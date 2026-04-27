@@ -1,0 +1,43 @@
+name: OddsIntel AI News Checker
+
+on:
+  schedule:
+    # Run 1h after morning pipeline (09:00 UTC = 12:00 EET)
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (no DB updates)'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  news-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run AI news checker
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python workers/jobs/news_checker.py --test
+          else
+            python workers/jobs/news_checker.py
+          fi

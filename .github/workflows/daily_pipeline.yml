@@ -32,7 +32,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pandas numpy requests beautifulsoup4 lxml httpx scikit-learn xgboost scipy python-dotenv rich click pydantic joblib
+          pip install -r requirements.txt
 
       - name: Download historical data (if not cached)
         uses: actions/cache@v4
@@ -54,20 +54,18 @@ jobs:
       - name: Run morning pipeline
         if: steps.mode.outputs.mode == 'morning'
         env:
-          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
-          python workers/jobs/daily_pipeline.py
+          python workers/jobs/daily_pipeline_v2.py
 
       - name: Run evening settlement
         if: steps.mode.outputs.mode == 'settle'
         env:
-          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
-          python workers/jobs/daily_pipeline.py settle
+          python workers/jobs/settlement.py
 
       - name: Upload daily results
         uses: actions/upload-artifact@v4

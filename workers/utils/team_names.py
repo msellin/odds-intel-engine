@@ -1,9 +1,24 @@
 """
 OddsIntel — Team Name Mapping
-Maps team names between different sources (Kambi, football-data.co.uk, Sofascore).
+Maps team names between different sources (Kambi, SofaScore, football-data.co.uk).
 
 This is one of the most important files — wrong mapping = missed bets.
+Unmatched team names are logged to data/logs/unmatched_teams.log for manual review.
 """
+
+import logging
+from pathlib import Path
+
+# Ensure log directory exists
+_log_dir = Path(__file__).parent.parent.parent / "data" / "logs"
+_log_dir.mkdir(parents=True, exist_ok=True)
+
+_unmatched_logger = logging.getLogger("unmatched_teams")
+if not _unmatched_logger.handlers:
+    _handler = logging.FileHandler(_log_dir / "unmatched_teams.log")
+    _handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+    _unmatched_logger.addHandler(_handler)
+    _unmatched_logger.setLevel(logging.INFO)
 
 # Kambi name → football-data.co.uk name
 # Add mappings as we discover mismatches
@@ -181,32 +196,48 @@ def normalize_team_name(name: str, source: str = "kambi") -> str:
     return name
 
 
-def fuzzy_match_team(name: str, known_teams: set, threshold: int = 5) -> str | None:
+def fuzzy_match_team(name: str, known_teams: set, threshold: int = 85) -> str | None:
     """
-    Try to fuzzy-match a team name against known teams.
-    Uses simple prefix matching.
-    """
-    name_lower = name.lower()
+    Fuzzy-match a team name against known teams using rapidfuzz.
 
-    # Exact match
+    Steps:
+    1. Exact match
+    2. Canonical mapping (KAMBI_TO_FOOTBALL_DATA)
+    3. rapidfuzz WRatio match with given threshold (default 85)
+
+    Logs unmatched names to data/logs/unmatched_teams.log.
+    """
+    if not name or not known_teams:
+        return None
+
+    # 1. Exact match
     if name in known_teams:
         return name
 
-    # Check mapping
+    # 2. Canonical mapping
     mapped = KAMBI_TO_FOOTBALL_DATA.get(name)
     if mapped and mapped in known_teams:
         return mapped
 
-    # Prefix match (first N chars)
-    for n in [10, 8, 6, 5]:
-        prefix = name_lower[:n]
-        matches = [t for t in known_teams if t.lower().startswith(prefix)]
-        if len(matches) == 1:
-            return matches[0]
+    # 3. rapidfuzz
+    try:
+        from rapidfuzz import process, fuzz
+        match = process.extractOne(
+            name,
+            known_teams,
+            scorer=fuzz.WRatio,
+            score_cutoff=threshold,
+        )
+        if match:
+            return match[0]
+    except ImportError:
+        # Fallback to prefix matching if rapidfuzz unavailable
+        name_lower = name.lower()
+        for n in [10, 8, 6, 5]:
+            prefix = name_lower[:n]
+            candidates = [t for t in known_teams if t.lower().startswith(prefix)]
+            if len(candidates) == 1:
+                return candidates[0]
 
-    # Contains match
-    for t in known_teams:
-        if name_lower[:5] in t.lower() or t.lower()[:5] in name_lower:
-            return t
-
+    _unmatched_logger.info(f"UNMATCHED: '{name}' (threshold={threshold})")
     return None

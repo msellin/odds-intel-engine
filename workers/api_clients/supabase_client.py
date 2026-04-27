@@ -1,11 +1,11 @@
 """
 OddsIntel — Supabase Client
-Handles all database operations: storing matches, odds, predictions, bets.
-Both the daily pipeline and the frontend read from the same database.
+Handles all database operations: storing matches, odds, predictions, bets,
+live snapshots, and match events.
 """
 
 import os
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
@@ -33,7 +33,6 @@ def ensure_bots(bots_config: dict) -> dict:
     """
     client = get_client()
 
-    # Get existing bots
     result = client.table("bots").select("id, name").execute()
     existing = {b["name"]: b["id"] for b in result.data}
 
@@ -59,17 +58,14 @@ def ensure_league(league_path: str, tier: int = 1) -> str:
     """Get or create a league, return its UUID"""
     client = get_client()
 
-    # Parse path like "England / Premier League"
     parts = league_path.split(" / ")
     country = parts[0] if len(parts) > 1 else "Unknown"
     name = parts[-1]
 
-    # Check if exists
     result = client.table("leagues").select("id").eq("name", name).eq("country", country).execute()
     if result.data:
         return result.data[0]["id"]
 
-    # Create
     new = client.table("leagues").insert({
         "name": name,
         "country": country,
@@ -87,7 +83,6 @@ def ensure_team(team_name: str, country: str = "Unknown") -> str:
     if result.data:
         return result.data[0]["id"]
 
-    # We need a league_id (required field) — use a default
     league = ensure_league(f"{country} / Unknown", tier=0)
 
     new = client.table("teams").insert({
@@ -109,22 +104,16 @@ def store_match(match_data: dict) -> str:
     home_team = match_data["home_team"]
     away_team = match_data["away_team"]
     match_date = match_data.get("start_time", match_data.get("date", ""))
-
-    # Check if match already exists (same teams + same date)
-    # Use date prefix for matching
     date_prefix = match_date[:10] if match_date else date.today().isoformat()
 
-    # Get or create teams
     country = match_data.get("league_path", "").split(" / ")[0] if " / " in match_data.get("league_path", "") else "Unknown"
     home_id = ensure_team(home_team, country)
     away_id = ensure_team(away_team, country)
 
-    # Get or create league
     league_path = match_data.get("league_path", "Unknown / Unknown")
     tier = match_data.get("tier", 1)
     league_id = ensure_league(league_path, tier)
 
-    # Check for existing match
     existing = client.table("matches").select("id").eq(
         "home_team_id", home_id
     ).eq(
@@ -134,14 +123,12 @@ def store_match(match_data: dict) -> str:
     if existing.data:
         return existing.data[0]["id"]
 
-    # Determine season (year of start, or year-1 if before July)
     try:
         dt = datetime.fromisoformat(match_date.replace("Z", "+00:00"))
         season = dt.year if dt.month >= 7 else dt.year - 1
     except (ValueError, AttributeError):
         season = date.today().year if date.today().month >= 7 else date.today().year - 1
 
-    # Create match
     match_record = {
         "date": match_date if match_date else datetime.now().isoformat(),
         "home_team_id": home_id,
@@ -151,7 +138,6 @@ def store_match(match_data: dict) -> str:
         "status": "scheduled",
     }
 
-    # Add scores if available
     if match_data.get("home_goals") is not None:
         match_record["score_home"] = int(match_data["home_goals"])
         match_record["score_away"] = int(match_data["away_goals"])
@@ -163,41 +149,203 @@ def store_match(match_data: dict) -> str:
     return new.data[0]["id"]
 
 
+def update_match_status(match_id: str, status: str):
+    """Update a match status (scheduled → live → finished)"""
+    client = get_client()
+    client.table("matches").update({"status": status}).eq("id", match_id).execute()
+
+
 # ============================================================
-# ODDS
+# ODDS (fixed: uses 'timestamp' column, not 'created_at')
 # ============================================================
 
-def store_odds(match_id: str, match_data: dict):
-    """Store odds snapshot for a match. One row per selection."""
+def store_odds(match_id: str, match_data: dict, minutes_to_kickoff: int = None):
+    """
+    Store odds snapshot for a match. One row per market/selection.
+    Fixed: uses 'timestamp' column (schema column name, not 'created_at').
+    minutes_to_kickoff: negative = pre-match (e.g. -120 = 2h before kickoff)
+                        0 = at kickoff / closing line
+                        positive = in-play minute
+    """
     client = get_client()
 
-    operator = match_data.get("operator", "unibet")
-    now = datetime.now().isoformat()
+    operator = match_data.get("bookmaker") or match_data.get("operator", "unibet")
+    now = datetime.now(timezone.utc).isoformat()
+
+    base = {
+        "match_id": match_id,
+        "bookmaker": operator,
+        "timestamp": now,
+        "is_closing": minutes_to_kickoff is not None and abs(minutes_to_kickoff) <= 5,
+        "minutes_to_kickoff": minutes_to_kickoff,
+    }
 
     odds_rows = []
 
-    # 1X2 odds — one row per selection
-    if match_data.get("odds_home", 0) > 0:
-        odds_rows.append({"match_id": match_id, "bookmaker": operator, "market": "1x2",
-                          "selection": "home", "odds": match_data["odds_home"], "created_at": now})
-    if match_data.get("odds_draw", 0) > 0:
-        odds_rows.append({"match_id": match_id, "bookmaker": operator, "market": "1x2",
-                          "selection": "draw", "odds": match_data["odds_draw"], "created_at": now})
-    if match_data.get("odds_away", 0) > 0:
-        odds_rows.append({"match_id": match_id, "bookmaker": operator, "market": "1x2",
-                          "selection": "away", "odds": match_data["odds_away"], "created_at": now})
+    # 1X2
+    for selection, key in [("home", "odds_home"), ("draw", "odds_draw"), ("away", "odds_away")]:
+        if match_data.get(key, 0) > 0:
+            odds_rows.append({**base, "market": "1x2", "selection": selection, "odds": match_data[key]})
 
-    # O/U odds
-    if match_data.get("odds_over_25", 0) > 0:
-        odds_rows.append({"match_id": match_id, "bookmaker": operator, "market": "over_under_25",
-                          "selection": "over", "odds": match_data["odds_over_25"], "created_at": now})
-    if match_data.get("odds_under_25", 0) > 0:
-        odds_rows.append({"match_id": match_id, "bookmaker": operator, "market": "over_under_25",
-                          "selection": "under", "odds": match_data["odds_under_25"], "created_at": now})
+    # All O/U lines
+    for line_label, over_key, under_key in [
+        ("over_under_05", "odds_over_05", "odds_under_05"),
+        ("over_under_15", "odds_over_15", "odds_under_15"),
+        ("over_under_25", "odds_over_25", "odds_under_25"),
+        ("over_under_35", "odds_over_35", "odds_under_35"),
+        ("over_under_45", "odds_over_45", "odds_under_45"),
+    ]:
+        if match_data.get(over_key, 0) > 0:
+            odds_rows.append({**base, "market": line_label, "selection": "over",
+                              "odds": match_data[over_key]})
+        if match_data.get(under_key, 0) > 0:
+            odds_rows.append({**base, "market": line_label, "selection": "under",
+                              "odds": match_data[under_key]})
 
-    # Batch insert
     if odds_rows:
         client.table("odds_snapshots").insert(odds_rows).execute()
+
+
+# ============================================================
+# LIVE TRACKING
+# ============================================================
+
+def store_live_snapshot(match_id: str, snapshot: dict):
+    """
+    Store an in-play snapshot (called every ~5 min during live matches).
+    snapshot keys: minute, score_home, score_away, shots_*, xg_*, possession_home,
+                   live_ou_* odds, live_1x2_* odds, model_* context
+    """
+    client = get_client()
+
+    row = {
+        "match_id": match_id,
+        "minute": snapshot.get("minute", 0),
+        "added_time": snapshot.get("added_time", 0),
+        "score_home": snapshot.get("score_home", 0),
+        "score_away": snapshot.get("score_away", 0),
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # Optional stats fields
+    optional_fields = [
+        "shots_home", "shots_away", "shots_on_target_home", "shots_on_target_away",
+        "xg_home", "xg_away", "possession_home", "corners_home", "corners_away",
+        "attacks_home", "attacks_away",
+        "live_ou_05_over", "live_ou_05_under",
+        "live_ou_15_over", "live_ou_15_under",
+        "live_ou_25_over", "live_ou_25_under",
+        "live_ou_35_over", "live_ou_35_under",
+        "live_ou_45_over", "live_ou_45_under",
+        "live_1x2_home", "live_1x2_draw", "live_1x2_away",
+        "model_xg_home", "model_xg_away", "model_ou25_prob",
+    ]
+    for field in optional_fields:
+        if snapshot.get(field) is not None:
+            row[field] = snapshot[field]
+
+    client.table("live_match_snapshots").insert(row).execute()
+
+
+def store_match_event(match_id: str, event: dict) -> bool:
+    """
+    Store a match event (goal, card, sub).
+    Returns False if event already exists (dedup via sofascore_event_id).
+    """
+    client = get_client()
+
+    row = {
+        "match_id": match_id,
+        "minute": event.get("minute", 0),
+        "added_time": event.get("added_time", 0),
+        "event_type": event["event_type"],
+        "team": event["team"],
+        "player_name": event.get("player_name"),
+        "assist_name": event.get("assist_name"),
+        "detail": event.get("detail"),
+        "sofascore_event_id": event.get("sofascore_event_id"),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    try:
+        client.table("match_events").insert(row).execute()
+        return True
+    except Exception as e:
+        # Unique constraint violation = duplicate event, that's fine
+        if "duplicate" in str(e).lower() or "unique" in str(e).lower():
+            return False
+        raise
+
+
+def get_live_matches() -> list[dict]:
+    """
+    Get matches that are currently in-play or starting soon.
+    Returns matches with sofascore_event_id so the live tracker can poll them.
+    """
+    client = get_client()
+    now = datetime.now(timezone.utc)
+
+    # Matches that started in the last 2.5 hours and are not yet finished
+    from_time = now.replace(hour=max(0, now.hour - 3)).isoformat()
+
+    result = client.table("matches").select(
+        "id, date, sofascore_event_id, status, "
+        "home:home_team_id(name), away:away_team_id(name), "
+        "leagues(name, country)"
+    ).gte("date", from_time).neq("status", "finished").execute()
+
+    return result.data
+
+
+def get_match_by_sofascore_id(sofascore_event_id: int) -> dict | None:
+    """Look up a DB match by Sofascore event ID"""
+    client = get_client()
+    result = client.table("matches").select("id, status, date").eq(
+        "sofascore_event_id", sofascore_event_id
+    ).execute()
+    return result.data[0] if result.data else None
+
+
+def get_match_by_teams_and_date(home_team_name: str, away_team_name: str,
+                                 match_date: str) -> dict | None:
+    """
+    Fallback lookup when sofascore_event_id is not stored.
+    Joins through teams table to match by name.
+    """
+    client = get_client()
+    date_prefix = match_date[:10]
+
+    # Get team IDs
+    home_result = client.table("teams").select("id").eq("name", home_team_name).execute()
+    away_result = client.table("teams").select("id").eq("name", away_team_name).execute()
+
+    if not home_result.data or not away_result.data:
+        return None
+
+    home_id = home_result.data[0]["id"]
+    away_id = away_result.data[0]["id"]
+
+    result = client.table("matches").select("id, status, date, sofascore_event_id").eq(
+        "home_team_id", home_id
+    ).eq(
+        "away_team_id", away_id
+    ).gte("date", f"{date_prefix}T00:00:00").lte("date", f"{date_prefix}T23:59:59").execute()
+
+    return result.data[0] if result.data else None
+
+
+def get_todays_scheduled_matches() -> list[dict]:
+    """Get all of today's scheduled (not yet started) matches with kickoff times"""
+    client = get_client()
+    today = date.today().isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    result = client.table("matches").select(
+        "id, date, sofascore_event_id, "
+        "home:home_team_id(name), away:away_team_id(name)"
+    ).gte("date", now_iso).lte("date", f"{today}T23:59:59").eq("status", "scheduled").execute()
+
+    return result.data
 
 
 # ============================================================
@@ -214,9 +362,8 @@ def store_prediction(match_id: str, market: str, prediction: dict):
         "model_probability": prediction["model_prob"],
         "implied_probability": prediction.get("implied_prob"),
         "edge_percent": prediction.get("edge"),
-        "best_odds": prediction.get("odds"),
-        "best_bookmaker": prediction.get("bookmaker", "unibet"),
-        "confidence": "high" if prediction.get("edge", 0) > 0.08 else "medium" if prediction.get("edge", 0) > 0.05 else "low",
+        "confidence": prediction.get("confidence", 0.5),
+        "reasoning": prediction.get("reasoning"),
     }).execute()
 
 
@@ -253,7 +400,6 @@ def settle_bet(bet_id: str, result: str, pnl: float, bankroll_after: float):
         "result": result,
         "pnl": pnl,
         "bankroll_after": bankroll_after,
-        "settled_at": datetime.now().isoformat(),
     }).eq("id", bet_id).execute()
 
 
@@ -302,7 +448,6 @@ def get_bot_performance(bot_name: str = None) -> list[dict]:
 
     query = client.table("simulated_bets").select("*")
     if bot_name:
-        # Get bot ID first
         bot = client.table("bots").select("id").eq("name", bot_name).execute()
         if bot.data:
             query = query.eq("bot_id", bot.data[0]["id"])
@@ -324,11 +469,13 @@ def get_todays_matches() -> list[dict]:
 
 
 if __name__ == "__main__":
-    # Quick test
     client = get_client()
     print("Supabase connection OK")
 
-    # Check table counts
-    for table in ["bots", "matches", "simulated_bets", "predictions", "odds_snapshots", "leagues", "teams"]:
-        result = client.table(table).select("id", count="exact").execute()
-        print(f"  {table}: {result.count} rows")
+    for table in ["bots", "matches", "simulated_bets", "predictions", "odds_snapshots",
+                  "leagues", "teams", "live_match_snapshots", "match_events"]:
+        try:
+            result = client.table(table).select("id", count="exact").execute()
+            print(f"  {table}: {result.count} rows")
+        except Exception as e:
+            print(f"  {table}: ERROR — {e}")

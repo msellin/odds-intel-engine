@@ -63,7 +63,11 @@ def get_todays_matches_from_flashscore() -> list[dict]:
             console.print(f"[yellow]Flashscore returned {resp.status_code} — trying alternative...[/yellow]")
             return _get_matches_alternative()
 
-        return _parse_flashscore_data(resp.text)
+        matches = _parse_flashscore_data(resp.text)
+        if not matches:
+            console.print("[yellow]Flashscore returned no matches — trying SofaScore...[/yellow]")
+            return _get_matches_alternative()
+        return matches
 
     except Exception as e:
         console.print(f"[red]Flashscore error: {e}[/red]")
@@ -96,8 +100,9 @@ def _get_matches_alternative() -> list[dict]:
             tournament_name = tournament.get("name", "")
             category = tournament.get("category", {}).get("name", "")
 
-            # Only include football (not futsal, beach soccer, etc.)
-            if event.get("sport", {}).get("name") != "Football":
+            # Skip non-football subtypes (futsal, beach soccer) by tournament name heuristic
+            tournament_lower = tournament_name.lower()
+            if any(s in tournament_lower for s in ("futsal", "beach", "esports", "indoor")):
                 continue
 
             home = event.get("homeTeam", {})

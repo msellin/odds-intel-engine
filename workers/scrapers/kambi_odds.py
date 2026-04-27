@@ -49,6 +49,22 @@ LEAGUE_MAP = {
     "Denmark / Superligaen": {"fd_code": "DK1", "tier": 1},
     "Estonia / Esiliiga": {"fd_code": "EST1", "tier": 2},
     "Estonia / Esiliiga B": {"fd_code": "EST2", "tier": 3},
+    # Additional leagues — available in Kambi, added for broader odds coverage
+    "Norway / Eliteserien": {"fd_code": "NOR1", "tier": 1},
+    "Norway / OBOS-ligaen": {"fd_code": "NOR2", "tier": 2},
+    "Poland / Ekstraklasa": {"fd_code": "PL1", "tier": 1},
+    "Poland / I Liga": {"fd_code": "PL2", "tier": 2},
+    "Croatia / 1. HNL League": {"fd_code": "CR1", "tier": 1},
+    "Romania / Liga I": {"fd_code": "RO1", "tier": 1},
+    "Serbia / Super Liga": {"fd_code": "SER1", "tier": 1},
+    "Ukraine / Premier League": {"fd_code": "UA1", "tier": 1},
+    "Hungary / NB I": {"fd_code": "HUN1", "tier": 1},
+    "Hungary / NB 2": {"fd_code": "HUN2", "tier": 2},
+    "Iceland / Úrvalsdeild": {"fd_code": "ICE1", "tier": 1},
+    "Latvia / Virsliga": {"fd_code": "LAT1", "tier": 1},
+    "Cyprus / 1st Division": {"fd_code": "CY1", "tier": 1},
+    "Georgia / Erovnuli Liga": {"fd_code": "GEO1", "tier": 1},
+    "Portugal / Liga 2": {"fd_code": "P2", "tier": 2},
 }
 
 
@@ -131,19 +147,26 @@ def _parse_event(event: dict, operator: str) -> dict | None:
                     odds_1x2["away"] = decimal_odds
 
         elif offer_type == "Over/Under":
-            # Over/Under odds
-            line = offer.get("outcomes", [{}])[0].get("line", 0) / 1000 if offer.get("outcomes") else 0
+            # Over/Under odds — capture ALL lines (0.5, 1.5, 2.5, 3.5, 4.5)
+            outcomes = offer.get("outcomes", [])
+            if not outcomes:
+                continue
 
-            if abs(line - 2.5) < 0.01:  # Only 2.5 line
-                for outcome in offer.get("outcomes", []):
-                    label = outcome.get("label", "")
-                    raw_odds = outcome.get("odds", 0)
-                    decimal_odds = raw_odds / 1000 if raw_odds > 0 else 0
+            line = outcomes[0].get("line", 0) / 1000
+            # Only store lines we care about
+            if line not in (0.5, 1.5, 2.5, 3.5, 4.5):
+                continue
 
-                    if label == "Over":
-                        odds_ou["over_25"] = decimal_odds
-                    elif label == "Under":
-                        odds_ou["under_25"] = decimal_odds
+            line_key = str(line).replace(".", "")  # "05", "15", "25", "35", "45"
+            for outcome in outcomes:
+                label = outcome.get("label", "")
+                raw_odds = outcome.get("odds", 0)
+                decimal_odds = raw_odds / 1000 if raw_odds > 0 else 0
+
+                if label == "Over":
+                    odds_ou[f"over_{line_key}"] = decimal_odds
+                elif label == "Under":
+                    odds_ou[f"under_{line_key}"] = decimal_odds
 
     # Only include if we have at least 1X2 odds
     if not odds_1x2:
@@ -157,11 +180,23 @@ def _parse_event(event: dict, operator: str) -> dict | None:
         "league_code": league_info.get("fd_code", ""),
         "tier": league_info.get("tier", 0),
         "operator": operator,
+        # 1X2
         "odds_home": odds_1x2.get("home", 0),
         "odds_draw": odds_1x2.get("draw", 0),
         "odds_away": odds_1x2.get("away", 0),
+        # O/U lines — all available
+        "odds_over_05": odds_ou.get("over_05", 0),
+        "odds_under_05": odds_ou.get("under_05", 0),
+        "odds_over_15": odds_ou.get("over_15", 0),
+        "odds_under_15": odds_ou.get("under_15", 0),
         "odds_over_25": odds_ou.get("over_25", 0),
         "odds_under_25": odds_ou.get("under_25", 0),
+        "odds_over_35": odds_ou.get("over_35", 0),
+        "odds_under_35": odds_ou.get("under_35", 0),
+        "odds_over_45": odds_ou.get("over_45", 0),
+        "odds_under_45": odds_ou.get("under_45", 0),
+        # Raw ou_lines dict for downstream use
+        "ou_lines": odds_ou,
         "scraped_at": datetime.now().isoformat(),
     }
 
@@ -191,25 +226,143 @@ def fetch_all_operators() -> list[dict]:
                 "home": m["odds_home"],
                 "draw": m["odds_draw"],
                 "away": m["odds_away"],
-                "over_25": m["odds_over_25"],
-                "under_25": m["odds_under_25"],
+                **{k: v for k, v in m.items() if k.startswith("odds_over_") or k.startswith("odds_under_")},
             }
 
-            # Update best odds
-            if m["odds_home"] > all_matches[key]["odds_home"]:
-                all_matches[key]["odds_home"] = m["odds_home"]
-            if m["odds_draw"] > all_matches[key]["odds_draw"]:
-                all_matches[key]["odds_draw"] = m["odds_draw"]
-            if m["odds_away"] > all_matches[key]["odds_away"]:
-                all_matches[key]["odds_away"] = m["odds_away"]
-            if m["odds_over_25"] > all_matches[key]["odds_over_25"]:
-                all_matches[key]["odds_over_25"] = m["odds_over_25"]
-            if m["odds_under_25"] > all_matches[key]["odds_under_25"]:
-                all_matches[key]["odds_under_25"] = m["odds_under_25"]
+            # Update best odds (take highest across operators)
+            for field in ["odds_home", "odds_draw", "odds_away",
+                          "odds_over_05", "odds_under_05",
+                          "odds_over_15", "odds_under_15",
+                          "odds_over_25", "odds_under_25",
+                          "odds_over_35", "odds_under_35",
+                          "odds_over_45", "odds_under_45"]:
+                if m.get(field, 0) > all_matches[key].get(field, 0):
+                    all_matches[key][field] = m[field]
 
         time.sleep(2)  # Be polite between operators
 
     return list(all_matches.values())
+
+
+def fetch_live_odds(operator: str = "ub") -> list[dict]:
+    """
+    Fetch live in-play odds from Kambi.
+    Returns matches currently being played with available live markets.
+    """
+    url = f"https://eu-offering-api.kambicdn.com/offering/v2018/{operator}/listView/football/live.json"
+
+    try:
+        resp = requests.get(url, headers=HEADERS,
+                           params={"lang": "en_GB", "market": "EE"},
+                           timeout=15)
+
+        if resp.status_code != 200:
+            console.print(f"[red]Kambi live API error: {resp.status_code}[/red]")
+            return []
+
+        data = resp.json()
+        events = data.get("events", [])
+
+        matches = []
+        for event in events:
+            match = _parse_live_event(event, operator)
+            if match:
+                matches.append(match)
+
+        return matches
+
+    except Exception as e:
+        console.print(f"[red]Kambi live error: {e}[/red]")
+        return []
+
+
+def _parse_live_event(event: dict, operator: str) -> dict | None:
+    """Parse a live Kambi event — same structure as pre-match but with live state"""
+    event_data = event.get("event", {})
+
+    name = event_data.get("name", "")
+    if " - " not in name:
+        return None
+
+    home_team, away_team = name.split(" - ", 1)
+
+    path_parts = [p.get("englishName", p.get("name", ""))
+                  for p in event_data.get("path", [])]
+    league_path = " / ".join(path_parts[1:]) if len(path_parts) > 1 else ""
+
+    if "Esports" in league_path or "esports" in league_path:
+        return None
+
+    league_info = LEAGUE_MAP.get(league_path, {})
+
+    # Live state
+    live_data = event_data.get("liveData", {})
+    score = live_data.get("score", {})
+    match_clock = live_data.get("matchClock", {})
+
+    # Extract all available O/U and 1X2 live odds
+    odds_1x2 = {}
+    odds_ou = {}
+
+    for offer in event.get("betOffers", []):
+        offer_type = offer.get("betOfferType", {}).get("name", "")
+
+        if offer_type == "Match":
+            for outcome in offer.get("outcomes", []):
+                label = outcome.get("label", "")
+                raw_odds = outcome.get("odds", 0)
+                decimal_odds = raw_odds / 1000 if raw_odds > 0 else 0
+                if label == "1":
+                    odds_1x2["home"] = decimal_odds
+                elif label == "X":
+                    odds_1x2["draw"] = decimal_odds
+                elif label == "2":
+                    odds_1x2["away"] = decimal_odds
+
+        elif offer_type == "Over/Under":
+            outcomes = offer.get("outcomes", [])
+            if not outcomes:
+                continue
+            line = outcomes[0].get("line", 0) / 1000
+            if line not in (0.5, 1.5, 2.5, 3.5, 4.5):
+                continue
+            line_key = str(line).replace(".", "")
+            for outcome in outcomes:
+                label = outcome.get("label", "")
+                raw_odds = outcome.get("odds", 0)
+                decimal_odds = raw_odds / 1000 if raw_odds > 0 else 0
+                if label == "Over":
+                    odds_ou[f"over_{line_key}"] = decimal_odds
+                elif label == "Under":
+                    odds_ou[f"under_{line_key}"] = decimal_odds
+
+    return {
+        "home_team": home_team.strip(),
+        "away_team": away_team.strip(),
+        "league_path": league_path,
+        "league_code": league_info.get("fd_code", ""),
+        "tier": league_info.get("tier", 0),
+        "operator": operator,
+        # Live state
+        "score_home": score.get("home", 0),
+        "score_away": score.get("away", 0),
+        "minute": match_clock.get("minute", 0),
+        # Live odds
+        "live_1x2_home": odds_1x2.get("home", 0),
+        "live_1x2_draw": odds_1x2.get("draw", 0),
+        "live_1x2_away": odds_1x2.get("away", 0),
+        "live_ou_05_over": odds_ou.get("over_05", 0),
+        "live_ou_05_under": odds_ou.get("under_05", 0),
+        "live_ou_15_over": odds_ou.get("over_15", 0),
+        "live_ou_15_under": odds_ou.get("under_15", 0),
+        "live_ou_25_over": odds_ou.get("over_25", 0),
+        "live_ou_25_under": odds_ou.get("under_25", 0),
+        "live_ou_35_over": odds_ou.get("over_35", 0),
+        "live_ou_35_under": odds_ou.get("under_35", 0),
+        "live_ou_45_over": odds_ou.get("over_45", 0),
+        "live_ou_45_under": odds_ou.get("under_45", 0),
+        "scraped_at": datetime.now().isoformat(),
+    }
 
 
 def get_target_league_matches() -> list[dict]:

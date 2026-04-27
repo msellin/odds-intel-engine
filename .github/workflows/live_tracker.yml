@@ -1,0 +1,46 @@
+name: OddsIntel — Live Match Tracker
+
+on:
+  schedule:
+    # Every 5 minutes during European match hours: 12:00–23:00 UTC
+    # GitHub Actions minimum interval is 5 minutes
+    - cron: '*/5 12-22 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (fetch data but do not store)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  live-track:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4   # Must finish before next 5-min trigger
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run live tracker
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python workers/jobs/live_tracker.py --test
+          else
+            python workers/jobs/live_tracker.py
+          fi
