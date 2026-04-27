@@ -37,6 +37,7 @@ from workers.api_clients.supabase_client import (
     get_client,
     store_live_snapshot,
     store_match_event,
+    store_match_stats,
     get_live_matches,
     get_match_by_sofascore_id,
     get_match_by_teams_and_date,
@@ -418,6 +419,14 @@ def run_live_tracker(dry_run: bool = False):
                     update_match_status(match_id, "live")
                 except Exception:
                     pass
+
+            # P1.2: Save final stats to match_stats when match finishes
+            # Sofascore status_code 100 = "Ended", also check for FT-like states
+            if event.get("status_code") == 100 and stats:
+                try:
+                    store_match_stats(match_id, stats)
+                except Exception as e:
+                    console.print(f"  [yellow]match_stats save error: {e}[/yellow]")
 
         # Add to display table
         xg_str = (f"{stats.get('xg_home', 0):.1f}-{stats.get('xg_away', 0):.1f}"

@@ -23,7 +23,13 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workers.scrapers.flashscore import get_todays_matches_from_flashscore
-from workers.api_clients.supabase_client import get_client
+from workers.api_clients.supabase_client import (
+    get_client,
+    store_team_elo,
+    store_team_form,
+    store_model_evaluation,
+    compute_team_form_from_db,
+)
 
 console = Console()
 
@@ -333,6 +339,194 @@ def run_settlement():
     if avg_clv is not None:
         clv_color = "green" if avg_clv > 0 else "red"
         console.print(f"  Avg CLV: [{clv_color}]{avg_clv:+.1%}[/] ({'beating' if avg_clv > 0 else 'behind'} closing line)")
+
+    # P1.3: Update ELO ratings for today's finished matches
+    console.print("\n[cyan]Updating ELO ratings...[/cyan]")
+    try:
+        elo_count = update_elo_ratings(client)
+        console.print(f"  {elo_count} team ratings updated")
+    except Exception as e:
+        console.print(f"  [yellow]ELO update error: {e}[/yellow]")
+
+    # P1.4: Aggregate model evaluations for today
+    console.print("[cyan]Computing model evaluations...[/cyan]")
+    try:
+        eval_count = compute_model_evaluations(client)
+        console.print(f"  {eval_count} evaluation records stored")
+    except Exception as e:
+        console.print(f"  [yellow]Model evaluation error: {e}[/yellow]")
+
+    # P1.5: Update form cache for teams that played today
+    console.print("[cyan]Updating team form cache...[/cyan]")
+    try:
+        form_count = update_team_form_cache(client)
+        console.print(f"  {form_count} team forms updated")
+    except Exception as e:
+        console.print(f"  [yellow]Form cache error: {e}[/yellow]")
+
+
+def update_elo_ratings(client):
+    """
+    P1.3: Update ELO ratings for teams in today's finished matches.
+    Simple ELO with K=30, home advantage +100, goal diff multiplier.
+    """
+    today_str = date.today().isoformat()
+
+    # Get today's finished matches with team IDs
+    finished = client.table("matches").select(
+        "id, home_team_id, away_team_id, score_home, score_away"
+    ).eq("status", "finished").gte(
+        "date", f"{today_str}T00:00:00"
+    ).lte("date", f"{today_str}T23:59:59").execute().data
+
+    if not finished:
+        return 0
+
+    # Load current ELO ratings for involved teams
+    team_ids = set()
+    for m in finished:
+        team_ids.add(m["home_team_id"])
+        team_ids.add(m["away_team_id"])
+
+    elo_cache: dict[str, float] = {}
+    for tid in team_ids:
+        result = client.table("team_elo_daily").select(
+            "elo_rating"
+        ).eq("team_id", tid).order("date", desc=True).limit(1).execute()
+        elo_cache[tid] = float(result.data[0]["elo_rating"]) if result.data else 1500.0
+
+    K = 30
+    HOME_ADV = 100
+    updated = 0
+
+    for m in finished:
+        if m["score_home"] is None or m["score_away"] is None:
+            continue
+
+        h_id = m["home_team_id"]
+        a_id = m["away_team_id"]
+        h_elo = elo_cache.get(h_id, 1500.0) + HOME_ADV
+        a_elo = elo_cache.get(a_id, 1500.0)
+
+        # Expected scores
+        exp_h = 1 / (1 + 10 ** ((a_elo - h_elo) / 400))
+        exp_a = 1 - exp_h
+
+        # Actual scores
+        gd = abs(m["score_home"] - m["score_away"])
+        gd_mult = max(1.0, (gd + 1) ** 0.5)  # goal diff multiplier
+
+        if m["score_home"] > m["score_away"]:
+            actual_h, actual_a = 1.0, 0.0
+        elif m["score_home"] < m["score_away"]:
+            actual_h, actual_a = 0.0, 1.0
+        else:
+            actual_h, actual_a = 0.5, 0.5
+
+        # Update (remove home advantage from stored rating)
+        new_h = (elo_cache.get(h_id, 1500.0) +
+                 K * gd_mult * (actual_h - exp_h))
+        new_a = (elo_cache.get(a_id, 1500.0) +
+                 K * gd_mult * (actual_a - exp_a))
+
+        elo_cache[h_id] = new_h
+        elo_cache[a_id] = new_a
+
+        try:
+            store_team_elo(h_id, today_str, new_h)
+            store_team_elo(a_id, today_str, new_a)
+            updated += 2
+        except Exception:
+            pass
+
+    return updated
+
+
+def update_team_form_cache(client):
+    """
+    P1.5: Update form cache for teams that played today.
+    Computes rolling 10-match form from DB and stores in team_form_cache.
+    """
+    today_str = date.today().isoformat()
+
+    # Get today's finished matches
+    finished = client.table("matches").select(
+        "home_team_id, away_team_id"
+    ).eq("status", "finished").gte(
+        "date", f"{today_str}T00:00:00"
+    ).lte("date", f"{today_str}T23:59:59").execute().data
+
+    if not finished:
+        return 0
+
+    team_ids = set()
+    for m in finished:
+        team_ids.add(m["home_team_id"])
+        team_ids.add(m["away_team_id"])
+
+    updated = 0
+    for tid in team_ids:
+        form = compute_team_form_from_db(tid, today_str)
+        if form:
+            try:
+                store_team_form(tid, today_str, form)
+                updated += 1
+            except Exception:
+                pass
+
+    return updated
+
+
+def compute_model_evaluations(client):
+    """
+    P1.4: Aggregate settled bets into model_evaluations by date/market.
+    Runs after all bets are settled for the day.
+    """
+    today_str = date.today().isoformat()
+
+    # Get today's settled bets with league info
+    bets = client.table("simulated_bets").select(
+        "id, market, result, pnl, stake, clv, "
+        "match:match_id(league_id)"
+    ).neq("result", "pending").gte(
+        "pick_time", f"{today_str}T00:00:00"
+    ).execute().data
+
+    if not bets:
+        return 0
+
+    # Group by market
+    from collections import defaultdict
+    by_market: dict[str, list] = defaultdict(list)
+    for b in bets:
+        by_market[b["market"]].append(b)
+
+    evals_stored = 0
+    for market, market_bets in by_market.items():
+        total = len(market_bets)
+        hits = sum(1 for b in market_bets if b["result"] == "won")
+        total_stake = sum(b["stake"] for b in market_bets)
+        total_pnl = sum(b["pnl"] or 0 for b in market_bets)
+        roi = (total_pnl / total_stake * 100) if total_stake > 0 else 0
+        clv_vals = [b["clv"] for b in market_bets if b.get("clv") is not None]
+        avg_clv = sum(clv_vals) / len(clv_vals) if clv_vals else None
+
+        try:
+            store_model_evaluation(
+                eval_date=today_str,
+                league_id=None,  # aggregate across all leagues
+                market=market,
+                total_bets=total,
+                hits=hits,
+                roi=roi,
+                avg_clv=avg_clv,
+                notes=f"Auto-generated from {total} settled bets",
+            )
+            evals_stored += 1
+        except Exception:
+            pass
+
+    return evals_stored
 
 
 def run_report():

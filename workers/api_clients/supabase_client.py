@@ -435,6 +435,145 @@ def store_prediction_snapshot(
         raise
 
 
+def store_match_stats(match_id: str, stats: dict):
+    """
+    Store final match stats (xG, shots, possession, corners, cards).
+    Uses upsert — safe to call multiple times for the same match.
+    """
+    client = get_client()
+
+    row = {"match_id": match_id}
+    field_map = {
+        "xg_home": "xg_home", "xg_away": "xg_away",
+        "shots_home": "shots_home", "shots_away": "shots_away",
+        "possession_home": "possession_home",
+        "corners_home": "corners_home", "corners_away": "corners_away",
+    }
+    for src, dst in field_map.items():
+        if src in stats and stats[src] is not None:
+            row[dst] = stats[src]
+
+    if len(row) <= 1:
+        return  # no stats to store
+
+    client.table("match_stats").upsert(row, on_conflict="match_id").execute()
+
+
+def store_team_elo(team_id: str, elo_date: str, elo_rating: float):
+    """
+    Store or update a team's ELO rating for a given date.
+    Uses upsert on (team_id, date) constraint.
+    """
+    client = get_client()
+    client.table("team_elo_daily").upsert({
+        "team_id": team_id,
+        "date": elo_date,
+        "elo_rating": round(elo_rating, 2),
+    }, on_conflict="team_id,date").execute()
+
+
+def store_team_form(team_id: str, form_date: str, form: dict):
+    """
+    Store or update cached form metrics for a team on a given date.
+    Uses upsert on (team_id, date) constraint.
+    """
+    client = get_client()
+
+    row = {"team_id": team_id, "date": form_date}
+    for key in ["matches_played", "win_pct", "draw_pct", "loss_pct", "ppg",
+                "goals_scored_avg", "goals_conceded_avg", "goal_diff_avg",
+                "clean_sheet_pct", "over25_pct", "btts_pct"]:
+        if key in form and form[key] is not None:
+            row[key] = form[key]
+
+    client.table("team_form_cache").upsert(row, on_conflict="team_id,date").execute()
+
+
+def store_model_evaluation(eval_date: str, league_id: str | None, market: str,
+                           total_bets: int, hits: int, roi: float,
+                           avg_clv: float | None, notes: str | None = None):
+    """Store daily model evaluation metrics per league/market."""
+    client = get_client()
+
+    row = {
+        "date": eval_date,
+        "market": market,
+        "total_bets": total_bets,
+        "hits": hits,
+        "hit_rate": round(hits / total_bets, 4) if total_bets > 0 else None,
+        "roi": round(roi, 2),
+    }
+    if league_id:
+        row["league_id"] = league_id
+    if avg_clv is not None:
+        row["avg_clv"] = round(avg_clv, 4)
+    if notes:
+        row["notes"] = notes
+
+    client.table("model_evaluations").insert(row).execute()
+
+
+def compute_team_form_from_db(team_id: str, as_of_date: str, window: int = 10) -> dict | None:
+    """
+    Compute rolling form metrics for a team from recent finished matches in DB.
+    Returns form dict or None if insufficient data.
+    """
+    client = get_client()
+
+    # Get last N finished matches involving this team
+    home_matches = client.table("matches").select(
+        "score_home, score_away"
+    ).eq("home_team_id", team_id).eq("status", "finished").lt(
+        "date", f"{as_of_date}T23:59:59"
+    ).order("date", desc=True).limit(window).execute().data or []
+
+    away_matches = client.table("matches").select(
+        "score_home, score_away"
+    ).eq("away_team_id", team_id).eq("status", "finished").lt(
+        "date", f"{as_of_date}T23:59:59"
+    ).order("date", desc=True).limit(window).execute().data or []
+
+    # Combine and compute stats
+    results = []
+    for m in home_matches:
+        if m["score_home"] is None:
+            continue
+        gf, ga = m["score_home"], m["score_away"]
+        results.append({"gf": gf, "ga": ga, "won": gf > ga, "draw": gf == ga, "lost": gf < ga})
+
+    for m in away_matches:
+        if m["score_away"] is None:
+            continue
+        gf, ga = m["score_away"], m["score_home"]
+        results.append({"gf": gf, "ga": ga, "won": gf > ga, "draw": gf == ga, "lost": gf < ga})
+
+    # Take most recent N
+    results = results[:window]
+    n = len(results)
+    if n < 3:
+        return None
+
+    wins = sum(1 for r in results if r["won"])
+    draws = sum(1 for r in results if r["draw"])
+    losses = sum(1 for r in results if r["lost"])
+    gf_list = [r["gf"] for r in results]
+    ga_list = [r["ga"] for r in results]
+
+    return {
+        "matches_played": n,
+        "win_pct": round(wins / n, 4),
+        "draw_pct": round(draws / n, 4),
+        "loss_pct": round(losses / n, 4),
+        "ppg": round((wins * 3 + draws) / n, 3),
+        "goals_scored_avg": round(sum(gf_list) / n, 3),
+        "goals_conceded_avg": round(sum(ga_list) / n, 3),
+        "goal_diff_avg": round((sum(gf_list) - sum(ga_list)) / n, 3),
+        "clean_sheet_pct": round(sum(1 for g in ga_list if g == 0) / n, 4),
+        "over25_pct": round(sum(1 for i in range(n) if gf_list[i] + ga_list[i] > 2) / n, 4),
+        "btts_pct": round(sum(1 for i in range(n) if gf_list[i] > 0 and ga_list[i] > 0) / n, 4),
+    }
+
+
 def settle_bet(bet_id: str, result: str, pnl: float, bankroll_after: float):
     """Settle a paper bet with result and P&L"""
     client = get_client()
@@ -517,7 +656,8 @@ if __name__ == "__main__":
 
     for table in ["bots", "matches", "simulated_bets", "predictions", "odds_snapshots",
                   "leagues", "teams", "live_match_snapshots", "match_events",
-                  "prediction_snapshots"]:
+                  "prediction_snapshots", "match_stats", "model_evaluations",
+                  "team_elo_daily", "team_form_cache"]:
         try:
             result = client.table(table).select("id", count="exact").execute()
             print(f"  {table}: {result.count} rows")
