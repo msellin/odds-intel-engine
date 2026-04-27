@@ -399,6 +399,42 @@ def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
         raise
 
 
+def store_prediction_snapshot(
+    bet_id: str, stage: str, model_probability: float,
+    implied_probability: float = None, edge_percent: float = None,
+    odds_at_snapshot: float = None, metadata: dict = None,
+) -> str | None:
+    """
+    Store a prediction snapshot for audit trail.
+    Tracks model probability at each info stage: stats_only, post_ai, pre_kickoff, closing.
+    Returns snapshot UUID, or None if this stage already exists for this bet.
+    """
+    client = get_client()
+
+    row = {
+        "bet_id": bet_id,
+        "stage": stage,
+        "model_probability": model_probability,
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if implied_probability is not None:
+        row["implied_probability"] = implied_probability
+    if edge_percent is not None:
+        row["edge_percent"] = edge_percent
+    if odds_at_snapshot is not None:
+        row["odds_at_snapshot"] = odds_at_snapshot
+    if metadata:
+        row["metadata"] = metadata
+
+    try:
+        result = client.table("prediction_snapshots").insert(row).execute()
+        return result.data[0]["id"]
+    except Exception as e:
+        if "duplicate" in str(e).lower() or "unique" in str(e).lower():
+            return None  # stage already recorded
+        raise
+
+
 def settle_bet(bet_id: str, result: str, pnl: float, bankroll_after: float):
     """Settle a paper bet with result and P&L"""
     client = get_client()
@@ -480,7 +516,8 @@ if __name__ == "__main__":
     print("Supabase connection OK")
 
     for table in ["bots", "matches", "simulated_bets", "predictions", "odds_snapshots",
-                  "leagues", "teams", "live_match_snapshots", "match_events"]:
+                  "leagues", "teams", "live_match_snapshots", "match_events",
+                  "prediction_snapshots"]:
         try:
             result = client.table(table).select("id", count="exact").execute()
             print(f"  {table}: {result.count} rows")
