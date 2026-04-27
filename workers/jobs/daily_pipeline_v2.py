@@ -41,6 +41,9 @@ from workers.model.improvements import (
     calibrate_prob, compute_odds_movement, compute_alignment,
     compute_kelly, compute_stake, compute_rank_score,
 )
+from workers.model.xgboost_ensemble import (
+    get_xgboost_prediction, ensemble_prediction,
+)
 
 console = Console()
 
@@ -589,16 +592,39 @@ def run_morning():
         except Exception as e:
             console.print(f"  [yellow]Error storing odds: {e}[/yellow]")
 
-        # Compute prediction
-        pred = compute_prediction(
+        # Compute Poisson prediction
+        poisson_pred = compute_prediction(
             match, hist_targets,
             hist_targets_global=hist_targets_global,
             sofascore_cache=sofascore_cache,
         )
-        if not pred:
+        if not poisson_pred:
             continue
 
-        data_tier = pred.get("data_tier", "A")
+        data_tier = poisson_pred.get("data_tier", "A")
+
+        # Try XGBoost ensemble for Tier A teams
+        pred = poisson_pred  # default: Poisson-only
+        xgb_pred = None
+        if data_tier == "A":
+            from workers.utils.team_names import normalize_team_name, fuzzy_match_team
+            home_norm = normalize_team_name(match["home_team"], source="kambi")
+            away_norm = normalize_team_name(match["away_team"], source="kambi")
+            # Try to get XGBoost prediction
+            xgb_pred = get_xgboost_prediction(
+                home_norm, away_norm,
+                tier=match.get("tier", 1),
+            )
+            if xgb_pred:
+                pred = ensemble_prediction(poisson_pred, xgb_pred)
+            else:
+                # Also try with raw names
+                xgb_pred = get_xgboost_prediction(
+                    match["home_team"], match["away_team"],
+                    tier=match.get("tier", 1),
+                )
+                if xgb_pred:
+                    pred = ensemble_prediction(poisson_pred, xgb_pred)
 
         # Store predictions
         for market, prob_key in [
@@ -748,6 +774,8 @@ def run_morning():
                         "alignment_class": alignment["alignment_class"],
                         # P4: Kelly
                         "kelly_fraction": round(kelly, 6),
+                        # Model disagreement (when ensemble is active)
+                        "model_disagreement": pred.get("model_disagreement"),
                     })
                     if bet_id:
                         total_bets += 1
@@ -775,7 +803,9 @@ def run_morning():
                     console.print(f"  [red]Error storing bet: {e}[/red]")
 
         # Brief status
-        console.print(f"  {match['home_team']} vs {match['away_team']} — predicted [Tier {data_tier}]")
+        ensemble_tag = " [ensemble]" if pred.get("ensemble") else ""
+        disagree_tag = f" disagree={pred['model_disagreement']:.1%}" if pred.get("model_disagreement") else ""
+        console.print(f"  {match['home_team']} vs {match['away_team']} — predicted [Tier {data_tier}]{ensemble_tag}{disagree_tag}")
 
     console.print(f"\n[bold green]Done! {total_bets} bets placed across {len(BOTS_CONFIG)} bots[/bold green]")
     console.print(f"[green]All data stored in Supabase — frontend can display it now[/green]")
