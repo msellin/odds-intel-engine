@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from workers.scrapers.kambi_odds import fetch_all_operators, get_target_league_matches
 from workers.scrapers.flashscore import get_todays_matches_from_flashscore
 from workers.scrapers.sofascore_odds import fetch_all_odds as fetch_sofascore_odds
-from workers.scrapers.betexplorer_odds import fetch_upcoming_odds as fetch_betexplorer_odds
+from workers.scrapers.betexplorer_odds import fetch_gap_leagues_odds as fetch_betexplorer_odds
 from workers.api_clients.supabase_client import (
     get_client, ensure_bots, store_match, store_odds,
     store_prediction, store_bet, settle_bet,
