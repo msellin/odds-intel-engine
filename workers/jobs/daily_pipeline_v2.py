@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from workers.scrapers.kambi_odds import fetch_all_operators, get_target_league_matches
 from workers.scrapers.flashscore import get_todays_matches_from_flashscore
 from workers.scrapers.sofascore_odds import fetch_all_odds as fetch_sofascore_odds
+from workers.scrapers.betexplorer_odds import fetch_upcoming_odds as fetch_betexplorer_odds
 from workers.api_clients.supabase_client import (
     get_client, ensure_bots, store_match, store_odds,
     store_prediction, store_bet, settle_bet,
@@ -358,38 +359,42 @@ def compute_prediction(match, hist_targets, hist_targets_global=None, sofascore_
     return result
 
 
-def _merge_odds_sources(kambi_matches: list[dict], sofascore_matches: list[dict]) -> list[dict]:
+def _merge_odds_sources(kambi_matches: list[dict], sofascore_matches: list[dict], betexplorer_matches: list[dict] = None) -> list[dict]:
     """
     Merge odds from multiple sources by match key (home_team + away_team + date).
     - Kambi is authoritative when available (we trust its team names for our mapping).
     - SofaScore fills in leagues Kambi doesn't cover.
-    - If both cover the same match, keep both and use best odds.
+    - BetExplorer fills remaining gaps (Singapore, South Korea, Scotland lower divs).
+    - If multiple sources cover the same match, keep best odds across all.
     Returns unified list of match dicts with bookmaker field set.
     """
     merged: dict[str, dict] = {}
 
-    for m in kambi_matches:
-        key = f"{m['home_team'].lower()}_{m['away_team'].lower()}_{m['start_time'][:10]}"
-        merged[key] = {**m, "bookmaker": "kambi"}
+    def _merge_into(matches: list[dict], source_name: str):
+        for m in matches:
+            date_part = m.get("start_time", "")[:10] or "nodate"
+            key = f"{m['home_team'].lower()}_{m['away_team'].lower()}_{date_part}"
+            if key in merged:
+                existing = merged[key]
+                for field in ["odds_home", "odds_draw", "odds_away",
+                              "odds_over_05", "odds_under_05",
+                              "odds_over_15", "odds_under_15",
+                              "odds_over_25", "odds_under_25",
+                              "odds_over_35", "odds_under_35",
+                              "odds_over_45", "odds_under_45"]:
+                    if m.get(field, 0) > existing.get(field, 0):
+                        existing[field] = m[field]
+                # Append source name
+                sources = existing["bookmaker"].split("+")
+                if source_name not in sources:
+                    existing["bookmaker"] = "+".join(sources + [source_name])
+            else:
+                merged[key] = {**m, "bookmaker": source_name}
 
-    for m in sofascore_matches:
-        key = f"{m['home_team'].lower()}_{m['away_team'].lower()}_{m['start_time'][:10]}"
-        if key in merged:
-            # Update best odds but keep kambi as primary source
-            existing = merged[key]
-            if m["odds_home"] > existing.get("odds_home", 0):
-                existing["odds_home"] = m["odds_home"]
-            if m["odds_draw"] > existing.get("odds_draw", 0):
-                existing["odds_draw"] = m["odds_draw"]
-            if m["odds_away"] > existing.get("odds_away", 0):
-                existing["odds_away"] = m["odds_away"]
-            if m["odds_over_25"] > existing.get("odds_over_25", 0):
-                existing["odds_over_25"] = m["odds_over_25"]
-            if m["odds_under_25"] > existing.get("odds_under_25", 0):
-                existing["odds_under_25"] = m["odds_under_25"]
-            existing["bookmaker"] = "kambi+sofascore"
-        else:
-            merged[key] = {**m, "bookmaker": "sofascore"}
+    _merge_into(kambi_matches, "kambi")
+    _merge_into(sofascore_matches, "sofascore")
+    if betexplorer_matches:
+        _merge_into(betexplorer_matches, "betexplorer")
 
     return list(merged.values())
 
@@ -449,15 +454,25 @@ def run_morning():
     console.print("\n[cyan]Fetching odds from SofaScore (target leagues)...[/cyan]")
     sofascore_matches = fetch_sofascore_odds(all_fixtures)
 
+    # 5b. Fetch odds from BetExplorer (fills gaps: Singapore, S. Korea, Scotland lower divs)
+    console.print("\n[cyan]Fetching odds from BetExplorer (gap leagues)...[/cyan]")
+    try:
+        betexplorer_matches = fetch_betexplorer_odds(delay=1.0)
+    except Exception as e:
+        console.print(f"  [yellow]BetExplorer scrape failed (non-fatal): {e}[/yellow]")
+        betexplorer_matches = []
+
     # 6. Merge odds sources
-    odds_matches = _merge_odds_sources(kambi_matches, sofascore_matches)
-    console.print(f"\n  [bold]{len(odds_matches)} matches with odds (Kambi + SofaScore merged)[/bold]")
+    odds_matches = _merge_odds_sources(kambi_matches, sofascore_matches, betexplorer_matches)
+    console.print(f"\n  [bold]{len(odds_matches)} matches with odds (Kambi + SofaScore + BetExplorer merged)[/bold]")
 
     # Coverage by source
-    kambi_only = sum(1 for m in odds_matches if m.get("bookmaker") == "kambi")
-    sofascore_only = sum(1 for m in odds_matches if m.get("bookmaker") == "sofascore")
-    both = sum(1 for m in odds_matches if m.get("bookmaker") == "kambi+sofascore")
-    console.print(f"  Kambi only: {kambi_only} | SofaScore only: {sofascore_only} | Both: {both}")
+    source_counts = {}
+    for m in odds_matches:
+        bk = m.get("bookmaker", "unknown")
+        source_counts[bk] = source_counts.get(bk, 0) + 1
+    for source, count in sorted(source_counts.items()):
+        console.print(f"  {source}: {count}")
 
     if not odds_matches:
         console.print("[yellow]No matches with odds today — predictions skipped.[/yellow]")
