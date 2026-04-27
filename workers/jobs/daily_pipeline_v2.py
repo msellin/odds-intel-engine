@@ -138,6 +138,76 @@ BOTS_CONFIG = {
         "odds_range": (1.50, 5.00),
         "min_prob": 0.28,
     },
+    # ── Optimizer-found bots (2026-04-27) ──────────────────────────────────
+    # Grid-searched 412K parameter combos across 1.6M potential bets
+    # (football-data 2007-2025 + beat_the_bookie 2005-2015).
+    # Only cross-era validated strategies included.
+    "bot_opt_away_british": {
+        # Confirmed in both FD (+30.6% ROI) and BTB (+15-26% ROI) datasets.
+        # Away wins in English lower divisions at mid-range longshot odds.
+        "description": "Optimizer: Away wins, T2+ British Isles — cross-era +16% ROI, 336 bets",
+        "tier_label": "syndicate",
+        "markets": ["1x2"],
+        "selection_filter": ["Away"],
+        "tier_filter": [2, 3, 4],
+        "league_filter": ["England", "Scotland", "Ireland", "Wales"],
+        "edge_thresholds": {
+            2: {"1x2_fav": 0.05, "1x2_long": 0.05},
+            3: {"1x2_fav": 0.05, "1x2_long": 0.05},
+            4: {"1x2_fav": 0.05, "1x2_long": 0.05},
+        },
+        "odds_range": (2.50, 3.00),
+        "min_prob": 0.25,
+    },
+    "bot_opt_away_europe": {
+        # Confirmed in FD (+18.8% ROI, CI +4.9% to +32.8%) and BTB (+30.5%).
+        # Away wins in Europe top 5 second divisions.
+        "description": "Optimizer: Away wins, T2+ Europe top 5 — cross-era +19% ROI, 373 bets",
+        "tier_label": "syndicate",
+        "markets": ["1x2"],
+        "selection_filter": ["Away"],
+        "tier_filter": [2, 3, 4],
+        "league_filter": ["England", "Spain", "Germany", "Italy", "France"],
+        "edge_thresholds": {
+            2: {"1x2_fav": 0.05, "1x2_long": 0.05},
+            3: {"1x2_fav": 0.05, "1x2_long": 0.05},
+            4: {"1x2_fav": 0.05, "1x2_long": 0.05},
+        },
+        "odds_range": (2.50, 3.00),
+        "min_prob": 0.40,
+    },
+    "bot_opt_home_lower": {
+        # Confirmed in FD (+24.2% ROI) and BTB (+12.5% ROI, 448 bets).
+        # Home underdogs in lower European divisions.
+        "description": "Optimizer: Home underdogs, T2+ Europe — cross-era +14% ROI, 244 bets",
+        "tier_label": "syndicate",
+        "markets": ["1x2"],
+        "selection_filter": ["Home"],
+        "tier_filter": [2, 3, 4],
+        "edge_thresholds": {
+            2: {"1x2_fav": 0.20, "1x2_long": 0.20},
+            3: {"1x2_fav": 0.20, "1x2_long": 0.20},
+            4: {"1x2_fav": 0.20, "1x2_long": 0.20},
+        },
+        "odds_range": (3.00, 5.00),
+        "min_prob": 0.30,
+    },
+    "bot_opt_ou_british": {
+        # FD only (BTB has no O/U data) — +29% ROI, 85 bets, +22% on O/U combined.
+        # Over 2.5 goals in English lower divisions at value odds.
+        "description": "Optimizer: O/U T2+ British Isles — FD +22-29% ROI, 85-146 bets",
+        "tier_label": "syndicate",
+        "markets": ["ou"],
+        "tier_filter": [2, 3, 4],
+        "league_filter": ["England", "Scotland", "Ireland", "Wales"],
+        "edge_thresholds": {
+            2: {"ou": 0.07},
+            3: {"ou": 0.07},
+            4: {"ou": 0.07},
+        },
+        "odds_range": (2.50, 4.00),
+        "min_prob": 0.40,
+    },
 }
 
 
@@ -580,9 +650,10 @@ def run_morning():
             min_prob = config["min_prob"]
 
             bet_candidates = []
+            sel_filter = config.get("selection_filter")
 
             # 1X2 Home
-            if "1x2" in config["markets"] and match["odds_home"] > 0:
+            if "1x2" in config["markets"] and match["odds_home"] > 0 and (not sel_filter or "Home" in sel_filter):
                 odds = match["odds_home"]
                 mp = pred["home_prob"]
                 ip = 1 / odds
@@ -592,7 +663,7 @@ def run_morning():
                     bet_candidates.append(("1X2", "Home", odds, mp, ip, edge))
 
             # 1X2 Away
-            if "1x2" in config["markets"] and match["odds_away"] > 0:
+            if "1x2" in config["markets"] and match["odds_away"] > 0 and (not sel_filter or "Away" in sel_filter):
                 odds = match["odds_away"]
                 mp = pred["away_prob"]
                 ip = 1 / odds
