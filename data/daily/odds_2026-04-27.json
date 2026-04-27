@@ -1,0 +1,591 @@
+[
+  {
+    "home_team": "Alanyaspor",
+    "away_team": "Samsunspor",
+    "start_time": "2026-04-27T14:00:00Z",
+    "league_path": "Turkey / S\u00fcper Lig",
+    "league_code": "T1",
+    "tier": 1,
+    "operator": "ub",
+    "odds_home": 2.18,
+    "odds_draw": 3.2,
+    "odds_away": 3.25,
+    "odds_over_25": 0,
+    "odds_under_25": 0,
+    "scraped_at": "2026-04-27T09:33:47.096206",
+    "operators": {
+      "unibet": {
+        "home": 2.18,
+        "draw": 3.2,
+        "away": 3.25,
+        "over_25": 0,
+        "under_25": 0
+      },
+      "paf": {
+        "home": 2.18,
+        "draw": 3.2,
+        "away": 3.25,
+        "over_25": 0,
+        "under_25": 0
+      }
+    }
+  },
+  {
+    "home_team": "J\u00f5hvi FC Lokomotiv",
+    "away_team": "Tallinna JK Legion",
+    "start_time": "2026-04-27T15:00:00Z",
+    "league_path": "Estonia / Esiliiga B",
+    "league_code": "EST2",
+    "tier": 3,
+    "operator": "ub",
+    "odds_home": 1.21,
+    "odds_draw": 6.25,
+    "odds_away": 8.5,
+    "odds_over_25": 0,
+    "odds_under_25": 0,
+    "scraped_at": "2026-04-27T09:33:47.096254",
+    "operators": {
+      "unibet": {
+        "home": 1.21,
+        "draw": 6.25,
+        "away": 8.5,
+        "over_25": 0,
+        "under_25": 0
+      },
+      "paf": {
+        "home": 1.21,
+        "draw": 6.25,
+        "away": 8.5,
+        "over_25": 0,
+        "under_25": 0
+      }
+    }
+  },
+  {
+    "home_team": "N\u00f5mme Kalju II",
+    "away_team": "JK Tallinna Kalev",
+    "start_time": "2026-04-27T16:00:00Z",
+    "league_path": "Estonia / Esiliiga",
+    "league_code": "EST1",
+    "tier": 2,
+    "operator": "ub",
+    "odds_home": 2.63,
+    "odds_draw": 3.55,
+    "odds_away": 2.17,
+    "odds_over_25": 0,
+    "odds_under_25": 0,
+    "scraped_at": "2026-04-27T09:33:47.096287",
+    "operators": {
+      "unibet": {
+        "home": 2.6,
+        "draw": 3.5,
+        "away": 2.15,
+        "over_25": 0,
+        "under_25": 0
+      },
+      "paf": {
+        "home": 2.63,
+        "draw": 3.55,
+        "away": 2.17,
+        "over_25": 0,
+        "under_25": 0
+      }
+    }
+  },
+  {
+    "home_team": "FC Tallinn",
+    "away_team": "Levadia Tallinn II",
+    "start_time": "2026-04-27T16:00:00Z",
+    "league_path": "Estonia / Esiliiga",
+    "league_code": "EST1",
+    "tier": 2,
+    "operator": "ub",
+    "odds_home": 3.05,
+    "odds_draw": 3.5,
+    "odds_away": 1.97,
+    "odds_over_25": 0,
+    "odds_under_25": 0,
+    "scraped_at": "2026-04-27T09:33:47.096290",
+    "operators": {
+      "unibet": {
+        "home": 3.0,
+        "draw": 3.45,
+        "away": 1.95,
+        "over_25": 0,
+        "under_25": 0
+      },
+      "paf": {
+        "home": 3.05,
+        "draw": 3.5,
+        "away": 1.97,
+        "over_25": 0,
+        "under_25": 0
+      }
+    }
+  },
+  {
+    "home_team": "Cagliari",
+    "away_team": "Atalanta",
+    "start_time": "2026-04-27T16:30:00Z",
+    "league_path": "Italy / Serie A",
+    "league_code": "I1",
+    "tier": 1,
+    "operator": "ub",
+    "odds_home": 4.6,
+    "odds_draw": 3.9,
+    "odds_away": 1.75,
+    "odds_over_25": 0,
+    "odds_under_25": 0,
+    "scraped_at": "2026-04-27T09:33:47.096320",
+    "operators": {
+      "unibet": {
+        "home": 4.5,
+        "draw": 3.85,
+        "away": 1.71,
+        "over_25": 0,
+        "under_25": 0
+      },
+      "paf": {
+        "home": 4.6,
+        "draw": 3.9,
+        "away": 1.75,
+        "over_25": 0,
+        "under_25": 0
+      }
+    }
+  },
+  {
+    "home_team": "FC Copenhagen",
+    "away_team": "Vejle Boldklub",
+    "start_time": "2026-04-27T17:00:00Z",
+    "league_path": "Denmark / Superligaen",
+    "league_code": "DK1",
+    "tier": 1,
+    "operator": "ub",
+    "odds_home": 1.22,
+    "odds_draw": 6.5,
+    "odds_away": 11.5,
+    "odds_over_25": 0,
+    "odds_under_25": 0,
+    "scraped_at": "2026-04-27T09:33:47.096336",
+    "operators": {
+      "unibet": {
+        "home": 1.22,
+        "draw": 6.5,
+        "away": 11.5,
+        "over_25": 0,
+        "under_25": 0
+      },
+      "paf": {
+        "home": 1.22,
+        "draw": 6.5,
+        "away": 11.5,
+        "over_25": 0,
+        "under_25": 0
+      }
+    }
+  },
+  {
+    "home_team": "\u00d6rgryte IS",
+    "away_team": "Degerfors IF",
+    "start_time": "2026-04-27T17:00:00Z",
+    "league_path": "Sweden / Allsvenskan",
+    "league_code": "SE1",
+    "tier": 1,
+    "operator": "ub",
+    "odds_home": 3.25,
+    "odds_draw": 3.25,
+    "odds_away": 2.16,
+    "odds_over_25": 0,
+    "odds_under_25": 0,
+    "scraped_at": "2026-04-27T09:33:47.096346",
+    "operators": {
+      "unibet": {
+        "home": 3.25,
+        "draw": 3.25,
+        "away": 2.16,
+        "over_25": 0,
+        "under_25": 0
+      },
+      "paf": {
+        "home": 3.25,
+        "draw": 3.25,
+        "away": 2.16,
+        "over_25": 0,
+        "under_25": 0
+      }
+    }
+  },
+  {
+    "home_team": "BK H\u00e4cken",
+    "away_team": "IK Sirius FK",
+    "start_time": "2026-04-27T17:00:00Z",
+    "league_path": "Sweden / Allsvenskan",
+    "league_code": "SE1",
+    "tier": 1,
+    "operator": "ub",
+    "odds_home": 2.75,
+    "odds_draw": 3.5,
+    "odds_away": 2.28,
+    "odds_over_25": 0,
+    "odds_under_25": 0,
+    "scraped_at": "2026-04-27T09:33:47.096348",
+    "operators": {
+      "unibet": {
+        "home": 2.75,
+        "draw": 3.5,
+        "away": 2.28,
+        "over_25": 0,
+        "under_25": 0
+      },
+      "paf": {
+        "home": 2.75,
+        "draw": 3.5,
+        "away": 2.28,
+        "over_25": 0,
+        "under_25": 0
+      }
+    }
+  },
+  {
+    "home_team": "Mj\u00e4llby AIF",
+    "away_team": "Halmstads BK",
+    "start_time": "2026-04-27T17:00:00Z",
+    "league_path": "Sweden / Allsvenskan",
+    "league_code": "SE1",
+    "tier": 1,
+    "operator": "ub",
+    "odds_home": 1.42,
+    "odds_draw": 4.3,
+    "odds_away": 7.5,
+    "odds_over_25": 0,
+    "odds_under_25": 0,
+    "scraped_at": "2026-04-27T09:33:47.096351",
+    "operators": {
+      "unibet": {
+        "home": 1.42,
+        "draw": 4.3,
+        "away": 7.5,
+        "over_25": 0,
+        "under_25": 0
+      },
+      "paf": {
+        "home": 1.42,
+        "draw": 4.3,
+        "away": 7.5,
+        "over_25": 0,
+        "under_25": 0
+      }
+    }
+  },
+  {
+    "home_team": "AIK",
+    "away_team": "Malm\u00f6 FF",
+    "start_time": "2026-04-27T17:00:00Z",
+    "league_path": "Sweden / Allsvenskan",
+    "league_code": "SE1",
+    "tier": 1,
+    "operator": "ub",
+    "odds_home": 2.38,
+    "odds_draw": 3.35,
+    "odds_away": 2.8,
+    "odds_over_25": 0,
+    "odds_under_25": 0,
+    "scraped_at": "2026-04-27T09:33:47.096354",
+    "operators": {
+      "unibet": {
+        "home": 2.38,
+        "draw": 3.35,
+        "away": 2.8,
+        "over_25": 0,
+        "under_25": 0
+      },
+      "paf": {
+        "home": 2.38,
+        "draw": 3.35,
+        "away": 2.8,
+        "over_25": 0,
+        "under_25": 0
+      }
+    }
+  },
+  {
+    "home_team": "Kalmar FF",
+    "away_team": "IF Elfsborg",
+    "start_time": "2026-04-27T17:00:00Z",
+    "league_path": "Sweden / Allsvenskan",
+    "league_code": "SE1",
+    "tier": 1,
+    "operator": "ub",
+    "odds_home": 2.48,
+    "odds_draw": 3.2,
+    "odds_away": 2.8,
+    "odds_over_25": 0,
+    "odds_under_25": 0,
+    "scraped_at": "2026-04-27T09:33:47.096357",
+    "operators": {
+      "unibet": {
+        "home": 2.48,
+        "draw": 3.2,
+        "away": 2.8,
+        "over_25": 0,
+        "under_25": 0
+      },
+      "paf": {
+        "home": 2.48,
+        "draw": 3.2,
+        "away": 2.8,
+        "over_25": 0,
+        "under_25": 0
+      }
+    }
+  },
+  {
+    "home_team": "Be\u015fikta\u015f",
+    "away_team": "Fatih Karag\u00fcmr\u00fck",
+    "start_time": "2026-04-27T17:00:00Z",
+    "league_path": "Turkey / S\u00fcper Lig",
+    "league_code": "T1",
+    "tier": 1,
+    "operator": "ub",
+    "odds_home": 1.29,
+    "odds_draw": 5.4,
+    "odds_away": 8.5,
+    "odds_over_25": 0,
+    "odds_under_25": 0,
+    "scraped_at": "2026-04-27T09:33:47.096360",
+    "operators": {
+      "unibet": {
+        "home": 1.29,
+        "draw": 5.4,
+        "away": 8.5,
+        "over_25": 0,
+        "under_25": 0
+      },
+      "paf": {
+        "home": 1.29,
+        "draw": 5.4,
+        "away": 8.5,
+        "over_25": 0,
+        "under_25": 0
+      }
+    }
+  },
+  {
+    "home_team": "Konyaspor",
+    "away_team": "Trabzonspor",
+    "start_time": "2026-04-27T17:00:00Z",
+    "league_path": "Turkey / S\u00fcper Lig",
+    "league_code": "T1",
+    "tier": 1,
+    "operator": "ub",
+    "odds_home": 2.95,
+    "odds_draw": 3.35,
+    "odds_away": 2.28,
+    "odds_over_25": 0,
+    "odds_under_25": 0,
+    "scraped_at": "2026-04-27T09:33:47.096362",
+    "operators": {
+      "unibet": {
+        "home": 2.95,
+        "draw": 3.35,
+        "away": 2.28,
+        "over_25": 0,
+        "under_25": 0
+      },
+      "paf": {
+        "home": 2.95,
+        "draw": 3.35,
+        "away": 2.28,
+        "over_25": 0,
+        "under_25": 0
+      }
+    }
+  },
+  {
+    "home_team": "Cadiz",
+    "away_team": "UD Las Palmas",
+    "start_time": "2026-04-27T18:30:00Z",
+    "league_path": "Spain / La Liga 2",
+    "league_code": "SP2",
+    "tier": 2,
+    "operator": "ub",
+    "odds_home": 3.5,
+    "odds_draw": 3.2,
+    "odds_away": 2.04,
+    "odds_over_25": 0,
+    "odds_under_25": 0,
+    "scraped_at": "2026-04-27T09:33:47.096407",
+    "operators": {
+      "unibet": {
+        "home": 3.5,
+        "draw": 3.2,
+        "away": 2.04,
+        "over_25": 0,
+        "under_25": 0
+      },
+      "paf": {
+        "home": 3.5,
+        "draw": 3.2,
+        "away": 2.04,
+        "over_25": 0,
+        "under_25": 0
+      }
+    }
+  },
+  {
+    "home_team": "Boulogne",
+    "away_team": "Dunkerque",
+    "start_time": "2026-04-27T18:45:00Z",
+    "league_path": "France / Ligue 2",
+    "league_code": "F2",
+    "tier": 2,
+    "operator": "ub",
+    "odds_home": 2.7,
+    "odds_draw": 3.15,
+    "odds_away": 2.5,
+    "odds_over_25": 0,
+    "odds_under_25": 0,
+    "scraped_at": "2026-04-27T09:33:47.096414",
+    "operators": {
+      "unibet": {
+        "home": 2.7,
+        "draw": 3.15,
+        "away": 2.5,
+        "over_25": 0,
+        "under_25": 0
+      },
+      "paf": {
+        "home": 2.7,
+        "draw": 3.15,
+        "away": 2.5,
+        "over_25": 0,
+        "under_25": 0
+      }
+    }
+  },
+  {
+    "home_team": "Lazio",
+    "away_team": "Udinese",
+    "start_time": "2026-04-27T18:45:00Z",
+    "league_path": "Italy / Serie A",
+    "league_code": "I1",
+    "tier": 1,
+    "operator": "ub",
+    "odds_home": 2.08,
+    "odds_draw": 3.25,
+    "odds_away": 3.9,
+    "odds_over_25": 0,
+    "odds_under_25": 0,
+    "scraped_at": "2026-04-27T09:33:47.096417",
+    "operators": {
+      "unibet": {
+        "home": 2.05,
+        "draw": 3.2,
+        "away": 3.8,
+        "over_25": 0,
+        "under_25": 0
+      },
+      "paf": {
+        "home": 2.08,
+        "draw": 3.25,
+        "away": 3.9,
+        "over_25": 0,
+        "under_25": 0
+      }
+    }
+  },
+  {
+    "home_team": "Manchester United",
+    "away_team": "Brentford",
+    "start_time": "2026-04-27T19:00:00Z",
+    "league_path": "England / Premier League",
+    "league_code": "E0",
+    "tier": 1,
+    "operator": "ub",
+    "odds_home": 1.98,
+    "odds_draw": 3.85,
+    "odds_away": 3.85,
+    "odds_over_25": 0,
+    "odds_under_25": 0,
+    "scraped_at": "2026-04-27T09:33:47.096421",
+    "operators": {
+      "unibet": {
+        "home": 1.94,
+        "draw": 3.75,
+        "away": 3.75,
+        "over_25": 0,
+        "under_25": 0
+      },
+      "paf": {
+        "home": 1.98,
+        "draw": 3.85,
+        "away": 3.85,
+        "over_25": 0,
+        "under_25": 0
+      }
+    }
+  },
+  {
+    "home_team": "Espanyol",
+    "away_team": "Levante",
+    "start_time": "2026-04-27T19:00:00Z",
+    "league_path": "Spain / La Liga",
+    "league_code": "SP1",
+    "tier": 1,
+    "operator": "ub",
+    "odds_home": 2.07,
+    "odds_draw": 3.4,
+    "odds_away": 3.8,
+    "odds_over_25": 0,
+    "odds_under_25": 0,
+    "scraped_at": "2026-04-27T09:33:47.096424",
+    "operators": {
+      "unibet": {
+        "home": 2.05,
+        "draw": 3.35,
+        "away": 3.8,
+        "over_25": 0,
+        "under_25": 0
+      },
+      "paf": {
+        "home": 2.07,
+        "draw": 3.4,
+        "away": 3.8,
+        "over_25": 0,
+        "under_25": 0
+      }
+    }
+  },
+  {
+    "home_team": "Gil Vicente",
+    "away_team": "Casa Pia",
+    "start_time": "2026-04-27T19:15:00Z",
+    "league_path": "Portugal / Primeira Liga",
+    "league_code": "P1",
+    "tier": 1,
+    "operator": "ub",
+    "odds_home": 1.6,
+    "odds_draw": 3.75,
+    "odds_away": 5.75,
+    "odds_over_25": 0,
+    "odds_under_25": 0,
+    "scraped_at": "2026-04-27T09:33:47.096429",
+    "operators": {
+      "unibet": {
+        "home": 1.58,
+        "draw": 3.7,
+        "away": 5.6,
+        "over_25": 0,
+        "under_25": 0
+      },
+      "paf": {
+        "home": 1.6,
+        "draw": 3.75,
+        "away": 5.75,
+        "over_25": 0,
+        "under_25": 0
+      }
+    }
+  }
+]

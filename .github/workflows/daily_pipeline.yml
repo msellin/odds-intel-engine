@@ -1,0 +1,85 @@
+name: OddsIntel Daily Pipeline
+
+on:
+  schedule:
+    # Morning run: fetch data + place bets (08:00 UTC = 11:00 EET)
+    - cron: '0 8 * * *'
+    # Evening run: settle bets (21:00 UTC = 00:00 EET next day)
+    - cron: '0 21 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode: morning or settle'
+        required: true
+        default: 'morning'
+        type: choice
+        options:
+          - morning
+          - settle
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install pandas numpy requests beautifulsoup4 lxml httpx scikit-learn xgboost scipy python-dotenv rich click pydantic joblib
+
+      - name: Download historical data (if not cached)
+        uses: actions/cache@v4
+        with:
+          path: data/processed
+          key: historical-data-v1
+
+      - name: Determine run mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mode=${{ inputs.mode }}" >> $GITHUB_OUTPUT
+          elif [ "$(date -u +%H)" -lt "15" ]; then
+            echo "mode=morning" >> $GITHUB_OUTPUT
+          else
+            echo "mode=settle" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run morning pipeline
+        if: steps.mode.outputs.mode == 'morning'
+        env:
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python workers/jobs/daily_pipeline.py
+
+      - name: Run evening settlement
+        if: steps.mode.outputs.mode == 'settle'
+        env:
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python workers/jobs/daily_pipeline.py settle
+
+      - name: Upload daily results
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-bets-${{ github.run_number }}
+          path: data/daily/
+          retention-days: 90
+
+      - name: Commit daily data
+        run: |
+          git config user.name "OddsIntel Bot"
+          git config user.email "bot@oddsintel.com"
+          git add data/daily/ || true
+          git diff --staged --quiet || git commit -m "Daily pipeline: $(date -u +%Y-%m-%d)"
+          git push || true

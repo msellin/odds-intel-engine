@@ -8,6 +8,35 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
+# Features used by the prediction model
+FEATURE_COLS = [
+    # Home form
+    "home_form_win_pct", "home_form_ppg", "home_form_goals_scored",
+    "home_form_goals_conceded", "home_form_goal_diff",
+    "home_form_over25_pct", "home_form_btts_pct", "home_form_clean_sheet_pct",
+    # Home at home
+    "home_venue_win_pct", "home_venue_goals_scored",
+    "home_venue_goals_conceded", "home_venue_over25_pct",
+    # Away form
+    "away_form_win_pct", "away_form_ppg", "away_form_goals_scored",
+    "away_form_goals_conceded", "away_form_goal_diff",
+    "away_form_over25_pct", "away_form_btts_pct", "away_form_clean_sheet_pct",
+    # Away at away
+    "away_venue_win_pct", "away_venue_goals_scored",
+    "away_venue_goals_conceded", "away_venue_over25_pct",
+    # H2H
+    "h2h_home_win_pct", "h2h_avg_goals", "h2h_over25_pct",
+    "h2h_btts_pct", "h2h_matches",
+    # Position
+    "home_position_norm", "away_position_norm", "position_diff",
+    "home_pts_to_relegation", "away_pts_to_relegation",
+    "home_in_relegation", "away_in_relegation",
+    # Rest
+    "home_rest_days", "away_rest_days", "rest_advantage",
+    # League
+    "league_tier",
+]
+
 
 def team_form(df: pd.DataFrame, team: str, before_date: pd.Timestamp,
               n: int = 10, venue: str = "all") -> dict:
