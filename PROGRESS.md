@@ -1,86 +1,108 @@
 # OddsIntel — Progress Tracker
 
 > Shared between frontend (odds-intel-web) and engine (odds-intel-engine) teams.
-> Update this file when completing tasks. Check it before starting new work.
+> Last updated: 2026-04-27
 
 ---
 
 ## Current Status
 
-### Engine (odds-intel-engine) — Claude Agent 1
-- [x] Project setup, dependencies, venv
-- [x] Historical data import script (133K matches, 18 leagues, 20 seasons downloaded)
-- [x] Feature engineering module (form, H2H, league position, rest days)
-- [x] Prediction model (XGBoost for 1X2, O/U 2.5, BTTS with calibration)
-- [x] Backtest engine (value detection, P&L simulation, calibration check)
-- [x] Database schema SQL (001_initial_schema.sql)
-- [x] Pushed to GitHub: github.com/msellin/odds-intel-engine
-- [ ] **IN PROGRESS**: Running backtest on historical data (optimizing for speed)
-- [ ] Supabase schema deployment (SQL is written, needs to be run)
-- [ ] Data import to Supabase (once schema is deployed)
-- [ ] Scrapers (Transfermarkt injuries, FBref xG, weather)
-- [ ] API-Football integration
-- [ ] The Odds API integration
-- [ ] Twitter monitoring
-- [ ] NLP news pipeline (Claude/OpenAI)
-- [ ] Paper trading bots
-- [ ] Self-evaluation engine
+### Engine (odds-intel-engine)
 
-### Frontend (odds-intel-web) — Claude Agent 2
-- [x] Next.js project initialized with TypeScript + Tailwind
-- [x] shadcn/ui configured (dark theme)
-- [x] All pages built with mock data:
-  - [x] Landing page (/)
-  - [x] Today's matches (/matches)
-  - [x] Match detail with tabs (/matches/[id])
-  - [x] Value bets (/value-bets)
-  - [x] Track record (/track-record)
-- [x] Tier gating system (Scout/Analyst/Sharp/Syndicate)
-- [x] Supabase client config + GitHub configured
+**DONE:**
+- [x] Historical data: 133K soccer matches, 18 leagues, 20 seasons
+- [x] Soccer model: 10 iterations (v0-v10), all documented in SOCCER_FINDINGS.md
+- [x] Tennis model: 11 iterations (v0-v10), all documented in TENNIS_FINDINGS.md
+- [x] Feature engineering: ELO, xG proxy, form, H2H, rest days
+- [x] Kambi odds scraper (Unibet/Paf) — free, real odds, working
+- [x] Sofascore fixture scraper — free, 467+ matches/day, working
+- [x] Team name mapping (Kambi → football-data format)
+- [x] Supabase client for all DB operations
+- [x] Daily pipeline v2 — stores matches/odds/bets in Supabase
+- [x] 5 bot users created with different strategies
+- [x] First live run: 19 matches, 12 predicted, 10 bets placed in Supabase
+- [x] GitHub Actions workflow for automated daily runs
+- [x] All pushed to github.com/msellin/odds-intel-engine
+
+**IN PROGRESS / NEXT:**
+- [ ] Fix odds_snapshots column names (created_at issue)
+- [ ] Predictions storage (currently 0 stored — need to debug)
+- [ ] Settlement pipeline (match results → settle pending bets)
+- [ ] Add Supabase secrets to GitHub repo for Actions to work
+- [ ] Improve team name coverage (Swedish/Estonian/Danish teams missing)
+- [ ] Add Coolbet odds scraping (blocked by Incapsula, may need alternative approach)
+
+### Frontend (odds-intel-web)
+
+**DONE:**
+- [x] All pages built with mock data
+- [x] Supabase schema deployed
+- [x] Tier gating system
+- [x] Now reading from Supabase (switching from JSON to DB queries)
+
+**IN PROGRESS / NEXT:**
 - [ ] Supabase Auth (real login/signup)
-- [ ] Replace mock data with Supabase queries
-- [ ] User profile page with tier management
+- [ ] Display real match data from Supabase
+- [ ] Display real bot performance
 - [ ] Stripe integration
-- [ ] PWA manifest
 - [ ] Deploy to Vercel
 
-### Database (Supabase)
-- [x] Schema SQL written (odds-intel-engine/supabase/migrations/001_initial_schema.sql)
-- [x] Schema deployed to Supabase (by frontend agent)
-- [ ] Historical data imported
-- [ ] RLS policies tested
+### Tennis Module
+- [x] Research documented (TENNIS_RESEARCH.md)
+- [x] 317K matches downloaded (ATP + WTA + Challenger)
+- [x] 100K matches with odds
+- [x] Surface-specific ELO system
+- [x] 11 model versions tested
+- [x] Data leakage bug found and fixed (fatigue features)
+- [x] Results: 1-3% short of profitability (same as soccer)
+- [x] ATP 250 = softest market (not WTA as expected)
 
 ---
 
-## Who Does What
+## Key Findings (Both Sports)
 
-| Task | Owner | Status |
-|------|-------|--------|
-| Database schema | Engine (written) → Frontend (deployed) | Done |
-| Historical data import to Supabase | Engine | Not started |
-| Supabase Auth | Frontend | Not started |
-| Replace mock data with DB queries | Frontend | Not started |
-| Backtest validation | Engine | In progress |
-| Scrapers | Engine | Not started |
-| API integrations | Engine | Not started |
-| Stripe billing | Frontend | Not started |
-| Vercel deployment | Frontend | Not started |
+Both soccer and tennis models show the SAME pattern:
+- Pure stats models are 2-5% ROI short of profitability
+- Bookmakers already price in ELO, form, serve stats, etc.
+- The gap can ONLY be closed by real-time information (injuries, lineups, news)
+- Lower-tier events (soccer tier 3-4, tennis ATP 250) are softer markets
+- Selectivity (fewer, higher-edge bets) consistently improves ROI
+
+**The real edge = SPEED, not better stats.** Getting injury/lineup news 1-2 hours before odds adjust is where professional bettors make their 3-8% ROI.
+
+---
+
+## Data in Supabase (live)
+
+| Table | Rows | Notes |
+|-------|------|-------|
+| bots | 5 | Different strategies |
+| matches | 19 | Today's matches |
+| simulated_bets | 10 | Pending bets across 4 bots |
+| teams | ~30 | Auto-created from match data |
+| leagues | ~15 | Auto-created from match data |
+| odds_snapshots | 0 | Column name bug being fixed |
+| predictions | 0 | Storage bug being fixed |
+
+---
+
+## Architecture
+
+```
+Sofascore API (free) → Fixtures/Results
+Kambi API (free)     → Odds (Unibet/Paf)
+                          ↓
+              Python Daily Pipeline
+                          ↓
+                  Supabase Database
+                          ↓
+              Next.js Frontend (Vercel)
+```
 
 ---
 
 ## Supabase Credentials
 
 Both repos have .env files with credentials (gitignored).
-- Engine: /odds-intel-engine/.env
-- Frontend: /odds-intel-web/.env.local
-
----
-
-## Key Decisions Made
-
-1. **Two separate repos** (not monorepo) — frontend deploys to Vercel, engine to Railway
-2. **Supabase as the hub** — both repos read/write to the same database
-3. **Python for engine** — better ML/scraping ecosystem
-4. **Next.js for frontend** — SSR, PWA-capable
-5. **Football-first** — start with soccer, expand to tennis/esports later
-6. **4 pricing tiers** — Scout (free), Analyst (€4.99), Sharp (€14.99), Syndicate (€49.99)
+Engine: /odds-intel-engine/.env
+Frontend: /odds-intel-web/.env.local
