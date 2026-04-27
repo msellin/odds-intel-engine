@@ -493,8 +493,8 @@ rank = kelly * alignment_multiplier
 | Item | What | Data source | Min data needed | Estimated timeline |
 |------|------|-------------|-----------------|-------------------|
 | **Platt scaling** | Logistic regression on model output → corrected probability | `predictions` table (ALL matches with odds, ~200/day) + match results | 500+ predictions with known outcomes | ~1-2 weeks (mid-May 2026) |
-| **XGBoost in live pipeline** | Full ensemble (Poisson + XGBoost) instead of Poisson-only | Historical CSV (already have 96K matches) OR retrain on DB data | Engineering work, not data-blocked. Can use existing v9/v10 CSV training data. | 2-4 weeks (May 2026) |
-| **Model disagreement** | abs(xgboost_prob - poisson_prob) as confidence modifier | Requires XGBoost running in live pipeline | N/A — blocked on XGBoost, not data | After XGBoost is live |
+| **XGBoost in live pipeline** | ✅ DONE (2026-04-27). Loads v9a_202425 saved models, computes features from CSV, blends 50/50 with Poisson for Tier A teams. `workers/model/xgboost_ensemble.py` | — | — | — |
+| **Model disagreement** | ✅ DONE. `model_disagreement = abs(poisson_prob - xgb_prob)` stored on every Tier A bet. | — | — | — |
 | **Dynamic alignment thresholds** | Set HIGH/MED/LOW cutoffs from ROI inflection points | `simulated_bets` with alignment_class populated (bot bets only, ~10-20/day) | 300+ settled bot bets with alignment data | ~3-4 weeks (late May 2026) |
 | **Meta-model** | Second-stage model predicting bet profitability, target=CLV not binary profit | `simulated_bets` with dimension_scores, kelly, CLV (bot bets only) | 1000+ settled bot bets with all fields | ~2-3 months (July 2026) |
 
