@@ -432,7 +432,7 @@ def fetch_all_target_leagues(
         try:
             matches = fetch_league_odds(
                 country, league, mode=mode,
-                delay=delay, max_per_league=max_per_league,
+                delay=delay, max_matches=max_per_league,
             )
             all_matches.extend(matches)
         except Exception as e:
@@ -442,6 +442,52 @@ def fetch_all_target_leagues(
 
     console.print(
         f"\n  [bold]BetExplorer total: {len(all_matches)} matches with odds[/bold]"
+    )
+    return all_matches
+
+
+# Leagues where Kambi + SofaScore have no/weak coverage — only these
+# are fetched in the daily pipeline to avoid unnecessary load.
+GAP_LEAGUES = [
+    ("singapore", "premier-league"),
+    ("south-korea", "k-league-1"),
+    ("south-korea", "k-league-2"),
+    ("scotland", "championship"),
+    ("scotland", "league-one"),
+    ("scotland", "league-two"),
+    ("austria", "2-liga"),
+    ("ireland", "premier-division"),
+    ("ireland", "first-division"),
+    ("iceland", "urvalsdeild"),
+    ("georgia", "erovnuli-liga"),
+    ("cyprus", "1st-division"),
+    ("latvia", "virsliga"),
+    ("estonia", "meistriliiga"),
+    ("estonia", "esiliiga"),
+]
+
+
+def fetch_gap_leagues_odds(delay: float = 1.0) -> list[dict]:
+    """
+    Fetch odds only for leagues that Kambi + SofaScore don't cover well.
+    Used by the daily pipeline to keep run time reasonable.
+    """
+    all_matches = []
+
+    for country, league in GAP_LEAGUES:
+        console.print(f"  [cyan]{country}/{league}...[/cyan]")
+        try:
+            matches = fetch_league_odds(
+                country, league, mode="upcoming", delay=delay,
+            )
+            all_matches.extend(matches)
+        except Exception as e:
+            console.print(f"  [red]Error for {country}/{league}: {e}[/red]")
+
+        time.sleep(2)
+
+    console.print(
+        f"  [bold]BetExplorer gap leagues: {len(all_matches)} matches with odds[/bold]"
     )
     return all_matches
 
