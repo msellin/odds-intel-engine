@@ -17,6 +17,9 @@ on:
           - morning
           - settle
 
+permissions:
+  contents: write
+
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
