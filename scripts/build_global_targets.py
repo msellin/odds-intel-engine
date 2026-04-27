@@ -20,23 +20,36 @@ PROCESSED_DIR = ENGINE_DIR / "data" / "processed"
 # Countries already covered by targets_v9.csv are still included here
 # so we capture additional teams / seasons the football-data set misses.
 COMPETITION_MAP = {
-    "norway":   ("NOR1", "Norwegian Eliteserien",        1),
-    "sweden":   ("SE1",  "Swedish Allsvenskan",          1),
-    "poland":   ("PL1",  "Polish Ekstraklasa",           1),
-    "romania":  ("RO1",  "Romanian Liga I",              1),
-    "serbia":   ("SER1", "Serbian Super Liga",           1),
-    "ukraine":  ("UA1",  "Ukrainian Premier League",     1),
-    "turkey":   ("T1",   "Turkish Super Lig",            1),
-    "greece":   ("G1",   "Greek Super League",           1),
-    "croatia":  ("CR1",  "Croatian 1. HNL",              1),
-    "denmark":  ("DK1",  "Danish Superligaen",           1),
-    "iceland":  ("ICE1", "Icelandic Úrvalsdeild",        1),
-    "hungary":  ("HUN1", "Hungarian NB I",               1),
-    "bulgaria": ("BUL1", "Bulgarian First League",       1),
-    "cyprus":   ("CY1",  "Cypriot 1st Division",         1),
-    "georgia":  ("GEO1", "Georgian Erovnuli Liga",       1),
-    "latvia":   ("LAT1", "Latvian Virsliga",             1),
-    "portugal": ("P1",   "Primeira Liga",                1),
+    # --- Original Tier B (top flights with Kambi odds) ---
+    "norway":          ("NOR1", "Norwegian Eliteserien",    1),
+    "sweden":          ("SE1",  "Swedish Allsvenskan",      1),
+    "poland":          ("PL1",  "Polish Ekstraklasa",       1),
+    "romania":         ("RO1",  "Romanian Liga I",          1),
+    "serbia":          ("SER1", "Serbian Super Liga",       1),
+    "ukraine":         ("UA1",  "Ukrainian (all divs)",     2),
+    "turkey":          ("T1",   "Turkish Super Lig",        1),
+    "greece":          ("G1",   "Greek Super League",       1),
+    "croatia":         ("CR1",  "Croatian 1. HNL",          1),
+    "denmark":         ("DK1",  "Danish Superligaen",       1),
+    "iceland":         ("ICE1", "Icelandic Úrvalsdeild",    1),
+    "hungary":         ("HUN1", "Hungarian NB I",           1),
+    "bulgaria":        ("BUL1", "Bulgarian First League",   1),
+    "cyprus":          ("CY1",  "Cypriot 1st Division",     1),
+    "georgia":         ("GEO1", "Georgian Erovnuli Liga",   1),
+    "latvia":          ("LAT1", "Latvian Virsliga",         1),
+    "portugal":        ("P1",   "Primeira Liga",            1),
+
+    # --- High-ROI leagues from mega backtest (added 2026-04-27) ---
+    # Scotland: all divisions mixed — covers League Two (+12.3% ROI) team histories
+    "scotland":        ("SCO",  "Scotland (all divs)",      3),
+    # Austria: all divisions — covers Erste Liga (+5.5% ROI)
+    "austria":         ("AT",   "Austria (all divs)",       2),
+    # Ireland: Division 1 showed +2.7% ROI across 4/7 seasons
+    "ireland-republic":("IRL1", "Ireland (all divs)",       2),
+    # South Korea: K League Challenge showed +3.2% ROI (3/3 seasons)
+    "korea-republic":  ("KOR",  "South Korea (all divs)",   2),
+    # Singapore: S.League showed +27.5% ROI (5/5 seasons) — strongest global signal
+    "singapore":       ("SG1",  "Singapore (all divs)",     3),
 }
 
 # Minimum season year — drop ancient data that doesn't represent modern teams

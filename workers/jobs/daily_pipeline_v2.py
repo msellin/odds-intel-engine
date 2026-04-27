@@ -102,16 +102,40 @@ BOTS_CONFIG = {
         "min_prob": 0.25,
     },
     "bot_greek_turkish": {
-        "description": "Only Greek + Turkish leagues — consistently profitable in backtests",
+        # NOTE: +ROI in 2022-25 backtest but -ROI in mega backtest (2005-15).
+        # Era discrepancy — treat results here as exploratory until more live data.
+        "description": "Only Greek + Turkish leagues — profitable in 2022-25 backtest (era-sensitive)",
         "tier_label": "syndicate",
         "markets": ["1x2"],
-        "tier_filter": [1],  # These are tier 1 in their countries
+        "tier_filter": [1],
         "league_filter": ["Turkey", "Greece"],
         "edge_thresholds": {
             1: {"1x2_fav": 0.04, "1x2_long": 0.06},
         },
         "odds_range": (1.40, 4.00),
         "min_prob": 0.30,
+    },
+    "bot_high_roi_global": {
+        # Based on mega backtest findings (354K matches, 275 leagues, 2005-15).
+        # Targets leagues where even a basic Poisson model found consistent edge.
+        # Scotland all divs: covers League Two (+12.3% ROI, cross-era confirmed).
+        # Austria all divs: covers Erste Liga (+5.5% ROI, 5/7 seasons).
+        # Ireland: Division 1 showed +2.7% ROI (4/7 seasons).
+        # South Korea: K League Challenge +3.2% ROI (3/3 seasons).
+        # Singapore: S.League +27.5% ROI (5/5 seasons) — need odds source, tracked for data.
+        # Tier B stake cap (50%) applied since these use targets_global history only.
+        "description": "Mega backtest confirmed leagues — Scotland/Austria/Ireland/Korea (Tier B)",
+        "tier_label": "syndicate",
+        "markets": ["1x2"],
+        "tier_filter": None,
+        "league_filter": ["Scotland", "Austria", "Ireland", "South Korea", "Singapore"],
+        "edge_thresholds": {
+            1: {"1x2_fav": 0.06, "1x2_long": 0.09},
+            2: {"1x2_fav": 0.05, "1x2_long": 0.08},
+            3: {"1x2_fav": 0.05, "1x2_long": 0.08},
+        },
+        "odds_range": (1.50, 5.00),
+        "min_prob": 0.28,
     },
 }
 

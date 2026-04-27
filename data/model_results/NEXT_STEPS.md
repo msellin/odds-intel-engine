@@ -1,114 +1,109 @@
 # OddsIntel — Next Steps (Updated 2026-04-27)
 
-## State After All Three Agents' Work
+## Current State
 
-### What's working
-- Daily pipeline runs at 08:00 UTC via GH Actions (once SUPABASE_SECRET_KEY + SUPABASE_URL secrets added)
-- ~200 matches/day with odds (Kambi 41 leagues + Sofascore 30+ leagues)
-- All 467 Sofascore fixtures stored in DB daily
-- **92% of Kambi matches now get predictions** (was 8%) — thanks to Tier A/B/C system
-- Live tracker collects in-play data every 5min (once GH secrets set)
-- Hourly pre-match snapshots build CLV timeline (once GH secrets set)
-- Settlement runs at 21:00 UTC — results from Sofascore, CLV computed, bot bankrolls updated
-- AI news checker runs at 09:00 UTC — Gemini flags injury/lineup risk on each bet
+### Pipeline (fully operational once GitHub secrets set)
+- **08:00 UTC** — Morning: fetch Kambi+Sofascore odds, run Poisson predictions, place paper bets
+- **09:00 UTC** — AI news checker: Gemini 2.5 Flash flags injuries/suspensions per bet
+- **21:00 UTC** — Settlement: match results → settle bets, compute CLV, update bankrolls
+- **Every 2h** — Odds snapshots: pre-match CLV timeline (minutes_to_kickoff)
+- **Every 5min** — Live tracker: in-play scores/stats/events (12-22 UTC)
 
-### ✅ COMPLETED (no longer pending)
-1. DB migration 002 — run in Supabase SQL editor ✓
-2. Build targets_global.csv — done (scripts/build_global_targets.py, 42,581 rows, 17 leagues) ✓
-3. Tiered confidence system — Tier A/B/C in compute_prediction() + stake sizing ✓
-4. Sofascore Tier C fallback — on-demand team history via API ✓
-5. Settlement pipeline — workers/jobs/settlement.py, wired to GH Actions ✓
-6. AI news checker — workers/jobs/news_checker.py, wired to GH Actions ✓
+### Prediction coverage
+- **Tier A** (512 teams, targets_v9.csv): 18 European leagues, full odds calibration
+- **Tier B** (22 leagues, targets_global.csv): Norway/Sweden/Poland/Romania/Serbia/Ukraine/Turkey/Greece/Croatia/Denmark/Iceland/Hungary/Bulgaria/Cyprus/Georgia/Latvia/Portugal + **Scotland/Austria/Ireland/South Korea/Singapore** (just added from mega backtest)
+- **Tier C**: On-demand Sofascore team history
+
+### Bots running
+| Bot | Strategy | Signal source |
+|-----|----------|---------------|
+| bot_v10_all | All tiers, 1X2+O/U | 18-league v9 backtest |
+| bot_lower_1x2 | Tier 2-4, 1X2 only | English lower league finding |
+| bot_conservative | 10%+ edge only | All |
+| bot_aggressive | 3% edge, high volume | All |
+| bot_greek_turkish | Greece + Turkey | 2022-25 backtest ⚠️ era-sensitive |
+| **bot_high_roi_global** | Scotland/Austria/Ireland/Korea | **Mega backtest (new)** |
 
 ---
 
-## Priority Queue (Current)
+## Priority Queue
 
-### 1. Add Remaining GitHub Secrets (BLOCKING)
-Required for all automated jobs to run.
-- `SUPABASE_URL` — your Supabase project URL
-- `SUPABASE_SECRET_KEY` — service_role key (sb_secret_... from .env)
-- `GEMINI_API_KEY` — for AI news checker (AIzaSy... from .env)
+### 1. Odds coverage for Singapore & South Korea (HIGH VALUE)
+**Singapore S.League: +27.5% ROI across 5 consecutive seasons** — strongest signal found.
+Problem: Kambi doesn't cover Singapore. Need a different odds source.
 
-### 2. Tier B Backtest (HIGH VALUE — do before trusting live Tier B bets)
-The bot is NOW placing Tier B bets on Norway, Sweden, Poland, Romania, Serbia, Ukraine, Turkey, Greece, Croatia etc.
-The stake cap (50%) and +2% edge threshold are conservative safeguards — but we don't know yet if these leagues are actually profitable.
+Options:
+- **bet365 scraping** (most coverage, technically risky)
+- **Pinnacle API** — covers Asian markets, good odds, has an unofficial API
+- **OddsPortal scraping** — Singapore S.League appears there occasionally
+- **Asian bookmakers**: SBOBET, 188BET have Singapore/S.Korea but no clean API
+
+Task for next agent: research whether Pinnacle API or a free scraper can provide Singapore Premier League odds. Until then, bot_high_roi_global tracks the signal but can't bet.
+
+### 2. Tier B Backtest — validate new leagues before trusting live bets
+bot_high_roi_global is NOW placing paper bets on Scotland/Austria/Ireland/South Korea (Tier B).
+We don't yet know if these ARE profitable with our current Poisson model (vs mega backtest's simpler model).
 
 Script to build: `scripts/backtest_tier_b.py`
-- Load targets_global.csv (42,581 matches, 2015–present)
-- For each match: run compute_prediction() using only targets_global as Tier B source
-- Apply same edge thresholds as Tier B bots
-- Compute: hit rate, ROI, CLV (where bookmaker odds available), by league
-- Key question: which of the 17 new leagues show real edge? Which should be Tier B vs dropped?
+- Load targets_global.csv (52K matches, 2015-present)
+- Run Poisson model with same edge thresholds as Tier B bots
+- Output: per-league hit rate, ROI, avg odds — validate which of the 22 leagues are actually worth betting now
 
-Expected output: a league-by-league profitability table like SOCCER_FINDINGS.md.
-Note: targets_global.csv has no bookmaker odds (set to NaN) — so edge is measured against Poisson fair odds, not market odds. Still valid for calibration direction.
+### 3. news_checker.py — run multiple times per day (QUICK WIN)
+Currently runs once at 09:00 UTC. Lineups only confirmed ~1h before kickoff.
+Update `news_checker.yml` to also run at 12:30, 16:30, 19:30 UTC to catch late lineup news.
+Cost: ~$0.04/day total (Gemini 2.5 Flash).
 
-### 3. Mega Backtest — Beat the Bookie Dataset (NOT STARTED)
-479K matches, 818 leagues, with real bookmaker odds from Bet365/PS/market avg.
-This is the gold standard for finding which obscure leagues have consistent edge.
+### 4. Gemini API key — must fix before production
+Current key (AIzaSy...) belongs to a different Google Cloud project (AI Training Analyst).
+If that project is deleted, news checker silently breaks.
+Action: create dedicated GCP project for OddsIntel, generate new key, update GitHub secret + .env.
 
-Dataset: https://www.football-data.co.uk/data.php (Beat the Bookie section)
-Script: scripts/mega_backtest.py already exists — check if it handles the BTB format.
+### 5. Scotland League Two — confirm odds coverage
+We know Kambi covers Scottish football (Unibet/Paf). But does it cover League Two specifically?
+Check tomorrow's Kambi snapshot output — if Scottish lower-tier teams appear, we're good.
 
-Once done → update bot league_filter configs and tier thresholds.
-
-### 4. O/U 0.5 / 1.5 / 3.5 Backtests (MEDIUM VALUE)
-We can compute outcomes from existing total_goals data.
-Problem: no historical bookmaker odds for 0.5/1.5/3.5 lines (only 2.5 in dataset).
-Solution: use Poisson distribution to estimate fair odds for any line → compare to model.
-
-Script: `scripts/backtest_ou_lines.py`
-- For each match: compute fair odds for O/U 0.5, 1.5, 2.5, 3.5 from Poisson model
-- Compare to actual outcome
-- Key question: at which O/U line does our model have most edge?
-
-Note: Results are indicative (estimated fair odds, not real bookmaker odds).
-Live data collection (now running) will give real validation in 4-6 weeks.
-
-### 5. OddsPortal Scraper (MEDIUM VALUE)
-Currently 200/467 = 43% of daily fixtures have odds.
-OddsPortal covers virtually every league → could push to 70-80%.
-Only worthwhile after Tier B backtest confirms which leagues are worth betting.
-
-### 6. Live Data Validation (ONGOING — starts automatically once secrets set)
-- Live tracker builds live_match_snapshots + match_events every 5min
-- Hourly snapshots build odds timeline (minutes_to_kickoff column)
-- After 2-4 weeks of data, run CLV analysis: does our T-2h pick odds beat closing line?
-- In-play hypothesis: high-xG game 0-0 at minute 10-15 → O/U 1.5 drifts upward
+### 6. bot_greek_turkish era discrepancy
+Prior backtest (2022-25): Greece/Turkey positive ROI
+Mega backtest (2005-15): Greece -14.4%, Turkey -10.4%
+Both used different models and different eras. The 2022-25 signal is more recent and used a better model.
+Action: **do not disable** bot_greek_turkish, but wait for 30+ live settled bets before drawing conclusions.
+CLV tracking will show whether it's finding value at time of pick.
 
 ---
 
-## Key Data Gaps to Fill
+## Data Gaps
 
-| Gap | Data exists? | Effort | Unlocks |
-|-----|-------------|--------|---------|
-| Norway/Sweden/Poland/Romania targets | Yes (global parquet) | 2h | Predictions for 30+ new leagues |
-| O/U 0.5/1.5/3.5 historical odds | Partial (need Beat the Bookie check) | 1h | Better O/U backtest |
-| Odds for 267 matches without odds | Need OddsPortal | 3h | More match coverage |
-| Real-time xG data | Sofascore live (collecting now) | Done | In-play model improvement |
-| Settlement logic | Build it | 2h | Real ROI measurement |
-
----
-
-## The Bet Timing Question (Collecting Data Now)
-
-Pre-match timing rule of thumb while we gather our own data:
-- **T-2h to T-1h**: Best window for pre-match. Line has moved from sharp action but still has value windows.
-- **Never at opening**: Opening lines in obscure leagues are soft but you can't predict direction.
-- **Live — minutes 8-18**: For high-xG games 0-0 at minute 10-15, O/U 1.5 drifts upward. Hypothesis — the live tracker will validate or refute this with real data.
-- **CLV is the only short-term metric**: Beat the closing line consistently = finding real value.
-
-The hourly snapshot job is building the pre-match timeline. The live tracker is building the in-play dataset. In 2-4 weeks we can run the analysis queries.
+| Gap | Status | Impact |
+|-----|--------|--------|
+| Singapore odds source | ❌ no solution yet | Can't bet on +27.5% ROI signal |
+| South Korea odds (Kambi?) | ⚠️ unclear | K League Challenge +3.2% ROI |
+| Scotland League Two (Kambi?) | ⚠️ need to confirm | League Two +12.3% ROI |
+| O/U 0.5/1.5/3.5 historical odds | ❌ not in BTB data | Can't backtest O/U lines |
+| OddsPortal scraper | ❌ not built | Would push coverage 43% → 80% |
 
 ---
 
-## Bot Configuration Reality
+## Key Research Findings (Reference)
 
-| Bot | Strategy | Currently active on | Expected bets/day (weekends) |
-|-----|----------|---------------------|------------------------------|
-| bot_lower_1x2 | Tier 2-4, 1X2 only | English lower leagues mainly | 2-5 |
-| bot_v10_all | All leagues, tier-adjusted | All 18 historical leagues | 5-15 |
-| bot_conservative | 10%+ edge only | Very selective | 0-3 |
-| bot_aggressive | 3% edge, high volume | All available | 10-30 |
-| bot_greek_turkish | Greece + Turkey only | G1 + T1 | 1-3 |
+### Mega backtest (354K matches, 275 leagues, 2005-15)
+Top consistently profitable leagues:
+1. Singapore S.League: **+27.5% ROI**, 5/5 seasons
+2. Scotland League Two: **+12.3% ROI**, 2/2 seasons (also +21% in 2022-25 backtest — cross-era confirmed)
+3. Ukraine Division 2: **+9.4% ROI**, 3/4 seasons
+4. Estonia Esi Liiga: **+6.3% ROI**, 2/4 seasons
+5. Austria Erste Liga: **+5.5% ROI**, 5/7 seasons
+6. Sweden Division 1 Norra: **+4.7% ROI**, 5/7 seasons
+
+Pattern: obscure/lower-tier leagues = less bookmaker pricing effort = more edge.
+Top leagues (England, Germany, Spain) = worst ROI (-9% to -15%).
+
+Full findings: `data/model_results/MEGA_BACKTEST_FINDINGS.md`
+
+### Prior backtest (18 leagues, 2022-25)
+- Tier 3-4: +4.8% to +21% ROI
+- Greece Super League: +45% (v10 model) — era-sensitive
+- Turkey Super Lig: positive (era-sensitive)
+- Scotland lower tiers: +21%
+
+Full findings: `data/model_results/SOCCER_FINDINGS.md`
