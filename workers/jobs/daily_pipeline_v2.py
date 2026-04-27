@@ -33,7 +33,7 @@ from workers.scrapers.sofascore_odds import fetch_all_odds as fetch_sofascore_od
 from workers.scrapers.betexplorer_odds import fetch_gap_leagues_odds as fetch_betexplorer_odds
 from workers.api_clients.supabase_client import (
     get_client, ensure_bots, store_match, store_odds,
-    store_prediction, store_bet, settle_bet,
+    store_prediction, store_bet, store_prediction_snapshot, settle_bet,
     get_pending_bets, update_bot_bankroll, update_match_result,
     get_bot_performance, get_todays_matches,
 )
@@ -636,6 +636,19 @@ def run_morning():
                     })
                     if bet_id:
                         total_bets += 1
+                        # Save Stage 1 snapshot: stats-only probability
+                        try:
+                            store_prediction_snapshot(
+                                bet_id=bet_id,
+                                stage="stats_only",
+                                model_probability=mp,
+                                implied_probability=ip,
+                                edge_percent=edge,
+                                odds_at_snapshot=odds,
+                                metadata={"data_tier": data_tier, "bot": bot_name},
+                            )
+                        except Exception:
+                            pass  # non-critical
                     # else: already placed today, skip silently
                 except Exception as e:
                     console.print(f"  [red]Error storing bet: {e}[/red]")

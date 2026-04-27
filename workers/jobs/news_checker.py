@@ -32,13 +32,13 @@ from rich.table import Table
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-import google.generativeai as genai
-from workers.api_clients.supabase_client import get_client
+from google import genai
+from workers.api_clients.supabase_client import get_client, store_prediction_snapshot
 
 console = Console()
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY", ""))
-GEMINI_MODEL = "gemini-2.5-flash-preview-04-17"
+gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
+GEMINI_MODEL = "gemini-2.5-flash"
 
 SOFASCORE_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
@@ -168,8 +168,10 @@ Rules:
 Only flag real concerns. Don't invent problems if data is sparse."""
 
     try:
-        model = genai.GenerativeModel(GEMINI_MODEL)
-        response = model.generate_content(prompt)
+        response = gemini_client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+        )
         text = response.text.strip()
 
         # Extract JSON
@@ -324,6 +326,28 @@ def run_news_checker(dry_run: bool = False):
                 "model_probability": updated_prob,
                 "news_triggered": flag in ("warning", "skip"),
             }).eq("id", bet["id"]).execute()
+
+            # Save Stage 2 snapshot: post-AI probability
+            try:
+                odds = bet["odds_at_pick"]
+                store_prediction_snapshot(
+                    bet_id=bet["id"],
+                    stage="post_ai",
+                    model_probability=updated_prob,
+                    implied_probability=1 / odds if odds > 0 else None,
+                    edge_percent=updated_prob - (1 / odds) if odds > 0 else None,
+                    odds_at_snapshot=odds,
+                    metadata={
+                        "ai_flag": flag,
+                        "ai_reason": reason[:200],
+                        "confidence_adjustment": adj,
+                        "home_facts_count": len(match_context.get("home_facts", [])),
+                        "away_facts_count": len(match_context.get("away_facts", [])),
+                        "lineups_confirmed": match_context.get("lineups", {}).get("home_confirmed", False),
+                    },
+                )
+            except Exception:
+                pass  # non-critical
 
     # Summary table
     console.print()

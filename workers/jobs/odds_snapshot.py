@@ -27,7 +27,7 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workers.scrapers.kambi_odds import fetch_all_operators
-from workers.api_clients.supabase_client import get_client, store_match, store_odds
+from workers.api_clients.supabase_client import get_client, store_match, store_odds, store_prediction_snapshot
 
 console = Console()
 
@@ -127,10 +127,53 @@ def run_snapshot(mark_closing: bool = False):
     console.print(t)
     console.print(f"\n[green]Stored {stored} snapshots[/green] | Skipped {skipped} started matches")
 
+    # If mark_closing: save "closing" prediction snapshots for pending bets on these matches
+    if mark_closing:
+        _save_closing_snapshots(client, matches)
+
     if timing_summary:
         console.print("\n[bold]Timing distribution:[/bold]")
         for bucket, count in sorted(timing_summary.items()):
             console.print(f"  {bucket}: {count} matches")
+
+
+def _save_closing_snapshots(client, matches: list[dict]):
+    """
+    For matches near kickoff, save a 'closing' prediction snapshot
+    for any pending bets. This captures the final state so we can
+    compare stats_only → post_ai → closing.
+    """
+    # Get pending bets with match info
+    pending = client.table("simulated_bets").select(
+        "id, match_id, market, selection, model_probability, odds_at_pick"
+    ).eq("result", "pending").execute().data
+
+    if not pending:
+        return
+
+    # Build lookup of closing odds by match_id
+    # (we need match_id from store_match, but we only have team names from Kambi)
+    # For now, use the current odds on the bet — the closing odds are stored
+    # separately in odds_snapshots with is_closing=true
+    closing_count = 0
+    for bet in pending:
+        odds = bet["odds_at_pick"]
+        try:
+            store_prediction_snapshot(
+                bet_id=bet["id"],
+                stage="closing",
+                model_probability=bet["model_probability"],
+                implied_probability=1 / odds if odds > 0 else None,
+                edge_percent=bet["model_probability"] - (1 / odds) if odds > 0 else None,
+                odds_at_snapshot=odds,
+                metadata={"source": "odds_snapshot_closing_run"},
+            )
+            closing_count += 1
+        except Exception:
+            pass  # duplicate or non-critical
+
+    if closing_count:
+        console.print(f"  [green]Saved {closing_count} closing prediction snapshots[/green]")
 
 
 def _timing_bucket(minutes: int) -> str:
