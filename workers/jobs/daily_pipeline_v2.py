@@ -780,6 +780,68 @@ def run_morning():
     console.print(f"\n[bold green]Done! {total_bets} bets placed across {len(BOTS_CONFIG)} bots[/bold green]")
     console.print(f"[green]All data stored in Supabase — frontend can display it now[/green]")
 
+    # 11.6: Cross-match correlation check — warn about concentrated exposure
+    _check_exposure_concentration()
+
+
+def _check_exposure_concentration():
+    """
+    11.6: Cross-match correlation / exposure management.
+    After all bets are placed, checks if any single league has
+    too many bets on the same day (correlated outcomes).
+
+    If a bot has 3+ bets in the same league on the same day,
+    outcomes are correlated — warns and logs. Future: auto-reduce stakes.
+
+    See MODEL_ANALYSIS.md Section 11.6.
+    """
+    from collections import defaultdict
+
+    try:
+        client = get_client()
+        today_str = date.today().isoformat()
+
+        # Get today's pending bets with league info
+        bets = client.table("simulated_bets").select(
+            "id, bot_id, stake, market, selection, "
+            "matches(league_id, leagues(name, country))"
+        ).eq("result", "pending").gte(
+            "pick_time", f"{today_str}T00:00:00"
+        ).execute().data
+
+        if not bets:
+            return
+
+        # Group by bot × league
+        exposure: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
+
+        for b in bets:
+            match = b.get("matches", {})
+            league = match.get("leagues", [{}])
+            league_name = league[0]["name"] if isinstance(league, list) and league else league.get("name", "?")
+            bot_id = b["bot_id"]
+            exposure[bot_id][league_name].append(b)
+
+        # Check for concentrated exposure
+        warnings_found = False
+        for bot_id, leagues in exposure.items():
+            for league_name, league_bets in leagues.items():
+                if len(league_bets) >= 3:
+                    total_stake = sum(float(b["stake"]) for b in league_bets)
+                    if not warnings_found:
+                        console.print("\n[yellow]═══ Exposure Concentration Warnings ═══[/yellow]")
+                        warnings_found = True
+                    console.print(
+                        f"  [yellow]⚠ {len(league_bets)} bets in {league_name} "
+                        f"(total stake €{total_stake:.2f}) — outcomes are correlated[/yellow]"
+                    )
+
+        if not warnings_found:
+            console.print("\n[dim]Exposure check: OK — no concentrated league exposure[/dim]")
+
+    except Exception as e:
+        console.print(f"  [yellow]Exposure check error (non-critical): {e}[/yellow]")
+
 
 def run_settle():
     """Settle pending bets using match results"""

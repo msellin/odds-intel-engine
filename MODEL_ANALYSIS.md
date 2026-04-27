@@ -603,39 +603,43 @@ Computes rolling 5-match average of a team's market-implied win probability from
 
 ### Tier 2: Do Soon (medium effort, high value)
 
-#### 11.4 Daily Post-Mortem LLM Analysis
+#### 11.4 Daily Post-Mortem LLM Analysis ✅ DONE
 **Consensus: 2/4 assessments recommend this.**
+**Implemented:** 2026-04-27 in `workers/jobs/settlement.py` → `run_post_mortem()`
 
-After settlement (21:00 UTC), auto-generate a daily report classifying each loss:
-- `Bad Luck/Variance` — won xG 3.0 vs 0.5 but lost 1-0
-- `Information Asymmetry` — odds tanked pre-match, we missed news
-- `Model Error` — model was simply wrong about team strength
-- `Timing` — right pick, wrong timing (should have waited for lineup)
+Runs automatically after settlement. Sends all settled bets (with full context: calibrated_prob, odds_drift, CLV, alignment, news_impact) to Gemini Flash. Classifies each loss as:
+- `VARIANCE` — reasonable bet, bad luck
+- `INFORMATION_GAP` — missed news/odds movement
+- `MODEL_ERROR` — model was wrong about team strength
+- `TIMING` — right pick, should have waited for lineup
 
-**Implementation:** Add LLM call to `settlement.py` after settling bets. Store in `model_evaluations.notes`.
-**Expected impact:** Faster iteration on model flaws, structural vs variance identification.
-**Cost:** ~$0.02/day (one Gemini call with settlement context).
+Also outputs: daily summary, patterns noticed, one actionable suggestion.
+Results stored in `model_evaluations` table (market="post_mortem", notes=JSON analysis).
 
-#### 11.5 RSS News Extraction Pipeline (Speed Edge)
+**Cost:** ~$0.01-0.02/day.
+**Validation:** After 2 weeks of daily post-mortems, check:
+- Are loss categories consistent? (e.g., "70% of T1 losses are MODEL_ERROR" → confirms T1 is hard)
+- Do suggestions lead to measurable changes?
+- **How to check:** `SELECT notes FROM model_evaluations WHERE market = 'post_mortem' ORDER BY date DESC LIMIT 7;`
+- **Timeline:** First useful patterns after ~14 days of settlement data
+
+#### 11.5 RSS News Extraction Pipeline (Speed Edge) — DEFERRED
 **Source: Assessment #4. Directly targets our core thesis.**
+**Deferred:** Cost $30-90/month. Will revisit when model proves profitable enough to justify.
 
-Scrape 3-5 RSS feeds per major league (team official sites, local sports media). LLM extracts structured events: `{player, event_type, severity, source_reliability}`. Stores in `news_events`.
-
-This is the "speed edge" our PROGRESS.md identifies: *"Getting injury/lineup news 1-2 hours before odds adjust is where professional bettors make their 3-8% ROI."*
-
-**Implementation:** New worker script, RSS polling every 30min, LLM extraction per article.
-**Expected impact:** +3-8% ROI on flagged bets (if we genuinely get news before odds adjust).
-**Cost:** ~$1-5/day in LLM calls for 50-100 articles.
-**Risk:** High effort to find reliable, structured sources across 40+ leagues in multiple languages.
-
-#### 11.6 Cross-Match Correlation / Exposure Management
+#### 11.6 Cross-Match Correlation / Exposure Management ✅ DONE
 **Source: Assessment #4. Simple risk management we don't do.**
+**Implemented:** 2026-04-27 in `workers/jobs/daily_pipeline_v2.py` → `_check_exposure_concentration()`
 
-If bots place 3+ bets on the same league matchday, outcomes are correlated (if Team A loses, Team B's title odds shift). Reduce total exposure when bets are correlated.
+After all bets are placed, checks if any bot has 3+ bets in the same league on the same day. Logs a warning with total stake exposure. Correlated outcomes (same league matchday) can amplify drawdowns.
 
-**Implementation:** After bet placement, check how many bets are on the same league/date. Cap combined stake.
-**Expected impact:** -2-5% drawdown reduction (risk management, not ROI improvement).
-**Data needed:** Historical results already in targets_v9.
+Currently: warning-only. Future: auto-reduce stakes proportionally when correlated.
+
+**Cost:** $0 (pure computation).
+**Validation:** After 4+ weeks of data, compare:
+- Drawdown on days with exposure warnings vs days without
+- **How to check:** Cross-reference pipeline logs with daily P&L from settlement
+- **Timeline:** ~4 weeks for enough data points
 
 ### Tier 3: Do When Data Allows (2-6 months)
 

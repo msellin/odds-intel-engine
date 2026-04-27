@@ -364,6 +364,14 @@ def run_settlement():
     except Exception as e:
         console.print(f"  [yellow]Form cache error: {e}[/yellow]")
 
+    # 11.4: Daily post-mortem LLM analysis
+    if settled > 0:
+        console.print("\n[cyan]Running AI post-mortem analysis...[/cyan]")
+        try:
+            run_post_mortem(client)
+        except Exception as e:
+            console.print(f"  [yellow]Post-mortem error (non-critical): {e}[/yellow]")
+
 
 def update_elo_ratings(client):
     """
@@ -527,6 +535,158 @@ def compute_model_evaluations(client):
             pass
 
     return evals_stored
+
+
+def run_post_mortem(client):
+    """
+    11.4: Daily AI post-mortem analysis.
+    After settlement, sends today's settled bets to Gemini for loss classification.
+    Classifies each loss as: Variance, Information Gap, Model Error, or Timing.
+    Stores classification in model_evaluations.notes for pattern tracking.
+
+    Cost: ~$0.01-0.02/day (one Gemini call with batch context).
+    See MODEL_ANALYSIS.md Section 11.4.
+    """
+    import json
+    import re
+
+    today_str = date.today().isoformat()
+
+    # Get today's settled bets with full context
+    bets = client.table("simulated_bets").select(
+        "id, market, selection, odds_at_pick, model_probability, edge_percent, "
+        "result, pnl, stake, clv, calibrated_prob, alignment_class, kelly_fraction, "
+        "odds_drift, news_impact_score, reasoning, "
+        "matches(score_home, score_away, "
+        "home_team:home_team_id(name), away_team:away_team_id(name), "
+        "leagues(name, country, tier))"
+    ).neq("result", "pending").gte(
+        "pick_time", f"{today_str}T00:00:00"
+    ).execute().data
+
+    if not bets:
+        return
+
+    # Also get match stats if available
+    losses = [b for b in bets if b["result"] == "lost"]
+    wins = [b for b in bets if b["result"] == "won"]
+
+    if not losses:
+        console.print("  [green]No losses today — no post-mortem needed![/green]")
+        return
+
+    # Build context for LLM
+    bet_summaries = []
+    for b in bets:
+        match = b.get("matches", {})
+        home = match.get("home_team", [{}])
+        away = match.get("away_team", [{}])
+        league = match.get("leagues", [{}])
+        home_name = home[0]["name"] if isinstance(home, list) else home.get("name", "?")
+        away_name = away[0]["name"] if isinstance(away, list) else away.get("name", "?")
+        league_name = league[0]["name"] if isinstance(league, list) else league.get("name", "?")
+        tier = league[0]["tier"] if isinstance(league, list) else league.get("tier", "?")
+
+        summary = (
+            f"{'✗ LOST' if b['result'] == 'lost' else '✓ WON'}: "
+            f"{home_name} vs {away_name} ({league_name}, T{tier}) "
+            f"| Score: {match.get('score_home', '?')}-{match.get('score_away', '?')} "
+            f"| Bet: {b['market']} {b['selection']} @{b['odds_at_pick']:.2f} "
+            f"| Model prob: {b['model_probability']:.1%}"
+        )
+        if b.get("calibrated_prob"):
+            summary += f", Cal: {b['calibrated_prob']:.1%}"
+        if b.get("odds_drift") and b["odds_drift"] != 0:
+            summary += f", Drift: {b['odds_drift']:+.3f}"
+        if b.get("clv") is not None:
+            summary += f", CLV: {b['clv']:+.1%}"
+        if b.get("news_impact_score") and b["news_impact_score"] != 0:
+            summary += f", News: {b['news_impact_score']:+.2f}"
+        if b.get("alignment_class"):
+            summary += f", Align: {b['alignment_class']}"
+        bet_summaries.append(summary)
+
+    prompt = f"""You are a sports betting analyst performing a daily post-mortem.
+
+TODAY'S SETTLED BETS ({len(bets)} total: {len(wins)} won, {len(losses)} lost):
+
+{chr(10).join(bet_summaries)}
+
+For each LOST bet, classify the likely cause into exactly one category:
+- VARIANCE: Model assessment was reasonable (good edge, maybe good CLV) but result went against us. Bad luck, not a model flaw.
+- INFORMATION_GAP: Odds moved against us (negative drift) or news impacted the match in a way our model didn't capture. We were missing information.
+- MODEL_ERROR: Model probability was significantly wrong — the team was simply not as strong/weak as predicted. The pick was bad, not unlucky.
+- TIMING: The pick might have been right earlier but conditions changed (lineup, late injury). Better timing would have helped.
+
+Also provide:
+1. A one-paragraph overall assessment of today's performance
+2. Any patterns you notice (e.g., "all losses were in Tier 1", "negative CLV on every loss")
+3. One specific actionable suggestion for improving tomorrow
+
+Respond with ONLY a JSON object:
+{{
+  "loss_classifications": [
+    {{"match": "Home vs Away", "category": "VARIANCE|INFORMATION_GAP|MODEL_ERROR|TIMING", "reason": "brief explanation"}}
+  ],
+  "daily_summary": "one paragraph",
+  "patterns_noticed": ["pattern 1", "pattern 2"],
+  "suggestion": "one specific action"
+}}"""
+
+    try:
+        from google import genai
+        gemini = genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
+        response = gemini.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+        )
+        text = response.text.strip()
+
+        json_match = re.search(r'\{[\s\S]*\}', text)
+        if json_match:
+            analysis = json.loads(json_match.group())
+
+            # Display results
+            console.print(f"\n  [bold]Post-Mortem ({len(losses)} losses analyzed):[/bold]")
+
+            for lc in analysis.get("loss_classifications", []):
+                cat_color = {
+                    "VARIANCE": "blue",
+                    "INFORMATION_GAP": "yellow",
+                    "MODEL_ERROR": "red",
+                    "TIMING": "magenta",
+                }.get(lc.get("category", ""), "white")
+                console.print(f"  [{cat_color}]{lc.get('category', '?'):18s}[/{cat_color}] {lc.get('match', '?')} — {lc.get('reason', '')}")
+
+            console.print(f"\n  [bold]Summary:[/bold] {analysis.get('daily_summary', 'N/A')}")
+
+            patterns = analysis.get("patterns_noticed", [])
+            if patterns:
+                console.print(f"  [bold]Patterns:[/bold]")
+                for p in patterns:
+                    console.print(f"    • {p}")
+
+            suggestion = analysis.get("suggestion", "")
+            if suggestion:
+                console.print(f"  [bold]Suggestion:[/bold] {suggestion}")
+
+            # Store in model_evaluations
+            try:
+                store_model_evaluation(
+                    eval_date=today_str,
+                    league_id=None,
+                    market="post_mortem",
+                    total_bets=len(bets),
+                    hits=len(wins),
+                    roi=sum(b["pnl"] or 0 for b in bets) / max(sum(b["stake"] for b in bets), 1) * 100,
+                    avg_clv=None,
+                    notes=json.dumps(analysis, ensure_ascii=False)[:2000],
+                )
+            except Exception:
+                pass
+
+    except Exception as e:
+        console.print(f"  [yellow]Post-mortem LLM error: {e}[/yellow]")
 
 
 def run_report():
