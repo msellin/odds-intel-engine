@@ -371,25 +371,32 @@ def store_prediction(match_id: str, market: str, prediction: dict):
 # SIMULATED BETS
 # ============================================================
 
-def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str:
-    """Store a paper bet in Supabase"""
+def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
+    """
+    Store a paper bet in Supabase.
+    Returns the bet UUID, or None if this bet already exists (idempotent).
+    """
     client = get_client()
 
-    new = client.table("simulated_bets").insert({
-        "bot_id": bot_id,
-        "match_id": match_id,
-        "market": bet_data["market"],
-        "selection": bet_data["selection"].lower(),
-        "odds_at_pick": bet_data["odds"],
-        "pick_time": bet_data.get("placed_at", datetime.now().isoformat()),
-        "stake": bet_data["stake"],
-        "model_probability": bet_data["model_prob"],
-        "edge_percent": bet_data["edge"],
-        "result": "pending",
-        "reasoning": bet_data.get("reasoning") or f"Edge: {bet_data['edge']:.1%}, Model: {bet_data['model_prob']:.1%}, Implied: {bet_data['implied_prob']:.1%}",
-    }).execute()
-
-    return new.data[0]["id"]
+    try:
+        new = client.table("simulated_bets").insert({
+            "bot_id": bot_id,
+            "match_id": match_id,
+            "market": bet_data["market"],
+            "selection": bet_data["selection"].lower(),
+            "odds_at_pick": bet_data["odds"],
+            "pick_time": bet_data.get("placed_at", datetime.now().isoformat()),
+            "stake": bet_data["stake"],
+            "model_probability": bet_data["model_prob"],
+            "edge_percent": bet_data["edge"],
+            "result": "pending",
+            "reasoning": bet_data.get("reasoning") or f"Edge: {bet_data['edge']:.1%}, Model: {bet_data['model_prob']:.1%}, Implied: {bet_data['implied_prob']:.1%}",
+        }).execute()
+        return new.data[0]["id"]
+    except Exception as e:
+        if "duplicate" in str(e).lower() or "unique" in str(e).lower() or "uq_bet" in str(e).lower():
+            return None  # already placed, skip silently
+        raise
 
 
 def settle_bet(bet_id: str, result: str, pnl: float, bankroll_after: float):

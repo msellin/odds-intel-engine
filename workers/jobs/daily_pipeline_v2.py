@@ -584,7 +584,7 @@ def run_morning():
 
             for market, selection, odds, mp, ip, edge in bet_candidates:
                 try:
-                    store_bet(bot_ids[bot_name], match_id, {
+                    bet_id = store_bet(bot_ids[bot_name], match_id, {
                         "market": market,
                         "selection": selection,
                         "odds": odds,
@@ -595,7 +595,9 @@ def run_morning():
                         "placed_at": datetime.now().isoformat(),
                         "reasoning": f"{tier_tag}{match['home_team']} vs {match['away_team']} | edge={edge:.3f}",
                     })
-                    total_bets += 1
+                    if bet_id:
+                        total_bets += 1
+                    # else: already placed today, skip silently
                 except Exception as e:
                     console.print(f"  [red]Error storing bet: {e}[/red]")
 
