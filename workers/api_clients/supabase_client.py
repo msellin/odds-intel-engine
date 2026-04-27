@@ -375,23 +375,41 @@ def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
     """
     Store a paper bet in Supabase.
     Returns the bet UUID, or None if this bet already exists (idempotent).
+
+    Supports new model improvement fields (migration 006):
+    - calibrated_prob, kelly_fraction, odds_at_open, odds_drift
+    - dimension_scores, alignment_count, alignment_total, alignment_class
+    - model_disagreement, news_impact_score, lineup_confirmed
     """
     client = get_client()
 
+    row = {
+        "bot_id": bot_id,
+        "match_id": match_id,
+        "market": bet_data["market"],
+        "selection": bet_data["selection"].lower(),
+        "odds_at_pick": bet_data["odds"],
+        "pick_time": bet_data.get("placed_at", datetime.now().isoformat()),
+        "stake": bet_data["stake"],
+        "model_probability": bet_data["model_prob"],
+        "edge_percent": bet_data["edge"],
+        "result": "pending",
+        "reasoning": bet_data.get("reasoning") or f"Edge: {bet_data['edge']:.1%}, Model: {bet_data['model_prob']:.1%}, Implied: {bet_data['implied_prob']:.1%}",
+    }
+
+    # Model improvement fields (P1-P4, migration 006)
+    optional_fields = [
+        "calibrated_prob", "kelly_fraction",
+        "odds_at_open", "odds_drift",
+        "dimension_scores", "alignment_count", "alignment_total", "alignment_class",
+        "model_disagreement", "news_impact_score", "lineup_confirmed",
+    ]
+    for field in optional_fields:
+        if field in bet_data and bet_data[field] is not None:
+            row[field] = bet_data[field]
+
     try:
-        new = client.table("simulated_bets").insert({
-            "bot_id": bot_id,
-            "match_id": match_id,
-            "market": bet_data["market"],
-            "selection": bet_data["selection"].lower(),
-            "odds_at_pick": bet_data["odds"],
-            "pick_time": bet_data.get("placed_at", datetime.now().isoformat()),
-            "stake": bet_data["stake"],
-            "model_probability": bet_data["model_prob"],
-            "edge_percent": bet_data["edge"],
-            "result": "pending",
-            "reasoning": bet_data.get("reasoning") or f"Edge: {bet_data['edge']:.1%}, Model: {bet_data['model_prob']:.1%}, Implied: {bet_data['implied_prob']:.1%}",
-        }).execute()
+        new = client.table("simulated_bets").insert(row).execute()
         return new.data[0]["id"]
     except Exception as e:
         if "duplicate" in str(e).lower() or "unique" in str(e).lower() or "uq_bet" in str(e).lower():
@@ -511,6 +529,61 @@ def store_model_evaluation(eval_date: str, league_id: str | None, market: str,
         row["notes"] = notes
 
     client.table("model_evaluations").insert(row).execute()
+
+
+def compute_market_implied_strength(team_id: str, window: int = 5) -> float | None:
+    """
+    Compute rolling average of a team's market-implied win probability
+    from recent odds snapshots. The market's recent pricing of a team
+    is a strong indicator of true team strength (especially in Tier 1-2).
+
+    Returns average implied win probability (0.0-1.0) or None if insufficient data.
+    See MODEL_ANALYSIS.md Section 11.3.
+    """
+    client = get_client()
+
+    # Get last N matches where this team played, with 1X2 odds
+    home_matches = client.table("matches").select(
+        "id"
+    ).eq("home_team_id", team_id).eq("status", "finished").order(
+        "date", desc=True
+    ).limit(window).execute().data or []
+
+    away_matches = client.table("matches").select(
+        "id"
+    ).eq("away_team_id", team_id).eq("status", "finished").order(
+        "date", desc=True
+    ).limit(window).execute().data or []
+
+    implied_probs = []
+
+    # For home matches, get the 1x2 home odds
+    for m in home_matches:
+        odds_rows = client.table("odds_snapshots").select("odds").eq(
+            "match_id", m["id"]
+        ).eq("market", "1x2").eq("selection", "home").order(
+            "timestamp", desc=True
+        ).limit(1).execute().data
+
+        if odds_rows and float(odds_rows[0]["odds"]) > 1.0:
+            implied_probs.append(1.0 / float(odds_rows[0]["odds"]))
+
+    # For away matches, get the 1x2 away odds
+    for m in away_matches:
+        odds_rows = client.table("odds_snapshots").select("odds").eq(
+            "match_id", m["id"]
+        ).eq("market", "1x2").eq("selection", "away").order(
+            "timestamp", desc=True
+        ).limit(1).execute().data
+
+        if odds_rows and float(odds_rows[0]["odds"]) > 1.0:
+            implied_probs.append(1.0 / float(odds_rows[0]["odds"]))
+
+    if len(implied_probs) < 3:
+        return None
+
+    # Return average implied win probability (most recent N matches)
+    return round(sum(implied_probs[:window]) / min(len(implied_probs), window), 4)
 
 
 def compute_team_form_from_db(team_id: str, as_of_date: str, window: int = 10) -> dict | None:

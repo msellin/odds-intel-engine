@@ -123,17 +123,18 @@ def fetch_match_lineups(sofascore_event_id: int) -> dict:
 
 def analyse_with_gemini(match_context: dict) -> dict:
     """
-    Send match context to Gemini and get a confidence adjustment.
+    Send match context to Gemini and get structured impact assessment.
 
-    Returns:
-        {
-            "flag": "ok" | "warning" | "skip",
-            "reason": str,
-            "confidence_adjustment": float,  # -0.15 to +0.05
-            "tokens_used": int
-        }
+    Returns structured output with:
+      - Per-player impact scores (not just binary flags)
+      - Lineup confidence (0.0-1.0)
+      - Net team impact for home and away
+      - Overall flag and confidence adjustment
+
+    This is the v2 prompt (structured JSON output with player importance).
+    See MODEL_ANALYSIS.md Section 11.1 for design rationale.
     """
-    prompt = f"""You are a football betting analyst. Evaluate whether a pre-match prediction should still be trusted given the latest team news.
+    prompt = f"""You are a football betting analyst. Assess how team news affects a specific bet.
 
 MATCH: {match_context['home_team']} vs {match_context['away_team']}
 LEAGUE: {match_context['league']} (Tier {match_context['tier']})
@@ -144,28 +145,53 @@ Model probability: {match_context['model_prob']:.1%}
 Implied probability: {match_context['implied_prob']:.1%}
 Edge: {match_context['edge']:.1%}
 
-HOME TEAM INTEL:
+HOME TEAM NEWS:
 {chr(10).join(match_context.get('home_facts', ['No data available']))}
 
-AWAY TEAM INTEL:
+AWAY TEAM NEWS:
 {chr(10).join(match_context.get('away_facts', ['No data available']))}
 
-{f"CONFIRMED LINEUPS: Home: {', '.join(match_context['lineups'].get('home_players', []))[:100]} | Away: {', '.join(match_context['lineups'].get('away_players', []))[:100]}" if match_context.get('lineups', {}).get('home_confirmed') else "Lineups: Not confirmed yet"}
+{f"CONFIRMED LINEUPS: Home: {', '.join(match_context['lineups'].get('home_players', []))[:200]} | Away: {', '.join(match_context['lineups'].get('away_players', []))[:200]}" if match_context.get('lineups', {}).get('home_confirmed') else "LINEUPS: Not confirmed yet"}
 
-Based on this information, respond with ONLY a JSON object:
+Respond with ONLY a JSON object. No other text.
+
 {{
   "flag": "ok" or "warning" or "skip",
-  "reason": "one sentence explaining your assessment",
-  "confidence_adjustment": a number between -0.15 and 0.05
+  "reason": "one sentence summary (<60 words)",
+  "confidence_adjustment": float between -0.15 and +0.05,
+  "players_out": [
+    {{"name": "Player Name", "team": "home" or "away", "position": "GK/DEF/MID/FWD", "impact": float -1.0 to 0.0, "reason": "brief"}}
+  ],
+  "players_doubtful": [
+    {{"name": "Player Name", "team": "home" or "away", "position": "GK/DEF/MID/FWD", "impact": float -0.5 to 0.0, "reason": "brief"}}
+  ],
+  "players_returning": [
+    {{"name": "Player Name", "team": "home" or "away", "position": "GK/DEF/MID/FWD", "impact": float 0.0 to +0.3, "reason": "brief"}}
+  ],
+  "lineup_confidence": float 0.0 to 1.0,
+  "home_net_impact": float -1.0 to +1.0,
+  "away_net_impact": float -1.0 to +1.0
 }}
 
-Rules:
-- "ok": news is neutral or positive for our bet, no concerns
-- "warning": something worth noting but not a dealbreaker (e.g. one rotation player missing)
-- "skip": key information that invalidates the bet (e.g. star striker absent for an Over bet, or key defender out for an Away win bet)
-- confidence_adjustment: how much to shift the model probability (negative = less confident)
+RULES for impact scores:
+- Star player out (top scorer, key creator, first-choice GK): -0.3 to -0.5
+- Regular starter out: -0.1 to -0.25
+- Rotation/squad player out: -0.05 to -0.1
+- Player returning from injury: +0.1 to +0.3
+- Scale by relevance to our bet (striker out matters more for Over bet, defender out matters more for Home/Away)
 
-Only flag real concerns. Don't invent problems if data is sparse."""
+RULES for lineup_confidence:
+- Confirmed XI available: 1.0
+- Most expected starters known, 1-2 doubts: 0.7-0.9
+- Significant uncertainty (3+ unknowns): 0.4-0.6
+- No lineup info at all: 0.5 (neutral)
+
+RULES for flag:
+- "ok": news neutral or favorable for our bet
+- "warning": notable concern but edge may still exist
+- "skip": information that likely invalidates the bet (e.g. key striker out for Over bet)
+
+If data is sparse, set lineup_confidence=0.5, impacts to empty arrays, and flag "ok". Do NOT invent problems."""
 
     try:
         response = gemini_client.models.generate_content(
@@ -174,18 +200,40 @@ Only flag real concerns. Don't invent problems if data is sparse."""
         )
         text = response.text.strip()
 
-        # Extract JSON
+        # Extract JSON (may be wrapped in markdown code block)
         import re
         json_match = re.search(r'\{[\s\S]*\}', text)
         if json_match:
             result = json.loads(json_match.group())
             result["tokens_used"] = getattr(response.usage_metadata, "total_token_count", 0) if hasattr(response, "usage_metadata") else 0
+
+            # Ensure required fields have defaults
+            result.setdefault("flag", "ok")
+            result.setdefault("reason", "")
+            result.setdefault("confidence_adjustment", 0)
+            result.setdefault("players_out", [])
+            result.setdefault("players_doubtful", [])
+            result.setdefault("players_returning", [])
+            result.setdefault("lineup_confidence", 0.5)
+            result.setdefault("home_net_impact", 0.0)
+            result.setdefault("away_net_impact", 0.0)
+
+            # Clamp values to valid ranges
+            result["confidence_adjustment"] = max(-0.15, min(0.05, float(result["confidence_adjustment"])))
+            result["lineup_confidence"] = max(0.0, min(1.0, float(result["lineup_confidence"])))
+            result["home_net_impact"] = max(-1.0, min(1.0, float(result["home_net_impact"])))
+            result["away_net_impact"] = max(-1.0, min(1.0, float(result["away_net_impact"])))
+
             return result
 
     except Exception as e:
         console.print(f"  [yellow]Gemini error: {e}[/yellow]")
 
-    return {"flag": "ok", "reason": "AI check unavailable", "confidence_adjustment": 0, "tokens_used": 0}
+    return {
+        "flag": "ok", "reason": "AI check unavailable", "confidence_adjustment": 0,
+        "tokens_used": 0, "players_out": [], "players_doubtful": [], "players_returning": [],
+        "lineup_confidence": 0.5, "home_net_impact": 0.0, "away_net_impact": 0.0,
+    }
 
 
 # ─── Main ────────────────────────────────────────────────────────────────────
@@ -295,6 +343,12 @@ def run_news_checker(dry_run: bool = False):
         flag = ai_result.get("flag", "ok")
         reason = ai_result.get("reason", "")
         adj = ai_result.get("confidence_adjustment", 0)
+        lineup_conf = ai_result.get("lineup_confidence", 0.5)
+        home_impact = ai_result.get("home_net_impact", 0.0)
+        away_impact = ai_result.get("away_net_impact", 0.0)
+        players_out = ai_result.get("players_out", [])
+        players_doubtful = ai_result.get("players_doubtful", [])
+        players_returning = ai_result.get("players_returning", [])
 
         flag_display = {
             "ok": "[green]✓ OK[/green]",
@@ -302,7 +356,16 @@ def run_news_checker(dry_run: bool = False):
             "skip": "[red]✗ SKIP[/red]",
         }.get(flag, flag)
 
-        console.print(f"  {flag_display} — {reason}")
+        # Show player impacts if any
+        player_summary = ""
+        if players_out:
+            names = [f"{p.get('name', '?')}({p.get('impact', 0):+.2f})" for p in players_out[:3]]
+            player_summary = f" | Out: {', '.join(names)}"
+        if players_returning:
+            names = [f"{p.get('name', '?')}({p.get('impact', 0):+.2f})" for p in players_returning[:2]]
+            player_summary += f" | Back: {', '.join(names)}"
+
+        console.print(f"  {flag_display} — {reason} [dim]lineup_conf={lineup_conf:.1f}{player_summary}[/dim]")
 
         results_table.append({
             "match": f"{home_team[:12]} v {away_team[:12]}",
@@ -310,9 +373,10 @@ def run_news_checker(dry_run: bool = False):
             "flag": flag,
             "reason": reason[:60],
             "adj": adj,
+            "lineup_conf": lineup_conf,
         })
 
-        # Update bet reasoning in DB
+        # Update bet in DB with structured news data
         if not dry_run:
             existing_reasoning = bet.get("reasoning", "") or ""
             ai_note = f" | AI [{flag.upper()}]: {reason}"
@@ -321,13 +385,48 @@ def run_news_checker(dry_run: bool = False):
 
             updated_prob = max(0.05, min(0.95, bet["model_probability"] + adj))
 
-            client.table("simulated_bets").update({
+            # Compute news_impact_score: net impact on the team our bet favors
+            # For Home bet: positive home_impact is good, negative away_impact is good
+            # For Away bet: positive away_impact is good, negative home_impact is good
+            selection = bet.get("selection", "").lower()
+            if selection == "home":
+                news_impact = home_impact - away_impact
+            elif selection == "away":
+                news_impact = away_impact - home_impact
+            else:
+                # O/U: both teams' attacking losses hurt Over, help Under
+                news_impact = home_impact + away_impact  # negative = bad for attacking
+
+            bet_update = {
                 "reasoning": existing_reasoning + ai_note,
                 "model_probability": updated_prob,
                 "news_triggered": flag in ("warning", "skip"),
-            }).eq("id", bet["id"]).execute()
+            }
 
-            # Save Stage 2 snapshot: post-AI probability
+            # Store structured fields (migration 006 columns)
+            bet_update["news_impact_score"] = round(news_impact, 4)
+            bet_update["lineup_confirmed"] = lineup_conf >= 0.9
+
+            client.table("simulated_bets").update(bet_update).eq("id", bet["id"]).execute()
+
+            # Store structured AI output in news_events table
+            for player_info in players_out + players_doubtful:
+                try:
+                    impact_type = "injury" if "injur" in player_info.get("reason", "").lower() else "suspension"
+                    client.table("news_events").insert({
+                        "match_id": match_id,
+                        "source": "gemini_news_checker_v2",
+                        "raw_text": f"{player_info.get('name', '?')} ({player_info.get('position', '?')}) — {player_info.get('reason', 'out')}",
+                        "extracted_entity": player_info.get("name"),
+                        "impact_type": impact_type,
+                        "impact_magnitude": abs(float(player_info.get("impact", 0))) * 100,
+                        "detected_at": datetime.now(timezone.utc).isoformat(),
+                        "processed_at": datetime.now(timezone.utc).isoformat(),
+                    }).execute()
+                except Exception:
+                    pass  # Duplicate or non-critical
+
+            # Save Stage 2 snapshot: post-AI probability with full structured data
             try:
                 odds = bet["odds_at_pick"]
                 store_prediction_snapshot(
@@ -341,8 +440,13 @@ def run_news_checker(dry_run: bool = False):
                         "ai_flag": flag,
                         "ai_reason": reason[:200],
                         "confidence_adjustment": adj,
-                        "home_facts_count": len(match_context.get("home_facts", [])),
-                        "away_facts_count": len(match_context.get("away_facts", [])),
+                        "lineup_confidence": lineup_conf,
+                        "home_net_impact": home_impact,
+                        "away_net_impact": away_impact,
+                        "news_impact_score": round(news_impact, 4),
+                        "players_out_count": len(players_out),
+                        "players_doubtful_count": len(players_doubtful),
+                        "players_returning_count": len(players_returning),
                         "lineups_confirmed": match_context.get("lineups", {}).get("home_confirmed", False),
                     },
                 )
@@ -357,10 +461,13 @@ def run_news_checker(dry_run: bool = False):
     t.add_column("Flag")
     t.add_column("Reason")
     t.add_column("Adj", justify="right")
+    t.add_column("Lineup", justify="right")
 
     for r in results_table:
         flag_cell = {"ok": "[green]OK[/green]", "warning": "[yellow]WARN[/yellow]", "skip": "[red]SKIP[/red]"}.get(r["flag"], r["flag"])
-        t.add_row(r["match"], r["bet"], flag_cell, r["reason"], f"{r['adj']:+.1%}" if r["adj"] != 0 else "-")
+        lc = r.get("lineup_conf", 0.5)
+        lc_cell = f"[green]{lc:.0%}[/green]" if lc >= 0.9 else f"[yellow]{lc:.0%}[/yellow]" if lc >= 0.6 else f"[red]{lc:.0%}[/red]"
+        t.add_row(r["match"], r["bet"], flag_cell, r["reason"], f"{r['adj']:+.1%}" if r["adj"] != 0 else "-", lc_cell)
 
     console.print(t)
 

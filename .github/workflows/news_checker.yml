@@ -2,8 +2,16 @@ name: OddsIntel AI News Checker
 
 on:
   schedule:
-    # Run 1h after morning pipeline (09:00 UTC = 12:00 EET)
+    # 4 runs/day to catch lineup confirmations closer to kickoff:
+    #   09:00 UTC — after morning pipeline (catches overnight news)
+    #   12:30 UTC — midday update (early afternoon lineups)
+    #   16:30 UTC — catches 18:00-19:00 UTC kickoff lineups (~2h before)
+    #   19:30 UTC — catches 20:00-21:00 UTC kickoff lineups (~1.5h before)
+    # Cost: ~$0.04/day total (Gemini 2.5 Flash)
     - cron: '0 9 * * *'
+    - cron: '30 12 * * *'
+    - cron: '30 16 * * *'
+    - cron: '30 19 * * *'
   workflow_dispatch:
     inputs:
       dry_run:

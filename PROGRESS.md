@@ -34,9 +34,15 @@
 - [x] Live match tracker (workers/jobs/live_tracker.py) — runs every 5min during matches, collects: score, shots, xG, possession + live O/U 0.5–4.5 odds + match events (goals/cards)
 - [x] GitHub Actions: odds_snapshots.yml (every 2h), live_tracker.yml (every 5min during match hours)
 
-**PENDING — Must do before GitHub Actions work:**
-- [ ] Run DB migration 002 in Supabase SQL editor (supabase/migrations/002_live_tracking.sql)
-- [ ] Add SUPABASE_SECRET_KEY and SUPABASE_URL to GitHub repo secrets
+**DONE — Infrastructure:**
+- [x] DB migration 002 (live tracking tables) — run in Supabase
+- [x] DB migration 003 (unique constraint on simulated_bets) — run in Supabase
+- [x] DB migration 004 (prediction audit trail) — run in Supabase
+- [x] DB migration 005 (data quality tables) — run in Supabase
+- [x] SUPABASE_SECRET_KEY and SUPABASE_URL added to GitHub repo secrets
+- [x] GEMINI_API_KEY added to GitHub repo secrets
+- [x] RLS public read policies added to all data tables
+- [x] GitHub Actions `contents: write` permission for daily pipeline git push
 
 **DONE — Expanded prediction coverage:**
 - [x] scripts/build_global_targets.py — generates targets_global.csv (42,581 rows) from global_matches_with_elo.parquet covering 17 new leagues (Norway, Sweden, Poland, Romania, Serbia, Ukraine, Turkey, Greece, Croatia, Denmark, Iceland, Hungary, Bulgaria, Cyprus, Georgia, Latvia, Portugal)
@@ -47,26 +53,43 @@
 - [x] AI news checker (workers/jobs/news_checker.py) — Gemini 2.5 Flash flags bets with injury/suspension/lineup intel
 - [x] GitHub Actions: news_checker.yml (09:00 UTC), settlement wired into daily_pipeline.yml (21:00 UTC)
 
+**DONE — Model Improvements (P1-P4):**
+- [x] P1: Tier-specific calibration — `calibrate_prob()` blends model prob with market (α varies: T1=0.55, T2=0.65, T3=0.80, T4=0.85)
+- [x] P2: Odds movement — `compute_odds_movement()` queries snapshots for drift/velocity, soft penalty on Kelly, hard veto >10%
+- [x] P3: Alignment filter (LOG-ONLY) — 4 external-signal dimensions (odds_move, news, lineup, situational), stored but doesn't filter yet
+- [x] P4: Kelly stake sizing — 1/4 Kelly, 1.5% max cap, data-tier multiplier, odds movement penalty
+- [x] Migration 006: 11 new columns on simulated_bets (calibrated_prob, kelly_fraction, dimension_scores, alignment_class, odds_drift, etc.)
+- [x] Validation script: `scripts/validate_improvements.py` — calibration ECE, ROI by alignment, CLV, Kelly vs flat Sharpe ratio
+- [x] Pipeline fully integrated: `daily_pipeline_v2.py` runs P1→P2→P3→P4 flow
+
 **IN PROGRESS / NEXT:**
-- [ ] Tier B backtest: run Poisson model against targets_global.csv (42K matches) to validate Norway/Sweden/Poland etc. are profitable before trusting Tier B live bets
-- [ ] Mega backtest: Beat the Bookie dataset (479K matches, 818 leagues) — not yet started
+- [ ] Run migration 006 in Supabase (manual step)
+- [ ] Validate improvements with first 50+ settled bets via `validate_improvements.py`
+- [ ] Activate alignment filter after 300+ bets show ROI correlating with alignment class
+- [ ] Tier B backtest: run Poisson model against targets_global.csv (42K matches)
 - [ ] OddsPortal scraper — to reach 80%+ daily match odds coverage (currently 43%)
-- [ ] O/U 0.5 / 1.5 / 3.5 backtests (outcomes computable from total_goals, odds need Poisson estimation)
-- [ ] Add GEMINI_API_KEY to GitHub repo secrets (manual step)
+- [ ] O/U 0.5 / 1.5 / 3.5 backtests
 
 ### Frontend (odds-intel-web)
 
 **DONE:**
-- [x] All pages built with mock data
+- [x] All pages built (landing, matches, match detail, value-bets, track-record, profile)
 - [x] Supabase schema deployed
-- [x] Tier gating system
+- [x] Tier gating system (TierGate component, blurred pro teaser for free users)
+- [x] Supabase Auth — full login/signup with email/password, middleware route protection
+- [x] Real match data from Supabase — `getPublicMatches()`, `getTodayOdds()`, `getPublicMatchById()`
+- [x] Real bot performance — track record page connected to `simulated_bets` table
+- [x] Public matches page — works without login, smart sort (odds first), dual layout, view toggle
+- [x] Public match detail — best odds + pro teaser for free users, full odds for auth users
+- [x] "All matches / With odds only" view toggle
+- [x] Match interest indicators (hot/warm/neutral)
+- [x] RLS public read policies on all data tables
 
 **IN PROGRESS / NEXT:**
-- [ ] Supabase Auth (real login/signup)
-- [ ] Display real match data from Supabase
-- [ ] Display real bot performance
-- [ ] Stripe integration
+- [ ] Stripe integration (Pro €19/mo, Elite €49/mo)
 - [ ] Deploy to Vercel
+- [ ] Live score display during matches
+- [ ] Onboarding flow (post-signup)
 
 ---
 

@@ -37,6 +37,10 @@ from workers.api_clients.supabase_client import (
     get_pending_bets, update_bot_bankroll, update_match_result,
     get_bot_performance, get_todays_matches,
 )
+from workers.model.improvements import (
+    calibrate_prob, compute_odds_movement, compute_alignment,
+    compute_kelly, compute_stake, compute_rank_score,
+)
 
 console = Console()
 
@@ -631,10 +635,11 @@ def run_morning():
         #   B — results only, require +2% edge, cap stake at 50%
         #   C — on-demand Sofascore, require +5% edge, cap stake at 25%
         DATA_TIER_EDGE_BUMP = {"A": 0.00, "B": 0.02, "C": 0.05}
-        DATA_TIER_STAKE_MULT = {"A": 1.00, "B": 0.50, "C": 0.25}
         edge_bump = DATA_TIER_EDGE_BUMP.get(data_tier, 0.00)
-        stake_mult = DATA_TIER_STAKE_MULT.get(data_tier, 1.00)
         tier_tag = f"[Tier {data_tier}] " if data_tier != "A" else ""
+
+        # P2: Compute odds movement for this match (once per match, cached per market)
+        odds_movement_cache = {}
 
         for bot_name, config in BOTS_CONFIG.items():
             # Check tier filter
@@ -652,58 +657,97 @@ def run_morning():
             bet_candidates = []
             sel_filter = config.get("selection_filter")
 
-            # 1X2 Home
+            # Build candidates: (market, selection, odds_key, prob_key, threshold_key)
+            candidate_specs = []
             if "1x2" in config["markets"] and match["odds_home"] > 0 and (not sel_filter or "Home" in sel_filter):
                 odds = match["odds_home"]
-                mp = pred["home_prob"]
-                ip = 1 / odds
-                edge = mp - ip
-                me = (thresholds.get("1x2_fav", 0.05) if odds < 2.0 else thresholds.get("1x2_long", 0.08)) + edge_bump
-                if edge >= me and odds_min <= odds <= odds_max and mp >= min_prob:
-                    bet_candidates.append(("1X2", "Home", odds, mp, ip, edge))
-
-            # 1X2 Away
+                me = (thresholds.get("1x2_fav", 0.05) if odds < 2.0 else thresholds.get("1x2_long", 0.08))
+                candidate_specs.append(("1X2", "Home", odds, pred["home_prob"], "1x2", "home", me))
             if "1x2" in config["markets"] and match["odds_away"] > 0 and (not sel_filter or "Away" in sel_filter):
-                odds = match["odds_away"]
-                mp = pred["away_prob"]
-                ip = 1 / odds
-                edge = mp - ip
-                me = thresholds.get("1x2_long", 0.08) + edge_bump
-                if edge >= me and odds_min <= odds <= odds_max and mp >= min_prob:
-                    bet_candidates.append(("1X2", "Away", odds, mp, ip, edge))
-
-            # O/U Over
+                candidate_specs.append(("1X2", "Away", match["odds_away"], pred["away_prob"], "1x2", "away", thresholds.get("1x2_long", 0.08)))
             if "ou" in config.get("markets", []) and match.get("odds_over_25", 0) > 0:
-                odds = match["odds_over_25"]
-                mp = pred["over_25_prob"]
-                ip = 1 / odds
-                edge = mp - ip
-                me = thresholds.get("ou", 0.05) + edge_bump
-                if edge >= me and odds_min <= odds <= odds_max and mp >= min_prob:
-                    bet_candidates.append(("O/U", "Over 2.5", odds, mp, ip, edge))
-
-            # O/U Under
+                candidate_specs.append(("O/U", "Over 2.5", match["odds_over_25"], pred["over_25_prob"], "over_under_25", "over", thresholds.get("ou", 0.05)))
             if "ou" in config.get("markets", []) and match.get("odds_under_25", 0) > 0:
-                odds = match["odds_under_25"]
-                mp = pred["under_25_prob"]
-                ip = 1 / odds
-                edge = mp - ip
-                me = thresholds.get("ou", 0.05) + edge_bump
-                if edge >= me and odds_min <= odds <= odds_max and mp >= min_prob:
-                    bet_candidates.append(("O/U", "Under 2.5", odds, mp, ip, edge))
+                candidate_specs.append(("O/U", "Under 2.5", match["odds_under_25"], pred["under_25_prob"], "over_under_25", "under", thresholds.get("ou", 0.05)))
 
-            for market, selection, odds, mp, ip, edge in bet_candidates:
+            for mkt, selection, odds, raw_mp, os_market, os_selection, base_threshold in candidate_specs:
+                ip = 1 / odds
+
+                # P1: Calibrate probability (tier-specific shrinkage)
+                cal_prob = calibrate_prob(raw_mp, ip, tier=tier)
+
+                # Use calibrated probability for edge calculation
+                edge = cal_prob - ip
+                me = base_threshold + edge_bump
+
+                if edge < me or odds < odds_min or odds > odds_max or cal_prob < min_prob:
+                    continue
+
+                # P2: Odds movement — soft penalty, hard veto only >10%
+                mv_key = f"{os_market}_{os_selection}"
+                if mv_key not in odds_movement_cache:
+                    odds_movement_cache[mv_key] = compute_odds_movement(
+                        match_id, os_market, os_selection, odds
+                    )
+                odds_mv = odds_movement_cache[mv_key]
+
+                if odds_mv["veto"]:
+                    continue  # Market moved >10% against pick — hard skip
+
+                # P4: Kelly fraction (using calibrated prob)
+                kelly = compute_kelly(cal_prob, odds)
+                if kelly <= 0:
+                    continue
+
+                # P3: Alignment — LOG-ONLY (stored but does not affect decisions)
+                alignment = compute_alignment(
+                    match_id, selection, odds_mv, match
+                )
+
+                # P4: Kelly-based stake sizing with soft odds penalty
+                bot_bankroll = 1000.0
+                try:
+                    bot_record = get_client().table("bots").select("current_bankroll").eq(
+                        "id", bot_ids[bot_name]
+                    ).execute().data
+                    if bot_record:
+                        bot_bankroll = float(bot_record[0]["current_bankroll"])
+                except Exception:
+                    pass
+
+                stake = compute_stake(
+                    kelly, bot_bankroll, data_tier,
+                    odds_penalty=odds_mv.get("penalty", 0.0),
+                )
+                if stake < 1.0:
+                    continue
+
+                bet_candidates.append((mkt, selection, odds, raw_mp, cal_prob, ip, edge, kelly, alignment, odds_mv, stake))
+
+            for mkt, selection, odds, raw_mp, cal_prob, ip, edge, kelly, alignment, odds_mv, stake in bet_candidates:
                 try:
                     bet_id = store_bet(bot_ids[bot_name], match_id, {
-                        "market": market,
+                        "market": mkt,
                         "selection": selection,
                         "odds": odds,
-                        "model_prob": mp,
+                        "model_prob": raw_mp,
                         "implied_prob": ip,
                         "edge": edge,
-                        "stake": round(STAKE * stake_mult, 2),
+                        "stake": stake,
                         "placed_at": datetime.now().isoformat(),
-                        "reasoning": f"{tier_tag}{match['home_team']} vs {match['away_team']} | edge={edge:.3f}",
+                        "reasoning": f"{tier_tag}{match['home_team']} vs {match['away_team']} | edge={edge:.3f} cal={cal_prob:.3f} kelly={kelly:.4f} align={alignment['alignment_class']}",
+                        # P1: Calibration
+                        "calibrated_prob": round(cal_prob, 4),
+                        # P2: Odds movement
+                        "odds_at_open": odds_mv.get("odds_at_open"),
+                        "odds_drift": odds_mv.get("odds_drift"),
+                        # P3: Alignment
+                        "dimension_scores": alignment["dimensions"],
+                        "alignment_count": alignment["alignment_count"],
+                        "alignment_total": alignment["alignment_total"],
+                        "alignment_class": alignment["alignment_class"],
+                        # P4: Kelly
+                        "kelly_fraction": round(kelly, 6),
                     })
                     if bet_id:
                         total_bets += 1
@@ -712,11 +756,17 @@ def run_morning():
                             store_prediction_snapshot(
                                 bet_id=bet_id,
                                 stage="stats_only",
-                                model_probability=mp,
+                                model_probability=raw_mp,
                                 implied_probability=ip,
                                 edge_percent=edge,
                                 odds_at_snapshot=odds,
-                                metadata={"data_tier": data_tier, "bot": bot_name},
+                                metadata={
+                                    "data_tier": data_tier,
+                                    "bot": bot_name,
+                                    "calibrated_prob": round(cal_prob, 4),
+                                    "kelly": round(kelly, 4),
+                                    "alignment_class": alignment["alignment_class"],
+                                },
                             )
                         except Exception:
                             pass  # non-critical
