@@ -386,7 +386,7 @@ def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str:
         "model_probability": bet_data["model_prob"],
         "edge_percent": bet_data["edge"],
         "result": "pending",
-        "reasoning": f"Edge: {bet_data['edge']:.1%}, Model: {bet_data['model_prob']:.1%}, Implied: {bet_data['implied_prob']:.1%}",
+        "reasoning": bet_data.get("reasoning") or f"Edge: {bet_data['edge']:.1%}, Model: {bet_data['model_prob']:.1%}, Implied: {bet_data['implied_prob']:.1%}",
     }).execute()
 
     return new.data[0]["id"]
