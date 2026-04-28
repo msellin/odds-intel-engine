@@ -176,9 +176,9 @@ Tasks:
 ### Manual steps (only Margus can do these)
 - [x] Gemini API key — created in AI Studio for OddsIntel project
 - [x] Migration 009 applied in Supabase SQL editor (2026-04-28)
-- [ ] **Run**: `ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS shots_on_target_home integer, ADD COLUMN IF NOT EXISTS shots_on_target_away integer; NOTIFY pgrst, 'reload schema';` in Supabase SQL editor (missed from migration 009)
-- [ ] Deploy to Vercel: link project, add env vars (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
-- [ ] Buy domain (oddsintel.ai or similar), connect to Vercel
+- [x] `shots_on_target_home/away` columns added to match_stats + schema reloaded
+- [x] Deploy to Vercel: project linked, env vars set (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SECRET_KEY`)
+- [x] Domain: oddsintel.app bought and connected to Vercel
 - [ ] Stripe: create account + products (Pro €19/mo, Elite €49/mo), add keys to Vercel
 
 ### Code/infra tasks before go-live

@@ -125,16 +125,19 @@ def analyse_with_gemini(match_context: dict) -> dict:
     """
     Send match context to Gemini and get structured impact assessment.
 
-    Returns structured output with:
-      - Per-player impact scores (not just binary flags)
-      - Lineup confidence (0.0-1.0)
-      - Net team impact for home and away
-      - Overall flag and confidence adjustment
+    Focuses on qualitative signals only — injuries/suspensions are already
+    covered by structured API-Football data processed each morning.
 
-    This is the v2 prompt (structured JSON output with player importance).
+    Returns structured output with:
+      - Qualitative flag (ok / warning / skip)
+      - Net team impact for home and away (driven by qualitative factors)
+      - Lineup confidence from confirmed lineups
+      - Overall confidence adjustment
+
+    This is the v3 prompt (qualitative focus, no injury hunting).
     See MODEL_ANALYSIS.md Section 11.1 for design rationale.
     """
-    prompt = f"""You are a football betting analyst. Assess how team news affects a specific bet.
+    prompt = f"""You are a football betting analyst. Assess how qualitative pre-match news affects a specific bet.
 
 MATCH: {match_context['home_team']} vs {match_context['away_team']}
 LEAGUE: {match_context['league']} (Tier {match_context['tier']})
@@ -145,40 +148,43 @@ Model probability: {match_context['model_prob']:.1%}
 Implied probability: {match_context['implied_prob']:.1%}
 Edge: {match_context['edge']:.1%}
 
-HOME TEAM NEWS:
+HOME TEAM RECENT FORM:
 {chr(10).join(match_context.get('home_facts', ['No data available']))}
 
-AWAY TEAM NEWS:
+AWAY TEAM RECENT FORM:
 {chr(10).join(match_context.get('away_facts', ['No data available']))}
 
 {f"CONFIRMED LINEUPS: Home: {', '.join(match_context['lineups'].get('home_players', []))[:200]} | Away: {', '.join(match_context['lineups'].get('away_players', []))[:200]}" if match_context.get('lineups', {}).get('home_confirmed') else "LINEUPS: Not confirmed yet"}
+
+IMPORTANT: Injury and suspension data is already handled by our structured data pipeline.
+DO NOT flag injuries or standard suspensions — focus ONLY on the following qualitative signals:
+  1. Manager sacked or changed since last match
+  2. Red card in the previous match forcing a key player suspension today
+  3. Severe weather forecast (heavy rain, snow, extreme wind) affecting play style
+  4. Fan/stadium issues (crowd bans, neutral venue, high-pressure derby atmosphere)
+  5. Unexpected tactical shift or publicly announced formation change
+  6. Mid-week European fixture fatigue (team played 3 days ago in a cup/European game)
 
 Respond with ONLY a JSON object. No other text.
 
 {{
   "flag": "ok" or "warning" or "skip",
-  "reason": "one sentence summary (<60 words)",
+  "reason": "one sentence summary of the most significant qualitative signal found, or 'No notable qualitative signals' (<60 words)",
   "confidence_adjustment": float between -0.15 and +0.05,
-  "players_out": [
-    {{"name": "Player Name", "team": "home" or "away", "position": "GK/DEF/MID/FWD", "impact": float -1.0 to 0.0, "reason": "brief"}}
-  ],
-  "players_doubtful": [
-    {{"name": "Player Name", "team": "home" or "away", "position": "GK/DEF/MID/FWD", "impact": float -0.5 to 0.0, "reason": "brief"}}
-  ],
-  "players_returning": [
-    {{"name": "Player Name", "team": "home" or "away", "position": "GK/DEF/MID/FWD", "impact": float 0.0 to +0.3, "reason": "brief"}}
-  ],
+  "players_out": [],
+  "players_doubtful": [],
+  "players_returning": [],
   "lineup_confidence": float 0.0 to 1.0,
   "home_net_impact": float -1.0 to +1.0,
   "away_net_impact": float -1.0 to +1.0
 }}
 
-RULES for impact scores:
-- Star player out (top scorer, key creator, first-choice GK): -0.3 to -0.5
-- Regular starter out: -0.1 to -0.25
-- Rotation/squad player out: -0.05 to -0.1
-- Player returning from injury: +0.1 to +0.3
-- Scale by relevance to our bet (striker out matters more for Over bet, defender out matters more for Home/Away)
+RULES for confidence_adjustment:
+- Manager change or tactical overhaul: -0.05 to -0.10
+- Severe weather affecting play (e.g. heavy wind for Over/Under): -0.05 to -0.10
+- European fatigue (played 3 days ago): -0.03 to -0.07
+- Derby/high-pressure atmosphere favouring home side: +0.02 to +0.05
+- No notable signal: 0.0
 
 RULES for lineup_confidence:
 - Confirmed XI available: 1.0
@@ -187,11 +193,12 @@ RULES for lineup_confidence:
 - No lineup info at all: 0.5 (neutral)
 
 RULES for flag:
-- "ok": news neutral or favorable for our bet
-- "warning": notable concern but edge may still exist
-- "skip": information that likely invalidates the bet (e.g. key striker out for Over bet)
+- "ok": no notable qualitative signal, or signal neutral for our bet
+- "warning": notable qualitative concern but edge may still exist
+- "skip": signal that likely invalidates the bet (e.g. manager sacked + unknown tactics for a 1X2 bet)
 
-If data is sparse, set lineup_confidence=0.5, impacts to empty arrays, and flag "ok". Do NOT invent problems."""
+Always set players_out, players_doubtful, players_returning to empty arrays.
+If no qualitative signal is found, set flag "ok", confidence_adjustment 0.0, impacts 0.0. Do NOT invent problems."""
 
     try:
         response = gemini_client.models.generate_content(
@@ -452,6 +459,32 @@ def run_news_checker(dry_run: bool = False):
                 )
             except Exception:
                 pass  # non-critical
+
+            # Save Stage 3 snapshot: pre_kickoff for matches kicking off within 3 hours
+            kickoff_str = match.get("date", "")
+            if kickoff_str:
+                try:
+                    kickoff_dt = datetime.fromisoformat(kickoff_str.replace("Z", "+00:00"))
+                    if kickoff_dt.tzinfo is None:
+                        kickoff_dt = kickoff_dt.replace(tzinfo=timezone.utc)
+                    hours_to_kickoff = (kickoff_dt - datetime.now(timezone.utc)).total_seconds() / 3600
+                    if 0 <= hours_to_kickoff <= 3:
+                        store_prediction_snapshot(
+                            bet_id=bet["id"],
+                            stage="pre_kickoff",
+                            model_probability=updated_prob,
+                            implied_probability=1 / odds if odds > 0 else None,
+                            edge_percent=updated_prob - (1 / odds) if odds > 0 else None,
+                            odds_at_snapshot=odds,
+                            metadata={
+                                "hours_to_kickoff": round(hours_to_kickoff, 2),
+                                "ai_flag": flag,
+                                "lineup_confidence": lineup_conf,
+                                "news_impact_score": round(news_impact, 4),
+                            },
+                        )
+                except Exception:
+                    pass  # non-critical
 
     # Summary table
     console.print()
