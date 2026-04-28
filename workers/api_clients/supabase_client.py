@@ -673,15 +673,23 @@ def _build_feature_row(client, match: dict) -> dict | None:
                 data_tier = t
                 break
 
-    # ── Signals from match_signals (S3/S4/S5/BDM-1) ─────────────────────────
+    # ── Signals from match_signals (S3/S4/S5/BDM-1 + S3b-S3f + T2) ──────────
     # Pull the latest value for each signal name (closest to kickoff)
     fixture_importance = bookmaker_disagreement = referee_cards_avg = None
     injury_count_home = injury_count_away = None
-    news_impact_score = injury_severity_home = injury_severity_away = lineup_confirmed = None
+    news_impact_score = lineup_confirmed = None
+    league_position_home = league_position_away = None
+    points_to_relegation_home = points_to_relegation_away = None
+    points_to_title_home = points_to_title_away = None
+    h2h_win_pct = overnight_line_move = None
+    rest_days_home = rest_days_away = None
+    referee_home_win_pct = referee_over25_pct = None
+    goals_for_avg_home = goals_for_avg_away = None
+    goals_against_avg_home = goals_against_avg_away = None
 
     signals_r = client.table("match_signals").select(
         "signal_name, signal_value, captured_at"
-    ).eq("match_id", match_id).order("captured_at", desc=True).limit(200).execute()
+    ).eq("match_id", match_id).order("captured_at", desc=True).limit(500).execute()
 
     if signals_r.data:
         seen_signals: set[str] = set()
@@ -690,20 +698,54 @@ def _build_feature_row(client, match: dict) -> dict | None:
             val = sig.get("signal_value")
             if name and name not in seen_signals:
                 seen_signals.add(name)
+                fval = float(val) if val is not None else None
+                ival = int(val) if val is not None else None
                 if name == "fixture_importance":
-                    fixture_importance = float(val) if val is not None else None
+                    fixture_importance = fval
                 elif name == "bookmaker_disagreement":
-                    bookmaker_disagreement = float(val) if val is not None else None
+                    bookmaker_disagreement = fval
                 elif name == "referee_cards_avg":
-                    referee_cards_avg = float(val) if val is not None else None
+                    referee_cards_avg = fval
                 elif name == "injury_count_home":
-                    injury_count_home = int(val) if val is not None else None
+                    injury_count_home = ival
                 elif name == "injury_count_away":
-                    injury_count_away = int(val) if val is not None else None
+                    injury_count_away = ival
                 elif name == "news_impact_score":
-                    news_impact_score = float(val) if val is not None else None
+                    news_impact_score = fval
                 elif name == "lineup_confirmed":
                     lineup_confirmed = bool(val) if val is not None else None
+                elif name == "league_position_home":
+                    league_position_home = fval
+                elif name == "league_position_away":
+                    league_position_away = fval
+                elif name == "points_to_relegation_home":
+                    points_to_relegation_home = ival
+                elif name == "points_to_relegation_away":
+                    points_to_relegation_away = ival
+                elif name == "points_to_title_home":
+                    points_to_title_home = ival
+                elif name == "points_to_title_away":
+                    points_to_title_away = ival
+                elif name == "h2h_win_pct":
+                    h2h_win_pct = fval
+                elif name == "overnight_line_move":
+                    overnight_line_move = fval
+                elif name == "rest_days_home":
+                    rest_days_home = ival
+                elif name == "rest_days_away":
+                    rest_days_away = ival
+                elif name == "referee_home_win_pct":
+                    referee_home_win_pct = fval
+                elif name == "referee_over25_pct":
+                    referee_over25_pct = fval
+                elif name == "goals_for_avg_home":
+                    goals_for_avg_home = fval
+                elif name == "goals_for_avg_away":
+                    goals_for_avg_away = fval
+                elif name == "goals_against_avg_home":
+                    goals_against_avg_home = fval
+                elif name == "goals_against_avg_away":
+                    goals_against_avg_away = fval
 
     return {
         "match_id": match_id,
@@ -723,12 +765,26 @@ def _build_feature_row(client, match: dict) -> dict | None:
         "odds_drift_home": odds_drift_home,
         "steam_move": steam_move,
         "bookmaker_disagreement": bookmaker_disagreement,
+        "overnight_line_move": overnight_line_move,
         # Group 3: Quality
         "elo_home": elo_home,
         "elo_away": elo_away,
         "elo_diff": elo_diff,
         "form_ppg_home": float(form_ppg_home) if form_ppg_home is not None else None,
         "form_ppg_away": float(form_ppg_away) if form_ppg_away is not None else None,
+        "league_position_home": league_position_home,
+        "league_position_away": league_position_away,
+        "points_to_relegation_home": points_to_relegation_home,
+        "points_to_relegation_away": points_to_relegation_away,
+        "points_to_title_home": points_to_title_home,
+        "points_to_title_away": points_to_title_away,
+        "h2h_win_pct": h2h_win_pct,
+        "rest_days_home": rest_days_home,
+        "rest_days_away": rest_days_away,
+        "goals_for_avg_home": goals_for_avg_home,
+        "goals_for_avg_away": goals_for_avg_away,
+        "goals_against_avg_home": goals_against_avg_home,
+        "goals_against_avg_away": goals_against_avg_away,
         # Group 4: Information
         "news_impact_score": news_impact_score,
         "lineup_confirmed": lineup_confirmed,
@@ -737,6 +793,8 @@ def _build_feature_row(client, match: dict) -> dict | None:
         # Group 5: Context
         "fixture_importance": fixture_importance,
         "referee_cards_avg": referee_cards_avg,
+        "referee_home_win_pct": referee_home_win_pct,
+        "referee_over25_pct": referee_over25_pct,
         # Outcome labels
         "match_outcome": outcome,
         "total_goals": total_goals,
@@ -1840,6 +1898,181 @@ def write_morning_signals(
                         store_match_signal(match_id, signal_name,
                                            float(fr.data[0]["ppg"]),
                                            "quality", "derived", captured_at=now_str)
+    except Exception:
+        pass
+
+    # ── S3b: Standings signals ──────────────────────────────────────────────
+    try:
+        if league_api_id and season and home_team_api_id and away_team_api_id:
+            client = get_client()
+            st_r = client.table("league_standings").select(
+                "team_api_id, rank, points, description"
+            ).eq("league_api_id", league_api_id).eq(
+                "season", season
+            ).order("fetched_date", desc=True).limit(200).execute()
+
+            if st_r.data:
+                # Deduplicate — latest fetched_date first, keep first seen per team
+                seen_tids: set = set()
+                deduped: list = []
+                for row in st_r.data:
+                    tid = row.get("team_api_id")
+                    if tid and tid not in seen_tids:
+                        seen_tids.add(tid)
+                        deduped.append(row)
+
+                total_teams = len(deduped)
+                if total_teams >= 4:
+                    rows_by_rank = sorted(deduped, key=lambda r: r.get("rank") or 99)
+                    leader_points = rows_by_rank[0].get("points") or 0
+                    # Last safe position = 4th from bottom (relegation = bottom 3)
+                    last_safe_points = rows_by_rank[-4].get("points") or 0
+
+                    for api_id, suffix in [
+                        (home_team_api_id, "home"),
+                        (away_team_api_id, "away"),
+                    ]:
+                        team_row = next(
+                            (r for r in deduped if r.get("team_api_id") == api_id), None
+                        )
+                        if not team_row:
+                            continue
+                        rank = team_row.get("rank") or 0
+                        pts = team_row.get("points") or 0
+                        pos_norm = round(rank / total_teams, 4)
+                        pts_to_title = int(leader_points - pts)
+                        pts_to_rel = int(pts - last_safe_points)
+                        store_match_signal(match_id, f"league_position_{suffix}",
+                                           pos_norm, "quality", "standings",
+                                           captured_at=now_str)
+                        store_match_signal(match_id, f"points_to_title_{suffix}",
+                                           float(pts_to_title), "quality", "standings",
+                                           captured_at=now_str)
+                        store_match_signal(match_id, f"points_to_relegation_{suffix}",
+                                           float(pts_to_rel), "quality", "standings",
+                                           captured_at=now_str)
+    except Exception:
+        pass
+
+    # ── S3c: H2H win pct ────────────────────────────────────────────────────
+    try:
+        client = get_client()
+        h2h_r = client.table("matches").select(
+            "h2h_home_wins, h2h_draws, h2h_away_wins"
+        ).eq("id", match_id).execute()
+        if h2h_r.data:
+            d = h2h_r.data[0]
+            hw = d.get("h2h_home_wins") or 0
+            hd = d.get("h2h_draws") or 0
+            ha = d.get("h2h_away_wins") or 0
+            total_h2h = hw + hd + ha
+            if total_h2h >= 3:
+                store_match_signal(match_id, "h2h_win_pct",
+                                   round(hw / total_h2h, 4),
+                                   "quality", "af", captured_at=now_str)
+                store_match_signal(match_id, "h2h_total",
+                                   float(total_h2h),
+                                   "quality", "af", captured_at=now_str)
+    except Exception:
+        pass
+
+    # ── S3d: Referee home win pct + over 2.5 pct ────────────────────────────
+    try:
+        if referee:
+            client = get_client()
+            ref_r = client.table("referee_stats").select(
+                "home_win_pct, over_25_pct"
+            ).eq("referee_name", referee).execute()
+            if ref_r.data:
+                hwp = ref_r.data[0].get("home_win_pct")
+                o25p = ref_r.data[0].get("over_25_pct")
+                if hwp is not None:
+                    store_match_signal(match_id, "referee_home_win_pct",
+                                       float(hwp), "context", "referee_stats",
+                                       captured_at=now_str)
+                if o25p is not None:
+                    store_match_signal(match_id, "referee_over25_pct",
+                                       float(o25p), "context", "referee_stats",
+                                       captured_at=now_str)
+    except Exception:
+        pass
+
+    # ── S3e: Overnight line move ─────────────────────────────────────────────
+    try:
+        client = get_client()
+        today_date = date.today().isoformat()
+        midnight_utc = f"{today_date}T00:00:00+00:00"
+
+        yest_r = client.table("odds_snapshots").select("odds").eq(
+            "match_id", match_id
+        ).eq("market", "1x2").eq("selection", "home").lt(
+            "timestamp", midnight_utc
+        ).order("timestamp", desc=True).limit(1).execute()
+
+        today_r = client.table("odds_snapshots").select("odds").eq(
+            "match_id", match_id
+        ).eq("market", "1x2").eq("selection", "home").gte(
+            "timestamp", midnight_utc
+        ).order("timestamp", desc=False).limit(1).execute()
+
+        if yest_r.data and today_r.data:
+            last_yest = 1.0 / float(yest_r.data[0]["odds"])
+            first_today = 1.0 / float(today_r.data[0]["odds"])
+            store_match_signal(match_id, "overnight_line_move",
+                               round(first_today - last_yest, 5),
+                               "market", "derived", captured_at=now_str)
+    except Exception:
+        pass
+
+    # ── S3f: Rest days home / away ───────────────────────────────────────────
+    try:
+        client = get_client()
+        match_r2 = client.table("matches").select(
+            "home_team_id, away_team_id, date"
+        ).eq("id", match_id).execute()
+        if match_r2.data:
+            m2 = match_r2.data[0]
+            match_date_str = (m2.get("date") or "")[:10]
+            if match_date_str:
+                for team_id, sig_name in [
+                    (m2.get("home_team_id"), "rest_days_home"),
+                    (m2.get("away_team_id"), "rest_days_away"),
+                ]:
+                    if not team_id:
+                        continue
+                    prev_r = client.table("matches").select("date").or_(
+                        f"home_team_id.eq.{team_id},away_team_id.eq.{team_id}"
+                    ).eq("status", "finished").lt(
+                        "date", f"{match_date_str}T00:00:00"
+                    ).order("date", desc=True).limit(1).execute()
+                    if prev_r.data:
+                        prev_date_str = prev_r.data[0]["date"][:10]
+                        delta = date.fromisoformat(match_date_str) - date.fromisoformat(prev_date_str)
+                        store_match_signal(match_id, sig_name,
+                                           float(delta.days), "quality", "derived",
+                                           captured_at=now_str)
+    except Exception:
+        pass
+
+    # ── T2: Season goals avg (from team_season_stats, populated by T2 fetch) ─
+    try:
+        if home_team_api_id and away_team_api_id and season:
+            for api_id, suffix in [
+                (home_team_api_id, "home"),
+                (away_team_api_id, "away"),
+            ]:
+                stats = get_team_season_stats(api_id, season)
+                if stats:
+                    gf_avg = stats.get("goals_for_avg")
+                    ga_avg = stats.get("goals_against_avg")
+                    if gf_avg is not None:
+                        store_match_signal(match_id, f"goals_for_avg_{suffix}",
+                                           float(gf_avg), "quality", "team_season_stats",
+                                           captured_at=now_str)
+                    if ga_avg is not None:
+                        store_match_signal(match_id, f"goals_against_avg_{suffix}",
+                                           float(ga_avg), "quality", "team_season_stats",
+                                           captured_at=now_str)
     except Exception:
         pass
 

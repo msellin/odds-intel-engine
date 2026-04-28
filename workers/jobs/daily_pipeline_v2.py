@@ -13,11 +13,13 @@ import sys
 import os
 import time
 import json
+import threading
 import numpy as np
 import pandas as pd
 import requests
 from pathlib import Path
 from datetime import datetime, date
+from concurrent.futures import ThreadPoolExecutor
 from scipy.stats import poisson
 from dotenv import load_dotenv
 from rich.console import Console
@@ -335,7 +337,8 @@ def _goals_from_sofascore(matches: list[dict], team: str) -> tuple[list[float], 
     return gf, ga
 
 
-def compute_prediction(match, hist_targets, hist_targets_global=None, sofascore_cache=None):
+def compute_prediction(match, hist_targets, hist_targets_global=None, sofascore_cache=None,
+                       _team_sets=None):
     """
     Compute Poisson prediction for a match using the best available history.
 
@@ -343,6 +346,8 @@ def compute_prediction(match, hist_targets, hist_targets_global=None, sofascore_
       A — team found in targets_v9 (has bookmaker odds calibration)
       B — team found only in targets_global (global results, no odds calibration)
       C — team not in either dataset; Sofascore API fetched on-demand
+
+    _team_sets: optional pre-computed (v9_teams, global_teams) to avoid rebuilding per call.
 
     Returns prediction dict with a 'data_tier' field, or None if no data.
     """
@@ -356,17 +361,24 @@ def compute_prediction(match, hist_targets, hist_targets_global=None, sofascore_
     away = normalize_team_name(away_raw, source="kambi")
 
     # --- Tier A: search in targets_v9 ---
-    v9_teams = set(hist_targets["home_team"].unique()) | set(hist_targets["away_team"].unique())
+    if _team_sets:
+        v9_teams, global_teams_set = _team_sets
+    else:
+        v9_teams = set(hist_targets["home_team"].unique()) | set(hist_targets["away_team"].unique())
+        global_teams_set = None
     home_v9 = fuzzy_match_team(home, v9_teams) or fuzzy_match_team(home_raw, v9_teams)
     away_v9 = fuzzy_match_team(away, v9_teams) or fuzzy_match_team(away_raw, v9_teams)
 
     # --- Tier B: search in targets_global ---
     home_global = away_global = None
     if hist_targets_global is not None:
-        global_teams = (
-            set(hist_targets_global["home_team"].unique()) |
-            set(hist_targets_global["away_team"].unique())
-        )
+        if global_teams_set is not None:
+            global_teams = global_teams_set
+        else:
+            global_teams = (
+                set(hist_targets_global["home_team"].unique()) |
+                set(hist_targets_global["away_team"].unique())
+            )
         if not home_v9:
             home_global = fuzzy_match_team(home, global_teams) or fuzzy_match_team(home_raw, global_teams)
         if not away_v9:
@@ -509,6 +521,22 @@ def _fetch_af_predictions(af_id_to_match_id: dict[int, str]) -> dict[str, dict]:
                 }).eq("id", match_id).execute()
             except Exception:
                 pass  # non-critical
+
+            # S1-AF: also store as separate prediction rows (source='af')
+            for market, prob_key in [
+                ("1x2_home", "af_home_prob"),
+                ("1x2_draw", "af_draw_prob"),
+                ("1x2_away", "af_away_prob"),
+            ]:
+                prob = parsed.get(prob_key)
+                if prob is not None:
+                    try:
+                        store_prediction(match_id, market, {
+                            "model_prob": prob,
+                            "reasoning": "af_prediction",
+                        }, source="af")
+                    except Exception:
+                        pass
 
             fetched += 1
 
@@ -695,36 +723,52 @@ def _fetch_morning_enrichment(af_fixtures_raw: list[dict], af_id_to_match_id: di
         inj_stored += store_match_injuries(match_id, fid, parsed)
     console.print(f"  {inj_stored} injury records stored")
 
-    # ── T2: Team Statistics (~2 calls per fixture team = ~260 calls) ───────
-    console.print("[cyan]T2: Fetching team season statistics...[/cyan]")
-    seen_team_league: set[tuple] = set()
-    team_stats_stored = 0
+    # ── T2: Team Statistics (Tier A only, ~2 calls per Tier A fixture) ────────
+    console.print("[cyan]T2: Fetching team statistics (Tier A only)...[/cyan]")
 
+    # Batch-fetch tier for all today's matches (1 query)
+    tier_by_match: dict[str, int] = {}
+    match_ids_for_tier = [m["match_id"] for m in fixture_meta.values() if m.get("match_id")]
+    if match_ids_for_tier:
+        try:
+            tier_r = get_client().table("matches").select(
+                "id, leagues(tier)"
+            ).in_("id", match_ids_for_tier).execute()
+            for row in (tier_r.data or []):
+                lg = row.get("leagues") or {}
+                tier_by_match[row["id"]] = lg.get("tier", 3)
+        except Exception:
+            pass
+
+    t2_stored = 0
+    seen_t2: set[tuple] = set()
     for fid, meta in fixture_meta.items():
-        league_api_id = meta.get("league_api_id")
-        fix_season = meta.get("season")
-        if not league_api_id or not fix_season:
+        match_id_t2 = meta.get("match_id")
+        if not match_id_t2:
             continue
+        if tier_by_match.get(match_id_t2, 3) != 1:
+            continue  # Tier A only
 
-        for team_api_id in [meta.get("home_team_api_id"), meta.get("away_team_api_id")]:
-            if not team_api_id:
-                continue
-            key = (team_api_id, league_api_id, fix_season)
-            if key in seen_team_league:
-                continue
-            seen_team_league.add(key)
+        lg_api_id = meta.get("league_api_id")
+        fix_season = meta.get("season")
 
+        for api_id in [meta.get("home_team_api_id"), meta.get("away_team_api_id")]:
+            if not api_id or not lg_api_id or not fix_season:
+                continue
+            key = (api_id, lg_api_id, fix_season)
+            if key in seen_t2:
+                continue
+            seen_t2.add(key)
             try:
-                raw = get_team_statistics(team_api_id, league_api_id, fix_season)
-                if not raw:
-                    continue
-                parsed = parse_team_statistics(raw)
-                store_team_season_stats(team_api_id, league_api_id, fix_season, parsed)
-                team_stats_stored += 1
+                raw_t2 = get_team_statistics(api_id, lg_api_id, fix_season)
+                if raw_t2:
+                    parsed_t2 = parse_team_statistics(raw_t2)
+                    store_team_season_stats(api_id, lg_api_id, fix_season, parsed_t2)
+                    t2_stored += 1
             except Exception:
                 continue
 
-    console.print(f"  {team_stats_stored} team season stat records stored")
+    console.print(f"  {t2_stored} team stat records stored ({len(seen_t2)} unique Tier A teams)")
 
     # ── T9: League Standings (~1 call per unique league) ───────────────────
     console.print("[cyan]T9: Fetching league standings...[/cyan]")
@@ -775,6 +819,112 @@ def _fetch_morning_enrichment(af_fixtures_raw: list[dict], af_id_to_match_id: di
             continue
 
     console.print(f"  {h2h_stored} H2H records stored")
+
+
+def _fetch_af_bulk_odds(today_str, af_fixtures_raw, af_id_to_match_id):
+    """Fetch odds from API-Football bulk endpoint and parse per fixture."""
+    af_odds_fixtures = []
+    af_odds_fetched = 0
+
+    console.print("\n[cyan]Fetching odds from API-Football (bulk)...[/cyan]")
+    try:
+        bulk_odds = get_odds_by_date(today_str)
+        console.print(f"  {len(bulk_odds)} fixtures with odds from API-Football")
+
+        for af_fix in af_fixtures_raw:
+            af_id = af_fix.get("fixture", {}).get("id")
+            if not af_id or af_id not in bulk_odds:
+                continue
+
+            parsed = parse_fixture_odds(bulk_odds[af_id])
+            if not parsed:
+                continue
+
+            best: dict[str, float] = {}
+            for row in parsed:
+                if row["market"] == "1x2":
+                    field = f"odds_{row['selection']}"
+                    if row["odds"] > best.get(field, 0):
+                        best[field] = row["odds"]
+                else:
+                    direction = "over" if row["selection"] == "over" else "under"
+                    line_suffix = row["market"].replace("over_under_", "")
+                    field = f"odds_{direction}_{line_suffix}"
+                    if row["odds"] > best.get(field, 0):
+                        best[field] = row["odds"]
+
+            if not best.get("odds_home", 0):
+                continue
+
+            match_dict = fixture_to_match_dict(af_fix)
+            league_path = match_dict["league_path"]
+            tier = _league_path_to_tier(league_path)
+
+            af_odds_fixtures.append({
+                **match_dict,
+                **best,
+                "tier": tier,
+                "bookmaker": "api-football",
+            })
+            af_odds_fetched += 1
+
+            match_id = af_id_to_match_id.get(af_id)
+            if match_id:
+                _store_parsed_odds(match_id, parsed)
+
+    except Exception as e:
+        console.print(f"  [yellow]AF bulk odds error: {e}[/yellow]")
+
+    console.print(f"  {af_odds_fetched} AF fixtures with odds (tier assigned)")
+    return af_odds_fixtures
+
+
+def _parallel_fetch(af_id_to_match_id, af_fixtures_raw, today_str, all_fixtures):
+    """
+    Run all data fetching in parallel across 3 thread groups:
+      A: API-Football (predictions + enrichment + bulk odds) — sequential within, shares AF rate limiter
+      B: Kambi + SofaScore — different APIs, fast
+      C: BetExplorer — different API, slow scraper (biggest win from parallelism)
+    """
+    def _af_work():
+        preds = {}
+        if af_id_to_match_id:
+            preds = _fetch_af_predictions(af_id_to_match_id)
+            console.print(f"  AF predictions: {len(preds)} available out of {len(af_id_to_match_id)} fixtures")
+        console.print("\n[cyan]Running morning enrichment (T2/T3/T9/T10)...[/cyan]")
+        try:
+            _fetch_morning_enrichment(af_fixtures_raw, af_id_to_match_id)
+        except Exception as e:
+            console.print(f"  [yellow]Enrichment error (non-fatal): {e}[/yellow]")
+        odds = _fetch_af_bulk_odds(today_str, af_fixtures_raw, af_id_to_match_id)
+        return preds, odds
+
+    def _scraper_work():
+        console.print("\n[cyan]Fetching odds from Kambi...[/cyan]")
+        kambi = get_target_league_matches()
+        console.print(f"  {len(kambi)} matches with Kambi odds")
+        # SofaScore odds skipped — fetches 0 matches consistently (no odds or unmapped leagues)
+        console.print("[dim]SofaScore odds — skipped (0 matches with odds recently)[/dim]")
+        return kambi, []
+
+    def _be_work():
+        console.print("\n[cyan]Fetching odds from BetExplorer (gap leagues)...[/cyan]")
+        try:
+            return fetch_betexplorer_odds(delay=0.5)
+        except Exception as e:
+            console.print(f"  [yellow]BetExplorer scrape failed (non-fatal): {e}[/yellow]")
+            return []
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        af_future = executor.submit(_af_work)
+        scraper_future = executor.submit(_scraper_work)
+        be_future = executor.submit(_be_work)
+
+        af_preds, af_odds_fixtures = af_future.result()
+        kambi_matches, sofascore_matches = scraper_future.result()
+        betexplorer_matches = be_future.result()
+
+    return af_preds, af_odds_fixtures, kambi_matches, sofascore_matches, betexplorer_matches
 
 
 def run_morning():
@@ -856,95 +1006,14 @@ def run_morning():
 
     console.print(f"  {stored_fixture_count} fixtures stored")
 
-    # 3.5. Fetch API-Football predictions for all today's fixtures
-    af_preds: dict[str, dict] = {}  # match_id → parsed prediction
-    if af_id_to_match_id:
-        af_preds = _fetch_af_predictions(af_id_to_match_id)
-        console.print(f"  AF predictions: {len(af_preds)} available out of {len(af_id_to_match_id)} fixtures")
-
-    # 3.6. T2/T3/T9/T10: Morning enrichment (team stats, injuries, standings, H2H)
-    console.print("\n[cyan]Running morning enrichment (T2/T3/T9/T10)...[/cyan]")
-    try:
-        _fetch_morning_enrichment(af_fixtures_raw, af_id_to_match_id)
-    except Exception as e:
-        console.print(f"  [yellow]Enrichment error (non-fatal): {e}[/yellow]")
-
-    # 4. Fetch odds from API-Football (bulk by date — ~10 calls instead of ~200)
-    # AF is the PRIMARY odds source: it covers 1236 leagues, gives us tier and
-    # league_path from the already-enriched fixture metadata.
-    console.print("\n[cyan]Fetching odds from API-Football (bulk)...[/cyan]")
-    af_odds_fixtures = []   # matches with proper tier/league_path, ready for prediction
-    af_odds_fetched = 0
-    try:
-        bulk_odds = get_odds_by_date(today_str)  # {af_fixture_id: [raw entries]}
-        console.print(f"  {len(bulk_odds)} fixtures with odds from API-Football")
-
-        for af_fix in af_fixtures_raw:
-            af_id = af_fix.get("fixture", {}).get("id")
-            if not af_id or af_id not in bulk_odds:
-                continue
-
-            parsed = parse_fixture_odds(bulk_odds[af_id])
-            if not parsed:
-                continue
-
-            # Best odds across all AF bookmakers per market
-            best: dict[str, float] = {}
-            for row in parsed:
-                if row["market"] == "1x2":
-                    field = f"odds_{row['selection']}"
-                    if row["odds"] > best.get(field, 0):
-                        best[field] = row["odds"]
-                else:
-                    # O/U lines: over_under_25, over_under_15, etc.
-                    direction = "over" if row["selection"] == "over" else "under"
-                    line_suffix = row["market"].replace("over_under_", "")
-                    field = f"odds_{direction}_{line_suffix}"
-                    if row["odds"] > best.get(field, 0):
-                        best[field] = row["odds"]
-
-            if not best.get("odds_home", 0):
-                continue  # Need at least 1X2 odds
-
-            # Build full match entry from AF fixture metadata (tier, league_path, team names)
-            match_dict = fixture_to_match_dict(af_fix)
-            league_path = match_dict["league_path"]
-            tier = _league_path_to_tier(league_path)
-
-            af_odds_fixtures.append({
-                **match_dict,
-                **best,
-                "tier": tier,
-                "bookmaker": "api-football",
-            })
-            af_odds_fetched += 1
-
-            # Store per-bookmaker rows in odds_snapshots
-            match_id = af_id_to_match_id.get(af_id)
-            if match_id:
-                _store_parsed_odds(match_id, parsed)
-
-    except Exception as e:
-        console.print(f"  [yellow]AF bulk odds error: {e}[/yellow]")
-
-    console.print(f"  {af_odds_fetched} AF fixtures with odds (tier assigned)")
-
-    # 4b. Fetch odds from Kambi (supplementary — different bookmaker, best-odds merge)
-    console.print("\n[cyan]Fetching odds from Kambi...[/cyan]")
-    kambi_matches = get_target_league_matches()
-    console.print(f"  {len(kambi_matches)} matches with Kambi odds")
-
-    # 5. Fetch odds from SofaScore
-    console.print("\n[cyan]Fetching odds from SofaScore (target leagues)...[/cyan]")
-    sofascore_matches = fetch_sofascore_odds(all_fixtures)
-
-    # 5b. Fetch odds from BetExplorer (fills gaps)
-    console.print("\n[cyan]Fetching odds from BetExplorer (gap leagues)...[/cyan]")
-    try:
-        betexplorer_matches = fetch_betexplorer_odds(delay=1.0)
-    except Exception as e:
-        console.print(f"  [yellow]BetExplorer scrape failed (non-fatal): {e}[/yellow]")
-        betexplorer_matches = []
+    # === PARALLEL DATA FETCH ===
+    # Runs 3 groups concurrently (saves ~5 min vs sequential):
+    #   A: API-Football (predictions + enrichment + bulk odds)
+    #   B: Kambi + SofaScore
+    #   C: BetExplorer (gap leagues)
+    console.print("\n[cyan]Running parallel data fetch (predictions + enrichment + odds)...[/cyan]")
+    af_preds, af_odds_fixtures, kambi_matches, sofascore_matches, betexplorer_matches = \
+        _parallel_fetch(af_id_to_match_id, af_fixtures_raw, today_str, all_fixtures)
 
     # 6. Merge all odds sources — AF is the primary base, scrapers add better odds
     # Result: one entry per match, best odds across all bookmakers, correct tier
@@ -983,6 +1052,13 @@ def run_morning():
     # Load Sofascore team cache for Tier C (reset each day)
     sofascore_cache = _load_sofascore_cache()
 
+    # Pre-compute team name sets once (avoid rebuilding per match — saves ~30s)
+    v9_teams = set(hist_targets["home_team"].unique()) | set(hist_targets["away_team"].unique())
+    global_teams = None
+    if hist_targets_global is not None:
+        global_teams = set(hist_targets_global["home_team"].unique()) | set(hist_targets_global["away_team"].unique())
+    team_sets = (v9_teams, global_teams)
+
     # 8. Process each match with odds
     console.print("\n[cyan]Processing matches with odds...[/cyan]")
     total_bets = 0
@@ -1006,6 +1082,7 @@ def run_morning():
             match, hist_targets,
             hist_targets_global=hist_targets_global,
             sofascore_cache=sofascore_cache,
+            _team_sets=team_sets,
         )
         # Tier D fallback: if Poisson has no historical data for this match,
         # use API-Football's own prediction probabilities (already fetched for

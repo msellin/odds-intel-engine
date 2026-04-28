@@ -3,7 +3,7 @@
 > Single source of truth for all open tasks across ROADMAP.md, BACKLOG.md, and MODEL_ANALYSIS.md.
 > Synthesised after external AI architecture review (2026-04-28).
 > Update status here as tasks complete; propagate back to source docs.
-> Last updated: 2026-04-28 (S3/S4/S5/BDM-1 done)
+> Last updated: 2026-04-28 (S3b–S3f, S1-AF, T2 scoped done)
 
 ---
 
@@ -25,6 +25,13 @@
 | 5 | S3 | Wire existing signals into match_signals | 1 day | ✅ Done 2026-04-28 | Morning pipeline writes opening odds, ELO, form, injuries, lineup, BDM-1, fixture importance, referee avg. News checker writes news_impact_score + lineup_confidence |
 | 6 | S4 | Referee signals (referee_stats table + daily enrichment) | 1 day | ✅ Done 2026-04-28 | Migration 011 creates referee_stats. build_referee_stats() + backfill_referee_stats.py. Morning pipeline writes referee_cards_avg to match_signals |
 | 7 | S5 | Fixture importance signal (standings → 0-1 urgency score) | <2h | ✅ Done 2026-04-28 | compute_fixture_importance() from league_standings (rank + description). Written to match_signals in morning pipeline |
+| — | S3b | Wire standings signals: league_position, points_to_relegation/title | 1h | ✅ Done 2026-04-28 | Normalised rank + points gap signals, home+away, stored in match_signals |
+| — | S3c | Wire H2H signal: h2h_win_pct | <1h | ✅ Done 2026-04-28 | h2h_home_wins/total, min 3 meetings; also h2h_total signal |
+| — | S3d | Wire referee_home_win_pct + referee_over25_pct | <1h | ✅ Done 2026-04-28 | From referee_stats table; populates as data accumulates (needs ≥3 matches/ref) |
+| — | S3e | Wire overnight_line_move | 1h | ✅ Done 2026-04-28 | yesterday-last vs today-first implied prob delta from odds_snapshots |
+| — | S3f | Wire rest_days_home/away | 1h | ✅ Done 2026-04-28 | Days since each team's last finished match from matches table |
+| — | S1-AF | Store af_prediction as predictions rows with source='af' | <1h | ✅ Done 2026-04-28 | _fetch_af_predictions now stores 1x2_home/draw/away with source='af' in predictions table |
+| — | T2-scoped | Re-enable T2 team stats for Tier A only | 1h | ✅ Done 2026-04-28 | Batch tier check, ~50 calls vs 303; goals_for/against_avg wired as signals |
 | 8 | B-ML3 | First meta-model: 5-feature logistic regression, target=pseudo_clv>0 | 1 day | ⬜ | Train after ~11 days when 3000+ pseudo-CLV rows exist. Features: ensemble_prob, odds_drift, elo_diff, league_tier, model_disagreement |
 | 9 | STRIPE | Stripe setup: Pro €19/mo + Elite €49/mo products, keys to Vercel | External | ⬜ | Blocking Milestone 2 |
 | 10 | B3 | Tier-aware data API (Next.js strips fields by tier) | 1-2 days | ⬜ | Blocking Milestone 2 |

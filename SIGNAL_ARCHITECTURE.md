@@ -214,23 +214,27 @@ That's the meta-model described in MODEL_ANALYSIS.md Section 8.
 | Component | Status | Notes |
 |-----------|--------|-------|
 | Group 1: Model signals (Poisson/XGBoost/ensemble) | ✅ Running | Predictions table, one row per market |
-| Group 1: AF prediction signal | ✅ Stored on matches | `af_prediction` JSONB; needs separate predictions row |
+| Group 1: AF prediction signal | ✅ Done 2026-04-28 | JSONB on matches + source='af' rows in predictions table (S1-AF) |
 | Group 1: `source` column on predictions | ✅ Done 2026-04-28 | Migration 010 — upsert on (match_id, market, source) |
 | Group 2: Opening odds | ✅ Running | odds_snapshots table |
 | Group 2: Odds drift / steam move | ✅ Running | Computed in `compute_odds_movement()` |
+| Group 2: overnight_line_move | ✅ Done 2026-04-28 | S3e — yesterday close vs today open, written to match_signals |
 | Group 3: ELO | ✅ Running | team_elo_daily table |
 | Group 3: Form / standings | ✅ Running | team_form_cache, league_standings |
-| Group 3: H2H | ✅ Running | h2h columns on matches |
-| Group 4: News impact | ✅ Running | news_events table, `news_impact_score` on bets |
-| Group 4: Injuries | ✅ Running | match_injuries table |
-| Group 4: Lineups | ✅ Running | lineups_home/away JSONB on matches |
-| Group 5: Referee signals | ✅ Done 2026-04-28 | referee_stats table (migration 011) + `referee_cards_avg` written to match_signals |
+| Group 3: league_position, points_to_relegation/title | ✅ Done 2026-04-28 | S3b — from league_standings, normalised rank + points gap signals |
+| Group 3: rest_days_home/away | ✅ Done 2026-04-28 | S3f — computed from matches table (days since last finished match) |
+| Group 3: H2H (h2h_win_pct) | ✅ Done 2026-04-28 | S3c — h2h_home_wins/total, stored in match_signals |
+| Group 3: goals_for/against_avg | ✅ Done 2026-04-28 | T2 season stats wired as signals for Tier A teams |
+| Group 4: News impact | ✅ Running | news_events table, `news_impact_score` on bets + match_signals |
+| Group 4: Injuries | ✅ Running | match_injuries table + injury_count_home/away in match_signals |
+| Group 4: Lineups | ✅ Running | lineups_home/away JSONB on matches + lineup_confirmed signal |
+| Group 5: Referee signals | ✅ Done 2026-04-28 | referee_stats table (migration 011); cards_avg + home_win_pct + over25_pct in match_signals |
 | Group 5: Fixture importance | ✅ Done 2026-04-28 | `compute_fixture_importance()` from standings, written to match_signals |
 | Group 5: Is-derby / travel | ❌ Not built | Needs team location data |
 | Group 6: Live signals | ✅ Running | live_match_snapshots, is_live odds |
 | `match_signals` table | ✅ Done 2026-04-28 | Migration 010 — append-only EAV signal store |
 | Pseudo-CLV for all matches | ✅ Done 2026-04-28 | S0a — `compute_and_store_pseudo_clv()` in settlement |
-| `match_feature_vectors` wide table | ✅ Done 2026-04-28 | S0b — `build_match_feature_vectors()` in settlement |
+| `match_feature_vectors` wide table | ✅ Done 2026-04-28 | S0b — `build_match_feature_vectors()` in settlement; migration 012 adds 16 new signal columns |
 | ML meta-model training | ❌ Waiting for data | ~11 days to 3000 pseudo-CLV rows (~mid-May 2026) |
 
 ---
@@ -247,6 +251,14 @@ That's the meta-model described in MODEL_ANALYSIS.md Section 8.
 5. ✅ S3 — Wire signals into match_signals (opening odds, ELO, form, injuries, BDM-1, fixture importance, referee avg, news_impact)
 6. ✅ S4 — Referee signals: referee_stats table + backfill + morning pipeline lookup
 7. ✅ S5 — Fixture importance from standings urgency
+8. ✅ S3b — Standings signals: league_position, points_to_relegation/title (home + away)
+9. ✅ S3c — H2H signal: h2h_win_pct (home team win rate over last 10 H2H)
+10. ✅ S3d — Referee home_win_pct + over25_pct from referee_stats
+11. ✅ S3e — overnight_line_move: yesterday's close vs today's first odds snapshot
+12. ✅ S3f — rest_days_home/away: days since each team's last finished match
+13. ✅ S1-AF — AF predictions now stored as predictions rows with source='af' (meta-model Group 1 signal)
+14. ✅ T2-scoped — Team season stats re-enabled for Tier A only; goals_for/against_avg wired as match_signals
+15. ✅ Migration 012 — 16 new signal columns on match_feature_vectors
 
 **In ~11 days (~mid-May 2026):**
 8. ⬜ Train meta-model Phase 1: 5-feature logistic regression on 3000+ pseudo-CLV rows

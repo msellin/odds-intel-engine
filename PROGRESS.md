@@ -113,13 +113,24 @@
 - [x] `_merge_odds_sources()` refactored: AF-first, scrapers as additive best-odds layer. Single source of truth for prediction pool.
 - [x] Live tracker column fix: `home_team_api_id` → `home_team_id` (DB column name mismatch)
 
+**DONE — Signal Architecture (2026-04-28):**
+- [x] Migration 010: `source` column on predictions, `match_signals` EAV table
+- [x] Migration 011: `referee_stats` table + 5 new columns on match_feature_vectors
+- [x] Migration 012: 16 new signal columns on match_feature_vectors (standings, H2H, rest, overnight move, referee stats, season goals avg)
+- [x] Pseudo-CLV computed nightly for ALL ~280 finished matches (not just bet matches)
+- [x] `match_feature_vectors` wide ML training table built nightly in settlement
+- [x] `write_morning_signals()` — wires all morning context signals to match_signals: opening odds implied probs, ELO+diff, form PPG, BDM-1, fixture importance, referee cards avg + home_win_pct + over25_pct, injury counts, H2H win pct, league position + points signals, rest days home/away, overnight line move, season goals avg (T2)
+- [x] `build_referee_stats()` + backfill script — aggregates from finished matches, cards from match_stats
+- [x] S1-AF: AF predictions stored as source='af' rows in predictions table (1x2_home/draw/away)
+- [x] T2 team stats re-enabled for Tier A only (~50 API calls vs 303); season goals avg wired as signals
+
 **IN PROGRESS / NEXT (engine):**
+- [ ] Apply migration 012 in Supabase (SQL in `supabase/migrations/012_feature_vector_signal_columns.sql`)
 - [ ] Validate model improvements with first 50+ settled bets via `scripts/validate_improvements.py`
 - [ ] Activate alignment filter after 300+ bets show ROI correlating with alignment class
 - [ ] Retrain XGBoost on API-Football accumulated data (broader league coverage)
 - [ ] Historical backfill via API-Football spare quota (~73K req/day unused)
 - [ ] Simplify `news_checker.py` to non-injury news only (T3 now handles injuries structurally)
-- [ ] Remove redundant form functions once T2 data accumulates (see `DATA_SOURCES.md` cleanup list)
 
 ### Frontend (odds-intel-web)
 
