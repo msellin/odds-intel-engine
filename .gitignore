@@ -11,3 +11,5 @@ data/models/
 *.joblib
 .DS_Store
 /.idea/
+data/logs/
+supabase/.temp/
