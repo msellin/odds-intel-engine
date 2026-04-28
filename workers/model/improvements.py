@@ -33,12 +33,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 # T1-2: market is well-calibrated → trust market more (lower alpha)
 # T3-4: market is less efficient → trust model more (higher alpha)
 CALIBRATION_ALPHA = {
-    1: 0.55,
-    2: 0.65,
-    3: 0.80,
-    4: 0.85,
+    1: 0.20,
+    2: 0.30,
+    3: 0.50,
+    4: 0.65,
 }
-CALIBRATION_ALPHA_DEFAULT = 0.70
+CALIBRATION_ALPHA_DEFAULT = 0.35
 
 
 def calibrate_prob(model_prob: float, implied_prob: float,
@@ -49,10 +49,10 @@ def calibrate_prob(model_prob: float, implied_prob: float,
     adjusted_prob = alpha * model_prob + (1 - alpha) * implied_prob
 
     Uses tier-specific alpha:
-      T1: 0.55 (market well-priced, trust market more)
-      T2: 0.65
-      T3: 0.80 (market less efficient, trust model more)
-      T4: 0.85
+      T1: 0.20 (market very efficient — trust market heavily)
+      T2: 0.30
+      T3: 0.50 (balanced — market less efficient)
+      T4: 0.65 (market least efficient, trust model more)
 
     Args:
         model_prob: Raw model probability (Poisson)
@@ -342,11 +342,11 @@ def _dim_situational(match: dict, is_home: bool, is_away: bool,
 # P4: KELLY-BASED STAKE SIZING
 # =============================================================================
 
-# Fraction of Kelly to use (1/4 Kelly = conservative)
-KELLY_FRACTION = 0.25
-# Maximum stake as fraction of bankroll — 1.5% per assessment 1 & 2
-# (reduced from 2% since model is still being validated)
-MAX_STAKE_PCT = 0.015
+# Fraction of Kelly to use — reduced from 0.25 to 0.15 (2026-04-29)
+# With 6 concurrent bots, 0.25× was stacking up to 9% bankroll exposure.
+KELLY_FRACTION = 0.15
+# Maximum stake as fraction of bankroll — reduced from 1.5% to 1.0% (2026-04-29)
+MAX_STAKE_PCT = 0.010
 
 # Data tier multipliers (only non-model multiplier applied to stakes)
 # Alignment multipliers are NOT active yet (log-only mode)

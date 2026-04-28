@@ -6,8 +6,8 @@ All project documentation lives in this repo (`odds-intel-engine/`). Before star
 
 | File | Purpose |
 |------|---------|
-| `ROADMAP.md` | Product vision, tier structure, milestones, frontend data backlog, completed work log |
-| `BACKLOG.md` | Prioritized engine/ML improvements with dependencies |
+| `ROADMAP.md` | Product vision, tier structure, milestone goals, launch checklist, open decisions |
+| `BACKLOG.md` | ⚠️ Retired 2026-04-29 — all tasks are in PRIORITY_QUEUE.md |
 | `PROGRESS.md` | Current status of both engine and frontend, data coverage, architecture |
 | `INFRASTRUCTURE.md` | Full infra stack, current costs, and projections by growth phase |
 | `DATA_SOURCES.md` | Data source architecture, API-Football integration status, alternatives evaluated |
@@ -22,11 +22,10 @@ All project documentation lives in this repo (`odds-intel-engine/`). Before star
 ## Keeping Docs Updated
 
 When you complete a task, update the relevant documentation:
-- Mark tasks done in `PRIORITY_QUEUE.md` (master task list — update status column)
-- Mark tasks done in `ROADMAP.md` (milestones + completed work log)
+- Mark tasks done in `PRIORITY_QUEUE.md` (master task list — update status column here first)
 - Update `PROGRESS.md` if you change what's built or fix a data issue
-- Update `BACKLOG.md` if you complete a backlog item or its dependencies change
 - Manual steps and launch checklist live in `ROADMAP.md` (Launch Checklist section)
+- Do NOT update `BACKLOG.md` — it is retired
 
 Do not let docs drift from reality. If you notice something marked TODO that is already done, fix it.
 

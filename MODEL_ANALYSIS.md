@@ -122,7 +122,8 @@ Submitted to 4 AI evaluators. Key verdicts that were implemented:
 │  XGBoost Poisson ─────┘                                     │
 │                                                             │
 │  Calibration: tier-specific market shrinkage                │
-│    α = {T1: 0.55, T2: 0.65, T3: 0.80, T4: 0.85}           │
+│    α = {T1: 0.20, T2: 0.30, T3: 0.50, T4: 0.65}           │
+│    (updated 2026-04-29 — was T1=0.55, now market-weighted) │
 │  Disagreement: abs(poisson - xgb) stored per bet            │
 │  Fallback: Tier D uses AF /predictions probability          │
 ├─────────────────────────────────────────────────────────────┤
@@ -130,7 +131,7 @@ Submitted to 4 AI evaluators. Key verdicts that were implemented:
 │                                                             │
 │  edge = calibrated_prob - (1 / odds)                        │
 │  kelly = (calibrated_prob * odds - 1) / (odds - 1)         │
-│  stake = min(kelly * 0.25 * bankroll, 0.015 * bankroll)     │
+│  stake = min(kelly * 0.15 * bankroll, 0.010 * bankroll)     │
 │                                                             │
 │  Multipliers: × tier_mult × data_tier_mult × lineup_mult    │
 │  Alignment filter: LOG-ONLY (pending 300 bot bet validation) │
@@ -190,7 +191,7 @@ Computes 7 independent dimension scores per bet. Currently stored but not used f
 - 300+ settled bot bets with alignment → activate alignment filter (~late May)
 - 1000+ settled bot bets → train Phase 2 XGBoost meta-model (~June)
 
-**See PRIORITY_QUEUE.md for the full 37-item ordered list.**
+**See PRIORITY_QUEUE.md for the full ordered task list (57 items as of 2026-04-29).**
 
 ---
 
@@ -281,10 +282,10 @@ rank = kelly * alignment_multiplier
 
 | Priority | What | How | Key Decision |
 |----------|------|-----|-------------|
-| P1 | Calibration | Tier-specific α: T1=0.55, T2=0.65, T3=0.80, T4=0.85 | Higher α for lower tiers (trust model more where market is less efficient) |
+| P1 | Calibration | Tier-specific α: T1=0.20, T2=0.30, T3=0.50, T4=0.65 (updated 2026-04-29) | Lower α for higher tiers — market is more efficient in T1/T2, trust it more |
 | P2 | Odds movement | Soft penalty on Kelly for adverse drift, hard veto only >10% | Soft penalty over hard veto — markets overshoot |
 | P3 | Alignment | 4 external-signal dimensions, LOG-ONLY mode | Only external signals (odds_move, news, lineup, situational). ELO/form/xG removed — already in model. |
-| P4 | Kelly sizing | 1/4 Kelly, 1.5% max cap, data-tier multiplier | 1.5% cap (not 2%) while model is unvalidated |
+| P4 | Kelly sizing | 0.15× Kelly, 1.0% max cap, data-tier multiplier (updated 2026-04-29) | Reduced from 0.25×/1.5% — 6 concurrent bots were stacking to 9% bankroll exposure |
 | P6 | News timing | 4x/day: 09:00, 12:30, 16:30, 19:30 UTC | Catches lineup confirmations 1-2h before kickoff |
 
 ### Implemented (logging only, not affecting decisions)

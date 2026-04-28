@@ -1,95 +1,115 @@
 # OddsIntel — Master Priority Queue
 
 > Single source of truth for all open tasks across ROADMAP.md, BACKLOG.md, and MODEL_ANALYSIS.md.
-> Synthesised after external AI architecture review (2026-04-28).
+> Synthesised after two rounds of external AI architecture review (2026-04-27 and 2026-04-28).
 > Update status here as tasks complete; propagate back to source docs.
-> Last updated: 2026-04-28 (S3b–S3f, S1-AF, T2 scoped done)
+> Last updated: 2026-04-29 — added Source + Impact + Timeline columns; 11 new tasks from AI analysis round 2; 8 previously missing tasks from MODEL_ANALYSIS/ROADMAP cross-check
 
 ---
 
 ## Tier 0 — Do This Week (foundation for everything)
 
-| # | ID | Task | Effort | Status | Notes |
-|---|-----|------|--------|--------|-------|
-| 1 | B-ML1 | Pseudo-CLV for all ~280 daily matches | 2-3h | ✅ Done 2026-04-28 | `(1/open) / (1/close) - 1` for every finished match. Grows ML training data 2-5/day → 280/day |
-| 2 | B-ML2 | `match_feature_vectors` nightly ETL (wide ML training table) | 1 day | ✅ Done 2026-04-28 | Pivots signals + predictions + ELO/form → wide row per match. The actual ML training table |
-| 3 | CAL-1 | Calibration validation script | 2h | ✅ Done 2026-04-28 | `scripts/check_calibration.py` — predicted vs actual win rate in 5% bins |
-| 4 | S1+S2 | Migration 010: `source` on predictions + `match_signals` table | 2-3h | ✅ Done 2026-04-28 | Unique constraint on (match_id, market, source). Append-only signal store |
+| # | ID | Task | Effort | Status | Impact | Source | Timeline | Notes |
+|---|-----|------|--------|--------|--------|--------|----------|-------|
+| 1 | B-ML1 | Pseudo-CLV for all ~280 daily matches | 2-3h | ✅ Done | Very High | Internal | Done | `(1/open) / (1/close) - 1` for every finished match. Grows ML training data 280/day |
+| 2 | B-ML2 | `match_feature_vectors` nightly ETL (wide ML training table) | 1 day | ✅ Done | Very High | Internal | Done | Pivots signals + predictions + ELO/form → wide row per match |
+| 3 | CAL-1 | Calibration validation script | 2h | ✅ Done | High | Internal | Done | `scripts/check_calibration.py` — predicted vs actual win rate in 5% bins |
+| 4 | S1+S2 | Migration 010: `source` on predictions + `match_signals` table | 2-3h | ✅ Done | Very High | Internal | Done | Unique constraint on (match_id, market, source). Append-only signal store |
+| 5 | CAL-2 | Flip calibration α: T1→0.20, T2→0.30, T3→0.50, T4→0.65 | 30 min | ✅ Done 2026-04-29 | **Very High** | AI Analysis (2026-04-28) | Done | CALIBRATION_ALPHA updated in improvements.py. Was T1=0.55 (model-heavy in efficient markets) — now T1=0.20 (market-heavy) |
+| 6 | RISK-1 | Reduce Kelly fraction to 0.15×, cap to 1% bankroll per bet | 15 min | ✅ Done 2026-04-29 | **Very High** | AI Analysis (2026-04-28) | Done | KELLY_FRACTION 0.25→0.15, MAX_STAKE_PCT 0.015→0.010 in improvements.py |
+| 7 | LLM-RESOLVE | Run `scripts/resolve_team_names.py --apply` and validate output | 30 min | ✅ Done 2026-04-29 | High | Internal (MODEL_ANALYSIS 11.2) | Done | 3 new mappings added (Brondby→Brøndby, Dinamo Bucuresti→Dinamo Bucureşti, IFK Goeteborg→IFK Göteborg). 140 existing + 3 = 143 total. 204 unmatched names now all accounted for |
 
 ---
 
 ## Tier 1 — Next 1-2 Weeks
 
-| # | ID | Task | Effort | Status | Notes |
-|---|-----|------|--------|--------|-------|
-| 5 | S3 | Wire existing signals into match_signals | 1 day | ✅ Done 2026-04-28 | Morning pipeline writes opening odds, ELO, form, injuries, lineup, BDM-1, fixture importance, referee avg. News checker writes news_impact_score + lineup_confidence |
-| 6 | S4 | Referee signals (referee_stats table + daily enrichment) | 1 day | ✅ Done 2026-04-28 | Migration 011 creates referee_stats. build_referee_stats() + backfill_referee_stats.py. Morning pipeline writes referee_cards_avg to match_signals |
-| 7 | S5 | Fixture importance signal (standings → 0-1 urgency score) | <2h | ✅ Done 2026-04-28 | compute_fixture_importance() from league_standings (rank + description). Written to match_signals in morning pipeline |
-| — | S3b | Wire standings signals: league_position, points_to_relegation/title | 1h | ✅ Done 2026-04-28 | Normalised rank + points gap signals, home+away, stored in match_signals |
-| — | S3c | Wire H2H signal: h2h_win_pct | <1h | ✅ Done 2026-04-28 | h2h_home_wins/total, min 3 meetings; also h2h_total signal |
-| — | S3d | Wire referee_home_win_pct + referee_over25_pct | <1h | ✅ Done 2026-04-28 | From referee_stats table; populates as data accumulates (needs ≥3 matches/ref) |
-| — | S3e | Wire overnight_line_move | 1h | ✅ Done 2026-04-28 | yesterday-last vs today-first implied prob delta from odds_snapshots |
-| — | S3f | Wire rest_days_home/away | 1h | ✅ Done 2026-04-28 | Days since each team's last finished match from matches table |
-| — | S1-AF | Store af_prediction as predictions rows with source='af' | <1h | ✅ Done 2026-04-28 | _fetch_af_predictions now stores 1x2_home/draw/away with source='af' in predictions table |
-| — | T2-scoped | Re-enable T2 team stats for Tier A only | 1h | ✅ Done 2026-04-28 | Batch tier check, ~50 calls vs 303; goals_for/against_avg wired as signals |
-| 8 | B-ML3 | First meta-model: 5-feature logistic regression, target=pseudo_clv>0 | 1 day | ⬜ | Train after ~11 days when 3000+ pseudo-CLV rows exist. Features: ensemble_prob, odds_drift, elo_diff, league_tier, model_disagreement |
-| 9 | STRIPE | Stripe setup: Pro €19/mo + Elite €49/mo products, keys to Vercel | External | ⬜ | Blocking Milestone 2 |
-| 10 | B3 | Tier-aware data API (Next.js strips fields by tier) | 1-2 days | ⬜ | Blocking Milestone 2 |
-| 11 | SENTRY | Sentry error monitoring (free tier) | 1h | ⬜ | Pre-launch checklist item |
+| # | ID | Task | Effort | Status | Impact | Source | Timeline | Notes |
+|---|-----|------|--------|--------|--------|--------|----------|-------|
+| 8 | S3 | Wire existing signals into match_signals | 1 day | ✅ Done | Very High | Internal | Done | Opening odds, ELO, form, injuries, BDM-1, fixture importance, referee avg, news_impact |
+| 9 | S4 | Referee signals (referee_stats table + daily enrichment) | 1 day | ✅ Done | High | Internal | Done | Migration 011. Morning pipeline writes referee_cards_avg |
+| 10 | S5 | Fixture importance signal (standings → 0-1 urgency score) | <2h | ✅ Done | High | Internal | Done | compute_fixture_importance() from league_standings |
+| — | S3b | Standings signals: league_position, points_to_relegation/title | 1h | ✅ Done | High | Internal | Done | Normalised rank + points gap signals, home+away |
+| — | S3c | H2H signal: h2h_win_pct | <1h | ✅ Done | Medium | Internal | Done | h2h_home_wins/total, min 3 meetings |
+| — | S3d | Referee home_win_pct + over25_pct | <1h | ✅ Done | Medium | Internal | Done | From referee_stats; needs ≥3 matches/ref to populate |
+| — | S3e | Overnight line move signal | 1h | ✅ Done | High | Internal | Done | yesterday-last vs today-first implied prob delta |
+| — | S3f | Rest days home/away | 1h | ✅ Done | Medium | Internal | Done | Days since each team's last finished match |
+| — | S1-AF | Store AF prediction as predictions rows source='af' | <1h | ✅ Done | High | Internal | Done | _fetch_af_predictions stores 1x2_home/draw/away with source='af' |
+| — | T2-scoped | Re-enable T2 team stats for Tier A only | 1h | ✅ Done | High | Internal | Done | Batch tier check; goals_for/against_avg wired as signals |
+| 11 | SIG-7 | Importance asymmetry signal: `importance_diff = home_importance - away_importance` | 30 min | ⬜ | Medium | AI Analysis (2026-04-28) | This week | Derived from fixture_importance already computed. E.g., home team in relegation vs mid-table away = large positive diff |
+| 12 | SIG-8 | Home/away split signals from T2 stats | 1h | ⬜ | Medium | AI Analysis (2026-04-28) | This week | Store goals_for/against_home and goals_for/against_away separately (not just season avg). Better reflects true home/away gap |
+| 13 | SIG-9 | Form slope: linear slope of last-5 vs prior-5 PPG trend | 1h | ⬜ | Medium | AI Analysis (2026-04-28) | This week | Rising team vs falling team is more predictive than raw form. `form_slope_home/away` from team_form_cache |
+| 14 | SIG-10 | Odds volatility: std dev of home implied prob over last 24h snapshots | 1h | ⬜ | Medium | AI Analysis (2026-04-28) | This week | High volatility → market uncertain → bigger edge potential. From odds_snapshots, 6-8 points per match |
+| 15 | SIG-11 | League meta-features: avg_home_win_pct, draw_pct, goals_avg per league | 1h | ⬜ | Medium | AI Analysis (2026-04-28) | This week | Stored in a league_meta table or derived from league_standings. Calibration context per league |
+| 16 | META-2 | Meta-model feature design: drop raw fundamentals, keep market structure features | 2h design | ⬜ | High | AI Analysis (2026-04-28) | Before May 9 | Model should learn: `model_prob - pinnacle_implied`, `odds_drift`, `steam_move`, `bookmaker_disagreement` — not ELO/form directly (market already priced those) |
+| 17 | B-ML3 | First meta-model: 5-feature logistic regression, target=pseudo_clv>0 | 1 day | ⬜ | Very High | Internal | ~May 9 | Train after ~3000+ pseudo-CLV rows. Features: ensemble_prob, odds_drift, elo_diff, league_tier, model_disagreement |
+| 18 | STRIPE | Stripe setup: Pro €4.99/mo + Elite €14.99/mo products, keys to Vercel | External | ⬜ | High | Internal | ~May 2026 | Blocking Milestone 2 |
+| 19 | B3 | Tier-aware data API (Next.js layer strips fields by tier) | 1-2 days | ⬜ | High | Internal | ~May 2026 | Blocking Milestone 2 |
+| 20 | SENTRY | Sentry error monitoring (free tier) | 1h | ✅ Done | Medium | Internal | Done | @sentry/nextjs wired in frontend, DSN configured |
 
 ---
 
 ## Tier 2 — 2-4 Weeks
 
-| # | ID | Task | Effort | Status | Notes |
-|---|-----|------|--------|--------|-------|
-| 12 | PLATT | Platt scaling once 500+ predictions have outcomes | 1 day | ⬜ | Replaces/complements tier-specific shrinkage. ~mid-May 2026 |
-| 13 | P5.1 | European Soccer DB (Kaggle): 13-bookmaker sharp/soft analysis | 1-2 days | ⬜ | `bookmaker_sharpness_rankings.csv` + `sharp_money_signal` feature. Strongest unused signal |
-| 14 | PIN-1 | Pinnacle anchor signal: `model_prob - pinnacle_implied` as feature | 2-3h | ⬜ | Low effort. Depends on P5.1 to confirm Pinnacle is in our 13 bookmakers |
-| 15 | BDM-1 | Bookmaker disagreement signal: `max(implied) - min(implied)` across 13 bookmakers | 1h | ✅ Done 2026-04-28 | compute_bookmaker_disagreement() + written to match_signals in morning pipeline |
-| 16 | F8 | Stripe integration (Pro + Elite, webhook, tier column update) | 2-3 days | ⬜ | Blocking Milestone 2 |
-| 17 | F5 | Value bets page redesign (free=teaser, Pro=directional, Elite=full picks) | 1-2 days | ⬜ | Blocking Milestone 3 |
-| 18 | ALN-1 | Dynamic alignment thresholds (300+ settled bot bets → ROI by alignment bin) | 2h | ⬜ | Needs actual placed bets — pseudo-CLV does NOT substitute |
+| # | ID | Task | Effort | Status | Impact | Source | Timeline | Notes |
+|---|-----|------|--------|--------|--------|--------|----------|-------|
+| 21 | MOD-1 | Dixon-Coles correction to Poisson model | 4h | ⬜ | **High** | AI Analysis (2026-04-28) | ~May 2026 | Fixes documented 8% draw underestimation from MEGA_BACKTEST. Bivariate Poisson correction for 0-0, 1-0, 0-1, 1-1 game correlation |
+| 22 | PLATT | Platt scaling once 500+ predictions have outcomes | 1 day | ⬜ | High | Internal | ~mid-May 2026 | Replaces/complements tier-specific shrinkage |
+| 23 | P5.1 | European Soccer DB (Kaggle): 13-bookmaker sharp/soft analysis | 1-2 days | ⬜ | High | Internal | ~May 2026 | `bookmaker_sharpness_rankings.csv` + `sharp_money_signal` feature |
+| 24 | PIN-1 | Pinnacle anchor signal: `model_prob - pinnacle_implied` as feature | 2-3h | ⬜ | High | Internal | ~May 2026 | Depends on P5.1 to confirm Pinnacle is in our 13 bookmakers |
+| 25 | BDM-1 | Bookmaker disagreement signal | 1h | ✅ Done | Medium | Internal | Done | compute_bookmaker_disagreement() written to match_signals |
+| 26 | FE-LIVE | Live odds in-play on match detail (frontend only) | 1 day | ⬜ | Medium | ROADMAP Frontend Backlog #9 | ~May 2026 | `odds_snapshots` with `is_live=true` already populated. Frontend chart during live match. Pro tier feature |
+| 27 | MKT-STR | Wire market-implied team strength into XGBoost as input feature | 1 day | ⬜ | Medium | Internal (MODEL_ANALYSIS 11.3) | ~May 2026 | `compute_market_implied_strength()` exists in supabase_client.py but not wired into pipeline. Needs 200+ finished matches with odds first |
+| 28 | EXPOSURE-AUTO | Auto-reduce stakes on league exposure concentration | 1h | ⬜ | Medium | Internal (MODEL_ANALYSIS 11.6) | ~May 2026 | Currently warning-only. Add proportional stake reduction when 3+ bets same league same day. Low effort, pure risk management |
+| 29 | F8 | Stripe integration (Pro + Elite, webhook, tier column update) | 2-3 days | ⬜ | High | Internal | ~May 2026 | Blocking Milestone 2 |
+| 30 | F5 | Value bets page redesign (free=teaser, Pro=directional, Elite=full picks) | 1-2 days | ⬜ | High | Internal | ~May 2026 | Blocking Milestone 3 |
+| 31 | ALN-1 | Dynamic alignment thresholds (300+ settled bot bets → ROI by alignment bin) | 2h | ⬜ | High | Internal | ~June 2026 | Needs actual placed bets — pseudo-CLV does NOT substitute |
+| 32 | VAL-POST-MORTEM | Review 14 days of LLM post-mortem patterns | 30 min | ⬜ | Medium | Internal (MODEL_ANALYSIS 11.4) | May 13+ | `SELECT notes FROM model_evaluations WHERE market = 'post_mortem' ORDER BY date DESC LIMIT 14;` — check if loss categories consistent. Decides if post-mortem feature is valuable |
+| 33 | BET-EXPLAIN | Natural language bet explanations (LLM from dimension scores) | 1-2 days | ⬜ | Medium | Internal (MODEL_ANALYSIS end) | ~May 2026 | Frontend LLM prompt using stored bet data. Sells Elite tier — "why we like this pick". Zero betting ROI, high subscriber retention |
 
 ---
 
 ## Tier 3 — 1-2 Months
 
-| # | ID | Task | Effort | Status | Notes |
-|---|-----|------|--------|--------|-------|
-| 19 | B6 | Singapore/South Korea odds source (Pinnacle API or OddsPortal) | Unknown | ⬜ | +27.5% ROI signal has no live odds feed. Biggest gap |
-| 20 | P5.2 | Footiqo: validate Singapore/Scotland ROI with independent 1xBet closing odds | Manual first | ⬜ | Independent validation. If ROI holds on 2nd source, it's real |
-| 21 | P3.1 | Odds drift as XGBoost input feature (model retraining) | 1-2 days | ⬜ | Currently veto filter only. Strongest unused signal once data is there |
-| 22 | P3.3 | Player-level injury weighting (weight by position/market value) | 2-3 days | ⬜ | "Starting striker out" ≠ "3rd-choice GK out" |
-| 23 | S6-P2 | Graduate meta-model to XGBoost + full signal set (1000+ bot bets) | 2-3 days | ⬜ | After alignment thresholds validated |
-| 24 | P4.1 | Audit trail ROI comparison: stats-only vs after-AI vs after-lineups | 1 day | ⬜ | Proves value of each information layer. Needed for Elite tier pricing |
-| 25 | P3.5 | Feature importance tracking per league | 1 day | ⬜ | Which signals matter in which markets |
-| 26 | F10 | My bets / tip tracking (user_bets table, personal P&L) | 2 days | ⬜ | Skip until Stripe + Elite launch |
-| 27 | F7 | Stitch redesign (landing + matches page) | Awaiting designs | ⬜ | Parked until after M1 go-live |
+| # | ID | Task | Effort | Status | Impact | Source | Timeline | Notes |
+|---|-----|------|--------|--------|--------|--------|----------|-------|
+| 34 | HIST-BACKFILL | Backfill historical match data using spare API quota | 2-3 days | ⬜ | Very High | Internal (MODEL_ANALYSIS 11.3) | ~May-June 2026 | ~67K spare req/day. Fetch historical matches + stats + 13-bookmaker odds. Accelerates XGBoost retraining timeline from months to weeks |
+| 35 | B6 | Singapore/South Korea odds source (Pinnacle API or OddsPortal) | Unknown | ⬜ | Very High | Internal | ~June 2026 | +27.5% ROI signal has no live odds feed. Biggest gap |
+| 36 | P5.2 | Footiqo: validate Singapore/Scotland ROI with independent 1xBet closing odds | Manual first | ⬜ | High | Internal | ~June 2026 | Independent validation. If ROI holds on 2nd source, it's real |
+| 37 | P3.1 | Odds drift as XGBoost input feature (model retraining) | 1-2 days | ⬜ | High | Internal | ~June 2026 | Currently veto filter only. Strongest unused signal once data is there |
+| 38 | P3.3 | Player-level injury weighting (weight by position/market value) | 2-3 days | ⬜ | Low | Internal | ~June 2026 | ~90% captured by injury_count + news_impact per AI analysis. Lower priority than originally scoped |
+| 39 | S6-P2 | Graduate meta-model to XGBoost + full signal set (1000+ bot bets) | 2-3 days | ⬜ | Very High | Internal | ~June 2026 | After alignment thresholds validated |
+| 40 | P4.1 | Audit trail ROI comparison: stats-only vs after-AI vs after-lineups | 1 day | ⬜ | High | Internal | ~June 2026 | Proves value of each information layer. Needed for Elite tier pricing |
+| 41 | P3.5 | Feature importance tracking per league | 1 day | ⬜ | Medium | Internal | ~June 2026 | Which signals matter in which markets |
+| 42 | F10 | My bets / tip tracking (user_bets table, personal P&L) | 2 days | ⬜ | Medium | Internal | After M2 | Skip until Stripe + Elite launch |
+| 43 | F7 | Stitch redesign (landing + matches page) | Awaiting designs | ⬜ | Medium | Internal | After M1 | Parked until after M1 go-live |
 
 ---
 
 ## Tier 4 — 2-3 Months (needs data accumulation)
 
-| # | ID | Task | Effort | Status | Notes |
-|---|-----|------|--------|--------|-------|
-| 28 | P3.4 | In-play value detection model (minute X state → final result) | 2-3 weeks | ⬜ | Needs 500+ completed matches in live_match_snapshots |
-| 29 | P4.2 | A/B bot testing framework (parallel bots with/without AI) | 1-2 days | ⬜ | Needs audit trail + data |
-| 30 | P4.3 | Live odds arbitrage detector (cross-bookmaker real-time) | 1-2 days | ⬜ | P2.1 per-bookmaker odds ✅ — can build but low priority |
-| 31 | P5.3 | OddAlerts API evaluation (20+ bookmakers real-time) | Research | ⬜ | Depends on P5.1 sharp/soft model |
-| 32 | OTC-1 | Odds trajectory clustering (DTW on full timelines, cluster shapes) | 1-2 weeks | ⬜ | Needs 1000+ matches with 6+ snapshots each |
-| 33 | P3.2 | Stacked ensemble meta-learner (logistic regression: when Poisson vs XGBoost) | 1-2 days | ⬜ | Needs settled bets with both predictions stored |
+| # | ID | Task | Effort | Status | Impact | Source | Timeline | Notes |
+|---|-----|------|--------|--------|--------|--------|----------|-------|
+| 44 | SIG-12 | xG overperformance rolling signal: recent xG vs actual goals | 2h | ⬜ | Medium | AI Analysis (2026-04-28) | Needs ~2 wks data | Team over/underperforming their xG → regression to mean. Needs ~2 weeks of post-match xG from T4 enrichment |
+| 45 | MOD-2 | Learned Poisson/XGBoost blend weights (replace fixed α constants) | 2h | ⬜ | High | AI Analysis (2026-04-28) | Needs 500+ settled | Calibrated per-tier blend weights from actual prediction outcomes |
+| 46 | P3.4 | In-play value detection model (minute X state → final result) | 2-3 weeks | ⬜ | High | Internal | Needs 500+ live | Needs 500+ completed matches in live_match_snapshots (July-Aug 2026) |
+| 47 | P4.2 | A/B bot testing framework (parallel bots with/without AI) | 1-2 days | ⬜ | Medium | Internal | Needs audit trail | Needs audit trail + data |
+| 48 | P4.3 | Live odds arbitrage detector (cross-bookmaker real-time) | 1-2 days | ⬜ | Medium | Internal | ~July 2026 | Per-bookmaker odds ✅ — can build but low priority |
+| 49 | P5.3 | OddAlerts API evaluation (20+ bookmakers real-time) | Research | ⬜ | Medium | Internal | Depends P5.1 | Depends on P5.1 sharp/soft model |
+| 50 | RSS-NEWS | RSS news extraction pipeline (speed edge) | 1-2 days | ⬜ | High | Internal (MODEL_ANALYSIS 11.5) | Profitable first | $30-90/mo cost — deferred until model proves profitable. Targets news before odds adjust. Re-evaluate when Elite tier has subscribers |
+| 51 | OTC-1 | Odds trajectory clustering (DTW on full timelines, cluster shapes) | 1-2 weeks | ⬜ | Low | Internal | Needs 1000+ | Downgraded: AI Analysis notes simple volatility+drift captures ~same signal at 5% the effort |
+| 52 | P3.2 | Stacked ensemble meta-learner (logistic regression: when Poisson vs XGBoost) | 1-2 days | ⬜ | Medium | Internal | Needs settled bets | Needs settled bets with both predictions stored |
 
 ---
 
 ## Tier 5 — Future / Speculative
 
-| # | ID | Task | Notes |
-|---|-----|------|-------|
-| 34 | SLM | Shadow Line Model: predict what opening odds *should be*, fire before market corrects | Blocked on opening odds timestamp storage |
-| 35 | MTI | Managerial Tactical Intent: press conference classification | Blocked on reliable transcript sources across leagues |
-| 36 | RVB | Referee/Venue full bias features (beyond S4) | Venue-level stats not yet collected |
-| 37 | WTH | Weather signal (OpenWeatherMap, free) | Low effort, defer until O/U becomes a focus market |
+| # | ID | Task | Impact | Source | Notes |
+|---|-----|------|--------|--------|-------|
+| 53 | SLM | Shadow Line Model: predict what opening odds *should be* | High | Internal | Blocked on opening odds timestamp storage |
+| 54 | MTI | Managerial Tactical Intent: press conference classification | Medium | Internal | Blocked on reliable transcript sources across leagues |
+| 55 | RVB | Referee/Venue full bias features (beyond S4 referee stats) | Medium | Internal | Venue-level stats not yet collected |
+| 56 | WTH | Weather signal (OpenWeatherMap, free) | Low | Internal | Low effort, defer until O/U becomes a focus market |
+| 57 | SIG-DERBY | Is-derby + travel distance signals | Low | Internal | Needs team location data. SIGNAL_ARCHITECTURE.md Group 5 gap |
 
 ---
 
@@ -97,8 +117,22 @@
 
 | Milestone | Query | Target | Current |
 |-----------|-------|--------|---------|
+| LLM team name resolve | `wc -l data/logs/unmatched_teams.log` before vs after `--apply` | Shrinks toward 0 | 2,287 entries |
 | Platt scaling ready | `SELECT COUNT(*) FROM predictions p JOIN matches m ON p.match_id = m.id WHERE m.status = 'finished'` | 500+ | ~? |
 | Meta-model Phase 1 ready | `SELECT COUNT(*) FROM matches WHERE status = 'finished' AND pseudo_clv_home IS NOT NULL` | 3000+ | 0 (just built) |
 | Alignment threshold validation | `SELECT COUNT(*) FROM simulated_bets WHERE result != 'pending' AND alignment_class IS NOT NULL` | 300+ | ~? |
 | Meta-model Phase 2 ready | `SELECT COUNT(*) FROM simulated_bets WHERE result != 'pending' AND dimension_scores IS NOT NULL AND clv IS NOT NULL` | 1000+ | ~? |
 | In-play model ready | `SELECT COUNT(DISTINCT match_id) FROM live_match_snapshots` | 500+ | ~? |
+| Market-implied strength ready | `SELECT COUNT(DISTINCT m.id) FROM matches m JOIN odds_snapshots o ON m.id = o.match_id WHERE m.status = 'finished'` | 200+ | ~? |
+| Post-mortem patterns readable | `SELECT COUNT(*) FROM model_evaluations WHERE market = 'post_mortem'` | 14+ | 0 (just built) |
+
+---
+
+## Source Legend
+
+| Source | Meaning |
+|--------|---------|
+| Internal | Planned before external AI analysis — from ROADMAP/BACKLOG/MODEL_ANALYSIS |
+| AI Analysis (2026-04-28) | Identified during external 4-agent AI architecture review session on 2026-04-28 |
+| ROADMAP Frontend Backlog | From the Frontend Data Display Backlog section of ROADMAP.md |
+| Internal (MODEL_ANALYSIS X.X) | Exists in MODEL_ANALYSIS.md but was not yet tracked in this queue |
