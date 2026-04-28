@@ -107,7 +107,8 @@
 - [x] Settlement now records results for ALL stored matches (not just bet matches) — gives complete labeled dataset for ML
 - [x] Settlement uses `api_football_id` for direct result matching (no team-name lookup fragility)
 - [x] Settlement post-match analytics (ELO, form, model evals, T4/T8/T12) always run even when no bets to settle
-- [x] **AF as primary odds source in prediction pool** — was broken: AF odds were fetched and stored but never fed into the Poisson model. Fixed: `daily_pipeline_v2.py` now builds prediction pool from all AF fixtures with odds (~94/day), merges Kambi/SofaScore/BetExplorer on top for best-odds. Was generating 8 predictions/day; now ~94.
+- [x] **AF as primary odds source in prediction pool** — was broken: AF odds were fetched and stored but never fed into the Poisson model. Fixed: `daily_pipeline_v2.py` now builds prediction pool from all AF fixtures with odds (~94/day), merges Kambi/SofaScore/BetExplorer on top for best-odds. Was generating 8 predictions/day; now ~191+.
+- [x] **Tier D fallback** — when Poisson model has no historical data (team not in any CSV), fall back to AF's own prediction probabilities (fetched for ~191/280 matches/day). Edge bump +8%, stake cap 20%. Previously these matches were silently skipped; now they generate predictions and are evaluated by all bots.
 - [x] `_league_path_to_tier()` — resolves tier from league path for AF fixtures (was hardcoded to 0, causing bots to skip all AF matches)
 - [x] `_merge_odds_sources()` refactored: AF-first, scrapers as additive best-odds layer. Single source of truth for prediction pool.
 - [x] Live tracker column fix: `home_team_api_id` → `home_team_id` (DB column name mismatch)

@@ -1006,8 +1006,33 @@ def run_morning():
             hist_targets_global=hist_targets_global,
             sofascore_cache=sofascore_cache,
         )
+        # Tier D fallback: if Poisson has no historical data for this match,
+        # use API-Football's own prediction probabilities (already fetched for
+        # ~191/280 matches/day via the /predictions endpoint).  This ensures we
+        # generate a prediction — and evaluate bets — for every match that has
+        # odds, not just the subset our CSVs happen to cover.
+        af_pred_for_match = af_preds.get(match_id)
         if not poisson_pred:
-            continue
+            if af_pred_for_match and af_pred_for_match.get("af_home_prob"):
+                hp = af_pred_for_match["af_home_prob"]
+                dp = af_pred_for_match["af_draw_prob"] or 0
+                ap = af_pred_for_match["af_away_prob"] or 0
+                total = hp + dp + ap
+                if total > 0:
+                    hp, dp, ap = hp / total, dp / total, ap / total
+                over_p = 0.5  # AF doesn't give O/U; use neutral prior
+                poisson_pred = {
+                    "home_prob": hp,
+                    "draw_prob": dp,
+                    "away_prob": ap,
+                    "over_25_prob": over_p,
+                    "under_25_prob": 1 - over_p,
+                    "exp_home": None,
+                    "exp_away": None,
+                    "data_tier": "D",
+                }
+            else:
+                continue  # No Poisson data AND no AF prediction — truly skip
 
         data_tier = poisson_pred.get("data_tier", "A")
 
@@ -1064,19 +1089,20 @@ def run_morning():
         tier = match.get("tier", 1)
         country = match.get("league_path", "").split(" / ")[0] if " / " in match.get("league_path", "") else ""
 
-        # Data-tier adjustments:
-        #   A — full odds history, no adjustment
-        #   B — results only, require +2% edge, cap stake at 50%
-        #   C — on-demand Sofascore, require +5% edge, cap stake at 25%
-        DATA_TIER_EDGE_BUMP = {"A": 0.00, "B": 0.02, "C": 0.05}
+        # Data-tier adjustments (conservative stake / extra edge for lower-quality data):
+        #   A — our CSV + odds history, full calibration → no bump, full stake
+        #   B — global ELO CSV, results only → +2% edge req, 50% stake cap
+        #   C — Sofascore last-15-games, on-demand → +5% edge req, 25% stake cap
+        #   D — AF prediction probabilities only, no goals model → +8% edge req, 20% stake cap
+        DATA_TIER_EDGE_BUMP = {"A": 0.00, "B": 0.02, "C": 0.05, "D": 0.08}
         edge_bump = DATA_TIER_EDGE_BUMP.get(data_tier, 0.00)
         tier_tag = f"[Tier {data_tier}] " if data_tier != "A" else ""
 
         # P2: Compute odds movement for this match (once per match, cached per market)
         odds_movement_cache = {}
 
-        # T1: Look up AF prediction for this match
-        af_pred = af_preds.get(match_id)
+        # T1: AF prediction for this match (already looked up for Tier D above)
+        af_pred = af_pred_for_match
 
         for bot_name, config in BOTS_CONFIG.items():
             # Check tier filter
