@@ -1898,6 +1898,47 @@ def write_morning_signals(
                         store_match_signal(match_id, signal_name,
                                            float(fr.data[0]["ppg"]),
                                            "quality", "derived", captured_at=now_str)
+
+            # ── SIG-9: Form slope (PPG trend: last 5 vs prior 5) ────────────
+            for team_id, sig_name in [
+                (m.get("home_team_id"), "form_slope_home"),
+                (m.get("away_team_id"), "form_slope_away"),
+            ]:
+                if not team_id:
+                    continue
+                fm_r = client.table("matches").select(
+                    "home_team_id, result"
+                ).or_(
+                    f"home_team_id.eq.{team_id},away_team_id.eq.{team_id}"
+                ).eq("status", "finished").lt(
+                    "date", f"{match_date}T00:00:00"
+                ).order("date", desc=True).limit(10).execute()
+
+                if not fm_r.data or len(fm_r.data) < 6:
+                    continue
+
+                def _pts(row: dict, tid: str) -> int | None:
+                    res = row.get("result")
+                    if not res:
+                        return None
+                    if res == "home":
+                        return 3 if row.get("home_team_id") == tid else 0
+                    if res == "away":
+                        return 0 if row.get("home_team_id") == tid else 3
+                    if res == "draw":
+                        return 1
+                    return None
+
+                pts_list = [p for row in fm_r.data if (p := _pts(row, team_id)) is not None]
+                if len(pts_list) < 6:
+                    continue
+                recent = pts_list[:5]
+                prior = pts_list[5:min(10, len(pts_list))]
+                if len(prior) < 3:
+                    continue
+                store_match_signal(match_id, sig_name,
+                                   round(sum(recent) / len(recent) - sum(prior) / len(prior), 4),
+                                   "quality", "derived", captured_at=now_str)
     except Exception:
         pass
 
@@ -2054,7 +2095,7 @@ def write_morning_signals(
     except Exception:
         pass
 
-    # ── T2: Season goals avg (from team_season_stats, populated by T2 fetch) ─
+    # ── T2: Season goals avg + SIG-8: venue-specific splits ─────────────────
     try:
         if home_team_api_id and away_team_api_id and season:
             for api_id, suffix in [
@@ -2073,6 +2114,137 @@ def write_morning_signals(
                         store_match_signal(match_id, f"goals_against_avg_{suffix}",
                                            float(ga_avg), "quality", "team_season_stats",
                                            captured_at=now_str)
+
+                    # SIG-8: venue-specific avg — home team's home stats, away team's away stats
+                    if suffix == "home":
+                        played = stats.get("played_home") or 0
+                        gf = stats.get("goals_for_home")
+                        ga = stats.get("goals_against_home")
+                    else:
+                        played = stats.get("played_away") or 0
+                        gf = stats.get("goals_for_away")
+                        ga = stats.get("goals_against_away")
+                    if played >= 3:
+                        if gf is not None:
+                            store_match_signal(
+                                match_id, f"goals_for_venue_{suffix}",
+                                round(int(gf) / played, 3),
+                                "quality", "team_season_stats", captured_at=now_str,
+                            )
+                        if ga is not None:
+                            store_match_signal(
+                                match_id, f"goals_against_venue_{suffix}",
+                                round(int(ga) / played, 3),
+                                "quality", "team_season_stats", captured_at=now_str,
+                            )
+    except Exception:
+        pass
+
+    # ── SIG-7: Fixture importance per team + asymmetry ───────────────────────
+    try:
+        if league_api_id and season and home_team_api_id and away_team_api_id:
+            client = get_client()
+            st7 = client.table("league_standings").select(
+                "team_api_id, rank, description"
+            ).eq("league_api_id", league_api_id).eq(
+                "season", season
+            ).order("fetched_date", desc=True).limit(200).execute()
+
+            if st7.data:
+                seen7: set = set()
+                deduped7: list = []
+                for row in st7.data:
+                    tid = row.get("team_api_id")
+                    if tid and tid not in seen7:
+                        seen7.add(tid)
+                        deduped7.append(row)
+                total7 = len(deduped7)
+
+                if total7 >= 4:
+                    rel7 = max(1, total7 - 2)
+
+                    def _urgency(row: dict) -> float:
+                        rank = row.get("rank") or total7
+                        desc = (row.get("description") or "").lower()
+                        if rank <= 2 or "champion" in desc or "promot" in desc:
+                            return 0.85
+                        if rank >= rel7 or "relegate" in desc:
+                            return 0.70
+                        if rank <= 4 or "playoff" in desc or "play-off" in desc:
+                            return 0.50
+                        if rank / total7 < 0.35:
+                            return 0.25
+                        return 0.10
+
+                    home7 = next((r for r in deduped7 if r.get("team_api_id") == home_team_api_id), None)
+                    away7 = next((r for r in deduped7 if r.get("team_api_id") == away_team_api_id), None)
+                    if home7 and away7:
+                        urg_h = _urgency(home7)
+                        urg_a = _urgency(away7)
+                        store_match_signal(match_id, "fixture_importance_home",
+                                           urg_h, "context", "derived", captured_at=now_str)
+                        store_match_signal(match_id, "fixture_importance_away",
+                                           urg_a, "context", "derived", captured_at=now_str)
+                        store_match_signal(match_id, "importance_diff",
+                                           round(urg_h - urg_a, 3),
+                                           "context", "derived", captured_at=now_str)
+    except Exception:
+        pass
+
+    # ── SIG-10: Odds volatility (std of implied prob over last 24h) ──────────
+    try:
+        from statistics import stdev
+        from datetime import timedelta
+        client = get_client()
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        vol_r = client.table("odds_snapshots").select("odds").eq(
+            "match_id", match_id
+        ).eq("market", "1x2").eq("selection", "home").eq(
+            "is_live", False
+        ).gte("timestamp", cutoff).execute()
+        if vol_r.data and len(vol_r.data) >= 3:
+            implied = [1.0 / float(r["odds"]) for r in vol_r.data if float(r["odds"]) > 1.0]
+            if len(implied) >= 3:
+                store_match_signal(match_id, "odds_volatility",
+                                   round(stdev(implied), 6),
+                                   "market", "derived", captured_at=now_str)
+    except Exception:
+        pass
+
+    # ── SIG-11: League meta-features (home win pct, draw pct, avg goals) ─────
+    try:
+        client = get_client()
+        lm_match = client.table("matches").select("league_id").eq("id", match_id).execute()
+        if lm_match.data:
+            league_uuid = lm_match.data[0].get("league_id")
+            if league_uuid:
+                lm_r = client.table("matches").select(
+                    "result, score_home, score_away"
+                ).eq("league_id", league_uuid).eq(
+                    "status", "finished"
+                ).not_.is_("result", "null").order(
+                    "date", desc=True
+                ).limit(200).execute()
+
+                if lm_r.data and len(lm_r.data) >= 20:
+                    total_lm = len(lm_r.data)
+                    home_wins = sum(1 for r in lm_r.data if r.get("result") == "home")
+                    draws = sum(1 for r in lm_r.data if r.get("result") == "draw")
+                    goal_totals = [
+                        int(r["score_home"]) + int(r["score_away"])
+                        for r in lm_r.data
+                        if r.get("score_home") is not None and r.get("score_away") is not None
+                    ]
+                    store_match_signal(match_id, "league_home_win_pct",
+                                       round(home_wins / total_lm, 4),
+                                       "context", "derived", captured_at=now_str)
+                    store_match_signal(match_id, "league_draw_pct",
+                                       round(draws / total_lm, 4),
+                                       "context", "derived", captured_at=now_str)
+                    if goal_totals:
+                        store_match_signal(match_id, "league_avg_goals",
+                                           round(sum(goal_totals) / len(goal_totals), 3),
+                                           "context", "derived", captured_at=now_str)
     except Exception:
         pass
 
