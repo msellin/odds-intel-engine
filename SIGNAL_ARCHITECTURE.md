@@ -224,8 +224,8 @@ That's the meta-model described in MODEL_ANALYSIS.md Section 8.
 | Group 4: News impact | ✅ Running | news_events table, `news_impact_score` on bets |
 | Group 4: Injuries | ✅ Running | match_injuries table |
 | Group 4: Lineups | ✅ Running | lineups_home/away JSONB on matches |
-| Group 5: Referee signals | ❌ Not built | Data exists in AF /fixtures, needs extraction |
-| Group 5: Fixture importance | ❌ Not built | Derivable from standings data we have |
+| Group 5: Referee signals | ✅ Done 2026-04-28 | referee_stats table (migration 011) + `referee_cards_avg` written to match_signals |
+| Group 5: Fixture importance | ✅ Done 2026-04-28 | `compute_fixture_importance()` from standings, written to match_signals |
 | Group 5: Is-derby / travel | ❌ Not built | Needs team location data |
 | Group 6: Live signals | ✅ Running | live_match_snapshots, is_live odds |
 | `match_signals` table | ✅ Done 2026-04-28 | Migration 010 — append-only EAV signal store |
@@ -243,10 +243,10 @@ That's the meta-model described in MODEL_ANALYSIS.md Section 8.
 3. ✅ Migration 010 — `source` on predictions + `match_signals` table
 4. ✅ Store poisson + xgboost as separate prediction rows (S1)
 
-**Next 1-2 weeks:**
-5. ⬜ S3 — Wire existing signals into match_signals (odds_drift, news_impact, injuries, lineup, ELO, form)
-6. ⬜ S4 — Referee signals (build referee_stats table)
-7. ⬜ S5 — Fixture importance signal (standings → urgency score)
+**Also done (2026-04-28):**
+5. ✅ S3 — Wire signals into match_signals (opening odds, ELO, form, injuries, BDM-1, fixture importance, referee avg, news_impact)
+6. ✅ S4 — Referee signals: referee_stats table + backfill + morning pipeline lookup
+7. ✅ S5 — Fixture importance from standings urgency
 
 **In ~11 days (~mid-May 2026):**
 8. ⬜ Train meta-model Phase 1: 5-feature logistic regression on 3000+ pseudo-CLV rows

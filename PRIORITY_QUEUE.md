@@ -3,7 +3,7 @@
 > Single source of truth for all open tasks across ROADMAP.md, BACKLOG.md, and MODEL_ANALYSIS.md.
 > Synthesised after external AI architecture review (2026-04-28).
 > Update status here as tasks complete; propagate back to source docs.
-> Last updated: 2026-04-28
+> Last updated: 2026-04-28 (S3/S4/S5/BDM-1 done)
 
 ---
 
@@ -22,9 +22,9 @@
 
 | # | ID | Task | Effort | Status | Notes |
 |---|-----|------|--------|--------|-------|
-| 5 | S3 | Wire existing signals into match_signals | 1 day | ⬜ | odds_drift, news_impact, injuries, lineup, ELO diff, form, fixture importance — all already computed |
-| 6 | S4 | Referee signals (referee_stats table + daily enrichment) | 1 day | ⬜ | Data in matches.referee already. Depends on S2 |
-| 7 | S5 | Fixture importance signal (standings → 0-1 urgency score) | <2h | ⬜ | Depends on S2 |
+| 5 | S3 | Wire existing signals into match_signals | 1 day | ✅ Done 2026-04-28 | Morning pipeline writes opening odds, ELO, form, injuries, lineup, BDM-1, fixture importance, referee avg. News checker writes news_impact_score + lineup_confidence |
+| 6 | S4 | Referee signals (referee_stats table + daily enrichment) | 1 day | ✅ Done 2026-04-28 | Migration 011 creates referee_stats. build_referee_stats() + backfill_referee_stats.py. Morning pipeline writes referee_cards_avg to match_signals |
+| 7 | S5 | Fixture importance signal (standings → 0-1 urgency score) | <2h | ✅ Done 2026-04-28 | compute_fixture_importance() from league_standings (rank + description). Written to match_signals in morning pipeline |
 | 8 | B-ML3 | First meta-model: 5-feature logistic regression, target=pseudo_clv>0 | 1 day | ⬜ | Train after ~11 days when 3000+ pseudo-CLV rows exist. Features: ensemble_prob, odds_drift, elo_diff, league_tier, model_disagreement |
 | 9 | STRIPE | Stripe setup: Pro €19/mo + Elite €49/mo products, keys to Vercel | External | ⬜ | Blocking Milestone 2 |
 | 10 | B3 | Tier-aware data API (Next.js strips fields by tier) | 1-2 days | ⬜ | Blocking Milestone 2 |
@@ -39,7 +39,7 @@
 | 12 | PLATT | Platt scaling once 500+ predictions have outcomes | 1 day | ⬜ | Replaces/complements tier-specific shrinkage. ~mid-May 2026 |
 | 13 | P5.1 | European Soccer DB (Kaggle): 13-bookmaker sharp/soft analysis | 1-2 days | ⬜ | `bookmaker_sharpness_rankings.csv` + `sharp_money_signal` feature. Strongest unused signal |
 | 14 | PIN-1 | Pinnacle anchor signal: `model_prob - pinnacle_implied` as feature | 2-3h | ⬜ | Low effort. Depends on P5.1 to confirm Pinnacle is in our 13 bookmakers |
-| 15 | BDM-1 | Bookmaker disagreement signal: `max(implied) - min(implied)` across 13 bookmakers | 1h | ⬜ | Data already in odds_snapshots |
+| 15 | BDM-1 | Bookmaker disagreement signal: `max(implied) - min(implied)` across 13 bookmakers | 1h | ✅ Done 2026-04-28 | compute_bookmaker_disagreement() + written to match_signals in morning pipeline |
 | 16 | F8 | Stripe integration (Pro + Elite, webhook, tier column update) | 2-3 days | ⬜ | Blocking Milestone 2 |
 | 17 | F5 | Value bets page redesign (free=teaser, Pro=directional, Elite=full picks) | 1-2 days | ⬜ | Blocking Milestone 3 |
 | 18 | ALN-1 | Dynamic alignment thresholds (300+ settled bot bets → ROI by alignment bin) | 2h | ⬜ | Needs actual placed bets — pseudo-CLV does NOT substitute |
