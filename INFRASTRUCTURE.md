@@ -1,6 +1,6 @@
 # OddsIntel — Infrastructure & Costs
 
-> Last updated: 2026-04-27
+> Last updated: 2026-04-29
 
 ---
 
@@ -17,6 +17,7 @@
 | **Kambi API** | Odds for 41 leagues (public) | Free (no key) | Active |
 | **ESPN API** | Settlement results backup (public) | Free (no key) | Active |
 | **API-Football** | PRIMARY: fixtures, results, odds, lineups, injuries, live stats | Ultra ($29/mo) | Pending setup |
+| **Sentry** | Error monitoring & alerting (frontend) | Free (5K errors/mo) | Active |
 
 ### Not yet active (needed for launch)
 
@@ -24,8 +25,7 @@
 |---------|------|-------------|------|-----------|
 | **Domain** | oddsintel.ai or similar | Milestone 1 (free tier launch) | One-time purchase | ~€10-15/yr |
 | **Vercel Analytics** | Privacy-friendly page analytics (no GDPR banner) | Milestone 1 | Included in Hobby | Free (up to 2.5K events/mo) |
-| **Sentry** | Error monitoring & alerting | Milestone 1 | Free (5K errors/mo) | €0 |
-| **Stripe** | Payment processing (Pro/Elite tiers) | Milestone 2 (Pro launch) | No monthly fee | 2.9% + €0.25/txn |
+| **Stripe** | Payment processing (Pro/Elite tiers) | Milestone 2 (Pro launch) | No monthly fee | 1.5% + €0.25/txn (EU) / 2.9% + €0.25 (non-EU) |
 | **Plausible** | Alternative to Vercel Analytics if more depth needed | Optional | Cloud | €9/mo (10K pageviews) |
 | **Resend / Postmark** | Transactional email (welcome, receipts, alerts) | Milestone 2 | Free tier | €0 up to 3K emails/mo |
 
@@ -133,12 +133,12 @@ See `DATA_SOURCES.md` for full data architecture, migration plan, and alternativ
 | Subscribers | Plan Mix | Monthly Revenue | Monthly Costs | Net |
 |-------------|----------|----------------|---------------|-----|
 | 0 | — | €0 | €0 | €0 |
-| 5 | 5 Pro | €95 | ~€27 | **+€68** |
-| 10+2 | 10 Pro, 2 Elite | €288 | ~€55 | **+€233** |
-| 50+10 | 50 Pro, 10 Elite | €1,440 | ~€100 | **+€1,340** |
-| 200+50 | 200 Pro, 50 Elite | €6,300 | ~€200 | **+€6,100** |
+| 5 | 5 Pro | €25 | ~€27 | **-€2** |
+| 10+2 | 10 Pro, 2 Elite | €80 | ~€55 | **+€25** |
+| 50+10 | 50 Pro, 10 Elite | €400 | ~€100 | **+€300** |
+| 200+50 | 200 Pro, 50 Elite | €1,748 | ~€200 | **+€1,548** |
 
-> Stripe takes 2.9% + €0.25 per transaction — factored into cost estimates above.
+> Stripe takes 1.5% + €0.25/txn for EU cards, 2.9% + €0.25 for non-EU. Revenue based on Pro €4.99/mo, Elite €14.99/mo.
 
 ---
 

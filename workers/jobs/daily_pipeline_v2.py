@@ -70,7 +70,7 @@ STAKE = 10.0
 BOTS_CONFIG = {
     "bot_v10_all": {
         "description": "v10 model, all target leagues, tier-adjusted thresholds",
-        "tier_label": "sharp",
+        "tier_label": "elite",
         "markets": ["1x2", "ou"],
         "tier_filter": None,
         "edge_thresholds": {
@@ -84,7 +84,7 @@ BOTS_CONFIG = {
     },
     "bot_lower_1x2": {
         "description": "Tier 2-4 only, 1X2 only — our best backtest signal",
-        "tier_label": "sharp",
+        "tier_label": "elite",
         "markets": ["1x2"],
         "tier_filter": [2, 3, 4],
         "edge_thresholds": {
@@ -97,7 +97,7 @@ BOTS_CONFIG = {
     },
     "bot_conservative": {
         "description": "Only bet on 10%+ edge, very selective",
-        "tier_label": "sharp",
+        "tier_label": "elite",
         "markets": ["1x2"],
         "tier_filter": None,
         "edge_thresholds": {
@@ -111,7 +111,7 @@ BOTS_CONFIG = {
     },
     "bot_aggressive": {
         "description": "Low threshold (3% edge), high volume",
-        "tier_label": "analyst",
+        "tier_label": "pro",
         "markets": ["1x2", "ou"],
         "tier_filter": None,
         "edge_thresholds": {
@@ -127,7 +127,7 @@ BOTS_CONFIG = {
         # NOTE: +ROI in 2022-25 backtest but -ROI in mega backtest (2005-15).
         # Era discrepancy — treat results here as exploratory until more live data.
         "description": "Only Greek + Turkish leagues — profitable in 2022-25 backtest (era-sensitive)",
-        "tier_label": "syndicate",
+        "tier_label": "elite",
         "markets": ["1x2"],
         "tier_filter": [1],
         "league_filter": ["Turkey", "Greece"],
@@ -147,7 +147,7 @@ BOTS_CONFIG = {
         # Singapore: S.League +27.5% ROI (5/5 seasons) — need odds source, tracked for data.
         # Tier B stake cap (50%) applied since these use targets_global history only.
         "description": "Mega backtest confirmed leagues — Scotland/Austria/Ireland/Korea (Tier B)",
-        "tier_label": "syndicate",
+        "tier_label": "elite",
         "markets": ["1x2"],
         "tier_filter": None,
         "league_filter": ["Scotland", "Austria", "Ireland", "South Korea", "Singapore"],
@@ -167,7 +167,7 @@ BOTS_CONFIG = {
         # Confirmed in both FD (+30.6% ROI) and BTB (+15-26% ROI) datasets.
         # Away wins in English lower divisions at mid-range longshot odds.
         "description": "Optimizer: Away wins, T2+ British Isles — cross-era +16% ROI, 336 bets",
-        "tier_label": "syndicate",
+        "tier_label": "elite",
         "markets": ["1x2"],
         "selection_filter": ["Away"],
         "tier_filter": [2, 3, 4],
@@ -184,7 +184,7 @@ BOTS_CONFIG = {
         # Confirmed in FD (+18.8% ROI, CI +4.9% to +32.8%) and BTB (+30.5%).
         # Away wins in Europe top 5 second divisions.
         "description": "Optimizer: Away wins, T2+ Europe top 5 — cross-era +19% ROI, 373 bets",
-        "tier_label": "syndicate",
+        "tier_label": "elite",
         "markets": ["1x2"],
         "selection_filter": ["Away"],
         "tier_filter": [2, 3, 4],
@@ -201,7 +201,7 @@ BOTS_CONFIG = {
         # Confirmed in FD (+24.2% ROI) and BTB (+12.5% ROI, 448 bets).
         # Home underdogs in lower European divisions.
         "description": "Optimizer: Home underdogs, T2+ Europe — cross-era +14% ROI, 244 bets",
-        "tier_label": "syndicate",
+        "tier_label": "elite",
         "markets": ["1x2"],
         "selection_filter": ["Home"],
         "tier_filter": [2, 3, 4],
@@ -217,7 +217,7 @@ BOTS_CONFIG = {
         # FD only (BTB has no O/U data) — +29% ROI, 85 bets, +22% on O/U combined.
         # Over 2.5 goals in English lower divisions at value odds.
         "description": "Optimizer: O/U T2+ British Isles — FD +22-29% ROI, 85-146 bets",
-        "tier_label": "syndicate",
+        "tier_label": "elite",
         "markets": ["ou"],
         "tier_filter": [2, 3, 4],
         "league_filter": ["England", "Scotland", "Ireland", "Wales"],
