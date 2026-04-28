@@ -1,6 +1,9 @@
 # Supabase project configuration
 # https://supabase.com/docs/guides/cli/config
 
+# Project ID — used by `supabase db push` and GitHub Actions migration
+project_id = "jjdmmfpulofyykzwiuqr"
+
 [api]
 enabled = true
 port = 54321
@@ -32,6 +35,3 @@ enable_signup = true
 
 [realtime]
 enabled = true
-
-# Project ID — used by `supabase db push` and GitHub Actions migration
-project_id = "jjdmmfpulofyykzwiuqr"
