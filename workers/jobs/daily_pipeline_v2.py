@@ -33,7 +33,7 @@ from workers.scrapers.sofascore_odds import fetch_all_odds as fetch_sofascore_od
 from workers.scrapers.betexplorer_odds import fetch_gap_leagues_odds as fetch_betexplorer_odds
 from workers.api_clients.api_football import (
     get_fixtures_by_date, fixture_to_match_dict,
-    get_fixture_odds, parse_fixture_odds,
+    get_fixture_odds, parse_fixture_odds, get_odds_by_date,
     get_prediction, parse_prediction,
     get_team_statistics, parse_team_statistics,
     get_injuries_batched, parse_injuries,
@@ -814,20 +814,26 @@ def run_morning():
     except Exception as e:
         console.print(f"  [yellow]Enrichment error (non-fatal): {e}[/yellow]")
 
-    # 4. Fetch odds from API-Football (primary, covers all leagues)
-    console.print("\n[cyan]Fetching odds from API-Football...[/cyan]")
+    # 4. Fetch odds from API-Football (bulk by date — ~10 calls instead of ~200)
+    console.print("\n[cyan]Fetching odds from API-Football (bulk)...[/cyan]")
     api_football_odds_matches = []
-    scheduled_fixtures = [f for f in all_fixtures if f.get("status", "NS") == "NS" and f.get("api_football_id")]
     af_odds_fetched = 0
-    for fixture in scheduled_fixtures:
-        af_id = fixture["api_football_id"]
-        try:
-            raw_odds = get_fixture_odds(af_id)
-            parsed = parse_fixture_odds(raw_odds)
+    try:
+        bulk_odds = get_odds_by_date(today_str)  # {af_fixture_id: [raw entries]}
+        console.print(f"  {len(bulk_odds)} fixtures with odds from API-Football")
+
+        # Build a lookup: af_id -> fixture metadata
+        af_fixture_lookup = {
+            int(f["api_football_id"]): f
+            for f in all_fixtures if f.get("api_football_id")
+        }
+
+        for af_id, raw_entries in bulk_odds.items():
+            parsed = parse_fixture_odds(raw_entries)
             if not parsed:
                 continue
 
-            # Convert to match dict format: pick best odds across bookmakers
+            # Pick best odds across all bookmakers
             best = {"odds_home": 0, "odds_draw": 0, "odds_away": 0,
                     "odds_over_25": 0, "odds_under_25": 0}
             for row in parsed:
@@ -841,10 +847,11 @@ def run_morning():
                         best[key] = row["odds"]
 
             if best["odds_home"] > 0:
+                fixture = af_fixture_lookup.get(af_id, {})
                 api_football_odds_matches.append({
-                    "home_team": fixture["home_team"],
-                    "away_team": fixture["away_team"],
-                    "start_time": fixture["date"],
+                    "home_team": fixture.get("home_team", ""),
+                    "away_team": fixture.get("away_team", ""),
+                    "start_time": fixture.get("date", ""),
                     "league_path": f"{fixture.get('country', '')} / {fixture.get('league_name', '')}",
                     "league_code": "",
                     "tier": 0,
@@ -854,15 +861,15 @@ def run_morning():
                 })
                 af_odds_fetched += 1
 
-                # Also store all bookmaker odds in odds_snapshots
+                # Store all bookmaker rows in odds_snapshots
                 match_id = af_id_to_match_id.get(af_id)
                 if match_id:
                     _store_parsed_odds(match_id, parsed)
 
-        except Exception as e:
-            continue  # Skip individual fixture errors silently
+    except Exception as e:
+        console.print(f"  [yellow]AF bulk odds error: {e}[/yellow]")
 
-    console.print(f"  {af_odds_fetched} matches with API-Football odds")
+    console.print(f"  {af_odds_fetched} matches with API-Football odds stored")
 
     # 4b. Fetch odds from Kambi (supplementary — different bookmaker)
     console.print("\n[cyan]Fetching odds from Kambi...[/cyan]")

@@ -213,11 +213,36 @@ def _parse_int(val) -> int | None:
 
 def get_fixture_odds(fixture_id: int) -> list[dict]:
     """
-    Get pre-match odds for a fixture from all available bookmakers.
+    Get pre-match odds for a single fixture from all available bookmakers.
     Returns raw bookmaker odds data.
     """
     data = _get("odds", {"fixture": fixture_id})
     return data.get("response", [])
+
+
+def get_odds_by_date(date_str: str) -> dict[int, list[dict]]:
+    """
+    Bulk fetch all pre-match odds for a given date using the paginated /odds endpoint.
+    Much more efficient than per-fixture calls (~10 calls vs ~200).
+    Returns dict keyed by fixture_id -> list of raw bookmaker odds entries.
+    """
+    result: dict[int, list[dict]] = {}
+    page = 1
+    total_pages = 1
+
+    while page <= total_pages:
+        data = _get("odds", {"date": date_str, "page": page})
+        paging = data.get("paging", {})
+        total_pages = paging.get("total", 1)
+        for entry in data.get("response", []):
+            fid = entry.get("fixture", {}).get("id")
+            if fid:
+                if fid not in result:
+                    result[fid] = []
+                result[fid].append(entry)
+        page += 1
+
+    return result
 
 
 def parse_fixture_odds(odds_response: list[dict]) -> list[dict]:
