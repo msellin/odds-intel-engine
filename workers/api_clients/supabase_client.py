@@ -645,7 +645,7 @@ def _build_feature_row(client, match: dict) -> dict | None:
 
     if home_team_id and match_date:
         form_r = client.table("team_form_cache").select(
-            "ppg, wins, draws, losses"
+            "ppg"
         ).eq("team_id", home_team_id).lte(
             "date", match_date
         ).order("date", desc=True).limit(1).execute()
@@ -654,7 +654,7 @@ def _build_feature_row(client, match: dict) -> dict | None:
 
     if away_team_id and match_date:
         form_r = client.table("team_form_cache").select(
-            "ppg, wins, draws, losses"
+            "ppg"
         ).eq("team_id", away_team_id).lte(
             "date", match_date
         ).order("date", desc=True).limit(1).execute()
