@@ -291,12 +291,36 @@ def _fetch_sofascore_team_history(team_id: int, cache: dict) -> list[dict] | Non
         return None
 
 
+# Dixon-Coles correlation parameter — corrects independent Poisson's draw underestimation.
+# Literature standard value. Negative sign: low-scoring draws are more common than Poisson predicts.
+DIXON_COLES_RHO = -0.13
+
+
+def _dc_tau(h: int, a: int, exp_h: float, exp_a: float, rho: float) -> float:
+    """Dixon-Coles correction factor τ for the four low-scoring outcomes."""
+    if h == 0 and a == 0:
+        return 1.0 - exp_h * exp_a * rho
+    if h == 1 and a == 0:
+        return 1.0 + exp_a * rho
+    if h == 0 and a == 1:
+        return 1.0 + exp_h * rho
+    if h == 1 and a == 1:
+        return 1.0 - rho
+    return 1.0
+
+
 def _poisson_probs(exp_h: float, exp_a: float) -> dict:
-    """Compute 1X2 + O/U 2.5 probabilities from expected goals."""
+    """Compute 1X2 + O/U 2.5 probabilities from expected goals.
+
+    Applies Dixon-Coles bivariate correction to the four low-scoring outcomes
+    (0-0, 1-0, 0-1, 1-1) to fix the ~8% draw underestimation of independent Poisson.
+    1X2 probabilities are renormalised after correction; O/U is unaffected.
+    """
     p_h = p_d = p_a = p_over = 0.0
     for h in range(8):
         for a in range(8):
             p = poisson.pmf(h, exp_h) * poisson.pmf(a, exp_a)
+            p *= _dc_tau(h, a, exp_h, exp_a, DIXON_COLES_RHO)
             if h > a:
                 p_h += p
             elif h == a:
@@ -305,6 +329,12 @@ def _poisson_probs(exp_h: float, exp_a: float) -> dict:
                 p_a += p
             if h + a > 2:
                 p_over += p
+    # Renormalise 1x2 after DC correction (τ shifts probability mass slightly)
+    total_1x2 = p_h + p_d + p_a
+    if total_1x2 > 0:
+        p_h /= total_1x2
+        p_d /= total_1x2
+        p_a /= total_1x2
     return {
         "home_prob": p_h, "draw_prob": p_d, "away_prob": p_a,
         "over_25_prob": p_over, "under_25_prob": 1 - p_over,

@@ -232,9 +232,12 @@ Meta-model (Phase 1 ~May 9, Phase 2 ~June)
     │
     └─ Logistic regression on match_feature_vectors
            Target: pseudo_clv > 0 (was this bet +EV?)
-           Features: ensemble_prob, odds_drift, elo_diff, league_tier,
-                     model_disagreement, bookmaker_disagreement, overnight_line_move,
-                     news_impact_score, injury_count, form_slope, odds_volatility...
+           Features (META-2 design — market structure gaps only):
+                     edge (ensemble_prob − market_implied_home),
+                     odds_drift, bookmaker_disagreement, overnight_line_move,
+                     model_disagreement, league_tier,
+                     news_impact_score, odds_volatility
+           Note: raw ELO/form excluded — market already priced those in
 ```
 
 ---

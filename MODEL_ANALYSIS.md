@@ -146,11 +146,21 @@ Submitted to 4 AI evaluators. Key verdicts that were implemented:
 ├─────────────────────────────────────────────────────────────┤
 │ Stage 4: META-MODEL (pending data accumulation)             │
 │                                                             │
-│  Phase 1 (~mid-May 2026): 5-feature logistic regression     │
-│    Features: ensemble_prob, odds_drift, elo_diff,           │
-│              league_tier, model_disagreement                │
+│  Phase 1 (~mid-May 2026): 8-feature logistic regression     │
 │    Target: pseudo_clv > 0 (all matches, not just bets)      │
 │    Ready when: 3000+ rows in match_feature_vectors (~11d)   │
+│                                                             │
+│  Feature design (META-2, 2026-04-29):                       │
+│    DO NOT use raw fundamentals (ELO, form) — market         │
+│    already priced those in. Use market structure gaps:      │
+│    • edge = ensemble_prob − market_implied_home             │
+│    • odds_drift (open → now implied prob delta)             │
+│    • bookmaker_disagreement (max−min implied)               │
+│    • overnight_line_move (yesterday close → today open)     │
+│    • model_disagreement (|poisson_prob − xgboost_prob|)     │
+│    • league_tier (T1–T4 data quality proxy)                 │
+│    • news_impact_score (Gemini qualitative signal)          │
+│    • odds_volatility (std of implied prob, 24h)             │
 │                                                             │
 │  Phase 2 (~June 2026): XGBoost + full signal set            │
 │    Replaces fixed edge thresholds with ML-predicted EV      │

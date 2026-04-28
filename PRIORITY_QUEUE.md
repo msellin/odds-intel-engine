@@ -40,8 +40,8 @@
 | 13 | SIG-9 | Form slope: PPG(last 5) − PPG(prior 5) per team | 1h | ✅ Done 2026-04-29 | Medium | AI Analysis (2026-04-28) | Done | `form_slope_home/away` — rising vs falling form. Needs ≥6 historical matches per team |
 | 14 | SIG-10 | Odds volatility: std dev of home implied prob over last 24h | 1h | ✅ Done 2026-04-29 | Medium | AI Analysis (2026-04-28) | Done | `odds_volatility` — needs ≥3 snapshots in 24h window. High = market uncertain |
 | 15 | SIG-11 | League meta-features: home_win_pct, draw_pct, avg_goals per league | 1h | ✅ Done 2026-04-29 | Medium | AI Analysis (2026-04-28) | Done | `league_home_win_pct`, `league_draw_pct`, `league_avg_goals` — last 200 finished matches per league. Needs ≥20 matches |
-| 16 | META-2 | Meta-model feature design: drop raw fundamentals, keep market structure features | 2h design | ⬜ | High | AI Analysis (2026-04-28) | Before May 9 | Model should learn: `model_prob - pinnacle_implied`, `odds_drift`, `steam_move`, `bookmaker_disagreement` — not ELO/form directly (market already priced those) |
-| 17 | B-ML3 | First meta-model: 5-feature logistic regression, target=pseudo_clv>0 | 1 day | ⬜ | Very High | Internal | ~May 9 | Train after ~3000+ pseudo-CLV rows. Features: ensemble_prob, odds_drift, elo_diff, league_tier, model_disagreement |
+| 16 | META-2 | Meta-model feature design: drop raw fundamentals, keep market structure features | 2h design | ✅ Done 2026-04-29 | High | AI Analysis (2026-04-28) | Done | Features: `edge` (ensemble_prob−market_implied), `odds_drift`, `bookmaker_disagreement`, `overnight_line_move`, `model_disagreement`, `league_tier`, `news_impact_score`, `odds_volatility`. NOT ELO/form — market already priced those |
+| 17 | B-ML3 | First meta-model: 8-feature logistic regression, target=pseudo_clv>0 | 1 day | ⬜ | Very High | Internal | ~May 9 | Train after ~3000+ pseudo-CLV rows. Features per META-2 design. See MODEL_ANALYSIS.md Stage 4 |
 | 18 | STRIPE | Stripe setup: Pro €4.99/mo + Elite €14.99/mo products, keys to Vercel | External | ⬜ | High | Internal | ~May 2026 | Blocking Milestone 2 |
 | 19 | B3 | Tier-aware data API (Next.js layer strips fields by tier) | 1-2 days | ⬜ | High | Internal | ~May 2026 | Blocking Milestone 2 |
 | 20 | SENTRY | Sentry error monitoring (free tier) | 1h | ✅ Done | Medium | Internal | Done | @sentry/nextjs wired in frontend, DSN configured |
@@ -52,7 +52,7 @@
 
 | # | ID | Task | Effort | Status | Impact | Source | Timeline | Notes |
 |---|-----|------|--------|--------|--------|--------|----------|-------|
-| 21 | MOD-1 | Dixon-Coles correction to Poisson model | 4h | ⬜ | **High** | AI Analysis (2026-04-28) | ~May 2026 | Fixes documented 8% draw underestimation from MEGA_BACKTEST. Bivariate Poisson correction for 0-0, 1-0, 0-1, 1-1 game correlation |
+| 21 | MOD-1 | Dixon-Coles correction to Poisson model | 4h | ✅ Done 2026-04-29 | **High** | AI Analysis (2026-04-28) | Done | `DIXON_COLES_RHO=-0.13` applied in `_poisson_probs()`. τ correction for 0-0/1-0/0-1/1-1, 1x2 renormalised. Takes effect in tomorrow's 08:00 UTC pipeline |
 | 22 | PLATT | Platt scaling once 500+ predictions have outcomes | 1 day | ⬜ | High | Internal | ~mid-May 2026 | Replaces/complements tier-specific shrinkage |
 | 23 | P5.1 | European Soccer DB (Kaggle): 13-bookmaker sharp/soft analysis | 1-2 days | ⬜ | High | Internal | ~May 2026 | `bookmaker_sharpness_rankings.csv` + `sharp_money_signal` feature |
 | 24 | PIN-1 | Pinnacle anchor signal: `model_prob - pinnacle_implied` as feature | 2-3h | ⬜ | High | Internal | ~May 2026 | Depends on P5.1 to confirm Pinnacle is in our 13 bookmakers |
