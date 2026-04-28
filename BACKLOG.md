@@ -183,9 +183,83 @@ These require accumulated data from P1/P2 before they're useful.
 
 ---
 
+## Priority 6 — Multi-Signal Architecture
+
+> See `SIGNAL_ARCHITECTURE.md` for the full design.
+>
+> Core idea: every match accumulates independent signals across time. We store all of them.
+> The ML model learns which signals actually matter — we don't decide upfront.
+
+### S0a — Pseudo-CLV for all matches ✅ DONE 2026-04-28
+- `compute_and_store_pseudo_clv()` in `supabase_client.py`
+- Called from `settlement.py` for every finished match (not just bet matches)
+- Migration 010 adds `pseudo_clv_home/draw/away` to `matches` table
+- **Files:** `supabase_client.py`, `settlement.py`, `supabase/migrations/010_multi_signal_architecture.sql`
+
+### S0b — `match_feature_vectors` materialized ETL table ✅ DONE 2026-04-28
+- `build_match_feature_vectors()` in `supabase_client.py`
+- Runs nightly in `settlement.py` after pseudo-CLV computation
+- Wide table: one row per match, columns for ensemble_prob, ELO, form, odds, outcome labels
+- Migration 010 creates the table
+- **Files:** `supabase_client.py`, `settlement.py`, `supabase/migrations/010_multi_signal_architecture.sql`
+
+### S1 — `source` column on predictions table (Migration 010)
+- Add `source text` to `predictions` (values: 'poisson', 'af', 'xgboost', 'ensemble')
+- Unique constraint on `(match_id, market, source)`
+- Store each signal as its own row — Poisson, AF, XGBoost separately, ensemble as consensus
+- **Value:** Every match becomes a labeled multi-signal training example
+- **Effort:** 1 migration + pipeline change (~2h)
+- **Depends on:** Nothing blocked
+
+### S2 — `match_signals` table (Migration 010, same migration)
+- New append-only table: `(match_id, signal_name, signal_value, signal_group, captured_at)`
+- Stores all non-probability signals: odds_drift, news_impact, injury counts, lineup_confirmed, referee stats, etc.
+- Same signal can have multiple rows (captured at different times) — ML uses value closest to kickoff
+- **Value:** Single queryable table for all contextual signals → clean ML training data join
+- **Effort:** 1 migration + wire existing computed values into it
+
+### S3 — Wire existing signals into match_signals
+In priority order (all data already computed, just needs to be stored in the new table):
+1. `odds_drift`, `odds_drift_pct`, `steam_move` — already computed in `compute_odds_movement()`
+2. `news_impact_score` — already in news_checker output
+3. `injury_severity_home/away`, `players_out_home/away` — already in match_injuries table
+4. `lineup_confirmed` — already on matches table
+5. `elo_diff` — already in team_elo_daily
+6. `form_momentum` — already in team_form_cache
+7. `fixture_importance` — derivable from league_standings (already collected)
+- **Effort:** Wire into settlement pipeline and news_checker (~1 day)
+
+### S4 — Referee signals
+- Extract referee name from AF fixture metadata (already stored in `matches.referee`)
+- Build `referee_stats` table: cards/game avg, home win%, O/U 2.5% by referee
+- Morning pipeline looks up referee and writes `referee_cards_avg`, `referee_home_win_pct` to match_signals
+- **Value:** Free signal, referee data consistently shows patterns (especially in lower leagues)
+- **Effort:** Backfill script + daily enrichment (~1 day)
+- **Depends on:** S2 (match_signals table)
+
+### S5 — Fixture importance signal
+- Derivable from `league_standings` (already collected): points to relegation, points to title
+- `fixture_importance = max(urgency_home, urgency_away)` — 0 to 1 scale
+- High-importance matches (derbies, relegation 6-pointers) behave differently
+- Write to match_signals at morning pipeline
+- **Effort:** <2h once S2 is done
+
+### S6 — Meta-model (train when data is ready)
+- **Was blocked:** 6-8 weeks for 1000 bot bets. **Now unblocked** by S0a pseudo-CLV approach — 3000+ labeled examples in ~11 days
+- **Phase 1 (~mid-May 2026):** 5-feature logistic regression on all matches with pseudo-CLV. Features: `ensemble_prob, odds_drift, elo_diff, league_tier, model_disagreement`. Target: `pseudo_clv > 0`.
+- **Phase 2 (~June 2026):** Graduate to XGBoost once 1000+ bot bets validate alignment thresholds. Full signal set.
+- Input features: all Group 1-5 signals + signal_count + data_tier
+- Target: `pseudo_clv > 0` (primary) + `won_bet` (secondary, bot bets only)
+- Replace fixed edge thresholds with ML-predicted EV score
+- **Key constraint:** Use time-series split (train on week 1-3, validate on week 4). Never random split.
+- **Value:** This is the long-term goal — the model that actually knows when to bet
+
+---
+
 ## Notes
 
 - **Don't optimize the model until you can measure it.** P1.1 (audit trail) is the prerequisite for everything.
 - **Singapore S.League (+27.5% ROI) and Scotland League Two (+12.3%/+21%) are the strongest signals.** Any data improvement that helps these leagues is highest priority.
 - **The question "should we sell this or keep it?" depends entirely on P4.1.** If the model + AI consistently beats closing lines by 3%+, that's genuine alpha worth keeping. If it's 0.5%, sell the analysis as a product.
 - **External data priority:** P5.1 (European Soccer DB) is actionable immediately — download + parse. P5.2 (Footiqo) needs a manual league check first. P5.3 (OddAlerts) is blocked on P5.1 analysis.
+- **Multi-signal architecture priority:** S1+S2 are the foundation — do these before any other model work. Without them, every signal is scattered across different tables and hard to train on.

@@ -379,19 +379,331 @@ def get_todays_scheduled_matches() -> list[dict]:
 # PREDICTIONS
 # ============================================================
 
-def store_prediction(match_id: str, market: str, prediction: dict):
-    """Store a model prediction for a match"""
+def store_prediction(match_id: str, market: str, prediction: dict,
+                     source: str = "ensemble"):
+    """
+    Store a model prediction for a match.
+
+    source: 'ensemble' (default) | 'poisson' | 'xgboost' | 'af'
+    Each (match_id, market, source) combination is unique — upsert on conflict.
+    """
     client = get_client()
 
-    client.table("predictions").insert({
+    row = {
         "match_id": match_id,
         "market": market,
+        "source": source,
         "model_probability": prediction["model_prob"],
         "implied_probability": prediction.get("implied_prob"),
         "edge_percent": prediction.get("edge"),
         "confidence": prediction.get("confidence", 0.5),
         "reasoning": prediction.get("reasoning"),
-    }).execute()
+    }
+
+    client.table("predictions").upsert(
+        row,
+        on_conflict="match_id,market,source",
+    ).execute()
+
+
+def store_match_signal(match_id: str, signal_name: str, signal_value: float | None,
+                       signal_group: str, data_source: str = "derived",
+                       signal_text: str | None = None,
+                       captured_at: str | None = None):
+    """
+    Append a signal observation to match_signals.
+    Same signal can be stored multiple times (different timestamps).
+    ML training uses the value closest to kickoff.
+    """
+    client = get_client()
+
+    row = {
+        "match_id": match_id,
+        "signal_name": signal_name,
+        "signal_value": signal_value,
+        "signal_group": signal_group,
+        "data_source": data_source,
+        "signal_text": signal_text,
+    }
+    if captured_at:
+        row["captured_at"] = captured_at
+
+    client.table("match_signals").insert(row).execute()
+
+
+# ─── Pseudo-CLV ──────────────────────────────────────────────────────────────
+
+def compute_and_store_pseudo_clv(client, match_id: str) -> dict | None:
+    """
+    Compute pseudo-CLV for all three 1x2 selections for a finished match.
+
+    pseudo_clv = (1/opening_odds) / (1/closing_odds) - 1
+    Positive = opening odds had more implied edge than closing (bet was +value at open).
+
+    Opening odds = earliest snapshot (any bookmaker).
+    Closing odds = latest snapshot before is_closing=True, or latest overall.
+
+    Returns dict with home/draw/away values, or None if not enough data.
+    """
+    # Fetch all 1x2 snapshots for this match
+    result = client.table("odds_snapshots").select(
+        "selection, odds, timestamp, is_closing"
+    ).eq("match_id", match_id).eq("market", "1x2").order(
+        "timestamp", desc=False
+    ).execute()
+
+    if not result.data:
+        return None
+
+    # Group by selection
+    by_selection: dict[str, list[dict]] = {}
+    for row in result.data:
+        sel = row["selection"].lower()
+        by_selection.setdefault(sel, []).append(row)
+
+    pseudo_clvs = {}
+    for sel in ("home", "draw", "away"):
+        snaps = by_selection.get(sel, [])
+        if len(snaps) < 2:
+            pseudo_clvs[sel] = None
+            continue
+
+        opening_odds = float(snaps[0]["odds"])   # earliest snapshot
+        # Closing: prefer is_closing=True, else latest
+        closing_snaps = [s for s in snaps if s.get("is_closing")]
+        closing_odds = float(closing_snaps[-1]["odds"]) if closing_snaps else float(snaps[-1]["odds"])
+
+        if opening_odds <= 1.0 or closing_odds <= 1.0:
+            pseudo_clvs[sel] = None
+            continue
+
+        opening_implied = 1.0 / opening_odds
+        closing_implied = 1.0 / closing_odds
+        pseudo_clvs[sel] = round(opening_implied / closing_implied - 1, 5)
+
+    if all(v is None for v in pseudo_clvs.values()):
+        return None
+
+    client.table("matches").update({
+        "pseudo_clv_home": pseudo_clvs.get("home"),
+        "pseudo_clv_draw": pseudo_clvs.get("draw"),
+        "pseudo_clv_away": pseudo_clvs.get("away"),
+    }).eq("id", match_id).execute()
+
+    return pseudo_clvs
+
+
+# ─── match_feature_vectors ETL ────────────────────────────────────────────────
+
+def build_match_feature_vectors(client, date_str: str) -> int:
+    """
+    Nightly ETL: build wide ML training rows for all finished matches on date_str.
+    Pulls from predictions, team_elo_daily, team_form_cache, odds_snapshots, matches.
+    Returns count of rows upserted.
+    """
+    # Fetch finished matches for this date
+    matches_result = client.table("matches").select(
+        "id, date, result, score_home, score_away, "
+        "home_team_id, away_team_id, league_id, "
+        "pseudo_clv_home, pseudo_clv_draw, pseudo_clv_away"
+    ).eq("status", "finished").gte(
+        "date", f"{date_str}T00:00:00"
+    ).lte("date", f"{date_str}T23:59:59").execute()
+
+    matches = matches_result.data
+    if not matches:
+        return 0
+
+    upserted = 0
+
+    for match in matches:
+        match_id = match["id"]
+        match_date = date_str
+
+        try:
+            row = _build_feature_row(client, match)
+            if row:
+                client.table("match_feature_vectors").upsert(
+                    row, on_conflict="match_id"
+                ).execute()
+                upserted += 1
+        except Exception:
+            pass
+
+    return upserted
+
+
+def _build_feature_row(client, match: dict) -> dict | None:
+    """Build a single match_feature_vectors row from all available sources."""
+    match_id = match["id"]
+    match_date = match["date"][:10] if match.get("date") else None
+
+    # ── Outcome labels ────────────────────────────────────────────────────────
+    outcome = match.get("result")
+    score_home = match.get("score_home")
+    score_away = match.get("score_away")
+    total_goals = None
+    over_25 = None
+    if score_home is not None and score_away is not None:
+        total_goals = int(score_home) + int(score_away)
+        over_25 = total_goals > 2
+
+    # ── League tier ───────────────────────────────────────────────────────────
+    league_tier = None
+    if match.get("league_id"):
+        lr = client.table("leagues").select("tier").eq(
+            "id", match["league_id"]
+        ).execute()
+        if lr.data:
+            league_tier = lr.data[0].get("tier")
+
+    # ── Ensemble prediction (1x2 home) ────────────────────────────────────────
+    ens_home = ens_draw = ens_away = None
+    pois_home = xgb_home = af_home = None
+    model_disagreement = None
+
+    pred_result = client.table("predictions").select(
+        "source, model_probability, market"
+    ).eq("match_id", match_id).eq("market", "1x2").execute()
+
+    for p in (pred_result.data or []):
+        src = p.get("source", "ensemble")
+        prob = p.get("model_probability")
+        if src == "ensemble":
+            ens_home = prob
+        elif src == "poisson":
+            pois_home = prob
+        elif src == "xgboost":
+            xgb_home = prob
+        elif src == "af":
+            af_home = prob
+
+    if pois_home is not None and xgb_home is not None:
+        model_disagreement = round(abs(float(pois_home) - float(xgb_home)), 4)
+
+    # Use ensemble; fall back to first available
+    if ens_home is None:
+        ens_home = pois_home or xgb_home or af_home
+
+    # ── Opening implied odds ──────────────────────────────────────────────────
+    opening_implied_home = opening_implied_draw = opening_implied_away = None
+    odds_drift_home = steam_move = None
+
+    # Earliest snapshot per selection
+    for sel, col in [("home", "opening_implied_home"),
+                     ("draw", "opening_implied_draw"),
+                     ("away", "opening_implied_away")]:
+        snap = client.table("odds_snapshots").select(
+            "odds, timestamp"
+        ).eq("match_id", match_id).eq("market", "1x2").eq(
+            "selection", sel
+        ).order("timestamp", desc=False).limit(1).execute()
+        if snap.data:
+            val = 1.0 / float(snap.data[0]["odds"])
+            if col == "opening_implied_home":
+                opening_implied_home = round(val, 4)
+                # Compute drift: latest vs earliest
+                latest = client.table("odds_snapshots").select("odds").eq(
+                    "match_id", match_id
+                ).eq("market", "1x2").eq("selection", "home").order(
+                    "timestamp", desc=True
+                ).limit(1).execute()
+                if latest.data:
+                    closing_implied = 1.0 / float(latest.data[0]["odds"])
+                    odds_drift_home = round(closing_implied - val, 5)
+                    steam_move = abs(odds_drift_home) > 0.03
+            elif col == "opening_implied_draw":
+                opening_implied_draw = round(val, 4)
+            elif col == "opening_implied_away":
+                opening_implied_away = round(val, 4)
+
+    # ── ELO ───────────────────────────────────────────────────────────────────
+    elo_home = elo_away = elo_diff = None
+    home_team_id = match.get("home_team_id")
+    away_team_id = match.get("away_team_id")
+
+    if home_team_id and match_date:
+        elo_r = client.table("team_elo_daily").select("elo_rating").eq(
+            "team_id", home_team_id
+        ).lte("date", match_date).order("date", desc=True).limit(1).execute()
+        if elo_r.data:
+            elo_home = float(elo_r.data[0]["elo_rating"])
+
+    if away_team_id and match_date:
+        elo_r = client.table("team_elo_daily").select("elo_rating").eq(
+            "team_id", away_team_id
+        ).lte("date", match_date).order("date", desc=True).limit(1).execute()
+        if elo_r.data:
+            elo_away = float(elo_r.data[0]["elo_rating"])
+
+    if elo_home is not None and elo_away is not None:
+        elo_diff = round(elo_home - elo_away, 2)
+
+    # ── Form ──────────────────────────────────────────────────────────────────
+    form_ppg_home = form_ppg_away = None
+    form_momentum_home = form_momentum_away = None
+
+    if home_team_id and match_date:
+        form_r = client.table("team_form_cache").select(
+            "ppg, wins, draws, losses"
+        ).eq("team_id", home_team_id).lte(
+            "date", match_date
+        ).order("date", desc=True).limit(1).execute()
+        if form_r.data:
+            form_ppg_home = form_r.data[0].get("ppg")
+
+    if away_team_id and match_date:
+        form_r = client.table("team_form_cache").select(
+            "ppg, wins, draws, losses"
+        ).eq("team_id", away_team_id).lte(
+            "date", match_date
+        ).order("date", desc=True).limit(1).execute()
+        if form_r.data:
+            form_ppg_away = form_r.data[0].get("ppg")
+
+    # ── Data tier (from predictions) ─────────────────────────────────────────
+    data_tier = None
+    tier_r = client.table("predictions").select("reasoning").eq(
+        "match_id", match_id
+    ).limit(1).execute()
+    if tier_r.data and tier_r.data[0].get("reasoning"):
+        reasoning = tier_r.data[0]["reasoning"]
+        for t in ("A", "B", "C", "D"):
+            if f"tier={t}" in reasoning or f"Tier {t}" in reasoning or f"data_tier={t}" in reasoning:
+                data_tier = t
+                break
+
+    return {
+        "match_id": match_id,
+        "match_date": match_date,
+        "league_tier": league_tier,
+        "data_tier": data_tier,
+        # Group 1: Model
+        "ensemble_prob_home": ens_home,
+        "poisson_prob_home": pois_home,
+        "xgboost_prob_home": xgb_home,
+        "af_pred_prob_home": af_home,
+        "model_disagreement": model_disagreement,
+        # Group 2: Market
+        "opening_implied_home": opening_implied_home,
+        "opening_implied_draw": opening_implied_draw,
+        "opening_implied_away": opening_implied_away,
+        "odds_drift_home": odds_drift_home,
+        "steam_move": steam_move,
+        # Group 3: Quality
+        "elo_home": elo_home,
+        "elo_away": elo_away,
+        "elo_diff": elo_diff,
+        "form_ppg_home": float(form_ppg_home) if form_ppg_home is not None else None,
+        "form_ppg_away": float(form_ppg_away) if form_ppg_away is not None else None,
+        # Outcome labels
+        "match_outcome": outcome,
+        "total_goals": total_goals,
+        "over_25": over_25,
+        "pseudo_clv_home": match.get("pseudo_clv_home"),
+        "pseudo_clv_draw": match.get("pseudo_clv_draw"),
+        "pseudo_clv_away": match.get("pseudo_clv_away"),
+    }
 
 
 # ============================================================

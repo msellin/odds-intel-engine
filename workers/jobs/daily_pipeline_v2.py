@@ -1076,12 +1076,40 @@ def run_morning():
             odds_val = match.get(odds_key, 0)
             if odds_val > 0:
                 try:
+                    data_tier = pred.get("data_tier", "A")
+
+                    # Store ensemble prediction (source='ensemble')
                     store_prediction(match_id, market, {
                         "model_prob": pred[prob_key],
                         "implied_prob": 1 / odds_val,
                         "edge": pred[prob_key] - (1 / odds_val),
                         "odds": odds_val,
-                    })
+                        "reasoning": f"data_tier={data_tier}",
+                    }, source="ensemble")
+
+                    # Store individual model signals for 1x2_home market (S1)
+                    # ensemble dict has poisson_home_prob + xgb_home_prob when blended
+                    if market == "1x2_home":
+                        if pred.get("poisson_home_prob") is not None:
+                            try:
+                                store_prediction(match_id, market, {
+                                    "model_prob": pred["poisson_home_prob"],
+                                    "implied_prob": 1 / odds_val,
+                                    "edge": pred["poisson_home_prob"] - (1 / odds_val),
+                                    "reasoning": f"data_tier={data_tier}",
+                                }, source="poisson")
+                            except Exception:
+                                pass
+                        if pred.get("xgb_home_prob") is not None:
+                            try:
+                                store_prediction(match_id, market, {
+                                    "model_prob": pred["xgb_home_prob"],
+                                    "implied_prob": 1 / odds_val,
+                                    "edge": pred["xgb_home_prob"] - (1 / odds_val),
+                                    "reasoning": f"data_tier={data_tier}",
+                                }, source="xgboost")
+                            except Exception:
+                                pass
                 except Exception:
                     pass
 

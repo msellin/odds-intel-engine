@@ -384,7 +384,7 @@ target = bet_was_profitable  # binary: 1 if won, 0 if lost
 # This reframes the problem from "who wins?" to "is this bet +EV in reality?"
 ```
 
-**Warning:** Needs substantial paper trading data to train. Don't attempt until you have 1000+ settled bets with dimension scores attached.
+**Updated approach (from 2026-04-28 external review):** The "1000+ settled bot bets" blocker is eliminated by computing pseudo-CLV for ALL ~280 daily matches. This grows training data from 2-5 labeled rows/day to ~280/day — hitting 3000+ examples in ~11 days. Start with 5 features (ensemble_prob, odds_drift, elo_diff, league_tier, model_disagreement) and logistic regression. Graduate to full XGBoost only after 1000+ bot bets validate alignment thresholds. See `match_feature_vectors` materialized table task in Section 10.
 
 ---
 
@@ -488,6 +488,16 @@ rank = kelly * alignment_multiplier
 | Alignment filter | Stores dimension_scores + alignment_class on every bet | After 300+ settled bets show ROI correlating with alignment class |
 | Alignment thresholds | HIGH/MEDIUM/LOW at 0.75/0.50 (provisional) | Replace with data-driven thresholds from ROI inflection points |
 
+### New prerequisite tasks (from 2026-04-28 external review)
+
+> 4 independent AI evaluations unanimously recommended these before building the meta-model.
+> Both are low-effort and eliminate the main data accumulation bottleneck.
+
+| Item | What | Effort | Unblocks |
+|------|------|--------|---------|
+| **Pseudo-CLV for all matches** | Compute `(1/opening_odds) / (1/closing_odds) - 1` for ALL ~280 daily fixtures, not just bet matches. Store in `matches` or `odds_snapshots`. Grows training dataset from 2-5 labeled rows/day to ~280/day. | Low — closing odds already in odds_snapshots | Meta-model in weeks not months |
+| **match_feature_vectors table** | Nightly ETL that pivots `match_signals` EAV rows into a wide table: one row per match, one column per signal, value closest to kickoff. This is the actual ML training table. | Medium — ~1 day | Clean ML training input without complex joins |
+
 ### Deferred (need data accumulation)
 
 | Item | What | Data source | Min data needed | Estimated timeline |
@@ -495,8 +505,8 @@ rank = kelly * alignment_multiplier
 | **Platt scaling** | Logistic regression on model output → corrected probability | `predictions` table (ALL matches with odds, ~200/day) + match results | 500+ predictions with known outcomes | ~1-2 weeks (mid-May 2026). **UNBLOCKED** — settlement now works via API-Football |
 | **XGBoost in live pipeline** | ✅ DONE (2026-04-27). Loads v9a_202425 saved models, computes features from CSV, blends 50/50 with Poisson for Tier A teams. `workers/model/xgboost_ensemble.py` | — | — | — |
 | **Model disagreement** | ✅ DONE. `model_disagreement = abs(poisson_prob - xgb_prob)` stored on every Tier A bet. | — | — | — |
-| **Dynamic alignment thresholds** | Set HIGH/MED/LOW cutoffs from ROI inflection points | `simulated_bets` with alignment_class populated (bot bets only, ~10-20/day) | 300+ settled bot bets with alignment data | ~3-4 weeks (late May 2026) |
-| **Meta-model** | Second-stage model predicting bet profitability, target=CLV not binary profit | `simulated_bets` with dimension_scores, kelly, CLV (bot bets only) | 1000+ settled bot bets with all fields | ~2-3 months (July 2026) |
+| **Dynamic alignment thresholds** | Set HIGH/MED/LOW cutoffs from ROI inflection points | `simulated_bets` with alignment_class populated (bot bets only, ~10-20/day) | 300+ settled bot bets with alignment data | ~3-4 weeks (late May 2026). **Note: requires actual placed bets — pseudo-CLV does NOT substitute here.** |
+| **Meta-model** | Second-stage model predicting bet profitability, target=CLV not binary profit | `matches` with pseudo-CLV (all fixtures) + `match_feature_vectors` (wide table) | 3000+ matches with pseudo-CLV populated (~11 days at 280/day) | **~mid-May 2026** (was July 2026 — unblocked by pseudo-CLV approach). Start with 5-feature logistic regression. |
 
 **How to check readiness:** Run these queries against Supabase to see if you've hit the thresholds:
 ```sql
@@ -506,12 +516,17 @@ JOIN matches m ON p.match_id = m.id
 WHERE m.status = 'finished';
 -- Need: 500+
 
--- Dynamic alignment: settled bets with alignment data
+-- Dynamic alignment: settled bets with alignment data (requires actual placed bets)
 SELECT COUNT(*) FROM simulated_bets
 WHERE result != 'pending' AND alignment_class IS NOT NULL;
 -- Need: 300+
 
--- Meta-model: settled bets with full dimension scores
+-- Meta-model: all matches with pseudo-CLV (not just bot bets)
+SELECT COUNT(*) FROM matches
+WHERE status = 'finished' AND pseudo_clv IS NOT NULL;
+-- Need: 3000+ (~11 days at 280/day)
+
+-- Meta-model (fallback check using bot bets only):
 SELECT COUNT(*) FROM simulated_bets
 WHERE result != 'pending' AND dimension_scores IS NOT NULL AND clv IS NOT NULL;
 -- Need: 1000+
@@ -530,11 +545,14 @@ Check these milestones against the DB queries above.
 
 | Milestone | Action | Script |
 |-----------|--------|--------|
+| **Now** | Build pseudo-CLV computation for all matches | New script needed |
+| **Now** | Build `match_feature_vectors` materialized ETL table | New script/migration needed |
 | 200+ predictions with results | First calibration ECE check (uses ALL predictions, not just bets) | `python scripts/validate_improvements.py` |
 | 50+ settled bot bets | First alignment + Kelly check | Same script |
 | 500+ predictions with results | Fit Platt scaling (replace/complement tier-specific shrinkage) | New script needed |
-| 300+ settled bot bets | Evaluate alignment filter activation (check ROI by alignment bin) | Same script |
-| 1000+ settled bot bets | Train simple meta-model (logistic regression, target=CLV) | New script needed |
+| **3000+ matches with pseudo-CLV** (~11 days) | Train first meta-model: 5-feature logistic regression on all matches | New script needed |
+| 300+ settled bot bets | Validate alignment filter (check ROI by alignment bin on actual bets) | Same script |
+| 1000+ settled bot bets | Graduate meta-model: XGBoost with full signal set | New script needed |
 
 ---
 

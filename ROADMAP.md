@@ -165,6 +165,10 @@ Tasks:
 - [x] **B-OPS6** — GitHub Actions `contents: write` permission for daily pipeline git push
 - [x] **B-OPS7** — Data quality pipeline: match_stats population, ELO storage, model_evaluations, team form cache (migration 005)
 - [x] **B-OPS8** — ~~BSD Sports Data API~~ Superseded by API-Football Ultra (13 bookmakers already stored per match)
+- [x] **B-ML1** — Pseudo-CLV for all matches: `compute_and_store_pseudo_clv()` in `supabase_client.py`, called from settlement for every finished match. Migration 010 adds `pseudo_clv_home/draw/away` to `matches`. Done 2026-04-28.
+- [x] **B-ML2** — `match_feature_vectors` materialized table: `build_match_feature_vectors()` in `supabase_client.py`, runs nightly in settlement. Migration 010. Done 2026-04-28.
+- [x] **CAL-1** — Calibration validation script: `scripts/check_calibration.py` — predicted vs actual win rate in 5% bins, ECE metric. Done 2026-04-28.
+- [ ] **B-ML3** — First meta-model: 5-feature logistic regression (`ensemble_prob, odds_drift, elo_diff, league_tier, model_disagreement`), target=`pseudo_clv > 0`. Train when ~3000 pseudo-CLV rows exist (~11 days after B-ML1 runs). **mid-May 2026.**
 - [ ] **B-DATA1** — European Soccer DB (Kaggle): download + parse 13-bookmaker odds → train sharp/soft bookmaker model
 - [ ] **B-DATA2** — Footiqo: check gap league coverage (Singapore, S. Korea, Scotland) → validate +27.5% ROI signal with independent odds
 - [ ] **B-DATA3** — OddAlerts API evaluation: 20+ bookmakers real-time odds for live sharp money detection + user-facing odds comparison
@@ -247,6 +251,7 @@ Tasks:
 | F9 Onboarding page | 2026-04-28 | /welcome page with free tier features, Pro teaser, go-to-matches + set-preferences CTAs |
 | B5 Tier B backtest script | 2026-04-28 | scripts/backtest_tier_b.py — validates Scotland/Austria/Ireland ROI, saves JSON to data/logs/ |
 | B7 Bot validation tracker | 2026-04-28 | scripts/check_bot_validation.py — per-bot summary table, exits 1 when 60+ bets + positive ROI |
+| Tier 0 ML foundation (B-ML1, B-ML2, CAL-1, S1+S2) | 2026-04-28 | Migration 010: pseudo-CLV on all matches, match_feature_vectors ETL, match_signals table, source on predictions, calibration script |
 
 ---
 

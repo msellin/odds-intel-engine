@@ -34,6 +34,8 @@ from workers.api_clients.supabase_client import (
     store_match_stats_full,
     store_match_events_af,
     store_match_player_stats,
+    compute_and_store_pseudo_clv,
+    build_match_feature_vectors,
 )
 
 console = Console()
@@ -435,6 +437,39 @@ def run_settlement():
         )
     except Exception as e:
         console.print(f"  [yellow]Post-match enrichment error: {e}[/yellow]")
+
+    # B-ML1: Compute pseudo-CLV for ALL finished matches (not just bet matches)
+    # Grows ML training dataset from 2-5 rows/day → ~280/day
+    console.print("\n[cyan]Computing pseudo-CLV for all finished matches...[/cyan]")
+    try:
+        pclv_count = 0
+        pclv_skipped = 0
+        for d in sorted(fetch_dates):
+            finished_today = client.table("matches").select(
+                "id"
+            ).eq("status", "finished").gte(
+                "date", f"{d}T00:00:00"
+            ).lte("date", f"{d}T23:59:59").execute().data or []
+            for m in finished_today:
+                result = compute_and_store_pseudo_clv(client, m["id"])
+                if result:
+                    pclv_count += 1
+                else:
+                    pclv_skipped += 1
+        console.print(f"  {pclv_count} pseudo-CLV computed | {pclv_skipped} skipped (insufficient odds data)")
+    except Exception as e:
+        console.print(f"  [yellow]Pseudo-CLV error: {e}[/yellow]")
+
+    # B-ML2: Build match_feature_vectors wide table (ML training table)
+    console.print("[cyan]Building match feature vectors...[/cyan]")
+    try:
+        fv_total = 0
+        for d in sorted(fetch_dates):
+            fv_count = build_match_feature_vectors(client, d)
+            fv_total += fv_count
+        console.print(f"  {fv_total} feature vector rows upserted")
+    except Exception as e:
+        console.print(f"  [yellow]Feature vectors error: {e}[/yellow]")
 
     # 11.4: Daily post-mortem LLM analysis (only if bets were settled)
     if pending:
