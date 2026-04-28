@@ -260,11 +260,12 @@ def fetch_post_match_enrichment(client) -> dict:
 
 def run_settlement():
     today = date.today().isoformat()
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
     console.print(f"[bold green]═══ OddsIntel Settlement: {today} ═══[/bold green]\n")
 
     client = get_client()
 
-    # 1. Get pending bets with match info
+    # 1. Get pending bets with match info (may be empty — that's fine)
     console.print("[cyan]Loading pending bets...[/cyan]")
     bets_result = client.table("simulated_bets").select(
         "*, matches(id, date, score_home, score_away, result, status, "
@@ -274,26 +275,20 @@ def run_settlement():
     pending = bets_result.data
     console.print(f"  {len(pending)} pending bets")
 
-    if not pending:
-        console.print("[yellow]No pending bets to settle.[/yellow]")
-        return
-
-    # 2. Collect all dates that have pending bets
-    bet_dates = set()
+    # 2. Determine which dates to fetch results for.
+    # Always include today + yesterday to catch late finishes.
+    # Also include any dates that have pending bets.
+    fetch_dates = {today, yesterday}
     for bet in pending:
         match_info = bet.get("matches", {})
         if match_info and match_info.get("date"):
-            bet_dates.add(match_info["date"][:10])
-    if not bet_dates:
-        bet_dates.add(date.today().isoformat())
-    # Also add today in case bets were placed today
-    bet_dates.add(date.today().isoformat())
+            fetch_dates.add(match_info["date"][:10])
 
     # 2a. API-Football as primary source (paid, reliable, 1236 leagues)
-    console.print(f"\n[cyan]Fetching results from API-Football for {len(bet_dates)} date(s)...[/cyan]")
+    console.print(f"\n[cyan]Fetching results from API-Football for {len(fetch_dates)} date(s)...[/cyan]")
     finished = []
     try:
-        for d in sorted(bet_dates):
+        for d in sorted(fetch_dates):
             af_results = get_api_football_results(d)
             console.print(f"  {d}: {len(af_results)} finished matches from API-Football")
             finished.extend(af_results)
@@ -303,7 +298,7 @@ def run_settlement():
     # 2b. ESPN as backup (free, no auth)
     if len(finished) < 10:
         console.print("[cyan]Trying ESPN as backup...[/cyan]")
-        for d in sorted(bet_dates):
+        for d in sorted(fetch_dates):
             espn_results = get_finished_matches_espn(d)
             day_finished = [r for r in espn_results
                             if r.get("status") == "FT"
@@ -316,7 +311,7 @@ def run_settlement():
     if len(finished) < 10:
         console.print("[cyan]Trying Sofascore as last resort...[/cyan]")
         try:
-            for d in sorted(bet_dates):
+            for d in sorted(fetch_dates):
                 sofascore_results = get_sofascore_results(d)
                 sofascore_finished = [r for r in sofascore_results
                                       if r.get("status") == "FT"
@@ -333,43 +328,125 @@ def run_settlement():
         console.print("[yellow]No finished matches found from any source. Try again later.[/yellow]")
         return
 
-    # 3. Also update match scores in DB directly
-    console.print("\n[cyan]Updating match results in Supabase...[/cyan]")
+    # 3. Update ALL match results in DB — not just bet matches.
+    # Match by api_football_id (direct, reliable) with team-name fallback.
+    # This gives us a complete labeled dataset for every match we tracked,
+    # regardless of whether any bot placed a bet on it.
+    console.print("\n[cyan]Updating all match results in Supabase...[/cyan]")
     db_updated = 0
-    for r in finished:
-        home_result = client.table("teams").select("id").eq("name", r["home_team"]).execute()
-        away_result = client.table("teams").select("id").eq("name", r["away_team"]).execute()
+    db_skipped = 0
 
-        if not home_result.data or not away_result.data:
+    # Build lookup: api_football_id -> result row
+    af_id_to_result = {
+        int(r["api_football_id"]): r
+        for r in finished
+        if r.get("api_football_id") and r.get("home_goals") is not None
+    }
+
+    # Fetch all DB matches for the fetch window (today + yesterday + bet dates)
+    date_min = min(fetch_dates)
+    date_max = max(fetch_dates)
+    db_matches = client.table("matches").select(
+        "id, api_football_id, home_team_id, away_team_id, status"
+    ).gte("date", f"{date_min}T00:00:00").lte(
+        "date", f"{date_max}T23:59:59"
+    ).execute().data
+
+    for db_match in db_matches:
+        if db_match.get("status") == "finished":
+            continue  # already settled
+
+        result_row = None
+
+        # Primary: match by api_football_id
+        af_id = db_match.get("api_football_id")
+        if af_id and int(af_id) in af_id_to_result:
+            result_row = af_id_to_result[int(af_id)]
+
+        # Fallback: team name lookup (for Sofascore/ESPN-sourced results)
+        if not result_row:
+            home_r = client.table("teams").select("name").eq(
+                "id", db_match["home_team_id"]
+            ).execute()
+            away_r = client.table("teams").select("name").eq(
+                "id", db_match["away_team_id"]
+            ).execute()
+            if home_r.data and away_r.data:
+                result_row = find_result_for_match(
+                    home_r.data[0]["name"], away_r.data[0]["name"], finished
+                )
+
+        if not result_row:
+            db_skipped += 1
             continue
 
-        home_id = home_result.data[0]["id"]
-        away_id = away_result.data[0]["id"]
+        hg = int(result_row["home_goals"])
+        ag = int(result_row["away_goals"])
+        result_str = "home" if hg > ag else "away" if ag > hg else "draw"
+        client.table("matches").update({
+            "score_home": hg, "score_away": ag,
+            "result": result_str, "status": "finished",
+        }).eq("id", db_match["id"]).execute()
+        db_updated += 1
 
-        # Search across all dates with pending bets
-        match_q = None
-        for d in sorted(bet_dates):
-            match_q = client.table("matches").select("id").eq(
-                "home_team_id", home_id
-            ).eq("away_team_id", away_id).gte(
-                "date", f"{d}T00:00:00"
-            ).lte("date", f"{d}T23:59:59").execute()
-            if match_q.data:
-                break
+    console.print(f"  {db_updated} matches updated | {db_skipped} no result found yet")
 
-        if match_q and match_q.data:
-            match_id = match_q.data[0]["id"]
-            hg, ag = int(r["home_goals"]), int(r["away_goals"])
-            result_str = "home" if hg > ag else "away" if ag > hg else "draw"
-            client.table("matches").update({
-                "score_home": hg, "score_away": ag,
-                "result": result_str, "status": "finished",
-            }).eq("id", match_id).execute()
-            db_updated += 1
+    # 4. Settle each bet (skip gracefully if none pending)
+    if not pending:
+        console.print("\n[yellow]No pending bets to settle — skipping bet settlement.[/yellow]")
+    else:
+        _settle_pending_bets(client, pending, finished)
 
-    console.print(f"  {db_updated} matches updated in DB")
+    # Post-match enrichment and analytics always run (not gated on bets)
 
-    # 4. Settle each bet
+    # P1.3: Update ELO ratings for all finished matches
+    console.print("\n[cyan]Updating ELO ratings...[/cyan]")
+    try:
+        elo_count = update_elo_ratings(client)
+        console.print(f"  {elo_count} team ratings updated")
+    except Exception as e:
+        console.print(f"  [yellow]ELO update error: {e}[/yellow]")
+
+    # P1.4: Aggregate model evaluations
+    console.print("[cyan]Computing model evaluations...[/cyan]")
+    try:
+        eval_count = compute_model_evaluations(client)
+        console.print(f"  {eval_count} evaluation records stored")
+    except Exception as e:
+        console.print(f"  [yellow]Model evaluation error: {e}[/yellow]")
+
+    # P1.5: Update form cache for teams that played
+    console.print("[cyan]Updating team form cache...[/cyan]")
+    try:
+        form_count = update_team_form_cache(client)
+        console.print(f"  {form_count} team forms updated")
+    except Exception as e:
+        console.print(f"  [yellow]Form cache error: {e}[/yellow]")
+
+    # T4/T8/T12: Post-match enrichment (stats, half-time, events, player stats)
+    console.print("[cyan]Fetching post-match enrichment (T4/T8/T12)...[/cyan]")
+    try:
+        enrichment_counts = fetch_post_match_enrichment(client)
+        console.print(
+            f"  {enrichment_counts['stats']} match stats | "
+            f"{enrichment_counts['halftime']} with half-time | "
+            f"{enrichment_counts['events']} events | "
+            f"{enrichment_counts['players']} player stat rows"
+        )
+    except Exception as e:
+        console.print(f"  [yellow]Post-match enrichment error: {e}[/yellow]")
+
+    # 11.4: Daily post-mortem LLM analysis (only if bets were settled)
+    if pending:
+        console.print("\n[cyan]Running AI post-mortem analysis...[/cyan]")
+        try:
+            run_post_mortem(client)
+        except Exception as e:
+            console.print(f"  [yellow]Post-mortem error (non-critical): {e}[/yellow]")
+
+
+def _settle_pending_bets(client, pending: list, finished: list):
+    """Settle all pending bets against finished match results."""
     console.print("\n[cyan]Settling bets...[/cyan]\n")
 
     settled = 0
@@ -484,50 +561,7 @@ def run_settlement():
         clv_color = "green" if avg_clv > 0 else "red"
         console.print(f"  Avg CLV: [{clv_color}]{avg_clv:+.1%}[/] ({'beating' if avg_clv > 0 else 'behind'} closing line)")
 
-    # P1.3: Update ELO ratings for today's finished matches
-    console.print("\n[cyan]Updating ELO ratings...[/cyan]")
-    try:
-        elo_count = update_elo_ratings(client)
-        console.print(f"  {elo_count} team ratings updated")
-    except Exception as e:
-        console.print(f"  [yellow]ELO update error: {e}[/yellow]")
-
-    # P1.4: Aggregate model evaluations for today
-    console.print("[cyan]Computing model evaluations...[/cyan]")
-    try:
-        eval_count = compute_model_evaluations(client)
-        console.print(f"  {eval_count} evaluation records stored")
-    except Exception as e:
-        console.print(f"  [yellow]Model evaluation error: {e}[/yellow]")
-
-    # P1.5: Update form cache for teams that played today
-    console.print("[cyan]Updating team form cache...[/cyan]")
-    try:
-        form_count = update_team_form_cache(client)
-        console.print(f"  {form_count} team forms updated")
-    except Exception as e:
-        console.print(f"  [yellow]Form cache error: {e}[/yellow]")
-
-    # T4/T8/T12: Post-match enrichment (stats, half-time, events, player stats)
-    console.print("[cyan]Fetching post-match enrichment (T4/T8/T12)...[/cyan]")
-    try:
-        enrichment_counts = fetch_post_match_enrichment(client)
-        console.print(
-            f"  {enrichment_counts['stats']} match stats | "
-            f"{enrichment_counts['halftime']} with half-time | "
-            f"{enrichment_counts['events']} events | "
-            f"{enrichment_counts['players']} player stat rows"
-        )
-    except Exception as e:
-        console.print(f"  [yellow]Post-match enrichment error: {e}[/yellow]")
-
-    # 11.4: Daily post-mortem LLM analysis
-    if settled > 0:
-        console.print("\n[cyan]Running AI post-mortem analysis...[/cyan]")
-        try:
-            run_post_mortem(client)
-        except Exception as e:
-            console.print(f"  [yellow]Post-mortem error (non-critical): {e}[/yellow]")
+    return settled
 
 
 def update_elo_ratings(client):

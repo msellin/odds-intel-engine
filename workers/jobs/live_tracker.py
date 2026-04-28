@@ -185,7 +185,7 @@ def _build_af_id_map(client) -> dict[int, dict]:
     """
     today = date.today().isoformat()
     result = client.table("matches").select(
-        "id, api_football_id, home_team_api_id, away_team_api_id, "
+        "id, api_football_id, home_team_id, away_team_id, "
         "date, status, lineups_fetched_at"
     ).gte("date", f"{today}T00:00:00").lte("date", f"{today}T23:59:59").execute()
 
