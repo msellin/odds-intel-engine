@@ -564,7 +564,7 @@ def _build_feature_row(client, match: dict) -> dict | None:
 
     pred_result = client.table("predictions").select(
         "source, model_probability, market"
-    ).eq("match_id", match_id).eq("market", "1x2").execute()
+    ).eq("match_id", match_id).eq("market", "1x2_home").execute()
 
     for p in (pred_result.data or []):
         src = p.get("source", "ensemble")

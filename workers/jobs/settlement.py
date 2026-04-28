@@ -187,9 +187,9 @@ def fetch_post_match_enrichment(client) -> dict:
     yesterday_str = (date.today() - timedelta(days=1)).isoformat()
     today_str = date.today().isoformat()
 
-    # Get recently finished matches with AF IDs and team IDs
+    # Get recently finished matches with AF IDs
     db_finished = client.table("matches").select(
-        "id, api_football_id, home_team_api_id, away_team_api_id"
+        "id, api_football_id"
     ).eq("status", "finished").gte(
         "date", f"{yesterday_str}T00:00:00"
     ).lte("date", f"{today_str}T23:59:59").execute().data
@@ -212,7 +212,14 @@ def fetch_post_match_enrichment(client) -> dict:
             continue
 
         match_id = match["id"]
-        home_api_id = match.get("home_team_api_id")
+
+        # Look up home_team_api_id from match_injuries (stored during morning enrichment)
+        home_api_id = None
+        inj_r = client.table("match_injuries").select("team_api_id").eq(
+            "match_id", match_id
+        ).eq("team_side", "home").limit(1).execute()
+        if inj_r.data:
+            home_api_id = inj_r.data[0].get("team_api_id")
 
         # ── T4 + Full stats: fetch full-match stats + half-time ────────────
         try:
