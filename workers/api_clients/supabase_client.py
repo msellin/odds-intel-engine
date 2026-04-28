@@ -114,14 +114,29 @@ def store_match(match_data: dict) -> str:
     tier = match_data.get("tier", 1)
     league_id = ensure_league(league_path, tier)
 
-    existing = client.table("matches").select("id").eq(
+    existing = client.table("matches").select("id, sofascore_event_id, api_football_id, venue_name, referee").eq(
         "home_team_id", home_id
     ).eq(
         "away_team_id", away_id
     ).gte("date", f"{date_prefix}T00:00:00").lte("date", f"{date_prefix}T23:59:59").execute()
 
     if existing.data:
-        return existing.data[0]["id"]
+        match_id = existing.data[0]["id"]
+        # Backfill IDs and metadata if we have them now but DB doesn't
+        updates = {}
+        event_id = match_data.get("sofascore_event_id") or match_data.get("event_id")
+        if event_id and not existing.data[0].get("sofascore_event_id"):
+            updates["sofascore_event_id"] = int(event_id)
+        af_id = match_data.get("api_football_id")
+        if af_id and not existing.data[0].get("api_football_id"):
+            updates["api_football_id"] = int(af_id)
+        if match_data.get("venue_name") and not existing.data[0].get("venue_name"):
+            updates["venue_name"] = match_data["venue_name"]
+        if match_data.get("referee") and not existing.data[0].get("referee"):
+            updates["referee"] = match_data["referee"]
+        if updates:
+            client.table("matches").update(updates).eq("id", match_id).execute()
+        return match_id
 
     try:
         dt = datetime.fromisoformat(match_date.replace("Z", "+00:00"))
@@ -137,6 +152,18 @@ def store_match(match_data: dict) -> str:
         "season": season,
         "status": "scheduled",
     }
+
+    # Store external IDs and metadata if available
+    event_id = match_data.get("sofascore_event_id") or match_data.get("event_id")
+    if event_id:
+        match_record["sofascore_event_id"] = int(event_id)
+    af_id = match_data.get("api_football_id")
+    if af_id:
+        match_record["api_football_id"] = int(af_id)
+    if match_data.get("venue_name"):
+        match_record["venue_name"] = match_data["venue_name"]
+    if match_data.get("referee"):
+        match_record["referee"] = match_data["referee"]
 
     if match_data.get("home_goals") is not None:
         match_record["score_home"] = int(match_data["home_goals"])
@@ -505,6 +532,403 @@ def store_team_form(team_id: str, form_date: str, form: dict):
             row[key] = form[key]
 
     client.table("team_form_cache").upsert(row, on_conflict="team_id,date").execute()
+
+
+# ============================================================
+# T2: TEAM SEASON STATISTICS
+# ============================================================
+
+def store_team_season_stats(team_api_id: int, league_api_id: int, season: int,
+                             parsed: dict) -> str | None:
+    """
+    Store or update team season stats. Upserts on (team_api_id, league_api_id, season, fetched_date).
+    Returns row id or None on error.
+    """
+    client = get_client()
+    today = date.today().isoformat()
+
+    row = {
+        "team_api_id": team_api_id,
+        "league_api_id": league_api_id,
+        "season": season,
+        "fetched_date": today,
+    }
+
+    fields = [
+        "form", "played_total", "played_home", "played_away",
+        "wins_total", "wins_home", "wins_away",
+        "draws_total", "draws_home", "draws_away",
+        "losses_total", "losses_home", "losses_away",
+        "goals_for_total", "goals_for_home", "goals_for_away",
+        "goals_against_total", "goals_against_home", "goals_against_away",
+        "goals_for_avg", "goals_against_avg",
+        "clean_sheets_total", "clean_sheets_home", "clean_sheets_away",
+        "failed_to_score_total", "failed_to_score_home", "failed_to_score_away",
+        "clean_sheet_pct", "failed_to_score_pct",
+        "biggest_win_home", "biggest_win_away", "biggest_loss_home", "biggest_loss_away",
+        "streak_wins", "streak_draws", "streak_losses",
+        "penalty_scored", "penalty_missed", "penalty_total", "penalty_scored_pct",
+        "most_used_formation", "formations_jsonb",
+        "yellow_cards_by_minute", "red_cards_by_minute",
+        "goals_for_by_minute", "goals_against_by_minute",
+        "raw",
+    ]
+    for f in fields:
+        if f in parsed and parsed[f] is not None:
+            row[f] = parsed[f]
+
+    try:
+        result = client.table("team_season_stats").upsert(
+            row, on_conflict="team_api_id,league_api_id,season,fetched_date"
+        ).execute()
+        return result.data[0]["id"] if result.data else None
+    except Exception as e:
+        if "duplicate" in str(e).lower() or "unique" in str(e).lower():
+            return None
+        raise
+
+
+def get_team_season_stats(team_api_id: int, season: int) -> dict | None:
+    """Get the most recent team season stats for a team/season."""
+    client = get_client()
+    result = client.table("team_season_stats").select("*").eq(
+        "team_api_id", team_api_id
+    ).eq("season", season).order("fetched_date", desc=True).limit(1).execute()
+    return result.data[0] if result.data else None
+
+
+# ============================================================
+# T3: MATCH INJURIES
+# ============================================================
+
+def store_match_injuries(match_id: str, af_fixture_id: int,
+                          injuries: list[dict]) -> int:
+    """
+    Store injuries for a match. Upserts on (match_id, player_id).
+    Returns count of rows stored.
+    """
+    client = get_client()
+    stored = 0
+
+    for inj in injuries:
+        if not inj.get("player_id"):
+            continue
+        row = {
+            "match_id": match_id,
+            "af_fixture_id": af_fixture_id,
+            **{k: v for k, v in inj.items() if k in (
+                "team_api_id", "team_side", "player_id", "player_name",
+                "player_type", "status", "reason", "raw"
+            )},
+        }
+        try:
+            client.table("match_injuries").upsert(
+                row, on_conflict="match_id,player_id"
+            ).execute()
+            stored += 1
+        except Exception:
+            pass
+
+    return stored
+
+
+# ============================================================
+# T4: MATCH STATS (half-time extension)
+# ============================================================
+
+def store_match_stats_full(match_id: str, stats: dict):
+    """
+    Extended version of store_match_stats — stores all fields including
+    half-time stats (_ht suffix) and full-match fields (fouls, saves, etc.).
+    Uses upsert — safe to call multiple times.
+    """
+    client = get_client()
+
+    row = {"match_id": match_id}
+
+    all_fields = [
+        # Full match
+        "xg_home", "xg_away",
+        "shots_home", "shots_away",
+        "shots_on_target_home", "shots_on_target_away",
+        "possession_home",
+        "corners_home", "corners_away",
+        "fouls_home", "fouls_away",
+        "offsides_home", "offsides_away",
+        "saves_home", "saves_away",
+        "passes_home", "passes_away",
+        "pass_accuracy_home", "pass_accuracy_away",
+        "yellow_cards_home", "yellow_cards_away",
+        "red_cards_home", "red_cards_away",
+        # Half-time
+        "shots_home_ht", "shots_away_ht",
+        "shots_on_target_home_ht", "shots_on_target_away_ht",
+        "possession_home_ht",
+        "corners_home_ht", "corners_away_ht",
+        "fouls_home_ht", "fouls_away_ht",
+        "offsides_home_ht", "offsides_away_ht",
+        "yellow_cards_home_ht", "yellow_cards_away_ht",
+        "xg_home_ht", "xg_away_ht",
+        "passes_home_ht", "passes_away_ht",
+    ]
+
+    for field in all_fields:
+        if field in stats and stats[field] is not None:
+            row[field] = stats[field]
+
+    if len(row) <= 1:
+        return
+
+    client.table("match_stats").upsert(row, on_conflict="match_id").execute()
+
+
+# ============================================================
+# T5: LIVE ODDS STORAGE
+# ============================================================
+
+def store_live_odds(match_id: str, odds_rows: list[dict], minute: int = None):
+    """
+    Store live in-play odds in odds_snapshots with is_live=true.
+    Called every 5min during live matches.
+    """
+    client = get_client()
+    now = datetime.now(timezone.utc).isoformat()
+
+    rows = []
+    for row in odds_rows:
+        rows.append({
+            "match_id": match_id,
+            "bookmaker": row.get("bookmaker", "api-football-live"),
+            "market": row["market"],
+            "selection": row["selection"],
+            "odds": row["odds"],
+            "timestamp": now,
+            "is_live": True,
+            "is_closing": False,
+            "minutes_to_kickoff": row.get("minute"),  # minute elapsed during match
+        })
+
+    if rows:
+        try:
+            client.table("odds_snapshots").insert(rows).execute()
+        except Exception:
+            pass  # Duplicate rows are fine
+
+
+# ============================================================
+# T7: LINEUPS
+# ============================================================
+
+def store_match_lineups(match_id: str, lineups_parsed: dict):
+    """
+    Store lineup data on the matches table.
+    lineups_parsed keys: formation_home, formation_away, coach_home, coach_away,
+                         lineups_home (JSONB), lineups_away (JSONB)
+    """
+    client = get_client()
+
+    updates = {}
+    for field in ["formation_home", "formation_away", "coach_home", "coach_away",
+                  "lineups_home", "lineups_away"]:
+        if lineups_parsed.get(field) is not None:
+            updates[field] = lineups_parsed[field]
+
+    if updates:
+        from datetime import datetime, timezone
+        updates["lineups_fetched_at"] = datetime.now(timezone.utc).isoformat()
+        client.table("matches").update(updates).eq("id", match_id).execute()
+
+
+# ============================================================
+# T8: MATCH EVENTS (from API-Football)
+# ============================================================
+
+def store_match_events_af(match_id: str, events: list[dict],
+                           home_team_api_id: int = None) -> int:
+    """
+    Store match events sourced from API-Football.
+    Resolves team side (home/away) from team_api_id.
+    Returns count of newly stored events.
+    """
+    client = get_client()
+    stored = 0
+
+    for ev in events:
+        # Resolve home/away from team_api_id
+        team_side = "unknown"
+        if home_team_api_id and ev.get("team_api_id"):
+            team_side = "home" if ev["team_api_id"] == home_team_api_id else "away"
+
+        row = {
+            "match_id": match_id,
+            "minute": ev.get("minute", 0),
+            "added_time": ev.get("added_time", 0),
+            "event_type": ev["event_type"],
+            "team": team_side,
+            "player_name": ev.get("player_name"),
+            "detail": ev.get("detail"),
+            "af_event_order": ev.get("af_event_order"),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        try:
+            client.table("match_events").upsert(
+                row, on_conflict="match_id,af_event_order"
+            ).execute()
+            stored += 1
+        except Exception:
+            pass
+
+    return stored
+
+
+# ============================================================
+# T9: LEAGUE STANDINGS
+# ============================================================
+
+def store_league_standings(league_api_id: int, season: int,
+                            rows: list[dict]) -> int:
+    """
+    Store league standings. Upserts on (league_api_id, season, fetched_date, team_api_id).
+    Returns count stored.
+    """
+    client = get_client()
+    today = date.today().isoformat()
+    stored = 0
+
+    for r in rows:
+        row = {
+            "league_api_id": league_api_id,
+            "season": season,
+            "fetched_date": today,
+            **{k: v for k, v in r.items() if k in (
+                "team_api_id", "team_name", "rank", "points", "goals_diff",
+                "group_name", "form", "status", "description",
+                "played", "wins", "draws", "losses", "goals_for", "goals_against",
+                "home_played", "home_wins", "home_draws", "home_losses",
+                "home_goals_for", "home_goals_against",
+                "away_played", "away_wins", "away_draws", "away_losses",
+                "away_goals_for", "away_goals_against",
+                "raw",
+            )},
+        }
+        try:
+            client.table("league_standings").upsert(
+                row, on_conflict="league_api_id,season,fetched_date,team_api_id"
+            ).execute()
+            stored += 1
+        except Exception:
+            pass
+
+    return stored
+
+
+# ============================================================
+# T10: H2H
+# ============================================================
+
+def store_match_h2h(match_id: str, h2h_parsed: dict):
+    """Store H2H data on the matches table."""
+    client = get_client()
+
+    updates = {}
+    for field in ["h2h_raw", "h2h_home_wins", "h2h_draws", "h2h_away_wins"]:
+        if h2h_parsed.get(field) is not None:
+            updates[field] = h2h_parsed[field]
+
+    if updates:
+        client.table("matches").update(updates).eq("id", match_id).execute()
+
+
+# ============================================================
+# T11: PLAYER SIDELINED
+# ============================================================
+
+def store_player_sidelined(rows: list[dict]) -> int:
+    """Store player sidelined history. Upserts on (player_id, start_date, type)."""
+    client = get_client()
+    stored = 0
+
+    for row in rows:
+        if not row.get("player_id") or not row.get("start_date"):
+            continue
+        try:
+            client.table("player_sidelined").upsert(
+                row, on_conflict="player_id,start_date,type"
+            ).execute()
+            stored += 1
+        except Exception:
+            pass
+
+    return stored
+
+
+# ============================================================
+# T12: MATCH PLAYER STATS
+# ============================================================
+
+def store_match_player_stats(match_id: str, af_fixture_id: int,
+                              players: list[dict]) -> int:
+    """
+    Store per-player match statistics. Upserts on (match_id, player_id).
+    Returns count stored.
+    """
+    client = get_client()
+    stored = 0
+
+    for p in players:
+        if not p.get("player_id"):
+            continue
+        row = {
+            "match_id": match_id,
+            "af_fixture_id": af_fixture_id,
+            **{k: v for k, v in p.items() if k in (
+                "team_api_id", "team_side", "player_id", "player_name",
+                "shirt_number", "position", "minutes_played", "rating", "captain",
+                "goals", "assists", "shots_total", "shots_on_target",
+                "passes_total", "passes_key", "pass_accuracy",
+                "tackles_total", "blocks", "interceptions",
+                "duels_total", "duels_won",
+                "dribbles_attempted", "dribbles_success",
+                "fouls_drawn", "fouls_committed",
+                "yellow_cards", "red_cards",
+                "goals_conceded", "saves",
+                "penalty_scored", "penalty_missed", "penalty_saved",
+                "raw",
+            )},
+        }
+        try:
+            client.table("match_player_stats").upsert(
+                row, on_conflict="match_id,player_id"
+            ).execute()
+            stored += 1
+        except Exception:
+            pass
+
+    return stored
+
+
+# ============================================================
+# T13: TEAM TRANSFERS
+# ============================================================
+
+def store_team_transfers(team_api_id: int, rows: list[dict]) -> int:
+    """Store team transfer records. Upserts on (team_api_id, player_id, transfer_date)."""
+    client = get_client()
+    stored = 0
+
+    for row in rows:
+        if not row.get("player_id") or not row.get("transfer_date"):
+            continue
+        try:
+            client.table("team_transfers").upsert(
+                row, on_conflict="team_api_id,player_id,transfer_date"
+            ).execute()
+            stored += 1
+        except Exception:
+            pass
+
+    return stored
 
 
 def store_model_evaluation(eval_date: str, league_id: str | None, market: str,

@@ -492,7 +492,7 @@ rank = kelly * alignment_multiplier
 
 | Item | What | Data source | Min data needed | Estimated timeline |
 |------|------|-------------|-----------------|-------------------|
-| **Platt scaling** | Logistic regression on model output → corrected probability | `predictions` table (ALL matches with odds, ~200/day) + match results | 500+ predictions with known outcomes | ~1-2 weeks (mid-May 2026) |
+| **Platt scaling** | Logistic regression on model output → corrected probability | `predictions` table (ALL matches with odds, ~200/day) + match results | 500+ predictions with known outcomes | ~1-2 weeks (mid-May 2026). **UNBLOCKED** — settlement now works via API-Football |
 | **XGBoost in live pipeline** | ✅ DONE (2026-04-27). Loads v9a_202425 saved models, computes features from CSV, blends 50/50 with Poisson for Tier A teams. `workers/model/xgboost_ensemble.py` | — | — | — |
 | **Model disagreement** | ✅ DONE. `model_disagreement = abs(poisson_prob - xgb_prob)` stored on every Tier A bet. | — | — | — |
 | **Dynamic alignment thresholds** | Set HIGH/MED/LOW cutoffs from ROI inflection points | `simulated_bets` with alignment_class populated (bot bets only, ~10-20/day) | 300+ settled bot bets with alignment data | ~3-4 weeks (late May 2026) |
@@ -553,6 +553,21 @@ The next gains come from three areas, in order of ROI:
 2. **Live data** — exploiting our 5-min match snapshots for in-play edge (all 4 assessments agree)
 3. **Market intelligence** — understanding odds movement patterns, not just magnitude (trajectory clustering, regime classification)
 
+### Data Infrastructure Upgrade (2026-04-28)
+
+Migrated from fragile multi-scraper setup to **API-Football Ultra ($29/mo)** as primary data source.
+See `DATA_SOURCES.md` for full details.
+
+**Impact on model improvement timeline:**
+- Settlement now works reliably (164+ finished matches/day from API-Football vs 0 on day 1)
+- Post-match stats (shots, possession, corners) now collected automatically after settlement
+- Multi-bookmaker odds (13 bookmakers) stored on every match — feeds Platt scaling + CLV
+- Fixtures with venue + referee stored — new potential features
+- **All deferred items below are now unblocked** — data accumulation has started
+
+**Backfill plan:** Use spare API quota (~67K requests/day) to fetch historical matches with stats + odds.
+This enables retraining XGBoost on broader data sooner than waiting for daily accumulation.
+
 ### Tier 1: Do Now (low effort, uses existing data)
 
 #### 11.1 Structured News Scoring + Lineup Confidence ✅ DONE
@@ -598,7 +613,7 @@ Computes rolling 5-match average of a team's market-implied win probability from
 - Wire as XGBoost input feature when XGBoost goes live in pipeline
 - Backtest with/without feature on historical data to measure impact
 - **Blocked on:** XGBoost in live pipeline + enough odds_snapshots for finished matches
-- **Timeline: ~4-6 weeks** (needs accumulated match data with odds + XGBoost integration)
+- **Timeline: ~4-6 weeks** (needs accumulated match data with odds + XGBoost integration). **Accelerated** — API-Football now stores 13-bookmaker odds per match
 - **How to check readiness:** `SELECT COUNT(DISTINCT m.id) FROM matches m JOIN odds_snapshots o ON m.id = o.match_id WHERE m.status = 'finished';` — need 200+
 
 ### Tier 2: Do Soon (medium effort, high value)
@@ -654,6 +669,7 @@ Key insight from our own data: "High-xG game, 0-0 at minute 10-15 → O/U odds d
 **Min data needed:** ~500 completed matches × 10 snapshots = 5,000 snapshot rows.
 **Expected impact:** +2-5% ROI on in-play bets. Opens entirely new revenue stream.
 **Timeline:** July-August 2026 (2-3 months of live data collection).
+**Status (2026-04-28):** Live tracker needs rewiring to use API-Football live endpoint (task pending). Once wired, data accumulation starts immediately.
 
 ```sql
 -- Check readiness:

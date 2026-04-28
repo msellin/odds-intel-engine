@@ -74,16 +74,21 @@ def get_todays_matches_from_flashscore() -> list[dict]:
         return _get_matches_alternative()
 
 
-def _get_matches_alternative() -> list[dict]:
+def _get_matches_alternative(target_date: str = None) -> list[dict]:
     """
     Alternative: scrape from sofascore API which is more stable.
     """
-    today_str = date.today().isoformat()
+    today_str = target_date or date.today().isoformat()
 
     try:
         resp = requests.get(
             f"https://api.sofascore.com/api/v1/sport/football/scheduled-events/{today_str}",
-            headers={"User-Agent": "Mozilla/5.0"},
+            headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "application/json",
+                "Referer": "https://www.sofascore.com/",
+                "Origin": "https://www.sofascore.com",
+            },
             timeout=15,
         )
 
@@ -109,8 +114,22 @@ def _get_matches_alternative() -> list[dict]:
             away = event.get("awayTeam", {})
 
             status_code = event.get("status", {}).get("code", 0)
-            status_map = {0: "NS", 6: "FT", 7: "FT", 31: "1H", 41: "HT", 51: "2H"}
-            status = status_map.get(status_code, str(status_code))
+            status_type = event.get("status", {}).get("type", "")
+            # Sofascore: code 100 = finished, 110 = after extra time, 120 = after penalties
+            if status_type == "finished" or status_code in (100, 110, 120):
+                status = "FT"
+            elif status_code == 0:
+                status = "NS"
+            elif status_code in (6, 7):  # Legacy codes
+                status = "FT"
+            elif status_code == 60:
+                status = "1H"
+            elif status_code == 31:
+                status = "HT"
+            elif status_code == 70:
+                status = "2H"
+            else:
+                status = str(status_code)
 
             home_score = event.get("homeScore", {}).get("current")
             away_score = event.get("awayScore", {}).get("current")

@@ -10,3 +10,4 @@ data/models/
 *.pkl
 *.joblib
 .DS_Store
+/.idea/

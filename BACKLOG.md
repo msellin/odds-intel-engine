@@ -47,11 +47,10 @@ These capture data we already produce but currently throw away.
 
 These add new information that the model doesn't currently have.
 
-### P2.1 — Per-bookmaker odds storage
-- Currently `_merge_odds_sources()` aggregates to best-odds only
-- Store each bookmaker's odds separately in `odds_snapshots` (already supported by schema — bookmaker field exists)
-- **Value:** Sharp-vs-soft money detection (Pinnacle moves but Bet365 doesn't = sharp action). Also enables best-odds analysis per bookmaker over time
-- **Effort:** Modify odds merge logic to store individual rows (~50 lines)
+### P2.1 — Per-bookmaker odds storage ✅ DONE 2026-04-28
+- API-Football integration stores 13 bookmakers separately in `odds_snapshots` (bookmaker field populated)
+- **Value delivered:** Sharp-vs-soft money detection now enabled — Pinnacle vs Bet365 divergence trackable
+- Per-bookmaker best-odds comparison live in frontend (MatchDetailLive)
 
 ### P2.2 — Odds movement velocity ✅ DONE
 - `compute_odds_movement()` in `workers/model/improvements.py` computes drift, drift_pct, velocity from odds_snapshots
@@ -66,11 +65,10 @@ These add new information that the model doesn't currently have.
 - **Value:** Lineup-confirmed info is the highest-impact moment. Most injuries are public by then
 - **Effort:** Add cron entries + modify news_checker to save stage 3 snapshots
 
-### P2.4 — Half-time snapshot storage
-- When live tracker sees minute ~45-48, save a `halftime` snapshot to `live_match_snapshots` with a flag
-- Store HT score explicitly (HTHG/HTAG) — historical CSVs have this but live data doesn't mark it
-- **Value:** HT score is a strong predictor for in-play models and 2H betting
-- **Effort:** ~20 lines in live_tracker.py
+### P2.4 — Half-time stats storage ✅ DONE 2026-04-28 (via T4)
+- AF `/fixtures/statistics?half=1` + `?half=2` called post-match during settlement
+- All `match_stats` `*_ht` columns populated (shots, possession, corners, fouls, saves, xG at half-time)
+- **Value delivered:** HT vs full-time comparison available for in-play model training (P3.4)
 
 ---
 
@@ -78,11 +76,12 @@ These add new information that the model doesn't currently have.
 
 These require accumulated data from P1/P2 before they're useful.
 
-### P3.1 — Odds movement as model input feature (partially done)
+### P3.1 — Odds movement as XGBoost input feature
 - ✅ Odds drift computed and stored per bet (P2.2)
 - ✅ Soft penalty on stake for adverse movement
-- ⬜ Feed as XGBoost feature (needs XGBoost in live pipeline, currently Poisson-only)
-- **Depends on:** P2.1 (per-bookmaker odds) + live XGBoost integration
+- ✅ XGBoost now in live pipeline (50/50 blend with Poisson)
+- ⬜ Feed `odds_drift` as an actual XGBoost input feature (model retraining needed)
+- **Depends on:** Enough settled bets with odds_drift populated to retrain
 - **Value:** Market information is the strongest signal you're not using
 
 ### P3.2 — Stacked ensemble (meta-learner)

@@ -1,7 +1,7 @@
 # OddsIntel — Progress Tracker
 
 > Shared between both agents working on this project.
-> Last updated: 2026-04-27
+> Last updated: 2026-04-28 (post T2–T13 integration)
 
 ---
 
@@ -62,13 +62,54 @@
 - [x] Validation script: `scripts/validate_improvements.py` — calibration ECE, ROI by alignment, CLV, Kelly vs flat Sharpe ratio
 - [x] Pipeline fully integrated: `daily_pipeline_v2.py` runs P1→P2→P3→P4 flow
 
-**IN PROGRESS / NEXT:**
-- [ ] Run migration 006 in Supabase (manual step)
-- [ ] Validate improvements with first 50+ settled bets via `validate_improvements.py`
+**DONE — API-Football Predictions (T1, 2026-04-28):**
+- [x] `get_prediction()` + `parse_prediction()` in api_football.py — fetches /predictions endpoint
+- [x] Migration 008: `af_prediction` JSONB on matches, `af_home/draw/away_prob` + `af_agrees` on simulated_bets
+- [x] Pipeline fetches predictions for all fixtures in morning run, stores on matches
+- [x] Bets annotated with `af_agrees` (bool) — does AF's top pick agree with our selection?
+- [x] `scripts/evaluate_af_predictions.py` — ROI split: AF-agrees vs AF-disagrees, by bot + market
+- [x] Pipeline output shows AF probs per match: `[AF: H50%/D30%/A20%]`
+
+**DONE — API-Football Integration (2026-04-28):**
+- [x] API-Football Ultra ($29/mo) integrated as primary data source (75K req/day, 1236 leagues)
+- [x] `workers/api_clients/api_football.py` — unified client with rate limiting, all endpoints
+- [x] Fixtures: API-Football as primary, Sofascore as fallback (143+ fixtures/day with venue + referee)
+- [x] Settlement: API-Football as primary (164 results/day), ESPN backup, Sofascore last resort
+- [x] Odds: API-Football stores 13-bookmaker odds per match alongside Kambi + Sofascore
+- [x] Post-match stats: auto-fetched from API-Football after settlement (shots, possession, corners)
+- [x] `sofascore_event_id` + `api_football_id` now stored on every match for cross-referencing
+- [x] Migration 007: added `api_football_id`, `venue_name`, `referee` columns to matches
+- [x] `workers/scrapers/espn_results.py` — ESPN backup result source (28+ leagues, free)
+- [x] Settlement date bug fixed: now processes all dates with pending bets (was today-only)
+- [x] ELO/form/evaluation updates now cover yesterday + today (was today-only)
+- [x] Sofascore fallback headers fixed (was getting 403), status codes fixed (100=finished)
+- [x] Day 1 results: 26/32 bets settled (81%), P&L: -59.00, 4 wins / 22 losses
+- [x] See `DATA_SOURCES.md` for full architecture, migration plan, alternatives evaluation
+
+**DONE — Full API-Football Enrichment (T2–T13, 2026-04-28):**
+- [x] **T2** — Team season stats: form string, home/away goal splits, clean sheet%, failed-to-score%, formations, penalty stats. Table: `team_season_stats`. Morning pipeline.
+- [x] **T3** — Match injuries/suspensions: player name, status, reason, team side. Batched 20/call (~7 calls/day). Table: `match_injuries`. Morning pipeline.
+- [x] **T4** — Half-time stats: all fixture stats split by first half and second half. Extended `match_stats` with `*_ht` columns. Settlement pipeline.
+- [x] **T5** — Live odds in-play: every 5min during matches, stored in `odds_snapshots` with `is_live=true`. Live tracker.
+- [x] **T6** — Live match data: AF `/fixtures?live=all` replaces Sofascore live polling in `live_tracker.py`. Live scores, minute, status for all matches.
+- [x] **T7** — Pre-match lineups: formation, coach, starting XI. Stored as JSONB on `matches`. Live tracker fires 0-65min before KO, guarded by `lineups_fetched_at`.
+- [x] **T8** — Match events (goals, cards, subs, VAR): AF sourced, replaces 0-capture Sofascore events. Table: `match_events` with `af_event_order` dedup key. Live tracker + settlement.
+- [x] **T9** — League standings: full table per league/season with home/away splits. Table: `league_standings`. Morning pipeline (~40 calls/day).
+- [x] **T10** — H2H history: last 10 meetings, win/draw/loss counts stored on `matches`. Morning pipeline (~130 calls/day).
+- [x] **T11** — Player injury history (sidelined): full injury timeline per player. Table: `player_sidelined`. Backfill script collects from T3 injury player IDs.
+- [x] **T12** — Per-player match stats: rating, goals, assists, passes, tackles, dribbles, fouls, cards. Table: `match_player_stats`. Settlement pipeline.
+- [x] **T13** — Player transfers: all transfer history per team. Table: `team_transfers`. Opt-in via `--transfers` flag in backfill script.
+- [x] Migration 009: 6 new tables + 4 altered existing tables. Applied 2026-04-28.
+- [x] `scripts/backfill_api_football.py` — CLI tool to populate all T2–T13 data for any date
+- [x] `WEB_DATA_TASKS.md` updated with all 15 frontend display tasks with DB location and tier
+
+**IN PROGRESS / NEXT (engine):**
+- [ ] Validate model improvements with first 50+ settled bets via `scripts/validate_improvements.py`
 - [ ] Activate alignment filter after 300+ bets show ROI correlating with alignment class
-- [ ] Tier B backtest: run Poisson model against targets_global.csv (42K matches)
-- [ ] OddsPortal scraper — to reach 80%+ daily match odds coverage (currently 43%)
-- [ ] O/U 0.5 / 1.5 / 3.5 backtests
+- [ ] Retrain XGBoost on API-Football accumulated data (broader league coverage)
+- [ ] Historical backfill via API-Football spare quota (~73K req/day unused)
+- [ ] Simplify `news_checker.py` to non-injury news only (T3 now handles injuries structurally)
+- [ ] Remove redundant form functions once T2 data accumulates (see `DATA_SOURCES.md` cleanup list)
 
 ### Frontend (odds-intel-web)
 
@@ -85,11 +126,16 @@
 - [x] Match interest indicators (hot/warm/neutral)
 - [x] RLS public read policies on all data tables
 
-**IN PROGRESS / NEXT:**
-- [ ] Stripe integration (Pro €19/mo, Elite €49/mo)
-- [ ] Deploy to Vercel
-- [ ] Live score display during matches
-- [ ] Onboarding flow (post-signup)
+**DONE — Match detail enrichment (2026-04-28):**
+- [x] Show scores on match detail (score_home / score_away)
+- [x] Show venue + referee (MapPin + User icons in header)
+- [x] Post-match stats bars (shots, shots on target, possession, corners)
+- [x] Multi-bookmaker odds comparison table (13 bookmakers, best highlighted)
+- [x] Odds movement chart (recharts LineChart, hourly buckets)
+
+**IN PROGRESS / NEXT (frontend):**
+See `ROADMAP.md` → Milestone 2 (Pro tier) and Frontend Data Display Backlog for the full task list.
+Short version: Stripe + Vercel deploy + live scores + 10 new data display components (T2–T12 data all in DB, frontend not built yet).
 
 ---
 
@@ -112,18 +158,21 @@ High-xG game, 0-0 at minute 10-15 → O/U 0.5/1.5 odds drift upward → potentia
 ## Architecture
 
 ```
-Sofascore API (free)   → ALL fixtures (467/day) + live match stats + events
-Kambi API (free)       → Odds for 41 leagues (~122 matches/day)
-Sofascore odds API     → Odds for 30+ leagues (~119 matches/day)
-Combined               → ~200 matches/day with odds
-                              ↓
-                    Python Daily Pipeline (08:00 UTC)
+API-Football Ultra ($29/mo) → PRIMARY for ALL data: fixtures, odds, live, events, stats, lineups
+  75K req/day, 1236 leagues  → 13 bookmaker odds, team stats, injuries, standings, H2H, player data
+Sofascore API (free)        → Fixture fallback only (if AF misses a match)
+Kambi API (free)            → Odds for 41 leagues (~122 matches/day) — supplemental
+ESPN Results (free)         → Settlement backup (28 leagues)
+                                            ↓
+                    Python Daily Pipeline (08:00 UTC) — T2/T3/T9/T10 enrichment
+                    AI News Checker (09:00 UTC) — Gemini 2.5 Flash, non-injury news
+                    Settlement (21:00 UTC) — T4/T8/T12 post-match enrichment
                     Hourly Odds Snapshots (every 2h, 06-22 UTC)
-                    Live Tracker (every 5min, 12-22 UTC)
-                              ↓
-                      Supabase Database
-                              ↓
-                  Next.js Frontend (Vercel) — in progress
+                    Live Tracker (every 5min, 12-22 UTC) — T5/T6/T7/T8 live
+                                            ↓
+                                  Supabase Database (15 tables)
+                                            ↓
+                          Next.js Frontend (odds-intel-web) → Vercel (not yet deployed)
 ```
 
 ---
@@ -156,22 +205,32 @@ Combined               → ~200 matches/day with odds
 
 ## Data in Supabase (live)
 
-| Table | Rows | Notes |
-|-------|------|-------|
-| bots | 5 | Different strategies |
-| matches | 19+ | Growing daily |
-| simulated_bets | 10+ | Pending bets across 4 bots |
-| teams | ~30+ | Auto-created from match data |
-| leagues | ~15+ | Auto-created from match data |
-| odds_snapshots | ~0→growing | Column bug fixed, now storing correctly |
-| predictions | ~0→growing | Bug fixed |
-| live_match_snapshots | 0 | New table — needs migration 002 + GH secrets |
-| match_events | 0 | New table — needs migration 002 + GH secrets |
+| Table | Notes |
+|-------|-------|
+| bots | 6 paper trading bots since 2026-04-27 |
+| matches | Growing daily — includes venue, referee, scores, lineups, H2H |
+| simulated_bets | Annotated with calibration, Kelly, AF agreement, alignment scores |
+| teams / leagues | Auto-created from match data |
+| odds_snapshots | 13 bookmakers per match, pre-match + live (is_live flag) |
+| predictions | Model predictions with AF second-opinion |
+| live_match_snapshots | AF live data — score, minute, status |
+| match_events | Goals, cards, subs, VAR from API-Football (was 0 from Sofascore) |
+| match_stats | Full stats + half-time splits (`*_ht` columns) |
+| team_season_stats | Form, goal splits, clean sheet%, failed-to-score%, formations |
+| match_injuries | Player-level injury/suspension data per fixture |
+| league_standings | Full league table per league/season with home/away splits |
+| player_sidelined | Player injury history timeline |
+| match_player_stats | Per-player ratings, goals, assists, passes, tackles, cards (post-match) |
+| team_transfers | Transfer history per team |
 
 ---
 
 ## Supabase Credentials
 
-Both repos have .env files with credentials (gitignored).
-Engine: /odds-intel-engine/.env
-SUPABASE_SECRET_KEY = service_role key from Supabase dashboard → Settings → API
+Both repos have `.env` files with credentials (gitignored).
+Engine: `/odds-intel-engine/.env`
+- `SUPABASE_URL` — project URL from Supabase dashboard → Settings → API
+- `SUPABASE_SECRET_KEY` — service_role key (used by engine for writes)
+- `SUPABASE_ANON_KEY` — anon/public key (used by frontend for reads)
+- `API_FOOTBALL_KEY` — Ultra plan key ($29/mo, 75K req/day)
+- `GEMINI_API_KEY` — Gemini 2.5 Flash for news checker

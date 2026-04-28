@@ -31,11 +31,22 @@ from workers.scrapers.kambi_odds import fetch_all_operators, get_target_league_m
 from workers.scrapers.flashscore import get_todays_matches_from_flashscore
 from workers.scrapers.sofascore_odds import fetch_all_odds as fetch_sofascore_odds
 from workers.scrapers.betexplorer_odds import fetch_gap_leagues_odds as fetch_betexplorer_odds
+from workers.api_clients.api_football import (
+    get_fixtures_by_date, fixture_to_match_dict,
+    get_fixture_odds, parse_fixture_odds,
+    get_prediction, parse_prediction,
+    get_team_statistics, parse_team_statistics,
+    get_injuries_batched, parse_injuries,
+    get_standings, parse_standings,
+    get_h2h, parse_h2h,
+)
 from workers.api_clients.supabase_client import (
     get_client, ensure_bots, store_match, store_odds,
     store_prediction, store_bet, store_prediction_snapshot, settle_bet,
     get_pending_bets, update_bot_bankroll, update_match_result,
     get_bot_performance, get_todays_matches,
+    store_team_season_stats, store_match_injuries,
+    store_league_standings, store_match_h2h,
 )
 from workers.model.improvements import (
     calibrate_prob, compute_odds_movement, compute_alignment,
@@ -436,6 +447,111 @@ def compute_prediction(match, hist_targets, hist_targets_global=None, sofascore_
     return result
 
 
+def _store_parsed_odds(match_id: str, parsed_odds: list[dict]):
+    """Store pre-parsed API-Football odds rows directly into odds_snapshots."""
+    from workers.api_clients.supabase_client import get_client
+    client = get_client()
+    now = datetime.now().astimezone().isoformat()
+
+    rows = []
+    for row in parsed_odds:
+        rows.append({
+            "match_id": match_id,
+            "bookmaker": row["bookmaker"],
+            "market": row["market"],
+            "selection": row["selection"],
+            "odds": row["odds"],
+            "timestamp": now,
+            "is_closing": False,
+            "minutes_to_kickoff": None,
+        })
+
+    if rows:
+        try:
+            client.table("odds_snapshots").insert(rows).execute()
+        except Exception:
+            pass  # Dedup errors are fine
+
+
+def _fetch_af_predictions(af_id_to_match_id: dict[int, str]) -> dict[str, dict]:
+    """
+    Fetch API-Football predictions for all today's fixtures.
+    Returns {match_id: parsed_prediction_dict}
+    """
+    from workers.api_clients.supabase_client import get_client
+    client = get_client()
+
+    af_preds: dict[str, dict] = {}
+    fetched = 0
+    failed = 0
+
+    console.print(f"\n[cyan]Fetching API-Football predictions ({len(af_id_to_match_id)} fixtures)...[/cyan]")
+
+    for af_id, match_id in af_id_to_match_id.items():
+        try:
+            raw = get_prediction(af_id)
+            if not raw:
+                failed += 1
+                continue
+
+            parsed = parse_prediction(raw)
+            if not parsed.get("af_home_prob"):
+                failed += 1
+                continue
+
+            af_preds[match_id] = parsed
+
+            # Store full JSONB on the match row
+            try:
+                client.table("matches").update({
+                    "af_prediction": parsed["raw"]
+                }).eq("id", match_id).execute()
+            except Exception:
+                pass  # non-critical
+
+            fetched += 1
+
+        except Exception as e:
+            failed += 1
+            continue
+
+    console.print(f"  {fetched} predictions stored, {failed} unavailable (league not supported by AF predictions)")
+    return af_preds
+
+
+def _af_agrees_with_bet(selection: str, parsed_pred: dict | None) -> bool | None:
+    """
+    Determine if API-Football's prediction agrees with our bet selection.
+
+    For 1X2 bets: AF agrees if their highest probability matches the selection.
+    For O/U bets: AF agrees if their under_over sign matches ("+2.5" = over, "-2.5" = under).
+
+    Returns True/False/None (None = no AF prediction available).
+    """
+    if not parsed_pred:
+        return None
+
+    home_p = parsed_pred.get("af_home_prob") or 0
+    draw_p = parsed_pred.get("af_draw_prob") or 0
+    away_p = parsed_pred.get("af_away_prob") or 0
+
+    sel_l = selection.lower()
+    if sel_l == "home":
+        return home_p >= draw_p and home_p >= away_p
+    elif sel_l == "away":
+        return away_p >= home_p and away_p >= draw_p
+    elif sel_l == "draw":
+        return draw_p >= home_p and draw_p >= away_p
+    elif "over" in sel_l:
+        uo = parsed_pred.get("af_under_over") or ""
+        return str(uo).startswith("+")
+    elif "under" in sel_l:
+        uo = parsed_pred.get("af_under_over") or ""
+        return str(uo).startswith("-")
+
+    return None
+
+
 def _merge_odds_sources(kambi_matches: list[dict], sofascore_matches: list[dict], betexplorer_matches: list[dict] = None) -> list[dict]:
     """
     Merge odds from multiple sources by match key (home_team + away_team + date).
@@ -476,6 +592,136 @@ def _merge_odds_sources(kambi_matches: list[dict], sofascore_matches: list[dict]
     return list(merged.values())
 
 
+def _fetch_morning_enrichment(af_fixtures_raw: list[dict], af_id_to_match_id: dict[int, str]):
+    """
+    T2, T3, T9, T10: Enrich today's fixtures with team stats, injuries,
+    standings, and H2H data. Called once per morning after fixtures are stored.
+    """
+    if not af_fixtures_raw or not af_id_to_match_id:
+        return
+
+    today = date.today()
+    season = today.year if today.month >= 7 else today.year - 1
+
+    # Build per-fixture metadata for enrichment calls
+    fixture_meta: dict[int, dict] = {}
+    for af_fix in af_fixtures_raw:
+        fid = af_fix.get("fixture", {}).get("id")
+        if not fid:
+            continue
+        teams = af_fix.get("teams", {})
+        league = af_fix.get("league", {})
+        fixture_meta[fid] = {
+            "match_id": af_id_to_match_id.get(fid),
+            "home_team_api_id": teams.get("home", {}).get("id"),
+            "away_team_api_id": teams.get("away", {}).get("id"),
+            "league_api_id": league.get("id"),
+            "season": league.get("season") or season,
+        }
+
+    # ── T3: Injuries (batched, ~7 calls for 130 fixtures) ──────────────────
+    console.print("\n[cyan]T3: Fetching injuries (batched)...[/cyan]")
+    fixture_ids_with_match = [fid for fid, m in fixture_meta.items() if m.get("match_id")]
+    injuries_by_fixture: dict[int, list[dict]] = {}
+    try:
+        injuries_by_fixture = get_injuries_batched(fixture_ids_with_match)
+    except Exception as e:
+        console.print(f"  [yellow]Injuries fetch error: {e}[/yellow]")
+
+    inj_stored = 0
+    for fid, injuries in injuries_by_fixture.items():
+        if not injuries:
+            continue
+        meta = fixture_meta.get(fid, {})
+        match_id = meta.get("match_id")
+        if not match_id:
+            continue
+        parsed = parse_injuries(injuries, home_team_api_id=meta.get("home_team_api_id"))
+        inj_stored += store_match_injuries(match_id, fid, parsed)
+    console.print(f"  {inj_stored} injury records stored")
+
+    # ── T2: Team Statistics (~2 calls per fixture team = ~260 calls) ───────
+    console.print("[cyan]T2: Fetching team season statistics...[/cyan]")
+    seen_team_league: set[tuple] = set()
+    team_stats_stored = 0
+
+    for fid, meta in fixture_meta.items():
+        league_api_id = meta.get("league_api_id")
+        fix_season = meta.get("season")
+        if not league_api_id or not fix_season:
+            continue
+
+        for team_api_id in [meta.get("home_team_api_id"), meta.get("away_team_api_id")]:
+            if not team_api_id:
+                continue
+            key = (team_api_id, league_api_id, fix_season)
+            if key in seen_team_league:
+                continue
+            seen_team_league.add(key)
+
+            try:
+                raw = get_team_statistics(team_api_id, league_api_id, fix_season)
+                if not raw:
+                    continue
+                parsed = parse_team_statistics(raw)
+                store_team_season_stats(team_api_id, league_api_id, fix_season, parsed)
+                team_stats_stored += 1
+            except Exception:
+                continue
+
+    console.print(f"  {team_stats_stored} team season stat records stored")
+
+    # ── T9: League Standings (~1 call per unique league) ───────────────────
+    console.print("[cyan]T9: Fetching league standings...[/cyan]")
+    seen_leagues: set[tuple] = set()
+    standings_stored = 0
+
+    for fid, meta in fixture_meta.items():
+        league_api_id = meta.get("league_api_id")
+        fix_season = meta.get("season")
+        if not league_api_id or not fix_season:
+            continue
+        key = (league_api_id, fix_season)
+        if key in seen_leagues:
+            continue
+        seen_leagues.add(key)
+
+        try:
+            raw = get_standings(league_api_id, fix_season)
+            if not raw:
+                continue
+            rows = parse_standings(raw)
+            stored = store_league_standings(league_api_id, fix_season, rows)
+            standings_stored += stored
+        except Exception:
+            continue
+
+    console.print(f"  {standings_stored} standing rows stored across {len(seen_leagues)} leagues")
+
+    # ── T10: H2H (~1 call per fixture) ─────────────────────────────────────
+    console.print("[cyan]T10: Fetching H2H history...[/cyan]")
+    h2h_stored = 0
+
+    for fid, meta in fixture_meta.items():
+        match_id = meta.get("match_id")
+        home_id = meta.get("home_team_api_id")
+        away_id = meta.get("away_team_api_id")
+        if not match_id or not home_id or not away_id:
+            continue
+
+        try:
+            raw = get_h2h(home_id, away_id, last=10)
+            if not raw:
+                continue
+            parsed = parse_h2h(raw, home_team_api_id=home_id)
+            store_match_h2h(match_id, parsed)
+            h2h_stored += 1
+        except Exception:
+            continue
+
+    console.print(f"  {h2h_stored} H2H records stored")
+
+
 def run_morning():
     """Fetch data → predict → store matches/odds/bets in Supabase"""
     today_str = date.today().isoformat()
@@ -486,43 +732,139 @@ def run_morning():
     bot_ids = ensure_bots(BOTS_CONFIG)
     console.print(f"  {len(bot_ids)} bots ready")
 
-    # 2. Fetch ALL fixtures from SofaScore (source of truth for match list)
-    console.print("\n[cyan]Fetching all fixtures from SofaScore...[/cyan]")
-    all_fixtures = get_todays_matches_from_flashscore()
-    console.print(f"  {len(all_fixtures)} total fixtures today")
+    # 2. Fetch ALL fixtures from API-Football (primary) with Sofascore fallback
+    console.print("\n[cyan]Fetching all fixtures from API-Football...[/cyan]")
+    af_fixtures_raw = []
+    all_fixtures = []  # Sofascore-format list for odds scrapers compatibility
+    try:
+        af_fixtures_raw = get_fixtures_by_date(today_str)
+        console.print(f"  {len(af_fixtures_raw)} fixtures from API-Football")
+    except Exception as e:
+        console.print(f"  [yellow]API-Football error: {e} — falling back to Sofascore[/yellow]")
+
+    if not af_fixtures_raw:
+        console.print("[cyan]Falling back to Sofascore for fixtures...[/cyan]")
+        all_fixtures = get_todays_matches_from_flashscore()
+        console.print(f"  {len(all_fixtures)} fixtures from Sofascore fallback")
 
     # 3. Store ALL fixtures in Supabase (even without odds)
     console.print("\n[cyan]Storing all fixtures in Supabase...[/cyan]")
     stored_fixture_count = 0
     fixture_id_map: dict[str, str] = {}  # event_id → match_id
+    af_id_to_match_id: dict[int, str] = {}  # api_football_id → match_id (for odds fetch)
 
-    for fixture in all_fixtures:
-        # Convert sofascore fixture to match dict format
-        match_dict = {
-            "home_team": fixture.get("home_team", ""),
-            "away_team": fixture.get("away_team", ""),
-            "start_time": fixture.get("date", ""),
-            "league_path": f"{fixture.get('country', '')} / {fixture.get('league_name', '')}",
-            "league_code": "",  # Unknown until odds are fetched
-            "tier": 0,
-            "operator": "sofascore_fixture",
-            "odds_home": 0,
-            "odds_draw": 0,
-            "odds_away": 0,
-            "odds_over_25": 0,
-            "odds_under_25": 0,
-        }
-        try:
-            match_id = store_match(match_dict)
-            if match_id and fixture.get("event_id"):
-                fixture_id_map[str(fixture["event_id"])] = match_id
-            stored_fixture_count += 1
-        except Exception as e:
-            console.print(f"  [yellow]Could not store fixture {fixture.get('home_team')} vs {fixture.get('away_team')}: {e}[/yellow]")
+    if af_fixtures_raw:
+        # Store API-Football fixtures (primary path)
+        for af_fix in af_fixtures_raw:
+            match_dict = fixture_to_match_dict(af_fix)
+            try:
+                match_id = store_match(match_dict)
+                af_id = af_fix.get("fixture", {}).get("id")
+                if match_id and af_id:
+                    af_id_to_match_id[af_id] = match_id
+                # Also populate sofascore-format list for odds scrapers
+                all_fixtures.append({
+                    "home_team": match_dict["home_team"],
+                    "away_team": match_dict["away_team"],
+                    "date": match_dict["start_time"],
+                    "event_id": None,  # No sofascore ID from this source
+                    "league_name": af_fix.get("league", {}).get("name", ""),
+                    "country": af_fix.get("league", {}).get("country", ""),
+                    "status": af_fix.get("fixture", {}).get("status", {}).get("short", "NS"),
+                    "api_football_id": af_id,
+                })
+                stored_fixture_count += 1
+            except Exception as e:
+                console.print(f"  [yellow]Could not store {match_dict.get('home_team')} vs {match_dict.get('away_team')}: {e}[/yellow]")
+    else:
+        # Store Sofascore fallback fixtures
+        for fixture in all_fixtures:
+            match_dict = {
+                "home_team": fixture.get("home_team", ""),
+                "away_team": fixture.get("away_team", ""),
+                "start_time": fixture.get("date", ""),
+                "league_path": f"{fixture.get('country', '')} / {fixture.get('league_name', '')}",
+                "league_code": "",
+                "tier": 0,
+                "operator": "sofascore_fixture",
+                "sofascore_event_id": fixture.get("event_id"),
+                "odds_home": 0, "odds_draw": 0, "odds_away": 0,
+                "odds_over_25": 0, "odds_under_25": 0,
+            }
+            try:
+                match_id = store_match(match_dict)
+                if match_id and fixture.get("event_id"):
+                    fixture_id_map[str(fixture["event_id"])] = match_id
+                stored_fixture_count += 1
+            except Exception as e:
+                console.print(f"  [yellow]Could not store fixture {fixture.get('home_team')} vs {fixture.get('away_team')}: {e}[/yellow]")
 
     console.print(f"  {stored_fixture_count} fixtures stored")
 
-    # 4. Fetch odds from Kambi
+    # 3.5. Fetch API-Football predictions for all today's fixtures
+    af_preds: dict[str, dict] = {}  # match_id → parsed prediction
+    if af_id_to_match_id:
+        af_preds = _fetch_af_predictions(af_id_to_match_id)
+        console.print(f"  AF predictions: {len(af_preds)} available out of {len(af_id_to_match_id)} fixtures")
+
+    # 3.6. T2/T3/T9/T10: Morning enrichment (team stats, injuries, standings, H2H)
+    console.print("\n[cyan]Running morning enrichment (T2/T3/T9/T10)...[/cyan]")
+    try:
+        _fetch_morning_enrichment(af_fixtures_raw, af_id_to_match_id)
+    except Exception as e:
+        console.print(f"  [yellow]Enrichment error (non-fatal): {e}[/yellow]")
+
+    # 4. Fetch odds from API-Football (primary, covers all leagues)
+    console.print("\n[cyan]Fetching odds from API-Football...[/cyan]")
+    api_football_odds_matches = []
+    scheduled_fixtures = [f for f in all_fixtures if f.get("status", "NS") == "NS" and f.get("api_football_id")]
+    af_odds_fetched = 0
+    for fixture in scheduled_fixtures:
+        af_id = fixture["api_football_id"]
+        try:
+            raw_odds = get_fixture_odds(af_id)
+            parsed = parse_fixture_odds(raw_odds)
+            if not parsed:
+                continue
+
+            # Convert to match dict format: pick best odds across bookmakers
+            best = {"odds_home": 0, "odds_draw": 0, "odds_away": 0,
+                    "odds_over_25": 0, "odds_under_25": 0}
+            for row in parsed:
+                if row["market"] == "1x2":
+                    key = f"odds_{row['selection']}"
+                    if key in best and row["odds"] > best[key]:
+                        best[key] = row["odds"]
+                elif row["market"] == "over_under_25":
+                    key = f"odds_{'over' if row['selection'] == 'over' else 'under'}_25"
+                    if row["odds"] > best.get(key, 0):
+                        best[key] = row["odds"]
+
+            if best["odds_home"] > 0:
+                api_football_odds_matches.append({
+                    "home_team": fixture["home_team"],
+                    "away_team": fixture["away_team"],
+                    "start_time": fixture["date"],
+                    "league_path": f"{fixture.get('country', '')} / {fixture.get('league_name', '')}",
+                    "league_code": "",
+                    "tier": 0,
+                    "operator": "api-football",
+                    "api_football_id": af_id,
+                    **best,
+                })
+                af_odds_fetched += 1
+
+                # Also store all bookmaker odds in odds_snapshots
+                match_id = af_id_to_match_id.get(af_id)
+                if match_id:
+                    _store_parsed_odds(match_id, parsed)
+
+        except Exception as e:
+            continue  # Skip individual fixture errors silently
+
+    console.print(f"  {af_odds_fetched} matches with API-Football odds")
+
+    # 4b. Fetch odds from Kambi (supplementary — different bookmaker)
     console.print("\n[cyan]Fetching odds from Kambi...[/cyan]")
     kambi_matches = get_target_league_matches()
     console.print(f"  {len(kambi_matches)} matches with Kambi odds")
@@ -531,7 +873,7 @@ def run_morning():
     console.print("\n[cyan]Fetching odds from SofaScore (target leagues)...[/cyan]")
     sofascore_matches = fetch_sofascore_odds(all_fixtures)
 
-    # 5b. Fetch odds from BetExplorer (fills gaps: Singapore, S. Korea, Scotland lower divs)
+    # 5b. Fetch odds from BetExplorer (fills gaps)
     console.print("\n[cyan]Fetching odds from BetExplorer (gap leagues)...[/cyan]")
     try:
         betexplorer_matches = fetch_betexplorer_odds(delay=1.0)
@@ -539,9 +881,21 @@ def run_morning():
         console.print(f"  [yellow]BetExplorer scrape failed (non-fatal): {e}[/yellow]")
         betexplorer_matches = []
 
-    # 6. Merge odds sources
+    # 6. Merge odds sources (API-Football → Kambi → SofaScore → BetExplorer)
     odds_matches = _merge_odds_sources(kambi_matches, sofascore_matches, betexplorer_matches)
-    console.print(f"\n  [bold]{len(odds_matches)} matches with odds (Kambi + SofaScore + BetExplorer merged)[/bold]")
+    # Also merge API-Football odds into the pool
+    _merge_into_existing = {}
+    for m in odds_matches:
+        date_part = m.get("start_time", "")[:10] or "nodate"
+        key = f"{m['home_team'].lower()}_{m['away_team'].lower()}_{date_part}"
+        _merge_into_existing[key] = m
+    for m in api_football_odds_matches:
+        date_part = m.get("start_time", "")[:10] or "nodate"
+        key = f"{m['home_team'].lower()}_{m['away_team'].lower()}_{date_part}"
+        if key not in _merge_into_existing:
+            odds_matches.append(m)
+
+    console.print(f"\n  [bold]{len(odds_matches)} matches with odds (API-Football + Kambi + SofaScore + BetExplorer merged)[/bold]")
 
     # Coverage by source
     source_counts = {}
@@ -667,6 +1021,9 @@ def run_morning():
         # P2: Compute odds movement for this match (once per match, cached per market)
         odds_movement_cache = {}
 
+        # T1: Look up AF prediction for this match
+        af_pred = af_preds.get(match_id)
+
         for bot_name, config in BOTS_CONFIG.items():
             # Check tier filter
             if config.get("tier_filter") and tier not in config["tier_filter"]:
@@ -751,6 +1108,9 @@ def run_morning():
                 bet_candidates.append((mkt, selection, odds, raw_mp, cal_prob, ip, edge, kelly, alignment, odds_mv, stake))
 
             for mkt, selection, odds, raw_mp, cal_prob, ip, edge, kelly, alignment, odds_mv, stake in bet_candidates:
+                # T1: AF prediction agreement
+                af_agrees = _af_agrees_with_bet(selection, af_pred)
+
                 try:
                     bet_id = store_bet(bot_ids[bot_name], match_id, {
                         "market": mkt,
@@ -776,6 +1136,11 @@ def run_morning():
                         "kelly_fraction": round(kelly, 6),
                         # Model disagreement (when ensemble is active)
                         "model_disagreement": pred.get("model_disagreement"),
+                        # T1: API-Football prediction comparison
+                        "af_home_prob": af_pred.get("af_home_prob") if af_pred else None,
+                        "af_draw_prob": af_pred.get("af_draw_prob") if af_pred else None,
+                        "af_away_prob": af_pred.get("af_away_prob") if af_pred else None,
+                        "af_agrees": af_agrees,
                     })
                     if bet_id:
                         total_bets += 1
@@ -805,7 +1170,13 @@ def run_morning():
         # Brief status
         ensemble_tag = " [ensemble]" if pred.get("ensemble") else ""
         disagree_tag = f" disagree={pred['model_disagreement']:.1%}" if pred.get("model_disagreement") else ""
-        console.print(f"  {match['home_team']} vs {match['away_team']} — predicted [Tier {data_tier}]{ensemble_tag}{disagree_tag}")
+        af_tag = ""
+        if af_pred:
+            hp = af_pred.get("af_home_prob", 0) or 0
+            dp = af_pred.get("af_draw_prob", 0) or 0
+            ap = af_pred.get("af_away_prob", 0) or 0
+            af_tag = f" [AF: H{hp:.0%}/D{dp:.0%}/A{ap:.0%}]"
+        console.print(f"  {match['home_team']} vs {match['away_team']} — predicted [Tier {data_tier}]{ensemble_tag}{disagree_tag}{af_tag}")
 
     console.print(f"\n[bold green]Done! {total_bets} bets placed across {len(BOTS_CONFIG)} bots[/bold green]")
     console.print(f"[green]All data stored in Supabase — frontend can display it now[/green]")
