@@ -33,7 +33,7 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from google import genai
-from workers.api_clients.supabase_client import get_client, store_prediction_snapshot
+from workers.api_clients.supabase_client import get_client, store_prediction_snapshot, store_match_signal
 
 console = Console()
 
@@ -415,6 +415,25 @@ def run_news_checker(dry_run: bool = False):
             bet_update["lineup_confirmed"] = lineup_conf >= 0.9
 
             client.table("simulated_bets").update(bet_update).eq("id", bet["id"]).execute()
+
+            # S3: Write signals to match_signals for ML training
+            try:
+                store_match_signal(match_id, "news_impact_score",
+                                   round(news_impact, 4), "information", "gemini")
+                store_match_signal(match_id, "lineup_confidence",
+                                   round(lineup_conf, 3), "information", "gemini")
+                if players_out or players_doubtful:
+                    home_out = sum(1 for p in players_out
+                                  if p.get("team", "").lower() in ("home", match.get("home_team", "").lower()))
+                    away_out = len(players_out) - home_out
+                    if home_out > 0:
+                        store_match_signal(match_id, "players_out_home_ai",
+                                           float(home_out), "information", "gemini")
+                    if away_out > 0:
+                        store_match_signal(match_id, "players_out_away_ai",
+                                           float(away_out), "information", "gemini")
+            except Exception:
+                pass  # non-critical
 
             # Store structured AI output in news_events table
             for player_info in players_out + players_doubtful:

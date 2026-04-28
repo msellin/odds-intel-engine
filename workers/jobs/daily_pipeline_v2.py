@@ -47,6 +47,7 @@ from workers.api_clients.supabase_client import (
     get_bot_performance, get_todays_matches,
     store_team_season_stats, store_match_injuries,
     store_league_standings, store_match_h2h,
+    write_morning_signals,
 )
 from workers.model.improvements import (
     calibrate_prob, compute_odds_movement, compute_alignment,
@@ -1112,6 +1113,22 @@ def run_morning():
                                 pass
                 except Exception:
                     pass
+
+        # S3/S4/S5/BDM-1: Write morning signals to match_signals
+        try:
+            write_morning_signals(
+                match_id,
+                league_api_id=match.get("league_api_id"),
+                season=match.get("season"),
+                home_team_api_id=match.get("home_team_api_id"),
+                away_team_api_id=match.get("away_team_api_id"),
+                referee=match.get("referee"),
+                opening_odds_home=match.get("odds_home"),
+                opening_odds_draw=match.get("odds_draw"),
+                opening_odds_away=match.get("odds_away"),
+            )
+        except Exception:
+            pass  # non-critical
 
         # Place bets for each bot
         tier = match.get("tier", 1)
