@@ -253,13 +253,8 @@ Meta-model (Phase 1 ~May 9, Phase 2 ~June)
 
 ---
 
-## Open Gaps (not yet built)
+## Open Gaps
 
-| Signal | Priority | Blocked on |
-|--------|----------|-----------|
-| `xg_proxy_home/away` (shots-based) | Low | Need match_stats from prior matches in signals |
-| `h2h_avg_goals` | Low | Easy to add, low marginal value |
-| Pinnacle anchor (`model_prob - pinnacle_implied`) | High (PIN-1) | Need P5.1 to confirm Pinnacle is in our 13 bookmakers |
-| `is_derby` / `travel_distance` | Low | Needs team location data |
-| `xG_overperformance` rolling | Medium (SIG-12) | Needs ~2 weeks of post-match xG accumulation |
-| Learned blend weights (MOD-2) | High | Needs 500+ settled predictions |
+Some signals are planned but not yet built. For task status and priority, see **PRIORITY_QUEUE.md** (single source of truth for all tasks).
+
+Relevant queue IDs: PIN-1 (Pinnacle anchor), SIG-12 (xG overperformance), MOD-2 (learned blend weights), SIG-DERBY (is-derby/travel), P3.3 (player injury weighting).

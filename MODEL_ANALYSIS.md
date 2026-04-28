@@ -105,9 +105,9 @@ Submitted to 4 AI evaluators. Key verdicts that were implemented:
 | Two-stage: keep outcome model (Stage 1) separate from meta-model (Stage 2) | ✅ Already correct |
 | Pseudo-CLV for ALL matches (not just bets) → 10x training data | ✅ Done (B-ML1) |
 | Materialized wide table for ML training (not EAV directly) | ✅ Done (B-ML2) |
-| Start with 5-feature logistic regression before full XGBoost | ⬜ Pending data |
-| Calibration before everything — validate on settled predictions | ⬜ Script ready (check_calibration.py) |
-| Bookmaker disagreement + Pinnacle anchor as signals | ⬜ Tier 2 task |
+| Start with 5-feature logistic regression before full XGBoost | See B-ML3 in PRIORITY_QUEUE.md |
+| Calibration before everything — validate on settled predictions | See CAL-1 (done) in PRIORITY_QUEUE.md |
+| Bookmaker disagreement + Pinnacle anchor as signals | See BDM-1 (done), PIN-1 in PRIORITY_QUEUE.md |
 
 ---
 
