@@ -26,7 +26,7 @@ When you complete a task, update the relevant documentation:
 - Mark tasks done in `PRIORITY_QUEUE.md` (master task list — update status column here first)
 - Update `ROADMAP.md` Current System State section if you change what's built
 - Manual steps and launch checklist live in `ROADMAP.md` (Launch Checklist section)
-- Do NOT update `BACKLOG.md`, `PROGRESS.md`, `data/model_results/NEXT_STEPS.md`, or `data/model_results/research_findings.md` — all retired
+- Retired docs (BACKLOG, PROGRESS, NEXT_STEPS, research_findings) have been deleted — history is in git
 
 Do not let docs drift from reality. If you notice something marked TODO that is already done, fix it.
 

@@ -13,3 +13,4 @@ data/models/
 /.idea/
 data/logs/
 supabase/.temp/
+.claude/
