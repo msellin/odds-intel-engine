@@ -237,22 +237,22 @@ That's the meta-model described in MODEL_ANALYSIS.md Section 8.
 
 ## Priority Order
 
-**Now (data collection phase):**
-1. **S0a** — Pseudo-CLV for ALL ~280 daily matches (not just bot bets) → 280 labeled rows/day
-2. **S0b** — `match_feature_vectors` materialized ETL table (wide format for ML training)
-3. Migration 010: add `source` to predictions + `match_signals` table
-4. Store all Group 1 signals as separate prediction rows
-5. Start writing referee, fixture importance, and key-player signals to `match_signals`
+**Done (2026-04-28):**
+1. ✅ S0a — Pseudo-CLV for all ~280 daily matches
+2. ✅ S0b — `match_feature_vectors` nightly ETL (wide ML training table)
+3. ✅ Migration 010 — `source` on predictions + `match_signals` table
+4. ✅ Store poisson + xgboost as separate prediction rows (S1)
 
-**In ~11 days (3000+ examples via pseudo-CLV):**
-6. Train first meta-model: 5-feature logistic regression (ensemble_prob, odds_drift, elo_diff, league_tier, model_disagreement). Target: pseudo_clv > 0.
-7. Validate vs fixed edge thresholds. If it outperforms, graduate to full signal set.
+**Next 1-2 weeks:**
+5. ⬜ S3 — Wire existing signals into match_signals (odds_drift, news_impact, injuries, lineup, ELO, form)
+6. ⬜ S4 — Referee signals (build referee_stats table)
+7. ⬜ S5 — Fixture importance signal (standings → urgency score)
 
-**In 4-6 weeks (enough bot bets for alignment validation):**
-8. Validate alignment filter (ROI by alignment bin on actual placed bets)
-9. Graduate meta-model to XGBoost with full signal set (1000+ bot bets)
-10. Replace fixed edge thresholds with ML-predicted EV score
+**In ~11 days (~mid-May 2026):**
+8. ⬜ Train meta-model Phase 1: 5-feature logistic regression on 3000+ pseudo-CLV rows
 
-**Ongoing:**
-8. Add new signal sources as they become available (travel, altitude, press conferences)
-9. Monitor signal stability (does odds_drift still predict outcomes in recent data?)
+**In 4-6 weeks:**
+9. ⬜ Validate alignment filter (300+ settled bot bets with alignment data)
+10. ⬜ Graduate meta-model to XGBoost with full signal set (1000+ bot bets)
+
+**See PRIORITY_QUEUE.md for the full 37-item ordered task list.**

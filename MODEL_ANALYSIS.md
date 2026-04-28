@@ -78,313 +78,119 @@ Step 5: Edge calculation
 
 ---
 
-## 2. Four Independent Assessments — Synthesized Consensus
+## 2. External Assessment Consensus
 
-We submitted the current architecture and the multi-dimensional alignment proposal to 4 independent AI evaluators. Here is what they unanimously or majority agreed on.
+Two rounds of independent AI evaluation shaped the current architecture.
 
-### 2.1 Unanimous Verdicts (4/4 agree)
+### Round 1 (2026-04-27): Alignment Filter Architecture
 
-| Topic | Verdict |
-|-------|---------|
-| **Replace ensemble with alignment scoring?** | **NO.** Keep the ensemble. It captures non-linear interactions that hand-coded dimensions miss. |
-| **14 dimensions collapse to ~6-7 independent signals** | The proposed 14 dimensions have severe correlation. Form, goal trend, defensive trend, xG quality all measure the same latent variable (team strength/performance). |
-| **Alignment counting as probability model?** | **NO.** Counting agreeing dimensions destroys information (loses magnitude). XGBoost already captures feature agreement internally. |
-| **Alignment as BET FILTER?** | **YES.** Alignment count is valuable as a confidence-in-confidence measure — not better probability, but more robust probability. Filters out fragile predictions. |
-| **Odds movement is the most valuable unused signal** | Currently wasted. Should be both a model feature AND a filter. |
-| **Fix calibration first** | The 10-15% overconfidence is the single biggest ROI leak. Every overconfident bet is a negative EV bet you think is positive. |
-| **Use Kelly fraction, not linear edge** | Linear edge treats all odds equally. Kelly naturally handles the variance-adjusted EV per unit of capital. |
-| **Real edge = lower leagues + information speed** | Not better statistical features. Bookmakers already model form/ELO/xG perfectly in Tier 1-2. |
+Submitted to 4 AI evaluators. Key verdicts that were implemented:
 
-### 2.2 Strong Majority (3/4 agree)
+| Verdict | Status |
+|---------|--------|
+| Keep ensemble (don't replace with dimension counting) | ✅ Done |
+| Alignment as BET FILTER (LOG-ONLY pending validation) | ✅ Implemented |
+| Odds movement is most valuable unused signal | ✅ Soft penalty + veto |
+| Fix calibration (market shrinkage by tier) | ✅ Done |
+| Kelly fraction for stake sizing | ✅ Done |
+| H2H is mostly noise — remove from alignment | ✅ Removed |
+| Real edge = lower leagues + information speed | ✅ Bot config confirmed |
 
-| Topic | Verdict | Dissent |
-|-------|---------|---------|
-| **Layer alignment on top (option B)** | Best approach: ensemble → edge → alignment filter → Kelly sizing | One evaluator preferred option C+B hybrid (new signals like odds movement INTO ensemble, alignment as filter) |
-| **Shrink toward market price** | `adjusted_prob = α * model_prob + (1-α) * implied_prob` with α=0.6-0.7 is the single highest-ROI change | One evaluator preferred temperature scaling or Platt scaling instead |
-| **H2H is mostly noise** | Downweight or remove. Small sample sizes, inflates confidence | One evaluator said keep if ≥5 meetings in last 5 years |
+### Round 2 (2026-04-28): Multi-Signal Architecture
 
-### 2.3 Notable Individual Insights
+Submitted to 4 AI evaluators. Key verdicts that were implemented:
 
-| Source | Insight |
-|--------|---------|
-| **Reply 2** | Build a **meta-model** that predicts bet profitability (not match outcome). Inputs: model probability, EV, dimension scores, odds movement, league tier. Reframes the problem from "who wins?" to "is this bet +EV in reality?" |
-| **Reply 2** | Add **model disagreement** as a feature: when Poisson and XGBoost disagree, that's a signal of uncertainty the current 50/50 blend hides. |
-| **Reply 4** | Alignment score is best understood as **regime detection**: a high-probability bet with low alignment (one extreme signal dominating) behaves differently than high-probability with broad agreement. The distribution of signal sources is meta-information. |
-| **Reply 4** | Dimensions 13 (market efficiency) and 14 (lineup confirmation) are not prediction signals — they're **confidence modifiers** that should affect stake sizing, not alignment counting. |
-| **Reply 3** | Track **Closing Line Value (CLV)** as the ultimate ground truth. If your placed odds are consistently worse than closing odds, you have negative expectation long-term regardless of model edge. |
-| **Reply 1** | Plot **ROI vs alignment bins** (2/7, 3/7, ..., 7/7). If ROI doesn't monotonically increase with alignment, the approach isn't adding value. |
-| **Reply 3** | For O/U market: switch from Poisson to **negative binomial** distribution (handles overdispersion — Poisson underestimates 0-0 and 4+ goal matches). |
+| Verdict | Status |
+|---------|--------|
+| Two-stage: keep outcome model (Stage 1) separate from meta-model (Stage 2) | ✅ Already correct |
+| Pseudo-CLV for ALL matches (not just bets) → 10x training data | ✅ Done (B-ML1) |
+| Materialized wide table for ML training (not EAV directly) | ✅ Done (B-ML2) |
+| Start with 5-feature logistic regression before full XGBoost | ⬜ Pending data |
+| Calibration before everything — validate on settled predictions | ⬜ Script ready (check_calibration.py) |
+| Bookmaker disagreement + Pinnacle anchor as signals | ⬜ Tier 2 task |
 
 ---
 
-## 3. The 7 Truly Independent Dimensions
+## 3. Current Architecture (Implemented)
 
-All 4 assessments agreed the 14 proposed dimensions collapse to 6-7 genuinely independent signals. Here is the consolidated mapping:
-
-### 3.1 Redundancy Map (What Collapses)
-
-| Proposed Dimensions | Collapse Into | Why |
-|--------------------|--------------|----|
-| #1 Home form, #2 Away form, #9 Goal scoring trend, #10 Defensive trend, #5 xG quality | **Team performance** | All derived from recent match results; ~80% correlated |
-| #6 Negative news, #7 Positive news | **News impact** | One dimension on -1 to +1 scale |
-| #11 Motivation, #12 Rest advantage | **Situational context** | Weakly correlated, can combine |
-| #13 Market efficiency, #14 Lineup confirmation | **Not prediction signals** | Meta-dimensions that modify confidence, not alignment |
-
-### 3.2 Final 7 Independent Dimensions for Alignment
-
-| # | Dimension | What It Measures | Scale | Data Source |
-|---|-----------|-----------------|-------|-------------|
-| 1 | **Strength Differential** | Long-term team quality gap | ELO difference normalized | ELO ratings |
-| 2 | **Form Momentum** | Recent performance trend (combined attack + defense) | 0-1 per team → differential | 10-match rolling stats |
-| 3 | **xG Over/Underperformance** | Is the team outperforming its underlying quality? | Ratio of actual goals to xG proxy | Shots data |
-| 4 | **H2H Pattern** | Historical matchup tendency | Only if ≥5 meetings in 5 years, else neutral | Match history |
-| 5 | **News/External Info** | Injuries, suspensions, managerial changes | -1.0 to +1.0 (severity-weighted) | Gemini AI analysis |
-| 6 | **Odds Movement** | Market direction since opening | -1 (strong against) to +1 (strong for) | 2-hourly snapshots |
-| 7 | **Situational Context** | Motivation (relegation/title) + rest advantage | Combined score | League table + schedule |
-
-### 3.3 Meta-Dimensions (Affect Stake, Not Alignment)
-
-| Dimension | How to Use |
-|-----------|-----------|
-| **Market Efficiency** (league tier) | Stake multiplier: Tier 3-4 → higher allocation, Tier 1-2 → lower |
-| **Lineup Confirmation** | Confidence multiplier: confirmed XI → trust model more |
-| **Model Agreement** | Poisson vs XGBoost disagreement → flag uncertainty |
-
-### 3.4 Alignment Score Calculation
-
-```python
-# For each bet candidate:
-alignment = 0
-total_active = 0
-
-for dim in [strength, form, xg_perf, h2h, news, odds_movement, situational]:
-    if dim.has_signal():  # not neutral
-        total_active += 1
-        if dim.agrees_with_pick():
-            alignment += 1
-
-alignment_ratio = alignment / total_active  # e.g., 5/6 = 0.83
-
-# Classify
-if alignment_ratio >= 0.75:  # 6+/7 or 5/6
-    alignment_class = "HIGH"
-elif alignment_ratio >= 0.50:  # 4/7 or 3/6
-    alignment_class = "MEDIUM"
-else:
-    alignment_class = "LOW"
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Stage 1: ENSEMBLE (running since 2026-04-27)                │
+│                                                             │
+│  XGBoost Classifier ──┐                                     │
+│                       ├── 50/50 blend → calibrated_prob     │
+│  XGBoost Poisson ─────┘                                     │
+│                                                             │
+│  Calibration: tier-specific market shrinkage                │
+│    α = {T1: 0.55, T2: 0.65, T3: 0.80, T4: 0.85}           │
+│  Disagreement: abs(poisson - xgb) stored per bet            │
+│  Fallback: Tier D uses AF /predictions probability          │
+├─────────────────────────────────────────────────────────────┤
+│ Stage 2: EDGE + FILTER + SIZING (running since 2026-04-27)  │
+│                                                             │
+│  edge = calibrated_prob - (1 / odds)                        │
+│  kelly = (calibrated_prob * odds - 1) / (odds - 1)         │
+│  stake = min(kelly * 0.25 * bankroll, 0.015 * bankroll)     │
+│                                                             │
+│  Multipliers: × tier_mult × data_tier_mult × lineup_mult    │
+│  Alignment filter: LOG-ONLY (pending 300 bot bet validation) │
+│  Odds veto: >10% adverse move → hard skip                   │
+├─────────────────────────────────────────────────────────────┤
+│ Stage 3: SIGNAL COLLECTION (running since 2026-04-28)       │
+│                                                             │
+│  match_signals: append-only EAV signal store                │
+│  pseudo_clv: computed for ALL ~280 matches/day              │
+│  match_feature_vectors: wide ML training table (nightly)    │
+│  source on predictions: poisson/xgboost/af/ensemble rows    │
+├─────────────────────────────────────────────────────────────┤
+│ Stage 4: META-MODEL (pending data accumulation)             │
+│                                                             │
+│  Phase 1 (~mid-May 2026): 5-feature logistic regression     │
+│    Features: ensemble_prob, odds_drift, elo_diff,           │
+│              league_tier, model_disagreement                │
+│    Target: pseudo_clv > 0 (all matches, not just bets)      │
+│    Ready when: 3000+ rows in match_feature_vectors (~11d)   │
+│                                                             │
+│  Phase 2 (~June 2026): XGBoost + full signal set            │
+│    Replaces fixed edge thresholds with ML-predicted EV      │
+│    Ready when: 1000+ settled bot bets with alignment data   │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 4. Target Architecture (What to Build)
+## 4. Alignment Filter (LOG-ONLY — pending validation)
 
-Based on all 4 assessments, this is the recommended system:
+Computes 7 independent dimension scores per bet. Currently stored but not used for decisions.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│ Layer 1: ENSEMBLE (keep current, fix calibration)       │
-│                                                         │
-│  XGBoost Classifier ──┐                                 │
-│                       ├── 50/50 blend → calibrated_prob │
-│  XGBoost Poisson ─────┘                                 │
-│                                                         │
-│  NEW: Add odds_drift, drift_velocity as features        │
-│  NEW: Fix calibration (shrink toward market or Platt)   │
-│  NEW: Track Poisson vs XGBoost disagreement             │
-├─────────────────────────────────────────────────────────┤
-│ Layer 2: EDGE CALCULATION                               │
-│                                                         │
-│  edge = calibrated_prob - (1 / odds)                    │
-│  kelly = (calibrated_prob * odds - 1) / (odds - 1)     │
-│  ev = calibrated_prob * odds - 1                        │
-│                                                         │
-│  Gate: edge > minimum_threshold → proceed               │
-│  Gate: kelly > 0 → proceed                              │
-├─────────────────────────────────────────────────────────┤
-│ Layer 3: ALIGNMENT FILTER (NEW)                         │
-│                                                         │
-│  Compute 7 independent dimension scores                 │
-│  Count alignment (how many agree with pick direction)   │
-│  Classify: HIGH / MEDIUM / LOW                          │
-│                                                         │
-│  Gate: LOW alignment → SKIP (or quarter stake)          │
-│  Veto: odds moved >5% against pick → SKIP              │
-├─────────────────────────────────────────────────────────┤
-│ Layer 4: STAKE SIZING (NEW)                             │
-│                                                         │
-│  base_stake = fractional_kelly * bankroll               │
-│  base_stake = min(base_stake, 0.02 * bankroll)          │
-│                                                         │
-│  Multipliers:                                           │
-│    × alignment_mult  (HIGH=1.0, MED=0.6, LOW=0.3)      │
-│    × tier_mult       (T1=0.5, T2=0.7, T3=1.0, T4=1.0) │
-│    × data_tier_mult  (A=1.0, B=0.5, C=0.25)            │
-│    × lineup_mult     (confirmed=1.0, unknown=0.8)       │
-├─────────────────────────────────────────────────────────┤
-│ Layer 5: AUDIT & TRACKING                               │
-│                                                         │
-│  Store dimension_scores JSON per bet                    │
-│  Track CLV (placed odds vs closing odds)                │
-│  Track ROI by alignment bin (validation)                │
-│  Track model disagreement (Poisson vs XGBoost)          │
-└─────────────────────────────────────────────────────────┘
-```
+| # | Dimension | Scale | Status |
+|---|-----------|-------|--------|
+| 1 | Strength Differential (ELO diff) | ±1 | ✅ Stored |
+| 2 | Form Momentum (PPG trend) | ±1 | ✅ Stored |
+| 3 | xG Over/Underperformance | ±1 | ✅ Stored |
+| 4 | News / External Info (Gemini) | -1 to +1 | ✅ Stored |
+| 5 | Odds Movement direction | ±1 | ✅ Stored |
+| 6 | Situational Context (motivation/rest) | ±1 | ✅ Stored |
+| **H2H** | Removed — too noisy at small samples | — | ❌ Removed |
+
+**Activation:** After 300+ settled bot bets show ROI increases monotonically with alignment class (HIGH/MED/LOW). Script: `python scripts/validate_improvements.py`.
 
 ---
 
-## 5. Implementation Priorities (Ordered by Impact)
+## 5. Current Task List
 
-### Priority 1: Fix Calibration (Highest Impact, Lowest Effort)
+> All open tasks with priorities are in **`PRIORITY_QUEUE.md`**. The items below are for quick reference only.
 
-**The problem:** 10-15% systematic overconfidence. This means the model thinks a 70% bet is +3.3% edge at 1.5 odds, but the true probability is ~60%, making it actually -6.7% edge. Every overconfident bet is a negative EV bet disguised as positive.
+**Do now (data foundation):**
+- Run `python scripts/check_calibration.py` once 200+ predictions have outcomes
+- Check readiness queries in Section 10 to know when to train meta-model
 
-**Three options (try in order, pick what works best on held-out data):**
+**Next milestones:**
+- 3000+ `match_feature_vectors` rows → train Phase 1 logistic regression (~mid-May)
+- 300+ settled bot bets with alignment → activate alignment filter (~late May)
+- 1000+ settled bot bets → train Phase 2 XGBoost meta-model (~June)
 
-```python
-# Option A: Shrink toward market price (simplest, recommended first)
-adjusted_prob = alpha * model_prob + (1 - alpha) * implied_prob
-# Start with alpha = 0.65, optimize on held-out season data
-# Expected improvement: reduces overconfidence from 10-15% to 3-5%
-
-# Option B: Platt scaling (replace isotonic regression)
-# Train logistic regression on model outputs → actual outcomes
-from sklearn.linear_model import LogisticRegression
-platt = LogisticRegression()
-platt.fit(model_probs.reshape(-1, 1), outcomes)
-calibrated = platt.predict_proba(model_probs.reshape(-1, 1))
-
-# Option C: Temperature scaling
-# Single parameter T that softens probabilities
-calibrated = softmax(logits / T)
-# T > 1 reduces confidence, T < 1 increases it
-# Optimize T on validation set
-```
-
-**Also:** Reduce XGBoost overconfidence at source — lower `max_depth`, increase `min_child_weight`, heavier L1/L2 regularization.
-
-**Validation:** After calibration fix, plot predicted probability vs actual win rate in 5% bins. Should be close to diagonal.
-
-### Priority 2: Add Odds Movement as Model Features (Highest Unused Signal)
-
-**We already collect 2-hourly odds snapshots.** This is the most valuable unused data.
-
-```python
-# Features to compute and feed into XGBoost:
-opening_implied = 1 / opening_odds
-current_implied = 1 / current_odds
-
-odds_drift = current_implied - opening_implied          # positive = shortened
-odds_drift_pct = odds_drift / opening_implied            # normalized
-hours_since_open = (current_time - opening_time).hours
-drift_velocity = odds_drift / max(hours_since_open, 1)  # speed of movement
-
-# Also useful:
-steam_move = 1 if abs(odds_drift_pct) > 0.03 else 0    # sharp money flag
-```
-
-**As a veto filter (hard rule):**
-- Odds moved >5% against pick → **SKIP** (market knows something model doesn't)
-- Odds moved >3% toward pick → **bonus confidence** (market confirms)
-
-**Critical:** Only count movement that happened *before* bet calculation. Use T-12h to T-2h window.
-
-### Priority 3: Implement Alignment Filter
-
-Build the 7 independent dimensions. Use as discrete bet filter (HIGH/MEDIUM/LOW), not a continuous score requiring its own calibration.
-
-```python
-# Per bet, compute:
-dimensions = {
-    "strength": compute_elo_differential(home, away),      # favors pick? +1/0/-1
-    "form": compute_form_momentum(home, away),             # favors pick? +1/0/-1
-    "xg_perf": compute_xg_over_under(home, away),          # favors pick? +1/0/-1
-    "h2h": compute_h2h(home, away, min_meetings=5),        # favors pick? +1/0/-1
-    "news": get_news_impact(home, away),                   # from Gemini, -1 to +1
-    "odds_move": compute_odds_direction(match),            # market agrees? +1/0/-1
-    "situation": compute_motivation_rest(home, away),      # favors pick? +1/0/-1
-}
-
-agreeing = sum(1 for d in dimensions.values() if d > 0)
-active = sum(1 for d in dimensions.values() if d != 0)
-alignment = agreeing / max(active, 1)
-```
-
-**Validation requirement:** Before trusting this filter, track alignment vs actual outcomes for at least 500 bets. Plot ROI by alignment bin. If ROI doesn't increase with alignment, the filter isn't working.
-
-### Priority 4: Kelly-Based Stake Sizing
-
-Replace flat stakes and linear edge ranking.
-
-```python
-# Kelly fraction (for ranking AND sizing)
-kelly = (model_prob * odds - 1) / (odds - 1)
-
-# Fractional Kelly for actual stakes (1/4 Kelly recommended)
-raw_stake = kelly * 0.25 * bankroll
-max_stake = 0.02 * bankroll  # never risk more than 2%
-
-# Apply multipliers
-final_stake = min(raw_stake, max_stake)
-final_stake *= alignment_multiplier    # HIGH=1.0, MED=0.6, LOW=0.3
-final_stake *= league_tier_multiplier  # T1=0.5, T2=0.7, T3=1.0, T4=1.0
-final_stake *= data_tier_multiplier    # A=1.0, B=0.5, C=0.25
-
-# For bet ranking in UI:
-rank_score = kelly * alignment_multiplier
-```
-
-### Priority 5: Shift Volume Toward Tier 3-4
-
-The evidence is clear: edge exists in lower leagues, not top leagues.
-
-- **Tier 3-4:** 70% of bankroll allocation, lower edge thresholds
-- **Tier 1-2:** 20% of bankroll, **only when news alignment is HIGH** (injury + lineup confirmed + odds stable)
-- **Tier B/C:** 10% with strict thresholds (+5% edge, 25% stake)
-- Add more lower leagues (expand Tier B coverage)
-
-### Priority 6: Timing Optimization
-
-- Move news checker closer to kickoff (2-3h before, not 09:00 UTC fixed)
-- Compare model probability to implied prob **at time of bet placement**, not a stale snapshot
-- Track whether winning bets correlate with stable odds (information not priced in) vs moving odds (timing luck)
-
-### Priority 7: Separate Models per Market
-
-1X2 significantly outperforms O/U. They need different model structures:
-
-- **1X2:** Keep current Poisson + XGBoost blend
-- **O/U:** Switch to **negative binomial** distribution (handles overdispersion — Poisson underestimates 0-0 and 4+ goal matches)
-- **BTTS:** Derive from goals model, not from 1X2 model
-
-### Priority 8 (Longer Term): Meta-Model
-
-Train a second-stage model that predicts **bet profitability** rather than match outcome:
-
-```python
-# Meta-model inputs:
-features = [
-    model_probability,
-    edge,
-    kelly_fraction,
-    alignment_score,
-    alignment_class,
-    odds_drift,
-    drift_velocity,
-    news_impact,
-    league_tier,
-    data_tier,
-    model_disagreement,  # abs(xgboost_prob - poisson_prob)
-    hours_to_kickoff,
-    lineup_confirmed,
-]
-
-# Meta-model target:
-target = bet_was_profitable  # binary: 1 if won, 0 if lost
-
-# This reframes the problem from "who wins?" to "is this bet +EV in reality?"
-```
-
-**Updated approach (from 2026-04-28 external review):** The "1000+ settled bot bets" blocker is eliminated by computing pseudo-CLV for ALL ~280 daily matches. This grows training data from 2-5 labeled rows/day to ~280/day — hitting 3000+ examples in ~11 days. Start with 5 features (ensemble_prob, odds_drift, elo_diff, league_tier, model_disagreement) and logistic regression. Graduate to full XGBoost only after 1000+ bot bets validate alignment thresholds. See `match_feature_vectors` materialized table task in Section 10.
+**See PRIORITY_QUEUE.md for the full 37-item ordered list.**
 
 ---
 
