@@ -4,12 +4,12 @@ Access levels for anonymous visitors, free signed-in users, and paid subscribers
 
 ## Tier Overview
 
-| Tier | Monthly | Annual | Founding Rate | Internal Name | Description |
-|------|---------|--------|---------------|--------------|-------------|
+| Tier | Monthly | Annual | Founding Rate | DB Value | Description |
+|------|---------|--------|---------------|----------|-------------|
 | Anonymous | Free | — | — | — | No account, browsing only |
-| Free | €0 | — | — | `scout` | Signed-in, personalization + tools |
-| Pro | €4.99 | €39.99/yr (€3.33/mo) | €3.99/mo (first 500) | `analyst` | Deep match intelligence |
-| Elite | €14.99 | €119.99/yr (€9.99/mo) | €9.99/mo (first 200) | `sharp` | AI picks + track record |
+| Free | €0 | — | — | `free` | Signed-in, personalization + tools |
+| Pro | €4.99 | €39.99/yr (€3.33/mo) | €3.99/mo (first 500) | `pro` | Deep match intelligence |
+| Elite | €14.99 | €119.99/yr (€9.99/mo) | €9.99/mo (first 200) | `elite` | AI picks + track record |
 
 ### Pricing Strategy
 - **Stage:** Early launch — optimizing for user acquisition, not ARPU
@@ -23,7 +23,7 @@ Access levels for anonymous visitors, free signed-in users, and paid subscribers
 
 ### Match Browsing & Data
 
-| Feature | Anonymous | Free (Scout) | Pro (Analyst) | Elite (Sharp) |
+| Feature | Anonymous | Free | Pro | Elite |
 |---------|:---------:|:------------:|:-------------:|:-------------:|
 | Browse today's matches | Y | Y | Y | Y |
 | Best odds (1 bookmaker) | Y | Y | Y | Y |
@@ -43,7 +43,7 @@ Access levels for anonymous visitors, free signed-in users, and paid subscribers
 
 ### Personalization & Tools (Free Account Features)
 
-| Feature | Anonymous | Free (Scout) | Pro (Analyst) | Elite (Sharp) |
+| Feature | Anonymous | Free | Pro | Elite |
 |---------|:---------:|:------------:|:-------------:|:-------------:|
 | Favorite teams (star toggle) | — | Y | Y | Y |
 | Favorite leagues (star toggle) | — | Y | Y | Y |
@@ -59,7 +59,7 @@ Access levels for anonymous visitors, free signed-in users, and paid subscribers
 
 ### AI & Analytics
 
-| Feature | Anonymous | Free (Scout) | Pro (Analyst) | Elite (Sharp) |
+| Feature | Anonymous | Free | Pro | Elite |
 |---------|:---------:|:------------:|:-------------:|:-------------:|
 | Value bets page (all AI picks) | — | — | — | Y |
 | Model probability + edge % | — | — | — | Y |
@@ -111,8 +111,8 @@ All new tables have RLS policies: users can only read/write their own data.
 | `/login`, `/signup` | Public |
 | `/my-picks` | Authenticated |
 | `/profile` | Authenticated |
-| `/value-bets` | Authenticated + `sharp` tier (TierGate) |
-| `/track-record` | Authenticated + `sharp` tier (TierGate) |
+| `/value-bets` | Authenticated + `elite` tier (TierGate) |
+| `/track-record` | Authenticated + superadmin only |
 
 ---
 

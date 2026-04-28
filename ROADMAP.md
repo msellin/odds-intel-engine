@@ -24,23 +24,23 @@ Both lanes feed the same frontend. Tips are the Elite tier differentiator when r
 
 | Tier | Price | Target user |
 |------|-------|-------------|
-| **Free (Scout)** | €0 | Casual football fan, curious about the product |
-| **Pro (Analyst)** | €4.99/mo | Does own research, wants better data |
-| **Elite (Sharp)** | €14.99/mo | Serious bettor, wants model-backed picks |
+| **Free** | €0 | Casual football fan, curious about the product |
+| **Pro** | €4.99/mo | Does own research, wants better data |
+| **Elite** | €14.99/mo | Serious bettor, wants model-backed picks |
 
 Founder pricing (locks in for life): Pro €3.99/mo · Elite €9.99/mo
 Annual: Pro €39.99/yr (€3.33/mo) · Elite €119.99/yr (€9.99/mo)
 
 ### What each tier includes
 
-**Free (Scout)**
+**Free**
 - All 467 daily fixtures (teams, kickoff, league)
 - Live scores during matches
 - Odds from 2-3 bookmakers (not full comparison)
 - Match interest indicator (🔥 / ⚡ / —) based on data coverage
 - Today only — no historical view
 
-**Pro (Analyst)**
+**Pro**
 - Everything in Free
 - Full odds comparison across all bookmakers
 - Pre-match odds movement timeline
@@ -49,7 +49,7 @@ Annual: Pro €39.99/yr (€3.33/mo) · Elite €119.99/yr (€9.99/mo)
 - Directional model signal (Home lean / Away lean / Even — no raw %)
 - Full match history, not just today
 
-**Elite (Sharp)** ← launch when 60+ settled bets validated
+**Elite** ← launch when 60+ settled bets validated
 - Everything in Pro
 - Exact model probability % and edge %
 - Value bet list (what the model would pick today)
@@ -157,10 +157,26 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 | Decision | Options | Status |
 |----------|---------|--------|
-| Tier names final? | Scout/Analyst/Sharp vs Free/Pro/Elite | ⏳ Pending |
+| Tier names final? | Free/Pro/Elite | ✅ Done |
 | Tips: picks or signals? | "Today's picks" vs "What bot_X would bet" | ⏳ Pending |
 | Design: Stitch redesign or ship now? | Polish current vs wait for Stitch designs | ⏳ Pending |
 | user_bets feature at M3? | Follow a tip → personal P&L | Skip until M3 |
+
+---
+
+## Bot Strategy
+
+The 6 paper trading bots running since 2026-04-27 are all based on **historical backtest data** — edge thresholds and league filters derived from football-data.co.uk 2007-2025 and beat_the_bookie 2005-2015. They answer: *"what worked in old data?"*
+
+**Never retire current bots when adding new ones.** They are the baseline — their ROI data is what proves (or disproves) whether new bots are better.
+
+New bots planned based on live data accumulation:
+
+| Bot | Trigger | ~When | What's different |
+|-----|---------|-------|-----------------|
+| `bot_meta_v1` | 3000+ pseudo_clv rows in match_feature_vectors | ~May 9 | Uses logistic regression EV score instead of hardcoded thresholds. First bot learning from live data |
+| `bot_high_alignment` | 300+ settled bot bets, alignment filter validated | ~late May | Only bets when alignment_class=HIGH. Fewer bets, higher precision |
+| `bot_retrained_xgb` | HIST-BACKFILL complete (API-Football 2020-2026) | ~June | XGBoost retrained on recent data, not 2007-2025 |
 
 ---
 
