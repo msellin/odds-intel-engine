@@ -552,42 +552,96 @@ def _af_agrees_with_bet(selection: str, parsed_pred: dict | None) -> bool | None
     return None
 
 
-def _merge_odds_sources(kambi_matches: list[dict], sofascore_matches: list[dict], betexplorer_matches: list[dict] = None) -> list[dict]:
+def _league_path_to_tier(league_path: str) -> int:
     """
-    Merge odds from multiple sources by match key (home_team + away_team + date).
-    - Kambi is authoritative when available (we trust its team names for our mapping).
-    - SofaScore fills in leagues Kambi doesn't cover.
-    - BetExplorer fills remaining gaps (Singapore, South Korea, Scotland lower divs).
-    - If multiple sources cover the same match, keep best odds across all.
-    Returns unified list of match dicts with bookmaker field set.
+    Look up the tier for a league path (e.g. "England / Championship" → 2).
+    Falls back to tier 1 for known top-flight countries, tier 2 otherwise.
+    Reuses the same LEAGUE_MAP as the Kambi scraper.
+    """
+    from workers.scrapers.kambi_odds import LEAGUE_MAP
+    info = LEAGUE_MAP.get(league_path)
+    if info:
+        return info["tier"]
+    # Reasonable fallback: if we recognise the country, assign tier 1
+    country = league_path.split(" / ")[0] if " / " in league_path else ""
+    top_flight_countries = {
+        "England", "Spain", "Germany", "Italy", "France",
+        "Netherlands", "Portugal", "Turkey", "Greece", "Scotland",
+        "Belgium", "Sweden", "Denmark", "Norway", "Poland",
+        "Croatia", "Romania", "Serbia", "Ukraine", "Hungary",
+        "Iceland", "Latvia", "Cyprus", "Georgia", "Estonia",
+        "Austria", "Switzerland", "Russia", "Czech Republic",
+        "Slovakia", "Bulgaria", "Belarus", "Finland",
+    }
+    return 1 if country in top_flight_countries else 2
+
+
+def _merge_odds_sources(
+    af_odds_fixtures: list[dict],
+    kambi_matches: list[dict],
+    sofascore_matches: list[dict],
+    betexplorer_matches: list[dict] | None = None,
+) -> list[dict]:
+    """
+    Build the prediction pool by merging all odds sources.
+
+    Priority / role of each source:
+      API-Football (primary) — paid, 1236 leagues, gives us tier + league_path
+                               from the fixture metadata; base of the pool.
+      Kambi        (additive) — different bookmaker, better odds on some markets;
+                               also carries pre-mapped tier for our target leagues.
+      SofaScore    (additive) — fills leagues Kambi doesn't cover.
+      BetExplorer  (additive) — gap leagues (Singapore, South Korea, lower divs).
+
+    For each match, we keep the best odds across all sources. The AF entry is used
+    for tier / league_path because it comes from the AF fixture metadata (which has
+    already been enriched with T2/T3/T9/T10 data and is the source of truth for
+    what's stored in the DB). Scraper entries are merged on top purely for odds.
     """
     merged: dict[str, dict] = {}
+    ODDS_FIELDS = [
+        "odds_home", "odds_draw", "odds_away",
+        "odds_over_05", "odds_under_05",
+        "odds_over_15", "odds_under_15",
+        "odds_over_25", "odds_under_25",
+        "odds_over_35", "odds_under_35",
+        "odds_over_45", "odds_under_45",
+    ]
 
-    def _merge_into(matches: list[dict], source_name: str):
+    def _key(m: dict) -> str:
+        date_part = m.get("start_time", "")[:10] or "nodate"
+        return f"{m.get('home_team', '').lower()}_{m.get('away_team', '').lower()}_{date_part}"
+
+    def _merge_odds_into(existing: dict, incoming: dict, source_name: str):
+        """Update existing entry with better odds from incoming, track source."""
+        for field in ODDS_FIELDS:
+            if incoming.get(field, 0) > existing.get(field, 0):
+                existing[field] = incoming[field]
+        sources = existing.get("bookmaker", "").split("+")
+        if source_name not in sources:
+            existing["bookmaker"] = "+".join(filter(None, sources + [source_name]))
+
+    # 1. Seed with AF fixtures (they carry tier, league_path, api_football_id)
+    for m in af_odds_fixtures:
+        k = _key(m)
+        if k and k != "__nodate":  # skip entries with missing team names
+            merged[k] = {**m, "bookmaker": "api-football"}
+
+    # 2. Merge scraper sources on top (best odds win, tier/league_path from AF)
+    for matches, source_name in [
+        (kambi_matches, "kambi"),
+        (sofascore_matches, "sofascore"),
+        (betexplorer_matches or [], "betexplorer"),
+    ]:
         for m in matches:
-            date_part = m.get("start_time", "")[:10] or "nodate"
-            key = f"{m['home_team'].lower()}_{m['away_team'].lower()}_{date_part}"
-            if key in merged:
-                existing = merged[key]
-                for field in ["odds_home", "odds_draw", "odds_away",
-                              "odds_over_05", "odds_under_05",
-                              "odds_over_15", "odds_under_15",
-                              "odds_over_25", "odds_under_25",
-                              "odds_over_35", "odds_under_35",
-                              "odds_over_45", "odds_under_45"]:
-                    if m.get(field, 0) > existing.get(field, 0):
-                        existing[field] = m[field]
-                # Append source name
-                sources = existing["bookmaker"].split("+")
-                if source_name not in sources:
-                    existing["bookmaker"] = "+".join(sources + [source_name])
+            k = _key(m)
+            if not k or k == "__nodate":
+                continue
+            if k in merged:
+                _merge_odds_into(merged[k], m, source_name)
             else:
-                merged[key] = {**m, "bookmaker": source_name}
-
-    _merge_into(kambi_matches, "kambi")
-    _merge_into(sofascore_matches, "sofascore")
-    if betexplorer_matches:
-        _merge_into(betexplorer_matches, "betexplorer")
+                # Scraper-only match (league not in AF today) — use as-is
+                merged[k] = {**m, "bookmaker": source_name}
 
     return list(merged.values())
 
@@ -815,63 +869,66 @@ def run_morning():
         console.print(f"  [yellow]Enrichment error (non-fatal): {e}[/yellow]")
 
     # 4. Fetch odds from API-Football (bulk by date — ~10 calls instead of ~200)
+    # AF is the PRIMARY odds source: it covers 1236 leagues, gives us tier and
+    # league_path from the already-enriched fixture metadata.
     console.print("\n[cyan]Fetching odds from API-Football (bulk)...[/cyan]")
-    api_football_odds_matches = []
+    af_odds_fixtures = []   # matches with proper tier/league_path, ready for prediction
     af_odds_fetched = 0
     try:
         bulk_odds = get_odds_by_date(today_str)  # {af_fixture_id: [raw entries]}
         console.print(f"  {len(bulk_odds)} fixtures with odds from API-Football")
 
-        # Build a lookup: af_id -> fixture metadata
-        af_fixture_lookup = {
-            int(f["api_football_id"]): f
-            for f in all_fixtures if f.get("api_football_id")
-        }
+        for af_fix in af_fixtures_raw:
+            af_id = af_fix.get("fixture", {}).get("id")
+            if not af_id or af_id not in bulk_odds:
+                continue
 
-        for af_id, raw_entries in bulk_odds.items():
-            parsed = parse_fixture_odds(raw_entries)
+            parsed = parse_fixture_odds(bulk_odds[af_id])
             if not parsed:
                 continue
 
-            # Pick best odds across all bookmakers
-            best = {"odds_home": 0, "odds_draw": 0, "odds_away": 0,
-                    "odds_over_25": 0, "odds_under_25": 0}
+            # Best odds across all AF bookmakers per market
+            best: dict[str, float] = {}
             for row in parsed:
                 if row["market"] == "1x2":
-                    key = f"odds_{row['selection']}"
-                    if key in best and row["odds"] > best[key]:
-                        best[key] = row["odds"]
-                elif row["market"] == "over_under_25":
-                    key = f"odds_{'over' if row['selection'] == 'over' else 'under'}_25"
-                    if row["odds"] > best.get(key, 0):
-                        best[key] = row["odds"]
+                    field = f"odds_{row['selection']}"
+                    if row["odds"] > best.get(field, 0):
+                        best[field] = row["odds"]
+                else:
+                    # O/U lines: over_under_25, over_under_15, etc.
+                    direction = "over" if row["selection"] == "over" else "under"
+                    line_suffix = row["market"].replace("over_under_", "")
+                    field = f"odds_{direction}_{line_suffix}"
+                    if row["odds"] > best.get(field, 0):
+                        best[field] = row["odds"]
 
-            if best["odds_home"] > 0:
-                fixture = af_fixture_lookup.get(af_id, {})
-                api_football_odds_matches.append({
-                    "home_team": fixture.get("home_team", ""),
-                    "away_team": fixture.get("away_team", ""),
-                    "start_time": fixture.get("date", ""),
-                    "league_path": f"{fixture.get('country', '')} / {fixture.get('league_name', '')}",
-                    "league_code": "",
-                    "tier": 0,
-                    "operator": "api-football",
-                    "api_football_id": af_id,
-                    **best,
-                })
-                af_odds_fetched += 1
+            if not best.get("odds_home", 0):
+                continue  # Need at least 1X2 odds
 
-                # Store all bookmaker rows in odds_snapshots
-                match_id = af_id_to_match_id.get(af_id)
-                if match_id:
-                    _store_parsed_odds(match_id, parsed)
+            # Build full match entry from AF fixture metadata (tier, league_path, team names)
+            match_dict = fixture_to_match_dict(af_fix)
+            league_path = match_dict["league_path"]
+            tier = _league_path_to_tier(league_path)
+
+            af_odds_fixtures.append({
+                **match_dict,
+                **best,
+                "tier": tier,
+                "bookmaker": "api-football",
+            })
+            af_odds_fetched += 1
+
+            # Store per-bookmaker rows in odds_snapshots
+            match_id = af_id_to_match_id.get(af_id)
+            if match_id:
+                _store_parsed_odds(match_id, parsed)
 
     except Exception as e:
         console.print(f"  [yellow]AF bulk odds error: {e}[/yellow]")
 
-    console.print(f"  {af_odds_fetched} matches with API-Football odds stored")
+    console.print(f"  {af_odds_fetched} AF fixtures with odds (tier assigned)")
 
-    # 4b. Fetch odds from Kambi (supplementary — different bookmaker)
+    # 4b. Fetch odds from Kambi (supplementary — different bookmaker, best-odds merge)
     console.print("\n[cyan]Fetching odds from Kambi...[/cyan]")
     kambi_matches = get_target_league_matches()
     console.print(f"  {len(kambi_matches)} matches with Kambi odds")
@@ -888,27 +945,17 @@ def run_morning():
         console.print(f"  [yellow]BetExplorer scrape failed (non-fatal): {e}[/yellow]")
         betexplorer_matches = []
 
-    # 6. Merge odds sources (API-Football → Kambi → SofaScore → BetExplorer)
-    odds_matches = _merge_odds_sources(kambi_matches, sofascore_matches, betexplorer_matches)
-    # Also merge API-Football odds into the pool
-    _merge_into_existing = {}
-    for m in odds_matches:
-        date_part = m.get("start_time", "")[:10] or "nodate"
-        key = f"{m['home_team'].lower()}_{m['away_team'].lower()}_{date_part}"
-        _merge_into_existing[key] = m
-    for m in api_football_odds_matches:
-        date_part = m.get("start_time", "")[:10] or "nodate"
-        key = f"{m['home_team'].lower()}_{m['away_team'].lower()}_{date_part}"
-        if key not in _merge_into_existing:
-            odds_matches.append(m)
+    # 6. Merge all odds sources — AF is the primary base, scrapers add better odds
+    # Result: one entry per match, best odds across all bookmakers, correct tier
+    odds_matches = _merge_odds_sources(
+        af_odds_fixtures, kambi_matches, sofascore_matches, betexplorer_matches
+    )
 
-    console.print(f"\n  [bold]{len(odds_matches)} matches with odds (API-Football + Kambi + SofaScore + BetExplorer merged)[/bold]")
-
-    # Coverage by source
-    source_counts = {}
+    console.print(f"\n  [bold]{len(odds_matches)} matches in prediction pool[/bold]")
+    source_counts: dict[str, int] = {}
     for m in odds_matches:
-        bk = m.get("bookmaker", "unknown")
-        source_counts[bk] = source_counts.get(bk, 0) + 1
+        for src in m.get("bookmaker", "unknown").split("+"):
+            source_counts[src] = source_counts.get(src, 0) + 1
     for source, count in sorted(source_counts.items()):
         console.print(f"  {source}: {count}")
 

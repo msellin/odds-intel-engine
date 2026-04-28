@@ -71,8 +71,8 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | API-Football Ultra | ✅ PRIMARY | 75K req/day, all endpoints T1–T13 integrated |
 | Fixtures (AF primary) | ✅ Running | 143+ fixtures/day with venue + referee |
 | Odds (13 bookmakers) | ✅ Running | Per-bookmaker stored in odds_snapshots |
-| Poisson + XGBoost model | ✅ Running | 50/50 blend, 3-tier fallback, 92% match coverage |
-| Daily pipeline (GitHub Actions) | ✅ 08:00 UTC | T2/T3/T9/T10 enrichment + predictions + bets |
+| Poisson + XGBoost model | ✅ Running | 50/50 blend, 3-tier fallback, 92% match coverage on target leagues |
+| Daily pipeline (GitHub Actions) | ✅ 08:00 UTC | T2/T3/T9/T10 enrichment + predictions + bets. AF-primary odds pool: ~94 predictions/day (was 8) |
 | AI news checker | ✅ 09:00 UTC | Gemini 2.5 Flash, flags non-injury news |
 | Settlement pipeline | ✅ 21:00 UTC | T4/T8/T12 enrichment + settle + CLV + ELO |
 | Live tracker | ✅ Every 5min | T5/T6/T7/T8 live data, 12-22 UTC |

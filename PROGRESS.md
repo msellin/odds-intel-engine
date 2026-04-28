@@ -103,6 +103,15 @@
 - [x] `scripts/backfill_api_football.py` — CLI tool to populate all T2–T13 data for any date
 - [x] `WEB_DATA_TASKS.md` updated with all 15 frontend display tasks with DB location and tier
 
+**DONE — Pipeline fixes (2026-04-28):**
+- [x] Settlement now records results for ALL stored matches (not just bet matches) — gives complete labeled dataset for ML
+- [x] Settlement uses `api_football_id` for direct result matching (no team-name lookup fragility)
+- [x] Settlement post-match analytics (ELO, form, model evals, T4/T8/T12) always run even when no bets to settle
+- [x] **AF as primary odds source in prediction pool** — was broken: AF odds were fetched and stored but never fed into the Poisson model. Fixed: `daily_pipeline_v2.py` now builds prediction pool from all AF fixtures with odds (~94/day), merges Kambi/SofaScore/BetExplorer on top for best-odds. Was generating 8 predictions/day; now ~94.
+- [x] `_league_path_to_tier()` — resolves tier from league path for AF fixtures (was hardcoded to 0, causing bots to skip all AF matches)
+- [x] `_merge_odds_sources()` refactored: AF-first, scrapers as additive best-odds layer. Single source of truth for prediction pool.
+- [x] Live tracker column fix: `home_team_api_id` → `home_team_id` (DB column name mismatch)
+
 **IN PROGRESS / NEXT (engine):**
 - [ ] Validate model improvements with first 50+ settled bets via `scripts/validate_improvements.py`
 - [ ] Activate alignment filter after 300+ bets show ROI correlating with alignment class
