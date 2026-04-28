@@ -126,10 +126,10 @@ Tasks:
 
 Tasks:
 - [ ] **B3** — Tier-aware data API (Next.js layer strips fields by tier — odds detail, model signals, AI alerts)
-- [ ] **B4** — news_checker.py runs 4x/day (add 12:30, 16:30, 19:30 UTC crons for lineup-confirmed checks)
+- [x] **B4** — news_checker.py runs 4x/day — schedules already in YAML; Stage 3 pre_kickoff snapshot added; Gemini prompt updated to qualitative-only (commit 51c70ff)
 - [x] **F2** — Tier-gated match depth (free: best odds + blurred pro teaser, auth: full odds table via TierGate)
 - [x] **F3** — "All matches / With odds only" view toggle on matches list
-- [ ] **F4** — Live score display (matches in progress show current score + last updated)
+- [x] **F4** — Live score display — getLiveSnapshots(), pulsing LIVE badge + minute on match list, MatchScoreDisplay component on detail page, 60s polling (commit 8809b7f)
 - [x] **F6** — Track record page connected to real Supabase data (`getAllBets()` from `simulated_bets`)
 - [ ] **F8** — Stripe integration (Pro + Elite products, webhook handler, tier column update)
 - [ ] **F9** — Onboarding flow (post-signup: show what free vs pro vs elite unlocks, with real examples)
@@ -229,6 +229,9 @@ Tasks:
 | TASK-01 Free Tier Foundation | 2026-04 | Public matches page, auth, track record, tier gating, interest score |
 | TASK-06 Model Improvements P1-P4 | 2026-04-28 | Calibration, odds movement, Kelly stake sizing, alignment filter (log-only) |
 | TASK-07 API-Football T1–T13 | 2026-04-28 | All 13 enrichment endpoints integrated, 6 new DB tables, live tracker rewrite, backfill script |
+| B4 News checker 4x/day | 2026-04-28 | Stage 3 snapshot added, Gemini prompt qualitative-only (commit 51c70ff) |
+| F4 Live score display | 2026-04-28 | getLiveSnapshots(), LIVE badge + minute on list, MatchScoreDisplay on detail (commit 8809b7f) |
+| Pre-match odds bulk fix | 2026-04-28 | /odds?date= bulk fetch replaces per-fixture loop — 94 matches covered vs 6 (commit beaef74) |
 
 ---
 
