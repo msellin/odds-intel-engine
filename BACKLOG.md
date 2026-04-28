@@ -1,7 +1,7 @@
 # OddsIntel Engine — Data & ML Backlog
 
 > Prioritized list of improvements to make bots smarter, data richer, and every information source measurable.
-> Last updated: 2026-04-27
+> Last updated: 2026-04-28
 
 ---
 
@@ -146,6 +146,8 @@ These require accumulated data from P1/P2 before they're useful.
 | P1.4 | Part of B3 (Milestone 2) | Done — settlement pipeline |
 | P1.5 | Milestone 1.5 | Done — migration 005 |
 | P2.3 | B4 (Milestone 2) | Not started |
+| B5 | Tier B backtest | Done 2026-04-28 — scripts/backtest_tier_b.py |
+| B7 | Bot validation tracker | Done 2026-04-28 — scripts/check_bot_validation.py |
 | P3.4 | Future (Milestone 3+) | Needs data accumulation |
 | P4.1 | Validates Elite tier pricing | Needs P1.1 data (now accumulating) |
 

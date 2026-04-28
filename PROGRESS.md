@@ -129,13 +129,31 @@
 **DONE — Match detail enrichment (2026-04-28):**
 - [x] Show scores on match detail (score_home / score_away)
 - [x] Show venue + referee (MapPin + User icons in header)
-- [x] Post-match stats bars (shots, shots on target, possession, corners)
+- [x] Post-match stats bars (shots, shots on target, possession, corners, xG)
 - [x] Multi-bookmaker odds comparison table (13 bookmakers, best highlighted)
 - [x] Odds movement chart (recharts LineChart, hourly buckets)
+- [x] H2H bar + recent meetings (free tier, from migration 009)
+- [x] League standings + team form (free tier, from league_standings)
+- [x] Injury report card (Pro — match_injuries, home/away split, player + status + reason)
+- [x] Confirmed lineups card (Pro — formation view, coach, starting XI grid layout)
+- [x] Team season stats (Pro — W/D/L, goals avg, clean sheet%, most used formation)
+- [x] HT vs FT comparison (Pro — first half stats bars, second half derived)
+- [x] Player ratings table (Pro — sorted by rating, goals, assists, per team side)
+- [x] Match events timeline (Free: goals+cards, Pro: full inc. subs)
+- [x] Pro section now shown for all authenticated users (was only when odds.length > 0)
+
+**DONE — Auth gating (2026-04-28):**
+- [x] /value-bets — redirects to /login if not authenticated
+- [x] /track-record — redirects to /login if not authenticated
+- [x] /welcome — new onboarding page for post-signup (free tier features + Pro teaser + CTAs)
+
+**DONE — Backend scripts (2026-04-28):**
+- [x] `scripts/check_bot_validation.py` (B7) — per-bot table with settled bets, ROI, CLV; exits 1 when launch threshold met
+- [x] `scripts/backtest_tier_b.py` (B5) — validates Tier B league ROI, flags validated vs needs-more-data, saves JSON to data/logs/
 
 **IN PROGRESS / NEXT (frontend):**
-See `ROADMAP.md` → Milestone 2 (Pro tier) and Frontend Data Display Backlog for the full task list.
-Short version: Stripe + Vercel deploy + live scores + 10 new data display components (T2–T12 data all in DB, frontend not built yet).
+See `ROADMAP.md` → Milestone 2 (Pro tier) for the remaining task list.
+Short version: Stripe integration + live odds in-play (#9) — everything else is built.
 
 ---
 
