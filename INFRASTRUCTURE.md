@@ -11,12 +11,12 @@
 | **Supabase** | PostgreSQL DB, Auth, RLS, REST API | Free | Active |
 | **GitHub Actions** | 4 scheduled workflows (engine automation) | Free (public repos) | Active |
 | **GitHub** | Source control (2 repos, both public) | Free | Active |
-| **Vercel** | Frontend hosting (Next.js 16) | Hobby (free) | Not yet deployed |
+| **Vercel** | Frontend hosting (Next.js 16) | Hobby (free) | Active (oddsintel.app) |
 | **Gemini API** | AI news checker (2.5 Flash) | Free | Active |
 | **Sofascore API** | xG post-match only (unofficial/public) | Free (no key) | Active (demoted) |
 | **Kambi API** | Odds for 41 leagues (public) | Free (no key) | Active |
 | **ESPN API** | Settlement results backup (public) | Free (no key) | Active |
-| **API-Football** | PRIMARY: fixtures, results, odds, lineups, injuries, live stats | Ultra ($29/mo) | Pending setup |
+| **API-Football** | PRIMARY: fixtures, results, odds, lineups, injuries, live stats | Ultra ($29/mo) | Active |
 | **Sentry** | Error monitoring & alerting (frontend) | Free (5K errors/mo) | Active |
 
 ### Not yet active (needed for launch)

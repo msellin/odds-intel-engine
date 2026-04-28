@@ -3,7 +3,7 @@
 > Single source of truth for all open tasks across ROADMAP.md, BACKLOG.md, and MODEL_ANALYSIS.md.
 > Synthesised after two rounds of external AI architecture review (2026-04-27 and 2026-04-28).
 > Update status here as tasks complete; propagate back to source docs.
-> Last updated: 2026-04-29 — added Source + Impact + Timeline columns; 11 new tasks from AI analysis round 2; 8 previously missing tasks from MODEL_ANALYSIS/ROADMAP cross-check
+> Last updated: 2026-04-29 — added 12 Signal UX tasks (SUX-1 through SUX-12) from 4 independent UX reviews; added Source + Impact + Timeline columns; 11 new tasks from AI analysis round 2; 8 previously missing tasks from MODEL_ANALYSIS/ROADMAP cross-check
 
 ---
 
@@ -48,6 +48,18 @@
 
 ---
 
+## Signal UX — Phase 1 (no blockers, signal data already exists)
+
+> From 4 independent UX/product reviews (2026-04-29). Full strategy in SIGNAL_UX_ROADMAP.md.
+
+| # | ID | Task | Effort | Status | Impact | Source | Timeline | Notes |
+|---|-----|------|--------|--------|--------|--------|----------|-------|
+| 58 | SUX-1 | Match Intelligence Score: signal count + A/B/C/D grade on every match card | 1-2 days | ⬜ | High | UX Review (2026-04-29) | ~May 2026 | Count signals in match_signals per match + map data tier → grade. API endpoint + frontend card component. All tiers see this |
+| 59 | SUX-2 | Match Pulse composite indicator (Routine/Interesting/High Alert) | 4h | ⬜ | High | UX Review (2026-04-29) | ~May 2026 | Derive from model_disagreement + bookmaker_disagreement + importance_diff + steam_move. Badge on ~15-20% of matches only (scarcity = compelling) |
+| 60 | SUX-3 | Free-tier signal teasers on notable matches | 4h | ⬜ | Medium | UX Review (2026-04-29) | ~May 2026 | 1-2 plain-English hooks on 30-40% of matches: "Odds shifted overnight", "High bookmaker disagreement". No numbers, just curiosity gaps |
+
+---
+
 ## Tier 2 — 2-4 Weeks
 
 | # | ID | Task | Effort | Status | Impact | Source | Timeline | Notes |
@@ -65,6 +77,13 @@
 | 31 | ALN-1 | Dynamic alignment thresholds (300+ settled bot bets → ROI by alignment bin) | 2h | ⬜ | High | Internal | ~June 2026 | Needs actual placed bets — pseudo-CLV does NOT substitute |
 | 32 | VAL-POST-MORTEM | Review 14 days of LLM post-mortem patterns | 30 min | ⬜ | Medium | Internal (MODEL_ANALYSIS 11.4) | May 13+ | `SELECT notes FROM model_evaluations WHERE market = 'post_mortem' ORDER BY date DESC LIMIT 14;` — check if loss categories consistent. Decides if post-mortem feature is valuable |
 | 33 | BET-EXPLAIN | Natural language bet explanations (LLM from dimension scores) | 1-2 days | ⬜ | Medium | Internal (MODEL_ANALYSIS end) | ~May 2026 | Frontend LLM prompt using stored bet data. Sells Elite tier — "why we like this pick". Zero betting ROI, high subscriber retention |
+| 61 | SUX-4 | Summary tab on match detail: top 3-5 key signals in plain English | 1-2 days | ⬜ | High | UX Review (2026-04-29) | ~May 2026 | Default view. Cherry-picks most interesting signal from each group. "FORM: Arsenal trending up. MARKET: Sharp money moved toward Home." The killer Pro feature |
+| 62 | SUX-5 | Signal group accordion sections on match detail | 2-3 days | ⬜ | High | UX Review (2026-04-29) | ~May 2026 | Market, Form & Strength, Context, News & Injuries, Live. Accordion cards (not tabs — better mobile). Tier-gated content per section. Depends on B3 |
+| 63 | SUX-6 | Plain-English signal translation layer | 1 day | ⬜ | Medium | UX Review (2026-04-29) | ~May 2026 | Convert raw values → labels. odds_volatility→"Volatile", form_slope→arrows (↑↑/↑/→/↓/↓↓), elo→percentile, importance→"Title decider". Reusable util for all signal display |
+| 64 | SUX-7 | Signal-based conversion hooks (Free→Pro, Pro→Elite) | 1 day | ⬜ | High | UX Review (2026-04-29) | ~May 2026 | Free: teaser badges + "X of Y signals" CTA. Pro: model conclusion lock at bottom of signal groups + weekly "you would have found N value bets" email. Depends on B3 |
+| 65 | SUX-8 | Signal Timeline component on match detail | 2-3 days | ⬜ | Medium | UX Review (2026-04-29) | ~June 2026 | Vertical stepping-line showing signal events chronologically. "Upcoming" section for next odds snapshot / expected lineups. Retention/engagement play |
+| 66 | SUX-9 | Signal Delta — "what changed since last visit" | 1 day | ⬜ | Medium | UX Review (2026-04-29) | ~June 2026 | Track last-visited timestamp per user per match. Show diff: "+ Steam move toward Away, + Lineups confirmed". Creates habit + return visits |
+| 67 | SUX-10 | Post-match signal reveal for Free users | 4h | ⬜ | Medium | UX Review (2026-04-29) | ~June 2026 | After settlement, show 1 retrospective insight: "Our signals detected sharp movement 4h before kickoff. Home won 2-0." Proves signal value, drives Free→Pro |
 
 ---
 
@@ -82,6 +101,8 @@
 | 41 | P3.5 | Feature importance tracking per league | 1 day | ⬜ | Medium | Internal | ~June 2026 | Which signals matter in which markets |
 | 42 | F10 | My bets / tip tracking (user_bets table, personal P&L) | 2 days | ⬜ | Medium | Internal | After M2 | Skip until Stripe + Elite launch |
 | 43 | F7 | Stitch redesign (landing + matches page) | Awaiting designs | ⬜ | Medium | Internal | After M1 | Parked until after M1 go-live |
+| 68 | SUX-11 | "Why This Pick" reasoning card UI (Elite match detail) | 1-2 days | ⬜ | High | UX Review (2026-04-29) | ~June 2026 | Maps signals → reasoning → outcome in natural language. Builds on BET-EXPLAIN LLM work. "Key factors: Form slope ↑, 2 players out, models agree" |
+| 69 | SUX-12 | CLV tracking dashboard (Elite) | 1-2 days | ⬜ | Medium | UX Review (2026-04-29) | ~June 2026 | Historical CLV% chart + running win rate + ROI. Post-match notification: "Your bet beat the closing line by 2.1%." Proves model skill over time |
 
 ---
 
@@ -136,3 +157,4 @@
 | AI Analysis (2026-04-28) | Identified during external 4-agent AI architecture review session on 2026-04-28 |
 | ROADMAP Frontend Backlog | From the Frontend Data Display Backlog section of ROADMAP.md |
 | Internal (MODEL_ANALYSIS X.X) | Exists in MODEL_ANALYSIS.md but was not yet tracked in this queue |
+| UX Review (2026-04-29) | Identified during 4 independent UX/product reviews of signal surfacing strategy. Full details in SIGNAL_UX_ROADMAP.md |

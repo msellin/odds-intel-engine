@@ -256,11 +256,11 @@ ev = model_prob * odds - 1
 # Kelly fraction (for ranking and stake sizing)
 kelly = (model_prob * odds - 1) / (odds - 1)
 
-# Fractional Kelly stake (1/4 Kelly, 1.5% cap)
-stake = min(kelly * 0.25 * bankroll, 0.015 * bankroll)
+# Fractional Kelly stake (0.15× Kelly, 1.0% cap — updated 2026-04-29)
+stake = min(kelly * 0.15 * bankroll, 0.010 * bankroll)
 
-# Market-shrunk probability (tier-specific calibration)
-# alpha = {T1: 0.55, T2: 0.65, T3: 0.80, T4: 0.85}
+# Market-shrunk probability (tier-specific calibration — updated 2026-04-29)
+# alpha = {T1: 0.20, T2: 0.30, T3: 0.50, T4: 0.65}
 adjusted_prob = alpha * model_prob + (1 - alpha) * implied_prob
 
 # CLV (closing line value — ground truth for edge detection)

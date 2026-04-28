@@ -130,33 +130,8 @@ For matches without odds:
 
 ---
 
-## External Data Sources Research (2026-04-27)
-
-### Current datasets
-1. **football-data.co.uk** → `targets_v9.csv` (96K matches, 18 leagues, 20 seasons, with odds)
-2. **Beat the Bookie (Kaggle)** → `targets_global.csv` (479K matches, 818 leagues, 2005-2015, closing odds)
-
-### New sources evaluated
-
-#### OddAlerts (oddalerts.com/downloads)
-- **Coverage:** 1,500+ leagues, 20+ bookmakers (Bet365, Pinnacle, 1xBet, William Hill)
-- **Data:** Opening, closing, peak odds per match + their own probability model
-- **Format:** CSV, up to 6 months history at a time
-- **Limitation:** Likely requires Pro plan. Only 6 months at a time — not suitable for deep historical backtest
-- **Use case for us:** **Live odds API** — 20+ bookmakers real-time could supplement Kambi for per-bookmaker odds (P2.1). Not for historical training.
-- **Action:** Bookmark for live API evaluation when implementing P2.1
-
-#### Footiqo (footiqo.com/database/)
-- **Coverage:** Free, no paywall. Closing odds sourced from 1xBet. CSV/Excel export per league
-- **Data:** FT, 1H, 2H results + 1X2, goals, corners, cards, BTTS. Minute intervals (5'/15') for goals, corners, cards
-- **Unique value:** Minute-interval data is rare and directly useful for in-play model (P3.4)
-- **Gap league coverage:** Needs manual check — browse league list for Singapore, S. Korea, Scotland lower divs
-- **Action:** Check league list for gap countries. If Singapore S.League has closing odds, download for backtest validation of the +27.5% ROI signal
-
-#### European Soccer Database (Kaggle)
-- **Coverage:** 25K+ matches, 11 European countries, 2008-2016, SQLite
-- **Data:** Per-match odds from **13 bookmakers**: Bet365, Pinnacle, William Hill, Ladbrokes, Interwetten, Gamebookers, Blue Square, Sporting Odds, Sportingbet, Stan James, Stanleybet, VC Bet, Bet&Win
-- **Unique value:** Multi-bookmaker odds per match (13 providers). Also has FIFA player ratings, lineup formations (X,Y coords), detailed match events
+> **Note:** Data source research that was previously in this file has been moved to `DATA_SOURCES.md`.
+> Signal display strategy is now in `SIGNAL_UX_ROADMAP.md`.
 - **Limitation:** Ends 2016. Only big European leagues (no gap countries)
 - **Action:** Download for sharp-vs-soft bookmaker analysis. Train model to detect which bookmaker moves signal real information vs noise. Bookmaker behavior patterns persist across eras.
 
