@@ -80,6 +80,28 @@ def get_remaining_requests() -> dict:
     }
 
 
+# ─── Leagues ─────────────────────────────────────────────────────────────────
+
+def get_leagues(season: int = None, current: bool = True) -> list[dict]:
+    """
+    Fetch all leagues with coverage metadata from API-Football.
+    Returns list of league objects, each containing:
+      - league: {id, name, type, logo}
+      - country: {name, code, flag}
+      - seasons: [{year, coverage: {fixtures, standings, players, injuries, predictions, odds, ...}}]
+
+    The coverage field per season tells us what data AF has for that league.
+    Recommended: 1 call per hour (AF docs). We call weekly.
+    """
+    params = {}
+    if season:
+        params["season"] = season
+    if current:
+        params["current"] = "true"
+    data = _get("leagues", params)
+    return data.get("response", [])
+
+
 # ─── Fixtures ────────────────────────────────────────────────────────────────
 
 def get_fixtures_by_date(target_date: str = None) -> list[dict]:

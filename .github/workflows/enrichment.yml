@@ -1,0 +1,64 @@
+name: OddsIntel — Enrichment
+
+on:
+  schedule:
+    # Wave 1: full enrichment (06:15 UTC, after fixtures at 06:00)
+    - cron: '15 6 * * *'
+    # Wave 2: injuries + standings refresh (12:00 UTC)
+    - cron: '0 12 * * *'
+    # Wave 3: injuries + standings refresh (16:00 UTC)
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Date (YYYY-MM-DD, default: today)'
+        required: false
+        type: string
+      components:
+        description: 'Components to run (all, injuries, team_stats, standings, h2h)'
+        required: false
+        default: 'all'
+        type: string
+
+jobs:
+  enrichment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Determine components
+        id: comp
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "components=${{ inputs.components || 'all' }}" >> $GITHUB_OUTPUT
+          else
+            HOUR=$(date -u +%H)
+            if [ "$HOUR" = "06" ]; then
+              echo "components=all" >> $GITHUB_OUTPUT
+            else
+              echo "components=injuries,standings" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Run enrichment
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+        run: |
+          ARGS="--components ${{ steps.comp.outputs.components }}"
+          if [ -n "${{ inputs.date }}" ]; then
+            ARGS="$ARGS --date ${{ inputs.date }}"
+          fi
+          python -m workers.jobs.fetch_enrichment $ARGS

@@ -39,7 +39,10 @@ Kambi API (free)             -> Supplementary odds for 41 leagues
 Sofascore API (free)         -> xG post-match only (fallback fixture source)
 ESPN (free)                  -> Settlement results backup
                                          |
-                    Python Daily Pipeline (08:00 UTC) — T2/T3/T9/T10 enrichment + predictions
+                    Fetch Fixtures (06:00 UTC) — fixtures + league coverage (weekly)
+                    Enrichment (06:15/12:00/16:00 UTC) — standings, H2H, team stats, injuries
+                    Predictions+Odds (07:00 UTC) — AF predictions + AF/Kambi/BE odds
+                    Betting Pipeline (08:00 UTC) — model predictions + signals + bet placement
                     AI News Checker (09:00 UTC, Gemini 2.5 Flash) — non-injury news only
                     Settlement (21:00 UTC) — T4/T8/T12 post-match enrichment
                     Odds Snapshots (every 2h, 06-22 UTC)
