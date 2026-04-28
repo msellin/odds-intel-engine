@@ -91,29 +91,27 @@ def _load_feature_data() -> dict:
         features["Date"] = targets["Date"]
         features["tier"] = targets["tier"]
 
-        # For each team, get their most recent match features
-        # Home features (prefix h_)
+        # Sort by date so groupby().last() gives most recent
+        features_sorted = features.sort_values("Date")
+
         home_cols = [c for c in features.columns if c.startswith("h_")]
-        elo_cols = ["home_elo", "away_elo", "elo_diff", "home_elo_exp"]
+        away_cols = [c for c in features.columns if c.startswith("a_")]
 
-        for _, row in features.sort_values("Date").iterrows():
-            home = row["home_team"]
-            away = row["away_team"]
+        # Vectorized: get last row per home team (much faster than iterrows)
+        last_home = features_sorted.dropna(subset=["h_win_pct"]).groupby("home_team").last()
+        for team, row in last_home.iterrows():
+            _feature_cache[f"{team}_home"] = {
+                c: row[c] for c in home_cols if pd.notna(row.get(c))
+            }
+            _feature_cache[f"{team}_home"]["elo"] = row.get("home_elo", 1500)
 
-            # Store home team's latest stats (as "playing at home")
-            if pd.notna(row.get("h_win_pct")):
-                _feature_cache[f"{home}_home"] = {
-                    c: row[c] for c in home_cols if pd.notna(row.get(c))
-                }
-                _feature_cache[f"{home}_home"]["elo"] = row.get("home_elo", 1500)
-
-            # Store away team's latest stats (as "playing away")
-            away_cols = [c for c in features.columns if c.startswith("a_")]
-            if pd.notna(row.get("a_win_pct")):
-                _feature_cache[f"{away}_away"] = {
-                    c: row[c] for c in away_cols if pd.notna(row.get(c))
-                }
-                _feature_cache[f"{away}_away"]["elo"] = row.get("away_elo", 1500)
+        # Vectorized: get last row per away team
+        last_away = features_sorted.dropna(subset=["a_win_pct"]).groupby("away_team").last()
+        for team, row in last_away.iterrows():
+            _feature_cache[f"{team}_away"] = {
+                c: row[c] for c in away_cols if pd.notna(row.get(c))
+            }
+            _feature_cache[f"{team}_away"]["elo"] = row.get("away_elo", 1500)
 
     except Exception:
         _feature_cache.clear()

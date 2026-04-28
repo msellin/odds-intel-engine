@@ -214,7 +214,7 @@ def fetch_match_odds(match_id: str, referer_url: str = "") -> dict:
     except Exception as e:
         console.print(f"  [yellow]1X2 odds error for {match_id}: {e}[/yellow]")
 
-    time.sleep(0.5)
+    time.sleep(0.3)
 
     # O/U odds
     try:
@@ -471,7 +471,7 @@ GAP_LEAGUES = [
 ]
 
 
-def fetch_gap_leagues_odds(delay: float = 1.5) -> list[dict]:
+def fetch_gap_leagues_odds(delay: float = 0.5) -> list[dict]:
     """
     Fetch odds only for leagues that Kambi + SofaScore don't cover well.
     Used by the daily pipeline to keep run time reasonable.
@@ -488,12 +488,11 @@ def fetch_gap_leagues_odds(delay: float = 1.5) -> list[dict]:
         except Exception as e:
             console.print(f"  [red]Error for {country}/{league}: {e}[/red]")
 
-        # Longer pause between leagues to avoid 429s
-        # Every 5 leagues, take a longer break
+        # Brief pause between leagues to avoid 429s
         if (i + 1) % 5 == 0:
-            time.sleep(10)
+            time.sleep(4)
         else:
-            time.sleep(5)
+            time.sleep(2)
 
     console.print(
         f"  [bold]BetExplorer gap leagues: {len(all_matches)} matches with odds[/bold]"

@@ -8,6 +8,7 @@ API docs: https://www.api-football.com/documentation-v3
 
 import os
 import time
+import threading
 import requests
 from datetime import date, datetime, timezone
 from dotenv import load_dotenv
@@ -21,9 +22,10 @@ BASE_URL = "https://v3.football.api-sports.io"
 API_KEY = os.getenv("API_FOOTBALL_KEY", "")
 
 # Rate limiting: 450 req/min on Ultra = 7.5 req/sec
-# We use a conservative 5 req/sec to stay safe
-MIN_REQUEST_INTERVAL = 0.2  # 200ms between requests
+# We use ~6.7 req/sec to stay safe with some headroom
+MIN_REQUEST_INTERVAL = 0.15  # 150ms between requests
 _last_request_time = 0.0
+_rate_lock = threading.Lock()
 
 
 def _headers() -> dict:
@@ -33,6 +35,7 @@ def _headers() -> dict:
 def _get(endpoint: str, params: dict = None) -> dict:
     """
     Make a rate-limited GET request to API-Football.
+    Thread-safe: uses a lock to serialize rate limiting across threads.
     Returns the parsed JSON response.
     Raises on HTTP errors or API errors.
     """
@@ -41,12 +44,13 @@ def _get(endpoint: str, params: dict = None) -> dict:
     if not API_KEY:
         raise ValueError("API_FOOTBALL_KEY not set in .env")
 
-    # Rate limiting
-    now = time.time()
-    elapsed = now - _last_request_time
-    if elapsed < MIN_REQUEST_INTERVAL:
-        time.sleep(MIN_REQUEST_INTERVAL - elapsed)
-    _last_request_time = time.time()
+    # Thread-safe rate limiting
+    with _rate_lock:
+        now = time.time()
+        elapsed = now - _last_request_time
+        if elapsed < MIN_REQUEST_INTERVAL:
+            time.sleep(MIN_REQUEST_INTERVAL - elapsed)
+        _last_request_time = time.time()
 
     url = f"{BASE_URL}/{endpoint}"
     resp = requests.get(url, headers=_headers(), params=params, timeout=15)
