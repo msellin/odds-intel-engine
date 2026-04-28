@@ -4,12 +4,18 @@ Access levels for anonymous visitors, free signed-in users, and paid subscribers
 
 ## Tier Overview
 
-| Tier | Price | Internal Name | Description |
-|------|-------|--------------|-------------|
-| Anonymous | Free | — | No account, browsing only |
-| Free | €0/mo | `scout` | Signed-in, personalization + tools |
-| Pro | €19/mo | `analyst` | Deep match intelligence |
-| Elite | €49/mo | `sharp` | AI picks + track record |
+| Tier | Monthly | Annual | Founding Rate | Internal Name | Description |
+|------|---------|--------|---------------|--------------|-------------|
+| Anonymous | Free | — | — | — | No account, browsing only |
+| Free | €0 | — | — | `scout` | Signed-in, personalization + tools |
+| Pro | €4.99 | €39.99/yr (€3.33/mo) | €3.99/mo (first 500) | `analyst` | Deep match intelligence |
+| Elite | €14.99 | €119.99/yr (€9.99/mo) | €9.99/mo (first 200) | `sharp` | AI picks + track record |
+
+### Pricing Strategy
+- **Stage:** Early launch — optimizing for user acquisition, not ARPU
+- **No free trial** — free tier IS the trial
+- **Founding member rates** locked forever for first 500 Pro / 200 Elite subscribers
+- **Price raise triggers:** Pro → €7.99 at 2K paid users; Elite → €24.99 at 6mo proven ROI
 
 ---
 
