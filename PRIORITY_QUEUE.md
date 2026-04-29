@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-04-29 — consolidated from ROADMAP, MODEL_ANALYSIS, SIGNAL_UX_ROADMAP, TIER_ACCESS_MATRIX, DATA_SOURCES, LAUNCH_PLAN, WORKFLOWS
+> Last updated: 2026-04-29 — ML-1/2/5/6/7/8 match list UX sprint complete. All 6 match list features shipped (filter tabs, FT label, team crests, predicted score, odds arrows, bookmaker count).
 
 ---
 
