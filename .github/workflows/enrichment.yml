@@ -1,21 +1,18 @@
-name: OddsIntel — Enrichment
+name: ② Enrichment
 
 on:
   schedule:
-    # Wave 1: full enrichment (06:15 UTC, after fixtures at 06:00)
-    - cron: '15 6 * * *'
-    # Wave 2: injuries + standings refresh (12:00 UTC)
-    - cron: '0 12 * * *'
-    # Wave 3: injuries + standings refresh (16:00 UTC)
-    - cron: '0 16 * * *'
+    - cron: '15 4 * * *'  # 04:15 UTC — full (standings, H2H, team stats, injuries)
+    - cron: '0 12 * * *'  # 12:00 UTC — injuries + standings refresh
+    - cron: '0 16 * * *'  # 16:00 UTC — injuries + standings refresh
   workflow_dispatch:
     inputs:
       date:
-        description: 'Date (YYYY-MM-DD, default: today)'
+        description: 'Date (YYYY-MM-DD)'
         required: false
         type: string
       components:
-        description: 'Components to run (all, injuries, team_stats, standings, h2h)'
+        description: 'all, injuries, team_stats, standings, h2h'
         required: false
         default: 'all'
         type: string
@@ -24,31 +21,23 @@ jobs:
   enrichment:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: 'pip'
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - run: pip install -r requirements.txt
 
       - name: Determine components
         id: comp
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "components=${{ inputs.components || 'all' }}" >> $GITHUB_OUTPUT
+          elif [ "$(date -u +%H)" = "04" ]; then
+            echo "components=all" >> $GITHUB_OUTPUT
           else
-            HOUR=$(date -u +%H)
-            if [ "$HOUR" = "06" ]; then
-              echo "components=all" >> $GITHUB_OUTPUT
-            else
-              echo "components=injuries,standings" >> $GITHUB_OUTPUT
-            fi
+            echo "components=injuries,standings" >> $GITHUB_OUTPUT
           fi
 
       - name: Run enrichment
@@ -58,7 +47,5 @@ jobs:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
         run: |
           ARGS="--components ${{ steps.comp.outputs.components }}"
-          if [ -n "${{ inputs.date }}" ]; then
-            ARGS="$ARGS --date ${{ inputs.date }}"
-          fi
+          if [ -n "${{ inputs.date }}" ]; then ARGS="$ARGS --date ${{ inputs.date }}"; fi
           python -m workers.jobs.fetch_enrichment $ARGS

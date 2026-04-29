@@ -1,0 +1,33 @@
+name: ④ Predictions
+
+on:
+  schedule:
+    - cron: '30 5 * * *'  # 05:30 UTC (after fixtures + enrichment + first odds)
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Date (YYYY-MM-DD)'
+        required: false
+        type: string
+
+jobs:
+  predictions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+
+      - name: Fetch AF predictions
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.date }}" ]; then ARGS="$ARGS --date ${{ inputs.date }}"; fi
+          python -m workers.jobs.fetch_predictions $ARGS

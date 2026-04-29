@@ -38,14 +38,14 @@ API-Football Ultra ($29/mo)  -> PRIMARY: fixtures, odds (13 bookmakers), live da
 Kambi API (free)             -> Supplementary odds for 41 leagues
 ESPN (free)                  -> Settlement results backup
                                          |
-                    Fetch Fixtures (06:00 UTC) — fixtures + league coverage (weekly)
-                    Enrichment (06:15/12:00/16:00 UTC) — standings, H2H, team stats, injuries
-                    Predictions+Odds (07:00 UTC) — AF predictions + AF/Kambi/BE odds
-                    Betting Pipeline (08:00 UTC) — model predictions + signals + bet placement
-                    AI News Checker (09:00 UTC, Gemini 2.5 Flash) — non-injury news only
-                    Settlement (21:00 UTC) — T4/T8/T12 post-match enrichment
-                    Odds Snapshots (every 2h, 06-22 UTC)
-                    Live Tracker (every 5min, 12-22 UTC) — T5/T6/T7/T8 live data
+                    ① Fixtures    (04:00 UTC) — AF fixtures + league coverage (weekly)
+                    ② Enrichment  (04:15/12:00/16:00 UTC) — standings, H2H, team stats, injuries
+                    ③ Odds        (every 2h 05-22 UTC) — AF bulk odds + Kambi
+                    ④ Predictions (05:30 UTC) — AF predictions
+                    ⑤ Betting     (06:00 UTC) — Poisson/XGBoost model + signals + bet placement
+                    ⑥ Live Tracker (every 5min, 12-22 UTC) — live scores, odds, events, lineups
+                    ⑦ News Checker (09:00/12:30/16:30/19:30 UTC) — Gemini AI analysis
+                    ⑧ Settlement  (21:00 UTC) — settle bets, post-match stats, ELO, CLV
                                          |
                                Supabase Database (15 tables)
                                          |

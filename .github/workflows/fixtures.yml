@@ -1,0 +1,42 @@
+name: ① Fixtures
+
+on:
+  schedule:
+    - cron: '0 4 * * *'  # 04:00 UTC (07:00 EET)
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Date (YYYY-MM-DD)'
+        required: false
+        type: string
+      refresh_leagues:
+        description: 'Refresh league coverage'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+
+      - name: Fetch fixtures
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.date }}" ]; then ARGS="$ARGS --date ${{ inputs.date }}"; fi
+          # Refresh leagues on Mondays or manual
+          if [ "${{ inputs.refresh_leagues }}" = "true" ] || [ "$(date -u +%u)" = "1" ]; then
+            ARGS="$ARGS --refresh-leagues"
+          fi
+          python -m workers.jobs.fetch_fixtures $ARGS
