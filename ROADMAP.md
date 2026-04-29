@@ -70,8 +70,11 @@ Annual: Pro €39.99/yr (€3.33/mo) · Elite €119.99/yr (€9.99/mo)
 - Full value bets page: exact odds, model probability %, edge %, Kelly stake
 - Natural language bet explanations — "Why this pick?" powered by Gemini (BET-EXPLAIN)
 - Pro→Elite conversion hook in Intelligence Summary (model conclusion lock)
-- CLV tracking (beat the closing line analysis)
+- CLV tracking (beat the closing line analysis) — per match + personal aggregate
 - Tips from top-performing bot once ROI validated
+- *Planned:* Personal bankroll analytics — your ROI vs model benchmark, per-league performance, drawdown (ELITE-BANKROLL)
+- *Planned:* League performance filter — restrict value bets to leagues where model has historically outperformed (ELITE-LEAGUE-FILTER)
+- *Planned:* Custom multi-signal alert stacking — alert only when confidence + edge + line movement all align (ELITE-ALERT-STACK)
 
 ### Key UX principle
 Everyone sees all matches. Depth of information varies by tier.
