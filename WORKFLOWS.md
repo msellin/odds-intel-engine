@@ -68,11 +68,13 @@
 - Readiness gate: won't run unless ① Fixtures completed
 
 ### ⑤ Betting (`betting_pipeline.py`)
-- Reads all data from DB (no API calls in Phase 2)
+- Reads all data from DB — no API calls (Phase 2 complete as of 2026-04-29)
+- Calls `run_morning(skip_fetch=True)` in `daily_pipeline_v2.py`
+- `_load_today_from_db()` reads today's matches + best pre-match odds + AF predictions from DB
 - Loads historical CSVs (targets_v9, targets_global) for Poisson model
 - For each match with odds: compute Poisson/XGBoost prediction, write signals
 - For each of 9 bots: calibrate, check odds movement, Kelly sizing, place bet
-- Currently wraps `daily_pipeline_v2.py` (Phase 1) — will be fully extracted (Phase 2)
+- `daily_pipeline_v2.py run_morning(skip_fetch=False)` still works for manual full runs
 
 ### ⑥ Live Tracker (`live_tracker.py`)
 - AF `/fixtures?live=all` — live scores + minute

@@ -1,14 +1,14 @@
 """
-OddsIntel — Betting Pipeline
+OddsIntel — Betting Pipeline (Phase 2)
 
-Pure model + betting logic. Reads ALL data from DB (fixtures, odds, predictions,
-enrichment already stored by upstream jobs). No external API calls.
+Pure model + betting logic. Reads ALL data from DB — no external API calls.
+Upstream jobs store everything before this runs at 06:00 UTC.
 
 Upstream jobs (must complete before this runs):
-  - fetch_fixtures.py (04:00 UTC)
-  - fetch_enrichment.py (04:15 UTC)
-  - fetch_odds.py (05:00 UTC)
-  - fetch_predictions.py (05:30 UTC)
+  - fetch_fixtures.py   (04:00 UTC) — stores matches
+  - fetch_enrichment.py (04:15 UTC) — stores standings, H2H, injuries
+  - fetch_odds.py       (05:00 UTC) — stores odds_snapshots
+  - fetch_predictions.py(05:30 UTC) — stores predictions (source='af')
 
 Schedule: 06:00 UTC daily
 Workflow: .github/workflows/betting.yml
@@ -28,10 +28,7 @@ from rich.console import Console
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-# Import model functions from the existing monolith (will be inlined later)
-from workers.jobs.daily_pipeline_v2 import (
-    BOTS_CONFIG, run_morning as _monolith_run_morning, run_report,
-)
+from workers.jobs.daily_pipeline_v2 import run_morning, run_report
 from workers.utils.pipeline_utils import (
     check_fixtures_ready, log_pipeline_start, log_pipeline_complete,
     log_pipeline_failed, log_pipeline_skipped,
@@ -42,14 +39,8 @@ console = Console()
 
 def run_betting():
     """
-    Run the betting pipeline.
-
-    Phase 1 (current): delegates to the existing monolith run_morning().
-    Phase 2 (TODO): reads from DB only, no API calls.
-
-    The monolith's fetch functions are idempotent — if upstream jobs already
-    stored the data, the monolith will just re-fetch and upsert (harmless).
-    Once validated, Phase 2 will strip the fetch code entirely.
+    Run the betting pipeline (Phase 2 — DB-only, no API calls).
+    Reads matches, odds, and predictions stored by upstream jobs.
     """
     today_str = date.today().isoformat()
     console.print(f"[bold green]═══ OddsIntel Betting Pipeline: {today_str} ═══[/bold green]")
@@ -57,10 +48,10 @@ def run_betting():
     run_id = log_pipeline_start("betting_pipeline", today_str)
 
     try:
-        # Phase 1: delegate to monolith (includes fetch + model + bet)
-        _monolith_run_morning()
+        # Phase 2: skip_fetch=True — upstream jobs already stored everything in DB
+        run_morning(skip_fetch=True)
 
-        log_pipeline_complete(run_id, metadata={"phase": 1})
+        log_pipeline_complete(run_id, metadata={"phase": 2, "skip_fetch": True})
         console.print(f"\n[bold green]Betting pipeline complete.[/bold green]")
 
     except Exception as e:
