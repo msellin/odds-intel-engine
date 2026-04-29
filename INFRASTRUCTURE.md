@@ -17,16 +17,25 @@
 | **ESPN API** | Settlement results backup (public) | Free (no key) | Active |
 | **API-Football** | PRIMARY: fixtures, results, odds, lineups, injuries, live stats | Ultra ($29/mo) | Active |
 | **Sentry** | Error monitoring & alerting (frontend) | Free (5K errors/mo) | Active |
+| **Stripe** | Payment processing (Pro/Elite tiers) | No monthly fee | **Test mode** — products + webhook live, awaiting production keys |
+| **Domain** | oddsintel.app | Registered + connected to Vercel | Active |
 
-### Not yet active (needed for launch)
+### Not yet active
 
 | Service | Role | When needed | Plan | Est. Cost |
 |---------|------|-------------|------|-----------|
-| **Domain** | oddsintel.ai or similar | Milestone 1 (free tier launch) | One-time purchase | ~€10-15/yr |
-| **Vercel Analytics** | Privacy-friendly page analytics (no GDPR banner) | Milestone 1 | Included in Hobby | Free (up to 2.5K events/mo) |
-| **Stripe** | Payment processing (Pro/Elite tiers) | Milestone 2 (Pro launch) | No monthly fee | 1.5% + €0.25/txn (EU) / 2.9% + €0.25 (non-EU) |
 | **Plausible** | Alternative to Vercel Analytics if more depth needed | Optional | Cloud | €9/mo (10K pageviews) |
 | **Resend / Postmark** | Transactional email (welcome, receipts, alerts) | Milestone 2 | Free tier | €0 up to 3K emails/mo |
+
+### Stripe — going to production checklist
+
+When ready to accept real payments (switch from test → live mode):
+
+1. In Stripe dashboard: switch to **Live mode**
+2. Re-run `source venv/bin/activate && python scripts/setup_stripe.py` with live secret key → get live price IDs
+3. Update Vercel env vars: `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, all `STRIPE_*_PRICE_ID` and `STRIPE_*_PRODUCT_ID` vars → live values
+4. Create new webhook endpoint in Stripe **live mode** → `https://oddsintel.app/api/stripe/webhook` → same 3 events → copy new `whsec_` secret → update `STRIPE_WEBHOOK_SECRET` in Vercel
+5. Upgrade Supabase to Pro ($25/mo) — need point-in-time recovery before accepting real payments
 
 ---
 

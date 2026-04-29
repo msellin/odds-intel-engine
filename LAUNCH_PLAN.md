@@ -1,6 +1,6 @@
 # OddsIntel — Launch Plan
 
-> Written 2026-04-29. Free tier is technically ready to launch now (Stripe only blocks paid tiers).
+> Written 2026-04-29. Updated 2026-04-29. Stripe test mode fully wired — checkout, webhook, portal, tier gating all built. Awaiting production key swap before accepting real payments.
 > Use this doc to brief another agent or resume after ongoing tasks complete.
 
 ---
@@ -14,9 +14,9 @@
 - 6 paper trading bots running since 2026-04-27, pseudo-CLV tracked on ~280 matches/day
 
 ### What's NOT ready
-- **Stripe**: not set up — blocks paid tiers (Pro €4.99/mo, Elite €14.99/mo) but NOT free tier
+- **Stripe production keys**: test mode is fully wired (checkout + webhook + portal + tier gating). Need live key swap before accepting real money — see INFRASTRUCTURE.md checklist
 - Track record: only 2 days of bot data — thin, but honest transparency is the right frame
-- Signal teasers (SUX-1/2/3): not built — free tier looks more like a scores app without these
+- Signal teasers (SUX-1/2/3): ✅ Done 2026-04-29
 - Email notifications: not built — no re-engagement loop yet
 - Data coverage: 43% of fixtures have model data (200/467) — most popular leagues are covered
 
@@ -34,7 +34,7 @@
 
 - [ ] Add "Early Access / Beta" framing to site header or landing page
 - [ ] Make daily AI pick visible without login on /matches or landing page
-- [ ] Fix LP-1, LP-2, LP-3 pricing display issues (15 min each, see PRIORITY_QUEUE.md)
+- [x] Fix LP-1, LP-2, LP-3 pricing display issues — done 2026-04-29
 - [ ] Ensure /welcome onboarding clearly explains what happens next after signup
 - [ ] Write the Reddit post (see Phase 1 template below)
 
@@ -91,10 +91,10 @@ During this window:
 
 ---
 
-## Phase 3 — Paid acquisition (after Stripe is live, ~mid-May)
+## Phase 3 — Paid acquisition (after Stripe production keys, ~mid-May)
 
 Only start paid ads once:
-1. Stripe is live (Pro conversion is possible)
+1. Stripe production keys swapped (real payments enabled — see INFRASTRUCTURE.md checklist)
 2. 2+ weeks of track record exists
 3. Organic posts have validated which message resonates
 
@@ -123,7 +123,7 @@ Do not scale spend until these signals are visible:
 | Prediction tracker usage | Building daily habit? | 40%+ of signups log at least 1 pick |
 | Pro section click-through | Upgrade intent? | 20%+ of match detail viewers click into Pro sections |
 
-You don't need paid subscribers to validate. Seeing free users hit upsell surfaces tells you paid conversion will work once Stripe is live.
+You don't need paid subscribers to validate. Seeing free users hit upsell surfaces tells you paid conversion will work once Stripe production keys are active.
 
 ---
 
@@ -151,7 +151,7 @@ You don't need paid subscribers to validate. Seeing free users hit upsell surfac
 | Pro | €4.99/mo | €3.99/mo (first 500) |
 | Elite | €14.99/mo | €9.99/mo (first 200) |
 
-Annual: Pro €39.99/yr · Elite €119.99/yr (once Elite annual discount is real — see LP-2 in PRIORITY_QUEUE.md)
+Annual: Pro €39.99/yr (shown on landing page) · Elite annual not shown yet (no real discount — LP-2 resolved)
 
 ---
 
@@ -159,7 +159,7 @@ Annual: Pro €39.99/yr · Elite €119.99/yr (once Elite annual discount is rea
 
 1. Add "Early Access" framing to site
 2. Make daily AI pick visible on /matches without login
-3. Fix LP-1/LP-2/LP-3 pricing issues
+3. ~~Fix LP-1/LP-2/LP-3 pricing issues~~ — done 2026-04-29
 4. Write and post r/soccerbetting Reddit thread
 5. Start daily pick posting on Twitter
-6. Come back to paid ads after Stripe is live (~mid-May)
+6. Swap Stripe to production keys when ready to accept real payments (see INFRASTRUCTURE.md)
