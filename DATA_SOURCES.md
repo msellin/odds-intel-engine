@@ -62,7 +62,7 @@ Remaining headroom: ~73,500 req/day for historical backfill or new features.
 
 ## Remaining Cleanup
 
-- [ ] Remove `betexplorer_odds.py` once AF odds coverage confirmed across gap leagues
-- [ ] Remove `compute_team_form_from_db()` / `update_team_form_cache()` — now superseded by T2
-- [ ] Simplify `news_checker.py` to skip injury detection — injuries now structured via T3
+- [x] ~~Remove `betexplorer_odds.py`~~ Done 2026-04-29
+- [x] ~~Remove Sofascore scrapers~~ Done 2026-04-29
 - [ ] Evaluate API-Football Pro ($19/mo, 7.5K req/day) after 4–6 weeks once we know which leagues are profitable
+- [ ] Activate The Odds API for Pinnacle odds (code exists, dormant)

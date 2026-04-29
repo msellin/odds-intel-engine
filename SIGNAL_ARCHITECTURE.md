@@ -31,7 +31,7 @@ We do not decide upfront which signals matter. We collect everything, store it w
 Data tier system:
 - **Tier A**: team in targets_v9.csv (European leagues) — Poisson + XGBoost available
 - **Tier B**: team in targets_global.csv (global ELO dataset) — Poisson only
-- ~~Tier C~~: removed (was Sofascore on-demand, now dropped)
+- **Tier D**: no historical data — AF prediction only (ensemble = AF directly)
 - **Tier D**: no historical data — AF prediction only (ensemble = AF directly)
 
 ---
@@ -149,7 +149,7 @@ Data tier system:
 
 ```
 T-24h   Fixtures published (AF)
-T-16h   Morning pipeline runs (08:00 UTC):
+T-16h   Pipeline runs (04:00-06:00 UTC — fixtures, enrichment, odds, predictions, betting):
           → Group 1: Model signals (Poisson, XGBoost, AF prediction, ensemble)
           → Group 2: Opening market odds + bookmaker_disagreement + overnight_line_move + odds_volatility
           → Group 3: ELO, form PPG, form slope, season stats, venue splits,

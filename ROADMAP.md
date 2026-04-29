@@ -110,13 +110,16 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 ### Backend
 | Component | Status |
 |-----------|--------|
-| API-Football Ultra ($29/mo) | ✅ Primary — 75K req/day, T1–T13 integrated |
-| Daily pipeline (08:00 UTC) | ✅ T2/T3/T9/T10 enrichment + predictions + bets |
-| AI news checker (09:00 UTC, 4×/day) | ✅ Gemini 2.5 Flash, qualitative-only |
-| Settlement pipeline (21:00 UTC) | ✅ T4/T8/T12 + settle + CLV + ELO + post-mortem |
-| Live tracker (every 5min, 12-22 UTC) | ✅ T5/T6/T7/T8 live data |
-| Odds snapshots (every 2h, 06-22 UTC) | ✅ 13 bookmakers per match |
-| 6 paper trading bots | ✅ Running since 2026-04-27 |
+| API-Football Ultra ($29/mo) + Kambi (free) | ✅ Primary + supplementary odds |
+| ① Fixtures (04:00 UTC) | ✅ AF fixtures + league coverage |
+| ② Enrichment (04:15/12:00/16:00 UTC) | ✅ Standings, H2H, team stats, injuries |
+| ③ Odds (every 2h 05-22 UTC) | ✅ AF bulk odds + Kambi |
+| ④ Predictions (05:30 UTC) | ✅ AF predictions (coverage-aware) |
+| ⑤ Betting (06:00 UTC) | ✅ Poisson/XGBoost + signals + bet placement |
+| ⑥ Live tracker (every 5min, 12-22 UTC) | ✅ T5/T6/T7/T8 live data |
+| ⑦ AI news checker (4×/day) | ✅ Gemini 2.5 Flash, qualitative-only |
+| ⑧ Settlement (21:00 UTC) | ✅ T4/T8/T12 + settle + CLV + ELO + post-mortem |
+| 9 paper trading bots | ✅ Running since 2026-04-27 |
 | match_signals (EAV signal store) | ✅ 20+ signals per match |
 | match_feature_vectors (ML training table) | ✅ Nightly ETL, wide table |
 | pseudo_clv | ✅ All ~280 matches/day |
