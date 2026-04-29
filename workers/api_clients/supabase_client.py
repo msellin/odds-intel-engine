@@ -675,6 +675,7 @@ def _build_feature_row(client, match: dict) -> dict | None:
     referee_home_win_pct = referee_over25_pct = None
     goals_for_avg_home = goals_for_avg_away = None
     goals_against_avg_home = goals_against_avg_away = None
+    market_implied_home = market_implied_draw = market_implied_away = None
 
     signals_r = client.table("match_signals").select(
         "signal_name, signal_value, captured_at"
@@ -735,6 +736,12 @@ def _build_feature_row(client, match: dict) -> dict | None:
                     goals_against_avg_home = fval
                 elif name == "goals_against_avg_away":
                     goals_against_avg_away = fval
+                elif name == "market_implied_home":
+                    market_implied_home = fval
+                elif name == "market_implied_draw":
+                    market_implied_draw = fval
+                elif name == "market_implied_away":
+                    market_implied_away = fval
 
     return {
         "match_id": match_id,
@@ -755,6 +762,9 @@ def _build_feature_row(client, match: dict) -> dict | None:
         "steam_move": steam_move,
         "bookmaker_disagreement": bookmaker_disagreement,
         "overnight_line_move": overnight_line_move,
+        "market_implied_home": market_implied_home,
+        "market_implied_draw": market_implied_draw,
+        "market_implied_away": market_implied_away,
         # Group 3: Quality
         "elo_home": elo_home,
         "elo_away": elo_away,
@@ -1981,6 +1991,32 @@ def write_morning_signals(
                         store_match_signal(match_id, f"points_to_relegation_{suffix}",
                                            float(pts_to_rel), "quality", "standings",
                                            captured_at=now_str)
+
+                    # ML-3: Store form string (e.g. "WWDLW") directly on matches row
+                    home_form = None
+                    away_form = None
+                    for api_id, attr in [(home_team_api_id, "home"), (away_team_api_id, "away")]:
+                        row = next(
+                            (r for r in deduped if r.get("team_api_id") == api_id), None
+                        )
+                        if row and row.get("form"):
+                            if attr == "home":
+                                home_form = row["form"][:5]  # last 5 chars
+                            else:
+                                away_form = row["form"][:5]
+                    form_updates = {}
+                    if home_form:
+                        form_updates["form_home"] = home_form
+                    if away_form:
+                        form_updates["form_away"] = away_form
+                    if form_updates:
+                        try:
+                            get_client().table("matches").update(form_updates).eq(
+                                "id", match_id
+                            ).execute()
+                        except Exception:
+                            pass
+
     except Exception:
         pass
 
