@@ -34,7 +34,8 @@ When ready to accept real payments (switch from test → live mode):
 1. In Stripe dashboard: switch to **Live mode**
 2. Re-run `source venv/bin/activate && python scripts/setup_stripe.py` with live secret key → get live price IDs
 3. Update Vercel env vars: `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, all `STRIPE_*_PRICE_ID` and `STRIPE_*_PRODUCT_ID` vars → live values
-4. Create new webhook endpoint in Stripe **live mode** → `https://oddsintel.app/api/stripe/webhook` → same 3 events → copy new `whsec_` secret → update `STRIPE_WEBHOOK_SECRET` in Vercel
+4. Create new webhook endpoint in Stripe **live mode** → `https://www.oddsintel.app/api/stripe/webhook` → same 3 events → copy new `whsec_` secret → update `STRIPE_WEBHOOK_SECRET` in Vercel
+   > **Note:** Use `www.oddsintel.app` not `oddsintel.app` — Vercel redirects the bare domain to www with a 301, and Stripe does not follow redirects.
 5. Upgrade Supabase to Pro ($25/mo) — need point-in-time recovery before accepting real payments
 
 ---

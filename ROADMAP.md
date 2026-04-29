@@ -86,7 +86,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 **What's built:** Tier gating, match detail Pro sections (injuries, lineups, stats, events, ratings), value bets page, track record with real data, onboarding flow. Stripe checkout + webhook + portal + value-bets Elite gate.
 
-**Remaining:** Tier-aware API (B3 — Next.js strips fields by tier), value bets page redesign (F5), STRIPE_WEBHOOK_SECRET configured in Vercel (manual step after Stripe dashboard webhook setup).
+**Remaining:** Tier-aware API (B3 — Next.js strips fields by tier), value bets page redesign (F5).
 
 **Ready to launch when:** Stripe works, Pro users see odds/form/directional signals, free users see the gap.
 
