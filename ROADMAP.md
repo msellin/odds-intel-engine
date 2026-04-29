@@ -80,13 +80,13 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 ---
 
 ### Milestone 2 — Pro Tier Launch
-**Status:** 🔲 Not started — blocked on Stripe
+**Status:** 🟡 In progress — Stripe live, blocked on B3 (tier-aware API)
 
 **Goal:** First paying customers. Enough depth to justify €4.99/mo.
 
-**What's built:** Tier gating, match detail Pro sections (injuries, lineups, stats, events, ratings), value bets page, track record with real data, onboarding flow.
+**What's built:** Tier gating, match detail Pro sections (injuries, lineups, stats, events, ratings), value bets page, track record with real data, onboarding flow. Stripe checkout + webhook + portal + value-bets Elite gate.
 
-**Remaining:** Stripe integration (F8), tier-aware API (B3), value bets page redesign (F5).
+**Remaining:** Tier-aware API (B3 — Next.js strips fields by tier), value bets page redesign (F5), STRIPE_WEBHOOK_SECRET configured in Vercel (manual step after Stripe dashboard webhook setup).
 
 **Ready to launch when:** Stripe works, Pro users see odds/form/directional signals, free users see the gap.
 
@@ -134,7 +134,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | /value-bets | ✅ Built — needs tier gating |
 | /track-record | ✅ Real Supabase data |
 | /welcome onboarding | ✅ Built |
-| Stripe payments | ❌ Not built — blocking M2 |
+| Stripe payments | ✅ Built — checkout + webhook + portal + tier gating |
 
 ### Data coverage
 - Fixtures with any model data: ~200/467 (43%)
@@ -151,7 +151,8 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 - [x] Domain — oddsintel.app bought and connected to Vercel
 - [x] Google Search Console — verified, sitemap submitted
 - [x] Migration 009 applied in Supabase SQL editor
-- [ ] **Stripe** — create account + products (Pro €4.99/mo, Elite €14.99/mo), add keys to Vercel
+- [x] **Stripe** — products + price IDs created (test mode), checkout + webhook + portal built
+- [ ] **Stripe webhook endpoint** — Stripe dashboard → Developers → Webhooks → Add endpoint → `https://oddsintel.app/api/stripe/webhook` → events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted` → copy signing secret → add `STRIPE_WEBHOOK_SECRET` to Vercel
 - [ ] **GitHub secret** — add `SUPABASE_ACCESS_TOKEN` for DB migration workflow
 
 ---

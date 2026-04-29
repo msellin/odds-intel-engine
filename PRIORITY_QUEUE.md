@@ -42,7 +42,7 @@
 | 16 | META-2 | Meta-model feature design: drop raw fundamentals, keep market structure features | 2h design | ✅ Done 2026-04-29 | High | AI Analysis (2026-04-28) | Done | Features: `edge` (ensemble_prob−market_implied), `odds_drift`, `bookmaker_disagreement`, `overnight_line_move`, `model_disagreement`, `league_tier`, `news_impact_score`, `odds_volatility`. NOT ELO/form — market already priced those |
 | — | PIPE-1 | Clean pipeline: 9 single-purpose jobs replacing monolith | 1 day | ✅ Done 2026-04-29 | **Very High** | Data Analysis (2026-04-29) | Done | ①Fixtures(04:00) ②Enrichment(04:15/12/16) ③Odds(2h) ④Predictions(05:30) ⑤Betting(06:00) ⑥Live ⑦News ⑧Settlement. Removed Sofascore+BetExplorer. 192 matches with odds. Migration 014+015 |
 | 17 | B-ML3 | First meta-model: 8-feature logistic regression, target=pseudo_clv>0 | 1 day | ⬜ | Very High | Internal | ~May 9 | Train after ~3000+ pseudo-CLV rows. Features per META-2 design. See MODEL_ANALYSIS.md Stage 4 |
-| 18 | STRIPE | Stripe setup: Pro €4.99/mo + Elite €14.99/mo products, keys to Vercel | External | ⬜ | High | Internal | ~May 2026 | Blocking Milestone 2 |
+| 18 | STRIPE | Stripe setup: Pro €4.99/mo + Elite €14.99/mo products, keys to Vercel | External | ✅ Done 2026-04-29 | High | Internal | Done | Products + 6 price IDs created in Stripe test mode. Keys in .env + Vercel (Production). |
 | 19 | B3 | Tier-aware data API (Next.js layer strips fields by tier) | 1-2 days | ⬜ | High | Internal | ~May 2026 | Blocking Milestone 2 |
 | 20 | SENTRY | Sentry error monitoring (free tier) | 1h | ✅ Done | Medium | Internal | Done | @sentry/nextjs wired in frontend, DSN configured |
 
@@ -72,10 +72,10 @@
 | 26 | FE-LIVE | Live odds in-play on match detail (frontend only) | 1 day | ⬜ | Medium | ROADMAP Frontend Backlog #9 | ~May 2026 | `odds_snapshots` with `is_live=true` already populated. Frontend chart during live match. Pro tier feature |
 | 27 | MKT-STR | Wire market-implied team strength into XGBoost as input feature | 1 day | ⬜ | Medium | Internal (MODEL_ANALYSIS 11.3) | ~May 2026 | `compute_market_implied_strength()` exists in supabase_client.py but not wired into pipeline. Needs 200+ finished matches with odds first |
 | 28 | EXPOSURE-AUTO | Auto-reduce stakes on league exposure concentration | 1h | ⬜ | Medium | Internal (MODEL_ANALYSIS 11.6) | ~May 2026 | Currently warning-only. Add proportional stake reduction when 3+ bets same league same day. Low effort, pure risk management |
-| 29 | F8 | Stripe integration (Pro + Elite, webhook, tier column update) | 2-3 days | ⬜ | High | Internal | ~May 2026 | Blocking Milestone 2 |
-| — | LP-1 | Landing page: fix strikethrough pricing — badge instead of strikethrough on Pro/Elite cards | 15 min | ⬜ | Low | Landing Page Review (2026-04-29) | After Stripe | ~~€4.99~~ is misleading (implies it was higher). Show €4.99 with "Founders lock in €3.99/mo" badge only. No strikethrough needed |
-| — | LP-2 | Landing page: remove Elite annual pricing until a real annual discount exists | 15 min | ⬜ | Low | Landing Page Review (2026-04-29) | After Stripe | €9.99×12=€119.88≈€119.99 — no actual annual discount for Elite currently. Confusing to show it |
-| — | LP-3 | Landing page: consolidate Founding Member urgency — badge on cards OR banner, not both | 15 min | ⬜ | Low | Landing Page Review (2026-04-29) | After Stripe | Currently duplicated. Once Stripe is live and pricing is real, pick one placement for the scarcity message |
+| 29 | F8 | Stripe integration (Pro + Elite, webhook, tier column update) | 2-3 days | ✅ Done 2026-04-29 | High | Internal | Done | Checkout API, webhook handler, portal API. Profile page upgrade buttons live. Value-bets Elite-gated. |
+| — | LP-1 | Landing page: fix strikethrough pricing | 15 min | ✅ Done 2026-04-29 | Low | Landing Page Review (2026-04-29) | Done | No strikethrough was present — cards already show badge-only. Verified. |
+| — | LP-2 | Landing page: remove Elite annual pricing | 15 min | ✅ Done 2026-04-29 | Low | Landing Page Review (2026-04-29) | Done | Elite card never had annual pricing shown. Verified. |
+| — | LP-3 | Landing page: consolidate Founding Member urgency | 15 min | ✅ Done 2026-04-29 | Low | Landing Page Review (2026-04-29) | Done | Removed bottom banner. Card badges are single source of truth now. |
 
 ---
 
