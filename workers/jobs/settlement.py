@@ -171,7 +171,10 @@ def get_closing_odds(client, match_id: str, market: str, selection: str) -> floa
 def fetch_post_match_enrichment(client) -> dict:
     """
     T4: Half-time stats, T8: Match events, T12: Player stats.
-    Runs after settlement for all recently finished matches.
+    Runs after settlement for recently finished matches.
+
+    Skips matches already enriched (match_stats row exists) — idempotent.
+    Uses a single batch query instead of N+1 per-match queries.
     Returns counts dict.
     """
     from workers.api_clients.api_football import (
@@ -181,7 +184,7 @@ def fetch_post_match_enrichment(client) -> dict:
         get_fixture_players, parse_fixture_players,
     )
 
-    counts = {"stats": 0, "halftime": 0, "events": 0, "players": 0}
+    counts = {"stats": 0, "halftime": 0, "events": 0, "players": 0, "skipped": 0}
 
     yesterday_str = (date.today() - timedelta(days=1)).isoformat()
     today_str = date.today().isoformat()
@@ -196,14 +199,21 @@ def fetch_post_match_enrichment(client) -> dict:
     if not db_finished:
         return counts
 
-    # Which matches already have stats
-    match_ids_with_stats = set()
-    for m in db_finished:
-        existing = client.table("match_stats").select("match_id").eq(
-            "match_id", m["id"]
-        ).execute()
-        if existing.data:
-            match_ids_with_stats.add(m["id"])
+    all_match_ids = [m["id"] for m in db_finished]
+
+    # Batch query: which matches already have stats (single query, not N+1)
+    existing_stats = client.table("match_stats").select("match_id").in_(
+        "match_id", all_match_ids
+    ).execute()
+    match_ids_with_stats = {r["match_id"] for r in (existing_stats.data or [])}
+
+    # Batch query: look up home_team_api_id from match_injuries for all matches
+    inj_rows = client.table("match_injuries").select(
+        "match_id, team_api_id"
+    ).in_("match_id", all_match_ids).eq("team_side", "home").execute()
+    home_api_id_by_match: dict[str, int] = {
+        r["match_id"]: r["team_api_id"] for r in (inj_rows.data or []) if r.get("team_api_id")
+    }
 
     for match in db_finished:
         af_id = match.get("api_football_id")
@@ -212,20 +222,18 @@ def fetch_post_match_enrichment(client) -> dict:
 
         match_id = match["id"]
 
-        # Look up home_team_api_id from match_injuries (stored during morning enrichment)
-        home_api_id = None
-        inj_r = client.table("match_injuries").select("team_api_id").eq(
-            "match_id", match_id
-        ).eq("team_side", "home").limit(1).execute()
-        if inj_r.data:
-            home_api_id = inj_r.data[0].get("team_api_id")
+        # Skip if already enriched — the key idempotency check
+        if match_id in match_ids_with_stats:
+            counts["skipped"] += 1
+            continue
+
+        home_api_id = home_api_id_by_match.get(match_id)
 
         # ── T4 + Full stats: fetch full-match stats + half-time ────────────
         try:
             raw_full = get_fixture_statistics(af_id)
             full_stats = parse_fixture_stats(raw_full)
 
-            # Fetch half-time stats (T4)
             ht_response = get_fixture_statistics_halftime(af_id)
             ht_stats = parse_fixture_stats_halftime(ht_response)
 
@@ -424,7 +432,8 @@ def run_settlement():
             f"  {enrichment_counts['stats']} match stats | "
             f"{enrichment_counts['halftime']} with half-time | "
             f"{enrichment_counts['events']} events | "
-            f"{enrichment_counts['players']} player stat rows"
+            f"{enrichment_counts['players']} player stat rows | "
+            f"{enrichment_counts.get('skipped', 0)} already enriched (skipped)"
         )
     except Exception as e:
         console.print(f"  [yellow]Post-match enrichment error: {e}[/yellow]")
@@ -469,6 +478,39 @@ def run_settlement():
             run_post_mortem(client)
         except Exception as e:
             console.print(f"  [yellow]Post-mortem error (non-critical): {e}[/yellow]")
+
+
+def _normalize_bet_market(market: str) -> str:
+    """
+    Map bet market strings (as stored in simulated_bets) to odds_snapshots market values.
+    e.g. "1X2" → "1x2", "O/U" → "over_under_25"
+    """
+    m = market.strip().lower()
+    if m in ("1x2", "1×2"):
+        return "1x2"
+    if m in ("o/u", "ou", "over/under"):
+        return "over_under_25"
+    # Already in DB format (e.g. "over_under_25")
+    return m
+
+
+def _normalize_bet_selection(selection: str) -> str:
+    """
+    Map bet selection strings (as stored in simulated_bets) to odds_snapshots selection values.
+    e.g. "Home" → "home", "Over 2.5" → "over", "Under 2.5" → "under"
+    """
+    s = selection.strip().lower()
+    if s in ("home", "h"):
+        return "home"
+    if s in ("away", "a"):
+        return "away"
+    if s in ("draw", "d", "x"):
+        return "draw"
+    if s.startswith("over"):
+        return "over"
+    if s.startswith("under"):
+        return "under"
+    return s
 
 
 def _settle_pending_bets(client, pending: list, finished: list):
@@ -522,11 +564,16 @@ def _settle_pending_bets(client, pending: list, finished: list):
             away_name_display = (match["away_team"][0]["name"] if isinstance(match.get("away_team"), list)
                                 else match.get("away_team", {}).get("name", "?"))
 
-        # Get closing odds for CLV
+        # Get closing odds for CLV.
+        # Bets store market as "1X2"/"O/U" and selection as "Home"/"Over 2.5" etc.
+        # odds_snapshots uses "1x2"/"over_under_25" and "home"/"over" etc.
+        # Normalize before lookup so CLV is actually computed.
         match_id = match["id"]
-        market = bet["market"]
-        selection = bet["selection"]
-        closing_odds = get_closing_odds(client, match_id, market, selection)
+        raw_market = bet["market"]
+        raw_selection = bet["selection"]
+        odds_market = _normalize_bet_market(raw_market)
+        odds_selection = _normalize_bet_selection(raw_selection)
+        closing_odds = get_closing_odds(client, match_id, odds_market, odds_selection)
 
         # Settle
         settlement = settle_bet_result(bet, score_home, score_away, closing_odds)
