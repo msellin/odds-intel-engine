@@ -95,15 +95,59 @@ ESPN (free)                  -> Settlement results backup
                        Next.js Frontend (odds-intel-web) -> Vercel (not yet deployed)
 ```
 
-## Frontend Repo
-
-The frontend lives at `../odds-intel-web/` (sibling directory). It has its own `CLAUDE.md` with Next.js-specific rules. All shared project docs are here in the engine repo — do not create duplicate docs in the frontend repo.
-
-## Key Technical Details
+## Key Technical Details (Engine)
 
 - Python 3.14, dependencies in `requirements.txt`
 - Supabase for DB (PostgreSQL) — migrations in `supabase/migrations/`
 - GitHub Actions for automation — workflows in `.github/workflows/`
 - Credentials in `.env` (gitignored) — never commit secrets
 - Prediction model: Poisson + XGBoost blend with 3-tier fallback (A/B/C)
-- 6 paper trading bots running since 2026-04-27
+- 9 paper trading bots running since 2026-04-27
+
+---
+
+## Frontend (`../odds-intel-web/`)
+
+The frontend lives at `../odds-intel-web/` (sibling directory). All rules for it live here — do not create duplicate docs in the frontend repo.
+
+### Stack
+
+- Next.js 15 (App Router), TypeScript, Tailwind CSS
+- Auth + DB: Supabase (`createSupabaseServer()` in server components, `createBrowserClient()` in client components)
+- Payments: Stripe (checkout, webhook at `/api/stripe/webhook`, portal)
+- Error monitoring: Sentry
+- Deployment: Vercel
+
+### Tier Gating Rules
+
+Server-side gating is the only safe gating. Client-side gating hides UI but does not protect data.
+
+- Tier is read from `profiles.tier` (values: `free`, `pro`, `elite`) + `profiles.is_superadmin`
+- `isElite = is_superadmin || tier === 'elite'`
+- `isPro = isElite || tier === 'pro'` ← Elite users are always also Pro
+- Pro data (odds movement, events, lineups, stats, injuries) must only be **fetched** server-side when `isPro === true` — never fetch then conditionally hide client-side
+- Pass `isPro` and `isElite` as props down to any component that changes its rendering by tier — do not assume a component receives them without checking
+
+### Key Frontend Files
+
+| File | Purpose |
+|------|---------|
+| `src/lib/engine-data.ts` | All Supabase queries — data fetching layer |
+| `src/lib/signal-labels.ts` | Signal translation layer — raw floats → human labels |
+| `src/app/(app)/matches/[id]/page.tsx` | Match detail — server-side tier gating |
+| `src/app/(app)/value-bets/page.tsx` | Value bets — server-side tier gating |
+| `src/components/match-detail-free.tsx` | Free-tier match detail (pass `isPro` to suppress Pro CTAs for Pro/Elite users) |
+| `src/components/match-signal-summary.tsx` | Intelligence Summary (SUX-4) |
+| `src/components/signal-accordion.tsx` | Signal group accordion (SUX-5) |
+| `src/components/signal-delta.tsx` | Signal delta — what changed since last visit (SUX-9) |
+| `src/components/live-odds-chart.tsx` | Live in-play odds chart (FE-LIVE) |
+| `src/components/bet-explain-button.tsx` | LLM bet explanation button (BET-EXPLAIN) |
+| `src/app/api/bet-explain/route.ts` | Gemini API route — Elite only |
+| `src/app/api/live-odds/route.ts` | Live odds API route — Pro only |
+| `src/app/api/stripe/webhook/route.ts` | Stripe webhook handler |
+
+### Frontend Code Conventions
+
+- Server components fetch data; client components handle interaction — `"use client"` only when you need `useState`, `useEffect`, or browser APIs
+- Never expose `SUPABASE_SERVICE_ROLE_KEY` to the client
+- Select dropdowns: use `<SelectValue>{explicit display text}</SelectValue>` not `placeholder` — Radix Select doesn't resolve item label text until the dropdown is opened, causing the raw value string to display on first render
