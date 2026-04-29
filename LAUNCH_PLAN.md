@@ -11,12 +11,12 @@
 - oddsintel.app deployed on Vercel, domain connected, Google Search Console verified
 - Landing page, auth (login/signup), /matches, /matches/[id], /value-bets, /track-record, /welcome onboarding
 - Free tier features: prediction tracker, 1 daily AI value pick, community voting, favorites, match notes, interest score (🔥/⚡/—)
-- 6 paper trading bots running since 2026-04-27, pseudo-CLV tracked on ~280 matches/day
+- 9 paper trading bots running since 2026-04-27, pseudo-CLV tracked on ~280 matches/day
+- Signal intelligence grade + teasers + pulse indicator on every match (SUX-1/2/3)
 
 ### What's NOT ready
 - **Stripe production keys**: test mode is fully wired (checkout + webhook + portal + tier gating). Need live key swap before accepting real money — see INFRASTRUCTURE.md checklist
-- Track record: only 2 days of bot data — thin, but honest transparency is the right frame
-- Signal teasers (SUX-1/2/3): ✅ Done 2026-04-29
+- Track record: only a few days of bot data — thin, but honest transparency is the right frame
 - Email notifications: not built — no re-engagement loop yet
 - Data coverage: 43% of fixtures have model data (200/467) — most popular leagues are covered
 
@@ -62,7 +62,7 @@ Post across these subreddits, spaced over ~1 week. Do not cross-post the same te
 - Space posts across different days
 
 **Sample r/soccerbetting post hook:**
-> "I've been running 6 automated betting bots on paper money since last week, tracking CLV (closing line value) as the proof metric because results take too long to accumulate. Here's what the early data looks like. I also built a free tool to track this openly — happy to share if anyone's interested."
+> "I've been running 9 automated betting bots on paper money since last week, tracking CLV (closing line value) as the proof metric because results take too long to accumulate. Here's what the early data looks like. I also built a free tool to track this openly — happy to share if anyone's interested."
 
 ### Twitter/X
 

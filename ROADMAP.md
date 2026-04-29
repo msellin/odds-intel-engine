@@ -33,30 +33,41 @@ Annual: Pro €39.99/yr (€3.33/mo) · Elite €119.99/yr (€9.99/mo)
 
 ### What each tier includes
 
-**Free**
-- All 467 daily fixtures (teams, kickoff, league)
-- Live scores during matches
-- Odds from 2-3 bookmakers (not full comparison)
-- Match interest indicator (🔥 / ⚡ / —) based on data coverage
-- Today only — no historical view
+**Free** (anonymous + signed-in)
+- All ~467 daily fixtures with kickoff, league, venue, referee
+- Best available odds (single best price across all bookmakers we track)
+- H2H records and recent meetings
+- League standings + team form (last 5 matches)
+- Live scores during matches (auto-refresh)
+- Match intelligence grade (A/B/D) + signal teasers on notable matches
+- Match interest indicator (⚡ / 🔥 / —)
 
-**Pro**
+*Signed-in free additionally:*
+- Favourite teams + leagues → "My Matches" filtered view
+- Prediction tracker (log picks, track hit rate vs AI)
+- Daily free AI value pick (1 unlock per day)
+- Match notes (private journal)
+- Community prediction voting (1X2 poll)
+
+**Pro** (€4.99/mo)
 - Everything in Free
-- Full odds comparison across all bookmakers
-- Pre-match odds movement timeline
-- Team form, H2H, goals stats, standings
-- AI injury/suspension alerts per match
-- Directional model signal (Home lean / Away lean / Even — no raw %)
-- Full match history, not just today
+- Full odds comparison across all 13 bookmakers with best-price highlighting
+- Pre-match odds movement chart
+- AI injury & suspension alerts with player names
+- Confirmed lineups + formation view
+- Team season stats (goals avg, clean sheet %, most-used formation)
+- Post-match stats (shots, possession, corners, xG) + HT vs FT comparison
+- Player ratings
+- Match events timeline (goals, cards, subs)
+- *Coming — SUX-4:* Directional model signal (Home lean / Away lean / Even — no raw %)
 
-**Elite** ← launch when 60+ settled bets validated
+**Elite** ← launch when 60+ settled bets with positive ROI
 - Everything in Pro
-- Exact model probability % and edge %
-- Value bet list (what the model would pick today)
+- Full value bets page (all model picks today)
+- Exact model probability % and edge % per match
 - CLV tracking (beat the closing line analysis)
-- Natural language bet explanations (why we like this pick)
+- Natural language bet explanations — why the model likes a pick
 - Tips from top-performing bot once ROI validated
-- Early access to new league signals
 
 ### Key UX principle
 Everyone sees all matches. Depth of information varies by tier.
@@ -67,15 +78,13 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 ## Milestones
 
 ### Milestone 1 — Free Tier Launch
-**Status:** 🟡 In progress — blocked on F7 (Stitch redesign, awaiting designs)
+**Status:** ✅ Ready to promote — site live at oddsintel.app, Stripe set up, all core pages built.
 
 **Goal:** Public-facing product. Someone can find the site, see today's matches, understand what the product is, and sign up.
 
-**What's built:** Public matches page, auth, match detail (free + pro sections), interest score, live scores, track record, onboarding flow, legal pages, analytics, OG image.
+**What's built:** Public matches page, auth, match detail (free + pro sections with server-side tier gating), signal grade + teasers + pulse (SUX-1/2/3), live scores, track record, onboarding flow, legal pages, analytics, OG image. Stripe checkout + webhook + portal.
 
-**Remaining:** Stitch redesign (F7) — parked until after M1 go-live. Site is technically launchable now.
-
-**Blocking condition for launch:** Stripe account + products created (manual step — only Margus can do this).
+**Remaining (post-launch polish):** Stitch redesign (F7) — parked until after first users arrive. Pre-launch: add "Early Access / Beta" label (LAUNCH-BETA), make daily AI pick visible without login (LAUNCH-PICK).
 
 ---
 
@@ -88,7 +97,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 **Remaining:** Value bets page redesign (F5).
 
-**Ready to launch when:** Stripe works, Pro users see odds/form/directional signals, free users see the gap.
+**Ready to launch when:** Value bets page redesigned, Pro users see the full data gap vs Free.
 
 ---
 
@@ -99,7 +108,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 **Blocking condition:** Top-performing bot needs 60+ settled bets with positive ROI. At current pace (~5-10 bets/day), earliest: ~2 weeks from 2026-04-27.
 
-**What's built:** 6 paper trading bots running, tier B backtest script, bot validation tracker (check_bot_validation.py exits 1 when condition met).
+**What's built:** 9 paper trading bots running, tier B backtest script, bot validation tracker (check_bot_validation.py exits 1 when condition met).
 
 **Remaining:** Singapore/South Korea odds source (B6), value bets redesign (F5), tip tracking (F10).
 
@@ -130,8 +139,8 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | Landing page | ✅ Built |
 | Auth (login/signup) | ✅ Built |
 | /matches | ✅ Public, smart sort, dual layout, signal grade + pulse + teasers (SUX-1/2/3) |
-| /matches/[id] | ✅ Free + Pro sections |
-| /value-bets | ✅ Built — needs tier gating |
+| /matches/[id] | ✅ Free + Pro sections, server-side tier gating (B3) |
+| /value-bets | ✅ Built — Elite-only (TierGate + Stripe) |
 | /track-record | ✅ Real Supabase data |
 | /welcome onboarding | ✅ Built |
 | Stripe payments | ✅ Built — checkout + webhook + portal + tier gating |
@@ -170,7 +179,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 ## Bot Strategy
 
-The 6 paper trading bots running since 2026-04-27 are all based on **historical backtest data** — edge thresholds and league filters derived from football-data.co.uk 2007-2025 and beat_the_bookie 2005-2015. They answer: *"what worked in old data?"*
+The 9 paper trading bots running since 2026-04-27 are all based on **historical backtest data** — edge thresholds and league filters derived from football-data.co.uk 2007-2025 and beat_the_bookie 2005-2015. They answer: *"what worked in old data?"*
 
 **Never retire current bots when adding new ones.** They are the baseline — their ROI data is what proves (or disproves) whether new bots are better.
 
@@ -187,7 +196,7 @@ New bots planned based on live data accumulation:
 ## Notes & Context
 
 **Why bots are internal tools, not the product:**
-The 6 bots are validation instruments — they find which markets/leagues have real edge before we sell tips. The product is the picks from the best-performing bot.
+The 9 bots are validation instruments — they find which markets/leagues have real edge before we sell tips. The product is the picks from the best-performing bot.
 
 **Scotland League Two cross-era signal:**
 +12.3% ROI in mega backtest (2005-15) AND +21% in recent 2022-25 backtest. Two models, two eras, same direction. Most consistent signal we have.

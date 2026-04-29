@@ -559,8 +559,8 @@ All 4 reviewers identified these as unique positioning:
 
 ## Phase Dependencies
 
-- **Phase 1** — no blockers, signal data already exists in `match_signals` table
-- **Phase 2** — needs tier-aware data API (B3 in PRIORITY_QUEUE.md) to gate content by subscription
+- **Phase 1** — ✅ No blockers, signal data already exists in `match_signals` table. Done 2026-04-29.
+- **Phase 2** — ✅ Tier-aware data API (B3) complete — pro data stripped server-side. Stripe live. No remaining blockers.
 - **Phase 3** — needs signal event logging (timestamp when each signal was computed/updated)
-- **Phase 4** — needs Stripe integration (STRIPE/F8 in PRIORITY_QUEUE.md) for Elite tier to exist
+- **Phase 4** — ✅ Stripe + Elite tier live. Blocked only on data accumulation for CLV dashboard (needs settled bets).
 - **SUX-11** ("Why This Pick") builds on BET-EXPLAIN (#33) — share the LLM prompt work

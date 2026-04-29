@@ -26,11 +26,13 @@ Access levels for anonymous visitors, free signed-in users, and paid subscribers
 | Feature | Anonymous | Free | Pro | Elite |
 |---------|:---------:|:------------:|:-------------:|:-------------:|
 | Browse today's matches | Y | Y | Y | Y |
-| Best odds (1 bookmaker) | Y | Y | Y | Y |
+| Best available odds (single best price across all bookmakers) | Y | Y | Y | Y |
 | H2H records & recent meetings | Y | Y | Y | Y |
 | League standings & team form | Y | Y | Y | Y |
 | Live scores (auto-refresh) | Y | Y | Y | Y |
 | Venue & referee info | Y | Y | Y | Y |
+| Signal intelligence grade (A/B/D) + match pulse (⚡/🔥/—) | Y | Y | Y | Y |
+| Signal teasers on notable matches (2 hooks, no numbers) | Y | Y | Y | Y |
 | Full odds comparison (13 bookmakers) | — | — | Y | Y |
 | Odds movement chart (pre-match) | — | — | Y | Y |
 | Match events timeline | — | — | Y | Y |
@@ -61,11 +63,11 @@ Access levels for anonymous visitors, free signed-in users, and paid subscribers
 
 | Feature | Anonymous | Free | Pro | Elite |
 |---------|:---------:|:------------:|:-------------:|:-------------:|
+| Model prediction accuracy (public track record) | Y | Y | Y | Y |
 | Value bets page (all AI picks) | — | — | — | Y |
-| Model probability + edge % | — | — | — | Y |
+| Model probability + edge % per match | — | — | — | Y |
 | CLV tracking (closing line value) | — | — | — | Y |
-| Full track record & ROI analytics | — | — | — | Y |
-| Bot-validated strategy results | — | — | — | Y |
+| Full bot ROI analytics + strategy breakdown | — | — | — | Y |
 
 ---
 
