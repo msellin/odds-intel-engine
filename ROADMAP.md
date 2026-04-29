@@ -51,22 +51,26 @@ Annual: Pro €39.99/yr (€3.33/mo) · Elite €119.99/yr (€9.99/mo)
 
 **Pro** (€4.99/mo)
 - Everything in Free
-- Full odds comparison across all 13 bookmakers with best-price highlighting
-- Pre-match odds movement chart
+- Full odds comparison across all 13 bookmakers with best-price highlighting (1X2, O/U 2.5, BTTS, O/U 1.5, O/U 3.5)
+- Pre-match odds movement charts (1X2 + O/U 2.5)
+- Live in-play odds chart by match minute (FE-LIVE)
+- Intelligence Summary: top 5 signals in plain English with severity indicators (SUX-4/6)
+- Signal group accordion: Market, Team Quality, Context, News & Injuries (SUX-5)
+- Signal Delta: "what changed since your last visit" (SUX-9)
 - AI injury & suspension alerts with player names
 - Confirmed lineups + formation view
 - Team season stats (goals avg, clean sheet %, most-used formation)
 - Post-match stats (shots, possession, corners, xG) + HT vs FT comparison
 - Player ratings
 - Match events timeline (goals, cards, subs)
-- *Coming — SUX-4:* Directional model signal (Home lean / Away lean / Even — no raw %)
+- Value bets page — directional (match + selection + edge tier, no exact %)
 
 **Elite** ← launch when 60+ settled bets with positive ROI
 - Everything in Pro
-- Full value bets page (all model picks today)
-- Exact model probability % and edge % per match
+- Full value bets page: exact odds, model probability %, edge %, Kelly stake
+- Natural language bet explanations — "Why this pick?" powered by Gemini (BET-EXPLAIN)
+- Pro→Elite conversion hook in Intelligence Summary (model conclusion lock)
 - CLV tracking (beat the closing line analysis)
-- Natural language bet explanations — why the model likes a pick
 - Tips from top-performing bot once ROI validated
 
 ### Key UX principle
@@ -84,20 +88,18 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 **What's built:** Public matches page, auth, match detail (free + pro sections with server-side tier gating), signal grade + teasers + pulse (SUX-1/2/3), live scores, track record, onboarding flow, legal pages, analytics, OG image. Stripe checkout + webhook + portal.
 
-**Remaining (post-launch polish):** Stitch redesign (F7) — parked until after first users arrive. Pre-launch: add "Early Access / Beta" label (LAUNCH-BETA), make daily AI pick visible without login (LAUNCH-PICK).
+**Remaining (post-launch polish):** Stitch redesign (F7) — parked until after first users arrive. Pre-launch items done: Beta label (LAUNCH-BETA) ✅, daily AI pick visible without login (LAUNCH-PICK) ✅.
 
 ---
 
 ### Milestone 2 — Pro Tier Launch
-**Status:** 🟡 In progress — blocked on F5 (value bets page redesign)
+**Status:** ✅ Ready to launch — all blockers resolved
 
 **Goal:** First paying customers. Enough depth to justify €4.99/mo.
 
-**What's built:** Tier gating, match detail Pro sections (injuries, lineups, stats, events, ratings), value bets page, track record with real data, onboarding flow. Stripe checkout + webhook + portal + value-bets Elite gate.
+**What's built:** Tier gating, match detail Pro sections (injuries, lineups, stats, events, ratings, odds), value bets page (F5 redesign ✅), track record with real data, onboarding flow. Stripe checkout + webhook + portal. Intelligence Summary (SUX-4), Signal Accordion (SUX-5), Signal Delta (SUX-9), Live In-Play Chart (FE-LIVE). Value bets page: Free=teaser, Pro=directional, Elite=full.
 
-**Remaining:** Value bets page redesign (F5).
-
-**Ready to launch when:** Value bets page redesigned, Pro users see the full data gap vs Free.
+**Ready to promote.** Pro users now see a clear data gap vs Free — deep signal analysis, live in-play odds, full odds comparison.
 
 ---
 
@@ -139,11 +141,11 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | Landing page | ✅ Built |
 | Auth (login/signup) | ✅ Built |
 | /matches | ✅ Public, smart sort, dual layout, signal grade + pulse + teasers (SUX-1/2/3) |
-| /matches/[id] | ✅ Free + Pro sections, server-side tier gating (B3) |
-| /value-bets | ✅ Built — Elite-only (TierGate + Stripe) |
+| /matches/[id] | ✅ Free+Pro+Elite sections, server-side tier gating (B3), BTTS+O/U odds, Intelligence Summary (SUX-4/6/7), Signal Accordion (SUX-5), Signal Delta (SUX-9), Live in-play chart (FE-LIVE), Post-match signal reveal for Free (SUX-10) |
+| /value-bets | ✅ Tiered: Free=teaser+stats, Pro=directional picks, Elite=full table + BET-EXPLAIN |
 | /track-record | ✅ Real Supabase data |
 | /welcome onboarding | ✅ Built |
-| Stripe payments | ✅ Built — checkout + webhook + portal + tier gating |
+| Stripe payments | ✅ Built — checkout + webhook + portal + tier gating + annual billing toggle |
 
 ### Data coverage
 - Fixtures with any model data: ~200/467 (43%)
@@ -163,6 +165,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 - [x] **Stripe** — products + price IDs created (test mode), checkout + webhook + portal built
 - [x] **Stripe webhook endpoint** — endpoint created, `STRIPE_WEBHOOK_SECRET` added to Vercel
 - [ ] **GitHub secret** — add `SUPABASE_ACCESS_TOKEN` for DB migration workflow
+- [ ] **Vercel env var** — add `GEMINI_API_KEY` to Production (needed for BET-EXPLAIN `/api/bet-explain`)
 
 ---
 
