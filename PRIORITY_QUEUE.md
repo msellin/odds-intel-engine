@@ -76,6 +76,31 @@
 | — | LP-1 | Landing page: fix strikethrough pricing — badge instead of strikethrough on Pro/Elite cards | 15 min | ⬜ | Low | Landing Page Review (2026-04-29) | After Stripe | ~~€4.99~~ is misleading (implies it was higher). Show €4.99 with "Founders lock in €3.99/mo" badge only. No strikethrough needed |
 | — | LP-2 | Landing page: remove Elite annual pricing until a real annual discount exists | 15 min | ⬜ | Low | Landing Page Review (2026-04-29) | After Stripe | €9.99×12=€119.88≈€119.99 — no actual annual discount for Elite currently. Confusing to show it |
 | — | LP-3 | Landing page: consolidate Founding Member urgency — badge on cards OR banner, not both | 15 min | ⬜ | Low | Landing Page Review (2026-04-29) | After Stripe | Currently duplicated. Once Stripe is live and pricing is real, pick one placement for the scarcity message |
+
+---
+
+## Frontend UX — Completed (2026-04-29)
+
+> Full UX pass completed this session. All items below are done and pushed to main.
+
+| ID | Task | Notes |
+|----|------|-------|
+| LP-0 | Landing page full rewrite | New headline, product mockup, pricing before comparison table, FAQ, trust stats, 23 items |
+| A-1/A-2/A-3 | Profile page redesign | Dynamic starred leagues, auto-save, quick-add popular leagues |
+| A-4 | My Matches empty state copy | Clearer call to action matching new profile language |
+| B-1 | Model accuracy component | Public, all users, no login required |
+| B-2 | Track record login gate removed | `/track-record` is now fully public |
+| B-3 | Confidence tier filter | All / Confident 50%+ / Strong 60%+ — stats update per filter |
+| B-4/B-5 | Confidence tooltip + explanation banner | Explains statistical confidence vs value bet edge |
+| B-6 | `/how-it-works` page | Model explanation, 58 signals breakdown, correct tier info (Pro=match intel, Elite=value bets), FAQ |
+| C-1 | Date tooltip on matches page | "Date picker coming soon" hint |
+| C-2 | Odds column H/X/A header + tooltip | Decimal odds explained, best-value highlighting |
+| C-3 | Match detail tooltips | Best Odds (decimal explained), Data Coverage grade (A/B/C/D), Interest indicator (🔥/⚡/—) |
+| C-4 | My Picks empty state | Explains exactly how to make a pick, teaser about hit rate comparison |
+| C-5 | Edge % tooltip on value bets | Model prob minus implied prob, colour-coded examples |
+| C-6 | Value bets gate | Blurred preview + feature explanation + sign-in modal trigger |
+| BONUS | Login modal system | `openLoginModal()` from anywhere via AuthContext, renders in app layout |
+| BONUS | Signup banner uses modal | Matches page sign-up CTA triggers modal instead of navigating away |
 | 30 | F5 | Value bets page redesign (free=teaser, Pro=directional, Elite=full picks) | 1-2 days | ⬜ | High | Internal | ~May 2026 | Blocking Milestone 3 |
 | 31 | ALN-1 | Dynamic alignment thresholds (300+ settled bot bets → ROI by alignment bin) | 2h | ⬜ | High | Internal | ~June 2026 | Needs actual placed bets — pseudo-CLV does NOT substitute |
 | 32 | VAL-POST-MORTEM | Review 14 days of LLM post-mortem patterns | 30 min | ⬜ | Medium | Internal (MODEL_ANALYSIS 11.4) | May 13+ | `SELECT notes FROM model_evaluations WHERE market = 'post_mortem' ORDER BY date DESC LIMIT 14;` — check if loss categories consistent. Decides if post-mortem feature is valuable |

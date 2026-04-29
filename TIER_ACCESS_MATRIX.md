@@ -109,10 +109,11 @@ All new tables have RLS policies: users can only read/write their own data.
 | `/matches` | Public |
 | `/matches/[id]` | Public (pro sections gated in UI) |
 | `/login`, `/signup` | Public |
-| `/my-picks` | Authenticated |
+| `/track-record` | Public (model accuracy section); bot P&L superadmin only |
+| `/how-it-works` | Public |
+| `/my-picks` | Authenticated (login modal if not signed in) |
 | `/profile` | Authenticated |
-| `/value-bets` | Authenticated + `elite` tier (TierGate) |
-| `/track-record` | Authenticated + superadmin only |
+| `/value-bets` | Authenticated (shows ValueBetsGate with modal for anon; TierGate for non-Elite) |
 
 ---
 
@@ -124,10 +125,17 @@ All new tables have RLS policies: users can only read/write their own data.
 - [x] Match notes (auto-save on match detail)
 - [x] Community sentiment voting (1X2 poll)
 - [x] Saved matches DB schema (frontend TBD)
-- [x] Updated signup page with new free tier perks
-- [x] Updated landing page pricing section
-- [x] SQL migration for all new tables
+- [x] Updated landing page (full rewrite, 23 items)
+- [x] SQL migration for all new tables (in odds-intel-engine/supabase/migrations/)
+- [x] Track record public (model accuracy, no login required)
+- [x] Login modal (replaces page redirects — openLoginModal() from anywhere)
+- [x] Value bets gate (blurred preview + sign-in modal for anon users)
+- [x] How it works page (/how-it-works — tier comparison, 58 signals, FAQ)
+- [x] Profile page redesign (dynamic leagues, auto-save, quick-add)
+- [x] Confidence tier filter on track record (All / Confident 50%+ / Strong 60%+)
+- [x] Tooltips: odds, date, data coverage, interest score, edge %, match detail signals
 - [ ] Match alerts & notifications (email/push)
 - [ ] Weekly performance summary email
 - [ ] Dark mode / theme persistence toggle
 - [ ] Stripe integration for paid tier upgrades
+- [ ] Tier-aware data API (B3 — strip fields by tier in Next.js layer)
