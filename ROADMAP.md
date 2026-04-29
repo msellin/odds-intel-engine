@@ -80,13 +80,13 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 ---
 
 ### Milestone 2 — Pro Tier Launch
-**Status:** 🟡 In progress — Stripe live, blocked on B3 (tier-aware API)
+**Status:** 🟡 In progress — blocked on F5 (value bets page redesign)
 
 **Goal:** First paying customers. Enough depth to justify €4.99/mo.
 
 **What's built:** Tier gating, match detail Pro sections (injuries, lineups, stats, events, ratings), value bets page, track record with real data, onboarding flow. Stripe checkout + webhook + portal + value-bets Elite gate.
 
-**Remaining:** Tier-aware API (B3 — Next.js strips fields by tier), value bets page redesign (F5).
+**Remaining:** Value bets page redesign (F5).
 
 **Ready to launch when:** Stripe works, Pro users see odds/form/directional signals, free users see the gap.
 
