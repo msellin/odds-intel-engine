@@ -1,6 +1,6 @@
 # OddsIntel — Infrastructure & Costs
 
-> Last updated: 2026-04-29
+> Last updated: 2026-04-29 — Supabase upgraded to Pro
 
 ---
 
@@ -8,7 +8,7 @@
 
 | Service | Role | Plan | Status |
 |---------|------|------|--------|
-| **Supabase** | PostgreSQL DB, Auth, RLS, REST API | Free | Active |
+| **Supabase** | PostgreSQL DB, Auth, RLS, REST API | **Pro ($25/mo)** | Active — upgraded 2026-04-29 |
 | **GitHub Actions** | 4 scheduled workflows (engine automation) | Free (public repos) | Active |
 | **GitHub** | Source control (2 repos, both public) | Free | Active |
 | **Vercel** | Frontend hosting (Next.js 16) | Hobby (free) | Active (oddsintel.app) |
@@ -36,7 +36,7 @@ When ready to accept real payments (switch from test → live mode):
 3. Update Vercel env vars: `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, all `STRIPE_*_PRICE_ID` and `STRIPE_*_PRODUCT_ID` vars → live values
 4. Create new webhook endpoint in Stripe **live mode** → `https://www.oddsintel.app/api/stripe/webhook` → same 3 events → copy new `whsec_` secret → update `STRIPE_WEBHOOK_SECRET` in Vercel
    > **Note:** Use `www.oddsintel.app` not `oddsintel.app` — Vercel redirects the bare domain to www with a 301, and Stripe does not follow redirects.
-5. Upgrade Supabase to Pro ($25/mo) — need point-in-time recovery before accepting real payments
+5. ~~Upgrade Supabase to Pro ($25/mo)~~ — ✅ Done 2026-04-29
 
 ---
 
@@ -58,37 +58,39 @@ Monthly estimate: **~11,280 min/month**
 
 ---
 
-## Supabase Usage
+## Supabase Usage (Pro plan — upgraded 2026-04-29)
 
-| Resource | Free Tier Limit | Current Usage | Headroom |
-|----------|----------------|---------------|----------|
-| Database size | **500 MB** (official limit — disk includes WAL + indexes) | ~130 MB | ~4-6 months at current rate |
-| Database (rows) | — | odds_snapshots ~416K, matches ~816, predictions ~590 | Fine |
-| Auth MAU | 50,000 | 2 users | Plenty |
-| Storage | 1 GB | Not used | N/A |
-| Bandwidth | 2 GB | Low | Plenty |
-| Compute/RAM | Shared CPU, 500 MB RAM | Low | Fine |
-| Backups | None (7-day log retention only) | — | **Upgrade before real payments** |
-| Project pausing | Pauses after 1 week inactivity | Active | Keep workflows running |
+| Resource | Pro Limit | Current Usage (2026-04-29) | Headroom |
+|----------|-----------|---------------------------|----------|
+| Database size | **8 GB** | ~150-200 MB (845K odds_snapshots rows, 2 days data) | Massive — years |
+| Database (rows) | — | odds_snapshots 845K, matches 885, predictions 590, match_signals 2,701 | Fine |
+| Auth MAU | 100,000 | 2 users | Plenty |
+| Storage | 100 GB | Not used | N/A |
+| Bandwidth | 5 GB/mo | Low | Plenty |
+| Backups | ✅ Daily automated + PITR (7 days) | Active | — |
+| Project pausing | Never pauses | Active | — |
+| Custom SMTP | ✅ Available | Not yet configured | Needed for STRIPE-EMAIL task |
 
-**Daily pruning active** (runs after settlement at 21:00 UTC): `odds_snapshots` keeps only opening + closing per finished match, deleting intermediates. Steady-state growth is ~6K rows/day from historical opening+closing accumulation + ~420K rows constant for upcoming matches.
+**Odds snapshot growth pattern** (observed): Pipeline started April 27 — 845K rows in 2 days.
+- Steady-state: ~600 scheduled matches × ~1,400 rows each = ~840K rows constant for upcoming matches
+- After finishing + pruning: scheduled matches shrink from ~1,400 rows to ~22 rows (opening + closing only)
+- Daily pruning runs after settlement (21:00 UTC) via `scripts/prune_odds_snapshots.py --apply`
+- At 120 bytes/row steady state: ~100-200 MB for odds_snapshots. Well within 8 GB Pro limit.
 
-**Projected DB size:**
-- Now: ~130 MB
-- 3 months: ~200 MB
-- 6 months: ~300 MB
-- 500 MB limit hit: ~9-12 months at current rate (earlier if user growth adds data)
-
-**When to upgrade:** Supabase Pro ($25/mo) is needed:
-- **Before accepting real payments** — no automatic backups on free tier, point-in-time recovery requires Pro
-- If DB approaches 400 MB (leave 100 MB buffer)
-- If Auth MAU approaches 50K
+**When to watch next:** If expanding to new sports (tennis, basketball) — each adds a comparable snapshot volume.
 
 ---
 
-## Current Monthly Cost: ~€27 ($29)
+## Current Monthly Cost: ~€52 ($54)
 
-API-Football Ultra is the only paid service. Everything else runs on free tiers. Both repos are public.
+| Service | Plan | Monthly Cost |
+|---------|------|-------------|
+| API-Football | Ultra | ~€27 ($29) |
+| Supabase | Pro | ~€23 ($25) |
+| Domain | oddsintel.app | ~€1 amortized |
+| **Total** | | **~€51/mo** |
+
+All other services (Vercel, GitHub Actions, Gemini, Sentry, Kambi, ESPN) on free tiers.
 
 See `DATA_SOURCES.md` for full data architecture, migration plan, and alternatives evaluation.
 
@@ -96,30 +98,21 @@ See `DATA_SOURCES.md` for full data architecture, migration plan, and alternativ
 
 ## Cost Projections by Phase
 
-### Phase 1: Free Tier Launch (Milestone 1)
+### Phase 1 + Phase 2: Current State (Milestone 1 live, Milestone 2 ready)
+
+> Supabase Pro was added proactively before Stripe production keys — no longer a separate phase cost event.
 
 | Service | Plan | Monthly Cost |
 |---------|------|-------------|
-| Supabase | Free | €0 |
+| **Supabase** | **Pro** ✅ upgraded 2026-04-29 | ~€23 ($25) |
 | Vercel | Hobby | €0 |
-| Vercel Analytics | Included | €0 |
+| Stripe | Per-transaction (when live) | ~€1-3/mo (few customers) |
 | Sentry | Free | €0 |
 | GitHub Actions | Free (public) | €0 |
 | Gemini API | Free | €0 |
 | **API-Football** | **Ultra** | **~€27 ($29)** |
-| Domain | .ai domain (yearly) | ~€1/mo amortized |
-| **Total** | | **~€28/mo** |
-
-### Phase 2: Pro Launch — First Paying Users (Milestone 2)
-
-| Service | Plan | Monthly Cost |
-|---------|------|-------------|
-| Supabase | **Pro** (backups before payments) | $25/mo (~€23) |
-| Vercel | Hobby | €0 |
-| Stripe | Per-transaction | ~€1-3/mo (few customers) |
-| Sentry | Free | €0 |
-| Domain | | ~€1/mo |
-| **Total** | | **~€27/mo** |
+| Domain | oddsintel.app | ~€1/mo amortized |
+| **Total** | | **~€52/mo** |
 
 ### Phase 3: Growing (50-200 users)
 
@@ -151,11 +144,14 @@ See `DATA_SOURCES.md` for full data architecture, migration plan, and alternativ
 
 | Subscribers | Plan Mix | Monthly Revenue | Monthly Costs | Net |
 |-------------|----------|----------------|---------------|-----|
-| 0 | — | €0 | €0 | €0 |
-| 5 | 5 Pro | €25 | ~€27 | **-€2** |
-| 10+2 | 10 Pro, 2 Elite | €80 | ~€55 | **+€25** |
-| 50+10 | 50 Pro, 10 Elite | €400 | ~€100 | **+€300** |
+| 0 | — | €0 | ~€52 | **-€52** |
+| 5 | 5 Pro | €25 | ~€52 | **-€27** |
+| 11+1 | 11 Pro, 1 Elite | €70 | ~€52 | **~break-even** |
+| 20+3 | 20 Pro, 3 Elite | €145 | ~€55 | **+€90** |
+| 50+10 | 50 Pro, 10 Elite | €400 | ~€75 | **+€325** |
 | 200+50 | 200 Pro, 50 Elite | €1,748 | ~€200 | **+€1,548** |
+
+> Break-even is 11 Pro + 1 Elite subscribers, or ~14 Pro-equivalent subscriptions. Costs based on current stack: API-Football Ultra ($29) + Supabase Pro ($25) + domain (€1).
 
 > Stripe takes 1.5% + €0.25/txn for EU cards, 2.9% + €0.25 for non-EU. Revenue based on Pro €4.99/mo, Elite €14.99/mo.
 
@@ -185,7 +181,7 @@ The live tracker (132 runs/day, ~9,900 min/month) is the expensive workflow. Git
 ## Key Decisions & Notes
 
 - **Repos are public** — keeps GitHub Actions free (saves ~$74/mo). No secrets in code; all credentials in `.env` (gitignored) and GitHub Secrets.
-- **Supabase Pro is the first real cost** — upgrade before accepting payments (need backups).
+- **Supabase Pro** — upgraded 2026-04-29. Daily backups + PITR active. 8 GB DB limit vs 500 MB free.
 - **No paid odds APIs yet** — Kambi is free/public. OddAlerts or BSD Sports Data API are candidates if we need broader bookmaker coverage later.
 - **Gemini 2.5 Flash is near-free** — even at 4x/day, costs ~$1.20/month. Won't be a cost concern.
 - **Live tracker is the heaviest workflow** — 132 runs/day. If GitHub ever throttles, move to Railway/Fly.io free tier or a €5/mo VPS.

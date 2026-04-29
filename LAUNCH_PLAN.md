@@ -1,6 +1,6 @@
 # OddsIntel — Launch Plan
 
-> Written 2026-04-29. Updated 2026-04-29. Stripe test mode fully wired — checkout, webhook, portal, tier gating all built. Awaiting production key swap before accepting real payments.
+> Written 2026-04-29. Updated 2026-04-29 (audit + Supabase Pro upgrade). Stripe test mode fully wired — checkout, webhook, portal, tier gating all built. Supabase upgraded to Pro. **Phase 1 (organic) is unblocked and can start now. Phase 3 (paid ads + real payments) needs Stripe production keys only.**
 > Use this doc to brief another agent or resume after ongoing tasks complete.
 
 ---
@@ -15,10 +15,10 @@
 - Signal intelligence grade + teasers + pulse indicator on every match (SUX-1/2/3)
 
 ### What's NOT ready
-- **Stripe production keys**: test mode is fully wired (checkout + webhook + portal + tier gating). Need live key swap before accepting real money — see INFRASTRUCTURE.md checklist
-- Track record: only a few days of bot data — thin, but honest transparency is the right frame
-- Email notifications: not built — no re-engagement loop yet
-- Data coverage: 43% of fixtures have model data (200/467) — most popular leagues are covered
+- **Stripe production keys**: test mode is fully wired (checkout + webhook + portal + tier gating). Need live key swap before accepting real money — see INFRASTRUCTURE.md checklist. **Supabase Pro is now done (2026-04-29) — this was the only other blocker.**
+- Track record: ~56 settled bot bets, 2 days of data — thin, but honest transparency is the right frame. Gets meaningfully stronger at ~2 weeks (mid-May).
+- Email notifications: not built — no welcome email on signup, no re-engagement loop yet (STRIPE-EMAIL task)
+- Data coverage: ~67% of fixtures have model data (590 predictions / 885 matches) — most popular leagues covered
 
 ---
 
@@ -30,13 +30,18 @@
 
 ---
 
-## Phase 0 — Pre-launch prep (1-2 days)
+## Phase 0 — Pre-launch prep ✅ Essentially complete
 
-- [ ] Add "Early Access / Beta" framing to site header or landing page
-- [ ] Make daily AI pick visible without login on /matches or landing page
+- [x] Add "Early Access / Beta" framing — Beta badge in nav (LAUNCH-BETA, done 2026-04-29)
+- [x] Make daily AI pick visible without login on /matches — DailyValueTeaser anon branch (LAUNCH-PICK, done 2026-04-29)
 - [x] Fix LP-1, LP-2, LP-3 pricing display issues — done 2026-04-29
-- [ ] Ensure /welcome onboarding clearly explains what happens next after signup
-- [ ] Write the Reddit post (see Phase 1 template below)
+- [x] Supabase Pro — upgraded 2026-04-29 (PITR + daily backups active)
+- [x] Founding member pricing caps enforced in code (500 Pro / 200 Elite)
+- [x] Legal pages (privacy, terms) — live
+- [x] Sitemap + robots.txt — live
+- [x] SEO metadata (title, description, OG tags) — live
+- [ ] Ensure /welcome onboarding explains daily pick timing + pipeline schedule — *minor polish, not blocking*
+- [ ] Write and post the Reddit thread (see Phase 1 template below) — *manual action, do this to launch Phase 1*
 
 ---
 
@@ -155,11 +160,14 @@ Annual: Pro €39.99/yr (shown on landing page) · Elite annual not shown yet (n
 
 ---
 
-## What to Do Today (ordered)
+## Launch Day Checklist (ordered)
 
-1. Add "Early Access" framing to site
-2. Make daily AI pick visible on /matches without login
-3. ~~Fix LP-1/LP-2/LP-3 pricing issues~~ — done 2026-04-29
-4. Write and post r/soccerbetting Reddit thread
-5. Start daily pick posting on Twitter
-6. Swap Stripe to production keys when ready to accept real payments (see INFRASTRUCTURE.md)
+> Phase 0 is done. To start Phase 1 now, only 2 manual actions remain.
+
+1. ~~Add "Early Access" framing~~ — ✅ done
+2. ~~Make daily AI pick visible without login~~ — ✅ done
+3. ~~Fix LP-1/LP-2/LP-3 pricing issues~~ — ✅ done
+4. ~~Supabase Pro~~ — ✅ done 2026-04-29
+5. **Write and post r/soccerbetting Reddit thread** ← do this to launch Phase 1
+6. **Start daily pick posting on Twitter** ← do this to launch Phase 1
+7. Swap Stripe to production keys when ready to accept real payments — see INFRASTRUCTURE.md 4-step checklist (Supabase Pro is already done)
