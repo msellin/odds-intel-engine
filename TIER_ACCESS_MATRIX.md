@@ -138,5 +138,5 @@ All new tables have RLS policies: users can only read/write their own data.
 - [ ] Weekly performance summary email
 - [ ] Dark mode / theme persistence toggle
 - [x] Stripe integration for paid tier upgrades (checkout + webhook + portal, profile upgrade buttons)
-- [ ] STRIPE_WEBHOOK_SECRET — add to Vercel after creating webhook endpoint in Stripe dashboard
+- [x] STRIPE_WEBHOOK_SECRET — configured in Vercel
 - [ ] Tier-aware data API (B3 — strip fields by tier in Next.js layer)

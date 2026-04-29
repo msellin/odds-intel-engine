@@ -152,7 +152,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 - [x] Google Search Console — verified, sitemap submitted
 - [x] Migration 009 applied in Supabase SQL editor
 - [x] **Stripe** — products + price IDs created (test mode), checkout + webhook + portal built
-- [ ] **Stripe webhook endpoint** — Stripe dashboard → Developers → Webhooks → Add endpoint → `https://oddsintel.app/api/stripe/webhook` → events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted` → copy signing secret → add `STRIPE_WEBHOOK_SECRET` to Vercel
+- [x] **Stripe webhook endpoint** — endpoint created, `STRIPE_WEBHOOK_SECRET` added to Vercel
 - [ ] **GitHub secret** — add `SUPABASE_ACCESS_TOKEN` for DB migration workflow
 
 ---
