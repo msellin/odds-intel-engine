@@ -62,20 +62,27 @@ Monthly estimate: **~11,280 min/month**
 
 | Resource | Free Tier Limit | Current Usage | Headroom |
 |----------|----------------|---------------|----------|
-| Database (disk) | ~2 GB (dashboard shows disk quota, includes WAL + indexes) | ~130 MB | Plenty — months of runway |
+| Database size | **500 MB** (official limit — disk includes WAL + indexes) | ~130 MB | ~4-6 months at current rate |
 | Database (rows) | — | odds_snapshots ~416K, matches ~816, predictions ~590 | Fine |
 | Auth MAU | 50,000 | 2 users | Plenty |
 | Storage | 1 GB | Not used | N/A |
 | Bandwidth | 2 GB | Low | Plenty |
-| Edge Functions | 500K invocations | Not used | N/A |
-| Realtime connections | 200 concurrent | Not used | N/A |
+| Compute/RAM | Shared CPU, 500 MB RAM | Low | Fine |
+| Backups | None (7-day log retention only) | — | **Upgrade before real payments** |
+| Project pausing | Pauses after 1 week inactivity | Active | Keep workflows running |
 
-**Daily pruning active** (runs after settlement at 21:00 UTC): `odds_snapshots` keeps only opening + closing per finished match. Steady-state size is ~upcoming matches only. DB growth is now slow and bounded.
+**Daily pruning active** (runs after settlement at 21:00 UTC): `odds_snapshots` keeps only opening + closing per finished match, deleting intermediates. Steady-state growth is ~6K rows/day from historical opening+closing accumulation + ~420K rows constant for upcoming matches.
 
-**When to upgrade:** Supabase Pro ($25/mo) will be needed when:
-- You want daily backups / point-in-time recovery — **required before accepting real payments**
-- Auth MAU exceeds 50K (very long way off)
-- DB genuinely exceeds the disk quota (months away at current rate)
+**Projected DB size:**
+- Now: ~130 MB
+- 3 months: ~200 MB
+- 6 months: ~300 MB
+- 500 MB limit hit: ~9-12 months at current rate (earlier if user growth adds data)
+
+**When to upgrade:** Supabase Pro ($25/mo) is needed:
+- **Before accepting real payments** — no automatic backups on free tier, point-in-time recovery requires Pro
+- If DB approaches 400 MB (leave 100 MB buffer)
+- If Auth MAU approaches 50K
 
 ---
 
