@@ -418,7 +418,7 @@ Never show raw numbers without context. Translate everything:
 
 **Goal:** Turn the static match page into a living analysis that builds toward kickoff. The retention play.
 
-### SUX-8: Signal Timeline Component
+### SUX-8: Signal Timeline Component ⬜ (~June 2026)
 
 Vertical stepping-line (like GitHub commit history) showing signal events chronologically:
 
@@ -444,7 +444,7 @@ Vertical stepping-line (like GitHub commit history) showing signal events chrono
 - **Pro:** All signal updates with values
 - **Elite:** How each update affected the model's prediction ("Lineup confirmation moved Home probability from 54.1% to 57.8%")
 
-### SUX-9: Signal Delta ("what changed since last visit")
+### SUX-9: Signal Delta ("what changed since last visit") ✅ Done 2026-04-29
 
 ```
 Since you last checked:
@@ -456,6 +456,7 @@ Since you last checked:
 Requires tracking last-visited timestamp per user per match. Creates habit, trust, and return visits.
 
 ### SUX-10: Post-Match Signal Reveal (Free) ✅ Done 2026-04-29
+
 
 After settlement, show one interesting retrospective signal to Free users:
 
@@ -559,8 +560,8 @@ All 4 reviewers identified these as unique positioning:
 
 ## Phase Dependencies
 
-- **Phase 1** — ✅ No blockers, signal data already exists in `match_signals` table. Done 2026-04-29.
-- **Phase 2** — ✅ Tier-aware data API (B3) complete — pro data stripped server-side. Stripe live. No remaining blockers.
-- **Phase 3** — needs signal event logging (timestamp when each signal was computed/updated)
-- **Phase 4** — ✅ Stripe + Elite tier live. Blocked only on data accumulation for CLV dashboard (needs settled bets).
+- **Phase 1** — ✅ Complete (2026-04-29). SUX-1/2/3 all done.
+- **Phase 2** — ✅ Complete (2026-04-29). SUX-4/5/6/7/9/10 all done. FE-LIVE + BET-EXPLAIN also done.
+- **Phase 3** — ⬜ SUX-8 (Signal Timeline) is the only remaining item. Needs ~2-3 days. Parked ~June 2026. SUX-9/10 were done as part of Phase 2 session.
+- **Phase 4** — ⬜ SUX-11/12 parked. Blocked on data accumulation for CLV dashboard (needs 60+ settled bets with ROI). Stripe + Elite tier live.
 - **SUX-11** ("Why This Pick") builds on BET-EXPLAIN (#33) — share the LLM prompt work
