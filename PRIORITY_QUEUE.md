@@ -1,9 +1,8 @@
 # OddsIntel — Master Priority Queue
 
-> Single source of truth for all open tasks across ROADMAP.md, BACKLOG.md, and MODEL_ANALYSIS.md.
-> Synthesised after two rounds of external AI architecture review (2026-04-27 and 2026-04-28).
-> Update status here as tasks complete; propagate back to source docs.
-> Last updated: 2026-04-29 — added 12 Signal UX tasks (SUX-1 through SUX-12) from 4 independent UX reviews; added Source + Impact + Timeline columns; 11 new tasks from AI analysis round 2; 8 previously missing tasks from MODEL_ANALYSIS/ROADMAP cross-check
+> Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
+> Other docs may describe features but ONLY this file tracks task status.
+> Last updated: 2026-04-29 — consolidated from ROADMAP, MODEL_ANALYSIS, SIGNAL_UX_ROADMAP, TIER_ACCESS_MATRIX, DATA_SOURCES, LAUNCH_PLAN, WORKFLOWS
 
 ---
 
@@ -89,6 +88,14 @@
 | 66 | SUX-9 | Signal Delta — "what changed since last visit" | 1 day | ⬜ | Medium | UX Review (2026-04-29) | ~June 2026 | Track last-visited timestamp per user per match. Show diff: "+ Steam move toward Away, + Lineups confirmed". Creates habit + return visits |
 | 67 | SUX-10 | Post-match signal reveal for Free users | 4h | ⬜ | Medium | UX Review (2026-04-29) | ~June 2026 | After settlement, show 1 retrospective insight: "Our signals detected sharp movement 4h before kickoff. Home won 2-0." Proves signal value, drives Free→Pro |
 
+| — | PIPE-2 | Strip fetch code from betting_pipeline.py (Phase 2) | 2-3h | ⬜ | Medium | Internal (2026-04-29) | ~May 2026 | betting_pipeline.py currently wraps monolith. Phase 2: read from DB only, delete daily_pipeline_v2.py |
+| — | ODDS-API | Activate The Odds API for Pinnacle odds ($20/mo) | 2h | ⬜ | High | Data Analysis (2026-04-29) | ~May 2026 | Code exists (254 lines, dormant). Pinnacle = gold standard for CLV. Depends on PIN-1 validation |
+| — | LAUNCH-BETA | Add "Early Access / Beta" label to site | 15 min | ⬜ | Medium | Launch Plan (2026-04-29) | Before any promotion | Resets credibility bar, makes thin track record acceptable |
+| — | LAUNCH-PICK | Make daily AI pick visible without login on /matches | 2-4h | ⬜ | High | Launch Plan (2026-04-29) | Before any promotion | The hook for organic traffic — currently requires login |
+| — | ALERTS | Match alerts & notifications (email/push) | 2-3 days | ⬜ | Medium | Tier Access Matrix | ~June 2026 | Re-engagement loop. No system for this yet |
+| — | EMAIL-WEEKLY | Weekly performance summary email | 1 day | ⬜ | Medium | Tier Access Matrix | ~June 2026 | Shows bot ROI, top picks, CLV stats. Retention play |
+| — | AF-EVAL | Evaluate AF Pro tier ($19/mo, 7.5K req/day) vs Ultra ($29/mo) | Research | ⬜ | Low | Data Sources | ~June 2026 | After 4-6 weeks of data, check if we need 75K or 7.5K is enough |
+
 ---
 
 ## Tier 3 — 1-2 Months
@@ -96,7 +103,7 @@
 | # | ID | Task | Effort | Status | Impact | Source | Timeline | Notes |
 |---|-----|------|--------|--------|--------|--------|----------|-------|
 | 34 | HIST-BACKFILL | Backfill historical match data using spare API quota | 2-3 days | ⬜ | Very High | Internal (MODEL_ANALYSIS 11.3) | ~May-June 2026 | ~67K spare req/day. Fetch historical matches + stats + 13-bookmaker odds. Accelerates XGBoost retraining timeline from months to weeks |
-| 35 | B6 | Singapore/South Korea odds source (Pinnacle API or OddsPortal) | Unknown | ⬜ | Very High | Internal | ~June 2026 | +27.5% ROI signal has no live odds feed. Biggest gap |
+| 35 | B6 | Singapore/South Korea odds source (Pinnacle API or OddsPortal) | Unknown | ⬜ | Very High | Internal | ~June 2026 | +27.5% ROI signal has no live odds feed. Note: AF has odds for Korea K League but NOT Singapore. Pinnacle via The Odds API ($20/mo) is best path |
 | 36 | P5.2 | Footiqo: validate Singapore/Scotland ROI with independent 1xBet closing odds | Manual first | ⬜ | High | Internal | ~June 2026 | Independent validation. If ROI holds on 2nd source, it's real |
 | 37 | P3.1 | Odds drift as XGBoost input feature (model retraining) | 1-2 days | ⬜ | High | Internal | ~June 2026 | Currently veto filter only. Strongest unused signal once data is there |
 | 38 | P3.3 | Player-level injury weighting (weight by position/market value) | 2-3 days | ⬜ | Low | Internal | ~June 2026 | ~90% captured by injury_count + news_impact per AI analysis. Lower priority than originally scoped |
@@ -162,3 +169,8 @@
 | ROADMAP Frontend Backlog | From the Frontend Data Display Backlog section of ROADMAP.md |
 | Internal (MODEL_ANALYSIS X.X) | Exists in MODEL_ANALYSIS.md but was not yet tracked in this queue |
 | UX Review (2026-04-29) | Identified during 4 independent UX/product reviews of signal surfacing strategy. Full details in SIGNAL_UX_ROADMAP.md |
+| Data Analysis (2026-04-29) | From pipeline refactor + data source audit session (2026-04-29) |
+| Launch Plan (2026-04-29) | From LAUNCH_PLAN.md pre-launch preparation |
+| Tier Access Matrix | From TIER_ACCESS_MATRIX.md feature checklist |
+| Data Sources | From DATA_SOURCES.md remaining cleanup |
+| Landing Page Review (2026-04-29) | From landing page pricing/UX review |
