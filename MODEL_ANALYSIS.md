@@ -64,7 +64,7 @@ Step 5: Edge calculation
 |------|------|-----------------|-----------|
 | A | Full history + odds calibration (18 leagues) | Base threshold | 100% |
 | B | Results-only history (22 leagues) | +2% extra edge | 50% |
-| C | Last 15 matches via Sofascore API | +5% extra edge | 25% |
+| ~~C~~ | ~~Sofascore on-demand~~ (removed 2026-04-29) | — | — |
 
 ### 1.6 Current Performance (Honest)
 
@@ -558,9 +558,9 @@ Scrape pre-match press conferences, classify intent: `[Expected_Rotation: High/L
 #### 11.12 Referee/Venue Bias Features
 **Source: Assessment #4.**
 
-Some referees consistently produce more goals/cards. Sofascore already has referee data in their event API (we call it in `live_tracker.py`). Free signal for O/U markets.
+Some referees consistently produce more goals/cards. API-Football provides referee data in fixtures. Already implemented as `referee_cards_avg`, `referee_home_win_pct`, `referee_over25_pct` signals.
 
-**Implementation:** Extract referee assignment from Sofascore pre-match, compute historical referee stats, add as feature.
+**Implementation:** ✅ Done — referee stats computed from AF data in morning pipeline.
 **Expected impact:** +1-2% on O/U markets specifically.
 
 ### Bet Explanations (Product Feature, All Tiers)

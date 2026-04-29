@@ -31,7 +31,7 @@ We do not decide upfront which signals matter. We collect everything, store it w
 Data tier system:
 - **Tier A**: team in targets_v9.csv (European leagues) — Poisson + XGBoost available
 - **Tier B**: team in targets_global.csv (global ELO dataset) — Poisson only
-- **Tier C**: last 15 matches via Sofascore — Poisson, lower confidence
+- ~~Tier C~~: removed (was Sofascore on-demand, now dropped)
 - **Tier D**: no historical data — AF prediction only (ensemble = AF directly)
 
 ---

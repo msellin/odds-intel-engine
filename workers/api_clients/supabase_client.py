@@ -124,9 +124,6 @@ def store_match(match_data: dict) -> str:
         match_id = existing.data[0]["id"]
         # Backfill IDs and metadata if we have them now but DB doesn't
         updates = {}
-        event_id = match_data.get("sofascore_event_id") or match_data.get("event_id")
-        if event_id and not existing.data[0].get("sofascore_event_id"):
-            updates["sofascore_event_id"] = int(event_id)
         af_id = match_data.get("api_football_id")
         if af_id and not existing.data[0].get("api_football_id"):
             updates["api_football_id"] = int(af_id)
@@ -154,9 +151,6 @@ def store_match(match_data: dict) -> str:
     }
 
     # Store external IDs and metadata if available
-    event_id = match_data.get("sofascore_event_id") or match_data.get("event_id")
-    if event_id:
-        match_record["sofascore_event_id"] = int(event_id)
     af_id = match_data.get("api_football_id")
     if af_id:
         match_record["api_football_id"] = int(af_id)

@@ -40,82 +40,15 @@ console = Console()
 gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
 GEMINI_MODEL = "gemini-2.5-flash"
 
-SOFASCORE_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-    "Accept": "application/json",
-    "Referer": "https://www.sofascore.com/",
-}
+# ─── Team news fetchers (Sofascore removed — uses DB injuries only now) ─────
+
+def fetch_team_news(team_id: int) -> list[str]:
+    """Stub — Sofascore removed. Returns empty list. Injuries come from AF/DB now."""
+    return []
 
 
-# ─── Sofascore news fetchers ────────────────────────────────────────────────
-
-def fetch_team_news(sofascore_team_id: int) -> list[str]:
-    """
-    Fetch recent news/form for a team from Sofascore.
-    Returns list of plain-text facts (last 3 results, missing players).
-    """
-    facts = []
-
-    # Last 5 results
-    try:
-        resp = requests.get(
-            f"https://api.sofascore.com/api/v1/team/{sofascore_team_id}/events/last/0",
-            headers=SOFASCORE_HEADERS, timeout=10,
-        )
-        if resp.status_code == 200:
-            events = resp.json().get("events", [])[:5]
-            for e in events:
-                home = e.get("homeTeam", {}).get("name", "?")
-                away = e.get("awayTeam", {}).get("name", "?")
-                hs = e.get("homeScore", {}).get("current", "?")
-                as_ = e.get("awayScore", {}).get("current", "?")
-                facts.append(f"Recent: {home} {hs}-{as_} {away}")
-    except Exception:
-        pass
-
-    # Missing players (injuries/suspensions)
-    try:
-        resp = requests.get(
-            f"https://api.sofascore.com/api/v1/team/{sofascore_team_id}/players/missing",
-            headers=SOFASCORE_HEADERS, timeout=10,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            missing = data.get("missingPlayers", [])
-            for p in missing[:5]:
-                player = p.get("player", {}).get("name", "Unknown")
-                reason = p.get("type", "out")
-                position = p.get("player", {}).get("position", "")
-                facts.append(f"Missing: {player} ({position}) — {reason}")
-    except Exception:
-        pass
-
-    time.sleep(0.5)
-    return facts
-
-
-def fetch_match_lineups(sofascore_event_id: int) -> dict:
-    """
-    Fetch confirmed lineups if available (usually 1h before kickoff).
-    Returns {'home_lineup_confirmed': bool, 'home_missing_key': bool, ...}
-    """
-    try:
-        resp = requests.get(
-            f"https://api.sofascore.com/api/v1/event/{sofascore_event_id}/lineups",
-            headers=SOFASCORE_HEADERS, timeout=10,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            home_lineup = data.get("home", {})
-            away_lineup = data.get("away", {})
-            return {
-                "home_confirmed": bool(home_lineup.get("players")),
-                "away_confirmed": bool(away_lineup.get("players")),
-                "home_players": [p.get("player", {}).get("name") for p in home_lineup.get("players", [])[:11]],
-                "away_players": [p.get("player", {}).get("name") for p in away_lineup.get("players", [])[:11]],
-            }
-    except Exception:
-        pass
+def fetch_match_lineups(event_id: int) -> dict:
+    """Stub — Sofascore removed. Lineups come from AF/DB now."""
     return {}
 
 
@@ -254,7 +187,7 @@ def run_news_checker(dry_run: bool = False):
     # Get today's pending bets with match context
     result = client.table("simulated_bets").select(
         "id, market, selection, odds_at_pick, model_probability, edge_percent, reasoning, "
-        "matches(id, date, sofascore_event_id, "
+        "matches(id, date, "
         "home_team:home_team_id(name), away_team:away_team_id(name), "
         "leagues(name, country, tier))"
     ).eq("result", "pending").gte(
@@ -280,8 +213,6 @@ def run_news_checker(dry_run: bool = False):
             continue
 
         match_id = match["id"]
-        sofascore_id = match.get("sofascore_event_id")
-
         home_team_data = match.get("home_team", {})
         away_team_data = match.get("away_team", {})
         league_data = match.get("leagues", {})
@@ -294,33 +225,9 @@ def run_news_checker(dry_run: bool = False):
         if match_id not in checked_matches:
             console.print(f"[cyan]Checking: {home_team} vs {away_team}...[/cyan]")
 
-            # Fetch team news from Sofascore
-            # We don't have team IDs stored yet, but we can look up by event
             home_facts = []
             away_facts = []
             lineups = {}
-
-            if sofascore_id:
-                lineups = fetch_match_lineups(sofascore_id)
-
-            # Get teams from Sofascore by searching event
-            if sofascore_id:
-                try:
-                    resp = requests.get(
-                        f"https://api.sofascore.com/api/v1/event/{sofascore_id}",
-                        headers=SOFASCORE_HEADERS, timeout=10,
-                    )
-                    if resp.status_code == 200:
-                        event_data = resp.json().get("event", {})
-                        home_id = event_data.get("homeTeam", {}).get("id")
-                        away_id = event_data.get("awayTeam", {}).get("id")
-
-                        if home_id:
-                            home_facts = fetch_team_news(home_id)
-                        if away_id:
-                            away_facts = fetch_team_news(away_id)
-                except Exception as e:
-                    console.print(f"  [yellow]Event lookup error: {e}[/yellow]")
 
             checked_matches[match_id] = {
                 "home_team": home_team,

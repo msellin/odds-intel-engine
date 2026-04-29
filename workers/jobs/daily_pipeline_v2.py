@@ -30,8 +30,6 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workers.scrapers.kambi_odds import fetch_all_operators, get_target_league_matches
-from workers.scrapers.flashscore import get_todays_matches_from_flashscore
-from workers.scrapers.sofascore_odds import fetch_all_odds as fetch_sofascore_odds
 from workers.scrapers.betexplorer_odds import fetch_gap_leagues_odds as fetch_betexplorer_odds
 from workers.api_clients.api_football import (
     get_fixtures_by_date, fixture_to_match_dict,
@@ -232,65 +230,6 @@ BOTS_CONFIG = {
 }
 
 
-_SOFASCORE_CACHE_PATH = PROCESSED_DIR / "sofascore_team_cache.json"
-_SOFASCORE_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-    "Referer": "https://www.sofascore.com/",
-}
-
-
-def _load_sofascore_cache() -> dict:
-    if _SOFASCORE_CACHE_PATH.exists():
-        try:
-            return json.loads(_SOFASCORE_CACHE_PATH.read_text())
-        except Exception:
-            pass
-    return {}
-
-
-def _save_sofascore_cache(cache: dict) -> None:
-    _SOFASCORE_CACHE_PATH.write_text(json.dumps(cache, indent=2))
-
-
-def _fetch_sofascore_team_history(team_id: int, cache: dict) -> list[dict] | None:
-    """
-    Fetch last 15 matches for a Sofascore team_id.
-    Returns list of {home_team, away_team, FTHG, FTAG} dicts, or None on failure.
-    Results are cached in sofascore_team_cache.json (reset daily by the pipeline).
-    """
-    key = str(team_id)
-    if key in cache:
-        return cache[key]
-
-    url = f"https://api.sofascore.com/api/v1/team/{team_id}/events/last/0"
-    try:
-        resp = requests.get(url, headers=_SOFASCORE_HEADERS, timeout=10)
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        events = data.get("events", [])
-        matches = []
-        for ev in events:
-            ht = ev.get("homeTeam", {}).get("name", "")
-            at = ev.get("awayTeam", {}).get("name", "")
-            score = ev.get("homeScore", {})
-            hg = score.get("current")
-            ag = ev.get("awayScore", {}).get("current")
-            if ht and at and hg is not None and ag is not None:
-                matches.append({
-                    "home_team": ht,
-                    "away_team": at,
-                    "FTHG": int(hg),
-                    "FTAG": int(ag),
-                })
-        matches = matches[-15:]  # Cap at 15 most recent
-        cache[key] = matches
-        _save_sofascore_cache(cache)
-        return matches
-    except Exception:
-        return None
-
-
 # Dixon-Coles correlation parameter — corrects independent Poisson's draw underestimation.
 # Literature standard value. Negative sign: low-scoring draws are more common than Poisson predicts.
 DIXON_COLES_RHO = -0.13
@@ -354,20 +293,7 @@ def _goals_from_hist(df: pd.DataFrame, team: str) -> tuple[list[float], list[flo
     return gf, ga
 
 
-def _goals_from_sofascore(matches: list[dict], team: str) -> tuple[list[float], list[float]]:
-    """Extract goals-for and goals-against from Sofascore raw match dicts."""
-    gf, ga = [], []
-    for m in matches:
-        if m["home_team"] == team:
-            gf.append(float(m["FTHG"]))
-            ga.append(float(m["FTAG"]))
-        else:
-            gf.append(float(m["FTAG"]))
-            ga.append(float(m["FTHG"]))
-    return gf, ga
-
-
-def compute_prediction(match, hist_targets, hist_targets_global=None, sofascore_cache=None,
+def compute_prediction(match, hist_targets, hist_targets_global=None,
                        _team_sets=None):
     """
     Compute Poisson prediction for a match using the best available history.
@@ -375,7 +301,7 @@ def compute_prediction(match, hist_targets, hist_targets_global=None, sofascore_
     Data tiers:
       A — team found in targets_v9 (has bookmaker odds calibration)
       B — team found only in targets_global (global results, no odds calibration)
-      C — team not in either dataset; Sofascore API fetched on-demand
+      D — no historical data (AF prediction fallback only)
 
     _team_sets: optional pre-computed (v9_teams, global_teams) to avoid rebuilding per call.
 
@@ -423,31 +349,8 @@ def compute_prediction(match, hist_targets, hist_targets_global=None, sofascore_
     elif home_matched and away_matched:
         data_tier = "B"
     else:
-        # --- Tier C: try Sofascore on-demand ---
-        if sofascore_cache is None:
-            return None
-        home_sf_id = match.get("home_team_id")
-        away_sf_id = match.get("away_team_id")
-        if not home_sf_id or not away_sf_id:
-            return None
-
-        home_sf = _fetch_sofascore_team_history(home_sf_id, sofascore_cache)
-        away_sf = _fetch_sofascore_team_history(away_sf_id, sofascore_cache)
-
-        if not home_sf or not away_sf or len(home_sf) < 3 or len(away_sf) < 3:
-            return None
-
-        home_gf, home_ga = _goals_from_sofascore(home_sf, home_raw)
-        away_gf, away_ga = _goals_from_sofascore(away_sf, away_raw)
-
-        exp_h = max(0.3, np.mean(home_gf[-10:])) * 1.08
-        exp_a = max(0.3, np.mean(away_gf[-10:])) * 0.92
-        exp_h = (exp_h + np.mean(away_ga[-10:])) / 2
-        exp_a = (exp_a + np.mean(home_ga[-10:])) / 2
-
-        result = _poisson_probs(exp_h, exp_a)
-        result.update({"exp_home": exp_h, "exp_away": exp_a, "data_tier": "C"})
-        return result
+        # No historical data — skip (Tier D handled by AF prediction only)
+        return None
 
     # --- Fetch history for matched teams ---
     # Home team history: prefer v9 if available, else global
@@ -638,7 +541,6 @@ def _league_path_to_tier(league_path: str) -> int:
 def _merge_odds_sources(
     af_odds_fixtures: list[dict],
     kambi_matches: list[dict],
-    sofascore_matches: list[dict],
     betexplorer_matches: list[dict] | None = None,
 ) -> list[dict]:
     """
@@ -649,13 +551,9 @@ def _merge_odds_sources(
                                from the fixture metadata; base of the pool.
       Kambi        (additive) — different bookmaker, better odds on some markets;
                                also carries pre-mapped tier for our target leagues.
-      SofaScore    (additive) — fills leagues Kambi doesn't cover.
       BetExplorer  (additive) — gap leagues (Singapore, South Korea, lower divs).
 
-    For each match, we keep the best odds across all sources. The AF entry is used
-    for tier / league_path because it comes from the AF fixture metadata (which has
-    already been enriched with T2/T3/T9/T10 data and is the source of truth for
-    what's stored in the DB). Scraper entries are merged on top purely for odds.
+    For each match, we keep the best odds across all sources.
     """
     merged: dict[str, dict] = {}
     ODDS_FIELDS = [
@@ -689,7 +587,6 @@ def _merge_odds_sources(
     # 2. Merge scraper sources on top (best odds win, tier/league_path from AF)
     for matches, source_name in [
         (kambi_matches, "kambi"),
-        (sofascore_matches, "sofascore"),
         (betexplorer_matches or [], "betexplorer"),
     ]:
         for m in matches:
@@ -913,7 +810,7 @@ def _parallel_fetch(af_id_to_match_id, af_fixtures_raw, today_str, all_fixtures)
     """
     Run all data fetching in parallel across 3 thread groups:
       A: API-Football (predictions + enrichment + bulk odds) — sequential within, shares AF rate limiter
-      B: Kambi + SofaScore — different APIs, fast
+      B: Kambi — different API, fast
       C: BetExplorer — different API, slow scraper (biggest win from parallelism)
     """
     def _af_work():
@@ -933,9 +830,7 @@ def _parallel_fetch(af_id_to_match_id, af_fixtures_raw, today_str, all_fixtures)
         console.print("\n[cyan]Fetching odds from Kambi...[/cyan]")
         kambi = get_target_league_matches()
         console.print(f"  {len(kambi)} matches with Kambi odds")
-        # SofaScore odds skipped — fetches 0 matches consistently (no odds or unmapped leagues)
-        console.print("[dim]SofaScore odds — skipped (0 matches with odds recently)[/dim]")
-        return kambi, []
+        return kambi
 
     def _be_work():
         console.print("\n[cyan]Fetching odds from BetExplorer (gap leagues)...[/cyan]")
@@ -951,10 +846,10 @@ def _parallel_fetch(af_id_to_match_id, af_fixtures_raw, today_str, all_fixtures)
         be_future = executor.submit(_be_work)
 
         af_preds, af_odds_fixtures = af_future.result()
-        kambi_matches, sofascore_matches = scraper_future.result()
+        kambi_matches = scraper_future.result()
         betexplorer_matches = be_future.result()
 
-    return af_preds, af_odds_fixtures, kambi_matches, sofascore_matches, betexplorer_matches
+    return af_preds, af_odds_fixtures, kambi_matches, betexplorer_matches
 
 
 def run_morning():
@@ -967,88 +862,60 @@ def run_morning():
     bot_ids = ensure_bots(BOTS_CONFIG)
     console.print(f"  {len(bot_ids)} bots ready")
 
-    # 2. Fetch ALL fixtures from API-Football (primary) with Sofascore fallback
+    # 2. Fetch ALL fixtures from API-Football
     console.print("\n[cyan]Fetching all fixtures from API-Football...[/cyan]")
     af_fixtures_raw = []
-    all_fixtures = []  # Sofascore-format list for odds scrapers compatibility
+    all_fixtures = []
     try:
         af_fixtures_raw = get_fixtures_by_date(today_str)
         console.print(f"  {len(af_fixtures_raw)} fixtures from API-Football")
     except Exception as e:
-        console.print(f"  [yellow]API-Football error: {e} — falling back to Sofascore[/yellow]")
+        console.print(f"  [red]API-Football error: {e}[/red]")
+        return
 
     if not af_fixtures_raw:
-        console.print("[cyan]Falling back to Sofascore for fixtures...[/cyan]")
-        all_fixtures = get_todays_matches_from_flashscore()
-        console.print(f"  {len(all_fixtures)} fixtures from Sofascore fallback")
+        console.print("[yellow]No fixtures from API-Football today.[/yellow]")
+        return
 
-    # 3. Store ALL fixtures in Supabase (even without odds)
+    # 3. Store all fixtures in Supabase
     console.print("\n[cyan]Storing all fixtures in Supabase...[/cyan]")
     stored_fixture_count = 0
-    fixture_id_map: dict[str, str] = {}  # event_id → match_id
-    af_id_to_match_id: dict[int, str] = {}  # api_football_id → match_id (for odds fetch)
+    af_id_to_match_id: dict[int, str] = {}
 
-    if af_fixtures_raw:
-        # Store API-Football fixtures (primary path)
-        for af_fix in af_fixtures_raw:
-            match_dict = fixture_to_match_dict(af_fix)
-            try:
-                match_id = store_match(match_dict)
-                af_id = af_fix.get("fixture", {}).get("id")
-                if match_id and af_id:
-                    af_id_to_match_id[af_id] = match_id
-                # Also populate sofascore-format list for odds scrapers
-                all_fixtures.append({
-                    "home_team": match_dict["home_team"],
-                    "away_team": match_dict["away_team"],
-                    "date": match_dict["start_time"],
-                    "event_id": None,  # No sofascore ID from this source
-                    "league_name": af_fix.get("league", {}).get("name", ""),
-                    "country": af_fix.get("league", {}).get("country", ""),
-                    "status": af_fix.get("fixture", {}).get("status", {}).get("short", "NS"),
-                    "api_football_id": af_id,
-                })
-                stored_fixture_count += 1
-            except Exception as e:
-                console.print(f"  [yellow]Could not store {match_dict.get('home_team')} vs {match_dict.get('away_team')}: {e}[/yellow]")
-    else:
-        # Store Sofascore fallback fixtures
-        for fixture in all_fixtures:
-            match_dict = {
-                "home_team": fixture.get("home_team", ""),
-                "away_team": fixture.get("away_team", ""),
-                "start_time": fixture.get("date", ""),
-                "league_path": f"{fixture.get('country', '')} / {fixture.get('league_name', '')}",
-                "league_code": "",
-                "tier": 0,
-                "operator": "sofascore_fixture",
-                "sofascore_event_id": fixture.get("event_id"),
-                "odds_home": 0, "odds_draw": 0, "odds_away": 0,
-                "odds_over_25": 0, "odds_under_25": 0,
-            }
-            try:
-                match_id = store_match(match_dict)
-                if match_id and fixture.get("event_id"):
-                    fixture_id_map[str(fixture["event_id"])] = match_id
-                stored_fixture_count += 1
-            except Exception as e:
-                console.print(f"  [yellow]Could not store fixture {fixture.get('home_team')} vs {fixture.get('away_team')}: {e}[/yellow]")
+    for af_fix in af_fixtures_raw:
+        match_dict = fixture_to_match_dict(af_fix)
+        try:
+            match_id = store_match(match_dict)
+            af_id = af_fix.get("fixture", {}).get("id")
+            if match_id and af_id:
+                af_id_to_match_id[af_id] = match_id
+            all_fixtures.append({
+                "home_team": match_dict["home_team"],
+                "away_team": match_dict["away_team"],
+                "date": match_dict["start_time"],
+                "league_name": af_fix.get("league", {}).get("name", ""),
+                "country": af_fix.get("league", {}).get("country", ""),
+                "status": af_fix.get("fixture", {}).get("status", {}).get("short", "NS"),
+                "api_football_id": af_id,
+            })
+            stored_fixture_count += 1
+        except Exception as e:
+            console.print(f"  [yellow]Could not store {match_dict.get('home_team')} vs {match_dict.get('away_team')}: {e}[/yellow]")
 
     console.print(f"  {stored_fixture_count} fixtures stored")
 
     # === PARALLEL DATA FETCH ===
     # Runs 3 groups concurrently (saves ~5 min vs sequential):
     #   A: API-Football (predictions + enrichment + bulk odds)
-    #   B: Kambi + SofaScore
+    #   B: Kambi
     #   C: BetExplorer (gap leagues)
     console.print("\n[cyan]Running parallel data fetch (predictions + enrichment + odds)...[/cyan]")
-    af_preds, af_odds_fixtures, kambi_matches, sofascore_matches, betexplorer_matches = \
+    af_preds, af_odds_fixtures, kambi_matches, betexplorer_matches = \
         _parallel_fetch(af_id_to_match_id, af_fixtures_raw, today_str, all_fixtures)
 
     # 6. Merge all odds sources — AF is the primary base, scrapers add better odds
-    # Result: one entry per match, best odds across all bookmakers, correct tier
     odds_matches = _merge_odds_sources(
-        af_odds_fixtures, kambi_matches, sofascore_matches, betexplorer_matches
+        af_odds_fixtures, kambi_matches, betexplorer_matches
     )
 
     console.print(f"\n  [bold]{len(odds_matches)} matches in prediction pool[/bold]")
@@ -1079,9 +946,6 @@ def run_morning():
     else:
         console.print("  [yellow]targets_global.csv not found — Tier B unavailable[/yellow]")
 
-    # Load Sofascore team cache for Tier C (reset each day)
-    sofascore_cache = _load_sofascore_cache()
-
     # Pre-compute team name sets once (avoid rebuilding per match — saves ~30s)
     v9_teams = set(hist_targets["home_team"].unique()) | set(hist_targets["away_team"].unique())
     global_teams = None
@@ -1111,7 +975,6 @@ def run_morning():
         poisson_pred = compute_prediction(
             match, hist_targets,
             hist_targets_global=hist_targets_global,
-            sofascore_cache=sofascore_cache,
             _team_sets=team_sets,
         )
         # Tier D fallback: if Poisson has no historical data for this match,
@@ -1244,7 +1107,7 @@ def run_morning():
         # Data-tier adjustments (conservative stake / extra edge for lower-quality data):
         #   A — our CSV + odds history, full calibration → no bump, full stake
         #   B — global ELO CSV, results only → +2% edge req, 50% stake cap
-        #   C — Sofascore last-15-games, on-demand → +5% edge req, 25% stake cap
+        #   D — AF prediction only → +8% edge req, 20% stake cap
         #   D — AF prediction probabilities only, no goals model → +8% edge req, 20% stake cap
         DATA_TIER_EDGE_BUMP = {"A": 0.00, "B": 0.02, "C": 0.05, "D": 0.08}
         edge_bump = DATA_TIER_EDGE_BUMP.get(data_tier, 0.00)
@@ -1477,28 +1340,8 @@ def _check_exposure_concentration():
 
 
 def run_settle():
-    """Settle pending bets using match results"""
-    console.print(f"[bold green]═══ OddsIntel Settlement ═══[/bold green]\n")
-
-    # Fetch results from Sofascore
-    console.print("[cyan]Fetching results...[/cyan]")
-    results = get_todays_matches_from_flashscore()
-    finished = [r for r in results if r.get("status") in ["FT", "finished"]
-                and r.get("home_goals") is not None]
-    console.print(f"  {len(finished)} finished matches")
-
-    # Get pending bets
-    pending = get_pending_bets()
-    console.print(f"  {len(pending)} pending bets")
-
-    if not pending:
-        console.print("[yellow]No pending bets to settle.[/yellow]")
-        return
-
-    # TODO: Match pending bets to results and settle
-    # This requires matching team names between our DB and Sofascore
-    # For now, log that settlement needs to happen
-    console.print("[yellow]Settlement matching needs team name resolution — TODO[/yellow]")
+    """Settle pending bets — delegates to settlement.py"""
+    console.print("[yellow]Use settlement.py directly for settlement.[/yellow]")
 
 
 def run_report():

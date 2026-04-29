@@ -2,13 +2,11 @@
 OddsIntel — Live Match Tracker (v2)
 Runs every 5 minutes during match hours to capture in-play data.
 
-Data sources (API-Football primary, Sofascore fallback for rich stats):
-  T5  /odds/live             — 1 call → all live odds (replaces Kambi scraping)
+Data sources (API-Football only):
+  T5  /odds/live             — 1 call → all live odds
   T6  /fixtures?live=all     — 1 call → all live scores/minutes/status
   T7  /fixtures/lineups      — fired ~40min before KO for upcoming matches
   T8  /fixtures/events       — per live match (goals, cards, subs, VAR)
-
-Sofascore kept as stats-only fallback (xG, shots, possession — not in AF live).
 
 Usage:
   python live_tracker.py          # Track all currently live matches
@@ -43,17 +41,10 @@ from workers.api_clients.supabase_client import (
     store_match_lineups,
     store_match_stats_full,
     update_match_status,
-    get_match_by_sofascore_id,
     get_match_by_teams_and_date,
 )
 
 console = Console()
-
-SOFASCORE_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-    "Accept": "application/json",
-    "Referer": "https://www.sofascore.com/",
-}
 
 
 # ============================================================
@@ -85,74 +76,6 @@ def _parse_af_live_fixture(af_fix: dict) -> dict:
     }
 
 
-# ============================================================
-# Sofascore fallback — stats only (xG, possession, shots)
-# ============================================================
-
-def _fetch_sofascore_stats(event_id: int) -> dict:
-    """
-    Fetch live xG, possession, shots from Sofascore for a single match.
-    Returns empty dict on any failure (Sofascore is fragile).
-    """
-    try:
-        resp = requests.get(
-            f"https://api.sofascore.com/api/v1/event/{event_id}/statistics",
-            headers=SOFASCORE_HEADERS,
-            timeout=8,
-        )
-        if resp.status_code != 200:
-            return {}
-
-        data = resp.json()
-        stats = {}
-
-        for group in data.get("statistics", []):
-            if group.get("period") != "ALL":
-                continue
-            for stat_group in group.get("groups", []):
-                for item in stat_group.get("statisticsItems", []):
-                    name = item.get("name", "")
-                    home_val = item.get("home")
-                    away_val = item.get("away")
-
-                    if name == "Ball possession":
-                        try:
-                            stats["possession_home"] = float(str(home_val).replace("%", ""))
-                        except (ValueError, TypeError):
-                            pass
-                    elif name == "Total shots":
-                        try:
-                            stats["shots_home"] = int(home_val or 0)
-                            stats["shots_away"] = int(away_val or 0)
-                        except (ValueError, TypeError):
-                            pass
-                    elif name == "Shots on target":
-                        try:
-                            stats["shots_on_target_home"] = int(home_val or 0)
-                            stats["shots_on_target_away"] = int(away_val or 0)
-                        except (ValueError, TypeError):
-                            pass
-                    elif name == "Corner kicks":
-                        try:
-                            stats["corners_home"] = int(home_val or 0)
-                            stats["corners_away"] = int(away_val or 0)
-                        except (ValueError, TypeError):
-                            pass
-                    elif name == "Expected goals":
-                        try:
-                            stats["xg_home"] = float(home_val or 0)
-                            stats["xg_away"] = float(away_val or 0)
-                        except (ValueError, TypeError):
-                            pass
-                    elif name in ("Attacks", "Total attacks"):
-                        try:
-                            stats["attacks_home"] = int(home_val or 0)
-                            stats["attacks_away"] = int(away_val or 0)
-                        except (ValueError, TypeError):
-                            pass
-        return stats
-    except Exception:
-        return {}
 
 
 # ============================================================
@@ -328,15 +251,6 @@ def run_live_tracker(dry_run: bool = False):
         db_match = _lookup_db_match(af_fix, af_id_map, client)
         db_status = "[green]✓[/green]" if db_match else "[dim]—[/dim]"
 
-        # ── Sofascore stats fallback (xG, possession, shots — not in AF live) ─
-        ss_stats = {}
-        if not dry_run:
-            # Only try Sofascore if we have a Sofascore event ID linked
-            sofascore_id = db_match.get("sofascore_event_id") if db_match else None
-            if sofascore_id:
-                ss_stats = _fetch_sofascore_stats(sofascore_id)
-                time.sleep(0.3)
-
         # ── T5: Resolve live odds for this fixture ─────────────────────────
         fixture_live_odds = live_odds_by_fixture.get(af_id, []) if af_id else []
 
@@ -363,7 +277,6 @@ def run_live_tracker(dry_run: bool = False):
             "added_time": af_fix.get("added_time", 0),
             "score_home": af_fix["score_home"],
             "score_away": af_fix["score_away"],
-            **ss_stats,
         }
 
         # Embed live odds into snapshot for O/U lines
@@ -418,13 +331,7 @@ def run_live_tracker(dry_run: bool = False):
                 except Exception:
                     pass
 
-            # When match finishes: store final stats
-            if af_fix.get("status_short") in ("FT", "AET", "PEN") and ss_stats:
-                try:
-                    store_match_stats_full(match_id, ss_stats)
-                except Exception:
-                    pass
-            # Also mark as finished in DB
+            # Mark as finished in DB
             if af_fix.get("status_short") in ("FT", "AET", "PEN"):
                 try:
                     update_match_status(match_id, "finished")
@@ -432,10 +339,8 @@ def run_live_tracker(dry_run: bool = False):
                     pass
 
         # ── Build display row ──────────────────────────────────────────────
-        xg_str = (f"{ss_stats.get('xg_home', 0):.1f}-{ss_stats.get('xg_away', 0):.1f}"
-                  if "xg_home" in ss_stats else "-")
-        sot_str = (f"{ss_stats.get('shots_on_target_home', 0)}-{ss_stats.get('shots_on_target_away', 0)}"
-                   if "shots_on_target_home" in ss_stats else "-")
+        xg_str = "-"
+        sot_str = "-"
         ou25_str = f"{ou25_over:.2f}" if ou25_over else "-"
         odds_str = f"{home_odds:.2f}/{away_odds:.2f}" if home_odds and away_odds else "-"
 

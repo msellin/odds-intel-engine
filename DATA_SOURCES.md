@@ -10,13 +10,10 @@
 |--------|------|--------|
 | **API-Football Ultra** ($29/mo) | PRIMARY — all structured data | ✅ Active |
 | Kambi API (free) | Supplementary odds, 41 leagues | ✅ Active |
-| Sofascore API (free) | xG post-match only; fallback fixture source | Reduced |
 | ESPN (free) | Settlement result backup | ✅ Active (backup) |
 | BetExplorer (free) | Gap league odds (phasing out) | To be removed |
 
-**What API-Football covers:** fixtures, 13-bookmaker odds, live scores, lineups, injuries, standings, H2H, match events, player stats, team stats, transfers. 1,236 leagues.
-
-**What it doesn't cover:** xG (use Sofascore), weather (use Open-Meteo free).
+**What API-Football covers:** fixtures, 13-bookmaker odds, live scores, lineups, injuries, standings, H2H, match events, player stats, team stats, transfers, xG (post-match via /fixtures/statistics). 1,236 leagues.
 
 ---
 

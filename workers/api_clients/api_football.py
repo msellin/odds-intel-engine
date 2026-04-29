@@ -1150,7 +1150,6 @@ def fixture_to_match_dict(fixture: dict) -> dict:
         "tier": 0,
         "operator": "api-football",
         "api_football_id": f.get("id"),
-        "sofascore_event_id": None,
         "venue_name": venue.get("name"),
         "venue_city": venue.get("city"),
         "referee": f.get("referee"),

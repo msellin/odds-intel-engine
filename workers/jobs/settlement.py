@@ -24,7 +24,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workers.api_clients.api_football import get_results_for_settlement as get_api_football_results
 from workers.scrapers.espn_results import get_finished_matches_espn
-from workers.scrapers.flashscore import _get_matches_alternative as get_sofascore_results
 from workers.api_clients.supabase_client import (
     get_client,
     store_team_elo,
@@ -71,7 +70,7 @@ def match_score(db_name: str, result_name: str) -> float:
 
 def find_result_for_match(db_home: str, db_away: str,
                           results: list[dict]) -> dict | None:
-    """Find the matching result for a DB match from Sofascore results list"""
+    """Find the matching result for a DB match from results list"""
     best_score = 0
     best_match = None
 
@@ -316,21 +315,6 @@ def run_settlement():
                 console.print(f"  {d}: {len(day_finished)} from ESPN")
                 finished.extend(day_finished)
 
-    # 2c. Sofascore as last resort (free, fragile)
-    if len(finished) < 10:
-        console.print("[cyan]Trying Sofascore as last resort...[/cyan]")
-        try:
-            for d in sorted(fetch_dates):
-                sofascore_results = get_sofascore_results(d)
-                sofascore_finished = [r for r in sofascore_results
-                                      if r.get("status") == "FT"
-                                      and r.get("home_goals") is not None]
-                if sofascore_finished:
-                    console.print(f"  {d}: {len(sofascore_finished)} from Sofascore")
-                    finished.extend(sofascore_finished)
-        except Exception as e:
-            console.print(f"  [yellow]Sofascore error: {e}[/yellow]")
-
     console.print(f"  [bold]{len(finished)} total finished matches[/bold]")
 
     if not finished:
@@ -372,7 +356,7 @@ def run_settlement():
         if af_id and int(af_id) in af_id_to_result:
             result_row = af_id_to_result[int(af_id)]
 
-        # Fallback: team name lookup (for Sofascore/ESPN-sourced results)
+        # Fallback: team name lookup (for ESPN-sourced results)
         if not result_row:
             home_r = client.table("teams").select("name").eq(
                 "id", db_match["home_team_id"]
@@ -516,7 +500,7 @@ def _settle_pending_bets(client, pending: list, finished: list):
         score_home = match.get("score_home")
         score_away = match.get("score_away")
 
-        # If not in DB, try to find in Sofascore results
+        # If not in DB, try to find in external results
         if score_home is None:
             home_name = (match["home_team"][0]["name"] if isinstance(match.get("home_team"), list)
                         else match.get("home_team", {}).get("name", ""))

@@ -13,7 +13,6 @@
 | **GitHub** | Source control (2 repos, both public) | Free | Active |
 | **Vercel** | Frontend hosting (Next.js 16) | Hobby (free) | Active (oddsintel.app) |
 | **Gemini API** | AI news checker (2.5 Flash) | Free | Active |
-| **Sofascore API** | xG post-match only (unofficial/public) | Free (no key) | Active (demoted) |
 | **Kambi API** | Odds for 41 leagues (public) | Free (no key) | Active |
 | **ESPN API** | Settlement results backup (public) | Free (no key) | Active |
 | **API-Football** | PRIMARY: fixtures, results, odds, lineups, injuries, live stats | Ultra ($29/mo) | Active |
@@ -167,6 +166,6 @@ The live tracker (132 runs/day, ~9,900 min/month) is the expensive workflow. Git
 
 - **Repos are public** — keeps GitHub Actions free (saves ~$74/mo). No secrets in code; all credentials in `.env` (gitignored) and GitHub Secrets.
 - **Supabase Pro is the first real cost** — upgrade before accepting payments (need backups).
-- **No paid odds APIs yet** — Sofascore + Kambi are free/public. OddAlerts or BSD Sports Data API are candidates if we need broader bookmaker coverage later.
+- **No paid odds APIs yet** — Kambi is free/public. OddAlerts or BSD Sports Data API are candidates if we need broader bookmaker coverage later.
 - **Gemini 2.5 Flash is near-free** — even at 4x/day, costs ~$1.20/month. Won't be a cost concern.
 - **Live tracker is the heaviest workflow** — 132 runs/day. If GitHub ever throttles, move to Railway/Fly.io free tier or a €5/mo VPS.

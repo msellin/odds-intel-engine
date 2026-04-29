@@ -26,7 +26,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workers.api_clients.api_football import get_fixtures_by_date, fixture_to_match_dict, get_leagues
 from workers.api_clients.supabase_client import get_client, store_match
-from workers.scrapers.flashscore import get_todays_matches_from_flashscore
 from workers.utils.pipeline_utils import (
     log_pipeline_start, log_pipeline_complete, log_pipeline_failed,
     store_league_coverage,
@@ -37,7 +36,7 @@ console = Console()
 
 def fetch_and_store_fixtures(target_date: str) -> tuple[int, dict[int, str], list[dict]]:
     """
-    Fetch all fixtures for a date from API-Football (with Sofascore fallback).
+    Fetch all fixtures for a date from API-Football.
     Store in Supabase matches table.
 
     Returns: (stored_count, af_id_to_match_id, af_fixtures_raw)
@@ -49,35 +48,12 @@ def fetch_and_store_fixtures(target_date: str) -> tuple[int, dict[int, str], lis
         af_fixtures_raw = get_fixtures_by_date(target_date)
         console.print(f"  {len(af_fixtures_raw)} fixtures from API-Football")
     except Exception as e:
-        console.print(f"  [yellow]API-Football error: {e} — falling back to Sofascore[/yellow]")
+        console.print(f"  [red]API-Football error: {e}[/red]")
+        return 0, {}, []
 
     if not af_fixtures_raw:
-        console.print("[cyan]Falling back to Sofascore for fixtures...[/cyan]")
-        sf_fixtures = get_todays_matches_from_flashscore()
-        console.print(f"  {len(sf_fixtures)} fixtures from Sofascore fallback")
-
-        stored = 0
-        for fixture in sf_fixtures:
-            match_dict = {
-                "home_team": fixture.get("home_team", ""),
-                "away_team": fixture.get("away_team", ""),
-                "start_time": fixture.get("date", ""),
-                "league_path": f"{fixture.get('country', '')} / {fixture.get('league_name', '')}",
-                "league_code": "",
-                "tier": 0,
-                "operator": "sofascore_fixture",
-                "sofascore_event_id": fixture.get("event_id"),
-                "odds_home": 0, "odds_draw": 0, "odds_away": 0,
-                "odds_over_25": 0, "odds_under_25": 0,
-            }
-            try:
-                store_match(match_dict)
-                stored += 1
-            except Exception as e:
-                console.print(f"  [yellow]Could not store {match_dict.get('home_team')}: {e}[/yellow]")
-
-        console.print(f"  {stored} Sofascore fixtures stored")
-        return stored, {}, []
+        console.print("[yellow]No fixtures from API-Football today.[/yellow]")
+        return 0, {}, []
 
     # Store API-Football fixtures
     console.print(f"\n[cyan]Storing {len(af_fixtures_raw)} fixtures in Supabase...[/cyan]")

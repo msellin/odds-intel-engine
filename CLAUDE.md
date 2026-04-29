@@ -36,7 +36,6 @@ Do not let docs drift from reality. If you notice something marked TODO that is 
 API-Football Ultra ($29/mo)  -> PRIMARY: fixtures, odds (13 bookmakers), live data,
                                 lineups, injuries, standings, H2H, events, player stats
 Kambi API (free)             -> Supplementary odds for 41 leagues
-Sofascore API (free)         -> xG post-match only (fallback fixture source)
 ESPN (free)                  -> Settlement results backup
                                          |
                     Fetch Fixtures (06:00 UTC) — fixtures + league coverage (weekly)
