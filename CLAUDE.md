@@ -12,6 +12,7 @@ All project documentation lives in this repo (`odds-intel-engine/`). Before star
 | `SIGNAL_ARCHITECTURE.md` | Every signal we collect — inventory, storage, timeline, how signals flow into the model |
 | `SIGNAL_UX_ROADMAP.md` | How to surface signals in UI — 4-phase plan from UX reviews, task IDs SUX-1 to SUX-12 |
 | `TIER_ACCESS_MATRIX.md` | Feature matrix per tier (Anonymous/Free/Pro/Elite), conversion hooks, route protection |
+| `WORKFLOWS.md` | Pipeline architecture — all scheduled jobs, order, manual run instructions, data sources |
 | `DATA_SOURCES.md` | Data source architecture, API-Football integration status, alternatives evaluated |
 | `INFRASTRUCTURE.md` | Full infra stack, current costs, and projections by growth phase |
 | `RESEARCH.md` | Master research document — sports, APIs, pricing, architecture (archival, 2026-04-26) |
