@@ -178,6 +178,21 @@
 
 ---
 
+## Automation Sequels — Run These When Implementing Their Parent Task
+
+> These tasks must be built **at the same time** as their parent. A model task is not "done" until its retraining is automated. Without these, the model calibration slowly rots as new data changes the distribution.
+
+| ID | Parent | Task | Effort | Status | Notes |
+|----|--------|------|--------|--------|-------|
+| PLATT-AUTO | PLATT | Add weekly Platt recalibration to settlement pipeline | 1h | ⬜ | Recalibrate sigmoid parameters every Sunday using all settled predictions. Write updated α/β to a `model_calibration` table. Pipeline reads from there instead of hardcoded constants. Without this, calibration drifts as league mix shifts with seasons. |
+| BLEND-AUTO | MOD-2 | Add monthly Poisson/XGBoost blend weight recalculation | 1h | ⬜ | Re-derive per-tier α constants (CALIBRATION_ALPHA dict in improvements.py) from actual outcomes monthly. Script reads settled predictions → brier score per source → optimal weight. Replaces current hardcoded T1=0.20, T2=0.30 etc. with data-driven values. |
+| META-RETRAIN | B-ML3 | Weekly meta-model retraining job (logistic regression v1) | 2h | ⬜ | After meta-model v1 is built at 3K CLV rows: add a weekly GitHub Action that re-runs training on all available `match_feature_vectors` rows, writes new model coefficients to a `model_versions` table, logs performance delta vs prior version. Should auto-deploy if accuracy improves. |
+| XGB-RETRAIN | S6-P2 | Weekly XGBoost full-model retraining schedule | 3-4h | ⬜ | When XGBoost meta-model replaces logistic v1: set up weekly retraining with train/val split, track feature importances over time (signals that mattered in April may not matter in August — seasons change team dynamics). Log to model_versions. Alert if validation loss spikes. |
+| ALN-AUTO | ALN-1 | Monthly alignment threshold refresh | 1h | ⬜ | After ALN-1 first pass at 300 bets: re-run threshold derivation monthly. Alignment thresholds (what signal count produces edge) shift as model quality improves. Script: bin settled bets by alignment_count → compute ROI per bin → update threshold constants → log to DB. |
+| INPLAY-RETRAIN | P3.4 | Quarterly in-play model retraining | 2h | ⬜ | After in-play model is built: retrain quarterly (game states are seasonal — late-season desperation changes how minute-80 scores translate to final results). Separate train set per season if data allows. |
+
+---
+
 ## Tier 5 — Future / Speculative
 
 | # | ID | Task | Impact | Source | Notes |
