@@ -18,15 +18,51 @@ All project documentation lives in this repo (`odds-intel-engine/`). Before star
 | `data/model_results/TENNIS_FINDINGS.md` | Tennis model iterations and backtest results (archival) |
 | `data/model_results/MEGA_BACKTEST_FINDINGS.md` | 354K match backtest across 275 leagues (archival) |
 
+## Task Lifecycle — Every Task Must Follow This Exactly
+
+This protocol exists because parallel agents caused real production bugs when docs drifted. Follow it without exception.
+
+### Before writing any code
+
+1. **Read `PRIORITY_QUEUE.md`** — check the task's current status. If it is already `🔄 In Progress`, stop and tell the user. Do not start parallel work on a task already claimed.
+2. **Mark it `🔄 In Progress`** in `PRIORITY_QUEUE.md` — update the Status column immediately, before touching any code. This is the lock that prevents two agents stepping on each other.
+3. **Read every doc relevant to the task** — at minimum: TIER_ACCESS_MATRIX.md if touching any tier/gating logic; SIGNALS.md if touching signals or match detail; WORKFLOWS.md if touching the pipeline; ROADMAP.md system state if touching what's built.
+
+### While implementing
+
+- If a task depends on something another task was supposed to build, **verify it was actually built** before assuming it exists. Read the code — do not trust doc status alone.
+- If you discover a related bug or gap, **log it in PRIORITY_QUEUE.md** before moving on. Never silently fix something unrelated without tracking it.
+
+### When done — before committing
+
+Update **all** of the following that apply. "Not relevant" is almost never true for more than 2 of these:
+
+| Doc | Update when |
+|-----|-------------|
+| `PRIORITY_QUEUE.md` | Always — change status to ✅ Done with date |
+| `ROADMAP.md` (Current System State) | Any change to what's built or what tier sees what |
+| `SIGNALS.md` | Any change to signal collection, storage, or UX surface |
+| `TIER_ACCESS_MATRIX.md` | Any change to what tier can see or do |
+| `WORKFLOWS.md` | Any change to pipeline jobs or schedule |
+| `DATA_SOURCES.md` | Any change to data sources or coverage |
+| `INFRASTRUCTURE.md` | Any change to costs, services, or infra |
+
+Then commit docs **in the same commit as the code**. Never separate them — a code commit without doc update is an incomplete task.
+
+### Status values for PRIORITY_QUEUE.md
+
+| Symbol | Meaning |
+|--------|---------|
+| ⬜ | Not started |
+| 🔄 In Progress | Claimed — another agent must not start this |
+| ✅ Done YYYY-MM-DD | Complete and documented |
+
 ## Keeping Docs Updated
 
-When you complete a task, update the relevant documentation:
-- Mark tasks done in `PRIORITY_QUEUE.md` (master task list — update status column here first)
-- Update `ROADMAP.md` Current System State section if you change what's built
+Do not let docs drift from reality. If you notice something marked TODO that is already done, fix it. If you notice a doc describing behaviour that no longer matches the code, fix the doc in the same commit.
+
 - Manual steps and launch checklist live in `ROADMAP.md` (Launch Checklist section)
 - Retired docs (BACKLOG, PROGRESS, NEXT_STEPS, research_findings) have been deleted — history is in git
-
-Do not let docs drift from reality. If you notice something marked TODO that is already done, fix it.
 
 ## Database Migrations
 
