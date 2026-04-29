@@ -16,7 +16,7 @@ Only works for Tier A teams (those in features_v9.csv / targets_v9.csv).
 Tier B/C teams fall back to Poisson-only (no change from current behavior).
 """
 
-import pickle
+import joblib
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -44,16 +44,11 @@ def _load_models() -> dict:
         return {}
 
     try:
-        with open(model_path / "feature_cols.pkl", "rb") as f:
-            _model_cache["feature_cols"] = pickle.load(f)
-        with open(model_path / "result_1x2.pkl", "rb") as f:
-            _model_cache["result_1x2"] = pickle.load(f)
-        with open(model_path / "over_under.pkl", "rb") as f:
-            _model_cache["over_under"] = pickle.load(f)
-        with open(model_path / "home_goals.pkl", "rb") as f:
-            _model_cache["home_goals"] = pickle.load(f)
-        with open(model_path / "away_goals.pkl", "rb") as f:
-            _model_cache["away_goals"] = pickle.load(f)
+        _model_cache["feature_cols"] = joblib.load(model_path / "feature_cols.pkl")
+        _model_cache["result_1x2"] = joblib.load(model_path / "result_1x2.pkl")
+        _model_cache["over_under"] = joblib.load(model_path / "over_under.pkl")
+        _model_cache["home_goals"] = joblib.load(model_path / "home_goals.pkl")
+        _model_cache["away_goals"] = joblib.load(model_path / "away_goals.pkl")
     except Exception:
         _model_cache.clear()
         return {}

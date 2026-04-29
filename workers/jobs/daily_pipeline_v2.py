@@ -1148,6 +1148,46 @@ def run_morning(skip_fetch: bool = False):
                     pred = ensemble_prediction(poisson_pred, xgb_pred)
 
         # Store predictions
+        data_tier = pred.get("data_tier", "A")
+
+        # S1: Store Poisson predictions for all three 1x2 markets unconditionally.
+        # poisson_pred is always available here (it's the base prediction, never None at this point).
+        for market, prob_key, odds_field in [
+            ("1x2_home", "home_prob",  "odds_home"),
+            ("1x2_draw", "draw_prob",  "odds_draw"),
+            ("1x2_away", "away_prob",  "odds_away"),
+        ]:
+            odds_val = match.get(odds_field, 0)
+            if odds_val > 0 and poisson_pred.get(prob_key) is not None:
+                try:
+                    store_prediction(match_id, market, {
+                        "model_prob": poisson_pred[prob_key],
+                        "implied_prob": 1 / odds_val,
+                        "edge": poisson_pred[prob_key] - (1 / odds_val),
+                        "reasoning": f"data_tier={data_tier}",
+                    }, source="poisson")
+                except Exception:
+                    pass
+
+        # S1-XGB: Store XGBoost individual predictions when ensemble ran
+        if xgb_pred:
+            for market, xgb_key, odds_field in [
+                ("1x2_home", "xgb_home_prob", "odds_home"),
+                ("1x2_draw", "xgb_draw_prob", "odds_draw"),
+                ("1x2_away", "xgb_away_prob", "odds_away"),
+            ]:
+                odds_val = match.get(odds_field, 0)
+                if odds_val > 0 and xgb_pred.get(xgb_key) is not None:
+                    try:
+                        store_prediction(match_id, market, {
+                            "model_prob": xgb_pred[xgb_key],
+                            "implied_prob": 1 / odds_val,
+                            "edge": xgb_pred[xgb_key] - (1 / odds_val),
+                            "reasoning": f"data_tier={data_tier}",
+                        }, source="xgboost")
+                    except Exception:
+                        pass
+
         for market, prob_key in [
             ("1x2_home", "home_prob"),
             ("1x2_draw", "draw_prob"),
@@ -1166,8 +1206,6 @@ def run_morning(skip_fetch: bool = False):
             odds_val = match.get(odds_key, 0)
             if odds_val > 0:
                 try:
-                    data_tier = pred.get("data_tier", "A")
-
                     # Store ensemble prediction (source='ensemble')
                     store_prediction(match_id, market, {
                         "model_prob": pred[prob_key],
@@ -1176,30 +1214,6 @@ def run_morning(skip_fetch: bool = False):
                         "odds": odds_val,
                         "reasoning": f"data_tier={data_tier}",
                     }, source="ensemble")
-
-                    # Store individual model signals for 1x2_home market (S1)
-                    # ensemble dict has poisson_home_prob + xgb_home_prob when blended
-                    if market == "1x2_home":
-                        if pred.get("poisson_home_prob") is not None:
-                            try:
-                                store_prediction(match_id, market, {
-                                    "model_prob": pred["poisson_home_prob"],
-                                    "implied_prob": 1 / odds_val,
-                                    "edge": pred["poisson_home_prob"] - (1 / odds_val),
-                                    "reasoning": f"data_tier={data_tier}",
-                                }, source="poisson")
-                            except Exception:
-                                pass
-                        if pred.get("xgb_home_prob") is not None:
-                            try:
-                                store_prediction(match_id, market, {
-                                    "model_prob": pred["xgb_home_prob"],
-                                    "implied_prob": 1 / odds_val,
-                                    "edge": pred["xgb_home_prob"] - (1 / odds_val),
-                                    "reasoning": f"data_tier={data_tier}",
-                                }, source="xgboost")
-                            except Exception:
-                                pass
                 except Exception:
                     pass
 
