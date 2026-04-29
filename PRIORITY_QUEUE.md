@@ -76,8 +76,11 @@
 | 24 | PIN-1 | Pinnacle anchor signal: `model_prob - pinnacle_implied` as feature | 2-3h | ⬜ | High | Internal | ~May 2026 | Depends on P5.1 to confirm Pinnacle is in our 13 bookmakers |
 | 25 | BDM-1 | Bookmaker disagreement signal | 1h | ✅ Done | Medium | Internal | Done | compute_bookmaker_disagreement() written to match_signals |
 | 26 | FE-LIVE | Live odds in-play on match detail (frontend only) | 1 day | ⬜ | Medium | ROADMAP Frontend Backlog #9 | ~May 2026 | `odds_snapshots` with `is_live=true` already populated. Frontend chart during live match. Pro tier feature |
+| — | ODDS-OU-CHART | O/U 2.5 movement chart on match detail (Pro) | 2-3h | ⬜ | Medium | Data audit 2026-04-29 | ~May 2026 | Already in DB — same snapshot structure as 1X2. Add a second movement chart for over/under line. Zero extra pipeline cost. |
+| — | ODDS-BTTS | BTTS odds per bookmaker in Pro match detail | 2-3h | ⬜ | Medium | Data audit 2026-04-29 | ~May 2026 | BTTS collected across 13 bookmakers every 2h, never surfaced. Add row in full odds comparison table. One of the most-bet markets. |
+| — | ODDS-MARKETS | Show O/U 1.5 and O/U 3.5 lines in Pro odds table | 1-2h | ⬜ | Low | Data audit 2026-04-29 | ~May 2026 | `over_under_15` and `over_under_35` already in DB. Expand Pro odds table with additional lines. Low priority until ODDS-BTTS done. |
 | 27 | MKT-STR | Wire market-implied team strength into XGBoost as input feature | 1 day | ⬜ | Medium | Internal (MODEL_ANALYSIS 11.3) | ~May 2026 | `compute_market_implied_strength()` exists in supabase_client.py but not wired into pipeline. Needs 200+ finished matches with odds first |
-| 28 | EXPOSURE-AUTO | Auto-reduce stakes on league exposure concentration | 1h | ⬜ | Medium | Internal (MODEL_ANALYSIS 11.6) | ~May 2026 | Currently warning-only. Add proportional stake reduction when 3+ bets same league same day. Low effort, pure risk management |
+| 28 | EXPOSURE-AUTO | Auto-reduce stakes on league exposure concentration | 1h | ✅ Done 2026-04-29 | Medium | Internal (MODEL_ANALYSIS 11.6) | Done | 3rd+ bet in same league per bot gets 50% stake reduction. Enforced during placement in daily_pipeline_v2.py. _check_exposure_concentration() still runs as post-placement audit log. |
 | 29 | F8 | Stripe integration (Pro + Elite, webhook, tier column update) | 2-3 days | ✅ Done 2026-04-29 | High | Internal | Done | See Tier 1 row — full breakdown there. |
 | — | LP-1 | Landing page: fix strikethrough pricing | 15 min | ✅ Done 2026-04-29 | Low | Landing Page Review (2026-04-29) | Done | No strikethrough was present — cards already show badge-only. Verified. |
 | — | LP-2 | Landing page: remove Elite annual pricing | 15 min | ✅ Done 2026-04-29 | Low | Landing Page Review (2026-04-29) | Done | Elite card never had annual pricing shown. Verified. |
@@ -121,7 +124,7 @@
 
 | — | PIPE-2 | Strip fetch code from betting_pipeline.py (Phase 2) | 2-3h | ⬜ | Medium | Internal (2026-04-29) | ~May 2026 | betting_pipeline.py currently wraps monolith. Phase 2: read from DB only, delete daily_pipeline_v2.py |
 | — | ODDS-API | Activate The Odds API for Pinnacle odds ($20/mo) | 2h | ⬜ | High | Data Analysis (2026-04-29) | ~May 2026 | Code exists (254 lines, dormant). Pinnacle = gold standard for CLV. Depends on PIN-1 validation |
-| — | LAUNCH-BETA | Add "Early Access / Beta" label to site | 15 min | ⬜ | Medium | Launch Plan (2026-04-29) | Before any promotion | Resets credibility bar, makes thin track record acceptable |
+| — | LAUNCH-BETA | Add "Early Access / Beta" label to site | 15 min | ✅ Done 2026-04-29 | Medium | Launch Plan (2026-04-29) | Done | Beta badge added to nav header next to ODDSINTEL logo |
 | — | LAUNCH-PICK | Make daily AI pick visible without login on /matches | 2-4h | ⬜ | High | Launch Plan (2026-04-29) | Before any promotion | The hook for organic traffic — currently requires login |
 | — | ALERTS | Match alerts & notifications (email/push) | 2-3 days | ⬜ | Medium | Tier Access Matrix | ~June 2026 | Re-engagement loop. No system for this yet |
 | — | EMAIL-WEEKLY | Weekly performance summary email | 1 day | ⬜ | Medium | Tier Access Matrix | ~June 2026 | Shows bot ROI, top picks, CLV stats. Retention play |

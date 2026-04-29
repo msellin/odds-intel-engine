@@ -937,6 +937,9 @@ def run_morning():
     # 8. Process each match with odds
     console.print("\n[cyan]Processing matches with odds...[/cyan]")
     total_bets = 0
+    # 11.6: Track placed bets per bot per league for exposure management
+    from collections import defaultdict
+    league_bet_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     for match in odds_matches:
         # Store match in Supabase
@@ -1187,6 +1190,13 @@ def run_morning():
                 # T1: AF prediction agreement
                 af_agrees = _af_agrees_with_bet(selection, af_pred)
 
+                # 11.6: Exposure management — halve stake for 3rd+ bet in same league per bot
+                _league_key = match.get("league_path", "unknown")
+                _league_count = league_bet_counts[bot_name][_league_key]
+                if _league_count >= 2:
+                    stake = max(round(stake * 0.5, 2), 1.0)
+                    console.print(f"  [dim]Exposure cap ({bot_name}): {_league_count} bets already in {_league_key} — stake halved to €{stake:.2f}[/dim]")
+
                 try:
                     bet_id = store_bet(bot_ids[bot_name], match_id, {
                         "market": mkt,
@@ -1220,6 +1230,7 @@ def run_morning():
                     })
                     if bet_id:
                         total_bets += 1
+                        league_bet_counts[bot_name][_league_key] += 1
                         # Save Stage 1 snapshot: stats-only probability
                         try:
                             store_prediction_snapshot(
@@ -1263,12 +1274,9 @@ def run_morning():
 
 def _check_exposure_concentration():
     """
-    11.6: Cross-match correlation / exposure management.
-    After all bets are placed, checks if any single league has
-    too many bets on the same day (correlated outcomes).
-
-    If a bot has 3+ bets in the same league on the same day,
-    outcomes are correlated — warns and logs. Future: auto-reduce stakes.
+    11.6: Cross-match correlation / exposure management — post-placement audit.
+    Stakes are already reduced during placement (3rd+ bet per league per bot → 50% stake).
+    This function logs a summary of any concentrated exposure after the fact.
 
     See MODEL_ANALYSIS.md Section 11.6.
     """
