@@ -1144,6 +1144,8 @@ def fixture_to_match_dict(fixture: dict) -> dict:
     match_dict = {
         "home_team": teams.get("home", {}).get("name", ""),
         "away_team": teams.get("away", {}).get("name", ""),
+        "home_logo": teams.get("home", {}).get("logo"),
+        "away_logo": teams.get("away", {}).get("logo"),
         "start_time": f.get("date", ""),
         "league_path": f"{league.get('country', '')} / {league.get('name', '')}",
         "league_code": "",

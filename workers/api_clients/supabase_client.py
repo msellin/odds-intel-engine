@@ -75,21 +75,29 @@ def ensure_league(league_path: str, tier: int = 1) -> str:
     return new.data[0]["id"]
 
 
-def ensure_team(team_name: str, country: str = "Unknown") -> str:
-    """Get or create a team, return its UUID"""
+def ensure_team(team_name: str, country: str = "Unknown", logo_url: str | None = None) -> str:
+    """Get or create a team, return its UUID. Updates logo_url if provided and not yet stored."""
     client = get_client()
 
-    result = client.table("teams").select("id").eq("name", team_name).execute()
+    result = client.table("teams").select("id, logo_url").eq("name", team_name).execute()
     if result.data:
-        return result.data[0]["id"]
+        team_id = result.data[0]["id"]
+        # Backfill logo if we have it and DB doesn't
+        if logo_url and not result.data[0].get("logo_url"):
+            client.table("teams").update({"logo_url": logo_url}).eq("id", team_id).execute()
+        return team_id
 
     league = ensure_league(f"{country} / Unknown", tier=0)
 
-    new = client.table("teams").insert({
+    row: dict = {
         "name": team_name,
         "country": country,
         "league_id": league,
-    }).execute()
+    }
+    if logo_url:
+        row["logo_url"] = logo_url
+
+    new = client.table("teams").insert(row).execute()
     return new.data[0]["id"]
 
 
@@ -107,8 +115,8 @@ def store_match(match_data: dict) -> str:
     date_prefix = match_date[:10] if match_date else date.today().isoformat()
 
     country = match_data.get("league_path", "").split(" / ")[0] if " / " in match_data.get("league_path", "") else "Unknown"
-    home_id = ensure_team(home_team, country)
-    away_id = ensure_team(away_team, country)
+    home_id = ensure_team(home_team, country, logo_url=match_data.get("home_logo"))
+    away_id = ensure_team(away_team, country, logo_url=match_data.get("away_logo"))
 
     league_path = match_data.get("league_path", "Unknown / Unknown")
     tier = match_data.get("tier", 1)
