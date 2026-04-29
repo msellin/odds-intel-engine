@@ -9,14 +9,11 @@ All project documentation lives in this repo (`odds-intel-engine/`). Before star
 | `PRIORITY_QUEUE.md` | **Master task list** — all open tasks across all docs, in priority order. Update status here first. |
 | `ROADMAP.md` | Product vision, tier structure, milestones, system state, bot strategy, launch checklist |
 | `MODEL_ANALYSIS.md` | Prediction model architecture, AI evaluations, improvement roadmap |
-| `SIGNAL_ARCHITECTURE.md` | Every signal we collect — inventory, storage, timeline, how signals flow into the model |
-| `SIGNAL_UX_ROADMAP.md` | How to surface signals in UI — 4-phase plan from UX reviews, task IDs SUX-1 to SUX-12 |
+| `SIGNALS.md` | Every signal we collect (inventory, storage, flow into model) + 4-phase UX strategy for surfacing them (SUX-1 to SUX-12) |
 | `TIER_ACCESS_MATRIX.md` | Feature matrix per tier (Anonymous/Free/Pro/Elite), conversion hooks, route protection |
 | `WORKFLOWS.md` | Pipeline architecture — all scheduled jobs, order, manual run instructions, data sources |
 | `DATA_SOURCES.md` | Data source architecture, API-Football integration status, alternatives evaluated |
 | `INFRASTRUCTURE.md` | Full infra stack, current costs, and projections by growth phase |
-| `RESEARCH.md` | Master research document — sports, APIs, pricing, architecture (archival, 2026-04-26) |
-| `UI_RESEARCH.md` | UI/UX patterns from competitor analysis (archival, 2026-04-27) |
 | `data/model_results/SOCCER_FINDINGS.md` | Soccer model iterations and backtest results (archival) |
 | `data/model_results/TENNIS_FINDINGS.md` | Tennis model iterations and backtest results (archival) |
 | `data/model_results/MEGA_BACKTEST_FINDINGS.md` | 354K match backtest across 275 leagues (archival) |
