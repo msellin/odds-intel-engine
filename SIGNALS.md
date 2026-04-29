@@ -301,7 +301,7 @@ All 4 reviewers unanimously agreed: the biggest opportunity is making the invisi
 
 ---
 
-## Phase 1 — Signal Meter + Match Pulse (foundation)
+## Phase 1 — Signal Meter + Match Pulse (foundation) ✅ Complete
 
 **Goal:** Make the engine's work visible on every match card. Zero new data needed — signals already exist.
 
@@ -351,11 +351,11 @@ On notable matches (30-40%), show 1-2 teaser hooks. No numbers — just curiosit
 
 ---
 
-## Phase 2 — Match Detail Signal Views (Pro value unlock)
+## Phase 2 — Match Detail Signal Views (Pro value unlock) — Partial ✅
 
 **Goal:** Give Pro users raw signal data organized as an analytical workspace. They explore, form opinions, then want Elite to validate.
 
-### SUX-4: Summary Tab — The Killer Feature
+### SUX-4: Summary Tab — The Killer Feature ✅ Done 2026-04-29
 
 Default view on match detail. Cherry-picks the most interesting signal from each group in plain English. Readable in 30 seconds:
 
@@ -384,7 +384,7 @@ Accordion cards (not tabs — better mobile) in priority order:
 5. **News & Injuries** — injury count, players out, lineup confidence, news impact
 6. **Live** (during match only)
 
-### SUX-6: Plain-English Signal Translation
+### SUX-6: Plain-English Signal Translation ✅ Done 2026-04-29
 
 Never show raw numbers without context. Translate everything:
 

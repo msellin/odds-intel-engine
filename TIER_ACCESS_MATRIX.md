@@ -59,12 +59,23 @@ Access levels for anonymous visitors, free signed-in users, and paid subscribers
 | Profile & preferences persistence | — | Y | Y | Y |
 | Odds format preference (dec/frac/us) | — | Y | Y | Y |
 
+### Signal Intelligence
+
+| Feature | Anonymous | Free | Pro | Elite |
+|---------|:---------:|:------------:|:-------------:|:-------------:|
+| Signal intelligence grade (A/B/D) + match pulse | Y | Y | Y | Y |
+| Signal teasers (1-2 hooks per notable match) | Y | Y | Y | Y |
+| Intelligence Summary (top 3-5 signals, plain English) | — | 1 signal teaser + upgrade CTA | Full (all groups) | Full |
+| Signal group accordion (Market, Form, Context, Injuries) | — | — | Y | Y |
+
 ### AI & Analytics
 
 | Feature | Anonymous | Free | Pro | Elite |
 |---------|:---------:|:------------:|:-------------:|:-------------:|
 | Model prediction accuracy (public track record) | Y | Y | Y | Y |
-| Value bets page (all AI picks) | — | — | — | Y |
+| Value bets page — stats only (bet count, edge tiers, leagues) | — | Y | Y | Y |
+| Value bets page — directional (match + selection + edge tier) | — | — | Y | Y |
+| Value bets page — full (odds, model prob, exact edge %, stake) | — | — | — | Y |
 | Model probability + edge % per match | — | — | — | Y |
 | CLV tracking (closing line value) | — | — | — | Y |
 | Full bot ROI analytics + strategy breakdown | — | — | — | Y |
