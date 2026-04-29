@@ -351,7 +351,7 @@ On notable matches (30-40%), show 1-2 teaser hooks. No numbers — just curiosit
 
 ---
 
-## Phase 2 — Match Detail Signal Views (Pro value unlock) — Partial ✅
+## Phase 2 — Match Detail Signal Views (Pro value unlock) ✅ Complete
 
 **Goal:** Give Pro users raw signal data organized as an analytical workspace. They explore, form opinions, then want Elite to validate.
 
@@ -373,7 +373,7 @@ NEWS: Chelsea missing 2 key players. Arsenal full strength.
 
 Most users read this and move on. Power users drill into signal group sections.
 
-### SUX-5: Signal Group Accordion Sections
+### SUX-5: Signal Group Accordion Sections ✅ Done 2026-04-29
 
 Accordion cards (not tabs — better mobile) in priority order:
 
@@ -455,7 +455,7 @@ Since you last checked:
 
 Requires tracking last-visited timestamp per user per match. Creates habit, trust, and return visits.
 
-### SUX-10: Post-Match Signal Reveal (Free)
+### SUX-10: Post-Match Signal Reveal (Free) ✅ Done 2026-04-29
 
 After settlement, show one interesting retrospective signal to Free users:
 
