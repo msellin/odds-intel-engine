@@ -1150,12 +1150,14 @@ def run_morning(skip_fetch: bool = False):
         # Store predictions
         for market, prob_key in [
             ("1x2_home", "home_prob"),
+            ("1x2_draw", "draw_prob"),
             ("1x2_away", "away_prob"),
             ("over25", "over_25_prob"),
             ("under25", "under_25_prob"),
         ]:
             odds_key = {
                 "1x2_home": "odds_home",
+                "1x2_draw": "odds_draw",
                 "1x2_away": "odds_away",
                 "over25": "odds_over_25",
                 "under25": "odds_under_25",
