@@ -129,7 +129,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 |------|--------|
 | Landing page | ✅ Built |
 | Auth (login/signup) | ✅ Built |
-| /matches | ✅ Public, smart sort, dual layout |
+| /matches | ✅ Public, smart sort, dual layout, signal grade + pulse + teasers (SUX-1/2/3) |
 | /matches/[id] | ✅ Free + Pro sections |
 | /value-bets | ✅ Built — needs tier gating |
 | /track-record | ✅ Real Supabase data |

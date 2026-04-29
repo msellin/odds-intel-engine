@@ -54,9 +54,9 @@
 
 | # | ID | Task | Effort | Status | Impact | Source | Timeline | Notes |
 |---|-----|------|--------|--------|--------|--------|----------|-------|
-| 58 | SUX-1 | Match Intelligence Score: signal count + A/B/C/D grade on every match card | 1-2 days | ⬜ | High | UX Review (2026-04-29) | ~May 2026 | Count signals in match_signals per match + map data tier → grade. API endpoint + frontend card component. All tiers see this |
-| 59 | SUX-2 | Match Pulse composite indicator (Routine/Interesting/High Alert) | 4h | ⬜ | High | UX Review (2026-04-29) | ~May 2026 | Derive from model_disagreement + bookmaker_disagreement + importance_diff + steam_move. Badge on ~15-20% of matches only (scarcity = compelling) |
-| 60 | SUX-3 | Free-tier signal teasers on notable matches | 4h | ⬜ | Medium | UX Review (2026-04-29) | ~May 2026 | 1-2 plain-English hooks on 30-40% of matches: "Odds shifted overnight", "High bookmaker disagreement". No numbers, just curiosity gaps |
+| 58 | SUX-1 | Match Intelligence Score: signal count + A/B/C/D grade on every match card | 1-2 days | ✅ Done 2026-04-29 | High | UX Review (2026-04-29) | Done | Grade badge (A=xgboost, B=poisson, D=af-only) on every match row. Signal count in tooltip. All tiers see this. batchFetchSignalSummary() in engine-data.ts |
+| 59 | SUX-2 | Match Pulse composite indicator (Routine/Interesting/High Alert) | 4h | ✅ Done 2026-04-29 | High | UX Review (2026-04-29) | Done | ⚡ badge on high-alert matches (bdm>0.12 + olm/vol threshold). ~15-20% scarcity preserved. Derived from bookmaker_disagreement, overnight_line_move, odds_volatility, importance_diff |
+| 60 | SUX-3 | Free-tier signal teasers on notable matches | 4h | ✅ Done 2026-04-29 | Medium | UX Review (2026-04-29) | Done | 1-2 italic hooks on 30-40% of matches below team names. "High bookmaker disagreement", "Odds shifted overnight", "Key injury news detected", etc. No raw numbers |
 
 ---
 
