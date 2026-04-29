@@ -62,17 +62,20 @@ Monthly estimate: **~11,280 min/month**
 
 | Resource | Free Tier Limit | Current Usage | Headroom |
 |----------|----------------|---------------|----------|
-| Database | 500 MB | Low (<50 MB) | Plenty |
-| Auth MAU | 50,000 | 0 (no users yet) | Plenty |
+| Database (disk) | ~2 GB (dashboard shows disk quota, includes WAL + indexes) | ~130 MB | Plenty — months of runway |
+| Database (rows) | — | odds_snapshots ~416K, matches ~816, predictions ~590 | Fine |
+| Auth MAU | 50,000 | 2 users | Plenty |
 | Storage | 1 GB | Not used | N/A |
 | Bandwidth | 2 GB | Low | Plenty |
 | Edge Functions | 500K invocations | Not used | N/A |
 | Realtime connections | 200 concurrent | Not used | N/A |
 
+**Daily pruning active** (runs after settlement at 21:00 UTC): `odds_snapshots` keeps only opening + closing per finished match. Steady-state size is ~upcoming matches only. DB growth is now slow and bounded.
+
 **When to upgrade:** Supabase Pro ($25/mo) will be needed when:
-- DB exceeds 500 MB (est. 3-6 months at current data rate)
-- You want daily backups / point-in-time recovery (recommended before accepting payments)
-- You need more than 200 concurrent realtime connections
+- You want daily backups / point-in-time recovery — **required before accepting real payments**
+- Auth MAU exceeds 50K (very long way off)
+- DB genuinely exceeds the disk quota (months away at current rate)
 
 ---
 
