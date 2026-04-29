@@ -114,7 +114,7 @@ def store_match(match_data: dict) -> str:
     tier = match_data.get("tier", 1)
     league_id = ensure_league(league_path, tier)
 
-    existing = client.table("matches").select("id, sofascore_event_id, api_football_id, venue_name, referee").eq(
+    existing = client.table("matches").select("id, api_football_id, venue_name, referee").eq(
         "home_team_id", home_id
     ).eq(
         "away_team_id", away_id
@@ -271,7 +271,7 @@ def store_live_snapshot(match_id: str, snapshot: dict):
 def store_match_event(match_id: str, event: dict) -> bool:
     """
     Store a match event (goal, card, sub).
-    Returns False if event already exists (dedup via sofascore_event_id).
+    Returns False if event already exists (dedup via unique constraint).
     """
     client = get_client()
 
@@ -284,7 +284,6 @@ def store_match_event(match_id: str, event: dict) -> bool:
         "player_name": event.get("player_name"),
         "assist_name": event.get("assist_name"),
         "detail": event.get("detail"),
-        "sofascore_event_id": event.get("sofascore_event_id"),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -301,7 +300,7 @@ def store_match_event(match_id: str, event: dict) -> bool:
 def get_live_matches() -> list[dict]:
     """
     Get matches that are currently in-play or starting soon.
-    Returns matches with sofascore_event_id so the live tracker can poll them.
+    Returns matches that are live or starting soon for the live tracker.
     """
     client = get_client()
     now = datetime.now(timezone.utc)
@@ -310,7 +309,7 @@ def get_live_matches() -> list[dict]:
     from_time = now.replace(hour=max(0, now.hour - 3)).isoformat()
 
     result = client.table("matches").select(
-        "id, date, sofascore_event_id, status, "
+        "id, date, status, "
         "home:home_team_id(name), away:away_team_id(name), "
         "leagues(name, country)"
     ).gte("date", from_time).neq("status", "finished").execute()
@@ -318,21 +317,9 @@ def get_live_matches() -> list[dict]:
     return result.data
 
 
-def get_match_by_sofascore_id(sofascore_event_id: int) -> dict | None:
-    """Look up a DB match by Sofascore event ID"""
-    client = get_client()
-    result = client.table("matches").select("id, status, date").eq(
-        "sofascore_event_id", sofascore_event_id
-    ).execute()
-    return result.data[0] if result.data else None
-
-
 def get_match_by_teams_and_date(home_team_name: str, away_team_name: str,
                                  match_date: str) -> dict | None:
-    """
-    Fallback lookup when sofascore_event_id is not stored.
-    Joins through teams table to match by name.
-    """
+    """Look up a match by team names and date."""
     client = get_client()
     date_prefix = match_date[:10]
 
@@ -346,7 +333,7 @@ def get_match_by_teams_and_date(home_team_name: str, away_team_name: str,
     home_id = home_result.data[0]["id"]
     away_id = away_result.data[0]["id"]
 
-    result = client.table("matches").select("id, status, date, sofascore_event_id").eq(
+    result = client.table("matches").select("id, status, date").eq(
         "home_team_id", home_id
     ).eq(
         "away_team_id", away_id
@@ -362,7 +349,7 @@ def get_todays_scheduled_matches() -> list[dict]:
     now_iso = datetime.now(timezone.utc).isoformat()
 
     result = client.table("matches").select(
-        "id, date, sofascore_event_id, "
+        "id, date, "
         "home:home_team_id(name), away:away_team_id(name)"
     ).gte("date", now_iso).lte("date", f"{today}T23:59:59").eq("status", "scheduled").execute()
 
