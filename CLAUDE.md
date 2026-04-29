@@ -30,6 +30,15 @@ When you complete a task, update the relevant documentation:
 
 Do not let docs drift from reality. If you notice something marked TODO that is already done, fix it.
 
+## Database Migrations
+
+**All migrations live in `supabase/migrations/` in this repo (odds-intel-engine) — never in odds-intel-web.**
+
+- Naming convention: `NNN_short_description.sql` — e.g. `016_free_user_features.sql`
+- NNN = zero-padded sequential number, next is always current highest + 1
+- Applied automatically via GitHub Actions (`migrate.yml`) on any push to main that touches `supabase/migrations/`
+- Can also be triggered manually via Actions → "OddsIntel — Run DB Migrations" → Run workflow
+
 ## Architecture
 
 ```
