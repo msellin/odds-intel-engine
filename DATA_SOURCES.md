@@ -11,7 +11,7 @@
 | **API-Football Ultra** ($29/mo) | PRIMARY — all structured data | ✅ Active |
 | Kambi API (free) | Supplementary odds, 41 leagues | ✅ Active |
 | ESPN (free) | Settlement result backup | ✅ Active (backup) |
-| BetExplorer (free) | Gap league odds (phasing out) | To be removed |
+| ~~BetExplorer~~ | Gap league odds — removed 2026-04-29 (fragile HTML scraping, low value) | Removed |
 
 **What API-Football covers:** fixtures, 13-bookmaker odds, live scores, lineups, injuries, standings, H2H, match events, player stats, team stats, transfers, xG (post-match via /fixtures/statistics). 1,236 leagues.
 

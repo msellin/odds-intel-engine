@@ -5,7 +5,6 @@ Standalone job that fetches:
   - AF predictions for all today's fixtures (coverage-aware)
   - AF bulk odds
   - Kambi scraper odds
-  - BetExplorer gap league odds
 
 Stores odds in odds_snapshots and AF predictions on matches + predictions tables.
 
@@ -38,7 +37,6 @@ from workers.api_clients.supabase_client import (
     get_client, store_prediction, store_odds,
 )
 from workers.scrapers.kambi_odds import get_target_league_matches
-from workers.scrapers.betexplorer_odds import fetch_gap_leagues_odds as fetch_betexplorer_odds
 from workers.utils.pipeline_utils import (
     check_fixtures_ready, log_pipeline_start, log_pipeline_complete,
     log_pipeline_failed, log_pipeline_skipped, get_league_coverage_map,
@@ -189,34 +187,22 @@ def fetch_af_bulk_odds(target_date: str, af_id_to_match_id: dict) -> int:
     return stored
 
 
-def fetch_scraper_odds() -> tuple[int, int]:
-    """Fetch odds from Kambi and BetExplorer scrapers."""
-    kambi_count = 0
-    be_count = 0
-
+def fetch_scraper_odds() -> int:
+    """Fetch odds from Kambi scraper."""
     console.print("\n[cyan]Fetching Kambi odds...[/cyan]")
     try:
         kambi = get_target_league_matches()
-        kambi_count = len(kambi)
-        console.print(f"  {kambi_count} matches with Kambi odds")
+        console.print(f"  {len(kambi)} matches with Kambi odds")
+        return len(kambi)
     except Exception as e:
         console.print(f"  [yellow]Kambi error: {e}[/yellow]")
-
-    console.print("[cyan]Fetching BetExplorer odds (gap leagues)...[/cyan]")
-    try:
-        be = fetch_betexplorer_odds(delay=0.5)
-        be_count = len(be) if be else 0
-        console.print(f"  {be_count} matches with BetExplorer odds")
-    except Exception as e:
-        console.print(f"  [yellow]BetExplorer error: {e}[/yellow]")
-
-    return kambi_count, be_count
+        return 0
 
 
 def main():
     parser = argparse.ArgumentParser(description="Fetch AF predictions and odds from all sources")
     parser.add_argument("--date", type=str, default=None, help="Date (YYYY-MM-DD, default: today)")
-    parser.add_argument("--skip-scrapers", action="store_true", help="Skip Kambi/BetExplorer")
+    parser.add_argument("--skip-scrapers", action="store_true", help="Skip Kambi scraper")
     args = parser.parse_args()
 
     target_date = args.date or date.today().isoformat()
@@ -248,8 +234,7 @@ def main():
 
         # Scraper odds
         if not args.skip_scrapers:
-            kambi_n, be_n = fetch_scraper_odds()
-            total += kambi_n + be_n
+            total += fetch_scraper_odds()
 
         log_pipeline_complete(
             run_id,

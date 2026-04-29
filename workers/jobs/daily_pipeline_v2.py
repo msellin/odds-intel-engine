@@ -30,7 +30,6 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workers.scrapers.kambi_odds import fetch_all_operators, get_target_league_matches
-from workers.scrapers.betexplorer_odds import fetch_gap_leagues_odds as fetch_betexplorer_odds
 from workers.api_clients.api_football import (
     get_fixtures_by_date, fixture_to_match_dict,
     get_fixture_odds, parse_fixture_odds, get_odds_by_date,
@@ -541,17 +540,13 @@ def _league_path_to_tier(league_path: str) -> int:
 def _merge_odds_sources(
     af_odds_fixtures: list[dict],
     kambi_matches: list[dict],
-    betexplorer_matches: list[dict] | None = None,
 ) -> list[dict]:
     """
     Build the prediction pool by merging all odds sources.
 
     Priority / role of each source:
       API-Football (primary) — paid, 1236 leagues, gives us tier + league_path
-                               from the fixture metadata; base of the pool.
-      Kambi        (additive) — different bookmaker, better odds on some markets;
-                               also carries pre-mapped tier for our target leagues.
-      BetExplorer  (additive) — gap leagues (Singapore, South Korea, lower divs).
+      Kambi        (additive) — different bookmaker, better odds on some markets
 
     For each match, we keep the best odds across all sources.
     """
@@ -587,7 +582,6 @@ def _merge_odds_sources(
     # 2. Merge scraper sources on top (best odds win, tier/league_path from AF)
     for matches, source_name in [
         (kambi_matches, "kambi"),
-        (betexplorer_matches or [], "betexplorer"),
     ]:
         for m in matches:
             k = _key(m)
@@ -808,10 +802,9 @@ def _fetch_af_bulk_odds(today_str, af_fixtures_raw, af_id_to_match_id):
 
 def _parallel_fetch(af_id_to_match_id, af_fixtures_raw, today_str, all_fixtures):
     """
-    Run all data fetching in parallel across 3 thread groups:
-      A: API-Football (predictions + enrichment + bulk odds) — sequential within, shares AF rate limiter
+    Run data fetching in parallel across 2 thread groups:
+      A: API-Football (predictions + enrichment + bulk odds)
       B: Kambi — different API, fast
-      C: BetExplorer — different API, slow scraper (biggest win from parallelism)
     """
     def _af_work():
         preds = {}
@@ -832,24 +825,14 @@ def _parallel_fetch(af_id_to_match_id, af_fixtures_raw, today_str, all_fixtures)
         console.print(f"  {len(kambi)} matches with Kambi odds")
         return kambi
 
-    def _be_work():
-        console.print("\n[cyan]Fetching odds from BetExplorer (gap leagues)...[/cyan]")
-        try:
-            return fetch_betexplorer_odds(delay=0.5)
-        except Exception as e:
-            console.print(f"  [yellow]BetExplorer scrape failed (non-fatal): {e}[/yellow]")
-            return []
-
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=2) as executor:
         af_future = executor.submit(_af_work)
         scraper_future = executor.submit(_scraper_work)
-        be_future = executor.submit(_be_work)
 
         af_preds, af_odds_fixtures = af_future.result()
         kambi_matches = scraper_future.result()
-        betexplorer_matches = be_future.result()
 
-    return af_preds, af_odds_fixtures, kambi_matches, betexplorer_matches
+    return af_preds, af_odds_fixtures, kambi_matches
 
 
 def run_morning():
@@ -910,13 +893,11 @@ def run_morning():
     #   B: Kambi
     #   C: BetExplorer (gap leagues)
     console.print("\n[cyan]Running parallel data fetch (predictions + enrichment + odds)...[/cyan]")
-    af_preds, af_odds_fixtures, kambi_matches, betexplorer_matches = \
+    af_preds, af_odds_fixtures, kambi_matches = \
         _parallel_fetch(af_id_to_match_id, af_fixtures_raw, today_str, all_fixtures)
 
-    # 6. Merge all odds sources — AF is the primary base, scrapers add better odds
-    odds_matches = _merge_odds_sources(
-        af_odds_fixtures, kambi_matches, betexplorer_matches
-    )
+    # 6. Merge odds sources — AF primary, Kambi additive
+    odds_matches = _merge_odds_sources(af_odds_fixtures, kambi_matches)
 
     console.print(f"\n  [bold]{len(odds_matches)} matches in prediction pool[/bold]")
     source_counts: dict[str, int] = {}

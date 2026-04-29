@@ -11,7 +11,7 @@ on:
         required: false
         type: string
       skip_scrapers:
-        description: 'Skip Kambi/BetExplorer scrapers'
+        description: 'Skip Kambi scraper'
         required: false
         default: false
         type: boolean
