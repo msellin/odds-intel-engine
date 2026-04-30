@@ -265,7 +265,7 @@ def store_match_events_batch(match_id: str, events: list[dict],
 
     rows = []
     for ev in events:
-        team_side = "unknown"
+        team_side = "home"  # Default to home (DB CHECK constraint requires home/away)
         if home_team_api_id and ev.get("team_api_id"):
             team_side = "home" if ev["team_api_id"] == home_team_api_id else "away"
 
@@ -281,12 +281,27 @@ def store_match_events_batch(match_id: str, events: list[dict],
             now,
         ))
 
-    return bulk_upsert(
-        "match_events", columns, rows,
-        conflict_columns=["match_id", "af_event_order"],
-        update_columns=["minute", "added_time", "event_type", "team",
-                        "player_name", "detail"]
-    )
+    # No unique constraint on (match_id, af_event_order) in DB.
+    # Use insert with duplicate check — skip events already stored.
+    # Check: af_event_order is the most reliable dedup key per match.
+    stored = 0
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            for row in rows:
+                try:
+                    cur.execute(
+                        """INSERT INTO match_events
+                           (match_id, minute, added_time, event_type, team,
+                            player_name, detail, af_event_order, created_at)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                        row
+                    )
+                    stored += 1
+                except Exception:
+                    conn.rollback()
+                    continue
+            conn.commit()
+    return stored
 
 
 def update_match_status_sql(match_id: str, status: str):
