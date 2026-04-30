@@ -488,6 +488,9 @@ def build_match_feature_vectors(client, date_str: str) -> int:
     """
     Nightly ETL: build wide ML training rows for all finished matches on date_str.
     Pulls from predictions, team_elo_daily, team_form_cache, odds_snapshots, matches.
+
+    Uses batched bulk queries (one per table) instead of per-match queries.
+    ~400 matches now takes ~8 queries total instead of ~4000.
     Returns count of rows upserted.
     """
     # Fetch finished matches for this date
@@ -503,27 +506,144 @@ def build_match_feature_vectors(client, date_str: str) -> int:
     if not matches:
         return 0
 
+    all_match_ids = [m["id"] for m in matches]
+    all_team_ids = set()
+    all_league_ids = set()
+    for m in matches:
+        if m.get("home_team_id"):
+            all_team_ids.add(m["home_team_id"])
+        if m.get("away_team_id"):
+            all_team_ids.add(m["away_team_id"])
+        if m.get("league_id"):
+            all_league_ids.add(m["league_id"])
+
+    # ── Batch load: leagues ──────────────────────────────────────────────────
+    league_tier_map = {}
+    if all_league_ids:
+        lr = client.table("leagues").select("id, tier").in_(
+            "id", list(all_league_ids)
+        ).execute()
+        league_tier_map = {r["id"]: r.get("tier") for r in (lr.data or [])}
+
+    # ── Batch load: predictions (1x2_home) ───────────────────────────────────
+    # Supabase .in_() has a practical limit; chunk if needed
+    preds_by_match: dict[str, list] = {}
+    for chunk in _chunk_list(all_match_ids, 200):
+        pr = client.table("predictions").select(
+            "match_id, source, model_probability, market, reasoning"
+        ).in_("match_id", chunk).eq("market", "1x2_home").execute()
+        for p in (pr.data or []):
+            preds_by_match.setdefault(p["match_id"], []).append(p)
+
+    # Also get reasoning for data_tier (any market, just need one per match)
+    reasoning_by_match: dict[str, str] = {}
+    for chunk in _chunk_list(all_match_ids, 200):
+        rr = client.table("predictions").select(
+            "match_id, reasoning"
+        ).in_("match_id", chunk).not_.is_("reasoning", "null").limit(1000).execute()
+        for r in (rr.data or []):
+            if r["match_id"] not in reasoning_by_match and r.get("reasoning"):
+                reasoning_by_match[r["match_id"]] = r["reasoning"]
+
+    # ── Batch load: odds_snapshots (1x2, earliest + latest per selection) ────
+    # Fetch all 1x2 snapshots for these matches, ordered by timestamp
+    odds_by_match: dict[str, list] = {}
+    for chunk in _chunk_list(all_match_ids, 200):
+        odr = client.table("odds_snapshots").select(
+            "match_id, selection, odds, timestamp"
+        ).in_("match_id", chunk).eq("market", "1x2").order(
+            "timestamp", desc=False
+        ).limit(10000).execute()
+        for o in (odr.data or []):
+            odds_by_match.setdefault(o["match_id"], []).append(o)
+
+    # ── Batch load: ELO (latest per team up to date_str) ─────────────────────
+    elo_by_team: dict[str, float] = {}
+    for chunk in _chunk_list(list(all_team_ids), 200):
+        er = client.table("team_elo_daily").select(
+            "team_id, elo_rating, date"
+        ).in_("team_id", chunk).lte("date", date_str).order(
+            "date", desc=True
+        ).limit(5000).execute()
+        for e in (er.data or []):
+            # Keep only the most recent per team (first seen due to desc order)
+            if e["team_id"] not in elo_by_team:
+                elo_by_team[e["team_id"]] = float(e["elo_rating"])
+
+    # ── Batch load: form cache (latest per team up to date_str) ──────────────
+    form_by_team: dict[str, float] = {}
+    for chunk in _chunk_list(list(all_team_ids), 200):
+        fr = client.table("team_form_cache").select(
+            "team_id, ppg, date"
+        ).in_("team_id", chunk).lte("date", date_str).order(
+            "date", desc=True
+        ).limit(5000).execute()
+        for f in (fr.data or []):
+            if f["team_id"] not in form_by_team:
+                form_by_team[f["team_id"]] = f.get("ppg")
+
+    # ── Batch load: match_signals ────────────────────────────────────────────
+    signals_by_match: dict[str, list] = {}
+    for chunk in _chunk_list(all_match_ids, 200):
+        sr = client.table("match_signals").select(
+            "match_id, signal_name, signal_value, captured_at"
+        ).in_("match_id", chunk).order("captured_at", desc=True).limit(50000).execute()
+        for s in (sr.data or []):
+            signals_by_match.setdefault(s["match_id"], []).append(s)
+
+    # ── Build rows from cached data ──────────────────────────────────────────
     upserted = 0
+    batch_rows = []
 
     for match in matches:
-        match_id = match["id"]
-        match_date = date_str
-
         try:
-            row = _build_feature_row(client, match)
+            row = _build_feature_row_batched(
+                match, league_tier_map, preds_by_match,
+                reasoning_by_match, odds_by_match, elo_by_team,
+                form_by_team, signals_by_match,
+            )
             if row:
-                client.table("match_feature_vectors").upsert(
-                    row, on_conflict="match_id"
-                ).execute()
-                upserted += 1
+                batch_rows.append(row)
         except Exception:
             pass
+
+    # Upsert in batches of 50
+    for chunk in _chunk_list(batch_rows, 50):
+        try:
+            client.table("match_feature_vectors").upsert(
+                chunk, on_conflict="match_id"
+            ).execute()
+            upserted += len(chunk)
+        except Exception:
+            # Fall back to one-by-one
+            for row in chunk:
+                try:
+                    client.table("match_feature_vectors").upsert(
+                        row, on_conflict="match_id"
+                    ).execute()
+                    upserted += 1
+                except Exception:
+                    pass
 
     return upserted
 
 
-def _build_feature_row(client, match: dict) -> dict | None:
-    """Build a single match_feature_vectors row from all available sources."""
+def _chunk_list(lst: list, size: int) -> list[list]:
+    """Split list into chunks of given size."""
+    return [lst[i:i + size] for i in range(0, len(lst), size)]
+
+
+def _build_feature_row_batched(
+    match: dict,
+    league_tier_map: dict,
+    preds_by_match: dict,
+    reasoning_by_match: dict,
+    odds_by_match: dict,
+    elo_by_team: dict,
+    form_by_team: dict,
+    signals_by_match: dict,
+) -> dict | None:
+    """Build a single match_feature_vectors row from pre-loaded batch data."""
     match_id = match["id"]
     match_date = match["date"][:10] if match.get("date") else None
 
@@ -538,24 +658,13 @@ def _build_feature_row(client, match: dict) -> dict | None:
         over_25 = total_goals > 2
 
     # ── League tier ───────────────────────────────────────────────────────────
-    league_tier = None
-    if match.get("league_id"):
-        lr = client.table("leagues").select("tier").eq(
-            "id", match["league_id"]
-        ).execute()
-        if lr.data:
-            league_tier = lr.data[0].get("tier")
+    league_tier = league_tier_map.get(match.get("league_id"))
 
-    # ── Ensemble prediction (1x2 home) ────────────────────────────────────────
-    ens_home = ens_draw = ens_away = None
-    pois_home = xgb_home = af_home = None
+    # ── Predictions ───────────────────────────────────────────────────────────
+    ens_home = pois_home = xgb_home = af_home = None
     model_disagreement = None
 
-    pred_result = client.table("predictions").select(
-        "source, model_probability, market"
-    ).eq("match_id", match_id).eq("market", "1x2_home").execute()
-
-    for p in (pred_result.data or []):
+    for p in preds_by_match.get(match_id, []):
         src = p.get("source", "ensemble")
         prob = p.get("model_probability")
         if src == "ensemble":
@@ -570,100 +679,61 @@ def _build_feature_row(client, match: dict) -> dict | None:
     if pois_home is not None and xgb_home is not None:
         model_disagreement = round(abs(float(pois_home) - float(xgb_home)), 4)
 
-    # Use ensemble; fall back to first available
     if ens_home is None:
         ens_home = pois_home or xgb_home or af_home
 
-    # ── Opening implied odds ──────────────────────────────────────────────────
-    opening_implied_home = opening_implied_draw = opening_implied_away = None
-    odds_drift_home = steam_move = None
-
-    # Earliest snapshot per selection
-    for sel, col in [("home", "opening_implied_home"),
-                     ("draw", "opening_implied_draw"),
-                     ("away", "opening_implied_away")]:
-        snap = client.table("odds_snapshots").select(
-            "odds, timestamp"
-        ).eq("match_id", match_id).eq("market", "1x2").eq(
-            "selection", sel
-        ).order("timestamp", desc=False).limit(1).execute()
-        if snap.data:
-            val = 1.0 / float(snap.data[0]["odds"])
-            if col == "opening_implied_home":
-                opening_implied_home = round(val, 4)
-                # Compute drift: latest vs earliest
-                latest = client.table("odds_snapshots").select("odds").eq(
-                    "match_id", match_id
-                ).eq("market", "1x2").eq("selection", "home").order(
-                    "timestamp", desc=True
-                ).limit(1).execute()
-                if latest.data:
-                    closing_implied = 1.0 / float(latest.data[0]["odds"])
-                    odds_drift_home = round(closing_implied - val, 5)
-                    steam_move = abs(odds_drift_home) > 0.03
-            elif col == "opening_implied_draw":
-                opening_implied_draw = round(val, 4)
-            elif col == "opening_implied_away":
-                opening_implied_away = round(val, 4)
-
-    # ── ELO ───────────────────────────────────────────────────────────────────
-    elo_home = elo_away = elo_diff = None
-    home_team_id = match.get("home_team_id")
-    away_team_id = match.get("away_team_id")
-
-    if home_team_id and match_date:
-        elo_r = client.table("team_elo_daily").select("elo_rating").eq(
-            "team_id", home_team_id
-        ).lte("date", match_date).order("date", desc=True).limit(1).execute()
-        if elo_r.data:
-            elo_home = float(elo_r.data[0]["elo_rating"])
-
-    if away_team_id and match_date:
-        elo_r = client.table("team_elo_daily").select("elo_rating").eq(
-            "team_id", away_team_id
-        ).lte("date", match_date).order("date", desc=True).limit(1).execute()
-        if elo_r.data:
-            elo_away = float(elo_r.data[0]["elo_rating"])
-
-    if elo_home is not None and elo_away is not None:
-        elo_diff = round(elo_home - elo_away, 2)
-
-    # ── Form ──────────────────────────────────────────────────────────────────
-    form_ppg_home = form_ppg_away = None
-    form_momentum_home = form_momentum_away = None
-
-    if home_team_id and match_date:
-        form_r = client.table("team_form_cache").select(
-            "ppg"
-        ).eq("team_id", home_team_id).lte(
-            "date", match_date
-        ).order("date", desc=True).limit(1).execute()
-        if form_r.data:
-            form_ppg_home = form_r.data[0].get("ppg")
-
-    if away_team_id and match_date:
-        form_r = client.table("team_form_cache").select(
-            "ppg"
-        ).eq("team_id", away_team_id).lte(
-            "date", match_date
-        ).order("date", desc=True).limit(1).execute()
-        if form_r.data:
-            form_ppg_away = form_r.data[0].get("ppg")
-
-    # ── Data tier (from predictions) ─────────────────────────────────────────
+    # ── Data tier ─────────────────────────────────────────────────────────────
     data_tier = None
-    tier_r = client.table("predictions").select("reasoning").eq(
-        "match_id", match_id
-    ).limit(1).execute()
-    if tier_r.data and tier_r.data[0].get("reasoning"):
-        reasoning = tier_r.data[0]["reasoning"]
+    reasoning = reasoning_by_match.get(match_id)
+    if reasoning:
         for t in ("A", "B", "C", "D"):
             if f"tier={t}" in reasoning or f"Tier {t}" in reasoning or f"data_tier={t}" in reasoning:
                 data_tier = t
                 break
 
-    # ── Signals from match_signals (S3/S4/S5/BDM-1 + S3b-S3f + T2) ──────────
-    # Pull the latest value for each signal name (closest to kickoff)
+    # ── Opening/closing implied odds ─────────────────────────────────────────
+    opening_implied_home = opening_implied_draw = opening_implied_away = None
+    odds_drift_home = steam_move = None
+
+    snaps = odds_by_match.get(match_id, [])
+    # Group by selection, already ordered by timestamp asc
+    snaps_by_sel: dict[str, list] = {}
+    for s in snaps:
+        snaps_by_sel.setdefault(s["selection"].lower(), []).append(s)
+
+    for sel, attr in [("home", "opening_implied_home"),
+                      ("draw", "opening_implied_draw"),
+                      ("away", "opening_implied_away")]:
+        sel_snaps = snaps_by_sel.get(sel, [])
+        if sel_snaps:
+            opening_odds = float(sel_snaps[0]["odds"])
+            opening_implied = round(1.0 / opening_odds, 4) if opening_odds > 1.0 else None
+
+            if sel == "home":
+                opening_implied_home = opening_implied
+                if len(sel_snaps) >= 2 and opening_implied:
+                    closing_odds = float(sel_snaps[-1]["odds"])
+                    if closing_odds > 1.0:
+                        closing_implied = 1.0 / closing_odds
+                        odds_drift_home = round(closing_implied - opening_implied, 5)
+                        steam_move = abs(odds_drift_home) > 0.03
+            elif sel == "draw":
+                opening_implied_draw = opening_implied
+            elif sel == "away":
+                opening_implied_away = opening_implied
+
+    # ── ELO ───────────────────────────────────────────────────────────────────
+    home_team_id = match.get("home_team_id")
+    away_team_id = match.get("away_team_id")
+    elo_home = elo_by_team.get(home_team_id)
+    elo_away = elo_by_team.get(away_team_id)
+    elo_diff = round(elo_home - elo_away, 2) if elo_home is not None and elo_away is not None else None
+
+    # ── Form ──────────────────────────────────────────────────────────────────
+    form_ppg_home = form_by_team.get(home_team_id)
+    form_ppg_away = form_by_team.get(away_team_id)
+
+    # ── Signals ───────────────────────────────────────────────────────────────
     fixture_importance = bookmaker_disagreement = referee_cards_avg = None
     injury_count_home = injury_count_away = None
     news_impact_score = lineup_confirmed = None
@@ -677,71 +747,67 @@ def _build_feature_row(client, match: dict) -> dict | None:
     goals_against_avg_home = goals_against_avg_away = None
     market_implied_home = market_implied_draw = market_implied_away = None
 
-    signals_r = client.table("match_signals").select(
-        "signal_name, signal_value, captured_at"
-    ).eq("match_id", match_id).order("captured_at", desc=True).limit(500).execute()
-
-    if signals_r.data:
-        seen_signals: set[str] = set()
-        for sig in signals_r.data:
-            name = sig.get("signal_name")
-            val = sig.get("signal_value")
-            if name and name not in seen_signals:
-                seen_signals.add(name)
-                fval = float(val) if val is not None else None
-                ival = int(val) if val is not None else None
-                if name == "fixture_importance":
-                    fixture_importance = fval
-                elif name == "bookmaker_disagreement":
-                    bookmaker_disagreement = fval
-                elif name == "referee_cards_avg":
-                    referee_cards_avg = fval
-                elif name == "injury_count_home":
-                    injury_count_home = ival
-                elif name == "injury_count_away":
-                    injury_count_away = ival
-                elif name == "news_impact_score":
-                    news_impact_score = fval
-                elif name == "lineup_confirmed":
-                    lineup_confirmed = bool(val) if val is not None else None
-                elif name == "league_position_home":
-                    league_position_home = fval
-                elif name == "league_position_away":
-                    league_position_away = fval
-                elif name == "points_to_relegation_home":
-                    points_to_relegation_home = ival
-                elif name == "points_to_relegation_away":
-                    points_to_relegation_away = ival
-                elif name == "points_to_title_home":
-                    points_to_title_home = ival
-                elif name == "points_to_title_away":
-                    points_to_title_away = ival
-                elif name == "h2h_win_pct":
-                    h2h_win_pct = fval
-                elif name == "overnight_line_move":
-                    overnight_line_move = fval
-                elif name == "rest_days_home":
-                    rest_days_home = ival
-                elif name == "rest_days_away":
-                    rest_days_away = ival
-                elif name == "referee_home_win_pct":
-                    referee_home_win_pct = fval
-                elif name == "referee_over25_pct":
-                    referee_over25_pct = fval
-                elif name == "goals_for_avg_home":
-                    goals_for_avg_home = fval
-                elif name == "goals_for_avg_away":
-                    goals_for_avg_away = fval
-                elif name == "goals_against_avg_home":
-                    goals_against_avg_home = fval
-                elif name == "goals_against_avg_away":
-                    goals_against_avg_away = fval
-                elif name == "market_implied_home":
-                    market_implied_home = fval
-                elif name == "market_implied_draw":
-                    market_implied_draw = fval
-                elif name == "market_implied_away":
-                    market_implied_away = fval
+    match_signals = signals_by_match.get(match_id, [])
+    seen_signals: set[str] = set()
+    for sig in match_signals:
+        name = sig.get("signal_name")
+        val = sig.get("signal_value")
+        if name and name not in seen_signals:
+            seen_signals.add(name)
+            fval = float(val) if val is not None else None
+            ival = int(val) if val is not None else None
+            if name == "fixture_importance":
+                fixture_importance = fval
+            elif name == "bookmaker_disagreement":
+                bookmaker_disagreement = fval
+            elif name == "referee_cards_avg":
+                referee_cards_avg = fval
+            elif name == "injury_count_home":
+                injury_count_home = ival
+            elif name == "injury_count_away":
+                injury_count_away = ival
+            elif name == "news_impact_score":
+                news_impact_score = fval
+            elif name == "lineup_confirmed":
+                lineup_confirmed = bool(val) if val is not None else None
+            elif name == "league_position_home":
+                league_position_home = fval
+            elif name == "league_position_away":
+                league_position_away = fval
+            elif name == "points_to_relegation_home":
+                points_to_relegation_home = ival
+            elif name == "points_to_relegation_away":
+                points_to_relegation_away = ival
+            elif name == "points_to_title_home":
+                points_to_title_home = ival
+            elif name == "points_to_title_away":
+                points_to_title_away = ival
+            elif name == "h2h_win_pct":
+                h2h_win_pct = fval
+            elif name == "overnight_line_move":
+                overnight_line_move = fval
+            elif name == "rest_days_home":
+                rest_days_home = ival
+            elif name == "rest_days_away":
+                rest_days_away = ival
+            elif name == "referee_home_win_pct":
+                referee_home_win_pct = fval
+            elif name == "referee_over25_pct":
+                referee_over25_pct = fval
+            elif name == "goals_for_avg_home":
+                goals_for_avg_home = fval
+            elif name == "goals_for_avg_away":
+                goals_for_avg_away = fval
+            elif name == "goals_against_avg_home":
+                goals_against_avg_home = fval
+            elif name == "goals_against_avg_away":
+                goals_against_avg_away = fval
+            elif name == "market_implied_home":
+                market_implied_home = fval
+            elif name == "market_implied_draw":
+                market_implied_draw = fval
+            elif name == "market_implied_away":
+                market_implied_away = fval
 
     return {
         "match_id": match_id,

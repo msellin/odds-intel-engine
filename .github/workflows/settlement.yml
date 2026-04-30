@@ -8,7 +8,7 @@ on:
 jobs:
   settlement:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -17,13 +17,19 @@ jobs:
           cache: 'pip'
       - run: pip install -r requirements.txt
 
-      - name: Run settlement
+      - name: Run core settlement (results, bets, ELO, form, enrichment)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python workers/jobs/settlement.py
+
+      - name: Run ML ETL (pseudo-CLV + feature vectors)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python workers/jobs/settlement.py --ml-etl
 
       - name: Prune odds_snapshots (keep opening + closing only for finished matches)
         env:

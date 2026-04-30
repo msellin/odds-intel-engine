@@ -26,14 +26,12 @@ from workers.api_clients.api_football import get_results_for_settlement as get_a
 from workers.scrapers.espn_results import get_finished_matches_espn
 from workers.api_clients.supabase_client import (
     get_client,
-    store_team_elo,
     store_team_form,
     store_model_evaluation,
     compute_team_form_from_db,
     store_match_stats_full,
     store_match_events_af,
     store_match_player_stats,
-    compute_and_store_pseudo_clv,
     build_match_feature_vectors,
 )
 
@@ -174,9 +172,10 @@ def fetch_post_match_enrichment(client) -> dict:
     Runs after settlement for recently finished matches.
 
     Skips matches already enriched (match_stats row exists) — idempotent.
-    Uses a single batch query instead of N+1 per-match queries.
+    Uses ThreadPoolExecutor to parallelize API calls (4 concurrent).
     Returns counts dict.
     """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     from workers.api_clients.api_football import (
         get_fixture_statistics, parse_fixture_stats,
         get_fixture_statistics_halftime, parse_fixture_stats_halftime,
@@ -215,59 +214,75 @@ def fetch_post_match_enrichment(client) -> dict:
         r["match_id"]: r["team_api_id"] for r in (inj_rows.data or []) if r.get("team_api_id")
     }
 
+    # Filter to matches that need enrichment
+    to_enrich = []
     for match in db_finished:
         af_id = match.get("api_football_id")
         if not af_id:
             continue
-
-        match_id = match["id"]
-
-        # Skip if already enriched — the key idempotency check
-        if match_id in match_ids_with_stats:
+        if match["id"] in match_ids_with_stats:
             counts["skipped"] += 1
             continue
+        to_enrich.append(match)
 
+    def _enrich_one_match(match: dict) -> dict:
+        """Enrich a single match — runs in a thread."""
+        af_id = match["api_football_id"]
+        match_id = match["id"]
         home_api_id = home_api_id_by_match.get(match_id)
+        result = {"stats": 0, "halftime": 0, "events": 0, "players": 0}
 
-        # ── T4 + Full stats: fetch full-match stats + half-time ────────────
+        # T4 + Full stats
         try:
             raw_full = get_fixture_statistics(af_id)
             full_stats = parse_fixture_stats(raw_full)
-
             ht_response = get_fixture_statistics_halftime(af_id)
             ht_stats = parse_fixture_stats_halftime(ht_response)
-
             merged_stats = {**full_stats, **ht_stats}
-
             if merged_stats:
                 store_match_stats_full(match_id, merged_stats)
-                counts["stats"] += 1
+                result["stats"] = 1
                 if ht_stats:
-                    counts["halftime"] += 1
+                    result["halftime"] = 1
         except Exception as e:
             console.print(f"    [yellow]Stats error for fixture {af_id}: {e}[/yellow]")
 
-        # ── T8: Match events ──────────────────────────────────────────────
+        # T8: Match events
         try:
             raw_events = get_fixture_events(af_id)
             parsed_events = parse_fixture_events(raw_events)
             if parsed_events:
-                stored = store_match_events_af(match_id, parsed_events,
-                                               home_team_api_id=home_api_id)
-                counts["events"] += stored
+                result["events"] = store_match_events_af(
+                    match_id, parsed_events, home_team_api_id=home_api_id
+                )
         except Exception as e:
             console.print(f"    [yellow]Events error for fixture {af_id}: {e}[/yellow]")
 
-        # ── T12: Player stats ─────────────────────────────────────────────
+        # T12: Player stats
         try:
             raw_players = get_fixture_players(af_id)
-            parsed_players = parse_fixture_players(raw_players,
-                                                    home_team_api_id=home_api_id)
+            parsed_players = parse_fixture_players(
+                raw_players, home_team_api_id=home_api_id
+            )
             if parsed_players:
-                stored = store_match_player_stats(match_id, af_id, parsed_players)
-                counts["players"] += stored
+                result["players"] = store_match_player_stats(match_id, af_id, parsed_players)
         except Exception as e:
             console.print(f"    [yellow]Player stats error for fixture {af_id}: {e}[/yellow]")
+
+        return result
+
+    # Run enrichment in parallel (4 threads — stay within API rate limits)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {pool.submit(_enrich_one_match, m): m for m in to_enrich}
+        for future in as_completed(futures):
+            try:
+                r = future.result()
+                counts["stats"] += r["stats"]
+                counts["halftime"] += r["halftime"]
+                counts["events"] += r["events"]
+                counts["players"] += r["players"]
+            except Exception:
+                pass
 
     return counts
 
@@ -353,6 +368,19 @@ def run_settlement():
         "date", f"{date_max}T23:59:59"
     ).execute().data
 
+    # Pre-load all team names in one batch query (instead of 2 per unmatched match)
+    all_team_ids = set()
+    for m in db_matches:
+        all_team_ids.add(m["home_team_id"])
+        all_team_ids.add(m["away_team_id"])
+    team_name_map: dict[str, str] = {}
+    team_id_list = list(all_team_ids)
+    for i in range(0, len(team_id_list), 200):
+        chunk = team_id_list[i:i + 200]
+        tr = client.table("teams").select("id, name").in_("id", chunk).execute()
+        for t in (tr.data or []):
+            team_name_map[t["id"]] = t["name"]
+
     for db_match in db_matches:
         if db_match.get("status") == "finished":
             continue  # already settled
@@ -366,16 +394,10 @@ def run_settlement():
 
         # Fallback: team name lookup (for ESPN-sourced results)
         if not result_row:
-            home_r = client.table("teams").select("name").eq(
-                "id", db_match["home_team_id"]
-            ).execute()
-            away_r = client.table("teams").select("name").eq(
-                "id", db_match["away_team_id"]
-            ).execute()
-            if home_r.data and away_r.data:
-                result_row = find_result_for_match(
-                    home_r.data[0]["name"], away_r.data[0]["name"], finished
-                )
+            home_name = team_name_map.get(db_match["home_team_id"])
+            away_name = team_name_map.get(db_match["away_team_id"])
+            if home_name and away_name:
+                result_row = find_result_for_match(home_name, away_name, finished)
 
         if not result_row:
             db_skipped += 1
@@ -438,24 +460,123 @@ def run_settlement():
     except Exception as e:
         console.print(f"  [yellow]Post-match enrichment error: {e}[/yellow]")
 
-    # B-ML1: Compute pseudo-CLV for ALL finished matches (not just bet matches)
-    # Grows ML training dataset from 2-5 rows/day → ~280/day
-    console.print("\n[cyan]Computing pseudo-CLV for all finished matches...[/cyan]")
+    # 11.4: Daily post-mortem LLM analysis (only if bets were settled)
+    if pending:
+        console.print("\n[cyan]Running AI post-mortem analysis...[/cyan]")
+        try:
+            run_post_mortem(client)
+        except Exception as e:
+            console.print(f"  [yellow]Post-mortem error (non-critical): {e}[/yellow]")
+
+    console.print("\n[bold green]Core settlement complete.[/bold green]")
+
+
+def _compute_pseudo_clv_batched(client, fetch_dates: list[str]) -> tuple[int, int]:
+    """
+    Compute pseudo-CLV for all finished matches in the given dates.
+    Bulk-loads all odds_snapshots, computes in-memory, batch-updates matches.
+    Returns (computed_count, skipped_count).
+    """
+    # Get all finished match IDs for these dates
+    all_match_ids = []
+    for d in sorted(fetch_dates):
+        rows = client.table("matches").select("id").eq(
+            "status", "finished"
+        ).gte("date", f"{d}T00:00:00").lte(
+            "date", f"{d}T23:59:59"
+        ).execute().data or []
+        all_match_ids.extend(r["id"] for r in rows)
+
+    if not all_match_ids:
+        return 0, 0
+
+    # Bulk-load all 1x2 odds snapshots for these matches
+    odds_by_match: dict[str, list] = {}
+    for i in range(0, len(all_match_ids), 200):
+        chunk = all_match_ids[i:i + 200]
+        result = client.table("odds_snapshots").select(
+            "match_id, selection, odds, timestamp, is_closing"
+        ).in_("match_id", chunk).eq("market", "1x2").order(
+            "timestamp", desc=False
+        ).limit(50000).execute()
+        for row in (result.data or []):
+            odds_by_match.setdefault(row["match_id"], []).append(row)
+
+    # Compute pseudo-CLV in-memory
+    computed = 0
+    skipped = 0
+    update_rows = []
+
+    for match_id in all_match_ids:
+        snaps = odds_by_match.get(match_id, [])
+        if not snaps:
+            skipped += 1
+            continue
+
+        # Group by selection
+        by_sel: dict[str, list] = {}
+        for s in snaps:
+            by_sel.setdefault(s["selection"].lower(), []).append(s)
+
+        pseudo_clvs = {}
+        for sel in ("home", "draw", "away"):
+            sel_snaps = by_sel.get(sel, [])
+            if len(sel_snaps) < 2:
+                pseudo_clvs[sel] = None
+                continue
+
+            opening_odds = float(sel_snaps[0]["odds"])
+            closing_snaps = [s for s in sel_snaps if s.get("is_closing")]
+            closing_odds = float(closing_snaps[-1]["odds"]) if closing_snaps else float(sel_snaps[-1]["odds"])
+
+            if opening_odds <= 1.0 or closing_odds <= 1.0:
+                pseudo_clvs[sel] = None
+                continue
+
+            pseudo_clvs[sel] = round((1.0 / opening_odds) / (1.0 / closing_odds) - 1, 5)
+
+        if all(v is None for v in pseudo_clvs.values()):
+            skipped += 1
+            continue
+
+        update_rows.append({
+            "id": match_id,
+            "pseudo_clv_home": pseudo_clvs.get("home"),
+            "pseudo_clv_draw": pseudo_clvs.get("draw"),
+            "pseudo_clv_away": pseudo_clvs.get("away"),
+        })
+        computed += 1
+
+    # Batch update matches (chunks of 50)
+    for i in range(0, len(update_rows), 50):
+        chunk = update_rows[i:i + 50]
+        for row in chunk:
+            match_id = row.pop("id")
+            try:
+                client.table("matches").update(row).eq("id", match_id).execute()
+            except Exception:
+                pass
+
+    return computed, skipped
+
+
+def run_ml_etl():
+    """
+    ML ETL phase — runs separately from core settlement.
+    Computes pseudo-CLV and builds match_feature_vectors for recently finished matches.
+    Split out because these are query-heavy (~10 queries/match) and can safely run later.
+    """
+    today = date.today().isoformat()
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    console.print(f"[bold green]═══ OddsIntel ML ETL: {today} ═══[/bold green]\n")
+
+    client = get_client()
+    fetch_dates = [yesterday, today]
+
+    # B-ML1: Compute pseudo-CLV for ALL finished matches (batched)
+    console.print("[cyan]Computing pseudo-CLV for all finished matches...[/cyan]")
     try:
-        pclv_count = 0
-        pclv_skipped = 0
-        for d in sorted(fetch_dates):
-            finished_today = client.table("matches").select(
-                "id"
-            ).eq("status", "finished").gte(
-                "date", f"{d}T00:00:00"
-            ).lte("date", f"{d}T23:59:59").execute().data or []
-            for m in finished_today:
-                result = compute_and_store_pseudo_clv(client, m["id"])
-                if result:
-                    pclv_count += 1
-                else:
-                    pclv_skipped += 1
+        pclv_count, pclv_skipped = _compute_pseudo_clv_batched(client, fetch_dates)
         console.print(f"  {pclv_count} pseudo-CLV computed | {pclv_skipped} skipped (insufficient odds data)")
     except Exception as e:
         console.print(f"  [yellow]Pseudo-CLV error: {e}[/yellow]")
@@ -471,13 +592,7 @@ def run_settlement():
     except Exception as e:
         console.print(f"  [yellow]Feature vectors error: {e}[/yellow]")
 
-    # 11.4: Daily post-mortem LLM analysis (only if bets were settled)
-    if pending:
-        console.print("\n[cyan]Running AI post-mortem analysis...[/cyan]")
-        try:
-            run_post_mortem(client)
-        except Exception as e:
-            console.print(f"  [yellow]Post-mortem error (non-critical): {e}[/yellow]")
+    console.print("\n[bold green]ML ETL complete.[/bold green]")
 
 
 def _normalize_bet_market(market: str) -> str:
@@ -641,6 +756,7 @@ def update_elo_ratings(client):
     """
     P1.3: Update ELO ratings for teams in recently finished matches.
     Simple ELO with K=30, home advantage +100, goal diff multiplier.
+    Uses batch load + batch upsert instead of per-team queries.
     """
     yesterday_str = (date.today() - timedelta(days=1)).isoformat()
     today_str = date.today().isoformat()
@@ -655,22 +771,28 @@ def update_elo_ratings(client):
     if not finished:
         return 0
 
-    # Load current ELO ratings for involved teams
+    # Collect all involved team IDs
     team_ids = set()
     for m in finished:
         team_ids.add(m["home_team_id"])
         team_ids.add(m["away_team_id"])
 
+    # Batch load current ELO ratings (one query instead of ~520)
     elo_cache: dict[str, float] = {}
-    for tid in team_ids:
+    team_id_list = list(team_ids)
+    for i in range(0, len(team_id_list), 200):
+        chunk = team_id_list[i:i + 200]
         result = client.table("team_elo_daily").select(
-            "elo_rating"
-        ).eq("team_id", tid).order("date", desc=True).limit(1).execute()
-        elo_cache[tid] = float(result.data[0]["elo_rating"]) if result.data else 1500.0
+            "team_id, elo_rating, date"
+        ).in_("team_id", chunk).order("date", desc=True).limit(5000).execute()
+        for r in (result.data or []):
+            # Keep only most recent per team (first seen due to desc order)
+            if r["team_id"] not in elo_cache:
+                elo_cache[r["team_id"]] = float(r["elo_rating"])
 
     K = 30
     HOME_ADV = 100
-    updated = 0
+    elo_rows = []
 
     for m in finished:
         if m["score_home"] is None or m["score_away"] is None:
@@ -696,7 +818,6 @@ def update_elo_ratings(client):
         else:
             actual_h, actual_a = 0.5, 0.5
 
-        # Update (remove home advantage from stored rating)
         new_h = (elo_cache.get(h_id, 1500.0) +
                  K * gd_mult * (actual_h - exp_h))
         new_a = (elo_cache.get(a_id, 1500.0) +
@@ -705,12 +826,34 @@ def update_elo_ratings(client):
         elo_cache[h_id] = new_h
         elo_cache[a_id] = new_a
 
+        elo_rows.append({"team_id": h_id, "date": today_str, "elo_rating": round(new_h, 2)})
+        elo_rows.append({"team_id": a_id, "date": today_str, "elo_rating": round(new_a, 2)})
+
+    # Batch upsert all ELO rows (chunks of 100 instead of 1 per team)
+    updated = 0
+    # Deduplicate: keep last computed value per team (a team may appear in multiple matches)
+    seen_teams: dict[str, dict] = {}
+    for row in elo_rows:
+        seen_teams[row["team_id"]] = row
+    deduped_rows = list(seen_teams.values())
+
+    for i in range(0, len(deduped_rows), 100):
+        chunk = deduped_rows[i:i + 100]
         try:
-            store_team_elo(h_id, today_str, new_h)
-            store_team_elo(a_id, today_str, new_a)
-            updated += 2
+            client.table("team_elo_daily").upsert(
+                chunk, on_conflict="team_id,date"
+            ).execute()
+            updated += len(chunk)
         except Exception:
-            pass
+            # Fallback to one-by-one
+            for row in chunk:
+                try:
+                    client.table("team_elo_daily").upsert(
+                        row, on_conflict="team_id,date"
+                    ).execute()
+                    updated += 1
+                except Exception:
+                    pass
 
     return updated
 
@@ -1008,9 +1151,13 @@ def run_report():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--report", action="store_true", help="Show P&L report")
+    parser.add_argument("--ml-etl", action="store_true",
+                        help="Run ML ETL only (pseudo-CLV + feature vectors)")
     args = parser.parse_args()
 
     if args.report:
         run_report()
+    elif args.ml_etl:
+        run_ml_etl()
     else:
         run_settlement()
