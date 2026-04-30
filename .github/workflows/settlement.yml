@@ -36,3 +36,16 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: python scripts/prune_odds_snapshots.py --apply
+
+      - name: Weekly Platt recalibration (Sundays only)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          DAY_OF_WEEK=$(date -u +%u)
+          if [ "$DAY_OF_WEEK" = "7" ]; then
+            echo "Sunday — running Platt recalibration"
+            python scripts/fit_platt.py
+          else
+            echo "Not Sunday (day=$DAY_OF_WEEK) — skipping"
+          fi

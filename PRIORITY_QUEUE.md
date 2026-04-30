@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-04-30 — 6 new bots (BTTS, O/U 1.5/3.5, draw, O/U 2.5 global) → 16 total. Poisson extended with BTTS + O/U 1.5 + O/U 3.5 probabilities. Target: ~30-40 bets/day (was ~10) to accelerate ALN-1 threshold.
+> Last updated: 2026-04-30 — Platt scaling implemented (PLATT + PLATT-AUTO). Featured leagues frontend filter (show_on_frontend). Performance indexes for matches/track-record pages.
 
 ---
 
@@ -71,7 +71,7 @@
 | # | ID | Task | Effort | Status | Impact | Source | Timeline | Notes |
 |---|-----|------|--------|--------|--------|--------|----------|-------|
 | 21 | MOD-1 | Dixon-Coles correction to Poisson model | 4h | ✅ Done 2026-04-29 | **High** | AI Analysis (2026-04-28) | Done | `DIXON_COLES_RHO=-0.13` applied in `_poisson_probs()`. τ correction for 0-0/1-0/0-1/1-1, 1x2 renormalised. Takes effect in tomorrow's 08:00 UTC pipeline |
-| 22 | PLATT | Platt scaling once 500+ predictions have outcomes | 1 day | ⬜ | High | Internal | ~mid-May 2026 | Replaces/complements tier-specific shrinkage |
+| 22 | PLATT | Platt scaling once 500+ predictions have outcomes | 1 day | ✅ Done 2026-04-30 | High | Internal | Done | Sigmoid post-hoc calibration per market. `scripts/fit_platt.py` fits α/β from settled predictions → `model_calibration` table. Pipeline applies after tier shrinkage in `calibrate_prob()`. Weekly recalibration via settlement workflow (Sundays). |
 | 23 | P5.1 | European Soccer DB (Kaggle): 13-bookmaker sharp/soft analysis | 1-2 days | ⬜ | High | Internal | ~May 2026 | `bookmaker_sharpness_rankings.csv` + `sharp_money_signal` feature |
 | 24 | PIN-1 | Pinnacle anchor signal: `model_prob - pinnacle_implied` as feature | 2-3h | ⬜ | High | Internal | ~May 2026 | Depends on P5.1 to confirm Pinnacle is in our 13 bookmakers |
 | 25 | BDM-1 | Bookmaker disagreement signal | 1h | ✅ Done | Medium | Internal | Done | compute_bookmaker_disagreement() written to match_signals |
@@ -194,7 +194,7 @@
 
 | ID | Parent | Task | Effort | Status | Notes |
 |----|--------|------|--------|--------|-------|
-| PLATT-AUTO | PLATT | Add weekly Platt recalibration to settlement pipeline | 1h | ⬜ | Recalibrate sigmoid parameters every Sunday using all settled predictions. Write updated α/β to a `model_calibration` table. Pipeline reads from there instead of hardcoded constants. Without this, calibration drifts as league mix shifts with seasons. |
+| PLATT-AUTO | PLATT | Add weekly Platt recalibration to settlement pipeline | 1h | ✅ Done 2026-04-30 | Sunday step in `settlement.yml` runs `scripts/fit_platt.py`. Stores new α/β in `model_calibration` table each week. Pipeline reads latest row per market on startup. |
 | BLEND-AUTO | MOD-2 | Add monthly Poisson/XGBoost blend weight recalculation | 1h | ⬜ | Re-derive per-tier α constants (CALIBRATION_ALPHA dict in improvements.py) from actual outcomes monthly. Script reads settled predictions → brier score per source → optimal weight. Replaces current hardcoded T1=0.20, T2=0.30 etc. with data-driven values. |
 | META-RETRAIN | B-ML3 | Weekly meta-model retraining job (logistic regression v1) | 2h | ⬜ | After meta-model v1 is built at 3K CLV rows: add a weekly GitHub Action that re-runs training on all available `match_feature_vectors` rows, writes new model coefficients to a `model_versions` table, logs performance delta vs prior version. Should auto-deploy if accuracy improves. |
 | XGB-RETRAIN | S6-P2 | Weekly XGBoost full-model retraining schedule | 3-4h | ⬜ | When XGBoost meta-model replaces logistic v1: set up weekly retraining with train/val split, track feature importances over time (signals that mattered in April may not matter in August — seasons change team dynamics). Log to model_versions. Alert if validation loss spikes. |
@@ -219,7 +219,7 @@
 
 | Milestone | Query | Target | Current (2026-04-30) | ETA |
 |-----------|-------|--------|---------------------|-----|
-| **Platt scaling ready** | Predictions with finished match outcomes | 500+ | **586 ✅ READY** | Now |
+| **Platt scaling ready** | Predictions with finished match outcomes | 500+ | **586 ✅ IMPLEMENTED 2026-04-30** | Done |
 | Meta-model Phase 1 ready | `matches WHERE status='finished' AND pseudo_clv_home IS NOT NULL` | 3,000+ | 494 | ~May 9 (+280/day) |
 | Alignment threshold validation | `simulated_bets WHERE result!='pending' AND alignment_class IS NOT NULL` | 300+ | 30 | ~May 9-10 (~30-40/day with 16 bots) |
 | Post-mortem patterns readable | `model_evaluations WHERE market='post_mortem'` | 14+ | 2 | ~May 12 (+1/day) |

@@ -4,7 +4,7 @@ Implements the prioritized changes from MODEL_ANALYSIS.md, revised per
 4-assessment synthesis (2026-04-27).
 
 Architecture decisions:
-  - P1 (calibration): ACTIVE — tier-specific alpha, affects edge calculation
+  - P1 (calibration): ACTIVE — tier-specific alpha + Platt sigmoid post-hoc
   - P2 (odds movement): ACTIVE — soft penalty on Kelly, hard veto only >10%
   - P3 (alignment): LOG-ONLY — stores scores, does NOT filter/modify stakes yet
   - P4 (Kelly sizing): ACTIVE — 1/4 Kelly, 1.5% cap, simplified multipliers
@@ -12,8 +12,13 @@ Architecture decisions:
 Key revision: Alignment uses EXTERNAL signals only (odds movement, news,
 lineup, situational). Strength/form/xG are already model inputs — including
 them in alignment double-counts what the Poisson model already knows.
+
+Platt scaling (2026-04-30): After tier-specific shrinkage, applies a learned
+sigmoid correction fitted on settled predictions. Parameters loaded from
+model_calibration table, refreshed weekly by scripts/fit_platt.py.
 """
 
+import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,22 +47,26 @@ CALIBRATION_ALPHA_DEFAULT = 0.35
 
 
 def calibrate_prob(model_prob: float, implied_prob: float,
-                   tier: int = 1) -> float:
+                   tier: int = 1, market: str = "") -> float:
     """
-    Shrink model probability toward market-implied probability.
+    Two-stage calibration:
+      1. Tier-specific shrinkage toward market-implied probability
+      2. Platt sigmoid correction (if parameters available for this market)
 
-    adjusted_prob = alpha * model_prob + (1 - alpha) * implied_prob
+    Stage 1 (shrinkage):
+      adjusted = alpha * model_prob + (1 - alpha) * implied_prob
+      Uses tier-specific alpha (T1: 0.20 → T4: 0.65).
 
-    Uses tier-specific alpha:
-      T1: 0.20 (market very efficient — trust market heavily)
-      T2: 0.30
-      T3: 0.50 (balanced — market less efficient)
-      T4: 0.65 (market least efficient, trust model more)
+    Stage 2 (Platt):
+      calibrated = 1 / (1 + exp(-(a * adjusted + b)))
+      Parameters a, b loaded from model_calibration table.
+      Skipped if no params exist for this market (graceful no-op).
 
     Args:
-        model_prob: Raw model probability (Poisson)
+        model_prob: Raw model probability (Poisson/XGBoost/ensemble)
         implied_prob: 1/odds (bookmaker-implied probability before margin)
         tier: League tier (1-4)
+        market: Market key for Platt lookup (e.g. '1x2_home')
 
     Returns:
         Calibrated probability
@@ -65,7 +74,79 @@ def calibrate_prob(model_prob: float, implied_prob: float,
     if implied_prob <= 0 or implied_prob >= 1:
         return model_prob
     alpha = CALIBRATION_ALPHA.get(tier, CALIBRATION_ALPHA_DEFAULT)
-    return alpha * model_prob + (1 - alpha) * implied_prob
+    shrunk = alpha * model_prob + (1 - alpha) * implied_prob
+
+    # Stage 2: Platt sigmoid (if available for this market)
+    return apply_platt(shrunk, market)
+
+
+# =============================================================================
+# P1b: PLATT SCALING — Learned sigmoid post-hoc calibration
+# =============================================================================
+
+# Cache: loaded once per pipeline run, refreshed weekly by fit_platt.py
+_platt_params: dict[str, tuple[float, float]] | None = None
+
+
+def load_platt_params() -> dict[str, tuple[float, float]]:
+    """
+    Load latest Platt α, β per market from model_calibration table.
+    Returns dict: market → (a, b). Empty dict if table doesn't exist or is empty.
+    Cached for the lifetime of the process.
+    """
+    global _platt_params
+    if _platt_params is not None:
+        return _platt_params
+
+    _platt_params = {}
+    try:
+        from workers.api_clients.supabase_client import get_client
+        client = get_client()
+
+        # Get latest row per market (ordered by fitted_at DESC, take first per market)
+        result = client.table("model_calibration").select(
+            "market, platt_a, platt_b, fitted_at"
+        ).order("fitted_at", desc=True).limit(20).execute()
+
+        seen = set()
+        for row in (result.data or []):
+            mkt = row["market"]
+            if mkt not in seen:
+                _platt_params[mkt] = (float(row["platt_a"]), float(row["platt_b"]))
+                seen.add(mkt)
+
+    except Exception:
+        pass  # Table may not exist yet — graceful no-op
+
+    return _platt_params
+
+
+def apply_platt(prob: float, market: str) -> float:
+    """
+    Apply Platt sigmoid if parameters exist for this market.
+
+        calibrated = 1 / (1 + exp(-(a * prob + b)))
+
+    Falls back to returning prob unchanged if no params available.
+    """
+    if not market:
+        return prob
+
+    params = load_platt_params()
+    if market not in params:
+        return prob
+
+    a, b = params[market]
+    z = a * prob + b
+    # Clamp to prevent overflow
+    z = max(-30.0, min(30.0, z))
+    return 1.0 / (1.0 + math.exp(-z))
+
+
+def reset_platt_cache():
+    """Force reload of Platt params on next call. Used by tests."""
+    global _platt_params
+    _platt_params = None
 
 
 # =============================================================================

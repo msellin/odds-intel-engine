@@ -121,9 +121,13 @@ Submitted to 4 AI evaluators. Key verdicts that were implemented:
 │                       ├── 50/50 blend → calibrated_prob     │
 │  XGBoost Poisson ─────┘                                     │
 │                                                             │
-│  Calibration: tier-specific market shrinkage                │
-│    α = {T1: 0.20, T2: 0.30, T3: 0.50, T4: 0.65}           │
-│    (updated 2026-04-29 — was T1=0.55, now market-weighted) │
+│  Calibration (2-stage, updated 2026-04-30):                  │
+│    Stage 1: tier-specific market shrinkage                   │
+│      α = {T1: 0.20, T2: 0.30, T3: 0.50, T4: 0.65}         │
+│    Stage 2: Platt sigmoid post-hoc correction                │
+│      cal = 1/(1+exp(-(a*shrunk+b))) per market              │
+│      α/β fitted weekly from settled predictions              │
+│      (scripts/fit_platt.py → model_calibration table)       │
 │  Disagreement: abs(poisson - xgb) stored per bet            │
 │  Fallback: Tier D uses AF /predictions probability          │
 ├─────────────────────────────────────────────────────────────┤
@@ -319,7 +323,7 @@ rank = kelly * alignment_multiplier
 
 | Item | What | Data source | Min data needed | Estimated timeline |
 |------|------|-------------|-----------------|-------------------|
-| **Platt scaling** | Logistic regression on model output → corrected probability | `predictions` table (ALL matches with odds, ~200/day) + match results | 500+ predictions with known outcomes | ~1-2 weeks (mid-May 2026). **UNBLOCKED** — settlement now works via API-Football |
+| **Platt scaling** | ✅ DONE (2026-04-30). Sigmoid post-hoc calibration per market (1x2_home/draw/away). `scripts/fit_platt.py` fits α/β → `model_calibration` table. Applied in `calibrate_prob()` after tier shrinkage. Weekly recalibration in settlement workflow (Sundays). | — | — | — |
 | **XGBoost in live pipeline** | ✅ DONE (2026-04-27). Loads v9a_202425 saved models, computes features from CSV, blends 50/50 with Poisson for Tier A teams. `workers/model/xgboost_ensemble.py` | — | — | — |
 | **Model disagreement** | ✅ DONE. `model_disagreement = abs(poisson_prob - xgb_prob)` stored on every Tier A bet. | — | — | — |
 | **Dynamic alignment thresholds** | Set HIGH/MED/LOW cutoffs from ROI inflection points | `simulated_bets` with alignment_class populated (bot bets only, ~10-20/day) | 300+ settled bot bets with alignment data | ~3-4 weeks (late May 2026). **Note: requires actual placed bets — pseudo-CLV does NOT substitute here.** |

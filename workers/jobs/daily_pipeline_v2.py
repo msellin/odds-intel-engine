@@ -1420,8 +1420,9 @@ def run_morning(skip_fetch: bool = False):
             for mkt, selection, odds, raw_mp, os_market, os_selection, base_threshold in candidate_specs:
                 ip = 1 / odds
 
-                # P1: Calibrate probability (tier-specific shrinkage)
-                cal_prob = calibrate_prob(raw_mp, ip, tier=tier)
+                # P1: Calibrate probability (tier-specific shrinkage + Platt sigmoid)
+                platt_market = f"{os_market}_{os_selection}"
+                cal_prob = calibrate_prob(raw_mp, ip, tier=tier, market=platt_market)
 
                 # Use calibrated probability for edge calculation
                 edge = cal_prob - ip

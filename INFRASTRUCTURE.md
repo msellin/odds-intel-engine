@@ -1,6 +1,6 @@
 # OddsIntel — Infrastructure & Costs
 
-> Last updated: 2026-04-29 — Supabase upgraded to Pro
+> Last updated: 2026-04-30 — Supabase upgraded to Pro. Added model_calibration table (Platt scaling).
 
 ---
 

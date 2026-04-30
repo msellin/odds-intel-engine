@@ -94,6 +94,7 @@
 - Post-match: stats (T4), events (T8), player stats (T12)
 - Update ELO, form, pseudo-CLV, match feature vectors
 - Gemini post-mortem analysis of losses
+- **Sundays only:** Platt recalibration (`scripts/fit_platt.py`) — refits sigmoid α/β per market from all settled predictions → `model_calibration` table
 
 ### ⑨ Historical Backfill (`backfill_historical.py`)
 - Fetches historical fixtures, odds, statistics, events from API-Football
