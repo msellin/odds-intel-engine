@@ -469,8 +469,8 @@ def main():
                         help="Max matches to process per league/season (default 500)")
     parser.add_argument("--league-cap", type=int, default=200,
                         help="Max API calls per league/season before moving to next (default 200)")
-    parser.add_argument("--max-requests", type=int, default=1500,
-                        help="Max API calls for this run (default 1500)")
+    parser.add_argument("--max-requests", type=int, default=800,
+                        help="Max API calls for this run (default 800)")
     parser.add_argument("--skip-existing", action="store_true", default=True,
                         help="Skip matches already in DB (default true)")
     parser.add_argument("--no-skip-existing", action="store_true",

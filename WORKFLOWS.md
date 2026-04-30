@@ -37,7 +37,7 @@
 | ⑥ | `live_tracker.yml` | `workers/jobs/live_tracker.py` | `*/5 12-22 * * *` | SUPABASE_* |
 | ⑦ | `news_checker.yml` | `workers/jobs/news_checker.py` | `0 9`, `30 12`, `30 16`, `30 19` | SUPABASE_*, GEMINI_API_KEY |
 | ⑧ | `settlement.yml` | `workers/jobs/settlement.py` | `0 21 * * *` | SUPABASE_*, API_FOOTBALL_KEY, GEMINI_API_KEY |
-| ⑨ | `backfill.yml` | `scripts/backfill_historical.py` | `0 23,0,1,2,3,6,9,11 * * *` | SUPABASE_*, API_FOOTBALL_KEY |
+| ⑨ | `backfill.yml` | `scripts/backfill_historical.py` | Every 30min overnight + hourly 06–11 UTC (~16 runs/day, 800 calls each) | SUPABASE_*, API_FOOTBALL_KEY |
 | — | `migrate.yml` | Supabase CLI | On push to `supabase/migrations/` | SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF |
 
 ---

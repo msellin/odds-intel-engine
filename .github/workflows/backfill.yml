@@ -2,10 +2,11 @@ name: Historical Backfill
 
 on:
   schedule:
-    # Prime overnight window (0 competing AF calls): 23, 00, 01, 02, 03 UTC
-    - cron: '0 23,0,1,2,3 * * *'
-    # Daytime gaps (0 competing AF calls): 06, 09, 11 UTC
-    - cron: '0 6,9,11 * * *'
+    # Every 30min overnight (0 competing AF calls): 23:00–03:30 UTC
+    - cron: '0,30 23 * * *'
+    - cron: '0,30 0-3 * * *'
+    # Every hour during daytime gaps: 06–11 UTC (between enrichment/odds)
+    - cron: '0 6-11 * * *'
   workflow_dispatch:
     inputs:
       phase:
@@ -27,7 +28,7 @@ on:
       max_requests:
         description: 'Max API calls for this run'
         required: false
-        default: '1500'
+        default: '800'
         type: string
       dry_run:
         description: 'Dry run (count only, no writes)'
@@ -38,7 +39,7 @@ on:
 jobs:
   backfill:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
 
@@ -74,7 +75,7 @@ jobs:
           PHASE="${{ inputs.phase || '1' }}"
           BATCH="${{ inputs.batch_size || '500' }}"
           LEAGUE_CAP="${{ inputs.league_cap || '200' }}"
-          MAX_REQ="${{ inputs.max_requests || '1500' }}"
+          MAX_REQ="${{ inputs.max_requests || '800' }}"
 
           ARGS="--phase $PHASE --batch-size $BATCH --league-cap $LEAGUE_CAP --max-requests $MAX_REQ"
           if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
