@@ -21,7 +21,7 @@ Usage:
 import sys
 import argparse
 from pathlib import Path
-from datetime import datetime, date, timezone
+from datetime import datetime, date, timezone, timedelta
 
 from dotenv import load_dotenv
 from rich.console import Console
@@ -60,8 +60,7 @@ def fetch_af_odds(target_date: str) -> int:
     now = datetime.now(timezone.utc).isoformat()
 
     # Get AF fixture ID → match UUID mapping from DB
-    next_day_num = int(target_date[8:]) + 1
-    next_date = f"{target_date[:8]}{next_day_num:02d}"
+    next_date = (date.fromisoformat(target_date) + timedelta(days=1)).isoformat()
 
     matches_result = client.table("matches").select(
         "id, api_football_id, date"

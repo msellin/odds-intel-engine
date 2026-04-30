@@ -7,7 +7,7 @@ Shared helpers for the fragmented pipeline jobs:
 - Coverage-aware fetching (skip unsupported leagues)
 """
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from workers.api_clients.supabase_client import get_client
 
 
@@ -94,7 +94,7 @@ def get_today_fixtures(run_date: str = None) -> list[dict]:
     client = get_client()
     if not run_date:
         run_date = date.today().isoformat()
-    next_day = run_date[:8] + str(int(run_date[8:]) + 1).zfill(2)
+    next_day = (date.fromisoformat(run_date) + timedelta(days=1)).isoformat()
     result = (
         client.table("matches")
         .select("id, api_football_id, home_team_id, away_team_id, league_id, date, status")

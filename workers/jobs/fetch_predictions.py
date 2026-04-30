@@ -19,7 +19,7 @@ Usage:
 import sys
 import argparse
 from pathlib import Path
-from datetime import date
+from datetime import date, timedelta
 
 from dotenv import load_dotenv
 from rich.console import Console
@@ -43,8 +43,7 @@ def fetch_af_predictions(target_date: str) -> int:
     client = get_client()
 
     # Load today's fixtures with AF IDs
-    next_day_num = int(target_date[8:]) + 1
-    next_date = f"{target_date[:8]}{next_day_num:02d}"
+    next_date = (date.fromisoformat(target_date) + timedelta(days=1)).isoformat()
 
     result = client.table("matches").select(
         "id, api_football_id, league_id"
