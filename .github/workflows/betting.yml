@@ -2,8 +2,15 @@ name: ⑤ Betting
 
 on:
   schedule:
-    - cron: '0 6 * * *'  # 06:00 UTC (after all data jobs complete)
+    - cron: '0 6 * * *'   # 06:00 UTC — after overnight data jobs
+    - cron: '0 10 * * *'  # 10:00 UTC — catch morning European fixtures
+    - cron: '0 13 * * *'  # 13:00 UTC — pre-afternoon kickoffs
+    - cron: '0 16 * * *'  # 16:00 UTC — pre-evening kickoffs
+    - cron: '0 19 * * *'  # 19:00 UTC — pre-night kickoffs
   workflow_dispatch: {}
+
+# Duplicate bets prevented by DB unique constraint (bot_id, match_id, market, selection)
+# Safe to run multiple times per day.
 
 permissions:
   contents: write

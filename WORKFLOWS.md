@@ -12,7 +12,7 @@
 04:15  ② Enrichment      fetch_enrichment.py       Standings, H2H, team stats, injuries (full)
 05:00  ③ Odds            fetch_odds.py             AF bulk odds + Kambi odds
 05:30  ④ Predictions     fetch_predictions.py      AF predictions (coverage-aware)
-06:00  ⑤ Betting         betting_pipeline.py       Poisson/XGBoost model + signals + bet placement
+06,10,13,16,19  ⑤ Betting  betting_pipeline.py    Poisson/XGBoost model + signals + bet placement (5x/day, dedup-safe)
 05-22  ③ Odds (repeat)   fetch_odds.py             Every 2h: 07,08,10,12,14,16,18,20,22 UTC
 12:00  ② Enrichment      fetch_enrichment.py       Injuries + standings refresh
 12-22  ⑥ Live Tracker    live_tracker.py           Every 5min: live scores, odds, events, lineups
@@ -33,7 +33,7 @@
 | ② | `enrichment.yml` | `workers/jobs/fetch_enrichment.py` | `15 4`, `0 12`, `0 16` | SUPABASE_*, API_FOOTBALL_KEY |
 | ③ | `odds.yml` | `workers/jobs/fetch_odds.py` | `0 5,7,8,10,12,14,16,18,20,22` + `30 13`, `30 17` | SUPABASE_*, API_FOOTBALL_KEY |
 | ④ | `predictions.yml` | `workers/jobs/fetch_predictions.py` | `30 5 * * *` | SUPABASE_*, API_FOOTBALL_KEY |
-| ⑤ | `betting.yml` | `workers/jobs/betting_pipeline.py` | `0 6 * * *` | SUPABASE_*, API_FOOTBALL_KEY |
+| ⑤ | `betting.yml` | `workers/jobs/betting_pipeline.py` | `0 6,10,13,16,19 * * *` | SUPABASE_*, API_FOOTBALL_KEY |
 | ⑥ | `live_tracker.yml` | `workers/jobs/live_tracker.py` | `*/5 12-22 * * *` | SUPABASE_* |
 | ⑦ | `news_checker.yml` | `workers/jobs/news_checker.py` | `0 9`, `30 12`, `30 16`, `30 19` | SUPABASE_*, GEMINI_API_KEY |
 | ⑧ | `settlement.yml` | `workers/jobs/settlement.py` | `0 21 * * *` | SUPABASE_*, API_FOOTBALL_KEY, GEMINI_API_KEY |
@@ -57,8 +57,10 @@
 - Readiness gate: won't run unless ① Fixtures completed
 
 ### ③ Odds (`fetch_odds.py`)
-- AF bulk odds via `/odds?date=` — ~178 fixtures, 13+ bookmakers each
-- Kambi odds via `fetch_all_operators()` — ~20 fixtures, Unibet/Paf
+- AF bulk odds via `/odds?date=` — ~178 fixtures, 13+ bookmakers, all markets (1X2, O/U, BTTS, DC)
+- Kambi odds via `fetch_all_operators()` — ~250 events, Unibet/Paf
+  - `listView` endpoint: 1X2 for all events (1 call per operator)
+  - `betoffer/event/{id}` endpoint: O/U + BTTS for mapped-league events (~40-80 per operator)
 - Kambi league names mapped to AF leagues via `KAMBI_TO_AF_LEAGUE` dict in `supabase_client.py` (prevents duplicate league creation)
 - Stores all in `odds_snapshots` with `minutes_to_kickoff`
 - `--mark-closing` flag for pre-kickoff runs (13:30/17:30)
@@ -70,12 +72,14 @@
 - Readiness gate: won't run unless ① Fixtures completed
 
 ### ⑤ Betting (`betting_pipeline.py`)
+- Runs 5x/day (06:00, 10:00, 13:00, 16:00, 19:00 UTC) to catch all kickoff windows
+- Duplicate bets prevented by DB unique constraint `(bot_id, match_id, market, selection)` — safe to run any number of times
 - Reads all data from DB — no API calls (Phase 2 complete as of 2026-04-29)
 - Calls `run_morning(skip_fetch=True)` in `daily_pipeline_v2.py`
 - `_load_today_from_db()` reads today's matches + best pre-match odds + AF predictions from DB
 - Loads historical CSVs (targets_v9, targets_global) for Poisson model
 - For each match with odds: compute Poisson/XGBoost prediction, write signals
-- For each of 9 bots: calibrate, check odds movement, Kelly sizing, place bet
+- For each of 16 bots: calibrate, check odds movement, Kelly sizing, place bet
 - `daily_pipeline_v2.py run_morning(skip_fetch=False)` still works for manual full runs
 
 ### ⑥ Live Tracker (`live_tracker.py`)

@@ -68,10 +68,66 @@ LEAGUE_MAP = {
 }
 
 
+def _fetch_event_offers(operator: str, event_id: int) -> list[dict]:
+    """Fetch full bet offers for a single event (O/U, BTTS, etc.)."""
+    url = f"https://eu-offering-api.kambicdn.com/offering/v2018/{operator}/betoffer/event/{event_id}.json"
+    try:
+        resp = requests.get(url, headers=HEADERS,
+                           params={"lang": "en_GB", "market": "EE"},
+                           timeout=15)
+        if resp.status_code == 200:
+            return resp.json().get("betOffers", [])
+    except Exception:
+        pass
+    return []
+
+
+def _parse_event_offers(offers: list[dict]) -> dict:
+    """Parse O/U + BTTS from individual event bet offers into odds dict."""
+    odds_ou = {}
+    odds_btts = {}
+
+    for offer in offers:
+        offer_type = offer.get("betOfferType", {}).get("name", "")
+
+        if offer_type == "Over/Under":
+            outcomes = offer.get("outcomes", [])
+            if not outcomes:
+                continue
+            line = outcomes[0].get("line", 0) / 1000
+            if line not in (0.5, 1.5, 2.5, 3.5, 4.5):
+                continue
+            line_key = str(line).replace(".", "")
+            for outcome in outcomes:
+                label = outcome.get("label", "")
+                raw_odds = outcome.get("odds", 0)
+                decimal_odds = raw_odds / 1000 if raw_odds > 0 else 0
+                if label == "Over":
+                    odds_ou[f"over_{line_key}"] = max(odds_ou.get(f"over_{line_key}", 0), decimal_odds)
+                elif label == "Under":
+                    odds_ou[f"under_{line_key}"] = max(odds_ou.get(f"under_{line_key}", 0), decimal_odds)
+
+        elif offer_type == "Yes/No":
+            criterion = offer.get("criterion", {}).get("label", "")
+            if "Both Teams" not in criterion and "Both teams" not in criterion:
+                continue  # Skip "Goal in Both Halves" etc.
+            for outcome in offer.get("outcomes", []):
+                label = outcome.get("label", "")
+                raw_odds = outcome.get("odds", 0)
+                decimal_odds = raw_odds / 1000 if raw_odds > 0 else 0
+                if label == "Yes":
+                    odds_btts["yes"] = decimal_odds
+                elif label == "No":
+                    odds_btts["no"] = decimal_odds
+
+    return {"ou": odds_ou, "btts": odds_btts}
+
+
 def fetch_odds(operator: str = "ub") -> list[dict]:
     """
     Fetch all football events with odds from a Kambi operator.
-    Returns structured match data with 1X2 and Over/Under odds.
+    Step 1: listView for 1X2 (single bulk call)
+    Step 2: Individual event calls for O/U + BTTS (mapped leagues only)
     """
     url = f"https://eu-offering-api.kambicdn.com/offering/v2018/{operator}/listView/football.json"
 
@@ -88,10 +144,41 @@ def fetch_odds(operator: str = "ub") -> list[dict]:
         events = data.get("events", [])
 
         matches = []
+        enriched = 0
         for event in events:
             match = _parse_event(event, operator)
-            if match:
-                matches.append(match)
+            if not match:
+                continue
+
+            # Enrich mapped-league events with O/U + BTTS from event endpoint
+            if match["league_path"] in LEAGUE_MAP:
+                event_id = event.get("event", {}).get("id")
+                if event_id:
+                    offers = _fetch_event_offers(operator, event_id)
+                    if offers:
+                        extra = _parse_event_offers(offers)
+                        # Merge O/U (take best)
+                        for key, val in extra["ou"].items():
+                            field = f"odds_{key}"
+                            if val > match.get(field, 0):
+                                match[field] = val
+                            if key in match.get("ou_lines", {}):
+                                if val > match["ou_lines"].get(key, 0):
+                                    match["ou_lines"][key] = val
+                            else:
+                                match.setdefault("ou_lines", {})[key] = val
+                        # Merge BTTS
+                        if extra["btts"].get("yes", 0) > 0:
+                            match["odds_btts_yes"] = extra["btts"]["yes"]
+                        if extra["btts"].get("no", 0) > 0:
+                            match["odds_btts_no"] = extra["btts"]["no"]
+                        enriched += 1
+                    time.sleep(0.1)  # Be polite — ~40-80 calls per operator
+
+            matches.append(match)
+
+        if enriched:
+            console.print(f"    Enriched {enriched} events with O/U + BTTS")
 
         return matches
 
@@ -195,6 +282,9 @@ def _parse_event(event: dict, operator: str) -> dict | None:
         "odds_under_35": odds_ou.get("under_35", 0),
         "odds_over_45": odds_ou.get("over_45", 0),
         "odds_under_45": odds_ou.get("under_45", 0),
+        # BTTS — populated by event-level enrichment
+        "odds_btts_yes": 0,
+        "odds_btts_no": 0,
         # Raw ou_lines dict for downstream use
         "ou_lines": odds_ou,
         "scraped_at": datetime.now().isoformat(),
@@ -235,7 +325,8 @@ def fetch_all_operators() -> list[dict]:
                           "odds_over_15", "odds_under_15",
                           "odds_over_25", "odds_under_25",
                           "odds_over_35", "odds_under_35",
-                          "odds_over_45", "odds_under_45"]:
+                          "odds_over_45", "odds_under_45",
+                          "odds_btts_yes", "odds_btts_no"]:
                 if m.get(field, 0) > all_matches[key].get(field, 0):
                     all_matches[key][field] = m[field]
 

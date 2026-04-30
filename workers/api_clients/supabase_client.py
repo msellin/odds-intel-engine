@@ -304,6 +304,14 @@ def store_odds(match_id: str, match_data: dict, minutes_to_kickoff: int = None):
             odds_rows.append({**base, "market": line_label, "selection": "under",
                               "odds": match_data[under_key]})
 
+    # BTTS
+    if match_data.get("odds_btts_yes", 0) > 0:
+        odds_rows.append({**base, "market": "btts", "selection": "yes",
+                          "odds": match_data["odds_btts_yes"]})
+    if match_data.get("odds_btts_no", 0) > 0:
+        odds_rows.append({**base, "market": "btts", "selection": "no",
+                          "odds": match_data["odds_btts_no"]})
+
     if odds_rows:
         client.table("odds_snapshots").insert(odds_rows).execute()
 

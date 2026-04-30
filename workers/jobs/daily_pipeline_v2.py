@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 import requests
 from pathlib import Path
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from concurrent.futures import ThreadPoolExecutor
 from scipy.stats import poisson
 from dotenv import load_dotenv
@@ -950,7 +950,11 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], dict[str, dict]]:
     client = get_client()
     next_day_str = _next_day(today_str)
 
-    # 1. Load today's scheduled matches with team + league info
+    # 1. Load today's scheduled + recently-live matches with team + league info
+    #    Include live matches so we don't miss games that kicked off between pipeline runs.
+    #    The bet loop below skips any live match that's been going for >5 minutes.
+    #    Duplicate bets prevented by DB unique constraint (bot_id, match_id, market, selection).
+    #    Finished matches excluded — their pre-match odds are stale.
     matches_r = client.table("matches").select(
         "id, date, referee, season, "
         "home_team:home_team_id(name, country), "
@@ -958,7 +962,24 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], dict[str, dict]]:
         "league:league_id(name, country, tier, api_football_id)"
     ).gte("date", f"{today_str}T00:00:00Z").lt(
         "date", f"{next_day_str}T00:00:00Z"
-    ).eq("status", "scheduled").execute()
+    ).in_("status", ["scheduled", "live"]).execute()
+
+    if matches_r.data:
+        # Filter out live matches that kicked off > 5 minutes ago
+        now_utc = datetime.now(timezone.utc)
+        filtered = []
+        for m in matches_r.data:
+            kickoff_str = m.get("date", "")
+            try:
+                kickoff = datetime.fromisoformat(kickoff_str.replace("Z", "+00:00"))
+                if kickoff.tzinfo is None:
+                    kickoff = kickoff.replace(tzinfo=timezone.utc)
+                minutes_since = (now_utc - kickoff).total_seconds() / 60
+                if minutes_since <= 5:
+                    filtered.append(m)  # Scheduled or just kicked off
+            except (ValueError, AttributeError):
+                filtered.append(m)  # Can't parse date — include it
+        matches_r.data = filtered
 
     if not matches_r.data:
         return [], {}
