@@ -54,13 +54,86 @@ def ensure_bots(bots_config: dict) -> dict:
 # LEAGUES & TEAMS
 # ============================================================
 
+# Kambi uses different league names/countries than API-Football.
+# This mapping prevents Kambi from creating duplicate leagues.
+# Format: (kambi_country, kambi_name) -> (af_country, af_name)
+KAMBI_TO_AF_LEAGUE: dict[tuple[str, str], tuple[str, str]] = {
+    # Continental cups
+    ("Unknown", "Europa League"): ("World", "UEFA Europa League"),
+    ("Unknown", "Conference League"): ("World", "UEFA Europa Conference League"),
+    ("Unknown", "Champions League"): ("World", "UEFA Champions League"),
+    ("Unknown", "Copa Libertadores"): ("World", "CONMEBOL Libertadores"),
+    ("Unknown", "Copa Sudamericana"): ("World", "CONMEBOL Sudamericana"),
+    ("Unknown", "CONCACAF Champions Cup"): ("World", "CONCACAF Champions League"),
+    ("Unknown", "Europa Cup (W)"): ("World", "UEFA Europa Cup - Women"),
+    # Country format differences (Kambi uses spaces, AF uses hyphens)
+    ("Saudi Arabia", "Professional League"): ("Saudi-Arabia", "Pro League"),
+    ("Saudi Arabia", "Division 1"): ("Saudi-Arabia", "Division 1"),
+    ("United Arab Emirates", "Division 1"): ("United-Arab-Emirates", "Division 1"),
+    ("South Korea", "K-League Women"): ("South-Korea", "WK-League"),
+    ("Hong Kong", "Premier League"): ("Hong-Kong", "Premier League"),
+    ("Costa Rica", "Liga de Ascenso"): ("Costa-Rica", "Liga de Ascenso"),
+    ("Czech Republic", "MSFL"): ("Czech-Republic", "3. liga - MSFL"),
+    # Name differences
+    ("England", "The Championship"): ("England", "Championship"),
+    ("England", "Super League (W)"): ("England", "FA WSL"),
+    ("Denmark", "Superligaen"): ("Denmark", "Superliga"),
+    ("Denmark", "1st Division"): ("Denmark", "1. Division"),
+    ("France", "Championnat National"): ("France", "National 1"),
+    ("Slovenia", "SNL 2"): ("Slovenia", "2. SNL"),
+    ("Morocco", "Botola"): ("Morocco", "Botola Pro"),
+    ("Iraq", "Premier League"): ("Iraq", "Iraqi League"),
+    ("Qatar", "Qatar Stars League"): ("Qatar", "Stars League"),
+    ("Israel", "Ligat Ha'Al"): ("Israel", "Ligat Ha'al"),
+    ("Jordan", "Premier League"): ("Jordan", "League"),
+    ("Azerbaijan", "Premier League"): ("Azerbaijan", "Premyer Liqa"),
+    ("Norway", "Toppserien (W)"): ("Norway", "Toppserien"),
+    ("Croatia", "1. HNL League"): ("Croatia", "HNL"),
+    ("Hungary", "NB 1"): ("Hungary", "NB I"),
+    ("Hungary", "NB 2"): ("Hungary", "NB II"),
+    ("Peru", "Liga 1"): ("Peru", "Primera División"),
+    ("Peru", "Segunda Division"): ("Peru", "Segunda División"),
+    ("Argentina", "Reserves Leagues U23"): ("Argentina", "Reserve League"),
+    ("Brazil", "Campeonato Brasileiro U20"): ("Brazil", "Brasileiro U20 A"),
+    ("Brazil", "Campeonato Brasileiro B U20"): ("Brazil", "Brasileiro U20 B"),
+    ("Brazil", "Campeonato Brasileiro (W)"): ("Brazil", "Brasileiro Women"),
+    ("Brazil", "Copa Sul - Sudeste"): ("Brazil", "Copa Sul-Sudeste"),
+    ("Brazil", "Paulista A2"): ("Brazil", "Paulista - A2"),
+    ("Brazil", "Cearense 2"): ("Brazil", "Cearense - 2"),
+    ("Brazil", "Copa Paraense U20"): ("Brazil", "Paraense U20"),
+    ("Ecuador", "Serie B"): ("Ecuador", "Liga Pro Serie B"),
+    ("Guatemala", "Liga Nacional Guatemala"): ("Guatemala", "Liga Nacional"),
+    ("Honduras", "Liga Nacional Honduras"): ("Honduras", "Liga Nacional"),
+    ("Nicaragua", "Primera Division Nicaragua"): ("Nicaragua", "Primera Division"),
+    ("USA", "NWSL (W)"): ("USA", "NWSL Women"),
+    ("Mexico", "Liga MX Femenil (W)"): ("Mexico", "Liga MX Femenil"),
+    ("Colombia", "Liga Femenina Profesional"): ("Colombia", "Liga Femenina"),
+    ("Japan", "J1 100 Year Vision League"): ("Japan", "J1 League"),
+    ("Japan", "J2/J3 100 Year Vision League"): ("Japan", "J2/J3 League"),
+    ("Belgium", "Lotto Super League (W)"): ("Belgium", "Super League Women"),
+    ("Belgium", "Pro League U21"): ("Belgium", "Reserve Pro League"),
+    ("Portugal", "Liga Revelacao U23"): ("Portugal", "Liga Revelação U23"),
+    ("Italy", "Coppa Primavera U20"): ("Italy", "Coppa Italia Primavera"),
+    ("Cyprus", "1st Division"): ("Cyprus", "1. Division"),
+}
+
+
 def ensure_league(league_path: str, tier: int = 1) -> str:
-    """Get or create a league, return its UUID"""
+    """Get or create a league, return its UUID.
+    Checks Kambi name mapping to avoid creating duplicates of AF leagues."""
     client = get_client()
 
     parts = league_path.split(" / ")
     country = parts[0] if len(parts) > 1 else "Unknown"
     name = parts[-1]
+
+    # Check if this is a known Kambi alias for an AF league
+    af_mapping = KAMBI_TO_AF_LEAGUE.get((country, name))
+    if af_mapping:
+        af_country, af_name = af_mapping
+        result = client.table("leagues").select("id").eq("name", af_name).eq("country", af_country).execute()
+        if result.data:
+            return result.data[0]["id"]
 
     result = client.table("leagues").select("id").eq("name", name).eq("country", country).execute()
     if result.data:

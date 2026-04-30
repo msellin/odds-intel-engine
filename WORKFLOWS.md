@@ -59,6 +59,7 @@
 ### ③ Odds (`fetch_odds.py`)
 - AF bulk odds via `/odds?date=` — ~178 fixtures, 13+ bookmakers each
 - Kambi odds via `fetch_all_operators()` — ~20 fixtures, Unibet/Paf
+- Kambi league names mapped to AF leagues via `KAMBI_TO_AF_LEAGUE` dict in `supabase_client.py` (prevents duplicate league creation)
 - Stores all in `odds_snapshots` with `minutes_to_kickoff`
 - `--mark-closing` flag for pre-kickoff runs (13:30/17:30)
 

@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-04-30 — Platt scaling implemented (PLATT + PLATT-AUTO). Featured leagues frontend filter (show_on_frontend). Performance indexes for matches/track-record pages.
+> Last updated: 2026-04-30 — League deduplication (LEAGUE-DEDUP): merged ~70 Kambi duplicates into AF leagues, added priority sorting column, fixed ensure_league() mapping. Europa/Conference League now visible on frontend.
 
 ---
 
@@ -47,6 +47,7 @@
 | — | STRIPE-WEBHOOK-URL | Fix Stripe webhook 301 redirect (www vs bare domain) | 5 min | ✅ Done 2026-04-29 | High | Internal | Done | Vercel redirects oddsintel.app → www.oddsintel.app with 301. Stripe doesn't follow redirects — webhook was silently failing. Updated endpoint to https://www.oddsintel.app/api/stripe/webhook. |
 | 19 | B3 | Tier-aware data API (Next.js layer strips fields by tier) | 1-2 days | ✅ Done 2026-04-29 | High | Internal | Done | **Unblocked Milestone 2.** profiles.tier checked server-side in matches/[id]/page.tsx. Pro data (oddsMovement, events, lineups, stats, injuries detail) only fetched + passed to components when isPro. Free/anon never receive pro data in payload. CTAs in MatchDetailFree context-aware (signup vs upgrade). |
 | — | SUPABASE-PRO | Upgrade Supabase to Pro ($25/mo) | 15 min | ✅ Done 2026-04-29 | High | Infrastructure | Done | PITR + daily backups active. 8 GB DB limit. ~€23/mo. |
+| — | LEAGUE-DEDUP | Deduplicate Kambi/AF leagues, add priority sorting, fix ensure_league() | 2-3h | ✅ Done 2026-04-30 | **Critical** | Launch blocker (2026-04-30) | Done | Migration 025: merged ~70 Kambi duplicate leagues into AF counterparts (moved matches, deleted orphans). Added `priority` column (10=top leagues/cups, 20=major secondary, 30=notable). Fixed `ensure_league()` with KAMBI_TO_AF_LEAGUE mapping dict (~55 entries). Frontend: sort by priority then alphabetical (like FlashScore). Europa/Conference League games now visible. Set `show_on_frontend=true` on merged AF leagues (UCL, UEL, UECL, Libertadores, etc). Cleaned up ~1100 zero-match orphan leagues. |
 | — | STRIPE-PROD | Swap Stripe to production keys (5-step checklist in INFRASTRUCTURE.md) | 1h | ⬜ | High | Infrastructure | After Supabase Pro | 1) Switch to live mode 2) Re-run setup_stripe.py with live key 3) Update all Vercel STRIPE_* env vars 4) New live webhook endpoint + new whsec_ in Vercel 5) Supabase Pro must be done first |
 | — | STRIPE-ANNUAL | Add annual billing option to profile page + landing page CTA | 2-3h | ✅ Done 2026-04-29 | Medium | Internal | Done | Monthly/annual toggle on profile upgrade buttons (swaps priceId to annual) and landing page pricing cards (updates displayed prices). Pro €39.99/yr, Elite €119.99/yr. BillingToggle + PricingCards components. |
 | — | STRIPE-EMAIL | Transactional email via Resend (welcome + payment receipt) | 1 day | ⬜ | Medium | Infrastructure | Milestone 2 | Resend free to 3K/mo. Welcome email on signup, payment receipt on checkout.session.completed. Re-engagement loop. |
