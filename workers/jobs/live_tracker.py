@@ -32,6 +32,7 @@ from workers.api_clients.api_football import (
     get_live_odds, parse_live_odds,
     get_fixture_events, parse_fixture_events,
     get_fixture_lineups, parse_fixture_lineups,
+    get_fixture_statistics, parse_fixture_stats,
 )
 from workers.api_clients.supabase_client import (
     get_client,
@@ -289,8 +290,31 @@ def run_live_tracker(dry_run: bool = False):
             elif mkt == "1x2":
                 snapshot[f"live_1x2_{sel}"] = row["odds"]
 
+        # ── T4-live: Fetch live match statistics (xG, shots, possession) ──
+        if af_id and not dry_run:
+            try:
+                stats_resp = get_fixture_statistics(af_id)
+                if stats_resp:
+                    parsed_stats = parse_fixture_stats(stats_resp)
+                    if parsed_stats:
+                        snapshot["xg_home"] = parsed_stats.get("xg_home")
+                        snapshot["xg_away"] = parsed_stats.get("xg_away")
+                        snapshot["shots_home"] = parsed_stats.get("shots_home")
+                        snapshot["shots_away"] = parsed_stats.get("shots_away")
+                        snapshot["shots_on_target_home"] = parsed_stats.get("shots_on_target_home")
+                        snapshot["shots_on_target_away"] = parsed_stats.get("shots_on_target_away")
+                        snapshot["possession_home"] = parsed_stats.get("possession_home")
+                        snapshot["corners_home"] = parsed_stats.get("corners_home")
+                        snapshot["corners_away"] = parsed_stats.get("corners_away")
+                        snapshot["attacks_home"] = parsed_stats.get("passes_home")  # proxy for attacking activity
+                        snapshot["attacks_away"] = parsed_stats.get("passes_away")
+            except Exception as e:
+                console.print(f"  [yellow]Stats error {home} v {away}: {e}[/yellow]")
+
         # ── T8: Fetch match events ─────────────────────────────────────────
         new_events = 0
+        red_cards_home = 0
+        red_cards_away = 0
         if db_match and not dry_run and af_id:
             try:
                 raw_events = get_fixture_events(af_id)
@@ -301,8 +325,33 @@ def run_live_tracker(dry_run: bool = False):
                         home_team_api_id=home_api_id
                     )
                     events_stored += new_events
+
+                    # Derive red card state from events for snapshot context
+                    for ev in parsed_events:
+                        if ev.get("event_type") in ("red_card", "yellow_red_card"):
+                            team_id = ev.get("team_api_id")
+                            if team_id == home_api_id:
+                                red_cards_home += 1
+                            else:
+                                red_cards_away += 1
             except Exception as e:
                 console.print(f"  [yellow]Events error {home} v {away}: {e}[/yellow]")
+
+        # ── Load pre-match model context (once per match) ──────────────────
+        if db_match and not dry_run:
+            try:
+                preds = client.table("predictions").select(
+                    "market, model_probability"
+                ).eq("match_id", db_match["id"]).in_(
+                    "source", ["poisson", "ensemble"]
+                ).execute()
+                for p in (preds.data or []):
+                    if p["market"] == "over25":
+                        snapshot["model_ou25_prob"] = float(p["model_probability"])
+                    # Use 1x2_home implied xG as proxy for model expected goals
+                    # (actual xG stored when available from Poisson output)
+            except Exception:
+                pass
 
         # ── Store in DB ────────────────────────────────────────────────────
         if db_match and not dry_run:
@@ -339,8 +388,12 @@ def run_live_tracker(dry_run: bool = False):
                     pass
 
         # ── Build display row ──────────────────────────────────────────────
-        xg_str = "-"
-        sot_str = "-"
+        xg_h = snapshot.get("xg_home")
+        xg_a = snapshot.get("xg_away")
+        xg_str = f"{xg_h:.1f}-{xg_a:.1f}" if xg_h is not None and xg_a is not None else "-"
+        sot_h = snapshot.get("shots_on_target_home")
+        sot_a = snapshot.get("shots_on_target_away")
+        sot_str = f"{sot_h}-{sot_a}" if sot_h is not None and sot_a is not None else "-"
         ou25_str = f"{ou25_over:.2f}" if ou25_over else "-"
         odds_str = f"{home_odds:.2f}/{away_odds:.2f}" if home_odds and away_odds else "-"
 

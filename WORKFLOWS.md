@@ -79,9 +79,12 @@
 
 ### ⑥ Live Tracker (`live_tracker.py`)
 - AF `/fixtures?live=all` — live scores + minute
-- AF `/odds/live` — in-play odds
+- AF `/fixtures/statistics` — live xG, shots, SoT, possession, corners per match
+- AF `/odds/live` — in-play odds (all O/U lines + 1X2 + BTTS)
 - AF `/fixtures/lineups` — 20-40min before kickoff
-- AF `/fixtures/events` — goals, cards, subs, VAR
+- AF `/fixtures/events` — goals, cards, subs, VAR → derives red card state
+- Pre-match model context (O/U 2.5 probability) loaded into each snapshot
+- All data written to unified `live_match_snapshots` row per match per cycle
 
 ### ⑦ News Checker (`news_checker.py`)
 - Gemini 2.5 Flash AI analysis of pending bets
