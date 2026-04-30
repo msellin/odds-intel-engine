@@ -429,9 +429,11 @@ WHERE api_football_id IN (
 -- 5. CLEAN UP: Delete Kambi leagues with 0 matches and no AF ID
 -- ============================================================
 -- These are orphan Kambi-created leagues that never got any AF data.
--- Only delete if they have no matches pointing to them.
+-- Only delete if they have no matches AND no teams pointing to them.
+-- (teams.league_id is a dummy FK set by ensure_team() for placeholder grouping)
 DELETE FROM leagues
 WHERE api_football_id IS NULL
-  AND id NOT IN (SELECT DISTINCT league_id FROM matches WHERE league_id IS NOT NULL);
+  AND id NOT IN (SELECT DISTINCT league_id FROM matches WHERE league_id IS NOT NULL)
+  AND id NOT IN (SELECT DISTINCT league_id FROM teams WHERE league_id IS NOT NULL);
 
 COMMIT;
