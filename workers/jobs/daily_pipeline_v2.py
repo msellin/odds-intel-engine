@@ -962,18 +962,21 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], dict[str, dict]]:
     match_ids = [m["id"] for m in matches_r.data]
 
     # 2. Load best pre-match odds per match per (market, selection)
-    odds_r = client.table("odds_snapshots").select(
-        "match_id, market, selection, odds, bookmaker"
-    ).in_("match_id", match_ids).eq("is_closing", False).execute()
-
+    #    Paginate in chunks of match IDs to avoid Supabase row limits (~1000 default)
     best: dict[str, dict[str, float]] = _dd(lambda: _dd(float))
     bm_sources: dict[str, set] = _dd(set)
-    for row in (odds_r.data or []):
-        mid = row["match_id"]
-        key = f"{row['market']}_{row['selection']}"
-        if float(row["odds"]) > best[mid][key]:
-            best[mid][key] = float(row["odds"])
-        bm_sources[mid].add(row.get("bookmaker", "unknown"))
+    for i in range(0, len(match_ids), 50):
+        chunk = match_ids[i:i + 50]
+        odds_r = client.table("odds_snapshots").select(
+            "match_id, market, selection, odds, bookmaker"
+        ).in_("match_id", chunk).eq("is_closing", False).limit(10000).execute()
+
+        for row in (odds_r.data or []):
+            mid = row["match_id"]
+            key = f"{row['market']}_{row['selection']}"
+            if float(row["odds"]) > best[mid][key]:
+                best[mid][key] = float(row["odds"])
+            bm_sources[mid].add(row.get("bookmaker", "unknown"))
 
     MARKET_TO_FIELD = {
         "1x2_home": "odds_home", "1x2_draw": "odds_draw", "1x2_away": "odds_away",
@@ -990,8 +993,8 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], dict[str, dict]]:
     for m in matches_r.data:
         mid = m["id"]
         match_best = best.get(mid, {})
-        if not match_best.get("1x2_home") and not match_best.get("1x2_away"):
-            continue  # no 1X2 odds — skip
+        if not match_best:
+            continue  # no odds at all — skip
 
         ht = m.get("home_team") or {}
         at = m.get("away_team") or {}
