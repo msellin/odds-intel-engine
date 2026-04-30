@@ -170,8 +170,8 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 - [x] Migration 009 applied in Supabase SQL editor
 - [x] **Stripe** — products + price IDs created (test mode), checkout + webhook + portal built
 - [x] **Stripe webhook endpoint** — endpoint created, `STRIPE_WEBHOOK_SECRET` added to Vercel
-- [ ] **GitHub secret** — add `SUPABASE_ACCESS_TOKEN` for DB migration workflow
-- [ ] **Vercel env var** — add `GEMINI_API_KEY` to Production (needed for BET-EXPLAIN `/api/bet-explain`)
+- [x] **GitHub secrets** — `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `API_FOOTBALL_KEY`, `SUPABASE_SECRET_KEY`, `SUPABASE_URL`, `SUPABASE_DB_PASSWORD`, `GEMINI_API_KEY` all set
+- [x] **Vercel env var** — `GEMINI_API_KEY` added to Production (for BET-EXPLAIN `/api/bet-explain`)
 
 ---
 
