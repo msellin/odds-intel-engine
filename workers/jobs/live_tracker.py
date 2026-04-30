@@ -44,6 +44,15 @@ from workers.api_clients.supabase_client import (
     update_match_status,
     get_match_by_teams_and_date,
 )
+from workers.api_clients.db import (
+    build_af_id_map as _db_build_af_id_map,
+    find_match_by_teams_and_date as _db_find_match,
+    store_live_snapshots_batch,
+    store_live_odds_batch,
+    store_match_events_batch,
+    update_match_status_sql,
+    DATABASE_URL,
+)
 
 console = Console()
 
@@ -92,11 +101,13 @@ def _lookup_db_match(af_fix: dict, af_id_map: dict, client) -> dict | None:
     if af_id and af_id in af_id_map:
         return af_id_map[af_id]
 
-    # Fallback: team name + today's date
+    # Fallback: team name + today's date (uses direct SQL with JOIN if available)
     today_str = date.today().isoformat()
     home = af_fix.get("home_team", "")
     away = af_fix.get("away_team", "")
     if home and away:
+        if DATABASE_URL:
+            return _db_find_match(home, away, today_str)
         return get_match_by_teams_and_date(home, away, today_str)
 
     return None
@@ -105,8 +116,12 @@ def _lookup_db_match(af_fix: dict, af_id_map: dict, client) -> dict | None:
 def _build_af_id_map(client) -> dict[int, dict]:
     """
     Build {api_football_id: match_record} for all of today's matches in DB.
-    Called once per tracker run.
+    Uses direct SQL (no 1K row limit) when DATABASE_URL is set.
     """
+    if DATABASE_URL:
+        return _db_build_af_id_map()
+
+    # Fallback: PostgREST (has 1K row cap risk)
     today = date.today().isoformat()
     result = client.table("matches").select(
         "id, api_football_id, home_team_id, away_team_id, "
@@ -230,6 +245,11 @@ def run_live_tracker(dry_run: bool = False):
     live_odds_stored = 0
     matched_to_db = 0
 
+    # Batch collection for direct SQL bulk writes
+    _pending_snapshots = []
+    _pending_odds = []
+    _pending_status = []
+
     t = Table(title=f"Live Matches ({len(live_fixtures)})")
     t.add_column("Match", style="cyan")
     t.add_column("Min", justify="right")
@@ -320,10 +340,16 @@ def run_live_tracker(dry_run: bool = False):
                 raw_events = get_fixture_events(af_id)
                 parsed_events = parse_fixture_events(raw_events)
                 if parsed_events:
-                    new_events = store_match_events_af(
-                        db_match["id"], parsed_events,
-                        home_team_api_id=home_api_id
-                    )
+                    if DATABASE_URL:
+                        new_events = store_match_events_batch(
+                            db_match["id"], parsed_events,
+                            home_team_api_id=home_api_id
+                        )
+                    else:
+                        new_events = store_match_events_af(
+                            db_match["id"], parsed_events,
+                            home_team_api_id=home_api_id
+                        )
                     events_stored += new_events
 
                     # Derive red card state from events for snapshot context
@@ -353,39 +379,24 @@ def run_live_tracker(dry_run: bool = False):
             except Exception:
                 pass
 
-        # ── Store in DB ────────────────────────────────────────────────────
+        # ── Collect for DB write ───────────────────────────────────────────
         if db_match and not dry_run:
             match_id = db_match["id"]
             matched_to_db += 1
+            snapshot["match_id"] = match_id
 
-            # Live snapshot
-            try:
-                store_live_snapshot(match_id, snapshot)
-                snapshots_stored += 1
-            except Exception as e:
-                console.print(f"  [red]Snapshot error {home} v {away}: {e}[/red]")
+            # Collect for batch write
+            _pending_snapshots.append(snapshot)
 
-            # T5: Store live odds in odds_snapshots
-            if fixture_live_odds:
-                try:
-                    store_live_odds(match_id, fixture_live_odds, minute=minute)
-                    live_odds_stored += len(fixture_live_odds)
-                except Exception as e:
-                    console.print(f"  [yellow]Live odds store error: {e}[/yellow]")
+            for lr in fixture_live_odds:
+                lr["match_id"] = match_id
+            _pending_odds.extend(fixture_live_odds)
 
-            # Update match status to 'live' if currently scheduled
+            # Status updates
             if db_match.get("status") == "scheduled" and minute > 0:
-                try:
-                    update_match_status(match_id, "live")
-                except Exception:
-                    pass
-
-            # Mark as finished in DB
+                _pending_status.append((match_id, "live"))
             if af_fix.get("status_short") in ("FT", "AET", "PEN"):
-                try:
-                    update_match_status(match_id, "finished")
-                except Exception:
-                    pass
+                _pending_status.append((match_id, "finished"))
 
         # ── Build display row ──────────────────────────────────────────────
         xg_h = snapshot.get("xg_home")
@@ -410,6 +421,43 @@ def run_live_tracker(dry_run: bool = False):
         )
 
     console.print(t)
+
+    # ── Batch write to DB (direct SQL — much faster than PostgREST) ────────
+    if not dry_run and DATABASE_URL:
+        try:
+            snapshots_stored = store_live_snapshots_batch(_pending_snapshots)
+        except Exception as e:
+            console.print(f"[red]Batch snapshot write failed: {e}[/red]")
+        try:
+            live_odds_stored = store_live_odds_batch(_pending_odds)
+        except Exception as e:
+            console.print(f"[yellow]Batch odds write failed: {e}[/yellow]")
+        for match_id, status in _pending_status:
+            try:
+                update_match_status_sql(match_id, status)
+            except Exception:
+                pass
+    elif not dry_run:
+        # Fallback: PostgREST one-at-a-time (GH Actions / no DATABASE_URL)
+        for s in _pending_snapshots:
+            try:
+                store_live_snapshot(s["match_id"], s)
+                snapshots_stored += 1
+            except Exception as e:
+                console.print(f"[red]Snapshot error: {e}[/red]")
+        for match_id_group in set(r["match_id"] for r in _pending_odds):
+            match_odds = [r for r in _pending_odds if r["match_id"] == match_id_group]
+            try:
+                store_live_odds(match_id_group, match_odds)
+                live_odds_stored += len(match_odds)
+            except Exception as e:
+                console.print(f"[yellow]Live odds store error: {e}[/yellow]")
+        for match_id, status in _pending_status:
+            try:
+                update_match_status(match_id, status)
+            except Exception:
+                pass
+
     console.print(
         f"\n[bold green]Done:[/bold green] "
         f"{snapshots_stored} snapshots | "
