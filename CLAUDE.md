@@ -15,6 +15,8 @@ All project documentation lives in this repo (`odds-intel-engine/`). Before star
 | `WORKFLOWS.md` | Pipeline architecture — all scheduled jobs, order, manual run instructions, data sources |
 | `DATA_SOURCES.md` | Data source architecture, API-Football integration status, alternatives evaluated |
 | `INFRASTRUCTURE.md` | Full infra stack, current costs, and projections by growth phase |
+| `docs/AF_ENDPOINT_FREQUENCY.md` | API-Football endpoint update frequencies vs our polling — identifies gaps |
+| `docs/API-Football_Documentation_v3.9.3.pdf` | Full API-Football v3.9.3 docs (130 pages) — reference for endpoint params, update frequencies |
 | `data/model_results/SOCCER_FINDINGS.md` | Soccer model iterations and backtest results (archival) |
 | `data/model_results/TENNIS_FINDINGS.md` | Tennis model iterations and backtest results (archival) |
 | `data/model_results/MEGA_BACKTEST_FINDINGS.md` | 354K match backtest across 275 leagues (archival) |
