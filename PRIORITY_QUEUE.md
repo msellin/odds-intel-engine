@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-04-30 — XGBoost retrained (pickle→joblib fix), Poisson storage fixed for all 3 markets, draw market fixed in pipeline.
+> Last updated: 2026-04-30 — HIST-BACKFILL deployed (script + workflow + migration). Fixtures + stats + events working. Historical odds unavailable from AF (skipped). Awaiting first overnight cron run.
 
 ---
 
@@ -152,7 +152,7 @@
 
 | # | ID | Task | Effort | Status | Impact | Source | Timeline | Notes |
 |---|-----|------|--------|--------|--------|--------|----------|-------|
-| 34 | HIST-BACKFILL | Historical match data backfill via automated cron during spare API quota windows | 3-4 days | 🔄 In Progress | Very High | Internal (MODEL_ANALYSIS 11.3) | ~May 2026 | **Detailed plan below.** ~73.5K spare req/day (1.5K used of 75K). Automated GitHub Actions crons run during dead windows. Completion auto-detected via DB row counts. See § HIST-BACKFILL Plan |
+| 34 | HIST-BACKFILL | Historical match data backfill via automated cron during spare API quota windows | 3-4 days | 🔄 In Progress | Very High | Internal (MODEL_ANALYSIS 11.3) | ~May 2026 | **Code deployed 2026-04-30.** Fixtures + stats + events working (live tested). Historical odds NOT available from AF `/odds` endpoint (returns empty for completed fixtures) — skipped. 8 cron slots/day running Phase 1. Awaiting first overnight run confirmation → then Phase 2+3. See § HIST-BACKFILL Plan |
 | 35 | B6 | Singapore/South Korea odds source (Pinnacle API or OddsPortal) | Unknown | ⬜ | Very High | Internal | ~June 2026 | +27.5% ROI signal has no live odds feed. Note: AF has odds for Korea K League but NOT Singapore. Pinnacle via The Odds API ($20/mo) is best path |
 | 36 | P5.2 | Footiqo: validate Singapore/Scotland ROI with independent 1xBet closing odds | Manual first | ⬜ | High | Internal | ~June 2026 | Independent validation. If ROI holds on 2nd source, it's real |
 | 37 | P3.1 | Odds drift as XGBoost input feature (model retraining) | 1-2 days | ⬜ | High | Internal | ~June 2026 | Currently veto filter only. Strongest unused signal once data is there |
@@ -291,23 +291,24 @@ Hour  | Jobs Running                          | Est. AF Calls | Backfill OK?
 
 #### Target Data (ordered by ML impact)
 
-| Priority | Data | AF Endpoint | Calls/Match | Why |
-|----------|------|-------------|-------------|-----|
-| P1 | Historical fixtures + results | `/fixtures?league=X&season=Y` | 1 per league/season (batch) | Match results = training labels |
-| P2 | Historical odds (13 bookmakers) | `/odds?fixture=ID` | 1 per match | CLV analysis, market efficiency, opening/closing lines |
-| P3 | Match statistics (xG, shots, possession) | `/fixtures/statistics?fixture=ID` | 1 per match | Feature engineering for XGBoost |
-| P4 | Match events (goals, cards, subs) | `/fixtures/events?fixture=ID` | 1 per match | Referee profiles, team discipline signals |
+| Priority | Data | AF Endpoint | Calls/Match | Status | Why |
+|----------|------|-------------|-------------|--------|-----|
+| P1 | Historical fixtures + results | `/fixtures?league=X&season=Y` | 1 per league/season (batch) | ✅ Working | Match results = training labels |
+| P2 | Historical odds (13 bookmakers) | `/odds?fixture=ID` | 1 per match | ❌ **Skipped** — AF returns empty for completed fixtures | CLV analysis needs separate source (The Odds API historical?) |
+| P3 | Match statistics (xG, shots, possession) | `/fixtures/statistics?fixture=ID` | 1 per match | ✅ Working | Feature engineering for XGBoost |
+| P4 | Match events (goals, cards, subs) | `/fixtures/events?fixture=ID` | 1 per match | ✅ Working | Referee profiles, team discipline signals |
 
 #### Scope
 
 | Scope | Leagues | Seasons | Est. Matches | Est. API Calls |
 |-------|---------|---------|-------------|----------------|
-| **Phase 1: Tier 1 leagues** | ~15-20 top leagues | 2023-24, 2024-25, 2025-26 | ~18,000 | ~54,000 (3 calls/match + 60 fixture batch calls) |
-| **Phase 2: Tier 2 leagues** | ~30-40 secondary leagues | 2024-25, 2025-26 | ~22,000 | ~66,000 |
-| **Phase 3: Tier 3 leagues** | ~50+ remaining active | 2025-26 only | ~15,000 | ~45,000 |
-| **Total** | **All active** | **2-3 seasons** | **~55,000** | **~165,000** |
+| **Phase 1: Tier 1 leagues** | 19 top leagues | 2023, 2024, 2025 | ~18,000 | ~36,000 (2 calls/match + 57 fixture batch calls) |
+| **Phase 2: Tier 2 leagues** | 29 secondary leagues | 2024, 2025 | ~17,000 | ~34,000 |
+| **Phase 3: Tier 3 leagues** | 28 remaining active | 2025 only | ~8,000 | ~16,000 |
+| **Total** | **76 leagues** | **1-3 seasons** | **~43,000** | **~86,000** |
 
-**At 73K spare/day → Phase 1 done in ~1 day, all phases done in ~2.5 days**
+**At 73K spare/day → Phase 1 done in ~1 day, all phases done in ~1.5 days**
+**Note:** Odds skipped (AF doesn't serve historical odds for finished fixtures). 2 API calls/match = stats + events.
 
 ### 3. Implementation Plan
 
@@ -428,15 +429,15 @@ The script auto-detects completion and the workflow self-disables:
 
 ### 4. Sub-Tasks
 
-| # | Sub-ID | Task | Effort | Depends On |
-|---|--------|------|--------|------------|
-| 1 | HIST-1 | Create migration: `backfill_progress` table | 15 min | — |
-| 2 | HIST-2 | Write `scripts/backfill_historical.py` (fetch fixtures + odds + stats + events, track progress) | 4-6h | HIST-1 |
-| 3 | HIST-3 | Create `.github/workflows/backfill.yml` (8 cron slots + manual trigger) | 30 min | HIST-2 |
-| 4 | HIST-4 | Add completion detection + auto-disable logic | 1h | HIST-2 |
-| 5 | HIST-5 | Dry run test: `--dry-run --phase 1` to validate league/season targeting | 30 min | HIST-2 |
-| 6 | HIST-6 | Deploy Phase 1 (enable workflow, monitor first overnight run) | 30 min | HIST-3, HIST-5 |
-| 7 | HIST-7 | After Phase 1 complete: enable Phase 2+3, verify auto-stop works | 30 min | HIST-6 |
+| # | Sub-ID | Task | Effort | Status | Notes |
+|---|--------|------|--------|--------|-------|
+| 1 | HIST-1 | Create migration: `backfill_progress` table | 15 min | ✅ Done | `021_backfill_progress.sql` |
+| 2 | HIST-2 | Write `scripts/backfill_historical.py` | 4-6h | ✅ Done | Fixtures + stats + events. Odds skipped (AF limitation). Batch dedup, budget caps, SIGTERM handling |
+| 3 | HIST-3 | Create `.github/workflows/backfill.yml` (8 cron slots + manual trigger) | 30 min | ✅ Done | 5 overnight + 3 daytime slots. Completion flag check at start |
+| 4 | HIST-4 | Add completion detection + auto-disable logic | 1h | ✅ Done | `backfill_complete.flag` + `check_all_complete()` |
+| 5 | HIST-5 | Dry run test + live test | 30 min | ✅ Done | Dry run: 57 league/season combos. Live: 38 fixtures, 23 stats, 16 events stored correctly |
+| 6 | HIST-6 | Deploy Phase 1 (monitor first overnight run) | 30 min | ⬜ Awaiting | Workflow deployed, first cron run tonight 23:00 UTC |
+| 7 | HIST-7 | After Phase 1 complete: trigger Phase 2+3 via workflow_dispatch | 30 min | ⬜ Awaiting | Phase 1 ~1 day, then manually dispatch Phase 2 |
 
 ### 5. Expected Timeline
 
@@ -451,12 +452,12 @@ The script auto-detects completion and the workflow self-disables:
 
 ### 6. What This Unlocks
 
-- **B-ML3 meta-model** can train immediately (3K+ CLV rows → 55K+ match outcomes)
-- **PLATT scaling** has abundant data (500+ → 55K+ predictions with outcomes)
-- **P3.1 odds drift feature** has historical odds timelines to compute from
-- **ALN-1 alignment thresholds** can be derived from historical data, not just paper bets
+- **B-ML3 meta-model** can train on 43K+ match outcomes (vs waiting for daily accumulation)
+- **PLATT scaling** has abundant data (500+ → 43K+ predictions with outcomes)
 - **SIG-12 xG signal** has historical match stats for rolling calculations
+- **Referee profiles** have thousands of historical events for cards/fouls patterns
 - XGBoost retraining timeline: **months → days**
+- ~~P3.1 odds drift~~ — needs historical odds; AF doesn't provide. Would need The Odds API historical endpoint ($20/mo)
 
 ---
 
