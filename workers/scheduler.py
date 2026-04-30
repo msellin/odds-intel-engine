@@ -315,10 +315,6 @@ def main():
     scheduler.add_job(job_settlement, CronTrigger(hour=21, minute=0),
                       id="settlement", name="Settlement")
 
-    # Live tracker: every 5 min, 12-22 UTC (Phase 1 — will be replaced by LivePoller)
-    scheduler.add_job(job_live_tracker, CronTrigger(minute="*/5", hour="12-22"),
-                      id="live_tracker", name="Live Tracker")
-
     # Budget sync: hourly
     scheduler.add_job(job_budget_sync, CronTrigger(minute=0),
                       id="budget_sync", name="Budget Sync")
@@ -327,12 +323,26 @@ def main():
     scheduler.start()
 
     jobs = scheduler.get_jobs()
-    console.print(f"\n[green]{len(jobs)} jobs registered:[/green]")
+    console.print(f"\n[green]{len(jobs)} scheduled jobs registered:[/green]")
     for job in sorted(jobs, key=lambda j: str(j.next_run_time)):
         next_run = job.next_run_time.strftime("%H:%M UTC") if job.next_run_time else "—"
         console.print(f"  [dim]{next_run}[/dim]  {job.name}")
 
-    console.print(f"\n[bold green]Scheduler running. Waiting for jobs...[/bold green]\n")
+    # ── Start LivePoller in background thread ──────────────────────────
+    from workers.live_poller import LivePoller
+    from workers.api_clients.api_football import budget
+
+    poller = LivePoller(
+        budget_tracker=budget,
+        shutdown_flag_fn=lambda: _shutdown_requested,
+    )
+    poller_thread = threading.Thread(target=poller.run_forever, daemon=True, name="live-poller")
+    poller_thread.start()
+
+    console.print(f"\n[bold green]Scheduler + LivePoller running. "
+                  f"Fast={poller.FAST_INTERVAL}s, "
+                  f"Medium={poller.FAST_INTERVAL * poller.MEDIUM_MULTIPLIER}s, "
+                  f"Slow={poller.FAST_INTERVAL * poller.SLOW_MULTIPLIER}s[/bold green]\n")
 
     # Keep alive until shutdown
     try:
@@ -341,7 +351,7 @@ def main():
     except (KeyboardInterrupt, SystemExit):
         pass
 
-    console.print("[yellow]Shutting down scheduler...[/yellow]")
+    console.print("[yellow]Shutting down scheduler + poller...[/yellow]")
     scheduler.shutdown(wait=True)
     console.print("[green]Scheduler stopped cleanly.[/green]")
 

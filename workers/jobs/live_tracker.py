@@ -58,6 +58,92 @@ console = Console()
 
 
 # ============================================================
+# Decomposed sub-functions (used by both run_live_tracker and LivePoller)
+# ============================================================
+
+def fetch_live_bulk() -> tuple[list[dict], dict[int, list[dict]]]:
+    """
+    Fetch all live fixtures + all live odds in 2 bulk API calls.
+    Returns (parsed_fixtures, odds_by_fixture_id).
+    """
+    fixtures = []
+    try:
+        raw = get_live_fixtures()
+        fixtures = [_parse_af_live_fixture(f) for f in raw]
+    except Exception as e:
+        console.print(f"[yellow]AF live fixtures error: {e}[/yellow]")
+
+    odds_by_fixture: dict[int, list[dict]] = {}
+    try:
+        raw_odds = get_live_odds()
+        odds_by_fixture = parse_live_odds(raw_odds)
+    except Exception as e:
+        console.print(f"[yellow]AF live odds error: {e}[/yellow]")
+
+    return fixtures, odds_by_fixture
+
+
+def fetch_match_stats_for(af_id: int) -> dict | None:
+    """Fetch live statistics (xG, shots, possession) for one match. 1 API call."""
+    try:
+        raw = get_fixture_statistics(af_id)
+        if raw:
+            return parse_fixture_stats(raw)
+    except Exception as e:
+        console.print(f"[yellow]Stats error AF {af_id}: {e}[/yellow]")
+    return None
+
+
+def fetch_match_events_for(af_id: int) -> list[dict]:
+    """Fetch events (goals, cards, subs) for one match. 1 API call."""
+    try:
+        raw = get_fixture_events(af_id)
+        return parse_fixture_events(raw) or []
+    except Exception as e:
+        console.print(f"[yellow]Events error AF {af_id}: {e}[/yellow]")
+    return []
+
+
+def build_snapshot(af_fix: dict, fixture_odds: list[dict],
+                   stats: dict = None) -> dict:
+    """
+    Assemble a snapshot dict from fixture, odds, and optional stats.
+    Does NOT include match_id — caller adds it after DB lookup.
+    """
+    snapshot = {
+        "minute": af_fix.get("minute", 0),
+        "added_time": af_fix.get("added_time", 0),
+        "score_home": af_fix.get("score_home", 0),
+        "score_away": af_fix.get("score_away", 0),
+    }
+
+    # Embed live odds
+    for row in fixture_odds:
+        mkt = row.get("market", "")
+        sel = row.get("selection", "")
+        if mkt.startswith("over_under_") and sel in ("over", "under"):
+            key = f"live_{mkt.replace('over_under_', 'ou')}_{sel}"
+            snapshot[key] = row["odds"]
+        elif mkt == "1x2":
+            snapshot[f"live_1x2_{sel}"] = row["odds"]
+
+    # Embed stats if available
+    if stats:
+        for field in ["xg_home", "xg_away", "shots_home", "shots_away",
+                      "shots_on_target_home", "shots_on_target_away",
+                      "possession_home", "corners_home", "corners_away"]:
+            if stats.get(field) is not None:
+                snapshot[field] = stats[field]
+        # Proxy fields
+        if stats.get("passes_home") is not None:
+            snapshot["attacks_home"] = stats["passes_home"]
+        if stats.get("passes_away") is not None:
+            snapshot["attacks_away"] = stats["passes_away"]
+
+    return snapshot
+
+
+# ============================================================
 # AF Live Data Parsing
 # ============================================================
 
