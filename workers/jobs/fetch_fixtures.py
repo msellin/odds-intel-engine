@@ -28,7 +28,7 @@ from workers.api_clients.api_football import get_fixtures_by_date, fixture_to_ma
 from workers.api_clients.supabase_client import get_client, store_match
 from workers.utils.pipeline_utils import (
     log_pipeline_start, log_pipeline_complete, log_pipeline_failed,
-    store_league_coverage,
+    store_league_coverage, set_daily_featured_leagues,
 )
 
 console = Console()
@@ -110,6 +110,11 @@ def main():
         # Fetch and store fixtures
         stored, af_id_to_match_id, af_fixtures_raw = fetch_and_store_fixtures(target_date)
 
+        # Set daily featured leagues (continental cups with matches today → priority 1)
+        featured = set_daily_featured_leagues(af_fixtures_raw)
+        if featured:
+            console.print(f"\n[yellow]Featured today:[/yellow] {', '.join(featured)}")
+
         log_pipeline_complete(
             run_id,
             fixtures_count=stored,
@@ -118,6 +123,7 @@ def main():
                 "af_fixtures": len(af_fixtures_raw),
                 "af_id_mappings": len(af_id_to_match_id),
                 "leagues_refreshed": leagues_count,
+                "featured_leagues": featured,
             }
         )
 

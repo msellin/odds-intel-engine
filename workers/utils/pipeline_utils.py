@@ -231,3 +231,90 @@ def store_league_coverage(af_leagues: list[dict]):
         stored += 1
 
     return stored
+
+
+# ─── Daily Featured Leagues ──────────────────────────────────────────────────
+
+# Continental cups + major international tournaments that should be featured
+# when they have matches today. AF league IDs.
+FEATURED_WHEN_PLAYING = {
+    2,    # UEFA Champions League
+    3,    # UEFA Europa League
+    848,  # UEFA Europa Conference League
+    13,   # CONMEBOL Libertadores
+    11,   # CONMEBOL Sudamericana
+    16,   # CONCACAF Champions League
+    480,  # Euro Championship
+    531,  # Euro Championship - Qualification
+    1,    # World Cup
+    15,   # FIFA Club World Cup
+    4,    # UEFA Nations League
+    9,    # Copa America
+    6,    # Africa Cup of Nations
+    29,   # AFC Asian Cup
+}
+
+# Base priorities for leagues (used to restore after daily reset).
+# Matches the static values set in migration 025.
+BASE_PRIORITY = {
+    # Continental cups + Big 5: priority 10
+    2: 10, 3: 10, 848: 10, 13: 10, 11: 10, 16: 10, 480: 10, 531: 10,
+    39: 10, 140: 10, 135: 10, 78: 10, 61: 10,
+    # Major secondary + notable top flights: priority 20
+    40: 20, 141: 20, 136: 20, 79: 20, 62: 20, 88: 20, 94: 20,
+    144: 20, 203: 20, 253: 20, 262: 20, 71: 20, 128: 20,
+    307: 20, 98: 20, 292: 20,
+    # Other notable: priority 30
+    119: 30, 113: 30, 103: 30, 106: 30, 218: 30, 207: 30, 179: 30,
+    197: 30, 169: 30, 254: 30, 383: 30, 200: 30, 233: 30,
+    332: 30, 286: 30, 72: 30, 73: 30, 188: 30, 210: 30, 271: 30,
+}
+
+
+def set_daily_featured_leagues(af_fixtures_raw: list[dict]) -> list[str]:
+    """
+    After fixtures are fetched, check which continental cups/tournaments
+    have matches today and bump them to priority=1 (featured).
+    Resets yesterday's featured leagues back to their base priority.
+
+    Returns list of featured league names for logging.
+    """
+    client = get_client()
+
+    # 1. Reset any league currently at priority=1 back to its base priority
+    current_featured = client.table("leagues").select(
+        "id, api_football_id"
+    ).eq("priority", 1).execute()
+
+    for league in (current_featured.data or []):
+        af_id = league.get("api_football_id")
+        base = BASE_PRIORITY.get(af_id)  # None if not in base map
+        client.table("leagues").update(
+            {"priority": base}
+        ).eq("id", league["id"]).execute()
+
+    # 2. Find which featured-eligible leagues have matches today
+    today_af_league_ids = set()
+    for fixture in af_fixtures_raw:
+        league = fixture.get("league", {})
+        af_id = league.get("id")
+        if af_id:
+            today_af_league_ids.add(af_id)
+
+    featured_ids = today_af_league_ids & FEATURED_WHEN_PLAYING
+    if not featured_ids:
+        return []
+
+    # 3. Set priority=1 on today's featured leagues
+    featured_names = []
+    for af_id in featured_ids:
+        result = client.table("leagues").select("id, name").eq(
+            "api_football_id", af_id
+        ).execute()
+        if result.data:
+            league_id = result.data[0]["id"]
+            name = result.data[0]["name"]
+            client.table("leagues").update({"priority": 1}).eq("id", league_id).execute()
+            featured_names.append(name)
+
+    return sorted(featured_names)
