@@ -226,6 +226,87 @@ BOTS_CONFIG = {
         "odds_range": (2.50, 4.00),
         "min_prob": 0.40,
     },
+
+    # ─── New bots (2026-04-30): BTTS, O/U 1.5/3.5, draw, O/U 2.5 global ────
+
+    "bot_btts_all": {
+        "description": "BTTS all leagues — new market, zero overlap with 1X2 bets",
+        "tier_label": "pro",
+        "markets": ["btts"],
+        "edge_thresholds": {
+            1: {"btts": 0.06},
+            2: {"btts": 0.06},
+            3: {"btts": 0.05},
+            4: {"btts": 0.05},
+        },
+        "odds_range": (1.50, 2.80),
+        "min_prob": 0.30,
+    },
+    "bot_btts_conservative": {
+        "description": "BTTS top leagues only — selective, 10%+ edge",
+        "tier_label": "elite",
+        "markets": ["btts"],
+        "tier_filter": [1, 2],
+        "edge_thresholds": {
+            1: {"btts": 0.10},
+            2: {"btts": 0.10},
+        },
+        "odds_range": (1.60, 2.50),
+        "min_prob": 0.35,
+    },
+    "bot_ou15_defensive": {
+        "description": "O/U 1.5 — under 1.5 in defensive leagues, over 1.5 at value odds",
+        "tier_label": "pro",
+        "markets": ["ou15"],
+        "edge_thresholds": {
+            1: {"ou": 0.06},
+            2: {"ou": 0.06},
+            3: {"ou": 0.05},
+            4: {"ou": 0.05},
+        },
+        "odds_range": (1.80, 3.50),
+        "min_prob": 0.30,
+    },
+    "bot_ou35_attacking": {
+        "description": "O/U 3.5 — over 3.5 in high-scoring leagues, under 3.5 at value",
+        "tier_label": "pro",
+        "markets": ["ou35"],
+        "edge_thresholds": {
+            1: {"ou": 0.06},
+            2: {"ou": 0.06},
+            3: {"ou": 0.05},
+            4: {"ou": 0.05},
+        },
+        "odds_range": (1.80, 3.50),
+        "min_prob": 0.30,
+    },
+    "bot_ou25_global": {
+        "description": "O/U 2.5 all leagues — extends bot_opt_ou_british globally",
+        "tier_label": "pro",
+        "markets": ["ou"],
+        "edge_thresholds": {
+            1: {"ou": 0.06},
+            2: {"ou": 0.05},
+            3: {"ou": 0.05},
+            4: {"ou": 0.04},
+        },
+        "odds_range": (1.60, 3.00),
+        "min_prob": 0.30,
+    },
+    "bot_draw_specialist": {
+        "description": "Draw specialist T2-4 — draws underbet in lower tiers",
+        "tier_label": "pro",
+        "markets": ["1x2"],
+        "tier_filter": [2, 3, 4],
+        "selection_filter": ["Draw"],
+        "edge_thresholds": {
+            2: {"1x2_long": 0.05},
+            3: {"1x2_long": 0.05},
+            4: {"1x2_long": 0.04},
+        },
+        "odds_range": (2.80, 4.50),
+        "min_prob": 0.22,
+    },
 }
 
 
@@ -248,13 +329,16 @@ def _dc_tau(h: int, a: int, exp_h: float, exp_a: float, rho: float) -> float:
 
 
 def _poisson_probs(exp_h: float, exp_a: float) -> dict:
-    """Compute 1X2 + O/U 2.5 probabilities from expected goals.
+    """Compute 1X2 + O/U (1.5, 2.5, 3.5) + BTTS probabilities from expected goals.
 
     Applies Dixon-Coles bivariate correction to the four low-scoring outcomes
     (0-0, 1-0, 0-1, 1-1) to fix the ~8% draw underestimation of independent Poisson.
-    1X2 probabilities are renormalised after correction; O/U is unaffected.
+    1X2 probabilities are renormalised after correction.
     """
-    p_h = p_d = p_a = p_over = 0.0
+    p_h = p_d = p_a = 0.0
+    p_over_15 = p_over_25 = p_over_35 = 0.0
+    p_btts_yes = 0.0
+
     for h in range(8):
         for a in range(8):
             p = poisson.pmf(h, exp_h) * poisson.pmf(a, exp_a)
@@ -265,8 +349,15 @@ def _poisson_probs(exp_h: float, exp_a: float) -> dict:
                 p_d += p
             else:
                 p_a += p
+            if h + a > 1:
+                p_over_15 += p
             if h + a > 2:
-                p_over += p
+                p_over_25 += p
+            if h + a > 3:
+                p_over_35 += p
+            if h >= 1 and a >= 1:
+                p_btts_yes += p
+
     # Renormalise 1x2 after DC correction (τ shifts probability mass slightly)
     total_1x2 = p_h + p_d + p_a
     if total_1x2 > 0:
@@ -275,7 +366,10 @@ def _poisson_probs(exp_h: float, exp_a: float) -> dict:
         p_a /= total_1x2
     return {
         "home_prob": p_h, "draw_prob": p_d, "away_prob": p_a,
-        "over_25_prob": p_over, "under_25_prob": 1 - p_over,
+        "over_15_prob": p_over_15, "under_15_prob": 1 - p_over_15,
+        "over_25_prob": p_over_25, "under_25_prob": 1 - p_over_25,
+        "over_35_prob": p_over_35, "under_35_prob": 1 - p_over_35,
+        "btts_yes_prob": p_btts_yes, "btts_no_prob": 1 - p_btts_yes,
     }
 
 
@@ -888,6 +982,7 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], dict[str, dict]]:
         "over_under_25_over": "odds_over_25", "over_under_25_under": "odds_under_25",
         "over_under_35_over": "odds_over_35", "over_under_35_under": "odds_under_35",
         "over_under_45_over": "odds_over_45", "over_under_45_under": "odds_under_45",
+        "btts_yes": "odds_btts_yes", "btts_no": "odds_btts_no",
     }
 
     # 3. Build match dicts
@@ -923,6 +1018,7 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], dict[str, dict]]:
             "odds_over_25": 0, "odds_under_25": 0,
             "odds_over_35": 0, "odds_under_35": 0,
             "odds_over_45": 0, "odds_under_45": 0,
+            "odds_btts_yes": 0, "odds_btts_no": 0,
         }
         for mkt_sel, field in MARKET_TO_FIELD.items():
             val = match_best.get(mkt_sel, 0)
@@ -1192,15 +1288,27 @@ def run_morning(skip_fetch: bool = False):
             ("1x2_home", "home_prob"),
             ("1x2_draw", "draw_prob"),
             ("1x2_away", "away_prob"),
+            ("over15", "over_15_prob"),
+            ("under15", "under_15_prob"),
             ("over25", "over_25_prob"),
             ("under25", "under_25_prob"),
+            ("over35", "over_35_prob"),
+            ("under35", "under_35_prob"),
+            ("btts_yes", "btts_yes_prob"),
+            ("btts_no", "btts_no_prob"),
         ]:
             odds_key = {
                 "1x2_home": "odds_home",
                 "1x2_draw": "odds_draw",
                 "1x2_away": "odds_away",
+                "over15": "odds_over_15",
+                "under15": "odds_under_15",
                 "over25": "odds_over_25",
                 "under25": "odds_under_25",
+                "over35": "odds_over_35",
+                "under35": "odds_under_35",
+                "btts_yes": "odds_btts_yes",
+                "btts_no": "odds_btts_no",
             }[market]
 
             odds_val = match.get(odds_key, 0)
@@ -1268,18 +1376,46 @@ def run_morning(skip_fetch: bool = False):
             bet_candidates = []
             sel_filter = config.get("selection_filter")
 
-            # Build candidates: (market, selection, odds_key, prob_key, threshold_key)
+            # Build candidates: (market, selection, odds, raw_prob, os_market, os_selection, threshold)
             candidate_specs = []
+
+            # 1X2: Home
             if "1x2" in config["markets"] and match["odds_home"] > 0 and (not sel_filter or "Home" in sel_filter):
                 odds = match["odds_home"]
                 me = (thresholds.get("1x2_fav", 0.05) if odds < 2.0 else thresholds.get("1x2_long", 0.08))
                 candidate_specs.append(("1X2", "Home", odds, pred["home_prob"], "1x2", "home", me))
+
+            # 1X2: Draw
+            if "1x2" in config["markets"] and match["odds_draw"] > 0 and (not sel_filter or "Draw" in sel_filter):
+                candidate_specs.append(("1X2", "Draw", match["odds_draw"], pred["draw_prob"], "1x2", "draw", thresholds.get("1x2_long", 0.08)))
+
+            # 1X2: Away
             if "1x2" in config["markets"] and match["odds_away"] > 0 and (not sel_filter or "Away" in sel_filter):
                 candidate_specs.append(("1X2", "Away", match["odds_away"], pred["away_prob"], "1x2", "away", thresholds.get("1x2_long", 0.08)))
+
+            # O/U 2.5
             if "ou" in config.get("markets", []) and match.get("odds_over_25", 0) > 0:
                 candidate_specs.append(("O/U", "Over 2.5", match["odds_over_25"], pred["over_25_prob"], "over_under_25", "over", thresholds.get("ou", 0.05)))
             if "ou" in config.get("markets", []) and match.get("odds_under_25", 0) > 0:
                 candidate_specs.append(("O/U", "Under 2.5", match["odds_under_25"], pred["under_25_prob"], "over_under_25", "under", thresholds.get("ou", 0.05)))
+
+            # O/U 1.5
+            if "ou15" in config.get("markets", []) and match.get("odds_over_15", 0) > 0:
+                candidate_specs.append(("O/U", "Over 1.5", match["odds_over_15"], pred.get("over_15_prob", 0), "over_under_15", "over", thresholds.get("ou", 0.05)))
+            if "ou15" in config.get("markets", []) and match.get("odds_under_15", 0) > 0:
+                candidate_specs.append(("O/U", "Under 1.5", match["odds_under_15"], pred.get("under_15_prob", 0), "over_under_15", "under", thresholds.get("ou", 0.05)))
+
+            # O/U 3.5
+            if "ou35" in config.get("markets", []) and match.get("odds_over_35", 0) > 0:
+                candidate_specs.append(("O/U", "Over 3.5", match["odds_over_35"], pred.get("over_35_prob", 0), "over_under_35", "over", thresholds.get("ou", 0.05)))
+            if "ou35" in config.get("markets", []) and match.get("odds_under_35", 0) > 0:
+                candidate_specs.append(("O/U", "Under 3.5", match["odds_under_35"], pred.get("under_35_prob", 0), "over_under_35", "under", thresholds.get("ou", 0.05)))
+
+            # BTTS
+            if "btts" in config.get("markets", []) and match.get("odds_btts_yes", 0) > 0:
+                candidate_specs.append(("BTTS", "Yes", match["odds_btts_yes"], pred.get("btts_yes_prob", 0), "btts", "yes", thresholds.get("btts", 0.06)))
+            if "btts" in config.get("markets", []) and match.get("odds_btts_no", 0) > 0:
+                candidate_specs.append(("BTTS", "No", match["odds_btts_no"], pred.get("btts_no_prob", 0), "btts", "no", thresholds.get("btts", 0.06)))
 
             for mkt, selection, odds, raw_mp, os_market, os_selection, base_threshold in candidate_specs:
                 ip = 1 / odds

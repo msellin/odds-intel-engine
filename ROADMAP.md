@@ -134,7 +134,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | ⑦ AI news checker (4×/day) | ✅ Gemini 2.5 Flash, qualitative-only |
 | ⑧ Settlement (21:00 UTC) | ✅ T4/T8/T12 + settle + CLV + ELO + post-mortem |
 | ⑨ Historical backfill (8 cron slots/day) | ✅ Built — 3-phase backfill of ~55K matches via spare API quota |
-| 9 paper trading bots | ✅ Running since 2026-04-27 |
+| 16 paper trading bots | ✅ 10 original (since 2026-04-27) + 6 new BTTS/O/U/draw bots (2026-04-30) |
 | match_signals (EAV signal store) | ✅ 20+ signals per match |
 | match_feature_vectors (ML training table) | ✅ Nightly ETL, wide table |
 | pseudo_clv | ✅ All ~280 matches/day |

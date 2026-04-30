@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-04-30 — HIST-BACKFILL deployed (script + workflow + migration). Fixtures + stats + events working. Historical odds unavailable from AF (skipped). Awaiting first overnight cron run.
+> Last updated: 2026-04-30 — 6 new bots (BTTS, O/U 1.5/3.5, draw, O/U 2.5 global) → 16 total. Poisson extended with BTTS + O/U 1.5 + O/U 3.5 probabilities. Target: ~30-40 bets/day (was ~10) to accelerate ALN-1 threshold.
 
 ---
 
@@ -81,6 +81,7 @@
 | — | ODDS-MARKETS | Show O/U 1.5 and O/U 3.5 lines in Pro odds table | 1-2h | ✅ Done 2026-04-29 | Low | Data audit 2026-04-29 | Done | Separate "Over/Under Lines" card with O/U 1.5 and O/U 3.5 per bookmaker. Only renders when data exists. |
 | 27 | MKT-STR | Wire market-implied team strength into XGBoost as input feature | 1 day | ✅ Done 2026-04-29 | Medium | Internal (MODEL_ANALYSIS 11.3) | Done | `market_implied_home/draw/away` signals already stored in match_signals (write_morning_signals lines 1769-1780). Added extraction in `_build_feature_row()` signal loop + added to return dict. Migration 019 adds columns to match_feature_vectors. |
 | 28 | EXPOSURE-AUTO | Auto-reduce stakes on league exposure concentration | 1h | ✅ Done 2026-04-29 | Medium | Internal (MODEL_ANALYSIS 11.6) | Done | 3rd+ bet in same league per bot gets 50% stake reduction. Enforced during placement in daily_pipeline_v2.py. _check_exposure_concentration() still runs as post-placement audit log. |
+| — | BOTS-EXPAND | Add 6 new bots: BTTS, O/U 1.5/3.5, draw specialist, O/U 2.5 global | 2h | ✅ Done 2026-04-30 | **High** | Internal (2026-04-30) | Done | Poisson extended with BTTS + O/U 1.5 + O/U 3.5 probs. Draw selection wired into 1X2 candidate specs. 10→16 bots. Target: ~30-40 bets/day (was ~10) to accelerate ALN-1 from ~27 days to ~9-10 days. New bots: bot_btts_all, bot_btts_conservative, bot_ou15_defensive, bot_ou35_attacking, bot_ou25_global, bot_draw_specialist. |
 | 29 | F8 | Stripe integration (Pro + Elite, webhook, tier column update) | 2-3 days | ✅ Done 2026-04-29 | High | Internal | Done | See Tier 1 row — full breakdown there. |
 | — | LP-1 | Landing page: fix strikethrough pricing | 15 min | ✅ Done 2026-04-29 | Low | Landing Page Review (2026-04-29) | Done | No strikethrough was present — cards already show badge-only. Verified. |
 | — | LP-2 | Landing page: remove Elite annual pricing | 15 min | ✅ Done 2026-04-29 | Low | Landing Page Review (2026-04-29) | Done | Elite card never had annual pricing shown. Verified. |
@@ -220,7 +221,7 @@
 |-----------|-------|--------|---------------------|-----|
 | **Platt scaling ready** | Predictions with finished match outcomes | 500+ | **586 ✅ READY** | Now |
 | Meta-model Phase 1 ready | `matches WHERE status='finished' AND pseudo_clv_home IS NOT NULL` | 3,000+ | 494 | ~May 9 (+280/day) |
-| Alignment threshold validation | `simulated_bets WHERE result!='pending' AND alignment_class IS NOT NULL` | 300+ | 30 | ~May 27 (~10/day) |
+| Alignment threshold validation | `simulated_bets WHERE result!='pending' AND alignment_class IS NOT NULL` | 300+ | 30 | ~May 9-10 (~30-40/day with 16 bots) |
 | Post-mortem patterns readable | `model_evaluations WHERE market='post_mortem'` | 14+ | 2 | ~May 12 (+1/day) |
 | In-play model ready | Distinct matches in live_match_snapshots | 500+ | 49 | ~July (~10-20/day) |
 | Meta-model Phase 2 ready | Settled bets with dimension_scores + CLV | 1,000+ | 0 | ~Aug (needs ALN-1 first) |
