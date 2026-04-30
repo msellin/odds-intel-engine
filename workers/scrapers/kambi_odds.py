@@ -168,8 +168,8 @@ def _parse_event(event: dict, operator: str) -> dict | None:
                 elif label == "Under":
                     odds_ou[f"under_{line_key}"] = decimal_odds
 
-    # Only include if we have at least 1X2 odds
-    if not odds_1x2:
+    # Only include if we have any odds at all
+    if not odds_1x2 and not odds_ou:
         return None
 
     return {
