@@ -32,11 +32,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from workers.api_clients.api_football import (
     get_remaining_requests,
     get_fixtures_by_league_season,
-    get_fixture_odds,
     get_fixture_statistics,
     get_fixture_events,
     fixture_to_match_dict,
-    parse_fixture_odds,
     parse_fixture_stats,
     parse_fixture_events,
 )
@@ -44,7 +42,6 @@ from workers.api_clients.supabase_client import (
     get_client,
     store_match,
     store_match_stats_full,
-    store_match_events_af,
 )
 from workers.utils.pipeline_utils import (
     log_pipeline_start,
@@ -344,62 +341,11 @@ def backfill_league_season(
     # Build match map once, reuse for all data type checks
     match_map = get_match_map(client, list(match_af_to_uuid.keys()))
 
-    # Step 3: Fetch odds for matches that need them
-    need_odds = get_af_ids_needing(client, "odds_snapshots", match_map) if skip_existing else set(match_af_to_uuid.keys())
-    odds_stored = 0
-
-    for af_id in need_odds:
-        if _shutdown_requested:
-            break
-        if budget_tracker["used"] >= budget_tracker["max"]:
-            console.print(f"  [yellow]Budget cap reached ({budget_tracker['max']} calls)[/yellow]")
-            break
-
-        # Check global API budget periodically (every 100 calls)
-        if stats["api_calls"] > 0 and stats["api_calls"] % 100 == 0:
-            remaining = get_remaining_requests()
-            stats["api_calls"] += 1
-            budget_tracker["used"] += 1
-            if remaining["remaining"] < MIN_BUDGET_TO_CONTINUE:
-                console.print(f"  [red]API budget low ({remaining['remaining']} remaining) — stopping[/red]")
-                break
-
-        match_uuid = match_af_to_uuid.get(af_id)
-        if not match_uuid:
-            continue
-
-        try:
-            odds_resp = get_fixture_odds(af_id)
-            stats["api_calls"] += 1
-            budget_tracker["used"] += 1
-
-            if odds_resp:
-                parsed = parse_fixture_odds(odds_resp)
-                if parsed:
-                    now = datetime.now(timezone.utc).isoformat()
-                    rows = []
-                    for odd in parsed:
-                        rows.append({
-                            "match_id": match_uuid,
-                            "bookmaker": odd["bookmaker"],
-                            "timestamp": now,
-                            "market": odd["market"],
-                            "selection": odd["selection"],
-                            "odds": odd["odds"],
-                            "is_closing": False,
-                        })
-                    if rows:
-                        client.table("odds_snapshots").insert(rows).execute()
-                        odds_stored += 1
-        except Exception as e:
-            console.print(f"  [red]Odds error for AF {af_id}: {e}[/red]")
-
-    stats["odds_stored"] = odds_stored
-    update_progress(client, league_id, season, odds_done=progress.get("odds_done", 0) + odds_stored)
-    console.print(f"  Stored odds for {odds_stored} matches")
-
-    if _shutdown_requested:
-        return stats
+    # Step 3: Odds — SKIPPED
+    # API-Football /odds endpoint only returns data for upcoming/recent fixtures,
+    # not historical completed matches. Confirmed via live test 2026-04-30.
+    # Historical odds would need a separate source (e.g. Odds API historical endpoint).
+    console.print(f"  Odds: skipped (AF doesn't serve historical odds for completed fixtures)")
 
     # Step 4: Fetch statistics for matches that need them
     need_stats = get_af_ids_needing(client, "match_stats", match_map) if skip_existing else set(match_af_to_uuid.keys())
@@ -461,8 +407,28 @@ def backfill_league_season(
             if events_resp:
                 parsed = parse_fixture_events(events_resp)
                 if parsed:
-                    stored = store_match_events_af(match_uuid, parsed, home_team_api_id)
-                    if stored:
+                    now = datetime.now(timezone.utc).isoformat()
+                    rows = []
+                    for ev in parsed:
+                        team_side = "unknown"
+                        if home_team_api_id and ev.get("team_api_id"):
+                            team_side = "home" if ev["team_api_id"] == home_team_api_id else "away"
+                        rows.append({
+                            "match_id": match_uuid,
+                            "minute": max(0, ev.get("minute", 0)),
+                            "added_time": ev.get("added_time", 0),
+                            "event_type": ev["event_type"],
+                            "team": team_side,
+                            "player_name": ev.get("player_name"),
+                            "detail": ev.get("detail"),
+                            "af_event_order": ev.get("af_event_order"),
+                            "created_at": now,
+                        })
+                    if rows:
+                        # Use insert (not upsert) — partial unique index on
+                        # af_event_order doesn't support ON CONFLICT in PostgREST.
+                        # Dedup is handled by skip-existing check at the batch level.
+                        client.table("match_events").insert(rows).execute()
                         events_stored += 1
         except Exception as e:
             console.print(f"  [red]Events error for AF {af_id}: {e}[/red]")
@@ -474,7 +440,7 @@ def backfill_league_season(
     # Check if this league/season is complete
     progress_now = get_or_create_progress(client, league_id, season, phase)
     if (progress_now.get("fixtures_done", 0) >= total_fixtures
-            and not need_odds and not need_stats and not need_events):
+            and not need_stats and not need_events):
         update_progress(client, league_id, season, status="complete")
         console.print(f"  [green]✓ League {league_id} season {season} complete[/green]")
 
