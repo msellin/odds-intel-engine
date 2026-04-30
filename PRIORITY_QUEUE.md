@@ -178,7 +178,7 @@
 |---|-----|------|--------|--------|--------|--------|----------|-------|
 | 44 | SIG-12 | xG overperformance rolling signal: recent xG vs actual goals | 2h | ⬜ | Medium | AI Analysis (2026-04-28) | Needs ~2 wks data | Team over/underperforming their xG → regression to mean. Needs ~2 weeks of post-match xG from T4 enrichment |
 | 45 | MOD-2 | Learned Poisson/XGBoost blend weights (replace fixed α constants) | 2h | ⬜ | High | AI Analysis (2026-04-28) | Needs 500+ settled | Calibrated per-tier blend weights from actual prediction outcomes |
-| 46 | P3.4 | In-play value detection model (minute X state → final result) | 2-3 weeks | ⬜ | High | Internal | Needs 500+ live | Needs 500+ completed matches in live_match_snapshots (July-Aug 2026) |
+| 46 | P3.4 | In-play value detection model — full research plan below (§ INPLAY) | 2-3 weeks | ⬜ | **Very High** | Internal + 4-AI Review (2026-04-30) | Needs 500+ live | See § INPLAY Plan. 3 phases: feature pipeline (now→200 matches), LightGBM training (200→500), live execution (500+). 6 strategies validated by 4 independent AI reviews. Core: predict `lambda_home/away_remaining` via LightGBM Poisson regression → derive all market probabilities. xG pace ratio is #1 feature. |
 | 47 | P4.2 | A/B bot testing framework (parallel bots with/without AI) | 1-2 days | ⬜ | Medium | Internal | Needs audit trail | Needs audit trail + data |
 | 48 | P4.3 | Live odds arbitrage detector (cross-bookmaker real-time) | 1-2 days | ⬜ | Medium | Internal | ~July 2026 | Per-bookmaker odds ✅ — can build but low priority |
 | 49 | P5.3 | OddAlerts API evaluation (20+ bookmakers real-time) | Research | ⬜ | Medium | Internal | Depends P5.1 | Depends on P5.1 sharp/soft model |
@@ -461,6 +461,155 @@ The script auto-detects completion and the workflow self-disables:
 - **Referee profiles** have thousands of historical events for cards/fouls patterns
 - XGBoost retraining timeline: **months → days**
 - ~~P3.1 odds drift~~ — needs historical odds; AF doesn't provide. Would need The Odds API historical endpoint ($20/mo)
+
+---
+
+## § INPLAY Plan — In-Play Value Detection Model
+
+> Created: 2026-04-30. Synthesized from 4 independent AI strategy reviews. Detailed plan for task #46 (P3.4).
+
+### 1. Core Hypothesis (validated by all 4 reviews)
+
+**"Conditional mispricing occurs when realized goal output < expected output, but forward-looking hazard rate remains high."**
+
+The market adjusts live odds primarily on **time elapsed + scoreline**, but lags on **true chance quality (xG)** and **game state intensity (tempo, pressure)**. The edge is NOT "0-0 = bet Overs" — it's "0-0 but underlying goal process is ABOVE expectation."
+
+Key qualifier: **xG pace ratio > 1.0** (live xG/min exceeds pre-match expected xG/min). Without this, the market's drift is mathematically correct.
+
+### 2. Model Architecture (all 4 reviews agreed)
+
+**Target:** Predict `lambda_home_remaining` and `lambda_away_remaining` (Poisson rates for remaining goals per team) — NOT classification.
+
+**Why:** One regression model derives ALL market probabilities:
+- P(Over 2.5) = P(Poisson(λ_total_remaining) ≥ 2.5 - current_goals)
+- P(BTTS) = derived from per-team lambdas via bivariate Poisson
+- P(Home Win) = derived from goal difference distribution
+
+**Algorithm:** LightGBM with `objective='poisson'` (primary) + XGBoost as ensemble partner.
+
+**Time handling:** Single model with:
+- `match_minute` as continuous feature
+- `match_phase` as categorical: [0-15, 15-30, 30-45, 45-60, 60-75, 75-90]
+- `time_remaining = 90 - match_minute`
+- Non-linear transforms: `minute_squared`, `log(90 - minute)`
+
+**Red cards:** V1: hard-skip matches with red cards. V2 (2000+ matches): add `man_advantage` + `minutes_since_red` features.
+
+### 3. Feature Engineering (ranked by predictive power)
+
+#### Tier 1 — Build immediately
+| Feature | Formula | Signal |
+|---------|---------|--------|
+| **xG pace ratio** | `(live_xg / minutes_played) / (prematch_xg / 90)` | Core edge — >1.0 means game more open than market expects |
+| **xG-to-score divergence** | `live_xg_total - actual_goals` | Large positive = "unlucky", regression due |
+| **Implied probability gap** | `model_prob - (1 / live_odds)` | Direct value measure |
+| **Per-team shot quality** | `team_xg / team_shots` | High = dangerous chances; low = shooting from distance |
+| **Odds velocity** | `(odds_t - odds_t_minus_5min) / odds_t_minus_5min` | Sharp moves without goals = information |
+
+#### Tier 2 — Build by Phase 2
+| Feature | Formula | Signal |
+|---------|---------|--------|
+| Possession efficiency | `team_xg / (possession_pct × minute / 90)` | Strips time-wasting possession |
+| Score-state adjustment | All metrics segmented by leading/drawing/trailing | Trailing team stats more predictive |
+| Corner momentum | `corners_last_10min / corners_total` | Acceleration predicts pressure |
+| Bookmaker consensus | `std(implied_probs_across_13_bookmakers)` | High disagreement = value opportunity |
+| xG acceleration | `last_10_min_xg / previous_10_min_xg` | Momentum proxy |
+
+#### Tier 3 — Refinements
+| Feature | Formula | Signal |
+|---------|---------|--------|
+| Bayesian lambda update | `prematch_lambda × (1 - min/90) + xG_evidence` | Formal Bayesian update |
+| ELO-adjusted xG | `xG × (opponent_elo / league_avg_elo)` | xG vs strong defense worth more |
+| Importance × score state | `importance × (trailing: 1.3, leading: 0.7, drawing: 1.0)` | Must-win + trailing = max pressure |
+
+### 4. Validated Strategies (from 4 AI reviews)
+
+#### Strategy A: "xG Divergence Over" (appeared in all 4 reviews)
+- **Entry:** Min 20-35, score 0-0 or 0-1/1-0
+- **Signal:** Combined xG ≥ 0.7+ at min 20 AND xG pace ratio > 1.0 AND pre-match O2.5 > 52%
+- **Market:** Over 2.5 goals (or Over 1.5 if minute > 30)
+- **Skip:** xG per shot < 0.08 (low-quality shots), red card, live odds < 2.20
+- **Edge:** 3-8% when conditions align
+
+#### Strategy B: "BTTS Momentum" (3/4 reviews)
+- **Entry:** Min 15-40, score 1-0 or 0-1
+- **Signal:** Trailing team xG ≥ 0.4 AND shots on target ≥ 2 AND pre-match BTTS > 48%
+- **Market:** BTTS Yes
+- **Skip:** Trailing team xG < 0.2, score becomes 2-0, red card for trailing team
+- **Edge:** 4-7%
+
+#### Strategy C: "Favorite Comeback" (3/4 reviews)
+- **Entry:** Min 25-60, pre-match favorite trailing by 1
+- **Signal:** Favorite xG > underdog xG AND possession ≥ 60%
+- **Market:** 1X2 Favorite or Draw No Bet
+- **Skip:** Favorite not generating xG, underdog counter-xG high
+- **Edge:** 3-6%
+
+#### Strategy D: "Late Goals Compression" (3/4 reviews)
+- **Entry:** Min 55-75, score 0-0 or 1-0
+- **Signal:** Combined xG ≥ 1.0 AND live odds > 2.50 AND pre-match expected goals > 2.3
+- **Market:** Over 0.5 remaining (or Over 1.5 total)
+- **Skip:** Combined xG < 0.6 (dead game), no fixture importance
+- **Edge:** 3-6% — final-30-min scoring rate is ~65-70% regardless of prior score
+
+#### Strategy E: "Dead Game Unders" (2/4 reviews)
+- **Entry:** Min 25-50, score 0-0 or 1-0
+- **Signal:** xG pace < 70% of expected AND shots slowing AND corners low
+- **Market:** Under 2.5 / Under 1.5
+- **Edge:** Market assumes constant hazard rate; tempo collapse is real
+
+#### Strategy F: "Odds Momentum Reversal" (2/4 reviews)
+- **Entry:** Any minute, triggered by odds velocity
+- **Signal:** Odds move > 15% in < 10 min WITHOUT goal AND contrary to xG trend
+- **Market:** Fade the move (bet against direction)
+- **Skip:** Red card, score change, only 1 bookmaker moved
+- **Edge:** 5-10% when triggered, rare (~2-3% of matches)
+
+### 5. Staking (in-play specific)
+
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| Kelly fraction | **Quarter Kelly** (not half) | Higher model uncertainty in-play |
+| Time decay | `(minutes_remaining / 90)^0.5` | Min 30: 82% stake, min 60: 58%, min 75: 41% |
+| Max stake per bet | 1.5% bankroll | Lower than pre-match (2%) |
+| Max exposure per match | 3% bankroll | Prevents doubling down |
+| Bankroll allocation | 70% pre-match, 30% in-play | Pre-match is more reliable |
+
+**Minimum edge thresholds by minute:**
+
+| Minute | Min edge | Rationale |
+|--------|----------|-----------|
+| 15-30 | 3% | Good signal, plenty of time |
+| 30-45 | 4% | HT reset incoming |
+| 46-60 | 5% | Post-HT uncertainty |
+| 60-75 | 6% | Time running out |
+| 75+ | 8% | Extreme value only |
+
+### 6. Data Gaps to Fix
+
+| Gap | Priority | Solution |
+|-----|----------|----------|
+| Open-play xG vs set-piece xG | High | Separate penalty/free-kick xG from open-play in snapshots |
+| Substitution timestamps + type | High | Already in match_events — extract and add to snapshot features |
+| Event-triggered odds capture | High | Snapshot odds at goal/red card moments, not just 5-min cycle |
+| 1-minute trigger checks | Medium | When model flags potential entry, poll odds at 1-min for execution |
+| Formation changes | Medium | Capture at HT and after goals |
+| Dangerous attacks count | Low | Available from AF, add to snapshot |
+
+### 7. Implementation Phases
+
+| Phase | Data | Timeline | What to build |
+|-------|------|----------|---------------|
+| **Phase 1: Feature Pipeline** | Now → 200 matches (~2 weeks) | May 2026 | Transform `live_match_snapshots` → training rows at minute checkpoints. Compute all Tier 1 features. Paper trade Strategy A (xG Divergence) with fixed 1% stakes. Track hit rate and CLV. |
+| **Phase 2: Model Training** | 200 → 500 matches (~4 weeks) | June 2026 | Train LightGBM Poisson on `lambda_home/away_remaining`. Backtest all 6 strategies. Identify which have genuine edge. Add XGBoost ensemble. |
+| **Phase 3: Live Execution** | 500+ matches | July 2026 | Deploy in-play bots for 1-2 winning strategies. Quarter Kelly + time decay. 1-min trigger checks. Track CLV (entry odds vs closing odds). |
+
+### 8. What This Unlocks
+
+- **Entirely new revenue stream** — in-play betting is ~60% of global sports betting volume
+- **Pro/Elite product differentiation** — "Live Win Probability" updating every 5 min on match detail
+- **Higher bet volume** — each match can generate multiple in-play bets at different checkpoints
+- **xG-based edge** — most retail bettors and many bookmaker algorithms anchor on scoreline, not xG
 
 ---
 
