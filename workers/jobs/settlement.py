@@ -420,6 +420,12 @@ def run_settlement():
     else:
         _settle_pending_bets(client, pending, finished)
 
+    # 4b. Settle user picks (frontend prediction tracker)
+    try:
+        _settle_user_picks(client)
+    except Exception as e:
+        console.print(f"  [yellow]User picks settlement error: {e}[/yellow]")
+
     # Post-match enrichment and analytics always run (not gated on bets)
 
     # P1.3: Update ELO ratings for all finished matches
@@ -749,6 +755,56 @@ def _settle_pending_bets(client, pending: list, finished: list):
         clv_color = "green" if avg_clv > 0 else "red"
         console.print(f"  Avg CLV: [{clv_color}]{avg_clv:+.1%}[/] ({'beating' if avg_clv > 0 else 'behind'} closing line)")
 
+    return settled
+
+
+def _settle_user_picks(client):
+    """Settle user picks (from the frontend prediction tracker) against finished match results."""
+    console.print("\n[cyan]Settling user picks...[/cyan]")
+
+    # Fetch pending user picks with their match data
+    resp = client.table("user_picks").select(
+        "id, match_id, selection, odds, matches(id, score_home, score_away, result, status)"
+    ).eq("result", "pending").execute()
+
+    picks = resp.data or []
+    if not picks:
+        console.print("  No pending user picks.")
+        return 0
+
+    settled = 0
+    skipped = 0
+
+    for pick in picks:
+        match = pick.get("matches")
+        if not match or match.get("status") != "finished":
+            skipped += 1
+            continue
+
+        score_home = match.get("score_home")
+        score_away = match.get("score_away")
+        if score_home is None or score_away is None:
+            skipped += 1
+            continue
+
+        # Determine result: compare user selection against match outcome
+        selection = pick["selection"].lower()
+        match_result = match.get("result", "").lower()  # 'home', 'draw', 'away'
+
+        if selection in ("home", "draw", "away") and match_result:
+            won = selection == match_result
+        else:
+            skipped += 1
+            continue
+
+        result_str = "won" if won else "lost"
+        client.table("user_picks").update({
+            "result": result_str,
+            "resolved_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", pick["id"]).execute()
+        settled += 1
+
+    console.print(f"  {settled} user picks settled | {skipped} skipped (match not finished)")
     return settled
 
 
