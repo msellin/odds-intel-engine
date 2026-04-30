@@ -5,6 +5,8 @@ live snapshots, and match events.
 """
 
 import os
+import unicodedata
+import re
 from datetime import datetime, date, timezone
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -148,18 +150,43 @@ def ensure_league(league_path: str, tier: int = 1) -> str:
     return new.data[0]["id"]
 
 
+def _normalize_team_name(name: str) -> str:
+    """Strip accents, punctuation, and case for fuzzy team matching."""
+    nfkd = unicodedata.normalize("NFKD", name)
+    ascii_only = nfkd.encode("ASCII", "ignore").decode("ASCII")
+    return re.sub(r"[^a-z0-9]", "", ascii_only.lower())
+
+
 def ensure_team(team_name: str, country: str = "Unknown", logo_url: str | None = None) -> str:
-    """Get or create a team, return its UUID. Updates logo_url if provided and not yet stored."""
+    """Get or create a team, return its UUID. Updates logo_url if provided and not yet stored.
+
+    Uses normalized (accent/punctuation-stripped) matching to prevent duplicates
+    from different data sources (e.g. AF 'Atletico Madrid' vs Kambi 'Atlético Madrid').
+    """
     client = get_client()
 
+    # 1. Try exact match first (fastest)
     result = client.table("teams").select("id, logo_url").eq("name", team_name).execute()
     if result.data:
         team_id = result.data[0]["id"]
-        # Backfill logo if we have it and DB doesn't
         if logo_url and not result.data[0].get("logo_url"):
             client.table("teams").update({"logo_url": logo_url}).eq("id", team_id).execute()
         return team_id
 
+    # 2. Fuzzy match: search by ilike prefix, then compare normalized names.
+    # This catches "Atlético Madrid" matching "Atletico Madrid", "S.C. Braga" matching "SC Braga", etc.
+    norm_target = _normalize_team_name(team_name)
+    # Use first 3 chars of normalized name as a search prefix to limit candidates
+    prefix = team_name[:3]
+    candidates = client.table("teams").select("id, name, logo_url").ilike("name", f"{prefix}%").execute()
+    for row in candidates.data or []:
+        if _normalize_team_name(row["name"]) == norm_target:
+            team_id = row["id"]
+            if logo_url and not row.get("logo_url"):
+                client.table("teams").update({"logo_url": logo_url}).eq("id", team_id).execute()
+            return team_id
+
+    # 3. No match found — create new team
     league = ensure_league(f"{country} / Unknown", tier=0)
 
     row: dict = {
