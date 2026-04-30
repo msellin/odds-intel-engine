@@ -283,10 +283,11 @@ T+FT+1h  Post-match: stats, events, player stats enrichment
 
 16 paper trading bots run simultaneously, each with distinct market focus, league scope, and edge thresholds. Bots are **not** independent models — they all use the same ensemble prediction. They differ in:
 
-- **Which markets** they bet (1X2, O/U, BTTS)
+- **Which markets** they bet (1X2 home/draw/away, O/U 1.5/2.5/3.5, BTTS yes/no)
 - **Which leagues** they target (all, lower tiers only, specific countries)
 - **What edge threshold** they require (conservative: 10%, aggressive: 3%)
 - **What odds range** they accept (e.g. 1.30-4.50 vs 2.50-3.00)
+- **Which selections** they filter (e.g. draw-only, away-only, over-only)
 
 ### 8.1 Strategy Categories
 
@@ -394,6 +395,9 @@ Alignment will be activated (move from log-only to staking modifier) after:
 | **Next: Alignment activation** | Use external signal filter to modify stakes | Needs 300+ settled bets |
 | **Next: Sharp bookmaker features** | Pinnacle line as anchor, sharp/soft bookmaker classification | Research phase |
 | **Next: Dynamic blend weights** | Monthly recalculation of Poisson/XGBoost blend per tier | Planned |
+| **Next: Historical backfill** | 43K+ matches with stats + events from API-Football (no historical odds available) | In progress — automated cron |
+| **Next: XGBoost retrain on backfill** | Retrain on 43K matches with richer AF features (xG, shots, possession) | After backfill Phase 1 |
+| **Next: In-play model (P3.4)** | LightGBM Poisson regression predicting `lambda_home/away_remaining` from live match state. 6 validated strategies (xG divergence, BTTS momentum, favorite comeback, late goals, dead game unders, odds reversal). Quarter Kelly + time-decay staking. | Needs 500+ live-tracked matches (~July 2026) |
 
 ---
 
