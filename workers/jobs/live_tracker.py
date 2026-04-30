@@ -157,8 +157,12 @@ def _fetch_lineups_for_upcoming(af_id_map: dict[int, dict], dry_run: bool = Fals
 
         # Check if kickoff is within 60 minutes
         try:
-            kickoff = datetime.fromisoformat(match["date"].replace("Z", "+00:00"))
-        except (ValueError, KeyError):
+            match_date = match["date"]
+            if isinstance(match_date, datetime):
+                kickoff = match_date if match_date.tzinfo else match_date.replace(tzinfo=timezone.utc)
+            else:
+                kickoff = datetime.fromisoformat(str(match_date).replace("Z", "+00:00"))
+        except (ValueError, KeyError, TypeError):
             continue
 
         mins_to_ko = (kickoff - now).total_seconds() / 60
