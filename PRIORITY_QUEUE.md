@@ -153,6 +153,7 @@
 | # | ID | Task | Effort | Status | Impact | Source | Timeline | Notes |
 |---|-----|------|--------|--------|--------|--------|----------|-------|
 | 34 | HIST-BACKFILL | Historical match data backfill via automated cron during spare API quota windows | 3-4 days | 🔄 In Progress | Very High | Internal (MODEL_ANALYSIS 11.3) | ~May 2026 | **Code deployed 2026-04-30.** Fixtures + stats + events working (live tested). Historical odds NOT available from AF `/odds` endpoint (returns empty for completed fixtures) — skipped. 8 cron slots/day running Phase 1. Awaiting first overnight run confirmation → then Phase 2+3. See § HIST-BACKFILL Plan |
+| — | XGB-HIST | Retrain XGBoost on backfilled historical data (43K matches with stats+events) | 1 day | ⬜ | **Very High** | Internal (2026-04-30) | After HIST-BACKFILL Phase 1 | Retrain result_1x2 + over_under classifiers on ~43K matches with full match_stats (xG, shots, possession, corners). Build referee card/foul profiles from match_events. Compute SIG-12 xG rolling signal. No odds needed — trains on outcomes + stats features. Current training: 96K rows from Kaggle but limited features. New: richer AF features on 43K+ matches. Also recompute `scripts/retrain_xgboost.py` with expanded feature set. |
 | 35 | B6 | Singapore/South Korea odds source (Pinnacle API or OddsPortal) | Unknown | ⬜ | Very High | Internal | ~June 2026 | +27.5% ROI signal has no live odds feed. Note: AF has odds for Korea K League but NOT Singapore. Pinnacle via The Odds API ($20/mo) is best path |
 | 36 | P5.2 | Footiqo: validate Singapore/Scotland ROI with independent 1xBet closing odds | Manual first | ⬜ | High | Internal | ~June 2026 | Independent validation. If ROI holds on 2nd source, it's real |
 | 37 | P3.1 | Odds drift as XGBoost input feature (model retraining) | 1-2 days | ⬜ | High | Internal | ~June 2026 | Currently veto filter only. Strongest unused signal once data is there |
@@ -215,16 +216,16 @@
 
 ## Key Thresholds to Watch
 
-| Milestone | Query | Target | Current |
-|-----------|-------|--------|---------|
-| LLM team name resolve | `wc -l data/logs/unmatched_teams.log` before vs after `--apply` | Shrinks toward 0 | 2,287 entries |
-| Platt scaling ready | `SELECT COUNT(*) FROM predictions p JOIN matches m ON p.match_id = m.id WHERE m.status = 'finished'` | 500+ | ~? |
-| Meta-model Phase 1 ready | `SELECT COUNT(*) FROM matches WHERE status = 'finished' AND pseudo_clv_home IS NOT NULL` | 3000+ | 0 (just built) |
-| Alignment threshold validation | `SELECT COUNT(*) FROM simulated_bets WHERE result != 'pending' AND alignment_class IS NOT NULL` | 300+ | ~? |
-| Meta-model Phase 2 ready | `SELECT COUNT(*) FROM simulated_bets WHERE result != 'pending' AND dimension_scores IS NOT NULL AND clv IS NOT NULL` | 1000+ | ~? |
-| In-play model ready | `SELECT COUNT(DISTINCT match_id) FROM live_match_snapshots` | 500+ | ~? |
-| Market-implied strength ready | `SELECT COUNT(DISTINCT m.id) FROM matches m JOIN odds_snapshots o ON m.id = o.match_id WHERE m.status = 'finished'` | 200+ | ~? |
-| Post-mortem patterns readable | `SELECT COUNT(*) FROM model_evaluations WHERE market = 'post_mortem'` | 14+ | 0 (just built) |
+| Milestone | Query | Target | Current (2026-04-30) | ETA |
+|-----------|-------|--------|---------------------|-----|
+| **Platt scaling ready** | Predictions with finished match outcomes | 500+ | **586 ✅ READY** | Now |
+| Meta-model Phase 1 ready | `matches WHERE status='finished' AND pseudo_clv_home IS NOT NULL` | 3,000+ | 494 | ~May 9 (+280/day) |
+| Alignment threshold validation | `simulated_bets WHERE result!='pending' AND alignment_class IS NOT NULL` | 300+ | 30 | ~May 27 (~10/day) |
+| Post-mortem patterns readable | `model_evaluations WHERE market='post_mortem'` | 14+ | 2 | ~May 12 (+1/day) |
+| In-play model ready | Distinct matches in live_match_snapshots | 500+ | 49 | ~July (~10-20/day) |
+| Meta-model Phase 2 ready | Settled bets with dimension_scores + CLV | 1,000+ | 0 | ~Aug (needs ALN-1 first) |
+| XGBoost retrain on backfill | Backfill Phase 1 complete (match_stats) | ~18,000 | 149 | ~May 1-2 (backfill running) |
+| LLM team name resolve | `wc -l data/logs/unmatched_teams.log` | Shrinks toward 0 | 2,287 entries | Manual |
 
 ---
 
