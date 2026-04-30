@@ -861,6 +861,10 @@ def _fetch_af_bulk_odds(today_str, af_fixtures_raw, af_id_to_match_id):
                     field = f"odds_{row['selection']}"
                     if row["odds"] > best.get(field, 0):
                         best[field] = row["odds"]
+                elif row["market"] == "btts":
+                    field = f"odds_btts_{row['selection']}"
+                    if row["odds"] > best.get(field, 0):
+                        best[field] = row["odds"]
                 else:
                     direction = "over" if row["selection"] == "over" else "under"
                     line_suffix = row["market"].replace("over_under_", "")
@@ -868,7 +872,7 @@ def _fetch_af_bulk_odds(today_str, af_fixtures_raw, af_id_to_match_id):
                     if row["odds"] > best.get(field, 0):
                         best[field] = row["odds"]
 
-            if not best.get("odds_home", 0):
+            if not best:
                 continue
 
             match_dict = fixture_to_match_dict(af_fix)

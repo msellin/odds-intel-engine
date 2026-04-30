@@ -212,6 +212,7 @@
 | 55 | RVB | Referee/Venue full bias features (beyond S4 referee stats) | Medium | Internal | Venue-level stats not yet collected |
 | 56 | WTH | Weather signal (OpenWeatherMap, free) | Low | Internal | Low effort, defer until O/U becomes a focus market |
 | 57 | SIG-DERBY | Is-derby + travel distance signals | Low | Internal | Needs team location data. SIGNAL_ARCHITECTURE.md Group 5 gap |
+| 58 | DB-DIRECT | Switch from PostgREST to direct PostgreSQL connection (psycopg2) | Medium | Internal (2026-04-30) | PostgREST limits: default 1K row cap (caused silent data loss), no JOINs, partial unique index upsert bug, URL length limits on IN clauses. Direct SQL via Supabase connection string removes all of these. Refactor supabase_client.py. Not urgent — pagination workarounds in place — but will become painful as data grows. |
 
 ---
 
