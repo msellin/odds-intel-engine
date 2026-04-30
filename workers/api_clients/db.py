@@ -155,17 +155,20 @@ from datetime import datetime, date, timezone
 
 def build_af_id_map(target_date: str = None) -> dict[int, dict]:
     """
-    Build {api_football_id: match_record} for all of a day's matches.
-    Replaces _build_af_id_map() — no 1K row limit.
+    Build {api_football_id: match_record} for today's AND yesterday's matches.
+    Includes yesterday because late matches (e.g., 21:00+ UTC kickoffs)
+    may still be live after midnight UTC when date.today() rolls over.
     """
-    target_date = target_date or date.today().isoformat()
+    from datetime import timedelta
+    today = target_date or date.today().isoformat()
+    yesterday = (date.fromisoformat(today) - timedelta(days=1)).isoformat()
     rows = execute_query(
         """SELECT id, api_football_id, home_team_id, away_team_id,
                   date, status, lineups_fetched_at
            FROM matches
-           WHERE date::date = %s
+           WHERE date::date IN (%s, %s)
              AND api_football_id IS NOT NULL""",
-        (target_date,)
+        (today, yesterday)
     )
     return {int(r["api_football_id"]): r for r in rows}
 
@@ -309,4 +312,20 @@ def update_match_status_sql(match_id: str, status: str):
     execute_write(
         "UPDATE matches SET status = %s WHERE id = %s",
         (status, match_id)
+    )
+
+
+def finish_match_sql(match_id: str, score_home: int, score_away: int):
+    """
+    Mark a match as finished with final score + result.
+    Called by the live poller when it detects FT/AET/PEN status.
+    This ensures the matches table has correct scores immediately,
+    not just after the 21:00 UTC settlement run.
+    """
+    result = "home" if score_home > score_away else "away" if score_away > score_home else "draw"
+    execute_write(
+        """UPDATE matches
+           SET status = 'finished', score_home = %s, score_away = %s, result = %s
+           WHERE id = %s AND status != 'finished'""",
+        (score_home, score_away, result, match_id)
     )

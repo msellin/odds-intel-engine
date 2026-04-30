@@ -201,18 +201,20 @@ def _lookup_db_match(af_fix: dict, af_id_map: dict, client) -> dict | None:
 
 def _build_af_id_map(client) -> dict[int, dict]:
     """
-    Build {api_football_id: match_record} for all of today's matches in DB.
+    Build {api_football_id: match_record} for today's + yesterday's matches.
+    Includes yesterday because late matches may still be live after midnight UTC.
     Uses direct SQL (no 1K row limit) when DATABASE_URL is set.
     """
     if DATABASE_URL:
         return _db_build_af_id_map()
 
     # Fallback: PostgREST (has 1K row cap risk)
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
     today = date.today().isoformat()
     result = client.table("matches").select(
         "id, api_football_id, home_team_id, away_team_id, "
         "date, status, lineups_fetched_at"
-    ).gte("date", f"{today}T00:00:00").lte("date", f"{today}T23:59:59").execute()
+    ).gte("date", f"{yesterday}T00:00:00").lte("date", f"{today}T23:59:59").execute()
 
     mapping = {}
     for m in result.data or []:
@@ -486,7 +488,8 @@ def run_live_tracker(dry_run: bool = False):
             if db_match.get("status") == "scheduled" and minute > 0:
                 _pending_status.append((match_id, "live"))
             if af_fix.get("status_short") in ("FT", "AET", "PEN"):
-                _pending_status.append((match_id, "finished"))
+                _pending_status.append((match_id, "finished",
+                                         af_fix["score_home"], af_fix["score_away"]))
 
         # ── Build display row ──────────────────────────────────────────────
         xg_h = snapshot.get("xg_home")
@@ -522,11 +525,25 @@ def run_live_tracker(dry_run: bool = False):
             live_odds_stored = store_live_odds_batch(_pending_odds)
         except Exception as e:
             console.print(f"[yellow]Batch odds write failed: {e}[/yellow]")
-        for match_id, status in _pending_status:
+        from workers.api_clients.db import finish_match_sql
+        finished_ids = []
+        for entry in _pending_status:
             try:
-                update_match_status_sql(match_id, status)
+                if len(entry) == 4:
+                    match_id, status, sh, sa = entry
+                    finish_match_sql(match_id, sh, sa)
+                    finished_ids.append(match_id)
+                else:
+                    match_id, status = entry
+                    update_match_status_sql(match_id, status)
             except Exception:
                 pass
+        if finished_ids:
+            try:
+                from workers.jobs.settlement import settle_finished_matches
+                settle_finished_matches(finished_ids)
+            except Exception as e:
+                console.print(f"[yellow]Per-match settlement error: {e}[/yellow]")
     elif not dry_run:
         # Fallback: PostgREST one-at-a-time (GH Actions / no DATABASE_URL)
         for s in _pending_snapshots:
@@ -542,9 +559,15 @@ def run_live_tracker(dry_run: bool = False):
                 live_odds_stored += len(match_odds)
             except Exception as e:
                 console.print(f"[yellow]Live odds store error: {e}[/yellow]")
-        for match_id, status in _pending_status:
+        for entry in _pending_status:
             try:
-                update_match_status(match_id, status)
+                if len(entry) == 4:
+                    match_id, status, sh, sa = entry
+                    update_match_status(match_id, status)
+                    # Can't use finish_match_sql without DATABASE_URL
+                else:
+                    match_id, status = entry
+                    update_match_status(match_id, status)
             except Exception:
                 pass
 

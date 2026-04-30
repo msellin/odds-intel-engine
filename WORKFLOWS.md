@@ -27,7 +27,9 @@
        ⑦ News Checker    run_news_checker()        4x/day: 09:00, 12:30, 16:30, 19:30 UTC
 13:30  ③ Odds            run_odds(mark_closing)    Pre-kickoff (European afternoon)
 17:30  ③ Odds            run_odds(mark_closing)    Pre-kickoff (European evening)
-21:00  ⑧ Settlement      settlement_pipeline()     Settle bets, post-match stats, ELO, CLV, prune, Platt (Sun)
+         ⑧a Live settle   settle_finished_matches()  Per-match: triggered by LivePoller on FT detection (instant)
+21:00  ⑧b Settlement      settlement_pipeline()     Bulk: settle bets, post-match stats, ELO, CLV, prune, Platt (Sun)
+23:30  ⑧c Settlement      settlement_pipeline()     Late catch-up: European evening matches finishing after 21:00
 ```
 
 ---
@@ -118,6 +120,8 @@
 - DB writes via **direct PostgreSQL** (psycopg2 bulk inserts) — 10-50x faster than PostgREST
 - Pre-match model context (O/U 2.5 probability) loaded into each snapshot
 - All data written to unified `live_match_snapshots` row per match per cycle
+- **On FT/AET/PEN:** immediately writes final score to `matches` table + triggers per-match settlement
+- `build_af_id_map()` queries today + yesterday (handles UTC midnight rollover for late matches)
 - ~10K-15K AF API calls/day during live play (was ~3.4K at 5-min polling)
 - Match window: 10:00-23:00 UTC (configurable)
 
@@ -127,12 +131,18 @@
 - Stores `news_impact_score`, `lineup_confidence` signals
 
 ### ⑧ Settlement (`settlement.py`)
-- AF results (primary) + ESPN (fallback)
-- Settle pending bets: won/lost, P&L, CLV
-- Post-match: stats (T4), events (T8), player stats (T12)
-- Update ELO, form, pseudo-CLV, match feature vectors
-- Gemini post-mortem analysis of losses
-- **Sundays only:** Platt recalibration (`scripts/fit_platt.py`) — refits sigmoid α/β per market from all settled predictions → `model_calibration` table
+
+**Two modes:**
+
+1. **Per-match (instant):** `settle_finished_matches(match_ids)` — called by LivePoller the moment it detects FT/AET/PEN status. Writes final score + result to `matches` table, settles pending bets + user picks for that match immediately. No delay.
+
+2. **Bulk (scheduled 21:00 + 23:30 UTC):** `settlement_pipeline()` — full settlement run:
+   - AF results (primary) + ESPN (fallback)
+   - Settle any remaining pending bets: won/lost, P&L, CLV
+   - Post-match: stats (T4), events (T8), player stats (T12)
+   - Update ELO, form, pseudo-CLV, match feature vectors
+   - Gemini post-mortem analysis of losses
+   - **Sundays only:** Platt recalibration (`scripts/fit_platt.py`) — refits sigmoid α/β per market from all settled predictions → `model_calibration` table
 
 ### ⑨ Historical Backfill (`backfill_historical.py`)
 - Fetches historical fixtures, odds, statistics, events from API-Football

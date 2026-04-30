@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-01 — LIVE-INFRA Phases 1-3+5 complete. Railway running (scheduler + LivePoller 30s/60s/5min). Direct PostgreSQL for live ops. GH Actions crons disabled. RAIL-1 to RAIL-10, RAIL-12 done. Only RAIL-11 (smart polling) remains.
+> Last updated: 2026-05-01 — LIVE-INFRA Phases 1-3+5 complete. Railway running (scheduler + LivePoller 30s/60s/5min). Direct PostgreSQL for live ops. GH Actions crons disabled. RAIL-1 to RAIL-10, RAIL-12, RAIL-13 done. Only RAIL-11 (smart polling) remains.
 
 ---
 
@@ -156,6 +156,7 @@
 | — | RAIL-10 | Decompose `live_tracker.py` into sub-functions | 4h | ✅ Done 2026-05-01 | High | LIVE-INFRA Phase 3 | Done | fetch_live_bulk(), fetch_match_stats_for(), fetch_match_events_for(), build_snapshot(). Used by both run_live_tracker() and LivePoller. |
 | — | RAIL-11 | Smart polling: priority tiers + event-triggered snapshots | 1 day | ⬜ | High | LIVE-INFRA Phase 4 | — | HIGH (active bet, 30s stats) / NORMAL (60s) / LOW (5min). Instant odds snapshot on goal/red card detection. |
 | — | RAIL-12 | Full doc sweep: all .md files aligned with Railway architecture | 1h | ✅ Done 2026-05-01 | Medium | LIVE-INFRA Phase 5 | Done | Updated 8 files: CLAUDE.md, WORKFLOWS.md, INFRASTRUCTURE.md, ROADMAP.md, SIGNALS.md, DATA_SOURCES.md, MODEL_WHITEPAPER.md, AF_ENDPOINT_FREQUENCY.md. |
+| — | RAIL-13 | Instant settlement on FT + score sync fix | 2h | ✅ Done 2026-05-01 | **Very High** | BUG: scores not updating, late matches not settled | Done | Live poller now writes final scores to `matches` table on FT/AET/PEN (was only stored in snapshots). Per-match `settle_finished_matches()` settles bets immediately on FT detection. `build_af_id_map()` includes yesterday's matches (UTC rollover fix). Added 23:30 UTC settlement as safety net. |
 
 ---
 
@@ -770,7 +771,7 @@ End state (4-8 weeks): all DB access through `db.py`. PostgREST kept only for Su
 - **In-play model (P3.4)**: 15s odds + 60s xG data → LightGBM training starts immediately
 - **Event-triggered odds capture**: odds at moment of goal/red card → CLV analysis
 - **Live Win Probability**: frontend can show updating probabilities during matches (Pro feature)
-- **Faster settlement**: detect finished matches within 15s, not 5min
+- **~~Faster settlement~~**: ✅ Done (RAIL-13) — per-match settlement triggered by LivePoller on FT detection
 - **Future in-play bots**: <1s execution latency for bet placement
 
 ---

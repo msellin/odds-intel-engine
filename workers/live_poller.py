@@ -98,7 +98,7 @@ class LivePoller:
         from workers.api_clients.db import (
             store_live_snapshots_batch, store_live_odds_batch,
             store_match_events_batch, update_match_status_sql,
-            build_af_id_map,
+            finish_match_sql, build_af_id_map,
         )
         from workers.api_clients.supabase_client import get_client
 
@@ -191,7 +191,9 @@ class LivePoller:
             if db_match.get("status") == "scheduled" and minute > 0:
                 pending_status.append((match_id, "live"))
             if af_fix.get("status_short") in ("FT", "AET", "PEN"):
-                pending_status.append((match_id, "finished"))
+                pending_status.append((match_id, "finished",
+                                       af_fix.get("score_home", 0),
+                                       af_fix.get("score_away", 0)))
 
         # ── Batch write ────────────────────────────────────────────────────
         try:
@@ -204,8 +206,29 @@ class LivePoller:
         except Exception as e:
             console.print(f"[yellow]Batch odds error: {e}[/yellow]")
 
-        for match_id, status in pending_status:
+        finished_match_ids = []
+        for entry in pending_status:
             try:
-                update_match_status_sql(match_id, status)
-            except Exception:
-                pass
+                if len(entry) == 4:
+                    # Finished match: (match_id, "finished", score_home, score_away)
+                    match_id, status, score_home, score_away = entry
+                    finish_match_sql(match_id, score_home, score_away)
+                    finished_match_ids.append(match_id)
+                    console.print(
+                        f"[green]Match finished: {match_id} → "
+                        f"{score_home}-{score_away}[/green]"
+                    )
+                else:
+                    # Status change: (match_id, "live")
+                    match_id, status = entry
+                    update_match_status_sql(match_id, status)
+            except Exception as e:
+                console.print(f"[yellow]Status update error: {e}[/yellow]")
+
+        # Trigger per-match settlement for finished matches
+        if finished_match_ids:
+            try:
+                from workers.jobs.settlement import settle_finished_matches
+                settle_finished_matches(finished_match_ids)
+            except Exception as e:
+                console.print(f"[yellow]Per-match settlement error: {e}[/yellow]")

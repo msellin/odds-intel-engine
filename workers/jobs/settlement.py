@@ -287,6 +287,75 @@ def fetch_post_match_enrichment(client) -> dict:
     return counts
 
 
+# ─── Per-match settlement (called by live poller on FT) ──────────────────────
+
+def settle_finished_matches(match_ids: list[str]):
+    """
+    Settle bets for specific finished matches. Called by the live poller
+    immediately when it detects FT/AET/PEN, so bets are settled in real-time
+    instead of waiting for the 21:00 UTC bulk settlement.
+    """
+    if not match_ids:
+        return
+
+    client = get_client()
+
+    # Get pending bets for these specific matches
+    pending = client.table("simulated_bets").select(
+        "*, matches(id, date, score_home, score_away, result, status, "
+        "home_team:home_team_id(name), away_team:away_team_id(name))"
+    ).eq("result", "pending").in_("match_id", match_ids).execute().data
+
+    if not pending:
+        # Still settle user picks even if no bot bets
+        try:
+            _settle_user_picks_for_matches(client, match_ids)
+        except Exception:
+            pass
+        return
+
+    console.print(f"[cyan]Live settlement: {len(pending)} pending bets "
+                  f"for {len(match_ids)} finished match(es)[/cyan]")
+    _settle_pending_bets(client, pending, finished=[])
+
+    # Also settle user picks for these matches
+    try:
+        _settle_user_picks_for_matches(client, match_ids)
+    except Exception as e:
+        console.print(f"  [yellow]User picks settlement error: {e}[/yellow]")
+
+
+def _settle_user_picks_for_matches(client, match_ids: list[str]):
+    """Settle user picks for specific finished matches."""
+    resp = client.table("user_picks").select(
+        "id, match_id, selection, odds, matches(id, score_home, score_away, result, status)"
+    ).eq("result", "pending").in_("match_id", match_ids).execute()
+
+    picks = resp.data or []
+    settled = 0
+    for pick in picks:
+        match = pick.get("matches")
+        if not match or match.get("status") != "finished":
+            continue
+        score_home = match.get("score_home")
+        score_away = match.get("score_away")
+        if score_home is None or score_away is None:
+            continue
+
+        selection = pick["selection"].lower()
+        match_result = match.get("result", "").lower()
+        if selection in ("home", "draw", "away") and match_result:
+            won = selection == match_result
+            client.table("user_picks").update({
+                "result": "won" if won else "lost",
+                "resolved_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", pick["id"]).execute()
+            settled += 1
+
+    if settled:
+        console.print(f"  {settled} user picks settled (live)")
+
+
 # ─── Main settlement ──────────────────────────────────────────────────────────
 
 def run_settlement():

@@ -311,9 +311,11 @@ def main():
                           id=f"news_{hour:02d}{minute:02d}",
                           name=f"News {hour:02d}:{minute:02d}")
 
-    # Settlement: 21:00 UTC
+    # Settlement: 21:00 + 23:30 UTC (late-finishing European matches)
     scheduler.add_job(job_settlement, CronTrigger(hour=21, minute=0),
-                      id="settlement", name="Settlement")
+                      id="settlement", name="Settlement 21:00")
+    scheduler.add_job(job_settlement, CronTrigger(hour=23, minute=30),
+                      id="settlement_late", name="Settlement 23:30")
 
     # Budget sync: hourly
     scheduler.add_job(job_budget_sync, CronTrigger(minute=0),
