@@ -274,11 +274,14 @@ def backfill_league_season(
     dry_run: bool,
     budget_tracker: dict,
     batch_limit: int,
+    league_cap: int = 200,
 ) -> dict:
     """
     Backfill one league/season. Returns stats dict.
+    league_cap limits API calls per league/season to keep runs short.
     """
     stats = {"fixtures_stored": 0, "odds_stored": 0, "stats_stored": 0, "events_stored": 0, "api_calls": 0}
+    league_calls = 0  # Track calls within this league/season
 
     progress = get_or_create_progress(client, league_id, season, phase)
     if progress.get("status") == "complete" and skip_existing:
@@ -297,6 +300,7 @@ def backfill_league_season(
     fixtures = get_fixtures_by_league_season(league_id, season)
     stats["api_calls"] += 1
     budget_tracker["used"] += 1
+    league_calls += 1
 
     # Filter to finished matches only
     finished = [
@@ -356,6 +360,9 @@ def backfill_league_season(
             break
         if budget_tracker["used"] >= budget_tracker["max"]:
             break
+        if league_calls >= league_cap:
+            console.print(f"  [yellow]League cap ({league_cap}) reached — moving to next[/yellow]")
+            break
 
         match_uuid = match_af_to_uuid.get(af_id)
         if not match_uuid:
@@ -365,6 +372,7 @@ def backfill_league_season(
             stats_resp = get_fixture_statistics(af_id)
             stats["api_calls"] += 1
             budget_tracker["used"] += 1
+            league_calls += 1
 
             if stats_resp:
                 parsed = parse_fixture_stats(stats_resp)
@@ -390,6 +398,9 @@ def backfill_league_season(
             break
         if budget_tracker["used"] >= budget_tracker["max"]:
             break
+        if league_calls >= league_cap:
+            console.print(f"  [yellow]League cap ({league_cap}) reached — moving to next[/yellow]")
+            break
 
         match_uuid = match_af_to_uuid.get(af_id)
         if not match_uuid:
@@ -403,6 +414,7 @@ def backfill_league_season(
             events_resp = get_fixture_events(af_id)
             stats["api_calls"] += 1
             budget_tracker["used"] += 1
+            league_calls += 1
 
             if events_resp:
                 parsed = parse_fixture_events(events_resp)
@@ -455,6 +467,8 @@ def main():
                         help="Which league tier to process (1=top, 2=secondary, 3=remaining)")
     parser.add_argument("--batch-size", type=int, default=500,
                         help="Max matches to process per league/season (default 500)")
+    parser.add_argument("--league-cap", type=int, default=200,
+                        help="Max API calls per league/season before moving to next (default 200)")
     parser.add_argument("--max-requests", type=int, default=9000,
                         help="Max API calls for this run (default 9000)")
     parser.add_argument("--skip-existing", action="store_true", default=True,
@@ -468,7 +482,8 @@ def main():
     skip_existing = not args.no_skip_existing
 
     console.print(f"\n[bold green]═══ Historical Backfill — Phase {args.phase} ═══[/bold green]")
-    console.print(f"Batch size: {args.batch_size} | Max requests: {args.max_requests} | "
+    console.print(f"Batch size: {args.batch_size} | League cap: {args.league_cap} | "
+                  f"Max requests: {args.max_requests} | "
                   f"Skip existing: {skip_existing} | Dry run: {args.dry_run}\n")
 
     # Check API budget
@@ -529,6 +544,7 @@ def main():
                     dry_run=args.dry_run,
                     budget_tracker=budget_tracker,
                     batch_limit=args.batch_size,
+                    league_cap=args.league_cap,
                 )
 
                 totals["fixtures"] += result["fixtures_stored"]
