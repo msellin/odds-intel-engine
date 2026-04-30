@@ -19,6 +19,11 @@ on:
         required: false
         default: '500'
         type: string
+      league_cap:
+        description: 'Max API calls per league/season (prevents long runs)'
+        required: false
+        default: '200'
+        type: string
       max_requests:
         description: 'Max API calls for this run'
         required: false
@@ -68,9 +73,10 @@ jobs:
         run: |
           PHASE="${{ inputs.phase || '1' }}"
           BATCH="${{ inputs.batch_size || '500' }}"
+          LEAGUE_CAP="${{ inputs.league_cap || '200' }}"
           MAX_REQ="${{ inputs.max_requests || '9000' }}"
 
-          ARGS="--phase $PHASE --batch-size $BATCH --max-requests $MAX_REQ"
+          ARGS="--phase $PHASE --batch-size $BATCH --league-cap $LEAGUE_CAP --max-requests $MAX_REQ"
           if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
 
           python scripts/backfill_historical.py $ARGS
