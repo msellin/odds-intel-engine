@@ -37,6 +37,7 @@
 | ⑥ | `live_tracker.yml` | `workers/jobs/live_tracker.py` | `*/5 12-22 * * *` | SUPABASE_* |
 | ⑦ | `news_checker.yml` | `workers/jobs/news_checker.py` | `0 9`, `30 12`, `30 16`, `30 19` | SUPABASE_*, GEMINI_API_KEY |
 | ⑧ | `settlement.yml` | `workers/jobs/settlement.py` | `0 21 * * *` | SUPABASE_*, API_FOOTBALL_KEY, GEMINI_API_KEY |
+| ⑨ | `backfill.yml` | `scripts/backfill_historical.py` | `0 23,0,1,2,3,6,9,11 * * *` | SUPABASE_*, API_FOOTBALL_KEY |
 | — | `migrate.yml` | Supabase CLI | On push to `supabase/migrations/` | SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF |
 
 ---
@@ -93,6 +94,15 @@
 - Post-match: stats (T4), events (T8), player stats (T12)
 - Update ELO, form, pseudo-CLV, match feature vectors
 - Gemini post-mortem analysis of losses
+
+### ⑨ Historical Backfill (`backfill_historical.py`)
+- Fetches historical fixtures, odds, statistics, events from API-Football
+- Runs during spare API quota windows (overnight + daytime gaps, 8 cron slots)
+- 3 phases: Phase 1 = top ~20 leagues (3 seasons), Phase 2 = ~30 secondary (2 seasons), Phase 3 = ~50+ remaining (1 season)
+- Budget-capped: aborts if < 10K API calls remaining; max 9K calls per run
+- Idempotent: tracks progress in `backfill_progress` table, resumes from where it left off
+- Auto-disables via `backfill_complete.flag` when all phases are done
+- Manual run: `python scripts/backfill_historical.py --phase 1 --dry-run`
 
 ---
 

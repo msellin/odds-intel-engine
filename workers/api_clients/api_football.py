@@ -104,6 +104,15 @@ def get_leagues(season: int = None, current: bool = True) -> list[dict]:
 
 # ─── Fixtures ────────────────────────────────────────────────────────────────
 
+def get_fixtures_by_league_season(league_id: int, season: int) -> list[dict]:
+    """
+    Get all fixtures for a league/season. Returns raw API-Football fixture objects.
+    Used by historical backfill — one call returns ~200-400 matches.
+    """
+    data = _get("fixtures", {"league": league_id, "season": season})
+    return data.get("response", [])
+
+
 def get_fixtures_by_date(target_date: str = None) -> list[dict]:
     """
     Get all fixtures for a date. Returns raw API-Football fixture objects.

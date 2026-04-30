@@ -152,7 +152,7 @@
 
 | # | ID | Task | Effort | Status | Impact | Source | Timeline | Notes |
 |---|-----|------|--------|--------|--------|--------|----------|-------|
-| 34 | HIST-BACKFILL | Historical match data backfill via automated cron during spare API quota windows | 3-4 days | ⬜ | Very High | Internal (MODEL_ANALYSIS 11.3) | ~May 2026 | **Detailed plan below.** ~73.5K spare req/day (1.5K used of 75K). Automated GitHub Actions crons run during dead windows. Completion auto-detected via DB row counts. See § HIST-BACKFILL Plan |
+| 34 | HIST-BACKFILL | Historical match data backfill via automated cron during spare API quota windows | 3-4 days | 🔄 In Progress | Very High | Internal (MODEL_ANALYSIS 11.3) | ~May 2026 | **Detailed plan below.** ~73.5K spare req/day (1.5K used of 75K). Automated GitHub Actions crons run during dead windows. Completion auto-detected via DB row counts. See § HIST-BACKFILL Plan |
 | 35 | B6 | Singapore/South Korea odds source (Pinnacle API or OddsPortal) | Unknown | ⬜ | Very High | Internal | ~June 2026 | +27.5% ROI signal has no live odds feed. Note: AF has odds for Korea K League but NOT Singapore. Pinnacle via The Odds API ($20/mo) is best path |
 | 36 | P5.2 | Footiqo: validate Singapore/Scotland ROI with independent 1xBet closing odds | Manual first | ⬜ | High | Internal | ~June 2026 | Independent validation. If ROI holds on 2nd source, it's real |
 | 37 | P3.1 | Odds drift as XGBoost input feature (model retraining) | 1-2 days | ⬜ | High | Internal | ~June 2026 | Currently veto filter only. Strongest unused signal once data is there |

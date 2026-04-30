@@ -1,0 +1,76 @@
+name: Historical Backfill
+
+on:
+  schedule:
+    # Prime overnight window (0 competing AF calls): 23, 00, 01, 02, 03 UTC
+    - cron: '0 23,0,1,2,3 * * *'
+    # Daytime gaps (0 competing AF calls): 06, 09, 11 UTC
+    - cron: '0 6,9,11 * * *'
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: 'Phase (1=top leagues, 2=secondary, 3=remaining)'
+        required: false
+        default: '1'
+        type: choice
+        options: ['1', '2', '3']
+      batch_size:
+        description: 'Max matches per league/season'
+        required: false
+        default: '500'
+        type: string
+      max_requests:
+        description: 'Max API calls for this run'
+        required: false
+        default: '9000'
+        type: string
+      dry_run:
+        description: 'Dry run (count only, no writes)'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      # Check completion flag — skip if backfill is done
+      - name: Check completion flag
+        id: check_flag
+        run: |
+          if [ -f "backfill_complete.flag" ]; then
+            echo "complete=true" >> "$GITHUB_OUTPUT"
+            echo "Backfill already complete — skipping"
+            cat backfill_complete.flag
+          else
+            echo "complete=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.check_flag.outputs.complete != 'true'
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        if: steps.check_flag.outputs.complete != 'true'
+        run: pip install -r requirements.txt
+
+      - name: Run backfill
+        if: steps.check_flag.outputs.complete != 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+        run: |
+          PHASE="${{ inputs.phase || '1' }}"
+          BATCH="${{ inputs.batch_size || '500' }}"
+          MAX_REQ="${{ inputs.max_requests || '9000' }}"
+
+          ARGS="--phase $PHASE --batch-size $BATCH --max-requests $MAX_REQ"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+
+          python scripts/backfill_historical.py $ARGS
