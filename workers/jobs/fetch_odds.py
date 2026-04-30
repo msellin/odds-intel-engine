@@ -172,14 +172,9 @@ def fetch_kambi_odds(mark_closing: bool = False) -> int:
     return stored
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Fetch odds from AF + Kambi")
-    parser.add_argument("--date", type=str, default=None, help="Date (YYYY-MM-DD, default: today)")
-    parser.add_argument("--mark-closing", action="store_true", help="Mark near-kickoff odds as closing")
-    parser.add_argument("--af-only", action="store_true", help="Skip Kambi, AF odds only")
-    args = parser.parse_args()
-
-    target_date = args.date or date.today().isoformat()
+def run_odds(target_date: str = None, mark_closing: bool = False, af_only: bool = False):
+    """Run odds fetch pipeline. Callable by scheduler or CLI."""
+    target_date = target_date or date.today().isoformat()
     now_str = datetime.now(timezone.utc).strftime("%H:%M UTC")
     console.print(f"[bold green]═══ OddsIntel Odds: {target_date} @ {now_str} ═══[/bold green]")
 
@@ -192,8 +187,8 @@ def main():
         total += fetch_af_odds(target_date)
 
         # Kambi odds (supplementary — Unibet/Paf)
-        if not args.af_only:
-            total += fetch_kambi_odds(mark_closing=args.mark_closing)
+        if not af_only:
+            total += fetch_kambi_odds(mark_closing=mark_closing)
 
         log_pipeline_complete(run_id, records_count=total)
         console.print(f"\n[bold green]Done. {total} matches with odds stored.[/bold green]")
@@ -203,6 +198,15 @@ def main():
         if run_id:
             log_pipeline_failed(run_id, str(e))
         raise
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Fetch odds from AF + Kambi")
+    parser.add_argument("--date", type=str, default=None, help="Date (YYYY-MM-DD, default: today)")
+    parser.add_argument("--mark-closing", action="store_true", help="Mark near-kickoff odds as closing")
+    parser.add_argument("--af-only", action="store_true", help="Skip Kambi, AF odds only")
+    args = parser.parse_args()
+    run_odds(target_date=args.date, mark_closing=args.mark_closing, af_only=args.af_only)
 
 
 if __name__ == "__main__":

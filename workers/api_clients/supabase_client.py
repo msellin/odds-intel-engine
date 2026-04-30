@@ -16,12 +16,17 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_SECRET_KEY", "")
 
+_client: Client | None = None
+
 
 def get_client() -> Client:
-    """Get Supabase client (using service role key for write access)"""
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        raise ValueError("SUPABASE_URL and SUPABASE_SECRET_KEY must be set in .env")
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
+    """Get Supabase client singleton (using service role key for write access)."""
+    global _client
+    if _client is None:
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            raise ValueError("SUPABASE_URL and SUPABASE_SECRET_KEY must be set in .env")
+        _client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    return _client
 
 
 # ============================================================

@@ -117,12 +117,9 @@ def fetch_af_predictions(target_date: str) -> int:
     return fetched
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Fetch AF predictions")
-    parser.add_argument("--date", type=str, default=None, help="Date (YYYY-MM-DD)")
-    args = parser.parse_args()
-
-    target_date = args.date or date.today().isoformat()
+def run_predictions(target_date: str = None):
+    """Run predictions fetch pipeline. Callable by scheduler or CLI."""
+    target_date = target_date or date.today().isoformat()
     console.print(f"[bold green]═══ OddsIntel Predictions: {target_date} ═══[/bold green]")
 
     if not check_fixtures_ready(target_date):
@@ -141,6 +138,13 @@ def main():
         if run_id:
             log_pipeline_failed(run_id, str(e))
         raise
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Fetch AF predictions")
+    parser.add_argument("--date", type=str, default=None, help="Date (YYYY-MM-DD)")
+    args = parser.parse_args()
+    run_predictions(target_date=args.date)
 
 
 if __name__ == "__main__":

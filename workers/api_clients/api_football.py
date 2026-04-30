@@ -28,6 +28,82 @@ _last_request_time = 0.0
 _rate_lock = threading.Lock()
 
 
+# ── Budget Tracker ─────────────────────────────────────────────────────────
+# Tracks daily API call count in-memory. Syncs with AF /status endpoint hourly.
+# Used by scheduler to skip non-critical jobs when budget is low.
+
+class BudgetTracker:
+    """Thread-safe daily API call budget tracker for API-Football Ultra (75K/day)."""
+
+    def __init__(self, daily_limit: int = 75000, reserve: int = 5000):
+        self.daily_limit = daily_limit
+        self.reserve = reserve  # Keep reserve for manual runs / settlement
+        self.calls_today = 0
+        self.reset_date = date.today()
+        self._lock = threading.Lock()
+
+    def can_call(self) -> bool:
+        """Check if we have budget for another API call."""
+        with self._lock:
+            self._maybe_reset()
+            return self.calls_today < (self.daily_limit - self.reserve)
+
+    def record_call(self):
+        """Record one API call."""
+        with self._lock:
+            self._maybe_reset()
+            self.calls_today += 1
+
+    def remaining(self) -> int:
+        """Estimated remaining calls today."""
+        with self._lock:
+            self._maybe_reset()
+            return max(0, self.daily_limit - self.calls_today)
+
+    def usage_pct(self) -> float:
+        """Current usage as percentage."""
+        with self._lock:
+            self._maybe_reset()
+            return (self.calls_today / self.daily_limit) * 100 if self.daily_limit else 0
+
+    def sync_with_server(self):
+        """Sync local count with AF /status endpoint. Call at startup + hourly."""
+        try:
+            info = get_remaining_requests()
+            current = info.get("current", 0)
+            if current is not None:
+                with self._lock:
+                    self.calls_today = current
+                    self.reset_date = date.today()
+                console.print(f"[dim]Budget sync: {current} calls used today, "
+                              f"{info.get('remaining', '?')} remaining[/dim]")
+        except Exception as e:
+            console.print(f"[yellow]Budget sync failed: {e}[/yellow]")
+
+    def status(self) -> dict:
+        """Return budget status dict for health endpoint."""
+        with self._lock:
+            self._maybe_reset()
+            return {
+                "calls_today": self.calls_today,
+                "daily_limit": self.daily_limit,
+                "remaining": max(0, self.daily_limit - self.calls_today),
+                "usage_pct": round(self.usage_pct(), 1),
+                "can_call": self.calls_today < (self.daily_limit - self.reserve),
+            }
+
+    def _maybe_reset(self):
+        """Reset counter if it's a new UTC day."""
+        today = date.today()
+        if today != self.reset_date:
+            self.calls_today = 0
+            self.reset_date = today
+
+
+# Module-level singleton — shared by all jobs
+budget = BudgetTracker()
+
+
 def _headers() -> dict:
     return {"x-apisports-key": API_KEY}
 
@@ -55,6 +131,9 @@ def _get(endpoint: str, params: dict = None) -> dict:
     url = f"{BASE_URL}/{endpoint}"
     resp = requests.get(url, headers=_headers(), params=params, timeout=15)
     resp.raise_for_status()
+
+    # Track budget
+    budget.record_call()
 
     data = resp.json()
     if data.get("errors") and len(data["errors"]) > 0:

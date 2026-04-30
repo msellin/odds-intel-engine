@@ -90,13 +90,9 @@ def refresh_league_coverage():
         return 0
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Fetch fixtures and optionally refresh league coverage")
-    parser.add_argument("--date", type=str, default=None, help="Date to fetch (YYYY-MM-DD, default: today)")
-    parser.add_argument("--refresh-leagues", action="store_true", help="Also refresh league coverage data")
-    args = parser.parse_args()
-
-    target_date = args.date or date.today().isoformat()
+def run_fixtures(target_date: str = None, refresh_leagues: bool = False):
+    """Run fixture fetch pipeline. Callable by scheduler or CLI."""
+    target_date = target_date or date.today().isoformat()
     console.print(f"[bold green]═══ OddsIntel Fixture Fetch: {target_date} ═══[/bold green]")
 
     run_id = log_pipeline_start("fetch_fixtures", target_date)
@@ -104,7 +100,7 @@ def main():
     try:
         # Refresh league coverage if requested (weekly on Mondays)
         leagues_count = 0
-        if args.refresh_leagues:
+        if refresh_leagues:
             leagues_count = refresh_league_coverage()
 
         # Fetch and store fixtures
@@ -134,6 +130,14 @@ def main():
         if run_id:
             log_pipeline_failed(run_id, str(e))
         raise
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Fetch fixtures and optionally refresh league coverage")
+    parser.add_argument("--date", type=str, default=None, help="Date to fetch (YYYY-MM-DD, default: today)")
+    parser.add_argument("--refresh-leagues", action="store_true", help="Also refresh league coverage data")
+    args = parser.parse_args()
+    run_fixtures(target_date=args.date, refresh_leagues=args.refresh_leagues)
 
 
 if __name__ == "__main__":

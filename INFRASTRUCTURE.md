@@ -1,6 +1,6 @@
 # OddsIntel — Infrastructure & Costs
 
-> Last updated: 2026-04-30 — Supabase upgraded to Pro. Added model_calibration table (Platt scaling).
+> Last updated: 2026-04-30 — Added Railway migration plan (LIVE-INFRA). AF downgrade to Pro blocked (15s polling needs Ultra). DATABASE_URL env var planned.
 
 ---
 
@@ -15,10 +15,20 @@
 | **Gemini API** | AI news checker (2.5 Flash) | Free | Active |
 | **Kambi API** | Odds for 41 leagues (public) | Free (no key) | Active |
 | **ESPN API** | Settlement results backup (public) | Free (no key) | Active |
-| **API-Football** | PRIMARY: fixtures, results, odds, lineups, injuries, live stats | Ultra ($29/mo) | Active |
+| **API-Football** | PRIMARY: fixtures, results, odds, lineups, injuries, live stats | Ultra ($29/mo) | Active — ⚠️ **Do NOT downgrade to Pro** — 15s live polling needs 18K-45K calls/day (Pro limit: 7.5K) |
 | **Sentry** | Error monitoring & alerting (frontend) | Free (5K errors/mo) | Active |
 | **Stripe** | Payment processing (Pro/Elite tiers) | No monthly fee | **Test mode** — products + webhook live, awaiting production keys |
 | **Domain** | oddsintel.app | Registered + connected to Vercel | Active |
+
+### Planned (LIVE-INFRA migration)
+
+| Service | Role | When needed | Plan | Est. Cost |
+|---------|------|-------------|------|-----------|
+| **Railway** | Long-running pipeline scheduler + live poller | LIVE-INFRA Phase 1 (~May 2026) | Hobby ($5/mo, $5 credit) | **$5/mo** |
+
+> Railway replaces GitHub Actions cron scheduling. All 8 pipeline jobs move to a single long-running Python process with APScheduler. Live tracker upgrades from 5-min cron to 15s/60s/5min tiered polling. Direct PostgreSQL connection (psycopg2) replaces PostgREST for live operations. See `PRIORITY_QUEUE.md § RAILWAY Plan` for full architecture.
+>
+> **New env var required:** `DATABASE_URL` — Supabase connection string (`postgresql://postgres:...@db.xxx.supabase.co:5432/postgres`). Get from Supabase Dashboard → Settings → Database → Connection string (Session mode, port 5432).
 
 ### Not yet active
 
@@ -174,7 +184,7 @@ The live tracker (132 runs/day, ~9,900 min/month) is the expensive workflow. Git
 
 **Now:** Stay public (Option C). The competitive moat is in the data (Supabase) and execution speed, not the code. A Poisson+XGBoost pipeline with scrapers isn't worth protecting with $74/mo.
 
-**Later (if needed):** Move to Option B — migrate just the live tracker to **Railway** (free tier: 500 hrs/mo), **Fly.io** (free tier), or a **Hetzner VPS** (~€5/mo). The remaining workflows (daily pipeline, news checker, odds snapshots) use ~1,380 min/month — under the 2K private-repo free limit. Total cost: €0 or ~€5/mo for VPS.
+**After LIVE-INFRA migration:** All pipeline jobs move to Railway ($5/mo). GH Actions is used only for manual triggers + backfill. Going private becomes nearly free — remaining GH Actions usage drops to <100 min/month (manual triggers only). The $74/mo concern is eliminated.
 
 ---
 

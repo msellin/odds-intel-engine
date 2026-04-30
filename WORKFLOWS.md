@@ -1,7 +1,11 @@
 # OddsIntel — Workflows & Pipeline Architecture
 
 > Single source of truth for all scheduled jobs, their order, and manual run instructions.
-> Last updated: 2026-04-29
+> Last updated: 2026-04-30 — Added Railway migration plan note.
+
+### ⚠️ Upcoming: Railway Migration (LIVE-INFRA)
+
+> All cron schedules below will move to a single long-running Railway process (`workers/scheduler.py`). GitHub Actions will be kept for manual `workflow_dispatch` triggers only. The live tracker upgrades from 5-min cron to tiered polling: **15s** (odds/scores), **60s** (stats/events), **5min** (lineups). Direct PostgreSQL (psycopg2) replaces PostgREST for live operations. See `PRIORITY_QUEUE.md § RAILWAY Plan` for full details and timeline (~10 days, ~May 2026).
 
 ---
 

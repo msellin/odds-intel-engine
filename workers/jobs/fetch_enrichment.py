@@ -275,15 +275,10 @@ def fetch_h2h(fixture_meta: dict) -> int:
     return stored
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Enrich today's fixtures with team stats, injuries, standings, H2H")
-    parser.add_argument("--date", type=str, default=None, help="Date (YYYY-MM-DD, default: today)")
-    parser.add_argument("--components", type=str, default="all",
-                        help="Comma-separated: injuries,team_stats,standings,h2h or 'all'")
-    args = parser.parse_args()
-
-    target_date = args.date or date.today().isoformat()
-    components = ALL_COMPONENTS if args.components == "all" else set(args.components.split(","))
+def run_enrichment(target_date: str = None, components: set = None):
+    """Run enrichment pipeline. Callable by scheduler or CLI."""
+    target_date = target_date or date.today().isoformat()
+    components = components or ALL_COMPONENTS
 
     console.print(f"[bold green]═══ OddsIntel Enrichment: {target_date} ═══[/bold green]")
     console.print(f"  Components: {', '.join(sorted(components))}")
@@ -338,6 +333,16 @@ def main():
         if run_id:
             log_pipeline_failed(run_id, str(e))
         raise
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Enrich today's fixtures with team stats, injuries, standings, H2H")
+    parser.add_argument("--date", type=str, default=None, help="Date (YYYY-MM-DD, default: today)")
+    parser.add_argument("--components", type=str, default="all",
+                        help="Comma-separated: injuries,team_stats,standings,h2h or 'all'")
+    args = parser.parse_args()
+    components = ALL_COMPONENTS if args.components == "all" else set(args.components.split(","))
+    run_enrichment(target_date=args.date, components=components)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-04-30 — League deduplication (LEAGUE-DEDUP): merged ~70 Kambi duplicates into AF leagues, added priority sorting column, fixed ensure_league() mapping. Europa/Conference League now visible on frontend.
+> Last updated: 2026-04-30 — LIVE-INFRA Phase 1 complete: scheduler.py (21 jobs), BudgetTracker, Dockerfile, job refactoring. RAIL-1 through RAIL-4 done. Railway project created + env vars set.
 
 ---
 
@@ -95,6 +95,29 @@
 
 ---
 
+## Railway Migration — LIVE-INFRA (promoted from Tier 5)
+
+> Full architecture migration: GitHub Actions → Railway long-running process + direct PostgreSQL + tiered live polling.
+> 5 phases, ~10 days. See § RAILWAY Plan for full details.
+
+| # | ID | Task | Effort | Status | Impact | Source | Timeline | Notes |
+|---|-----|------|--------|--------|--------|--------|----------|-------|
+| — | LIVE-INFRA | Railway migration: long-running scheduler + direct SQL + tiered live polling | 10 days | 🔄 In Progress | **Very High** | Infra Analysis (2026-04-30) | ~May 2026 | Phase 1 code complete (2026-04-30). Railway project created, service linked, env vars set. See § RAILWAY Plan. |
+| — | RAIL-1 | Create `workers/scheduler.py` (APScheduler + health endpoint + SIGTERM) | 1 day | ✅ Done 2026-04-30 | High | LIVE-INFRA Phase 1 | Done | 21 jobs registered. Morning pipeline chained. Settlement pipeline chained (incl. Platt Sundays). Budget sync hourly. Health on :8080. |
+| — | RAIL-2 | Refactor job scripts: extract `run_*()` from all `main()` functions | 4h | ✅ Done 2026-04-30 | High | LIVE-INFRA Phase 1 | Done | run_fixtures(), run_enrichment(), run_odds(), run_predictions() extracted. main() kept as CLI wrapper. |
+| — | RAIL-3 | API budget tracker in `api_football.py` | 2h | ✅ Done 2026-04-30 | Medium | LIVE-INFRA Phase 1 | Done | BudgetTracker class: thread-safe call counting, midnight reset, can_call(), sync_with_server(), status() for health endpoint. Integrated into _get(). |
+| — | RAIL-4 | Deployment files: Dockerfile, railway.toml, .dockerignore | 1h | ✅ Done 2026-04-30 | High | LIVE-INFRA Phase 1 | Done | Python 3.12-slim, TZ=UTC, PYTHONUNBUFFERED=1. Health check path /health. |
+| — | RAIL-5 | Deploy Railway + shadow mode validation (2-3 days parallel run) | 2h + wait | ⬜ | High | LIVE-INFRA Phase 1 | — | `SHADOW_MODE=true` prefixes job names in pipeline_runs. Compare Railway vs GH Actions output for 2-3 days. |
+| — | RAIL-6 | Disable GH Actions crons (keep workflow_dispatch for fallback) | 30min | ⬜ | Medium | LIVE-INFRA Phase 1 | — | Comment out `schedule:` in 7 workflow files. Keep backfill.yml unchanged. |
+| — | RAIL-7 | Create `workers/api_clients/db.py` (psycopg2 connection pool) | 4h | ⬜ | **Very High** | LIVE-INFRA Phase 2 | — | ThreadedConnectionPool, execute_query(), bulk_insert(). Replaces PostgREST for live ops. Eliminates 1K row cap, enables JOINs, 10-50x faster bulk writes. |
+| — | RAIL-8 | Migrate live tracker DB functions to direct SQL | 1 day | ⬜ | **Very High** | LIVE-INFRA Phase 2 | — | 6 functions: store_live_snapshot (batched), store_live_odds (batched), store_match_events_af, update_match_status, _build_af_id_map (no 1K limit), get_match_by_teams_and_date. |
+| — | RAIL-9 | Create `workers/live_poller.py` (tiered 15s/60s/5min polling) | 1-2 days | ⬜ | **Very High** | LIVE-INFRA Phase 3 | — | Fast (15s): bulk fixtures+odds. Medium (60s): per-match stats+events. Slow (5min): lineups+match map refresh. ~14K-20K AF calls/day. |
+| — | RAIL-10 | Decompose `live_tracker.py` into sub-functions | 4h | ⬜ | High | LIVE-INFRA Phase 3 | — | fetch_live_bulk(), fetch_match_stats(), fetch_match_events(), build_snapshot(), store_snapshot_batch(). Keep run_live_tracker() wrapper. |
+| — | RAIL-11 | Smart polling: priority tiers + event-triggered snapshots | 1 day | ⬜ | High | LIVE-INFRA Phase 4 | — | HIGH (active bet, 30s stats) / NORMAL (60s) / LOW (5min). Instant odds snapshot on goal/red card detection. |
+| — | RAIL-12 | Update WORKFLOWS.md, INFRASTRUCTURE.md, AF-EVAL notes | 1h | ⬜ | Medium | LIVE-INFRA Phase 5 | — | Railway in service stack, $59/mo total, 24% AF budget, GH Actions manual-only. |
+
+---
+
 ## Frontend UX — Completed (2026-04-29)
 
 > Full UX pass completed this session. All items below are done and pushed to main.
@@ -149,7 +172,7 @@
 | — | FE-AUDIT | Full frontend code vs specs comparison (tier gating, data display, edge cases) | 2-3 days | ✅ Done 2026-04-29 | Medium | Screenshot audit (2026-04-29) | Done | **Bugs found and fixed:** (1) value-bets/page.tsx: `isPro = !isElite && tier==="pro"` was semantically wrong — Elite users had isPro=false. Fixed to `isPro = isElite \|\| tier === "pro"`. (2) matches/page.tsx: `is_superadmin \|\|` without `=== true`. Fixed. **No critical security gaps** — all Pro/Elite data fetched server-side only. **Gaps noted (no bugs):** saved matches frontend TBD, model prob per match Elite feature not built, full bot ROI separate page not built. |
 | — | ALERTS | Match alerts & notifications (email/push) | 2-3 days | ⬜ | Medium | Tier Access Matrix | ~June 2026 | Re-engagement loop. No system for this yet |
 | — | EMAIL-WEEKLY | Weekly performance summary email | 1 day | ⬜ | Medium | Tier Access Matrix | ~June 2026 | Shows bot ROI, top picks, CLV stats. Retention play |
-| — | AF-EVAL | Evaluate AF Pro tier ($19/mo, 7.5K req/day) vs Ultra ($29/mo) | Research | ✅ Done 2026-04-29 | Low | Data Sources | Done | **Estimated daily usage: ~1,500–2,500 req/day** (normal days). Breakdown: morning ~300 (1 fixtures + ~100 predictions + 7 injury batches + ~40 team stats + ~50 standings + ~100 H2H + 1 bulk odds), odds pipeline ~9 (1 bulk/run × 9 runs), live tracker ~1,200 (3 calls × avg 10 live matches × 120 runs), settlement ~320 (4 calls × 80 matches). **Peak days** (CL group stage, 50+ simultaneous live): ~6,000–7,000 req/day — still within 7,500 cap. **Recommendation: switch to Pro ($19/mo)** — saves $10/mo ($120/yr) with 3-5× daily headroom. Add `get_remaining_requests()` logging to morning pipeline as safety check. |
+| — | AF-EVAL | Evaluate AF Pro tier ($19/mo, 7.5K req/day) vs Ultra ($29/mo) | Research | ✅ Done 2026-04-29 | Low | Data Sources | Done | **Estimated daily usage: ~1,500–2,500 req/day** (normal days). ⚠️ **SUPERSEDED by LIVE-INFRA:** 15s live polling uses ~18K-45K calls/day, which exceeds AF Pro's 7.5K limit. **Do NOT downgrade to AF Pro.** Ultra (75K/day) required for tiered live polling. |
 
 ---
 
@@ -216,8 +239,8 @@
 | 55 | RVB | Referee/Venue full bias features (beyond S4 referee stats) | Medium | Internal | Venue-level stats not yet collected |
 | 56 | WTH | Weather signal (OpenWeatherMap, free) | Low | Internal | Low effort, defer until O/U becomes a focus market |
 | 57 | SIG-DERBY | Is-derby + travel distance signals | Low | Internal | Needs team location data. SIGNAL_ARCHITECTURE.md Group 5 gap |
-| 58 | DB-DIRECT | Switch from PostgREST to direct PostgreSQL connection (psycopg2) | Medium | Internal (2026-04-30) | PostgREST limits: default 1K row cap (caused silent data loss), no JOINs, partial unique index upsert bug, URL length limits on IN clauses. Direct SQL via Supabase connection string removes all of these. Refactor supabase_client.py. Not urgent — pagination workarounds in place — but will become painful as data grows. |
-| 59 | LIVE-INFRA | Move live tracker to long-running process (1-min polling) | Medium | Internal (2026-04-30) | GitHub Actions cron minimum is `*/1` but has 30-60s jitter. For in-play bet execution (Phase 3 of P3.4) we need 1-min stats + odds polling with <5s execution latency. Options: Railway/Fly.io container ($5-10/mo), Supabase Edge Function with pg_cron, or dedicated VPS. Also enables event-triggered odds capture (snapshot odds at goal/red card moments). Only needed when in-play bots go live (~July 2026). |
+| 58 | DB-DIRECT | ~~Switch from PostgREST to direct PostgreSQL connection~~ | — | — | **Merged into LIVE-INFRA** — now Phase 2 of the Railway migration. See § RAILWAY Plan. |
+| 59 | LIVE-INFRA | ~~Move live tracker to long-running process~~ | — | — | **Promoted to Tier 2** — now a full Railway migration with 5 phases. See Tier 2 and § RAILWAY Plan. |
 
 ---
 
@@ -615,6 +638,96 @@ Key qualifier: **xG pace ratio > 1.0** (live xG/min exceeds pre-match expected x
 - **Pro/Elite product differentiation** — "Live Win Probability" updating every 5 min on match detail
 - **Higher bet volume** — each match can generate multiple in-play bets at different checkpoints
 - **xG-based edge** — most retail bettors and many bookmaker algorithms anchor on scoreline, not xG
+
+---
+
+## § RAILWAY Plan — Railway Migration (GH Actions → Long-Running Process)
+
+> Created: 2026-04-30. Full architecture migration for LIVE-INFRA task.
+> Decision: Railway ($5/mo) chosen over GCP Cloud Run, Fly.io, Render, Hetzner VPS, pg_cron.
+> Architecture longevity: 18-24+ months before next major change needed.
+
+### 1. Why
+
+- GH Actions cron is unreliable: 10-20 minute gaps observed on live tracker (should be every 5 min)
+- API-Football updates live odds every **15 seconds** — we poll every 5 min (**20x slower**)
+- Cold start overhead: ~90s wasted per GH Actions run (checkout + setup Python + pip install) × 132 runs/day
+- PostgREST HTTP overhead: 24 HTTP requests per live tracker cycle (~3s) — at 15s polling this is 20-30% of cycle
+- Blocks in-play model (P3.4) which needs 15s odds + 60s stats + <5s execution latency
+
+### 2. Architecture
+
+```
+Railway ($5/mo)                          Supabase Pro ($25/mo)
+┌─────────────────────────┐              ┌──────────────────┐
+│  workers/scheduler.py   │              │   PostgreSQL DB   │
+│  ┌───────────────────┐  │              │                  │
+│  │ APScheduler       │  │   psycopg2   │  matches         │
+│  │ • morning_pipeline│──┼──────────────│  odds_snapshots   │
+│  │ • odds_refresh    │  │  connection  │  live_match_snap  │
+│  │ • enrichment      │  │    pool      │  simulated_bets   │
+│  │ • news_checker    │  │  (direct SQL)│  pipeline_runs    │
+│  │ • settlement      │  │              │  ...              │
+│  └───────────────────┘  │              └──────────────────┘
+│  ┌───────────────────┐  │                      │
+│  │ LivePoller        │  │   API-Football       │
+│  │ • 15s: odds+score │──┼──── Ultra $29/mo ────┘
+│  │ • 60s: stats+evts │  │   75K req/day
+│  │ • 5min: lineups   │  │
+│  │ • smart priority  │  │
+│  └───────────────────┘  │
+│  ┌───────────────────┐  │
+│  │ Health endpoint   │  │
+│  │ :8080/health      │  │
+│  └───────────────────┘  │
+└─────────────────────────┘
+```
+
+### 3. Five Phases
+
+| Phase | Days | What | Key deliverable |
+|-------|------|------|----------------|
+| **1. Scheduler** | 1-3 | APScheduler replaces GH Actions crons. Same behavior, better reliability. | `workers/scheduler.py`, Dockerfile, railway.toml |
+| **2. Direct SQL** | 4-5 | psycopg2 connection pool for live tracker ops. 10-50x faster writes. | `workers/api_clients/db.py`, migrated live tracker functions |
+| **3. Tiered Polling** | 6-8 | 15s/60s/5min polling loop. 20x faster live data. | `workers/live_poller.py`, decomposed live_tracker.py |
+| **4. Smart Polling** | 9 | Dynamic priority per match. Event-triggered snapshots. | Priority classification, goal/card → instant odds capture |
+| **5. Validation** | 10 | Shadow mode testing, monitoring, doc updates. | End-to-end checklist, WORKFLOWS.md + INFRASTRUCTURE.md |
+
+### 4. API Budget Impact
+
+| Stage | AF calls/day (avg) | AF calls/day (peak) | % of 75K limit |
+|-------|-------------------|--------------------|--------------:|
+| **Current** (5min polling) | ~1,500 | ~7,000 | 2-9% |
+| **After Phase 3** (15s/60s tiered) | ~18,000 | ~32,000 | 24-43% |
+| **After Phase 4** (smart polling) | ~18,000 | ~45,000 | 24-60% |
+
+AF Ultra (75K/day) required. **Do NOT downgrade to AF Pro** ($19/mo, 7.5K/day).
+
+### 5. Cost Impact
+
+| Item | Before | After |
+|------|--------|-------|
+| Railway | $0 | $5/mo |
+| Total monthly | ~€52 | ~€57 |
+
+### 6. DB Access Migration Strategy
+
+Two patterns coexist during migration:
+
+| Pattern | Used by | Migrate when |
+|---------|---------|-------------|
+| PostgREST (supabase SDK) | Morning pipeline, odds, enrichment, settlement | Gradually over weeks — HTTP overhead negligible at 2h intervals |
+| **Direct SQL** (psycopg2 pool) | Live poller, live tracker, all new code | Immediately for Phase 2+ |
+
+End state (4-8 weeks): all DB access through `db.py`. PostgREST kept only for Supabase Auth if needed.
+
+### 7. What This Unlocks
+
+- **In-play model (P3.4)**: 15s odds + 60s xG data → LightGBM training starts immediately
+- **Event-triggered odds capture**: odds at moment of goal/red card → CLV analysis
+- **Live Win Probability**: frontend can show updating probabilities during matches (Pro feature)
+- **Faster settlement**: detect finished matches within 15s, not 5min
+- **Future in-play bots**: <1s execution latency for bet placement
 
 ---
 
