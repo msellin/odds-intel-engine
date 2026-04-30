@@ -1,8 +1,8 @@
 name: ⑧ Settlement
 
 on:
-  schedule:
-    - cron: '0 21 * * *'  # 21:00 UTC (00:00 EET)
+  # schedule:                          # Disabled — now runs on Railway
+  #   - cron: '0 21 * * *'            # 21:00 UTC
   workflow_dispatch: {}
 
 jobs:

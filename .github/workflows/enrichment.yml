@@ -1,10 +1,10 @@
 name: ② Enrichment
 
 on:
-  schedule:
-    - cron: '15 4 * * *'  # 04:15 UTC — full (standings, H2H, team stats, injuries)
-    - cron: '0 12 * * *'  # 12:00 UTC — injuries + standings refresh
-    - cron: '0 16 * * *'  # 16:00 UTC — injuries + standings refresh
+  # schedule:                          # Disabled — now runs on Railway
+  #   - cron: '15 4 * * *'            # 04:15 UTC — full
+  #   - cron: '0 12 * * *'            # 12:00 UTC — refresh
+  #   - cron: '0 16 * * *'            # 16:00 UTC — refresh
   workflow_dispatch:
     inputs:
       date:

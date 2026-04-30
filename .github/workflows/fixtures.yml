@@ -1,8 +1,8 @@
 name: ① Fixtures
 
 on:
-  schedule:
-    - cron: '0 4 * * *'  # 04:00 UTC (07:00 EET)
+  # schedule:                          # Disabled — now runs on Railway
+  #   - cron: '0 4 * * *'             # 04:00 UTC (07:00 EET)
   workflow_dispatch:
     inputs:
       date:

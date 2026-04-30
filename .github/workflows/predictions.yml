@@ -1,8 +1,8 @@
 name: ④ Predictions
 
 on:
-  schedule:
-    - cron: '30 5 * * *'  # 05:30 UTC (after fixtures + enrichment + first odds)
+  # schedule:                          # Disabled — now runs on Railway
+  #   - cron: '30 5 * * *'            # 05:30 UTC
   workflow_dispatch:
     inputs:
       date:

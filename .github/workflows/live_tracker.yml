@@ -1,10 +1,8 @@
 name: OddsIntel — Live Match Tracker
 
 on:
-  schedule:
-    # Every 5 minutes during European match hours: 12:00–23:00 UTC
-    # GitHub Actions minimum interval is 5 minutes
-    - cron: '*/5 12-22 * * *'
+  # schedule:                          # Disabled — now runs on Railway
+  #   - cron: '*/5 12-22 * * *'       # Every 5min, 12-22 UTC
   workflow_dispatch:
     inputs:
       dry_run:

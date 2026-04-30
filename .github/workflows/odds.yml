@@ -1,10 +1,10 @@
 name: ③ Odds
 
 on:
-  schedule:
-    - cron: '0 5,7,8,10,12,14,16,18,20,22 * * *'  # Every 2h, starting 05:00 UTC
-    - cron: '30 13 * * *'  # Pre-kickoff (European afternoon)
-    - cron: '30 17 * * *'  # Pre-kickoff (European evening)
+  # schedule:                          # Disabled — now runs on Railway
+  #   - cron: '0 5,7,8,...,22 * * *'  # Every 2h
+  #   - cron: '30 13 * * *'           # Pre-kickoff afternoon
+  #   - cron: '30 17 * * *'           # Pre-kickoff evening
   workflow_dispatch:
     inputs:
       date:
