@@ -9,6 +9,7 @@ All project documentation lives in this repo (`odds-intel-engine/`). Before star
 | `PRIORITY_QUEUE.md` | **Master task list** — all open tasks across all docs, in priority order. Update status here first. |
 | `ROADMAP.md` | Product vision, tier structure, milestones, system state, bot strategy, launch checklist |
 | `MODEL_ANALYSIS.md` | Prediction model architecture, AI evaluations, improvement roadmap |
+| `MODEL_WHITEPAPER.md` | **Technical whitepaper** — full model description for data scientists and external review. **Must be updated whenever model logic changes.** |
 | `SIGNALS.md` | Every signal we collect (inventory, storage, flow into model) + 4-phase UX strategy for surfacing them (SUX-1 to SUX-12) |
 | `TIER_ACCESS_MATRIX.md` | Feature matrix per tier (Anonymous/Free/Pro/Elite), conversion hooks, route protection |
 | `WORKFLOWS.md` | Pipeline architecture — all scheduled jobs, order, manual run instructions, data sources |
@@ -46,6 +47,7 @@ Update **all** of the following that apply. "Not relevant" is almost never true 
 | `WORKFLOWS.md` | Any change to pipeline jobs or schedule |
 | `DATA_SOURCES.md` | Any change to data sources or coverage |
 | `INFRASTRUCTURE.md` | Any change to costs, services, or infra |
+| `MODEL_WHITEPAPER.md` | **Any change to model logic** — calibration, features, ensemble, sizing, signals, ELO, or bot strategies |
 
 Then commit docs **in the same commit as the code**. Never separate them — a code commit without doc update is an incomplete task.
 
