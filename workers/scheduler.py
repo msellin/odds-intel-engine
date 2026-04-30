@@ -266,15 +266,18 @@ def main():
     if SHADOW_MODE:
         console.print("[yellow]SHADOW MODE: job names prefixed with 'railway_'[/yellow]")
 
-    # Start health endpoint
+    # Start health endpoint FIRST — must respond before Railway's health check window
     _start_health_server()
 
-    # Sync budget at startup
-    try:
-        from workers.api_clients.api_football import budget
-        budget.sync_with_server()
-    except Exception as e:
-        console.print(f"[yellow]Initial budget sync failed: {e}[/yellow]")
+    # Sync budget in background (API call can take 2-5s, don't block startup)
+    def _initial_budget_sync():
+        try:
+            from workers.api_clients.api_football import budget
+            budget.sync_with_server()
+        except Exception as e:
+            console.print(f"[yellow]Initial budget sync failed: {e}[/yellow]")
+
+    threading.Thread(target=_initial_budget_sync, daemon=True).start()
 
     # Create scheduler
     scheduler = BackgroundScheduler(timezone="UTC")
