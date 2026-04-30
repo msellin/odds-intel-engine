@@ -5,20 +5,20 @@
 
 ## Real-Time Endpoints (15-second updates)
 
-These endpoints update **every 15 seconds** during live matches. GitHub Actions cron (minimum 1 min, 30-60s jitter) cannot match this — would need a long-running process (Railway/Fly.io).
+These endpoints update **every 15 seconds** during live matches. ✅ Now matched via Railway LivePoller (30s polling, can go to 15s).
 
 | Endpoint | AF Update | AF Recommended | Our Usage | Gap |
 |----------|-----------|---------------|-----------|-----|
-| `/fixtures` (live) | **15 sec** | 1/min per league with live match | Every 5 min via live_tracker | **20x slower** — missing ~80% of in-play state changes |
+| `/fixtures` (live) | **15 sec** | 1/min per league with live match | Every 30s via Railway LivePoller | ✅ **Matched** (was 20x slower at 5min) |
 | `/fixtures/headtohead` | **15 sec** | 1/min per live match | Once at enrichment (04:15) | Only pre-match, not live |
-| `/fixtures/events` | **15 sec** | 1/min per live match | Every 5 min via live_tracker | **4x slower** — goals/cards detected late |
-| `/fixtures/lineups` | **15 min** | 1/15min per live match | Every 5 min via live_tracker | OK (we poll more than needed) |
+| `/fixtures/events` | **15 sec** | 1/min per live match | Every 60s via Railway LivePoller | ✅ **Near-matched** (was 4x slower) |
+| `/fixtures/lineups` | **15 min** | 1/15min per live match | Every 5 min via LivePoller slow tier | OK |
 
 ## Minute-Level Endpoints
 
 | Endpoint | AF Update | AF Recommended | Our Usage | Gap |
 |----------|-----------|---------------|-----------|-----|
-| `/fixtures/statistics` | **1 min** | 1/min per live match | Every 5 min via live_tracker (since 2026-04-30) | **5x slower** |
+| `/fixtures/statistics` | **1 min** | 1/min per live match | Every 60s via Railway LivePoller | ✅ **Matched** (was 5x slower) |
 | `/fixtures/players` | **1 min** | 1/min per live match | Settlement only (post-match) | **Not used live** — missing live player xG, ratings |
 
 ## Hourly Endpoints
@@ -66,21 +66,20 @@ These endpoints update **every 15 seconds** during live matches. GitHub Actions 
 | `/players/topredcards` | Most red-carded players | Low — discipline signal |
 | `/venues` | Venue data | Low — display feature |
 
-## Key Insight: The 15-Second Problem
+## ✅ The 15-Second Problem — SOLVED (2026-04-30)
 
-The `/fixtures` endpoint updates every 15 seconds. Our live tracker runs every 5 minutes via GitHub Actions cron. This means:
+The `/fixtures` endpoint updates every 15 seconds. Previously our live tracker ran every 5 minutes via GitHub Actions cron, missing ~80% of state changes.
 
-1. **Score changes** are detected up to 5 min late (should be <30 sec)
-2. **Red cards** (which shift odds ~10-15%) are detected late
-3. **In-play betting windows** close before we see the state change
+**Solution:** Railway long-running process with `LivePoller` (tiered polling):
+- **30s** (fast tier): bulk fixtures + live odds — scores/odds detected within 30s
+- **60s** (medium tier): per-match stats + events — xG, shots, goals, cards within 60s
+- **5min** (slow tier): lineups + match map refresh
 
-**GitHub Actions limitation:** Cron minimum is 1 minute, but actual execution has 30-60 second jitter. For 15-second polling, we'd need a long-running process on Railway/Fly.io (~$5/mo).
-
-**API budget impact of 1-min polling:** ~10 live matches avg × 3 endpoints × 60 min/match × 90 min = ~2,700 calls/match-day. Well within 75K daily budget.
+**API budget:** ~10K-15K calls/day during live play. Well within AF Ultra 75K/day.
 
 ## Odds-Specific Notes
 
 - AF `/odds` for pre-match: updates roughly every 2 hours — we match this
 - AF `/odds` does NOT return data for completed fixtures (confirmed 2026-04-30)
-- AF `/odds/live` (added v3.9.2): real-time in-play odds — we don't use this yet
+- AF `/odds/live`: ✅ now polled every 30s via LivePoller fast tier
 - Historical odds need a separate source (The Odds API)

@@ -1,6 +1,6 @@
 # OddsIntel — Infrastructure & Costs
 
-> Last updated: 2026-04-30 — Added Railway migration plan (LIVE-INFRA). AF downgrade to Pro blocked (15s polling needs Ultra). DATABASE_URL env var planned.
+> Last updated: 2026-05-01 — Railway migration complete. $5/mo Railway added. GH Actions down to ~100 min/month. Direct PostgreSQL for live tracker. Total cost ~€56/mo.
 
 ---
 
@@ -9,7 +9,8 @@
 | Service | Role | Plan | Status |
 |---------|------|------|--------|
 | **Supabase** | PostgreSQL DB, Auth, RLS, REST API | **Pro ($25/mo)** | Active — upgraded 2026-04-29 |
-| **GitHub Actions** | 4 scheduled workflows (engine automation) | Free (public repos) | Active |
+| **Railway** | Pipeline scheduler + LivePoller (long-running process) | **Hobby ($5/mo)** | Active — all 20 scheduled jobs + 30s/60s/5min live polling |
+| **GitHub Actions** | Manual workflow_dispatch + DB migrations only | Free (public repos) | Active — crons disabled, ~100 min/month |
 | **GitHub** | Source control (2 repos, both public) | Free | Active |
 | **Vercel** | Frontend hosting (Next.js 16) | Hobby (free) | Active (oddsintel.app) |
 | **Gemini API** | AI news checker (2.5 Flash) | Free | Active |
@@ -19,16 +20,6 @@
 | **Sentry** | Error monitoring & alerting (frontend) | Free (5K errors/mo) | Active |
 | **Stripe** | Payment processing (Pro/Elite tiers) | No monthly fee | **Test mode** — products + webhook live, awaiting production keys |
 | **Domain** | oddsintel.app | Registered + connected to Vercel | Active |
-
-### Planned (LIVE-INFRA migration)
-
-| Service | Role | When needed | Plan | Est. Cost |
-|---------|------|-------------|------|-----------|
-| **Railway** | Long-running pipeline scheduler + live poller | LIVE-INFRA Phase 1 (~May 2026) | Hobby ($5/mo, $5 credit) | **$5/mo** |
-
-> Railway replaces GitHub Actions cron scheduling. All 8 pipeline jobs move to a single long-running Python process with APScheduler. Live tracker upgrades from 5-min cron to 15s/60s/5min tiered polling. Direct PostgreSQL connection (psycopg2) replaces PostgREST for live operations. See `PRIORITY_QUEUE.md § RAILWAY Plan` for full architecture.
->
-> **New env var required:** `DATABASE_URL` — Supabase connection string (`postgresql://postgres:...@db.xxx.supabase.co:5432/postgres`). Get from Supabase Dashboard → Settings → Database → Connection string (Session mode, port 5432).
 
 ### Not yet active
 
@@ -50,21 +41,18 @@ When ready to accept real payments (switch from test → live mode):
 
 ---
 
-## GitHub Actions Usage
+## GitHub Actions Usage (post-Railway migration)
 
-Both repos are **public** — GitHub Actions minutes are unlimited for public repos.
+All scheduled jobs moved to Railway. GitHub Actions used only for manual triggers + DB migrations.
 
-| Workflow | Schedule | Runs/day | ~Min/run | ~Min/day |
-|----------|----------|----------|----------|----------|
-| Daily Pipeline | 08:00 + 21:00 UTC | 2 | 3-5 | ~8 |
-| News Checker | 4x/day (09:00, 12:30, 16:30, 19:30 UTC) | 4 | 2-3 | ~10 |
-| Odds Snapshots | 11x/day (every 2h + 2 pre-match) | 11 | 2-3 | ~28 |
-| Live Tracker | Every 5min, 12-22 UTC | 132 | 2-3 | ~330 |
-| **Total** | | **~149** | | **~376 min/day** |
+| Usage | Runs/month | ~Min/month |
+|-------|-----------|-----------|
+| Manual pipeline runs | ~5-10 | ~50 |
+| DB migrations | ~5-10 | ~20 |
+| Backfill (while active) | ~240 | ~600 |
+| **Total** | — | **~100-200** (without backfill) |
 
-Monthly estimate: **~11,280 min/month**
-
-> **If repos ever go private:** GitHub Free gives 2,000 min/month. Overage is $0.008/min = **~$74/month**. Keep repos public to avoid this.
+> **Going private is now safe:** ~100-200 min/month is well under the 2,000 free private-repo limit.
 
 ---
 
@@ -91,14 +79,15 @@ Monthly estimate: **~11,280 min/month**
 
 ---
 
-## Current Monthly Cost: ~€52 ($54)
+## Current Monthly Cost: ~€57 ($59)
 
 | Service | Plan | Monthly Cost |
 |---------|------|-------------|
 | API-Football | Ultra | ~€27 ($29) |
 | Supabase | Pro | ~€23 ($25) |
+| Railway | Hobby | ~€5 ($5) |
 | Domain | oddsintel.app | ~€1 amortized |
-| **Total** | | **~€51/mo** |
+| **Total** | | **~€56/mo** |
 
 All other services (Vercel, GitHub Actions, Gemini, Sentry, Kambi, ESPN) on free tiers.
 

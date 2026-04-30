@@ -130,7 +130,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | ③ Odds (every 2h 05-22 UTC) | ✅ AF bulk odds + Kambi |
 | ④ Predictions (05:30 UTC) | ✅ AF predictions (coverage-aware) |
 | ⑤ Betting (06:00 UTC) | ✅ Poisson/XGBoost + signals + bet placement |
-| ⑥ Live tracker (every 5min, 12-22 UTC) | ✅ T5/T6/T7/T8 live data |
+| ⑥ LivePoller (30s/60s/5min tiered, 10-23 UTC) | ✅ T5/T6/T7/T8 live data — Railway long-running process |
 | ⑦ AI news checker (4×/day) | ✅ Gemini 2.5 Flash, qualitative-only |
 | ⑧ Settlement (21:00 UTC) | ✅ T4/T8/T12 + settle + CLV + ELO + post-mortem + weekly Platt recalibration (Sundays) |
 | ⑨ Historical backfill (8 cron slots/day) | ✅ Built — 3-phase backfill of ~55K matches via spare API quota |
@@ -175,6 +175,20 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 ---
 
+## Engagement & Growth Strategy
+
+**Full playbook:** `docs/ENGAGEMENT_PLAYBOOK.md` — synthesized from 4 independent AI brainstorm sessions + web research (2026-04-30).
+
+**Core principles:** No gamification, premium analytical tone, transparency as differentiator, social proof through aggregate data (not forums/profiles).
+
+**Phase 1 (launch sprint):** Daily email digest (ENG-4), AI match previews (ENG-3), "X analyzing" counter (ENG-1), community vote splits (ENG-2), betting glossary (ENG-5), bot consensus (ENG-6), methodology page (ENG-7).
+
+**Phase 2 (retention):** Watchlist alerts (ENG-8), personal bet tracker + Model vs You (ENG-9), weekly email (ENG-10), "What changed today" widget (ENG-11), Model vs Market vs Users triangulation (ENG-12), shareable pick cards (ENG-13), SEO prediction pages (ENG-14).
+
+**Phase 3 (differentiation):** Market inefficiency index (ENG-15), expanded AI chat per match (ENG-16), season-end review (ENG-17).
+
+---
+
 ## Open Decisions
 
 | Decision | Options | Status |
@@ -182,7 +196,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | Tier names final? | Free/Pro/Elite | ✅ Done |
 | Tips: picks or signals? | "Today's picks" vs "What bot_X would bet" | ⏳ Pending |
 | Design: Stitch redesign or ship now? | Polish current vs wait for Stitch designs | ⏳ Pending |
-| user_bets feature at M3? | Follow a tip → personal P&L | Skip until M3 |
+| user_bets feature at M3? | Follow a tip → personal P&L | ✅ Promoted to ENG-9 (Phase 2, ~May W3-4) |
 
 ---
 

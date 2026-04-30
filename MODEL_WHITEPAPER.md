@@ -272,7 +272,7 @@ T-10h    Betting: edge detection, Kelly sizing, bet placement
 T-6h     News: first Gemini analysis pass
 T-3h     News: second pass (closer to kickoff)
 T-1h     Lineups published, lineup signals updated
-T-0      Kickoff → live signal collection every 5 minutes
+T-0      Kickoff → live signal collection every 30-60 seconds (Railway LivePoller)
 T+FT     Settlement: results, P&L, CLV, ELO update, pseudo-CLV
 T+FT+1h  Post-match: stats, events, player stats enrichment
 ```

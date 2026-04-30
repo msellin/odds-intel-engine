@@ -134,7 +134,7 @@ Data tier system:
 
 ---
 
-### Group 6 — Live Signals (in-play, updated every 5 minutes)
+### Group 6 — Live Signals (in-play, updated every 30-60 seconds via Railway LivePoller)
 
 | Signal | Where stored | Status |
 |--------|-------------|--------|
@@ -183,7 +183,7 @@ T-2h    Odds snapshot #6
 T-1h    Lineups published → lineup_confirmed signal
 T-30m   Final news scan #4
 T-0h    Match kicks off
-T+5m    Live tracker starts (every 5min) → Group 6 signals
+T+0m    LivePoller starts (30s scores/odds, 60s stats/events) → Group 6 signals
 T+FT    Settlement: result recorded, pseudo_clv computed
 T+1h    Post-match enrichment: T4/T8/T12
 ```

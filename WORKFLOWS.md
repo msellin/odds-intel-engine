@@ -1,48 +1,67 @@
 # OddsIntel — Workflows & Pipeline Architecture
 
 > Single source of truth for all scheduled jobs, their order, and manual run instructions.
-> Last updated: 2026-04-30 — Added Railway migration plan note.
+> Last updated: 2026-05-01 — Railway migration complete. All jobs run via `workers/scheduler.py` on Railway ($5/mo). Live tracker upgraded to 30s/60s/5min tiered polling via `workers/live_poller.py`.
 
-### ⚠️ Upcoming: Railway Migration (LIVE-INFRA)
+### ✅ Railway Migration Complete (2026-04-30)
 
-> All cron schedules below will move to a single long-running Railway process (`workers/scheduler.py`). GitHub Actions will be kept for manual `workflow_dispatch` triggers only. The live tracker upgrades from 5-min cron to tiered polling: **15s** (odds/scores), **60s** (stats/events), **5min** (lineups). Direct PostgreSQL (psycopg2) replaces PostgREST for live operations. See `PRIORITY_QUEUE.md § RAILWAY Plan` for full details and timeline (~10 days, ~May 2026).
-
----
-
-## Daily Schedule (UTC)
-
-```
-04:00  ① Fixtures        fetch_fixtures.py         AF fixtures + league coverage (weekly Mon)
-04:15  ② Enrichment      fetch_enrichment.py       Standings, H2H, team stats, injuries (full)
-05:00  ③ Odds            fetch_odds.py             AF bulk odds + Kambi odds
-05:30  ④ Predictions     fetch_predictions.py      AF predictions (coverage-aware)
-06,10,13,16,19  ⑤ Betting  betting_pipeline.py    Poisson/XGBoost model + signals + bet placement (5x/day, dedup-safe)
-05-22  ③ Odds (repeat)   fetch_odds.py             Every 2h: 07,08,10,12,14,16,18,20,22 UTC
-12:00  ② Enrichment      fetch_enrichment.py       Injuries + standings refresh
-12-22  ⑥ Live Tracker    live_tracker.py           Every 5min: live scores, odds, events, lineups
-       ⑦ News Checker    news_checker.py           4x/day: 09:00, 12:30, 16:30, 19:30 UTC
-13:30  ③ Odds            fetch_odds.py             Pre-kickoff (European afternoon)
-16:00  ② Enrichment      fetch_enrichment.py       Injuries + standings refresh
-17:30  ③ Odds            fetch_odds.py             Pre-kickoff (European evening)
-21:00  ⑧ Settlement      settlement.py             Settle bets, post-match stats, ELO, CLV
-```
+> All pipeline jobs now run on **Railway** as a single long-running Python process (`workers/scheduler.py`).
+> GitHub Actions crons are **disabled** — kept only for manual `workflow_dispatch` triggers and DB migrations.
+> Live tracker replaced by **LivePoller** (`workers/live_poller.py`) with tiered polling: **30s** (odds/scores), **60s** (stats/events), **5min** (lineups).
+> Direct PostgreSQL (psycopg2 via `workers/api_clients/db.py`) used for live tracker DB writes — 10-50x faster than PostgREST.
 
 ---
 
-## Workflow Files
+## Daily Schedule (UTC) — executed by Railway `workers/scheduler.py`
 
-| # | Workflow file | Script | Cron | Env vars needed |
-|---|--------------|--------|------|-----------------|
-| ① | `fixtures.yml` | `workers/jobs/fetch_fixtures.py` | `0 4 * * *` | SUPABASE_*, API_FOOTBALL_KEY |
-| ② | `enrichment.yml` | `workers/jobs/fetch_enrichment.py` | `15 4`, `0 12`, `0 16` | SUPABASE_*, API_FOOTBALL_KEY |
-| ③ | `odds.yml` | `workers/jobs/fetch_odds.py` | `0 5,7,8,10,12,14,16,18,20,22` + `30 13`, `30 17` | SUPABASE_*, API_FOOTBALL_KEY |
-| ④ | `predictions.yml` | `workers/jobs/fetch_predictions.py` | `30 5 * * *` | SUPABASE_*, API_FOOTBALL_KEY |
-| ⑤ | `betting.yml` | `workers/jobs/betting_pipeline.py` | `0 6,10,13,16,19 * * *` | SUPABASE_*, API_FOOTBALL_KEY |
-| ⑥ | `live_tracker.yml` | `workers/jobs/live_tracker.py` | `*/5 12-22 * * *` | SUPABASE_* |
-| ⑦ | `news_checker.yml` | `workers/jobs/news_checker.py` | `0 9`, `30 12`, `30 16`, `30 19` | SUPABASE_*, GEMINI_API_KEY |
-| ⑧ | `settlement.yml` | `workers/jobs/settlement.py` | `0 21 * * *` | SUPABASE_*, API_FOOTBALL_KEY, GEMINI_API_KEY |
-| ⑨ | `backfill.yml` | `scripts/backfill_historical.py` | Every 30min overnight + hourly 06–11 UTC (~16 runs/day, 800 calls each) | SUPABASE_*, API_FOOTBALL_KEY |
-| — | `migrate.yml` | Supabase CLI | On push to `supabase/migrations/` | SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF |
+```
+04:00  ① Fixtures        run_fixtures()            AF fixtures + league coverage (weekly Mon)
+       ② Enrichment      run_enrichment()          Standings, H2H, team stats, injuries (full)
+       ③ Odds            run_odds()                AF bulk odds + Kambi odds
+       ④ Predictions     run_predictions()         AF predictions (coverage-aware)
+       ⑤ Betting         run_betting()             Poisson/XGBoost model + signals + bet placement
+       (morning pipeline — chained sequentially, completes by ~06:30)
+07-22  ③ Odds (repeat)   run_odds()                Every 2h: 07,08,10,12,14,16,18,20,22 UTC
+12,16  ② Enrichment      run_enrichment()          Injuries + standings refresh
+10-23  ⑥ LivePoller      live_poller.py            30s: scores+odds, 60s: stats+events, 5min: lineups
+       ⑦ News Checker    run_news_checker()        4x/day: 09:00, 12:30, 16:30, 19:30 UTC
+13:30  ③ Odds            run_odds(mark_closing)    Pre-kickoff (European afternoon)
+17:30  ③ Odds            run_odds(mark_closing)    Pre-kickoff (European evening)
+21:00  ⑧ Settlement      settlement_pipeline()     Settle bets, post-match stats, ELO, CLV, prune, Platt (Sun)
+```
+
+---
+
+## Execution: Railway vs GitHub Actions
+
+| Component | Runs on | How |
+|-----------|---------|-----|
+| **All scheduled jobs (①-⑧)** | **Railway** ($5/mo) | `workers/scheduler.py` — APScheduler cron triggers |
+| **Live polling (⑥)** | **Railway** | `workers/live_poller.py` — daemon thread, 30s/60s/5min tiers |
+| Manual recovery runs | GitHub Actions | `workflow_dispatch` — trigger any job manually |
+| DB migrations | GitHub Actions | `migrate.yml` — on push to `supabase/migrations/` |
+| Historical backfill | GitHub Actions | `backfill.yml` — temporary, budget-sensitive |
+
+### Railway Environment Variables
+
+`SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `API_FOOTBALL_KEY`, `GEMINI_API_KEY`, `DATABASE_URL`, `TZ=UTC`
+
+### GitHub Actions Workflow Files (manual trigger only)
+
+> **Crons disabled** — all `schedule:` blocks commented out. Kept for `workflow_dispatch` fallback.
+
+| # | Workflow file | Script | Env vars needed |
+|---|--------------|--------|-----------------|
+| ① | `fixtures.yml` | `workers/jobs/fetch_fixtures.py` | SUPABASE_*, API_FOOTBALL_KEY |
+| ② | `enrichment.yml` | `workers/jobs/fetch_enrichment.py` | SUPABASE_*, API_FOOTBALL_KEY |
+| ③ | `odds.yml` | `workers/jobs/fetch_odds.py` | SUPABASE_*, API_FOOTBALL_KEY |
+| ④ | `predictions.yml` | `workers/jobs/fetch_predictions.py` | SUPABASE_*, API_FOOTBALL_KEY |
+| ⑤ | `betting.yml` | `workers/jobs/betting_pipeline.py` | SUPABASE_*, API_FOOTBALL_KEY |
+| ⑥ | `live_tracker.yml` | `workers/jobs/live_tracker.py` | SUPABASE_*, DATABASE_URL |
+| ⑦ | `news_checker.yml` | `workers/jobs/news_checker.py` | SUPABASE_*, GEMINI_API_KEY |
+| ⑧ | `settlement.yml` | `workers/jobs/settlement.py` | SUPABASE_*, API_FOOTBALL_KEY, GEMINI_API_KEY |
+| ⑨ | `backfill.yml` | `scripts/backfill_historical.py` | SUPABASE_*, API_FOOTBALL_KEY |
+| — | `migrate.yml` | Supabase CLI | SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF |
 
 ---
 
@@ -86,14 +105,21 @@
 - For each of 16 bots: calibrate, check odds movement, Kelly sizing, place bet
 - `daily_pipeline_v2.py run_morning(skip_fetch=False)` still works for manual full runs
 
-### ⑥ Live Tracker (`live_tracker.py`)
-- AF `/fixtures?live=all` — live scores + minute
-- AF `/fixtures/statistics` — live xG, shots, SoT, possession, corners per match
-- AF `/odds/live` — in-play odds (all O/U lines + 1X2 + BTTS)
-- AF `/fixtures/lineups` — 20-40min before kickoff
-- AF `/fixtures/events` — goals, cards, subs, VAR → derives red card state
+### ⑥ Live Tracker / LivePoller (`live_poller.py` + `live_tracker.py`)
+
+**Runs on Railway as a daemon thread** with tiered polling (replaced 5-min GH Actions cron):
+
+| Tier | Interval | Endpoints | Calls/cycle |
+|------|----------|-----------|-------------|
+| **Fast** | 30s | `/fixtures?live=all` (bulk), `/odds/live` (bulk) | 2 |
+| **Medium** | 60s | `/fixtures/statistics` (per match), `/fixtures/events` (per match) | 2N |
+| **Slow** | 5min | `/fixtures/lineups` (upcoming), match map refresh | ~2-5 |
+
+- DB writes via **direct PostgreSQL** (psycopg2 bulk inserts) — 10-50x faster than PostgREST
 - Pre-match model context (O/U 2.5 probability) loaded into each snapshot
 - All data written to unified `live_match_snapshots` row per match per cycle
+- ~10K-15K AF API calls/day during live play (was ~3.4K at 5-min polling)
+- Match window: 10:00-23:00 UTC (configurable)
 
 ### ⑦ News Checker (`news_checker.py`)
 - Gemini 2.5 Flash AI analysis of pending bets
@@ -151,17 +177,15 @@ After step 5: bets are placed, value bets page has data.
 
 ---
 
-## GitHub Actions Budget
+## GitHub Actions Budget (post-Railway migration)
 
-~150-180 minutes/day. Free for public repos (unlimited).
+**~100-200 minutes/month** (down from ~11,280 min/month). All scheduled jobs moved to Railway.
 
-| Job | Runs/day | Minutes each | Total/day |
-|-----|---------|-------------|-----------|
-| Fixtures | 1 | 5 | 5 |
-| Enrichment | 3 | 10/5/5 | 20 |
-| Odds | 12 | 5 | 60 |
-| Predictions | 1 | 10 | 10 |
-| Betting | 1 | 10 | 10 |
-| Live Tracker | ~120 | 3 | ~60 (but very short) |
-| News Checker | 4 | 10 | 40 |
-| Settlement | 1 | 15 | 15 |
+| Usage | Runs/month | Minutes |
+|-------|-----------|---------|
+| Manual pipeline runs (recovery/testing) | ~5-10 | ~50 |
+| DB migrations (on push) | ~5-10 | ~20 |
+| Backfill (temporary) | ~240 while active | ~600 |
+| **Total** | — | **~100-200 min/month** (without backfill) |
+
+> Repos can now go private without cost concern — well under 2,000 free min/month limit.

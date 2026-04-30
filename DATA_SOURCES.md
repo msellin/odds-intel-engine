@@ -28,15 +28,16 @@
 | Injuries (T3) | ~7 | Morning |
 | Standings (T9) | ~40 | Morning |
 | H2H (T10) | ~130 | Morning |
-| Live fixtures + stats (T6) | ~120 | Live tracker every 5min |
-| Live odds (T5) | ~120 | Live tracker every 5min |
-| Lineups (T7) | ~120 | Live tracker pre-KO |
-| Events (T8) | ~120 | Live tracker + settlement |
+| Live fixtures (T6) | ~5,280 | LivePoller fast tier (30s, bulk) |
+| Live odds (T5) | ~5,280 | LivePoller fast tier (30s, bulk) |
+| Live stats (T6) | ~4,300 | LivePoller medium tier (60s, per-match) |
+| Events (T8) | ~4,300 | LivePoller medium tier (60s, per-match) + settlement |
+| Lineups (T7) | ~50 | LivePoller slow tier (5min, pre-KO) |
 | Post-match stats (T4) | ~120 | Settlement |
 | Player stats (T12) | ~120 | Settlement |
-| **Total** | **~1,512** | **2% of 75K limit** |
+| **Total** | **~10K-15K** | **13-20% of 75K limit** |
 
-Remaining headroom: ~73,500 req/day for historical backfill or new features.
+Remaining headroom: ~60K req/day. AF Ultra required — **do NOT downgrade to Pro** (7.5K limit).
 
 ---
 

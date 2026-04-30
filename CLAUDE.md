@@ -15,6 +15,7 @@ All project documentation lives in this repo (`odds-intel-engine/`). Before star
 | `WORKFLOWS.md` | Pipeline architecture — all scheduled jobs, order, manual run instructions, data sources |
 | `DATA_SOURCES.md` | Data source architecture, API-Football integration status, alternatives evaluated |
 | `INFRASTRUCTURE.md` | Full infra stack, current costs, and projections by growth phase |
+| `docs/ENGAGEMENT_PLAYBOOK.md` | Engagement & growth strategy — social proof, AI features, email, SEO, retention hooks (ENG-1 to ENG-17) |
 | `docs/AF_ENDPOINT_FREQUENCY.md` | API-Football endpoint update frequencies vs our polling — identifies gaps |
 | `docs/API-Football_Documentation_v3.9.3.pdf` | Full API-Football v3.9.3 docs (130 pages) — reference for endpoint params, update frequencies |
 | `data/model_results/SOCCER_FINDINGS.md` | Soccer model iterations and backtest results (archival) |
@@ -90,7 +91,7 @@ ESPN (free)                  -> Settlement results backup
                     ③ Odds        (every 2h 05-22 UTC) — AF bulk odds + Kambi
                     ④ Predictions (05:30 UTC) — AF predictions
                     ⑤ Betting     (06:00 UTC) — Poisson/XGBoost model + signals + bet placement
-                    ⑥ Live Tracker (every 5min, 12-22 UTC) — live scores, odds, events, lineups
+                    ⑥ Live Tracker (30s/60s/5min tiered, 10-23 UTC) — live scores, odds, events, lineups
                     ⑦ News Checker (09:00/12:30/16:30/19:30 UTC) — Gemini AI analysis
                     ⑧ Settlement  (21:00 UTC) — settle bets, post-match stats, ELO, CLV
                                          |
@@ -103,10 +104,12 @@ ESPN (free)                  -> Settlement results backup
 
 - Python 3.14, dependencies in `requirements.txt`
 - Supabase for DB (PostgreSQL) — migrations in `supabase/migrations/`
-- GitHub Actions for automation — workflows in `.github/workflows/`
+- **Railway** for pipeline automation (`workers/scheduler.py` — long-running process, $5/mo)
+- Direct PostgreSQL (psycopg2) for live tracker DB operations; PostgREST for scheduled jobs
+- GitHub Actions kept for manual `workflow_dispatch` triggers + DB migrations only
 - Credentials in `.env` (gitignored) — never commit secrets
 - Prediction model: Poisson + XGBoost blend with 3-tier fallback (A/B/C)
-- 9 paper trading bots running since 2026-04-27
+- 16 paper trading bots running since 2026-04-27
 
 ---
 
