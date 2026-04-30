@@ -72,12 +72,21 @@ Access levels for anonymous visitors, free signed-in users, and paid subscribers
 
 | Feature | Anonymous | Free | Pro | Elite |
 |---------|:---------:|:------------:|:-------------:|:-------------:|
-| Model prediction accuracy (public track record) | Y | Y | Y | Y |
+| Track record — hero (CLV avg, value bets count, coverage) | Y | Y | Y | Y |
+| Track record — CLV education + system status + progress bar | Y | Y | Y | Y |
+| Track record — early results (contextualized, collapsible) | Y | Y | Y | Y |
+| Track record — prediction history (limited 20 rows, basic columns) | Y | Y | Y | Y |
+| Track record — prediction history (full + best odds + CLV column) | — | — | Y | Y |
+| Track record — prediction history (+ edge % column) | — | — | — | Y |
+| Track record — feature comparison table | Y | Y | Y | — |
+| Track record — today's picks (match + pick + confidence) | Y | Y | Y | Y |
+| Track record — today's picks (+ best odds revealed) | — | — | Y | Y |
+| Track record — today's picks (+ Kelly stake revealed) | — | — | — | Y |
 | Value bets page — stats only (bet count, edge tiers, leagues) | — | Y | Y | Y |
 | Value bets page — directional (match + selection + edge tier) | — | — | Y | Y |
 | Value bets page — full (odds, model prob, exact edge %, stake) | — | — | — | Y |
 | Model probability + edge % per match | — | — | — | Y |
-| CLV tracking (closing line value) | — | — | — | Y |
+| CLV tracking per bet (Pro on track record, Elite on match detail) | — | — | Y | Y |
 | Full bot ROI analytics + strategy breakdown | — | — | — | Y |
 
 ---
@@ -122,7 +131,7 @@ All new tables have RLS policies: users can only read/write their own data.
 | `/matches` | Public |
 | `/matches/[id]` | Public (pro sections gated in UI) |
 | `/login`, `/signup` | Public |
-| `/track-record` | Public (model accuracy section); bot P&L superadmin only |
+| `/track-record` | Public (hero, CLV education, status, progress, early results, feature comparison). Pro: full history + CLV. Elite: + edge %. Bot P&L superadmin only |
 | `/how-it-works` | Public |
 | `/my-picks` | Authenticated (login modal if not signed in) |
 | `/profile` | Authenticated |

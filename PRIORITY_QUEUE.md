@@ -86,6 +86,8 @@
 | — | LP-2 | Landing page: remove Elite annual pricing | 15 min | ✅ Done 2026-04-29 | Low | Landing Page Review (2026-04-29) | Done | Elite card never had annual pricing shown. Verified. |
 | — | LP-3 | Landing page: consolidate Founding Member urgency | 15 min | ✅ Done 2026-04-29 | Low | Landing Page Review (2026-04-29) | Done | Removed bottom banner. Card badges are single source of truth now. |
 
+| — | TR-REDESIGN | Track record page redesign: CLV-led, tier-gated, no bankroll sim | 1 day | ✅ Done 2026-04-30 | **Very High** | 4-AI UX Review (2026-04-30) | Done | Removed LayeredSimulation (4 declining bankroll curves). New hero: CLV, value bets, coverage. CLV education, system status, significance progress bar. Early results collapsible. Prediction history tier-gated (free: 20 rows + blurred Pro/Elite columns, Pro: full + CLV, Elite: + edge %). Feature comparison table. Tiered today's picks. Footer CTA. Based on 8 independent AI reviews (4 page structure + 4 tier gating). |
+
 ---
 
 ## Frontend UX — Completed (2026-04-29)
