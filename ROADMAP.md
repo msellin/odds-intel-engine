@@ -119,7 +119,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 ---
 
-## Current System State (2026-04-30)
+## Current System State (2026-05-01)
 
 ### Backend
 | Component | Status |
@@ -134,6 +134,8 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | ⑦ AI news checker (4×/day) | ✅ Gemini 2.5 Flash, qualitative-only |
 | ⑧ Settlement (21:00 UTC) | ✅ T4/T8/T12 + settle + CLV + ELO + post-mortem + weekly Platt recalibration (Sundays) |
 | ⑨ Historical backfill (8 cron slots/day) | ✅ Built — 3-phase backfill of ~55K matches via spare API quota |
+| ⑩ AI match previews (07:00 UTC) | ✅ ENG-3 — Gemini 200-word previews for top 10 matches → `match_previews` table |
+| ⑪ Email digest (07:30 UTC) | ✅ ENG-4 — Resend, tier-gated (Free/Pro/Elite), requires `RESEND_API_KEY` |
 | 16 paper trading bots | ✅ 10 original (since 2026-04-27) + 6 new BTTS/O/U/draw bots (2026-04-30) |
 | match_signals (EAV signal store) | ✅ 20+ signals per match |
 | match_feature_vectors (ML training table) | ✅ Nightly ETL, wide table |
@@ -172,6 +174,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 - [x] **Stripe webhook endpoint** — endpoint created, `STRIPE_WEBHOOK_SECRET` added to Vercel
 - [x] **GitHub secrets** — `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `API_FOOTBALL_KEY`, `SUPABASE_SECRET_KEY`, `SUPABASE_URL`, `SUPABASE_DB_PASSWORD`, `GEMINI_API_KEY` all set
 - [x] **Vercel env var** — `GEMINI_API_KEY` added to Production (for BET-EXPLAIN `/api/bet-explain`)
+- [ ] **Resend** — create account at resend.com, verify `oddsintelhq.com` sending domain, get API key, add `RESEND_API_KEY` to Railway env vars + `.env`
 
 ---
 

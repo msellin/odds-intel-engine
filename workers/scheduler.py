@@ -233,6 +233,16 @@ def job_news_checker():
     _run_job("news_checker", run_news_checker)
 
 
+def job_match_previews():
+    from workers.jobs.match_previews import run_match_previews
+    _run_job("match_previews", run_match_previews)
+
+
+def job_email_digest():
+    from workers.jobs.email_digest import run_email_digest
+    _run_job("email_digest", run_email_digest)
+
+
 def job_settlement():
     _run_job("settlement", settlement_pipeline)
 
@@ -360,6 +370,14 @@ def main():
         scheduler.add_job(job_news_checker, CronTrigger(hour=hour, minute=minute),
                           id=f"news_{hour:02d}{minute:02d}",
                           name=f"News {hour:02d}:{minute:02d}")
+
+    # ENG-3: AI match previews — 07:00 UTC (after morning pipeline settles)
+    scheduler.add_job(job_match_previews, CronTrigger(hour=7, minute=0),
+                      id="match_previews", name="Match Previews 07:00")
+
+    # ENG-4: Email digest — 07:30 UTC (after previews are generated)
+    scheduler.add_job(job_email_digest, CronTrigger(hour=7, minute=30),
+                      id="email_digest", name="Email Digest 07:30")
 
     # Settlement: 21:00 + 23:30 UTC (late-finishing European matches)
     scheduler.add_job(job_settlement, CronTrigger(hour=21, minute=0),

@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-01 — BOT-TIMING + POSTGREST-CLEANUP done. 16 bots split into morning/midday/pre_ko cohorts. All PostgREST direct calls removed from engine (settlement, pipeline_utils, news_checker, fetch_odds, fetch_enrichment, daily_pipeline_v2). Direct psycopg2 throughout. Migration 032 adds timing_cohort to simulated_bets.
+> Last updated: 2026-05-01 — ENG-3 + ENG-4 done. Daily AI match previews (07:00 UTC, Gemini, match_previews table, migration 033) + email digest via Resend (07:30 UTC, migration 034). Before that: BOT-TIMING + POSTGREST-CLEANUP. 16 bots split into morning/midday/pre_ko cohorts. Direct psycopg2 throughout. Migration 032 adds timing_cohort to simulated_bets.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -99,8 +99,8 @@
 
 | ID | Task | Effort | ☑ | Ready? | Notes |
 |----|------|--------|----|--------|-------|
-| ENG-3 | Daily AI match previews (top 5-10, Gemini) | 1-2 days | ⬜ | ✅ Ready | **Very High.** Triple duty: on-site + email + social. 07:00 UTC cron. Feed signals+odds+form → 200-word preview. Store in `match_previews` table. Free/Pro/Elite see varying detail |
-| ENG-4 | Daily email digest via Resend | 2-3 days | ⬜ | ✅ Ready | **#1 retention driver** (unanimous). 07:00 UTC. Free: 3 previews + CTA. Pro: + value bet count. Elite: + full picks. Unsubscribe controls. Subsumes STRIPE-EMAIL |
+| ENG-3 | Daily AI match previews (top 5-10, Gemini) | 1-2 days | ✅ Done 2026-05-01 | ✅ Ready | `workers/jobs/match_previews.py`. Scheduler 07:00 UTC. `match_previews` table (migration 033). Free sees teaser, Pro/Elite see full 200-word preview. Triple-duty: on-site + email + social. |
+| ENG-4 | Daily email digest via Resend | 2-3 days | ✅ Done 2026-05-01 | ✅ Ready | `workers/jobs/email_digest.py`. Scheduler 07:30 UTC. `email_digest_log` table (migration 034). Free: teasers + CTA. Pro: + bet count. Elite: + full picks table. Resend REST API via httpx. Set `RESEND_API_KEY` in .env. |
 | ENG-1 | "X analyzing this match" live counter | 4-6h | ⬜ | ✅ Ready | Rolling 30min page view counter per match. Supabase realtime or DB counter. All tiers. Makes site feel alive |
 | ENG-2 | Community vote split display | 4-6h | ⬜ | ✅ Ready | `match_votes` table exists. Horizontal bar Home/Draw/Away % on match detail. Lock at kickoff |
 | ENG-6 | Bot consensus on match detail ("7/9 models agree: Over 2.5") | 3-4h | ⬜ | ✅ Ready | Data in `simulated_bets`. Zero new data needed. Free: count. Pro: markets. Elite: full breakdown |

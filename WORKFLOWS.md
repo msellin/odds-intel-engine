@@ -1,7 +1,7 @@
 # OddsIntel — Workflows & Pipeline Architecture
 
 > Single source of truth for all scheduled jobs, their order, and manual run instructions.
-> Last updated: 2026-05-01 — Railway migration complete. All jobs run via `workers/scheduler.py` on Railway ($5/mo). Live tracker upgraded to 30s/60s/5min tiered polling via `workers/live_poller.py`. POSTGREST-CLEANUP complete — all engine files now use direct psycopg2 (`execute_query`/`execute_write`/`bulk_insert`); `get_client()` only in `supabase_client.py` internals. BOT-TIMING: 16 bots split into morning/midday/pre_ko cohorts, cohort auto-selected by UTC hour.
+> Last updated: 2026-05-01 — ENG-3/ENG-4 added: `match_previews.py` at 07:00 UTC (Gemini previews) + `email_digest.py` at 07:30 UTC (Resend). Migrations 033+034. Add `RESEND_API_KEY` to Railway env vars. Before that: Railway migration complete, POSTGREST-CLEANUP, BOT-TIMING (16 bots in 3 cohorts).
 
 ### ✅ Railway Migration Complete (2026-04-30)
 
@@ -22,6 +22,8 @@
        ④ Predictions     run_predictions()         AF predictions (coverage-aware)
        ⑤ Betting         run_betting()             Poisson/XGBoost model + signals + bet placement
        (morning pipeline — chained sequentially, completes by ~06:30)
+07:00  ⑩ Match Previews  run_match_previews()      Top 10 matches → Gemini 200-word previews (ENG-3)
+07:30  ⑪ Email Digest    run_email_digest()        Resend — tier-gated digest to subscribed users (ENG-4)
 07-22  ③ Odds (repeat)   run_odds()                Every 2h: 07,08,10,12,14,16,18,20,22 UTC
 11,15  ⑨ Betting Refresh  betting_refresh()         Pre-KO re-evaluation with fresh odds, lineups, news
 19     ⑨ Betting Refresh  betting_refresh()         Evening KO window re-evaluation
@@ -49,7 +51,7 @@
 
 ### Railway Environment Variables
 
-`SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `API_FOOTBALL_KEY`, `GEMINI_API_KEY`, `DATABASE_URL`, `TZ=UTC`
+`SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `API_FOOTBALL_KEY`, `GEMINI_API_KEY`, `DATABASE_URL`, `RESEND_API_KEY`, `DIGEST_FROM_EMAIL`, `SITE_URL`, `TZ=UTC`
 
 ### GitHub Actions Workflow Files (manual trigger only)
 
@@ -147,6 +149,26 @@
    - Gemini post-mortem analysis of losses
    - **Sundays only:** Platt recalibration (`scripts/fit_platt.py`) — refits sigmoid α/β per market from all settled predictions → `model_calibration` table
 
+### ⑩ Match Previews (`match_previews.py`) — ENG-3
+- Runs at 07:00 UTC, after morning pipeline completes
+- Selects top 10 matches for today: ranked by league tier then signal count
+- For each match: gathers form, H2H, injuries, odds, model prediction, key signals from DB
+- Calls Gemini 2.5 Flash: generates 180-220 word preview + 40-55 word teaser
+- Upserts into `match_previews` table (migration 033) — idempotent, safe to re-run
+- Content is triple-duty: match detail page (Free sees teaser, Pro/Elite see full), email digest, social posts
+- Manual run: `python -m workers.jobs.match_previews --dry-run`
+
+### ⑪ Email Digest (`email_digest.py`) — ENG-4
+- Runs at 07:30 UTC, after ⑩ Match Previews completes
+- Sends tier-appropriate HTML email via Resend REST API (httpx)
+  - **Free:** 3 preview teasers + bet count teaser + upgrade CTA
+  - **Pro:** 3 full previews + value bet count + link to value bets page
+  - **Elite:** 3 full previews + value bet table (top 5 with odds/edge/confidence)
+- Only sends to users with `user_notification_settings.email_digest_enabled = true`
+- One email per user per day enforced by `email_digest_log` unique constraint (migration 034)
+- Requires `RESEND_API_KEY` in env (+ Railway env vars). Set `RESEND_API_KEY` in `.env` and Railway dashboard.
+- Manual run: `python -m workers.jobs.email_digest --dry-run` (prints emails, logs as "skipped")
+
 ### ⑨ Historical Backfill (`backfill_historical.py`)
 - Fetches historical fixtures, odds, statistics, events from API-Football
 - Runs during spare API quota windows (overnight + daytime gaps, 8 cron slots)
@@ -186,7 +208,8 @@ After step 5: bets are placed, value bets page has data.
 | **API-Football Ultra** | Primary: fixtures, odds (13 bookmakers), predictions, injuries, lineups, standings, H2H, stats, live | $29/mo |
 | **Kambi** | Supplementary odds (Unibet/Paf, 68 leagues) | Free |
 | **ESPN** | Settlement results backup | Free |
-| **Gemini 2.5 Flash** | AI news analysis (qualitative signals) | ~$0.04/day |
+| **Gemini 2.5 Flash** | AI news analysis (qualitative signals) + match previews (ENG-3) | ~$0.05/day |
+| **Resend** | Email digest delivery (ENG-4) | Free to 3,000 emails/mo |
 
 ---
 
