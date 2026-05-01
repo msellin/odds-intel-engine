@@ -94,6 +94,7 @@ ESPN (free)                  -> Settlement results backup
                     ⑥ Live Tracker (30s/60s/5min tiered, 10-23 UTC) — live scores, odds, events, lineups
                     ⑦ News Checker (09:00/12:30/16:30/19:30 UTC) — Gemini AI analysis
                     ⑧ Settlement  (21:00 UTC) — settle bets, post-match stats, ELO, CLV
+                    ⑨ Betting Refresh (11:00/15:00/19:00 UTC) — pre-KO re-evaluation with fresh data
                                          |
                                Supabase Database (15 tables)
                                          |
@@ -105,7 +106,7 @@ ESPN (free)                  -> Settlement results backup
 - Python 3.14, dependencies in `requirements.txt`
 - Supabase for DB (PostgreSQL) — migrations in `supabase/migrations/`
 - **Railway** for pipeline automation (`workers/scheduler.py` — long-running process, $5/mo)
-- Direct PostgreSQL (psycopg2) for live tracker DB operations; PostgREST for scheduled jobs
+- Direct PostgreSQL (psycopg2) for all `supabase_client.py` functions + live tracker; PostgREST kept for external callers (settlement, pipeline_utils)
 - GitHub Actions kept for manual `workflow_dispatch` triggers + DB migrations only
 - Credentials in `.env` (gitignored) — never commit secrets
 - Prediction model: Poisson + XGBoost blend with 3-tier fallback (A/B/C)

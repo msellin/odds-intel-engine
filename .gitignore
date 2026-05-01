@@ -14,3 +14,7 @@ data/models/
 data/logs/
 supabase/.temp/
 .claude/
+
+# Lighthouse reports
+lighthouse-*.json
+lighthouse-*.html
