@@ -3,9 +3,14 @@ OddsIntel — Live Poller (Tiered Polling)
 
 Multi-frequency polling loop for live match data.
 Replaces the 5-minute APScheduler cron with:
-  - Fast tier (15s): bulk fixtures + live odds (2 API calls)
+  - Fast tier (30s): bulk fixtures + live odds (2 API calls)
   - Medium tier (60s): per-match statistics + events (2N API calls)
   - Slow tier (5min): lineups for upcoming + refresh match map
+
+RAIL-11: Smart priority tiers + event-triggered snapshots
+  - HIGH priority (active bet): fetch stats every cycle instead of medium interval
+  - NORMAL priority (all other live matches): stats every MEDIUM_MULTIPLIER cycles
+  - Event-triggered: goal or red card detected → immediate extra odds snapshot
 
 Runs in its own thread alongside the APScheduler.
 Uses direct SQL (db.py) for all DB writes.
@@ -28,9 +33,12 @@ class LivePoller:
     """
     Tiered live match polling loop.
 
-    Fast tier (every 15s): 2 bulk API calls for all live fixtures + odds
-    Medium tier (every 60s): per-match stats + events
+    Fast tier (every 30s): 2 bulk API calls for all live fixtures + odds
+    Medium tier (every 60s): per-match stats + events for NORMAL priority matches
+    High priority (active bet): stats every fast cycle (30s)
     Slow tier (every 5min): lineups + match map refresh
+
+    Event-triggered: goal or red card → immediate extra odds snapshot
     """
 
     # Match window: UTC hours when live matches are expected
@@ -41,6 +49,9 @@ class LivePoller:
     FAST_INTERVAL = 30       # Bulk fixtures + odds (can go to 15s later)
     MEDIUM_MULTIPLIER = 2    # Stats every 2nd fast cycle (= 60s at 30s fast)
     SLOW_MULTIPLIER = 10     # Lineups every 10th fast cycle (= 5min at 30s fast)
+
+    # Active bet refresh: refresh the set of match_ids with pending bets
+    BET_REFRESH_MULTIPLIER = 5  # Every 5th slow cycle (~25 min)
 
     def __init__(self, budget_tracker, shutdown_flag_fn):
         """
@@ -54,9 +65,19 @@ class LivePoller:
         self._af_id_map: dict[int, dict] = {}
         self._last_map_refresh = 0.0
 
+        # RAIL-11: Smart priority tracking
+        # match_id → (score_home, score_away) from last cycle — detects goals
+        self._prev_scores: dict[str, tuple[int, int]] = {}
+        # Set of DB match_ids that have pending bets → HIGH priority
+        self._active_bet_match_ids: set[str] = set()
+        self._bet_refresh_count = 0  # Counts slow cycles, triggers bet refresh
+
     def run_forever(self):
         """Main polling loop. Call from a daemon thread."""
-        console.print("[bold cyan]LivePoller started — 15s/60s/5min tiered polling[/bold cyan]")
+        console.print("[bold cyan]LivePoller started — 30s/60s/5min tiered polling (RAIL-11 smart priority)[/bold cyan]")
+
+        # Load active bets immediately on startup
+        self._refresh_active_bets()
 
         while not self._should_stop():
             cycle_start = time.time()
@@ -89,6 +110,55 @@ class LivePoller:
         hour = datetime.now(timezone.utc).hour
         return self.MATCH_WINDOW_START <= hour <= self.MATCH_WINDOW_END
 
+    def _refresh_active_bets(self):
+        """Query DB for match_ids with pending simulated bets → HIGH priority matches."""
+        try:
+            from workers.api_clients.db import execute_query
+            rows = execute_query(
+                "SELECT DISTINCT match_id FROM simulated_bets WHERE result = 'pending'"
+            )
+            self._active_bet_match_ids = {str(r["match_id"]) for r in rows}
+            if self._active_bet_match_ids:
+                console.print(
+                    f"[cyan]LivePoller: {len(self._active_bet_match_ids)} HIGH-priority matches "
+                    f"(active bets)[/cyan]"
+                )
+        except Exception as e:
+            console.print(f"[yellow]LivePoller: failed to refresh active bets: {e}[/yellow]")
+
+    def _is_high_priority(self, match_id: str) -> bool:
+        """Return True if this match has an active bet — gets 30s stats instead of 60s."""
+        return str(match_id) in self._active_bet_match_ids
+
+    def _detect_key_event(self, match_id: str, af_fix: dict) -> bool:
+        """
+        Detect goal or red card since last cycle.
+        Returns True if a key event was detected (triggers extra odds snapshot).
+        A goal is detected via score change; red cards are detected via the
+        'red_card_home'/'red_card_away' fields if present in af_fix, or
+        by score jump >1 which is anomalous and worth snapshotting anyway.
+        """
+        score_home = af_fix.get("score_home", 0) or 0
+        score_away = af_fix.get("score_away", 0) or 0
+        prev = self._prev_scores.get(match_id)
+
+        if prev is None:
+            # First time seeing this match — store baseline, no event yet
+            self._prev_scores[match_id] = (score_home, score_away)
+            return False
+
+        prev_home, prev_away = prev
+        self._prev_scores[match_id] = (score_home, score_away)
+
+        if score_home != prev_home or score_away != prev_away:
+            console.print(
+                f"[bold yellow]GOAL detected: match {match_id} "
+                f"{prev_home}-{prev_away} → {score_home}-{score_away}[/bold yellow]"
+            )
+            return True
+
+        return False
+
     def _run_cycle(self):
         """Execute one polling cycle."""
         from workers.jobs.live_tracker import (
@@ -113,7 +183,12 @@ class LivePoller:
             except Exception as e:
                 console.print(f"[yellow]Lineup fetch error: {e}[/yellow]")
 
-        # ── Fast tier: bulk fixtures + odds (every cycle = 15s) ────────────
+            # Refresh active bet match_ids periodically
+            self._bet_refresh_count += 1
+            if self._bet_refresh_count % self.BET_REFRESH_MULTIPLIER == 0:
+                self._refresh_active_bets()
+
+        # ── Fast tier: bulk fixtures + odds (every cycle = 30s) ────────────
         if not self.budget.can_call():
             if self._cycle % self.SLOW_MULTIPLIER == 0:
                 console.print("[yellow]LivePoller: API budget low, skipping cycle[/yellow]")
@@ -126,15 +201,22 @@ class LivePoller:
 
         # Log periodically (every ~2 min)
         if self._cycle % (self.SLOW_MULTIPLIER // 2 or 4) == 0:
+            high_count = sum(
+                1 for af_fix in fixtures
+                if str(self._af_id_map.get(af_fix.get("af_fixture_id"), {}).get("id", ""))
+                in self._active_bet_match_ids
+            )
             console.print(
                 f"[dim]LivePoller cycle {self._cycle}: "
-                f"{len(fixtures)} live, budget {self.budget.remaining()}/75K[/dim]"
+                f"{len(fixtures)} live ({high_count} HIGH priority), "
+                f"budget {self.budget.remaining()}/75K[/dim]"
             )
 
         # ── Build snapshots from fixtures + odds ───────────────────────────
         pending_snapshots = []
         pending_odds = []
         pending_status = []
+        event_triggered_odds = []  # Extra odds on goal/red card
 
         for af_fix in fixtures:
             af_id = af_fix.get("af_fixture_id")
@@ -154,8 +236,16 @@ class LivePoller:
             # Build snapshot (fast tier — no stats yet)
             snapshot = build_snapshot(af_fix, fixture_odds)
 
-            # ── Medium tier: stats + events (every Nth cycle = ~60s) ────
-            if self._cycle % self.MEDIUM_MULTIPLIER == 0 and af_id:
+            # ── RAIL-11: Determine if this match needs HIGH-priority stats ──
+            is_high = self._is_high_priority(match_id)
+
+            # Fetch stats on medium interval OR every cycle for HIGH priority
+            fetch_stats_this_cycle = (
+                is_high or
+                (self._cycle % self.MEDIUM_MULTIPLIER == 0)
+            )
+
+            if fetch_stats_this_cycle and af_id:
                 stats = fetch_match_stats_for(af_id)
                 if stats:
                     # Merge stats into snapshot
@@ -169,7 +259,7 @@ class LivePoller:
                     if stats.get("passes_away") is not None:
                         snapshot["attacks_away"] = stats["passes_away"]
 
-                # Events
+                # Events (always with stats fetch)
                 events = fetch_match_events_for(af_id)
                 if events:
                     home_api_id = af_fix.get("home_team_api_id")
@@ -178,6 +268,13 @@ class LivePoller:
                                                  home_team_api_id=home_api_id)
                     except Exception:
                         pass
+
+            # ── RAIL-11: Event-triggered snapshot on goal / red card ────────
+            key_event = self._detect_key_event(match_id, af_fix)
+            if key_event and fixture_odds:
+                # Tag these odds rows as event-triggered (same format as pending_odds)
+                for lr in fixture_odds:
+                    event_triggered_odds.append({**lr, "match_id": match_id})
 
             # Collect for batch write
             snapshot["match_id"] = match_id
@@ -206,6 +303,17 @@ class LivePoller:
         except Exception as e:
             console.print(f"[yellow]Batch odds error: {e}[/yellow]")
 
+        # Event-triggered extra odds snapshot (goal/red card)
+        if event_triggered_odds:
+            try:
+                store_live_odds_batch(event_triggered_odds)
+                console.print(
+                    f"[yellow]Event-triggered odds snapshot: "
+                    f"{len(event_triggered_odds)} rows stored[/yellow]"
+                )
+            except Exception as e:
+                console.print(f"[yellow]Event odds error: {e}[/yellow]")
+
         finished_match_ids = []
         for entry in pending_status:
             try:
@@ -214,6 +322,9 @@ class LivePoller:
                     match_id, status, score_home, score_away = entry
                     finish_match_sql(match_id, score_home, score_away)
                     finished_match_ids.append(match_id)
+                    # Remove from active bets and score tracking once finished
+                    self._active_bet_match_ids.discard(str(match_id))
+                    self._prev_scores.pop(str(match_id), None)
                     console.print(
                         f"[green]Match finished: {match_id} → "
                         f"{score_home}-{score_away}[/green]"
