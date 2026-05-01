@@ -618,6 +618,11 @@ def store_prediction(match_id: str, market: str, prediction: dict,
     if prediction.get("edge") is not None:
         row["edge_percent"] = prediction["edge"]
 
+    # Sanitize: numpy scalars → native Python floats, NaN/Inf → None.
+    # psycopg2 cannot handle numpy types — it interprets np.float64(x) as a
+    # schema reference and raises 'schema "np" does not exist'.
+    row = {k: _sanitize_for_json(v) for k, v in row.items()}
+
     columns = list(row.keys())
     col_str = ", ".join(columns)
     placeholders = ", ".join(["%s"] * len(columns))
