@@ -8,7 +8,7 @@
 > All pipeline jobs now run on **Railway** as a single long-running Python process (`workers/scheduler.py`).
 > GitHub Actions crons are **disabled** — kept only for manual `workflow_dispatch` triggers and DB migrations.
 > Live tracker replaced by **LivePoller** (`workers/live_poller.py`) with tiered polling: **30s** (odds/scores), **60s** (stats/events), **5min** (lineups).
-> Direct PostgreSQL (psycopg2 via `workers/api_clients/db.py`) used for live tracker DB writes — 10-50x faster than PostgREST.
+> Direct PostgreSQL (psycopg2 via `workers/api_clients/db.py`) used for all `supabase_client.py` functions + live tracker. `get_client()` still returns PostgREST for external callers (settlement, pipeline_utils) — migration ongoing.
 
 ---
 
@@ -22,6 +22,8 @@
        ⑤ Betting         run_betting()             Poisson/XGBoost model + signals + bet placement
        (morning pipeline — chained sequentially, completes by ~06:30)
 07-22  ③ Odds (repeat)   run_odds()                Every 2h: 07,08,10,12,14,16,18,20,22 UTC
+11,15  ⑨ Betting Refresh  betting_refresh()         Pre-KO re-evaluation with fresh odds, lineups, news
+19     ⑨ Betting Refresh  betting_refresh()         Evening KO window re-evaluation
 12,16  ② Enrichment      run_enrichment()          Injuries + standings refresh
 10-23  ⑥ LivePoller      live_poller.py            30s: scores+odds, 60s: stats+events, 5min: lineups
        ⑦ News Checker    run_news_checker()        4x/day: 09:00, 12:30, 16:30, 19:30 UTC

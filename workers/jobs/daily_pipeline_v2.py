@@ -545,8 +545,8 @@ def _fetch_af_predictions(af_id_to_match_id: dict[int, str]) -> dict[str, dict]:
                 client.table("matches").update({
                     "af_prediction": parsed["raw"]
                 }).eq("id", match_id).execute()
-            except Exception:
-                pass  # non-critical
+            except Exception as e:
+                console.print(f"  [yellow]AF prediction JSONB store failed for {match_id}: {e}[/yellow]")
 
             # S1-AF: also store as separate prediction rows (source='af')
             for market, prob_key in [
@@ -561,8 +561,8 @@ def _fetch_af_predictions(af_id_to_match_id: dict[int, str]) -> dict[str, dict]:
                             "model_prob": prob,
                             "reasoning": "af_prediction",
                         }, source="af")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        console.print(f"  [yellow]Prediction store failed {match_id}/{market}: {e}[/yellow]")
 
             fetched += 1
 
@@ -944,64 +944,69 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], dict[str, dict]]:
     """
     PIPE-2: Load today's matches with best pre-match odds + AF predictions from DB.
     No API calls — reads odds_snapshots and predictions tables only.
+    Uses direct SQL to avoid PostgREST URL length limits with large IN clauses.
     Returns (odds_matches list, af_preds dict keyed by match_id).
     """
     from collections import defaultdict as _dd
-    client = get_client()
+    from workers.api_clients.db import execute_query
     next_day_str = _next_day(today_str)
 
     # 1. Load today's scheduled + recently-live matches with team + league info
-    #    Include live matches so we don't miss games that kicked off between pipeline runs.
-    #    The bet loop below skips any live match that's been going for >5 minutes.
-    #    Duplicate bets prevented by DB unique constraint (bot_id, match_id, market, selection).
-    #    Finished matches excluded — their pre-match odds are stale.
-    matches_r = client.table("matches").select(
-        "id, date, referee, season, "
-        "home_team:home_team_id(name, country), "
-        "away_team:away_team_id(name, country), "
-        "league:league_id(name, country, tier, api_football_id)"
-    ).gte("date", f"{today_str}T00:00:00Z").lt(
-        "date", f"{next_day_str}T00:00:00Z"
-    ).in_("status", ["scheduled", "live"]).execute()
+    matches_raw = execute_query(
+        """SELECT m.id, m.date, m.referee, m.season,
+                  th.name AS home_team_name, th.country AS home_country,
+                  ta.name AS away_team_name, ta.country AS away_country,
+                  l.name AS league_name, l.country AS league_country,
+                  l.tier AS league_tier, l.api_football_id AS league_api_id
+           FROM matches m
+           JOIN teams th ON m.home_team_id = th.id
+           JOIN teams ta ON m.away_team_id = ta.id
+           LEFT JOIN leagues l ON m.league_id = l.id
+           WHERE m.date >= %s AND m.date < %s
+             AND m.status IN ('scheduled', 'live')""",
+        (f"{today_str}T00:00:00Z", f"{next_day_str}T00:00:00Z"),
+    )
 
-    if matches_r.data:
-        # Filter out live matches that kicked off > 5 minutes ago
-        now_utc = datetime.now(timezone.utc)
-        filtered = []
-        for m in matches_r.data:
-            kickoff_str = m.get("date", "")
-            try:
-                kickoff = datetime.fromisoformat(kickoff_str.replace("Z", "+00:00"))
-                if kickoff.tzinfo is None:
-                    kickoff = kickoff.replace(tzinfo=timezone.utc)
-                minutes_since = (now_utc - kickoff).total_seconds() / 60
-                if minutes_since <= 5:
-                    filtered.append(m)  # Scheduled or just kicked off
-            except (ValueError, AttributeError):
-                filtered.append(m)  # Can't parse date — include it
-        matches_r.data = filtered
-
-    if not matches_r.data:
+    if not matches_raw:
         return [], {}
 
-    match_ids = [m["id"] for m in matches_r.data]
+    # Filter out live matches that kicked off > 5 minutes ago
+    now_utc = datetime.now(timezone.utc)
+    filtered = []
+    for m in matches_raw:
+        kickoff_str = str(m.get("date", ""))
+        try:
+            kickoff = datetime.fromisoformat(kickoff_str.replace("Z", "+00:00"))
+            if kickoff.tzinfo is None:
+                kickoff = kickoff.replace(tzinfo=timezone.utc)
+            minutes_since = (now_utc - kickoff).total_seconds() / 60
+            if minutes_since <= 5:
+                filtered.append(m)
+        except (ValueError, AttributeError):
+            filtered.append(m)
 
-    # 2. Load best pre-match odds per match per (market, selection)
-    #    Paginate in chunks of match IDs to avoid Supabase row limits (~1000 default)
+    if not filtered:
+        return [], {}
+
+    match_ids = [m["id"] for m in filtered]
+
+    # 2. Load best pre-match odds per match per (market, selection) — single query
+    odds_raw = execute_query(
+        """SELECT match_id, market, selection, odds, bookmaker
+           FROM odds_snapshots
+           WHERE match_id = ANY(%s::uuid[]) AND is_closing = false""",
+        (match_ids,),
+    )
+
     best: dict[str, dict[str, float]] = _dd(lambda: _dd(float))
     bm_sources: dict[str, set] = _dd(set)
-    for i in range(0, len(match_ids), 50):
-        chunk = match_ids[i:i + 50]
-        odds_r = client.table("odds_snapshots").select(
-            "match_id, market, selection, odds, bookmaker"
-        ).in_("match_id", chunk).eq("is_closing", False).limit(10000).execute()
-
-        for row in (odds_r.data or []):
-            mid = row["match_id"]
-            key = f"{row['market']}_{row['selection']}"
-            if float(row["odds"]) > best[mid][key]:
-                best[mid][key] = float(row["odds"])
-            bm_sources[mid].add(row.get("bookmaker", "unknown"))
+    for row in odds_raw:
+        mid = str(row["match_id"])
+        key = f"{row['market']}_{row['selection']}"
+        odds_val = float(row["odds"])
+        if odds_val > best[mid][key]:
+            best[mid][key] = odds_val
+        bm_sources[mid].add(row.get("bookmaker") or "unknown")
 
     MARKET_TO_FIELD = {
         "1x2_home": "odds_home", "1x2_draw": "odds_draw", "1x2_away": "odds_away",
@@ -1015,26 +1020,23 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], dict[str, dict]]:
 
     # 3. Build match dicts
     odds_matches = []
-    for m in matches_r.data:
-        mid = m["id"]
+    for m in filtered:
+        mid = str(m["id"])
         match_best = best.get(mid, {})
         if not match_best:
-            continue  # no odds at all — skip
+            continue
 
-        ht = m.get("home_team") or {}
-        at = m.get("away_team") or {}
-        lg = m.get("league") or {}
-        country = lg.get("country", "")
-        league_name = lg.get("name", "")
+        country = m.get("league_country") or ""
+        league_name = m.get("league_name") or ""
 
         match_dict: dict = {
             "id": mid,
-            "home_team": ht.get("name", ""),
-            "away_team": at.get("name", ""),
-            "start_time": m.get("date", ""),
+            "home_team": m.get("home_team_name", ""),
+            "away_team": m.get("away_team_name", ""),
+            "start_time": str(m.get("date", "")),
             "league_path": f"{country} / {league_name}" if country and league_name else league_name,
-            "tier": int(lg.get("tier") or 1),
-            "league_api_id": lg.get("api_football_id"),
+            "tier": int(m.get("league_tier") or 1),
+            "league_api_id": m.get("league_api_id"),
             "season": m.get("season"),
             "referee": m.get("referee"),
             "home_team_api_id": None,
@@ -1054,14 +1056,17 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], dict[str, dict]]:
                 match_dict[field] = val
         odds_matches.append(match_dict)
 
-    # 4. Load AF predictions from predictions table (source='af')
-    preds_r = client.table("predictions").select(
-        "match_id, market, model_probability"
-    ).in_("match_id", match_ids).eq("source", "af").execute()
+    # 4. Load AF predictions — single query
+    preds_raw = execute_query(
+        """SELECT match_id, market, model_probability
+           FROM predictions
+           WHERE match_id = ANY(%s::uuid[]) AND source = 'af'""",
+        (match_ids,),
+    )
 
     af_preds: dict[str, dict] = {}
-    for p in (preds_r.data or []):
-        mid = p["match_id"]
+    for p in preds_raw:
+        mid = str(p["match_id"])
         if mid not in af_preds:
             af_preds[mid] = {}
         mp = float(p["model_probability"])
@@ -1448,9 +1453,17 @@ def run_morning(skip_fetch: bool = False):
             for mkt, selection, odds, raw_mp, os_market, os_selection, base_threshold in candidate_specs:
                 ip = 1 / odds
 
+                # Guard: skip if raw model probability is NaN
+                if raw_mp != raw_mp:  # NaN != NaN is True
+                    continue
+
                 # P1: Calibrate probability (tier-specific shrinkage + Platt sigmoid)
                 platt_market = f"{os_market}_{os_selection}"
                 cal_prob = calibrate_prob(raw_mp, ip, tier=tier, market=platt_market)
+
+                # Guard: skip if calibration produced NaN
+                if cal_prob != cal_prob:
+                    continue
 
                 # Use calibrated probability for edge calculation
                 edge = cal_prob - ip

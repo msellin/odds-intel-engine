@@ -33,6 +33,8 @@ _shutdown_requested = False
 _start_time = time.time()
 _last_job: dict = {"name": None, "completed_at": None, "status": None}
 _last_job_lock = threading.Lock()
+_recent_errors: list[dict] = []  # Last N job errors for health endpoint
+_MAX_RECENT_ERRORS = 20
 
 SHADOW_MODE = os.getenv("SHADOW_MODE", "false").lower() == "true"
 HEALTH_PORT = int(os.getenv("PORT", "8080"))
@@ -46,26 +48,50 @@ def _job_prefix() -> str:
 
 def _run_job(name: str, fn, *args, **kwargs):
     """Wrapper that runs a job function with error isolation and logging."""
+    import traceback
     full_name = f"{_job_prefix()}{name}"
     started = datetime.now(timezone.utc)
     console.print(f"\n[bold cyan]{'─' * 60}[/bold cyan]")
     console.print(f"[bold cyan]Job: {full_name} @ {started.strftime('%H:%M:%S UTC')}[/bold cyan]")
     console.print(f"[bold cyan]{'─' * 60}[/bold cyan]\n")
 
+    error_msg = None
     try:
         fn(*args, **kwargs)
         status = "completed"
     except Exception as e:
         status = "failed"
-        console.print(f"\n[red]Job {full_name} failed: {e}[/red]")
+        error_msg = str(e)
+        tb = traceback.format_exc()
+        console.print(f"\n[red]{'═' * 60}[/red]")
+        console.print(f"[red bold]JOB FAILED: {full_name}[/red bold]")
+        console.print(f"[red]Error: {e}[/red]")
+        console.print(f"[red dim]{tb}[/red dim]")
+        console.print(f"[red]{'═' * 60}[/red]")
+
+        # Track recent errors for health endpoint
+        _recent_errors.append({
+            "job": full_name,
+            "error": error_msg[:500],
+            "at": datetime.now(timezone.utc).isoformat(),
+        })
+        if len(_recent_errors) > _MAX_RECENT_ERRORS:
+            _recent_errors.pop(0)
+
+    elapsed = (datetime.now(timezone.utc) - started).total_seconds()
 
     with _last_job_lock:
         _last_job["name"] = full_name
         _last_job["completed_at"] = datetime.now(timezone.utc).isoformat()
         _last_job["status"] = status
+        _last_job["elapsed_seconds"] = round(elapsed, 1)
+        if error_msg:
+            _last_job["error"] = error_msg[:500]
+        else:
+            _last_job.pop("error", None)
 
-    elapsed = (datetime.now(timezone.utc) - started).total_seconds()
-    console.print(f"\n[dim]Job {full_name} {status} in {elapsed:.1f}s[/dim]")
+    status_color = "green" if status == "completed" else "red"
+    console.print(f"\n[{status_color}]Job {full_name} {status} in {elapsed:.1f}s[/{status_color}]")
 
 
 # ── Pipeline chains ────────────────────────────────────────────────────────
@@ -86,82 +112,72 @@ def morning_pipeline():
 
     console.print(f"[bold green]═══ Morning Pipeline: {today} ═══[/bold green]\n")
 
-    # Step 1: Fixtures
-    console.print("[cyan]Step 1/5: Fixtures[/cyan]")
-    try:
-        run_fixtures(target_date=today, refresh_leagues=is_monday)
-    except Exception as e:
-        console.print(f"[red]Fixtures failed: {e}[/red]")
+    import traceback
+    steps = [
+        ("1/5", "Fixtures",    lambda: run_fixtures(target_date=today, refresh_leagues=is_monday)),
+        ("2/5", "Enrichment",  lambda: run_enrichment(target_date=today)),
+        ("3/5", "Odds",        lambda: run_odds(target_date=today)),
+        ("4/5", "Predictions", lambda: run_predictions(target_date=today)),
+        ("5/5", "Betting",     lambda: run_betting()),
+    ]
 
-    # Step 2: Enrichment (full)
-    console.print("\n[cyan]Step 2/5: Enrichment (full)[/cyan]")
-    try:
-        run_enrichment(target_date=today)
-    except Exception as e:
-        console.print(f"[red]Enrichment failed: {e}[/red]")
+    failed_steps = []
+    for step_num, step_name, step_fn in steps:
+        console.print(f"\n[cyan]Step {step_num}: {step_name}[/cyan]")
+        step_start = datetime.now(timezone.utc)
+        try:
+            step_fn()
+            elapsed = (datetime.now(timezone.utc) - step_start).total_seconds()
+            console.print(f"[green]  ✓ {step_name} completed in {elapsed:.1f}s[/green]")
+        except Exception as e:
+            elapsed = (datetime.now(timezone.utc) - step_start).total_seconds()
+            failed_steps.append(step_name)
+            console.print(f"[red]  ✗ {step_name} FAILED after {elapsed:.1f}s: {e}[/red]")
+            console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
 
-    # Step 3: Odds
-    console.print("\n[cyan]Step 3/5: Odds[/cyan]")
-    try:
-        run_odds(target_date=today)
-    except Exception as e:
-        console.print(f"[red]Odds failed: {e}[/red]")
-
-    # Step 4: Predictions
-    console.print("\n[cyan]Step 4/5: Predictions[/cyan]")
-    try:
-        run_predictions(target_date=today)
-    except Exception as e:
-        console.print(f"[red]Predictions failed: {e}[/red]")
-
-    # Step 5: Betting
-    console.print("\n[cyan]Step 5/5: Betting pipeline[/cyan]")
-    try:
-        run_betting()
-    except Exception as e:
-        console.print(f"[red]Betting failed: {e}[/red]")
-
-    console.print(f"\n[bold green]Morning pipeline complete.[/bold green]")
+    if failed_steps:
+        console.print(f"\n[red bold]Morning pipeline finished with {len(failed_steps)} failure(s): {', '.join(failed_steps)}[/red bold]")
+    else:
+        console.print(f"\n[bold green]Morning pipeline complete — all 5 steps succeeded.[/bold green]")
 
 
 def settlement_pipeline():
     """
     21:00 UTC — Settlement chain: results → ML ETL → prune → Platt (Sundays).
     """
+    import traceback
     from workers.jobs.settlement import run_settlement, run_ml_etl
 
-    # Step 1: Core settlement
-    console.print("[cyan]Settlement step 1/4: Core settlement[/cyan]")
-    try:
-        run_settlement()
-    except Exception as e:
-        console.print(f"[red]Settlement failed: {e}[/red]")
+    steps = [
+        ("1/4", "Core settlement", lambda: run_settlement()),
+        ("2/4", "ML ETL",          lambda: run_ml_etl()),
+        ("3/4", "Prune odds",      lambda: __import__('scripts.prune_odds_snapshots', fromlist=['prune']).prune(dry_run=False)),
+    ]
 
-    # Step 2: ML ETL
-    console.print("\n[cyan]Settlement step 2/4: ML ETL[/cyan]")
-    try:
-        run_ml_etl()
-    except Exception as e:
-        console.print(f"[red]ML ETL failed: {e}[/red]")
-
-    # Step 3: Prune odds snapshots
-    console.print("\n[cyan]Settlement step 3/4: Prune odds snapshots[/cyan]")
-    try:
-        from scripts.prune_odds_snapshots import prune
-        prune(dry_run=False)
-    except Exception as e:
-        console.print(f"[red]Prune failed: {e}[/red]")
-
-    # Step 4: Platt recalibration (Sundays only)
-    if date.today().weekday() == 6:  # Sunday
-        console.print("\n[cyan]Settlement step 4/4: Platt recalibration (Sunday)[/cyan]")
-        try:
-            from scripts.fit_platt import fit_and_store
-            fit_and_store()
-        except Exception as e:
-            console.print(f"[red]Platt recalibration failed: {e}[/red]")
+    # Step 4 only on Sundays
+    if date.today().weekday() == 6:
+        steps.append(("4/4", "Platt recalibration", lambda: __import__('scripts.fit_platt', fromlist=['fit_and_store']).fit_and_store()))
     else:
-        console.print(f"\n[dim]Settlement step 4/4: Platt — skipped (not Sunday)[/dim]")
+        console.print(f"[dim]Settlement step 4/4: Platt — skipped (not Sunday)[/dim]")
+
+    failed_steps = []
+    for step_num, step_name, step_fn in steps:
+        console.print(f"\n[cyan]Settlement step {step_num}: {step_name}[/cyan]")
+        step_start = datetime.now(timezone.utc)
+        try:
+            step_fn()
+            elapsed = (datetime.now(timezone.utc) - step_start).total_seconds()
+            console.print(f"[green]  ✓ {step_name} completed in {elapsed:.1f}s[/green]")
+        except Exception as e:
+            elapsed = (datetime.now(timezone.utc) - step_start).total_seconds()
+            failed_steps.append(step_name)
+            console.print(f"[red]  ✗ {step_name} FAILED after {elapsed:.1f}s: {e}[/red]")
+            console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
+
+    if failed_steps:
+        console.print(f"\n[red bold]Settlement finished with {len(failed_steps)} failure(s): {', '.join(failed_steps)}[/red bold]")
+    else:
+        console.print(f"\n[bold green]Settlement complete — all steps succeeded.[/bold green]")
 
 
 # ── Individual job wrappers ────────────────────────────────────────────────
@@ -184,6 +200,32 @@ def job_enrichment_refresh():
     from workers.jobs.fetch_enrichment import run_enrichment
     _run_job("enrichment_refresh", run_enrichment,
              components={"injuries", "standings"})
+
+
+def job_betting_refresh_wrapper():
+    _run_job("betting_refresh", job_betting_refresh)
+
+
+def job_betting_refresh():
+    """Pre-kickoff betting re-evaluation — re-run predictions + betting with fresher data."""
+    from workers.jobs.fetch_predictions import run_predictions
+    from workers.jobs.betting_pipeline import run_betting
+    import traceback
+
+    today = date.today().isoformat()
+    console.print(f"[bold cyan]Pre-KO Betting Refresh: {today}[/bold cyan]")
+
+    try:
+        run_predictions(target_date=today)
+    except Exception as e:
+        console.print(f"[red]Predictions refresh failed: {e}[/red]")
+        console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
+
+    try:
+        run_betting()
+    except Exception as e:
+        console.print(f"[red]Betting refresh failed: {e}[/red]")
+        console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
 
 
 def job_news_checker():
@@ -222,6 +264,7 @@ class HealthHandler(BaseHTTPRequestHandler):
                 "shadow_mode": SHADOW_MODE,
                 "api_budget": budget.status(),
                 "last_job": last,
+                "recent_errors": list(_recent_errors),
             })
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -304,6 +347,13 @@ def main():
                       id="enrichment_12", name="Enrichment 12:00")
     scheduler.add_job(job_enrichment_refresh, CronTrigger(hour=16, minute=0),
                       id="enrichment_16", name="Enrichment 16:00")
+
+    # Pre-kickoff betting refresh: 11:00, 15:00, 19:00 UTC
+    # Re-evaluates predictions + bets with fresher odds, lineups, and news
+    for hour in [11, 15, 19]:
+        scheduler.add_job(job_betting_refresh_wrapper, CronTrigger(hour=hour, minute=0),
+                          id=f"betting_refresh_{hour:02d}",
+                          name=f"Betting Refresh {hour:02d}:00")
 
     # News checker: 09:00, 12:30, 16:30, 19:30 UTC
     for hour, minute in [(9, 0), (12, 30), (16, 30), (19, 30)]:

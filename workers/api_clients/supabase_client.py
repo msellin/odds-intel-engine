@@ -1,26 +1,43 @@
 """
-OddsIntel — Supabase Client
+OddsIntel — Supabase Client (Direct PostgreSQL via psycopg2)
 Handles all database operations: storing matches, odds, predictions, bets,
 live snapshots, and match events.
+
+Migrated from Supabase Python SDK (PostgREST) to direct psycopg2 for:
+  - No 1K row cap
+  - Real JOINs
+  - Bulk INSERT via execute_values
+  - No URL length limits on IN clauses
+  - Persistent connections
 """
 
 import os
 import unicodedata
 import re
 from datetime import datetime, date, timezone
+
+import psycopg2
+import psycopg2.extras
+from psycopg2.extras import Json
 from supabase import create_client, Client
 from dotenv import load_dotenv
+from rich.console import Console
+
+from workers.api_clients.db import get_conn, execute_query, execute_write, bulk_upsert
 
 load_dotenv()
 
+console = Console()
+
+# PostgREST client kept alive for external callers (pipeline_utils, settlement, etc.)
+# that still use client.table(...) directly. Functions in THIS file all use psycopg2.
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_SECRET_KEY", "")
-
 _client: Client | None = None
 
 
 def get_client() -> Client:
-    """Get Supabase client singleton (using service role key for write access)."""
+    """Get Supabase client singleton. Used by external callers for PostgREST queries."""
     global _client
     if _client is None:
         if not SUPABASE_URL or not SUPABASE_KEY:
@@ -35,24 +52,25 @@ def get_client() -> Client:
 
 def ensure_bots(bots_config: dict) -> dict:
     """
-    Create bot records in Supabase if they don't exist.
+    Create bot records if they don't exist.
     Returns {bot_name: bot_uuid} mapping.
     """
-    client = get_client()
-
-    result = client.table("bots").select("id, name").execute()
-    existing = {b["name"]: b["id"] for b in result.data}
+    rows = execute_query("SELECT id, name FROM bots")
+    existing = {b["name"]: b["id"] for b in rows}
 
     for bot_name, config in bots_config.items():
         if bot_name not in existing:
-            new_bot = client.table("bots").insert({
-                "name": bot_name,
-                "strategy": config.get("description", ""),
-                "starting_bankroll": 1000.0,
-                "current_bankroll": 1000.0,
-                "is_active": True,
-            }).execute()
-            existing[bot_name] = new_bot.data[0]["id"]
+            with get_conn() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute(
+                        """INSERT INTO bots (name, strategy, starting_bankroll, current_bankroll, is_active)
+                           VALUES (%s, %s, %s, %s, %s)
+                           RETURNING id""",
+                        (bot_name, config.get("description", ""), 1000.0, 1000.0, True),
+                    )
+                    conn.commit()
+                    new_row = cur.fetchone()
+                    existing[bot_name] = new_row["id"]
 
     return existing
 
@@ -128,8 +146,6 @@ KAMBI_TO_AF_LEAGUE: dict[tuple[str, str], tuple[str, str]] = {
 def ensure_league(league_path: str, tier: int = 1) -> str:
     """Get or create a league, return its UUID.
     Checks Kambi name mapping to avoid creating duplicates of AF leagues."""
-    client = get_client()
-
     parts = league_path.split(" / ")
     country = parts[0] if len(parts) > 1 else "Unknown"
     name = parts[-1]
@@ -138,21 +154,30 @@ def ensure_league(league_path: str, tier: int = 1) -> str:
     af_mapping = KAMBI_TO_AF_LEAGUE.get((country, name))
     if af_mapping:
         af_country, af_name = af_mapping
-        result = client.table("leagues").select("id").eq("name", af_name).eq("country", af_country).execute()
-        if result.data:
-            return result.data[0]["id"]
+        rows = execute_query(
+            "SELECT id FROM leagues WHERE name = %s AND country = %s",
+            (af_name, af_country),
+        )
+        if rows:
+            return rows[0]["id"]
 
-    result = client.table("leagues").select("id").eq("name", name).eq("country", country).execute()
-    if result.data:
-        return result.data[0]["id"]
+    rows = execute_query(
+        "SELECT id FROM leagues WHERE name = %s AND country = %s",
+        (name, country),
+    )
+    if rows:
+        return rows[0]["id"]
 
-    new = client.table("leagues").insert({
-        "name": name,
-        "country": country,
-        "tier": tier,
-        "is_active": True,
-    }).execute()
-    return new.data[0]["id"]
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """INSERT INTO leagues (name, country, tier, is_active)
+                   VALUES (%s, %s, %s, %s)
+                   RETURNING id""",
+                (name, country, tier, True),
+            )
+            conn.commit()
+            return cur.fetchone()["id"]
 
 
 def _normalize_team_name(name: str) -> str:
@@ -168,42 +193,55 @@ def ensure_team(team_name: str, country: str = "Unknown", logo_url: str | None =
     Uses normalized (accent/punctuation-stripped) matching to prevent duplicates
     from different data sources (e.g. AF 'Atletico Madrid' vs Kambi 'Atlético Madrid').
     """
-    client = get_client()
-
     # 1. Try exact match first (fastest)
-    result = client.table("teams").select("id, logo_url").eq("name", team_name).execute()
-    if result.data:
-        team_id = result.data[0]["id"]
-        if logo_url and not result.data[0].get("logo_url"):
-            client.table("teams").update({"logo_url": logo_url}).eq("id", team_id).execute()
+    rows = execute_query(
+        "SELECT id, logo_url FROM teams WHERE name = %s", (team_name,)
+    )
+    if rows:
+        team_id = rows[0]["id"]
+        if logo_url and not rows[0].get("logo_url"):
+            execute_write(
+                "UPDATE teams SET logo_url = %s WHERE id = %s", (logo_url, team_id)
+            )
         return team_id
 
     # 2. Fuzzy match: search by ilike prefix, then compare normalized names.
-    # This catches "Atlético Madrid" matching "Atletico Madrid", "S.C. Braga" matching "SC Braga", etc.
     norm_target = _normalize_team_name(team_name)
-    # Use first 3 chars of normalized name as a search prefix to limit candidates
     prefix = team_name[:3]
-    candidates = client.table("teams").select("id, name, logo_url").ilike("name", f"{prefix}%").execute()
-    for row in candidates.data or []:
+    candidates = execute_query(
+        "SELECT id, name, logo_url FROM teams WHERE name ILIKE %s",
+        (f"{prefix}%",),
+    )
+    for row in candidates:
         if _normalize_team_name(row["name"]) == norm_target:
             team_id = row["id"]
             if logo_url and not row.get("logo_url"):
-                client.table("teams").update({"logo_url": logo_url}).eq("id", team_id).execute()
+                execute_write(
+                    "UPDATE teams SET logo_url = %s WHERE id = %s", (logo_url, team_id)
+                )
             return team_id
 
-    # 3. No match found — create new team
+    # 3. No match found -- create new team
     league = ensure_league(f"{country} / Unknown", tier=0)
 
-    row: dict = {
-        "name": team_name,
-        "country": country,
-        "league_id": league,
-    }
-    if logo_url:
-        row["logo_url"] = logo_url
-
-    new = client.table("teams").insert(row).execute()
-    return new.data[0]["id"]
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            if logo_url:
+                cur.execute(
+                    """INSERT INTO teams (name, country, league_id, logo_url)
+                       VALUES (%s, %s, %s, %s)
+                       RETURNING id""",
+                    (team_name, country, league, logo_url),
+                )
+            else:
+                cur.execute(
+                    """INSERT INTO teams (name, country, league_id)
+                       VALUES (%s, %s, %s)
+                       RETURNING id""",
+                    (team_name, country, league),
+                )
+            conn.commit()
+            return cur.fetchone()["id"]
 
 
 # ============================================================
@@ -211,9 +249,7 @@ def ensure_team(team_name: str, country: str = "Unknown", logo_url: str | None =
 # ============================================================
 
 def store_match(match_data: dict) -> str:
-    """Store a match in Supabase, return its UUID"""
-    client = get_client()
-
+    """Store a match, return its UUID"""
     home_team = match_data["home_team"]
     away_team = match_data["away_team"]
     match_date = match_data.get("start_time", match_data.get("date", ""))
@@ -227,25 +263,30 @@ def store_match(match_data: dict) -> str:
     tier = match_data.get("tier", 1)
     league_id = ensure_league(league_path, tier)
 
-    existing = client.table("matches").select("id, api_football_id, venue_name, referee").eq(
-        "home_team_id", home_id
-    ).eq(
-        "away_team_id", away_id
-    ).gte("date", f"{date_prefix}T00:00:00").lte("date", f"{date_prefix}T23:59:59").execute()
+    existing = execute_query(
+        """SELECT id, api_football_id, venue_name, referee FROM matches
+           WHERE home_team_id = %s AND away_team_id = %s
+             AND date >= %s AND date <= %s""",
+        (home_id, away_id, f"{date_prefix}T00:00:00", f"{date_prefix}T23:59:59"),
+    )
 
-    if existing.data:
-        match_id = existing.data[0]["id"]
+    if existing:
+        match_id = existing[0]["id"]
         # Backfill IDs and metadata if we have them now but DB doesn't
         updates = {}
         af_id = match_data.get("api_football_id")
-        if af_id and not existing.data[0].get("api_football_id"):
+        if af_id and not existing[0].get("api_football_id"):
             updates["api_football_id"] = int(af_id)
-        if match_data.get("venue_name") and not existing.data[0].get("venue_name"):
+        if match_data.get("venue_name") and not existing[0].get("venue_name"):
             updates["venue_name"] = match_data["venue_name"]
-        if match_data.get("referee") and not existing.data[0].get("referee"):
+        if match_data.get("referee") and not existing[0].get("referee"):
             updates["referee"] = match_data["referee"]
         if updates:
-            client.table("matches").update(updates).eq("id", match_id).execute()
+            set_clauses = ", ".join(f"{k} = %s" for k in updates)
+            params = list(updates.values()) + [match_id]
+            execute_write(
+                f"UPDATE matches SET {set_clauses} WHERE id = %s", tuple(params)
+            )
         return match_id
 
     try:
@@ -279,14 +320,26 @@ def store_match(match_data: dict) -> str:
         match_record["result"] = "home" if hg > ag else "away" if ag > hg else "draw"
         match_record["status"] = "finished"
 
-    new = client.table("matches").insert(match_record).execute()
-    return new.data[0]["id"]
+    columns = list(match_record.keys())
+    placeholders = ", ".join(["%s"] * len(columns))
+    col_str = ", ".join(columns)
+    values = tuple(match_record[c] for c in columns)
+
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                f"INSERT INTO matches ({col_str}) VALUES ({placeholders}) RETURNING id",
+                values,
+            )
+            conn.commit()
+            return cur.fetchone()["id"]
 
 
 def update_match_status(match_id: str, status: str):
-    """Update a match status (scheduled → live → finished)"""
-    client = get_client()
-    client.table("matches").update({"status": status}).eq("id", match_id).execute()
+    """Update a match status (scheduled -> live -> finished)"""
+    execute_write(
+        "UPDATE matches SET status = %s WHERE id = %s", (status, match_id)
+    )
 
 
 # ============================================================
@@ -301,8 +354,6 @@ def store_odds(match_id: str, match_data: dict, minutes_to_kickoff: int = None):
                         0 = at kickoff / closing line
                         positive = in-play minute
     """
-    client = get_client()
-
     operator = match_data.get("bookmaker") or match_data.get("operator", "unibet")
     now = datetime.now(timezone.utc).isoformat()
 
@@ -345,7 +396,24 @@ def store_odds(match_id: str, match_data: dict, minutes_to_kickoff: int = None):
                           "odds": match_data["odds_btts_no"]})
 
     if odds_rows:
-        client.table("odds_snapshots").insert(odds_rows).execute()
+        columns = ["match_id", "bookmaker", "market", "selection", "odds",
+                    "timestamp", "is_closing", "minutes_to_kickoff"]
+        tuples = [
+            (r["match_id"], r["bookmaker"], r["market"], r["selection"],
+             r["odds"], r["timestamp"], r["is_closing"], r["minutes_to_kickoff"])
+            for r in odds_rows
+        ]
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """INSERT INTO odds_snapshots
+                       (match_id, bookmaker, market, selection, odds, timestamp, is_closing, minutes_to_kickoff)
+                       VALUES %s""",
+                    tuples,
+                    page_size=500,
+                )
+                conn.commit()
 
 
 # ============================================================
@@ -358,8 +426,6 @@ def store_live_snapshot(match_id: str, snapshot: dict):
     snapshot keys: minute, score_home, score_away, shots_*, xg_*, possession_home,
                    live_ou_* odds, live_1x2_* odds, model_* context
     """
-    client = get_client()
-
     row = {
         "match_id": match_id,
         "minute": snapshot.get("minute", 0),
@@ -386,7 +452,18 @@ def store_live_snapshot(match_id: str, snapshot: dict):
         if snapshot.get(field) is not None:
             row[field] = snapshot[field]
 
-    client.table("live_match_snapshots").insert(row).execute()
+    columns = list(row.keys())
+    placeholders = ", ".join(["%s"] * len(columns))
+    col_str = ", ".join(columns)
+    values = tuple(row[c] for c in columns)
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"INSERT INTO live_match_snapshots ({col_str}) VALUES ({placeholders})",
+                values,
+            )
+            conn.commit()
 
 
 def store_match_event(match_id: str, event: dict) -> bool:
@@ -394,8 +471,6 @@ def store_match_event(match_id: str, event: dict) -> bool:
     Store a match event (goal, card, sub).
     Returns False if event already exists (dedup via unique constraint).
     """
-    client = get_client()
-
     row = {
         "match_id": match_id,
         "minute": event.get("minute", 0),
@@ -408,8 +483,19 @@ def store_match_event(match_id: str, event: dict) -> bool:
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
+    columns = list(row.keys())
+    placeholders = ", ".join(["%s"] * len(columns))
+    col_str = ", ".join(columns)
+    values = tuple(row[c] for c in columns)
+
     try:
-        client.table("match_events").insert(row).execute()
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"INSERT INTO match_events ({col_str}) VALUES ({placeholders})",
+                    values,
+                )
+                conn.commit()
         return True
     except Exception as e:
         # Unique constraint violation = duplicate event, that's fine
@@ -423,58 +509,87 @@ def get_live_matches() -> list[dict]:
     Get matches that are currently in-play or starting soon.
     Returns matches that are live or starting soon for the live tracker.
     """
-    client = get_client()
     now = datetime.now(timezone.utc)
-
-    # Matches that started in the last 2.5 hours and are not yet finished
     from_time = now.replace(hour=max(0, now.hour - 3)).isoformat()
 
-    result = client.table("matches").select(
-        "id, date, status, "
-        "home:home_team_id(name), away:away_team_id(name), "
-        "leagues(name, country)"
-    ).gte("date", from_time).neq("status", "finished").execute()
+    rows = execute_query(
+        """SELECT m.id, m.date, m.status,
+                  th.name AS home_name,
+                  ta.name AS away_name,
+                  l.name AS league_name, l.country AS league_country
+           FROM matches m
+           LEFT JOIN teams th ON m.home_team_id = th.id
+           LEFT JOIN teams ta ON m.away_team_id = ta.id
+           LEFT JOIN leagues l ON m.league_id = l.id
+           WHERE m.date >= %s AND m.status != 'finished'""",
+        (from_time,),
+    )
 
-    return result.data
+    # Restructure to match PostgREST format callers expect
+    result = []
+    for r in rows:
+        result.append({
+            "id": r["id"],
+            "date": r["date"],
+            "status": r["status"],
+            "home": {"name": r["home_name"]},
+            "away": {"name": r["away_name"]},
+            "leagues": {"name": r["league_name"], "country": r["league_country"]},
+        })
+    return result
 
 
 def get_match_by_teams_and_date(home_team_name: str, away_team_name: str,
                                  match_date: str) -> dict | None:
     """Look up a match by team names and date."""
-    client = get_client()
     date_prefix = match_date[:10]
 
     # Get team IDs
-    home_result = client.table("teams").select("id").eq("name", home_team_name).execute()
-    away_result = client.table("teams").select("id").eq("name", away_team_name).execute()
+    home_result = execute_query("SELECT id FROM teams WHERE name = %s", (home_team_name,))
+    away_result = execute_query("SELECT id FROM teams WHERE name = %s", (away_team_name,))
 
-    if not home_result.data or not away_result.data:
+    if not home_result or not away_result:
         return None
 
-    home_id = home_result.data[0]["id"]
-    away_id = away_result.data[0]["id"]
+    home_id = home_result[0]["id"]
+    away_id = away_result[0]["id"]
 
-    result = client.table("matches").select("id, status, date").eq(
-        "home_team_id", home_id
-    ).eq(
-        "away_team_id", away_id
-    ).gte("date", f"{date_prefix}T00:00:00").lte("date", f"{date_prefix}T23:59:59").execute()
+    rows = execute_query(
+        """SELECT id, status, date FROM matches
+           WHERE home_team_id = %s AND away_team_id = %s
+             AND date >= %s AND date <= %s""",
+        (home_id, away_id, f"{date_prefix}T00:00:00", f"{date_prefix}T23:59:59"),
+    )
 
-    return result.data[0] if result.data else None
+    return rows[0] if rows else None
 
 
 def get_todays_scheduled_matches() -> list[dict]:
     """Get all of today's scheduled (not yet started) matches with kickoff times"""
-    client = get_client()
     today = date.today().isoformat()
     now_iso = datetime.now(timezone.utc).isoformat()
 
-    result = client.table("matches").select(
-        "id, date, "
-        "home:home_team_id(name), away:away_team_id(name)"
-    ).gte("date", now_iso).lte("date", f"{today}T23:59:59").eq("status", "scheduled").execute()
+    rows = execute_query(
+        """SELECT m.id, m.date,
+                  th.name AS home_name,
+                  ta.name AS away_name
+           FROM matches m
+           LEFT JOIN teams th ON m.home_team_id = th.id
+           LEFT JOIN teams ta ON m.away_team_id = ta.id
+           WHERE m.date >= %s AND m.date <= %s AND m.status = 'scheduled'""",
+        (now_iso, f"{today}T23:59:59"),
+    )
 
-    return result.data
+    # Restructure to match PostgREST format
+    result = []
+    for r in rows:
+        result.append({
+            "id": r["id"],
+            "date": r["date"],
+            "home": {"name": r["home_name"]},
+            "away": {"name": r["away_name"]},
+        })
+    return result
 
 
 # ============================================================
@@ -487,25 +602,38 @@ def store_prediction(match_id: str, market: str, prediction: dict,
     Store a model prediction for a match.
 
     source: 'ensemble' (default) | 'poisson' | 'xgboost' | 'af'
-    Each (match_id, market, source) combination is unique — upsert on conflict.
+    Each (match_id, market, source) combination is unique -- upsert on conflict.
     """
-    client = get_client()
-
     row = {
         "match_id": match_id,
         "market": market,
         "source": source,
         "model_probability": prediction["model_prob"],
-        "implied_probability": prediction.get("implied_prob"),
-        "edge_percent": prediction.get("edge"),
         "confidence": prediction.get("confidence", 0.5),
         "reasoning": prediction.get("reasoning"),
     }
+    # Only include these if actually provided (columns are NOT NULL in DB)
+    if prediction.get("implied_prob") is not None:
+        row["implied_probability"] = prediction["implied_prob"]
+    if prediction.get("edge") is not None:
+        row["edge_percent"] = prediction["edge"]
 
-    client.table("predictions").upsert(
-        row,
-        on_conflict="match_id,market,source",
-    ).execute()
+    columns = list(row.keys())
+    col_str = ", ".join(columns)
+    placeholders = ", ".join(["%s"] * len(columns))
+    update_cols = [c for c in columns if c not in ("match_id", "market", "source")]
+    update_str = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+    values = tuple(row[c] for c in columns)
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""INSERT INTO predictions ({col_str}) VALUES ({placeholders})
+                    ON CONFLICT (match_id, market, source)
+                    DO UPDATE SET {update_str}""",
+                values,
+            )
+            conn.commit()
 
 
 def store_match_signal(match_id: str, signal_name: str, signal_value: float | None,
@@ -517,8 +645,6 @@ def store_match_signal(match_id: str, signal_name: str, signal_value: float | No
     Same signal can be stored multiple times (different timestamps).
     ML training uses the value closest to kickoff.
     """
-    client = get_client()
-
     row = {
         "match_id": match_id,
         "signal_name": signal_name,
@@ -530,10 +656,21 @@ def store_match_signal(match_id: str, signal_name: str, signal_value: float | No
     if captured_at:
         row["captured_at"] = captured_at
 
-    client.table("match_signals").insert(row).execute()
+    columns = list(row.keys())
+    col_str = ", ".join(columns)
+    placeholders = ", ".join(["%s"] * len(columns))
+    values = tuple(row[c] for c in columns)
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"INSERT INTO match_signals ({col_str}) VALUES ({placeholders})",
+                values,
+            )
+            conn.commit()
 
 
-# ─── Pseudo-CLV ──────────────────────────────────────────────────────────────
+# --- Pseudo-CLV ---------------------------------------------------------------
 
 def compute_and_store_pseudo_clv(client, match_id: str) -> dict | None:
     """
@@ -548,18 +685,20 @@ def compute_and_store_pseudo_clv(client, match_id: str) -> dict | None:
     Returns dict with home/draw/away values, or None if not enough data.
     """
     # Fetch all 1x2 snapshots for this match
-    result = client.table("odds_snapshots").select(
-        "selection, odds, timestamp, is_closing"
-    ).eq("match_id", match_id).eq("market", "1x2").order(
-        "timestamp", desc=False
-    ).execute()
+    rows = execute_query(
+        """SELECT selection, odds, timestamp, is_closing
+           FROM odds_snapshots
+           WHERE match_id = %s AND market = '1x2'
+           ORDER BY timestamp ASC""",
+        (match_id,),
+    )
 
-    if not result.data:
+    if not rows:
         return None
 
     # Group by selection
     by_selection: dict[str, list[dict]] = {}
-    for row in result.data:
+    for row in rows:
         sel = row["selection"].lower()
         by_selection.setdefault(sel, []).append(row)
 
@@ -586,16 +725,17 @@ def compute_and_store_pseudo_clv(client, match_id: str) -> dict | None:
     if all(v is None for v in pseudo_clvs.values()):
         return None
 
-    client.table("matches").update({
-        "pseudo_clv_home": pseudo_clvs.get("home"),
-        "pseudo_clv_draw": pseudo_clvs.get("draw"),
-        "pseudo_clv_away": pseudo_clvs.get("away"),
-    }).eq("id", match_id).execute()
+    execute_write(
+        """UPDATE matches
+           SET pseudo_clv_home = %s, pseudo_clv_draw = %s, pseudo_clv_away = %s
+           WHERE id = %s""",
+        (pseudo_clvs.get("home"), pseudo_clvs.get("draw"), pseudo_clvs.get("away"), match_id),
+    )
 
     return pseudo_clvs
 
 
-# ─── match_feature_vectors ETL ────────────────────────────────────────────────
+# --- match_feature_vectors ETL ------------------------------------------------
 
 def build_match_feature_vectors(client, date_str: str) -> int:
     """
@@ -607,15 +747,16 @@ def build_match_feature_vectors(client, date_str: str) -> int:
     Returns count of rows upserted.
     """
     # Fetch finished matches for this date
-    matches_result = client.table("matches").select(
-        "id, date, result, score_home, score_away, "
-        "home_team_id, away_team_id, league_id, "
-        "pseudo_clv_home, pseudo_clv_draw, pseudo_clv_away"
-    ).eq("status", "finished").gte(
-        "date", f"{date_str}T00:00:00"
-    ).lte("date", f"{date_str}T23:59:59").execute()
+    matches = execute_query(
+        """SELECT id, date, result, score_home, score_away,
+                  home_team_id, away_team_id, league_id,
+                  pseudo_clv_home, pseudo_clv_draw, pseudo_clv_away
+           FROM matches
+           WHERE status = 'finished'
+             AND date >= %s AND date <= %s""",
+        (f"{date_str}T00:00:00", f"{date_str}T23:59:59"),
+    )
 
-    matches = matches_result.data
     if not matches:
         return 0
 
@@ -630,81 +771,101 @@ def build_match_feature_vectors(client, date_str: str) -> int:
         if m.get("league_id"):
             all_league_ids.add(m["league_id"])
 
-    # ── Batch load: leagues ──────────────────────────────────────────────────
+    # -- Batch load: leagues ---------------------------------------------------
     league_tier_map = {}
     if all_league_ids:
-        lr = client.table("leagues").select("id, tier").in_(
-            "id", list(all_league_ids)
-        ).execute()
-        league_tier_map = {r["id"]: r.get("tier") for r in (lr.data or [])}
+        lr = execute_query(
+            "SELECT id, tier FROM leagues WHERE id = ANY(%s)",
+            (list(all_league_ids),),
+        )
+        league_tier_map = {r["id"]: r.get("tier") for r in lr}
 
-    # ── Batch load: predictions (1x2_home) ───────────────────────────────────
-    # Supabase .in_() has a practical limit; chunk if needed
+    # -- Batch load: predictions (1x2_home) ------------------------------------
     preds_by_match: dict[str, list] = {}
     for chunk in _chunk_list(all_match_ids, 200):
-        pr = client.table("predictions").select(
-            "match_id, source, model_probability, market, reasoning"
-        ).in_("match_id", chunk).eq("market", "1x2_home").execute()
-        for p in (pr.data or []):
+        pr = execute_query(
+            """SELECT match_id, source, model_probability, market, reasoning
+               FROM predictions
+               WHERE match_id = ANY(%s) AND market = '1x2_home'""",
+            (chunk,),
+        )
+        for p in pr:
             preds_by_match.setdefault(p["match_id"], []).append(p)
 
     # Also get reasoning for data_tier (any market, just need one per match)
     reasoning_by_match: dict[str, str] = {}
     for chunk in _chunk_list(all_match_ids, 200):
-        rr = client.table("predictions").select(
-            "match_id, reasoning"
-        ).in_("match_id", chunk).not_.is_("reasoning", "null").limit(1000).execute()
-        for r in (rr.data or []):
+        rr = execute_query(
+            """SELECT match_id, reasoning
+               FROM predictions
+               WHERE match_id = ANY(%s) AND reasoning IS NOT NULL
+               LIMIT 1000""",
+            (chunk,),
+        )
+        for r in rr:
             if r["match_id"] not in reasoning_by_match and r.get("reasoning"):
                 reasoning_by_match[r["match_id"]] = r["reasoning"]
 
-    # ── Batch load: odds_snapshots (1x2, earliest + latest per selection) ────
-    # Fetch all 1x2 snapshots for these matches, ordered by timestamp
+    # -- Batch load: odds_snapshots (1x2, earliest + latest per selection) ------
     odds_by_match: dict[str, list] = {}
     for chunk in _chunk_list(all_match_ids, 200):
-        odr = client.table("odds_snapshots").select(
-            "match_id, selection, odds, timestamp"
-        ).in_("match_id", chunk).eq("market", "1x2").order(
-            "timestamp", desc=False
-        ).limit(10000).execute()
-        for o in (odr.data or []):
+        odr = execute_query(
+            """SELECT match_id, selection, odds, timestamp
+               FROM odds_snapshots
+               WHERE match_id = ANY(%s) AND market = '1x2'
+               ORDER BY timestamp ASC
+               LIMIT 10000""",
+            (chunk,),
+        )
+        for o in odr:
             odds_by_match.setdefault(o["match_id"], []).append(o)
 
-    # ── Batch load: ELO (latest per team up to date_str) ─────────────────────
+    # -- Batch load: ELO (latest per team up to date_str) ----------------------
     elo_by_team: dict[str, float] = {}
     for chunk in _chunk_list(list(all_team_ids), 200):
-        er = client.table("team_elo_daily").select(
-            "team_id, elo_rating, date"
-        ).in_("team_id", chunk).lte("date", date_str).order(
-            "date", desc=True
-        ).limit(5000).execute()
-        for e in (er.data or []):
+        er = execute_query(
+            """SELECT team_id, elo_rating, date
+               FROM team_elo_daily
+               WHERE team_id = ANY(%s) AND date <= %s
+               ORDER BY date DESC
+               LIMIT 5000""",
+            (chunk, date_str),
+        )
+        for e in er:
             # Keep only the most recent per team (first seen due to desc order)
             if e["team_id"] not in elo_by_team:
                 elo_by_team[e["team_id"]] = float(e["elo_rating"])
 
-    # ── Batch load: form cache (latest per team up to date_str) ──────────────
+    # -- Batch load: form cache (latest per team up to date_str) ---------------
     form_by_team: dict[str, float] = {}
     for chunk in _chunk_list(list(all_team_ids), 200):
-        fr = client.table("team_form_cache").select(
-            "team_id, ppg, date"
-        ).in_("team_id", chunk).lte("date", date_str).order(
-            "date", desc=True
-        ).limit(5000).execute()
-        for f in (fr.data or []):
+        fr = execute_query(
+            """SELECT team_id, ppg, date
+               FROM team_form_cache
+               WHERE team_id = ANY(%s) AND date <= %s
+               ORDER BY date DESC
+               LIMIT 5000""",
+            (chunk, date_str),
+        )
+        for f in fr:
             if f["team_id"] not in form_by_team:
                 form_by_team[f["team_id"]] = f.get("ppg")
 
-    # ── Batch load: match_signals ────────────────────────────────────────────
+    # -- Batch load: match_signals ---------------------------------------------
     signals_by_match: dict[str, list] = {}
     for chunk in _chunk_list(all_match_ids, 200):
-        sr = client.table("match_signals").select(
-            "match_id, signal_name, signal_value, captured_at"
-        ).in_("match_id", chunk).order("captured_at", desc=True).limit(50000).execute()
-        for s in (sr.data or []):
+        sr = execute_query(
+            """SELECT match_id, signal_name, signal_value, captured_at
+               FROM match_signals
+               WHERE match_id = ANY(%s)
+               ORDER BY captured_at DESC
+               LIMIT 50000""",
+            (chunk,),
+        )
+        for s in sr:
             signals_by_match.setdefault(s["match_id"], []).append(s)
 
-    # ── Build rows from cached data ──────────────────────────────────────────
+    # -- Build rows from cached data -------------------------------------------
     upserted = 0
     batch_rows = []
 
@@ -723,17 +884,26 @@ def build_match_feature_vectors(client, date_str: str) -> int:
     # Upsert in batches of 50
     for chunk in _chunk_list(batch_rows, 50):
         try:
-            client.table("match_feature_vectors").upsert(
-                chunk, on_conflict="match_id"
-            ).execute()
-            upserted += len(chunk)
+            if not chunk:
+                continue
+            columns = list(chunk[0].keys())
+            conflict_cols = ["match_id"]
+            update_cols = [c for c in columns if c != "match_id"]
+            tuples = [tuple(row.get(c) for c in columns) for row in chunk]
+            upserted += bulk_upsert(
+                "match_feature_vectors", columns, tuples, conflict_cols, update_cols
+            )
         except Exception:
             # Fall back to one-by-one
             for row in chunk:
                 try:
-                    client.table("match_feature_vectors").upsert(
-                        row, on_conflict="match_id"
-                    ).execute()
+                    columns = list(row.keys())
+                    conflict_cols = ["match_id"]
+                    update_cols = [c for c in columns if c != "match_id"]
+                    tuples = [tuple(row.get(c) for c in columns)]
+                    bulk_upsert(
+                        "match_feature_vectors", columns, tuples, conflict_cols, update_cols
+                    )
                     upserted += 1
                 except Exception:
                     pass
@@ -760,7 +930,7 @@ def _build_feature_row_batched(
     match_id = match["id"]
     match_date = match["date"][:10] if match.get("date") else None
 
-    # ── Outcome labels ────────────────────────────────────────────────────────
+    # -- Outcome labels --------------------------------------------------------
     outcome = match.get("result")
     score_home = match.get("score_home")
     score_away = match.get("score_away")
@@ -770,10 +940,10 @@ def _build_feature_row_batched(
         total_goals = int(score_home) + int(score_away)
         over_25 = total_goals > 2
 
-    # ── League tier ───────────────────────────────────────────────────────────
+    # -- League tier -----------------------------------------------------------
     league_tier = league_tier_map.get(match.get("league_id"))
 
-    # ── Predictions ───────────────────────────────────────────────────────────
+    # -- Predictions -----------------------------------------------------------
     ens_home = pois_home = xgb_home = af_home = None
     model_disagreement = None
 
@@ -795,7 +965,7 @@ def _build_feature_row_batched(
     if ens_home is None:
         ens_home = pois_home or xgb_home or af_home
 
-    # ── Data tier ─────────────────────────────────────────────────────────────
+    # -- Data tier -------------------------------------------------------------
     data_tier = None
     reasoning = reasoning_by_match.get(match_id)
     if reasoning:
@@ -804,7 +974,7 @@ def _build_feature_row_batched(
                 data_tier = t
                 break
 
-    # ── Opening/closing implied odds ─────────────────────────────────────────
+    # -- Opening/closing implied odds ------------------------------------------
     opening_implied_home = opening_implied_draw = opening_implied_away = None
     odds_drift_home = steam_move = None
 
@@ -835,18 +1005,18 @@ def _build_feature_row_batched(
             elif sel == "away":
                 opening_implied_away = opening_implied
 
-    # ── ELO ───────────────────────────────────────────────────────────────────
+    # -- ELO -------------------------------------------------------------------
     home_team_id = match.get("home_team_id")
     away_team_id = match.get("away_team_id")
     elo_home = elo_by_team.get(home_team_id)
     elo_away = elo_by_team.get(away_team_id)
     elo_diff = round(elo_home - elo_away, 2) if elo_home is not None and elo_away is not None else None
 
-    # ── Form ──────────────────────────────────────────────────────────────────
+    # -- Form ------------------------------------------------------------------
     form_ppg_home = form_by_team.get(home_team_id)
     form_ppg_away = form_by_team.get(away_team_id)
 
-    # ── Signals ───────────────────────────────────────────────────────────────
+    # -- Signals ---------------------------------------------------------------
     fixture_importance = bookmaker_disagreement = referee_cards_avg = None
     injury_count_home = injury_count_away = None
     news_impact_score = lineup_confirmed = None
@@ -987,9 +1157,26 @@ def _build_feature_row_batched(
 # SIMULATED BETS
 # ============================================================
 
+def _sanitize_for_json(value):
+    """Convert numpy types to native Python and replace NaN/Infinity with None."""
+    import math
+    if value is None:
+        return None
+    # numpy scalar -> native Python
+    if hasattr(value, 'item'):
+        value = value.item()
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return None
+    if isinstance(value, dict):
+        return {k: _sanitize_for_json(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_for_json(v) for v in value]
+    return value
+
+
 def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
     """
-    Store a paper bet in Supabase.
+    Store a paper bet.
     Returns the bet UUID, or None if this bet already exists (idempotent).
 
     Supports new model improvement fields (migration 006):
@@ -997,8 +1184,6 @@ def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
     - dimension_scores, alignment_count, alignment_total, alignment_class
     - model_disagreement, news_impact_score, lineup_confirmed
     """
-    client = get_client()
-
     row = {
         "bot_id": bot_id,
         "match_id": match_id,
@@ -1024,9 +1209,28 @@ def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
         if field in bet_data and bet_data[field] is not None:
             row[field] = bet_data[field]
 
+    # Sanitize all values: numpy types -> native Python, NaN/Inf -> None
+    row = {k: _sanitize_for_json(v) for k, v in row.items()}
+
+    # Wrap JSONB fields
+    if "dimension_scores" in row and row["dimension_scores"] is not None:
+        row["dimension_scores"] = Json(row["dimension_scores"])
+
+    columns = list(row.keys())
+    col_str = ", ".join(columns)
+    placeholders = ", ".join(["%s"] * len(columns))
+    values = tuple(row[c] for c in columns)
+
     try:
-        new = client.table("simulated_bets").insert(row).execute()
-        return new.data[0]["id"]
+        with get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    f"INSERT INTO simulated_bets ({col_str}) VALUES ({placeholders}) RETURNING id",
+                    values,
+                )
+                conn.commit()
+                new_row = cur.fetchone()
+                return new_row["id"]
     except Exception as e:
         if "duplicate" in str(e).lower() or "unique" in str(e).lower() or "uq_bet" in str(e).lower():
             return None  # already placed, skip silently
@@ -1043,8 +1247,6 @@ def store_prediction_snapshot(
     Tracks model probability at each info stage: stats_only, post_ai, pre_kickoff, closing.
     Returns snapshot UUID, or None if this stage already exists for this bet.
     """
-    client = get_client()
-
     row = {
         "bet_id": bet_id,
         "stage": stage,
@@ -1058,11 +1260,22 @@ def store_prediction_snapshot(
     if odds_at_snapshot is not None:
         row["odds_at_snapshot"] = odds_at_snapshot
     if metadata:
-        row["metadata"] = metadata
+        row["metadata"] = Json(metadata)
+
+    columns = list(row.keys())
+    col_str = ", ".join(columns)
+    placeholders = ", ".join(["%s"] * len(columns))
+    values = tuple(row[c] for c in columns)
 
     try:
-        result = client.table("prediction_snapshots").insert(row).execute()
-        return result.data[0]["id"]
+        with get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    f"INSERT INTO prediction_snapshots ({col_str}) VALUES ({placeholders}) RETURNING id",
+                    values,
+                )
+                conn.commit()
+                return cur.fetchone()["id"]
     except Exception as e:
         if "duplicate" in str(e).lower() or "unique" in str(e).lower():
             return None  # stage already recorded
@@ -1072,10 +1285,8 @@ def store_prediction_snapshot(
 def store_match_stats(match_id: str, stats: dict):
     """
     Store final match stats (xG, shots, possession, corners, cards).
-    Uses upsert — safe to call multiple times for the same match.
+    Uses upsert -- safe to call multiple times for the same match.
     """
-    client = get_client()
-
     row = {"match_id": match_id}
     field_map = {
         "xg_home": "xg_home", "xg_away": "xg_away",
@@ -1090,7 +1301,21 @@ def store_match_stats(match_id: str, stats: dict):
     if len(row) <= 1:
         return  # no stats to store
 
-    client.table("match_stats").upsert(row, on_conflict="match_id").execute()
+    columns = list(row.keys())
+    col_str = ", ".join(columns)
+    placeholders = ", ".join(["%s"] * len(columns))
+    update_cols = [c for c in columns if c != "match_id"]
+    update_str = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+    values = tuple(row[c] for c in columns)
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""INSERT INTO match_stats ({col_str}) VALUES ({placeholders})
+                    ON CONFLICT (match_id) DO UPDATE SET {update_str}""",
+                values,
+            )
+            conn.commit()
 
 
 def store_team_elo(team_id: str, elo_date: str, elo_rating: float):
@@ -1098,12 +1323,15 @@ def store_team_elo(team_id: str, elo_date: str, elo_rating: float):
     Store or update a team's ELO rating for a given date.
     Uses upsert on (team_id, date) constraint.
     """
-    client = get_client()
-    client.table("team_elo_daily").upsert({
-        "team_id": team_id,
-        "date": elo_date,
-        "elo_rating": round(elo_rating, 2),
-    }, on_conflict="team_id,date").execute()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO team_elo_daily (team_id, date, elo_rating)
+                   VALUES (%s, %s, %s)
+                   ON CONFLICT (team_id, date) DO UPDATE SET elo_rating = EXCLUDED.elo_rating""",
+                (team_id, elo_date, round(elo_rating, 2)),
+            )
+            conn.commit()
 
 
 def store_team_form(team_id: str, form_date: str, form: dict):
@@ -1111,8 +1339,6 @@ def store_team_form(team_id: str, form_date: str, form: dict):
     Store or update cached form metrics for a team on a given date.
     Uses upsert on (team_id, date) constraint.
     """
-    client = get_client()
-
     row = {"team_id": team_id, "date": form_date}
     for key in ["matches_played", "win_pct", "draw_pct", "loss_pct", "ppg",
                 "goals_scored_avg", "goals_conceded_avg", "goal_diff_avg",
@@ -1120,7 +1346,21 @@ def store_team_form(team_id: str, form_date: str, form: dict):
         if key in form and form[key] is not None:
             row[key] = form[key]
 
-    client.table("team_form_cache").upsert(row, on_conflict="team_id,date").execute()
+    columns = list(row.keys())
+    col_str = ", ".join(columns)
+    placeholders = ", ".join(["%s"] * len(columns))
+    update_cols = [c for c in columns if c not in ("team_id", "date")]
+    update_str = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+    values = tuple(row[c] for c in columns)
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""INSERT INTO team_form_cache ({col_str}) VALUES ({placeholders})
+                    ON CONFLICT (team_id, date) DO UPDATE SET {update_str}""",
+                values,
+            )
+            conn.commit()
 
 
 # ============================================================
@@ -1133,7 +1373,6 @@ def store_team_season_stats(team_api_id: int, league_api_id: int, season: int,
     Store or update team season stats. Upserts on (team_api_id, league_api_id, season, fetched_date).
     Returns row id or None on error.
     """
-    client = get_client()
     today = date.today().isoformat()
 
     row = {
@@ -1162,15 +1401,38 @@ def store_team_season_stats(team_api_id: int, league_api_id: int, season: int,
         "goals_for_by_minute", "goals_against_by_minute",
         "raw",
     ]
+
+    # JSONB fields need wrapping
+    jsonb_fields = {"formations_jsonb", "yellow_cards_by_minute", "red_cards_by_minute",
+                    "goals_for_by_minute", "goals_against_by_minute", "raw"}
+
     for f in fields:
         if f in parsed and parsed[f] is not None:
-            row[f] = parsed[f]
+            if f in jsonb_fields:
+                row[f] = Json(parsed[f])
+            else:
+                row[f] = parsed[f]
+
+    columns = list(row.keys())
+    col_str = ", ".join(columns)
+    placeholders = ", ".join(["%s"] * len(columns))
+    update_cols = [c for c in columns if c not in ("team_api_id", "league_api_id", "season", "fetched_date")]
+    update_str = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+    values = tuple(row[c] for c in columns)
 
     try:
-        result = client.table("team_season_stats").upsert(
-            row, on_conflict="team_api_id,league_api_id,season,fetched_date"
-        ).execute()
-        return result.data[0]["id"] if result.data else None
+        with get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    f"""INSERT INTO team_season_stats ({col_str}) VALUES ({placeholders})
+                        ON CONFLICT (team_api_id, league_api_id, season, fetched_date)
+                        DO UPDATE SET {update_str}
+                        RETURNING id""",
+                    values,
+                )
+                conn.commit()
+                result = cur.fetchone()
+                return result["id"] if result else None
     except Exception as e:
         if "duplicate" in str(e).lower() or "unique" in str(e).lower():
             return None
@@ -1179,11 +1441,14 @@ def store_team_season_stats(team_api_id: int, league_api_id: int, season: int,
 
 def get_team_season_stats(team_api_id: int, season: int) -> dict | None:
     """Get the most recent team season stats for a team/season."""
-    client = get_client()
-    result = client.table("team_season_stats").select("*").eq(
-        "team_api_id", team_api_id
-    ).eq("season", season).order("fetched_date", desc=True).limit(1).execute()
-    return result.data[0] if result.data else None
+    rows = execute_query(
+        """SELECT * FROM team_season_stats
+           WHERE team_api_id = %s AND season = %s
+           ORDER BY fetched_date DESC
+           LIMIT 1""",
+        (team_api_id, season),
+    )
+    return rows[0] if rows else None
 
 
 # ============================================================
@@ -1196,7 +1461,6 @@ def store_match_injuries(match_id: str, af_fixture_id: int,
     Store injuries for a match. Upserts on (match_id, player_id).
     Returns count of rows stored.
     """
-    client = get_client()
     stored = 0
 
     for inj in injuries:
@@ -1205,18 +1469,35 @@ def store_match_injuries(match_id: str, af_fixture_id: int,
         row = {
             "match_id": match_id,
             "af_fixture_id": af_fixture_id,
-            **{k: v for k, v in inj.items() if k in (
-                "team_api_id", "team_side", "player_id", "player_name",
-                "player_type", "status", "reason", "raw"
-            )},
         }
+        allowed = {"team_api_id", "team_side", "player_id", "player_name",
+                    "player_type", "status", "reason", "raw"}
+        for k, v in inj.items():
+            if k in allowed:
+                if k == "raw":
+                    row[k] = Json(v) if v is not None else None
+                else:
+                    row[k] = v
+
+        columns = list(row.keys())
+        col_str = ", ".join(columns)
+        placeholders = ", ".join(["%s"] * len(columns))
+        update_cols = [c for c in columns if c not in ("match_id", "player_id")]
+        update_str = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+        values = tuple(row[c] for c in columns)
+
         try:
-            client.table("match_injuries").upsert(
-                row, on_conflict="match_id,player_id"
-            ).execute()
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""INSERT INTO match_injuries ({col_str}) VALUES ({placeholders})
+                            ON CONFLICT (match_id, player_id) DO UPDATE SET {update_str}""",
+                        values,
+                    )
+                    conn.commit()
             stored += 1
-        except Exception:
-            pass
+        except Exception as e:
+            console.print(f"[yellow]store_match_injuries: {e}[/yellow]")
 
     return stored
 
@@ -1227,12 +1508,10 @@ def store_match_injuries(match_id: str, af_fixture_id: int,
 
 def store_match_stats_full(match_id: str, stats: dict):
     """
-    Extended version of store_match_stats — stores all fields including
+    Extended version of store_match_stats -- stores all fields including
     half-time stats (_ht suffix) and full-match fields (fouls, saves, etc.).
-    Uses upsert — safe to call multiple times.
+    Uses upsert -- safe to call multiple times.
     """
-    client = get_client()
-
     row = {"match_id": match_id}
 
     all_fields = [
@@ -1268,7 +1547,21 @@ def store_match_stats_full(match_id: str, stats: dict):
     if len(row) <= 1:
         return
 
-    client.table("match_stats").upsert(row, on_conflict="match_id").execute()
+    columns = list(row.keys())
+    col_str = ", ".join(columns)
+    placeholders = ", ".join(["%s"] * len(columns))
+    update_cols = [c for c in columns if c != "match_id"]
+    update_str = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+    values = tuple(row[c] for c in columns)
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""INSERT INTO match_stats ({col_str}) VALUES ({placeholders})
+                    ON CONFLICT (match_id) DO UPDATE SET {update_str}""",
+                values,
+            )
+            conn.commit()
 
 
 # ============================================================
@@ -1280,26 +1573,36 @@ def store_live_odds(match_id: str, odds_rows: list[dict], minute: int = None):
     Store live in-play odds in odds_snapshots with is_live=true.
     Called every 5min during live matches.
     """
-    client = get_client()
     now = datetime.now(timezone.utc).isoformat()
 
     rows = []
-    for row in odds_rows:
-        rows.append({
-            "match_id": match_id,
-            "bookmaker": row.get("bookmaker", "api-football-live"),
-            "market": row["market"],
-            "selection": row["selection"],
-            "odds": row["odds"],
-            "timestamp": now,
-            "is_live": True,
-            "is_closing": False,
-            "minutes_to_kickoff": row.get("minute"),  # minute elapsed during match
-        })
+    for r in odds_rows:
+        rows.append((
+            match_id,
+            r.get("bookmaker", "api-football-live"),
+            r["market"],
+            r["selection"],
+            r["odds"],
+            now,
+            True,
+            False,
+            r.get("minute"),  # minute elapsed during match
+        ))
 
     if rows:
         try:
-            client.table("odds_snapshots").insert(rows).execute()
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    psycopg2.extras.execute_values(
+                        cur,
+                        """INSERT INTO odds_snapshots
+                           (match_id, bookmaker, market, selection, odds,
+                            timestamp, is_live, is_closing, minutes_to_kickoff)
+                           VALUES %s""",
+                        rows,
+                        page_size=500,
+                    )
+                    conn.commit()
         except Exception:
             pass  # Duplicate rows are fine
 
@@ -1314,18 +1617,23 @@ def store_match_lineups(match_id: str, lineups_parsed: dict):
     lineups_parsed keys: formation_home, formation_away, coach_home, coach_away,
                          lineups_home (JSONB), lineups_away (JSONB)
     """
-    client = get_client()
-
     updates = {}
     for field in ["formation_home", "formation_away", "coach_home", "coach_away",
                   "lineups_home", "lineups_away"]:
         if lineups_parsed.get(field) is not None:
-            updates[field] = lineups_parsed[field]
+            if field in ("lineups_home", "lineups_away"):
+                updates[field] = Json(lineups_parsed[field])
+            else:
+                updates[field] = lineups_parsed[field]
 
     if updates:
-        from datetime import datetime, timezone
         updates["lineups_fetched_at"] = datetime.now(timezone.utc).isoformat()
-        client.table("matches").update(updates).eq("id", match_id).execute()
+        set_clauses = ", ".join(f"{k} = %s" for k in updates)
+        params = list(updates.values()) + [match_id]
+        execute_write(
+            f"UPDATE matches SET {set_clauses} WHERE id = %s",
+            tuple(params),
+        )
 
 
 # ============================================================
@@ -1339,7 +1647,6 @@ def store_match_events_af(match_id: str, events: list[dict],
     Resolves team side (home/away) from team_api_id.
     Returns count of newly stored events.
     """
-    client = get_client()
     stored = 0
 
     for ev in events:
@@ -1348,22 +1655,36 @@ def store_match_events_af(match_id: str, events: list[dict],
         if home_team_api_id and ev.get("team_api_id"):
             team_side = "home" if ev["team_api_id"] == home_team_api_id else "away"
 
-        row = {
-            "match_id": match_id,
-            "minute": ev.get("minute", 0),
-            "added_time": ev.get("added_time", 0),
-            "event_type": ev["event_type"],
-            "team": team_side,
-            "player_name": ev.get("player_name"),
-            "detail": ev.get("detail"),
-            "af_event_order": ev.get("af_event_order"),
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
+        row = (
+            match_id,
+            ev.get("minute", 0),
+            ev.get("added_time", 0),
+            ev["event_type"],
+            team_side,
+            ev.get("player_name"),
+            ev.get("detail"),
+            ev.get("af_event_order"),
+            datetime.now(timezone.utc).isoformat(),
+        )
 
         try:
-            client.table("match_events").upsert(
-                row, on_conflict="match_id,af_event_order"
-            ).execute()
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """INSERT INTO match_events
+                           (match_id, minute, added_time, event_type, team,
+                            player_name, detail, af_event_order, created_at)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                           ON CONFLICT (match_id, af_event_order) DO UPDATE SET
+                            minute = EXCLUDED.minute,
+                            added_time = EXCLUDED.added_time,
+                            event_type = EXCLUDED.event_type,
+                            team = EXCLUDED.team,
+                            player_name = EXCLUDED.player_name,
+                            detail = EXCLUDED.detail""",
+                        row,
+                    )
+                    conn.commit()
             stored += 1
         except Exception:
             pass
@@ -1381,7 +1702,6 @@ def store_league_standings(league_api_id: int, season: int,
     Store league standings. Upserts on (league_api_id, season, fetched_date, team_api_id).
     Returns count stored.
     """
-    client = get_client()
     today = date.today().isoformat()
     stored = 0
 
@@ -1390,24 +1710,44 @@ def store_league_standings(league_api_id: int, season: int,
             "league_api_id": league_api_id,
             "season": season,
             "fetched_date": today,
-            **{k: v for k, v in r.items() if k in (
-                "team_api_id", "team_name", "rank", "points", "goals_diff",
-                "group_name", "form", "status", "description",
-                "played", "wins", "draws", "losses", "goals_for", "goals_against",
-                "home_played", "home_wins", "home_draws", "home_losses",
-                "home_goals_for", "home_goals_against",
-                "away_played", "away_wins", "away_draws", "away_losses",
-                "away_goals_for", "away_goals_against",
-                "raw",
-            )},
         }
+        allowed = {
+            "team_api_id", "team_name", "rank", "points", "goals_diff",
+            "group_name", "form", "status", "description",
+            "played", "wins", "draws", "losses", "goals_for", "goals_against",
+            "home_played", "home_wins", "home_draws", "home_losses",
+            "home_goals_for", "home_goals_against",
+            "away_played", "away_wins", "away_draws", "away_losses",
+            "away_goals_for", "away_goals_against",
+            "raw",
+        }
+        for k, v in r.items():
+            if k in allowed:
+                if k == "raw":
+                    row[k] = Json(v) if v is not None else None
+                else:
+                    row[k] = v
+
+        columns = list(row.keys())
+        col_str = ", ".join(columns)
+        placeholders = ", ".join(["%s"] * len(columns))
+        update_cols = [c for c in columns if c not in ("league_api_id", "season", "fetched_date", "team_api_id")]
+        update_str = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+        values = tuple(row[c] for c in columns)
+
         try:
-            client.table("league_standings").upsert(
-                row, on_conflict="league_api_id,season,fetched_date,team_api_id"
-            ).execute()
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""INSERT INTO league_standings ({col_str}) VALUES ({placeholders})
+                            ON CONFLICT (league_api_id, season, fetched_date, team_api_id)
+                            DO UPDATE SET {update_str}""",
+                        values,
+                    )
+                    conn.commit()
             stored += 1
-        except Exception:
-            pass
+        except Exception as e:
+            console.print(f"[yellow]store_league_standings: {e}[/yellow]")
 
     return stored
 
@@ -1418,15 +1758,21 @@ def store_league_standings(league_api_id: int, season: int,
 
 def store_match_h2h(match_id: str, h2h_parsed: dict):
     """Store H2H data on the matches table."""
-    client = get_client()
-
     updates = {}
     for field in ["h2h_raw", "h2h_home_wins", "h2h_draws", "h2h_away_wins"]:
         if h2h_parsed.get(field) is not None:
-            updates[field] = h2h_parsed[field]
+            if field == "h2h_raw":
+                updates[field] = Json(h2h_parsed[field])
+            else:
+                updates[field] = h2h_parsed[field]
 
     if updates:
-        client.table("matches").update(updates).eq("id", match_id).execute()
+        set_clauses = ", ".join(f"{k} = %s" for k in updates)
+        params = list(updates.values()) + [match_id]
+        execute_write(
+            f"UPDATE matches SET {set_clauses} WHERE id = %s",
+            tuple(params),
+        )
 
 
 # ============================================================
@@ -1435,19 +1781,32 @@ def store_match_h2h(match_id: str, h2h_parsed: dict):
 
 def store_player_sidelined(rows: list[dict]) -> int:
     """Store player sidelined history. Upserts on (player_id, start_date, type)."""
-    client = get_client()
     stored = 0
 
-    for row in rows:
-        if not row.get("player_id") or not row.get("start_date"):
+    for row_data in rows:
+        if not row_data.get("player_id") or not row_data.get("start_date"):
             continue
+
+        columns = list(row_data.keys())
+        col_str = ", ".join(columns)
+        placeholders = ", ".join(["%s"] * len(columns))
+        update_cols = [c for c in columns if c not in ("player_id", "start_date", "type")]
+        update_str = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols) if update_cols else "player_id = EXCLUDED.player_id"
+        values = tuple(row_data[c] for c in columns)
+
         try:
-            client.table("player_sidelined").upsert(
-                row, on_conflict="player_id,start_date,type"
-            ).execute()
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""INSERT INTO player_sidelined ({col_str}) VALUES ({placeholders})
+                            ON CONFLICT (player_id, start_date, type)
+                            DO UPDATE SET {update_str}""",
+                        values,
+                    )
+                    conn.commit()
             stored += 1
-        except Exception:
-            pass
+        except Exception as e:
+            console.print(f"[yellow]store_player_sidelined: {e}[/yellow]")
 
     return stored
 
@@ -1462,7 +1821,6 @@ def store_match_player_stats(match_id: str, af_fixture_id: int,
     Store per-player match statistics. Upserts on (match_id, player_id).
     Returns count stored.
     """
-    client = get_client()
     stored = 0
 
     for p in players:
@@ -1471,28 +1829,48 @@ def store_match_player_stats(match_id: str, af_fixture_id: int,
         row = {
             "match_id": match_id,
             "af_fixture_id": af_fixture_id,
-            **{k: v for k, v in p.items() if k in (
-                "team_api_id", "team_side", "player_id", "player_name",
-                "shirt_number", "position", "minutes_played", "rating", "captain",
-                "goals", "assists", "shots_total", "shots_on_target",
-                "passes_total", "passes_key", "pass_accuracy",
-                "tackles_total", "blocks", "interceptions",
-                "duels_total", "duels_won",
-                "dribbles_attempted", "dribbles_success",
-                "fouls_drawn", "fouls_committed",
-                "yellow_cards", "red_cards",
-                "goals_conceded", "saves",
-                "penalty_scored", "penalty_missed", "penalty_saved",
-                "raw",
-            )},
         }
+        allowed = {
+            "team_api_id", "team_side", "player_id", "player_name",
+            "shirt_number", "position", "minutes_played", "rating", "captain",
+            "goals", "assists", "shots_total", "shots_on_target",
+            "passes_total", "passes_key", "pass_accuracy",
+            "tackles_total", "blocks", "interceptions",
+            "duels_total", "duels_won",
+            "dribbles_attempted", "dribbles_success",
+            "fouls_drawn", "fouls_committed",
+            "yellow_cards", "red_cards",
+            "goals_conceded", "saves",
+            "penalty_scored", "penalty_missed", "penalty_saved",
+            "raw",
+        }
+        for k, v in p.items():
+            if k in allowed:
+                if k == "raw":
+                    row[k] = Json(v) if v is not None else None
+                else:
+                    row[k] = v
+
+        columns = list(row.keys())
+        col_str = ", ".join(columns)
+        placeholders = ", ".join(["%s"] * len(columns))
+        update_cols = [c for c in columns if c not in ("match_id", "player_id")]
+        update_str = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+        values = tuple(row[c] for c in columns)
+
         try:
-            client.table("match_player_stats").upsert(
-                row, on_conflict="match_id,player_id"
-            ).execute()
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""INSERT INTO match_player_stats ({col_str}) VALUES ({placeholders})
+                            ON CONFLICT (match_id, player_id)
+                            DO UPDATE SET {update_str}""",
+                        values,
+                    )
+                    conn.commit()
             stored += 1
-        except Exception:
-            pass
+        except Exception as e:
+            console.print(f"[yellow]store_match_player_stats: {e}[/yellow]")
 
     return stored
 
@@ -1503,19 +1881,32 @@ def store_match_player_stats(match_id: str, af_fixture_id: int,
 
 def store_team_transfers(team_api_id: int, rows: list[dict]) -> int:
     """Store team transfer records. Upserts on (team_api_id, player_id, transfer_date)."""
-    client = get_client()
     stored = 0
 
-    for row in rows:
-        if not row.get("player_id") or not row.get("transfer_date"):
+    for row_data in rows:
+        if not row_data.get("player_id") or not row_data.get("transfer_date"):
             continue
+
+        columns = list(row_data.keys())
+        col_str = ", ".join(columns)
+        placeholders = ", ".join(["%s"] * len(columns))
+        update_cols = [c for c in columns if c not in ("team_api_id", "player_id", "transfer_date")]
+        update_str = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols) if update_cols else "team_api_id = EXCLUDED.team_api_id"
+        values = tuple(row_data[c] for c in columns)
+
         try:
-            client.table("team_transfers").upsert(
-                row, on_conflict="team_api_id,player_id,transfer_date"
-            ).execute()
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""INSERT INTO team_transfers ({col_str}) VALUES ({placeholders})
+                            ON CONFLICT (team_api_id, player_id, transfer_date)
+                            DO UPDATE SET {update_str}""",
+                        values,
+                    )
+                    conn.commit()
             stored += 1
-        except Exception:
-            pass
+        except Exception as e:
+            console.print(f"[yellow]store_team_transfers: {e}[/yellow]")
 
     return stored
 
@@ -1524,8 +1915,6 @@ def store_model_evaluation(eval_date: str, league_id: str | None, market: str,
                            total_bets: int, hits: int, roi: float,
                            avg_clv: float | None, notes: str | None = None):
     """Store daily model evaluation metrics per league/market."""
-    client = get_client()
-
     row = {
         "date": eval_date,
         "market": market,
@@ -1541,7 +1930,18 @@ def store_model_evaluation(eval_date: str, league_id: str | None, market: str,
     if notes:
         row["notes"] = notes
 
-    client.table("model_evaluations").insert(row).execute()
+    columns = list(row.keys())
+    col_str = ", ".join(columns)
+    placeholders = ", ".join(["%s"] * len(columns))
+    values = tuple(row[c] for c in columns)
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"INSERT INTO model_evaluations ({col_str}) VALUES ({placeholders})",
+                values,
+            )
+            conn.commit()
 
 
 def compute_market_implied_strength(team_id: str, window: int = 5) -> float | None:
@@ -1553,42 +1953,42 @@ def compute_market_implied_strength(team_id: str, window: int = 5) -> float | No
     Returns average implied win probability (0.0-1.0) or None if insufficient data.
     See MODEL_ANALYSIS.md Section 11.3.
     """
-    client = get_client()
-
     # Get last N matches where this team played, with 1X2 odds
-    home_matches = client.table("matches").select(
-        "id"
-    ).eq("home_team_id", team_id).eq("status", "finished").order(
-        "date", desc=True
-    ).limit(window).execute().data or []
+    home_matches = execute_query(
+        """SELECT id FROM matches
+           WHERE home_team_id = %s AND status = 'finished'
+           ORDER BY date DESC LIMIT %s""",
+        (team_id, window),
+    )
 
-    away_matches = client.table("matches").select(
-        "id"
-    ).eq("away_team_id", team_id).eq("status", "finished").order(
-        "date", desc=True
-    ).limit(window).execute().data or []
+    away_matches = execute_query(
+        """SELECT id FROM matches
+           WHERE away_team_id = %s AND status = 'finished'
+           ORDER BY date DESC LIMIT %s""",
+        (team_id, window),
+    )
 
     implied_probs = []
 
     # For home matches, get the 1x2 home odds
     for m in home_matches:
-        odds_rows = client.table("odds_snapshots").select("odds").eq(
-            "match_id", m["id"]
-        ).eq("market", "1x2").eq("selection", "home").order(
-            "timestamp", desc=True
-        ).limit(1).execute().data
-
+        odds_rows = execute_query(
+            """SELECT odds FROM odds_snapshots
+               WHERE match_id = %s AND market = '1x2' AND selection = 'home'
+               ORDER BY timestamp DESC LIMIT 1""",
+            (m["id"],),
+        )
         if odds_rows and float(odds_rows[0]["odds"]) > 1.0:
             implied_probs.append(1.0 / float(odds_rows[0]["odds"]))
 
     # For away matches, get the 1x2 away odds
     for m in away_matches:
-        odds_rows = client.table("odds_snapshots").select("odds").eq(
-            "match_id", m["id"]
-        ).eq("market", "1x2").eq("selection", "away").order(
-            "timestamp", desc=True
-        ).limit(1).execute().data
-
+        odds_rows = execute_query(
+            """SELECT odds FROM odds_snapshots
+               WHERE match_id = %s AND market = '1x2' AND selection = 'away'
+               ORDER BY timestamp DESC LIMIT 1""",
+            (m["id"],),
+        )
         if odds_rows and float(odds_rows[0]["odds"]) > 1.0:
             implied_probs.append(1.0 / float(odds_rows[0]["odds"]))
 
@@ -1604,20 +2004,22 @@ def compute_team_form_from_db(team_id: str, as_of_date: str, window: int = 10) -
     Compute rolling form metrics for a team from recent finished matches in DB.
     Returns form dict or None if insufficient data.
     """
-    client = get_client()
-
     # Get last N finished matches involving this team
-    home_matches = client.table("matches").select(
-        "score_home, score_away"
-    ).eq("home_team_id", team_id).eq("status", "finished").lt(
-        "date", f"{as_of_date}T23:59:59"
-    ).order("date", desc=True).limit(window).execute().data or []
+    home_matches = execute_query(
+        """SELECT score_home, score_away FROM matches
+           WHERE home_team_id = %s AND status = 'finished'
+             AND date < %s
+           ORDER BY date DESC LIMIT %s""",
+        (team_id, f"{as_of_date}T23:59:59", window),
+    )
 
-    away_matches = client.table("matches").select(
-        "score_home, score_away"
-    ).eq("away_team_id", team_id).eq("status", "finished").lt(
-        "date", f"{as_of_date}T23:59:59"
-    ).order("date", desc=True).limit(window).execute().data or []
+    away_matches = execute_query(
+        """SELECT score_home, score_away FROM matches
+           WHERE away_team_id = %s AND status = 'finished'
+             AND date < %s
+           ORDER BY date DESC LIMIT %s""",
+        (team_id, f"{as_of_date}T23:59:59", window),
+    )
 
     # Combine and compute stats
     results = []
@@ -1662,30 +2064,49 @@ def compute_team_form_from_db(team_id: str, as_of_date: str, window: int = 10) -
 
 def settle_bet(bet_id: str, result: str, pnl: float, bankroll_after: float):
     """Settle a paper bet with result and P&L"""
-    client = get_client()
-
-    client.table("simulated_bets").update({
-        "result": result,
-        "pnl": pnl,
-        "bankroll_after": bankroll_after,
-    }).eq("id", bet_id).execute()
+    execute_write(
+        """UPDATE simulated_bets
+           SET result = %s, pnl = %s, bankroll_after = %s
+           WHERE id = %s""",
+        (result, pnl, bankroll_after, bet_id),
+    )
 
 
 def get_pending_bets() -> list[dict]:
-    """Get all pending (unsettled) bets"""
-    client = get_client()
+    """Get all pending (unsettled) bets with match data"""
+    rows = execute_query(
+        """SELECT sb.*,
+                  m.date AS match_date, m.home_team_id, m.away_team_id,
+                  m.score_home AS match_score_home, m.score_away AS match_score_away,
+                  m.result AS match_result, m.status AS match_status
+           FROM simulated_bets sb
+           JOIN matches m ON sb.match_id = m.id
+           WHERE sb.result = 'pending'""",
+    )
 
-    result = client.table("simulated_bets").select(
-        "*, matches(date, home_team_id, away_team_id, score_home, score_away, result, status)"
-    ).eq("result", "pending").execute()
-
-    return result.data
+    # Restructure to match PostgREST format with nested matches dict
+    result = []
+    for r in rows:
+        row = dict(r)
+        row["matches"] = {
+            "date": row.pop("match_date"),
+            "home_team_id": row.pop("home_team_id"),
+            "away_team_id": row.pop("away_team_id"),
+            "score_home": row.pop("match_score_home"),
+            "score_away": row.pop("match_score_away"),
+            "result": row.pop("match_result"),
+            "status": row.pop("match_status"),
+        }
+        result.append(row)
+    return result
 
 
 def update_bot_bankroll(bot_id: str, new_bankroll: float):
     """Update a bot's current bankroll"""
-    client = get_client()
-    client.table("bots").update({"current_bankroll": new_bankroll}).eq("id", bot_id).execute()
+    execute_write(
+        "UPDATE bots SET current_bankroll = %s WHERE id = %s",
+        (new_bankroll, bot_id),
+    )
 
 
 # ============================================================
@@ -1694,16 +2115,14 @@ def update_bot_bankroll(bot_id: str, new_bankroll: float):
 
 def update_match_result(match_id: str, home_goals: int, away_goals: int):
     """Update a match with its final score"""
-    client = get_client()
-
     result = "home" if home_goals > away_goals else "away" if away_goals > home_goals else "draw"
 
-    client.table("matches").update({
-        "score_home": home_goals,
-        "score_away": away_goals,
-        "result": result,
-        "status": "finished",
-    }).eq("id", match_id).execute()
+    execute_write(
+        """UPDATE matches
+           SET score_home = %s, score_away = %s, result = %s, status = 'finished'
+           WHERE id = %s""",
+        (home_goals, away_goals, result, match_id),
+    )
 
 
 # ============================================================
@@ -1712,28 +2131,46 @@ def update_match_result(match_id: str, home_goals: int, away_goals: int):
 
 def get_bot_performance(bot_name: str = None) -> list[dict]:
     """Get performance summary for bots"""
-    client = get_client()
-
-    query = client.table("simulated_bets").select("*")
     if bot_name:
-        bot = client.table("bots").select("id").eq("name", bot_name).execute()
-        if bot.data:
-            query = query.eq("bot_id", bot.data[0]["id"])
+        bot_rows = execute_query(
+            "SELECT id FROM bots WHERE name = %s", (bot_name,)
+        )
+        if bot_rows:
+            return execute_query(
+                "SELECT * FROM simulated_bets WHERE bot_id = %s AND result != 'pending'",
+                (bot_rows[0]["id"],),
+            )
+        return []
 
-    result = query.neq("result", "pending").execute()
-    return result.data
+    return execute_query(
+        "SELECT * FROM simulated_bets WHERE result != 'pending'"
+    )
 
 
 def get_todays_matches() -> list[dict]:
-    """Get today's matches from Supabase"""
-    client = get_client()
+    """Get today's matches"""
     today = date.today().isoformat()
 
-    result = client.table("matches").select(
-        "*, leagues(name, country, tier)"
-    ).gte("date", f"{today}T00:00:00").lte("date", f"{today}T23:59:59").execute()
+    rows = execute_query(
+        """SELECT m.*,
+                  l.name AS league_name, l.country AS league_country, l.tier AS league_tier
+           FROM matches m
+           LEFT JOIN leagues l ON m.league_id = l.id
+           WHERE m.date >= %s AND m.date <= %s""",
+        (f"{today}T00:00:00", f"{today}T23:59:59"),
+    )
 
-    return result.data
+    # Restructure to match PostgREST format with nested leagues dict
+    result = []
+    for r in rows:
+        row = dict(r)
+        row["leagues"] = {
+            "name": row.pop("league_name"),
+            "country": row.pop("league_country"),
+            "tier": row.pop("league_tier"),
+        }
+        result.append(row)
+    return result
 
 
 # ============================================================
@@ -1743,21 +2180,24 @@ def get_todays_matches() -> list[dict]:
 def compute_bookmaker_disagreement(match_id: str) -> float | None:
     """
     BDM-1: max(implied_prob) - min(implied_prob) across bookmakers for home 1x2.
-    Uses the most recent snapshot per bookmaker. Requires ≥2 distinct bookmakers.
+    Uses the most recent snapshot per bookmaker. Requires >=2 distinct bookmakers.
     """
-    client = get_client()
-    result = client.table("odds_snapshots").select(
-        "bookmaker, odds, timestamp"
-    ).eq("match_id", match_id).eq("market", "1x2").eq(
-        "selection", "home"
-    ).not_.is_("bookmaker", "null").order("timestamp", desc=True).limit(200).execute()
+    rows = execute_query(
+        """SELECT bookmaker, odds, timestamp
+           FROM odds_snapshots
+           WHERE match_id = %s AND market = '1x2' AND selection = 'home'
+             AND bookmaker IS NOT NULL
+           ORDER BY timestamp DESC
+           LIMIT 200""",
+        (match_id,),
+    )
 
-    if not result.data:
+    if not rows:
         return None
 
     # Latest odds per bookmaker
     seen: dict[str, float] = {}
-    for row in result.data:
+    for row in rows:
         bk = row.get("bookmaker")
         if bk and bk not in seen and float(row["odds"]) > 1.0:
             seen[bk] = 1.0 / float(row["odds"])
@@ -1775,24 +2215,26 @@ def compute_fixture_importance(
 ) -> float | None:
     """
     S5: Fixture importance from standings urgency.
-    Returns 0.0–1.0. High = title/relegation 6-pointer.
+    Returns 0.0-1.0. High = title/relegation 6-pointer.
     """
     if not (league_api_id and season and home_team_api_id and away_team_api_id):
         return None
 
-    client = get_client()
-    result = client.table("league_standings").select(
-        "team_api_id, rank, points, played, description, status"
-    ).eq("league_api_id", league_api_id).eq("season", season).order(
-        "fetched_date", desc=True
-    ).limit(40).execute()
+    rows = execute_query(
+        """SELECT team_api_id, rank, points, played, description, status
+           FROM league_standings
+           WHERE league_api_id = %s AND season = %s
+           ORDER BY fetched_date DESC
+           LIMIT 40""",
+        (league_api_id, season),
+    )
 
-    if not result.data:
+    if not rows:
         return None
 
     # Deduplicate: latest entry per team
     by_team: dict[int, dict] = {}
-    for row in result.data:
+    for row in rows:
         tid = row["team_api_id"]
         if tid not in by_team:
             by_team[tid] = row
@@ -1832,12 +2274,12 @@ def get_referee_cards_avg(referee_name: str) -> float | None:
     """S4: Look up pre-computed cards_per_game for a referee."""
     if not referee_name:
         return None
-    client = get_client()
-    result = client.table("referee_stats").select(
-        "cards_per_game"
-    ).eq("referee_name", referee_name).execute()
-    if result.data:
-        return result.data[0].get("cards_per_game")
+    rows = execute_query(
+        "SELECT cards_per_game FROM referee_stats WHERE referee_name = %s",
+        (referee_name,),
+    )
+    if rows:
+        return rows[0].get("cards_per_game")
     return None
 
 
@@ -1847,14 +2289,14 @@ def build_referee_stats() -> int:
     Called from backfill_referee_stats.py and optionally from settlement.
     Returns number of referees upserted.
     """
-    client = get_client()
-
     # Fetch all finished matches with referee name and score
-    matches_r = client.table("matches").select(
-        "id, referee, result, score_home, score_away"
-    ).eq("status", "finished").not_.is_("referee", "null").execute()
+    matches_r = execute_query(
+        """SELECT id, referee, result, score_home, score_away
+           FROM matches
+           WHERE status = 'finished' AND referee IS NOT NULL""",
+    )
 
-    if not matches_r.data:
+    if not matches_r:
         return 0
 
     from collections import defaultdict
@@ -1863,7 +2305,7 @@ def build_referee_stats() -> int:
         "over25": 0, "yellow": 0, "red": 0,
     })
 
-    for m in matches_r.data:
+    for m in matches_r:
         ref = m.get("referee", "").strip()
         if not ref:
             continue
@@ -1885,20 +2327,24 @@ def build_referee_stats() -> int:
 
     # Enrich with card data from match_stats
     match_ids_by_ref: dict[str, list[str]] = defaultdict(list)
-    for m in matches_r.data:
+    for m in matches_r:
         ref = m.get("referee", "").strip()
         if ref:
             match_ids_by_ref[ref].append(m["id"])
 
     # Fetch card totals from match_stats
     for ref, mids in match_ids_by_ref.items():
-        # Batch queries — 100 at a time
+        # Batch queries -- 100 at a time
         for i in range(0, len(mids), 100):
             batch = mids[i:i + 100]
-            cards_r = client.table("match_stats").select(
-                "yellow_cards_home, yellow_cards_away, red_cards_home, red_cards_away"
-            ).in_("match_id", batch).execute()
-            for row in (cards_r.data or []):
+            cards_r = execute_query(
+                """SELECT yellow_cards_home, yellow_cards_away,
+                          red_cards_home, red_cards_away
+                   FROM match_stats
+                   WHERE match_id = ANY(%s)""",
+                (batch,),
+            )
+            for row in cards_r:
                 yh = row.get("yellow_cards_home") or 0
                 ya = row.get("yellow_cards_away") or 0
                 rh = row.get("red_cards_home") or 0
@@ -1926,13 +2372,26 @@ def build_referee_stats() -> int:
             "red_total": s["red"],
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
+
+        columns = list(row.keys())
+        col_str = ", ".join(columns)
+        placeholders = ", ".join(["%s"] * len(columns))
+        update_cols = [c for c in columns if c != "referee_name"]
+        update_str = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+        values = tuple(row[c] for c in columns)
+
         try:
-            client.table("referee_stats").upsert(
-                row, on_conflict="referee_name"
-            ).execute()
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""INSERT INTO referee_stats ({col_str}) VALUES ({placeholders})
+                            ON CONFLICT (referee_name) DO UPDATE SET {update_str}""",
+                        values,
+                    )
+                    conn.commit()
             upserted += 1
-        except Exception:
-            pass
+        except Exception as e:
+            console.print(f"[yellow]build_referee_stats: {e}[/yellow]")
 
     return upserted
 
@@ -1954,7 +2413,7 @@ def write_morning_signals(
     """
     now_str = datetime.now(timezone.utc).isoformat()
 
-    # ── Opening odds → market implied probs ────────────────────────────────
+    # -- Opening odds -> market implied probs -----------------------------------
     if opening_odds_home and opening_odds_home > 1.0:
         store_match_signal(match_id, "market_implied_home",
                            round(1.0 / opening_odds_home, 4),
@@ -1968,7 +2427,7 @@ def write_morning_signals(
                            round(1.0 / opening_odds_away, 4),
                            "market", "opening_odds", captured_at=now_str)
 
-    # ── BDM-1: Bookmaker disagreement ──────────────────────────────────────
+    # -- BDM-1: Bookmaker disagreement -----------------------------------------
     try:
         bdm = compute_bookmaker_disagreement(match_id)
         if bdm is not None:
@@ -1977,7 +2436,7 @@ def write_morning_signals(
     except Exception:
         pass
 
-    # ── S5: Fixture importance ──────────────────────────────────────────────
+    # -- S5: Fixture importance -------------------------------------------------
     try:
         if league_api_id and season and home_team_api_id and away_team_api_id:
             importance = compute_fixture_importance(
@@ -1989,7 +2448,7 @@ def write_morning_signals(
     except Exception:
         pass
 
-    # ── S4: Referee cards avg ───────────────────────────────────────────────
+    # -- S4: Referee cards avg --------------------------------------------------
     try:
         if referee:
             cards_avg = get_referee_cards_avg(referee)
@@ -2000,20 +2459,20 @@ def write_morning_signals(
     except Exception:
         pass
 
-    # ── Injury counts (from match_injuries already stored by T3) ───────────
+    # -- Injury counts (from match_injuries already stored by T3) ---------------
     try:
-        client = get_client()
-        inj_r = client.table("match_injuries").select(
-            "team_side, status"
-        ).eq("match_id", match_id).execute()
-        if inj_r.data:
-            out_home = sum(1 for r in inj_r.data
+        inj_rows = execute_query(
+            "SELECT team_side, status FROM match_injuries WHERE match_id = %s",
+            (match_id,),
+        )
+        if inj_rows:
+            out_home = sum(1 for r in inj_rows
                           if r.get("team_side") == "home" and r.get("status") == "Missing Fixture")
-            out_away = sum(1 for r in inj_r.data
+            out_away = sum(1 for r in inj_rows
                           if r.get("team_side") == "away" and r.get("status") == "Missing Fixture")
-            doubt_home = sum(1 for r in inj_r.data
+            doubt_home = sum(1 for r in inj_rows
                             if r.get("team_side") == "home" and r.get("status") == "Questionable")
-            doubt_away = sum(1 for r in inj_r.data
+            doubt_away = sum(1 for r in inj_rows
                             if r.get("team_side") == "away" and r.get("status") == "Questionable")
             if out_home + doubt_home > 0:
                 store_match_signal(match_id, "injury_count_home",
@@ -2032,24 +2491,31 @@ def write_morning_signals(
     except Exception:
         pass
 
-    # ── ELO diff ────────────────────────────────────────────────────────────
+    # -- ELO diff ---------------------------------------------------------------
     try:
-        client = get_client()
-        match_r = client.table("matches").select(
-            "home_team_id, away_team_id, date"
-        ).eq("id", match_id).execute()
-        if match_r.data:
-            m = match_r.data[0]
-            match_date = m["date"][:10] if m.get("date") else date.today().isoformat()
+        match_r = execute_query(
+            "SELECT home_team_id, away_team_id, date FROM matches WHERE id = %s",
+            (match_id,),
+        )
+        if match_r:
+            m = match_r[0]
+            match_date_val = m["date"]
+            if isinstance(match_date_val, datetime):
+                match_date_str = match_date_val.strftime("%Y-%m-%d")
+            else:
+                match_date_str = str(match_date_val)[:10] if match_date_val else date.today().isoformat()
             elo_home = elo_away = None
             for team_id, attr in [(m.get("home_team_id"), "elo_home"),
                                    (m.get("away_team_id"), "elo_away")]:
                 if team_id:
-                    r = client.table("team_elo_daily").select("elo_rating").eq(
-                        "team_id", team_id
-                    ).lte("date", match_date).order("date", desc=True).limit(1).execute()
-                    if r.data:
-                        val = float(r.data[0]["elo_rating"])
+                    r = execute_query(
+                        """SELECT elo_rating FROM team_elo_daily
+                           WHERE team_id = %s AND date <= %s
+                           ORDER BY date DESC LIMIT 1""",
+                        (team_id, match_date_str),
+                    )
+                    if r:
+                        val = float(r[0]["elo_rating"])
                         if attr == "elo_home":
                             elo_home = val
                         else:
@@ -2063,36 +2529,40 @@ def write_morning_signals(
                 store_match_signal(match_id, "elo_away",
                                    elo_away, "quality", "derived", captured_at=now_str)
 
-            # ── Form PPG ────────────────────────────────────────────────────
+            # -- Form PPG -------------------------------------------------------
             for team_id, signal_name in [
                 (m.get("home_team_id"), "form_ppg_home"),
                 (m.get("away_team_id"), "form_ppg_away"),
             ]:
                 if team_id:
-                    fr = client.table("team_form_cache").select("ppg").eq(
-                        "team_id", team_id
-                    ).lte("date", match_date).order("date", desc=True).limit(1).execute()
-                    if fr.data and fr.data[0].get("ppg") is not None:
+                    fr = execute_query(
+                        """SELECT ppg FROM team_form_cache
+                           WHERE team_id = %s AND date <= %s
+                           ORDER BY date DESC LIMIT 1""",
+                        (team_id, match_date_str),
+                    )
+                    if fr and fr[0].get("ppg") is not None:
                         store_match_signal(match_id, signal_name,
-                                           float(fr.data[0]["ppg"]),
+                                           float(fr[0]["ppg"]),
                                            "quality", "derived", captured_at=now_str)
 
-            # ── SIG-9: Form slope (PPG trend: last 5 vs prior 5) ────────────
+            # -- SIG-9: Form slope (PPG trend: last 5 vs prior 5) ---------------
             for team_id, sig_name in [
                 (m.get("home_team_id"), "form_slope_home"),
                 (m.get("away_team_id"), "form_slope_away"),
             ]:
                 if not team_id:
                     continue
-                fm_r = client.table("matches").select(
-                    "home_team_id, result"
-                ).or_(
-                    f"home_team_id.eq.{team_id},away_team_id.eq.{team_id}"
-                ).eq("status", "finished").lt(
-                    "date", f"{match_date}T00:00:00"
-                ).order("date", desc=True).limit(10).execute()
+                fm_r = execute_query(
+                    """SELECT home_team_id, result FROM matches
+                       WHERE (home_team_id = %s OR away_team_id = %s)
+                         AND status = 'finished'
+                         AND date < %s
+                       ORDER BY date DESC LIMIT 10""",
+                    (team_id, team_id, f"{match_date_str}T00:00:00"),
+                )
 
-                if not fm_r.data or len(fm_r.data) < 6:
+                if not fm_r or len(fm_r) < 6:
                     continue
 
                 def _pts(row: dict, tid: str) -> int | None:
@@ -2107,7 +2577,7 @@ def write_morning_signals(
                         return 1
                     return None
 
-                pts_list = [p for row in fm_r.data if (p := _pts(row, team_id)) is not None]
+                pts_list = [p for row in fm_r if (p := _pts(row, team_id)) is not None]
                 if len(pts_list) < 6:
                     continue
                 recent = pts_list[:5]
@@ -2120,21 +2590,23 @@ def write_morning_signals(
     except Exception:
         pass
 
-    # ── S3b: Standings signals ──────────────────────────────────────────────
+    # -- S3b: Standings signals -------------------------------------------------
     try:
         if league_api_id and season and home_team_api_id and away_team_api_id:
-            client = get_client()
-            st_r = client.table("league_standings").select(
-                "team_api_id, rank, points, description"
-            ).eq("league_api_id", league_api_id).eq(
-                "season", season
-            ).order("fetched_date", desc=True).limit(200).execute()
+            st_r = execute_query(
+                """SELECT team_api_id, rank, points, description
+                   FROM league_standings
+                   WHERE league_api_id = %s AND season = %s
+                   ORDER BY fetched_date DESC
+                   LIMIT 200""",
+                (league_api_id, season),
+            )
 
-            if st_r.data:
-                # Deduplicate — latest fetched_date first, keep first seen per team
+            if st_r:
+                # Deduplicate -- latest fetched_date first, keep first seen per team
                 seen_tids: set = set()
                 deduped: list = []
-                for row in st_r.data:
+                for row in st_r:
                     tid = row.get("team_api_id")
                     if tid and tid not in seen_tids:
                         seen_tids.add(tid)
@@ -2172,17 +2644,30 @@ def write_morning_signals(
                                            captured_at=now_str)
 
                     # ML-3: Store form string (e.g. "WWDLW") directly on matches row
+                    # Need to re-fetch standings with form column
+                    st_form = execute_query(
+                        """SELECT team_api_id, form
+                           FROM league_standings
+                           WHERE league_api_id = %s AND season = %s
+                             AND team_api_id = ANY(%s)
+                           ORDER BY fetched_date DESC
+                           LIMIT 10""",
+                        (league_api_id, season, [home_team_api_id, away_team_api_id]),
+                    )
                     home_form = None
                     away_form = None
-                    for api_id, attr in [(home_team_api_id, "home"), (away_team_api_id, "away")]:
-                        row = next(
-                            (r for r in deduped if r.get("team_api_id") == api_id), None
-                        )
-                        if row and row.get("form"):
-                            if attr == "home":
-                                home_form = row["form"][:5]  # last 5 chars
-                            else:
+                    seen_form: set = set()
+                    for row in st_form:
+                        tid = row.get("team_api_id")
+                        if tid in seen_form:
+                            continue
+                        seen_form.add(tid)
+                        if row.get("form"):
+                            if tid == home_team_api_id:
+                                home_form = row["form"][:5]
+                            elif tid == away_team_api_id:
                                 away_form = row["form"][:5]
+
                     form_updates = {}
                     if home_form:
                         form_updates["form_home"] = home_form
@@ -2190,23 +2675,26 @@ def write_morning_signals(
                         form_updates["form_away"] = away_form
                     if form_updates:
                         try:
-                            get_client().table("matches").update(form_updates).eq(
-                                "id", match_id
-                            ).execute()
+                            set_clauses = ", ".join(f"{k} = %s" for k in form_updates)
+                            params = list(form_updates.values()) + [match_id]
+                            execute_write(
+                                f"UPDATE matches SET {set_clauses} WHERE id = %s",
+                                tuple(params),
+                            )
                         except Exception:
                             pass
 
     except Exception:
         pass
 
-    # ── S3c: H2H win pct ────────────────────────────────────────────────────
+    # -- S3c: H2H win pct ------------------------------------------------------
     try:
-        client = get_client()
-        h2h_r = client.table("matches").select(
-            "h2h_home_wins, h2h_draws, h2h_away_wins"
-        ).eq("id", match_id).execute()
-        if h2h_r.data:
-            d = h2h_r.data[0]
+        h2h_r = execute_query(
+            "SELECT h2h_home_wins, h2h_draws, h2h_away_wins FROM matches WHERE id = %s",
+            (match_id,),
+        )
+        if h2h_r:
+            d = h2h_r[0]
             hw = d.get("h2h_home_wins") or 0
             hd = d.get("h2h_draws") or 0
             ha = d.get("h2h_away_wins") or 0
@@ -2221,16 +2709,16 @@ def write_morning_signals(
     except Exception:
         pass
 
-    # ── S3d: Referee home win pct + over 2.5 pct ────────────────────────────
+    # -- S3d: Referee home win pct + over 2.5 pct -------------------------------
     try:
         if referee:
-            client = get_client()
-            ref_r = client.table("referee_stats").select(
-                "home_win_pct, over_25_pct"
-            ).eq("referee_name", referee).execute()
-            if ref_r.data:
-                hwp = ref_r.data[0].get("home_win_pct")
-                o25p = ref_r.data[0].get("over_25_pct")
+            ref_r = execute_query(
+                "SELECT home_win_pct, over_25_pct FROM referee_stats WHERE referee_name = %s",
+                (referee,),
+            )
+            if ref_r:
+                hwp = ref_r[0].get("home_win_pct")
+                o25p = ref_r[0].get("over_25_pct")
                 if hwp is not None:
                     store_match_signal(match_id, "referee_home_win_pct",
                                        float(hwp), "context", "referee_stats",
@@ -2242,64 +2730,78 @@ def write_morning_signals(
     except Exception:
         pass
 
-    # ── S3e: Overnight line move ─────────────────────────────────────────────
+    # -- S3e: Overnight line move -----------------------------------------------
     try:
-        client = get_client()
         today_date = date.today().isoformat()
         midnight_utc = f"{today_date}T00:00:00+00:00"
 
-        yest_r = client.table("odds_snapshots").select("odds").eq(
-            "match_id", match_id
-        ).eq("market", "1x2").eq("selection", "home").lt(
-            "timestamp", midnight_utc
-        ).order("timestamp", desc=True).limit(1).execute()
+        yest_r = execute_query(
+            """SELECT odds FROM odds_snapshots
+               WHERE match_id = %s AND market = '1x2' AND selection = 'home'
+                 AND timestamp < %s
+               ORDER BY timestamp DESC LIMIT 1""",
+            (match_id, midnight_utc),
+        )
 
-        today_r = client.table("odds_snapshots").select("odds").eq(
-            "match_id", match_id
-        ).eq("market", "1x2").eq("selection", "home").gte(
-            "timestamp", midnight_utc
-        ).order("timestamp", desc=False).limit(1).execute()
+        today_r = execute_query(
+            """SELECT odds FROM odds_snapshots
+               WHERE match_id = %s AND market = '1x2' AND selection = 'home'
+                 AND timestamp >= %s
+               ORDER BY timestamp ASC LIMIT 1""",
+            (match_id, midnight_utc),
+        )
 
-        if yest_r.data and today_r.data:
-            last_yest = 1.0 / float(yest_r.data[0]["odds"])
-            first_today = 1.0 / float(today_r.data[0]["odds"])
+        if yest_r and today_r:
+            last_yest = 1.0 / float(yest_r[0]["odds"])
+            first_today = 1.0 / float(today_r[0]["odds"])
             store_match_signal(match_id, "overnight_line_move",
                                round(first_today - last_yest, 5),
                                "market", "derived", captured_at=now_str)
     except Exception:
         pass
 
-    # ── S3f: Rest days home / away ───────────────────────────────────────────
+    # -- S3f: Rest days home / away ---------------------------------------------
     try:
-        client = get_client()
-        match_r2 = client.table("matches").select(
-            "home_team_id, away_team_id, date"
-        ).eq("id", match_id).execute()
-        if match_r2.data:
-            m2 = match_r2.data[0]
-            match_date_str = (m2.get("date") or "")[:10]
-            if match_date_str:
+        match_r2 = execute_query(
+            "SELECT home_team_id, away_team_id, date FROM matches WHERE id = %s",
+            (match_id,),
+        )
+        if match_r2:
+            m2 = match_r2[0]
+            m2_date = m2.get("date")
+            if isinstance(m2_date, datetime):
+                match_date_str2 = m2_date.strftime("%Y-%m-%d")
+            else:
+                match_date_str2 = str(m2_date)[:10] if m2_date else ""
+            if match_date_str2:
                 for team_id, sig_name in [
                     (m2.get("home_team_id"), "rest_days_home"),
                     (m2.get("away_team_id"), "rest_days_away"),
                 ]:
                     if not team_id:
                         continue
-                    prev_r = client.table("matches").select("date").or_(
-                        f"home_team_id.eq.{team_id},away_team_id.eq.{team_id}"
-                    ).eq("status", "finished").lt(
-                        "date", f"{match_date_str}T00:00:00"
-                    ).order("date", desc=True).limit(1).execute()
-                    if prev_r.data:
-                        prev_date_str = prev_r.data[0]["date"][:10]
-                        delta = date.fromisoformat(match_date_str) - date.fromisoformat(prev_date_str)
+                    prev_r = execute_query(
+                        """SELECT date FROM matches
+                           WHERE (home_team_id = %s OR away_team_id = %s)
+                             AND status = 'finished'
+                             AND date < %s
+                           ORDER BY date DESC LIMIT 1""",
+                        (team_id, team_id, f"{match_date_str2}T00:00:00"),
+                    )
+                    if prev_r:
+                        prev_date_val = prev_r[0]["date"]
+                        if isinstance(prev_date_val, datetime):
+                            prev_date_str = prev_date_val.strftime("%Y-%m-%d")
+                        else:
+                            prev_date_str = str(prev_date_val)[:10]
+                        delta = date.fromisoformat(match_date_str2) - date.fromisoformat(prev_date_str)
                         store_match_signal(match_id, sig_name,
                                            float(delta.days), "quality", "derived",
                                            captured_at=now_str)
     except Exception:
         pass
 
-    # ── T2: Season goals avg + SIG-8: venue-specific splits ─────────────────
+    # -- T2: Season goals avg + SIG-8: venue-specific splits --------------------
     try:
         if home_team_api_id and away_team_api_id and season:
             for api_id, suffix in [
@@ -2319,7 +2821,7 @@ def write_morning_signals(
                                            float(ga_avg), "quality", "team_season_stats",
                                            captured_at=now_str)
 
-                    # SIG-8: venue-specific avg — home team's home stats, away team's away stats
+                    # SIG-8: venue-specific avg -- home team's home stats, away team's away stats
                     if suffix == "home":
                         played = stats.get("played_home") or 0
                         gf = stats.get("goals_for_home")
@@ -2344,20 +2846,22 @@ def write_morning_signals(
     except Exception:
         pass
 
-    # ── SIG-7: Fixture importance per team + asymmetry ───────────────────────
+    # -- SIG-7: Fixture importance per team + asymmetry -------------------------
     try:
         if league_api_id and season and home_team_api_id and away_team_api_id:
-            client = get_client()
-            st7 = client.table("league_standings").select(
-                "team_api_id, rank, description"
-            ).eq("league_api_id", league_api_id).eq(
-                "season", season
-            ).order("fetched_date", desc=True).limit(200).execute()
+            st7 = execute_query(
+                """SELECT team_api_id, rank, description
+                   FROM league_standings
+                   WHERE league_api_id = %s AND season = %s
+                   ORDER BY fetched_date DESC
+                   LIMIT 200""",
+                (league_api_id, season),
+            )
 
-            if st7.data:
+            if st7:
                 seen7: set = set()
                 deduped7: list = []
-                for row in st7.data:
+                for row in st7:
                     tid = row.get("team_api_id")
                     if tid and tid not in seen7:
                         seen7.add(tid)
@@ -2395,19 +2899,19 @@ def write_morning_signals(
     except Exception:
         pass
 
-    # ── SIG-10: Odds volatility (std of implied prob over last 24h) ──────────
+    # -- SIG-10: Odds volatility (std of implied prob over last 24h) ------------
     try:
         from statistics import stdev
         from datetime import timedelta
-        client = get_client()
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-        vol_r = client.table("odds_snapshots").select("odds").eq(
-            "match_id", match_id
-        ).eq("market", "1x2").eq("selection", "home").eq(
-            "is_live", False
-        ).gte("timestamp", cutoff).execute()
-        if vol_r.data and len(vol_r.data) >= 3:
-            implied = [1.0 / float(r["odds"]) for r in vol_r.data if float(r["odds"]) > 1.0]
+        vol_r = execute_query(
+            """SELECT odds FROM odds_snapshots
+               WHERE match_id = %s AND market = '1x2' AND selection = 'home'
+                 AND is_live = false AND timestamp >= %s""",
+            (match_id, cutoff),
+        )
+        if vol_r and len(vol_r) >= 3:
+            implied = [1.0 / float(r["odds"]) for r in vol_r if float(r["odds"]) > 1.0]
             if len(implied) >= 3:
                 store_match_signal(match_id, "odds_volatility",
                                    round(stdev(implied), 6),
@@ -2415,35 +2919,39 @@ def write_morning_signals(
     except Exception:
         pass
 
-    # ── SIG-11: League meta-features (home win pct, draw pct, avg goals) ─────
+    # -- SIG-11: League meta-features (home win pct, draw pct, avg goals) -------
     try:
-        client = get_client()
-        lm_match = client.table("matches").select("league_id").eq("id", match_id).execute()
-        if lm_match.data:
-            league_uuid = lm_match.data[0].get("league_id")
+        lm_match = execute_query(
+            "SELECT league_id FROM matches WHERE id = %s",
+            (match_id,),
+        )
+        if lm_match:
+            league_uuid = lm_match[0].get("league_id")
             if league_uuid:
-                lm_r = client.table("matches").select(
-                    "result, score_home, score_away"
-                ).eq("league_id", league_uuid).eq(
-                    "status", "finished"
-                ).not_.is_("result", "null").order(
-                    "date", desc=True
-                ).limit(200).execute()
+                lm_r = execute_query(
+                    """SELECT result, score_home, score_away
+                       FROM matches
+                       WHERE league_id = %s AND status = 'finished'
+                         AND result IS NOT NULL
+                       ORDER BY date DESC
+                       LIMIT 200""",
+                    (league_uuid,),
+                )
 
-                if lm_r.data and len(lm_r.data) >= 20:
-                    total_lm = len(lm_r.data)
-                    home_wins = sum(1 for r in lm_r.data if r.get("result") == "home")
-                    draws = sum(1 for r in lm_r.data if r.get("result") == "draw")
+                if lm_r and len(lm_r) >= 20:
+                    total_lm = len(lm_r)
+                    home_wins = sum(1 for r in lm_r if r.get("result") == "home")
+                    draws_count = sum(1 for r in lm_r if r.get("result") == "draw")
                     goal_totals = [
                         int(r["score_home"]) + int(r["score_away"])
-                        for r in lm_r.data
+                        for r in lm_r
                         if r.get("score_home") is not None and r.get("score_away") is not None
                     ]
                     store_match_signal(match_id, "league_home_win_pct",
                                        round(home_wins / total_lm, 4),
                                        "context", "derived", captured_at=now_str)
                     store_match_signal(match_id, "league_draw_pct",
-                                       round(draws / total_lm, 4),
+                                       round(draws_count / total_lm, 4),
                                        "context", "derived", captured_at=now_str)
                     if goal_totals:
                         store_match_signal(match_id, "league_avg_goals",
@@ -2454,15 +2962,16 @@ def write_morning_signals(
 
 
 if __name__ == "__main__":
-    client = get_client()
-    print("Supabase connection OK")
+    from workers.api_clients.db import execute_query as eq
+
+    console.print("[green]psycopg2 direct connection OK[/green]")
 
     for table in ["bots", "matches", "simulated_bets", "predictions", "odds_snapshots",
                   "leagues", "teams", "live_match_snapshots", "match_events",
                   "prediction_snapshots", "match_stats", "model_evaluations",
                   "team_elo_daily", "team_form_cache"]:
         try:
-            result = client.table(table).select("id", count="exact").execute()
-            print(f"  {table}: {result.count} rows")
+            result = eq(f"SELECT COUNT(*) AS cnt FROM {table}")
+            print(f"  {table}: {result[0]['cnt']} rows")
         except Exception as e:
-            print(f"  {table}: ERROR — {e}")
+            print(f"  {table}: ERROR -- {e}")

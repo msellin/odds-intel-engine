@@ -210,7 +210,8 @@ def fetch_team_stats(fixture_meta: dict, coverage_map: dict) -> int:
                     parsed = parse_team_statistics(raw)
                     store_team_season_stats(api_id, lg_api_id, fix_season, parsed)
                     stored += 1
-            except Exception:
+            except Exception as e:
+                console.print(f"  [yellow]Team stats failed for team {api_id} league {lg_api_id}: {e}[/yellow]")
                 continue
 
     console.print(f"  {stored} team stat records stored ({len(seen)} unique Tier A teams)")
@@ -242,7 +243,8 @@ def fetch_standings(fixture_meta: dict, coverage_map: dict) -> int:
                 continue
             rows = parse_standings(raw)
             stored += store_league_standings(league_api_id, fix_season, rows)
-        except Exception:
+        except Exception as e:
+            console.print(f"  [yellow]Standings failed for league {league_api_id}: {e}[/yellow]")
             continue
 
     console.print(f"  {stored} standing rows stored across {len(seen)} leagues")
@@ -268,7 +270,8 @@ def fetch_h2h(fixture_meta: dict) -> int:
             parsed = parse_h2h(raw, home_team_api_id=home_id)
             store_match_h2h(match_id, parsed)
             stored += 1
-        except Exception:
+        except Exception as e:
+            console.print(f"  [yellow]H2H failed for {home_id} vs {away_id}: {e}[/yellow]")
             continue
 
     console.print(f"  {stored} H2H records stored")

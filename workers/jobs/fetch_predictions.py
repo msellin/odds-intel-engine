@@ -90,8 +90,8 @@ def fetch_af_predictions(target_date: str) -> int:
                 client.table("matches").update({
                     "af_prediction": parsed["raw"]
                 }).eq("id", match_id).execute()
-            except Exception:
-                pass
+            except Exception as e:
+                console.print(f"  [yellow]AF prediction JSONB store failed for {match_id}: {e}[/yellow]")
 
             # Store as prediction rows (source='af')
             for market, prob_key in [
@@ -106,11 +106,13 @@ def fetch_af_predictions(target_date: str) -> int:
                             "model_prob": prob,
                             "reasoning": "af_prediction",
                         }, source="af")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        console.print(f"  [red]Failed to store prediction for {match_id}/{market}: {e}[/red]")
+                        failed += 1
 
             fetched += 1
-        except Exception:
+        except Exception as e:
+            console.print(f"  [yellow]Prediction fetch failed for AF {af_id}: {e}[/yellow]")
             failed += 1
 
     console.print(f"  [green]{fetched} predictions stored[/green] | {failed} unavailable | {skipped_coverage} skipped (no coverage)")
