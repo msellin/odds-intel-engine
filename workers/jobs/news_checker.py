@@ -33,7 +33,8 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from google import genai
-from workers.api_clients.supabase_client import get_client, store_prediction_snapshot, store_match_signal
+from workers.api_clients.supabase_client import store_prediction_snapshot, store_match_signal
+from workers.api_clients.db import execute_query, execute_write
 
 console = Console()
 
@@ -182,19 +183,21 @@ def run_news_checker(dry_run: bool = False):
     today = date.today().isoformat()
     console.print(f"[bold cyan]═══ OddsIntel AI News Checker: {today} ═══[/bold cyan]\n")
 
-    client = get_client()
-
     # Get today's pending bets with match context
-    result = client.table("simulated_bets").select(
-        "id, market, selection, odds_at_pick, model_probability, edge_percent, reasoning, "
-        "matches(id, date, "
-        "home_team:home_team_id(name), away_team:away_team_id(name), "
-        "leagues(name, country, tier))"
-    ).eq("result", "pending").gte(
-        "created_at", f"{today}T00:00:00"
-    ).execute()
-
-    bets = result.data
+    bets = execute_query(
+        """SELECT sb.id, sb.match_id, sb.market, sb.selection, sb.odds_at_pick,
+                  sb.model_probability, sb.edge_percent, sb.reasoning,
+                  m.id as match_id, m.date as match_date,
+                  ht.name as home_team_name, ta.name as away_team_name,
+                  l.name as league_name, l.country as league_country, l.tier as league_tier
+           FROM simulated_bets sb
+           LEFT JOIN matches m ON sb.match_id = m.id
+           LEFT JOIN teams ht ON m.home_team_id = ht.id
+           LEFT JOIN teams ta ON m.away_team_id = ta.id
+           LEFT JOIN leagues l ON m.league_id = l.id
+           WHERE sb.result = 'pending' AND sb.created_at >= %s""",
+        [f"{today}T00:00:00"]
+    )
     console.print(f"Found {len(bets)} pending bets to check today\n")
 
     if not bets:
@@ -208,36 +211,27 @@ def run_news_checker(dry_run: bool = False):
     checked_matches: dict[str, dict] = {}
 
     for bet in bets:
-        match = bet.get("matches", {})
-        if not match:
+        match_id = bet.get("match_id")
+        if not match_id:
             continue
 
-        match_id = match["id"]
-        home_team_data = match.get("home_team", {})
-        away_team_data = match.get("away_team", {})
-        league_data = match.get("leagues", {})
-
-        home_team = (home_team_data[0]["name"] if isinstance(home_team_data, list) else home_team_data.get("name", "?"))
-        away_team = (away_team_data[0]["name"] if isinstance(away_team_data, list) else away_team_data.get("name", "?"))
-        league = (league_data[0]["name"] if isinstance(league_data, list) else league_data.get("name", "?"))
-        tier = (league_data[0]["tier"] if isinstance(league_data, list) else league_data.get("tier", 1))
+        home_team = bet.get("home_team_name", "?")
+        away_team = bet.get("away_team_name", "?")
+        league = bet.get("league_name", "?")
+        tier = bet.get("league_tier", 1)
 
         if match_id not in checked_matches:
             console.print(f"[cyan]Checking: {home_team} vs {away_team}...[/cyan]")
-
-            home_facts = []
-            away_facts = []
-            lineups = {}
 
             checked_matches[match_id] = {
                 "home_team": home_team,
                 "away_team": away_team,
                 "league": league,
                 "tier": tier,
-                "kickoff": match.get("date", ""),
-                "home_facts": home_facts,
-                "away_facts": away_facts,
-                "lineups": lineups,
+                "kickoff": bet.get("match_date", ""),
+                "home_facts": [],
+                "away_facts": [],
+                "lineups": {},
             }
 
         match_context = {
@@ -321,7 +315,9 @@ def run_news_checker(dry_run: bool = False):
             bet_update["news_impact_score"] = round(news_impact, 4)
             bet_update["lineup_confirmed"] = lineup_conf >= 0.9
 
-            client.table("simulated_bets").update(bet_update).eq("id", bet["id"]).execute()
+            set_clauses = ", ".join(f"{k} = %s" for k in bet_update)
+            params = list(bet_update.values()) + [bet["id"]]
+            execute_write(f"UPDATE simulated_bets SET {set_clauses} WHERE id = %s", params)
 
             # S3: Write signals to match_signals for ML training
             try:
@@ -331,7 +327,7 @@ def run_news_checker(dry_run: bool = False):
                                    round(lineup_conf, 3), "information", "gemini")
                 if players_out or players_doubtful:
                     home_out = sum(1 for p in players_out
-                                  if p.get("team", "").lower() in ("home", match.get("home_team", "").lower()))
+                                  if p.get("team", "").lower() in ("home", bet.get("home_team_name", "").lower()))
                     away_out = len(players_out) - home_out
                     if home_out > 0:
                         store_match_signal(match_id, "players_out_home_ai",
@@ -346,16 +342,22 @@ def run_news_checker(dry_run: bool = False):
             for player_info in players_out + players_doubtful:
                 try:
                     impact_type = "injury" if "injur" in player_info.get("reason", "").lower() else "suspension"
-                    client.table("news_events").insert({
-                        "match_id": match_id,
-                        "source": "gemini_news_checker_v2",
-                        "raw_text": f"{player_info.get('name', '?')} ({player_info.get('position', '?')}) — {player_info.get('reason', 'out')}",
-                        "extracted_entity": player_info.get("name"),
-                        "impact_type": impact_type,
-                        "impact_magnitude": abs(float(player_info.get("impact", 0))) * 100,
-                        "detected_at": datetime.now(timezone.utc).isoformat(),
-                        "processed_at": datetime.now(timezone.utc).isoformat(),
-                    }).execute()
+                    now_ts = datetime.now(timezone.utc).isoformat()
+                    execute_write(
+                        "INSERT INTO news_events (match_id, source, raw_text, extracted_entity, "
+                        "impact_type, impact_magnitude, detected_at, processed_at) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                        [
+                            match_id,
+                            "gemini_news_checker_v2",
+                            f"{player_info.get('name', '?')} ({player_info.get('position', '?')}) — {player_info.get('reason', 'out')}",
+                            player_info.get("name"),
+                            impact_type,
+                            abs(float(player_info.get("impact", 0))) * 100,
+                            now_ts,
+                            now_ts,
+                        ]
+                    )
                 except Exception:
                     pass  # Duplicate or non-critical
 
@@ -387,7 +389,7 @@ def run_news_checker(dry_run: bool = False):
                 pass  # non-critical
 
             # Save Stage 3 snapshot: pre_kickoff for matches kicking off within 3 hours
-            kickoff_str = match.get("date", "")
+            kickoff_str = bet.get("match_date", "")
             if kickoff_str:
                 try:
                     kickoff_dt = datetime.fromisoformat(kickoff_str.replace("Z", "+00:00"))

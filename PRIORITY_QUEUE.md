@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-01 — LIVE-INFRA fully complete. All RAIL-1 to RAIL-13 done. Railway running live (scheduler + LivePoller with smart priority polling). Direct PostgreSQL for all live ops. GH Actions crons disabled. Next: POSTGREST-CLEANUP + Engagement Phase 1 (ENG-1 to ENG-7).
+> Last updated: 2026-05-01 — BOT-TIMING + POSTGREST-CLEANUP done. 16 bots split into morning/midday/pre_ko cohorts. All PostgREST direct calls removed from engine (settlement, pipeline_utils, news_checker, fetch_odds, fetch_enrichment, daily_pipeline_v2). Direct psycopg2 throughout. Migration 032 adds timing_cohort to simulated_bets.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -45,8 +45,8 @@
 | ID | Task | Effort | ☑ | Ready? | Notes |
 |----|------|--------|----|--------|-------|
 | B-ML3 | First meta-model: 8-feature logistic regression, target=pseudo_clv>0 | 1 day | ⬜ | ⏳ ~May 9 (need 3K CLV rows, have ~494) | Train after 3000+ pseudo-CLV rows. Features per META-2. See MODEL_ANALYSIS.md Stage 4 |
-| BOT-TIMING | Time-window bot cohorts: morning/midday/pre-KO A/B test | 2-3h | ⬜ | ✅ Ready | Split 16 bots into 3 cohorts (04:00/11:00/15:00-19:00). Same model, different data freshness. Track CLV+ROI per cohort. Empirically answer: when is edge maximized? |
-| POSTGREST-CLEANUP | Migrate remaining PostgREST callers to psycopg2 | 3-4h | ⬜ | ✅ Ready | settlement.py, pipeline_utils.py, news_checker.py, fetch_odds.py, fetch_enrichment.py still use get_client().table(). Remove Supabase SDK dependency from engine. |
+| BOT-TIMING | Time-window bot cohorts: morning/midday/pre-KO A/B test | 2-3h | ✅ | ✅ Done 2026-05-01 | 16 bots → 5 morning / 6 midday / 5 pre_ko. `BOT_TIMING_COHORTS` dict + cohort param in run_morning(). Migration 032 adds timing_cohort to simulated_bets. Scheduler auto-selects cohort by UTC hour. |
+| POSTGREST-CLEANUP | Migrate remaining PostgREST callers to psycopg2 | 3-4h | ✅ | ✅ Done 2026-05-01 | settlement.py, pipeline_utils.py, news_checker.py, fetch_odds.py, fetch_enrichment.py, daily_pipeline_v2.py all migrated. SQL JOINs replace PostgREST nested selects. get_client() only in supabase_client.py internals now. |
 | STRIPE-PROD | Swap Stripe to production keys | 1h | ⬜ | ⏳ Manual (user action) | 5-step checklist in INFRASTRUCTURE.md. 1) Live mode 2) Re-run setup_stripe.py 3) Update Vercel env vars 4) New webhook + whsec_ 5) Supabase Pro ✅ done |
 | GH-CLEANUP | Remove pipeline workflow files from GitHub Actions | 30min | ⬜ | ⏳ ~May W3-4 (after 2-4 wks Railway stable) | Delete fixtures/enrichment/odds/predictions/betting/live_tracker/news_checker/settlement .yml. Keep migrate.yml + backfill.yml. workflow_dispatch is the fire extinguisher until then. |
 

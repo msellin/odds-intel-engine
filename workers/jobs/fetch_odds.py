@@ -30,7 +30,8 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workers.api_clients.api_football import get_odds_by_date, parse_fixture_odds
-from workers.api_clients.supabase_client import get_client, store_match, store_odds
+from workers.api_clients.supabase_client import store_match, store_odds
+from workers.api_clients.db import execute_query, bulk_insert
 from workers.scrapers.kambi_odds import fetch_all_operators
 from workers.utils.pipeline_utils import (
     log_pipeline_start, log_pipeline_complete, log_pipeline_failed,
@@ -56,21 +57,20 @@ def fetch_af_odds(target_date: str) -> int:
     """Fetch AF bulk odds and store in odds_snapshots. Returns matches stored."""
     console.print("\n[cyan]Fetching AF bulk odds...[/cyan]")
 
-    client = get_client()
     now = datetime.now(timezone.utc).isoformat()
 
     # Get AF fixture ID → match UUID mapping from DB
     next_date = (date.fromisoformat(target_date) + timedelta(days=1)).isoformat()
 
-    matches_result = client.table("matches").select(
-        "id, api_football_id, date"
-    ).gte("date", f"{target_date}T00:00:00Z").lt(
-        "date", f"{next_date}T00:00:00Z"
-    ).not_.is_("api_football_id", "null").execute()
+    matches_result = execute_query(
+        "SELECT id, api_football_id, date FROM matches "
+        "WHERE date >= %s AND date < %s AND api_football_id IS NOT NULL",
+        [f"{target_date}T00:00:00Z", f"{next_date}T00:00:00Z"]
+    )
 
     af_id_to_match = {}
     match_kickoffs = {}
-    for m in matches_result.data:
+    for m in matches_result:
         af_id = m.get("api_football_id")
         if af_id:
             af_id_to_match[af_id] = m["id"]
@@ -119,7 +119,10 @@ def fetch_af_odds(target_date: str) -> int:
 
         if rows:
             try:
-                client.table("odds_snapshots").insert(rows).execute()
+                cols = ["match_id", "bookmaker", "market", "selection", "odds",
+                        "timestamp", "is_closing", "minutes_to_kickoff"]
+                tuples = [tuple(r[c] for c in cols) for r in rows]
+                bulk_insert("odds_snapshots", cols, tuples)
                 stored += 1
             except Exception:
                 pass  # dedup errors fine

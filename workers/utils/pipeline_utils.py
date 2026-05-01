@@ -7,102 +7,87 @@ Shared helpers for the fragmented pipeline jobs:
 - Coverage-aware fetching (skip unsupported leagues)
 """
 
+import json
 from datetime import date, datetime, timezone, timedelta
-from workers.api_clients.supabase_client import get_client
+from workers.api_clients.db import execute_query, execute_write
 
 
 # ─── Pipeline Run Logging ────────────────────────────────────────────────────
 
 def log_pipeline_start(job_name: str, run_date: str = None) -> str:
     """Log a pipeline job as 'running'. Returns the run ID."""
-    client = get_client()
     if not run_date:
         run_date = date.today().isoformat()
-    row = {
-        "job_name": job_name,
-        "run_date": run_date,
-        "status": "running",
-        "started_at": datetime.now(timezone.utc).isoformat(),
-    }
-    result = client.table("pipeline_runs").insert(row).execute()
-    return result.data[0]["id"] if result.data else None
+    now = datetime.now(timezone.utc).isoformat()
+    result = execute_query(
+        "INSERT INTO pipeline_runs (job_name, run_date, status, started_at) "
+        "VALUES (%s, %s, %s, %s) RETURNING id",
+        [job_name, run_date, "running", now]
+    )
+    return result[0]["id"] if result else None
 
 
 def log_pipeline_complete(run_id: str, fixtures_count: int = None,
                           records_count: int = None, metadata: dict = None):
     """Mark a pipeline job as completed."""
-    client = get_client()
-    update = {
-        "status": "completed",
-        "completed_at": datetime.now(timezone.utc).isoformat(),
-    }
+    sets = ["status = %s", "completed_at = %s"]
+    params: list = ["completed", datetime.now(timezone.utc).isoformat()]
     if fixtures_count is not None:
-        update["fixtures_count"] = fixtures_count
+        sets.append("fixtures_count = %s")
+        params.append(fixtures_count)
     if records_count is not None:
-        update["records_count"] = records_count
+        sets.append("records_count = %s")
+        params.append(records_count)
     if metadata:
-        update["metadata"] = metadata
-    client.table("pipeline_runs").update(update).eq("id", run_id).execute()
+        sets.append("metadata = %s::jsonb")
+        params.append(json.dumps(metadata))
+    params.append(run_id)
+    execute_write(f"UPDATE pipeline_runs SET {', '.join(sets)} WHERE id = %s", params)
 
 
 def log_pipeline_failed(run_id: str, error_message: str):
     """Mark a pipeline job as failed."""
-    client = get_client()
-    client.table("pipeline_runs").update({
-        "status": "failed",
-        "completed_at": datetime.now(timezone.utc).isoformat(),
-        "error_message": error_message[:1000],
-    }).eq("id", run_id).execute()
+    execute_write(
+        "UPDATE pipeline_runs SET status = %s, completed_at = %s, error_message = %s WHERE id = %s",
+        ["failed", datetime.now(timezone.utc).isoformat(), error_message[:1000], run_id]
+    )
 
 
 def log_pipeline_skipped(job_name: str, reason: str, run_date: str = None):
     """Log a skipped pipeline run (e.g. fixtures not ready)."""
-    client = get_client()
     if not run_date:
         run_date = date.today().isoformat()
-    client.table("pipeline_runs").insert({
-        "job_name": job_name,
-        "run_date": run_date,
-        "status": "skipped",
-        "started_at": datetime.now(timezone.utc).isoformat(),
-        "completed_at": datetime.now(timezone.utc).isoformat(),
-        "error_message": reason,
-    }).execute()
+    now = datetime.now(timezone.utc).isoformat()
+    execute_write(
+        "INSERT INTO pipeline_runs (job_name, run_date, status, started_at, completed_at, error_message) "
+        "VALUES (%s, %s, %s, %s, %s, %s)",
+        [job_name, run_date, "skipped", now, now, reason]
+    )
 
 
 # ─── Readiness Checks ────────────────────────────────────────────────────────
 
 def check_fixtures_ready(run_date: str = None) -> bool:
     """Check if fetch_fixtures has completed for today."""
-    client = get_client()
     if not run_date:
         run_date = date.today().isoformat()
-    result = (
-        client.table("pipeline_runs")
-        .select("id")
-        .eq("job_name", "fetch_fixtures")
-        .eq("run_date", run_date)
-        .eq("status", "completed")
-        .limit(1)
-        .execute()
+    result = execute_query(
+        "SELECT id FROM pipeline_runs WHERE job_name = %s AND run_date = %s AND status = %s LIMIT 1",
+        ["fetch_fixtures", run_date, "completed"]
     )
-    return len(result.data) > 0
+    return len(result) > 0
 
 
 def get_today_fixtures(run_date: str = None) -> list[dict]:
     """Load today's fixtures from DB with AF IDs, team IDs, league IDs."""
-    client = get_client()
     if not run_date:
         run_date = date.today().isoformat()
     next_day = (date.fromisoformat(run_date) + timedelta(days=1)).isoformat()
-    result = (
-        client.table("matches")
-        .select("id, api_football_id, home_team_id, away_team_id, league_id, date, status")
-        .gte("date", f"{run_date}T00:00:00Z")
-        .lt("date", f"{next_day}T00:00:00Z")
-        .execute()
+    return execute_query(
+        "SELECT id, api_football_id, home_team_id, away_team_id, league_id, date, status "
+        "FROM matches WHERE date >= %s AND date < %s",
+        [f"{run_date}T00:00:00Z", f"{next_day}T00:00:00Z"]
     )
-    return result.data
 
 
 # ─── Coverage Helpers ────────────────────────────────────────────────────────
@@ -112,15 +97,14 @@ def get_league_coverage_map() -> dict:
     Load all league coverage flags into a dict keyed by league UUID.
     Returns: {league_uuid: {coverage_odds: bool, coverage_predictions: bool, ...}}
     """
-    client = get_client()
-    result = (
-        client.table("leagues")
-        .select("id, api_football_id, coverage_odds, coverage_predictions, "
-                "coverage_injuries, coverage_lineups, coverage_standings, "
-                "coverage_events, coverage_statistics_fixtures, coverage_statistics_players")
-        .execute()
+    result = execute_query(
+        "SELECT id, api_football_id, coverage_odds, coverage_predictions, "
+        "coverage_injuries, coverage_lineups, coverage_standings, "
+        "coverage_events, coverage_statistics_fixtures, coverage_statistics_players "
+        "FROM leagues",
+        []
     )
-    return {row["id"]: row for row in result.data}
+    return {row["id"]: row for row in result}
 
 
 def league_has_coverage(coverage_map: dict, league_id: str, feature: str) -> bool:
@@ -140,6 +124,27 @@ def league_has_coverage(coverage_map: dict, league_id: str, feature: str) -> boo
 
 # ─── League Coverage Storage ─────────────────────────────────────────────────
 
+_UPDATE_COVERAGE_SQL = """
+UPDATE leagues SET
+    api_football_id = %s, name = %s, country = %s, is_active = %s,
+    coverage_odds = %s, coverage_predictions = %s, coverage_injuries = %s,
+    coverage_standings = %s, coverage_lineups = %s, coverage_events = %s,
+    coverage_statistics_fixtures = %s, coverage_statistics_players = %s,
+    af_season_current = %s, af_coverage_raw = %s::jsonb, coverage_fetched_at = %s
+WHERE id = %s
+"""
+
+_INSERT_COVERAGE_SQL = """
+INSERT INTO leagues (
+    api_football_id, name, country, is_active,
+    coverage_odds, coverage_predictions, coverage_injuries,
+    coverage_standings, coverage_lineups, coverage_events,
+    coverage_statistics_fixtures, coverage_statistics_players,
+    af_season_current, af_coverage_raw, coverage_fetched_at
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)
+"""
+
+
 def store_league_coverage(af_leagues: list[dict]):
     """
     Upsert league coverage data from API-Football /leagues response.
@@ -149,7 +154,6 @@ def store_league_coverage(af_leagues: list[dict]):
       - country: {name, code}
       - seasons: [{year, start, end, current, coverage: {...}}]
     """
-    client = get_client()
     stored = 0
 
     for item in af_leagues:
@@ -180,53 +184,41 @@ def store_league_coverage(af_leagues: list[dict]):
             coverage = last.get("coverage", {})
 
         fixtures_cov = coverage.get("fixtures", {})
+        now = datetime.now(timezone.utc).isoformat()
 
-        row = {
-            "api_football_id": af_id,
-            "name": name,
-            "country": country,
-            "is_active": True,
-            "coverage_odds": coverage.get("odds", False),
-            "coverage_predictions": coverage.get("predictions", False),
-            "coverage_injuries": coverage.get("injuries", False),
-            "coverage_standings": coverage.get("standings", False),
-            "coverage_lineups": fixtures_cov.get("lineups", False),
-            "coverage_events": fixtures_cov.get("events", False),
-            "coverage_statistics_fixtures": fixtures_cov.get("statistics_fixtures", False),
-            "coverage_statistics_players": fixtures_cov.get("statistics_players", False),
-            "af_season_current": current_season,
-            "af_coverage_raw": coverage,
-            "coverage_fetched_at": datetime.now(timezone.utc).isoformat(),
-        }
-
-        # Try to find existing league by api_football_id
-        existing = (
-            client.table("leagues")
-            .select("id")
-            .eq("api_football_id", af_id)
-            .limit(1)
-            .execute()
+        params = (
+            af_id, name, country, True,
+            coverage.get("odds", False),
+            coverage.get("predictions", False),
+            coverage.get("injuries", False),
+            coverage.get("standings", False),
+            fixtures_cov.get("lineups", False),
+            fixtures_cov.get("events", False),
+            fixtures_cov.get("statistics_fixtures", False),
+            fixtures_cov.get("statistics_players", False),
+            current_season,
+            json.dumps(coverage),
+            now,
         )
 
-        if existing.data:
-            # Update existing
-            client.table("leagues").update(row).eq("id", existing.data[0]["id"]).execute()
+        # Try to find existing league by api_football_id
+        existing = execute_query(
+            "SELECT id FROM leagues WHERE api_football_id = %s LIMIT 1",
+            [af_id]
+        )
+
+        if existing:
+            execute_write(_UPDATE_COVERAGE_SQL, list(params) + [existing[0]["id"]])
         else:
             # Try matching by name + country (for leagues created by fixture fetch)
-            by_name = (
-                client.table("leagues")
-                .select("id")
-                .eq("name", name)
-                .eq("country", country)
-                .is_("api_football_id", "null")
-                .limit(1)
-                .execute()
+            by_name = execute_query(
+                "SELECT id FROM leagues WHERE name = %s AND country = %s AND api_football_id IS NULL LIMIT 1",
+                [name, country]
             )
-            if by_name.data:
-                client.table("leagues").update(row).eq("id", by_name.data[0]["id"]).execute()
+            if by_name:
+                execute_write(_UPDATE_COVERAGE_SQL, list(params) + [by_name[0]["id"]])
             else:
-                # Insert new
-                client.table("leagues").insert(row).execute()
+                execute_write(_INSERT_COVERAGE_SQL, list(params))
 
         stored += 1
 
@@ -279,19 +271,18 @@ def set_daily_featured_leagues(af_fixtures_raw: list[dict]) -> list[str]:
 
     Returns list of featured league names for logging.
     """
-    client = get_client()
-
     # 1. Reset any league currently at priority=1 back to its base priority
-    current_featured = client.table("leagues").select(
-        "id, api_football_id"
-    ).eq("priority", 1).execute()
-
-    for league in (current_featured.data or []):
+    current_featured = execute_query(
+        "SELECT id, api_football_id FROM leagues WHERE priority = 1",
+        []
+    )
+    for league in current_featured:
         af_id = league.get("api_football_id")
         base = BASE_PRIORITY.get(af_id)  # None if not in base map
-        client.table("leagues").update(
-            {"priority": base}
-        ).eq("id", league["id"]).execute()
+        execute_write(
+            "UPDATE leagues SET priority = %s WHERE id = %s",
+            [base, league["id"]]
+        )
 
     # 2. Find which featured-eligible leagues have matches today
     today_af_league_ids = set()
@@ -308,13 +299,17 @@ def set_daily_featured_leagues(af_fixtures_raw: list[dict]) -> list[str]:
     # 3. Set priority=1 on today's featured leagues
     featured_names = []
     for af_id in featured_ids:
-        result = client.table("leagues").select("id, name").eq(
-            "api_football_id", af_id
-        ).execute()
-        if result.data:
-            league_id = result.data[0]["id"]
-            name = result.data[0]["name"]
-            client.table("leagues").update({"priority": 1}).eq("id", league_id).execute()
+        result = execute_query(
+            "SELECT id, name FROM leagues WHERE api_football_id = %s",
+            [af_id]
+        )
+        if result:
+            league_id = result[0]["id"]
+            name = result[0]["name"]
+            execute_write(
+                "UPDATE leagues SET priority = 1 WHERE id = %s",
+                [league_id]
+            )
             featured_names.append(name)
 
     return sorted(featured_names)

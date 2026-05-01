@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from workers.api_clients.api_football import get_results_for_settlement as get_api_football_results
 from workers.scrapers.espn_results import get_finished_matches_espn
 from workers.api_clients.supabase_client import (
-    get_client,
+    get_client as _get_supabase_client,
     store_team_form,
     store_model_evaluation,
     compute_team_form_from_db,
@@ -34,8 +34,27 @@ from workers.api_clients.supabase_client import (
     store_match_player_stats,
     build_match_feature_vectors,
 )
+from workers.api_clients.db import execute_query, execute_write, bulk_upsert
 
 console = Console()
+
+# SQL query to load pending bets with match + team join
+_PENDING_BETS_SQL = """
+SELECT
+    sb.id, sb.bot_id, sb.match_id, sb.market, sb.selection, sb.stake,
+    sb.odds_at_pick, sb.model_probability, sb.edge_percent, sb.result,
+    sb.pnl, sb.clv, sb.calibrated_prob, sb.alignment_class, sb.kelly_fraction,
+    sb.odds_drift, sb.news_impact_score, sb.reasoning, sb.bankroll_after,
+    sb.closing_odds, sb.pick_time,
+    m.id as m_id, m.date as m_date, m.score_home, m.score_away,
+    m.result as match_result, m.status as match_status,
+    ht.name as home_team_name, ta.name as away_team_name
+FROM simulated_bets sb
+LEFT JOIN matches m ON sb.match_id = m.id
+LEFT JOIN teams ht ON m.home_team_id = ht.id
+LEFT JOIN teams ta ON m.away_team_id = ta.id
+WHERE sb.result = 'pending'
+"""
 
 
 # ─── Result matching ─────────────────────────────────────────────────────────
@@ -143,30 +162,28 @@ def settle_bet_result(bet: dict, home_goals: int, away_goals: int,
 
 # ─── Closing odds lookup ─────────────────────────────────────────────────────
 
-def get_closing_odds(client, match_id: str, market: str, selection: str) -> float | None:
+def get_closing_odds(match_id: str, market: str, selection: str) -> float | None:
     """Get the closing odds for a match/market/selection from odds_snapshots"""
-    result = client.table("odds_snapshots").select("odds").eq(
-        "match_id", match_id
-    ).eq("market", market).eq("selection", selection).eq(
-        "is_closing", True
-    ).order("timestamp", desc=True).limit(1).execute()
-
-    if result.data:
-        return float(result.data[0]["odds"])
+    result = execute_query(
+        "SELECT odds FROM odds_snapshots WHERE match_id = %s AND market = %s "
+        "AND selection = %s AND is_closing = TRUE ORDER BY timestamp DESC LIMIT 1",
+        [match_id, market, selection]
+    )
+    if result:
+        return float(result[0]["odds"])
 
     # Fallback: use the latest snapshot (closest to closing)
-    result2 = client.table("odds_snapshots").select("odds").eq(
-        "match_id", match_id
-    ).eq("market", market).eq("selection", selection).order(
-        "timestamp", desc=True
-    ).limit(1).execute()
-
-    return float(result2.data[0]["odds"]) if result2.data else None
+    result2 = execute_query(
+        "SELECT odds FROM odds_snapshots WHERE match_id = %s AND market = %s "
+        "AND selection = %s ORDER BY timestamp DESC LIMIT 1",
+        [match_id, market, selection]
+    )
+    return float(result2[0]["odds"]) if result2 else None
 
 
 # ─── Post-match enrichment (T4, T8, T12) ─────────────────────────────────────
 
-def fetch_post_match_enrichment(client) -> dict:
+def fetch_post_match_enrichment() -> dict:
     """
     T4: Half-time stats, T8: Match events, T12: Player stats.
     Runs after settlement for recently finished matches.
@@ -189,29 +206,32 @@ def fetch_post_match_enrichment(client) -> dict:
     today_str = date.today().isoformat()
 
     # Get recently finished matches with AF IDs
-    db_finished = client.table("matches").select(
-        "id, api_football_id"
-    ).eq("status", "finished").gte(
-        "date", f"{yesterday_str}T00:00:00"
-    ).lte("date", f"{today_str}T23:59:59").execute().data
+    db_finished = execute_query(
+        "SELECT id, api_football_id FROM matches WHERE status = 'finished' "
+        "AND date >= %s AND date <= %s",
+        [f"{yesterday_str}T00:00:00", f"{today_str}T23:59:59"]
+    )
 
     if not db_finished:
         return counts
 
     all_match_ids = [m["id"] for m in db_finished]
 
-    # Batch query: which matches already have stats (single query, not N+1)
-    existing_stats = client.table("match_stats").select("match_id").in_(
-        "match_id", all_match_ids
-    ).execute()
-    match_ids_with_stats = {r["match_id"] for r in (existing_stats.data or [])}
+    # Batch query: which matches already have stats
+    existing_stats = execute_query(
+        "SELECT match_id FROM match_stats WHERE match_id = ANY(%s)",
+        [all_match_ids]
+    )
+    match_ids_with_stats = {r["match_id"] for r in existing_stats}
 
     # Batch query: look up home_team_api_id from match_injuries for all matches
-    inj_rows = client.table("match_injuries").select(
-        "match_id, team_api_id"
-    ).in_("match_id", all_match_ids).eq("team_side", "home").execute()
+    inj_rows = execute_query(
+        "SELECT match_id, team_api_id FROM match_injuries "
+        "WHERE match_id = ANY(%s) AND team_side = 'home'",
+        [all_match_ids]
+    )
     home_api_id_by_match: dict[str, int] = {
-        r["match_id"]: r["team_api_id"] for r in (inj_rows.data or []) if r.get("team_api_id")
+        r["match_id"]: r["team_api_id"] for r in inj_rows if r.get("team_api_id")
     }
 
     # Filter to matches that need enrichment
@@ -298,58 +318,59 @@ def settle_finished_matches(match_ids: list[str]):
     if not match_ids:
         return
 
-    client = get_client()
-
-    # Get pending bets for these specific matches
-    pending = client.table("simulated_bets").select(
-        "*, matches(id, date, score_home, score_away, result, status, "
-        "home_team:home_team_id(name), away_team:away_team_id(name))"
-    ).eq("result", "pending").in_("match_id", match_ids).execute().data
+    # Get pending bets for these specific matches (with match + team info via JOIN)
+    pending = execute_query(
+        _PENDING_BETS_SQL + " AND sb.match_id = ANY(%s)",
+        [match_ids]
+    )
 
     if not pending:
         # Still settle user picks even if no bot bets
         try:
-            _settle_user_picks_for_matches(client, match_ids)
+            _settle_user_picks_for_matches(match_ids)
         except Exception:
             pass
         return
 
     console.print(f"[cyan]Live settlement: {len(pending)} pending bets "
                   f"for {len(match_ids)} finished match(es)[/cyan]")
-    _settle_pending_bets(client, pending, finished=[])
+    _settle_pending_bets(pending, finished=[])
 
     # Also settle user picks for these matches
     try:
-        _settle_user_picks_for_matches(client, match_ids)
+        _settle_user_picks_for_matches(match_ids)
     except Exception as e:
         console.print(f"  [yellow]User picks settlement error: {e}[/yellow]")
 
 
-def _settle_user_picks_for_matches(client, match_ids: list[str]):
+def _settle_user_picks_for_matches(match_ids: list[str]):
     """Settle user picks for specific finished matches."""
-    resp = client.table("user_picks").select(
-        "id, match_id, selection, odds, matches(id, score_home, score_away, result, status)"
-    ).eq("result", "pending").in_("match_id", match_ids).execute()
+    picks = execute_query(
+        """SELECT up.id, up.match_id, up.selection, up.odds,
+                  m.score_home, m.score_away, m.result as match_result, m.status as match_status
+           FROM user_picks up
+           LEFT JOIN matches m ON up.match_id = m.id
+           WHERE up.result = 'pending' AND up.match_id = ANY(%s)""",
+        [match_ids]
+    )
 
-    picks = resp.data or []
     settled = 0
     for pick in picks:
-        match = pick.get("matches")
-        if not match or match.get("status") != "finished":
+        if pick.get("match_status") != "finished":
             continue
-        score_home = match.get("score_home")
-        score_away = match.get("score_away")
+        score_home = pick.get("score_home")
+        score_away = pick.get("score_away")
         if score_home is None or score_away is None:
             continue
 
         selection = pick["selection"].lower()
-        match_result = match.get("result", "").lower()
+        match_result = pick.get("match_result", "").lower()
         if selection in ("home", "draw", "away") and match_result:
             won = selection == match_result
-            client.table("user_picks").update({
-                "result": "won" if won else "lost",
-                "resolved_at": datetime.now(timezone.utc).isoformat(),
-            }).eq("id", pick["id"]).execute()
+            execute_write(
+                "UPDATE user_picks SET result = %s, resolved_at = %s WHERE id = %s",
+                ["won" if won else "lost", datetime.now(timezone.utc).isoformat(), pick["id"]]
+            )
             settled += 1
 
     if settled:
@@ -363,16 +384,9 @@ def run_settlement():
     yesterday = (date.today() - timedelta(days=1)).isoformat()
     console.print(f"[bold green]═══ OddsIntel Settlement: {today} ═══[/bold green]\n")
 
-    client = get_client()
-
     # 1. Get pending bets with match info (may be empty — that's fine)
     console.print("[cyan]Loading pending bets...[/cyan]")
-    bets_result = client.table("simulated_bets").select(
-        "*, matches(id, date, score_home, score_away, result, status, "
-        "home_team:home_team_id(name), away_team:away_team_id(name))"
-    ).eq("result", "pending").execute()
-
-    pending = bets_result.data
+    pending = execute_query(_PENDING_BETS_SQL, [])
     console.print(f"  {len(pending)} pending bets")
 
     # 2. Determine which dates to fetch results for.
@@ -380,9 +394,9 @@ def run_settlement():
     # Also include any dates that have pending bets.
     fetch_dates = {today, yesterday}
     for bet in pending:
-        match_info = bet.get("matches", {})
-        if match_info and match_info.get("date"):
-            fetch_dates.add(match_info["date"][:10])
+        m_date = bet.get("m_date")
+        if m_date:
+            fetch_dates.add(str(m_date)[:10])
 
     # 2a. API-Football as primary source (paid, reliable, 1236 leagues)
     console.print(f"\n[cyan]Fetching results from API-Football for {len(fetch_dates)} date(s)...[/cyan]")
@@ -415,8 +429,6 @@ def run_settlement():
 
     # 3. Update ALL match results in DB — not just bet matches.
     # Match by api_football_id (direct, reliable) with team-name fallback.
-    # This gives us a complete labeled dataset for every match we tracked,
-    # regardless of whether any bot placed a bet on it.
     console.print("\n[cyan]Updating all match results in Supabase...[/cyan]")
     db_updated = 0
     db_skipped = 0
@@ -431,24 +443,24 @@ def run_settlement():
     # Fetch all DB matches for the fetch window (today + yesterday + bet dates)
     date_min = min(fetch_dates)
     date_max = max(fetch_dates)
-    db_matches = client.table("matches").select(
-        "id, api_football_id, home_team_id, away_team_id, status"
-    ).gte("date", f"{date_min}T00:00:00").lte(
-        "date", f"{date_max}T23:59:59"
-    ).execute().data
+    db_matches = execute_query(
+        "SELECT id, api_football_id, home_team_id, away_team_id, status FROM matches "
+        "WHERE date >= %s AND date <= %s",
+        [f"{date_min}T00:00:00", f"{date_max}T23:59:59"]
+    )
 
-    # Pre-load all team names in one batch query (instead of 2 per unmatched match)
+    # Pre-load all team names in one batch query
     all_team_ids = set()
     for m in db_matches:
         all_team_ids.add(m["home_team_id"])
         all_team_ids.add(m["away_team_id"])
     team_name_map: dict[str, str] = {}
-    team_id_list = list(all_team_ids)
-    for i in range(0, len(team_id_list), 200):
-        chunk = team_id_list[i:i + 200]
-        tr = client.table("teams").select("id, name").in_("id", chunk).execute()
-        for t in (tr.data or []):
-            team_name_map[t["id"]] = t["name"]
+    if all_team_ids:
+        tr = execute_query(
+            "SELECT id, name FROM teams WHERE id = ANY(%s)",
+            [list(all_team_ids)]
+        )
+        team_name_map = {t["id"]: t["name"] for t in tr}
 
     for db_match in db_matches:
         if db_match.get("status") == "finished":
@@ -475,10 +487,10 @@ def run_settlement():
         hg = int(result_row["home_goals"])
         ag = int(result_row["away_goals"])
         result_str = "home" if hg > ag else "away" if ag > hg else "draw"
-        client.table("matches").update({
-            "score_home": hg, "score_away": ag,
-            "result": result_str, "status": "finished",
-        }).eq("id", db_match["id"]).execute()
+        execute_write(
+            "UPDATE matches SET score_home = %s, score_away = %s, result = %s, status = %s WHERE id = %s",
+            [hg, ag, result_str, "finished", db_match["id"]]
+        )
         db_updated += 1
 
     console.print(f"  {db_updated} matches updated | {db_skipped} no result found yet")
@@ -487,11 +499,11 @@ def run_settlement():
     if not pending:
         console.print("\n[yellow]No pending bets to settle — skipping bet settlement.[/yellow]")
     else:
-        _settle_pending_bets(client, pending, finished)
+        _settle_pending_bets(pending, finished)
 
     # 4b. Settle user picks (frontend prediction tracker)
     try:
-        _settle_user_picks(client)
+        _settle_user_picks()
     except Exception as e:
         console.print(f"  [yellow]User picks settlement error: {e}[/yellow]")
 
@@ -500,7 +512,7 @@ def run_settlement():
     # P1.3: Update ELO ratings for all finished matches
     console.print("\n[cyan]Updating ELO ratings...[/cyan]")
     try:
-        elo_count = update_elo_ratings(client)
+        elo_count = update_elo_ratings()
         console.print(f"  {elo_count} team ratings updated")
     except Exception as e:
         console.print(f"  [yellow]ELO update error: {e}[/yellow]")
@@ -508,7 +520,7 @@ def run_settlement():
     # P1.4: Aggregate model evaluations
     console.print("[cyan]Computing model evaluations...[/cyan]")
     try:
-        eval_count = compute_model_evaluations(client)
+        eval_count = compute_model_evaluations()
         console.print(f"  {eval_count} evaluation records stored")
     except Exception as e:
         console.print(f"  [yellow]Model evaluation error: {e}[/yellow]")
@@ -516,7 +528,7 @@ def run_settlement():
     # P1.5: Update form cache for teams that played
     console.print("[cyan]Updating team form cache...[/cyan]")
     try:
-        form_count = update_team_form_cache(client)
+        form_count = update_team_form_cache()
         console.print(f"  {form_count} team forms updated")
     except Exception as e:
         console.print(f"  [yellow]Form cache error: {e}[/yellow]")
@@ -524,7 +536,7 @@ def run_settlement():
     # T4/T8/T12: Post-match enrichment (stats, half-time, events, player stats)
     console.print("[cyan]Fetching post-match enrichment (T4/T8/T12)...[/cyan]")
     try:
-        enrichment_counts = fetch_post_match_enrichment(client)
+        enrichment_counts = fetch_post_match_enrichment()
         console.print(
             f"  {enrichment_counts['stats']} match stats | "
             f"{enrichment_counts['halftime']} with half-time | "
@@ -539,14 +551,14 @@ def run_settlement():
     if pending:
         console.print("\n[cyan]Running AI post-mortem analysis...[/cyan]")
         try:
-            run_post_mortem(client)
+            run_post_mortem()
         except Exception as e:
             console.print(f"  [yellow]Post-mortem error (non-critical): {e}[/yellow]")
 
     console.print("\n[bold green]Core settlement complete.[/bold green]")
 
 
-def _compute_pseudo_clv_batched(client, fetch_dates: list[str]) -> tuple[int, int]:
+def _compute_pseudo_clv_batched(fetch_dates: list[str]) -> tuple[int, int]:
     """
     Compute pseudo-CLV for all finished matches in the given dates.
     Bulk-loads all odds_snapshots, computes in-memory, batch-updates matches.
@@ -555,35 +567,31 @@ def _compute_pseudo_clv_batched(client, fetch_dates: list[str]) -> tuple[int, in
     # Get all finished match IDs for these dates
     all_match_ids = []
     for d in sorted(fetch_dates):
-        rows = client.table("matches").select("id").eq(
-            "status", "finished"
-        ).gte("date", f"{d}T00:00:00").lte(
-            "date", f"{d}T23:59:59"
-        ).execute().data or []
+        rows = execute_query(
+            "SELECT id FROM matches WHERE status = 'finished' AND date >= %s AND date <= %s",
+            [f"{d}T00:00:00", f"{d}T23:59:59"]
+        )
         all_match_ids.extend(r["id"] for r in rows)
 
     if not all_match_ids:
         return 0, 0
 
     # Bulk-load all 1x2 odds snapshots for these matches
+    odds_rows = execute_query(
+        "SELECT match_id, selection, odds, timestamp, is_closing FROM odds_snapshots "
+        "WHERE match_id = ANY(%s) AND market = '1x2' ORDER BY timestamp ASC",
+        [all_match_ids]
+    )
     odds_by_match: dict[str, list] = {}
-    for i in range(0, len(all_match_ids), 200):
-        chunk = all_match_ids[i:i + 200]
-        result = client.table("odds_snapshots").select(
-            "match_id, selection, odds, timestamp, is_closing"
-        ).in_("match_id", chunk).eq("market", "1x2").order(
-            "timestamp", desc=False
-        ).limit(50000).execute()
-        for row in (result.data or []):
-            odds_by_match.setdefault(row["match_id"], []).append(row)
+    for row in odds_rows:
+        odds_by_match.setdefault(str(row["match_id"]), []).append(row)
 
     # Compute pseudo-CLV in-memory
     computed = 0
     skipped = 0
-    update_rows = []
 
     for match_id in all_match_ids:
-        snaps = odds_by_match.get(match_id, [])
+        snaps = odds_by_match.get(str(match_id), [])
         if not snaps:
             skipped += 1
             continue
@@ -614,23 +622,14 @@ def _compute_pseudo_clv_batched(client, fetch_dates: list[str]) -> tuple[int, in
             skipped += 1
             continue
 
-        update_rows.append({
-            "id": match_id,
-            "pseudo_clv_home": pseudo_clvs.get("home"),
-            "pseudo_clv_draw": pseudo_clvs.get("draw"),
-            "pseudo_clv_away": pseudo_clvs.get("away"),
-        })
-        computed += 1
-
-    # Batch update matches (chunks of 50)
-    for i in range(0, len(update_rows), 50):
-        chunk = update_rows[i:i + 50]
-        for row in chunk:
-            match_id = row.pop("id")
-            try:
-                client.table("matches").update(row).eq("id", match_id).execute()
-            except Exception:
-                pass
+        try:
+            execute_write(
+                "UPDATE matches SET pseudo_clv_home = %s, pseudo_clv_draw = %s, pseudo_clv_away = %s WHERE id = %s",
+                [pseudo_clvs.get("home"), pseudo_clvs.get("draw"), pseudo_clvs.get("away"), match_id]
+            )
+            computed += 1
+        except Exception:
+            pass
 
     return computed, skipped
 
@@ -645,13 +644,12 @@ def run_ml_etl():
     yesterday = (date.today() - timedelta(days=1)).isoformat()
     console.print(f"[bold green]═══ OddsIntel ML ETL: {today} ═══[/bold green]\n")
 
-    client = get_client()
     fetch_dates = [yesterday, today]
 
     # B-ML1: Compute pseudo-CLV for ALL finished matches (batched)
     console.print("[cyan]Computing pseudo-CLV for all finished matches...[/cyan]")
     try:
-        pclv_count, pclv_skipped = _compute_pseudo_clv_batched(client, fetch_dates)
+        pclv_count, pclv_skipped = _compute_pseudo_clv_batched(fetch_dates)
         console.print(f"  {pclv_count} pseudo-CLV computed | {pclv_skipped} skipped (insufficient odds data)")
     except Exception as e:
         console.print(f"  [yellow]Pseudo-CLV error: {e}[/yellow]")
@@ -660,8 +658,9 @@ def run_ml_etl():
     console.print("[cyan]Building match feature vectors...[/cyan]")
     try:
         fv_total = 0
+        _client = _get_supabase_client()
         for d in sorted(fetch_dates):
-            fv_count = build_match_feature_vectors(client, d)
+            fv_count = build_match_feature_vectors(_client, d)
             fv_total += fv_count
         console.print(f"  {fv_total} feature vector rows upserted")
     except Exception as e:
@@ -703,7 +702,7 @@ def _normalize_bet_selection(selection: str) -> str:
     return s
 
 
-def _settle_pending_bets(client, pending: list, finished: list):
+def _settle_pending_bets(pending: list, finished: list):
     """Settle all pending bets against finished match results."""
     console.print("\n[cyan]Settling bets...[/cyan]\n")
 
@@ -714,6 +713,14 @@ def _settle_pending_bets(client, pending: list, finished: list):
 
     by_bot: dict[str, dict] = {}
 
+    # Pre-load all bot bankrolls in one query
+    bot_rows = execute_query("SELECT id, name, current_bankroll FROM bots", [])
+    for b in bot_rows:
+        by_bot[str(b["id"])] = {
+            "bankroll": float(b["current_bankroll"]),
+            "name": b["name"],
+        }
+
     t = Table(title="Settlement Results")
     t.add_column("Match", style="cyan")
     t.add_column("Bet")
@@ -723,71 +730,50 @@ def _settle_pending_bets(client, pending: list, finished: list):
     t.add_column("CLV", justify="right")
 
     for bet in pending:
-        match = bet.get("matches", {})
-        if not match:
-            skipped += 1
-            continue
+        # Flat SQL row: score_home/score_away are directly on bet
+        score_home = bet.get("score_home")
+        score_away = bet.get("score_away")
+        home_name_display = bet.get("home_team_name", "?")
+        away_name_display = bet.get("away_team_name", "?")
 
-        # Check if match result is already in DB
-        score_home = match.get("score_home")
-        score_away = match.get("score_away")
-
-        # If not in DB, try to find in external results
+        # If not in DB (match not yet updated), try to find in external results
         if score_home is None:
-            home_name = (match["home_team"][0]["name"] if isinstance(match.get("home_team"), list)
-                        else match.get("home_team", {}).get("name", ""))
-            away_name = (match["away_team"][0]["name"] if isinstance(match.get("away_team"), list)
-                        else match.get("away_team", {}).get("name", ""))
-
-            result_match = find_result_for_match(home_name, away_name, finished)
+            result_match = find_result_for_match(home_name_display, away_name_display, finished)
             if not result_match:
                 skipped += 1
                 continue
-
             score_home = int(result_match["home_goals"])
             score_away = int(result_match["away_goals"])
-            home_name_display = home_name
-            away_name_display = away_name
         else:
-            home_name_display = (match["home_team"][0]["name"] if isinstance(match.get("home_team"), list)
-                                else match.get("home_team", {}).get("name", "?"))
-            away_name_display = (match["away_team"][0]["name"] if isinstance(match.get("away_team"), list)
-                                else match.get("away_team", {}).get("name", "?"))
+            score_home = int(score_home)
+            score_away = int(score_away)
 
-        # Get closing odds for CLV.
-        # Bets store market as "1X2"/"O/U" and selection as "Home"/"Over 2.5" etc.
-        # odds_snapshots uses "1x2"/"over_under_25" and "home"/"over" etc.
-        # Normalize before lookup so CLV is actually computed.
-        match_id = match["id"]
+        # Get closing odds for CLV
+        match_id = bet["match_id"]
         raw_market = bet["market"]
         raw_selection = bet["selection"]
         odds_market = _normalize_bet_market(raw_market)
         odds_selection = _normalize_bet_selection(raw_selection)
-        closing_odds = get_closing_odds(client, match_id, odds_market, odds_selection)
+        closing_odds = get_closing_odds(match_id, odds_market, odds_selection)
 
         # Settle
         settlement = settle_bet_result(bet, score_home, score_away, closing_odds)
 
-        # Get bot bankroll
-        bot_id = bet["bot_id"]
+        # Bot bankroll tracking
+        bot_id = str(bet["bot_id"])
         if bot_id not in by_bot:
-            bot_data = client.table("bots").select("current_bankroll, name").eq("id", bot_id).execute()
-            by_bot[bot_id] = {
-                "bankroll": float(bot_data.data[0]["current_bankroll"]) if bot_data.data else 1000.0,
-                "name": bot_data.data[0]["name"] if bot_data.data else "unknown",
-            }
+            by_bot[bot_id] = {"bankroll": 1000.0, "name": "unknown"}
 
         new_bankroll = by_bot[bot_id]["bankroll"] + settlement["pnl"]
         by_bot[bot_id]["bankroll"] = new_bankroll
 
         # Update DB
-        client.table("simulated_bets").update({
-            "result": settlement["result"],
-            "pnl": settlement["pnl"],
-            "bankroll_after": new_bankroll,
-            "closing_odds": closing_odds,
-            "clv": settlement["clv"],
-        }).eq("id", bet["id"]).execute()
+        execute_write(
+            "UPDATE simulated_bets SET result = %s, pnl = %s, bankroll_after = %s, "
+            "closing_odds = %s, clv = %s WHERE id = %s",
+            [settlement["result"], settlement["pnl"], new_bankroll,
+             closing_odds, settlement["clv"], bet["id"]]
+        )
 
         settled += 1
         total_pnl += settlement["pnl"]
@@ -799,7 +785,7 @@ def _settle_pending_bets(client, pending: list, finished: list):
 
         t.add_row(
             f"{home_name_display[:10]} v {away_name_display[:10]}",
-            f"{market} {selection}",
+            f"{raw_market} {raw_selection}",
             f"{score_home}-{score_away}",
             f"[{result_color}]{settlement['result'].upper()}[/{result_color}]",
             f"[{result_color}]{settlement['pnl']:+.2f}[/{result_color}]",
@@ -808,14 +794,14 @@ def _settle_pending_bets(client, pending: list, finished: list):
 
     # Update bot bankrolls
     for bot_id, data in by_bot.items():
-        client.table("bots").update({
-            "current_bankroll": data["bankroll"]
-        }).eq("id", bot_id).execute()
+        execute_write(
+            "UPDATE bots SET current_bankroll = %s WHERE id = %s",
+            [data["bankroll"], bot_id]
+        )
 
     console.print(t)
 
     avg_clv = sum(clv_values) / len(clv_values) if clv_values else None
-    wins = sum(1 for b in pending[:settled] if b.get("result") == "pending")
 
     console.print(f"\n[bold]Settlement complete:[/bold]")
     console.print(f"  Settled: {settled} | Skipped (no result): {skipped}")
@@ -827,16 +813,19 @@ def _settle_pending_bets(client, pending: list, finished: list):
     return settled
 
 
-def _settle_user_picks(client):
+def _settle_user_picks():
     """Settle user picks (from the frontend prediction tracker) against finished match results."""
     console.print("\n[cyan]Settling user picks...[/cyan]")
 
-    # Fetch pending user picks with their match data
-    resp = client.table("user_picks").select(
-        "id, match_id, selection, odds, matches(id, score_home, score_away, result, status)"
-    ).eq("result", "pending").execute()
+    picks = execute_query(
+        """SELECT up.id, up.match_id, up.selection, up.odds,
+                  m.score_home, m.score_away, m.result as match_result, m.status as match_status
+           FROM user_picks up
+           LEFT JOIN matches m ON up.match_id = m.id
+           WHERE up.result = 'pending'""",
+        []
+    )
 
-    picks = resp.data or []
     if not picks:
         console.print("  No pending user picks.")
         return 0
@@ -845,39 +834,34 @@ def _settle_user_picks(client):
     skipped = 0
 
     for pick in picks:
-        match = pick.get("matches")
-        if not match or match.get("status") != "finished":
+        if pick.get("match_status") != "finished":
             skipped += 1
             continue
 
-        score_home = match.get("score_home")
-        score_away = match.get("score_away")
+        score_home = pick.get("score_home")
+        score_away = pick.get("score_away")
         if score_home is None or score_away is None:
             skipped += 1
             continue
 
-        # Determine result: compare user selection against match outcome
         selection = pick["selection"].lower()
-        match_result = match.get("result", "").lower()  # 'home', 'draw', 'away'
+        match_result = pick.get("match_result", "").lower()
 
         if selection in ("home", "draw", "away") and match_result:
             won = selection == match_result
+            execute_write(
+                "UPDATE user_picks SET result = %s, resolved_at = %s WHERE id = %s",
+                ["won" if won else "lost", datetime.now(timezone.utc).isoformat(), pick["id"]]
+            )
+            settled += 1
         else:
             skipped += 1
-            continue
-
-        result_str = "won" if won else "lost"
-        client.table("user_picks").update({
-            "result": result_str,
-            "resolved_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("id", pick["id"]).execute()
-        settled += 1
 
     console.print(f"  {settled} user picks settled | {skipped} skipped (match not finished)")
     return settled
 
 
-def update_elo_ratings(client):
+def update_elo_ratings():
     """
     P1.3: Update ELO ratings for teams in recently finished matches.
     Simple ELO with K=30, home advantage +100, goal diff multiplier.
@@ -887,11 +871,11 @@ def update_elo_ratings(client):
     today_str = date.today().isoformat()
 
     # Get yesterday's and today's finished matches with team IDs
-    finished = client.table("matches").select(
-        "id, home_team_id, away_team_id, score_home, score_away"
-    ).eq("status", "finished").gte(
-        "date", f"{yesterday_str}T00:00:00"
-    ).lte("date", f"{today_str}T23:59:59").execute().data
+    finished = execute_query(
+        "SELECT id, home_team_id, away_team_id, score_home, score_away FROM matches "
+        "WHERE status = 'finished' AND date >= %s AND date <= %s",
+        [f"{yesterday_str}T00:00:00", f"{today_str}T23:59:59"]
+    )
 
     if not finished:
         return 0
@@ -902,22 +886,19 @@ def update_elo_ratings(client):
         team_ids.add(m["home_team_id"])
         team_ids.add(m["away_team_id"])
 
-    # Batch load current ELO ratings (one query instead of ~520)
+    # Batch load current ELO ratings — most recent per team via DISTINCT ON
     elo_cache: dict[str, float] = {}
-    team_id_list = list(team_ids)
-    for i in range(0, len(team_id_list), 200):
-        chunk = team_id_list[i:i + 200]
-        result = client.table("team_elo_daily").select(
-            "team_id, elo_rating, date"
-        ).in_("team_id", chunk).order("date", desc=True).limit(5000).execute()
-        for r in (result.data or []):
-            # Keep only most recent per team (first seen due to desc order)
-            if r["team_id"] not in elo_cache:
-                elo_cache[r["team_id"]] = float(r["elo_rating"])
+    elo_rows = execute_query(
+        "SELECT DISTINCT ON (team_id) team_id, elo_rating FROM team_elo_daily "
+        "WHERE team_id = ANY(%s) ORDER BY team_id, date DESC",
+        [list(team_ids)]
+    )
+    for r in elo_rows:
+        elo_cache[r["team_id"]] = float(r["elo_rating"])
 
     K = 30
     HOME_ADV = 100
-    elo_rows = []
+    new_elo_rows = []
 
     for m in finished:
         if m["score_home"] is None or m["score_away"] is None:
@@ -934,7 +915,7 @@ def update_elo_ratings(client):
 
         # Actual scores
         gd = abs(m["score_home"] - m["score_away"])
-        gd_mult = max(1.0, (gd + 1) ** 0.5)  # goal diff multiplier
+        gd_mult = max(1.0, (gd + 1) ** 0.5)
 
         if m["score_home"] > m["score_away"]:
             actual_h, actual_a = 1.0, 0.0
@@ -943,47 +924,35 @@ def update_elo_ratings(client):
         else:
             actual_h, actual_a = 0.5, 0.5
 
-        new_h = (elo_cache.get(h_id, 1500.0) +
-                 K * gd_mult * (actual_h - exp_h))
-        new_a = (elo_cache.get(a_id, 1500.0) +
-                 K * gd_mult * (actual_a - exp_a))
+        new_h = (elo_cache.get(h_id, 1500.0) + K * gd_mult * (actual_h - exp_h))
+        new_a = (elo_cache.get(a_id, 1500.0) + K * gd_mult * (actual_a - exp_a))
 
         elo_cache[h_id] = new_h
         elo_cache[a_id] = new_a
 
-        elo_rows.append({"team_id": h_id, "date": today_str, "elo_rating": round(new_h, 2)})
-        elo_rows.append({"team_id": a_id, "date": today_str, "elo_rating": round(new_a, 2)})
+        new_elo_rows.append((h_id, today_str, round(new_h, 2)))
+        new_elo_rows.append((a_id, today_str, round(new_a, 2)))
 
-    # Batch upsert all ELO rows (chunks of 100 instead of 1 per team)
-    updated = 0
-    # Deduplicate: keep last computed value per team (a team may appear in multiple matches)
-    seen_teams: dict[str, dict] = {}
-    for row in elo_rows:
-        seen_teams[row["team_id"]] = row
+    # Deduplicate: keep last computed value per team
+    seen_teams: dict[str, tuple] = {}
+    for row in new_elo_rows:
+        seen_teams[row[0]] = row
     deduped_rows = list(seen_teams.values())
 
-    for i in range(0, len(deduped_rows), 100):
-        chunk = deduped_rows[i:i + 100]
-        try:
-            client.table("team_elo_daily").upsert(
-                chunk, on_conflict="team_id,date"
-            ).execute()
-            updated += len(chunk)
-        except Exception:
-            # Fallback to one-by-one
-            for row in chunk:
-                try:
-                    client.table("team_elo_daily").upsert(
-                        row, on_conflict="team_id,date"
-                    ).execute()
-                    updated += 1
-                except Exception:
-                    pass
+    if not deduped_rows:
+        return 0
 
+    updated = bulk_upsert(
+        table="team_elo_daily",
+        columns=["team_id", "date", "elo_rating"],
+        rows=deduped_rows,
+        conflict_columns=["team_id", "date"],
+        update_columns=["elo_rating"],
+    )
     return updated
 
 
-def update_team_form_cache(client):
+def update_team_form_cache():
     """
     P1.5: Update form cache for teams that played recently.
     Computes rolling 10-match form from DB and stores in team_form_cache.
@@ -991,12 +960,11 @@ def update_team_form_cache(client):
     yesterday_str = (date.today() - timedelta(days=1)).isoformat()
     today_str = date.today().isoformat()
 
-    # Get yesterday's and today's finished matches
-    finished = client.table("matches").select(
-        "home_team_id, away_team_id"
-    ).eq("status", "finished").gte(
-        "date", f"{yesterday_str}T00:00:00"
-    ).lte("date", f"{today_str}T23:59:59").execute().data
+    finished = execute_query(
+        "SELECT home_team_id, away_team_id FROM matches WHERE status = 'finished' "
+        "AND date >= %s AND date <= %s",
+        [f"{yesterday_str}T00:00:00", f"{today_str}T23:59:59"]
+    )
 
     if not finished:
         return 0
@@ -1019,20 +987,22 @@ def update_team_form_cache(client):
     return updated
 
 
-def compute_model_evaluations(client):
+def compute_model_evaluations():
     """
     P1.4: Aggregate settled bets into model_evaluations by date/market.
     Runs after all bets are settled for the day.
     """
     yesterday_str = (date.today() - timedelta(days=1)).isoformat()
+    today_str = date.today().isoformat()
 
     # Get recently settled bets with league info
-    bets = client.table("simulated_bets").select(
-        "id, market, result, pnl, stake, clv, "
-        "match:match_id(league_id)"
-    ).neq("result", "pending").gte(
-        "pick_time", f"{yesterday_str}T00:00:00"
-    ).execute().data
+    bets = execute_query(
+        "SELECT sb.id, sb.market, sb.result, sb.pnl, sb.stake, sb.clv, m.league_id "
+        "FROM simulated_bets sb "
+        "LEFT JOIN matches m ON sb.match_id = m.id "
+        "WHERE sb.result != 'pending' AND sb.pick_time >= %s",
+        [f"{yesterday_str}T00:00:00"]
+    )
 
     if not bets:
         return 0
@@ -1056,7 +1026,7 @@ def compute_model_evaluations(client):
         try:
             store_model_evaluation(
                 eval_date=today_str,
-                league_id=None,  # aggregate across all leagues
+                league_id=None,
                 market=market,
                 total_bets=total,
                 hits=hits,
@@ -1071,7 +1041,7 @@ def compute_model_evaluations(client):
     return evals_stored
 
 
-def run_post_mortem(client):
+def run_post_mortem():
     """
     11.4: Daily AI post-mortem analysis.
     After settlement, sends today's settled bets to Gemini for loss classification.
@@ -1087,21 +1057,26 @@ def run_post_mortem(client):
     today_str = date.today().isoformat()
 
     # Get today's settled bets with full context
-    bets = client.table("simulated_bets").select(
-        "id, market, selection, odds_at_pick, model_probability, edge_percent, "
-        "result, pnl, stake, clv, calibrated_prob, alignment_class, kelly_fraction, "
-        "odds_drift, news_impact_score, reasoning, "
-        "matches(score_home, score_away, "
-        "home_team:home_team_id(name), away_team:away_team_id(name), "
-        "leagues(name, country, tier))"
-    ).neq("result", "pending").gte(
-        "pick_time", f"{today_str}T00:00:00"
-    ).execute().data
+    bets = execute_query(
+        """SELECT sb.id, sb.market, sb.selection, sb.odds_at_pick, sb.model_probability,
+                  sb.edge_percent, sb.result, sb.pnl, sb.stake, sb.clv, sb.calibrated_prob,
+                  sb.alignment_class, sb.kelly_fraction, sb.odds_drift, sb.news_impact_score,
+                  sb.reasoning,
+                  m.score_home, m.score_away,
+                  ht.name as home_team_name, ta.name as away_team_name,
+                  l.name as league_name, l.country as league_country, l.tier as league_tier
+           FROM simulated_bets sb
+           LEFT JOIN matches m ON sb.match_id = m.id
+           LEFT JOIN teams ht ON m.home_team_id = ht.id
+           LEFT JOIN teams ta ON m.away_team_id = ta.id
+           LEFT JOIN leagues l ON m.league_id = l.id
+           WHERE sb.result != 'pending' AND sb.pick_time >= %s""",
+        [f"{today_str}T00:00:00"]
+    )
 
     if not bets:
         return
 
-    # Also get match stats if available
     losses = [b for b in bets if b["result"] == "lost"]
     wins = [b for b in bets if b["result"] == "won"]
 
@@ -1112,19 +1087,15 @@ def run_post_mortem(client):
     # Build context for LLM
     bet_summaries = []
     for b in bets:
-        match = b.get("matches", {})
-        home = match.get("home_team", [{}])
-        away = match.get("away_team", [{}])
-        league = match.get("leagues", [{}])
-        home_name = home[0]["name"] if isinstance(home, list) else home.get("name", "?")
-        away_name = away[0]["name"] if isinstance(away, list) else away.get("name", "?")
-        league_name = league[0]["name"] if isinstance(league, list) else league.get("name", "?")
-        tier = league[0]["tier"] if isinstance(league, list) else league.get("tier", "?")
+        home_name = b.get("home_team_name", "?")
+        away_name = b.get("away_team_name", "?")
+        league_name = b.get("league_name", "?")
+        tier = b.get("league_tier", "?")
 
         summary = (
             f"{'✗ LOST' if b['result'] == 'lost' else '✓ WON'}: "
             f"{home_name} vs {away_name} ({league_name}, T{tier}) "
-            f"| Score: {match.get('score_home', '?')}-{match.get('score_away', '?')} "
+            f"| Score: {b.get('score_home', '?')}-{b.get('score_away', '?')} "
             f"| Bet: {b['market']} {b['selection']} @{b['odds_at_pick']:.2f} "
             f"| Model prob: {b['model_probability']:.1%}"
         )
@@ -1225,10 +1196,12 @@ Respond with ONLY a JSON object:
 
 def run_report():
     """Show cumulative P&L and CLV across all settled bets"""
-    client = get_client()
     console.print("[bold]═══ OddsIntel P&L Report ═══[/bold]\n")
 
-    bots = client.table("bots").select("id, name, starting_bankroll, current_bankroll").execute().data
+    bots = execute_query(
+        "SELECT id, name, starting_bankroll, current_bankroll FROM bots",
+        []
+    )
 
     t = Table(title="Bot Performance")
     t.add_column("Bot", style="cyan")
@@ -1241,9 +1214,11 @@ def run_report():
     t.add_column("Bankroll", justify="right")
 
     for bot in bots:
-        bets = client.table("simulated_bets").select(
-            "result, pnl, stake, clv"
-        ).eq("bot_id", bot["id"]).neq("result", "pending").execute().data
+        bets = execute_query(
+            "SELECT result, pnl, stake, clv FROM simulated_bets "
+            "WHERE bot_id = %s AND result != 'pending'",
+            [bot["id"]]
+        )
 
         if not bets:
             continue

@@ -310,6 +310,35 @@ BOTS_CONFIG = {
 }
 
 
+# BOT-TIMING cohort assignment — A/B test to find optimal bet timing.
+# Cohorts map to scheduler windows:
+#   morning  → 06:00 UTC (full match slate, fresh opening odds)
+#   midday   → 11:00 UTC (injury news refreshed, standings updated)
+#   pre_ko   → 15:00-19:00 UTC (confirmed lineups, most info available)
+# 5 / 6 / 5 split across 16 bots. Track CLV+ROI per cohort to find edge-maximizing window.
+BOT_TIMING_COHORTS: dict[str, str] = {
+    # Morning — early odds capture (5 bots)
+    "bot_v10_all":        "morning",
+    "bot_lower_1x2":      "morning",
+    "bot_aggressive":     "morning",
+    "bot_ou25_global":    "morning",
+    "bot_opt_ou_british": "morning",
+    # Midday — post-injury-news (6 bots)
+    "bot_conservative":   "midday",
+    "bot_greek_turkish":  "midday",
+    "bot_high_roi_global":"midday",
+    "bot_ou15_defensive": "midday",
+    "bot_ou35_attacking": "midday",
+    "bot_draw_specialist":"midday",
+    # Pre-kickoff — confirmed lineups (5 bots)
+    "bot_opt_away_british":"pre_ko",
+    "bot_opt_away_europe": "pre_ko",
+    "bot_opt_home_lower":  "pre_ko",
+    "bot_btts_all":        "pre_ko",
+    "bot_btts_conservative":"pre_ko",
+}
+
+
 # Dixon-Coles correlation parameter — corrects independent Poisson's draw underestimation.
 # Literature standard value. Negative sign: low-scoring draws are more common than Poisson predicts.
 DIXON_COLES_RHO = -0.13
@@ -746,12 +775,13 @@ def _fetch_morning_enrichment(af_fixtures_raw: list[dict], af_id_to_match_id: di
     match_ids_for_tier = [m["match_id"] for m in fixture_meta.values() if m.get("match_id")]
     if match_ids_for_tier:
         try:
-            tier_r = get_client().table("matches").select(
-                "id, leagues(tier)"
-            ).in_("id", match_ids_for_tier).execute()
-            for row in (tier_r.data or []):
-                lg = row.get("leagues") or {}
-                tier_by_match[row["id"]] = lg.get("tier", 3)
+            from workers.api_clients.db import execute_query as _eq2
+            tier_r = _eq2(
+                "SELECT m.id, l.tier FROM matches m LEFT JOIN leagues l ON m.league_id = l.id WHERE m.id = ANY(%s)",
+                [match_ids_for_tier]
+            )
+            for row in tier_r:
+                tier_by_match[row["id"]] = row.get("tier") or 3
         except Exception:
             pass
 
@@ -1082,12 +1112,14 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], dict[str, dict]]:
     return odds_matches, af_preds
 
 
-def run_morning(skip_fetch: bool = False):
+def run_morning(skip_fetch: bool = False, cohort: str | None = None):
     """
     Fetch data → predict → store matches/odds/bets in Supabase.
 
     skip_fetch=True (Phase 2): reads pre-fetched data from DB — no API calls.
     skip_fetch=False (Phase 1 / manual): fetches from API-Football + Kambi first.
+    cohort: if set, only run bots assigned to that timing cohort (morning/midday/pre_ko).
+            None = run all bots (backward-compatible).
     """
     today_str = date.today().isoformat()
     console.print(f"[bold green]═══ OddsIntel Pipeline: {today_str} ═══[/bold green]\n")
@@ -1408,6 +1440,11 @@ def run_morning(skip_fetch: bool = False):
         af_pred = af_pred_for_match
 
         for bot_name, config in BOTS_CONFIG.items():
+            # BOT-TIMING: skip bots not in the active cohort (None = run all)
+            bot_cohort = BOT_TIMING_COHORTS.get(bot_name, "morning")
+            if cohort and bot_cohort != cohort:
+                continue
+
             # Check tier filter
             if config.get("tier_filter") and tier not in config["tier_filter"]:
                 continue
@@ -1510,9 +1547,11 @@ def run_morning(skip_fetch: bool = False):
                 # P4: Kelly-based stake sizing with soft odds penalty
                 bot_bankroll = 1000.0
                 try:
-                    bot_record = get_client().table("bots").select("current_bankroll").eq(
-                        "id", bot_ids[bot_name]
-                    ).execute().data
+                    from workers.api_clients.db import execute_query as _eq
+                    bot_record = _eq(
+                        "SELECT current_bankroll FROM bots WHERE id = %s",
+                        [bot_ids[bot_name]]
+                    )
                     if bot_record:
                         bot_bankroll = float(bot_record[0]["current_bankroll"])
                 except Exception:
@@ -1568,6 +1607,8 @@ def run_morning(skip_fetch: bool = False):
                         "af_draw_prob": af_pred.get("af_draw_prob") if af_pred else None,
                         "af_away_prob": af_pred.get("af_away_prob") if af_pred else None,
                         "af_agrees": af_agrees,
+                        # BOT-TIMING: which time-window cohort placed this bet
+                        "timing_cohort": bot_cohort,
                     })
                     if bet_id:
                         total_bets += 1
@@ -1606,7 +1647,8 @@ def run_morning(skip_fetch: bool = False):
             af_tag = f" [AF: H{hp:.0%}/D{dp:.0%}/A{ap:.0%}]"
         console.print(f"  {match['home_team']} vs {match['away_team']} — predicted [Tier {data_tier}]{ensemble_tag}{disagree_tag}{af_tag}")
 
-    console.print(f"\n[bold green]Done! {total_bets} bets placed across {len(BOTS_CONFIG)} bots[/bold green]")
+    cohort_label = f" [{cohort} cohort]" if cohort else " [all bots]"
+    console.print(f"\n[bold green]Done! {total_bets} bets placed{cohort_label}[/bold green]")
     console.print(f"[green]All data stored in Supabase — frontend can display it now[/green]")
 
     # 11.6: Cross-match correlation check — warn about concentrated exposure

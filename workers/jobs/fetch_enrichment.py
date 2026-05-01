@@ -39,9 +39,10 @@ from workers.api_clients.api_football import (
     get_h2h, parse_h2h,
 )
 from workers.api_clients.supabase_client import (
-    get_client, store_team_season_stats, store_match_injuries,
+    store_team_season_stats, store_match_injuries,
     store_league_standings, store_match_h2h,
 )
+from workers.api_clients.db import execute_query
 from workers.utils.pipeline_utils import (
     check_fixtures_ready, log_pipeline_start, log_pipeline_complete,
     log_pipeline_failed, log_pipeline_skipped, get_league_coverage_map,
@@ -55,7 +56,6 @@ ALL_COMPONENTS = {"injuries", "team_stats", "standings", "h2h"}
 
 def _build_fixture_meta(target_date: str) -> dict[int, dict]:
     """Load today's fixtures from DB and build per-fixture metadata for enrichment calls."""
-    client = get_client()
     today = date.fromisoformat(target_date)
     season = today.year if today.month >= 7 else today.year - 1
 
@@ -64,41 +64,43 @@ def _build_fixture_meta(target_date: str) -> dict[int, dict]:
     next_date = d.fromordinal(next_day).isoformat()
 
     # Get matches with their AF IDs and team/league info
-    result = client.table("matches").select(
-        "id, api_football_id, home_team_id, away_team_id, league_id"
-    ).gte("date", f"{target_date}T00:00:00Z").lt("date", f"{next_date}T00:00:00Z").execute()
+    matches = execute_query(
+        "SELECT id, api_football_id, home_team_id, away_team_id, league_id FROM matches "
+        "WHERE date >= %s AND date < %s",
+        [f"{target_date}T00:00:00Z", f"{next_date}T00:00:00Z"]
+    )
 
-    if not result.data:
+    if not matches:
         return {}
 
     # Get team AF IDs
     team_ids = set()
     league_ids = set()
-    for m in result.data:
+    for m in matches:
         team_ids.add(m["home_team_id"])
         team_ids.add(m["away_team_id"])
         league_ids.add(m["league_id"])
 
     team_af_ids = {}
-    team_list = list(team_ids)
-    for i in range(0, len(team_list), 80):
-        batch = team_list[i:i+80]
-        tr = client.table("teams").select("id, name").in_("id", batch).execute()
-        for t in tr.data:
-            team_af_ids[t["id"]] = t  # We need the team UUID
+    tr = execute_query(
+        "SELECT id, name FROM teams WHERE id = ANY(%s)",
+        [list(team_ids)]
+    )
+    for t in tr:
+        team_af_ids[t["id"]] = t
 
     # Get league AF IDs
     league_af_ids = {}
-    lid_list = list(league_ids)
-    for i in range(0, len(lid_list), 80):
-        batch = lid_list[i:i+80]
-        lr = client.table("leagues").select("id, api_football_id, tier").in_("id", batch).execute()
-        for l in lr.data:
-            league_af_ids[l["id"]] = l
+    lr = execute_query(
+        "SELECT id, api_football_id, tier FROM leagues WHERE id = ANY(%s)",
+        [list(league_ids)]
+    )
+    for league in lr:
+        league_af_ids[league["id"]] = league
 
     # Build fixture metadata keyed by AF fixture ID
     fixture_meta = {}
-    for m in result.data:
+    for m in matches:
         af_id = m.get("api_football_id")
         if not af_id:
             continue

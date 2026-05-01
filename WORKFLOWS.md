@@ -1,7 +1,7 @@
 # OddsIntel — Workflows & Pipeline Architecture
 
 > Single source of truth for all scheduled jobs, their order, and manual run instructions.
-> Last updated: 2026-05-01 — Railway migration complete. All jobs run via `workers/scheduler.py` on Railway ($5/mo). Live tracker upgraded to 30s/60s/5min tiered polling via `workers/live_poller.py`.
+> Last updated: 2026-05-01 — Railway migration complete. All jobs run via `workers/scheduler.py` on Railway ($5/mo). Live tracker upgraded to 30s/60s/5min tiered polling via `workers/live_poller.py`. POSTGREST-CLEANUP complete — all engine files now use direct psycopg2 (`execute_query`/`execute_write`/`bulk_insert`); `get_client()` only in `supabase_client.py` internals. BOT-TIMING: 16 bots split into morning/midday/pre_ko cohorts, cohort auto-selected by UTC hour.
 
 ### ✅ Railway Migration Complete (2026-04-30)
 

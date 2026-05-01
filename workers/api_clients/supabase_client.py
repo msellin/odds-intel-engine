@@ -1203,12 +1203,13 @@ def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
         "reasoning": bet_data.get("reasoning") or f"Edge: {bet_data['edge']:.1%}, Model: {bet_data['model_prob']:.1%}, Implied: {bet_data['implied_prob']:.1%}",
     }
 
-    # Model improvement fields (P1-P4, migration 006)
+    # Model improvement fields (P1-P4, migration 006) + BOT-TIMING (migration 032)
     optional_fields = [
         "calibrated_prob", "kelly_fraction",
         "odds_at_open", "odds_drift",
         "dimension_scores", "alignment_count", "alignment_total", "alignment_class",
         "model_disagreement", "news_impact_score", "lineup_confirmed",
+        "timing_cohort",
     ]
     for field in optional_fields:
         if field in bet_data and bet_data[field] is not None:
