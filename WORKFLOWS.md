@@ -6,9 +6,10 @@
 ### ✅ Railway Migration Complete (2026-04-30)
 
 > All pipeline jobs now run on **Railway** as a single long-running Python process (`workers/scheduler.py`).
-> GitHub Actions crons are **disabled** — kept only for manual `workflow_dispatch` triggers and DB migrations.
+> GitHub Actions crons are **disabled** — kept only for manual `workflow_dispatch` triggers and DB migrations. Cleanup (full removal) deferred until Railway has 2-4 weeks of stable operation (see GH-CLEANUP task).
 > Live tracker replaced by **LivePoller** (`workers/live_poller.py`) with tiered polling: **30s** (odds/scores), **60s** (stats/events), **5min** (lineups).
-> Direct PostgreSQL (psycopg2 via `workers/api_clients/db.py`) used for all `supabase_client.py` functions + live tracker. `get_client()` still returns PostgREST for external callers (settlement, pipeline_utils) — migration ongoing.
+> **Smart priority polling (RAIL-11):** matches with pending bets get stats every 30s instead of 60s. Goals detected via score delta → immediate extra odds snapshot stored.
+> Direct PostgreSQL (psycopg2 via `workers/api_clients/db.py`) used for all live ops. `get_client()` (PostgREST) still used in settlement.py, pipeline_utils.py, news_checker.py, fetch_odds.py, fetch_enrichment.py — see POSTGREST-CLEANUP task.
 
 ---
 
