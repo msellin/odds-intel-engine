@@ -174,7 +174,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 - [x] **Stripe webhook endpoint** — endpoint created, `STRIPE_WEBHOOK_SECRET` added to Vercel
 - [x] **GitHub secrets** — `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `API_FOOTBALL_KEY`, `SUPABASE_SECRET_KEY`, `SUPABASE_URL`, `SUPABASE_DB_PASSWORD`, `GEMINI_API_KEY` all set
 - [x] **Vercel env var** — `GEMINI_API_KEY` added to Production (for BET-EXPLAIN `/api/bet-explain`)
-- [ ] **Resend** — create account at resend.com, verify `oddsintelhq.com` sending domain, get API key, add `RESEND_API_KEY` to Railway env vars + `.env`
+- [x] **Resend** — account created, `oddsintel.app` domain verified, `RESEND_API_KEY` + `DIGEST_FROM_EMAIL` + `SITE_URL` set in Railway + `.env`
 
 ---
 

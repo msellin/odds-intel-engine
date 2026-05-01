@@ -35,8 +35,8 @@ from workers.api_clients.db import execute_query, execute_write
 console = Console()
 
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-FROM_EMAIL = os.getenv("DIGEST_FROM_EMAIL", "OddsIntel <digest@oddsintelhq.com>")
-SITE_URL = os.getenv("SITE_URL", "https://oddsintelhq.com")
+FROM_EMAIL = os.getenv("DIGEST_FROM_EMAIL", "OddsIntel <digest@oddsintel.app>")
+SITE_URL = os.getenv("SITE_URL", "https://oddsintel.app")
 
 
 # ── Data fetchers ──────────────────────────────────────────────────────────
