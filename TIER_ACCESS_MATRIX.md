@@ -89,6 +89,27 @@ Access levels for anonymous visitors, free signed-in users, and paid subscribers
 | CLV tracking per bet (Pro on track record, Elite on match detail) | — | — | Y | Y |
 | Full bot ROI analytics + strategy breakdown | — | — | — | Y |
 
+### Engagement & Social Proof (ENG-* tasks, docs/ENGAGEMENT_PLAYBOOK.md)
+
+| Feature | Anonymous | Free | Pro | Elite |
+|---------|:---------:|:------------:|:-------------:|:-------------:|
+| "X analyzing this match" counter (ENG-1) | Y | Y | Y | Y |
+| Community vote split display (ENG-2) | Read-only | Vote + read | Vote + read | Vote + read |
+| AI match preview (ENG-3) | Y (top 3) | Y (top 3) | Y (all) | Y (all + signals) |
+| Daily email digest (ENG-4) | — | Previews + CTA | + value bet count + alerts | + full picks |
+| Betting glossary /learn/[term] (ENG-5) | Y | Y | Y | Y |
+| Bot consensus display (ENG-6) | Count only | Count only | + which markets | + full breakdown |
+| Methodology page (ENG-7) | Y | Y | Y | Y |
+| Watchlist signal alerts (ENG-8) | — | Kickoff reminders | Signal change alerts | Custom conditions |
+| Personal bet tracker (ENG-9) | — | 10 bets/mo, W/L | Unlimited + ROI + CLV | + per-league + Model vs You |
+| Weekly performance email (ENG-10) | — | Model stats | + personal stats | + per-league + CLV |
+| "What Changed Today" widget (ENG-11) | Headlines | Headlines | Signal details | Edge impact |
+| Model vs Market vs Users (ENG-12) | Bars only | Bars only | + percentages | + historical accuracy |
+| Shareable pick cards (ENG-13) | Y | Y | Y | Y (+ edge %) |
+| Weekly prediction pages (ENG-14) | Match + score | Match + score | + odds + confidence | + edge + stake |
+| Market inefficiency index (ENG-15) | — | Labels only | + edge %s | + per-market |
+| "Ask AI" expanded chat (ENG-16) | — | 3 Q/day | 20 Q/day | Unlimited |
+
 ---
 
 ## Conversion Hooks
@@ -121,6 +142,10 @@ The free tier features are designed to drive signups and eventual paid conversio
 All new tables have RLS policies: users can only read/write their own data.
 `match_votes` is an exception — all users can read all votes (for consensus display).
 
+### Planned (Engagement & Growth)
+- `match_previews` — AI-generated match previews (match_id, preview_text, generated_at) — ENG-3
+- `match_view_counts` — rolling page view counter per match for "X analyzing" — ENG-1
+
 ---
 
 ## Route Protection
@@ -136,6 +161,9 @@ All new tables have RLS policies: users can only read/write their own data.
 | `/my-picks` | Authenticated (login modal if not signed in) |
 | `/profile` | Authenticated |
 | `/value-bets` | Authenticated (shows ValueBetsGate with modal for anon; TierGate for non-Elite) |
+| `/learn/[term]` | Public (SEO glossary pages — ENG-5) |
+| `/methodology` | Public (model explanation — ENG-7) |
+| `/predictions/[league]/[week]` | Public (SEO prediction pages — ENG-14, tiered detail) |
 
 ---
 

@@ -229,31 +229,56 @@ def ensemble_prediction(poisson_pred: dict, xgb_pred: dict,
     Blend Poisson and XGBoost predictions 50/50.
 
     Returns merged prediction dict with:
-      - Blended probabilities
-      - Model disagreement (abs difference between models)
+      - Blended probabilities for ALL markets (1x2, over/under, BTTS)
+      - Model disagreement (abs difference between models on 1x2 home)
       - Both models' individual outputs for tracking
+
+    Market coverage:
+      - 1x2 (home/draw/away): blended Poisson + XGBoost
+      - over/under 2.5: blended Poisson + XGBoost (XGBoost has an O/U model)
+      - over/under 1.5, 3.5, BTTS: Poisson-only (XGBoost not trained on these)
+        These are passed through directly so the pipeline stores them too.
+        If you add a new market to the pipeline's storage loop (daily_pipeline_v2.py),
+        you MUST ensure the corresponding prob key is produced here.
     """
     xw = 1.0 - poisson_weight
     pw = poisson_weight
 
     blended = {
-        # Blended probabilities
+        # --- 1x2: blended ---
         "home_prob": pw * poisson_pred["home_prob"] + xw * xgb_pred["xgb_home_prob"],
         "draw_prob": pw * poisson_pred["draw_prob"] + xw * xgb_pred["xgb_draw_prob"],
         "away_prob": pw * poisson_pred["away_prob"] + xw * xgb_pred["xgb_away_prob"],
+
+        # --- Over/Under 2.5: blended (XGBoost has an O/U 2.5 model) ---
         "over_25_prob": pw * poisson_pred["over_25_prob"] + xw * xgb_pred["xgb_over25_prob"],
         "under_25_prob": pw * poisson_pred.get("under_25_prob", 1 - poisson_pred["over_25_prob"]) + xw * (1 - xgb_pred["xgb_over25_prob"]),
+
+        # --- Over/Under 1.5 and 3.5: Poisson-only (XGBoost not trained on these lines) ---
+        "over_15_prob": poisson_pred.get("over_15_prob", 0.0),
+        "under_15_prob": poisson_pred.get("under_15_prob", 1.0),
+        "over_35_prob": poisson_pred.get("over_35_prob", 0.0),
+        "under_35_prob": poisson_pred.get("under_35_prob", 1.0),
+
+        # --- BTTS: Poisson-only (derived from Dixon-Coles joint goal distribution) ---
+        "btts_yes_prob": poisson_pred.get("btts_yes_prob", 0.0),
+        "btts_no_prob": poisson_pred.get("btts_no_prob", 1.0),
+
         # Expected goals (average of both)
         "exp_home": (poisson_pred["exp_home"] + xgb_pred["xgb_exp_home"]) / 2,
         "exp_away": (poisson_pred["exp_away"] + xgb_pred["xgb_exp_away"]) / 2,
+
         # Keep data tier from Poisson
         "data_tier": poisson_pred.get("data_tier", "A"),
-        # Model disagreement — key uncertainty signal
+
+        # Model disagreement — key uncertainty signal (1x2 home delta)
         "model_disagreement": round(abs(
             poisson_pred["home_prob"] - xgb_pred["xgb_home_prob"]
         ), 4),
+
         # Flag that this was an ensemble prediction
         "ensemble": True,
+
         # Individual model outputs (for tracking/debugging)
         "poisson_home_prob": poisson_pred["home_prob"],
         "xgb_home_prob": xgb_pred["xgb_home_prob"],

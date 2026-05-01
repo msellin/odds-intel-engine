@@ -422,7 +422,8 @@ def backfill_league_season(
                     now = datetime.now(timezone.utc).isoformat()
                     rows = []
                     for ev in parsed:
-                        team_side = "unknown"
+                        # Default to "home" — DB CHECK constraint requires home/away
+                        team_side = "home"
                         if home_team_api_id and ev.get("team_api_id"):
                             team_side = "home" if ev["team_api_id"] == home_team_api_id else "away"
                         rows.append({

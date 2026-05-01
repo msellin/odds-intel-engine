@@ -1237,13 +1237,15 @@ def run_morning(skip_fetch: bool = False):
                 total = hp + dp + ap
                 if total > 0:
                     hp, dp, ap = hp / total, dp / total, ap / total
-                over_p = 0.5  # AF doesn't give O/U; use neutral prior
+                # Tier D: AF-only fallback — only 1x2 and over/under 2.5 are
+                # available (AF gives win probabilities; O/U 2.5 uses a neutral 50/50
+                # prior). BTTS, O/U 1.5, O/U 3.5 are omitted — no meaningful model
+                # value exists for them without Poisson expected-goals data.
                 poisson_pred = {
                     "home_prob": hp,
                     "draw_prob": dp,
                     "away_prob": ap,
-                    "over_25_prob": over_p,
-                    "under_25_prob": 1 - over_p,
+                    "over_25_prob": 0.50, "under_25_prob": 0.50,  # neutral prior
                     "exp_home": None,
                     "exp_away": None,
                     "data_tier": "D",
@@ -1290,13 +1292,13 @@ def run_morning(skip_fetch: bool = False):
             if odds_val > 0 and poisson_pred.get(prob_key) is not None:
                 try:
                     store_prediction(match_id, market, {
-                        "model_prob": poisson_pred[prob_key],
+                        "model_prob": float(poisson_pred[prob_key]),
                         "implied_prob": 1 / odds_val,
-                        "edge": poisson_pred[prob_key] - (1 / odds_val),
+                        "edge": float(poisson_pred[prob_key]) - (1 / odds_val),
                         "reasoning": f"data_tier={data_tier}",
                     }, source="poisson")
-                except Exception:
-                    pass
+                except Exception as e:
+                    console.print(f"  [yellow]Poisson prediction store failed {match_id}/{market}: {e}[/yellow]")
 
         # S1-XGB: Store XGBoost individual predictions when ensemble ran
         if xgb_pred:
@@ -1309,54 +1311,66 @@ def run_morning(skip_fetch: bool = False):
                 if odds_val > 0 and xgb_pred.get(xgb_key) is not None:
                     try:
                         store_prediction(match_id, market, {
-                            "model_prob": xgb_pred[xgb_key],
+                            "model_prob": float(xgb_pred[xgb_key]),
                             "implied_prob": 1 / odds_val,
-                            "edge": xgb_pred[xgb_key] - (1 / odds_val),
+                            "edge": float(xgb_pred[xgb_key]) - (1 / odds_val),
                             "reasoning": f"data_tier={data_tier}",
                         }, source="xgboost")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        console.print(f"  [yellow]XGBoost prediction store failed {match_id}/{market}: {e}[/yellow]")
 
+        # Store ensemble predictions for every market where we have both a model
+        # probability AND bookmaker odds. The prob_key must exist in the pred dict —
+        # if you add a new market here, ensure ensemble_prediction() (xgboost_ensemble.py)
+        # also produces the corresponding key, otherwise it will silently skip.
         for market, prob_key in [
-            ("1x2_home", "home_prob"),
-            ("1x2_draw", "draw_prob"),
-            ("1x2_away", "away_prob"),
-            ("over15", "over_15_prob"),
-            ("under15", "under_15_prob"),
-            ("over25", "over_25_prob"),
-            ("under25", "under_25_prob"),
-            ("over35", "over_35_prob"),
-            ("under35", "under_35_prob"),
-            ("btts_yes", "btts_yes_prob"),
-            ("btts_no", "btts_no_prob"),
+            ("1x2_home",  "home_prob"),
+            ("1x2_draw",  "draw_prob"),
+            ("1x2_away",  "away_prob"),
+            ("over15",    "over_15_prob"),    # Poisson-only in ensemble
+            ("under15",   "under_15_prob"),   # Poisson-only in ensemble
+            ("over25",    "over_25_prob"),     # blended Poisson + XGBoost
+            ("under25",   "under_25_prob"),    # blended Poisson + XGBoost
+            ("over35",    "over_35_prob"),    # Poisson-only in ensemble
+            ("under35",   "under_35_prob"),   # Poisson-only in ensemble
+            ("btts_yes",  "btts_yes_prob"),   # Poisson-only in ensemble
+            ("btts_no",   "btts_no_prob"),    # Poisson-only in ensemble
         ]:
             odds_key = {
                 "1x2_home": "odds_home",
                 "1x2_draw": "odds_draw",
                 "1x2_away": "odds_away",
-                "over15": "odds_over_15",
-                "under15": "odds_under_15",
-                "over25": "odds_over_25",
-                "under25": "odds_under_25",
-                "over35": "odds_over_35",
-                "under35": "odds_under_35",
+                "over15":   "odds_over_15",
+                "under15":  "odds_under_15",
+                "over25":   "odds_over_25",
+                "under25":  "odds_under_25",
+                "over35":   "odds_over_35",
+                "under35":  "odds_under_35",
                 "btts_yes": "odds_btts_yes",
-                "btts_no": "odds_btts_no",
+                "btts_no":  "odds_btts_no",
             }[market]
 
             odds_val = match.get(odds_key, 0)
             if odds_val > 0:
+                prob = pred.get(prob_key)
+                if prob is None:
+                    # Tier D uses AF-only fallback which intentionally omits BTTS and
+                    # O/U 1.5/3.5 (no Poisson expected-goals data). Only warn for
+                    # Tier A/B/C where we'd expect the key to exist.
+                    if data_tier not in ("D",):
+                        console.print(f"  [yellow]Prediction missing prob key '{prob_key}' for {match_id}/{market} (tier={data_tier}) — skipping[/yellow]")
+                    continue
+                prob = float(prob)  # ensure plain Python float — numpy floats break psycopg2
                 try:
-                    # Store ensemble prediction (source='ensemble')
                     store_prediction(match_id, market, {
-                        "model_prob": pred[prob_key],
+                        "model_prob": prob,
                         "implied_prob": 1 / odds_val,
-                        "edge": pred[prob_key] - (1 / odds_val),
+                        "edge": prob - (1 / odds_val),
                         "odds": odds_val,
                         "reasoning": f"data_tier={data_tier}",
                     }, source="ensemble")
-                except Exception:
-                    pass
+                except Exception as e:
+                    console.print(f"  [yellow]Prediction store failed {match_id}/{market}: {e}[/yellow]")
 
         # S3/S4/S5/BDM-1: Write morning signals to match_signals
         try:
