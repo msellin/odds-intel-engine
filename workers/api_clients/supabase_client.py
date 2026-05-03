@@ -3052,6 +3052,12 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
         for row in snap_rows:
             snaps_by_match[str(row["match_id"])].append(row)
 
+        # P5.1: Bookmaker sharpness classification
+        # Tier 1 = sharp (Pinnacle, exchange) — prices closest to true prob
+        # Tier 3 = soft (recreational) — higher margins, less informed
+        _SHARP_BMS = {"Pinnacle", "Betfair Exchange", "Betfair", "Marathon Bet"}
+        _SOFT_BMS = {"Bwin", "Unibet", "Sportingbet", "Betway", "NordicBet", "10Bet", "1xBet"}
+
         for mid, rows in snaps_by_match.items():
             # BDM-1: spread across bookmakers (latest per bm)
             seen_bm: dict[str, float] = {}
@@ -3062,6 +3068,16 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
             if len(seen_bm) >= 2:
                 vals = list(seen_bm.values())
                 add(mid, "bookmaker_disagreement", round(max(vals) - min(vals), 4), "market", "derived")
+
+            # P5.1: Sharp consensus signal — sharp books vs soft books on home 1x2
+            # Positive: sharp books price home HIGHER than soft → sharp money on home
+            # Negative: sharp books fade home vs soft books
+            sharp_probs = [v for k, v in seen_bm.items() if k in _SHARP_BMS]
+            soft_probs = [v for k, v in seen_bm.items() if k in _SOFT_BMS]
+            if sharp_probs and len(soft_probs) >= 2:
+                sharp_avg = sum(sharp_probs) / len(sharp_probs)
+                soft_avg = sum(soft_probs) / len(soft_probs)
+                add(mid, "sharp_consensus_home", round(sharp_avg - soft_avg, 5), "market", "derived")
 
             # Overnight line move
             yest = [r for r in rows if str(r["timestamp"]) < midnight_utc]

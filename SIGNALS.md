@@ -53,7 +53,10 @@ Data tier system:
 | Steam move flag (>3% drift) | `steam_move` | On bets | ✅ Running |
 | Odds volatility (std of implied prob, 24h) | `odds_volatility` | Morning pipeline | ✅ Running |
 | CLV (closing line value) | `pseudo_clv_home/draw/away` on `matches` | Settlement | ✅ Running |
+| Sharp consensus (home 1x2) | `sharp_consensus_home` | Morning pipeline | ✅ Running (P5.1) |
 
+> `sharp_consensus_home` = sharp bookmaker avg implied prob − soft bookmaker avg implied prob for home 1x2. Positive = sharp books back home more than soft books. Sharp tier: Pinnacle, Betfair Exchange, Marathon Bet. Soft tier: Bwin, Unibet, NordicBet, 10Bet, Sportingbet, Betway, 1xBet. Requires ≥1 sharp + ≥2 soft bookmakers present; otherwise skipped. Source: `data/bookmaker_sharpness_rankings.csv`.
+>
 > `odds_drift` and `steam_move` are currently stored on `simulated_bets` and `match_feature_vectors`, not in `match_signals`. Future: move to match_signals for all matches.
 
 ---

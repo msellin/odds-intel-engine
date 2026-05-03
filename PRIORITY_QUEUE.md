@@ -87,8 +87,8 @@
 
 | ID | Task | Effort | ☑ | Ready? | Notes |
 |----|------|--------|----|--------|-------|
-| P5.1 | European Soccer DB (Kaggle): sharp/soft bookmaker analysis | 1-2 days | ⬜ | ✅ Ready | `bookmaker_sharpness_rankings.csv` + `sharp_money_signal` feature |
-| PIN-1 | Pinnacle anchor signal: `model_prob - pinnacle_implied` | 2-3h | ⬜ | ⏳ After P5.1 | Depends on P5.1 confirming Pinnacle is in our 13 bookmakers |
+| P5.1 | Sharp/soft bookmaker classification + sharp_consensus signal | 1-2 days | ✅ | ✅ Done 2026-05-03 | `data/bookmaker_sharpness_rankings.csv` (13 bookmakers, 3 tiers). `sharp_consensus_home` signal added to `batch_write_morning_signals` — computes sharp avg implied prob − soft avg implied prob for home 1x2. Runs every morning pipeline. |
+| PIN-1 | Pinnacle anchor signal: `model_prob - pinnacle_implied` | 2-3h | ⬜ | ✅ Ready | P5.1 done — Pinnacle is in our bookmaker set. Can now build: compare model_prob directly to Pinnacle-only implied prob per market. |
 | ODDS-API | Activate The Odds API for Pinnacle odds ($20/mo) | 2h | ⬜ | ⏳ After PIN-1 | Code exists (254 lines, dormant) |
 | ALN-1 | Dynamic alignment thresholds (300+ settled bot bets) | 2h | ⬜ | ⏳ ~May 9-10 (have ~30, need 300) | Needs actual placed bets — pseudo-CLV does NOT substitute |
 | VAL-POST-MORTEM | Review 14 days of LLM post-mortem patterns | 30 min | ⬜ | ⏳ May 13+ (have 2 rows, need 14) | `SELECT notes FROM model_evaluations WHERE market='post_mortem' ORDER BY date DESC LIMIT 14` |
@@ -105,8 +105,8 @@
 | ENG-4 | Daily email digest via Resend | 2-3 days | ✅ Done 2026-05-01 | ✅ Ready | `workers/jobs/email_digest.py`. Scheduler 07:30 UTC. `email_digest_log` table (migration 034). Free: teasers + CTA. Pro: + bet count. Elite: + full picks table. Resend REST API via httpx. Set `RESEND_API_KEY` in .env. |
 | ENG-1 | "X analyzing this match" live counter | 4-6h | ⬜ | ✅ Ready | Rolling 30min page view counter per match. Supabase realtime or DB counter. All tiers. Makes site feel alive |
 | ENG-2 | Community vote split display | 4-6h | ⬜ | ✅ Ready | `match_votes` table exists. Horizontal bar Home/Draw/Away % on match detail. Lock at kickoff |
-| ENG-6 | Bot consensus on match detail ("7/9 models agree: Over 2.5") | 3-4h | ⬜ | ✅ Ready | Data in `simulated_bets`. Zero new data needed. Free: count. Pro: markets. Elite: full breakdown |
-| ENG-7 | Public /methodology page | Half day | ⬜ | ✅ Ready | Plain-English model explanation. Trust anchor. Nobody else publishes this |
+| ENG-6 | Bot consensus on match detail ("7/9 models agree: Over 2.5") | 3-4h | ✅ Done 2026-05-03 | ✅ Ready | Data in `simulated_bets`. Zero new data needed. Free: count. Pro: markets. Elite: full breakdown |
+| ENG-7 | Public /methodology page | Half day | ✅ Done 2026-05-03 | ✅ Ready | Plain-English model explanation. Trust anchor. Nobody else publishes this |
 | ENG-5 | Betting glossary (10-15 SEO pages at /learn/[term]) | 2-3 days | ⬜ | ✅ Ready | EV, CLV, Poisson, Kelly, xG, BTTS etc. FAQ schema for Google |
 
 ---

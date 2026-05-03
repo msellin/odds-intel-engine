@@ -1,0 +1,14 @@
+bookmaker,sharpness_tier,sharpness_score,notes
+Pinnacle,1,1.00,Gold standard — lowest margin bookmaker globally. Sharpest closing line. Widely used as benchmark.
+Betfair Exchange,1,0.95,Betting exchange — no bookmaker margin bias. Prices set purely by market participants.
+Betfair,1,0.92,Betfair fixed-odds arm. Closely tracks exchange prices.
+Marathon Bet,2,0.72,Sharp-friendly. Known to accept sharp bettors longer than recreational books.
+Bet365,2,0.58,Largest volume globally. Line set competitively; moves with sharp money before recreational bettors see it.
+William Hill,2,0.50,Established sportsbook. Semi-sharp pricing on major markets.
+Unibet,2,0.45,European focus. Competitive odds on football markets with some sharp-tracking behaviour.
+Bwin,3,0.30,GVC/Entain brand. Recreational-focused pricing with higher margins.
+Sportingbet,3,0.25,Recreational. Part of GVC group. Softer lines than sharp books.
+Betway,3,0.22,Recreational-focused. Sponsors heavily in entertainment markets.
+NordicBet,3,0.20,Scandinavian recreational book. Softer odds; limited sharp action.
+10Bet,3,0.18,Recreational. Smaller book with wider margins.
+1xBet,3,0.15,High volume from recreational base. Irregular closing lines.
