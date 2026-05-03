@@ -46,7 +46,7 @@ from workers.api_clients.supabase_client import (
     get_bot_performance, get_todays_matches,
     store_team_season_stats, store_match_injuries,
     store_league_standings, store_match_h2h,
-    write_morning_signals,
+    write_morning_signals, batch_write_morning_signals,
 )
 from workers.model.improvements import (
     calibrate_prob, compute_odds_movement, compute_alignment,
@@ -984,10 +984,15 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], dict[str, dict]]:
     # 1. Load today's scheduled + recently-live matches with team + league info
     matches_raw = execute_query(
         """SELECT m.id, m.date, m.referee, m.season,
+                  m.home_team_id, m.away_team_id,
+                  m.h2h_home_wins, m.h2h_draws, m.h2h_away_wins,
                   th.name AS home_team_name, th.country AS home_country,
+                  th.api_football_id AS home_team_api_id,
                   ta.name AS away_team_name, ta.country AS away_country,
+                  ta.api_football_id AS away_team_api_id,
                   l.name AS league_name, l.country AS league_country,
-                  l.tier AS league_tier, l.api_football_id AS league_api_id
+                  l.tier AS league_tier, l.api_football_id AS league_api_id,
+                  m.league_id
            FROM matches m
            JOIN teams th ON m.home_team_id = th.id
            JOIN teams ta ON m.away_team_id = ta.id
@@ -1069,8 +1074,14 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], dict[str, dict]]:
             "league_api_id": m.get("league_api_id"),
             "season": m.get("season"),
             "referee": m.get("referee"),
-            "home_team_api_id": None,
-            "away_team_api_id": None,
+            "home_team_id": str(m["home_team_id"]) if m.get("home_team_id") else None,
+            "away_team_id": str(m["away_team_id"]) if m.get("away_team_id") else None,
+            "home_team_api_id": m.get("home_team_api_id"),
+            "away_team_api_id": m.get("away_team_api_id"),
+            "league_id": str(m["league_id"]) if m.get("league_id") else None,
+            "h2h_home_wins": m.get("h2h_home_wins"),
+            "h2h_draws": m.get("h2h_draws"),
+            "h2h_away_wins": m.get("h2h_away_wins"),
             "bookmaker": "+".join(sorted(bm_sources.get(mid, {"unknown"}))),
             "odds_home": 0, "odds_draw": 0, "odds_away": 0,
             "odds_over_05": 0, "odds_under_05": 0,
@@ -1223,6 +1234,14 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
     if hist_targets_global is not None:
         global_teams = set(hist_targets_global["home_team"].unique()) | set(hist_targets_global["away_team"].unique())
     team_sets = (v9_teams, global_teams)
+
+    # 8a. Write all morning signals in one batch (replaces per-match write_morning_signals)
+    console.print("\n[cyan]Writing morning signals (batch)...[/cyan]")
+    try:
+        n_signals = batch_write_morning_signals(odds_matches)
+        console.print(f"  {n_signals} signals written for {len(odds_matches)} matches")
+    except Exception as e:
+        console.print(f"  [yellow]batch_write_morning_signals failed (non-critical): {e}[/yellow]")
 
     # 8. Process each match with odds
     console.print("\n[cyan]Processing matches with odds...[/cyan]")
@@ -1403,22 +1422,6 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                     }, source="ensemble")
                 except Exception as e:
                     console.print(f"  [yellow]Prediction store failed {match_id}/{market}: {e}[/yellow]")
-
-        # S3/S4/S5/BDM-1: Write morning signals to match_signals
-        try:
-            write_morning_signals(
-                match_id,
-                league_api_id=match.get("league_api_id"),
-                season=match.get("season"),
-                home_team_api_id=match.get("home_team_api_id"),
-                away_team_api_id=match.get("away_team_api_id"),
-                referee=match.get("referee"),
-                opening_odds_home=match.get("odds_home"),
-                opening_odds_draw=match.get("odds_draw"),
-                opening_odds_away=match.get("odds_away"),
-            )
-        except Exception:
-            pass  # non-critical
 
         # Place bets for each bot
         tier = match.get("tier", 1)

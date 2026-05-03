@@ -49,7 +49,7 @@ def log_pipeline_failed(run_id: str, error_message: str):
     """Mark a pipeline job as failed."""
     execute_write(
         "UPDATE pipeline_runs SET status = %s, completed_at = %s, error_message = %s WHERE id = %s",
-        ["failed", datetime.now(timezone.utc).isoformat(), error_message[:1000], run_id]
+        ["failed", datetime.now(timezone.utc).isoformat(), error_message[:4000], run_id]
     )
 
 

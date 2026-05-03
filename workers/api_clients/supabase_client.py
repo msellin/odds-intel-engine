@@ -2967,6 +2967,506 @@ def write_morning_signals(
         pass
 
 
+def batch_write_morning_signals(matches: list[dict]) -> int:
+    """
+    High-performance batch replacement for write_morning_signals.
+    Processes ALL matches in ~10 bulk DB queries instead of 25-40 queries per match.
+    Returns total number of signal rows inserted.
+    """
+    if not matches:
+        return 0
+
+    from psycopg2.extras import execute_values
+    from statistics import stdev
+    from datetime import timedelta
+    from collections import defaultdict
+
+    now_str = datetime.now(timezone.utc).isoformat()
+    today_str = date.today().isoformat()
+
+    match_ids = [m["id"] for m in matches]
+
+    # Collect unique IDs for bulk lookups
+    all_team_uuids = list({
+        tid for m in matches
+        for tid in [m.get("home_team_id"), m.get("away_team_id")]
+        if tid
+    })
+    all_referee_names = list({m["referee"] for m in matches if m.get("referee")})
+    all_league_api_ids = list({m["league_api_id"] for m in matches if m.get("league_api_id")})
+    all_seasons = list({m["season"] for m in matches if m.get("season")})
+    all_home_api_ids = [m["home_team_api_id"] for m in matches if m.get("home_team_api_id")]
+    all_away_api_ids = [m["away_team_api_id"] for m in matches if m.get("away_team_api_id")]
+    all_team_api_ids = list(set(all_home_api_ids + all_away_api_ids))
+    all_league_uuids = list({m.get("league_id") for m in matches if m.get("league_id")})
+
+    signals: list[tuple] = []  # (match_id, signal_name, value, group, source, captured_at)
+
+    def add(mid: str, name: str, val, group: str, source: str):
+        if val is None:
+            return
+        try:
+            fval = float(val)
+        except (TypeError, ValueError):
+            return
+        if fval != fval:  # NaN check
+            return
+        signals.append((mid, name, fval, group, source, now_str))
+
+    # ── 1. Opening odds implied probs (no DB query) ──────────────────────────
+    for m in matches:
+        mid = m["id"]
+        if m.get("odds_home", 0) > 1.0:
+            add(mid, "market_implied_home", round(1.0 / m["odds_home"], 4), "market", "opening_odds")
+        if m.get("odds_draw", 0) > 1.0:
+            add(mid, "market_implied_draw", round(1.0 / m["odds_draw"], 4), "market", "opening_odds")
+        if m.get("odds_away", 0) > 1.0:
+            add(mid, "market_implied_away", round(1.0 / m["odds_away"], 4), "market", "opening_odds")
+
+    # ── 2. H2H win pct (from match dict — no DB query) ───────────────────────
+    for m in matches:
+        mid = m["id"]
+        hw = m.get("h2h_home_wins") or 0
+        hd = m.get("h2h_draws") or 0
+        ha = m.get("h2h_away_wins") or 0
+        total = hw + hd + ha
+        if total >= 3:
+            add(mid, "h2h_win_pct", round(hw / total, 4), "quality", "af")
+            add(mid, "h2h_total", float(total), "quality", "af")
+
+    # ── 3. Odds snapshots: BDM-1 + overnight line move + volatility ──────────
+    try:
+        cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        midnight_utc = f"{today_str}T00:00:00+00:00"
+
+        snap_rows = execute_query(
+            """SELECT match_id, bookmaker, odds, timestamp
+               FROM odds_snapshots
+               WHERE match_id = ANY(%s::uuid[])
+                 AND market = '1x2' AND selection = 'home'
+                 AND bookmaker IS NOT NULL AND is_live = false
+               ORDER BY match_id, timestamp DESC""",
+            (match_ids,),
+        )
+        snaps_by_match: dict[str, list] = defaultdict(list)
+        for row in snap_rows:
+            snaps_by_match[str(row["match_id"])].append(row)
+
+        for mid, rows in snaps_by_match.items():
+            # BDM-1: spread across bookmakers (latest per bm)
+            seen_bm: dict[str, float] = {}
+            for row in rows:
+                bk = row.get("bookmaker")
+                if bk and bk not in seen_bm and float(row["odds"]) > 1.0:
+                    seen_bm[bk] = 1.0 / float(row["odds"])
+            if len(seen_bm) >= 2:
+                vals = list(seen_bm.values())
+                add(mid, "bookmaker_disagreement", round(max(vals) - min(vals), 4), "market", "derived")
+
+            # Overnight line move
+            yest = [r for r in rows if str(r["timestamp"]) < midnight_utc]
+            today_sorted = sorted(
+                [r for r in rows if str(r["timestamp"]) >= midnight_utc],
+                key=lambda r: r["timestamp"],
+            )
+            if yest and today_sorted:
+                last_yest = 1.0 / float(yest[0]["odds"])  # rows are DESC
+                first_today = 1.0 / float(today_sorted[0]["odds"])
+                add(mid, "overnight_line_move", round(first_today - last_yest, 5), "market", "derived")
+
+            # Odds volatility
+            recent = [r for r in rows if str(r["timestamp"]) >= cutoff_24h]
+            if len(recent) >= 3:
+                implied = [1.0 / float(r["odds"]) for r in recent if float(r["odds"]) > 1.0]
+                if len(implied) >= 3:
+                    try:
+                        add(mid, "odds_volatility", round(stdev(implied), 6), "market", "derived")
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+    # ── 4. Referee stats bulk query ───────────────────────────────────────────
+    try:
+        if all_referee_names:
+            ref_rows = execute_query(
+                "SELECT referee_name, cards_per_game, home_win_pct, over_25_pct "
+                "FROM referee_stats WHERE referee_name = ANY(%s)",
+                (all_referee_names,),
+            )
+            ref_by_name = {r["referee_name"]: r for r in ref_rows}
+            for m in matches:
+                mid = m["id"]
+                r = ref_by_name.get(m.get("referee") or "")
+                if r:
+                    add(mid, "referee_cards_avg", r.get("cards_per_game"), "context", "referee_stats")
+                    add(mid, "referee_home_win_pct", r.get("home_win_pct"), "context", "referee_stats")
+                    add(mid, "referee_over25_pct", r.get("over_25_pct"), "context", "referee_stats")
+    except Exception:
+        pass
+
+    # ── 5. Injuries bulk query ────────────────────────────────────────────────
+    try:
+        inj_rows = execute_query(
+            "SELECT match_id, team_side, status FROM match_injuries WHERE match_id = ANY(%s::uuid[])",
+            (match_ids,),
+        )
+        inj_by_match: dict[str, list] = defaultdict(list)
+        for row in inj_rows:
+            inj_by_match[str(row["match_id"])].append(row)
+        for mid, rows in inj_by_match.items():
+            out_h = sum(1 for r in rows if r.get("team_side") == "home" and r.get("status") == "Missing Fixture")
+            out_a = sum(1 for r in rows if r.get("team_side") == "away" and r.get("status") == "Missing Fixture")
+            dbt_h = sum(1 for r in rows if r.get("team_side") == "home" and r.get("status") == "Questionable")
+            dbt_a = sum(1 for r in rows if r.get("team_side") == "away" and r.get("status") == "Questionable")
+            if out_h + dbt_h > 0:
+                add(mid, "injury_count_home", float(out_h + dbt_h), "information", "af")
+                add(mid, "players_out_home", float(out_h), "information", "af")
+            if out_a + dbt_a > 0:
+                add(mid, "injury_count_away", float(out_a + dbt_a), "information", "af")
+                add(mid, "players_out_away", float(out_a), "information", "af")
+    except Exception:
+        pass
+
+    # ── 6. ELO bulk query ─────────────────────────────────────────────────────
+    try:
+        if all_team_uuids:
+            elo_rows = execute_query(
+                """SELECT DISTINCT ON (team_id) team_id, elo_rating
+                   FROM team_elo_daily
+                   WHERE team_id = ANY(%s::uuid[]) AND date <= %s
+                   ORDER BY team_id, date DESC""",
+                (all_team_uuids, today_str),
+            )
+            elo_by_team = {str(r["team_id"]): float(r["elo_rating"]) for r in elo_rows}
+            for m in matches:
+                mid = m["id"]
+                elo_h = elo_by_team.get(m.get("home_team_id") or "")
+                elo_a = elo_by_team.get(m.get("away_team_id") or "")
+                if elo_h is not None:
+                    add(mid, "elo_home", elo_h, "quality", "derived")
+                if elo_a is not None:
+                    add(mid, "elo_away", elo_a, "quality", "derived")
+                if elo_h is not None and elo_a is not None:
+                    add(mid, "elo_diff", round(elo_h - elo_a, 2), "quality", "derived")
+    except Exception:
+        pass
+
+    # ── 7. Form PPG bulk query ────────────────────────────────────────────────
+    try:
+        if all_team_uuids:
+            ppg_rows = execute_query(
+                """SELECT DISTINCT ON (team_id) team_id, ppg
+                   FROM team_form_cache
+                   WHERE team_id = ANY(%s::uuid[]) AND date <= %s
+                   ORDER BY team_id, date DESC""",
+                (all_team_uuids, today_str),
+            )
+            ppg_by_team = {
+                str(r["team_id"]): float(r["ppg"])
+                for r in ppg_rows if r.get("ppg") is not None
+            }
+            for m in matches:
+                mid = m["id"]
+                ppg_h = ppg_by_team.get(m.get("home_team_id") or "")
+                ppg_a = ppg_by_team.get(m.get("away_team_id") or "")
+                if ppg_h is not None:
+                    add(mid, "form_ppg_home", ppg_h, "quality", "derived")
+                if ppg_a is not None:
+                    add(mid, "form_ppg_away", ppg_a, "quality", "derived")
+    except Exception:
+        pass
+
+    # ── 8. Historical matches: form slope + rest days ─────────────────────────
+    try:
+        if all_team_uuids:
+            hist_rows = execute_query(
+                """SELECT home_team_id, away_team_id, result, date
+                   FROM matches
+                   WHERE (home_team_id = ANY(%s::uuid[]) OR away_team_id = ANY(%s::uuid[]))
+                     AND status = 'finished'
+                     AND date < %s
+                   ORDER BY date DESC
+                   LIMIT 20000""",
+                (all_team_uuids, all_team_uuids, f"{today_str}T00:00:00"),
+            )
+
+            # Per-team history: list of (date, pts) already in date DESC order
+            team_hist: dict[str, list] = defaultdict(list)
+            for row in hist_rows:
+                hid = str(row["home_team_id"]) if row.get("home_team_id") else None
+                aid = str(row["away_team_id"]) if row.get("away_team_id") else None
+                res = row.get("result")
+                dt = row.get("date")
+                if hid:
+                    pts = 3 if res == "home" else (1 if res == "draw" else (0 if res == "away" else None))
+                    team_hist[hid].append((dt, pts))
+                if aid:
+                    pts = 3 if res == "away" else (1 if res == "draw" else (0 if res == "home" else None))
+                    team_hist[aid].append((dt, pts))
+
+            for m in matches:
+                mid = m["id"]
+                match_date_str = str(m.get("start_time", ""))[:10] or today_str
+
+                for team_id, slope_sig, rest_sig in [
+                    (m.get("home_team_id"), "form_slope_home", "rest_days_home"),
+                    (m.get("away_team_id"), "form_slope_away", "rest_days_away"),
+                ]:
+                    if not team_id:
+                        continue
+                    hist = team_hist.get(team_id, [])
+                    if not hist:
+                        continue
+
+                    # Rest days: days since last finished match
+                    last_dt = hist[0][0]
+                    if last_dt:
+                        last_str = (
+                            last_dt.strftime("%Y-%m-%d")
+                            if isinstance(last_dt, datetime)
+                            else str(last_dt)[:10]
+                        )
+                        try:
+                            delta = date.fromisoformat(match_date_str) - date.fromisoformat(last_str)
+                            add(mid, rest_sig, float(delta.days), "quality", "derived")
+                        except (ValueError, TypeError):
+                            pass
+
+                    # Form slope: recent 5 vs prior 5 avg pts
+                    pts_list = [p for _, p in hist[:10] if p is not None]
+                    if len(pts_list) >= 6:
+                        recent = pts_list[:5]
+                        prior = pts_list[5:min(10, len(pts_list))]
+                        if len(prior) >= 3:
+                            add(
+                                mid, slope_sig,
+                                round(sum(recent) / len(recent) - sum(prior) / len(prior), 4),
+                                "quality", "derived",
+                            )
+    except Exception:
+        pass
+
+    # ── 9. Standings: S3b + fixture importance + SIG-7 ────────────────────────
+    try:
+        if all_league_api_ids and all_seasons:
+            st_rows = execute_query(
+                """SELECT DISTINCT ON (league_api_id, season, team_api_id)
+                          team_api_id, rank, points, description, form, league_api_id, season
+                   FROM league_standings
+                   WHERE league_api_id = ANY(%s) AND season = ANY(%s)
+                   ORDER BY league_api_id, season, team_api_id, fetched_date DESC""",
+                (all_league_api_ids, all_seasons),
+            )
+
+            # standings_map[(league_api_id, season)] = {team_api_id: row}
+            standings_map: dict[tuple, dict] = defaultdict(dict)
+            for row in st_rows:
+                key = (row["league_api_id"], row["season"])
+                standings_map[key][row["team_api_id"]] = row
+
+            form_updates: list[tuple] = []  # (form_home, form_away, match_id) for batch UPDATE
+
+            for m in matches:
+                mid = m["id"]
+                lai = m.get("league_api_id")
+                seas = m.get("season")
+                hat = m.get("home_team_api_id")
+                aat = m.get("away_team_api_id")
+                if not (lai and seas and hat and aat):
+                    continue
+
+                by_team = standings_map.get((lai, seas), {})
+                if not by_team:
+                    continue
+
+                deduped = list(by_team.values())
+                total_teams = len(deduped)
+                if total_teams < 4:
+                    continue
+
+                rows_by_rank = sorted(deduped, key=lambda r: r.get("rank") or 99)
+                leader_pts = rows_by_rank[0].get("points") or 0
+                last_safe_pts = rows_by_rank[-4].get("points") or 0
+                rel_threshold = max(1, total_teams - 2)
+
+                # S3b: standings per team
+                for api_id, suffix in [(hat, "home"), (aat, "away")]:
+                    tr = by_team.get(api_id)
+                    if not tr:
+                        continue
+                    rank = tr.get("rank") or 0
+                    pts = tr.get("points") or 0
+                    add(mid, f"league_position_{suffix}", round(rank / total_teams, 4), "quality", "standings")
+                    add(mid, f"points_to_title_{suffix}", float(int(leader_pts - pts)), "quality", "standings")
+                    add(mid, f"points_to_relegation_{suffix}", float(int(pts - last_safe_pts)), "quality", "standings")
+
+                # Form string update (batched)
+                home_form = (by_team.get(hat) or {}).get("form")
+                away_form = (by_team.get(aat) or {}).get("form")
+                if home_form or away_form:
+                    form_updates.append((
+                        home_form[:5] if home_form else None,
+                        away_form[:5] if away_form else None,
+                        mid,
+                    ))
+
+                # Fixture importance (S5 + SIG-7)
+                def _urg(tr: dict, total: int, rel: int) -> float:
+                    rk = tr.get("rank") or total
+                    desc = (tr.get("description") or "").lower()
+                    if rk <= 2 or "champion" in desc or "promot" in desc:
+                        return 0.85
+                    if rk >= rel or "relegate" in desc:
+                        return 0.70
+                    if rk <= 4 or "playoff" in desc or "play-off" in desc:
+                        return 0.50
+                    if rk / total < 0.35:
+                        return 0.25
+                    return 0.10
+
+                home_tr = by_team.get(hat)
+                away_tr = by_team.get(aat)
+                if home_tr and away_tr:
+                    urg_h = _urg(home_tr, total_teams, rel_threshold)
+                    urg_a = _urg(away_tr, total_teams, rel_threshold)
+                    add(mid, "fixture_importance", round(max(urg_h, urg_a), 3), "context", "derived")
+                    add(mid, "fixture_importance_home", urg_h, "context", "derived")
+                    add(mid, "fixture_importance_away", urg_a, "context", "derived")
+                    add(mid, "importance_diff", round(urg_h - urg_a, 3), "context", "derived")
+
+            # Batch UPDATE form strings
+            if form_updates:
+                try:
+                    with get_conn() as conn:
+                        with conn.cursor() as cur:
+                            for home_form, away_form, mid in form_updates:
+                                updates = {}
+                                if home_form:
+                                    updates["form_home"] = home_form
+                                if away_form:
+                                    updates["form_away"] = away_form
+                                if updates:
+                                    set_clauses = ", ".join(f"{k} = %s" for k in updates)
+                                    params = list(updates.values()) + [mid]
+                                    cur.execute(
+                                        f"UPDATE matches SET {set_clauses} WHERE id = %s",
+                                        tuple(params),
+                                    )
+                            conn.commit()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # ── 10. Team season stats bulk query ─────────────────────────────────────
+    try:
+        if all_team_api_ids and all_seasons:
+            tss_rows = execute_query(
+                """SELECT DISTINCT ON (team_api_id, season)
+                          team_api_id, season,
+                          goals_for_avg, goals_against_avg,
+                          played_home, played_away,
+                          goals_for_home, goals_against_home,
+                          goals_for_away, goals_against_away
+                   FROM team_season_stats
+                   WHERE team_api_id = ANY(%s) AND season = ANY(%s)
+                   ORDER BY team_api_id, season, fetched_date DESC""",
+                (all_team_api_ids, all_seasons),
+            )
+            tss_lookup = {(r["team_api_id"], r["season"]): r for r in tss_rows}
+
+            for m in matches:
+                mid = m["id"]
+                seas = m.get("season")
+                if not seas:
+                    continue
+                for api_id, suffix in [
+                    (m.get("home_team_api_id"), "home"),
+                    (m.get("away_team_api_id"), "away"),
+                ]:
+                    if not api_id:
+                        continue
+                    stats = tss_lookup.get((api_id, seas))
+                    if not stats:
+                        continue
+                    add(mid, f"goals_for_avg_{suffix}", stats.get("goals_for_avg"), "quality", "team_season_stats")
+                    add(mid, f"goals_against_avg_{suffix}", stats.get("goals_against_avg"), "quality", "team_season_stats")
+                    played = stats.get(f"played_{suffix}") or 0
+                    gf = stats.get(f"goals_for_{suffix}")
+                    ga = stats.get(f"goals_against_{suffix}")
+                    if played >= 3:
+                        if gf is not None:
+                            add(mid, f"goals_for_venue_{suffix}", round(int(gf) / played, 3), "quality", "team_season_stats")
+                        if ga is not None:
+                            add(mid, f"goals_against_venue_{suffix}", round(int(ga) / played, 3), "quality", "team_season_stats")
+    except Exception:
+        pass
+
+    # ── 11. League meta-features (SIG-11) ─────────────────────────────────────
+    try:
+        if all_league_uuids:
+            lm_rows = execute_query(
+                """SELECT league_id, result, score_home, score_away
+                   FROM (
+                       SELECT league_id, result, score_home, score_away,
+                              ROW_NUMBER() OVER (PARTITION BY league_id ORDER BY date DESC) AS rn
+                       FROM matches
+                       WHERE league_id = ANY(%s::uuid[])
+                         AND status = 'finished' AND result IS NOT NULL
+                   ) sub
+                   WHERE rn <= 200""",
+                (all_league_uuids,),
+            )
+            lm_by_league: dict[str, list] = defaultdict(list)
+            for row in lm_rows:
+                lm_by_league[str(row["league_id"])].append(row)
+
+            for m in matches:
+                mid = m["id"]
+                lid = m.get("league_id")
+                if not lid:
+                    continue
+                rows = lm_by_league.get(lid, [])
+                if len(rows) < 20:
+                    continue
+                total = len(rows)
+                home_wins = sum(1 for r in rows if r.get("result") == "home")
+                draws_count = sum(1 for r in rows if r.get("result") == "draw")
+                goal_totals = [
+                    int(r["score_home"]) + int(r["score_away"])
+                    for r in rows
+                    if r.get("score_home") is not None and r.get("score_away") is not None
+                ]
+                add(mid, "league_home_win_pct", round(home_wins / total, 4), "context", "derived")
+                add(mid, "league_draw_pct", round(draws_count / total, 4), "context", "derived")
+                if goal_totals:
+                    add(mid, "league_avg_goals", round(sum(goal_totals) / len(goal_totals), 3), "context", "derived")
+    except Exception:
+        pass
+
+    # ── 12. Bulk INSERT all signals ───────────────────────────────────────────
+    if not signals:
+        return 0
+
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                execute_values(
+                    cur,
+                    """INSERT INTO match_signals
+                       (match_id, signal_name, signal_value, signal_group, data_source, captured_at)
+                       VALUES %s""",
+                    signals,
+                    page_size=1000,
+                )
+                conn.commit()
+        return len(signals)
+    except Exception as e:
+        console.print(f"[yellow]batch_write_morning_signals INSERT failed: {e}[/yellow]")
+        return 0
+
+
 if __name__ == "__main__":
     from workers.api_clients.db import execute_query as eq
 

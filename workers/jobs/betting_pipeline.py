@@ -82,9 +82,14 @@ def run_betting(cohort: str | None = None):
         console.print(f"\n[bold green]Betting pipeline complete.[/bold green]")
 
     except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
         console.print(f"\n[red]Betting pipeline failed: {e}[/red]")
+        console.print(f"[red dim]{tb}[/red dim]")
         if run_id:
-            log_pipeline_failed(run_id, str(e))
+            # Store full traceback (not just str(e)) to help diagnose Railway failures
+            full_error = f"{type(e).__name__}: {e}\n\nTraceback:\n{tb}"
+            log_pipeline_failed(run_id, full_error[:2000])
         raise
 
 
