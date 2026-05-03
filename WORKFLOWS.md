@@ -1,7 +1,7 @@
 # OddsIntel — Workflows & Pipeline Architecture
 
 > Single source of truth for all scheduled jobs, their order, and manual run instructions.
-> Last updated: 2026-05-01 — ENG-3/ENG-4 added: `match_previews.py` at 07:00 UTC (Gemini previews) + `email_digest.py` at 07:30 UTC (Resend). Migrations 033+034. Add `RESEND_API_KEY` to Railway env vars. Before that: Railway migration complete, POSTGREST-CLEANUP, BOT-TIMING (16 bots in 3 cohorts).
+> Last updated: 2026-05-03 — PERF-1/PERF-2: `batch_write_morning_signals()` replaces per-match signal loop (10 bulk queries vs ~14K serial, 34-70min → ~15s). `improvements.py` fully on psycopg2 (eliminates Railway PostgREST failure). `prune_odds_snapshots.py` rewritten to single SQL DELETE. Before: ENG-3/ENG-4 (match previews + email digest). Before that: Railway migration complete, POSTGREST-CLEANUP, BOT-TIMING.
 
 ### ✅ Railway Migration Complete (2026-04-30)
 
@@ -9,7 +9,7 @@
 > GitHub Actions crons are **disabled** — kept only for manual `workflow_dispatch` triggers and DB migrations. Cleanup (full removal) deferred until Railway has 2-4 weeks of stable operation (see GH-CLEANUP task).
 > Live tracker replaced by **LivePoller** (`workers/live_poller.py`) with tiered polling: **30s** (odds/scores), **60s** (stats/events), **5min** (lineups).
 > **Smart priority polling (RAIL-11):** matches with pending bets get stats every 30s instead of 60s. Goals detected via score delta → immediate extra odds snapshot stored.
-> Direct PostgreSQL (psycopg2 via `workers/api_clients/db.py`) used for all live ops. `get_client()` (PostgREST) still used in settlement.py, pipeline_utils.py, news_checker.py, fetch_odds.py, fetch_enrichment.py — see POSTGREST-CLEANUP task.
+> Direct PostgreSQL (psycopg2 via `workers/api_clients/db.py`) used for all pipeline ops. `get_client()` (PostgREST/Supabase SDK) is now **only** used inside `workers/api_clients/supabase_client.py` internals — no other pipeline code calls it directly. `improvements.py` fully migrated 2026-05-03.
 
 ---
 
@@ -108,8 +108,9 @@
 - Calls `run_morning(skip_fetch=True)` in `daily_pipeline_v2.py`
 - `_load_today_from_db()` reads today's matches + best pre-match odds + AF predictions from DB
 - Loads historical CSVs (targets_v9, targets_global) for Poisson model
-- For each match with odds: compute Poisson/XGBoost prediction, write signals
-- For each of 16 bots: calibrate, check odds movement, Kelly sizing, place bet
+- **Batch signal writing (PERF-1):** `batch_write_morning_signals(odds_matches)` called ONCE before the match loop — 10 bulk queries cover all 400+ matches at once (ELO, PPG, injuries, standings, season stats, BDM, overnight line move, odds volatility, league meta, H2H). One `execute_values` INSERT for all signals. Reduced from 34-70 min to ~15s.
+- For each match with odds: compute Poisson/XGBoost prediction + store predictions
+- For each of 16 bots: calibrate, check odds movement (psycopg2), alignment (psycopg2), Kelly sizing, place bet
 - `daily_pipeline_v2.py run_morning(skip_fetch=False)` still works for manual full runs
 
 ### ⑥ Live Tracker / LivePoller (`live_poller.py` + `live_tracker.py`)
@@ -147,6 +148,7 @@
    - Post-match: stats (T4), events (T8), player stats (T12)
    - Update ELO, form, pseudo-CLV, match feature vectors
    - Gemini post-mortem analysis of losses
+   - **Pruning (PERF-2):** `scripts/prune_odds_snapshots.py` — single SQL DELETE removes all intermediate snapshots for finished matches (keeps opening + closing). Prevents `odds_snapshots` from growing unboundedly (was 4.1M rows, ~500K/day).
    - **Sundays only:** Platt recalibration (`scripts/fit_platt.py`) — refits sigmoid α/β per market from all settled predictions → `model_calibration` table
 
 ### ⑩ Match Previews (`match_previews.py`) — ENG-3

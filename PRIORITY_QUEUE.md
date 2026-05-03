@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-01 — ENG-3 + ENG-4 done. Daily AI match previews (07:00 UTC, Gemini, match_previews table, migration 033) + email digest via Resend (07:30 UTC, migration 034). Before that: BOT-TIMING + POSTGREST-CLEANUP. 16 bots split into morning/midday/pre_ko cohorts. Direct psycopg2 throughout. Migration 032 adds timing_cohort to simulated_bets.
+> Last updated: 2026-05-03 — PERF-1 + PERF-2 done. Betting pipeline performance overhaul: batch signal writing (10 bulk queries instead of 25-40 per match × 416 matches, reducing 34-70min bottleneck to ~15s), improvements.py migrated fully to psycopg2 (eliminates Railway PostgREST failure), prune script rewritten to single SQL DELETE.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -46,7 +46,9 @@
 |----|------|--------|----|--------|-------|
 | B-ML3 | First meta-model: 8-feature logistic regression, target=pseudo_clv>0 | 1 day | ⬜ | ⏳ ~May 9 (need 3K CLV rows, have ~494) | Train after 3000+ pseudo-CLV rows. Features per META-2. See MODEL_ANALYSIS.md Stage 4 |
 | BOT-TIMING | Time-window bot cohorts: morning/midday/pre-KO A/B test | 2-3h | ✅ | ✅ Done 2026-05-01 | 16 bots → 5 morning / 6 midday / 5 pre_ko. `BOT_TIMING_COHORTS` dict + cohort param in run_morning(). Migration 032 adds timing_cohort to simulated_bets. Scheduler auto-selects cohort by UTC hour. |
-| POSTGREST-CLEANUP | Migrate remaining PostgREST callers to psycopg2 | 3-4h | ✅ | ✅ Done 2026-05-01 | settlement.py, pipeline_utils.py, news_checker.py, fetch_odds.py, fetch_enrichment.py, daily_pipeline_v2.py all migrated. SQL JOINs replace PostgREST nested selects. get_client() only in supabase_client.py internals now. |
+| POSTGREST-CLEANUP | Migrate remaining PostgREST callers to psycopg2 | 3-4h | ✅ | ✅ Done 2026-05-03 | settlement.py, pipeline_utils.py, news_checker.py, fetch_odds.py, fetch_enrichment.py, daily_pipeline_v2.py, **improvements.py** (load_platt_params, compute_odds_movement, _dim_news, _dim_lineup) all migrated. SQL JOINs replace PostgREST nested selects. get_client() only in supabase_client.py internals now. |
+| PERF-1 | Batch morning signal writing — replace 25-40 per-match DB queries | 2-3h | ✅ | ✅ Done 2026-05-03 | `batch_write_morning_signals()` in supabase_client.py: 10 bulk queries (ANY(match_ids[])) + one execute_values INSERT replaces ~14K serial round-trips. Reduced 34-70 min bottleneck to ~15s. Added league_id to match_dict for SIG-11. |
+| PERF-2 | Rewrite prune_odds_snapshots.py — single SQL DELETE | 1h | ✅ | ✅ Done 2026-05-03 | Replaced per-match PostgREST iteration with one DISTINCT ON subquery DELETE. Prunes all finished matches in a single statement. Migrated to psycopg2. |
 | STRIPE-PROD | Swap Stripe to production keys | 1h | ⬜ | ⏳ Manual (user action) | 5-step checklist in INFRASTRUCTURE.md. 1) Live mode 2) Re-run setup_stripe.py 3) Update Vercel env vars 4) New webhook + whsec_ 5) Supabase Pro ✅ done |
 | GH-CLEANUP | Remove pipeline workflow files from GitHub Actions | 30min | ⬜ | ⏳ ~May W3-4 (after 2-4 wks Railway stable) | Delete fixtures/enrichment/odds/predictions/betting/live_tracker/news_checker/settlement .yml. Keep migrate.yml + backfill.yml. workflow_dispatch is the fire extinguisher until then. |
 

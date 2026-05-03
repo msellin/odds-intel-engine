@@ -16,6 +16,9 @@ them in alignment double-counts what the Poisson model already knows.
 Platt scaling (2026-04-30): After tier-specific shrinkage, applies a learned
 sigmoid correction fitted on settled predictions. Parameters loaded from
 model_calibration table, refreshed weekly by scripts/fit_platt.py.
+
+DB access (2026-05-03): All DB queries use direct psycopg2 via execute_query()
+— no PostgREST/supabase SDK. Consistent with the rest of the pipeline.
 """
 
 import math
@@ -28,6 +31,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+from workers.api_clients.db import execute_query
 
 
 # =============================================================================
@@ -100,21 +105,16 @@ def load_platt_params() -> dict[str, tuple[float, float]]:
 
     _platt_params = {}
     try:
-        from workers.api_clients.supabase_client import get_client
-        client = get_client()
-
-        # Get latest row per market (ordered by fitted_at DESC, take first per market)
-        result = client.table("model_calibration").select(
-            "market, platt_a, platt_b, fitted_at"
-        ).order("fitted_at", desc=True).limit(20).execute()
-
-        seen = set()
-        for row in (result.data or []):
+        rows = execute_query(
+            "SELECT market, platt_a, platt_b FROM model_calibration ORDER BY fitted_at DESC LIMIT 20",
+            [],
+        )
+        seen: set = set()
+        for row in rows:
             mkt = row["market"]
             if mkt not in seen:
                 _platt_params[mkt] = (float(row["platt_a"]), float(row["platt_b"]))
                 seen.add(mkt)
-
     except Exception:
         pass  # Table may not exist yet — graceful no-op
 
@@ -163,8 +163,6 @@ def compute_odds_movement(match_id: str, market: str, selection: str,
 
     Returns dict with drift metrics and penalty/veto flags.
     """
-    from workers.api_clients.supabase_client import get_client
-
     result = {
         "odds_at_open": None,
         "odds_drift": 0.0,
@@ -177,14 +175,13 @@ def compute_odds_movement(match_id: str, market: str, selection: str,
     }
 
     try:
-        client = get_client()
-
-        # Get all snapshots for this match/market/selection, ordered by time
-        snapshots = client.table("odds_snapshots").select(
-            "odds, timestamp, minutes_to_kickoff"
-        ).eq("match_id", match_id).eq("market", market).eq(
-            "selection", selection
-        ).order("timestamp", desc=False).execute().data
+        snapshots = execute_query(
+            """SELECT odds, timestamp, minutes_to_kickoff
+               FROM odds_snapshots
+               WHERE match_id = %s AND market = %s AND selection = %s
+               ORDER BY timestamp ASC""",
+            [match_id, market, selection],
+        )
 
         if not snapshots or len(snapshots) < 2:
             return result
@@ -203,7 +200,11 @@ def compute_odds_movement(match_id: str, market: str, selection: str,
 
         # Velocity: drift per hour
         try:
-            open_time = datetime.fromisoformat(opening["timestamp"].replace("Z", "+00:00"))
+            ts = opening["timestamp"]
+            if hasattr(ts, "isoformat"):
+                open_time = ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+            else:
+                open_time = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
             hours_elapsed = max(
                 (datetime.now(timezone.utc) - open_time).total_seconds() / 3600,
                 1.0
@@ -299,7 +300,7 @@ def compute_alignment(
     # Checks simulated_bets for lineup_confirmed flag (set by news_checker v2)
     dimensions["lineup"] = _dim_lineup(match_id)
 
-    # --- Dimension 4: Situational Context (rest + motivation) ---
+    # --- Dimension 4: Situational Context (rest + home advantage in lower leagues) ---
     dimensions["situation"] = _dim_situational(match, is_home_pick, is_away_pick, is_1x2)
 
     # --- Compute alignment ---
@@ -346,12 +347,10 @@ def _dim_news(match_id: str) -> int:
     Checks news_events table for any flagged impacts on this match.
     """
     try:
-        from workers.api_clients.supabase_client import get_client
-        client = get_client()
-
-        events = client.table("news_events").select(
-            "impact_type, impact_magnitude"
-        ).eq("match_id", match_id).execute().data
+        events = execute_query(
+            "SELECT impact_type, impact_magnitude FROM news_events WHERE match_id = %s",
+            [match_id],
+        )
 
         if not events:
             return 0
@@ -385,15 +384,11 @@ def _dim_lineup(match_id: str) -> int:
     on first pass and update to +1 on subsequent news_checker runs.
     """
     try:
-        from workers.api_clients.supabase_client import get_client
-        client = get_client()
-
-        # Check if any bet on this match has lineup_confirmed = true
-        bets = client.table("simulated_bets").select(
-            "lineup_confirmed"
-        ).eq("match_id", match_id).eq("lineup_confirmed", True).limit(1).execute().data
-
-        if bets:
+        rows = execute_query(
+            "SELECT id FROM simulated_bets WHERE match_id = %s AND lineup_confirmed = true LIMIT 1",
+            [match_id],
+        )
+        if rows:
             return 1  # Lineup confirmed — our prediction is more trustworthy
     except Exception:
         pass
