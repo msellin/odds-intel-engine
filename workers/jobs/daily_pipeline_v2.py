@@ -991,9 +991,7 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], dict[str, dict]]:
                   m.home_team_id, m.away_team_id,
                   m.h2h_home_wins, m.h2h_draws, m.h2h_away_wins,
                   th.name AS home_team_name, th.country AS home_country,
-                  th.api_football_id AS home_team_api_id,
                   ta.name AS away_team_name, ta.country AS away_country,
-                  ta.api_football_id AS away_team_api_id,
                   l.name AS league_name, l.country AS league_country,
                   l.tier AS league_tier, l.api_football_id AS league_api_id,
                   m.league_id
