@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-03 — PERF-1 + PERF-2 done. Betting pipeline performance overhaul: batch signal writing (10 bulk queries instead of 25-40 per match × 416 matches, reducing 34-70min bottleneck to ~15s), improvements.py migrated fully to psycopg2 (eliminates Railway PostgREST failure), prune script rewritten to single SQL DELETE.
+> Last updated: 2026-05-03 — POSTGREST-CLEANUP fully complete. Zero PostgREST callers outside supabase_client.py: fit_platt.py + backfill_historical.py migrated to psycopg2, live_tracker.py crash bug fixed (undefined client). Backfill moved from GH Actions to Railway 02:00 UTC daily (self-stops on completion). Also done: PERF-1 (batch_write_morning_signals 10 bulk queries → 14K serial), PERF-2 (prune single SQL DELETE).
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -50,7 +50,7 @@
 | PERF-1 | Batch morning signal writing — replace 25-40 per-match DB queries | 2-3h | ✅ | ✅ Done 2026-05-03 | `batch_write_morning_signals()` in supabase_client.py: 10 bulk queries (ANY(match_ids[])) + one execute_values INSERT replaces ~14K serial round-trips. Reduced 34-70 min bottleneck to ~15s. Added league_id to match_dict for SIG-11. |
 | PERF-2 | Rewrite prune_odds_snapshots.py — single SQL DELETE | 1h | ✅ | ✅ Done 2026-05-03 | Replaced per-match PostgREST iteration with one DISTINCT ON subquery DELETE. Prunes all finished matches in a single statement. Migrated to psycopg2. |
 | STRIPE-PROD | Swap Stripe to production keys | 1h | ⬜ | ⏳ Manual (user action) | 5-step checklist in INFRASTRUCTURE.md. 1) Live mode 2) Re-run setup_stripe.py 3) Update Vercel env vars 4) New webhook + whsec_ 5) Supabase Pro ✅ done |
-| GH-CLEANUP | Remove pipeline workflow files from GitHub Actions | 30min | ⬜ | ⏳ ~May W3-4 (after 2-4 wks Railway stable) | Delete fixtures/enrichment/odds/predictions/betting/live_tracker/news_checker/settlement .yml. Keep migrate.yml + backfill.yml. workflow_dispatch is the fire extinguisher until then. |
+| GH-CLEANUP | Remove pipeline workflow files from GitHub Actions | 30min | ⬜ | ⏳ ~May W3-4 (after 2-4 wks Railway stable) | Delete fixtures/enrichment/odds/predictions/betting/live_tracker/news_checker/settlement .yml. Keep migrate.yml only (backfill.yml now redundant — backfill is on Railway). workflow_dispatch is the fire extinguisher until then. |
 
 ---
 
@@ -180,7 +180,7 @@
 
 | ID | Task | Effort | ☑ | Ready? | Notes |
 |----|------|--------|----|--------|-------|
-| HIST-BACKFILL | Historical data backfill (code deployed, running) | — | 🔄 | 🔄 Active | **⚠️ Workflow was failing** (DATABASE_URL missing, "unknown" team_side bug — both fixed 2026-05-01). 8 cron slots/day. See § HIST-BACKFILL Plan |
+| HIST-BACKFILL | Historical data backfill (running on Railway) | — | 🔄 | 🔄 Active | Moved from GH Actions → Railway 02:00 UTC daily (2026-05-03). Fully psycopg2, self-stops when `backfill_complete.flag` exists. See § HIST-BACKFILL Plan |
 | XGB-HIST | Retrain XGBoost on backfilled data (~43K matches with stats+events) | 1 day | ⬜ | ⏳ After HIST-BACKFILL Phase 1 | Retrain result_1x2 + over_under on full AF features. Current: 96K Kaggle rows (limited features). New: richer per-match stats |
 | B6 | Singapore/South Korea odds source | Unknown | ⬜ | ⏳ Research needed | +27.5% ROI signal, no live odds. AF has Korea K League odds but NOT Singapore. Pinnacle via Odds API ($20/mo) is best path |
 | P5.2 | Footiqo: validate Singapore/Scotland ROI with 1xBet closing odds | Manual | ⬜ | ✅ Ready | Independent validation. If ROI holds on 2nd source, it's real |

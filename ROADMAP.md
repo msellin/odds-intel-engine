@@ -2,7 +2,7 @@
 
 > Product vision, tier structure, milestone goals, and open decisions.
 > Task tracking lives in PRIORITY_QUEUE.md — not here.
-> Last updated: 2026-04-29
+> Last updated: 2026-05-03
 
 ---
 
@@ -133,7 +133,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | ⑥ LivePoller (30s/60s/5min tiered, 10-23 UTC) | ✅ T5/T6/T7/T8 live data — Railway long-running process |
 | ⑦ AI news checker (4×/day) | ✅ Gemini 2.5 Flash, qualitative-only |
 | ⑧ Settlement (21:00 UTC) | ✅ T4/T8/T12 + settle + CLV + ELO + post-mortem + weekly Platt recalibration (Sundays) |
-| ⑨ Historical backfill (8 cron slots/day) | ✅ Built — 3-phase backfill of ~55K matches via spare API quota |
+| ⑨ Historical backfill (02:00 UTC Railway) | ✅ Running on Railway — fully psycopg2, self-stops when complete. Phase 1: 19 top leagues × 3 seasons |
 | ⑩ AI match previews (07:00 UTC) | ✅ ENG-3 — Gemini 200-word previews for top 10 matches → `match_previews` table |
 | ⑪ Email digest (07:30 UTC) | ✅ ENG-4 — Resend, tier-gated (Free/Pro/Elite), requires `RESEND_API_KEY` |
 | 16 paper trading bots | ✅ 10 original (since 2026-04-27) + 6 new BTTS/O/U/draw bots (2026-04-30) |
