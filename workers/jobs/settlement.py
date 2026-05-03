@@ -25,7 +25,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from workers.api_clients.api_football import get_results_for_settlement as get_api_football_results
 from workers.scrapers.espn_results import get_finished_matches_espn
 from workers.api_clients.supabase_client import (
-    get_client as _get_supabase_client,
     store_team_form,
     store_model_evaluation,
     compute_team_form_from_db,
@@ -658,9 +657,8 @@ def run_ml_etl():
     console.print("[cyan]Building match feature vectors...[/cyan]")
     try:
         fv_total = 0
-        _client = _get_supabase_client()
         for d in sorted(fetch_dates):
-            fv_count = build_match_feature_vectors(_client, d)
+            fv_count = build_match_feature_vectors(None, d)
             fv_total += fv_count
         console.print(f"  {fv_total} feature vector rows upserted")
     except Exception as e:

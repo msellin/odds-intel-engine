@@ -28,7 +28,8 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workers.api_clients.api_football import get_prediction, parse_prediction
-from workers.api_clients.supabase_client import get_client, store_prediction
+from workers.api_clients.supabase_client import store_prediction
+from workers.api_clients.db import execute_query, execute_write
 from workers.utils.pipeline_utils import (
     check_fixtures_ready, log_pipeline_start, log_pipeline_complete,
     log_pipeline_failed, log_pipeline_skipped,
@@ -40,31 +41,28 @@ console = Console()
 
 def fetch_af_predictions(target_date: str) -> int:
     """Fetch AF predictions for all today's fixtures. Returns count stored."""
-    client = get_client()
-
-    # Load today's fixtures with AF IDs
     next_date = (date.fromisoformat(target_date) + timedelta(days=1)).isoformat()
 
-    result = client.table("matches").select(
-        "id, api_football_id, league_id"
-    ).gte("date", f"{target_date}T00:00:00Z").lt(
-        "date", f"{next_date}T00:00:00Z"
-    ).not_.is_("api_football_id", "null").execute()
+    rows = execute_query(
+        """SELECT id, api_football_id, league_id FROM matches
+           WHERE date >= %s AND date < %s AND api_football_id IS NOT NULL""",
+        (f"{target_date}T00:00:00Z", f"{next_date}T00:00:00Z"),
+    )
 
-    if not result.data:
+    if not rows:
         console.print("  No AF matches found")
         return 0
 
     # Load coverage map for filtering
     coverage_map = get_league_coverage_map()
 
-    console.print(f"  {len(result.data)} fixtures to process")
+    console.print(f"  {len(rows)} fixtures to process")
 
     fetched = 0
     skipped_coverage = 0
     failed = 0
 
-    for m in result.data:
+    for m in rows:
         af_id = m["api_football_id"]
         match_id = m["id"]
         league_id = m.get("league_id")
@@ -87,9 +85,11 @@ def fetch_af_predictions(target_date: str) -> int:
 
             # Store full JSONB on match row
             try:
-                client.table("matches").update({
-                    "af_prediction": parsed["raw"]
-                }).eq("id", match_id).execute()
+                import json as _json
+                execute_write(
+                    "UPDATE matches SET af_prediction = %s::jsonb WHERE id = %s",
+                    (_json.dumps(parsed["raw"]), match_id),
+                )
             except Exception as e:
                 console.print(f"  [yellow]AF prediction JSONB store failed for {match_id}: {e}[/yellow]")
 

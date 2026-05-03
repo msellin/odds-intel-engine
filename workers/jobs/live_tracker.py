@@ -35,7 +35,6 @@ from workers.api_clients.api_football import (
     get_fixture_statistics, parse_fixture_stats,
 )
 from workers.api_clients.supabase_client import (
-    get_client,
     store_live_snapshot,
     store_live_odds,
     store_match_events_af,
@@ -199,29 +198,12 @@ def _lookup_db_match(af_fix: dict, af_id_map: dict, client) -> dict | None:
     return None
 
 
-def _build_af_id_map(client) -> dict[int, dict]:
+def _build_af_id_map(client=None) -> dict[int, dict]:
     """
     Build {api_football_id: match_record} for today's + yesterday's matches.
     Includes yesterday because late matches may still be live after midnight UTC.
-    Uses direct SQL (no 1K row limit) when DATABASE_URL is set.
     """
-    if DATABASE_URL:
-        return _db_build_af_id_map()
-
-    # Fallback: PostgREST (has 1K row cap risk)
-    yesterday = (date.today() - timedelta(days=1)).isoformat()
-    today = date.today().isoformat()
-    result = client.table("matches").select(
-        "id, api_football_id, home_team_id, away_team_id, "
-        "date, status, lineups_fetched_at"
-    ).gte("date", f"{yesterday}T00:00:00").lte("date", f"{today}T23:59:59").execute()
-
-    mapping = {}
-    for m in result.data or []:
-        af_id = m.get("api_football_id")
-        if af_id:
-            mapping[int(af_id)] = m
-    return mapping
+    return _db_build_af_id_map()
 
 
 # ============================================================
@@ -291,10 +273,8 @@ def run_live_tracker(dry_run: bool = False):
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     console.print(f"[bold green]═══ OddsIntel Live Tracker v2: {now_str} ═══[/bold green]\n")
 
-    client = get_client()
-
     # Build today's AF ID → match record map (one DB query)
-    af_id_map = _build_af_id_map(client)
+    af_id_map = _build_af_id_map()
     console.print(f"[dim]{len(af_id_map)} today's matches in DB[/dim]")
 
     # ── T7: Lineup fetch for upcoming matches ──────────────────────────────

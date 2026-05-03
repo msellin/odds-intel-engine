@@ -170,7 +170,6 @@ class LivePoller:
             store_match_events_batch, update_match_status_sql,
             finish_match_sql, build_af_id_map,
         )
-        from workers.api_clients.supabase_client import get_client
 
         # ── Slow tier: refresh match map every ~5 min ──────────────────────
         if self._cycle % self.SLOW_MULTIPLIER == 0:

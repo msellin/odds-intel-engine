@@ -25,7 +25,7 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workers.api_clients.api_football import get_fixtures_by_date, fixture_to_match_dict, get_leagues
-from workers.api_clients.supabase_client import get_client, store_match
+from workers.api_clients.supabase_client import store_match
 from workers.utils.pipeline_utils import (
     log_pipeline_start, log_pipeline_complete, log_pipeline_failed,
     store_league_coverage, set_daily_featured_leagues,

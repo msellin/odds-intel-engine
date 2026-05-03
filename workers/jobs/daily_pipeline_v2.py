@@ -40,7 +40,7 @@ from workers.api_clients.api_football import (
     get_h2h, parse_h2h,
 )
 from workers.api_clients.supabase_client import (
-    get_client, ensure_bots, store_match, store_odds,
+    ensure_bots, store_match, store_odds,
     store_prediction, store_bet, store_prediction_snapshot, settle_bet,
     get_pending_bets, update_bot_bankroll, update_match_result,
     get_bot_performance, get_todays_matches,
@@ -517,26 +517,29 @@ def compute_prediction(match, hist_targets, hist_targets_global=None,
 
 def _store_parsed_odds(match_id: str, parsed_odds: list[dict]):
     """Store pre-parsed API-Football odds rows directly into odds_snapshots."""
-    from workers.api_clients.supabase_client import get_client
-    client = get_client()
+    from psycopg2.extras import execute_values
+    from workers.api_clients.db import get_conn
     now = datetime.now().astimezone().isoformat()
 
-    rows = []
-    for row in parsed_odds:
-        rows.append({
-            "match_id": match_id,
-            "bookmaker": row["bookmaker"],
-            "market": row["market"],
-            "selection": row["selection"],
-            "odds": row["odds"],
-            "timestamp": now,
-            "is_closing": False,
-            "minutes_to_kickoff": None,
-        })
+    rows = [
+        (match_id, row["bookmaker"], row["market"], row["selection"],
+         row["odds"], now, False, None)
+        for row in parsed_odds
+    ]
 
     if rows:
         try:
-            client.table("odds_snapshots").insert(rows).execute()
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    execute_values(
+                        cur,
+                        """INSERT INTO odds_snapshots
+                           (match_id, bookmaker, market, selection, odds, timestamp, is_closing, minutes_to_kickoff)
+                           VALUES %s ON CONFLICT DO NOTHING""",
+                        rows,
+                        page_size=500,
+                    )
+                    conn.commit()
         except Exception:
             pass  # Dedup errors are fine
 
@@ -546,8 +549,8 @@ def _fetch_af_predictions(af_id_to_match_id: dict[int, str]) -> dict[str, dict]:
     Fetch API-Football predictions for all today's fixtures.
     Returns {match_id: parsed_prediction_dict}
     """
-    from workers.api_clients.supabase_client import get_client
-    client = get_client()
+    from workers.api_clients.db import execute_write as _ew
+    import json as _json
 
     af_preds: dict[str, dict] = {}
     fetched = 0
@@ -571,9 +574,10 @@ def _fetch_af_predictions(af_id_to_match_id: dict[int, str]) -> dict[str, dict]:
 
             # Store full JSONB on the match row
             try:
-                client.table("matches").update({
-                    "af_prediction": parsed["raw"]
-                }).eq("id", match_id).execute()
+                _ew(
+                    "UPDATE matches SET af_prediction = %s::jsonb WHERE id = %s",
+                    (_json.dumps(parsed["raw"]), match_id),
+                )
             except Exception as e:
                 console.print(f"  [yellow]AF prediction JSONB store failed for {match_id}: {e}[/yellow]")
 
@@ -1669,16 +1673,20 @@ def _check_exposure_concentration():
     from collections import defaultdict
 
     try:
-        client = get_client()
+        from workers.api_clients.db import execute_query as _eq
         today_str = date.today().isoformat()
 
-        # Get today's pending bets with league info
-        bets = client.table("simulated_bets").select(
-            "id, bot_id, stake, market, selection, "
-            "matches(league_id, leagues(name, country))"
-        ).eq("result", "pending").gte(
-            "pick_time", f"{today_str}T00:00:00"
-        ).execute().data
+        # Get today's pending bets with league name via JOIN
+        bets = _eq(
+            """SELECT sb.id, sb.bot_id, sb.stake, sb.market, sb.selection,
+                      COALESCE(l.name, 'Unknown') AS league_name
+               FROM simulated_bets sb
+               JOIN matches m ON sb.match_id = m.id
+               LEFT JOIN leagues l ON m.league_id = l.id
+               WHERE sb.result = 'pending'
+                 AND sb.pick_time >= %s""",
+            (f"{today_str}T00:00:00",),
+        )
 
         if not bets:
             return
@@ -1687,9 +1695,7 @@ def _check_exposure_concentration():
         exposure: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
 
         for b in bets:
-            match = b.get("matches", {})
-            league = match.get("leagues", [{}])
-            league_name = league[0]["name"] if isinstance(league, list) and league else league.get("name", "?")
+            league_name = b.get("league_name") or "Unknown"
             bot_id = b["bot_id"]
             exposure[bot_id][league_name].append(b)
 
@@ -1721,12 +1727,10 @@ def run_settle():
 
 def run_report():
     """Show cumulative bot performance"""
+    from workers.api_clients.db import execute_query as _eq
     console.print(f"[bold green]═══ OddsIntel Bot Report ═══[/bold green]\n")
 
-    client = get_client()
-
-    # Get all bots
-    bots = client.table("bots").select("*").execute().data
+    bots = _eq("SELECT id, name, strategy, current_bankroll FROM bots ORDER BY name", [])
 
     t = Table(title="Bot Performance (All Time)")
     t.add_column("Bot", style="cyan")
@@ -1738,8 +1742,10 @@ def run_report():
     t.add_column("Pending", justify="right")
 
     for bot in bots:
-        bets = client.table("simulated_bets").select("result, pnl").eq("bot_id", bot["id"]).execute().data
-
+        bets = _eq(
+            "SELECT result, pnl FROM simulated_bets WHERE bot_id = %s",
+            (bot["id"],),
+        )
         won = sum(1 for b in bets if b["result"] == "won")
         lost = sum(1 for b in bets if b["result"] == "lost")
         pending = sum(1 for b in bets if b["result"] == "pending")
