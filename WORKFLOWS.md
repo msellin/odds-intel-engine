@@ -1,7 +1,7 @@
 # OddsIntel — Workflows & Pipeline Architecture
 
 > Single source of truth for all scheduled jobs, their order, and manual run instructions.
-> Last updated: 2026-05-03 — PERF-1/PERF-2: `batch_write_morning_signals()` replaces per-match signal loop (10 bulk queries vs ~14K serial, 34-70min → ~15s). `improvements.py` fully on psycopg2 (eliminates Railway PostgREST failure). `prune_odds_snapshots.py` rewritten to single SQL DELETE. Before: ENG-3/ENG-4 (match previews + email digest). Before that: Railway migration complete, POSTGREST-CLEANUP, BOT-TIMING.
+> Last updated: 2026-05-03 — POSTGREST-CLEANUP complete: all workers + scripts fully on psycopg2 (`fit_platt.py`, `backfill_historical.py` migrated; `live_tracker.py` crash bug fixed). Backfill now scheduled on Railway at 02:00 UTC daily. Before: PERF-1/PERF-2 batch signals + prune rewrite. Before that: Railway migration, BOT-TIMING.
 
 ### ✅ Railway Migration Complete (2026-04-30)
 
@@ -9,13 +9,14 @@
 > GitHub Actions crons are **disabled** — kept only for manual `workflow_dispatch` triggers and DB migrations. Cleanup (full removal) deferred until Railway has 2-4 weeks of stable operation (see GH-CLEANUP task).
 > Live tracker replaced by **LivePoller** (`workers/live_poller.py`) with tiered polling: **30s** (odds/scores), **60s** (stats/events), **5min** (lineups).
 > **Smart priority polling (RAIL-11):** matches with pending bets get stats every 30s instead of 60s. Goals detected via score delta → immediate extra odds snapshot stored.
-> Direct PostgreSQL (psycopg2 via `workers/api_clients/db.py`) used for all pipeline ops. `get_client()` (PostgREST/Supabase SDK) is now **only** used inside `workers/api_clients/supabase_client.py` internals — no other pipeline code calls it directly. `improvements.py` fully migrated 2026-05-03.
+> Direct PostgreSQL (psycopg2 via `workers/api_clients/db.py`) used for all pipeline ops. `get_client()` (PostgREST/Supabase SDK) is now **only** used inside `workers/api_clients/supabase_client.py` internals — zero other pipeline or script code calls it directly. Full PostgREST removal completed 2026-05-03 (including `fit_platt.py`, `backfill_historical.py`, and `live_tracker.py` crash fix).
 
 ---
 
 ## Daily Schedule (UTC) — executed by Railway `workers/scheduler.py`
 
 ```
+02:00  ⓪ Hist Backfill   run_backfill()            Historical fixtures/stats/events (self-stops once complete)
 04:00  ① Fixtures        run_fixtures()            AF fixtures + league coverage (weekly Mon)
        ② Enrichment      run_enrichment()          Standings, H2H, team stats, injuries (full)
        ③ Odds            run_odds()                AF bulk odds + Kambi odds
@@ -47,7 +48,7 @@
 | **Live polling (⑥)** | **Railway** | `workers/live_poller.py` — daemon thread, 30s/60s/5min tiers |
 | Manual recovery runs | GitHub Actions | `workflow_dispatch` — trigger any job manually |
 | DB migrations | GitHub Actions | `migrate.yml` — on push to `supabase/migrations/` |
-| Historical backfill | GitHub Actions | `backfill.yml` — temporary, budget-sensitive |
+| Historical backfill | **Railway** | `scripts/backfill_historical.py` — 02:00 UTC daily, self-stops on completion |
 
 ### Railway Environment Variables
 

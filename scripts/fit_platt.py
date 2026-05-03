@@ -29,43 +29,31 @@ from dotenv import load_dotenv
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from workers.api_clients.supabase_client import get_client
+from workers.api_clients.db import execute_query, execute_write
 
 MARKETS = ["1x2_home", "1x2_draw", "1x2_away"]
 MIN_SAMPLES_DEFAULT = 100
 
 
-def fetch_labeled_predictions(client, source: str = "ensemble") -> list[dict]:
+def fetch_labeled_predictions(source: str = "ensemble") -> list[dict]:
     """Fetch all predictions with finished match outcomes."""
-    rows = []
-    offset = 0
-    batch = 1000
-    while True:
-        result = client.table("predictions").select(
-            "model_probability, market, match_id, "
-            "matches!inner(status, result, score_home, score_away)"
-        ).eq("source", source).eq(
-            "matches.status", "finished"
-        ).range(offset, offset + batch - 1).execute()
-
-        data = result.data or []
-        rows.extend(data)
-        if len(data) < batch:
-            break
-        offset += batch
+    rows = execute_query(
+        """
+        SELECT p.model_probability, p.market, m.result
+        FROM predictions p
+        INNER JOIN matches m ON m.id = p.match_id
+        WHERE p.source = %s AND m.status = 'finished' AND m.result IS NOT NULL
+        """,
+        [source],
+    )
 
     labeled = []
     for row in rows:
-        m = row.get("matches") or {}
-        if isinstance(m, list):
-            m = m[0] if m else {}
-        result_val = m.get("result")
-        if not result_val:
-            continue
-
         prob = row.get("model_probability")
         mkt = row.get("market", "")
-        if prob is None:
+        result_val = row.get("result")
+
+        if prob is None or not result_val:
             continue
 
         won = None
@@ -131,8 +119,7 @@ def fit_platt_params(probs: np.ndarray, outcomes: np.ndarray) -> tuple[float, fl
 
 def fit_and_store(min_samples: int = MIN_SAMPLES_DEFAULT):
     """Fit Platt scaling per market and store in model_calibration."""
-    client = get_client()
-    labeled = fetch_labeled_predictions(client)
+    labeled = fetch_labeled_predictions()
 
     print(f"\n{'─'*65}")
     print(f"  Platt Scaling Calibration — {len(labeled)} labeled predictions")
@@ -180,18 +167,23 @@ def fit_and_store(min_samples: int = MIN_SAMPLES_DEFAULT):
         else:
             print(f"    ⚠  No improvement — Platt params stored but may not help this market")
 
-        # Store in model_calibration
-        row = {
-            "market": market,
-            "platt_a": round(a, 6),
-            "platt_b": round(b, 6),
-            "ece_before": round(ece_before, 6),
-            "ece_after": round(ece_after, 6),
-            "sample_count": n,
-            "fitted_at": datetime.now(timezone.utc).isoformat(),
-        }
-        client.table("model_calibration").insert(row).execute()
-        results.append(row)
+        execute_write(
+            """
+            INSERT INTO model_calibration
+                (market, platt_a, platt_b, ece_before, ece_after, sample_count, fitted_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                market,
+                round(a, 6),
+                round(b, 6),
+                round(ece_before, 6),
+                round(ece_after, 6),
+                n,
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        results.append({"market": market})
         print(f"    → Stored in model_calibration")
 
     print(f"\n{'─'*65}")

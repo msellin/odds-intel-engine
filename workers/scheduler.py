@@ -247,6 +247,12 @@ def job_settlement():
     _run_job("settlement", settlement_pipeline)
 
 
+def job_backfill():
+    """Daily historical backfill — 02:00 UTC, skips once flag file exists."""
+    from scripts.backfill_historical import run_backfill
+    _run_job("hist_backfill", run_backfill, phase=1)
+
+
 def job_live_tracker():
     from workers.jobs.live_tracker import run_live_tracker
     _run_job("live_tracker", run_live_tracker)
@@ -336,6 +342,10 @@ def main():
     scheduler = BackgroundScheduler(timezone="UTC")
 
     # ── Register all jobs ──────────────────────────────────────────────
+
+    # Historical backfill: 02:00 UTC daily (self-terminates once complete)
+    scheduler.add_job(job_backfill, CronTrigger(hour=2, minute=0),
+                      id="hist_backfill", name="Historical Backfill 02:00")
 
     # Morning pipeline: 04:00 UTC
     scheduler.add_job(job_morning, CronTrigger(hour=4, minute=0),
