@@ -50,6 +50,7 @@ from workers.api_clients.db import (
     store_live_odds_batch,
     store_match_events_batch,
     update_match_status_sql,
+    execute_query,
     DATABASE_URL,
 )
 
@@ -177,7 +178,7 @@ def _parse_af_live_fixture(af_fix: dict) -> dict:
 # DB match lookup helpers
 # ============================================================
 
-def _lookup_db_match(af_fix: dict, af_id_map: dict, client) -> dict | None:
+def _lookup_db_match(af_fix: dict, af_id_map: dict) -> dict | None:
     """
     Find the DB match record for a live AF fixture.
     Tries: af_fixture_id → team name + date fallback.
@@ -198,7 +199,7 @@ def _lookup_db_match(af_fix: dict, af_id_map: dict, client) -> dict | None:
     return None
 
 
-def _build_af_id_map(client=None) -> dict[int, dict]:
+def _build_af_id_map() -> dict[int, dict]:
     """
     Build {api_football_id: match_record} for today's + yesterday's matches.
     Includes yesterday because late matches may still be live after midnight UTC.
@@ -341,7 +342,7 @@ def run_live_tracker(dry_run: bool = False):
         home_api_id = af_fix.get("home_team_api_id")
 
         # Look up DB match
-        db_match = _lookup_db_match(af_fix, af_id_map, client)
+        db_match = _lookup_db_match(af_fix, af_id_map)
         db_status = "[green]✓[/green]" if db_match else "[dim]—[/dim]"
 
         # ── T5: Resolve live odds for this fixture ─────────────────────────
@@ -438,12 +439,12 @@ def run_live_tracker(dry_run: bool = False):
         # ── Load pre-match model context (once per match) ──────────────────
         if db_match and not dry_run:
             try:
-                preds = client.table("predictions").select(
-                    "market, model_probability"
-                ).eq("match_id", db_match["id"]).in_(
-                    "source", ["poisson", "ensemble"]
-                ).execute()
-                for p in (preds.data or []):
+                preds = execute_query(
+                    "SELECT market, model_probability FROM predictions "
+                    "WHERE match_id = %s AND source = ANY(%s)",
+                    [db_match["id"], ["poisson", "ensemble"]]
+                )
+                for p in (preds or []):
                     if p["market"] == "over25":
                         snapshot["model_ou25_prob"] = float(p["model_probability"])
                     # Use 1x2_home implied xG as proxy for model expected goals
