@@ -1248,6 +1248,29 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
         global_teams = set(hist_targets_global["home_team"].unique()) | set(hist_targets_global["away_team"].unique())
     team_sets = (v9_teams, global_teams)
 
+    # Pre-compute league-average BTTS rates for Tier D fallback.
+    # Poisson gives us no goal-model for unknown teams, but a league-average
+    # BTTS rate (e.g. Czech Republic 35.8%, Sweden 63.7%) is real signal vs
+    # the market's implied probability.
+    console.print("\n[cyan]Loading league BTTS rates (Tier D fallback)...[/cyan]")
+    _league_btts_rates: dict[str, float] = {}
+    _global_btts_rate = 0.538  # fallback if no league history
+    try:
+        btts_rows = _eq_br("""
+            SELECT m.league_id,
+                   AVG(CASE WHEN m.score_home >= 1 AND m.score_away >= 1 THEN 1.0 ELSE 0.0 END) as btts_rate,
+                   COUNT(*) as n
+            FROM matches m
+            WHERE m.status = 'finished' AND m.score_home IS NOT NULL
+            GROUP BY m.league_id
+            HAVING COUNT(*) >= 20
+        """, [])
+        for r in btts_rows:
+            _league_btts_rates[str(r["league_id"])] = float(r["btts_rate"])
+        console.print(f"  {len(_league_btts_rates)} leagues with BTTS history (global avg {_global_btts_rate:.1%})")
+    except Exception as e:
+        console.print(f"  [yellow]BTTS rate load failed (non-critical): {e}[/yellow]")
+
     # 8a. Write all morning signals in one batch (replaces per-match write_morning_signals)
     console.print("\n[cyan]Writing morning signals (batch)...[/cyan]")
     try:
@@ -1301,15 +1324,22 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                 total = hp + dp + ap
                 if total > 0:
                     hp, dp, ap = hp / total, dp / total, ap / total
-                # Tier D: AF-only fallback — only 1x2 and over/under 2.5 are
-                # available (AF gives win probabilities; O/U 2.5 uses a neutral 50/50
-                # prior). BTTS, O/U 1.5, O/U 3.5 are omitted — no meaningful model
-                # value exists for them without Poisson expected-goals data.
+                # Tier D: AF-only fallback.
+                # - 1x2: AF win probabilities (normalised)
+                # - O/U 2.5: neutral 50/50 prior (AF doesn't give goals model)
+                # - BTTS: league-average historical BTTS rate as prior.
+                #   Czech Republic averages 35.8% BTTS; Sweden 63.7%. This is
+                #   real signal vs the market's implied probability, even without
+                #   match-specific Poisson expected-goals data.
+                league_id_str = str(match.get("league_id", ""))
+                btts_rate = _league_btts_rates.get(league_id_str, _global_btts_rate)
                 poisson_pred = {
                     "home_prob": hp,
                     "draw_prob": dp,
                     "away_prob": ap,
                     "over_25_prob": 0.50, "under_25_prob": 0.50,  # neutral prior
+                    "btts_yes_prob": btts_rate,
+                    "btts_no_prob": 1.0 - btts_rate,
                     "exp_home": None,
                     "exp_away": None,
                     "data_tier": "D",
@@ -1418,9 +1448,9 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
             if odds_val > 0:
                 prob = pred.get(prob_key)
                 if prob is None:
-                    # Tier D uses AF-only fallback which intentionally omits BTTS and
-                    # O/U 1.5/3.5 (no Poisson expected-goals data). Only warn for
-                    # Tier A/B/C where we'd expect the key to exist.
+                    # Tier D: O/U 1.5 and O/U 3.5 are still omitted (no Poisson
+                    # expected-goals). BTTS is now covered via league-average rate.
+                    # Only warn for Tier A/B/C where we'd expect the key to exist.
                     if data_tier not in ("D",):
                         console.print(f"  [yellow]Prediction missing prob key '{prob_key}' for {match_id}/{market} (tier={data_tier}) — skipping[/yellow]")
                     continue

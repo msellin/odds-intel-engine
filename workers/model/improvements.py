@@ -50,6 +50,16 @@ CALIBRATION_ALPHA = {
 }
 CALIBRATION_ALPHA_DEFAULT = 0.35
 
+# Goal-line markets (BTTS, O/U) use higher alpha — Poisson expected-goals
+# model is specifically designed for these, so we trust it more than for 1x2.
+CALIBRATION_ALPHA_GOALLINE = {
+    1: 0.35,
+    2: 0.45,
+    3: 0.65,
+    4: 0.80,
+}
+_GOALLINE_PREFIXES = ("btts", "over", "under")
+
 
 def calibrate_prob(model_prob: float, implied_prob: float,
                    tier: int = 1, market: str = "") -> float:
@@ -60,7 +70,9 @@ def calibrate_prob(model_prob: float, implied_prob: float,
 
     Stage 1 (shrinkage):
       adjusted = alpha * model_prob + (1 - alpha) * implied_prob
-      Uses tier-specific alpha (T1: 0.20 → T4: 0.65).
+      Uses tier-specific alpha (T1: 0.20 → T4: 0.65 for 1x2).
+      Goal-line markets (BTTS, O/U) use higher alpha (T1: 0.35 → T4: 0.80)
+      because Poisson expected-goals is specifically designed for them.
 
     Stage 2 (Platt):
       calibrated = 1 / (1 + exp(-(a * adjusted + b)))
@@ -78,7 +90,11 @@ def calibrate_prob(model_prob: float, implied_prob: float,
     """
     if implied_prob <= 0 or implied_prob >= 1:
         return model_prob
-    alpha = CALIBRATION_ALPHA.get(tier, CALIBRATION_ALPHA_DEFAULT)
+    mkt_lower = market.lower()
+    if any(mkt_lower.startswith(p) for p in _GOALLINE_PREFIXES):
+        alpha = CALIBRATION_ALPHA_GOALLINE.get(tier, CALIBRATION_ALPHA_DEFAULT)
+    else:
+        alpha = CALIBRATION_ALPHA.get(tier, CALIBRATION_ALPHA_DEFAULT)
     shrunk = alpha * model_prob + (1 - alpha) * implied_prob
 
     # Stage 2: Platt sigmoid (if available for this market)
