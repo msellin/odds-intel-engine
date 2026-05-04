@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-04 — STRIPE-PROD: live mode activated. ALN-FIX + ALN-EXPAND + PIN-1: alignment NONE class, sharp_consensus + Pinnacle anchor signals. PERF-CACHE + FE-BOT-DASH: bot dashboard + bankroll chart. ADMIN-TIER-PREVIEW: superadmin floating tier switcher — free/pro/elite/"My Tier" pill, httpOnly cookie, getUserTier() utility replaces inline tier logic across all pages.
+> Last updated: 2026-05-04 — ENG-1 + ENG-2: "X analyzing this match" 30-min rolling counter + community vote split always visible + locked at kickoff. STRIPE-PROD: live mode activated. ALN-FIX + ALN-EXPAND + PIN-1: alignment NONE class, sharp_consensus + Pinnacle anchor signals. PERF-CACHE + FE-BOT-DASH: bot dashboard + bankroll chart. ADMIN-TIER-PREVIEW: superadmin floating tier switcher.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -108,8 +108,8 @@
 |----|------|--------|----|--------|-------|
 | ENG-3 | Daily AI match previews (top 5-10, Gemini) | 1-2 days | ✅ Done 2026-05-01 | ✅ Ready | `workers/jobs/match_previews.py`. Scheduler 07:00 UTC. `match_previews` table (migration 033). Free sees teaser, Pro/Elite see full 200-word preview. Triple-duty: on-site + email + social. |
 | ENG-4 | Daily email digest via Resend | 2-3 days | ✅ Done 2026-05-01 | ✅ Ready | `workers/jobs/email_digest.py`. Scheduler 07:30 UTC. `email_digest_log` table (migration 034). Free: teasers + CTA. Pro: + bet count. Elite: + full picks table. Resend REST API via httpx. Set `RESEND_API_KEY` in .env. |
-| ENG-1 | "X analyzing this match" live counter | 4-6h | ⬜ | ✅ Ready | Rolling 30min page view counter per match. Supabase realtime or DB counter. All tiers. Makes site feel alive |
-| ENG-2 | Community vote split display | 4-6h | ⬜ | ✅ Ready | `match_votes` table exists. Horizontal bar Home/Draw/Away % on match detail. Lock at kickoff |
+| ENG-1 | "X analyzing this match" live counter | 4-6h | ✅ Done 2026-05-04 | ✅ Done | `match_page_views` table (migration 038). `/api/track-page-view` POST route — upserts session_id+match_id, returns 30-min window count. `MatchViewingCounter` client component in match header metadata row. Hidden until 2+ people (no self-only display). |
+| ENG-2 | Community vote split display | 4-6h | ✅ Done 2026-05-04 | ✅ Done | `community-vote.tsx` updated: percentages + fill bars always visible when any votes exist. Locks at kickoff (live/finished) with Lock icon + "Locked at kickoff" label. Voting disabled for locked matches. |
 | ENG-6 | Bot consensus on match detail ("7/9 models agree: Over 2.5") | 3-4h | ✅ Done 2026-05-03 | ✅ Ready | Data in `simulated_bets`. Zero new data needed. Free: count. Pro: markets. Elite: full breakdown |
 | ENG-7 | Public /methodology page | Half day | ✅ Done 2026-05-03 | ✅ Ready | Plain-English model explanation. Trust anchor. Nobody else publishes this |
 | ENG-5 | Betting glossary (10-15 SEO pages at /learn/[term]) | 2-3 days | ⬜ | ✅ Ready | EV, CLV, Poisson, Kelly, xG, BTTS etc. FAQ schema for Google |
