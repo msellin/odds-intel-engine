@@ -7,6 +7,11 @@ Newest entries at the top. Internal refactors and infrastructure changes are not
 
 ## 2026-05-04
 
+### Docs Restructure
+- Merged `docs/reddit_warmup_comments.md` + `docs/reddit_launch_posts.md` → `docs/REDDIT_LAUNCH.md` (single file: progress tracker + all 6 post drafts + subreddit rules)
+- Moved `LAUNCH_PLAN.md` → `docs/LAUNCH_PLAN.md`
+- Established convention: root `/*.md` = agent protocol docs; `docs/` = strategy, playbooks, reference
+
 ### Bot Dashboard (Superadmin)
 - **Bot detail modal**: click any bot row to see its full bet history — date, match, market, odds, stake, result, P&L, closing line value (CLV), and a bankroll progression chart
 - Inactive bots (no settled bets yet) are shown greyed out but still clickable
