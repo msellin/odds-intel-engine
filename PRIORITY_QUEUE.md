@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-03 — POSTGREST-CLEANUP fully complete. Zero PostgREST callers outside supabase_client.py: fit_platt.py + backfill_historical.py migrated to psycopg2, live_tracker.py crash bug fixed (undefined client). Backfill moved from GH Actions to Railway 02:00 UTC daily (self-stops on completion). Also done: PERF-1 (batch_write_morning_signals 10 bulk queries → 14K serial), PERF-2 (prune single SQL DELETE).
+> Last updated: 2026-05-04 — ALN-FIX: `compute_alignment()` now emits NONE when no dimensions fire (was misclassifying no-signal as LOW). ALN-EXPAND: added dim 5 (sharp_consensus) + dim 6 (pinnacle anchor) to alignment. PIN-1: `pinnacle_implied_home` signal stored in morning signals pipeline from existing Pinnacle odds_snapshots rows.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -88,10 +88,14 @@
 | ID | Task | Effort | ☑ | Ready? | Notes |
 |----|------|--------|----|--------|-------|
 | P5.1 | Sharp/soft bookmaker classification + sharp_consensus signal | 1-2 days | ✅ | ✅ Done 2026-05-03 | `data/bookmaker_sharpness_rankings.csv` (13 bookmakers, 3 tiers). `sharp_consensus_home` signal added to `batch_write_morning_signals` — computes sharp avg implied prob − soft avg implied prob for home 1x2. Runs every morning pipeline. |
-| PIN-1 | Pinnacle anchor signal: `model_prob - pinnacle_implied` | 2-3h | ⬜ | ✅ Ready | P5.1 done — Pinnacle is in our bookmaker set. Can now build: compare model_prob directly to Pinnacle-only implied prob per market. |
+| PIN-1 | Pinnacle anchor signal: `model_prob - pinnacle_implied` | 2-3h | ✅ Done 2026-05-04 | ✅ Ready | `pinnacle_implied_home` signal added to `batch_write_morning_signals()` in supabase_client.py. Filters `market='1x2' AND selection='home' AND bookmaker='Pinnacle'` from existing bulk query — latest snapshot only. |
 | ODDS-API | Activate The Odds API for Pinnacle odds ($20/mo) | 2h | ⬜ | ⏳ After PIN-1 | Code exists (254 lines, dormant) |
-| ALN-1 | Dynamic alignment thresholds (300+ settled bot bets) | 2h | ⬜ | ⏳ ~May 9-10 (have ~30, need 300) | Needs actual placed bets — pseudo-CLV does NOT substitute |
+| ALN-FIX | Fix alignment classification: add NONE class when active=0 | 30min | ✅ Done 2026-05-04 | ✅ Ready | Fixed in `workers/model/improvements.py:compute_alignment()`. `ratio` now uses `active` as divisor (no max(active,1) trick). `active=0` → `alignment_class="NONE"`. Docstring updated. |
+| ALN-EXPAND | Add sharp_consensus + Pinnacle anchor to alignment dimensions | 1-2h | ✅ Done 2026-05-04 | ⏳ After ALN-FIX + PIN-1 | Added `_dim_sharp_consensus()` (dim 5) and `_dim_pinnacle()` (dim 6) to `improvements.py`. Wired into `compute_alignment()`. `ALIGNMENT_DIMENSIONS` updated to 6 entries. |
+| ALN-1 | Dynamic alignment thresholds (300+ settled bot bets) | 2h | ⬜ | ⏳ ~May 9-10 (have 73, need 300) | Needs actual placed bets — pseudo-CLV does NOT substitute |
 | VAL-POST-MORTEM | Review 14 days of LLM post-mortem patterns | 30 min | ⬜ | ⏳ May 13+ (have 2 rows, need 14) | `SELECT notes FROM model_evaluations WHERE market='post_mortem' ORDER BY date DESC LIMIT 14` |
+| PERF-CACHE | Pre-store expensive page stats in DB via settlement cron | 1 day | ✅ Done 2026-05-04 | ✅ Done | Migration `035_dashboard_cache.sql`. `write_dashboard_cache()` added to settlement.py — called at end of `run_settlement()`. `getDashboardCache()` + `DashboardCache` type added to `engine-data.ts` for fast frontend reads |
+| FE-BOT-DASH | Bot P&L dashboard: superadmin now, Elite later | 1-2 days | ✅ Done 2026-05-04 | ✅ Done | `/admin/bots` page (server component, double-gated is_superadmin). Per-bot P&L table, market breakdown, summary cards. Amber "Bots" nav link for superadmins only. TIER_ACCESS_MATRIX lists "Full bot ROI analytics" as Elite — promote from superadmin → Elite once 300+ bets show meaningful ROI |
 
 ---
 
@@ -243,8 +247,8 @@
 | Milestone | Query | Target | Current (2026-04-30) | ETA |
 |-----------|-------|--------|---------------------|-----|
 | **Platt scaling ready** | Predictions with finished match outcomes | 500+ | **586 ✅ IMPLEMENTED 2026-04-30** | Done |
-| Meta-model Phase 1 ready | `matches WHERE status='finished' AND pseudo_clv_home IS NOT NULL` | 3,000+ | 494 | ~May 9 (+280/day) |
-| Alignment threshold validation | `simulated_bets WHERE result!='pending' AND alignment_class IS NOT NULL` | 300+ | 30 | ~May 9-10 (~30-40/day with 16 bots) |
+| Meta-model Phase 1 ready | `matches WHERE status='finished' AND pseudo_clv_home IS NOT NULL` | 3,000+ | 1,679 | ~May 15 |
+| Alignment threshold validation | `simulated_bets WHERE result!='pending' AND alignment_class IS NOT NULL` | 300+ | 73 | ~May 12 (~30-40/day). Note: 73 stamped LOW due to ALN-FIX bug (now fixed 2026-05-04 — future bets will show NONE/LOW/MED/HIGH correctly) |
 | Post-mortem patterns readable | `model_evaluations WHERE market='post_mortem'` | 14+ | 2 | ~May 12 (+1/day) |
 | In-play model ready | Distinct matches in live_match_snapshots | 500+ | 49 | ~July (~10-20/day) |
 | Meta-model Phase 2 ready | Settled bets with dimension_scores + CLV | 1,000+ | 0 | ~Aug (needs ALN-1 first) |

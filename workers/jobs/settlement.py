@@ -554,6 +554,9 @@ def run_settlement():
         except Exception as e:
             console.print(f"  [yellow]Post-mortem error (non-critical): {e}[/yellow]")
 
+    # Write pre-computed stats to dashboard_cache for fast frontend loads
+    write_dashboard_cache()
+
     console.print("\n[bold green]Core settlement complete.[/bold green]")
 
 
@@ -631,6 +634,118 @@ def _compute_pseudo_clv_batched(fetch_dates: list[str]) -> tuple[int, int]:
             pass
 
     return computed, skipped
+
+
+def write_dashboard_cache():
+    """
+    Pre-compute all dashboard stats and write to dashboard_cache table.
+    Called at end of settlement (21:00 UTC). Frontend reads latest row — fast.
+    """
+    console.print("[cyan]Writing dashboard cache...[/cyan]")
+    try:
+        # Bot performance
+        bot_rows = execute_query("""
+            SELECT
+                b.name, sb.timing_cohort,
+                COUNT(sb.id) FILTER (WHERE sb.result != 'pending') as settled,
+                COUNT(sb.id) FILTER (WHERE sb.result = 'won') as won,
+                SUM(sb.pnl) FILTER (WHERE sb.result != 'pending') as total_pnl,
+                SUM(sb.stake) FILTER (WHERE sb.result != 'pending') as total_staked,
+                AVG(sb.clv) FILTER (WHERE sb.result != 'pending' AND sb.clv IS NOT NULL) as avg_clv
+            FROM bots b
+            LEFT JOIN simulated_bets sb ON sb.bot_id = b.id
+            WHERE b.is_active = true
+            GROUP BY b.id, b.name, sb.timing_cohort
+        """, [])
+
+        total_bets = execute_query("SELECT COUNT(*) as n FROM simulated_bets", [])[0]["n"]
+        settled_bets = execute_query("SELECT COUNT(*) as n FROM simulated_bets WHERE result != 'pending'", [])[0]["n"]
+        pending_bets = int(total_bets) - int(settled_bets)
+        won = execute_query("SELECT COUNT(*) as n FROM simulated_bets WHERE result = 'won'", [])[0]["n"]
+        lost = execute_query("SELECT COUNT(*) as n FROM simulated_bets WHERE result = 'lost'", [])[0]["n"]
+        staked_row = execute_query("SELECT SUM(stake) as s, SUM(pnl) as p, AVG(clv) as c FROM simulated_bets WHERE result != 'pending'", [])[0]
+        total_staked = float(staked_row["s"] or 0)
+        total_pnl = float(staked_row["p"] or 0)
+        avg_clv = float(staked_row["c"] or 0) if staked_row["c"] else None
+        hit_rate = (int(won) / int(settled_bets) * 100) if int(settled_bets) > 0 else None
+        roi_pct = (total_pnl / total_staked * 100) if total_staked > 0 and int(settled_bets) > 0 else None
+
+        bot_breakdown = []
+        for r in bot_rows:
+            s = int(r.get("settled") or 0)
+            w = int(r.get("won") or 0)
+            p = float(r.get("total_pnl") or 0)
+            st = float(r.get("total_staked") or 0)
+            bot_breakdown.append({
+                "name": r["name"],
+                "timing_cohort": r.get("timing_cohort"),
+                "settled": s,
+                "won": w,
+                "total_pnl": round(p, 2),
+                "roi_pct": round(p / st * 100, 1) if st > 0 and s > 0 else None,
+                "avg_clv": round(float(r["avg_clv"]), 4) if r.get("avg_clv") else None,
+            })
+
+        market_rows = execute_query("""
+            SELECT market,
+                COUNT(*) FILTER (WHERE result != 'pending') as bets,
+                COUNT(*) FILTER (WHERE result = 'won') as won,
+                AVG(clv) FILTER (WHERE result != 'pending' AND clv IS NOT NULL) as avg_clv
+            FROM simulated_bets
+            GROUP BY market ORDER BY bets DESC
+        """, [])
+        market_breakdown = [
+            {"market": r["market"], "bets": int(r["bets"] or 0), "won": int(r["won"] or 0),
+             "avg_clv": round(float(r["avg_clv"]), 4) if r.get("avg_clv") else None}
+            for r in market_rows
+        ]
+
+        # Model accuracy (simple: % of matches where highest ensemble prob = actual result)
+        acc_row = execute_query("""
+            SELECT
+                COUNT(*) as n,
+                SUM(CASE
+                    WHEN m.result = 'home' AND p1.model_probability >= p2.model_probability AND p1.model_probability >= p3.model_probability THEN 1
+                    WHEN m.result = 'draw' AND p2.model_probability >= p1.model_probability AND p2.model_probability >= p3.model_probability THEN 1
+                    WHEN m.result = 'away' AND p3.model_probability >= p1.model_probability AND p3.model_probability >= p2.model_probability THEN 1
+                    ELSE 0
+                END) as correct
+            FROM matches m
+            JOIN predictions p1 ON p1.match_id = m.id AND p1.market = '1x2_home' AND p1.source = 'ensemble'
+            JOIN predictions p2 ON p2.match_id = m.id AND p2.market = '1x2_draw' AND p2.source = 'ensemble'
+            JOIN predictions p3 ON p3.match_id = m.id AND p3.market = '1x2_away' AND p3.source = 'ensemble'
+            WHERE m.status = 'finished' AND m.result IS NOT NULL
+        """, [])
+        acc = acc_row[0] if acc_row else {}
+        n = int(acc.get("n") or 0)
+        correct = int(acc.get("correct") or 0)
+        model_accuracy_pct = round(correct / n * 100, 1) if n > 0 else None
+
+        # Data accumulation counts
+        pseudo_clv_count = execute_query("SELECT COUNT(*) as n FROM matches WHERE status='finished' AND pseudo_clv_home IS NOT NULL", [])[0]["n"]
+        live_snapshot_matches = execute_query("SELECT COUNT(DISTINCT match_id) as n FROM live_match_snapshots", [])[0]["n"]
+        alignment_settled = execute_query("SELECT COUNT(*) as n FROM simulated_bets WHERE result != 'pending' AND alignment_class IS NOT NULL", [])[0]["n"]
+
+        import json
+        execute_write("""
+            INSERT INTO dashboard_cache (
+                total_bets, settled_bets, pending_bets, won_bets, lost_bets,
+                hit_rate, total_staked, total_pnl, roi_pct, avg_clv,
+                bot_breakdown, market_breakdown,
+                model_accuracy_pct, prediction_sample_size,
+                pseudo_clv_count, live_snapshot_matches, alignment_settled_count
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, [
+            int(total_bets), int(settled_bets), int(pending_bets), int(won), int(lost),
+            hit_rate, total_staked, total_pnl, roi_pct, avg_clv,
+            json.dumps(bot_breakdown), json.dumps(market_breakdown),
+            model_accuracy_pct, n,
+            int(pseudo_clv_count), int(live_snapshot_matches), int(alignment_settled)
+        ])
+        console.print(f"  Dashboard cache written: {int(settled_bets)} settled bets, accuracy={model_accuracy_pct}%")
+    except Exception as e:
+        console.print(f"  [yellow]Dashboard cache error (non-critical): {e}[/yellow]")
+        import traceback; traceback.print_exc()
 
 
 def run_ml_etl():

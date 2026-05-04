@@ -256,7 +256,7 @@ def compute_odds_movement(match_id: str, market: str, selection: str,
 #   - xG over/underperformance
 #   - H2H pattern (also noise per 3/4 assessments)
 
-ALIGNMENT_DIMENSIONS = ["odds_move", "news", "lineup", "situation"]
+ALIGNMENT_DIMENSIONS = ["odds_move", "news", "lineup", "situation", "sharp", "pinnacle"]
 
 
 def compute_alignment(
@@ -281,8 +281,10 @@ def compute_alignment(
             "alignment_count": int,
             "alignment_total": int,
             "alignment_ratio": float,
-            "alignment_class": "HIGH" | "MEDIUM" | "LOW",
+            "alignment_class": "NONE" | "HIGH" | "MEDIUM" | "LOW",
         }
+        alignment_class is "NONE" when no dimensions fired (active=0), so that
+        LOW/MEDIUM/HIGH are only assigned when there is actual signal data.
     """
     dimensions = {}
 
@@ -303,14 +305,26 @@ def compute_alignment(
     # --- Dimension 4: Situational Context (rest + home advantage in lower leagues) ---
     dimensions["situation"] = _dim_situational(match, is_home_pick, is_away_pick, is_1x2)
 
+    # --- Dimension 5: Sharp consensus ---
+    dimensions["sharp"] = _dim_sharp_consensus(match_id, selection)
+
+    # --- Dimension 6: Pinnacle agreement ---
+    # model_prob: use calibrated_prob from the bet record if available.
+    # Falls back to 0.0 → _dim_pinnacle returns 0 (neutral) if no prob available.
+    model_prob = match.get("calibrated_prob", 0.0) or 0.0
+    dimensions["pinnacle"] = _dim_pinnacle(match_id, selection, float(model_prob))
+
     # --- Compute alignment ---
     agreeing = sum(1 for v in dimensions.values() if v > 0)
     active = sum(1 for v in dimensions.values() if v != 0)
-    ratio = agreeing / max(active, 1)
+    ratio = agreeing / active if active > 0 else 0.0
 
     # Classification — thresholds are provisional, will be set from data
-    # after 300+ bets (per assessment 1 & 4 recommendation)
-    if ratio >= 0.75:
+    # after 300+ bets (per assessment 1 & 4 recommendation).
+    # NONE = no dimensions fired at all (no external signal data available).
+    if active == 0:
+        alignment_class = "NONE"
+    elif ratio >= 0.75:
         alignment_class = "HIGH"
     elif ratio >= 0.50:
         alignment_class = "MEDIUM"
@@ -412,6 +426,70 @@ def _dim_situational(match: dict, is_home: bool, is_away: bool,
         return -1
 
     return 0
+
+
+def _dim_sharp_consensus(match_id: str, selection: str) -> int:
+    """
+    Dimension 5: Sharp bookmaker consensus (P5.1 signal).
+    sharp_consensus_home > 0: sharp books price home higher than soft books.
+    Only meaningful for 1X2 picks. O/U always returns 0 (neutral).
+    """
+    is_home = selection.lower() == "home"
+    is_away = selection.lower() == "away"
+    if not (is_home or is_away):
+        return 0  # O/U, draw — no sharp consensus signal for these yet
+
+    try:
+        rows = execute_query(
+            "SELECT signal_value FROM match_signals WHERE match_id = %s AND signal_name = 'sharp_consensus_home' ORDER BY captured_at DESC LIMIT 1",
+            [match_id],
+        )
+        if not rows:
+            return 0
+        val = float(rows[0].get("signal_value") or 0)
+        if abs(val) < 0.01:
+            return 0  # Too small to be meaningful
+        # Positive = sharp books price home higher
+        if is_home:
+            return 1 if val > 0.01 else (-1 if val < -0.01 else 0)
+        else:  # away pick
+            return 1 if val < -0.01 else (-1 if val > 0.01 else 0)
+    except Exception:
+        return 0
+
+
+def _dim_pinnacle(match_id: str, selection: str, model_prob: float) -> int:
+    """
+    Dimension 6: Pinnacle anchor — does Pinnacle agree with our pick direction?
+    We're betting on this selection because model_prob > implied_prob (positive edge).
+    If Pinnacle implied is close to our model → Pinnacle doesn't strongly disagree → +1.
+    If Pinnacle implied >> model_prob → sharp market strongly disagrees → -1.
+    """
+    is_home = selection.lower() == "home"
+    if not is_home:
+        return 0  # Only have pinnacle_implied_home for now
+
+    try:
+        rows = execute_query(
+            "SELECT signal_value FROM match_signals WHERE match_id = %s AND signal_name = 'pinnacle_implied_home' ORDER BY captured_at DESC LIMIT 1",
+            [match_id],
+        )
+        if not rows or model_prob <= 0:
+            return 0
+        pinnacle_implied = float(rows[0].get("signal_value") or 0)
+        if pinnacle_implied <= 0:
+            return 0
+        gap = model_prob - pinnacle_implied  # positive = model rates higher
+        # We're betting home because model finds value (gap should be positive)
+        # If Pinnacle also agrees (small gap): neutral-to-positive
+        # If Pinnacle strongly disagrees (gap very negative): bad sign
+        if gap > -0.03:  # Pinnacle doesn't strongly disagree
+            return 1
+        elif gap < -0.08:  # Pinnacle strongly disagrees with our model
+            return -1
+        return 0
+    except Exception:
+        return 0
 
 
 # =============================================================================

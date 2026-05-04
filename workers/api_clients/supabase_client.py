@@ -3079,6 +3079,20 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
                 soft_avg = sum(soft_probs) / len(soft_probs)
                 add(mid, "sharp_consensus_home", round(sharp_avg - soft_avg, 5), "market", "derived")
 
+            # PIN-1: Pinnacle anchor signal — Pinnacle implied home probability
+            # Positive anchor_home (model_prob - pinnacle_implied) = model rates home higher than Pinnacle
+            # Near-zero = model agrees with Pinnacle (sharp market confirmation)
+            # Negative = Pinnacle rates home much higher than model (model may be wrong)
+            # Note: rows are already filtered to market='1x2' AND selection='home' by the bulk query above.
+            pinnacle_rows = [
+                r for r in rows
+                if r.get("bookmaker") == "Pinnacle" and float(r.get("odds") or 0) > 1.0
+            ]
+            if pinnacle_rows:
+                # Rows are sorted DESC by timestamp — first entry is most recent
+                pin_implied = 1.0 / float(pinnacle_rows[0]["odds"])
+                add(mid, "pinnacle_implied_home", round(pin_implied, 5), "market", "derived")
+
             # Overnight line move
             yest = [r for r in rows if str(r["timestamp"]) < midnight_utc]
             today_sorted = sorted(
