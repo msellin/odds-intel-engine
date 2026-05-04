@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-04 — STRIPE-PROD: live mode activated, products created, all Vercel env vars updated, live webhook live. ALN-FIX + ALN-EXPAND + PIN-1: alignment NONE class, sharp_consensus + Pinnacle anchor signals. PERF-CACHE + FE-BOT-DASH: bot dashboard with detail modal + bankroll chart.
+> Last updated: 2026-05-04 — STRIPE-PROD: live mode activated. ALN-FIX + ALN-EXPAND + PIN-1: alignment NONE class, sharp_consensus + Pinnacle anchor signals. PERF-CACHE + FE-BOT-DASH: bot dashboard + bankroll chart. ADMIN-TIER-PREVIEW: superadmin floating tier switcher — free/pro/elite/"My Tier" pill, httpOnly cookie, getUserTier() utility replaces inline tier logic across all pages.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -51,6 +51,7 @@
 | PERF-2 | Rewrite prune_odds_snapshots.py — single SQL DELETE | 1h | ✅ | ✅ Done 2026-05-03 | Replaced per-match PostgREST iteration with one DISTINCT ON subquery DELETE. Prunes all finished matches in a single statement. Migrated to psycopg2. |
 | STRIPE-PROD | Swap Stripe to production keys | 1h | ✅ Done 2026-05-04 | ✅ Done | Live products created (Pro €4.99, Elite €14.99 + yearly + founding). All Vercel env vars updated. Live webhook `https://www.oddsintel.app/api/stripe/webhook`. Deployed. |
 | GH-CLEANUP | Remove pipeline workflow files from GitHub Actions | 30min | ⬜ | ⏳ ~May W3-4 (after 2-4 wks Railway stable) | Delete fixtures/enrichment/odds/predictions/betting/live_tracker/news_checker/settlement .yml. Keep migrate.yml only (backfill.yml now redundant — backfill is on Railway). workflow_dispatch is the fire extinguisher until then. |
+| ADMIN-TIER-PREVIEW | Superadmin tier preview switcher — switch between free/pro/elite to QA any page | 2-3h | ✅ Done 2026-05-04 | ✅ Done | Cookie-based override. (1) `src/lib/get-user-tier.ts` shared utility — wraps profile fetch, checks `preview_tier` httpOnly cookie when `is_superadmin=true` and overrides tier; replace ~5 pages that inline `.select("tier, is_superadmin")` with this. (2) `/api/set-preview-tier` POST route — sets/clears cookie, superadmin-only server-validated. (3) Floating pill UI (`src/components/superadmin-tier-bar.tsx`) — fixed overlay, only renders for superadmins, shows current preview tier badge + free/pro/elite/"My Tier" buttons, added to app layout. Cookie is httpOnly+sameSite=lax. Works cleanly: all pages are dynamic (no ISR), so cookie flip = instant re-render with different tier data. Visual banner ensures you always know which tier you're previewing. |
 
 ---
 
