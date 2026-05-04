@@ -115,8 +115,8 @@ def settle_bet_result(bet: dict, home_goals: int, away_goals: int,
     """
     market = bet["market"].lower()
     selection = bet["selection"].lower()
-    stake = bet["stake"]
-    odds = bet["odds_at_pick"]
+    stake = float(bet["stake"])
+    odds = float(bet["odds_at_pick"])
     total_goals = home_goals + away_goals
 
     won = False
@@ -150,7 +150,7 @@ def settle_bet_result(bet: dict, home_goals: int, away_goals: int,
     # CLV: positive = we got better odds than closing line
     clv = None
     if closing_odds and closing_odds > 0:
-        clv = round((odds / closing_odds) - 1, 4)
+        clv = round((float(odds) / float(closing_odds)) - 1, 4)
 
     return {
         "result": "won" if won else "lost",
@@ -456,7 +456,7 @@ def run_settlement():
     team_name_map: dict[str, str] = {}
     if all_team_ids:
         tr = execute_query(
-            "SELECT id, name FROM teams WHERE id = ANY(%s)",
+            "SELECT id::text, name FROM teams WHERE id = ANY(%s::uuid[])",
             [list(all_team_ids)]
         )
         team_name_map = {t["id"]: t["name"] for t in tr}
@@ -888,7 +888,7 @@ def update_elo_ratings():
     elo_cache: dict[str, float] = {}
     elo_rows = execute_query(
         "SELECT DISTINCT ON (team_id) team_id, elo_rating FROM team_elo_daily "
-        "WHERE team_id = ANY(%s) ORDER BY team_id, date DESC",
+        "WHERE team_id = ANY(%s::uuid[]) ORDER BY team_id, date DESC",
         [list(team_ids)]
     )
     for r in elo_rows:
