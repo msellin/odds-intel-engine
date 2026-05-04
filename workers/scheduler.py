@@ -247,6 +247,12 @@ def job_settlement():
     _run_job("settlement", settlement_pipeline)
 
 
+def job_settle_ready():
+    """15-min sweep: settle any finished match not yet marked done."""
+    from workers.jobs.settlement import settle_ready_matches
+    _run_job("settle_ready", settle_ready_matches)
+
+
 def job_backfill():
     """Daily historical backfill — 02:00 UTC, skips once flag file exists."""
     from scripts.backfill_historical import run_backfill
@@ -394,6 +400,12 @@ def main():
                       id="settlement", name="Settlement 21:00")
     scheduler.add_job(job_settlement, CronTrigger(hour=23, minute=30),
                       id="settlement_late", name="Settlement 23:30")
+
+    # Settle-ready sweep: every 15 min, all day.
+    # Catches matches the live poller missed (outside 10-23 UTC window, or if it errored).
+    # Idempotent — skips matches already marked 'done'.
+    scheduler.add_job(job_settle_ready, CronTrigger(minute="*/15"),
+                      id="settle_ready", name="Settle-Ready Sweep (15min)")
 
     # Budget sync: hourly
     scheduler.add_job(job_budget_sync, CronTrigger(minute=0),

@@ -325,7 +325,8 @@ def finish_match_sql(match_id: str, score_home: int, score_away: int):
     result = "home" if score_home > score_away else "away" if score_away > score_home else "draw"
     execute_write(
         """UPDATE matches
-           SET status = 'finished', score_home = %s, score_away = %s, result = %s
+           SET status = 'finished', score_home = %s, score_away = %s, result = %s,
+               settlement_status = 'ready'
            WHERE id = %s AND status != 'finished'""",
         (score_home, score_away, result, match_id)
     )

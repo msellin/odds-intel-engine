@@ -313,6 +313,12 @@ def settle_finished_matches(match_ids: list[str]):
     Settle bets for specific finished matches. Called by the live poller
     immediately when it detects FT/AET/PEN, so bets are settled in real-time
     instead of waiting for the 21:00 UTC bulk settlement.
+
+    Also called by settle_ready_matches() (15-min sweep) for any match the
+    live poller missed (outside 10-23 UTC window, or if it errored).
+
+    Always marks settlement_status = 'done' at the end, even if there were
+    no pending bets, so the sweep doesn't re-visit the same match.
     """
     if not match_ids:
         return
@@ -329,17 +335,60 @@ def settle_finished_matches(match_ids: list[str]):
             _settle_user_picks_for_matches(match_ids)
         except Exception:
             pass
+    else:
+        console.print(f"[cyan]Live settlement: {len(pending)} pending bets "
+                      f"for {len(match_ids)} finished match(es)[/cyan]")
+        _settle_pending_bets(pending, finished=[])
+
+        # Also settle user picks for these matches
+        try:
+            _settle_user_picks_for_matches(match_ids)
+        except Exception as e:
+            console.print(f"  [yellow]User picks settlement error: {e}[/yellow]")
+
+    # Mark settled regardless of whether there were any pending bets/picks.
+    # This stops the 15-min sweep from re-querying the same finished matches.
+    execute_write(
+        "UPDATE matches SET settlement_status = 'done' WHERE id = ANY(%s)",
+        [match_ids]
+    )
+
+
+def settle_ready_matches():
+    """
+    Lightweight catch-all settlement sweep — runs every 15 minutes.
+
+    Settles bets for any finished match that has not yet been marked 'done'.
+    This catches two cases the live poller can't handle:
+      1. settlement_status = 'ready': live poller detected FT but the inline
+         settle_finished_matches() call errored (exception was swallowed).
+      2. settlement_status = 'none': match finished outside the 10-23 UTC live
+         window (e.g. very early Asian matches, or late night games after 23:00),
+         or the match was written as 'finished' by the bulk settlement run but
+         no subsequent per-match settlement was ever triggered.
+
+    Safe to run while the live poller is also running: settle_finished_matches()
+    only touches bets with result='pending', and the final UPDATE to 'done' is
+    idempotent.
+    """
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    today = date.today().isoformat()
+
+    rows = execute_query(
+        """SELECT id FROM matches
+           WHERE status = 'finished'
+             AND settlement_status IS DISTINCT FROM 'done'
+             AND date >= %s AND date <= %s""",
+        [f"{yesterday}T00:00:00", f"{today}T23:59:59"]
+    )
+
+    if not rows:
+        console.print("[dim]Settle-ready sweep: nothing to do.[/dim]")
         return
 
-    console.print(f"[cyan]Live settlement: {len(pending)} pending bets "
-                  f"for {len(match_ids)} finished match(es)[/cyan]")
-    _settle_pending_bets(pending, finished=[])
-
-    # Also settle user picks for these matches
-    try:
-        _settle_user_picks_for_matches(match_ids)
-    except Exception as e:
-        console.print(f"  [yellow]User picks settlement error: {e}[/yellow]")
+    match_ids = [r["id"] for r in rows]
+    console.print(f"[cyan]Settle-ready sweep: {len(match_ids)} match(es) need settlement[/cyan]")
+    settle_finished_matches(match_ids)
 
 
 def _settle_user_picks_for_matches(match_ids: list[str]):
@@ -556,6 +605,20 @@ def run_settlement():
 
     # Write pre-computed stats to dashboard_cache for fast frontend loads
     write_dashboard_cache()
+
+    # Mark all finished matches in the settlement window as done.
+    # This is the bulk run's safety net: any match that slipped through
+    # the live poller or the 15-min sweep gets marked here.
+    try:
+        execute_write(
+            """UPDATE matches SET settlement_status = 'done'
+               WHERE status = 'finished'
+                 AND settlement_status IS DISTINCT FROM 'done'
+                 AND date >= %s AND date <= %s""",
+            [f"{date_min}T00:00:00", f"{date_max}T23:59:59"]
+        )
+    except Exception as e:
+        console.print(f"  [yellow]settlement_status cleanup error: {e}[/yellow]")
 
     console.print("\n[bold green]Core settlement complete.[/bold green]")
 
