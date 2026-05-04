@@ -1,12 +1,7 @@
 name: Historical Backfill
 
 on:
-  schedule:
-    # Every 30min overnight (0 competing AF calls): 23:00–03:30 UTC
-    - cron: '0,30 23 * * *'
-    - cron: '0,30 0-3 * * *'
-    # Every hour during daytime gaps: 06–11 UTC (between enrichment/odds)
-    - cron: '0 6-11 * * *'
+  # schedule disabled — backfill now runs on Railway (02:00 UTC daily, self-stops on completion)
   workflow_dispatch:
     inputs:
       phase:
