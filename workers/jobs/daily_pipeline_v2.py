@@ -1142,6 +1142,17 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
     bot_ids = ensure_bots(BOTS_CONFIG)
     console.print(f"  {len(bot_ids)} bots ready")
 
+    # Running bankroll: tracks in-run stake spend so later bets size against
+    # remaining capital (not the same starting bankroll for every bet).
+    from workers.api_clients.db import execute_query as _eq_br
+    _running_bankroll: dict[str, float] = {}
+    for _bn, _bid in bot_ids.items():
+        try:
+            _row = _eq_br("SELECT current_bankroll FROM bots WHERE id = %s", [_bid])
+            _running_bankroll[_bn] = float(_row[0]["current_bankroll"]) if _row else 1000.0
+        except Exception:
+            _running_bankroll[_bn] = 1000.0
+
     if skip_fetch:
         # Phase 2: read from DB — upstream jobs already fetched everything
         console.print("\n[cyan]Loading today's data from DB (skip_fetch=True)...[/cyan]")
@@ -1550,17 +1561,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                 )
 
                 # P4: Kelly-based stake sizing with soft odds penalty
-                bot_bankroll = 1000.0
-                try:
-                    from workers.api_clients.db import execute_query as _eq
-                    bot_record = _eq(
-                        "SELECT current_bankroll FROM bots WHERE id = %s",
-                        [bot_ids[bot_name]]
-                    )
-                    if bot_record:
-                        bot_bankroll = float(bot_record[0]["current_bankroll"])
-                except Exception:
-                    pass
+                # Use running bankroll (reduced by stakes already placed this run)
+                bot_bankroll = _running_bankroll.get(bot_name, 1000.0)
 
                 stake = compute_stake(
                     kelly, bot_bankroll, data_tier,
@@ -1618,6 +1620,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                     if bet_id:
                         total_bets += 1
                         league_bet_counts[bot_name][_league_key] += 1
+                        _running_bankroll[bot_name] = max(0.0, _running_bankroll.get(bot_name, 1000.0) - stake)
                         # Save Stage 1 snapshot: stats-only probability
                         try:
                             store_prediction_snapshot(
