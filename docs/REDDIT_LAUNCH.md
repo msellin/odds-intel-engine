@@ -1,14 +1,64 @@
-# Reddit Launch Posts — Phase 1
+# Reddit Launch — Strategy, Progress & Posts
 
-> Draft posts for each subreddit. Adapt tone per audience. Space across ~1 week.
-> Post from a warmed-up account (3-5 days of comments first).
-> Lead with value, product link at the bottom.
+> Merged from `reddit_warmup_comments.md` + `reddit_launch_posts.md` (2026-05-04).
+> Full launch strategy in `docs/LAUNCH_PLAN.md`. ENG task tracking in `PRIORITY_QUEUE.md`.
 
 ---
 
-## 1. r/SoccerBetting
+## Progress
 
-**Title:** I built a tool that tracks CLV on automated betting strategies — here's the early data after 3 days
+| Day | Date | Target | Status |
+|-----|------|--------|--------|
+| 1 | Apr 30 | Warm-up comments (r/SoccerBetting + r/soccer) | ✅ Done — 4 comments across 2 subs |
+| 2 | May 1 | Warm-up comments (EL/ECL results angle) | ⬜ TODO / verify |
+| 3 | May 2 | Launch post → r/SoccerBetting | ⬜ TODO / verify |
+| 4 | May 3 | Launch post → r/FootballBetting | ⬜ TODO / verify |
+| 5 | May 4 | Post in r/soccer Daily Discussion (no standalone post — mods nuke promo) | ⬜ TODAY |
+| 6 | May 5 | r/dataisbeautiful [OC] + r/buildinpublic | ⬜ Upcoming |
+
+### Day 1 detail (Apr 30 — DONE)
+
+- r/SoccerBetting → Daily Picks Thread — Forest vs Villa take
+- r/soccer → Daily Discussion — CL semis recap + EL tonight preview
+- r/soccer → Atletico-Arsenal Post-Match Thread — Eze penalty VAR take
+- r/soccer → Braga match thread — "Strong start from Braga"
+
+### Day 2 (May 1 — TODO)
+
+4-5 comments across r/SoccerBetting + r/soccer based on EL/ECL results from Apr 30.
+
+Threads to target:
+- r/SoccerBetting → Daily Picks Thread (Friday matches)
+- r/SoccerBetting → Reply to someone in the Daily Picks Thread
+- r/soccer → Daily Discussion (react to last night's EL results)
+- r/soccer → Post-match threads from Forest vs Villa / Braga vs Freiburg / Palace vs Shakhtar
+
+---
+
+## Subreddit Rules
+
+| Sub | Standalone post? | Self-promo? | Notes |
+|-----|-----------------|-------------|-------|
+| r/SoccerBetting | Yes (lead with picks + data) | Cautiously — link at the bottom | No paid tipster promotion. Show data first. |
+| r/FootballBetting | Yes | Same as above | Smaller community, similar rules |
+| r/soccer | **No** — Daily Discussion only | Very strict, auto-removed | 5.8M members, heavy moderation |
+| r/dataisbeautiful | Yes — requires [OC] tag + visual | Ok if genuine data viz | Must include a chart/screenshot, not a pitch |
+| r/buildinpublic | Yes | Yes — that's the whole point | Builder/maker community, expects project posts |
+
+**Key rules:**
+1. Never mention OddsIntel in warm-up comments
+2. Space comments across the day, not all at once
+3. Engage with every reply on launch posts
+4. Different text for every subreddit — no cross-posting
+5. If a post gets removed, message mods before reposting
+
+---
+
+## Post Drafts
+
+### Post 1 — r/SoccerBetting
+
+**Title:** I built a tool that tracks CLV on automated betting strategies — here's the early data after a week
 
 **Body:**
 
@@ -24,7 +74,7 @@ Most "tipster" services show you W/L records that are impossible to verify. I'm 
 - Ensemble model: Poisson regression + XGBoost blend, with 20+ signals per match (form, xG, injuries, odds movement, referee tendencies, H2H)
 - Scanning ~280 matches/day across 60+ leagues, comparing odds from 13 bookmakers
 - Every prediction, every CLV calculation, every result — tracked on the site, no cherry-picking
-- Track record is thin (a few days of settled bets) — that's why it says "Beta" on the site
+- Track record is still accumulating — that's why it says "Beta" on the site
 
 **What you can actually use for free:**
 
@@ -35,7 +85,7 @@ Most "tipster" services show you W/L records that are impossible to verify. I'm 
 - 1 free AI value pick per day
 - Prediction tracker — log your picks, track your hit rate, compare vs the model
 
-Paid tiers (Pro/Elite) are coming soon — odds comparison across 13 bookmakers, odds movement charts, injury alerts, lineups, full value bet list with model probabilities. Not live yet, building in public.
+Paid tiers (Pro/Elite) add full odds comparison across 13 bookmakers, odds movement charts, injury alerts, lineups, model probabilities, and value bet edge %.
 
 If anyone's interested: [oddsintel.app](https://oddsintel.app)
 
@@ -43,7 +93,7 @@ Happy to answer questions about the model, methodology, or data pipeline. Not he
 
 ---
 
-## 2. r/FootballBetting
+### Post 2 — r/FootballBetting
 
 **Title:** Free match intelligence tool — 280+ leagues, odds comparison, 1 AI pick daily (no signup needed for basics)
 
@@ -68,9 +118,9 @@ Been working on a football research tool that pulls together the stuff I always 
 - Community voting — see what others think (1X2 poll)
 - Saved matches watchlist
 
-The model behind it runs 16 automated paper-trading strategies across different markets, tracking closing line value as the proof metric. Track record is live on the site — it's thin because we only started a few days ago, but everything is transparent. No cherry-picked screenshots.
+The model behind it runs 16 automated paper-trading strategies across different markets, tracking closing line value as the proof metric. Track record is live on the site — it's thin because we only started a few weeks ago, but everything is transparent. No cherry-picked screenshots.
 
-Paid tiers are coming soon (odds from 13 bookmakers side by side, injury reports, lineups, odds movement timeline). Free tier is genuinely useful on its own though — not a bait-and-switch.
+Paid tiers add full odds from 13 bookmakers side by side, injury reports, lineups, odds movement timeline, and model probability breakdown.
 
 Check it out: [oddsintel.app](https://oddsintel.app)
 
@@ -78,40 +128,23 @@ Would love feedback on what's useful and what's missing. Built this because I wa
 
 ---
 
-## 3. r/soccer
+### Post 3 — r/soccer (Daily Discussion only — no standalone post)
 
-**Title:** I built a free football match tracker with AI predictions — covers 280+ leagues, live scores, and one free value pick daily
+**Title:** (reply in Daily Discussion thread — no standalone post allowed)
 
-**Body:**
+**Short version for Daily Discussion:**
 
-Hey r/soccer — I built a tool for following football matches that goes a bit deeper than the usual score apps.
+Hey — I built a free football match tracker that goes a bit deeper than the usual score apps. It covers 280+ leagues, shows best odds, H2H records, team form, and has a signal grade per match (basically a score of how much the data aligns).
 
-**What you get (no account, completely free):**
+Also runs an AI prediction model — shows its best pick for the day right on the matches page, no login needed.
 
-- All today's fixtures across 280+ leagues worldwide
-- Live scores with auto-refresh
-- Best available odds for every match
-- Head-to-head records and recent meetings
-- League standings and team form
-- An intelligence grade on each match — the model looks at 20+ data signals (form, odds movement, injuries, market disagreements) and rates how much the data "agrees" on an outcome
-- 1 AI value pick per day — the model's best pick, visible right on the matches page
+If you want to track your own picks against the AI, you can create a free account (just email). It settles predictions automatically after matches.
 
-**With a free account (just email, nothing else):**
-
-- Star your favourite teams and leagues, get a "My Matches" filtered view
-- Prediction tracker — make your picks before matches start, track your hit rate over time
-- Community voting on each match
-- Match notes (private)
-
-It's in early access / beta — the prediction model has only been running live for a few days so the track record is thin. But it's all transparent on the site. No fake screenshots or inflated numbers.
-
-Built it because I wanted one place to check matches, odds, form, and signals without bouncing between 5 different apps.
-
-[oddsintel.app](https://oddsintel.app)
+Still in beta — [oddsintel.app](https://oddsintel.app) if anyone wants a look.
 
 ---
 
-## 4. r/SoccerPredictions
+### Post 4 — r/SoccerPredictions
 
 **Title:** Free prediction tracker — log your picks, track your hit rate, compare against an AI model
 
@@ -135,13 +168,13 @@ The interesting part: the platform also runs an AI model (Poisson + XGBoost ense
 - 1 AI value pick per day — the model's top pick
 - Community voting — see what everyone else predicts
 
-Everything is free. The site is in beta — track record is still thin because the model only went live recently. But it's all transparent.
+Everything is free. The site is in beta — track record is still accumulating. But it's all transparent.
 
 [oddsintel.app](https://oddsintel.app)
 
 ---
 
-## 5. r/dataisbeautiful
+### Post 5 — r/dataisbeautiful
 
 **Title:** [OC] I track 20+ signals across 280 daily football matches to find where bookmakers disagree with the data
 
@@ -155,21 +188,24 @@ I built a football prediction engine that scans ~280 matches per day across 60+ 
 - Injury & suspension impact
 - Head-to-head patterns
 - Referee tendencies (cards, penalties)
+- Sharp vs soft bookmaker consensus (do Pinnacle/Pinnacle-tier books agree with the public lines?)
 - Market consensus vs model disagreement
 
 Each match gets graded: **A** (strong alignment — most signals point the same way), **B** (mixed), or **D** (weak data / conflicting signals). The model is a Poisson regression + XGBoost ensemble, calibrated with Platt scaling.
 
 The interesting bit is tracking Closing Line Value (CLV) — did the model identify value *before* the market corrected? A bet placed at 2.10 that closes at 1.95 beat the closing line by 7.7%. Consistently positive CLV = genuine predictive edge, regardless of short-term W/L variance.
 
-I'm running 16 automated paper-trading strategies to test this across different markets (1X2, Both Teams to Score, Over/Under) and leagues. Still very early (a few days of data), but everything is tracked openly.
+I'm running 16 automated paper-trading strategies to test this across different markets (1X2, Both Teams to Score, Over/Under) and leagues.
 
 The dashboard is free: [oddsintel.app](https://oddsintel.app) — you can browse all matches, see the signal grade, and check the track record.
 
 *Tools: Python, XGBoost, Supabase (Postgres), Next.js, API-Football, Vercel*
 
+> **Note for posting:** Needs a visual — screenshot of odds movement timeline or signal heatmap. r/dataisbeautiful requires [OC] tag + actual visualization.
+
 ---
 
-## 6. r/buildinpublic
+### Post 6 — r/buildinpublic
 
 **Title:** Launched OddsIntel — football analytics platform tracking 16 automated strategies across 280 matches/day. Here's the stack.
 
@@ -179,61 +215,40 @@ Been building this for a few months, just went live in beta. It's a football mat
 
 **The pipeline:**
 
-9 single-purpose jobs running on GitHub Actions cron:
+9 single-purpose jobs running on **Railway** (long-running APScheduler process — no cold starts):
 
 1. **Fixtures** (04:00 UTC) — pull today's matches from API-Football
 2. **Enrichment** (3x daily) — standings, H2H, team stats, injuries
 3. **Odds** (every 2h, 05-22 UTC) — bulk odds from API-Football (13 bookmakers) + Kambi scraper
 4. **Predictions** (05:30) — API-Football predictions for ensemble blend
-5. **Betting** (06:00) — Poisson + XGBoost model runs, 16 bots place paper bets
-6. **Live Tracker** (every 5 min, 12-22 UTC) — live scores, events, lineups, in-play odds
+5. **Betting** (06:00 + 3 refreshes/day) — Poisson + XGBoost model runs, 16 bots place paper bets
+6. **Live Poller** (tiered 30s/60s/5min, 10-23 UTC) — live scores, events, lineups, in-play odds
 7. **News Checker** (4x daily) — Gemini AI scans for injury/suspension news
 8. **Settlement** (21:00) — settle bets, post-match stats, ELO updates, CLV calculation
+9. **AI Match Previews** (07:00) — Gemini 200-word previews for top 10 matches
 
 **Stack:**
 
-- **Backend/Pipeline:** Python 3.14, GitHub Actions (free tier — ~11K min/month)
+- **Backend/Pipeline:** Python 3.12, Railway ($5/mo — long-running process, no cold starts)
 - **Model:** Poisson regression + XGBoost ensemble with Platt scaling calibration
-- **Database:** Supabase Pro (Postgres, Row Level Security, real-time subscriptions)
+- **Database:** Supabase Pro (Postgres, Row Level Security, real-time)
 - **Frontend:** Next.js 15 (App Router), TypeScript, Tailwind, Vercel
-- **Auth:** Supabase Auth (email OTP + Google + Discord)
+- **Auth:** Supabase Auth (email OTP + Google)
 - **Payments:** Stripe (test mode — going live soon)
 - **Error monitoring:** Sentry
-- **Data:** API-Football Ultra ($29/mo) + Kambi (free)
+- **AI:** Gemini 2.5 Flash (news analysis + match previews + bet explanations)
+- **Data:** API-Football Ultra ($29/mo, 75K req/day) + Kambi (free)
 
 **Current numbers:**
 
 - ~280 matches scanned daily across 60+ leagues
 - 13 bookmakers compared per match
 - 20+ signals per match feeding the model
-- 16 paper trading bots testing different strategies
-- Total infra cost: ~$85/month (API-Football $29 + Supabase Pro $25 + Vercel Pro $20 + domain $12/yr)
+- 16 paper trading bots testing different markets and strategies
+- Total infra cost: ~$85/month (API-Football $29 + Supabase Pro $25 + Railway $5 + Vercel $20 + domain)
 
 **Business model:**
 
-Free tier is genuinely useful (all matches, live scores, odds, form, 1 AI pick/day). Paid tiers (Pro €4.99/mo, Elite €14.99/mo) add depth — full odds comparison, injury alerts, model probabilities. Founding member pricing: first 500 Pro lock in €3.99/mo forever.
-
-Paid tiers say "Coming Soon" — I'm not turning on real payments until the track record has 2+ weeks of data. No point charging people before the model has proven itself.
+Free tier is genuinely useful (all matches, live scores, odds, form, 1 AI pick/day). Paid tiers (Pro €4.99/mo, Elite €14.99/mo) add depth — full odds comparison, injury alerts, model probabilities, value bet page. Founding member pricing: first 500 Pro lock in €3.99/mo forever.
 
 Live at [oddsintel.app](https://oddsintel.app) — would love feedback on the product or architecture. Happy to go deeper on any part of the stack.
-
----
-
-## Posting Schedule
-
-| Day | Subreddit | Notes |
-|-----|-----------|-------|
-| Day 1 | r/SoccerBetting | Primary target — sharp bettors |
-| Day 2 | r/FootballBetting | Similar audience, slightly different tone |
-| Day 3 | r/soccer | Casual angle, biggest audience |
-| Day 4 | r/SoccerPredictions | Prediction tracker angle |
-| Day 5 | r/dataisbeautiful | Data/methodology angle (needs a chart/visual) |
-| Day 6 | r/buildinpublic | Builder/architecture angle |
-
-## Notes
-
-- For r/dataisbeautiful: need to create a visual (odds movement chart or signal heatmap) — OC rule requires original visualization
-- Space posts across different times of day for maximum visibility
-- Engage genuinely in comments — answer every question
-- If a post gets traction, update it with results after 1 week
-- Don't mention "beta" defensively — frame it as "launched recently, data is accumulating, everything is transparent"

@@ -2,7 +2,15 @@
 
 ## Project Documentation
 
-All project documentation lives in this repo (`odds-intel-engine/`). Before starting any task, read the relevant files:
+All project documentation lives in this repo (`odds-intel-engine/`). Before starting any task, read the relevant files.
+
+### Doc location convention
+
+**Root `/`** — Agent protocol docs. Things agents must read or update as part of their task workflow: task tracking, system state, model logic, pipeline architecture, tier gating, data sources, infra costs. If a doc belongs in the "update when done" checklist, it lives here.
+
+**`docs/`** — Strategy, playbooks, reference, and execution content. Things you look up rather than act on in every task: engagement strategy, launch plan, Reddit execution, API reference docs, archival backtests.
+
+### Root docs (agent protocol)
 
 | File | Purpose |
 |------|---------|
@@ -15,7 +23,14 @@ All project documentation lives in this repo (`odds-intel-engine/`). Before star
 | `WORKFLOWS.md` | Pipeline architecture — all scheduled jobs, order, manual run instructions, data sources |
 | `DATA_SOURCES.md` | Data source architecture, API-Football integration status, alternatives evaluated |
 | `INFRASTRUCTURE.md` | Full infra stack, current costs, and projections by growth phase |
+
+### docs/ (strategy, playbooks, reference)
+
+| File | Purpose |
+|------|---------|
 | `docs/ENGAGEMENT_PLAYBOOK.md` | Engagement & growth strategy — social proof, AI features, email, SEO, retention hooks (ENG-1 to ENG-17) |
+| `docs/LAUNCH_PLAN.md` | Launch phases (organic → paid), validation metrics, ad copy, pricing |
+| `docs/REDDIT_LAUNCH.md` | Reddit execution — progress tracker, subreddit rules, all 6 post drafts |
 | `docs/AF_ENDPOINT_FREQUENCY.md` | API-Football endpoint update frequencies vs our polling — identifies gaps |
 | `docs/API-Football_Documentation_v3.9.3.pdf` | Full API-Football v3.9.3 docs (130 pages) — reference for endpoint params, update frequencies |
 | `data/model_results/SOCCER_FINDINGS.md` | Soccer model iterations and backtest results (archival) |

@@ -101,7 +101,7 @@
 
 ## Engagement & Growth — Phase 1 (Launch Sprint — do this week)
 
-> Full strategy in docs/ENGAGEMENT_PLAYBOOK.md. Phase 1 = ship with Reddit launch. Phase 2 = retention (weeks 3-6). Phase 3 = differentiation (months 2-3).
+> Full strategy in `docs/ENGAGEMENT_PLAYBOOK.md`. Reddit execution plan + post drafts in `docs/REDDIT_LAUNCH.md`. Launch phases + paid ads in `docs/LAUNCH_PLAN.md`. Phase 1 = ship with Reddit launch. Phase 2 = retention (weeks 3-6). Phase 3 = differentiation (months 2-3).
 
 | ID | Task | Effort | ☑ | Ready? | Notes |
 |----|------|--------|----|--------|-------|
