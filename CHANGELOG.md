@@ -12,6 +12,10 @@ Newest entries at the top. Internal refactors and infrastructure changes are not
 - Moved `LAUNCH_PLAN.md` → `docs/LAUNCH_PLAN.md`
 - Established convention: root `/*.md` = agent protocol docs; `docs/` = strategy, playbooks, reference
 
+### Stripe — Live Mode
+- **Payments now live**: real checkout for Pro (€4.99/mo) and Elite (€14.99/mo) — annual and founding rates also active
+- Production webhook active at `https://www.oddsintel.app/api/stripe/webhook` — tier upgrades apply instantly on payment
+
 ### Bot Dashboard (Superadmin)
 - **Bot detail modal**: click any bot row to see its full bet history — date, match, market, odds, stake, result, P&L, closing line value (CLV), and a bankroll progression chart
 - Inactive bots (no settled bets yet) are shown greyed out but still clickable

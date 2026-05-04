@@ -153,7 +153,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | /value-bets | ✅ Tiered: Free=teaser+stats, Pro=directional picks, Elite=full table + BET-EXPLAIN |
 | /track-record | ✅ Real Supabase data |
 | /welcome onboarding | ✅ Built |
-| Stripe payments | ✅ Built — checkout + webhook + portal + tier gating + annual billing toggle |
+| Stripe payments | ✅ Live — production mode 2026-05-04. Checkout + webhook + portal + tier gating + annual billing + founding rates. |
 
 ### Data coverage
 - Fixtures with any model data: ~200/467 (43%)
@@ -170,8 +170,8 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 - [x] Domain — oddsintel.app bought and connected to Vercel
 - [x] Google Search Console — verified, sitemap submitted
 - [x] Migration 009 applied in Supabase SQL editor
-- [x] **Stripe** — products + price IDs created (test mode), checkout + webhook + portal built
-- [x] **Stripe webhook endpoint** — endpoint created, `STRIPE_WEBHOOK_SECRET` added to Vercel
+- [x] **Stripe** — production mode live 2026-05-04. Products + prices created (Pro €4.99, Elite €14.99 + annual + founding). Checkout + webhook + portal built.
+- [x] **Stripe webhook endpoint** — live endpoint at `https://www.oddsintel.app/api/stripe/webhook`, `STRIPE_WEBHOOK_SECRET` updated in Vercel
 - [x] **GitHub secrets** — `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `API_FOOTBALL_KEY`, `SUPABASE_SECRET_KEY`, `SUPABASE_URL`, `SUPABASE_DB_PASSWORD`, `GEMINI_API_KEY` all set
 - [x] **Vercel env var** — `GEMINI_API_KEY` added to Production (for BET-EXPLAIN `/api/bet-explain`)
 - [x] **Resend** — account created, `oddsintel.app` domain verified, `RESEND_API_KEY` + `DIGEST_FROM_EMAIL` + `SITE_URL` set in Railway + `.env`

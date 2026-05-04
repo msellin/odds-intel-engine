@@ -18,7 +18,7 @@
 | **ESPN API** | Settlement results backup (public) | Free (no key) | Active |
 | **API-Football** | PRIMARY: fixtures, results, odds, lineups, injuries, live stats | Ultra ($29/mo) | Active — ⚠️ **Do NOT downgrade to Pro** — 15s live polling needs 18K-45K calls/day (Pro limit: 7.5K) |
 | **Sentry** | Error monitoring & alerting (frontend) | Free (5K errors/mo) | Active |
-| **Stripe** | Payment processing (Pro/Elite tiers) | No monthly fee | **Test mode** — products + webhook live, awaiting production keys |
+| **Stripe** | Payment processing (Pro/Elite tiers) | No monthly fee | **Live mode** ✅ — production keys active 2026-05-04. Pro €4.99/mo, Elite €14.99/mo + annual + founding rates. |
 | **Domain** | oddsintel.app | Registered + connected to Vercel | Active |
 
 ### Not yet active
@@ -28,16 +28,15 @@
 | **Plausible** | Alternative to Vercel Analytics if more depth needed | Optional | Cloud | €9/mo (10K pageviews) |
 | **Resend / Postmark** | Transactional email (welcome, receipts, alerts) | Milestone 2 | Free tier | €0 up to 3K emails/mo |
 
-### Stripe — going to production checklist
+### Stripe — production setup ✅ Done 2026-05-04
 
-When ready to accept real payments (switch from test → live mode):
+All steps complete:
 
-1. In Stripe dashboard: switch to **Live mode**
-2. Re-run `source venv/bin/activate && python scripts/setup_stripe.py` with live secret key → get live price IDs
-3. Update Vercel env vars: `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, all `STRIPE_*_PRICE_ID` and `STRIPE_*_PRODUCT_ID` vars → live values
-4. Create new webhook endpoint in Stripe **live mode** → `https://www.oddsintel.app/api/stripe/webhook` → same 3 events → copy new `whsec_` secret → update `STRIPE_WEBHOOK_SECRET` in Vercel
-   > **Note:** Use `www.oddsintel.app` not `oddsintel.app` — Vercel redirects the bare domain to www with a 301, and Stripe does not follow redirects.
-5. ~~Upgrade Supabase to Pro ($25/mo)~~ — ✅ Done 2026-04-29
+1. ~~Switch to Live mode~~ ✅
+2. ~~Re-run `setup_stripe.py` with live key~~ ✅ — Products: `prod_USD0AoBcAGStdg` (Pro), `prod_USD0cniBCa2i4m` (Elite)
+3. ~~Update Vercel env vars~~ ✅ — All `STRIPE_*` vars updated to live values
+4. ~~Create live webhook~~ ✅ — `https://www.oddsintel.app/api/stripe/webhook`, `whsec_` updated in Vercel
+5. ~~Upgrade Supabase to Pro~~ ✅ — Done 2026-04-29
 
 ---
 

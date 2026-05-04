@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-04 — ALN-FIX: `compute_alignment()` now emits NONE when no dimensions fire (was misclassifying no-signal as LOW). ALN-EXPAND: added dim 5 (sharp_consensus) + dim 6 (pinnacle anchor) to alignment. PIN-1: `pinnacle_implied_home` signal stored in morning signals pipeline from existing Pinnacle odds_snapshots rows.
+> Last updated: 2026-05-04 — STRIPE-PROD: live mode activated, products created, all Vercel env vars updated, live webhook live. ALN-FIX + ALN-EXPAND + PIN-1: alignment NONE class, sharp_consensus + Pinnacle anchor signals. PERF-CACHE + FE-BOT-DASH: bot dashboard with detail modal + bankroll chart.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -49,7 +49,7 @@
 | POSTGREST-CLEANUP | Migrate remaining PostgREST callers to psycopg2 | 3-4h | ✅ | ✅ Done 2026-05-03 | All workers + scripts fully migrated. Last batch: `fit_platt.py` (SQL JOIN replaces paginated PostgREST), `backfill_historical.py` (all progress tracking + bulk event INSERT), `live_tracker.py` (crash fix — undefined `client`). `get_client()` lives exclusively in `supabase_client.py` internals. Backfill moved to Railway 02:00 UTC daily. |
 | PERF-1 | Batch morning signal writing — replace 25-40 per-match DB queries | 2-3h | ✅ | ✅ Done 2026-05-03 | `batch_write_morning_signals()` in supabase_client.py: 10 bulk queries (ANY(match_ids[])) + one execute_values INSERT replaces ~14K serial round-trips. Reduced 34-70 min bottleneck to ~15s. Added league_id to match_dict for SIG-11. |
 | PERF-2 | Rewrite prune_odds_snapshots.py — single SQL DELETE | 1h | ✅ | ✅ Done 2026-05-03 | Replaced per-match PostgREST iteration with one DISTINCT ON subquery DELETE. Prunes all finished matches in a single statement. Migrated to psycopg2. |
-| STRIPE-PROD | Swap Stripe to production keys | 1h | ⬜ | ⏳ Manual (user action) | 5-step checklist in INFRASTRUCTURE.md. 1) Live mode 2) Re-run setup_stripe.py 3) Update Vercel env vars 4) New webhook + whsec_ 5) Supabase Pro ✅ done |
+| STRIPE-PROD | Swap Stripe to production keys | 1h | ✅ Done 2026-05-04 | ✅ Done | Live products created (Pro €4.99, Elite €14.99 + yearly + founding). All Vercel env vars updated. Live webhook `https://www.oddsintel.app/api/stripe/webhook`. Deployed. |
 | GH-CLEANUP | Remove pipeline workflow files from GitHub Actions | 30min | ⬜ | ⏳ ~May W3-4 (after 2-4 wks Railway stable) | Delete fixtures/enrichment/odds/predictions/betting/live_tracker/news_checker/settlement .yml. Keep migrate.yml only (backfill.yml now redundant — backfill is on Railway). workflow_dispatch is the fire extinguisher until then. |
 
 ---
