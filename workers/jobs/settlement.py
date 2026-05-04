@@ -218,7 +218,7 @@ def fetch_post_match_enrichment() -> dict:
 
     # Batch query: which matches already have stats
     existing_stats = execute_query(
-        "SELECT match_id FROM match_stats WHERE match_id = ANY(%s)",
+        "SELECT match_id FROM match_stats WHERE match_id = ANY(%s::uuid[])",
         [all_match_ids]
     )
     match_ids_with_stats = {r["match_id"] for r in existing_stats}
@@ -226,7 +226,7 @@ def fetch_post_match_enrichment() -> dict:
     # Batch query: look up home_team_api_id from match_injuries for all matches
     inj_rows = execute_query(
         "SELECT match_id, team_api_id FROM match_injuries "
-        "WHERE match_id = ANY(%s) AND team_side = 'home'",
+        "WHERE match_id = ANY(%s::uuid[]) AND team_side = 'home'",
         [all_match_ids]
     )
     home_api_id_by_match: dict[str, int] = {
@@ -325,7 +325,7 @@ def settle_finished_matches(match_ids: list[str]):
 
     # Get pending bets for these specific matches (with match + team info via JOIN)
     pending = execute_query(
-        _PENDING_BETS_SQL + " AND sb.match_id = ANY(%s)",
+        _PENDING_BETS_SQL + " AND sb.match_id = ANY(%s::uuid[])",
         [match_ids]
     )
 
@@ -349,9 +349,66 @@ def settle_finished_matches(match_ids: list[str]):
     # Mark settled regardless of whether there were any pending bets/picks.
     # This stops the 15-min sweep from re-querying the same finished matches.
     execute_write(
-        "UPDATE matches SET settlement_status = 'done' WHERE id = ANY(%s)",
+        "UPDATE matches SET settlement_status = 'done' WHERE id = ANY(%s::uuid[])",
         [match_ids]
     )
+
+
+def fix_stale_live_matches():
+    """
+    Detect matches stuck on status='live' that have actually finished.
+
+    The live poller's fetch_live_bulk() only returns fixtures with status
+    1H/2H/HT. Once a match goes to FT it drops off that list, so the DB
+    status is never updated. This function catches those matches by:
+      1. Finding matches with status='live' kicked off >130 minutes ago
+         (90 min + 40 min buffer for extra time / delays).
+      2. Fetching each fixture individually from AF API to get its real status.
+      3. Updating the DB to 'finished' with the final score.
+
+    Called by settle_ready_matches() so it runs on the same 15-min cadence.
+    """
+    from workers.api_clients.api_football import get_fixture_by_id
+    from workers.api_clients.supabase_client import update_match_result
+
+    stale_cutoff = datetime.now(timezone.utc) - timedelta(minutes=130)
+
+    rows = execute_query(
+        """SELECT m.id, m.api_football_id
+           FROM matches m
+           WHERE m.status = 'live'
+             AND m.date < %s
+             AND m.api_football_id IS NOT NULL""",
+        [stale_cutoff.isoformat()],
+    )
+
+    if not rows:
+        return
+
+    console.print(f"[yellow]Stale-live check: {len(rows)} match(es) stuck on 'live' — querying AF API[/yellow]")
+    fixed = 0
+    for row in rows:
+        match_id = row["id"]
+        af_id = row["api_football_id"]
+        try:
+            fixture = get_fixture_by_id(int(af_id))
+            if not fixture:
+                continue
+            status_short = fixture.get("fixture", {}).get("status", {}).get("short", "")
+            if status_short in ("FT", "AET", "PEN"):
+                goals = fixture.get("goals", {})
+                home_goals = goals.get("home")
+                away_goals = goals.get("away")
+                if home_goals is None or away_goals is None:
+                    continue
+                update_match_result(match_id, int(home_goals), int(away_goals))
+                console.print(f"[green]Fixed stale match {match_id}: {status_short} {home_goals}-{away_goals}[/green]")
+                fixed += 1
+        except Exception as e:
+            console.print(f"[red]Stale-live fix error for {match_id}: {e}[/red]")
+
+    if fixed:
+        console.print(f"[green]Stale-live: fixed {fixed} match(es)[/green]")
 
 
 def settle_ready_matches():
@@ -371,6 +428,9 @@ def settle_ready_matches():
     only touches bets with result='pending', and the final UPDATE to 'done' is
     idempotent.
     """
+    # First: fix any matches stuck on 'live' that have actually finished
+    fix_stale_live_matches()
+
     yesterday = (date.today() - timedelta(days=1)).isoformat()
     today = date.today().isoformat()
 
@@ -398,7 +458,7 @@ def _settle_user_picks_for_matches(match_ids: list[str]):
                   m.score_home, m.score_away, m.result as match_result, m.status as match_status
            FROM user_picks up
            LEFT JOIN matches m ON up.match_id = m.id
-           WHERE up.result = 'pending' AND up.match_id = ANY(%s)""",
+           WHERE up.result = 'pending' AND up.match_id = ANY(%s::uuid[])""",
         [match_ids]
     )
 
@@ -644,7 +704,7 @@ def _compute_pseudo_clv_batched(fetch_dates: list[str]) -> tuple[int, int]:
     # Bulk-load all 1x2 odds snapshots for these matches
     odds_rows = execute_query(
         "SELECT match_id, selection, odds, timestamp, is_closing FROM odds_snapshots "
-        "WHERE match_id = ANY(%s) AND market = '1x2' ORDER BY timestamp ASC",
+        "WHERE match_id = ANY(%s::uuid[]) AND market = '1x2' ORDER BY timestamp ASC",
         [all_match_ids]
     )
     odds_by_match: dict[str, list] = {}
