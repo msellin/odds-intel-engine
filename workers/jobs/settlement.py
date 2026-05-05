@@ -1135,12 +1135,16 @@ def update_elo_ratings():
         team_ids.add(m["home_team_id"])
         team_ids.add(m["away_team_id"])
 
-    # Batch load current ELO ratings — most recent per team via DISTINCT ON
+    # Batch load ELO baseline from BEFORE today.
+    # Deliberately excludes today's date so this function is idempotent:
+    # running it twice on the same day (21:00 + 23:30 safety run) always
+    # starts from the same pre-day baseline and re-computes today's ELO
+    # from scratch, rather than double-applying today's match deltas.
     elo_cache: dict[str, float] = {}
     elo_rows = execute_query(
         "SELECT DISTINCT ON (team_id) team_id, elo_rating FROM team_elo_daily "
-        "WHERE team_id = ANY(%s::uuid[]) ORDER BY team_id, date DESC",
-        [list(team_ids)]
+        "WHERE team_id = ANY(%s::uuid[]) AND date < %s ORDER BY team_id, date DESC",
+        [list(team_ids), today_str]
     )
     for r in elo_rows:
         elo_cache[r["team_id"]] = float(r["elo_rating"])
@@ -1262,6 +1266,21 @@ def compute_model_evaluations():
     for b in bets:
         by_market[b["market"]].append(b)
 
+    # Delete today's auto-generated records before re-inserting.
+    # Prevents duplicate rows when run_settlement() runs twice (21:00 + 23:30).
+    # Preserves manually written rows and post_mortem records (different market keys).
+    auto_markets = list(by_market.keys())
+    if auto_markets:
+        try:
+            placeholders = ", ".join(["%s"] * len(auto_markets))
+            execute_write(
+                f"DELETE FROM model_evaluations WHERE date = %s AND league_id IS NULL "
+                f"AND market IN ({placeholders})",
+                [today_str] + auto_markets,
+            )
+        except Exception:
+            pass
+
     evals_stored = 0
     for market, market_bets in by_market.items():
         total = len(market_bets)
@@ -1304,6 +1323,15 @@ def run_post_mortem():
     import re
 
     today_str = date.today().isoformat()
+
+    # Skip if post-mortem already ran today (prevents double Gemini call at 23:30).
+    already_done = execute_query(
+        "SELECT id FROM model_evaluations WHERE date = %s AND market = 'post_mortem' LIMIT 1",
+        [today_str],
+    )
+    if already_done:
+        console.print("[dim]Post-mortem: already ran today — skipping.[/dim]")
+        return
 
     # Get today's settled bets with full context
     bets = execute_query(
