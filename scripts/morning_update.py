@@ -345,23 +345,53 @@ news_today = val("""
 """, [TODAY])
 row("News events detected today", news_today)
 
-# Backfill progress
+# Backfill queue status
 backfill = q("""
-    SELECT phase, COUNT(*) as leagues,
-           SUM(fixtures_done) as fixtures,
-           SUM(fixtures_total) as total,
-           COUNT(*) FILTER (WHERE status = 'done') as done_leagues
-    FROM backfill_progress
-    GROUP BY phase
-    ORDER BY phase
+    SELECT
+        COUNT(*) FILTER (WHERE status = 'complete') as complete,
+        COUNT(*) FILTER (WHERE status = 'in_progress' AND fixtures_total > 0) as started,
+        COUNT(*) FILTER (WHERE status = 'in_progress' AND fixtures_total = 0) as not_started,
+        MAX(last_run_at) as last_ran
+    FROM backfill_progress WHERE phase = 1
 """)
 if backfill:
-    print(f"\n  Backfill progress:")
-    for r in backfill:
-        done = r.get('fixtures', 0) or 0
-        total = r.get('total', 0) or 0
-        pct = f"{100*done/total:.0f}%" if total else "?"
-        print(f"    Phase {r.get('phase','?')}  leagues={r.get('leagues',0)}  fixtures={done}/{total} ({pct})  done={r.get('done_leagues',0)}")
+    b = backfill[0]
+    total_leagues = (b.get('complete') or 0) + (b.get('started') or 0) + (b.get('not_started') or 0)
+    last = str(b.get('last_ran', ''))[:16]
+    print(f"\n  Backfill queue (phase 1):  {b.get('complete')}/{total_leagues} leagues complete  "
+          f"|  {b.get('started')} started  |  {b.get('not_started')} not yet started  |  last ran {last}")
+
+# Actual DB coverage — what % of finished matches have stats/events (source of truth)
+coverage = q("""
+    SELECT
+        l.api_football_id as league_api_id,
+        l.name as league_name,
+        m.season,
+        COUNT(*) as finished,
+        COUNT(DISTINCT ms.match_id) as has_stats,
+        COUNT(DISTINCT me.match_id) as has_events
+    FROM matches m
+    JOIN leagues l ON l.id = m.league_id
+    LEFT JOIN match_stats ms ON ms.match_id = m.id
+    LEFT JOIN (SELECT DISTINCT match_id FROM match_events) me ON me.match_id = m.id
+    WHERE m.status = 'finished'
+      AND m.season IN (2023, 2024, 2025)
+      AND l.api_football_id IN (
+          SELECT DISTINCT league_api_id FROM backfill_progress WHERE status = 'complete'
+      )
+    GROUP BY l.api_football_id, l.name, m.season
+    ORDER BY l.name, m.season
+""")
+
+if coverage:
+    print(f"\n  Actual DB coverage (completed leagues — stats/events %):")
+    print(f"  {'League':<20} {'Season':<7} {'Matches':<9} {'Stats':<8} {'Events'}")
+    for r in coverage:
+        fin = r.get('finished', 0)
+        stats_pct = f"{100*r.get('has_stats',0)//fin}%" if fin else '—'
+        events_pct = f"{100*r.get('has_events',0)//fin}%" if fin else '—'
+        print(f"  {(r.get('league_name') or '')[:20]:<20} {r.get('season'):<7} {fin:<9} {stats_pct:<8} {events_pct}")
+    print(f"  (Odds not backfilled — AF only serves odds for upcoming/recent matches)")
 
 
 # ── 6. UPCOMING THRESHOLDS — WHAT UNLOCKS NEXT ───────────────
