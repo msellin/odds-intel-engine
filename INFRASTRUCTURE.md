@@ -1,6 +1,6 @@
 # OddsIntel — Infrastructure & Costs
 
-> Last updated: 2026-05-01 — Railway migration complete. $5/mo Railway added. GH Actions down to ~100 min/month. Direct PostgreSQL for live tracker. Total cost ~€56/mo.
+> Last updated: 2026-05-05 — Railway upgraded to Hobby. Gemini billing enabled. Total cost ~€56.20/mo.
 
 ---
 
@@ -13,7 +13,7 @@
 | **GitHub Actions** | Manual workflow_dispatch + DB migrations only | Free (public repos) | Active — crons disabled, ~100 min/month |
 | **GitHub** | Source control (2 repos, both public) | Free | Active |
 | **Vercel** | Frontend hosting (Next.js 16) | Hobby (free) | Active (oddsintel.app) |
-| **Gemini API** | AI news checker (2.5 Flash) | Free | Active |
+| **Gemini API** | news_checker (2.5 Flash), match_previews, settlement loss classifier, bet-explain (2.5 Flash Lite) | **Pay-as-you-go** (~$0.20-0.30/mo) | Active — billing enabled 2026-05-05. Free tier RPD=20 was too low (news_checker alone needs 64+/day). |
 | **Kambi API** | Odds for 41 leagues (public) | Free (no key) | Active |
 | **ESPN API** | Settlement results backup (public) | Free (no key) | Active |
 | **API-Football** | PRIMARY: fixtures, results, odds, lineups, injuries, live stats | Ultra ($29/mo) | Active — ⚠️ **Do NOT downgrade to Pro** — 15s live polling needs 18K-45K calls/day (Pro limit: 7.5K) |
@@ -78,17 +78,20 @@ All scheduled jobs moved to Railway. GitHub Actions used only for manual trigger
 
 ---
 
-## Current Monthly Cost: ~€57 ($59)
+## Current Monthly Cost: ~€56.20 ($59.25)
 
 | Service | Plan | Monthly Cost |
 |---------|------|-------------|
 | API-Football | Ultra | ~€27 ($29) |
 | Supabase | Pro | ~€23 ($25) |
 | Railway | Hobby | ~€5 ($5) |
+| Gemini API | Pay-as-you-go | ~€0.20 ($0.20) |
 | Domain | oddsintel.app | ~€1 amortized |
-| **Total** | | **~€56/mo** |
+| **Total** | | **~€56.20/mo** |
 
-All other services (Vercel, GitHub Actions, Gemini, Sentry, Kambi, ESPN) on free tiers.
+> Gemini cost: ~75 calls/day × ~500 tokens/call = ~1.1M tokens/month. Flash at $0.15/1M input + $0.60/1M output ≈ $0.20-0.30/mo. Essentially free but billing must be enabled — free tier RPD cap is only 20/day.
+
+All other services (Vercel, GitHub Actions, Sentry, Kambi, ESPN) on free tiers.
 
 See `DATA_SOURCES.md` for full data architecture, migration plan, and alternatives evaluation.
 
@@ -107,10 +110,10 @@ See `DATA_SOURCES.md` for full data architecture, migration plan, and alternativ
 | Stripe | Per-transaction (when live) | ~€1-3/mo (few customers) |
 | Sentry | Free | €0 |
 | GitHub Actions | Free (public) | €0 |
-| Gemini API | Free | €0 |
+| Gemini API | Pay-as-you-go | ~€0.20 |
 | **API-Football** | **Ultra** | **~€27 ($29)** |
 | Domain | oddsintel.app | ~€1/mo amortized |
-| **Total** | | **~€52/mo** |
+| **Total** | | **~€52.20/mo** |
 
 ### Phase 3: Growing (50-200 users)
 
@@ -181,5 +184,5 @@ The live tracker (132 runs/day, ~9,900 min/month) is the expensive workflow. Git
 - **Repos are public** — keeps GitHub Actions free (saves ~$74/mo). No secrets in code; all credentials in `.env` (gitignored) and GitHub Secrets.
 - **Supabase Pro** — upgraded 2026-04-29. Daily backups + PITR active. 8 GB DB limit vs 500 MB free.
 - **No paid odds APIs yet** — Kambi is free/public. OddAlerts or BSD Sports Data API are candidates if we need broader bookmaker coverage later.
-- **Gemini 2.5 Flash is near-free** — even at 4x/day, costs ~$1.20/month. Won't be a cost concern.
+- **Gemini billing enabled 2026-05-05** — free tier RPD cap is only 20/day; news_checker alone needs 64+/day. Pay-as-you-go cost is ~$0.20-0.30/mo (negligible). Engine jobs use `gemini-2.5-flash`; bet-explain uses `gemini-2.5-flash-lite` (separate quota bucket).
 - **Live tracker is the heaviest workflow** — 132 runs/day. If GitHub ever throttles, move to Railway/Fly.io free tier or a €5/mo VPS.
