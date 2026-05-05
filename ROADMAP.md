@@ -184,9 +184,9 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 **Core principles:** No gamification, premium analytical tone, transparency as differentiator, social proof through aggregate data (not forums/profiles).
 
-**Phase 1 (launch sprint):** Daily email digest (ENG-4), AI match previews (ENG-3), "X analyzing" counter (ENG-1), community vote splits (ENG-2), betting glossary (ENG-5), bot consensus (ENG-6), methodology page (ENG-7).
+**Phase 1 (launch sprint):** Daily email digest (ENG-4), AI match previews (ENG-3), "X analyzing" counter (ENG-1), community vote splits (ENG-2), betting glossary (ENG-5 ✅), bot consensus (ENG-6), methodology page (ENG-7).
 
-**Phase 2 (retention):** Watchlist alerts (ENG-8), personal bet tracker + Model vs You (ENG-9), weekly email (ENG-10), "What changed today" widget (ENG-11), Model vs Market vs Users triangulation (ENG-12), shareable pick cards (ENG-13), SEO prediction pages (ENG-14).
+**Phase 2 (retention):** Watchlist alerts (ENG-8), personal bet tracker + Model vs You (ENG-9), weekly email (ENG-10), "What changed today" widget (ENG-11 ✅), Model vs Market vs Users triangulation (ENG-12 ✅), shareable pick cards (ENG-13), SEO prediction pages (ENG-14).
 
 **Phase 3 (differentiation):** Market inefficiency index (ENG-15), expanded AI chat per match (ENG-16), season-end review (ENG-17).
 

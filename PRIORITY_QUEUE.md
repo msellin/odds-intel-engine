@@ -113,7 +113,7 @@
 | ENG-2 | Community vote split display | 4-6h | ✅ Done 2026-05-04 | ✅ Done | `community-vote.tsx` updated: percentages + fill bars always visible when any votes exist. Locks at kickoff (live/finished) with Lock icon + "Locked at kickoff" label. Voting disabled for locked matches. |
 | ENG-6 | Bot consensus on match detail ("7/9 models agree: Over 2.5") | 3-4h | ✅ Done 2026-05-03 | ✅ Ready | Data in `simulated_bets`. Zero new data needed. Free: count. Pro: markets. Elite: full breakdown |
 | ENG-7 | Public /methodology page | Half day | ✅ Done 2026-05-03 | ✅ Ready | Plain-English model explanation. Trust anchor. Nobody else publishes this |
-| ENG-5 | Betting glossary (10-15 SEO pages at /learn/[term]) | 2-3 days | ⬜ | ✅ Ready | EV, CLV, Poisson, Kelly, xG, BTTS etc. FAQ schema for Google |
+| ENG-5 | Betting glossary (10-15 SEO pages at /learn/[term]) | 2-3 days | ✅ Done 2026-05-05 | ✅ Done | 12 terms at /learn/[term]: EV, CLV, Kelly, value betting, Poisson, xG, BTTS, O/U, odds movement, margin, ELO, bankroll. FAQ schema. /learn index. Glossary nav link. Sitemap updated. |
 
 ---
 
@@ -122,8 +122,8 @@
 | ID | Task | Effort | ☑ | Ready? | Notes |
 |----|------|--------|----|--------|-------|
 | ENG-9 | Personal bet tracker + "Model vs You" dashboard | 3-4 days | ⬜ | ✅ Ready | Extend `user_picks` with odds+stake+settlement. ROI/CLV/hit rate. "Your ROI: +2.1% \| Model: +6.8%". Free: 10/mo. Pro: unlimited. Elite: per-league. 50 tracked bets = user never leaves |
-| ENG-11 | "What Changed Today" widget on matches page | 1 day | ⬜ | ✅ Ready | Top 5 signal moves today: odds shifts, injuries, confidence changes. All see headlines, Pro sees details |
-| ENG-12 | Model vs Market vs Users triangulation | 4-6h | ⬜ | ✅ Ready | Three-bar: Model 54% / Market 48% / Users 61%. Data all exists. "Who's wrong?" tension |
+| ENG-11 | "What Changed Today" widget on matches page | 1 day | ✅ Done 2026-05-05 | ✅ Done | `getWhatChangedToday()` in engine-data.ts: compares last 8h signals vs 20-32h ago, top 5 by abs delta. `what-changed-today.tsx` component: links to matches, free sees magnitude dot, Pro sees exact delta. |
+| ENG-12 | Model vs Market vs Users triangulation | 4-6h | ✅ Done 2026-05-05 | ✅ Done | `getModelMarketUsers(matchId)` queries ensemble 1x2_home prediction + implied_prob + match_votes. `model-market-users.tsx`: 3 colored bars + tension text when model/market gap >5pp. On every match detail page. |
 | ENG-13 | Shareable pick cards (branded image generation) | 1-2 days | ⬜ | ✅ Ready | Vercel OG image API. Free marketing on every share |
 | ENG-14 | Auto-generated prediction pages for SEO (/predictions/[league]/[week]) | 2-3 days | ⬜ | ✅ Ready | Forebet/BetStudy territory. Model already produces data. New route + AI narrative |
 | ENG-8 | Watchlist signal alerts (email/push) | 3-4 days | ⬜ | ⏳ After ENG-4 (needs email infra) | Odds >5% move, model confidence shift, injury. Free: kickoff reminders. Pro: signal alerts. Elite: custom (ELITE-ALERT-STACK) |
