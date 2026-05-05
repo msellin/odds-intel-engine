@@ -121,11 +121,11 @@
 
 | ID | Task | Effort | ☑ | Ready? | Notes |
 |----|------|--------|----|--------|-------|
-| ENG-9 | Personal bet tracker + "Model vs You" dashboard | 3-4 days | ⬜ | ✅ Ready | Extend `user_picks` with odds+stake+settlement. ROI/CLV/hit rate. "Your ROI: +2.1% \| Model: +6.8%". Free: 10/mo. Pro: unlimited. Elite: per-league. 50 tracked bets = user never leaves |
+| ENG-9 | Personal bet tracker + "Model vs You" dashboard | 3-4 days | ✅ Done 2026-05-05 | ✅ Done | my-picks: ROI%, units, W/L stats. Model vs You card after 5+ settled picks. Model prob + agree/disagree icon per row. Share button (native share API + clipboard fallback + OG image). |
 | ENG-11 | "What Changed Today" widget on matches page | 1 day | ✅ Done 2026-05-05 | ✅ Done | `getWhatChangedToday()` in engine-data.ts: compares last 8h signals vs 20-32h ago, top 5 by abs delta. `what-changed-today.tsx` component: links to matches, free sees magnitude dot, Pro sees exact delta. |
 | ENG-12 | Model vs Market vs Users triangulation | 4-6h | ✅ Done 2026-05-05 | ✅ Done | `getModelMarketUsers(matchId)` queries ensemble 1x2_home prediction + implied_prob + match_votes. `model-market-users.tsx`: 3 colored bars + tension text when model/market gap >5pp. On every match detail page. |
-| ENG-13 | Shareable pick cards (branded image generation) | 1-2 days | ⬜ | ✅ Ready | Vercel OG image API. Free marketing on every share |
-| ENG-14 | Auto-generated prediction pages for SEO (/predictions/[league]/[week]) | 2-3 days | ⬜ | ✅ Ready | Forebet/BetStudy territory. Model already produces data. New route + AI narrative |
+| ENG-13 | Shareable pick cards (branded image generation) | 1-2 days | ✅ Done 2026-05-05 | ✅ Done | `/api/og/pick` route: Next.js ImageResponse, accepts home/away/selection/odds/model_prob/result as query params. Share button on my-picks uses native Web Share API, falls back to clipboard. |
+| ENG-14 | Auto-generated prediction pages for SEO (/predictions/[league]/[week]) | 2-3 days | ✅ Done 2026-05-05 | ✅ Done | `/predictions` index + `/predictions/[league]` pages. 8 featured leagues. Prob bars, model call badges, preview teasers, FAQ schema. "Predictions" nav link added. Sitemap updated. |
 | ENG-8 | Watchlist signal alerts (email/push) | 3-4 days | ⬜ | ⏳ After ENG-4 (needs email infra) | Odds >5% move, model confidence shift, injury. Free: kickoff reminders. Pro: signal alerts. Elite: custom (ELITE-ALERT-STACK) |
 | ENG-10 | Weekly performance email (Monday 08:00 UTC) | 1 day | ⬜ | ⏳ After ENG-4 (needs email infra) | "Model 18-12 (+5.3u). Your bets: 4-2 (+1.1u). Top league: Bundesliga." |
 
