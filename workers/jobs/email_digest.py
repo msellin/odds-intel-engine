@@ -307,19 +307,19 @@ def build_email_html(
       <!-- Card -->
       <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
 
-        <!-- Logo header -->
+        <!-- Logo header — dark navy, matches site navbar -->
         <tr>
-          <td style="background:{_WHITE};border-radius:10px 10px 0 0;border-top:4px solid {_BLUE};padding:24px 32px 20px;text-align:center;border-left:1px solid {_BORDER};border-right:1px solid {_BORDER};">
+          <td style="background:{_NAVY};border-radius:10px 10px 0 0;padding:22px 32px;text-align:center;">
             <a href="{SITE_URL}" style="text-decoration:none;display:inline-block;">
-              <span style="font-size:26px;font-weight:800;color:{_NAVY};letter-spacing:-0.5px;">Odds</span><span style="font-size:26px;font-weight:800;color:{_BLUE};letter-spacing:-0.5px;">Intel</span>
+              <span style="font-size:28px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">Odds</span><span style="font-size:28px;font-weight:800;color:{_BLUE};letter-spacing:-0.5px;">Intel</span>
             </a>
-            <div style="font-size:12px;color:{_MUTED};margin-top:4px;letter-spacing:0.03em;">{display_date}</div>
+            <div style="font-size:12px;color:#94a3b8;margin-top:5px;letter-spacing:0.04em;">{display_date}</div>
           </td>
         </tr>
 
         <!-- Body -->
         <tr>
-          <td style="background:{_WHITE};padding:24px 32px 28px;border-left:1px solid {_BORDER};border-right:1px solid {_BORDER};">
+          <td style="background:{_WHITE};padding:24px 32px 28px;border-left:1px solid {_BORDER};border-right:1px solid {_BORDER};border-top:none;">
 
             <!-- Section label -->
             <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:{_MUTED};text-transform:uppercase;margin-bottom:14px;">Today's Match Previews</div>
