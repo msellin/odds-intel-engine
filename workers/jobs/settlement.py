@@ -583,9 +583,11 @@ def run_settlement():
         )
         team_name_map = {t["id"]: t["name"] for t in tr}
 
+    db_already_finished = 0
     for db_match in db_matches:
         if db_match.get("status") == "finished":
-            continue  # already settled
+            db_already_finished += 1
+            continue  # live tracker already settled this
 
         result_row = None
 
@@ -614,7 +616,7 @@ def run_settlement():
         )
         db_updated += 1
 
-    console.print(f"  {db_updated} matches updated | {db_skipped} no result found yet")
+    console.print(f"  {db_updated} matches updated | {db_already_finished} already settled by live tracker | {db_skipped} no result yet (unplayed or outside AF coverage)")
 
     # 4. Settle each bet (skip gracefully if none pending)
     if not pending:
