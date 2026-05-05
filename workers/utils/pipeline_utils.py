@@ -246,6 +246,26 @@ FEATURED_WHEN_PLAYING = {
     29,   # AFC Asian Cup
 }
 
+# Featured priority: what priority a continental cup gets on days it has matches.
+# Tier 1 = top of page (CL, World Cup, Euros). Tier 2 = just below.
+# All others in FEATURED_WHEN_PLAYING default to 2 if not listed here.
+FEATURED_PRIORITY = {
+    2: 1,    # UEFA Champions League
+    1: 1,    # FIFA World Cup
+    15: 1,   # FIFA Club World Cup
+    480: 1,  # UEFA Euro Championship
+    9: 1,    # Copa America
+    3: 2,    # UEFA Europa League
+    848: 2,  # UEFA Europa Conference League
+    13: 2,   # CONMEBOL Libertadores
+    11: 2,   # CONMEBOL Sudamericana
+    4: 2,    # UEFA Nations League
+    531: 2,  # Euro Championship - Qualification
+    6: 2,    # Africa Cup of Nations
+    29: 2,   # AFC Asian Cup
+    16: 2,   # CONCACAF Champions League
+}
+
 # Base priorities for leagues (used to restore after daily reset).
 # Matches the static values set in migration 025.
 BASE_PRIORITY = {
@@ -266,14 +286,15 @@ BASE_PRIORITY = {
 def set_daily_featured_leagues(af_fixtures_raw: list[dict]) -> list[str]:
     """
     After fixtures are fetched, check which continental cups/tournaments
-    have matches today and bump them to priority=1 (featured).
+    have matches today and bump them to their featured priority tier.
     Resets yesterday's featured leagues back to their base priority.
 
     Returns list of featured league names for logging.
     """
-    # 1. Reset any league currently at priority=1 back to its base priority
+    # 1. Reset any league currently at a featured priority back to its base priority.
+    # Featured priorities are 1 and 2 (base priorities start at 10).
     current_featured = execute_query(
-        "SELECT id, api_football_id FROM leagues WHERE priority = 1",
+        "SELECT id, api_football_id FROM leagues WHERE priority < 10",
         []
     )
     for league in current_featured:
@@ -296,7 +317,7 @@ def set_daily_featured_leagues(af_fixtures_raw: list[dict]) -> list[str]:
     if not featured_ids:
         return []
 
-    # 3. Set priority=1 on today's featured leagues
+    # 3. Set tiered priority on today's featured leagues (CL=1, others=2).
     featured_names = []
     for af_id in featured_ids:
         result = execute_query(
@@ -306,9 +327,10 @@ def set_daily_featured_leagues(af_fixtures_raw: list[dict]) -> list[str]:
         if result:
             league_id = result[0]["id"]
             name = result[0]["name"]
+            featured_prio = FEATURED_PRIORITY.get(af_id, 2)
             execute_write(
-                "UPDATE leagues SET priority = 1 WHERE id = %s",
-                [league_id]
+                "UPDATE leagues SET priority = %s WHERE id = %s",
+                [featured_prio, league_id]
             )
             featured_names.append(name)
 
