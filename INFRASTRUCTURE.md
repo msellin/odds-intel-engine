@@ -26,7 +26,7 @@
 | Service | Role | When needed | Plan | Est. Cost |
 |---------|------|-------------|------|-----------|
 | **Plausible** | Alternative to Vercel Analytics if more depth needed | Optional | Cloud | €9/mo (10K pageviews) |
-| **Resend / Postmark** | Transactional email (welcome, receipts, alerts) | Milestone 2 | Free tier | €0 up to 3K emails/mo |
+| **Resend** | Email digest (ENG-4) — daily digest active since 2026-05-01 | ✅ Active | Free tier | €0 up to 3K emails/mo |
 
 ### Stripe — production setup ✅ Done 2026-05-04
 

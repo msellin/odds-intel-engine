@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-04 — ENG-1 + ENG-2: "X analyzing this match" 30-min rolling counter + community vote split always visible + locked at kickoff. STRIPE-PROD: live mode activated. ALN-FIX + ALN-EXPAND + PIN-1: alignment NONE class, sharp_consensus + Pinnacle anchor signals. PERF-CACHE + FE-BOT-DASH: bot dashboard + bankroll chart. ADMIN-TIER-PREVIEW: superadmin floating tier switcher.
+> Last updated: 2026-05-05 — LIVE-ODDS-FIX: live_ou_* fields were never written to live_match_snapshots due to key mismatch in build_snapshot() (live_ou25_over vs live_ou_25_over). Fixed in live_tracker.py both occurrences. Live odds collection now working for all 30s snapshots going forward. Threshold table updated with current real numbers.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -44,7 +44,7 @@
 
 | ID | Task | Effort | ☑ | Ready? | Notes |
 |----|------|--------|----|--------|-------|
-| B-ML3 | First meta-model: 8-feature logistic regression, target=pseudo_clv>0 | 1 day | ⬜ | ⏳ ~May 9 (need 3K CLV rows, have ~494) | Train after 3000+ pseudo-CLV rows. Features per META-2. See MODEL_ANALYSIS.md Stage 4 |
+| B-ML3 | First meta-model: 8-feature logistic regression, target=pseudo_clv>0 | 1 day | ⬜ | ⏳ ~May 10 (need 3K CLV rows, have 1,679 as of 2026-05-05) | Train after 3000+ pseudo-CLV rows. Features per META-2. See MODEL_ANALYSIS.md Stage 4 |
 | BOT-TIMING | Time-window bot cohorts: morning/midday/pre-KO A/B test | 2-3h | ✅ | ✅ Done 2026-05-01 | 16 bots → 5 morning / 6 midday / 5 pre_ko. `BOT_TIMING_COHORTS` dict + cohort param in run_morning(). Migration 032 adds timing_cohort to simulated_bets. Scheduler auto-selects cohort by UTC hour. |
 | POSTGREST-CLEANUP | Migrate remaining PostgREST callers to psycopg2 | 3-4h | ✅ | ✅ Done 2026-05-03 | All workers + scripts fully migrated. Last batch: `fit_platt.py` (SQL JOIN replaces paginated PostgREST), `backfill_historical.py` (all progress tracking + bulk event INSERT), `live_tracker.py` (crash fix — undefined `client`). `get_client()` lives exclusively in `supabase_client.py` internals. Backfill moved to Railway 02:00 UTC daily. |
 | PERF-1 | Batch morning signal writing — replace 25-40 per-match DB queries | 2-3h | ✅ | ✅ Done 2026-05-03 | `batch_write_morning_signals()` in supabase_client.py: 10 bulk queries (ANY(match_ids[])) + one execute_values INSERT replaces ~14K serial round-trips. Reduced 34-70 min bottleneck to ~15s. Added league_id to match_dict for SIG-11. |
@@ -245,249 +245,23 @@
 
 ## Key Thresholds to Watch
 
-| Milestone | Query | Target | Current (2026-04-30) | ETA |
+| Milestone | Query | Target | Current (2026-05-05) | ETA |
 |-----------|-------|--------|---------------------|-----|
 | **Platt scaling ready** | Predictions with finished match outcomes | 500+ | **586 ✅ IMPLEMENTED 2026-04-30** | Done |
-| Meta-model Phase 1 ready | `matches WHERE status='finished' AND pseudo_clv_home IS NOT NULL` | 3,000+ | 1,679 | ~May 15 |
-| Alignment threshold validation | `simulated_bets WHERE result!='pending' AND alignment_class IS NOT NULL` | 300+ | 73 | ~May 12 (~30-40/day). Note: 73 stamped LOW due to ALN-FIX bug (now fixed 2026-05-04 — future bets will show NONE/LOW/MED/HIGH correctly) |
-| Post-mortem patterns readable | `model_evaluations WHERE market='post_mortem'` | 14+ | 2 | ~May 12 (+1/day) |
-| In-play model ready | Distinct matches in live_match_snapshots | 500+ | 49 | ~July (~10-20/day) |
+| Meta-model Phase 1 ready | `matches WHERE status='finished' AND pseudo_clv_home IS NOT NULL` | 3,000+ | 1,679 | ~May 10 (~280/day) |
+| Alignment threshold validation | `simulated_bets WHERE result!='pending' AND alignment_class IS NOT NULL` | 300+ | 98 | ~May 20 (~20-25/day). Note: bets before ALN-FIX (2026-05-04) were stamped LOW; future bets will show NONE/LOW/MED/HIGH correctly |
+| Post-mortem patterns readable | `model_evaluations WHERE market='post_mortem'` | 14+ | 2 | ~May 13 (+1/day) |
+| In-play model ready | Distinct matches in live_match_snapshots WITH xG | 500+ | 243 | ~May 7-8 (~150/day). NOTE: live odds now fixed (2026-05-05) — ou_* fields were broken before |
 | Meta-model Phase 2 ready | Settled bets with dimension_scores + CLV | 1,000+ | 0 | ~Aug (needs ALN-1 first) |
-| XGBoost retrain on backfill | Backfill Phase 1 complete (match_stats) | ~18,000 | 149 | ~May 1-2 (backfill running) |
+| XGBoost retrain on backfill | Backfill Phase 1 complete (match_stats) | ~18,000 | 3,474 matches done (~8 leagues complete, 49 in-progress) | ~May 7 |
 | LLM team name resolve | `wc -l data/logs/unmatched_teams.log` | Shrinks toward 0 | 2,287 entries | Manual |
 
 ---
 
-## § HIST-BACKFILL Plan — Automated Historical Data Backfill
+## § HIST-BACKFILL Plan — ✅ IMPLEMENTED (archived from PRIORITY_QUEUE 2026-05-05)
 
-> Created: 2026-04-30. Detailed implementation plan for task #34.
-
-### 1. API Rate Limit Analysis
-
-**API-Football Ultra plan:** 75,000 req/day, 450 req/min (7.5 req/sec)
-**Current daily usage:** ~1,500 req/day (2% of limit)
-**Spare capacity:** ~73,500 req/day
-
-#### Hour-by-Hour API-Football Usage (UTC)
-
-```
-Hour  | Jobs Running                          | Est. AF Calls | Backfill OK?
-------|---------------------------------------|---------------|-------------
-00:00 | —                                     |       0       | ✅ PRIME
-01:00 | —                                     |       0       | ✅ PRIME
-02:00 | —                                     |       0       | ✅ PRIME
-03:00 | —                                     |       0       | ✅ PRIME
-04:00 | ① Fixtures + ② Enrichment (full)      |    ~265       | ❌ Skip
-05:00 | ③ Odds + ④ Predictions                |    ~135       | ⚠️ Light use
-06:00 | ⑤ Betting (DB only, 0 AF calls)       |       0       | ✅ FREE
-07:00 | ③ Odds (bulk)                          |      ~5       | ✅ Nearly free
-08:00 | ③ Odds (bulk)                          |      ~5       | ✅ Nearly free
-09:00 | ⑦ News (Gemini only, 0 AF calls)      |       0       | ✅ FREE
-10:00 | ③ Odds (bulk)                          |      ~5       | ✅ Nearly free
-11:00 | —                                      |       0       | ✅ FREE
-12:00 | ② Enrichment + ③ Odds + ⑥ Live start  |     ~85       | ⚠️ Moderate
-13:00 | ③ Odds(13:30) + ⑥ Live                |     ~45       | ⚠️ Light
-14:00 | ③ Odds + ⑥ Live                        |     ~45       | ⚠️ Light
-15:00 | ⑥ Live                                 |     ~40       | ⚠️ Light
-16:00 | ② Enrichment + ③ Odds + ⑥ Live        |     ~85       | ⚠️ Moderate
-17:00 | ③ Odds(17:30) + ⑥ Live                |     ~45       | ⚠️ Light
-18:00 | ③ Odds + ⑥ Live                        |     ~45       | ⚠️ Light
-19:00 | ⑦ News + ⑥ Live                        |     ~40       | ⚠️ Light
-20:00 | ③ Odds + ⑥ Live                        |     ~45       | ⚠️ Light
-21:00 | ⑧ Settlement + ⑥ Live                  |    ~360       | ❌ Skip
-22:00 | ③ Odds + ⑥ Live (last)                 |     ~45       | ⚠️ Light
-23:00 | —                                      |       0       | ✅ PRIME
-      |                                       | ~1,340 total  |
-```
-
-#### Backfill Windows (ranked by priority)
-
-| Window (UTC) | Duration | Competing AF Calls | Available Capacity |
-|-------------|----------|-------------------|-------------------|
-| **23:00 – 03:59** | 5h | 0 | ~36,750 req (at 450/min throttled to ~300/min safe) |
-| **06:00 – 06:59** | 1h | 0 | ~18,000 req |
-| **09:00 – 09:59** | 1h | 0 | ~18,000 req |
-| **11:00 – 11:59** | 1h | 0 | ~18,000 req |
-| **07:00 – 08:59** | 2h | ~10 | ~36,000 req |
-| **10:00 – 10:59** | 1h | ~5 | ~18,000 req |
-| **Total safe capacity** | **~11h** | **~15** | **~73,000+ req/day** |
-
-**Recommended cron slots (conservative — zero-competition only):**
-- `0 23,0,1,2,3 * * *` — 5 runs during the prime overnight window
-- `0 6,9,11 * * *` — 3 runs during daytime gaps
-- **= 8 runs/day, each run processes a batch of ~9,000 requests max**
-
-### 2. What to Backfill
-
-#### Target Data (ordered by ML impact)
-
-| Priority | Data | AF Endpoint | Calls/Match | Status | Why |
-|----------|------|-------------|-------------|--------|-----|
-| P1 | Historical fixtures + results | `/fixtures?league=X&season=Y` | 1 per league/season (batch) | ✅ Working | Match results = training labels |
-| P2 | Historical odds (13 bookmakers) | `/odds?fixture=ID` | 1 per match | ❌ **Skipped** — AF returns empty for completed fixtures | CLV analysis needs separate source (The Odds API historical?) |
-| P3 | Match statistics (xG, shots, possession) | `/fixtures/statistics?fixture=ID` | 1 per match | ✅ Working | Feature engineering for XGBoost |
-| P4 | Match events (goals, cards, subs) | `/fixtures/events?fixture=ID` | 1 per match | ✅ Working | Referee profiles, team discipline signals |
-
-#### Scope
-
-| Scope | Leagues | Seasons | Est. Matches | Est. API Calls |
-|-------|---------|---------|-------------|----------------|
-| **Phase 1: Tier 1 leagues** | 19 top leagues | 2023, 2024, 2025 | ~18,000 | ~36,000 (2 calls/match + 57 fixture batch calls) |
-| **Phase 2: Tier 2 leagues** | 29 secondary leagues | 2024, 2025 | ~17,000 | ~34,000 |
-| **Phase 3: Tier 3 leagues** | 28 remaining active | 2025 only | ~8,000 | ~16,000 |
-| **Total** | **76 leagues** | **1-3 seasons** | **~43,000** | **~86,000** |
-
-**At 73K spare/day → Phase 1 done in ~1 day, all phases done in ~1.5 days**
-**Note:** Odds skipped (AF doesn't serve historical odds for finished fixtures). 2 API calls/match = stats + events.
-
-### 3. Implementation Plan
-
-#### 3a. New Script: `scripts/backfill_historical.py`
-
-```
-Purpose: Fetch historical match data in batches, respecting API budget
-Args:
-  --phase 1|2|3           Which league tier to process
-  --batch-size 500        Max matches per run (default 500)
-  --max-requests 9000     Budget cap per run (default 9000)
-  --skip-existing         Skip matches already in DB (default true)
-  --dry-run               Count only, no writes
-
-Flow:
-  1. Check get_remaining_requests() — abort if < 10,000 remaining today
-  2. Query DB for target leagues (by tier) that need backfill
-  3. For each league+season not yet fully backfilled:
-     a. Fetch /fixtures?league=X&season=Y → store in matches table
-     b. For each finished match missing odds: /odds?fixture=ID → store
-     c. For each finished match missing stats: /fixtures/statistics → store
-     d. For each finished match missing events: /fixtures/events → store
-  4. Track progress in `backfill_progress` table:
-     - (league_api_id, season, phase, fixtures_total, fixtures_done,
-        odds_done, stats_done, events_done, last_run_at)
-  5. Log run summary to pipeline_runs (job_name='hist_backfill')
-  6. Check get_remaining_requests() at end — log remaining budget
-```
-
-#### 3b. Progress Tracking Table (Migration)
-
-```sql
-CREATE TABLE IF NOT EXISTS backfill_progress (
-    league_api_id   integer NOT NULL,
-    season          integer NOT NULL,
-    phase           smallint NOT NULL DEFAULT 1,
-    fixtures_total  integer DEFAULT 0,
-    fixtures_done   integer DEFAULT 0,
-    odds_done       integer DEFAULT 0,
-    stats_done      integer DEFAULT 0,
-    events_done     integer DEFAULT 0,
-    status          text DEFAULT 'pending',  -- pending | in_progress | complete
-    last_run_at     timestamptz,
-    created_at      timestamptz DEFAULT now(),
-    PRIMARY KEY (league_api_id, season)
-);
-```
-
-#### 3c. GitHub Actions Workflow: `backfill.yml`
-
-```yaml
-name: Historical Backfill
-on:
-  schedule:
-    # Prime overnight window: 23, 00, 01, 02, 03 UTC
-    - cron: '0 23,0,1,2,3 * * *'
-    # Daytime gaps: 06, 09, 11 UTC
-    - cron: '0 6,9,11 * * *'
-  workflow_dispatch:
-    inputs:
-      phase: { type: choice, options: ['1','2','3'], default: '1' }
-      batch_size: { type: string, default: '500' }
-      dry_run: { type: boolean, default: false }
-
-jobs:
-  backfill:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - Checkout + setup Python + install deps
-      - Run: python scripts/backfill_historical.py
-          --phase $PHASE --batch-size 500 --max-requests 9000
-      - If all phases complete → disable cron (see §3e)
-```
-
-#### 3d. Completion Detection (Auto-Stop)
-
-The script auto-detects completion and the workflow self-disables:
-
-1. **Per-run check:** After each run, query `backfill_progress`:
-   ```sql
-   SELECT COUNT(*) FROM backfill_progress WHERE status != 'complete';
-   ```
-   If 0 rows remaining → backfill is done.
-
-2. **Auto-disable workflow:** When complete, the script:
-   - Creates a file `backfill_complete.flag` in the repo
-   - The workflow checks for this flag at the start and exits early with a success message
-   - Alternatively: use `gh workflow disable "Historical Backfill"` via the GitHub CLI
-
-3. **Notification:** On final run, write to `pipeline_runs` with `job_name='hist_backfill_complete'` containing total stats:
-   ```
-   Phase 1: 18,234 matches (17,891 with odds, 17,456 with stats)
-   Phase 2: 21,567 matches (...)
-   Phase 3: 14,892 matches (...)
-   Total: 54,693 matches backfilled in 2.4 days
-   ```
-
-4. **Dashboard query** to check progress anytime:
-   ```sql
-   SELECT phase, status, COUNT(*) as leagues,
-          SUM(fixtures_done) as matches, SUM(odds_done) as odds
-   FROM backfill_progress
-   GROUP BY phase, status
-   ORDER BY phase, status;
-   ```
-
-#### 3e. Safety Guards
-
-| Guard | Implementation |
-|-------|---------------|
-| **Budget cap** | Each run checks `get_remaining_requests()` at start — abort if < 10,000 left today |
-| **Rate limiting** | Uses existing 150ms throttle (6.7 req/sec) from `api_football.py` |
-| **Idempotent** | `--skip-existing` is default — re-running is safe, picks up where it left off |
-| **No interference** | Runs only during verified zero-competition windows |
-| **Graceful stop** | Catches SIGTERM, commits progress to `backfill_progress` before exit |
-| **Batch size** | 500 matches/run = ~2,000 API calls/run, well under 9,000 cap |
-
-### 4. Sub-Tasks
-
-| # | Sub-ID | Task | Effort | Status | Notes |
-|---|--------|------|--------|--------|-------|
-| 1 | HIST-1 | Create migration: `backfill_progress` table | 15 min | ✅ Done | `021_backfill_progress.sql` |
-| 2 | HIST-2 | Write `scripts/backfill_historical.py` | 4-6h | ✅ Done | Fixtures + stats + events. Odds skipped (AF limitation). Batch dedup, budget caps, SIGTERM handling |
-| 3 | HIST-3 | Create `.github/workflows/backfill.yml` (8 cron slots + manual trigger) | 30 min | ✅ Done | 5 overnight + 3 daytime slots. Completion flag check at start |
-| 4 | HIST-4 | Add completion detection + auto-disable logic | 1h | ✅ Done | `backfill_complete.flag` + `check_all_complete()` |
-| 5 | HIST-5 | Dry run test + live test | 30 min | ✅ Done | Dry run: 57 league/season combos. Live: 38 fixtures, 23 stats, 16 events stored correctly |
-| 6 | HIST-6 | Deploy Phase 1 (monitor first overnight run) | 30 min | ⬜ Awaiting | Workflow deployed, first cron run tonight 23:00 UTC |
-| 7 | HIST-7 | After Phase 1 complete: trigger Phase 2+3 via workflow_dispatch | 30 min | ⬜ Awaiting | Phase 1 ~1 day, then manually dispatch Phase 2 |
-
-### 5. Expected Timeline
-
-| Day | What Happens |
-|-----|-------------|
-| Day 0 | Build script + migration + workflow, dry-run test |
-| Day 1 | Phase 1 runs overnight (8 cron runs × ~9K req = ~72K calls → 18K matches) |
-| Day 1 afternoon | Phase 1 complete, Phase 2 begins |
-| Day 2 | Phase 2 completes overnight, Phase 3 begins |
-| Day 2-3 | Phase 3 completes, workflow auto-disables, `pipeline_runs` logs final summary |
-| Day 3 | **55K+ matches with odds + stats available for XGBoost training** |
-
-### 6. What This Unlocks
-
-- **B-ML3 meta-model** can train on 43K+ match outcomes (vs waiting for daily accumulation)
-- **PLATT scaling** has abundant data (500+ → 43K+ predictions with outcomes)
-- **SIG-12 xG signal** has historical match stats for rolling calculations
-- **Referee profiles** have thousands of historical events for cards/fouls patterns
-- XGBoost retraining timeline: **months → days**
-- ~~P3.1 odds drift~~ — needs historical odds; AF doesn't provide. Would need The Odds API historical endpoint ($20/mo)
+> Implementation complete. Script at `scripts/backfill_historical.py`, running on Railway 02:00 UTC daily.
+> Phase 1: ~3,474 matches done. Full plan archived in git history.
 
 ---
 
@@ -640,93 +414,9 @@ Key qualifier: **xG pace ratio > 1.0** (live xG/min exceeds pre-match expected x
 
 ---
 
-## § RAILWAY Plan — Railway Migration (GH Actions → Long-Running Process)
+## § RAILWAY Plan — ✅ COMPLETE (archived from PRIORITY_QUEUE 2026-05-05)
 
-> Created: 2026-04-30. Full architecture migration for LIVE-INFRA task.
-> Decision: Railway ($5/mo) chosen over GCP Cloud Run, Fly.io, Render, Hetzner VPS, pg_cron.
-> Architecture longevity: 18-24+ months before next major change needed.
-
-### 1. Why
-
-- GH Actions cron is unreliable: 10-20 minute gaps observed on live tracker (should be every 5 min)
-- API-Football updates live odds every **15 seconds** — we poll every 5 min (**20x slower**)
-- Cold start overhead: ~90s wasted per GH Actions run (checkout + setup Python + pip install) × 132 runs/day
-- PostgREST HTTP overhead: 24 HTTP requests per live tracker cycle (~3s) — at 15s polling this is 20-30% of cycle
-- Blocks in-play model (P3.4) which needs 15s odds + 60s stats + <5s execution latency
-
-### 2. Architecture
-
-```
-Railway ($5/mo)                          Supabase Pro ($25/mo)
-┌─────────────────────────┐              ┌──────────────────┐
-│  workers/scheduler.py   │              │   PostgreSQL DB   │
-│  ┌───────────────────┐  │              │                  │
-│  │ APScheduler       │  │   psycopg2   │  matches         │
-│  │ • morning_pipeline│──┼──────────────│  odds_snapshots   │
-│  │ • odds_refresh    │  │  connection  │  live_match_snap  │
-│  │ • enrichment      │  │    pool      │  simulated_bets   │
-│  │ • news_checker    │  │  (direct SQL)│  pipeline_runs    │
-│  │ • settlement      │  │              │  ...              │
-│  └───────────────────┘  │              └──────────────────┘
-│  ┌───────────────────┐  │                      │
-│  │ LivePoller        │  │   API-Football       │
-│  │ • 15s: odds+score │──┼──── Ultra $29/mo ────┘
-│  │ • 60s: stats+evts │  │   75K req/day
-│  │ • 5min: lineups   │  │
-│  │ • smart priority  │  │
-│  └───────────────────┘  │
-│  ┌───────────────────┐  │
-│  │ Health endpoint   │  │
-│  │ :8080/health      │  │
-│  └───────────────────┘  │
-└─────────────────────────┘
-```
-
-### 3. Five Phases
-
-| Phase | Days | What | Key deliverable |
-|-------|------|------|----------------|
-| **1. Scheduler** | 1-3 | APScheduler replaces GH Actions crons. Same behavior, better reliability. | `workers/scheduler.py`, Dockerfile, railway.toml |
-| **2. Direct SQL** | 4-5 | psycopg2 connection pool for live tracker ops. 10-50x faster writes. | `workers/api_clients/db.py`, migrated live tracker functions |
-| **3. Tiered Polling** | 6-8 | 15s/60s/5min polling loop. 20x faster live data. | `workers/live_poller.py`, decomposed live_tracker.py |
-| **4. Smart Polling** | 9 | Dynamic priority per match. Event-triggered snapshots. | Priority classification, goal/card → instant odds capture |
-| **5. Validation** | 10 | Shadow mode testing, monitoring, doc updates. | End-to-end checklist, WORKFLOWS.md + INFRASTRUCTURE.md |
-
-### 4. API Budget Impact
-
-| Stage | AF calls/day (avg) | AF calls/day (peak) | % of 75K limit |
-|-------|-------------------|--------------------|--------------:|
-| **Current** (5min polling) | ~1,500 | ~7,000 | 2-9% |
-| **After Phase 3** (15s/60s tiered) | ~18,000 | ~32,000 | 24-43% |
-| **After Phase 4** (smart polling) | ~18,000 | ~45,000 | 24-60% |
-
-AF Ultra (75K/day) required. **Do NOT downgrade to AF Pro** ($19/mo, 7.5K/day).
-
-### 5. Cost Impact
-
-| Item | Before | After |
-|------|--------|-------|
-| Railway | $0 | $5/mo |
-| Total monthly | ~€52 | ~€57 |
-
-### 6. DB Access Migration Strategy
-
-Two patterns coexist during migration:
-
-| Pattern | Used by | Migrate when |
-|---------|---------|-------------|
-| PostgREST (supabase SDK) | Morning pipeline, odds, enrichment, settlement | Gradually over weeks — HTTP overhead negligible at 2h intervals |
-| **Direct SQL** (psycopg2 pool) | Live poller, live tracker, all new code | Immediately for Phase 2+ |
-
-End state (4-8 weeks): all DB access through `db.py`. PostgREST kept only for Supabase Auth if needed.
-
-### 7. What This Unlocks
-
-- **In-play model (P3.4)**: 15s odds + 60s xG data → LightGBM training starts immediately
-- **Event-triggered odds capture**: odds at moment of goal/red card → CLV analysis
-- **Live Win Probability**: frontend can show updating probabilities during matches (Pro feature)
-- **~~Faster settlement~~**: ✅ Done (RAIL-13) — per-match settlement triggered by LivePoller on FT detection
-- **Future in-play bots**: <1s execution latency for bet placement
+> All 5 phases complete 2026-04-30. Architecture running on Railway. Full plan archived in git history.
 
 ---
 

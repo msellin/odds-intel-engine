@@ -113,7 +113,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 **Blocking condition:** Top-performing bot needs 60+ settled bets with positive ROI. At current pace (~5-10 bets/day), earliest: ~2 weeks from 2026-04-27.
 
-**What's built:** 9 paper trading bots running, tier B backtest script, bot validation tracker (check_bot_validation.py exits 1 when condition met).
+**What's built:** 16 paper trading bots running, tier B backtest script, bot validation tracker (check_bot_validation.py exits 1 when condition met). Top bot (bot_aggressive) has 49 settled bets +93 units as of 2026-05-05.
 
 **Remaining:** Singapore/South Korea odds source (B6), value bets redesign (F5), tip tracking (F10).
 
