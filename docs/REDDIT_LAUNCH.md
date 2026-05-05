@@ -10,11 +10,9 @@
 | Day | Date | Target | Status |
 |-----|------|--------|--------|
 | 1 | Apr 30 | Warm-up comments (r/SoccerBetting + r/soccer) | ✅ Done — 4 comments across 2 subs |
-| 2 | May 1 | Warm-up comments (EL/ECL results angle) | ⬜ TODO / verify |
-| 3 | May 2 | Launch post → r/SoccerBetting | ⬜ TODO / verify |
-| 4 | May 3 | Launch post → r/FootballBetting | ⬜ TODO / verify |
-| 5 | May 4 | Post in r/soccer Daily Discussion (no standalone post — mods nuke promo) | ⬜ TODAY |
-| 6 | May 5 | r/dataisbeautiful [OC] + r/buildinpublic | ⬜ Upcoming |
+| 2 | May 1–3 | Warm-up comments + r/SoccerBetting + r/FootballBetting | ⬜ Unverified — may have happened, not confirmed |
+| 3 | May 4 | Launch post → r/buildinpublic | ✅ Done — first branded OddsIntel post |
+| 4 | May 5 | r/SoccerBetting (if not done), r/soccer Daily Discussion, r/dataisbeautiful [OC] | ⬜ Next |
 
 ### Day 1 detail (Apr 30 — DONE)
 
