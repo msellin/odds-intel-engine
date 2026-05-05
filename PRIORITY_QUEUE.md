@@ -128,7 +128,7 @@
 | ENG-12 | Model vs Market vs Users triangulation | 4-6h | ✅ Done 2026-05-05 | ✅ Done | `getModelMarketUsers(matchId)` queries ensemble 1x2_home prediction + implied_prob + match_votes. `model-market-users.tsx`: 3 colored bars + tension text when model/market gap >5pp. On every match detail page. |
 | ENG-13 | Shareable pick cards (branded image generation) | 1-2 days | ✅ Done 2026-05-05 | ✅ Done | `/api/og/pick` route: Next.js ImageResponse, accepts home/away/selection/odds/model_prob/result as query params. Share button on my-picks uses native Web Share API, falls back to clipboard. |
 | ENG-14 | Auto-generated prediction pages for SEO (/predictions/[league]/[week]) | 2-3 days | ✅ Done 2026-05-05 | ✅ Done | `/predictions` index + `/predictions/[league]` pages. 8 featured leagues. Prob bars, model call badges, preview teasers, FAQ schema. "Predictions" nav link added. Sitemap updated. |
-| ENG-8 | Watchlist signal alerts (email/push) | 3-4 days | ⬜ | ⏳ After ENG-4 (needs email infra) | Odds >5% move, model confidence shift, injury. Free: kickoff reminders. Pro: signal alerts. Elite: custom (ELITE-ALERT-STACK) |
+| ENG-8 | Watchlist signal alerts (email/push) | 3-4 days | ✅ Done 2026-05-05 | ✅ Done | `workers/jobs/watchlist_alerts.py`. Scheduler 08:30/14:30/20:30 UTC. Migration 045: `watchlist_alerts_enabled` + `watchlist_alert_log`. Free: kickoff reminder ≤2h before KO. Pro/Elite: odds movement ≥5% alert (6h lookback). Profile page toggle for all 3 notification types (daily digest, weekly report, watchlist alerts). |
 | ENG-10 | Weekly performance email (Monday 08:00 UTC) | 1 day | ✅ Done 2026-05-05 | ✅ Done | `workers/jobs/weekly_digest.py`. Scheduler Monday 08:00 UTC. `weekly_digest_log` table (migration 043). Model W/L/units + user's picks + upcoming top matches. Uses `weekly_report` column (default true). Free: model stats + CTA. Pro/Elite: + personal pick stats + CLV. |
 
 ---
@@ -198,7 +198,7 @@
 | P4.1 | Audit trail ROI: stats-only vs after-AI vs after-lineups | 1 day | ⬜ | ⏳ Needs data | Proves value of each layer. Needed for Elite pricing rationale |
 | P3.5 | Feature importance tracking per league | 1 day | ✅ Done 2026-05-05 | ✅ Done | `scripts/compute_feature_importance.py` + migration 040. Pearson r per (league, signal, market). Run manually or extend Sunday refit. |
 | F7 | Stitch redesign (landing + matches page) | Awaiting designs | ⬜ | ⏳ Awaiting designs | Parked until after first users arrive |
-| ELITE-BANKROLL | Personal bankroll analytics dashboard (Elite) | 2-3 days | ⬜ | ⏳ After ENG-9 | ROI vs model benchmark, CLV over time, per-league, drawdown. Turns Elite into a daily tool |
+| ELITE-BANKROLL | Personal bankroll analytics dashboard (Elite) | 2-3 days | ✅ Done 2026-05-05 | ✅ Done | `/bankroll` server page (Elite-gated). `getUserBankrollData()` in engine-data.ts. `bankroll-chart.tsx` (recharts AreaChart). Summary stats (ROI, hit rate, net units, avg CLV, max drawdown). Model benchmark comparison. Per-league breakdown table. Recent picks with CLV. Nav link shown for Elite/superadmin. |
 | ELITE-LEAGUE-FILTER | League performance filter for Elite value bets | 1 day | ⬜ | ⏳ After 3mo data | "Show only leagues where model hit rate > 45%". Needs data to be meaningful |
 | ELITE-ALERT-STACK | Custom multi-signal alert stacking (Elite) | 2-3 days | ⬜ | ⏳ After ENG-8 | "Alert when confidence > 65% AND edge > 8% AND line moved in model's direction" |
 
