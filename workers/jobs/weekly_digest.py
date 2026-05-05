@@ -467,7 +467,8 @@ def run_weekly_digest(dry_run: bool = False, limit: int | None = None, to: str |
     model_stats = fetch_model_week_stats(prev_week)
     upcoming    = fetch_top_upcoming_matches(week_start)  # current week's upcoming matches
 
-    console.print(f"Model bets last week: {model_stats['total']} ({model_stats['won']}W/{model_stats['lost']}L, {_units_fmt(model_stats['net_units'])})")
+    roi_display = f"{model_stats['roi']:+.1f}%" if model_stats.get('roi') is not None else "—"
+    console.print(f"Model bets last week: {model_stats['total']} ({model_stats['won']}W/{model_stats['lost']}L, ROI {roi_display})")
     console.print(f"Upcoming top matches: {len(upcoming)}")
 
     # --to: send a one-off test email without touching the subscriber list or log
