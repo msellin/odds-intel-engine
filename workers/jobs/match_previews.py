@@ -64,18 +64,15 @@ def select_top_matches(target_date: str, limit: int) -> list[dict]:
             l.country,
             l.tier   AS league_tier,
             COALESCE(sig.signal_count, 0) AS signal_count,
-            p.home_win_prob,
-            p.draw_prob,
-            p.away_win_prob,
-            p.predicted_home_score,
-            p.predicted_away_score,
-            p.confidence_tier
+            MAX(CASE WHEN p.market = '1x2_home' THEN p.model_probability END) AS home_win_prob,
+            MAX(CASE WHEN p.market = '1x2_draw' THEN p.model_probability END) AS draw_prob,
+            MAX(CASE WHEN p.market = '1x2_away' THEN p.model_probability END) AS away_win_prob
         FROM matches m
         JOIN teams  ht ON ht.id = m.home_team_id
         JOIN teams  at ON at.id = m.away_team_id
         JOIN leagues l  ON l.id  = m.league_id
         LEFT JOIN predictions p ON p.match_id = m.id
-            AND p.source = 'poisson_xgb'
+            AND p.source = 'ensemble'
         LEFT JOIN (
             SELECT match_id, COUNT(*) AS signal_count
             FROM match_signals
@@ -84,7 +81,8 @@ def select_top_matches(target_date: str, limit: int) -> list[dict]:
         WHERE m.date::date = %s
           AND m.status IN ('scheduled', 'live')
           AND l.is_active = true
-        ORDER BY l.tier ASC, sig.signal_count DESC NULLS LAST, p.home_win_prob DESC NULLS LAST
+        GROUP BY m.id, m.date, ht.name, at.name, l.name, l.country, l.tier, sig.signal_count
+        ORDER BY l.tier ASC, sig.signal_count DESC NULLS LAST
         LIMIT %s
         """,
         [target_date, limit],
@@ -140,41 +138,47 @@ def fetch_recent_form(match_id: str) -> tuple[str, str]:
 
 
 def fetch_odds_summary(match_id: str) -> dict:
-    """Pull latest odds snapshot for 1X2 market."""
+    """Pull latest 1X2 odds for a match, pivoted to home/draw/away."""
     rows = execute_query(
         """
-        SELECT home_odds, draw_odds, away_odds, bookmaker
+        SELECT
+            MAX(CASE WHEN selection = 'home' THEN odds END) AS home_odds,
+            MAX(CASE WHEN selection = 'draw' THEN odds END) AS draw_odds,
+            MAX(CASE WHEN selection = 'away' THEN odds END) AS away_odds,
+            MIN(bookmaker) AS bookmaker
         FROM odds_snapshots
         WHERE match_id = %s
-          AND market = '1X2'
-        ORDER BY snapshot_time DESC
-        LIMIT 1
+          AND market = '1x2'
+          AND timestamp = (
+              SELECT MAX(timestamp) FROM odds_snapshots
+              WHERE match_id = %s AND market = '1x2'
+          )
         """,
-        [match_id],
+        [match_id, match_id],
     )
-    return rows[0] if rows else {}
+    if rows and rows[0].get("home_odds"):
+        return rows[0]
+    return {}
 
 
 def fetch_injuries(match_id: str) -> tuple[list[str], list[str]]:
     """Return (home_injuries, away_injuries) player name lists."""
     rows = execute_query(
         """
-        SELECT p.name, ti.team_id, m.home_team_id, m.away_team_id
-        FROM team_injuries ti
-        JOIN players p ON p.id = ti.player_id
-        JOIN matches  m ON m.id = %s
-        WHERE ti.match_id = %s
-          AND ti.status IN ('injured', 'doubtful')
+        SELECT player_name, team_side
+        FROM match_injuries
+        WHERE match_id = %s
+          AND status IN ('injured', 'doubtful', 'missing')
         LIMIT 10
         """,
-        [match_id, match_id],
+        [match_id],
     )
     home_inj, away_inj = [], []
     for r in (rows or []):
-        if r["team_id"] == r["home_team_id"]:
-            home_inj.append(r["name"])
+        if r["team_side"] == "home":
+            home_inj.append(r["player_name"])
         else:
-            away_inj.append(r["name"])
+            away_inj.append(r["player_name"])
     return home_inj, away_inj
 
 
