@@ -1,7 +1,7 @@
 # OddsIntel — Workflows & Pipeline Architecture
 
 > Single source of truth for all scheduled jobs, their order, and manual run instructions.
-> Last updated: 2026-05-05 — SCHED-AUDIT done. Added ENG-10 weekly digest (Mon 08:00) and ENG-8 watchlist alerts (08:30/14:30/20:00).
+> Last updated: 2026-05-05 — SCHED-AUDIT: 6 betting runs/day, closing odds all KO windows, enrichment 10:30, news aligned. N1/N2/N3: LivePoller now 24/7 (30s live / 120s idle), betting pipeline guards against live matches, fixture status refresh 4×/day (09:15, 10:45, 14:45, 18:45) catches postponements/cancellations.
 
 ### ✅ Railway Migration Complete (2026-04-30)
 
@@ -30,9 +30,11 @@
 08:00  ⑫ Weekly Digest   run_weekly_digest()       Monday only — model week review + upcoming matches (ENG-10)
 08:30  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts (ENG-8)
 09:00  ⑦ News Checker    run_news_checker()        Injury/lineup/news signals (Gemini)
+09:15  ① Fixtures        run_fixtures()            Status refresh — catches morning postponements
 09:30  ⑨ Betting Refresh betting_refresh()         Asian KOs + acts on 08:00 odds + 09:00 news
 10:00  ③ Odds            run_odds()
 10:30  ② Enrichment      run_enrichment()          Injuries + standings — fresh before 11:00 betting
+10:45  ① Fixtures        run_fixtures()            Status refresh — before European morning betting
 11:00  ⑨ Betting Refresh betting_refresh()         European morning KOs
 12:00  ③ Odds            run_odds()
 12:30  ⑦ News Checker    run_news_checker()
@@ -40,6 +42,7 @@
 14:00  ③ Odds            run_odds()
 14:30  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts (ENG-8)
 14:30  ⑦ News Checker    run_news_checker()        Feeds 15:00 betting refresh
+14:45  ① Fixtures        run_fixtures()            Status refresh — before European afternoon betting
 15:00  ⑨ Betting Refresh betting_refresh()         European afternoon KOs
 16:00  ② Enrichment      run_enrichment()          Injuries + standings refresh
        ③ Odds            run_odds()
@@ -47,17 +50,18 @@
 17:30  ③ Odds            run_odds(mark_closing)    Pre-KO closing odds (European evening)
 18:00  ③ Odds            run_odds()
 18:30  ⑦ News Checker    run_news_checker()        Feeds 19:00 + 20:30 betting (moved from 19:30)
+18:45  ① Fixtures        run_fixtures()            Status refresh — before European evening betting
 19:00  ⑨ Betting Refresh betting_refresh()         European early evening KOs
 20:00  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts (ENG-8)
 20:00  ③ Odds            run_odds(mark_closing)    Pre-KO closing odds (European prime-time 19-21 KO)
 20:30  ⑨ Betting Refresh betting_refresh()         European prime-time KOs — uses 20:00 closing odds
-         ⑧a Live settle   settle_finished_matches()  Per-match: triggered by LivePoller on FT detection (instant)
+         ⑧a Live settle   settle_finished_matches()  Per-match: triggered by LivePoller on FT (instant, 24/7)
 21:00  ⑧b Settlement      settlement_pipeline()     Bulk: settle bets, post-match stats, ELO, CLV, prune
                                                     + Platt recalibration + blend refit (Wed + Sun)
                                                     + DC rho per tier (Sun only)
 22:00  ③ Odds            run_odds()                Late matches (Asian/American)
 23:30  ⑧c Settlement      settlement_pipeline()     Late catch-up: European evening matches finishing after 21:00
-10-23  ⑥ LivePoller      live_poller.py            30s: scores+odds, 60s: stats+events, 5min: lineups
+24/7   ⑥ LivePoller      live_poller.py            30s when live (scores+odds+stats), 120s idle — no time gate
 ```
 
 ### Betting refresh schedule (6x/day)
@@ -115,7 +119,7 @@
 
 ### ② Enrichment (`fetch_enrichment.py`)
 - **04:15 (full):** standings (T9), H2H (T10), team stats (T2), injuries (T3)
-- **12:00/16:00 (refresh):** injuries + standings only
+- **10:30/16:00 (refresh):** injuries + standings only (10:30 moved from 12:00 to feed 11:00 betting)
 - Coverage-aware: skips leagues AF doesn't support
 - Readiness gate: won't run unless ① Fixtures completed
 
@@ -126,7 +130,7 @@
   - `betoffer/event/{id}` endpoint: O/U + BTTS for mapped-league events (~40-80 per operator)
 - Kambi league names mapped to AF leagues via `KAMBI_TO_AF_LEAGUE` dict in `supabase_client.py` (prevents duplicate league creation)
 - Stores all in `odds_snapshots` with `minutes_to_kickoff`
-- `--mark-closing` flag for pre-kickoff runs (13:30/17:30)
+- `--mark-closing` flag for pre-kickoff runs (13:30, 17:30, 20:00)
 
 ### ④ Predictions (`fetch_predictions.py`)
 - AF `/predictions` for each fixture — Poisson-based probability
@@ -137,6 +141,7 @@
 ### ⑤ Betting (`betting_pipeline.py`)
 - Runs 6x/day (morning pipeline ~06:30, then 09:30, 11:00, 15:00, 19:00, 20:30 UTC) to catch all kickoff windows
 - Duplicate bets prevented by DB unique constraint `(bot_id, match_id, market, selection)` — safe to run any number of times
+- Only bets on matches with `status='scheduled'` AND kickoff still in the future — never bets on live/started matches
 - Reads all data from DB — no API calls (Phase 2 complete as of 2026-04-29)
 - Calls `run_morning(skip_fetch=True)` in `daily_pipeline_v2.py`
 - `_load_today_from_db()` reads today's matches + best pre-match odds + AF predictions from DB
@@ -162,7 +167,9 @@
 - **On FT/AET/PEN:** immediately writes final score to `matches` table + triggers per-match settlement
 - `build_af_id_map()` queries today + yesterday (handles UTC midnight rollover for late matches)
 - ~10K-15K AF API calls/day during live play (was ~3.4K at 5-min polling)
-- Match window: 10:00-23:00 UTC (configurable)
+- **Runs 24/7** — no time-gate. Adaptive sleep: 30s when live matches found, 120s when idle
+- When idle: 2 bulk API calls/2min (~960 calls/day) — negligible vs 75K budget
+- Previously gated to 10:00-23:00 UTC, which missed Asian/early-UTC matches entirely
 
 ### ⑦ News Checker (`news_checker.py`)
 - Gemini 2.5 Flash AI analysis of pending bets

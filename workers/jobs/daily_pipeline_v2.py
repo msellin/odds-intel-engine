@@ -1075,14 +1075,17 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], dict[str, dict]]:
            JOIN teams ta ON m.away_team_id = ta.id
            LEFT JOIN leagues l ON m.league_id = l.id
            WHERE m.date >= %s AND m.date < %s
-             AND m.status IN ('scheduled', 'live')""",
+             AND m.status = 'scheduled'""",
         (f"{today_str}T00:00:00Z", f"{next_day_str}T00:00:00Z"),
     )
 
     if not matches_raw:
         return [], {}
 
-    # Filter out live matches that kicked off > 5 minutes ago
+    # Only bet on matches that haven't kicked off yet.
+    # 'scheduled' status + kickoff in the future = safe to bet.
+    # We exclude anything at or past kickoff — bookmakers close pre-match
+    # markets at kickoff and our Poisson model is only valid pre-match.
     now_utc = datetime.now(timezone.utc)
     filtered = []
     for m in matches_raw:
@@ -1091,8 +1094,7 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], dict[str, dict]]:
             kickoff = datetime.fromisoformat(kickoff_str.replace("Z", "+00:00"))
             if kickoff.tzinfo is None:
                 kickoff = kickoff.replace(tzinfo=timezone.utc)
-            minutes_since = (now_utc - kickoff).total_seconds() / 60
-            if minutes_since <= 5:
+            if kickoff > now_utc:  # Kickoff must still be in the future
                 filtered.append(m)
         except (ValueError, AttributeError):
             filtered.append(m)

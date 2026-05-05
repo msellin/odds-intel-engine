@@ -405,6 +405,17 @@ def job_settle_ready():
     _run_job("settle_ready", settle_ready_matches)
 
 
+def job_fixture_refresh():
+    """Mid-day fixture status refresh — catches postponements/cancellations/time changes.
+
+    Runs 4× daily, 15 min before each betting window. Re-fetches today's fixtures
+    from AF and updates any status changes (PST/CANC → 'postponed') in the DB.
+    Prevents the betting pipeline from placing bets on postponed matches.
+    """
+    from workers.jobs.fetch_fixtures import run_fixtures
+    _run_job("fixture_refresh", run_fixtures)
+
+
 def job_backfill():
     """Daily historical backfill — 02:00 UTC, auto-advances phase 1→2→3, skips once all done."""
     from scripts.backfill_historical import run_backfill
@@ -507,6 +518,14 @@ def main():
     scheduler.add_job(job_backfill, CronTrigger(hour=2, minute=0),
                       id="hist_backfill", name="Historical Backfill 02:00")
 
+    # Fixture status refresh: 4× daily, 15 min before each betting window
+    # Re-fetches today's fixtures to catch postponements/cancellations/time changes.
+    # store_match() now updates status → 'postponed' for PST/CANC matches.
+    for hour, minute in [(9, 15), (10, 45), (14, 45), (18, 45)]:
+        scheduler.add_job(job_fixture_refresh, CronTrigger(hour=hour, minute=minute),
+                          id=f"fixture_refresh_{hour:02d}{minute:02d}",
+                          name=f"Fixture Refresh {hour:02d}:{minute:02d}")
+
     # Morning pipeline: 04:00 UTC
     scheduler.add_job(job_morning, CronTrigger(hour=4, minute=0),
                       id="morning_pipeline", name="Morning Pipeline")
@@ -606,10 +625,11 @@ def main():
     poller_thread = threading.Thread(target=poller.run_forever, daemon=True, name="live-poller")
     poller_thread.start()
 
-    console.print(f"\n[bold green]Scheduler + LivePoller running. "
-                  f"Fast={poller.FAST_INTERVAL}s, "
-                  f"Medium={poller.FAST_INTERVAL * poller.MEDIUM_MULTIPLIER}s, "
-                  f"Slow={poller.FAST_INTERVAL * poller.SLOW_MULTIPLIER}s[/bold green]\n")
+    console.print(f"\n[bold green]Scheduler + LivePoller running 24/7. "
+                  f"Live={poller.FAST_INTERVAL}s, "
+                  f"Idle={poller.IDLE_INTERVAL}s, "
+                  f"Stats={poller.FAST_INTERVAL * poller.MEDIUM_MULTIPLIER}s, "
+                  f"Lineups={poller.FAST_INTERVAL * poller.SLOW_MULTIPLIER}s[/bold green]\n")
 
     # Keep alive until shutdown
     try:

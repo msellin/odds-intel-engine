@@ -272,8 +272,10 @@ def store_match(match_data: dict) -> str:
 
     if existing:
         match_id = existing[0]["id"]
-        # Backfill IDs and metadata if we have them now but DB doesn't
+        current_status = existing[0].get("status", "")
         updates = {}
+
+        # Backfill IDs and metadata if we have them now but DB doesn't
         af_id = match_data.get("api_football_id")
         if af_id and not existing[0].get("api_football_id"):
             updates["api_football_id"] = int(af_id)
@@ -281,6 +283,22 @@ def store_match(match_data: dict) -> str:
             updates["venue_name"] = match_data["venue_name"]
         if match_data.get("referee") and not existing[0].get("referee"):
             updates["referee"] = match_data["referee"]
+
+        # Update status if fixture was postponed/cancelled since last fetch.
+        # Only applies when DB still shows 'scheduled' — never override live/finished.
+        af_status = match_data.get("af_status_short", "")
+        if current_status == "scheduled" and af_status in ("PST", "CANC", "ABD", "WO", "AWD"):
+            updates["status"] = "postponed"
+
+        # Update kickoff time if it changed (rescheduled match).
+        # Only applies when DB still shows 'scheduled'.
+        if current_status == "scheduled":
+            new_date = match_data.get("start_time") or match_data.get("date", "")
+            existing_date = str(existing[0].get("date", ""))
+            # Compare first 16 chars (YYYY-MM-DDTHH:MM) to avoid microsecond noise
+            if new_date and new_date[:16] != existing_date[:16]:
+                updates["date"] = new_date
+
         if updates:
             set_clauses = ", ".join(f"{k} = %s" for k in updates)
             params = list(updates.values()) + [match_id]

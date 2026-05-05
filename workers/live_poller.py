@@ -16,9 +16,10 @@ Runs in its own thread alongside the APScheduler.
 Uses direct SQL (db.py) for all DB writes.
 
 API budget (AF Ultra 75K/day):
-  - Fast: ~5,280 calls/day (2 calls × 4/min × 60min × 11h)
-  - Medium: ~8,640 calls/day (avg 12 matches × 2 calls × 60min × 6h)
-  - Total: ~14,000-20,000 calls/day (was ~3,400 at 5min)
+  - Live (30s): ~2,880 calls/day (2 calls × 2/min × 60min × 12h active window)
+  - Idle (120s): ~960 calls/day (2 calls × 0.5/min × 60min × 16h quiet)
+  - Medium (stats): ~8,640 calls/day (avg 12 matches × 2 calls × 60min × 6h)
+  - Total: ~12,000-18,000 calls/day (was 14,000-20,000 with 11h window, now lower due to idle)
 """
 
 import time
@@ -41,12 +42,10 @@ class LivePoller:
     Event-triggered: goal or red card → immediate extra odds snapshot
     """
 
-    # Match window: UTC hours when live matches are expected
-    MATCH_WINDOW_START = 10  # 10:00 UTC (early Asian/Australian matches)
-    MATCH_WINDOW_END = 23    # 23:00 UTC (late European/South American)
-
-    # Polling intervals (seconds) — configurable, start conservative
-    FAST_INTERVAL = 30       # Bulk fixtures + odds (can go to 15s later)
+    # Polling intervals (seconds)
+    FAST_INTERVAL = 30       # Bulk fixtures + odds when live matches exist (can go to 15s later)
+    IDLE_INTERVAL = 120      # Poll interval when no live matches — saves API budget while still
+                             # catching any match that kicks off within ~2 min
     MEDIUM_MULTIPLIER = 2    # Stats every 2nd fast cycle (= 60s at 30s fast)
     SLOW_MULTIPLIER = 10     # Lineups every 10th fast cycle (= 5min at 30s fast)
 
@@ -73,8 +72,14 @@ class LivePoller:
         self._bet_refresh_count = 0  # Counts slow cycles, triggers bet refresh
 
     def run_forever(self):
-        """Main polling loop. Call from a daemon thread."""
-        console.print("[bold cyan]LivePoller started — 30s/60s/5min tiered polling (RAIL-11 smart priority)[/bold cyan]")
+        """Main polling loop. Runs 24/7 — no time-window gate.
+
+        Uses adaptive sleep:
+        - 30s when live matches are active (fast polling for goals, odds, stats)
+        - 120s when no live matches (idle polling — catches kickoffs within 2 min,
+          minimal API cost: 2 bulk calls/2min vs 2 bulk calls/30s when live)
+        """
+        console.print("[bold cyan]LivePoller started — 24/7, 30s live / 120s idle (RAIL-11)[/bold cyan]")
 
         # Load active bets immediately on startup
         self._refresh_active_bets()
@@ -82,33 +87,22 @@ class LivePoller:
         while not self._should_stop():
             cycle_start = time.time()
 
-            if not self._in_match_window():
-                # Outside match hours — sleep longer
-                if self._cycle % self.SLOW_MULTIPLIER == 0:
-                    console.print("[dim]LivePoller: outside match window, sleeping...[/dim]")
-                self._cycle += 1
-                time.sleep(self.FAST_INTERVAL)
-                continue
-
+            had_live = False
             try:
-                self._run_cycle()
+                had_live = self._run_cycle()
             except Exception as e:
                 console.print(f"[red]LivePoller cycle error: {e}[/red]")
 
             self._cycle += 1
 
-            # Sleep to maintain fast interval
+            # Adaptive sleep: fast when matches are live, idle otherwise
+            target = self.FAST_INTERVAL if had_live else self.IDLE_INTERVAL
             elapsed = time.time() - cycle_start
-            sleep_time = max(0, self.FAST_INTERVAL - elapsed)
+            sleep_time = max(0, target - elapsed)
             if sleep_time > 0:
                 time.sleep(sleep_time)
 
         console.print("[yellow]LivePoller stopped.[/yellow]")
-
-    def _in_match_window(self) -> bool:
-        """Check if current UTC hour is within the match window."""
-        hour = datetime.now(timezone.utc).hour
-        return self.MATCH_WINDOW_START <= hour <= self.MATCH_WINDOW_END
 
     def _refresh_active_bets(self):
         """Query DB for match_ids with pending simulated bets → HIGH priority matches."""
@@ -159,8 +153,8 @@ class LivePoller:
 
         return False
 
-    def _run_cycle(self):
-        """Execute one polling cycle."""
+    def _run_cycle(self) -> bool:
+        """Execute one polling cycle. Returns True if live matches were found."""
         from workers.jobs.live_tracker import (
             fetch_live_bulk, fetch_match_stats_for, fetch_match_events_for,
             build_snapshot, _fetch_lineups_for_upcoming, _lookup_db_match,
@@ -196,7 +190,7 @@ class LivePoller:
         fixtures, odds_by_fixture = fetch_live_bulk()
 
         if not fixtures:
-            return  # No live matches
+            return False  # No live matches — caller uses idle sleep interval
 
         # Log periodically (every ~2 min)
         if self._cycle % (self.SLOW_MULTIPLIER // 2 or 4) == 0:
@@ -342,3 +336,5 @@ class LivePoller:
                 settle_finished_matches(finished_match_ids)
             except Exception as e:
                 console.print(f"[yellow]Per-match settlement error: {e}[/yellow]")
+
+        return True  # Live matches were found this cycle — use fast sleep interval

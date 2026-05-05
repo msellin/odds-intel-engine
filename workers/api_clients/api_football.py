@@ -1254,9 +1254,12 @@ def fixture_to_match_dict(fixture: dict) -> dict:
         "odds_under_25": 0,
     }
 
+    # Pass through AF status short code so store_match can detect postponements
+    af_status = f.get("status", {}).get("short", "")
+    match_dict["af_status_short"] = af_status
+
     # Include score if finished
-    status = f.get("status", {}).get("short", "")
-    if status in ("FT", "AET", "PEN") and goals.get("home") is not None:
+    if af_status in ("FT", "AET", "PEN") and goals.get("home") is not None:
         match_dict["home_goals"] = goals["home"]
         match_dict["away_goals"] = goals["away"]
 
