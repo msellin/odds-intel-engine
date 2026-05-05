@@ -1,16 +1,22 @@
 """
-OddsIntel — Daily Email Digest (ENG-4)
+OddsIntel — Daily Email Digest (ENG-4) + Value Bet Alerts (N5)
 
 Sends a tier-appropriate morning email to all subscribed users at 07:30 UTC.
+Also sends afternoon (16:00) and evening (20:45) value bet alerts to Pro/Elite users.
 
-Tier content:
+Morning digest tier content:
   Free   — top 3 match preview teasers + site activity stats + upgrade CTA
   Pro    — + value bet count + signal alert count for today
   Elite  — + full value bet details with odds + model confidence
 
+Value bet alert (Pro/Elite only):
+  afternoon slot (16:00) — new bets placed since 10:00 UTC (11:00 + 15:00 refreshes)
+  evening slot   (20:45) — new bets placed since 17:00 UTC (19:00 + 20:30 refreshes)
+
 Requires RESEND_API_KEY in .env. Uses Resend's Python SDK.
 
-One email per user per day enforced via email_digest_log unique constraint.
+One morning email per user per day: email_digest_log UNIQUE(user_id, digest_date).
+One alert per user per slot per day: value_bet_alert_log UNIQUE(user_id, alert_date, slot).
 
 Usage:
   python -m workers.jobs.email_digest           # live run (today)
@@ -100,6 +106,39 @@ def fetch_value_bets_summary(target_date: str) -> dict:
     }
 
 
+def fetch_new_value_bets(target_date: str, since_iso: str) -> dict:
+    """Return value bets created since a given UTC timestamp (for alert emails)."""
+    rows = execute_query(
+        """
+        SELECT
+            sb.market,
+            sb.selection,
+            sb.odds_at_pick,
+            sb.edge_percent,
+            sb.model_probability,
+            ht.name AS home_team,
+            at.name AS away_team,
+            l.name  AS league
+        FROM simulated_bets sb
+        JOIN matches m  ON m.id  = sb.match_id
+        JOIN teams   ht ON ht.id = m.home_team_id
+        JOIN teams   at ON at.id = m.away_team_id
+        JOIN leagues l  ON l.id  = m.league_id
+        WHERE sb.created_at::date = %s
+          AND sb.created_at >= %s
+          AND sb.result = 'pending'
+          AND sb.edge_percent >= 3
+        ORDER BY sb.edge_percent DESC
+        LIMIT 10
+        """,
+        [target_date, since_iso],
+    )
+    return {
+        "count": len(rows or []),
+        "top_picks": rows or [],
+    }
+
+
 def fetch_subscribed_users() -> list[dict]:
     """
     Return all users who have email_digest_enabled = true.
@@ -117,6 +156,28 @@ def fetch_subscribed_users() -> list[dict]:
         WHERE uns.email_digest_enabled = true
           AND p.email IS NOT NULL
           AND p.email != ''
+        ORDER BY p.created_at ASC
+        """,
+        [],
+    )
+    return rows or []
+
+
+def fetch_subscribed_pro_users() -> list[dict]:
+    """Return Pro/Elite users with email_digest_enabled for value bet alerts."""
+    rows = execute_query(
+        """
+        SELECT
+            p.id,
+            p.email,
+            p.tier,
+            p.is_superadmin
+        FROM profiles p
+        JOIN user_notification_settings uns ON uns.user_id = p.id
+        WHERE uns.email_digest_enabled = true
+          AND p.email IS NOT NULL
+          AND p.email != ''
+          AND (p.tier IN ('pro', 'elite') OR p.is_superadmin = true)
         ORDER BY p.created_at ASC
         """,
         [],
@@ -146,6 +207,33 @@ def log_send(user_id: str, digest_date: str, tier: str, email_to: str,
         [
             user_id, digest_date, tier, datetime.now(timezone.utc).isoformat(),
             resend_id, email_to, status, error_msg, preview_count, value_bet_count,
+        ],
+    )
+
+
+def alert_already_sent(user_id: str, alert_date: str, slot: str) -> bool:
+    rows = execute_query(
+        "SELECT id FROM value_bet_alert_log WHERE user_id = %s AND alert_date = %s AND slot = %s",
+        [user_id, alert_date, slot],
+    )
+    return bool(rows)
+
+
+def log_alert_send(user_id: str, alert_date: str, slot: str, tier: str,
+                   email_to: str, resend_id: str | None, status: str,
+                   bet_count: int, error_msg: str | None = None):
+    execute_write(
+        """
+        INSERT INTO value_bet_alert_log
+          (user_id, alert_date, slot, tier, sent_at, resend_id, email_to,
+           status, bet_count, error_msg)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (user_id, alert_date, slot) DO NOTHING
+        """,
+        [
+            user_id, alert_date, slot, tier,
+            datetime.now(timezone.utc).isoformat(),
+            resend_id, email_to, status, bet_count, error_msg,
         ],
     )
 
@@ -453,6 +541,181 @@ def run_email_digest(target_date: str | None = None, dry_run: bool = False, limi
         else:
             console.print(f"  [green]✓ {email} ({tier}) — id={resend_id}[/green]")
             log_send(uid, today, tier, email, resend_id, "sent", len(previews), value_bets["count"])
+            sent += 1
+
+    console.print(f"\n[bold]Done:[/bold] {sent} sent | {skipped} skipped | {failed} failed")
+    if dry_run:
+        console.print("[yellow](dry-run — no emails sent)[/yellow]")
+
+
+# ── Value bet alert email ──────────────────────────────────────────────────
+
+_SLOT_LABELS = {
+    "afternoon": "Afternoon",
+    "evening":   "Evening",
+}
+
+# Bets created at/after this UTC hour are included in each slot
+_SLOT_SINCE_HOUR = {
+    "afternoon": 10,  # catches 11:00 + 15:00 betting refreshes
+    "evening":   17,  # catches 19:00 + 20:30 betting refreshes
+}
+
+
+def build_alert_email_html(
+    user_email: str,
+    tier: str,
+    value_bets: dict,
+    slot: str,
+    target_date: str,
+) -> tuple[str, str]:
+    """Build (subject, html_body) for a value bet alert email."""
+    is_elite = tier == "elite"
+    slot_label = _SLOT_LABELS.get(slot, slot.capitalize())
+    bet_count = value_bets["count"]
+    display_date = datetime.strptime(target_date, "%Y-%m-%d").strftime("%B %d, %Y")
+    value_bets_url = f"{SITE_URL}/value-bets"
+    unsubscribe_url = f"{SITE_URL}/profile?tab=notifications"
+
+    subject = (f"OddsIntel · {bet_count} new value bet{'s' if bet_count != 1 else ''} "
+               f"this {slot_label.lower()} — {display_date}")
+
+    # Value bets table (Elite) or summary callout (Pro)
+    if is_elite and bet_count > 0:
+        rows_html = "".join(_value_bet_row_html(b) for b in value_bets["top_picks"][:5])
+        bets_content = f"""
+        <table style="width:100%;border-collapse:collapse;background:{_WHITE};border:1px solid {_BORDER};border-radius:8px;overflow:hidden;margin-bottom:14px;">
+          <thead>
+            <tr style="background:{_BG};">
+              <th style="padding:10px 8px;text-align:left;font-size:11px;color:{_MUTED};font-weight:600;letter-spacing:0.04em;text-transform:uppercase;border-bottom:1px solid {_BORDER};">MATCH</th>
+              <th style="padding:10px 8px;text-align:left;font-size:11px;color:{_MUTED};font-weight:600;letter-spacing:0.04em;text-transform:uppercase;border-bottom:1px solid {_BORDER};">BET</th>
+              <th style="padding:10px 8px;text-align:left;font-size:11px;color:{_MUTED};font-weight:600;letter-spacing:0.04em;text-transform:uppercase;border-bottom:1px solid {_BORDER};">ODDS</th>
+              <th style="padding:10px 8px;text-align:left;font-size:11px;color:{_MUTED};font-weight:600;letter-spacing:0.04em;text-transform:uppercase;border-bottom:1px solid {_BORDER};">EDGE</th>
+              <th style="padding:10px 8px;text-align:left;font-size:11px;color:{_MUTED};font-weight:600;letter-spacing:0.04em;text-transform:uppercase;border-bottom:1px solid {_BORDER};">CONF</th>
+            </tr>
+          </thead>
+          <tbody>{rows_html}</tbody>
+        </table>"""
+    else:
+        bets_content = f"""
+        <div style="background:{_GREEN_BG};border:1px solid {_GREEN_BD};border-radius:8px;padding:16px 20px;margin-bottom:14px;">
+          <div style="font-size:15px;font-weight:700;color:#15803d;">{bet_count} new value bet{'s' if bet_count != 1 else ''} this {slot_label.lower()}</div>
+          <p style="color:#166534;font-size:13px;margin:4px 0 0;">Model edge ≥ 3%.</p>
+        </div>"""
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{subject}</title>
+</head>
+<body style="margin:0;padding:0;background:{_BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:{_BG};">
+    <tr><td align="center" style="padding:32px 16px 24px;">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+
+        <tr>
+          <td style="background:{_SITE_BG};border-radius:10px 10px 0 0;padding:24px 32px;text-align:center;">
+            <a href="{SITE_URL}" style="text-decoration:none;display:inline-block;">
+              <span style="font-size:28px;font-weight:800;color:#ffffff;letter-spacing:0.04em;">ODDS</span><span style="font-size:28px;font-weight:800;color:{_GREEN};letter-spacing:0.04em;">INTEL</span>
+            </a>
+            <div style="font-size:12px;color:#64748b;margin-top:6px;letter-spacing:0.04em;">{slot_label} Value Bet Alert · {display_date}</div>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="background:{_WHITE};padding:24px 32px 28px;border-left:1px solid {_BORDER};border-right:1px solid {_BORDER};">
+            <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:{_MUTED};text-transform:uppercase;margin-bottom:14px;">{slot_label} Value Bets</div>
+            {bets_content}
+            <p style="margin:12px 0 0;">
+              <a href="{value_bets_url}" style="display:inline-block;background:{_GREEN};color:{_WHITE};font-size:12px;font-weight:600;padding:7px 14px;border-radius:6px;text-decoration:none;">View all value bets →</a>
+            </p>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="background:#f8fafc;border-radius:0 0 10px 10px;border:1px solid {_BORDER};border-top:none;padding:18px 32px;text-align:center;">
+            <p style="margin:0 0 6px;font-size:12px;color:{_MUTED};">
+              You're receiving this because you have daily digests enabled in your
+              <a href="{SITE_URL}" style="color:{_GREEN};text-decoration:none;font-weight:600;">OddsIntel</a> account.
+            </p>
+            <p style="margin:0 0 10px;font-size:12px;">
+              <a href="{unsubscribe_url}" style="color:{_MUTED};text-decoration:underline;">Manage preferences</a>
+            </p>
+            <p style="margin:0;font-size:11px;color:#94a3b8;line-height:1.5;">
+              Not financial or gambling advice. Past model performance does not guarantee future results.<br>Please gamble responsibly.
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"""
+
+    return subject, html
+
+
+def run_value_bet_alert(slot: str, dry_run: bool = False):
+    """
+    Send value bet alert emails to Pro/Elite users for a given slot.
+
+    slot: 'afternoon' (16:00 UTC) or 'evening' (20:45 UTC)
+    Only sends when new bets have been placed since the slot's cutoff hour.
+    Deduped via value_bet_alert_log UNIQUE(user_id, alert_date, slot).
+    """
+    today = date.today().isoformat()
+    since_hour = _SLOT_SINCE_HOUR.get(slot, 10)
+    since_iso = f"{today}T{since_hour:02d}:00:00+00:00"
+    slot_label = _SLOT_LABELS.get(slot, slot)
+
+    console.print(f"[bold cyan]═══ Value Bet Alert [{slot_label}]: {today} (since {since_hour:02d}:00 UTC) ═══[/bold cyan]\n")
+
+    if not RESEND_API_KEY and not dry_run:
+        console.print("[red]RESEND_API_KEY not set — aborting.[/red]")
+        return
+
+    value_bets = fetch_new_value_bets(today, since_iso)
+    console.print(f"New value bets since {since_hour:02d}:00 UTC: {value_bets['count']}")
+
+    if value_bets["count"] == 0:
+        console.print("[yellow]No new value bets — nothing to send.[/yellow]")
+        return
+
+    users = fetch_subscribed_pro_users()
+    console.print(f"Pro/Elite subscribers: {len(users)}\n")
+
+    sent = skipped = failed = 0
+
+    for user in users:
+        uid = user["id"]
+        email = user["email"]
+        raw_tier = user.get("tier", "pro")
+        tier = "elite" if user.get("is_superadmin") else raw_tier
+
+        if alert_already_sent(uid, today, slot):
+            skipped += 1
+            continue
+
+        subject, html = build_alert_email_html(email, tier, value_bets, slot, today)
+
+        if dry_run:
+            console.print(f"[dim]WOULD SEND to {email} ({tier}):[/dim] {subject}")
+            log_alert_send(uid, today, slot, tier, email, None, "skipped", value_bets["count"])
+            skipped += 1
+            continue
+
+        resend_id, error = send_via_resend(email, subject, html)
+
+        if error:
+            console.print(f"  [red]✗ {email} ({tier}): {error}[/red]")
+            log_alert_send(uid, today, slot, tier, email, None, "failed", value_bets["count"], error)
+            failed += 1
+        else:
+            console.print(f"  [green]✓ {email} ({tier}) — id={resend_id}[/green]")
+            log_alert_send(uid, today, slot, tier, email, resend_id, "sent", value_bets["count"])
             sent += 1
 
     console.print(f"\n[bold]Done:[/bold] {sent} sent | {skipped} skipped | {failed} failed")

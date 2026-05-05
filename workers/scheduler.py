@@ -344,6 +344,14 @@ def job_enrichment_refresh():
              components={"injuries", "standings"})
 
 
+def job_enrichment_full():
+    """13:00 UTC full enrichment — all 4 components (standings, H2H, team_stats, injuries).
+    Ensures H2H + team_stats are fresh for afternoon/evening betting refreshes (N7 fix).
+    """
+    from workers.jobs.fetch_enrichment import run_enrichment
+    _run_job("enrichment_full", run_enrichment)  # no components= filter → all 4
+
+
 def job_betting_refresh_wrapper():
     _run_job("betting_refresh", job_betting_refresh)
 
@@ -393,6 +401,16 @@ def job_weekly_digest():
 def job_watchlist_alerts():
     from workers.jobs.watchlist_alerts import run_watchlist_alerts
     _run_job("watchlist_alerts", run_watchlist_alerts)
+
+
+def job_value_bet_alert_afternoon():
+    from workers.jobs.email_digest import run_value_bet_alert
+    _run_job("value_bet_alert_afternoon", lambda: run_value_bet_alert("afternoon"))
+
+
+def job_value_bet_alert_evening():
+    from workers.jobs.email_digest import run_value_bet_alert
+    _run_job("value_bet_alert_evening", lambda: run_value_bet_alert("evening"))
 
 
 def job_settlement():
@@ -552,6 +570,12 @@ def main():
     scheduler.add_job(job_enrichment_refresh, CronTrigger(hour=16, minute=0),
                       id="enrichment_16", name="Enrichment 16:00")
 
+    # Full enrichment: 13:00 UTC — all 4 components (standings, H2H, team_stats, injuries)
+    # N7 fix: H2H + team_stats were only fetched in morning pipeline; this refresh
+    # ensures afternoon/evening betting runs have up-to-date context.
+    scheduler.add_job(job_enrichment_full, CronTrigger(hour=13, minute=0),
+                      id="enrichment_full_13", name="Enrichment Full 13:00")
+
     # Betting refreshes: 09:30, 11:00, 15:00, 19:00, 20:30 UTC
     # 09:30 — acts on 08:00 odds + 09:00 news; catches Asian KO window
     # 11:00 — European morning KOs; uses fresh 10:30 enrichment
@@ -578,6 +602,15 @@ def main():
     # ENG-4: Email digest — 07:30 UTC (after previews are generated)
     scheduler.add_job(job_email_digest, CronTrigger(hour=7, minute=30),
                       id="email_digest", name="Email Digest 07:30")
+
+    # N5: Value bet alerts — 16:00 (afternoon) + 20:45 (evening) UTC — Pro/Elite only
+    # Afternoon: catches 11:00 + 15:00 betting refresh bets (since 10:00 UTC)
+    # Evening:   catches 19:00 + 20:30 betting refresh bets (since 17:00 UTC)
+    # No-op if no new bets exist. Deduped per slot via value_bet_alert_log.
+    scheduler.add_job(job_value_bet_alert_afternoon, CronTrigger(hour=16, minute=0),
+                      id="value_bet_alert_afternoon", name="Value Bet Alert Afternoon 16:00")
+    scheduler.add_job(job_value_bet_alert_evening, CronTrigger(hour=20, minute=45),
+                      id="value_bet_alert_evening", name="Value Bet Alert Evening 20:45")
 
     # ENG-10: Weekly performance email — Monday 08:00 UTC
     scheduler.add_job(job_weekly_digest, CronTrigger(day_of_week="mon", hour=8, minute=0),

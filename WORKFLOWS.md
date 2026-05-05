@@ -1,7 +1,7 @@
 # OddsIntel — Workflows & Pipeline Architecture
 
 > Single source of truth for all scheduled jobs, their order, and manual run instructions.
-> Last updated: 2026-05-05 — N4/N6/N9: settlement 01:00 added, watchlist lookback 6h→14h, watchlist 20:30→20:35 (staggered from betting). N1/N2/N3: LivePoller 24/7, betting live-match guard, fixture refresh 4×/day. SCHED-AUDIT: 6 betting runs/day, closing odds all KO windows.
+> Last updated: 2026-05-05 — N5: afternoon (16:00) + evening (20:45) value bet alerts for Pro/Elite. N7: full enrichment at 13:00 UTC (all 4 components). N4/N6/N9: settlement 01:00, watchlist 14h lookback, watchlist 20:35. N1/N2/N3: LivePoller 24/7, betting live-match guard, fixture refresh 4×/day. SCHED-AUDIT: 6 betting runs/day, closing odds all KO windows.
 
 ### ✅ Railway Migration Complete (2026-04-30)
 
@@ -38,6 +38,7 @@
 11:00  ⑨ Betting Refresh betting_refresh()         European morning KOs
 12:00  ③ Odds            run_odds()
 12:30  ⑦ News Checker    run_news_checker()
+13:00  ② Enrichment      run_enrichment()          Full enrichment — all 4 components (H2H+team_stats fresh for afternoon betting)
 13:30  ③ Odds            run_odds(mark_closing)    Pre-KO closing odds (European afternoon)
 14:00  ③ Odds            run_odds()
 14:30  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts (ENG-8)
@@ -46,6 +47,7 @@
 15:00  ⑨ Betting Refresh betting_refresh()         European afternoon KOs
 16:00  ② Enrichment      run_enrichment()          Injuries + standings refresh
        ③ Odds            run_odds()
+16:00  ⑪ Value Bet Alert run_value_bet_alert('afternoon')  New bets since 10:00 UTC → Pro/Elite (N5)
 16:30  ⑦ News Checker    run_news_checker()
 17:30  ③ Odds            run_odds(mark_closing)    Pre-KO closing odds (European evening)
 18:00  ③ Odds            run_odds()
@@ -55,6 +57,7 @@
 20:00  ③ Odds            run_odds(mark_closing)    Pre-KO closing odds (European prime-time 19-21 KO)
 20:30  ⑨ Betting Refresh betting_refresh()         European prime-time KOs — uses 20:00 closing odds
 20:35  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts — after betting (ENG-8)
+20:45  ⑪ Value Bet Alert run_value_bet_alert('evening')    New bets since 17:00 UTC → Pro/Elite (N5)
          ⑧a Live settle   settle_finished_matches()  Per-match: triggered by LivePoller on FT (instant, 24/7)
 21:00  ⑧b Settlement      settlement_pipeline()     Bulk: settle bets, post-match stats, ELO, CLV, prune
                                                     + Platt recalibration + blend refit (Wed + Sun)
@@ -121,6 +124,7 @@
 ### ② Enrichment (`fetch_enrichment.py`)
 - **04:15 (full):** standings (T9), H2H (T10), team stats (T2), injuries (T3)
 - **10:30/16:00 (refresh):** injuries + standings only (10:30 moved from 12:00 to feed 11:00 betting)
+- **13:00 (full, N7):** all 4 components — ensures H2H + team_stats are fresh for afternoon/evening betting refreshes (was only refreshed in morning pipeline)
 - Coverage-aware: skips leagues AF doesn't support
 - Readiness gate: won't run unless ① Fixtures completed
 
@@ -201,16 +205,25 @@
 - Content is triple-duty: match detail page (Free sees teaser, Pro/Elite see full), email digest, social posts
 - Manual run: `python -m workers.jobs.match_previews --dry-run`
 
-### ⑪ Email Digest (`email_digest.py`) — ENG-4
-- Runs at 07:30 UTC, after ⑩ Match Previews completes
+### ⑪ Email Digest + Value Bet Alerts (`email_digest.py`) — ENG-4 + N5
+
+**Morning digest (07:30 UTC):**
 - Sends tier-appropriate HTML email via Resend REST API (httpx)
   - **Free:** 3 preview teasers + bet count teaser + upgrade CTA
   - **Pro:** 3 full previews + value bet count + link to value bets page
   - **Elite:** 3 full previews + value bet table (top 5 with odds/edge/confidence)
-- Only sends to users with `user_notification_settings.email_digest_enabled = true`
 - One email per user per day enforced by `email_digest_log` unique constraint (migration 034)
-- Requires `RESEND_API_KEY` in env (+ Railway env vars). Set `RESEND_API_KEY` in `.env` and Railway dashboard.
-- Manual run: `python -m workers.jobs.email_digest --dry-run` (prints emails, logs as "skipped")
+
+**Value bet alerts (16:00 + 20:45 UTC) — Pro/Elite only (N5):**
+- `run_value_bet_alert('afternoon')` at 16:00 — bets placed since 10:00 UTC (11:00 + 15:00 refreshes)
+- `run_value_bet_alert('evening')` at 20:45 — bets placed since 17:00 UTC (19:00 + 20:30 refreshes)
+- No-op if no new bets in the slot window — never sends empty alerts
+- Deduped per slot: `value_bet_alert_log` UNIQUE(user_id, alert_date, slot) (migration 046)
+- Pro: bet count + CTA. Elite: full table with odds/edge/confidence.
+
+- Only sends to users with `user_notification_settings.email_digest_enabled = true`
+- Requires `RESEND_API_KEY` in env (+ Railway env vars).
+- Manual run: `python -m workers.jobs.email_digest --dry-run`
 
 ### ⑨ Historical Backfill (`backfill_historical.py`)
 - Fetches historical fixtures, odds, statistics, events from API-Football
