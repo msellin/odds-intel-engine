@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-05 — LIVE-ODDS-FIX: live_ou_* fields were never written to live_match_snapshots due to key mismatch in build_snapshot() (live_ou25_over vs live_ou_25_over). Fixed in live_tracker.py both occurrences. Live odds collection now working for all 30s snapshots going forward. Threshold table updated with current real numbers.
+> Last updated: 2026-05-05 — Group 1 done: GH-CLEANUP (deleted 8 obsolete workflow files, keep migrate.yml + backfill.yml), MOD-2 (scripts/fit_blend_weights.py: optimizes Poisson/XGBoost blend weight + shrinkage alphas per tier from settled predictions; improvements.py loads learned values, falls back to hardcoded; weekly refit added to Sunday settlement), P3.5 (scripts/compute_feature_importance.py + migration 040_feature_importance.sql: Pearson r between signals and outcomes per league×market).
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -50,7 +50,7 @@
 | PERF-1 | Batch morning signal writing — replace 25-40 per-match DB queries | 2-3h | ✅ | ✅ Done 2026-05-03 | `batch_write_morning_signals()` in supabase_client.py: 10 bulk queries (ANY(match_ids[])) + one execute_values INSERT replaces ~14K serial round-trips. Reduced 34-70 min bottleneck to ~15s. Added league_id to match_dict for SIG-11. |
 | PERF-2 | Rewrite prune_odds_snapshots.py — single SQL DELETE | 1h | ✅ | ✅ Done 2026-05-03 | Replaced per-match PostgREST iteration with one DISTINCT ON subquery DELETE. Prunes all finished matches in a single statement. Migrated to psycopg2. |
 | STRIPE-PROD | Swap Stripe to production keys | 1h | ✅ Done 2026-05-04 | ✅ Done | Live products created (Pro €4.99, Elite €14.99 + yearly + founding). All Vercel env vars updated. Live webhook `https://www.oddsintel.app/api/stripe/webhook`. Deployed. |
-| GH-CLEANUP | Remove pipeline workflow files from GitHub Actions | 30min | ⬜ | ⏳ ~May W3-4 (after 2-4 wks Railway stable) | Delete fixtures/enrichment/odds/predictions/betting/live_tracker/news_checker/settlement .yml. Keep migrate.yml only (backfill.yml now redundant — backfill is on Railway). workflow_dispatch is the fire extinguisher until then. |
+| GH-CLEANUP | Remove pipeline workflow files from GitHub Actions | 30min | ✅ Done 2026-05-05 | ✅ Done | Deleted fixtures/enrichment/odds/predictions/betting/live_tracker/news_checker/settlement .yml. Only migrate.yml + backfill.yml remain. |
 | ADMIN-TIER-PREVIEW | Superadmin tier preview switcher — switch between free/pro/elite to QA any page | 2-3h | ✅ Done 2026-05-04 | ✅ Done | Cookie-based override. (1) `src/lib/get-user-tier.ts` shared utility — wraps profile fetch, checks `preview_tier` httpOnly cookie when `is_superadmin=true` and overrides tier; replace ~5 pages that inline `.select("tier, is_superadmin")` with this. (2) `/api/set-preview-tier` POST route — sets/clears cookie, superadmin-only server-validated. (3) Floating pill UI (`src/components/superadmin-tier-bar.tsx`) — fixed overlay, only renders for superadmins, shows current preview tier badge + free/pro/elite/"My Tier" buttons, added to app layout. Cookie is httpOnly+sameSite=lax. Works cleanly: all pages are dynamic (no ISR), so cookie flip = instant re-render with different tier data. Visual banner ensures you always know which tier you're previewing. |
 
 ---
@@ -194,7 +194,7 @@
 | P3.3 | Player-level injury weighting (by position/market value) | 2-3 days | ⬜ | ⏳ Low priority | ~90% captured by injury_count + news_impact already |
 | S6-P2 | Graduate meta-model to XGBoost + full signal set | 2-3 days | ⬜ | ⏳ After ALN-1 (~May W3) | After alignment thresholds validated at 300+ bets |
 | P4.1 | Audit trail ROI: stats-only vs after-AI vs after-lineups | 1 day | ⬜ | ⏳ Needs data | Proves value of each layer. Needed for Elite pricing rationale |
-| P3.5 | Feature importance tracking per league | 1 day | ⬜ | ✅ Ready | Which signals matter in which markets |
+| P3.5 | Feature importance tracking per league | 1 day | ✅ Done 2026-05-05 | ✅ Done | `scripts/compute_feature_importance.py` + migration 040. Pearson r per (league, signal, market). Run manually or extend Sunday refit. |
 | F7 | Stitch redesign (landing + matches page) | Awaiting designs | ⬜ | ⏳ Awaiting designs | Parked until after first users arrive |
 | ELITE-BANKROLL | Personal bankroll analytics dashboard (Elite) | 2-3 days | ⬜ | ⏳ After ENG-9 | ROI vs model benchmark, CLV over time, per-league, drawdown. Turns Elite into a daily tool |
 | ELITE-LEAGUE-FILTER | League performance filter for Elite value bets | 1 day | ⬜ | ⏳ After 3mo data | "Show only leagues where model hit rate > 45%". Needs data to be meaningful |
@@ -207,7 +207,7 @@
 | ID | Task | Effort | ☑ | Ready? | Notes |
 |----|------|--------|----|--------|-------|
 | SIG-12 | xG overperformance rolling signal | 2h | ⬜ | ⏳ ~2 wks of post-match xG data | Regression to mean signal. Needs post-match xG from live snapshots |
-| MOD-2 | Learned Poisson/XGBoost blend weights (replace fixed α) | 2h | ⬜ | ⏳ 500+ settled predictions | Calibrated per-tier α from actual outcomes. Replaces hardcoded T1=0.20/T2=0.30 |
+| MOD-2 | Learned Poisson/XGBoost blend weights (replace fixed α) | 2h | ✅ Done 2026-05-05 | ✅ Done | `scripts/fit_blend_weights.py`: optimizes Poisson weight + per-tier shrinkage alpha. improvements.py loads from model_calibration, falls back to hardcoded. Weekly refit added to Sunday settlement. |
 | P3.4 | In-play value detection model | 2-3 wks | ⬜ | ⏳ 500+ live snapshots (~July) | LightGBM Poisson regression. xG pace ratio is #1 feature. See § INPLAY Plan |
 | P4.2 | A/B bot testing framework | 1-2 days | ⬜ | ⏳ Needs audit trail + data | Parallel bots with/without AI layers |
 | P4.3 | Live odds arbitrage detector | 1-2 days | ⬜ | ⏳ ~July | Per-bookmaker odds exist. Low priority |
@@ -224,7 +224,7 @@
 | ID | Parent | Task | Effort | ☑ | Ready? | Notes |
 |----|--------|------|--------|----|--------|-------|
 | PLATT-AUTO | PLATT | Weekly Platt recalibration in settlement | 1h | ✅ | ✅ Done | Sunday step runs `scripts/fit_platt.py` → `model_calibration` table |
-| BLEND-AUTO | MOD-2 | Monthly Poisson/XGBoost blend weight recalculation | 1h | ⬜ | ⏳ After MOD-2 | Re-derive CALIBRATION_ALPHA from brier score per source monthly |
+| BLEND-AUTO | MOD-2 | Monthly Poisson/XGBoost blend weight recalculation | 1h | ✅ Done 2026-05-05 | ✅ Done | Weekly refit added to Sunday settlement step 5/5 alongside Platt. |
 | META-RETRAIN | B-ML3 | Weekly meta-model retraining job | 2h | ⬜ | ⏳ After B-ML3 | Re-run on all `match_feature_vectors` rows, write to `model_versions` |
 | XGB-RETRAIN | S6-P2 | Weekly XGBoost full-model retraining | 3-4h | ⬜ | ⏳ After S6-P2 | Train/val split, track feature importances over time |
 | ALN-AUTO | ALN-1 | Monthly alignment threshold refresh | 1h | ⬜ | ⏳ After ALN-1 | Bin settled bets by alignment_count → ROI per bin → update thresholds |

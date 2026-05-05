@@ -154,11 +154,12 @@ def settlement_pipeline():
         ("3/4", "Prune odds",      lambda: __import__('scripts.prune_odds_snapshots', fromlist=['prune']).prune(dry_run=False)),
     ]
 
-    # Step 4 only on Sundays
+    # Steps 4 + 5 only on Sundays
     if date.today().weekday() == 6:
-        steps.append(("4/4", "Platt recalibration", lambda: __import__('scripts.fit_platt', fromlist=['fit_and_store']).fit_and_store()))
+        steps.append(("4/5", "Platt recalibration", lambda: __import__('scripts.fit_platt', fromlist=['fit_and_store']).fit_and_store()))
+        steps.append(("5/5", "Blend weight refit",  lambda: __import__('scripts.fit_blend_weights', fromlist=['run']).run()))
     else:
-        console.print(f"[dim]Settlement step 4/4: Platt — skipped (not Sunday)[/dim]")
+        console.print(f"[dim]Settlement steps 4+5: Platt + blend weight — skipped (not Sunday)[/dim]")
 
     failed_steps = []
     for step_num, step_name, step_fn in steps:

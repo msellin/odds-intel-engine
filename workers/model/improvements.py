@@ -42,6 +42,8 @@ from workers.api_clients.db import execute_query
 # Per-tier alpha: weight on model probability.
 # T1-2: market is well-calibrated → trust market more (lower alpha)
 # T3-4: market is less efficient → trust model more (higher alpha)
+# These are the hardcoded fallback values. The pipeline loads learned values
+# from model_calibration at startup (via load_shrinkage_alphas()).
 CALIBRATION_ALPHA = {
     1: 0.20,
     2: 0.30,
@@ -60,6 +62,64 @@ CALIBRATION_ALPHA_GOALLINE = {
 }
 _GOALLINE_PREFIXES = ("btts", "over", "under")
 
+# Cache: loaded once per pipeline run by load_shrinkage_alphas()
+_shrinkage_alphas: dict[str, float] | None = None
+
+
+def load_shrinkage_alphas() -> dict[str, float]:
+    """
+    Load learned shrinkage alphas from model_calibration table.
+    Keys: 'shrinkage_alpha_t{tier}_{market_type}', e.g. 'shrinkage_alpha_t1_1x2'
+    Returns empty dict if no rows exist (falls back to hardcoded CALIBRATION_ALPHA).
+    Cached for the lifetime of the process.
+    """
+    global _shrinkage_alphas
+    if _shrinkage_alphas is not None:
+        return _shrinkage_alphas
+
+    _shrinkage_alphas = {}
+    try:
+        rows = execute_query(
+            """
+            SELECT market, platt_a, fitted_at
+            FROM model_calibration
+            WHERE market LIKE 'shrinkage_alpha_%'
+            ORDER BY fitted_at DESC
+            """,
+            [],
+        )
+        seen: set = set()
+        for row in rows:
+            mkt = row["market"]
+            if mkt not in seen:
+                _shrinkage_alphas[mkt] = float(row["platt_a"])
+                seen.add(mkt)
+    except Exception:
+        pass  # Table may not have shrinkage rows yet — fall back to hardcoded
+
+    return _shrinkage_alphas
+
+
+def reset_shrinkage_cache():
+    """Force reload of shrinkage alphas on next call. Used by tests."""
+    global _shrinkage_alphas
+    _shrinkage_alphas = None
+
+
+def _get_shrinkage_alpha(tier: int, goalline: bool) -> float:
+    """
+    Return shrinkage alpha for (tier, market_type).
+    Prefers learned values from model_calibration; falls back to hardcoded.
+    """
+    market_type = "goalline" if goalline else "1x2"
+    learned = load_shrinkage_alphas()
+    key = f"shrinkage_alpha_t{tier}_{market_type}"
+    if key in learned:
+        return learned[key]
+    if goalline:
+        return CALIBRATION_ALPHA_GOALLINE.get(tier, CALIBRATION_ALPHA_DEFAULT)
+    return CALIBRATION_ALPHA.get(tier, CALIBRATION_ALPHA_DEFAULT)
+
 
 def calibrate_prob(model_prob: float, implied_prob: float,
                    tier: int = 1, market: str = "") -> float:
@@ -70,9 +130,8 @@ def calibrate_prob(model_prob: float, implied_prob: float,
 
     Stage 1 (shrinkage):
       adjusted = alpha * model_prob + (1 - alpha) * implied_prob
-      Uses tier-specific alpha (T1: 0.20 → T4: 0.65 for 1x2).
-      Goal-line markets (BTTS, O/U) use higher alpha (T1: 0.35 → T4: 0.80)
-      because Poisson expected-goals is specifically designed for them.
+      Alpha is loaded from model_calibration if available (fit by scripts/fit_blend_weights.py),
+      otherwise falls back to hardcoded CALIBRATION_ALPHA / CALIBRATION_ALPHA_GOALLINE.
 
     Stage 2 (Platt):
       calibrated = 1 / (1 + exp(-(a * adjusted + b)))
@@ -91,10 +150,8 @@ def calibrate_prob(model_prob: float, implied_prob: float,
     if implied_prob <= 0 or implied_prob >= 1:
         return model_prob
     mkt_lower = market.lower()
-    if any(mkt_lower.startswith(p) for p in _GOALLINE_PREFIXES):
-        alpha = CALIBRATION_ALPHA_GOALLINE.get(tier, CALIBRATION_ALPHA_DEFAULT)
-    else:
-        alpha = CALIBRATION_ALPHA.get(tier, CALIBRATION_ALPHA_DEFAULT)
+    goalline = any(mkt_lower.startswith(p) for p in _GOALLINE_PREFIXES)
+    alpha = _get_shrinkage_alpha(tier, goalline)
     shrunk = alpha * model_prob + (1 - alpha) * implied_prob
 
     # Stage 2: Platt sigmoid (if available for this market)

@@ -223,10 +223,50 @@ def get_xgboost_prediction(home_team: str, away_team: str,
         return None
 
 
-def ensemble_prediction(poisson_pred: dict, xgb_pred: dict,
-                        poisson_weight: float = 0.5) -> dict:
+def load_blend_weight() -> float:
     """
-    Blend Poisson and XGBoost predictions 50/50.
+    Load the learned Poisson/XGBoost blend weight from model_calibration.
+    Falls back to 0.5 (50/50) if no row exists.
+    Cached for the lifetime of the process.
+    """
+    global _blend_weight_cache
+    if _blend_weight_cache is not None:
+        return _blend_weight_cache
+
+    try:
+        import sys
+        from pathlib import Path as _Path
+        sys.path.insert(0, str(_Path(__file__).parent.parent.parent))
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            """
+            SELECT platt_a FROM model_calibration
+            WHERE market = 'blend_weight_1x2'
+            ORDER BY fitted_at DESC LIMIT 1
+            """,
+            [],
+        )
+        if rows:
+            _blend_weight_cache = float(rows[0]["platt_a"])
+        else:
+            _blend_weight_cache = 0.5
+    except Exception:
+        _blend_weight_cache = 0.5
+
+    return _blend_weight_cache
+
+
+_blend_weight_cache: float | None = None
+
+
+def ensemble_prediction(poisson_pred: dict, xgb_pred: dict,
+                        poisson_weight: float | None = None) -> dict:
+    """
+    Blend Poisson and XGBoost predictions.
+
+    poisson_weight: if None, loads from model_calibration (learned via
+    scripts/fit_blend_weights.py). Falls back to 0.5 if no learned value.
+    Pass an explicit float to override (e.g. poisson_weight=0.5 for legacy).
 
     Returns merged prediction dict with:
       - Blended probabilities for ALL markets (1x2, over/under, BTTS)
@@ -241,6 +281,8 @@ def ensemble_prediction(poisson_pred: dict, xgb_pred: dict,
         If you add a new market to the pipeline's storage loop (daily_pipeline_v2.py),
         you MUST ensure the corresponding prob key is produced here.
     """
+    if poisson_weight is None:
+        poisson_weight = load_blend_weight()
     xw = 1.0 - poisson_weight
     pw = poisson_weight
 
