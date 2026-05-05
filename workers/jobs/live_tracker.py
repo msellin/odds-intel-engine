@@ -122,7 +122,7 @@ def build_snapshot(af_fix: dict, fixture_odds: list[dict],
         mkt = row.get("market", "")
         sel = row.get("selection", "")
         if mkt.startswith("over_under_") and sel in ("over", "under"):
-            key = f"live_{mkt.replace('over_under_', 'ou')}_{sel}"
+            key = f"live_ou_{mkt.replace('over_under_', '')}_{sel}"
             snapshot[key] = row["odds"]
         elif mkt == "1x2":
             snapshot[f"live_1x2_{sel}"] = row["odds"]
@@ -378,7 +378,7 @@ def run_live_tracker(dry_run: bool = False):
             mkt = row["market"]
             sel = row["selection"]
             if mkt.startswith("over_under_") and sel in ("over", "under"):
-                key = f"live_{mkt.replace('over_under_', 'ou')}_{sel}"
+                key = f"live_ou_{mkt.replace('over_under_', '')}_{sel}"
                 snapshot[key] = row["odds"]
             elif mkt == "1x2":
                 snapshot[f"live_1x2_{sel}"] = row["odds"]
