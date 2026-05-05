@@ -28,12 +28,10 @@
 
 | ID | Feature | Model | Calls/day | $/mo at launch (10 users) | $/user/mo |
 |----|---------|-------|-----------|--------------------------|-----------|
-| ENG-16 | Ask AI About This Match (freeform Q&A) | flash | 3/user Free · 20/user Pro · ~50 Elite | ~$0.40 | Free: ~$0.04 · Pro: ~$0.26 · Elite: ~$0.65 |
 | MTI | Managerial tactical intent (press conf.) | flash | ~10 (5 matches × 2 teams) | **~$0.22** flat | negligible per user |
 | RSS-NEWS | RSS news extraction pipeline | flash | ~20 articles | **~$0.30** Gemini only | negligible — data service ($30-90/mo) is the real cost |
 
 **Current total AI cost: ~$0.55/mo running + $0/mo planned = ~$0.55/mo**
-**ENG-16 ceiling: ~$0.65/Elite user/mo — price into Elite tier before building.**
 
 ---
 
@@ -170,7 +168,6 @@
 
 | ID | Task | Effort | ☑ | Ready? | Notes |
 |----|------|--------|----|--------|-------|
-| ENG-16 | "Ask AI About This Match" freeform Gemini Q&A | 2-3 days | ⬜ | ⏳ ~June-July | Extends BET-EXPLAIN. Rate-limited by tier. ParlaySavant charges $30/mo for this. **AI: Free ~$0.04/user/mo (3 Q/day) · Pro ~$0.26/user/mo (20 Q/day) · Elite ~$0.65/user/mo (~50 Q/day) — price into Elite before building** |
 | ENG-15 | Market inefficiency index per league (rolling 30-day edge) | 1 day | ⬜ | ⏳ ~June (needs 30 days of data) | "Eredivisie: HIGH +4.8%. Premier League: LOW +1.2%." No competitor does this |
 | ENG-17 | Season-end "Year in Review" (personal, shareable) | 2-3 days | ⬜ | ⏳ ~Aug+ (needs full season of user data) | Strava-style. "312 bets, best month October." Viral potential |
 
