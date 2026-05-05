@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-05 — ENG-10, LEAGUE-ORDER, ELITE-BANKROLL, ENG-8, INFRA-5/6/8, BOT-PROVEN, RHO-DYN, SCHED-AUDIT, N1/N2/N3, N4/N6/N9, N5/N7 all done.
+> Last updated: 2026-05-05 — TZ-TOMORROW added to Tier 1 Open.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -44,6 +44,7 @@
 
 | ID | Task | Effort | ☑ | Ready? | Notes |
 |----|------|--------|----|--------|-------|
+| TZ-TOMORROW | Tomorrow's matches tab on matches page | 2-3h | ⬜ | ✅ Ready | Add Today/Tomorrow toggle. Tomorrow query: 03:00 UTC tomorrow → 03:00 UTC day after (mirrors the +3h overhang we use for today). Predictions + value bets should also respect the selected day. |
 | B-ML3 | First meta-model: 8-feature logistic regression, target=pseudo_clv>0 | 1 day | ⬜ | ⏳ ~May 10 (need 3K CLV rows, have 1,679 as of 2026-05-05) | Train after 3000+ pseudo-CLV rows. Features per META-2. See MODEL_ANALYSIS.md Stage 4 |
 | BOT-TIMING | Time-window bot cohorts: morning/midday/pre-KO A/B test | 2-3h | ✅ | ✅ Done 2026-05-01 | 16 bots → 5 morning / 6 midday / 5 pre_ko. `BOT_TIMING_COHORTS` dict + cohort param in run_morning(). Migration 032 adds timing_cohort to simulated_bets. Scheduler auto-selects cohort by UTC hour. |
 | POSTGREST-CLEANUP | Migrate remaining PostgREST callers to psycopg2 | 3-4h | ✅ | ✅ Done 2026-05-03 | All workers + scripts fully migrated. Last batch: `fit_platt.py` (SQL JOIN replaces paginated PostgREST), `backfill_historical.py` (all progress tracking + bulk event INSERT), `live_tracker.py` (crash fix — undefined `client`). `get_client()` lives exclusively in `supabase_client.py` internals. Backfill moved to Railway 02:00 UTC daily. |
