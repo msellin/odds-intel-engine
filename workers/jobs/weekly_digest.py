@@ -445,7 +445,7 @@ def send_via_resend(to_email: str, subject: str, html: str) -> tuple[str | None,
 
 # ── Main ───────────────────────────────────────────────────────────────────
 
-def run_weekly_digest(dry_run: bool = False, limit: int | None = None):
+def run_weekly_digest(dry_run: bool = False, limit: int | None = None, to: str | None = None):
     today      = date.today()
     week_start = _week_start(today)  # This Monday = start of current week
     prev_week  = week_start - timedelta(days=7)  # Previous Monday = week we're reporting on
@@ -459,10 +459,25 @@ def run_weekly_digest(dry_run: bool = False, limit: int | None = None):
     # Fetch shared data
     model_stats = fetch_model_week_stats(prev_week)
     upcoming    = fetch_top_upcoming_matches(week_start)  # current week's upcoming matches
-    users       = fetch_subscribed_users()
 
     console.print(f"Model bets last week: {model_stats['total']} ({model_stats['won']}W/{model_stats['lost']}L, {_units_fmt(model_stats['net_units'])})")
     console.print(f"Upcoming top matches: {len(upcoming)}")
+
+    # --to: send a one-off test email without touching the subscriber list or log
+    if to:
+        console.print(f"\n[yellow]Test send → {to} (elite tier, no log written)[/yellow]")
+        subject, html = build_weekly_email(to, "elite", week_start, model_stats, None, upcoming)
+        if dry_run:
+            console.print(f"[dim]WOULD SEND:[/dim] {subject}")
+            return
+        resend_id, error = send_via_resend(to, subject, html)
+        if error:
+            console.print(f"[red]✗ {error}[/red]")
+        else:
+            console.print(f"[green]✓ Sent — id={resend_id}[/green]")
+        return
+
+    users = fetch_subscribed_users()
     console.print(f"Subscribed users:     {len(users)}\n")
 
     if limit is not None:
@@ -507,5 +522,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Send weekly performance email digest")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--limit",   type=int, default=None)
+    parser.add_argument("--to",      type=str, default=None, help="Send a one-off test email to this address (skips subscriber list and log)")
     args = parser.parse_args()
-    run_weekly_digest(dry_run=args.dry_run, limit=args.limit)
+    run_weekly_digest(dry_run=args.dry_run, limit=args.limit, to=args.to)
