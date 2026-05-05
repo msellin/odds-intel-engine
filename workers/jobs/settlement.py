@@ -395,14 +395,27 @@ def fix_stale_live_matches():
             if not fixture:
                 continue
             status_short = fixture.get("fixture", {}).get("status", {}).get("short", "")
-            if status_short in ("FT", "AET", "PEN"):
+            if status_short in ("FT", "AET", "PEN", "ABD", "WO"):
                 goals = fixture.get("goals", {})
                 home_goals = goals.get("home")
                 away_goals = goals.get("away")
                 if home_goals is None or away_goals is None:
-                    continue
+                    # ABD/WO with no score — mark finished with 0-0
+                    if status_short in ("ABD", "WO"):
+                        home_goals, away_goals = 0, 0
+                    else:
+                        continue
                 update_match_result(match_id, int(home_goals), int(away_goals))
                 console.print(f"[green]Fixed stale match {match_id}: {status_short} {home_goals}-{away_goals}[/green]")
+                fixed += 1
+            elif status_short in ("PST", "CANC", "SUSP", "AWD", "INT"):
+                # Postponed/cancelled — remove from live without a result
+                execute_query(
+                    "UPDATE matches SET status='postponed' WHERE id=%s",
+                    [match_id],
+                    return_data=False,
+                )
+                console.print(f"[yellow]Stale match {match_id} marked postponed: {status_short}[/yellow]")
                 fixed += 1
         except Exception as e:
             console.print(f"[red]Stale-live fix error for {match_id}: {e}[/red]")
