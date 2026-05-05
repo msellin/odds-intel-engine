@@ -152,20 +152,46 @@ def log_send(user_id: str, digest_date: str, tier: str, email_to: str,
 
 # ── Email HTML builders ────────────────────────────────────────────────────
 
+# Brand colours
+_BLUE       = "#2563eb"
+_BLUE_DARK  = "#1d4ed8"
+_NAVY       = "#0f172a"
+_SLATE      = "#1e293b"
+_MUTED      = "#64748b"
+_BORDER     = "#e2e8f0"
+_BG         = "#f1f5f9"
+_WHITE      = "#ffffff"
+_GREEN      = "#16a34a"
+_GREEN_BG   = "#f0fdf4"
+_GREEN_BD   = "#bbf7d0"
+
+
+def _kickoff_fmt(raw: str) -> str:
+    """'2026-05-05T19:00:00' → 'May 05 · 19:00 UTC'"""
+    try:
+        dt = datetime.fromisoformat(str(raw)[:19])
+        return dt.strftime("%b %d · %H:%M UTC")
+    except Exception:
+        return str(raw)[:16].replace("T", " ") + " UTC"
+
+
 def _preview_card_html(p: dict, full_text: bool = False) -> str:
     home = p.get("home_team", "?")
     away = p.get("away_team", "?")
     league = p.get("league", "")
-    kickoff = str(p.get("kickoff", ""))[:16].replace("T", " ")
+    kickoff = _kickoff_fmt(p.get("kickoff", ""))
     text = p["preview_text"] if full_text else p["preview_short"]
     match_url = f"{SITE_URL}/matches/{p['match_id']}"
     return f"""
-    <div style="border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:16px;background:#fff;">
-      <div style="font-size:12px;color:#64748b;margin-bottom:4px;">{league} · {kickoff} UTC</div>
-      <div style="font-size:18px;font-weight:700;color:#1e293b;margin-bottom:8px;">{home} vs {away}</div>
-      <div style="font-size:14px;color:#334155;line-height:1.6;">{text}</div>
-      <div style="margin-top:12px;">
-        <a href="{match_url}" style="font-size:13px;color:#2563eb;text-decoration:none;font-weight:600;">
+    <div style="background:{_WHITE};border:1px solid {_BORDER};border-left:3px solid {_BLUE};border-radius:8px;padding:18px 20px;margin-bottom:14px;">
+      <div style="margin-bottom:8px;">
+        <span style="display:inline-block;background:#eff6ff;color:{_BLUE};font-size:11px;font-weight:600;letter-spacing:0.04em;padding:2px 8px;border-radius:4px;text-transform:uppercase;">{league}</span>
+        <span style="font-size:12px;color:{_MUTED};margin-left:8px;">{kickoff}</span>
+      </div>
+      <div style="font-size:17px;font-weight:700;color:{_SLATE};margin-bottom:10px;">{home} <span style="color:{_MUTED};font-weight:400;">vs</span> {away}</div>
+      <div style="font-size:14px;color:#334155;line-height:1.7;">{text}</div>
+      <div style="margin-top:14px;">
+        <a href="{match_url}" style="display:inline-block;background:{_BLUE};color:{_WHITE};font-size:12px;font-weight:600;padding:7px 14px;border-radius:6px;text-decoration:none;">
           View full analysis →
         </a>
       </div>
@@ -183,11 +209,11 @@ def _value_bet_row_html(bet: dict) -> str:
     conf = bet.get("model_probability", 0)
     return f"""
     <tr>
-      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px;">{home} vs {away}<br><span style="color:#64748b;font-size:11px;">{league}</span></td>
-      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px;">{market} — {selection}</td>
-      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:600;">{odds:.2f}</td>
-      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#16a34a;font-weight:600;">+{edge:.1f}%</td>
-      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px;">{conf:.0%}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid {_BG};font-size:13px;color:{_SLATE};">{home} vs {away}<br><span style="color:{_MUTED};font-size:11px;">{league}</span></td>
+      <td style="padding:10px 8px;border-bottom:1px solid {_BG};font-size:13px;color:{_SLATE};">{market} — {selection}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid {_BG};font-size:13px;font-weight:700;color:{_SLATE};">{odds:.2f}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid {_BG};font-size:13px;font-weight:700;color:{_GREEN};">+{edge:.1f}%</td>
+      <td style="padding:10px 8px;border-bottom:1px solid {_BG};font-size:13px;color:{_MUTED};">{conf:.0%}</td>
     </tr>"""
 
 
@@ -214,64 +240,56 @@ def build_email_html(
         subject = f"OddsIntel · Today's {preview_count} match previews — {display_date}"
 
     unsubscribe_url = f"{SITE_URL}/profile?tab=notifications"
-    value_bets_url = f"{SITE_URL}/value-bets"
+    value_bets_url  = f"{SITE_URL}/value-bets"
 
     # Preview cards
-    preview_cards_html = ""
-    for p in previews:
-        preview_cards_html += _preview_card_html(p, full_text=is_pro)
+    preview_cards_html = "".join(_preview_card_html(p, full_text=is_pro) for p in previews)
 
     # Value bets section
     value_bets_section = ""
     if is_elite and bet_count > 0:
         rows_html = "".join(_value_bet_row_html(b) for b in value_bets["top_picks"][:5])
         value_bets_section = f"""
-        <h2 style="font-size:18px;font-weight:700;color:#1e293b;margin:24px 0 12px;">
-          Today's Value Bets ({bet_count} total)
-        </h2>
-        <table style="width:100%;border-collapse:collapse;">
-          <thead>
-            <tr style="background:#f8fafc;">
-              <th style="padding:8px;text-align:left;font-size:12px;color:#64748b;font-weight:600;border-bottom:2px solid #e2e8f0;">MATCH</th>
-              <th style="padding:8px;text-align:left;font-size:12px;color:#64748b;font-weight:600;border-bottom:2px solid #e2e8f0;">BET</th>
-              <th style="padding:8px;text-align:left;font-size:12px;color:#64748b;font-weight:600;border-bottom:2px solid #e2e8f0;">ODDS</th>
-              <th style="padding:8px;text-align:left;font-size:12px;color:#64748b;font-weight:600;border-bottom:2px solid #e2e8f0;">EDGE</th>
-              <th style="padding:8px;text-align:left;font-size:12px;color:#64748b;font-weight:600;border-bottom:2px solid #e2e8f0;">CONF</th>
-            </tr>
-          </thead>
-          <tbody>{rows_html}</tbody>
-        </table>
-        <p style="margin-top:12px;">
-          <a href="{value_bets_url}" style="font-size:13px;color:#2563eb;text-decoration:none;font-weight:600;">
-            View all value bets →
-          </a>
-        </p>"""
+        <div style="margin-top:28px;">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:{_MUTED};text-transform:uppercase;margin-bottom:10px;">Today's Value Bets</div>
+          <table style="width:100%;border-collapse:collapse;background:{_WHITE};border:1px solid {_BORDER};border-radius:8px;overflow:hidden;">
+            <thead>
+              <tr style="background:{_BG};">
+                <th style="padding:10px 8px;text-align:left;font-size:11px;color:{_MUTED};font-weight:600;letter-spacing:0.04em;text-transform:uppercase;border-bottom:1px solid {_BORDER};">MATCH</th>
+                <th style="padding:10px 8px;text-align:left;font-size:11px;color:{_MUTED};font-weight:600;letter-spacing:0.04em;text-transform:uppercase;border-bottom:1px solid {_BORDER};">BET</th>
+                <th style="padding:10px 8px;text-align:left;font-size:11px;color:{_MUTED};font-weight:600;letter-spacing:0.04em;text-transform:uppercase;border-bottom:1px solid {_BORDER};">ODDS</th>
+                <th style="padding:10px 8px;text-align:left;font-size:11px;color:{_MUTED};font-weight:600;letter-spacing:0.04em;text-transform:uppercase;border-bottom:1px solid {_BORDER};">EDGE</th>
+                <th style="padding:10px 8px;text-align:left;font-size:11px;color:{_MUTED};font-weight:600;letter-spacing:0.04em;text-transform:uppercase;border-bottom:1px solid {_BORDER};">CONF</th>
+              </tr>
+            </thead>
+            <tbody>{rows_html}</tbody>
+          </table>
+          <p style="margin-top:12px;margin-bottom:0;">
+            <a href="{value_bets_url}" style="font-size:13px;color:{_BLUE};text-decoration:none;font-weight:600;">View all value bets →</a>
+          </p>
+        </div>"""
     elif is_pro and bet_count > 0:
         value_bets_section = f"""
-        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px;margin-bottom:16px;">
-          <div style="font-size:16px;font-weight:700;color:#15803d;">
-            {bet_count} value bet{'s' if bet_count != 1 else ''} identified today
-          </div>
-          <p style="color:#166534;font-size:13px;margin-top:4px;">
-            Model edge ≥ 3% on today's slate.
-          </p>
-          <a href="{value_bets_url}" style="font-size:13px;color:#15803d;font-weight:600;text-decoration:none;">
-            View value bets →
-          </a>
+        <div style="margin-top:20px;background:{_GREEN_BG};border:1px solid {_GREEN_BD};border-radius:8px;padding:16px 20px;">
+          <div style="font-size:15px;font-weight:700;color:#15803d;">{bet_count} value bet{'s' if bet_count != 1 else ''} identified today</div>
+          <p style="color:#166534;font-size:13px;margin:4px 0 12px;">Model edge ≥ 3% on today's slate.</p>
+          <a href="{value_bets_url}" style="display:inline-block;background:#15803d;color:{_WHITE};font-size:12px;font-weight:600;padding:7px 14px;border-radius:6px;text-decoration:none;">View value bets →</a>
         </div>"""
     elif not is_pro:
         value_bets_section = f"""
-        <div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:16px;margin-bottom:16px;">
-          <div style="font-size:15px;font-weight:700;color:#7e22ce;">
-            Upgrade to Pro to unlock value bets
-          </div>
-          <p style="color:#6b21a8;font-size:13px;margin-top:4px;">
-            Our model found {bet_count} value bet{'s' if bet_count != 1 else ''} today. Pro members see edge percentages and confidence scores.
-          </p>
-          <a href="{SITE_URL}/pricing" style="display:inline-block;margin-top:8px;background:#7c3aed;color:#fff;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
-            View plans →
-          </a>
+        <div style="margin-top:20px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:16px 20px;">
+          <div style="font-size:15px;font-weight:700;color:{_BLUE_DARK};">Unlock value bets with Pro</div>
+          <p style="color:#1e40af;font-size:13px;margin:4px 0 12px;">Our model found {bet_count} value bet{'s' if bet_count != 1 else ''} today. Pro members see edge %, confidence scores, and full analysis.</p>
+          <a href="{SITE_URL}/pricing" style="display:inline-block;background:{_BLUE};color:{_WHITE};font-size:12px;font-weight:600;padding:7px 14px;border-radius:6px;text-decoration:none;">See plans →</a>
         </div>"""
+
+    # "View all matches" CTA for free users
+    all_matches_cta = ""
+    if not is_pro:
+        all_matches_cta = f"""
+        <p style="margin:16px 0 0;font-size:13px;color:{_MUTED};">
+          <a href="{SITE_URL}/matches" style="color:{_BLUE};text-decoration:none;font-weight:600;">View all today's matches →</a>
+        </p>"""
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -280,44 +298,61 @@ def build_email_html(
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{subject}</title>
 </head>
-<body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <div style="max-width:600px;margin:0 auto;padding:24px 16px;">
+<body style="margin:0;padding:0;background:{_BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
 
-    <!-- Header -->
-    <div style="text-align:center;margin-bottom:24px;">
-      <a href="{SITE_URL}" style="text-decoration:none;">
-        <span style="font-size:22px;font-weight:800;color:#1e293b;">Odds</span><span style="font-size:22px;font-weight:800;color:#2563eb;">Intel</span>
-      </a>
-      <div style="font-size:13px;color:#64748b;margin-top:4px;">{display_date}</div>
-    </div>
+  <!-- Outer wrapper -->
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:{_BG};">
+    <tr><td align="center" style="padding:32px 16px 24px;">
 
-    <!-- Previews section -->
-    <h2 style="font-size:18px;font-weight:700;color:#1e293b;margin:0 0 12px;">
-      Today's Match Previews
-    </h2>
-    {preview_cards_html}
+      <!-- Card -->
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
 
-    {"<p style='font-size:13px;color:#64748b;'><a href='" + SITE_URL + "/matches' style='color:#2563eb;text-decoration:none;font-weight:600;'>View all today's matches →</a></p>" if not is_pro else ""}
+        <!-- Logo header -->
+        <tr>
+          <td style="background:{_WHITE};border-radius:10px 10px 0 0;border-top:4px solid {_BLUE};padding:24px 32px 20px;text-align:center;border-left:1px solid {_BORDER};border-right:1px solid {_BORDER};">
+            <a href="{SITE_URL}" style="text-decoration:none;display:inline-block;">
+              <span style="font-size:26px;font-weight:800;color:{_NAVY};letter-spacing:-0.5px;">Odds</span><span style="font-size:26px;font-weight:800;color:{_BLUE};letter-spacing:-0.5px;">Intel</span>
+            </a>
+            <div style="font-size:12px;color:{_MUTED};margin-top:4px;letter-spacing:0.03em;">{display_date}</div>
+          </td>
+        </tr>
 
-    <!-- Value bets section -->
-    {value_bets_section}
+        <!-- Body -->
+        <tr>
+          <td style="background:{_WHITE};padding:24px 32px 28px;border-left:1px solid {_BORDER};border-right:1px solid {_BORDER};">
 
-    <!-- Footer -->
-    <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e2e8f0;text-align:center;font-size:12px;color:#94a3b8;">
-      <p style="margin:0 0 8px;">
-        You're receiving this because you have daily digests enabled in your OddsIntel account.
-      </p>
-      <p style="margin:0;">
-        <a href="{unsubscribe_url}" style="color:#64748b;text-decoration:underline;">Manage email preferences</a>
-        &nbsp;·&nbsp;
-        <a href="{SITE_URL}" style="color:#64748b;text-decoration:underline;">OddsIntel</a>
-      </p>
-      <p style="margin:8px 0 0;font-size:11px;color:#cbd5e1;">
-        This is not financial or gambling advice. Past model performance does not guarantee future results. Please gamble responsibly.
-      </p>
-    </div>
+            <!-- Section label -->
+            <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:{_MUTED};text-transform:uppercase;margin-bottom:14px;">Today's Match Previews</div>
 
-  </div>
+            {preview_cards_html}
+            {all_matches_cta}
+            {value_bets_section}
+
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="background:#f8fafc;border-radius:0 0 10px 10px;border:1px solid {_BORDER};border-top:none;padding:18px 32px;text-align:center;">
+            <p style="margin:0 0 6px;font-size:12px;color:{_MUTED};">
+              You're receiving this because you have daily digests enabled in your
+              <a href="{SITE_URL}" style="color:{_BLUE};text-decoration:none;font-weight:600;">OddsIntel</a> account.
+            </p>
+            <p style="margin:0 0 10px;font-size:12px;">
+              <a href="{unsubscribe_url}" style="color:{_MUTED};text-decoration:underline;">Manage preferences</a>
+              &nbsp;·&nbsp;
+              <a href="{SITE_URL}/matches" style="color:{_MUTED};text-decoration:underline;">Today's matches</a>
+            </p>
+            <p style="margin:0;font-size:11px;color:#94a3b8;line-height:1.5;">
+              Not financial or gambling advice. Past model performance does not guarantee future results.<br>Please gamble responsibly.
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+
 </body>
 </html>"""
 
