@@ -2,7 +2,7 @@
 
 > Technical specification of the prediction and betting system.
 > Written for data scientists, auditors, and technical stakeholders.
-> Last updated: 2026-04-30
+> Last updated: 2026-05-05
 
 ---
 
@@ -122,10 +122,10 @@ Gradient boosted decision tree trained on historical match data:
 ### 4.2 Ensemble
 
 ```
-P(outcome) = 0.5 * Poisson_prob + 0.5 * XGBoost_prob
+P(outcome) = w * Poisson_prob + (1 - w) * XGBoost_prob
 ```
 
-Equal-weight blend. Model disagreement (`|Poisson - XGBoost|`) is stored per bet as an uncertainty signal.
+Default blend weight w = 0.5 (equal). The weight is learned and stored in the `model_calibration` table (market key `blend_weight_1x2`) via `scripts/fit_blend_weights.py`, and loaded at pipeline startup — falls back to 0.5 if no learned value exists. Model disagreement (`|Poisson - XGBoost|`) is stored per bet as an uncertainty signal.
 
 ### 4.3 Data Tier Fallback
 
@@ -151,12 +151,25 @@ Blend model probability toward bookmaker-implied probability, with the blend wei
 shrunk = alpha * model_prob + (1 - alpha) * implied_prob
 ```
 
+**1X2 markets (default alphas):**
+
 | Tier | alpha | Model weight | Market weight | Rationale |
 |------|-------|-------------|---------------|-----------|
 | 1 (top flight) | 0.20 | 20% | 80% | EPL/La Liga: market is very efficient |
 | 2 | 0.30 | 30% | 70% | Championship level |
 | 3 | 0.50 | 50% | 50% | Balanced |
 | 4 (lower) | 0.65 | 65% | 35% | Market least efficient, trust model more |
+
+**Goal-line markets (BTTS, O/U) use higher alpha** — the Poisson/Dixon-Coles model is specifically designed for goal totals, so we trust it more relative to the bookmaker:
+
+| Tier | alpha (goal-line) |
+|------|------------------|
+| 1 | 0.35 |
+| 2 | 0.45 |
+| 3 | 0.65 |
+| 4 | 0.80 |
+
+All alpha values are **learned and updatable**: the pipeline loads them from the `model_calibration` table at startup (keys `shrinkage_alpha_t{tier}_{market_type}`), falling back to the hardcoded defaults above if no learned values exist.
 
 ### 5.2 Stage 2 — Platt Sigmoid Correction
 
@@ -296,10 +309,27 @@ T+FT+1h  Post-match: stats, events, player stats enrichment
 | Broad coverage | `bot_v10_all`, `bot_aggressive` | All leagues, lower thresholds |
 | Lower-tier specialist | `bot_lower_1x2`, `bot_high_roi_global` | Tiers 2-4 where pricing is softest |
 | Conservative | `bot_conservative` | 10%+ edge only, highest selectivity |
-| Country/region | `bot_greek_turkish`, `bot_opt_away_british` | Specific regions with backtest-confirmed edge |
-| Market specialist | `bot_btts_all`, `bot_ou15_defensive`, `bot_draw_specialist` | Non-1X2 markets with zero overlap |
+| Country/region | `bot_greek_turkish` | Specific regions with backtest-confirmed edge |
+| Optimizer — away value | `bot_opt_away_british`, `bot_opt_away_europe` | Away wins at mid-range longshot odds in British Isles / top-5 Europe; cross-era validated (+16-19% ROI) |
+| Optimizer — home underdog | `bot_opt_home_lower` | Home underdogs at longshot odds (3.00-5.00) in T2-4 Europe; cross-era +14% ROI |
+| Optimizer — O/U | `bot_opt_ou_british`, `bot_ou25_global` | Over/Under value in British lower divisions and globally |
+| Market specialist — BTTS | `bot_btts_all`, `bot_btts_conservative` | Both-teams-to-score: broad (all leagues) and selective (T1-2, 7%+ edge) |
+| Market specialist — O/U | `bot_ou15_defensive`, `bot_ou35_attacking` | O/U 1.5 (defensive leagues) and O/U 3.5 (high-scoring leagues) |
+| Draw specialist | `bot_draw_specialist` | Draws underbet in T2-4; odds range 2.80-4.50 |
 
-### 8.2 Backtest Foundation
+### 8.2 Bot Timing Cohorts
+
+All 16 bots are assigned to one of three timing windows as an A/B test to identify the optimal bet placement time:
+
+| Cohort | UTC window | Bots | Rationale |
+|--------|-----------|------|-----------|
+| morning | 06:00 | `bot_v10_all`, `bot_lower_1x2`, `bot_aggressive`, `bot_ou25_global`, `bot_opt_ou_british` | Early odds capture before sharp money moves lines |
+| midday | 11:00 | `bot_conservative`, `bot_greek_turkish`, `bot_high_roi_global`, `bot_ou15_defensive`, `bot_ou35_attacking`, `bot_draw_specialist` | Post-injury-news refresh, standings updated |
+| pre_ko | 15:00–19:00 | `bot_opt_away_british`, `bot_opt_away_europe`, `bot_opt_home_lower`, `bot_btts_all`, `bot_btts_conservative` | Confirmed lineups, most information available |
+
+CLV and ROI are tracked per cohort to determine which window produces the best edge.
+
+### 8.3 Backtest Foundation
 
 Bot strategies are validated against a 354,518-match dataset (275 leagues, 2005-2015):
 
@@ -349,21 +379,25 @@ The public track record page displays:
 
 An external signal filter currently in **log-only mode** — it records alignment scores on every bet but does not yet influence staking or filtering.
 
-### 10.1 Four Dimensions
+### 10.1 Six Dimensions
 
-| Dimension | Signal | +1 | -1 |
-|-----------|--------|----|----|
-| Odds Movement | Market drift direction | Shortened (agrees) | Lengthened (disagrees) |
-| News | Gemini impact analysis | Positive news | Key injury/suspension |
-| Lineup | Confirmation status | Confirmed | Unconfirmed |
-| Situational | Rest + home advantage in lower tiers | Favourable | Unfavourable |
+| # | Dimension | Signal | +1 | -1 |
+|---|-----------|--------|----|----|
+| 1 | Odds Movement | Market drift direction | Shortened (agrees) | Lengthened (disagrees) |
+| 2 | News | Gemini impact analysis | Positive news for selection | Key injury/suspension |
+| 3 | Lineup | Confirmation status | Confirmed | Not yet confirmed |
+| 4 | Situational | Rest + home advantage in lower tiers | Favourable | Unfavourable |
+| 5 | Sharp consensus | Sharp vs soft bookmaker pricing gap (`sharp_consensus_home` signal) | Sharp books agree with pick | Sharp books disagree |
+| 6 | Pinnacle anchor | Pinnacle implied probability vs model probability | Pinnacle doesn't strongly disagree (gap > −3%) | Pinnacle strongly disagrees (gap < −8%) |
+
+Note: dimensions 5 and 6 only fire for 1X2 home picks. O/U and draw picks use dimensions 1-4.
 
 ### 10.2 Activation Criteria
 
 Alignment will be activated (move from log-only to staking modifier) after:
 - 300+ settled bets with alignment data
 - Statistical evidence that HIGH alignment correlates with higher ROI
-- Currently at ~30 bets — estimated activation: late May 2026
+- Tracking live since 2026-04-27 (~10 bets/day) — estimated activation: late May 2026
 
 ---
 
@@ -417,7 +451,7 @@ Alignment will be activated (move from log-only to staking modifier) after:
 | ELO updates | `workers/jobs/settlement.py` | ELO update section |
 | CLV computation | `workers/jobs/settlement.py` | Settlement + pseudo-CLV |
 | Signal collection | `workers/jobs/daily_pipeline_v2.py` | Signal writing throughout pipeline |
-| Bot strategies | `workers/jobs/daily_pipeline_v2.py` | `BOT_CONFIGS` dict (lines 67-310) |
+| Bot strategies | `workers/jobs/daily_pipeline_v2.py` | `BOTS_CONFIG` dict (lines 67-340) |
 | Feature vectors ETL | `workers/jobs/settlement.py` | `--ml-etl` flag |
 
 ---
