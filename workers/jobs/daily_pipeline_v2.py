@@ -307,6 +307,30 @@ BOTS_CONFIG = {
         "odds_range": (2.80, 4.50),
         "min_prob": 0.22,
     },
+    "bot_proven_leagues": {
+        # Targets only the 5 leagues with cross-era, cross-dataset profitable signals
+        # from the 354K-match mega backtest (2005-15) AND 2022-25 football-data validation:
+        #   Singapore S.League: +27.5% ROI, 5/5 seasons, strongest signal
+        #   Scotland L2+:       +12.3% ROI, cross-era confirmed
+        #   Austria Erste Liga: +5.5% ROI, 5/7 seasons positive
+        #   Ireland:            +2.7% ROI (League 1), 4/7 seasons positive
+        #   South Korea:        K League Challenge +3.2%, 3/3 seasons
+        # Purpose: clean isolated performance track for the best backtest signals.
+        # Tier B multiplier applied (50% stake) — these teams use targets_global only.
+        "description": "Proven leagues only — Singapore/Scotland/Austria/Ireland/Korea, cross-era confirmed edge",
+        "tier_label": "elite",
+        "markets": ["1x2"],
+        "tier_filter": None,
+        "league_filter": ["Singapore", "Scotland", "Austria", "Ireland", "South Korea"],
+        "edge_thresholds": {
+            1: {"1x2_fav": 0.05, "1x2_long": 0.08},
+            2: {"1x2_fav": 0.04, "1x2_long": 0.06},
+            3: {"1x2_fav": 0.04, "1x2_long": 0.06},
+            4: {"1x2_fav": 0.03, "1x2_long": 0.05},
+        },
+        "odds_range": (1.40, 5.00),
+        "min_prob": 0.28,
+    },
 }
 
 
@@ -336,12 +360,53 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_opt_home_lower":  "pre_ko",
     "bot_btts_all":        "pre_ko",
     "bot_btts_conservative":"pre_ko",
+    # Midday — proven leagues run after injury-news refresh
+    "bot_proven_leagues":  "midday",
 }
 
 
 # Dixon-Coles correlation parameter — corrects independent Poisson's draw underestimation.
-# Literature standard value. Negative sign: low-scoring draws are more common than Poisson predicts.
+# Global fallback value. The pipeline loads per-tier values from model_calibration at startup
+# (fit by scripts/fit_league_rho.py, refreshed weekly on Sundays alongside Platt).
 DIXON_COLES_RHO = -0.13
+
+# Cache: {league_tier (1-4): rho}. Loaded once per pipeline run.
+_dc_rho_cache: dict | None = None
+
+
+def _load_dc_rho_cache() -> dict:
+    """
+    Load per-tier Dixon-Coles rho from model_calibration table.
+    Keys in DB: 'dc_rho_tier_1', 'dc_rho_tier_2', 'dc_rho_tier_3', 'dc_rho_tier_4'.
+    platt_a stores the rho value (platt_b = 0, unused).
+    Falls back to empty dict (→ global DIXON_COLES_RHO) if no rows.
+    """
+    global _dc_rho_cache
+    if _dc_rho_cache is not None:
+        return _dc_rho_cache
+
+    _dc_rho_cache = {}
+    try:
+        from workers.api_clients.db import execute_query as _eq_rho
+        rows = _eq_rho(
+            """
+            SELECT DISTINCT ON (market) market, platt_a
+            FROM model_calibration
+            WHERE market LIKE 'dc_rho_tier_%'
+            ORDER BY market, fitted_at DESC
+            """,
+            [],
+        )
+        for row in rows:
+            try:
+                tier_num = int(row["market"].replace("dc_rho_tier_", ""))
+                _dc_rho_cache[tier_num] = float(row["platt_a"])
+            except (ValueError, KeyError):
+                pass
+    except Exception:
+        pass  # Table may lack dc_rho rows yet — fall back to global
+
+    return _dc_rho_cache
 
 
 def _dc_tau(h: int, a: int, exp_h: float, exp_a: float, rho: float) -> float:
@@ -357,13 +422,19 @@ def _dc_tau(h: int, a: int, exp_h: float, exp_a: float, rho: float) -> float:
     return 1.0
 
 
-def _poisson_probs(exp_h: float, exp_a: float) -> dict:
+def _poisson_probs(exp_h: float, exp_a: float, rho: float | None = None) -> dict:
     """Compute 1X2 + O/U (1.5, 2.5, 3.5) + BTTS probabilities from expected goals.
 
     Applies Dixon-Coles bivariate correction to the four low-scoring outcomes
     (0-0, 1-0, 0-1, 1-1) to fix the ~8% draw underestimation of independent Poisson.
     1X2 probabilities are renormalised after correction.
+
+    Args:
+        rho: Dixon-Coles correlation parameter. If None, uses the per-tier cached
+             value from model_calibration (loaded by _load_dc_rho_cache()), or falls
+             back to DIXON_COLES_RHO (-0.13) if no DB value available.
     """
+    _rho = rho if rho is not None else DIXON_COLES_RHO
     p_h = p_d = p_a = 0.0
     p_over_15 = p_over_25 = p_over_35 = 0.0
     p_btts_yes = 0.0
@@ -371,7 +442,7 @@ def _poisson_probs(exp_h: float, exp_a: float) -> dict:
     for h in range(8):
         for a in range(8):
             p = poisson.pmf(h, exp_h) * poisson.pmf(a, exp_a)
-            p *= _dc_tau(h, a, exp_h, exp_a, DIXON_COLES_RHO)
+            p *= _dc_tau(h, a, exp_h, exp_a, _rho)
             if h > a:
                 p_h += p
             elif h == a:
@@ -510,7 +581,11 @@ def compute_prediction(match, hist_targets, hist_targets_global=None,
     exp_h = (exp_h + np.mean(away_ga[-10:])) / 2
     exp_a = (exp_a + np.mean(home_ga[-10:])) / 2
 
-    result = _poisson_probs(exp_h, exp_a)
+    # Use per-tier rho if available (fit by scripts/fit_league_rho.py),
+    # otherwise falls back to global DIXON_COLES_RHO (-0.13).
+    league_tier = int(match.get("tier") or 1)
+    tier_rho = _load_dc_rho_cache().get(league_tier)  # None → _poisson_probs uses global
+    result = _poisson_probs(exp_h, exp_a, rho=tier_rho)
     result.update({"exp_home": exp_h, "exp_away": exp_a, "data_tier": data_tier})
     return result
 

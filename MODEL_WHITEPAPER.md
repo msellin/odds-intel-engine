@@ -88,7 +88,7 @@ For each scoreline (h, a):
     P(h, a) = Poisson(h; exp_home) * Poisson(a; exp_away) * tau(h, a)
 ```
 
-**Dixon-Coles correction** (rho = -0.13) adjusts the four low-scoring outcomes where independence assumption breaks down:
+**Dixon-Coles correction** adjusts the four low-scoring outcomes where the independence assumption breaks down. The rho parameter is estimated per league tier from historical scoreline frequencies (script: `scripts/fit_league_rho.py`, refreshed weekly). Default fallback: rho = -0.13 (literature standard) when fewer than 200 matches exist for a tier.
 
 | Scoreline | Correction factor tau |
 |-----------|----------------------|
@@ -411,7 +411,7 @@ Alignment will be activated (move from log-only to staking modifier) after:
 
 4. **No proprietary data:** All data comes from public APIs. No private injury feeds, no in-house scouting, no pitch-level telemetry.
 
-5. **Dixon-Coles rho is static:** The correlation parameter (-0.13) is fixed rather than estimated per league. A league-specific rho could improve draw predictions in leagues with systematically different draw rates.
+5. **Dixon-Coles rho needs more data:** The parameter is now estimated per league tier (not global static) from historical scoreline frequencies. However tier-level grouping is a coarse approximation — a per-league rho would be more precise but requires ~500+ matches per league to be stable.
 
 6. **Isotonic calibration is trained once:** The XGBoost model's isotonic calibration is fitted during training on historical data. It doesn't adapt to live prediction drift (Platt scaling addresses this partially).
 
@@ -428,7 +428,7 @@ Alignment will be activated (move from log-only to staking modifier) after:
 | **Next: Meta-model** | Second-stage model predicting bet profitability (target = CLV) | Needs 3,000+ matches |
 | **Next: Alignment activation** | Use external signal filter to modify stakes | Needs 300+ settled bets |
 | **Next: Sharp bookmaker features** | Pinnacle line as anchor, sharp/soft bookmaker classification | Research phase |
-| **Next: Dynamic blend weights** | Monthly recalculation of Poisson/XGBoost blend per tier | Planned |
+| **Dynamic blend weights** | Weekly recalculation of Poisson/XGBoost blend per tier | Done — `scripts/fit_blend_weights.py`, Sunday refit |
 | **Next: Historical backfill** | 43K+ matches with stats + events from API-Football (no historical odds available) | In progress — automated cron |
 | **Next: XGBoost retrain on backfill** | Retrain on 43K matches with richer AF features (xG, shots, possession) | After backfill Phase 1 |
 | **Next: In-play model (P3.4)** | LightGBM Poisson regression predicting `lambda_home/away_remaining` from live match state. 6 validated strategies (xG divergence, BTTS momentum, favorite comeback, late goals, dead game unders, odds reversal). Quarter Kelly + time-decay staking. | Needs 500+ live-tracked matches (~July 2026) |
@@ -446,6 +446,7 @@ Alignment will be activated (move from log-only to staking modifier) after:
 | Odds movement | `workers/model/improvements.py` | `compute_odds_movement()` |
 | Alignment | `workers/model/improvements.py` | `compute_alignment()` |
 | Platt fitting | `scripts/fit_platt.py` | `fit_and_store()` |
+| DC rho fitting | `scripts/fit_league_rho.py` | `run()` |
 | Calibration validation | `scripts/check_calibration.py` | `check_calibration()` |
 | XGBoost training | `scripts/retrain_xgboost.py` | Main training script |
 | ELO updates | `workers/jobs/settlement.py` | ELO update section |
