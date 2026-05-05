@@ -71,7 +71,7 @@ def fetch_model_week_stats(week_start: date) -> dict:
     week_end = week_start + timedelta(days=6)
     rows = execute_query(
         """
-        SELECT result, pnl, clv, market
+        SELECT result, pnl, stake, clv, market
         FROM simulated_bets
         WHERE created_at::date BETWEEN %s AND %s
           AND result IN ('won', 'lost')
@@ -82,7 +82,9 @@ def fetch_model_week_stats(week_start: date) -> dict:
     won   = sum(1 for r in rows if r["result"] == "won")
     lost  = sum(1 for r in rows if r["result"] == "lost")
     total = won + lost
-    net_units  = sum(r["pnl"] or 0 for r in rows)
+    net_pnl     = sum(r["pnl"] or 0 for r in rows)
+    total_staked = sum(r["stake"] or 0 for r in rows)
+    roi = round((net_pnl / total_staked * 100), 1) if total_staked else None
     clv_values = [r["clv"] for r in rows if r.get("clv") is not None]
     avg_clv    = sum(clv_values) / len(clv_values) if clv_values else None
 
@@ -105,7 +107,7 @@ def fetch_model_week_stats(week_start: date) -> dict:
         "won":        won,
         "lost":       lost,
         "total":      total,
-        "net_units":  round(float(net_units), 2),
+        "roi":        roi,
         "avg_clv":    round(float(avg_clv), 1) if avg_clv is not None else None,
         "best_market":    best_market,
         "best_market_hr": round(best_hr * 100) if best_market else None,
@@ -284,32 +286,33 @@ def build_weekly_email(
 
     # Model stats block
     m = model_stats
-    model_color = _GREEN if m["net_units"] >= 0 else "#ef4444"
-    model_result_str = (
-        f"{m['won']}W / {m['lost']}L"
-        if m["total"] > 0 else "No settled bets"
-    )
-    units_str = _units_fmt(m["net_units"]) if m["total"] > 0 else "—"
+    roi = m.get("roi")
+    roi_color = _GREEN if roi is not None and roi >= 0 else "#ef4444"
+    roi_str   = f"+{roi}%" if roi is not None and roi >= 0 else (f"{roi}%" if roi is not None else "—")
+    wl_str    = f"{m['won']}W&nbsp;/&nbsp;{m['lost']}L" if m["total"] > 0 else "No settled bets"
     clv_str   = f"+{m['avg_clv']}%" if m.get("avg_clv") and m["avg_clv"] > 0 else (f"{m['avg_clv']}%" if m.get("avg_clv") is not None else "—")
+    clv_color = _GREEN if m.get("avg_clv") and m["avg_clv"] > 0 else _MUTED
 
     model_block = f"""
     <div style="background:{_WHITE};border:1px solid {_BORDER};border-left:3px solid {_GREEN};border-radius:8px;padding:18px 20px;margin-bottom:16px;">
-      <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:{_MUTED};text-transform:uppercase;margin-bottom:10px;">Model Performance Last Week</div>
-      <div style="display:flex;gap:24px;flex-wrap:wrap;">
-        <div>
-          <div style="font-size:22px;font-weight:800;color:{model_color};">{units_str}</div>
-          <div style="font-size:11px;color:{_MUTED};margin-top:2px;">Net units</div>
-        </div>
-        <div>
-          <div style="font-size:22px;font-weight:800;color:{_SLATE};">{model_result_str}</div>
-          <div style="font-size:11px;color:{_MUTED};margin-top:2px;">{m['total']} settled bets</div>
-        </div>
-        <div>
-          <div style="font-size:22px;font-weight:800;color:{_GREEN if m.get('avg_clv') and m['avg_clv'] > 0 else _MUTED};">{clv_str}</div>
-          <div style="font-size:11px;color:{_MUTED};margin-top:2px;">Avg CLV</div>
-        </div>
-      </div>
-      {"" if not m.get("best_market") else f'<div style="margin-top:12px;font-size:12px;color:{_MUTED};">Best market: <strong style="color:{_SLATE};">{m["best_market"]}</strong> — {m["best_market_hr"]}% hit rate this week</div>'}
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:{_MUTED};text-transform:uppercase;margin-bottom:14px;">Model Performance Last Week</div>
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="padding-right:28px;vertical-align:top;">
+            <div style="font-size:24px;font-weight:800;color:{roi_color};line-height:1;">{roi_str}</div>
+            <div style="font-size:11px;color:{_MUTED};margin-top:4px;">ROI</div>
+          </td>
+          <td style="padding-right:28px;vertical-align:top;">
+            <div style="font-size:24px;font-weight:800;color:{_SLATE};line-height:1;">{wl_str}</div>
+            <div style="font-size:11px;color:{_MUTED};margin-top:4px;">{m['total']} settled bets</div>
+          </td>
+          <td style="vertical-align:top;">
+            <div style="font-size:24px;font-weight:800;color:{clv_color};line-height:1;">{clv_str}</div>
+            <div style="font-size:11px;color:{_MUTED};margin-top:4px;">Avg CLV</div>
+          </td>
+        </tr>
+      </table>
+      {"" if not m.get("best_market") else f'<div style="margin-top:14px;font-size:12px;color:{_MUTED};">Best market: <strong style="color:{_SLATE};">{m["best_market"]}</strong> — {m["best_market_hr"]}% hit rate</div>'}
     </div>"""
 
     # User stats block (Pro/Elite, or if they have picks)
@@ -320,25 +323,24 @@ def build_weekly_email(
         u_units = _units_fmt(u["net_units"])
         u_clv   = f"+{u['avg_clv']}%" if u.get("avg_clv") and u["avg_clv"] > 0 else (f"{u['avg_clv']}%" if u.get("avg_clv") is not None else "—")
         clv_color = _GREEN if u.get("avg_clv") and u["avg_clv"] > 0 else _MUTED
-        if u.get("avg_clv") is not None:
-            clv_block = f'<div><div style="font-size:22px;font-weight:800;color:{clv_color};">{u_clv}</div><div style="font-size:11px;color:{_MUTED};margin-top:2px;">Avg closing line value</div></div>'
-        else:
-            clv_block = ""
+        clv_td = f'<td style="vertical-align:top;"><div style="font-size:24px;font-weight:800;color:{clv_color};line-height:1;">{u_clv}</div><div style="font-size:11px;color:{_MUTED};margin-top:4px;">Avg CLV</div></td>' if u.get("avg_clv") is not None else ""
         user_block = f"""
     <div style="background:{_WHITE};border:1px solid {_BORDER};border-left:3px solid #8b5cf6;border-radius:8px;padding:18px 20px;margin-bottom:16px;">
-      <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:{_MUTED};text-transform:uppercase;margin-bottom:10px;">Your Picks Last Week</div>
-      <div style="display:flex;gap:24px;flex-wrap:wrap;">
-        <div>
-          <div style="font-size:22px;font-weight:800;color:{u_color};">{u_units}</div>
-          <div style="font-size:11px;color:{_MUTED};margin-top:2px;">Net units</div>
-        </div>
-        <div>
-          <div style="font-size:22px;font-weight:800;color:{_SLATE};">{u['won']}W / {u['lost']}L</div>
-          <div style="font-size:11px;color:{_MUTED};margin-top:2px;">{u['total']} settled picks</div>
-        </div>
-        {clv_block}
-      </div>
-      <p style="margin:12px 0 0;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:{_MUTED};text-transform:uppercase;margin-bottom:14px;">Your Picks Last Week</div>
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="padding-right:28px;vertical-align:top;">
+            <div style="font-size:24px;font-weight:800;color:{u_color};line-height:1;">{u_units}</div>
+            <div style="font-size:11px;color:{_MUTED};margin-top:4px;">Net units</div>
+          </td>
+          <td style="padding-right:28px;vertical-align:top;">
+            <div style="font-size:24px;font-weight:800;color:{_SLATE};line-height:1;">{u['won']}W&nbsp;/&nbsp;{u['lost']}L</div>
+            <div style="font-size:11px;color:{_MUTED};margin-top:4px;">{u['total']} settled picks</div>
+          </td>
+          {clv_td}
+        </tr>
+      </table>
+      <p style="margin:14px 0 0;">
         <a href="{SITE_URL}/my-picks" style="font-size:12px;color:{_GREEN};text-decoration:none;font-weight:600;">View full history →</a>
       </p>
     </div>"""
