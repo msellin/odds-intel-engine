@@ -120,6 +120,20 @@ _SENTRY_MONITORS: dict[str, dict] = {
         "max_runtime": 5,
         "grace_period": 2,
     },
+    "weekly_digest": {
+        "slug": "oddsIntel-weekly-digest",
+        "schedule": {"type": "crontab", "value": "0 8 * * 1"},
+        "timezone": "UTC",
+        "max_runtime": 10,
+        "grace_period": 5,
+    },
+    "watchlist_alerts": {
+        "slug": "oddsIntel-watchlist-alerts",
+        "schedule": {"type": "crontab", "value": "30 8 * * *"},
+        "timezone": "UTC",
+        "max_runtime": 10,
+        "grace_period": 5,
+    },
 }
 
 # ── Globals ────────────────────────────────────────────────────────────────
@@ -366,6 +380,16 @@ def job_email_digest():
     _run_job("email_digest", run_email_digest)
 
 
+def job_weekly_digest():
+    from workers.jobs.weekly_digest import run_weekly_digest
+    _run_job("weekly_digest", run_weekly_digest)
+
+
+def job_watchlist_alerts():
+    from workers.jobs.watchlist_alerts import run_watchlist_alerts
+    _run_job("watchlist_alerts", run_watchlist_alerts)
+
+
 def job_settlement():
     _run_job("settlement", settlement_pipeline)
 
@@ -519,6 +543,16 @@ def main():
     # ENG-4: Email digest — 07:30 UTC (after previews are generated)
     scheduler.add_job(job_email_digest, CronTrigger(hour=7, minute=30),
                       id="email_digest", name="Email Digest 07:30")
+
+    # ENG-10: Weekly performance email — Monday 08:00 UTC
+    scheduler.add_job(job_weekly_digest, CronTrigger(day_of_week="mon", hour=8, minute=0),
+                      id="weekly_digest", name="Weekly Digest Monday 08:00")
+
+    # ENG-8: Watchlist alerts — 08:30, 14:30, 20:30 UTC (after odds refreshes)
+    for hour in [8, 14, 20]:
+        scheduler.add_job(job_watchlist_alerts, CronTrigger(hour=hour, minute=30),
+                          id=f"watchlist_alerts_{hour:02d}",
+                          name=f"Watchlist Alerts {hour:02d}:30")
 
     # Settlement: 21:00 + 23:30 UTC (late-finishing European matches)
     scheduler.add_job(job_settlement, CronTrigger(hour=21, minute=0),
