@@ -5,6 +5,41 @@ Newest entries at the top. Internal refactors and infrastructure changes are not
 
 ---
 
+## 2026-05-05
+
+### Bankroll Analytics (Elite)
+- New `/bankroll` page for Elite subscribers: cumulative units chart, ROI, hit rate, avg CLV, max drawdown, model benchmark comparison, per-league breakdown, and last 20 picks with CLV
+- Accessible via "Bankroll Analytics" link in the profile dropdown (Elite/superadmin only)
+
+### Watchlist Alerts
+- Saved matches now trigger email alerts: kickoff reminder ≤2h before KO (all tiers), odds movement ≥5% in last 6h (Pro/Elite)
+- Notification settings now manageable from the Profile page — toggle switches for daily digest, weekly report, and watchlist alerts
+
+### Weekly Performance Digest
+- New Monday morning email (08:00 UTC): model W/L/units for prior week + top upcoming fixtures
+- Pro/Elite version includes your personal pick stats (hit rate, net units, avg CLV)
+- Opt out via the notification settings toggle on your Profile page
+
+### League Priority Overhaul
+- Matches are now sorted by a 6-tier league system: CL/WC/Euros at top, then Europa League group, then Big 5 domestic leagues, then strong secondary, then all others
+- Previously the model treated Champions League and Premier League as the same tier — now corrected
+
+### Model
+- Dynamic Dixon-Coles ρ per league tier: each tier now has its own fitted correlation coefficient (from historical scoreline frequencies) instead of a global constant. Improves low-scoring draw accuracy in lower-tier leagues.
+- New paper trading bot: `bot_proven_leagues` — focuses on the 5 leagues with the strongest cross-era backtest signals (Singapore, Scotland, Austria, Ireland, South Korea)
+
+### Predictions Pages
+- New `/predictions` index and `/predictions/[league]` pages — SEO-optimised match prediction pages for 8 featured leagues, with probability bars, model confidence badges, and FAQ schema
+- Linked from the main nav
+
+### Pick Cards
+- Share any of your picks as a branded image — hit "Share" on the My Picks page to get a pre-rendered OG card with match, selection, odds, and result
+
+### Match Intelligence
+- Model vs Market vs Users widget on every match detail page: three colored bars showing where the model, the implied odds, and community votes each sit — highlights tension when they disagree by >5pp
+
+---
+
 ## 2026-05-04
 
 ### Docs Restructure

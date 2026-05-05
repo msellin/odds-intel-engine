@@ -1,6 +1,6 @@
 # OddsIntel Web — All Pages Reference
 
-Last updated: 2026-05-04
+Last updated: 2026-05-05
 
 ---
 
@@ -64,7 +64,22 @@ Account management page.
 - Email/account info
 - Current subscription tier with upgrade buttons
 - Starred league management — add/remove leagues to prioritize in the match list
-- Tier feature summary
+- Email notification toggles: daily digest, weekly report, watchlist alerts
+
+#### `/bankroll` — Bankroll Analytics (Elite only)
+Personal betting performance dashboard. Non-Elite users see an upgrade CTA.
+
+- Summary stats: net units, ROI, hit rate, avg CLV, max drawdown, pending picks
+- Cumulative units over time chart (recharts AreaChart, green/red by final position)
+- Model benchmark: your hit rate and ROI vs the AI model's on the same picks
+- Per-league breakdown: W/L, net units, ROI per competition
+- Last 20 picks with date, match, odds, CLV, and result
+
+#### `/predictions` — Predictions Index
+SEO-optimised prediction hub. Lists 8 featured leagues with links to per-league prediction pages.
+
+#### `/predictions/[league]` — League Predictions
+Per-league prediction page (e.g. `/predictions/premier-league`). Shows upcoming fixtures with model probability bars, confidence badges (High/Medium/Low), and AI preview teasers. Includes FAQ schema markup for search indexing.
 
 #### `/welcome` — Welcome
 Post-signup onboarding screen. Shown once after account creation.
