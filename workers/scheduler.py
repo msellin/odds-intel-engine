@@ -254,9 +254,9 @@ def job_settle_ready():
 
 
 def job_backfill():
-    """Daily historical backfill — 02:00 UTC, skips once flag file exists."""
+    """Daily historical backfill — 02:00 UTC, auto-advances phase 1→2→3, skips once all done."""
     from scripts.backfill_historical import run_backfill
-    _run_job("hist_backfill", run_backfill, phase=1)
+    _run_job("hist_backfill", run_backfill)  # phase=None → auto-detect next phase
 
 
 def job_live_tracker():

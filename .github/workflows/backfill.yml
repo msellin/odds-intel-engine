@@ -23,7 +23,7 @@ on:
       max_requests:
         description: 'Max API calls for this run'
         required: false
-        default: '400'
+        default: '2000'
         type: string
       dry_run:
         description: 'Dry run (count only, no writes)'

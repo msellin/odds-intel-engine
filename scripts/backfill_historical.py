@@ -208,12 +208,36 @@ def update_progress(league_api_id: int, season: int, **kwargs):
 
 
 def check_all_complete() -> bool:
-    """Check if all backfill work is done."""
+    """Check if all 3 phases are fully done (every league/season row complete)."""
+    total_expected = (
+        len(PHASE_1_LEAGUES) * len(PHASE_SEASONS[1]) +
+        len(PHASE_2_LEAGUES) * len(PHASE_SEASONS[2]) +
+        len(PHASE_3_LEAGUES) * len(PHASE_SEASONS[3])
+    )
     rows = execute_query(
-        "SELECT COUNT(*) AS cnt FROM backfill_progress WHERE status != 'complete'",
+        "SELECT COUNT(*) AS cnt FROM backfill_progress WHERE status = 'complete'",
         [],
     )
-    return rows[0]["cnt"] == 0 if rows else True
+    complete_count = rows[0]["cnt"] if rows else 0
+    return complete_count >= total_expected
+
+
+def detect_next_phase() -> int | None:
+    """
+    Detect which phase should run next.
+    Returns 1, 2, or 3 if that phase has incomplete work, None if all done.
+    """
+    phase_leagues = {1: PHASE_1_LEAGUES, 2: PHASE_2_LEAGUES, 3: PHASE_3_LEAGUES}
+    for phase in [1, 2, 3]:
+        expected = len(phase_leagues[phase]) * len(PHASE_SEASONS[phase])
+        rows = execute_query(
+            "SELECT COUNT(*) AS cnt FROM backfill_progress WHERE phase = %s AND status = 'complete'",
+            [phase],
+        )
+        complete = rows[0]["cnt"] if rows else 0
+        if complete < expected:
+            return phase
+    return None  # all phases done
 
 
 # ─── Core backfill logic ────────────────────────────────────────────────────
@@ -461,14 +485,30 @@ def backfill_league_season(
 
 # ─── Main ───────────────────────────────────────────────────────────────────
 
-def run_backfill(phase: int = 1, batch_size: int = 500, league_cap: int = 200,
+def run_backfill(phase: int | None = None, batch_size: int = 500, league_cap: int = 200,
                  max_requests: int = 800, skip_existing: bool = True, dry_run: bool = False):
-    """Run historical backfill. Callable by scheduler or CLI."""
+    """
+    Run historical backfill. Callable by scheduler or CLI.
+
+    phase=None (Railway default): auto-detects the next phase that needs work,
+    advancing 1→2→3 automatically. Explicit phase= overrides (CLI / GH Actions use).
+    """
     # Skip if already complete
     flag_path = Path(__file__).parent.parent / "backfill_complete.flag"
     if flag_path.exists():
         console.print("[green]✓ Backfill already complete (flag file exists) — skipping[/green]")
         return
+
+    # Auto-detect phase when called from scheduler (phase=None)
+    if phase is None:
+        phase = detect_next_phase()
+        if phase is None:
+            console.print("[green]✓ All backfill phases complete![/green]")
+            if not dry_run:
+                flag_path.write_text(
+                    f"Backfill completed at {datetime.now(timezone.utc).isoformat()}\n"
+                )
+            return
 
     console.print(f"\n[bold green]═══ Historical Backfill — Phase {phase} ═══[/bold green]")
     console.print(f"Batch size: {batch_size} | League cap: {league_cap} | "
@@ -486,18 +526,6 @@ def run_backfill(phase: int = 1, batch_size: int = 500, league_cap: int = 200,
     run_id = log_pipeline_start("hist_backfill", date.today().isoformat())
 
     try:
-        # Check if all backfill is already done
-        if check_all_complete():
-            row_count = execute_query("SELECT COUNT(*) AS cnt FROM backfill_progress", [])
-            if row_count and row_count[0]["cnt"] > 0:
-                console.print("[green]✓ All backfill phases complete![/green]")
-                log_pipeline_complete(run_id, metadata={"status": "all_complete"})
-                # Create flag file so future runs skip immediately
-                flag_path.write_text(
-                    f"Backfill completed at {datetime.now(timezone.utc).isoformat()}\n"
-                )
-                return
-
         # Select leagues for this phase
         phase_leagues = {1: PHASE_1_LEAGUES, 2: PHASE_2_LEAGUES, 3: PHASE_3_LEAGUES}
         leagues = phase_leagues[phase]
