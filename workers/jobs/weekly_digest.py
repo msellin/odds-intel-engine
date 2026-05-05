@@ -319,6 +319,11 @@ def build_weekly_email(
         u_color = _GREEN if u["net_units"] >= 0 else "#ef4444"
         u_units = _units_fmt(u["net_units"])
         u_clv   = f"+{u['avg_clv']}%" if u.get("avg_clv") and u["avg_clv"] > 0 else (f"{u['avg_clv']}%" if u.get("avg_clv") is not None else "—")
+        clv_color = _GREEN if u.get("avg_clv") and u["avg_clv"] > 0 else _MUTED
+        if u.get("avg_clv") is not None:
+            clv_block = f'<div><div style="font-size:22px;font-weight:800;color:{clv_color};">{u_clv}</div><div style="font-size:11px;color:{_MUTED};margin-top:2px;">Avg closing line value</div></div>'
+        else:
+            clv_block = ""
         user_block = f"""
     <div style="background:{_WHITE};border:1px solid {_BORDER};border-left:3px solid #8b5cf6;border-radius:8px;padding:18px 20px;margin-bottom:16px;">
       <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:{_MUTED};text-transform:uppercase;margin-bottom:10px;">Your Picks Last Week</div>
@@ -331,7 +336,7 @@ def build_weekly_email(
           <div style="font-size:22px;font-weight:800;color:{_SLATE};">{u['won']}W / {u['lost']}L</div>
           <div style="font-size:11px;color:{_MUTED};margin-top:2px;">{u['total']} settled picks</div>
         </div>
-        {"" if not u.get("avg_clv") else f'<div><div style="font-size:22px;font-weight:800;color:{_GREEN if u.get(\"avg_clv\", 0) > 0 else _MUTED};">{u_clv}</div><div style="font-size:11px;color:{_MUTED};margin-top:2px;">Avg closing line value</div></div>'}
+        {clv_block}
       </div>
       <p style="margin:12px 0 0;">
         <a href="{SITE_URL}/my-picks" style="font-size:12px;color:{_GREEN};text-decoration:none;font-weight:600;">View full history →</a>
