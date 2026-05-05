@@ -88,6 +88,7 @@ Access levels for anonymous visitors, free signed-in users, and paid subscribers
 | Model probability + edge % per match | — | — | — | Y |
 | CLV tracking per bet (Pro on track record, Elite on match detail) | — | — | Y | Y |
 | Full bot ROI analytics + strategy breakdown | — | — | — | Y |
+| Bankroll analytics dashboard (/bankroll) — cumulative chart, drawdown, ROI, CLV, model benchmark, per-league | — | — | — | Y |
 
 ### Engagement & Social Proof (ENG-* tasks, docs/ENGAGEMENT_PLAYBOOK.md)
 

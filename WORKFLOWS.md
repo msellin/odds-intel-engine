@@ -1,7 +1,7 @@
 # OddsIntel — Workflows & Pipeline Architecture
 
 > Single source of truth for all scheduled jobs, their order, and manual run instructions.
-> Last updated: 2026-05-05 — SCHED-AUDIT: 6 betting runs/day (was 4), closing odds for all KO windows, enrichment moved to 10:30, news aligned to betting refreshes, match previews shifted to 07:15, Platt+blend refit now Wednesday+Sunday.
+> Last updated: 2026-05-05 — SCHED-AUDIT done. Added ENG-10 weekly digest (Mon 08:00) and ENG-8 watchlist alerts (08:30/14:30/20:00).
 
 ### ✅ Railway Migration Complete (2026-04-30)
 
@@ -27,7 +27,8 @@
 07:15  ⑩ Match Previews  run_match_previews()      Top 10 matches → Gemini 200-word previews (ENG-3)
 07:30  ⑪ Email Digest    run_email_digest()        Resend — tier-gated digest to subscribed users (ENG-4)
 08:00  ③ Odds            run_odds()                Second morning refresh
-08:30  Watchlist Alerts  run_watchlist_alerts()    After 08:00 odds
+08:00  ⑫ Weekly Digest   run_weekly_digest()       Monday only — model week review + upcoming matches (ENG-10)
+08:30  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts (ENG-8)
 09:00  ⑦ News Checker    run_news_checker()        Injury/lineup/news signals (Gemini)
 09:30  ⑨ Betting Refresh betting_refresh()         Asian KOs + acts on 08:00 odds + 09:00 news
 10:00  ③ Odds            run_odds()
@@ -37,7 +38,7 @@
 12:30  ⑦ News Checker    run_news_checker()
 13:30  ③ Odds            run_odds(mark_closing)    Pre-KO closing odds (European afternoon)
 14:00  ③ Odds            run_odds()
-14:30  Watchlist Alerts  run_watchlist_alerts()
+14:30  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts (ENG-8)
 14:30  ⑦ News Checker    run_news_checker()        Feeds 15:00 betting refresh
 15:00  ⑨ Betting Refresh betting_refresh()         European afternoon KOs
 16:00  ② Enrichment      run_enrichment()          Injuries + standings refresh
@@ -47,7 +48,7 @@
 18:00  ③ Odds            run_odds()
 18:30  ⑦ News Checker    run_news_checker()        Feeds 19:00 + 20:30 betting (moved from 19:30)
 19:00  ⑨ Betting Refresh betting_refresh()         European early evening KOs
-20:00  Watchlist Alerts  run_watchlist_alerts()
+20:00  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts (ENG-8)
 20:00  ③ Odds            run_odds(mark_closing)    Pre-KO closing odds (European prime-time 19-21 KO)
 20:30  ⑨ Betting Refresh betting_refresh()         European prime-time KOs — uses 20:00 closing odds
          ⑧a Live settle   settle_finished_matches()  Per-match: triggered by LivePoller on FT detection (instant)

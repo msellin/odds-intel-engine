@@ -72,7 +72,7 @@ Annual: Pro €39.99/yr (€3.33/mo) · Elite €119.99/yr (€9.99/mo)
 - Pro→Elite conversion hook in Intelligence Summary (model conclusion lock)
 - CLV tracking (beat the closing line analysis) — per match + personal aggregate
 - Tips from top-performing bot once ROI validated
-- *Planned:* Personal bankroll analytics — your ROI vs model benchmark, per-league performance, drawdown (ELITE-BANKROLL)
+- Personal bankroll analytics — `/bankroll` page: cumulative units chart, ROI, hit rate, avg CLV, max drawdown, model benchmark, per-league breakdown, recent picks (ELITE-BANKROLL ✅ live)
 - *Planned:* League performance filter — restrict value bets to leagues where model has historically outperformed (ELITE-LEAGUE-FILTER)
 - *Planned:* Custom multi-signal alert stacking — alert only when confidence + edge + line movement all align (ELITE-ALERT-STACK)
 
@@ -186,7 +186,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 **Phase 1 (launch sprint):** Daily email digest (ENG-4), AI match previews (ENG-3), "X analyzing" counter (ENG-1), community vote splits (ENG-2), betting glossary (ENG-5 ✅), bot consensus (ENG-6), methodology page (ENG-7).
 
-**Phase 2 (retention):** Watchlist alerts (ENG-8), personal bet tracker + Model vs You (ENG-9 ✅), weekly email (ENG-10), "What changed today" widget (ENG-11 ✅), Model vs Market vs Users triangulation (ENG-12 ✅), shareable pick cards (ENG-13 ✅), SEO prediction pages (ENG-14 ✅).
+**Phase 2 (retention):** Watchlist alerts (ENG-8 ✅), personal bet tracker + Model vs You (ENG-9 ✅), weekly email (ENG-10 ✅), "What changed today" widget (ENG-11 ✅), Model vs Market vs Users triangulation (ENG-12 ✅), shareable pick cards (ENG-13 ✅), SEO prediction pages (ENG-14 ✅).
 
 **Phase 3 (differentiation):** Market inefficiency index (ENG-15), expanded AI chat per match (ENG-16), season-end review (ENG-17).
 
