@@ -202,6 +202,26 @@
 
 ---
 
+## Infrastructure & Platform Optimization
+
+> Identified 2026-05-05 via infra audit — features we're paying for or have for free but not using. Sorted by priority: 🔴 Critical (do ASAP, launch is live) → 🟡 High (this week) → 🟢 Medium.
+
+| ID | Task | Effort | ☑ | Priority | Notes |
+|----|------|--------|----|----------|-------|
+| INFRA-1 | Stripe free trial (7-day Pro) | 15 min | ⬜ | 🔴 ASAP | Reddit launch already live. Removes "pay before seeing Pro" friction. Stripe dashboard → Products → add trial. Biggest conversion lever available. |
+| INFRA-2 | Stripe promo code for Reddit launch | 5 min | ⬜ | 🔴 ASAP | Create `REDDIT10` or `FOUNDER25` code in Stripe dashboard. Tracks Reddit acquisition, creates urgency in posts already live. |
+| INFRA-3 | Supabase Custom SMTP + Auth email templates | 30 min | ⬜ | 🔴 ASAP | Auth emails currently sent from supabase.co domain. Configure in Supabase → Settings → Auth → SMTP → point at Resend (already have account + oddsintel.app domain verified). Update HTML templates with OddsIntel branding at same time. |
+| INFRA-4 | PostHog conversion funnel setup | 1h | ⬜ | 🟡 This week | Set up Signup → Email confirmed → Match viewed → Pro upgrade funnel in PostHog dashboard (no code). Launch is live — need this from day 1 to see where users drop off. |
+| INFRA-5 | Vercel Speed Insights | 15 min | ⬜ | 🟡 This week | `npm install @vercel/speed-insights` + add `<SpeedInsights />` to layout. Free on Hobby. Shows real user LCP/FID/CLS — currently have zero visibility on whether match detail is slow for real users. |
+| INFRA-6 | Sentry Crons monitoring for Railway jobs | 1h | ⬜ | 🟡 This week | Sentry Crons (free) — add heartbeat pings from each Railway job. Currently pipeline failures are silent. Add `sentry_sdk.monitor(monitor_slug=...)` wrapper around each `run_*()` in scheduler.py. |
+| INFRA-7 | PostHog feature flags for Tips launch | 1h | ⬜ | 🟡 Before M3 | Create `tips_enabled` flag in PostHog. Gate Tips section on this flag instead of hardcoded condition. When bot_aggressive validates → flip flag, no deploy needed. |
+| INFRA-8 | Resend webhook → email open/click tracking | 2h | ⬜ | 🟡 This week | Configure Resend webhook endpoint in Next.js API route for `email.opened` + `email.clicked` events. Store `last_email_opened_at` in profiles table. Enables churn detection (14-day silence = at-risk). Currently sending digest blind. |
+| INFRA-9 | Vercel Edge Config for feature flags | 2h | ⬜ | 🟢 Week of May 12 | Replace any DB queries used for global on/off flags with Vercel Edge Config (~1ms reads vs ~20ms DB). Good for: tips_enabled, maintenance_mode, featured_match_id. |
+| INFRA-10 | Supabase DB Webhooks → watchlist alerts backend | 1 day | ⬜ | 🟢 When building ENG-8 | Instead of building a polling job for ENG-8 (watchlist alerts), use Supabase DB Webhooks: INSERT on match_signals with high injury_impact → fire Next.js API route → send Resend email. Eliminates most of ENG-8 backend complexity. |
+| INFRA-11 | Supabase Realtime → replace live polling | 2 days | ⬜ | 🟢 Week of May 19 | Live score auto-refresh + ENG-1 viewing counter currently use HTTP polling. Replace with Supabase Realtime WebSocket subscriptions (included in Pro). Lower DB load, truly real-time UX. |
+
+---
+
 ## Tier 4 — 2-3 Months (needs data accumulation)
 
 | ID | Task | Effort | ☑ | Ready? | Notes |

@@ -12,8 +12,12 @@
 | 1 | Apr 30 | Warm-up comments (r/SoccerBetting + r/soccer) | ✅ Done — 4+ comments: Forest/Villa, Atletico/Arsenal, Braga match threads, SoccerBetting Daily Picks |
 | 2 | May 1–3 | Additional warm-up comments | ✅ Done — further warm-up comments on r/SoccerBetting + r/soccer visible in profile |
 | 3 | May 4 | Launch post → r/buildinpublic | ✅ Done — "Building a football analytics platform in public — week 1 update. What am I missing?" — 60 views, 1 upvote |
-| 4 | May 5 | r/SoccerBetting launch post + r/soccer Daily Discussion | ⬜ TODAY — priority |
-| 5 | May 6+ | r/FootballBetting, r/SoccerPredictions, r/dataisbeautiful [OC] | ⬜ Upcoming |
+| 4 | May 5 | OddsIntel posted to 2 subreddits (confirmed by Margus) | ✅ Done — site link posted live |
+| 5 | May 6+ | r/FootballBetting, r/SoccerPredictions, r/dataisbeautiful [OC] — remaining subs | ⬜ Upcoming |
+
+### Day 4 detail (May 5 — DONE)
+
+OddsIntel posted to 2 subreddits (update with which subs + any engagement data when known).
 
 ### Day 3 detail (May 4 — DONE)
 
