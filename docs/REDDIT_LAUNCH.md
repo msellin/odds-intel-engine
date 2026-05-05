@@ -19,6 +19,8 @@
 
 OddsIntel posted to 2 subreddits (update with which subs + any engagement data when known).
 
+Promo code `REDDIT` (1 month free) added as reply to all 3 active posts (r/buildinpublic + 2 launch subs). Copy used: "Quick add — a few people DMed asking about pricing. If you want to try Pro, use code **REDDIT** at checkout for your first month free. No pressure, the free tier has most of what you need anyway."
+
 ### Day 3 detail (May 4 — DONE)
 
 r/buildinpublic — "Building a football analytics platform in public — week 1 update. What am I missing?"

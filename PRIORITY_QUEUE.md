@@ -208,8 +208,8 @@
 
 | ID | Task | Effort | ☑ | Priority | Notes |
 |----|------|--------|----|----------|-------|
-| INFRA-1 | Stripe free trial (7-day Pro) | 15 min | ⬜ | 🔴 ASAP | Reddit launch already live. Removes "pay before seeing Pro" friction. Stripe dashboard → Products → add trial. Biggest conversion lever available. |
-| INFRA-2 | Stripe promo code for Reddit launch | 5 min | ⬜ | 🔴 ASAP | Create `REDDIT10` or `FOUNDER25` code in Stripe dashboard. Tracks Reddit acquisition, creates urgency in posts already live. |
+| INFRA-1 | Stripe free trial (7-day Pro) | 15 min | ✅ Done 2026-05-05 | 🔴 ASAP | `subscription_data.trial_period_days=7` added to checkout session. `allow_promotion_codes=true` added. Webhook already handled `trialing` status. Deployed to Vercel. |
+| INFRA-2 | Stripe promo code for Reddit launch | 5 min | ✅ Done 2026-05-05 | 🔴 ASAP | Code `REDDIT` — 100% off first month (duration=once). Created live via Stripe API. Added as reply to all 3 active Reddit posts (r/buildinpublic + 2 subs). |
 | INFRA-3 | Supabase Custom SMTP + Auth email templates | 30 min | ⬜ | 🔴 ASAP | Auth emails currently sent from supabase.co domain. Configure in Supabase → Settings → Auth → SMTP → point at Resend (already have account + oddsintel.app domain verified). Update HTML templates with OddsIntel branding at same time. |
 | INFRA-4 | PostHog conversion funnel setup | 1h | ⬜ | 🟡 This week | Set up Signup → Email confirmed → Match viewed → Pro upgrade funnel in PostHog dashboard (no code). Launch is live — need this from day 1 to see where users drop off. |
 | INFRA-5 | Vercel Speed Insights | 15 min | ⬜ | 🟡 This week | `npm install @vercel/speed-insights` + add `<SpeedInsights />` to layout. Free on Hobby. Shows real user LCP/FID/CLS — currently have zero visibility on whether match detail is slow for real users. |
