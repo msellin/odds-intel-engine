@@ -9,10 +9,17 @@
 
 | Day | Date | Target | Status |
 |-----|------|--------|--------|
-| 1 | Apr 30 | Warm-up comments (r/SoccerBetting + r/soccer) | ✅ Done — 4 comments across 2 subs |
-| 2 | May 1–3 | Warm-up comments + r/SoccerBetting + r/FootballBetting | ⬜ Unverified — may have happened, not confirmed |
-| 3 | May 4 | Launch post → r/buildinpublic | ✅ Done — first branded OddsIntel post |
-| 4 | May 5 | r/SoccerBetting (if not done), r/soccer Daily Discussion, r/dataisbeautiful [OC] | ⬜ Next |
+| 1 | Apr 30 | Warm-up comments (r/SoccerBetting + r/soccer) | ✅ Done — 4+ comments: Forest/Villa, Atletico/Arsenal, Braga match threads, SoccerBetting Daily Picks |
+| 2 | May 1–3 | Additional warm-up comments | ✅ Done — further warm-up comments on r/SoccerBetting + r/soccer visible in profile |
+| 3 | May 4 | Launch post → r/buildinpublic | ✅ Done — "Building a football analytics platform in public — week 1 update. What am I missing?" — 60 views, 1 upvote |
+| 4 | May 5 | r/SoccerBetting launch post + r/soccer Daily Discussion | ⬜ TODAY — priority |
+| 5 | May 6+ | r/FootballBetting, r/SoccerPredictions, r/dataisbeautiful [OC] | ⬜ Upcoming |
+
+### Day 3 detail (May 4 — DONE)
+
+r/buildinpublic — "Building a football analytics platform in public — week 1 update. What am I missing?"
+- 60 views, 1 upvote as of May 5 morning
+- Post title was adapted from Post 6 draft — shorter, curiosity-hook style
 
 ### Day 1 detail (Apr 30 — DONE)
 
