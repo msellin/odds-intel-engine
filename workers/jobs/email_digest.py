@@ -152,18 +152,19 @@ def log_send(user_id: str, digest_date: str, tier: str, email_to: str,
 
 # ── Email HTML builders ────────────────────────────────────────────────────
 
-# Brand colours
-_BLUE       = "#2563eb"
-_BLUE_DARK  = "#1d4ed8"
-_NAVY       = "#0f172a"
-_SLATE      = "#1e293b"
-_MUTED      = "#64748b"
-_BORDER     = "#e2e8f0"
-_BG         = "#f1f5f9"
+# Brand colours — matches oddsintel.app (dark theme, green primary)
+_GREEN      = "#22c55e"   # text-green-500 — "INTEL" in logo, primary CTA
+_GREEN_DARK = "#16a34a"   # green-600 — hover/dark variant
+_GREEN_BG   = "#f0fdf4"   # green-50 — light tint for callouts
+_GREEN_BD   = "#bbf7d0"   # green-200 — callout border
+_SITE_BG    = "#0a0a14"   # site background — header
+_NAVY       = "#0f172a"   # fallback dark
+_SLATE      = "#1e293b"   # body text
+_MUTED      = "#64748b"   # secondary text
+_BORDER     = "#e2e8f0"   # card borders
+_BG         = "#f1f5f9"   # email outer background
 _WHITE      = "#ffffff"
-_GREEN      = "#16a34a"
-_GREEN_BG   = "#f0fdf4"
-_GREEN_BD   = "#bbf7d0"
+_EDGE_GREEN = "#22c55e"   # positive edge colour
 
 
 def _kickoff_fmt(raw: str) -> str:
@@ -183,15 +184,15 @@ def _preview_card_html(p: dict, full_text: bool = False) -> str:
     text = p["preview_text"] if full_text else p["preview_short"]
     match_url = f"{SITE_URL}/matches/{p['match_id']}"
     return f"""
-    <div style="background:{_WHITE};border:1px solid {_BORDER};border-left:3px solid {_BLUE};border-radius:8px;padding:18px 20px;margin-bottom:14px;">
+    <div style="background:{_WHITE};border:1px solid {_BORDER};border-left:3px solid {_GREEN};border-radius:8px;padding:18px 20px;margin-bottom:14px;">
       <div style="margin-bottom:8px;">
-        <span style="display:inline-block;background:#eff6ff;color:{_BLUE};font-size:11px;font-weight:600;letter-spacing:0.04em;padding:2px 8px;border-radius:4px;text-transform:uppercase;">{league}</span>
+        <span style="display:inline-block;background:#f0fdf4;color:{_GREEN};font-size:11px;font-weight:600;letter-spacing:0.04em;padding:2px 8px;border-radius:4px;text-transform:uppercase;">{league}</span>
         <span style="font-size:12px;color:{_MUTED};margin-left:8px;">{kickoff}</span>
       </div>
       <div style="font-size:17px;font-weight:700;color:{_SLATE};margin-bottom:10px;">{home} <span style="color:{_MUTED};font-weight:400;">vs</span> {away}</div>
       <div style="font-size:14px;color:#334155;line-height:1.7;">{text}</div>
       <div style="margin-top:14px;">
-        <a href="{match_url}" style="display:inline-block;background:{_BLUE};color:{_WHITE};font-size:12px;font-weight:600;padding:7px 14px;border-radius:6px;text-decoration:none;">
+        <a href="{match_url}" style="display:inline-block;background:{_GREEN};color:{_WHITE};font-size:12px;font-weight:600;padding:7px 14px;border-radius:6px;text-decoration:none;">
           View full analysis →
         </a>
       </div>
@@ -265,7 +266,7 @@ def build_email_html(
             <tbody>{rows_html}</tbody>
           </table>
           <p style="margin-top:12px;margin-bottom:0;">
-            <a href="{value_bets_url}" style="font-size:13px;color:{_BLUE};text-decoration:none;font-weight:600;">View all value bets →</a>
+            <a href="{value_bets_url}" style="font-size:13px;color:{_GREEN};text-decoration:none;font-weight:600;">View all value bets →</a>
           </p>
         </div>"""
     elif is_pro and bet_count > 0:
@@ -277,10 +278,10 @@ def build_email_html(
         </div>"""
     elif not is_pro:
         value_bets_section = f"""
-        <div style="margin-top:20px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:16px 20px;">
-          <div style="font-size:15px;font-weight:700;color:{_BLUE_DARK};">Unlock value bets with Pro</div>
-          <p style="color:#1e40af;font-size:13px;margin:4px 0 12px;">Our model found {bet_count} value bet{'s' if bet_count != 1 else ''} today. Pro members see edge %, confidence scores, and full analysis.</p>
-          <a href="{SITE_URL}/pricing" style="display:inline-block;background:{_BLUE};color:{_WHITE};font-size:12px;font-weight:600;padding:7px 14px;border-radius:6px;text-decoration:none;">See plans →</a>
+        <div style="margin-top:20px;background:#f0fdf4;border:1px solid {_GREEN_BD};border-radius:8px;padding:16px 20px;">
+          <div style="font-size:15px;font-weight:700;color:{_GREEN_DARK};">Unlock value bets with Pro</div>
+          <p style="color:{_GREEN_DARK};font-size:13px;margin:4px 0 12px;">Our model found {bet_count} value bet{'s' if bet_count != 1 else ''} today. Pro members see edge %, confidence scores, and full analysis.</p>
+          <a href="{SITE_URL}/pricing" style="display:inline-block;background:{_GREEN};color:{_WHITE};font-size:12px;font-weight:600;padding:7px 14px;border-radius:6px;text-decoration:none;">See plans →</a>
         </div>"""
 
     # "View all matches" CTA for free users
@@ -288,7 +289,7 @@ def build_email_html(
     if not is_pro:
         all_matches_cta = f"""
         <p style="margin:16px 0 0;font-size:13px;color:{_MUTED};">
-          <a href="{SITE_URL}/matches" style="color:{_BLUE};text-decoration:none;font-weight:600;">View all today's matches →</a>
+          <a href="{SITE_URL}/matches" style="color:{_GREEN};text-decoration:none;font-weight:600;">View all today's matches →</a>
         </p>"""
 
     html = f"""<!DOCTYPE html>
@@ -307,13 +308,13 @@ def build_email_html(
       <!-- Card -->
       <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
 
-        <!-- Logo header — dark navy, matches site navbar -->
+        <!-- Logo header — matches site: dark bg, ODDS white, INTEL green -->
         <tr>
-          <td style="background:{_NAVY};border-radius:10px 10px 0 0;padding:22px 32px;text-align:center;">
+          <td style="background:{_SITE_BG};border-radius:10px 10px 0 0;padding:24px 32px;text-align:center;">
             <a href="{SITE_URL}" style="text-decoration:none;display:inline-block;">
-              <span style="font-size:28px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">Odds</span><span style="font-size:28px;font-weight:800;color:{_BLUE};letter-spacing:-0.5px;">Intel</span>
+              <span style="font-size:28px;font-weight:800;color:#ffffff;letter-spacing:0.04em;">ODDS</span><span style="font-size:28px;font-weight:800;color:{_GREEN};letter-spacing:0.04em;">INTEL</span>
             </a>
-            <div style="font-size:12px;color:#94a3b8;margin-top:5px;letter-spacing:0.04em;">{display_date}</div>
+            <div style="font-size:12px;color:#64748b;margin-top:6px;letter-spacing:0.04em;">{display_date}</div>
           </td>
         </tr>
 
@@ -336,7 +337,7 @@ def build_email_html(
           <td style="background:#f8fafc;border-radius:0 0 10px 10px;border:1px solid {_BORDER};border-top:none;padding:18px 32px;text-align:center;">
             <p style="margin:0 0 6px;font-size:12px;color:{_MUTED};">
               You're receiving this because you have daily digests enabled in your
-              <a href="{SITE_URL}" style="color:{_BLUE};text-decoration:none;font-weight:600;">OddsIntel</a> account.
+              <a href="{SITE_URL}" style="color:{_GREEN};text-decoration:none;font-weight:600;">OddsIntel</a> account.
             </p>
             <p style="margin:0 0 10px;font-size:12px;">
               <a href="{unsubscribe_url}" style="color:{_MUTED};text-decoration:underline;">Manage preferences</a>
