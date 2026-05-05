@@ -583,17 +583,21 @@ def main():
     scheduler.add_job(job_weekly_digest, CronTrigger(day_of_week="mon", hour=8, minute=0),
                       id="weekly_digest", name="Weekly Digest Monday 08:00")
 
-    # ENG-8: Watchlist alerts — 08:30, 14:30, 20:30 UTC (after odds refreshes)
-    for hour in [8, 14, 20]:
-        scheduler.add_job(job_watchlist_alerts, CronTrigger(hour=hour, minute=30),
+    # ENG-8: Watchlist alerts — 08:30, 14:30, 20:35 UTC
+    # 20:35 staggered 5 min after 20:30 betting refresh (N9 fix — avoids simultaneous heavy jobs)
+    for hour, minute in [(8, 30), (14, 30), (20, 35)]:
+        scheduler.add_job(job_watchlist_alerts, CronTrigger(hour=hour, minute=minute),
                           id=f"watchlist_alerts_{hour:02d}",
-                          name=f"Watchlist Alerts {hour:02d}:30")
+                          name=f"Watchlist Alerts {hour:02d}:{minute:02d}")
 
-    # Settlement: 21:00 + 23:30 UTC (late-finishing European matches)
+    # Settlement: 21:00 + 23:30 + 01:00 UTC
+    # 01:00 added (N4 fix) — catches 21:30+ KO matches finishing with extra time after 23:30
     scheduler.add_job(job_settlement, CronTrigger(hour=21, minute=0),
                       id="settlement", name="Settlement 21:00")
     scheduler.add_job(job_settlement, CronTrigger(hour=23, minute=30),
                       id="settlement_late", name="Settlement 23:30")
+    scheduler.add_job(job_settlement, CronTrigger(hour=1, minute=0),
+                      id="settlement_overnight", name="Settlement 01:00")
 
     # Settle-ready sweep: every 15 min, all day.
     # Catches matches the live poller missed (outside 10-23 UTC window, or if it errored).

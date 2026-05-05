@@ -40,7 +40,8 @@ SITE_URL = os.getenv("SITE_URL", "https://oddsintel.app")
 
 KICKOFF_WINDOW_HOURS = 2      # alert when match is ≤2h away
 ODDS_MOVE_THRESHOLD = 0.05    # 5% relative movement triggers alert
-ODDS_LOOKBACK_HOURS = 6       # compare to odds from 6h ago
+ODDS_LOOKBACK_HOURS = 14      # 14h covers the overnight gap (20:30 prev → 08:30 next)
+                              # Dedup via watchlist_alert_log prevents repeat alerts within a day
 
 
 # ── Data fetchers ──────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 # OddsIntel — Workflows & Pipeline Architecture
 
 > Single source of truth for all scheduled jobs, their order, and manual run instructions.
-> Last updated: 2026-05-05 — SCHED-AUDIT: 6 betting runs/day, closing odds all KO windows, enrichment 10:30, news aligned. N1/N2/N3: LivePoller now 24/7 (30s live / 120s idle), betting pipeline guards against live matches, fixture status refresh 4×/day (09:15, 10:45, 14:45, 18:45) catches postponements/cancellations.
+> Last updated: 2026-05-05 — N4/N6/N9: settlement 01:00 added, watchlist lookback 6h→14h, watchlist 20:30→20:35 (staggered from betting). N1/N2/N3: LivePoller 24/7, betting live-match guard, fixture refresh 4×/day. SCHED-AUDIT: 6 betting runs/day, closing odds all KO windows.
 
 ### ✅ Railway Migration Complete (2026-04-30)
 
@@ -52,15 +52,16 @@
 18:30  ⑦ News Checker    run_news_checker()        Feeds 19:00 + 20:30 betting (moved from 19:30)
 18:45  ① Fixtures        run_fixtures()            Status refresh — before European evening betting
 19:00  ⑨ Betting Refresh betting_refresh()         European early evening KOs
-20:00  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts (ENG-8)
 20:00  ③ Odds            run_odds(mark_closing)    Pre-KO closing odds (European prime-time 19-21 KO)
 20:30  ⑨ Betting Refresh betting_refresh()         European prime-time KOs — uses 20:00 closing odds
+20:35  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts — after betting (ENG-8)
          ⑧a Live settle   settle_finished_matches()  Per-match: triggered by LivePoller on FT (instant, 24/7)
 21:00  ⑧b Settlement      settlement_pipeline()     Bulk: settle bets, post-match stats, ELO, CLV, prune
                                                     + Platt recalibration + blend refit (Wed + Sun)
                                                     + DC rho per tier (Sun only)
 22:00  ③ Odds            run_odds()                Late matches (Asian/American)
 23:30  ⑧c Settlement      settlement_pipeline()     Late catch-up: European evening matches finishing after 21:00
+01:00  ⑧d Settlement      settlement_pipeline()     Overnight catch-up: 21:30+ KOs finishing after extra time
 24/7   ⑥ LivePoller      live_poller.py            30s when live (scores+odds+stats), 120s idle — no time gate
 ```
 
