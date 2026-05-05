@@ -28,6 +28,39 @@ load_dotenv()
 
 console = Console()
 
+# ── Sentry ─────────────────────────────────────────────────────────────────
+
+def _init_sentry():
+    dsn = os.getenv("SENTRY_DSN")
+    if not dsn:
+        return
+    try:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=dsn,
+            environment=os.getenv("RAILWAY_ENVIRONMENT", "production"),
+            traces_sample_rate=0.0,   # no performance tracing — cron monitoring only
+        )
+        console.print("[dim]Sentry initialised (cron monitoring active)[/dim]")
+    except Exception as e:
+        console.print(f"[yellow]Sentry init failed (non-fatal): {e}[/yellow]")
+
+
+# Cron monitor slugs — must match what you register in Sentry dashboard
+# Each key is the job name passed to _run_job(); value is the Sentry slug.
+_SENTRY_MONITOR_SLUGS: dict[str, str] = {
+    "morning_pipeline":    "oddsIntel-morning-pipeline",
+    "settlement":          "oddsIntel-settlement",
+    "email_digest":        "oddsIntel-email-digest",
+    "match_previews":      "oddsIntel-match-previews",
+    "news_checker":        "oddsIntel-news-checker",
+    "hist_backfill":       "oddsIntel-hist-backfill",
+    "betting_refresh":     "oddsIntel-betting-refresh",
+    "odds_refresh":        "oddsIntel-odds-refresh",
+    "enrichment_refresh":  "oddsIntel-enrichment-refresh",
+    "settle_ready":        "oddsIntel-settle-ready",
+}
+
 # ── Globals ────────────────────────────────────────────────────────────────
 _shutdown_requested = False
 _start_time = time.time()
@@ -47,13 +80,24 @@ def _job_prefix() -> str:
 
 
 def _run_job(name: str, fn, *args, **kwargs):
-    """Wrapper that runs a job function with error isolation and logging."""
+    """Wrapper that runs a job function with error isolation, logging, and Sentry cron monitoring."""
     import traceback
     full_name = f"{_job_prefix()}{name}"
     started = datetime.now(timezone.utc)
     console.print(f"\n[bold cyan]{'─' * 60}[/bold cyan]")
     console.print(f"[bold cyan]Job: {full_name} @ {started.strftime('%H:%M:%S UTC')}[/bold cyan]")
     console.print(f"[bold cyan]{'─' * 60}[/bold cyan]\n")
+
+    # Sentry cron monitor — check-in if slug registered for this job
+    slug = _SENTRY_MONITOR_SLUGS.get(name)
+    sentry_monitor = None
+    try:
+        if slug:
+            import sentry_sdk
+            sentry_monitor = sentry_sdk.monitor(monitor_slug=slug)
+            sentry_monitor.__enter__()
+    except Exception:
+        sentry_monitor = None  # Sentry unavailable — continue anyway
 
     error_msg = None
     try:
@@ -77,6 +121,13 @@ def _run_job(name: str, fn, *args, **kwargs):
         })
         if len(_recent_errors) > _MAX_RECENT_ERRORS:
             _recent_errors.pop(0)
+    finally:
+        if sentry_monitor is not None:
+            try:
+                exc_info = (None, None, None) if status == "completed" else sys.exc_info()
+                sentry_monitor.__exit__(*exc_info)
+            except Exception:
+                pass
 
     elapsed = (datetime.now(timezone.utc) - started).total_seconds()
 
@@ -325,6 +376,8 @@ def main():
 
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
+
+    _init_sentry()
 
     console.print("[bold green]═══════════════════════════════════════════════[/bold green]")
     console.print("[bold green]   OddsIntel Railway Scheduler starting...    [/bold green]")
