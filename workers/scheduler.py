@@ -46,19 +46,80 @@ def _init_sentry():
         console.print(f"[yellow]Sentry init failed (non-fatal): {e}[/yellow]")
 
 
-# Cron monitor slugs — must match what you register in Sentry dashboard
-# Each key is the job name passed to _run_job(); value is the Sentry slug.
-_SENTRY_MONITOR_SLUGS: dict[str, str] = {
-    "morning_pipeline":    "oddsIntel-morning-pipeline",
-    "settlement":          "oddsIntel-settlement",
-    "email_digest":        "oddsIntel-email-digest",
-    "match_previews":      "oddsIntel-match-previews",
-    "news_checker":        "oddsIntel-news-checker",
-    "hist_backfill":       "oddsIntel-hist-backfill",
-    "betting_refresh":     "oddsIntel-betting-refresh",
-    "odds_refresh":        "oddsIntel-odds-refresh",
-    "enrichment_refresh":  "oddsIntel-enrichment-refresh",
-    "settle_ready":        "oddsIntel-settle-ready",
+# Cron monitor config — auto-registers monitors in Sentry on first check-in.
+# Keys match the job name passed to _run_job().
+# schedule_type: "crontab" or "interval". max_runtime + grace_period in minutes.
+_SENTRY_MONITORS: dict[str, dict] = {
+    "morning_pipeline": {
+        "slug": "oddsIntel-morning-pipeline",
+        "schedule": {"type": "crontab", "value": "0 4 * * *"},
+        "timezone": "UTC",
+        "max_runtime": 40,
+        "grace_period": 10,
+    },
+    "settlement": {
+        "slug": "oddsIntel-settlement",
+        "schedule": {"type": "crontab", "value": "0 21 * * *"},
+        "timezone": "UTC",
+        "max_runtime": 30,
+        "grace_period": 10,
+    },
+    "email_digest": {
+        "slug": "oddsIntel-email-digest",
+        "schedule": {"type": "crontab", "value": "30 7 * * *"},
+        "timezone": "UTC",
+        "max_runtime": 10,
+        "grace_period": 5,
+    },
+    "match_previews": {
+        "slug": "oddsIntel-match-previews",
+        "schedule": {"type": "crontab", "value": "0 7 * * *"},
+        "timezone": "UTC",
+        "max_runtime": 15,
+        "grace_period": 5,
+    },
+    "news_checker": {
+        "slug": "oddsIntel-news-checker",
+        "schedule": {"type": "crontab", "value": "0 9 * * *"},
+        "timezone": "UTC",
+        "max_runtime": 15,
+        "grace_period": 5,
+    },
+    "hist_backfill": {
+        "slug": "oddsIntel-hist-backfill",
+        "schedule": {"type": "crontab", "value": "0 2 * * *"},
+        "timezone": "UTC",
+        "max_runtime": 60,
+        "grace_period": 10,
+    },
+    "betting_refresh": {
+        "slug": "oddsIntel-betting-refresh",
+        "schedule": {"type": "crontab", "value": "0 11 * * *"},
+        "timezone": "UTC",
+        "max_runtime": 20,
+        "grace_period": 5,
+    },
+    "odds_refresh": {
+        "slug": "oddsIntel-odds-refresh",
+        "schedule": {"type": "crontab", "value": "0 7 * * *"},
+        "timezone": "UTC",
+        "max_runtime": 10,
+        "grace_period": 5,
+    },
+    "enrichment_refresh": {
+        "slug": "oddsIntel-enrichment-refresh",
+        "schedule": {"type": "crontab", "value": "0 12 * * *"},
+        "timezone": "UTC",
+        "max_runtime": 15,
+        "grace_period": 5,
+    },
+    "settle_ready": {
+        "slug": "oddsIntel-settle-ready",
+        "schedule": {"type": "crontab", "value": "*/15 * * * *"},
+        "timezone": "UTC",
+        "max_runtime": 5,
+        "grace_period": 2,
+    },
 }
 
 # ── Globals ────────────────────────────────────────────────────────────────
@@ -88,13 +149,22 @@ def _run_job(name: str, fn, *args, **kwargs):
     console.print(f"[bold cyan]Job: {full_name} @ {started.strftime('%H:%M:%S UTC')}[/bold cyan]")
     console.print(f"[bold cyan]{'─' * 60}[/bold cyan]\n")
 
-    # Sentry cron monitor — check-in if slug registered for this job
-    slug = _SENTRY_MONITOR_SLUGS.get(name)
+    # Sentry cron monitor — auto-registers monitor with schedule config on first check-in
+    mon_cfg = _SENTRY_MONITORS.get(name)
     sentry_monitor = None
     try:
-        if slug:
+        if mon_cfg:
             import sentry_sdk
-            sentry_monitor = sentry_sdk.monitor(monitor_slug=slug)
+            from sentry_sdk.crons import monitor as sentry_cron_monitor
+            sentry_monitor = sentry_cron_monitor(
+                monitor_slug=mon_cfg["slug"],
+                monitor_config={
+                    "schedule": mon_cfg["schedule"],
+                    "timezone": mon_cfg["timezone"],
+                    "max_runtime": mon_cfg["max_runtime"],
+                    "grace_period_minutes": mon_cfg["grace_period"],
+                },
+            )
             sentry_monitor.__enter__()
     except Exception:
         sentry_monitor = None  # Sentry unavailable — continue anyway
