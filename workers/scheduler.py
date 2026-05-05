@@ -87,9 +87,9 @@ _SENTRY_MONITORS: dict[str, dict] = {
     },
     "hist_backfill": {
         "slug": "oddsIntel-hist-backfill",
-        "schedule": {"type": "crontab", "value": "0 2 * * *"},
+        "schedule": {"type": "crontab", "value": "0 2,23 * * *"},
         "timezone": "UTC",
-        "max_runtime": 60,
+        "max_runtime": 90,
         "grace_period": 10,
     },
     "betting_refresh": {
@@ -437,9 +437,9 @@ def job_fixture_refresh():
 
 
 def job_backfill():
-    """Daily historical backfill — 02:00 UTC, auto-advances phase 1→2→3, skips once all done."""
+    """Historical backfill — 02:00 + 23:00 UTC, auto-advances phase 1→2→3, skips once all done."""
     from scripts.backfill_historical import run_backfill
-    _run_job("hist_backfill", run_backfill)  # phase=None → auto-detect next phase
+    _run_job("hist_backfill", run_backfill, max_requests=2000)  # phase=None → auto-detect next phase
 
 
 def job_live_tracker():
@@ -534,9 +534,11 @@ def main():
 
     # ── Register all jobs ──────────────────────────────────────────────
 
-    # Historical backfill: 02:00 UTC daily (self-terminates once complete)
+    # Historical backfill: 02:00 + 23:00 UTC daily (self-terminates once complete)
     scheduler.add_job(job_backfill, CronTrigger(hour=2, minute=0),
-                      id="hist_backfill", name="Historical Backfill 02:00")
+                      id="hist_backfill_02", name="Historical Backfill 02:00")
+    scheduler.add_job(job_backfill, CronTrigger(hour=23, minute=0),
+                      id="hist_backfill_23", name="Historical Backfill 23:00")
 
     # Fixture status refresh: 4× daily, 15 min before each betting window
     # Re-fetches today's fixtures to catch postponements/cancellations/time changes.
