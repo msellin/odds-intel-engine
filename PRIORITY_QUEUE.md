@@ -2,11 +2,38 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-05 — TZ-TOMORROW added to Tier 1 Open.
+> Last updated: 2026-05-05 — TZ-TOMORROW added. Gemini AI cost tracker added.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
 - **Ready?** — `✅ Ready` pick up now · `⏳ Waiting [reason]` blocked
+
+---
+
+## Gemini AI Cost Tracker
+
+> Billing enabled 2026-05-05. Prices: `gemini-2.5-flash` $0.15/1M input + $0.60/1M output · `gemini-2.5-flash-lite` $0.075/1M input + $0.30/1M output.
+
+### Running now
+
+| Job | Model | Calls/day | Tokens/call | $/mo now | Scales with |
+|-----|-------|-----------|-------------|----------|-------------|
+| `news_checker` (4×/day per active bet) | flash | ~64 (4 × 16 bets) | ~800 | **~$0.38** | Active bets — 50 bets = ~$1.20/mo |
+| `match_previews` (ENG-3, 1×/day) | flash | ~10 | ~1,200 | **~$0.11** | Fixed (top 10 matches) |
+| `settlement post-mortem` (1×/day) | flash | 1 batch | ~2,000 | **~$0.04** | Fixed |
+| `bet-explain` (BET-EXPLAIN, user-triggered) | flash-lite | ~5 new/day | ~800 | **~$0.02** | New bets only — cached after 1st call |
+| **Total running** | | | | **~$0.55/mo** | |
+
+### Planned (not yet built)
+
+| ID | Feature | Model | Calls/day | $/mo at launch (10 users) | $/user/mo |
+|----|---------|-------|-----------|--------------------------|-----------|
+| ENG-16 | Ask AI About This Match (freeform Q&A) | flash | 3/user Free · 20/user Pro · ~50 Elite | ~$0.40 | Free: ~$0.04 · Pro: ~$0.26 · Elite: ~$0.65 |
+| MTI | Managerial tactical intent (press conf.) | flash | ~10 (5 matches × 2 teams) | **~$0.22** flat | negligible per user |
+| RSS-NEWS | RSS news extraction pipeline | flash | ~20 articles | **~$0.30** Gemini only | negligible — data service ($30-90/mo) is the real cost |
+
+**Current total AI cost: ~$0.55/mo running + $0/mo planned = ~$0.55/mo**
+**ENG-16 ceiling: ~$0.65/Elite user/mo — price into Elite tier before building.**
 
 ---
 
@@ -20,7 +47,7 @@
 | S1+S2 | Migration 010: `source` on predictions + `match_signals` table | 2-3h | ✅ | ✅ Done | Unique constraint on (match_id, market, source) |
 | CAL-2 | Flip calibration α: T1→0.20, T2→0.30, T3→0.50, T4→0.65 | 30 min | ✅ | ✅ Done | Was T1=0.55 (model-heavy). Now market-heavy in efficient markets |
 | RISK-1 | Reduce Kelly fraction to 0.15×, cap to 1% bankroll per bet | 15 min | ✅ | ✅ Done | KELLY_FRACTION 0.25→0.15, MAX_STAKE_PCT 0.015→0.010 |
-| LLM-RESOLVE | Run `scripts/resolve_team_names.py --apply` | 30 min | ✅ | ✅ Done | 143 total mappings. 204 unmatched names accounted for |
+| LLM-RESOLVE | Run `scripts/resolve_team_names.py --apply` | 30 min | ✅ | ✅ Done | 143 total mappings. 204 unmatched names accounted for. **AI: $0 ongoing (one-time batch)** |
 
 ---
 
@@ -115,7 +142,7 @@
 
 | ID | Task | Effort | ☑ | Ready? | Notes |
 |----|------|--------|----|--------|-------|
-| ENG-3 | Daily AI match previews (top 5-10, Gemini) | 1-2 days | ✅ Done 2026-05-01 | ✅ Ready | `workers/jobs/match_previews.py`. Scheduler 07:00 UTC. `match_previews` table (migration 033). Free sees teaser, Pro/Elite see full 200-word preview. Triple-duty: on-site + email + social. Fixed 2026-05-05: predictions pivot (source=ensemble), odds_snapshots pivot, match_injuries schema. |
+| ENG-3 | Daily AI match previews (top 5-10, Gemini) | 1-2 days | ✅ Done 2026-05-01 | ✅ Ready | `workers/jobs/match_previews.py`. Scheduler 07:00 UTC. `match_previews` table (migration 033). Free sees teaser, Pro/Elite see full 200-word preview. Triple-duty: on-site + email + social. Fixed 2026-05-05: predictions pivot (source=ensemble), odds_snapshots pivot, match_injuries schema. **AI: ~$0.11/mo (10 calls/day, flash)** |
 | ENG-4 | Daily email digest via Resend | 2-3 days | ✅ Done 2026-05-05 | ✅ Ready | `workers/jobs/email_digest.py`. Scheduler 07:30 UTC. `email_digest_log` (migration 034). Free: teasers + CTA. Pro: + bet count. Elite: + full picks table. Branded HTML: dark `#0a0a14` header, ODDS white + INTEL green logo, green CTAs/badges. Fixed 2026-05-05: migration 042 backfills `user_notification_settings` for all existing users + trigger wired for new signups (was empty → zero sends). Tested end-to-end. |
 | ENG-1 | "X analyzing this match" live counter | 4-6h | ✅ Done 2026-05-04 | ✅ Done | `match_page_views` table (migration 038). `/api/track-page-view` POST route — upserts session_id+match_id, returns 30-min window count. `MatchViewingCounter` client component in match header metadata row. Hidden until 2+ people (no self-only display). |
 | ENG-2 | Community vote split display | 4-6h | ✅ Done 2026-05-04 | ✅ Done | `community-vote.tsx` updated: percentages + fill bars always visible when any votes exist. Locks at kickoff (live/finished) with Lock icon + "Locked at kickoff" label. Voting disabled for locked matches. |
@@ -143,7 +170,7 @@
 
 | ID | Task | Effort | ☑ | Ready? | Notes |
 |----|------|--------|----|--------|-------|
-| ENG-16 | "Ask AI About This Match" freeform Gemini Q&A | 2-3 days | ⬜ | ⏳ ~June-July | Extends BET-EXPLAIN. Rate-limited by tier. ParlaySavant charges $30/mo for this |
+| ENG-16 | "Ask AI About This Match" freeform Gemini Q&A | 2-3 days | ⬜ | ⏳ ~June-July | Extends BET-EXPLAIN. Rate-limited by tier. ParlaySavant charges $30/mo for this. **AI: Free ~$0.04/user/mo (3 Q/day) · Pro ~$0.26/user/mo (20 Q/day) · Elite ~$0.65/user/mo (~50 Q/day) — price into Elite before building** |
 | ENG-15 | Market inefficiency index per league (rolling 30-day edge) | 1 day | ⬜ | ⏳ ~June (needs 30 days of data) | "Eredivisie: HIGH +4.8%. Premier League: LOW +1.2%." No competitor does this |
 | ENG-17 | Season-end "Year in Review" (personal, shareable) | 2-3 days | ⬜ | ⏳ ~Aug+ (needs full season of user data) | Strava-style. "312 bets, best month October." Viral potential |
 
@@ -178,7 +205,7 @@
 | B-1/2/3/4/5/6 | Track record public, confidence filter, /how-it-works | ✅ | |
 | C-1 to C-6 | Match page tooltips, odds header, value bets gate, login modal | ✅ | |
 | F5 | Value bets page: Free=teaser, Pro=directional, Elite=full | ✅ | |
-| BET-EXPLAIN | Natural language bet explanations (Gemini, Elite-gated) | ✅ | GET /api/bet-explain |
+| BET-EXPLAIN | Natural language bet explanations (Gemini, Elite-gated) | ✅ | GET /api/bet-explain. **AI: ~$0.02/mo (flash-lite, cached after 1st call per bet)** |
 | SUX-4/5/6/7/8/9/10 | Signal summary, accordion, labels, hooks, timeline, delta, post-match reveal | ✅ | |
 | SUX-11/12 | "Why This Pick" Elite card + CLV tracker | ✅ | |
 | ML-1/2/3/4/5/6/7/8 | Logos, live timer, form strip, match filter tabs, predicted score, odds arrows, BM badge, match star | ✅ | |
@@ -240,7 +267,7 @@
 | P3.4 | In-play value detection model | 2-3 wks | ⬜ | ⏳ 500+ live snapshots (~July) | LightGBM Poisson regression. xG pace ratio is #1 feature. See § INPLAY Plan |
 | P4.2 | A/B bot testing framework | 1-2 days | ⬜ | ⏳ Needs audit trail + data | Parallel bots with/without AI layers |
 | P4.3 | Live odds arbitrage detector | 1-2 days | ⬜ | ⏳ ~July | Per-bookmaker odds exist. Low priority |
-| RSS-NEWS | RSS news extraction pipeline ($30-90/mo) | 1-2 days | ⬜ | ⏳ After model proves profitable | Targets news before odds adjust. Re-evaluate when Elite has subscribers |
+| RSS-NEWS | RSS news extraction pipeline ($30-90/mo) | 1-2 days | ⬜ | ⏳ After model proves profitable | Targets news before odds adjust. Re-evaluate when Elite has subscribers. **AI: +~$0.30/mo Gemini (data service $30-90/mo is the real cost)** |
 | P3.2 | Stacked ensemble meta-learner (when Poisson vs XGBoost) | 1-2 days | ⬜ | ⏳ Needs settled bets with both predictions | Logistic regression on model disagreement |
 | OTC-1 | Odds trajectory clustering (DTW) | 1-2 wks | ⬜ | ⏳ 1000+ snapshots | Low priority — volatility+drift captures ~same at 5% effort |
 
@@ -266,7 +293,7 @@
 | ID | Task | ☑ | Ready? | Notes |
 |----|------|----|--------|-------|
 | SLM | Shadow Line Model: predict what opening odds *should be* | ⬜ | ⏳ Blocked | Needs opening odds timestamp storage |
-| MTI | Managerial Tactical Intent: press conference classification | ⬜ | ⏳ Blocked | No reliable transcript source across leagues |
+| MTI | Managerial Tactical Intent: press conference classification | ⬜ | ⏳ Blocked | No reliable transcript source across leagues. **AI: ~$0.22/mo flat (10 calls/day, flash)** |
 | RVB | Referee/Venue full bias features | ⬜ | ⏳ Blocked | Venue-level stats not yet collected |
 | WTH | Weather signal (OpenWeatherMap, free) | ⬜ | ⏳ Low priority | Defer until O/U becomes a focus market |
 | SIG-DERBY | Is-derby + travel distance signals | ⬜ | ⏳ Blocked | Needs team location data |
