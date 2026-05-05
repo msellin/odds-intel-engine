@@ -82,6 +82,16 @@ def execute_write(sql: str, params=None) -> int:
             return cur.rowcount
 
 
+def execute_write_returning(sql: str, params=None) -> list[dict]:
+    """Execute a write query with RETURNING clause, commit immediately, return rows."""
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, params)
+            rows = [dict(row) for row in cur.fetchall()]
+            conn.commit()
+            return rows
+
+
 def bulk_insert(table: str, columns: list[str], rows: list[tuple],
                 on_conflict: str = "DO NOTHING") -> int:
     """

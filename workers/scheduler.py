@@ -169,8 +169,7 @@ def _run_job(name: str, fn, *args, **kwargs):
     try:
         if mon_cfg:
             import sentry_sdk
-            from sentry_sdk.crons import monitor as sentry_cron_monitor
-            sentry_monitor = sentry_cron_monitor(
+            sentry_monitor = sentry_sdk.monitor(
                 monitor_slug=mon_cfg["slug"],
                 monitor_config={
                     "schedule": mon_cfg["schedule"],
@@ -180,7 +179,8 @@ def _run_job(name: str, fn, *args, **kwargs):
                 },
             )
             sentry_monitor.__enter__()
-    except Exception:
+    except Exception as _sentry_err:
+        console.print(f"[yellow]Sentry monitor setup failed (non-fatal): {_sentry_err}[/yellow]")
         sentry_monitor = None  # Sentry unavailable — continue anyway
 
     error_msg = None
@@ -210,6 +210,8 @@ def _run_job(name: str, fn, *args, **kwargs):
             try:
                 exc_info = (None, None, None) if status == "completed" else sys.exc_info()
                 sentry_monitor.__exit__(*exc_info)
+                import sentry_sdk
+                sentry_sdk.flush(timeout=5)
             except Exception:
                 pass
 

@@ -9,7 +9,7 @@ Shared helpers for the fragmented pipeline jobs:
 
 import json
 from datetime import date, datetime, timezone, timedelta
-from workers.api_clients.db import execute_query, execute_write
+from workers.api_clients.db import execute_query, execute_write, execute_write_returning
 
 
 # ─── Pipeline Run Logging ────────────────────────────────────────────────────
@@ -19,7 +19,7 @@ def log_pipeline_start(job_name: str, run_date: str = None) -> str:
     if not run_date:
         run_date = date.today().isoformat()
     now = datetime.now(timezone.utc).isoformat()
-    result = execute_query(
+    result = execute_write_returning(
         "INSERT INTO pipeline_runs (job_name, run_date, status, started_at) "
         "VALUES (%s, %s, %s, %s) RETURNING id",
         [job_name, run_date, "running", now]
