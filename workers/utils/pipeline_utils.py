@@ -267,19 +267,31 @@ FEATURED_PRIORITY = {
 }
 
 # Base priorities for leagues (used to restore after daily reset).
-# Matches the static values set in migration 025.
+# 6-tier system (lower = higher on page). Set by migration 044.
+#
+#  10 — Tier 1 continental: CL, WC, Euros, Copa America, Club WC
+#  12 — Tier 2 continental: EL, ECL, Libertadores, Sudamericana, Nations League, etc.
+#  14 — Big 5 domestic: PL, La Liga, Serie A, Bundesliga, Ligue 1
+#  20 — Strong secondary: Championship, Eredivisie, Primeira, MLS, Brasileirao, etc.
+#  25 — Other notable top flights: Scottish Prem, Austrian BL, Greek SL, etc.
+#  30 — Rest
 BASE_PRIORITY = {
-    # Continental cups + Big 5: priority 10
-    2: 10, 3: 10, 848: 10, 13: 10, 11: 10, 16: 10, 480: 10, 531: 10,
-    39: 10, 140: 10, 135: 10, 78: 10, 61: 10,
-    # Major secondary + notable top flights: priority 20
+    # Tier 1 continental (priority 10)
+    2: 10, 1: 10, 15: 10, 480: 10, 9: 10,
+    # Tier 2 continental (priority 12)
+    3: 12, 848: 12, 13: 12, 11: 12, 4: 12, 531: 12, 6: 12, 29: 12, 16: 12,
+    # Big 5 domestic (priority 14)
+    39: 14, 140: 14, 135: 14, 78: 14, 61: 14,
+    # Strong secondary (priority 20)
     40: 20, 141: 20, 136: 20, 79: 20, 62: 20, 88: 20, 94: 20,
     144: 20, 203: 20, 253: 20, 262: 20, 71: 20, 128: 20,
     307: 20, 98: 20, 292: 20,
-    # Other notable: priority 30
-    119: 30, 113: 30, 103: 30, 106: 30, 218: 30, 207: 30, 179: 30,
-    197: 30, 169: 30, 254: 30, 383: 30, 200: 30, 233: 30,
-    332: 30, 286: 30, 72: 30, 73: 30, 188: 30, 210: 30, 271: 30,
+    # Other notable top flights (priority 25)
+    179: 25, 106: 25, 345: 25, 197: 25, 207: 25, 218: 25,
+    119: 25, 113: 25, 103: 25, 283: 25, 271: 25, 333: 25,
+    210: 25, 188: 25, 200: 25, 233: 25, 254: 25, 383: 25,
+    332: 25, 286: 25, 72: 25, 73: 25, 386: 25,
+    # All others fall through to their DB value (priority 30 or higher)
 }
 
 
