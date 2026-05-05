@@ -108,7 +108,7 @@ _SENTRY_MONITORS: dict[str, dict] = {
     },
     "enrichment_refresh": {
         "slug": "oddsIntel-enrichment-refresh",
-        "schedule": {"type": "crontab", "value": "0 12 * * *"},
+        "schedule": {"type": "crontab", "value": "30 10 * * *"},
         "timezone": "UTC",
         "max_runtime": 15,
         "grace_period": 5,
@@ -278,24 +278,29 @@ def morning_pipeline():
 
 def settlement_pipeline():
     """
-    21:00 UTC — Settlement chain: results → ML ETL → prune → Platt (Sundays).
+    21:00 UTC — Settlement chain: results → ML ETL → prune → Platt (Wed+Sun) → DC rho (Sun).
     """
     import traceback
     from workers.jobs.settlement import run_settlement, run_ml_etl
 
     steps = [
-        ("1/4", "Core settlement", lambda: run_settlement()),
-        ("2/4", "ML ETL",          lambda: run_ml_etl()),
-        ("3/4", "Prune odds",      lambda: __import__('scripts.prune_odds_snapshots', fromlist=['prune']).prune(dry_run=False)),
+        ("1/3", "Core settlement", lambda: run_settlement()),
+        ("2/3", "ML ETL",          lambda: run_ml_etl()),
+        ("3/3", "Prune odds",      lambda: __import__('scripts.prune_odds_snapshots', fromlist=['prune']).prune(dry_run=False)),
     ]
 
-    # Steps 4 + 5 + 6 only on Sundays
-    if date.today().weekday() == 6:
-        steps.append(("4/6", "Platt recalibration", lambda: __import__('scripts.fit_platt', fromlist=['fit_and_store']).fit_and_store()))
-        steps.append(("5/6", "Blend weight refit",  lambda: __import__('scripts.fit_blend_weights', fromlist=['run']).run()))
-        steps.append(("6/6", "DC rho per tier",     lambda: __import__('scripts.fit_league_rho', fromlist=['run']).run()))
-    else:
-        console.print(f"[dim]Settlement steps 4-6: Platt + blend weight + DC rho — skipped (not Sunday)[/dim]")
+    is_refit_day = date.today().weekday() in (2, 6)  # Wednesday + Sunday
+    is_sunday    = date.today().weekday() == 6        # Sunday only
+
+    # Platt recalibration + blend weight refit: Wednesday + Sunday
+    if is_refit_day:
+        steps.append(("4+", "Platt recalibration", lambda: __import__('scripts.fit_platt', fromlist=['fit_and_store']).fit_and_store()))
+        steps.append(("5+", "Blend weight refit",  lambda: __import__('scripts.fit_blend_weights', fromlist=['run']).run()))
+    # DC rho refit: Sunday only (more data-intensive)
+    if is_sunday:
+        steps.append(("6+", "DC rho per tier",     lambda: __import__('scripts.fit_league_rho', fromlist=['run']).run()))
+    if not is_refit_day:
+        console.print(f"[dim]Settlement steps 4-6: Platt + blend weight + DC rho — skipped (not Wednesday or Sunday)[/dim]")
 
     failed_steps = []
     for step_num, step_name, step_fn in steps:
@@ -507,38 +512,49 @@ def main():
                       id="morning_pipeline", name="Morning Pipeline")
 
     # Odds refresh: every 2h during 07-22 UTC
-    for hour in [7, 8, 10, 12, 14, 16, 18, 20, 22]:
+    # 20:00 replaced by pre-KO mark_closing run (marks closing odds for evening KOs)
+    for hour in [7, 8, 10, 12, 14, 16, 18, 22]:
         scheduler.add_job(job_odds_refresh, CronTrigger(hour=hour, minute=0),
                           id=f"odds_{hour:02d}", name=f"Odds {hour:02d}:00")
 
-    # Odds pre-kickoff: 13:30, 17:30 UTC
+    # Odds pre-kickoff (mark_closing): 13:30, 17:30, 20:00 UTC
+    # 20:00 covers 19:00-21:00 KO window (replaces regular 20:00 refresh — marks CLV closing line)
     scheduler.add_job(job_odds_pre_kickoff, CronTrigger(hour=13, minute=30),
                       id="odds_prekick_1330", name="Odds Pre-KO 13:30")
     scheduler.add_job(job_odds_pre_kickoff, CronTrigger(hour=17, minute=30),
                       id="odds_prekick_1730", name="Odds Pre-KO 17:30")
+    scheduler.add_job(job_odds_pre_kickoff, CronTrigger(hour=20, minute=0),
+                      id="odds_prekick_2000", name="Odds Pre-KO 20:00")
 
-    # Enrichment refresh: 12:00, 16:00 UTC
-    scheduler.add_job(job_enrichment_refresh, CronTrigger(hour=12, minute=0),
-                      id="enrichment_12", name="Enrichment 12:00")
+    # Enrichment refresh: 10:30, 16:00 UTC (injuries + standings)
+    # 10:30 moved from 12:00 so injury data is fresh before the 11:00 betting refresh
+    scheduler.add_job(job_enrichment_refresh, CronTrigger(hour=10, minute=30),
+                      id="enrichment_1030", name="Enrichment 10:30")
     scheduler.add_job(job_enrichment_refresh, CronTrigger(hour=16, minute=0),
                       id="enrichment_16", name="Enrichment 16:00")
 
-    # Pre-kickoff betting refresh: 11:00, 15:00, 19:00 UTC
-    # Re-evaluates predictions + bets with fresher odds, lineups, and news
-    for hour in [11, 15, 19]:
-        scheduler.add_job(job_betting_refresh_wrapper, CronTrigger(hour=hour, minute=0),
-                          id=f"betting_refresh_{hour:02d}",
-                          name=f"Betting Refresh {hour:02d}:00")
+    # Betting refreshes: 09:30, 11:00, 15:00, 19:00, 20:30 UTC
+    # 09:30 — acts on 08:00 odds + 09:00 news; catches Asian KO window
+    # 11:00 — European morning KOs; uses fresh 10:30 enrichment
+    # 15:00 — European afternoon KOs
+    # 19:00 — European early evening KOs; uses fresh 18:30 news
+    # 20:30 — European prime-time KOs (19:00-21:00); uses 20:00 closing odds
+    for hour, minute in [(9, 30), (11, 0), (15, 0), (19, 0), (20, 30)]:
+        scheduler.add_job(job_betting_refresh_wrapper, CronTrigger(hour=hour, minute=minute),
+                          id=f"betting_refresh_{hour:02d}{minute:02d}",
+                          name=f"Betting Refresh {hour:02d}:{minute:02d}")
 
-    # News checker: 09:00, 12:30, 16:30, 19:30 UTC
-    for hour, minute in [(9, 0), (12, 30), (16, 30), (19, 30)]:
+    # News checker: 09:00, 12:30, 14:30, 16:30, 18:30 UTC
+    # 14:30 added — feeds 15:00 betting (was 2.5h stale)
+    # 18:30 replaces 19:30 — now feeds 19:00 + 20:30 betting instead of neither
+    for hour, minute in [(9, 0), (12, 30), (14, 30), (16, 30), (18, 30)]:
         scheduler.add_job(job_news_checker, CronTrigger(hour=hour, minute=minute),
                           id=f"news_{hour:02d}{minute:02d}",
                           name=f"News {hour:02d}:{minute:02d}")
 
-    # ENG-3: AI match previews — 07:00 UTC (after morning pipeline settles)
-    scheduler.add_job(job_match_previews, CronTrigger(hour=7, minute=0),
-                      id="match_previews", name="Match Previews 07:00")
+    # ENG-3: AI match previews — 07:15 UTC (after morning pipeline + 07:00 odds refresh settle)
+    scheduler.add_job(job_match_previews, CronTrigger(hour=7, minute=15),
+                      id="match_previews", name="Match Previews 07:15")
 
     # ENG-4: Email digest — 07:30 UTC (after previews are generated)
     scheduler.add_job(job_email_digest, CronTrigger(hour=7, minute=30),

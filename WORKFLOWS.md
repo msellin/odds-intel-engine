@@ -1,7 +1,7 @@
 # OddsIntel — Workflows & Pipeline Architecture
 
 > Single source of truth for all scheduled jobs, their order, and manual run instructions.
-> Last updated: 2026-05-03 — POSTGREST-CLEANUP complete: all workers + scripts fully on psycopg2 (`fit_platt.py`, `backfill_historical.py` migrated; `live_tracker.py` crash bug fixed). Backfill now scheduled on Railway at 02:00 UTC daily. Before: PERF-1/PERF-2 batch signals + prune rewrite. Before that: Railway migration, BOT-TIMING.
+> Last updated: 2026-05-05 — SCHED-AUDIT: 6 betting runs/day (was 4), closing odds for all KO windows, enrichment moved to 10:30, news aligned to betting refreshes, match previews shifted to 07:15, Platt+blend refit now Wednesday+Sunday.
 
 ### ✅ Railway Migration Complete (2026-04-30)
 
@@ -23,20 +23,51 @@
        ④ Predictions     run_predictions()         AF predictions (coverage-aware)
        ⑤ Betting         run_betting()             Poisson/XGBoost model + signals + bet placement
        (morning pipeline — chained sequentially, completes by ~06:30)
-07:00  ⑩ Match Previews  run_match_previews()      Top 10 matches → Gemini 200-word previews (ENG-3)
+07:00  ③ Odds            run_odds()                First daytime odds refresh
+07:15  ⑩ Match Previews  run_match_previews()      Top 10 matches → Gemini 200-word previews (ENG-3)
 07:30  ⑪ Email Digest    run_email_digest()        Resend — tier-gated digest to subscribed users (ENG-4)
-07-22  ③ Odds (repeat)   run_odds()                Every 2h: 07,08,10,12,14,16,18,20,22 UTC
-11,15  ⑨ Betting Refresh  betting_refresh()         Pre-KO re-evaluation with fresh odds, lineups, news
-19     ⑨ Betting Refresh  betting_refresh()         Evening KO window re-evaluation
-12,16  ② Enrichment      run_enrichment()          Injuries + standings refresh
-10-23  ⑥ LivePoller      live_poller.py            30s: scores+odds, 60s: stats+events, 5min: lineups
-       ⑦ News Checker    run_news_checker()        4x/day: 09:00, 12:30, 16:30, 19:30 UTC
-13:30  ③ Odds            run_odds(mark_closing)    Pre-kickoff (European afternoon)
-17:30  ③ Odds            run_odds(mark_closing)    Pre-kickoff (European evening)
+08:00  ③ Odds            run_odds()                Second morning refresh
+08:30  Watchlist Alerts  run_watchlist_alerts()    After 08:00 odds
+09:00  ⑦ News Checker    run_news_checker()        Injury/lineup/news signals (Gemini)
+09:30  ⑨ Betting Refresh betting_refresh()         Asian KOs + acts on 08:00 odds + 09:00 news
+10:00  ③ Odds            run_odds()
+10:30  ② Enrichment      run_enrichment()          Injuries + standings — fresh before 11:00 betting
+11:00  ⑨ Betting Refresh betting_refresh()         European morning KOs
+12:00  ③ Odds            run_odds()
+12:30  ⑦ News Checker    run_news_checker()
+13:30  ③ Odds            run_odds(mark_closing)    Pre-KO closing odds (European afternoon)
+14:00  ③ Odds            run_odds()
+14:30  Watchlist Alerts  run_watchlist_alerts()
+14:30  ⑦ News Checker    run_news_checker()        Feeds 15:00 betting refresh
+15:00  ⑨ Betting Refresh betting_refresh()         European afternoon KOs
+16:00  ② Enrichment      run_enrichment()          Injuries + standings refresh
+       ③ Odds            run_odds()
+16:30  ⑦ News Checker    run_news_checker()
+17:30  ③ Odds            run_odds(mark_closing)    Pre-KO closing odds (European evening)
+18:00  ③ Odds            run_odds()
+18:30  ⑦ News Checker    run_news_checker()        Feeds 19:00 + 20:30 betting (moved from 19:30)
+19:00  ⑨ Betting Refresh betting_refresh()         European early evening KOs
+20:00  Watchlist Alerts  run_watchlist_alerts()
+20:00  ③ Odds            run_odds(mark_closing)    Pre-KO closing odds (European prime-time 19-21 KO)
+20:30  ⑨ Betting Refresh betting_refresh()         European prime-time KOs — uses 20:00 closing odds
          ⑧a Live settle   settle_finished_matches()  Per-match: triggered by LivePoller on FT detection (instant)
-21:00  ⑧b Settlement      settlement_pipeline()     Bulk: settle bets, post-match stats, ELO, CLV, prune, Platt (Sun)
+21:00  ⑧b Settlement      settlement_pipeline()     Bulk: settle bets, post-match stats, ELO, CLV, prune
+                                                    + Platt recalibration + blend refit (Wed + Sun)
+                                                    + DC rho per tier (Sun only)
+22:00  ③ Odds            run_odds()                Late matches (Asian/American)
 23:30  ⑧c Settlement      settlement_pipeline()     Late catch-up: European evening matches finishing after 21:00
+10-23  ⑥ LivePoller      live_poller.py            30s: scores+odds, 60s: stats+events, 5min: lineups
 ```
+
+### Betting refresh schedule (6x/day)
+| Time | KO window covered | Fresh inputs |
+|------|-------------------|-------------|
+| 06:30 (morning pipeline) | All day initial | Full enrichment + odds |
+| 09:30 | Asian (09-11 UTC) | 08:00 odds, 09:00 news |
+| 11:00 | European morning (12-13 UTC) | 10:00 odds, 10:30 enrichment |
+| 15:00 | European afternoon (15-17 UTC) | 14:00 odds, 14:30 news |
+| 19:00 | European early evening (18-20 UTC) | 18:00 odds, 18:30 news |
+| 20:30 | European prime-time (19-21 UTC) | 20:00 closing odds, 18:30 news |
 
 ---
 
@@ -103,7 +134,7 @@
 - Readiness gate: won't run unless ① Fixtures completed
 
 ### ⑤ Betting (`betting_pipeline.py`)
-- Runs 5x/day (06:00, 10:00, 13:00, 16:00, 19:00 UTC) to catch all kickoff windows
+- Runs 6x/day (morning pipeline ~06:30, then 09:30, 11:00, 15:00, 19:00, 20:30 UTC) to catch all kickoff windows
 - Duplicate bets prevented by DB unique constraint `(bot_id, match_id, market, selection)` — safe to run any number of times
 - Reads all data from DB — no API calls (Phase 2 complete as of 2026-04-29)
 - Calls `run_morning(skip_fetch=True)` in `daily_pipeline_v2.py`
@@ -153,7 +184,7 @@
    - **Sundays only:** Platt recalibration (`scripts/fit_platt.py`) — refits sigmoid α/β per market from all settled predictions → `model_calibration` table
 
 ### ⑩ Match Previews (`match_previews.py`) — ENG-3
-- Runs at 07:00 UTC, after morning pipeline completes
+- Runs at 07:15 UTC, after morning pipeline + 07:00 odds refresh complete
 - Selects top 10 matches for today: ranked by league tier then signal count
 - For each match: gathers form, H2H, injuries, odds, model prediction, key signals from DB
 - Calls Gemini 2.5 Flash: generates 180-220 word preview + 40-55 word teaser

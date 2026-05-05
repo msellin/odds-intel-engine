@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-05 — ENG-10 done (weekly digest, migration 043, Monday 08:00 UTC). LEAGUE-ORDER done (6-tier priority, migration 044). ELITE-BANKROLL done (/bankroll Elite page). ENG-8 done (watchlist alerts, migration 045, 3x/day). INFRA-5/6/8 fully complete. BOT-PROVEN. RHO-DYN.
+> Last updated: 2026-05-05 — ENG-10 done. LEAGUE-ORDER done. ELITE-BANKROLL done. ENG-8 done. INFRA-5/6/8 done. BOT-PROVEN. RHO-DYN. SCHED-AUDIT done (6 betting runs/day, closing odds all KO windows, enrichment 10:30, news aligned, Platt Wed+Sun).
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -53,6 +53,7 @@
 | GH-CLEANUP | Remove pipeline workflow files from GitHub Actions | 30min | ✅ Done 2026-05-05 | ✅ Done | Deleted fixtures/enrichment/odds/predictions/betting/live_tracker/news_checker/settlement .yml. Only migrate.yml + backfill.yml remain. |
 | BOT-PROVEN | `bot_proven_leagues` — focused strategy targeting only the 5 cross-era backtest-confirmed leagues (Singapore/Scotland/Austria/Ireland/S.Korea) | 1h | ✅ Done 2026-05-05 | Added to BOTS_CONFIG + BOT_TIMING_COHORTS (midday). 17th bot. Clean performance track for strongest backtest signals. |
 | RHO-DYN | Dynamic Dixon-Coles rho per league tier — fit rho from historical scoreline frequencies instead of global -0.13 | 2h | ✅ Done 2026-05-05 | `scripts/fit_league_rho.py` → `model_calibration` (market=`dc_rho_tier_{n}`). `_load_dc_rho_cache()` + `_poisson_probs(rho=)` in pipeline. Sunday refit step 6/6. Falls back to -0.13 if <200 matches/tier. |
+| SCHED-AUDIT | Full cron audit — 10 gaps identified and fixed | 1h | ✅ Done 2026-05-05 | 6 betting runs/day (was 4): added 09:30 + 20:30. Closing odds (mark_closing) added for 19-21 UTC KO window (20:00). Enrichment moved 12:00→10:30 so injuries fresh before 11:00 betting. News added at 14:30, moved 19:30→18:30. Match previews shifted 07:00→07:15. Platt+blend refit now Wed+Sun (was Sun only). WORKFLOWS.md stale betting schedule fixed. |
 | ADMIN-TIER-PREVIEW | Superadmin tier preview switcher — switch between free/pro/elite to QA any page | 2-3h | ✅ Done 2026-05-04 | ✅ Done | Cookie-based override. (1) `src/lib/get-user-tier.ts` shared utility — wraps profile fetch, checks `preview_tier` httpOnly cookie when `is_superadmin=true` and overrides tier; replace ~5 pages that inline `.select("tier, is_superadmin")` with this. (2) `/api/set-preview-tier` POST route — sets/clears cookie, superadmin-only server-validated. (3) Floating pill UI (`src/components/superadmin-tier-bar.tsx`) — fixed overlay, only renders for superadmins, shows current preview tier badge + free/pro/elite/"My Tier" buttons, added to app layout. Cookie is httpOnly+sameSite=lax. Works cleanly: all pages are dynamic (no ISR), so cookie flip = instant re-render with different tier data. Visual banner ensures you always know which tier you're previewing. |
 
 ---
