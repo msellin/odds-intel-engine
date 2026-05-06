@@ -295,7 +295,7 @@
 |----|------|--------|----|--------|-------|
 | SIG-12 | xG overperformance rolling signal | 2h | ⬜ | ⏳ ~2 wks of post-match xG data | Regression to mean signal. Needs post-match xG from live snapshots |
 | MOD-2 | Learned Poisson/XGBoost blend weights (replace fixed α) | 2h | ✅ Done 2026-05-05 | ✅ Done | `scripts/fit_blend_weights.py`: optimizes Poisson weight + per-tier shrinkage alpha. improvements.py loads from model_calibration, falls back to hardcoded. Weekly refit added to Sunday settlement. |
-| P3.4 | In-play value detection model | 2-3 wks | 🔄 In Progress | ⏳ Phase 1A building now. Phase 2 ML needs 500+ snapshots (~May 7-8). See § INPLAY Plan for full 5-phase roadmap | LightGBM Poisson regression (Phase 2+). Phase 1A: rule-based Strategy A paper bot, building 2026-05-06. |
+| P3.4 | In-play value detection model | 2-3 wks | 🔄 In Progress | ⏳ Phase 1A deployed 2026-05-06 (8 strategies, paper trading). Phase 2 ML needs 500+ snapshots + 200 settled bets. See § INPLAY Plan for full 5-phase roadmap | Phase 1A live: `workers/jobs/inplay_bot.py` — strategies A, A2, B, C, C_home, D, E, F. Bayesian xG posterior. Runs inside LivePoller every 30s. Week 2: add G, H. Week 3: add I, J, K. |
 | P4.2 | A/B bot testing framework | 1-2 days | ⬜ | ⏳ Needs audit trail + data | Parallel bots with/without AI layers |
 | P4.3 | Live odds arbitrage detector | 1-2 days | ⬜ | ⏳ ~July | Per-bookmaker odds exist. Low priority |
 | RSS-NEWS | RSS news extraction pipeline ($30-90/mo) | 1-2 days | ⬜ | ⏳ After model proves profitable | Targets news before odds adjust. Re-evaluate when Elite has subscribers. **AI: +~$0.30/mo Gemini (data service $30-90/mo is the real cost)** |
