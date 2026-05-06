@@ -1312,6 +1312,32 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
     from collections import defaultdict
     league_bet_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
+    # Pinnacle disagreement veto: batch-load pinnacle_implied_home for all matches.
+    # Empirical analysis (77 settled bets) shows: when cal_prob - pinnacle_implied > 0.12
+    # for 1X2 home, the bet loses 22/28 times. Won bets all have gap ≤ 0.129.
+    # Threshold 0.12 catches 22 of 34 losses while filtering only 6 of 40 winners.
+    PINNACLE_VETO_GAP = 0.12
+    all_match_ids_for_signals = [
+        m.get("id") for m in odds_matches if m.get("id")
+    ]
+    pinnacle_implied_by_match: dict[str, float] = {}
+    if all_match_ids_for_signals:
+        try:
+            from workers.api_clients.db import execute_query as _eq_pin
+            pin_rows = _eq_pin(
+                """SELECT DISTINCT ON (match_id) match_id, signal_value
+                   FROM match_signals
+                   WHERE match_id = ANY(%s)
+                     AND signal_name = 'pinnacle_implied_home'
+                   ORDER BY match_id, captured_at DESC""",
+                (all_match_ids_for_signals,)
+            )
+            for pr in pin_rows:
+                if pr["signal_value"] is not None:
+                    pinnacle_implied_by_match[str(pr["match_id"])] = float(pr["signal_value"])
+        except Exception as e:
+            console.print(f"  [yellow]Pinnacle signal load failed (non-critical): {e}[/yellow]")
+
     for match in odds_matches:
         # Store match in Supabase (idempotent upsert — skipped if id pre-set from DB load)
         if match.get("id"):
@@ -1594,6 +1620,14 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
 
                 if edge < me or odds < odds_min or odds > odds_max or cal_prob < min_prob:
                     continue
+
+                # Pinnacle disagreement veto: skip 1X2 home bets where our model is
+                # significantly more optimistic than Pinnacle (the sharpest book).
+                # Gap > 0.12 on home: retrospective data shows 79% loss rate (22/28).
+                if mkt == "1X2" and selection == "Home":
+                    pin_implied = pinnacle_implied_by_match.get(str(match_id))
+                    if pin_implied is not None and (cal_prob - pin_implied) > PINNACLE_VETO_GAP:
+                        continue  # Pinnacle disagrees strongly — skip
 
                 # P2: Odds movement — soft penalty, hard veto only >10%
                 mv_key = f"{os_market}_{os_selection}"
