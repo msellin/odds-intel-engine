@@ -8,21 +8,40 @@
 
 BEGIN;
 
--- Delete teams that reference zero-match orphan Unknown leagues first (FK constraint)
--- These teams have no match data — they came from Kambi placeholder records
+-- Teams referenced by matches (home_team_id or away_team_id) must never be deleted
+-- Leagues whose teams appear in matches must also be kept
+-- The safe set to delete: Unknown orphan leagues where NEITHER the league NOR any
+-- of its teams appear anywhere in the matches table.
+
+-- Step 1: Delete teams in orphan leagues that are not referenced in any match
 DELETE FROM teams
 WHERE league_id IN (
     SELECT id FROM leagues
     WHERE api_football_id IS NULL
       AND name = 'Unknown'
       AND id NOT IN (SELECT DISTINCT league_id FROM matches WHERE league_id IS NOT NULL)
+)
+AND id NOT IN (
+    SELECT home_team_id FROM matches WHERE home_team_id IS NOT NULL
+    UNION
+    SELECT away_team_id FROM matches WHERE away_team_id IS NOT NULL
 );
 
--- Delete all zero-match leagues with name='Unknown' and no api_football_id
+-- Step 2: Delete orphan Unknown leagues that have no match references AND no
+-- remaining team references (teams linked to matches were excluded above)
 DELETE FROM leagues
 WHERE api_football_id IS NULL
   AND name = 'Unknown'
-  AND id NOT IN (SELECT DISTINCT league_id FROM matches WHERE league_id IS NOT NULL);
+  AND id NOT IN (SELECT DISTINCT league_id FROM matches WHERE league_id IS NOT NULL)
+  AND id NOT IN (
+    SELECT DISTINCT t.league_id FROM teams t
+    WHERE t.league_id IS NOT NULL
+      AND t.id IN (
+          SELECT home_team_id FROM matches WHERE home_team_id IS NOT NULL
+          UNION
+          SELECT away_team_id FROM matches WHERE away_team_id IS NOT NULL
+      )
+  );
 
 -- Delete the 5 named zero-match orphan leagues
 DELETE FROM leagues
