@@ -83,7 +83,7 @@ def _build_fixture_meta(target_date: str) -> dict[int, dict]:
 
     team_af_ids = {}
     tr = execute_query(
-        "SELECT id, name FROM teams WHERE id = ANY(%s)",
+        "SELECT id, name FROM teams WHERE id = ANY(%s::uuid[])",
         [list(team_ids)]
     )
     for t in tr:
@@ -92,7 +92,7 @@ def _build_fixture_meta(target_date: str) -> dict[int, dict]:
     # Get league AF IDs
     league_af_ids = {}
     lr = execute_query(
-        "SELECT id, api_football_id, tier FROM leagues WHERE id = ANY(%s)",
+        "SELECT id, api_football_id, tier FROM leagues WHERE id = ANY(%s::uuid[])",
         [list(league_ids)]
     )
     for league in lr:

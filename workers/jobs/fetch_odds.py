@@ -36,15 +36,18 @@ from workers.utils.pipeline_utils import (
 console = Console()
 
 
-def _compute_minutes_to_kickoff(kickoff_iso: str) -> int | None:
+def _compute_minutes_to_kickoff(kickoff_iso) -> int | None:
     """Minutes until kickoff. Negative = before, positive = after."""
     try:
-        kickoff = datetime.fromisoformat(kickoff_iso.replace("Z", "+00:00"))
+        if isinstance(kickoff_iso, datetime):
+            kickoff = kickoff_iso
+        else:
+            kickoff = datetime.fromisoformat(kickoff_iso.replace("Z", "+00:00"))
         if kickoff.tzinfo is None:
             kickoff = kickoff.replace(tzinfo=timezone.utc)
         now = datetime.now(timezone.utc)
         return int((kickoff - now).total_seconds() / 60)
-    except (ValueError, AttributeError):
+    except (ValueError, AttributeError, TypeError):
         return None
 
 
