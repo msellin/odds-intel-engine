@@ -39,9 +39,16 @@ Step 2: Two parallel models
 Step 3: Ensemble
   - final_prob = 0.5 * XGBoost_prob + 0.5 * Poisson_prob
 
-Step 4: Calibration
-  - Isotonic regression (5-fold CV)
-  - PROBLEM: Still 10-15% overconfident despite calibration
+Step 4: Calibration (2-stage pipeline, implemented 2026-04-30)
+  - Stage 1: tier-specific market shrinkage
+      shrunk = alpha * model_prob + (1-alpha) * implied_prob
+      alpha = model weight: {T1: 0.20, T2: 0.30, T3: 0.50, T4: 0.65}
+      Anchor currently = market average implied prob
+      Pending CAL-PIN-SHRINK: switch anchor to Pinnacle specifically
+      Pending CAL-ALPHA-ODDS: if odds > 3.0 → alpha_effective = min(alpha + 0.20, 0.85)
+  - Stage 2: Platt sigmoid correction fitted weekly from settled outcomes
+      cal = 1/(1+exp(-(a*shrunk+b))) per market
+      Pending CAL-PLATT-UPGRADE: replace with 2-feature logistic at 300+ settled bets
 
 Step 5: Edge calculation
   - edge = model_probability - (1 / odds)
@@ -96,6 +103,23 @@ Submitted to 4 AI evaluators. Key verdicts that were implemented:
 | H2H is mostly noise — remove from alignment | ✅ Removed |
 | Real edge = lower leagues + information speed | ✅ Bot config confirmed |
 
+### Round 3 (2026-05-06): Live Calibration Failure Analysis
+
+Submitted to 4 AI evaluators after 77 settled bets showed systematic failure on 1X2 home bets (42% predicted vs 26% actual). Key findings and actions taken:
+
+| Verdict | Status |
+|---------|--------|
+| Failure is **conditional miscalibration at high odds**, not global — 0.30-0.40 bin (23 bets, 13% actual) is the problem | ✅ Confirmed |
+| Single Platt sigmoid cannot fix conditional miscalibration — the 0.40-0.50 bin is well-calibrated; both cannot be fixed by one sigmoid | ✅ Confirmed. Platt refit will not self-correct |
+| Switch shrinkage anchor to Pinnacle specifically (not market avg) — Pinnacle vig 2-3% vs soft 5-8% | Tracked as CAL-PIN-SHRINK / PIN-6 |
+| Hard veto when `calibrated_prob - pinnacle_implied > 0.12` on home bets | ✅ Done 2026-05-06 — PIN-VETO implemented. Empirically catches 22/34 losses, filters 6/40 wins |
+| Add sharp_consensus gate for 1X2 (skip when `sharp_consensus_home < -0.02`) | Tracked as CAL-SHARP-GATE |
+| Odds-conditional α boost: `if odds > 3.0 → alpha += 0.20` | Tracked as CAL-ALPHA-ODDS |
+| Draw inflation factor (`raw_draw × 1.08`, renormalize) — Dixon-Coles only patches (0,0)-(1,1) corner | Tracked as CAL-DRAW-INFLATE |
+| Replace Platt with 2-feature logistic `[shrunk_prob, log(odds)]` at 300+ settled bets | Tracked as CAL-PLATT-UPGRADE |
+| Add `model_prob - pinnacle_implied`, `odds_at_pick`, `time_to_kickoff` to meta-model; drop/combine `overnight_line_move` (collinear with `odds_drift`) | Updated in B-ML3 notes |
+| CLV is the primary long-run EV validator — track per market, not just aggregate | Already tracked via B-ML1 pseudo-CLV |
+
 ### Round 2 (2026-04-28): Multi-Signal Architecture
 
 Submitted to 4 AI evaluators. Key verdicts that were implemented:
@@ -121,13 +145,19 @@ Submitted to 4 AI evaluators. Key verdicts that were implemented:
 │                       ├── 50/50 blend → calibrated_prob     │
 │  XGBoost Poisson ─────┘                                     │
 │                                                             │
-│  Calibration (2-stage, updated 2026-04-30):                  │
+│  Calibration (2-stage + veto gate, updated 2026-05-06):      │
 │    Stage 1: tier-specific market shrinkage                   │
 │      α = {T1: 0.20, T2: 0.30, T3: 0.50, T4: 0.65}         │
+│      Anchor: market avg implied (→ Pinnacle pending PIN-6)   │
+│      Pending CAL-ALPHA-ODDS: odds>3.0 → alpha += 0.20       │
 │    Stage 2: Platt sigmoid post-hoc correction                │
 │      cal = 1/(1+exp(-(a*shrunk+b))) per market              │
 │      α/β fitted weekly from settled predictions              │
-│      (scripts/fit_platt.py → model_calibration table)       │
+│      Upgrade path: 2-feature logistic at 300+ bets (CAL-PLATT-UPGRADE) │
+│    Veto gate (1X2 home): cal_prob - pinnacle_implied > 0.12 → skip │
+│      Empirical: catches 22/34 losses, filters 6/40 wins      │
+│      Pending PIN-3: extend veto to draw/away/O/U             │
+│      Pending CAL-SHARP-GATE: skip when sharp_consensus < -0.02 │
 │  Disagreement: abs(poisson - xgb) stored per bet            │
 │  Fallback: Tier D uses AF /predictions probability          │
 ├─────────────────────────────────────────────────────────────┤
@@ -154,17 +184,20 @@ Submitted to 4 AI evaluators. Key verdicts that were implemented:
 │    Target: pseudo_clv > 0 (all matches, not just bets)      │
 │    Ready when: 3000+ rows in match_feature_vectors (~11d)   │
 │                                                             │
-│  Feature design (META-2, 2026-04-29):                       │
+│  Feature design (META-2 + calibration review 2026-05-06):   │
 │    DO NOT use raw fundamentals (ELO, form) — market         │
 │    already priced those in. Use market structure gaps:      │
 │    • edge = ensemble_prob − market_implied_home             │
 │    • odds_drift (open → now implied prob delta)             │
 │    • bookmaker_disagreement (max−min implied)               │
-│    • overnight_line_move (yesterday close → today open)     │
 │    • model_disagreement (|poisson_prob − xgboost_prob|)     │
 │    • league_tier (T1–T4 data quality proxy)                 │
-│    • news_impact_score (Gemini qualitative signal)          │
+│    • news_impact_score (Gemini — validate AUC>0.52 first)  │
 │    • odds_volatility (std of implied prob, 24h)             │
+│    • model_prob − pinnacle_implied (likely strongest signal) │
+│    • odds_at_pick (raw) — 5% edge at 1.5 ≠ 5% edge at 5.0 │
+│    • time_to_kickoff (hours) — early bets ≠ late bets       │
+│    DROP overnight_line_move — correlated 0.7+ with odds_drift│
 │                                                             │
 │  Phase 2 (~June 2026): XGBoost + full signal set            │
 │    Replaces fixed edge thresholds with ML-predicted EV      │

@@ -5,6 +5,31 @@ Newest entries at the top. Internal refactors and infrastructure changes are not
 
 ---
 
+## 2026-05-06
+
+### Model — Calibration Overhaul (CAL tasks 1–4)
+
+**Root-cause diagnostic (CAL-DIAG-1)**
+- New diagnostic script `scripts/run_cal_diag.py` — 3 targeted SQL queries against settled 1X2 home bets
+- Found: Platt sigmoid was inflating calibrated probabilities by +3.87pp (38.2% → 42%) on home bets, making calibration worse not better
+- Found: Pinnacle-implied (30.2%) is much closer to actual win rate (26%) than the model (38.2%), validating the Pinnacle-anchor approach
+- Found: sharp_consensus was negative on average (−0.0034), consistent with the model picking against sharp money
+
+**Pinnacle as calibration anchor (CAL-PIN-SHRINK)**
+- `calibrate_prob()` now accepts an optional `anchor_implied` parameter
+- When Pinnacle-implied probability is available for a 1X2 Home bet, it replaces the soft-market average as the shrinkage anchor
+- Pinnacle's 2–3% vig vs soft books' 5–8% means its implied probabilities are systematically closer to true probability
+
+**Longshot model-weight reduction (CAL-ALPHA-ODDS)**
+- When odds > 3.0, model weight (alpha) is reduced by 0.20 (floor: 0.10), forcing the calibrated probability closer to the anchor
+- Addresses the 0.30–0.40 probability bin where 23 bets showed 35.5% model-predicted vs 13% actual win rate
+
+**Sharp consensus gate (CAL-SHARP-GATE)**
+- 1X2 Home bets are now skipped when `sharp_consensus_home < −0.02` (sharps disagree with a home pick)
+- Batch-loads sharp consensus signals alongside Pinnacle signals at bet selection time
+
+---
+
 ## 2026-05-05
 
 ### Bankroll Analytics (Elite)

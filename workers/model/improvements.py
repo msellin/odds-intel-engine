@@ -122,16 +122,28 @@ def _get_shrinkage_alpha(tier: int, goalline: bool) -> float:
 
 
 def calibrate_prob(model_prob: float, implied_prob: float,
-                   tier: int = 1, market: str = "") -> float:
+                   tier: int = 1, market: str = "",
+                   anchor_implied: float | None = None,
+                   odds: float | None = None) -> float:
     """
     Two-stage calibration:
-      1. Tier-specific shrinkage toward market-implied probability
+      1. Tier-specific shrinkage toward an implied probability anchor
       2. Platt sigmoid correction (if parameters available for this market)
 
     Stage 1 (shrinkage):
-      adjusted = alpha * model_prob + (1 - alpha) * implied_prob
-      Alpha is loaded from model_calibration if available (fit by scripts/fit_blend_weights.py),
-      otherwise falls back to hardcoded CALIBRATION_ALPHA / CALIBRATION_ALPHA_GOALLINE.
+      adjusted = alpha * model_prob + (1 - alpha) * anchor
+
+      Anchor priority (CAL-PIN-SHRINK, 2026-05-06):
+        Pinnacle-implied > market-implied (implied_prob)
+        Pinnacle vig is 2-3% vs 5-8% for soft books, so Pinnacle implied
+        probabilities are closer to true probabilities. Soft books price
+        for liability management, not probability estimation.
+
+      Odds-conditional alpha (CAL-ALPHA-ODDS, 2026-05-06):
+        When odds > 3.0, alpha is boosted by +0.20 (capped at 0.85).
+        Live data (31 settled home bets): the 0.30-0.40 probability bin
+        showed 13% actual win rate vs 35.5% predicted — all longshot bets.
+        Pulling these harder toward the anchor reduces false edge detection.
 
     Stage 2 (Platt):
       calibrated = 1 / (1 + exp(-(a * adjusted + b)))
@@ -143,6 +155,8 @@ def calibrate_prob(model_prob: float, implied_prob: float,
         implied_prob: 1/odds (bookmaker-implied probability before margin)
         tier: League tier (1-4)
         market: Market key for Platt lookup (e.g. '1x2_home')
+        anchor_implied: Pinnacle-implied prob when available (CAL-PIN-SHRINK)
+        odds: Decimal odds for odds-conditional alpha boost (CAL-ALPHA-ODDS)
 
     Returns:
         Calibrated probability
@@ -152,7 +166,24 @@ def calibrate_prob(model_prob: float, implied_prob: float,
     mkt_lower = market.lower()
     goalline = any(mkt_lower.startswith(p) for p in _GOALLINE_PREFIXES)
     alpha = _get_shrinkage_alpha(tier, goalline)
-    shrunk = alpha * model_prob + (1 - alpha) * implied_prob
+
+    # CAL-ALPHA-ODDS: for longshot bets (odds > 3.0), reduce model weight so
+    # the calibration pulls harder toward the anchor (market/Pinnacle).
+    # NOTE: alpha here is MODEL weight (lower = more anchor trust). The original
+    # task spec used the inverse convention, so "alpha + 0.20" in the task meant
+    # "more market trust" — achieved here by decreasing alpha.
+    # Floor of 0.10 ensures we never fully discard the model signal.
+    if odds is not None and odds > 3.0:
+        alpha = max(alpha - 0.20, 0.10)
+
+    # CAL-PIN-SHRINK: use Pinnacle-implied as shrinkage anchor when available
+    effective_anchor = (
+        anchor_implied
+        if anchor_implied is not None and 0 < anchor_implied < 1
+        else implied_prob
+    )
+
+    shrunk = alpha * model_prob + (1 - alpha) * effective_anchor
 
     # Stage 2: Platt sigmoid (if available for this market)
     return apply_platt(shrunk, market)

@@ -1321,6 +1321,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
         m.get("id") for m in odds_matches if m.get("id")
     ]
     pinnacle_implied_by_match: dict[str, float] = {}
+    sharp_consensus_by_match: dict[str, float] = {}
     if all_match_ids_for_signals:
         try:
             from workers.api_clients.db import execute_query as _eq_pin
@@ -1337,6 +1338,26 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                     pinnacle_implied_by_match[str(pr["match_id"])] = float(pr["signal_value"])
         except Exception as e:
             console.print(f"  [yellow]Pinnacle signal load failed (non-critical): {e}[/yellow]")
+
+        # CAL-SHARP-GATE: batch-load sharp_consensus_home for all matches.
+        # Skip 1X2 home bets where sharp_consensus < -0.02 (sharps say home
+        # is less likely than soft books). Diagnostic (2026-05-06) showed avg
+        # sharp_consensus = -0.0034 across 31 settled home bets — gate is
+        # conservative and will fire only when sharps strongly disagree.
+        try:
+            sc_rows = _eq_pin(
+                """SELECT DISTINCT ON (match_id) match_id, signal_value
+                   FROM match_signals
+                   WHERE match_id = ANY(%s)
+                     AND signal_name = 'sharp_consensus_home'
+                   ORDER BY match_id, captured_at DESC""",
+                (all_match_ids_for_signals,)
+            )
+            for sr in sc_rows:
+                if sr["signal_value"] is not None:
+                    sharp_consensus_by_match[str(sr["match_id"])] = float(sr["signal_value"])
+        except Exception as e:
+            console.print(f"  [yellow]Sharp consensus signal load failed (non-critical): {e}[/yellow]")
 
     for match in odds_matches:
         # Store match in Supabase (idempotent upsert — skipped if id pre-set from DB load)
@@ -1607,8 +1628,12 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                     continue
 
                 # P1: Calibrate probability (tier-specific shrinkage + Platt sigmoid)
+                # CAL-PIN-SHRINK: pass Pinnacle-implied as shrinkage anchor (1X2 home only for now)
+                # CAL-ALPHA-ODDS: pass odds so calibrate_prob can boost alpha for longshots
                 platt_market = f"{os_market}_{os_selection}"
-                cal_prob = calibrate_prob(raw_mp, ip, tier=tier, market=platt_market)
+                pin_anchor = pinnacle_implied_by_match.get(str(match_id)) if (mkt == "1X2" and selection == "Home") else None
+                cal_prob = calibrate_prob(raw_mp, ip, tier=tier, market=platt_market,
+                                          anchor_implied=pin_anchor, odds=odds)
 
                 # Guard: skip if calibration produced NaN
                 if cal_prob != cal_prob:
@@ -1628,6 +1653,16 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                     pin_implied = pinnacle_implied_by_match.get(str(match_id))
                     if pin_implied is not None and (cal_prob - pin_implied) > PINNACLE_VETO_GAP:
                         continue  # Pinnacle disagrees strongly — skip
+
+                # CAL-SHARP-GATE: skip 1X2 home bets when sharp books collectively
+                # say home is LESS likely than soft books (sharp_consensus_home < -0.02).
+                # Diagnostic (2026-05-06): gate is conservative — avg sharp_consensus
+                # was -0.0034 across 31 settled home bets, meaning most bets had
+                # sharps roughly aligned. When sharps do disagree strongly, this fires.
+                if mkt == "1X2" and selection == "Home":
+                    sc = sharp_consensus_by_match.get(str(match_id))
+                    if sc is not None and sc < -0.02:
+                        continue  # Sharps say home is less likely — skip
 
                 # P2: Odds movement — soft penalty, hard veto only >10%
                 mv_key = f"{os_market}_{os_selection}"

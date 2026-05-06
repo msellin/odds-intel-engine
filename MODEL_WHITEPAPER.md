@@ -2,7 +2,7 @@
 
 > Technical specification of the prediction and betting system.
 > Written for data scientists, auditors, and technical stakeholders.
-> Last updated: 2026-05-05
+> Last updated: 2026-05-06
 
 ---
 
@@ -23,12 +23,13 @@ The core thesis: **bookmaker pricing is less efficient in lower-tier leagues** (
 
 | Source | Data | Frequency | Cost |
 |--------|------|-----------|------|
-| API-Football (Ultra) | Fixtures, results, odds (13 bookmakers), lineups, injuries, standings, H2H, player stats, live data | Multiple daily | $29/mo |
-| Kambi API | Supplementary odds for 41 leagues | Every 2h | Free |
+| API-Football (Ultra) | Fixtures, results, odds (13 bookmakers incl. Pinnacle), lineups, injuries, standings, H2H, player stats, live data | Multiple daily | $29/mo |
 | ESPN | Settlement results backup | Daily | Free |
 | Gemini 2.5 Flash | AI news analysis (injuries, manager changes, tactical shifts) | 4x daily | Free |
 
-**Coverage:** 280+ leagues, 13 bookmakers tracked, ~280 matches analysed daily.
+**Coverage:** 280+ leagues, 13 bookmakers tracked (including Pinnacle), ~280 matches analysed daily.
+
+Note: Kambi API was removed 2026-05-06 after analysis showed Unibet odds (the main Kambi source) are already included in the API-Football 13-bookmaker feed.
 
 ---
 
@@ -145,11 +146,13 @@ Raw model probabilities are systematically overconfident (10-15%). Two-stage cal
 
 ### 5.1 Stage 1 — Tier-Specific Market Shrinkage
 
-Blend model probability toward bookmaker-implied probability, with the blend weight depending on how efficient the market is for that league tier:
+Blend model probability toward an implied probability anchor, with the blend weight depending on how efficient the market is for that league tier:
 
 ```
-shrunk = alpha * model_prob + (1 - alpha) * implied_prob
+shrunk = alpha * model_prob + (1 - alpha) * anchor_implied_prob
 ```
+
+**Anchor:** Currently market-average implied probability across the 13 tracked bookmakers. Planned upgrade (PIN-6): switch anchor to Pinnacle-specifically when available (fallback to market avg). Pinnacle vig is 2-3% vs 5-8% for soft books — their implied probabilities are closer to true probabilities.
 
 **1X2 markets (default alphas):**
 
@@ -159,6 +162,8 @@ shrunk = alpha * model_prob + (1 - alpha) * implied_prob
 | 2 | 0.30 | 30% | 70% | Championship level |
 | 3 | 0.50 | 50% | 50% | Balanced |
 | 4 (lower) | 0.65 | 65% | 35% | Market least efficient, trust model more |
+
+**Pending CAL-ALPHA-ODDS:** For bets at odds > 3.0 (longshots), `alpha_effective = min(alpha_tier + 0.20, 0.85)`. Live data (77 settled bets) showed the 0.30-0.40 probability bin is catastrophically miscalibrated (13% actual win rate vs 35.5% predicted), driven by longshot home bets where the model overestimates vs the market. Pulling these harder toward the anchor significantly reduces the volume of these bets.
 
 **Goal-line markets (BTTS, O/U) use higher alpha** — the Poisson/Dixon-Coles model is specifically designed for goal totals, so we trust it more relative to the bookmaker:
 
@@ -185,7 +190,21 @@ calibrated = 1 / (1 + exp(-(a * shrunk + b)))
 - Requires 100+ samples per market; graceful no-op if unavailable
 - Script: `scripts/fit_platt.py`
 
-### 5.3 Validation
+**Known limitation:** Single Platt sigmoid is a monotonic function and cannot fix conditional miscalibration. Live data (77 settled bets, 2026-05-06) shows the 0.40-0.50 bin is well-calibrated (45.5% actual vs 44.8% predicted) while the 0.30-0.40 bin is severely miscalibrated (13% actual vs 35.5% predicted). A single sigmoid fitted to both bins simultaneously will degrade both. The weekly refit will not self-correct this.
+
+**Planned upgrade (CAL-PLATT-UPGRADE, at 300+ settled bets):** Replace with a 2-feature logistic regression: `X = [shrunk_prob, log(odds_at_pick)]`. This allows the calibration to learn that "model says 40% at odds 3.6" should be corrected differently than "model says 40% at odds 1.8", without the overfitting risk of per-odds-bucket Platt scaling.
+
+### 5.3 Stage 3 — Veto Gate
+
+An additional hard filter applied after calibration, before bet placement:
+
+**Pinnacle disagreement veto (implemented 2026-05-06):** If `calibrated_prob - pinnacle_implied_home > 0.12` on a 1X2 home bet → bet is skipped entirely. Empirical validation on 77 settled bets: all winning bets had gap ≤ 12.9%; losing bets averaged 14.1% gap (max 21.7%). Catches 22/34 losses at the cost of filtering 6/40 wins.
+
+This veto addresses a structural bias: both XGBoost (with `is_home` feature) and Poisson (with separate home/away lambdas) encode home advantage. When blended 50/50, home advantage may stack. The market already prices in home advantage — so the model's excess home confidence shows up as a large positive gap vs Pinnacle.
+
+**Planned expansion (PIN-3):** Extend veto to draw, away, and O/U markets once Pinnacle implied probabilities are stored for those markets (PIN-2).
+
+### 5.4 Validation
 
 Calibration quality measured by **Expected Calibration Error (ECE)**:
 
@@ -411,9 +430,11 @@ Alignment will be activated (move from log-only to staking modifier) after:
 
 4. **No proprietary data:** All data comes from public APIs. No private injury feeds, no in-house scouting, no pitch-level telemetry.
 
-5. **Dixon-Coles rho needs more data:** The parameter is now estimated per league tier (not global static) from historical scoreline frequencies. However tier-level grouping is a coarse approximation — a per-league rho would be more precise but requires ~500+ matches per league to be stable.
+5. **Dixon-Coles rho needs more data:** The parameter is now estimated per league tier (not global static) from historical scoreline frequencies. However tier-level grouping is a coarse approximation — a per-league rho would be more precise but requires ~500+ matches per league to be stable. Additionally, Dixon-Coles only corrects the four low-scoring outcomes (0-0, 1-0, 0-1, 1-1) — higher-scoring draws (2-2, 3-3) remain underestimated due to the positive correlation between team scoring that results from game-state effects. Draw inflation factor (×1.08, pending CAL-DRAW-INFLATE) addresses this.
 
 6. **Isotonic calibration is trained once:** The XGBoost model's isotonic calibration is fitted during training on historical data. It doesn't adapt to live prediction drift (Platt scaling addresses this partially).
+
+7. **Conditional miscalibration at high odds (observed 2026-05-06):** Live data (77 settled bets) shows the model's calibration fails specifically on longshot bets (predicted 30-40%, odds > 3.0). In the 0.30-0.40 probability bin: 23 bets, 35.5% predicted, 13% actual win rate. The primary driver is likely double-counted home advantage (Poisson encodes it via separate home/away lambdas; XGBoost has it as a feature), amplified by edge detection selecting exactly the bets where the model most overestimates. The Pinnacle veto (gap > 0.12) was deployed immediately; the remaining fixes (odds-conditional alpha, sharp consensus gate) are tracked as CAL-ALPHA-ODDS and CAL-SHARP-GATE.
 
 ---
 
@@ -427,7 +448,8 @@ Alignment will be activated (move from log-only to staking modifier) after:
 | **Signal infrastructure** | 58 signals, append-only store, wide ML training table, pseudo-CLV | Done |
 | **Next: Meta-model** | Second-stage model predicting bet profitability (target = CLV) | Needs 3,000+ matches |
 | **Next: Alignment activation** | Use external signal filter to modify stakes | Needs 300+ settled bets |
-| **Next: Sharp bookmaker features** | Pinnacle line as anchor, sharp/soft bookmaker classification | Research phase |
+| **Sharp bookmaker features** | Pinnacle disagreement veto (done), sharp/soft classification (done), Pinnacle signals for all markets (PIN-2 through PIN-6 in progress) | PIN-VETO + P5.1 done; PIN-2..6 in progress |
+| **Calibration improvements (live data)** | Odds-conditional alpha boost, sharp consensus gate, draw inflation, Pinnacle-anchored shrinkage | CAL-ALPHA-ODDS / CAL-SHARP-GATE / CAL-DRAW-INFLATE / PIN-6 — all tracked in PRIORITY_QUEUE.md |
 | **Dynamic blend weights** | Weekly recalculation of Poisson/XGBoost blend per tier | Done — `scripts/fit_blend_weights.py`, Sunday refit |
 | **Next: Historical backfill** | 43K+ matches with stats + events from API-Football (no historical odds available) | In progress — automated cron |
 | **Next: XGBoost retrain on backfill** | Retrain on 43K matches with richer AF features (xG, shots, possession) | After backfill Phase 1 |
