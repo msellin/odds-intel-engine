@@ -3,18 +3,22 @@ __pycache__/
 *.pyc
 .env
 data/raw/
-data/processed/*
-!data/processed/targets_v9.csv
-!data/processed/targets_global.csv
+data/processed/
 data/models/
+data/model_results/
+data/daily/
+data/logs/
 *.pkl
 *.joblib
 .DS_Store
 /.idea/
-data/logs/
 supabase/.temp/
 .claude/
 
-# Lighthouse reports
+# Large vendor docs (keep locally, not in repo)
+docs/*.pdf
+
+# Generated reports
+sonarcloud_report.*
 lighthouse-*.json
 lighthouse-*.html

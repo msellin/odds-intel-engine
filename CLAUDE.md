@@ -32,10 +32,7 @@ All project documentation lives in this repo (`odds-intel-engine/`). Before star
 | `docs/LAUNCH_PLAN.md` | Launch phases (organic → paid), validation metrics, ad copy, pricing |
 | `docs/REDDIT_LAUNCH.md` | Reddit execution — progress tracker, subreddit rules, all 6 post drafts |
 | `docs/AF_ENDPOINT_FREQUENCY.md` | API-Football endpoint update frequencies vs our polling — identifies gaps |
-| `docs/API-Football_Documentation_v3.9.3.pdf` | Full API-Football v3.9.3 docs (130 pages) — reference for endpoint params, update frequencies |
-| `data/model_results/SOCCER_FINDINGS.md` | Soccer model iterations and backtest results (archival) |
-| `data/model_results/TENNIS_FINDINGS.md` | Tennis model iterations and backtest results (archival) |
-| `data/model_results/MEGA_BACKTEST_FINDINGS.md` | 354K match backtest across 275 leagues (archival) |
+| `docs/API-Football_Documentation_v3.9.3.pdf` | Full API-Football v3.9.3 docs (130 pages) — **local only** (gitignored, 7.1MB) |
 
 ## Task Lifecycle — Every Task Must Follow This Exactly
 
