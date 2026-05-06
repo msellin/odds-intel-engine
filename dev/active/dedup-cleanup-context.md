@@ -30,6 +30,38 @@ duplicates. This task builds proper infrastructure so we don't need emergency pa
 - Improved frontend dedup key to normalise team names + use kickoff date (odds-intel-web)
 - These are stop-gaps; the underlying Bulgaria duplicate records still exist in the DB
 
+## Kambi vs API-Football — what Kambi uniquely provides
+
+**Nothing exclusive.** All 41 Kambi leagues are also in API-Football. Kambi's only value is:
+1. **Better odds pricing** on 1X2/O/U for 41 European leagues (Unibet/Paf often sharper)
+2. **Live in-play odds** via `/live.json` (AF doesn't have this)
+3. **Free + no rate limit** (AF costs $29/mo, rate-limited to 450 req/min)
+
+Actual odds data is stored in `odds_snapshots` keyed by `match_id`, not `league_id`.
+This means **league merges carry zero risk of losing odds data** — the odds snapshot rows
+stay intact, just their parent match's league_id changes.
+
+**Simplification for Phase 4:** Any league record with `api_football_id IS NULL` came from
+Kambi. It always has an AF counterpart. Detection can apply this rule directly.
+
+## Unmapped LEAGUE_MAP entries (future duplicate risk)
+
+30 of the 41 Kambi LEAGUE_MAP entries have no explicit KAMBI_TO_AF_LEAGUE entry.
+Most probably match AF by name, but these are high/medium risk for name divergence:
+
+| Kambi path | Risk | AF name (suspected) |
+|---|---|---|
+| Greece / Super League | **High** | Super League 1 |
+| Portugal / Liga 2 | **High** | Segunda Liga |
+| Poland / I Liga | Medium | I liga (case) |
+| Serbia / Super Liga | Medium | Super liga (case) |
+| Estonia / Esiliiga | Medium | TBD |
+| Estonia / Esiliiga B | Medium | TBD |
+| Norway / OBOS-ligaen | Low | Same (already in migration 025) |
+
+Phase 1 detection script will definitively identify all mismatches.
+Phase 3 (alternate_names) or KAMBI_TO_AF_LEAGUE additions will fix them.
+
 ## Key files
 
 | File | Purpose |
