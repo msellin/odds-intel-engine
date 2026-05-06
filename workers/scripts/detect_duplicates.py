@@ -225,7 +225,7 @@ def generate_sql(league_pairs, team_pairs, fixture_dupes) -> str:
                 f"UPDATE lineups        SET team_id = '{c['id']}' WHERE team_id = '{o['id']}';",
                 f"UPDATE players        SET team_id = '{c['id']}' WHERE team_id = '{o['id']}';",
                 f"UPDATE manager_tenures SET team_id = '{c['id']}' WHERE team_id = '{o['id']}';",
-                f"UPDATE team_transfers  SET team_id = '{c['id']}' WHERE team_id = '{o['id']}';",
+                f"-- team_transfers uses team_api_id (integer AF ID), not team_id UUID — skip",
                 f"DELETE FROM team_elo_daily  WHERE team_id = '{o['id']}';",
                 f"DELETE FROM team_form_cache WHERE team_id = '{o['id']}';",
                 f"DELETE FROM teams           WHERE id = '{o['id']}';",

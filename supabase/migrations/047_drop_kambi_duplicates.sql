@@ -144,7 +144,6 @@ UPDATE matches        SET away_team_id = '01bda5be-0540-43d3-821e-eddb17ca23ba' 
 UPDATE lineups        SET team_id = '01bda5be-0540-43d3-821e-eddb17ca23ba' WHERE team_id = 'b6b108a8-aaf3-4618-8066-8c23169a704a';
 UPDATE players        SET team_id = '01bda5be-0540-43d3-821e-eddb17ca23ba' WHERE team_id = 'b6b108a8-aaf3-4618-8066-8c23169a704a';
 UPDATE manager_tenures SET team_id = '01bda5be-0540-43d3-821e-eddb17ca23ba' WHERE team_id = 'b6b108a8-aaf3-4618-8066-8c23169a704a';
-UPDATE team_transfers  SET team_id = '01bda5be-0540-43d3-821e-eddb17ca23ba' WHERE team_id = 'b6b108a8-aaf3-4618-8066-8c23169a704a';
 DELETE FROM team_elo_daily  WHERE team_id = 'b6b108a8-aaf3-4618-8066-8c23169a704a';
 DELETE FROM team_form_cache WHERE team_id = 'b6b108a8-aaf3-4618-8066-8c23169a704a';
 DELETE FROM teams           WHERE id = 'b6b108a8-aaf3-4618-8066-8c23169a704a';
@@ -155,7 +154,6 @@ UPDATE matches        SET away_team_id = '620e4fbc-9bf7-4781-9739-3d1e37859bd3' 
 UPDATE lineups        SET team_id = '620e4fbc-9bf7-4781-9739-3d1e37859bd3' WHERE team_id = '028bcc86-d392-4cdb-a2ec-4f565afecfcd';
 UPDATE players        SET team_id = '620e4fbc-9bf7-4781-9739-3d1e37859bd3' WHERE team_id = '028bcc86-d392-4cdb-a2ec-4f565afecfcd';
 UPDATE manager_tenures SET team_id = '620e4fbc-9bf7-4781-9739-3d1e37859bd3' WHERE team_id = '028bcc86-d392-4cdb-a2ec-4f565afecfcd';
-UPDATE team_transfers  SET team_id = '620e4fbc-9bf7-4781-9739-3d1e37859bd3' WHERE team_id = '028bcc86-d392-4cdb-a2ec-4f565afecfcd';
 DELETE FROM team_elo_daily  WHERE team_id = '028bcc86-d392-4cdb-a2ec-4f565afecfcd';
 DELETE FROM team_form_cache WHERE team_id = '028bcc86-d392-4cdb-a2ec-4f565afecfcd';
 DELETE FROM teams           WHERE id = '028bcc86-d392-4cdb-a2ec-4f565afecfcd';
@@ -166,7 +164,6 @@ UPDATE matches        SET away_team_id = 'ccf61d44-3193-4faa-9a7e-354c8594040b' 
 UPDATE lineups        SET team_id = 'ccf61d44-3193-4faa-9a7e-354c8594040b' WHERE team_id = '03897f94-c675-4f8e-addb-4695de9e2c18';
 UPDATE players        SET team_id = 'ccf61d44-3193-4faa-9a7e-354c8594040b' WHERE team_id = '03897f94-c675-4f8e-addb-4695de9e2c18';
 UPDATE manager_tenures SET team_id = 'ccf61d44-3193-4faa-9a7e-354c8594040b' WHERE team_id = '03897f94-c675-4f8e-addb-4695de9e2c18';
-UPDATE team_transfers  SET team_id = 'ccf61d44-3193-4faa-9a7e-354c8594040b' WHERE team_id = '03897f94-c675-4f8e-addb-4695de9e2c18';
 DELETE FROM team_elo_daily  WHERE team_id = '03897f94-c675-4f8e-addb-4695de9e2c18';
 DELETE FROM team_form_cache WHERE team_id = '03897f94-c675-4f8e-addb-4695de9e2c18';
 DELETE FROM teams           WHERE id = '03897f94-c675-4f8e-addb-4695de9e2c18';
@@ -177,7 +174,6 @@ UPDATE matches        SET away_team_id = 'f7b56c0e-5397-4d2e-bb48-ac197ae4d1f7' 
 UPDATE lineups        SET team_id = 'f7b56c0e-5397-4d2e-bb48-ac197ae4d1f7' WHERE team_id = '09f7d0f7-2de6-4e6f-8a81-9ad9d9a2af99';
 UPDATE players        SET team_id = 'f7b56c0e-5397-4d2e-bb48-ac197ae4d1f7' WHERE team_id = '09f7d0f7-2de6-4e6f-8a81-9ad9d9a2af99';
 UPDATE manager_tenures SET team_id = 'f7b56c0e-5397-4d2e-bb48-ac197ae4d1f7' WHERE team_id = '09f7d0f7-2de6-4e6f-8a81-9ad9d9a2af99';
-UPDATE team_transfers  SET team_id = 'f7b56c0e-5397-4d2e-bb48-ac197ae4d1f7' WHERE team_id = '09f7d0f7-2de6-4e6f-8a81-9ad9d9a2af99';
 DELETE FROM team_elo_daily  WHERE team_id = '09f7d0f7-2de6-4e6f-8a81-9ad9d9a2af99';
 DELETE FROM team_form_cache WHERE team_id = '09f7d0f7-2de6-4e6f-8a81-9ad9d9a2af99';
 DELETE FROM teams           WHERE id = '09f7d0f7-2de6-4e6f-8a81-9ad9d9a2af99';
@@ -188,7 +184,6 @@ UPDATE matches        SET away_team_id = '879fb3e0-bafd-46d3-a0cf-26230c8efc5b' 
 UPDATE lineups        SET team_id = '879fb3e0-bafd-46d3-a0cf-26230c8efc5b' WHERE team_id = '0cdccc0e-f12d-43c0-8b05-192e9fb85583';
 UPDATE players        SET team_id = '879fb3e0-bafd-46d3-a0cf-26230c8efc5b' WHERE team_id = '0cdccc0e-f12d-43c0-8b05-192e9fb85583';
 UPDATE manager_tenures SET team_id = '879fb3e0-bafd-46d3-a0cf-26230c8efc5b' WHERE team_id = '0cdccc0e-f12d-43c0-8b05-192e9fb85583';
-UPDATE team_transfers  SET team_id = '879fb3e0-bafd-46d3-a0cf-26230c8efc5b' WHERE team_id = '0cdccc0e-f12d-43c0-8b05-192e9fb85583';
 DELETE FROM team_elo_daily  WHERE team_id = '0cdccc0e-f12d-43c0-8b05-192e9fb85583';
 DELETE FROM team_form_cache WHERE team_id = '0cdccc0e-f12d-43c0-8b05-192e9fb85583';
 DELETE FROM teams           WHERE id = '0cdccc0e-f12d-43c0-8b05-192e9fb85583';
@@ -199,7 +194,6 @@ UPDATE matches        SET away_team_id = '10cf9d8b-8fa6-47bd-acc5-ee6e5652a95b' 
 UPDATE lineups        SET team_id = '10cf9d8b-8fa6-47bd-acc5-ee6e5652a95b' WHERE team_id = 'f2ee1ffc-7e66-4be0-9242-e6d707d39a9b';
 UPDATE players        SET team_id = '10cf9d8b-8fa6-47bd-acc5-ee6e5652a95b' WHERE team_id = 'f2ee1ffc-7e66-4be0-9242-e6d707d39a9b';
 UPDATE manager_tenures SET team_id = '10cf9d8b-8fa6-47bd-acc5-ee6e5652a95b' WHERE team_id = 'f2ee1ffc-7e66-4be0-9242-e6d707d39a9b';
-UPDATE team_transfers  SET team_id = '10cf9d8b-8fa6-47bd-acc5-ee6e5652a95b' WHERE team_id = 'f2ee1ffc-7e66-4be0-9242-e6d707d39a9b';
 DELETE FROM team_elo_daily  WHERE team_id = 'f2ee1ffc-7e66-4be0-9242-e6d707d39a9b';
 DELETE FROM team_form_cache WHERE team_id = 'f2ee1ffc-7e66-4be0-9242-e6d707d39a9b';
 DELETE FROM teams           WHERE id = 'f2ee1ffc-7e66-4be0-9242-e6d707d39a9b';
@@ -210,7 +204,6 @@ UPDATE matches        SET away_team_id = 'c047d3e6-cdac-495a-9129-b5c13a3793dc' 
 UPDATE lineups        SET team_id = 'c047d3e6-cdac-495a-9129-b5c13a3793dc' WHERE team_id = '119a0b9f-2fd5-4178-beaf-9c145744ec1a';
 UPDATE players        SET team_id = 'c047d3e6-cdac-495a-9129-b5c13a3793dc' WHERE team_id = '119a0b9f-2fd5-4178-beaf-9c145744ec1a';
 UPDATE manager_tenures SET team_id = 'c047d3e6-cdac-495a-9129-b5c13a3793dc' WHERE team_id = '119a0b9f-2fd5-4178-beaf-9c145744ec1a';
-UPDATE team_transfers  SET team_id = 'c047d3e6-cdac-495a-9129-b5c13a3793dc' WHERE team_id = '119a0b9f-2fd5-4178-beaf-9c145744ec1a';
 DELETE FROM team_elo_daily  WHERE team_id = '119a0b9f-2fd5-4178-beaf-9c145744ec1a';
 DELETE FROM team_form_cache WHERE team_id = '119a0b9f-2fd5-4178-beaf-9c145744ec1a';
 DELETE FROM teams           WHERE id = '119a0b9f-2fd5-4178-beaf-9c145744ec1a';
@@ -221,7 +214,6 @@ UPDATE matches        SET away_team_id = '6191c125-afc0-4735-bdf1-651e6ad56345' 
 UPDATE lineups        SET team_id = '6191c125-afc0-4735-bdf1-651e6ad56345' WHERE team_id = '15486bb2-e4d4-4963-ae95-73f25ac3f6b9';
 UPDATE players        SET team_id = '6191c125-afc0-4735-bdf1-651e6ad56345' WHERE team_id = '15486bb2-e4d4-4963-ae95-73f25ac3f6b9';
 UPDATE manager_tenures SET team_id = '6191c125-afc0-4735-bdf1-651e6ad56345' WHERE team_id = '15486bb2-e4d4-4963-ae95-73f25ac3f6b9';
-UPDATE team_transfers  SET team_id = '6191c125-afc0-4735-bdf1-651e6ad56345' WHERE team_id = '15486bb2-e4d4-4963-ae95-73f25ac3f6b9';
 DELETE FROM team_elo_daily  WHERE team_id = '15486bb2-e4d4-4963-ae95-73f25ac3f6b9';
 DELETE FROM team_form_cache WHERE team_id = '15486bb2-e4d4-4963-ae95-73f25ac3f6b9';
 DELETE FROM teams           WHERE id = '15486bb2-e4d4-4963-ae95-73f25ac3f6b9';
@@ -232,7 +224,6 @@ UPDATE matches        SET away_team_id = '16cc4701-46cb-47de-af7f-f16c72a87152' 
 UPDATE lineups        SET team_id = '16cc4701-46cb-47de-af7f-f16c72a87152' WHERE team_id = '1db84ae4-d2e1-42b2-91b6-9e8b2ce4f778';
 UPDATE players        SET team_id = '16cc4701-46cb-47de-af7f-f16c72a87152' WHERE team_id = '1db84ae4-d2e1-42b2-91b6-9e8b2ce4f778';
 UPDATE manager_tenures SET team_id = '16cc4701-46cb-47de-af7f-f16c72a87152' WHERE team_id = '1db84ae4-d2e1-42b2-91b6-9e8b2ce4f778';
-UPDATE team_transfers  SET team_id = '16cc4701-46cb-47de-af7f-f16c72a87152' WHERE team_id = '1db84ae4-d2e1-42b2-91b6-9e8b2ce4f778';
 DELETE FROM team_elo_daily  WHERE team_id = '1db84ae4-d2e1-42b2-91b6-9e8b2ce4f778';
 DELETE FROM team_form_cache WHERE team_id = '1db84ae4-d2e1-42b2-91b6-9e8b2ce4f778';
 DELETE FROM teams           WHERE id = '1db84ae4-d2e1-42b2-91b6-9e8b2ce4f778';
@@ -243,7 +234,6 @@ UPDATE matches        SET away_team_id = '1ba30b3e-3593-464a-84ac-cb887260267a' 
 UPDATE lineups        SET team_id = '1ba30b3e-3593-464a-84ac-cb887260267a' WHERE team_id = 'ca2a9404-8cd2-4e2b-84ea-292329c88349';
 UPDATE players        SET team_id = '1ba30b3e-3593-464a-84ac-cb887260267a' WHERE team_id = 'ca2a9404-8cd2-4e2b-84ea-292329c88349';
 UPDATE manager_tenures SET team_id = '1ba30b3e-3593-464a-84ac-cb887260267a' WHERE team_id = 'ca2a9404-8cd2-4e2b-84ea-292329c88349';
-UPDATE team_transfers  SET team_id = '1ba30b3e-3593-464a-84ac-cb887260267a' WHERE team_id = 'ca2a9404-8cd2-4e2b-84ea-292329c88349';
 DELETE FROM team_elo_daily  WHERE team_id = 'ca2a9404-8cd2-4e2b-84ea-292329c88349';
 DELETE FROM team_form_cache WHERE team_id = 'ca2a9404-8cd2-4e2b-84ea-292329c88349';
 DELETE FROM teams           WHERE id = 'ca2a9404-8cd2-4e2b-84ea-292329c88349';
@@ -254,7 +244,6 @@ UPDATE matches        SET away_team_id = 'b7a2871a-09fb-4919-9e98-539362de2aaf' 
 UPDATE lineups        SET team_id = 'b7a2871a-09fb-4919-9e98-539362de2aaf' WHERE team_id = '1f9fa1ec-0596-4a25-925e-8e2ab9f45417';
 UPDATE players        SET team_id = 'b7a2871a-09fb-4919-9e98-539362de2aaf' WHERE team_id = '1f9fa1ec-0596-4a25-925e-8e2ab9f45417';
 UPDATE manager_tenures SET team_id = 'b7a2871a-09fb-4919-9e98-539362de2aaf' WHERE team_id = '1f9fa1ec-0596-4a25-925e-8e2ab9f45417';
-UPDATE team_transfers  SET team_id = 'b7a2871a-09fb-4919-9e98-539362de2aaf' WHERE team_id = '1f9fa1ec-0596-4a25-925e-8e2ab9f45417';
 DELETE FROM team_elo_daily  WHERE team_id = '1f9fa1ec-0596-4a25-925e-8e2ab9f45417';
 DELETE FROM team_form_cache WHERE team_id = '1f9fa1ec-0596-4a25-925e-8e2ab9f45417';
 DELETE FROM teams           WHERE id = '1f9fa1ec-0596-4a25-925e-8e2ab9f45417';
@@ -265,7 +254,6 @@ UPDATE matches        SET away_team_id = '1fec92e5-f4dd-4971-9ae5-c528d4160288' 
 UPDATE lineups        SET team_id = '1fec92e5-f4dd-4971-9ae5-c528d4160288' WHERE team_id = 'e08f7319-bef1-4b62-acc0-b136bf889552';
 UPDATE players        SET team_id = '1fec92e5-f4dd-4971-9ae5-c528d4160288' WHERE team_id = 'e08f7319-bef1-4b62-acc0-b136bf889552';
 UPDATE manager_tenures SET team_id = '1fec92e5-f4dd-4971-9ae5-c528d4160288' WHERE team_id = 'e08f7319-bef1-4b62-acc0-b136bf889552';
-UPDATE team_transfers  SET team_id = '1fec92e5-f4dd-4971-9ae5-c528d4160288' WHERE team_id = 'e08f7319-bef1-4b62-acc0-b136bf889552';
 DELETE FROM team_elo_daily  WHERE team_id = 'e08f7319-bef1-4b62-acc0-b136bf889552';
 DELETE FROM team_form_cache WHERE team_id = 'e08f7319-bef1-4b62-acc0-b136bf889552';
 DELETE FROM teams           WHERE id = 'e08f7319-bef1-4b62-acc0-b136bf889552';
@@ -276,7 +264,6 @@ UPDATE matches        SET away_team_id = '1ffbcfe8-02bb-4173-8165-344f25f7602f' 
 UPDATE lineups        SET team_id = '1ffbcfe8-02bb-4173-8165-344f25f7602f' WHERE team_id = 'a7f16af4-923e-4e86-9f46-ddb25710c1bc';
 UPDATE players        SET team_id = '1ffbcfe8-02bb-4173-8165-344f25f7602f' WHERE team_id = 'a7f16af4-923e-4e86-9f46-ddb25710c1bc';
 UPDATE manager_tenures SET team_id = '1ffbcfe8-02bb-4173-8165-344f25f7602f' WHERE team_id = 'a7f16af4-923e-4e86-9f46-ddb25710c1bc';
-UPDATE team_transfers  SET team_id = '1ffbcfe8-02bb-4173-8165-344f25f7602f' WHERE team_id = 'a7f16af4-923e-4e86-9f46-ddb25710c1bc';
 DELETE FROM team_elo_daily  WHERE team_id = 'a7f16af4-923e-4e86-9f46-ddb25710c1bc';
 DELETE FROM team_form_cache WHERE team_id = 'a7f16af4-923e-4e86-9f46-ddb25710c1bc';
 DELETE FROM teams           WHERE id = 'a7f16af4-923e-4e86-9f46-ddb25710c1bc';
@@ -287,7 +274,6 @@ UPDATE matches        SET away_team_id = '27660a08-123f-44cd-aa09-df3ff38d85e3' 
 UPDATE lineups        SET team_id = '27660a08-123f-44cd-aa09-df3ff38d85e3' WHERE team_id = 'bd17e4d4-9bc7-4ba1-a774-ab57053ddb98';
 UPDATE players        SET team_id = '27660a08-123f-44cd-aa09-df3ff38d85e3' WHERE team_id = 'bd17e4d4-9bc7-4ba1-a774-ab57053ddb98';
 UPDATE manager_tenures SET team_id = '27660a08-123f-44cd-aa09-df3ff38d85e3' WHERE team_id = 'bd17e4d4-9bc7-4ba1-a774-ab57053ddb98';
-UPDATE team_transfers  SET team_id = '27660a08-123f-44cd-aa09-df3ff38d85e3' WHERE team_id = 'bd17e4d4-9bc7-4ba1-a774-ab57053ddb98';
 DELETE FROM team_elo_daily  WHERE team_id = 'bd17e4d4-9bc7-4ba1-a774-ab57053ddb98';
 DELETE FROM team_form_cache WHERE team_id = 'bd17e4d4-9bc7-4ba1-a774-ab57053ddb98';
 DELETE FROM teams           WHERE id = 'bd17e4d4-9bc7-4ba1-a774-ab57053ddb98';
@@ -298,7 +284,6 @@ UPDATE matches        SET away_team_id = '276e12a5-fb01-42a1-9539-5153bb171dc2' 
 UPDATE lineups        SET team_id = '276e12a5-fb01-42a1-9539-5153bb171dc2' WHERE team_id = 'aa602764-8956-4ba0-a45d-49358d7b5703';
 UPDATE players        SET team_id = '276e12a5-fb01-42a1-9539-5153bb171dc2' WHERE team_id = 'aa602764-8956-4ba0-a45d-49358d7b5703';
 UPDATE manager_tenures SET team_id = '276e12a5-fb01-42a1-9539-5153bb171dc2' WHERE team_id = 'aa602764-8956-4ba0-a45d-49358d7b5703';
-UPDATE team_transfers  SET team_id = '276e12a5-fb01-42a1-9539-5153bb171dc2' WHERE team_id = 'aa602764-8956-4ba0-a45d-49358d7b5703';
 DELETE FROM team_elo_daily  WHERE team_id = 'aa602764-8956-4ba0-a45d-49358d7b5703';
 DELETE FROM team_form_cache WHERE team_id = 'aa602764-8956-4ba0-a45d-49358d7b5703';
 DELETE FROM teams           WHERE id = 'aa602764-8956-4ba0-a45d-49358d7b5703';
@@ -309,7 +294,6 @@ UPDATE matches        SET away_team_id = '34d8adfa-1e11-4246-8144-9c9bc4cbc76b' 
 UPDATE lineups        SET team_id = '34d8adfa-1e11-4246-8144-9c9bc4cbc76b' WHERE team_id = '3f6ec1fb-8c5b-4b01-86c5-924179f47552';
 UPDATE players        SET team_id = '34d8adfa-1e11-4246-8144-9c9bc4cbc76b' WHERE team_id = '3f6ec1fb-8c5b-4b01-86c5-924179f47552';
 UPDATE manager_tenures SET team_id = '34d8adfa-1e11-4246-8144-9c9bc4cbc76b' WHERE team_id = '3f6ec1fb-8c5b-4b01-86c5-924179f47552';
-UPDATE team_transfers  SET team_id = '34d8adfa-1e11-4246-8144-9c9bc4cbc76b' WHERE team_id = '3f6ec1fb-8c5b-4b01-86c5-924179f47552';
 DELETE FROM team_elo_daily  WHERE team_id = '3f6ec1fb-8c5b-4b01-86c5-924179f47552';
 DELETE FROM team_form_cache WHERE team_id = '3f6ec1fb-8c5b-4b01-86c5-924179f47552';
 DELETE FROM teams           WHERE id = '3f6ec1fb-8c5b-4b01-86c5-924179f47552';
@@ -320,7 +304,6 @@ UPDATE matches        SET away_team_id = '3732f4ff-2736-4327-b880-863447669311' 
 UPDATE lineups        SET team_id = '3732f4ff-2736-4327-b880-863447669311' WHERE team_id = '78d01e95-4eaa-476e-aaa8-f27dbbc30439';
 UPDATE players        SET team_id = '3732f4ff-2736-4327-b880-863447669311' WHERE team_id = '78d01e95-4eaa-476e-aaa8-f27dbbc30439';
 UPDATE manager_tenures SET team_id = '3732f4ff-2736-4327-b880-863447669311' WHERE team_id = '78d01e95-4eaa-476e-aaa8-f27dbbc30439';
-UPDATE team_transfers  SET team_id = '3732f4ff-2736-4327-b880-863447669311' WHERE team_id = '78d01e95-4eaa-476e-aaa8-f27dbbc30439';
 DELETE FROM team_elo_daily  WHERE team_id = '78d01e95-4eaa-476e-aaa8-f27dbbc30439';
 DELETE FROM team_form_cache WHERE team_id = '78d01e95-4eaa-476e-aaa8-f27dbbc30439';
 DELETE FROM teams           WHERE id = '78d01e95-4eaa-476e-aaa8-f27dbbc30439';
@@ -331,7 +314,6 @@ UPDATE matches        SET away_team_id = '38aa0cbb-4b03-4d92-948d-6850e3c8f0cc' 
 UPDATE lineups        SET team_id = '38aa0cbb-4b03-4d92-948d-6850e3c8f0cc' WHERE team_id = '9905ea93-ce63-47f1-bbdb-d97e086cf004';
 UPDATE players        SET team_id = '38aa0cbb-4b03-4d92-948d-6850e3c8f0cc' WHERE team_id = '9905ea93-ce63-47f1-bbdb-d97e086cf004';
 UPDATE manager_tenures SET team_id = '38aa0cbb-4b03-4d92-948d-6850e3c8f0cc' WHERE team_id = '9905ea93-ce63-47f1-bbdb-d97e086cf004';
-UPDATE team_transfers  SET team_id = '38aa0cbb-4b03-4d92-948d-6850e3c8f0cc' WHERE team_id = '9905ea93-ce63-47f1-bbdb-d97e086cf004';
 DELETE FROM team_elo_daily  WHERE team_id = '9905ea93-ce63-47f1-bbdb-d97e086cf004';
 DELETE FROM team_form_cache WHERE team_id = '9905ea93-ce63-47f1-bbdb-d97e086cf004';
 DELETE FROM teams           WHERE id = '9905ea93-ce63-47f1-bbdb-d97e086cf004';
@@ -342,7 +324,6 @@ UPDATE matches        SET away_team_id = '3b1ee90e-5b22-4634-9237-27214e0c8b96' 
 UPDATE lineups        SET team_id = '3b1ee90e-5b22-4634-9237-27214e0c8b96' WHERE team_id = 'a7fb6023-bcf2-4ac8-8de1-e687ab2e7643';
 UPDATE players        SET team_id = '3b1ee90e-5b22-4634-9237-27214e0c8b96' WHERE team_id = 'a7fb6023-bcf2-4ac8-8de1-e687ab2e7643';
 UPDATE manager_tenures SET team_id = '3b1ee90e-5b22-4634-9237-27214e0c8b96' WHERE team_id = 'a7fb6023-bcf2-4ac8-8de1-e687ab2e7643';
-UPDATE team_transfers  SET team_id = '3b1ee90e-5b22-4634-9237-27214e0c8b96' WHERE team_id = 'a7fb6023-bcf2-4ac8-8de1-e687ab2e7643';
 DELETE FROM team_elo_daily  WHERE team_id = 'a7fb6023-bcf2-4ac8-8de1-e687ab2e7643';
 DELETE FROM team_form_cache WHERE team_id = 'a7fb6023-bcf2-4ac8-8de1-e687ab2e7643';
 DELETE FROM teams           WHERE id = 'a7fb6023-bcf2-4ac8-8de1-e687ab2e7643';
@@ -353,7 +334,6 @@ UPDATE matches        SET away_team_id = '3b898e95-e637-46a9-b9e6-af095dd6b53d' 
 UPDATE lineups        SET team_id = '3b898e95-e637-46a9-b9e6-af095dd6b53d' WHERE team_id = 'a2276dfa-9464-4f45-be52-363e8d35e85e';
 UPDATE players        SET team_id = '3b898e95-e637-46a9-b9e6-af095dd6b53d' WHERE team_id = 'a2276dfa-9464-4f45-be52-363e8d35e85e';
 UPDATE manager_tenures SET team_id = '3b898e95-e637-46a9-b9e6-af095dd6b53d' WHERE team_id = 'a2276dfa-9464-4f45-be52-363e8d35e85e';
-UPDATE team_transfers  SET team_id = '3b898e95-e637-46a9-b9e6-af095dd6b53d' WHERE team_id = 'a2276dfa-9464-4f45-be52-363e8d35e85e';
 DELETE FROM team_elo_daily  WHERE team_id = 'a2276dfa-9464-4f45-be52-363e8d35e85e';
 DELETE FROM team_form_cache WHERE team_id = 'a2276dfa-9464-4f45-be52-363e8d35e85e';
 DELETE FROM teams           WHERE id = 'a2276dfa-9464-4f45-be52-363e8d35e85e';
@@ -364,7 +344,6 @@ UPDATE matches        SET away_team_id = '3c5b3539-7330-469a-90c3-d26076ffb9fd' 
 UPDATE lineups        SET team_id = '3c5b3539-7330-469a-90c3-d26076ffb9fd' WHERE team_id = '5b006a6d-076b-40ea-884a-979eeac5f93c';
 UPDATE players        SET team_id = '3c5b3539-7330-469a-90c3-d26076ffb9fd' WHERE team_id = '5b006a6d-076b-40ea-884a-979eeac5f93c';
 UPDATE manager_tenures SET team_id = '3c5b3539-7330-469a-90c3-d26076ffb9fd' WHERE team_id = '5b006a6d-076b-40ea-884a-979eeac5f93c';
-UPDATE team_transfers  SET team_id = '3c5b3539-7330-469a-90c3-d26076ffb9fd' WHERE team_id = '5b006a6d-076b-40ea-884a-979eeac5f93c';
 DELETE FROM team_elo_daily  WHERE team_id = '5b006a6d-076b-40ea-884a-979eeac5f93c';
 DELETE FROM team_form_cache WHERE team_id = '5b006a6d-076b-40ea-884a-979eeac5f93c';
 DELETE FROM teams           WHERE id = '5b006a6d-076b-40ea-884a-979eeac5f93c';
@@ -375,7 +354,6 @@ UPDATE matches        SET away_team_id = '8f37db5b-5727-47c8-a085-13dfc8df2904' 
 UPDATE lineups        SET team_id = '8f37db5b-5727-47c8-a085-13dfc8df2904' WHERE team_id = '3cf8f047-dee4-4ceb-a572-e26a09f806e3';
 UPDATE players        SET team_id = '8f37db5b-5727-47c8-a085-13dfc8df2904' WHERE team_id = '3cf8f047-dee4-4ceb-a572-e26a09f806e3';
 UPDATE manager_tenures SET team_id = '8f37db5b-5727-47c8-a085-13dfc8df2904' WHERE team_id = '3cf8f047-dee4-4ceb-a572-e26a09f806e3';
-UPDATE team_transfers  SET team_id = '8f37db5b-5727-47c8-a085-13dfc8df2904' WHERE team_id = '3cf8f047-dee4-4ceb-a572-e26a09f806e3';
 DELETE FROM team_elo_daily  WHERE team_id = '3cf8f047-dee4-4ceb-a572-e26a09f806e3';
 DELETE FROM team_form_cache WHERE team_id = '3cf8f047-dee4-4ceb-a572-e26a09f806e3';
 DELETE FROM teams           WHERE id = '3cf8f047-dee4-4ceb-a572-e26a09f806e3';
@@ -386,7 +364,6 @@ UPDATE matches        SET away_team_id = '4044dd40-59c9-4083-af8f-d8eb8bc947d9' 
 UPDATE lineups        SET team_id = '4044dd40-59c9-4083-af8f-d8eb8bc947d9' WHERE team_id = 'bd189fb8-4f33-4a48-9e09-eb97504e0823';
 UPDATE players        SET team_id = '4044dd40-59c9-4083-af8f-d8eb8bc947d9' WHERE team_id = 'bd189fb8-4f33-4a48-9e09-eb97504e0823';
 UPDATE manager_tenures SET team_id = '4044dd40-59c9-4083-af8f-d8eb8bc947d9' WHERE team_id = 'bd189fb8-4f33-4a48-9e09-eb97504e0823';
-UPDATE team_transfers  SET team_id = '4044dd40-59c9-4083-af8f-d8eb8bc947d9' WHERE team_id = 'bd189fb8-4f33-4a48-9e09-eb97504e0823';
 DELETE FROM team_elo_daily  WHERE team_id = 'bd189fb8-4f33-4a48-9e09-eb97504e0823';
 DELETE FROM team_form_cache WHERE team_id = 'bd189fb8-4f33-4a48-9e09-eb97504e0823';
 DELETE FROM teams           WHERE id = 'bd189fb8-4f33-4a48-9e09-eb97504e0823';
@@ -397,7 +374,6 @@ UPDATE matches        SET away_team_id = '413a5a6d-21b0-49cf-9083-d9531caddb44' 
 UPDATE lineups        SET team_id = '413a5a6d-21b0-49cf-9083-d9531caddb44' WHERE team_id = 'f5a8ecca-d3d9-46de-8eae-ebefbc6ddb13';
 UPDATE players        SET team_id = '413a5a6d-21b0-49cf-9083-d9531caddb44' WHERE team_id = 'f5a8ecca-d3d9-46de-8eae-ebefbc6ddb13';
 UPDATE manager_tenures SET team_id = '413a5a6d-21b0-49cf-9083-d9531caddb44' WHERE team_id = 'f5a8ecca-d3d9-46de-8eae-ebefbc6ddb13';
-UPDATE team_transfers  SET team_id = '413a5a6d-21b0-49cf-9083-d9531caddb44' WHERE team_id = 'f5a8ecca-d3d9-46de-8eae-ebefbc6ddb13';
 DELETE FROM team_elo_daily  WHERE team_id = 'f5a8ecca-d3d9-46de-8eae-ebefbc6ddb13';
 DELETE FROM team_form_cache WHERE team_id = 'f5a8ecca-d3d9-46de-8eae-ebefbc6ddb13';
 DELETE FROM teams           WHERE id = 'f5a8ecca-d3d9-46de-8eae-ebefbc6ddb13';
@@ -408,7 +384,6 @@ UPDATE matches        SET away_team_id = 'fa54be98-0cb5-49e5-b0ea-1da4dc55ef8f' 
 UPDATE lineups        SET team_id = 'fa54be98-0cb5-49e5-b0ea-1da4dc55ef8f' WHERE team_id = '441de2a4-eea4-42c1-9619-86814d644692';
 UPDATE players        SET team_id = 'fa54be98-0cb5-49e5-b0ea-1da4dc55ef8f' WHERE team_id = '441de2a4-eea4-42c1-9619-86814d644692';
 UPDATE manager_tenures SET team_id = 'fa54be98-0cb5-49e5-b0ea-1da4dc55ef8f' WHERE team_id = '441de2a4-eea4-42c1-9619-86814d644692';
-UPDATE team_transfers  SET team_id = 'fa54be98-0cb5-49e5-b0ea-1da4dc55ef8f' WHERE team_id = '441de2a4-eea4-42c1-9619-86814d644692';
 DELETE FROM team_elo_daily  WHERE team_id = '441de2a4-eea4-42c1-9619-86814d644692';
 DELETE FROM team_form_cache WHERE team_id = '441de2a4-eea4-42c1-9619-86814d644692';
 DELETE FROM teams           WHERE id = '441de2a4-eea4-42c1-9619-86814d644692';
@@ -419,7 +394,6 @@ UPDATE matches        SET away_team_id = '47b9386e-cee7-4d43-8676-bc301e02a414' 
 UPDATE lineups        SET team_id = '47b9386e-cee7-4d43-8676-bc301e02a414' WHERE team_id = '72e596af-5f96-450e-8dc9-16950f4e4623';
 UPDATE players        SET team_id = '47b9386e-cee7-4d43-8676-bc301e02a414' WHERE team_id = '72e596af-5f96-450e-8dc9-16950f4e4623';
 UPDATE manager_tenures SET team_id = '47b9386e-cee7-4d43-8676-bc301e02a414' WHERE team_id = '72e596af-5f96-450e-8dc9-16950f4e4623';
-UPDATE team_transfers  SET team_id = '47b9386e-cee7-4d43-8676-bc301e02a414' WHERE team_id = '72e596af-5f96-450e-8dc9-16950f4e4623';
 DELETE FROM team_elo_daily  WHERE team_id = '72e596af-5f96-450e-8dc9-16950f4e4623';
 DELETE FROM team_form_cache WHERE team_id = '72e596af-5f96-450e-8dc9-16950f4e4623';
 DELETE FROM teams           WHERE id = '72e596af-5f96-450e-8dc9-16950f4e4623';
@@ -430,7 +404,6 @@ UPDATE matches        SET away_team_id = '493eb4c0-1495-4ad8-8b84-6a22231ce805' 
 UPDATE lineups        SET team_id = '493eb4c0-1495-4ad8-8b84-6a22231ce805' WHERE team_id = 'b6f60dd7-9507-42ca-9dc2-588380764cfd';
 UPDATE players        SET team_id = '493eb4c0-1495-4ad8-8b84-6a22231ce805' WHERE team_id = 'b6f60dd7-9507-42ca-9dc2-588380764cfd';
 UPDATE manager_tenures SET team_id = '493eb4c0-1495-4ad8-8b84-6a22231ce805' WHERE team_id = 'b6f60dd7-9507-42ca-9dc2-588380764cfd';
-UPDATE team_transfers  SET team_id = '493eb4c0-1495-4ad8-8b84-6a22231ce805' WHERE team_id = 'b6f60dd7-9507-42ca-9dc2-588380764cfd';
 DELETE FROM team_elo_daily  WHERE team_id = 'b6f60dd7-9507-42ca-9dc2-588380764cfd';
 DELETE FROM team_form_cache WHERE team_id = 'b6f60dd7-9507-42ca-9dc2-588380764cfd';
 DELETE FROM teams           WHERE id = 'b6f60dd7-9507-42ca-9dc2-588380764cfd';
@@ -441,7 +414,6 @@ UPDATE matches        SET away_team_id = 'e94af25b-3fcf-4fa7-894c-29f0e6d0b5da' 
 UPDATE lineups        SET team_id = 'e94af25b-3fcf-4fa7-894c-29f0e6d0b5da' WHERE team_id = '49ee95ff-886e-431c-bd31-d73e69bd5266';
 UPDATE players        SET team_id = 'e94af25b-3fcf-4fa7-894c-29f0e6d0b5da' WHERE team_id = '49ee95ff-886e-431c-bd31-d73e69bd5266';
 UPDATE manager_tenures SET team_id = 'e94af25b-3fcf-4fa7-894c-29f0e6d0b5da' WHERE team_id = '49ee95ff-886e-431c-bd31-d73e69bd5266';
-UPDATE team_transfers  SET team_id = 'e94af25b-3fcf-4fa7-894c-29f0e6d0b5da' WHERE team_id = '49ee95ff-886e-431c-bd31-d73e69bd5266';
 DELETE FROM team_elo_daily  WHERE team_id = '49ee95ff-886e-431c-bd31-d73e69bd5266';
 DELETE FROM team_form_cache WHERE team_id = '49ee95ff-886e-431c-bd31-d73e69bd5266';
 DELETE FROM teams           WHERE id = '49ee95ff-886e-431c-bd31-d73e69bd5266';
@@ -452,7 +424,6 @@ UPDATE matches        SET away_team_id = '503531ec-4ba6-4ef2-bed1-a5ded9d33207' 
 UPDATE lineups        SET team_id = '503531ec-4ba6-4ef2-bed1-a5ded9d33207' WHERE team_id = 'a1621d9b-75e1-4db8-b144-271171ec38f5';
 UPDATE players        SET team_id = '503531ec-4ba6-4ef2-bed1-a5ded9d33207' WHERE team_id = 'a1621d9b-75e1-4db8-b144-271171ec38f5';
 UPDATE manager_tenures SET team_id = '503531ec-4ba6-4ef2-bed1-a5ded9d33207' WHERE team_id = 'a1621d9b-75e1-4db8-b144-271171ec38f5';
-UPDATE team_transfers  SET team_id = '503531ec-4ba6-4ef2-bed1-a5ded9d33207' WHERE team_id = 'a1621d9b-75e1-4db8-b144-271171ec38f5';
 DELETE FROM team_elo_daily  WHERE team_id = 'a1621d9b-75e1-4db8-b144-271171ec38f5';
 DELETE FROM team_form_cache WHERE team_id = 'a1621d9b-75e1-4db8-b144-271171ec38f5';
 DELETE FROM teams           WHERE id = 'a1621d9b-75e1-4db8-b144-271171ec38f5';
@@ -463,7 +434,6 @@ UPDATE matches        SET away_team_id = '53f13d55-113b-4f21-b124-06961de83dd2' 
 UPDATE lineups        SET team_id = '53f13d55-113b-4f21-b124-06961de83dd2' WHERE team_id = '5d47f111-163e-4860-a015-23ec716d922a';
 UPDATE players        SET team_id = '53f13d55-113b-4f21-b124-06961de83dd2' WHERE team_id = '5d47f111-163e-4860-a015-23ec716d922a';
 UPDATE manager_tenures SET team_id = '53f13d55-113b-4f21-b124-06961de83dd2' WHERE team_id = '5d47f111-163e-4860-a015-23ec716d922a';
-UPDATE team_transfers  SET team_id = '53f13d55-113b-4f21-b124-06961de83dd2' WHERE team_id = '5d47f111-163e-4860-a015-23ec716d922a';
 DELETE FROM team_elo_daily  WHERE team_id = '5d47f111-163e-4860-a015-23ec716d922a';
 DELETE FROM team_form_cache WHERE team_id = '5d47f111-163e-4860-a015-23ec716d922a';
 DELETE FROM teams           WHERE id = '5d47f111-163e-4860-a015-23ec716d922a';
@@ -474,7 +444,6 @@ UPDATE matches        SET away_team_id = '5529599d-4890-4f00-b545-7af615fbb385' 
 UPDATE lineups        SET team_id = '5529599d-4890-4f00-b545-7af615fbb385' WHERE team_id = '9881fcb4-12f5-486c-bfdd-73ebe972188e';
 UPDATE players        SET team_id = '5529599d-4890-4f00-b545-7af615fbb385' WHERE team_id = '9881fcb4-12f5-486c-bfdd-73ebe972188e';
 UPDATE manager_tenures SET team_id = '5529599d-4890-4f00-b545-7af615fbb385' WHERE team_id = '9881fcb4-12f5-486c-bfdd-73ebe972188e';
-UPDATE team_transfers  SET team_id = '5529599d-4890-4f00-b545-7af615fbb385' WHERE team_id = '9881fcb4-12f5-486c-bfdd-73ebe972188e';
 DELETE FROM team_elo_daily  WHERE team_id = '9881fcb4-12f5-486c-bfdd-73ebe972188e';
 DELETE FROM team_form_cache WHERE team_id = '9881fcb4-12f5-486c-bfdd-73ebe972188e';
 DELETE FROM teams           WHERE id = '9881fcb4-12f5-486c-bfdd-73ebe972188e';
@@ -485,7 +454,6 @@ UPDATE matches        SET away_team_id = '58f5f914-c039-43ab-9399-3c047327d18c' 
 UPDATE lineups        SET team_id = '58f5f914-c039-43ab-9399-3c047327d18c' WHERE team_id = 'b08063b6-c5b9-4915-a94f-816b8d854fd1';
 UPDATE players        SET team_id = '58f5f914-c039-43ab-9399-3c047327d18c' WHERE team_id = 'b08063b6-c5b9-4915-a94f-816b8d854fd1';
 UPDATE manager_tenures SET team_id = '58f5f914-c039-43ab-9399-3c047327d18c' WHERE team_id = 'b08063b6-c5b9-4915-a94f-816b8d854fd1';
-UPDATE team_transfers  SET team_id = '58f5f914-c039-43ab-9399-3c047327d18c' WHERE team_id = 'b08063b6-c5b9-4915-a94f-816b8d854fd1';
 DELETE FROM team_elo_daily  WHERE team_id = 'b08063b6-c5b9-4915-a94f-816b8d854fd1';
 DELETE FROM team_form_cache WHERE team_id = 'b08063b6-c5b9-4915-a94f-816b8d854fd1';
 DELETE FROM teams           WHERE id = 'b08063b6-c5b9-4915-a94f-816b8d854fd1';
@@ -496,7 +464,6 @@ UPDATE matches        SET away_team_id = '92163fd1-0da9-4cff-bbd7-3cce88815021' 
 UPDATE lineups        SET team_id = '92163fd1-0da9-4cff-bbd7-3cce88815021' WHERE team_id = '5a336d1d-41fa-4055-b5f9-3293b90678f8';
 UPDATE players        SET team_id = '92163fd1-0da9-4cff-bbd7-3cce88815021' WHERE team_id = '5a336d1d-41fa-4055-b5f9-3293b90678f8';
 UPDATE manager_tenures SET team_id = '92163fd1-0da9-4cff-bbd7-3cce88815021' WHERE team_id = '5a336d1d-41fa-4055-b5f9-3293b90678f8';
-UPDATE team_transfers  SET team_id = '92163fd1-0da9-4cff-bbd7-3cce88815021' WHERE team_id = '5a336d1d-41fa-4055-b5f9-3293b90678f8';
 DELETE FROM team_elo_daily  WHERE team_id = '5a336d1d-41fa-4055-b5f9-3293b90678f8';
 DELETE FROM team_form_cache WHERE team_id = '5a336d1d-41fa-4055-b5f9-3293b90678f8';
 DELETE FROM teams           WHERE id = '5a336d1d-41fa-4055-b5f9-3293b90678f8';
@@ -507,7 +474,6 @@ UPDATE matches        SET away_team_id = 'dce56ae8-bea7-4616-8e84-cff2eec00065' 
 UPDATE lineups        SET team_id = 'dce56ae8-bea7-4616-8e84-cff2eec00065' WHERE team_id = '683f3b28-efe6-4599-878a-5f26f53e1486';
 UPDATE players        SET team_id = 'dce56ae8-bea7-4616-8e84-cff2eec00065' WHERE team_id = '683f3b28-efe6-4599-878a-5f26f53e1486';
 UPDATE manager_tenures SET team_id = 'dce56ae8-bea7-4616-8e84-cff2eec00065' WHERE team_id = '683f3b28-efe6-4599-878a-5f26f53e1486';
-UPDATE team_transfers  SET team_id = 'dce56ae8-bea7-4616-8e84-cff2eec00065' WHERE team_id = '683f3b28-efe6-4599-878a-5f26f53e1486';
 DELETE FROM team_elo_daily  WHERE team_id = '683f3b28-efe6-4599-878a-5f26f53e1486';
 DELETE FROM team_form_cache WHERE team_id = '683f3b28-efe6-4599-878a-5f26f53e1486';
 DELETE FROM teams           WHERE id = '683f3b28-efe6-4599-878a-5f26f53e1486';
@@ -518,7 +484,6 @@ UPDATE matches        SET away_team_id = '69338e6c-2d8b-48b6-b0ac-501b8e53894d' 
 UPDATE lineups        SET team_id = '69338e6c-2d8b-48b6-b0ac-501b8e53894d' WHERE team_id = 'd64b4ef2-5f57-4840-a5db-49bc41260e07';
 UPDATE players        SET team_id = '69338e6c-2d8b-48b6-b0ac-501b8e53894d' WHERE team_id = 'd64b4ef2-5f57-4840-a5db-49bc41260e07';
 UPDATE manager_tenures SET team_id = '69338e6c-2d8b-48b6-b0ac-501b8e53894d' WHERE team_id = 'd64b4ef2-5f57-4840-a5db-49bc41260e07';
-UPDATE team_transfers  SET team_id = '69338e6c-2d8b-48b6-b0ac-501b8e53894d' WHERE team_id = 'd64b4ef2-5f57-4840-a5db-49bc41260e07';
 DELETE FROM team_elo_daily  WHERE team_id = 'd64b4ef2-5f57-4840-a5db-49bc41260e07';
 DELETE FROM team_form_cache WHERE team_id = 'd64b4ef2-5f57-4840-a5db-49bc41260e07';
 DELETE FROM teams           WHERE id = 'd64b4ef2-5f57-4840-a5db-49bc41260e07';
@@ -529,7 +494,6 @@ UPDATE matches        SET away_team_id = '69364f4d-c3d8-4ad6-98f4-a57ed05efa3a' 
 UPDATE lineups        SET team_id = '69364f4d-c3d8-4ad6-98f4-a57ed05efa3a' WHERE team_id = '711a232b-5989-46ea-a3c9-cf30c3543f16';
 UPDATE players        SET team_id = '69364f4d-c3d8-4ad6-98f4-a57ed05efa3a' WHERE team_id = '711a232b-5989-46ea-a3c9-cf30c3543f16';
 UPDATE manager_tenures SET team_id = '69364f4d-c3d8-4ad6-98f4-a57ed05efa3a' WHERE team_id = '711a232b-5989-46ea-a3c9-cf30c3543f16';
-UPDATE team_transfers  SET team_id = '69364f4d-c3d8-4ad6-98f4-a57ed05efa3a' WHERE team_id = '711a232b-5989-46ea-a3c9-cf30c3543f16';
 DELETE FROM team_elo_daily  WHERE team_id = '711a232b-5989-46ea-a3c9-cf30c3543f16';
 DELETE FROM team_form_cache WHERE team_id = '711a232b-5989-46ea-a3c9-cf30c3543f16';
 DELETE FROM teams           WHERE id = '711a232b-5989-46ea-a3c9-cf30c3543f16';
@@ -540,7 +504,6 @@ UPDATE matches        SET away_team_id = '77ae0c10-51cd-4c65-b65a-72cded0603d1' 
 UPDATE lineups        SET team_id = '77ae0c10-51cd-4c65-b65a-72cded0603d1' WHERE team_id = '6a7a1726-f8c0-4659-88e9-e8f12ef1e0d3';
 UPDATE players        SET team_id = '77ae0c10-51cd-4c65-b65a-72cded0603d1' WHERE team_id = '6a7a1726-f8c0-4659-88e9-e8f12ef1e0d3';
 UPDATE manager_tenures SET team_id = '77ae0c10-51cd-4c65-b65a-72cded0603d1' WHERE team_id = '6a7a1726-f8c0-4659-88e9-e8f12ef1e0d3';
-UPDATE team_transfers  SET team_id = '77ae0c10-51cd-4c65-b65a-72cded0603d1' WHERE team_id = '6a7a1726-f8c0-4659-88e9-e8f12ef1e0d3';
 DELETE FROM team_elo_daily  WHERE team_id = '6a7a1726-f8c0-4659-88e9-e8f12ef1e0d3';
 DELETE FROM team_form_cache WHERE team_id = '6a7a1726-f8c0-4659-88e9-e8f12ef1e0d3';
 DELETE FROM teams           WHERE id = '6a7a1726-f8c0-4659-88e9-e8f12ef1e0d3';
@@ -551,7 +514,6 @@ UPDATE matches        SET away_team_id = '75696aee-d610-44f4-9df3-c4fb02caad06' 
 UPDATE lineups        SET team_id = '75696aee-d610-44f4-9df3-c4fb02caad06' WHERE team_id = 'a4727782-4002-4c54-859b-e10d63663fea';
 UPDATE players        SET team_id = '75696aee-d610-44f4-9df3-c4fb02caad06' WHERE team_id = 'a4727782-4002-4c54-859b-e10d63663fea';
 UPDATE manager_tenures SET team_id = '75696aee-d610-44f4-9df3-c4fb02caad06' WHERE team_id = 'a4727782-4002-4c54-859b-e10d63663fea';
-UPDATE team_transfers  SET team_id = '75696aee-d610-44f4-9df3-c4fb02caad06' WHERE team_id = 'a4727782-4002-4c54-859b-e10d63663fea';
 DELETE FROM team_elo_daily  WHERE team_id = 'a4727782-4002-4c54-859b-e10d63663fea';
 DELETE FROM team_form_cache WHERE team_id = 'a4727782-4002-4c54-859b-e10d63663fea';
 DELETE FROM teams           WHERE id = 'a4727782-4002-4c54-859b-e10d63663fea';
@@ -562,7 +524,6 @@ UPDATE matches        SET away_team_id = 'e9cd3429-4a5d-4d66-9f79-ba728ae06930' 
 UPDATE lineups        SET team_id = 'e9cd3429-4a5d-4d66-9f79-ba728ae06930' WHERE team_id = '79d2be3c-89fa-498d-a9a2-88bcbfd14cea';
 UPDATE players        SET team_id = 'e9cd3429-4a5d-4d66-9f79-ba728ae06930' WHERE team_id = '79d2be3c-89fa-498d-a9a2-88bcbfd14cea';
 UPDATE manager_tenures SET team_id = 'e9cd3429-4a5d-4d66-9f79-ba728ae06930' WHERE team_id = '79d2be3c-89fa-498d-a9a2-88bcbfd14cea';
-UPDATE team_transfers  SET team_id = 'e9cd3429-4a5d-4d66-9f79-ba728ae06930' WHERE team_id = '79d2be3c-89fa-498d-a9a2-88bcbfd14cea';
 DELETE FROM team_elo_daily  WHERE team_id = '79d2be3c-89fa-498d-a9a2-88bcbfd14cea';
 DELETE FROM team_form_cache WHERE team_id = '79d2be3c-89fa-498d-a9a2-88bcbfd14cea';
 DELETE FROM teams           WHERE id = '79d2be3c-89fa-498d-a9a2-88bcbfd14cea';
@@ -573,7 +534,6 @@ UPDATE matches        SET away_team_id = 'f3b96f3e-ff92-44bf-8822-a3c146efcb1d' 
 UPDATE lineups        SET team_id = 'f3b96f3e-ff92-44bf-8822-a3c146efcb1d' WHERE team_id = '7d7e58fb-10c8-4352-8727-bf237a6b7c37';
 UPDATE players        SET team_id = 'f3b96f3e-ff92-44bf-8822-a3c146efcb1d' WHERE team_id = '7d7e58fb-10c8-4352-8727-bf237a6b7c37';
 UPDATE manager_tenures SET team_id = 'f3b96f3e-ff92-44bf-8822-a3c146efcb1d' WHERE team_id = '7d7e58fb-10c8-4352-8727-bf237a6b7c37';
-UPDATE team_transfers  SET team_id = 'f3b96f3e-ff92-44bf-8822-a3c146efcb1d' WHERE team_id = '7d7e58fb-10c8-4352-8727-bf237a6b7c37';
 DELETE FROM team_elo_daily  WHERE team_id = '7d7e58fb-10c8-4352-8727-bf237a6b7c37';
 DELETE FROM team_form_cache WHERE team_id = '7d7e58fb-10c8-4352-8727-bf237a6b7c37';
 DELETE FROM teams           WHERE id = '7d7e58fb-10c8-4352-8727-bf237a6b7c37';
@@ -584,7 +544,6 @@ UPDATE matches        SET away_team_id = '845d48ec-5d92-420a-9772-721851f491f8' 
 UPDATE lineups        SET team_id = '845d48ec-5d92-420a-9772-721851f491f8' WHERE team_id = 'efa2fc90-672a-44af-a049-c1298579daee';
 UPDATE players        SET team_id = '845d48ec-5d92-420a-9772-721851f491f8' WHERE team_id = 'efa2fc90-672a-44af-a049-c1298579daee';
 UPDATE manager_tenures SET team_id = '845d48ec-5d92-420a-9772-721851f491f8' WHERE team_id = 'efa2fc90-672a-44af-a049-c1298579daee';
-UPDATE team_transfers  SET team_id = '845d48ec-5d92-420a-9772-721851f491f8' WHERE team_id = 'efa2fc90-672a-44af-a049-c1298579daee';
 DELETE FROM team_elo_daily  WHERE team_id = 'efa2fc90-672a-44af-a049-c1298579daee';
 DELETE FROM team_form_cache WHERE team_id = 'efa2fc90-672a-44af-a049-c1298579daee';
 DELETE FROM teams           WHERE id = 'efa2fc90-672a-44af-a049-c1298579daee';
@@ -595,7 +554,6 @@ UPDATE matches        SET away_team_id = '89fc1588-0440-4dac-b3d8-b4722d80c3f3' 
 UPDATE lineups        SET team_id = '89fc1588-0440-4dac-b3d8-b4722d80c3f3' WHERE team_id = 'e13ecc58-b9e4-4a0f-b982-0f03ba898691';
 UPDATE players        SET team_id = '89fc1588-0440-4dac-b3d8-b4722d80c3f3' WHERE team_id = 'e13ecc58-b9e4-4a0f-b982-0f03ba898691';
 UPDATE manager_tenures SET team_id = '89fc1588-0440-4dac-b3d8-b4722d80c3f3' WHERE team_id = 'e13ecc58-b9e4-4a0f-b982-0f03ba898691';
-UPDATE team_transfers  SET team_id = '89fc1588-0440-4dac-b3d8-b4722d80c3f3' WHERE team_id = 'e13ecc58-b9e4-4a0f-b982-0f03ba898691';
 DELETE FROM team_elo_daily  WHERE team_id = 'e13ecc58-b9e4-4a0f-b982-0f03ba898691';
 DELETE FROM team_form_cache WHERE team_id = 'e13ecc58-b9e4-4a0f-b982-0f03ba898691';
 DELETE FROM teams           WHERE id = 'e13ecc58-b9e4-4a0f-b982-0f03ba898691';
@@ -606,7 +564,6 @@ UPDATE matches        SET away_team_id = '95c0b20f-2aa9-492e-af54-dc8bb794614d' 
 UPDATE lineups        SET team_id = '95c0b20f-2aa9-492e-af54-dc8bb794614d' WHERE team_id = 'e1c35911-5eab-4a23-80ec-22ea76cbd9b2';
 UPDATE players        SET team_id = '95c0b20f-2aa9-492e-af54-dc8bb794614d' WHERE team_id = 'e1c35911-5eab-4a23-80ec-22ea76cbd9b2';
 UPDATE manager_tenures SET team_id = '95c0b20f-2aa9-492e-af54-dc8bb794614d' WHERE team_id = 'e1c35911-5eab-4a23-80ec-22ea76cbd9b2';
-UPDATE team_transfers  SET team_id = '95c0b20f-2aa9-492e-af54-dc8bb794614d' WHERE team_id = 'e1c35911-5eab-4a23-80ec-22ea76cbd9b2';
 DELETE FROM team_elo_daily  WHERE team_id = 'e1c35911-5eab-4a23-80ec-22ea76cbd9b2';
 DELETE FROM team_form_cache WHERE team_id = 'e1c35911-5eab-4a23-80ec-22ea76cbd9b2';
 DELETE FROM teams           WHERE id = 'e1c35911-5eab-4a23-80ec-22ea76cbd9b2';
@@ -617,7 +574,6 @@ UPDATE matches        SET away_team_id = '9bd9be6d-b381-49da-bf28-a5f8c5f51712' 
 UPDATE lineups        SET team_id = '9bd9be6d-b381-49da-bf28-a5f8c5f51712' WHERE team_id = 'ff21eae0-0c04-4f14-9448-791cdb32e943';
 UPDATE players        SET team_id = '9bd9be6d-b381-49da-bf28-a5f8c5f51712' WHERE team_id = 'ff21eae0-0c04-4f14-9448-791cdb32e943';
 UPDATE manager_tenures SET team_id = '9bd9be6d-b381-49da-bf28-a5f8c5f51712' WHERE team_id = 'ff21eae0-0c04-4f14-9448-791cdb32e943';
-UPDATE team_transfers  SET team_id = '9bd9be6d-b381-49da-bf28-a5f8c5f51712' WHERE team_id = 'ff21eae0-0c04-4f14-9448-791cdb32e943';
 DELETE FROM team_elo_daily  WHERE team_id = 'ff21eae0-0c04-4f14-9448-791cdb32e943';
 DELETE FROM team_form_cache WHERE team_id = 'ff21eae0-0c04-4f14-9448-791cdb32e943';
 DELETE FROM teams           WHERE id = 'ff21eae0-0c04-4f14-9448-791cdb32e943';
@@ -628,7 +584,6 @@ UPDATE matches        SET away_team_id = 'a11d0c2b-5f6a-4777-ac0e-c9be9b2d5eca' 
 UPDATE lineups        SET team_id = 'a11d0c2b-5f6a-4777-ac0e-c9be9b2d5eca' WHERE team_id = 'cdc3c2ee-9ef3-4fa6-81d5-ebc780587f7b';
 UPDATE players        SET team_id = 'a11d0c2b-5f6a-4777-ac0e-c9be9b2d5eca' WHERE team_id = 'cdc3c2ee-9ef3-4fa6-81d5-ebc780587f7b';
 UPDATE manager_tenures SET team_id = 'a11d0c2b-5f6a-4777-ac0e-c9be9b2d5eca' WHERE team_id = 'cdc3c2ee-9ef3-4fa6-81d5-ebc780587f7b';
-UPDATE team_transfers  SET team_id = 'a11d0c2b-5f6a-4777-ac0e-c9be9b2d5eca' WHERE team_id = 'cdc3c2ee-9ef3-4fa6-81d5-ebc780587f7b';
 DELETE FROM team_elo_daily  WHERE team_id = 'cdc3c2ee-9ef3-4fa6-81d5-ebc780587f7b';
 DELETE FROM team_form_cache WHERE team_id = 'cdc3c2ee-9ef3-4fa6-81d5-ebc780587f7b';
 DELETE FROM teams           WHERE id = 'cdc3c2ee-9ef3-4fa6-81d5-ebc780587f7b';
@@ -639,7 +594,6 @@ UPDATE matches        SET away_team_id = 'b6c2d040-bffa-4cb6-a7a3-ee16d5890db2' 
 UPDATE lineups        SET team_id = 'b6c2d040-bffa-4cb6-a7a3-ee16d5890db2' WHERE team_id = 'd87797b7-97e3-4889-9b65-ff1c19f2a9cf';
 UPDATE players        SET team_id = 'b6c2d040-bffa-4cb6-a7a3-ee16d5890db2' WHERE team_id = 'd87797b7-97e3-4889-9b65-ff1c19f2a9cf';
 UPDATE manager_tenures SET team_id = 'b6c2d040-bffa-4cb6-a7a3-ee16d5890db2' WHERE team_id = 'd87797b7-97e3-4889-9b65-ff1c19f2a9cf';
-UPDATE team_transfers  SET team_id = 'b6c2d040-bffa-4cb6-a7a3-ee16d5890db2' WHERE team_id = 'd87797b7-97e3-4889-9b65-ff1c19f2a9cf';
 DELETE FROM team_elo_daily  WHERE team_id = 'd87797b7-97e3-4889-9b65-ff1c19f2a9cf';
 DELETE FROM team_form_cache WHERE team_id = 'd87797b7-97e3-4889-9b65-ff1c19f2a9cf';
 DELETE FROM teams           WHERE id = 'd87797b7-97e3-4889-9b65-ff1c19f2a9cf';
@@ -650,7 +604,6 @@ UPDATE matches        SET away_team_id = 'd046e414-ed51-4a8f-878c-dbb34a4a7d64' 
 UPDATE lineups        SET team_id = 'd046e414-ed51-4a8f-878c-dbb34a4a7d64' WHERE team_id = 'b902fb12-aa29-493f-af31-ece91cd7dc32';
 UPDATE players        SET team_id = 'd046e414-ed51-4a8f-878c-dbb34a4a7d64' WHERE team_id = 'b902fb12-aa29-493f-af31-ece91cd7dc32';
 UPDATE manager_tenures SET team_id = 'd046e414-ed51-4a8f-878c-dbb34a4a7d64' WHERE team_id = 'b902fb12-aa29-493f-af31-ece91cd7dc32';
-UPDATE team_transfers  SET team_id = 'd046e414-ed51-4a8f-878c-dbb34a4a7d64' WHERE team_id = 'b902fb12-aa29-493f-af31-ece91cd7dc32';
 DELETE FROM team_elo_daily  WHERE team_id = 'b902fb12-aa29-493f-af31-ece91cd7dc32';
 DELETE FROM team_form_cache WHERE team_id = 'b902fb12-aa29-493f-af31-ece91cd7dc32';
 DELETE FROM teams           WHERE id = 'b902fb12-aa29-493f-af31-ece91cd7dc32';
@@ -661,7 +614,6 @@ UPDATE matches        SET away_team_id = 'c63d0a6e-d77c-4c32-8b89-6ee10be84f8c' 
 UPDATE lineups        SET team_id = 'c63d0a6e-d77c-4c32-8b89-6ee10be84f8c' WHERE team_id = 'ed94b2bf-bcd7-4228-ad7c-a32b145f71cc';
 UPDATE players        SET team_id = 'c63d0a6e-d77c-4c32-8b89-6ee10be84f8c' WHERE team_id = 'ed94b2bf-bcd7-4228-ad7c-a32b145f71cc';
 UPDATE manager_tenures SET team_id = 'c63d0a6e-d77c-4c32-8b89-6ee10be84f8c' WHERE team_id = 'ed94b2bf-bcd7-4228-ad7c-a32b145f71cc';
-UPDATE team_transfers  SET team_id = 'c63d0a6e-d77c-4c32-8b89-6ee10be84f8c' WHERE team_id = 'ed94b2bf-bcd7-4228-ad7c-a32b145f71cc';
 DELETE FROM team_elo_daily  WHERE team_id = 'ed94b2bf-bcd7-4228-ad7c-a32b145f71cc';
 DELETE FROM team_form_cache WHERE team_id = 'ed94b2bf-bcd7-4228-ad7c-a32b145f71cc';
 DELETE FROM teams           WHERE id = 'ed94b2bf-bcd7-4228-ad7c-a32b145f71cc';
@@ -672,7 +624,6 @@ UPDATE matches        SET away_team_id = 'ee38af74-6944-4474-b2cc-f15ae9b7dc9b' 
 UPDATE lineups        SET team_id = 'ee38af74-6944-4474-b2cc-f15ae9b7dc9b' WHERE team_id = 'ccc6d5eb-59df-4b8c-94ce-a693ef3f45fb';
 UPDATE players        SET team_id = 'ee38af74-6944-4474-b2cc-f15ae9b7dc9b' WHERE team_id = 'ccc6d5eb-59df-4b8c-94ce-a693ef3f45fb';
 UPDATE manager_tenures SET team_id = 'ee38af74-6944-4474-b2cc-f15ae9b7dc9b' WHERE team_id = 'ccc6d5eb-59df-4b8c-94ce-a693ef3f45fb';
-UPDATE team_transfers  SET team_id = 'ee38af74-6944-4474-b2cc-f15ae9b7dc9b' WHERE team_id = 'ccc6d5eb-59df-4b8c-94ce-a693ef3f45fb';
 DELETE FROM team_elo_daily  WHERE team_id = 'ccc6d5eb-59df-4b8c-94ce-a693ef3f45fb';
 DELETE FROM team_form_cache WHERE team_id = 'ccc6d5eb-59df-4b8c-94ce-a693ef3f45fb';
 DELETE FROM teams           WHERE id = 'ccc6d5eb-59df-4b8c-94ce-a693ef3f45fb';
@@ -683,7 +634,6 @@ UPDATE matches        SET away_team_id = 'eea96782-9998-4d98-b33d-2dd2bc3488d7' 
 UPDATE lineups        SET team_id = 'eea96782-9998-4d98-b33d-2dd2bc3488d7' WHERE team_id = 'eb20552b-bc95-45c4-90da-33b1b9088a10';
 UPDATE players        SET team_id = 'eea96782-9998-4d98-b33d-2dd2bc3488d7' WHERE team_id = 'eb20552b-bc95-45c4-90da-33b1b9088a10';
 UPDATE manager_tenures SET team_id = 'eea96782-9998-4d98-b33d-2dd2bc3488d7' WHERE team_id = 'eb20552b-bc95-45c4-90da-33b1b9088a10';
-UPDATE team_transfers  SET team_id = 'eea96782-9998-4d98-b33d-2dd2bc3488d7' WHERE team_id = 'eb20552b-bc95-45c4-90da-33b1b9088a10';
 DELETE FROM team_elo_daily  WHERE team_id = 'eb20552b-bc95-45c4-90da-33b1b9088a10';
 DELETE FROM team_form_cache WHERE team_id = 'eb20552b-bc95-45c4-90da-33b1b9088a10';
 DELETE FROM teams           WHERE id = 'eb20552b-bc95-45c4-90da-33b1b9088a10';
