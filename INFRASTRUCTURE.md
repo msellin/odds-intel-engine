@@ -9,7 +9,7 @@
 | Service | Role | Plan | Status |
 |---------|------|------|--------|
 | **Supabase** | PostgreSQL DB, Auth, RLS, REST API | **Pro ($25/mo)** | Active — upgraded 2026-04-29 |
-| **Railway** | Pipeline scheduler + LivePoller (long-running process) | **Hobby ($5/mo)** | Active — upgraded from Trial 2026-05-05. All scheduled jobs + 30s/60s/5min live polling |
+| **Railway** | Pipeline scheduler + LivePoller + InplayBot (long-running process) | **Hobby ($5/mo)** | Active — upgraded from Trial 2026-05-05. Auto-deploy from GitHub main (2026-05-06). All scheduled jobs + 30s/60s/5min live polling + in-play paper trading |
 | **GitHub Actions** | Manual workflow_dispatch + DB migrations only | Free (public repos) | Active — crons disabled, ~100 min/month |
 | **GitHub** | Source control (2 repos, both public) | Free | Active |
 | **Vercel** | Frontend hosting (Next.js 16) | Hobby (free) | Active (oddsintel.app) |

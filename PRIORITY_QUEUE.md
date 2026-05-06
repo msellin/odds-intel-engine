@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-06 — Full cleanup: done items moved to Done sections. Open = only genuinely open tasks. CAL-* calibration tasks + PIN-2..6 Pinnacle expansion added.
+> Last updated: 2026-05-06 — In-play bot Phase 1A deployed (8 strategies). Kambi fully removed. Settlement KeyError fixed. Sentry cron + Railway auto-deploy fixed.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -238,7 +238,10 @@
 | LAUNCH-BETA / LAUNCH-PICK | Beta label, daily pick visible without login | ✅ | |
 | AF-EVAL | AF Ultra confirmed required — do NOT downgrade (live polling needs 18K-45K calls/day) | ✅ | |
 | KAMBI-BUG-1 | Duplicate value bets when Kambi league name ≠ AF name — added Bulgaria PFL 1 mapping + improved frontend dedup to normalise club prefixes (FK/FC/etc) and key on kickoff date | ✅ Done 2026-05-06 | |
-| KAMBI-DROP | Drop Kambi entirely — empirical analysis showed "ub"=Unibet (AF has it), "paf"/"kambi"=36 rows/30 days. Removed scraper from pipeline, cleaned 20 league/50 team/7 fixture dupes via migration 047. | ✅ Done 2026-05-06 | |
+| KAMBI-DROP | Drop Kambi entirely — empirical analysis showed "ub"=Unibet (AF has it), "paf"/"kambi"=36 rows/30 days. Removed scraper from pipeline, cleaned 20 league/50 team/7 fixture dupes via migration 047. Full cleanup 2026-05-06: deleted `kambi_odds.py`, `kambi_odds_value.py`, `detect_duplicates.py`, removed `fetch_kambi_odds()` from fetch_odds.py, removed `KAMBI_TO_AF_LEAGUE` mapping, renamed team_names.py refs. Cleaned 37 more duplicates from 23h deploy gap. | ✅ Done 2026-05-06 | |
+| SETTLE-FIX | Settlement `KeyError: 'odds'` — `bet["odds"]` → `bet["odds_at_pick"]` in settlement.py:1034. Was crashing settle_ready every 15 min, blocking 158 matches from settling. | ✅ Done 2026-05-06 | |
+| SENTRY-CRON | Sentry cron monitors not registering — `grace_period_minutes` → `checkin_margin` (correct sentry-sdk 2.x key). | ✅ Done 2026-05-06 | |
+| RAIL-AUTODEPLOY | Railway auto-deploy from GitHub — connected repo in Settings → Source, main branch, Wait for CI off. Previously required manual `railway up`. | ✅ Done 2026-05-06 | |
 
 ---
 
