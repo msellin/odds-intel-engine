@@ -289,7 +289,7 @@ def run_news_checker(dry_run: bool = False):
             if adj != 0:
                 ai_note += f" (confidence adj: {adj:+.1%})"
 
-            updated_prob = max(0.05, min(0.95, bet["model_probability"] + adj))
+            updated_prob = max(0.05, min(0.95, float(bet["model_probability"]) + adj))
 
             # Compute news_impact_score: net impact on the team our bet favors
             # For Home bet: positive home_impact is good, negative away_impact is good
