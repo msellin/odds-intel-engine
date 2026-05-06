@@ -2,7 +2,7 @@
 
 > Product vision, tier structure, milestone goals, and open decisions.
 > Task tracking lives in PRIORITY_QUEUE.md — not here.
-> Last updated: 2026-05-03
+> Last updated: 2026-05-06
 
 ---
 
@@ -107,53 +107,63 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 ---
 
 ### Milestone 3 — Elite Tier + Tips Launch
-**Status:** 🔲 Blocked on data collection
+**Status:** 🔲 Blocked on data collection — close (~82% of threshold)
 
 **Goal:** Tips product live. Requires validated ROI.
 
-**Blocking condition:** Top-performing bot needs 60+ settled bets with positive ROI. At current pace (~5-10 bets/day), earliest: ~2 weeks from 2026-04-27.
+**Blocking condition:** Top-performing bot needs 60+ settled bets with positive ROI. **bot_aggressive has 49 settled bets +93 units as of 2026-05-05.** At ~5-10 bets/day, should hit 60 bets by ~May 8-9.
 
-**What's built:** 24 paper trading bots (16 pre-match + 8 in-play since 2026-05-06), tier B backtest script, bot validation tracker (check_bot_validation.py exits 1 when condition met). Top bot (bot_aggressive) has 49 settled bets +93 units as of 2026-05-05. In-play bots: strategies A, A2, B, C, C_home, D, E, F using Bayesian xG posterior — see § INPLAY Plan in PRIORITY_QUEUE.md.
+**What's built:** 24 paper trading bots (16 pre-match + 8 in-play since 2026-05-06), tier B backtest script, bot validation tracker (check_bot_validation.py exits 1 when condition met). In-play bots: strategies A, A2, B, C, C_home, D, E, F using Bayesian xG posterior — see § INPLAY Plan in PRIORITY_QUEUE.md. Elite bankroll dashboard live (ELITE-BANKROLL ✅).
 
-**Remaining:** Singapore/South Korea odds source (B6), value bets redesign (F5), tip tracking (F10).
+**Remaining:** Singapore/South Korea odds source (B6), PostHog feature flag for tips toggle (INFRA-7).
 
 ---
 
-## Current System State (2026-05-01)
+## Current System State (2026-05-06)
 
 ### Backend
 | Component | Status |
 |-----------|--------|
-| API-Football Ultra ($29/mo) + Kambi (free) | ✅ Primary + supplementary odds |
-| ① Fixtures (04:00 UTC) | ✅ AF fixtures + league coverage |
-| ② Enrichment (04:15/12:00/16:00 UTC) | ✅ Standings, H2H, team stats, injuries |
-| ③ Odds (every 2h 05-22 UTC) | ✅ AF bulk odds + Kambi |
+| API-Football Ultra ($29/mo) | ✅ Primary data source (Kambi removed 2026-05-06 — empirically redundant) |
+| ① Fixtures (04:00 + 4 refreshes/day) | ✅ AF fixtures + league coverage + postponement detection |
+| ② Enrichment (04:15/10:30/13:00/16:00 UTC) | ✅ Standings, H2H, team stats, injuries |
+| ③ Odds (every 2h 05-22 UTC + closing odds 20:00) | ✅ AF bulk odds, 13 bookmakers |
 | ④ Predictions (05:30 UTC) | ✅ AF predictions (coverage-aware) |
-| ⑤ Betting (06:00 UTC) | ✅ Poisson/XGBoost + signals + bet placement |
-| ⑥ LivePoller (30s/60s/5min tiered, 10-23 UTC) | ✅ T5/T6/T7/T8 live data — Railway long-running process |
-| ⑦ AI news checker (4×/day) | ✅ Gemini 2.5 Flash, qualitative-only |
-| ⑧ Settlement (21:00 UTC) | ✅ T4/T8/T12 + settle + CLV + ELO + post-mortem + weekly Platt recalibration (Sundays) |
-| ⑨ Historical backfill (02:00 UTC Railway) | ✅ Running on Railway — fully psycopg2, self-stops when complete. Phase 1: 19 top leagues × 3 seasons |
-| ⑩ AI match previews (07:00 UTC) | ✅ ENG-3 — Gemini 200-word previews for top 10 matches → `match_previews` table |
-| ⑪ Email digest (07:30 UTC) | ✅ ENG-4 — Resend, tier-gated (Free/Pro/Elite), requires `RESEND_API_KEY` |
-| 16 paper trading bots | ✅ 10 original (since 2026-04-27) + 6 new BTTS/O/U/draw bots (2026-04-30) |
-| match_signals (EAV signal store) | ✅ 20+ signals per match |
+| ⑤ Betting (6×/day: 06:00/09:30/11:00/15:00/19:00/20:30 UTC) | ✅ Poisson/XGBoost + Pinnacle anchor + sharp consensus gate + veto filters |
+| ⑥ LivePoller (24/7, adaptive 30s live / 120s idle) | ✅ Live scores, events, lineups, in-play odds + 8 in-play bots |
+| ⑦ AI news checker (4×/day + 14:30) | ✅ Gemini 2.5 Flash, qualitative-only |
+| ⑧ Settlement (21:00 + 01:00 UTC) | ✅ Settle + CLV + Pinnacle CLV + ELO + post-mortem + weekly Platt + blend refit (Wed+Sun) + dynamic DC rho |
+| ⑨ Historical backfill (02:00 UTC Railway) | 🔄 Running — 3,474 matches done, 19 leagues in progress |
+| ⑩ AI match previews (07:15 UTC) | ✅ Gemini 200-word previews for top 10 matches |
+| ⑪ Email digest (07:30 UTC) | ✅ Resend, tier-gated + value bet alerts (16:00/20:45) + weekly (Mon 08:00) + watchlist (08:30/14:30/20:30) |
+| 24 paper trading bots | ✅ 16 pre-match (since 2026-04-27, incl. bot_proven_leagues) + 8 in-play (since 2026-05-06, strategies A/A2/B/C/C_home/D/E/F) |
+| Pinnacle signals | ✅ PIN-1 through PIN-5: implied probs (all markets), line movement, veto gate, Pinnacle-anchored CLV |
+| Calibration improvements | ✅ Pinnacle shrinkage anchor, odds-conditional alpha, sharp consensus gate, draw inflation, dynamic DC rho |
+| match_signals (EAV signal store) | ✅ 25+ signals per match (incl. sharp_consensus, Pinnacle implied, Pinnacle line move) |
 | match_feature_vectors (ML training table) | ✅ Nightly ETL, wide table |
 | pseudo_clv | ✅ All ~280 matches/day |
-| Platt scaling (post-hoc calibration) | ✅ 2-stage: tier shrinkage → Platt sigmoid. Weekly refit from settled predictions |
-| Featured leagues (frontend filtering) | ✅ `show_on_frontend` flag on leagues table. ~50 curated leagues shown on website |
+| Platt scaling (post-hoc calibration) | ✅ 2-stage: tier shrinkage → Platt sigmoid. Weekly refit (Wed+Sun) |
+| Learned blend weights | ✅ MOD-2 — optimized Poisson/XGBoost weights + per-tier alpha. Weekly refit |
+| Featured leagues (frontend filtering) | ✅ `show_on_frontend` flag. ~50 curated leagues. 6-tier priority system |
 
 ### Frontend (odds-intel-web)
 | Page | Status |
 |------|--------|
 | Landing page | ✅ Built |
-| Auth (login/signup) | ✅ Built |
-| /matches | ✅ Public, smart sort, dual layout, signal grade + pulse + teasers (SUX-1/2/3) |
-| /matches/[id] | ✅ Free+Pro+Elite sections, server-side tier gating (B3), BTTS+O/U odds, Intelligence Summary (SUX-4/6/7), Signal Accordion (SUX-5), Signal Delta (SUX-9), Live in-play chart (FE-LIVE), Post-match signal reveal for Free (SUX-10) |
+| Auth (magic link + Google) | ✅ Custom SMTP via Resend, branded emails |
+| /matches | ✅ Today + Tomorrow tabs, smart sort, dual layout, signal grade + pulse + teasers (SUX-1/2/3), What Changed Today, "X analyzing" counter, community vote splits |
+| /matches/[id] | ✅ Free+Pro+Elite sections, server-side tier gating, all odds markets, Intelligence Summary (SUX-4/6/7), Signal Accordion (SUX-5), Signal Delta (SUX-9), Live in-play chart, bot consensus, Model vs Market vs Users, AI preview, post-match signal reveal |
 | /value-bets | ✅ Tiered: Free=teaser+stats, Pro=directional picks, Elite=full table + BET-EXPLAIN |
 | /track-record | ✅ Real Supabase data |
+| /predictions | ✅ 8 featured leagues, SEO prediction pages with FAQ schema |
+| /learn | ✅ 12-term betting glossary with FAQ schema |
+| /methodology | ✅ Public model explanation |
+| /bankroll | ✅ Elite-gated personal bankroll analytics (ROI, CLV, drawdown, per-league) |
+| /my-picks | ✅ Personal bet tracker + "Model vs You" + shareable pick cards |
 | /welcome onboarding | ✅ Built |
-| Stripe payments | ✅ Live — production mode 2026-05-04. Checkout + webhook + portal + tier gating + annual billing + founding rates. |
+| /admin/bots | ✅ Superadmin bot P&L dashboard |
+| Stripe payments | ✅ Live production mode since 2026-05-04. Checkout + webhook + portal + tier gating + annual billing + founding rates + promo codes |
+| Superadmin tier preview | ✅ Cookie-based tier switcher for QA |
 
 ### Data coverage
 - Fixtures with any model data: ~200/467 (43%)
@@ -184,11 +194,11 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 **Core principles:** No gamification, premium analytical tone, transparency as differentiator, social proof through aggregate data (not forums/profiles).
 
-**Phase 1 (launch sprint):** Daily email digest (ENG-4), AI match previews (ENG-3), "X analyzing" counter (ENG-1), community vote splits (ENG-2), betting glossary (ENG-5 ✅), bot consensus (ENG-6), methodology page (ENG-7).
+**Phase 1 (launch sprint):** ✅ All done — ENG-1 through ENG-7 shipped by 2026-05-05.
 
-**Phase 2 (retention):** Watchlist alerts (ENG-8 ✅), personal bet tracker + Model vs You (ENG-9 ✅), weekly email (ENG-10 ✅), "What changed today" widget (ENG-11 ✅), Model vs Market vs Users triangulation (ENG-12 ✅), shareable pick cards (ENG-13 ✅), SEO prediction pages (ENG-14 ✅).
+**Phase 2 (retention):** ✅ All done — ENG-8 through ENG-14 shipped by 2026-05-05. Watchlist alerts, personal bet tracker + Model vs You, weekly email, What Changed Today, Model vs Market vs Users, shareable pick cards, SEO prediction pages.
 
-**Phase 3 (differentiation):** Market inefficiency index (ENG-15), expanded AI chat per match (ENG-16), season-end review (ENG-17).
+**Phase 3 (differentiation):** Market inefficiency index (ENG-15, ~June — needs 30 days data), season-end review (ENG-17, ~Aug+).
 
 ---
 
@@ -205,7 +215,11 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 ## Bot Strategy
 
-The 9 paper trading bots running since 2026-04-27 are all based on **historical backtest data** — edge thresholds and league filters derived from football-data.co.uk 2007-2025 and beat_the_bookie 2005-2015. They answer: *"what worked in old data?"*
+**24 paper trading bots** running across two categories:
+
+**Pre-match (16 bots, since 2026-04-27):** Based on historical backtest data — edge thresholds and league filters derived from football-data.co.uk 2007-2025 and beat_the_bookie 2005-2015. Includes `bot_proven_leagues` (5 cross-era confirmed leagues). 5 morning / 6 midday / 5 pre-KO timing cohorts.
+
+**In-play (8 bots, since 2026-05-06):** Rule-based strategies A, A2, B, C, C_home, D, E, F using Bayesian xG posterior. Run inside LivePoller every 30s. See § INPLAY Plan in PRIORITY_QUEUE.md.
 
 **Never retire current bots when adding new ones.** They are the baseline — their ROI data is what proves (or disproves) whether new bots are better.
 
@@ -213,16 +227,18 @@ New bots planned based on live data accumulation:
 
 | Bot | Trigger | ~When | What's different |
 |-----|---------|-------|-----------------|
-| `bot_meta_v1` | 3000+ pseudo_clv rows in match_feature_vectors | ~May 9 | Uses logistic regression EV score instead of hardcoded thresholds. First bot learning from live data |
-| `bot_high_alignment` | 300+ settled bot bets, alignment filter validated | ~late May | Only bets when alignment_class=HIGH. Fewer bets, higher precision |
+| `bot_meta_v1` | 3000+ quality CLV rows (captured_at >= 2026-05-06) | ~May 17 | Uses logistic regression EV score instead of hardcoded thresholds. First bot learning from live data |
+| `bot_high_alignment` | 300+ settled bot bets (>= 2026-05-06) | ~June 5 | Only bets when alignment_class=HIGH. Fewer bets, higher precision |
 | `bot_retrained_xgb` | HIST-BACKFILL complete (API-Football 2020-2026) | ~June | XGBoost retrained on recent data, not 2007-2025 |
+| In-play strategies G, H | Week 2 after Phase 1A launch | ~May 13 | Shot Quality Under + Corner Pressure Over |
+| In-play strategies I, J, K | Week 3 after Phase 1A launch | ~May 20 | Possession Trap + Dominant Underdog + 2H Burst |
 
 ---
 
 ## Notes & Context
 
 **Why bots are internal tools, not the product:**
-The 9 bots are validation instruments — they find which markets/leagues have real edge before we sell tips. The product is the picks from the best-performing bot.
+The 24 bots are validation instruments — they find which markets/leagues have real edge before we sell tips. The product is the picks from the best-performing bot.
 
 **Scotland League Two cross-era signal:**
 +12.3% ROI in mega backtest (2005-15) AND +21% in recent 2022-25 backtest. Two models, two eras, same direction. Most consistent signal we have.

@@ -1,33 +1,43 @@
 # OddsIntel — Launch Plan
 
-> Written 2026-04-29. Updated 2026-05-04 (moved to docs/, Reddit section consolidated into REDDIT_LAUNCH.md).
+> Written 2026-04-29. Updated 2026-05-06 (full status sync from PRIORITY_QUEUE).
 > Use this doc to brief another agent or plan the next phase.
 > Detailed Reddit execution: `docs/REDDIT_LAUNCH.md`. ENG task tracking: `PRIORITY_QUEUE.md`.
 
 ---
 
-## Product State at Time of Writing (2026-04-29)
+## Product State (updated 2026-05-06)
 
 ### What's live
 - oddsintel.app deployed on Vercel, domain connected, Google Search Console verified
-- Landing page, auth (login/signup), /matches, /matches/[id], /value-bets, /track-record, /welcome onboarding
-- Free tier features: prediction tracker, 1 daily AI value pick, community voting, favorites, match notes, interest score (🔥/⚡/—)
-- 16 paper trading bots running since 2026-04-27, pseudo-CLV tracked on ~280 matches/day
+- Landing page, auth (login/signup with magic link + Google), /matches (today + tomorrow tabs), /matches/[id], /value-bets, /track-record, /welcome onboarding, /predictions (SEO), /learn (glossary), /methodology, /bankroll (Elite)
+- **Stripe production mode** live since 2026-05-04 — checkout + webhook + portal + tier gating + annual billing + founding rates + REDDIT promo code
+- Free tier features: prediction tracker, 1 daily AI value pick, community voting + vote splits, favorites, match notes, interest score (🔥/⚡/—), "X analyzing" counter, What Changed Today widget, Model vs Market vs Users triangulation
+- Pro tier features: full odds (13 bookmakers), odds movement charts, live in-play chart, Intelligence Summary, Signal Accordion, Signal Delta, injuries, lineups, stats, events, player ratings, bot consensus, AI match previews, directional value bets
+- Elite tier features: full value bets with edge %, BET-EXPLAIN (Gemini), bankroll analytics dashboard, shareable pick cards, CLV tracking
+- 24 paper trading bots: 16 pre-match (since 2026-04-27) + 8 in-play (since 2026-05-06, strategies A/A2/B/C/C_home/D/E/F)
+- Pseudo-CLV tracked on ~280 matches/day
 - Signal intelligence grade + teasers + pulse indicator on every match (SUX-1/2/3)
+- Daily email digest + weekly performance email + value bet alerts (afternoon + evening) + watchlist alerts — all via Resend
+- PostHog analytics with conversion funnel + Vercel Speed Insights
+- Resend webhook tracking (email opens/clicks)
+- Superadmin tier preview switcher for QA
 
 ### What's NOT ready
-- **Stripe production keys**: test mode is fully wired (checkout + webhook + portal + tier gating). Need live key swap before accepting real money — see `INFRASTRUCTURE.md` checklist.
-- Track record: thin at launch, gets meaningfully stronger at ~2 weeks (mid-May)
-- Email notifications: daily digest pipeline live (ENG-4 ✅) but depends on `RESEND_API_KEY` being set
+- **Elite tier tips launch**: blocked on data — top bot (bot_aggressive) has ~49/60 settled bets needed for validation. ETA ~May 8-9
+- Track record: 9 days of data, gets meaningfully stronger at ~2 weeks (mid-May)
 - Data coverage: ~43% of fixtures have model data — most popular leagues covered
+- Singapore S.League: +27.5% ROI signal but no live odds feed
 
 ---
 
-## Honest Weaknesses to Address Before Posting
+## Honest Weaknesses Addressed
 
 1. "Early Access / Beta" label → resets credibility bar, makes thin track record acceptable ✅ done
 2. Daily AI pick visible on /matches **without requiring login** → that's the hook ✅ done
 3. Landing page pricing display issues (LP-1/2/3) ✅ done
+4. Stripe production keys → ✅ live 2026-05-04
+5. Auth email branding → ✅ Custom SMTP via Resend, magic link flow
 
 ---
 
@@ -41,31 +51,53 @@
 - [x] Legal pages (privacy, terms) — live
 - [x] Sitemap + robots.txt — live
 - [x] SEO metadata (title, description, OG tags) — live
-- [ ] Stripe production keys — **manual action required** (5-step checklist in INFRASTRUCTURE.md)
+- [x] Stripe production keys — ✅ live 2026-05-04 (Pro €4.99, Elite €14.99 + annual + founding rates)
+- [x] Custom SMTP (Resend) + branded magic link auth — done 2026-05-05
+- [x] PostHog conversion funnel — done 2026-05-05
+- [x] Vercel Speed Insights — done 2026-05-05
+- [x] ~~7-day free trial on Pro~~ — removed 2026-05-06 (free tier is the trial; REDDIT promo code handles targeted free months)
+- [x] REDDIT promo code (100% off first month) — done 2026-05-05
 
 ---
 
-## Phase 1 — Organic / Zero-cost (Week 1-2)
+## Phase 1 — Organic / Zero-cost (Week 1-2) — 🔄 IN PROGRESS
 
-### Reddit
+### Reddit — 4/6 posts done
 
 **Detailed execution plan and all 6 post drafts: `docs/REDDIT_LAUNCH.md`**
 
-Summary:
-- r/SoccerBetting, r/FootballBetting, r/soccer (Daily Discussion only), r/SoccerPredictions, r/dataisbeautiful, r/buildinpublic
-- Space posts across ~1 week, different angle per subreddit
-- Warm up the account first (3-5 days of comments before launch posts)
+| # | Subreddit | Status |
+|---|-----------|--------|
+| 1 | Warm-up comments (r/SoccerBetting + r/soccer) | ✅ Done Apr 30 – May 3 |
+| 2 | r/buildinpublic | ✅ Done May 4 (60 views) |
+| 3 | r/FootballBetting | ✅ Done May 5 |
+| 4 | r/SoccerPredictions | ⬜ Ready today (draft done, REDDIT code) |
+| 5 | r/dataisbeautiful [OC] | ⬜ Needs odds movement screenshot |
+| 6 | r/soccer Daily Discussion | Can drop anytime |
 
-### Twitter/X
+REDDIT promo code dropped as reply on all 3 active posts.
+
+### Twitter/X — not started
 
 - Post one AI pick daily: match, edge %, short explanation ("XGBoost + Poisson both lean home, bookmakers disagree, line moved overnight")
 - Post wins AND losses equally — this is what builds credibility with sharp bettors
 - Use: #valuebets #footballtips #soccerpredictions
 - Write one "I built this in public" thread explaining the model — link to oddsintel.app at the end
 
-### Discord
+### Discord — not started
 
 Search for football betting Discords. Join legitimately, add value first, mention the tool naturally after a few days.
+
+### Engagement features — ✅ all Phase 1 done
+
+All Phase 1 engagement features shipped before Reddit traffic:
+- ENG-1: "X analyzing this match" counter ✅
+- ENG-2: Community vote split display ✅
+- ENG-3: AI match previews (Gemini, top 10) ✅
+- ENG-4: Daily email digest (tier-gated) ✅
+- ENG-5: Betting glossary (12 terms at /learn/[term]) ✅
+- ENG-6: Bot consensus on match detail ✅
+- ENG-7: Public /methodology page ✅
 
 ---
 
@@ -77,17 +109,28 @@ During this window:
 - Keep the daily pick posting on Twitter
 - If daily pick hits 60-70%+ accuracy over 2 weeks, screenshot and share widely
 - Daily email digest (ENG-4 ✅) keeps early signups engaged
-- Engagement features from PRIORITY_QUEUE.md Phase 1: ENG-1 (watching counter), ENG-2 (vote splits) — build these before Reddit traffic peaks
+- ENG-1 (watching counter) ✅ and ENG-2 (vote splits) ✅ already shipped
+
+### Phase 2 engagement features — ✅ all done
+
+All Phase 2 retention features shipped ahead of schedule:
+- ENG-8: Watchlist signal alerts (email, 3×/day) ✅
+- ENG-9: Personal bet tracker + "Model vs You" dashboard ✅
+- ENG-10: Weekly performance email (Monday 08:00 UTC) ✅
+- ENG-11: "What Changed Today" widget on matches page ✅
+- ENG-12: Model vs Market vs Users triangulation ✅
+- ENG-13: Shareable pick cards (branded OG image) ✅
+- ENG-14: Auto-generated prediction pages for SEO (/predictions/[league]) ✅
 
 **Goal: 100-200 registered free users by end of Phase 2.**
 
 ---
 
-## Phase 3 — Paid acquisition (after Stripe production keys, ~mid-May)
+## Phase 3 — Paid acquisition (~mid-May)
 
 Only start paid ads once:
-1. Stripe production keys swapped (real payments enabled — see INFRASTRUCTURE.md checklist)
-2. 2+ weeks of track record exists
+1. ~~Stripe production keys swapped~~ ✅ Done 2026-05-04
+2. 2+ weeks of track record exists (~May 11+)
 3. Organic posts have validated which message resonates
 
 ### Meta/Instagram Ads

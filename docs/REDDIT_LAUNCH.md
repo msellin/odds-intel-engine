@@ -1,6 +1,6 @@
 # Reddit Launch — Strategy, Progress & Posts
 
-> Merged from `reddit_warmup_comments.md` + `reddit_launch_posts.md` (2026-05-04).
+> Merged from `reddit_warmup_comments.md` + `reddit_launch_posts.md` (2026-05-04). Updated 2026-05-06.
 > Full launch strategy in `docs/LAUNCH_PLAN.md`. ENG task tracking in `PRIORITY_QUEUE.md`.
 
 ---
@@ -35,15 +35,9 @@ r/buildinpublic — "Building a football analytics platform in public — week 1
 - r/soccer → Atletico-Arsenal Post-Match Thread — Eze penalty VAR take
 - r/soccer → Braga match thread — "Strong start from Braga"
 
-### Day 2 (May 1 — TODO)
+### Day 2 (May 1-3 — DONE)
 
-4-5 comments across r/SoccerBetting + r/soccer based on EL/ECL results from Apr 30.
-
-Threads to target:
-- r/SoccerBetting → Daily Picks Thread (Friday matches)
-- r/SoccerBetting → Reply to someone in the Daily Picks Thread
-- r/soccer → Daily Discussion (react to last night's EL results)
-- r/soccer → Post-match threads from Forest vs Villa / Braga vs Freiburg / Palace vs Shakhtar
+Additional warm-up comments across r/SoccerBetting + r/soccer. Visible in profile history.
 
 ---
 
@@ -82,8 +76,8 @@ Most "tipster" services show you W/L records that are impossible to verify. I'm 
 
 **Current state (it's early, I know):**
 
-- 16 paper trading bots running since April 27, each targeting different markets (1X2, BTTS, Over/Under) across specific leagues
-- Ensemble model: Poisson regression + XGBoost blend, with 20+ signals per match (form, xG, injuries, odds movement, referee tendencies, H2H)
+- 24 paper trading bots running (16 pre-match since April 27 + 8 in-play since May 6), each targeting different markets (1X2, BTTS, Over/Under) across specific leagues
+- Ensemble model: Poisson regression + XGBoost blend, with 25+ signals per match (form, xG, injuries, odds movement, Pinnacle line moves, sharp consensus, referee tendencies, H2H)
 - Scanning ~280 matches/day across 60+ leagues, comparing odds from 13 bookmakers
 - Every prediction, every CLV calculation, every result — tracked on the site, no cherry-picking
 - Track record is still accumulating — that's why it says "Beta" on the site
@@ -130,7 +124,7 @@ Been working on a football research tool that pulls together the stuff I always 
 - Community voting — see what others think (1X2 poll)
 - Saved matches watchlist
 
-The model behind it runs 16 automated paper-trading strategies across different markets, tracking closing line value as the proof metric. Track record is live on the site — it's thin because we only started a few weeks ago, but everything is transparent. No cherry-picked screenshots.
+The model behind it runs 24 automated paper-trading strategies across different markets (pre-match + in-play), tracking closing line value as the proof metric. Track record is live on the site — it's thin because we only started a few weeks ago, but everything is transparent. No cherry-picked screenshots.
 
 Paid tiers add full odds from 13 bookmakers side by side, injury reports, lineups, odds movement timeline, and model probability breakdown.
 
@@ -171,7 +165,7 @@ I built a prediction tracker as part of a larger football analytics tool. Though
 3. After the match finishes, the system settles your pick automatically
 4. Track your hit rate, W/L record, and streaks over time
 
-The interesting part: the platform also runs an AI model (Poisson + XGBoost ensemble) making its own predictions on every match. So you can see how your gut compares to the algorithm.
+The interesting part: the platform also runs an AI model (Poisson + XGBoost ensemble with Pinnacle-anchored calibration) making its own predictions on every match. So you can see how your gut compares to the algorithm.
 
 **Also included (free):**
 
@@ -192,7 +186,7 @@ Everything is free. The site is in beta — track record is still accumulating. 
 
 **Body:**
 
-I built a football prediction engine that scans ~280 matches per day across 60+ leagues, pulling together 20+ data signals per match:
+I built a football prediction engine that scans ~280 matches per day across 60+ leagues, pulling together 25+ data signals per match:
 
 - Expected goals (xG) vs actual form divergence
 - Odds movement across 13 bookmakers (where are lines shifting?)
@@ -207,7 +201,7 @@ Each match gets graded: **A** (strong alignment — most signals point the same 
 
 The interesting bit is tracking Closing Line Value (CLV) — did the model identify value *before* the market corrected? A bet placed at 2.10 that closes at 1.95 beat the closing line by 7.7%. Consistently positive CLV = genuine predictive edge, regardless of short-term W/L variance.
 
-I'm running 16 automated paper-trading strategies to test this across different markets (1X2, Both Teams to Score, Over/Under) and leagues.
+I'm running 24 automated paper-trading strategies to test this across different markets (1X2, Both Teams to Score, Over/Under) and leagues — 16 pre-match + 8 in-play.
 
 The dashboard is free: [oddsintel.app](https://oddsintel.app) — you can browse all matches, see the signal grade, and check the track record.
 
@@ -227,40 +221,44 @@ Been building this for a few months, just went live in beta. It's a football mat
 
 **The pipeline:**
 
-9 single-purpose jobs running on **Railway** (long-running APScheduler process — no cold starts):
+11 jobs running on **Railway** (long-running APScheduler process — no cold starts):
 
-1. **Fixtures** (04:00 UTC) — pull today's matches from API-Football
-2. **Enrichment** (3x daily) — standings, H2H, team stats, injuries
-3. **Odds** (every 2h, 05-22 UTC) — bulk odds from API-Football (13 bookmakers) + Kambi scraper
+1. **Fixtures** (04:00 UTC + 4 refreshes) — pull today's matches from API-Football
+2. **Enrichment** (4x daily) — standings, H2H, team stats, injuries
+3. **Odds** (every 2h, 05-22 UTC) — bulk odds from API-Football (13 bookmakers)
 4. **Predictions** (05:30) — API-Football predictions for ensemble blend
-5. **Betting** (06:00 + 3 refreshes/day) — Poisson + XGBoost model runs, 16 bots place paper bets
-6. **Live Poller** (tiered 30s/60s/5min, 10-23 UTC) — live scores, events, lineups, in-play odds
-7. **News Checker** (4x daily) — Gemini AI scans for injury/suspension news
-8. **Settlement** (21:00) — settle bets, post-match stats, ELO updates, CLV calculation
-9. **AI Match Previews** (07:00) — Gemini 200-word previews for top 10 matches
+5. **Betting** (6x daily) — Poisson + XGBoost model runs, 24 bots place paper bets
+6. **Live Poller** (24/7 adaptive 30s/120s) — live scores, events, lineups, in-play odds + 8 in-play betting strategies
+7. **News Checker** (5x daily) — Gemini AI scans for injury/suspension news
+8. **Settlement** (21:00 + 01:00 UTC) — settle bets, post-match stats, ELO updates, CLV calculation, weekly model recalibration
+9. **AI Match Previews** (07:15) — Gemini 200-word previews for top 10 matches
+10. **Email Digest** (07:30) — tier-gated daily digest + value bet alerts + weekly report
+11. **Watchlist Alerts** (3x daily) — odds movement + kickoff reminder emails
 
 **Stack:**
 
 - **Backend/Pipeline:** Python 3.12, Railway ($5/mo — long-running process, no cold starts)
-- **Model:** Poisson regression + XGBoost ensemble with Platt scaling calibration
+- **Model:** Poisson regression + XGBoost ensemble with Platt scaling, Pinnacle-anchored calibration, dynamic Dixon-Coles
 - **Database:** Supabase Pro (Postgres, Row Level Security, real-time)
 - **Frontend:** Next.js 15 (App Router), TypeScript, Tailwind, Vercel
-- **Auth:** Supabase Auth (email OTP + Google)
-- **Payments:** Stripe (test mode — going live soon)
-- **Error monitoring:** Sentry
-- **AI:** Gemini 2.5 Flash (news analysis + match previews + bet explanations)
-- **Data:** API-Football Ultra ($29/mo, 75K req/day) + Kambi (free)
+- **Auth:** Supabase Auth (magic link + Google) with custom SMTP
+- **Payments:** Stripe (live — checkout, webhooks, customer portal, promo codes)
+- **Error monitoring:** Sentry (frontend)
+- **AI:** Gemini 2.5 Flash (~$0.55/mo — news analysis + match previews + bet explanations + post-mortems)
+- **Email:** Resend (transactional + digest + alerts)
+- **Analytics:** PostHog (conversion funnel) + Vercel Speed Insights
+- **Data:** API-Football Ultra ($29/mo, 75K req/day)
 
 **Current numbers:**
 
 - ~280 matches scanned daily across 60+ leagues
 - 13 bookmakers compared per match
-- 20+ signals per match feeding the model
-- 16 paper trading bots testing different markets and strategies
-- Total infra cost: ~$85/month (API-Football $29 + Supabase Pro $25 + Railway $5 + Vercel $20 + domain)
+- 25+ signals per match feeding the model (including Pinnacle line moves, sharp consensus)
+- 24 paper trading bots — 16 pre-match + 8 in-play strategies
+- Total infra cost: ~$85/month (API-Football $29 + Supabase Pro $25 + Railway $5 + Vercel $20 + domain + Gemini ~$0.55)
 
 **Business model:**
 
-Free tier is genuinely useful (all matches, live scores, odds, form, 1 AI pick/day). Paid tiers (Pro €4.99/mo, Elite €14.99/mo) add depth — full odds comparison, injury alerts, model probabilities, value bet page. Founding member pricing: first 500 Pro lock in €3.99/mo forever.
+Free tier is genuinely useful (all matches, live scores, odds, form, 1 AI pick/day, prediction tracker, community voting). Paid tiers (Pro €4.99/mo, Elite €14.99/mo) add depth — full odds comparison across 13 bookmakers, odds movement charts, live in-play chart, AI injury alerts, intelligence summary, value bet page, bankroll analytics. Founding member pricing: first 500 Pro lock in €3.99/mo forever.
 
 Live at [oddsintel.app](https://oddsintel.app) — would love feedback on the product or architecture. Happy to go deeper on any part of the stack.
