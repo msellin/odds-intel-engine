@@ -292,7 +292,7 @@
 |----|------|--------|----|--------|-------|
 | SIG-12 | xG overperformance rolling signal | 2h | ⬜ | ⏳ ~2 wks of post-match xG data | Regression to mean signal. Needs post-match xG from live snapshots |
 | MOD-2 | Learned Poisson/XGBoost blend weights (replace fixed α) | 2h | ✅ Done 2026-05-05 | ✅ Done | `scripts/fit_blend_weights.py`: optimizes Poisson weight + per-tier shrinkage alpha. improvements.py loads from model_calibration, falls back to hardcoded. Weekly refit added to Sunday settlement. |
-| P3.4 | In-play value detection model | 2-3 wks | ⬜ | ⏳ 500+ live snapshots (~July) | LightGBM Poisson regression. xG pace ratio is #1 feature. See § INPLAY Plan |
+| P3.4 | In-play value detection model | 2-3 wks | ⬜ | ⏳ Phase 1A starts today (no data gate). Phase 2 ML needs 500+ snapshots (~May 7-8). See § INPLAY Plan for full 5-phase roadmap | LightGBM Poisson regression (Phase 2+). Phase 1A: rule-based Strategy A paper bot, builds today. |
 | P4.2 | A/B bot testing framework | 1-2 days | ⬜ | ⏳ Needs audit trail + data | Parallel bots with/without AI layers |
 | P4.3 | Live odds arbitrage detector | 1-2 days | ⬜ | ⏳ ~July | Per-bookmaker odds exist. Low priority |
 | RSS-NEWS | RSS news extraction pipeline ($30-90/mo) | 1-2 days | ⬜ | ⏳ After model proves profitable | Targets news before odds adjust. Re-evaluate when Elite has subscribers. **AI: +~$0.30/mo Gemini (data service $30-90/mo is the real cost)** |
@@ -482,13 +482,107 @@ Key qualifier: **xG pace ratio > 1.0** (live xG/min exceeds pre-match expected x
 | Formation changes | Medium | Capture at HT and after goals |
 | Dangerous attacks count | Low | Available from AF, add to snapshot |
 
-### 7. Implementation Phases
+### 7. Implementation Phases — Full Roadmap
 
-| Phase | Data | Timeline | What to build |
-|-------|------|----------|---------------|
-| **Phase 1: Feature Pipeline** | Now → 200 matches (~2 weeks) | May 2026 | Transform `live_match_snapshots` → training rows at minute checkpoints. Compute all Tier 1 features. Paper trade Strategy A (xG Divergence) with fixed 1% stakes. Track hit rate and CLV. |
-| **Phase 2: Model Training** | 200 → 500 matches (~4 weeks) | June 2026 | Train LightGBM Poisson on `lambda_home/away_remaining`. Backtest all 6 strategies. Identify which have genuine edge. Add XGBoost ensemble. |
-| **Phase 3: Live Execution** | 500+ matches | July 2026 | Deploy in-play bots for 1-2 winning strategies. Quarter Kelly + time decay. 1-min trigger checks. Track CLV (entry odds vs closing odds). |
+Each phase has an explicit **gate** that must pass before the next phase begins.
+All paper phases use AF live odds from `live_match_snapshots` — no bookmaker API needed.
+Real money phases require a Betfair Exchange account + API integration (1-2 days to add).
+
+---
+
+#### 🟦 Paper Trading — Phase 1A: Rule-Based Single Strategy (START TODAY)
+**Data needed:** None — starts immediately using live AF odds  
+**Timeline:** May 2026 (build now, runs continuously)  
+**What to build:**
+- Live bot in scheduler: reads `live_match_snapshots` every 30s during active matches
+- Computes xG pace ratio = `(live_xg_total / minute) / (prematch_xg_total / 90)`
+- Checks Strategy A conditions: minute 20-35, combined goals ≤ 1, xG pace > 1.0, pre-match O2.5 prob > 52%, live O2.5 odds ≥ 2.20
+- Logs to `simulated_bets`: `market='ou_25'`, `selection='over'`, `odds=live_ou_25_over`, `stake=1% fixed`
+- Settlement handled by existing pipeline at FT
+
+**Gate to Phase 1B:** 200+ paper bets logged (≈2 weeks at ~15/day)
+
+---
+
+#### 🟦 Paper Trading — Phase 1B: Rule-Based All Strategies
+**Data needed:** 200+ Phase 1A bets settled, ROI > 0% OR CLV > 0 on 60%+ of bets  
+**Timeline:** Late May / early June 2026  
+**What to build:**
+- Extend bot to run all 6 strategies (A-F) simultaneously
+- Strategy B (BTTS Momentum), C (Favorite Comeback), D (Late Goals Compression), E (Dead Game Unders), F (Odds Momentum Reversal)
+- Each strategy logs independently — separate analysis per strategy
+- Add `strategy_id` column to `simulated_bets` (or use `notes` field) to track which strategy triggered
+
+**Gate to Phase 2:** 500+ Phase 1A/1B bets across strategies, identify which have ROI > 0% + CLV > 0 on 70%+ bets
+
+---
+
+#### 🟩 Paper Trading — Phase 2: ML Model Replaces Rules
+**Data needed:** 500+ live match snapshots with xG (≈ May 7-8), 200+ settled paper bets for validation  
+**Timeline:** June 2026  
+**What to build:**
+- Feature pipeline: `live_match_snapshots` → training rows at minute 15/30/45/60/75 checkpoints
+- Train LightGBM with `objective='poisson'` on `lambda_home_remaining` + `lambda_away_remaining`
+- Derive O/U, BTTS, 1X2 probabilities from lambda estimates
+- Replace rule-based triggers with model probability: bet when `model_prob - implied_prob > edge_threshold`
+- Backtest all 6 strategies on historical snapshots — confirm which have genuine edge
+- Add XGBoost ensemble partner
+
+**Gate to Phase 3:** ML model CLV > 0% on 300+ paper bets AND outperforms Phase 1 rules by ≥ 2% ROI
+
+---
+
+#### 🟩 Paper Trading — Phase 3: Full System (Kelly + Multi-Market + All Strategies)
+**Data needed:** Phase 2 model validated (300+ bets)  
+**Timeline:** July 2026  
+**What to build:**
+- Quarter Kelly staking with time decay: `stake = 0.25 × Kelly × (minutes_remaining / 90)^0.5`
+- 1-minute trigger checks when model flags potential entry (switch from 30s to 1-min targeted poll)
+- Multi-market bets per match: O/U + BTTS simultaneously when both conditions met
+- Max 3% bankroll exposure per match across all in-play positions
+- CLV tracking: entry odds vs closing odds (same as pre-match CLV pipeline)
+- Per-strategy P&L dashboard on frontend (Elite-gated)
+
+**Gate to Phase 4 (real money):** Phase 3 paper results: ROI > 3% on 500+ bets AND CLV > 0 on 80%+ AND Sharpe > 1.0 over 60-day window
+
+---
+
+#### 🔴 Real Money — Phase 4: Micro-Stakes Live (Betfair Exchange)
+**Data needed:** Phase 3 gates passed  
+**Timeline:** August 2026  
+**What to build:**
+- Betfair Exchange API integration (1-2 days): place lay/back bets programmatically
+- Strategy A + best-performing Phase 3 strategy only — 2 strategies max
+- Ultra-conservative staking: 0.25% bankroll max per bet (half of paper rate)
+- Kill switch: auto-pause if drawdown > 10% in any 7-day window
+- Real CLV tracking: execution price vs closing price on Betfair
+
+**Gate to Phase 5:** 200+ real bets, ROI > 0%, no systematic execution issues (slippage < 2%)
+
+---
+
+#### 🔴 Real Money — Phase 5: Full Live Deployment
+**Data needed:** Phase 4 validated (200+ real bets)  
+**Timeline:** September 2026+  
+**What to build:**
+- All validated strategies (those with confirmed real-money edge from Phase 4)
+- Full Quarter Kelly sizing
+- Expand to multiple leagues (start with EPL + top 5, expand to lower leagues where limits allow)
+- Automated limit monitoring (Betfair exchange limits are less of an issue than fixed-odds books)
+- Monthly model retraining as data accumulates
+
+---
+
+#### Summary
+
+| Phase | Type | Start condition | Est. timeline | Key metric |
+|-------|------|----------------|---------------|------------|
+| **1A** — Rule bot, Strategy A | 📄 Paper | TODAY | May 2026 | 200 bets logged |
+| **1B** — Rule bot, all strategies | 📄 Paper | 200 bets settled | Late May | Best strategy identified |
+| **2** — LightGBM model | 📄 Paper | 500 snapshots + 200 bets | June 2026 | Model CLV > 0% |
+| **3** — Full system, Kelly | 📄 Paper | Model validated | July 2026 | ROI > 3%, CLV 80%+ |
+| **4** — Real money micro | 💰 Real | Phase 3 gates | Aug 2026 | ROI > 0%, no slippage issues |
+| **5** — Real money full | 💰 Real | Phase 4 validated | Sep 2026+ | Sharpe > 1.0, scaling |
 
 ### 8. What This Unlocks
 
