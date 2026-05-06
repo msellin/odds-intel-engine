@@ -65,6 +65,17 @@
 | LEAGUE-DEDUP | Kambi/AF dedup, priority sort, ~1100 orphan leagues pruned | ✅ | |
 | SENTRY | Error monitoring wired in frontend | ✅ | |
 
+### Done (continued)
+
+| ID | Task | ☑ | Notes |
+|----|------|----|-------|
+| PERF-FE-1 | A1: daily_unlocks check parallelised inside auth IIFE | ✅ Done 2026-05-06 | Was sequential after main Promise.all (one extra round-trip for logged-in users). Moved inside authResult async block, runs in parallel with getUserTier. `src/app/(app)/matches/page.tsx` |
+| PERF-FE-2 | C3: getTodayOdds — replace SELECT * with get_latest_match_odds RPC | ✅ Done 2026-05-06 | Was fetching all historical snapshots (~18k rows for 160 matches). Now DISTINCT ON (match, bookmaker, market, selection) returns only the latest snapshot per combo. Migration 053. `src/lib/engine-data.ts` |
+| PERF-FE-3 | D1: getTrackRecordStats — replace 2500-row fetch with get_coverage_counts RPC | ✅ Done 2026-05-06 | Was fetching 500 odds_snapshots + 2000 matches to count distinct bookmakers/leagues in JS. Now COUNT(DISTINCT) in DB returns two integers. Migration 053. `src/lib/engine-data.ts` |
+| PERF-FE-4 | C1: getPublicMatchBookmakerCount — replace row fetch with get_bookmaker_count_for_match RPC | ✅ Done 2026-05-06 | Was fetching all 1x2 rows per match and counting in JS. Now single COUNT(DISTINCT bookmaker) in DB. Migration 053. `src/lib/engine-data.ts` |
+| PERF-FE-5 | C2: getOddsMovement — replace JS bucketing with get_odds_movement_bucketed RPC | ✅ Done 2026-05-06 | Was fetching 100-1000 raw snapshots and bucketing by hour in JS. Now DATE_TRUNC('hour') + MAX GROUP BY in DB returns ~20-50 rows. Migration 053. `src/lib/engine-data.ts` |
+| PERF-PY-1 | B1: compute_market_implied_strength — fix N+1 (was 2+N queries) | ✅ Done 2026-05-06 | Was 1 query per match in two loops (up to 12 queries). Replaced with one batched DISTINCT ON query for all match IDs. 2+N → 3 queries total. `workers/api_clients/supabase_client.py` |
+
 ### Open
 
 | ID | Task | Effort | ☑ | Ready? | Notes |

@@ -1978,14 +1978,13 @@ def compute_market_implied_strength(team_id: str, window: int = 5) -> float | No
     Returns average implied win probability (0.0-1.0) or None if insufficient data.
     See MODEL_ANALYSIS.md Section 11.3.
     """
-    # Get last N matches where this team played, with 1X2 odds
+    # Get last N home and last N away finished matches — 2 queries
     home_matches = execute_query(
         """SELECT id FROM matches
            WHERE home_team_id = %s AND status = 'finished'
            ORDER BY date DESC LIMIT %s""",
         (team_id, window),
     )
-
     away_matches = execute_query(
         """SELECT id FROM matches
            WHERE away_team_id = %s AND status = 'finished'
@@ -1993,29 +1992,37 @@ def compute_market_implied_strength(team_id: str, window: int = 5) -> float | No
         (team_id, window),
     )
 
+    home_ids = [m["id"] for m in home_matches]
+    away_ids = [m["id"] for m in away_matches]
+    all_ids = home_ids + away_ids
+    if not all_ids:
+        return None
+
+    # Batch-fetch latest 1x2 odds for all matches in one query — was N+1
+    odds_rows = execute_query(
+        """SELECT DISTINCT ON (match_id, selection)
+               match_id, selection, odds
+           FROM odds_snapshots
+           WHERE match_id = ANY(%s::uuid[])
+             AND market = '1x2'
+             AND selection IN ('home', 'away')
+             AND odds > 1.0
+           ORDER BY match_id, selection, timestamp DESC""",
+        (all_ids,),
+    )
+    odds_lookup: dict[tuple[str, str], float] = {
+        (r["match_id"], r["selection"]): float(r["odds"]) for r in odds_rows
+    }
+
     implied_probs = []
-
-    # For home matches, get the 1x2 home odds
-    for m in home_matches:
-        odds_rows = execute_query(
-            """SELECT odds FROM odds_snapshots
-               WHERE match_id = %s AND market = '1x2' AND selection = 'home'
-               ORDER BY timestamp DESC LIMIT 1""",
-            (m["id"],),
-        )
-        if odds_rows and float(odds_rows[0]["odds"]) > 1.0:
-            implied_probs.append(1.0 / float(odds_rows[0]["odds"]))
-
-    # For away matches, get the 1x2 away odds
-    for m in away_matches:
-        odds_rows = execute_query(
-            """SELECT odds FROM odds_snapshots
-               WHERE match_id = %s AND market = '1x2' AND selection = 'away'
-               ORDER BY timestamp DESC LIMIT 1""",
-            (m["id"],),
-        )
-        if odds_rows and float(odds_rows[0]["odds"]) > 1.0:
-            implied_probs.append(1.0 / float(odds_rows[0]["odds"]))
+    for m_id in home_ids:
+        o = odds_lookup.get((m_id, "home"))
+        if o:
+            implied_probs.append(1.0 / o)
+    for m_id in away_ids:
+        o = odds_lookup.get((m_id, "away"))
+        if o:
+            implied_probs.append(1.0 / o)
 
     if len(implied_probs) < 3:
         return None

@@ -5,6 +5,22 @@ Newest entries at the top. Internal refactors and infrastructure changes are not
 
 ---
 
+## 2026-05-06 (5)
+
+### Performance — DB query audit (PERF-FE-1..5, PERF-PY-1)
+
+Six anti-patterns found and fixed across frontend and pipeline:
+
+- **A1 — matches page render path**: `daily_unlocks` DB check was sequential after the main `Promise.all`. Moved inside the auth IIFE so it runs in parallel with `getUserTier` — saves one round-trip on every page load for logged-in users
+- **C3 — `getTodayOdds()`**: Was `SELECT *` on `odds_snapshots` for all today's match IDs — returning all historical snapshots (~18k rows for 160 matches). Now uses `get_latest_match_odds` RPC (`DISTINCT ON (match, bookmaker, market, selection)`) — returns only the latest snapshot per combination
+- **D1 — `getTrackRecordStats()`**: Hot path fetched 500 `odds_snapshots` rows + 2000 `matches` rows just to count distinct bookmakers/leagues in JS. Replaced with `get_coverage_counts` RPC — two `COUNT(DISTINCT)` queries returning two integers
+- **C1 — `getPublicMatchBookmakerCount()`**: Fetched all 1x2 rows for a match and counted distinct bookmakers in JS. Replaced with `get_bookmaker_count_for_match` RPC — single `COUNT(DISTINCT bookmaker)`
+- **C2 — `getOddsMovement()`**: Fetched all snapshots (100–1000 rows) and bucketed by hour in JS. Replaced with `get_odds_movement_bucketed` RPC — `DATE_TRUNC('hour') + MAX GROUP BY` returns ~20–50 rows
+- **B1 — `compute_market_implied_strength()`** (Python pipeline): Was 2 + N queries (one per match in two loops, up to 12 total). Replaced with one `DISTINCT ON (match_id, selection)` batch query covering all match IDs — 3 queries total
+- Migration 053 adds the four new RPCs
+
+---
+
 ## 2026-05-06 (4)
 
 ### Model — Draw inflation (CAL-DRAW-INFLATE)
