@@ -66,6 +66,23 @@ These endpoints update **every 15 seconds** during live matches. ✅ Now matched
 | `/players/topredcards` | Most red-carded players | Low — discipline signal |
 | `/venues` | Venue data | Low — display feature |
 
+## ✅ In-Play Strategy Polling Requirements — ANALYSED (2026-05-06)
+
+Strategies A-K (§ INPLAY Plan) were evaluated against current polling tiers:
+
+| Data needed | Current | Strategies requiring it | Verdict |
+|-------------|---------|------------------------|---------|
+| Score + minute | 30s fast | All (entry conditions, goal abort) | ✅ Sufficient |
+| Live odds (O/U 2.5, 1X2) | 30s fast | All | ✅ Sufficient — staleness <60s guaranteed |
+| xG, shots, corners, possession | 60s medium | A, B, C, D, E, G, H, I, J, K | ✅ Matched to AF update rate (1/min) |
+| Odds history (10-min window) | 30s fast → DB | Strategy F (15% drift detection) | ✅ Bot queries last 20 snapshots — not a polling gap |
+| 2H kickoff detection (min 46-54) | 30s fast | Strategy K | ✅ 15+ cycles in 8-minute window |
+
+**Conclusion: No polling frequency changes needed for Phase 1 in-play strategies.**
+The HIGH-priority escalation (30s stats for matches with active bets, `live_poller.py:233`) already provides enhanced refresh once a paper bet fires.
+
+---
+
 ## ✅ The 15-Second Problem — SOLVED (2026-04-30)
 
 The `/fixtures` endpoint updates every 15 seconds. Previously our live tracker ran every 5 minutes via GitHub Actions cron, missing ~80% of state changes.

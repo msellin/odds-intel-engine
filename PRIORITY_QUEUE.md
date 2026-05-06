@@ -352,17 +352,16 @@
 
 ## § INPLAY Plan — In-Play Value Detection Model
 
-> Created: 2026-04-30. Synthesized from 4 independent AI strategy reviews. Detailed plan for task #46 (P3.4).
+> Created: 2026-04-30. Original synthesis from 4 AI strategy reviews.
+> Updated: 2026-05-06. Second round of 4 independent AI reviews (8 answers total) refined strategy conditions, added 5 new strategies (G-K), corrected xG formulation, and updated validation thresholds.
 
-### 1. Core Hypothesis (validated by all 4 reviews)
+### 1. Core Hypothesis (validated by all 8 reviews)
 
 **"Conditional mispricing occurs when realized goal output < expected output, but forward-looking hazard rate remains high."**
 
 The market adjusts live odds primarily on **time elapsed + scoreline**, but lags on **true chance quality (xG)** and **game state intensity (tempo, pressure)**. The edge is NOT "0-0 = bet Overs" — it's "0-0 but underlying goal process is ABOVE expectation."
 
-Key qualifier: **xG pace ratio > 1.0** (live xG/min exceeds pre-match expected xG/min). Without this, the market's drift is mathematically correct.
-
-### 2. Model Architecture (all 4 reviews agreed)
+### 2. Model Architecture (all 4 original reviews agreed)
 
 **Target:** Predict `lambda_home_remaining` and `lambda_away_remaining` (Poisson rates for remaining goals per team) — NOT classification.
 
@@ -384,72 +383,217 @@ Key qualifier: **xG pace ratio > 1.0** (live xG/min exceeds pre-match expected x
 ### 3. Feature Engineering (ranked by predictive power)
 
 #### Tier 1 — Build immediately
+
 | Feature | Formula | Signal |
 |---------|---------|--------|
-| **xG pace ratio** | `(live_xg / minutes_played) / (prematch_xg / 90)` | Core edge — >1.0 means game more open than market expects |
+| **Bayesian xG rate** *(replaces raw ratio — unanimous across all 8 reviews)* | `posterior_rate = (prematch_xg + live_xg) / (1.0 + minute / 90)` | Shrinks early noise toward prior; converges with pace ratio by min 35 |
+| **xG delta vs expectation** | `live_xg - (prematch_xg × minute / 90)` | Positive = game running hotter than pre-match model expected |
 | **xG-to-score divergence** | `live_xg_total - actual_goals` | Large positive = "unlucky", regression due |
-| **Implied probability gap** | `model_prob - (1 / live_odds)` | Direct value measure |
+| **Implied probability gap** | `model_prob - (1 / live_odds)` | Direct value measure — trigger on this, not raw odds level |
 | **Per-team shot quality** | `team_xg / team_shots` | High = dangerous chances; low = shooting from distance |
 | **Odds velocity** | `(odds_t - odds_t_minus_5min) / odds_t_minus_5min` | Sharp moves without goals = information |
+| **Odds staleness flag** | `NOW() - odds_last_updated > 60s` | Critical: if True, skip bet — odds may be frozen post-goal |
 
 #### Tier 2 — Build by Phase 2
 | Feature | Formula | Signal |
 |---------|---------|--------|
 | Possession efficiency | `team_xg / (possession_pct × minute / 90)` | Strips time-wasting possession |
 | Score-state adjustment | All metrics segmented by leading/drawing/trailing | Trailing team stats more predictive |
+| xG home/away share | `xg_home / (xg_home + xg_away)` | Away dominance in 0-0 may already be priced |
 | Corner momentum | `corners_last_10min / corners_total` | Acceleration predicts pressure |
 | Bookmaker consensus | `std(implied_probs_across_13_bookmakers)` | High disagreement = value opportunity |
-| xG acceleration | `last_10_min_xg / previous_10_min_xg` | Momentum proxy |
+| xG acceleration | `last_10_min_xg / previous_10_min_xg` | Momentum proxy — derive from snapshot deltas |
 
 #### Tier 3 — Refinements
 | Feature | Formula | Signal |
 |---------|---------|--------|
-| Bayesian lambda update | `prematch_lambda × (1 - min/90) + xG_evidence` | Formal Bayesian update |
 | ELO-adjusted xG | `xG × (opponent_elo / league_avg_elo)` | xG vs strong defense worth more |
 | Importance × score state | `importance × (trailing: 1.3, leading: 0.7, drawing: 1.0)` | Must-win + trailing = max pressure |
 
-### 4. Validated Strategies (from 4 AI reviews)
+### 3b. Critical Engineering Fixes (from 8-review synthesis — build before first bet)
 
-#### Strategy A: "xG Divergence Over" (appeared in all 4 reviews)
-- **Entry:** Min 20-35, score 0-0 or 0-1/1-0
-- **Signal:** Combined xG ≥ 0.7+ at min 20 AND xG pace ratio > 1.0 AND pre-match O2.5 > 52%
-- **Market:** Over 2.5 goals (or Over 1.5 if minute > 30)
-- **Skip:** xG per shot < 0.08 (low-quality shots), red card, live odds < 2.20
-- **Edge:** 3-8% when conditions align
+All 4 second-round tools flagged these independently:
 
-#### Strategy B: "BTTS Momentum" (3/4 reviews)
+1. **Staleness check (HIGH):** Before logging any paper bet, verify live odds updated in the last 60 seconds. API-Football odds can lag 30-60s post-goal. A stale odds snapshot could log a bet at pre-goal prices on a match that's already 1-0. Implementation: compare `captured_at` of the odds fields to current time.
+
+2. **Score re-check at execution (HIGH):** When a trigger fires, re-read the latest score from the most recent snapshot before logging the bet. If score changed since the triggering snapshot, abort.
+
+3. **League calibration filter (HIGH):** Only run in leagues with ≥ 20 completed matches with xG data in `live_match_snapshots`. AF's xG is less calibrated in lower tiers with sparse history.
+
+4. **Split 0-0 and 1-0 scenarios (MEDIUM):** These are structurally different game states. Strategies A and D should have separate configs — 0-0 version and 1-0 version — logged with different `strategy_id` values so Phase 2 analysis can compare them.
+
+5. **xG home/away direction (MEDIUM):** Log `xg_home_share` per bet. Away dominance in a 0-0 (away pressing, home defending deep) may already be priced by sharp books. Phase 2 feature engineering will test this.
+
+### 4. Strategy Portfolio (A-K)
+
+*A-F from original 4-AI synthesis. G-K added after second 8-answer round.*
+*Over 3.5 bot: REJECTED by all 4 second-round tools — no O3.5 live odds, total overlap with A. Tag extreme A conditions as `strategy_tag='A_extreme'` instead.*
+
+---
+
+#### Strategy A: "xG Divergence Over" — Phase 1A bot
+**Edge confidence:** Medium | **Trigger rate:** ~8-12% of matches | **Time to 200 bets:** ~14 days
+- **Entry:** Min **25-35** (tightened from 20-35 — all 4 reviews agreed early window too noisy)
+- **Score:** 0-0 only (split 1-0 into A2 for separate analysis)
+- **Signal:** Bayesian posterior rate > prematch rate × 1.15 AND combined xG ≥ 0.9 AND shots on target ≥ 4 combined AND pre-match O2.5 > 54%
+- **Market:** Over 2.5; trigger when `model_prob - (1/live_odds) ≥ 3%` (not static odds floor)
+- **Skip:** xG per shot < 0.09, red card, odds staleness flag, league with < 20 xG matches
+- **Edge:** 2-4% (revised down from 3-8% — Pinnacle's live market is sharper than assumed)
+
+#### Strategy A2: "xG Divergence Over — 1-0 State"
+**Edge confidence:** Medium | Separate bot, same logic as A but score = 1-0
+- **Note:** Who is winning vs pre-match expectation matters — log `score_leader_is_favourite` for Phase 2 analysis
+
+#### Strategy B: "BTTS Momentum"
+**Edge confidence:** High | **Trigger rate:** ~15-20% | **Time to 200 bets:** ~8 days
 - **Entry:** Min 15-40, score 1-0 or 0-1
 - **Signal:** Trailing team xG ≥ 0.4 AND shots on target ≥ 2 AND pre-match BTTS > 48%
 - **Market:** BTTS Yes
 - **Skip:** Trailing team xG < 0.2, score becomes 2-0, red card for trailing team
 - **Edge:** 4-7%
 
-#### Strategy C: "Favorite Comeback" (3/4 reviews)
-- **Entry:** Min 25-60, pre-match favorite trailing by 1
-- **Signal:** Favorite xG > underdog xG AND possession ≥ 60%
-- **Market:** 1X2 Favorite or Draw No Bet
-- **Skip:** Favorite not generating xG, underdog counter-xG high
+#### Strategy C: "Favourite Comeback"
+**Edge confidence:** High | **Trigger rate:** ~5-8% | **Time to 200 bets:** ~22 days
+- **Entry:** Min 25-60, pre-match favourite trailing by 1
+- **Signal:** Favourite xG > underdog xG AND possession ≥ 60% AND shots on target ≥ opponent
+- **Market:** Draw No Bet (favourite) — DNB gives cleaner CLV analysis than Double Chance
+- **Skip:** Favourite not generating xG, underdog counter-xG high
 - **Edge:** 3-6%
 
-#### Strategy D: "Late Goals Compression" (3/4 reviews)
+#### Strategy C_home: "Home Favourite Comeback" *(new — user idea, validated by all 4 tools)*
+**Edge confidence:** High | **Trigger rate:** ~3-5% | **Time to 200 bets:** ~30 days
+- **Entry:** Same as C but ONLY home team is pre-match favourite trailing 1-0
+- **Signal:** Same as C + ELO confirms home team quality (elo_home > elo_away)
+- **Possession threshold:** ≥ 55% (home crowd generates set-piece pressure at lower possession)
+- **Minute cap:** ≤ 70 (post-70 crowd dynamics can shift to panic, opening counter-attacks)
+- **Market:** Draw No Bet (home) — log draw outcome separately to also capture DC data
+- **Mechanism:** COVID natural experiment showed ~6-8pp crowd effect on home win rate. Referee bias + urgency not captured in xG.
+- **Edge:** 5-10%
+
+#### Strategy D: "Late Goals Compression"
+**Edge confidence:** Medium | **Trigger rate:** ~22-27% | **Time to 200 bets:** ~6 days (fastest)
 - **Entry:** Min 55-75, score 0-0 or 1-0
 - **Signal:** Combined xG ≥ 1.0 AND live odds > 2.50 AND pre-match expected goals > 2.3
-- **Market:** Over 0.5 remaining (or Over 1.5 total)
-- **Skip:** Combined xG < 0.6 (dead game), no fixture importance
-- **Edge:** 3-6% — final-30-min scoring rate is ~65-70% regardless of prior score
+- **Market:** Over 2.5 (proxy — we don't have O1.5 live odds)
+- **Skip:** Combined xG < 0.6 (dead game)
+- **Edge:** 3-6% — needs 500+ bets before trusting (high variance at these odds)
 
-#### Strategy E: "Dead Game Unders" (2/4 reviews)
+#### Strategy E: "Dead Game Unders"
+**Edge confidence:** High | **Trigger rate:** ~12-16% | **Time to 200 bets:** ~10 days
 - **Entry:** Min 25-50, score 0-0 or 1-0
-- **Signal:** xG pace < 70% of expected AND shots slowing AND corners low
-- **Market:** Under 2.5 / Under 1.5
-- **Edge:** Market assumes constant hazard rate; tempo collapse is real
+- **Signal:** xG pace < 70% of expected AND shots slowing (derive from snapshot deltas) AND corners low
+- **Market:** Under 2.5
+- **Edge:** Market assumes constant hazard rate; tempo collapse is real and well-documented
 
-#### Strategy F: "Odds Momentum Reversal" (2/4 reviews)
+#### Strategy F: "Odds Momentum Reversal"
+**Edge confidence:** Low | **Trigger rate:** ~4-7% | **Time to 200 bets:** ~25 days
 - **Entry:** Any minute, triggered by odds velocity
-- **Signal:** Odds move > 15% in < 10 min WITHOUT goal AND contrary to xG trend
-- **Market:** Fade the move (bet against direction)
-- **Skip:** Red card, score change, only 1 bookmaker moved
-- **Edge:** 5-10% when triggered, rare (~2-3% of matches)
+- **Signal:** Odds move > 15% in < 10 min WITHOUT goal AND score unchanged across last 3 polls AND contrary to xG trend
+- **Market:** Fade the move direction
+- **Skip:** Red card, score change, only 1 bookmaker moved, odds staleness flag
+- **Edge:** 5-10% when triggered — but 30s polling makes distinguishing real moves from VAR/injury noise hard. Minimum 500+ bets before conclusions.
+
+#### Strategy G: "Shot Quality Under" *(new — appeared in all 4 second-round tools)*
+**Edge confidence:** Medium-High | **Trigger rate:** ~6-10% | **Time to 200 bets:** ~18 days
+- **Entry:** Min 32-52, score combined ≤ 1
+- **Signal:** Combined shots ≥ 12 AND (xg_home + xg_away) / (shots_home + shots_away) < 0.07 AND live Under 2.5 odds ≥ 1.70
+- **Skip:** Pre-match O2.5 implied > 62% (expected goal-fest), red card
+- **Market:** Under 2.5
+- **Mechanism:** Market reacts to shot volume (visible, salient). Low xG/shot = teams shooting from distance, not generating danger. Under is mispriced.
+- **Edge:** 5-8%
+
+#### Strategy H: "Corner Pressure Over" *(new — appeared in 3/4 second-round tools)*
+**Edge confidence:** Medium | **Trigger rate:** ~4-6% | **Time to 200 bets:** ~28 days
+- **Entry:** Min 35-48, score combined ≤ 1
+- **Signal:** Combined corners ≥ 8 AND combined xG ≥ 0.4 AND live O2.5 ≥ 1.90
+- **Skip:** One team has ≥ 70% possession AND their corners > opponent (defensive clearances, not bilateral pressure)
+- **Market:** Over 2.5
+- **Mechanism:** High bilateral corners = sustained set-piece pressure underweighted by pure xG models
+- **Edge:** 3-6% — run league-tier stratified; expect higher edge in Tier 3-4
+
+#### Strategy I: "Possession Trap Under" *(new — appeared in 3/4 second-round tools)*
+**Edge confidence:** Medium-High | **Trigger rate:** ~3-6% | **Time to 200 bets:** ~30 days
+- **Entry:** Min 32-55, score **0-0 only** (1-0 with high possession = time-wasting, different mechanism)
+- **Signal:** (possession_home ≥ 62 AND xg_home ≤ 0.30) OR (possession_home ≤ 38 AND xg_away ≤ 0.30) AND combined xG ≤ 0.40 AND live Under 2.5 ≥ 1.75
+- **Market:** Under 2.5
+- **Mechanism:** Market sees high possession → interprets attacking intent → misprices Under. Sterile possession (possession without penetration) is a distinct game state.
+- **Edge:** 5-8%
+
+#### Strategy J: "Dominant Underdog Win" *(new — appeared in 2/4 second-round tools)*
+**Edge confidence:** Medium | **Trigger rate:** ~3-5% | **Time to 200 bets:** ~32 days
+- **Entry:** Min 25-55, underdog leading 1-0 (identify via lower pre-match Pinnacle implied prob)
+- **Signal:** Underdog xG > Favourite xG AND possession within 10% of 50/50 or favouring underdog AND live underdog win odds ≥ 2.80
+- **Market:** 1X2 Underdog to Win
+- **Mechanism:** Narrative bias ("favourite will come back") keeps underdog win odds too high even when data shows deserved lead
+- **Edge:** 4-7% per bet — rare trigger but potentially highest edge-per-bet
+
+#### Strategy K: "Second-Half Kickoff Burst" *(new — appeared in 2/4 second-round tools)*
+**Edge confidence:** Low-Medium | **Trigger rate:** ~8-12% | **Time to 200 bets:** ~14 days
+- **Entry:** Min 46-54 ONLY (narrow post-HT window)
+- **Signal:** Score 0-0 or 1-0 AND combined first-half xG ≥ 0.70 AND pre-match O2.5 > 50% AND live O2.5 ≥ 1.90
+- **Market:** Over 2.5
+- **Mechanism:** Above-average goal rate in first 5-8 min of 2H from fresh legs + HT adjustments. Market applies smooth time-decay, missing this temporal spike.
+- **Edge:** 2-4% — sharp books increasingly price this for major leagues. More relevant Tier 3-4.
+- **Hold:** Start in Week 3 after A and F confirmed working cleanly.
+
+### 4b. Launch Order (based on 8-review prioritisation consensus)
+
+| Week | Start these bots | Rationale |
+|------|-----------------|-----------|
+| **Week 1** | A, A2, B, C, C_home, D, E, F | Core portfolio — fastest validators first |
+| **Week 2** | G (Shot Quality Under), H (Corners Over) | Simple conditions, fields already collected |
+| **Week 3** | I (Possession Trap), J (Dominant Underdog), K (2H Burst) | More complex logic, lower frequency |
+| **Hold** | Over 3.5 bot | No O3.5 odds — tag extreme A triggers as `A_extreme` instead |
+
+### 4c. Strategy Prioritisation Table (Tool 4 synthesis)
+
+| Strategy | Est. bets/day | Days to 200 bets | Edge confidence | Notes |
+|----------|--------------|-----------------|-----------------|-------|
+| D — Late Goals | 33-40 | **~6 days** | Medium | High variance, need 500+ to trust |
+| B — BTTS Momentum | 22-30 | ~8 days | **High** | Fastest high-confidence strategy |
+| E — Dead Game Under | 18-24 | ~10 days | **High** | Strong mechanism, well-studied |
+| K — 2H Kickoff Burst | 12-18 | ~14 days | Low-Medium | Start Week 3 |
+| A — xG Divergence | 12-18 | ~14 days | Medium | Core strategy, run first |
+| G — Shot Quality Under | 9-15 | ~18 days | Medium-High | Good contrast to A |
+| C — Favourite Comeback | 8-12 | ~22 days | **High** | Needs patience |
+| F — Odds Reversal | 6-10 | ~25 days | Low | 500+ minimum before conclusions |
+| H — Corners Over | 6-9 | ~28 days | Medium | Noisy without timing data |
+| C_home — Home Comeback | 5-8 | ~30 days | **High** | Rarest but strongest mechanism |
+| I — Possession Trap | 5-9 | ~30 days | Medium-High | Low frequency, high edge |
+| J — Dominant Underdog | 5-8 | ~32 days | Medium | Rarest, highest edge-per-bet |
+
+### 5. Staking (in-play specific)
+
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| Kelly fraction | **Quarter Kelly** (not half) | Higher model uncertainty in-play |
+| Time decay | `(minutes_remaining / 90)^0.5` | Min 30: 82% stake, min 60: 58%, min 75: 41% |
+| Max stake per bet | 1.5% bankroll | Lower than pre-match (2%) |
+| Max exposure per match | 3% bankroll | Prevents doubling down |
+| Bankroll allocation | 70% pre-match, 30% in-play | Pre-match is more reliable |
+
+**Minimum edge thresholds by minute:**
+
+| Minute | Min edge | Rationale |
+|--------|----------|-----------|
+| 15-30 | 3% | Good signal, plenty of time |
+| 30-45 | 4% | HT reset incoming |
+| 46-60 | 5% | Post-HT uncertainty |
+| 60-75 | 6% | Time running out |
+| 75+ | 8% | Extreme value only |
+
+### 6. Data Gaps to Fix
+
+| Gap | Priority | Solution |
+|-----|----------|----------|
+| Odds staleness detection | **Critical** | Compare `captured_at` of odds to NOW() — skip if > 60s stale |
+| Score re-check at trigger | **Critical** | Re-read latest score before logging bet, abort if changed |
+| Open-play xG vs set-piece xG | High | Separate penalty/free-kick xG from open-play in snapshots |
+| Substitution timestamps + type | High | Already in match_events — extract and add to snapshot features |
+| Event-triggered odds capture | High | Snapshot odds at goal/red card moments, not just 5-min cycle |
+| 1-minute trigger checks | Medium | When model flags potential entry, poll odds at 1-min for execution |
+| Formation changes | Medium | Capture at HT and after goals |
+| Dangerous attacks count | Low | Available from AF, add to snapshot |
 
 ### 5. Staking (in-play specific)
 
@@ -495,12 +639,14 @@ Real money phases require a Betfair Exchange account + API integration (1-2 days
 **Timeline:** May 2026 (build now, runs continuously)  
 **What to build:**
 - Live bot in scheduler: reads `live_match_snapshots` every 30s during active matches
-- Computes xG pace ratio = `(live_xg_total / minute) / (prematch_xg_total / 90)`
-- Checks Strategy A conditions: minute 20-35, combined goals ≤ 1, xG pace > 1.0, pre-match O2.5 prob > 52%, live O2.5 odds ≥ 2.20
-- Logs to `simulated_bets`: `market='ou_25'`, `selection='over'`, `odds=live_ou_25_over`, `stake=1% fixed`
+- Computes Bayesian posterior: `posterior_rate = (prematch_xg + live_xg) / (1.0 + minute / 90)`
+- Staleness check: if odds haven't updated in 60s → skip
+- Score re-check: re-read latest score before logging → abort if changed since trigger snapshot
+- Checks Strategy A conditions: minute 25-35, score 0-0, posterior_rate > prematch_rate × 1.15, combined xG ≥ 0.9, shots on target ≥ 4, pre-match O2.5 > 54%, `model_prob - implied_prob ≥ 3%`
+- Logs to `simulated_bets`: `market='ou_25'`, `selection='over'`, `odds=live_ou_25_over`, `stake=1% fixed`, `strategy_id='inplay_a'`
 - Settlement handled by existing pipeline at FT
 
-**Gate to Phase 1B:** 200+ paper bets logged (≈2 weeks at ~15/day)
+**Gate to Phase 1B:** 200+ paper bets logged AND CLV positive on ≥ 55% of bets (revised from 80% — 8-tool consensus)
 
 ---
 
