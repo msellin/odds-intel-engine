@@ -413,11 +413,14 @@ def main():
     scheduler.add_job(job_morning, CronTrigger(hour=4, minute=0),
                       id="morning_pipeline", name="Morning Pipeline")
 
-    # Odds refresh: every 2h during 07-22 UTC
+    # Odds refresh: every 30min during 07-22 UTC
     # 20:00 replaced by pre-KO mark_closing run (marks closing odds for evening KOs)
-    for hour in [7, 8, 10, 12, 14, 16, 18, 22]:
-        scheduler.add_job(job_odds_refresh, CronTrigger(hour=hour, minute=0),
-                          id=f"odds_{hour:02d}", name=f"Odds {hour:02d}:00")
+    for hour in range(7, 23):
+        for minute in [0, 30]:
+            if hour == 20 and minute == 0:
+                continue  # 20:00 is handled by pre-KO mark_closing below
+            scheduler.add_job(job_odds_refresh, CronTrigger(hour=hour, minute=minute),
+                              id=f"odds_{hour:02d}{minute:02d}", name=f"Odds {hour:02d}:{minute:02d}")
 
     # Odds pre-kickoff (mark_closing): 13:30, 17:30, 20:00 UTC
     # 20:00 covers 19:00-21:00 KO window (replaces regular 20:00 refresh — marks CLV closing line)
