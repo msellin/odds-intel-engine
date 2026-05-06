@@ -79,7 +79,6 @@ ESPN_LEAGUES = {
     "kaz.1": "Kazakhstan / Premier League",
     "uzb.1": "Uzbekistan / Super League",
     # Asian
-    "kor.1": "South Korea / K League 1",
     "kor.2": "South Korea / K League 2",
     "tha.1": "Thailand / Thai League",
     "idn.1": "Indonesia / Liga 1",

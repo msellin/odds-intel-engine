@@ -338,8 +338,6 @@ def store_odds(match_id: str, match_data: dict, minutes_to_kickoff: int = None):
                           "odds": match_data["odds_btts_no"]})
 
     if odds_rows:
-        columns = ["match_id", "bookmaker", "market", "selection", "odds",
-                    "timestamp", "is_closing", "minutes_to_kickoff"]
         tuples = [
             (r["match_id"], r["bookmaker"], r["market"], r["selection"],
              r["odds"], r["timestamp"], r["is_closing"], r["minutes_to_kickoff"])

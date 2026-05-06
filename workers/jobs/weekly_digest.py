@@ -274,10 +274,8 @@ def build_weekly_email(
     upcoming: list[dict],
 ) -> tuple[str, str]:
     is_pro   = tier in ("pro", "elite")
-    is_elite = tier == "elite"
 
     week_label = _week_label(week_start - timedelta(days=7))  # previous week label
-    display_date = datetime.now().strftime("%B %d, %Y")
 
     subject = f"OddsIntel · Week in Review — {week_label}"
 

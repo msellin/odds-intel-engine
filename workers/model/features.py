@@ -5,8 +5,6 @@ No AI needed — just SQL-like operations on pandas DataFrames.
 """
 
 import pandas as pd
-import numpy as np
-from pathlib import Path
 
 # Features used by the prediction model
 FEATURE_COLS = [
@@ -452,7 +450,7 @@ def build_feature_matrix(df: pd.DataFrame, min_matches: int = 50) -> pd.DataFram
                     "season": row["season"],
                     "tier": row["tier"],
                 })
-            except Exception as e:
+            except Exception:
                 continue
 
     features_df = pd.DataFrame(feature_rows)

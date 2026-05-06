@@ -17,10 +17,8 @@ Tier B/C teams fall back to Poisson-only (no change from current behavior).
 """
 
 import joblib
-import numpy as np
 import pandas as pd
 from pathlib import Path
-from scipy.stats import poisson
 
 ENGINE_DIR = Path(__file__).parent.parent.parent
 PROCESSED_DIR = ENGINE_DIR / "data" / "processed"

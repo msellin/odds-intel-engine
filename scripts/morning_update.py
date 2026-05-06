@@ -146,7 +146,7 @@ last_runs = q("""
     LIMIT 8
 """)
 if last_runs:
-    print(f"\n  Recent pipeline runs:")
+    print("\n  Recent pipeline runs:")
     for r in last_runs:
         ts = str(r.get('completed_at', ''))[:16]
         status_icon = "✅" if r.get('status') == 'success' else "❌" if r.get('status') == 'error' else "🔄"
@@ -201,7 +201,7 @@ alignment_perf = q("""
     ORDER BY alignment_class DESC
 """)
 if alignment_perf and any(r.get('bets', 0) > 0 for r in alignment_perf):
-    print(f"\n  CLV by alignment class (hypothesis: HIGH > MED > LOW):")
+    print("\n  CLV by alignment class (hypothesis: HIGH > MED > LOW):")
     for r in alignment_perf:
         clv = r.get('avg_clv', '—')
         flag = "✅" if clv and float(clv) > 0 else "⚠️ "
@@ -209,7 +209,7 @@ if alignment_perf and any(r.get('bets', 0) > 0 for r in alignment_perf):
     if alignment_settled < 30:
         print(f"    (only {alignment_settled} bets — too early for signal)")
 else:
-    print(f"\n  Alignment class breakdown: no settled alignment bets yet")
+    print("\n  Alignment class breakdown: no settled alignment bets yet")
 
 # Market breakdown
 market_perf = q("""
@@ -225,7 +225,7 @@ market_perf = q("""
     ORDER BY bets DESC
 """)
 if market_perf:
-    print(f"\n  Performance by market:")
+    print("\n  Performance by market:")
     for r in market_perf:
         clv = r.get('avg_clv')
         flag = "✅" if clv and float(clv) > 0 else "  "
@@ -250,7 +250,7 @@ per_bot = q("""
 """)
 active_with_bets = [r for r in per_bot if (r.get('settled') or 0) > 0]
 if active_with_bets:
-    print(f"\n  Active bots with settled bets:")
+    print("\n  Active bots with settled bets:")
     for r in active_with_bets:
         pnl = float(r.get('total_pnl') or 0)
         start = float(r.get('starting_bankroll') or 1000)
@@ -271,7 +271,7 @@ platt_params = q("""
     ORDER BY market
 """)
 if platt_params:
-    print(f"  Platt scaling (ECE = Expected Calibration Error, lower is better):")
+    print("  Platt scaling (ECE = Expected Calibration Error, lower is better):")
     for r in platt_params:
         ts = str(r.get('fitted_at', '?'))[:10]
         ece_b = r.get('ece_before', 0) or 0
@@ -305,7 +305,7 @@ if args.verbose:
         ORDER BY prob_bucket
     """)
     if calib_check:
-        print(f"\n  Calibration (predicted vs actual, buckets ≥15 samples):")
+        print("\n  Calibration (predicted vs actual, buckets ≥15 samples):")
         for r in calib_check:
             pred = float(r.get('prob_bucket', 0))
             actual = float(r.get('actual_rate', 0))
@@ -384,14 +384,14 @@ coverage = q("""
 """)
 
 if coverage:
-    print(f"\n  Actual DB coverage (completed leagues — stats/events %):")
+    print("\n  Actual DB coverage (completed leagues — stats/events %):")
     print(f"  {'League':<20} {'Season':<7} {'Matches':<9} {'Stats':<8} {'Events'}")
     for r in coverage:
         fin = r.get('finished', 0)
         stats_pct = f"{100*r.get('has_stats',0)//fin}%" if fin else '—'
         events_pct = f"{100*r.get('has_events',0)//fin}%" if fin else '—'
         print(f"  {(r.get('league_name') or '')[:20]:<20} {r.get('season'):<7} {fin:<9} {stats_pct:<8} {events_pct}")
-    print(f"  (Odds not backfilled — AF only serves odds for upcoming/recent matches)")
+    print("  (Odds not backfilled — AF only serves odds for upcoming/recent matches)")
 
 
 # ── 6. UPCOMING THRESHOLDS — WHAT UNLOCKS NEXT ───────────────

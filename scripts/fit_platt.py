@@ -165,7 +165,7 @@ def fit_and_store(min_samples: int = MIN_SAMPLES_DEFAULT):
         if improvement > 0:
             print(f"    ✅ Improvement: {improvement:.4f} ({improvement/ece_before*100:.0f}% relative)")
         else:
-            print(f"    ⚠  No improvement — Platt params stored but may not help this market")
+            print("    ⚠  No improvement — Platt params stored but may not help this market")
 
         execute_write(
             """
@@ -184,7 +184,7 @@ def fit_and_store(min_samples: int = MIN_SAMPLES_DEFAULT):
             ),
         )
         results.append({"market": market})
-        print(f"    → Stored in model_calibration")
+        print("    → Stored in model_calibration")
 
     print(f"\n{'─'*65}")
     if results:

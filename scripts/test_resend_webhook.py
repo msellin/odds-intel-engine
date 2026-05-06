@@ -19,7 +19,6 @@ import uuid
 import json
 import httpx
 import psycopg2
-from pathlib import Path
 from dotenv import load_dotenv
 import os
 

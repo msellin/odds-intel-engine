@@ -11,7 +11,8 @@ Checks:
 
 Run: python3 scripts/debug_betting.py
 """
-import os, sys
+import os
+import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 load_dotenv()

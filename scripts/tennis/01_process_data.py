@@ -6,7 +6,6 @@ Two data tracks:
 We compute ELO and form from Sackmann data, then join to odds data for backtesting.
 """
 import pandas as pd
-import numpy as np
 import os
 import warnings
 warnings.filterwarnings('ignore')
@@ -179,7 +178,7 @@ def main():
     # Save Sackmann data (will be used for ELO and feature engineering)
     atp_sack.to_csv(os.path.join(PROCESSED_DIR, 'sackmann_atp_all.csv'), index=False)
     wta_sack.to_csv(os.path.join(PROCESSED_DIR, 'sackmann_wta.csv'), index=False)
-    print(f"  Saved sackmann_atp_all.csv and sackmann_wta.csv")
+    print("  Saved sackmann_atp_all.csv and sackmann_wta.csv")
 
     # Track 2: Odds data (for backtesting)
     print("\n--- TRACK 2: Odds Data (backtesting) ---")

@@ -38,8 +38,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workers.jobs.daily_pipeline_v2 import run_morning, run_report
 from workers.utils.pipeline_utils import (
-    check_fixtures_ready, log_pipeline_start, log_pipeline_complete,
-    log_pipeline_failed, log_pipeline_skipped,
+    log_pipeline_start, log_pipeline_complete,
+    log_pipeline_failed,
 )
 
 console = Console()
@@ -79,7 +79,7 @@ def run_betting(cohort: str | None = None):
         run_morning(skip_fetch=True, cohort=active_cohort)
 
         log_pipeline_complete(run_id, metadata={"phase": 2, "skip_fetch": True, "cohort": active_cohort})
-        console.print(f"\n[bold green]Betting pipeline complete.[/bold green]")
+        console.print("\n[bold green]Betting pipeline complete.[/bold green]")
 
     except Exception as e:
         import traceback

@@ -8,7 +8,6 @@ Uses Sackmann data for computing features, then joins to odds data for backtesti
 import pandas as pd
 import numpy as np
 import os
-import json
 from collections import defaultdict
 import warnings
 warnings.filterwarnings('ignore')
@@ -580,7 +579,7 @@ def main():
 
     # Combined dataset
     combined = pd.concat(all_features, ignore_index=True)
-    combined.to_csv(os.path.join(PROCESSED_DIR, f'combined_model_features.csv'), index=False)
+    combined.to_csv(os.path.join(PROCESSED_DIR, 'combined_model_features.csv'), index=False)
     print(f"\n  Saved combined_model_features.csv ({len(combined):,} rows)")
 
     # Feature coverage summary

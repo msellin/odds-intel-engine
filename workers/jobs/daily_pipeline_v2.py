@@ -10,13 +10,8 @@ Usage:
 """
 
 import sys
-import os
-import time
-import json
-import threading
 import numpy as np
 import pandas as pd
-import requests
 from pathlib import Path
 from datetime import datetime, date, timezone
 from scipy.stats import poisson
@@ -30,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workers.api_clients.api_football import (
     get_fixtures_by_date, fixture_to_match_dict,
-    get_fixture_odds, parse_fixture_odds, get_odds_by_date,
+    parse_fixture_odds, get_odds_by_date,
     get_prediction, parse_prediction,
     get_team_statistics, parse_team_statistics,
     get_injuries_batched, parse_injuries,
@@ -39,16 +34,13 @@ from workers.api_clients.api_football import (
 )
 from workers.api_clients.supabase_client import (
     ensure_bots, store_match, store_odds,
-    store_prediction, store_bet, store_prediction_snapshot, settle_bet,
-    get_pending_bets, update_bot_bankroll, update_match_result,
-    get_bot_performance, get_todays_matches,
-    store_team_season_stats, store_match_injuries,
+    store_prediction, store_bet, store_prediction_snapshot, store_team_season_stats, store_match_injuries,
     store_league_standings, store_match_h2h,
-    write_morning_signals, batch_write_morning_signals,
+    batch_write_morning_signals,
 )
 from workers.model.improvements import (
     calibrate_prob, compute_odds_movement, compute_alignment,
-    compute_kelly, compute_stake, compute_rank_score,
+    compute_kelly, compute_stake,
 )
 from workers.model.xgboost_ensemble import (
     get_xgboost_prediction, ensemble_prediction,
@@ -688,7 +680,7 @@ def _fetch_af_predictions(af_id_to_match_id: dict[int, str]) -> dict[str, dict]:
 
             fetched += 1
 
-        except Exception as e:
+        except Exception:
             failed += 1
             continue
 
@@ -1462,7 +1454,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
         pred = poisson_pred  # default: Poisson-only
         xgb_pred = None
         if data_tier == "A":
-            from workers.utils.team_names import normalize_team_name, fuzzy_match_team
+            from workers.utils.team_names import normalize_team_name
             home_norm = normalize_team_name(match["home_team"], source="default")
             away_norm = normalize_team_name(match["away_team"], source="default")
             # Try to get XGBoost prediction
@@ -1836,7 +1828,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
 
     cohort_label = f" [{cohort} cohort]" if cohort else " [all bots]"
     console.print(f"\n[bold green]Done! {total_bets} bets placed{cohort_label}[/bold green]")
-    console.print(f"[green]All data stored in Supabase — frontend can display it now[/green]")
+    console.print("[green]All data stored in Supabase — frontend can display it now[/green]")
 
     # 11.6: Cross-match correlation check — warn about concentrated exposure
     _check_exposure_concentration()
@@ -1908,7 +1900,7 @@ def run_settle():
 def run_report():
     """Show cumulative bot performance"""
     from workers.api_clients.db import execute_query as _eq
-    console.print(f"[bold green]═══ OddsIntel Bot Report ═══[/bold green]\n")
+    console.print("[bold green]═══ OddsIntel Bot Report ═══[/bold green]\n")
 
     bots = _eq("SELECT id, name, strategy, current_bankroll FROM bots ORDER BY name", [])
 

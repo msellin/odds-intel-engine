@@ -1085,7 +1085,7 @@ def _settle_pending_bets(pending: list, finished: list):
 
     avg_clv = sum(clv_values) / len(clv_values) if clv_values else None
 
-    console.print(f"\n[bold]Settlement complete:[/bold]")
+    console.print("\n[bold]Settlement complete:[/bold]")
     console.print(f"  Settled: {settled} | Skipped (no result): {skipped}")
     console.print(f"  Total P&L: [{'green' if total_pnl >= 0 else 'red'}]{total_pnl:+.2f}[/]")
     if avg_clv is not None:
@@ -1477,7 +1477,7 @@ Respond with ONLY a JSON object:
 
             patterns = analysis.get("patterns_noticed", [])
             if patterns:
-                console.print(f"  [bold]Patterns:[/bold]")
+                console.print("  [bold]Patterns:[/bold]")
                 for p in patterns:
                     console.print(f"    • {p}")
 

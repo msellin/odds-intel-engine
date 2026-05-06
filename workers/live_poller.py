@@ -23,8 +23,6 @@ API budget (AF Ultra 75K/day):
 """
 
 import time
-import threading
-from datetime import datetime, timezone, date
 from rich.console import Console
 
 console = Console()
@@ -157,7 +155,7 @@ class LivePoller:
         """Execute one polling cycle. Returns True if live matches were found."""
         from workers.jobs.live_tracker import (
             fetch_live_bulk, fetch_match_stats_for, fetch_match_events_for,
-            build_snapshot, _fetch_lineups_for_upcoming, _lookup_db_match,
+            build_snapshot, _fetch_lineups_for_upcoming,
         )
         from workers.api_clients.db import (
             store_live_snapshots_batch, store_live_odds_batch,

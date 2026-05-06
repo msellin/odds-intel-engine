@@ -269,7 +269,7 @@ def optimize_shrinkage_alpha(rows: list[dict]) -> dict:
 
 def run(min_samples: int = MIN_SAMPLES_DEFAULT, dry_run: bool = False):
     print(f"\n{'─'*70}")
-    print(f"  MOD-2: Blend Weight & Shrinkage Alpha Optimizer")
+    print("  MOD-2: Blend Weight & Shrinkage Alpha Optimizer")
     print(f"  dry_run={dry_run}  min_samples={min_samples}")
     print(f"{'─'*70}")
 
@@ -289,9 +289,9 @@ def run(min_samples: int = MIN_SAMPLES_DEFAULT, dry_run: bool = False):
 
     # ── 1. Poisson/XGBoost blend weight ──────────────────────────────────────
     print(f"\n  {'─'*65}")
-    print(f"  § 1. Poisson / XGBoost Blend Weight")
+    print("  § 1. Poisson / XGBoost Blend Weight")
     print(f"  {'─'*65}")
-    print(f"  Current hardcoded: 50/50 (poisson_weight=0.5)")
+    print("  Current hardcoded: 50/50 (poisson_weight=0.5)")
 
     blend_results = {}
     for market in ("1x2_home", "1x2_draw", "1x2_away"):
@@ -336,7 +336,7 @@ def run(min_samples: int = MIN_SAMPLES_DEFAULT, dry_run: bool = False):
 
     # ── 2. Shrinkage alpha per tier ───────────────────────────────────────────
     print(f"\n  {'─'*65}")
-    print(f"  § 2. Shrinkage Alpha Per Tier (CALIBRATION_ALPHA)")
+    print("  § 2. Shrinkage Alpha Per Tier (CALIBRATION_ALPHA)")
     print(f"  {'─'*65}")
     HARDCODED = {1: 0.20, 2: 0.30, 3: 0.50, 4: 0.65}
     HARDCODED_GL = {1: 0.35, 2: 0.45, 3: 0.65, 4: 0.80}

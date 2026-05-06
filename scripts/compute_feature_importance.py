@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from workers.api_clients.db import execute_query, execute_write, bulk_upsert
+from workers.api_clients.db import execute_query, execute_write
 
 MIN_SAMPLES_DEFAULT = 30
 TOP_SIGNALS_DEFAULT = 20  # max signals to store per (league, market)
@@ -119,7 +119,7 @@ def run(min_samples: int = MIN_SAMPLES_DEFAULT,
         dry_run: bool = False):
 
     print(f"\n{'─'*70}")
-    print(f"  P3.5: Feature Importance Per League")
+    print("  P3.5: Feature Importance Per League")
     print(f"  min_samples={min_samples}  top_signals={top_signals}  dry_run={dry_run}")
     print(f"{'─'*70}")
 
@@ -215,7 +215,7 @@ def run(min_samples: int = MIN_SAMPLES_DEFAULT,
         for row in home_rows[:10]:
             print(f"    {row['league_name']:30s}  {row['signal_name']:35s}  "
                   f"r={row['correlation']:+.4f}  n={row['sample_count']}")
-        print(f"\n  DRY RUN — no writes performed.")
+        print("\n  DRY RUN — no writes performed.")
         return
 
     if not upsert_rows:
@@ -229,8 +229,6 @@ def run(min_samples: int = MIN_SAMPLES_DEFAULT,
         chunk = upsert_rows[i:i + batch]
         cols = list(chunk[0].keys())
         values = [tuple(r[c] for c in cols) for r in chunk]
-        placeholders = ", ".join(["(%s)" % ", ".join(["%s"] * len(cols))] * len(values))
-
         # Flatten for execute
         flat_vals = [v for row in values for v in row]
         execute_write(
@@ -244,7 +242,7 @@ def run(min_samples: int = MIN_SAMPLES_DEFAULT,
     # Print top 10 by |r| for 1x2_home
     home_rows = [r for r in upsert_rows if r["market"] == "1x2_home"]
     home_rows.sort(key=lambda x: -x["abs_correlation"])
-    print(f"\n  Top 10 signals by |r| for 1x2_home:")
+    print("\n  Top 10 signals by |r| for 1x2_home:")
     for row in home_rows[:10]:
         print(f"    {row['league_name']:30s}  {row['signal_name']:35s}  "
               f"r={row['correlation']:+.4f}  n={row['sample_count']}")

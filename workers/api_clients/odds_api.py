@@ -8,8 +8,6 @@ Docs: https://the-odds-api.com/liveapi/guides/v4/
 
 import os
 import requests
-from datetime import datetime
-from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -240,7 +238,7 @@ if __name__ == "__main__":
 
     # Test with one league
     if soccer_sports:
-        print(f"\nFetching EPL odds...")
+        print("\nFetching EPL odds...")
         matches = get_odds("soccer_epl")
         print(f"Found {len(matches)} matches with odds")
         if matches:

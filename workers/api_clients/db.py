@@ -50,7 +50,7 @@ def get_pool() -> pool.ThreadedConnectionPool:
                     dsn=DATABASE_URL,
                     connect_timeout=10,
                 )
-                console.print(f"[dim]DB pool created (2-10 connections)[/dim]")
+                console.print("[dim]DB pool created (2-10 connections)[/dim]")
     return _pool
 
 
@@ -273,8 +273,6 @@ def store_match_events_batch(match_id: str, events: list[dict],
         return 0
 
     now = datetime.now(timezone.utc).isoformat()
-    columns = ["match_id", "minute", "added_time", "event_type", "team",
-               "player_name", "detail", "af_event_order", "created_at"]
 
     rows = []
     for ev in events:

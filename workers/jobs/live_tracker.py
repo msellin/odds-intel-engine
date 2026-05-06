@@ -14,12 +14,9 @@ Usage:
 """
 
 import sys
-import os
-import time
 import argparse
-import requests
 from pathlib import Path
-from datetime import datetime, date, timezone, timedelta
+from datetime import datetime, date, timezone
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
@@ -39,7 +36,6 @@ from workers.api_clients.supabase_client import (
     store_live_odds,
     store_match_events_af,
     store_match_lineups,
-    store_match_stats_full,
     update_match_status,
     get_match_by_teams_and_date,
 )

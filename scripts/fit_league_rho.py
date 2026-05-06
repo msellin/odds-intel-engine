@@ -170,7 +170,7 @@ def run(min_matches: int = MIN_MATCHES_DEFAULT, dry_run: bool = False) -> dict:
             print(f"    → Stored as '{market_key}'")
 
     if dry_run and results:
-        print(f"\n  Dry run — not written to DB.")
+        print("\n  Dry run — not written to DB.")
 
     if not results:
         print("\n  No tiers had sufficient data. Global rho=-0.13 remains in effect.")

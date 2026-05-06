@@ -20,7 +20,7 @@ Strategies:
 
 import json
 import math
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from rich.console import Console
 
 console = Console()
@@ -684,7 +684,6 @@ def _check_strategy_c(cand: dict, pm: dict, has_red_card: bool,
     # Simple model: favourite comeback probability based on xG dominance
     remaining = max(1, 90 - minute)
     fav_lambda_remaining = fav_xg * (remaining / max(1, minute))
-    opp_lambda_remaining = opp_xg * (remaining / max(1, minute))
     # P(favourite scores at least 1 more than opponent in remaining time)
     # Simplified: P(fav scores >=1) * correction
     p_fav_scores = 1.0 - math.exp(-fav_lambda_remaining)

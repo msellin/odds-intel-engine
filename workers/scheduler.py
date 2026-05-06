@@ -138,7 +138,7 @@ def morning_pipeline():
     if failed_steps:
         console.print(f"\n[red bold]Morning pipeline finished with {len(failed_steps)} failure(s): {', '.join(failed_steps)}[/red bold]")
     else:
-        console.print(f"\n[bold green]Morning pipeline complete — all 5 steps succeeded.[/bold green]")
+        console.print("\n[bold green]Morning pipeline complete — all 5 steps succeeded.[/bold green]")
 
 
 def settlement_pipeline():
@@ -165,7 +165,7 @@ def settlement_pipeline():
     if is_sunday:
         steps.append(("6+", "DC rho per tier",     lambda: __import__('scripts.fit_league_rho', fromlist=['run']).run()))
     if not is_refit_day:
-        console.print(f"[dim]Settlement steps 4-6: Platt + blend weight + DC rho — skipped (not Wednesday or Sunday)[/dim]")
+        console.print("[dim]Settlement steps 4-6: Platt + blend weight + DC rho — skipped (not Wednesday or Sunday)[/dim]")
 
     failed_steps = []
     for step_num, step_name, step_fn in steps:
@@ -184,7 +184,7 @@ def settlement_pipeline():
     if failed_steps:
         console.print(f"\n[red bold]Settlement finished with {len(failed_steps)} failure(s): {', '.join(failed_steps)}[/red bold]")
     else:
-        console.print(f"\n[bold green]Settlement complete — all steps succeeded.[/bold green]")
+        console.print("\n[bold green]Settlement complete — all steps succeeded.[/bold green]")
 
 
 # ── Individual job wrappers ────────────────────────────────────────────────

@@ -10,7 +10,7 @@ import os
 import time
 import threading
 import requests
-from datetime import date, datetime, timezone
+from datetime import date
 from dotenv import load_dotenv
 from rich.console import Console
 

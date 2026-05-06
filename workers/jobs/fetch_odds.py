@@ -28,11 +28,9 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workers.api_clients.api_football import get_odds_by_date, parse_fixture_odds
-from workers.api_clients.supabase_client import store_match, store_odds
 from workers.api_clients.db import execute_query, bulk_insert
 from workers.utils.pipeline_utils import (
     log_pipeline_start, log_pipeline_complete, log_pipeline_failed,
-    check_fixtures_ready,
 )
 
 console = Console()

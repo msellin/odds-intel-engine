@@ -18,7 +18,6 @@ Safety:
 """
 
 import sys
-import os
 import signal
 import argparse
 from pathlib import Path
@@ -297,7 +296,7 @@ def backfill_league_season(
 
     progress = get_or_create_progress(league_id, season, phase)
     if progress.get("status") == "complete" and skip_existing:
-        console.print(f"  [dim]Already complete — skipping[/dim]")
+        console.print("  [dim]Already complete — skipping[/dim]")
         return stats
 
     update_progress(league_id, season, status="in_progress")
@@ -360,7 +359,7 @@ def backfill_league_season(
     # Step 3: Odds — SKIPPED
     # API-Football /odds endpoint only returns data for upcoming/recent fixtures,
     # not historical completed matches. Confirmed via live test 2026-04-30.
-    console.print(f"  Odds: skipped (AF doesn't serve historical odds for completed fixtures)")
+    console.print("  Odds: skipped (AF doesn't serve historical odds for completed fixtures)")
 
     # Step 4: Fetch statistics for matches that need them
     need_stats = get_af_ids_needing("match_stats", match_map) if skip_existing else set(match_af_to_uuid.keys())
@@ -541,7 +540,7 @@ def run_backfill(phase: int | None = None, batch_size: int = 500, league_cap: in
             if _shutdown_requested:
                 break
             if budget_tracker["used"] >= budget_tracker["max"]:
-                console.print(f"\n[yellow]Budget cap reached — stopping[/yellow]")
+                console.print("\n[yellow]Budget cap reached — stopping[/yellow]")
                 break
 
             for season in seasons:
@@ -570,7 +569,7 @@ def run_backfill(phase: int | None = None, batch_size: int = 500, league_cap: in
                 totals["api_calls"] += result["api_calls"]
 
         # Final summary
-        console.print(f"\n[bold green]═══ Backfill Complete ═══[/bold green]")
+        console.print("\n[bold green]═══ Backfill Complete ═══[/bold green]")
         console.print(f"Fixtures: {totals['fixtures']} | Odds: {totals['odds']} | "
                       f"Stats: {totals['stats']} | Events: {totals['events']}")
         console.print(f"API calls: {totals['api_calls']}")

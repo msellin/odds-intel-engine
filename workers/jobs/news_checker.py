@@ -20,8 +20,6 @@ Usage:
 import sys
 import os
 import json
-import time
-import requests
 import argparse
 from pathlib import Path
 from datetime import datetime, timezone, date

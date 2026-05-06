@@ -111,7 +111,7 @@ def run():
 
     print(f"  Updated:       {updated} bets with clv_pinnacle")
     print(f"  No Pinnacle:   {missing} bets (no Pinnacle snapshot in odds_snapshots)")
-    print(f"\n=== Done ===\n")
+    print("\n=== Done ===\n")
 
 
 if __name__ == "__main__":

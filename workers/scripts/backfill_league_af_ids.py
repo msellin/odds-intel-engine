@@ -131,7 +131,6 @@ def apply_updates(matched: list[dict]) -> tuple[int, list]:
     (those are duplicates that need merging, not simple ID backfills).
     Returns (update_count, skipped_list).
     """
-    import psycopg2
     updated = 0
     skipped = []
     for m in matched:

@@ -22,14 +22,13 @@ Scheduled: daily in settlement_pipeline() after core settlement + ML ETL.
 import argparse
 import os
 import sys
-from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 load_dotenv()
 
-from workers.api_clients.db import execute_query, execute_write, get_conn
+from workers.api_clients.db import execute_query, get_conn
 
 
 def prune(dry_run: bool = True):
@@ -99,7 +98,7 @@ def prune(dry_run: bool = True):
 
     print(f"Deleted:                       {deleted:,} rows")
     print(f"Rows remaining:                {after_cnt:,}")
-    print(f"Done.")
+    print("Done.")
 
 
 if __name__ == "__main__":

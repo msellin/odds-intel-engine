@@ -10,7 +10,6 @@ and updates the DB if a match is found.
 Cost: 1 AF API call per team. With ~150ms rate limiting, ~50 teams/minute.
 """
 
-import sys
 import argparse
 import unicodedata
 import re
