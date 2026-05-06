@@ -378,13 +378,14 @@ def settle_finished_matches(match_ids: list[str]):
 
 def fix_stale_live_matches():
     """
-    Detect matches stuck on status='live' that have actually finished.
+    Detect matches stuck on status='live' OR 'scheduled' that have actually finished.
 
     The live poller's fetch_live_bulk() only returns fixtures with status
-    1H/2H/HT. Once a match goes to FT it drops off that list, so the DB
-    status is never updated. This function catches those matches by:
-      1. Finding matches with status='live' kicked off >130 minutes ago
-         (90 min + 40 min buffer for extra time / delays).
+    1H/2H/HT. If the poller misses a match entirely (e.g. Railway restart,
+    stale deploy, race condition at startup), the DB status stays 'scheduled'
+    forever. This function catches both cases:
+      1. Finding matches with status IN ('live','scheduled') kicked off >130
+         minutes ago (90 min + 40 min buffer for extra time / delays).
       2. Fetching each fixture individually from AF API to get its real status.
       3. Updating the DB to 'finished' with the final score.
 
@@ -396,9 +397,9 @@ def fix_stale_live_matches():
     stale_cutoff = datetime.now(timezone.utc) - timedelta(minutes=130)
 
     rows = execute_query(
-        """SELECT m.id, m.api_football_id
+        """SELECT m.id, m.api_football_id, m.status
            FROM matches m
-           WHERE m.status = 'live'
+           WHERE m.status IN ('live', 'scheduled')
              AND m.date < %s
              AND m.api_football_id IS NOT NULL""",
         [stale_cutoff.isoformat()],
@@ -407,11 +408,15 @@ def fix_stale_live_matches():
     if not rows:
         return
 
-    console.print(f"[yellow]Stale-live check: {len(rows)} match(es) stuck on 'live' — querying AF API[/yellow]")
+    live_count = sum(1 for r in rows if r["status"] == "live")
+    sched_count = sum(1 for r in rows if r["status"] == "scheduled")
+    console.print(f"[yellow]Stale-match check: {len(rows)} match(es) overdue "
+                  f"({live_count} live, {sched_count} scheduled) — querying AF API[/yellow]")
     fixed = 0
     for row in rows:
         match_id = row["id"]
         af_id = row["api_football_id"]
+        db_status = row["status"]
         try:
             fixture = get_fixture_by_id(int(af_id))
             if not fixture:
@@ -428,22 +433,22 @@ def fix_stale_live_matches():
                     else:
                         continue
                 update_match_result(match_id, int(home_goals), int(away_goals))
-                console.print(f"[green]Fixed stale match {match_id}: {status_short} {home_goals}-{away_goals}[/green]")
+                console.print(f"[green]Fixed stale match {match_id} ({db_status}→finished): "
+                              f"{status_short} {home_goals}-{away_goals}[/green]")
                 fixed += 1
             elif status_short in ("PST", "CANC", "SUSP", "AWD", "INT"):
-                # Postponed/cancelled — remove from live without a result
-                execute_query(
+                # Postponed/cancelled — remove from live/scheduled without a result
+                execute_write(
                     "UPDATE matches SET status='postponed' WHERE id=%s",
                     [match_id],
-                    return_data=False,
                 )
-                console.print(f"[yellow]Stale match {match_id} marked postponed: {status_short}[/yellow]")
+                console.print(f"[yellow]Stale match {match_id} ({db_status}→postponed): {status_short}[/yellow]")
                 fixed += 1
         except Exception as e:
-            console.print(f"[red]Stale-live fix error for {match_id}: {e}[/red]")
+            console.print(f"[red]Stale-match fix error for {match_id}: {e}[/red]")
 
     if fixed:
-        console.print(f"[green]Stale-live: fixed {fixed} match(es)[/green]")
+        console.print(f"[green]Stale-match check: fixed {fixed} match(es)[/green]")
 
 
 def settle_ready_matches():
