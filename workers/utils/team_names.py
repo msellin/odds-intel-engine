@@ -1,6 +1,6 @@
 """
 OddsIntel — Team Name Mapping
-Maps team names between different sources (Kambi, SofaScore, football-data.co.uk).
+Canonical team name normalization (common short forms → DB standard names).
 
 This is one of the most important files — wrong mapping = missed bets.
 Unmatched team names are logged to data/logs/unmatched_teams.log for manual review.
@@ -20,9 +20,9 @@ if not _unmatched_logger.handlers:
     _unmatched_logger.addHandler(_handler)
     _unmatched_logger.setLevel(logging.INFO)
 
-# Kambi name → football-data.co.uk name
+# Canonical team name mapping (common variants → DB standard name)
 # Add mappings as we discover mismatches
-KAMBI_TO_FOOTBALL_DATA = {
+TEAM_NAME_MAP = {
     # England
     "Manchester United": "Man United",
     "Manchester City": "Man City",
@@ -194,16 +194,14 @@ KAMBI_TO_FOOTBALL_DATA = {
 }
 
 # Reverse map
-FOOTBALL_DATA_TO_KAMBI = {v: k for k, v in KAMBI_TO_FOOTBALL_DATA.items()}
+TEAM_NAME_REVERSE = {v: k for k, v in TEAM_NAME_MAP.items()}
 
 
-def normalize_team_name(name: str, source: str = "kambi") -> str:
+def normalize_team_name(name: str, source: str = "default") -> str:
     """
-    Normalize a team name to match our historical data (football-data.co.uk format).
+    Normalize a team name to match our DB standard names.
     """
-    if source == "kambi":
-        return KAMBI_TO_FOOTBALL_DATA.get(name, name)
-    return name
+    return TEAM_NAME_MAP.get(name, name)
 
 
 def fuzzy_match_team(name: str, known_teams: set, threshold: int = 85) -> str | None:
@@ -212,7 +210,7 @@ def fuzzy_match_team(name: str, known_teams: set, threshold: int = 85) -> str | 
 
     Steps:
     1. Exact match
-    2. Canonical mapping (KAMBI_TO_FOOTBALL_DATA)
+    2. Canonical mapping (TEAM_NAME_MAP)
     3. rapidfuzz WRatio match with given threshold (default 85)
 
     Logs unmatched names to data/logs/unmatched_teams.log.
@@ -225,7 +223,7 @@ def fuzzy_match_team(name: str, known_teams: set, threshold: int = 85) -> str | 
         return name
 
     # 2. Canonical mapping
-    mapped = KAMBI_TO_FOOTBALL_DATA.get(name)
+    mapped = TEAM_NAME_MAP.get(name)
     if mapped and mapped in known_teams:
         return mapped
 

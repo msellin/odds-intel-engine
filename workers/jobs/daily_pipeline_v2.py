@@ -519,9 +519,9 @@ def compute_prediction(match, hist_targets, hist_targets_global=None,
     home_raw = match["home_team"]
     away_raw = match["away_team"]
 
-    # Normalise Kambi names
-    home = normalize_team_name(home_raw, source="kambi")
-    away = normalize_team_name(away_raw, source="kambi")
+    # Normalise team names
+    home = normalize_team_name(home_raw, source="default")
+    away = normalize_team_name(away_raw, source="default")
 
     # --- Tier A: search in targets_v9 ---
     if _team_sets:
@@ -1463,8 +1463,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
         xgb_pred = None
         if data_tier == "A":
             from workers.utils.team_names import normalize_team_name, fuzzy_match_team
-            home_norm = normalize_team_name(match["home_team"], source="kambi")
-            away_norm = normalize_team_name(match["away_team"], source="kambi")
+            home_norm = normalize_team_name(match["home_team"], source="default")
+            away_norm = normalize_team_name(match["away_team"], source="default")
             # Try to get XGBoost prediction
             xgb_pred = get_xgboost_prediction(
                 home_norm, away_norm,
