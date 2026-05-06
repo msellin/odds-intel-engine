@@ -195,11 +195,16 @@ def run_inplay_strategies():
 
     # Periodic status log every ~5 min (10 cycles at 30s)
     if _cycle_count % 10 == 0:
+        sample = candidates[:3]
+        summaries = [
+            f"min{c['minute']} {c['score_home']}-{c['score_away']} "
+            f"xG {float(c['xg_home'] or 0):.1f}-{float(c['xg_away'] or 0):.1f}"
+            for c in sample
+        ]
+        extra = f" +{len(candidates)-3} more" if len(candidates) > 3 else ""
         console.print(
-            f"[dim]InplayBot heartbeat: cycle {_cycle_count}, "
-            f"{len(candidates)} candidates this cycle, "
-            f"{_total_bets_session} total bets session, "
-            f"{_total_candidates_session} total candidates evaluated[/dim]"
+            f"[dim]InplayBot heartbeat: {len(candidates)} live [{', '.join(summaries)}{extra}] | "
+            f"session: {_total_bets_session} bets / {_total_candidates_session} evaluated[/dim]"
         )
 
 
