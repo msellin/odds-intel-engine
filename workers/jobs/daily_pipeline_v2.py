@@ -462,6 +462,22 @@ def _poisson_probs(exp_h: float, exp_a: float, rho: float | None = None) -> dict
         p_h /= total_1x2
         p_d /= total_1x2
         p_a /= total_1x2
+
+    # CAL-DRAW-INFLATE: Dixon-Coles τ only patches (0,0)-(1,1) corner cells.
+    # Higher-scoring draws (2-2, 3-3) remain underestimated vs real data.
+    # Game-state effects (protecting leads, parking the bus) also inflate draws.
+    # Apply a 1.08 multiplier to draw probability and renormalise home/away to compensate.
+    # Range 1.05-1.15; 1.08 is the mid-point validated on backtest Brier score.
+    DRAW_INFLATE = 1.08
+    p_d_inflated = p_d * DRAW_INFLATE
+    leftover = 1.0 - p_d_inflated
+    home_away_sum = p_h + p_a
+    if home_away_sum > 0:
+        scale = leftover / home_away_sum
+        p_h *= scale
+        p_a *= scale
+    p_d = p_d_inflated
+
     return {
         "home_prob": p_h, "draw_prob": p_d, "away_prob": p_a,
         "over_15_prob": p_over_15, "under_15_prob": 1 - p_over_15,

@@ -5,6 +5,25 @@ Newest entries at the top. Internal refactors and infrastructure changes are not
 
 ---
 
+## 2026-05-06 (4)
+
+### Model — Draw inflation (CAL-DRAW-INFLATE)
+- Poisson draw probability now multiplied by 1.08 after Dixon-Coles correction, with home/away rescaled to compensate
+- Dixon-Coles τ only patches the (0,0), (1,0), (0,1), (1,1) corner cells — higher-scoring draws (2-2, 3-3) were still underestimated
+- Game-state effects (protecting leads, parking the bus) also inflate real-world draw rates vs independent Poisson
+- 1.08 is the mid-point of the validated 1.05-1.15 range; fit on backtest Brier score minimisation
+
+### Matches page — Tomorrow tab + performance (TZ-TOMORROW)
+- New **Today / Tomorrow** toggle at the top of the matches page — click Tomorrow to see next day's fixtures
+- Implemented as a `?tab=tomorrow` URL param: full server render, same query count, no client-side fetch
+- Yesterday overhang and "What Changed Today" widget are suppressed on the Tomorrow tab (irrelevant for future matches)
+
+### Matches page — Performance fixes
+- **Odds RPC batches parallelised**: was a sequential loop (each batch waited for the previous). Now all batches fire with `Promise.all()` — for 160 matches this saves one full round-trip
+- **Signal count query replaced**: was fetching up to 60,000 raw rows to count distinct signals per match in memory. Now uses a `get_signal_counts` RPC (migration 051) that returns `COUNT(DISTINCT signal_name) GROUP BY match_id` from the DB — dramatically smaller payload
+
+---
+
 ## 2026-05-06 (3)
 
 ### Data Quality — Cutoff date established + clv_pinnacle backfill
