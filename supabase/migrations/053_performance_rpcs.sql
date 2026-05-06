@@ -8,16 +8,16 @@
 -- selection). Reduces payload from ~18k rows to ~N_matches × N_combos rows.
 CREATE OR REPLACE FUNCTION get_latest_match_odds(p_match_ids uuid[])
 RETURNS TABLE(
-  match_id  uuid,
-  bookmaker text,
-  market    text,
-  selection text,
-  odds      numeric,
-  timestamp timestamptz
+  match_id    uuid,
+  bookmaker   text,
+  market      text,
+  selection   text,
+  odds        numeric,
+  "timestamp" timestamptz
 )
 LANGUAGE sql STABLE SECURITY DEFINER AS $$
   SELECT DISTINCT ON (match_id, bookmaker, market, selection)
-    match_id, bookmaker, market, selection, odds, timestamp
+    match_id, bookmaker, market, selection, odds, "timestamp"
   FROM odds_snapshots
   WHERE match_id = ANY(p_match_ids)
   ORDER BY match_id, bookmaker, market, selection, timestamp DESC;
