@@ -96,6 +96,43 @@ def run_inplay_strategies():
 
     # 1. Get latest snapshot per live match (within 90s — allows for 1 missed cycle)
     candidates = _get_live_candidates(execute_query)
+
+    # Heartbeat even when no candidates — so we can tell the bot is running
+    if _cycle_count % 10 == 0:
+        if candidates:
+            sample = candidates[:3]
+            summaries = [
+                f"min{c['minute']} {c['score_home']}-{c['score_away']} "
+                f"xG {float(c['xg_home'] or 0):.1f}-{float(c['xg_away'] or 0):.1f}"
+                for c in sample
+            ]
+            extra = f" +{len(candidates)-3} more" if len(candidates) > 3 else ""
+            console.print(
+                f"[dim]InplayBot heartbeat: {len(candidates)} candidates [{', '.join(summaries)}{extra}] | "
+                f"session: {_total_bets_session} bets / {_total_candidates_session} evaluated[/dim]"
+            )
+        else:
+            # Diagnose why no candidates: count live matches vs those with xG
+            try:
+                live_count = execute_query(
+                    "SELECT COUNT(DISTINCT lms.match_id) AS n FROM live_match_snapshots lms "
+                    "JOIN matches m ON m.id = lms.match_id "
+                    "WHERE m.status = 'live' AND lms.captured_at >= NOW() - INTERVAL '90 seconds'",
+                )[0]["n"]
+                xg_count = execute_query(
+                    "SELECT COUNT(DISTINCT lms.match_id) AS n FROM live_match_snapshots lms "
+                    "JOIN matches m ON m.id = lms.match_id "
+                    "WHERE m.status = 'live' AND lms.captured_at >= NOW() - INTERVAL '90 seconds' "
+                    "AND lms.xg_home IS NOT NULL",
+                )[0]["n"]
+                console.print(
+                    f"[dim]InplayBot heartbeat: 0 candidates | "
+                    f"{live_count} live snapshots (90s), {xg_count} with xG | "
+                    f"session: {_total_bets_session} bets[/dim]"
+                )
+            except Exception:
+                console.print(f"[dim]InplayBot heartbeat: 0 candidates | session: {_total_bets_session} bets[/dim]")
+
     if not candidates:
         return
 
@@ -192,20 +229,6 @@ def run_inplay_strategies():
 
     if bets_placed > 0:
         console.print(f"[bold green]InplayBot: {bets_placed} paper bet(s) placed this cycle[/bold green]")
-
-    # Periodic status log every ~5 min (10 cycles at 30s)
-    if _cycle_count % 10 == 0:
-        sample = candidates[:3]
-        summaries = [
-            f"min{c['minute']} {c['score_home']}-{c['score_away']} "
-            f"xG {float(c['xg_home'] or 0):.1f}-{float(c['xg_away'] or 0):.1f}"
-            for c in sample
-        ]
-        extra = f" +{len(candidates)-3} more" if len(candidates) > 3 else ""
-        console.print(
-            f"[dim]InplayBot heartbeat: {len(candidates)} live [{', '.join(summaries)}{extra}] | "
-            f"session: {_total_bets_session} bets / {_total_candidates_session} evaluated[/dim]"
-        )
 
 
 # ── Data Queries ─────────────────────────────────────────────────────────────

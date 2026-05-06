@@ -1031,7 +1031,7 @@ def _settle_pending_bets(pending: list, finished: list):
 
         # PIN-5: Pinnacle-anchored CLV — the industry-standard EV validator
         pinnacle_closing = get_pinnacle_closing_odds(match_id, odds_market, odds_selection)
-        odds_at_pick = float(bet["odds"])
+        odds_at_pick = float(bet["odds_at_pick"])
         clv_pinnacle = (
             round((odds_at_pick / pinnacle_closing) - 1, 4)
             if pinnacle_closing and pinnacle_closing > 1.0
