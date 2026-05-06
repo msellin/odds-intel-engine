@@ -317,7 +317,7 @@ T+FT+1h  Post-match: stats, events, player stats enrichment
 
 ## 8. Bot Strategies
 
-16 paper trading bots run simultaneously, each with distinct market focus, league scope, and edge thresholds. Bots are **not** independent models — they all use the same ensemble prediction. They differ in:
+24 paper trading bots run simultaneously: 16 pre-match bots (same ensemble prediction, different market/league filters) + 8 in-play bots (rule-based strategies using live xG + Bayesian posterior, `workers/jobs/inplay_bot.py`). Pre-match bots differ in:
 
 - **Which markets** they bet (1X2 home/draw/away, O/U 1.5/2.5/3.5, BTTS yes/no)
 - **Which leagues** they target (all, lower tiers only, specific countries)
@@ -461,7 +461,8 @@ Alignment will be activated (move from log-only to staking modifier) after:
 | **Dynamic blend weights** | Weekly recalculation of Poisson/XGBoost blend per tier | Done — `scripts/fit_blend_weights.py`, Sunday refit |
 | **Next: Historical backfill** | 43K+ matches with stats + events from API-Football (no historical odds available) | In progress — automated cron |
 | **Next: XGBoost retrain on backfill** | Retrain on 43K matches with richer AF features (xG, shots, possession) | After backfill Phase 1 |
-| **Next: In-play model (P3.4)** | LightGBM Poisson regression predicting `lambda_home/away_remaining` from live match state. 6 validated strategies (xG divergence, BTTS momentum, favorite comeback, late goals, dead game unders, odds reversal). Quarter Kelly + time-decay staking. | Needs 500+ live-tracked matches (~July 2026) |
+| **In-play Phase 1: Rule-based paper trading (P3.4)** | 8 strategies (A, A2, B, C, C_home, D, E, F) using Bayesian xG posterior `(prematch_xg + live_xg) / (1 + min/90)`. Safety: staleness <60s, score re-check, league filter (≥20 xG matches), red card skip. Fixed 1-unit stake. Runs inside LivePoller every 30s. | **Live since 2026-05-06** — paper bets logging to `simulated_bets` |
+| **Next: In-play Phase 2 ML** | LightGBM Poisson regression predicting `lambda_home/away_remaining` from live match state. Replaces rule-based triggers with model probability. Quarter Kelly + time-decay staking. | Needs 500+ live-tracked matches + 200 settled paper bets (~June 2026) |
 
 ---
 

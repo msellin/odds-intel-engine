@@ -5,45 +5,47 @@
 
 | File | Purpose |
 |------|---------|
-| `workers/live_poller.py` | LivePoller — 30s/60s/5min tiered polling, already running |
-| `workers/scheduler.py` | APScheduler — add in-play bot job here |
-| `workers/jobs/live_tracker.py` | fetch_live_bulk(), fetch_match_stats_for() — reuse these |
-| `workers/api_clients/db.py` | execute_query(), store_simulated_bet() — use for all DB writes |
-| `supabase/migrations/` | NNN_description.sql — next migration is 053 |
+| `workers/jobs/inplay_bot.py` | **NEW** — 8 strategies, safety checks, Bayesian posterior, paper bet logging |
+| `workers/live_poller.py` | Integration point — calls `run_inplay_strategies()` after each cycle |
+| `workers/api_clients/supabase_client.py` | `ensure_bots()`, `store_bet()` — reused for in-play |
+| `workers/api_clients/db.py` | `execute_query()`, `store_live_snapshots_batch()` |
 | `PRIORITY_QUEUE.md` § INPLAY Plan | Full strategy conditions, staking, phases |
 
 ## DB Tables Used
 
-- `live_match_snapshots` — source of truth for live state (score, xG, odds, minute, captured_at)
-- `simulated_bets` — destination for paper bet logs
-- `matches` — pre-match data (prematch_xg_home/away, prematch_o25_prob, prematch_btts_prob)
-- `match_events` — red card detection
-- `bots` — register each strategy here to appear on superadmin bot page
+- `live_match_snapshots` — live state: score, xG, odds, minute, captured_at
+- `simulated_bets` — paper bet destination (via `store_bet()`)
+- `bots` — 8 rows auto-created by `ensure_bots()` (inplay_a through inplay_f)
+- `matches` — `af_prediction` JSONB for prematch xG, `league_id`, `status`
+- `predictions` — prematch O2.5, BTTS, 1X2 probabilities (source='ensemble')
+- `leagues` — `tier` for league filter
+- `match_events` — red card detection (`event_type IN ('red_card', 'yellow_red_card')`)
 
 ## Key Decisions Made
 
-1. **Bot runs in scheduler, not as separate process** — zero API budget impact, shares Railway host
-2. **Bayesian posterior formula** (not raw pace ratio): `(prematch_xg + live_xg) / (1 + minute/90)`
-3. **Fixed 1-unit stake** in Phase 1 — no Kelly until ML model in Phase 2
-4. **strategy_id in simulated_bets** — each of 11 strategies logs independently
-5. **league filter ≥ 20 xG matches** — prevents mis-triggers in data-sparse leagues
-6. **All 8 AI reviews confirmed**: 30s polling sufficient for all strategies, no frequency changes needed
-7. **CLV proxy**: use pre-KO `odds_snapshots` closing line (Pinnacle where available)
+1. **Bot integrated into LivePoller.\_run_cycle()** — not a separate scheduler job. Runs naturally after snapshots stored, only when live matches exist.
+2. **Prematch xG from `matches.af_prediction` JSONB** — `predictions.goals.home/away`. Our model's exp_home/exp_away isn't stored persistently.
+3. **`ensure_bots()` at runtime** — no migration needed. Bots created on first call.
+4. **Fixed 1-unit stake** — no Kelly in Phase 1.
+5. **Sentry + Railway logs + heartbeat** for error detection.
+6. **All 8 Week 1 strategies built at once** — AI tools consensus was parallel launch for faster data accumulation.
 
-## What Exists Already
+## Prematch Data Sources
 
-- `live_match_snapshots` table with `xg_home`, `xg_away`, `shots_on_target_*`, `corners_*`, `possession_home`, `ou_25_over`, `live_home_odds`, `live_draw_odds`, `live_away_odds`, `captured_at`
-- `simulated_bets` table — used by 16 pre-match bots, settlement pipeline handles FT
-- `bots` table — renders on superadmin bot page automatically
-- HIGH-priority bet escalation in LivePoller (30s stats once bet is active)
-- Event-triggered odds snapshot on goal/red card (already in live_poller.py)
+| Data | Source | Query path |
+|------|--------|-----------|
+| Prematch xG home/away | `matches.af_prediction` JSONB | `af_prediction->'predictions'->'goals'->>'home'` |
+| Prematch O2.5 prob | `predictions` table | `market='ou_25_over', source='ensemble'` |
+| Prematch BTTS prob | `predictions` table | `market='btts_yes', source='ensemble'` |
+| Prematch 1X2 probs | `predictions` table | `market='1x2_home'/'1x2_away', source='ensemble'` |
+| League tier | `leagues` table | `tier` column |
 
 ## Next Steps
 
-1. Check `simulated_bets` schema — confirm `strategy_id` column exists or add migration 053
-2. Write `workers/jobs/inplay_bot.py` — Phase 1A Strategy A logic
-3. Register job in `workers/scheduler.py` (30s APScheduler interval)
-4. Insert bot rows into `bots` table for each strategy
-5. Test with dry-run mode (log without DB insert) for 1 match day
-6. Switch to live — watch `simulated_bets` for first triggers
-7. Add strategies A2, B, C, C_home, D, E, F (Week 1 complete)
+1. Commit and push — Railway auto-deploys
+2. Watch Railway logs for "InplayBot: 8 bots registered" message
+3. Monitor first heartbeat log (~5 min after first live match)
+4. Watch for first paper bet trigger
+5. After first day: query `simulated_bets` for in-play rows, verify settlement
+6. Week 2: add strategies G, H
+7. Week 3: add strategies I, J, K

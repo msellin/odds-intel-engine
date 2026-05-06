@@ -337,4 +337,21 @@ class LivePoller:
             except Exception as e:
                 console.print(f"[yellow]Per-match settlement error: {e}[/yellow]")
 
+        # ── In-play paper trading bot ─────────────────────────────────────
+        # Runs after snapshots are stored — reads from DB, no extra API calls.
+        # Errors are isolated so they never disrupt the polling loop.
+        try:
+            from workers.jobs.inplay_bot import run_inplay_strategies
+            run_inplay_strategies()
+        except Exception as e:
+            console.print(f"[red]InplayBot error: {e}[/red]")
+            import traceback
+            traceback.print_exc()
+            # Report to Sentry if available
+            try:
+                import sentry_sdk
+                sentry_sdk.capture_exception(e)
+            except Exception:
+                pass
+
         return True  # Live matches were found this cycle — use fast sleep interval

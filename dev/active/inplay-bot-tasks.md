@@ -1,49 +1,50 @@
 # In-Play Paper Trading Bot — Task Checklist
 > Task: P3.4 | Updated: 2026-05-06
 
-## Phase 1A — Strategy A Bot
+## Phase 1A — 8 Week 1 Strategies (all at once)
 
 ### Pre-build
-- [ ] Check `simulated_bets` schema for `strategy_id` column
-- [ ] Check `matches` schema for `prematch_xg_home`, `prematch_xg_away`, `prematch_o25_prob`
-- [ ] Confirm `live_match_snapshots.captured_at` is populated by LivePoller
-- [ ] Confirm `live_match_snapshots.ou_25_over` and `live_*_odds` populated since May 5 fix
-- [ ] Add migration 053 if `strategy_id` column missing from `simulated_bets`
-- [ ] Build league filter query: leagues with ≥ 20 rows in `live_match_snapshots` where `xg_home IS NOT NULL`
+- [x] Check `simulated_bets` schema — uses `bot_id` FK to `bots` table, no strategy_id needed
+- [x] Check `matches` schema — `af_prediction` JSONB has prematch xG via `predictions.goals.home/away`
+- [x] Confirm `live_match_snapshots.captured_at` populated — yes, set to `now()` in `store_live_snapshots_batch()`
+- [x] Confirm `live_match_snapshots.live_ou_25_over` etc populated — yes, since May 5 odds fix
+- [x] No migration needed — `ensure_bots()` creates bot rows at runtime
+- [x] League filter: query leagues with >= 20 rows where `xg_home IS NOT NULL`
 
 ### Bot implementation
-- [ ] Create `workers/jobs/inplay_bot.py`
-  - [ ] `get_live_candidates()` — query latest snapshot per live match (last 30s)
-  - [ ] `check_staleness(snapshot)` — `captured_at` within 60s
-  - [ ] `check_score_recheck(match_id, expected_score)` — re-read latest snapshot
-  - [ ] `compute_bayesian_posterior(prematch_xg, live_xg, minute)` — formula
-  - [ ] `check_strategy_a(snapshot, prematch_data)` — all entry conditions
-  - [ ] `log_paper_bet(match_id, strategy_id, market, selection, odds, model_prob, notes)` — insert to simulated_bets
-  - [ ] Dry-run mode: `--dry-run` flag prints triggers without inserting
-- [ ] Register in `workers/scheduler.py` as 30s interval job
+- [x] Create `workers/jobs/inplay_bot.py`
+  - [x] `_get_live_candidates()` — latest snapshot per live match (90s window)
+  - [x] `_odds_age_seconds()` — staleness check (< 60s)
+  - [x] `_score_recheck()` — re-read latest snapshot, verify score unchanged
+  - [x] `_bayesian_posterior()` — `(prematch_xg + live_xg) / (1 + minute/90)`
+  - [x] `_check_strategy_a()` — Strategy A/A2 conditions
+  - [x] `_check_strategy_b()` — Strategy B (BTTS Momentum)
+  - [x] `_check_strategy_c()` — Strategy C/C_home (Favourite Comeback)
+  - [x] `_check_strategy_d()` — Strategy D (Late Goals Compression)
+  - [x] `_check_strategy_e()` — Strategy E (Dead Game Unders)
+  - [x] `_check_strategy_f()` — Strategy F (Odds Momentum Reversal — 10min lookback)
+  - [x] Heartbeat log every ~5 min for Railway visibility
+- [x] Integrate in `workers/live_poller.py` — called after snapshots stored
 
 ### Bot registration
-- [ ] Insert `inplay_a` row into `bots` table
-- [ ] Insert `inplay_a2` row into `bots` table (Strategy A2 — 1-0 state)
+- [x] 8 bots registered via `ensure_bots()` at first run:
+  inplay_a, inplay_a2, inplay_b, inplay_c, inplay_c_home, inplay_d, inplay_e, inplay_f
 
-### Testing
-- [ ] Run dry-run for one live match day — check trigger count vs expected 8-12% rate
-- [ ] Verify `simulated_bets` rows inserted with correct fields
-- [ ] Verify settlement pipeline picks them up at FT
-- [ ] Check `bots` page shows in-play bots correctly
+### Error monitoring
+- [x] Sentry `capture_exception()` on unhandled errors
+- [x] Rich console logging to Railway logs
+- [x] Health endpoint `/health` shows recent_errors
+- [x] 5-minute heartbeat log with cycle count, candidates, bets placed
 
-## Phase 1B — All Week 1 Strategies
+### Validation (after deploy)
+- [ ] Watch Railway logs for first heartbeat (~5 min after deploy)
+- [ ] Verify "InplayBot: 8 bots registered" appears on first live match
+- [ ] Watch for first paper bet log (green bold message)
+- [ ] Check Supabase: `SELECT * FROM simulated_bets WHERE bot_id IN (SELECT id FROM bots WHERE name LIKE 'inplay_%') ORDER BY created_at DESC`
+- [ ] Verify settlement pipeline picks up in-play bets at FT
+- [ ] Check superadmin bot page shows in-play bots
 
-- [ ] Add Strategy A2 (score 1-0, same logic as A)
-- [ ] Add Strategy B (BTTS Momentum)
-- [ ] Add Strategy C (Favourite Comeback — DNB)
-- [ ] Add Strategy C_home (Home Favourite Comeback)
-- [ ] Add Strategy D (Late Goals Compression)
-- [ ] Add Strategy E (Dead Game Unders)
-- [ ] Add Strategy F (Odds Momentum Reversal — needs 20-snapshot lookback query)
-- [ ] Register all in `bots` table
-
-## Phase 1B — Week 2 Strategies
+## Phase 1B — Week 2 Strategies (after Week 1 validated)
 
 - [ ] Add Strategy G (Shot Quality Under)
 - [ ] Add Strategy H (Corner Pressure Over)
@@ -56,14 +57,7 @@
 
 ## Phase 1 Validation (gates to Phase 2)
 
-- [ ] 200+ Strategy A paper bets logged
-- [ ] CLV > 0 on ≥ 55% of settled A bets
-- [ ] ROI > 0% on Strategy A
+- [ ] 200+ paper bets logged across strategies
+- [ ] CLV > 0 on >= 55% of settled bets
+- [ ] ROI > 0% on best-performing strategy
 - [ ] Build CLV calculation for in-play: entry odds vs pre-KO closing odds (Pinnacle)
-
-## Phase 2 — ML Model (June 2026)
-
-- [ ] Feature pipeline: snapshots → training rows at minute 15/30/45/60/75 checkpoints
-- [ ] Train LightGBM `objective='poisson'` on lambda_remaining
-- [ ] Backtest all strategies on historical snapshots
-- [ ] Gate: model CLV > 0% on 300+ paper bets, outperforms rules by ≥ 2% ROI

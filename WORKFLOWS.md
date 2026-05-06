@@ -66,6 +66,7 @@
 23:30  ⑧c Settlement      settlement_pipeline()     Late catch-up: European evening matches finishing after 21:00
 01:00  ⑧d Settlement      settlement_pipeline()     Overnight catch-up: 21:30+ KOs finishing after extra time
 24/7   ⑥ LivePoller      live_poller.py            30s when live (scores+odds+stats), 120s idle — no time gate
+         ⑫ InplayBot      inplay_bot.py             Paper trading: 8 strategies (A-F + A2 + C_home), runs after each LivePoller snapshot store
 ```
 
 ### Betting refresh schedule (6x/day)
