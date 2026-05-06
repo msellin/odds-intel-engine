@@ -180,6 +180,28 @@ def get_closing_odds(match_id: str, market: str, selection: str) -> float | None
     return float(result2[0]["odds"]) if result2 else None
 
 
+def get_pinnacle_closing_odds(match_id: str, market: str, selection: str) -> float | None:
+    """PIN-5: Get Pinnacle-specific closing odds for clv_pinnacle calculation.
+    Pinnacle CLV is the industry-standard bet model validator — consistently
+    positive = finding edge before sharp money moves the line.
+    Falls back to latest Pinnacle snapshot if is_closing not marked."""
+    result = execute_query(
+        "SELECT odds FROM odds_snapshots WHERE match_id = %s AND market = %s "
+        "AND selection = %s AND bookmaker = 'Pinnacle' AND is_closing = TRUE "
+        "ORDER BY timestamp DESC LIMIT 1",
+        [match_id, market, selection]
+    )
+    if result:
+        return float(result[0]["odds"])
+
+    result2 = execute_query(
+        "SELECT odds FROM odds_snapshots WHERE match_id = %s AND market = %s "
+        "AND selection = %s AND bookmaker = 'Pinnacle' ORDER BY timestamp DESC LIMIT 1",
+        [match_id, market, selection]
+    )
+    return float(result2[0]["odds"]) if result2 else None
+
+
 # ─── Post-match enrichment (T4, T8, T12) ─────────────────────────────────────
 
 def fetch_post_match_enrichment() -> dict:
@@ -1007,6 +1029,15 @@ def _settle_pending_bets(pending: list, finished: list):
         odds_selection = _normalize_bet_selection(raw_selection)
         closing_odds = get_closing_odds(match_id, odds_market, odds_selection)
 
+        # PIN-5: Pinnacle-anchored CLV — the industry-standard EV validator
+        pinnacle_closing = get_pinnacle_closing_odds(match_id, odds_market, odds_selection)
+        odds_at_pick = float(bet["odds"])
+        clv_pinnacle = (
+            round((odds_at_pick / pinnacle_closing) - 1, 4)
+            if pinnacle_closing and pinnacle_closing > 1.0
+            else None
+        )
+
         # Settle
         settlement = settle_bet_result(bet, score_home, score_away, closing_odds)
 
@@ -1021,9 +1052,9 @@ def _settle_pending_bets(pending: list, finished: list):
         # Update DB
         execute_write(
             "UPDATE simulated_bets SET result = %s, pnl = %s, bankroll_after = %s, "
-            "closing_odds = %s, clv = %s WHERE id = %s",
+            "closing_odds = %s, clv = %s, clv_pinnacle = %s WHERE id = %s",
             [settlement["result"], settlement["pnl"], new_bankroll,
-             closing_odds, settlement["clv"], bet["id"]]
+             closing_odds, settlement["clv"], clv_pinnacle, bet["id"]]
         )
 
         settled += 1

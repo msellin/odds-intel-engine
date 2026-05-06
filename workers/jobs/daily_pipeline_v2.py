@@ -1312,30 +1312,50 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
     from collections import defaultdict
     league_bet_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
-    # Pinnacle disagreement veto: batch-load pinnacle_implied_home for all matches.
+    # Pinnacle disagreement veto: batch-load Pinnacle implied for all match/market combos.
     # Empirical analysis (77 settled bets) shows: when cal_prob - pinnacle_implied > 0.12
     # for 1X2 home, the bet loses 22/28 times. Won bets all have gap ≤ 0.129.
     # Threshold 0.12 catches 22 of 34 losses while filtering only 6 of 40 winners.
+    # PIN-3: same veto now extended to draw/away/O/U markets (threshold 0.12, tune later).
     PINNACLE_VETO_GAP = 0.12
     all_match_ids_for_signals = [
         m.get("id") for m in odds_matches if m.get("id")
     ]
-    pinnacle_implied_by_match: dict[str, float] = {}
+    # Keys: (match_id_str, signal_name) → float value
+    pinnacle_implied_by_match: dict[str, float] = {}      # home (existing)
+    pinnacle_draw_by_match:  dict[str, float] = {}        # draw  (PIN-2/3)
+    pinnacle_away_by_match:  dict[str, float] = {}        # away  (PIN-2/3)
+    pinnacle_over_by_match:  dict[str, float] = {}        # over 2.5 (PIN-2/3)
+    pinnacle_under_by_match: dict[str, float] = {}        # under 2.5 (PIN-2/3)
     sharp_consensus_by_match: dict[str, float] = {}
     if all_match_ids_for_signals:
         try:
             from workers.api_clients.db import execute_query as _eq_pin
-            pin_rows = _eq_pin(
-                """SELECT DISTINCT ON (match_id) match_id, signal_value
+            # Load all 5 Pinnacle implied signals in one query
+            pin_all_rows = _eq_pin(
+                """SELECT DISTINCT ON (match_id, signal_name) match_id, signal_name, signal_value
                    FROM match_signals
                    WHERE match_id = ANY(%s)
-                     AND signal_name = 'pinnacle_implied_home'
-                   ORDER BY match_id, captured_at DESC""",
+                     AND signal_name IN (
+                       'pinnacle_implied_home', 'pinnacle_implied_draw',
+                       'pinnacle_implied_away', 'pinnacle_implied_over25',
+                       'pinnacle_implied_under25'
+                     )
+                   ORDER BY match_id, signal_name, captured_at DESC""",
                 (all_match_ids_for_signals,)
             )
-            for pr in pin_rows:
+            _pin_maps = {
+                "pinnacle_implied_home":    pinnacle_implied_by_match,
+                "pinnacle_implied_draw":    pinnacle_draw_by_match,
+                "pinnacle_implied_away":    pinnacle_away_by_match,
+                "pinnacle_implied_over25":  pinnacle_over_by_match,
+                "pinnacle_implied_under25": pinnacle_under_by_match,
+            }
+            for pr in pin_all_rows:
                 if pr["signal_value"] is not None:
-                    pinnacle_implied_by_match[str(pr["match_id"])] = float(pr["signal_value"])
+                    target = _pin_maps.get(pr["signal_name"])
+                    if target is not None:
+                        target[str(pr["match_id"])] = float(pr["signal_value"])
         except Exception as e:
             console.print(f"  [yellow]Pinnacle signal load failed (non-critical): {e}[/yellow]")
 
@@ -1628,10 +1648,18 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                     continue
 
                 # P1: Calibrate probability (tier-specific shrinkage + Platt sigmoid)
-                # CAL-PIN-SHRINK: pass Pinnacle-implied as shrinkage anchor (1X2 home only for now)
-                # CAL-ALPHA-ODDS: pass odds so calibrate_prob can boost alpha for longshots
+                # CAL-PIN-SHRINK: pass Pinnacle-implied as shrinkage anchor for all markets (PIN-2)
+                # CAL-ALPHA-ODDS: pass odds so calibrate_prob can reduce model weight for longshots
                 platt_market = f"{os_market}_{os_selection}"
-                pin_anchor = pinnacle_implied_by_match.get(str(match_id)) if (mkt == "1X2" and selection == "Home") else None
+                _cal_pin_map = {
+                    "Home":      pinnacle_implied_by_match,
+                    "Draw":      pinnacle_draw_by_match,
+                    "Away":      pinnacle_away_by_match,
+                    "Over 2.5":  pinnacle_over_by_match,
+                    "Under 2.5": pinnacle_under_by_match,
+                }
+                _cal_pmap = _cal_pin_map.get(selection)
+                pin_anchor = _cal_pmap.get(str(match_id)) if _cal_pmap is not None else None
                 cal_prob = calibrate_prob(raw_mp, ip, tier=tier, market=platt_market,
                                           anchor_implied=pin_anchor, odds=odds)
 
@@ -1646,13 +1674,23 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                 if edge < me or odds < odds_min or odds > odds_max or cal_prob < min_prob:
                     continue
 
-                # Pinnacle disagreement veto: skip 1X2 home bets where our model is
-                # significantly more optimistic than Pinnacle (the sharpest book).
-                # Gap > 0.12 on home: retrospective data shows 79% loss rate (22/28).
-                if mkt == "1X2" and selection == "Home":
-                    pin_implied = pinnacle_implied_by_match.get(str(match_id))
-                    if pin_implied is not None and (cal_prob - pin_implied) > PINNACLE_VETO_GAP:
-                        continue  # Pinnacle disagrees strongly — skip
+                # Pinnacle disagreement veto: skip bets where our model is significantly
+                # more optimistic than Pinnacle (the sharpest book).
+                # Home: gap > 0.12 → 79% loss rate (22/28) from retrospective data.
+                # PIN-3: extended to draw/away/O/U with same 0.12 threshold (tune later).
+                _pin_veto_map = {
+                    "Home":      pinnacle_implied_by_match,
+                    "Draw":      pinnacle_draw_by_match,
+                    "Away":      pinnacle_away_by_match,
+                    "Over 2.5":  pinnacle_over_by_match,
+                    "Under 2.5": pinnacle_under_by_match,
+                }
+                if mkt in ("1X2", "O/U"):
+                    _pmap = _pin_veto_map.get(selection)
+                    if _pmap is not None:
+                        pin_implied = _pmap.get(str(match_id))
+                        if pin_implied is not None and (cal_prob - pin_implied) > PINNACLE_VETO_GAP:
+                            continue  # Pinnacle disagrees strongly — skip
 
                 # CAL-SHARP-GATE: skip 1X2 home bets when sharp books collectively
                 # say home is LESS likely than soft books (sharp_consensus_home < -0.02).

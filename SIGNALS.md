@@ -52,10 +52,23 @@ Data tier system:
 | Odds drift (open → now, implied prob delta) | `odds_drift` | On bets (simulated_bets) | ✅ Running |
 | Steam move flag (>3% drift) | `steam_move` | On bets | ✅ Running |
 | Odds volatility (std of implied prob, 24h) | `odds_volatility` | Morning pipeline | ✅ Running |
-| CLV (closing line value) | `pseudo_clv_home/draw/away` on `matches` | Settlement | ✅ Running |
+| CLV (soft-book closing line value) | `pseudo_clv_home/draw/away` on `matches`; `clv` on `simulated_bets` | Settlement | ✅ Running |
+| CLV — Pinnacle-anchored | `clv_pinnacle` on `simulated_bets` | Settlement (PIN-5) | ✅ Running |
 | Sharp consensus (home 1x2) | `sharp_consensus_home` | Morning pipeline | ✅ Running (P5.1) |
+| Pinnacle implied prob — home | `pinnacle_implied_home` | Morning pipeline | ✅ Running (PIN-1) |
+| Pinnacle implied prob — draw | `pinnacle_implied_draw` | Morning pipeline | ✅ Running (PIN-2) |
+| Pinnacle implied prob — away | `pinnacle_implied_away` | Morning pipeline | ✅ Running (PIN-2) |
+| Pinnacle implied prob — over 2.5 | `pinnacle_implied_over25` | Morning pipeline | ✅ Running (PIN-2) |
+| Pinnacle implied prob — under 2.5 | `pinnacle_implied_under25` | Morning pipeline | ✅ Running (PIN-2) |
+| Pinnacle line move — home | `pinnacle_line_move_home` | Morning pipeline | ✅ Running (PIN-4) |
+| Pinnacle line move — draw | `pinnacle_line_move_draw` | Morning pipeline | ✅ Running (PIN-4) |
+| Pinnacle line move — away | `pinnacle_line_move_away` | Morning pipeline | ✅ Running (PIN-4) |
 
 > `sharp_consensus_home` = sharp bookmaker avg implied prob − soft bookmaker avg implied prob for home 1x2. Positive = sharp books back home more than soft books. Sharp tier: Pinnacle, Betfair Exchange, Marathon Bet. Soft tier: Bwin, Unibet, NordicBet, 10Bet, Sportingbet, Betway, 1xBet. Requires ≥1 sharp + ≥2 soft bookmakers present; otherwise skipped. Source: `data/bookmaker_sharpness_rankings.csv`.
+>
+> `pinnacle_line_move_*` = current Pinnacle implied − opening Pinnacle implied. Positive = selection shortened (sharp money backing). Requires 2+ Pinnacle snapshots for the match; otherwise skipped.
+>
+> `clv_pinnacle` = `(odds_at_pick / pinnacle_closing_odds) − 1`. The industry-standard betting EV validator. Consistently positive = finding edge before Pinnacle prices it in. Falls back to latest Pinnacle snapshot when `is_closing` is not explicitly flagged.
 >
 > `odds_drift` and `steam_move` are currently stored on `simulated_bets` and `match_feature_vectors`, not in `match_signals`. Future: move to match_signals for all matches.
 

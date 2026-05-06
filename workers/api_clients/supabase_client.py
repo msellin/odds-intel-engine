@@ -3112,6 +3112,15 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
                 pin_implied = 1.0 / float(pinnacle_rows[0]["odds"])
                 add(mid, "pinnacle_implied_home", round(pin_implied, 5), "market", "derived")
 
+                # PIN-4: Pinnacle line movement (opening implied → current implied)
+                # Positive = home shortened over time = sharp money backing home
+                # Negative = home drifted = sharps fading home
+                # Only meaningful when we have 2+ snapshots
+                if len(pinnacle_rows) >= 2:
+                    pin_open = 1.0 / float(pinnacle_rows[-1]["odds"])   # oldest
+                    pin_current = 1.0 / float(pinnacle_rows[0]["odds"]) # most recent
+                    add(mid, "pinnacle_line_move_home", round(pin_current - pin_open, 5), "market", "derived")
+
             # Overnight line move
             yest = [r for r in rows if str(r["timestamp"]) < midnight_utc]
             today_sorted = sorted(
@@ -3132,6 +3141,52 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
                         add(mid, "odds_volatility", round(stdev(implied), 6), "market", "derived")
                     except Exception:
                         pass
+    except Exception:
+        pass
+
+    # ── 3b. PIN-2: Pinnacle implied for draw / away / O/U markets ────────────
+    try:
+        for _market, _selection, _signal_name in [
+            ("1x2",           "draw",  "pinnacle_implied_draw"),
+            ("1x2",           "away",  "pinnacle_implied_away"),
+            ("over_under_25", "over",  "pinnacle_implied_over25"),
+            ("over_under_25", "under", "pinnacle_implied_under25"),
+        ]:
+            pin2_rows = execute_query(
+                """SELECT DISTINCT ON (match_id) match_id, odds
+                   FROM odds_snapshots
+                   WHERE match_id = ANY(%s::uuid[])
+                     AND market = %s AND selection = %s
+                     AND bookmaker = 'Pinnacle'
+                     AND odds > 1.0 AND is_live = false
+                   ORDER BY match_id, timestamp DESC""",
+                (match_ids, _market, _selection),
+            )
+            for row in pin2_rows:
+                mid = str(row["match_id"])
+                add(mid, _signal_name, round(1.0 / float(row["odds"]), 5), "market", "derived")
+
+            # PIN-4: line movement for draw and away (same query, need oldest too)
+            if _selection in ("draw", "away"):
+                _move_name = f"pinnacle_line_move_{_selection}"
+                pin2_open_rows = execute_query(
+                    """SELECT DISTINCT ON (match_id) match_id, odds
+                       FROM odds_snapshots
+                       WHERE match_id = ANY(%s::uuid[])
+                         AND market = %s AND selection = %s
+                         AND bookmaker = 'Pinnacle'
+                         AND odds > 1.0 AND is_live = false
+                       ORDER BY match_id, timestamp ASC""",
+                    (match_ids, _market, _selection),
+                )
+                open_by_match = {str(r["match_id"]): 1.0 / float(r["odds"]) for r in pin2_open_rows}
+                for row in pin2_rows:
+                    mid = str(row["match_id"])
+                    if mid in open_by_match:
+                        current = 1.0 / float(row["odds"])
+                        opening = open_by_match[mid]
+                        if abs(current - opening) > 1e-6:   # skip if same snapshot
+                            add(mid, _move_name, round(current - opening, 5), "market", "derived")
     except Exception:
         pass
 

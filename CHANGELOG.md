@@ -5,6 +5,33 @@ Newest entries at the top. Internal refactors and infrastructure changes are not
 
 ---
 
+## 2026-05-06 (2)
+
+### Model — Pinnacle Signal Expansion (PIN-2 through PIN-5)
+
+**Pinnacle signals for all markets (PIN-2)**
+- Morning pipeline now stores `pinnacle_implied_draw`, `pinnacle_implied_away`, `pinnacle_implied_over25`, `pinnacle_implied_under25` in `match_signals`, alongside the existing `pinnacle_implied_home`
+- Separate bulk query block (3b) in `batch_write_morning_signals()` — one query per market/selection combo
+
+**Pinnacle disagreement veto extended to all markets (PIN-3)**
+- The veto that skips bets when `calibrated_prob − pinnacle_implied > 0.12` now applies to Draw, Away, Over 2.5, and Under 2.5 bets, not just Home
+- Pinnacle anchor also now used as the calibration shrinkage anchor for all markets (was Home-only before)
+- Threshold 0.12 applied uniformly; tune per market once 50+ settled bets accumulate
+
+**Pinnacle line movement signal (PIN-4)**
+- `pinnacle_line_move_home`, `pinnacle_line_move_draw`, `pinnacle_line_move_away` added to `match_signals`
+- Computed as: current Pinnacle implied − opening Pinnacle implied. Positive = selection shortened = sharp money backing
+- Requires at least 2 Pinnacle snapshots for a match to fire; otherwise skipped
+- Purer sharp-money signal than generic `odds_drift` (Pinnacle lines only move on informed money)
+
+**Pinnacle-anchored CLV (PIN-5)**
+- `clv_pinnacle` column added to `simulated_bets` (migration 050)
+- Computed at settlement: `(odds_at_pick / pinnacle_closing_odds) − 1`
+- Pinnacle CLV is the industry-standard bet model validator — consistently positive = finding edge before the sharpest market moves
+- Falls back to latest Pinnacle snapshot when `is_closing` is not flagged
+
+---
+
 ## 2026-05-06
 
 ### Model — Calibration Overhaul (CAL tasks 1–4)

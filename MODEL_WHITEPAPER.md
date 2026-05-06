@@ -152,7 +152,7 @@ Blend model probability toward an implied probability anchor, with the blend wei
 shrunk = alpha * model_prob + (1 - alpha) * anchor_implied_prob
 ```
 
-**Anchor:** Currently market-average implied probability across the 13 tracked bookmakers. Planned upgrade (PIN-6): switch anchor to Pinnacle-specifically when available (fallback to market avg). Pinnacle vig is 2-3% vs 5-8% for soft books — their implied probabilities are closer to true probabilities.
+**Anchor:** Pinnacle-implied probability when available (fallback to market-average across the 13 tracked bookmakers). Pinnacle vig is 2-3% vs 5-8% for soft books — their implied probabilities are closer to true probabilities. This applies to all markets (1X2 home/draw/away, O/U over/under) since PIN-2 (2026-05-06).
 
 **1X2 markets (default alphas):**
 
@@ -163,7 +163,7 @@ shrunk = alpha * model_prob + (1 - alpha) * anchor_implied_prob
 | 3 | 0.50 | 50% | 50% | Balanced |
 | 4 (lower) | 0.65 | 65% | 35% | Market least efficient, trust model more |
 
-**Pending CAL-ALPHA-ODDS:** For bets at odds > 3.0 (longshots), `alpha_effective = min(alpha_tier + 0.20, 0.85)`. Live data (77 settled bets) showed the 0.30-0.40 probability bin is catastrophically miscalibrated (13% actual win rate vs 35.5% predicted), driven by longshot home bets where the model overestimates vs the market. Pulling these harder toward the anchor significantly reduces the volume of these bets.
+**CAL-ALPHA-ODDS (implemented 2026-05-06):** For bets at odds > 3.0 (longshots), `alpha = max(alpha_tier - 0.20, 0.10)` — reducing model weight to pull calibrated probability harder toward the anchor. Live data (77 settled bets) showed the 0.30-0.40 probability bin is catastrophically miscalibrated (13% actual win rate vs 35.5% predicted), driven by longshot home bets where the model overestimates vs the market.
 
 **Goal-line markets (BTTS, O/U) use higher alpha** — the Poisson/Dixon-Coles model is specifically designed for goal totals, so we trust it more relative to the bookmaker:
 
@@ -198,11 +198,15 @@ calibrated = 1 / (1 + exp(-(a * shrunk + b)))
 
 An additional hard filter applied after calibration, before bet placement:
 
-**Pinnacle disagreement veto (implemented 2026-05-06):** If `calibrated_prob - pinnacle_implied_home > 0.12` on a 1X2 home bet → bet is skipped entirely. Empirical validation on 77 settled bets: all winning bets had gap ≤ 12.9%; losing bets averaged 14.1% gap (max 21.7%). Catches 22/34 losses at the cost of filtering 6/40 wins.
+**Pinnacle disagreement veto (PIN-VETO, implemented 2026-05-06):** If `calibrated_prob - pinnacle_implied > 0.12` → bet is skipped entirely. Applies to all 1X2 and O/U markets (extended to draw/away/over/under via PIN-3, 2026-05-06).
 
-This veto addresses a structural bias: both XGBoost (with `is_home` feature) and Poisson (with separate home/away lambdas) encode home advantage. When blended 50/50, home advantage may stack. The market already prices in home advantage — so the model's excess home confidence shows up as a large positive gap vs Pinnacle.
+Empirical validation on 77 settled home bets: all winning bets had gap ≤ 12.9%; losing bets averaged 14.1% gap (max 21.7%). Catches 22/34 losses at the cost of filtering 6/40 wins.
 
-**Planned expansion (PIN-3):** Extend veto to draw, away, and O/U markets once Pinnacle implied probabilities are stored for those markets (PIN-2).
+This veto addresses a structural bias: both XGBoost (`is_home` feature) and Poisson (separate home/away lambdas) encode home advantage. When blended 50/50, home advantage may stack. The market already prices it in — so the model's excess confidence shows up as a large positive gap vs Pinnacle.
+
+Threshold 0.12 is calibrated on home bets only. Draw/away/O/U thresholds should be tuned independently once 50+ settled bets per market accumulate.
+
+**Sharp consensus gate (CAL-SHARP-GATE, implemented 2026-05-06):** For 1X2 home bets, also skipped when `sharp_consensus_home < -0.02` (sharps collectively price home less likely than soft books).
 
 ### 5.4 Validation
 
@@ -366,13 +370,17 @@ Bot strategies are validated against a 354,518-match dataset (275 leagues, 2005-
 CLV is the industry standard for evaluating betting models independently of short-term variance:
 
 ```
-CLV = (odds_at_pick / odds_at_close) - 1
+CLV (soft-book) = (odds_at_pick / soft_closing_odds) - 1
+CLV (Pinnacle)  = (odds_at_pick / pinnacle_closing_odds) - 1   ← primary metric (PIN-5)
 ```
 
 - **Positive CLV** means we consistently got better odds than the closing line — the market moved in our direction after our bet. This is the strongest evidence of a real edge.
 - **Negative CLV** means the market moved against us — our model may be seeing phantom edges.
+- **Pinnacle CLV is the stronger signal.** Pinnacle closes at the sharpest line; beating it means we found edge before the most informed market participants did.
 
 CLV is meaningful even when P&L is negative (variance can dominate in small samples).
+
+Both `clv` (soft-book) and `clv_pinnacle` (Pinnacle-specific) are stored on `simulated_bets` and tracked per cohort.
 
 ### 9.2 Secondary Metrics
 
@@ -448,8 +456,8 @@ Alignment will be activated (move from log-only to staking modifier) after:
 | **Signal infrastructure** | 58 signals, append-only store, wide ML training table, pseudo-CLV | Done |
 | **Next: Meta-model** | Second-stage model predicting bet profitability (target = CLV) | Needs 3,000+ matches |
 | **Next: Alignment activation** | Use external signal filter to modify stakes | Needs 300+ settled bets |
-| **Sharp bookmaker features** | Pinnacle disagreement veto (done), sharp/soft classification (done), Pinnacle signals for all markets (PIN-2 through PIN-6 in progress) | PIN-VETO + P5.1 done; PIN-2..6 in progress |
-| **Calibration improvements (live data)** | Odds-conditional alpha boost, sharp consensus gate, draw inflation, Pinnacle-anchored shrinkage | CAL-ALPHA-ODDS / CAL-SHARP-GATE / CAL-DRAW-INFLATE / PIN-6 — all tracked in PRIORITY_QUEUE.md |
+| **Sharp bookmaker features** | Pinnacle disagreement veto (all markets), Pinnacle implied signals (all markets), Pinnacle line movement, Pinnacle-anchored CLV, sharp/soft consensus | PIN-VETO + PIN-1..5 + P5.1 done |
+| **Calibration improvements (live data)** | Odds-conditional alpha, sharp consensus gate, Pinnacle anchor, Pinnacle-anchored CLV | CAL-ALPHA-ODDS / CAL-SHARP-GATE / CAL-PIN-SHRINK done; CAL-DRAW-INFLATE / CAL-PLATT-UPGRADE pending |
 | **Dynamic blend weights** | Weekly recalculation of Poisson/XGBoost blend per tier | Done — `scripts/fit_blend_weights.py`, Sunday refit |
 | **Next: Historical backfill** | 43K+ matches with stats + events from API-Football (no historical odds available) | In progress — automated cron |
 | **Next: XGBoost retrain on backfill** | Retrain on 43K matches with richer AF features (xG, shots, possession) | After backfill Phase 1 |
