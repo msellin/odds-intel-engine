@@ -1,21 +1,19 @@
 """
 OddsIntel — Fetch Odds
 
-Single unified job for all pre-match odds collection:
-  1. AF bulk odds (/odds?date=) — 13+ bookmakers, ~200 fixtures
-  2. Kambi odds (Unibet/Paf) — 68 leagues, best prices
+Pre-match odds collection from API-Football (13+ bookmakers, ~200 fixtures).
+Kambi scraper removed 2026-05-06 (KAMBI-DROP) — empirical analysis showed
+negligible incremental value (36 rows/30 days from non-Unibet sources).
 
 Runs every 2 hours + pre-kickoff windows. All odds stored in odds_snapshots
 with minutes_to_kickoff for CLV tracking.
 
-Schedule: 05,07,08,10,12,14,16,18,20,22 UTC + 13:30,17:30 pre-kickoff
-Workflow: .github/workflows/odds.yml
+Schedule: 07,08,10,12,14,16,18,22 UTC + 13:30,17:30,20:00 pre-kickoff
 
 Usage:
   python -m workers.jobs.fetch_odds
   python -m workers.jobs.fetch_odds --date 2026-04-30
   python -m workers.jobs.fetch_odds --mark-closing    # for pre-kickoff runs
-  python -m workers.jobs.fetch_odds --af-only          # skip Kambi
 """
 
 import sys
@@ -32,7 +30,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from workers.api_clients.api_football import get_odds_by_date, parse_fixture_odds
 from workers.api_clients.supabase_client import store_match, store_odds
 from workers.api_clients.db import execute_query, bulk_insert
-from workers.scrapers.kambi_odds import fetch_all_operators
 from workers.utils.pipeline_utils import (
     log_pipeline_start, log_pipeline_complete, log_pipeline_failed,
     check_fixtures_ready,
@@ -131,51 +128,7 @@ def fetch_af_odds(target_date: str) -> int:
     return stored
 
 
-def fetch_kambi_odds(mark_closing: bool = False) -> int:
-    """Fetch Kambi odds and store in odds_snapshots. Returns matches stored."""
-    console.print("\n[cyan]Fetching Kambi odds...[/cyan]")
-
-    try:
-        matches = fetch_all_operators()
-        console.print(f"  {len(matches)} matches from Kambi")
-    except Exception as e:
-        console.print(f"  [red]Kambi error: {e}[/red]")
-        return 0
-
-    if not matches:
-        return 0
-
-    stored = 0
-    skipped = 0
-
-    for match in matches:
-        kickoff = match.get("start_time", "")
-        minutes_to_kickoff = _compute_minutes_to_kickoff(kickoff)
-
-        # Skip matches already kicked off >5 min ago
-        if minutes_to_kickoff is not None and minutes_to_kickoff < -5:
-            skipped += 1
-            continue
-
-        # Override closing flag if requested
-        if mark_closing and minutes_to_kickoff is not None and minutes_to_kickoff <= 60:
-            match["_force_closing"] = True
-
-        try:
-            # Ensure match exists in DB (idempotent upsert)
-            match_id = store_match(match)
-
-            # Store odds snapshot with timing
-            store_odds(match_id, match, minutes_to_kickoff=minutes_to_kickoff)
-            stored += 1
-        except Exception as e:
-            console.print(f"  [yellow]Error: {match.get('home_team', '?')} v {match.get('away_team', '?')}: {e}[/yellow]")
-
-    console.print(f"  [green]{stored} Kambi matches stored[/green] | {skipped} skipped (already started)")
-    return stored
-
-
-def run_odds(target_date: str = None, mark_closing: bool = False, af_only: bool = False):
+def run_odds(target_date: str = None, mark_closing: bool = False, **_kwargs):
     """Run odds fetch pipeline. Callable by scheduler or CLI."""
     target_date = target_date or date.today().isoformat()
     now_str = datetime.now(timezone.utc).strftime("%H:%M UTC")
@@ -184,14 +137,7 @@ def run_odds(target_date: str = None, mark_closing: bool = False, af_only: bool 
     run_id = log_pipeline_start("fetch_odds", target_date)
 
     try:
-        total = 0
-
-        # AF bulk odds (primary — 13+ bookmakers)
-        total += fetch_af_odds(target_date)
-
-        # Kambi odds (supplementary — Unibet/Paf)
-        if not af_only:
-            total += fetch_kambi_odds(mark_closing=mark_closing)
+        total = fetch_af_odds(target_date)
 
         log_pipeline_complete(run_id, records_count=total)
         console.print(f"\n[bold green]Done. {total} matches with odds stored.[/bold green]")
@@ -204,12 +150,11 @@ def run_odds(target_date: str = None, mark_closing: bool = False, af_only: bool 
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Fetch odds from AF + Kambi")
+    parser = argparse.ArgumentParser(description="Fetch odds from API-Football")
     parser.add_argument("--date", type=str, default=None, help="Date (YYYY-MM-DD, default: today)")
     parser.add_argument("--mark-closing", action="store_true", help="Mark near-kickoff odds as closing")
-    parser.add_argument("--af-only", action="store_true", help="Skip Kambi, AF odds only")
     args = parser.parse_args()
-    run_odds(target_date=args.date, mark_closing=args.mark_closing, af_only=args.af_only)
+    run_odds(target_date=args.date, mark_closing=args.mark_closing)
 
 
 if __name__ == "__main__":

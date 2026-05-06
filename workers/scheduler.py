@@ -175,7 +175,7 @@ def _run_job(name: str, fn, *args, **kwargs):
                     "schedule": mon_cfg["schedule"],
                     "timezone": mon_cfg["timezone"],
                     "max_runtime": mon_cfg["max_runtime"],
-                    "grace_period_minutes": mon_cfg["grace_period"],
+                    "checkin_margin": mon_cfg["grace_period"],
                 },
             )
             sentry_monitor.__enter__()
