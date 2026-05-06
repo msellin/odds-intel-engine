@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-06 — In-play bot Phase 1A deployed (8 strategies). Kambi fully removed. Settlement KeyError fixed. Sentry cron + Railway auto-deploy fixed.
+> Last updated: 2026-05-06 — In-play bot Phase 1A deployed (8 strategies). Kambi fully removed. Settlement KeyError fixed. Sentry removed from engine (frontend only now).
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -240,7 +240,7 @@
 | KAMBI-BUG-1 | Duplicate value bets when Kambi league name ≠ AF name — added Bulgaria PFL 1 mapping + improved frontend dedup to normalise club prefixes (FK/FC/etc) and key on kickoff date | ✅ Done 2026-05-06 | |
 | KAMBI-DROP | Drop Kambi entirely — empirical analysis showed "ub"=Unibet (AF has it), "paf"/"kambi"=36 rows/30 days. Removed scraper from pipeline, cleaned 20 league/50 team/7 fixture dupes via migration 047. Full cleanup 2026-05-06: deleted `kambi_odds.py`, `kambi_odds_value.py`, `detect_duplicates.py`, removed `fetch_kambi_odds()` from fetch_odds.py, removed `KAMBI_TO_AF_LEAGUE` mapping, renamed team_names.py refs. Cleaned 37 more duplicates from 23h deploy gap. | ✅ Done 2026-05-06 | |
 | SETTLE-FIX | Settlement `KeyError: 'odds'` — `bet["odds"]` → `bet["odds_at_pick"]` in settlement.py:1034. Was crashing settle_ready every 15 min, blocking 158 matches from settling. | ✅ Done 2026-05-06 | |
-| SENTRY-CRON | Sentry cron monitors not registering — `grace_period_minutes` → `checkin_margin` (correct sentry-sdk 2.x key). | ✅ Done 2026-05-06 | |
+| SENTRY-CRON | Sentry cron monitors not registering — `grace_period_minutes` → `checkin_margin` (correct sentry-sdk 2.x key). | ✅ Done 2026-05-06 → Reverted: Sentry removed from engine 2026-05-06 (free tier budget exceeded, Railway logs sufficient) | |
 | RAIL-AUTODEPLOY | Railway auto-deploy from GitHub — connected repo in Settings → Source, main branch, Wait for CI off. Previously required manual `railway up`. | ✅ Done 2026-05-06 | |
 
 ---
@@ -280,7 +280,7 @@
 | INFRA-12 | Apple Sign In | 1-2h | ⬜ | ⏳ When ready | Apple Developer account ready. Need: Services ID (`app.oddsintel.web`), Key (.p8 + Key ID + Team ID) → Supabase Auth → Sign In/Providers → Apple. Frontend: add `<AppleSignIn />` button alongside Google/Discord in login, signup, modal. Return URL: `https://jjdmmfpulofyykzwiuqr.supabase.co/auth/v1/callback`. Required if ever shipping iOS app. |
 | INFRA-4 | PostHog conversion funnel setup | 1h | ✅ Done 2026-05-05 | ✅ Done | Funnel built in PostHog dashboard (Signup → Match → upgrade_clicked → upgrade_completed). Custom events added to pricing-cards.tsx + profile/page.tsx. upgrade_cancelled also tracked. |
 | INFRA-5 | Vercel Speed Insights | 15 min | ✅ Done 2026-05-05 | 🟡 This week | `@vercel/speed-insights` installed. `<SpeedInsights />` added to root layout.tsx. Will auto-report LCP/FID/CLS to Vercel dashboard once deployed. |
-| INFRA-6 | Sentry Crons monitoring for Railway jobs | 1h | ✅ Done 2026-05-05 | ✅ Done | `sentry-sdk>=2.0.0` added to requirements.txt. `_init_sentry()` in scheduler.py. `_run_job()` now wraps each job with `sentry_sdk.monitor(monitor_slug=...)`. 10 monitor slugs registered. `SENTRY_DSN` set in Railway. Cron monitors registered in Sentry UI. |
+| INFRA-6 | Sentry Crons monitoring for Railway jobs | 1h | ✅ Done 2026-05-05 → Reverted 2026-05-06 | ✅ Done | Reverted: Sentry cron monitors exceeded free tier budget. Removed `sentry-sdk` from engine, deleted all monitor/init code. Railway logs + health endpoint are sufficient. Frontend Sentry kept. |
 | INFRA-7 | PostHog feature flags for Tips launch | 1h | ⬜ | 🟡 Before M3 | Create `tips_enabled` flag in PostHog. Gate Tips section on this flag instead of hardcoded condition. When bot_aggressive validates → flip flag, no deploy needed. |
 | INFRA-8 | Resend webhook → email open/click tracking | 2h | ✅ Done 2026-05-05 | ✅ Done | Migration 041 adds `last_email_opened_at` + `last_email_clicked_at` to profiles. `/api/resend-webhook` route handles `email.opened` + `email.clicked`. Svix signature verification. Webhook created in Resend dashboard. `RESEND_WEBHOOK_SECRET` set in Vercel + local .env.local. |
 | INFRA-9 | Vercel Edge Config for feature flags | 2h | ⬜ | 🟢 Week of May 12 | Replace any DB queries used for global on/off flags with Vercel Edge Config (~1ms reads vs ~20ms DB). Good for: tips_enabled, maintenance_mode, featured_match_id. |

@@ -28,114 +28,6 @@ load_dotenv()
 
 console = Console()
 
-# ── Sentry ─────────────────────────────────────────────────────────────────
-
-def _init_sentry():
-    dsn = os.getenv("SENTRY_DSN")
-    if not dsn:
-        return
-    try:
-        import sentry_sdk
-        sentry_sdk.init(
-            dsn=dsn,
-            environment=os.getenv("RAILWAY_ENVIRONMENT", "production"),
-            traces_sample_rate=0.0,   # no performance tracing — cron monitoring only
-        )
-        console.print("[dim]Sentry initialised (cron monitoring active)[/dim]")
-    except Exception as e:
-        console.print(f"[yellow]Sentry init failed (non-fatal): {e}[/yellow]")
-
-
-# Cron monitor config — auto-registers monitors in Sentry on first check-in.
-# Keys match the job name passed to _run_job().
-# schedule_type: "crontab" or "interval". max_runtime + grace_period in minutes.
-_SENTRY_MONITORS: dict[str, dict] = {
-    "morning_pipeline": {
-        "slug": "oddsIntel-morning-pipeline",
-        "schedule": {"type": "crontab", "value": "0 4 * * *"},
-        "timezone": "UTC",
-        "max_runtime": 40,
-        "grace_period": 10,
-    },
-    "settlement": {
-        "slug": "oddsIntel-settlement",
-        "schedule": {"type": "crontab", "value": "0 21 * * *"},
-        "timezone": "UTC",
-        "max_runtime": 30,
-        "grace_period": 10,
-    },
-    "email_digest": {
-        "slug": "oddsIntel-email-digest",
-        "schedule": {"type": "crontab", "value": "30 7 * * *"},
-        "timezone": "UTC",
-        "max_runtime": 10,
-        "grace_period": 5,
-    },
-    "match_previews": {
-        "slug": "oddsIntel-match-previews",
-        "schedule": {"type": "crontab", "value": "0 7 * * *"},
-        "timezone": "UTC",
-        "max_runtime": 15,
-        "grace_period": 5,
-    },
-    "news_checker": {
-        "slug": "oddsIntel-news-checker",
-        "schedule": {"type": "crontab", "value": "0 9 * * *"},
-        "timezone": "UTC",
-        "max_runtime": 15,
-        "grace_period": 5,
-    },
-    "hist_backfill": {
-        "slug": "oddsIntel-hist-backfill",
-        "schedule": {"type": "crontab", "value": "0 2,23 * * *"},
-        "timezone": "UTC",
-        "max_runtime": 90,
-        "grace_period": 10,
-    },
-    "betting_refresh": {
-        "slug": "oddsIntel-betting-refresh",
-        "schedule": {"type": "crontab", "value": "0 11 * * *"},
-        "timezone": "UTC",
-        "max_runtime": 20,
-        "grace_period": 5,
-    },
-    "odds_refresh": {
-        "slug": "oddsIntel-odds-refresh",
-        "schedule": {"type": "crontab", "value": "0 7 * * *"},
-        "timezone": "UTC",
-        "max_runtime": 10,
-        "grace_period": 5,
-    },
-    "enrichment_refresh": {
-        "slug": "oddsIntel-enrichment-refresh",
-        "schedule": {"type": "crontab", "value": "30 10 * * *"},
-        "timezone": "UTC",
-        "max_runtime": 15,
-        "grace_period": 5,
-    },
-    "settle_ready": {
-        "slug": "oddsIntel-settle-ready",
-        "schedule": {"type": "crontab", "value": "*/15 * * * *"},
-        "timezone": "UTC",
-        "max_runtime": 5,
-        "grace_period": 2,
-    },
-    "weekly_digest": {
-        "slug": "oddsIntel-weekly-digest",
-        "schedule": {"type": "crontab", "value": "0 8 * * 1"},
-        "timezone": "UTC",
-        "max_runtime": 10,
-        "grace_period": 5,
-    },
-    "watchlist_alerts": {
-        "slug": "oddsIntel-watchlist-alerts",
-        "schedule": {"type": "crontab", "value": "30 8 * * *"},
-        "timezone": "UTC",
-        "max_runtime": 10,
-        "grace_period": 5,
-    },
-}
-
 # ── Globals ────────────────────────────────────────────────────────────────
 _shutdown_requested = False
 _start_time = time.time()
@@ -155,33 +47,13 @@ def _job_prefix() -> str:
 
 
 def _run_job(name: str, fn, *args, **kwargs):
-    """Wrapper that runs a job function with error isolation, logging, and Sentry cron monitoring."""
+    """Wrapper that runs a job function with error isolation and logging."""
     import traceback
     full_name = f"{_job_prefix()}{name}"
     started = datetime.now(timezone.utc)
     console.print(f"\n[bold cyan]{'─' * 60}[/bold cyan]")
     console.print(f"[bold cyan]Job: {full_name} @ {started.strftime('%H:%M:%S UTC')}[/bold cyan]")
     console.print(f"[bold cyan]{'─' * 60}[/bold cyan]\n")
-
-    # Sentry cron monitor — auto-registers monitor with schedule config on first check-in
-    mon_cfg = _SENTRY_MONITORS.get(name)
-    sentry_monitor = None
-    try:
-        if mon_cfg:
-            import sentry_sdk
-            sentry_monitor = sentry_sdk.monitor(
-                monitor_slug=mon_cfg["slug"],
-                monitor_config={
-                    "schedule": mon_cfg["schedule"],
-                    "timezone": mon_cfg["timezone"],
-                    "max_runtime": mon_cfg["max_runtime"],
-                    "checkin_margin": mon_cfg["grace_period"],
-                },
-            )
-            sentry_monitor.__enter__()
-    except Exception as _sentry_err:
-        console.print(f"[yellow]Sentry monitor setup failed (non-fatal): {_sentry_err}[/yellow]")
-        sentry_monitor = None  # Sentry unavailable — continue anyway
 
     error_msg = None
     try:
@@ -205,15 +77,6 @@ def _run_job(name: str, fn, *args, **kwargs):
         })
         if len(_recent_errors) > _MAX_RECENT_ERRORS:
             _recent_errors.pop(0)
-    finally:
-        if sentry_monitor is not None:
-            try:
-                exc_info = (None, None, None) if status == "completed" else sys.exc_info()
-                sentry_monitor.__exit__(*exc_info)
-                import sentry_sdk
-                sentry_sdk.flush(timeout=5)
-            except Exception:
-                pass
 
     elapsed = (datetime.now(timezone.utc) - started).total_seconds()
 
@@ -507,8 +370,6 @@ def main():
 
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
-
-    _init_sentry()
 
     console.print("[bold green]═══════════════════════════════════════════════[/bold green]")
     console.print("[bold green]   OddsIntel Railway Scheduler starting...    [/bold green]")

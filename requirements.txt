@@ -36,6 +36,3 @@ rapidfuzz>=3.0.0
 
 # AI
 google-genai>=1.0.0
-
-# Error monitoring
-sentry-sdk>=2.0.0

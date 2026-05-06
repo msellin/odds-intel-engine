@@ -347,11 +347,5 @@ class LivePoller:
             console.print(f"[red]InplayBot error: {e}[/red]")
             import traceback
             traceback.print_exc()
-            # Report to Sentry if available
-            try:
-                import sentry_sdk
-                sentry_sdk.capture_exception(e)
-            except Exception:
-                pass
 
         return True  # Live matches were found this cycle — use fast sleep interval

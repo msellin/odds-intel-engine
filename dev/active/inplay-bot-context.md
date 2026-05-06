@@ -27,7 +27,7 @@
 2. **Prematch xG from `matches.af_prediction` JSONB** — `predictions.goals.home/away`. Our model's exp_home/exp_away isn't stored persistently.
 3. **`ensure_bots()` at runtime** — no migration needed. Bots created on first call.
 4. **Fixed 1-unit stake** — no Kelly in Phase 1.
-5. **Sentry + Railway logs + heartbeat** for error detection.
+5. **Railway logs + heartbeat** for error detection.
 6. **All 8 Week 1 strategies built at once** — AI tools consensus was parallel launch for faster data accumulation.
 
 ## Prematch Data Sources
