@@ -9,7 +9,7 @@
 | Source | Role | Status |
 |--------|------|--------|
 | **API-Football Ultra** ($29/mo) | PRIMARY — all structured data | ✅ Active |
-| Kambi API (free) | Supplementary odds, 41 leagues | ✅ Active |
+| ~~Kambi API (free)~~ | Supplementary odds — removed 2026-05-06 (all 41 leagues already covered by AF; "ub"/"paf" bookmakers provided <5% best-odds and "ub" is just Unibet which AF covers separately) | Removed |
 | ESPN (free) | Settlement result backup | ✅ Active (backup) |
 | ~~BetExplorer~~ | Gap league odds — removed 2026-04-29 (fragile HTML scraping, low value) | Removed |
 

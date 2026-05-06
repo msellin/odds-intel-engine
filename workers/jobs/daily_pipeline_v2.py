@@ -19,7 +19,6 @@ import pandas as pd
 import requests
 from pathlib import Path
 from datetime import datetime, date, timezone
-from concurrent.futures import ThreadPoolExecutor
 from scipy.stats import poisson
 from dotenv import load_dotenv
 from rich.console import Console
@@ -29,7 +28,6 @@ load_dotenv()
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from workers.scrapers.kambi_odds import fetch_all_operators, get_target_league_matches
 from workers.api_clients.api_football import (
     get_fixtures_by_date, fixture_to_match_dict,
     get_fixture_odds, parse_fixture_odds, get_odds_by_date,
@@ -715,85 +713,52 @@ def _af_agrees_with_bet(selection: str, parsed_pred: dict | None) -> bool | None
     return None
 
 
+_TOP_FLIGHT_COUNTRIES = {
+    "England", "Spain", "Germany", "Italy", "France",
+    "Netherlands", "Portugal", "Turkey", "Greece", "Scotland",
+    "Belgium", "Sweden", "Denmark", "Norway", "Poland",
+    "Croatia", "Romania", "Serbia", "Ukraine", "Hungary",
+    "Iceland", "Latvia", "Cyprus", "Georgia", "Estonia",
+    "Austria", "Switzerland", "Russia", "Czech Republic",
+    "Slovakia", "Bulgaria", "Belarus", "Finland",
+}
+
+# Known tier-2 league name fragments (overrides country-level tier-1 default)
+_TIER2_FRAGMENTS = {
+    "Championship", "2. Bundesliga", "Serie B", "Ligue 2", "La Liga 2",
+    "Liga 2", "Segunda", "Esiliiga", "OBOS", "I Liga", "NB II", "NB 2",
+}
+
+
 def _league_path_to_tier(league_path: str) -> int:
     """
-    Look up the tier for a league path (e.g. "England / Championship" → 2).
-    Falls back to tier 1 for known top-flight countries, tier 2 otherwise.
-    Reuses the same LEAGUE_MAP as the Kambi scraper.
+    Derive tier from league path. Tier 1 = top domestic flight, Tier 2 = second tier, etc.
+    Uses country + known tier-2 fragment heuristic. League tier stored in DB is authoritative;
+    this is only used during initial fixture ingestion before DB lookup is available.
     """
-    from workers.scrapers.kambi_odds import LEAGUE_MAP
-    info = LEAGUE_MAP.get(league_path)
-    if info:
-        return info["tier"]
-    # Reasonable fallback: if we recognise the country, assign tier 1
     country = league_path.split(" / ")[0] if " / " in league_path else ""
-    top_flight_countries = {
-        "England", "Spain", "Germany", "Italy", "France",
-        "Netherlands", "Portugal", "Turkey", "Greece", "Scotland",
-        "Belgium", "Sweden", "Denmark", "Norway", "Poland",
-        "Croatia", "Romania", "Serbia", "Ukraine", "Hungary",
-        "Iceland", "Latvia", "Cyprus", "Georgia", "Estonia",
-        "Austria", "Switzerland", "Russia", "Czech Republic",
-        "Slovakia", "Bulgaria", "Belarus", "Finland",
-    }
-    return 1 if country in top_flight_countries else 2
+    name = league_path.split(" / ")[-1] if " / " in league_path else league_path
+    if any(frag in name for frag in _TIER2_FRAGMENTS):
+        return 2
+    return 1 if country in _TOP_FLIGHT_COUNTRIES else 2
 
 
-def _merge_odds_sources(
-    af_odds_fixtures: list[dict],
-    kambi_matches: list[dict],
-) -> list[dict]:
+def _merge_odds_sources(af_odds_fixtures: list[dict]) -> list[dict]:
     """
-    Build the prediction pool by merging all odds sources.
-
-    Priority / role of each source:
-      API-Football (primary) — paid, 1236 leagues, gives us tier + league_path
-      Kambi        (additive) — different bookmaker, better odds on some markets
-
-    For each match, we keep the best odds across all sources.
+    Build the prediction pool from API-Football odds fixtures.
+    Previously also merged Kambi odds; Kambi was removed 2026-05-06 after
+    empirical analysis showed it never provided the best odds vs AF's 13 bookmakers.
     """
     merged: dict[str, dict] = {}
-    ODDS_FIELDS = [
-        "odds_home", "odds_draw", "odds_away",
-        "odds_over_05", "odds_under_05",
-        "odds_over_15", "odds_under_15",
-        "odds_over_25", "odds_under_25",
-        "odds_over_35", "odds_under_35",
-        "odds_over_45", "odds_under_45",
-    ]
 
     def _key(m: dict) -> str:
         date_part = m.get("start_time", "")[:10] or "nodate"
         return f"{m.get('home_team', '').lower()}_{m.get('away_team', '').lower()}_{date_part}"
 
-    def _merge_odds_into(existing: dict, incoming: dict, source_name: str):
-        """Update existing entry with better odds from incoming, track source."""
-        for field in ODDS_FIELDS:
-            if incoming.get(field, 0) > existing.get(field, 0):
-                existing[field] = incoming[field]
-        sources = existing.get("bookmaker", "").split("+")
-        if source_name not in sources:
-            existing["bookmaker"] = "+".join(filter(None, sources + [source_name]))
-
-    # 1. Seed with AF fixtures (they carry tier, league_path, api_football_id)
     for m in af_odds_fixtures:
         k = _key(m)
-        if k and k != "__nodate":  # skip entries with missing team names
+        if k and k != "__nodate":
             merged[k] = {**m, "bookmaker": "api-football"}
-
-    # 2. Merge scraper sources on top (best odds win, tier/league_path from AF)
-    for matches, source_name in [
-        (kambi_matches, "kambi"),
-    ]:
-        for m in matches:
-            k = _key(m)
-            if not k or k == "__nodate":
-                continue
-            if k in merged:
-                _merge_odds_into(merged[k], m, source_name)
-            else:
-                # Scraper-only match (league not in AF today) — use as-is
-                merged[k] = {**m, "bookmaker": source_name}
 
     return list(merged.values())
 
@@ -1009,37 +974,21 @@ def _fetch_af_bulk_odds(today_str, af_fixtures_raw, af_id_to_match_id):
 
 def _parallel_fetch(af_id_to_match_id, af_fixtures_raw, today_str, all_fixtures):
     """
-    Run data fetching in parallel across 2 thread groups:
-      A: API-Football (predictions + enrichment + bulk odds)
-      B: Kambi — different API, fast
+    Fetch predictions, enrichment, and bulk odds from API-Football.
+    Kambi was removed 2026-05-06 — empirical data showed it never provided
+    best odds vs the 13 bookmakers already covered by API-Football Ultra.
     """
-    def _af_work():
-        preds = {}
-        if af_id_to_match_id:
-            preds = _fetch_af_predictions(af_id_to_match_id)
-            console.print(f"  AF predictions: {len(preds)} available out of {len(af_id_to_match_id)} fixtures")
-        console.print("\n[cyan]Running morning enrichment (T2/T3/T9/T10)...[/cyan]")
-        try:
-            _fetch_morning_enrichment(af_fixtures_raw, af_id_to_match_id)
-        except Exception as e:
-            console.print(f"  [yellow]Enrichment error (non-fatal): {e}[/yellow]")
-        odds = _fetch_af_bulk_odds(today_str, af_fixtures_raw, af_id_to_match_id)
-        return preds, odds
-
-    def _scraper_work():
-        console.print("\n[cyan]Fetching odds from Kambi...[/cyan]")
-        kambi = get_target_league_matches()
-        console.print(f"  {len(kambi)} matches with Kambi odds")
-        return kambi
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        af_future = executor.submit(_af_work)
-        scraper_future = executor.submit(_scraper_work)
-
-        af_preds, af_odds_fixtures = af_future.result()
-        kambi_matches = scraper_future.result()
-
-    return af_preds, af_odds_fixtures, kambi_matches
+    af_preds = {}
+    if af_id_to_match_id:
+        af_preds = _fetch_af_predictions(af_id_to_match_id)
+        console.print(f"  AF predictions: {len(af_preds)} available out of {len(af_id_to_match_id)} fixtures")
+    console.print("\n[cyan]Running morning enrichment (T2/T3/T9/T10)...[/cyan]")
+    try:
+        _fetch_morning_enrichment(af_fixtures_raw, af_id_to_match_id)
+    except Exception as e:
+        console.print(f"  [yellow]Enrichment error (non-fatal): {e}[/yellow]")
+    af_odds_fixtures = _fetch_af_bulk_odds(today_str, af_fixtures_raw, af_id_to_match_id)
+    return af_preds, af_odds_fixtures
 
 
 def _next_day(date_str: str) -> str:
@@ -1284,11 +1233,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
 
         # === PARALLEL DATA FETCH ===
         console.print("\n[cyan]Running parallel data fetch (predictions + enrichment + odds)...[/cyan]")
-        af_preds, af_odds_fixtures, kambi_matches = \
+        af_preds, af_odds_fixtures = \
             _parallel_fetch(af_id_to_match_id, af_fixtures_raw, today_str, all_fixtures)
 
-        # 6. Merge odds sources — AF primary, Kambi additive
-        odds_matches = _merge_odds_sources(af_odds_fixtures, kambi_matches)
+        # 6. Build prediction pool from AF odds
+        odds_matches = _merge_odds_sources(af_odds_fixtures)
 
         console.print(f"\n  [bold]{len(odds_matches)} matches in prediction pool[/bold]")
         source_counts: dict[str, int] = {}

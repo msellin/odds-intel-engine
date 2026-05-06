@@ -19,7 +19,7 @@
 02:00  ⓪ Hist Backfill   run_backfill()            Historical fixtures/stats/events (self-stops once complete)
 04:00  ① Fixtures        run_fixtures()            AF fixtures + league coverage (weekly Mon)
        ② Enrichment      run_enrichment()          Standings, H2H, team stats, injuries (full)
-       ③ Odds            run_odds()                AF bulk odds + Kambi odds
+       ③ Odds            run_odds()                AF bulk odds (13 bookmakers)
        ④ Predictions     run_predictions()         AF predictions (coverage-aware)
        ⑤ Betting         run_betting()             Poisson/XGBoost model + signals + bet placement
        (morning pipeline — chained sequentially, completes by ~06:30)
@@ -129,11 +129,9 @@
 - Readiness gate: won't run unless ① Fixtures completed
 
 ### ③ Odds (`fetch_odds.py`)
-- AF bulk odds via `/odds?date=` — ~178 fixtures, 13+ bookmakers, all markets (1X2, O/U, BTTS, DC)
-- Kambi odds via `fetch_all_operators()` — ~250 events, Unibet/Paf
-  - `listView` endpoint: 1X2 for all events (1 call per operator)
-  - `betoffer/event/{id}` endpoint: O/U + BTTS for mapped-league events (~40-80 per operator)
-- Kambi league names mapped to AF leagues via `KAMBI_TO_AF_LEAGUE` dict in `supabase_client.py` (prevents duplicate league creation)
+- AF bulk odds via `/odds?date=` — ~178 fixtures, 13 bookmakers, all markets (1X2, O/U, BTTS, DC)
+- Bookmakers: 10Bet, 1xBet, 888Sport, Bet365, Betano, BetVictor, Betfair, Dafabet, Marathonbet, Pinnacle, SBO, Unibet, William Hill
+- Kambi removed 2026-05-06 — all leagues already covered by AF, no unique value
 - Stores all in `odds_snapshots` with `minutes_to_kickoff`
 - `--mark-closing` flag for pre-kickoff runs (13:30, 17:30, 20:00)
 
@@ -262,7 +260,7 @@ After step 5: bets are placed, value bets page has data.
 | Source | Role | Cost |
 |--------|------|------|
 | **API-Football Ultra** | Primary: fixtures, odds (13 bookmakers), predictions, injuries, lineups, standings, H2H, stats, live | $29/mo |
-| **Kambi** | Supplementary odds (Unibet/Paf, 68 leagues) | Free |
+| ~~**Kambi**~~ | Removed 2026-05-06 — AF already covers all 41 Kambi leagues with 13 bookmakers | — |
 | **ESPN** | Settlement results backup | Free |
 | **Gemini 2.5 Flash** | AI news analysis (qualitative signals) + match previews (ENG-3) | ~$0.05/day |
 | **Resend** | Email digest delivery (ENG-4) | Free to 3,000 emails/mo |
