@@ -292,7 +292,7 @@
 |----|------|--------|----|--------|-------|
 | SIG-12 | xG overperformance rolling signal | 2h | ⬜ | ⏳ ~2 wks of post-match xG data | Regression to mean signal. Needs post-match xG from live snapshots |
 | MOD-2 | Learned Poisson/XGBoost blend weights (replace fixed α) | 2h | ✅ Done 2026-05-05 | ✅ Done | `scripts/fit_blend_weights.py`: optimizes Poisson weight + per-tier shrinkage alpha. improvements.py loads from model_calibration, falls back to hardcoded. Weekly refit added to Sunday settlement. |
-| P3.4 | In-play value detection model | 2-3 wks | ⬜ | ⏳ Phase 1A starts today (no data gate). Phase 2 ML needs 500+ snapshots (~May 7-8). See § INPLAY Plan for full 5-phase roadmap | LightGBM Poisson regression (Phase 2+). Phase 1A: rule-based Strategy A paper bot, builds today. |
+| P3.4 | In-play value detection model | 2-3 wks | 🔄 In Progress | ⏳ Phase 1A building now. Phase 2 ML needs 500+ snapshots (~May 7-8). See § INPLAY Plan for full 5-phase roadmap | LightGBM Poisson regression (Phase 2+). Phase 1A: rule-based Strategy A paper bot, building 2026-05-06. |
 | P4.2 | A/B bot testing framework | 1-2 days | ⬜ | ⏳ Needs audit trail + data | Parallel bots with/without AI layers |
 | P4.3 | Live odds arbitrage detector | 1-2 days | ⬜ | ⏳ ~July | Per-bookmaker odds exist. Low priority |
 | RSS-NEWS | RSS news extraction pipeline ($30-90/mo) | 1-2 days | ⬜ | ⏳ After model proves profitable | Targets news before odds adjust. Re-evaluate when Elite has subscribers. **AI: +~$0.30/mo Gemini (data service $30-90/mo is the real cost)** |
@@ -588,37 +588,6 @@ All 4 second-round tools flagged these independently:
 |-----|----------|----------|
 | Odds staleness detection | **Critical** | Compare `captured_at` of odds to NOW() — skip if > 60s stale |
 | Score re-check at trigger | **Critical** | Re-read latest score before logging bet, abort if changed |
-| Open-play xG vs set-piece xG | High | Separate penalty/free-kick xG from open-play in snapshots |
-| Substitution timestamps + type | High | Already in match_events — extract and add to snapshot features |
-| Event-triggered odds capture | High | Snapshot odds at goal/red card moments, not just 5-min cycle |
-| 1-minute trigger checks | Medium | When model flags potential entry, poll odds at 1-min for execution |
-| Formation changes | Medium | Capture at HT and after goals |
-| Dangerous attacks count | Low | Available from AF, add to snapshot |
-
-### 5. Staking (in-play specific)
-
-| Parameter | Value | Rationale |
-|-----------|-------|-----------|
-| Kelly fraction | **Quarter Kelly** (not half) | Higher model uncertainty in-play |
-| Time decay | `(minutes_remaining / 90)^0.5` | Min 30: 82% stake, min 60: 58%, min 75: 41% |
-| Max stake per bet | 1.5% bankroll | Lower than pre-match (2%) |
-| Max exposure per match | 3% bankroll | Prevents doubling down |
-| Bankroll allocation | 70% pre-match, 30% in-play | Pre-match is more reliable |
-
-**Minimum edge thresholds by minute:**
-
-| Minute | Min edge | Rationale |
-|--------|----------|-----------|
-| 15-30 | 3% | Good signal, plenty of time |
-| 30-45 | 4% | HT reset incoming |
-| 46-60 | 5% | Post-HT uncertainty |
-| 60-75 | 6% | Time running out |
-| 75+ | 8% | Extreme value only |
-
-### 6. Data Gaps to Fix
-
-| Gap | Priority | Solution |
-|-----|----------|----------|
 | Open-play xG vs set-piece xG | High | Separate penalty/free-kick xG from open-play in snapshots |
 | Substitution timestamps + type | High | Already in match_events — extract and add to snapshot features |
 | Event-triggered odds capture | High | Snapshot odds at goal/red card moments, not just 5-min cycle |
