@@ -5,6 +5,17 @@ Newest entries at the top. Internal refactors and infrastructure changes are not
 
 ---
 
+## 2026-05-06 (3)
+
+### Data Quality — Cutoff date established + clv_pinnacle backfill
+
+- **Quality cutoff date: 2026-05-06.** All modeling thresholds (B-ML3, ALN-1) now filter to data from this date onward. Pre-cutoff data was collected before the full calibration pipeline (Pinnacle anchor, CAL-ALPHA-ODDS, sharp gate, full veto coverage) was live — training on it would teach the wrong patterns.
+- **B-ML3 ETA updated** to ~May 17 (was May 10) — 11 days of quality `match_feature_vectors` rows with Pinnacle signals present
+- **ALN-1 ETA updated** to ~June 5 (was May 9-10) — 300 clean settled bets at ~27/day from cutoff
+- **`clv_pinnacle` backfill** run via `scripts/backfill_clv_pinnacle.py` — updated 26/77 existing settled bets. Remaining 51 pre-date Pinnacle odds collection (PIN-1 started May 4, is_closing snapshots only started accumulating then).
+
+---
+
 ## 2026-05-06 (2)
 
 ### Model — Pinnacle Signal Expansion (PIN-2 through PIN-5)
