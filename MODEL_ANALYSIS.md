@@ -1,91 +1,12 @@
 # OddsIntel Prediction Model — Analysis & Improvement Roadmap
 
-> This document captures the current model architecture, an independent assessment from 4 AI evaluations,
-> and a concrete improvement roadmap. Written so any agent or developer can pick this up and start working.
+> Internal agent working doc — assessment history, improvement roadmap, and implementation status.
+> For the full technical model specification (features, calibration pipeline, known limitations), see **MODEL_WHITEPAPER.md**.
+> Written so any agent or developer can pick this up and start working.
 
 ---
 
-## 1. Current Model Architecture
-
-### 1.1 Overview
-
-Poisson + XGBoost **50/50 ensemble** producing match outcome probabilities. Compares model probabilities against bookmaker odds to find positive expected value (EV) bets.
-
-### 1.2 Input Features (36-40 total)
-
-| Category | Features | Scale |
-|----------|----------|-------|
-| **Team Form** (10-match rolling) | Win%, PPG, goals scored/conceded, goal diff, clean sheet%, O2.5%, BTTS% | Continuous |
-| **Home/Away Splits** | Same form stats split by venue | Continuous |
-| **ELO Ratings** | K=30, home advantage +100, goal-diff multiplier | ~1200-1800 |
-| **xG Proxy** | `0.10 * shots + 0.22 * shots_on_target` | Continuous |
-| **Head-to-Head** | Last 10 meetings: win%, avg goals, O2.5%, BTTS% | Continuous (default 0.33) |
-| **League Position** | Normalized position, points to relegation/title, in-relegation flag | 0-1 + binary |
-| **Rest Days** | Days since last match per team, rest advantage | Integer (capped 14) |
-| **League Tier** | Proxy for bookmaker pricing efficiency | Categorical (1-4) |
-
-### 1.3 Prediction Pipeline
-
-```
-Step 1: Feature extraction
-  - 10-match rolling stats for home and away team
-  - Compute differentials (home_form - away_form, home_elo - away_elo, etc.)
-
-Step 2: Two parallel models
-  - XGBoost Classifier → P(home), P(draw), P(away), P(over 2.5)
-  - XGBoost Poisson Regressor → expected goals → enumerate 0-7 x 0-7 scorelines via PMF
-    → derive P(home), P(draw), P(away), P(over 2.5)
-
-Step 3: Ensemble
-  - final_prob = 0.5 * XGBoost_prob + 0.5 * Poisson_prob
-
-Step 4: Calibration (2-stage pipeline, implemented 2026-04-30)
-  - Stage 1: tier-specific market shrinkage
-      shrunk = alpha * model_prob + (1-alpha) * implied_prob
-      alpha = model weight: {T1: 0.20, T2: 0.30, T3: 0.50, T4: 0.65}
-      Anchor currently = market average implied prob
-      Pending CAL-PIN-SHRINK: switch anchor to Pinnacle specifically
-      Pending CAL-ALPHA-ODDS: if odds > 3.0 → alpha_effective = min(alpha + 0.20, 0.85)
-  - Stage 2: Platt sigmoid correction fitted weekly from settled outcomes
-      cal = 1/(1+exp(-(a*shrunk+b))) per market
-      Pending CAL-PLATT-UPGRADE: replace with 2-feature logistic at 300+ settled bets
-
-Step 5: Edge calculation
-  - edge = model_probability - (1 / odds)
-  - Bet if edge > threshold (varies by league tier and bot strategy)
-```
-
-### 1.4 What's NOT in the Model (Known Gaps)
-
-| Signal | Status |
-|--------|--------|
-| News/injuries | Post-processing only (Gemini at 09:00 UTC), not a model input |
-| Odds movement | Snapshots collected every 2h but **not used as features** |
-| Market sentiment | Not available |
-| Motivation context | Only basic position stats, no relegation/title urgency scoring |
-| Lineup confirmation | Checked by Gemini but not quantified |
-
-### 1.5 Data Tier System
-
-| Tier | Data | Edge Requirement | Stake Cap |
-|------|------|-----------------|-----------|
-| A | Full history + odds calibration (18 leagues) | Base threshold | 100% |
-| B | Results-only history (22 leagues) | +2% extra edge | 50% |
-| ~~C~~ | ~~Sofascore on-demand~~ (removed 2026-04-29) | — | — |
-
-### 1.6 Current Performance (Honest)
-
-| Metric | Result |
-|--------|--------|
-| Tier 1-2 ROI | -8% to -15% |
-| Tier 3-4 ROI | Near-breakeven to +5% |
-| 1X2 vs O/U | 1X2 significantly better |
-| Overconfidence | 10-15% systematic |
-| Root cause | Statistical features (form, ELO, xG) already priced by bookmakers |
-
----
-
-## 2. External Assessment Consensus
+## 1. External Assessment Consensus
 
 Two rounds of independent AI evaluation shaped the current architecture.
 
@@ -135,7 +56,7 @@ Submitted to 4 AI evaluators. Key verdicts that were implemented:
 
 ---
 
-## 3. Current Architecture (Implemented)
+## 2. Current Architecture (Implemented)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -145,19 +66,20 @@ Submitted to 4 AI evaluators. Key verdicts that were implemented:
 │                       ├── 50/50 blend → calibrated_prob     │
 │  XGBoost Poisson ─────┘                                     │
 │                                                             │
-│  Calibration (2-stage + veto gate, updated 2026-05-06):      │
+│  Calibration (2-stage + veto gates, updated 2026-05-06):     │
 │    Stage 1: tier-specific market shrinkage                   │
-│      α = {T1: 0.20, T2: 0.30, T3: 0.50, T4: 0.65}         │
-│      Anchor: market avg implied (→ Pinnacle pending PIN-6)   │
-│      Pending CAL-ALPHA-ODDS: odds>3.0 → alpha += 0.20       │
+│      α = model weight {T1: 0.20, T2: 0.30, T3: 0.50, T4: 0.65} │
+│      Anchor: Pinnacle-implied (soft-book fallback) ✅CAL-PIN-SHRINK │
+│      Longshot: odds>3.0 → α = max(α-0.20, 0.10) ✅CAL-ALPHA-ODDS │
 │    Stage 2: Platt sigmoid post-hoc correction                │
 │      cal = 1/(1+exp(-(a*shrunk+b))) per market              │
 │      α/β fitted weekly from settled predictions              │
 │      Upgrade path: 2-feature logistic at 300+ bets (CAL-PLATT-UPGRADE) │
-│    Veto gate (1X2 home): cal_prob - pinnacle_implied > 0.12 → skip │
-│      Empirical: catches 22/34 losses, filters 6/40 wins      │
-│      Pending PIN-3: extend veto to draw/away/O/U             │
-│      Pending CAL-SHARP-GATE: skip when sharp_consensus < -0.02 │
+│    Veto gates (1X2 home):                                    │
+│      cal_prob - pinnacle_implied > 0.12 → skip (PIN-VETO)   │
+│        Empirical: catches 22/34 losses, filters 6/40 wins    │
+│        Pending PIN-3: extend to draw/away/O/U                │
+│      sharp_consensus_home < -0.02 → skip ✅CAL-SHARP-GATE   │
 │  Disagreement: abs(poisson - xgb) stored per bet            │
 │  Fallback: Tier D uses AF /predictions probability          │
 ├─────────────────────────────────────────────────────────────┤
@@ -207,7 +129,7 @@ Submitted to 4 AI evaluators. Key verdicts that were implemented:
 
 ---
 
-## 4. Alignment Filter (LOG-ONLY — pending validation)
+## 3. Alignment Filter (LOG-ONLY — pending validation)
 
 Computes 7 independent dimension scores per bet. Currently stored but not used for decisions.
 
@@ -225,7 +147,7 @@ Computes 7 independent dimension scores per bet. Currently stored but not used f
 
 ---
 
-## 5. Current Task List
+## 4. Current Task List
 
 > All open tasks with priorities are in **`PRIORITY_QUEUE.md`**. The items below are for quick reference only.
 
@@ -242,7 +164,7 @@ Computes 7 independent dimension scores per bet. Currently stored but not used f
 
 ---
 
-## 6. What to Store per Bet (Schema Addition)
+## 5. What to Store per Bet (Schema Addition)
 
 Add to `simulated_bets` table:
 
@@ -266,7 +188,7 @@ This data enables all future analysis: ROI by alignment bin, CLV tracking, meta-
 
 ---
 
-## 7. Validation Checkpoints
+## 6. Validation Checkpoints
 
 Before trusting any change in production paper trading:
 
@@ -281,7 +203,7 @@ Before trusting any change in production paper trading:
 
 ---
 
-## 8. Key Formulas Reference
+## 7. Key Formulas Reference
 
 ```python
 # Edge (current)
@@ -309,7 +231,7 @@ rank = kelly * alignment_multiplier
 
 ---
 
-## 9. Summary: Where the Edge Actually Lives
+## 8. Summary: Where the Edge Actually Lives
 
 | Source | Evidence | Priority |
 |--------|----------|----------|
@@ -323,7 +245,7 @@ rank = kelly * alignment_multiplier
 
 ---
 
-## 10. Implementation Status & Deferred Items (Updated 2026-04-27)
+## 9. Implementation Status & Deferred Items (Updated 2026-04-27)
 
 ### Implemented (active in production pipeline)
 
@@ -410,7 +332,7 @@ Check these milestones against the DB queries above.
 
 ---
 
-## 11. AI Usage Roadmap (Consolidated from 4 Independent Assessments, 2026-04-27)
+## 10. AI Usage Roadmap (Consolidated from 4 Independent Assessments, 2026-04-27)
 
 > Where AI adds value beyond current usage. Assessed by 4 independent evaluators against our
 > actual data stack. Only ideas that work with data we have or are actively collecting are included.
