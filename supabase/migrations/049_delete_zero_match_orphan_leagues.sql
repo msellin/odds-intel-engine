@@ -8,6 +8,16 @@
 
 BEGIN;
 
+-- Delete teams that reference zero-match orphan Unknown leagues first (FK constraint)
+-- These teams have no match data — they came from Kambi placeholder records
+DELETE FROM teams
+WHERE league_id IN (
+    SELECT id FROM leagues
+    WHERE api_football_id IS NULL
+      AND name = 'Unknown'
+      AND id NOT IN (SELECT DISTINCT league_id FROM matches WHERE league_id IS NOT NULL)
+);
+
 -- Delete all zero-match leagues with name='Unknown' and no api_football_id
 DELETE FROM leagues
 WHERE api_football_id IS NULL
