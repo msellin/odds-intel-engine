@@ -140,6 +140,7 @@ KAMBI_TO_AF_LEAGUE: dict[tuple[str, str], tuple[str, str]] = {
     ("Portugal", "Liga Revelacao U23"): ("Portugal", "Liga Revelação U23"),
     ("Italy", "Coppa Primavera U20"): ("Italy", "Coppa Italia Primavera"),
     ("Cyprus", "1st Division"): ("Cyprus", "1. Division"),
+    ("Bulgaria", "PFL 1"): ("Bulgaria", "First League"),
 }
 
 
