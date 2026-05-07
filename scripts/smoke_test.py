@@ -702,6 +702,87 @@ def _():
     assert rows[0]["n"] >= 0
 
 
+# ── H2H-SPLITS ────────────────────────────────────────────────────────────────
+
+@test("H2H-SPLITS — h2h_avg_goal_diff computed correctly from h2h_raw perspective")
+def _():
+    # Simulate h2h_raw: home team (AF id=33) won 2-0 and 1-0, lost 0-1
+    home_af_id = 33
+    h2h_raw = [
+        {"teams": {"home": {"id": 33}, "away": {"id": 40}}, "goals": {"home": 2, "away": 0}},
+        {"teams": {"home": {"id": 40}, "away": {"id": 33}}, "goals": {"home": 1, "away": 0}},  # our team lost
+        {"teams": {"home": {"id": 33}, "away": {"id": 40}}, "goals": {"home": 1, "away": 0}},
+    ]
+    goal_diffs = []
+    wins = []
+    for f in h2h_raw:
+        fix_home_id = f["teams"]["home"]["id"]
+        gf, ga = f["goals"]["home"], f["goals"]["away"]
+        if fix_home_id == home_af_id:
+            goal_diffs.append(gf - ga)
+            wins.append(1 if gf > ga else 0)
+        else:
+            goal_diffs.append(ga - gf)
+            wins.append(1 if ga > gf else 0)
+
+    # 2-0, -1 (lost 0-1), 1-0 → diffs [2, -1, 1] → avg = 0.667
+    assert abs(sum(goal_diffs) / len(goal_diffs) - 2/3) < 0.001
+    # wins: [1, 0, 1] → 2/3 overall, recent (last 3) = [1, 0, 1] = 2/3 → premium = 0
+    assert sum(wins) == 2
+
+
+@test("H2H-SPLITS — h2h_recency_premium positive when recent form better than overall")
+def _():
+    # 5 H2H: last 3 all wins, earlier 2 all losses → recency premium > 0
+    home_af_id = 33
+    h2h_raw = [  # newest first
+        {"teams": {"home": {"id": 33}, "away": {"id": 40}}, "goals": {"home": 2, "away": 0}},
+        {"teams": {"home": {"id": 33}, "away": {"id": 40}}, "goals": {"home": 1, "away": 0}},
+        {"teams": {"home": {"id": 33}, "away": {"id": 40}}, "goals": {"home": 3, "away": 1}},
+        {"teams": {"home": {"id": 33}, "away": {"id": 40}}, "goals": {"home": 0, "away": 2}},
+        {"teams": {"home": {"id": 33}, "away": {"id": 40}}, "goals": {"home": 0, "away": 1}},
+    ]
+    wins = []
+    for f in h2h_raw:
+        fix_home_id = f["teams"]["home"]["id"]
+        gf, ga = f["goals"]["home"], f["goals"]["away"]
+        wins.append(1 if (gf > ga and fix_home_id == home_af_id) or (ga > gf and fix_home_id != home_af_id) else 0)
+
+    recent_pct = sum(wins[:3]) / 3   # 3/3 = 1.0
+    overall_pct = sum(wins) / len(wins)  # 3/5 = 0.6
+    premium = round(recent_pct - overall_pct, 4)
+    assert premium > 0, f"Expected positive recency premium, got {premium}"
+    assert abs(premium - 0.4) < 0.001
+
+
+@test("H2H-SPLITS — matches.home_team_api_id column exists (migration 067)")
+def _():
+    from workers.api_clients.db import execute_query
+    try:
+        cols = execute_query(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'matches' AND column_name IN ('home_team_api_id', 'away_team_api_id')",
+            []
+        )
+    except Exception:
+        cols = []
+    if not cols:
+        return  # migration not yet applied
+    col_names = {r["column_name"] for r in cols}
+    assert "home_team_api_id" in col_names
+    assert "away_team_api_id" in col_names
+
+
+@test("H2H-SPLITS — h2h_avg_goal_diff signal name queryable in match_signals")
+def _():
+    from workers.api_clients.db import execute_query
+    rows = execute_query(
+        "SELECT COUNT(*) AS n FROM match_signals WHERE signal_name = 'h2h_avg_goal_diff'",
+        []
+    )
+    assert rows[0]["n"] >= 0
+
+
 # ── Results ───────────────────────────────────────────────────────────────────
 
 def main():

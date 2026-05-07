@@ -172,7 +172,8 @@ def store_match(match_data: dict) -> str:
     league_id = ensure_league(league_path, tier)
 
     existing = execute_query(
-        """SELECT id, api_football_id, venue_name, venue_af_id, referee FROM matches
+        """SELECT id, api_football_id, venue_name, venue_af_id, referee,
+                  home_team_api_id, away_team_api_id FROM matches
            WHERE home_team_id = %s AND away_team_id = %s
              AND date >= %s AND date <= %s""",
         (home_id, away_id, f"{date_prefix}T00:00:00", f"{date_prefix}T23:59:59"),
@@ -193,6 +194,10 @@ def store_match(match_data: dict) -> str:
             updates["venue_af_id"] = int(match_data["venue_af_id"])
         if match_data.get("referee") and not existing[0].get("referee"):
             updates["referee"] = match_data["referee"]
+        if match_data.get("home_team_api_id") and not existing[0].get("home_team_api_id"):
+            updates["home_team_api_id"] = int(match_data["home_team_api_id"])
+        if match_data.get("away_team_api_id") and not existing[0].get("away_team_api_id"):
+            updates["away_team_api_id"] = int(match_data["away_team_api_id"])
 
         # Update status if fixture was postponed/cancelled since last fetch.
         # Only applies when DB still shows 'scheduled' — never override live/finished.
@@ -242,6 +247,10 @@ def store_match(match_data: dict) -> str:
         match_record["venue_af_id"] = int(match_data["venue_af_id"])
     if match_data.get("referee"):
         match_record["referee"] = match_data["referee"]
+    if match_data.get("home_team_api_id"):
+        match_record["home_team_api_id"] = int(match_data["home_team_api_id"])
+    if match_data.get("away_team_api_id"):
+        match_record["away_team_api_id"] = int(match_data["away_team_api_id"])
 
     if match_data.get("home_goals") is not None:
         match_record["score_home"] = int(match_data["home_goals"])
@@ -3074,6 +3083,53 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
             add(mid, "h2h_win_pct", round(hw / total, 4), "quality", "af")
             add(mid, "h2h_total", float(total), "quality", "af")
 
+    # ── 2b. H2H-SPLITS: goal diff, recency premium from h2h_raw ─────────────
+    # home_team_api_id now on matches (migration 067) — needed to assign perspective.
+    try:
+        h2h_rows = execute_query(
+            """SELECT id, h2h_raw, home_team_api_id
+               FROM matches
+               WHERE id = ANY(%s::uuid[])
+                 AND h2h_raw IS NOT NULL
+                 AND home_team_api_id IS NOT NULL""",
+            (match_ids,),
+        )
+        for row in h2h_rows:
+            mid = str(row["id"])
+            h2h_raw = row["h2h_raw"] or []
+            home_af_id = row["home_team_api_id"]
+
+            goal_diffs = []
+            wins = []
+            for f in h2h_raw:
+                teams = f.get("teams", {})
+                goals = f.get("goals", {})
+                fix_home_id = teams.get("home", {}).get("id")
+                gf = goals.get("home")
+                ga = goals.get("away")
+                if gf is None or ga is None:
+                    continue
+                # Perspective: is our home team playing home or away in this H2H?
+                if fix_home_id == home_af_id:
+                    goal_diffs.append(gf - ga)
+                    wins.append(1 if gf > ga else 0)
+                else:
+                    goal_diffs.append(ga - gf)
+                    wins.append(1 if ga > gf else 0)
+
+            if goal_diffs:
+                avg_diff = sum(goal_diffs) / len(goal_diffs)
+                add(mid, "h2h_avg_goal_diff", round(avg_diff, 3), "quality", "af")
+
+            # Recency premium: win rate in last 3 vs overall
+            # AF returns H2H newest-first, so [:3] = most recent
+            if len(wins) >= 3:
+                recent_pct = sum(wins[:3]) / 3
+                overall_pct = sum(wins) / len(wins)
+                add(mid, "h2h_recency_premium", round(recent_pct - overall_pct, 4), "quality", "af")
+    except Exception:
+        pass
+
     # ── 3. Odds snapshots: BDM-1 + overnight line move + volatility ──────────
     try:
         cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
@@ -3711,7 +3767,120 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
     except Exception:
         pass
 
-    # ── 12. Bulk INSERT all signals ───────────────────────────────────────────
+    # ── 12. Injury recurrence signals (from player_sidelined) ───────────────
+    # For each team's currently-injured players, count how many career injury
+    # episodes each has. High average = injury-prone squad context.
+    # Signal value: average career injury count for players listed as "Missing Fixture".
+    try:
+        inj_detail = execute_query(
+            """SELECT match_id, player_id, team_side
+               FROM match_injuries
+               WHERE match_id = ANY(%s::uuid[])
+                 AND player_id IS NOT NULL
+                 AND status = 'Missing Fixture'""",
+            (match_ids,),
+        )
+        if inj_detail:
+            all_pids = list({r["player_id"] for r in inj_detail})
+            sid_counts = execute_query(
+                """SELECT player_id, COUNT(*) AS cnt
+                   FROM player_sidelined
+                   WHERE player_id = ANY(%s)
+                   GROUP BY player_id""",
+                (all_pids,),
+            )
+            sid_by_player = {r["player_id"]: int(r["cnt"]) for r in sid_counts}
+
+            from collections import defaultdict as _defaultdict
+            pid_by_match_side: dict = _defaultdict(list)
+            for r in inj_detail:
+                pid_by_match_side[(str(r["match_id"]), r["team_side"])].append(r["player_id"])
+
+            for (mid, side), pids in pid_by_match_side.items():
+                counts_list = [sid_by_player.get(p, 0) for p in pids]
+                if counts_list:
+                    avg = round(sum(counts_list) / len(counts_list), 2)
+                    add(mid, f"injury_recurrence_{side}", avg, "information", "af_sidelined")
+    except Exception:
+        pass
+
+    # ── 13. Half-time tendency signals (from recent match_stats._ht) ─────────
+    # Compute each team's tendency to take shots in H1 vs full match (last 5 games).
+    # Data from 2024 season onward (API-Football v3.9.3 half= param).
+    try:
+        all_team_api_for_ht = list({
+            tid
+            for m in matches
+            for tid in [m.get("home_team_api_id"), m.get("away_team_api_id")]
+            if tid
+        })
+        if all_team_api_for_ht:
+            ht_rows = execute_query(
+                """SELECT DISTINCT ON (mi.team_api_id, ms.match_id)
+                          mi.team_api_id, mi.team_side,
+                          ms.shots_home_ht, ms.shots_away_ht,
+                          ms.shots_home,    ms.shots_away,
+                          ms.possession_home_ht
+                   FROM match_stats ms
+                   JOIN match_injuries mi ON ms.match_id = mi.match_id
+                   WHERE mi.team_api_id = ANY(%s)
+                     AND ms.shots_home_ht IS NOT NULL
+                   ORDER BY mi.team_api_id, ms.match_id DESC""",
+                (all_team_api_for_ht,),
+            )
+            from collections import defaultdict as _dd2
+            ht_by_team: dict = _dd2(list)
+            for r in ht_rows:
+                ht_by_team[r["team_api_id"]].append(r)
+
+            for m in matches:
+                mid = m["id"]
+                for af_id, side in [
+                    (m.get("home_team_api_id"), "home"),
+                    (m.get("away_team_api_id"), "away"),
+                ]:
+                    if not af_id:
+                        continue
+                    rows_t = ht_by_team.get(af_id, [])[:5]
+                    vals = []
+                    for r in rows_t:
+                        ht_s = r.get(f"shots_{side}_ht")
+                        ft_s = r.get(f"shots_{side}")
+                        if ht_s is not None and ft_s and float(ft_s) > 0:
+                            vals.append(float(ht_s) / float(ft_s))
+                    if vals:
+                        add(mid, f"h1_shot_dominance_{side}",
+                            round(sum(vals) / len(vals), 3), "quality", "af_match_stats")
+    except Exception:
+        pass
+
+    # ── 14. Squad disruption signals (from team_transfers) ───────────────────
+    # Count transfers INTO each team in the last 60 days.
+    # Many new arrivals → unfamiliar system → cohesion risk.
+    try:
+        from datetime import timedelta as _td
+        cutoff_60d = (date.today() - _td(days=60)).isoformat()
+        transfer_counts = execute_query(
+            """SELECT team_api_id, COUNT(*) AS arrivals
+               FROM team_transfers
+               WHERE transfer_date >= %s
+                 AND to_team_api_id = team_api_id
+               GROUP BY team_api_id""",
+            (cutoff_60d,),
+        )
+        arrivals_by_team = {r["team_api_id"]: int(r["arrivals"]) for r in transfer_counts}
+        for m in matches:
+            mid = m["id"]
+            for af_id, sig_name in [
+                (m.get("home_team_api_id"), "squad_disruption_home"),
+                (m.get("away_team_api_id"), "squad_disruption_away"),
+            ]:
+                if af_id and af_id in arrivals_by_team:
+                    add(mid, sig_name, float(arrivals_by_team[af_id]), "context", "af_transfers")
+    except Exception:
+        pass
+
+    # ── 15. Bulk INSERT all signals ───────────────────────────────────────────
     if not signals:
         return 0
 
@@ -4004,6 +4173,21 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
         elite_users       = r[0]["elite"] if r else 0
         new_signups_today = r[0]["new_today"] if r else 0
 
+        # ⑩ Sidelined + transfers coverage (new — migration 067)
+        sidelined_players_fetched = 0
+        transfers_teams_fetched = 0
+        try:
+            r = execute_query(
+                "SELECT COUNT(DISTINCT player_id) AS n FROM player_sidelined WHERE created_at::date = %s",
+                [today])
+            sidelined_players_fetched = r[0]["n"] if r else 0
+            r = execute_query(
+                "SELECT COUNT(DISTINCT team_api_id) AS n FROM team_transfers WHERE created_at::date = %s",
+                [today])
+            transfers_teams_fetched = r[0]["n"] if r else 0
+        except Exception:
+            pass
+
         # Write snapshot
         execute_write(
             """
@@ -4026,7 +4210,8 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               news_checker_errors_today, watchlist_alerts_today,
               backfill_total_done, backfill_total_finished, backfill_last_run,
               af_calls_today, af_budget_remaining,
-              total_users, pro_users, elite_users, new_signups_today
+              total_users, pro_users, elite_users, new_signups_today,
+              sidelined_players_fetched, transfers_teams_fetched
             ) VALUES (
               %s,
               %s, %s, %s, %s, %s, %s, %s, %s,
@@ -4039,7 +4224,8 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               %s, %s, %s, %s, %s,
               %s, %s, %s,
               %s, %s,
-              %s, %s, %s, %s
+              %s, %s, %s, %s,
+              %s, %s
             )
             """,
             [
@@ -4062,6 +4248,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
                 backfill_total_done, backfill_total_finished, backfill_last_run,
                 af_calls_today, af_budget_remaining,
                 total_users, pro_users, elite_users, new_signups_today,
+                sidelined_players_fetched, transfers_teams_fetched,
             ]
         )
         console.print(f"[dim]ops_snapshot written for {today}[/dim]")

@@ -145,6 +145,8 @@ Data tier system:
 | Manager change days — home | `manager_change_home_days` | Morning pipeline (batch_write block 3c) | ✅ Running |
 | Manager change days — away | `manager_change_away_days` | Morning pipeline (batch_write block 3c) | ✅ Running |
 | Venue artificial turf | `venue_surface_artificial` | Morning pipeline (batch_write block 11b) | ✅ Running |
+| H2H average goal diff (home perspective) | `h2h_avg_goal_diff` | Morning pipeline (batch_write block 2b) | ✅ Running |
+| H2H recency premium (last 3 vs overall) | `h2h_recency_premium` | Morning pipeline (batch_write block 2b) | ✅ Running |
 | Pinnacle AH line (home handicap) | `pinnacle_ah_line` | Morning pipeline (batch_write block 3d) | ✅ Running (data from 2026-05-07) |
 | Pinnacle AH line move | `pinnacle_ah_line_move` | Morning pipeline (batch_write block 3d) | ✅ Running (data from 2026-05-07) |
 | AH bookmaker disagreement | `ah_bookmaker_disagreement` | Morning pipeline (batch_write block 3d) | ✅ Running (data from 2026-05-07) |

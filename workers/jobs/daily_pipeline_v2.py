@@ -1029,6 +1029,7 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
     matches_raw = execute_query(
         """SELECT m.id, m.date, m.referee, m.season,
                   m.home_team_id, m.away_team_id,
+                  m.home_team_api_id, m.away_team_api_id,
                   m.h2h_home_wins, m.h2h_draws, m.h2h_away_wins,
                   th.name AS home_team_name, th.country AS home_country,
                   ta.name AS away_team_name, ta.country AS away_country,
