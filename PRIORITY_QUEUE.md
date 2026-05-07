@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-06 — In-play bot Phase 1A deployed (8 strategies). Kambi fully removed. Settlement KeyError fixed. Sentry removed from engine (frontend only now).
+> Last updated: 2026-05-07 — Match detail refactor complete (tabbed layout, stats, signals, odds movement). Signal pipeline now generates for all matches incl. Grade D. Extended stats stored in DB. MD-POLISH queued.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -157,6 +157,7 @@
 | CAL-PLATT-UPGRADE | Replace single-input Platt with 2-feature logistic: `X = [shrunk_prob, log(odds)]` | half day | ⬜ | ⏳ ~300+ settled bets/market (have ~77 total) | Learns that "40% at odds 3.6" needs different correction than "40% at odds 1.8". Do NOT implement sooner — will overfit. Source: 4-AI Calibration Review 2026-05-06. |
 | ALN-1 | Dynamic alignment thresholds | 2h | ⬜ | ⏳ ~June 5 (need 300 clean settled bets) | **Data quality cutoff: validate on bets WHERE `created_at >= 2026-05-06` only** — pre-cutoff bets were placed by the old pipeline (no Pinnacle anchor, no CAL-ALPHA-ODDS, different veto coverage). Training on those teaches patterns from a system we have already replaced. At ~27 bets/day post-cutoff, 300 clean bets ≈ June 5. Pseudo-CLV does NOT substitute. |
 | VAL-POST-MORTEM | Review 14 days of LLM post-mortem patterns | 30min | ⬜ | ⏳ May 13+ (have 2 rows, need 14) | `SELECT notes FROM model_evaluations WHERE market='post_mortem' ORDER BY date DESC LIMIT 14` |
+| MD-POLISH | Match detail visual polish: sticky tab blur, tab badge counts (e.g. "Match 4"), signal severity colors by group (market=blue, form=green, injuries=red), signal timestamps ("detected 3h ago"), "Why this match?" auto-generated hook at top of Intel, bot consensus as visual icons. Bookmaker comparison table (Odds tab). | 2-3h | ⬜ | ✅ Ready | Polish pass on the tabbed match detail layout. All data already available — purely frontend rendering. `src/components/match-detail-tabs.tsx`, `signal-accordion.tsx`, `bot-consensus.tsx`. |
 
 ---
 
