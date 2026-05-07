@@ -626,7 +626,7 @@ def compute_kelly(model_prob: float, odds: float) -> float:
     Returns:
         Kelly fraction (0.0 if negative EV)
     """
-    if odds <= 1.0 or model_prob <= 0 or model_prob >= 1:
+    if odds <= 1.0 or model_prob <= 0 or model_prob >= 1:  # NOSONAR
         return 0.0
 
     kelly = (model_prob * odds - 1) / (odds - 1)

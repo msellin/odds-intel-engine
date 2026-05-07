@@ -203,7 +203,7 @@ def extract_best_odds(match: dict) -> dict:
             best["away_bk"] = bk_data["name"]
 
         # Best totals (only 2.5 line)
-        if totals.get("line") == 2.5:
+        if abs((totals.get("line") or 0) - 2.5) < 0.001:
             if totals.get("over", 0) > best["over_25"]:
                 best["over_25"] = totals["over"]
                 best["over_25_bk"] = bk_data["name"]

@@ -14,7 +14,7 @@ ALTER TABLE predictions
     ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'ensemble';
 
 -- Update any existing rows to ensemble (they were all ensemble predictions)
-UPDATE predictions SET source = 'ensemble' WHERE source IS NULL OR source = '';
+UPDATE predictions SET source = 'ensemble' WHERE source IS NULL OR source = ''; -- NOSONAR
 
 -- New unique constraint: one row per (match, market, source)
 -- Drop old constraint if exists (there was no unique on this before)

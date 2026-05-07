@@ -11,6 +11,7 @@ All DB access uses psycopg2 directly (via workers/api_clients/db.py):
   - Persistent connection pool
 """
 
+import math
 import os
 import unicodedata
 import re
@@ -2965,7 +2966,7 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
             fval = float(val)
         except (TypeError, ValueError):
             return
-        if fval != fval:  # NaN check
+        if math.isnan(fval):  # NaN check
             return
         signals.append((mid, name, fval, group, source, now_str))
 

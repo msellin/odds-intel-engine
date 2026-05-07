@@ -9,6 +9,7 @@ Usage:
   python daily_pipeline_v2.py report     # Anytime: show bot performance
 """
 
+import math
 import sys
 import numpy as np
 import pandas as pd
@@ -1661,7 +1662,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                 ip = 1 / odds
 
                 # Guard: skip if raw model probability is NaN
-                if raw_mp != raw_mp:  # NaN != NaN is True
+                if math.isnan(raw_mp):  # NaN guard
                     continue
 
                 # P1: Calibrate probability (tier-specific shrinkage + Platt sigmoid)
@@ -1681,7 +1682,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                                           anchor_implied=pin_anchor, odds=odds)
 
                 # Guard: skip if calibration produced NaN
-                if cal_prob != cal_prob:
+                if math.isnan(cal_prob):
                     continue
 
                 # Use calibrated probability for edge calculation
