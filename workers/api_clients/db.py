@@ -55,17 +55,18 @@ def get_pool() -> pool.ThreadedConnectionPool:
 
 
 def _reset_pool():
-    """Close and discard the current pool so the next call recreates it.
-    Called when a connection is found to be dead (SSL drop / idle timeout)."""
+    """Discard the current pool so the next call recreates it.
+    Called when a connection is found to be dead (SSL drop / idle timeout).
+
+    NOTE: We intentionally do NOT call closeall() here. Multiple jobs run
+    concurrently in APScheduler threads sharing this pool. closeall() would
+    kill connections held by sibling threads mid-query, causing InterfaceError
+    in those threads. Instead we just discard the pool reference — existing
+    connections finish normally against the old pool; new calls get a fresh pool.
+    """
     global _pool
     with _pool_lock:
-        old = _pool
         _pool = None
-    if old is not None:
-        try:
-            old.closeall()
-        except Exception:
-            pass
     console.print("[yellow]DB pool reset — will reconnect on next query[/yellow]")
 
 
@@ -76,9 +77,9 @@ def get_conn():
     conn = p.getconn()
     try:
         yield conn
-    except psycopg2.OperationalError:
-        # Connection was dropped server-side (SSL timeout). Discard it so the
-        # pool doesn't hand out more dead connections.
+    except (psycopg2.OperationalError, psycopg2.InterfaceError):
+        # Connection was dropped (SSL timeout, or killed by concurrent pool reset).
+        # Close just this connection; don't touch the rest of the pool.
         try:
             p.putconn(conn, close=True)
         except Exception:
@@ -89,6 +90,9 @@ def get_conn():
         p.putconn(conn)
 
 
+_CONN_ERRORS = (psycopg2.OperationalError, psycopg2.InterfaceError)
+
+
 def execute_query(sql: str, params=None) -> list[dict]:
     """Execute a read query, return list of dicts. Retries once on connection drop."""
     for attempt in range(2):
@@ -97,7 +101,7 @@ def execute_query(sql: str, params=None) -> list[dict]:
                 with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                     cur.execute(sql, params)
                     return [dict(row) for row in cur.fetchall()]
-        except psycopg2.OperationalError:
+        except _CONN_ERRORS:
             if attempt == 1:
                 raise
 
@@ -111,7 +115,7 @@ def execute_write(sql: str, params=None) -> int:
                     cur.execute(sql, params)
                     conn.commit()
                     return cur.rowcount
-        except psycopg2.OperationalError:
+        except _CONN_ERRORS:
             if attempt == 1:
                 raise
 
@@ -126,7 +130,7 @@ def execute_write_returning(sql: str, params=None) -> list[dict]:
                     rows = [dict(row) for row in cur.fetchall()]
                     conn.commit()
                     return rows
-        except psycopg2.OperationalError:
+        except _CONN_ERRORS:
             if attempt == 1:
                 raise
 
@@ -157,7 +161,7 @@ def bulk_insert(table: str, columns: list[str], rows: list[tuple],
                     psycopg2.extras.execute_values(cur, sql, rows, page_size=500)
                     conn.commit()
                     return cur.rowcount
-        except psycopg2.OperationalError:
+        except _CONN_ERRORS:
             if attempt == 1:
                 raise
 
@@ -189,7 +193,7 @@ def bulk_upsert(table: str, columns: list[str], rows: list[tuple],
                     psycopg2.extras.execute_values(cur, sql, rows, page_size=500)
                     conn.commit()
                     return cur.rowcount
-        except psycopg2.OperationalError:
+        except _CONN_ERRORS:
             if attempt == 1:
                 raise
 
