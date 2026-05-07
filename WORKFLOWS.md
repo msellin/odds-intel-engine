@@ -114,10 +114,12 @@
 - Logs to `pipeline_runs` table
 
 ### ② Enrichment (`fetch_enrichment.py`)
-- **04:15 (full):** standings (T9), H2H (T10), team stats (T2), injuries (T3), coaches (MGR-CHANGE), venues (AF-VENUES)
+- **04:15 (full):** standings (T9), H2H (T10), team stats (T2), injuries (T3), coaches (MGR-CHANGE), venues (AF-VENUES), sidelined (AF-SIDELINED), transfers (AF-TRANSFERS)
 - **10:30/16:00 (refresh):** injuries + standings only (10:30 moved from 12:00 to feed 11:00 betting)
 - **13:00 (full, N7):** all components — ensures H2H + team_stats are fresh for afternoon/evening betting refreshes
 - Venues: one call per unique venue, cached in `venues` table; skips already-cached venues (near-zero ongoing cost)
+- Sidelined: 7-day cache per player; only fetches players currently listed as injured in today's matches (~5-20 calls/day)
+- Transfers: 7-day cache per team; only fetches today's fixture teams (~5-40 calls/day)
 - Coverage-aware: skips leagues AF doesn't support
 - Readiness gate: won't run unless ① Fixtures completed
 

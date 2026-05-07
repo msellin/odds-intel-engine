@@ -215,6 +215,7 @@ def fetch_post_match_enrichment() -> dict:
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from workers.api_clients.api_football import (
+        get_fixtures_batch,
         get_fixture_statistics, parse_fixture_stats,
         get_fixture_statistics_halftime, parse_fixture_stats_halftime,
         get_fixture_events, parse_fixture_events,
@@ -266,19 +267,37 @@ def fetch_post_match_enrichment() -> dict:
             continue
         to_enrich.append(match)
 
+    # Batch-fetch all fixture data upfront (ceil(N/20) API calls instead of 4N).
+    # Each fixture in the batch response includes nested statistics, events,
+    # lineups, and players — so threads just parse pre-fetched data.
+    af_ids_to_enrich = [m["api_football_id"] for m in to_enrich]
+    prefetched: dict[int, dict] = {}
+    if af_ids_to_enrich:
+        try:
+            prefetched = get_fixtures_batch(af_ids_to_enrich)
+            console.print(f"  Batch-fetched {len(prefetched)}/{len(af_ids_to_enrich)} fixtures")
+        except Exception as e:
+            console.print(f"  [yellow]Batch fetch failed, will fall back per-fixture: {e}[/yellow]")
+
     def _enrich_one_match(match: dict) -> dict:
-        """Enrich a single match — runs in a thread."""
+        """Enrich a single match — runs in a thread. Uses pre-fetched batch data where available."""
         af_id = match["api_football_id"]
         match_id = match["id"]
         home_api_id = home_api_id_by_match.get(match_id)
         result = {"stats": 0, "halftime": 0, "events": 0, "players": 0}
+        batch_fix = prefetched.get(af_id)
 
-        # T4 + Full stats
+        # T4 + Full stats — use batch data if available, fall back to individual call
         try:
-            raw_full = get_fixture_statistics(af_id)
+            if batch_fix and batch_fix.get("statistics"):
+                raw_full = batch_fix["statistics"]
+            else:
+                raw_full = get_fixture_statistics(af_id)
             full_stats = parse_fixture_stats(raw_full)
+
             ht_response = get_fixture_statistics_halftime(af_id)
             ht_stats = parse_fixture_stats_halftime(ht_response)
+
             merged_stats = {**full_stats, **ht_stats}
             if merged_stats:
                 store_match_stats_full(match_id, merged_stats)
@@ -288,9 +307,12 @@ def fetch_post_match_enrichment() -> dict:
         except Exception as e:
             console.print(f"    [yellow]Stats error for fixture {af_id}: {e}[/yellow]")
 
-        # T8: Match events
+        # T8: Match events — use batch data if available
         try:
-            raw_events = get_fixture_events(af_id)
+            if batch_fix and batch_fix.get("events"):
+                raw_events = batch_fix["events"]
+            else:
+                raw_events = get_fixture_events(af_id)
             parsed_events = parse_fixture_events(raw_events)
             if parsed_events:
                 result["events"] = store_match_events_af(
@@ -299,9 +321,12 @@ def fetch_post_match_enrichment() -> dict:
         except Exception as e:
             console.print(f"    [yellow]Events error for fixture {af_id}: {e}[/yellow]")
 
-        # T12: Player stats
+        # T12: Player stats — use batch data if available
         try:
-            raw_players = get_fixture_players(af_id)
+            if batch_fix and batch_fix.get("players"):
+                raw_players = batch_fix["players"]
+            else:
+                raw_players = get_fixture_players(af_id)
             parsed_players = parse_fixture_players(
                 raw_players, home_team_api_id=home_api_id
             )

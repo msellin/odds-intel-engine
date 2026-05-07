@@ -39,11 +39,14 @@ from workers.api_clients.api_football import (
     get_h2h, parse_h2h,
     get_coaches, parse_coaches,
     get_venue, parse_venue,
+    get_sidelined, parse_sidelined,
+    get_transfers, parse_transfers,
 )
 from workers.api_clients.supabase_client import (
     store_team_season_stats, store_match_injuries,
     store_league_standings, store_match_h2h,
     store_team_coaches, store_venues,
+    store_player_sidelined, store_team_transfers,
 )
 from workers.api_clients.db import execute_query
 from workers.utils.pipeline_utils import (
@@ -54,7 +57,7 @@ from workers.utils.pipeline_utils import (
 
 console = Console()
 
-ALL_COMPONENTS = {"injuries", "team_stats", "standings", "h2h", "coaches", "venues"}
+ALL_COMPONENTS = {"injuries", "team_stats", "standings", "h2h", "coaches", "venues", "sidelined", "transfers"}
 
 
 def _build_fixture_meta(target_date: str) -> dict[int, dict]:
@@ -397,6 +400,120 @@ def fetch_venues(fixture_meta: dict) -> int:
     return stored
 
 
+def fetch_player_sidelined(fixture_meta: dict) -> int:
+    """Fetch full injury history for each player currently injured in today's fixtures.
+
+    Reads player_ids from match_injuries (populated by T3 fetch_injuries), fetches the
+    full sidelined career history per player, and stores in player_sidelined.
+
+    Uses a 7-day cache — skips players already fetched recently to stay quota-efficient.
+    Only runs as part of the morning enrichment wave (not intraday refreshes).
+    """
+    console.print("\n[cyan]Sidelined: Fetching player injury histories...[/cyan]")
+    from datetime import datetime, timezone, timedelta
+
+    match_ids = [meta["match_id"] for meta in fixture_meta.values() if meta.get("match_id")]
+    if not match_ids:
+        console.print("  No matches — skipping sidelined fetch")
+        return 0
+
+    # Get all injured players for today's fixtures (already stored by T3 fetch_injuries)
+    inj_rows = execute_query(
+        "SELECT DISTINCT player_id, player_name, team_api_id "
+        "FROM match_injuries WHERE match_id = ANY(%s::uuid[]) AND player_id IS NOT NULL",
+        [match_ids]
+    )
+    if not inj_rows:
+        console.print("  No injury records found — skipping sidelined fetch")
+        return 0
+
+    all_player_ids = [r["player_id"] for r in inj_rows]
+
+    # 7-day cache: skip players whose history was already fetched recently
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    try:
+        cached = execute_query(
+            "SELECT DISTINCT player_id FROM player_sidelined WHERE player_id = ANY(%s) AND created_at > %s",
+            [all_player_ids, cutoff]
+        )
+        cached_ids = {r["player_id"] for r in cached}
+    except Exception:
+        cached_ids = set()
+
+    player_lookup = {r["player_id"]: r for r in inj_rows}
+    to_fetch = [pid for pid in all_player_ids if pid not in cached_ids]
+    console.print(f"  {len(all_player_ids)} injured players, {len(cached_ids)} cached, {len(to_fetch)} to fetch")
+
+    stored = 0
+    for player_id in to_fetch:
+        info = player_lookup.get(player_id, {})
+        try:
+            raw = get_sidelined(player_id)
+            if not raw:
+                continue
+            rows = parse_sidelined(
+                raw,
+                player_id=player_id,
+                player_name=info.get("player_name"),
+                team_api_id=info.get("team_api_id"),
+            )
+            stored += store_player_sidelined(rows)
+        except Exception as e:
+            console.print(f"  [yellow]Sidelined fetch failed for player {player_id}: {e}[/yellow]")
+
+    console.print(f"  {stored} sidelined records stored across {len(to_fetch)} players")
+    return stored
+
+
+def fetch_transfers(fixture_meta: dict) -> int:
+    """Fetch recent transfer history for every team playing today.
+
+    Calls /transfers?team={id} once per unique team AF ID, with a 7-day cache.
+    Stores into team_transfers. Powers the squad_disruption signal in the betting pipeline.
+    """
+    console.print("\n[cyan]Transfers: Fetching team transfer history...[/cyan]")
+    from datetime import datetime, timezone, timedelta
+
+    team_af_ids: set[int] = set()
+    for meta in fixture_meta.values():
+        if meta.get("home_team_api_id"):
+            team_af_ids.add(meta["home_team_api_id"])
+        if meta.get("away_team_api_id"):
+            team_af_ids.add(meta["away_team_api_id"])
+
+    if not team_af_ids:
+        console.print("  No team AF IDs — skipping transfers fetch")
+        return 0
+
+    # 7-day cache
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    try:
+        cached = execute_query(
+            "SELECT DISTINCT team_api_id FROM team_transfers WHERE team_api_id = ANY(%s) AND created_at > %s",
+            [list(team_af_ids), cutoff]
+        )
+        cached_ids = {r["team_api_id"] for r in cached}
+    except Exception:
+        cached_ids = set()
+
+    to_fetch = team_af_ids - cached_ids
+    console.print(f"  {len(team_af_ids)} teams, {len(cached_ids)} cached, {len(to_fetch)} to fetch")
+
+    stored = 0
+    for team_af_id in to_fetch:
+        try:
+            raw = get_transfers(team_af_id)
+            if not raw:
+                continue
+            rows = parse_transfers(raw, team_api_id=team_af_id)
+            stored += store_team_transfers(team_af_id, rows)
+        except Exception as e:
+            console.print(f"  [yellow]Transfers fetch failed for team {team_af_id}: {e}[/yellow]")
+
+    console.print(f"  {stored} transfer records stored across {len(to_fetch)} teams")
+    return stored
+
+
 def run_enrichment(target_date: str = None, components: set = None):
     """Run enrichment pipeline. Callable by scheduler or CLI."""
     target_date = target_date or date.today().isoformat()
@@ -446,6 +563,12 @@ def run_enrichment(target_date: str = None, components: set = None):
 
         if "venues" in components:
             total_records += fetch_venues(fixture_meta)
+
+        if "sidelined" in components:
+            total_records += fetch_player_sidelined(fixture_meta)
+
+        if "transfers" in components:
+            total_records += fetch_transfers(fixture_meta)
 
         log_pipeline_complete(
             run_id,

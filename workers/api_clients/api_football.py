@@ -235,6 +235,32 @@ def get_fixture_by_id(fixture_id: int) -> dict | None:
     return results[0] if results else None
 
 
+def get_fixtures_batch(fixture_ids: list[int]) -> dict[int, dict]:
+    """
+    Batch-fetch up to 20 fixtures per API call using the ids param.
+    Each fixture object includes nested events, lineups, statistics, and players.
+    Returns {fixture_id: raw_fixture_dict} for all successfully fetched fixtures.
+
+    Replaces N individual /fixtures/statistics + /fixtures/events + /fixtures/players
+    calls with ceil(N/20) combined calls — ~75% fewer API quota units on busy days.
+    """
+    result: dict[int, dict] = {}
+    chunk_size = 20
+    for i in range(0, len(fixture_ids), chunk_size):
+        chunk = fixture_ids[i : i + chunk_size]
+        ids_param = "-".join(str(fid) for fid in chunk)
+        try:
+            data = _get("fixtures", {"ids": ids_param})
+            for fixture in data.get("response", []):
+                fid = fixture.get("fixture", {}).get("id")
+                if fid:
+                    result[fid] = fixture
+        except Exception as e:
+            import logging
+            logging.warning(f"get_fixtures_batch chunk {chunk}: {e}")
+    return result
+
+
 # ─── Results (for settlement) ────────────────────────────────────────────────
 
 def get_results_for_settlement(target_date: str = None) -> list[dict]:

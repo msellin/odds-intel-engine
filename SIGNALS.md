@@ -119,6 +119,8 @@ Data tier system:
 | Injury count away | `injury_count_away` | `match_signals` | Morning pipeline | ✅ Running |
 | Players out home | `players_out_home` | `match_signals` | Morning pipeline | ✅ Running |
 | Players out away | `players_out_away` | `match_signals` | Morning pipeline | ✅ Running |
+| Injury recurrence — home | `injury_recurrence_home` | `match_signals` | Morning pipeline (batch_write block 12) | ✅ Running (data from 2026-05-07) |
+| Injury recurrence — away | `injury_recurrence_away` | `match_signals` | Morning pipeline (batch_write block 12) | ✅ Running (data from 2026-05-07) |
 | Lineup confirmed | `lineup_confirmed` | `simulated_bets` | News checker | ✅ Running |
 | Lineup confidence | `lineup_confidence` | `simulated_bets` | News checker | ✅ Running |
 
@@ -151,6 +153,10 @@ Data tier system:
 | Pinnacle AH line move | `pinnacle_ah_line_move` | Morning pipeline (batch_write block 3d) | ✅ Running (data from 2026-05-07) |
 | AH bookmaker disagreement | `ah_bookmaker_disagreement` | Morning pipeline (batch_write block 3d) | ✅ Running (data from 2026-05-07) |
 | Pinnacle BTTS yes probability | `pinnacle_btts_yes_prob` | Morning pipeline (batch_write block 3e) | ✅ Running (data from 2026-05-07) |
+| H1 shot dominance — home | `h1_shot_dominance_home` | Morning pipeline (batch_write block 13) | ✅ Running (data from 2026-05-07) |
+| H1 shot dominance — away | `h1_shot_dominance_away` | Morning pipeline (batch_write block 13) | ✅ Running (data from 2026-05-07) |
+| Squad disruption — home | `squad_disruption_home` | Morning pipeline (batch_write block 14) | ✅ Running (data from 2026-05-07) |
+| Squad disruption — away | `squad_disruption_away` | Morning pipeline (batch_write block 14) | ✅ Running (data from 2026-05-07) |
 
 **Not yet built:**
 - `is_derby` / `travel_distance` — needs team location data

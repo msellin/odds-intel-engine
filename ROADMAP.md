@@ -139,7 +139,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | 24 paper trading bots | ✅ 16 pre-match (since 2026-04-27, incl. bot_proven_leagues) + 8 in-play (since 2026-05-06, strategies A/A2/B/C/C_home/D/E/F) |
 | Pinnacle signals | ✅ PIN-1 through PIN-5: implied probs (all markets), line movement, veto gate, Pinnacle-anchored CLV |
 | Calibration improvements | ✅ Pinnacle shrinkage anchor, odds-conditional alpha, sharp consensus gate, draw inflation, dynamic DC rho |
-| match_signals (EAV signal store) | ✅ 25+ signals per match (incl. sharp_consensus, Pinnacle implied, Pinnacle line move) |
+| match_signals (EAV signal store) | ✅ 30+ signals per match (incl. sharp_consensus, Pinnacle implied, Pinnacle line move, injury_recurrence, h1_shot_dominance, squad_disruption) |
 | match_feature_vectors (ML training table) | ✅ Nightly ETL, wide table |
 | pseudo_clv | ✅ All ~280 matches/day |
 | Platt scaling (post-hoc calibration) | ✅ 2-stage: tier shrinkage → Platt sigmoid. Weekly refit (Wed+Sun) |
