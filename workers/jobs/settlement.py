@@ -697,13 +697,15 @@ def run_settlement():
     except Exception as e:
         console.print(f"  [yellow]Post-match enrichment error: {e}[/yellow]")
 
-    # 11.4: Daily post-mortem LLM analysis (only if bets were settled)
-    if pending:
-        console.print("\n[cyan]Running AI post-mortem analysis...[/cyan]")
-        try:
-            run_post_mortem()
-        except Exception as e:
-            console.print(f"  [yellow]Post-mortem error (non-critical): {e}[/yellow]")
+    # 11.4: Daily post-mortem LLM analysis
+    # Note: run unconditionally — settle_ready_matches() settles bets every 15min
+    # so by 21:00 UTC pending is often empty, but there are still losses to analyse.
+    # run_post_mortem() has its own dedup guard (skips if already ran today).
+    console.print("\n[cyan]Running AI post-mortem analysis...[/cyan]")
+    try:
+        run_post_mortem()
+    except Exception as e:
+        console.print(f"  [yellow]Post-mortem error (non-critical): {e}[/yellow]")
 
     # Write pre-computed stats to dashboard_cache for fast frontend loads
     write_dashboard_cache()
