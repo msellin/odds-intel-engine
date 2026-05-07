@@ -372,6 +372,24 @@ def _handle_signal(signum, frame):
 
 # ── Main ───────────────────────────────────────────────────────────────────
 
+def _cleanup_stale_runs():
+    """Mark orphaned 'running' records as failed on startup — left by previous Railway kill/restart."""
+    try:
+        from workers.api_clients.db import execute_write
+        execute_write(
+            """UPDATE pipeline_runs
+               SET status = 'failed',
+                   completed_at = NOW(),
+                   error_message = 'killed — scheduler restarted'
+               WHERE status = 'running'
+                 AND started_at < NOW() - INTERVAL '30 minutes'""",
+            []
+        )
+        console.print(f"[cyan]Startup cleanup: marked orphaned running jobs as failed[/cyan]")
+    except Exception as e:
+        console.print(f"[yellow]Startup cleanup failed (non-fatal): {e}[/yellow]")
+
+
 def main():
     global _shutdown_requested
 
@@ -386,6 +404,9 @@ def main():
 
     # Start health endpoint FIRST — must respond before Railway's health check window
     _start_health_server()
+
+    # Clean up orphaned "running" records from previous process (Railway kill/restart)
+    _cleanup_stale_runs()
 
     # Sync budget in background (API call can take 2-5s, don't block startup)
     def _initial_budget_sync():
