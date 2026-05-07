@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-07 — AF data expansion: AF-BATCH (batch fixture enrichment in settlement), AF-HALF-TIME-SIGNALS (h1 tendency signals + frontend H1 stats rows), AF-SIDELINED (career injury history → injury_recurrence signals + match detail badge), AF-TRANSFERS (60-day squad disruption signal). Migration 068 adds indexes + ops tracking columns. H2H-SPLITS + AH-SIGNALS done earlier today.
+> Last updated: 2026-05-07 — Added 17 tasks from 4-AI signal review (DOUBTFUL-SIGNAL, SHARP-DRAW-AWAY, LEAGUE-GOALS-DIST, H2H-GATE, INJURY-UNCERTAINTY, ODDS-VOL-AUDIT, TURF-FAMILIARITY, IMPORTANCE-GAMES-REM, REST-NONLINEAR, FORM-ELO-RESIDUAL, LEAGUE-ELO-VAR, LEAGUE-SEASON-PHASE, LEAGUE-DRAW-YTD, BOOKMAKER-COUNT, LINE-VELOCITY, LEAGUE-CLV-EFFICIENCY, SUSPENSION-SIGNAL, CUP-ROTATION, GOALKEEPER-SIGNAL, META-FEATURE-DESIGN, LONGSHOT-GEO-AUDIT). Earlier: AF data expansion (AF-BATCH, AF-HALF-TIME-SIGNALS, AF-SIDELINED, AF-TRANSFERS), H2H-SPLITS, AH-SIGNALS.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -486,6 +486,59 @@ Yellow warning if today's value < 7-day average × 0.60.
 | ID | Task | Effort | ☑ | Ready? | Notes |
 |----|------|--------|----|--------|-------|
 | ADMIN-OPS-DASH | `ops_snapshots` table + `write_ops_snapshot()` writer + `/admin/ops` dashboard | 1.5 days | ✅ Done 2026-05-07 | ✅ Ready | All 3 phases complete. Engine hooks, migration 059+060, /admin/ops frontend with 10 panels. |
+
+---
+
+## Signal Improvements — 4-AI External Review (2026-05-07)
+
+> Sourced from 4-model AI review of MODEL_WHITEPAPER.md + SIGNALS.md. Ordered by effort and when unblocked.
+> Full synthesis in conversation history (2026-05-07). Items below are all net-new tasks; items already in other sections are cross-referenced.
+
+### Group 1 — Quick wins (do now, data already exists, no new API calls)
+
+| ID | Task | Effort | ☑ | Ready? | Notes |
+|----|------|--------|----|--------|-------|
+| DOUBTFUL-SIGNAL | Wire `players_doubtful_home/away` from `match_injuries`. Status "Doubtful" is already stored in `match_injuries` but never aggregated into `match_signals`. 4/4 AIs flagged this — market partially but not fully prices "doubtful" status known 24-48h before kickoff. The gap between doubtful and confirmed-out is where line moves happen. | 30 min | ⬜ | ✅ Ready | Add to `batch_write_morning_signals()` alongside existing injury_count block. Filter `match_injuries.status = 'Doubtful'` GROUP BY match_id, home/away side. Zero new API cost. |
+| SHARP-DRAW-AWAY | Add `sharp_consensus_draw` and `sharp_consensus_away` to `batch_write_morning_signals`. Currently only `sharp_consensus_home` exists — alignment filter and meta-model have a quality gap for draw/away picks (4 dimensions vs 6 for home). Bookmaker sharpness tier CSV is already in place. | 1h | ⬜ | ✅ Ready | Two more aggregations in the same block 3a pipeline query. Same sharp/soft split logic, different selection filter. |
+| LEAGUE-GOALS-DIST | Add `league_over25_pct` and `league_btts_pct` to morning signals. We have `league_avg_goals` but not the distribution shape — two leagues averaging 2.5 goals can have 44% vs 58% over-2.5 rate. Direct base rate for O/U and BTTS bots. 4/4 AIs flagged this gap. | 1h | ⬜ | ✅ Ready | Simple query from same 200-match window used for `league_home_win_pct`. Already have `finished_home_score + finished_away_score` data. |
+| H2H-GATE | Apply small-sample gate to all H2H signals. Current `h2h_win_pct` for teams with only 3 meetings returns 0%, 33%, 67%, or 100% — none of which is meaningful. Fix: multiply H2H signals by `LEAST(h2h_total / 10.0, 1.0)` weight before writing, so 3 meetings contributes 30% weight and 10+ meetings contributes 100%. | 30 min | ⬜ | ✅ Ready | Affects `h2h_win_pct`, `h2h_avg_goal_diff`, `h2h_recency_premium` in `batch_write_morning_signals` block 2 + 2b. |
+| INJURY-UNCERTAINTY | Add `injury_uncertainty_home/away` = `injury_count − players_out`. The difference between total injuries listed and confirmed-out represents ambiguity the market cannot fully price. Acts as an "uncertainty overhang" signal distinct from the confirmed-out count. | 30 min | ⬜ | ✅ Ready | Computed from signals already written in same pipeline block. No new query. |
+| ODDS-VOL-AUDIT | Audit `odds_volatility` for lookahead leakage. Verify the 24h window used to compute std of implied prob does not include any movement that post-dates our bet placement time. If the window rolls forward to include future snapshots, the signal is contaminated. | 30 min | ⬜ | ✅ Ready | Read `batch_write_morning_signals` block for odds_volatility timestamp filter. Confirm window is `< now()` at pipeline run time, not `< kickoff`. |
+
+### Group 2 — Signal refinements (this week, computation changes to existing signals)
+
+| ID | Task | Effort | ☑ | Ready? | Notes |
+|----|------|--------|----|--------|-------|
+| TURF-FAMILIARITY | Add `away_team_turf_games_ytd` companion to `venue_surface_artificial`. The turf edge is a visitor unfamiliarity effect, not a "game is on turf" effect. Two Finnish teams on turf = no edge. An English team visiting a Swedish team on turf in April = real edge. This companion signal (count of away games on artificial turf this season for the away team) transforms the signal from context to actual edge quantification. | 2h | ⬜ | ✅ Ready | Requires querying `venues.surface` joined to historical `matches` for the away team. Venues table exists (migration 065). |
+| IMPORTANCE-GAMES-REM | Normalize `fixture_importance` by games remaining. Current formula compresses urgency mid-season: 6 points from relegation with 20 games left = background noise; same gap with 5 games = crisis. Fix: `urgency = points_gap / (games_remaining * 3)` — values >1.0 = mathematically dire, 0.7-1.0 = high urgency. Games remaining available from fixtures metadata (round number + total rounds per league). | 1h | ⬜ | ✅ Ready | Update `batch_write_morning_signals` block 7 (fixture_importance). |
+| REST-NONLINEAR | Log-transform or bucket `rest_days_home/away`. The effect is non-linear: 2→3 days rest is massive, 10→11 days is zero. Current linear storage doesn't encode this. Either transform to `log(rest_days + 1)` or use 3 buckets: short (≤3d), normal (4-7d), long (8d+). | 30 min | ⬜ | ✅ Ready | Update signal computation and `match_feature_vectors` ETL. Keep raw days stored for reference. |
+| FORM-ELO-RESIDUAL | Add `form_vs_elo_expectation_home/away` residual signal. Instead of raw `form_ppg`, compute how much the team is over/underperforming what their ELO rating predicts. Strips out baseline quality already priced by the market. A bad team on a hot streak and a good team playing normally are conflated by raw form_ppg; the residual separates them. 3/4 AIs recommended this. | 2h | ⬜ | ✅ Ready | Requires loading team ELO + expected PPG from ELO rating, then comparing to actual recent PPG. Both datasets already in DB. |
+
+### Group 3 — New signals (next 1-2 weeks, new queries but no new API endpoints)
+
+| ID | Task | Effort | ☑ | Ready? | Notes |
+|----|------|--------|----|--------|-------|
+| LEAGUE-ELO-VAR | Add `league_elo_variance` — std dev of ELO ratings within the league. High-variance league (ELO range 400+): favorites reliable, upsets rare, draws uncommon. Low-variance (parity, range <200): home advantage is dominant factor. Helps calibrate how much weight to place on `elo_diff` per league. Computable from ELO table filtered by league. 3/4 AIs recommended this. | 1h | ⬜ | ✅ Ready | Query ELO table GROUP BY league. Add to morning pipeline alongside other league-meta signals. |
+| LEAGUE-SEASON-PHASE | Add `league_season_phase` — `games_played / total_games_in_season` normalized 0.0 (start) → 1.0 (final round). Draw rates, home win rates, and result predictability are non-stationary: early season = high uncertainty (new signings, fitness), mid = most predictable, late = urgency volatility. One field addition using fixtures metadata (round number). | 1h | ⬜ | ✅ Ready | `total_games` from league config or inferred from max round seen per league per season. |
+| LEAGUE-DRAW-YTD | Add `league_draw_ytd` — season-specific draw rate for the current season only (faster-adapting than 200-match rolling `league_draw_pct` which spans multiple seasons). Some seasons have anomalously high/low draw rates. More relevant for BTTS/O/U bots where base rate matters. | 1h | ⬜ | ✅ Ready | Filter existing `league_draw_pct` query to `season = current_season` only. Run alongside other league-meta signals. |
+| BOOKMAKER-COUNT | Add `bookmaker_count_active` — count of bookmakers with non-null odds for each match in the latest odds snapshot. Low count = thin market = inefficiency persists longer. Directly computable from `odds_snapshots`. Acts as liquidity proxy without any external data. 2/4 AIs flagged this. | 1h | ⬜ | ✅ Ready | COUNT(DISTINCT bookmaker) WHERE match_id = X AND created_at > T-2h in batch query. |
+| LINE-VELOCITY | Add line movement velocity and shape features. Not just how much Pinnacle moved, but how fast and whether it reversed. Fast early move = sharp positioning; slow drift = retail noise; reversal = conflicting information. Computable from existing timestamped `odds_snapshots`. 1/4 AIs flagged this as potentially top-3 Stage 3 feature family. | 2h | ⬜ | ✅ Ready | Requires multi-snapshot query per match: slope of implied prob over time windows (T-12h to T-6h, T-6h to T-2h, reversal detection). |
+| LEAGUE-CLV-EFFICIENCY | Add `league_clv_efficiency` — historical average pseudo-CLV beatability per league, computed from our own `pseudo_clv` data. Which leagues have we historically beaten closing line in most often? This formalizes the Scotland League Two discovery: some leagues are structurally more beatable. Run weekly, stored as league-level signal. | 2h | ⬜ | ⏳ Need ~60d pseudo_clv data (~May 17+) | GROUP BY league from `matches.pseudo_clv_home/draw/away`. Requires enough data to be meaningful (>20 matches per league). |
+| SUSPENSION-SIGNAL | Add `suspension_risk_home/away` from accumulated yellow card counts in `match_events`. A player at 4 yellows in a 5-yellow ban competition is a real pre-match signal. Coach may rest them preemptively (rotation) or play them with risk. Market must price a probability; we can look up the count. | 2h | ⬜ | ⏳ Need `match_events` yellow card counts per player + league ban thresholds config | Requires per-player card accumulation across a season (not just this match). League ban thresholds vary (5 in most, 3 in some cups). |
+
+### Group 4 — Stage 3 meta-model prep (when ready to train, ~mid-May)
+
+| ID | Task | Effort | ☑ | Ready? | Notes |
+|----|------|--------|----|--------|-------|
+| META-FEATURE-DESIGN | Finalize Stage 3 feature vector. Cap at 12-15 features (overfitting risk: 3000 rows × 40 features = guaranteed overfit with logistic regression). Final set per 4-AI review: `edge` (ensemble − pinnacle_implied), `odds_at_pick`, `model_disagreement`, `bookmaker_disagreement`, `sharp_consensus_home`, `pinnacle_line_move_home`, `pinnacle_ah_line_move` (cross-market confirmation), `odds_volatility`, `news_impact_score`, `league_tier`, `time_to_kickoff`, `importance_diff` (test), `venue_surface_artificial` (test). Drop all quality proxies (ELO, form, position). | 1h | ⬜ | ⏳ ~mid-May (need 3000+ match_feature_vectors rows) | Document final list in MODEL_WHITEPAPER.md before training. |
+| LONGSHOT-GEO-AUDIT | Audit if 0.30-0.40 probability bin failures (42% predicted, 13% actual win rate) are geographically concentrated. If the miscalibration is mostly South American or Eastern European leagues, it may reflect structural home advantage inflation in those regions, not a global model flaw. | 2h | ⬜ | ✅ Ready | Query settled bets JOIN matches WHERE calibrated_prob BETWEEN 0.30 AND 0.40, GROUP BY league/region. May explain what Platt cannot fix. |
+
+### Group 5 — Deferred (need player-level data from AF-PLAYER-RATINGS first)
+
+| ID | Task | Effort | ☑ | Ready? | Notes |
+|----|------|--------|----|--------|-------|
+| CUP-ROTATION | Add `rotation_risk_home/away` flag. When a team has a high-stakes fixture (cup semi, European game) within 72h of this match, they heavily rotate. Current form data treats cup wins against lower opposition the same as league wins. `rotation_risk_home/away` = (fixture within 72h AND competition tier of that fixture > current fixture tier). | 2h | ⬜ | ⏳ Needs fixture calendar with competition tier data | Requires cross-referencing fixtures across competitions per team. AF has competition type on fixtures. |
+| GOALKEEPER-SIGNAL | Add `goalkeeper_absence_flag` — binary flag when the starting goalkeeper is absent (confirmed injured or suspended). Goalkeeper absences are massively underpriced in lower leagues, especially: backup keeper starts, youth keeper debut, emergency keeper. 1/4 AIs ranked this the highest-value specific missing signal after player weighting. | 2h | ⬜ | ⏳ Needs AF-PLAYER-RATINGS + lineup data | Requires confirmed starting lineups (T-75min) + GK position identification. When available, flag per side. |
 
 ---
 
