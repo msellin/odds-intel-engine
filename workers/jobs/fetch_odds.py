@@ -143,6 +143,9 @@ def run_odds(target_date: str = None, mark_closing: bool = False, **_kwargs):
         log_pipeline_complete(run_id, records_count=total)
         console.print(f"\n[bold green]Done. {total} matches with odds stored.[/bold green]")
 
+        from workers.api_clients.supabase_client import write_ops_snapshot
+        write_ops_snapshot(target_date)
+
     except Exception as e:
         console.print(f"\n[red]Failed: {e}[/red]")
         if run_id:

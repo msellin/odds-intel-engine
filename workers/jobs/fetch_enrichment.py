@@ -333,6 +333,9 @@ def run_enrichment(target_date: str = None, components: set = None):
 
         console.print(f"\n[bold green]Done. {total_records} records stored.[/bold green]")
 
+        from workers.api_clients.supabase_client import write_ops_snapshot
+        write_ops_snapshot(target_date)
+
     except Exception as e:
         console.print(f"\n[red]Enrichment failed: {e}[/red]")
         if run_id:

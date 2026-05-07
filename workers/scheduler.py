@@ -317,6 +317,12 @@ def job_budget_sync():
     budget.sync_with_server()
 
 
+def job_ops_snapshot():
+    """Hourly fallback ops snapshot — captures state if no pipeline ran this hour."""
+    from workers.api_clients.supabase_client import write_ops_snapshot
+    write_ops_snapshot()
+
+
 # ── Health endpoint ────────────────────────────────────────────────────────
 
 class HealthHandler(BaseHTTPRequestHandler):
@@ -511,6 +517,10 @@ def main():
     # Budget sync: hourly
     scheduler.add_job(job_budget_sync, CronTrigger(minute=0),
                       id="budget_sync", name="Budget Sync")
+
+    # Ops snapshot fallback: every hour at :30 — captures state if no pipeline ran
+    scheduler.add_job(job_ops_snapshot, CronTrigger(minute=30),
+                      id="ops_snapshot", name="Ops Snapshot :30")
 
     # ── Start scheduler ────────────────────────────────────────────────
     scheduler.start()

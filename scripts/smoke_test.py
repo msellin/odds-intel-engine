@@ -258,6 +258,12 @@ def _():
     from workers.api_clients.supabase_client import batch_write_morning_signals  # noqa: F401
 
 
+@test("write_ops_snapshot — runs without error")
+def _():
+    from workers.api_clients.supabase_client import write_ops_snapshot
+    write_ops_snapshot()  # Must not raise; logs warning on failure instead
+
+
 @test("live_poller — imports without error")
 def _():
     from workers.live_poller import LivePoller  # noqa: F401

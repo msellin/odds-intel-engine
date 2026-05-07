@@ -1843,6 +1843,9 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
     # 11.6: Cross-match correlation check — warn about concentrated exposure
     _check_exposure_concentration()
 
+    from workers.api_clients.supabase_client import write_ops_snapshot
+    write_ops_snapshot(today_str)
+
 
 def _check_exposure_concentration():
     """

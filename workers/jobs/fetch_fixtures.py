@@ -125,6 +125,9 @@ def run_fixtures(target_date: str = None, refresh_leagues: bool = False):
 
         console.print(f"\n[bold green]Done. {stored} fixtures stored.[/bold green]")
 
+        from workers.api_clients.supabase_client import write_ops_snapshot
+        write_ops_snapshot(target_date)
+
     except Exception as e:
         console.print(f"\n[red]Pipeline failed: {e}[/red]")
         if run_id:

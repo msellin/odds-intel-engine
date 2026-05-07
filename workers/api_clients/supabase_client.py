@@ -3508,6 +3508,268 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
         return 0
 
 
+# ============================================================
+# OPS SNAPSHOT — Operational Health Dashboard
+# ============================================================
+
+def write_ops_snapshot(snapshot_date: str | None = None) -> None:
+    """
+    Compute ~40 operational counters for today and append one row to ops_snapshots.
+    Called at the end of each major pipeline job + hourly fallback cron.
+    Dashboard reads: WHERE snapshot_date = today ORDER BY created_at DESC LIMIT 1.
+    """
+    from datetime import date as _date
+    today = snapshot_date or _date.today().isoformat()
+
+    try:
+        # ① Fixtures & coverage
+        r = execute_query(
+            """
+            SELECT
+              COUNT(*)                                        AS matches_today,
+              COUNT(*) FILTER (WHERE status = 'postponed')   AS postponed
+            FROM matches WHERE date = %s
+            """, [today])
+        matches_today       = r[0]["matches_today"] if r else 0
+        matches_missing_grade = None  # no grade column yet
+        matches_postponed   = r[0]["postponed"] if r else 0
+
+        r = execute_query(
+            """
+            SELECT
+              COUNT(DISTINCT o.match_id) AS with_odds,
+              COUNT(DISTINCT CASE WHEN o.bookmaker = 'Pinnacle' THEN o.match_id END) AS with_pinnacle,
+              COUNT(DISTINCT CASE WHEN o.bookmaker != 'Pinnacle' AND NOT EXISTS (
+                SELECT 1 FROM odds_snapshots o2
+                WHERE o2.match_id = o.match_id AND o2.bookmaker = 'Pinnacle'
+              ) THEN o.match_id END) AS without_pinnacle,
+              COUNT(*)                   AS snapshots_today,
+              COUNT(DISTINCT o.bookmaker) AS distinct_bm
+            FROM odds_snapshots o
+            JOIN matches m ON m.id = o.match_id
+            WHERE m.date = %s
+            """, [today])
+        matches_with_odds       = r[0]["with_odds"] if r else 0
+        matches_with_pinnacle   = r[0]["with_pinnacle"] if r else 0
+        matches_without_pinnacle = r[0]["without_pinnacle"] if r else 0
+        odds_snapshots_today    = r[0]["snapshots_today"] if r else 0
+        distinct_bookmakers     = r[0]["distinct_bm"] if r else 0
+
+        r = execute_query(
+            "SELECT COUNT(DISTINCT match_id) AS n FROM predictions WHERE source='af' AND created_at::date = %s",
+            [today])
+        matches_with_predictions = r[0]["n"] if r else 0
+
+        r = execute_query(
+            "SELECT COUNT(DISTINCT match_id) AS n FROM match_signals WHERE created_at::date = %s",
+            [today])
+        matches_with_signals = r[0]["n"] if r else 0
+
+        r = execute_query(
+            "SELECT COUNT(DISTINCT match_id) AS n FROM match_feature_vectors WHERE match_date = %s",
+            [today])
+        matches_with_fvectors = r[0]["n"] if r else 0
+
+        # ② Betting & bots
+        r = execute_query(
+            """
+            SELECT
+              COUNT(*)                                                              AS placed_today,
+              COUNT(*) FILTER (WHERE result = 'pending')                           AS pending_total,
+              COUNT(*) FILTER (WHERE result IN ('won','lost') AND updated_at::date = %s) AS settled_today,
+              SUM(CASE WHEN result='won' AND updated_at::date = %s THEN pnl
+                       WHEN result='lost' AND updated_at::date = %s THEN pnl
+                       ELSE 0 END)                                                AS pnl_today,
+              COUNT(*) FILTER (WHERE bot_id IN (
+                SELECT id FROM bots WHERE name LIKE 'bot_inplay%%'
+              ) AND placed_at::date = %s)                                          AS inplay_today,
+              COUNT(DISTINCT bot_id) FILTER (WHERE placed_at::date = %s)          AS active_bots
+            FROM simulated_bets
+            WHERE placed_at::date = %s OR result IN ('won','lost')
+            """, [today, today, today, today, today, today])
+        bets_placed_today  = r[0]["placed_today"] if r else 0
+        bets_pending       = r[0]["pending_total"] if r else 0
+        bets_settled_today = r[0]["settled_today"] if r else 0
+        pnl_today          = float(r[0]["pnl_today"] or 0) if r else 0.0
+        bets_inplay_today  = r[0]["inplay_today"] if r else 0
+        active_bots        = r[0]["active_bots"] if r else 0
+
+        total_bots = execute_query("SELECT COUNT(*) AS n FROM bots WHERE is_active = true")
+        total_bots_n = total_bots[0]["n"] if total_bots else 17
+        silent_bots = max(0, total_bots_n - active_bots)
+
+        r = execute_query(
+            """
+            SELECT COUNT(*) AS n FROM (
+              SELECT bot_id, match_id, market, selection
+              FROM simulated_bets WHERE placed_at::date = %s
+              GROUP BY 1,2,3,4 HAVING COUNT(*) > 1
+            ) t
+            """, [today])
+        duplicate_bets = r[0]["n"] if r else 0
+
+        # ③ Live / in-play
+        r = execute_query(
+            """
+            SELECT
+              COUNT(*)                                              AS snapshots_today,
+              COUNT(*) FILTER (WHERE home_xg IS NOT NULL)          AS with_xg,
+              COUNT(*) FILTER (WHERE ou_over_25_odds IS NOT NULL)  AS with_live_odds
+            FROM live_match_snapshots WHERE created_at::date = %s
+            """, [today])
+        live_snapshots_today     = r[0]["snapshots_today"] if r else 0
+        snapshots_with_xg        = r[0]["with_xg"] if r else 0
+        snapshots_with_live_odds = r[0]["with_live_odds"] if r else 0
+
+        # ④ Post-match / settlement
+        r = execute_query(
+            "SELECT COUNT(*) AS n FROM matches WHERE status = 'finished' AND date = %s", [today])
+        matches_finished_today = r[0]["n"] if r else 0
+
+        r = execute_query(
+            "SELECT COUNT(*) AS n FROM model_evaluations WHERE market = 'post_mortem' AND date = %s",
+            [today])
+        post_mortem_ran_today = (r[0]["n"] > 0) if r else False
+
+        r = execute_query(
+            "SELECT COUNT(*) AS n FROM match_feature_vectors WHERE captured_at::date = %s", [today])
+        feature_vectors_today = r[0]["n"] if r else 0
+
+        r = execute_query(
+            "SELECT COUNT(*) AS n FROM team_elo_daily WHERE updated_at::date = %s", [today])
+        elo_updates_today = r[0]["n"] if r else 0
+
+        # ⑤ Enrichment quality
+        r = execute_query(
+            """
+            SELECT
+              COUNT(DISTINCT h.match_id) AS with_h2h
+            FROM matches m
+            LEFT JOIN match_h2h h ON h.match_id = m.id
+            WHERE m.date = %s AND h.match_id IS NOT NULL
+            """, [today])
+        matches_with_h2h = r[0]["with_h2h"] if r else 0
+
+        r = execute_query(
+            """
+            SELECT COUNT(DISTINCT match_id) AS n FROM match_injuries
+            WHERE created_at::date = %s
+            """, [today])
+        matches_with_injuries = r[0]["n"] if r else 0
+
+        r = execute_query(
+            """
+            SELECT COUNT(DISTINCT l.match_id) AS n
+            FROM match_lineups l
+            JOIN matches m ON m.id = l.match_id
+            WHERE m.date = %s
+            """, [today])
+        matches_with_lineups = r[0]["n"] if r else 0
+
+        # ⑥ Email & alerts
+        r = execute_query(
+            "SELECT COUNT(*) AS n FROM email_digest_log WHERE sent_at::date = %s", [today])
+        digests_sent_today = r[0]["n"] if r else 0
+
+        r = execute_query(
+            "SELECT COUNT(*) AS n FROM value_bet_alert_log WHERE alert_date = %s", [today])
+        value_bet_alerts_today = r[0]["n"] if r else 0
+
+        r = execute_query(
+            "SELECT COUNT(*) AS n FROM match_previews WHERE created_at::date = %s", [today])
+        previews_generated_today = r[0]["n"] if r else 0
+
+        r = execute_query(
+            """SELECT COUNT(*) AS n FROM pipeline_runs
+               WHERE job_name = 'news_checker' AND status = 'error' AND started_at::date = %s""",
+            [today])
+        news_checker_errors_today = r[0]["n"] if r else 0
+
+        r = execute_query(
+            "SELECT COUNT(*) AS n FROM watchlist_alert_log WHERE sent_at::date = %s", [today])
+        watchlist_alerts_today = r[0]["n"] if r else 0
+
+        # ⑦ Backfill
+        r = execute_query("SELECT COUNT(DISTINCT match_id) AS n FROM match_stats")
+        backfill_total_done = r[0]["n"] if r else 0
+
+        r = execute_query(
+            """SELECT MAX(started_at) AS t FROM pipeline_runs
+               WHERE job_name LIKE '%backfill%' OR job_name = 'hist_backfill'""")
+        backfill_last_run = r[0]["t"] if r else None
+
+        # ⑧ Users
+        r = execute_query(
+            """
+            SELECT
+              COUNT(*)                                              AS total,
+              COUNT(*) FILTER (WHERE tier = 'pro')                 AS pro,
+              COUNT(*) FILTER (WHERE tier = 'elite')               AS elite,
+              COUNT(*) FILTER (WHERE created_at::date = %s)        AS new_today
+            FROM profiles
+            """, [today])
+        total_users       = r[0]["total"] if r else 0
+        pro_users         = r[0]["pro"] if r else 0
+        elite_users       = r[0]["elite"] if r else 0
+        new_signups_today = r[0]["new_today"] if r else 0
+
+        # Write snapshot
+        execute_write(
+            """
+            INSERT INTO ops_snapshots (
+              snapshot_date,
+              matches_today, matches_with_odds, matches_with_pinnacle,
+              matches_with_predictions, matches_with_signals, matches_with_fvectors,
+              matches_missing_grade, matches_postponed_today,
+              odds_snapshots_today, distinct_bookmakers, matches_without_pinnacle,
+              bets_placed_today, bets_pending, bets_settled_today, pnl_today,
+              bets_inplay_today, active_bots, silent_bots, duplicate_bets,
+              live_snapshots_today, snapshots_with_xg, snapshots_with_live_odds,
+              matches_finished_today, post_mortem_ran_today, feature_vectors_today, elo_updates_today,
+              matches_with_h2h, matches_with_injuries, matches_with_lineups,
+              digests_sent_today, value_bet_alerts_today, previews_generated_today,
+              news_checker_errors_today, watchlist_alerts_today,
+              backfill_total_done, backfill_last_run,
+              af_calls_today, af_budget_remaining,
+              total_users, pro_users, elite_users, new_signups_today
+            ) VALUES (
+              %s,
+              %s, %s, %s, %s, %s, %s, %s, %s,
+              %s, %s, %s,
+              %s, %s, %s, %s, %s, %s, %s, %s,
+              %s, %s, %s,
+              %s, %s, %s, %s,
+              %s, %s, %s,
+              %s, %s, %s, %s, %s,
+              %s, %s,
+              %s, %s,
+              %s, %s, %s, %s
+            )
+            """,
+            [
+                today,
+                matches_today, matches_with_odds, matches_with_pinnacle,
+                matches_with_predictions, matches_with_signals, matches_with_fvectors,
+                matches_missing_grade, matches_postponed,
+                odds_snapshots_today, distinct_bookmakers, matches_without_pinnacle,
+                bets_placed_today, bets_pending, bets_settled_today, pnl_today,
+                bets_inplay_today, active_bots, silent_bots, duplicate_bets,
+                live_snapshots_today, snapshots_with_xg, snapshots_with_live_odds,
+                matches_finished_today, post_mortem_ran_today, feature_vectors_today, elo_updates_today,
+                matches_with_h2h, matches_with_injuries, matches_with_lineups,
+                digests_sent_today, value_bet_alerts_today, previews_generated_today,
+                news_checker_errors_today, watchlist_alerts_today,
+                backfill_total_done, backfill_last_run,
+                None, None,  # af_calls_today, af_budget_remaining — Phase 3
+                total_users, pro_users, elite_users, new_signups_today,
+            ]
+        )
+        console.print(f"[dim]ops_snapshot written for {today}[/dim]")
+
+    except Exception as e:
+        console.print(f"[yellow]write_ops_snapshot failed: {e}[/yellow]")
+
+
 if __name__ == "__main__":
     from workers.api_clients.db import execute_query as eq
 

@@ -726,6 +726,9 @@ def run_settlement():
 
     console.print("\n[bold green]Core settlement complete.[/bold green]")
 
+    from workers.api_clients.supabase_client import write_ops_snapshot
+    write_ops_snapshot(today)
+
 
 def _compute_pseudo_clv_batched(fetch_dates: list[str]) -> tuple[int, int]:
     """
