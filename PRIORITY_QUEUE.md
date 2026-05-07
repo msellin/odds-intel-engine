@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-07 — parse_live_odds fixed (Fulltime Result market name + handicap O/U format). Smoke tests expanded to 24 (2 new parse_live_odds unit tests). Live odds now parsed correctly — inplay bot will have real market data for the first time.
+> Last updated: 2026-05-07 — (1) db.py: `_reset_pool()` removed `closeall()` — was killing sibling APScheduler threads' connections causing `cursor already closed` InterfaceError at 15:00 UTC; added InterfaceError to all retry catch clauses. (2) ops dashboard: Live Tracker redesigned to show distinct game counts (not raw row counts); Bots section split pre-match vs inplay; bets_inplay_today LIKE fix (`bot_inplay%` → `inplay_%`); migration 063 adds 4 new ops_snapshots columns. (3) Matches page: grade filter A/B/C added (client-side, colour-coded).
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
