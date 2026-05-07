@@ -55,6 +55,8 @@ Data tier system:
 | CLV (soft-book closing line value) | `pseudo_clv_home/draw/away` on `matches`; `clv` on `simulated_bets` | Settlement | ✅ Running |
 | CLV — Pinnacle-anchored | `clv_pinnacle` on `simulated_bets` | Settlement (PIN-5) | ✅ Running |
 | Sharp consensus (home 1x2) | `sharp_consensus_home` | Morning pipeline | ✅ Running (P5.1) |
+| Sharp consensus (draw 1x2) | `sharp_consensus_draw` | Morning pipeline | ✅ Running (SHARP-DRAW-AWAY) |
+| Sharp consensus (away 1x2) | `sharp_consensus_away` | Morning pipeline | ✅ Running (SHARP-DRAW-AWAY) |
 | Pinnacle implied prob — home | `pinnacle_implied_home` | Morning pipeline | ✅ Running (PIN-1) |
 | Pinnacle implied prob — draw | `pinnacle_implied_draw` | Morning pipeline | ✅ Running (PIN-2) |
 | Pinnacle implied prob — away | `pinnacle_implied_away` | Morning pipeline | ✅ Running (PIN-2) |
@@ -64,7 +66,7 @@ Data tier system:
 | Pinnacle line move — draw | `pinnacle_line_move_draw` | Morning pipeline | ✅ Running (PIN-4) |
 | Pinnacle line move — away | `pinnacle_line_move_away` | Morning pipeline | ✅ Running (PIN-4) |
 
-> `sharp_consensus_home` = sharp bookmaker avg implied prob − soft bookmaker avg implied prob for home 1x2. Positive = sharp books back home more than soft books. Sharp tier: Pinnacle, Betfair Exchange, Marathon Bet. Soft tier: Bwin, Unibet, NordicBet, 10Bet, Sportingbet, Betway, 1xBet. Requires ≥1 sharp + ≥2 soft bookmakers present; otherwise skipped. Source: `data/bookmaker_sharpness_rankings.csv`.
+> `sharp_consensus_home/draw/away` = sharp bookmaker avg implied prob − soft bookmaker avg implied prob for each 1x2 selection. Positive = sharp books back that outcome more than soft books. Sharp tier: Pinnacle, Betfair Exchange, Marathon Bet. Soft tier: Bwin, Unibet, NordicBet, 10Bet, Sportingbet, Betway, 1xBet. Requires ≥1 sharp + ≥2 soft bookmakers present per selection; otherwise skipped. Source: `data/bookmaker_sharpness_rankings.csv`.
 >
 > `pinnacle_line_move_*` = current Pinnacle implied − opening Pinnacle implied. Positive = selection shortened (sharp money backing). Requires 2+ Pinnacle snapshots for the match; otherwise skipped.
 >
@@ -99,7 +101,7 @@ Data tier system:
 | Points to title away | `points_to_title_away` | Morning pipeline | ✅ Running |
 | Points to relegation home | `points_to_relegation_home` | Morning pipeline | ✅ Running |
 | Points to relegation away | `points_to_relegation_away` | Morning pipeline | ✅ Running |
-| H2H home win pct (last 10 meetings) | `h2h_win_pct` | Morning pipeline | ✅ Running |
+| H2H home win pct (last 10 meetings, gated by sample size) | `h2h_win_pct` | Morning pipeline | ✅ Running (H2H-GATE: × min(n/10, 1)) |
 | H2H total meetings | `h2h_total` | Morning pipeline | ✅ Running |
 | Rest days home | `rest_days_home` | Morning pipeline | ✅ Running |
 | Rest days away | `rest_days_away` | Morning pipeline | ✅ Running |
@@ -121,12 +123,15 @@ Data tier system:
 | Players out away | `players_out_away` | `match_signals` | Morning pipeline | ✅ Running |
 | Injury recurrence — home | `injury_recurrence_home` | `match_signals` | Morning pipeline (batch_write block 12) | ✅ Running (data from 2026-05-07) |
 | Injury recurrence — away | `injury_recurrence_away` | `match_signals` | Morning pipeline (batch_write block 12) | ✅ Running (data from 2026-05-07) |
+| Players doubtful — home | `players_doubtful_home` | `match_signals` | Morning pipeline (block 5) | ✅ Running (DOUBTFUL-SIGNAL 2026-05-07) |
+| Players doubtful — away | `players_doubtful_away` | `match_signals` | Morning pipeline (block 5) | ✅ Running (DOUBTFUL-SIGNAL 2026-05-07) |
+| Injury uncertainty — home | `injury_uncertainty_home` | `match_signals` | Morning pipeline (block 5) | ✅ Running (INJURY-UNCERTAINTY 2026-05-07) |
+| Injury uncertainty — away | `injury_uncertainty_away` | `match_signals` | Morning pipeline (block 5) | ✅ Running (INJURY-UNCERTAINTY 2026-05-07) |
 | Lineup confirmed | `lineup_confirmed` | `simulated_bets` | News checker | ✅ Running |
 | Lineup confidence | `lineup_confidence` | `simulated_bets` | News checker | ✅ Running |
 
 **Not yet built:**
 - `key_player_missing` — boolean, requires player importance weighting (P3.3, deprioritised)
-- `players_doubtful_home/away` — Questionable status tracked in match_injuries but not yet a signal
 
 ---
 
@@ -144,6 +149,8 @@ Data tier system:
 | League home win pct (last 200 finished) | `league_home_win_pct` | Morning pipeline | ✅ Running |
 | League draw pct | `league_draw_pct` | Morning pipeline | ✅ Running |
 | League avg goals | `league_avg_goals` | Morning pipeline | ✅ Running |
+| League over 2.5 pct (last 200 finished) | `league_over25_pct` | Morning pipeline | ✅ Running (LEAGUE-GOALS-DIST 2026-05-07) |
+| League BTTS pct (last 200 finished) | `league_btts_pct` | Morning pipeline | ✅ Running (LEAGUE-GOALS-DIST 2026-05-07) |
 | Manager change days — home | `manager_change_home_days` | Morning pipeline (batch_write block 3c) | ✅ Running |
 | Manager change days — away | `manager_change_away_days` | Morning pipeline (batch_write block 3c) | ✅ Running |
 | Venue artificial turf | `venue_surface_artificial` | Morning pipeline (batch_write block 11b) | ✅ Running |

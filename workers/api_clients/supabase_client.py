@@ -3051,6 +3051,10 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
 
     signals: list[tuple] = []  # (match_id, signal_name, value, group, source, captured_at)
 
+    # Sharp/soft bookmaker sets — used in blocks 3 and 3a
+    _SHARP_BMS = {"Pinnacle", "Betfair Exchange", "Betfair", "Marathon Bet"}
+    _SOFT_BMS = {"Bwin", "Unibet", "Sportingbet", "Betway", "NordicBet", "10Bet", "1xBet"}
+
     def add(mid: str, name: str, val, group: str, source: str):
         if val is None:
             return
@@ -3080,7 +3084,9 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
         ha = m.get("h2h_away_wins") or 0
         total = hw + hd + ha
         if total >= 3:
-            add(mid, "h2h_win_pct", round(hw / total, 4), "quality", "af")
+            # H2H-GATE: down-weight small samples — 3 meetings = 30%, 10+ = 100%
+            gate = min(total / 10.0, 1.0)
+            add(mid, "h2h_win_pct", round((hw / total) * gate, 4), "quality", "af")
             add(mid, "h2h_total", float(total), "quality", "af")
 
     # ── 2b. H2H-SPLITS: goal diff, recency premium from h2h_raw ─────────────
@@ -3118,15 +3124,17 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
                     wins.append(1 if ga > gf else 0)
 
             if goal_diffs:
+                gate = min(len(goal_diffs) / 10.0, 1.0)
                 avg_diff = sum(goal_diffs) / len(goal_diffs)
-                add(mid, "h2h_avg_goal_diff", round(avg_diff, 3), "quality", "af")
+                add(mid, "h2h_avg_goal_diff", round(avg_diff * gate, 3), "quality", "af")
 
             # Recency premium: win rate in last 3 vs overall
             # AF returns H2H newest-first, so [:3] = most recent
             if len(wins) >= 3:
+                gate = min(len(wins) / 10.0, 1.0)
                 recent_pct = sum(wins[:3]) / 3
                 overall_pct = sum(wins) / len(wins)
-                add(mid, "h2h_recency_premium", round(recent_pct - overall_pct, 4), "quality", "af")
+                add(mid, "h2h_recency_premium", round((recent_pct - overall_pct) * gate, 4), "quality", "af")
     except Exception:
         pass
 
@@ -3147,12 +3155,6 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
         snaps_by_match: dict[str, list] = defaultdict(list)
         for row in snap_rows:
             snaps_by_match[str(row["match_id"])].append(row)
-
-        # P5.1: Bookmaker sharpness classification
-        # Tier 1 = sharp (Pinnacle, exchange) — prices closest to true prob
-        # Tier 3 = soft (recreational) — higher margins, less informed
-        _SHARP_BMS = {"Pinnacle", "Betfair Exchange", "Betfair", "Marathon Bet"}
-        _SOFT_BMS = {"Bwin", "Unibet", "Sportingbet", "Betway", "NordicBet", "10Bet", "1xBet"}
 
         for mid, rows in snaps_by_match.items():
             # BDM-1: spread across bookmakers (latest per bm)
@@ -3198,6 +3200,37 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
                         add(mid, "odds_volatility", round(stdev(implied), 6), "market", "derived")
                     except Exception:
                         pass
+    except Exception:
+        pass
+
+    # ── 3a. SHARP-DRAW-AWAY: sharp_consensus_draw/away ──────────────────────────
+    # Same sharp/soft split as home but for draw and away 1x2 selections.
+    # Uses DISTINCT ON per bookmaker so only the latest snapshot per book is used.
+    try:
+        for _sel in ("draw", "away"):
+            _sel_snaps = execute_query(
+                """SELECT DISTINCT ON (match_id, bookmaker)
+                       match_id, bookmaker, odds
+                   FROM odds_snapshots
+                   WHERE match_id = ANY(%s::uuid[])
+                     AND market = '1x2' AND selection = %s
+                     AND bookmaker IS NOT NULL AND is_live = false
+                   ORDER BY match_id, bookmaker, timestamp DESC""",
+                (match_ids, _sel),
+            )
+            _by_match_sel: dict[str, dict[str, float]] = defaultdict(dict)
+            for _row in _sel_snaps:
+                _bk = _row.get("bookmaker")
+                if _bk and float(_row["odds"]) > 1.0:
+                    _by_match_sel[str(_row["match_id"])][_bk] = 1.0 / float(_row["odds"])
+
+            for _mid, _bm_map in _by_match_sel.items():
+                _sharp = [v for k, v in _bm_map.items() if k in _SHARP_BMS]
+                _soft = [v for k, v in _bm_map.items() if k in _SOFT_BMS]
+                if _sharp and len(_soft) >= 2:
+                    add(_mid, f"sharp_consensus_{_sel}",
+                        round(sum(_sharp) / len(_sharp) - sum(_soft) / len(_soft), 5),
+                        "market", "derived")
     except Exception:
         pass
 
@@ -3422,14 +3455,24 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
         for mid, rows in inj_by_match.items():
             out_h = sum(1 for r in rows if r.get("team_side") == "home" and r.get("status") == "Missing Fixture")
             out_a = sum(1 for r in rows if r.get("team_side") == "away" and r.get("status") == "Missing Fixture")
-            dbt_h = sum(1 for r in rows if r.get("team_side") == "home" and r.get("status") == "Questionable")
-            dbt_a = sum(1 for r in rows if r.get("team_side") == "away" and r.get("status") == "Questionable")
+            dbt_h = sum(1 for r in rows if r.get("team_side") == "home" and r.get("status") in ("Questionable", "Doubtful"))
+            dbt_a = sum(1 for r in rows if r.get("team_side") == "away" and r.get("status") in ("Questionable", "Doubtful"))
             if out_h + dbt_h > 0:
                 add(mid, "injury_count_home", float(out_h + dbt_h), "information", "af")
                 add(mid, "players_out_home", float(out_h), "information", "af")
             if out_a + dbt_a > 0:
                 add(mid, "injury_count_away", float(out_a + dbt_a), "information", "af")
                 add(mid, "players_out_away", float(out_a), "information", "af")
+            # DOUBTFUL-SIGNAL: uncertain-availability players (market partially prices these 24-48h early)
+            if dbt_h > 0:
+                add(mid, "players_doubtful_home", float(dbt_h), "information", "af")
+            if dbt_a > 0:
+                add(mid, "players_doubtful_away", float(dbt_a), "information", "af")
+            # INJURY-UNCERTAINTY: injury_count − players_out = doubtful overhang market can't fully price
+            if dbt_h > 0:
+                add(mid, "injury_uncertainty_home", float(dbt_h), "information", "af")
+            if dbt_a > 0:
+                add(mid, "injury_uncertainty_away", float(dbt_a), "information", "af")
     except Exception:
         pass
 
@@ -3747,6 +3790,17 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
                 add(mid, "league_draw_pct", round(draws_count / total, 4), "context", "derived")
                 if goal_totals:
                     add(mid, "league_avg_goals", round(sum(goal_totals) / len(goal_totals), 3), "context", "derived")
+                    # LEAGUE-GOALS-DIST: distribution shape signals (two leagues can avg 2.5 with 44% vs 58% O25)
+                    _scored_n = len(goal_totals)
+                    if _scored_n >= 20:
+                        _over25 = sum(1 for g in goal_totals if g > 2)
+                        add(mid, "league_over25_pct", round(_over25 / _scored_n, 4), "context", "derived")
+                        _btts = sum(
+                            1 for r in rows
+                            if r.get("score_home") is not None and r.get("score_away") is not None
+                            and int(r["score_home"]) > 0 and int(r["score_away"]) > 0
+                        )
+                        add(mid, "league_btts_pct", round(_btts / _scored_n, 4), "context", "derived")
     except Exception:
         pass
 

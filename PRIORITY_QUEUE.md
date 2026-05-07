@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-07 — Fixed INPLAY-EDGE-BUG (inplay bot edge stored as percent not decimal). Added 17 tasks from 4-AI signal review (DOUBTFUL-SIGNAL, SHARP-DRAW-AWAY, LEAGUE-GOALS-DIST, H2H-GATE, INJURY-UNCERTAINTY, ODDS-VOL-AUDIT, TURF-FAMILIARITY, IMPORTANCE-GAMES-REM, REST-NONLINEAR, FORM-ELO-RESIDUAL, LEAGUE-ELO-VAR, LEAGUE-SEASON-PHASE, LEAGUE-DRAW-YTD, BOOKMAKER-COUNT, LINE-VELOCITY, LEAGUE-CLV-EFFICIENCY, SUSPENSION-SIGNAL, CUP-ROTATION, GOALKEEPER-SIGNAL, META-FEATURE-DESIGN, LONGSHOT-GEO-AUDIT). Earlier: AF data expansion (AF-BATCH, AF-HALF-TIME-SIGNALS, AF-SIDELINED, AF-TRANSFERS), H2H-SPLITS, AH-SIGNALS.
+> Last updated: 2026-05-07 — Group 1 quick wins done: DOUBTFUL-SIGNAL, SHARP-DRAW-AWAY, LEAGUE-GOALS-DIST, H2H-GATE, INJURY-UNCERTAINTY, ODDS-VOL-AUDIT (all ✅). 62 smoke tests passing. Earlier: AF data expansion (AF-BATCH, AF-HALF-TIME-SIGNALS, AF-SIDELINED, AF-TRANSFERS), H2H-SPLITS, AH-SIGNALS, 4-AI signal review tasks added.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -499,12 +499,12 @@ Yellow warning if today's value < 7-day average × 0.60.
 
 | ID | Task | Effort | ☑ | Ready? | Notes |
 |----|------|--------|----|--------|-------|
-| DOUBTFUL-SIGNAL | Wire `players_doubtful_home/away` from `match_injuries`. Status "Doubtful" is already stored in `match_injuries` but never aggregated into `match_signals`. 4/4 AIs flagged this — market partially but not fully prices "doubtful" status known 24-48h before kickoff. The gap between doubtful and confirmed-out is where line moves happen. | 30 min | ⬜ | ✅ Ready | Add to `batch_write_morning_signals()` alongside existing injury_count block. Filter `match_injuries.status = 'Doubtful'` GROUP BY match_id, home/away side. Zero new API cost. |
-| SHARP-DRAW-AWAY | Add `sharp_consensus_draw` and `sharp_consensus_away` to `batch_write_morning_signals`. Currently only `sharp_consensus_home` exists — alignment filter and meta-model have a quality gap for draw/away picks (4 dimensions vs 6 for home). Bookmaker sharpness tier CSV is already in place. | 1h | ⬜ | ✅ Ready | Two more aggregations in the same block 3a pipeline query. Same sharp/soft split logic, different selection filter. |
-| LEAGUE-GOALS-DIST | Add `league_over25_pct` and `league_btts_pct` to morning signals. We have `league_avg_goals` but not the distribution shape — two leagues averaging 2.5 goals can have 44% vs 58% over-2.5 rate. Direct base rate for O/U and BTTS bots. 4/4 AIs flagged this gap. | 1h | ⬜ | ✅ Ready | Simple query from same 200-match window used for `league_home_win_pct`. Already have `finished_home_score + finished_away_score` data. |
-| H2H-GATE | Apply small-sample gate to all H2H signals. Current `h2h_win_pct` for teams with only 3 meetings returns 0%, 33%, 67%, or 100% — none of which is meaningful. Fix: multiply H2H signals by `LEAST(h2h_total / 10.0, 1.0)` weight before writing, so 3 meetings contributes 30% weight and 10+ meetings contributes 100%. | 30 min | ⬜ | ✅ Ready | Affects `h2h_win_pct`, `h2h_avg_goal_diff`, `h2h_recency_premium` in `batch_write_morning_signals` block 2 + 2b. |
-| INJURY-UNCERTAINTY | Add `injury_uncertainty_home/away` = `injury_count − players_out`. The difference between total injuries listed and confirmed-out represents ambiguity the market cannot fully price. Acts as an "uncertainty overhang" signal distinct from the confirmed-out count. | 30 min | ⬜ | ✅ Ready | Computed from signals already written in same pipeline block. No new query. |
-| ODDS-VOL-AUDIT | Audit `odds_volatility` for lookahead leakage. Verify the 24h window used to compute std of implied prob does not include any movement that post-dates our bet placement time. If the window rolls forward to include future snapshots, the signal is contaminated. | 30 min | ⬜ | ✅ Ready | Read `batch_write_morning_signals` block for odds_volatility timestamp filter. Confirm window is `< now()` at pipeline run time, not `< kickoff`. |
+| DOUBTFUL-SIGNAL | Wire `players_doubtful_home/away` from `match_injuries`. | 30 min | ✅ Done 2026-05-07 | ✅ Done | Block 5. Captures "Doubtful" + "Questionable" statuses. Rendered in `signal-accordion.tsx`. |
+| SHARP-DRAW-AWAY | Add `sharp_consensus_draw` and `sharp_consensus_away`. | 1h | ✅ Done 2026-05-07 | ✅ Done | New block 3a — DISTINCT ON per selection. All 3 selections rendered in accordion. |
+| LEAGUE-GOALS-DIST | Add `league_over25_pct` and `league_btts_pct`. | 1h | ✅ Done 2026-05-07 | ✅ Done | Added to block 11 from same 200-match window. Rendered in accordion. |
+| H2H-GATE | Apply `LEAST(n/10, 1.0)` gate to h2h_win_pct, h2h_avg_goal_diff, h2h_recency_premium. | 30 min | ✅ Done 2026-05-07 | ✅ Done | Blocks 2 + 2b. Unit test in smoke_test.py. |
+| INJURY-UNCERTAINTY | Add `injury_uncertainty_home/away` = doubtful player count. | 30 min | ✅ Done 2026-05-07 | ✅ Done | Block 5 alongside DOUBTFUL-SIGNAL. Rendered in accordion. |
+| ODDS-VOL-AUDIT | Audit `odds_volatility` for lookahead leakage. | 30 min | ✅ Done 2026-05-07 | ✅ Done | **Audit result: CLEAN.** `is_live=false` filter prevents post-kickoff contamination. `cutoff_24h=now−24h` is always past-pointing. Smoke test guards the filter. |
 
 ### Group 2 — Signal refinements (this week, computation changes to existing signals)
 
