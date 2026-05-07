@@ -395,9 +395,11 @@ def main():
 
     # ── Register all jobs ──────────────────────────────────────────────
 
-    # Historical backfill: 02:00 + 23:00 UTC daily (self-terminates once complete)
+    # Historical backfill: 02:00 + 12:00 + 23:00 UTC daily (self-terminates once complete)
     scheduler.add_job(job_backfill, CronTrigger(hour=2, minute=0),
                       id="hist_backfill_02", name="Historical Backfill 02:00")
+    scheduler.add_job(job_backfill, CronTrigger(hour=12, minute=0),
+                      id="hist_backfill_12", name="Historical Backfill 12:00")
     scheduler.add_job(job_backfill, CronTrigger(hour=23, minute=0),
                       id="hist_backfill_23", name="Historical Backfill 23:00")
 
