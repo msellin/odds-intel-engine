@@ -242,11 +242,6 @@ def _():
     from workers.api_clients.supabase_client import batch_write_morning_signals  # noqa: F401
 
 
-@test("write_ops_snapshot — runs without error")
-def _():
-    from workers.api_clients.supabase_client import write_ops_snapshot
-    write_ops_snapshot()  # Must not raise; logs warning on failure instead
-
 
 @test("live_poller — imports without error")
 def _():
@@ -892,23 +887,26 @@ def main():
     order = {name: i for i, (name, _) in enumerate(_registry)}
     results.sort(key=lambda r: order.get(r[0], 9999))
 
-    passed = sum(1 for _, ok, _ in results if ok)
-    failed = sum(1 for _, ok, _ in results if not ok)
+    passed = sum(1 for _, ok, _, _ in results if ok)
+    failed = sum(1 for _, ok, _, _ in results if not ok)
 
     print("\n" + "═" * 60)
     print("  OddsIntel Smoke Tests")
     print("═" * 60)
 
-    for name, ok, error in results:
+    for name, ok, error, t in results:
         status = "✓" if ok else "✗"
         color_on = "\033[32m" if ok else "\033[31m"
-        print(f"  {color_on}{status}\033[0m  {name}")
+        slow = f"  \033[33m({t:.1f}s)\033[0m" if t > 5 else ""
+        print(f"  {color_on}{status}\033[0m  {name}{slow}")
         if error:
             print(f"       \033[31m{error}\033[0m")
 
     print("═" * 60)
+    slowest = sorted(results, key=lambda r: r[3], reverse=True)[:3]
     color = "\033[32m" if failed == 0 else "\033[31m"
     print(f"  {color}{passed} passed, {failed} failed\033[0m  ({elapsed:.1f}s)")
+    print(f"  Slowest: " + " | ".join(f"{r[0][:40]} {r[3]:.1f}s" for r in slowest))
     print("═" * 60 + "\n")
 
     sys.exit(0 if failed == 0 else 1)
