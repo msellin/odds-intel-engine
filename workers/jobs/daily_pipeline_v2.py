@@ -1006,12 +1006,15 @@ def _next_day(date_str: str) -> str:
     return (d + timedelta(days=1)).isoformat()
 
 
-def _load_today_from_db(today_str: str) -> tuple[list[dict], dict[str, dict]]:
+def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[str, dict]]:
     """
     PIPE-2: Load today's matches with best pre-match odds + AF predictions from DB.
     No API calls — reads odds_snapshots and predictions tables only.
     Uses direct SQL to avoid PostgREST URL length limits with large IN clauses.
-    Returns (odds_matches list, af_preds dict keyed by match_id).
+    Returns (odds_matches, af_only_matches, af_preds):
+      - odds_matches: matches with odds (used for betting + signals)
+      - af_only_matches: matches with predictions but no odds (signals only, no betting)
+      - af_preds: AF prediction probabilities keyed by match_id
     """
     from collections import defaultdict as _dd
     from workers.api_clients.db import execute_query
@@ -1023,7 +1026,9 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], dict[str, dict]]:
                   m.home_team_id, m.away_team_id,
                   m.h2h_home_wins, m.h2h_draws, m.h2h_away_wins,
                   th.name AS home_team_name, th.country AS home_country,
+                  th.api_football_id AS home_team_api_id,
                   ta.name AS away_team_name, ta.country AS away_country,
+                  ta.api_football_id AS away_team_api_id,
                   l.name AS league_name, l.country AS league_country,
                   l.tier AS league_tier, l.api_football_id AS league_api_id,
                   m.league_id
@@ -1091,11 +1096,10 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], dict[str, dict]]:
 
     # 3. Build match dicts
     odds_matches = []
+    af_only_matches = []
     for m in filtered:
         mid = str(m["id"])
         match_best = best.get(mid, {})
-        if not match_best:
-            continue
 
         country = m.get("league_country") or ""
         league_name = m.get("league_name") or ""
@@ -1127,11 +1131,14 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], dict[str, dict]]:
             "odds_over_45": 0, "odds_under_45": 0,
             "odds_btts_yes": 0, "odds_btts_no": 0,
         }
-        for mkt_sel, field in MARKET_TO_FIELD.items():
-            val = match_best.get(mkt_sel, 0)
-            if val > 0:
-                match_dict[field] = val
-        odds_matches.append(match_dict)
+        if match_best:
+            for mkt_sel, field in MARKET_TO_FIELD.items():
+                val = match_best.get(mkt_sel, 0)
+                if val > 0:
+                    match_dict[field] = val
+            odds_matches.append(match_dict)
+        else:
+            af_only_matches.append(match_dict)
 
     # 4. Load AF predictions — single query
     preds_raw = execute_query(
@@ -1155,8 +1162,9 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], dict[str, dict]]:
             af_preds[mid]["af_away_prob"] = mp
 
     console.print(f"  {len(odds_matches)} matches with odds loaded from DB")
+    console.print(f"  {len(af_only_matches)} AF-only matches (no odds) loaded from DB")
     console.print(f"  {len(af_preds)} AF predictions loaded from DB")
-    return odds_matches, af_preds
+    return odds_matches, af_only_matches, af_preds
 
 
 def run_morning(skip_fetch: bool = False, cohort: str | None = None):
@@ -1187,14 +1195,15 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
         except Exception:
             _running_bankroll[_bn] = 1000.0
 
+    af_only_matches: list[dict] = []  # matches with predictions but no odds (signals only)
     if skip_fetch:
         # Phase 2: read from DB — upstream jobs already fetched everything
         console.print("\n[cyan]Loading today's data from DB (skip_fetch=True)...[/cyan]")
-        odds_matches, af_preds = _load_today_from_db(today_str)
-        if not odds_matches:
-            console.print("[yellow]No matches with odds in DB today — predictions skipped.[/yellow]")
+        odds_matches, af_only_matches, af_preds = _load_today_from_db(today_str)
+        if not odds_matches and not af_only_matches:
+            console.print("[yellow]No matches in DB today — pipeline skipped.[/yellow]")
             return
-        console.print(f"  [bold]{len(odds_matches)} matches in prediction pool[/bold]")
+        console.print(f"  [bold]{len(odds_matches)} matches with odds, {len(af_only_matches)} AF-only[/bold]")
     else:
         # Phase 1: fetch from API-Football + Kambi
         # 2. Fetch ALL fixtures from API-Football
@@ -1305,11 +1314,14 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
     except Exception as e:
         console.print(f"  [yellow]BTTS rate load failed (non-critical): {e}[/yellow]")
 
-    # 8a. Write all morning signals in one batch (replaces per-match write_morning_signals)
+    # 8a. Write all morning signals in one batch — includes AF-only (Grade D) matches
+    # Previously only ran for matches with odds; now runs for ALL today's matches so
+    # Grade D fixtures get ELO, form, H2H, injury, standings signals too.
     console.print("\n[cyan]Writing morning signals (batch)...[/cyan]")
     try:
-        n_signals = batch_write_morning_signals(odds_matches)
-        console.print(f"  {n_signals} signals written for {len(odds_matches)} matches")
+        all_signal_matches = odds_matches + af_only_matches
+        n_signals = batch_write_morning_signals(all_signal_matches)
+        console.print(f"  {n_signals} signals written for {len(all_signal_matches)} matches ({len(odds_matches)} with odds, {len(af_only_matches)} AF-only)")
     except Exception as e:
         console.print(f"  [yellow]batch_write_morning_signals failed (non-critical): {e}[/yellow]")
 
