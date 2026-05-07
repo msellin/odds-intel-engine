@@ -189,6 +189,20 @@ def _():
     from workers.jobs.daily_pipeline_v2 import run_morning  # noqa: F401
 
 
+@test("backfill — get_uuids_with_data query uses ::uuid[] cast")
+def _():
+    from workers.api_clients.db import execute_query
+    # Pull a known match_id and verify the exact query backfill uses works
+    rows = execute_query("SELECT id FROM matches WHERE status='finished' LIMIT 1")
+    if not rows:
+        return
+    match_uuid = str(rows[0]["id"])
+    execute_query(
+        "SELECT DISTINCT match_id FROM match_stats WHERE match_id = ANY(%s::uuid[])",
+        [[match_uuid]],
+    )
+
+
 @test("settlement — run_post_mortem imports and dedup guard works")
 def _():
     from workers.jobs.settlement import run_post_mortem  # noqa: F401

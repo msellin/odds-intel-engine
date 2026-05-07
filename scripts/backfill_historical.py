@@ -263,7 +263,7 @@ def get_uuids_with_data(table: str, match_uuids: list[str]) -> set[str]:
     if not match_uuids:
         return set()
     rows = execute_query(
-        f"SELECT DISTINCT match_id FROM {table} WHERE match_id = ANY(%s)",
+        f"SELECT DISTINCT match_id FROM {table} WHERE match_id = ANY(%s::uuid[])",
         [match_uuids],
     )
     return {row["match_id"] for row in rows}
