@@ -6,7 +6,9 @@ ALTER TABLE simulated_bets
     ADD COLUMN IF NOT EXISTS xg_source TEXT;
 
 -- Backfill existing inplay bets from reasoning JSON
+-- Guard against rows where reasoning is plain text (not valid JSON)
 UPDATE simulated_bets
 SET xg_source = reasoning::jsonb->>'xg_source'
 WHERE reasoning IS NOT NULL
-  AND reasoning::jsonb->>'xg_source' IS NOT NULL;
+  AND reasoning ~ '^\{'
+  AND (reasoning::jsonb)->>'xg_source' IS NOT NULL;
