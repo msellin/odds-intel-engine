@@ -1353,7 +1353,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
             pin_all_rows = _eq_pin(
                 """SELECT DISTINCT ON (match_id, signal_name) match_id, signal_name, signal_value
                    FROM match_signals
-                   WHERE match_id = ANY(%s)
+                   WHERE match_id = ANY(%s::uuid[])
                      AND signal_name IN (
                        'pinnacle_implied_home', 'pinnacle_implied_draw',
                        'pinnacle_implied_away', 'pinnacle_implied_over25',
@@ -1386,7 +1386,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
             sc_rows = _eq_pin(
                 """SELECT DISTINCT ON (match_id) match_id, signal_value
                    FROM match_signals
-                   WHERE match_id = ANY(%s)
+                   WHERE match_id = ANY(%s::uuid[])
                      AND signal_name = 'sharp_consensus_home'
                    ORDER BY match_id, captured_at DESC""",
                 (all_match_ids_for_signals,)
