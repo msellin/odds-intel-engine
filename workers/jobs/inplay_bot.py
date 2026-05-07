@@ -63,7 +63,8 @@ INPLAY_BOTS = {
 }
 
 # Minimum matches with xG data per league before we trust signals
-MIN_LEAGUE_XG_MATCHES = 20
+# Set low (3) while data accumulates — bot launched 2026-04-27, no league has 20 yet
+MIN_LEAGUE_XG_MATCHES = 3
 
 # ── Global State ─────────────────────────────────────────────────────────────
 
