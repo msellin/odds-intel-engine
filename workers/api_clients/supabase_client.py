@@ -3556,17 +3556,23 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
         distinct_bookmakers     = r[0]["distinct_bm"] if r else 0
 
         r = execute_query(
-            "SELECT COUNT(DISTINCT match_id) AS n FROM predictions WHERE source='af' AND created_at::date = %s",
+            """SELECT COUNT(DISTINCT p.match_id) AS n
+               FROM predictions p JOIN matches m ON m.id = p.match_id
+               WHERE m.date = %s AND p.source = 'af'""",
             [today])
         matches_with_predictions = r[0]["n"] if r else 0
 
         r = execute_query(
-            "SELECT COUNT(DISTINCT match_id) AS n FROM match_signals WHERE created_at::date = %s",
+            """SELECT COUNT(DISTINCT s.match_id) AS n
+               FROM match_signals s JOIN matches m ON m.id = s.match_id
+               WHERE m.date = %s""",
             [today])
         matches_with_signals = r[0]["n"] if r else 0
 
         r = execute_query(
-            "SELECT COUNT(DISTINCT match_id) AS n FROM match_feature_vectors WHERE match_date = %s",
+            """SELECT COUNT(DISTINCT mfv.match_id) AS n
+               FROM match_feature_vectors mfv JOIN matches m ON m.id = mfv.match_id
+               WHERE m.date = %s""",
             [today])
         matches_with_fvectors = r[0]["n"] if r else 0
 
@@ -3574,19 +3580,17 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
         r = execute_query(
             """
             SELECT
-              COUNT(*)                                                              AS placed_today,
-              COUNT(*) FILTER (WHERE result = 'pending')                           AS pending_total,
+              COUNT(*) FILTER (WHERE pick_time::date = %s)                             AS placed_today,
+              COUNT(*) FILTER (WHERE result = 'pending')                               AS pending_total,
               COUNT(*) FILTER (WHERE result IN ('won','lost') AND pick_time::date = %s) AS settled_today,
-              SUM(CASE WHEN result='won' AND pick_time::date = %s THEN pnl
-                       WHEN result='lost' AND pick_time::date = %s THEN pnl
-                       ELSE 0 END)                                                AS pnl_today,
+              SUM(CASE WHEN result IN ('won','lost') AND pick_time::date = %s
+                       THEN pnl ELSE 0 END)                                            AS pnl_today,
               COUNT(*) FILTER (WHERE bot_id IN (
                 SELECT id FROM bots WHERE name LIKE 'bot_inplay%%'
-              ) AND pick_time::date = %s)                                          AS inplay_today,
-              COUNT(DISTINCT bot_id) FILTER (WHERE pick_time::date = %s)          AS active_bots
+              ) AND pick_time::date = %s)                                              AS inplay_today,
+              COUNT(DISTINCT bot_id) FILTER (WHERE pick_time::date = %s)               AS active_bots
             FROM simulated_bets
-            WHERE pick_time::date = %s OR result IN ('won','lost')
-            """, [today, today, today, today, today, today])
+            """, [today, today, today, today, today])
         bets_placed_today  = r[0]["placed_today"] if r else 0
         bets_pending       = r[0]["pending_total"] if r else 0
         bets_settled_today = r[0]["settled_today"] if r else 0
@@ -3632,7 +3636,10 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
         post_mortem_ran_today = (r[0]["n"] > 0) if r else False
 
         r = execute_query(
-            "SELECT COUNT(*) AS n FROM match_feature_vectors WHERE built_at::date = %s", [today])
+            """SELECT COUNT(*) AS n
+               FROM match_feature_vectors mfv JOIN matches m ON m.id = mfv.match_id
+               WHERE m.date = %s""",
+            [today])
         feature_vectors_today = r[0]["n"] if r else 0
 
         r = execute_query(
