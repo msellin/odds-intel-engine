@@ -723,7 +723,7 @@ def build_match_feature_vectors(client, date_str: str) -> int:
     league_tier_map = {}
     if all_league_ids:
         lr = execute_query(
-            "SELECT id, tier FROM leagues WHERE id = ANY(%s)",
+            "SELECT id, tier FROM leagues WHERE id = ANY(%s::uuid[])",
             (list(all_league_ids),),
         )
         league_tier_map = {r["id"]: r.get("tier") for r in lr}
@@ -734,7 +734,7 @@ def build_match_feature_vectors(client, date_str: str) -> int:
         pr = execute_query(
             """SELECT match_id, source, model_probability, market, reasoning
                FROM predictions
-               WHERE match_id = ANY(%s) AND market = '1x2_home'""",
+               WHERE match_id = ANY(%s::uuid[]) AND market = '1x2_home'""",
             (chunk,),
         )
         for p in pr:
@@ -746,7 +746,7 @@ def build_match_feature_vectors(client, date_str: str) -> int:
         rr = execute_query(
             """SELECT match_id, reasoning
                FROM predictions
-               WHERE match_id = ANY(%s) AND reasoning IS NOT NULL
+               WHERE match_id = ANY(%s::uuid[]) AND reasoning IS NOT NULL
                LIMIT 1000""",
             (chunk,),
         )
@@ -760,7 +760,7 @@ def build_match_feature_vectors(client, date_str: str) -> int:
         odr = execute_query(
             """SELECT match_id, selection, odds, timestamp
                FROM odds_snapshots
-               WHERE match_id = ANY(%s) AND market = '1x2'
+               WHERE match_id = ANY(%s::uuid[]) AND market = '1x2'
                ORDER BY timestamp ASC
                LIMIT 10000""",
             (chunk,),
@@ -774,7 +774,7 @@ def build_match_feature_vectors(client, date_str: str) -> int:
         er = execute_query(
             """SELECT team_id, elo_rating, date
                FROM team_elo_daily
-               WHERE team_id = ANY(%s) AND date <= %s
+               WHERE team_id = ANY(%s::uuid[]) AND date <= %s
                ORDER BY date DESC
                LIMIT 5000""",
             (chunk, date_str),
@@ -790,7 +790,7 @@ def build_match_feature_vectors(client, date_str: str) -> int:
         fr = execute_query(
             """SELECT team_id, ppg, date
                FROM team_form_cache
-               WHERE team_id = ANY(%s) AND date <= %s
+               WHERE team_id = ANY(%s::uuid[]) AND date <= %s
                ORDER BY date DESC
                LIMIT 5000""",
             (chunk, date_str),
@@ -805,7 +805,7 @@ def build_match_feature_vectors(client, date_str: str) -> int:
         sr = execute_query(
             """SELECT match_id, signal_name, signal_value, captured_at
                FROM match_signals
-               WHERE match_id = ANY(%s)
+               WHERE match_id = ANY(%s::uuid[])
                ORDER BY captured_at DESC
                LIMIT 50000""",
             (chunk,),
@@ -876,7 +876,8 @@ def _build_feature_row_batched(
 ) -> dict | None:
     """Build a single match_feature_vectors row from pre-loaded batch data."""
     match_id = match["id"]
-    match_date = match["date"][:10] if match.get("date") else None
+    _d = match.get("date")
+    match_date = _d.isoformat()[:10] if hasattr(_d, "isoformat") else str(_d)[:10] if _d else None
 
     # -- Outcome labels --------------------------------------------------------
     outcome = match.get("result")
