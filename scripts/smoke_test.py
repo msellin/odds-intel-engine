@@ -210,6 +210,59 @@ def _():
     # (won't make a Gemini call — already-ran check fires first or no losses yet)
 
 
+@test("settlement — run_settlement imports and pending bets query runs")
+def _():
+    from workers.jobs.settlement import run_settlement, _PENDING_BETS_SQL  # noqa: F401
+    from workers.api_clients.db import execute_query
+    rows = execute_query(_PENDING_BETS_SQL, [])
+    assert isinstance(rows, list)
+
+
+@test("betting pipeline — run_betting imports without error")
+def _():
+    from workers.jobs.betting_pipeline import run_betting  # noqa: F401
+
+
+@test("fetch_odds — run_odds imports without error")
+def _():
+    from workers.jobs.fetch_odds import run_odds  # noqa: F401
+
+
+@test("fetch_enrichment — run_enrichment imports without error")
+def _():
+    from workers.jobs.fetch_enrichment import run_enrichment  # noqa: F401
+
+
+@test("fetch_fixtures — run_fixtures imports without error")
+def _():
+    from workers.jobs.fetch_fixtures import run_fixtures  # noqa: F401
+
+
+@test("news_checker — imports without error (skips if google SDK absent)")
+def _():
+    try:
+        from workers.jobs.news_checker import run_news_checker  # noqa: F401
+    except ModuleNotFoundError as e:
+        if "google" in str(e):
+            return  # google-genai not installed locally — fine, it's on Railway
+        raise
+
+
+@test("supabase_client — store_bet and settle_bet are importable")
+def _():
+    from workers.api_clients.supabase_client import store_bet, settle_bet  # noqa: F401
+
+
+@test("supabase_client — batch_write_morning_signals is importable")
+def _():
+    from workers.api_clients.supabase_client import batch_write_morning_signals  # noqa: F401
+
+
+@test("live_poller — imports without error")
+def _():
+    from workers.live_poller import LivePoller  # noqa: F401
+
+
 # ── Results ───────────────────────────────────────────────────────────────────
 
 def main():
