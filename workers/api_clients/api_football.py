@@ -66,17 +66,29 @@ class BudgetTracker:
             self._maybe_reset()
             return (self.calls_today / self.daily_limit) * 100 if self.daily_limit else 0
 
-    def sync_with_server(self):
+    def sync_with_server(self, source: str = "sync"):
         """Sync local count with AF /status endpoint. Call at startup + hourly."""
         try:
             info = get_remaining_requests()
             current = info.get("current", 0)
+            remaining = info.get("remaining", self.daily_limit)
             if current is not None:
                 with self._lock:
                     self.calls_today = current
                     self.reset_date = date.today()
                 console.print(f"[dim]Budget sync: {current} calls used today, "
-                              f"{info.get('remaining', '?')} remaining[/dim]")
+                              f"{remaining} remaining[/dim]")
+                # Persist to DB so ops dashboard can display real AF budget
+                try:
+                    from workers.api_clients.db import execute_write
+                    execute_write(
+                        """INSERT INTO api_budget_log (calls_today, remaining, daily_limit, source)
+                           VALUES (%s, %s, %s, %s)""",
+                        [current, remaining if remaining is not None else self.daily_limit - current,
+                         self.daily_limit, source]
+                    )
+                except Exception as db_err:
+                    console.print(f"[dim]Budget log write failed: {db_err}[/dim]")
         except Exception as e:
             console.print(f"[yellow]Budget sync failed: {e}[/yellow]")
 

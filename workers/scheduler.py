@@ -391,7 +391,7 @@ def main():
     def _initial_budget_sync():
         try:
             from workers.api_clients.api_football import budget
-            budget.sync_with_server()
+            budget.sync_with_server(source="startup")
         except Exception as e:
             console.print(f"[yellow]Initial budget sync failed: {e}[/yellow]")
 

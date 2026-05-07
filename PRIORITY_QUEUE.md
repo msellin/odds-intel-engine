@@ -478,7 +478,7 @@ Yellow warning if today's value < 7-day average × 0.60.
 
 | ID | Task | Effort | ☑ | Ready? | Notes |
 |----|------|--------|----|--------|-------|
-| ADMIN-OPS-DASH | `ops_snapshots` table + `write_ops_snapshot()` writer + `/admin/ops` dashboard | 1.5 days | ⬜ | ✅ Ready | Full spec above. Phase 1 (engine) → Phase 2 (frontend) → Phase 3 (AF budget) independently. |
+| ADMIN-OPS-DASH | `ops_snapshots` table + `write_ops_snapshot()` writer + `/admin/ops` dashboard | 1.5 days | ✅ Done 2026-05-07 | ✅ Ready | All 3 phases complete. Engine hooks, migration 059+060, /admin/ops frontend with 10 panels. |
 
 ---
 

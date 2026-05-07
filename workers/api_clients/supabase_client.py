@@ -3696,7 +3696,20 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
                WHERE job_name LIKE '%backfill%' OR job_name = 'hist_backfill'""")
         backfill_last_run = r[0]["t"] if r else None
 
-        # ⑧ Users
+        # ⑧ API budget (from persisted api_budget_log — NULL until migration 060 applied)
+        af_calls_today = None
+        af_budget_remaining = None
+        try:
+            r = execute_query(
+                """SELECT calls_today, remaining FROM api_budget_log
+                   WHERE log_date = %s ORDER BY logged_at DESC LIMIT 1""",
+                [today])
+            af_calls_today      = r[0]["calls_today"] if r else None
+            af_budget_remaining = r[0]["remaining"] if r else None
+        except Exception:
+            pass  # Table doesn't exist yet — safe to skip
+
+        # ⑨ Users
         r = execute_query(
             """
             SELECT
@@ -3758,7 +3771,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
                 digests_sent_today, value_bet_alerts_today, previews_generated_today,
                 news_checker_errors_today, watchlist_alerts_today,
                 backfill_total_done, backfill_last_run,
-                None, None,  # af_calls_today, af_budget_remaining — Phase 3
+                af_calls_today, af_budget_remaining,
                 total_users, pro_users, elite_users, new_signups_today,
             ]
         )
