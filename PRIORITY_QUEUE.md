@@ -57,6 +57,7 @@
 |----|------|----|-------|
 | INPLAY-EDGE-BUG | Inplay bot edge_percent stored as percent not decimal | ✅ Done 2026-05-07 | `inplay_bot.py` stored `edge = (prob-implied)*100` but `store_bet` expects decimal. Fixed: divide by 100 at storage. Patched 1 bad DB record. Smoke test added. |
 | SIGNALS-RLS | `match_signals` RLS enabled but no SELECT policy — anon key returned [] for everyone | ✅ Done 2026-05-07 | Migration 069. `getMatchSignals()` was silently returning empty, hiding accordion + summary on ALL matches. |
+| SIGNALS-UI | Wire all missing signals to accordion + summary (~20 signals in DB but invisible) | ✅ Done 2026-05-07 | `signal-labels.ts`: 15 new label functions (Pinnacle, manager change, turf, H2H depth, goals avg, relegation, referee O/U, AH, BTTS). `signal-accordion.tsx`: new Specialist Markets group + all signals added. `match-signal-summary.tsx`: manager change, relegation pressure, Pinnacle line moves added to top-5 priority list. |
 | S3/S4/S5/S3b-f | All signals wired (ELO, form, H2H, referee, BDM, OLM, venue, rest, standings) | ✅ | Full signal set in match_signals |
 | SIG-7/8/9/10/11 | Importance asymmetry, venue splits, form slope, odds vol, league meta | ✅ | |
 | META-2 | Meta-model feature design (8 market-structure features) | ✅ | |
