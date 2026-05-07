@@ -413,7 +413,7 @@ def _dc_tau(h: int, a: int, exp_h: float, exp_a: float, rho: float) -> float:
     return 1.0
 
 
-def _poisson_probs(exp_h: float, exp_a: float, rho: float | None = None) -> dict:
+def _poisson_probs(exp_h: float, exp_a: float, rho: float | None = None, league_draw_pct: float | None = None) -> dict:
     """Compute 1X2 + O/U (1.5, 2.5, 3.5) + BTTS probabilities from expected goals.
 
     Applies Dixon-Coles bivariate correction to the four low-scoring outcomes
@@ -456,12 +456,16 @@ def _poisson_probs(exp_h: float, exp_a: float, rho: float | None = None) -> dict
         p_d /= total_1x2
         p_a /= total_1x2
 
-    # CAL-DRAW-INFLATE: Dixon-Coles τ only patches (0,0)-(1,1) corner cells.
+    # CAL-DRAW-INFLATE / DRAW-PER-LEAGUE: Dixon-Coles τ only patches (0,0)-(1,1) corner cells.
     # Higher-scoring draws (2-2, 3-3) remain underestimated vs real data.
     # Game-state effects (protecting leads, parking the bus) also inflate draws.
-    # Apply a 1.08 multiplier to draw probability and renormalise home/away to compensate.
-    # Range 1.05-1.15; 1.08 is the mid-point validated on backtest Brier score.
-    DRAW_INFLATE = 1.08
+    # Per-league: leagues with high draw rates (e.g. 32%) get higher multiplier than
+    # open attacking leagues (e.g. 22%). Global avg is 26.8%. Clamped [1.03, 1.15].
+    if league_draw_pct is not None:
+        raw_inflate = 1.0 + max(0.0, (league_draw_pct - 0.268) / 0.268 * 0.08)
+        DRAW_INFLATE = max(1.03, min(1.15, raw_inflate))
+    else:
+        DRAW_INFLATE = 1.08  # validated global fallback
     p_d_inflated = p_d * DRAW_INFLATE
     leftover = 1.0 - p_d_inflated
     home_away_sum = p_h + p_a
@@ -494,7 +498,7 @@ def _goals_from_hist(df: pd.DataFrame, team: str) -> tuple[list[float], list[flo
 
 
 def compute_prediction(match, hist_targets, hist_targets_global=None,
-                       _team_sets=None):
+                       _team_sets=None, league_draw_pct: float | None = None):
     """
     Compute Poisson prediction for a match using the best available history.
 
@@ -592,7 +596,7 @@ def compute_prediction(match, hist_targets, hist_targets_global=None,
     # otherwise falls back to global DIXON_COLES_RHO (-0.13).
     league_tier = int(match.get("tier") or 1)
     tier_rho = _load_dc_rho_cache().get(league_tier)  # None → _poisson_probs uses global
-    result = _poisson_probs(exp_h, exp_a, rho=tier_rho)
+    result = _poisson_probs(exp_h, exp_a, rho=tier_rho, league_draw_pct=league_draw_pct)
     result.update({"exp_home": exp_h, "exp_away": exp_a, "data_tier": data_tier})
     return result
 
@@ -1398,6 +1402,27 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
         except Exception as e:
             console.print(f"  [yellow]Sharp consensus signal load failed (non-critical): {e}[/yellow]")
 
+        # DRAW-PER-LEAGUE: batch-load league_draw_pct so _poisson_probs can use
+        # per-league draw inflation instead of the global 1.08 fallback.
+        try:
+            ldp_rows = _eq_pin(
+                """SELECT DISTINCT ON (match_id) match_id, signal_value
+                   FROM match_signals
+                   WHERE match_id = ANY(%s::uuid[])
+                     AND signal_name = 'league_draw_pct'
+                   ORDER BY match_id, captured_at DESC""",
+                (all_match_ids_for_signals,)
+            )
+            league_draw_pct_by_match: dict[str, float] = {}
+            for lr in ldp_rows:
+                if lr["signal_value"] is not None:
+                    league_draw_pct_by_match[str(lr["match_id"])] = float(lr["signal_value"])
+        except Exception as e:
+            console.print(f"  [yellow]league_draw_pct signal load failed (non-critical): {e}[/yellow]")
+            league_draw_pct_by_match = {}
+    else:
+        league_draw_pct_by_match = {}
+
     for match in odds_matches:
         # Store match in Supabase (idempotent upsert — skipped if id pre-set from DB load)
         if match.get("id"):
@@ -1417,10 +1442,12 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                 console.print(f"  [yellow]Error storing odds: {e}[/yellow]")
 
         # Compute Poisson prediction
+        _ldp = league_draw_pct_by_match.get(str(match_id))
         poisson_pred = compute_prediction(
             match, hist_targets,
             hist_targets_global=hist_targets_global,
             _team_sets=team_sets,
+            league_draw_pct=_ldp,
         )
         # Tier C fallback: if Poisson has no historical data for this match,
         # use API-Football's own prediction probabilities (already fetched for

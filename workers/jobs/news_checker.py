@@ -321,6 +321,10 @@ def run_news_checker(dry_run: bool = False):
             try:
                 store_match_signal(match_id, "news_impact_score",
                                    round(news_impact, 4), "information", "gemini")
+                store_match_signal(match_id, "news_impact_home",
+                                   round(home_impact, 4), "information", "gemini")
+                store_match_signal(match_id, "news_impact_away",
+                                   round(away_impact, 4), "information", "gemini")
                 store_match_signal(match_id, "lineup_confidence",
                                    round(lineup_conf, 3), "information", "gemini")
                 if players_out or players_doubtful:

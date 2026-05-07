@@ -3036,28 +3036,8 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
                 soft_avg = sum(soft_probs) / len(soft_probs)
                 add(mid, "sharp_consensus_home", round(sharp_avg - soft_avg, 5), "market", "derived")
 
-            # PIN-1: Pinnacle anchor signal — Pinnacle implied home probability
-            # Positive anchor_home (model_prob - pinnacle_implied) = model rates home higher than Pinnacle
-            # Near-zero = model agrees with Pinnacle (sharp market confirmation)
-            # Negative = Pinnacle rates home much higher than model (model may be wrong)
-            # Note: rows are already filtered to market='1x2' AND selection='home' by the bulk query above.
-            pinnacle_rows = [
-                r for r in rows
-                if r.get("bookmaker") == "Pinnacle" and float(r.get("odds") or 0) > 1.0
-            ]
-            if pinnacle_rows:
-                # Rows are sorted DESC by timestamp — first entry is most recent
-                pin_implied = 1.0 / float(pinnacle_rows[0]["odds"])
-                add(mid, "pinnacle_implied_home", round(pin_implied, 5), "market", "derived")
-
-                # PIN-4: Pinnacle line movement (opening implied → current implied)
-                # Positive = home shortened over time = sharp money backing home
-                # Negative = home drifted = sharps fading home
-                # Only meaningful when we have 2+ snapshots
-                if len(pinnacle_rows) >= 2:
-                    pin_open = 1.0 / float(pinnacle_rows[-1]["odds"])   # oldest
-                    pin_current = 1.0 / float(pinnacle_rows[0]["odds"]) # most recent
-                    add(mid, "pinnacle_line_move_home", round(pin_current - pin_open, 5), "market", "derived")
+            # PIN-1: home Pinnacle rows retained for line movement only.
+            # Vig-normalized pinnacle_implied_home/draw/away written in block 3b below.
 
             # Overnight line move
             yest = [r for r in rows if str(r["timestamp"]) < midnight_utc]
@@ -3082,49 +3062,75 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
     except Exception:
         pass
 
-    # ── 3b. PIN-2: Pinnacle implied for draw / away / O/U markets ────────────
+    # ── 3b. VIG-REMOVE: Pinnacle implied with overround normalization ────────────
+    # 1X2: load all 3 selections together so we can divide out the overround.
+    # Raw 1/odds sums to ~1.05 (Pinnacle margin); fair_x = raw_x / sum(raws).
+    # O/U: same treatment across the over+under pair.
+    # Line movements kept as raw diffs — direction is what matters, vig is stable intraday.
     try:
-        for _market, _selection, _signal_name in [
-            ("1x2",           "draw",  "pinnacle_implied_draw"),
-            ("1x2",           "away",  "pinnacle_implied_away"),
-            ("over_under_25", "over",  "pinnacle_implied_over25"),
-            ("over_under_25", "under", "pinnacle_implied_under25"),
-        ]:
-            pin2_rows = execute_query(
-                """SELECT DISTINCT ON (match_id) match_id, odds
-                   FROM odds_snapshots
-                   WHERE match_id = ANY(%s::uuid[])
-                     AND market = %s AND selection = %s
-                     AND bookmaker = 'Pinnacle'
-                     AND odds > 1.0 AND is_live = false
-                   ORDER BY match_id, timestamp DESC""",
-                (match_ids, _market, _selection),
-            )
-            for row in pin2_rows:
-                mid = str(row["match_id"])
-                add(mid, _signal_name, round(1.0 / float(row["odds"]), 5), "market", "derived")
+        pin_1x2_all = execute_query(
+            """SELECT match_id, selection, odds, timestamp
+               FROM odds_snapshots
+               WHERE match_id = ANY(%s::uuid[])
+                 AND market = '1x2'
+                 AND bookmaker = 'Pinnacle'
+                 AND odds > 1.0 AND is_live = false
+               ORDER BY match_id, selection, timestamp DESC""",
+            (match_ids,),
+        )
+        # Group: match_id → selection → rows (DESC by timestamp, so [0]=newest, [-1]=oldest)
+        p1x2_by_match: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
+        for row in pin_1x2_all:
+            p1x2_by_match[str(row["match_id"])][row["selection"]].append(row)
 
-            # PIN-4: line movement for draw and away (same query, need oldest too)
-            if _selection in ("draw", "away"):
-                _move_name = f"pinnacle_line_move_{_selection}"
-                pin2_open_rows = execute_query(
-                    """SELECT DISTINCT ON (match_id) match_id, odds
-                       FROM odds_snapshots
-                       WHERE match_id = ANY(%s::uuid[])
-                         AND market = %s AND selection = %s
-                         AND bookmaker = 'Pinnacle'
-                         AND odds > 1.0 AND is_live = false
-                       ORDER BY match_id, timestamp ASC""",
-                    (match_ids, _market, _selection),
-                )
-                open_by_match = {str(r["match_id"]): 1.0 / float(r["odds"]) for r in pin2_open_rows}
-                for row in pin2_rows:
-                    mid = str(row["match_id"])
-                    if mid in open_by_match:
-                        current = 1.0 / float(row["odds"])
-                        opening = open_by_match[mid]
-                        if abs(current - opening) > 1e-6:   # skip if same snapshot
-                            add(mid, _move_name, round(current - opening, 5), "market", "derived")
+        for mid, sel_map in p1x2_by_match.items():
+            # Vig-normalized implied: fair = raw / sum(all available raws)
+            raws: dict[str, float] = {}
+            for sel in ("home", "draw", "away"):
+                if sel_map.get(sel):
+                    raws[sel] = 1.0 / float(sel_map[sel][0]["odds"])
+            if raws:
+                overround = sum(raws.values())
+                for sel, raw in raws.items():
+                    add(mid, f"pinnacle_implied_{sel}", round(raw / overround, 5), "market", "derived")
+
+            # PIN-4: line movement per selection (raw diff — directional signal)
+            for sel in ("home", "draw", "away"):
+                rows_s = sel_map.get(sel, [])
+                if len(rows_s) >= 2:
+                    pin_current = 1.0 / float(rows_s[0]["odds"])
+                    pin_open = 1.0 / float(rows_s[-1]["odds"])
+                    move = pin_current - pin_open
+                    if abs(move) > 1e-6:
+                        add(mid, f"pinnacle_line_move_{sel}", round(move, 5), "market", "derived")
+    except Exception:
+        pass
+
+    # O/U 2.5: normalize over+under pair
+    try:
+        pin_ou_all = execute_query(
+            """SELECT DISTINCT ON (match_id, selection) match_id, selection, odds
+               FROM odds_snapshots
+               WHERE match_id = ANY(%s::uuid[])
+                 AND market = 'over_under_25'
+                 AND bookmaker = 'Pinnacle'
+                 AND odds > 1.0 AND is_live = false
+               ORDER BY match_id, selection, timestamp DESC""",
+            (match_ids,),
+        )
+        ou_by_match: dict[str, dict[str, float]] = defaultdict(dict)
+        for row in pin_ou_all:
+            ou_by_match[str(row["match_id"])][row["selection"]] = 1.0 / float(row["odds"])
+
+        for mid, ou_raws in ou_by_match.items():
+            if "over" in ou_raws and "under" in ou_raws:
+                ou_sum = ou_raws["over"] + ou_raws["under"]
+                add(mid, "pinnacle_implied_over25",  round(ou_raws["over"]  / ou_sum, 5), "market", "derived")
+                add(mid, "pinnacle_implied_under25", round(ou_raws["under"] / ou_sum, 5), "market", "derived")
+            elif "over" in ou_raws:
+                add(mid, "pinnacle_implied_over25",  round(ou_raws["over"],  5), "market", "derived")
+            elif "under" in ou_raws:
+                add(mid, "pinnacle_implied_under25", round(ou_raws["under"], 5), "market", "derived")
     except Exception:
         pass
 

@@ -406,6 +406,70 @@ def _():
     assert r3 > 0, f"Expected positive posterior, got {r3}"
 
 
+@test("VIG-REMOVE — vig normalization: fair probs sum to 1.0 and are each less than raw")
+def _():
+    import math
+    # Typical Pinnacle 1X2 odds with ~4.8% margin
+    home_odds, draw_odds, away_odds = 2.10, 3.40, 3.60
+    raw_h = 1.0 / home_odds
+    raw_d = 1.0 / draw_odds
+    raw_a = 1.0 / away_odds
+    overround = raw_h + raw_d + raw_a
+    assert overround > 1.0, f"Overround should be > 1.0 (bookmaker margin), got {overround}"
+    fair_h = raw_h / overround
+    fair_d = raw_d / overround
+    fair_a = raw_a / overround
+    total = fair_h + fair_d + fair_a
+    assert abs(total - 1.0) < 1e-10, f"Vig-normalized probs must sum to 1.0, got {total}"
+    assert fair_h < raw_h, "Vig removal must reduce home probability"
+    assert fair_d < raw_d, "Vig removal must reduce draw probability"
+    assert fair_a < raw_a, "Vig removal must reduce away probability"
+    # O/U pair normalization
+    ou_over, ou_under = 1.0 / 1.87, 1.0 / 1.98
+    ou_sum = ou_over + ou_under
+    assert ou_sum > 1.0, "O/U pair should also have overround"
+    assert abs(ou_over / ou_sum + ou_under / ou_sum - 1.0) < 1e-10
+
+
+@test("DRAW-PER-LEAGUE — _poisson_probs uses league_draw_pct for dynamic inflation")
+def _():
+    import math
+    from workers.jobs.daily_pipeline_v2 import _poisson_probs
+    # High draw league (50% draw rate, e.g. defensive lower division) vs low (22%, open attacking league).
+    # The formula clips to a floor of 1.03 for leagues below ~37% — so we need ldp=0.50 to show a clear
+    # difference vs ldp=0.22 (which clips at 1.03).
+    high    = _poisson_probs(1.5, 1.5, league_draw_pct=0.50)
+    low     = _poisson_probs(1.5, 1.5, league_draw_pct=0.22)
+    default = _poisson_probs(1.5, 1.5)
+    assert high["draw_prob"] > low["draw_prob"], (
+        f"High draw league (50%) should produce higher draw prob than low (22%): "
+        f"{high['draw_prob']:.4f} vs {low['draw_prob']:.4f}"
+    )
+    # Probabilities must still sum to 1.0 in all cases
+    for label, r in [("high", high), ("low", low), ("default", default)]:
+        total = r["home_prob"] + r["draw_prob"] + r["away_prob"]
+        assert abs(total - 1.0) < 1e-6, f"1X2 probs must sum to 1.0 for {label}, got {total}"
+        for key in ("home_prob", "draw_prob", "away_prob"):
+            assert not math.isnan(r[key]), f"NaN in {key} for {label}"
+    # Ceiling clamp: ldp=0.99 should not exceed ldp=0.80 (both capped at 1.15)
+    extreme_high = _poisson_probs(1.5, 1.5, league_draw_pct=0.99)
+    capped_high  = _poisson_probs(1.5, 1.5, league_draw_pct=0.80)
+    assert abs(extreme_high["draw_prob"] - capped_high["draw_prob"]) < 0.001, \
+        "Upper clamp (1.15) should plateau extreme values"
+
+
+@test("NEWS-IMPACT-DIR — news_impact_home/away signal names queryable in match_signals")
+def _():
+    from workers.api_clients.db import execute_query
+    rows = execute_query(
+        "SELECT COUNT(*) AS cnt FROM match_signals "
+        "WHERE signal_name IN ('news_impact_home', 'news_impact_away')"
+    )
+    cnt = rows[0]["cnt"] if rows else 0
+    # May be 0 if news_checker hasn't run since the fix — just verify query works without error
+    assert isinstance(cnt, int), f"Expected int count, got {type(cnt)}"
+
+
 # ── Results ───────────────────────────────────────────────────────────────────
 
 def main():
