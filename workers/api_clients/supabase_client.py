@@ -172,7 +172,7 @@ def store_match(match_data: dict) -> str:
     league_id = ensure_league(league_path, tier)
 
     existing = execute_query(
-        """SELECT id, api_football_id, venue_name, referee FROM matches
+        """SELECT id, api_football_id, venue_name, venue_af_id, referee FROM matches
            WHERE home_team_id = %s AND away_team_id = %s
              AND date >= %s AND date <= %s""",
         (home_id, away_id, f"{date_prefix}T00:00:00", f"{date_prefix}T23:59:59"),
@@ -189,6 +189,8 @@ def store_match(match_data: dict) -> str:
             updates["api_football_id"] = int(af_id)
         if match_data.get("venue_name") and not existing[0].get("venue_name"):
             updates["venue_name"] = match_data["venue_name"]
+        if match_data.get("venue_af_id") and not existing[0].get("venue_af_id"):
+            updates["venue_af_id"] = int(match_data["venue_af_id"])
         if match_data.get("referee") and not existing[0].get("referee"):
             updates["referee"] = match_data["referee"]
 
@@ -236,6 +238,8 @@ def store_match(match_data: dict) -> str:
         match_record["api_football_id"] = int(af_id)
     if match_data.get("venue_name"):
         match_record["venue_name"] = match_data["venue_name"]
+    if match_data.get("venue_af_id"):
+        match_record["venue_af_id"] = int(match_data["venue_af_id"])
     if match_data.get("referee"):
         match_record["referee"] = match_data["referee"]
 
@@ -1770,6 +1774,43 @@ def store_team_coaches(team_af_id: int, entries: list[dict]) -> int:
         return len(rows)
     except Exception as e:
         console.print(f"[yellow]store_team_coaches failed for team {team_af_id}: {e}[/yellow]")
+        return 0
+
+
+def store_venues(venue_list: list[dict]) -> int:
+    """Upsert venue records into venues table. Returns count upserted.
+
+    venue_list: list of {af_id, name, surface, capacity} from parse_venue().
+    """
+    if not venue_list:
+        return 0
+    from psycopg2.extras import execute_values
+    rows = [
+        (v["af_id"], v.get("name"), v.get("surface"), v.get("capacity"))
+        for v in venue_list
+        if v.get("af_id")
+    ]
+    if not rows:
+        return 0
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                execute_values(
+                    cur,
+                    """INSERT INTO venues (af_id, name, surface, capacity, fetched_at)
+                       VALUES %s
+                       ON CONFLICT (af_id)
+                       DO UPDATE SET name = EXCLUDED.name,
+                                     surface = EXCLUDED.surface,
+                                     capacity = EXCLUDED.capacity,
+                                     fetched_at = now()""",
+                    rows,
+                    template="(%s, %s, %s, %s, now())",
+                )
+                conn.commit()
+        return len(rows)
+    except Exception as e:
+        console.print(f"[yellow]store_venues failed: {e}[/yellow]")
         return 0
 
 
@@ -3571,6 +3612,23 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
                 add(mid, "league_draw_pct", round(draws_count / total, 4), "context", "derived")
                 if goal_totals:
                     add(mid, "league_avg_goals", round(sum(goal_totals) / len(goal_totals), 3), "context", "derived")
+    except Exception:
+        pass
+
+    # ── 11b. Venue surface signal (AF-VENUES) ─────────────────────────────────
+    try:
+        venue_rows = execute_query(
+            """SELECT m.id, v.surface
+               FROM matches m
+               JOIN venues v ON m.venue_af_id = v.af_id
+               WHERE m.id = ANY(%s::uuid[])
+                 AND v.surface IS NOT NULL""",
+            (match_ids,),
+        )
+        for row in venue_rows:
+            mid = str(row["id"])
+            surface = (row["surface"] or "").lower()
+            add(mid, "venue_surface_artificial", 1.0 if surface == "artificial turf" else 0.0, "context", "venues")
     except Exception:
         pass
 

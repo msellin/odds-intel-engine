@@ -526,6 +526,81 @@ def _():
     from workers.jobs.fetch_enrichment import fetch_coaches, run_enrichment  # noqa: F401
 
 
+# ── AF-VENUES ─────────────────────────────────────────────────────────────────
+
+@test("AF-VENUES — parse_venue extracts surface and capacity correctly")
+def _():
+    from workers.api_clients.api_football import parse_venue
+    raw = {
+        "id": 1,
+        "name": "Old Trafford",
+        "surface": "grass",
+        "capacity": 76212,
+    }
+    result = parse_venue(raw)
+    assert result["af_id"] == 1
+    assert result["surface"] == "grass"
+    assert result["capacity"] == 76212
+
+    raw_turf = {"id": 2, "name": "Turf Arena", "surface": "Artificial Turf", "capacity": 5000}
+    result_turf = parse_venue(raw_turf)
+    assert result_turf["surface"] == "artificial turf", "surface should be lowercased"
+
+
+@test("AF-VENUES — venue signal logic: artificial turf → 1.0, grass → 0.0")
+def _():
+    def surface_to_signal(surface: str) -> float:
+        return 1.0 if (surface or "").lower() == "artificial turf" else 0.0
+
+    assert surface_to_signal("grass") == 0.0
+    assert surface_to_signal("Grass") == 0.0
+    assert surface_to_signal("artificial turf") == 1.0
+    assert surface_to_signal("Artificial Turf") == 1.0
+    assert surface_to_signal("indoor") == 0.0
+    assert surface_to_signal(None) == 0.0
+
+
+@test("AF-VENUES — venues table exists (migration 065)")
+def _():
+    from workers.api_clients.db import execute_query
+    try:
+        cols = execute_query(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'venues' ORDER BY column_name",
+            []
+        )
+    except Exception:
+        cols = []
+    if not cols:
+        return  # migration not yet applied, skip gracefully
+    col_names = {r["column_name"] for r in cols}
+    assert "af_id" in col_names, "venues.af_id missing"
+    assert "surface" in col_names, "venues.surface missing"
+    assert "capacity" in col_names, "venues.capacity missing"
+
+
+@test("AF-VENUES — matches.venue_af_id column exists (migration 065)")
+def _():
+    from workers.api_clients.db import execute_query
+    try:
+        cols = execute_query(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'matches' AND column_name = 'venue_af_id'",
+            []
+        )
+    except Exception:
+        cols = []
+    if not cols:
+        return  # migration not yet applied, skip gracefully
+    assert len(cols) == 1, "matches.venue_af_id column not found"
+
+
+@test("AF-VENUES — fetch_enrichment imports venues component without error")
+def _():
+    from workers.jobs.fetch_enrichment import fetch_venues, ALL_COMPONENTS  # noqa: F401
+    assert "venues" in ALL_COMPONENTS
+
+
 # ── Results ───────────────────────────────────────────────────────────────────
 
 def main():

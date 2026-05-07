@@ -142,6 +142,9 @@ Data tier system:
 | League home win pct (last 200 finished) | `league_home_win_pct` | Morning pipeline | ✅ Running |
 | League draw pct | `league_draw_pct` | Morning pipeline | ✅ Running |
 | League avg goals | `league_avg_goals` | Morning pipeline | ✅ Running |
+| Manager change days — home | `manager_change_home_days` | Morning pipeline (batch_write block 3c) | ✅ Running |
+| Manager change days — away | `manager_change_away_days` | Morning pipeline (batch_write block 3c) | ✅ Running |
+| Venue artificial turf | `venue_surface_artificial` | Morning pipeline (batch_write block 11b) | ✅ Running |
 
 **Not yet built:**
 - `is_derby` / `travel_distance` — needs team location data

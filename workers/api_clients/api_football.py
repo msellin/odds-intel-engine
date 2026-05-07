@@ -564,6 +564,25 @@ def get_h2h(team1_id: int, team2_id: int, last: int = 5) -> list[dict]:
     return data.get("response", [])
 
 
+# ─── Venues (AF-VENUES) ─────────────────────────────────────────────────────
+
+def get_venue(venue_id: int) -> dict | None:
+    """Get venue details (surface, capacity). Endpoint: GET /venues?id={id}"""
+    data = _get("venues", {"id": venue_id})
+    results = data.get("response", [])
+    return results[0] if results else None
+
+
+def parse_venue(raw: dict) -> dict:
+    surface = (raw.get("surface") or "").lower().strip() or None
+    return {
+        "af_id": raw.get("id"),
+        "name": raw.get("name"),
+        "surface": surface,
+        "capacity": raw.get("capacity"),
+    }
+
+
 # ─── Coaches (MGR-CHANGE) ────────────────────────────────────────────────────
 
 def get_coaches(team_id: int) -> list[dict]:
@@ -1307,6 +1326,7 @@ def fixture_to_match_dict(fixture: dict) -> dict:
         "api_football_id": f.get("id"),
         "venue_name": venue.get("name"),
         "venue_city": venue.get("city"),
+        "venue_af_id": venue.get("id"),
         "referee": f.get("referee"),
         "home_team_api_id": teams.get("home", {}).get("id"),
         "away_team_api_id": teams.get("away", {}).get("id"),

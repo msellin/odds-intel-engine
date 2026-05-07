@@ -38,11 +38,12 @@ from workers.api_clients.api_football import (
     get_standings, parse_standings,
     get_h2h, parse_h2h,
     get_coaches, parse_coaches,
+    get_venue, parse_venue,
 )
 from workers.api_clients.supabase_client import (
     store_team_season_stats, store_match_injuries,
     store_league_standings, store_match_h2h,
-    store_team_coaches,
+    store_team_coaches, store_venues,
 )
 from workers.api_clients.db import execute_query
 from workers.utils.pipeline_utils import (
@@ -53,7 +54,7 @@ from workers.utils.pipeline_utils import (
 
 console = Console()
 
-ALL_COMPONENTS = {"injuries", "team_stats", "standings", "h2h", "coaches"}
+ALL_COMPONENTS = {"injuries", "team_stats", "standings", "h2h", "coaches", "venues"}
 
 
 def _build_fixture_meta(target_date: str) -> dict[int, dict]:
@@ -141,6 +142,8 @@ def _build_fixture_meta(target_date: str) -> dict[int, dict]:
                 if not fixture_meta[fid]["league_api_id"]:
                     fixture_meta[fid]["league_api_id"] = league.get("id")
                 fixture_meta[fid]["season"] = league.get("season") or season
+                venue_id = af_fix.get("fixture", {}).get("venue", {}).get("id")
+                fixture_meta[fid]["venue_af_id"] = venue_id
     except Exception as e:
         console.print(f"  [yellow]Could not fetch AF fixtures for team IDs: {e}[/yellow]")
 
@@ -333,6 +336,67 @@ def fetch_coaches(fixture_meta: dict) -> int:
     return stored
 
 
+def fetch_venues(fixture_meta: dict) -> int:
+    """AF-VENUES: Fetch and cache venue surface + capacity.
+
+    One call per unique venue ID. Skips venues already in the venues table.
+    Backfills venue_af_id on today's matches so the signal block can join.
+    """
+    console.print("\n[cyan]Venues: Fetching surface + capacity...[/cyan]")
+    from workers.api_clients.db import execute_query as _eq, execute_write as _ew
+
+    # Collect unique venue_af_ids from fixture_meta
+    venue_to_matches: dict[int, list[str]] = {}
+    for meta in fixture_meta.values():
+        vid = meta.get("venue_af_id")
+        mid = meta.get("match_id")
+        if vid and mid:
+            venue_to_matches.setdefault(vid, []).append(mid)
+
+    if not venue_to_matches:
+        console.print("  No venue IDs available — skipping")
+        return 0
+
+    all_venue_ids = list(venue_to_matches.keys())
+
+    # Backfill venue_af_id on matches that don't have it yet
+    try:
+        for vid, match_ids in venue_to_matches.items():
+            for mid in match_ids:
+                _ew(
+                    "UPDATE matches SET venue_af_id = %s WHERE id = %s AND venue_af_id IS NULL",
+                    (vid, mid)
+                )
+    except Exception as e:
+        console.print(f"  [yellow]venue_af_id backfill error: {e}[/yellow]")
+
+    # Check which venues are already cached
+    try:
+        cached_rows = _eq(
+            "SELECT af_id FROM venues WHERE af_id = ANY(%s)",
+            (all_venue_ids,)
+        )
+        cached_ids = {r["af_id"] for r in cached_rows}
+    except Exception:
+        cached_ids = set()
+
+    to_fetch = [vid for vid in all_venue_ids if vid not in cached_ids]
+    console.print(f"  {len(all_venue_ids)} venues total, {len(cached_ids)} cached, {len(to_fetch)} to fetch")
+
+    fetched = []
+    for vid in to_fetch:
+        try:
+            raw = get_venue(vid)
+            if raw:
+                fetched.append(parse_venue(raw))
+        except Exception as e:
+            console.print(f"  [yellow]Venue fetch failed for {vid}: {e}[/yellow]")
+
+    stored = store_venues(fetched)
+    console.print(f"  {stored} venue records upserted")
+    return stored
+
+
 def run_enrichment(target_date: str = None, components: set = None):
     """Run enrichment pipeline. Callable by scheduler or CLI."""
     target_date = target_date or date.today().isoformat()
@@ -379,6 +443,9 @@ def run_enrichment(target_date: str = None, components: set = None):
 
         if "coaches" in components:
             total_records += fetch_coaches(fixture_meta)
+
+        if "venues" in components:
+            total_records += fetch_venues(fixture_meta)
 
         log_pipeline_complete(
             run_id,
