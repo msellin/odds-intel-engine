@@ -3576,16 +3576,16 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
             SELECT
               COUNT(*)                                                              AS placed_today,
               COUNT(*) FILTER (WHERE result = 'pending')                           AS pending_total,
-              COUNT(*) FILTER (WHERE result IN ('won','lost') AND updated_at::date = %s) AS settled_today,
-              SUM(CASE WHEN result='won' AND updated_at::date = %s THEN pnl
-                       WHEN result='lost' AND updated_at::date = %s THEN pnl
+              COUNT(*) FILTER (WHERE result IN ('won','lost') AND pick_time::date = %s) AS settled_today,
+              SUM(CASE WHEN result='won' AND pick_time::date = %s THEN pnl
+                       WHEN result='lost' AND pick_time::date = %s THEN pnl
                        ELSE 0 END)                                                AS pnl_today,
               COUNT(*) FILTER (WHERE bot_id IN (
                 SELECT id FROM bots WHERE name LIKE 'bot_inplay%%'
-              ) AND placed_at::date = %s)                                          AS inplay_today,
-              COUNT(DISTINCT bot_id) FILTER (WHERE placed_at::date = %s)          AS active_bots
+              ) AND pick_time::date = %s)                                          AS inplay_today,
+              COUNT(DISTINCT bot_id) FILTER (WHERE pick_time::date = %s)          AS active_bots
             FROM simulated_bets
-            WHERE placed_at::date = %s OR result IN ('won','lost')
+            WHERE pick_time::date = %s OR result IN ('won','lost')
             """, [today, today, today, today, today, today])
         bets_placed_today  = r[0]["placed_today"] if r else 0
         bets_pending       = r[0]["pending_total"] if r else 0
@@ -3602,7 +3602,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
             """
             SELECT COUNT(*) AS n FROM (
               SELECT bot_id, match_id, market, selection
-              FROM simulated_bets WHERE placed_at::date = %s
+              FROM simulated_bets WHERE pick_time::date = %s
               GROUP BY 1,2,3,4 HAVING COUNT(*) > 1
             ) t
             """, [today])
@@ -3612,10 +3612,10 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
         r = execute_query(
             """
             SELECT
-              COUNT(*)                                              AS snapshots_today,
-              COUNT(*) FILTER (WHERE home_xg IS NOT NULL)          AS with_xg,
-              COUNT(*) FILTER (WHERE ou_over_25_odds IS NOT NULL)  AS with_live_odds
-            FROM live_match_snapshots WHERE created_at::date = %s
+              COUNT(*)                                                AS snapshots_today,
+              COUNT(*) FILTER (WHERE xg_home IS NOT NULL)            AS with_xg,
+              COUNT(*) FILTER (WHERE live_ou_25_over IS NOT NULL)    AS with_live_odds
+            FROM live_match_snapshots WHERE captured_at::date = %s
             """, [today])
         live_snapshots_today     = r[0]["snapshots_today"] if r else 0
         snapshots_with_xg        = r[0]["with_xg"] if r else 0
@@ -3632,21 +3632,19 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
         post_mortem_ran_today = (r[0]["n"] > 0) if r else False
 
         r = execute_query(
-            "SELECT COUNT(*) AS n FROM match_feature_vectors WHERE captured_at::date = %s", [today])
+            "SELECT COUNT(*) AS n FROM match_feature_vectors WHERE built_at::date = %s", [today])
         feature_vectors_today = r[0]["n"] if r else 0
 
         r = execute_query(
-            "SELECT COUNT(*) AS n FROM team_elo_daily WHERE updated_at::date = %s", [today])
+            "SELECT COUNT(*) AS n FROM team_elo_daily WHERE date = %s", [today])
         elo_updates_today = r[0]["n"] if r else 0
 
         # ⑤ Enrichment quality
         r = execute_query(
             """
-            SELECT
-              COUNT(DISTINCT h.match_id) AS with_h2h
-            FROM matches m
-            LEFT JOIN match_h2h h ON h.match_id = m.id
-            WHERE m.date = %s AND h.match_id IS NOT NULL
+            SELECT COUNT(*) AS with_h2h
+            FROM matches
+            WHERE date = %s AND h2h_raw IS NOT NULL
             """, [today])
         matches_with_h2h = r[0]["with_h2h"] if r else 0
 
@@ -3660,7 +3658,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
         r = execute_query(
             """
             SELECT COUNT(DISTINCT l.match_id) AS n
-            FROM match_lineups l
+            FROM lineups l
             JOIN matches m ON m.id = l.match_id
             WHERE m.date = %s
             """, [today])
@@ -3676,7 +3674,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
         value_bet_alerts_today = r[0]["n"] if r else 0
 
         r = execute_query(
-            "SELECT COUNT(*) AS n FROM match_previews WHERE created_at::date = %s", [today])
+            "SELECT COUNT(*) AS n FROM match_previews WHERE generated_at::date = %s", [today])
         previews_generated_today = r[0]["n"] if r else 0
 
         r = execute_query(
