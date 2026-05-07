@@ -3523,12 +3523,14 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
 
     try:
         # ① Fixtures & coverage
+        # IMPORTANT: matches.date is timestamptz storing kickoff datetimes (not midnight).
+        # Use date::date = %s (date-part cast) to match all matches on this calendar day.
         r = execute_query(
             """
             SELECT
               COUNT(*)                                        AS matches_today,
               COUNT(*) FILTER (WHERE status = 'postponed')   AS postponed
-            FROM matches WHERE date = %s
+            FROM matches WHERE date::date = %s
             """, [today])
         matches_today       = r[0]["matches_today"] if r else 0
         matches_missing_grade = None  # no grade column yet
@@ -3543,38 +3545,63 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
                 SELECT 1 FROM odds_snapshots o2
                 WHERE o2.match_id = o.match_id AND o2.bookmaker = 'Pinnacle'
               ) THEN o.match_id END) AS without_pinnacle,
-              COUNT(*)                   AS snapshots_today,
-              COUNT(DISTINCT o.bookmaker) AS distinct_bm
+              COUNT(*)                    AS snapshots_today,
+              COUNT(DISTINCT o.bookmaker) AS distinct_bm,
+              COUNT(DISTINCT CASE WHEN o.market = 'Match Winner' THEN o.match_id END)     AS mkt_match_winner,
+              COUNT(DISTINCT CASE WHEN o.market LIKE 'Goals Over/Under%' THEN o.match_id END) AS mkt_goals_ou,
+              COUNT(DISTINCT CASE WHEN o.market = 'Both Teams Score' THEN o.match_id END) AS mkt_btts
             FROM odds_snapshots o
             JOIN matches m ON m.id = o.match_id
-            WHERE m.date = %s
+            WHERE m.date::date = %s
             """, [today])
-        matches_with_odds       = r[0]["with_odds"] if r else 0
-        matches_with_pinnacle   = r[0]["with_pinnacle"] if r else 0
+        matches_with_odds        = r[0]["with_odds"] if r else 0
+        matches_with_pinnacle    = r[0]["with_pinnacle"] if r else 0
         matches_without_pinnacle = r[0]["without_pinnacle"] if r else 0
-        odds_snapshots_today    = r[0]["snapshots_today"] if r else 0
-        distinct_bookmakers     = r[0]["distinct_bm"] if r else 0
+        odds_snapshots_today     = r[0]["snapshots_today"] if r else 0
+        distinct_bookmakers      = r[0]["distinct_bm"] if r else 0
+        odds_market_match_winner = r[0]["mkt_match_winner"] if r else 0
+        odds_market_goals_ou     = r[0]["mkt_goals_ou"] if r else 0
+        odds_market_btts         = r[0]["mkt_btts"] if r else 0
 
         r = execute_query(
             """SELECT COUNT(DISTINCT p.match_id) AS n
                FROM predictions p JOIN matches m ON m.id = p.match_id
-               WHERE m.date = %s AND p.source = 'af'""",
+               WHERE m.date::date = %s AND p.source = 'af'""",
             [today])
         matches_with_predictions = r[0]["n"] if r else 0
 
         r = execute_query(
             """SELECT COUNT(DISTINCT s.match_id) AS n
                FROM match_signals s JOIN matches m ON m.id = s.match_id
-               WHERE m.date = %s""",
+               WHERE m.date::date = %s""",
             [today])
         matches_with_signals = r[0]["n"] if r else 0
 
         r = execute_query(
             """SELECT COUNT(DISTINCT mfv.match_id) AS n
                FROM match_feature_vectors mfv JOIN matches m ON m.id = mfv.match_id
-               WHERE m.date = %s""",
+               WHERE m.date::date = %s""",
             [today])
         matches_with_fvectors = r[0]["n"] if r else 0
+
+        # Signal breakdown: how many of today's matches have each signal type
+        r = execute_query(
+            """
+            SELECT
+              COUNT(DISTINCT CASE WHEN s.signal_name = 'elo_home'           THEN s.match_id END) AS with_elo,
+              COUNT(DISTINCT CASE WHEN s.signal_name = 'form_ppg_home'      THEN s.match_id END) AS with_form,
+              COUNT(DISTINCT CASE WHEN s.signal_name = 'h2h_win_pct'        THEN s.match_id END) AS with_h2h_sig,
+              COUNT(DISTINCT CASE WHEN s.signal_name = 'injury_count_home'  THEN s.match_id END) AS with_injuries_sig,
+              COUNT(DISTINCT CASE WHEN s.signal_name LIKE 'league_position%%' THEN s.match_id END) AS with_standings
+            FROM match_signals s
+            JOIN matches m ON m.id = s.match_id
+            WHERE m.date::date = %s
+            """, [today])
+        signals_with_elo       = r[0]["with_elo"] if r else 0
+        signals_with_form      = r[0]["with_form"] if r else 0
+        signals_with_h2h       = r[0]["with_h2h_sig"] if r else 0
+        signals_with_injuries  = r[0]["with_injuries_sig"] if r else 0
+        signals_with_standings = r[0]["with_standings"] if r else 0
 
         # ② Betting & bots
         r = execute_query(
@@ -3627,7 +3654,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
 
         # ④ Post-match / settlement
         r = execute_query(
-            "SELECT COUNT(*) AS n FROM matches WHERE status = 'finished' AND date = %s", [today])
+            "SELECT COUNT(*) AS n FROM matches WHERE status = 'finished' AND date::date = %s", [today])
         matches_finished_today = r[0]["n"] if r else 0
 
         r = execute_query(
@@ -3638,7 +3665,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
         r = execute_query(
             """SELECT COUNT(*) AS n
                FROM match_feature_vectors mfv JOIN matches m ON m.id = mfv.match_id
-               WHERE m.date = %s""",
+               WHERE m.date::date = %s""",
             [today])
         feature_vectors_today = r[0]["n"] if r else 0
 
@@ -3651,14 +3678,15 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
             """
             SELECT COUNT(*) AS with_h2h
             FROM matches
-            WHERE date = %s AND h2h_raw IS NOT NULL
+            WHERE date::date = %s AND h2h_raw IS NOT NULL
             """, [today])
         matches_with_h2h = r[0]["with_h2h"] if r else 0
 
         r = execute_query(
             """
-            SELECT COUNT(DISTINCT match_id) AS n FROM match_injuries
-            WHERE created_at::date = %s
+            SELECT COUNT(DISTINCT mi.match_id) AS n FROM match_injuries mi
+            JOIN matches m ON m.id = mi.match_id
+            WHERE m.date::date = %s
             """, [today])
         matches_with_injuries = r[0]["n"] if r else 0
 
@@ -3667,7 +3695,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
             SELECT COUNT(DISTINCT l.match_id) AS n
             FROM lineups l
             JOIN matches m ON m.id = l.match_id
-            WHERE m.date = %s
+            WHERE m.date::date = %s
             """, [today])
         matches_with_lineups = r[0]["n"] if r else 0
 
@@ -3740,11 +3768,14 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               matches_with_predictions, matches_with_signals, matches_with_fvectors,
               matches_missing_grade, matches_postponed_today,
               odds_snapshots_today, distinct_bookmakers, matches_without_pinnacle,
+              odds_market_match_winner, odds_market_goals_ou, odds_market_btts,
               bets_placed_today, bets_pending, bets_settled_today, pnl_today,
               bets_inplay_today, active_bots, silent_bots, duplicate_bets,
               live_snapshots_today, snapshots_with_xg, snapshots_with_live_odds,
               matches_finished_today, post_mortem_ran_today, feature_vectors_today, elo_updates_today,
               matches_with_h2h, matches_with_injuries, matches_with_lineups,
+              signals_with_elo, signals_with_form, signals_with_h2h,
+              signals_with_injuries, signals_with_standings,
               digests_sent_today, value_bet_alerts_today, previews_generated_today,
               news_checker_errors_today, watchlist_alerts_today,
               backfill_total_done, backfill_last_run,
@@ -3753,11 +3784,11 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
             ) VALUES (
               %s,
               %s, %s, %s, %s, %s, %s, %s, %s,
-              %s, %s, %s,
+              %s, %s, %s, %s, %s, %s,
               %s, %s, %s, %s, %s, %s, %s, %s,
               %s, %s, %s,
               %s, %s, %s, %s,
-              %s, %s, %s,
+              %s, %s, %s, %s, %s, %s, %s, %s,
               %s, %s, %s, %s, %s,
               %s, %s,
               %s, %s,
@@ -3770,11 +3801,14 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
                 matches_with_predictions, matches_with_signals, matches_with_fvectors,
                 matches_missing_grade, matches_postponed,
                 odds_snapshots_today, distinct_bookmakers, matches_without_pinnacle,
+                odds_market_match_winner, odds_market_goals_ou, odds_market_btts,
                 bets_placed_today, bets_pending, bets_settled_today, pnl_today,
                 bets_inplay_today, active_bots, silent_bots, duplicate_bets,
                 live_snapshots_today, snapshots_with_xg, snapshots_with_live_odds,
                 matches_finished_today, post_mortem_ran_today, feature_vectors_today, elo_updates_today,
                 matches_with_h2h, matches_with_injuries, matches_with_lineups,
+                signals_with_elo, signals_with_form, signals_with_h2h,
+                signals_with_injuries, signals_with_standings,
                 digests_sent_today, value_bet_alerts_today, previews_generated_today,
                 news_checker_errors_today, watchlist_alerts_today,
                 backfill_total_done, backfill_last_run,
