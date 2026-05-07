@@ -210,7 +210,7 @@ def run_inplay_strategies():
                 "odds": trigger["odds"],
                 "stake": 1.0,
                 "model_prob": trigger["model_prob"],
-                "edge": trigger["edge"],
+                "edge": trigger["edge"] / 100,  # strategies store edge as %, DB expects decimal (0.374 = 37.4%)
                 "xg_source": xg_source,
                 "reasoning": json.dumps({
                     "strategy": bot_name,

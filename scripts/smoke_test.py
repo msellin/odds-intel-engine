@@ -783,6 +783,22 @@ def _():
     assert rows[0]["n"] >= 0
 
 
+@test("INPLAY-EDGE — simulated_bets.edge_percent stored as decimal not percent (bug: inplay bot was * 100)")
+def _():
+    from workers.api_clients.db import execute_query
+    rows = execute_query(
+        """SELECT id, edge_percent FROM simulated_bets
+           WHERE edge_percent IS NOT NULL AND edge_percent > 1.5
+           LIMIT 5""",
+        []
+    )
+    bad = [r for r in rows if r["edge_percent"] is not None and float(r["edge_percent"]) > 1.5]
+    assert len(bad) == 0, (
+        f"{len(bad)} bet(s) have edge_percent > 1.5 (150% edge — likely stored as percent, not decimal): "
+        + ", ".join(f"id={r['id']} edge={r['edge_percent']}" for r in bad[:3])
+    )
+
+
 # ── Results ───────────────────────────────────────────────────────────────────
 
 def main():

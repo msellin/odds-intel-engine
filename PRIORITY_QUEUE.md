@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-07 — Added 17 tasks from 4-AI signal review (DOUBTFUL-SIGNAL, SHARP-DRAW-AWAY, LEAGUE-GOALS-DIST, H2H-GATE, INJURY-UNCERTAINTY, ODDS-VOL-AUDIT, TURF-FAMILIARITY, IMPORTANCE-GAMES-REM, REST-NONLINEAR, FORM-ELO-RESIDUAL, LEAGUE-ELO-VAR, LEAGUE-SEASON-PHASE, LEAGUE-DRAW-YTD, BOOKMAKER-COUNT, LINE-VELOCITY, LEAGUE-CLV-EFFICIENCY, SUSPENSION-SIGNAL, CUP-ROTATION, GOALKEEPER-SIGNAL, META-FEATURE-DESIGN, LONGSHOT-GEO-AUDIT). Earlier: AF data expansion (AF-BATCH, AF-HALF-TIME-SIGNALS, AF-SIDELINED, AF-TRANSFERS), H2H-SPLITS, AH-SIGNALS.
+> Last updated: 2026-05-07 — Fixed INPLAY-EDGE-BUG (inplay bot edge stored as percent not decimal). Added 17 tasks from 4-AI signal review (DOUBTFUL-SIGNAL, SHARP-DRAW-AWAY, LEAGUE-GOALS-DIST, H2H-GATE, INJURY-UNCERTAINTY, ODDS-VOL-AUDIT, TURF-FAMILIARITY, IMPORTANCE-GAMES-REM, REST-NONLINEAR, FORM-ELO-RESIDUAL, LEAGUE-ELO-VAR, LEAGUE-SEASON-PHASE, LEAGUE-DRAW-YTD, BOOKMAKER-COUNT, LINE-VELOCITY, LEAGUE-CLV-EFFICIENCY, SUSPENSION-SIGNAL, CUP-ROTATION, GOALKEEPER-SIGNAL, META-FEATURE-DESIGN, LONGSHOT-GEO-AUDIT). Earlier: AF data expansion (AF-BATCH, AF-HALF-TIME-SIGNALS, AF-SIDELINED, AF-TRANSFERS), H2H-SPLITS, AH-SIGNALS.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -55,6 +55,7 @@
 
 | ID | Task | ☑ | Notes |
 |----|------|----|-------|
+| INPLAY-EDGE-BUG | Inplay bot edge_percent stored as percent not decimal | ✅ Done 2026-05-07 | `inplay_bot.py` stored `edge = (prob-implied)*100` but `store_bet` expects decimal. Fixed: divide by 100 at storage. Patched 1 bad DB record. Smoke test added. |
 | S3/S4/S5/S3b-f | All signals wired (ELO, form, H2H, referee, BDM, OLM, venue, rest, standings) | ✅ | Full signal set in match_signals |
 | SIG-7/8/9/10/11 | Importance asymmetry, venue splits, form slope, odds vol, league meta | ✅ | |
 | META-2 | Meta-model feature design (8 market-structure features) | ✅ | |
