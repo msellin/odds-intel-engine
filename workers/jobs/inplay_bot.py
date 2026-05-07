@@ -203,6 +203,7 @@ def run_inplay_strategies():
                 continue
 
             xg_h, xg_a, is_real = _compute_live_xg(cand)
+            xg_source = "live" if is_real else "shot_proxy"
             bet_data = {
                 "market": trigger["market"],
                 "selection": trigger["selection"],
@@ -210,6 +211,7 @@ def run_inplay_strategies():
                 "stake": 1.0,
                 "model_prob": trigger["model_prob"],
                 "edge": trigger["edge"],
+                "xg_source": xg_source,
                 "reasoning": json.dumps({
                     "strategy": bot_name,
                     "minute": cand["minute"],

@@ -1153,6 +1153,7 @@ def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
         "dimension_scores", "alignment_count", "alignment_total", "alignment_class",
         "model_disagreement", "news_impact_score", "lineup_confirmed",
         "timing_cohort",
+        "xg_source",  # inplay bots: 'live' | 'shot_proxy' (migration 057)
     ]
     for field in optional_fields:
         if field in bet_data and bet_data[field] is not None:
