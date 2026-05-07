@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-07 — Match detail refactor complete (tabbed layout, stats, signals, odds movement). Signal pipeline now generates for all matches incl. Grade D. Extended stats stored in DB. MD-POLISH queued.
+> Last updated: 2026-05-07 — parse_live_odds fixed (Fulltime Result market name + handicap O/U format). Smoke tests expanded to 24 (2 new parse_live_odds unit tests). Live odds now parsed correctly — inplay bot will have real market data for the first time.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -242,6 +242,7 @@
 | KAMBI-BUG-1 | Duplicate value bets when Kambi league name ≠ AF name — added Bulgaria PFL 1 mapping + improved frontend dedup to normalise club prefixes (FK/FC/etc) and key on kickoff date | ✅ Done 2026-05-06 | |
 | KAMBI-DROP | Drop Kambi entirely — empirical analysis showed "ub"=Unibet (AF has it), "paf"/"kambi"=36 rows/30 days. Removed scraper from pipeline, cleaned 20 league/50 team/7 fixture dupes via migration 047. Full cleanup 2026-05-06: deleted `kambi_odds.py`, `kambi_odds_value.py`, `detect_duplicates.py`, removed `fetch_kambi_odds()` from fetch_odds.py, removed `KAMBI_TO_AF_LEAGUE` mapping, renamed team_names.py refs. Cleaned 37 more duplicates from 23h deploy gap. | ✅ Done 2026-05-06 | |
 | SETTLE-FIX | Settlement `KeyError: 'odds'` — `bet["odds"]` → `bet["odds_at_pick"]` in settlement.py:1034. Was crashing settle_ready every 15 min, blocking 158 matches from settling. | ✅ Done 2026-05-06 | |
+| LIVE-ODDS-PARSE | `parse_live_odds()` returned 0 fixtures — AF sends "Fulltime Result" not "Match Winner", and O/U uses `value="Over"` + `handicap="2.5"` (not `"Over 2.5"` combined). Inplay bot has never had real live odds data. Fixed both parsers. 2 regression tests added to smoke_test.py. | ✅ Done 2026-05-07 | `workers/api_clients/api_football.py:parse_live_odds` |
 | SENTRY-CRON | Sentry cron monitors not registering — `grace_period_minutes` → `checkin_margin` (correct sentry-sdk 2.x key). | ✅ Done 2026-05-06 → Reverted: Sentry removed from engine 2026-05-06 (free tier budget exceeded, Railway logs sufficient) | |
 | RAIL-AUTODEPLOY | Railway auto-deploy from GitHub — connected repo in Settings → Source, main branch, Wait for CI off. Previously required manual `railway up`. | ✅ Done 2026-05-06 | |
 
@@ -341,7 +342,7 @@
 | Meta-model Phase 1 ready | `match_feature_vectors WHERE captured_at >= 2026-05-06 AND pinnacle_implied_home IS NOT NULL` | 3,000+ | ~0 (quality clock starts today) | ~May 17 (~280/day) |
 | Alignment threshold validation | `simulated_bets WHERE result!='pending' AND created_at >= 2026-05-06` | 300+ | ~0 (quality clock starts today) | ~June 5 (~27 bets/day post-cutoff) |
 | Post-mortem patterns readable | `model_evaluations WHERE market='post_mortem'` | 14+ | 2 | ~May 13 (+1/day) |
-| In-play model ready | Distinct matches in live_match_snapshots WITH xG | 500+ | 243 | ~May 7-8 (~150/day). NOTE: live odds now fixed (2026-05-05) — ou_* fields were broken before |
+| In-play model ready | Distinct matches in live_match_snapshots WITH xG | 500+ | 243 | ~May 7-8 (~150/day). NOTE: live 1x2/O/U odds NOW fixed (2026-05-07) — parse_live_odds was returning 0 rows due to market name mismatch ("Fulltime Result" not "Match Winner") + O/U handicap field format |
 | Meta-model Phase 2 ready | Settled bets with dimension_scores + CLV | 1,000+ | 0 | ~Aug (needs ALN-1 first) |
 | XGBoost retrain on backfill | Backfill Phase 1 complete (match_stats) | ~18,000 | 3,474 matches done (~8 leagues complete, 49 in-progress) | ~May 7 |
 | LLM team name resolve | `wc -l data/logs/unmatched_teams.log` | Shrinks toward 0 | 2,287 entries | Manual |

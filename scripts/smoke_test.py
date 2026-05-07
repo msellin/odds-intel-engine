@@ -263,6 +263,47 @@ def _():
     from workers.live_poller import LivePoller  # noqa: F401
 
 
+@test("parse_live_odds — Fulltime Result market parsed as 1x2")
+def _():
+    from workers.api_clients.api_football import parse_live_odds
+    sample = [{
+        "fixture": {"id": 999, "status": {"elapsed": 45}},
+        "odds": [{
+            "name": "Fulltime Result",
+            "values": [
+                {"value": "Home", "odd": "1.80", "suspended": False},
+                {"value": "Draw", "odd": "3.50", "suspended": False},
+                {"value": "Away", "odd": "4.20", "suspended": False},
+            ]
+        }]
+    }]
+    result = parse_live_odds(sample)
+    assert 999 in result, "fixture 999 not found in result"
+    markets = {r["selection"] for r in result[999]}
+    assert markets == {"home", "draw", "away"}, f"Expected home/draw/away, got {markets}"
+
+
+@test("parse_live_odds — Over/Under Line with handicap field parsed correctly")
+def _():
+    from workers.api_clients.api_football import parse_live_odds
+    sample = [{
+        "fixture": {"id": 888, "status": {"elapsed": 60}},
+        "odds": [{
+            "name": "Over/Under Line",
+            "values": [
+                {"value": "Over", "handicap": "2.5", "odd": "1.95", "suspended": False},
+                {"value": "Under", "handicap": "2.5", "odd": "1.90", "suspended": False},
+            ]
+        }]
+    }]
+    result = parse_live_odds(sample)
+    assert 888 in result, "fixture 888 not found in result"
+    markets = {r["market"] for r in result[888]}
+    assert "over_under_25" in markets, f"Expected over_under_25, got {markets}"
+    selections = {r["selection"] for r in result[888]}
+    assert selections == {"over", "under"}, f"Expected over/under, got {selections}"
+
+
 # ── Results ───────────────────────────────────────────────────────────────────
 
 def main():

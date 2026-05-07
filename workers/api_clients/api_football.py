@@ -803,7 +803,7 @@ def parse_live_odds(live_odds_response: list[dict]) -> dict[int, list[dict]]:
         for bet in item.get("odds", []):
             market_name = bet.get("name", "")
 
-            if market_name == "Match Winner":
+            if market_name in ("Match Winner", "Fulltime Result"):
                 for val in bet.get("values", []):
                     if val.get("suspended"):
                         continue
@@ -823,20 +823,29 @@ def parse_live_odds(live_odds_response: list[dict]) -> dict[int, list[dict]]:
                     if val.get("suspended"):
                         continue
                     v = val.get("value", "")
-                    if " " in v:
-                        direction, line = v.split(" ", 1)
-                        try:
-                            line_num = float(line)
-                            label = f"over_under_{str(line_num).replace('.', '')}"
-                            rows.append({
-                                "bookmaker": "api-football-live",
-                                "market": label,
-                                "selection": direction.lower(),
-                                "odds": float(val["odd"]),
-                                "minute": minute,
-                            })
-                        except ValueError:
-                            pass
+                    # AF may send direction + line as separate fields:
+                    # value="Over", handicap="2.5"  (Over/Under Line market)
+                    # or combined: value="Over 2.5"  (Goals Over/Under market)
+                    handicap = val.get("handicap")
+                    if handicap is not None and v in ("Over", "Under"):
+                        direction = v
+                        line_str = str(handicap)
+                    elif " " in v:
+                        direction, line_str = v.split(" ", 1)
+                    else:
+                        continue
+                    try:
+                        line_num = float(line_str)
+                        label = f"over_under_{str(line_num).replace('.', '')}"
+                        rows.append({
+                            "bookmaker": "api-football-live",
+                            "market": label,
+                            "selection": direction.lower(),
+                            "odds": float(val["odd"]),
+                            "minute": minute,
+                        })
+                    except ValueError:
+                        pass
 
             elif market_name == "Both Teams Score":
                 for val in bet.get("values", []):
