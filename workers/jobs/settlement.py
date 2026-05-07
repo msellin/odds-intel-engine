@@ -1504,8 +1504,8 @@ Respond with ONLY a JSON object:
                     avg_clv=None,
                     notes=json.dumps(analysis, ensure_ascii=False)[:2000],
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                console.print(f"  [yellow]Post-mortem store error: {e}[/yellow]")
 
     except Exception as e:
         console.print(f"  [yellow]Post-mortem LLM error: {e}[/yellow]")

@@ -1,0 +1,16 @@
+#!/bin/bash
+# OddsIntel pre-push hook — runs smoke tests before every push.
+# Install once: git config core.hooksPath .githooks
+
+cd "$(git rev-parse --show-toplevel)"
+
+echo ""
+echo "Running smoke tests before push..."
+python3 scripts/smoke_test.py
+
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "Push blocked: smoke tests failed. Fix the errors above then push again."
+  echo "To skip (only if you're sure): git push --no-verify"
+  exit 1
+fi

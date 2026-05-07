@@ -817,6 +817,7 @@ def build_match_feature_vectors(client, date_str: str) -> int:
     upserted = 0
     batch_rows = []
 
+    build_errors = 0
     for match in matches:
         try:
             row = _build_feature_row_batched(
@@ -826,8 +827,12 @@ def build_match_feature_vectors(client, date_str: str) -> int:
             )
             if row:
                 batch_rows.append(row)
-        except Exception:
-            pass
+        except Exception as e:
+            build_errors += 1
+            console.print(f"  [yellow]feature row error ({match.get('id', '?')}): {e}[/yellow]")
+
+    if build_errors:
+        console.print(f"  [yellow]⚠ {build_errors}/{len(matches)} matches failed to build feature row[/yellow]")
 
     # Upsert in batches of 50
     for chunk in _chunk_list(batch_rows, 50):
@@ -841,7 +846,8 @@ def build_match_feature_vectors(client, date_str: str) -> int:
             upserted += bulk_upsert(
                 "match_feature_vectors", columns, tuples, conflict_cols, update_cols
             )
-        except Exception:
+        except Exception as e:
+            console.print(f"  [yellow]bulk upsert failed ({len(chunk)} rows), falling back one-by-one: {e}[/yellow]")
             # Fall back to one-by-one
             for row in chunk:
                 try:
@@ -853,8 +859,8 @@ def build_match_feature_vectors(client, date_str: str) -> int:
                         "match_feature_vectors", columns, tuples, conflict_cols, update_cols
                     )
                     upserted += 1
-                except Exception:
-                    pass
+                except Exception as e2:
+                    console.print(f"  [yellow]single row upsert failed ({row.get('match_id', '?')}): {e2}[/yellow]")
 
     return upserted
 
