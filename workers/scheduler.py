@@ -300,9 +300,10 @@ def job_fixture_refresh():
 
 
 def job_backfill():
-    """Historical backfill — 02:00 + 23:00 UTC, auto-advances phase 1→2→3, skips once all done."""
+    """Historical backfill — every 2h, 500 requests/run (~3 min each), self-terminates once done.
+    75K AF requests/day available; 12 runs × 500 = 6K/day leaves 67K headroom for live ops."""
     from scripts.backfill_historical import run_backfill
-    _run_job("hist_backfill", run_backfill, max_requests=2000)  # phase=None → auto-detect next phase
+    _run_job("hist_backfill", run_backfill, max_requests=500)  # phase=None → auto-detect next phase
 
 
 def job_live_tracker():
@@ -395,13 +396,12 @@ def main():
 
     # ── Register all jobs ──────────────────────────────────────────────
 
-    # Historical backfill: 02:00 + 12:00 + 23:00 UTC daily (self-terminates once complete)
-    scheduler.add_job(job_backfill, CronTrigger(hour=2, minute=0),
-                      id="hist_backfill_02", name="Historical Backfill 02:00")
-    scheduler.add_job(job_backfill, CronTrigger(hour=12, minute=0),
-                      id="hist_backfill_12", name="Historical Backfill 12:00")
-    scheduler.add_job(job_backfill, CronTrigger(hour=23, minute=0),
-                      id="hist_backfill_23", name="Historical Backfill 23:00")
+    # Historical backfill: every 2h, 500 requests/run (~3 min, 12 runs/day)
+    # AF budget: 75K/day, live ops ~8K, backfill uses 6K — leaves 61K headroom.
+    for _bh_hour in range(0, 24, 2):
+        scheduler.add_job(job_backfill, CronTrigger(hour=_bh_hour, minute=30),
+                          id=f"hist_backfill_{_bh_hour:02d}",
+                          name=f"Historical Backfill {_bh_hour:02d}:30")
 
     # Fixture status refresh: 4× daily, 15 min before each betting window
     # Re-fetches today's fixtures to catch postponements/cancellations/time changes.

@@ -3,12 +3,12 @@ OddsIntel — Supabase Client (Direct PostgreSQL via psycopg2)
 Handles all database operations: storing matches, odds, predictions, bets,
 live snapshots, and match events.
 
-Migrated from Supabase Python SDK (PostgREST) to direct psycopg2 for:
-  - No 1K row cap
+All DB access uses psycopg2 directly (via workers/api_clients/db.py):
+  - No 1K row cap (PostgREST default)
   - Real JOINs
   - Bulk INSERT via execute_values
   - No URL length limits on IN clauses
-  - Persistent connections
+  - Persistent connection pool
 """
 
 import os
@@ -19,7 +19,6 @@ from datetime import datetime, date, timezone
 import psycopg2
 import psycopg2.extras
 from psycopg2.extras import Json
-from supabase import create_client, Client
 from dotenv import load_dotenv
 from rich.console import Console
 
@@ -28,22 +27,6 @@ from workers.api_clients.db import get_conn, execute_query, execute_write, bulk_
 load_dotenv()
 
 console = Console()
-
-# PostgREST client kept alive for external callers (pipeline_utils, settlement, etc.)
-# that still use client.table(...) directly. Functions in THIS file all use psycopg2.
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_SECRET_KEY", "")
-_client: Client | None = None
-
-
-def get_client() -> Client:
-    """Get Supabase client singleton. Used by external callers for PostgREST queries."""
-    global _client
-    if _client is None:
-        if not SUPABASE_URL or not SUPABASE_KEY:
-            raise ValueError("SUPABASE_URL and SUPABASE_SECRET_KEY must be set in .env")
-        _client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    return _client
 
 
 # ============================================================
