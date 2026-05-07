@@ -3727,6 +3727,11 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
         backfill_total_done = r[0]["n"] if r else 0
 
         r = execute_query(
+            """SELECT COUNT(*) AS n FROM matches
+               WHERE status = 'finished' AND api_football_id IS NOT NULL""")
+        backfill_total_finished = r[0]["n"] if r else 0
+
+        r = execute_query(
             """SELECT MAX(started_at) AS t FROM pipeline_runs
                WHERE job_name LIKE '%backfill%' OR job_name = 'hist_backfill'""")
         backfill_last_run = r[0]["t"] if r else None
@@ -3778,7 +3783,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               signals_with_injuries, signals_with_standings,
               digests_sent_today, value_bet_alerts_today, previews_generated_today,
               news_checker_errors_today, watchlist_alerts_today,
-              backfill_total_done, backfill_last_run,
+              backfill_total_done, backfill_total_finished, backfill_last_run,
               af_calls_today, af_budget_remaining,
               total_users, pro_users, elite_users, new_signups_today
             ) VALUES (
@@ -3790,7 +3795,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               %s, %s, %s, %s,
               %s, %s, %s, %s, %s, %s, %s, %s,
               %s, %s, %s, %s, %s,
-              %s, %s,
+              %s, %s, %s,
               %s, %s,
               %s, %s, %s, %s
             )
@@ -3811,7 +3816,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
                 signals_with_injuries, signals_with_standings,
                 digests_sent_today, value_bet_alerts_today, previews_generated_today,
                 news_checker_errors_today, watchlist_alerts_today,
-                backfill_total_done, backfill_last_run,
+                backfill_total_done, backfill_total_finished, backfill_last_run,
                 af_calls_today, af_budget_remaining,
                 total_users, pro_users, elite_users, new_signups_today,
             ]
