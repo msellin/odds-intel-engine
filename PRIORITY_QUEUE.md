@@ -248,6 +248,124 @@
 
 ---
 
+## ADMIN-OPS-DASH — Operational Health Dashboard (Investigation → Implementation)
+
+> **Status: ⬜ Not started — full spec below. Read this before implementing.**
+> **Priority: High — needed for daily pipeline oversight while scaling.**
+
+### Problem
+
+No single place to see whether the pipeline is healthy today. Checking requires manual SQL across 10+ tables. Need a `/admin/ops` page that loads instantly (reads pre-computed rows, zero aggregation queries on open).
+
+### Mechanism — `ops_snapshots` table
+
+One row per hourly snapshot, written by a new `write_ops_snapshot()` function called:
+1. At the **end of each major pipeline job** (fixtures, odds, betting, settlement, backfill) — each job writes a snapshot after it completes, so numbers refresh as work happens, not on a fixed clock.
+2. Also by a **fallback cron every 60 min** (catches hours with no job run — weekend idle etc).
+
+Each snapshot is a **full recompute of all counters for today (UTC date)**. Not a delta — a full replace-or-insert for today's row. The dashboard always reads `WHERE snapshot_date = today ORDER BY created_at DESC LIMIT 1`.
+
+**Why not update a single row?** Multiple jobs run in parallel and can race. Append-only + read-latest is safe without locks. Also gives you an audit trail (you can see what changed between the 06:00 and 14:00 snapshots).
+
+**Schema (proposed `ops_snapshots` table):**
+
+```sql
+CREATE TABLE ops_snapshots (
+  id            SERIAL PRIMARY KEY,
+  snapshot_date DATE NOT NULL,
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  -- ① Fixtures & coverage
+  matches_today         INT,   -- matches with kickoff on snapshot_date
+  matches_with_odds     INT,   -- matches that have ≥1 odds snapshot today
+  matches_with_pinnacle INT,   -- matches with Pinnacle odds today
+  matches_with_predictions INT,
+  matches_with_signals  INT,   -- matches that have ≥1 signal
+  matches_with_fvectors INT,   -- matches in match_feature_vectors today
+  -- ② Odds pipeline
+  odds_snapshots_today  INT,   -- total rows inserted in odds_snapshots today
+  distinct_bookmakers   INT,   -- distinct bookmakers seen today
+  -- ③ Betting / bots
+  bets_placed_today     INT,   -- simulated_bets created today
+  bets_pending          INT,   -- simulated_bets WHERE result='pending'
+  bets_settled_today    INT,   -- simulated_bets settled today
+  pnl_today             NUMERIC(8,2),  -- sum of pnl on bets settled today
+  bets_inplay_today     INT,   -- inplay_bot bets today
+  active_bots           INT,   -- distinct bot_name in simulated_bets WHERE result='pending'
+  -- ④ Live / in-play
+  live_snapshots_today  INT,   -- live_match_snapshots rows created today
+  snapshots_with_xg     INT,   -- snapshots where home_xg IS NOT NULL
+  snapshots_with_live_odds INT, -- snapshots where ou_over_25_odds IS NOT NULL
+  live_matches_now      INT,   -- matches with status='live' right now
+  -- ⑤ Post-match data
+  matches_finished_today  INT,
+  matches_settled_today   INT,  -- matches with all bets settled
+  post_mortem_ran_today   BOOL, -- model_evaluations row with market='post_mortem' for today
+  feature_vectors_today   INT,  -- match_feature_vectors rows built today
+  -- ⑥ Enrichment quality
+  matches_with_h2h        INT,  -- distinct match_id in match_h2h
+  matches_with_injuries    INT, -- distinct match_id in match_injuries (today)
+  matches_with_lineups     INT, -- distinct match_id in match_lineups (today)
+  -- ⑦ Historical backfill
+  backfill_total_done     INT,  -- distinct match_id in match_stats (all time)
+  backfill_last_run       TIMESTAMPTZ,  -- latest created_at in pipeline_runs WHERE job_name='hist_backfill'
+  -- ⑧ API budget
+  af_calls_today          INT,  -- from api_budget_log or BudgetTracker (if persisted)
+  af_budget_remaining     INT,  -- 75000 - af_calls_today
+  -- ⑨ Users (read from profiles)
+  total_users             INT,
+  pro_users               INT,
+  elite_users             INT,
+  new_signups_today       INT
+);
+```
+
+That's 35 numbers. Some may collapse (e.g. if AF calls aren't persisted yet — mark those as phase 2).
+
+### Dashboard layout (`/admin/ops`)
+
+Superadmin-only. No Nav link — access via direct URL or from bot dashboard.
+
+**Top bar:** snapshot timestamp + "Last updated X min ago" + manual refresh button (calls `/api/ops-snapshot/refresh` which triggers a fresh write then returns).
+
+**Grid of cards (6 groups):**
+- 🟢 Fixtures & Coverage (6 numbers)
+- 📈 Odds Pipeline (2 numbers)
+- 💰 Betting & Bots (6 numbers)
+- ⚡ Live / In-Play (4 numbers)
+- 🔁 Post-Match & Enrichment (7 numbers)
+- 🛠 Backfill & Budget (4 numbers)
+
+Each card shows: label, value (large), and optionally a red/yellow/green status dot if value is below expected threshold (e.g. `matches_with_odds < matches_today * 0.5` = red).
+
+### Implementation phases
+
+**Phase 1 — Schema + writer (engine)**
+- Migration NNN: `CREATE TABLE ops_snapshots`
+- `write_ops_snapshot()` function in `supabase_client.py` — runs all ~35 SQL counts, writes one row
+- Call it at the end of: `run_fixtures`, `run_odds`, `run_betting`, `run_morning`, `run_settlement`
+- Add scheduler cron at every :00 (fallback)
+
+**Phase 2 — Dashboard (frontend)**
+- `getOpsSnapshot()` in `engine-data.ts` — single SELECT, no aggregation
+- `/admin/ops/page.tsx` — server component, superadmin-gated, renders the grid
+
+**Phase 3 — AF budget persistence (engine)**
+- Currently `BudgetTracker` is in-memory only — resets on Railway restart
+- Persist daily total to `ops_snapshots.af_calls_today` after each job (or to a separate `api_budget_log` table if granularity needed)
+
+### Open questions before starting
+1. Does `BudgetTracker` in `api_football.py` persist to DB or memory-only? If memory-only, Phase 3 is needed first for AF budget numbers to be accurate.
+2. Are `match_lineups` stored per-match with a date we can filter on, or only by kickoff time of the match? (determines how to count `matches_with_lineups`)
+3. Should the fallback cron be hourly `:00` or every 30 min? (more granular = more history but more rows/year)
+
+---
+
+| ID | Task | Effort | ☑ | Ready? | Notes |
+|----|------|--------|----|--------|-------|
+| ADMIN-OPS-DASH | Operational health dashboard: `ops_snapshots` table + writer + `/admin/ops` frontend | 1.5 days | ⬜ | ✅ Ready | Full spec above. Phase 1 (engine) first, then Phase 2 (frontend). Phase 3 (AF budget persistence) can follow independently. |
+
+---
+
 ## Tier 3 — 1-2 Months
 
 | ID | Task | Effort | ☑ | Ready? | Notes |
