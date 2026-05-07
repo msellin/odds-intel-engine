@@ -113,12 +113,13 @@ def fetch_af_odds(target_date: str) -> int:
                 "timestamp": now,
                 "is_closing": False,
                 "minutes_to_kickoff": minutes_to_kickoff,
+                "handicap_line": row.get("handicap_line"),
             })
 
         if rows:
             try:
                 cols = ["match_id", "bookmaker", "market", "selection", "odds",
-                        "timestamp", "is_closing", "minutes_to_kickoff"]
+                        "timestamp", "is_closing", "minutes_to_kickoff", "handicap_line"]
                 tuples = [tuple(r[c] for c in cols) for r in rows]
                 bulk_insert("odds_snapshots", cols, tuples)
                 stored += 1

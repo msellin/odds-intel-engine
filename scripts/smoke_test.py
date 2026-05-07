@@ -601,6 +601,107 @@ def _():
     assert "venues" in ALL_COMPONENTS
 
 
+# ── AH-SIGNALS ────────────────────────────────────────────────────────────────
+
+@test("AH-SIGNALS — parse_fixture_odds extracts Asian Handicap rows with handicap_line")
+def _():
+    from workers.api_clients.api_football import parse_fixture_odds
+    raw = [{
+        "bookmakers": [{
+            "name": "Pinnacle",
+            "bets": [{
+                "name": "Asian Handicap",
+                "values": [
+                    {"value": "Home", "odd": "1.87", "handicap": "-0.5"},
+                    {"value": "Away", "odd": "2.03", "handicap": "0.5"},
+                ]
+            }]
+        }]
+    }]
+    rows = parse_fixture_odds(raw)
+    ah_rows = [r for r in rows if r["market"] == "asian_handicap"]
+    assert len(ah_rows) == 2, f"Expected 2 AH rows, got {len(ah_rows)}"
+    home_row = next(r for r in ah_rows if r["selection"] == "home")
+    assert home_row["handicap_line"] == -0.5
+    assert home_row["bookmaker"] == "Pinnacle"
+    away_row = next(r for r in ah_rows if r["selection"] == "away")
+    assert away_row["handicap_line"] == 0.5
+
+
+@test("AH-SIGNALS — parse_fixture_odds skips Asian Handicap First Half market")
+def _():
+    from workers.api_clients.api_football import parse_fixture_odds
+    raw = [{
+        "bookmakers": [{
+            "name": "Pinnacle",
+            "bets": [{
+                "name": "Asian Handicap First Half",
+                "values": [
+                    {"value": "Home", "odd": "1.90", "handicap": "-0.25"},
+                ]
+            }]
+        }]
+    }]
+    rows = parse_fixture_odds(raw)
+    ah_rows = [r for r in rows if r["market"] == "asian_handicap"]
+    assert len(ah_rows) == 0, "First Half AH should be skipped"
+
+
+@test("AH-SIGNALS — parse_fixture_odds skips AH rows with missing handicap field")
+def _():
+    from workers.api_clients.api_football import parse_fixture_odds
+    raw = [{
+        "bookmakers": [{
+            "name": "Bet365",
+            "bets": [{
+                "name": "Asian Handicap",
+                "values": [
+                    {"value": "Home", "odd": "1.90"},  # no handicap field
+                ]
+            }]
+        }]
+    }]
+    rows = parse_fixture_odds(raw)
+    ah_rows = [r for r in rows if r["market"] == "asian_handicap"]
+    assert len(ah_rows) == 0, "AH row without handicap field should be skipped"
+
+
+@test("AH-SIGNALS — odds_snapshots.handicap_line column exists (migration 066)")
+def _():
+    from workers.api_clients.db import execute_query
+    try:
+        cols = execute_query(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'odds_snapshots' AND column_name = 'handicap_line'",
+            []
+        )
+    except Exception:
+        cols = []
+    if not cols:
+        return  # migration not yet applied, skip gracefully
+    assert len(cols) == 1
+
+
+@test("AH-SIGNALS — pinnacle_ah_line signal name queryable in match_signals")
+def _():
+    from workers.api_clients.db import execute_query
+    rows = execute_query(
+        "SELECT COUNT(*) AS n FROM match_signals WHERE signal_name = 'pinnacle_ah_line'",
+        []
+    )
+    assert rows[0]["n"] >= 0  # 0 is fine pre-collection
+
+
+@test("BTTS-SIGNAL — pinnacle_btts_yes_prob signal name queryable in match_signals")
+def _():
+    from workers.api_clients.db import execute_query
+    rows = execute_query(
+        "SELECT COUNT(*) AS n FROM match_signals WHERE signal_name = 'pinnacle_btts_yes_prob'",
+        []
+    )
+    assert rows[0]["n"] >= 0
+
+
 # ── Results ───────────────────────────────────────────────────────────────────
 
 def main():

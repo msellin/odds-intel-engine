@@ -438,6 +438,25 @@ def parse_fixture_odds(odds_response: list[dict]) -> list[dict]:
                                 "odds": float(val["odd"]),
                             })
 
+                elif "Asian Handicap" in bet_name and "First Half" not in bet_name:
+                    for val in bet.get("values", []):
+                        v = val.get("value", "")
+                        if v not in ("Home", "Away"):
+                            continue
+                        handicap_str = val.get("handicap")
+                        if handicap_str is None:
+                            continue
+                        try:
+                            rows.append({
+                                "bookmaker": bm_name,
+                                "market": "asian_handicap",
+                                "selection": v.lower(),
+                                "odds": float(val["odd"]),
+                                "handicap_line": float(handicap_str),
+                            })
+                        except (ValueError, TypeError):
+                            pass
+
     return rows
 
 

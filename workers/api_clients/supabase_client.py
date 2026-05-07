@@ -3256,6 +3256,85 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
     except Exception:
         pass
 
+    # ── 3d. AH-SIGNALS: Asian Handicap line + move + bookmaker disagreement ──
+    try:
+        # Latest AH snapshot per bookmaker (home selection = home team's handicap)
+        ah_latest = execute_query(
+            """SELECT DISTINCT ON (match_id, bookmaker)
+                   match_id, bookmaker, handicap_line
+               FROM odds_snapshots
+               WHERE match_id = ANY(%s::uuid[])
+                 AND market = 'asian_handicap'
+                 AND selection = 'home'
+                 AND handicap_line IS NOT NULL
+                 AND is_live = false
+               ORDER BY match_id, bookmaker, timestamp DESC""",
+            (match_ids,),
+        )
+        ah_by_match: dict[str, list] = defaultdict(list)
+        for row in ah_latest:
+            ah_by_match[str(row["match_id"])].append(row)
+
+        for mid, bm_rows in ah_by_match.items():
+            pin = next((r for r in bm_rows if r["bookmaker"] == "Pinnacle"), None)
+            if pin:
+                add(mid, "pinnacle_ah_line", float(pin["handicap_line"]), "market", "derived")
+            lines = [float(r["handicap_line"]) for r in bm_rows]
+            if len(lines) >= 3:
+                try:
+                    add(mid, "ah_bookmaker_disagreement", round(stdev(lines), 4), "market", "derived")
+                except Exception:
+                    pass
+
+        # AH line move: first vs latest Pinnacle snapshot today
+        ah_all = execute_query(
+            """SELECT match_id, handicap_line, timestamp
+               FROM odds_snapshots
+               WHERE match_id = ANY(%s::uuid[])
+                 AND market = 'asian_handicap'
+                 AND selection = 'home'
+                 AND bookmaker = 'Pinnacle'
+                 AND handicap_line IS NOT NULL
+                 AND is_live = false
+               ORDER BY match_id, timestamp DESC""",
+            (match_ids,),
+        )
+        ah_all_by_match: dict[str, list] = defaultdict(list)
+        for row in ah_all:
+            ah_all_by_match[str(row["match_id"])].append(row)
+
+        for mid, rows_m in ah_all_by_match.items():
+            if len(rows_m) >= 2:
+                drift = float(rows_m[0]["handicap_line"]) - float(rows_m[-1]["handicap_line"])
+                if abs(drift) > 1e-6:
+                    add(mid, "pinnacle_ah_line_move", round(drift, 4), "market", "derived")
+    except Exception:
+        pass
+
+    # ── 3e. BTTS-SIGNAL: Pinnacle BTTS yes probability (vig-normalized) ──────
+    try:
+        btts_rows = execute_query(
+            """SELECT DISTINCT ON (match_id, selection)
+                   match_id, selection, odds
+               FROM odds_snapshots
+               WHERE match_id = ANY(%s::uuid[])
+                 AND market = 'btts'
+                 AND bookmaker = 'Pinnacle'
+                 AND odds > 1.0 AND is_live = false
+               ORDER BY match_id, selection, timestamp DESC""",
+            (match_ids,),
+        )
+        btts_by_match: dict[str, dict] = defaultdict(dict)
+        for row in btts_rows:
+            btts_by_match[str(row["match_id"])][row["selection"]] = 1.0 / float(row["odds"])
+
+        for mid, sels in btts_by_match.items():
+            if "yes" in sels and "no" in sels:
+                total = sels["yes"] + sels["no"]
+                add(mid, "pinnacle_btts_yes_prob", round(sels["yes"] / total, 5), "market", "derived")
+    except Exception:
+        pass
+
     # ── 4. Referee stats bulk query ───────────────────────────────────────────
     try:
         if all_referee_names:

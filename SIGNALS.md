@@ -145,6 +145,10 @@ Data tier system:
 | Manager change days — home | `manager_change_home_days` | Morning pipeline (batch_write block 3c) | ✅ Running |
 | Manager change days — away | `manager_change_away_days` | Morning pipeline (batch_write block 3c) | ✅ Running |
 | Venue artificial turf | `venue_surface_artificial` | Morning pipeline (batch_write block 11b) | ✅ Running |
+| Pinnacle AH line (home handicap) | `pinnacle_ah_line` | Morning pipeline (batch_write block 3d) | ✅ Running (data from 2026-05-07) |
+| Pinnacle AH line move | `pinnacle_ah_line_move` | Morning pipeline (batch_write block 3d) | ✅ Running (data from 2026-05-07) |
+| AH bookmaker disagreement | `ah_bookmaker_disagreement` | Morning pipeline (batch_write block 3d) | ✅ Running (data from 2026-05-07) |
+| Pinnacle BTTS yes probability | `pinnacle_btts_yes_prob` | Morning pipeline (batch_write block 3e) | ✅ Running (data from 2026-05-07) |
 
 **Not yet built:**
 - `is_derby` / `travel_distance` — needs team location data
