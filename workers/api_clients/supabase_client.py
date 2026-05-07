@@ -3614,7 +3614,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               SUM(CASE WHEN result IN ('won','lost') AND pick_time::date = %s
                        THEN pnl ELSE 0 END)                                            AS pnl_today,
               COUNT(*) FILTER (WHERE bot_id IN (
-                SELECT id FROM bots WHERE name LIKE 'bot_inplay%%'
+                SELECT id FROM bots WHERE name LIKE 'inplay_%%'
               ) AND pick_time::date = %s)                                              AS inplay_today,
               COUNT(DISTINCT bot_id) FILTER (WHERE pick_time::date = %s)               AS active_bots
             FROM simulated_bets
