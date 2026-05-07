@@ -319,6 +319,93 @@ def _():
     assert selections == {"over", "under"}, f"Expected over/under, got {selections}"
 
 
+@test("ops_snapshots — migration 063 columns exist")
+def _():
+    from workers.api_clients.db import execute_query
+    rows = execute_query(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name='ops_snapshots'"
+    )
+    actual = {r["column_name"] for r in rows}
+    required = {
+        "live_games_tracked", "live_games_with_xg",
+        "live_games_with_odds", "inplay_active_bots",
+    }
+    missing = required - actual
+    if missing:
+        raise AssertionError(f"Missing ops_snapshots columns (run migration 063): {missing}")
+
+
+@test("simulated_bets — odds_at_pick column exists (settlement KeyError guard)")
+def _():
+    from workers.api_clients.db import execute_query
+    rows = execute_query(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name='simulated_bets' AND column_name='odds_at_pick'"
+    )
+    assert rows, "odds_at_pick missing from simulated_bets — settlement will KeyError on every bet"
+
+
+@test("bots — inplay bot names match LIKE 'inplay_%' pattern")
+def _():
+    from workers.api_clients.db import execute_query
+    # Verify at least the expected inplay bots exist with the right naming convention.
+    # If this fails, bets_inplay_today and inplay_active_bots will silently count 0.
+    rows = execute_query("SELECT name FROM bots WHERE name LIKE 'inplay_%' ORDER BY name")
+    names = [r["name"] for r in rows]
+    assert len(names) >= 6, (
+        f"Expected ≥6 inplay bots matching 'inplay_%', got {len(names)}: {names}. "
+        "ops_snapshot inplay counts will be 0 if names don't match."
+    )
+
+
+@test("settle_bet_result — 1x2 home win, correct pnl")
+def _():
+    from workers.jobs.settlement import settle_bet_result
+    bet = {"market": "1x2", "selection": "home", "stake": "10", "odds_at_pick": "2.00"}
+    r = settle_bet_result(bet, home_goals=2, away_goals=1, closing_odds=None)
+    assert r["result"] == "won", f"Expected won, got {r['result']}"
+    assert r["pnl"] == 10.0, f"Expected pnl=10.0, got {r['pnl']}"
+
+
+@test("settle_bet_result — over_under_25 market parses line correctly")
+def _():
+    from workers.jobs.settlement import settle_bet_result
+    # over 2.5 — 3 goals — should win
+    bet = {"market": "over_under_25", "selection": "over", "stake": "10", "odds_at_pick": "1.90"}
+    r = settle_bet_result(bet, home_goals=2, away_goals=1, closing_odds=None)
+    assert r["result"] == "won", f"over_under_25 over with 3 goals should win, got {r['result']}"
+    # under 2.5 — 2 goals — should win
+    bet2 = {"market": "over_under_25", "selection": "under", "stake": "10", "odds_at_pick": "1.90"}
+    r2 = settle_bet_result(bet2, home_goals=1, away_goals=1, closing_odds=None)
+    assert r2["result"] == "won", f"over_under_25 under with 2 goals should win, got {r2['result']}"
+
+
+@test("_poisson_over_prob — no NaN/inf at edge cases (lam=0, lam=0.001)")
+def _():
+    from workers.jobs.inplay_bot import _poisson_over_prob
+    import math
+    for lam in (0.0, 0.001, 0.1, 3.0, 10.0):
+        p = _poisson_over_prob(lam, 2.5)
+        assert not math.isnan(p), f"NaN at lam={lam}"
+        assert not math.isinf(p), f"Inf at lam={lam}"
+        assert 0.0 <= p <= 1.0, f"Probability out of [0,1] at lam={lam}: {p}"
+
+
+@test("_bayesian_posterior — valid probability at edge cases (minute=0, total xg=0)")
+def _():
+    from workers.jobs.inplay_bot import _bayesian_posterior
+    # minute=0: should return prematch xg unchanged
+    r = _bayesian_posterior(prematch_xg_total=2.5, live_xg_total=0.0, minute=0)
+    assert r == 2.5, f"At minute=0 should return prematch xg, got {r}"
+    # zero xg inputs — should not crash or return negative
+    r2 = _bayesian_posterior(prematch_xg_total=0.0, live_xg_total=0.0, minute=45)
+    assert r2 == 0.0, f"Zero xg at minute=45 should return 0.0, got {r2}"
+    # normal case — result should be positive
+    r3 = _bayesian_posterior(prematch_xg_total=1.4, live_xg_total=0.8, minute=60)
+    assert r3 > 0, f"Expected positive posterior, got {r3}"
+
+
 # ── Results ───────────────────────────────────────────────────────────────────
 
 def main():
