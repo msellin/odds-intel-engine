@@ -301,6 +301,7 @@ def parse_fixture_stats(stats_response: list[dict]) -> dict:
         result[f"saves_{prefix}"] = _parse_int(stats.get("Goalkeeper Saves"))
         result[f"passes_{prefix}"] = _parse_int(stats.get("Total passes"))
         result[f"pass_accuracy_{prefix}"] = _parse_int(stats.get("Passes accurate"))
+        result[f"blocked_shots_{prefix}"] = _parse_int(stats.get("Blocked Shots"))
         result[f"shots_on_target_{prefix}"] = _parse_int(stats.get("Shots on Goal"))
 
         # xG (API-Football has it for some top leagues)

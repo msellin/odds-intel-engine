@@ -242,7 +242,12 @@ class LivePoller:
                     # Merge stats into snapshot
                     for field in ["xg_home", "xg_away", "shots_home", "shots_away",
                                   "shots_on_target_home", "shots_on_target_away",
-                                  "possession_home", "corners_home", "corners_away"]:
+                                  "possession_home", "corners_home", "corners_away",
+                                  "fouls_home", "fouls_away",
+                                  "offsides_home", "offsides_away",
+                                  "saves_home", "saves_away",
+                                  "blocked_shots_home", "blocked_shots_away",
+                                  "pass_accuracy_home", "pass_accuracy_away"]:
                         if stats.get(field) is not None:
                             snapshot[field] = stats[field]
                     if stats.get("passes_home") is not None:
