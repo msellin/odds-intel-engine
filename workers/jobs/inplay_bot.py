@@ -16,6 +16,12 @@ Strategies:
   D   — Late Goals Compression (Over 2.5)
   E   — Dead Game Unders
   F   — Odds Momentum Reversal
+
+xG source:
+  All strategies now run on both real live xG (from AF stats endpoint, ~top leagues only)
+  and a shot-based proxy: xg_proxy = sot * 0.10 + (shots - sot) * 0.03.
+  Proxy bets use a higher edge floor (+1.5–2pp) and log xg_source="shot_proxy" in reasoning.
+  A/A2 require real xG for the quality filter but fall back gracefully with a tighter threshold.
 """
 
 import json
@@ -37,7 +43,7 @@ INPLAY_BOTS = {
         "strategy": "inplay_a2",
     },
     "inplay_b": {
-        "description": "BTTS Momentum — trailing team xG, min 15-40",
+        "description": "BTTS Momentum — trailing team pressure, min 15-40",
         "strategy": "inplay_b",
     },
     "inplay_c": {
@@ -62,8 +68,9 @@ INPLAY_BOTS = {
     },
 }
 
-# Minimum matches with xG data per league before we trust signals
-# Set low (3) while data accumulates — bot launched 2026-04-27, no league has 20 yet
+# Minimum distinct matches with real xG per league before trusting xG-gated strategies.
+# Set low (3) while data accumulates — bot launched 2026-04-27, no league has 20 yet.
+# Only applies to real-xG mode; proxy mode bypasses this gate entirely.
 MIN_LEAGUE_XG_MATCHES = 3
 
 # ── Global State ─────────────────────────────────────────────────────────────
@@ -98,22 +105,27 @@ def run_inplay_strategies():
     # 1. Get latest snapshot per live match (within 90s — allows for 1 missed cycle)
     candidates = _get_live_candidates(execute_query)
 
-    # Heartbeat even when no candidates — so we can tell the bot is running
+    # Heartbeat every 10 cycles — show real/proxy split
     if _cycle_count % 10 == 0:
         if candidates:
+            real_xg = sum(1 for c in candidates if c.get("has_live_xg"))
+            proxy = len(candidates) - real_xg
             sample = candidates[:3]
-            summaries = [
-                f"min{c['minute']} {c['score_home']}-{c['score_away']} "
-                f"xG {float(c['xg_home'] or 0):.1f}-{float(c['xg_away'] or 0):.1f}"
-                for c in sample
-            ]
+            summaries = []
+            for c in sample:
+                xg_h, xg_a, is_real = _compute_live_xg(c)
+                src = "xG" if is_real else "proxy"
+                summaries.append(
+                    f"min{c['minute']} {c['score_home']}-{c['score_away']} "
+                    f"{src} {xg_h:.1f}-{xg_a:.1f}"
+                )
             extra = f" +{len(candidates)-3} more" if len(candidates) > 3 else ""
             console.print(
-                f"[dim]InplayBot heartbeat: {len(candidates)} candidates [{', '.join(summaries)}{extra}] | "
+                f"[dim]InplayBot heartbeat: {len(candidates)} candidates "
+                f"({real_xg} real xG, {proxy} proxy) [{', '.join(summaries)}{extra}] | "
                 f"session: {_total_bets_session} bets / {_total_candidates_session} evaluated[/dim]"
             )
         else:
-            # Diagnose why no candidates: count live matches vs those with xG
             try:
                 live_count = execute_query(
                     "SELECT COUNT(DISTINCT lms.match_id) AS n FROM live_match_snapshots lms "
@@ -128,7 +140,7 @@ def run_inplay_strategies():
                 )[0]["n"]
                 console.print(
                     f"[dim]InplayBot heartbeat: 0 candidates | "
-                    f"{live_count} live snapshots (90s), {xg_count} with xG | "
+                    f"{live_count} live snapshots (90s), {xg_count} with real xG | "
                     f"session: {_total_bets_session} bets[/dim]"
                 )
             except Exception:
@@ -156,14 +168,17 @@ def run_inplay_strategies():
         mid = cand["match_id"]
         pm = prematch.get(mid)
         if not pm:
-            continue  # No prematch data — skip
-
-        # Safety: league has enough xG data?
-        league_id = pm.get("league_id")
-        if league_id and _league_xg_cache.get(str(league_id), 0) < MIN_LEAGUE_XG_MATCHES:
             continue
 
-        # Safety: red card active?
+        league_id = pm.get("league_id")
+        has_live_xg = cand.get("has_live_xg", False)
+
+        # League xG gate — only enforced for real-xG matches.
+        # Proxy matches bypass: shot data is universally available and doesn't need calibration.
+        if has_live_xg:
+            if league_id and _league_xg_cache.get(str(league_id), 0) < MIN_LEAGUE_XG_MATCHES:
+                continue
+
         has_red_card = mid in red_card_matches
 
         for bot_name, bot_cfg in INPLAY_BOTS.items():
@@ -171,11 +186,9 @@ def run_inplay_strategies():
             if not bot_id:
                 continue
 
-            # No double-trigger
             if (mid, bot_name) in existing_bets:
                 continue
 
-            # Check strategy conditions
             trigger = _check_strategy(bot_name, cand, pm, has_red_card, execute_query)
             if not trigger:
                 continue
@@ -185,24 +198,25 @@ def run_inplay_strategies():
             if odds_age is None or odds_age > 60:
                 continue
 
-            # Safety: score re-check — re-read latest snapshot, verify score unchanged
+            # Safety: score re-check — verify score unchanged since snapshot
             if not _score_recheck(execute_query, mid, cand["score_home"], cand["score_away"]):
                 continue
 
-            # Log the paper bet
+            xg_h, xg_a, is_real = _compute_live_xg(cand)
             bet_data = {
                 "market": trigger["market"],
                 "selection": trigger["selection"],
                 "odds": trigger["odds"],
-                "stake": 1.0,  # Fixed unit stake for Phase 1
+                "stake": 1.0,
                 "model_prob": trigger["model_prob"],
                 "edge": trigger["edge"],
                 "reasoning": json.dumps({
                     "strategy": bot_name,
                     "minute": cand["minute"],
                     "score": f"{cand['score_home']}-{cand['score_away']}",
-                    "xg_home": float(cand["xg_home"] or 0),
-                    "xg_away": float(cand["xg_away"] or 0),
+                    "xg_home": round(xg_h, 3),
+                    "xg_away": round(xg_a, 3),
+                    "xg_source": "live" if is_real else "shot_proxy",
                     "posterior_rate": trigger.get("posterior_rate"),
                     "prematch_xg_total": trigger.get("prematch_xg_total"),
                     "odds_age_ms": int(odds_age * 1000) if odds_age else None,
@@ -214,12 +228,13 @@ def run_inplay_strategies():
                 bet_id = store_bet(bot_id, mid, bet_data)
                 if bet_id:
                     bets_placed += 1
+                    src_tag = "" if is_real else " [proxy]"
                     console.print(
-                        f"[bold green]INPLAY BET: {bot_name} | "
+                        f"[bold green]INPLAY BET: {bot_name}{src_tag} | "
                         f"{trigger['market']}/{trigger['selection']} @ {trigger['odds']:.2f} | "
                         f"edge={trigger['edge']:.1f}% | "
                         f"min {cand['minute']} score {cand['score_home']}-{cand['score_away']} | "
-                        f"xG {float(cand['xg_home'] or 0):.2f}-{float(cand['xg_away'] or 0):.2f}"
+                        f"xG {xg_h:.2f}-{xg_a:.2f}"
                         f"[/bold green]"
                     )
             except Exception as e:
@@ -235,7 +250,11 @@ def run_inplay_strategies():
 # ── Data Queries ─────────────────────────────────────────────────────────────
 
 def _get_live_candidates(execute_query) -> list[dict]:
-    """Get latest snapshot per live match with xG data, within last 90 seconds."""
+    """
+    Get latest snapshot per live match within last 90 seconds.
+    Returns ALL live matches (not just those with xG) — strategies handle proxy fallback.
+    has_live_xg flag lets each strategy decide confidence level.
+    """
     rows = execute_query("""
         SELECT DISTINCT ON (lms.match_id)
             lms.match_id,
@@ -256,12 +275,12 @@ def _get_live_candidates(execute_query) -> list[dict]:
             lms.live_1x2_home,
             lms.live_1x2_draw,
             lms.live_1x2_away,
-            lms.captured_at
+            lms.captured_at,
+            (lms.xg_home IS NOT NULL) AS has_live_xg
         FROM live_match_snapshots lms
         JOIN matches m ON m.id = lms.match_id
         WHERE m.status = 'live'
           AND lms.captured_at >= NOW() - INTERVAL '90 seconds'
-          AND lms.xg_home IS NOT NULL
         ORDER BY lms.match_id, lms.captured_at DESC
     """)
     return rows
@@ -390,6 +409,32 @@ def _score_recheck(execute_query, match_id: str,
 
 # ── Math Helpers ─────────────────────────────────────────────────────────────
 
+def _compute_live_xg(cand: dict) -> tuple[float, float, bool]:
+    """
+    Returns (xg_home, xg_away, is_real_xg).
+
+    Uses live xG from AF when available (top leagues only).
+    Falls back to shot proxy: sot * 0.10 + (shots - sot) * 0.03.
+      - 0.10 ≈ avg xG per shot on target
+      - 0.03 ≈ avg xG per off-target/blocked shot
+    Proxy is less accurate but directionally sound for trading signals.
+    """
+    xg_h = cand.get("xg_home")
+    xg_a = cand.get("xg_away")
+    if xg_h is not None and xg_a is not None:
+        return float(xg_h), float(xg_a), True
+
+    sot_h = cand.get("shots_on_target_home") or 0
+    sot_a = cand.get("shots_on_target_away") or 0
+    off_h = max(0, (cand.get("shots_home") or 0) - sot_h)
+    off_a = max(0, (cand.get("shots_away") or 0) - sot_a)
+    return (
+        sot_h * 0.10 + off_h * 0.03,
+        sot_a * 0.10 + off_a * 0.03,
+        False,
+    )
+
+
 def _bayesian_posterior(prematch_xg_total: float, live_xg_total: float,
                         minute: int) -> float:
     """
@@ -407,7 +452,6 @@ def _bayesian_posterior(prematch_xg_total: float, live_xg_total: float,
 def _poisson_over_prob(lam: float, threshold: float) -> float:
     """P(X >= threshold) for Poisson(lam). Used for Over 2.5 = P(goals >= 3)."""
     k = int(math.floor(threshold))
-    # P(X <= k) via CDF
     cdf = 0.0
     for i in range(k + 1):
         cdf += (lam ** i) * math.exp(-lam) / math.factorial(i)
@@ -432,7 +476,7 @@ def _check_strategy(bot_name: str, cand: dict, pm: dict,
     if bot_name == "inplay_a":
         return _check_strategy_a(cand, pm, has_red_card, score_filter=(0, 0))
     elif bot_name == "inplay_a2":
-        return _check_strategy_a(cand, pm, has_red_card, score_filter=None)  # 1-0 either way
+        return _check_strategy_a(cand, pm, has_red_card, score_filter=None)
     elif bot_name == "inplay_b":
         return _check_strategy_b(cand, pm, has_red_card)
     elif bot_name == "inplay_c":
@@ -452,7 +496,10 @@ def _check_strategy_a(cand: dict, pm: dict, has_red_card: bool,
                       score_filter: tuple | None) -> dict | None:
     """
     Strategy A/A2: xG Divergence Over 2.5.
-    A: score 0-0 only. A2: score 1-0 either way (combined goals = 1).
+    A: score 0-0 only. A2: combined goals = 1.
+
+    Proxy mode: runs but drops the shot-quality filter (trivially true with proxy),
+    replaces live_xg >= 0.9 with sot_combined >= 9, raises edge floor to 5%.
     """
     minute = cand["minute"] or 0
     if minute < 25 or minute > 35:
@@ -465,15 +512,12 @@ def _check_strategy_a(cand: dict, pm: dict, has_red_card: bool,
         if sh != 0 or sa != 0:
             return None
     else:
-        # A2: combined goals = 1
         if sh + sa != 1:
             return None
 
-    xg_h = float(cand["xg_home"] or 0)
-    xg_a = float(cand["xg_away"] or 0)
+    xg_h, xg_a, is_real = _compute_live_xg(cand)
     live_xg = xg_h + xg_a
 
-    # Need prematch xG
     pm_xg_h = float(pm.get("prematch_xg_home") or 0)
     pm_xg_a = float(pm.get("prematch_xg_away") or 0)
     pm_xg_total = pm_xg_h + pm_xg_a
@@ -482,49 +526,48 @@ def _check_strategy_a(cand: dict, pm: dict, has_red_card: bool,
 
     # Bayesian posterior must be > prematch rate * 1.15
     posterior = _bayesian_posterior(pm_xg_total, live_xg, minute)
-    prematch_rate = pm_xg_total  # per 90 min
-    if posterior <= prematch_rate * 1.15:
+    if posterior <= pm_xg_total * 1.15:
         return None
 
-    # Combined xG >= 0.9
-    if live_xg < 0.9:
-        return None
-
-    # Shots on target >= 4 combined
     sot = (cand["shots_on_target_home"] or 0) + (cand["shots_on_target_away"] or 0)
-    if sot < 4:
-        return None
 
-    # Prematch O2.5 > 54%
+    if is_real:
+        # Real xG: original checks
+        if live_xg < 0.9:
+            return None
+        if sot < 4:
+            return None
+        total_shots = (cand["shots_home"] or 0) + (cand["shots_away"] or 0)
+        if total_shots > 0 and live_xg / total_shots < 0.09:
+            return None  # Low-quality shots only
+        min_edge = 3.0
+    else:
+        # Proxy: proxy xg >= 0.9 maps to sot >= 9; no quality filter (trivially true)
+        if sot < 9:
+            return None
+        min_edge = 5.0  # Higher bar for proxy noise
+
     pm_o25 = float(pm.get("prematch_o25_prob") or 0)
     if pm_o25 <= 0.54:
         return None
 
-    # xG per shot quality filter
-    total_shots = (cand["shots_home"] or 0) + (cand["shots_away"] or 0)
-    if total_shots > 0 and live_xg / total_shots < 0.09:
-        return None
-
-    # Live O2.5 odds must exist
     odds = cand.get("live_ou_25_over")
     if not odds or float(odds) <= 1.0:
         return None
     odds = float(odds)
 
-    # Model probability: derive from Bayesian posterior remaining goals
     current_goals = sh + sa
-    goals_needed = 3 - current_goals  # Over 2.5 = 3+ goals total
+    goals_needed = 3 - current_goals
     if goals_needed <= 0:
-        return None  # Already over — market would be settled
+        return None
 
     remaining_minutes = max(1, 90 - minute)
     lambda_remaining = posterior * remaining_minutes / 90.0
     model_prob = _poisson_over_prob(lambda_remaining, goals_needed - 0.5)
 
-    # Edge = model_prob - implied_prob >= 3%
     implied = _implied_prob(odds)
     edge = (model_prob - implied) * 100
-    if edge < 3.0:
+    if edge < min_edge:
         return None
 
     return {
@@ -539,12 +582,18 @@ def _check_strategy_a(cand: dict, pm: dict, has_red_card: bool,
             "score_state": f"{sh}-{sa}",
             "sot_combined": sot,
             "prematch_o25": round(pm_o25, 3),
+            "xg_source": "live" if is_real else "shot_proxy",
         },
     }
 
 
 def _check_strategy_b(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
-    """Strategy B: BTTS Momentum — trailing team shows xG + shots."""
+    """
+    Strategy B: BTTS Momentum — trailing team shows pressure.
+
+    Real xG: trailing team xg >= 0.4 AND sot >= 2 (original).
+    Proxy: trailing team sot >= 4 (equivalent threshold at 0.10/shot).
+    """
     minute = cand["minute"] or 0
     if minute < 15 or minute > 40:
         return None
@@ -552,50 +601,54 @@ def _check_strategy_b(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
         return None
 
     sh, sa = cand["score_home"] or 0, cand["score_away"] or 0
-    # Score must be 1-0 or 0-1
     if not ((sh == 1 and sa == 0) or (sh == 0 and sa == 1)):
         return None
 
-    xg_h = float(cand["xg_home"] or 0)
-    xg_a = float(cand["xg_away"] or 0)
+    xg_h, xg_a, is_real = _compute_live_xg(cand)
     sot_h = cand["shots_on_target_home"] or 0
     sot_a = cand["shots_on_target_away"] or 0
 
-    # Trailing team's xG >= 0.4 AND shots on target >= 2
     if sa == 0:
         # Away team trailing
-        if xg_a < 0.4 or sot_a < 2:
-            return None
+        trailing_xg = xg_a
+        if is_real:
+            if xg_a < 0.4 or sot_a < 2:
+                return None
+        else:
+            if sot_a < 4:  # 4 * 0.10 = 0.40 proxy equivalent
+                return None
     else:
         # Home team trailing
-        if xg_h < 0.4 or sot_h < 2:
-            return None
+        trailing_xg = xg_h
+        if is_real:
+            if xg_h < 0.4 or sot_h < 2:
+                return None
+        else:
+            if sot_h < 4:
+                return None
 
-    # Prematch BTTS > 48%
     pm_btts = float(pm.get("prematch_btts_prob") or 0)
     if pm_btts <= 0.48:
         return None
 
-    # We don't have live BTTS odds from AF — use O2.5 as proxy
-    # BTTS and Over 2.5 are correlated: if trailing team scores, likely 2+ goals total
     odds = cand.get("live_ou_25_over")
     if not odds or float(odds) <= 1.0:
         return None
     odds = float(odds)
 
-    # Model probability for BTTS based on trailing team xG
-    trailing_xg = xg_a if sa == 0 else xg_h
     remaining_minutes = max(1, 90 - minute)
-    # Simple: trailing team scores at least once in remaining time
     trailing_lambda = trailing_xg * (remaining_minutes / max(1, minute))
-    # Bayesian blend with prematch
-    pm_xg_trailing = float(pm.get("prematch_xg_away") or 0.8) if sa == 0 else float(pm.get("prematch_xg_home") or 0.8)
+    pm_xg_trailing = (
+        float(pm.get("prematch_xg_away") or 0.8) if sa == 0
+        else float(pm.get("prematch_xg_home") or 0.8)
+    )
     blended_lambda = (pm_xg_trailing * (remaining_minutes / 90.0) + trailing_lambda) / 2.0
-    btts_prob = 1.0 - math.exp(-blended_lambda)  # P(at least 1 goal from trailing team)
+    btts_prob = 1.0 - math.exp(-blended_lambda)
 
+    min_edge = 3.0 if is_real else 4.5
     implied = _implied_prob(odds)
     edge = (btts_prob - implied) * 100
-    if edge < 3.0:
+    if edge < min_edge:
         return None
 
     return {
@@ -609,13 +662,20 @@ def _check_strategy_b(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
             "trailing_xg": round(trailing_xg, 2),
             "trailing_sot": sot_a if sa == 0 else sot_h,
             "prematch_btts": round(pm_btts, 3),
+            "xg_source": "live" if is_real else "shot_proxy",
         },
     }
 
 
 def _check_strategy_c(cand: dict, pm: dict, has_red_card: bool,
                       home_only: bool) -> dict | None:
-    """Strategy C/C_home: Favourite Comeback (DNB)."""
+    """
+    Strategy C/C_home: Favourite Comeback (DNB).
+
+    Real xG: fav_xg > opp_xg for dominance signal.
+    Proxy: fav_sot > opp_sot (tightened — must strictly exceed, not just equal).
+    Possession threshold raised 3pp in proxy mode.
+    """
     minute = cand["minute"] or 0
     max_minute = 70 if home_only else 60
     if minute < 25 or minute > max_minute:
@@ -624,19 +684,16 @@ def _check_strategy_c(cand: dict, pm: dict, has_red_card: bool,
         return None
 
     sh, sa = cand["score_home"] or 0, cand["score_away"] or 0
-    xg_h = float(cand["xg_home"] or 0)
-    xg_a = float(cand["xg_away"] or 0)
+    xg_h, xg_a, is_real = _compute_live_xg(cand)
     poss = float(cand["possession_home"] or 50)
 
-    # Determine favourite from prematch probabilities
     pm_home = float(pm.get("prematch_home_prob") or 0)
     pm_away = float(pm.get("prematch_away_prob") or 0)
-
     if pm_home <= 0 or pm_away <= 0:
         return None
 
     home_is_fav = pm_home > pm_away
-    # Favourite must be trailing by exactly 1
+
     if home_is_fav:
         if not (sa - sh == 1):
             return None
@@ -646,7 +703,7 @@ def _check_strategy_c(cand: dict, pm: dict, has_red_card: bool,
         opp_sot = cand["shots_on_target_away"] or 0
     else:
         if home_only:
-            return None  # C_home requires home team to be favourite
+            return None
         if not (sh - sa == 1):
             return None
         fav_xg, opp_xg = xg_a, xg_h
@@ -657,22 +714,24 @@ def _check_strategy_c(cand: dict, pm: dict, has_red_card: bool,
     if home_only and not home_is_fav:
         return None
 
-    # Favourite xG > underdog xG
-    if fav_xg <= opp_xg:
-        return None
+    # Dominance check
+    if is_real:
+        if fav_xg <= opp_xg:
+            return None
+        min_poss = 55.0 if home_only else 60.0
+    else:
+        # Proxy: use SoT differential instead; raise possession threshold
+        if fav_sot <= opp_sot:
+            return None
+        min_poss = 58.0 if home_only else 63.0
 
-    # Possession threshold
-    min_poss = 55.0 if home_only else 60.0
     if fav_poss < min_poss:
         return None
 
-    # Shots on target: favourite >= opponent
+    # SoT guard: favourite must not be losing the shots battle
     if fav_sot < opp_sot:
         return None
 
-    # We bet on favourite draw or win — use Draw odds as proxy for DNB
-    # (DNB = refund on draw, profit on fav win. Draw odds represent the "draw" scenario.)
-    # Actually for DNB we want the favourite's 1X2 odds
     if home_is_fav:
         odds = cand.get("live_1x2_home")
     else:
@@ -682,16 +741,14 @@ def _check_strategy_c(cand: dict, pm: dict, has_red_card: bool,
         return None
     odds = float(odds)
 
-    # Simple model: favourite comeback probability based on xG dominance
     remaining = max(1, 90 - minute)
     fav_lambda_remaining = fav_xg * (remaining / max(1, minute))
-    # P(favourite scores at least 1 more than opponent in remaining time)
-    # Simplified: P(fav scores >=1) * correction
     p_fav_scores = 1.0 - math.exp(-fav_lambda_remaining)
-    # Rough edge check
+
+    min_edge = 3.0 if is_real else 4.5
     implied = _implied_prob(odds)
     edge = (p_fav_scores - implied) * 100
-    if edge < 3.0:
+    if edge < min_edge:
         return None
 
     return {
@@ -704,14 +761,22 @@ def _check_strategy_c(cand: dict, pm: dict, has_red_card: bool,
             "fav_team": "home" if home_is_fav else "away",
             "fav_xg": round(fav_xg, 2),
             "opp_xg": round(opp_xg, 2),
+            "fav_sot": fav_sot,
+            "opp_sot": opp_sot,
             "fav_possession": round(fav_poss, 1),
             "prematch_home_prob": round(pm_home, 3),
+            "xg_source": "live" if is_real else "shot_proxy",
         },
     }
 
 
 def _check_strategy_d(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
-    """Strategy D: Late Goals Compression — Over 2.5 in late game."""
+    """
+    Strategy D: Late Goals Compression — Over 2.5 in late game (min 55-75).
+
+    Real xG: live_xg >= 1.0.
+    Proxy: sot_total >= 10 (10 * 0.10 = 1.0 equivalent). Lower confidence → edge floor 4.5%.
+    """
     minute = cand["minute"] or 0
     if minute < 55 or minute > 75:
         return None
@@ -720,30 +785,32 @@ def _check_strategy_d(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
 
     sh, sa = cand["score_home"] or 0, cand["score_away"] or 0
     total_goals = sh + sa
-    # Score must be 0-0 or 1-0 (either way)
     if total_goals > 1:
         return None
 
-    xg_h = float(cand["xg_home"] or 0)
-    xg_a = float(cand["xg_away"] or 0)
+    xg_h, xg_a, is_real = _compute_live_xg(cand)
     live_xg = xg_h + xg_a
+    sot = (cand["shots_on_target_home"] or 0) + (cand["shots_on_target_away"] or 0)
 
-    # Combined xG >= 1.0
-    if live_xg < 1.0:
-        return None
+    # Minimum pressure threshold
+    if is_real:
+        if live_xg < 1.0:
+            return None
+        min_edge = 3.0
+    else:
+        if sot < 10:  # ~1.0 xG equivalent
+            return None
+        min_edge = 4.5
 
-    # Live O2.5 odds > 2.50
     odds = cand.get("live_ou_25_over")
     if not odds or float(odds) <= 2.50:
         return None
     odds = float(odds)
 
-    # Prematch expected goals > 2.3 (use prematch O2.5 prob as proxy)
     pm_o25 = float(pm.get("prematch_o25_prob") or 0)
     if pm_o25 <= 0.50:
         return None
 
-    # Model: goals remaining based on Bayesian posterior
     pm_xg_total = float(pm.get("prematch_xg_home") or 0) + float(pm.get("prematch_xg_away") or 0)
     if pm_xg_total <= 0:
         return None
@@ -758,7 +825,7 @@ def _check_strategy_d(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     model_prob = _poisson_over_prob(lambda_remaining, goals_needed - 0.5)
     implied = _implied_prob(odds)
     edge = (model_prob - implied) * 100
-    if edge < 3.0:
+    if edge < min_edge:
         return None
 
     return {
@@ -772,13 +839,22 @@ def _check_strategy_d(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
         "extra": {
             "score_state": f"{sh}-{sa}",
             "live_xg_total": round(live_xg, 2),
+            "sot_total": sot,
             "prematch_o25": round(pm_o25, 3),
+            "xg_source": "live" if is_real else "shot_proxy",
         },
     }
 
 
 def _check_strategy_e(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
-    """Strategy E: Dead Game Unders — tempo collapse signals Under 2.5."""
+    """
+    Strategy E: Dead Game Unders — tempo collapse signals Under 2.5 (min 25-50).
+
+    Real xG: pace_ratio = live_xg / expected_xg < 0.70.
+    Proxy: shot_pace_ratio = total_shots / expected_shots < 0.70,
+           where expected_shots = (pm_xg_total / 0.10) * (minute / 90).
+    Both modes require low corner rate as confirmation.
+    """
     minute = cand["minute"] or 0
     if minute < 25 or minute > 50:
         return None
@@ -786,52 +862,58 @@ def _check_strategy_e(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
         return None
 
     sh, sa = cand["score_home"] or 0, cand["score_away"] or 0
-    total_goals = sh + sa
-    if total_goals > 1:
+    if sh + sa > 1:
         return None
 
-    xg_h = float(cand["xg_home"] or 0)
-    xg_a = float(cand["xg_away"] or 0)
+    xg_h, xg_a, is_real = _compute_live_xg(cand)
     live_xg = xg_h + xg_a
 
     pm_xg_total = float(pm.get("prematch_xg_home") or 0) + float(pm.get("prematch_xg_away") or 0)
     if pm_xg_total <= 0:
         return None
 
-    # xG pace < 70% of expected
-    expected_xg_at_minute = pm_xg_total * (minute / 90.0)
-    if expected_xg_at_minute <= 0:
-        return None
-    pace_ratio = live_xg / expected_xg_at_minute
+    if is_real:
+        expected_at_minute = pm_xg_total * (minute / 90.0)
+        if expected_at_minute <= 0:
+            return None
+        pace_ratio = live_xg / expected_at_minute
+        min_edge = 3.0
+    else:
+        # Shot pace proxy: expected shots derived from prematch xG at avg 0.10 xG/shot
+        expected_shots_at_minute = (pm_xg_total / 0.10) * (minute / 90.0)
+        if expected_shots_at_minute <= 0:
+            return None
+        total_shots = (cand["shots_home"] or 0) + (cand["shots_away"] or 0)
+        pace_ratio = total_shots / expected_shots_at_minute
+        min_edge = 4.5
+
     if pace_ratio >= 0.70:
-        return None  # Not a dead game — xG is tracking expectation
+        return None  # Not a dead game
 
-    # Corners low: proxy for low pressure
+    # Corners low: independent confirmation of low pressure
     corners_total = (cand["corners_home"] or 0) + (cand["corners_away"] or 0)
-    expected_corners = 10 * (minute / 90.0)  # ~10 corners per 90 min average
+    expected_corners = 10 * (minute / 90.0)
     if corners_total > expected_corners * 0.8:
-        return None  # Corner rate not low enough
+        return None
 
-    # Under 2.5 odds
     odds = cand.get("live_ou_25_under")
     if not odds or float(odds) <= 1.0:
         return None
     odds = float(odds)
 
-    # Model: Under probability from Bayesian posterior
     posterior = _bayesian_posterior(pm_xg_total, live_xg, minute)
     remaining = max(1, 90 - minute)
     lambda_remaining = posterior * remaining / 90.0
-    goals_needed_for_over = 3 - total_goals
+    goals_needed_for_over = 3 - (sh + sa)
     if goals_needed_for_over <= 0:
         return None
 
     p_over = _poisson_over_prob(lambda_remaining, goals_needed_for_over - 0.5)
-    model_prob = 1.0 - p_over  # P(Under 2.5)
+    model_prob = 1.0 - p_over
 
     implied = _implied_prob(odds)
     edge = (model_prob - implied) * 100
-    if edge < 3.0:
+    if edge < min_edge:
         return None
 
     return {
@@ -846,20 +928,25 @@ def _check_strategy_e(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
             "pace_ratio": round(pace_ratio, 2),
             "corners_total": corners_total,
             "live_xg_total": round(live_xg, 2),
+            "xg_source": "live" if is_real else "shot_proxy",
         },
     }
 
 
 def _check_strategy_f(cand: dict, pm: dict, has_red_card: bool,
                       execute_query) -> dict | None:
-    """Strategy F: Odds Momentum Reversal — bet against unexplained odds drift."""
+    """
+    Strategy F: Odds Momentum Reversal — bet against unexplained odds drift.
+
+    Real xG: xg_running_hot = xg_pace_90 > pm_xg_total.
+    Proxy: sot_pace_90 > pm_xg_total * 10 (inverse of 0.10 xG/shot).
+    """
     minute = cand["minute"] or 0
     if minute < 10:
         return None
     if has_red_card:
         return None
 
-    # Need to compare current odds to 10 minutes ago
     match_id = cand["match_id"]
     rows = execute_query("""
         SELECT live_ou_25_over, live_1x2_home, live_1x2_away,
@@ -882,51 +969,47 @@ def _check_strategy_f(cand: dict, pm: dict, has_red_card: bool,
     if old_ou <= 0 or cur_ou <= 0:
         return None
 
-    # Score must NOT have changed (no goal in the window)
     if (old["score_home"] != cand["score_home"] or
             old["score_away"] != cand["score_away"]):
         return None
 
-    # Check O/U 2.5 drift
     drift_pct = (cur_ou - old_ou) / old_ou * 100
-
     if abs(drift_pct) < 15:
-        return None  # Not enough drift
+        return None
 
-    # Check if drift is contrary to xG trend
-    xg_h = float(cand["xg_home"] or 0)
-    xg_a = float(cand["xg_away"] or 0)
+    xg_h, xg_a, is_real = _compute_live_xg(cand)
     live_xg = xg_h + xg_a
     pm_xg_total = float(pm.get("prematch_xg_home") or 0) + float(pm.get("prematch_xg_away") or 0)
-
     if pm_xg_total <= 0:
         return None
 
-    xg_pace = live_xg / max(1, minute) * 90
-    xg_running_hot = xg_pace > pm_xg_total
+    if is_real:
+        xg_pace_90 = live_xg / max(1, minute) * 90
+        xg_running_hot = xg_pace_90 > pm_xg_total
+        pace_label = round(xg_pace_90, 2)
+    else:
+        sot_total = (cand["shots_on_target_home"] or 0) + (cand["shots_on_target_away"] or 0)
+        sot_pace_90 = sot_total / max(1, minute) * 90
+        # expected SOT pace = pm_xg_total / 0.10 per 90
+        xg_running_hot = sot_pace_90 > pm_xg_total * 10
+        pace_label = round(sot_pace_90, 2)
 
-    # Drift up = Over odds increased = market moving toward Under
-    # If xG is running hot but Over odds went UP — market wrong, bet Over
     if drift_pct > 15 and xg_running_hot:
         odds = cur_ou
         selection = "over"
-    # Drift down = Over odds decreased = market moving toward Over
-    # If xG is running cold but Over odds went DOWN — market wrong, bet Under
     elif drift_pct < -15 and not xg_running_hot:
         odds = float(cand.get("live_ou_25_under") or 0)
         selection = "under"
     else:
-        return None  # Drift aligned with xG — no reversal signal
+        return None
 
     if odds <= 1.0:
         return None
 
-    # Simple edge estimate based on reversal magnitude
-    model_prob = _implied_prob(odds) + abs(drift_pct) / 1000.0  # Small bump
+    model_prob = _implied_prob(odds) + abs(drift_pct) / 1000.0
     edge = (model_prob - _implied_prob(odds)) * 100
     if edge < 2.0:
-        # For F, use a fixed minimum edge since the signal is the drift itself
-        edge = abs(drift_pct) / 5.0  # 15% drift → 3% estimated edge
+        edge = abs(drift_pct) / 5.0
 
     return {
         "market": "ou_25",
@@ -939,6 +1022,7 @@ def _check_strategy_f(cand: dict, pm: dict, has_red_card: bool,
             "old_ou_odds": round(old_ou, 3),
             "cur_ou_odds": round(cur_ou, 3),
             "xg_running_hot": xg_running_hot,
-            "xg_pace_90": round(xg_pace, 2),
+            "pace_90": pace_label,
+            "xg_source": "live" if is_real else "shot_proxy",
         },
     }
