@@ -548,7 +548,7 @@ def compute_prediction(match, hist_targets, hist_targets_global=None,
     elif home_matched and away_matched:
         data_tier = "B"
     else:
-        # No historical data — skip (Tier D handled by AF prediction only)
+        # No historical data — skip (Tier C handled by AF prediction only)
         return None
 
     # --- Fetch history for matched teams ---
@@ -1289,11 +1289,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
         global_teams = set(hist_targets_global["home_team"].unique()) | set(hist_targets_global["away_team"].unique())
     team_sets = (v9_teams, global_teams)
 
-    # Pre-compute league-average BTTS rates for Tier D fallback.
+    # Pre-compute league-average BTTS rates for Tier C fallback.
     # Poisson gives us no goal-model for unknown teams, but a league-average
     # BTTS rate (e.g. Czech Republic 35.8%, Sweden 63.7%) is real signal vs
     # the market's implied probability.
-    console.print("\n[cyan]Loading league BTTS rates (Tier D fallback)...[/cyan]")
+    console.print("\n[cyan]Loading league BTTS rates (Tier C fallback)...[/cyan]")
     _league_btts_rates: dict[str, float] = {}
     _global_btts_rate = 0.538  # fallback if no league history
     try:
@@ -1421,7 +1421,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
             hist_targets_global=hist_targets_global,
             _team_sets=team_sets,
         )
-        # Tier D fallback: if Poisson has no historical data for this match,
+        # Tier C fallback: if Poisson has no historical data for this match,
         # use API-Football's own prediction probabilities (already fetched for
         # ~191/280 matches/day via the /predictions endpoint).  This ensures we
         # generate a prediction — and evaluate bets — for every match that has
@@ -1435,7 +1435,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                 total = hp + dp + ap
                 if total > 0:
                     hp, dp, ap = hp / total, dp / total, ap / total
-                # Tier D: AF-only fallback.
+                # Tier C: AF-only fallback.
                 # - 1x2: AF win probabilities (normalised)
                 # - O/U 2.5: neutral 50/50 prior (AF doesn't give goals model)
                 # - BTTS: league-average historical BTTS rate as prior.
@@ -1453,7 +1453,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                     "btts_no_prob": 1.0 - btts_rate,
                     "exp_home": None,
                     "exp_away": None,
-                    "data_tier": "D",
+                    "data_tier": "C",
                 }
             else:
                 continue  # No Poisson data AND no AF prediction — truly skip
@@ -1559,10 +1559,10 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
             if odds_val > 0:
                 prob = pred.get(prob_key)
                 if prob is None:
-                    # Tier D: O/U 1.5 and O/U 3.5 are still omitted (no Poisson
+                    # Tier C: O/U 1.5 and O/U 3.5 are still omitted (no Poisson
                     # expected-goals). BTTS is now covered via league-average rate.
-                    # Only warn for Tier A/B/C where we'd expect the key to exist.
-                    if data_tier not in ("D",):
+                    # Only warn for Tier A/B where we'd expect the key to exist.
+                    if data_tier not in ("C",):
                         console.print(f"  [yellow]Prediction missing prob key '{prob_key}' for {match_id}/{market} (tier={data_tier}) — skipping[/yellow]")
                     continue
                 prob = float(prob)  # ensure plain Python float — numpy floats break psycopg2
@@ -1584,9 +1584,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
         # Data-tier adjustments (conservative stake / extra edge for lower-quality data):
         #   A — our CSV + odds history, full calibration → no bump, full stake
         #   B — global ELO CSV, results only → +2% edge req, 50% stake cap
-        #   D — AF prediction only → +8% edge req, 20% stake cap
-        #   D — AF prediction probabilities only, no goals model → +8% edge req, 20% stake cap
-        DATA_TIER_EDGE_BUMP = {"A": 0.00, "B": 0.02, "C": 0.05, "D": 0.08}
+        #   C — AF prediction only, no goals model → +8% edge req, 20% stake cap
+        DATA_TIER_EDGE_BUMP = {"A": 0.00, "B": 0.02, "C": 0.08}
         edge_bump = DATA_TIER_EDGE_BUMP.get(data_tier, 0.00)
         tier_tag = f"[Tier {data_tier}] " if data_tier != "A" else ""
 
