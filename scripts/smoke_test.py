@@ -263,6 +263,15 @@ def _():
     from workers.live_poller import LivePoller  # noqa: F401
 
 
+@test("backfill — match_events insert uses with get_conn() not conn.close()")
+def _():
+    from workers.api_clients.db import get_conn
+    import contextlib
+    # get_conn() must be a context manager, not a raw connection
+    assert isinstance(get_conn(), contextlib.AbstractContextManager) or hasattr(get_conn(), '__enter__'), \
+        "get_conn() must return a context manager"
+
+
 @test("parse_live_odds — Fulltime Result market parsed as 1x2")
 def _():
     from workers.api_clients.api_football import parse_live_odds

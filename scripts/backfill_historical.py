@@ -449,9 +449,8 @@ def backfill_league_season(
                             now,
                         ))
                     if rows:
-                        conn = get_conn()
-                        try:
-                            from psycopg2.extras import execute_values
+                        from psycopg2.extras import execute_values
+                        with get_conn() as conn:
                             with conn.cursor() as cur:
                                 execute_values(cur,
                                     """
@@ -464,8 +463,6 @@ def backfill_league_season(
                                     rows,
                                 )
                             conn.commit()
-                        finally:
-                            conn.close()
                         events_stored += 1
         except Exception as e:
             console.print(f"  [red]Events error for AF {af_id}: {e}[/red]")
