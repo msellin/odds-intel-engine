@@ -470,6 +470,62 @@ def _():
     assert isinstance(cnt, int), f"Expected int count, got {type(cnt)}"
 
 
+@test("MGR-CHANGE — team_coaches table schema (migration 064)")
+def _():
+    from workers.api_clients.db import execute_query
+    cols = execute_query(
+        "SELECT column_name FROM information_schema.columns WHERE table_name='team_coaches'"
+    )
+    if not cols:
+        # Migration not yet applied — skip gracefully rather than failing
+        return
+    actual = {r["column_name"] for r in cols}
+    required = {"id", "team_af_id", "coach_name", "start_date", "end_date", "fetched_at"}
+    missing = required - actual
+    assert not missing, f"Missing columns in team_coaches: {missing}"
+
+
+@test("MGR-CHANGE — parse_coaches correctly extracts career entries")
+def _():
+    from workers.api_clients.api_football import parse_coaches
+    from datetime import date
+    # Simulate AF /coachs response structure
+    sample = [{
+        "id": 1,
+        "name": "Test Manager",
+        "firstname": "Test",
+        "lastname": "Manager",
+        "career": [
+            {"team": {"id": 100, "name": "Club A"}, "start": "2026-01-15", "end": None},
+            {"team": {"id": 99, "name": "Club B"}, "start": "2024-06-01", "end": "2025-12-31"},
+        ]
+    }]
+    entries = parse_coaches(sample)
+    assert len(entries) == 2, f"Expected 2 career entries, got {len(entries)}"
+    current = next(e for e in entries if e["end_date"] is None)
+    assert current["coach_name"] == "Test Manager"
+    assert current["start_date"] == date(2026, 1, 15)
+    past = next(e for e in entries if e["end_date"] is not None)
+    assert past["end_date"] == date(2025, 12, 31)
+
+
+@test("MGR-CHANGE — manager_change_home_days signal queryable in match_signals")
+def _():
+    from workers.api_clients.db import execute_query
+    rows = execute_query(
+        "SELECT COUNT(*) AS cnt FROM match_signals "
+        "WHERE signal_name IN ('manager_change_home_days', 'manager_change_away_days')"
+    )
+    cnt = rows[0]["cnt"] if rows else 0
+    # May be 0 until coaches data accumulates — just verify schema + query run
+    assert isinstance(cnt, int), f"Expected int count, got {type(cnt)}"
+
+
+@test("MGR-CHANGE — fetch_enrichment imports coaches component without error")
+def _():
+    from workers.jobs.fetch_enrichment import fetch_coaches, run_enrichment  # noqa: F401
+
+
 # ── Results ───────────────────────────────────────────────────────────────────
 
 def main():

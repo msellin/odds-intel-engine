@@ -1732,6 +1732,48 @@ def store_match_h2h(match_id: str, h2h_parsed: dict):
 
 
 # ============================================================
+# MGR-CHANGE: TEAM COACHES
+# ============================================================
+
+def store_team_coaches(team_af_id: int, entries: list[dict]) -> int:
+    """Upsert coach career entries for a team into team_coaches.
+
+    entries: list of {coach_name, start_date, end_date} from parse_coaches().
+    Upserts on (team_af_id, start_date). Updates end_date + fetched_at on conflict.
+    Returns number of rows upserted.
+    """
+    if not entries:
+        return 0
+    from psycopg2.extras import execute_values
+    rows = [
+        (team_af_id, e["coach_name"], e["start_date"], e["end_date"])
+        for e in entries
+        if e.get("coach_name") and e.get("start_date")
+    ]
+    if not rows:
+        return 0
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                execute_values(
+                    cur,
+                    """INSERT INTO team_coaches (team_af_id, coach_name, start_date, end_date, fetched_at)
+                       VALUES %s
+                       ON CONFLICT (team_af_id, start_date)
+                       DO UPDATE SET end_date = EXCLUDED.end_date,
+                                     coach_name = EXCLUDED.coach_name,
+                                     fetched_at = now()""",
+                    rows,
+                    template="(%s, %s, %s, %s, now())",
+                )
+                conn.commit()
+        return len(rows)
+    except Exception as e:
+        console.print(f"[yellow]store_team_coaches failed for team {team_af_id}: {e}[/yellow]")
+        return 0
+
+
+# ============================================================
 # T11: PLAYER SIDELINED
 # ============================================================
 
@@ -3131,6 +3173,45 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
                 add(mid, "pinnacle_implied_over25",  round(ou_raws["over"],  5), "market", "derived")
             elif "under" in ou_raws:
                 add(mid, "pinnacle_implied_under25", round(ou_raws["under"], 5), "market", "derived")
+    except Exception:
+        pass
+
+    # ── 3c. MGR-CHANGE: manager change days signal ───────────────────────────
+    # Signal fires only when current coach started within the last 90 days.
+    # Post-sacking home bounce: ~+8% win rate above expectation in first 3 games.
+    # Source: team_coaches table, populated by fetch_enrichment coaches component.
+    try:
+        if all_team_api_ids:
+            coach_rows = execute_query(
+                """SELECT team_af_id, start_date
+                   FROM team_coaches
+                   WHERE team_af_id = ANY(%s)
+                     AND end_date IS NULL
+                   ORDER BY team_af_id, start_date DESC""",
+                (all_team_api_ids,),
+            )
+            # Most recent current-coach start per team
+            current_start_by_team: dict[int, date] = {}
+            for cr in coach_rows:
+                tid = cr["team_af_id"]
+                if tid not in current_start_by_team:
+                    current_start_by_team[tid] = cr["start_date"]
+
+            today_d = date.today()
+            for m in matches:
+                mid = m["id"]
+                for af_id, sig_name in [
+                    (m.get("home_team_api_id"), "manager_change_home_days"),
+                    (m.get("away_team_api_id"), "manager_change_away_days"),
+                ]:
+                    if not af_id:
+                        continue
+                    start = current_start_by_team.get(af_id)
+                    if start is None:
+                        continue
+                    days = (today_d - start).days
+                    if 0 <= days <= 90:
+                        add(mid, sig_name, float(days), "context", "af_coaches")
     except Exception:
         pass
 

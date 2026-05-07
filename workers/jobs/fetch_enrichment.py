@@ -37,10 +37,12 @@ from workers.api_clients.api_football import (
     get_injuries_batched, parse_injuries,
     get_standings, parse_standings,
     get_h2h, parse_h2h,
+    get_coaches, parse_coaches,
 )
 from workers.api_clients.supabase_client import (
     store_team_season_stats, store_match_injuries,
     store_league_standings, store_match_h2h,
+    store_team_coaches,
 )
 from workers.api_clients.db import execute_query
 from workers.utils.pipeline_utils import (
@@ -51,7 +53,7 @@ from workers.utils.pipeline_utils import (
 
 console = Console()
 
-ALL_COMPONENTS = {"injuries", "team_stats", "standings", "h2h"}
+ALL_COMPONENTS = {"injuries", "team_stats", "standings", "h2h", "coaches"}
 
 
 def _build_fixture_meta(target_date: str) -> dict[int, dict]:
@@ -280,6 +282,57 @@ def fetch_h2h(fixture_meta: dict) -> int:
     return stored
 
 
+def fetch_coaches(fixture_meta: dict) -> int:
+    """MGR-CHANGE: Fetch and cache coach history for all teams playing today.
+
+    Calls /coachs?team={id} once per unique team (skip if fetched within 48h).
+    Only the morning wave (full enrichment) runs this — coaches don't change intraday.
+    """
+    console.print("\n[cyan]Coaches: Fetching manager change data...[/cyan]")
+    from datetime import datetime, timezone, timedelta
+    from workers.api_clients.db import execute_query as _eq
+
+    # Collect unique AF team IDs from today's fixtures
+    team_af_ids: set[int] = set()
+    for meta in fixture_meta.values():
+        if meta.get("home_team_api_id"):
+            team_af_ids.add(meta["home_team_api_id"])
+        if meta.get("away_team_api_id"):
+            team_af_ids.add(meta["away_team_api_id"])
+
+    if not team_af_ids:
+        console.print("  No team AF IDs available — skipping coaches fetch")
+        return 0
+
+    # Skip teams whose coach data was fetched within 48h (coaches rarely change)
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
+    try:
+        recent_rows = _eq(
+            "SELECT DISTINCT team_af_id FROM team_coaches WHERE fetched_at > %s AND team_af_id = ANY(%s)",
+            [cutoff, list(team_af_ids)]
+        )
+        recently_fetched = {r["team_af_id"] for r in recent_rows}
+    except Exception:
+        recently_fetched = set()
+
+    to_fetch = team_af_ids - recently_fetched
+    console.print(f"  {len(team_af_ids)} teams total, {len(recently_fetched)} cached, {len(to_fetch)} to fetch")
+
+    stored = 0
+    for team_af_id in to_fetch:
+        try:
+            raw = get_coaches(team_af_id)
+            if not raw:
+                continue
+            entries = parse_coaches(raw)
+            stored += store_team_coaches(team_af_id, entries)
+        except Exception as e:
+            console.print(f"  [yellow]Coaches fetch failed for team {team_af_id}: {e}[/yellow]")
+
+    console.print(f"  {stored} coach records upserted across {len(to_fetch)} teams")
+    return stored
+
+
 def run_enrichment(target_date: str = None, components: set = None):
     """Run enrichment pipeline. Callable by scheduler or CLI."""
     target_date = target_date or date.today().isoformat()
@@ -323,6 +376,9 @@ def run_enrichment(target_date: str = None, components: set = None):
 
         if "h2h" in components:
             total_records += fetch_h2h(fixture_meta)
+
+        if "coaches" in components:
+            total_records += fetch_coaches(fixture_meta)
 
         log_pipeline_complete(
             run_id,

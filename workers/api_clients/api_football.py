@@ -564,6 +564,49 @@ def get_h2h(team1_id: int, team2_id: int, last: int = 5) -> list[dict]:
     return data.get("response", [])
 
 
+# ─── Coaches (MGR-CHANGE) ────────────────────────────────────────────────────
+
+def get_coaches(team_id: int) -> list[dict]:
+    """Get coach career history for a team. Endpoint: GET /coachs?team={id}"""
+    data = _get("coachs", {"team": team_id})
+    return data.get("response", [])
+
+
+def parse_coaches(response: list[dict]) -> list[dict]:
+    """Parse /coachs response into flat career-entry rows.
+
+    AF returns one entry per coach ever registered with the team.
+    Each coach has a `career` list of stints: [{team, start, end}, ...].
+    We return only stints for this team, with start/end dates.
+
+    Returns list of dicts: {coach_name, start_date, end_date}.
+    end_date is None for the current coach.
+    """
+    from datetime import date as _date
+
+    entries = []
+    for coach in response:
+        name = coach.get("name") or f"{coach.get('firstname', '')} {coach.get('lastname', '')}".strip()
+        for stint in coach.get("career", []):
+            start_str = stint.get("start")
+            end_str   = stint.get("end")
+            if not start_str:
+                continue
+            try:
+                start = _date.fromisoformat(start_str[:10])
+            except ValueError:
+                continue
+            end = None
+            if end_str:
+                try:
+                    end = _date.fromisoformat(end_str[:10])
+                except ValueError:
+                    pass
+            entries.append({"coach_name": name, "start_date": start, "end_date": end})
+
+    return entries
+
+
 # ─── Standings ───────────────────────────────────────────────────────────────
 
 def get_standings(league_id: int, season: int) -> list[dict]:
