@@ -3644,14 +3644,29 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
         r = execute_query(
             """
             SELECT
-              COUNT(*)                                                AS snapshots_today,
-              COUNT(*) FILTER (WHERE xg_home IS NOT NULL)            AS with_xg,
-              COUNT(*) FILTER (WHERE live_ou_25_over IS NOT NULL)    AS with_live_odds
+              COUNT(*)                                                          AS snapshots_today,
+              COUNT(*) FILTER (WHERE xg_home IS NOT NULL)                      AS with_xg,
+              COUNT(*) FILTER (WHERE live_ou_25_over IS NOT NULL)              AS with_live_odds,
+              COUNT(DISTINCT match_id)                                          AS games_tracked,
+              COUNT(DISTINCT match_id) FILTER (WHERE xg_home IS NOT NULL)      AS games_with_xg,
+              COUNT(DISTINCT match_id) FILTER (WHERE live_ou_25_over IS NOT NULL) AS games_with_odds
             FROM live_match_snapshots WHERE captured_at::date = %s
             """, [today])
         live_snapshots_today     = r[0]["snapshots_today"] if r else 0
         snapshots_with_xg        = r[0]["with_xg"] if r else 0
         snapshots_with_live_odds = r[0]["with_live_odds"] if r else 0
+        live_games_tracked       = r[0]["games_tracked"] if r else 0
+        live_games_with_xg       = r[0]["games_with_xg"] if r else 0
+        live_games_with_odds     = r[0]["games_with_odds"] if r else 0
+
+        # Inplay active bots — distinct inplay bots that placed a bet today
+        r = execute_query(
+            """SELECT COUNT(DISTINCT sb.bot_id) AS n
+               FROM simulated_bets sb
+               JOIN bots b ON b.id = sb.bot_id
+               WHERE b.name LIKE 'inplay_%%' AND sb.pick_time::date = %s""",
+            [today])
+        inplay_active_bots = r[0]["n"] if r else 0
 
         # ④ Post-match / settlement
         r = execute_query(
@@ -3778,6 +3793,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               bets_placed_today, bets_pending, bets_settled_today, pnl_today,
               bets_inplay_today, active_bots, silent_bots, duplicate_bets,
               live_snapshots_today, snapshots_with_xg, snapshots_with_live_odds,
+              live_games_tracked, live_games_with_xg, live_games_with_odds, inplay_active_bots,
               matches_finished_today, post_mortem_ran_today, feature_vectors_today, elo_updates_today,
               matches_with_h2h, matches_with_injuries, matches_with_lineups,
               signals_with_elo, signals_with_form, signals_with_h2h,
@@ -3793,6 +3809,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               %s, %s, %s, %s, %s, %s,
               %s, %s, %s, %s, %s, %s, %s, %s,
               %s, %s, %s,
+              %s, %s, %s, %s,
               %s, %s, %s, %s,
               %s, %s, %s, %s, %s, %s, %s, %s,
               %s, %s, %s, %s, %s,
@@ -3811,6 +3828,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
                 bets_placed_today, bets_pending, bets_settled_today, pnl_today,
                 bets_inplay_today, active_bots, silent_bots, duplicate_bets,
                 live_snapshots_today, snapshots_with_xg, snapshots_with_live_odds,
+                live_games_tracked, live_games_with_xg, live_games_with_odds, inplay_active_bots,
                 matches_finished_today, post_mortem_ran_today, feature_vectors_today, elo_updates_today,
                 matches_with_h2h, matches_with_injuries, matches_with_lineups,
                 signals_with_elo, signals_with_form, signals_with_h2h,
