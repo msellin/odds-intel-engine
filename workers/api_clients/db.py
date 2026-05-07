@@ -54,6 +54,21 @@ def get_pool() -> pool.ThreadedConnectionPool:
     return _pool
 
 
+def _reset_pool():
+    """Close and discard the current pool so the next call recreates it.
+    Called when a connection is found to be dead (SSL drop / idle timeout)."""
+    global _pool
+    with _pool_lock:
+        old = _pool
+        _pool = None
+    if old is not None:
+        try:
+            old.closeall()
+        except Exception:
+            pass
+    console.print("[yellow]DB pool reset — will reconnect on next query[/yellow]")
+
+
 @contextmanager
 def get_conn():
     """Context manager that gets a connection from the pool and returns it after use."""
@@ -61,35 +76,59 @@ def get_conn():
     conn = p.getconn()
     try:
         yield conn
-    finally:
+    except psycopg2.OperationalError:
+        # Connection was dropped server-side (SSL timeout). Discard it so the
+        # pool doesn't hand out more dead connections.
+        try:
+            p.putconn(conn, close=True)
+        except Exception:
+            pass
+        _reset_pool()
+        raise
+    else:
         p.putconn(conn)
 
 
 def execute_query(sql: str, params=None) -> list[dict]:
-    """Execute a read query, return list of dicts."""
-    with get_conn() as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(sql, params)
-            return [dict(row) for row in cur.fetchall()]
+    """Execute a read query, return list of dicts. Retries once on connection drop."""
+    for attempt in range(2):
+        try:
+            with get_conn() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute(sql, params)
+                    return [dict(row) for row in cur.fetchall()]
+        except psycopg2.OperationalError:
+            if attempt == 1:
+                raise
 
 
 def execute_write(sql: str, params=None) -> int:
-    """Execute a write query, return rows affected."""
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            conn.commit()
-            return cur.rowcount
+    """Execute a write query, return rows affected. Retries once on connection drop."""
+    for attempt in range(2):
+        try:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(sql, params)
+                    conn.commit()
+                    return cur.rowcount
+        except psycopg2.OperationalError:
+            if attempt == 1:
+                raise
 
 
 def execute_write_returning(sql: str, params=None) -> list[dict]:
-    """Execute a write query with RETURNING clause, commit immediately, return rows."""
-    with get_conn() as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(sql, params)
-            rows = [dict(row) for row in cur.fetchall()]
-            conn.commit()
-            return rows
+    """Execute a write query with RETURNING clause. Retries once on connection drop."""
+    for attempt in range(2):
+        try:
+            with get_conn() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute(sql, params)
+                    rows = [dict(row) for row in cur.fetchall()]
+                    conn.commit()
+                    return rows
+        except psycopg2.OperationalError:
+            if attempt == 1:
+                raise
 
 
 def bulk_insert(table: str, columns: list[str], rows: list[tuple],
@@ -109,13 +148,18 @@ def bulk_insert(table: str, columns: list[str], rows: list[tuple],
     if not rows:
         return 0
 
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cols = ", ".join(columns)
-            sql = f"INSERT INTO {table} ({cols}) VALUES %s ON CONFLICT {on_conflict}"
-            psycopg2.extras.execute_values(cur, sql, rows, page_size=500)
-            conn.commit()
-            return cur.rowcount
+    cols = ", ".join(columns)
+    sql = f"INSERT INTO {table} ({cols}) VALUES %s ON CONFLICT {on_conflict}"
+    for attempt in range(2):
+        try:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    psycopg2.extras.execute_values(cur, sql, rows, page_size=500)
+                    conn.commit()
+                    return cur.rowcount
+        except psycopg2.OperationalError:
+            if attempt == 1:
+                raise
 
 
 def bulk_upsert(table: str, columns: list[str], rows: list[tuple],
@@ -133,16 +177,21 @@ def bulk_upsert(table: str, columns: list[str], rows: list[tuple],
     if not rows:
         return 0
 
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cols = ", ".join(columns)
-            conflict = ", ".join(conflict_columns)
-            updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_columns)
-            sql = (f"INSERT INTO {table} ({cols}) VALUES %s "
-                   f"ON CONFLICT ({conflict}) DO UPDATE SET {updates}")
-            psycopg2.extras.execute_values(cur, sql, rows, page_size=500)
-            conn.commit()
-            return cur.rowcount
+    cols = ", ".join(columns)
+    conflict = ", ".join(conflict_columns)
+    updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_columns)
+    sql = (f"INSERT INTO {table} ({cols}) VALUES %s "
+           f"ON CONFLICT ({conflict}) DO UPDATE SET {updates}")
+    for attempt in range(2):
+        try:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    psycopg2.extras.execute_values(cur, sql, rows, page_size=500)
+                    conn.commit()
+                    return cur.rowcount
+        except psycopg2.OperationalError:
+            if attempt == 1:
+                raise
 
 
 def pool_status() -> dict:

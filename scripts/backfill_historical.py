@@ -169,8 +169,10 @@ def _handle_sigterm(signum, frame):
     console.print("[yellow]⚠ SIGTERM received — finishing current match then saving progress[/yellow]")
 
 
-signal.signal(signal.SIGTERM, _handle_sigterm)
-signal.signal(signal.SIGINT, _handle_sigterm)
+import threading as _threading
+if _threading.current_thread() is _threading.main_thread():
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+    signal.signal(signal.SIGINT, _handle_sigterm)
 
 
 # ─── Progress tracking ──────────────────────────────────────────────────────
