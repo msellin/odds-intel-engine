@@ -248,121 +248,237 @@
 
 ---
 
-## ADMIN-OPS-DASH — Operational Health Dashboard (Investigation → Implementation)
+## ADMIN-OPS-DASH — Operational Health Dashboard
 
 > **Status: ⬜ Not started — full spec below. Read this before implementing.**
-> **Priority: High — needed for daily pipeline oversight while scaling.**
+> **Priority: High — needed for daily pipeline oversight.**
+> Spec synthesized from 4 independent AI design reviews (2026-05-07).
 
-### Problem
+### Goal
 
-No single place to see whether the pipeline is healthy today. Checking requires manual SQL across 10+ tables. Need a `/admin/ops` page that loads instantly (reads pre-computed rows, zero aggregation queries on open).
+A `/admin/ops` page (superadmin-only) that answers "Is today's pipeline healthy?" in 3 seconds. Opens instantly — all heavy counts are pre-computed and stored in `ops_snapshots`; page does a single SELECT. Live panels (pipeline job grid, stale bets, last snapshot age) do lightweight point queries on small tables.
 
-### Mechanism — `ops_snapshots` table
+---
 
-One row per hourly snapshot, written by a new `write_ops_snapshot()` function called:
-1. At the **end of each major pipeline job** (fixtures, odds, betting, settlement, backfill) — each job writes a snapshot after it completes, so numbers refresh as work happens, not on a fixed clock.
-2. Also by a **fallback cron every 60 min** (catches hours with no job run — weekend idle etc).
+### Architecture
 
-Each snapshot is a **full recompute of all counters for today (UTC date)**. Not a delta — a full replace-or-insert for today's row. The dashboard always reads `WHERE snapshot_date = today ORDER BY created_at DESC LIMIT 1`.
+**`ops_snapshots` table — append-only, one row per snapshot.**
 
-**Why not update a single row?** Multiple jobs run in parallel and can race. Append-only + read-latest is safe without locks. Also gives you an audit trail (you can see what changed between the 06:00 and 14:00 snapshots).
+Written by `write_ops_snapshot()` which is called:
+1. At the **end of each major job**: `run_fixtures`, `run_odds`, `run_betting`, `run_morning`, `run_settlement`, `run_enrichment` — numbers refresh as work happens
+2. **Fallback cron every 60 min** — covers idle hours / weekends
 
-**Schema (proposed `ops_snapshots` table):**
+Each write is a **full recompute of all counters for today (UTC date)**. Not a delta. Dashboard reads `WHERE snapshot_date = today ORDER BY created_at DESC LIMIT 1`.
+
+Append-only avoids write races when jobs overlap. Also gives 7-day history for sparklines: `DISTINCT ON (snapshot_date) ORDER BY snapshot_date, created_at DESC`.
+
+**Three panels use live queries (not pre-computed)** — they're cheap and must be real-time:
+- Pipeline job grid → `DISTINCT ON (job_name) FROM pipeline_runs WHERE started_at > now() - interval '26 hours'`
+- Stale pending bets → `JOIN simulated_bets + matches WHERE result='pending' AND status='finished'`
+- LivePoller last snapshot age → `MAX(created_at) FROM live_match_snapshots`
+
+---
+
+### `ops_snapshots` schema (42 columns)
 
 ```sql
 CREATE TABLE ops_snapshots (
   id            SERIAL PRIMARY KEY,
   snapshot_date DATE NOT NULL,
   created_at    TIMESTAMPTZ DEFAULT now(),
-  -- ① Fixtures & coverage
-  matches_today         INT,   -- matches with kickoff on snapshot_date
-  matches_with_odds     INT,   -- matches that have ≥1 odds snapshot today
-  matches_with_pinnacle INT,   -- matches with Pinnacle odds today
-  matches_with_predictions INT,
-  matches_with_signals  INT,   -- matches that have ≥1 signal
-  matches_with_fvectors INT,   -- matches in match_feature_vectors today
+
+  -- ① Fixtures & coverage (funnel top)
+  matches_today            INT,  -- matches with kickoff on snapshot_date
+  matches_with_odds        INT,  -- matches with ≥1 odds snapshot today
+  matches_with_pinnacle    INT,  -- matches with Pinnacle odds today
+  matches_with_predictions INT,  -- matches with source='af' prediction today
+  matches_with_signals     INT,  -- matches with ≥1 signal today
+  matches_with_fvectors    INT,  -- matches in match_feature_vectors today
+  matches_missing_grade    INT,  -- matches where grade IS NULL and status != 'postponed'
+  matches_postponed_today  INT,  -- informational
+
   -- ② Odds pipeline
-  odds_snapshots_today  INT,   -- total rows inserted in odds_snapshots today
-  distinct_bookmakers   INT,   -- distinct bookmakers seen today
-  -- ③ Betting / bots
-  bets_placed_today     INT,   -- simulated_bets created today
-  bets_pending          INT,   -- simulated_bets WHERE result='pending'
-  bets_settled_today    INT,   -- simulated_bets settled today
-  pnl_today             NUMERIC(8,2),  -- sum of pnl on bets settled today
-  bets_inplay_today     INT,   -- inplay_bot bets today
-  active_bots           INT,   -- distinct bot_name in simulated_bets WHERE result='pending'
+  odds_snapshots_today  INT,  -- total rows in odds_snapshots today
+  distinct_bookmakers   INT,  -- should be 13; drop = odds job half-dead
+  matches_without_pinnacle INT, -- has odds but no Pinnacle specifically
+
+  -- ③ Betting & bots
+  bets_placed_today   INT,          -- simulated_bets created today (all bots)
+  bets_pending        INT,          -- result='pending' right now (all time)
+  bets_settled_today  INT,          -- settled today
+  pnl_today           NUMERIC(8,2), -- sum pnl on bets settled today
+  bets_inplay_today   INT,          -- from bot_id LIKE 'bot_inplay%'
+  active_bots         INT,          -- distinct bot_id with ≥1 bet today
+  silent_bots         INT,          -- bots with 0 bets today (out of 17 expected)
+  duplicate_bets      INT,          -- (bot_id, match_id, market, selection) with count >1
+
   -- ④ Live / in-play
-  live_snapshots_today  INT,   -- live_match_snapshots rows created today
-  snapshots_with_xg     INT,   -- snapshots where home_xg IS NOT NULL
-  snapshots_with_live_odds INT, -- snapshots where ou_over_25_odds IS NOT NULL
-  live_matches_now      INT,   -- matches with status='live' right now
-  -- ⑤ Post-match data
-  matches_finished_today  INT,
-  matches_settled_today   INT,  -- matches with all bets settled
-  post_mortem_ran_today   BOOL, -- model_evaluations row with market='post_mortem' for today
-  feature_vectors_today   INT,  -- match_feature_vectors rows built today
+  live_snapshots_today     INT,  -- live_match_snapshots rows today
+  snapshots_with_xg        INT,  -- home_xg IS NOT NULL
+  snapshots_with_live_odds INT,  -- ou_over_25_odds IS NOT NULL (fixed 2026-05-07)
+
+  -- ⑤ Post-match / settlement
+  matches_finished_today INT,
+  bets_settled_today_v2  INT,   -- alias — use bets_settled_today above
+  post_mortem_ran_today  BOOL,  -- model_evaluations market='post_mortem' for today
+  feature_vectors_today  INT,   -- match_feature_vectors rows built today (captured_at)
+  elo_updates_today      INT,   -- team_elo_daily rows updated today
+
   -- ⑥ Enrichment quality
-  matches_with_h2h        INT,  -- distinct match_id in match_h2h
-  matches_with_injuries    INT, -- distinct match_id in match_injuries (today)
-  matches_with_lineups     INT, -- distinct match_id in match_lineups (today)
-  -- ⑦ Historical backfill
-  backfill_total_done     INT,  -- distinct match_id in match_stats (all time)
-  backfill_last_run       TIMESTAMPTZ,  -- latest created_at in pipeline_runs WHERE job_name='hist_backfill'
-  -- ⑧ API budget
-  af_calls_today          INT,  -- from api_budget_log or BudgetTracker (if persisted)
-  af_budget_remaining     INT,  -- 75000 - af_calls_today
-  -- ⑨ Users (read from profiles)
-  total_users             INT,
-  pro_users               INT,
-  elite_users             INT,
-  new_signups_today       INT
+  matches_with_h2h      INT,  -- distinct match_id in match_h2h for today's matches
+  matches_with_injuries INT,  -- distinct match_id in match_injuries today
+  matches_with_lineups  INT,  -- via JOIN on matches.kickoff_time::date (not lineups.created_at)
+
+  -- ⑦ Email & alerts
+  digests_sent_today        INT,
+  value_bet_alerts_today    INT,  -- from value_bet_alert_log today
+  previews_generated_today  INT,  -- from match_previews today
+  news_checker_errors_today INT,  -- pipeline_runs WHERE job_name='news_checker' AND status='error'
+  watchlist_alerts_today    INT,
+
+  -- ⑧ Backfill
+  backfill_total_done INT,       -- COUNT(DISTINCT match_id) FROM match_stats (all time)
+  backfill_last_run   TIMESTAMPTZ, -- MAX(started_at) FROM pipeline_runs WHERE job_name='hist_backfill'
+
+  -- ⑨ API budget (NULL until Phase 3 persists BudgetTracker)
+  af_calls_today      INT,  -- NULL until Phase 3 — BudgetTracker is in-memory only
+  af_budget_remaining INT,  -- 75000 - af_calls_today, NULL until Phase 3
+
+  -- ⑩ Users
+  total_users      INT,
+  pro_users        INT,
+  elite_users      INT,
+  new_signups_today INT
 );
 ```
 
-That's 35 numbers. Some may collapse (e.g. if AF calls aren't persisted yet — mark those as phase 2).
+---
 
 ### Dashboard layout (`/admin/ops`)
 
-Superadmin-only. No Nav link — access via direct URL or from bot dashboard.
+**Top strip — always visible, aggressively colored:**
 
-**Top bar:** snapshot timestamp + "Last updated X min ago" + manual refresh button (calls `/api/ops-snapshot/refresh` which triggers a fresh write then returns).
+| KPI | Green | Yellow | Red |
+|-----|-------|--------|-----|
+| Matches Today | ≥ 50 | 10–49 | < 10 |
+| Prediction Coverage % | ≥ 90% | 70–89% | < 70% |
+| Bookmakers | 13 | 5–12 | < 5 |
+| Bets Today | ≥ 20 | 5–19 | 0 |
+| Silent Bots | 0 | 1–2 | ≥ 3 |
+| Stale Pending | 0 | 1–3 | > 3 |
+| Last Snapshot | < 10 min | 10–20 min | > 20 min |
+| AF Budget Used | < 70% | 70–90% | > 90% |
 
-**Grid of cards (6 groups):**
-- 🟢 Fixtures & Coverage (6 numbers)
-- 📈 Odds Pipeline (2 numbers)
-- 💰 Betting & Bots (6 numbers)
-- ⚡ Live / In-Play (4 numbers)
-- 🔁 Post-Match & Enrichment (7 numbers)
-- 🛠 Backfill & Budget (4 numbers)
+**"Currently Broken" feed** (auto-generated, appears only when non-empty): Scans all alert conditions and lists plain-English failures — "17 matches missing odds", "3 bots silent", "LivePoller stale 8 min", "Settlement lag 212 min". This is the operational inbox.
 
-Each card shows: label, value (large), and optionally a red/yellow/green status dot if value is below expected threshold (e.g. `matches_with_odds < matches_today * 0.5` = red).
+**9 panels below the strip:**
+
+**1. Pipeline Job Health** (live query — `pipeline_runs`)
+Table: job_name | last run | status (green/yellow/red) | duration | rows_affected | error (truncated 80 chars). One row per job (DISTINCT ON). Jobs: fixtures, enrichment (×2), odds, betting (×6/day), settlement, news_checker, match_previews, email_digest, live_poller (derived from snapshot age, not a pipeline_runs row).
+
+Alert: Red if `status='error'`. Yellow if `rows_affected=0` on jobs expected to produce output. Red if `finished_at IS NULL` and started > 30 min ago (stuck).
+
+**2. Data Funnel** (from ops_snapshots)
+Horizontal waterfall: `matches_today → matches_with_odds → matches_with_predictions → matches_with_signals → matches_with_fvectors → bets_placed_today`. Each bar shows count + % of step above. The step with the biggest drop is highlighted.
+
+Alert thresholds:
+- `matches_with_odds / matches_today` < 80% = yellow, < 50% = red
+- `distinct_bookmakers` < 8 = yellow, < 5 = red (should be 13)
+- `bets_placed_today` = 0 when matches_today ≥ 10 = red
+
+**3. Bot Health** (live query — `simulated_bets`)
+Top numbers: bets_placed_today (large), active_bots / 17, bets_inplay_today.
+Table: one row per bot — bot_id | bets today | pending | won | lost | avg_stake.
+Red row if bot has 0 bets and matches_today ≥ 10. `duplicate_bets > 0` = always red.
+
+**4. Live Tracker Health** (live + ops_snapshots)
+Large: "Last snapshot: X min ago" (live from MAX(live_match_snapshots.created_at)).
+Sparkline: snapshots/hour over last 12 hours.
+Cards: live_matches_now | snapshots_with_xg % | snapshots_with_live_odds % (post 2026-05-07 fix).
+
+Alert: Last snapshot > 20 min AND live_matches > 0 = red.
+
+**5. Settlement Health** (live + ops_snapshots)
+Large red badge if stale_pending > 0: "X bets stuck — match finished but not settled". Settlement run times today (from pipeline_runs). P&L today: won/lost/pending breakdown. ELO update today: green tick / red X.
+
+Alert: stale_pending > 5 = red. Settlement never ran today after 22:00 UTC = red.
+
+**6. Data Quality** (from ops_snapshots)
+Quality scorecard — each row is a check with a count. Zero = healthy, any non-zero highlighted:
+
+| Check | Yellow | Red |
+|-------|--------|-----|
+| matches_missing_grade | > 5 | > 20 |
+| matches_with_0_signals | > 10 | > 30 |
+| matches_without_pinnacle | > 20% of odds matches | > 50% |
+| duplicate_bets | — | ≥ 1 (always red) |
+| news_checker_errors_today | ≥ 1 | ≥ 3 |
+
+**7. API Budget** (from ops_snapshots)
+Progress bar 0 → 75K, green/yellow/red zones. af_calls_today | af_budget_remaining | estimated Gemini cost today ($).
+**Note: shows NULL until Phase 3** — BudgetTracker is in-memory, resets on Railway restart.
+
+**8. Email & Alerts** (from ops_snapshots)
+Cards: digests_sent_today | value_bet_alerts_today | previews_generated_today | watchlist_alerts_today | news_checker_errors_today. Zero digests after 09:00 UTC with users > 0 = red.
+
+**9. 7-Day Sparklines** (from ops_snapshots WHERE snapshot_date >= today - 7)
+8 mini Recharts LineCharts (no axes, just line + today value large): matches_today | distinct_bookmakers | bets_placed_today | matches_with_signals/matches_today ratio | live_snapshots_today | bets_settled_today | af_calls_today | new_signups_today.
+Yellow warning if today's value < 7-day average × 0.60.
+
+---
+
+### The 9 numbers that catch 80% of bugs
+
+| # | Number | Red threshold | What it catches |
+|---|--------|---------------|-----------------|
+| 1 | Last betting job rows_affected | 0 on a day with ≥10 matches | Silent betting failure |
+| 2 | distinct_bookmakers | < 5 | Odds pipeline dead |
+| 3 | active_bots | < 10 on busy day | Gate logic misfiring |
+| 4 | Last snapshot age | > 20 min | LivePoller dead |
+| 5 | stale_pending | > 0 | Settlement broken |
+| 6 | matches_missing_grade | > 20 | Signal pipeline broken |
+| 7 | af_budget_remaining | < 5,000 | Quota breach today |
+| 8 | digests_sent_today | 0 after 09:00 UTC | Resend/scheduler failure |
+| 9 | bets_placed_today 7d sparkline | < avg × 0.60 | Model edge eroding |
+
+---
 
 ### Implementation phases
 
-**Phase 1 — Schema + writer (engine)**
-- Migration NNN: `CREATE TABLE ops_snapshots`
-- `write_ops_snapshot()` function in `supabase_client.py` — runs all ~35 SQL counts, writes one row
-- Call it at the end of: `run_fixtures`, `run_odds`, `run_betting`, `run_morning`, `run_settlement`
-- Add scheduler cron at every :00 (fallback)
+**Phase 1 — Schema + writer (engine, ~4h)**
+- Migration NNN: `CREATE TABLE ops_snapshots` (schema above, skip af_calls_today/af_budget_remaining — leave NULL)
+- `write_ops_snapshot()` in `supabase_client.py` — runs all count queries, writes one row
+- Call at end of: `run_fixtures`, `run_odds`, `run_betting`, `run_morning`, `run_settlement`, `run_enrichment`
+- Scheduler: fallback cron every 60 min
 
-**Phase 2 — Dashboard (frontend)**
-- `getOpsSnapshot()` in `engine-data.ts` — single SELECT, no aggregation
-- `/admin/ops/page.tsx` — server component, superadmin-gated, renders the grid
+**Phase 2 — Dashboard (frontend, ~4h)**
+- `getOpsSnapshot()` in `engine-data.ts` — single SELECT latest row
+- `getOpsSnapshotHistory()` — 7-day history for sparklines
+- `getPipelineJobsToday()` — live DISTINCT ON from pipeline_runs (no pre-compute needed)
+- `getStalepeningBets()` — live join simulated_bets + matches
+- `getLastSnapshotAge()` — live MAX from live_match_snapshots
+- `/admin/ops/page.tsx` — server component, superadmin-gated
 
-**Phase 3 — AF budget persistence (engine)**
-- Currently `BudgetTracker` is in-memory only — resets on Railway restart
-- Persist daily total to `ops_snapshots.af_calls_today` after each job (or to a separate `api_budget_log` table if granularity needed)
+**Phase 3 — AF budget persistence (~2h, independent)**
+- `BudgetTracker` currently in-memory only → resets on Railway restart
+- Add `write_budget_log(calls_made)` after each AF job → persists to `api_budget_log (date, job_name, calls, created_at)` or directly into `ops_snapshots.af_calls_today`
+- Until Phase 3: column shows NULL with a tooltip "Requires Phase 3"
 
-### Open questions before starting
-1. Does `BudgetTracker` in `api_football.py` persist to DB or memory-only? If memory-only, Phase 3 is needed first for AF budget numbers to be accurate.
-2. Are `match_lineups` stored per-match with a date we can filter on, or only by kickoff time of the match? (determines how to count `matches_with_lineups`)
-3. Should the fallback cron be hourly `:00` or every 30 min? (more granular = more history but more rows/year)
+---
+
+### Implementation notes
+
+1. **BudgetTracker is memory-only** — af_calls_today will be NULL after every restart until Phase 3. Do not show misleading zeros; show NULL / "—".
+2. **Lineups date filter** — `matches_with_lineups` must JOIN via `matches.kickoff_time::date`, not `lineups.created_at` (lineups fetched pre-kickoff may land on prior UTC date for early fixtures).
+3. **LivePoller has no pipeline_runs rows** — it's a daemon. Derive "last snapshot age" from `MAX(live_match_snapshots.created_at)` directly. No new heartbeat writes needed.
+4. **Fallback cron frequency** — 60 min. 30 min gives ~1,000 rows/year vs ~500 for marginal benefit.
+5. **bets_settled_today_v2 column** — remove the duplicate before migration; keep only `bets_settled_today`.
 
 ---
 
 | ID | Task | Effort | ☑ | Ready? | Notes |
 |----|------|--------|----|--------|-------|
-| ADMIN-OPS-DASH | Operational health dashboard: `ops_snapshots` table + writer + `/admin/ops` frontend | 1.5 days | ⬜ | ✅ Ready | Full spec above. Phase 1 (engine) first, then Phase 2 (frontend). Phase 3 (AF budget persistence) can follow independently. |
+| ADMIN-OPS-DASH | `ops_snapshots` table + `write_ops_snapshot()` writer + `/admin/ops` dashboard | 1.5 days | ⬜ | ✅ Ready | Full spec above. Phase 1 (engine) → Phase 2 (frontend) → Phase 3 (AF budget) independently. |
 
 ---
 
