@@ -87,6 +87,8 @@ Data tier system:
 | Form PPG (10-match rolling) away | `form_ppg_away` | Morning pipeline | ✅ Running |
 | Form slope (PPG last-5 minus PPG prior-5) home | `form_slope_home` | Morning pipeline | ✅ Running |
 | Form slope away | `form_slope_away` | Morning pipeline | ✅ Running |
+| Form vs ELO expectation residual home | `form_vs_elo_expectation_home` | Morning pipeline (block 7) | ✅ Running |
+| Form vs ELO expectation residual away | `form_vs_elo_expectation_away` | Morning pipeline (block 7) | ✅ Running |
 | Season goals for avg home | `goals_for_avg_home` | Morning pipeline (Tier A only) | ✅ Running |
 | Season goals against avg home | `goals_against_avg_home` | Morning pipeline (Tier A only) | ✅ Running |
 | Season goals for avg away | `goals_for_avg_away` | Morning pipeline (Tier A only) | ✅ Running |
@@ -105,6 +107,8 @@ Data tier system:
 | H2H total meetings | `h2h_total` | Morning pipeline | ✅ Running |
 | Rest days home | `rest_days_home` | Morning pipeline | ✅ Running |
 | Rest days away | `rest_days_away` | Morning pipeline | ✅ Running |
+| Rest days log-transformed home (REST-NONLINEAR) | `rest_days_norm_home` | Morning pipeline (block 8) | ✅ Running |
+| Rest days log-transformed away | `rest_days_norm_away` | Morning pipeline (block 8) | ✅ Running |
 
 **Not yet built:**
 - `xg_proxy_home/away` (shots-based xG estimate) — needs match_stats from prior matches
@@ -146,6 +150,10 @@ Data tier system:
 | Fixture importance home team | `fixture_importance_home` | Morning pipeline | ✅ Running |
 | Fixture importance away team | `fixture_importance_away` | Morning pipeline | ✅ Running |
 | Importance asymmetry (home − away urgency) | `importance_diff` | Morning pipeline | ✅ Running |
+| Fixture urgency home (points gap / games rem × 3) | `fixture_urgency_home` | Morning pipeline (block 9) | ✅ Running (IMPORTANCE-GAMES-REM 2026-05-07) |
+| Fixture urgency away | `fixture_urgency_away` | Morning pipeline (block 9) | ✅ Running (IMPORTANCE-GAMES-REM 2026-05-07) |
+| Games remaining home | `games_remaining_home` | Morning pipeline (block 9) | ✅ Running (IMPORTANCE-GAMES-REM 2026-05-07) |
+| Games remaining away | `games_remaining_away` | Morning pipeline (block 9) | ✅ Running (IMPORTANCE-GAMES-REM 2026-05-07) |
 | League home win pct (last 200 finished) | `league_home_win_pct` | Morning pipeline | ✅ Running |
 | League draw pct | `league_draw_pct` | Morning pipeline | ✅ Running |
 | League avg goals | `league_avg_goals` | Morning pipeline | ✅ Running |
@@ -154,6 +162,7 @@ Data tier system:
 | Manager change days — home | `manager_change_home_days` | Morning pipeline (batch_write block 3c) | ✅ Running |
 | Manager change days — away | `manager_change_away_days` | Morning pipeline (batch_write block 3c) | ✅ Running |
 | Venue artificial turf | `venue_surface_artificial` | Morning pipeline (batch_write block 11b) | ✅ Running |
+| Away team turf games this season (TURF-FAMILIARITY) | `away_team_turf_games_ytd` | Morning pipeline (batch_write block 11c) | ✅ Running (2026-05-07) |
 | H2H average goal diff (home perspective) | `h2h_avg_goal_diff` | Morning pipeline (batch_write block 2b) | ✅ Running |
 | H2H recency premium (last 3 vs overall) | `h2h_recency_premium` | Morning pipeline (batch_write block 2b) | ✅ Running |
 | Pinnacle AH line (home handicap) | `pinnacle_ah_line` | Morning pipeline (batch_write block 3d) | ✅ Running (data from 2026-05-07) |

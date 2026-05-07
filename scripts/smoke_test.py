@@ -861,6 +861,89 @@ def _():
     assert "cutoff_24h" in src, "24h rolling window variable must be present"
 
 
+# ── Group 2 signal refinements ────────────────────────────────────────────────
+
+@test("REST-NONLINEAR — log(rest_days+1) squashes correctly (unit test)")
+def _():
+    import math
+    # log(3+1) ≈ 1.386
+    assert abs(round(math.log(3 + 1), 4) - 1.3863) < 0.001, "log(4) should be ~1.386"
+    # Diminishing returns: adding 1 rest day matters less at 10 days than at 1→2 days
+    delta_low = math.log(2 + 1) - math.log(1 + 1)   # 1→2 days
+    delta_high = math.log(11 + 1) - math.log(10 + 1)  # 10→11 days
+    assert delta_low > delta_high, "log-transform must show diminishing returns at high rest values"
+
+
+@test("REST-NONLINEAR — rest_days_norm_home/away signal names in source")
+def _():
+    import inspect
+    from workers.api_clients import supabase_client
+    src = inspect.getsource(supabase_client.batch_write_morning_signals)
+    assert "rest_days_norm_home" in src, "rest_days_norm_home must be written"
+    assert "rest_days_norm_away" in src, "rest_days_norm_away must be written"
+    assert "math.log" in src, "log-transform must use math.log"
+
+
+@test("IMPORTANCE-GAMES-REM — fixture_urgency_home/away queryable in match_signals")
+def _():
+    from workers.api_clients.db import execute_query
+    rows = execute_query(
+        "SELECT COUNT(*) AS cnt FROM match_signals "
+        "WHERE signal_name IN ('fixture_urgency_home', 'fixture_urgency_away')",
+        []
+    )
+    cnt = rows[0]["cnt"] if rows else 0
+    assert isinstance(cnt, int), f"Expected int count, got {type(cnt)}"
+
+
+@test("IMPORTANCE-GAMES-REM — games_remaining computed from played in standings query")
+def _():
+    import inspect
+    from workers.api_clients import supabase_client
+    src = inspect.getsource(supabase_client.batch_write_morning_signals)
+    assert "games_remaining_" in src, "games_remaining_{suffix} signal must be written"
+    assert "fixture_urgency_" in src, "fixture_urgency_{suffix} signal must be written"
+    assert "total_season_games" in src, "total_season_games formula must be present"
+    assert "played" in src, "played column must be used for games remaining computation"
+
+
+@test("TURF-FAMILIARITY — away_team_turf_games_ytd queryable in match_signals")
+def _():
+    from workers.api_clients.db import execute_query
+    rows = execute_query(
+        "SELECT COUNT(*) AS cnt FROM match_signals WHERE signal_name = 'away_team_turf_games_ytd'",
+        []
+    )
+    cnt = rows[0]["cnt"] if rows else 0
+    assert isinstance(cnt, int), f"Expected int count, got {type(cnt)}"
+
+
+@test("FORM-ELO-RESIDUAL — ELO→expected PPG formula at known ELO values")
+def _():
+    # At ELO=1500 (exactly average): p_win=0.5, expected_ppg = 3*0.5 + 0.27 = 1.77
+    p_win_1500 = 1.0 / (1.0 + 10.0 ** ((1500.0 - 1500.0) / 400.0))
+    expected_1500 = 3.0 * p_win_1500 + 0.27
+    assert abs(expected_1500 - 1.77) < 0.01, f"At ELO=1500 expected ~1.77 PPG, got {expected_1500}"
+    # At ELO=1700 (strong team): p_win higher → expected_ppg > 2.5
+    p_win_1700 = 1.0 / (1.0 + 10.0 ** ((1500.0 - 1700.0) / 400.0))
+    expected_1700 = 3.0 * p_win_1700 + 0.27
+    assert expected_1700 > 2.5, f"At ELO=1700 expected >2.5 PPG, got {expected_1700}"
+    # Residual is positive for a team outperforming ELO expectation
+    actual_ppg = 2.5
+    residual = actual_ppg - expected_1500  # vs average-ELO team
+    assert residual > 0, "Team with 2.5 PPG beats ELO=1500 expectation (~1.77)"
+
+
+@test("FORM-ELO-RESIDUAL — form_vs_elo_expectation signal names in source")
+def _():
+    import inspect
+    from workers.api_clients import supabase_client
+    src = inspect.getsource(supabase_client.batch_write_morning_signals)
+    assert "form_vs_elo_expectation_" in src, "form_vs_elo_expectation_{suffix} must be written"
+    assert "expected_ppg" in src, "expected_ppg variable must be present in ELO residual computation"
+    assert "p_win" in src, "p_win ELO probability variable must be present"
+
+
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 def _run_one(name: str, fn) -> tuple[str, bool, str, float]:

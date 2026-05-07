@@ -3522,6 +3522,25 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
                     add(mid, "form_ppg_home", ppg_h, "quality", "derived")
                 if ppg_a is not None:
                     add(mid, "form_ppg_away", ppg_a, "quality", "derived")
+
+            # FORM-ELO-RESIDUAL: actual PPG minus ELO-expected PPG
+            try:
+                for m in matches:
+                    mid = m["id"]
+                    for tid, suffix in [
+                        (m.get("home_team_id"), "home"),
+                        (m.get("away_team_id"), "away"),
+                    ]:
+                        if not tid:
+                            continue
+                        elo = elo_by_team.get(str(tid))
+                        ppg = ppg_by_team.get(str(tid))
+                        if elo is not None and ppg is not None:
+                            p_win = 1.0 / (1.0 + 10.0 ** ((1500.0 - elo) / 400.0))
+                            expected_ppg = 3.0 * p_win + 0.27
+                            add(mid, f"form_vs_elo_expectation_{suffix}", round(ppg - expected_ppg, 3), "quality", "derived")
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -3557,9 +3576,9 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
                 mid = m["id"]
                 match_date_str = str(m.get("start_time", ""))[:10] or today_str
 
-                for team_id, slope_sig, rest_sig in [
-                    (m.get("home_team_id"), "form_slope_home", "rest_days_home"),
-                    (m.get("away_team_id"), "form_slope_away", "rest_days_away"),
+                for team_id, slope_sig, rest_sig, rest_norm_sig in [
+                    (m.get("home_team_id"), "form_slope_home", "rest_days_home", "rest_days_norm_home"),
+                    (m.get("away_team_id"), "form_slope_away", "rest_days_away", "rest_days_norm_away"),
                 ]:
                     if not team_id:
                         continue
@@ -3578,6 +3597,7 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
                         try:
                             delta = date.fromisoformat(match_date_str) - date.fromisoformat(last_str)
                             add(mid, rest_sig, float(delta.days), "quality", "derived")
+                            add(mid, rest_norm_sig, round(math.log(delta.days + 1), 4), "quality", "derived")
                         except (ValueError, TypeError):
                             pass
 
@@ -3600,7 +3620,7 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
         if all_league_api_ids and all_seasons:
             st_rows = execute_query(
                 """SELECT DISTINCT ON (league_api_id, season, team_api_id)
-                          team_api_id, rank, points, description, form, league_api_id, season
+                          team_api_id, rank, points, description, form, league_api_id, season, played
                    FROM league_standings
                    WHERE league_api_id = ANY(%s) AND season = ANY(%s)
                    ORDER BY league_api_id, season, team_api_id, fetched_date DESC""",
@@ -3682,6 +3702,18 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
                     add(mid, "fixture_importance_home", urg_h, "context", "derived")
                     add(mid, "fixture_importance_away", urg_a, "context", "derived")
                     add(mid, "importance_diff", round(urg_h - urg_a, 3), "context", "derived")
+
+                    # IMPORTANCE-GAMES-REM: points-gap urgency normalized by games remaining
+                    total_season_games = 2 * (total_teams - 1)
+                    for tr, suffix in [(home_tr, "home"), (away_tr, "away")]:
+                        played_n = tr.get("played") or 0
+                        gr = max(0, total_season_games - played_n)
+                        if gr > 0:
+                            add(mid, f"games_remaining_{suffix}", float(gr), "context", "derived")
+                            pts = tr.get("points") or 0
+                            rel_urg = max(0.0, last_safe_pts - pts) / (gr * 3)
+                            title_urg = max(0.0, leader_pts - pts) / (gr * 3)
+                            add(mid, f"fixture_urgency_{suffix}", round(max(rel_urg, title_urg), 4), "context", "derived")
 
             # Batch UPDATE form strings
             if form_updates:
@@ -3818,6 +3850,29 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
             mid = str(row["id"])
             surface = (row["surface"] or "").lower()
             add(mid, "venue_surface_artificial", 1.0 if surface == "artificial turf" else 0.0, "context", "venues")
+    except Exception:
+        pass
+
+    # ── 11c. TURF-FAMILIARITY: away team's turf games this season ────────────
+    try:
+        if all_team_uuids and all_seasons:
+            turf_rows = execute_query(
+                """SELECT m.away_team_id, COUNT(*) AS turf_away_games
+                   FROM matches m
+                   JOIN venues v ON m.venue_af_id = v.af_id
+                   WHERE m.away_team_id = ANY(%s::uuid[])
+                     AND v.surface = 'artificial turf'
+                     AND m.season = ANY(%s)
+                     AND m.status = 'finished'
+                   GROUP BY m.away_team_id""",
+                (all_team_uuids, all_seasons),
+            )
+            turf_by_team = {str(r["away_team_id"]): int(r["turf_away_games"]) for r in turf_rows}
+            for m in matches:
+                mid = m["id"]
+                atid = m.get("away_team_id")
+                if atid:
+                    add(mid, "away_team_turf_games_ytd", float(turf_by_team.get(str(atid), 0)), "context", "derived")
     except Exception:
         pass
 

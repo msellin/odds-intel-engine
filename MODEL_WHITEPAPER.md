@@ -47,8 +47,9 @@ All rolling statistics computed from the **10 most recent matches** per team, sp
 | **Away at Away** | venue-specific: win%, goals scored/conceded, O2.5% | 4 |
 | **Head-to-Head** | home win%, avg goals, O2.5%, BTTS%, total meetings (last 10 H2H) | 5 |
 | **League Position** | normalised rank, points to relegation/title, in-relegation flag, position diff | 7 |
-| **Rest & Context** | rest days (home/away, capped 14), rest advantage, league tier (1-4) | 4 |
+| **Rest & Context** | rest days raw (home/away), log-transformed rest days `log(days+1)` (REST-NONLINEAR), fixture urgency (points gap / games rem × 3), games remaining, away turf experience | 8 |
 | **ELO** (at inference) | home ELO, away ELO, ELO differential, expected win probability from ELO | 4 |
+| **Form vs ELO Residual** | `form_vs_elo_expectation_home/away` = actual recent PPG minus ELO-predicted PPG (`3 × p_win + 0.27`) — isolates hot/cold streaks from baseline quality (FORM-ELO-RESIDUAL) | 2 |
 
 **Defaults:** When insufficient history exists (new teams, new season), features default to league averages or neutral values (e.g. H2H defaults to 0.33 for 3-way split).
 
@@ -68,6 +69,16 @@ Custom ELO implementation tracking every team globally:
 **Update rule:** `new_rating = old_rating + K * GD_mult * (actual - expected)`
 
 ELO ratings are updated daily during settlement (21:00 UTC) after match results are confirmed.
+
+### 3.3 Derived Signal Formulas (Group 2 refinements, 2026-05-07)
+
+**REST-NONLINEAR:** Rest effect is non-linear — 2→3 days matters, 10→11 days is negligible. Signal: `rest_days_norm = log(rest_days + 1)`. Raw `rest_days` kept for reference.
+
+**IMPORTANCE-GAMES-REM:** Points-urgency normalized by games remaining. `fixture_urgency = max(pts_to_relegation_gap, pts_to_title_gap) / (games_remaining × 3)`. Values >1.0 = mathematically desperate. Derived from `league_standings.played` + `2 × (total_teams - 1)` season formula.
+
+**FORM-ELO-RESIDUAL:** `form_vs_elo_expectation = actual_ppg - expected_ppg`. Expected PPG from ELO: `3 × (1 / (1 + 10^((1500 - ELO) / 400))) + 0.27`. Strips baseline quality (already priced by market) to isolate genuine hot/cold streaks. Positive = team outperforming ELO; negative = underperforming.
+
+**TURF-FAMILIARITY:** Away team's `away_team_turf_games_ytd` counts finished away matches on artificial turf this season. Quantifies visitor unfamiliarity — two home teams on turf = no signal; English visitor to Scandinavian turf = real edge.
 
 ---
 
