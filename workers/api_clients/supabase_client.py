@@ -3547,9 +3547,9 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               ) THEN o.match_id END) AS without_pinnacle,
               COUNT(*)                    AS snapshots_today,
               COUNT(DISTINCT o.bookmaker) AS distinct_bm,
-              COUNT(DISTINCT CASE WHEN o.market = 'Match Winner' THEN o.match_id END)     AS mkt_match_winner,
-              COUNT(DISTINCT CASE WHEN o.market LIKE 'Goals Over/Under%' THEN o.match_id END) AS mkt_goals_ou,
-              COUNT(DISTINCT CASE WHEN o.market = 'Both Teams Score' THEN o.match_id END) AS mkt_btts
+              COUNT(DISTINCT CASE WHEN o.market = '1x2' THEN o.match_id END)             AS mkt_match_winner,
+              COUNT(DISTINCT CASE WHEN o.market = 'over_under_25' THEN o.match_id END)   AS mkt_goals_ou,
+              COUNT(DISTINCT CASE WHEN o.market = 'btts' THEN o.match_id END)            AS mkt_btts
             FROM odds_snapshots o
             JOIN matches m ON m.id = o.match_id
             WHERE m.date::date = %s
