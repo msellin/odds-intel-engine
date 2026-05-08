@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-08 — Full P0 hardening complete (POOL-LEAK-FIX, EXCEPTION-BOUNDARIES, JOB-COALESCE, DB-STMT-TIMEOUT, OBS-HEARTBEAT, PIPE-ALERT, MONEY-STRIPE-IDEMPOTENT, RAIL-POLL-TUNE). P1 = pre-paid-launch money/security. Reddit posts live since ~May 2.
+> Last updated: 2026-05-08 — P0 + P1 automation complete. P0: POOL-LEAK-FIX, EXCEPTION-BOUNDARIES, JOB-COALESCE, DB-STMT-TIMEOUT, OBS-HEARTBEAT, PIPE-ALERT, MONEY-STRIPE-IDEMPOTENT, RAIL-POLL-TUNE. P1 automated: STRIPE-WEBHOOK-SIG, MONEY-STRIPE-IDEMPOTENT, MONEY-WEBHOOK-TEST, STRIPE-RECONCILE, MONEY-RLS-AUDIT, MONEY-SETTLE-RECON, RATE-LIMIT-API, ABUSE-DETECT-PRELAUNCH, DEPLOY-ROLLBACK-RUNBOOK. P1 user-action needed: STAGING-ENV, BACKUP-RESTORE-DRILL. OBS-SENTRY-BACKEND deferred (free tier exhausted). Next: P2 reliability hardening.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
