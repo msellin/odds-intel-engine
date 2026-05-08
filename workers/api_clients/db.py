@@ -97,7 +97,11 @@ def _reset_pool():
     console.print("[yellow]DB pool reset — will reconnect on next query[/yellow]")
 
 
-_POOL_WAIT_TIMEOUT = float(os.getenv("DB_POOL_WAIT_TIMEOUT", "60"))
+# 15s default: long enough to absorb transient saturation when several scheduler
+# jobs grab conns at once, short enough to surface real problems fast. 60s of
+# silently waiting on a stuck pool hides signal — the live poller would freeze
+# for a full minute before the cycle errored. Override via env if you need to.
+_POOL_WAIT_TIMEOUT = float(os.getenv("DB_POOL_WAIT_TIMEOUT", "15"))
 
 
 def _acquire_conn(p: pool.ThreadedConnectionPool, timeout: float):
@@ -433,26 +437,36 @@ def store_match_events_batch(match_id: str, events: list[dict],
             now,
         ))
 
-    # No unique constraint on (match_id, af_event_order) in DB.
-    # Use insert with duplicate check — skip events already stored.
-    # Check: af_event_order is the most reliable dedup key per match.
-    stored = 0
+    # Bulk insert via execute_values — one round-trip instead of N. Releases the
+    # pooled conn fast (was held for the full per-row loop, ~30 round-trips per
+    # match, multiplied by ~30 live matches per LivePoller cycle). If the batch
+    # fails (rare — bad row, e.g. NULL on a NOT NULL column), fall back to the
+    # per-row loop so a single bad event doesn't poison the whole match.
+    columns = ("match_id", "minute", "added_time", "event_type", "team",
+               "player_name", "detail", "af_event_order", "created_at")
+    cols = ", ".join(columns)
+    bulk_sql = f"INSERT INTO match_events ({cols}) VALUES %s"
     with get_conn() as conn:
         with conn.cursor() as cur:
-            for row in rows:
-                try:
-                    cur.execute(
-                        """INSERT INTO match_events
-                           (match_id, minute, added_time, event_type, team,
-                            player_name, detail, af_event_order, created_at)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                        row
-                    )
-                    stored += 1
-                except Exception:
-                    conn.rollback()
-                    continue
-            conn.commit()
+            try:
+                psycopg2.extras.execute_values(cur, bulk_sql, rows, page_size=500)
+                stored = cur.rowcount
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                stored = 0
+                for row in rows:
+                    try:
+                        cur.execute(
+                            f"INSERT INTO match_events ({cols}) "
+                            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                            row,
+                        )
+                        stored += 1
+                    except Exception:
+                        conn.rollback()
+                        continue
+                conn.commit()
     return stored
 
 

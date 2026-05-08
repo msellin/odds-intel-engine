@@ -19,6 +19,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.executors.pool import ThreadPoolExecutor as APSThreadPoolExecutor
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
@@ -540,9 +541,14 @@ def main():
 
     threading.Thread(target=_initial_budget_sync, daemon=True).start()
 
-    # Create scheduler — coalesce + max_instances=1 prevent overlapping/stacked runs
+    # Create scheduler — coalesce + max_instances=1 prevent same-job stacking;
+    # executor cap of 4 bounds cross-job concurrency. APScheduler's default is
+    # 10 threads, which combined with LivePoller + Flask + InplayBot can fan out
+    # to 15+ simultaneous DB conns at startup when missed jobs catch up. 4 is
+    # plenty for the actual workload (most jobs are short, scheduled minutes apart).
     scheduler = BackgroundScheduler(
         timezone="UTC",
+        executors={"default": APSThreadPoolExecutor(max_workers=4)},
         job_defaults={"coalesce": True, "max_instances": 1},
     )
 

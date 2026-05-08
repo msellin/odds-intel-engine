@@ -337,8 +337,12 @@ def fetch_post_match_enrichment() -> dict:
 
         return result
 
-    # Run enrichment in parallel (4 threads — stay within API rate limits)
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    # Run enrichment in parallel (2 threads — bounds DB conn fan-out).
+    # Each thread can hold up to 3 conns simultaneously (stats + events + player_stats
+    # writes), so 2 threads × 3 = worst-case 6 conns from this function. With 4 threads
+    # the worst case was 12, which combined with LivePoller and APScheduler workers
+    # could blow past the 20-conn pool. AF rate limits are not the binding constraint.
+    with ThreadPoolExecutor(max_workers=2) as pool:
         futures = {pool.submit(_enrich_one_match, m): m for m in to_enrich}
         for future in as_completed(futures):
             try:

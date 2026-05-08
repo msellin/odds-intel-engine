@@ -1127,6 +1127,67 @@ def _():
             pass
 
 
+@test("POOL-FANOUT — fetch_post_match_enrichment caps ThreadPoolExecutor at 2 workers")
+def _():
+    import inspect
+    from workers.jobs import settlement
+    src = inspect.getsource(settlement.fetch_post_match_enrichment)
+    assert "max_workers=2" in src, (
+        "fetch_post_match_enrichment must use max_workers=2 — each thread can hold "
+        "up to 3 conns (stats+events+player_stats), so 4 workers = up to 12 conns "
+        "from this function alone, which can blow the 20-conn pool when overlapping "
+        "with LivePoller + scheduler workers."
+    )
+
+
+@test("POOL-FANOUT — APScheduler executor capped at 4 threads")
+def _():
+    # Source-read instead of import — apscheduler isn't always installed in
+    # the smoke-test venv, but the source file is always in-tree.
+    from pathlib import Path
+    src = Path("workers/scheduler.py").read_text()
+    assert "APSThreadPoolExecutor(max_workers=4)" in src, (
+        "BackgroundScheduler must use APSThreadPoolExecutor(max_workers=4) — "
+        "default 10 threads × multiple conns/job can fan out to 15+ conns at "
+        "startup catch-up, exhausting the pool."
+    )
+    assert 'executors={"default": APSThreadPoolExecutor' in src, (
+        "BackgroundScheduler() must be passed the executor cap explicitly"
+    )
+
+
+@test("POOL-FANOUT — store_match_events_batch uses execute_values (single round-trip)")
+def _():
+    import inspect
+    from workers.api_clients import db
+    src = inspect.getsource(db.store_match_events_batch)
+    assert "execute_values" in src, (
+        "store_match_events_batch must use psycopg2.extras.execute_values — "
+        "the per-row INSERT loop holds the conn for ~30 round-trips per match, "
+        "blocking other threads waiting on the pool. Bulk insert releases the "
+        "conn in a fraction of the time."
+    )
+    # Ensure fallback per-row path is preserved so a single bad event doesn't
+    # kill the whole batch.
+    assert "for row in rows:" in src, (
+        "store_match_events_batch must keep the per-row fallback for batch failures"
+    )
+
+
+@test("POOL-WAIT — default timeout is 15s, not 60s (override via env)")
+def _():
+    import os
+    # Avoid module-cache effects: re-read the constant from source rather than
+    # importing (the user may have set DB_POOL_WAIT_TIMEOUT in their .env).
+    import inspect
+    from workers.api_clients import db
+    src = inspect.getsource(db)
+    assert 'os.getenv("DB_POOL_WAIT_TIMEOUT", "15")' in src, (
+        "DB_POOL_WAIT_TIMEOUT default must be 15s — 60s of silent waiting hides "
+        "real saturation problems. Override via env var if a specific job needs longer."
+    )
+
+
 @test("BOOKMAKER-COUNT — bookmaker_count_active signal name in source")
 def _():
     import inspect
