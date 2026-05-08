@@ -841,7 +841,7 @@ def write_dashboard_cache():
         # Bot performance
         bot_rows = execute_query("""
             SELECT
-                b.name, sb.timing_cohort,
+                b.name,
                 COUNT(sb.id) FILTER (WHERE sb.result != 'pending') as settled,
                 COUNT(sb.id) FILTER (WHERE sb.result = 'won') as won,
                 SUM(sb.pnl) FILTER (WHERE sb.result != 'pending') as total_pnl,
@@ -850,7 +850,7 @@ def write_dashboard_cache():
             FROM bots b
             LEFT JOIN simulated_bets sb ON sb.bot_id = b.id
             WHERE b.is_active = true
-            GROUP BY b.id, b.name, sb.timing_cohort
+            GROUP BY b.id, b.name
         """, [])
 
         total_bets = execute_query("SELECT COUNT(*) as n FROM simulated_bets", [])[0]["n"]
@@ -873,7 +873,6 @@ def write_dashboard_cache():
             st = float(r.get("total_staked") or 0)
             bot_breakdown.append({
                 "name": r["name"],
-                "timing_cohort": r.get("timing_cohort"),
                 "settled": s,
                 "won": w,
                 "total_pnl": round(p, 2),
