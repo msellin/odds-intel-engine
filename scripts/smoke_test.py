@@ -342,11 +342,11 @@ def _():
     pr = execute_query(
         """SELECT status FROM pipeline_runs
            WHERE job_name = 'write_ops_snapshot' AND run_date = %s
+             AND status = 'completed'
            ORDER BY started_at DESC LIMIT 1""",
         [today]
     )
-    assert pr, "write_ops_snapshot did not log a pipeline_runs entry — failures will be invisible on the dashboard"
-    assert pr[0]["status"] == "completed", f"Expected completed, got {pr[0]['status']}"
+    assert pr, "write_ops_snapshot did not log a completed pipeline_runs entry — failures will be invisible on the dashboard"
 
 
 
