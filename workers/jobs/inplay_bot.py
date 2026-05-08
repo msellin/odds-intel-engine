@@ -62,10 +62,14 @@ INPLAY_BOTS = {
         "description": "Dead Game Unders — tempo collapse, min 25-50",
         "strategy": "inplay_e",
     },
-    "inplay_f": {
-        "description": "Odds Momentum Reversal — odds move without goal",
-        "strategy": "inplay_f",
-    },
+    # inplay_f (Odds Momentum Reversal) was DROPPED 2026-05-08 after the
+    # 11-day backfill replay placed 78 settled F-bets at -6.4% ROI. 4/5
+    # AI tools (replies 1, 2, 4-probation, 5) recommended drop; reply 5's
+    # argument was decisive: sharp books already price the pace signal
+    # we'd need to exploit on the same data we have. The bot record + any
+    # pending bets remain in DB and will settle naturally; no new bets.
+    # _check_strategy_f below is kept so historical settlement / replay
+    # of older snapshots doesn't crash, but it's no longer dispatched.
 }
 
 # Minimum distinct matches with real xG per league before trusting xG-gated strategies.
@@ -332,13 +336,14 @@ def _get_prematch_data(execute_query, match_ids: list[str]) -> dict[str, dict]:
     if not match_ids:
         return {}
 
-    # NOTE: prematch_xg_home/away come from team_season_stats.goals_for_avg
-    # (rolling-season avg goals/game per team). The previous source —
-    # m.af_prediction->'predictions'->'goals'->>'home' — was misinterpreted:
-    # AF returns those as betting-line strings like "-1.5", "-2.5" (handicap
-    # indicators), NOT expected goals. That made pm_xg_total negative on
-    # ~every match and rejected every candidate at `if pm_xg_total <= 0`.
-    # Falls back to league-average prior (1.3 each) when stats are missing.
+    # prematch_xg_home/away come from team_season_stats.goals_for_avg (rolling
+    # season-avg goals/game per team). When team stats are missing we fall
+    # back to the league's mean goals/game across teams that DO have stats —
+    # this avoids the prior bug where a flat 1.3+1.3 inflated Strategy E's
+    # "Under" edges in low-scoring leagues (replies 4 + 5 of the 5-AI review).
+    # Final fallback is 1.1+1.1 (global median, not mean) when even the league
+    # has no calibration data; xg_fallback_used flag is exposed so strategies
+    # can apply an edge penalty for those rows.
     rows = execute_query("""
         SELECT
             m.id AS match_id,
@@ -346,14 +351,20 @@ def _get_prematch_data(execute_query, match_ids: list[str]) -> dict[str, dict]:
             m.home_team_id,
             m.away_team_id,
             l.tier AS league_tier,
-            COALESCE(tss_h.goals_for_avg::numeric, 1.3) AS prematch_xg_home,
-            COALESCE(tss_a.goals_for_avg::numeric, 1.3) AS prematch_xg_away,
+            COALESCE(tss_h.goals_for_avg::numeric, la.league_avg::numeric, 1.1) AS prematch_xg_home,
+            COALESCE(tss_a.goals_for_avg::numeric, la.league_avg::numeric, 1.1) AS prematch_xg_away,
+            (tss_h.goals_for_avg IS NULL OR tss_a.goals_for_avg IS NULL) AS xg_fallback_used,
             p_ou.model_probability   AS prematch_o25_prob,
             p_btts.model_probability AS prematch_btts_prob,
             p_home.model_probability AS prematch_home_prob,
             p_away.model_probability AS prematch_away_prob
         FROM matches m
         JOIN leagues l ON l.id = m.league_id
+        LEFT JOIN LATERAL (
+            SELECT AVG(goals_for_avg) AS league_avg
+            FROM team_season_stats
+            WHERE league_api_id = l.api_football_id
+        ) la ON TRUE
         LEFT JOIN LATERAL (
             SELECT goals_for_avg FROM team_season_stats
             WHERE team_api_id = m.home_team_api_id
@@ -539,8 +550,7 @@ def _check_strategy(bot_name: str, cand: dict, pm: dict,
         return _check_strategy_d(cand, pm, has_red_card)
     elif bot_name == "inplay_e":
         return _check_strategy_e(cand, pm, has_red_card)
-    elif bot_name == "inplay_f":
-        return _check_strategy_f(cand, pm, has_red_card, execute_query)
+    # inplay_f intentionally not dispatched — dropped 2026-05-08
     return None
 
 
@@ -641,7 +651,18 @@ def _check_strategy_a(cand: dict, pm: dict, has_red_card: bool,
 
 def _check_strategy_b(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     """
-    Strategy B: BTTS Momentum — trailing team shows pressure.
+    Strategy B: BTTS Momentum (bets Over 2.5).
+
+    Logic fixed 2026-05-08 per 5-AI consensus. Old version computed P(trailing
+    team scores) — mislabeled it as BTTS — and compared it directly to OU 2.5
+    implied probability. That created phantom edge: P(BTTS) is almost always
+    higher than P(Over 2.5), so the comparison inflated edge by construction.
+
+    New flow (Reply 4 Option C):
+      • Trailing team pressure (xG/SoT) is kept as a STATE filter — same idea
+      • Prematch BTTS prob is kept as a MATCH-TYPE filter
+      • Edge is computed against the actual market we bet on (Over 2.5) using
+        proper Poisson on full-match posterior xG (both teams) — not BTTS
 
     Real xG: trailing team xg >= 0.4 AND sot >= 2 (original).
     Proxy: trailing team sot >= 4 (equivalent threshold at 0.10/shot).
@@ -661,17 +682,17 @@ def _check_strategy_b(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     sot_a = cand["shots_on_target_away"] or 0
 
     if sa == 0:
-        # Away team trailing
         trailing_xg = xg_a
+        trailing_sot = sot_a
         if is_real:
             if xg_a < 0.4 or sot_a < 2:
                 return None
         else:
-            if sot_a < 4:  # 4 * 0.10 = 0.40 proxy equivalent
+            if sot_a < 4:
                 return None
     else:
-        # Home team trailing
         trailing_xg = xg_h
+        trailing_sot = sot_h
         if is_real:
             if xg_h < 0.4 or sot_h < 2:
                 return None
@@ -679,6 +700,7 @@ def _check_strategy_b(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
             if sot_h < 4:
                 return None
 
+    # Filter: prematch must signal "both attack" type match
     pm_btts = float(pm.get("prematch_btts_prob") or 0)
     if pm_btts <= 0.48:
         return None
@@ -688,18 +710,26 @@ def _check_strategy_b(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
         return None
     odds = float(odds)
 
+    # Edge: proper P(Over 2.5) from posterior xG (matches the market we bet)
+    pm_xg_total = float(pm.get("prematch_xg_home") or 0) + float(pm.get("prematch_xg_away") or 0)
+    if pm_xg_total <= 0:
+        return None
+
+    live_xg = xg_h + xg_a
+    posterior = _bayesian_posterior(pm_xg_total, live_xg, minute)
     remaining_minutes = max(1, 90 - minute)
-    trailing_lambda = trailing_xg * (remaining_minutes / max(1, minute))
-    pm_xg_trailing = (
-        float(pm.get("prematch_xg_away") or 0.8) if sa == 0
-        else float(pm.get("prematch_xg_home") or 0.8)
-    )
-    blended_lambda = (pm_xg_trailing * (remaining_minutes / 90.0) + trailing_lambda) / 2.0
-    btts_prob = 1.0 - math.exp(-blended_lambda)
+    lambda_remaining = posterior * remaining_minutes / 90.0
+
+    current_goals = sh + sa
+    goals_needed = 3 - current_goals
+    if goals_needed <= 0:
+        return None
+
+    model_prob = _poisson_over_prob(lambda_remaining, goals_needed - 0.5)
 
     min_edge = 3.0 if is_real else 4.5
     implied = _implied_prob(odds)
-    edge = (btts_prob - implied) * 100
+    edge = (model_prob - implied) * 100
     if edge < min_edge:
         return None
 
@@ -707,12 +737,14 @@ def _check_strategy_b(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
         "market": "O/U",
         "selection": "over 2.5",
         "odds": odds,
-        "model_prob": round(btts_prob, 4),
+        "model_prob": round(model_prob, 4),
         "edge": round(edge, 2),
+        "posterior_rate": round(posterior, 3),
+        "prematch_xg_total": round(pm_xg_total, 2),
         "extra": {
             "trailing_team": "away" if sa == 0 else "home",
             "trailing_xg": round(trailing_xg, 2),
-            "trailing_sot": sot_a if sa == 0 else sot_h,
+            "trailing_sot": trailing_sot,
             "prematch_btts": round(pm_btts, 3),
             "xg_source": "live" if is_real else "shot_proxy",
         },

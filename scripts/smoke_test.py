@@ -1208,6 +1208,99 @@ def _():
     )
 
 
+@test("INPLAY-DROP-F — inplay_f removed from INPLAY_BOTS dict and dispatcher")
+def _():
+    import pathlib, re
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+
+    # INPLAY_BOTS dict block: pull only the dict literal
+    dict_start = src.index("INPLAY_BOTS = {")
+    dict_end = src.index("\n}\n", dict_start) + 2
+    bots_block = src[dict_start:dict_end]
+    assert '"inplay_f"' not in bots_block, (
+        "inplay_f must not be a key in INPLAY_BOTS — strategy F was dropped 2026-05-08"
+    )
+
+    # Dispatcher block: _check_strategy() function body
+    disp_start = src.index("def _check_strategy(")
+    disp_end = src.index("\ndef ", disp_start + 1)
+    disp_body = src[disp_start:disp_end]
+    assert 'bot_name == "inplay_f"' not in disp_body, (
+        "_check_strategy dispatcher must not route to inplay_f"
+    )
+
+
+@test("INPLAY-FIX-B-MODEL — strategy B uses _poisson_over_prob, not BTTS exp formula")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    fn_start = src.index("def _check_strategy_b(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    fn_body = src[fn_start:fn_end]
+    # The buggy version computed btts_prob = 1 - exp(-blended_lambda) and bet OU 2.5
+    assert "_poisson_over_prob(" in fn_body, (
+        "Strategy B must compute P(Over 2.5) via _poisson_over_prob() — fix from 5-AI review"
+    )
+    assert "btts_prob = 1.0 - math.exp" not in fn_body, (
+        "Strategy B must not use the old btts_prob = 1 - exp(-lambda) phantom-edge formula"
+    )
+
+
+@test("INPLAY-FIX-E-FALLBACK — prematch query falls back to league avg, exposes flag")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    fn_start = src.index("def _get_prematch_data(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    fn_body = src[fn_start:fn_end]
+    # Old code: COALESCE(tss_h.goals_for_avg::numeric, 1.3) — flat 1.3 fallback
+    # New code: COALESCE(tss_h.goals_for_avg, la.league_avg, 1.1)
+    assert "la.league_avg" in fn_body, (
+        "Prematch query must fall back to per-league average before global default"
+    )
+    assert "xg_fallback_used" in fn_body, (
+        "Query must expose xg_fallback_used flag so strategies can apply edge penalty"
+    )
+    assert ", 1.3) AS prematch_xg_home" not in fn_body, (
+        "The flat 1.3 fallback was the source of inflated E ROI — must be replaced"
+    )
+
+
+@test("INPLAY-HIDE-VALUEBETS — getTodayBets filters xg_source IS NULL")
+def _():
+    import pathlib
+    p = pathlib.Path("../odds-intel-web/src/lib/engine-data.ts")
+    if not p.exists():
+        # Frontend repo not present in this checkout — skip rather than fail.
+        return
+    src = p.read_text()
+    fn_start = src.index("export async function getTodayBets(")
+    fn_end = src.index("\nexport ", fn_start + 1)
+    fn_body = src[fn_start:fn_end]
+    assert '.is("xg_source", null)' in fn_body, (
+        "getTodayBets must filter inplay bets out (xg_source IS NULL = prematch). "
+        "Inplay rows from broken Strategy B/E would otherwise leak into /value-bets."
+    )
+
+
+@test("INPLAY-HIDE-VALUEBETS — getFreeDailyPick filters xg_source IS NULL on both queries")
+def _():
+    import pathlib
+    p = pathlib.Path("../odds-intel-web/src/lib/engine-data.ts")
+    if not p.exists():
+        return
+    src = p.read_text()
+    fn_start = src.index("export async function getFreeDailyPick(")
+    fn_end = src.index("\nexport ", fn_start + 1)
+    fn_body = src[fn_start:fn_end]
+    # Both the pick query AND the dedupe-count query must be filtered, otherwise
+    # the totalCount and the pick will disagree.
+    assert fn_body.count('.is("xg_source", null)') >= 2, (
+        "getFreeDailyPick must apply xg_source IS NULL to both the pick query "
+        "and the all-bets dedupe query — otherwise totalCount drifts from the pick."
+    )
+
+
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 def _run_one(name: str, fn) -> tuple[str, bool, str, float]:

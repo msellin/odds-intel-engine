@@ -85,6 +85,7 @@ Access levels for anonymous visitors, free signed-in users, and paid subscribers
 | Value bets page — stats only (bet count, edge tiers, leagues) | — | Y | Y | Y |
 | Value bets page — directional (match + market + edge tier, no selection) | — | — | Y | — |
 | Value bets page — full (match + selection + odds + model prob + exact edge % + stake) | — | — | — | Y |
+| Value bets page — **prematch bots only** (inplay hidden until tuning is done — see INPLAY-HIDE-VALUEBETS). Performance page is the place for inplay history; it tags inplay rows with a `live` badge. | — | Prematch only | Prematch only | Prematch only |
 | Model probability + edge % per match | — | — | — | Y |
 | CLV tracking per bet (Pro on track record, Elite on match detail) | — | — | Y | Y |
 | Full bot ROI analytics + strategy breakdown | — | — | — | Y |
