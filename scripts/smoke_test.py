@@ -1384,6 +1384,29 @@ def _():
     assert "corners_delta < 3" in g_body, "G must require ≥ 3-corner delta in 10-min window"
 
 
+@test("INPLAY-NEW-HT-RESTART — Strategy H (HT Restart Surge) registered + dispatched")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+
+    dict_start = src.index("INPLAY_BOTS = {")
+    dict_end = src.index("\n}\n", dict_start) + 2
+    bots_block = src[dict_start:dict_end]
+    assert '"inplay_h"' in bots_block, "inplay_h must be registered (3/5 AI consensus)"
+
+    disp_start = src.index("def _check_strategy(")
+    disp_end = src.index("\ndef ", disp_start + 1)
+    disp_body = src[disp_start:disp_end]
+    assert 'bot_name == "inplay_h"' in disp_body, "Dispatcher must route inplay_h"
+
+    h_start = src.index("def _check_strategy_h(")
+    h_end = src.index("\ndef ", h_start + 1)
+    h_body = src[h_start:h_end]
+    assert "if minute < 46 or minute > 55" in h_body, "H window must be 46-55"
+    assert "if sh != 0 or sa != 0" in h_body, "H must require 0-0 at entry"
+    assert "minute BETWEEN 40 AND 46" in h_body, "H must look up an HT-end snapshot"
+
+
 @test("REPLAY-INPLAY — scripts/replay_inplay.py imports without DB writes")
 def _():
     """Defensive: backfill script must be dry-run only — no INSERT/UPDATE/DELETE

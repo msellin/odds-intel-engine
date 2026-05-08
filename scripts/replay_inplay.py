@@ -241,6 +241,83 @@ def _parse_dt(v):
     return datetime.fromisoformat(str(v))
 
 
+def replay_strategy_h(cand: dict, pm: dict, has_red_card: bool,
+                      snapshot_idx: dict[str, list[dict]]) -> dict | None:
+    """In-memory port of inplay_bot._check_strategy_h for backfill replay."""
+    minute = cand["minute"] or 0
+    if minute < 46 or minute > 55 or has_red_card:
+        return None
+
+    sh, sa = cand["score_home"] or 0, cand["score_away"] or 0
+    if sh != 0 or sa != 0:
+        return None
+
+    pm_o25 = float(pm.get("prematch_o25_prob") or 0)
+    if pm_o25 <= 0.50:
+        return None
+
+    pm_xg_total = float(pm.get("prematch_xg_home") or 0) + float(pm.get("prematch_xg_away") or 0)
+    if pm_xg_total <= 0:
+        return None
+
+    odds = cand.get("live_ou_25_over")
+    if not odds or float(odds) < 2.10:
+        return None
+    odds = float(odds)
+
+    # HT-end snapshot lookup — minute 40-46, latest first
+    mid = str(cand["match_id"])
+    history = snapshot_idx.get(mid, [])
+    ht = None
+    for s in reversed(history):
+        m = s.get("minute") or 0
+        if 40 <= m <= 46:
+            ht = s
+            break
+    if not ht:
+        return None
+    if (ht["score_home"] or 0) != 0 or (ht["score_away"] or 0) != 0:
+        return None
+
+    ht_xg_h = ht.get("xg_home")
+    ht_xg_a = ht.get("xg_away")
+    ht_sot = (ht.get("shots_on_target_home") or 0) + (ht.get("shots_on_target_away") or 0)
+
+    if ht_xg_h is not None and ht_xg_a is not None:
+        is_real = True
+        if float(ht_xg_h) + float(ht_xg_a) < 0.7:
+            return None
+    else:
+        is_real = False
+        if ht_sot < 6:
+            return None
+
+    xg_h, xg_a, _ = inplay_bot._compute_live_xg(cand)
+    live_xg = xg_h + xg_a
+    posterior = inplay_bot._bayesian_posterior(pm_xg_total, live_xg, minute)
+    remaining_minutes = max(1, 90 - minute)
+    lambda_remaining = posterior * remaining_minutes / 90.0
+    model_prob = inplay_bot._poisson_over_prob(lambda_remaining, 2.5)
+
+    min_edge = 2.0 if is_real else 3.5
+    implied = inplay_bot._implied_prob(odds)
+    edge = (model_prob - implied) * 100
+    if edge < min_edge:
+        return None
+
+    return {
+        "market": "O/U",
+        "selection": "over 2.5",
+        "odds": odds,
+        "model_prob": round(model_prob, 4),
+        "edge": round(edge, 2),
+        "extra": {
+            "ht_sot_total": ht_sot,
+            "prematch_o25": round(pm_o25, 3),
+        },
+    }
+
+
 def replay_strategy_g(cand: dict, pm: dict, has_red_card: bool,
                       snapshot_idx: dict[str, list[dict]]) -> dict | None:
     """In-memory port of inplay_bot._check_strategy_g for backfill replay.
@@ -469,6 +546,8 @@ def run_replay(snapshots: list[dict],
                     trigger = replay_strategy_f(cand, pm, has_red_card, snapshot_idx)
                 elif bot_name == "inplay_g" and use_in_memory_f:
                     trigger = replay_strategy_g(cand, pm, has_red_card, snapshot_idx)
+                elif bot_name == "inplay_h" and use_in_memory_f:
+                    trigger = replay_strategy_h(cand, pm, has_red_card, snapshot_idx)
                 else:
                     trigger = inplay_bot._check_strategy(
                         bot_name, cand, pm, has_red_card, execute_query

@@ -68,6 +68,10 @@ INPLAY_BOTS = {
         "description": "Corner Cluster Over 2.5 — ≥3 corners in last 10min, min 30-70",
         "strategy": "inplay_g",
     },
+    "inplay_h": {
+        "description": "HT Restart Surge Over 2.5 — 0-0 at HT with first-half attacking, min 46-55",
+        "strategy": "inplay_h",
+    },
     # inplay_f (Odds Momentum Reversal) was DROPPED 2026-05-08 after the
     # 11-day backfill replay placed 78 settled F-bets at -6.4% ROI. 4/5
     # AI tools (replies 1, 2, 4-probation, 5) recommended drop; reply 5's
@@ -556,6 +560,8 @@ def _check_strategy(bot_name: str, cand: dict, pm: dict,
         return _check_strategy_e(cand, pm, has_red_card)
     elif bot_name == "inplay_g":
         return _check_strategy_g(cand, pm, has_red_card, execute_query)
+    elif bot_name == "inplay_h":
+        return _check_strategy_h(cand, pm, has_red_card, execute_query)
     # inplay_f intentionally not dispatched — dropped 2026-05-08
     return None
 
@@ -1140,6 +1146,123 @@ def _check_strategy_g(cand: dict, pm: dict, has_red_card: bool,
             "corners_delta_10min": corners_delta,
             "corners_total": cur_corners,
             "score_state": f"{sh}-{sa}",
+            "prematch_o25": round(pm_o25, 3),
+            "xg_source": "live" if is_real else "shot_proxy",
+        },
+    }
+
+
+def _check_strategy_h(cand: dict, pm: dict, has_red_card: bool,
+                      execute_query) -> dict | None:
+    """
+    Strategy H: HT Restart Surge — Over 2.5.
+
+    New strategy added 2026-05-08 (3/5 AI consensus — replies 1, 3, 4).
+    Thesis: matches that are 0-0 at HT but had high first-half attacking
+    volume see a goal-rate spike in minutes 46-58 (managers make tactical
+    changes, urgency increases). The market underprices this — HT 0-0
+    drifts the headline odds toward Under.
+
+    Entry:
+      • minute 46-55 (early second half)
+      • current score is 0-0 (still drifted toward Under)
+      • HT-end snapshot (lookup at minute 40-46) shows attacking volume:
+          - first-half xG total ≥ 0.7 (real)  OR
+          - first-half SoT total ≥ 6 (proxy)
+      • prematch_o25 > 0.50 (genuine attacking-match prior)
+      • OU 2.5 over odds ≥ 2.10
+      • no red card
+      • edge ≥ 2% (real) / 3.5% (proxy)
+
+    Bet: Over 2.5
+    Edge model: same Bayesian-posterior + Poisson as A/D/G.
+
+    HT-end snapshot lookup is a per-snapshot DB query in live mode (one query
+    per match per cycle when minute is 46-55). Backfill mode uses the
+    in-memory snapshot index for ~10x speedup.
+    """
+    minute = cand["minute"] or 0
+    if minute < 46 or minute > 55:
+        return None
+    if has_red_card:
+        return None
+
+    sh, sa = cand["score_home"] or 0, cand["score_away"] or 0
+    if sh != 0 or sa != 0:
+        return None  # Bet thesis is "0-0 at HT drifts toward Under"
+
+    pm_o25 = float(pm.get("prematch_o25_prob") or 0)
+    if pm_o25 <= 0.50:
+        return None
+
+    pm_xg_total = float(pm.get("prematch_xg_home") or 0) + float(pm.get("prematch_xg_away") or 0)
+    if pm_xg_total <= 0:
+        return None
+
+    odds = cand.get("live_ou_25_over")
+    if not odds or float(odds) < 2.10:
+        return None
+    odds = float(odds)
+
+    # HT-end snapshot lookup. Tolerant 40-46 minute range so a missed cycle
+    # at exactly minute 45 doesn't break the trigger.
+    match_id = cand["match_id"]
+    rows = execute_query("""
+        SELECT xg_home, xg_away,
+               shots_on_target_home, shots_on_target_away,
+               score_home, score_away
+        FROM live_match_snapshots
+        WHERE match_id = %s
+          AND minute BETWEEN 40 AND 46
+        ORDER BY minute DESC
+        LIMIT 1
+    """, (match_id,))
+    if not rows:
+        return None
+
+    ht = rows[0]
+    if (ht["score_home"] or 0) != 0 or (ht["score_away"] or 0) != 0:
+        return None  # Wasn't actually 0-0 at HT
+
+    ht_xg_h = ht["xg_home"]
+    ht_xg_a = ht["xg_away"]
+    ht_sot = (ht["shots_on_target_home"] or 0) + (ht["shots_on_target_away"] or 0)
+
+    if ht_xg_h is not None and ht_xg_a is not None:
+        ht_xg_total = float(ht_xg_h) + float(ht_xg_a)
+        is_real = True
+        if ht_xg_total < 0.7:
+            return None
+    else:
+        is_real = False
+        if ht_sot < 6:
+            return None
+
+    xg_h, xg_a, _ = _compute_live_xg(cand)
+    live_xg = xg_h + xg_a
+    posterior = _bayesian_posterior(pm_xg_total, live_xg, minute)
+    remaining_minutes = max(1, 90 - minute)
+    lambda_remaining = posterior * remaining_minutes / 90.0
+
+    model_prob = _poisson_over_prob(lambda_remaining, 2.5)  # need 3+ goals total = 3+ remaining since 0-0
+
+    min_edge = 2.0 if is_real else 3.5
+    implied = _implied_prob(odds)
+    edge = (model_prob - implied) * 100
+    if edge < min_edge:
+        return None
+
+    return {
+        "market": "O/U",
+        "selection": "over 2.5",
+        "odds": odds,
+        "model_prob": round(model_prob, 4),
+        "edge": round(edge, 2),
+        "posterior_rate": round(posterior, 3),
+        "prematch_xg_total": round(pm_xg_total, 2),
+        "extra": {
+            "ht_xg_total": round(float(ht_xg_h or 0) + float(ht_xg_a or 0), 2) if ht_xg_h is not None else None,
+            "ht_sot_total": ht_sot,
             "prematch_o25": round(pm_o25, 3),
             "xg_source": "live" if is_real else "shot_proxy",
         },
