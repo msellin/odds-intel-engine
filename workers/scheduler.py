@@ -327,6 +327,13 @@ def job_ops_snapshot():
     _run_job("ops_snapshot_fallback", write_ops_snapshot)
 
 
+def job_stripe_reconcile():
+    """Daily Stripe event reconciliation — checks yesterday's events vs processed_events table."""
+    from scripts.stripe_reconcile import run as stripe_reconcile_run
+    from datetime import date, timedelta
+    _run_job("stripe_reconcile", lambda: stripe_reconcile_run(date.today() - timedelta(days=1)))
+
+
 def job_health_alerts_morning():
     from workers.jobs.health_alerts import run_morning_checks
     _run_job("health_alerts_morning", run_morning_checks)
@@ -589,6 +596,11 @@ def main():
     # Set HEALTHCHECKS_IO_PING_URL env var to activate (no-op if unset)
     scheduler.add_job(job_healthcheck_ping, CronTrigger(minute="*/5"),
                       id="healthcheck_ping", name="Healthcheck Ping (5min)")
+
+    # STRIPE-RECONCILE: daily drift check — Stripe events vs processed_events (09:00 UTC)
+    # Runs after Stripe's 24h retry window closes so all retries have been attempted.
+    scheduler.add_job(job_stripe_reconcile, CronTrigger(hour=9, minute=0),
+                      id="stripe_reconcile", name="Stripe Reconcile 09:00")
 
     # PIPE-ALERT: proactive pipeline anomaly alerts via email
     # Morning check at 09:35 (after 09:30 betting refresh settles)
