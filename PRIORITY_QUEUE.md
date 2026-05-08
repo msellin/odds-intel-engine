@@ -69,6 +69,7 @@
 | STAGING-ENV | Separate Supabase project (free tier) + Railway staging service + Vercel preview env + Stripe test webhook endpoint. | 3h | ⬜ | ⏳ After first paying user | R4 flagged as highest-leverage pre-paid-launch item, but the risk it protects against is "a paying user hits a broken Stripe flow." With 0 paying users that risk doesn't exist. At 12 users (3 family, no revenue), adding staging infra is premature complexity. Trigger: first paid subscription received. |
 | SCHEMA-DRIFT-SMOKE | 30-min cheap version of SCHEMA-DRIFT-GUARD: pytest that `SELECT col FROM table LIMIT 0` for every column code references. R4: cheap version captures 80% for 5% effort. | 30m | ⬜ | ✅ Ready | Drop the proper CI-integration version. |
 | BACKFILL-SAFETY | Test re-running each backfill script — same input, same output, no duplicates. R4: low priority since you backfill ~quarterly. | 2h | ⬜ | ⏳ Before next backfill | Just be careful that day. |
+| AF-COVERAGE-AUDIT | Validate whether AF league coverage flags (`coverage_events`, `coverage_lineups`) actually match reality. Pick ~20 leagues spanning `coverage_events = true/false`, grab a recent fixture from each, call `/fixtures/events` and `/fixtures/lineups`, compare results against stored flags. If flags are reliable, gate events and lineups fetches in the live poller — events are 1 call/match every ~135s during live matches so a 50% reduction is meaningful. | 1h | ⬜ | ✅ Ready | Script: pick leagues from DB, get a recent fixture_id per league, call AF, compare. |
 | EMAIL-DELIVERY-CHECK | Verify Resend DKIM/SPF/DMARC are correct (digest emails already sending — confirm not landing in spam at scale). | 1h | ⬜ | ✅ Ready | If `ENG-4` already configured this, mark ✅. |
 
 ### Explicitly DROPPED (consensus from 4-AI review)
@@ -87,6 +88,56 @@
 | ~RAILWAY-UPGRADE~ | Single instance fine ≤100 concurrent users. |
 | ~ADD-REDIS~ | No queue need yet. |
 | ~READ-REPLICAS~ | Overkill at this scale. |
+
+## InplayBot Tuning — Post-Bug Triage (5-AI review, 2026-05-08)
+
+> Origin: InplayBot placed only 2 paper bets in 11 days. Root cause was 4 stacked bugs (UUID cast, market-name mismatch, af_prediction.goals misread as xG, settlement market-format mismatch — all fixed). Replay of today's data showed only Strategy E firing (81 bets), all others firing zero — root cause is over-stacked AND-gates per the AI consensus, not a math problem.
+> 5 AI tools (ChatGPT, Gemini, Claude, etc.) reviewed the strategies on 2026-05-08 and produced strong consensus on threshold loosening, B's broken model, F's lack of edge, and a missing corner-pressure strategy.
+
+### P0 — Capture lost data + fix model bugs (~4h)
+
+| ID | Task | Effort | ☑ | Ready? | Notes |
+|----|------|--------|----|--------|-------|
+| INPLAY-BACKFILL-RUN | Run `scripts/replay_inplay.py --backfill` for the full Apr 27 → today window with the just-fixed strategies. Review CSV + summary in `dev/active/`. **Don't write to DB yet** — see INPLAY-BACKFILL-PERSIST. | 30m | ⬜ | ✅ Ready | Captures "what we lost" baseline. Runs in ~2 min with in-memory Strategy F. |
+| INPLAY-FIX-B-MODEL | Strategy B currently computes P(BTTS) and bets Over 2.5 — different markets, phantom edge. **5/5 AI consensus** this is a logic bug. Fix: compute P(BTTS) and bet **BTTS Yes** at BTTS odds. Requires reading live BTTS odds (snapshot already has `live_btts_yes/no` columns? verify). | 2h | ⬜ | ✅ Ready | Reply 5: cleanest fix; reply 4: option C (BTTS as filter, P(O2.5) as edge) is more conservative middle ground. |
+| INPLAY-FIX-E-FALLBACK | Strategy E's 1.3+1.3 fallback inflates pace_ratio denominator for low-scoring leagues → fake Under edges. **Replies 4 + 5 explicit:** either (a) use league-median goals/game when team_season_stats is missing, or (b) skip the bet entirely with a fallback flag. Today's +14% replay ROI is likely overstated; true ROI probably +3% to +7% (reply 5 estimate). | 2h | ⬜ | ✅ Ready | Add `LEFT JOIN league_avg_goals` (or compute via subquery) and use that instead of hardcoded 1.3. |
+| INPLAY-BACKFILL-PERSIST | After INPLAY-FIX-B-MODEL + INPLAY-FIX-E-FALLBACK ship, re-run backfill, then add `is_backfill BOOLEAN` column to `simulated_bets` and persist the backfilled bets with that flag set. Performance page shows them with a visual differentiator (dashed line on equity chart, "BF" badge in table). | 3h | ⬜ | ⏳ After backfill review | Let user review CSV first before any DB writes. |
+
+### P1 — Strategy consolidation + threshold loosening (~3h)
+
+| ID | Task | Effort | ☑ | Ready? | Notes |
+|----|------|--------|----|--------|-------|
+| INPLAY-DROP-F | **4/5 consensus drop F** (replies 1, 2, 5 explicit; 4 says probation). Reply 5 decisive: sharp books already price the pace signal — we have no edge over them on the same data. Remove `inplay_f` from INPLAY_BOTS dict and delete `_check_strategy_f`. | 30m | ⬜ | ✅ Ready | Mark the existing inplay_f bot as inactive in DB; don't delete its bets. |
+| INPLAY-MERGE-A2 | Merge A2 into A — single "low-scoring xG divergence" strategy with `total_goals ≤ 1` (replaces score=0-0 vs score-sum=1 split). **4/5 consensus.** | 1h | ⬜ | ✅ Ready | Same thesis, less dilution. |
+| INPLAY-MERGE-CHOME | Merge C_home into C with a home-favourite flag that relaxes possession threshold by 5pp. **3/5 consensus.** | 1h | ⬜ | ✅ Ready |  |
+| INPLAY-LOOSEN-THRESHOLDS | Apply convergent threshold reductions per the 5-AI table: A window 25-35 → 20-40, A live_xg 0.9 → 0.6, A SoT 4 → 3, A proxy SoT 9 → 6, A posterior multiplier 1.15 → 1.05-1.08, edge floors 3% → 1.5-2%. C/C_home possession 60% → 52-55%. D window 55-75 → 48-80, D live_xg 1.0 → 0.7, D OU odds floor 2.50 → 2.10-2.20. | 2h | ⬜ | ✅ Ready | All 5 replies converged on these numbers. Caveat: don't lock in based on backfill alone — reply 5 says wait for 1500+ bets before claiming calibration. |
+
+### P2 — New strategies (~6h)
+
+| ID | Task | Effort | ☑ | Ready? | Notes |
+|----|------|--------|----|--------|-------|
+| INPLAY-NEW-CORNER | New strategy G: **Corner Cluster Over**. Entry: ≥3 corners in last 10 min for one team, minute 30-70, total goals ≤ 1, OU 2.5 odds ≥ 2.10, edge ≥ 3%. Bet Over 2.5. **4/5 consensus** — most-proposed new strategy. | 3h | ⬜ | ✅ Ready | Snapshots already have `corners_home/away`; needs rolling 10-min delta computed in-strategy. |
+| INPLAY-NEW-HT-RESTART | New strategy: **Half-Time Restart Surge**. Entry: minute 46-55, score 0-0 at HT, first-half xG ≥ 0.7 OR first-half SoT ≥ 6, prematch_o25 > 0.50, edge ≥ 3%. Bet Over 2.5 if odds > 2.80, else Over 1.5 if odds > 1.60. **3/5 consensus.** | 3h | ⬜ | ✅ Ready | Need to compute first-half stats from snapshots at minute 45. |
+| INPLAY-NEW-RED-CARD | New strategy: **Red Card Overreaction Over**. Entry: red card in minute 15-55, total goals ≤ 1, 11-man team possession ≥ 55%, OU 2.5 over odds > 2.30. Bet Over 2.5. **1/5 (reply 4 only)** but unique thesis — exploits the fact that all current strategies *exclude* red-card matches. | 3h | ⬜ | ✅ Ready | Speculative — run alongside corner + HT and compare. |
+| INPLAY-NEW-POSSESSION-SWING | New strategy: **Possession Swing**. Detect ≥10pp possession increase over 15-min rolling window. Bet 1X2 on swinging team or BTTS Yes. **2/5 consensus.** | 4h | ⬜ | ⏳ After corner + HT validated | Most complex — needs rolling-window state tracking. |
+
+### P2 — Calibration improvements (~5h)
+
+| ID | Task | Effort | ☑ | Ready? | Notes |
+|----|------|--------|----|--------|-------|
+| INPLAY-LAMBDA-STATE | Add score-state multiplier to remaining-goal lambda: ~+15% trailing team late, −10% leading team late, +5% level late. **5/5 consensus.** Football is not Poisson-stationary. | 2h | ⬜ | ✅ Ready | Apply in `_check_strategy_*` after computing posterior. |
+| INPLAY-TIME-DECAY-PRIOR | Bayesian update weight should drift over the match: `w_live = 1 - exp(-minute/30)` (replies 1, 4, 5). At minute 30 → ~60/40 live/prematch; at 60 → ~85/15. Replaces flat `(prematch_xg + live_xg) / (1 + minute/90)`. | 2h | ⬜ | ✅ Ready |  |
+| INPLAY-PERIOD-RATES | Reply 4: scale remaining lambda by period-specific multipliers (1-15: 0.85×, 76-90+ST: 1.20×). | 1h | ⬜ | ✅ Ready | Marginal lift on top of state multiplier. |
+| INPLAY-EMA-LIVE-XG | Smooth live xG via 5-10 min EMA instead of cumulative-to-minute (reply 4). One spike shouldn't trigger a bet by itself. | 1h | ⬜ | ✅ Ready |  |
+| INPLAY-DIXON-COLES | Apply Dixon-Coles low-score correction (replies 3, 4). Matters most for E (Under bets on low-scoring) where exact P(0-0)/P(1-0)/P(0-1) determines edge. | 4h | ⬜ | ⏳ After 1500+ bets | Don't tune this until we have enough data to validate the correction parameter. |
+
+### P3 — Speculative / infra-dependent
+
+| ID | Task | Effort | ☑ | Ready? | Notes |
+|----|------|--------|----|--------|-------|
+| INPLAY-SOFT-GATES | Reply 1's biggest recommendation: replace hard threshold gates with composite weighted scoring (assign points to SoT pace, xG pace, possession, corners, market drift, prematch strength, score state — trigger above a single composite threshold). High-impact but architectural. | 8h | ⬜ | ⏳ After P0/P1 land | Will likely supersede many of the threshold tweaks above. |
+| INPLAY-TWO-BOOK-ARB | Reply 5: bet when primary book's OU 2.5 differs from a second feed by ≥4pp. Requires a second odds source. **Most reliable edge** if infra exists. | varies | ⬜ | ⏳ Need 2nd odds feed | Out of scope without Pinnacle/sharp feed. |
+| INPLAY-FUNNEL-LOGGING | Wire the `_funnel` dict (already added in inplay_bot.py) to heartbeat output: per-cycle counts of skips at each stage (no_prematch, league_xg_gate, no_strategy_trigger, odds_stale, score_changed, store_bet_error). Lets us see where the funnel collapses next time a strategy stops firing. | 1h | ⬜ | ✅ Ready | Defensive — pays for itself the next time a strategy goes silent. |
 
 ### Suggested commit grouping
 
