@@ -241,6 +241,94 @@ def _parse_dt(v):
     return datetime.fromisoformat(str(v))
 
 
+def replay_strategy_g(cand: dict, pm: dict, has_red_card: bool,
+                      snapshot_idx: dict[str, list[dict]]) -> dict | None:
+    """In-memory port of inplay_bot._check_strategy_g for backfill replay.
+
+    Mirrors live logic but the "corners 9-11 min ago" lookup is done against
+    the in-memory snapshot index keyed on the candidate's captured_at — not
+    a per-snapshot DB query.
+    """
+    minute = cand["minute"] or 0
+    if minute < 30 or minute > 70 or has_red_card:
+        return None
+
+    sh, sa = cand["score_home"] or 0, cand["score_away"] or 0
+    total_goals = sh + sa
+    if total_goals > 1:
+        return None
+
+    cand_t = _parse_dt(cand["captured_at"])
+    window_lo = cand_t - timedelta(minutes=11)
+    window_hi = cand_t - timedelta(minutes=9)
+
+    mid = str(cand["match_id"])
+    history = snapshot_idx.get(mid, [])
+    old = None
+    for s in reversed(history):
+        st = _parse_dt(s["captured_at"])
+        if st > window_hi:
+            continue
+        if st < window_lo:
+            break
+        old = s
+        break
+    if not old:
+        return None
+
+    if (old["score_home"] != cand["score_home"] or
+            old["score_away"] != cand["score_away"]):
+        return None
+
+    cur_corners = (cand["corners_home"] or 0) + (cand["corners_away"] or 0)
+    old_corners = (old["corners_home"] or 0) + (old["corners_away"] or 0)
+    corners_delta = cur_corners - old_corners
+    if corners_delta < 3:
+        return None
+
+    pm_o25 = float(pm.get("prematch_o25_prob") or 0)
+    if pm_o25 <= 0.45:
+        return None
+
+    pm_xg_total = float(pm.get("prematch_xg_home") or 0) + float(pm.get("prematch_xg_away") or 0)
+    if pm_xg_total <= 0:
+        return None
+
+    odds = cand.get("live_ou_25_over")
+    if not odds or float(odds) < 2.10:
+        return None
+    odds = float(odds)
+
+    xg_h, xg_a, is_real = inplay_bot._compute_live_xg(cand)
+    live_xg = xg_h + xg_a
+
+    posterior = inplay_bot._bayesian_posterior(pm_xg_total, live_xg, minute)
+    remaining_minutes = max(1, 90 - minute)
+    lambda_remaining = posterior * remaining_minutes / 90.0
+    goals_needed = 3 - total_goals
+    if goals_needed <= 0:
+        return None
+
+    model_prob = inplay_bot._poisson_over_prob(lambda_remaining, goals_needed - 0.5)
+    min_edge = 3.0 if is_real else 4.5
+    implied = inplay_bot._implied_prob(odds)
+    edge = (model_prob - implied) * 100
+    if edge < min_edge:
+        return None
+
+    return {
+        "market": "O/U",
+        "selection": "over 2.5",
+        "odds": odds,
+        "model_prob": round(model_prob, 4),
+        "edge": round(edge, 2),
+        "extra": {
+            "corners_delta_10min": corners_delta,
+            "corners_total": cur_corners,
+        },
+    }
+
+
 def replay_strategy_f(cand: dict, pm: dict, has_red_card: bool,
                       snapshot_idx: dict[str, list[dict]]) -> dict | None:
     """In-memory port of inplay_bot._check_strategy_f for backfill replay.
@@ -379,6 +467,8 @@ def run_replay(snapshots: list[dict],
             try:
                 if bot_name == "inplay_f" and use_in_memory_f:
                     trigger = replay_strategy_f(cand, pm, has_red_card, snapshot_idx)
+                elif bot_name == "inplay_g" and use_in_memory_f:
+                    trigger = replay_strategy_g(cand, pm, has_red_card, snapshot_idx)
                 else:
                     trigger = inplay_bot._check_strategy(
                         bot_name, cand, pm, has_red_card, execute_query

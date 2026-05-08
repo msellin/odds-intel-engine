@@ -64,6 +64,10 @@ INPLAY_BOTS = {
         "description": "Dead Game Unders — tempo collapse, min 25-50",
         "strategy": "inplay_e",
     },
+    "inplay_g": {
+        "description": "Corner Cluster Over 2.5 — ≥3 corners in last 10min, min 30-70",
+        "strategy": "inplay_g",
+    },
     # inplay_f (Odds Momentum Reversal) was DROPPED 2026-05-08 after the
     # 11-day backfill replay placed 78 settled F-bets at -6.4% ROI. 4/5
     # AI tools (replies 1, 2, 4-probation, 5) recommended drop; reply 5's
@@ -550,6 +554,8 @@ def _check_strategy(bot_name: str, cand: dict, pm: dict,
         return _check_strategy_d(cand, pm, has_red_card)
     elif bot_name == "inplay_e":
         return _check_strategy_e(cand, pm, has_red_card)
+    elif bot_name == "inplay_g":
+        return _check_strategy_g(cand, pm, has_red_card, execute_query)
     # inplay_f intentionally not dispatched — dropped 2026-05-08
     return None
 
@@ -1022,6 +1028,119 @@ def _check_strategy_e(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
             "pace_ratio": round(pace_ratio, 2),
             "corners_total": corners_total,
             "live_xg_total": round(live_xg, 2),
+            "xg_source": "live" if is_real else "shot_proxy",
+        },
+    }
+
+
+def _check_strategy_g(cand: dict, pm: dict, has_red_card: bool,
+                      execute_query) -> dict | None:
+    """
+    Strategy G: Corner Cluster Over 2.5.
+
+    New strategy added 2026-05-08 (4/5 AI consensus — replies 1, 2, 3, 5).
+    Thesis: corner clusters indicate sustained final-third pressure that
+    the live xG model under-weights for set-piece-strong teams. Three or
+    more corners in a 10-minute window precedes goals at higher than
+    baseline rate, especially when total goals are still ≤ 1.
+
+    Entry:
+      • minute 30-70
+      • current total goals ≤ 1
+      • ≥ 3 corners gained in last 10 min (combined home + away)
+      • OU 2.5 over odds ≥ 2.10
+      • prematch_o25 > 0.45 (filter out genuinely defensive matches)
+      • no red card
+      • model edge ≥ 3% (real xG) or 4.5% (proxy)
+
+    Bet: Over 2.5
+    Edge model: bayesian-posterior xG → P(remaining goals ≥ 3 - current),
+    same machinery as strategies A/D so we don't introduce a new bias.
+    """
+    minute = cand["minute"] or 0
+    if minute < 30 or minute > 70:
+        return None
+    if has_red_card:
+        return None
+
+    sh, sa = cand["score_home"] or 0, cand["score_away"] or 0
+    total_goals = sh + sa
+    if total_goals > 1:
+        return None
+
+    cur_corners = (cand["corners_home"] or 0) + (cand["corners_away"] or 0)
+
+    # Look up corners ~10 min ago for this match — same window pattern as
+    # strategy F's prior-snapshot lookup. Tolerance 9-11 min so a missed
+    # cycle doesn't kill the trigger.
+    match_id = cand["match_id"]
+    rows = execute_query("""
+        SELECT corners_home, corners_away, score_home, score_away
+        FROM live_match_snapshots
+        WHERE match_id = %s
+          AND captured_at >= NOW() - INTERVAL '11 minutes'
+          AND captured_at <= NOW() - INTERVAL '9 minutes'
+        ORDER BY captured_at DESC
+        LIMIT 1
+    """, (match_id,))
+    if not rows:
+        return None
+
+    old = rows[0]
+    # Don't fire if a goal was scored in the window — that already moved odds
+    if (old["score_home"] != cand["score_home"] or
+            old["score_away"] != cand["score_away"]):
+        return None
+
+    old_corners = (old["corners_home"] or 0) + (old["corners_away"] or 0)
+    corners_delta = cur_corners - old_corners
+    if corners_delta < 3:
+        return None
+
+    pm_o25 = float(pm.get("prematch_o25_prob") or 0)
+    if pm_o25 <= 0.45:
+        return None
+
+    pm_xg_total = float(pm.get("prematch_xg_home") or 0) + float(pm.get("prematch_xg_away") or 0)
+    if pm_xg_total <= 0:
+        return None
+
+    odds = cand.get("live_ou_25_over")
+    if not odds or float(odds) < 2.10:
+        return None
+    odds = float(odds)
+
+    xg_h, xg_a, is_real = _compute_live_xg(cand)
+    live_xg = xg_h + xg_a
+
+    posterior = _bayesian_posterior(pm_xg_total, live_xg, minute)
+    remaining_minutes = max(1, 90 - minute)
+    lambda_remaining = posterior * remaining_minutes / 90.0
+    goals_needed = 3 - total_goals
+    if goals_needed <= 0:
+        return None
+
+    model_prob = _poisson_over_prob(lambda_remaining, goals_needed - 0.5)
+
+    min_edge = 3.0 if is_real else 4.5
+    implied = _implied_prob(odds)
+    edge = (model_prob - implied) * 100
+    if edge < min_edge:
+        return None
+
+    return {
+        "market": "O/U",
+        "selection": "over 2.5",
+        "odds": odds,
+        "model_prob": round(model_prob, 4),
+        "edge": round(edge, 2),
+        "posterior_rate": round(posterior, 3),
+        "prematch_xg_total": round(pm_xg_total, 2),
+        "extra": {
+            "corners_delta_10min": corners_delta,
+            "corners_total": cur_corners,
+            "score_state": f"{sh}-{sa}",
+            "prematch_o25": round(pm_o25, 3),
             "xg_source": "live" if is_real else "shot_proxy",
         },
     }
