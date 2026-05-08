@@ -163,13 +163,16 @@ def run_transfers(missing: list[int], dry_run: bool) -> int:
             if raw:
                 rows = parse_transfers(raw, team_api_id=team_af_id)
                 stored += store_team_transfers(team_af_id, rows)
+        except Exception as e:
+            console.print(f"  [yellow]transfers {team_af_id}: {e}[/yellow]")
+        finally:
+            # Always mark as attempted — even on API error, so failing teams don't
+            # block the queue by being retried in every batch indefinitely.
             execute_write(
                 "INSERT INTO team_transfer_cache (team_api_id, fetched_at) VALUES (%s, NOW())"
                 " ON CONFLICT (team_api_id) DO UPDATE SET fetched_at = NOW()",
                 (team_af_id,),
             )
-        except Exception as e:
-            console.print(f"  [yellow]transfers {team_af_id}: {e}[/yellow]")
         time.sleep(RATE_DELAY)
     console.print(f"  {stored} transfer records stored")
     return stored
