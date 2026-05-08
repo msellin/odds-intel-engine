@@ -142,6 +142,24 @@ class LivePoller:
             return False
 
         prev_home, prev_away = prev
+        prev_total = prev_home + prev_away
+        new_total = score_home + score_away
+
+        if new_total < prev_total:
+            if new_total == 0 and prev_total > 0:
+                # API returned null scores (halftime flush / polling glitch) — ignore,
+                # keep the real score so the next cycle doesn't re-trigger.
+                return False
+            else:
+                # Total dropped by 1+ from a non-zero score — could be VAR disallowing a goal.
+                # Update stored score and snapshot odds; log as VAR candidate.
+                self._prev_scores[match_id] = (score_home, score_away)
+                console.print(
+                    f"[bold magenta]VAR? score dropped: match {match_id} "
+                    f"{prev_home}-{prev_away} → {score_home}-{score_away}[/bold magenta]"
+                )
+                return True
+
         self._prev_scores[match_id] = (score_home, score_away)
 
         if score_home != prev_home or score_away != prev_away:

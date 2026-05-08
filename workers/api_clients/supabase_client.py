@@ -1675,6 +1675,8 @@ def store_league_standings(league_api_id: int, season: int,
     stored = 0
 
     for r in rows:
+        if not r.get("team_api_id"):
+            continue  # youth/reserve teams without AF IDs can't satisfy the NOT NULL constraint
         row = {
             "league_api_id": league_api_id,
             "season": season,
@@ -1758,11 +1760,16 @@ def store_team_coaches(team_af_id: int, entries: list[dict]) -> int:
     if not entries:
         return 0
     from psycopg2.extras import execute_values
-    rows = [
+    raw = [
         (team_af_id, e["coach_name"], e["start_date"], e["end_date"])
         for e in entries
         if e.get("coach_name") and e.get("start_date")
     ]
+    # Deduplicate on (team_af_id, start_date) — PostgreSQL can't upsert the same key twice in one batch
+    seen: dict[tuple, tuple] = {}
+    for row in raw:
+        seen[(row[0], row[2])] = row
+    rows = list(seen.values())
     if not rows:
         return 0
     try:
@@ -1940,7 +1947,7 @@ def store_team_transfers(team_api_id: int, rows: list[dict]) -> int:
         placeholders = ", ".join(["%s"] * len(columns))
         update_cols = [c for c in columns if c not in ("team_api_id", "player_id", "transfer_date")]
         update_str = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols) if update_cols else "team_api_id = EXCLUDED.team_api_id"
-        values = tuple(row_data[c] for c in columns)
+        values = tuple(Json(v) if isinstance(v, (dict, list)) else v for v in (row_data[c] for c in columns))
 
         try:
             with get_conn() as conn:
