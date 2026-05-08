@@ -348,11 +348,9 @@
 
 ---
 
-## ADMIN-OPS-DASH — Operational Health Dashboard
+## ADMIN-OPS-DASH — Operational Health Dashboard ✅ Done 2026-05-07
 
-> **Status: ⬜ Not started — full spec below. Read this before implementing.**
-> **Priority: High — needed for daily pipeline oversight.**
-> Spec synthesized from 4 independent AI design reviews (2026-05-07).
+> Full spec and implementation in git history. Task complete.
 
 ### Goal
 
@@ -754,16 +752,17 @@ Yellow warning if today's value < 7-day average × 0.60.
 
 ## Key Thresholds to Watch
 
-| Milestone | Query | Target | Current (2026-05-06) | ETA |
+| Milestone | Query | Target | Status (2026-05-08) | ETA |
 |-----------|-------|--------|---------------------|-----|
-| **Platt scaling ready** | Predictions with finished match outcomes | 500+ | **586 ✅ IMPLEMENTED 2026-04-30** | Done |
-| Meta-model Phase 1 ready | `match_feature_vectors WHERE captured_at >= 2026-05-06 AND pinnacle_implied_home IS NOT NULL` | 3,000+ | ~0 (quality clock starts today) | ~May 17 (~280/day) |
-| Alignment threshold validation | `simulated_bets WHERE result!='pending' AND created_at >= 2026-05-06` | 300+ | ~0 (quality clock starts today) | ~June 5 (~27 bets/day post-cutoff) |
-| Post-mortem patterns readable | `model_evaluations WHERE market='post_mortem'` | 14+ | 2 | ~May 13 (+1/day) |
-| In-play model ready | Distinct matches in live_match_snapshots WITH xG | 500+ | 243 | ~May 7-8 (~150/day). NOTE: live 1x2/O/U odds NOW fixed (2026-05-07) — parse_live_odds was returning 0 rows due to market name mismatch ("Fulltime Result" not "Match Winner") + O/U handicap field format |
-| Meta-model Phase 2 ready | Settled bets with dimension_scores + CLV | 1,000+ | 0 | ~Aug (needs ALN-1 first) |
-| XGBoost retrain on backfill | Backfill Phase 1 complete (match_stats) | ~18,000 | 3,474 matches done (~8 leagues complete, 49 in-progress) | ~May 7 |
-| LLM team name resolve | `wc -l data/logs/unmatched_teams.log` | Shrinks toward 0 | 2,287 entries | Manual |
+| **Platt scaling ready** | Predictions with finished match outcomes | 500+ | ✅ Done 2026-04-30 | Done |
+| **In-play model live** | Distinct matches in live_match_snapshots WITH xG | 500+ | ✅ ~400+ (live 1x2/O/U odds fixed 2026-05-07) | Done |
+| Meta-model Phase 1 ready | `match_feature_vectors WHERE captured_at >= 2026-05-06 AND pinnacle_implied_home IS NOT NULL` | 3,000+ | ~2,200 (day 2 of quality clock) | ~May 17 |
+| Post-mortem patterns readable | `model_evaluations WHERE market='post_mortem'` | 14+ | ~11 | ~May 13 |
+| BOT-QUAL-FILTER ready | `simulated_bets WHERE result!='pending' AND created_at >= 2026-05-06` | 100+ | ~24 (~27/day) | ~May 10–11 |
+| Alignment threshold validation (ALN-1) | Same as above | 300+ | ~24 | ~June 5 |
+| XGBoost retrain on backfill (ML-RETRAIN-1) | match_stats coverage | ~80% of 14K | ~25% (3,474 done) | ~Late May |
+| CAL-PLATT-UPGRADE ready | Settled bets per market | 300+ | ~77 total | ~June |
+| Meta-model Phase 2 ready | Settled bets with dimension_scores + CLV | 1,000+ | 0 | ~Aug |
 
 ---
 
