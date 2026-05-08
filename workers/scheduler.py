@@ -248,6 +248,7 @@ def job_betting_refresh():
     """Pre-kickoff betting re-evaluation — re-run predictions + betting with fresher data."""
     from workers.jobs.fetch_predictions import run_predictions
     from workers.jobs.betting_pipeline import run_betting
+    from workers.jobs.settlement import write_dashboard_cache
     import traceback
 
     today = date.today().isoformat()
@@ -263,6 +264,12 @@ def job_betting_refresh():
         run_betting()
     except Exception as e:
         console.print(f"[red]Betting refresh failed: {e}[/red]")
+        console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
+
+    try:
+        write_dashboard_cache()
+    except Exception as e:
+        console.print(f"[red]Dashboard cache refresh failed: {e}[/red]")
         console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
 
 
