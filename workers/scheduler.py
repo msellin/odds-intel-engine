@@ -7,6 +7,7 @@ Uses APScheduler for timed jobs + a health endpoint for Railway.
 Run: python -m workers.scheduler
 """
 
+import logging
 import os
 import sys
 import json
@@ -22,6 +23,9 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
 from rich.console import Console
+
+# APScheduler logs every job-fire at INFO — with 50+ jobs this hits Railway's 500/sec limit.
+logging.getLogger("apscheduler").setLevel(logging.WARNING)
 
 # Ensure project root is on path
 sys.path.insert(0, str(Path(__file__).parent.parent))

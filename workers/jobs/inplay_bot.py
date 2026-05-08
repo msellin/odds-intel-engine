@@ -128,6 +128,8 @@ def run_inplay_strategies():
         if candidates:
             real_xg = sum(1 for c in candidates if c.get("has_live_xg"))
             proxy = len(candidates) - real_xg
+            with_ou_odds = sum(1 for c in candidates if c.get("live_ou_25_over"))
+            with_1x2_odds = sum(1 for c in candidates if c.get("live_1x2_home"))
             sample = candidates[:3]
             summaries = []
             for c in sample:
@@ -140,7 +142,9 @@ def run_inplay_strategies():
             extra = f" +{len(candidates)-3} more" if len(candidates) > 3 else ""
             console.print(
                 f"[dim]InplayBot heartbeat: {len(candidates)} candidates "
-                f"({real_xg} real xG, {proxy} proxy) [{', '.join(summaries)}{extra}] | "
+                f"({real_xg} real xG, {proxy} proxy) "
+                f"| odds: {with_ou_odds} OU / {with_1x2_odds} 1x2 "
+                f"[{', '.join(summaries)}{extra}] | "
                 f"session: {_total_bets_session} bets / {_total_candidates_session} evaluated | "
                 f"{pool_str}{pool_warn}[/dim]"
             )
