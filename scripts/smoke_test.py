@@ -1186,6 +1186,28 @@ def _():
     )
 
 
+@test("INPLAY-UUID-FIX — mid converted to str before prematch dict lookup")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    # Verify the main loop uses str(cand["match_id"]) not raw UUID
+    assert 'mid = str(cand["match_id"])' in src, (
+        "mid must be str() — psycopg2 returns UUID objects, prematch dict has string keys"
+    )
+
+
+@test("INPLAY-UUID-FIX — prematch dict keyed on str(match_id)")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    fn_start = src.index("def _get_prematch_data(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    fn_body = src[fn_start:fn_end]
+    assert 'str(r["match_id"])' in fn_body, (
+        "_get_prematch_data must key the return dict on str(match_id)"
+    )
+
+
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 def _run_one(name: str, fn) -> tuple[str, bool, str, float]:

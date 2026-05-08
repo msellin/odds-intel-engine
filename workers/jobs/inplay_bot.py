@@ -191,7 +191,7 @@ def run_inplay_strategies():
     # 6. Check each strategy for each candidate
     bets_placed = 0
     for cand in candidates:
-        mid = cand["match_id"]
+        mid = str(cand["match_id"])  # psycopg2 returns UUID objects; prematch keys are strings
         pm = prematch.get(mid)
         if not pm:
             continue
