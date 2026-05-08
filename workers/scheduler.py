@@ -333,10 +333,11 @@ def job_backfill_coaches():
 
 
 def job_backfill_transfers():
-    """Transfers backfill — micro-batch every 5min, 10 teams/run.
-    Fetches /transfers for teams not in team_transfer_cache. Self-skips when done."""
+    """Transfers backfill — 25 teams/run every 25min.
+    Fetches /transfers for teams not in team_transfer_cache. Self-skips when done.
+    25 teams × 0.15s/call normal = ~4s typical, 25min interval easily absorbs slow AF."""
     from scripts.backfill_team_enrichment import run_transfers_batch
-    _run_job("backfill_transfers", run_transfers_batch, batch_size=10)
+    _run_job("backfill_transfers", run_transfers_batch, batch_size=25)
 
 
 def job_live_tracker():
@@ -526,12 +527,12 @@ def main():
 
     # ── Register all jobs ──────────────────────────────────────────────
 
-    # Backfill jobs — micro-batch, tiny requests/run.
-    # If a run fails, only ~10-30 API calls are lost. Progress tracked in DB.
+    # Backfill jobs — micro-batch, runs every 25min.
+    # If a run fails, only ~25-30 API calls are lost. Progress tracked in DB.
     # AF budget: 75K/day. At 25min intervals: hist=30×57=1,710, coaches=10×57=570,
-    # transfers=10×57=570 → ~2,850/day total, well within headroom.
+    # transfers=25×57=1,425 → ~3,705/day total, well within headroom.
     # 25min interval: worst case = 15s timeout × 3 retries × 30 requests = 22 min max,
-    # so 25min gives 3 min buffer. Coaches/transfers (10 calls) fit with large margin.
+    # giving 3 min buffer. At 25 transfers/run: 7,400 teams ÷ 57 runs/day ≈ 5 days to complete.
     scheduler.add_job(job_backfill, IntervalTrigger(minutes=25),
                       id="hist_backfill", name="Match Stats/Events Backfill")
     scheduler.add_job(job_backfill_coaches, IntervalTrigger(minutes=25),
