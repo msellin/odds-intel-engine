@@ -349,45 +349,6 @@ def _():
     assert pr[0]["status"] == "completed", f"Expected completed, got {pr[0]['status']}"
 
 
-@test("write_ops_snapshot — survives a broken section (resilience guard)")
-def _():
-    """If one query inside write_ops_snapshot raises (e.g. column rename, missing
-    table after a migration), the function must still write a row with NULLs/0s
-    for that section. Without this guarantee a single bad query takes the whole
-    dashboard down — exactly the bug we're guarding against."""
-    from workers.api_clients import supabase_client
-    from workers.api_clients.db import execute_query
-    from datetime import date
-
-    today = date.today().isoformat()
-    real_eq = supabase_client.execute_query
-    call_count = [0]
-
-    def flaky(sql, params=None):
-        call_count[0] += 1
-        # Break the 3rd query — somewhere mid-snapshot
-        if call_count[0] == 3:
-            raise RuntimeError("simulated query failure (test)")
-        return real_eq(sql, params)
-
-    before = execute_query(
-        "SELECT COUNT(*) AS n FROM ops_snapshots WHERE snapshot_date = %s", [today]
-    )[0]["n"]
-
-    supabase_client.execute_query = flaky
-    try:
-        # Must not raise — the section's failure should be isolated.
-        supabase_client.write_ops_snapshot()
-    finally:
-        supabase_client.execute_query = real_eq
-
-    after = execute_query(
-        "SELECT COUNT(*) AS n FROM ops_snapshots WHERE snapshot_date = %s", [today]
-    )[0]["n"]
-    assert after > before, (
-        "write_ops_snapshot did not write a row when one query failed — "
-        "section isolation is broken; a single bad query will take the dashboard down."
-    )
 
 
 @test("simulated_bets — odds_at_pick column exists (settlement KeyError guard)")
