@@ -327,6 +327,41 @@ def job_ops_snapshot():
     _run_job("ops_snapshot_fallback", write_ops_snapshot)
 
 
+def job_health_alerts_morning():
+    from workers.jobs.health_alerts import run_morning_checks
+    _run_job("health_alerts_morning", run_morning_checks)
+
+
+def job_health_alerts_snapshot():
+    from workers.jobs.health_alerts import run_snapshot_check
+    # Not via _run_job — this runs every hour and is very lightweight.
+    # Errors are caught inside run_snapshot_check already.
+    try:
+        run_snapshot_check()
+    except Exception as e:
+        console.print(f"[yellow]health_alerts snapshot check error: {e}[/yellow]")
+
+
+def job_health_alerts_settlement():
+    from workers.jobs.health_alerts import run_settlement_check
+    _run_job("health_alerts_settlement", run_settlement_check)
+
+
+def job_healthcheck_ping():
+    """OBS-HEARTBEAT: Ping healthchecks.io every 5 min to confirm scheduler is alive.
+    Set HEALTHCHECKS_IO_PING_URL in Railway env vars after creating a check at healthchecks.io.
+    No-op if the env var is not set.
+    """
+    ping_url = os.getenv("HEALTHCHECKS_IO_PING_URL", "")
+    if not ping_url:
+        return
+    try:
+        import urllib.request
+        urllib.request.urlopen(ping_url, timeout=10)
+    except Exception as e:
+        console.print(f"[yellow]Healthcheck ping failed: {e}[/yellow]")
+
+
 # ── Health endpoint ────────────────────────────────────────────────────────
 
 class HealthHandler(BaseHTTPRequestHandler):
@@ -549,6 +584,24 @@ def main():
     # Ops snapshot fallback: every hour at :30 — captures state if no pipeline ran
     scheduler.add_job(job_ops_snapshot, CronTrigger(minute=30),
                       id="ops_snapshot", name="Ops Snapshot :30")
+
+    # OBS-HEARTBEAT: ping healthchecks.io every 5 min — external liveness signal
+    # Set HEALTHCHECKS_IO_PING_URL env var to activate (no-op if unset)
+    scheduler.add_job(job_healthcheck_ping, CronTrigger(minute="*/5"),
+                      id="healthcheck_ping", name="Healthcheck Ping (5min)")
+
+    # PIPE-ALERT: proactive pipeline anomaly alerts via email
+    # Morning check at 09:35 (after 09:30 betting refresh settles)
+    scheduler.add_job(job_health_alerts_morning, CronTrigger(hour=9, minute=35),
+                      id="health_alerts_morning", name="Health Alerts Morning 09:35")
+    # Snapshot staleness: every hour 10-22 UTC
+    for _ha_hour in range(10, 23):
+        scheduler.add_job(job_health_alerts_snapshot, CronTrigger(hour=_ha_hour, minute=45),
+                          id=f"health_alerts_snapshot_{_ha_hour:02d}",
+                          name=f"Health Alerts Snapshot {_ha_hour:02d}:45")
+    # Settlement check at 21:30 (after 21:00 settlement job has had 30 min to run)
+    scheduler.add_job(job_health_alerts_settlement, CronTrigger(hour=21, minute=30),
+                      id="health_alerts_settlement", name="Health Alerts Settlement 21:30")
 
     # ── Start scheduler ────────────────────────────────────────────────
     scheduler.start()

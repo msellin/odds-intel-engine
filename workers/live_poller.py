@@ -16,10 +16,10 @@ Runs in its own thread alongside the APScheduler.
 Uses direct SQL (db.py) for all DB writes.
 
 API budget (AF Ultra 75K/day):
-  - Live (30s): ~2,880 calls/day (2 calls × 2/min × 60min × 12h active window)
+  - Live (45s): ~1,920 calls/day (2 calls × 60/45/min × 60min × 12h active window)
   - Idle (120s): ~960 calls/day (2 calls × 0.5/min × 60min × 16h quiet)
-  - Medium (stats): ~8,640 calls/day (avg 12 matches × 2 calls × 60min × 6h)
-  - Total: ~12,000-18,000 calls/day (was 14,000-20,000 with 11h window, now lower due to idle)
+  - Medium (stats, 90s): ~5,760 calls/day (avg 12 matches × 2 calls × 60min × 6h / 1.5)
+  - Total: ~8,000-12,000 calls/day (~25% reduction vs 30s fast / 2× medium)
 """
 
 import time
@@ -42,11 +42,11 @@ class LivePoller:
     """
 
     # Polling intervals (seconds)
-    FAST_INTERVAL = 30       # Bulk fixtures + odds when live matches exist (can go to 15s later)
+    FAST_INTERVAL = 45       # Bulk fixtures + odds when live matches exist
     IDLE_INTERVAL = 120      # Poll interval when no live matches — saves API budget while still
                              # catching any match that kicks off within ~2 min
-    MEDIUM_MULTIPLIER = 2    # Stats every 2nd fast cycle (= 60s at 30s fast)
-    SLOW_MULTIPLIER = 10     # Lineups every 10th fast cycle (= 5min at 30s fast)
+    MEDIUM_MULTIPLIER = 3    # Stats every 3rd fast cycle (= 135s at 45s fast)
+    SLOW_MULTIPLIER = 10     # Lineups every 10th fast cycle (= 7.5min at 45s fast)
 
     # Active bet refresh: refresh the set of match_ids with pending bets
     BET_REFRESH_MULTIPLIER = 5  # Every 5th slow cycle (~25 min)
