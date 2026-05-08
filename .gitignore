@@ -10,6 +10,11 @@ data/daily/
 data/logs/
 *.pkl
 *.joblib
+
+# Model artifacts needed on Railway — force-tracked with `git add -f` (gitignore
+# negation doesn't work inside ignored directories; once tracked, git keeps them)
+# Files: data/processed/{features_v9,targets_v9,targets_global}.csv
+#        data/models/soccer/v9a_202425/*.pkl
 .DS_Store
 /.idea/
 supabase/.temp/
