@@ -505,11 +505,14 @@ def fetch_player_sidelined(fixture_meta: dict) -> int:
 def fetch_transfers(fixture_meta: dict) -> int:
     """Fetch recent transfer history for every team playing today.
 
-    Calls /transfers?team={id} once per unique team AF ID, with a 7-day cache.
+    Calls /transfers?team={id} once per unique team AF ID, with a 30-day cache.
+    Cache is tracked in team_transfer_cache so teams with no transfer activity
+    are still marked fetched and not re-fetched every run.
     Stores into team_transfers. Powers the squad_disruption signal in the betting pipeline.
     """
     console.print("\n[cyan]Transfers: Fetching team transfer history...[/cyan]")
     from datetime import datetime, timezone, timedelta
+    from workers.api_clients.db import execute_query as _eq, execute_write as _ew
 
     team_af_ids: set[int] = set()
     for meta in fixture_meta.values():
@@ -522,11 +525,11 @@ def fetch_transfers(fixture_meta: dict) -> int:
         console.print("  No team AF IDs — skipping transfers fetch")
         return 0
 
-    # 30-day cache — transfers only change in transfer windows
+    # 30-day cache tracked in team_transfer_cache (independent of whether any rows were stored)
     cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     try:
-        cached = execute_query(
-            "SELECT DISTINCT team_api_id FROM team_transfers WHERE team_api_id = ANY(%s) AND created_at > %s",
+        cached = _eq(
+            "SELECT team_api_id FROM team_transfer_cache WHERE team_api_id = ANY(%s) AND fetched_at > %s",
             [list(team_af_ids), cutoff]
         )
         cached_ids = {r["team_api_id"] for r in cached}
@@ -540,10 +543,15 @@ def fetch_transfers(fixture_meta: dict) -> int:
     for team_af_id in to_fetch:
         try:
             raw = get_transfers(team_af_id)
-            if not raw:
-                continue
-            rows = parse_transfers(raw, team_api_id=team_af_id)
-            stored += store_team_transfers(team_af_id, rows)
+            if raw:
+                rows = parse_transfers(raw, team_api_id=team_af_id)
+                stored += store_team_transfers(team_af_id, rows)
+            # Always mark fetched — even teams with no transfers shouldn't be re-fetched daily
+            _ew(
+                "INSERT INTO team_transfer_cache (team_api_id, fetched_at) VALUES (%s, NOW())"
+                " ON CONFLICT (team_api_id) DO UPDATE SET fetched_at = NOW()",
+                (team_af_id,)
+            )
         except Exception as e:
             console.print(f"  [yellow]Transfers fetch failed for team {team_af_id}: {e}[/yellow]")
 
