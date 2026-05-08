@@ -56,11 +56,20 @@ def fetch_and_store_fixtures(target_date: str) -> tuple[int, dict[int, str], lis
         return 0, {}, []
 
     # Store API-Football fixtures
-    console.print(f"\n[cyan]Storing {len(af_fixtures_raw)} fixtures in Supabase...[/cyan]")
+    total = len(af_fixtures_raw)
+    console.print(f"\n[cyan]Storing {total} fixtures in Supabase...[/cyan]")
     stored = 0
     af_id_to_match_id: dict[int, str] = {}
 
-    for af_fix in af_fixtures_raw:
+    # Per-fixture: store_match does ~5 round-trips (ensure_team×2, dedup SELECT,
+    # INSERT/UPDATE). At ~150ms RTT to the EU pooler that's ~750ms/fixture.
+    # 1500 fixtures ≈ 18 min. Print progress every 100 so the operator can see
+    # rate and estimate ETA instead of staring at a frozen-looking screen.
+    import time as _time
+    t_start = _time.monotonic()
+    last_log = t_start
+
+    for i, af_fix in enumerate(af_fixtures_raw, 1):
         match_dict = fixture_to_match_dict(af_fix)
         try:
             match_id = store_match(match_dict)
@@ -70,6 +79,17 @@ def fetch_and_store_fixtures(target_date: str) -> tuple[int, dict[int, str], lis
             stored += 1
         except Exception as e:
             console.print(f"  [yellow]Could not store {match_dict.get('home_team')} vs {match_dict.get('away_team')}: {e}[/yellow]")
+
+        if i % 100 == 0 or i == total:
+            now = _time.monotonic()
+            elapsed = now - t_start
+            rate = i / elapsed if elapsed > 0 else 0
+            eta = (total - i) / rate if rate > 0 else 0
+            console.print(
+                f"  [dim]progress: {i}/{total} stored "
+                f"({rate:.1f}/s, elapsed {elapsed:.0f}s, ETA {eta:.0f}s)[/dim]"
+            )
+            last_log = now
 
     console.print(f"  {stored} fixtures stored, {len(af_id_to_match_id)} AF ID mappings")
     return stored, af_id_to_match_id, af_fixtures_raw

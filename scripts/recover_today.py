@@ -76,25 +76,47 @@ def _resolve_steps(argv: list[str]) -> list[tuple]:
 
 
 def _run(num: int, label: str, module: str, fn_name: str, total: int, done: int) -> bool:
+    """Run one recovery step with a background heartbeat.
+
+    The heartbeat prints a "still running" line every 15s so a slow step
+    is visibly distinct from a wedged step. Without this, `recover_today.py`
+    looks frozen during the fixtures step (N×2 round-trips over the Supabase
+    pooler, 7-10 min for ~1500 fixtures).
+    """
+    import threading
     remaining = total - done
-    print(f"\n{'═' * 60}")
-    print(f"▶ Step {num}/{total}  —  {label}")
-    print(f"  {done} done · {remaining} remaining (including this one)")
-    print(f"{'═' * 60}")
+    print(f"\n{'═' * 60}", flush=True)
+    print(f"▶ Step {num}/{total}  —  {label}", flush=True)
+    print(f"  {done} done · {remaining} remaining (including this one)", flush=True)
+    print(f"{'═' * 60}", flush=True)
     t0 = time.monotonic()
+
+    stop = threading.Event()
+    def _heartbeat():
+        # First tick after 15s so fast steps don't spam.
+        while not stop.wait(15.0):
+            elapsed = time.monotonic() - t0
+            print(f"  ⏱  step {num} ({label}) running for {elapsed:.0f}s — "
+                  f"hit Ctrl+C if it's stuck", flush=True)
+
+    hb = threading.Thread(target=_heartbeat, daemon=True, name=f"recover-heartbeat-{num}")
+    hb.start()
+
     try:
         import importlib
         mod = importlib.import_module(module)
         fn = getattr(mod, fn_name)
         fn()
         elapsed = time.monotonic() - t0
-        print(f"\n✅ Step {num} — {label} — {elapsed:.1f}s")
+        print(f"\n✅ Step {num} — {label} — {elapsed:.1f}s", flush=True)
         return True
     except Exception as e:
         elapsed = time.monotonic() - t0
-        print(f"\n❌ Step {num} — {label} — {type(e).__name__}: {e} ({elapsed:.1f}s)")
+        print(f"\n❌ Step {num} — {label} — {type(e).__name__}: {e} ({elapsed:.1f}s)", flush=True)
         traceback.print_exc()
         return False
+    finally:
+        stop.set()
 
 
 def main():
