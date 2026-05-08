@@ -1847,7 +1847,7 @@ def store_player_sidelined(rows: list[dict]) -> int:
         placeholders = ", ".join(["%s"] * len(columns))
         update_cols = [c for c in columns if c not in ("player_id", "start_date", "type")]
         update_str = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols) if update_cols else "player_id = EXCLUDED.player_id"
-        values = tuple(row_data[c] for c in columns)
+        values = tuple(Json(v) if isinstance(v, (dict, list)) else v for v in (row_data[c] for c in columns))
 
         try:
             with get_conn() as conn:

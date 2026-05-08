@@ -966,15 +966,15 @@ def _fetch_af_bulk_odds(today_str, af_fixtures_raw, af_id_to_match_id):
             league_path = match_dict["league_path"]
             tier = _league_path_to_tier(league_path)
 
+            match_id = af_id_to_match_id.get(af_id)
             af_odds_fixtures.append({
                 **match_dict,
                 **best,
+                "id": match_id,
                 "tier": tier,
                 "bookmaker": "api-football",
             })
             af_odds_fetched += 1
-
-            match_id = af_id_to_match_id.get(af_id)
             if match_id:
                 _store_parsed_odds(match_id, parsed)
 
