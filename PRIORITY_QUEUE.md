@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-08 — ML-RESEARCH done: 4 AI reviews synthesized, ML improvement tasks updated with specific literature citations, code, and priority order. Also: BOT-PUBLIC-PERF, PRUNE-MONITORING, STAKE-RANK, API-RETRY-WRAPPER.
+> Last updated: 2026-05-08 — STAGING-ENV moved from P1 to P3 Watchlist (trigger: first paying user). No paying users yet — staging is premature complexity at this stage.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -31,7 +31,6 @@
 
 | ID | Task | Effort | ☑ | Ready? | Notes |
 |----|------|--------|----|--------|-------|
-| STAGING-ENV | Separate Supabase project (free tier) + Railway staging service + Vercel preview env + Stripe test webhook endpoint. Every change rehearsed before prod. R4: **single highest-leverage missing item** — you're about to ship paid Stripe to a prod-only setup. | 3h | ⬜ | ✅ Ready | Production-as-staging is a category that produces unlimited bugs. Paid launch is the wrong moment to discover this. |
 | STRIPE-WEBHOOK-SIG | Verify `Stripe-Signature` header against `STRIPE_WEBHOOK_SECRET` using `stripe.Webhook.construct_event`. Reject any unsigned/bad-signature payload. ✅ R1 + R4 both flagged: without this, anyone can POST fake `checkout.session.completed` and grant themselves Elite. | 1h | ✅ Done 2026-05-08 | ✅ Ready | Already implemented — `constructEvent()` with body+sig+secret was already in the handler. Verified 2026-05-08. |
 | MONEY-STRIPE-IDEMPOTENT | `processed_events` table keyed by `event.id` from **JSON payload (NOT header)** — R4 trap: header `Stripe-Signature` is per-attempt and won't dedupe retries. Wrap handler logic + DB write in a single transaction; on commit failure, mark event unprocessed for retry. | 3h | ✅ Done 2026-05-08 | ✅ Ready | Migration 071 (`processed_events` table, UNIQUE on event_id). Webhook handler now inserts event.id before processing — on 23505 (duplicate) returns 200 immediately without re-applying side effects. On unexpected DB error returns 500 so Stripe retries later. |
 | MONEY-WEBHOOK-TEST | Script 50+ webhook scenarios via Stripe CLI: `success`, `dupe`, `out-of-order`, `network-fail-after-process`, `bad-signature`, `unknown-event-type`. Verify no double-grants, no ghost tiers, no missed grants. R2 add. | 1h | ✅ Done 2026-05-08 | ✅ Ready | `scripts/test_stripe_webhook.sh` — automates bad-sig and no-sig checks, provides manual checklist + exact `stripe trigger` commands for remaining scenarios. |
@@ -66,6 +65,7 @@
 | FAIL-OPEN-DEGRADATION | Stale-but-usable fallbacks: yesterday's standings if enrichment fails, skip one bookmaker if its API dies, keep live tracking even if news analysis fails. R3 add. | 3-4h | ⬜ | ✅ Ready | Reliability is mostly graceful degradation. Right now AF rate-limit cascades through enrichment → predictions → betting. |
 | USER-DEGRADATION-UX | Clear "data temporarily unavailable" messages in frontend when backend stale/down, instead of "Loading..." forever. R4 add. | 2h | ⬜ | ✅ Ready | UX during degradation is half the trust-loss equation. |
 | SUPPORT-RUNBOOK | One-page: Stripe-charged-but-no-tier, tier-granted-but-no-charge, settlement-disputed, refund procedure. R4 add. | 1h | ⬜ | ⏳ After paid launch | Need the runbook before the first edge case fires, not during it. |
+| STAGING-ENV | Separate Supabase project (free tier) + Railway staging service + Vercel preview env + Stripe test webhook endpoint. | 3h | ⬜ | ⏳ After first paying user | R4 flagged as highest-leverage pre-paid-launch item, but the risk it protects against is "a paying user hits a broken Stripe flow." With 0 paying users that risk doesn't exist. At 12 users (3 family, no revenue), adding staging infra is premature complexity. Trigger: first paid subscription received. |
 | SCHEMA-DRIFT-SMOKE | 30-min cheap version of SCHEMA-DRIFT-GUARD: pytest that `SELECT col FROM table LIMIT 0` for every column code references. R4: cheap version captures 80% for 5% effort. | 30m | ⬜ | ✅ Ready | Drop the proper CI-integration version. |
 | BACKFILL-SAFETY | Test re-running each backfill script — same input, same output, no duplicates. R4: low priority since you backfill ~quarterly. | 2h | ⬜ | ⏳ Before next backfill | Just be careful that day. |
 | EMAIL-DELIVERY-CHECK | Verify Resend DKIM/SPF/DMARC are correct (digest emails already sending — confirm not landing in spam at scale). | 1h | ⬜ | ✅ Ready | If `ENG-4` already configured this, mark ✅. |
@@ -89,12 +89,11 @@
 
 ### Suggested commit grouping
 
-1. **Commit 1 (today):** POOL-LEAK-FIX + EXCEPTION-BOUNDARIES + JOB-COALESCE + DB-STMT-TIMEOUT — fixes today's outage class.
-2. **Commit 2 (today):** OBS-HEARTBEAT + OBS-SENTRY-BACKEND — visibility before Reddit goes live.
-3. **Commit 3 (this week):** STAGING-ENV solo — too disruptive to bundle.
-4. **Commit 4 (pre-paid-launch):** STRIPE-WEBHOOK-SIG + MONEY-STRIPE-IDEMPOTENT + MONEY-WEBHOOK-TEST + STRIPE-RECONCILE — one Stripe-integrity commit.
-5. **Commit 5:** MONEY-RLS-AUDIT + MONEY-SETTLE-RECON + BACKUP-RESTORE-DRILL + RATE-LIMIT-API + ABUSE-DETECT-PRELAUNCH + DEPLOY-ROLLBACK-RUNBOOK — pre-paid-launch security/recoverability.
-6. **Commit 6+:** P2 tasks individually as time allows.
+1. **Commit 1 (done):** POOL-LEAK-FIX + EXCEPTION-BOUNDARIES + JOB-COALESCE + DB-STMT-TIMEOUT — fixes today's outage class.
+2. **Commit 2 (next):** OBS-HEARTBEAT + OBS-SENTRY-BACKEND — visibility before Reddit goes live.
+3. **Commit 3 (pre-paid-launch):** STRIPE-WEBHOOK-SIG + MONEY-STRIPE-IDEMPOTENT + MONEY-WEBHOOK-TEST + STRIPE-RECONCILE — one Stripe-integrity commit.
+4. **Commit 4:** MONEY-RLS-AUDIT + MONEY-SETTLE-RECON + BACKUP-RESTORE-DRILL + RATE-LIMIT-API + ABUSE-DETECT-PRELAUNCH + DEPLOY-ROLLBACK-RUNBOOK — pre-paid-launch security/recoverability.
+5. **Commit 5+:** P2 tasks individually as time allows.
 
 ---
 

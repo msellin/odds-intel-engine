@@ -1935,35 +1935,39 @@ def store_match_player_stats(match_id: str, af_fixture_id: int,
 # ============================================================
 
 def store_team_transfers(team_api_id: int, rows: list[dict]) -> int:
-    """Store team transfer records. Upserts on (team_api_id, player_id, transfer_date)."""
-    stored = 0
+    """Store team transfer records. Bulk upserts on (team_api_id, player_id, transfer_date)."""
+    valid = [r for r in rows if r.get("player_id") and r.get("transfer_date")]
+    if not valid:
+        return 0
 
-    for row_data in rows:
-        if not row_data.get("player_id") or not row_data.get("transfer_date"):
-            continue
+    columns = list(valid[0].keys())
+    col_str = ", ".join(columns)
+    placeholders = ", ".join(["%s"] * len(columns))
+    update_cols = [c for c in columns if c not in ("team_api_id", "player_id", "transfer_date")]
+    update_str = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols) if update_cols else "team_api_id = EXCLUDED.team_api_id"
 
-        columns = list(row_data.keys())
-        col_str = ", ".join(columns)
-        placeholders = ", ".join(["%s"] * len(columns))
-        update_cols = [c for c in columns if c not in ("team_api_id", "player_id", "transfer_date")]
-        update_str = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols) if update_cols else "team_api_id = EXCLUDED.team_api_id"
-        values = tuple(Json(v) if isinstance(v, (dict, list)) else v for v in (row_data[c] for c in columns))
+    value_rows = [
+        tuple(Json(r[c]) if isinstance(r[c], (dict, list)) else r[c] for c in columns)
+        for r in valid
+    ]
 
-        try:
-            with get_conn() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        f"""INSERT INTO team_transfers ({col_str}) VALUES ({placeholders})
-                            ON CONFLICT (team_api_id, player_id, transfer_date)
-                            DO UPDATE SET {update_str}""",
-                        values,
-                    )
-                    conn.commit()
-            stored += 1
-        except Exception as e:
-            console.print(f"[yellow]store_team_transfers: {e}[/yellow]")
-
-    return stored
+    try:
+        from psycopg2.extras import execute_values
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                execute_values(
+                    cur,
+                    f"""INSERT INTO team_transfers ({col_str}) VALUES %s
+                        ON CONFLICT (team_api_id, player_id, transfer_date)
+                        DO UPDATE SET {update_str}""",
+                    value_rows,
+                    template=f"({placeholders})",
+                )
+            conn.commit()
+        return len(valid)
+    except Exception as e:
+        console.print(f"[yellow]store_team_transfers: {e}[/yellow]")
+        return 0
 
 
 def store_model_evaluation(eval_date: str, league_id: str | None, market: str,

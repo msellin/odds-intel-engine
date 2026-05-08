@@ -173,7 +173,7 @@ def _():
     from workers.jobs.daily_pipeline_v2 import run_morning  # noqa: F401
 
 
-@test("scheduler — backfill jobs use 15min interval (not 5min) to prevent overlap")
+@test("scheduler — backfill jobs use ≥25min interval to prevent overlap (worst case 22min)")
 def _():
     import ast, pathlib
     src = pathlib.Path("workers/scheduler.py").read_text()
@@ -192,9 +192,9 @@ def _():
                                         for ikw in arg.keywords:
                                             if ikw.arg == "minutes":
                                                 mins = ikw.value.n if hasattr(ikw.value, 'n') else ikw.value.value
-                                                assert mins >= 15, (
+                                                assert mins >= 25, (
                                                     f"Backfill job {kw.value.value!r} uses {mins}min interval — "
-                                                    "must be ≥15min to avoid overlap when AF API is slow"
+                                                    "must be ≥25min: worst case is 15s×3retries×30req=22min"
                                                 )
 
 
@@ -1170,6 +1170,20 @@ def _():
         assert is_disabled("news_checker") is True
     finally:
         del os.environ["DISABLE_NEWS_CHECKER"]
+
+
+@test("store_team_transfers — uses bulk execute_values (not per-row connections)")
+def _():
+    import ast, pathlib
+    src = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
+    # Verify no for-loop opening get_conn() inside store_team_transfers
+    fn_start = src.index("def store_team_transfers(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    fn_body = src[fn_start:fn_end]
+    assert "execute_values" in fn_body, "store_team_transfers must use execute_values for bulk insert"
+    assert fn_body.count("get_conn()") == 1, (
+        f"store_team_transfers should open exactly 1 DB connection (got {fn_body.count('get_conn()')})"
+    )
 
 
 # ── Runner ────────────────────────────────────────────────────────────────────

@@ -526,17 +526,17 @@ def main():
 
     # ── Register all jobs ──────────────────────────────────────────────
 
-    # Backfill jobs — micro-batch every 5min, tiny requests/run.
+    # Backfill jobs — micro-batch, tiny requests/run.
     # If a run fails, only ~10-30 API calls are lost. Progress tracked in DB.
-    # AF budget: 75K/day. At 15min intervals: hist=30×96=2,880, coaches=10×96=960,
-    # transfers=10×96=960 → ~4,800/day total, well within headroom.
-    # 15min interval (was 5min) gives jobs headroom to finish when AF is slow
-    # (15s timeout × 3 retries × 30 requests worst case ≈ 22 min max).
-    scheduler.add_job(job_backfill, IntervalTrigger(minutes=15),
+    # AF budget: 75K/day. At 25min intervals: hist=30×57=1,710, coaches=10×57=570,
+    # transfers=10×57=570 → ~2,850/day total, well within headroom.
+    # 25min interval: worst case = 15s timeout × 3 retries × 30 requests = 22 min max,
+    # so 25min gives 3 min buffer. Coaches/transfers (10 calls) fit with large margin.
+    scheduler.add_job(job_backfill, IntervalTrigger(minutes=25),
                       id="hist_backfill", name="Match Stats/Events Backfill")
-    scheduler.add_job(job_backfill_coaches, IntervalTrigger(minutes=15),
+    scheduler.add_job(job_backfill_coaches, IntervalTrigger(minutes=25),
                       id="backfill_coaches", name="Coaches Backfill")
-    scheduler.add_job(job_backfill_transfers, IntervalTrigger(minutes=15),
+    scheduler.add_job(job_backfill_transfers, IntervalTrigger(minutes=25),
                       id="backfill_transfers", name="Transfers Backfill")
 
     # Fixture status refresh: 4× daily, 15 min before each betting window
