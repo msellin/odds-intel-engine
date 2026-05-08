@@ -141,8 +141,24 @@ def _get(endpoint: str, params: dict = None) -> dict:
         _last_request_time = time.time()
 
     url = f"{BASE_URL}/{endpoint}"
-    resp = requests.get(url, headers=_headers(), params=params, timeout=15)
-    resp.raise_for_status()
+    last_exc = None
+    for attempt in range(3):
+        try:
+            resp = requests.get(url, headers=_headers(), params=params, timeout=15)
+            if resp.status_code in (429, 503) and attempt < 2:
+                time.sleep(2 ** attempt)
+                last_exc = requests.exceptions.HTTPError(response=resp)
+                continue
+            resp.raise_for_status()
+            break
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+                last_exc = exc
+                continue
+            raise
+    else:
+        raise last_exc
 
     # Track budget
     budget.record_call()

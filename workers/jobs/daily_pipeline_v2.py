@@ -1782,6 +1782,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
 
                 bet_candidates.append((mkt, selection, odds, raw_mp, cal_prob, ip, edge, kelly, alignment, odds_mv, stake))
 
+            bet_candidates.sort(key=lambda x: x[6], reverse=True)
+
             for mkt, selection, odds, raw_mp, cal_prob, ip, edge, kelly, alignment, odds_mv, stake in bet_candidates:
                 # T1: AF prediction agreement
                 af_agrees = _af_agrees_with_bet(selection, af_pred)

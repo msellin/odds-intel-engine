@@ -21,6 +21,7 @@ import sys
 import os
 import json
 import argparse
+import time
 from pathlib import Path
 from datetime import datetime, timezone, date
 from dotenv import load_dotenv
@@ -133,10 +134,20 @@ Always set players_out, players_doubtful, players_returning to empty arrays.
 If no qualitative signal is found, set flag "ok", confidence_adjustment 0.0, impacts 0.0. Do NOT invent problems."""
 
     try:
-        response = gemini_client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
-        )
+        _transient = ("ResourceExhausted", "ServiceUnavailable", "DeadlineExceeded")
+        response = None
+        for _attempt in range(3):
+            try:
+                response = gemini_client.models.generate_content(
+                    model=GEMINI_MODEL,
+                    contents=prompt,
+                )
+                break
+            except Exception as _exc:
+                if type(_exc).__name__ in _transient and _attempt < 2:
+                    time.sleep(2 ** _attempt)
+                    continue
+                raise
         text = response.text.strip()
 
         # Extract JSON (may be wrapped in markdown code block)
