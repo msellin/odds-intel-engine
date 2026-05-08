@@ -4020,14 +4020,94 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
     Compute ~40 operational counters for today and append one row to ops_snapshots.
     Called at the end of each major pipeline job + hourly fallback cron.
     Dashboard reads: WHERE snapshot_date = today ORDER BY created_at DESC LIMIT 1.
+
+    Resilience: each section is isolated — if one query breaks (e.g. column rename,
+    missing table), the section's values fall back to defaults and the row is still
+    written. The INSERT itself is what produces the dashboard row, so we never want
+    a single broken query to take the whole dashboard down.
+
+    Visibility: every invocation logs a pipeline_runs entry so failures are visible
+    on the Ops Dashboard (Pipeline Runs grid) instead of disappearing silently.
     """
     from datetime import date as _date
+    from workers.utils.pipeline_utils import (
+        log_pipeline_start, log_pipeline_complete, log_pipeline_failed,
+    )
     today = snapshot_date or _date.today().isoformat()
 
+    # Initialise every column with a safe default so a section failure can't
+    # prevent the INSERT below.
+    matches_today = 0
+    matches_with_odds = 0
+    matches_with_pinnacle = 0
+    matches_with_predictions = 0
+    matches_with_signals = 0
+    matches_with_fvectors = 0
+    matches_missing_grade = None
+    matches_postponed = 0
+    odds_snapshots_today = 0
+    distinct_bookmakers = 0
+    matches_without_pinnacle = 0
+    odds_market_match_winner = 0
+    odds_market_goals_ou = 0
+    odds_market_btts = 0
+    bets_placed_today = 0
+    bets_pending = 0
+    bets_settled_today = 0
+    pnl_today = 0.0
+    bets_inplay_today = 0
+    active_bots = 0
+    silent_bots = 0
+    duplicate_bets = 0
+    live_snapshots_today = 0
+    snapshots_with_xg = 0
+    snapshots_with_live_odds = 0
+    live_games_tracked = 0
+    live_games_with_xg = 0
+    live_games_with_odds = 0
+    inplay_active_bots = 0
+    matches_finished_today = 0
+    post_mortem_ran_today = False
+    feature_vectors_today = 0
+    elo_updates_today = 0
+    matches_with_h2h = 0
+    matches_with_injuries = 0
+    matches_with_lineups = 0
+    signals_with_elo = 0
+    signals_with_form = 0
+    signals_with_h2h = 0
+    signals_with_injuries = 0
+    signals_with_standings = 0
+    digests_sent_today = 0
+    value_bet_alerts_today = 0
+    previews_generated_today = 0
+    news_checker_errors_today = 0
+    watchlist_alerts_today = 0
+    backfill_total_done = 0
+    backfill_total_finished = 0
+    backfill_last_run = None
+    af_calls_today = None
+    af_budget_remaining = None
+    total_users = 0
+    pro_users = 0
+    elite_users = 0
+    new_signups_today = 0
+    sidelined_players_fetched = 0
+    transfers_teams_fetched = 0
+
+    failed_sections: list[str] = []
+
+    # Log start so the dashboard sees the run regardless of outcome.
+    run_id = None
     try:
-        # ① Fixtures & coverage
-        # IMPORTANT: matches.date is timestamptz storing kickoff datetimes (not midnight).
-        # Use date::date = %s (date-part cast) to match all matches on this calendar day.
+        run_id = log_pipeline_start("write_ops_snapshot", today)
+    except Exception as e:
+        console.print(f"[yellow]ops_snapshot: failed to log pipeline_start: {e}[/yellow]")
+
+    # ① Fixtures & coverage
+    # IMPORTANT: matches.date is timestamptz storing kickoff datetimes (not midnight).
+    # Use date::date = %s (date-part cast) to match all matches on this calendar day.
+    try:
         r = execute_query(
             """
             SELECT
@@ -4035,10 +4115,14 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               COUNT(*) FILTER (WHERE status = 'postponed')   AS postponed
             FROM matches WHERE date::date = %s
             """, [today])
-        matches_today       = r[0]["matches_today"] if r else 0
-        matches_missing_grade = None  # no grade column yet
-        matches_postponed   = r[0]["postponed"] if r else 0
+        if r:
+            matches_today     = r[0]["matches_today"]
+            matches_postponed = r[0]["postponed"]
+    except Exception as e:
+        failed_sections.append("fixtures_count")
+        console.print(f"[yellow]ops_snapshot: fixtures_count failed: {e}[/yellow]")
 
+    try:
         r = execute_query(
             """
             SELECT
@@ -4057,37 +4141,57 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
             JOIN matches m ON m.id = o.match_id
             WHERE m.date::date = %s
             """, [today])
-        matches_with_odds        = r[0]["with_odds"] if r else 0
-        matches_with_pinnacle    = r[0]["with_pinnacle"] if r else 0
-        matches_without_pinnacle = r[0]["without_pinnacle"] if r else 0
-        odds_snapshots_today     = r[0]["snapshots_today"] if r else 0
-        distinct_bookmakers      = r[0]["distinct_bm"] if r else 0
-        odds_market_match_winner = r[0]["mkt_match_winner"] if r else 0
-        odds_market_goals_ou     = r[0]["mkt_goals_ou"] if r else 0
-        odds_market_btts         = r[0]["mkt_btts"] if r else 0
+        if r:
+            matches_with_odds        = r[0]["with_odds"]
+            matches_with_pinnacle    = r[0]["with_pinnacle"]
+            matches_without_pinnacle = r[0]["without_pinnacle"]
+            odds_snapshots_today     = r[0]["snapshots_today"]
+            distinct_bookmakers      = r[0]["distinct_bm"]
+            odds_market_match_winner = r[0]["mkt_match_winner"]
+            odds_market_goals_ou     = r[0]["mkt_goals_ou"]
+            odds_market_btts         = r[0]["mkt_btts"]
+    except Exception as e:
+        failed_sections.append("odds_coverage")
+        console.print(f"[yellow]ops_snapshot: odds_coverage failed: {e}[/yellow]")
 
+    try:
         r = execute_query(
             """SELECT COUNT(DISTINCT p.match_id) AS n
                FROM predictions p JOIN matches m ON m.id = p.match_id
                WHERE m.date::date = %s AND p.source = 'af'""",
             [today])
-        matches_with_predictions = r[0]["n"] if r else 0
+        if r:
+            matches_with_predictions = r[0]["n"]
+    except Exception as e:
+        failed_sections.append("predictions_count")
+        console.print(f"[yellow]ops_snapshot: predictions_count failed: {e}[/yellow]")
 
+    try:
         r = execute_query(
             """SELECT COUNT(DISTINCT s.match_id) AS n
                FROM match_signals s JOIN matches m ON m.id = s.match_id
                WHERE m.date::date = %s""",
             [today])
-        matches_with_signals = r[0]["n"] if r else 0
+        if r:
+            matches_with_signals = r[0]["n"]
+    except Exception as e:
+        failed_sections.append("signals_count")
+        console.print(f"[yellow]ops_snapshot: signals_count failed: {e}[/yellow]")
 
+    try:
         r = execute_query(
             """SELECT COUNT(DISTINCT mfv.match_id) AS n
                FROM match_feature_vectors mfv JOIN matches m ON m.id = mfv.match_id
                WHERE m.date::date = %s""",
             [today])
-        matches_with_fvectors = r[0]["n"] if r else 0
+        if r:
+            matches_with_fvectors = r[0]["n"]
+    except Exception as e:
+        failed_sections.append("fvectors_count")
+        console.print(f"[yellow]ops_snapshot: fvectors_count failed: {e}[/yellow]")
 
-        # Signal breakdown: how many of today's matches have each signal type
+    # Signal breakdown: how many of today's matches have each signal type
+    try:
         r = execute_query(
             """
             SELECT
@@ -4100,13 +4204,18 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
             JOIN matches m ON m.id = s.match_id
             WHERE m.date::date = %s
             """, [today])
-        signals_with_elo       = r[0]["with_elo"] if r else 0
-        signals_with_form      = r[0]["with_form"] if r else 0
-        signals_with_h2h       = r[0]["with_h2h_sig"] if r else 0
-        signals_with_injuries  = r[0]["with_injuries_sig"] if r else 0
-        signals_with_standings = r[0]["with_standings"] if r else 0
+        if r:
+            signals_with_elo       = r[0]["with_elo"]
+            signals_with_form      = r[0]["with_form"]
+            signals_with_h2h       = r[0]["with_h2h_sig"]
+            signals_with_injuries  = r[0]["with_injuries_sig"]
+            signals_with_standings = r[0]["with_standings"]
+    except Exception as e:
+        failed_sections.append("signal_breakdown")
+        console.print(f"[yellow]ops_snapshot: signal_breakdown failed: {e}[/yellow]")
 
-        # ② Betting & bots
+    # ② Betting & bots
+    try:
         r = execute_query(
             """
             SELECT
@@ -4121,17 +4230,26 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               COUNT(DISTINCT bot_id) FILTER (WHERE pick_time::date = %s)               AS active_bots
             FROM simulated_bets
             """, [today, today, today, today, today])
-        bets_placed_today  = r[0]["placed_today"] if r else 0
-        bets_pending       = r[0]["pending_total"] if r else 0
-        bets_settled_today = r[0]["settled_today"] if r else 0
-        pnl_today          = float(r[0]["pnl_today"] or 0) if r else 0.0
-        bets_inplay_today  = r[0]["inplay_today"] if r else 0
-        active_bots        = r[0]["active_bots"] if r else 0
+        if r:
+            bets_placed_today  = r[0]["placed_today"]
+            bets_pending       = r[0]["pending_total"]
+            bets_settled_today = r[0]["settled_today"]
+            pnl_today          = float(r[0]["pnl_today"] or 0)
+            bets_inplay_today  = r[0]["inplay_today"]
+            active_bots        = r[0]["active_bots"]
+    except Exception as e:
+        failed_sections.append("betting_counts")
+        console.print(f"[yellow]ops_snapshot: betting_counts failed: {e}[/yellow]")
 
+    try:
         total_bots = execute_query("SELECT COUNT(*) AS n FROM bots WHERE is_active = true")
         total_bots_n = total_bots[0]["n"] if total_bots else 17
         silent_bots = max(0, total_bots_n - active_bots)
+    except Exception as e:
+        failed_sections.append("bot_count")
+        console.print(f"[yellow]ops_snapshot: bot_count failed: {e}[/yellow]")
 
+    try:
         r = execute_query(
             """
             SELECT COUNT(*) AS n FROM (
@@ -4140,9 +4258,14 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               GROUP BY 1,2,3,4 HAVING COUNT(*) > 1
             ) t
             """, [today])
-        duplicate_bets = r[0]["n"] if r else 0
+        if r:
+            duplicate_bets = r[0]["n"]
+    except Exception as e:
+        failed_sections.append("duplicate_bets")
+        console.print(f"[yellow]ops_snapshot: duplicate_bets failed: {e}[/yellow]")
 
-        # ③ Live / in-play
+    # ③ Live / in-play
+    try:
         r = execute_query(
             """
             SELECT
@@ -4154,60 +4277,100 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               COUNT(DISTINCT match_id) FILTER (WHERE live_ou_25_over IS NOT NULL) AS games_with_odds
             FROM live_match_snapshots WHERE captured_at::date = %s
             """, [today])
-        live_snapshots_today     = r[0]["snapshots_today"] if r else 0
-        snapshots_with_xg        = r[0]["with_xg"] if r else 0
-        snapshots_with_live_odds = r[0]["with_live_odds"] if r else 0
-        live_games_tracked       = r[0]["games_tracked"] if r else 0
-        live_games_with_xg       = r[0]["games_with_xg"] if r else 0
-        live_games_with_odds     = r[0]["games_with_odds"] if r else 0
+        if r:
+            live_snapshots_today     = r[0]["snapshots_today"]
+            snapshots_with_xg        = r[0]["with_xg"]
+            snapshots_with_live_odds = r[0]["with_live_odds"]
+            live_games_tracked       = r[0]["games_tracked"]
+            live_games_with_xg       = r[0]["games_with_xg"]
+            live_games_with_odds     = r[0]["games_with_odds"]
+    except Exception as e:
+        failed_sections.append("live_counts")
+        console.print(f"[yellow]ops_snapshot: live_counts failed: {e}[/yellow]")
 
-        # Inplay active bots — distinct inplay bots that placed a bet today
+    # Inplay active bots — distinct inplay bots that placed a bet today
+    try:
         r = execute_query(
             """SELECT COUNT(DISTINCT sb.bot_id) AS n
                FROM simulated_bets sb
                JOIN bots b ON b.id = sb.bot_id
                WHERE b.name LIKE 'inplay_%%' AND sb.pick_time::date = %s""",
             [today])
-        inplay_active_bots = r[0]["n"] if r else 0
+        if r:
+            inplay_active_bots = r[0]["n"]
+    except Exception as e:
+        failed_sections.append("inplay_active")
+        console.print(f"[yellow]ops_snapshot: inplay_active failed: {e}[/yellow]")
 
-        # ④ Post-match / settlement
+    # ④ Post-match / settlement
+    try:
         r = execute_query(
             "SELECT COUNT(*) AS n FROM matches WHERE status = 'finished' AND date::date = %s", [today])
-        matches_finished_today = r[0]["n"] if r else 0
+        if r:
+            matches_finished_today = r[0]["n"]
+    except Exception as e:
+        failed_sections.append("finished_count")
+        console.print(f"[yellow]ops_snapshot: finished_count failed: {e}[/yellow]")
 
+    try:
         r = execute_query(
             "SELECT COUNT(*) AS n FROM model_evaluations WHERE market = 'post_mortem' AND date = %s",
             [today])
-        post_mortem_ran_today = (r[0]["n"] > 0) if r else False
+        if r:
+            post_mortem_ran_today = r[0]["n"] > 0
+    except Exception as e:
+        failed_sections.append("post_mortem")
+        console.print(f"[yellow]ops_snapshot: post_mortem failed: {e}[/yellow]")
 
+    try:
         r = execute_query(
             """SELECT COUNT(*) AS n
                FROM match_feature_vectors mfv JOIN matches m ON m.id = mfv.match_id
                WHERE m.date::date = %s""",
             [today])
-        feature_vectors_today = r[0]["n"] if r else 0
+        if r:
+            feature_vectors_today = r[0]["n"]
+    except Exception as e:
+        failed_sections.append("fvectors_today")
+        console.print(f"[yellow]ops_snapshot: fvectors_today failed: {e}[/yellow]")
 
+    try:
         r = execute_query(
             "SELECT COUNT(*) AS n FROM team_elo_daily WHERE date = %s", [today])
-        elo_updates_today = r[0]["n"] if r else 0
+        if r:
+            elo_updates_today = r[0]["n"]
+    except Exception as e:
+        failed_sections.append("elo_updates")
+        console.print(f"[yellow]ops_snapshot: elo_updates failed: {e}[/yellow]")
 
-        # ⑤ Enrichment quality
+    # ⑤ Enrichment quality
+    try:
         r = execute_query(
             """
             SELECT COUNT(*) AS with_h2h
             FROM matches
             WHERE date::date = %s AND h2h_raw IS NOT NULL
             """, [today])
-        matches_with_h2h = r[0]["with_h2h"] if r else 0
+        if r:
+            matches_with_h2h = r[0]["with_h2h"]
+    except Exception as e:
+        failed_sections.append("h2h_count")
+        console.print(f"[yellow]ops_snapshot: h2h_count failed: {e}[/yellow]")
 
+    try:
         r = execute_query(
             """
             SELECT COUNT(DISTINCT mi.match_id) AS n FROM match_injuries mi
             JOIN matches m ON m.id = mi.match_id
             WHERE m.date::date = %s
             """, [today])
-        matches_with_injuries = r[0]["n"] if r else 0
+        if r:
+            matches_with_injuries = r[0]["n"]
+    except Exception as e:
+        failed_sections.append("injuries_count")
+        console.print(f"[yellow]ops_snapshot: injuries_count failed: {e}[/yellow]")
 
+    try:
         r = execute_query(
             """
             SELECT COUNT(DISTINCT l.match_id) AS n
@@ -4215,59 +4378,103 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
             JOIN matches m ON m.id = l.match_id
             WHERE m.date::date = %s
             """, [today])
-        matches_with_lineups = r[0]["n"] if r else 0
+        if r:
+            matches_with_lineups = r[0]["n"]
+    except Exception as e:
+        failed_sections.append("lineups_count")
+        console.print(f"[yellow]ops_snapshot: lineups_count failed: {e}[/yellow]")
 
-        # ⑥ Email & alerts
+    # ⑥ Email & alerts
+    try:
         r = execute_query(
             "SELECT COUNT(*) AS n FROM email_digest_log WHERE sent_at::date = %s", [today])
-        digests_sent_today = r[0]["n"] if r else 0
+        if r:
+            digests_sent_today = r[0]["n"]
+    except Exception as e:
+        failed_sections.append("digests")
+        console.print(f"[yellow]ops_snapshot: digests failed: {e}[/yellow]")
 
+    try:
         r = execute_query(
             "SELECT COUNT(*) AS n FROM value_bet_alert_log WHERE alert_date = %s", [today])
-        value_bet_alerts_today = r[0]["n"] if r else 0
+        if r:
+            value_bet_alerts_today = r[0]["n"]
+    except Exception as e:
+        failed_sections.append("value_alerts")
+        console.print(f"[yellow]ops_snapshot: value_alerts failed: {e}[/yellow]")
 
+    try:
         r = execute_query(
             "SELECT COUNT(*) AS n FROM match_previews WHERE generated_at::date = %s", [today])
-        previews_generated_today = r[0]["n"] if r else 0
+        if r:
+            previews_generated_today = r[0]["n"]
+    except Exception as e:
+        failed_sections.append("previews")
+        console.print(f"[yellow]ops_snapshot: previews failed: {e}[/yellow]")
 
+    try:
         r = execute_query(
             """SELECT COUNT(*) AS n FROM pipeline_runs
                WHERE job_name = 'news_checker' AND status = 'error' AND started_at::date = %s""",
             [today])
-        news_checker_errors_today = r[0]["n"] if r else 0
+        if r:
+            news_checker_errors_today = r[0]["n"]
+    except Exception as e:
+        failed_sections.append("news_errors")
+        console.print(f"[yellow]ops_snapshot: news_errors failed: {e}[/yellow]")
 
+    try:
         r = execute_query(
             "SELECT COUNT(*) AS n FROM watchlist_alert_log WHERE sent_at::date = %s", [today])
-        watchlist_alerts_today = r[0]["n"] if r else 0
+        if r:
+            watchlist_alerts_today = r[0]["n"]
+    except Exception as e:
+        failed_sections.append("watchlist")
+        console.print(f"[yellow]ops_snapshot: watchlist failed: {e}[/yellow]")
 
-        # ⑦ Backfill
+    # ⑦ Backfill
+    try:
         r = execute_query("SELECT COUNT(DISTINCT match_id) AS n FROM match_stats")
-        backfill_total_done = r[0]["n"] if r else 0
+        if r:
+            backfill_total_done = r[0]["n"]
+    except Exception as e:
+        failed_sections.append("backfill_done")
+        console.print(f"[yellow]ops_snapshot: backfill_done failed: {e}[/yellow]")
 
+    try:
         r = execute_query(
             """SELECT COUNT(*) AS n FROM matches
                WHERE status = 'finished' AND api_football_id IS NOT NULL""")
-        backfill_total_finished = r[0]["n"] if r else 0
+        if r:
+            backfill_total_finished = r[0]["n"]
+    except Exception as e:
+        failed_sections.append("backfill_finished")
+        console.print(f"[yellow]ops_snapshot: backfill_finished failed: {e}[/yellow]")
 
+    try:
         r = execute_query(
             """SELECT MAX(started_at) AS t FROM pipeline_runs
                WHERE job_name LIKE '%backfill%' OR job_name = 'hist_backfill'""")
-        backfill_last_run = r[0]["t"] if r else None
+        if r:
+            backfill_last_run = r[0]["t"]
+    except Exception as e:
+        failed_sections.append("backfill_last_run")
+        console.print(f"[yellow]ops_snapshot: backfill_last_run failed: {e}[/yellow]")
 
-        # ⑧ API budget (from persisted api_budget_log — NULL until migration 060 applied)
-        af_calls_today = None
-        af_budget_remaining = None
-        try:
-            r = execute_query(
-                """SELECT calls_today, remaining FROM api_budget_log
-                   WHERE log_date = %s ORDER BY logged_at DESC LIMIT 1""",
-                [today])
-            af_calls_today      = r[0]["calls_today"] if r else None
-            af_budget_remaining = r[0]["remaining"] if r else None
-        except Exception:
-            pass  # Table doesn't exist yet — safe to skip
+    # ⑧ API budget (from persisted api_budget_log — NULL until migration 060 applied)
+    try:
+        r = execute_query(
+            """SELECT calls_today, remaining FROM api_budget_log
+               WHERE log_date = %s ORDER BY logged_at DESC LIMIT 1""",
+            [today])
+        if r:
+            af_calls_today      = r[0]["calls_today"]
+            af_budget_remaining = r[0]["remaining"]
+    except Exception:
+        pass  # Table may not exist yet — leave as None
 
-        # ⑨ Users
+    # ⑨ Users
+    try:
         r = execute_query(
             """
             SELECT
@@ -4277,27 +4484,33 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               COUNT(*) FILTER (WHERE created_at::date = %s)        AS new_today
             FROM profiles
             """, [today])
-        total_users       = r[0]["total"] if r else 0
-        pro_users         = r[0]["pro"] if r else 0
-        elite_users       = r[0]["elite"] if r else 0
-        new_signups_today = r[0]["new_today"] if r else 0
+        if r:
+            total_users       = r[0]["total"]
+            pro_users         = r[0]["pro"]
+            elite_users       = r[0]["elite"]
+            new_signups_today = r[0]["new_today"]
+    except Exception as e:
+        failed_sections.append("users")
+        console.print(f"[yellow]ops_snapshot: users failed: {e}[/yellow]")
 
-        # ⑩ Sidelined + transfers coverage (new — migration 067)
-        sidelined_players_fetched = 0
-        transfers_teams_fetched = 0
-        try:
-            r = execute_query(
-                "SELECT COUNT(DISTINCT player_id) AS n FROM player_sidelined WHERE created_at::date = %s",
-                [today])
-            sidelined_players_fetched = r[0]["n"] if r else 0
-            r = execute_query(
-                "SELECT COUNT(DISTINCT team_api_id) AS n FROM team_transfers WHERE created_at::date = %s",
-                [today])
-            transfers_teams_fetched = r[0]["n"] if r else 0
-        except Exception:
-            pass
+    # ⑩ Sidelined + transfers coverage (new — migration 067)
+    try:
+        r = execute_query(
+            "SELECT COUNT(DISTINCT player_id) AS n FROM player_sidelined WHERE created_at::date = %s",
+            [today])
+        if r:
+            sidelined_players_fetched = r[0]["n"]
+        r = execute_query(
+            "SELECT COUNT(DISTINCT team_api_id) AS n FROM team_transfers WHERE created_at::date = %s",
+            [today])
+        if r:
+            transfers_teams_fetched = r[0]["n"]
+    except Exception:
+        pass  # Tables may not exist yet — leave as 0
 
-        # Write snapshot
+    # Write snapshot — happens regardless of section failures above so the dashboard
+    # always has a fresh row. Only the INSERT itself failing is a hard failure.
+    try:
         execute_write(
             """
             INSERT INTO ops_snapshots (
@@ -4360,10 +4573,29 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
                 sidelined_players_fetched, transfers_teams_fetched,
             ]
         )
-        console.print(f"[dim]ops_snapshot written for {today}[/dim]")
+        if failed_sections:
+            console.print(
+                f"[dim]ops_snapshot written for {today} "
+                f"(partial: {len(failed_sections)} section(s) failed: {', '.join(failed_sections)})[/dim]"
+            )
+        else:
+            console.print(f"[dim]ops_snapshot written for {today}[/dim]")
+
+        if run_id:
+            try:
+                metadata = {"failed_sections": failed_sections} if failed_sections else None
+                log_pipeline_complete(run_id, records_count=1, metadata=metadata)
+            except Exception as e:
+                console.print(f"[yellow]ops_snapshot: failed to log pipeline_complete: {e}[/yellow]")
 
     except Exception as e:
-        console.print(f"[yellow]write_ops_snapshot failed: {e}[/yellow]")
+        console.print(f"[red]write_ops_snapshot INSERT failed: {e}[/red]")
+        if run_id:
+            try:
+                log_pipeline_failed(run_id, f"INSERT failed: {e}")
+            except Exception as ee:
+                console.print(f"[yellow]ops_snapshot: failed to log pipeline_failed: {ee}[/yellow]")
+        raise
 
 
 if __name__ == "__main__":

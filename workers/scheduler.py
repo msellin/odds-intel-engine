@@ -318,9 +318,13 @@ def job_budget_sync():
 
 
 def job_ops_snapshot():
-    """Hourly fallback ops snapshot — captures state if no pipeline ran this hour."""
+    """Hourly fallback ops snapshot — captures state if no pipeline ran this hour.
+
+    Wrapped in _run_job so failures surface on the /health endpoint and console
+    instead of being lost. write_ops_snapshot also logs its own pipeline_runs row.
+    """
     from workers.api_clients.supabase_client import write_ops_snapshot
-    write_ops_snapshot()
+    _run_job("ops_snapshot_fallback", write_ops_snapshot)
 
 
 # ── Health endpoint ────────────────────────────────────────────────────────

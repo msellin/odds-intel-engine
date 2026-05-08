@@ -55,6 +55,7 @@
 
 | ID | Task | ☑ | Notes |
 |----|------|----|-------|
+| OPS-DASHBOARD-FIX | Ops dashboard blank — `write_ops_snapshot` swallowed all errors silently, no row written → every metric showed `—` | ✅ Done 2026-05-08 | `workers/api_clients/supabase_client.py`: per-section try/except so a single bad query doesn't kill the snapshot; logs to `pipeline_runs` so failures are visible on the dashboard; re-raises only on INSERT failure. `workers/scheduler.py`: hourly `job_ops_snapshot` now wrapped in `_run_job` so failures hit `/health` and `_recent_errors`. 2 smoke tests added. Backfilled today's row. |
 | INPLAY-EDGE-BUG | Inplay bot edge_percent stored as percent not decimal | ✅ Done 2026-05-07 | `inplay_bot.py` stored `edge = (prob-implied)*100` but `store_bet` expects decimal. Fixed: divide by 100 at storage. Patched 1 bad DB record. Smoke test added. |
 | SIGNALS-RLS | `match_signals` RLS enabled but no SELECT policy — anon key returned [] for everyone | ✅ Done 2026-05-07 | Migration 069. `getMatchSignals()` was silently returning empty, hiding accordion + summary on ALL matches. |
 | SIGNALS-UI | Wire all missing signals to accordion + summary (~20 signals in DB but invisible) | ✅ Done 2026-05-07 | `signal-labels.ts`: 15 new label functions (Pinnacle, manager change, turf, H2H depth, goals avg, relegation, referee O/U, AH, BTTS). `signal-accordion.tsx`: new Specialist Markets group + all signals added. `match-signal-summary.tsx`: manager change, relegation pressure, Pinnacle line moves added to top-5 priority list. |
