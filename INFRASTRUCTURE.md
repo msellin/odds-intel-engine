@@ -1,6 +1,6 @@
 # OddsIntel — Infrastructure & Costs
 
-> Last updated: 2026-05-05 — Railway upgraded to Hobby. Gemini billing enabled. Total cost ~€56.20/mo.
+> Last updated: 2026-05-08 — healthchecks.io added (external heartbeat). Stripe webhook idempotency added. LivePoller tuned to 45s/135s. Pipeline health alerts wired (PIPE-ALERT). Total cost ~€56.20/mo.
 
 ---
 
@@ -18,15 +18,21 @@
 | **ESPN API** | Settlement results backup (public) | Free (no key) | Active |
 | **API-Football** | PRIMARY: fixtures, results, odds, lineups, injuries, live stats | Ultra ($29/mo) | Active — ⚠️ **Do NOT downgrade to Pro** — 15s live polling needs 18K-45K calls/day (Pro limit: 7.5K) |
 | **Sentry** | Error monitoring & alerting (frontend only) | Free (5K errors/mo) | Active — removed from engine/Railway (cron monitors were exceeding free budget) |
-| **Stripe** | Payment processing (Pro/Elite tiers) | No monthly fee | **Live mode** ✅ — production keys active 2026-05-04. Pro €4.99/mo, Elite €14.99/mo + annual + founding rates. Promo code `REDDIT` (100% off first month). |
+| **healthchecks.io** | External scheduler heartbeat — pings every 5min, emails if Railway goes silent | Free | Active 2026-05-08. `HEALTHCHECKS_IO_PING_URL` env var on Railway. Would have caught the 2026-05-08 pool outage in 5 min vs 11h. |
+| **Stripe** | Payment processing (Pro/Elite tiers) | No monthly fee | **Live mode** ✅ — production keys active 2026-05-04. Pro €4.99/mo, Elite €14.99/mo + annual + founding rates. Promo code `REDDIT` (100% off first month). Webhook idempotency added 2026-05-08 (processed_events table). |
 | **Domain** | oddsintel.app | Registered + connected to Vercel | Active |
+
+### Active (free tier)
+
+| Service | Role | Plan | Notes |
+|---------|------|------|-------|
+| **Resend** | Email digest + value bet alerts + pipeline health alerts | Free (3K emails/mo) | Active since 2026-05-01. `RESEND_API_KEY` + `ADMIN_ALERT_EMAIL` on Railway. |
 
 ### Not yet active
 
 | Service | Role | When needed | Plan | Est. Cost |
 |---------|------|-------------|------|-----------|
 | **Plausible** | Alternative to Vercel Analytics if more depth needed | Optional | Cloud | €9/mo (10K pageviews) |
-| **Resend** | Email digest (ENG-4) — daily digest active since 2026-05-01 | ✅ Active | Free tier | €0 up to 3K emails/mo |
 
 ### Stripe — production setup ✅ Done 2026-05-04
 

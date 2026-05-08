@@ -1,13 +1,13 @@
 # OddsIntel — Workflows & Pipeline Architecture
 
 > Single source of truth for all scheduled jobs, their order, and manual run instructions.
-> Last updated: 2026-05-06 — Odds polling bumped to every 30min (was 2h). Pruner fixed (batch CTE). Migration 055: odds movement chart RPC now uses 30-min buckets.
+> Last updated: 2026-05-08 — LivePoller tuned to 45s fast / 135s stats (was 30s/60s). Pipeline health alerts added (PIPE-ALERT): 09:35 morning, hourly snapshot 10-22, 21:30 settlement check. healthchecks.io heartbeat ping every 5min.
 
 ### ✅ Railway Migration Complete (2026-04-30)
 
 > All pipeline jobs now run on **Railway** as a single long-running Python process (`workers/scheduler.py`).
 > GitHub Actions crons are **disabled** — kept only for manual `workflow_dispatch` triggers and DB migrations. Cleanup (full removal) deferred until Railway has 2-4 weeks of stable operation (see GH-CLEANUP task).
-> Live tracker replaced by **LivePoller** (`workers/live_poller.py`) with tiered polling: **30s** (odds/scores), **60s** (stats/events), **5min** (lineups).
+> Live tracker replaced by **LivePoller** (`workers/live_poller.py`) with tiered polling: **45s** (odds/scores), **135s** (stats/events), **7.5min** (lineups). Tuned 2026-05-08 — ~25% reduction in AF API calls with no meaningful data quality loss.
 > **Smart priority polling (RAIL-11):** matches with pending bets get stats every 30s instead of 60s. Goals detected via score delta → immediate extra odds snapshot stored.
 > Direct PostgreSQL (psycopg2 via `workers/api_clients/db.py`) used for all pipeline ops. `get_client()` (PostgREST/Supabase SDK) is now **only** used inside `workers/api_clients/supabase_client.py` internals — zero other pipeline or script code calls it directly. Full PostgREST removal completed 2026-05-03 (including `fit_platt.py`, `backfill_historical.py`, and `live_tracker.py` crash fix).
 
@@ -54,10 +54,14 @@
 21:00  ⑧b Settlement      settlement_pipeline()     Bulk: settle bets, post-match stats, ELO, CLV, prune
                                                     + Platt recalibration + blend refit (Wed + Sun)
                                                     + DC rho per tier (Sun only)
+21:30  ⑬ Health Alert    run_settlement_check()    Alerts if >5 pending bets on finished matches after settlement
 23:30  ⑧c Settlement      settlement_pipeline()     Late catch-up: European evening matches finishing after 21:00
 01:00  ⑧d Settlement      settlement_pipeline()     Overnight catch-up: 21:30+ KOs finishing after extra time
-24/7   ⑥ LivePoller      live_poller.py            30s when live (scores+odds+stats), 120s idle — no time gate
+24/7   ⑥ LivePoller      live_poller.py            45s when live (scores+odds+stats), 120s idle — no time gate
          ⑫ InplayBot      inplay_bot.py             Paper trading: 8 strategies (A-F + A2 + C_home), runs after each LivePoller snapshot store
+*/5    ⑭ Healthcheck     job_healthcheck_ping()    Pings healthchecks.io every 5min — external dead-man's switch
+09:35  ⑬ Health Alert    run_morning_checks()      Alerts if 0 bets placed or >10 matches missing Pinnacle odds
+10-22  ⑬ Health Alert    run_snapshot_check()      Hourly: alerts if last LivePoller snapshot >25min stale
 ```
 
 ### Betting refresh schedule (6x/day)
@@ -84,7 +88,7 @@
 
 ### Railway Environment Variables
 
-`SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `API_FOOTBALL_KEY`, `GEMINI_API_KEY`, `DATABASE_URL`, `RESEND_API_KEY`, `DIGEST_FROM_EMAIL`, `SITE_URL`, `TZ=UTC`
+`SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `API_FOOTBALL_KEY`, `GEMINI_API_KEY`, `DATABASE_URL`, `RESEND_API_KEY`, `DIGEST_FROM_EMAIL`, `SITE_URL`, `TZ=UTC`, `HEALTHCHECKS_IO_PING_URL`, `ADMIN_ALERT_EMAIL`
 
 ### GitHub Actions Workflow Files (manual trigger only)
 
@@ -155,17 +159,17 @@
 
 | Tier | Interval | Endpoints | Calls/cycle |
 |------|----------|-----------|-------------|
-| **Fast** | 30s | `/fixtures?live=all` (bulk), `/odds/live` (bulk) | 2 |
-| **Medium** | 60s | `/fixtures/statistics` (per match), `/fixtures/events` (per match) | 2N |
-| **Slow** | 5min | `/fixtures/lineups` (upcoming), match map refresh | ~2-5 |
+| **Fast** | 45s | `/fixtures?live=all` (bulk), `/odds/live` (bulk) | 2 |
+| **Medium** | 135s | `/fixtures/statistics` (per match), `/fixtures/events` (per match) | 2N |
+| **Slow** | 7.5min | `/fixtures/lineups` (upcoming), match map refresh | ~2-5 |
 
 - DB writes via **direct PostgreSQL** (psycopg2 bulk inserts) — 10-50x faster than PostgREST
 - Pre-match model context (O/U 2.5 probability) loaded into each snapshot
 - All data written to unified `live_match_snapshots` row per match per cycle
 - **On FT/AET/PEN:** immediately writes final score to `matches` table + triggers per-match settlement
 - `build_af_id_map()` queries today + yesterday (handles UTC midnight rollover for late matches)
-- ~10K-15K AF API calls/day during live play (was ~3.4K at 5-min polling)
-- **Runs 24/7** — no time-gate. Adaptive sleep: 30s when live matches found, 120s when idle
+- ~8K-12K AF API calls/day during live play (was 12K-18K at 30s/60s — tuned 2026-05-08)
+- **Runs 24/7** — no time-gate. Adaptive sleep: 45s when live matches found, 120s when idle
 - When idle: 2 bulk API calls/2min (~960 calls/day) — negligible vs 75K budget
 - Previously gated to 10:00-23:00 UTC, which missed Asian/early-UTC matches entirely
 
