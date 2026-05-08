@@ -1266,6 +1266,62 @@ def _():
     )
 
 
+@test("INPLAY-MERGE-A2 — inplay_a2 removed from INPLAY_BOTS and dispatcher")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+
+    dict_start = src.index("INPLAY_BOTS = {")
+    dict_end = src.index("\n}\n", dict_start) + 2
+    bots_block = src[dict_start:dict_end]
+    assert '"inplay_a2"' not in bots_block, (
+        "inplay_a2 must not be a key in INPLAY_BOTS — merged into A on 2026-05-08"
+    )
+
+    disp_start = src.index("def _check_strategy(")
+    disp_end = src.index("\ndef ", disp_start + 1)
+    disp_body = src[disp_start:disp_end]
+    assert 'bot_name == "inplay_a2"' not in disp_body, (
+        "_check_strategy dispatcher must not route to inplay_a2"
+    )
+
+    # The merged A must accept total_goals <= 1 (covers 0-0, 1-0, 0-1)
+    a_start = src.index("def _check_strategy_a(")
+    a_end = src.index("\ndef ", a_start + 1)
+    a_body = src[a_start:a_end]
+    assert "if sh + sa > 1:" in a_body, (
+        "Merged Strategy A must filter on total_goals <= 1, not just (0,0)"
+    )
+
+
+@test("INPLAY-MERGE-CHOME — inplay_c_home removed; C handles home/away in one path")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+
+    dict_start = src.index("INPLAY_BOTS = {")
+    dict_end = src.index("\n}\n", dict_start) + 2
+    bots_block = src[dict_start:dict_end]
+    assert '"inplay_c_home"' not in bots_block, (
+        "inplay_c_home must not be a key in INPLAY_BOTS — merged into C on 2026-05-08"
+    )
+
+    disp_start = src.index("def _check_strategy(")
+    disp_end = src.index("\ndef ", disp_start + 1)
+    disp_body = src[disp_start:disp_end]
+    assert 'bot_name == "inplay_c_home"' not in disp_body, (
+        "_check_strategy dispatcher must not route to inplay_c_home"
+    )
+
+    # _check_strategy_c must no longer take a home_only parameter
+    c_start = src.index("def _check_strategy_c(")
+    c_signature_end = src.index(":", c_start)
+    c_signature = src[c_start:c_signature_end]
+    assert "home_only" not in c_signature, (
+        "_check_strategy_c signature must not include home_only — merged into single strategy"
+    )
+
+
 @test("REPLAY-INPLAY — scripts/replay_inplay.py imports without DB writes")
 def _():
     """Defensive: backfill script must be dry-run only — no INSERT/UPDATE/DELETE

@@ -35,25 +35,27 @@ console = Console()
 
 INPLAY_BOTS = {
     "inplay_a": {
-        "description": "xG Divergence Over 2.5 — score 0-0, min 25-35",
+        "description": "xG Divergence Over 2.5 — total goals ≤ 1, min 25-35",
         "strategy": "inplay_a",
     },
-    "inplay_a2": {
-        "description": "xG Divergence Over 2.5 — score 1-0, min 25-35",
-        "strategy": "inplay_a2",
-    },
+    # inplay_a2 was MERGED into inplay_a on 2026-05-08 (4/5 AI consensus). Same
+    # thesis (live xG running ahead of prematch), just different score state.
+    # _check_strategy_a now accepts total_goals ≤ 1 so it covers 0-0, 1-0,
+    # and 0-1 in one strategy. The bot record + any pending a2 bets remain
+    # in DB for settlement; no new ones get placed.
     "inplay_b": {
         "description": "BTTS Momentum — trailing team pressure, min 15-40",
         "strategy": "inplay_b",
     },
     "inplay_c": {
-        "description": "Favourite Comeback DNB — favourite trailing, min 25-60",
+        "description": "Favourite Comeback — fav trailing by 1 (home fav: looser, longer window)",
         "strategy": "inplay_c",
     },
-    "inplay_c_home": {
-        "description": "Home Favourite Comeback DNB — home fav trailing, min 25-70",
-        "strategy": "inplay_c_home",
-    },
+    # inplay_c_home was MERGED into inplay_c on 2026-05-08 (3/5 AI consensus —
+    # replies 3, 4, 5). Same thesis. The merged strategy keeps both branches
+    # but always runs: home-favourite gets the wider minute window (25-70) +
+    # 5pp lower possession threshold; away-favourite gets the stricter
+    # original (25-60). One strategy instead of two near-identical ones.
     "inplay_d": {
         "description": "Late Goals Compression Over 2.5 — min 55-75",
         "strategy": "inplay_d",
@@ -537,15 +539,13 @@ def _check_strategy(bot_name: str, cand: dict, pm: dict,
     Returns trigger dict {market, selection, odds, model_prob, edge, ...} or None.
     """
     if bot_name == "inplay_a":
-        return _check_strategy_a(cand, pm, has_red_card, score_filter=(0, 0))
-    elif bot_name == "inplay_a2":
-        return _check_strategy_a(cand, pm, has_red_card, score_filter=None)
+        return _check_strategy_a(cand, pm, has_red_card)
+    # inplay_a2 intentionally not dispatched — merged into A on 2026-05-08
     elif bot_name == "inplay_b":
         return _check_strategy_b(cand, pm, has_red_card)
     elif bot_name == "inplay_c":
-        return _check_strategy_c(cand, pm, has_red_card, home_only=False)
-    elif bot_name == "inplay_c_home":
-        return _check_strategy_c(cand, pm, has_red_card, home_only=True)
+        return _check_strategy_c(cand, pm, has_red_card)
+    # inplay_c_home intentionally not dispatched — merged into C on 2026-05-08
     elif bot_name == "inplay_d":
         return _check_strategy_d(cand, pm, has_red_card)
     elif bot_name == "inplay_e":
@@ -554,14 +554,17 @@ def _check_strategy(bot_name: str, cand: dict, pm: dict,
     return None
 
 
-def _check_strategy_a(cand: dict, pm: dict, has_red_card: bool,
-                      score_filter: tuple | None) -> dict | None:
+def _check_strategy_a(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     """
-    Strategy A/A2: xG Divergence Over 2.5.
-    A: score 0-0 only. A2: combined goals = 1.
+    Strategy A: xG Divergence Over 2.5.
 
-    Proxy mode: runs but drops the shot-quality filter (trivially true with proxy),
-    replaces live_xg >= 0.9 with sot_combined >= 9, raises edge floor to 5%.
+    Merged 2026-05-08: previously A=score(0-0) and A2=combined goals=1. Now
+    both states share a single strategy with `total_goals <= 1`. Same thesis,
+    less code dilution (4/5 AI consensus from the post-bug review).
+
+    Proxy mode: runs but drops the shot-quality filter (trivially true with
+    proxy), replaces live_xg >= 0.9 with sot_combined >= 9, raises edge floor
+    to 5% to compensate for proxy noise.
     """
     minute = cand["minute"] or 0
     if minute < 25 or minute > 35:
@@ -570,12 +573,8 @@ def _check_strategy_a(cand: dict, pm: dict, has_red_card: bool,
         return None
 
     sh, sa = cand["score_home"] or 0, cand["score_away"] or 0
-    if score_filter == (0, 0):
-        if sh != 0 or sa != 0:
-            return None
-    else:
-        if sh + sa != 1:
-            return None
+    if sh + sa > 1:
+        return None  # Need a low-scoring state for the divergence thesis to apply
 
     xg_h, xg_a, is_real = _compute_live_xg(cand)
     live_xg = xg_h + xg_a
@@ -751,19 +750,21 @@ def _check_strategy_b(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     }
 
 
-def _check_strategy_c(cand: dict, pm: dict, has_red_card: bool,
-                      home_only: bool) -> dict | None:
+def _check_strategy_c(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     """
-    Strategy C/C_home: Favourite Comeback (DNB).
+    Strategy C: Favourite Comeback (DNB-style 1X2 bet on the trailing favourite).
+
+    Merged 2026-05-08: previously split into C (any fav) and C_home (home favs
+    only, with wider window + lower possession threshold). Now a single
+    strategy. When the favourite is at home we keep the looser variant
+    (window 25-70, possession 55%/58%); when away we keep the stricter
+    original (25-60, 60%/63%). Same code path for both.
 
     Real xG: fav_xg > opp_xg for dominance signal.
     Proxy: fav_sot > opp_sot (tightened — must strictly exceed, not just equal).
-    Possession threshold raised 3pp in proxy mode.
+    Possession threshold raised 3pp in proxy mode to compensate for noise.
     """
     minute = cand["minute"] or 0
-    max_minute = 70 if home_only else 60
-    if minute < 25 or minute > max_minute:
-        return None
     if has_red_card:
         return None
 
@@ -778,6 +779,11 @@ def _check_strategy_c(cand: dict, pm: dict, has_red_card: bool,
 
     home_is_fav = pm_home > pm_away
 
+    # Home favs get the looser bands (longer window, lower possession bar)
+    max_minute = 70 if home_is_fav else 60
+    if minute < 25 or minute > max_minute:
+        return None
+
     if home_is_fav:
         if not (sa - sh == 1):
             return None
@@ -786,8 +792,6 @@ def _check_strategy_c(cand: dict, pm: dict, has_red_card: bool,
         fav_sot = cand["shots_on_target_home"] or 0
         opp_sot = cand["shots_on_target_away"] or 0
     else:
-        if home_only:
-            return None
         if not (sh - sa == 1):
             return None
         fav_xg, opp_xg = xg_a, xg_h
@@ -795,19 +799,16 @@ def _check_strategy_c(cand: dict, pm: dict, has_red_card: bool,
         fav_sot = cand["shots_on_target_away"] or 0
         opp_sot = cand["shots_on_target_home"] or 0
 
-    if home_only and not home_is_fav:
-        return None
-
     # Dominance check
     if is_real:
         if fav_xg <= opp_xg:
             return None
-        min_poss = 55.0 if home_only else 60.0
+        min_poss = 55.0 if home_is_fav else 60.0
     else:
         # Proxy: use SoT differential instead; raise possession threshold
         if fav_sot <= opp_sot:
             return None
-        min_poss = 58.0 if home_only else 63.0
+        min_poss = 58.0 if home_is_fav else 63.0
 
     if fav_poss < min_poss:
         return None
