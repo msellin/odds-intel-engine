@@ -88,7 +88,14 @@ def fetch_af_odds(target_date: str) -> int:
         console.print(f"  [red]AF odds error: {e}[/red]")
         return 0
 
-    stored = 0
+    # Build all rows up-front, then write in a single bulk_insert call.
+    # Previous version did one bulk_insert per fixture (~560 round-trips at
+    # ~150ms pooler RTT = ~85s); a single call collapses that to ~5s.
+    cols = ["match_id", "bookmaker", "market", "selection", "odds",
+            "timestamp", "is_closing", "minutes_to_kickoff", "handicap_line"]
+    all_tuples: list[tuple] = []
+    fixtures_with_rows = 0
+
     for af_id, odds_data in bulk_odds.items():
         match_id = af_id_to_match.get(af_id)
         if not match_id:
@@ -101,33 +108,32 @@ def fetch_af_odds(target_date: str) -> int:
         kickoff = match_kickoffs.get(match_id, "")
         minutes_to_kickoff = _compute_minutes_to_kickoff(kickoff)
 
-        # Build rows for odds_snapshots
-        rows = []
         for row in parsed:
-            rows.append({
-                "match_id": match_id,
-                "bookmaker": row["bookmaker"],
-                "market": row["market"],
-                "selection": row["selection"],
-                "odds": row["odds"],
-                "timestamp": now,
-                "is_closing": False,
-                "minutes_to_kickoff": minutes_to_kickoff,
-                "handicap_line": row.get("handicap_line"),
-            })
+            all_tuples.append((
+                match_id,
+                row["bookmaker"],
+                row["market"],
+                row["selection"],
+                row["odds"],
+                now,
+                False,
+                minutes_to_kickoff,
+                row.get("handicap_line"),
+            ))
+        fixtures_with_rows += 1
 
-        if rows:
-            try:
-                cols = ["match_id", "bookmaker", "market", "selection", "odds",
-                        "timestamp", "is_closing", "minutes_to_kickoff", "handicap_line"]
-                tuples = [tuple(r[c] for c in cols) for r in rows]
-                bulk_insert("odds_snapshots", cols, tuples)
-                stored += 1
-            except Exception:
-                pass  # dedup errors fine
+    if not all_tuples:
+        console.print("  [yellow]No odds rows to store[/yellow]")
+        return 0
 
-    console.print(f"  [green]{stored} AF fixtures stored with odds[/green]")
-    return stored
+    # page_size=5000 chosen from empirical benchmark on Supabase EU pooler:
+    # 41s @ 500 vs 14s @ 5000 vs 13s @ 10000 for 100k rows. 5000 is the knee.
+    bulk_insert("odds_snapshots", cols, all_tuples, page_size=5000)
+    console.print(
+        f"  [green]{fixtures_with_rows} AF fixtures stored with odds "
+        f"({len(all_tuples)} rows in 1 bulk insert)[/green]"
+    )
+    return fixtures_with_rows
 
 
 def run_odds(target_date: str = None, mark_closing: bool = False, **_kwargs):

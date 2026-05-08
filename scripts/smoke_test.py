@@ -1637,6 +1637,30 @@ def _():
             )
 
 
+@test("BULK-STORE-ODDS — fetch_odds writes one bulk_insert, not one per fixture")
+def _():
+    """Source-inspection guard. The original loop did one bulk_insert call per
+    fixture (~560 round-trips on a typical day). The fix accumulates rows
+    across all fixtures and issues a single bulk_insert with a tuned page_size.
+
+    If anyone reverts to the per-fixture loop, this test fails and step 2 of
+    recover_today.py silently regresses from ~30s back to ~100s.
+    """
+    import pathlib
+    src = pathlib.Path(__file__).resolve().parent.parent / "workers/jobs/fetch_odds.py"
+    body = src.read_text()
+    # The bulk_insert call must appear OUTSIDE the for-loop and must use
+    # page_size kwarg (default 500 is too small for ~190k odds rows/run).
+    assert body.count("bulk_insert(\"odds_snapshots\"") == 1, (
+        "fetch_odds must call bulk_insert exactly once (single accumulated insert). "
+        "Multiple calls means we're back to the per-fixture loop."
+    )
+    assert "page_size=5000" in body, (
+        "fetch_odds bulk_insert must pass page_size=5000 — default 500 means "
+        "377 round-trips for ~190k rows = ~76s instead of ~14s."
+    )
+
+
 @test("INJURIES-BY-DATE — both call sites use the new function (no batched leftovers)")
 def _():
     """Source-inspection guard: if anyone reverts the call site to get_injuries_batched
