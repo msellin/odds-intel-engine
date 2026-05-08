@@ -262,19 +262,56 @@ def fetch_standings(fixture_meta: dict, coverage_map: dict) -> int:
 
 
 def fetch_h2h(fixture_meta: dict) -> int:
-    """T10: Fetch H2H history."""
-    console.print("\n[cyan]T10: Fetching H2H history...[/cyan]")
+    """T10: Fetch H2H history — Tier 1 only, with same-day cache.
+
+    Two optimisations over the naive approach:
+    - Tier 1 only: H2H matters most for top leagues where the model has enough
+      data to act on it. Cuts ~440 daily calls down to ~50-80.
+    - Same-day cache: h2h_raw IS NOT NULL on the match means we already fetched
+      it today. Intraday enrichment runs (10:30, 13:00, 16:00) make 0 H2H calls
+      once the morning run has populated them.
+    """
+    console.print("\n[cyan]T10: Fetching H2H history (Tier 1, same-day cache)...[/cyan]")
+
+    # Tier 1 only — H2H too expensive (1 call/fixture) to run for all tiers
+    tier1 = {
+        fid: meta for fid, meta in fixture_meta.items()
+        if meta.get("league_tier", 3) == 1
+        and meta.get("match_id")
+        and meta.get("home_team_api_id")
+        and meta.get("away_team_api_id")
+    }
+
+    if not tier1:
+        console.print("  No Tier 1 fixtures — skipping H2H")
+        return 0
+
+    # Same-day cache: skip matches that already have h2h_raw populated
+    match_ids = [meta["match_id"] for meta in tier1.values()]
+    try:
+        cached_rows = execute_query(
+            "SELECT id FROM matches WHERE id = ANY(%s::uuid[]) AND h2h_raw IS NOT NULL",
+            [match_ids]
+        )
+        cached_ids = {r["id"] for r in cached_rows}
+    except Exception:
+        cached_ids = set()
+
+    to_fetch = {fid: meta for fid, meta in tier1.items()
+                if meta["match_id"] not in cached_ids}
+
+    console.print(f"  {len(tier1)} Tier 1 fixtures, {len(cached_ids)} cached, {len(to_fetch)} to fetch")
+
+    if not to_fetch:
+        return 0
 
     stored = 0
-    for fid, meta in fixture_meta.items():
-        match_id = meta.get("match_id")
-        home_id = meta.get("home_team_api_id")
-        away_id = meta.get("away_team_api_id")
-        if not match_id or not home_id or not away_id:
-            continue
-
+    for fid, meta in to_fetch.items():
+        match_id = meta["match_id"]
+        home_id = meta["home_team_api_id"]
+        away_id = meta["away_team_api_id"]
         try:
-            raw = get_h2h(home_id, away_id, last=10)
+            raw = get_h2h(home_id, away_id, last=5)
             if not raw:
                 continue
             parsed = parse_h2h(raw, home_team_api_id=home_id)

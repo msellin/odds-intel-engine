@@ -1,7 +1,7 @@
 # OddsIntel — Workflows & Pipeline Architecture
 
 > Single source of truth for all scheduled jobs, their order, and manual run instructions.
-> Last updated: 2026-05-08 — Settlement reconciliation added (MONEY-SETTLE-RECON): `scripts/settle_reconcile.py` runs at 21:30 UTC, alerts if >2 finished matches have stuck pending bets. Rate limits added to API routes: `bet-explain` 10/hr, `live-odds` 120/hr, `stripe-upgrade` 5/hr. Rollback runbook at `docs/ROLLBACK_RUNBOOK.md`.
+> Last updated: 2026-05-08 — Enrichment optimised: H2H now **Tier 1 only + same-day cache** (442 → ~50-80 calls on morning run, 0 on intraday). Transfers **capped at 100/run + 30-day cache** (was 831 calls/week). Coaches **capped at 50/run**. Periodic orphan cleanup job added to scheduler (every 30 min). Full morning enrichment target: <10 min.
 
 ### ✅ Railway Migration Complete (2026-04-30)
 
@@ -122,9 +122,11 @@
 - **04:15 (full):** standings (T9), H2H (T10), team stats (T2), injuries (T3), coaches (MGR-CHANGE), venues (AF-VENUES), sidelined (AF-SIDELINED), transfers (AF-TRANSFERS)
 - **10:30/16:00 (refresh):** injuries + standings only (10:30 moved from 12:00 to feed 11:00 betting)
 - **13:00 (full, N7):** all components — ensures H2H + team_stats are fresh for afternoon/evening betting refreshes
+- **H2H (T10):** Tier 1 leagues only + same-day cache (`h2h_raw IS NOT NULL` on the match row). Morning run: ~50-80 calls. Intraday runs: 0 calls (all cached after morning). No API batching available for H2H, so scope + cache is the only optimisation.
 - Venues: one call per unique venue, cached in `venues` table; skips already-cached venues (near-zero ongoing cost)
 - Sidelined: 7-day cache per player; only fetches players currently listed as injured in today's matches (~5-20 calls/day)
-- Transfers: 7-day cache per team; only fetches today's fixture teams (~5-40 calls/day)
+- Transfers: 30-day cache per team (transfers only change in windows); capped at 100 teams/run; today's fixture teams are prioritised
+- Coaches: 48-hour cache per team; capped at 50 teams/run
 - Coverage-aware: skips leagues AF doesn't support
 - Readiness gate: won't run unless ① Fixtures completed
 
