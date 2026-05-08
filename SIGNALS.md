@@ -47,6 +47,7 @@ Data tier system:
 | Opening implied prob (home) | `market_implied_home` | Morning pipeline | ✅ Running |
 | Opening implied prob (draw) | `market_implied_draw` | Morning pipeline | ✅ Running |
 | Opening implied prob (away) | `market_implied_away` | Morning pipeline | ✅ Running |
+| Bookmaker count active | `bookmaker_count_active` | Morning pipeline (batch_write block 3) | ✅ Running (2026-05-08) |
 | Bookmaker disagreement (max−min implied) | `bookmaker_disagreement` | Morning pipeline | ✅ Running |
 | Overnight line move (yesterday close → today open) | `overnight_line_move` | Morning pipeline | ✅ Running |
 | Odds drift (open → now, implied prob delta) | `odds_drift` | On bets (simulated_bets) | ✅ Running |
@@ -159,6 +160,8 @@ Data tier system:
 | League avg goals | `league_avg_goals` | Morning pipeline | ✅ Running |
 | League over 2.5 pct (last 200 finished) | `league_over25_pct` | Morning pipeline | ✅ Running (LEAGUE-GOALS-DIST 2026-05-07) |
 | League BTTS pct (last 200 finished) | `league_btts_pct` | Morning pipeline | ✅ Running (LEAGUE-GOALS-DIST 2026-05-07) |
+| League ELO variance (stdev across today's teams) | `league_elo_variance` | Morning pipeline (batch_write block 6b) | ✅ Running (2026-05-08) |
+| League ELO range (max−min across today's teams) | `league_elo_range` | Morning pipeline (batch_write block 6b) | ✅ Running (2026-05-08) |
 | Manager change days — home | `manager_change_home_days` | Morning pipeline (batch_write block 3c) | ✅ Running |
 | Manager change days — away | `manager_change_away_days` | Morning pipeline (batch_write block 3c) | ✅ Running |
 | Venue artificial turf | `venue_surface_artificial` | Morning pipeline (batch_write block 11b) | ✅ Running |
@@ -196,17 +199,17 @@ Data tier system:
 
 ---
 
-## Signal Count Per Match (as of 2026-04-29)
+## Signal Count Per Match (as of 2026-05-08)
 
 | Group | Signals | Notes |
 |-------|---------|-------|
 | Group 1 (model) | 4 | poisson, xgboost, af, ensemble |
-| Group 2 (market) | 8 | implied probs ×3, bdm, olm, volatility, drift, clv |
+| Group 2 (market) | 9 | implied probs ×3, bdm, olm, volatility, drift, clv, bookmaker_count_active |
 | Group 3 (quality) | 22 | ELO ×3, form ×4, goals ×8, standings ×6, H2H ×2, rest ×2 (some Tier A only) |
 | Group 4 (information) | 6 | news, injuries ×4, lineup ×2 |
-| Group 5 (context) | 10 | referee ×3, importance ×3, league meta ×3, importance_diff |
+| Group 5 (context) | 12 | referee ×3, importance ×3, league meta ×5, importance_diff, league_elo_variance, league_elo_range |
 | Group 6 (live) | 8 | score, minute, shots, xg, possession, live_odds, cards, goals |
-| **Total** | **~58** | |
+| **Total** | **~61** | |
 
 ---
 
