@@ -1,7 +1,7 @@
 # OddsIntel — Workflows & Pipeline Architecture
 
 > Single source of truth for all scheduled jobs, their order, and manual run instructions.
-> Last updated: 2026-05-08 — LivePoller tuned to 45s fast / 135s stats (was 30s/60s). Pipeline health alerts added (PIPE-ALERT): 09:35 morning, hourly snapshot 10-22, 21:30 settlement check. healthchecks.io heartbeat ping every 5min.
+> Last updated: 2026-05-08 — Settlement reconciliation added (MONEY-SETTLE-RECON): `scripts/settle_reconcile.py` runs at 21:30 UTC, alerts if >2 finished matches have stuck pending bets. Rate limits added to API routes: `bet-explain` 10/hr, `live-odds` 120/hr, `stripe-upgrade` 5/hr. Rollback runbook at `docs/ROLLBACK_RUNBOOK.md`.
 
 ### ✅ Railway Migration Complete (2026-04-30)
 
@@ -55,6 +55,7 @@
                                                     + Platt recalibration + blend refit (Wed + Sun)
                                                     + DC rho per tier (Sun only)
 21:30  ⑬ Health Alert    run_settlement_check()    Alerts if >5 pending bets on finished matches after settlement
+       ⑮ Settle Recon  settle_reconcile.run()    MONEY-SETTLE-RECON: alerts if >2 finished matches have stuck pending bets
 23:30  ⑧c Settlement      settlement_pipeline()     Late catch-up: European evening matches finishing after 21:00
 01:00  ⑧d Settlement      settlement_pipeline()     Overnight catch-up: 21:30+ KOs finishing after extra time
 24/7   ⑥ LivePoller      live_poller.py            45s when live (scores+odds+stats), 120s idle — no time gate

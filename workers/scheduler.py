@@ -334,6 +334,12 @@ def job_stripe_reconcile():
     _run_job("stripe_reconcile", lambda: stripe_reconcile_run(date.today() - timedelta(days=1)))
 
 
+def job_settle_reconcile():
+    """MONEY-SETTLE-RECON: check finished matches have no stuck pending bets after settlement."""
+    from scripts.settle_reconcile import run as settle_reconcile_run
+    _run_job("settle_reconcile", settle_reconcile_run)
+
+
 def job_health_alerts_morning():
     from workers.jobs.health_alerts import run_morning_checks
     _run_job("health_alerts_morning", run_morning_checks)
@@ -614,6 +620,10 @@ def main():
     # Settlement check at 21:30 (after 21:00 settlement job has had 30 min to run)
     scheduler.add_job(job_health_alerts_settlement, CronTrigger(hour=21, minute=30),
                       id="health_alerts_settlement", name="Health Alerts Settlement 21:30")
+
+    # MONEY-SETTLE-RECON: verify no stuck pending bets after settlement (21:30 UTC)
+    scheduler.add_job(job_settle_reconcile, CronTrigger(hour=21, minute=30),
+                      id="settle_reconcile", name="Settlement Reconcile 21:30")
 
     # ── Start scheduler ────────────────────────────────────────────────
     scheduler.start()
