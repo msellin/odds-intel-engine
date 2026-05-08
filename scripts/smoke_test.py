@@ -1033,6 +1033,17 @@ def _():
     assert rows[0]["ok"] == 1
 
 
+@test("OBS-POOL-METRIC — get_pool_status returns valid structure")
+def _():
+    from workers.api_clients.db import get_pool_status, get_pool
+    get_pool()  # ensure pool is initialised
+    status = get_pool_status()
+    assert "used" in status and "idle" in status and "max" in status and "pct" in status
+    assert status["max"] == 10
+    assert 0 <= status["pct"] <= 100
+    assert status["used"] + status["idle"] <= status["max"]
+
+
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 def _run_one(name: str, fn) -> tuple[str, bool, str, float]:

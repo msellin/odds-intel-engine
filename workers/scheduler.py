@@ -424,15 +424,19 @@ class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health":
             from workers.api_clients.api_football import budget
+            from workers.api_clients.db import get_pool_status
 
             with _last_job_lock:
                 last = dict(_last_job)
 
+            pool = get_pool_status()
             body = json.dumps({
                 "status": "ok",
                 "uptime_seconds": int(time.time() - _start_time),
                 "shadow_mode": SHADOW_MODE,
                 "api_budget": budget.status(),
+                "pool": pool,
+                "pool_alert": pool["pct"] >= 80,
                 "last_job": last,
                 "recent_errors": list(_recent_errors),
             })

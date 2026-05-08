@@ -61,6 +61,23 @@ def get_pool() -> pool.ThreadedConnectionPool:
     return _pool
 
 
+def get_pool_status() -> dict:
+    """Return pool utilization snapshot — used by /health and InplayBot heartbeat.
+
+    psycopg2 ThreadedConnectionPool internals:
+      _used  — dict of checked-out connections (in use right now)
+      _pool  — list of idle connections waiting
+    Returns zeroes if pool not yet initialised.
+    """
+    with _pool_lock:
+        p = _pool
+    if p is None:
+        return {"used": 0, "idle": 0, "max": 10, "pct": 0}
+    used = len(p._used)
+    idle = len(p._pool)
+    return {"used": used, "idle": idle, "max": p.maxconn, "pct": round(used / p.maxconn * 100)}
+
+
 def _reset_pool():
     """Discard the current pool so the next call recreates it.
     Called when a connection is found to be dead (SSL drop / idle timeout).

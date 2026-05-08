@@ -116,8 +116,12 @@ def run_inplay_strategies():
         console.print("[yellow]InplayBot skipped: pool saturated, retry next cycle[/yellow]")
         return
 
-    # Heartbeat every 10 cycles — show real/proxy split
+    # Heartbeat every 10 cycles — show real/proxy split + pool utilization
     if _cycle_count % 10 == 0:
+        from workers.api_clients.db import get_pool_status
+        pool = get_pool_status()
+        pool_str = f"pool {pool['used']}/{pool['max']} ({pool['pct']}%)"
+        pool_warn = " ⚠️ POOL HIGH" if pool["pct"] >= 80 else ""
         if candidates:
             real_xg = sum(1 for c in candidates if c.get("has_live_xg"))
             proxy = len(candidates) - real_xg
@@ -134,7 +138,8 @@ def run_inplay_strategies():
             console.print(
                 f"[dim]InplayBot heartbeat: {len(candidates)} candidates "
                 f"({real_xg} real xG, {proxy} proxy) [{', '.join(summaries)}{extra}] | "
-                f"session: {_total_bets_session} bets / {_total_candidates_session} evaluated[/dim]"
+                f"session: {_total_bets_session} bets / {_total_candidates_session} evaluated | "
+                f"{pool_str}{pool_warn}[/dim]"
             )
         else:
             try:
@@ -152,10 +157,13 @@ def run_inplay_strategies():
                 console.print(
                     f"[dim]InplayBot heartbeat: 0 candidates | "
                     f"{live_count} live snapshots (90s), {xg_count} with real xG | "
-                    f"session: {_total_bets_session} bets[/dim]"
+                    f"session: {_total_bets_session} bets | {pool_str}{pool_warn}[/dim]"
                 )
             except Exception:
-                console.print(f"[dim]InplayBot heartbeat: 0 candidates | session: {_total_bets_session} bets[/dim]")
+                console.print(
+                    f"[dim]InplayBot heartbeat: 0 candidates | "
+                    f"session: {_total_bets_session} bets | {pool_str}{pool_warn}[/dim]"
+                )
 
     if not candidates:
         return
