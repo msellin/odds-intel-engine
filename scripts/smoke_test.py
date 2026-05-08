@@ -340,38 +340,29 @@ def _():
         raise AssertionError(f"Missing ops_snapshots columns (run migration 063): {missing}")
 
 
-@test("write_ops_snapshot — writes row + logs to pipeline_runs (admin dashboard guard)")
+@test("write_ops_snapshot — wired to ops_snapshots + pipeline_runs (source inspect)")
 def _():
     """The Ops Dashboard shows '—' on every metric if no ops_snapshot row for today.
-    This test guards against the silent-failure mode that took the dashboard down."""
-    from workers.api_clients.supabase_client import write_ops_snapshot
-    from workers.api_clients.db import execute_query
-    from datetime import date
+    Original test invoked write_ops_snapshot() directly: 146s and writing duplicate
+    rows on every CI push (~95% of suite runtime). The real silent-failure guard
+    is the daily Railway run logging to pipeline_runs — if that stops, the
+    dashboard goes stale visibly. Schema is covered by the migration 063 test
+    above. Here we just verify the function is correctly wired."""
+    import pathlib
+    src = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
+    fn_start = src.index("def write_ops_snapshot(")
+    next_def = src.find("\ndef ", fn_start + 1)
+    fn_body = src[fn_start:next_def] if next_def != -1 else src[fn_start:]
 
-    today = date.today().isoformat()
-
-    before = execute_query(
-        "SELECT COUNT(*) AS n FROM ops_snapshots WHERE snapshot_date = %s", [today]
-    )[0]["n"]
-
-    write_ops_snapshot()
-
-    after = execute_query(
-        "SELECT COUNT(*) AS n FROM ops_snapshots WHERE snapshot_date = %s", [today]
-    )[0]["n"]
-    assert after > before, (
-        f"write_ops_snapshot did not insert a row for {today}. "
-        f"Before: {before}, after: {after}. The dashboard will show 'no snapshot today'."
+    assert "INSERT INTO ops_snapshots" in fn_body, (
+        "write_ops_snapshot must INSERT into ops_snapshots — that's what the dashboard reads"
     )
-
-    pr = execute_query(
-        """SELECT status FROM pipeline_runs
-           WHERE job_name = 'write_ops_snapshot' AND run_date = %s
-             AND status = 'completed'
-           ORDER BY started_at DESC LIMIT 1""",
-        [today]
+    assert "log_pipeline_start" in fn_body and "log_pipeline_complete" in fn_body, (
+        "write_ops_snapshot must log to pipeline_runs (start + complete) so failures are visible"
     )
-    assert pr, "write_ops_snapshot did not log a completed pipeline_runs entry — failures will be invisible on the dashboard"
+    assert "log_pipeline_failed" in fn_body, (
+        "write_ops_snapshot must log_pipeline_failed on errors — silent failures break the dashboard"
+    )
 
 
 
@@ -1363,6 +1354,34 @@ def _():
     assert "min_poss = 52.0 if home_is_fav else 55.0" in c_body, (
         "C real-xG possession thresholds must drop to 52% home / 55% away"
     )
+
+
+@test("INPLAY-NEW-CORNER — Strategy G (Corner Cluster Over) registered + dispatched")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+
+    dict_start = src.index("INPLAY_BOTS = {")
+    dict_end = src.index("\n}\n", dict_start) + 2
+    bots_block = src[dict_start:dict_end]
+    assert '"inplay_g"' in bots_block, (
+        "inplay_g must be registered in INPLAY_BOTS — Strategy G (corner cluster, 4/5 AI consensus)"
+    )
+
+    disp_start = src.index("def _check_strategy(")
+    disp_end = src.index("\ndef ", disp_start + 1)
+    disp_body = src[disp_start:disp_end]
+    assert 'bot_name == "inplay_g"' in disp_body, "Dispatcher must route inplay_g"
+
+    # Function must exist and accept execute_query for the corner-history lookup
+    assert "def _check_strategy_g(cand: dict, pm: dict, has_red_card: bool,\n                      execute_query)" in src, (
+        "_check_strategy_g must accept execute_query for the 9-11 min corner-history lookup"
+    )
+    # Verify the strategy actually checks corner delta — no point if it doesn't
+    g_start = src.index("def _check_strategy_g(")
+    g_end = src.index("\ndef ", g_start + 1)
+    g_body = src[g_start:g_end]
+    assert "corners_delta < 3" in g_body, "G must require ≥ 3-corner delta in 10-min window"
 
 
 @test("REPLAY-INPLAY — scripts/replay_inplay.py imports without DB writes")
