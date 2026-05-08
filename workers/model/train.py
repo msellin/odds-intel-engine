@@ -14,7 +14,6 @@ import joblib
 from pathlib import Path
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import accuracy_score, log_loss, brier_score_loss
-from sklearn.calibration import CalibratedClassifierCV
 from xgboost import XGBClassifier
 from rich.console import Console
 from rich.table import Table
@@ -47,6 +46,8 @@ FEATURE_COLS = [
     "home_position_norm", "away_position_norm", "position_diff",
     "home_pts_to_relegation", "away_pts_to_relegation",
     "home_in_relegation", "away_in_relegation",
+    # ELO
+    "elo_home", "elo_away", "elo_diff",
     # Rest
     "home_rest_days", "away_rest_days", "rest_advantage",
     # League
@@ -122,17 +123,15 @@ def train_result_model(features_df: pd.DataFrame, targets_df: pd.DataFrame):
         verbosity=0,
     )
 
-    # Use calibration for better probability estimates
-    calibrated = CalibratedClassifierCV(final_model, cv=5, method="isotonic")
-    calibrated.fit(X, y)
+    # XGBoost multi:softprob already outputs calibrated probabilities.
+    # Platt scaling is applied at inference — no double-calibration here.
+    final_model.fit(X, y, verbose=False)
 
-    # Save model
     model_path = MODELS_DIR / "result_model.pkl"
-    joblib.dump(calibrated, model_path)
+    joblib.dump(final_model, model_path)
     console.print(f"  Saved to: {model_path}")
 
     # Feature importance
-    final_model.fit(X, y, verbose=False)
     importance = pd.Series(
         final_model.feature_importances_,
         index=FEATURE_COLS
@@ -147,7 +146,7 @@ def train_result_model(features_df: pd.DataFrame, targets_df: pd.DataFrame):
 
     console.print(imp_table)
 
-    return calibrated
+    return final_model
 
 
 def train_over25_model(features_df: pd.DataFrame, targets_df: pd.DataFrame):
@@ -214,14 +213,13 @@ def train_over25_model(features_df: pd.DataFrame, targets_df: pd.DataFrame):
         verbosity=0,
     )
 
-    calibrated = CalibratedClassifierCV(final_model, cv=5, method="isotonic")
-    calibrated.fit(X, y)
+    final_model.fit(X, y, verbose=False)
 
     model_path = MODELS_DIR / "over25_model.pkl"
-    joblib.dump(calibrated, model_path)
+    joblib.dump(final_model, model_path)
     console.print(f"  Saved to: {model_path}")
 
-    return calibrated
+    return final_model
 
 
 def train_btts_model(features_df: pd.DataFrame, targets_df: pd.DataFrame):
@@ -275,14 +273,13 @@ def train_btts_model(features_df: pd.DataFrame, targets_df: pd.DataFrame):
         random_state=42, verbosity=0,
     )
 
-    calibrated = CalibratedClassifierCV(final_model, cv=5, method="isotonic")
-    calibrated.fit(X, y)
+    final_model.fit(X, y, verbose=False)
 
     model_path = MODELS_DIR / "btts_model.pkl"
-    joblib.dump(calibrated, model_path)
+    joblib.dump(final_model, model_path)
     console.print(f"  Saved to: {model_path}")
 
-    return calibrated
+    return final_model
 
 
 def train_all(features_df: pd.DataFrame, targets_df: pd.DataFrame):
