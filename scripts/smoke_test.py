@@ -996,16 +996,16 @@ def _():
     assert "p_win" in src, "p_win ELO probability variable must be present"
 
 
-@test("POOL-LEAK-FIX — SQL exceptions don't leak conns (15 errors > maxconn=10)")
+@test("POOL-LEAK-FIX — SQL exceptions don't leak conns (25 errors > maxconn=20)")
 def _():
     """The 2026-05-08 outage: get_conn() leaked conns on any exception other
     than OperationalError/InterfaceError, so a single SQL syntax error per
-    polling cycle drained the pool within 5 minutes. Verify 15 SQL errors
-    (more than maxconn=10) leave the pool usable."""
+    polling cycle drained the pool within 5 minutes. Verify 25 SQL errors
+    (more than maxconn=20) leave the pool usable."""
     from workers.api_clients.db import get_conn
     import psycopg2
 
-    for _ in range(15):  # > maxconn=10, so leaks would have exhausted
+    for _ in range(25):  # > maxconn=20, so leaks would have exhausted
         try:
             with get_conn() as conn:
                 with conn.cursor() as cur:
@@ -1029,7 +1029,7 @@ def _():
     Use execute_query to absorb any flakey SSL-drop on idle pooled conns."""
     from workers.api_clients.db import get_conn, execute_query
 
-    for _ in range(15):
+    for _ in range(25):
         try:
             with get_conn() as conn:
                 with conn.cursor() as cur:
@@ -1055,9 +1055,53 @@ def _():
     get_pool()  # ensure pool is initialised
     status = get_pool_status()
     assert "used" in status and "idle" in status and "max" in status and "pct" in status
-    assert status["max"] == 10
+    assert status["max"] == 20
     assert 0 <= status["pct"] <= 100
     assert status["used"] + status["idle"] <= status["max"]
+
+
+@test("POOL-WAIT — _acquire_conn waits on saturation instead of immediate PoolError")
+def _():
+    """The 2026-05-09 fix: pool exhaustion previously crashed inplay_bot mid-cycle
+    (`psycopg2.pool.PoolError: connection pool exhausted`). Now `_acquire_conn`
+    polls with backoff until a slot frees up, only raising after wait_timeout.
+    Use an isolated pool so we don't starve other parallel smoke tests."""
+    import os
+    import time as _time
+    from psycopg2 import pool as _pool_mod
+    from workers.api_clients.db import _acquire_conn
+
+    p = _pool_mod.ThreadedConnectionPool(
+        minconn=1, maxconn=2, dsn=os.getenv("DATABASE_URL"), connect_timeout=10
+    )
+    try:
+        held = [p.getconn() for _ in range(2)]  # saturate the isolated pool
+
+        t0 = _time.monotonic()
+        try:
+            _acquire_conn(p, timeout=1.0)
+            assert False, "expected PoolError after timeout"
+        except _pool_mod.PoolError:
+            pass
+        elapsed = _time.monotonic() - t0
+        assert 0.9 <= elapsed <= 3.0, (
+            f"_acquire_conn did not wait the configured timeout: {elapsed:.2f}s "
+            f"(expected ~1.0s — unpatched psycopg2 raises immediately)"
+        )
+
+        # Release one slot — _acquire_conn should now succeed quickly.
+        p.putconn(held.pop())
+        t0 = _time.monotonic()
+        conn = _acquire_conn(p, timeout=2.0)
+        assert conn is not None and (_time.monotonic() - t0) < 1.5
+        p.putconn(conn)
+        for c in held:
+            p.putconn(c)
+    finally:
+        try:
+            p.closeall()
+        except Exception:
+            pass
 
 
 @test("BOOKMAKER-COUNT — bookmaker_count_active signal name in source")

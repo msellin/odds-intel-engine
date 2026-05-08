@@ -15,6 +15,7 @@ Benefits over PostgREST:
 
 import os
 import threading
+import time
 from contextlib import contextmanager
 
 import psycopg2
@@ -46,7 +47,7 @@ def get_pool() -> pool.ThreadedConnectionPool:
                     )
                 _pool = pool.ThreadedConnectionPool(
                     minconn=2,
-                    maxconn=10,
+                    maxconn=20,
                     dsn=DATABASE_URL,
                     connect_timeout=10,
                 )
@@ -57,7 +58,9 @@ def get_pool() -> pool.ThreadedConnectionPool:
                 # which acts as a runaway-query backstop. If we want a tighter
                 # bound, do it via SQL migration: ALTER ROLE app SET
                 # statement_timeout='60s'. Tracked under DB-STMT-TIMEOUT.
-                console.print("[dim]DB pool created (2-10 connections)[/dim]")
+                console.print(
+                    f"[dim]DB pool created ({_pool.minconn}-{_pool.maxconn} connections)[/dim]"
+                )
     return _pool
 
 
@@ -72,7 +75,7 @@ def get_pool_status() -> dict:
     with _pool_lock:
         p = _pool
     if p is None:
-        return {"used": 0, "idle": 0, "max": 10, "pct": 0}
+        return {"used": 0, "idle": 0, "max": 20, "pct": 0}
     used = len(p._used)
     idle = len(p._pool)
     return {"used": used, "idle": idle, "max": p.maxconn, "pct": round(used / p.maxconn * 100)}
@@ -94,18 +97,58 @@ def _reset_pool():
     console.print("[yellow]DB pool reset — will reconnect on next query[/yellow]")
 
 
+_POOL_WAIT_TIMEOUT = float(os.getenv("DB_POOL_WAIT_TIMEOUT", "60"))
+
+
+def _acquire_conn(p: pool.ThreadedConnectionPool, timeout: float):
+    """Get a connection from the pool, waiting up to `timeout` seconds when full.
+
+    psycopg2's ThreadedConnectionPool.getconn() raises PoolError immediately when
+    saturated — no built-in blocking. This wrapper polls with backoff so transient
+    saturation (multiple APScheduler jobs hitting the DB at once) waits instead of
+    crashing the caller. After `timeout` seconds with no slot, we re-raise so a
+    genuinely deadlocked pool still surfaces loudly rather than hanging forever.
+    """
+    deadline = time.monotonic() + timeout
+    backoff = 0.05
+    warned = False
+    while True:
+        try:
+            return p.getconn()
+        except pool.PoolError:
+            now = time.monotonic()
+            if now >= deadline:
+                console.print(
+                    f"[red]DB pool exhausted for {timeout}s — giving up "
+                    f"(used={len(p._used)}/{p.maxconn})[/red]"
+                )
+                raise
+            if not warned and now - (deadline - timeout) > 1.0:
+                console.print(
+                    f"[yellow]DB pool saturated ({len(p._used)}/{p.maxconn}) — "
+                    f"waiting up to {timeout:.0f}s[/yellow]"
+                )
+                warned = True
+            time.sleep(backoff)
+            backoff = min(backoff * 1.5, 1.0)
+
+
 @contextmanager
-def get_conn():
+def get_conn(wait_timeout: float | None = None):
     """Context manager that gets a connection from the pool and returns it after use.
 
     Always returns the connection to the pool, even on exception — without this
     `finally`, any non-connection error (SQL syntax, integrity violation, KeyError
-    on a malformed row, TypeError, etc.) leaks the conn permanently. With
-    maxconn=10 and InplayBot polling every 30s, ~10 such errors and the pool
-    is dead — which took the entire pipeline down for 11h on 2026-05-08.
+    on a malformed row, TypeError, etc.) leaks the conn permanently. With a small
+    pool and InplayBot polling every 30s, ~maxconn such errors and the pool is
+    dead — which took the entire pipeline down for 11h on 2026-05-08.
+
+    When the pool is saturated, waits up to `wait_timeout` seconds (default 60s,
+    overridable via DB_POOL_WAIT_TIMEOUT env) for a slot before raising. Prefer
+    being slow over crashing the live poller mid-cycle.
     """
     p = get_pool()
-    conn = p.getconn()
+    conn = _acquire_conn(p, wait_timeout if wait_timeout is not None else _POOL_WAIT_TIMEOUT)
     conn_dead = False
     try:
         yield conn
