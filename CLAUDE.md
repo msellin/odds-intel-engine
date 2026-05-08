@@ -51,6 +51,8 @@ This protocol exists because parallel agents caused real production bugs when do
 
 ### When done — before committing
 
+**Always add a smoke test.** Every task must have at least one test in `scripts/smoke_test.py` before the commit. No exceptions — even code-only changes get a source-inspection test. Run `python3 scripts/smoke_test.py` and confirm all pass before pushing.
+
 Update **all** of the following that apply. "Not relevant" is almost never true for more than 2 of these:
 
 | Doc | Update when |
