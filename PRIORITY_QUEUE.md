@@ -683,7 +683,7 @@ Yellow warning if today's value < 7-day average × 0.60.
 | INFRA-8 | Resend webhook → email open/click tracking | 2h | ✅ Done 2026-05-05 | ✅ Done | Migration 041 adds `last_email_opened_at` + `last_email_clicked_at` to profiles. `/api/resend-webhook` route handles `email.opened` + `email.clicked`. Svix signature verification. Webhook created in Resend dashboard. `RESEND_WEBHOOK_SECRET` set in Vercel + local .env.local. |
 | INFRA-9 | Vercel Edge Config for feature flags | 2h | ⬜ | 🟢 Week of May 12 | Replace any DB queries used for global on/off flags with Vercel Edge Config (~1ms reads vs ~20ms DB). Good for: tips_enabled, maintenance_mode, featured_match_id. |
 | INFRA-10 | Supabase DB Webhooks → watchlist alerts backend | 1 day | ⬜ | 🟢 When building ENG-8 | Instead of building a polling job for ENG-8 (watchlist alerts), use Supabase DB Webhooks: INSERT on match_signals with high injury_impact → fire Next.js API route → send Resend email. Eliminates most of ENG-8 backend complexity. |
-| INFRA-11 | Supabase Realtime → replace live polling | 2 days | ⬜ | 🟢 Week of May 19 | Live score auto-refresh + ENG-1 viewing counter currently use HTTP polling. Replace with Supabase Realtime WebSocket subscriptions (included in Pro). Lower DB load, truly real-time UX. |
+| INFRA-11 | Supabase Realtime → replace live polling | 2 days | ✅ Done 2026-05-08 | Migration 076: `live_match_snapshots` + `matches` added to supabase_realtime publication. `match-score-display.tsx` 60s poll → Realtime INSERT. `matches-client.tsx` 60s snapshot poll + 90s router.refresh() → Realtime INSERT/UPDATE. `live-odds-chart.tsx` 5min poll → Realtime-triggered fetch. ENG-1 viewing counter (presence) deferred. |
 
 ---
 
