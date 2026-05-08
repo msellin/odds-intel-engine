@@ -35,8 +35,9 @@ Note: Kambi API was removed 2026-05-06 after analysis showed Unibet odds (the ma
 
 ## 3. Feature Engineering
 
-### 3.1 Feature Set (36+ features)
+### 3.1 Feature Set — Production Model (Kaggle v9a, 36+ features)
 
+The currently deployed XGBoost model (`xgboost_ensemble.py`) was trained on the Kaggle v9a dataset.
 All rolling statistics computed from the **10 most recent matches** per team, split by home/away venue.
 
 | Group | Features | Count |
@@ -52,6 +53,33 @@ All rolling statistics computed from the **10 most recent matches** per team, sp
 | **Form vs ELO Residual** | `form_vs_elo_expectation_home/away` = actual recent PPG minus ELO-predicted PPG (`3 × p_win + 0.27`) — isolates hot/cold streaks from baseline quality (FORM-ELO-RESIDUAL) | 2 |
 
 **Defaults:** When insufficient history exists (new teams, new season), features default to league averages or neutral values (e.g. H2H defaults to 0.33 for 3-way split).
+
+### 3.1b Feature Set — AF Retrain Model (`workers/model/train.py`, 28 features)
+
+The new AF model trains on `match_feature_vectors` — live pipeline data accumulated since 2026-04-27.
+Column names match the table exactly. All features allow NaN — rows with any missing feature are dropped per model during training.
+
+| Group | Column name(s) | Count |
+|-------|---------------|-------|
+| **ELO** | `elo_home`, `elo_away`, `elo_diff` | 3 |
+| **Form** | `form_ppg_home`, `form_ppg_away` | 2 |
+| **Goals** | `goals_for_avg_home`, `goals_for_avg_away`, `goals_against_avg_home`, `goals_against_avg_away` | 4 |
+| **Standings** | `league_position_home`, `league_position_away`, `points_to_relegation_home`, `points_to_relegation_away`, `points_to_title_home`, `points_to_title_away` | 6 |
+| **H2H** | `h2h_win_pct` | 1 |
+| **Rest** | `rest_days_home`, `rest_days_away` | 2 |
+| **Injury / News** | `injury_count_home`, `injury_count_away` | 2 |
+| **Match context** | `fixture_importance` | 1 |
+| **Referee** | `referee_cards_avg`, `referee_home_win_pct`, `referee_over25_pct` | 3 |
+| **Market** | `opening_implied_home`, `opening_implied_draw`, `opening_implied_away`, `bookmaker_disagreement` | 4 |
+| **League** | `league_tier` | 1 |
+
+**Target columns** (from `match_feature_vectors` + matches JOIN):
+- `match_outcome` (H/D/A) → 1X2 result model
+- `over_25` (bool) → Over/Under 2.5 model
+- `btts` (bool, derived at load time: `score_home > 0 AND score_away > 0`) → BTTS model
+
+**Training:** Run `python3 workers/model/train.py` — `load_training_data()` queries the DB automatically.
+Ready when `match_feature_vectors` has ~3,000+ completed matches (estimated ~June 2026 at 280/day).
 
 ### 3.2 ELO Rating System
 
@@ -295,7 +323,7 @@ This prevents betting against strong market signals (e.g. late injury news that 
 
 ## 7. Signal System
 
-58 signals collected per match across 6 groups, stored in an append-only EAV table (`match_signals`).
+61 signals collected per match across 6 groups, stored in an append-only EAV table (`match_signals`).
 
 ### 7.1 Signal Groups
 
@@ -464,14 +492,14 @@ Alignment will be activated (move from log-only to staking modifier) after:
 | **Foundation** | ELO, form, Poisson, XGBoost ensemble, Kelly sizing, calibration | Done |
 | **Calibration** | Tier-specific shrinkage, Platt scaling, weekly recalibration | Done |
 | **Risk controls** | Odds movement penalty/veto, data tier multipliers, max stake cap | Done |
-| **Signal infrastructure** | 58 signals, append-only store, wide ML training table, pseudo-CLV | Done |
+| **Signal infrastructure** | 61 signals, append-only store, wide ML training table, pseudo-CLV | Done |
 | **Next: Meta-model** | Second-stage model predicting bet profitability (target = CLV) | Needs 3,000+ matches |
 | **Next: Alignment activation** | Use external signal filter to modify stakes | Needs 300+ settled bets |
 | **Sharp bookmaker features** | Pinnacle disagreement veto (all markets), Pinnacle implied signals (all markets), Pinnacle line movement, Pinnacle-anchored CLV, sharp/soft consensus | PIN-VETO + PIN-1..5 + P5.1 done |
 | **Calibration improvements (live data)** | Odds-conditional alpha, sharp consensus gate, Pinnacle anchor, Pinnacle-anchored CLV | CAL-ALPHA-ODDS / CAL-SHARP-GATE / CAL-PIN-SHRINK done; CAL-DRAW-INFLATE / CAL-PLATT-UPGRADE pending |
 | **Dynamic blend weights** | Weekly recalculation of Poisson/XGBoost blend per tier | Done — `scripts/fit_blend_weights.py`, Sunday refit |
 | **Next: Historical backfill** | 43K+ matches with stats + events from API-Football (no historical odds available) | In progress — automated cron |
-| **Next: XGBoost retrain on backfill** | Retrain on 43K matches with richer AF features (xG, shots, possession) | After backfill Phase 1 |
+| **Next: XGBoost retrain on backfill** | Retrain on live AF data — `workers/model/train.py` is ready (28 features, `load_training_data()` loads from DB). Run: `python3 workers/model/train.py` | After ~3,000 completed rows in `match_feature_vectors` (~June 2026) |
 | **In-play Phase 1: Rule-based paper trading (P3.4)** | 8 strategies (A, A2, B, C, C_home, D, E, F). xG source: real AF stats for top leagues (~UCL/Libertadores/Sudamericana); shot proxy `sot*0.10 + off_target*0.03` for all others. Proxy bets use higher edge floors (+1.5–2pp). League gate (MIN=3 xG matches) only enforced for real-xG mode. All bets log `xg_source: live\|shot_proxy` for backtest segmentation. Safety: staleness <60s, score re-check, red card skip. Fixed 1-unit stake. Runs inside LivePoller every 30s. | **Live since 2026-05-06** — proxy fallback added 2026-05-07 |
 | **Next: In-play Phase 2 ML** | LightGBM Poisson regression predicting `lambda_home/away_remaining` from live match state. Replaces rule-based triggers with model probability. Quarter Kelly + time-decay staking. | Needs 500+ live-tracked matches + 200 settled paper bets (~June 2026) |
 
@@ -490,12 +518,13 @@ Alignment will be activated (move from log-only to staking modifier) after:
 | Platt fitting | `scripts/fit_platt.py` | `fit_and_store()` |
 | DC rho fitting | `scripts/fit_league_rho.py` | `run()` |
 | Calibration validation | `scripts/check_calibration.py` | `check_calibration()` |
-| XGBoost training | `scripts/retrain_xgboost.py` | Main training script |
+| XGBoost training (Kaggle v9a) | `scripts/retrain_xgboost.py` | Legacy — trains on Kaggle CSV |
+| AF model training | `workers/model/train.py` | `train_all()` / `load_training_data()` — run directly |
 | ELO updates | `workers/jobs/settlement.py` | ELO update section |
 | CLV computation | `workers/jobs/settlement.py` | Settlement + pseudo-CLV |
 | Signal collection | `workers/jobs/daily_pipeline_v2.py` | Signal writing throughout pipeline |
 | Bot strategies | `workers/jobs/daily_pipeline_v2.py` | `BOTS_CONFIG` dict (lines 67-340) |
-| Feature vectors ETL | `workers/jobs/settlement.py` | `--ml-etl` flag |
+| Feature vectors ETL | `workers/api_clients/supabase_client.py` | `build_match_feature_vectors()` |
 
 ---
 

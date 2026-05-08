@@ -156,7 +156,7 @@ Computes 7 independent dimension scores per bet. Currently stored but not used f
 - Check readiness queries in Section 10 to know when to train meta-model
 
 **Next milestones:**
-- 3000+ `match_feature_vectors` rows → train Phase 1 logistic regression (~mid-May)
+- 3000+ `match_feature_vectors` rows → run `python3 workers/model/train.py` (ready — 28 features, `load_training_data()` loads from DB automatically). Also train Phase 1 logistic regression meta-model. (~mid-May/June)
 - 300+ settled bot bets with alignment → activate alignment filter (~late May)
 - 1000+ settled bot bets → train Phase 2 XGBoost meta-model (~June)
 
