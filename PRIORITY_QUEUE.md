@@ -302,6 +302,7 @@
 | ALN-FIX | Alignment NONE class when active=0 | ✅ Done 2026-05-04 | `improvements.py:compute_alignment()`. |
 | ALN-EXPAND | sharp_consensus + Pinnacle anchor as alignment dimensions 5+6 | ✅ Done 2026-05-04 | `improvements.py`. |
 | PERF-CACHE | Pre-stored dashboard stats in DB via settlement | ✅ Done 2026-05-04 | Migration 035. `write_dashboard_cache()` in settlement.py. |
+| PERF-CACHE-REFRESH | Periodic dashboard_cache refresh — `/performance` was lagging up to ~24h between settlement runs (showed 146 settled vs 213 actual). New `job_dashboard_cache_refresh` runs every 30 min at :15/:45 in `workers/scheduler.py`. Lightweight — pure SQL aggregations, no API calls. Source-inspect smoke test added. | ✅ Done 2026-05-09 | Now: ~50 cache rows/day vs ~5; aligns `/performance` with `/admin/bots` totals within 30 min. |
 | FE-BOT-DASH | Bot P&L dashboard (superadmin-gated) | ✅ Done 2026-05-04 | `/admin/bots` page. |
 
 ### Open

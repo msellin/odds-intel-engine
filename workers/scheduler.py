@@ -273,6 +273,16 @@ def job_betting_refresh():
         console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
 
 
+def job_dashboard_cache_refresh():
+    """Refresh dashboard_cache snapshot independently of betting/settlement.
+
+    Without this, the public /performance page can lag ~24h between the
+    last betting_refresh / settlement run that wrote cache. Lightweight —
+    just SQL aggregations, no external API calls."""
+    from workers.jobs.settlement import write_dashboard_cache
+    _run_job("dashboard_cache_refresh", write_dashboard_cache)
+
+
 def job_news_checker():
     from workers.jobs.news_checker import run_news_checker
     _run_job("news_checker", run_news_checker)
@@ -663,6 +673,12 @@ def main():
     # Ops snapshot fallback: every hour at :30 — captures state if no pipeline ran
     scheduler.add_job(job_ops_snapshot, CronTrigger(minute=30),
                       id="ops_snapshot", name="Ops Snapshot :30")
+
+    # Dashboard cache refresh: every 30 min — keeps public /performance page fresh
+    # between betting_refresh / settlement runs that already write cache. Offset to :15/:45
+    # to avoid colliding with budget_sync (:00) and ops_snapshot (:30).
+    scheduler.add_job(job_dashboard_cache_refresh, CronTrigger(minute="15,45"),
+                      id="dashboard_cache_refresh", name="Dashboard Cache Refresh (30min)")
 
     # Orphan cleanup: every 30 min — marks pipeline_runs stuck >60 min as failed
     # Catches records that slipped past startup cleanup (were <10 min old at restart time)

@@ -367,6 +367,29 @@ def _():
 
 
 
+@test("dashboard_cache_refresh — periodic job wired in scheduler (source inspect)")
+def _():
+    """Performance page reads dashboard_cache; without periodic refresh,
+    it lags up to ~24h between settlement runs. Verifies the standalone
+    refresh job is registered and calls write_dashboard_cache."""
+    import pathlib
+    src = pathlib.Path("workers/scheduler.py").read_text()
+
+    assert "def job_dashboard_cache_refresh" in src, (
+        "job_dashboard_cache_refresh must exist — keeps /performance fresh between settlements"
+    )
+    assert "from workers.jobs.settlement import write_dashboard_cache" in src, (
+        "job must import write_dashboard_cache so it can run the cache rebuild"
+    )
+    assert 'id="dashboard_cache_refresh"' in src, (
+        "scheduler must register dashboard_cache_refresh with a unique id"
+    )
+    # Ensure it runs more often than once a day — current spec is :15 and :45
+    assert 'CronTrigger(minute="15,45")' in src or 'IntervalTrigger(minutes=30)' in src, (
+        "dashboard_cache_refresh must be scheduled every 30 min (currently minute='15,45')"
+    )
+
+
 @test("simulated_bets — odds_at_pick column exists (settlement KeyError guard)")
 def _():
     from workers.api_clients.db import execute_query
