@@ -720,6 +720,24 @@ Yellow warning if today's value < 7-day average × 0.60.
 
 ---
 
+## ML Model Improvements (post-backfill research track)
+
+> Origin: 2026-05-08 brainstorm session. Blocked on backfill completion (match stats + coaches + transfers) before retraining makes sense. Run AI research prompt against Gemini/GPT-4/Opus before implementing — prompt is in `docs/ML_RESEARCH_PROMPT.md`.
+
+| ID | Task | Effort | ☑ | Ready? | Notes |
+|----|------|--------|----|--------|-------|
+| ML-RETRAIN-1 | **Retrain XGBoost on full dataset** after match stats backfill hits ~80%. Bigger training set (5K→14K rows) should improve calibration especially in lower leagues. | 2h | ⬜ | ⏳ Wait for backfill >80% | Run `workers/model/train.py` + re-run Platt + blend weight scripts. Compare log_loss before/after. |
+| ML-MISSING-DATA | **Fix aggressive row-dropping** — `X.notna().all(axis=1)` currently loses ~30-40% of training data. Switch to LightGBM (handles nulls natively) or add mean imputation per feature. LightGBM is a drop-in near-replacement for XGBoost. | 3h | ⬜ | ✅ Ready | LightGBM: `pip install lightgbm`, swap `XGBClassifier` → `LGBMClassifier`, remove the `valid = X.notna().all(axis=1)` filter. Expect ~20-30% more training rows immediately. |
+| ML-NEW-FEATURES | **Add live signals as training features** — ELO ratings, Pinnacle closing odds, sharp consensus, manager change days, squad disruption are computed live but never go into training. Need a backfill step: for each historical match in `match_feature_vectors`, compute what each signal value would have been at match date. | 1 day | ⬜ | ⏳ Wait for coaches/transfers backfill | Pinnacle odds alone likely the highest-lift single addition (market is already well-calibrated). ELO second. |
+| ML-PINNACLE-FEATURE | **Pinnacle odds as training feature** specifically — include `market_implied_home`, `market_implied_draw`, `market_implied_away` (vig-removed) as features in XGBoost training. The market already encodes a lot of what our model tries to learn. | 2h | ⬜ | ⏳ Need historical Pinnacle odds stored — check coverage | Already partially done for live pipeline (`MKT-STR` ✅). Need to verify historical match_feature_vectors have these populated. |
+| ML-HYPERPARAMS | **Tune XGBoost hyperparameters** — current settings (n_estimators=200, max_depth=6, lr=0.05) are untouched defaults from initial setup. Use optuna or sklearn GridSearchCV with TimeSeriesSplit. Do after backfill so tuning is on the full dataset. | 3h | ⬜ | ⏳ After ML-RETRAIN-1 | Focus on max_depth (overfitting risk at 6 with 5K rows) and n_estimators. |
+| ML-BLEND-DYNAMIC | **Dynamic Poisson/XGBoost blend weights per market** — `fit_blend_weights.py` exists and runs weekly but produces one global weight. Test whether separate weights per market (1X2 vs O/U vs BTTS) improve Brier score. | 2h | ⬜ | ⏳ After ~300 settled bets/market | O/U and BTTS are more goals-model-friendly (Poisson weight likely higher). 1X2 may benefit from more XGBoost weight. |
+| ML-PER-TIER | **Per-league-tier models** — train separate XGBoost for top-5 European (tier 1 elite) vs rest of tier 1. Different dynamics: top leagues have more efficient markets, more data, different draw rates. | 1 day | ⬜ | ⏳ Need >2K samples per tier segment | Only worth doing when total training rows >10K. Check tier distribution first. |
+| ML-LOSS-FN | **Betting-specific loss function** — instead of log_loss, optimize calibration at the edge threshold (bets with >5% edge). Currently model is calibrated equally across all probability ranges, but we only bet the tails. Explore pinball loss or Kelly-weighted log_loss. | 1 day | ⬜ | ⏳ Research first (see ML_RESEARCH_PROMPT) | May need custom XGBoost objective. Significant upside if model is miscalibrated specifically at betting-relevant odds ranges. |
+| ML-RESEARCH | **Run AI research prompt** — send `docs/ML_RESEARCH_PROMPT.md` prompt to Gemini 1.5 Pro, GPT-4o, and Claude Opus. Synthesize findings, add any new tasks from recommendations. | 1h | ⬜ | ✅ Ready | Prompt written 2026-05-08. Priority: LightGBM vs XGBoost comparison, Pinnacle feature literature, missing data strategies. |
+
+---
+
 ## Tier 5 — Future / Speculative
 
 | ID | Task | ☑ | Ready? | Notes |
