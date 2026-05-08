@@ -50,6 +50,13 @@ def get_pool() -> pool.ThreadedConnectionPool:
                     dsn=DATABASE_URL,
                     connect_timeout=10,
                 )
+                # NOTE on DB-STMT-TIMEOUT: Supavisor (Supabase's transaction-mode
+                # pooler) strips startup `options=` parameters, so we can't set
+                # statement_timeout per-connection from the client. Supabase
+                # configures a role-level statement_timeout (~2min by default)
+                # which acts as a runaway-query backstop. If we want a tighter
+                # bound, do it via SQL migration: ALTER ROLE app SET
+                # statement_timeout='60s'. Tracked under DB-STMT-TIMEOUT.
                 console.print("[dim]DB pool created (2-10 connections)[/dim]")
     return _pool
 
@@ -72,22 +79,40 @@ def _reset_pool():
 
 @contextmanager
 def get_conn():
-    """Context manager that gets a connection from the pool and returns it after use."""
+    """Context manager that gets a connection from the pool and returns it after use.
+
+    Always returns the connection to the pool, even on exception — without this
+    `finally`, any non-connection error (SQL syntax, integrity violation, KeyError
+    on a malformed row, TypeError, etc.) leaks the conn permanently. With
+    maxconn=10 and InplayBot polling every 30s, ~10 such errors and the pool
+    is dead — which took the entire pipeline down for 11h on 2026-05-08.
+    """
     p = get_pool()
     conn = p.getconn()
+    conn_dead = False
     try:
         yield conn
     except (psycopg2.OperationalError, psycopg2.InterfaceError):
-        # Connection was dropped (SSL timeout, or killed by concurrent pool reset).
-        # Close just this connection; don't touch the rest of the pool.
+        # Connection-level error (SSL drop, idle timeout, killed by pool reset).
+        # Discard this conn and reset the pool so the next caller reconnects.
+        conn_dead = True
+        raise
+    except Exception:
+        # App-level error (bad SQL, integrity violation, unexpected exception
+        # in caller). The transaction may be aborted — rollback so the conn
+        # is reusable. If rollback itself fails, treat the conn as dead.
         try:
-            p.putconn(conn, close=True)
+            conn.rollback()
+        except Exception:
+            conn_dead = True
+        raise
+    finally:
+        try:
+            p.putconn(conn, close=conn_dead)
         except Exception:
             pass
-        _reset_pool()
-        raise
-    else:
-        p.putconn(conn)
+        if conn_dead:
+            _reset_pool()
 
 
 _CONN_ERRORS = (psycopg2.OperationalError, psycopg2.InterfaceError)

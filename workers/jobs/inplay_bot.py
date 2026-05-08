@@ -90,6 +90,7 @@ def run_inplay_strategies():
     Main entrypoint — called every 30s from LivePoller after snapshots are stored.
     Reads latest snapshots from DB, checks all strategy conditions, logs paper bets.
     """
+    from psycopg2.pool import PoolError
     from workers.api_clients.db import execute_query
     from workers.api_clients.supabase_client import ensure_bots, store_bet
 
@@ -98,12 +99,22 @@ def run_inplay_strategies():
 
     # Ensure bots exist (cached after first call)
     if not _bot_ids:
-        _bot_ids = ensure_bots(INPLAY_BOTS)
+        try:
+            _bot_ids = ensure_bots(INPLAY_BOTS)
+        except PoolError:
+            console.print("[yellow]InplayBot skipped: pool saturated (ensure_bots)[/yellow]")
+            return
         if _bot_ids:
             console.print(f"[cyan]InplayBot: {len(_bot_ids)} bots registered[/cyan]")
 
     # 1. Get latest snapshot per live match (within 90s — allows for 1 missed cycle)
-    candidates = _get_live_candidates(execute_query)
+    try:
+        candidates = _get_live_candidates(execute_query)
+    except PoolError:
+        # Pool exhausted — bail this cycle with a one-line log instead of
+        # spamming a 100-line traceback every 30s. Will retry next cycle.
+        console.print("[yellow]InplayBot skipped: pool saturated, retry next cycle[/yellow]")
+        return
 
     # Heartbeat every 10 cycles — show real/proxy split
     if _cycle_count % 10 == 0:

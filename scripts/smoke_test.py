@@ -980,6 +980,59 @@ def _():
     assert "p_win" in src, "p_win ELO probability variable must be present"
 
 
+@test("POOL-LEAK-FIX — SQL exceptions don't leak conns (15 errors > maxconn=10)")
+def _():
+    """The 2026-05-08 outage: get_conn() leaked conns on any exception other
+    than OperationalError/InterfaceError, so a single SQL syntax error per
+    polling cycle drained the pool within 5 minutes. Verify 15 SQL errors
+    (more than maxconn=10) leave the pool usable."""
+    from workers.api_clients.db import get_conn
+    import psycopg2
+
+    for _ in range(15):  # > maxconn=10, so leaks would have exhausted
+        try:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    # Deliberate bad SQL — psycopg2.errors.UndefinedTable, NOT
+                    # OperationalError. Pre-fix this would leak the conn.
+                    cur.execute("SELECT * FROM table_that_does_not_exist_xyzzy")
+        except psycopg2.Error:
+            pass  # expected
+
+    # If conns leaked, this would fail with PoolError. With the fix, fine.
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            assert cur.fetchone()[0] == 1
+
+
+@test("POOL-LEAK-FIX — caller-raised exceptions don't leak (KeyError mid-query)")
+def _():
+    """Same as above but with a non-DB exception raised by the caller while
+    holding a conn (e.g. row dict missing a key). Pre-fix this also leaked.
+    Use execute_query to absorb any flakey SSL-drop on idle pooled conns."""
+    from workers.api_clients.db import get_conn, execute_query
+
+    for _ in range(15):
+        try:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1 AS ok")
+                    cur.fetchone()
+                    raise KeyError("simulated caller-side failure")
+        except KeyError:
+            pass
+        except Exception:
+            # Tolerate occasional Supavisor SSL drops on idle conns —
+            # execute_query has retry built in, but our raw get_conn doesn't.
+            # The test's purpose is leak detection, not SSL stability.
+            pass
+
+    # Pool must still be usable. execute_query retries through SSL drops.
+    rows = execute_query("SELECT 1 AS ok")
+    assert rows[0]["ok"] == 1
+
+
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 def _run_one(name: str, fn) -> tuple[str, bool, str, float]:
