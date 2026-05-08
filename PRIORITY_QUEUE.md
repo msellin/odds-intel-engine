@@ -2,11 +2,98 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-07 — Group 1 quick wins done: DOUBTFUL-SIGNAL, SHARP-DRAW-AWAY, LEAGUE-GOALS-DIST, H2H-GATE, INJURY-UNCERTAINTY, ODDS-VOL-AUDIT (all ✅). 62 smoke tests passing. Earlier: AF data expansion (AF-BATCH, AF-HALF-TIME-SIGNALS, AF-SIDELINED, AF-TRANSFERS), H2H-SPLITS, AH-SIGNALS, 4-AI signal review tasks added.
+> Last updated: 2026-05-08 — Reliability Hardening section added (synthesized from 4-AI review after pool exhaustion incident). P0 = Reddit launch blockers (Friday). P1 = pre-paid-launch money/security. Pool leak fix is the immediate fire.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
 - **Ready?** — `✅ Ready` pick up now · `⏳ Waiting [reason]` blocked
+
+---
+
+## Reliability Hardening — Pre-Launch (4-AI Review, 2026-05-08)
+
+> Origin: pool-exhaustion outage 2026-05-08. Dashboard at 0 for 11h before discovery. Root cause: `db.py:get_conn()` only returned the connection on success or connection-level errors — any other exception leaked it. With `maxconn=10` and InplayBot polling every 30s, the pool died and every subsequent job (Fixtures, Enrichment, Odds, Predictions, Betting, Settlement, ops snapshot, budget logger) failed with `pool exhausted`. The deeper lesson: one faulty subsystem permanently degraded the whole platform without isolation, alerting, or auto-recovery.
+>
+> List below is consolidated from 4 independent AI reviews. Strong consensus marked ✅ where 3+ reviewers agreed. Sharp disagreements resolved with reasoning in Notes column.
+
+### P0 — Reddit Launch Blockers (~6h, this Friday)
+
+| ID | Task | Effort | ☑ | Ready? | Notes |
+|----|------|--------|----|--------|-------|
+| POOL-LEAK-FIX | `db.py:get_conn()` rewrite — `try/finally`, rollback on app exception, return conn always. Skip-cycle on `PoolError` in InplayBot with terse log line. **Keep `maxconn=10`** (R4 was right — bumping to 20 hides the next leak; loud failure at 10 is a diagnostic feature, not a bug). | 1.5h | ⬜ | ✅ Ready | Test under load: simulate 20 non-connection exceptions, confirm pool recovers. The code change is 10 min; testing is the work. |
+| EXCEPTION-BOUNDARIES | Wrap every APScheduler job and every `live_poller._run_cycle` iteration in top-level `try/except Exception` so a single bug can never kill the loop silently. Log to Sentry, write to `pipeline_runs` with status. ✅ All 4 reviewers flagged blast-radius isolation as the architectural fix that obviates `WORKER-SPLIT`. | 1h | ⬜ | ✅ Ready | This is the structural lesson from the outage. With this + POOL-LEAK-FIX + JOB-COALESCE, today's incident class is closed. |
+| JOB-COALESCE | `coalesce=True, max_instances=1` on every APScheduler job. ✅ Strong consensus. | 30m | ⬜ | ✅ Ready | Audit `workers/scheduler.py` — verify every `add_job` call has both flags. Trap: APScheduler defaults stack overlapping runs. |
+| DB-STMT-TIMEOUT | Set `statement_timeout=60s` and `idle_in_transaction_session_timeout=30s` via DSN options on conn open. R4 caveat: 15s would kill nightly settlement (legitimate joins push 20-30s). 60s is the right global default. | 30m | ⬜ | ✅ Ready | Caps worst-case for runaway queries and stuck transactions — a different leak vector than POOL-LEAK-FIX. |
+| OBS-HEARTBEAT | External healthchecks.io ping on `/health` every 5min. Alert when `ops_snapshot` >2h old, pool >80%, or `/health` 5xx for 2 consecutive checks. ✅ All 4 reviewers — would have caught today's outage in 5 min vs 11h. | 1h | ⬜ | ✅ Ready | Free tier of healthchecks.io is sufficient. Email + Pushover. R3 + R4 both pulled this from P1 to P0. **Negligent to ship Reddit without it.** |
+| OBS-SENTRY-BACKEND | Wire `sentry_sdk` into `workers/scheduler.py` + `workers/live_poller.py`. Frontend already has it (`SENTRY` ✅). Add `before_send` filter to drop `psycopg2.pool.PoolError` and `OperationalError` to avoid free-tier flood. | 1.5h | ⬜ | ✅ Ready | R4 trap: Sentry will flood without filtering — APScheduler scheduling exceptions and httpx retries are noisy. Budget 1h for tuning, not 0. |
+
+### P1 — Pre-Paid-Launch Money / Security (~14h, before Stripe goes live)
+
+| ID | Task | Effort | ☑ | Ready? | Notes |
+|----|------|--------|----|--------|-------|
+| STAGING-ENV | Separate Supabase project (free tier) + Railway staging service + Vercel preview env + Stripe test webhook endpoint. Every change rehearsed before prod. R4: **single highest-leverage missing item** — you're about to ship paid Stripe to a prod-only setup. | 3h | ⬜ | ✅ Ready | Production-as-staging is a category that produces unlimited bugs. Paid launch is the wrong moment to discover this. |
+| STRIPE-WEBHOOK-SIG | Verify `Stripe-Signature` header against `STRIPE_WEBHOOK_SECRET` using `stripe.Webhook.construct_event`. Reject any unsigned/bad-signature payload. ✅ R1 + R4 both flagged: without this, anyone can POST fake `checkout.session.completed` and grant themselves Elite. | 1h | ⬜ | ✅ Ready | Audit `src/app/api/stripe/webhook/route.ts`. Likely already exists since Stripe quickstart includes it — verify, don't assume. |
+| MONEY-STRIPE-IDEMPOTENT | `processed_events` table keyed by `event.id` from **JSON payload (NOT header)** — R4 trap: header `Stripe-Signature` is per-attempt and won't dedupe retries. Wrap handler logic + DB write in a single transaction; on commit failure, mark event unprocessed for retry. | 3h | ⬜ | ✅ Ready | Without this, Stripe retries (which happen frequently) can double-grant tier or double-record bills. R4 trap: idempotency table without tx-wrap = ghost Pro users on partial failure. |
+| MONEY-WEBHOOK-TEST | Script 50+ webhook scenarios via Stripe CLI: `success`, `dupe`, `out-of-order`, `network-fail-after-process`, `bad-signature`, `unknown-event-type`. Verify no double-grants, no ghost tiers, no missed grants. R2 add. | 1h | ⬜ | ✅ Ready | Stripe CLI: `stripe trigger checkout.session.completed`. Hits localhost or staging. Real failures hide in retry edge cases. |
+| STRIPE-RECONCILE | Daily script: `stripe.events.list(created.gte=yesterday)` → diff vs `processed_events` table → alert on drift. R4 add: bigger Stripe risk isn't double-grant, it's **never-grant when webhook silently fails**. | 1h | ⬜ | ✅ Ready | Stripe Workbench shows 1-2% silent webhook failures across all merchants. Reconciliation is the only safety net. |
+| MONEY-RLS-AUDIT | Walk every table; confirm RLS policy + that service-role key is server-only (never in NEXT_PUBLIC_ env). R4: 30 min not 2h — checklist walkthrough since schema is known. | 30m | ⬜ | ✅ Ready | Tables to verify: `profiles`, `simulated_bets`, `match_signals`, `pipeline_runs`, `email_digest_log`, `processed_events`. |
+| MONEY-SETTLE-RECON | Daily reconciliation: count of bets settled vs count of finished matches. Alert on drift >2. ✅ R1 + R2 + R4. | 2h | ⬜ | ✅ Ready | Catches settlement bugs before users complain. Add to existing 21:00 UTC settlement job. |
+| BACKUP-RESTORE-DRILL | Actually restore Supabase PITR to a scratch project. Time it. Document the procedure. R4 add: untested backups = no backups. | 1h | ⬜ | ✅ Ready | You upgraded to Pro for this. Verify it works end-to-end before you need it at 02:00 UTC during an incident. |
+| RATE-LIMIT-API | Upstash rate limit on `/api/bet-explain` (Gemini cost), `/api/live-odds` (DB load), `/api/stripe/upgrade`. ✅ R1 + R4. | 2h | ⬜ | ✅ Ready | Reddit attracts scrapers. One bad actor with curl can drain Gemini budget overnight. |
+| ABUSE-DETECT-PRELAUNCH | One-shot scan: SQL injection on user-input forms, password policy, session timeout, anonymous endpoint enumeration, CSRF on state-changing routes. R4 add. | 2h | ⬜ | ✅ Ready | Public Reddit launch attracts adversarial traffic within 48h. Quick audit, not pen test. |
+| DEPLOY-ROLLBACK-RUNBOOK | One-page doc: exact Railway redeploy-from-SHA + Vercel redeploy-from-deployment commands. Test it: deploy a no-op commit, then roll back. R4 add. | 30m | ⬜ | ✅ Ready | At 02:00 UTC during an incident, "redeploy previous SHA" needs to be 30 seconds, not 5 minutes of figuring out the dashboard. |
+
+### P2 — Reliability Hardening (post-Reddit, before paid launch, ~12h)
+
+| ID | Task | Effort | ☑ | Ready? | Notes |
+|----|------|--------|----|--------|-------|
+| OBS-POOL-METRIC | Add pool utilization (`used/max`) to `/health` JSON and to InplayBot's 10-cycle heartbeat log. Alert when >80%. | 30m | ⬜ | ✅ Ready | Future leaks visible at 60-70% climb, not at 100% outage. |
+| SYNTHETIC-LIVENESS | Business-level liveness checks beyond infra: did we generate signals today? Did snapshots arrive in last 5 min during 10-23 UTC? Did settlement produce rows? Did bets get placed if matches existed? **Merge with existing `PIPE-ALERT` task** (line 170 in this file). | 2h | ⬜ | ✅ Ready | R3: infra metrics miss real failures constantly. PIPE-ALERT was already in the queue but unscheduled — promote it. |
+| KILL-SWITCH-FLAGS | Operator toggles via env var or `system_flags` table: `disable_inplay_strategies`, `disable_enrichment`, `disable_news_checker`, `disable_paper_betting`. Workers check on each cycle. R3 add. | 2h | ⬜ | ✅ Ready | When something is broken at 02:00 UTC, you want a switch, not a code deploy. Underrated operational leverage. |
+| JOB-TIMEOUT | Per-job watchdog timeout via `signal.alarm` or threading. Mark `pipeline_runs.status='timed_out'` distinct from 'killed'. | 2h | ⬜ | ✅ Ready | Hung jobs hold conns forever. Distinct status lets you tell crash-cause apart. |
+| JOB-IDEMPOTENT | Audit fixtures/odds/predictions/settlement/ELO for re-runnability. **R1 + R3: prefer destructive idempotency** — wipe day's records for a match and rewrite cleanly, instead of perfect-merge logic. R4 effort = 6h, not 3h. | 6h | ⬜ | ✅ Ready | The audit is fast. The fix-where-broken is the iceberg. Settlement and ELO update are likely offenders. |
+| API-RETRY-WRAPPER | `tenacity` decorator on AF/Kambi/ESPN/Gemini clients: 2 retries, exponential backoff, jitter, fail-fast after 3rd attempt, log to Sentry on each retry. R1 estimate (30m) was too low; R3 (1-2 days) was for circuit-breaker version we don't need. R4: 2h is right. | 2h | ⬜ | ✅ Ready | R3 trap: naive retries are outage amplifiers. Bounded retries + retry budgets prevent self-DDoS. |
+| OBS-BUDGET-ALERT | Alert when AF daily burn projects >60K of 75K. R4: low priority — failure mode is degraded, not financial. Pulled out of P1. | 30m | ⬜ | ✅ Ready | Catch runaway loops before quota blown. |
+| MEMORY-MONITORING | Track Railway pod memory, alert if >70% sustained. R1 trap: XGBoost + LiveTracker on $5 pod can OOM during concurrent peak — and SIGKILL by Railway emits no Python exception, so Sentry won't catch it. Heartbeat is the only defense. | 30m | ⬜ | ✅ Ready | Especially important if WORKER-SPLIT stays deferred. |
+
+### P3 — Watchlist (only when triggered, not on schedule)
+
+| ID | Task | Effort | ☑ | Ready? | Notes |
+|----|------|--------|----|--------|-------|
+| WORKER-SPLIT | Split `live_poller.py` into its own Railway service. R3 wanted P0; R4 said skip. **Resolution: only do this if cascade failures persist after EXCEPTION-BOUNDARIES.** Pool fix + boundaries should give blast-radius isolation without process split. Revisit if `live_poller` exceptions are still killing scheduler jobs after 2 weeks of monitoring. | 4h (lower than R3's "1 day") | ⬜ | ⏳ Trigger: scheduler jobs killed by live_poller after EXCEPTION-BOUNDARIES ships | Two Railway services: `scheduler-service` and `live-service`. Effort is small (separate entrypoints already exist) but operational complexity grows. |
+| MODEL-DRIFT-ALERT | Z-score on prediction mean/variance vs trailing 14-day distribution. Alert if today's predictions deviate >3σ. R4 add. | 1h | ⬜ | ✅ Ready | Catches silently broken feature pipeline before paper bots drain bankrolls. |
+| FAIL-OPEN-DEGRADATION | Stale-but-usable fallbacks: yesterday's standings if enrichment fails, skip one bookmaker if its API dies, keep live tracking even if news analysis fails. R3 add. | 3-4h | ⬜ | ✅ Ready | Reliability is mostly graceful degradation. Right now AF rate-limit cascades through enrichment → predictions → betting. |
+| USER-DEGRADATION-UX | Clear "data temporarily unavailable" messages in frontend when backend stale/down, instead of "Loading..." forever. R4 add. | 2h | ⬜ | ✅ Ready | UX during degradation is half the trust-loss equation. |
+| SUPPORT-RUNBOOK | One-page: Stripe-charged-but-no-tier, tier-granted-but-no-charge, settlement-disputed, refund procedure. R4 add. | 1h | ⬜ | ⏳ After paid launch | Need the runbook before the first edge case fires, not during it. |
+| SCHEMA-DRIFT-SMOKE | 30-min cheap version of SCHEMA-DRIFT-GUARD: pytest that `SELECT col FROM table LIMIT 0` for every column code references. R4: cheap version captures 80% for 5% effort. | 30m | ⬜ | ✅ Ready | Drop the proper CI-integration version. |
+| BACKFILL-SAFETY | Test re-running each backfill script — same input, same output, no duplicates. R4: low priority since you backfill ~quarterly. | 2h | ⬜ | ⏳ Before next backfill | Just be careful that day. |
+| EMAIL-DELIVERY-CHECK | Verify Resend DKIM/SPF/DMARC are correct (digest emails already sending — confirm not landing in spam at scale). | 1h | ⬜ | ✅ Ready | If `ENG-4` already configured this, mark ✅. |
+
+### Explicitly DROPPED (consensus from 4-AI review)
+
+| ID | Why dropped |
+|----|-------------|
+| ~OBS-LOGS-STRUCTURED~ | All 4 reviewers: yak-shaving for 12 users. Sentry + Railway logs + grep are sufficient. Revisit at 1K users. |
+| ~JOB-LOCK~ | All 4 reviewers: duplicate of JOB-COALESCE. APScheduler + `max_instances=1` already serializes runs. Custom locking adds failure modes (stale locks, recovery work). |
+| ~RUNBOOK-INCIDENTS~ (broad) | R1 + R3: at 02:00 UTC you restart the pod, you don't read a Notion doc. Replaced by targeted `DEPLOY-ROLLBACK-RUNBOOK` + `SUPPORT-RUNBOOK`. |
+| ~SCHEMA-DRIFT-GUARD~ (proper) | R3 + R4: founder dopamine, not founder reliability. Replaced by 30-min `SCHEMA-DRIFT-SMOKE`. |
+| ~LIVE-BATCH-COLLAPSE~ | All reviewers: defer until paying user complains about latency. |
+| ~SNAPSHOT-PARTITION~ | R3 + R4: way premature. Postgres handles more than founders think. |
+| ~FE-LIVE-WEBSOCKET~ | All reviewers: not a launch concern. |
+| ~PSYCOPG3-MIGRATION~ | Only if pool issues persist after POOL-LEAK-FIX. |
+| ~PUSH-FEED~ (Sportradar/BetGenius) | $3K-50K/mo. Defer until revenue covers 10× cost. |
+| ~RAILWAY-UPGRADE~ | Single instance fine ≤100 concurrent users. |
+| ~ADD-REDIS~ | No queue need yet. |
+| ~READ-REPLICAS~ | Overkill at this scale. |
+
+### Suggested commit grouping
+
+1. **Commit 1 (today):** POOL-LEAK-FIX + EXCEPTION-BOUNDARIES + JOB-COALESCE + DB-STMT-TIMEOUT — fixes today's outage class.
+2. **Commit 2 (today):** OBS-HEARTBEAT + OBS-SENTRY-BACKEND — visibility before Reddit goes live.
+3. **Commit 3 (this week):** STAGING-ENV solo — too disruptive to bundle.
+4. **Commit 4 (pre-paid-launch):** STRIPE-WEBHOOK-SIG + MONEY-STRIPE-IDEMPOTENT + MONEY-WEBHOOK-TEST + STRIPE-RECONCILE — one Stripe-integrity commit.
+5. **Commit 5:** MONEY-RLS-AUDIT + MONEY-SETTLE-RECON + BACKUP-RESTORE-DRILL + RATE-LIMIT-API + ABUSE-DETECT-PRELAUNCH + DEPLOY-ROLLBACK-RUNBOOK — pre-paid-launch security/recoverability.
+6. **Commit 6+:** P2 tasks individually as time allows.
 
 ---
 
@@ -167,7 +254,7 @@
 | DRAW-PER-LEAGUE | Per-league draw inflation factor. Current fixed `DRAW_INFLATE = 1.08` applies globally — draw rates vary from ~22% (PL, high-scoring open leagues) to ~32% (defensive lower-division leagues). `league_draw_pct` is already collected as a signal. Replace constant with a per-match calculation: `draw_inflate = 1.0 + max(0, (league_draw_pct - 0.268) / 0.268 * 0.08)` clamped to [1.03, 1.15]. Where `league_draw_pct` unavailable, keep 1.08 as fallback. | 2h | ✅ Done 2026-05-07 | ✅ Ready | `_poisson_probs()` now accepts `league_draw_pct` param. `compute_prediction()` passes it through. `run_morning()` batch-loads `league_draw_pct` from `match_signals` alongside Pinnacle signals and passes per match. Fallback 1.08 preserved when signal absent. Tests added. `workers/jobs/daily_pipeline_v2.py`. |
 | NEWS-IMPACT-DIR | Store directional news impact as separate signals. Gemini already returns `home_net_impact` and `away_net_impact` (−1.0 to +1.0) but they are never written to `match_signals` — only the combined bet-relative `news_impact_score` is stored. Fix: add `store_match_signal(match_id, "news_impact_home", home_net_impact, ...)` and `"news_impact_away"` in `news_checker.py` after Gemini parse. Zero extra Gemini cost. Enables match_feature_vectors and meta-model to distinguish "bad news for home team" from "bad news for away team". | 1h | ✅ Done 2026-05-07 | ✅ Ready | Two new `store_match_signal` calls added in `news_checker.py` after existing `news_impact_score` write. `news_impact_home` and `news_impact_away` now stored per match. Test added. `workers/jobs/news_checker.py:322-327`. |
 | MGR-CHANGE | New manager signal. Add `manager_change_home_days` and `manager_change_away_days` to match_signals — number of days since either team's manager changed (NULL = no change in last 90 days). Source: AF `/coaches` endpoint. Known market inefficiency: post-sacking home bounce ~+8% win rate above expectation in first 3 games (both in industry literature and confirmed by 2 of 5 AI reviewers). Converse: away form collapse under caretaker. Add to enrichment job, cache coach history in a `team_coaches` table or similar. | 3-4h | ✅ Done 2026-05-07 | ✅ Ready | Migration 064 (`team_coaches` table). `get_coaches()`/`parse_coaches()` in `api_football.py` (AF endpoint is `/coachs`). `store_team_coaches()` in `supabase_client.py`. `fetch_coaches()` in `fetch_enrichment.py` — skips teams fetched within 48h. Signal block 3c in `batch_write_morning_signals()` loads current coach start date per team and writes `manager_change_home/away_days` when ≤ 90 days. `coaches` added to `ALL_COMPONENTS`. 4 smoke tests added. |
-| PIPE-ALERT | Automated pipeline anomaly alerting. The ops dashboard (`/admin/ops`) is post-mortem — you have to open it to see problems. Add proactive Telegram bot or Resend email to superadmin when: (1) 0 bets placed on a day with ≥10 matches, (2) Pinnacle odds missing for >10 scheduled matches by 08:00 UTC, (3) LivePoller last snapshot >20 min stale during 10-23 UTC, (4) settlement completed with 0 results when >5 pending bets existed. Prevents silent failures killing paper trading integrity (and future real money). | 3-4h | ⬜ | ✅ Ready | New `workers/jobs/health_alerts.py`. Call from scheduler or as a check inside existing jobs. Telegram Bot API is free. |
+| PIPE-ALERT | **Merge target for `SYNTHETIC-LIVENESS` (P2 in Reliability Hardening section above).** Automated pipeline anomaly alerting. The ops dashboard (`/admin/ops`) is post-mortem — you have to open it to see problems. Add proactive Telegram bot or Resend email to superadmin when: (1) 0 bets placed on a day with ≥10 matches, (2) Pinnacle odds missing for >10 scheduled matches by 08:00 UTC, (3) LivePoller last snapshot >20 min stale during 10-23 UTC, (4) settlement completed with 0 results when >5 pending bets existed. Prevents silent failures killing paper trading integrity (and future real money). | 3-4h | ⬜ | ✅ Ready | New `workers/jobs/health_alerts.py`. Call from scheduler or as a check inside existing jobs. Telegram Bot API is free. Implement together with SYNTHETIC-LIVENESS. |
 | BM-FILTER | Bookmaker availability filter on value bets page. Users in different countries have access to different bookmakers — showing a Betano pick to a UK user who can't use Betano creates frustration and churn. Add `preferred_bookmakers` text[] column to `profiles` (migration NNN). Profile page: checkbox list of the 13 bookmakers. Value bets page respects filter: only shows picks where `bookmaker = ANY(preferred_bookmakers)`. Default = show all (no change for users who haven't set preferences). | 3-4h | ⬜ | ✅ Ready | Frontend: `src/app/(app)/value-bets/page.tsx` + `src/lib/engine-data.ts`. Backend: migration + profile update API. |
 | BOT-PUBLIC-PERF | Public bot performance page. `bot_aggressive` is at +93 units (paper trading) and is the strongest conversion asset in the product — currently visible only at `/admin/bots` (superadmin). Build a public `/performance` page (free tier) showing paper trading results clearly labeled: daily bets settled, cumulative units chart, hit rate, CLV context. Include "paper trading — not real money" disclaimer. Replaces the need for social proof via Reddit posts alone. | half day | ⬜ | ✅ Ready | New page in `odds-intel-web`. Reuse `simulated_bets` + `dashboard_cache` queries already built for `/admin/bots`. |
 
