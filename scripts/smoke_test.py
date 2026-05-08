@@ -1081,6 +1081,22 @@ def _():
     assert isinstance(rows[0]["cnt"], int)
 
 
+@test("ML-ELO-GAP — elo_home/elo_away/elo_diff in FEATURE_COLS")
+def _():
+    from workers.model.train import FEATURE_COLS
+    assert "elo_home" in FEATURE_COLS, "elo_home missing from FEATURE_COLS"
+    assert "elo_away" in FEATURE_COLS, "elo_away missing from FEATURE_COLS"
+    assert "elo_diff" in FEATURE_COLS, "elo_diff missing from FEATURE_COLS"
+
+
+@test("ML-CALIBRATION-FIX — no CalibratedClassifierCV in train.py")
+def _():
+    import inspect
+    from workers.model import train
+    src = inspect.getsource(train)
+    assert "CalibratedClassifierCV" not in src, "CalibratedClassifierCV still present — dual calibration not fixed"
+
+
 @test("KILL-SWITCH-FLAGS — is_disabled returns False for unknown flag")
 def _():
     from workers.utils.kill_switches import is_disabled
