@@ -6,6 +6,11 @@ Trains prediction models for:
   3. BTTS (Both Teams To Score) — XGBoost classifier
 
 No AI/LLM needed. Pure machine learning on historical data.
+
+Column names match match_feature_vectors exactly. Callers must provide:
+  features_df: columns from FEATURE_COLS (allow NaN — dropped per model)
+  targets_df:  match_outcome (H/D/A), over_25 (bool), btts (bool)
+               btts = score_home > 0 AND score_away > 0 — compute at load time
 """
 
 import pandas as pd
@@ -23,33 +28,32 @@ console = Console()
 MODELS_DIR = Path(__file__).parent.parent.parent / "data" / "models"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Features used by the model
+# Features used by the model — must match match_feature_vectors column names exactly
 FEATURE_COLS = [
-    # Home form
-    "home_form_win_pct", "home_form_ppg", "home_form_goals_scored",
-    "home_form_goals_conceded", "home_form_goal_diff",
-    "home_form_over25_pct", "home_form_btts_pct", "home_form_clean_sheet_pct",
-    # Home at home
-    "home_venue_win_pct", "home_venue_goals_scored",
-    "home_venue_goals_conceded", "home_venue_over25_pct",
-    # Away form
-    "away_form_win_pct", "away_form_ppg", "away_form_goals_scored",
-    "away_form_goals_conceded", "away_form_goal_diff",
-    "away_form_over25_pct", "away_form_btts_pct", "away_form_clean_sheet_pct",
-    # Away at away
-    "away_venue_win_pct", "away_venue_goals_scored",
-    "away_venue_goals_conceded", "away_venue_over25_pct",
-    # H2H
-    "h2h_home_win_pct", "h2h_avg_goals", "h2h_over25_pct",
-    "h2h_btts_pct", "h2h_matches",
-    # Position
-    "home_position_norm", "away_position_norm", "position_diff",
-    "home_pts_to_relegation", "away_pts_to_relegation",
-    "home_in_relegation", "away_in_relegation",
     # ELO
     "elo_home", "elo_away", "elo_diff",
+    # Form
+    "form_ppg_home", "form_ppg_away",
+    # Goals
+    "goals_for_avg_home", "goals_for_avg_away",
+    "goals_against_avg_home", "goals_against_avg_away",
+    # Position / standings
+    "league_position_home", "league_position_away",
+    "points_to_relegation_home", "points_to_relegation_away",
+    "points_to_title_home", "points_to_title_away",
+    # H2H
+    "h2h_win_pct",
     # Rest
-    "home_rest_days", "away_rest_days", "rest_advantage",
+    "rest_days_home", "rest_days_away",
+    # Injuries / news
+    "injury_count_home", "injury_count_away",
+    # Match context
+    "fixture_importance",
+    # Referee
+    "referee_cards_avg", "referee_home_win_pct", "referee_over25_pct",
+    # Market
+    "opening_implied_home", "opening_implied_draw", "opening_implied_away",
+    "bookmaker_disagreement",
     # League
     "league_tier",
 ]
@@ -60,7 +64,7 @@ def train_result_model(features_df: pd.DataFrame, targets_df: pd.DataFrame):
     console.print("\n[bold cyan]Training 1X2 Result Model[/bold cyan]")
 
     X = features_df[FEATURE_COLS].copy()
-    y = targets_df["result"].map({"H": 0, "D": 1, "A": 2}).copy()
+    y = targets_df["match_outcome"].map({"H": 0, "D": 1, "A": 2}).copy()
 
     # Drop rows with missing values
     valid = X.notna().all(axis=1) & y.notna()
@@ -282,8 +286,53 @@ def train_btts_model(features_df: pd.DataFrame, targets_df: pd.DataFrame):
     return final_model
 
 
-def train_all(features_df: pd.DataFrame, targets_df: pd.DataFrame):
-    """Train all three models"""
+def load_training_data() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Load match_feature_vectors rows with completed outcomes from the DB.
+
+    Returns (features_df, targets_df) sorted by match_date ascending.
+    btts is derived from match scores joined from the matches table.
+    Requires env DB credentials — same as the rest of the pipeline.
+    """
+    from workers.api_clients.supabase_client import execute_query
+
+    rows = execute_query(
+        """
+        SELECT
+            mfv.*,
+            m.score_home,
+            m.score_away
+        FROM match_feature_vectors mfv
+        JOIN matches m ON m.id = mfv.match_id
+        WHERE mfv.match_outcome IS NOT NULL
+          AND mfv.match_date IS NOT NULL
+        ORDER BY mfv.match_date ASC
+        """,
+        (),
+    )
+
+    if not rows:
+        raise ValueError("No completed matches in match_feature_vectors yet")
+
+    df = pd.DataFrame(rows)
+
+    # Derive btts from raw scores (not stored in MFV)
+    df["btts"] = (
+        (pd.to_numeric(df["score_home"], errors="coerce") > 0) &
+        (pd.to_numeric(df["score_away"], errors="coerce") > 0)
+    )
+
+    features_df = df[FEATURE_COLS].copy()
+    targets_df = df[["match_outcome", "over_25", "btts"]].copy()
+
+    console.print(f"Loaded {len(df):,} completed matches for training")
+    return features_df, targets_df
+
+
+def train_all(features_df: pd.DataFrame | None = None, targets_df: pd.DataFrame | None = None):
+    """Train all three models. If called with no args, loads data from DB automatically."""
+    if features_df is None or targets_df is None:
+        features_df, targets_df = load_training_data()
+
     console.print("\n[bold green]═══ OddsIntel Model Training ═══[/bold green]")
 
     result_model = train_result_model(features_df, targets_df)
@@ -297,3 +346,7 @@ def train_all(features_df: pd.DataFrame, targets_df: pd.DataFrame):
         "over25": over25_model,
         "btts": btts_model,
     }
+
+
+if __name__ == "__main__":
+    train_all()

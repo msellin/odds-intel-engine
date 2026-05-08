@@ -528,13 +528,15 @@ def main():
 
     # Backfill jobs — micro-batch every 5min, tiny requests/run.
     # If a run fails, only ~10-30 API calls are lost. Progress tracked in DB.
-    # AF budget: 75K/day. At 5min intervals: hist=30×288=8,640, coaches=10×288=2,880,
-    # transfers=10×288=2,880 → ~14,400/day total, well within headroom.
-    scheduler.add_job(job_backfill, IntervalTrigger(minutes=5),
+    # AF budget: 75K/day. At 15min intervals: hist=30×96=2,880, coaches=10×96=960,
+    # transfers=10×96=960 → ~4,800/day total, well within headroom.
+    # 15min interval (was 5min) gives jobs headroom to finish when AF is slow
+    # (15s timeout × 3 retries × 30 requests worst case ≈ 22 min max).
+    scheduler.add_job(job_backfill, IntervalTrigger(minutes=15),
                       id="hist_backfill", name="Match Stats/Events Backfill")
-    scheduler.add_job(job_backfill_coaches, IntervalTrigger(minutes=5),
+    scheduler.add_job(job_backfill_coaches, IntervalTrigger(minutes=15),
                       id="backfill_coaches", name="Coaches Backfill")
-    scheduler.add_job(job_backfill_transfers, IntervalTrigger(minutes=5),
+    scheduler.add_job(job_backfill_transfers, IntervalTrigger(minutes=15),
                       id="backfill_transfers", name="Transfers Backfill")
 
     # Fixture status refresh: 4× daily, 15 min before each betting window

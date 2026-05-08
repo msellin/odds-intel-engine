@@ -173,6 +173,31 @@ def _():
     from workers.jobs.daily_pipeline_v2 import run_morning  # noqa: F401
 
 
+@test("scheduler — backfill jobs use 15min interval (not 5min) to prevent overlap")
+def _():
+    import ast, pathlib
+    src = pathlib.Path("workers/scheduler.py").read_text()
+    tree = ast.parse(src)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            func = getattr(node.func, 'id', None) or getattr(node.func, 'attr', None)
+            if func == "add_job":
+                for kw in node.keywords:
+                    if kw.arg == "id" and isinstance(kw.value, ast.Constant):
+                        if kw.value.value in ("hist_backfill", "backfill_transfers", "backfill_coaches"):
+                            for arg in node.args:
+                                if isinstance(arg, ast.Call):
+                                    fname = getattr(arg.func, 'id', None) or getattr(arg.func, 'attr', None)
+                                    if fname == "IntervalTrigger":
+                                        for ikw in arg.keywords:
+                                            if ikw.arg == "minutes":
+                                                mins = ikw.value.n if hasattr(ikw.value, 'n') else ikw.value.value
+                                                assert mins >= 15, (
+                                                    f"Backfill job {kw.value.value!r} uses {mins}min interval — "
+                                                    "must be ≥15min to avoid overlap when AF API is slow"
+                                                )
+
+
 @test("backfill — get_uuids_with_data query uses ::uuid[] cast")
 def _():
     from workers.api_clients.db import execute_query
@@ -1087,6 +1112,31 @@ def _():
     assert "elo_home" in FEATURE_COLS, "elo_home missing from FEATURE_COLS"
     assert "elo_away" in FEATURE_COLS, "elo_away missing from FEATURE_COLS"
     assert "elo_diff" in FEATURE_COLS, "elo_diff missing from FEATURE_COLS"
+
+
+@test("ML-FEATURE-COLS-ALIGN — FEATURE_COLS use MFV column names (no Kaggle-era names)")
+def _():
+    from workers.model.train import FEATURE_COLS
+    # Old Kaggle-era names that don't exist in match_feature_vectors
+    banned = {
+        "home_form_win_pct", "home_form_ppg", "home_venue_win_pct",
+        "away_form_win_pct", "away_form_ppg", "away_venue_win_pct",
+        "h2h_home_win_pct", "h2h_avg_goals", "h2h_btts_pct", "h2h_matches",
+        "home_position_norm", "away_position_norm", "position_diff",
+        "home_pts_to_relegation", "away_pts_to_relegation",
+        "home_rest_days", "away_rest_days", "rest_advantage",
+    }
+    bad = [f for f in FEATURE_COLS if f in banned]
+    assert not bad, f"Kaggle-era column names in FEATURE_COLS: {bad}"
+
+
+@test("ML-FEATURE-COLS-ALIGN — train_result_model uses match_outcome not result")
+def _():
+    import inspect
+    from workers.model import train
+    src = inspect.getsource(train.train_result_model)
+    assert "match_outcome" in src, "train_result_model still references old 'result' column"
+    assert '"result"' not in src, "train_result_model still uses targets_df[\"result\"]"
 
 
 @test("ML-CALIBRATION-FIX — no CalibratedClassifierCV in train.py")
