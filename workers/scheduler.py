@@ -19,6 +19,7 @@ from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
 from rich.console import Console
 
@@ -318,10 +319,24 @@ def job_fixture_refresh():
 
 
 def job_backfill():
-    """Historical backfill — every 2h, 500 requests/run (~3 min each), self-terminates once done.
-    75K AF requests/day available; 12 runs × 500 = 6K/day leaves 67K headroom for live ops."""
+    """Match stats/events backfill — micro-batch every 5min, 30 req/run.
+    One run ≈ 10-15 fixtures. Picks up where it left off via backfill_progress table."""
     from scripts.backfill_historical import run_backfill
-    _run_job("hist_backfill", run_backfill, max_requests=500)  # phase=None → auto-detect next phase
+    _run_job("hist_backfill", run_backfill, max_requests=30)
+
+
+def job_backfill_coaches():
+    """Coaches backfill — micro-batch every 5min, 10 teams/run.
+    Fetches /coachs for teams never seen before. Self-skips when all caught up."""
+    from scripts.backfill_team_enrichment import run_coaches_batch
+    _run_job("backfill_coaches", run_coaches_batch, batch_size=10)
+
+
+def job_backfill_transfers():
+    """Transfers backfill — micro-batch every 5min, 10 teams/run.
+    Fetches /transfers for teams not in team_transfer_cache. Self-skips when done."""
+    from scripts.backfill_team_enrichment import run_transfers_batch
+    _run_job("backfill_transfers", run_transfers_batch, batch_size=10)
 
 
 def job_live_tracker():
@@ -507,12 +522,16 @@ def main():
 
     # ── Register all jobs ──────────────────────────────────────────────
 
-    # Historical backfill: every 2h, 500 requests/run (~3 min, 12 runs/day)
-    # AF budget: 75K/day, live ops ~8K, backfill uses 6K — leaves 61K headroom.
-    for _bh_hour in range(0, 24, 2):
-        scheduler.add_job(job_backfill, CronTrigger(hour=_bh_hour, minute=30),
-                          id=f"hist_backfill_{_bh_hour:02d}",
-                          name=f"Historical Backfill {_bh_hour:02d}:30")
+    # Backfill jobs — micro-batch every 5min, tiny requests/run.
+    # If a run fails, only ~10-30 API calls are lost. Progress tracked in DB.
+    # AF budget: 75K/day. At 5min intervals: hist=30×288=8,640, coaches=10×288=2,880,
+    # transfers=10×288=2,880 → ~14,400/day total, well within headroom.
+    scheduler.add_job(job_backfill, IntervalTrigger(minutes=5),
+                      id="hist_backfill", name="Match Stats/Events Backfill")
+    scheduler.add_job(job_backfill_coaches, IntervalTrigger(minutes=5),
+                      id="backfill_coaches", name="Coaches Backfill")
+    scheduler.add_job(job_backfill_transfers, IntervalTrigger(minutes=5),
+                      id="backfill_transfers", name="Transfers Backfill")
 
     # Fixture status refresh: 4× daily, 15 min before each betting window
     # Re-fetches today's fixtures to catch postponements/cancellations/time changes.

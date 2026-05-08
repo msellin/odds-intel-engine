@@ -16,9 +16,10 @@ Schedule:
   16:00 UTC — Wave 3: injuries + standings refresh
 
 Usage:
-  python -m workers.jobs.fetch_enrichment                           # All components
-  python -m workers.jobs.fetch_enrichment --components injuries,standings  # Specific
-  python -m workers.jobs.fetch_enrichment --date 2026-04-29         # Specific date
+  python -m workers.jobs.fetch_enrichment                                        # All components
+  python -m workers.jobs.fetch_enrichment --components injuries,standings        # Specific components
+  python -m workers.jobs.fetch_enrichment --components team_stats --team 12345   # One team's stats only
+  python -m workers.jobs.fetch_enrichment --date 2026-04-29                      # Specific date
 """
 
 import sys
@@ -191,9 +192,15 @@ def fetch_injuries(fixture_meta: dict, coverage_map: dict) -> int:
     return stored
 
 
-def fetch_team_stats(fixture_meta: dict, coverage_map: dict) -> int:
-    """T2: Fetch team statistics (Tier A / tier 1 only)."""
-    console.print("\n[cyan]T2: Fetching team statistics (Tier A only)...[/cyan]")
+def fetch_team_stats(fixture_meta: dict, coverage_map: dict, team_af_id: int = None) -> int:
+    """T2: Fetch team statistics (Tier A / tier 1 only).
+
+    Pass team_af_id to target a single team instead of all today's Tier A teams.
+    """
+    if team_af_id:
+        console.print(f"\n[cyan]T2: Fetching team statistics for team {team_af_id} only...[/cyan]")
+    else:
+        console.print("\n[cyan]T2: Fetching team statistics (Tier A only)...[/cyan]")
 
     stored = 0
     seen: set[tuple] = set()
@@ -209,6 +216,8 @@ def fetch_team_stats(fixture_meta: dict, coverage_map: dict) -> int:
 
         for api_id in [meta.get("home_team_api_id"), meta.get("away_team_api_id")]:
             if not api_id or not lg_api_id or not fix_season:
+                continue
+            if team_af_id and api_id != team_af_id:
                 continue
             key = (api_id, lg_api_id, fix_season)
             if key in seen:
@@ -559,13 +568,15 @@ def fetch_transfers(fixture_meta: dict) -> int:
     return stored
 
 
-def run_enrichment(target_date: str = None, components: set = None):
+def run_enrichment(target_date: str = None, components: set = None, team_af_id: int = None):
     """Run enrichment pipeline. Callable by scheduler or CLI."""
     target_date = target_date or date.today().isoformat()
     components = components or ALL_COMPONENTS
 
     console.print(f"[bold green]═══ OddsIntel Enrichment: {target_date} ═══[/bold green]")
     console.print(f"  Components: {', '.join(sorted(components))}")
+    if team_af_id:
+        console.print(f"  Team filter: AF team ID {team_af_id}")
 
     # Readiness check
     if not check_fixtures_ready(target_date):
@@ -595,7 +606,7 @@ def run_enrichment(target_date: str = None, components: set = None):
             total_records += fetch_injuries(fixture_meta, coverage_map)
 
         if "team_stats" in components:
-            total_records += fetch_team_stats(fixture_meta, coverage_map)
+            total_records += fetch_team_stats(fixture_meta, coverage_map, team_af_id=team_af_id)
 
         if "standings" in components:
             total_records += fetch_standings(fixture_meta, coverage_map)
@@ -638,10 +649,12 @@ def main():
     parser = argparse.ArgumentParser(description="Enrich today's fixtures with team stats, injuries, standings, H2H")
     parser.add_argument("--date", type=str, default=None, help="Date (YYYY-MM-DD, default: today)")
     parser.add_argument("--components", type=str, default="all",
-                        help="Comma-separated: injuries,team_stats,standings,h2h or 'all'")
+                        help="Comma-separated: injuries,team_stats,standings,h2h,coaches,venues,sidelined,transfers or 'all'")
+    parser.add_argument("--team", type=int, default=None,
+                        help="AF team ID — limit team_stats to a single team (use with --components team_stats)")
     args = parser.parse_args()
     components = ALL_COMPONENTS if args.components == "all" else set(args.components.split(","))
-    run_enrichment(target_date=args.date, components=components)
+    run_enrichment(target_date=args.date, components=components, team_af_id=args.team)
 
 
 if __name__ == "__main__":
