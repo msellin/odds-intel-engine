@@ -314,7 +314,7 @@ def job_live_tracker():
 def job_budget_sync():
     """Hourly budget sync with AF /status endpoint."""
     from workers.api_clients.api_football import budget
-    budget.sync_with_server()
+    _run_job("budget_sync", budget.sync_with_server)
 
 
 def job_ops_snapshot():
@@ -422,8 +422,11 @@ def main():
 
     threading.Thread(target=_initial_budget_sync, daemon=True).start()
 
-    # Create scheduler
-    scheduler = BackgroundScheduler(timezone="UTC")
+    # Create scheduler — coalesce + max_instances=1 prevent overlapping/stacked runs
+    scheduler = BackgroundScheduler(
+        timezone="UTC",
+        job_defaults={"coalesce": True, "max_instances": 1},
+    )
 
     # ── Register all jobs ──────────────────────────────────────────────
 

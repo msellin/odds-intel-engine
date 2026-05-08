@@ -23,6 +23,7 @@ API budget (AF Ultra 75K/day):
 """
 
 import time
+import traceback
 from rich.console import Console
 
 console = Console()
@@ -90,6 +91,7 @@ class LivePoller:
                 had_live = self._run_cycle()
             except Exception as e:
                 console.print(f"[red]LivePoller cycle error: {e}[/red]")
+                traceback.print_exc()
 
             self._cycle += 1
 
@@ -183,7 +185,7 @@ class LivePoller:
         if not self.budget.can_call():
             if self._cycle % self.SLOW_MULTIPLIER == 0:
                 console.print("[yellow]LivePoller: API budget low, skipping cycle[/yellow]")
-            return
+            return False
 
         fixtures, odds_by_fixture = fetch_live_bulk()
 
