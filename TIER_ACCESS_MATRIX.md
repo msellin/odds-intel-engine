@@ -83,8 +83,8 @@ Access levels for anonymous visitors, free signed-in users, and paid subscribers
 | Track record — today's picks (+ best odds revealed) | — | — | Y | Y |
 | Track record — today's picks (+ Kelly stake revealed) | — | — | — | Y |
 | Value bets page — stats only (bet count, edge tiers, leagues) | — | Y | Y | Y |
-| Value bets page — directional (match + selection + edge tier) | — | — | Y | Y |
-| Value bets page — full (odds, model prob, exact edge %, stake) | — | — | — | Y |
+| Value bets page — directional (match + market + edge tier, no selection) | — | — | Y | — |
+| Value bets page — full (match + selection + odds + model prob + exact edge % + stake) | — | — | — | Y |
 | Model probability + edge % per match | — | — | — | Y |
 | CLV tracking per bet (Pro on track record, Elite on match detail) | — | — | Y | Y |
 | Full bot ROI analytics + strategy breakdown | — | — | — | Y |
