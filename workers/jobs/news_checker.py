@@ -37,8 +37,20 @@ from workers.api_clients.db import execute_query, execute_write
 
 console = Console()
 
-gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
 GEMINI_MODEL = "gemini-2.5-flash"
+
+# Lazy-construct the Gemini client so importing this module doesn't require
+# GEMINI_API_KEY. genai.Client() validates the key in its constructor and
+# raises ValueError on empty input — that broke the smoke-test "imports
+# without error" check in CI, which has no Gemini key.
+_gemini_client = None
+
+
+def _get_gemini_client():
+    global _gemini_client
+    if _gemini_client is None:
+        _gemini_client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    return _gemini_client
 
 # ─── Team news fetchers (Sofascore removed — uses DB injuries only now) ─────
 
@@ -138,7 +150,7 @@ If no qualitative signal is found, set flag "ok", confidence_adjustment 0.0, imp
         response = None
         for _attempt in range(3):
             try:
-                response = gemini_client.models.generate_content(
+                response = _get_gemini_client().models.generate_content(
                     model=GEMINI_MODEL,
                     contents=prompt,
                 )
