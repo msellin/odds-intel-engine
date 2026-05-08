@@ -1180,6 +1180,9 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
     cohort: if set, only run bots assigned to that timing cohort (morning/midday/pre_ko).
             None = run all bots (backward-compatible).
     """
+    from workers.utils.kill_switches import is_disabled
+    if is_disabled("paper_betting"):
+        return
     today_str = date.today().isoformat()
     console.print(f"[bold green]═══ OddsIntel Pipeline: {today_str} ═══[/bold green]\n")
 

@@ -1044,6 +1044,31 @@ def _():
     assert status["used"] + status["idle"] <= status["max"]
 
 
+@test("KILL-SWITCH-FLAGS — is_disabled returns False for unknown flag")
+def _():
+    from workers.utils.kill_switches import is_disabled
+    assert is_disabled("nonexistent_flag") is False
+
+
+@test("KILL-SWITCH-FLAGS — is_disabled returns False when env var unset")
+def _():
+    import os
+    from workers.utils.kill_switches import is_disabled
+    os.environ.pop("DISABLE_ENRICHMENT", None)
+    assert is_disabled("enrichment") is False
+
+
+@test("KILL-SWITCH-FLAGS — is_disabled returns True when env var set to '1'")
+def _():
+    import os
+    from workers.utils.kill_switches import is_disabled
+    os.environ["DISABLE_NEWS_CHECKER"] = "1"
+    try:
+        assert is_disabled("news_checker") is True
+    finally:
+        del os.environ["DISABLE_NEWS_CHECKER"]
+
+
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 def _run_one(name: str, fn) -> tuple[str, bool, str, float]:

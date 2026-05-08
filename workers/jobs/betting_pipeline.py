@@ -63,6 +63,9 @@ def run_betting(cohort: str | None = None):
 
     cohort: 'morning', 'midday', or 'pre_ko'. Defaults to current time window.
     """
+    from workers.utils.kill_switches import is_disabled
+    if is_disabled("paper_betting"):
+        return
     from datetime import date
     today_str = date.today().isoformat()
 

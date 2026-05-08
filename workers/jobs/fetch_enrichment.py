@@ -570,6 +570,9 @@ def fetch_transfers(fixture_meta: dict) -> int:
 
 def run_enrichment(target_date: str = None, components: set = None, team_af_id: int = None):
     """Run enrichment pipeline. Callable by scheduler or CLI."""
+    from workers.utils.kill_switches import is_disabled
+    if is_disabled("enrichment"):
+        return
     target_date = target_date or date.today().isoformat()
     components = components or ALL_COMPONENTS
 

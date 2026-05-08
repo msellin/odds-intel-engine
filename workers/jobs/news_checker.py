@@ -189,6 +189,9 @@ If no qualitative signal is found, set flag "ok", confidence_adjustment 0.0, imp
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 def run_news_checker(dry_run: bool = False):
+    from workers.utils.kill_switches import is_disabled
+    if is_disabled("news_checker"):
+        return
     today = date.today().isoformat()
     console.print(f"[bold cyan]═══ OddsIntel AI News Checker: {today} ═══[/bold cyan]\n")
 

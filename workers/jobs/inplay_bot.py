@@ -90,6 +90,9 @@ def run_inplay_strategies():
     Main entrypoint — called every 30s from LivePoller after snapshots are stored.
     Reads latest snapshots from DB, checks all strategy conditions, logs paper bets.
     """
+    from workers.utils.kill_switches import is_disabled
+    if is_disabled("inplay"):
+        return
     from psycopg2.pool import PoolError
     from workers.api_clients.db import execute_query
     from workers.api_clients.supabase_client import ensure_bots, store_bet
