@@ -1044,6 +1044,43 @@ def _():
     assert status["used"] + status["idle"] <= status["max"]
 
 
+@test("BOOKMAKER-COUNT — bookmaker_count_active signal name in source")
+def _():
+    import inspect
+    from workers.api_clients import supabase_client
+    src = inspect.getsource(supabase_client.batch_write_morning_signals)
+    assert "bookmaker_count_active" in src, "bookmaker_count_active must be added in batch_write_morning_signals"
+
+
+@test("BOOKMAKER-COUNT — bookmaker_count_active queryable in match_signals")
+def _():
+    from workers.api_clients.db import execute_query
+    rows = execute_query(
+        "SELECT COUNT(*) AS cnt FROM match_signals WHERE signal_name = 'bookmaker_count_active'",
+        []
+    )
+    assert isinstance(rows[0]["cnt"], int)
+
+
+@test("LEAGUE-ELO-VAR — league_elo_variance signal name in source")
+def _():
+    import inspect
+    from workers.api_clients import supabase_client
+    src = inspect.getsource(supabase_client.batch_write_morning_signals)
+    assert "league_elo_variance" in src, "league_elo_variance must be in batch_write_morning_signals"
+    assert "league_elo_range" in src, "league_elo_range must be in batch_write_morning_signals"
+
+
+@test("LEAGUE-ELO-VAR — league_elo_variance queryable in match_signals")
+def _():
+    from workers.api_clients.db import execute_query
+    rows = execute_query(
+        "SELECT COUNT(*) AS cnt FROM match_signals WHERE signal_name IN ('league_elo_variance', 'league_elo_range')",
+        []
+    )
+    assert isinstance(rows[0]["cnt"], int)
+
+
 @test("KILL-SWITCH-FLAGS — is_disabled returns False for unknown flag")
 def _():
     from workers.utils.kill_switches import is_disabled

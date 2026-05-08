@@ -3170,6 +3170,7 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
                 bk = row.get("bookmaker")
                 if bk and bk not in seen_bm and float(row["odds"]) > 1.0:
                     seen_bm[bk] = 1.0 / float(row["odds"])
+            add(mid, "bookmaker_count_active", float(len(seen_bm)), "market", "derived")
             if len(seen_bm) >= 2:
                 vals = list(seen_bm.values())
                 add(mid, "bookmaker_disagreement", round(max(vals) - min(vals), 4), "market", "derived")
@@ -3504,6 +3505,34 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
                     add(mid, "elo_away", elo_a, "quality", "derived")
                 if elo_h is not None and elo_a is not None:
                     add(mid, "elo_diff", round(elo_h - elo_a, 2), "quality", "derived")
+    except Exception:
+        pass
+
+    # ── 6b. LEAGUE-ELO-VAR: ELO spread within each league ────────────────────
+    # High variance (range 400+) = clear hierarchy; low (range <200) = parity league.
+    # Helps calibrate how much weight to place on elo_diff per league.
+    try:
+        from statistics import stdev as _stdev
+        league_elos: dict[str, list[float]] = defaultdict(list)
+        for m in matches:
+            lid = m.get("league_id")
+            if not lid:
+                continue
+            for tid in [m.get("home_team_id"), m.get("away_team_id")]:
+                if not tid:
+                    continue
+                elo = elo_by_team.get(str(tid))
+                if elo is not None:
+                    league_elos[lid].append(elo)
+        for m in matches:
+            mid = m["id"]
+            lid = m.get("league_id")
+            if not lid:
+                continue
+            elos = league_elos.get(lid, [])
+            if len(elos) >= 4:
+                add(mid, "league_elo_variance", round(_stdev(elos), 1), "context", "derived")
+                add(mid, "league_elo_range", round(max(elos) - min(elos), 1), "context", "derived")
     except Exception:
         pass
 
