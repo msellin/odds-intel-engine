@@ -559,15 +559,17 @@ def _check_strategy_a(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     Strategy A: xG Divergence Over 2.5.
 
     Merged 2026-05-08: previously A=score(0-0) and A2=combined goals=1. Now
-    both states share a single strategy with `total_goals <= 1`. Same thesis,
-    less code dilution (4/5 AI consensus from the post-bug review).
+    both states share a single strategy with `total_goals <= 1`.
 
-    Proxy mode: runs but drops the shot-quality filter (trivially true with
-    proxy), replaces live_xg >= 0.9 with sot_combined >= 9, raises edge floor
-    to 5% to compensate for proxy noise.
+    Thresholds loosened 2026-05-08 per 5-AI consensus (combinatorial-rarity
+    diagnosis): minute 25-35→20-40, live_xg ≥0.9→0.6, SoT ≥4→3, proxy SoT
+    ≥9→6, shot-quality ≥0.09→0.07, posterior multiplier 1.15×→1.08×,
+    edge 3%/5%→1.5%/3.5%, prematch_o25 >0.54→0.50.
+
+    Proxy mode keeps a higher edge floor to compensate for shot-derived xG noise.
     """
     minute = cand["minute"] or 0
-    if minute < 25 or minute > 35:
+    if minute < 20 or minute > 40:
         return None
     if has_red_card:
         return None
@@ -585,31 +587,30 @@ def _check_strategy_a(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     if pm_xg_total <= 0:
         return None
 
-    # Bayesian posterior must be > prematch rate * 1.15
+    # Bayesian posterior must be > prematch rate * 1.08 (loosened from 1.15)
     posterior = _bayesian_posterior(pm_xg_total, live_xg, minute)
-    if posterior <= pm_xg_total * 1.15:
+    if posterior <= pm_xg_total * 1.08:
         return None
 
     sot = (cand["shots_on_target_home"] or 0) + (cand["shots_on_target_away"] or 0)
 
     if is_real:
-        # Real xG: original checks
-        if live_xg < 0.9:
+        if live_xg < 0.6:
             return None
-        if sot < 4:
+        if sot < 3:
             return None
         total_shots = (cand["shots_home"] or 0) + (cand["shots_away"] or 0)
-        if total_shots > 0 and live_xg / total_shots < 0.09:
+        if total_shots > 0 and live_xg / total_shots < 0.07:
             return None  # Low-quality shots only
-        min_edge = 3.0
+        min_edge = 1.5
     else:
-        # Proxy: proxy xg >= 0.9 maps to sot >= 9; no quality filter (trivially true)
-        if sot < 9:
+        # Proxy: live_xg ≥ 0.6 maps to sot ≥ 6
+        if sot < 6:
             return None
-        min_edge = 5.0  # Higher bar for proxy noise
+        min_edge = 3.5  # Higher bar for proxy noise
 
     pm_o25 = float(pm.get("prematch_o25_prob") or 0)
-    if pm_o25 <= 0.54:
+    if pm_o25 <= 0.50:
         return None
 
     odds = cand.get("live_ou_25_over")
@@ -667,7 +668,8 @@ def _check_strategy_b(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     Proxy: trailing team sot >= 4 (equivalent threshold at 0.10/shot).
     """
     minute = cand["minute"] or 0
-    if minute < 15 or minute > 40:
+    # Loosened 2026-05-08: window 15-40 → 12-50 (5-AI consensus)
+    if minute < 12 or minute > 50:
         return None
     if has_red_card:
         return None
@@ -680,28 +682,29 @@ def _check_strategy_b(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     sot_h = cand["shots_on_target_home"] or 0
     sot_a = cand["shots_on_target_away"] or 0
 
+    # Loosened 2026-05-08: trailing xg 0.4 → 0.20, sot 2 → 1 (real); proxy sot 4 → 2
     if sa == 0:
         trailing_xg = xg_a
         trailing_sot = sot_a
         if is_real:
-            if xg_a < 0.4 or sot_a < 2:
+            if xg_a < 0.20 or sot_a < 1:
                 return None
         else:
-            if sot_a < 4:
+            if sot_a < 2:
                 return None
     else:
         trailing_xg = xg_h
         trailing_sot = sot_h
         if is_real:
-            if xg_h < 0.4 or sot_h < 2:
+            if xg_h < 0.20 or sot_h < 1:
                 return None
         else:
-            if sot_h < 4:
+            if sot_h < 2:
                 return None
 
-    # Filter: prematch must signal "both attack" type match
+    # Filter: prematch must signal "both attack" type match (loosened 0.48 → 0.42)
     pm_btts = float(pm.get("prematch_btts_prob") or 0)
-    if pm_btts <= 0.48:
+    if pm_btts <= 0.42:
         return None
 
     odds = cand.get("live_ou_25_over")
@@ -726,7 +729,9 @@ def _check_strategy_b(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
 
     model_prob = _poisson_over_prob(lambda_remaining, goals_needed - 0.5)
 
-    min_edge = 3.0 if is_real else 4.5
+    # Edge floor loosened 2026-05-08: 3.0/4.5 → 2.0/3.0 (B model now uses
+    # proper Poisson P(Over 2.5) post-2026-05-08 fix, so edge values are honest)
+    min_edge = 2.0 if is_real else 3.0
     implied = _implied_prob(odds)
     edge = (model_prob - implied) * 100
     if edge < min_edge:
@@ -799,16 +804,16 @@ def _check_strategy_c(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
         fav_sot = cand["shots_on_target_away"] or 0
         opp_sot = cand["shots_on_target_home"] or 0
 
-    # Dominance check
+    # Dominance check (loosened possession 2026-05-08: home 55→52, away 60→55)
     if is_real:
         if fav_xg <= opp_xg:
             return None
-        min_poss = 55.0 if home_is_fav else 60.0
+        min_poss = 52.0 if home_is_fav else 55.0
     else:
         # Proxy: use SoT differential instead; raise possession threshold
         if fav_sot <= opp_sot:
             return None
-        min_poss = 58.0 if home_is_fav else 63.0
+        min_poss = 55.0 if home_is_fav else 58.0
 
     if fav_poss < min_poss:
         return None
@@ -830,7 +835,8 @@ def _check_strategy_c(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     fav_lambda_remaining = fav_xg * (remaining / max(1, minute))
     p_fav_scores = 1.0 - math.exp(-fav_lambda_remaining)
 
-    min_edge = 3.0 if is_real else 4.5
+    # Edge floor loosened 2026-05-08: 3.0/4.5 → 1.5/3.0
+    min_edge = 1.5 if is_real else 3.0
     implied = _implied_prob(odds)
     edge = (p_fav_scores - implied) * 100
     if edge < min_edge:
@@ -857,13 +863,16 @@ def _check_strategy_c(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
 
 def _check_strategy_d(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     """
-    Strategy D: Late Goals Compression — Over 2.5 in late game (min 55-75).
+    Strategy D: Late Goals Compression — Over 2.5 in late game.
 
-    Real xG: live_xg >= 1.0.
-    Proxy: sot_total >= 10 (10 * 0.10 = 1.0 equivalent). Lower confidence → edge floor 4.5%.
+    Thresholds loosened 2026-05-08 per 5-AI consensus: window 55-75 → 48-80,
+    live_xg ≥1.0 → 0.7, proxy SoT 10 → 6, OU odds floor 2.50 → 2.10,
+    prematch_o25 >0.50 → 0.46, edge 3%/4.5% → 1.5%/3.0%.
+
+    Real xG: live_xg >= 0.7. Proxy: sot_total >= 6 (~0.6 xG equivalent).
     """
     minute = cand["minute"] or 0
-    if minute < 55 or minute > 75:
+    if minute < 48 or minute > 80:
         return None
     if has_red_card:
         return None
@@ -877,23 +886,23 @@ def _check_strategy_d(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     live_xg = xg_h + xg_a
     sot = (cand["shots_on_target_home"] or 0) + (cand["shots_on_target_away"] or 0)
 
-    # Minimum pressure threshold
+    # Minimum pressure threshold (loosened)
     if is_real:
-        if live_xg < 1.0:
+        if live_xg < 0.7:
+            return None
+        min_edge = 1.5
+    else:
+        if sot < 6:
             return None
         min_edge = 3.0
-    else:
-        if sot < 10:  # ~1.0 xG equivalent
-            return None
-        min_edge = 4.5
 
     odds = cand.get("live_ou_25_over")
-    if not odds or float(odds) <= 2.50:
+    if not odds or float(odds) <= 2.10:
         return None
     odds = float(odds)
 
     pm_o25 = float(pm.get("prematch_o25_prob") or 0)
-    if pm_o25 <= 0.50:
+    if pm_o25 <= 0.46:
         return None
 
     pm_xg_total = float(pm.get("prematch_xg_home") or 0) + float(pm.get("prematch_xg_away") or 0)

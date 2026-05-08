@@ -1322,6 +1322,49 @@ def _():
     )
 
 
+@test("INPLAY-LOOSEN-A — strategy A uses minute 20-40 + live_xg ≥ 0.6 + sot ≥ 3")
+def _():
+    import pathlib, re
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    fn_start = src.index("def _check_strategy_a(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    body = src[fn_start:fn_end]
+    assert "if minute < 20 or minute > 40" in body, "A minute window must loosen to 20-40"
+    assert "live_xg < 0.6" in body, "A real-xG floor must drop to 0.6 (was 0.9)"
+    assert "sot < 3" in body, "A real SoT floor must drop to 3 (was 4)"
+    assert "sot < 6" in body, "A proxy SoT floor must drop to 6 (was 9)"
+    assert "pm_xg_total * 1.08" in body, "A posterior multiplier must drop to 1.08 (was 1.15)"
+
+
+@test("INPLAY-LOOSEN-D — strategy D uses minute 48-80 + live_xg ≥ 0.7 + odds > 2.10")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    fn_start = src.index("def _check_strategy_d(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    body = src[fn_start:fn_end]
+    assert "if minute < 48 or minute > 80" in body, "D minute window must loosen to 48-80"
+    assert "live_xg < 0.7" in body, "D real-xG floor must drop to 0.7 (was 1.0)"
+    assert "odds) <= 2.10" in body, "D OU odds floor must drop to 2.10 (was 2.50)"
+
+
+@test("INPLAY-LOOSEN-B-C — B window 12-50, C possession 52/55 (real)")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    b_start = src.index("def _check_strategy_b(")
+    b_end = src.index("\ndef ", b_start + 1)
+    b_body = src[b_start:b_end]
+    assert "if minute < 12 or minute > 50" in b_body, "B window must loosen to 12-50"
+
+    c_start = src.index("def _check_strategy_c(")
+    c_end = src.index("\ndef ", c_start + 1)
+    c_body = src[c_start:c_end]
+    assert "min_poss = 52.0 if home_is_fav else 55.0" in c_body, (
+        "C real-xG possession thresholds must drop to 52% home / 55% away"
+    )
+
+
 @test("REPLAY-INPLAY — scripts/replay_inplay.py imports without DB writes")
 def _():
     """Defensive: backfill script must be dry-run only — no INSERT/UPDATE/DELETE
