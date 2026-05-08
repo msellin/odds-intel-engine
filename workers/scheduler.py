@@ -360,6 +360,16 @@ def job_health_alerts_settlement():
     _run_job("health_alerts_settlement", run_settlement_check)
 
 
+def job_cleanup_orphaned_runs():
+    """Every 30 min: mark pipeline_runs stuck in 'running' >60 min as failed.
+
+    Catches records that were <10 min old at scheduler restart and slipped past
+    the startup cleanup. 60-min threshold is generous enough to allow legitimate
+    long-running jobs (enrichment, settlement) to finish.
+    """
+    _cleanup_stale_runs(threshold_minutes=60, label="orphaned (periodic cleanup)")
+
+
 def job_healthcheck_ping():
     """OBS-HEARTBEAT: Ping healthchecks.io every 5 min to confirm scheduler is alive.
     Set HEALTHCHECKS_IO_PING_URL in Railway env vars after creating a check at healthchecks.io.
@@ -424,22 +434,22 @@ def _handle_signal(signum, frame):
 
 # ── Main ───────────────────────────────────────────────────────────────────
 
-def _cleanup_stale_runs():
-    """Mark orphaned 'running' records as failed on startup — left by previous Railway kill/restart."""
+def _cleanup_stale_runs(threshold_minutes: int = 10, label: str = "scheduler restarted"):
+    """Mark orphaned 'running' records as failed — called on startup and periodically."""
     try:
         from workers.api_clients.db import execute_write
         execute_write(
-            """UPDATE pipeline_runs
+            f"""UPDATE pipeline_runs
                SET status = 'failed',
                    completed_at = NOW(),
-                   error_message = 'killed — scheduler restarted'
+                   error_message = 'killed — {label}'
                WHERE status = 'running'
-                 AND started_at < NOW() - INTERVAL '30 minutes'""",
+                 AND started_at < NOW() - INTERVAL '{threshold_minutes} minutes'""",
             []
         )
-        console.print(f"[cyan]Startup cleanup: marked orphaned running jobs as failed[/cyan]")
+        console.print(f"[cyan]Orphan cleanup ({label}): marked stale running jobs as failed[/cyan]")
     except Exception as e:
-        console.print(f"[yellow]Startup cleanup failed (non-fatal): {e}[/yellow]")
+        console.print(f"[yellow]Orphan cleanup failed (non-fatal): {e}[/yellow]")
 
 
 def main():
@@ -458,7 +468,8 @@ def main():
     _start_health_server()
 
     # Clean up orphaned "running" records from previous process (Railway kill/restart)
-    _cleanup_stale_runs()
+    # 10-min threshold catches jobs that were <30 min old under the old logic
+    _cleanup_stale_runs(threshold_minutes=10, label="scheduler restarted")
 
     # Sync budget in background (API call can take 2-5s, don't block startup)
     def _initial_budget_sync():
@@ -597,6 +608,11 @@ def main():
     # Ops snapshot fallback: every hour at :30 — captures state if no pipeline ran
     scheduler.add_job(job_ops_snapshot, CronTrigger(minute=30),
                       id="ops_snapshot", name="Ops Snapshot :30")
+
+    # Orphan cleanup: every 30 min — marks pipeline_runs stuck >60 min as failed
+    # Catches records that slipped past startup cleanup (were <10 min old at restart time)
+    scheduler.add_job(job_cleanup_orphaned_runs, CronTrigger(minute="*/30"),
+                      id="cleanup_orphaned_runs", name="Orphan Cleanup (30min)")
 
     # OBS-HEARTBEAT: ping healthchecks.io every 5 min — external liveness signal
     # Set HEALTHCHECKS_IO_PING_URL env var to activate (no-op if unset)

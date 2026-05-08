@@ -321,8 +321,8 @@ def fetch_coaches(fixture_meta: dict) -> int:
     except Exception:
         recently_fetched = set()
 
-    to_fetch = team_af_ids - recently_fetched
-    console.print(f"  {len(team_af_ids)} teams total, {len(recently_fetched)} cached, {len(to_fetch)} to fetch")
+    to_fetch = list(team_af_ids - recently_fetched)[:50]  # cap per run
+    console.print(f"  {len(team_af_ids)} teams total, {len(recently_fetched)} cached, {len(to_fetch)} to fetch (capped at 50)")
 
     stored = 0
     for team_af_id in to_fetch:
@@ -485,8 +485,8 @@ def fetch_transfers(fixture_meta: dict) -> int:
         console.print("  No team AF IDs — skipping transfers fetch")
         return 0
 
-    # 7-day cache
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    # 30-day cache — transfers only change in transfer windows
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     try:
         cached = execute_query(
             "SELECT DISTINCT team_api_id FROM team_transfers WHERE team_api_id = ANY(%s) AND created_at > %s",
@@ -496,8 +496,8 @@ def fetch_transfers(fixture_meta: dict) -> int:
     except Exception:
         cached_ids = set()
 
-    to_fetch = team_af_ids - cached_ids
-    console.print(f"  {len(team_af_ids)} teams, {len(cached_ids)} cached, {len(to_fetch)} to fetch")
+    to_fetch = list(team_af_ids - cached_ids)[:100]  # cap per run — rest picked up next day
+    console.print(f"  {len(team_af_ids)} teams, {len(cached_ids)} cached, {len(to_fetch)} to fetch (capped at 100)")
 
     stored = 0
     for team_af_id in to_fetch:
