@@ -29,7 +29,7 @@ from workers.api_clients.api_football import (
     parse_fixture_odds, get_odds_by_date,
     get_prediction, parse_prediction,
     get_team_statistics, parse_team_statistics,
-    get_injuries_batched, parse_injuries,
+    get_injuries_by_date, parse_injuries,
     get_standings, parse_standings,
     get_h2h, parse_h2h,
 )
@@ -803,18 +803,18 @@ def _fetch_morning_enrichment(af_fixtures_raw: list[dict], af_id_to_match_id: di
             "season": league.get("season") or season,
         }
 
-    # ── T3: Injuries (batched, ~7 calls for 130 fixtures) ──────────────────
-    console.print("\n[cyan]T3: Fetching injuries (batched)...[/cyan]")
-    fixture_ids_with_match = [fid for fid, m in fixture_meta.items() if m.get("match_id")]
+    # ── T3: Injuries (single /injuries?date= call) ──────────────────────────
+    console.print("\n[cyan]T3: Fetching injuries (by date, single call)...[/cyan]")
+    eligible_fids = {fid for fid, m in fixture_meta.items() if m.get("match_id")}
     injuries_by_fixture: dict[int, list[dict]] = {}
     try:
-        injuries_by_fixture = get_injuries_batched(fixture_ids_with_match)
+        injuries_by_fixture = get_injuries_by_date(today.isoformat())
     except Exception as e:
         console.print(f"  [yellow]Injuries fetch error: {e}[/yellow]")
 
     inj_stored = 0
     for fid, injuries in injuries_by_fixture.items():
-        if not injuries:
+        if fid not in eligible_fids or not injuries:
             continue
         meta = fixture_meta.get(fid, {})
         match_id = meta.get("match_id")

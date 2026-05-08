@@ -1611,6 +1611,54 @@ def _():
     )
 
 
+@test("INJURIES-BY-DATE — single call returns grouped fixtures (T3 fast path)")
+def _():
+    """Validates the /injuries?date=YYYY-MM-DD path is wired and returns the expected
+    {fixture_id: [item, ...]} shape that fetch_injuries / _fetch_morning_enrichment
+    consume. Replaces the per-fixture get_injuries_batched fan-out (~25 calls → 1).
+
+    Failure modes this catches: response shape change, AF endpoint regressions,
+    or accidental revert of the import in either pipeline call site.
+    """
+    from datetime import date
+    from workers.api_clients.api_football import get_injuries_by_date
+
+    today = date.today().isoformat()
+    result = get_injuries_by_date(today)
+    assert isinstance(result, dict), f"Expected dict, got {type(result)}"
+    # Don't assert non-empty — a quiet day could legitimately have 0 fixtures with injuries.
+    # Do assert the shape if anything came back.
+    for fid, items in result.items():
+        assert isinstance(fid, int), f"Expected int fixture id, got {type(fid)}"
+        assert isinstance(items, list), f"Expected list value, got {type(items)}"
+        for item in items[:1]:
+            assert "player" in item and "team" in item and "fixture" in item, (
+                f"Injury item missing expected keys: {list(item.keys())}"
+            )
+
+
+@test("INJURIES-BY-DATE — both call sites use the new function (no batched leftovers)")
+def _():
+    """Source-inspection guard: if anyone reverts the call site to get_injuries_batched
+    in either daily_pipeline_v2.py or fetch_enrichment.py, the recovery script and
+    morning pipeline silently lose the 47× speedup.
+    """
+    import pathlib
+    repo = pathlib.Path(__file__).resolve().parent.parent
+    for rel in ("workers/jobs/fetch_enrichment.py", "workers/jobs/daily_pipeline_v2.py"):
+        src = (repo / rel).read_text()
+        assert "get_injuries_by_date" in src, (
+            f"{rel} must call get_injuries_by_date (the single-call /injuries?date= path). "
+            f"If this fails, the per-fixture batched fan-out has been reintroduced."
+        )
+        # The deprecated batched function should not be IMPORTED into pipeline code.
+        # (It still lives in api_football.py for ad-hoc scripts — that's fine.)
+        assert "get_injuries_batched" not in src, (
+            f"{rel} still imports/uses get_injuries_batched. The pipeline call sites "
+            f"must use get_injuries_by_date instead."
+        )
+
+
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 def _run_one(name: str, fn) -> tuple[str, bool, str, float]:

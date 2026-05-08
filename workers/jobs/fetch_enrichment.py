@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workers.api_clients.api_football import (
     get_team_statistics, parse_team_statistics,
-    get_injuries_batched, parse_injuries,
+    get_injuries_by_date, parse_injuries,
     get_standings, parse_standings,
     get_h2h, parse_h2h,
     get_coaches, parse_coaches,
@@ -154,32 +154,33 @@ def _build_fixture_meta(target_date: str) -> dict[int, dict]:
     return fixture_meta
 
 
-def fetch_injuries(fixture_meta: dict, coverage_map: dict) -> int:
-    """T3: Fetch and store injuries (batched)."""
-    console.print("\n[cyan]T3: Fetching injuries (batched)...[/cyan]")
+def fetch_injuries(fixture_meta: dict, coverage_map: dict, target_date: str) -> int:
+    """T3: Fetch and store injuries (single /injuries?date= call)."""
+    console.print("\n[cyan]T3: Fetching injuries (by date, single call)...[/cyan]")
 
-    # Filter to fixtures with coverage
-    fixture_ids = []
-    for fid, meta in fixture_meta.items():
-        if league_has_coverage(coverage_map, meta.get("league_id", ""), "injuries"):
-            if meta.get("match_id"):
-                fixture_ids.append(fid)
+    # Set of fixture IDs we care about (have a match_id and league has coverage)
+    eligible_fids = {
+        fid for fid, meta in fixture_meta.items()
+        if meta.get("match_id")
+        and league_has_coverage(coverage_map, meta.get("league_id", ""), "injuries")
+    }
 
-    if not fixture_ids:
+    if not eligible_fids:
         console.print("  No fixtures eligible for injury fetch")
         return 0
 
-    console.print(f"  Fetching injuries for {len(fixture_ids)} fixtures...")
-    injuries_by_fixture = {}
     try:
-        injuries_by_fixture = get_injuries_batched(fixture_ids)
+        injuries_by_fixture = get_injuries_by_date(target_date)
     except Exception as e:
         console.print(f"  [yellow]Injuries fetch error: {e}[/yellow]")
         return 0
 
+    console.print(f"  {len(eligible_fids)} eligible fixtures, "
+                  f"{len(injuries_by_fixture)} fixtures with injuries returned")
+
     stored = 0
     for fid, injuries in injuries_by_fixture.items():
-        if not injuries:
+        if fid not in eligible_fids or not injuries:
             continue
         meta = fixture_meta.get(fid, {})
         match_id = meta.get("match_id")
@@ -606,7 +607,7 @@ def run_enrichment(target_date: str = None, components: set = None, team_af_id: 
         total_records = 0
 
         if "injuries" in components:
-            total_records += fetch_injuries(fixture_meta, coverage_map)
+            total_records += fetch_injuries(fixture_meta, coverage_map, target_date)
 
         if "team_stats" in components:
             total_records += fetch_team_stats(fixture_meta, coverage_map, team_af_id=team_af_id)
