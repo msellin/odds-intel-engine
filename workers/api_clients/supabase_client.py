@@ -4053,6 +4053,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
     matches_missing_grade = None
     matches_postponed = 0
     odds_snapshots_today = 0
+    odds_snapshots_total_rows = 0
     distinct_bookmakers = 0
     matches_without_pinnacle = 0
     odds_market_match_winner = 0
@@ -4160,6 +4161,14 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
     except Exception as e:
         failed_sections.append("odds_coverage")
         console.print(f"[yellow]ops_snapshot: odds_coverage failed: {e}[/yellow]")
+
+    try:
+        r = execute_query("SELECT COUNT(*) AS total FROM odds_snapshots", [])
+        if r:
+            odds_snapshots_total_rows = r[0]["total"]
+    except Exception as e:
+        failed_sections.append("odds_snapshots_total")
+        console.print(f"[yellow]ops_snapshot: odds_snapshots_total failed: {e}[/yellow]")
 
     try:
         r = execute_query(
@@ -4525,7 +4534,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               matches_today, matches_with_odds, matches_with_pinnacle,
               matches_with_predictions, matches_with_signals, matches_with_fvectors,
               matches_missing_grade, matches_postponed_today,
-              odds_snapshots_today, distinct_bookmakers, matches_without_pinnacle,
+              odds_snapshots_today, odds_snapshots_total_rows, distinct_bookmakers, matches_without_pinnacle,
               odds_market_match_winner, odds_market_goals_ou, odds_market_btts,
               bets_placed_today, bets_pending, bets_settled_today, pnl_today,
               bets_inplay_today, active_bots, silent_bots, duplicate_bets,
@@ -4544,7 +4553,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
             ) VALUES (
               %s,
               %s, %s, %s, %s, %s, %s, %s, %s,
-              %s, %s, %s, %s, %s, %s,
+              %s, %s, %s, %s, %s, %s, %s,
               %s, %s, %s, %s, %s, %s, %s, %s,
               %s, %s, %s,
               %s, %s, %s, %s,
@@ -4562,7 +4571,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
                 matches_today, matches_with_odds, matches_with_pinnacle,
                 matches_with_predictions, matches_with_signals, matches_with_fvectors,
                 matches_missing_grade, matches_postponed,
-                odds_snapshots_today, distinct_bookmakers, matches_without_pinnacle,
+                odds_snapshots_today, odds_snapshots_total_rows, distinct_bookmakers, matches_without_pinnacle,
                 odds_market_match_winner, odds_market_goals_ou, odds_market_btts,
                 bets_placed_today, bets_pending, bets_settled_today, pnl_today,
                 bets_inplay_today, active_bots, silent_bots, duplicate_bets,

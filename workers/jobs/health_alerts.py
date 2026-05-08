@@ -169,19 +169,7 @@ def check_snapshot_staleness() -> None:
 
 
 def check_settlement() -> None:
-    """Settlement produced 0 results when >5 bets were pending — settlement job may have failed."""
-    today = date.today().isoformat()
-
-    rows = execute_query(
-        """
-        SELECT COUNT(*) AS cnt FROM simulated_bets
-        WHERE result != 'pending'
-          AND updated_at::date = %s
-        """,
-        (today,)
-    )
-    settled_today = (rows[0]["cnt"] if rows else 0) or 0
-
+    """Bets still pending on finished matches after settlement window — settlement may have failed."""
     rows = execute_query(
         """
         SELECT COUNT(*) AS cnt FROM simulated_bets sb
@@ -191,17 +179,40 @@ def check_settlement() -> None:
         """,
     )
     stale_pending = (rows[0]["cnt"] if rows else 0) or 0
-
-    console.print(f"[dim]health_alerts: {settled_today} bets settled today, {stale_pending} pending on finished matches[/dim]")
+    console.print(f"[dim]health_alerts: {stale_pending} pending bets on finished matches[/dim]")
 
     if stale_pending > 5:
+        today = date.today().isoformat()
         _alert_once(
             "settlement_stale",
             f"Settlement gap — {stale_pending} pending bets on finished matches",
             f"<p>There are {stale_pending} simulated bets still marked 'pending' on matches "
             f"that have finished.</p>"
-            f"<p>Settlement job may have failed. Today ({today}) settled {settled_today} bets total.</p>"
-            f"<p>Check Railway logs for the 21:00 UTC settlement job.</p>",
+            f"<p>Settlement job may have failed on {today}. "
+            f"Check Railway logs for the 21:00 UTC settlement job and pipeline_runs table.</p>",
+        )
+
+
+def check_odds_bloat() -> None:
+    """odds_snapshots total row count > 1.5M after the nightly prune window — prune may have failed."""
+    now_utc = datetime.now(timezone.utc)
+    if now_utc.hour < 22:
+        return  # Only meaningful after the 21:00 UTC prune should have run
+
+    rows = execute_query("SELECT COUNT(*) AS cnt FROM odds_snapshots")
+    total = (rows[0]["cnt"] if rows else 0) or 0
+    console.print(f"[dim]health_alerts: odds_snapshots total rows: {total:,}[/dim]")
+
+    BLOAT_THRESHOLD = 1_500_000
+    if total > BLOAT_THRESHOLD:
+        today = date.today().isoformat()
+        _alert_once(
+            "odds_bloat",
+            f"odds_snapshots bloat — {total:,} rows (threshold {BLOAT_THRESHOLD:,})",
+            f"<p>odds_snapshots has {total:,} rows as of {now_utc.strftime('%H:%M UTC')} on {today}.</p>"
+            f"<p>The nightly prune (settlement step 3/3 at 21:00 UTC) should have run by now. "
+            f"Check <code>pipeline_runs WHERE job_name = 'settlement_prune'</code> for failure details.</p>"
+            f"<p>Manual fix: <code>venv/bin/python scripts/prune_odds_snapshots.py --apply</code></p>",
         )
 
 
@@ -227,9 +238,13 @@ def run_snapshot_check() -> None:
 
 
 def run_settlement_check() -> None:
-    """21:30 UTC — settlement completeness check."""
+    """21:30 UTC — settlement completeness check + odds bloat check."""
     console.print("[cyan]health_alerts: running settlement check[/cyan]")
     try:
         check_settlement()
     except Exception as e:
         console.print(f"[yellow]health_alerts settlement check error: {e}[/yellow]")
+    try:
+        check_odds_bloat()
+    except Exception as e:
+        console.print(f"[yellow]health_alerts odds bloat check error: {e}[/yellow]")

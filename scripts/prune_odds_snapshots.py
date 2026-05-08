@@ -135,6 +135,7 @@ def prune(dry_run: bool = True):
         print("\nThis was a DRY RUN. Run with --apply to actually delete.")
 
     print("Done.")
+    return total_deleted
 
 
 if __name__ == "__main__":

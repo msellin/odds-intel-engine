@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-08 — STAKE-RANK + API-RETRY-WRAPPER done. Bet candidates now sorted by edge descending before exposure cap applied. AF _get() has 3-attempt retry with backoff on 429/503/connection errors. Gemini retry in news_checker + match_previews. Next: BOT-PUBLIC-PERF.
+> Last updated: 2026-05-08 — PRUNE-MONITORING: settlement/ML-ETL/prune each log to pipeline_runs (with rows-deleted count); ops_snapshots.odds_snapshots_total_rows tracks total DB size; health alert at 22:00 UTC fires if >1.5M rows (prune missed). Also: STAKE-RANK + API-RETRY-WRAPPER. Next: BOT-PUBLIC-PERF.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done

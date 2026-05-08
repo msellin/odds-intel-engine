@@ -144,42 +144,60 @@ def morning_pipeline():
 def settlement_pipeline():
     """
     21:00 UTC — Settlement chain: results → ML ETL → prune → Platt (Wed+Sun) → DC rho (Sun).
+    Each step is logged to pipeline_runs so the ops dashboard shows status and row counts.
     """
     import traceback
     from workers.jobs.settlement import run_settlement, run_ml_etl
+    from workers.utils.pipeline_utils import log_pipeline_start, log_pipeline_complete, log_pipeline_failed
 
+    today = date.today().isoformat()
+
+    # (job_name, display_label, fn)
     steps = [
-        ("1/3", "Core settlement", lambda: run_settlement()),
-        ("2/3", "ML ETL",          lambda: run_ml_etl()),
-        ("3/3", "Prune odds",      lambda: __import__('scripts.prune_odds_snapshots', fromlist=['prune']).prune(dry_run=False)),
+        ("settlement",        "Core settlement", lambda: run_settlement()),
+        ("settlement_ml_etl", "ML ETL",          lambda: run_ml_etl()),
+        ("settlement_prune",  "Prune odds",      lambda: __import__('scripts.prune_odds_snapshots', fromlist=['prune']).prune(dry_run=False)),
     ]
 
     is_refit_day = date.today().weekday() in (2, 6)  # Wednesday + Sunday
     is_sunday    = date.today().weekday() == 6        # Sunday only
 
-    # Platt recalibration + blend weight refit: Wednesday + Sunday
     if is_refit_day:
-        steps.append(("4+", "Platt recalibration", lambda: __import__('scripts.fit_platt', fromlist=['fit_and_store']).fit_and_store()))
-        steps.append(("5+", "Blend weight refit",  lambda: __import__('scripts.fit_blend_weights', fromlist=['run']).run()))
-    # DC rho refit: Sunday only (more data-intensive)
+        steps.append(("settlement_platt", "Platt recalibration", lambda: __import__('scripts.fit_platt', fromlist=['fit_and_store']).fit_and_store()))
+        steps.append(("settlement_blend", "Blend weight refit",  lambda: __import__('scripts.fit_blend_weights', fromlist=['run']).run()))
     if is_sunday:
-        steps.append(("6+", "DC rho per tier",     lambda: __import__('scripts.fit_league_rho', fromlist=['run']).run()))
+        steps.append(("settlement_dc_rho", "DC rho per tier",    lambda: __import__('scripts.fit_league_rho', fromlist=['run']).run()))
     if not is_refit_day:
         console.print("[dim]Settlement steps 4-6: Platt + blend weight + DC rho — skipped (not Wednesday or Sunday)[/dim]")
 
     failed_steps = []
-    for step_num, step_name, step_fn in steps:
-        console.print(f"\n[cyan]Settlement step {step_num}: {step_name}[/cyan]")
+    for i, (job_name, step_label, step_fn) in enumerate(steps, 1):
+        console.print(f"\n[cyan]Settlement step {i}/{len(steps)}: {step_label}[/cyan]")
         step_start = datetime.now(timezone.utc)
+        run_id = None
         try:
-            step_fn()
+            run_id = log_pipeline_start(job_name, today)
+        except Exception:
+            pass
+        try:
+            result = step_fn()
             elapsed = (datetime.now(timezone.utc) - step_start).total_seconds()
-            console.print(f"[green]  ✓ {step_name} completed in {elapsed:.1f}s[/green]")
+            console.print(f"[green]  ✓ {step_label} completed in {elapsed:.1f}s[/green]")
+            try:
+                # prune returns rows deleted; other steps return None
+                rows = result if isinstance(result, int) else None
+                log_pipeline_complete(run_id, records_count=rows)
+            except Exception:
+                pass
         except Exception as e:
             elapsed = (datetime.now(timezone.utc) - step_start).total_seconds()
-            failed_steps.append(step_name)
-            console.print(f"[red]  ✗ {step_name} FAILED after {elapsed:.1f}s: {e}[/red]")
+            failed_steps.append(step_label)
+            console.print(f"[red]  ✗ {step_label} FAILED after {elapsed:.1f}s: {e}[/red]")
             console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
+            try:
+                log_pipeline_failed(run_id, str(e))
+            except Exception:
+                pass
 
     if failed_steps:
         console.print(f"\n[red bold]Settlement finished with {len(failed_steps)} failure(s): {', '.join(failed_steps)}[/red bold]")
