@@ -82,6 +82,19 @@ _cycle_count: int = 0  # Track cycles for periodic status logs
 _total_bets_session: int = 0  # Total bets placed since startup
 _total_candidates_session: int = 0  # Total candidates evaluated
 
+# Per-stage rejection counters — accumulated across the session, logged on heartbeat.
+# Lets us see exactly where the funnel collapses ("of 89 candidates, X had no prematch,
+# Y had stale odds, Z hit the league xG gate, ...").
+_funnel: dict[str, int] = {
+    "no_prematch": 0,
+    "league_xg_gate": 0,
+    "existing_bet": 0,
+    "no_strategy_trigger": 0,
+    "odds_stale": 0,
+    "score_changed": 0,
+    "store_bet_error": 0,
+}
+
 
 # ── Entrypoint (called from LivePoller) ──────────────────────────────────────
 
@@ -319,6 +332,13 @@ def _get_prematch_data(execute_query, match_ids: list[str]) -> dict[str, dict]:
     if not match_ids:
         return {}
 
+    # NOTE: prematch_xg_home/away come from team_season_stats.goals_for_avg
+    # (rolling-season avg goals/game per team). The previous source —
+    # m.af_prediction->'predictions'->'goals'->>'home' — was misinterpreted:
+    # AF returns those as betting-line strings like "-1.5", "-2.5" (handicap
+    # indicators), NOT expected goals. That made pm_xg_total negative on
+    # ~every match and rejected every candidate at `if pm_xg_total <= 0`.
+    # Falls back to league-average prior (1.3 each) when stats are missing.
     rows = execute_query("""
         SELECT
             m.id AS match_id,
@@ -326,26 +346,30 @@ def _get_prematch_data(execute_query, match_ids: list[str]) -> dict[str, dict]:
             m.home_team_id,
             m.away_team_id,
             l.tier AS league_tier,
-            -- AF predicted goals (prematch xG proxy)
-            (m.af_prediction->'predictions'->'goals'->>'home')::numeric AS prematch_xg_home,
-            (m.af_prediction->'predictions'->'goals'->>'away')::numeric AS prematch_xg_away,
-            -- Our model's prematch O2.5 probability
-            p_ou.model_probability AS prematch_o25_prob,
-            -- Our model's prematch BTTS probability
+            COALESCE(tss_h.goals_for_avg::numeric, 1.3) AS prematch_xg_home,
+            COALESCE(tss_a.goals_for_avg::numeric, 1.3) AS prematch_xg_away,
+            p_ou.model_probability   AS prematch_o25_prob,
             p_btts.model_probability AS prematch_btts_prob,
-            -- Our model's prematch 1X2 probabilities (for favourite detection)
             p_home.model_probability AS prematch_home_prob,
             p_away.model_probability AS prematch_away_prob
         FROM matches m
         JOIN leagues l ON l.id = m.league_id
-        LEFT JOIN predictions p_ou ON p_ou.match_id = m.id
-            AND p_ou.market = 'ou_25_over' AND p_ou.source = 'ensemble'
-        LEFT JOIN predictions p_btts ON p_btts.match_id = m.id
-            AND p_btts.market = 'btts_yes' AND p_btts.source = 'ensemble'
-        LEFT JOIN predictions p_home ON p_home.match_id = m.id
-            AND p_home.market = '1x2_home' AND p_home.source = 'ensemble'
-        LEFT JOIN predictions p_away ON p_away.match_id = m.id
-            AND p_away.market = '1x2_away' AND p_away.source = 'ensemble'
+        LEFT JOIN LATERAL (
+            SELECT goals_for_avg FROM team_season_stats
+            WHERE team_api_id = m.home_team_api_id
+              AND league_api_id = l.api_football_id
+            ORDER BY season DESC LIMIT 1
+        ) tss_h ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT goals_for_avg FROM team_season_stats
+            WHERE team_api_id = m.away_team_api_id
+              AND league_api_id = l.api_football_id
+            ORDER BY season DESC LIMIT 1
+        ) tss_a ON TRUE
+        LEFT JOIN predictions p_ou   ON p_ou.match_id   = m.id AND p_ou.market   = 'over25'   AND p_ou.source   = 'ensemble'
+        LEFT JOIN predictions p_btts ON p_btts.match_id = m.id AND p_btts.market = 'btts_yes' AND p_btts.source = 'ensemble'
+        LEFT JOIN predictions p_home ON p_home.match_id = m.id AND p_home.market = '1x2_home' AND p_home.source = 'ensemble'
+        LEFT JOIN predictions p_away ON p_away.match_id = m.id AND p_away.market = '1x2_away' AND p_away.source = 'ensemble'
         WHERE m.id = ANY(%s::uuid[])
     """, (match_ids,))
 
@@ -599,8 +623,8 @@ def _check_strategy_a(cand: dict, pm: dict, has_red_card: bool,
         return None
 
     return {
-        "market": "ou_25",
-        "selection": "over",
+        "market": "O/U",
+        "selection": "over 2.5",
         "odds": odds,
         "model_prob": round(model_prob, 4),
         "edge": round(edge, 2),
@@ -680,8 +704,8 @@ def _check_strategy_b(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
         return None
 
     return {
-        "market": "ou_25",
-        "selection": "over",
+        "market": "O/U",
+        "selection": "over 2.5",
         "odds": odds,
         "model_prob": round(btts_prob, 4),
         "edge": round(edge, 2),
@@ -857,8 +881,8 @@ def _check_strategy_d(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
         return None
 
     return {
-        "market": "ou_25",
-        "selection": "over",
+        "market": "O/U",
+        "selection": "over 2.5",
         "odds": odds,
         "model_prob": round(model_prob, 4),
         "edge": round(edge, 2),
@@ -945,8 +969,8 @@ def _check_strategy_e(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
         return None
 
     return {
-        "market": "ou_25",
-        "selection": "under",
+        "market": "O/U",
+        "selection": "under 2.5",
         "odds": odds,
         "model_prob": round(model_prob, 4),
         "edge": round(edge, 2),
@@ -1024,10 +1048,10 @@ def _check_strategy_f(cand: dict, pm: dict, has_red_card: bool,
 
     if drift_pct > 15 and xg_running_hot:
         odds = cur_ou
-        selection = "over"
+        selection = "over 2.5"
     elif drift_pct < -15 and not xg_running_hot:
         odds = float(cand.get("live_ou_25_under") or 0)
-        selection = "under"
+        selection = "under 2.5"
     else:
         return None
 
@@ -1040,7 +1064,7 @@ def _check_strategy_f(cand: dict, pm: dict, has_red_card: bool,
         edge = abs(drift_pct) / 5.0
 
     return {
-        "market": "ou_25",
+        "market": "O/U",
         "selection": selection,
         "odds": odds,
         "model_prob": round(min(model_prob, 0.99), 4),
