@@ -120,9 +120,32 @@ class LivePoller:
         except Exception as e:
             console.print(f"[yellow]LivePoller: failed to refresh active bets: {e}[/yellow]")
 
-    def _is_high_priority(self, match_id: str) -> bool:
-        """Return True if this match has an active bet — gets 30s stats instead of 60s."""
-        return str(match_id) in self._active_bet_match_ids
+    def _is_high_priority(self, match_id: str, af_fix: dict | None = None) -> bool:
+        """Return True if this match should get stats every cycle (vs every 3rd).
+
+        HIGH-priority matches are either:
+        1. Matches with a pending paper bet (we want fresh data for our positions), OR
+        2. Matches in an "actionable" state for in-play strategies — minute ≥ 25 with
+           total goals ≤ 1. This window is when strategies A, D, G, H fire, and they
+           need stats (xG, SoT, corners) to evaluate. Without lifting these to HIGH
+           priority, stats are only fetched every ~135s, leaving most candidate
+           snapshots without the data each strategy needs (~9% coverage observed in
+           backfill — see commit messages for INPLAY-NEW-CORNER / INPLAY-NEW-HT).
+
+        Cost: ~30% of live matches sit in this state at any given moment, so this
+        roughly doubles stats-call volume during peak hours. Daily AF budget is 75K;
+        currently using ~31K, so we have headroom.
+        """
+        mid = str(match_id)
+        if mid in self._active_bet_match_ids:
+            return True
+        if af_fix is not None:
+            minute = af_fix.get("minute") or 0
+            score_h = af_fix.get("score_home") or 0
+            score_a = af_fix.get("score_away") or 0
+            if minute >= 25 and (score_h + score_a) <= 1:
+                return True
+        return False
 
     def _detect_key_event(self, match_id: str, af_fix: dict) -> bool:
         """
@@ -248,7 +271,7 @@ class LivePoller:
             snapshot = build_snapshot(af_fix, fixture_odds)
 
             # ── RAIL-11: Determine if this match needs HIGH-priority stats ──
-            is_high = self._is_high_priority(match_id)
+            is_high = self._is_high_priority(match_id, af_fix)
 
             # Fetch stats on medium interval OR every cycle for HIGH priority
             fetch_stats_this_cycle = (

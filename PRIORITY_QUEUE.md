@@ -141,6 +141,22 @@
 | INPLAY-TWO-BOOK-ARB | Reply 5: bet when primary book's OU 2.5 differs from a second feed by ≥4pp. Requires a second odds source. **Most reliable edge** if infra exists. | varies | ⬜ | ⏳ Need 2nd odds feed | Out of scope without Pinnacle/sharp feed. |
 | INPLAY-FUNNEL-LOGGING | Wire the `_funnel` dict (already added in inplay_bot.py) to heartbeat output: per-cycle counts of skips at each stage (no_prematch, league_xg_gate, no_strategy_trigger, odds_stale, score_changed, store_bet_error). Lets us see where the funnel collapses next time a strategy stops firing. | 1h | ⬜ | ✅ Ready | Defensive — pays for itself the next time a strategy goes silent. |
 
+### AF Quota Optimization (audit, 2026-05-08)
+
+> Origin: a comprehensive audit of every AF endpoint we call (logged in agent transcript). Bot currently uses ~31K of 75K daily quota. Live polling alone is only ~6.3% of accounted budget; the bottleneck for in-play strategies is **stats coverage** (xG/SoT/corners populated on only ~9% of snapshots), not quota. Several non-critical fetches refetch the same data 3-5× per day and could be cached, freeing budget for stats polling.
+
+| ID | Task | Effort | ☑ | Ready? | Notes |
+|----|------|--------|----|--------|-------|
+| INPLAY-STATS-COVERAGE | Lift matches with `goals ≤ 1 AND minute ≥ 25` to HIGH priority in LivePoller so they get stats every cycle (45s) instead of every 3rd (135s). Targets exactly the matches that strategies A/D/G/H care about. ~30% of live matches will be HIGH at any given moment; stats calls roughly double during peak hours but absolute cost is small (~430 extra calls/day on a 720 baseline). Best-ROI single change before any further strategy work. | 30m | ⬜ | ✅ Ready | Owner: in flight 2026-05-08. |
+| AF-CACHE-H2H | H2H is refetched 3× daily per match in `fetch_enrichment.py` despite never changing within a match. Cache at team-pair-season granularity, 7-day TTL. | 1h | ⬜ | ✅ Ready | Save ~360 AF calls/day. |
+| AF-CACHE-TEAM-STATS | `team_season_stats` refetched 3× daily for ~50 Tier-A teams. Stats only update post-match; once-daily fetch is enough. | 1h | ⬜ | ✅ Ready | Save ~150 calls/day. Also fixes the freshness layer for E's xG fallback. |
+| AF-STANDINGS-DAILY | Standings refetched 3× daily for ~20 leagues. Only update post-match. Move to once-per-day at 23:30 UTC after most leagues' matches finished. | 30m | ⬜ | ✅ Ready | Save ~40 calls/day. |
+| AF-PREDICTIONS-FREQ | AF `/predictions` refresh runs 5× daily (morning + 4 betting refreshes). AF predictions don't change that fast. Drop to 2× daily (morning + late-afternoon). | 30m | ⬜ | ✅ Ready | Save ~360 calls/day if scaled to 120 fixtures. |
+| AF-INJURIES-LATE | Injuries refetched 2-3× per match-day. Move to once at 08:00 UTC + a news-event-triggered refresh path. | 1h | ⬜ | ✅ Ready | Save ~30 calls/day; bigger win is freshness when news drops. |
+| AF-FETCHES-AUDIT | Agent's audit could only account for ~5K of the 31K observed daily AF calls. Likely culprit: `get_fixtures_batch()` in api_football.py:254-277 batches 20 fixtures per call but is called from many places. Profile actual call counts via the existing budget logger and identify the gap. | 2h | ⬜ | ✅ Ready | The 26K mystery is the biggest single opportunity — could free 25%+ of quota in one fix. |
+| LIVE-SNAPSHOTS-PRUNE | `live_match_snapshots` is currently NEVER pruned. At ~50K rows/day it'll hit 1M+ in a month. Add a nightly job that, for matches finished 48h+ ago, keeps only snapshots at minute 0/45/90 + ±30s of every match_event row, and deletes the rest. Same model as `prune_odds_snapshots.py`. | 2h | ⬜ | ✅ Ready | ~90% reduction in stored snapshot rows; no API impact, just storage + query speed. Match the user's "use the data 101% then prune" intent. |
+| LIVE-ODDS-PRUNE | `live_odds` (per-snapshot odds rows) also unbounded. Same 48h-post-match pruning rule. | 1h | ⬜ | ✅ Ready | Pair with LIVE-SNAPSHOTS-PRUNE in one cleanup commit. |
+
 ### Suggested commit grouping
 
 1. **Commit 1 (done):** POOL-LEAK-FIX + EXCEPTION-BOUNDARIES + JOB-COALESCE + DB-STMT-TIMEOUT — fixes today's outage class.

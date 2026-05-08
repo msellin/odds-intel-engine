@@ -1451,6 +1451,28 @@ def _():
     assert "minute BETWEEN 40 AND 46" in h_body, "H must look up an HT-end snapshot"
 
 
+@test("INPLAY-STATS-COVERAGE — _is_high_priority lifts goals≤1 + min≥25 matches")
+def _():
+    """The bottleneck for strategies A/D/G/H is stats coverage (xG/SoT/corners
+    only on ~9% of historical snapshots). This test verifies that LivePoller's
+    HIGH-priority gate now also covers actionable in-play states, not just
+    matches with active bets."""
+    import pathlib
+    src = pathlib.Path("workers/live_poller.py").read_text()
+    fn_start = src.index("def _is_high_priority(")
+    fn_end = src.index("\n    def ", fn_start + 1)
+    body = src[fn_start:fn_end]
+    assert "af_fix" in body, (
+        "_is_high_priority must accept af_fix so it can read minute + score"
+    )
+    assert "minute >= 25" in body and "<= 1" in body, (
+        "Must lift matches with minute >= 25 and goals <= 1 to HIGH priority"
+    )
+    assert "self._is_high_priority(match_id, af_fix)" in src, (
+        "Call site in _run_cycle must pass af_fix to _is_high_priority"
+    )
+
+
 @test("REPLAY-INPLAY — scripts/replay_inplay.py imports without DB writes")
 def _():
     """Defensive: backfill script must be dry-run only — no INSERT/UPDATE/DELETE
