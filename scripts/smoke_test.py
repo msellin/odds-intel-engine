@@ -1266,6 +1266,25 @@ def _():
     )
 
 
+@test("REPLAY-INPLAY — scripts/replay_inplay.py imports without DB writes")
+def _():
+    """Defensive: backfill script must be dry-run only — no INSERT/UPDATE/DELETE
+    in the replay path so a stray invocation can't pollute simulated_bets."""
+    import pathlib
+    src = pathlib.Path("scripts/replay_inplay.py").read_text()
+    # Allow these in queries — they're SELECT-side only
+    write_ops = ["execute_write(", "store_bet(", "INSERT INTO", "UPDATE simulated", "DELETE FROM"]
+    for op in write_ops:
+        assert op not in src, (
+            f"replay_inplay.py must stay dry-run — found '{op}'. "
+            "Backfill is review-only until --apply is explicitly added."
+        )
+    # Sanity: dedup against existing inplay bets is wired up
+    assert "fetch_existing_inplay_bets" in src, (
+        "replay must skip (match,bot) pairs that already have a real bet in DB"
+    )
+
+
 @test("INPLAY-HIDE-VALUEBETS — getTodayBets filters xg_source IS NULL")
 def _():
     import pathlib
