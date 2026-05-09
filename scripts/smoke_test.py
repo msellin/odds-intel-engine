@@ -1894,6 +1894,25 @@ def _():
     )
 
 
+@test("INPLAY-E-NULL-SHOTS — strategy E rejects candidates with NULL shot data")
+def _():
+    """Strategy E used (shots_home or 0) which treated NULL as 0, firing on every
+    stats-less game (91% of live matches). Fix: explicit NULL guard before proxy calc."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    fn_start = src.index("def _check_strategy_e(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    fn_body = src[fn_start:fn_end]
+    assert 'cand["shots_home"] is None or cand["shots_away"] is None' in fn_body, (
+        "Strategy E proxy branch must guard against NULL shots_home/shots_away. "
+        "Without this, NULL treated as 0 makes pace_ratio=0 → fires on every stats-less game."
+    )
+    # Verify the old NULL-treating pattern is gone
+    assert '(cand["shots_home"] or 0) + (cand["shots_away"] or 0)' not in fn_body, (
+        "Strategy E must not use 'shots_home or 0' — this was the NULL-masking bug."
+    )
+
+
 @test("INJURIES-BY-DATE — both call sites use the new function (no batched leftovers)")
 def _():
     """Source-inspection guard: if anyone reverts the call site to get_injuries_batched

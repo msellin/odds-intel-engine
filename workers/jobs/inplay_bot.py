@@ -985,22 +985,29 @@ def _check_strategy_e(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
         pace_ratio = live_xg / expected_at_minute
         min_edge = 3.0
     else:
+        # Proxy requires actual shot data — NULL shots means AF hasn't sent stats yet,
+        # not that the game has 0 shots. Treating NULL as 0 fires on every stats-less game.
+        if cand["shots_home"] is None or cand["shots_away"] is None:
+            return None
         # Shot pace proxy: expected shots derived from prematch xG at avg 0.10 xG/shot
         expected_shots_at_minute = (pm_xg_total / 0.10) * (minute / 90.0)
         if expected_shots_at_minute <= 0:
             return None
-        total_shots = (cand["shots_home"] or 0) + (cand["shots_away"] or 0)
+        total_shots = cand["shots_home"] + cand["shots_away"]
         pace_ratio = total_shots / expected_shots_at_minute
         min_edge = 4.5
 
     if pace_ratio >= 0.70:
         return None  # Not a dead game
 
-    # Corners low: independent confirmation of low pressure
-    corners_total = (cand["corners_home"] or 0) + (cand["corners_away"] or 0)
-    expected_corners = 10 * (minute / 90.0)
-    if corners_total > expected_corners * 0.8:
-        return None
+    # Corners low: independent confirmation of low pressure.
+    # NULL corners = no stats yet; skip the corner confirmation rather than
+    # treating it as 0 corners (which would always pass as "low").
+    if cand["corners_home"] is not None and cand["corners_away"] is not None:
+        corners_total = cand["corners_home"] + cand["corners_away"]
+        expected_corners = 10 * (minute / 90.0)
+        if corners_total > expected_corners * 0.8:
+            return None
 
     odds = cand.get("live_ou_25_under")
     if not odds or float(odds) <= 1.0:
