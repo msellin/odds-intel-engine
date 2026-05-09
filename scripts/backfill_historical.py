@@ -463,17 +463,31 @@ def backfill_league_season(
                     _print(f"  [red]Stats parse error for AF {af_id}: {e}[/red]")
 
             # Events — collect rows; bulk insert below.
+            # Drop events whose minute falls outside the `chk_match_events_minute`
+            # bound (0..130). AF occasionally returns junk minute values (e.g. 145
+            # for a red card that wasn't actually placed in extra-time of extra-time)
+            # and a single bad row crashes the whole execute_values batch — losing
+            # every event for the league/season. Mirrors the parse_transfers
+            # malformed-date skip (BACKFILL-TRANSFER-PARSE).
             if af_id in need_events:
                 try:
                     parsed = parse_fixture_events(fixture.get("events") or [])
                     if parsed:
+                        added_for_match = 0
                         for ev in parsed:
+                            minute = max(0, ev.get("minute", 0))
+                            if minute > 130:
+                                _print(
+                                    f"  [yellow]Skipping AF {af_id} event at minute {minute} "
+                                    f"(out of [0,130] bound — likely AF data anomaly)[/yellow]"
+                                )
+                                continue
                             team_side = "home"
                             if home_team_api_id and ev.get("team_api_id"):
                                 team_side = "home" if ev["team_api_id"] == home_team_api_id else "away"
                             events_rows.append((
                                 match_uuid,
-                                max(0, ev.get("minute", 0)),
+                                minute,
                                 ev.get("added_time", 0),
                                 ev["event_type"],
                                 team_side,
@@ -482,7 +496,9 @@ def backfill_league_season(
                                 ev.get("af_event_order"),
                                 now,
                             ))
-                        events_stored += 1
+                            added_for_match += 1
+                        if added_for_match:
+                            events_stored += 1
                 except Exception as e:
                     _print(f"  [red]Events parse error for AF {af_id}: {e}[/red]")
 
@@ -496,19 +512,25 @@ def backfill_league_season(
 
         if events_rows:
             from psycopg2.extras import execute_values
-            with get_conn() as conn:
-                with conn.cursor() as cur:
-                    execute_values(cur,
-                        """
-                        INSERT INTO match_events
-                            (match_id, minute, added_time, event_type, team,
-                             player_name, detail, af_event_order, created_at)
-                        VALUES %s
-                        ON CONFLICT DO NOTHING
-                        """,
-                        events_rows,
-                    )
-                conn.commit()
+            try:
+                with get_conn() as conn:
+                    with conn.cursor() as cur:
+                        execute_values(cur,
+                            """
+                            INSERT INTO match_events
+                                (match_id, minute, added_time, event_type, team,
+                                 player_name, detail, af_event_order, created_at)
+                            VALUES %s
+                            ON CONFLICT DO NOTHING
+                            """,
+                            events_rows,
+                        )
+                    conn.commit()
+            except Exception as e:
+                # Don't let one bad batch kill the whole phase. Log + move on; the
+                # L/S won't be marked complete so the next run picks it up again.
+                _print(f"  [red]Events bulk insert failed: {e}[/red]")
+                events_stored = 0
 
     stats["stats_stored"] = stats_stored
     stats["events_stored"] = events_stored
