@@ -51,7 +51,9 @@ This protocol exists because parallel agents caused real production bugs when do
 
 ### When done — before committing
 
-**Always add a smoke test.** Every task must have at least one test in `scripts/smoke_test.py` before the commit. No exceptions — even code-only changes get a source-inspection test. Run `python3 scripts/smoke_test.py` and confirm all pass before pushing.
+**Always add a smoke test.** Every task must have at least one test in `scripts/smoke_test.py` before the commit. No exceptions — even code-only changes get a source-inspection test.
+
+**Run only the tests you added, not the full suite.** The full suite takes ~1 minute and GitHub Actions runs it on every push to main — that's the gate, not your local run. Locally, run only your new test (e.g. `python3 scripts/smoke_test.py 2>&1 | grep -E "MY-NEW-TEST"`) to confirm it passes. If you broke something elsewhere, CI will catch it after push — don't burn local time on the full suite for routine tasks.
 
 Update **all** of the following that apply. "Not relevant" is almost never true for more than 2 of these:
 
