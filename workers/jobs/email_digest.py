@@ -1,8 +1,22 @@
 """
-OddsIntel — Daily Email Digest (ENG-4) + Value Bet Alerts (N5)
+OddsIntel — Daily Email Digest (ENG-4 / EMAIL-DIGEST-SMART) + Value Bet Alerts (N5)
 
-Sends a tier-appropriate morning email to all subscribed users at 07:30 UTC.
-Also sends afternoon (16:00) and evening (20:45) value bet alerts to Pro/Elite users.
+Sends a tier-appropriate digest to subscribed users once per day. Scheduler
+fires four qualification slots (10:00 / 12:00 / 14:00 / 16:00 UTC). The first
+slot whose pending bets clear the signal-strength threshold sends the email;
+subsequent slots see the per-user `email_digest_log` lock and skip.
+
+Why slots (not a fixed time): at 04:00 UTC most evening markets aren't priced
+yet, so a 07:30 send routinely went out with "0 value bets" and trained users
+to ignore the email. Slots let the system wait until enough quality picks
+exist before sending.
+
+Qualification (signal strength, not raw count):
+    score = Σ (edge_pct × prestige_weight × kelly_fraction)
+where prestige_weight comes from `workers/utils/league_prestige.py`. T4
+leagues (youth / women / lower divisions / low-coverage countries) carry
+weight 0 and are excluded from both score and email content. Threshold via
+EMAIL_DIGEST_MIN_SIGNAL env var (default 5.0).
 
 Morning digest tier content:
   Free   — top 3 match preview teasers + site activity stats + upgrade CTA
@@ -15,13 +29,14 @@ Value bet alert (Pro/Elite only):
 
 Requires RESEND_API_KEY in .env. Uses Resend's Python SDK.
 
-One morning email per user per day: email_digest_log UNIQUE(user_id, digest_date).
+One digest per user per day: email_digest_log UNIQUE(user_id, digest_date).
 One alert per user per slot per day: value_bet_alert_log UNIQUE(user_id, alert_date, slot).
 
 Usage:
-  python -m workers.jobs.email_digest           # live run (today)
-  python -m workers.jobs.email_digest --dry-run # print emails, no sends
-  python -m workers.jobs.email_digest --limit 5 # send to max 5 users
+  python -m workers.jobs.email_digest                # live run (today)
+  python -m workers.jobs.email_digest --dry-run      # print emails, no sends
+  python -m workers.jobs.email_digest --limit 5      # send to max 5 users
+  python -m workers.jobs.email_digest --force        # bypass qualification check
 """
 
 import sys
@@ -37,6 +52,7 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workers.api_clients.db import execute_query, execute_write
+from workers.utils.league_prestige import PRESTIGE_WEIGHT_SQL
 
 console = Console()
 
@@ -44,21 +60,33 @@ RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 FROM_EMAIL = os.getenv("DIGEST_FROM_EMAIL", "OddsIntel <digest@oddsintel.app>")
 SITE_URL = os.getenv("SITE_URL", "https://oddsintel.app")
 
+# Qualification threshold for the smart-slot digest. Sum of
+# edge_pct × prestige_weight × kelly_fraction across pending bets.
+# Tunable without redeploys.
+EMAIL_DIGEST_MIN_SIGNAL = float(os.getenv("EMAIL_DIGEST_MIN_SIGNAL", "5.0"))
+
 
 # ── Data fetchers ──────────────────────────────────────────────────────────
 
 def fetch_todays_previews(target_date: str, limit: int = 3) -> list[dict]:
-    """Return top match previews generated today, ordered by league tier."""
+    """Return top match previews generated today, ordered by prestige then signal count.
+
+    Filters out previews for leagues with prestige_weight = 0 (youth, women,
+    lower-coverage countries) — these used to dominate the digest with matches
+    no one cares about.
+    """
     rows = execute_query(
-        """
+        f"""
         SELECT
             mp.preview_text,
             mp.preview_short,
             mp.match_id,
             mp.league_tier,
+            {PRESTIGE_WEIGHT_SQL} AS prestige_weight,
             ht.name  AS home_team,
             at.name  AS away_team,
             l.name   AS league,
+            l.country AS league_country,
             m.date   AS kickoff
         FROM match_previews mp
         JOIN matches  m  ON m.id  = mp.match_id
@@ -66,7 +94,8 @@ def fetch_todays_previews(target_date: str, limit: int = 3) -> list[dict]:
         JOIN teams    at ON at.id = m.away_team_id
         JOIN leagues  l  ON l.id  = m.league_id
         WHERE mp.match_date = %s
-        ORDER BY mp.league_tier ASC, mp.signal_count DESC
+          AND ({PRESTIGE_WEIGHT_SQL}) > 0
+        ORDER BY ({PRESTIGE_WEIGHT_SQL}) DESC, mp.signal_count DESC
         LIMIT %s
         """,
         [target_date, limit],
@@ -75,9 +104,15 @@ def fetch_todays_previews(target_date: str, limit: int = 3) -> list[dict]:
 
 
 def fetch_value_bets_summary(target_date: str) -> dict:
-    """Count today's value bets and return top picks for Elite email."""
+    """Count today's value bets and return top picks for Elite email.
+
+    Filters to leagues with prestige_weight > 0 — Elite users still get the
+    full pick list, but only for leagues that pass the same prestige bar as
+    the digest qualification check. Avoids the scenario where a user reads
+    the email, sees "Bistrica vs Brinje Grosuplje" as a top pick, and bounces.
+    """
     rows = execute_query(
-        """
+        f"""
         SELECT
             sb.market,
             sb.selection,
@@ -86,7 +121,9 @@ def fetch_value_bets_summary(target_date: str) -> dict:
             sb.model_probability,
             ht.name AS home_team,
             at.name AS away_team,
-            l.name  AS league
+            l.name  AS league,
+            l.country AS league_country,
+            ({PRESTIGE_WEIGHT_SQL}) AS prestige_weight
         FROM simulated_bets sb
         JOIN matches m  ON m.id  = sb.match_id
         JOIN teams   ht ON ht.id = m.home_team_id
@@ -95,6 +132,7 @@ def fetch_value_bets_summary(target_date: str) -> dict:
         WHERE sb.created_at::date = %s
           AND sb.result = 'pending'
           AND sb.edge_percent >= 3
+          AND ({PRESTIGE_WEIGHT_SQL}) > 0
         ORDER BY sb.edge_percent DESC
         LIMIT 10
         """,
@@ -104,6 +142,49 @@ def fetch_value_bets_summary(target_date: str) -> dict:
         "count": len(rows or []),
         "top_picks": rows or [],
     }
+
+
+def compute_signal_strength(target_date: str) -> dict:
+    """
+    Sum of (edge_pct × prestige_weight × kelly_fraction) across today's pending bets.
+    This is the qualification metric for the smart-slot digest. Returning a dict
+    so callers can log component counts (qualified leagues, raw pending count).
+    """
+    rows = execute_query(
+        f"""
+        SELECT
+            COUNT(*) FILTER (WHERE ({PRESTIGE_WEIGHT_SQL}) > 0) AS n_prestige_bets,
+            COUNT(*) AS n_total_bets,
+            COALESCE(SUM(
+                sb.edge_percent
+                  * ({PRESTIGE_WEIGHT_SQL})
+                  * COALESCE(sb.kelly_fraction, 0.05)
+            ), 0)::numeric AS signal_strength
+        FROM simulated_bets sb
+        JOIN matches m ON m.id = sb.match_id
+        JOIN leagues l ON l.id = m.league_id
+        WHERE sb.created_at::date = %s
+          AND sb.result = 'pending'
+          AND sb.edge_percent >= 3
+        """,
+        [target_date],
+    )
+    r = (rows or [{}])[0]
+    return {
+        "signal_strength": float(r.get("signal_strength") or 0),
+        "n_prestige_bets": int(r.get("n_prestige_bets") or 0),
+        "n_total_bets": int(r.get("n_total_bets") or 0),
+    }
+
+
+def qualifies_today(target_date: str) -> tuple[bool, dict]:
+    """
+    Returns (qualified, metrics_dict). Used by the slot scheduler to decide
+    whether to send the digest now or wait for a later slot.
+    """
+    metrics = compute_signal_strength(target_date)
+    qualified = metrics["signal_strength"] >= EMAIL_DIGEST_MIN_SIGNAL
+    return qualified, metrics
 
 
 def fetch_new_value_bets(target_date: str, since_iso: str) -> dict:
@@ -485,13 +566,35 @@ def send_via_resend(to_email: str, subject: str, html: str) -> tuple[str | None,
 
 # ── Main ───────────────────────────────────────────────────────────────────
 
-def run_email_digest(target_date: str | None = None, dry_run: bool = False, limit: int | None = None):
+def run_email_digest(target_date: str | None = None, dry_run: bool = False,
+                     limit: int | None = None, force: bool = False):
     today = target_date or date.today().isoformat()
     console.print(f"[bold cyan]═══ OddsIntel Email Digest: {today} ═══[/bold cyan]\n")
 
     if not RESEND_API_KEY and not dry_run:
         console.print("[red]RESEND_API_KEY not set — aborting. Set it in .env or use --dry-run.[/red]")
         return
+
+    # Smart-slot qualification gate. Each scheduler slot (10/12/14/16 UTC) calls
+    # this — first one to qualify sends the email; subsequent slots see the
+    # per-user `email_digest_log` lock and skip.
+    if not force:
+        qualified, metrics = qualifies_today(today)
+        ss = metrics["signal_strength"]
+        n_p = metrics["n_prestige_bets"]
+        n_t = metrics["n_total_bets"]
+        if not qualified:
+            console.print(
+                f"[yellow]Slot did not qualify[/yellow] — "
+                f"signal_strength={ss:.2f} (threshold {EMAIL_DIGEST_MIN_SIGNAL}), "
+                f"prestige_bets={n_p}/{n_t}. Will retry at next slot."
+            )
+            return
+        console.print(
+            f"[green]Slot qualified[/green] — "
+            f"signal_strength={ss:.2f} ≥ {EMAIL_DIGEST_MIN_SIGNAL}, "
+            f"prestige_bets={n_p}/{n_t}. Sending digest."
+        )
 
     # Fetch shared data once
     previews = fetch_todays_previews(today, limit=3)
@@ -728,5 +831,6 @@ if __name__ == "__main__":
     parser.add_argument("--dry-run", action="store_true", help="Print without sending")
     parser.add_argument("--limit", type=int, default=None, help="Max users to send to")
     parser.add_argument("--date", type=str, default=None, help="Target date YYYY-MM-DD (default: today)")
+    parser.add_argument("--force", action="store_true", help="Bypass qualification check (ad-hoc send)")
     args = parser.parse_args()
-    run_email_digest(target_date=args.date, dry_run=args.dry_run, limit=args.limit)
+    run_email_digest(target_date=args.date, dry_run=args.dry_run, limit=args.limit, force=args.force)

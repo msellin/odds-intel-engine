@@ -135,7 +135,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | ⑧ Settlement (21:00 + 01:00 UTC) | ✅ Settle + CLV + Pinnacle CLV + ELO + post-mortem + weekly Platt + blend refit (Wed+Sun) + dynamic DC rho |
 | ⑨ Historical backfill (02:00 UTC Railway) | 🔄 Running — 3,474 matches done, 19 leagues in progress |
 | ⑩ AI match previews (07:15 UTC) | ✅ Gemini 200-word previews for top 10 matches |
-| ⑪ Email digest (07:30 UTC) | ✅ Resend, tier-gated + value bet alerts (16:00/20:45) + weekly (Mon 08:00) + watchlist (08:30/14:30/20:30) |
+| ⑪ Email digest (10/12/14/16 UTC slots) | ✅ Smart-slot digest — first slot whose pending-bet signal-strength score (Σ edge × prestige × kelly) clears threshold sends; T4 leagues (youth/women/lower divisions) excluded from email content (EMAIL-DIGEST-SMART) + value bet alerts (16:00/20:45) + weekly (Mon 08:00) + watchlist (08:30/14:30/20:30) |
 | 24 paper trading bots | ✅ 16 pre-match (since 2026-04-27, incl. bot_proven_leagues) + 8 in-play (since 2026-05-06, strategies A/A2/B/C/C_home/D/E/F) |
 | Pinnacle signals | ✅ PIN-1 through PIN-5: implied probs (all markets), line movement, veto gate, Pinnacle-anchored CLV |
 | Calibration improvements | ✅ Pinnacle shrinkage anchor, odds-conditional alpha, sharp consensus gate, draw inflation, dynamic DC rho |

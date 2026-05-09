@@ -633,9 +633,16 @@ def main():
     scheduler.add_job(job_match_previews, CronTrigger(hour=7, minute=15),
                       id="match_previews", name="Match Previews 07:15")
 
-    # ENG-4: Email digest — 07:30 UTC (after previews are generated)
-    scheduler.add_job(job_email_digest, CronTrigger(hour=7, minute=30),
-                      id="email_digest", name="Email Digest 07:30")
+    # EMAIL-DIGEST-SMART (ENG-4): four qualification slots, 10/12/14/16 UTC.
+    # First slot whose pending-bet signal-strength score clears
+    # EMAIL_DIGEST_MIN_SIGNAL (default 5.0) sends the digest. Later slots
+    # see the per-user `email_digest_log` lock and skip — exactly one digest
+    # per user per day. Replaces the old 07:30 send that routinely went out
+    # with "0 value bets today" because evening markets weren't priced yet.
+    for hour in (10, 12, 14, 16):
+        scheduler.add_job(job_email_digest, CronTrigger(hour=hour, minute=0),
+                          id=f"email_digest_{hour:02d}",
+                          name=f"Email Digest Slot {hour:02d}:00")
 
     # N5: Value bet alerts — 16:00 (afternoon) + 20:45 (evening) UTC — Pro/Elite only
     # Afternoon: catches 11:00 + 15:00 betting refresh bets (since 10:00 UTC)

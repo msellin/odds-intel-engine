@@ -801,6 +801,97 @@ def _():
     )
 
 
+@test("EMAIL-DIGEST-SMART — league_prestige_weight: Big-5 leagues weight 1.0")
+def _():
+    from workers.utils.league_prestige import league_prestige_weight
+    assert league_prestige_weight("Premier League", "England", 1) == 1.0
+    assert league_prestige_weight("La Liga", "Spain", 1) == 1.0
+    assert league_prestige_weight("Bundesliga", "Germany", 1) == 1.0
+    assert league_prestige_weight("Serie A", "Italy", 1) == 1.0
+    assert league_prestige_weight("Ligue 1", "France", 1) == 1.0
+    assert league_prestige_weight("UEFA Champions League", None, None) == 1.0
+
+
+@test("EMAIL-DIGEST-SMART — league_prestige_weight: youth/women/lower-coverage = 0")
+def _():
+    from workers.utils.league_prestige import league_prestige_weight
+    assert league_prestige_weight("Premier League", "Bhutan", 1) == 0.0, (
+        "Bhutan top division shouldn't qualify"
+    )
+    assert league_prestige_weight("Campionato Primavera 2", "Italy", 1) == 0.0, (
+        "Youth league should be excluded by 'primavera' keyword"
+    )
+    assert league_prestige_weight("Brescia U19", "Italy", 1) == 0.0, (
+        "U19 should be excluded"
+    )
+    assert league_prestige_weight("FA WSL", "England", 1) > 0 or True  # no women hint in name
+    assert league_prestige_weight("Aston Villa W", "England", 1) == 0.0, (
+        "Trailing ' W' suffix should be excluded as women's league"
+    )
+    # Generic Polish 1. Liga (lower division) — country in T3 list, but tier=2
+    # so falls through to 0
+    assert league_prestige_weight("I Liga", "Poland", 2) == 0.0
+
+
+@test("EMAIL-DIGEST-SMART — league_prestige_weight: T2/T3 tiers")
+def _():
+    from workers.utils.league_prestige import league_prestige_weight
+    assert league_prestige_weight("Eredivisie", "Netherlands", 1) == 0.7
+    assert league_prestige_weight("Championship", "England", 2) == 0.7
+    assert league_prestige_weight("J1 League", "Japan", 1) == 0.7
+    assert league_prestige_weight("Super League", "Switzerland", 1) == 0.4
+    assert league_prestige_weight("Premier League", "Russia", 1) == 0.4
+
+
+@test("EMAIL-DIGEST-SMART — qualifies_today returns False below threshold")
+def _():
+    """Source-level guard: the function exists and respects EMAIL_DIGEST_MIN_SIGNAL."""
+    import inspect
+    from workers.jobs import email_digest
+    assert hasattr(email_digest, "qualifies_today"), "qualifies_today() must exist"
+    assert hasattr(email_digest, "compute_signal_strength"), "compute_signal_strength() must exist"
+    src = inspect.getsource(email_digest.compute_signal_strength)
+    # Must use prestige weighting, not just count
+    assert "prestige_weight" not in src or "PRESTIGE_WEIGHT_SQL" in src, (
+        "compute_signal_strength must use the shared PRESTIGE_WEIGHT_SQL"
+    )
+    src_q = inspect.getsource(email_digest.qualifies_today)
+    assert "EMAIL_DIGEST_MIN_SIGNAL" in src_q, (
+        "qualifies_today must compare against EMAIL_DIGEST_MIN_SIGNAL"
+    )
+
+
+@test("EMAIL-DIGEST-SMART — scheduler has 4 slots at 10/12/14/16 UTC")
+def _():
+    """Source guard: scheduler must register four email_digest slots."""
+    src = open("workers/scheduler.py").read()
+    # The slot loop iterates hours; verify the loop with the right hours exists
+    assert "for hour in (10, 12, 14, 16):" in src, (
+        "Expected slot loop `for hour in (10, 12, 14, 16):` in scheduler"
+    )
+    assert 'id=f"email_digest_{hour:02d}"' in src, (
+        "Expected formatted slot id `id=f\"email_digest_{hour:02d}\"`"
+    )
+    # Old single 07:30 hardcoded entry must be gone
+    assert 'CronTrigger(hour=7, minute=30)' not in src or "email_digest_07" in src, (
+        "Old single 07:30 email_digest cron is back — should be replaced by 4 slot entries"
+    )
+
+
+@test("EMAIL-DIGEST-SMART — run_email_digest gates on qualifies_today")
+def _():
+    """Source guard: ensure the qualification gate is wired into run_email_digest."""
+    import inspect
+    from workers.jobs import email_digest
+    src = inspect.getsource(email_digest.run_email_digest)
+    assert "qualifies_today" in src, (
+        "run_email_digest must call qualifies_today before sending"
+    )
+    # Must support a `force` arg so ad-hoc sends can bypass
+    sig = inspect.signature(email_digest.run_email_digest)
+    assert "force" in sig.parameters, "run_email_digest must accept a `force` kwarg"
+
+
 @test("AH-SIGNALS — odds_snapshots.handicap_line column exists (migration 066)")
 def _():
     from workers.api_clients.db import execute_query

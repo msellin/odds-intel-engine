@@ -981,11 +981,12 @@ def parse_live_odds(live_odds_response: list[dict]) -> dict[int, list[dict]]:
                             "minute": minute,
                         })
 
-            elif market_name in ("Goals Over/Under", "Over/Under"):
+            elif market_name in ("Goals Over/Under", "Over/Under", "Over/Under Line"):
                 # Same OU-PARSE-BUG fix as parse_fixture_odds: substring match
                 # swallowed first-half / team-specific OU markets and collapsed
-                # them into FT buckets. AF live API uses both names for FT
-                # match goals depending on bookmaker, so allow exactly those two.
+                # them into FT buckets. AF live API uses any of these three names
+                # for FT match goals depending on bookmaker — the "Line" variant
+                # ships value="Over"/"Under" + separate handicap field.
                 for val in bet.get("values", []):
                     if val.get("suspended"):
                         continue

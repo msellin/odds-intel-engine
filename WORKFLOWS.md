@@ -26,7 +26,7 @@
 07-22  ③ Odds            run_odds()                Every 30min (:00 and :30) — AF bulk odds, 13 bookmakers
                                                     + mark_closing runs at 13:30, 17:30, 20:00 (pre-KO windows)
 07:15  ⑩ Match Previews  run_match_previews()      Top 10 matches → Gemini 200-word previews (ENG-3)
-07:30  ⑪ Email Digest    run_email_digest()        Resend — tier-gated digest to subscribed users (ENG-4)
+10/12/14/16  ⑪ Email Digest Slots  run_email_digest()  Smart-slot digest — first slot whose pending-bet signal score ≥ EMAIL_DIGEST_MIN_SIGNAL sends; later slots see per-user lock and skip (ENG-4 / EMAIL-DIGEST-SMART)
 08:00  ⑫ Weekly Digest   run_weekly_digest()       Monday only — model week review + upcoming matches (ENG-10)
 08:30  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts (ENG-8)
 09:00  ⑦ News Checker    run_news_checker()        Injury/lineup/news signals (Gemini)
@@ -208,12 +208,21 @@
 
 ### ⑪ Email Digest + Value Bet Alerts (`email_digest.py`) — ENG-4 + N5
 
-**Morning digest (07:30 UTC):**
-- Sends tier-appropriate HTML email via Resend REST API (httpx)
+**Smart-slot digest (10:00 / 12:00 / 14:00 / 16:00 UTC) — EMAIL-DIGEST-SMART:**
+- Four scheduler slots; the first one whose pending-bet **signal-strength score** clears `EMAIL_DIGEST_MIN_SIGNAL` (default 5.0) sends the digest. Later slots see the per-user `email_digest_log` lock and skip — exactly one digest per user per day.
+- Score = Σ(edge_pct × prestige_weight × kelly_fraction) over today's pending bets with edge ≥ 3%.
+- **League prestige weights** (`workers/utils/league_prestige.py`):
+  - **1.0** — Big-5 European tops (PL, La Liga, Bundesliga, Serie A, Ligue 1) + UCL/UEL/UECL + national-team showpieces
+  - **0.7** — Eredivisie, Primeira, Belgian Pro, Turkish Süper Lig, Brazil Série A, Argentina, MLS, J1, K-League, Saudi Pro, plus Big-5 second tiers (Championship, Bundesliga 2, Serie B, La Liga 2, Ligue 2)
+  - **0.4** — Other established top divisions (Switzerland, Austria, Greece, Russia, Ukraine, Czech, Poland, Croatia, Romania, Serbia, Israel, Cyprus, Finland, China, UAE, Egypt, S-Africa, Chile, Colombia, Uruguay, Indonesia, Iran, etc.)
+  - **0.0** — Excluded entirely. Youth (U17-U23, Primavera), women's leagues, lower divisions, low-coverage countries.
+- Email content (previews + Elite value-bet picks) is filtered to weight > 0 — no more "Brescia U19" in the email.
+- Tier-appropriate HTML via Resend REST API:
   - **Free:** 3 preview teasers + bet count teaser + upgrade CTA
   - **Pro:** 3 full previews + value bet count + link to value bets page
   - **Elite:** 3 full previews + value bet table (top 5 with odds/edge/confidence)
-- One email per user per day enforced by `email_digest_log` unique constraint (migration 034)
+- One email per user per day enforced by `email_digest_log` unique constraint (migration 034).
+- `--force` CLI flag bypasses qualification for ad-hoc sends.
 
 **Value bet alerts (16:00 + 20:45 UTC) — Pro/Elite only (N5):**
 - `run_value_bet_alert('afternoon')` at 16:00 — bets placed since 10:00 UTC (11:00 + 15:00 refreshes)
