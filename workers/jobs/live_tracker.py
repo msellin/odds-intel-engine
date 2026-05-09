@@ -122,6 +122,8 @@ def build_snapshot(af_fix: dict, fixture_odds: list[dict],
             snapshot[key] = row["odds"]
         elif mkt == "1x2":
             snapshot[f"live_1x2_{sel}"] = row["odds"]
+        elif mkt == "next10" and sel in ("over", "under"):
+            snapshot[f"live_next10_{sel}"] = row["odds"]
 
     # Embed stats if available
     if stats:
@@ -383,6 +385,8 @@ def run_live_tracker(dry_run: bool = False):
                 snapshot[key] = row["odds"]
             elif mkt == "1x2":
                 snapshot[f"live_1x2_{sel}"] = row["odds"]
+            elif mkt == "next10" and sel in ("over", "under"):
+                snapshot[f"live_next10_{sel}"] = row["odds"]
 
         # ── T4-live: Fetch live match statistics (xG, shots, possession) ──
         if af_id and not dry_run:

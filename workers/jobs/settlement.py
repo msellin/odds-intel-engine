@@ -854,6 +854,7 @@ def write_dashboard_cache():
             FROM bots b
             LEFT JOIN simulated_bets sb ON sb.bot_id = b.id
             WHERE b.is_active = true
+              AND b.retired_at IS NULL
             GROUP BY b.id, b.name
         """, [])
 

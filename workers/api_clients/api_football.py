@@ -1035,6 +1035,29 @@ def parse_live_odds(live_odds_response: list[dict]) -> dict[int, list[dict]]:
                         "minute": minute,
                     })
 
+            # AF market id=65 — "Next 10 Minutes Total" (Over/Under 0.5 goals
+            # in the next ~10-minute window). Already in the /odds/live payload,
+            # so capturing it costs zero extra AF calls. Names observed in the
+            # wild: "Next 10 Minutes Total", "Next 10 Minutes". The id check is
+            # the primary key — the name match is a defensive fallback.
+            elif bet.get("id") == 65 or market_name in (
+                "Next 10 Minutes Total", "Next 10 Minutes"
+            ):
+                for val in bet.get("values", []):
+                    if val.get("suspended"):
+                        continue
+                    v = val.get("value", "")
+                    direction = v.split(" ", 1)[0] if " " in v else v
+                    if direction not in ("Over", "Under"):
+                        continue
+                    rows.append({
+                        "bookmaker": "api-football-live",
+                        "market": "next10",
+                        "selection": direction.lower(),
+                        "odds": float(val["odd"]),
+                        "minute": minute,
+                    })
+
         if rows:
             result[fid] = rows
 

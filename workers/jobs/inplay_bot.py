@@ -189,14 +189,18 @@ def run_inplay_strategies():
                     f"{src} {xg_h:.1f}-{xg_a:.1f}"
                 )
             extra = f" +{len(candidates)-3} more" if len(candidates) > 3 else ""
+            funnel_str = ", ".join(f"{k}={v}" for k, v in _funnel.items() if v > 0)
+            funnel_part = f" | funnel since-last: [{funnel_str}]" if funnel_str else ""
             console.print(
                 f"[dim]InplayBot heartbeat: {len(candidates)} candidates "
                 f"({real_xg} real xG, {proxy} proxy) "
                 f"| odds: {with_ou_odds} OU / {with_1x2_odds} 1x2 "
                 f"[{', '.join(summaries)}{extra}] | "
                 f"session: {_total_bets_session} bets / {_total_candidates_session} evaluated | "
-                f"{pool_str}{pool_warn}[/dim]"
+                f"{pool_str}{pool_warn}{funnel_part}[/dim]"
             )
+            for k in _funnel:
+                _funnel[k] = 0
         else:
             try:
                 live_count = execute_query(
@@ -243,6 +247,7 @@ def run_inplay_strategies():
         mid = str(cand["match_id"])  # psycopg2 returns UUID objects; prematch keys are strings
         pm = prematch.get(mid)
         if not pm:
+            _funnel["no_prematch"] += 1
             continue
 
         league_id = pm.get("league_id")
@@ -252,6 +257,7 @@ def run_inplay_strategies():
         # Proxy matches bypass: shot data is universally available and doesn't need calibration.
         if has_live_xg:
             if league_id and _league_xg_cache.get(str(league_id), 0) < MIN_LEAGUE_XG_MATCHES:
+                _funnel["league_xg_gate"] += 1
                 continue
 
         has_red_card = mid in red_card_matches
@@ -262,19 +268,23 @@ def run_inplay_strategies():
                 continue
 
             if (mid, bot_name) in existing_bets:
+                _funnel["existing_bet"] += 1
                 continue
 
             trigger = _check_strategy(bot_name, cand, pm, has_red_card, execute_query)
             if not trigger:
+                _funnel["no_strategy_trigger"] += 1
                 continue
 
             # Safety: staleness check — odds must be < 60s old
             odds_age = _odds_age_seconds(cand)
             if odds_age is None or odds_age > 60:
+                _funnel["odds_stale"] += 1
                 continue
 
             # Safety: score re-check — verify score unchanged since snapshot
             if not _score_recheck(execute_query, mid, cand["score_home"], cand["score_away"]):
+                _funnel["score_changed"] += 1
                 continue
 
             xg_h, xg_a, is_real = _compute_live_xg(cand)
@@ -315,6 +325,7 @@ def run_inplay_strategies():
                         f"[/bold green]"
                     )
             except Exception as e:
+                _funnel["store_bet_error"] += 1
                 console.print(f"[red]InplayBot store_bet error ({bot_name}): {e}[/red]")
 
     _total_bets_session += bets_placed
@@ -370,6 +381,8 @@ def _get_live_candidates(execute_query) -> list[dict]:
             lms.live_1x2_home,
             lms.live_1x2_draw,
             lms.live_1x2_away,
+            lms.live_next10_over,
+            lms.live_next10_under,
             lms.captured_at,
             (lms.xg_home IS NOT NULL) AS has_live_xg
         FROM live_match_snapshots lms
@@ -576,6 +589,30 @@ def _implied_prob(odds: float) -> float:
     if odds <= 1.0:
         return 1.0
     return 1.0 / odds
+
+
+def _remaining_goals_prob(pm_xg_total: float, minute: int,
+                          goals_observed: int, threshold: float) -> tuple[float, float, float]:
+    """
+    Bayesian remaining-goals Poisson — shared by strategies J and L (and future M/O).
+
+    Returns (model_prob, posterior_lam, remaining_lam):
+      - model_prob:    P(remaining goals ≥ threshold) under Poisson(remaining_lam)
+      - posterior_lam: Bayesian-updated full-match λ given goals observed by `minute`
+      - remaining_lam: posterior λ scaled to the remaining minutes (with 1.05× 2nd-half uplift)
+
+    Conjugate Gamma-Poisson update treats prematch xG as 1 game of prior evidence.
+    h2_uplift = 1.05 reflects empirical 2nd-half goal-rate uplift (Dixon & Robinson).
+
+    Example: J at min 40, 0-0, λ_full=2.8 → posterior=2.0, remaining=1.17, P(≥2)=0.36 → fair 2.78.
+    """
+    elapsed_frac = minute / 90.0
+    posterior_lam = (pm_xg_total + goals_observed) / (1.0 + elapsed_frac)
+    remaining_frac = (90.0 - minute) / 90.0
+    h2_uplift = 1.05 if minute >= 45 else 1.0
+    remaining_lam = posterior_lam * remaining_frac * h2_uplift
+    model_prob = _poisson_over_prob(remaining_lam, threshold - 0.5)
+    return model_prob, posterior_lam, remaining_lam
 
 
 def _bivariate_poisson_win_prob(lam_h: float, lam_a: float) -> tuple[float, float, float]:
@@ -1535,18 +1572,11 @@ def _check_strategy_j(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     if live_ou15 < 2.85:
         return None  # No edge or market not available
 
-    # Bayesian-adjusted remaining λ: posterior shrinks toward 2/3 of prematch
-    # when 0 goals observed in first ~40% of match (conjugate Gamma-Poisson).
-    pm_xg_total = float(pm.get("prematch_xg_home") or 1.1) + float(pm.get("prematch_xg_away") or 1.1)
-    elapsed_frac = minute / 90.0
-    # Posterior λ = (prior + observed) / (1 + elapsed): 0 goals observed
-    posterior_lam = pm_xg_total / (1.0 + elapsed_frac)
-    remaining_frac = (90.0 - minute) / 90.0
-    h2_uplift = 1.05 if minute >= 45 else 1.0
-    remaining_lam = posterior_lam * remaining_frac * h2_uplift
-
     # P(≥ 2 more goals) — need 2 more for Over 1.5 total (score is 0-0)
-    model_prob = _poisson_over_prob(remaining_lam, 1.5)  # P(X ≥ 2)
+    pm_xg_total = float(pm.get("prematch_xg_home") or 1.1) + float(pm.get("prematch_xg_away") or 1.1)
+    model_prob, posterior_lam, remaining_lam = _remaining_goals_prob(
+        pm_xg_total, minute, goals_observed=0, threshold=2
+    )
     market_prob = _implied_prob(live_ou15)
     edge_pct = (model_prob - market_prob) * 100
     if edge_pct < 3.0:
@@ -1611,19 +1641,13 @@ def _check_strategy_l(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     if live_ou25 <= 1.0:
         return None  # No live odds available — skip
 
-    # Need 2 more goals for Over 2.5 (1 already scored)
+    # Need 2 more goals for Over 2.5 (1 already scored). Bayesian update with
+    # goals_observed=1 reflects above-expectation pace at min 15-35 → posterior rises.
     pm_xg_total = float(pm.get("prematch_xg_home") or 1.1) + float(pm.get("prematch_xg_away") or 1.1)
-    remaining_frac = (90.0 - minute) / 90.0
-    h2_uplift = 1.05 if minute >= 45 else 1.0
-    # Slight Bayesian uplift: seeing 1 goal at min 15-35 is above-expectation → posterior rises
-    elapsed_frac = minute / 90.0
-    expected_by_now = pm_xg_total * elapsed_frac
-    # Posterior: saw 1 goal, expected ~0.5 → update toward slightly higher λ
-    posterior_lam = (pm_xg_total + 1.0) / (1.0 + elapsed_frac)
-    remaining_lam = posterior_lam * remaining_frac * h2_uplift
-
-    # P(≥ 2 more goals remaining) for Over 2.5 FT
-    model_prob = _poisson_over_prob(remaining_lam, 1.5)  # P(X ≥ 2)
+    expected_by_now = pm_xg_total * (minute / 90.0)
+    model_prob, posterior_lam, remaining_lam = _remaining_goals_prob(
+        pm_xg_total, minute, goals_observed=1, threshold=2
+    )
     market_prob = _implied_prob(live_ou25)
     edge_pct = (model_prob - market_prob) * 100
     if edge_pct < 4.0:

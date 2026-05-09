@@ -2012,6 +2012,90 @@ def _():
     assert "live_ou_15_over" in fn_body, "_get_live_candidates must select live_ou_15_over"
 
 
+@test("INPLAY-NEXT-10-MIN-MARKET — parser captures market id=65 / Next 10 Minutes Total")
+def _():
+    """Free capture from existing /odds/live payload — zero new AF calls."""
+    import pathlib
+    src = pathlib.Path("workers/api_clients/api_football.py").read_text()
+    fn_start = src.index("def parse_live_odds(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    fn_body = src[fn_start:fn_end]
+    assert 'bet.get("id") == 65' in fn_body or '"Next 10 Minutes Total"' in fn_body, (
+        "parse_live_odds must detect AF Next 10 Minutes market (id=65 or named match)"
+    )
+    assert '"market": "next10"' in fn_body, (
+        "Parsed rows must use market='next10' so build_snapshot can map them"
+    )
+    # Snapshot writers must accept the new columns
+    db_src = pathlib.Path("workers/api_clients/db.py").read_text()
+    assert '"live_next10_over"' in db_src and '"live_next10_under"' in db_src, (
+        "db.store_live_snapshots_batch columns list must include live_next10_over/under"
+    )
+    sb_src = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
+    assert '"live_next10_over"' in sb_src, (
+        "supabase_client store_live_snapshot optional_fields must include live_next10_over"
+    )
+
+
+@test("INPLAY-FUNNEL-LOGGING — _funnel counters incremented at every skip point")
+def _():
+    """Funnel keys: no_prematch, league_xg_gate, existing_bet, no_strategy_trigger,
+    odds_stale, score_changed, store_bet_error. All seven must be incremented to
+    diagnose silent-failure regressions when a strategy goes quiet."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    for key in ("no_prematch", "league_xg_gate", "existing_bet",
+                "no_strategy_trigger", "odds_stale", "score_changed",
+                "store_bet_error"):
+        assert f'_funnel["{key}"] += 1' in src, (
+            f"Funnel counter '{key}' must be incremented in run_inplay_strategies"
+        )
+    # Heartbeat must read funnel and reset
+    assert "funnel since-last" in src, (
+        "Heartbeat output must include 'funnel since-last' line"
+    )
+
+
+@test("INPLAY-BAYESIAN-ENGINE — _remaining_goals_prob helper extracted, J/L call it")
+def _():
+    """Shared Bayesian remaining-goals helper. Strategies J and L now share one
+    code path so future strategies (M/N/O) can adopt the same machinery."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    assert "def _remaining_goals_prob(" in src, (
+        "_remaining_goals_prob helper must exist (used by strategies J, L, future M/N/O)"
+    )
+    # Strategies J and L must call the helper rather than duplicate the math
+    j_start = src.index("def _check_strategy_j(")
+    j_end = src.index("\ndef ", j_start + 1)
+    assert "_remaining_goals_prob(" in src[j_start:j_end], (
+        "Strategy J must use _remaining_goals_prob helper"
+    )
+    l_start = src.index("def _check_strategy_l(")
+    try:
+        l_end = src.index("\ndef ", l_start + 1)
+    except ValueError:
+        l_end = len(src)
+    assert "_remaining_goals_prob(" in src[l_start:l_end], (
+        "Strategy L must use _remaining_goals_prob helper"
+    )
+
+
+@test("INPLAY-BOT-RETIREMENT — dashboard_cache filters retired_at IS NULL")
+def _():
+    """Public /performance leaderboard reads from dashboard_cache.bot_breakdown,
+    which is built by write_dashboard_cache(). Retired bots must be excluded."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/settlement.py").read_text()
+    fn_start = src.index("def write_dashboard_cache(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    fn_body = src[fn_start:fn_end]
+    assert "retired_at IS NULL" in fn_body, (
+        "write_dashboard_cache bot query must filter retired_at IS NULL — "
+        "otherwise retired bots show up on /performance"
+    )
+
+
 @test("INJURIES-BY-DATE — both call sites use the new function (no batched leftovers)")
 def _():
     """Source-inspection guard: if anyone reverts the call site to get_injuries_batched
