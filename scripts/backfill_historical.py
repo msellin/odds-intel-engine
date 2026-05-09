@@ -25,6 +25,10 @@ from datetime import datetime, date, timezone
 
 from dotenv import load_dotenv
 from rich.console import Console
+from rich.progress import (
+    Progress, BarColumn, MofNCompleteColumn, TimeRemainingColumn,
+    SpinnerColumn, TextColumn,
+)
 
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -278,6 +282,35 @@ def get_af_ids_needing(table: str, match_map: dict[int, str]) -> set[int]:
     return {uuid_to_af[uuid] for uuid in uuids if uuid not in has_data}
 
 
+def count_matches_needing_enrichment(leagues: list[int], seasons: list[int]) -> int:
+    """
+    Estimate of matches that this run will attempt to enrich — used as the
+    progress-bar total. Counts finished AF matches in `matches` for the given
+    leagues × seasons that are missing a row in `match_stats` OR `match_events`.
+    Newly-stored fixtures (added this run by `bulk_store_matches`) won't show up
+    here, so the bar may extend slightly past 100% on first runs of a new
+    league/season — that's a feature, not a bug.
+    """
+    if not leagues or not seasons:
+        return 0
+    rows = execute_query(
+        """
+        SELECT COUNT(*) AS n FROM matches m
+        JOIN leagues l ON l.id = m.league_id
+        WHERE l.api_football_id = ANY(%s)
+          AND m.season = ANY(%s)
+          AND m.status = 'finished'
+          AND m.api_football_id IS NOT NULL
+          AND (
+              NOT EXISTS (SELECT 1 FROM match_stats ms WHERE ms.match_id = m.id)
+              OR NOT EXISTS (SELECT 1 FROM match_events me WHERE me.match_id = m.id)
+          )
+        """,
+        [leagues, seasons],
+    )
+    return rows[0]["n"] if rows else 0
+
+
 def backfill_league_season(
     league_id: int,
     season: int,
@@ -287,26 +320,35 @@ def backfill_league_season(
     budget_tracker: dict,
     batch_limit: int,
     league_cap: int = 200,
+    bar: Progress | None = None,
+    task_id: int | None = None,
 ) -> dict:
     """
     Backfill one league/season. Returns stats dict.
     league_cap limits API calls per league/season to keep runs short.
+
+    `bar` + `task_id` (optional) wire a rich.Progress bar from the caller.
+    When provided, all per-L/S prints flow through `bar.console.print` so they
+    don't corrupt the bar, and the bar advances by the count of matches
+    actually enriched in this L/S.
     """
-    stats = {"fixtures_stored": 0, "odds_stored": 0, "stats_stored": 0, "events_stored": 0, "api_calls": 0}
+    stats = {"fixtures_stored": 0, "odds_stored": 0, "stats_stored": 0,
+             "events_stored": 0, "matches_enriched": 0, "api_calls": 0}
     league_calls = 0  # Track calls within this league/season
+    _print = bar.console.print if bar else console.print
 
     progress = get_or_create_progress(league_id, season, phase)
     if progress.get("status") == "complete" and skip_existing:
-        console.print("  [dim]Already complete — skipping[/dim]")
+        _print(f"  [dim]L{league_id}/S{season} — already complete[/dim]")
         return stats
 
     update_progress(league_id, season, status="in_progress")
 
     # Step 1: Fetch all fixtures for this league/season (1 API call)
-    console.print(f"  Fetching fixtures for league {league_id}, season {season}...")
+    _print(f"  [cyan]L{league_id}/S{season}[/cyan] — fetching fixtures...")
 
     if dry_run:
-        console.print(f"  [yellow]DRY RUN — would fetch /fixtures?league={league_id}&season={season}[/yellow]")
+        _print(f"  [yellow]DRY RUN — would fetch /fixtures?league={league_id}&season={season}[/yellow]")
         return stats
 
     fixtures = get_fixtures_by_league_season(league_id, season)
@@ -321,7 +363,7 @@ def backfill_league_season(
     ]
     total_fixtures = len(finished)
 
-    console.print(f"  Found {len(fixtures)} fixtures, {total_fixtures} finished")
+    _print(f"  Found {len(fixtures)} fixtures, {total_fixtures} finished")
 
     update_progress(league_id, season, fixtures_total=total_fixtures)
 
@@ -352,7 +394,7 @@ def backfill_league_season(
 
     stats["fixtures_stored"] = fixtures_stored
     update_progress(league_id, season, fixtures_done=fixtures_stored)
-    console.print(f"  Stored {fixtures_stored} match records")
+    _print(f"  Stored {fixtures_stored} match records")
 
     if _shutdown_requested:
         return stats
@@ -363,7 +405,7 @@ def backfill_league_season(
     # Step 3: Odds — SKIPPED
     # API-Football /odds endpoint only returns data for upcoming/recent fixtures,
     # not historical completed matches. Confirmed via live test 2026-04-30.
-    console.print("  Odds: skipped (AF doesn't serve historical odds for completed fixtures)")
+    _print("  Odds: skipped (AF doesn't serve historical odds for completed fixtures)")
 
     # Step 4 + 5: Batch-fetch stats AND events for matches that need either, in
     # one /fixtures?ids= round (BACKFILL-IDS-BATCH). One call returns 20 fixtures,
@@ -381,7 +423,7 @@ def backfill_league_season(
     max_calls = max(0, min(remaining_budget, remaining_league))
     max_ids = max_calls * chunk_size
     if len(union_ids) > max_ids:
-        console.print(f"  [yellow]Budget/league cap limits batch to {max_ids} of {len(union_ids)} matches[/yellow]")
+        _print(f"  [yellow]Budget/league cap limits batch to {max_ids} of {len(union_ids)} matches[/yellow]")
         union_ids = union_ids[:max_ids]
 
     stats_stored = 0
@@ -394,9 +436,9 @@ def backfill_league_season(
             stats["api_calls"] += calls_made
             budget_tracker["used"] += calls_made
             league_calls += calls_made
-            console.print(f"  Batch-fetched {len(prefetched)}/{len(union_ids)} fixtures ({calls_made} AF calls)")
+            _print(f"  Batch-fetched {len(prefetched)}/{len(union_ids)} fixtures ({calls_made} AF calls)")
         except Exception as e:
-            console.print(f"  [red]Batch fetch failed: {e}[/red]")
+            _print(f"  [red]Batch fetch failed: {e}[/red]")
             prefetched = {}
 
         events_rows: list[tuple] = []
@@ -418,7 +460,7 @@ def backfill_league_season(
                     if parsed:
                         stats_rows.append((match_uuid, parsed))
                 except Exception as e:
-                    console.print(f"  [red]Stats parse error for AF {af_id}: {e}[/red]")
+                    _print(f"  [red]Stats parse error for AF {af_id}: {e}[/red]")
 
             # Events — collect rows; bulk insert below.
             if af_id in need_events:
@@ -442,7 +484,7 @@ def backfill_league_season(
                             ))
                         events_stored += 1
                 except Exception as e:
-                    console.print(f"  [red]Events parse error for AF {af_id}: {e}[/red]")
+                    _print(f"  [red]Events parse error for AF {af_id}: {e}[/red]")
 
         # One bulk UPSERT for stats — collapses N round-trips to 1 (BULK-STORE-MATCH-STATS).
         # On EU Supabase pooler this is the dominant wall-time cost in the backfill.
@@ -450,7 +492,7 @@ def backfill_league_season(
             try:
                 stats_stored = bulk_store_match_stats(stats_rows)
             except Exception as e:
-                console.print(f"  [red]Bulk stats write failed: {e}[/red]")
+                _print(f"  [red]Bulk stats write failed: {e}[/red]")
 
         if events_rows:
             from psycopg2.extras import execute_values
@@ -470,19 +512,24 @@ def backfill_league_season(
 
     stats["stats_stored"] = stats_stored
     stats["events_stored"] = events_stored
+    # Distinct matches we attempted to enrich this run — bar unit.
+    stats["matches_enriched"] = len(union_ids)
     update_progress(
         league_id, season,
         stats_done=progress.get("stats_done", 0) + stats_stored,
         events_done=progress.get("events_done", 0) + events_stored,
     )
-    console.print(f"  Stored stats for {stats_stored} matches, events for {events_stored} matches")
+    _print(f"  → {stats_stored} stats, {events_stored} events written ({len(union_ids)} fixtures)")
+
+    if bar is not None and task_id is not None and stats["matches_enriched"]:
+        bar.advance(task_id, stats["matches_enriched"])
 
     # Check if this league/season is complete
     progress_now = get_or_create_progress(league_id, season, phase)
     if (progress_now.get("fixtures_done", 0) >= total_fixtures
             and not need_stats and not need_events):
         update_progress(league_id, season, status="complete")
-        console.print(f"  [green]✓ League {league_id} season {season} complete[/green]")
+        _print(f"  [green]✓ L{league_id}/S{season} complete[/green]")
 
     return stats
 
@@ -536,42 +583,64 @@ def run_backfill(phase: int | None = None, batch_size: int = 500, league_cap: in
         seasons = PHASE_SEASONS[phase]
 
         console.print(f"Target: {len(leagues)} leagues × {len(seasons)} seasons = "
-                      f"{len(leagues) * len(seasons)} league/season combos\n")
+                      f"{len(leagues) * len(seasons)} league/season combos")
+
+        # Pre-count matches missing stats or events for this phase — drives the
+        # progress-bar total. May undercount if new league/seasons are touched
+        # for the first time this run (their fixtures aren't in `matches` yet);
+        # the bar will simply extend past 100% in that case rather than freeze.
+        total_matches = count_matches_needing_enrichment(leagues, seasons)
+        console.print(f"Matches missing stats/events: ~{total_matches:,}\n")
 
         budget_tracker = {"used": 1, "max": max_requests}  # 1 for the status check
         totals = {"fixtures": 0, "odds": 0, "stats": 0, "events": 0, "api_calls": 1}
 
-        for league_id in leagues:
-            if _shutdown_requested:
-                break
-            if budget_tracker["used"] >= budget_tracker["max"]:
-                console.print("\n[yellow]Budget cap reached — stopping[/yellow]")
-                break
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>5.1f}%"),
+            TimeRemainingColumn(),
+            console=console,
+            transient=False,
+        ) as bar:
+            task_id = bar.add_task(
+                f"Phase {phase}",
+                total=max(total_matches, 1),
+            )
 
-            for season in seasons:
+            for league_id in leagues:
                 if _shutdown_requested:
                     break
                 if budget_tracker["used"] >= budget_tracker["max"]:
+                    bar.console.print("\n[yellow]Budget cap reached — stopping[/yellow]")
                     break
 
-                console.print(f"\n[bold]League {league_id} / Season {season}[/bold]")
+                for season in seasons:
+                    if _shutdown_requested:
+                        break
+                    if budget_tracker["used"] >= budget_tracker["max"]:
+                        break
 
-                result = backfill_league_season(
-                    league_id=league_id,
-                    season=season,
-                    phase=phase,
-                    skip_existing=skip_existing,
-                    dry_run=dry_run,
-                    budget_tracker=budget_tracker,
-                    batch_limit=batch_size,
-                    league_cap=league_cap,
-                )
+                    result = backfill_league_season(
+                        league_id=league_id,
+                        season=season,
+                        phase=phase,
+                        skip_existing=skip_existing,
+                        dry_run=dry_run,
+                        budget_tracker=budget_tracker,
+                        batch_limit=batch_size,
+                        league_cap=league_cap,
+                        bar=bar,
+                        task_id=task_id,
+                    )
 
-                totals["fixtures"] += result["fixtures_stored"]
-                totals["odds"] += result["odds_stored"]
-                totals["stats"] += result["stats_stored"]
-                totals["events"] += result["events_stored"]
-                totals["api_calls"] += result["api_calls"]
+                    totals["fixtures"] += result["fixtures_stored"]
+                    totals["odds"] += result["odds_stored"]
+                    totals["stats"] += result["stats_stored"]
+                    totals["events"] += result["events_stored"]
+                    totals["api_calls"] += result["api_calls"]
 
         # Final summary
         console.print("\n[bold green]═══ Backfill Complete ═══[/bold green]")
