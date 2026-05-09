@@ -842,15 +842,17 @@ def write_dashboard_cache():
     """
     console.print("[cyan]Writing dashboard cache...[/cyan]")
     try:
-        # Bot performance
+        # Bot performance — voids are excluded from settled/won/staked/pnl/clv.
+        # Void rows retain their original pnl/stake (we only flip `result`), so any
+        # `result != 'pending'` filter would silently double-count voided bets.
         bot_rows = execute_query("""
             SELECT
                 b.name,
-                COUNT(sb.id) FILTER (WHERE sb.result != 'pending') as settled,
+                COUNT(sb.id) FILTER (WHERE sb.result IN ('won','lost')) as settled,
                 COUNT(sb.id) FILTER (WHERE sb.result = 'won') as won,
-                SUM(sb.pnl) FILTER (WHERE sb.result != 'pending') as total_pnl,
-                SUM(sb.stake) FILTER (WHERE sb.result != 'pending') as total_staked,
-                AVG(sb.clv) FILTER (WHERE sb.result != 'pending' AND sb.clv IS NOT NULL) as avg_clv
+                SUM(sb.pnl) FILTER (WHERE sb.result IN ('won','lost')) as total_pnl,
+                SUM(sb.stake) FILTER (WHERE sb.result IN ('won','lost')) as total_staked,
+                AVG(sb.clv) FILTER (WHERE sb.result IN ('won','lost') AND sb.clv IS NOT NULL) as avg_clv
             FROM bots b
             LEFT JOIN simulated_bets sb ON sb.bot_id = b.id
             WHERE b.is_active = true
@@ -858,12 +860,12 @@ def write_dashboard_cache():
             GROUP BY b.id, b.name
         """, [])
 
-        total_bets = execute_query("SELECT COUNT(*) as n FROM simulated_bets", [])[0]["n"]
-        settled_bets = execute_query("SELECT COUNT(*) as n FROM simulated_bets WHERE result != 'pending'", [])[0]["n"]
+        total_bets = execute_query("SELECT COUNT(*) as n FROM simulated_bets WHERE result != 'void'", [])[0]["n"]
+        settled_bets = execute_query("SELECT COUNT(*) as n FROM simulated_bets WHERE result IN ('won','lost')", [])[0]["n"]
         pending_bets = int(total_bets) - int(settled_bets)
         won = execute_query("SELECT COUNT(*) as n FROM simulated_bets WHERE result = 'won'", [])[0]["n"]
         lost = execute_query("SELECT COUNT(*) as n FROM simulated_bets WHERE result = 'lost'", [])[0]["n"]
-        staked_row = execute_query("SELECT SUM(stake) as s, SUM(pnl) as p, AVG(clv) as c FROM simulated_bets WHERE result != 'pending'", [])[0]
+        staked_row = execute_query("SELECT SUM(stake) as s, SUM(pnl) as p, AVG(clv) as c FROM simulated_bets WHERE result IN ('won','lost')", [])[0]
         total_staked = float(staked_row["s"] or 0)
         total_pnl = float(staked_row["p"] or 0)
         avg_clv = float(staked_row["c"] or 0) if staked_row["c"] else None
@@ -887,9 +889,9 @@ def write_dashboard_cache():
 
         market_rows = execute_query("""
             SELECT market,
-                COUNT(*) FILTER (WHERE result != 'pending') as bets,
+                COUNT(*) FILTER (WHERE result IN ('won','lost')) as bets,
                 COUNT(*) FILTER (WHERE result = 'won') as won,
-                AVG(clv) FILTER (WHERE result != 'pending' AND clv IS NOT NULL) as avg_clv
+                AVG(clv) FILTER (WHERE result IN ('won','lost') AND clv IS NOT NULL) as avg_clv
             FROM simulated_bets
             GROUP BY market ORDER BY bets DESC
         """, [])
@@ -923,7 +925,7 @@ def write_dashboard_cache():
         # Data accumulation counts
         pseudo_clv_count = execute_query("SELECT COUNT(*) as n FROM matches WHERE status='finished' AND pseudo_clv_home IS NOT NULL", [])[0]["n"]
         live_snapshot_matches = execute_query("SELECT COUNT(DISTINCT match_id) as n FROM live_match_snapshots", [])[0]["n"]
-        alignment_settled = execute_query("SELECT COUNT(*) as n FROM simulated_bets WHERE result != 'pending' AND alignment_class IS NOT NULL", [])[0]["n"]
+        alignment_settled = execute_query("SELECT COUNT(*) as n FROM simulated_bets WHERE result IN ('won','lost') AND alignment_class IS NOT NULL", [])[0]["n"]
 
         import json
         execute_write("""
@@ -1320,12 +1322,12 @@ def compute_model_evaluations():
     yesterday_str = (date.today() - timedelta(days=1)).isoformat()
     today_str = date.today().isoformat()
 
-    # Get recently settled bets with league info
+    # Get recently settled bets with league info — exclude voids; they're not real outcomes.
     bets = execute_query(
         "SELECT sb.id, sb.market, sb.result, sb.pnl, sb.stake, sb.clv, m.league_id "
         "FROM simulated_bets sb "
         "LEFT JOIN matches m ON sb.match_id = m.id "
-        "WHERE sb.result != 'pending' AND sb.pick_time >= %s",
+        "WHERE sb.result IN ('won','lost') AND sb.pick_time >= %s",
         [f"{yesterday_str}T00:00:00"]
     )
 
@@ -1419,7 +1421,7 @@ def run_post_mortem():
            LEFT JOIN teams ht ON m.home_team_id = ht.id
            LEFT JOIN teams ta ON m.away_team_id = ta.id
            LEFT JOIN leagues l ON m.league_id = l.id
-           WHERE sb.result != 'pending' AND sb.pick_time >= %s""",
+           WHERE sb.result IN ('won','lost') AND sb.pick_time >= %s""",
         [f"{today_str}T00:00:00"]
     )
 
@@ -1565,7 +1567,7 @@ def run_report():
     for bot in bots:
         bets = execute_query(
             "SELECT result, pnl, stake, clv FROM simulated_bets "
-            "WHERE bot_id = %s AND result != 'pending'",
+            "WHERE bot_id = %s AND result IN ('won','lost')",
             [bot["id"]]
         )
 

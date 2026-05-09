@@ -1788,6 +1788,29 @@ def _():
     assert "inplay_e" in src, "085 must scope to inplay_e bot"
 
 
+@test("VOID-AGG-EXCLUSION — dashboard_cache and post-mortem queries exclude voids")
+def _():
+    """Voided bets keep their original pnl/stake (we only flip `result` to 'void').
+    A `result != 'pending'` filter therefore double-counts them in settled/pnl/staked.
+    Every aggregate in settlement.py must use `result IN ('won','lost')` instead.
+    Bug surfaced 2026-05-10 when 182 voided E proxy bets pulled hit_rate to ~7%."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/settlement.py").read_text()
+    fn_start = src.index("def write_dashboard_cache(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    fn_body = src[fn_start:fn_end]
+    non_comment = "\n".join(
+        line for line in fn_body.splitlines() if not line.lstrip().startswith("#")
+    )
+    assert "result != 'pending'" not in non_comment, (
+        "write_dashboard_cache: replace `result != 'pending'` with `result IN ('won','lost')`"
+        " — voids contaminate settled/pnl/staked"
+    )
+    assert "result IN ('won','lost')" in non_comment, (
+        "write_dashboard_cache must use the void-aware filter"
+    )
+
+
 @test("INPLAY-MERGE-A2 — inplay_a2 removed from INPLAY_BOTS and dispatcher")
 def _():
     import pathlib
