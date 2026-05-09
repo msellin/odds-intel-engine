@@ -1530,6 +1530,12 @@ def _():
     assert fn_body.count("get_conn()") == 1, (
         f"store_team_transfers should open exactly 1 DB connection (got {fn_body.count('get_conn()')})"
     )
+    # Must dedupe on the conflict key before bulk upsert — AF returns multi-leg
+    # transfers on the same (player, date) which trip "ON CONFLICT cannot affect row a second time".
+    assert 'r["team_api_id"], r["player_id"], r["transfer_date"]' in fn_body, (
+        "store_team_transfers must dedupe rows on (team_api_id, player_id, transfer_date) "
+        "before execute_values to avoid Postgres 'ON CONFLICT cannot affect row a second time' errors"
+    )
 
 
 @test("INPLAY-UUID-FIX — mid converted to str before prematch dict lookup")

@@ -2015,6 +2015,13 @@ def store_team_transfers(team_api_id: int, rows: list[dict]) -> int:
     if not valid:
         return 0
 
+    # Dedupe on the conflict key — AF returns multiple transfer legs for the same
+    # (player, date), and Postgres ON CONFLICT DO UPDATE rejects duplicates in one batch.
+    deduped: dict[tuple, dict] = {}
+    for r in valid:
+        deduped[(r["team_api_id"], r["player_id"], r["transfer_date"])] = r
+    valid = list(deduped.values())
+
     columns = list(valid[0].keys())
     col_str = ", ".join(columns)
     placeholders = ", ".join(["%s"] * len(columns))
