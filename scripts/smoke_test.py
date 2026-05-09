@@ -1618,6 +1618,24 @@ def _():
     )
 
 
+@test("INPLAY-FIX-E-FALLBACK — strategy E proxy mode disabled (if not is_real: return None)")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    fn_start = src.index("def _check_strategy_e(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    fn_body = src[fn_start:fn_end]
+    assert "if not is_real:" in fn_body and "return None" in fn_body, (
+        "Strategy E must bail early on proxy mode — 182 shot_proxy bets at −4.7% ROI confirmed bad"
+    )
+    assert "shot_proxy" not in fn_body or "disabled" in fn_body, (
+        "Strategy E must not produce shot_proxy bets — proxy formula inflated expected_shots"
+    )
+    assert "expected_shots_at_minute" not in fn_body, (
+        "The buggy expected_shots_at_minute formula must be removed from strategy E"
+    )
+
+
 @test("INPLAY-MERGE-A2 — inplay_a2 removed from INPLAY_BOTS and dispatcher")
 def _():
     import pathlib
@@ -1899,22 +1917,21 @@ def _():
     )
 
 
-@test("INPLAY-E-NULL-SHOTS — strategy E rejects candidates with NULL shot data")
+@test("INPLAY-E-NULL-SHOTS — strategy E proxy disabled; real-xG only (no shot data access)")
 def _():
-    """Strategy E used (shots_home or 0) which treated NULL as 0, firing on every
-    stats-less game (91% of live matches). Fix: explicit NULL guard before proxy calc."""
+    """Proxy mode disabled 2026-05-09 — 182 bets at −4.7% ROI. Strategy E now requires
+    real xG and returns None immediately for proxy candidates."""
     import pathlib
     src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
     fn_start = src.index("def _check_strategy_e(")
     fn_end = src.index("\ndef ", fn_start + 1)
     fn_body = src[fn_start:fn_end]
-    assert 'cand["shots_home"] is None or cand["shots_away"] is None' in fn_body, (
-        "Strategy E proxy branch must guard against NULL shots_home/shots_away. "
-        "Without this, NULL treated as 0 makes pace_ratio=0 → fires on every stats-less game."
+    # Proxy disabled — must bail before any shot data access
+    assert "if not is_real:" in fn_body and "return None" in fn_body, (
+        "Strategy E must bail on proxy mode via 'if not is_real: return None'"
     )
-    # Verify the old NULL-treating pattern is gone
-    assert '(cand["shots_home"] or 0) + (cand["shots_away"] or 0)' not in fn_body, (
-        "Strategy E must not use 'shots_home or 0' — this was the NULL-masking bug."
+    assert "expected_shots_at_minute" not in fn_body, (
+        "Strategy E must not reference expected_shots_at_minute — proxy formula removed"
     )
 
 
