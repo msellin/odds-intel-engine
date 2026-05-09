@@ -53,7 +53,14 @@ This protocol exists because parallel agents caused real production bugs when do
 
 **Always add a smoke test.** Every task must have at least one test in `scripts/smoke_test.py` before the commit. No exceptions — even code-only changes get a source-inspection test.
 
-**Run only the tests you added, not the full suite.** The full suite takes ~1 minute and GitHub Actions runs it on every push to main — that's the gate, not your local run. Locally, run only your new test (e.g. `python3 scripts/smoke_test.py 2>&1 | grep -E "MY-NEW-TEST"`) to confirm it passes. If you broke something elsewhere, CI will catch it after push — don't burn local time on the full suite for routine tasks.
+**Never run the full smoke suite locally.** The full suite takes ~60s and GitHub Actions runs it on every push to main — that's the gate, not your local run. Locally, run only your new test using the `--filter` flag:
+
+```bash
+python3 scripts/smoke_test.py --filter MY-NEW-TEST     # substring, case-insensitive
+python3 scripts/smoke_test.py -f INPLAY-LAMBDA          # short form
+```
+
+The pipe-to-grep pattern (`smoke_test.py 2>&1 | grep ...`) does NOT save runtime — the suite still runs, only the output is filtered. Use `--filter`. If you broke something elsewhere, CI will catch it after push — don't burn local time on the full suite for routine tasks.
 
 Update **all** of the following that apply. "Not relevant" is almost never true for more than 2 of these:
 

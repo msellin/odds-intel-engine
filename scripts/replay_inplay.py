@@ -153,6 +153,29 @@ def fetch_red_cards(match_ids: list[str]) -> set[str]:
     return {str(r["match_id"]) for r in rows}
 
 
+def fetch_red_card_index(match_ids: list[str]) -> dict[str, tuple[int, str]]:
+    """
+    Single bulk fetch of the FIRST red card in minute 15-55 for every match.
+    Returns {mid: (red_minute, red_team)}.
+
+    Replaces the per-snapshot SQL query in `_check_strategy_q` — the live
+    helper hits the DB on every cycle for every red-card match, which on
+    the backfill window translates to ~3-5k sequential round-trips and is
+    the dominant runtime cost. With this index Q's lookup becomes O(1).
+    """
+    if not match_ids:
+        return {}
+    rows = execute_query("""
+        SELECT DISTINCT ON (match_id) match_id, minute, team
+        FROM match_events
+        WHERE match_id = ANY(%s::uuid[])
+          AND event_type IN ('red_card', 'yellow_red_card')
+          AND minute BETWEEN 15 AND 55
+        ORDER BY match_id, minute ASC
+    """, (match_ids,))
+    return {str(r["match_id"]): (int(r["minute"]), r["team"]) for r in rows}
+
+
 def fetch_existing_inplay_bets() -> set[tuple[str, str]]:
     """Return set of (match_id, bot_name) for inplay bets already in simulated_bets.
 
@@ -238,7 +261,8 @@ def build_snapshot_index(snapshots: list[dict]) -> dict[str, list[dict]]:
 
 
 def apply_ema_live_xg_replay(snapshots: list[dict],
-                             half_life_min: float = 5.0) -> int:
+                             half_life_min: float = 5.0,
+                             snapshot_idx: dict[str, list[dict]] | None = None) -> int:
     """
     Replay-side port of inplay_bot._attach_ema_live_xg.
 
@@ -248,10 +272,13 @@ def apply_ema_live_xg_replay(snapshots: list[dict],
     each cand's `xg_home`/`xg_away` in-place so the same `_check_strategy_*`
     code path consumes smoothed values.
 
+    snapshot_idx: optional pre-built index (caller may share it with run_replay
+    to avoid two passes over 41k+ rows).
+
     Returns the count of snapshots that got smoothed (skipping the first
     snapshot per match — nothing to blend with).
     """
-    by_mid = build_snapshot_index(snapshots)
+    by_mid = snapshot_idx if snapshot_idx is not None else build_snapshot_index(snapshots)
     smoothed = 0
     for mid, history in by_mid.items():
         prev_min: int | None = None
@@ -371,6 +398,80 @@ def replay_strategy_h(cand: dict, pm: dict, has_red_card: bool,
             "line": line,
             "ht_sot_total": ht_sot,
             "prematch_o25": round(pm_o25, 3),
+        },
+    }
+
+
+def replay_strategy_q(cand: dict, pm: dict,
+                      red_card_idx: dict[str, tuple[int, str]]) -> dict | None:
+    """
+    In-memory port of inplay_bot._check_strategy_q.
+
+    Live `_check_strategy_q` runs a per-snapshot SQL query against
+    `match_events` to find the first red card in minute 15-55. On a backfill
+    replay that's ~3-5k sequential round-trips and dominates the runtime.
+    Here we look up the precomputed `red_card_idx` (one bulk fetch upfront)
+    in O(1).
+    """
+    minute = cand["minute"] or 0
+    if minute > 75:
+        return None
+
+    sh, sa = cand["score_home"] or 0, cand["score_away"] or 0
+    total_goals = sh + sa
+    if total_goals > 1:
+        return None
+
+    mid = str(cand["match_id"])
+    rc = red_card_idx.get(mid)
+    if not rc:
+        return None
+    red_minute, red_team = rc
+    if minute <= red_minute:
+        return None
+
+    eleven_man_team = "away" if red_team == "home" else "home"
+    poss_h = float(cand["possession_home"] or 50)
+    eleven_man_poss = poss_h if eleven_man_team == "home" else (100.0 - poss_h)
+    if eleven_man_poss < 55.0:
+        return None
+
+    odds = cand.get("live_ou_25_over")
+    if not odds or float(odds) <= 2.30:
+        return None
+    odds = float(odds)
+
+    pm_xg_total = float(pm.get("prematch_xg_home") or 0) + float(pm.get("prematch_xg_away") or 0)
+    if pm_xg_total <= 0:
+        return None
+
+    xg_h, xg_a, is_real = inplay_bot._compute_live_xg(cand)
+    live_xg = xg_h + xg_a
+    posterior = inplay_bot._bayesian_posterior(pm_xg_total, live_xg, minute)
+    lambda_remaining = inplay_bot._scaled_remaining_lam(posterior, minute, sh, sa)
+    goals_needed = 3 - total_goals
+    if goals_needed <= 0:
+        return None
+
+    model_prob = inplay_bot._poisson_over_prob(lambda_remaining, goals_needed - 0.5)
+    implied = inplay_bot._implied_prob(odds)
+    edge = (model_prob - implied) * 100
+
+    min_edge = 3.0 if is_real else 4.5
+    if edge < min_edge:
+        return None
+
+    return {
+        "market": "O/U",
+        "selection": "over 2.5",
+        "odds": odds,
+        "model_prob": round(model_prob, 4),
+        "edge": round(edge, 2),
+        "extra": {
+            "red_minute": red_minute,
+            "red_team": red_team,
+            "eleven_man_team": eleven_man_team,
+            "eleven_man_possession": round(eleven_man_poss, 1),
         },
     }
 
@@ -564,7 +665,9 @@ def run_replay(snapshots: list[dict],
                match_meta: dict[str, dict],
                existing_bets: set[tuple[str, str]] | None = None,
                skip_f: bool = False,
-               use_in_memory_f: bool = True) -> tuple[list[dict], dict]:
+               use_in_memory_f: bool = True,
+               snapshot_idx: dict[str, list[dict]] | None = None,
+               red_card_idx: dict[str, tuple[int, str]] | None = None) -> tuple[list[dict], dict]:
     """
     Returns (placed_bets, settled_aggregates).
       placed_bets: list of bet dicts with all fields needed for CSV output.
@@ -572,62 +675,151 @@ def run_replay(snapshots: list[dict],
 
     existing_bets: set of (match_id, bot_name) already in simulated_bets — skipped
     so the backfill CSV never contains a duplicate of a bet that was actually placed.
+    snapshot_idx / red_card_idx: optional precomputed indexes — main() builds them
+    once and reuses the snapshot one for the EMA pass too. If None, built lazily.
     """
-    snapshot_idx = build_snapshot_index(snapshots) if (use_in_memory_f and not skip_f) else {}
+    if snapshot_idx is None:
+        snapshot_idx = build_snapshot_index(snapshots) if (use_in_memory_f and not skip_f) else {}
+    red_card_idx = red_card_idx if red_card_idx is not None else {}
     existing_bets = existing_bets or set()
 
     bots_to_run = [b for b in INPLAY_BOTS if not (skip_f and b == "inplay_f")]
     placed: dict[tuple[str, str], dict] = {}
     eval_count = 0
+    skipped_oow = 0  # outside universal entry window
     skipped_dupe_keys: set[tuple[str, str]] = set()
 
-    for cand in snapshots:
-        eval_count += 1
-        mid = str(cand["match_id"])
-        pm = prematch.get(mid)
-        if not pm:
-            continue
+    # Universal-window prefilter — no bot fires outside minute 12-80, and the
+    # SELECT already guarantees ≥1; this saves ~10-15% of inner-loop dispatches.
+    UNIV_MIN_LO, UNIV_MIN_HI = 12, 80
 
-        has_red_card = mid in red_cards
+    try:
+        from rich.progress import Progress, BarColumn, MofNCompleteColumn, TimeRemainingColumn, SpinnerColumn, TextColumn
+        progress_ctx = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            "•",
+            TextColumn("placed: {task.fields[placed]}"),
+            TimeRemainingColumn(),
+            transient=False,
+        )
+    except ImportError:
+        progress_ctx = None
 
-        for bot_name in bots_to_run:
-            key = (mid, bot_name)
-            if key in placed:
-                continue
-            if key in existing_bets:
-                # This (match, bot) pair already has a real bet in DB — don't re-emit.
-                skipped_dupe_keys.add(key)
-                continue
-            try:
-                if bot_name == "inplay_f" and use_in_memory_f:
-                    trigger = replay_strategy_f(cand, pm, has_red_card, snapshot_idx)
-                elif bot_name == "inplay_g" and use_in_memory_f:
-                    trigger = replay_strategy_g(cand, pm, has_red_card, snapshot_idx)
-                elif bot_name == "inplay_h" and use_in_memory_f:
-                    trigger = replay_strategy_h(cand, pm, has_red_card, snapshot_idx)
-                else:
-                    trigger = inplay_bot._check_strategy(
-                        bot_name, cand, pm, has_red_card, execute_query
-                    )
-            except Exception:
-                continue
-            if not trigger:
-                continue
+    if progress_ctx is not None:
+        with progress_ctx as progress:
+            task = progress.add_task("Replaying snapshots", total=len(snapshots), placed=0)
+            for cand in snapshots:
+                eval_count += 1
+                progress.advance(task)
+                if eval_count % 500 == 0:
+                    progress.update(task, placed=len(placed))
 
-            placed[key] = {
-                "match_id": mid,
-                "bot_name": bot_name,
-                "market": trigger["market"],
-                "selection": trigger["selection"],
-                "odds": float(trigger["odds"]),
-                "edge_pct": float(trigger["edge"]),
-                "model_prob": float(trigger.get("model_prob", 0)),
-                "minute": cand["minute"],
-                "score_at_bet": f"{cand['score_home']}-{cand['score_away']}",
-                "captured_at": cand["captured_at"],
-            }
+                minute = cand.get("minute") or 0
+                if minute < UNIV_MIN_LO or minute > UNIV_MIN_HI:
+                    skipped_oow += 1
+                    continue
+
+                mid = str(cand["match_id"])
+                pm = prematch.get(mid)
+                if not pm:
+                    continue
+
+                has_red_card = mid in red_cards
+
+                for bot_name in bots_to_run:
+                    key = (mid, bot_name)
+                    if key in placed:
+                        continue
+                    if key in existing_bets:
+                        skipped_dupe_keys.add(key)
+                        continue
+                    try:
+                        if bot_name == "inplay_f" and use_in_memory_f:
+                            trigger = replay_strategy_f(cand, pm, has_red_card, snapshot_idx)
+                        elif bot_name == "inplay_g" and use_in_memory_f:
+                            trigger = replay_strategy_g(cand, pm, has_red_card, snapshot_idx)
+                        elif bot_name == "inplay_h" and use_in_memory_f:
+                            trigger = replay_strategy_h(cand, pm, has_red_card, snapshot_idx)
+                        elif bot_name == "inplay_q":
+                            trigger = replay_strategy_q(cand, pm, red_card_idx)
+                        else:
+                            trigger = inplay_bot._check_strategy(
+                                bot_name, cand, pm, has_red_card, execute_query
+                            )
+                    except Exception:
+                        continue
+                    if not trigger:
+                        continue
+
+                    placed[key] = {
+                        "match_id": mid,
+                        "bot_name": bot_name,
+                        "market": trigger["market"],
+                        "selection": trigger["selection"],
+                        "odds": float(trigger["odds"]),
+                        "edge_pct": float(trigger["edge"]),
+                        "model_prob": float(trigger.get("model_prob", 0)),
+                        "minute": cand["minute"],
+                        "score_at_bet": f"{cand['score_home']}-{cand['score_away']}",
+                        "captured_at": cand["captured_at"],
+                    }
+            progress.update(task, placed=len(placed))
+    else:
+        # Fallback path without rich — same logic, no progress UI.
+        for cand in snapshots:
+            eval_count += 1
+            minute = cand.get("minute") or 0
+            if minute < UNIV_MIN_LO or minute > UNIV_MIN_HI:
+                skipped_oow += 1
+                continue
+            mid = str(cand["match_id"])
+            pm = prematch.get(mid)
+            if not pm:
+                continue
+            has_red_card = mid in red_cards
+            for bot_name in bots_to_run:
+                key = (mid, bot_name)
+                if key in placed:
+                    continue
+                if key in existing_bets:
+                    skipped_dupe_keys.add(key)
+                    continue
+                try:
+                    if bot_name == "inplay_f" and use_in_memory_f:
+                        trigger = replay_strategy_f(cand, pm, has_red_card, snapshot_idx)
+                    elif bot_name == "inplay_g" and use_in_memory_f:
+                        trigger = replay_strategy_g(cand, pm, has_red_card, snapshot_idx)
+                    elif bot_name == "inplay_h" and use_in_memory_f:
+                        trigger = replay_strategy_h(cand, pm, has_red_card, snapshot_idx)
+                    elif bot_name == "inplay_q":
+                        trigger = replay_strategy_q(cand, pm, red_card_idx)
+                    else:
+                        trigger = inplay_bot._check_strategy(
+                            bot_name, cand, pm, has_red_card, execute_query
+                        )
+                except Exception:
+                    continue
+                if not trigger:
+                    continue
+                placed[key] = {
+                    "match_id": mid,
+                    "bot_name": bot_name,
+                    "market": trigger["market"],
+                    "selection": trigger["selection"],
+                    "odds": float(trigger["odds"]),
+                    "edge_pct": float(trigger["edge"]),
+                    "model_prob": float(trigger.get("model_prob", 0)),
+                    "minute": cand["minute"],
+                    "score_at_bet": f"{cand['score_home']}-{cand['score_away']}",
+                    "captured_at": cand["captured_at"],
+                }
 
     print(f"  evaluated: {eval_count:,} snapshots")
+    if skipped_oow:
+        print(f"  skipped (minute outside {UNIV_MIN_LO}-{UNIV_MIN_HI}): {skipped_oow:,}")
     print(f"  placed: {len(placed):,} unique (match × bot) bets")
     if skipped_dupe_keys:
         print(f"  skipped (already in simulated_bets): {len(skipped_dupe_keys)}")
@@ -851,9 +1043,13 @@ def main():
         print("No snapshots in selected window — aborting.")
         return
 
+    # Build the per-match snapshot index ONCE, share between EMA pre-pass and
+    # run_replay. The two used to walk the snapshot list independently.
+    snapshot_idx = build_snapshot_index(snapshots)
+
     # INPLAY-EMA-LIVE-XG (2026-05-10): smooth real-xG snapshots in-memory before
     # any strategy runs. Mirrors the live path in inplay_bot._attach_ema_live_xg.
-    smoothed = apply_ema_live_xg_replay(snapshots)
+    smoothed = apply_ema_live_xg_replay(snapshots, snapshot_idx=snapshot_idx)
     print(f"  EMA-smoothed real-xG snapshots: {smoothed:,}")
 
     distinct_match_ids = list({str(s["match_id"]) for s in snapshots})
@@ -862,6 +1058,10 @@ def main():
           f"{sum(1 for v in prematch.values() if v.get('prematch_o25_prob') is not None):,}")
     red_cards = fetch_red_cards(distinct_match_ids)
     print(f"  matches with red cards: {len(red_cards)}")
+    # Bulk red-card index for replay_strategy_q — replaces ~3-5k per-snapshot
+    # SQL queries with one round-trip + O(1) dict lookups.
+    red_card_idx = fetch_red_card_index(distinct_match_ids)
+    print(f"  red-card events 15-55: {len(red_card_idx)}")
     match_meta = fetch_match_meta(distinct_match_ids)
     finished = sum(1 for v in match_meta.values() if v.get("status") == "finished")
     print(f"  finished matches: {finished:,}")
@@ -874,13 +1074,17 @@ def main():
         # In-memory strategy F always on for backfill (fast + correct against historical timestamps)
         bets, by_bot = run_replay(snapshots, prematch, red_cards, match_meta,
                                   existing_bets=existing_bets,
-                                  skip_f=False, use_in_memory_f=True)
+                                  skip_f=False, use_in_memory_f=True,
+                                  snapshot_idx=snapshot_idx,
+                                  red_card_idx=red_card_idx)
         write_csv(bets, Path(args.csv))
         write_summary(bets, by_bot, Path(args.summary))
     else:
         bets, by_bot = run_replay(snapshots, prematch, red_cards, match_meta,
                                   existing_bets=existing_bets,
-                                  skip_f=args.skip_f, use_in_memory_f=not args.skip_f)
+                                  skip_f=args.skip_f, use_in_memory_f=not args.skip_f,
+                                  snapshot_idx=snapshot_idx,
+                                  red_card_idx=red_card_idx)
         # Single-day: terminal-only summary
         write_summary(bets, by_bot, Path(args.summary))
 

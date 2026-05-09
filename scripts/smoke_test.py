@@ -2492,9 +2492,43 @@ def _():
     assert "def apply_ema_live_xg_replay(" in replay_src, (
         "scripts/replay_inplay.py must expose apply_ema_live_xg_replay for backfill"
     )
-    assert "apply_ema_live_xg_replay(snapshots)" in replay_src, (
+    assert "apply_ema_live_xg_replay(snapshots" in replay_src, (
         "Replay main() must call apply_ema_live_xg_replay before run_replay"
     )
+
+
+@test("INPLAY-REPLAY-Q-INMEM — replay_strategy_q + bulk red_card_idx, no per-snapshot SQL")
+def _():
+    """
+    Replay's Q strategy must use the bulk-fetched red-card index, not a
+    per-snapshot SQL query. The live path runs `_check_strategy_q(... execute_query)`
+    which queries match_events for every snapshot — ~3-5k round-trips on the
+    backfill window and the dominant runtime cost. The replay port reads
+    `red_card_idx[mid]` instead.
+    """
+    import pathlib
+    src = pathlib.Path("scripts/replay_inplay.py").read_text()
+    assert "def replay_strategy_q(" in src, "replay_strategy_q must exist"
+    assert "def fetch_red_card_index(" in src, "bulk red-card index helper must exist"
+
+    fn_start = src.index("def replay_strategy_q(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    fn_body = src[fn_start:fn_end]
+    assert "red_card_idx.get(mid)" in fn_body, (
+        "replay_strategy_q must look up the precomputed index (no SQL per snapshot)"
+    )
+    assert "execute_query" not in fn_body, (
+        "replay_strategy_q must NOT call execute_query — defeats the perf win"
+    )
+
+    # Dispatch in run_replay must route inplay_q to the in-memory port
+    rr_start = src.index("def run_replay(")
+    rr_end = src.index("\ndef ", rr_start + 1)
+    rr_body = src[rr_start:rr_end]
+    assert 'bot_name == "inplay_q"' in rr_body, (
+        "run_replay must dispatch inplay_q to replay_strategy_q"
+    )
+    assert "replay_strategy_q(" in rr_body, "replay_strategy_q must be invoked from run_replay"
 
 
 @test("INPLAY-CALIBRATION-STACK — _scaled_remaining_lam used by every per-strategy lambda_remaining")
@@ -2712,11 +2746,29 @@ def _run_one(name: str, fn) -> tuple[str, bool, str, float]:
 
 
 def main():
-    import time
+    import time, argparse
+    parser = argparse.ArgumentParser(description="OddsIntel smoke tests")
+    parser.add_argument(
+        "--filter", "-f", default=None,
+        help="Run only tests whose name matches this substring (case-insensitive). "
+             "Use this for a single new test locally — full suite is CI's job."
+    )
+    args = parser.parse_args()
+
+    if args.filter:
+        needle = args.filter.lower()
+        registry = [(n, f) for (n, f) in _registry if needle in n.lower()]
+        if not registry:
+            print(f"No tests match filter: {args.filter}")
+            sys.exit(1)
+        print(f"Filter: {args.filter} → {len(registry)} test(s)")
+    else:
+        registry = _registry
+
     t0 = time.monotonic()
 
     with ThreadPoolExecutor(max_workers=8) as pool:
-        futures = {pool.submit(_run_one, name, fn): name for name, fn in _registry}
+        futures = {pool.submit(_run_one, name, fn): name for name, fn in registry}
         results = [f.result() for f in as_completed(futures)]
 
     elapsed = time.monotonic() - t0
