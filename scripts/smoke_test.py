@@ -2453,6 +2453,38 @@ def _():
     assert rows[0]["transfer_date"] == "2024-07-01"
 
 
+@test("PERF-GRAPH-START — both performance charts prepend a synthetic origin point")
+def _():
+    """Source guard. Without an origin point both charts start at the first
+    settled bet's outcome (e.g. -1u or 1010€), with no visible reference to the
+    starting bankroll. Fix prepends:
+      • Elite /bankroll cumulative-units chart  → {date, units: 0}
+      • /performance bot bankroll modal         → {idx: 0, bankroll: 1000, result: 'origin'}
+    """
+    import pathlib
+    web = pathlib.Path("/Users/margussellin/www/odds-intel-web/src")
+
+    bankroll_data = (web / "lib/engine-data.ts").read_text()
+    assert "cumulativeSeries.unshift({ date:" in bankroll_data, (
+        "getUserBankrollData must prepend a 0u origin to cumulativeSeries"
+    )
+    assert "units: 0" in bankroll_data, (
+        "Origin point in cumulativeSeries must have units: 0"
+    )
+
+    leaderboard = (web / "components/performance-leaderboard.tsx").read_text()
+    assert 'idx: 0, bankroll: 1000' in leaderboard, (
+        "buildChartData must prepend a 1000€ origin point to the bot bankroll series"
+    )
+    assert 'result: "origin"' in leaderboard, (
+        "Origin point must use result='origin' so the dot renderer + tooltip can branch on it"
+    )
+    # Old broken lookup that breaks once idx=0 exists must be gone
+    assert "chartData[Number(label) - 1]" not in leaderboard, (
+        "labelFormatter still uses index-1 lookup — wrong once origin idx=0 is prepended"
+    )
+
+
 @test("FETCH-ODDS-CONCURRENT — pages 2..N fetched via ThreadPoolExecutor")
 def _():
     """Source guard. The original loop was strictly sequential (`while page <=
