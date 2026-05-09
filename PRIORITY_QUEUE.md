@@ -358,6 +358,7 @@
 | BM-FILTER | Bookmaker availability filter on value bets page. Users in different countries have access to different bookmakers — showing a Betano pick to a UK user who can't use Betano creates frustration and churn. Add `preferred_bookmakers` text[] column to `profiles` (migration NNN). Profile page: checkbox list of the 13 bookmakers. Value bets page respects filter: only shows picks where `bookmaker = ANY(preferred_bookmakers)`. Default = show all (no change for users who haven't set preferences). | 3-4h | ⬜ | ✅ Ready | Frontend: `src/app/(app)/value-bets/page.tsx` + `src/lib/engine-data.ts`. Backend: migration + profile update API. |
 | BOT-PUBLIC-PERF | Public bot performance page. `bot_aggressive` is at +93 units (paper trading) and is the strongest conversion asset in the product — currently visible only at `/admin/bots` (superadmin). Build a public `/performance` page (free tier) showing paper trading results clearly labeled: daily bets settled, cumulative units chart, hit rate, CLV context. Include "paper trading — not real money" disclaimer. Replaces the need for social proof via Reddit posts alone. | half day | ✅ Done 2026-05-08 | ✅ Ready | Replaced `/track-record` with `/performance` (redirect from old URL). 4-tier gated: Free=hero stats+bot leaderboard(≥10 settled)+last 10 bets+CLV education; Pro=all 16 bots+W/L+P&L+bankroll chart modals+full 500-bet history with filters+CLV direction arrows; Elite=exact CLV %+stake sizes+closing odds+current bankroll per bot; Superadmin=all Elite. CLV is hero metric throughout. Sanitization server-side in page.tsx — client never receives gated data. Engine-data.ts: exported `getDashboardCache`, added `getRecentSettledBets`. Nav updated: "Track Record" → "Performance". TypeScript clean. |
 | PERF-GRAPH-START | Both performance graphs (`/performance` bot bankroll chart modal + `/bankroll` Elite chart) currently start with the first settled bet — so the first dot is the bankroll *after* bet #1 (e.g. 990 or 1010), never the 1000 starting point. UI should prepend a synthetic origin point at the bot's starting bankroll (`profiles.starting_bankroll` for users, 1000 for paper bots) dated at `min(settled_at) - 1ms` (or the bot's `created_at`) so the line visibly starts at 1000 and the first bet's delta is visible as the first move. Pure frontend — no DB change. | 30m | ⬜ | ✅ Ready | Two files: `src/components/bankroll-chart.tsx` (Elite `/bankroll`) and the bot bankroll modal in `src/app/(app)/performance/...` (find via grep for the bot modal chart). Prepend `{ date: startDate, bankroll: 1000 }` to the series before the recharts `data` prop. |
+| ODDS-TIMING-OPT | For every match we bet on, pull the full `odds_snapshots` history and find the odds at each time-bucket before kickoff: 24h+, 10h, 5h, 3h, 1h, 30min. For each settled bet compare the odds we got vs the best odds available in each bucket. Answer: at what window before kickoff were odds most favorable on average? Script outputs a table: `hours_before_ko | avg_best_odds | avg_bet_odds | pct_captures_peak | sample_n` per market (1X2 home/draw/away, O/U 2.5). If there's a clear window (e.g. odds peak 3-5h before KO), shift the betting pipeline's primary run to that window. Data: join `simulated_bets` (has `odds_at_pick`, `created_at`, `match_id`) → `matches` (kickoff) → `odds_snapshots` (full odds history). Filter to bets with `created_at >= 2026-05-06` for clean pipeline era. | 2h | ⬜ | ✅ Ready | Output to `scripts/odds_timing_analysis.py` + CSV in `dev/active/`. Don't change pipeline schedule based on a single run — need 200+ bets per market before conclusions are actionable. |
 
 ---
 
@@ -876,6 +877,7 @@ Yellow warning if today's value < 7-day average × 0.60.
 
 > Created: 2026-04-30. Original synthesis from 4 AI strategy reviews.
 > Updated: 2026-05-06. Second round of 4 independent AI reviews (8 answers total) refined strategy conditions, added 5 new strategies (G-K), corrected xG formulation, and updated validation thresholds.
+> Updated: 2026-05-09. Third round of 4 AI reviews on Kelly criterion and model_prob threshold. Consensus: flat stakes until 100-150 bets/strategy (exploratory) and 200-300/strategy (action). ECE < 5% is the Kelly gate. Edge is the right axis — no model_prob threshold. See §5b for full calibration roadmap.
 
 ### 1. Core Hypothesis (validated by all 8 reviews)
 
@@ -1086,12 +1088,16 @@ All 4 second-round tools flagged these independently:
 
 ### 5. Staking (in-play specific)
 
+**Current state: flat €1 paper stakes.** Kelly is not yet appropriate — `model_prob` is theoretical Poisson math, not empirically calibrated. Kelly with an overconfident prior oversizes bets and compounds losses asymmetrically. See §5b for the calibration roadmap before touching stake sizing.
+
+Target staking parameters once calibration gates pass:
+
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| Kelly fraction | **Quarter Kelly** (not half) | Higher model uncertainty in-play |
+| Kelly fraction | **Eighth Kelly initially (0.125x), then Quarter Kelly (0.25x)** | Start conservative — uncalibrated inplay model; upgrade after ECE < 5% confirmed stable |
 | Time decay | `(minutes_remaining / 90)^0.5` | Min 30: 82% stake, min 60: 58%, min 75: 41% |
 | Max stake per bet | 1.5% bankroll | Lower than pre-match (2%) |
-| Max exposure per match | 3% bankroll | Prevents doubling down |
+| Max exposure per match | 3% bankroll | Prevents doubling down on correlated strategies |
 | Bankroll allocation | 70% pre-match, 30% in-play | Pre-match is more reliable |
 
 **Minimum edge thresholds by minute:**
@@ -1103,6 +1109,56 @@ All 4 second-round tools flagged these independently:
 | 46-60 | 5% | Post-HT uncertainty |
 | 60-75 | 6% | Time running out |
 | 75+ | 8% | Extreme value only |
+
+### 5b. Calibration Roadmap (4-AI consensus, 2026-05-09)
+
+> Reviewed by 4 independent AI tools. All 4 agreed on the core framework below.
+
+**The key principle:** edge decides whether to bet, calibration decides how much to bet. Until calibration is stable, keep sizing tiny.
+
+#### Checkpoint 1 — Exploratory (~100–150 settled bets per strategy)
+
+Run now as a sanity check, treat as directional only — confidence intervals are wide.
+
+- **Reliability diagram per strategy:** bin bets by model_prob (40-50%, 50-60%, 60-70%, 70%+), compare average model_prob per bin vs actual win rate. If the line sits well above the diagonal, the model is overconfident.
+- **Edge bucket ROI:** group by edge (<3%, 3-6%, 6-10%, 10%+). If ROI is not monotonically increasing with edge, the edge calculation has a structural problem.
+- **Brier score + ECE (Expected Calibration Error):** ECE < 5% is the target bar before trusting probabilities enough to size off them.
+- **Do not change stake sizing based on this checkpoint.**
+
+Current pace: ~10-30 bets/strategy/12 days → 100-150 bets ≈ 6-8 weeks (mid-June 2026).
+
+#### Checkpoint 2 — Action threshold (~200–300 settled bets per strategy)
+
+- Repeat reliability diagrams + ECE per strategy.
+- If ECE < 5%: apply Platt scaling to correct systematic bias, then implement Eighth Kelly (0.125x) with hard per-bet cap.
+- If ECE ≥ 5%: stay flat, investigate which strategies are miscalibrated and why.
+- Evaluate per strategy independently — don't pool across strategies. Each has different failure modes (Strategy E betting Unders has completely different probability dynamics than Strategy C betting a comeback).
+
+Current pace → 200-300 bets/strategy ≈ 2-3 months (July-August 2026).
+
+#### Checkpoint 3 — Kelly upgrade (~500+ settled bets per strategy, stable calibration)
+
+- Re-run calibration. Non-stationarity is real — bookmaker algorithms adjust over time. Plan to recalibrate every ~500 bets, not just once.
+- If ECE still < 5% and edge monotonicity holds: upgrade to Quarter Kelly (0.25x).
+- Full Kelly is never appropriate for inplay — execution latency, odds moving before fill, and correlated simultaneous exposure all break Kelly's independence assumption.
+
+#### What NOT to do: model_prob threshold
+
+A minimum model_prob filter (e.g. "only bet when model says >60%") is redundant and often harmful. A 55% model probability with 40% implied (edge +15%) is a stronger bet than 62% model with 60% implied (edge +2%). The model_prob threshold filters on confidence in isolation, not on actual edge over the market.
+
+**Use instead:**
+- Tighten the minimum edge floor if you want to filter more aggressively (e.g. raise from 2% to 4%)
+- Odds ceiling of ~4.00 to control longshot variance (longshots with high model edge create massive drawdowns before the long run arrives)
+
+#### Pitfalls to watch
+
+| Pitfall | Description |
+|---------|-------------|
+| Selection bias | Calibration data is biased toward high-edge bets — you have no data on model accuracy at 0-3% edge since you never bet there |
+| Non-stationarity | Calibration from month 1 may not hold in month 3. Recalibrate every ~500 bets |
+| Correlated exposure | Multiple strategies can all express "more goals" simultaneously (HT surge + BTTS + late goals). Standard Kelly assumes independence — enforce the 3% per-match cap before implementing Kelly |
+| xG input uncertainty | Poisson outputs look crisp but xG inputs have wide uncertainty, especially before min 30. Systematic overconfidence source that calibration will surface |
+| Conditional calibration | Only evaluate calibration on executed bets, not all model outputs — these are structurally different populations |
 
 ### 6. Data Gaps to Fix
 
