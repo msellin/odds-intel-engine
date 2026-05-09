@@ -348,18 +348,17 @@ def job_backfill():
 
 
 def job_backfill_coaches():
-    """Coaches backfill — micro-batch every 5min, 10 teams/run.
+    """Coaches backfill — micro-batch every 25min, 10 teams/run.
     Fetches /coachs for teams never seen before. Self-skips when all caught up."""
-    from scripts.backfill_team_enrichment import run_coaches_batch
-    _run_job("backfill_coaches", run_coaches_batch, batch_size=10)
+    from scripts.backfill_coaches import run_batch
+    _run_job("backfill_coaches", run_batch, batch_size=10)
 
 
 def job_backfill_transfers():
     """Transfers backfill — 25 teams/run every 25min.
-    Fetches /transfers for teams not in team_transfer_cache. Self-skips when done.
-    25 teams × 0.15s/call normal = ~4s typical, 25min interval easily absorbs slow AF."""
-    from scripts.backfill_team_enrichment import run_transfers_batch
-    _run_job("backfill_transfers", run_transfers_batch, batch_size=25)
+    Fetches /transfers for teams not in team_transfer_cache. Self-skips when done."""
+    from scripts.backfill_transfers import run_batch
+    _run_job("backfill_transfers", run_batch, batch_size=25)
 
 
 def job_live_tracker():
