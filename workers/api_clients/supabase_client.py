@@ -209,9 +209,9 @@ def store_match(match_data: dict) -> str:
         # Only applies when DB still shows 'scheduled'.
         if current_status == "scheduled":
             new_date = match_data.get("start_time") or match_data.get("date", "")
-            existing_date = str(existing[0].get("date", ""))
-            # Compare first 16 chars (YYYY-MM-DDTHH:MM) to avoid microsecond noise
-            if new_date and new_date[:16] != existing_date[:16]:
+            new_minute = _kickoff_minute(new_date)
+            existing_minute = _kickoff_minute(existing[0].get("date"))
+            if new_date and new_minute and new_minute != existing_minute:
                 updates["date"] = new_date
 
         if updates:
@@ -280,6 +280,38 @@ def store_match(match_data: dict) -> str:
 # of pure DB-wait. bulk_store_matches collapses this to ~5 fixed round-trips
 # regardless of N, hitting ~3-5s for the same 1500-fixture batch.
 _POSTPONED_AF_STATUSES = ("PST", "CANC", "ABD", "WO", "AWD")
+
+
+def _kickoff_minute(value) -> str | None:
+    """Truncate a kickoff timestamp to ``YYYY-MM-DDTHH:MM`` in UTC for stable
+    comparison across sources.
+
+    STORE-MATCH-DATE-NORMALIZE — AF supplies ISO with a ``T`` separator
+    (``2026-05-10T14:00:00+00:00``); psycopg2 hands back ``datetime`` whose
+    ``str()`` uses a space (``2026-05-10 14:00:00+00:00``). The earlier
+    ``new[:16] != existing[:16]`` guard always saw the two as different at
+    index 10 and rewrote the ``date`` column on every scheduled match every
+    run. Normalize to UTC and emit a canonical ``T``-separated minute string
+    so the guard only fires on real kickoff changes.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        s = str(value).strip()
+        if not s:
+            return None
+        s = s.replace("Z", "+00:00")
+        try:
+            dt = datetime.fromisoformat(s)
+        except ValueError:
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.strftime("%Y-%m-%dT%H:%M")
 
 
 def bulk_store_matches(match_dicts: list[dict]) -> list[str | None]:
@@ -411,8 +443,9 @@ def bulk_store_matches(match_dicts: list[dict]) -> list[str | None]:
             new_date_val = None
             if current_status == "scheduled":
                 new_date = md.get("start_time") or md.get("date", "")
-                existing_date = str(existing.get("date", ""))
-                if new_date and new_date[:16] != existing_date[:16]:
+                new_minute = _kickoff_minute(new_date)
+                existing_minute = _kickoff_minute(existing.get("date"))
+                if new_date and new_minute and new_minute != existing_minute:
                     new_date_val = new_date
 
             postponing = (current_status == "scheduled" and af_status in _POSTPONED_AF_STATUSES)

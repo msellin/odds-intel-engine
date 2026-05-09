@@ -947,6 +947,56 @@ def _():
     )
 
 
+@test("STORE-MATCH-DATE-NORMALIZE — _kickoff_minute normalizes T/space/Z/tz/microseconds")
+def _():
+    """Helper must produce identical canonical minutes regardless of source format.
+
+    Bug it fixes: AF supplies ISO with `T` separator, psycopg2 datetime str() uses a
+    space; old `[:16]` slice compared 'YYYY-MM-DDTHH:MM' to 'YYYY-MM-DD HH:MM' —
+    always different → date column rewritten on every scheduled match every run.
+    """
+    from datetime import datetime, timezone
+    from workers.api_clients.supabase_client import _kickoff_minute
+
+    # Same instant, two source formats — must compare equal.
+    assert _kickoff_minute("2026-05-10T14:00:00+00:00") == _kickoff_minute("2026-05-10 14:00:00+00:00")
+    # Both yield the canonical T-form
+    assert _kickoff_minute("2026-05-10T14:00:00+00:00") == "2026-05-10T14:00"
+    # datetime objects (psycopg2 default return type)
+    assert _kickoff_minute(datetime(2026, 5, 10, 14, 0, tzinfo=timezone.utc)) == "2026-05-10T14:00"
+    # Non-UTC offset normalizes to UTC
+    assert _kickoff_minute("2026-05-10T16:00:00+02:00") == "2026-05-10T14:00"
+    # Z suffix
+    assert _kickoff_minute("2026-05-10T14:00:00Z") == "2026-05-10T14:00"
+    # Microseconds dropped
+    assert _kickoff_minute("2026-05-10T14:00:30.123+00:00") == "2026-05-10T14:00"
+    # Real kickoff change still detected
+    assert _kickoff_minute("2026-05-10T14:00:00+00:00") != _kickoff_minute("2026-05-10T14:30:00+00:00")
+    # Bad input → None (no false positive update)
+    assert _kickoff_minute(None) is None
+    assert _kickoff_minute("") is None
+    assert _kickoff_minute("not a date") is None
+
+
+@test("STORE-MATCH-DATE-NORMALIZE — store_match and bulk_store_matches use the helper")
+def _():
+    """Source guard: both date-mutation guards must go through _kickoff_minute,
+    not raw [:16] string slicing (which always differed on T vs space)."""
+    import inspect
+    from workers.api_clients import supabase_client
+    sm_src = inspect.getsource(supabase_client.store_match)
+    bsm_src = inspect.getsource(supabase_client.bulk_store_matches)
+    assert "_kickoff_minute" in sm_src, "store_match must use _kickoff_minute"
+    assert "_kickoff_minute" in bsm_src, "bulk_store_matches must use _kickoff_minute"
+    # The old broken slice form must be gone from both functions
+    assert "new_date[:16]" not in sm_src, (
+        "store_match still uses [:16] slice — STORE-MATCH-DATE-NORMALIZE reverted"
+    )
+    assert "new_date[:16]" not in bsm_src, (
+        "bulk_store_matches still uses [:16] slice — STORE-MATCH-DATE-NORMALIZE reverted"
+    )
+
+
 @test("BULK-STORE-MATCHES — bulk_store_matches exists and uses one execute_values per phase")
 def _():
     """Source guard: bulk helper exists, dedup uses tuple key, INSERT/UPDATE both use execute_values."""
@@ -2234,6 +2284,61 @@ def _():
             f"{rel} still imports/uses get_injuries_batched. The pipeline call sites "
             f"must use get_injuries_by_date instead."
         )
+
+
+@test("BACKFILL-COACH-CACHE — team_coaches_cache table + RPC count from cache (migration 083)")
+def _():
+    from workers.api_clients.db import execute_query
+    cols = execute_query(
+        "SELECT column_name FROM information_schema.columns WHERE table_name='team_coaches_cache'"
+    )
+    if not cols:
+        return  # migration not applied yet — skip
+    actual = {r["column_name"] for r in cols}
+    assert {"team_af_id", "fetched_at"}.issubset(actual), (
+        f"team_coaches_cache missing required columns: {actual}"
+    )
+    # RPC must read from cache so dashboard counts probed teams (not just teams with rows).
+    rpc_def = execute_query(
+        "SELECT pg_get_functiondef(p.oid) AS def FROM pg_proc p "
+        "JOIN pg_namespace n ON p.pronamespace = n.oid "
+        "WHERE n.nspname = 'public' AND p.proname = 'count_distinct_coached_teams'"
+    )
+    assert rpc_def, "count_distinct_coached_teams RPC missing"
+    assert "team_coaches_cache" in rpc_def[0]["def"], (
+        "count_distinct_coached_teams must count from team_coaches_cache "
+        "(otherwise empty-AF teams stay 'missing' on the dashboard forever)"
+    )
+
+
+@test("BACKFILL-COACH-MARK — backfill_coaches stamps cache on every probe (incl. empty/error)")
+def _():
+    import pathlib
+    src = pathlib.Path("scripts/backfill_coaches.py").read_text()
+    assert "_mark_fetched" in src, (
+        "backfill_coaches.py must call _mark_fetched in finally so empty-AF teams "
+        "are not re-probed on every run (the bug that parked the dashboard at 64.8%)"
+    )
+    assert "team_coaches_cache" in src, (
+        "_missing_teams must exclude teams already in team_coaches_cache"
+    )
+
+
+@test("BACKFILL-TRANSFER-PARSE — parse_transfers skips malformed AF dates instead of crashing batch")
+def _():
+    from workers.api_clients.api_football import parse_transfers
+    # Real-world failure: AF returned date "010897" (DDMMYY w/o separators)
+    # which crashed the entire psycopg2 batch via DATE column rejection.
+    bad = [{
+        "player": {"id": 90523, "name": "Alexander Manninger"},
+        "transfers": [
+            {"date": "010897", "type": "Free", "teams": {"in": {"id": 1}, "out": {"id": 2}}},
+            {"date": "2024-07-01", "type": "Free", "teams": {"in": {"id": 1}, "out": {"id": 2}}},
+        ],
+    }]
+    rows = parse_transfers(bad, team_api_id=4256)
+    assert len(rows) == 1, f"Expected malformed date dropped, got {len(rows)} rows"
+    assert rows[0]["transfer_date"] == "2024-07-01"
 
 
 # ── Runner ────────────────────────────────────────────────────────────────────
