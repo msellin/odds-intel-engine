@@ -10,6 +10,7 @@ import os
 import time
 import threading
 import requests
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from dotenv import load_dotenv
 from rich.console import Console
@@ -397,27 +398,39 @@ def get_fixture_odds(fixture_id: int) -> list[dict]:
     return data.get("response", [])
 
 
-def get_odds_by_date(date_str: str) -> dict[int, list[dict]]:
+def get_odds_by_date(date_str: str, max_workers: int = 8) -> dict[int, list[dict]]:
     """
     Bulk fetch all pre-match odds for a given date using the paginated /odds endpoint.
     Much more efficient than per-fixture calls (~10 calls vs ~200).
     Returns dict keyed by fixture_id -> list of raw bookmaker odds entries.
+
+    Pages 2..N are fetched concurrently via a thread pool; _get's _rate_lock
+    still paces actual requests at MIN_REQUEST_INTERVAL so we never breach the
+    AF rate budget. On a busy day (~56 pages × ~340ms sequential = ~19s) this
+    drops to ~6-7s bounded by the 120ms pacing.
     """
     result: dict[int, list[dict]] = {}
-    page = 1
-    total_pages = 1
 
-    while page <= total_pages:
-        data = _get("odds", {"date": date_str, "page": page})
-        paging = data.get("paging", {})
-        total_pages = paging.get("total", 1)
+    first = _get("odds", {"date": date_str, "page": 1})
+    pages_data: list[dict] = [first]
+    total_pages = first.get("paging", {}).get("total", 1)
+
+    if total_pages > 1:
+        remaining = list(range(2, total_pages + 1))
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            for data in ex.map(
+                lambda p: _get("odds", {"date": date_str, "page": p}),
+                remaining,
+            ):
+                pages_data.append(data)
+
+    for data in pages_data:
         for entry in data.get("response", []):
             fid = entry.get("fixture", {}).get("id")
             if fid:
                 if fid not in result:
                     result[fid] = []
                 result[fid].append(entry)
-        page += 1
 
     return result
 

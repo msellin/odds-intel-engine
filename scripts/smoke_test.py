@@ -2453,6 +2453,34 @@ def _():
     assert rows[0]["transfer_date"] == "2024-07-01"
 
 
+@test("FETCH-ODDS-CONCURRENT — pages 2..N fetched via ThreadPoolExecutor")
+def _():
+    """Source guard. The original loop was strictly sequential (`while page <=
+    total_pages: page += 1`) — ~56 pages × ~340ms = ~19s wait. The fix fetches
+    page 1 first to learn total_pages, then fans out the rest via a thread
+    pool. The _get _rate_lock still paces actual requests at MIN_REQUEST_INTERVAL
+    so concurrency cannot breach the AF rate budget."""
+    import pathlib
+    src = pathlib.Path("workers/api_clients/api_football.py").read_text()
+    fn_start = src.index("def get_odds_by_date(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    body = src[fn_start:fn_end]
+
+    assert "ThreadPoolExecutor" in body, (
+        "get_odds_by_date must use ThreadPoolExecutor for pages 2..N"
+    )
+    assert 'page": 1' in body, (
+        "Must fetch page 1 first to learn total_pages before fanning out"
+    )
+    # Old strictly-sequential pattern must be gone
+    assert "while page <= total_pages" not in body, (
+        "Sequential while-loop reverted — concurrency lost"
+    )
+    assert "from concurrent.futures import ThreadPoolExecutor" in src, (
+        "Module must import ThreadPoolExecutor"
+    )
+
+
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 def _run_one(name: str, fn) -> tuple[str, bool, str, float]:
