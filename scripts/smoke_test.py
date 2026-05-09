@@ -892,6 +892,61 @@ def _():
     assert "force" in sig.parameters, "run_email_digest must accept a `force` kwarg"
 
 
+@test("BULK-STORE-PREDICTIONS — bulk_store_predictions exists and is signature-stable")
+def _():
+    """Source guard: ensure the bulk helper is exported and accepts a list of dicts."""
+    import inspect
+    from workers.api_clients import supabase_client
+    assert hasattr(supabase_client, "bulk_store_predictions"), (
+        "bulk_store_predictions must exist in supabase_client"
+    )
+    fn = supabase_client.bulk_store_predictions
+    sig = inspect.signature(fn)
+    assert len(sig.parameters) == 1, "bulk_store_predictions takes one arg (rows list)"
+    src = inspect.getsource(fn)
+    assert "execute_values" in src, "bulk_store_predictions must use execute_values"
+    assert "ON CONFLICT (match_id, market, source) DO UPDATE" in src, (
+        "bulk_store_predictions must upsert on the existing unique key"
+    )
+    # Empty list is a no-op, returns 0
+    assert fn([]) == 0
+
+
+@test("BULK-STORE-PREDICTIONS — fetch_predictions.py uses bulk write, not per-fixture INSERTs")
+def _():
+    """Guard against revert to per-fixture store_prediction loop."""
+    import inspect
+    from workers.jobs import fetch_predictions
+    src = inspect.getsource(fetch_predictions.fetch_af_predictions)
+    assert "bulk_store_predictions" in src, (
+        "fetch_af_predictions must call bulk_store_predictions"
+    )
+    assert "bulk_update_match_af_predictions" in src, (
+        "fetch_af_predictions must call bulk_update_match_af_predictions for matches.af_prediction"
+    )
+    # The per-fixture UPDATE matches and store_prediction calls must be gone
+    assert "execute_write(" not in src, (
+        "fetch_af_predictions still calls execute_write per fixture — should batch"
+    )
+
+
+@test("BULK-STORE-PREDICTIONS — daily_pipeline_v2.run_morning buffers + flushes")
+def _():
+    """Guard: run_morning's prediction stores must be buffered into pending_pred_rows."""
+    src = open("workers/jobs/daily_pipeline_v2.py").read()
+    assert "pending_pred_rows" in src, "run_morning must use pending_pred_rows buffer"
+    # The 3 store_prediction call sites in run_morning's per-match loop should be gone.
+    # Only the standalone _fetch_af_predictions still references bulk helpers; the
+    # bare `store_prediction(match_id,` call form must not be inside run_morning.
+    # We verify by counting: store_prediction( call sites should be 0 now (the
+    # _fetch_af_predictions one was also bulk-converted).
+    bare_calls = src.count("store_prediction(match_id,")
+    assert bare_calls == 0, (
+        f"Expected 0 per-row store_prediction calls in daily_pipeline_v2.py, "
+        f"found {bare_calls}. Buffer + bulk-flush instead."
+    )
+
+
 @test("AH-SIGNALS — odds_snapshots.handicap_line column exists (migration 066)")
 def _():
     from workers.api_clients.db import execute_query

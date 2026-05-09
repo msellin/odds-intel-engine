@@ -581,6 +581,81 @@ def store_prediction(match_id: str, market: str, prediction: dict,
             conn.commit()
 
 
+def bulk_store_predictions(rows: list[dict]) -> int:
+    """
+    BULK-STORE-PREDICTIONS — collapse N×serial `store_prediction` round-trips
+    into one execute_values batch. Replaces the per-match per-market call loop
+    in `daily_pipeline_v2.run_morning` (~17 round-trips/match × 500 matches =
+    ~21min on EU pooler) and `fetch_predictions.fetch_af_predictions` (3
+    round-trips/fixture × 500 fixtures).
+
+    Each row dict must have: match_id, market, source, model_prob.
+    Optional: confidence (default 0.5), reasoning, implied_prob, edge.
+
+    Returns rows-attempted count. Caller is responsible for upstream filtering
+    (e.g. None probabilities). Numpy floats and NaN/Inf are sanitised here.
+    """
+    if not rows:
+        return 0
+
+    tuples = []
+    for r in rows:
+        prob = _sanitize_for_json(r["model_prob"])
+        if prob is None:
+            continue  # skip NaN/missing — schema requires NOT NULL
+        tuples.append((
+            r["match_id"],
+            r["market"],
+            r["source"],
+            prob,
+            _sanitize_for_json(r.get("confidence", 0.5)) or 0.5,
+            r.get("reasoning"),
+            _sanitize_for_json(r.get("implied_prob")),
+            _sanitize_for_json(r.get("edge")),
+        ))
+
+    if not tuples:
+        return 0
+
+    sql = """
+        INSERT INTO predictions
+            (match_id, market, source, model_probability, confidence, reasoning, implied_probability, edge_percent)
+        VALUES %s
+        ON CONFLICT (match_id, market, source) DO UPDATE SET
+            model_probability = EXCLUDED.model_probability,
+            confidence = EXCLUDED.confidence,
+            reasoning = EXCLUDED.reasoning,
+            implied_probability = EXCLUDED.implied_probability,
+            edge_percent = EXCLUDED.edge_percent
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            psycopg2.extras.execute_values(cur, sql, tuples, page_size=5000)
+            conn.commit()
+    return len(tuples)
+
+
+def bulk_update_match_af_predictions(rows: list[tuple[str, str]]) -> int:
+    """
+    Bulk UPDATE matches.af_prediction = JSONB for many matches in one round-trip.
+    Each row: (match_id_uuid_str, raw_prediction_json_str).
+    Replaces the per-fixture UPDATE in fetch_af_predictions.
+    """
+    if not rows:
+        return 0
+    sql = """
+        UPDATE matches AS m
+        SET af_prediction = data.raw::jsonb
+        FROM (VALUES %s) AS data(id, raw)
+        WHERE m.id = data.id::uuid
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            psycopg2.extras.execute_values(cur, sql, rows, page_size=5000)
+            conn.commit()
+    return len(rows)
+
+
 def store_match_signal(match_id: str, signal_name: str, signal_value: float | None,
                        signal_group: str, data_source: str = "derived",
                        signal_text: str | None = None,

@@ -633,14 +633,22 @@ def _store_parsed_odds(match_id: str, parsed_odds: list[dict]):
 def _fetch_af_predictions(af_id_to_match_id: dict[int, str]) -> dict[str, dict]:
     """
     Fetch API-Football predictions for all today's fixtures.
-    Returns {match_id: parsed_prediction_dict}
+    Returns {match_id: parsed_prediction_dict}.
+
+    BULK-STORE-PREDICTIONS: collects rows in memory and bulk-writes once at the
+    end. Same pattern as the standalone fetch_predictions.py — saves ~4
+    round-trips per fixture × 500 fixtures (~5min on EU pooler → ~1s).
     """
-    from workers.api_clients.db import execute_write as _ew
+    from workers.api_clients.supabase_client import (
+        bulk_store_predictions, bulk_update_match_af_predictions,
+    )
     import json as _json
 
     af_preds: dict[str, dict] = {}
     fetched = 0
     failed = 0
+    af_jsonb_rows: list[tuple[str, str]] = []
+    pred_rows: list[dict] = []
 
     console.print(f"\n[cyan]Fetching API-Football predictions ({len(af_id_to_match_id)} fixtures)...[/cyan]")
 
@@ -657,37 +665,42 @@ def _fetch_af_predictions(af_id_to_match_id: dict[int, str]) -> dict[str, dict]:
                 continue
 
             af_preds[match_id] = parsed
+            af_jsonb_rows.append((match_id, _json.dumps(parsed["raw"])))
 
-            # Store full JSONB on the match row
-            try:
-                _ew(
-                    "UPDATE matches SET af_prediction = %s::jsonb WHERE id = %s",
-                    (_json.dumps(parsed["raw"]), match_id),
-                )
-            except Exception as e:
-                console.print(f"  [yellow]AF prediction JSONB store failed for {match_id}: {e}[/yellow]")
-
-            # S1-AF: also store as separate prediction rows (source='af')
-            for market, prob_key in [
+            for market, prob_key in (
                 ("1x2_home", "af_home_prob"),
                 ("1x2_draw", "af_draw_prob"),
                 ("1x2_away", "af_away_prob"),
-            ]:
+            ):
                 prob = parsed.get(prob_key)
                 if prob is not None:
-                    try:
-                        store_prediction(match_id, market, {
-                            "model_prob": prob,
-                            "reasoning": "af_prediction",
-                        }, source="af")
-                    except Exception as e:
-                        console.print(f"  [yellow]Prediction store failed {match_id}/{market}: {e}[/yellow]")
+                    pred_rows.append({
+                        "match_id": match_id,
+                        "market": market,
+                        "source": "af",
+                        "model_prob": prob,
+                        "reasoning": "af_prediction",
+                    })
 
             fetched += 1
 
         except Exception:
             failed += 1
             continue
+
+    try:
+        n_jsonb = bulk_update_match_af_predictions(af_jsonb_rows)
+        if n_jsonb:
+            console.print(f"  [dim]bulk UPDATE matches.af_prediction: {n_jsonb} rows[/dim]")
+    except Exception as e:
+        console.print(f"  [yellow]bulk_update_match_af_predictions failed: {e}[/yellow]")
+
+    try:
+        n_pred = bulk_store_predictions(pred_rows)
+        if n_pred:
+            console.print(f"  [dim]bulk INSERT predictions (source=af): {n_pred} rows[/dim]")
+    except Exception as e:
+        console.print(f"  [red]bulk_store_predictions failed: {e}[/red]")
 
     console.print(f"  {fetched} predictions stored, {failed} unavailable (league not supported by AF predictions)")
     return af_preds
@@ -1427,6 +1440,12 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
     else:
         league_draw_pct_by_match = {}
 
+    # BULK-STORE-PREDICTIONS: accumulate prediction rows across all matches and
+    # flush in a single execute_values batch at the end of the loop. Replaces
+    # ~17 serial store_prediction round-trips per match × 500 matches that used
+    # to dominate run_morning wall time (~21min on EU pooler → ~1s).
+    pending_pred_rows: list[dict] = []
+
     for match in odds_matches:
         # Store match in Supabase (idempotent upsert — skipped if id pre-set from DB load)
         if match.get("id"):
@@ -1518,43 +1537,44 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
         # Store predictions
         data_tier = pred.get("data_tier", "A")
 
-        # S1: Store Poisson predictions for all three 1x2 markets unconditionally.
-        # poisson_pred is always available here (it's the base prediction, never None at this point).
-        for market, prob_key, odds_field in [
+        # S1: Poisson predictions for all three 1x2 markets — buffered for bulk write.
+        for market, prob_key, odds_field in (
             ("1x2_home", "home_prob",  "odds_home"),
             ("1x2_draw", "draw_prob",  "odds_draw"),
             ("1x2_away", "away_prob",  "odds_away"),
-        ]:
+        ):
             odds_val = match.get(odds_field, 0)
             if odds_val > 0 and poisson_pred.get(prob_key) is not None:
-                try:
-                    store_prediction(match_id, market, {
-                        "model_prob": float(poisson_pred[prob_key]),
-                        "implied_prob": 1 / odds_val,
-                        "edge": float(poisson_pred[prob_key]) - (1 / odds_val),
-                        "reasoning": f"data_tier={data_tier}",
-                    }, source="poisson")
-                except Exception as e:
-                    console.print(f"  [yellow]Poisson prediction store failed {match_id}/{market}: {e}[/yellow]")
+                p = float(poisson_pred[prob_key])
+                pending_pred_rows.append({
+                    "match_id": match_id,
+                    "market": market,
+                    "source": "poisson",
+                    "model_prob": p,
+                    "implied_prob": 1 / odds_val,
+                    "edge": p - (1 / odds_val),
+                    "reasoning": f"data_tier={data_tier}",
+                })
 
-        # S1-XGB: Store XGBoost individual predictions when ensemble ran
+        # S1-XGB: XGBoost individual predictions — buffered for bulk write.
         if xgb_pred:
-            for market, xgb_key, odds_field in [
+            for market, xgb_key, odds_field in (
                 ("1x2_home", "xgb_home_prob", "odds_home"),
                 ("1x2_draw", "xgb_draw_prob", "odds_draw"),
                 ("1x2_away", "xgb_away_prob", "odds_away"),
-            ]:
+            ):
                 odds_val = match.get(odds_field, 0)
                 if odds_val > 0 and xgb_pred.get(xgb_key) is not None:
-                    try:
-                        store_prediction(match_id, market, {
-                            "model_prob": float(xgb_pred[xgb_key]),
-                            "implied_prob": 1 / odds_val,
-                            "edge": float(xgb_pred[xgb_key]) - (1 / odds_val),
-                            "reasoning": f"data_tier={data_tier}",
-                        }, source="xgboost")
-                    except Exception as e:
-                        console.print(f"  [yellow]XGBoost prediction store failed {match_id}/{market}: {e}[/yellow]")
+                    p = float(xgb_pred[xgb_key])
+                    pending_pred_rows.append({
+                        "match_id": match_id,
+                        "market": market,
+                        "source": "xgboost",
+                        "model_prob": p,
+                        "implied_prob": 1 / odds_val,
+                        "edge": p - (1 / odds_val),
+                        "reasoning": f"data_tier={data_tier}",
+                    })
 
         # Store ensemble predictions for every market where we have both a model
         # probability AND bookmaker odds. The prob_key must exist in the pred dict —
@@ -1598,16 +1618,15 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                         console.print(f"  [yellow]Prediction missing prob key '{prob_key}' for {match_id}/{market} (tier={data_tier}) — skipping[/yellow]")
                     continue
                 prob = float(prob)  # ensure plain Python float — numpy floats break psycopg2
-                try:
-                    store_prediction(match_id, market, {
-                        "model_prob": prob,
-                        "implied_prob": 1 / odds_val,
-                        "edge": prob - (1 / odds_val),
-                        "odds": odds_val,
-                        "reasoning": f"data_tier={data_tier}",
-                    }, source="ensemble")
-                except Exception as e:
-                    console.print(f"  [yellow]Prediction store failed {match_id}/{market}: {e}[/yellow]")
+                pending_pred_rows.append({
+                    "match_id": match_id,
+                    "market": market,
+                    "source": "ensemble",
+                    "model_prob": prob,
+                    "implied_prob": 1 / odds_val,
+                    "edge": prob - (1 / odds_val),
+                    "reasoning": f"data_tier={data_tier}",
+                })
 
         # Place bets for each bot
         tier = match.get("tier", 1)
@@ -1868,6 +1887,19 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
             ap = af_pred.get("af_away_prob", 0) or 0
             af_tag = f" [AF: H{hp:.0%}/D{dp:.0%}/A{ap:.0%}]"
         console.print(f"  {match['home_team']} vs {match['away_team']} — predicted [Tier {data_tier}]{ensemble_tag}{disagree_tag}{af_tag}")
+
+    # BULK-STORE-PREDICTIONS: flush all buffered prediction rows in one bulk
+    # upsert. Replaces ~17 round-trips per match × N matches that used to
+    # dominate run_morning wall time (~21min on EU pooler → ~1s).
+    if pending_pred_rows:
+        try:
+            from workers.api_clients.supabase_client import bulk_store_predictions
+            n = bulk_store_predictions(pending_pred_rows)
+            console.print(f"  [dim]bulk INSERT predictions: {n} rows in 1 round-trip[/dim]")
+        except Exception as e:
+            import traceback
+            console.print(f"  [red]bulk_store_predictions failed: {e}[/red]")
+            console.print(f"  [red dim]{traceback.format_exc()}[/red dim]")
 
     cohort_label = f" [{cohort} cohort]" if cohort else " [all bots]"
     console.print(f"\n[bold green]Done! {total_bets} bets placed{cohort_label}[/bold green]")

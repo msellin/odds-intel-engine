@@ -28,8 +28,10 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workers.api_clients.api_football import get_prediction, parse_prediction
-from workers.api_clients.supabase_client import store_prediction
-from workers.api_clients.db import execute_query, execute_write
+from workers.api_clients.supabase_client import (
+    bulk_store_predictions, bulk_update_match_af_predictions,
+)
+from workers.api_clients.db import execute_query
 from workers.utils.pipeline_utils import (
     check_fixtures_ready, log_pipeline_start, log_pipeline_complete,
     log_pipeline_failed, log_pipeline_skipped,
@@ -62,12 +64,20 @@ def fetch_af_predictions(target_date: str) -> int:
     skipped_coverage = 0
     failed = 0
 
+    # BULK-STORE-PREDICTIONS: collect AF responses in memory, then write the
+    # `matches.af_prediction` JSONB column and the `predictions` rows in two
+    # bulk operations. The previous per-fixture loop did 4 round-trips/fixture
+    # (1 UPDATE + 3 INSERTs) — at 150ms EU pooler RTT × 500 fixtures that was
+    # ~5min of pure DB wait; now ~1s.
+    import json as _json
+    af_jsonb_rows: list[tuple[str, str]] = []   # (match_id, raw_json_str)
+    pred_rows: list[dict] = []
+
     for m in rows:
         af_id = m["api_football_id"]
         match_id = m["id"]
         league_id = m.get("league_id")
 
-        # Coverage check
         if league_id and not league_has_coverage(coverage_map, league_id, "predictions"):
             skipped_coverage += 1
             continue
@@ -83,37 +93,41 @@ def fetch_af_predictions(target_date: str) -> int:
                 failed += 1
                 continue
 
-            # Store full JSONB on match row
-            try:
-                import json as _json
-                execute_write(
-                    "UPDATE matches SET af_prediction = %s::jsonb WHERE id = %s",
-                    (_json.dumps(parsed["raw"]), match_id),
-                )
-            except Exception as e:
-                console.print(f"  [yellow]AF prediction JSONB store failed for {match_id}: {e}[/yellow]")
+            af_jsonb_rows.append((match_id, _json.dumps(parsed["raw"])))
 
-            # Store as prediction rows (source='af')
-            for market, prob_key in [
+            for market, prob_key in (
                 ("1x2_home", "af_home_prob"),
                 ("1x2_draw", "af_draw_prob"),
                 ("1x2_away", "af_away_prob"),
-            ]:
+            ):
                 prob = parsed.get(prob_key)
                 if prob is not None:
-                    try:
-                        store_prediction(match_id, market, {
-                            "model_prob": prob,
-                            "reasoning": "af_prediction",
-                        }, source="af")
-                    except Exception as e:
-                        console.print(f"  [red]Failed to store prediction for {match_id}/{market}: {e}[/red]")
-                        failed += 1
+                    pred_rows.append({
+                        "match_id": match_id,
+                        "market": market,
+                        "source": "af",
+                        "model_prob": prob,
+                        "reasoning": "af_prediction",
+                    })
 
             fetched += 1
         except Exception as e:
             console.print(f"  [yellow]Prediction fetch failed for AF {af_id}: {e}[/yellow]")
             failed += 1
+
+    # Two bulk writes, no per-fixture round-trips.
+    try:
+        n_jsonb = bulk_update_match_af_predictions(af_jsonb_rows)
+        console.print(f"  [dim]bulk UPDATE matches.af_prediction: {n_jsonb} rows[/dim]")
+    except Exception as e:
+        console.print(f"  [yellow]bulk_update_match_af_predictions failed: {e}[/yellow]")
+
+    try:
+        n_pred = bulk_store_predictions(pred_rows)
+        console.print(f"  [dim]bulk INSERT predictions (source=af): {n_pred} rows[/dim]")
+    except Exception as e:
+        console.print(f"  [red]bulk_store_predictions failed: {e}[/red]")
+        failed += len(pred_rows)
 
     console.print(f"  [green]{fetched} predictions stored[/green] | {failed} unavailable | {skipped_coverage} skipped (no coverage)")
     return fetched
