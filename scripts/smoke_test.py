@@ -2513,6 +2513,33 @@ def _():
     )
 
 
+@test("BACKFILL-TRANSFERS-CONCURRENT — backfill_transfers fans out via ThreadPoolExecutor, no per-team sleep")
+def _():
+    """Source guard. Sequential per-team fetch + 70ms sleep ran ~1.4s/team
+    real-world (network-bound), turning a 4430-team backfill into ~100 min.
+    Fix fans out via ThreadPoolExecutor; _get's _rate_lock paces actual HTTP
+    at MIN_REQUEST_INTERVAL=120ms so 8 workers cannot breach AF's budget.
+    The per-team time.sleep(RATE_DELAY) must be gone — it's redundant when
+    pacing is enforced globally inside _get."""
+    import pathlib
+    src = pathlib.Path("scripts/backfill_transfers.py").read_text()
+
+    assert "from concurrent.futures import ThreadPoolExecutor" in src, (
+        "backfill_transfers must import ThreadPoolExecutor"
+    )
+    assert "ThreadPoolExecutor(max_workers=" in src, (
+        "Both run() and run_batch() must use ThreadPoolExecutor for fan-out"
+    )
+    # Old per-team sleep is redundant once _rate_lock paces _get globally
+    assert "time.sleep(RATE_DELAY)" not in src, (
+        "Per-team time.sleep(RATE_DELAY) must be gone — _get's _rate_lock "
+        "already paces requests; per-thread sleep just slows each worker."
+    )
+    assert "RATE_DELAY" not in src, (
+        "RATE_DELAY constant should be removed — pacing lives in _get's _rate_lock"
+    )
+
+
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 def _run_one(name: str, fn) -> tuple[str, bool, str, float]:

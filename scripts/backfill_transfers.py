@@ -13,8 +13,8 @@ Usage:
 """
 
 import sys
-import time
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -30,7 +30,9 @@ from workers.api_clients.db import execute_query, execute_write
 
 console = Console()
 
-RATE_DELAY = 0.07       # 70ms ≈ 14 req/s — safe on Mega plan (900 req/min)
+# Concurrency: _get()'s global _rate_lock paces all calls at MIN_REQUEST_INTERVAL
+# (120ms), so 8 workers can't breach the AF budget. Same pattern as get_odds_by_date.
+MAX_WORKERS = 8
 MIN_BUDGET = 2_000      # abort if fewer AF requests remain
 BUDGET_CHECK_EVERY = 50 # recheck remaining quota every N teams
 
@@ -84,6 +86,16 @@ def run(limit: int | None = None, dry_run: bool = False) -> int:
     stored = 0
     errors = 0
 
+    def _fetch_one(team_af_id: int) -> int:
+        try:
+            raw = get_transfers(team_af_id)
+            if raw:
+                rows = parse_transfers(raw, team_api_id=team_af_id)
+                return store_team_transfers(team_af_id, rows)
+            return 0
+        finally:
+            _mark_fetched(team_af_id)
+
     with Progress(
         SpinnerColumn(),
         "[progress.description]{task.description}",
@@ -95,28 +107,27 @@ def run(limit: int | None = None, dry_run: bool = False) -> int:
     ) as progress:
         task = progress.add_task("Fetching transfers...", total=len(missing))
 
-        for i, team_af_id in enumerate(missing):
-            if i > 0 and i % BUDGET_CHECK_EVERY == 0:
-                if budget.remaining() < MIN_BUDGET:
-                    console.print(
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+            futures = {ex.submit(_fetch_one, tid): tid for tid in missing}
+            done = 0
+            for fut in as_completed(futures):
+                tid = futures[fut]
+                try:
+                    stored += fut.result()
+                except Exception as e:
+                    errors += 1
+                    progress.console.print(f"  [yellow]team {tid}: {e}[/yellow]")
+                progress.advance(task)
+                done += 1
+
+                if done % BUDGET_CHECK_EVERY == 0 and budget.remaining() < MIN_BUDGET:
+                    progress.console.print(
                         f"\n[yellow]Budget low ({budget.remaining()} remaining) — "
-                        f"stopping at {i}/{len(missing)} teams[/yellow]"
+                        f"cancelling remaining work at {done}/{len(missing)} teams[/yellow]"
                     )
+                    for f in futures:
+                        f.cancel()
                     break
-
-            try:
-                raw = get_transfers(team_af_id)
-                if raw:
-                    rows = parse_transfers(raw, team_api_id=team_af_id)
-                    stored += store_team_transfers(team_af_id, rows)
-            except Exception as e:
-                errors += 1
-                progress.console.print(f"  [yellow]team {team_af_id}: {e}[/yellow]")
-            finally:
-                _mark_fetched(team_af_id)
-
-            progress.advance(task)
-            time.sleep(RATE_DELAY)
 
     console.print(
         f"\n[bold green]Done: {stored} transfer records stored "
@@ -133,18 +144,26 @@ def run_batch(batch_size: int = 25) -> None:
 
     stored = 0
     errors = 0
-    for team_af_id in missing:
+
+    def _fetch_one(team_af_id: int) -> int:
         try:
             raw = get_transfers(team_af_id)
             if raw:
                 rows = parse_transfers(raw, team_api_id=team_af_id)
-                stored += store_team_transfers(team_af_id, rows)
-        except Exception as e:
-            errors += 1
-            console.print(f"  [yellow]transfers {team_af_id}: {e}[/yellow]")
+                return store_team_transfers(team_af_id, rows)
+            return 0
         finally:
             _mark_fetched(team_af_id)
-        time.sleep(RATE_DELAY)
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+        futures = {ex.submit(_fetch_one, tid): tid for tid in missing}
+        for fut in as_completed(futures):
+            tid = futures[fut]
+            try:
+                stored += fut.result()
+            except Exception as e:
+                errors += 1
+                console.print(f"  [yellow]transfers {tid}: {e}[/yellow]")
 
     if stored or errors:
         console.print(f"[dim]backfill_transfers: {stored} records stored, {errors} errors[/dim]")
