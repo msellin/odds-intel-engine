@@ -34,6 +34,7 @@ an in-memory lookup against the same snapshots we already loaded.
 import sys
 import os
 import csv
+import math
 import argparse
 from collections import defaultdict
 from datetime import datetime, date, timedelta
@@ -236,6 +237,49 @@ def build_snapshot_index(snapshots: list[dict]) -> dict[str, list[dict]]:
     return idx
 
 
+def apply_ema_live_xg_replay(snapshots: list[dict],
+                             half_life_min: float = 5.0) -> int:
+    """
+    Replay-side port of inplay_bot._attach_ema_live_xg.
+
+    The live helper does a DB lookup per cycle to read the prior 10-min
+    history. In replay we already have every snapshot loaded — group by
+    match_id, walk chronologically, run a time-aware EMA, and overwrite
+    each cand's `xg_home`/`xg_away` in-place so the same `_check_strategy_*`
+    code path consumes smoothed values.
+
+    Returns the count of snapshots that got smoothed (skipping the first
+    snapshot per match — nothing to blend with).
+    """
+    by_mid = build_snapshot_index(snapshots)
+    smoothed = 0
+    for mid, history in by_mid.items():
+        prev_min: int | None = None
+        prev_h: float | None = None
+        prev_a: float | None = None
+        for cand in history:
+            if cand.get("xg_home") is None or cand.get("xg_away") is None:
+                # Proxy snapshots reset state — next real-xG reading restarts EMA
+                prev_min = prev_h = prev_a = None
+                continue
+            cur_min = cand.get("minute") or 0
+            x_h = float(cand["xg_home"])
+            x_a = float(cand["xg_away"])
+            if prev_h is None:
+                prev_min, prev_h, prev_a = cur_min, x_h, x_a
+                continue
+            delta = max(0.5, cur_min - prev_min)
+            alpha = 1.0 - math.exp(-delta / max(half_life_min, 0.01))
+            new_h = alpha * x_h + (1 - alpha) * prev_h
+            new_a = alpha * x_a + (1 - alpha) * prev_a
+            cand["xg_home"] = new_h
+            cand["xg_away"] = new_a
+            cand["xg_ema_applied"] = True
+            prev_min, prev_h, prev_a = cur_min, new_h, new_a
+            smoothed += 1
+    return smoothed
+
+
 def _parse_dt(v):
     if isinstance(v, datetime):
         return v
@@ -308,7 +352,7 @@ def replay_strategy_h(cand: dict, pm: dict, has_red_card: bool,
     live_xg = xg_h + xg_a
     posterior = inplay_bot._bayesian_posterior(pm_xg_total, live_xg, minute)
     remaining_minutes = max(1, 90 - minute)
-    lambda_remaining = posterior * remaining_minutes / 90.0
+    lambda_remaining = inplay_bot._scaled_remaining_lam(posterior, minute, sh, sa)
     model_prob = inplay_bot._poisson_over_prob(lambda_remaining, line)
 
     min_edge = 2.0 if is_real else 3.5
@@ -394,7 +438,7 @@ def replay_strategy_g(cand: dict, pm: dict, has_red_card: bool,
 
     posterior = inplay_bot._bayesian_posterior(pm_xg_total, live_xg, minute)
     remaining_minutes = max(1, 90 - minute)
-    lambda_remaining = posterior * remaining_minutes / 90.0
+    lambda_remaining = inplay_bot._scaled_remaining_lam(posterior, minute, sh, sa)
     goals_needed = 3 - total_goals
     if goals_needed <= 0:
         return None
@@ -806,6 +850,11 @@ def main():
     if not snapshots:
         print("No snapshots in selected window — aborting.")
         return
+
+    # INPLAY-EMA-LIVE-XG (2026-05-10): smooth real-xG snapshots in-memory before
+    # any strategy runs. Mirrors the live path in inplay_bot._attach_ema_live_xg.
+    smoothed = apply_ema_live_xg_replay(snapshots)
+    print(f"  EMA-smoothed real-xG snapshots: {smoothed:,}")
 
     distinct_match_ids = list({str(s["match_id"]) for s in snapshots})
     prematch = fetch_prematch(distinct_match_ids)

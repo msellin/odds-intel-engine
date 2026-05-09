@@ -2326,6 +2326,197 @@ def _():
     )
 
 
+@test("INPLAY-TIME-DECAY-PRIOR — w_live = 1 - exp(-minute/30) blend in _bayesian_posterior + _remaining_goals_prob")
+def _():
+    """
+    Guard the time-decay-prior calibration (5/5 round-3 AI consensus). At min 30
+    the live signal must outweigh prematch ~63/37; at min 60 ~86/14. The flat
+    (pm + live)/(1 + minute/90) blend is gone.
+    """
+    import pathlib, math, importlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    assert "def _time_decay_weight(" in src, "_time_decay_weight helper must exist"
+    assert "1.0 - math.exp(-minute / 30.0)" in src, (
+        "_time_decay_weight must implement 1 - exp(-minute/30)"
+    )
+
+    # _bayesian_posterior must blend in rate-space using the new weight
+    bp_start = src.index("def _bayesian_posterior(")
+    bp_end = src.index("\ndef ", bp_start + 1)
+    bp_body = src[bp_start:bp_end]
+    assert "_time_decay_weight(minute)" in bp_body, (
+        "_bayesian_posterior must call _time_decay_weight"
+    )
+    assert "live_xg_total * 90.0 / minute" in bp_body, (
+        "_bayesian_posterior must normalize live signal to per-90 rate"
+    )
+    # Old flat blend must be removed
+    assert "(prematch_xg_total + live_xg_total) / (1.0 + minute / 90.0)" not in bp_body, (
+        "Old flat blend formula must be replaced"
+    )
+
+    # _remaining_goals_prob must also use the time-decay weight
+    rg_start = src.index("def _remaining_goals_prob(")
+    rg_end = src.index("\ndef ", rg_start + 1)
+    rg_body = src[rg_start:rg_end]
+    assert "_time_decay_weight(minute)" in rg_body, (
+        "_remaining_goals_prob must call _time_decay_weight"
+    )
+
+    # Unit-style: weight values match spec
+    spec = importlib.import_module("workers.jobs.inplay_bot")
+    assert abs(spec._time_decay_weight(30) - (1 - math.exp(-1))) < 1e-9
+    assert abs(spec._time_decay_weight(60) - (1 - math.exp(-2))) < 1e-9
+    assert spec._time_decay_weight(0) == 0.0
+
+
+@test("INPLAY-PERIOD-RATES — period multiplier (0.85× ≤15, 1.20× ≥76) applied to remaining lambda")
+def _():
+    import pathlib, importlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    assert "def _period_multiplier(" in src, "_period_multiplier helper must exist"
+    pm_start = src.index("def _period_multiplier(")
+    pm_end = src.index("\ndef ", pm_start + 1)
+    pm_body = src[pm_start:pm_end]
+    assert "0.85" in pm_body, "_period_multiplier must use 0.85× for early period"
+    assert "1.20" in pm_body, "_period_multiplier must use 1.20× for late period"
+    assert "minute <= 15" in pm_body, "Early threshold is minute ≤ 15"
+    assert "minute >= 76" in pm_body, "Late threshold is minute ≥ 76"
+
+    # Must be applied inside both _remaining_goals_prob and _scaled_remaining_lam
+    rg_start = src.index("def _remaining_goals_prob(")
+    rg_end = src.index("\ndef ", rg_start + 1)
+    assert "_period_multiplier(minute)" in src[rg_start:rg_end], (
+        "_remaining_goals_prob must apply _period_multiplier"
+    )
+    sr_start = src.index("def _scaled_remaining_lam(")
+    sr_end = src.index("\ndef ", sr_start + 1)
+    assert "_period_multiplier(minute)" in src[sr_start:sr_end], (
+        "_scaled_remaining_lam must apply _period_multiplier"
+    )
+
+    spec = importlib.import_module("workers.jobs.inplay_bot")
+    assert spec._period_multiplier(10) == 0.85
+    assert spec._period_multiplier(80) == 1.20
+    assert spec._period_multiplier(45) == 1.0
+
+
+@test("INPLAY-LAMBDA-STATE — score-state multipliers wired into total + per-team lambdas")
+def _():
+    """
+    Total: late-level +5%, late-imbalanced +2.5% (averages trailing+15% / leading-10%).
+    Per-team (Strategy N): trailing +15%, leading −10%, level +5%, all only ≥ minute 60.
+    Strategies J/L/M must pass score_home/score_away to _remaining_goals_prob; N must
+    apply per-team multipliers when computing bivariate Poisson lambdas.
+    """
+    import pathlib, importlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    assert "def _state_multiplier_total(" in src, "_state_multiplier_total helper must exist"
+    assert "def _state_multiplier_team(" in src, "_state_multiplier_team helper must exist"
+
+    spec = importlib.import_module("workers.jobs.inplay_bot")
+    # Total multiplier: pre-60 always 1.0
+    assert spec._state_multiplier_total(45, 0, 0) == 1.0
+    assert spec._state_multiplier_total(70, 0, 0) == 1.05
+    assert spec._state_multiplier_total(70, 1, 0) == 1.025
+    assert spec._state_multiplier_total(70, 2, 1) == 1.025
+    # Per-team multiplier
+    assert spec._state_multiplier_team(70, "trailing") == 1.15
+    assert spec._state_multiplier_team(70, "leading") == 0.90
+    assert spec._state_multiplier_team(70, "level") == 1.05
+    assert spec._state_multiplier_team(45, "trailing") == 1.0  # pre-60 disabled
+
+    # J/L/M must pass score_home/score_away to _remaining_goals_prob
+    for fn in ("_check_strategy_j", "_check_strategy_l", "_check_strategy_m"):
+        fs = src.index(f"def {fn}(")
+        fe = src.index("\ndef ", fs + 1)
+        body = src[fs:fe]
+        call_idx = body.index("_remaining_goals_prob(")
+        # Tolerate multi-line call — slice forward to the closing paren
+        call_block = body[call_idx:body.index(")", call_idx) + 1] if ")" in body[call_idx:call_idx+400] else body[call_idx:call_idx+400]
+        assert "score_home=" in call_block, (
+            f"{fn} must pass score_home= to _remaining_goals_prob (LAMBDA-STATE)"
+        )
+        assert "score_away=" in call_block, (
+            f"{fn} must pass score_away= to _remaining_goals_prob (LAMBDA-STATE)"
+        )
+
+    # N must apply per-team multipliers
+    n_start = src.index("def _check_strategy_n(")
+    n_end = src.index("\ndef ", n_start + 1)
+    n_body = src[n_start:n_end]
+    assert "_state_multiplier_team(" in n_body, (
+        "Strategy N must apply per-team state multipliers to bivariate lambdas"
+    )
+    assert '"trailing"' in n_body and '"leading"' in n_body and '"level"' in n_body, (
+        "Strategy N must classify each side as trailing/leading/level"
+    )
+
+
+@test("INPLAY-EMA-LIVE-XG — _attach_ema_live_xg + run_inplay_strategies wires + replay port")
+def _():
+    """
+    Live mode: _attach_ema_live_xg replaces cand['xg_home/away'] with EMA-smoothed
+    cumulative readings (5-min half-life, time-aware alpha) before strategies run.
+    Replay mode: apply_ema_live_xg_replay does the same in-memory across all
+    snapshots loaded from the historical window.
+    """
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    assert "def _attach_ema_live_xg(" in src, "_attach_ema_live_xg helper must exist"
+
+    # Helper must compute time-aware alpha (half-life-based) and update xg_home/away in-place
+    fn_start = src.index("def _attach_ema_live_xg(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    fn_body = src[fn_start:fn_end]
+    assert "1.0 - math.exp(-delta / max(half_life_min" in fn_body, (
+        "EMA must use time-aware alpha = 1 - exp(-delta / half_life_min)"
+    )
+    assert "live_match_snapshots" in fn_body, (
+        "EMA helper must read prior snapshots from live_match_snapshots"
+    )
+    assert 'cand["xg_home"] = ema_h' in fn_body, (
+        "EMA helper must overwrite cand['xg_home'] in-place so strategies pick it up"
+    )
+
+    # Must be called from run_inplay_strategies after _get_live_candidates
+    run_start = src.index("def run_inplay_strategies(")
+    run_end = src.index("\ndef ", run_start + 1)
+    run_body = src[run_start:run_end]
+    assert "_attach_ema_live_xg(candidates" in run_body, (
+        "run_inplay_strategies must call _attach_ema_live_xg(candidates, ...)"
+    )
+
+    # Replay-side port
+    replay_src = pathlib.Path("scripts/replay_inplay.py").read_text()
+    assert "def apply_ema_live_xg_replay(" in replay_src, (
+        "scripts/replay_inplay.py must expose apply_ema_live_xg_replay for backfill"
+    )
+    assert "apply_ema_live_xg_replay(snapshots)" in replay_src, (
+        "Replay main() must call apply_ema_live_xg_replay before run_replay"
+    )
+
+
+@test("INPLAY-CALIBRATION-STACK — _scaled_remaining_lam used by every per-strategy lambda_remaining")
+def _():
+    """
+    A/C/D/E/G/H/Q each compute their own lambda_remaining outside _remaining_goals_prob.
+    All must funnel through _scaled_remaining_lam so the calibration stack
+    (h2_uplift × period × state) lands once, in one helper.
+    """
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    assert "def _scaled_remaining_lam(" in src, "_scaled_remaining_lam helper must exist"
+    # No raw `posterior * remaining_minutes / 90.0` left — every callsite must use the helper
+    assert "lambda_remaining = posterior * remaining_minutes / 90.0" not in src, (
+        "All strategies must compute lambda_remaining via _scaled_remaining_lam — "
+        "raw posterior * remaining_minutes / 90.0 bypasses the calibration stack"
+    )
+    assert "lambda_remaining = posterior * remaining / 90.0" not in src, (
+        "All strategies must compute lambda_remaining via _scaled_remaining_lam"
+    )
+
+
 @test("INPLAY-BOT-RETIREMENT — dashboard_cache filters retired_at IS NULL")
 def _():
     """Public /performance leaderboard reads from dashboard_cache.bot_breakdown,

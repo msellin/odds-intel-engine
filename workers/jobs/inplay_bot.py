@@ -180,6 +180,14 @@ def run_inplay_strategies():
         console.print("[yellow]InplayBot skipped: pool saturated, retry next cycle[/yellow]")
         return
 
+    # 1b. Smooth live xG (INPLAY-EMA-LIVE-XG) — overwrite cand xg_home/away
+    # with a 5-min half-life EMA so a single big-chance snapshot can't trigger
+    # a bet on its own. Real-xG candidates only; proxy candidates pass through.
+    try:
+        _attach_ema_live_xg(candidates, execute_query)
+    except PoolError:
+        console.print("[yellow]InplayBot: pool saturated during EMA smoothing — falling back to raw xG this cycle[/yellow]")
+
     # Heartbeat every 10 cycles — show real/proxy split + pool utilization
     if _cycle_count % 10 == 0:
         from workers.api_clients.db import get_pool_status
@@ -547,6 +555,69 @@ def _score_recheck(execute_query, match_id: str,
 
 # ── Math Helpers ─────────────────────────────────────────────────────────────
 
+def _attach_ema_live_xg(candidates: list[dict], execute_query,
+                        half_life_min: float = 5.0, window_min: int = 10) -> None:
+    """
+    INPLAY-EMA-LIVE-XG — replace each cand's `xg_home`/`xg_away` with a
+    time-weighted EMA over the last `window_min` minutes of snapshots.
+
+    Why: AF live xG often jumps in single-cycle steps when a chance is logged
+    (a clear-cut chance can add 0.4 xG in one snapshot). Strategies built on
+    cumulative-to-minute readings then trip an entry on a one-off rather than
+    a sustained pattern. The exponential filter weights recent samples heavily
+    while smoothing isolated spikes — half-life of 5 min, time-aware (alpha
+    scales with the inter-snapshot minute delta).
+
+    No-op for proxy-only candidates (xG NULL → shot proxy in `_compute_live_xg`)
+    and for matches with fewer than 2 prior snapshots in the window.
+    """
+    if not candidates:
+        return
+    real_xg = [c for c in candidates
+               if c.get("xg_home") is not None and c.get("xg_away") is not None]
+    if not real_xg:
+        return
+
+    match_ids = [str(c["match_id"]) for c in real_xg]
+    rows = execute_query(
+        f"""
+        SELECT lms.match_id, lms.minute, lms.captured_at,
+               lms.xg_home, lms.xg_away
+        FROM live_match_snapshots lms
+        WHERE lms.match_id = ANY(%s::uuid[])
+          AND lms.xg_home IS NOT NULL
+          AND lms.captured_at >= NOW() - INTERVAL '{int(window_min)} minutes'
+        ORDER BY lms.match_id, lms.captured_at ASC
+        """,
+        (match_ids,),
+    )
+
+    by_mid: dict[str, list[dict]] = {}
+    for r in rows:
+        by_mid.setdefault(str(r["match_id"]), []).append(r)
+
+    for cand in real_xg:
+        mid = str(cand["match_id"])
+        history = by_mid.get(mid, [])
+        if len(history) < 2:
+            continue
+        prev_min = history[0].get("minute") or 0
+        ema_h = float(history[0].get("xg_home") or 0)
+        ema_a = float(history[0].get("xg_away") or 0)
+        for r in history[1:]:
+            cur_min = r.get("minute") or prev_min
+            delta = max(0.5, cur_min - prev_min)
+            alpha = 1.0 - math.exp(-delta / max(half_life_min, 0.01))
+            x_h = float(r.get("xg_home") or 0)
+            x_a = float(r.get("xg_away") or 0)
+            ema_h = alpha * x_h + (1 - alpha) * ema_h
+            ema_a = alpha * x_a + (1 - alpha) * ema_a
+            prev_min = cur_min
+        cand["xg_home"] = ema_h
+        cand["xg_away"] = ema_a
+        cand["xg_ema_applied"] = True
+
+
 def _compute_live_xg(cand: dict) -> tuple[float, float, bool]:
     """
     Returns (xg_home, xg_away, is_real_xg).
@@ -573,18 +644,89 @@ def _compute_live_xg(cand: dict) -> tuple[float, float, bool]:
     )
 
 
+def _time_decay_weight(minute: int) -> float:
+    """
+    INPLAY-TIME-DECAY-PRIOR — weight given to live evidence at `minute`.
+
+    `w_live = 1 - exp(-minute/30)`. At min 30 → 0.63 (63/37 live/prematch),
+    at min 60 → 0.86. Replaces the older flat (1 / (1 + minute/90)) blend
+    that gave too much weight to prematch information past minute 45.
+    """
+    if minute <= 0:
+        return 0.0
+    return 1.0 - math.exp(-minute / 30.0)
+
+
+def _period_multiplier(minute: int) -> float:
+    """
+    INPLAY-PERIOD-RATES — period-specific scoring rate multiplier.
+
+    Empirical per-match goal-rate distribution (Reply 4): minutes 1-15 score
+    ~0.85× the average rate (warm-up phase), minutes 76-90+ score ~1.20×
+    (late urgency). Mid-match periods at 1.0× neutral. Applied to the
+    `remaining_lam` so that bets entered late inherit the period uplift,
+    and bets entered very early are not overpriced.
+    """
+    if minute <= 15:
+        return 0.85
+    if minute >= 76:
+        return 1.20
+    return 1.0
+
+
+def _state_multiplier_total(minute: int, score_home: int | None,
+                             score_away: int | None) -> float:
+    """
+    INPLAY-LAMBDA-STATE — score-state multiplier on TOTAL remaining lambda.
+
+    Football is non-Poisson-stationary: trailing teams push (+15%) and
+    leaders defend (−10%) late, level matches (+5%/+5%) tend to open up.
+    For the *total* goal lambda the per-team effects partially cancel —
+    one team trailing + one leading averages to ~+2.5% net; level → +5%.
+    Only fires from minute 60 (urgency window).
+    """
+    if minute < 60:
+        return 1.0
+    if score_home is None or score_away is None:
+        return 1.0
+    diff = abs(int(score_home) - int(score_away))
+    if diff == 0:
+        return 1.05
+    return 1.025
+
+
+def _state_multiplier_team(minute: int, team_state: str) -> float:
+    """
+    INPLAY-LAMBDA-STATE — per-team multiplier for 1X2 (Strategy N).
+
+    `team_state ∈ {'leading', 'trailing', 'level'}`. Late (≥60) trailing
+    +15%, leading −10%, level +5%. Pre-60 returns 1.0 (no urgency yet).
+    """
+    if minute < 60:
+        return 1.0
+    return {"trailing": 1.15, "leading": 0.90, "level": 1.05}.get(team_state, 1.0)
+
+
 def _bayesian_posterior(prematch_xg_total: float, live_xg_total: float,
                         minute: int) -> float:
     """
-    Bayesian posterior rate: treats prematch xG as '1 game of prior evidence'.
-    Shrinks early noise toward prior; converges with raw pace by minute 35.
+    Bayesian posterior rate per 90 minutes — blends prematch + live signal.
 
-    Formula: (prematch_xg + live_xg) / (1.0 + minute / 90)
-    Returns rate per 90 minutes (comparable to prematch xG rate).
+    INPLAY-TIME-DECAY-PRIOR (2026-05-10): w_live = 1 - exp(-minute/30) drifts
+    weight from prematch toward live as the match progresses. At min 30 ~63%
+    live / 37% prematch; at min 60 ~86/14. The live signal is normalized to a
+    per-90 rate (live_xg × 90 / minute) so the blend is in rate-space, not
+    raw-cumulative-space.
+
+    Replaces the older flat blend (pm + live) / (1 + minute/90) which
+    underweighted live signal late in the match.
     """
     if minute <= 0:
         return prematch_xg_total
-    return (prematch_xg_total + live_xg_total) / (1.0 + minute / 90.0)
+    pm_rate = prematch_xg_total
+    live_rate = live_xg_total * 90.0 / minute
+    w_live = _time_decay_weight(minute)
+    return (1.0 - w_live) * pm_rate + w_live * live_rate
 
 
 def _poisson_over_prob(lam: float, threshold: float) -> float:
@@ -604,27 +746,66 @@ def _implied_prob(odds: float) -> float:
 
 
 def _remaining_goals_prob(pm_xg_total: float, minute: int,
-                          goals_observed: int, threshold: float) -> tuple[float, float, float]:
+                          goals_observed: int, threshold: float,
+                          score_home: int | None = None,
+                          score_away: int | None = None) -> tuple[float, float, float]:
     """
-    Bayesian remaining-goals Poisson — shared by strategies J and L (and future M/O).
+    Bayesian remaining-goals Poisson — shared by strategies J/L/M (and future O).
 
     Returns (model_prob, posterior_lam, remaining_lam):
       - model_prob:    P(remaining goals ≥ threshold) under Poisson(remaining_lam)
-      - posterior_lam: Bayesian-updated full-match λ given goals observed by `minute`
-      - remaining_lam: posterior λ scaled to the remaining minutes (with 1.05× 2nd-half uplift)
+      - posterior_lam: full-match λ blended from prematch xG and observed goals
+      - remaining_lam: posterior λ scaled to the remaining minutes, with all
+                      calibration multipliers applied
 
-    Conjugate Gamma-Poisson update treats prematch xG as 1 game of prior evidence.
-    h2_uplift = 1.05 reflects empirical 2nd-half goal-rate uplift (Dixon & Robinson).
+    Calibration stack (applied in order to remaining_lam):
+      • h2_uplift     = 1.05× post-min-45  (Dixon & Robinson empirical 2nd-half uplift)
+      • period_mult   — INPLAY-PERIOD-RATES (0.85× at 1-15, 1.20× at 76+)
+      • state_mult    — INPLAY-LAMBDA-STATE (level late +5%, imbalanced late +2.5%)
+                        only when score_home / score_away are supplied
 
-    Example: J at min 40, 0-0, λ_full=2.8 → posterior=2.0, remaining=1.17, P(≥2)=0.36 → fair 2.78.
+    Posterior λ:
+      INPLAY-TIME-DECAY-PRIOR — blend prematch rate + observed-goal rate (per 90)
+      with w_live = 1 - exp(-minute/30). Equivalent to the live-xG blend used
+      by `_bayesian_posterior`, but evidence here is the goal count rather than
+      a live-xG signal.
     """
-    elapsed_frac = minute / 90.0
-    posterior_lam = (pm_xg_total + goals_observed) / (1.0 + elapsed_frac)
+    if minute <= 0:
+        return 0.0, pm_xg_total, pm_xg_total
+
+    pm_rate = pm_xg_total
+    observed_rate_per_90 = goals_observed * 90.0 / minute
+    w_live = _time_decay_weight(minute)
+    posterior_lam = (1.0 - w_live) * pm_rate + w_live * observed_rate_per_90
+
     remaining_frac = (90.0 - minute) / 90.0
     h2_uplift = 1.05 if minute >= 45 else 1.0
-    remaining_lam = posterior_lam * remaining_frac * h2_uplift
+    period_mult = _period_multiplier(minute)
+    state_mult = _state_multiplier_total(minute, score_home, score_away)
+    remaining_lam = posterior_lam * remaining_frac * h2_uplift * period_mult * state_mult
+
     model_prob = _poisson_over_prob(remaining_lam, threshold - 0.5)
     return model_prob, posterior_lam, remaining_lam
+
+
+def _scaled_remaining_lam(posterior_lam: float, minute: int,
+                          score_home: int | None = None,
+                          score_away: int | None = None) -> float:
+    """
+    Convert a posterior full-match λ into a remaining-time λ with the full
+    calibration stack applied (h2_uplift × period_mult × state_mult).
+
+    Used by every strategy that computes its own remaining lambda outside
+    `_remaining_goals_prob` (A/C/D/E/G/H/Q). Keeps the multiplier set in
+    one place so future tweaks land everywhere.
+    """
+    if minute >= 90:
+        return 0.0
+    remaining_frac = (90.0 - minute) / 90.0
+    h2_uplift = 1.05 if minute >= 45 else 1.0
+    period_mult = _period_multiplier(minute)
+    state_mult = _state_multiplier_total(minute, score_home, score_away)
+    return posterior_lam * remaining_frac * h2_uplift * period_mult * state_mult
 
 
 def _bivariate_poisson_win_prob(lam_h: float, lam_a: float) -> tuple[float, float, float]:
@@ -759,7 +940,7 @@ def _check_strategy_a(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
         return None
 
     remaining_minutes = max(1, 90 - minute)
-    lambda_remaining = posterior * remaining_minutes / 90.0
+    lambda_remaining = _scaled_remaining_lam(posterior, minute, sh, sa)
     model_prob = _poisson_over_prob(lambda_remaining, goals_needed - 0.5)
 
     implied = _implied_prob(odds)
@@ -855,7 +1036,7 @@ def _check_strategy_b(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     live_xg = xg_h + xg_a
     posterior = _bayesian_posterior(pm_xg_total, live_xg, minute)
     remaining_minutes = max(1, 90 - minute)
-    lambda_remaining = posterior * remaining_minutes / 90.0
+    lambda_remaining = _scaled_remaining_lam(posterior, minute, sh, sa)
 
     current_goals = sh + sa
     goals_needed = 3 - current_goals
@@ -1046,7 +1227,7 @@ def _check_strategy_d(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
 
     posterior = _bayesian_posterior(pm_xg_total, live_xg, minute)
     remaining = max(1, 90 - minute)
-    lambda_remaining = posterior * remaining / 90.0
+    lambda_remaining = _scaled_remaining_lam(posterior, minute, sh, sa)
     goals_needed = 3 - total_goals
     if goals_needed <= 0:
         return None
@@ -1131,7 +1312,7 @@ def _check_strategy_e(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
 
     posterior = _bayesian_posterior(pm_xg_total, live_xg, minute)
     remaining = max(1, 90 - minute)
-    lambda_remaining = posterior * remaining / 90.0
+    lambda_remaining = _scaled_remaining_lam(posterior, minute, sh, sa)
     goals_needed_for_over = 3 - (sh + sa)
     if goals_needed_for_over <= 0:
         return None
@@ -1243,7 +1424,7 @@ def _check_strategy_g(cand: dict, pm: dict, has_red_card: bool,
 
     posterior = _bayesian_posterior(pm_xg_total, live_xg, minute)
     remaining_minutes = max(1, 90 - minute)
-    lambda_remaining = posterior * remaining_minutes / 90.0
+    lambda_remaining = _scaled_remaining_lam(posterior, minute, sh, sa)
     goals_needed = 3 - total_goals
     if goals_needed <= 0:
         return None
@@ -1376,7 +1557,7 @@ def _check_strategy_h(cand: dict, pm: dict, has_red_card: bool,
     live_xg = xg_h + xg_a
     posterior = _bayesian_posterior(pm_xg_total, live_xg, minute)
     remaining_minutes = max(1, 90 - minute)
-    lambda_remaining = posterior * remaining_minutes / 90.0
+    lambda_remaining = _scaled_remaining_lam(posterior, minute, sh, sa)
 
     # Score is 0-0, so total goals at FT == remaining goals.
     # _poisson_over_prob(lam, line) returns P(X > line) under Poisson(lam),
@@ -1609,7 +1790,8 @@ def _check_strategy_j(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     # P(≥ 2 more goals) — need 2 more for Over 1.5 total (score is 0-0)
     pm_xg_total = float(pm.get("prematch_xg_home") or 1.1) + float(pm.get("prematch_xg_away") or 1.1)
     model_prob, posterior_lam, remaining_lam = _remaining_goals_prob(
-        pm_xg_total, minute, goals_observed=0, threshold=2
+        pm_xg_total, minute, goals_observed=0, threshold=2,
+        score_home=sh, score_away=sa,
     )
     market_prob = _implied_prob(live_ou15)
     edge_pct = (model_prob - market_prob) * 100
@@ -1680,7 +1862,8 @@ def _check_strategy_l(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     pm_xg_total = float(pm.get("prematch_xg_home") or 1.1) + float(pm.get("prematch_xg_away") or 1.1)
     expected_by_now = pm_xg_total * (minute / 90.0)
     model_prob, posterior_lam, remaining_lam = _remaining_goals_prob(
-        pm_xg_total, minute, goals_observed=1, threshold=2
+        pm_xg_total, minute, goals_observed=1, threshold=2,
+        score_home=sh, score_away=sa,
     )
     market_prob = _implied_prob(live_ou25)
     edge_pct = (model_prob - market_prob) * 100
@@ -1751,7 +1934,8 @@ def _check_strategy_m(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
 
     pm_xg_total = float(pm.get("prematch_xg_home") or 1.1) + float(pm.get("prematch_xg_away") or 1.1)
     model_prob, posterior_lam, remaining_lam = _remaining_goals_prob(
-        pm_xg_total, minute, goals_observed=1, threshold=2
+        pm_xg_total, minute, goals_observed=1, threshold=2,
+        score_home=sh, score_away=sa,
     )
     market_prob = _implied_prob(live_ou25)
     edge_pct = (model_prob - market_prob) * 100
@@ -1816,15 +2000,26 @@ def _check_strategy_n(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     if live_home_odds < 2.20:
         return None  # Hasn't drifted enough — no edge
 
-    # Bivariate Poisson on the remaining minutes. h2_uplift already implicit
-    # since minute >= 72; the multiplier mostly matters because we're scaling
-    # the prematch full-match xG down to ~10-18 minutes.
+    # Bivariate Poisson on the remaining minutes. h2_uplift always engages
+    # at minute 72-80; lambda also gets a period multiplier (INPLAY-PERIOD-RATES,
+    # 1.20× ≥ minute 76) and a per-team score-state multiplier
+    # (INPLAY-LAMBDA-STATE — late level → +5%/+5%; late imbalance → trailing
+    # +15%, leader −10%).
     pm_xg_h = float(pm.get("prematch_xg_home") or 1.1)
     pm_xg_a = float(pm.get("prematch_xg_away") or 1.1)
     remaining_frac = (90.0 - minute) / 90.0
     h2_uplift = 1.05  # always in second half at minute 72-80
-    lam_h = pm_xg_h * remaining_frac * h2_uplift
-    lam_a = pm_xg_a * remaining_frac * h2_uplift
+    period_mult = _period_multiplier(minute)
+    if sh > sa:
+        home_state, away_state = "leading", "trailing"
+    elif sh < sa:
+        home_state, away_state = "trailing", "leading"
+    else:
+        home_state = away_state = "level"
+    state_mult_h = _state_multiplier_team(minute, home_state)
+    state_mult_a = _state_multiplier_team(minute, away_state)
+    lam_h = pm_xg_h * remaining_frac * h2_uplift * period_mult * state_mult_h
+    lam_a = pm_xg_a * remaining_frac * h2_uplift * period_mult * state_mult_a
 
     ph_win, _, _ = _bivariate_poisson_win_prob(lam_h, lam_a)
     # When level at 1-1, home still needs to outscore in the remaining time;
@@ -1928,7 +2123,7 @@ def _check_strategy_q(cand: dict, pm: dict, has_red_card: bool,
     live_xg = xg_h + xg_a
     posterior = _bayesian_posterior(pm_xg_total, live_xg, minute)
     remaining = max(1, 90 - minute)
-    lambda_remaining = posterior * remaining / 90.0
+    lambda_remaining = _scaled_remaining_lam(posterior, minute, sh, sa)
     goals_needed = 3 - total_goals
     if goals_needed <= 0:
         return None
