@@ -2966,6 +2966,12 @@ def _():
         "backfill_historical must apply a ≤2% tolerance to fixtures/stats/events "
         "gaps so AF data holes don't keep an L/S 'in_progress' forever."
     )
+    assert "af_permanent_gap" in src, (
+        "backfill_historical must detect the AF-permanent-gap escape — when AF "
+        "returns the fixture but the statistics/events arrays are empty, no "
+        "amount of retrying will fix it. Without this, finish_backfill.py loops "
+        "forever burning AF calls on the same impossible-to-enrich L/S."
+    )
 
 
 @test("FINISH-BACKFILL — entry-point script loops via detect_next_phase + run_backfill")

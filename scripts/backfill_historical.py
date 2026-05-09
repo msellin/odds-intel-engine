@@ -428,6 +428,7 @@ def backfill_league_season(
 
     stats_stored = 0
     events_stored = 0
+    prefetched: dict[int, dict] = {}
 
     if union_ids and not _shutdown_requested:
         try:
@@ -548,13 +549,19 @@ def backfill_league_season(
 
     # Check if this league/season is complete.
     #
-    # Two reasons rows used to wedge in 'in_progress' forever:
+    # Three reasons rows used to wedge in 'in_progress' forever:
     #   (1) `need_stats` / `need_events` above are sets snapshotted BEFORE the
     #       bulk write — they don't reflect what we just stored. Re-query.
     #   (2) AF feed permanently lacks stats/events for some old matches. A
     #       single missing match in a 230-fixture league should not block
     #       completion forever. Allow up to 2% gap (or 2 matches, whichever
     #       is larger) on either dimension.
+    #   (3) AF-permanent-gap escape hatch: if we attempted enrichment this run
+    #       (union_ids non-empty), AF actually returned every fixture we asked
+    #       for, AND the bulk write produced zero new stats AND zero new
+    #       events, the gaps are *permanent* (AF has the fixture but the
+    #       `statistics` / `events` arrays are empty). No future retry can
+    #       move the needle — mark complete to break the livelock.
     progress_now = get_or_create_progress(league_id, season, phase)
     fresh_need_stats = get_af_ids_needing("match_stats", match_map)
     fresh_need_events = get_af_ids_needing("match_events", match_map)
@@ -565,10 +572,22 @@ def backfill_league_season(
     stats_ok = len(fresh_need_stats) <= tolerance
     events_ok = len(fresh_need_events) <= tolerance
 
-    if fixtures_ok and stats_ok and events_ok:
+    af_permanent_gap = (
+        bool(union_ids)
+        and len(prefetched) >= len(union_ids)
+        and stats_stored == 0
+        and events_stored == 0
+    )
+
+    if (fixtures_ok and stats_ok and events_ok) or (fixtures_ok and af_permanent_gap):
         update_progress(league_id, season, status="complete")
         gap = len(fresh_need_stats) + len(fresh_need_events)
-        suffix = f" (AF gap: {gap})" if gap else ""
+        if af_permanent_gap and gap:
+            suffix = f" (AF permanent gap: {gap} fixtures with empty stats/events)"
+        elif gap:
+            suffix = f" (AF gap: {gap})"
+        else:
+            suffix = ""
         _print(f"  [green]✓ L{league_id}/S{season} complete{suffix}[/green]")
 
     return stats
