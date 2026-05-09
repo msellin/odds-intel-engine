@@ -1746,6 +1746,18 @@ def _():
     )
 
 
+@test("INPLAY-FIX-E-FALLBACK — migration 085 voids settled shot_proxy bets")
+def _():
+    import pathlib
+    src = pathlib.Path("supabase/migrations/085_void_e_proxy_bets_settled.sql").read_text()
+    assert "xg_source = 'shot_proxy'" in src, "085 must scope to shot_proxy bets"
+    assert "result = 'void'" in src, "085 must set result = 'void' (enum value, not 'voided')"
+    assert "result IN ('won', 'lost')" in src, (
+        "085 must target settled bets — 079's 'pending' filter matched zero rows after settlement"
+    )
+    assert "inplay_e" in src, "085 must scope to inplay_e bot"
+
+
 @test("INPLAY-MERGE-A2 — inplay_a2 removed from INPLAY_BOTS and dispatcher")
 def _():
     import pathlib
