@@ -1839,6 +1839,34 @@ def store_match_injuries(match_id: str, af_fixture_id: int,
 # T4: MATCH STATS (half-time extension)
 # ============================================================
 
+_MATCH_STATS_FIELDS = [
+    # Full match
+    "xg_home", "xg_away",
+    "shots_home", "shots_away",
+    "shots_on_target_home", "shots_on_target_away",
+    "possession_home",
+    "corners_home", "corners_away",
+    "fouls_home", "fouls_away",
+    "offsides_home", "offsides_away",
+    "saves_home", "saves_away",
+    "blocked_shots_home", "blocked_shots_away",
+    "passes_home", "passes_away",
+    "pass_accuracy_home", "pass_accuracy_away",
+    "yellow_cards_home", "yellow_cards_away",
+    "red_cards_home", "red_cards_away",
+    # Half-time
+    "shots_home_ht", "shots_away_ht",
+    "shots_on_target_home_ht", "shots_on_target_away_ht",
+    "possession_home_ht",
+    "corners_home_ht", "corners_away_ht",
+    "fouls_home_ht", "fouls_away_ht",
+    "offsides_home_ht", "offsides_away_ht",
+    "yellow_cards_home_ht", "yellow_cards_away_ht",
+    "xg_home_ht", "xg_away_ht",
+    "passes_home_ht", "passes_away_ht",
+]
+
+
 def store_match_stats_full(match_id: str, stats: dict):
     """
     Extended version of store_match_stats -- stores all fields including
@@ -1847,34 +1875,7 @@ def store_match_stats_full(match_id: str, stats: dict):
     """
     row = {"match_id": match_id}
 
-    all_fields = [
-        # Full match
-        "xg_home", "xg_away",
-        "shots_home", "shots_away",
-        "shots_on_target_home", "shots_on_target_away",
-        "possession_home",
-        "corners_home", "corners_away",
-        "fouls_home", "fouls_away",
-        "offsides_home", "offsides_away",
-        "saves_home", "saves_away",
-        "blocked_shots_home", "blocked_shots_away",
-        "passes_home", "passes_away",
-        "pass_accuracy_home", "pass_accuracy_away",
-        "yellow_cards_home", "yellow_cards_away",
-        "red_cards_home", "red_cards_away",
-        # Half-time
-        "shots_home_ht", "shots_away_ht",
-        "shots_on_target_home_ht", "shots_on_target_away_ht",
-        "possession_home_ht",
-        "corners_home_ht", "corners_away_ht",
-        "fouls_home_ht", "fouls_away_ht",
-        "offsides_home_ht", "offsides_away_ht",
-        "yellow_cards_home_ht", "yellow_cards_away_ht",
-        "xg_home_ht", "xg_away_ht",
-        "passes_home_ht", "passes_away_ht",
-    ]
-
-    for field in all_fields:
+    for field in _MATCH_STATS_FIELDS:
         if field in stats and stats[field] is not None:
             row[field] = stats[field]
 
@@ -1896,6 +1897,56 @@ def store_match_stats_full(match_id: str, stats: dict):
                 values,
             )
             conn.commit()
+
+
+def bulk_store_match_stats(rows: list[tuple]) -> int:
+    """
+    Bulk variant of store_match_stats_full. Each item is `(match_id, stats_dict)`.
+    Collapses N per-row UPSERTs into one execute_values round-trip — critical for
+    the historical backfill where the per-row pattern dominates wall time
+    (3,000+ matches × Supabase pooler RTT ≈ several minutes).
+
+    Uses COALESCE on the UPDATE side so a partial stats_dict (some fields NULL or
+    missing) cannot overwrite an existing non-NULL value with NULL — preserves
+    the same idempotency guarantee as `store_match_stats_full`.
+
+    Returns count of rows actually written (skips rows with no match_id or empty stats).
+    """
+    if not rows:
+        return 0
+
+    columns = ["match_id"] + _MATCH_STATS_FIELDS
+    col_str = ", ".join(columns)
+    update_str = ", ".join(
+        f"{c} = COALESCE(EXCLUDED.{c}, match_stats.{c})"
+        for c in _MATCH_STATS_FIELDS
+    )
+
+    values: list[tuple] = []
+    for match_id, stats in rows:
+        if not match_id or not stats:
+            continue
+        # Skip if every field is None — nothing to write, mirrors store_match_stats_full
+        if not any(stats.get(f) is not None for f in _MATCH_STATS_FIELDS):
+            continue
+        values.append(
+            (match_id, *(stats.get(f) for f in _MATCH_STATS_FIELDS))
+        )
+
+    if not values:
+        return 0
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            psycopg2.extras.execute_values(
+                cur,
+                f"INSERT INTO match_stats ({col_str}) VALUES %s "
+                f"ON CONFLICT (match_id) DO UPDATE SET {update_str}",
+                values,
+            )
+        conn.commit()
+
+    return len(values)
 
 
 # ============================================================

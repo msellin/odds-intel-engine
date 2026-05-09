@@ -2626,6 +2626,48 @@ def _():
     )
 
 
+@test("BULK-STORE-MATCH-STATS — backfill_historical bulks stats writes, no per-row store_match_stats_full")
+def _():
+    """
+    Guard the BULK-STORE-MATCH-STATS optimization. Per-match upsert dominated
+    wall time on the EU Supabase pooler (3,000+ matches × ~200ms RTT ≈ 10 min).
+    The fix collects (match_uuid, stats_dict) tuples and calls bulk_store_match_stats
+    once per league/season — one execute_values UPSERT instead of N round-trips.
+    A revert to per-row writes inside the backfill loop would silently re-introduce
+    the bottleneck.
+    """
+    import pathlib
+    src = pathlib.Path("scripts/backfill_historical.py").read_text()
+
+    assert "bulk_store_match_stats" in src, (
+        "backfill_historical.py must import + call bulk_store_match_stats — "
+        "without it the per-row store_match_stats_full pattern slows the backfill "
+        "by an order of magnitude on the EU pooler."
+    )
+    assert "store_match_stats_full" not in src, (
+        "backfill_historical.py must NOT call store_match_stats_full per match. "
+        "Use bulk_store_match_stats with collected tuples instead."
+    )
+
+    # Helper exists and uses execute_values + COALESCE (preserves existing values
+    # on partial dicts — matches store_match_stats_full's idempotency guarantee).
+    helper_src = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
+    assert "def bulk_store_match_stats(" in helper_src, (
+        "bulk_store_match_stats helper missing from supabase_client.py"
+    )
+    helper_idx = helper_src.index("def bulk_store_match_stats(")
+    helper_body = helper_src[helper_idx:helper_idx + 3000]
+    assert "execute_values" in helper_body, (
+        "bulk_store_match_stats must use psycopg2.extras.execute_values — "
+        "otherwise it's not actually bulked."
+    )
+    assert "COALESCE(EXCLUDED." in helper_body, (
+        "bulk_store_match_stats UPDATE clause must wrap EXCLUDED values in COALESCE "
+        "so a partial stats_dict (NULLs) cannot wipe an existing non-NULL value. "
+        "This preserves the idempotency guarantee from store_match_stats_full."
+    )
+
+
 @test("BACKFILL-IDS-BATCH — backfill_historical batches stats+events via /fixtures?ids=, no per-match endpoints")
 def _():
     """

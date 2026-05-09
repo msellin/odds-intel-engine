@@ -39,7 +39,7 @@ from workers.api_clients.api_football import (
 )
 from workers.api_clients.supabase_client import (
     bulk_store_matches,
-    store_match_stats_full,
+    bulk_store_match_stats,
 )
 from workers.api_clients.db import execute_query, execute_write, get_conn
 from workers.utils.pipeline_utils import (
@@ -400,6 +400,7 @@ def backfill_league_season(
             prefetched = {}
 
         events_rows: list[tuple] = []
+        stats_rows: list[tuple] = []
         now = datetime.now(timezone.utc).isoformat()
 
         for af_id, fixture in prefetched.items():
@@ -410,17 +411,16 @@ def backfill_league_season(
                 continue
             home_team_api_id = (fixture.get("teams") or {}).get("home", {}).get("id")
 
-            # Stats
+            # Stats — collect tuples; bulk upsert once per L/S below.
             if af_id in need_stats:
                 try:
                     parsed = parse_fixture_stats(fixture.get("statistics") or [])
                     if parsed:
-                        store_match_stats_full(match_uuid, parsed)
-                        stats_stored += 1
+                        stats_rows.append((match_uuid, parsed))
                 except Exception as e:
                     console.print(f"  [red]Stats parse error for AF {af_id}: {e}[/red]")
 
-            # Events — collect rows; bulk insert below
+            # Events — collect rows; bulk insert below.
             if af_id in need_events:
                 try:
                     parsed = parse_fixture_events(fixture.get("events") or [])
@@ -443,6 +443,14 @@ def backfill_league_season(
                         events_stored += 1
                 except Exception as e:
                     console.print(f"  [red]Events parse error for AF {af_id}: {e}[/red]")
+
+        # One bulk UPSERT for stats — collapses N round-trips to 1 (BULK-STORE-MATCH-STATS).
+        # On EU Supabase pooler this is the dominant wall-time cost in the backfill.
+        if stats_rows:
+            try:
+                stats_stored = bulk_store_match_stats(stats_rows)
+            except Exception as e:
+                console.print(f"  [red]Bulk stats write failed: {e}[/red]")
 
         if events_rows:
             from psycopg2.extras import execute_values
