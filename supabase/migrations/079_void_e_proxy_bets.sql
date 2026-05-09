@@ -5,7 +5,7 @@
 -- Proxy mode disabled in inplay_bot.py on 2026-05-09. Bad bets voided here so
 -- the performance chart shows a clean baseline from the real-xG-only era.
 UPDATE simulated_bets
-SET result = 'voided'
+SET result = 'void'
 WHERE xg_source = 'shot_proxy'
   AND bot_id = (SELECT id FROM bots WHERE name = 'inplay_e')
   AND result = 'pending';
