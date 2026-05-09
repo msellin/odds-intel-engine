@@ -120,6 +120,8 @@ def _headers() -> dict:
     return {"x-apisports-key": API_KEY}
 
 
+_HARD_QUOTA_FLOOR = 200  # Never burn below this — keeps settlement alive
+
 def _get(endpoint: str, params: dict = None) -> dict:
     """
     Make a rate-limited GET request to API-Football.
@@ -131,6 +133,12 @@ def _get(endpoint: str, params: dict = None) -> dict:
 
     if not API_KEY:
         raise ValueError("API_FOOTBALL_KEY not set in .env")
+
+    # Hard quota floor: block all calls when critically low, except /status itself
+    if endpoint != "status" and budget.remaining() <= _HARD_QUOTA_FLOOR:
+        raise RuntimeError(
+            f"AF quota critically low ({budget.remaining()} remaining) — call blocked"
+        )
 
     # Thread-safe rate limiting
     with _rate_lock:

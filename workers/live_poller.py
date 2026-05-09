@@ -45,7 +45,7 @@ class LivePoller:
     FAST_INTERVAL = 45       # Bulk fixtures + odds when live matches exist
     IDLE_INTERVAL = 120      # Poll interval when no live matches — saves API budget while still
                              # catching any match that kicks off within ~2 min
-    MEDIUM_MULTIPLIER = 3    # Stats every 3rd fast cycle (= 135s at 45s fast)
+    MEDIUM_MULTIPLIER = 5    # Stats every 5th fast cycle (= 225s at 45s fast)
     SLOW_MULTIPLIER = 10     # Lineups every 10th fast cycle (= 7.5min at 45s fast)
 
     # Active bet refresh: refresh the set of match_ids with pending bets
@@ -121,31 +121,16 @@ class LivePoller:
             console.print(f"[yellow]LivePoller: failed to refresh active bets: {e}[/yellow]")
 
     def _is_high_priority(self, match_id: str, af_fix: dict | None = None) -> bool:
-        """Return True if this match should get stats every cycle (vs every 3rd).
+        """Return True if this match should get stats every cycle (vs every 5th).
 
-        HIGH-priority matches are either:
-        1. Matches with a pending paper bet (we want fresh data for our positions), OR
-        2. Matches in an "actionable" state for in-play strategies — minute ≥ 25 with
-           total goals ≤ 1. This window is when strategies A, D, G, H fire, and they
-           need stats (xG, SoT, corners) to evaluate. Without lifting these to HIGH
-           priority, stats are only fetched every ~135s, leaving most candidate
-           snapshots without the data each strategy needs (~9% coverage observed in
-           backfill — see commit messages for INPLAY-NEW-CORNER / INPLAY-NEW-HT).
+        HIGH-priority means: match has a pending paper bet.
+        All other matches use normal MEDIUM_MULTIPLIER cadence.
 
-        Cost: ~30% of live matches sit in this state at any given moment, so this
-        roughly doubles stats-call volume during peak hours. Daily AF budget is 75K;
-        currently using ~31K, so we have headroom.
+        NOTE: The previous condition (minute ≥ 25 and goals ≤ 1) fired on ~30% of
+        live matches every cycle, which burned 74K+ AF calls on a busy Saturday.
+        Removed — paper bots miss some windows but quota is more critical.
         """
-        mid = str(match_id)
-        if mid in self._active_bet_match_ids:
-            return True
-        if af_fix is not None:
-            minute = af_fix.get("minute") or 0
-            score_h = af_fix.get("score_home") or 0
-            score_a = af_fix.get("score_away") or 0
-            if minute >= 25 and (score_h + score_a) <= 1:
-                return True
-        return False
+        return str(match_id) in self._active_bet_match_ids
 
     def _detect_key_event(self, match_id: str, af_fix: dict) -> bool:
         """

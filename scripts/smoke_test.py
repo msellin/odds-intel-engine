@@ -1768,25 +1768,25 @@ def _():
     assert "minute BETWEEN 40 AND 46" in h_body, "H must look up an HT-end snapshot"
 
 
-@test("INPLAY-STATS-COVERAGE — _is_high_priority lifts goals≤1 + min≥25 matches")
+@test("INPLAY-STATS-COVERAGE — _is_high_priority only lifts active-bet matches")
 def _():
-    """The bottleneck for strategies A/D/G/H is stats coverage (xG/SoT/corners
-    only on ~9% of historical snapshots). This test verifies that LivePoller's
-    HIGH-priority gate now also covers actionable in-play states, not just
-    matches with active bets."""
+    """HIGH priority was narrowed to active-bet matches only after the
+    minute>=25/goals<=1 condition burned 74K AF calls on a busy Saturday
+    (99% daily quota). Verify the expensive condition is gone and quota guard added."""
     import pathlib
     src = pathlib.Path("workers/live_poller.py").read_text()
     fn_start = src.index("def _is_high_priority(")
     fn_end = src.index("\n    def ", fn_start + 1)
     body = src[fn_start:fn_end]
-    assert "af_fix" in body, (
-        "_is_high_priority must accept af_fix so it can read minute + score"
+    assert "minute >= 25" not in body, (
+        "HIGH priority must NOT lift on minute >= 25 — caused quota exhaustion on busy Saturdays"
     )
-    assert "minute >= 25" in body and "<= 1" in body, (
-        "Must lift matches with minute >= 25 and goals <= 1 to HIGH priority"
+    assert "_active_bet_match_ids" in body, (
+        "_is_high_priority must still lift active-bet matches"
     )
-    assert "self._is_high_priority(match_id, af_fix)" in src, (
-        "Call site in _run_cycle must pass af_fix to _is_high_priority"
+    af_src = pathlib.Path("workers/api_clients/api_football.py").read_text()
+    assert "_HARD_QUOTA_FLOOR" in af_src, (
+        "_get() must have a hard quota floor to protect settlement"
     )
 
 
