@@ -65,6 +65,7 @@ SNAPSHOT_COLUMNS = """
     lms.xg_home, lms.xg_away, lms.shots_home, lms.shots_away,
     lms.shots_on_target_home, lms.shots_on_target_away,
     lms.possession_home, lms.corners_home, lms.corners_away,
+    lms.live_ou_15_over, lms.live_ou_15_under,
     lms.live_ou_25_over, lms.live_ou_25_under,
     lms.live_1x2_home, lms.live_1x2_draw, lms.live_1x2_away,
     lms.captured_at,
@@ -80,7 +81,7 @@ def fetch_snapshots(date_filter: str | None = None,
     date_filter: ISO date for a single day. Mutually exclusive with date_from/to.
     date_from/date_to: inclusive ISO date range. None on either side means open-ended.
     """
-    where = ["(lms.live_ou_25_over IS NOT NULL OR lms.live_1x2_home IS NOT NULL)",
+    where = ["(lms.live_ou_25_over IS NOT NULL OR lms.live_ou_15_over IS NOT NULL OR lms.live_1x2_home IS NOT NULL)",
              "lms.minute IS NOT NULL", "lms.minute BETWEEN 1 AND 90"]
     params: list = []
 

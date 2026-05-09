@@ -947,6 +947,66 @@ def _():
     )
 
 
+@test("BULK-STORE-MATCHES — bulk_store_matches exists and uses one execute_values per phase")
+def _():
+    """Source guard: bulk helper exists, dedup uses tuple key, INSERT/UPDATE both use execute_values."""
+    import inspect
+    from workers.api_clients import supabase_client
+    assert hasattr(supabase_client, "bulk_store_matches"), (
+        "bulk_store_matches must exist in supabase_client"
+    )
+    fn = supabase_client.bulk_store_matches
+    sig = inspect.signature(fn)
+    assert len(sig.parameters) == 1, "bulk_store_matches takes one arg (match_dicts list)"
+    src = inspect.getsource(fn)
+    # Dedup uses (home_team_id, away_team_id, date) tuple key
+    assert "home_team_id = v.home_id" in src, (
+        "bulk dedup must join on (home_team_id, away_team_id, date_prefix)"
+    )
+    # Both INSERT and UPDATE must go via execute_values, not per-row execute
+    ev_count = src.count("execute_values(")
+    assert ev_count >= 3, (
+        f"bulk_store_matches expected ≥3 execute_values calls (dedup, insert, update); found {ev_count}"
+    )
+    # INSERT must request RETURNING id so callers can map back to inputs
+    assert "RETURNING id" in src, "bulk INSERT must use RETURNING id"
+    # Empty list is a no-op
+    assert fn([]) == []
+
+
+@test("BULK-STORE-MATCHES — fetch_fixtures.py uses bulk helper, not per-row store_match")
+def _():
+    """Guard against revert to serial store_match() loop in the fixtures cron."""
+    src = open("workers/jobs/fetch_fixtures.py").read()
+    assert "bulk_store_matches" in src, (
+        "fetch_fixtures must call bulk_store_matches"
+    )
+    # The per-fixture store_match( inside the loop must be gone
+    assert "store_match(match_dict)" not in src, (
+        "fetch_fixtures still calls store_match per fixture — should bulk"
+    )
+
+
+@test("BULK-STORE-MATCHES — daily_pipeline_v2.py and backfill_historical.py have no per-row store_match")
+def _():
+    """Guard against revert in the two remaining call sites."""
+    dp_src = open("workers/jobs/daily_pipeline_v2.py").read()
+    assert "bulk_store_matches" in dp_src, "daily_pipeline_v2 must use bulk_store_matches"
+    # Bare `store_match(` calls in run_morning must be gone — only the docstring/comment
+    # references remain. Count actual call expressions: `store_match(` followed by an arg.
+    bare = dp_src.count("store_match(match_dict)") + dp_src.count("store_match(match)")
+    assert bare == 0, (
+        f"Expected 0 per-row store_match calls in daily_pipeline_v2.py, found {bare}."
+    )
+
+    bf_src = open("scripts/backfill_historical.py").read()
+    assert "bulk_store_matches" in bf_src, "backfill_historical must use bulk_store_matches"
+    bare_bf = bf_src.count("store_match(match_dict)") + bf_src.count("= store_match(")
+    assert bare_bf == 0, (
+        f"Expected 0 per-row store_match calls in backfill_historical.py, found {bare_bf}."
+    )
+
+
 @test("AH-SIGNALS — odds_snapshots.handicap_line column exists (migration 066)")
 def _():
     from workers.api_clients.db import execute_query
@@ -2078,6 +2138,64 @@ def _():
         l_end = len(src)
     assert "_remaining_goals_prob(" in src[l_start:l_end], (
         "Strategy L must use _remaining_goals_prob helper"
+    )
+
+
+@test("INPLAY-EQUALIZER-MAGNET — strategy M registered, dispatched, uses _remaining_goals_prob")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    # Registered in INPLAY_BOTS
+    dict_start = src.index("INPLAY_BOTS = {")
+    dict_end = src.index("\n}\n", dict_start) + 2
+    bots_block = src[dict_start:dict_end]
+    assert '"inplay_m"' in bots_block, "inplay_m must be registered in INPLAY_BOTS"
+    # Dispatched
+    disp_start = src.index("def _check_strategy(")
+    disp_end = src.index("\ndef ", disp_start + 1)
+    assert '_check_strategy_m(' in src[disp_start:disp_end], (
+        "_check_strategy must dispatch inplay_m → _check_strategy_m"
+    )
+    # Body uses the shared Bayesian helper + correct entry conditions
+    fn_start = src.index("def _check_strategy_m(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    fn_body = src[fn_start:fn_end]
+    assert "_remaining_goals_prob(" in fn_body, (
+        "Strategy M must use _remaining_goals_prob (1 goal observed → P(2 more))"
+    )
+    assert "0.48" in fn_body, "Strategy M must require prematch_btts_prob ≥ 0.48"
+    assert "3.0" in fn_body, "Strategy M must require live_ou_25_over ≥ 3.0"
+    assert "minute < 30 or minute > 60" in fn_body, (
+        "Strategy M minute window is 30-60"
+    )
+
+
+@test("INPLAY-LATE-FAV-PUSH — strategy N registered, dispatched, bivariate Poisson home win")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    dict_start = src.index("INPLAY_BOTS = {")
+    dict_end = src.index("\n}\n", dict_start) + 2
+    bots_block = src[dict_start:dict_end]
+    assert '"inplay_n"' in bots_block, "inplay_n must be registered in INPLAY_BOTS"
+    disp_start = src.index("def _check_strategy(")
+    disp_end = src.index("\ndef ", disp_start + 1)
+    assert '_check_strategy_n(' in src[disp_start:disp_end], (
+        "_check_strategy must dispatch inplay_n"
+    )
+    fn_start = src.index("def _check_strategy_n(")
+    try:
+        fn_end = src.index("\ndef ", fn_start + 1)
+    except ValueError:
+        fn_end = len(src)
+    fn_body = src[fn_start:fn_end]
+    assert "_bivariate_poisson_win_prob(" in fn_body, (
+        "Strategy N must price the home win via _bivariate_poisson_win_prob"
+    )
+    assert "0.65" in fn_body, "Strategy N must require prematch_home_prob ≥ 0.65"
+    assert "2.20" in fn_body, "Strategy N must require live_1x2_home ≥ 2.20"
+    assert "minute < 72 or minute > 80" in fn_body, (
+        "Strategy N minute window is 72-80 (intentionally tight)"
     )
 
 
