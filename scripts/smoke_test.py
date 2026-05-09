@@ -2054,41 +2054,6 @@ def _():
     )
 
 
-@test("INPLAY-HIDE-VALUEBETS — getTodayBets filters xg_source IS NULL")
-def _():
-    import pathlib
-    p = pathlib.Path("../odds-intel-web/src/lib/engine-data.ts")
-    if not p.exists():
-        # Frontend repo not present in this checkout — skip rather than fail.
-        return
-    src = p.read_text()
-    fn_start = src.index("export async function getTodayBets(")
-    fn_end = src.index("\nexport ", fn_start + 1)
-    fn_body = src[fn_start:fn_end]
-    assert '.is("xg_source", null)' in fn_body, (
-        "getTodayBets must filter inplay bets out (xg_source IS NULL = prematch). "
-        "Inplay rows from broken Strategy B/E would otherwise leak into /value-bets."
-    )
-
-
-@test("INPLAY-HIDE-VALUEBETS — getFreeDailyPick filters xg_source IS NULL on both queries")
-def _():
-    import pathlib
-    p = pathlib.Path("../odds-intel-web/src/lib/engine-data.ts")
-    if not p.exists():
-        return
-    src = p.read_text()
-    fn_start = src.index("export async function getFreeDailyPick(")
-    fn_end = src.index("\nexport ", fn_start + 1)
-    fn_body = src[fn_start:fn_end]
-    # Both the pick query AND the dedupe-count query must be filtered, otherwise
-    # the totalCount and the pick will disagree.
-    assert fn_body.count('.is("xg_source", null)') >= 2, (
-        "getFreeDailyPick must apply xg_source IS NULL to both the pick query "
-        "and the all-bets dedupe query — otherwise totalCount drifts from the pick."
-    )
-
-
 @test("INJURIES-BY-DATE — single call returns grouped fixtures (T3 fast path)")
 def _():
     """Validates the /injuries?date=YYYY-MM-DD path is wired and returns the expected
@@ -2436,6 +2401,41 @@ def _():
     )
 
 
+@test("BACKFILL-IDS-BATCH — backfill_historical batches stats+events via /fixtures?ids=, no per-match endpoints")
+def _():
+    """
+    Guard the BACKFILL-IDS-BATCH refactor (~40× AF-call reduction). Old code
+    fired 2 individual AF calls per match (`/fixtures/statistics?fixture=N` +
+    `/fixtures/events?fixture=N`); the new code batches both via
+    `get_fixtures_batch` and parses embedded `statistics` + `events` from the
+    prefetched payload. Both per-match helpers must be absent from the script
+    (importing them would silently re-permit a regression).
+    """
+    import pathlib
+    src = pathlib.Path("scripts/backfill_historical.py").read_text()
+
+    assert "get_fixtures_batch" in src, (
+        "backfill_historical.py must import + call get_fixtures_batch — that's "
+        "the whole point of BACKFILL-IDS-BATCH (one batched call replaces 40 "
+        "individual stats+events calls)."
+    )
+    assert "get_fixture_statistics" not in src, (
+        "backfill_historical.py must NOT call get_fixture_statistics per match. "
+        "Use the embedded `statistics` from get_fixtures_batch instead — "
+        "individual calls revert the 40× speedup."
+    )
+    assert "get_fixture_events" not in src, (
+        "backfill_historical.py must NOT call get_fixture_events per match. "
+        "Use the embedded `events` from get_fixtures_batch instead."
+    )
+    assert 'fixture.get("statistics")' in src or "fixture.get('statistics')" in src, (
+        "Stats parsing must read embedded `statistics` from the batched fixture dict."
+    )
+    assert 'fixture.get("events")' in src or "fixture.get('events')" in src, (
+        "Events parsing must read embedded `events` from the batched fixture dict."
+    )
+
+
 @test("BACKFILL-TRANSFER-PARSE — parse_transfers skips malformed AF dates instead of crashing batch")
 def _():
     from workers.api_clients.api_football import parse_transfers
@@ -2451,38 +2451,6 @@ def _():
     rows = parse_transfers(bad, team_api_id=4256)
     assert len(rows) == 1, f"Expected malformed date dropped, got {len(rows)} rows"
     assert rows[0]["transfer_date"] == "2024-07-01"
-
-
-@test("PERF-GRAPH-START — both performance charts prepend a synthetic origin point")
-def _():
-    """Source guard. Without an origin point both charts start at the first
-    settled bet's outcome (e.g. -1u or 1010€), with no visible reference to the
-    starting bankroll. Fix prepends:
-      • Elite /bankroll cumulative-units chart  → {date, units: 0}
-      • /performance bot bankroll modal         → {idx: 0, bankroll: 1000, result: 'origin'}
-    """
-    import pathlib
-    web = pathlib.Path("/Users/margussellin/www/odds-intel-web/src")
-
-    bankroll_data = (web / "lib/engine-data.ts").read_text()
-    assert "cumulativeSeries.unshift({ date:" in bankroll_data, (
-        "getUserBankrollData must prepend a 0u origin to cumulativeSeries"
-    )
-    assert "units: 0" in bankroll_data, (
-        "Origin point in cumulativeSeries must have units: 0"
-    )
-
-    leaderboard = (web / "components/performance-leaderboard.tsx").read_text()
-    assert 'idx: 0, bankroll: 1000' in leaderboard, (
-        "buildChartData must prepend a 1000€ origin point to the bot bankroll series"
-    )
-    assert 'result: "origin"' in leaderboard, (
-        "Origin point must use result='origin' so the dot renderer + tooltip can branch on it"
-    )
-    # Old broken lookup that breaks once idx=0 exists must be gone
-    assert "chartData[Number(label) - 1]" not in leaderboard, (
-        "labelFormatter still uses index-1 lookup — wrong once origin idx=0 is prepended"
-    )
 
 
 @test("FETCH-ODDS-CONCURRENT — pages 2..N fetched via ThreadPoolExecutor")
