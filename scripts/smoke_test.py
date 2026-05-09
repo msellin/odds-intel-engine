@@ -720,6 +720,87 @@ def _():
     assert len(ah_rows) == 0, "AH row without handicap field should be skipped"
 
 
+@test("OU-PARSE-BUG — parse_fixture_odds keeps FT Goals Over/Under rows")
+def _():
+    from workers.api_clients.api_football import parse_fixture_odds
+    raw = [{
+        "bookmakers": [{
+            "name": "Pinnacle",
+            "bets": [{
+                "name": "Goals Over/Under",
+                "values": [
+                    {"value": "Over 2.5",  "odd": "1.85"},
+                    {"value": "Under 2.5", "odd": "1.95"},
+                ]
+            }]
+        }]
+    }]
+    rows = parse_fixture_odds(raw)
+    ou25 = [r for r in rows if r["market"] == "over_under_25"]
+    assert len(ou25) == 2, f"Expected 2 FT OU 2.5 rows, got {len(ou25)}: {ou25}"
+    over = next(r for r in ou25 if r["selection"] == "over")
+    assert abs(over["odds"] - 1.85) < 1e-6
+
+
+@test("OU-PARSE-BUG — parse_fixture_odds drops First Half / team-specific OU markets")
+def _():
+    """Substring match used to bucket these into FT OU keys, producing fake edges."""
+    from workers.api_clients.api_football import parse_fixture_odds
+    raw = [{
+        "bookmakers": [{
+            "name": "1xBet",
+            "bets": [
+                {
+                    "name": "Goals Over/Under First Half",
+                    "values": [
+                        {"value": "Over 2.5",  "odd": "6.50"},  # ← would have leaked into over_under_25
+                        {"value": "Under 2.5", "odd": "1.10"},
+                    ]
+                },
+                {
+                    "name": "Goals Over/Under Second Half",
+                    "values": [
+                        {"value": "Over 2.5",  "odd": "5.20"},
+                    ]
+                },
+                {
+                    "name": "Home Team Goals Over/Under",
+                    "values": [
+                        {"value": "Over 1.5",  "odd": "3.10"},
+                    ]
+                },
+                {
+                    "name": "Away Team Goals Over/Under",
+                    "values": [
+                        {"value": "Over 1.5",  "odd": "4.00"},
+                    ]
+                },
+            ]
+        }]
+    }]
+    rows = parse_fixture_odds(raw)
+    bad = [r for r in rows if r["market"].startswith("over_under_")]
+    assert len(bad) == 0, (
+        f"OU-PARSE-BUG: non-FT OU markets leaked into over_under_* buckets: {bad}"
+    )
+
+
+@test("OU-PARSE-BUG — parser uses exact match, not substring (source guard)")
+def _():
+    """Guard against revert to the substring 'Over/Under' in bet_name pattern."""
+    import inspect
+    from workers.api_clients import api_football
+    src = inspect.getsource(api_football.parse_fixture_odds)
+    # The buggy form was: "Over/Under" in bet_name
+    assert '"Over/Under" in bet_name' not in src, (
+        "OU-PARSE-BUG regressed: substring match is back in parse_fixture_odds. "
+        "Use exact `bet_name == \"Goals Over/Under\"` only."
+    )
+    assert 'bet_name == "Goals Over/Under"' in src, (
+        "OU-PARSE-BUG: expected exact match `bet_name == \"Goals Over/Under\"` in parser."
+    )
+
+
 @test("AH-SIGNALS — odds_snapshots.handicap_line column exists (migration 066)")
 def _():
     from workers.api_clients.db import execute_query

@@ -442,7 +442,13 @@ def parse_fixture_odds(odds_response: list[dict]) -> list[dict]:
                                 "odds": float(val["odd"]),
                             })
 
-                elif "Over/Under" in bet_name or bet_name == "Goals Over/Under":
+                elif bet_name == "Goals Over/Under":
+                    # Strict exact-match. Substring match used to swallow
+                    # "Goals Over/Under First Half", "Home Team Goals Over/Under",
+                    # etc. — collapsing first-half / team-specific lines into the
+                    # FT bucket. Best-price selection downstream then picked the
+                    # higher (first-half) odds vs an FT model probability,
+                    # producing fake double-digit edges.
                     for val in bet.get("values", []):
                         v = val["value"]  # e.g. "Over 2.5", "Under 2.5"
                         if " " in v:
@@ -975,7 +981,11 @@ def parse_live_odds(live_odds_response: list[dict]) -> dict[int, list[dict]]:
                             "minute": minute,
                         })
 
-            elif "Over/Under" in market_name or market_name == "Goals Over/Under":
+            elif market_name in ("Goals Over/Under", "Over/Under"):
+                # Same OU-PARSE-BUG fix as parse_fixture_odds: substring match
+                # swallowed first-half / team-specific OU markets and collapsed
+                # them into FT buckets. AF live API uses both names for FT
+                # match goals depending on bookmaker, so allow exactly those two.
                 for val in bet.get("values", []):
                     if val.get("suspended"):
                         continue
