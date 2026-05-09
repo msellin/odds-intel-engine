@@ -52,14 +52,37 @@ def _job_prefix() -> str:
     return "railway_" if SHADOW_MODE else ""
 
 
-def _run_job(name: str, fn, *args, **kwargs):
-    """Wrapper that runs a job function with error isolation and logging."""
+def _run_job(name: str, fn, *args, _log_run: bool = True, **kwargs):
+    """Wrapper that runs a job function with error isolation and logging.
+
+    OBS-LOG-ALL-JOBS — every wrapped job auto-logs to ``pipeline_runs`` so the
+    ops dashboard sees all 25 jobs, not just the 14 whose body happens to call
+    ``log_pipeline_*`` themselves. Logging exceptions are swallowed: a failure
+    in the logger must not kill the actual job.
+
+    ``_log_run=False`` suppresses pipeline_runs writes when the wrapped fn
+    already logs the same job_name itself (currently ``settlement_pipeline``
+    whose first sub-step logs as ``settlement``, and ``run_backfill`` which
+    logs as ``hist_backfill``). Without the flag those rows would double up.
+    """
     import traceback
+    from datetime import date as _date
     full_name = f"{_job_prefix()}{name}"
     started = datetime.now(timezone.utc)
     console.print(f"\n[bold cyan]{'─' * 60}[/bold cyan]")
     console.print(f"[bold cyan]Job: {full_name} @ {started.strftime('%H:%M:%S UTC')}[/bold cyan]")
     console.print(f"[bold cyan]{'─' * 60}[/bold cyan]\n")
+
+    run_id = None
+    if _log_run:
+        try:
+            from workers.utils.pipeline_utils import log_pipeline_start
+            run_id = log_pipeline_start(name, _date.today().isoformat())
+        except Exception:
+            # Silent — logging failure must not interfere with the job and
+            # must not add Railway stdout volume. _recent_errors will surface
+            # any underlying DB problem on the next genuine job error.
+            run_id = None
 
     error_msg = None
     try:
@@ -83,6 +106,19 @@ def _run_job(name: str, fn, *args, **kwargs):
         })
         if len(_recent_errors) > _MAX_RECENT_ERRORS:
             _recent_errors.pop(0)
+
+    if _log_run and run_id:
+        try:
+            if status == "completed":
+                from workers.utils.pipeline_utils import log_pipeline_complete
+                log_pipeline_complete(run_id)
+            else:
+                from workers.utils.pipeline_utils import log_pipeline_failed
+                log_pipeline_failed(run_id, error_msg or "unknown error")
+        except Exception:
+            # Silent — see start-log note. cleanup_orphaned_runs sweeps any
+            # row left in 'running' status after >60 min.
+            pass
 
     elapsed = (datetime.now(timezone.utc) - started).total_seconds()
 
@@ -320,7 +356,10 @@ def job_value_bet_alert_evening():
 
 
 def job_settlement():
-    _run_job("settlement", settlement_pipeline)
+    # _log_run=False — settlement_pipeline's first sub-step already logs to
+    # pipeline_runs as job_name='settlement'. Letting the wrapper log too
+    # would write a duplicate row per run.
+    _run_job("settlement", settlement_pipeline, _log_run=False)
 
 
 def job_settle_ready():
@@ -344,7 +383,8 @@ def job_backfill():
     """Match stats/events backfill — micro-batch every 5min, 30 req/run.
     One run ≈ 10-15 fixtures. Picks up where it left off via backfill_progress table."""
     from scripts.backfill_historical import run_backfill
-    _run_job("hist_backfill", run_backfill, max_requests=30)
+    # _log_run=False — run_backfill internally logs job_name='hist_backfill'.
+    _run_job("hist_backfill", run_backfill, max_requests=30, _log_run=False)
 
 
 def job_backfill_coaches():
