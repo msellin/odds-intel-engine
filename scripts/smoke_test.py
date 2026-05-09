@@ -1409,6 +1409,36 @@ def _():
     assert rows[0]["ok"] == 1
 
 
+@test("OBS-LOG-ALL-JOBS — _run_job auto-logs to pipeline_runs")
+def _():
+    """Source guard: _run_job must call log_pipeline_start/complete/failed so
+    the ops dashboard sees every wrapped job, not just the 14 that happen to
+    log themselves. _log_run=False is the intentional opt-out for jobs whose
+    body already logs the same job_name (currently settlement and hist_backfill).
+
+    Reads source text directly so the test runs without apscheduler installed.
+    """
+    src = open("workers/scheduler.py").read()
+    # Locate the _run_job function body (until the next top-level def)
+    start = src.find("def _run_job(")
+    assert start != -1, "_run_job not found in scheduler.py"
+    body_end = src.find("\ndef ", start + 1)
+    body = src[start:body_end]
+    assert "log_pipeline_start" in body, "_run_job must call log_pipeline_start"
+    assert "log_pipeline_complete" in body, "_run_job must call log_pipeline_complete on success"
+    assert "log_pipeline_failed" in body, "_run_job must call log_pipeline_failed on exception"
+    assert "_log_run" in body, "_run_job must support _log_run=False opt-out"
+    # The two known double-log conflicts are explicitly suppressed
+    assert '_run_job("settlement", settlement_pipeline, _log_run=False)' in src, (
+        "settlement wrapper must opt out — settlement_pipeline already logs as 'settlement'"
+    )
+    backfill_idx = src.find('_run_job("hist_backfill"')
+    assert backfill_idx != -1, "hist_backfill wrapper not found"
+    assert "_log_run=False" in src[backfill_idx:backfill_idx + 200], (
+        "hist_backfill wrapper must opt out — run_backfill already logs as 'hist_backfill'"
+    )
+
+
 @test("OBS-POOL-METRIC — get_pool_status returns valid structure")
 def _():
     from workers.api_clients.db import get_pool_status, get_pool
@@ -1906,6 +1936,53 @@ def _():
     assert "if minute < 46 or minute > 55" in h_body, "H window must be 46-55"
     assert "if sh != 0 or sa != 0" in h_body, "H must require 0-0 at entry"
     assert "minute BETWEEN 40 AND 46" in h_body, "H must look up an HT-end snapshot"
+    # Dual-line refinement (2026-05-10): O2.5 if odds > 2.80, else O1.5 if odds > 1.60.
+    # Single-line "odds < 2.10" guard is gone — replaced by the dual-line ladder.
+    assert "o25_odds > 2.80" in h_body, "H must take O2.5 only when its odds > 2.80"
+    assert "o15_odds > 1.60" in h_body, "H must fall back to O1.5 when its odds > 1.60"
+    assert "live_ou_15_over" in h_body, "H must read live_ou_15_over for the fallback"
+
+
+@test("INPLAY-NEW-RED-CARD — Strategy Q (Red Card Overreaction Over 2.5) registered + dispatched")
+def _():
+    """Strategy Q is the only inplay strategy that *requires* a red card —
+    every other strategy excludes red-card matches as noise. This test guards
+    registration, dispatcher routing, and the entry conditions from the spec
+    (red minute 15-55, total goals ≤ 1, 11-man possession ≥ 55%, OU2.5 > 2.30)."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+
+    dict_start = src.index("INPLAY_BOTS = {")
+    dict_end = src.index("\n}\n", dict_start) + 2
+    bots_block = src[dict_start:dict_end]
+    assert '"inplay_q"' in bots_block, (
+        "inplay_q must be registered in INPLAY_BOTS — Red Card Overreaction"
+    )
+
+    disp_start = src.index("def _check_strategy(")
+    disp_end = src.index("\ndef ", disp_start + 1)
+    disp_body = src[disp_start:disp_end]
+    assert 'bot_name == "inplay_q"' in disp_body, "Dispatcher must route inplay_q"
+
+    assert "def _check_strategy_q(cand: dict, pm: dict, has_red_card: bool,\n                      execute_query)" in src, (
+        "_check_strategy_q must accept execute_query — needs red-card lookup from match_events"
+    )
+
+    # Q is currently the last function in the file — slice from def to end-of-file
+    # then trim at the next top-level def if a newer one is added later.
+    q_start = src.index("def _check_strategy_q(")
+    q_after = src[q_start:]
+    next_def = q_after.find("\ndef ", 1)
+    q_body = q_after if next_def < 0 else q_after[:next_def]
+    assert "minute BETWEEN 15 AND 55" in q_body, (
+        "Q must require the red card to fall in minute 15-55 (per spec)"
+    )
+    assert "total_goals > 1" in q_body, "Q must require total goals ≤ 1"
+    assert "eleven_man_poss < 55.0" in q_body, "Q must require 11-man possession ≥ 55%"
+    assert "odds) <= 2.30" in q_body, "Q must require live OU 2.5 over odds > 2.30"
+    assert "if not has_red_card" in q_body, (
+        "Q must early-out when there's no red card — opposite of every other strategy"
+    )
 
 
 @test("INPLAY-STATS-COVERAGE — _is_high_priority lifts goals≤1 + min≥25 matches")

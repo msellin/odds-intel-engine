@@ -95,6 +95,10 @@ INPLAY_BOTS = {
         "description": "Late Favourite Push — 0-0/1-1 min 72-80, home_win_prob ≥ 0.65, live home odds drifted ≥ 2.20, bet Home",
         "strategy": "inplay_n",
     },
+    "inplay_q": {
+        "description": "Red Card Overreaction — red 15-55, total goals ≤ 1, 11-man possession ≥ 55%, live OU2.5 over ≥ 2.30, bet Over 2.5",
+        "strategy": "inplay_q",
+    },
     # inplay_f (Odds Momentum Reversal) was DROPPED 2026-05-08 after the
     # 11-day backfill replay placed 78 settled F-bets at -6.4% ROI. 4/5
     # AI tools (replies 1, 2, 4-probation, 5) recommended drop; reply 5's
@@ -679,6 +683,8 @@ def _check_strategy(bot_name: str, cand: dict, pm: dict,
         return _check_strategy_m(cand, pm, has_red_card)
     elif bot_name == "inplay_n":
         return _check_strategy_n(cand, pm, has_red_card)
+    elif bot_name == "inplay_q":
+        return _check_strategy_q(cand, pm, has_red_card, execute_query)
     # inplay_f intentionally not dispatched — dropped 2026-05-08
     return None
 
@@ -1315,10 +1321,22 @@ def _check_strategy_h(cand: dict, pm: dict, has_red_card: bool,
     if pm_xg_total <= 0:
         return None
 
-    odds = cand.get("live_ou_25_over")
-    if not odds or float(odds) < 2.10:
+    # Dual-line selection (INPLAY-NEW-HT-RESTART, 2026-05-10):
+    #   • O2.5 if its odds > 2.80 (market still drifted toward Under — strongest edge)
+    #   • else O1.5 if its odds > 1.60 (more conservative when O2.5 is shorter-priced)
+    o25_odds = cand.get("live_ou_25_over")
+    o15_odds = cand.get("live_ou_15_over")
+    o25_odds = float(o25_odds) if o25_odds else 0.0
+    o15_odds = float(o15_odds) if o15_odds else 0.0
+
+    if o25_odds > 2.80:
+        line = 2.5
+        odds = o25_odds
+    elif o15_odds > 1.60:
+        line = 1.5
+        odds = o15_odds
+    else:
         return None
-    odds = float(odds)
 
     # HT-end snapshot lookup. Tolerant 40-46 minute range so a missed cycle
     # at exactly minute 45 doesn't break the trigger.
@@ -1360,7 +1378,10 @@ def _check_strategy_h(cand: dict, pm: dict, has_red_card: bool,
     remaining_minutes = max(1, 90 - minute)
     lambda_remaining = posterior * remaining_minutes / 90.0
 
-    model_prob = _poisson_over_prob(lambda_remaining, 2.5)  # need 3+ goals total = 3+ remaining since 0-0
+    # Score is 0-0, so total goals at FT == remaining goals.
+    # _poisson_over_prob(lam, line) returns P(X > line) under Poisson(lam),
+    # which is exactly P(over line) for an integer-valued goal count.
+    model_prob = _poisson_over_prob(lambda_remaining, line)
 
     min_edge = 2.0 if is_real else 3.5
     implied = _implied_prob(odds)
@@ -1370,13 +1391,14 @@ def _check_strategy_h(cand: dict, pm: dict, has_red_card: bool,
 
     return {
         "market": "O/U",
-        "selection": "over 2.5",
+        "selection": f"over {line}",
         "odds": odds,
         "model_prob": round(model_prob, 4),
         "edge": round(edge, 2),
         "posterior_rate": round(posterior, 3),
         "prematch_xg_total": round(pm_xg_total, 2),
         "extra": {
+            "line": line,
             "ht_xg_total": round(float(ht_xg_h or 0) + float(ht_xg_a or 0), 2) if ht_xg_h is not None else None,
             "ht_sot_total": ht_sot,
             "prematch_o25": round(pm_o25, 3),
@@ -1824,5 +1846,115 @@ def _check_strategy_n(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
             "pm_home_prob": round(pm_home_prob, 3),
             "lam_h_remaining": round(lam_h, 3),
             "lam_a_remaining": round(lam_a, 3),
+        },
+    }
+
+
+def _check_strategy_q(cand: dict, pm: dict, has_red_card: bool,
+                      execute_query) -> dict | None:
+    """
+    Strategy Q: Red Card Overreaction Over 2.5.
+
+    Thesis (1/5 first-round AI consensus, but unique angle): all other
+    strategies *exclude* red-card matches, so this strategy is the only one
+    that monetises them. When a side gets a red card in minute 15-55 with
+    total goals ≤ 1, the 11-man team often dominates territory and shots,
+    yet the live OU 2.5 market drifts toward Under because of the dampening
+    effect on the 10-man side. We bet Over 2.5 when the 11-man team is
+    showing possession dominance.
+
+    Entry:
+      • Match has a red card event in minute 15-55 (looked up per snapshot)
+      • Current minute > red_minute and ≤ 75 (don't enter too late)
+      • Total goals ≤ 1
+      • 11-man team possession ≥ 55%
+      • Live OU 2.5 over odds > 2.30 (drifted toward Under)
+      • prematch xG total > 0 (sanity)
+      • Bayesian-posterior + Poisson edge ≥ 3% (real) / 4.5% (proxy)
+
+    The Bayesian model uses standard remaining-Poisson — we deliberately do
+    NOT add a hand-tuned red-card uplift to the lambda. The edge comes from
+    the market drift, not from a model prediction tweak. If the market is
+    pricing the surge correctly, we won't see edge and won't bet.
+    """
+    minute = cand["minute"] or 0
+    if minute > 75:
+        return None  # Too late to expect another goal even with the man-up
+    if not has_red_card:
+        return None
+
+    sh, sa = cand["score_home"] or 0, cand["score_away"] or 0
+    total_goals = sh + sa
+    if total_goals > 1:
+        return None
+
+    # Find the first red card 15-55 + which team got it
+    match_id = cand["match_id"]
+    rows = execute_query("""
+        SELECT minute, team
+        FROM match_events
+        WHERE match_id = %s
+          AND event_type IN ('red_card', 'yellow_red_card')
+          AND minute BETWEEN 15 AND 55
+        ORDER BY minute ASC
+        LIMIT 1
+    """, (match_id,))
+    if not rows:
+        return None  # Red card outside the 15-55 window — not our setup
+
+    red_minute = int(rows[0]["minute"])
+    red_team = rows[0]["team"]  # 'home' or 'away'
+    if minute <= red_minute:
+        return None  # Snapshot must be AFTER the red card
+
+    eleven_man_team = "away" if red_team == "home" else "home"
+
+    poss_h = float(cand["possession_home"] or 50)
+    eleven_man_poss = poss_h if eleven_man_team == "home" else (100.0 - poss_h)
+    if eleven_man_poss < 55.0:
+        return None
+
+    odds = cand.get("live_ou_25_over")
+    if not odds or float(odds) <= 2.30:
+        return None
+    odds = float(odds)
+
+    pm_xg_total = float(pm.get("prematch_xg_home") or 0) + float(pm.get("prematch_xg_away") or 0)
+    if pm_xg_total <= 0:
+        return None
+
+    # Determine xg-source for edge floor — match the convention used by A/D/H
+    xg_h, xg_a, is_real = _compute_live_xg(cand)
+    live_xg = xg_h + xg_a
+    posterior = _bayesian_posterior(pm_xg_total, live_xg, minute)
+    remaining = max(1, 90 - minute)
+    lambda_remaining = posterior * remaining / 90.0
+    goals_needed = 3 - total_goals
+    if goals_needed <= 0:
+        return None
+
+    model_prob = _poisson_over_prob(lambda_remaining, goals_needed - 0.5)
+    implied = _implied_prob(odds)
+    edge = (model_prob - implied) * 100
+
+    min_edge = 3.0 if is_real else 4.5
+    if edge < min_edge:
+        return None
+
+    return {
+        "market": "O/U",
+        "selection": "over 2.5",
+        "odds": odds,
+        "model_prob": round(model_prob, 4),
+        "edge": round(edge, 2),
+        "posterior_rate": round(posterior, 3),
+        "prematch_xg_total": round(pm_xg_total, 2),
+        "extra": {
+            "score_state": f"{sh}-{sa}",
+            "red_minute": red_minute,
+            "red_team": red_team,
+            "eleven_man_team": eleven_man_team,
+            "eleven_man_possession": round(eleven_man_poss, 1),
+            "xg_source": "live" if is_real else "shot_proxy",
         },
     }

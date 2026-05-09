@@ -261,10 +261,21 @@ def replay_strategy_h(cand: dict, pm: dict, has_red_card: bool,
     if pm_xg_total <= 0:
         return None
 
-    odds = cand.get("live_ou_25_over")
-    if not odds or float(odds) < 2.10:
+    # Dual-line ladder — mirrors live _check_strategy_h (2026-05-10):
+    #   • O2.5 if odds > 2.80
+    #   • else O1.5 if odds > 1.60
+    o25_odds = cand.get("live_ou_25_over")
+    o15_odds = cand.get("live_ou_15_over")
+    o25_odds = float(o25_odds) if o25_odds else 0.0
+    o15_odds = float(o15_odds) if o15_odds else 0.0
+    if o25_odds > 2.80:
+        line = 2.5
+        odds = o25_odds
+    elif o15_odds > 1.60:
+        line = 1.5
+        odds = o15_odds
+    else:
         return None
-    odds = float(odds)
 
     # HT-end snapshot lookup — minute 40-46, latest first
     mid = str(cand["match_id"])
@@ -298,7 +309,7 @@ def replay_strategy_h(cand: dict, pm: dict, has_red_card: bool,
     posterior = inplay_bot._bayesian_posterior(pm_xg_total, live_xg, minute)
     remaining_minutes = max(1, 90 - minute)
     lambda_remaining = posterior * remaining_minutes / 90.0
-    model_prob = inplay_bot._poisson_over_prob(lambda_remaining, 2.5)
+    model_prob = inplay_bot._poisson_over_prob(lambda_remaining, line)
 
     min_edge = 2.0 if is_real else 3.5
     implied = inplay_bot._implied_prob(odds)
@@ -308,11 +319,12 @@ def replay_strategy_h(cand: dict, pm: dict, has_red_card: bool,
 
     return {
         "market": "O/U",
-        "selection": "over 2.5",
+        "selection": f"over {line}",
         "odds": odds,
         "model_prob": round(model_prob, 4),
         "edge": round(edge, 2),
         "extra": {
+            "line": line,
             "ht_sot_total": ht_sot,
             "prematch_o25": round(pm_o25, 3),
         },
