@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-09 — 3 new inplay bots added (I: Favourite Stall, J: Goal Debt O1.5, L: Goal Contagion). No-stats strategies that fire on 88% of games currently unserved. 9-AI analysis (2 prompt rounds). live_ou_15_over now fetched in candidates. Goal contagion window state added to run_inplay_strategies.
+> Last updated: 2026-05-09 — AF quota exhaustion incident (74,746/75K on end-of-season Saturday). Upgraded to Mega (150K/day, $39/mo). Added hard quota floor to `_get()`. AF-QUOTA-AUDIT task added with full spec and acceptance criteria.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
