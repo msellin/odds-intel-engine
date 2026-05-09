@@ -32,8 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from workers.api_clients.api_football import (
     get_remaining_requests,
     get_fixtures_by_league_season,
-    get_fixture_statistics,
-    get_fixture_events,
+    get_fixtures_batch,
     fixture_to_match_dict,
     parse_fixture_stats,
     parse_fixture_events,
@@ -366,113 +365,109 @@ def backfill_league_season(
     # not historical completed matches. Confirmed via live test 2026-04-30.
     console.print("  Odds: skipped (AF doesn't serve historical odds for completed fixtures)")
 
-    # Step 4: Fetch statistics for matches that need them
+    # Step 4 + 5: Batch-fetch stats AND events for matches that need either, in
+    # one /fixtures?ids= round (BACKFILL-IDS-BATCH). One call returns 20 fixtures,
+    # each with embedded statistics + events — replaces 2N individual calls with
+    # ceil(N/20) batched calls (~40× fewer AF requests). Embedding works for
+    # historical fixtures back to 2023 (verified 2026-05-10 via probe).
     need_stats = get_af_ids_needing("match_stats", match_map) if skip_existing else set(match_af_to_uuid.keys())
-    stats_stored = 0
-
-    for af_id in need_stats:
-        if _shutdown_requested:
-            break
-        if budget_tracker["used"] >= budget_tracker["max"]:
-            break
-        if league_calls >= league_cap:
-            console.print(f"  [yellow]League cap ({league_cap}) reached — moving to next[/yellow]")
-            break
-
-        match_uuid = match_af_to_uuid.get(af_id)
-        if not match_uuid:
-            continue
-
-        try:
-            stats_resp = get_fixture_statistics(af_id)
-            stats["api_calls"] += 1
-            budget_tracker["used"] += 1
-            league_calls += 1
-
-            if stats_resp:
-                parsed = parse_fixture_stats(stats_resp)
-                if parsed:
-                    store_match_stats_full(match_uuid, parsed)
-                    stats_stored += 1
-        except Exception as e:
-            console.print(f"  [red]Stats error for AF {af_id}: {e}[/red]")
-
-    stats["stats_stored"] = stats_stored
-    update_progress(league_id, season, stats_done=progress.get("stats_done", 0) + stats_stored)
-    console.print(f"  Stored stats for {stats_stored} matches")
-
-    if _shutdown_requested:
-        return stats
-
-    # Step 5: Fetch events for matches that need them
     need_events = get_af_ids_needing("match_events", match_map) if skip_existing else set(match_af_to_uuid.keys())
+    union_ids = list(need_stats | need_events)
+
+    # Respect remaining budget: stop adding chunks of 20 once we'd cross the cap.
+    chunk_size = 20
+    remaining_budget = budget_tracker["max"] - budget_tracker["used"]
+    remaining_league = league_cap - league_calls
+    max_calls = max(0, min(remaining_budget, remaining_league))
+    max_ids = max_calls * chunk_size
+    if len(union_ids) > max_ids:
+        console.print(f"  [yellow]Budget/league cap limits batch to {max_ids} of {len(union_ids)} matches[/yellow]")
+        union_ids = union_ids[:max_ids]
+
+    stats_stored = 0
     events_stored = 0
 
-    for af_id in need_events:
-        if _shutdown_requested:
-            break
-        if budget_tracker["used"] >= budget_tracker["max"]:
-            break
-        if league_calls >= league_cap:
-            console.print(f"  [yellow]League cap ({league_cap}) reached — moving to next[/yellow]")
-            break
-
-        match_uuid = match_af_to_uuid.get(af_id)
-        if not match_uuid:
-            continue
-
-        # Find home team API ID for this fixture
-        fixture_data = next((f for f in finished if f["fixture"]["id"] == af_id), None)
-        home_team_api_id = fixture_data["teams"]["home"]["id"] if fixture_data else None
-
+    if union_ids and not _shutdown_requested:
         try:
-            events_resp = get_fixture_events(af_id)
-            stats["api_calls"] += 1
-            budget_tracker["used"] += 1
-            league_calls += 1
-
-            if events_resp:
-                parsed = parse_fixture_events(events_resp)
-                if parsed:
-                    now = datetime.now(timezone.utc).isoformat()
-                    rows = []
-                    for ev in parsed:
-                        team_side = "home"
-                        if home_team_api_id and ev.get("team_api_id"):
-                            team_side = "home" if ev["team_api_id"] == home_team_api_id else "away"
-                        rows.append((
-                            match_uuid,
-                            max(0, ev.get("minute", 0)),
-                            ev.get("added_time", 0),
-                            ev["event_type"],
-                            team_side,
-                            ev.get("player_name"),
-                            ev.get("detail"),
-                            ev.get("af_event_order"),
-                            now,
-                        ))
-                    if rows:
-                        from psycopg2.extras import execute_values
-                        with get_conn() as conn:
-                            with conn.cursor() as cur:
-                                execute_values(cur,
-                                    """
-                                    INSERT INTO match_events
-                                        (match_id, minute, added_time, event_type, team,
-                                         player_name, detail, af_event_order, created_at)
-                                    VALUES %s
-                                    ON CONFLICT DO NOTHING
-                                    """,
-                                    rows,
-                                )
-                            conn.commit()
-                        events_stored += 1
+            prefetched = get_fixtures_batch(union_ids)
+            calls_made = (len(union_ids) + chunk_size - 1) // chunk_size
+            stats["api_calls"] += calls_made
+            budget_tracker["used"] += calls_made
+            league_calls += calls_made
+            console.print(f"  Batch-fetched {len(prefetched)}/{len(union_ids)} fixtures ({calls_made} AF calls)")
         except Exception as e:
-            console.print(f"  [red]Events error for AF {af_id}: {e}[/red]")
+            console.print(f"  [red]Batch fetch failed: {e}[/red]")
+            prefetched = {}
 
+        events_rows: list[tuple] = []
+        now = datetime.now(timezone.utc).isoformat()
+
+        for af_id, fixture in prefetched.items():
+            if _shutdown_requested:
+                break
+            match_uuid = match_af_to_uuid.get(af_id)
+            if not match_uuid:
+                continue
+            home_team_api_id = (fixture.get("teams") or {}).get("home", {}).get("id")
+
+            # Stats
+            if af_id in need_stats:
+                try:
+                    parsed = parse_fixture_stats(fixture.get("statistics") or [])
+                    if parsed:
+                        store_match_stats_full(match_uuid, parsed)
+                        stats_stored += 1
+                except Exception as e:
+                    console.print(f"  [red]Stats parse error for AF {af_id}: {e}[/red]")
+
+            # Events — collect rows; bulk insert below
+            if af_id in need_events:
+                try:
+                    parsed = parse_fixture_events(fixture.get("events") or [])
+                    if parsed:
+                        for ev in parsed:
+                            team_side = "home"
+                            if home_team_api_id and ev.get("team_api_id"):
+                                team_side = "home" if ev["team_api_id"] == home_team_api_id else "away"
+                            events_rows.append((
+                                match_uuid,
+                                max(0, ev.get("minute", 0)),
+                                ev.get("added_time", 0),
+                                ev["event_type"],
+                                team_side,
+                                ev.get("player_name"),
+                                ev.get("detail"),
+                                ev.get("af_event_order"),
+                                now,
+                            ))
+                        events_stored += 1
+                except Exception as e:
+                    console.print(f"  [red]Events parse error for AF {af_id}: {e}[/red]")
+
+        if events_rows:
+            from psycopg2.extras import execute_values
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    execute_values(cur,
+                        """
+                        INSERT INTO match_events
+                            (match_id, minute, added_time, event_type, team,
+                             player_name, detail, af_event_order, created_at)
+                        VALUES %s
+                        ON CONFLICT DO NOTHING
+                        """,
+                        events_rows,
+                    )
+                conn.commit()
+
+    stats["stats_stored"] = stats_stored
     stats["events_stored"] = events_stored
-    update_progress(league_id, season, events_done=progress.get("events_done", 0) + events_stored)
-    console.print(f"  Stored events for {events_stored} matches")
+    update_progress(
+        league_id, season,
+        stats_done=progress.get("stats_done", 0) + stats_stored,
+        events_done=progress.get("events_done", 0) + events_stored,
+    )
+    console.print(f"  Stored stats for {stats_stored} matches, events for {events_stored} matches")
 
     # Check if this league/season is complete
     progress_now = get_or_create_progress(league_id, season, phase)
