@@ -435,6 +435,49 @@ def _():
     assert r2["result"] == "won", f"over_under_25 under with 2 goals should win, got {r2['result']}"
 
 
+@test("settle_bet_result — BTTS yes/no settle from both teams scoring")
+def _():
+    from workers.jobs.settlement import settle_bet_result
+    # BTTS yes — both teams scored — should win
+    bet_yes = {"market": "BTTS", "selection": "yes", "stake": "10", "odds_at_pick": "1.80"}
+    r = settle_bet_result(bet_yes, home_goals=1, away_goals=1, closing_odds=None)
+    assert r["result"] == "won", f"BTTS yes 1-1 should win, got {r['result']}"
+    assert r["pnl"] == 8.0, f"Expected pnl=8.0, got {r['pnl']}"
+    # BTTS yes — clean sheet — should lose
+    r2 = settle_bet_result(bet_yes, home_goals=2, away_goals=0, closing_odds=None)
+    assert r2["result"] == "lost", f"BTTS yes 2-0 should lose, got {r2['result']}"
+    # BTTS no — clean sheet — should win
+    bet_no = {"market": "BTTS", "selection": "no", "stake": "10", "odds_at_pick": "2.10"}
+    r3 = settle_bet_result(bet_no, home_goals=2, away_goals=0, closing_odds=None)
+    assert r3["result"] == "won", f"BTTS no 2-0 should win, got {r3['result']}"
+    # BTTS no — both scored — should lose
+    r4 = settle_bet_result(bet_no, home_goals=1, away_goals=1, closing_odds=None)
+    assert r4["result"] == "lost", f"BTTS no 1-1 should lose, got {r4['result']}"
+
+
+@test("settle_bet_result — O/U with line in selection (inplay format)")
+def _():
+    """Inplay bots store market='O/U' with line in selection (e.g. 'over 1.5').
+    Default-2.5 line bug used to mis-settle every non-2.5 inplay O/U."""
+    from workers.jobs.settlement import settle_bet_result
+    # over 1.5 — 2 goals — should win (was lost under default-2.5 bug)
+    bet = {"market": "O/U", "selection": "over 1.5", "stake": "10", "odds_at_pick": "1.50"}
+    r = settle_bet_result(bet, home_goals=2, away_goals=0, closing_odds=None)
+    assert r["result"] == "won", f"O/U over 1.5 with 2 goals should win, got {r['result']}"
+    # over 3.5 — 3 goals — should lose (was won under default-2.5 bug)
+    bet2 = {"market": "O/U", "selection": "over 3.5", "stake": "10", "odds_at_pick": "2.50"}
+    r2 = settle_bet_result(bet2, home_goals=2, away_goals=1, closing_odds=None)
+    assert r2["result"] == "lost", f"O/U over 3.5 with 3 goals should lose, got {r2['result']}"
+    # under 3.5 — 3 goals — should win (was lost under default-2.5 bug)
+    bet3 = {"market": "O/U", "selection": "under 3.5", "stake": "10", "odds_at_pick": "1.60"}
+    r3 = settle_bet_result(bet3, home_goals=1, away_goals=2, closing_odds=None)
+    assert r3["result"] == "won", f"O/U under 3.5 with 3 goals should win, got {r3['result']}"
+    # over 25 (legacy no-dot encoding) — 3 goals — should win (line=2.5)
+    bet4 = {"market": "O/U", "selection": "over 25", "stake": "10", "odds_at_pick": "1.90"}
+    r4 = settle_bet_result(bet4, home_goals=2, away_goals=1, closing_odds=None)
+    assert r4["result"] == "won", f"O/U over 25 with 3 goals should win, got {r4['result']}"
+
+
 @test("_poisson_over_prob — no NaN/inf at edge cases (lam=0, lam=0.001)")
 def _():
     from workers.jobs.inplay_bot import _poisson_over_prob

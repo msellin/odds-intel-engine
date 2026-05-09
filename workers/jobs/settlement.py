@@ -107,14 +107,38 @@ def find_result_for_match(db_home: str, db_away: str,
 
 # ─── Bet settlement logic ────────────────────────────────────────────────────
 
+def _parse_ou_line(market: str, selection: str) -> float | None:
+    """Extract the O/U line from market or selection tokens.
+
+    Daily-pipeline bets store the line in market (`over_under_25`); inplay bets
+    store it in selection (`over 1.5`). Walk both, return the first numeric in
+    (0, 10). `25` (no dot) is interpreted as 2.5 to match the legacy encoding.
+    """
+    for token in market.replace("/", "_").split("_") + selection.split():
+        if token in ("over", "under", "o", "u", ""):
+            continue
+        try:
+            if "." in token:
+                v = float(token)
+            elif token.isdigit() and len(token) == 2:
+                v = int(token) / 10
+            else:
+                v = float(token)
+        except (ValueError, TypeError):
+            continue
+        if 0 < v < 10:
+            return v
+    return None
+
+
 def settle_bet_result(bet: dict, home_goals: int, away_goals: int,
                       closing_odds: float | None) -> dict:
     """
     Determine if a bet won or lost.
     Returns dict with result, pnl, clv.
     """
-    market = bet["market"].lower()
-    selection = bet["selection"].lower()
+    market = bet["market"].lower().strip()
+    selection = bet["selection"].lower().strip()
     stake = float(bet["stake"])
     odds = float(bet["odds_at_pick"])
     total_goals = home_goals + away_goals
@@ -129,20 +153,19 @@ def settle_bet_result(bet: dict, home_goals: int, away_goals: int,
         elif selection == "away" and away_goals > home_goals:
             won = True
 
-    elif "over_under" in market or "o/u" in market:
-        # Extract line from market name: "over_under_25" → 2.5
-        line = 2.5
-        for part in market.split("_"):
-            try:
-                line = int(part) / 10 if len(part) == 2 else float(part)
-                if 0 < line < 10:
-                    break
-            except ValueError:
-                continue
+    elif "over_under" in market or "o/u" in market or market == "ou":
+        line = _parse_ou_line(market, selection)
+        if line is not None:
+            if "over" in selection and total_goals > line:
+                won = True
+            elif "under" in selection and total_goals < line:
+                won = True
 
-        if "over" in selection and total_goals > line:
+    elif market == "btts":
+        both_scored = home_goals >= 1 and away_goals >= 1
+        if selection == "yes" and both_scored:
             won = True
-        elif "under" in selection and total_goals < line:
+        elif selection == "no" and not both_scored:
             won = True
 
     pnl = round((odds - 1) * stake if won else -stake, 2)
