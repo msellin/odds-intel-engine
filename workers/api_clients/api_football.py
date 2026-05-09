@@ -1389,7 +1389,16 @@ def get_transfers(team_id: int) -> list[dict]:
 
 
 def parse_transfers(transfers_response: list[dict], team_api_id: int) -> list[dict]:
-    """Parse transfers response into flat rows for team_transfers table."""
+    """Parse transfers response into flat rows for team_transfers table.
+
+    AF occasionally returns malformed dates (e.g. "010897" — DDMMYY without
+    separators). Anything that's not a parseable ISO YYYY-MM-DD is dropped:
+    the conflict key includes transfer_date, so a row with a bad date can't
+    be deduped and would also fail the DATE column. Skipping is safer than
+    losing the whole batch.
+    """
+    from datetime import date as _date
+
     rows = []
     for item in transfers_response:
         player = item.get("player", {})
@@ -1402,11 +1411,18 @@ def parse_transfers(transfers_response: list[dict], team_api_id: int) -> list[di
             to_team = teams.get("in", {})
             date_str = t.get("date")
 
+            transfer_date = None
+            if date_str:
+                try:
+                    transfer_date = _date.fromisoformat(date_str[:10]).isoformat()
+                except (ValueError, TypeError):
+                    continue
+
             rows.append({
                 "team_api_id": team_api_id,
                 "player_id": player_id,
                 "player_name": player_name,
-                "transfer_date": date_str[:10] if date_str else None,
+                "transfer_date": transfer_date,
                 "transfer_type": t.get("type"),
                 "from_team_api_id": from_team.get("id"),
                 "from_team_name": from_team.get("name"),

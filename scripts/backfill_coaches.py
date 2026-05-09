@@ -1,7 +1,9 @@
 """
-Backfill team coaches for all teams not yet in team_coaches.
+Backfill team coaches for all teams not yet probed.
 
-One AF call per team. ~6,000 teams remaining → ~7 min at 70ms/call.
+One AF call per team. Every team is marked in team_coaches_cache after the
+attempt (success, empty response, or error) so AF-empty teams don't re-enter
+the queue on the next run.
 
 Usage:
   python scripts/backfill_coaches.py              # full run
@@ -23,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from workers.api_clients.api_football import get_coaches, parse_coaches, budget
 from workers.api_clients.supabase_client import store_team_coaches
-from workers.api_clients.db import execute_query
+from workers.api_clients.db import execute_query, execute_write
 
 console = Console()
 
@@ -33,7 +35,7 @@ BUDGET_CHECK_EVERY = 50 # recheck remaining quota every N teams
 
 
 def _missing_teams(limit: int | None = None) -> list[int]:
-    """Single SQL query: AF team IDs present in matches but absent from team_coaches."""
+    """Single SQL query: AF team IDs in matches but not yet probed for coaches."""
     sql = """
         SELECT DISTINCT af_id
         FROM (
@@ -41,13 +43,22 @@ def _missing_teams(limit: int | None = None) -> list[int]:
             UNION
             SELECT away_team_api_id AS af_id FROM matches WHERE away_team_api_id IS NOT NULL
         ) t
-        WHERE af_id NOT IN (SELECT DISTINCT team_af_id FROM team_coaches)
+        WHERE af_id NOT IN (SELECT team_af_id FROM team_coaches_cache)
         ORDER BY af_id
     """
     if limit:
         sql += f" LIMIT {limit}"
     rows = execute_query(sql)
     return [r["af_id"] for r in rows]
+
+
+def _mark_fetched(team_af_id: int) -> None:
+    """Record team as attempted in cache — prevents re-queuing on empty/error."""
+    execute_write(
+        "INSERT INTO team_coaches_cache (team_af_id, fetched_at) VALUES (%s, NOW())"
+        " ON CONFLICT (team_af_id) DO UPDATE SET fetched_at = NOW()",
+        (team_af_id,),
+    )
 
 
 def run(limit: int | None = None, dry_run: bool = False) -> int:
@@ -100,6 +111,8 @@ def run(limit: int | None = None, dry_run: bool = False) -> int:
             except Exception as e:
                 errors += 1
                 progress.console.print(f"  [yellow]team {team_af_id}: {e}[/yellow]")
+            finally:
+                _mark_fetched(team_af_id)
 
             progress.advance(task)
             time.sleep(RATE_DELAY)
@@ -128,6 +141,8 @@ def run_batch(batch_size: int = 10) -> None:
         except Exception as e:
             errors += 1
             console.print(f"  [yellow]coaches {team_af_id}: {e}[/yellow]")
+        finally:
+            _mark_fetched(team_af_id)
         time.sleep(RATE_DELAY)
 
     if stored or errors:
