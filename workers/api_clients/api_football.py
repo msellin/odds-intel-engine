@@ -34,7 +34,13 @@ _rate_lock = threading.Lock()
 # Used by scheduler to skip non-critical jobs when budget is low.
 
 class BudgetTracker:
-    """Thread-safe daily API call budget tracker for API-Football Mega (150K/day)."""
+    """Thread-safe daily API call budget tracker for API-Football Mega (150K/day).
+
+    Per-endpoint attribution: record_call(endpoint) maintains a counter dict so we
+    can answer "where did the 26K go?" via the hourly sync's JSONB write to
+    api_budget_log. The dict snapshots and resets each hour to fit cleanly inside
+    one logged interval.
+    """
 
     def __init__(self, daily_limit: int = 150000, reserve: int = 5000):
         self.daily_limit = daily_limit
@@ -42,6 +48,10 @@ class BudgetTracker:
         self.calls_today = 0
         self.reset_date = date.today()
         self._lock = threading.Lock()
+        # endpoint → calls since the most recent hourly sync. Snapshotted + reset by sync_with_server.
+        self._endpoint_counts: dict[str, int] = {}
+        # endpoint → cumulative calls today. Reset only on new UTC day.
+        self._endpoint_counts_today: dict[str, int] = {}
 
     def can_call(self) -> bool:
         """Check if we have budget for another API call."""
@@ -49,11 +59,29 @@ class BudgetTracker:
             self._maybe_reset()
             return self.calls_today < (self.daily_limit - self.reserve)
 
-    def record_call(self):
-        """Record one API call."""
+    def record_call(self, endpoint: str = "unknown"):
+        """Record one API call, attributed to an endpoint label.
+
+        endpoint is the same path passed to _get (e.g. 'fixtures', 'odds/live',
+        'fixtures/statistics'). Unknown is the fallback for legacy direct callers.
+        """
         with self._lock:
             self._maybe_reset()
             self.calls_today += 1
+            self._endpoint_counts[endpoint] = self._endpoint_counts.get(endpoint, 0) + 1
+            self._endpoint_counts_today[endpoint] = self._endpoint_counts_today.get(endpoint, 0) + 1
+
+    def endpoint_counts_today(self) -> dict[str, int]:
+        """Snapshot of cumulative per-endpoint counts since last UTC midnight."""
+        with self._lock:
+            self._maybe_reset()
+            return dict(self._endpoint_counts_today)
+
+    def _drain_endpoint_counts(self) -> dict[str, int]:
+        """Pop the per-hour counter snapshot. Caller must already hold _lock."""
+        snap = dict(self._endpoint_counts)
+        self._endpoint_counts.clear()
+        return snap
 
     def remaining(self) -> int:
         """Estimated remaining calls today."""
@@ -68,7 +96,12 @@ class BudgetTracker:
             return (self.calls_today / self.daily_limit) * 100 if self.daily_limit else 0
 
     def sync_with_server(self, source: str = "sync"):
-        """Sync local count with AF /status endpoint. Call at startup + hourly."""
+        """Sync local count with AF /status endpoint. Call at startup + hourly.
+
+        Also drains the per-endpoint counter for this interval and persists it as
+        JSONB on the api_budget_log row, so post-hoc analysis can answer
+        "where did the calls go?" without instrumenting individual jobs.
+        """
         try:
             info = get_remaining_requests()
             current = info.get("current", 0)
@@ -77,16 +110,25 @@ class BudgetTracker:
                 with self._lock:
                     self.calls_today = current
                     self.reset_date = date.today()
+                    interval_breakdown = self._drain_endpoint_counts()
+                    today_breakdown = dict(self._endpoint_counts_today)
                 console.print(f"[dim]Budget sync: {current} calls used today, "
                               f"{remaining} remaining[/dim]")
                 # Persist to DB so ops dashboard can display real AF budget
                 try:
+                    import json as _json
                     from workers.api_clients.db import execute_write
                     execute_write(
-                        """INSERT INTO api_budget_log (calls_today, remaining, daily_limit, source)
-                           VALUES (%s, %s, %s, %s)""",
-                        [current, remaining if remaining is not None else self.daily_limit - current,
-                         self.daily_limit, source]
+                        """INSERT INTO api_budget_log
+                           (calls_today, remaining, daily_limit, source,
+                            endpoint_breakdown, endpoint_breakdown_today)
+                           VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb)""",
+                        [current,
+                         remaining if remaining is not None else self.daily_limit - current,
+                         self.daily_limit,
+                         source,
+                         _json.dumps(interval_breakdown),
+                         _json.dumps(today_breakdown)]
                     )
                 except Exception as db_err:
                     console.print(f"[dim]Budget log write failed: {db_err}[/dim]")
@@ -111,6 +153,8 @@ class BudgetTracker:
         if today != self.reset_date:
             self.calls_today = 0
             self.reset_date = today
+            self._endpoint_counts.clear()
+            self._endpoint_counts_today.clear()
 
 
 # Module-level singleton — shared by all jobs
@@ -169,8 +213,8 @@ def _get(endpoint: str, params: dict = None) -> dict:
     else:
         raise last_exc
 
-    # Track budget
-    budget.record_call()
+    # Track budget — endpoint label powers per-endpoint attribution in api_budget_log
+    budget.record_call(endpoint)
 
     data = resp.json()
     if data.get("errors") and len(data["errors"]) > 0:
@@ -1283,9 +1327,42 @@ def parse_h2h(h2h_response: list[dict], home_team_api_id: int = None) -> dict:
 # ─── Player Sidelined (T11) ───────────────────────────────────────────────────
 
 def get_sidelined(player_id: int) -> list[dict]:
-    """Get full injury/sidelined history for a player."""
+    """Get full injury/sidelined history for a player. Per-id form (legacy/fallback).
+
+    Prefer get_sidelined_by_players_bulk() — cuts N calls to ceil(N/20).
+    """
     data = _get("sidelined", {"player": player_id})
     return data.get("response", [])
+
+
+# Hard cap from AF: "Maximum of 20 ids allowed."
+_SIDELINED_BULK_LIMIT = 20
+
+
+def get_sidelined_by_players_bulk(player_ids: list[int]) -> dict[int, list[dict]]:
+    """Fetch sidelined history for many players in one call per 20-id chunk.
+
+    AF endpoint: GET /sidelined?players=A-B-C  (plural form, hyphen-joined, max 20).
+    Returns {player_id: [sidelined_entry, ...]} flattened across chunks.
+    Players with no sidelined history are absent from the result.
+    """
+    out: dict[int, list[dict]] = {}
+    if not player_ids:
+        return out
+    deduped = list(dict.fromkeys(int(p) for p in player_ids if p is not None))
+    for i in range(0, len(deduped), _SIDELINED_BULK_LIMIT):
+        chunk = deduped[i:i + _SIDELINED_BULK_LIMIT]
+        try:
+            data = _get("sidelined", {"players": "-".join(map(str, chunk))})
+        except Exception as e:
+            console.print(f"[yellow]/sidelined bulk failed on chunk size {len(chunk)}: {e}[/yellow]")
+            continue
+        for entry in data.get("response", []):
+            pid = entry.get("id")
+            sidelined = entry.get("sidelined") or []
+            if pid is not None:
+                out[int(pid)] = sidelined
+    return out
 
 
 def parse_sidelined(sidelined_response: list[dict], player_id: int,

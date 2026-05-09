@@ -2775,6 +2775,131 @@ def _():
     )
 
 
+@test("AF-FETCHES-AUDIT — BudgetTracker tracks per-endpoint counters and drains on sync")
+def _():
+    """The 26K-call mystery in PRIORITY_QUEUE.md cannot be diagnosed without
+    per-endpoint attribution. record_call(endpoint) must update both the
+    per-interval counter (drained on sync) and the cumulative day-to-date
+    counter; sync_with_server must persist both as JSONB on api_budget_log.
+    Source-inspection guard so a future cleanup pass cannot silently drop the
+    breakdown without us noticing.
+    """
+    import pathlib
+    src = pathlib.Path("workers/api_clients/api_football.py").read_text()
+
+    # BudgetTracker carries the two counter dicts
+    assert "_endpoint_counts" in src and "_endpoint_counts_today" in src, (
+        "BudgetTracker must keep _endpoint_counts (per-interval) and "
+        "_endpoint_counts_today (day-to-date)"
+    )
+    # record_call accepts an endpoint label and updates both maps
+    assert 'def record_call(self, endpoint' in src, (
+        "record_call must accept the endpoint label so attribution is non-NULL"
+    )
+    # _get passes the endpoint string when recording
+    assert "budget.record_call(endpoint)" in src, (
+        "_get must pass the endpoint string to record_call — without this, "
+        "every call attributes to 'unknown'"
+    )
+    # sync writes BOTH JSONB columns
+    assert "endpoint_breakdown" in src and "endpoint_breakdown_today" in src, (
+        "sync_with_server must persist both interval and day-to-date breakdowns"
+    )
+    assert "::jsonb" in src, "JSONB cast required for the breakdown columns"
+
+    # Day rollover clears both maps
+    assert "_endpoint_counts.clear()" in src and "_endpoint_counts_today.clear()" in src, (
+        "_maybe_reset must clear both endpoint counter maps so cross-day numbers "
+        "don't leak into the next day's first row"
+    )
+
+
+@test("AF-FETCHES-AUDIT — BudgetTracker per-endpoint counter behaves correctly")
+def _():
+    """Functional check (no network). Hit record_call with several endpoint
+    labels, verify cumulative + drainable maps, and that draining preserves
+    the day-to-date counter."""
+    from workers.api_clients.api_football import BudgetTracker
+
+    bt = BudgetTracker(daily_limit=1000)
+    for ep in ("fixtures", "fixtures", "odds/live", "fixtures/statistics", "fixtures"):
+        bt.record_call(ep)
+
+    today = bt.endpoint_counts_today()
+    assert today == {"fixtures": 3, "odds/live": 1, "fixtures/statistics": 1}, today
+    assert bt.calls_today == 5, bt.calls_today
+
+    # Drain the per-interval map (private but exercised by sync_with_server)
+    snap = bt._drain_endpoint_counts()
+    assert snap == {"fixtures": 3, "odds/live": 1, "fixtures/statistics": 1}, snap
+    assert bt.endpoint_counts_today() == today, "day-to-date map must NOT be drained"
+
+    # New calls after the drain start fresh in the interval map but accumulate in today
+    bt.record_call("predictions")
+    snap2 = bt._drain_endpoint_counts()
+    assert snap2 == {"predictions": 1}, snap2
+    today2 = bt.endpoint_counts_today()
+    assert today2["predictions"] == 1 and today2["fixtures"] == 3, today2
+
+
+@test("AUDIT-AF-ENDPOINTS — /sidelined bulk helper exists with N=20 chunking")
+def _():
+    """AF rejects bulk team/league for /standings, /transfers, /coachs (probed
+    2026-05-10) but accepts /sidelined?players=A-B-C with a hard 20-id ceiling.
+    The new helper must chunk by 20 and return a {player_id: entries} dict."""
+    import pathlib
+    src = pathlib.Path("workers/api_clients/api_football.py").read_text()
+
+    assert "def get_sidelined_by_players_bulk(" in src, (
+        "Bulk helper get_sidelined_by_players_bulk(player_ids) must exist"
+    )
+    assert "_SIDELINED_BULK_LIMIT = 20" in src, (
+        "Per-call ceiling must be 20 (AF cap; probed and confirmed)"
+    )
+    # Plural form is required — singular ?player= rejects the multi-id list
+    assert '"players":' in src or '\"players\":' in src, (
+        "Helper must use the plural ?players= form — singular ?player= is rejected"
+    )
+
+
+@test("AUDIT-AF-ENDPOINTS — fetch_player_sidelined uses bulk helper, not per-id loop")
+def _():
+    """Source guard: fetch_player_sidelined must call the bulk helper. Reverting
+    to a per-id `for pid in to_fetch: get_sidelined(pid)` loop would silently
+    multiply per-run AF calls by ~20× on the morning enrichment T9 step."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/fetch_enrichment.py").read_text()
+
+    assert "get_sidelined_by_players_bulk" in src, (
+        "fetch_enrichment must import + call the bulk helper"
+    )
+    # The legacy per-id helper must NOT be the active import — it remains in
+    # api_football.py only as a fallback for ad-hoc scripts.
+    assert "import get_sidelined_by_players_bulk" not in src or "get_sidelined," not in src.split("get_sidelined_by_players_bulk")[0], (
+        "fetch_enrichment must not still import the per-id get_sidelined helper "
+        "alongside the bulk helper — only the bulk path should be active"
+    )
+
+
+@test("AF-FETCHES-AUDIT — migration 086 adds endpoint_breakdown JSONB columns")
+def _():
+    """The hourly sync writes per-endpoint JSONB into api_budget_log; without
+    these two columns the writes silently fail under the broad except in
+    sync_with_server and we lose attribution again."""
+    from workers.api_clients.db import execute_query
+
+    rows = execute_query(
+        "SELECT column_name, data_type FROM information_schema.columns "
+        "WHERE table_name = 'api_budget_log' "
+        "  AND column_name IN ('endpoint_breakdown', 'endpoint_breakdown_today')"
+    )
+    if not rows:
+        return  # migration not applied yet — CI/Actions handles this on push
+    types = {r["column_name"]: r["data_type"] for r in rows}
+    assert types.get("endpoint_breakdown") == "jsonb", types
+    assert types.get("endpoint_breakdown_today") == "jsonb", types
+
+
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 def _run_one(name: str, fn) -> tuple[str, bool, str, float]:

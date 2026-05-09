@@ -40,7 +40,7 @@ from workers.api_clients.api_football import (
     get_h2h, parse_h2h,
     get_coaches, parse_coaches,
     get_venue, parse_venue,
-    get_sidelined, parse_sidelined,
+    get_sidelined_by_players_bulk, parse_sidelined,
     get_transfers, parse_transfers,
 )
 from workers.api_clients.supabase_client import (
@@ -491,13 +491,19 @@ def fetch_player_sidelined(fixture_meta: dict) -> int:
     to_fetch = [pid for pid in all_player_ids if pid not in cached_ids]
     console.print(f"  {len(all_player_ids)} injured players, {len(cached_ids)} cached, {len(to_fetch)} to fetch")
 
+    if not to_fetch:
+        return 0
+
+    # Bulk: 1 call per 20 player IDs (AF cap). N=80 → 4 calls instead of 80.
+    bulk = get_sidelined_by_players_bulk(to_fetch)
+
     stored = 0
     for player_id in to_fetch:
+        raw = bulk.get(player_id)
+        if not raw:
+            continue
         info = player_lookup.get(player_id, {})
         try:
-            raw = get_sidelined(player_id)
-            if not raw:
-                continue
             rows = parse_sidelined(
                 raw,
                 player_id=player_id,
@@ -506,9 +512,10 @@ def fetch_player_sidelined(fixture_meta: dict) -> int:
             )
             stored += store_player_sidelined(rows)
         except Exception as e:
-            console.print(f"  [yellow]Sidelined fetch failed for player {player_id}: {e}[/yellow]")
+            console.print(f"  [yellow]Sidelined parse/store failed for player {player_id}: {e}[/yellow]")
 
-    console.print(f"  {stored} sidelined records stored across {len(to_fetch)} players")
+    console.print(f"  {stored} sidelined records stored across {len(to_fetch)} players "
+                  f"({(len(to_fetch) + 19) // 20} AF calls)")
     return stored
 
 
