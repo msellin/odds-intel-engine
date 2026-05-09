@@ -1,7 +1,7 @@
 """
 OddsIntel — In-Play Paper Trading Bot (Phase 1)
 
-Rule-based in-play paper trading across 8 strategies (Week 1: A-F + A2 + C_home).
+Rule-based in-play paper trading across 11 strategies.
 Reads from live_match_snapshots (populated by LivePoller every 30s), joins prematch
 data from predictions + matches.af_prediction, and logs paper bets to simulated_bets.
 
@@ -15,7 +15,10 @@ Strategies:
   C_home — Home Favourite Comeback (DNB)
   D   — Late Goals Compression (Over 2.5)
   E   — Dead Game Unders
-  F   — Odds Momentum Reversal
+  F   — Odds Momentum Reversal (DROPPED 2026-05-08)
+  I   — Favourite Stall: strong fav, 0-0 at min 42-65, live home ≥ 3.0
+  J   — Goal Debt Over 1.5: 0-0 at min 30-52, prematch O25 ≥ 0.62, OU1.5 ≥ 2.85
+  L   — Goal Contagion: first goal at min 15-35, O25 ≥ 0.55, OU2.5 available
 
 xG source:
   All strategies now run on both real live xG (from AF stats endpoint, ~top leagues only)
@@ -72,6 +75,18 @@ INPLAY_BOTS = {
         "description": "HT Restart Surge Over 2.5 — 0-0 at HT with first-half attacking, min 46-55",
         "strategy": "inplay_h",
     },
+    "inplay_i": {
+        "description": "Favourite Stall — strong fav 0-0 min 42-65, live fav odds drifted ≥ 3.0",
+        "strategy": "inplay_i",
+    },
+    "inplay_j": {
+        "description": "Goal Debt Over 1.5 — 0-0 min 30-52, prematch O25 ≥ 0.62, live OU1.5 ≥ 2.85",
+        "strategy": "inplay_j",
+    },
+    "inplay_l": {
+        "description": "Goal Contagion — first goal min 15-35 in high-λ match, Over 2.5 at remaining Poisson",
+        "strategy": "inplay_l",
+    },
     # inplay_f (Odds Momentum Reversal) was DROPPED 2026-05-08 after the
     # 11-day backfill replay placed 78 settled F-bets at -6.4% ROI. 4/5
     # AI tools (replies 1, 2, 4-probation, 5) recommended drop; reply 5's
@@ -109,6 +124,12 @@ _funnel: dict[str, int] = {
     "store_bet_error": 0,
 }
 
+# Goal Contagion state — tracks first-goal events for strategy L.
+# match_id → last seen total goals (updated at end of each run_inplay_strategies cycle)
+_prev_total_goals: dict[str, int] = {}
+# match_id → cycle count when first goal was detected (window = 6 cycles ≈ 3 min)
+_goal_event_window: dict[str, int] = {}
+
 
 # ── Entrypoint (called from LivePoller) ──────────────────────────────────────
 
@@ -125,6 +146,7 @@ def run_inplay_strategies():
     from workers.api_clients.supabase_client import ensure_bots, store_bet
 
     global _bot_ids, _cycle_count, _total_bets_session, _total_candidates_session
+    global _prev_total_goals, _goal_event_window
     _cycle_count += 1
 
     # Ensure bots exist (cached after first call)
@@ -301,6 +323,22 @@ def run_inplay_strategies():
     if bets_placed > 0:
         console.print(f"[bold green]InplayBot: {bets_placed} paper bet(s) placed this cycle[/bold green]")
 
+    # Update goal contagion state — do this AFTER strategy checks so goal_just_scored
+    # is still True for strategy L on the cycle the goal is first detected.
+    for cand in candidates:
+        mid = str(cand["match_id"])
+        total = (cand.get("score_home") or 0) + (cand.get("score_away") or 0)
+        prev = _prev_total_goals.get(mid, 0)
+        if total > prev and prev == 0 and total == 1:
+            _goal_event_window[mid] = _cycle_count
+        _prev_total_goals[mid] = total
+
+    # Expire stale goal windows (> 8 cycles old ≈ 4 minutes)
+    expired = [mid for mid, cyc in _goal_event_window.items()
+               if _cycle_count - cyc > 8]
+    for mid in expired:
+        _goal_event_window.pop(mid, None)
+
 
 # ── Data Queries ─────────────────────────────────────────────────────────────
 
@@ -325,6 +363,8 @@ def _get_live_candidates(execute_query) -> list[dict]:
             lms.possession_home,
             lms.corners_home,
             lms.corners_away,
+            lms.live_ou_15_over,
+            lms.live_ou_15_under,
             lms.live_ou_25_over,
             lms.live_ou_25_under,
             lms.live_1x2_home,
@@ -538,6 +578,28 @@ def _implied_prob(odds: float) -> float:
     return 1.0 / odds
 
 
+def _bivariate_poisson_win_prob(lam_h: float, lam_a: float) -> tuple[float, float, float]:
+    """
+    P(home wins), P(draw), P(away wins) for independent Poisson goals.
+    Both lambdas represent expected goals in the REMAINING time.
+    Sums up to 8 goals per team (sufficient for < 0.001% error at typical live lambdas).
+    """
+    max_g = 9
+    ph_win = pd_draw = pa_win = 0.0
+    for h in range(max_g):
+        p_h = (lam_h ** h) * math.exp(-lam_h) / math.factorial(h)
+        for a in range(max_g):
+            p_a = (lam_a ** a) * math.exp(-lam_a) / math.factorial(a)
+            p = p_h * p_a
+            if h > a:
+                ph_win += p
+            elif h == a:
+                pd_draw += p
+            else:
+                pa_win += p
+    return ph_win, pd_draw, pa_win
+
+
 # ── Strategy Checks ──────────────────────────────────────────────────────────
 
 def _check_strategy(bot_name: str, cand: dict, pm: dict,
@@ -562,6 +624,12 @@ def _check_strategy(bot_name: str, cand: dict, pm: dict,
         return _check_strategy_g(cand, pm, has_red_card, execute_query)
     elif bot_name == "inplay_h":
         return _check_strategy_h(cand, pm, has_red_card, execute_query)
+    elif bot_name == "inplay_i":
+        return _check_strategy_i(cand, pm, has_red_card)
+    elif bot_name == "inplay_j":
+        return _check_strategy_j(cand, pm, has_red_card)
+    elif bot_name == "inplay_l":
+        return _check_strategy_l(cand, pm, has_red_card)
     # inplay_f intentionally not dispatched — dropped 2026-05-08
     return None
 
@@ -1367,5 +1435,221 @@ def _check_strategy_f(cand: dict, pm: dict, has_red_card: bool,
             "xg_running_hot": xg_running_hot,
             "pace_90": pace_label,
             "xg_source": "live" if is_real else "shot_proxy",
+        },
+    }
+
+
+def _check_strategy_i(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
+    """
+    Strategy I: Favourite Stall.
+
+    Strong home or away favourite (prematch win prob ≥ 0.62) is stuck at 0-0
+    at minute 42-65. The live 1x2 odds have drifted above 3.0 as the market
+    over-penalises the visible blank score. Bivariate Poisson on remaining
+    minutes confirms the favourite's win probability still exceeds the market
+    implied by ≥ 4%.
+
+    Edge: Market anchors on 0-0 scoreline and underweights the remaining 45%
+    of match time where quality advantage manifests. All 5 AI reviews rated
+    this as viable at 8-15 bets/day using 16% live 1x2 coverage.
+    """
+    minute = cand["minute"] or 0
+    if minute < 42 or minute > 65:
+        return None
+    if has_red_card:
+        return None
+
+    sh, sa = cand["score_home"] or 0, cand["score_away"] or 0
+    if sh != 0 or sa != 0:
+        return None  # Only fires at 0-0
+
+    pm_home_prob = float(pm.get("prematch_home_prob") or 0)
+    pm_away_prob = float(pm.get("prematch_away_prob") or 0)
+
+    # Identify which side is the strong favourite
+    if pm_home_prob >= 0.62:
+        fav_side = "home"
+        live_fav_odds = float(cand.get("live_1x2_home") or 0)
+        pm_fav_prob = pm_home_prob
+    elif pm_away_prob >= 0.62:
+        fav_side = "away"
+        live_fav_odds = float(cand.get("live_1x2_away") or 0)
+        pm_fav_prob = pm_away_prob
+    else:
+        return None
+
+    if live_fav_odds < 3.0:
+        return None  # Market hasn't drifted enough — no edge without meaningful drift
+
+    pm_xg_h = float(pm.get("prematch_xg_home") or 1.1)
+    pm_xg_a = float(pm.get("prematch_xg_away") or 1.1)
+    remaining_frac = (90.0 - minute) / 90.0
+    h2_uplift = 1.05 if minute >= 45 else 1.0
+    lam_h = pm_xg_h * remaining_frac * h2_uplift
+    lam_a = pm_xg_a * remaining_frac * h2_uplift
+
+    ph_win, _, pa_win = _bivariate_poisson_win_prob(lam_h, lam_a)
+    model_fav_win = ph_win if fav_side == "home" else pa_win
+
+    market_fav_prob = _implied_prob(live_fav_odds)
+    edge_pct = (model_fav_win - market_fav_prob) * 100
+    if edge_pct < 4.0:
+        return None
+
+    selection = "home" if fav_side == "home" else "away"
+    return {
+        "market": "1X2",
+        "selection": selection,
+        "odds": live_fav_odds,
+        "model_prob": round(model_fav_win, 4),
+        "edge": round(edge_pct, 2),
+        "extra": {
+            "fav_side": fav_side,
+            "pm_fav_prob": round(pm_fav_prob, 3),
+            "lam_h_remaining": round(lam_h, 3),
+            "lam_a_remaining": round(lam_a, 3),
+        },
+    }
+
+
+def _check_strategy_j(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
+    """
+    Strategy J: Goal Debt Over 1.5.
+
+    High-expectation match (prematch O25 ≥ 0.62) is 0-0 at minute 30-52.
+    Live Over 1.5 odds have drifted above 2.85 (Bayesian fair at min-40 0-0
+    is ~2.70 — market needs to overshoot for edge to exist). Bet Over 1.5.
+
+    Math basis (5-AI consensus): λ_remaining = λ_full × (90-m)/90 × Bayesian_update.
+    Bayesian update for 0-0 at min 40 with λ=2.8 → posterior λ ≈ 2.29.
+    Remaining λ at min 40 = 2.29 × 50/90 = 1.27. P(≥2 more) = 0.37 → fair 2.70.
+    Enter only when market ≥ 2.85 (8-12% edge on soft/medium books).
+    """
+    minute = cand["minute"] or 0
+    if minute < 30 or minute > 52:
+        return None
+    if has_red_card:
+        return None
+
+    sh, sa = cand["score_home"] or 0, cand["score_away"] or 0
+    if sh != 0 or sa != 0:
+        return None
+
+    pm_o25 = float(pm.get("prematch_o25_prob") or 0)
+    if pm_o25 < 0.62:
+        return None
+
+    live_ou15 = float(cand.get("live_ou_15_over") or 0)
+    if live_ou15 < 2.85:
+        return None  # No edge or market not available
+
+    # Bayesian-adjusted remaining λ: posterior shrinks toward 2/3 of prematch
+    # when 0 goals observed in first ~40% of match (conjugate Gamma-Poisson).
+    pm_xg_total = float(pm.get("prematch_xg_home") or 1.1) + float(pm.get("prematch_xg_away") or 1.1)
+    elapsed_frac = minute / 90.0
+    # Posterior λ = (prior + observed) / (1 + elapsed): 0 goals observed
+    posterior_lam = pm_xg_total / (1.0 + elapsed_frac)
+    remaining_frac = (90.0 - minute) / 90.0
+    h2_uplift = 1.05 if minute >= 45 else 1.0
+    remaining_lam = posterior_lam * remaining_frac * h2_uplift
+
+    # P(≥ 2 more goals) — need 2 more for Over 1.5 total (score is 0-0)
+    model_prob = _poisson_over_prob(remaining_lam, 1.5)  # P(X ≥ 2)
+    market_prob = _implied_prob(live_ou15)
+    edge_pct = (model_prob - market_prob) * 100
+    if edge_pct < 3.0:
+        return None
+
+    return {
+        "market": "O/U",
+        "selection": "over 1.5",
+        "odds": live_ou15,
+        "model_prob": round(model_prob, 4),
+        "edge": round(edge_pct, 2),
+        "posterior_rate": round(posterior_lam, 3),
+        "prematch_xg_total": round(pm_xg_total, 3),
+        "extra": {
+            "pm_o25_prob": round(pm_o25, 3),
+            "posterior_lam": round(posterior_lam, 3),
+            "remaining_lam": round(remaining_lam, 3),
+        },
+    }
+
+
+def _check_strategy_l(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
+    """
+    Strategy L: Goal Contagion.
+
+    First goal detected (0-0 → 1-0 or 0-1) at minute 15-35 in a high-expectation
+    match (prematch O25 ≥ 0.55). Bet Over 2.5 FT at remaining Poisson fair odds
+    when live_ou_25_over is available. Fires within a 4-minute window after goal.
+
+    Edge: After the first goal in an open game, the scoring rate is empirically
+    elevated for ~8 minutes (Dixon & Robinson 1998, Heuer 2010). The live OU 2.5
+    market partially reprices but frequently overestimates the "settling" effect.
+    Only fires when model edge vs market is ≥ 4%.
+
+    Uses _goal_event_window module state populated by run_inplay_strategies.
+    """
+    minute = cand["minute"] or 0
+    if has_red_card:
+        return None
+
+    mid = str(cand["match_id"])
+
+    # Check that a first-goal event was recorded within the last 8 cycles
+    event_cycle = _goal_event_window.get(mid)
+    if event_cycle is None:
+        return None
+    if _cycle_count - event_cycle > 8:
+        return None
+
+    sh, sa = cand["score_home"] or 0, cand["score_away"] or 0
+    total_goals = sh + sa
+    if total_goals != 1:
+        return None  # Only fires after the first goal (0→1)
+    if minute < 15 or minute > 35:
+        return None
+
+    pm_o25 = float(pm.get("prematch_o25_prob") or 0)
+    if pm_o25 < 0.55:
+        return None
+
+    live_ou25 = float(cand.get("live_ou_25_over") or 0)
+    if live_ou25 <= 1.0:
+        return None  # No live odds available — skip
+
+    # Need 2 more goals for Over 2.5 (1 already scored)
+    pm_xg_total = float(pm.get("prematch_xg_home") or 1.1) + float(pm.get("prematch_xg_away") or 1.1)
+    remaining_frac = (90.0 - minute) / 90.0
+    h2_uplift = 1.05 if minute >= 45 else 1.0
+    # Slight Bayesian uplift: seeing 1 goal at min 15-35 is above-expectation → posterior rises
+    elapsed_frac = minute / 90.0
+    expected_by_now = pm_xg_total * elapsed_frac
+    # Posterior: saw 1 goal, expected ~0.5 → update toward slightly higher λ
+    posterior_lam = (pm_xg_total + 1.0) / (1.0 + elapsed_frac)
+    remaining_lam = posterior_lam * remaining_frac * h2_uplift
+
+    # P(≥ 2 more goals remaining) for Over 2.5 FT
+    model_prob = _poisson_over_prob(remaining_lam, 1.5)  # P(X ≥ 2)
+    market_prob = _implied_prob(live_ou25)
+    edge_pct = (model_prob - market_prob) * 100
+    if edge_pct < 4.0:
+        return None
+
+    return {
+        "market": "O/U",
+        "selection": "over 2.5",
+        "odds": live_ou25,
+        "model_prob": round(model_prob, 4),
+        "edge": round(edge_pct, 2),
+        "posterior_rate": round(posterior_lam, 3),
+        "prematch_xg_total": round(pm_xg_total, 3),
+        "extra": {
+            "pm_o25_prob": round(pm_o25, 3),
+            "posterior_lam": round(posterior_lam, 3),
+            "remaining_lam": round(remaining_lam, 3),
+            "goal_at_minute": minute,
+            "expected_by_now": round(expected_by_now, 3),
         },
     }

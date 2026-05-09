@@ -1,7 +1,7 @@
 """
 OddsIntel — API-Football Client
 Primary data source for fixtures, results, odds, lineups, injuries, standings, live stats, H2H.
-$29/mo Ultra plan: 75,000 req/day, 450 req/min.
+$39/mo Mega plan: 150,000 req/day, 900 req/min.
 
 API docs: https://www.api-football.com/documentation-v3
 """
@@ -21,9 +21,9 @@ console = Console()
 BASE_URL = "https://v3.football.api-sports.io"
 API_KEY = os.getenv("API_FOOTBALL_KEY", "")
 
-# Rate limiting: 450 req/min on Ultra = 7.5 req/sec
-# We use ~6.7 req/sec to stay safe with some headroom
-MIN_REQUEST_INTERVAL = 0.15  # 150ms between requests
+# Rate limiting: 900 req/min on Mega = 15 req/sec
+# We use ~8 req/sec to stay safe with headroom
+MIN_REQUEST_INTERVAL = 0.12  # 120ms between requests
 _last_request_time = 0.0
 _rate_lock = threading.Lock()
 
@@ -33,9 +33,9 @@ _rate_lock = threading.Lock()
 # Used by scheduler to skip non-critical jobs when budget is low.
 
 class BudgetTracker:
-    """Thread-safe daily API call budget tracker for API-Football Ultra (75K/day)."""
+    """Thread-safe daily API call budget tracker for API-Football Mega (150K/day)."""
 
-    def __init__(self, daily_limit: int = 75000, reserve: int = 5000):
+    def __init__(self, daily_limit: int = 150000, reserve: int = 5000):
         self.daily_limit = daily_limit
         self.reserve = reserve  # Keep reserve for manual runs / settlement
         self.calls_today = 0

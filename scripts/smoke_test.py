@@ -1768,21 +1768,26 @@ def _():
     assert "minute BETWEEN 40 AND 46" in h_body, "H must look up an HT-end snapshot"
 
 
-@test("INPLAY-STATS-COVERAGE — _is_high_priority only lifts active-bet matches")
+@test("INPLAY-STATS-COVERAGE — _is_high_priority lifts goals≤1 + min≥25 matches")
 def _():
-    """HIGH priority was narrowed to active-bet matches only after the
-    minute>=25/goals<=1 condition burned 74K AF calls on a busy Saturday
-    (99% daily quota). Verify the expensive condition is gone and quota guard added."""
+    """The bottleneck for strategies A/D/G/H is stats coverage (xG/SoT/corners
+    only on ~9% of historical snapshots). This test verifies that LivePoller's
+    HIGH-priority gate covers actionable in-play states, not just matches with
+    active bets. Quota cost is real (~2× stats volume on peak days) — managed by
+    upgrading to AF Mega (150K/day) rather than removing the condition."""
     import pathlib
     src = pathlib.Path("workers/live_poller.py").read_text()
     fn_start = src.index("def _is_high_priority(")
     fn_end = src.index("\n    def ", fn_start + 1)
     body = src[fn_start:fn_end]
-    assert "minute >= 25" not in body, (
-        "HIGH priority must NOT lift on minute >= 25 — caused quota exhaustion on busy Saturdays"
+    assert "af_fix" in body, (
+        "_is_high_priority must accept af_fix so it can read minute + score"
     )
-    assert "_active_bet_match_ids" in body, (
-        "_is_high_priority must still lift active-bet matches"
+    assert "minute >= 25" in body and "<= 1" in body, (
+        "Must lift matches with minute >= 25 and goals <= 1 to HIGH priority"
+    )
+    assert "self._is_high_priority(match_id, af_fix)" in src, (
+        "Call site in _run_cycle must pass af_fix to _is_high_priority"
     )
     af_src = pathlib.Path("workers/api_clients/api_football.py").read_text()
     assert "_HARD_QUOTA_FLOOR" in af_src, (
@@ -1911,6 +1916,83 @@ def _():
     assert '(cand["shots_home"] or 0) + (cand["shots_away"] or 0)' not in fn_body, (
         "Strategy E must not use 'shots_home or 0' — this was the NULL-masking bug."
     )
+
+
+@test("INPLAY-NEW-IJL — bots I, J, L registered in INPLAY_BOTS + dispatched")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    for name in ("inplay_i", "inplay_j", "inplay_l"):
+        assert f'"{name}"' in src, f"{name} missing from INPLAY_BOTS"
+    for fn in ("_check_strategy_i", "_check_strategy_j", "_check_strategy_l"):
+        assert f"def {fn}(" in src, f"{fn} not defined"
+    assert "inplay_i" in src and "inplay_j" in src and "inplay_l" in src
+    assert "_check_strategy_i" in src and "_check_strategy_j" in src and "_check_strategy_l" in src
+
+
+@test("INPLAY-J-GOAL-DEBT — strategy J requires 0-0 and live_ou_15_over ≥ 2.85")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    fn_start = src.index("def _check_strategy_j(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    fn_body = src[fn_start:fn_end]
+    assert "live_ou_15_over" in fn_body, "Strategy J must read live_ou_15_over from candidate"
+    assert "2.85" in fn_body, "Strategy J must have min odds floor of 2.85"
+    assert '0.62' in fn_body, "Strategy J must require prematch_o25_prob >= 0.62"
+    # Verify no false-trigger on 1-0 score
+    assert 'sh != 0 or sa != 0' in fn_body, "Strategy J must exit early if score is not 0-0"
+
+
+@test("INPLAY-L-GOAL-CONTAGION — strategy L reads _goal_event_window + guards minute range")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    fn_start = src.index("def _check_strategy_l(")
+    # L is the last function — slice to end of file
+    try:
+        fn_end = src.index("\ndef ", fn_start + 1)
+    except ValueError:
+        fn_end = len(src)
+    fn_body = src[fn_start:fn_end]
+    assert "_goal_event_window" in fn_body, "Strategy L must check _goal_event_window"
+    assert "_cycle_count" in fn_body, "Strategy L must compare cycle count for window expiry"
+    assert "total_goals != 1" in fn_body, "Strategy L must fire only when exactly 1 goal scored"
+    assert "live_ou_25_over" in fn_body, "Strategy L must check live_ou_25_over for execution"
+
+
+@test("INPLAY-I-FAV-STALL — strategy I uses bivariate Poisson and requires 0-0")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    fn_start = src.index("def _check_strategy_i(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    fn_body = src[fn_start:fn_end]
+    assert "_bivariate_poisson_win_prob" in fn_body, "Strategy I must use bivariate Poisson"
+    assert "3.0" in fn_body, "Strategy I must require live odds drift ≥ 3.0"
+    assert "0.62" in fn_body, "Strategy I must require prematch_win_prob ≥ 0.62"
+    assert "sh != 0 or sa != 0" in fn_body, "Strategy I must exit early if score is not 0-0"
+
+
+@test("INPLAY-L-STATE-UPDATE — goal contagion state updated after strategy checks")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    fn_start = src.index("def run_inplay_strategies(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    fn_body = src[fn_start:fn_end]
+    assert "_prev_total_goals" in fn_body, "run_inplay_strategies must update _prev_total_goals"
+    assert "_goal_event_window" in fn_body, "run_inplay_strategies must update _goal_event_window"
+
+
+@test("INPLAY-CANDS-OU15 — live_ou_15_over fetched in _get_live_candidates SELECT")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    fn_start = src.index("def _get_live_candidates(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    fn_body = src[fn_start:fn_end]
+    assert "live_ou_15_over" in fn_body, "_get_live_candidates must select live_ou_15_over"
 
 
 @test("INJURIES-BY-DATE — both call sites use the new function (no batched leftovers)")

@@ -2,7 +2,7 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> Last updated: 2026-05-09 — POOL-FANOUT + recovery script observability shipped. Codebase audit completed; 5 follow-up tasks added under "Codebase Audit Follow-ups" (BULK-STORE-MATCHES, OBS-LOG-ALL-JOBS, WORKER-SPLIT-LIVEPOLLER + 2 awareness items). See `dev/active/codebase-audit-*.md`.
+> Last updated: 2026-05-09 — 3 new inplay bots added (I: Favourite Stall, J: Goal Debt O1.5, L: Goal Contagion). No-stats strategies that fire on 88% of games currently unserved. 9-AI analysis (2 prompt rounds). live_ou_15_over now fetched in candidates. Goal contagion window state added to run_inplay_strategies.
 
 **Column guide:**
 - **☑** — `⬜` not started · `🔄` in progress · `✅` done
@@ -83,7 +83,8 @@
 | JOB-TIMEOUT | Per-job watchdog timeout via `signal.alarm` or threading. Mark `pipeline_runs.status='timed_out'` distinct from 'killed'. | 2h | ⬜ | ✅ Ready | Hung jobs hold conns forever. Distinct status lets you tell crash-cause apart. |
 | JOB-IDEMPOTENT | Audit fixtures/odds/predictions/settlement/ELO for re-runnability. **R1 + R3: prefer destructive idempotency** — wipe day's records for a match and rewrite cleanly, instead of perfect-merge logic. R4 effort = 6h, not 3h. | 6h | ⬜ | ✅ Ready | The audit is fast. The fix-where-broken is the iceberg. Settlement and ELO update are likely offenders. |
 | API-RETRY-WRAPPER | `tenacity` decorator on AF/Kambi/ESPN/Gemini clients: 2 retries, exponential backoff, jitter, fail-fast after 3rd attempt, log to Sentry on each retry. R1 estimate (30m) was too low; R3 (1-2 days) was for circuit-breaker version we don't need. R4: 2h is right. | 2h | ✅ Done 2026-05-08 | ✅ Ready | No tenacity needed. Manual retry loop in `_get()` (api_football.py): 3 attempts, 1s/2s/4s backoff, retries on 429/503 and connection/timeout errors, fail-fast on other 4xx. Gemini retry in `news_checker.py` and `match_previews.py`: 3 attempts, backoff on `ResourceExhausted`/`ServiceUnavailable`/`DeadlineExceeded` by exception class name (no google-api-core import needed). |
-| OBS-BUDGET-ALERT | Alert when AF daily burn projects >60K of 75K. R4: low priority — failure mode is degraded, not financial. Pulled out of P1. | 30m | ⬜ | ✅ Ready | Catch runaway loops before quota blown. |
+| OBS-BUDGET-ALERT | Alert when AF daily burn projects >60K of 75K. R4: low priority — failure mode is degraded, not financial. Pulled out of P1. | 30m | ⬜ | ✅ Ready | Catch runaway loops before quota blown. Superseded by AF-QUOTA-AUDIT below — implement as part of that task. |
+| AF-QUOTA-AUDIT | **Full AF quota monitoring + throttle system.** See detailed description below this table. | 3-4h | ⬜ | ✅ Ready | Incident on 2026-05-09: hit 99% (74,746/75K) during an end-of-season Saturday, live poller stopped, settlement at risk. Upgraded to Mega (150K/day) as stopgap. Root cause and full spec in the section below. |
 | MEMORY-MONITORING | Track Railway pod memory, alert if >70% sustained. R1 trap: XGBoost + LiveTracker on $5 pod can OOM during concurrent peak — and SIGKILL by Railway emits no Python exception, so Sentry won't catch it. Heartbeat is the only defense. | 30m | ⬜ | ✅ Ready | Especially important if WORKER-SPLIT stays deferred. |
 
 ### P3 — Watchlist (only when triggered, not on schedule)
@@ -117,6 +118,66 @@
 | ~RAILWAY-UPGRADE~ | Single instance fine ≤100 concurrent users. |
 | ~ADD-REDIS~ | No queue need yet. |
 | ~READ-REPLICAS~ | Overkill at this scale. |
+
+---
+
+### AF-QUOTA-AUDIT — Full Spec
+
+**Incident (2026-05-09):** Hit 99% of AF daily quota (74,746 / 75,000) during an end-of-season Saturday. The live poller's `can_call()` budget gate stopped all live polling. Settlement at 21:00 UTC had only 254 calls left. Upgraded from Ultra ($29/mo, 75K/day) to Mega ($39/mo, 150K/day) as immediate stopgap.
+
+**Root cause — the RAIL-11 HIGH priority condition:**
+
+`live_poller.py:_is_high_priority()` fires `True` for any match where `minute >= 25 AND total_goals <= 1`. This fires on ~30% of all live matches simultaneously. For each HIGH-priority match it fetches **2 AF calls every 45s** (stats + events). On a busy Saturday with 30 simultaneous matches during peak hours (13:00–17:00 UTC):
+
+- 30 matches × 30% HIGH = 9 high-priority matches × 2 calls × 80 cycles/hr = **1,440 calls/hr** (HIGH tier)
+- 21 normal matches × 2 calls / 3 cycles × 80 cycles/hr = **1,120 calls/hr** (MEDIUM tier)
+- 2 bulk calls (live fixtures + live odds) × 80 = **160 calls/hr**
+- Peak: **~2,700 calls/hr for 5+ hours = ~13,500 calls from live polling peaks alone**
+
+Add scheduled jobs running all day:
+- 3 enrichment runs × ~500 calls = 1,500 (standings, H2H, team_stats, injuries per ~100-150 fixtures)
+- 3 betting refresh runs × ~150 AF predictions = 450
+- 3 backfill jobs × 25-30 calls/run × 57 runs/day = ~3,700
+- Settlement, fixtures, odds: ~500
+- **Total end-of-season Saturday: ~75K** (exactly the old plan limit)
+
+Normal weekday (fewer fixtures, shorter live window): ~25-35K — well within old 75K. The problem only surfaces on heavy Saturdays at end of season.
+
+**Current state after incident:**
+- Upgraded to Mega: 150K/day limit (`BudgetTracker(daily_limit=150000)` in `api_football.py`)
+- Added `_HARD_QUOTA_FLOOR = 200` in `_get()` — blocks all non-status calls when remaining ≤ 200, ensuring settlement has runway even if budget is exhausted
+- The RAIL-11 HIGH priority condition is **restored** (was temporarily removed, then reverted after upgrade)
+- Smoke test `INPLAY-STATS-COVERAGE` guards both the HIGH priority condition and the hard floor
+
+**What still needs to be built (this task):**
+
+1. **Per-job call accounting** — The existing `api_budget_log` table only records total daily usage at sync time. We have no visibility into which job is burning the most calls. Add a `source` label to `budget.record_call(source="live_poller")` (or a separate counter dict) so the hourly budget sync can log a breakdown: `{"live_poller": 12000, "enrichment": 1500, "backfill": 3700, ...}`. Store as JSONB in a new column or a separate `api_budget_breakdown_log` table.
+
+2. **Budget alert at 50% and 75% consumed** — Replace the thin `OBS-BUDGET-ALERT` task. The `job_budget_sync()` in `scheduler.py` already runs hourly. Extend it: after syncing, if `usage_pct > 50` send a Resend email to `ADMIN_ALERT_EMAIL` once (in-memory dedup flag, reset at midnight). At `usage_pct > 75`, send a second alert. Email subject: "⚠️ AF quota at 52% — on track for exhaustion". The alert should include: calls used, calls remaining, time until midnight UTC reset, and estimated end-of-day projection based on hourly burn rate (`calls_used_since_last_reset / hours_elapsed * 24`).
+
+3. **Graceful degradation when budget is tight** — The existing `can_call()` gate in the live poller is all-or-nothing (stops everything at 70K). Add a softer tier:
+   - Below 145K remaining (i.e., 5K+ used): normal operation
+   - Below 30K remaining (80% consumed): skip stats/events for MEDIUM-priority matches; only HIGH-priority (active bets) and bulk calls continue
+   - Below 10K remaining (93% consumed): skip ALL per-match calls; only bulk fixtures + live odds (2 calls per cycle)
+   - Below 1K remaining: stop all live polling
+   This gives a smooth graceful degradation instead of a cliff edge.
+
+4. **Day-type detection** — The live poller could detect "busy Saturday" vs "quiet Tuesday" at the start of day and auto-adjust intervals. Simple heuristic: query `SELECT COUNT(*) FROM matches WHERE date = today` at 06:00 UTC. If >200 matches, increase `FAST_INTERVAL` to 60s and `MEDIUM_MULTIPLIER` to 4 for the day. Log the decision. This is the structural fix — solves the root cause rather than just adding headroom.
+
+**Files to touch:**
+- `workers/api_clients/api_football.py` — add source labels to `record_call()`, add soft-degradation thresholds to `BudgetTracker`
+- `workers/jobs/scheduler.py` — extend `job_budget_sync()` with alert email logic + day-type detection at 06:00 UTC
+- `workers/live_poller.py` — add soft-degradation tier checks before stats/events fetches
+- `supabase/migrations/` — if adding `api_budget_breakdown_log` table
+- `scripts/smoke_test.py` — test that `record_call(source=...)` stores the source, and that degradation thresholds are present
+
+**Implementation order:** (2) alert first — lowest risk, highest ops value. Then (1) accounting. Then (3) degradation. (4) is optional if 150K/day proves comfortable.
+
+**Acceptance criteria:**
+- Admin gets an email when daily AF burn passes 50% and again at 75%
+- Email includes projected end-of-day usage
+- The hard floor (`_HARD_QUOTA_FLOOR`) remains as a last-resort guard
+- No regression to the incident: a busy Saturday should consume <120K of 150K/day
 
 ## InplayBot Tuning — Post-Bug Triage (5-AI review, 2026-05-08)
 
@@ -794,7 +855,7 @@ Yellow warning if today's value < 7-day average × 0.60.
 |----|------|--------|----|--------|-------|
 | SIG-12 | xG overperformance rolling signal | 2h | ⬜ | ⏳ ~2 wks of post-match xG data | Regression to mean signal. Needs post-match xG from live snapshots |
 | MOD-2 | Learned Poisson/XGBoost blend weights (replace fixed α) | 2h | ✅ Done 2026-05-05 | ✅ Done | `scripts/fit_blend_weights.py`: optimizes Poisson weight + per-tier shrinkage alpha. improvements.py loads from model_calibration, falls back to hardcoded. Weekly refit added to Sunday settlement. |
-| P3.4 | In-play value detection model | 2-3 wks | 🔄 In Progress | ⏳ Phase 1A deployed 2026-05-06 (8 strategies, paper trading). Phase 2 ML needs 500+ snapshots + 200 settled bets. See § INPLAY Plan for full 5-phase roadmap | Phase 1A live: `workers/jobs/inplay_bot.py` — strategies A, A2, B, C, C_home, D, E, F. Bayesian xG posterior. Runs inside LivePoller every 30s. Week 2: add G, H. Week 3: add I, J, K. |
+| P3.4 | In-play value detection model | 2-3 wks | 🔄 In Progress | ⏳ Phase 1B deployed 2026-05-09 (11 strategies). Phase 2 ML needs 500+ snapshots + 200 settled bets. See § INPLAY Plan for full 5-phase roadmap | Active bots: A, B, C, D, E, G, H (stats-based) + **I (Favourite Stall), J (Goal Debt O1.5), L (Goal Contagion)** (odds+score only — no stats required). F dropped 2026-05-08. All 9 + 3 new bots confirmed by 9-AI analysis (9 replies across 2 prompt rounds). Next: wait for 50+ bets per new strategy before calibration review. |
 | P4.2 | A/B bot testing framework | 1-2 days | ⬜ | ⏳ Needs audit trail + data | Parallel bots with/without AI layers |
 | P4.3 | Live odds arbitrage detector | 1-2 days | ⬜ | ⏳ ~July | Per-bookmaker odds exist. Low priority |
 | RSS-NEWS | RSS news extraction pipeline ($30-90/mo) | 1-2 days | ⬜ | ⏳ After model proves profitable | Targets news before odds adjust. Re-evaluate when Elite has subscribers. **AI: +~$0.30/mo Gemini (data service $30-90/mo is the real cost)** |
