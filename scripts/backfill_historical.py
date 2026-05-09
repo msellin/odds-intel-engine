@@ -546,12 +546,30 @@ def backfill_league_season(
     if bar is not None and task_id is not None and stats["matches_enriched"]:
         bar.advance(task_id, stats["matches_enriched"])
 
-    # Check if this league/season is complete
+    # Check if this league/season is complete.
+    #
+    # Two reasons rows used to wedge in 'in_progress' forever:
+    #   (1) `need_stats` / `need_events` above are sets snapshotted BEFORE the
+    #       bulk write — they don't reflect what we just stored. Re-query.
+    #   (2) AF feed permanently lacks stats/events for some old matches. A
+    #       single missing match in a 230-fixture league should not block
+    #       completion forever. Allow up to 2% gap (or 2 matches, whichever
+    #       is larger) on either dimension.
     progress_now = get_or_create_progress(league_id, season, phase)
-    if (progress_now.get("fixtures_done", 0) >= total_fixtures
-            and not need_stats and not need_events):
+    fresh_need_stats = get_af_ids_needing("match_stats", match_map)
+    fresh_need_events = get_af_ids_needing("match_events", match_map)
+    fixtures_in_db = progress_now.get("fixtures_done", 0)
+
+    tolerance = max(2, int(total_fixtures * 0.02)) if total_fixtures else 0
+    fixtures_ok = fixtures_in_db >= total_fixtures - tolerance
+    stats_ok = len(fresh_need_stats) <= tolerance
+    events_ok = len(fresh_need_events) <= tolerance
+
+    if fixtures_ok and stats_ok and events_ok:
         update_progress(league_id, season, status="complete")
-        _print(f"  [green]✓ L{league_id}/S{season} complete[/green]")
+        gap = len(fresh_need_stats) + len(fresh_need_events)
+        suffix = f" (AF gap: {gap})" if gap else ""
+        _print(f"  [green]✓ L{league_id}/S{season} complete{suffix}[/green]")
 
     return stats
 

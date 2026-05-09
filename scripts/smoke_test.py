@@ -2943,6 +2943,44 @@ def _():
     assert types.get("endpoint_breakdown_today") == "jsonb", types
 
 
+@test("BACKFILL-COMPLETE-TOLERANCE — completion check refreshes need-sets and tolerates AF gaps")
+def _():
+    """
+    A single AF data gap (one match where AF never returns stats) used to wedge
+    a league/season in 'in_progress' forever, because the completion check at
+    the end of `backfill_league_season` evaluated against the stale snapshot
+    of `need_stats`/`need_events` taken before the bulk write — and even after
+    the write, AF-permanent-gap matches stay in the need-set on every retry.
+    Fix: re-query post-write via `get_af_ids_needing` and allow up to ~2% gap.
+    """
+    import pathlib
+    src = pathlib.Path("scripts/backfill_historical.py").read_text()
+    assert "fresh_need_stats = get_af_ids_needing" in src, (
+        "backfill_historical must re-query need_stats AFTER the bulk write — "
+        "otherwise completion check uses a stale pre-write snapshot."
+    )
+    assert "fresh_need_events = get_af_ids_needing" in src, (
+        "backfill_historical must re-query need_events AFTER the bulk write."
+    )
+    assert "tolerance" in src and "0.02" in src, (
+        "backfill_historical must apply a ≤2% tolerance to fixtures/stats/events "
+        "gaps so AF data holes don't keep an L/S 'in_progress' forever."
+    )
+
+
+@test("FINISH-BACKFILL — entry-point script loops via detect_next_phase + run_backfill")
+def _():
+    """One-shot script that drives the backfill to completion; CLAUDE.md ops
+    flow refers to it. Make sure it stays wired to the real helpers."""
+    import pathlib
+    src = pathlib.Path("scripts/finish_backfill.py").read_text()
+    assert "detect_next_phase" in src, "finish_backfill must call detect_next_phase"
+    assert "run_backfill(" in src, "finish_backfill must call run_backfill"
+    assert "MIN_BUDGET_TO_START" in src, (
+        "finish_backfill must guard against running with starved AF budget."
+    )
+
+
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 def _run_one(name: str, fn) -> tuple[str, bool, str, float]:
