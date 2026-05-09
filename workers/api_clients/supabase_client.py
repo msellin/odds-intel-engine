@@ -274,6 +274,262 @@ def store_match(match_data: dict) -> str:
             return cur.fetchone()["id"]
 
 
+# BULK-STORE-MATCHES: bulk equivalent of store_match.
+# Per-row store_match does ~5 round-trips (ensure_team×2, ensure_league, dedup
+# SELECT, INSERT/UPDATE). At ~150ms EU pooler RTT × 1500 fixtures ≈ 15 min/run
+# of pure DB-wait. bulk_store_matches collapses this to ~5 fixed round-trips
+# regardless of N, hitting ~3-5s for the same 1500-fixture batch.
+_POSTPONED_AF_STATUSES = ("PST", "CANC", "ABD", "WO", "AWD")
+
+
+def bulk_store_matches(match_dicts: list[dict]) -> list[str | None]:
+    """Bulk equivalent of store_match. Returns one match UUID per input dict
+    (or None for rows missing required fields). Behaviourally identical to
+    calling store_match() per row — same dedup key (home, away, date prefix),
+    same NULL-only metadata backfill, same status/date mutation rules.
+    """
+    n = len(match_dicts)
+    if n == 0:
+        return []
+    results: list[str | None] = [None] * n
+
+    # 1. Parse + validate
+    parsed: list[dict | None] = []
+    for md in match_dicts:
+        home = md.get("home_team")
+        away = md.get("away_team")
+        if not home or not away:
+            parsed.append(None)
+            continue
+        match_date = md.get("start_time", md.get("date", ""))
+        date_prefix = match_date[:10] if match_date else date.today().isoformat()
+        league_path = md.get("league_path", "Unknown / Unknown")
+        country = league_path.split(" / ")[0] if " / " in league_path else "Unknown"
+        parsed.append({
+            "raw": md,
+            "home": home,
+            "away": away,
+            "country": country,
+            "home_logo": md.get("home_logo"),
+            "away_logo": md.get("away_logo"),
+            "league_path": league_path,
+            "tier": md.get("tier", 1),
+            "match_date": match_date,
+            "date_prefix": date_prefix,
+        })
+
+    # 2. Resolve teams. One batched exact-name SELECT, then ensure_team()
+    # fallback for the residual (preserves fuzzy/normalized matching + new inserts).
+    unique_team_names = {p["home"] for p in parsed if p} | {p["away"] for p in parsed if p}
+    team_id_by_name: dict[str, str] = {}
+    if unique_team_names:
+        rows = execute_query(
+            "SELECT id, name FROM teams WHERE name = ANY(%s)",
+            (list(unique_team_names),),
+        )
+        for r in rows:
+            team_id_by_name[r["name"]] = r["id"]
+    for p in parsed:
+        if not p:
+            continue
+        for side in ("home", "away"):
+            tn = p[side]
+            if tn not in team_id_by_name:
+                team_id_by_name[tn] = ensure_team(tn, p["country"], logo_url=p[f"{side}_logo"])
+
+    # 3. Resolve leagues — small unique set per run (~50), per-path ensure_league
+    # fallback collapses naturally. Caching dedupes within the call.
+    league_id_by_path: dict[str, str] = {}
+    for p in parsed:
+        if not p:
+            continue
+        if p["league_path"] not in league_id_by_path:
+            league_id_by_path[p["league_path"]] = ensure_league(p["league_path"], p["tier"])
+
+    # Attach resolved IDs
+    for p in parsed:
+        if not p:
+            continue
+        p["home_id"] = team_id_by_name[p["home"]]
+        p["away_id"] = team_id_by_name[p["away"]]
+        p["league_id"] = league_id_by_path[p["league_path"]]
+
+    # 4. Bulk dedup SELECT — one round-trip resolves all existing matches.
+    keys = {(p["home_id"], p["away_id"], p["date_prefix"]) for p in parsed if p}
+    existing_by_key: dict[tuple, dict] = {}
+    if keys:
+        sql_dedup = """
+            SELECT m.id, m.home_team_id, m.away_team_id, m.date, m.status,
+                   m.api_football_id, m.venue_name, m.venue_af_id, m.referee,
+                   m.home_team_api_id, m.away_team_api_id
+            FROM matches m
+            JOIN (VALUES %s) AS v(home_id, away_id, dp)
+              ON m.home_team_id = v.home_id::uuid
+             AND m.away_team_id = v.away_id::uuid
+             AND m.date >= (v.dp || 'T00:00:00')::timestamptz
+             AND m.date <= (v.dp || 'T23:59:59')::timestamptz
+        """
+        with get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                psycopg2.extras.execute_values(
+                    cur, sql_dedup, list(keys),
+                    template="(%s, %s, %s)",
+                    page_size=1000,
+                )
+                for row in cur.fetchall():
+                    dp = str(row["date"])[:10]
+                    existing_by_key[(str(row["home_team_id"]), str(row["away_team_id"]), dp)] = dict(row)
+
+    # 5. Plan inserts vs updates, deduped by key (so duplicate input rows in the
+    # same batch resolve to the same match_id without firing two INSERTs).
+    plan: dict[tuple, dict] = {}
+    for idx, p in enumerate(parsed):
+        if not p:
+            continue
+        key = (p["home_id"], p["away_id"], p["date_prefix"])
+        entry = plan.get(key)
+        if entry is not None:
+            entry["input_indices"].append(idx)
+            continue
+
+        md = p["raw"]
+        existing = existing_by_key.get(key)
+        if existing:
+            af_id = md.get("api_football_id")
+            v_af = md.get("venue_af_id")
+            ht = md.get("home_team_api_id")
+            at = md.get("away_team_api_id")
+            cand_af_id = int(af_id) if (af_id and not existing.get("api_football_id")) else None
+            cand_venue_name = md.get("venue_name") if (md.get("venue_name") and not existing.get("venue_name")) else None
+            cand_venue_af = int(v_af) if (v_af and not existing.get("venue_af_id")) else None
+            cand_referee = md.get("referee") if (md.get("referee") and not existing.get("referee")) else None
+            cand_h_api = int(ht) if (ht and not existing.get("home_team_api_id")) else None
+            cand_a_api = int(at) if (at and not existing.get("away_team_api_id")) else None
+
+            current_status = existing.get("status", "")
+            af_status = md.get("af_status_short", "")
+            new_date_val = None
+            if current_status == "scheduled":
+                new_date = md.get("start_time") or md.get("date", "")
+                existing_date = str(existing.get("date", ""))
+                if new_date and new_date[:16] != existing_date[:16]:
+                    new_date_val = new_date
+
+            postponing = (current_status == "scheduled" and af_status in _POSTPONED_AF_STATUSES)
+            has_update = postponing or new_date_val is not None or any(
+                v is not None for v in (cand_af_id, cand_venue_name, cand_venue_af,
+                                        cand_referee, cand_h_api, cand_a_api)
+            )
+
+            plan[key] = {
+                "match_id": existing["id"],
+                "action": "update" if has_update else "noop",
+                "update_row": (
+                    existing["id"], cand_af_id, cand_venue_name, cand_venue_af,
+                    cand_referee, cand_h_api, cand_a_api, af_status, new_date_val,
+                ) if has_update else None,
+                "input_indices": [idx],
+            }
+        else:
+            try:
+                dt = datetime.fromisoformat(p["match_date"].replace("Z", "+00:00"))
+                season = dt.year if dt.month >= 7 else dt.year - 1
+            except (ValueError, AttributeError):
+                today = date.today()
+                season = today.year if today.month >= 7 else today.year - 1
+
+            score_home = score_away = result_str = None
+            status = "scheduled"
+            if md.get("home_goals") is not None:
+                score_home = int(md["home_goals"])
+                score_away = int(md["away_goals"])
+                result_str = "home" if score_home > score_away else "away" if score_away > score_home else "draw"
+                status = "finished"
+
+            plan[key] = {
+                "match_id": None,
+                "action": "insert",
+                "insert_row": (
+                    p["match_date"] or datetime.now().isoformat(),
+                    p["home_id"], p["away_id"], p["league_id"], season, status,
+                    int(md["api_football_id"]) if md.get("api_football_id") else None,
+                    md.get("venue_name"),
+                    int(md["venue_af_id"]) if md.get("venue_af_id") else None,
+                    md.get("referee"),
+                    int(md["home_team_api_id"]) if md.get("home_team_api_id") else None,
+                    int(md["away_team_api_id"]) if md.get("away_team_api_id") else None,
+                    score_home, score_away, result_str,
+                ),
+                "input_indices": [idx],
+            }
+
+    # 6. Bulk INSERT new matches with RETURNING id.
+    insert_keys = [k for k, e in plan.items() if e["action"] == "insert"]
+    if insert_keys:
+        insert_rows = [plan[k]["insert_row"] for k in insert_keys]
+        cols = [
+            "date", "home_team_id", "away_team_id", "league_id", "season", "status",
+            "api_football_id", "venue_name", "venue_af_id", "referee",
+            "home_team_api_id", "away_team_api_id",
+            "score_home", "score_away", "result",
+        ]
+        sql_ins = f"INSERT INTO matches ({', '.join(cols)}) VALUES %s RETURNING id"
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                returned = psycopg2.extras.execute_values(
+                    cur, sql_ins, insert_rows, fetch=True, page_size=1000,
+                )
+                conn.commit()
+        for k, ret in zip(insert_keys, returned):
+            plan[k]["match_id"] = str(ret[0])
+
+    # 7. Bulk UPDATE existing rows that need backfill — single SQL via FROM(VALUES).
+    update_rows = [e["update_row"] for e in plan.values() if e["action"] == "update"]
+    if update_rows:
+        sql_upd = """
+            UPDATE matches AS m SET
+              api_football_id = COALESCE(v.cand_af_id, m.api_football_id),
+              venue_name      = COALESCE(v.cand_venue_name, m.venue_name),
+              venue_af_id     = COALESCE(v.cand_venue_af, m.venue_af_id),
+              referee         = COALESCE(v.cand_referee, m.referee),
+              home_team_api_id = COALESCE(v.cand_h_api, m.home_team_api_id),
+              away_team_api_id = COALESCE(v.cand_a_api, m.away_team_api_id),
+              status = CASE
+                  WHEN m.status = 'scheduled'
+                    AND v.af_status IN ('PST','CANC','ABD','WO','AWD')
+                  THEN 'postponed'
+                  ELSE m.status
+              END,
+              date = CASE
+                  WHEN m.status = 'scheduled' AND v.new_date IS NOT NULL
+                  THEN v.new_date::timestamptz
+                  ELSE m.date
+              END
+            FROM (VALUES %s) AS v(
+                id, cand_af_id, cand_venue_name, cand_venue_af, cand_referee,
+                cand_h_api, cand_a_api, af_status, new_date
+            )
+            WHERE m.id = v.id::uuid
+        """
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_values(
+                    cur, sql_upd, update_rows,
+                    template="(%s::uuid, %s::int, %s::text, %s::int, %s::text,"
+                             " %s::bigint, %s::bigint, %s::text, %s::text)",
+                    page_size=500,
+                )
+                conn.commit()
+
+    # 8. Map every input index → match_id (handles duplicate-key inputs too).
+    for entry in plan.values():
+        mid = entry["match_id"]
+        for idx in entry["input_indices"]:
+            results[idx] = mid
+
+    return results
+
+
 def update_match_status(match_id: str, status: str):
     """Update a match status (scheduled -> live -> finished)"""
     execute_write(

@@ -25,7 +25,7 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workers.api_clients.api_football import get_fixtures_by_date, fixture_to_match_dict, get_leagues
-from workers.api_clients.supabase_client import store_match
+from workers.api_clients.supabase_client import bulk_store_matches
 from workers.utils.pipeline_utils import (
     log_pipeline_start, log_pipeline_complete, log_pipeline_failed,
     store_league_coverage, set_daily_featured_leagues,
@@ -55,43 +55,35 @@ def fetch_and_store_fixtures(target_date: str) -> tuple[int, dict[int, str], lis
         console.print("[yellow]No fixtures from API-Football today.[/yellow]")
         return 0, {}, []
 
-    # Store API-Football fixtures
+    # Store API-Football fixtures via bulk_store_matches (BULK-STORE-MATCHES):
+    # one batched team SELECT + one bulk dedup SELECT + one execute_values INSERT
+    # + one execute_values UPDATE — ~3-5s for 1500 fixtures vs ~15min serial.
     total = len(af_fixtures_raw)
     console.print(f"\n[cyan]Storing {total} fixtures in Supabase...[/cyan]")
-    stored = 0
-    af_id_to_match_id: dict[int, str] = {}
 
-    # Per-fixture: store_match does ~5 round-trips (ensure_team×2, dedup SELECT,
-    # INSERT/UPDATE). At ~150ms RTT to the EU pooler that's ~750ms/fixture.
-    # 1500 fixtures ≈ 18 min. Print progress every 100 so the operator can see
-    # rate and estimate ETA instead of staring at a frozen-looking screen.
     import time as _time
     t_start = _time.monotonic()
-    last_log = t_start
+    match_dicts = [fixture_to_match_dict(af_fix) for af_fix in af_fixtures_raw]
+    try:
+        match_ids = bulk_store_matches(match_dicts)
+    except Exception as e:
+        console.print(f"  [red]Bulk store failed: {e}[/red]")
+        return 0, {}, []
 
-    for i, af_fix in enumerate(af_fixtures_raw, 1):
-        match_dict = fixture_to_match_dict(af_fix)
-        try:
-            match_id = store_match(match_dict)
-            af_id = af_fix.get("fixture", {}).get("id")
-            if match_id and af_id:
-                af_id_to_match_id[af_id] = match_id
-            stored += 1
-        except Exception as e:
-            console.print(f"  [yellow]Could not store {match_dict.get('home_team')} vs {match_dict.get('away_team')}: {e}[/yellow]")
+    stored = sum(1 for mid in match_ids if mid)
+    af_id_to_match_id: dict[int, str] = {}
+    for af_fix, mid in zip(af_fixtures_raw, match_ids):
+        if not mid:
+            continue
+        af_id = af_fix.get("fixture", {}).get("id")
+        if af_id:
+            af_id_to_match_id[af_id] = mid
 
-        if i % 100 == 0 or i == total:
-            now = _time.monotonic()
-            elapsed = now - t_start
-            rate = i / elapsed if elapsed > 0 else 0
-            eta = (total - i) / rate if rate > 0 else 0
-            console.print(
-                f"  [dim]progress: {i}/{total} stored "
-                f"({rate:.1f}/s, elapsed {elapsed:.0f}s, ETA {eta:.0f}s)[/dim]"
-            )
-            last_log = now
-
-    console.print(f"  {stored} fixtures stored, {len(af_id_to_match_id)} AF ID mappings")
+    elapsed = _time.monotonic() - t_start
+    console.print(
+        f"  {stored}/{total} fixtures stored, {len(af_id_to_match_id)} AF ID mappings "
+        f"({elapsed:.1f}s)"
+    )
     return stored, af_id_to_match_id, af_fixtures_raw
 
 

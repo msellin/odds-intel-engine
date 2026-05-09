@@ -39,7 +39,7 @@ from workers.api_clients.api_football import (
     parse_fixture_events,
 )
 from workers.api_clients.supabase_client import (
-    store_match,
+    bulk_store_matches,
     store_match_stats_full,
 )
 from workers.api_clients.db import execute_query, execute_write, get_conn
@@ -330,23 +330,26 @@ def backfill_league_season(
         update_progress(league_id, season, status="complete")
         return stats
 
-    # Step 2: Store fixtures (match records)
-    fixtures_stored = 0
-    match_af_to_uuid = {}  # af_id -> our match UUID
-
+    # Step 2: Store fixtures via bulk_store_matches (BULK-STORE-MATCHES). Backfill
+    # processes thousands of rows per league-season, so collapsing per-row
+    # round-trips is the largest absolute time saver here.
+    to_store = []
     for fixture in finished:
         if _shutdown_requested:
             break
-        if fixtures_stored >= batch_limit:
+        if len(to_store) >= batch_limit:
             break
+        to_store.append(fixture)
 
-        af_id = fixture["fixture"]["id"]
-
-        # Store match record (store_match handles dedup)
-        match_dict = fixture_to_match_dict(fixture)
-        match_uuid = store_match(match_dict)
-        match_af_to_uuid[af_id] = match_uuid
-        fixtures_stored += 1
+    match_af_to_uuid: dict[int, str] = {}
+    fixtures_stored = 0
+    if to_store:
+        match_dicts = [fixture_to_match_dict(f) for f in to_store]
+        match_uuids = bulk_store_matches(match_dicts)
+        for fixture, match_uuid in zip(to_store, match_uuids):
+            if match_uuid:
+                match_af_to_uuid[fixture["fixture"]["id"]] = match_uuid
+                fixtures_stored += 1
 
     stats["fixtures_stored"] = fixtures_stored
     update_progress(league_id, season, fixtures_done=fixtures_stored)

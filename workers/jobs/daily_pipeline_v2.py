@@ -34,7 +34,7 @@ from workers.api_clients.api_football import (
     get_h2h, parse_h2h,
 )
 from workers.api_clients.supabase_client import (
-    ensure_bots, store_match, store_odds,
+    ensure_bots, bulk_store_matches, store_odds,
     store_prediction, store_bet, store_prediction_snapshot, store_team_season_stats, store_match_injuries,
     store_league_standings, store_match_h2h,
     batch_write_morning_signals,
@@ -1241,30 +1241,36 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
             console.print("[yellow]No fixtures from API-Football today.[/yellow]")
             return
 
-        # 3. Store all fixtures in Supabase
+        # 3. Store all fixtures in Supabase via bulk_store_matches
+        # (BULK-STORE-MATCHES). Pre-builds match_dicts and ships in one batched
+        # call instead of N serial round-trips per fixture.
         console.print("\n[cyan]Storing all fixtures in Supabase...[/cyan]")
-        stored_fixture_count = 0
         af_id_to_match_id: dict[int, str] = {}
 
-        for af_fix in af_fixtures_raw:
-            match_dict = fixture_to_match_dict(af_fix)
-            try:
-                match_id = store_match(match_dict)
-                af_id = af_fix.get("fixture", {}).get("id")
-                if match_id and af_id:
-                    af_id_to_match_id[af_id] = match_id
-                all_fixtures.append({
-                    "home_team": match_dict["home_team"],
-                    "away_team": match_dict["away_team"],
-                    "date": match_dict["start_time"],
-                    "league_name": af_fix.get("league", {}).get("name", ""),
-                    "country": af_fix.get("league", {}).get("country", ""),
-                    "status": af_fix.get("fixture", {}).get("status", {}).get("short", "NS"),
-                    "api_football_id": af_id,
-                })
-                stored_fixture_count += 1
-            except Exception as e:
-                console.print(f"  [yellow]Could not store {match_dict.get('home_team')} vs {match_dict.get('away_team')}: {e}[/yellow]")
+        match_dicts = [fixture_to_match_dict(af_fix) for af_fix in af_fixtures_raw]
+        try:
+            match_ids = bulk_store_matches(match_dicts)
+        except Exception as e:
+            console.print(f"  [red]Bulk store failed: {e}[/red]")
+            return
+
+        stored_fixture_count = 0
+        for af_fix, match_dict, match_id in zip(af_fixtures_raw, match_dicts, match_ids):
+            if not match_id:
+                continue
+            af_id = af_fix.get("fixture", {}).get("id")
+            if af_id:
+                af_id_to_match_id[af_id] = match_id
+            all_fixtures.append({
+                "home_team": match_dict["home_team"],
+                "away_team": match_dict["away_team"],
+                "date": match_dict["start_time"],
+                "league_name": af_fix.get("league", {}).get("name", ""),
+                "country": af_fix.get("league", {}).get("country", ""),
+                "status": af_fix.get("fixture", {}).get("status", {}).get("short", "NS"),
+                "api_football_id": af_id,
+            })
+            stored_fixture_count += 1
 
         console.print(f"  {stored_fixture_count} fixtures stored")
 
@@ -1446,19 +1452,30 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
     # to dominate run_morning wall time (~21min on EU pooler → ~1s).
     pending_pred_rows: list[dict] = []
 
-    for match in odds_matches:
-        # Store match in Supabase (idempotent upsert — skipped if id pre-set from DB load)
-        if match.get("id"):
-            match_id = match["id"]
-        else:
-            try:
-                match_id = store_match(match)
-            except Exception as e:
-                console.print(f"  [red]Error storing match: {e}[/red]")
-                continue
+    # BULK-STORE-MATCHES: pre-resolve match_ids for any odds_matches that don't
+    # already carry one (i.e. matches not loaded from DB). One bulk call instead
+    # of N serial store_match round-trips inside the loop.
+    matches_needing_store_idx = [i for i, m in enumerate(odds_matches) if not m.get("id")]
+    if matches_needing_store_idx:
+        try:
+            bulk_ids = bulk_store_matches([odds_matches[i] for i in matches_needing_store_idx])
+            for i, mid in zip(matches_needing_store_idx, bulk_ids):
+                if mid:
+                    odds_matches[i]["id"] = mid
+                    odds_matches[i]["_just_stored"] = True
+        except Exception as e:
+            console.print(f"  [red]Bulk store_matches failed: {e}[/red]")
 
-        # Store odds — skipped when loading from DB (fetch_odds.py already stored them)
-        if not match.get("id"):
+    for match in odds_matches:
+        match_id = match.get("id")
+        if not match_id:
+            # Bulk store either failed for this row or input was malformed.
+            continue
+
+        # Store odds — skipped when loading from DB (fetch_odds.py already stored them).
+        # Original guard was `if not match.get("id")` — true only for matches not
+        # loaded from DB. Bulk pre-resolve now always sets id, so use _just_stored.
+        if match.get("_just_stored"):
             try:
                 store_odds(match_id, {**match, "bookmaker": match.get("bookmaker", match.get("operator", "unknown"))})
             except Exception as e:
