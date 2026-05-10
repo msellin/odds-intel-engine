@@ -34,6 +34,10 @@ CREATE INDEX IF NOT EXISTS idx_real_bets_pending   ON real_bets (placed_at DESC)
 
 ALTER TABLE real_bets ENABLE ROW LEVEL SECURITY;
 
+-- Idempotent: drop existing policies before recreating (CREATE POLICY has no IF NOT EXISTS).
+DROP POLICY IF EXISTS "Superadmins read real_bets"  ON real_bets;
+DROP POLICY IF EXISTS "Superadmins write real_bets" ON real_bets;
+
 CREATE POLICY "Superadmins read real_bets"
   ON real_bets FOR SELECT
   USING (
