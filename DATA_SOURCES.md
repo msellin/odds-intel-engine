@@ -95,3 +95,11 @@ Constants live in `workers/utils/odds_quality.py` (`BLACKLISTED_OU_SOURCES`,
 
 **Nordic books (Paf, Coolbet, Veikkaus, Svenska Spel, Norsk Tipping)** are not
 in the AF feed — adding them requires a separate scraper (`NORDIC-BOOKS-INTEGRATION`).
+
+## Match deduplication (MATCH-DUPES-CLEANUP, 2026-05-10)
+
+`matches` table now has a partial unique index `matches_af_id_unique ON matches(api_football_id) WHERE api_football_id IS NOT NULL` (migration 089). Every fixture from API-Football is keyed on `api_football_id` at the DB level — the previous app-only dedup on `(home_team_id, away_team_id, date_prefix)` silently dropped a fixture's identity when AF rescheduled it across a UTC day boundary, producing 1,425 dupe groups before the cleanup.
+
+`bulk_store_matches` and `store_match` (workers/api_clients/supabase_client.py) now look up existing rows **by `api_football_id` first**, falling back to the team/date window only for legacy rows without an AF id. This makes the dedup survive reschedules.
+
+Historical dupes (3,177 rows) are preserved in `matches_dupe_quarantined` with `canonical_id` and `quarantined_at` columns for forensic rollback.

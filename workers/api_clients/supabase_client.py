@@ -171,13 +171,26 @@ def store_match(match_data: dict) -> str:
     tier = match_data.get("tier", 1)
     league_id = ensure_league(league_path, tier)
 
-    existing = execute_query(
-        """SELECT id, api_football_id, venue_name, venue_af_id, referee,
-                  home_team_api_id, away_team_api_id FROM matches
-           WHERE home_team_id = %s AND away_team_id = %s
-             AND date >= %s AND date <= %s""",
-        (home_id, away_id, f"{date_prefix}T00:00:00", f"{date_prefix}T23:59:59"),
-    )
+    # MATCH-DUPES-CLEANUP: dedup by api_football_id first when present (covers AF
+    # reschedules across UTC day boundaries that the team/date window misses), fall back
+    # to home/away/date for legacy rows with NULL afid.
+    af_id_raw = match_data.get("api_football_id")
+    existing = None
+    if af_id_raw:
+        existing = execute_query(
+            """SELECT id, status, date, api_football_id, venue_name, venue_af_id, referee,
+                      home_team_api_id, away_team_api_id FROM matches
+               WHERE api_football_id = %s LIMIT 1""",
+            (int(af_id_raw),),
+        )
+    if not existing:
+        existing = execute_query(
+            """SELECT id, status, date, api_football_id, venue_name, venue_af_id, referee,
+                      home_team_api_id, away_team_api_id FROM matches
+               WHERE home_team_id = %s AND away_team_id = %s
+                 AND date >= %s AND date <= %s""",
+            (home_id, away_id, f"{date_prefix}T00:00:00", f"{date_prefix}T23:59:59"),
+        )
 
     if existing:
         match_id = existing[0]["id"]
@@ -387,13 +400,35 @@ def bulk_store_matches(match_dicts: list[dict]) -> list[str | None]:
         p["league_id"] = league_id_by_path[p["league_path"]]
 
     # 4. Bulk dedup SELECT — one round-trip resolves all existing matches.
+    # MATCH-DUPES-CLEANUP: prefer api_football_id when present (covers reschedules across
+    # UTC day boundaries — the home/away/date_prefix join misses those). Fall back to the
+    # team/date join for any row whose AF id is NULL.
     keys = {(p["home_id"], p["away_id"], p["date_prefix"]) for p in parsed if p}
+    af_ids = {int(p["raw"]["api_football_id"]) for p in parsed
+              if p and p["raw"].get("api_football_id")}
     existing_by_key: dict[tuple, dict] = {}
+    existing_by_af: dict[int, dict] = {}
+
+    select_cols = (
+        "m.id, m.home_team_id, m.away_team_id, m.date, m.status, "
+        "m.api_football_id, m.venue_name, m.venue_af_id, m.referee, "
+        "m.home_team_api_id, m.away_team_api_id"
+    )
+
+    if af_ids:
+        with get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    f"SELECT {select_cols} FROM matches m WHERE m.api_football_id = ANY(%s)",
+                    (list(af_ids),),
+                )
+                for row in cur.fetchall():
+                    if row["api_football_id"] is not None:
+                        existing_by_af[int(row["api_football_id"])] = dict(row)
+
     if keys:
-        sql_dedup = """
-            SELECT m.id, m.home_team_id, m.away_team_id, m.date, m.status,
-                   m.api_football_id, m.venue_name, m.venue_af_id, m.referee,
-                   m.home_team_api_id, m.away_team_api_id
+        sql_dedup = f"""
+            SELECT {select_cols}
             FROM matches m
             JOIN (VALUES %s) AS v(home_id, away_id, dp)
               ON m.home_team_id = v.home_id::uuid
@@ -425,7 +460,12 @@ def bulk_store_matches(match_dicts: list[dict]) -> list[str | None]:
             continue
 
         md = p["raw"]
-        existing = existing_by_key.get(key)
+        af_id_raw = md.get("api_football_id")
+        existing = None
+        if af_id_raw:
+            existing = existing_by_af.get(int(af_id_raw))
+        if existing is None:
+            existing = existing_by_key.get(key)
         if existing:
             af_id = md.get("api_football_id")
             v_af = md.get("venue_af_id")

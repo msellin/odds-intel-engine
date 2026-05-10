@@ -3498,6 +3498,73 @@ def _():
     )
 
 
+@test("MATCH-DUPES — bulk_store_matches dedup uses api_football_id first")
+def _():
+    """The bug that created 1,425 dupe groups: bulk_store_matches keyed dedup on
+    (home_team_id, away_team_id, date_prefix) only — when AF rescheduled a fixture
+    across a UTC day boundary, the new fetch's date_prefix didn't match the existing
+    row's stored date and an INSERT fired. Fix: lookup by api_football_id first."""
+    src = open("workers/api_clients/supabase_client.py").read()
+    assert "existing_by_af" in src, (
+        "bulk_store_matches must build an api_football_id → existing-row map. "
+        "Without this, AF reschedules silently dupe."
+    )
+    assert "WHERE m.api_football_id = ANY" in src, (
+        "Must SELECT existing rows by api_football_id ANY(...) before falling back "
+        "to home/away/date_prefix join."
+    )
+
+
+@test("MATCH-DUPES — store_match (per-row) dedup uses api_football_id first")
+def _():
+    """Same fix in the legacy per-row helper that ad-hoc callers may still use."""
+    src = open("workers/api_clients/supabase_client.py").read()
+    # Find the store_match function body
+    start = src.index("def store_match(match_data: dict)")
+    body = src[start:start + 3000]
+    assert "WHERE api_football_id = %s" in body, (
+        "store_match must check api_football_id before the team/date fallback. "
+        "Otherwise reschedules dupe via the per-row path too."
+    )
+    assert body.index("WHERE api_football_id = %s") < body.index(
+        "WHERE home_team_id = %s AND away_team_id = %s"
+    ), (
+        "AF id lookup must happen BEFORE the team/date fallback — the order is the "
+        "whole point of the fix."
+    )
+
+
+@test("MATCH-DUPES — migration 089 has partial unique index on api_football_id")
+def _():
+    """Belt-and-suspenders: even if the application-level dedup ever misses again,
+    the DB rejects the INSERT loudly instead of silently accepting the dupe."""
+    import pathlib
+    p = pathlib.Path("supabase/migrations/089_matches_unique_af_id.sql")
+    assert p.exists(), "Migration 089 must exist (was the constraint shipped?)"
+    sql = p.read_text()
+    assert "CREATE UNIQUE INDEX" in sql, "Must be a UNIQUE index, not a regular one."
+    assert "api_football_id" in sql and "WHERE api_football_id IS NOT NULL" in sql, (
+        "Partial index must filter on api_football_id IS NOT NULL — full unique would "
+        "reject every legacy NULL-afid row."
+    )
+
+
+@test("MATCH-DUPES — performance-leaderboard hides voided bets")
+def _():
+    """Cleanup-voided bets (result='void', pnl=0) shouldn't pollute the per-bot history
+    table — they're misleading at original odds_at_pick (e.g. OU 1.5 at 3.42 looked
+    like a real bet but the price was garbage from a blacklisted bookmaker)."""
+    import pathlib
+    p = pathlib.Path("../odds-intel-web/src/components/performance-leaderboard.tsx")
+    if not p.exists():
+        return  # frontend not co-located — skip in engine-only checkouts
+    src = p.read_text()
+    assert 'b.result !== "void"' in src, (
+        "performance-leaderboard botBets filter must exclude result==='void'. "
+        "Without this, cleanup-voided bets render at original odds and confuse users."
+    )
+
+
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 def _run_one(name: str, fn) -> tuple[str, bool, str, float]:
