@@ -616,6 +616,43 @@ def train_all(version: str = "untagged",
 
     console.print(f"\n[bold green]✓ All models trained and saved to {output_dir}[/bold green]\n")
 
+    # ML-BUNDLE-STORAGE — push the bundle to Supabase Storage + register a
+    # row in `model_versions`. Without this, training on Railway leaves the
+    # bundle on the container's ephemeral filesystem and it dies on the next
+    # deploy. With this, every freshly-trained bundle is durable, downloadable
+    # from any environment, and auditable through the registry table.
+    try:
+        from workers.model.storage import upload_bundle, register_version
+        console.print("[cyan]Uploading bundle to Supabase Storage...[/cyan]")
+        upload_bundle(version, output_dir)
+        # Derive metadata from the in-memory training frame.
+        win_start = win_end = None
+        n_rows = int(len(features_df))
+        try:
+            if "match_date" in targets_df.columns:
+                dates = targets_df["match_date"].dropna()
+                if len(dates):
+                    win_start = str(dates.min())[:10]
+                    win_end = str(dates.max())[:10]
+        except Exception:
+            pass
+        register_version(
+            version,
+            training_window_start=win_start,
+            training_window_end=win_end,
+            n_training_rows=n_rows,
+            feature_cols=augmented_feature_cols,
+            cv_metrics=None,  # TODO: thread per-market CV metrics through here once train_*_model returns them
+            notes=f"Auto-uploaded by train.py train_all() (include_pinnacle={include_pinnacle})",
+        )
+        console.print(f"[bold green]✓ Bundle {version} uploaded + registered in model_versions[/bold green]\n")
+    except Exception as e:
+        console.print(
+            f"[yellow]⚠ Storage upload failed for {version}: {e}\n"
+            f"  Bundle is on local disk only — Railway will lose it on next deploy.\n"
+            f"  Run `python3 scripts/bootstrap_model_storage.py --only {version}` to retry.[/yellow]\n"
+        )
+
     return {
         "result": result_model,
         "over25": over25_model,

@@ -51,13 +51,40 @@ _feature_cache = {}
 
 
 def _load_models() -> dict:
-    """Load saved XGBoost models from disk. Cached after first call."""
+    """Load saved XGBoost models from disk. Cached after first call.
+
+    ML-BUNDLE-STORAGE: if the bundle dir doesn't exist locally, attempt to
+    pull it from Supabase Storage first (`workers/model/storage.py`). This
+    is what makes ephemeral Railway deploys safe: a fresh container with
+    `MODEL_VERSION=v_20260517` set won't have the bundle on its filesystem,
+    so we hydrate from Storage on the first prediction. Cached for the
+    container's lifetime after that. Falls back to empty (Poisson-only)
+    if the version is in neither place — caller logs a warning."""
     if _model_cache:
         return _model_cache
 
     model_path = MODELS_DIR / MODEL_VERSION
-    if not model_path.exists():
-        return {}
+    if not model_path.exists() or not (model_path / "feature_cols.pkl").exists():
+        # Lazy import — Storage is only reached when the cache is cold AND
+        # the bundle isn't on local disk (i.e. once per container lifetime
+        # in production).
+        try:
+            from workers.model.storage import ensure_local_bundle
+            present = ensure_local_bundle(MODEL_VERSION, MODELS_DIR)
+        except Exception as e:
+            from rich.console import Console
+            Console().print(
+                f"[yellow]Bundle {MODEL_VERSION} not local and Storage hydration "
+                f"failed: {e} — falling back to Poisson-only.[/yellow]"
+            )
+            return {}
+        if not present:
+            from rich.console import Console
+            Console().print(
+                f"[yellow]Bundle {MODEL_VERSION} not in local disk OR Supabase "
+                f"Storage — falling back to Poisson-only.[/yellow]"
+            )
+            return {}
 
     try:
         _model_cache["feature_cols"] = joblib.load(model_path / "feature_cols.pkl")

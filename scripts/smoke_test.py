@@ -104,6 +104,56 @@ def _():
     )
 
 
+@test("ML-BUNDLE-STORAGE — model_versions table exists with required columns")
+def _():
+    from workers.api_clients.db import execute_query
+    cols = execute_query(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+        ("model_versions",),
+    )
+    have = {c["column_name"] for c in cols}
+    required = {"version", "trained_at", "training_window_start", "training_window_end",
+                "n_training_rows", "feature_cols", "cv_metrics", "storage_bucket",
+                "storage_prefix", "promoted_at", "demoted_at", "notes"}
+    missing = required - have
+    assert not missing, f"model_versions missing columns: {missing}"
+
+
+@test("ML-BUNDLE-STORAGE — Storage bundle exists for at least one known version")
+def _():
+    # Bootstrap should have uploaded v9a_202425 + v10_pre_shadow + v12_post0e at minimum.
+    # If Storage is empty, bootstrap was never run (or RLS blocked the upload).
+    from workers.model.storage import bundle_exists_in_storage
+    assert bundle_exists_in_storage("v9a_202425"), (
+        "v9a_202425 not in Supabase Storage. Run "
+        "`python3 scripts/bootstrap_model_storage.py --only v9a_202425` to fix."
+    )
+
+
+@test("ML-BUNDLE-STORAGE — _load_models() routes through ensure_local_bundle on cache miss")
+def _():
+    import inspect
+    from workers.model import xgboost_ensemble
+    src = inspect.getsource(xgboost_ensemble._load_models)
+    # Without this wire, a fresh Railway container with MODEL_VERSION set to a
+    # bundle not on disk falls through to {} and silently degrades to Poisson.
+    assert "ensure_local_bundle" in src, (
+        "_load_models must call ensure_local_bundle when the bundle dir is missing — "
+        "otherwise Railway redeploys lose bundles silently."
+    )
+
+
+@test("ML-BUNDLE-STORAGE — train.py uploads to Storage and registers on success")
+def _():
+    import inspect
+    from workers.model import train
+    src = inspect.getsource(train.train_all)
+    # Guard the auto-upload + auto-register hook so future train.py refactors
+    # don't accidentally drop the durability path.
+    assert "upload_bundle" in src, "train_all must upload to Supabase Storage"
+    assert "register_version" in src, "train_all must register in model_versions"
+
+
 @test("OFFLINE-EVAL — Platt formula matches fit_platt_offline (sigmoid(a*p+b), not logit)")
 def _():
     import inspect
