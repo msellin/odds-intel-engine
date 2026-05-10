@@ -106,8 +106,11 @@ The model can split on the indicator alongside the imputed value, learning that 
 - `over_25` (bool) → Over/Under 2.5 model
 - `btts` (bool, derived at load time: `score_home > 0 AND score_away > 0`) → BTTS model
 
-**Training:** Run `python3 workers/model/train.py` — `load_training_data()` queries the DB automatically.
-Ready when `match_feature_vectors` has ~3,000+ completed matches (estimated ~June 2026 at 280/day).
+**Training:** Run `python3 workers/model/train.py --version v_YYYYMMDD` — `load_training_data()` queries the DB automatically. As of 2026-05-10 the table holds **47,084 settled rows** (post-Stage-0e refresh).
+
+**Bundle storage & versioning (ML-BUNDLE-STORAGE, 2026-05-10).** Every successful train auto-uploads the bundle to Supabase Storage (`models/<version>/*.pkl`) and registers a row in the `model_versions` table (trained_at, training_window, n_rows, feature_cols, cv_metrics, promoted_at, demoted_at, notes). This solves Railway's ephemeral-filesystem problem: a fresh container with `MODEL_VERSION=v_X` set hits `xgboost_ensemble._load_models()`, sees no local copy, calls `ensure_local_bundle()`, downloads from Storage, caches for the container's lifetime. Switch versions by setting `MODEL_VERSION` env var on Railway → next deploy auto-pulls. Historical bundles stay in Storage forever — rollback is one env-var change. Costs ~$0.05/mo for 5 years of weekly bundles. Full architecture, port-to-other-projects guide, and gotchas in `docs/ML_MODEL_REGISTRY.md`.
+
+**Active production version:** `v12_post0e` since 2026-05-10. Switched from `v9a_202425` after `scripts/offline_eval.py` (offline A/B harness — runs N bundles head-to-head on a held-out MFV slice without waiting for shadow-deploy data) showed v12 cuts 1X2 log_loss roughly in half on every market vs v9. Final 5-way comparison (v9 / v10 / v11 / v12 / v13) saved at `dev/active/model-comparison-2026-05-10-final.md`.
 
 ### 3.2 ELO Rating System
 

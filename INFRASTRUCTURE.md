@@ -8,7 +8,7 @@
 
 | Service | Role | Plan | Status |
 |---------|------|------|--------|
-| **Supabase** | PostgreSQL DB, Auth, RLS, REST API | **Pro ($25/mo)** | Active — upgraded 2026-04-29 |
+| **Supabase** | PostgreSQL DB, Auth, RLS, REST API + **Storage** (`models` bucket — ML bundle registry, ML-BUNDLE-STORAGE 2026-05-10) | **Pro ($25/mo)** | Active — upgraded 2026-04-29 |
 | **Railway** | Pipeline scheduler + LivePoller + InplayBot (long-running process) | **Hobby ($5/mo)** | Active — upgraded from Trial 2026-05-05. Auto-deploy from GitHub main (2026-05-06). All scheduled jobs + 30s/60s/5min live polling + in-play paper trading |
 | **GitHub Actions** | Manual workflow_dispatch + DB migrations only | Free (public repos) | Active — crons disabled, ~100 min/month |
 | **GitHub** | Source control (2 repos, both public) | Free | Active |
@@ -68,7 +68,7 @@ All scheduled jobs moved to Railway. GitHub Actions used only for manual trigger
 | Database size | **8 GB** | ~150-200 MB (845K odds_snapshots rows, 2 days data) | Massive — years |
 | Database (rows) | — | odds_snapshots 845K, matches 885, predictions 590, match_signals 2,701 | Fine |
 | Auth MAU | 100,000 | 2 users | Plenty |
-| Storage | 100 GB | Not used | N/A |
+| Storage | 100 GB | ~100 MB (16 model bundles in `models` bucket) | Plenty — ~5MB/bundle, ~52 bundles/year at weekly retrain |
 | Bandwidth | 5 GB/mo | Low | Plenty |
 | Backups | ✅ Daily automated + PITR (7 days) | Active | — |
 | Project pausing | Never pauses | Active | — |

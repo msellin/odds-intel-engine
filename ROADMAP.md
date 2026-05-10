@@ -140,7 +140,9 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | Pinnacle signals | ✅ PIN-1 through PIN-5: implied probs (all markets), line movement, veto gate, Pinnacle-anchored CLV |
 | Calibration improvements | ✅ Pinnacle shrinkage anchor, odds-conditional alpha, sharp consensus gate, draw inflation, dynamic DC rho |
 | match_signals (EAV signal store) | ✅ 30+ signals per match (incl. sharp_consensus, Pinnacle implied, Pinnacle line move, injury_recurrence, h1_shot_dominance, squad_disruption) |
-| match_feature_vectors (ML training table) | ✅ Nightly ETL, wide table |
+| match_feature_vectors (ML training table) | ✅ Nightly ETL for finished matches + **MFV-LIVE-BUILD** (2026-05-10) writes pre-KO rows on every betting refresh so v10+ XGBoost finds a row at inference instead of falling back to Poisson |
+| ML model registry (Supabase Storage + `model_versions` table) | ✅ **ML-BUNDLE-STORAGE** (2026-05-10) — every trained bundle auto-uploads to Storage + auto-registers; `_load_models()` lazy-downloads on Railway cold-start. Solves Railway's ephemeral-filesystem problem for weekly retrains. 16 bundles archived. Switch versions via `MODEL_VERSION` env var → next deploy auto-pulls. Full design in `docs/ML_MODEL_REGISTRY.md` |
+| Active production model | ✅ **`v12_post0e`** (Pinnacle-free, post-Stage-0e). Switched from v9a_202425 on 2026-05-10. Beats v9 by ~50% on every 1X2 market log_loss in offline_eval. Compare any time: `python3 scripts/offline_eval.py vA vB --include-v9` |
 | pseudo_clv | ✅ All ~280 matches/day |
 | Platt scaling (post-hoc calibration) | ✅ 2-stage: tier shrinkage → Platt sigmoid. Weekly refit (Wed+Sun) |
 | Learned blend weights | ✅ MOD-2 — optimized Poisson/XGBoost weights + per-tier alpha. Weekly refit |
