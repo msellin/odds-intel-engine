@@ -7,9 +7,9 @@
 
 - ✅ **0.1** Sampling script `scripts/sample_coolbet_proxy_check.py` shipped — pulls all pending paper bets on not-yet-started matches with Unibet + Bet365 + Pinnacle joined at pick time. Generates CSV at `dev/active/self-use-validation-phase0-worksheet.csv`. Reframed forward-looking (Coolbet doesn't publish historical odds — once a match kicks off, the price is gone). Re-runnable; each session adds samples. **First run produced 26 rows incl. Barcelona vs Real Madrid, PSG, Olympiakos vs PAOK.**
 - ✅ **0.2** Done by 0.1 — script fetches Unibet + Bet365 directly.
-- ⬜ **0.3** **(USER MANUAL STEP)** Open `dev/active/self-use-validation-phase0-worksheet.csv` in Numbers/Excel. Open coolbet.ee, look up each upcoming match + market. Write the displayed Coolbet price into the `coolbet_actual` column. Where Coolbet doesn't offer the market, leave blank or write `N/A`. Re-run script over multiple days to accumulate samples.
-- ⬜ **0.4** Compute: mean abs gap (Unibet vs Coolbet), worst-case gap, % of cases where Coolbet didn't offer. Save as `dev/active/self-use-validation-phase0-results.md`.
-- ⬜ **0.5** Decision recorded in plan: "Unibet proxy works" or "Need direct Coolbet API".
+- ⏭ **0.3 — SUPERSEDED by Phase 3 real-bet logging.** The `/admin/place` modal captures captured_odds + actual_odds on every real bet, and `real_bets.slippage_pct` IS the Unibet-vs-Coolbet gap measurement. Selection bias caveat: only bets you choose to place get sampled. Acceptable for hobbyist validation. CSV worksheet at `dev/active/self-use-validation-phase0-worksheet.csv` is preserved for any future unbiased sampling but not required.
+- ⏭ **0.4 — SUPERSEDED.** Same data lives on `/admin/real-bets` (mean slippage stat card + per-book breakdown). After ~50 real bets logged, that's the validation signal.
+- ⏭ **0.5 — DEFERRED to Week 1 of Phase 3.** Decision will fall out of `/admin/real-bets` slippage trend after first 50 bets. Unibet proxy works if mean |slippage| < 3% and slippage doesn't show systematic bias by market type.
 
 ## Phase 1 — Coolbet odds via The Odds API *(only if Phase 0 says proxy is bad)*
 
