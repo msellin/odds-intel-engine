@@ -2830,7 +2830,7 @@ def build_referee_stats() -> int:
                 """SELECT yellow_cards_home, yellow_cards_away,
                           red_cards_home, red_cards_away
                    FROM match_stats
-                   WHERE match_id = ANY(%s)""",
+                   WHERE match_id = ANY(%s::uuid[])""",
                 (batch,),
             )
             for row in cards_r:
