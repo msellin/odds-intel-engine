@@ -340,6 +340,56 @@ def job_weekly_digest():
     _run_job("weekly_digest", run_weekly_digest)
 
 
+def job_weekly_retrain():
+    """ML-PIPELINE-UNIFY Stage 5a — weekly retrain + auto-comparison.
+
+    Trains a new model bundle tagged `v{YYYYMMDD}` from the current MFV, then
+    runs `compare_models.py` against the production version. Promotion stays
+    manual: the operator flips MODEL_VERSION env after reading the comparison.
+    """
+    from datetime import date as _date
+    import subprocess
+    import os
+
+    def _retrain():
+        version = f"v{_date.today().strftime('%Y%m%d')}"
+        production = os.getenv("MODEL_VERSION", "v9a_202425")
+
+        console.print(f"[bold cyan]Weekly retrain → {version}[/bold cyan]")
+        # Subprocess so a hung XGBoost run can't block the scheduler thread
+        # any longer than the 30-min wallclock here. Lives outside the cron
+        # process so a crash bubbles up cleanly.
+        result = subprocess.run(
+            [sys.executable, "-m", "workers.model.train", "--version", version],
+            cwd=str(Path(__file__).parent.parent),
+            timeout=1800,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[red]train.py exit {result.returncode}: {result.stderr[-2000:]}[/red]")
+            raise RuntimeError(f"weekly retrain failed: exit {result.returncode}")
+        console.print(result.stdout[-2000:])
+
+        # Auto-comparison — best-effort. A retrain that lands without anyone
+        # reading the diff is still a win (the bundle is on disk for next week).
+        try:
+            cmp = subprocess.run(
+                [sys.executable, "scripts/compare_models.py", version, production],
+                cwd=str(Path(__file__).parent.parent),
+                timeout=600,
+                capture_output=True,
+                text=True,
+            )
+            console.print(cmp.stdout[-3000:])
+            if cmp.returncode != 0:
+                console.print(f"[yellow]compare_models.py exit {cmp.returncode}: {cmp.stderr[-1000:]}[/yellow]")
+        except Exception as e:
+            console.print(f"[yellow]Auto-comparison skipped: {e}[/yellow]")
+
+    _run_job("weekly_retrain", _retrain)
+
+
 def job_watchlist_alerts():
     from workers.jobs.watchlist_alerts import run_watchlist_alerts
     _run_job("watchlist_alerts", run_watchlist_alerts)
@@ -695,6 +745,12 @@ def main():
     # ENG-10: Weekly performance email — Monday 08:00 UTC
     scheduler.add_job(job_weekly_digest, CronTrigger(day_of_week="mon", hour=8, minute=0),
                       id="weekly_digest", name="Weekly Digest Monday 08:00")
+
+    # ML-PIPELINE-UNIFY Stage 5a — weekly retrain Sunday 03:00 UTC, runs train.py +
+    # compare_models.py. Promotion stays manual (operator flips MODEL_VERSION).
+    scheduler.add_job(job_weekly_retrain, CronTrigger(day_of_week="sun", hour=3, minute=0),
+                      id="weekly_retrain", name="Weekly Retrain Sunday 03:00",
+                      max_instances=1, misfire_grace_time=3600)
 
     # ENG-8: Watchlist alerts — 08:30, 14:30, 20:35 UTC
     # 20:35 staggered 5 min after 20:30 betting refresh (N9 fix — avoids simultaneous heavy jobs)

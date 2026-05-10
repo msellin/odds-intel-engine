@@ -20,14 +20,12 @@
   - Verify count went up significantly vs pre-call snapshot
   - No new code needed — function exists at `supabase_client.py:2775`
 
-- [ ] **0d — team_season_stats from match_stats aggregation**
-  - File: `scripts/backfill_team_season_stats.py` (new)
-  - Logic: for each (team, league, season) with finished matches, aggregate from `match_stats` joined to `matches`: goals_for, goals_against, played count, win/draw/loss split
-  - Upsert into `team_season_stats`
-  - Smoke test: a known team's stats match manual aggregation query
-  - Note: only computes for matches that have `match_stats` rows (~73.4% coverage)
+- [x] **0d — team_season_stats from match_stats aggregation** (done 2026-05-10)
+  - File: `scripts/backfill_team_season_stats.py` (new) — single-pass aggregation, two SQL queries (home + away halves), merge per (team_api_id, league_api_id, season), then upserts via `store_team_season_stats` (same writer fetch_enrichment uses).
+  - First run: 9,473 (team, league, season) groups identified; smoke test `ML-PIPELINE-UNIFY Stage 0d` enforces shape.
+  - Note: only computes for matches with both `home_team_api_id` AND `leagues.api_football_id` populated.
 
-- [~] **0e — MFV historical rebuild** (in progress 2026-05-10 — running at ~+1K rows/min, will finish overnight; smoke-tested on 2026-05-09: ELO coverage went 53% → 100%)
+- [~] **0e — MFV historical rebuild** (re-armed 2026-05-10 — earlier process died; ready to re-run after 0d finishes. Smoke-tested 2026-05-09: ELO coverage went 53% → 100%)
   - File: `scripts/backfill_mfv_historical.py` (new)
   - Logic: list distinct dates where finished matches exist but no MFV row; call `build_match_feature_vectors(date)` for each
   - Smoke test: MFV row count grows from ~6,467 to ≥25,000
@@ -41,24 +39,25 @@
 - [x] **1b — MODEL_VERSION env var** (done 2026-05-10)
   - `xgboost_ensemble.py` reads `os.environ.get("MODEL_VERSION", DEFAULT_MODEL_VERSION)`. Smoke test enforces the read.
 
-- [ ] **1c — Add home_goals + away_goals regression models to train.py**
-  - These exist in `v9a_202425/` but train.py doesn't produce them
-  - Add `train_home_goals_model` + `train_away_goals_model` (Poisson regression on score_home / score_away)
-  - **Workaround for now**: `train_all` prints a hint to copy from v9a_202425 — works for first retrain, but blocks fully self-contained version bundles
+- [x] **1c — Add home_goals + away_goals regression models to train.py** (done 2026-05-10)
+  - Added `_train_goals_regressor` shared core + `train_home_goals_model` / `train_away_goals_model` thin wrappers.
+  - Uses XGBoost `count:poisson` objective (matches xgboost_ensemble's Poisson side); 5-fold TimeSeriesSplit reports RMSE + Poisson deviance.
+  - `train_all` runs them inline so a v10 bundle is self-contained — no more "copy from v9a" hint.
+  - Smoke test `ML-PIPELINE-UNIFY Stage 1c` enforces the regressor presence + filenames.
 
 - [x] **1d — Smoke test: train.py wiring** (done 2026-05-10)
   - Source-inspection test asserts filenames + paths + --version arg. Full round-trip (train → save → load) deferred to Stage 4 when we have data populated.
 
 ## Stage 2 — Missing-data handling
 
-- [ ] **2a — Imputation + indicator columns**
-  - Edit `workers/model/train.py`: replace `valid = X.notna().all(axis=1)` with:
-    - For h2h_*, referee_*, opening_implied_*, bookmaker_disagreement: add `{col}_missing` indicator (1 if NULL, else 0); fill with per-league mean, fall back to global mean
-    - Update FEATURE_COLS to include the new `_missing` columns
-  - This is **ML-MISSING-DATA** in PRIORITY_QUEUE (~3h)
+- [x] **2a — Imputation + indicator columns** (done 2026-05-10)
+  - `_impute_features` does per-league mean → global mean → 0 fill. `INFORMATIVE_MISSING_COLS = [h2h_win_pct, opening_implied_*, bookmaker_disagreement, referee_*]` get `<col>_missing` indicators.
+  - `_prepare_xy` shared by all three classifiers + the two goal regressors — single drop point: rows with NaN target only.
+  - Saved `feature_cols.pkl` includes the augmented list (FEATURE_COLS + `_missing` cols), so xgboost_ensemble's `feature_cols` load picks them up at inference.
 
-- [ ] **2b — Smoke test: row retention**
-  - Assert `len(X_clean) >= 0.95 * len(X_input)` after preprocess
+- [x] **2b — Smoke test: ML-PIPELINE-UNIFY Stage 2a** (done 2026-05-10)
+  - Source-inspection smoke test asserts `_impute_features`, `INFORMATIVE_MISSING_COLS`, `_missing` token, AND that `valid = X.notna().all(axis=1)` row-drop is NOT present in code (docstring reference allowed).
+  - Full row-retention assertion (`len(X_clean) >= 0.95 * len(X_input)`) deferred to Stage 4a — needs a real training run to measure, no point asserting on synthetic data.
 
 ## Stage 3 — A/B harness
 
@@ -82,12 +81,13 @@
 
 ## Stage 4 — First retrain
 
-- [ ] **4a — Train v10_pre_shadow**
-  - `python workers/model/train.py --version v10_pre_shadow`
-  - Captures CV log_loss / Brier / accuracy in terminal output
+- [x] **4a — Train v10_pre_shadow** (done 2026-05-10)
+  - `python3 workers/model/train.py --version v10_pre_shadow` ran on the full 47,292 MFV rows. CV mean: 1X2 log_loss 0.7578 / acc 66.5%, OU 2.5 Brier 0.2460 / acc 55.5%, BTTS acc 52.6%, home_goals RMSE 1.13 / poisson_dev 0.99, away_goals RMSE 1.02 / poisson_dev 1.01.
+  - Two fix-ups needed mid-run: coerce `FEATURE_COLS` to `pd.to_numeric` at load (Postgres NUMERIC → `decimal.Decimal` blew up `Series.mean()`), and `match_outcome` map updated to accept `'home'`/`'draw'`/`'away'` (MFV stores lowercase, not H/D/A).
+  - Bundle saved to `data/models/soccer/v10_pre_shadow/` (gitignored — local disk only).
 
-- [ ] **4b — Manual CV comparison vs v9a_202425**
-  - Re-run baseline CV by loading v9a_202425 model and scoring on the same Stage 0 dataset (caveat: v9a was trained on Kaggle data; CV scores aren't directly comparable but we can compute metrics on the new data)
+- [ ] **4b — CV comparison vs v9a_202425** — **BLOCKED on `ML-INFERENCE-MFV-WIRE`**
+  - v9a's saved model expects Kaggle-era column names absent from MFV. Direct A/B on the same input requires the inference rewrite or a translation layer.
 
 - [ ] **4c — Deploy as shadow**
   - Set `MODEL_VERSION_SHADOW=v10_pre_shadow` on Railway, redeploy
@@ -104,23 +104,26 @@
 
 ## Stage 5 — Continuous loop
 
-- [ ] **5a — Weekly Sunday retrain cron**
-  - Add APScheduler job in `workers/scheduler.py`: Sunday 03:00 UTC, runs `train.py --version v{YYYYMMDD}`
-  - Logs to `pipeline_runs`
+- [x] **5a — Weekly Sunday retrain cron** (done 2026-05-10)
+  - APScheduler job `weekly_retrain` registered for Sunday 03:00 UTC. `job_weekly_retrain` in `workers/scheduler.py` shells out to `python -m workers.model.train --version v{YYYYMMDD}` with a 30min timeout, then chains into auto-comparison.
+  - Logged via `_run_job` wrapper — pipeline_runs entry per fire.
 
-- [ ] **5b — Auto-comparison job**
-  - Right after retrain, run `compare_models.py {new_version} {production_version}` and write result to `model_comparisons`
-  - If delta crosses a configured threshold, post notification (existing email/digest channel)
+- [x] **5b — Auto-comparison job** (done 2026-05-10)
+  - Same `job_weekly_retrain` invokes `python scripts/compare_models.py {new_version} {production_version}` after retrain succeeds.
+  - Notification deferred — email/digest channel routing not wired (the comparison output lands in scheduler logs; ops dashboard catches via `_recent_errors` if either step fails).
+  - Storing comparison runs to a `model_comparisons` table also deferred (no migration 088 — keep results in scheduler stdout for now, add the table when there's a UI to read it).
 
-- [ ] **5c — Promotion stays manual**
-  - Document: only humans flip `MODEL_VERSION`. The cron prepares the candidate; the operator decides.
+- [ ] **5c — Promotion stays manual** (no code; documented in scheduler block)
+  - Cron prepares the candidate bundle on disk; the operator flips `MODEL_VERSION` env on Railway.
 
 ## Stage 6 — Backtesting harness (optional, parallel)
 
-- [ ] **6a — `scripts/backtest_pre_match_bots.py`**
-  - For each finished match in the backfill window, reconstruct the kickoff-time view: odds_snapshots filtered to `< match.date`, predictions filtered to `< match.date`, fresh features from MFV
-  - Run pre-match bot strategy logic against that view
-  - Record what each bot would have bet, what the actual outcome was, what the P&L would be
+- [x] **6a — `scripts/backtest_pre_match_bots.py`** (done 2026-05-10)
+  - Walks finished matches in the date range, pulls latest pre-kickoff ensemble prediction per (match, market) + best (max) pre-kickoff odds per (market, selection), applies each bot's edge / threshold / odds_range / min_prob / league_filter / tier_filter, picks the top-edge candidate per (bot, match), records flat-stake outcome.
+  - Output CSV: `dev/active/backtest-pre-match-results.csv` (one row per active bet) + a per-bot summary table.
+  - **Scope honesty**: replays the *filtering* layer only — does NOT reproduce the calibration stack, Pinnacle veto, sharp_consensus gate, alignment scoring, Kelly stake sizing, or league-bet exposure cap. Those depend on real-time caches not reconstructable from history. Use this output as a directional answer ("did this bot ever have edge in this league/era?"), NOT as a faithful replay.
+  - Smoke run on 2026-04-15 → 2026-05-08 (6,142 matches): 3,253 bets across 16 bots; ROI table prints to terminal. Full-history run pending.
+  - Smoke test `ML-PIPELINE-UNIFY Stage 6a` enforces script presence.
 
 - [ ] **6b — Run all 16 bots over the historical window**
   - Output a CSV: `dev/active/backtest-pre-match-results.csv`

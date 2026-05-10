@@ -3136,6 +3136,113 @@ def _():
     )
 
 
+@test("ML-PIPELINE-UNIFY Stage 2a — NaN-tolerant training")
+def _():
+    """Stage 2a: train.py used to drop every row with any NaN feature, losing
+    ~30-40% of MFV (H2H is structurally missing for promoted teams). Now it
+    imputes per-league mean and adds <col>_missing indicators. This guards the
+    rename so a future refactor can't silently reintroduce X.notna().all()."""
+    import pathlib
+    src = pathlib.Path("workers/model/train.py").read_text()
+    assert "_impute_features" in src, (
+        "train.py must use _impute_features for per-league mean fill — "
+        "the prior X.notna().all(axis=1) row-drop biased training away from promoted teams."
+    )
+    assert "INFORMATIVE_MISSING_COLS" in src, (
+        "Indicator columns for h2h/opening-odds/referee missingness must be added — "
+        "the model learns from the *pattern* of missingness, not just the imputed mean."
+    )
+    assert "_missing" in src, (
+        "Each INFORMATIVE_MISSING_COLS entry must produce a <col>_missing flag."
+    )
+    # The original aggressive drop must be gone — only the docstring reference
+    # in _impute_features may remain (it points to the prior pattern explicitly).
+    code_lines = [ln for ln in src.split("\n") if "notna().all(axis=1)" in ln and not ln.strip().startswith("#")]
+    real_uses = [ln for ln in code_lines if "valid =" in ln or "= X.notna" in ln]
+    assert not real_uses, (
+        f"X.notna().all(axis=1) row-drop is the regression we're guarding against, "
+        f"found in: {real_uses}. Imputation must replace it, not coexist with it."
+    )
+
+
+@test("ML-PIPELINE-UNIFY Stage 1c — home/away goals regressors trained inline")
+def _():
+    """Stage 1c: train.py now produces home_goals.pkl + away_goals.pkl so the
+    version bundle is self-contained. Without these, xgboost_ensemble.py
+    silently falls back to v9a_202425 for the Poisson side and a v10 model
+    isn't truly v10 — it's a 1X2/OU/BTTS swap with v9a goal expectations."""
+    import pathlib
+    src = pathlib.Path("workers/model/train.py").read_text()
+    assert "train_home_goals_model" in src and "train_away_goals_model" in src, (
+        "train.py must define train_home_goals_model + train_away_goals_model."
+    )
+    assert "count:poisson" in src, (
+        "Goal regressors must use the count:poisson XGBoost objective — that's "
+        "what xgboost_ensemble._predict_goals expects."
+    )
+    assert "home_goals.pkl" in src and "away_goals.pkl" in src, (
+        "Filenames must match what xgboost_ensemble._load_models reads."
+    )
+
+
+@test("ML-PIPELINE-UNIFY Stage 0d — backfill_team_season_stats script present")
+def _():
+    """Stage 0d: aggregates from match_stats joined to matches and writes one
+    row per (team, league, season) via the same store_team_season_stats writer
+    fetch_enrichment uses. Without this, MFV's per-team venue averages stay
+    NULL on backfilled matches and Stage 2a imputes from scratch."""
+    import pathlib
+    src = pathlib.Path("scripts/backfill_team_season_stats.py").read_text()
+    assert "store_team_season_stats" in src, (
+        "Backfill must use the same writer as live enrichment — keeps schema "
+        "in lockstep when team_season_stats columns evolve."
+    )
+    assert "GROUP BY" in src and "home_team_api_id" in src and "away_team_api_id" in src, (
+        "Aggregation must walk both home- and away-side groupings — without "
+        "the away half, away venue averages stay zero."
+    )
+
+
+@test("ML-PIPELINE-UNIFY Stage 5a — weekly retrain cron registered")
+def _():
+    """Stage 5a/5b: weekly Sunday 03:00 UTC retrain + auto-comparison. Without
+    this cron, the pipeline depends on a human remembering to retrain — every
+    week of drift is a week of stale calibration."""
+    import pathlib
+    src = pathlib.Path("workers/scheduler.py").read_text()
+    assert "weekly_retrain" in src, (
+        "Scheduler must register a weekly_retrain job — Sunday 03:00 UTC."
+    )
+    assert "job_weekly_retrain" in src, (
+        "job_weekly_retrain function must be defined alongside the other job_* helpers."
+    )
+    assert "compare_models.py" in src, (
+        "The retrain job must invoke compare_models.py for auto-comparison vs "
+        "the production version — promotion stays manual but the diff lands automatically."
+    )
+
+
+@test("ML-PIPELINE-UNIFY Stage 6a — pre-match backtester script present")
+def _():
+    """Stage 6a: replays every active pre-match bot against historical odds +
+    predictions and writes a per-(bot, match) CSV. The harness is scope-honest:
+    it does NOT re-run the calibration / Pinnacle veto / Kelly stack, so its
+    P&L is directional, not faithful."""
+    import pathlib
+    src = pathlib.Path("scripts/backtest_pre_match_bots.py").read_text()
+    assert "BOTS_CONFIG" in src, (
+        "Backtester must walk BOTS_CONFIG — single source of truth for bot definitions."
+    )
+    assert "_outcome" in src, (
+        "Outcome computation must be a named helper — guards against silent "
+        "logic drift between markets (1x2 vs OU vs BTTS)."
+    )
+    assert "is_live = false" in src, (
+        "Backtester must restrict to pre-kickoff odds (is_live=false). "
+        "Including in-play snapshots would conflate two different bots."
+    )
+
+
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 def _run_one(name: str, fn) -> tuple[str, bool, str, float]:

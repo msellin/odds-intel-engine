@@ -31,6 +31,28 @@ The core thesis: **bookmaker pricing is less efficient in lower-tier leagues** (
 
 Note: Kambi API was removed 2026-05-06 after analysis showed Unibet odds (the main Kambi source) are already included in the API-Football 13-bookmaker feed.
 
+### 2.1 Data quality gates (added 2026-05-10, ODDS-QUALITY-CLEANUP)
+
+Three sources from the AF feed were found to ship clearly broken Over/Under
+data: the synthetic `api-football` source (100% of OU pairs invalid, avg
+implied-sum 0.63 — not a betting market), `William Hill` (88% Under-favored
+on OU 1.5, line labels appear shifted), and `api-football-live` (in-play live
+odds leaking into pre-match best-price aggregation). All three are excluded
+from OU markets at both ingestion and the read-path best-price aggregator.
+1X2 and BTTS rows from the same sources are kept — those markets verified
+clean across every bookmaker (<0.05% invalid pair rate).
+
+A second gate — **implied-sum sanity** (`1/over + 1/under ≥ 1.02`) — drops both
+sides of any mathematically-impossible pair, auto-quarantining future broken
+sources without code changes. Constants live in `workers/utils/odds_quality.py`.
+
+**Verified unaffected** (no rebuild needed): `match_feature_vectors`
+(`build_match_feature_vectors` reads `market='1x2'` only), Platt calibration
+(fits on predictions vs match outcomes, no odds), ELO (match results only).
+Bot bankrolls and `simulated_bets` were repaired in the same commit (~$257 of
+phantom PnL erased across 8 bots; 53 settled OU bets voided where their
+`odds_at_pick` no longer matched any surviving snapshot).
+
 ---
 
 ## 3. Feature Engineering
@@ -54,10 +76,16 @@ All rolling statistics computed from the **10 most recent matches** per team, sp
 
 **Defaults:** When insufficient history exists (new teams, new season), features default to league averages or neutral values (e.g. H2H defaults to 0.33 for 3-way split).
 
-### 3.1b Feature Set — AF Retrain Model (`workers/model/train.py`, 28 features)
+### 3.1b Feature Set — AF Retrain Model (`workers/model/train.py`, 28 base + 8 missingness indicators)
 
-The new AF model trains on `match_feature_vectors` — live pipeline data accumulated since 2026-04-27.
-Column names match the table exactly. All features allow NaN — rows with any missing feature are dropped per model during training.
+The new AF model trains on `match_feature_vectors` — live pipeline data accumulated since 2026-04-27, plus historical rebuild via `scripts/backfill_mfv_historical.py` (Stage 0e of ML-PIPELINE-UNIFY).
+Column names match the table exactly.
+
+**Missing-data handling (Stage 2a, 2026-05-10).** The prior `valid = X.notna().all(axis=1)` row-drop lost ~30-40% of rows because H2H is structurally absent for newly-promoted pairings, opening odds are absent for pre-2026-Q2 matches the engine wasn't yet watching, and referee features are absent for unstaffed fixtures. The new pipeline imputes per-league mean (with a global-mean fallback for leagues with no observations) and adds `<col>_missing` indicator columns for the features where missingness *itself* carries signal:
+
+  `h2h_win_pct_missing`, `opening_implied_home_missing`, `opening_implied_draw_missing`, `opening_implied_away_missing`, `bookmaker_disagreement_missing`, `referee_cards_avg_missing`, `referee_home_win_pct_missing`, `referee_over25_pct_missing`
+
+The model can split on the indicator alongside the imputed value, learning that "we don't have H2H" predicts differently from "H2H exists and shows 50%". Saar-Tsechansky & Provost (2007 JMLR) shows this matches KNN imputation in accuracy at 1/100th the cost.
 
 | Group | Column name(s) | Count |
 |-------|---------------|-------|
@@ -158,6 +186,10 @@ Gradient boosted decision tree trained on historical match data:
 | Validation | TimeSeriesSplit (5 folds, no future data leakage) |
 
 **Output:** P(home), P(draw), P(away), P(O/U 2.5), expected goals (home/away).
+
+**Goal regressors (1c, 2026-05-10).** The XGBoost bundle now ships two `count:poisson` regressors (`home_goals.pkl`, `away_goals.pkl`) trained on `score_home` / `score_away` from the same MFV slice the classifiers use. Inference (`xgboost_ensemble._predict_goals`) consumes these to produce λ_home / λ_away for the Poisson side of the ensemble's score distribution. Before this change `train.py` only produced classifiers — operators had to copy `home_goals.pkl` / `away_goals.pkl` from `v9a_202425/` into every new bundle. A v10+ bundle is now self-contained.
+
+Regressor hyperparameters mirror the classifiers (`n_estimators=200`, `max_depth=5`, `lr=0.05`, `subsample=0.8`, `colsample_bytree=0.8`) with `objective="count:poisson"` + `eval_metric="poisson-nloglik"`. CV reports per-fold RMSE and Poisson deviance.
 
 ### 4.2 Ensemble
 

@@ -27,6 +27,7 @@
                                                     + mark_closing runs at 13:30, 17:30, 20:00 (pre-KO windows)
 07:15  ⑩ Match Previews  run_match_previews()      Top 10 matches → Gemini 200-word previews (ENG-3)
 10/12/14/16  ⑪ Email Digest Slots  run_email_digest()  Smart-slot digest — first slot whose pending-bet signal score ≥ EMAIL_DIGEST_MIN_SIGNAL sends; later slots see per-user lock and skip (ENG-4 / EMAIL-DIGEST-SMART)
+03:00  ⑭ Weekly Retrain  job_weekly_retrain()      Sunday only — runs `train.py --version v{YYYYMMDD}` then auto-`compare_models.py {new} {production}`. Promotion stays manual (operator flips MODEL_VERSION env). ML-PIPELINE-UNIFY Stage 5a/5b.
 08:00  ⑫ Weekly Digest   run_weekly_digest()       Monday only — model week review + upcoming matches (ENG-10)
 08:30  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts (ENG-8)
 09:00  ⑦ News Checker    run_news_checker()        Injury/lineup/news signals (Gemini)
@@ -137,6 +138,7 @@
 - Kambi removed 2026-05-06 — all leagues already covered by AF, no unique value
 - Stores all in `odds_snapshots` with `minutes_to_kickoff`
 - `--mark-closing` flag for pre-kickoff runs (13:30, 17:30, 20:00)
+- **OU quality gates (ODDS-QUALITY-CLEANUP, 2026-05-10)**: `filter_garbage_ou_rows` (in `workers/utils/odds_quality.py`) drops OU rows from blacklisted bookmakers (`api-football`, `api-football-live`, `William Hill`) and both sides of impossible `(over, under)` pairs (`1/over + 1/under < 1.02`). Applied at every write path. 1X2 / BTTS rows from the same bookmakers pass through unchanged. See `DATA_SOURCES.md` for the why.
 
 ### ④ Predictions (`fetch_predictions.py`)
 - AF `/predictions` for each fixture — Poisson-based probability
@@ -151,6 +153,8 @@
 - Reads all data from DB — no API calls (Phase 2 complete as of 2026-04-29)
 - Calls `run_morning(skip_fetch=True)` in `daily_pipeline_v2.py`
 - `_load_today_from_db()` reads today's matches + best pre-match odds + AF predictions from DB
+- **Bot gating (ODDS-QUALITY-CLEANUP, 2026-05-10)**: pipeline now skips any bot with `bots.is_active=false` or `retired_at IS NOT NULL`, so a paused bot stops placing bets immediately without a code change.
+- **OU quality gates**: same SQL exclusion as the write path (blacklisted bookmakers excluded from best-price aggregation; impossible `(over, under)` pairs zeroed out before bot evaluation).
 - Loads historical CSVs (targets_v9, targets_global) for Poisson model
 - **Batch signal writing (PERF-1):** `batch_write_morning_signals(odds_matches)` called ONCE before the match loop — 10 bulk queries cover all 400+ matches at once (ELO, PPG, injuries, standings, season stats, BDM, overnight line move, odds volatility, league meta, H2H). One `execute_values` INSERT for all signals. Reduced from 34-70 min to ~15s.
 - For each match with odds: compute Poisson/XGBoost prediction + store predictions

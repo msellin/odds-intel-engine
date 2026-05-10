@@ -33,11 +33,84 @@ import joblib
 from pathlib import Path
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import accuracy_score, log_loss, brier_score_loss
-from xgboost import XGBClassifier
+from xgboost import XGBClassifier, XGBRegressor
 from rich.console import Console
 from rich.table import Table
 
 console = Console()
+
+
+# Columns where missingness is informative (not just "we don't have the data
+# yet"). For these we add a `<col>_missing` indicator alongside per-league mean
+# imputation, so the model can learn from the *pattern* of missingness — e.g.
+# H2H is missing for newly-promoted pairings, opening odds are missing for
+# pre-Q2-2026 matches the engine wasn't watching.
+INFORMATIVE_MISSING_COLS = [
+    "h2h_win_pct",
+    "opening_implied_home", "opening_implied_draw", "opening_implied_away",
+    "bookmaker_disagreement",
+    "referee_cards_avg", "referee_home_win_pct", "referee_over25_pct",
+]
+
+
+def _impute_features(features_df: pd.DataFrame, league_col: pd.Series | None) -> tuple[pd.DataFrame, list[str]]:
+    """Per-league mean imputation + indicator columns for INFORMATIVE_MISSING_COLS.
+
+    Stage 2a — replaces the prior `X.notna().all(axis=1)` row-drop, which was
+    losing ~30-40% of rows because H2H is structurally missing for promoted
+    teams. Strategy: per-league mean for numeric, fall back to global mean for
+    leagues with no observations of that feature; add `<col>_missing` flag
+    alongside informative columns so the model can split on missingness.
+
+    Returns (imputed_df, augmented_feature_cols).
+    """
+    df = features_df.copy()
+
+    # Indicator columns first — must compute BEFORE imputation overwrites NaNs.
+    for col in INFORMATIVE_MISSING_COLS:
+        if col in df.columns:
+            df[f"{col}_missing"] = df[col].isna().astype(int)
+
+    augmented_cols = list(df.columns)
+
+    # Per-league mean for the original numeric columns (skip indicators).
+    if league_col is not None and not league_col.empty:
+        for col in features_df.columns:
+            if df[col].isna().any():
+                league_means = df.groupby(league_col)[col].transform("mean")
+                df[col] = df[col].fillna(league_means)
+
+    # Global mean as final fallback for any leagues without observations.
+    for col in features_df.columns:
+        if df[col].isna().any():
+            df[col] = df[col].fillna(df[col].mean())
+
+    # Last-resort 0 fill for fully-empty columns (no observations at all). Rare,
+    # but stops downstream `np.isnan` checks in xgboost from blowing up.
+    df = df.fillna(0.0)
+
+    return df, augmented_cols
+
+
+def _prepare_xy(features_df: pd.DataFrame, target: pd.Series, league_col: pd.Series | None):
+    """Apply imputation, drop only rows where the *target* is NaN.
+
+    Row-drop on features is removed in Stage 2a — we keep every row with a
+    valid target and impute its feature gaps. Returns (X, y, augmented_feature_cols).
+    """
+    X = features_df[FEATURE_COLS].copy()
+    n_input = len(X)
+
+    X_imp, augmented_cols = _impute_features(X, league_col)
+
+    target_valid = target.notna()
+    X_clean = X_imp[target_valid]
+    y_clean = target[target_valid]
+
+    n_dropped = n_input - len(X_clean)
+    if n_dropped:
+        console.print(f"  [dim]Dropped {n_dropped} rows for missing target ({n_dropped/n_input:.1%}).[/dim]")
+    return X_clean, y_clean, augmented_cols
 
 # Output to data/models/soccer/<version>/ — the same root xgboost_ensemble.py
 # loads from. Versioned subdir lets us train v10 without overwriting v9a.
@@ -78,13 +151,12 @@ def train_result_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, outp
     """Train 1X2 match result prediction model"""
     console.print("\n[bold cyan]Training 1X2 Result Model[/bold cyan]")
 
-    X = features_df[FEATURE_COLS].copy()
-    y = targets_df["match_outcome"].map({"H": 0, "D": 1, "A": 2}).copy()
-
-    # Drop rows with missing values
-    valid = X.notna().all(axis=1) & y.notna()
-    X = X[valid]
-    y = y[valid]
+    league_col = targets_df["league_tier"] if "league_tier" in targets_df else features_df.get("league_tier")
+    # MFV stores match_outcome as 'home'/'draw'/'away' (lowercase); legacy callers
+    # may still pass 'H'/'D'/'A'. Map both.
+    outcome_map = {"home": 0, "draw": 1, "away": 2, "H": 0, "D": 1, "A": 2}
+    y = targets_df["match_outcome"].map(outcome_map)
+    X, y, augmented_cols = _prepare_xy(features_df, y, league_col)
 
     console.print(f"Training samples: {len(X):,}")
 
@@ -155,7 +227,7 @@ def train_result_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, outp
     # Feature importance
     importance = pd.Series(
         final_model.feature_importances_,
-        index=FEATURE_COLS
+        index=augmented_cols
     ).sort_values(ascending=False)
 
     imp_table = Table(title="Top 10 Features (1X2 Model)")
@@ -174,12 +246,8 @@ def train_over25_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, outp
     """Train Over/Under 2.5 goals prediction model"""
     console.print("\n[bold cyan]Training Over/Under 2.5 Model[/bold cyan]")
 
-    X = features_df[FEATURE_COLS].copy()
-    y = targets_df["over_25"].copy()
-
-    valid = X.notna().all(axis=1) & y.notna()
-    X = X[valid]
-    y = y[valid]
+    league_col = targets_df["league_tier"] if "league_tier" in targets_df else features_df.get("league_tier")
+    X, y, _ = _prepare_xy(features_df, targets_df["over_25"], league_col)
 
     console.print(f"Training samples: {len(X):,}")
     console.print(f"Over 2.5 rate: {y.mean():.1%}")
@@ -249,12 +317,8 @@ def train_btts_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, output
     """Train BTTS (Both Teams To Score) prediction model"""
     console.print("\n[bold cyan]Training BTTS Model[/bold cyan]")
 
-    X = features_df[FEATURE_COLS].copy()
-    y = targets_df["btts"].copy()
-
-    valid = X.notna().all(axis=1) & y.notna()
-    X = X[valid]
-    y = y[valid]
+    league_col = targets_df["league_tier"] if "league_tier" in targets_df else features_df.get("league_tier")
+    X, y, _ = _prepare_xy(features_df, targets_df["btts"], league_col)
 
     console.print(f"Training samples: {len(X):,}")
     console.print(f"BTTS rate: {y.mean():.1%}")
@@ -307,6 +371,86 @@ def train_btts_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, output
     return final_model
 
 
+def _train_goals_regressor(features_df: pd.DataFrame, targets_df: pd.DataFrame,
+                            target_col: str, output_dir: Path | None,
+                            label: str, output_name: str):
+    """Shared core for home/away goals Poisson regression.
+
+    XGBoost's `count:poisson` objective predicts λ for the side, used by
+    `xgboost_ensemble.py:_predict_goals` to derive goals + the over-line
+    probabilities. Both v9a_202425 and v10+ ship these so the bundle is
+    self-contained.
+    """
+    console.print(f"\n[bold cyan]Training {label} Poisson regressor[/bold cyan]")
+
+    league_col = targets_df["league_tier"] if "league_tier" in targets_df else features_df.get("league_tier")
+    X, y, _ = _prepare_xy(features_df, targets_df[target_col].astype(float), league_col)
+
+    console.print(f"Training samples: {len(X):,}")
+    console.print(f"Mean {target_col}: {y.mean():.2f}")
+
+    tscv = TimeSeriesSplit(n_splits=5)
+    rmses = []
+    poisson_devs = []
+    for fold, (train_idx, val_idx) in enumerate(tscv.split(X)):
+        X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
+        y_tr, y_val = y.iloc[train_idx], y.iloc[val_idx]
+        m = XGBRegressor(
+            n_estimators=200,
+            max_depth=5,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            objective="count:poisson",
+            eval_metric="poisson-nloglik",
+            random_state=42,
+            verbosity=0,
+        )
+        m.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], verbose=False)
+        preds = np.clip(m.predict(X_val), 1e-6, None)
+        rmse = float(np.sqrt(np.mean((preds - y_val.values) ** 2)))
+        # Poisson deviance: 2 * sum(y*log(y/mu) - (y - mu)). Lower is better.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ratio = np.where(y_val.values > 0, y_val.values * np.log(y_val.values / preds), 0.0)
+        dev = float(2 * np.mean(ratio - (y_val.values - preds)))
+        rmses.append(rmse)
+        poisson_devs.append(dev)
+        console.print(f"  Fold {fold+1}: rmse={rmse:.3f}, poisson_dev={dev:.4f}")
+
+    console.print(f"\n  [green]Mean rmse: {np.mean(rmses):.3f}[/green]")
+    console.print(f"  [green]Mean poisson_dev: {np.mean(poisson_devs):.4f}[/green]")
+
+    final = XGBRegressor(
+        n_estimators=200,
+        max_depth=5,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        objective="count:poisson",
+        eval_metric="poisson-nloglik",
+        random_state=42,
+        verbosity=0,
+    )
+    final.fit(X, y, verbose=False)
+
+    out_dir = output_dir or DEFAULT_OUTPUT_ROOT / "untagged"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    model_path = out_dir / output_name
+    joblib.dump(final, model_path)
+    console.print(f"  Saved to: {model_path}")
+    return final
+
+
+def train_home_goals_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, output_dir: Path | None = None):
+    return _train_goals_regressor(features_df, targets_df, "score_home", output_dir,
+                                   "Home Goals", "home_goals.pkl")
+
+
+def train_away_goals_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, output_dir: Path | None = None):
+    return _train_goals_regressor(features_df, targets_df, "score_away", output_dir,
+                                   "Away Goals", "away_goals.pkl")
+
+
 def load_training_data() -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load match_feature_vectors rows with completed outcomes from the DB.
 
@@ -343,7 +487,21 @@ def load_training_data() -> tuple[pd.DataFrame, pd.DataFrame]:
     )
 
     features_df = df[FEATURE_COLS].copy()
-    targets_df = df[["match_outcome", "over_25", "btts"]].copy()
+    # Postgres NUMERIC columns come back as decimal.Decimal which pandas can't
+    # `.mean()` mixed with float NaNs. Coerce all features to float64 so the
+    # imputation helper has a uniform dtype to work with.
+    for col in FEATURE_COLS:
+        features_df[col] = pd.to_numeric(features_df[col], errors="coerce")
+
+    # Carry score_home/score_away through to targets so the goal regressors
+    # (1c) can train on the same dataframe. league_tier is duplicated into
+    # targets so the imputation helper can group on it without joining.
+    target_cols = ["match_outcome", "over_25", "btts", "score_home", "score_away"]
+    if "league_tier" in df.columns:
+        target_cols.append("league_tier")
+    targets_df = df[target_cols].copy()
+    targets_df["score_home"] = pd.to_numeric(targets_df["score_home"], errors="coerce")
+    targets_df["score_away"] = pd.to_numeric(targets_df["score_away"], errors="coerce")
 
     console.print(f"Loaded {len(df):,} completed matches for training")
     return features_df, targets_df
@@ -372,23 +530,32 @@ def train_all(version: str = "untagged",
     over25_model = train_over25_model(features_df, targets_df, output_dir)
     btts_model = train_btts_model(features_df, targets_df, output_dir)
 
+    # Stage 1c — goals regressors train inline so the version bundle is
+    # self-contained. xgboost_ensemble.py loads home_goals/away_goals for the
+    # Poisson side of its score-distribution head.
+    home_goals_model = away_goals_model = None
+    if {"score_home", "score_away"}.issubset(targets_df.columns):
+        try:
+            home_goals_model = train_home_goals_model(features_df, targets_df, output_dir)
+            away_goals_model = train_away_goals_model(features_df, targets_df, output_dir)
+        except Exception as e:
+            console.print(f"[red]Goals regressors failed: {e}[/red]")
+
     # Dump feature column list — xgboost_ensemble.py loads this to align
-    # incoming feature vectors at inference time.
-    joblib.dump(FEATURE_COLS, output_dir / "feature_cols.pkl")
+    # incoming feature vectors at inference time. Includes the new
+    # `<col>_missing` indicators added by Stage 2a.
+    augmented_feature_cols = list(FEATURE_COLS) + [f"{c}_missing" for c in INFORMATIVE_MISSING_COLS]
+    joblib.dump(augmented_feature_cols, output_dir / "feature_cols.pkl")
     console.print(f"  Saved: {output_dir / 'feature_cols.pkl'}")
 
-    console.print(
-        f"\n[bold green]✓ All models trained and saved to {output_dir}[/bold green]\n"
-        f"[yellow]Note: home_goals.pkl + away_goals.pkl not produced here. Production[/yellow]\n"
-        f"[yellow]xgboost_ensemble.py expects them too — copy from a previous version if needed:[/yellow]\n"
-        f"[yellow]  cp data/models/soccer/v9a_202425/home_goals.pkl {output_dir}/[/yellow]\n"
-        f"[yellow]  cp data/models/soccer/v9a_202425/away_goals.pkl {output_dir}/[/yellow]\n"
-    )
+    console.print(f"\n[bold green]✓ All models trained and saved to {output_dir}[/bold green]\n")
 
     return {
         "result": result_model,
         "over25": over25_model,
         "btts": btts_model,
+        "home_goals": home_goals_model,
+        "away_goals": away_goals_model,
         "version": version,
         "output_dir": output_dir,
     }

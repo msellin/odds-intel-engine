@@ -2,6 +2,39 @@
 
 > Started: 2026-05-10. Goal: turn the three disconnected ML pieces into one coherent loop that uses the data the historical backfill just produced. Owner: agent + Margus.
 
+## ⏸ Status 2026-05-10 — waiting on user `go`; OU bug confirmed NOT a blocker for ML retrain
+
+Other agent audited odds contamination in `_load_today_from_db` (`daily_pipeline_v2.py:1086-1102`). Three sources poison `MAX(odds)` aggregation for **Over/Under markets** (api-football pre-match: every OU line broken, sum 0.56–0.79; William Hill: OU labels shifted; api-football-live: in-play polluting pre-match max).
+
+**Verified by other agent — full alignment, no ML cleanup needed:**
+
+- `opening_implied_*`, `closing_implied_*`, `bookmaker_disagreement` all derive from `market='1x2'` only (`supabase_client.py:1140, :1313, :2685, :3613`). 1X2 clean across every bookmaker (<0.05% invalid). Not poisoned.
+- `pseudo_clv_*` in MFV (`supabase_client.py:1046-1048`) computed from 1X2 only. Not poisoned.
+- `sharp_consensus` also 1X2-only, clean.
+- Platt calibration fits on predictions vs outcomes (line 43) — clean.
+- 1X2 on api-football-live audited: 0.00% invalid, avg implied sum 1.078. Not affected.
+- My earlier concern that "MFV poisoning would bake the bug into 25K+ historical rows" was **incorrect** — MFV never touched OU odds, and I retract that claim. The "step 3 — filter MFV's odds reads" item from the prior version of this plan is also dropped (unnecessary).
+
+**What the OU bug DOES affect (other tracks, not ML retrain):**
+
+- OU betting bots placing live bets at fake prices → other agent's track.
+- `simulated_bets.odds_at_pick` for OU bets polluted → P&L / pseudo-CLV for OU bets wrong.
+- Any future meta-model on OU `simulated_bets` CLV (B-ML3-style) needs to filter OU bets from the contaminated period.
+- Stage 6 backtests of OU strategies need clean odds first.
+
+**Resume order (waiting on user `go`):**
+
+1. Restart Stage 0e MFV rebuild — `scripts/backfill_mfv_historical.py` (process died earlier; existing ~6,467 rows are confirmed clean, so this is a continuation, not a from-scratch rebuild). **Can run NOW in parallel with other agent's cleanup.**
+2. Write + run Stage 0d — `scripts/backfill_team_season_stats.py`. **Can run NOW in parallel with 0e and other agent's cleanup.**
+3. Land Stage 2a — NaN imputation + `_missing` indicator columns in `train.py`.
+4. Run Stage 4a — `python workers/model/train.py --version v10_pre_shadow`.
+5. Stage 4c — deploy as shadow for 14-day window.
+6. Stage 4e — promotion decision. **HARD DEPENDENCY:** other agent's Stages A+B+C must be complete before this — promotion gates on bot ROI, and ROI is contaminated by OU bets at fake prices until A+B+C land.
+
+Full plan and decision history: `/Users/margussellin/.claude/plans/logical-dancing-cocke.md`.
+
+---
+
 ## The problem we're solving
 
 Today the system has three unconnected pieces:
