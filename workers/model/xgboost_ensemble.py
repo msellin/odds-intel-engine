@@ -145,8 +145,9 @@ _INFORMATIVE_MISSING_COLS = (
 
 def _build_row_from_mfv(match_id: str, feature_cols: list, tier: int) -> dict | None:
     """v10+ inference path. Pulls the row directly from match_feature_vectors
-    by match_id. Returns None if the row doesn't exist yet (e.g. settlement
-    hasn't built today's MFV yet — caller falls back to Poisson)."""
+    by match_id. Returns None if the row doesn't exist yet — caller falls
+    back to Poisson. Pre-KO rows are written by MFV-LIVE-BUILD inside
+    `run_morning`; finished-match rows by the nightly settlement ETL."""
     try:
         from workers.api_clients.db import execute_query
         rows = execute_query(

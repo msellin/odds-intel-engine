@@ -157,6 +157,7 @@
 - **OU quality gates**: same SQL exclusion as the write path (blacklisted bookmakers excluded from best-price aggregation; impossible `(over, under)` pairs zeroed out before bot evaluation).
 - Loads historical CSVs (targets_v9, targets_global) for Poisson model
 - **Batch signal writing (PERF-1):** `batch_write_morning_signals(odds_matches)` called ONCE before the match loop — 10 bulk queries cover all 400+ matches at once (ELO, PPG, injuries, standings, season stats, BDM, overnight line move, odds volatility, league meta, H2H). One `execute_values` INSERT for all signals. Reduced from 34-70 min to ~15s.
+- **MFV-LIVE-BUILD (2026-05-10):** `build_match_feature_vectors_live(today)` called immediately after the morning signals batch and before the match loop. Writes one `match_feature_vectors` row per pre-KO match (status != 'finished') so v10+ XGBoost inference (`_build_row_from_mfv`) finds a row instead of falling back to Poisson. Re-runs on every betting_refresh because opening_implied_* / odds_drift_home pick up newer snapshots between cron passes. Twin of the nightly `build_match_feature_vectors` (which only runs at settlement for finished matches); both share `_build_mfv_rows_for_matches`.
 - For each match with odds: compute Poisson/XGBoost prediction + store predictions
 - For each of 16 bots: calibrate, check odds movement (psycopg2), alignment (psycopg2), Kelly sizing, place bet
 - `daily_pipeline_v2.py run_morning(skip_fetch=False)` still works for manual full runs

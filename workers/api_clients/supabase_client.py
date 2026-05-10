@@ -1091,6 +1091,50 @@ def build_match_feature_vectors(client, date_str: str) -> int:
     if not matches:
         return 0
 
+    return _build_mfv_rows_for_matches(matches, date_str)
+
+
+def build_match_feature_vectors_live(client, date_str: str) -> int:
+    """
+    MFV-LIVE-BUILD — pre-KO ETL. Builds MFV rows for matches scheduled today
+    that have NOT yet finished, so v10+ XGBoost inference can read them via
+    `_build_row_from_mfv` instead of falling back to Poisson.
+
+    Same batched-load + row builder as `build_match_feature_vectors`. The row
+    is built best-effort: outcome labels (match_outcome / total_goals / over_25)
+    and pseudo_clv stay NULL; opening_implied_* / odds_drift_home are computed
+    from the available pre-KO snapshot range; ELO / form / signals / opening
+    odds are all populated when present.
+
+    Critically, v10's FEATURE_COLS does NOT include any prediction-source
+    columns (poisson_prob_home etc.) — those stay NULL pre-KO and the model
+    is fine, because they're not features at inference time.
+
+    Status filter excludes only 'finished' so any in-progress match (1H/HT/2H/
+    LIVE/FT/AET/PEN) also gets a fresh row — useful for the betting_refresh
+    cron windows that overlap kick-offs.
+
+    Returns count of rows upserted.
+    """
+    matches = execute_query(
+        """SELECT id, date, result, score_home, score_away,
+                  home_team_id, away_team_id, league_id,
+                  pseudo_clv_home, pseudo_clv_draw, pseudo_clv_away
+           FROM matches
+           WHERE status != 'finished'
+             AND date >= %s AND date <= %s""",
+        (f"{date_str}T00:00:00", f"{date_str}T23:59:59"),
+    )
+
+    if not matches:
+        return 0
+
+    return _build_mfv_rows_for_matches(matches, date_str)
+
+
+def _build_mfv_rows_for_matches(matches: list[dict], date_str: str) -> int:
+    """Shared batched-load + per-match build + bulk-upsert pipeline used by
+    both the nightly (finished) and live (pre-KO) MFV builders."""
     all_match_ids = [m["id"] for m in matches]
     all_team_ids = set()
     all_league_ids = set()

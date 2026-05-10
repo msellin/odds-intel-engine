@@ -38,6 +38,7 @@ from workers.api_clients.supabase_client import (
     store_prediction, store_bet, store_prediction_snapshot, store_team_season_stats, store_match_injuries,
     store_league_standings, store_match_h2h,
     batch_write_morning_signals,
+    build_match_feature_vectors_live,
 )
 from workers.model.improvements import (
     calibrate_prob, compute_odds_movement, compute_alignment,
@@ -1386,6 +1387,22 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
         console.print(f"  {n_signals} signals written for {len(all_signal_matches)} matches ({len(odds_matches)} with odds, {len(af_only_matches)} AF-only)")
     except Exception as e:
         console.print(f"  [yellow]batch_write_morning_signals failed (non-critical): {e}[/yellow]")
+
+    # 8b. MFV-LIVE-BUILD — build match_feature_vectors rows for today's pre-KO
+    # matches so v10+ XGBoost inference (`_build_row_from_mfv`) finds a row
+    # instead of falling back to Poisson-only. Must run after morning signals
+    # are written (signals + ELO + form + opening odds are MFV inputs) and
+    # before the match loop runs `get_xgboost_prediction`. Re-runs on every
+    # betting_refresh because opening_implied_* / odds_drift_home pick up
+    # newer snapshots each pass. v10's FEATURE_COLS contains no
+    # prediction-source columns, so it's safe to build the row before the
+    # Poisson predictions are written in the loop below.
+    console.print("\n[cyan]MFV-LIVE-BUILD: writing pre-KO feature vectors...[/cyan]")
+    try:
+        n_mfv = build_match_feature_vectors_live(None, today_str)
+        console.print(f"  {n_mfv} MFV rows upserted for today's pre-KO matches")
+    except Exception as e:
+        console.print(f"  [yellow]MFV-LIVE-BUILD failed (non-critical, v10+ inference will fall back to Poisson): {e}[/yellow]")
 
     # 8. Process each match with odds
     console.print("\n[cyan]Processing matches with odds...[/cyan]")

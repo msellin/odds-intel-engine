@@ -75,6 +75,61 @@ def _():
     assert_gt(count, 0, "Expected feature vectors for 2026-05-06")
 
 
+@test("MFV-LIVE-BUILD — build_match_feature_vectors_live runs and returns int")
+def _():
+    from workers.api_clients.supabase_client import build_match_feature_vectors_live
+    today_str = date.today().isoformat()
+    # May be 0 (no scheduled fixtures today) — no-op is fine, exception is not.
+    count = build_match_feature_vectors_live(None, today_str)
+    assert isinstance(count, int), f"Expected int, got {type(count)}"
+
+
+@test("MFV-LIVE-BUILD — live builder selects non-finished matches (status guard)")
+def _():
+    import inspect
+    from workers.api_clients import supabase_client
+    src = inspect.getsource(supabase_client.build_match_feature_vectors_live)
+    # The whole point of the live builder vs the nightly builder: it must NOT
+    # filter to status='finished', and it must filter to status != 'finished'
+    # so pre-KO and in-progress matches both get rows.
+    assert "status != 'finished'" in src, (
+        "live builder must select non-finished matches (status != 'finished'); "
+        "drift would silently turn it into the nightly builder"
+    )
+    # Both builders share _build_mfv_rows_for_matches — guard the helper exists
+    # so a future refactor can't quietly diverge the two code paths.
+    assert hasattr(supabase_client, "_build_mfv_rows_for_matches"), (
+        "_build_mfv_rows_for_matches helper must remain shared between "
+        "build_match_feature_vectors and build_match_feature_vectors_live"
+    )
+
+
+@test("MFV-LIVE-BUILD — run_morning wires the live build before the match loop")
+def _():
+    import inspect
+    from workers.jobs import daily_pipeline_v2
+    src = inspect.getsource(daily_pipeline_v2.run_morning)
+    # Wire-through guard: without this call, v10+ XGBoost inference reads None
+    # from match_feature_vectors and silently falls back to Poisson — the bug
+    # this task was created to close.
+    assert "build_match_feature_vectors_live" in src, (
+        "run_morning must call build_match_feature_vectors_live before the "
+        "match loop runs get_xgboost_prediction; otherwise v10+ inference "
+        "silently falls back to Poisson on every pre-KO match"
+    )
+    # Ordering guard: the live MFV build must run AFTER batch_write_morning_signals
+    # (signals are MFV inputs) and BEFORE the prediction loop (the call site is
+    # `get_xgboost_prediction(`, paren-suffixed to skip prose mentions of the
+    # function name in surrounding docstrings/comments).
+    sig_pos = src.find("batch_write_morning_signals(")
+    mfv_pos = src.find("build_match_feature_vectors_live(")
+    pred_pos = src.find("get_xgboost_prediction(")
+    assert sig_pos < mfv_pos < pred_pos, (
+        f"MFV-LIVE-BUILD must run AFTER signals and BEFORE prediction loop; "
+        f"got sig={sig_pos} mfv={mfv_pos} pred={pred_pos}"
+    )
+
+
 @test("backfill_historical — safe to import in a background thread (signal guard)")
 def _():
     errors = []
