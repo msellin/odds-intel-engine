@@ -104,6 +104,41 @@ def _():
     )
 
 
+@test("OFFLINE-EVAL — Platt formula matches fit_platt_offline (sigmoid(a*p+b), not logit)")
+def _():
+    import inspect
+    from scripts import offline_eval, fit_platt_offline
+    # Critical: fit_platt_offline.py fits `sigmoid(a*p + b)` directly on the
+    # raw probability (not the logit). offline_eval.py MUST use the same form
+    # or v10's calibrated probabilities turn into garbage. The bug burned 1
+    # eval cycle — guard it so a future "fix" to standard Platt-on-logit
+    # silently breaks the comparison harness.
+    fit_src = inspect.getsource(fit_platt_offline._platt)
+    eval_src = inspect.getsource(offline_eval._apply_platt)
+    assert "a * p + b" in fit_src, (
+        "Sanity check: fit_platt_offline._platt should still be sigmoid(a*p+b). "
+        "If you changed the fitter, re-fit ALL bundle Platt params and update "
+        "offline_eval._apply_platt to match."
+    )
+    assert "a * p + b" in eval_src, (
+        "offline_eval._apply_platt MUST use sigmoid(a*p+b) — same form the "
+        "Platt was fit with. Using sigmoid(a*logit(p)+b) silently destroys "
+        "v10's calibrated log_loss (0.35 → 1.33 on 1x2_home in real test)."
+    )
+
+
+@test("OFFLINE-EVAL — bundle loader returns MFV-schema flag correctly")
+def _():
+    from scripts.offline_eval import _load_bundle, _is_mfv_schema
+    # v10 + v11 must be MFV-schema; v9a must NOT be (still on Kaggle schema).
+    # The schema check is the dispatch gate that keeps offline_eval from
+    # silently running v9 inference on MFV (would zero-fill all 36 features).
+    b10 = _load_bundle("v10_pre_shadow")
+    assert _is_mfv_schema(b10["feature_cols"]), "v10_pre_shadow must be MFV schema"
+    b9 = _load_bundle("v9a_202425")
+    assert not _is_mfv_schema(b9["feature_cols"]), "v9a_202425 must be Kaggle schema"
+
+
 @test("MFV-LIVE-BUILD — run_morning wires the live build before the match loop")
 def _():
     import inspect
