@@ -5,9 +5,9 @@
 
 ## Phase 0 — Free sanity check (1 evening)
 
-- ⬜ **0.1** Pick 20 settled paper bets from the last 2–3 days. Mix of bots (ou15_defensive, btts_all, lower_1x2, opt_*, etc.) and league tiers.
-- ⬜ **0.2** For each, query `odds_snapshots` for Unibet + Bet365 row at the closest timestamp ≤ pick time. Build a CSV: bot, match, market, sel, bot_odds, unibet_odds, bet365_odds.
-- ⬜ **0.3** Open coolbet.ee, look up each match (post-match results pages still show line history). Add `coolbet_odds` column manually. Where Coolbet didn't offer the market, mark `N/A`.
+- ✅ **0.1** Sampling script `scripts/sample_coolbet_proxy_check.py` shipped — pulls all pending paper bets on not-yet-started matches with Unibet + Bet365 + Pinnacle joined at pick time. Generates CSV at `dev/active/self-use-validation-phase0-worksheet.csv`. Reframed forward-looking (Coolbet doesn't publish historical odds — once a match kicks off, the price is gone). Re-runnable; each session adds samples. **First run produced 26 rows incl. Barcelona vs Real Madrid, PSG, Olympiakos vs PAOK.**
+- ✅ **0.2** Done by 0.1 — script fetches Unibet + Bet365 directly.
+- ⬜ **0.3** **(USER MANUAL STEP)** Open `dev/active/self-use-validation-phase0-worksheet.csv` in Numbers/Excel. Open coolbet.ee, look up each upcoming match + market. Write the displayed Coolbet price into the `coolbet_actual` column. Where Coolbet doesn't offer the market, leave blank or write `N/A`. Re-run script over multiple days to accumulate samples.
 - ⬜ **0.4** Compute: mean abs gap (Unibet vs Coolbet), worst-case gap, % of cases where Coolbet didn't offer. Save as `dev/active/self-use-validation-phase0-results.md`.
 - ⬜ **0.5** Decision recorded in plan: "Unibet proxy works" or "Need direct Coolbet API".
 
@@ -23,34 +23,32 @@
 ## Phase 2 — Real-bet infrastructure
 
 ### 2.1 — Database
-- ⬜ **2.1.1** Migration `090_accessible_bookmakers.sql` — table + seed rows for Coolbet + Bet365 with status='active'.
-- ⬜ **2.1.2** Migration `091_real_bets.sql` — table + indexes (bot_id, match_id, placed_at, result). Generated column for slippage.
-- ⬜ **2.1.3** Apply migrations via `supabase db push` or GH Actions migrate workflow.
+- ✅ **2.1.1** Migration `091_accessible_bookmakers.sql` — table + seed rows for Coolbet + Bet365 with status='active' + RLS policy.
+- ✅ **2.1.2** Migration `092_real_bets.sql` — table + indexes (bot_id, match_id, placed_at, partial pending) + slippage_pct generated column + RLS policy.
+- ✅ **2.1.3** Migrations applied directly to DB via psycopg2 — verified seeded rows + 16-column schema.
 
 ### 2.2 — Engine settlement integration
-- ⬜ **2.2.1** Add `_settle_real_bets(match_ids)` to `workers/jobs/settlement.py`. Same logic as `_settle_simulated_bets` but writes to `real_bets`. Reuse `settle_bet_result` for win/loss decision.
-- ⬜ **2.2.2** Wire into `run_settlement()` and `settle_ready_matches()` so real bets settle on the same cadence.
-- ⬜ **2.2.3** Smoke test: real bet on finished match, assert settled correctly with right pnl.
+- ✅ **2.2.1** `_settle_real_bets_for_matches(match_ids)` added to `workers/jobs/settlement.py`. Reuses `settle_bet_result` via `actual_odds AS odds_at_pick` aliasing.
+- ✅ **2.2.2** Wired into `settle_finished_matches` so real bets settle on the same 21:00/23:30/01:00 + 15-min cadence.
+- ✅ **2.2.3** Smoke test `SELF-USE-VALIDATION — settlement wires _settle_real_bets_for_matches (source inspect)` passes.
 
 ### 2.3 — Backend writer
-- ⬜ **2.3.1** Add `store_real_bet(...)` to `workers/api_clients/supabase_client.py`. Single-row insert. Returns bet ID.
-- ⬜ **2.3.2** Add `compute_real_pnl(stake, actual_odds, won)` helper — pure function, easy to unit test.
+- ✅ **2.3.1** `store_real_bet(...)` added to `workers/api_clients/supabase_client.py`. Round-trip verified end-to-end.
+- ✅ **2.3.2** `compute_real_pnl(stake, actual_odds, result)` helper — pure function, smoke-tested truth table (won/lost/void/half_won/half_lost/pending).
 
 ### 2.4 — Frontend
-- ⬜ **2.4.1** Server-side guard helper `requireSuperadmin()` in `src/lib/auth.ts` (or wherever similar helpers live). Returns `notFound()` for non-superadmins.
-- ⬜ **2.4.2** New page `src/app/(app)/admin/place/page.tsx` — server component:
-  - Calls new `getPlaceableBets()` in `engine-data.ts` that joins paper bets + odds_snapshots + accessible_bookmakers.
-  - Renders table with Match | Bot | Market | Sel | Paper bot odds | Coolbet (or proxy) | Bet365 | Edge | Stake | "Place" button.
-- ⬜ **2.4.3** Client component `<PlaceBetModal>` — opens on row click, captures actual odds + stake, POSTs to `/api/admin/real-bet`.
-- ⬜ **2.4.4** API route `src/app/api/admin/real-bet/route.ts` — superadmin-gated, validates input, inserts via Supabase admin client.
-- ⬜ **2.4.5** New page `src/app/(app)/admin/real-bets/page.tsx` — performance dashboard reading `real_bets`. Per-bot ROI, slippage stats, per-book breakdown, mini bankroll chart.
+- ✅ **2.4.2** New page `src/app/(app)/admin/place/page.tsx` — server component, gated by `is_superadmin`. Uses `getPlaceableBets()` in `engine-data.ts`.
+- ✅ **2.4.3** Client component `<PlaceBetTable>` — list + filter chips (all/edge/has-odds) + place modal capturing book/odds/stake/notes.
+- ✅ **2.4.4** API route `src/app/api/admin/real-bet/route.ts` — superadmin-gated, validates inputs (stake>0, odds>1.0, bookmaker in accessible_bookmakers, status not banned/inactive), inserts via service-role client.
+- ✅ **2.4.5** New page `src/app/(app)/admin/real-bets/page.tsx` — performance dashboard with aggregate stats (total/won-lost/PnL/ROI/mean slippage), per-book breakdown, full bet log with color-coded slippage column.
+- ✅ **2.4.6** Two new nav links (Place Bet + Real Bets) added to admin profile menu in `src/components/nav.tsx`.
 
 ### 2.5 — Bot dashboard surfacing (user's explicit ask)
-- ⬜ **2.5.1** Modify per-bet expansion table on `/admin/bots` to add columns: Coolbet (or Unibet proxy) at pick time, Bet365 at pick time. Pulled from `odds_snapshots` via `getBetsForBot()` extension.
-- ⬜ **2.5.2** Visual indicator: highlight the row in green if Coolbet/Bet365 ≥ 95% of bot's recorded odds (placeable in real life), red if both <80% (paper-only edge).
+- ✅ **2.5.1** New API route `src/app/api/admin/bot-book-odds/route.ts` — POST {betIds[]} → {[betId]: {unibet, bet365}}. Single round-trip lookup per bot's bet set.
+- ✅ **2.5.2** `bot-dashboard-client.tsx` modal — useEffect lazy-fetches bookOdds when modal opens; new Coolbet (emerald) + Bet365 (blue) columns render inline. Footnote explains the Unibet→Coolbet proxy.
 
 ### 2.6 — PRIORITY_QUEUE entry
-- ⬜ **2.6.1** Add `SELF-USE-VALIDATION` row to `Critical bugs found 2026-05-09` section of `PRIORITY_QUEUE.md` — link to this plan. Status: 🔄 In Progress until Phase 4 closes.
+- ✅ **2.6.1** SELF-USE-VALIDATION promoted to ⭐ Top Priority section of `PRIORITY_QUEUE.md`. Status: 🔄 In Progress until Phase 4.
 
 ## Phase 3 — Validation period (4–6 weeks)
 

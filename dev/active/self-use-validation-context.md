@@ -40,4 +40,6 @@ If Phase 0 is delegated to the next agent: hand them the plan + tasks files plus
 
 ## Decision log
 
-- 2026-05-10: Plan created. No phases started yet. PRIORITY_QUEUE entry pending.
+- 2026-05-10: Plan created. PRIORITY_QUEUE entry filed.
+- 2026-05-10: **Phases 0.1, 2.1, 2.2, 2.3, 2.4, 2.5 all shipped in one session.** Sampling script + migrations applied + settlement wired + backend writer + 3 admin pages (`/admin/place`, `/admin/real-bets`, bot-dashboard columns) + 2 API routes + 3 backend smoke tests. Engine pushed: ef2a671. Web pushed: d26ed3e + 7352858.
+- 2026-05-10: Phase 0.3 is the next blocker — user manual step. Open `dev/active/self-use-validation-phase0-worksheet.csv`, fill in `coolbet_actual` column from coolbet.ee for the 26 sampled rows.
