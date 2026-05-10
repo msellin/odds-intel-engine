@@ -129,14 +129,44 @@ def _():
 
 @test("OFFLINE-EVAL — bundle loader returns MFV-schema flag correctly")
 def _():
-    from scripts.offline_eval import _load_bundle, _is_mfv_schema
-    # v10 + v11 must be MFV-schema; v9a must NOT be (still on Kaggle schema).
-    # The schema check is the dispatch gate that keeps offline_eval from
-    # silently running v9 inference on MFV (would zero-fill all 36 features).
-    b10 = _load_bundle("v10_pre_shadow")
-    assert _is_mfv_schema(b10["feature_cols"]), "v10_pre_shadow must be MFV schema"
-    b9 = _load_bundle("v9a_202425")
-    assert not _is_mfv_schema(b9["feature_cols"]), "v9a_202425 must be Kaggle schema"
+    """`_is_mfv_schema` is the dispatch gate that keeps offline_eval from
+    silently running v9 inference on MFV (would zero-fill all 36 features).
+    Two assertions per schema:
+      1. Literal-list contract — deterministic, runs anywhere CI does.
+      2. Bundle round-trip — only when the bundle is on disk (v9a is
+         force-tracked per .gitignore; v10+ are not, so we skip on CI
+         until they get force-tracked at promotion time)."""
+    import pathlib
+    from scripts.offline_eval import _load_bundle, _is_mfv_schema, MODELS_DIR
+
+    # 1. Literal-list contract — always runs.
+    assert _is_mfv_schema(["elo_home", "elo_away", "form_ppg_home"]), (
+        "MFV schema (elo_home present, home_elo absent) must return True"
+    )
+    assert not _is_mfv_schema(["home_elo", "away_elo", "h_form_ppg"]), (
+        "Legacy Kaggle schema (home_elo present) must return False"
+    )
+    assert not _is_mfv_schema(["elo_home", "home_elo"]), (
+        "Mixed schema (both present) must return False — would silently "
+        "double-feed inference"
+    )
+    assert not _is_mfv_schema([]), "Empty feature list must return False"
+
+    # 2. Bundle round-trip — only assert when the bundle is locally tracked.
+    # v9a_202425 is force-tracked per .gitignore (production model); v10+
+    # bundles aren't tracked until they're promoted, so CI must not require
+    # them. Once a v10+ is force-tracked, this branch starts asserting it.
+    if (MODELS_DIR / "v9a_202425").exists():
+        b9 = _load_bundle("v9a_202425")
+        assert not _is_mfv_schema(b9["feature_cols"]), (
+            "Tracked v9a_202425 bundle must report Kaggle schema"
+        )
+    for v10_candidate in ("v10_pre_shadow", "v11_pinnacle"):
+        if (MODELS_DIR / v10_candidate).exists():
+            b = _load_bundle(v10_candidate)
+            assert _is_mfv_schema(b["feature_cols"]), (
+                f"Tracked {v10_candidate} bundle must report MFV schema"
+            )
 
 
 @test("MFV-LIVE-BUILD — run_morning wires the live build before the match loop")
