@@ -334,6 +334,47 @@ def run(min_samples: int = MIN_SAMPLES_DEFAULT, dry_run: bool = False):
         )
         print(f"    → Stored blend_weight_1x2 = {res_overall['weight']:.4f} in model_calibration")
 
+    # ── 1b. Per-tier 1x2 blend weights (ML-BLEND-DYNAMIC) ─────────────────
+    # Lower-tier leagues have noisier rolling stats, so XGBoost overfits on
+    # them. Constantinou 2019 (and our own Scotland League Two pseudo-CLV
+    # data) suggest the optimal blend shifts toward Poisson at tier 3-4.
+    # We fit per-tier and store as `blend_weight_1x2_t{tier}` so the live
+    # ensemble can pick the right weight by match tier.
+    print(f"\n  {'─'*65}")
+    print("  § 1b. Per-Tier 1X2 Blend Weights (ML-BLEND-DYNAMIC)")
+    print(f"  {'─'*65}")
+    for tier in TIERS:
+        p_rows = [r for r in poisson_rows if r["tier"] == tier]
+        x_rows = [r for r in xgb_rows if r["tier"] == tier]
+        if not p_rows or not x_rows:
+            print(f"\n  Tier {tier}: no data")
+            continue
+        res_t = optimize_blend_weight(p_rows, x_rows, market_filter=None)
+        if res_t["skipped"]:
+            print(f"\n  Tier {tier}: n={res_t['n']} (need {min_samples}) — SKIPPED")
+            continue
+        print(f"\n  Tier {tier} (n={res_t['n']}): "
+              f"Poisson={res_t['weight']:.4f}, XGBoost={1-res_t['weight']:.4f}, "
+              f"ll_opt={res_t['ll_optimal']:.4f} (vs 50/50 {res_t['ll_50_50']:.4f})")
+        if not dry_run:
+            execute_write(
+                """
+                INSERT INTO model_calibration
+                    (market, platt_a, platt_b, sample_count, ece_before, ece_after, fitted_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    f"blend_weight_1x2_t{tier}",
+                    round(res_t["weight"], 6),
+                    0.0,
+                    res_t["n"],
+                    round(res_t["ll_50_50"], 6),
+                    round(res_t["ll_optimal"], 6),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            print(f"    → Stored blend_weight_1x2_t{tier} = {res_t['weight']:.4f}")
+
     # ── 2. Shrinkage alpha per tier ───────────────────────────────────────────
     print(f"\n  {'─'*65}")
     print("  § 2. Shrinkage Alpha Per Tier (CALIBRATION_ALPHA)")

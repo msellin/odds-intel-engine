@@ -3334,6 +3334,94 @@ def _():
     )
 
 
+@test("ML-BLEND-DYNAMIC — load_blend_weight accepts tier and prefers tier-specific row")
+def _():
+    """Per-tier Poisson/XGBoost blend weights. fit_blend_weights.py stores
+    `blend_weight_1x2_t{tier}` rows; load_blend_weight(tier=X) prefers them
+    and falls back to the global `blend_weight_1x2`. Without this, the
+    pipeline ships a uniform weight regardless of league quality — wastes
+    XGBoost's overfit on lower tiers where Poisson's prior is stronger."""
+    import pathlib
+    src = pathlib.Path("workers/model/xgboost_ensemble.py").read_text()
+    assert "def load_blend_weight(tier:" in src, (
+        "load_blend_weight must accept a `tier` arg so per-tier weights are addressable."
+    )
+    assert "blend_weight_1x2_t" in src, (
+        "Tier-specific rowname `blend_weight_1x2_t{tier}` must appear in the loader."
+    )
+    fit_src = pathlib.Path("scripts/fit_blend_weights.py").read_text()
+    assert "blend_weight_1x2_t" in fit_src, (
+        "fit_blend_weights.py must store per-tier rows. Without that, the loader "
+        "always falls back to the global weight and ML-BLEND-DYNAMIC is dead code."
+    )
+    assert "Per-Tier 1X2 Blend Weights" in fit_src, (
+        "Per-tier optimisation block must be named so future readers can find it."
+    )
+    # Ensemble caller must pass tier through
+    pipeline = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    assert "ensemble_prediction(poisson_pred, xgb_pred, tier=" in pipeline, (
+        "daily_pipeline_v2 must pass tier into ensemble_prediction so the "
+        "per-tier weight is actually used at inference time."
+    )
+
+
+@test("ML-PINNACLE-FEATURE — train.py supports --include-pinnacle for v11+ bundles")
+def _():
+    """v11+ adds Pinnacle pre-match implied probs as features. Coverage is
+    sparse today (~5%) so the indicator columns from Stage 2a do most of
+    the work; the actual probs help where present."""
+    import pathlib
+    src = pathlib.Path("workers/model/train.py").read_text()
+    assert "PINNACLE_FEATURE_COLS" in src, (
+        "train.py must expose PINNACLE_FEATURE_COLS — keeps the Pinnacle "
+        "feature names in one named place, prevents stringly-typed drift."
+    )
+    assert "include_pinnacle" in src, (
+        "train_all + load_training_data must take an include_pinnacle flag "
+        "so v10 (no Pinnacle) and v11+ (with Pinnacle) coexist cleanly."
+    )
+    assert "_load_pinnacle_features" in src, (
+        "Per-match Pinnacle 1X2 lookup must be a named helper — looked up "
+        "from odds_snapshots, not from MFV's market-consensus implied_*."
+    )
+    # The Pinnacle cols must also be in INFORMATIVE_MISSING_COLS so the
+    # `_missing` indicator pattern from Stage 2a applies to them.
+    assert '"pinnacle_implied_home"' in src and "INFORMATIVE_MISSING_COLS" in src, (
+        "pinnacle_implied_* must be listed under INFORMATIVE_MISSING_COLS — "
+        "missingness is highly informative when Pinnacle coverage is thin."
+    )
+
+
+@test("ML-INFERENCE-MFV-WIRE — v10 schema routes to MFV inference path")
+def _():
+    """Live deploy of any v10+ model requires xgboost_ensemble to read its
+    inference features from match_feature_vectors (the new schema), not from
+    the legacy features_v9.csv cache (which uses Kaggle column names absent
+    from MFV). Without this routing, MODEL_VERSION=v10_* causes every call
+    to pd.DataFrame(...)[feature_cols] to KeyError and silently fall back to
+    Poisson-only — the new model is dead code in production."""
+    import pathlib
+    src = pathlib.Path("workers/model/xgboost_ensemble.py").read_text()
+    assert "_is_mfv_schema" in src, (
+        "xgboost_ensemble.py must expose a schema-detection helper so the "
+        "MFV vs Kaggle dispatch is named, not magic-stringed inline."
+    )
+    assert "_build_row_from_mfv" in src, (
+        "MFV-row inference helper must exist — fetches the row by match_id "
+        "and re-derives the Stage-2a `_missing` indicators."
+    )
+    assert "match_feature_vectors WHERE match_id" in src, (
+        "MFV-row helper must fetch by match_id, not by team name. Team-name "
+        "lookups belong on the legacy v9* path only."
+    )
+    # Caller must pass match_id through
+    pipeline = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    assert "match_id=_mid" in pipeline or "match_id=match.get(\"id\")" in pipeline, (
+        "daily_pipeline_v2 must pass match_id into get_xgboost_prediction — "
+        "without it, v10+ models can't reach their inference row."
+    )
+
+
 @test("ML-PIPELINE-UNIFY Stage 6a — pre-match backtester script present")
 def _():
     """Stage 6a: replays every active pre-match bot against historical odds +

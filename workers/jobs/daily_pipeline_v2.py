@@ -1571,21 +1571,28 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
             from workers.utils.team_names import normalize_team_name
             home_norm = normalize_team_name(match["home_team"], source="default")
             away_norm = normalize_team_name(match["away_team"], source="default")
-            # Try to get XGBoost prediction
+            # Try to get XGBoost prediction. `match_id` lets v10+ models read
+            # directly from match_feature_vectors; team-name args are still
+            # used by the v9* legacy path.
+            _mid = match.get("id")
             xgb_pred = get_xgboost_prediction(
                 home_norm, away_norm,
                 tier=match.get("tier", 1),
+                match_id=_mid,
             )
+            _tier = match.get("tier", 1)
             if xgb_pred:
-                pred = ensemble_prediction(poisson_pred, xgb_pred)
+                pred = ensemble_prediction(poisson_pred, xgb_pred, tier=_tier)
             else:
-                # Also try with raw names
+                # Also try with raw names (legacy schema — name normalisation
+                # mismatches between feature cache and DB sometimes happen).
                 xgb_pred = get_xgboost_prediction(
                     match["home_team"], match["away_team"],
-                    tier=match.get("tier", 1),
+                    tier=_tier,
+                    match_id=_mid,
                 )
                 if xgb_pred:
-                    pred = ensemble_prediction(poisson_pred, xgb_pred)
+                    pred = ensemble_prediction(poisson_pred, xgb_pred, tier=_tier)
 
         # Store predictions
         data_tier = pred.get("data_tier", "A")

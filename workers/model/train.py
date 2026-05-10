@@ -50,6 +50,9 @@ INFORMATIVE_MISSING_COLS = [
     "opening_implied_home", "opening_implied_draw", "opening_implied_away",
     "bookmaker_disagreement",
     "referee_cards_avg", "referee_home_win_pct", "referee_over25_pct",
+    # Pinnacle (v11+) — coverage is sparse so the indicator carries the bulk
+    # of the signal early on, with the imputed value useful where present.
+    "pinnacle_implied_home", "pinnacle_implied_draw", "pinnacle_implied_away",
 ]
 
 
@@ -98,7 +101,9 @@ def _prepare_xy(features_df: pd.DataFrame, target: pd.Series, league_col: pd.Ser
     Row-drop on features is removed in Stage 2a — we keep every row with a
     valid target and impute its feature gaps. Returns (X, y, augmented_feature_cols).
     """
-    X = features_df[FEATURE_COLS].copy()
+    # Use whatever columns the caller supplied — caller controls the base set
+    # (FEATURE_COLS for v10, FEATURE_COLS + PINNACLE_FEATURE_COLS for v11+).
+    X = features_df.copy()
     n_input = len(X)
 
     X_imp, augmented_cols = _impute_features(X, league_col)
@@ -451,12 +456,55 @@ def train_away_goals_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, 
                                    "Away Goals", "away_goals.pkl")
 
 
-def load_training_data() -> tuple[pd.DataFrame, pd.DataFrame]:
+PINNACLE_FEATURE_COLS = ["pinnacle_implied_home", "pinnacle_implied_draw", "pinnacle_implied_away"]
+
+
+def _load_pinnacle_features() -> pd.DataFrame:
+    """Per-match Pinnacle pre-match 1X2 implied probabilities.
+
+    Looked up directly from odds_snapshots — MFV's `market_implied_*` is a
+    multi-bookmaker consensus; Pinnacle is the sharp book and worth a
+    dedicated lookup. Coverage is thin (~5% of finished matches as of
+    2026-05-10) — Stage 2a's `_missing` indicator handles the rest.
+
+    Takes the LATEST pre-kickoff Pinnacle snapshot per (match_id, selection),
+    then implied prob = 1/odds. Overround is left in deliberately — its size
+    itself is informative (Pinnacle widens its margin on uncertain matches).
+    """
+    from workers.api_clients.supabase_client import execute_query
+
+    sql = """
+    WITH latest AS (
+        SELECT DISTINCT ON (os.match_id, os.selection)
+               os.match_id, os.selection, os.odds
+        FROM odds_snapshots os
+        JOIN matches m ON m.id = os.match_id
+        WHERE os.bookmaker = 'Pinnacle'
+          AND os.market = '1x2'
+          AND os.is_live = false
+          AND os.timestamp < m.date
+        ORDER BY os.match_id, os.selection, os.timestamp DESC
+    )
+    SELECT match_id,
+           MAX(CASE WHEN selection = 'home' THEN 1.0/odds END) AS pinnacle_implied_home,
+           MAX(CASE WHEN selection = 'draw' THEN 1.0/odds END) AS pinnacle_implied_draw,
+           MAX(CASE WHEN selection = 'away' THEN 1.0/odds END) AS pinnacle_implied_away
+    FROM latest
+    GROUP BY match_id
+    """
+    rows = execute_query(sql, ())
+    return pd.DataFrame(rows)
+
+
+def load_training_data(include_pinnacle: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load match_feature_vectors rows with completed outcomes from the DB.
 
     Returns (features_df, targets_df) sorted by match_date ascending.
     btts is derived from match scores joined from the matches table.
-    Requires env DB credentials — same as the rest of the pipeline.
+
+    `include_pinnacle=True` left-joins per-match Pinnacle pre-match 1X2
+    implied probabilities. Caller must extend FEATURE_COLS with
+    PINNACLE_FEATURE_COLS before training (used for v11+).
     """
     from workers.api_clients.supabase_client import execute_query
 
@@ -486,11 +534,21 @@ def load_training_data() -> tuple[pd.DataFrame, pd.DataFrame]:
         (pd.to_numeric(df["score_away"], errors="coerce") > 0)
     )
 
-    features_df = df[FEATURE_COLS].copy()
+    if include_pinnacle:
+        pin = _load_pinnacle_features()
+        if not pin.empty:
+            df = df.merge(pin, on="match_id", how="left")
+            console.print(
+                f"[dim]Joined Pinnacle features for {pin.shape[0]:,} matches "
+                f"({pin.shape[0] / len(df) * 100:.1f}% coverage)[/dim]"
+            )
+
+    feature_cols = FEATURE_COLS + (PINNACLE_FEATURE_COLS if include_pinnacle else [])
+    features_df = df[feature_cols].copy()
     # Postgres NUMERIC columns come back as decimal.Decimal which pandas can't
     # `.mean()` mixed with float NaNs. Coerce all features to float64 so the
     # imputation helper has a uniform dtype to work with.
-    for col in FEATURE_COLS:
+    for col in feature_cols:
         features_df[col] = pd.to_numeric(features_df[col], errors="coerce")
 
     # Carry score_home/score_away through to targets so the goal regressors
@@ -510,15 +568,20 @@ def load_training_data() -> tuple[pd.DataFrame, pd.DataFrame]:
 def train_all(version: str = "untagged",
               features_df: pd.DataFrame | None = None,
               targets_df: pd.DataFrame | None = None,
-              output_root: Path | None = None):
+              output_root: Path | None = None,
+              include_pinnacle: bool = False):
     """Train all three models. If called with no args, loads data from DB automatically.
 
     Writes to output_root/<version>/ — defaults to data/models/soccer/<version>/.
     Filenames match what xgboost_ensemble.py:_load_models() reads, so setting
     `MODEL_VERSION=<version>` activates the freshly trained set in production.
+
+    `include_pinnacle=True` adds Pinnacle pre-match 1X2 implied probs as
+    features (used for v11+ bundles). Coverage is sparse so the indicator
+    columns from Stage 2a do most of the work.
     """
     if features_df is None or targets_df is None:
-        features_df, targets_df = load_training_data()
+        features_df, targets_df = load_training_data(include_pinnacle=include_pinnacle)
 
     output_dir = (output_root or DEFAULT_OUTPUT_ROOT) / version
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -542,9 +605,12 @@ def train_all(version: str = "untagged",
             console.print(f"[red]Goals regressors failed: {e}[/red]")
 
     # Dump feature column list — xgboost_ensemble.py loads this to align
-    # incoming feature vectors at inference time. Includes the new
-    # `<col>_missing` indicators added by Stage 2a.
-    augmented_feature_cols = list(FEATURE_COLS) + [f"{c}_missing" for c in INFORMATIVE_MISSING_COLS]
+    # incoming feature vectors at inference time. Source the base set from
+    # the actual features_df columns (caller may have added Pinnacle), plus
+    # the Stage-2a `_missing` indicators that _impute_features synthesises.
+    base_cols = [c for c in features_df.columns if not c.endswith("_missing")]
+    indicator_cols = [f"{c}_missing" for c in INFORMATIVE_MISSING_COLS if c in base_cols]
+    augmented_feature_cols = base_cols + indicator_cols
     joblib.dump(augmented_feature_cols, output_dir / "feature_cols.pkl")
     console.print(f"  Saved: {output_dir / 'feature_cols.pkl'}")
 
@@ -563,8 +629,12 @@ def train_all(version: str = "untagged",
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--include-pinnacle", action="store_true",
+                        help="Add Pinnacle pre-match implied probs to FEATURE_COLS "
+                             "(v11+ bundles). Coverage ~5pct; _missing indicators "
+                             "carry most of the signal until coverage grows.")
     parser.add_argument("--version", default="untagged",
                         help="Version tag — used as the subdir under data/models/soccer/. "
                              "Set MODEL_VERSION=<version> in env to activate.")
     args = parser.parse_args()
-    train_all(version=args.version)
+    train_all(version=args.version, include_pinnacle=args.include_pinnacle)

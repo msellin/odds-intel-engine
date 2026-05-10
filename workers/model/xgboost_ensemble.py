@@ -1,19 +1,30 @@
 """
 OddsIntel — XGBoost Ensemble for Live Pipeline
 
-Loads saved v9 XGBoost models and computes predictions for Tier A teams
-by looking up their most recent feature vectors from features_v9.csv.
+Loads saved XGBoost models and computes predictions for Tier A teams.
+
+Two schemas supported, switched at runtime by inspecting the loaded
+`feature_cols.pkl`:
+
+  * **Kaggle schema** (v9*) — features `home_elo`, `h_*`, `a_*`, `xg_diff`,
+    `form_diff`, `tier`. Looked up from `features_v9.csv` keyed by team name.
+  * **MFV schema** (v10+) — features `elo_home`, `form_ppg_home`,
+    `goals_for_avg_home`, etc. Plus Stage-2a `<col>_missing` indicators.
+    Pulled from `match_feature_vectors` keyed by `match_id`.
+
+The schema check is a cheap sentinel: presence of `"elo_home"` in
+`feature_cols` is the new schema, else legacy. Both paths feed into the
+same downstream prediction logic (1X2 / OU / goal regressors).
 
 Blends 50/50 with Poisson predictions to form the ensemble.
 
 Architecture:
   - Poisson: thinks in goals (exp_home, exp_away → scoreline PMF)
-  - XGBoost: thinks in features (36 rolling stats → P(home), P(draw), P(away), P(over 2.5))
-  - Ensemble: 50/50 blend of both → better calibrated than either alone
+  - XGBoost: thinks in features → P(home), P(draw), P(away), P(over 2.5)
+  - Ensemble: blend → better calibrated than either alone
   - Model disagreement: abs(xgb_prob - poisson_prob) → uncertainty signal
 
-Only works for Tier A teams (those in features_v9.csv / targets_v9.csv).
-Tier B/C teams fall back to Poisson-only (no change from current behavior).
+Only works for Tier A teams. Tier B/C falls back to Poisson-only.
 """
 
 import os
@@ -120,12 +131,112 @@ def _load_feature_data() -> dict:
     return _feature_cache
 
 
-def get_xgboost_prediction(home_team: str, away_team: str,
-                           tier: int = 1) -> dict | None:
-    """
-    Get XGBoost prediction for a match using saved models + cached features.
+# Stage 2a indicator columns. When loading a v10+ bundle, feature_cols.pkl
+# contains the augmented list (FEATURE_COLS + these as <col>_missing). We must
+# recompute the indicators at inference from the raw MFV row — the model
+# learned to split on the indicator alongside the imputed value.
+_INFORMATIVE_MISSING_COLS = (
+    "h2h_win_pct",
+    "opening_implied_home", "opening_implied_draw", "opening_implied_away",
+    "bookmaker_disagreement",
+    "referee_cards_avg", "referee_home_win_pct", "referee_over25_pct",
+)
 
-    Returns dict with probabilities, or None if teams not in feature data.
+
+def _build_row_from_mfv(match_id: str, feature_cols: list, tier: int) -> dict | None:
+    """v10+ inference path. Pulls the row directly from match_feature_vectors
+    by match_id. Returns None if the row doesn't exist yet (e.g. settlement
+    hasn't built today's MFV yet — caller falls back to Poisson)."""
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            "SELECT * FROM match_feature_vectors WHERE match_id = %s LIMIT 1",
+            (match_id,),
+        )
+    except Exception:
+        return None
+    if not rows:
+        return None
+
+    raw = rows[0]
+    row: dict = {}
+    for col in feature_cols:
+        if col == "tier":
+            row[col] = tier
+            continue
+        if col.endswith("_missing"):
+            base = col[:-len("_missing")]
+            row[col] = 1 if (raw.get(base) is None) else 0
+            continue
+        v = raw.get(col)
+        if v is None:
+            # Mean-fill at inference is approximate — the model was trained on
+            # per-league means, but at predict time we don't have the league
+            # mean handy. Zero-fill is what feature_cols.pkl-aware builders
+            # have always done; the indicator column carries the real signal.
+            row[col] = 0.0
+        else:
+            try:
+                row[col] = float(v)
+            except (TypeError, ValueError):
+                row[col] = 0.0
+    return row
+
+
+def _build_row_from_legacy_cache(home_team: str, away_team: str,
+                                  tier: int, feature_cols: list) -> dict | None:
+    """v9* (Kaggle schema) inference path. Looks up the latest cached feature
+    vectors for each team from features_v9.csv and assembles a row in the
+    exact column order the model expects."""
+    features_data = _load_feature_data()
+    if not features_data:
+        return None
+
+    home_feats = features_data.get(f"{home_team}_home")
+    away_feats = features_data.get(f"{away_team}_away")
+    if not home_feats or not away_feats:
+        return None
+
+    row = {}
+    home_elo = home_feats.get("elo", 1500)
+    away_elo = away_feats.get("elo", 1500)
+    row["home_elo"] = home_elo
+    row["away_elo"] = away_elo
+    row["elo_diff"] = home_elo - away_elo
+    row["home_elo_exp"] = 1 / (1 + 10 ** (-(home_elo - away_elo + 100) / 400))
+
+    for col in feature_cols:
+        if col.startswith("h_"):
+            row[col] = home_feats.get(col, 0.0)
+        elif col.startswith("a_"):
+            row[col] = away_feats.get(col, 0.0)
+
+    row["xg_diff"] = row.get("h_xg_for_avg", 0) - row.get("a_xg_for_avg", 0)
+    row["form_diff"] = row.get("h_ppg", 1.3) - row.get("a_ppg", 1.3)
+    row["overperf_diff"] = row.get("h_overperf_avg", 0) - row.get("a_overperf_avg", 0)
+    row["tier"] = tier
+    return row
+
+
+def _is_mfv_schema(feature_cols) -> bool:
+    """Sentinel test. v10+ FEATURE_COLS lead with `elo_home`; v9* uses
+    `home_elo` (legacy Kaggle convention)."""
+    cols = list(feature_cols) if not isinstance(feature_cols, list) else feature_cols
+    return "elo_home" in cols and "home_elo" not in cols
+
+
+def get_xgboost_prediction(home_team: str, away_team: str,
+                           tier: int = 1,
+                           match_id: str | None = None) -> dict | None:
+    """
+    Get XGBoost prediction for a match using saved models.
+
+    `match_id` is required for v10+ (MFV-schema) models — the inference row
+    is fetched from `match_feature_vectors` by id. For v9* (Kaggle-schema)
+    models the lookup falls back to the legacy `features_v9.csv` cache keyed
+    by `home_team` / `away_team`.
+
+    Returns dict with probabilities, or None if features unavailable.
     {
         "xgb_home_prob": float,
         "xgb_draw_prob": float,
@@ -139,42 +250,19 @@ def get_xgboost_prediction(home_team: str, away_team: str,
     if not models:
         return None
 
-    features_data = _load_feature_data()
-    if not features_data:
-        return None
-
-    # Look up latest feature vectors for both teams
-    home_feats = features_data.get(f"{home_team}_home")
-    away_feats = features_data.get(f"{away_team}_away")
-
-    if not home_feats or not away_feats:
-        return None
-
     feature_cols = models["feature_cols"]
 
-    # Build the feature vector in the exact order the model expects
-    row = {}
+    if _is_mfv_schema(feature_cols):
+        # v10+ path — fetch the raw MFV row by match_id.
+        if not match_id:
+            return None
+        row = _build_row_from_mfv(match_id, feature_cols, tier)
+    else:
+        # v9* legacy path — feature lookup by team name.
+        row = _build_row_from_legacy_cache(home_team, away_team, tier, feature_cols)
 
-    # ELO features
-    home_elo = home_feats.get("elo", 1500)
-    away_elo = away_feats.get("elo", 1500)
-    row["home_elo"] = home_elo
-    row["away_elo"] = away_elo
-    row["elo_diff"] = home_elo - away_elo
-    row["home_elo_exp"] = 1 / (1 + 10 ** (-(home_elo - away_elo + 100) / 400))
-
-    # Home team rolling stats (h_ prefix)
-    for col in feature_cols:
-        if col.startswith("h_"):
-            row[col] = home_feats.get(col, 0.0)
-        elif col.startswith("a_"):
-            row[col] = away_feats.get(col, 0.0)
-
-    # Differential features
-    row["xg_diff"] = row.get("h_xg_for_avg", 0) - row.get("a_xg_for_avg", 0)
-    row["form_diff"] = row.get("h_ppg", 1.3) - row.get("a_ppg", 1.3)
-    row["overperf_diff"] = row.get("h_overperf_avg", 0) - row.get("a_overperf_avg", 0)
-    row["tier"] = tier
+    if row is None:
+        return None
 
     # Build DataFrame in correct column order
     try:
@@ -228,21 +316,42 @@ def get_xgboost_prediction(home_team: str, away_team: str,
         return None
 
 
-def load_blend_weight() -> float:
+def load_blend_weight(tier: int | None = None) -> float:
     """
     Load the learned Poisson/XGBoost blend weight from model_calibration.
-    Falls back to 0.5 (50/50) if no row exists.
-    Cached for the lifetime of the process.
+
+    With `tier`, prefers the tier-specific row `blend_weight_1x2_t{tier}`
+    (ML-BLEND-DYNAMIC) and falls back to the global `blend_weight_1x2` if
+    no tier row exists. Both fall back to 0.5 if neither row is present.
+
+    Per-tier values are loaded once per (process, tier) pair and cached.
     """
-    global _blend_weight_cache
-    if _blend_weight_cache is not None:
-        return _blend_weight_cache
+    cache_key = f"t{tier}" if tier is not None else "global"
+    if cache_key in _blend_weight_cache:
+        return _blend_weight_cache[cache_key]
 
     try:
         import sys
         from pathlib import Path as _Path
         sys.path.insert(0, str(_Path(__file__).parent.parent.parent))
         from workers.api_clients.db import execute_query
+
+        # Try tier-specific row first
+        if tier is not None:
+            rows = execute_query(
+                """
+                SELECT platt_a FROM model_calibration
+                WHERE market = %s
+                ORDER BY fitted_at DESC LIMIT 1
+                """,
+                [f"blend_weight_1x2_t{tier}"],
+            )
+            if rows:
+                w = float(rows[0]["platt_a"])
+                _blend_weight_cache[cache_key] = w
+                return w
+            # else fall through to global
+
         rows = execute_query(
             """
             SELECT platt_a FROM model_calibration
@@ -251,27 +360,27 @@ def load_blend_weight() -> float:
             """,
             [],
         )
-        if rows:
-            _blend_weight_cache = float(rows[0]["platt_a"])
-        else:
-            _blend_weight_cache = 0.5
+        w = float(rows[0]["platt_a"]) if rows else 0.5
     except Exception:
-        _blend_weight_cache = 0.5
+        w = 0.5
 
-    return _blend_weight_cache
+    _blend_weight_cache[cache_key] = w
+    return w
 
 
-_blend_weight_cache: float | None = None
+_blend_weight_cache: dict[str, float] = {}
 
 
 def ensemble_prediction(poisson_pred: dict, xgb_pred: dict,
-                        poisson_weight: float | None = None) -> dict:
+                        poisson_weight: float | None = None,
+                        tier: int | None = None) -> dict:
     """
     Blend Poisson and XGBoost predictions.
 
     poisson_weight: if None, loads from model_calibration (learned via
-    scripts/fit_blend_weights.py). Falls back to 0.5 if no learned value.
-    Pass an explicit float to override (e.g. poisson_weight=0.5 for legacy).
+    scripts/fit_blend_weights.py). With `tier`, prefers a tier-specific
+    weight (ML-BLEND-DYNAMIC). Falls back to 0.5 if no learned value.
+    Pass an explicit float to override.
 
     Returns merged prediction dict with:
       - Blended probabilities for ALL markets (1x2, over/under, BTTS)
@@ -287,7 +396,7 @@ def ensemble_prediction(poisson_pred: dict, xgb_pred: dict,
         you MUST ensure the corresponding prob key is produced here.
     """
     if poisson_weight is None:
-        poisson_weight = load_blend_weight()
+        poisson_weight = load_blend_weight(tier=tier)
     xw = 1.0 - poisson_weight
     pw = poisson_weight
 
