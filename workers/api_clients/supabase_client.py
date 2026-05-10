@@ -623,6 +623,12 @@ def store_odds(match_id: str, match_data: dict, minutes_to_kickoff: int = None):
         odds_rows.append({**base, "market": "btts", "selection": "no",
                           "odds": match_data["odds_btts_no"]})
 
+    # ODDS-QUALITY-CLEANUP: drop OU rows from blacklisted bookmakers and
+    # impossible (1/over + 1/under < 1.02) OU pairs before insertion.
+    # Belt + suspenders against the read-path filter in daily_pipeline_v2.
+    from workers.utils.odds_quality import filter_garbage_ou_rows
+    odds_rows = filter_garbage_ou_rows(odds_rows)
+
     if odds_rows:
         tuples = [
             (r["match_id"], r["bookmaker"], r["market"], r["selection"],

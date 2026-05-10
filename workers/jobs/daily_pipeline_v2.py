@@ -1084,10 +1084,17 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
     match_ids = [m["id"] for m in filtered]
 
     # 2. Load best pre-match odds per match per (market, selection) — single query
+    # ODDS-QUALITY-CLEANUP: exclude bookmakers known to ship garbage on OU lines
+    # (api-football synthetic, api-football-live in-play, William Hill line-shifted).
+    # 1X2 and BTTS rows from the same bookmakers are kept — those markets are clean.
     odds_raw = execute_query(
         """SELECT match_id, market, selection, odds, bookmaker
            FROM odds_snapshots
-           WHERE match_id = ANY(%s::uuid[]) AND is_closing = false""",
+           WHERE match_id = ANY(%s::uuid[]) AND is_closing = false
+             AND NOT (
+               market LIKE 'over_under_%%'
+               AND bookmaker IN ('api-football', 'api-football-live', 'William Hill')
+             )""",
         (match_ids,),
     )
 
@@ -1100,6 +1107,24 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
         if odds_val > best[mid][key]:
             best[mid][key] = odds_val
         bm_sources[mid].add(row.get("bookmaker") or "unknown")
+
+    # ODDS-QUALITY-CLEANUP: implied-sum sanity gate on OU pairs.
+    # Drop both sides of any (over, under) where 1/over + 1/under < 1.02
+    # (impossible market — every legit feed has overround ≥ 2%).
+    # Auto-quarantines any future broken source without code changes.
+    OU_PAIRS = [
+        ("over_under_05_over", "over_under_05_under"),
+        ("over_under_15_over", "over_under_15_under"),
+        ("over_under_25_over", "over_under_25_under"),
+        ("over_under_35_over", "over_under_35_under"),
+        ("over_under_45_over", "over_under_45_under"),
+    ]
+    for mid in list(best.keys()):
+        for over_key, under_key in OU_PAIRS:
+            o, u = best[mid].get(over_key, 0), best[mid].get(under_key, 0)
+            if o > 0 and u > 0 and (1.0 / o + 1.0 / u) < 1.02:
+                best[mid][over_key] = 0
+                best[mid][under_key] = 0
 
     MARKET_TO_FIELD = {
         "1x2_home": "odds_home", "1x2_draw": "odds_draw", "1x2_away": "odds_away",
@@ -1206,14 +1231,25 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
 
     # Running bankroll: tracks in-run stake spend so later bets size against
     # remaining capital (not the same starting bankroll for every bet).
+    # Also load is_active so the pipeline can skip paused/retired bots.
     from workers.api_clients.db import execute_query as _eq_br
     _running_bankroll: dict[str, float] = {}
+    _bot_active: dict[str, bool] = {}
     for _bn, _bid in bot_ids.items():
         try:
-            _row = _eq_br("SELECT current_bankroll FROM bots WHERE id = %s", [_bid])
-            _running_bankroll[_bn] = float(_row[0]["current_bankroll"]) if _row else 1000.0
+            _row = _eq_br(
+                "SELECT current_bankroll, is_active, retired_at FROM bots WHERE id = %s",
+                [_bid],
+            )
+            if _row:
+                _running_bankroll[_bn] = float(_row[0]["current_bankroll"])
+                _bot_active[_bn] = bool(_row[0].get("is_active")) and _row[0].get("retired_at") is None
+            else:
+                _running_bankroll[_bn] = 1000.0
+                _bot_active[_bn] = True
         except Exception:
             _running_bankroll[_bn] = 1000.0
+            _bot_active[_bn] = True
 
     af_only_matches: list[dict] = []  # matches with predictions but no odds (signals only)
     if skip_fetch:
@@ -1664,6 +1700,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
         af_pred = af_pred_for_match
 
         for bot_name, config in BOTS_CONFIG.items():
+            # ODDS-QUALITY-CLEANUP: skip bots flagged is_active=false or retired
+            # (e.g. paused during a data-quality cleanup or retired permanently).
+            if not _bot_active.get(bot_name, True):
+                continue
+
             # BOT-TIMING: skip bots not in the active cohort (None = run all)
             bot_cohort = BOT_TIMING_COHORTS.get(bot_name, "morning")
             if cohort and bot_cohort != cohort:

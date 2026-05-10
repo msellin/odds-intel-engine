@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workers.api_clients.api_football import get_odds_by_date, parse_fixture_odds
 from workers.api_clients.db import execute_query, bulk_insert
+from workers.utils.odds_quality import filter_garbage_ou_rows
 from workers.utils.pipeline_utils import (
     log_pipeline_start, log_pipeline_complete, log_pipeline_failed,
 )
@@ -102,6 +103,13 @@ def fetch_af_odds(target_date: str) -> int:
             continue
 
         parsed = parse_fixture_odds(odds_data)
+        if not parsed:
+            continue
+
+        # ODDS-QUALITY-CLEANUP: drop OU rows from blacklisted bookmakers and
+        # both sides of impossible (1/over + 1/under < 1.02) OU pairs.
+        # 1X2 / BTTS rows pass through untouched.
+        parsed = filter_garbage_ou_rows(parsed)
         if not parsed:
             continue
 

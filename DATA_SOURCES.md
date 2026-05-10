@@ -67,3 +67,31 @@ Remaining headroom: ~60K req/day. AF Ultra required — **do NOT downgrade to Pr
 - [x] ~~Remove Sofascore scrapers~~ Done 2026-04-29
 - [ ] Evaluate API-Football Pro ($19/mo, 7.5K req/day) after 4–6 weeks once we know which leagues are profitable
 - [ ] Activate The Odds API for Pinnacle odds (code exists, dormant)
+
+---
+
+## Over/Under bookmaker blacklist (ODDS-QUALITY-CLEANUP, 2026-05-10)
+
+These three sources ship clearly broken Over/Under data and are excluded from
+both ingestion (`workers/jobs/fetch_odds.py`, `workers/api_clients/supabase_client.py:store_odds`)
+and the read-path best-price aggregator (`workers/jobs/daily_pipeline_v2.py:_load_today_from_db`).
+1X2 and BTTS rows from the same sources are kept — those markets verified clean.
+
+| Source | Why blacklisted |
+|---|---|
+| `api-football` | Synthetic AF source; 100% of OU pairs invalid (avg implied-sum 0.63 across all OU lines). Not a real market feed. |
+| `William Hill` | Line labels appear shifted: 88% Under-favored on OU 1.5, 100% Under-favored on OU 2.5/3.5/4.5. Stored "Over 1.5" matches real Over 2.5 prices. |
+| `api-football-live` | In-play live odds; max 21.0. Belongs in live snapshots, not pre-match best-price. |
+
+In addition to the source blacklist, both write paths and the read-path
+aggregator apply an **implied-sum sanity gate**: drop both sides of any
+`(over, under)` pair where `1/over + 1/under < 1.02` (mathematically impossible
+market — every legit feed has overround ≥ 2%). This auto-quarantines any
+future broken source without code changes.
+
+Constants live in `workers/utils/odds_quality.py` (`BLACKLISTED_OU_SOURCES`,
+`MIN_OU_IMPLIED_SUM`, `filter_garbage_ou_rows`). Smoke tests prefixed
+`ODDS-QUALITY-CLEANUP — …` guard each path.
+
+**Nordic books (Paf, Coolbet, Veikkaus, Svenska Spel, Norsk Tipping)** are not
+in the AF feed — adding them requires a separate scraper (`NORDIC-BOOKS-INTEGRATION`).

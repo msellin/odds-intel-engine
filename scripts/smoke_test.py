@@ -844,6 +844,118 @@ def _():
     )
 
 
+@test("ODDS-QUALITY-CLEANUP — filter_garbage_ou_rows drops blacklisted bookmakers on OU only")
+def _():
+    from workers.utils.odds_quality import filter_garbage_ou_rows
+    rows = [
+        # OU rows from blacklisted sources — must be dropped
+        {"bookmaker": "api-football", "market": "over_under_15", "selection": "over",  "odds": 3.34},
+        {"bookmaker": "api-football", "market": "over_under_15", "selection": "under", "odds": 2.63},
+        {"bookmaker": "William Hill",  "market": "over_under_25", "selection": "over",  "odds": 5.96},
+        {"bookmaker": "William Hill",  "market": "over_under_25", "selection": "under", "odds": 1.14},
+        {"bookmaker": "api-football-live", "market": "over_under_35", "selection": "over", "odds": 21.0},
+        # 1X2 rows from same blacklisted sources — must be kept (those markets are clean)
+        {"bookmaker": "api-football", "market": "1x2", "selection": "home", "odds": 2.10},
+        {"bookmaker": "William Hill",  "market": "1x2", "selection": "draw", "odds": 3.40},
+        # BTTS from a blacklisted source — also kept (BTTS clean)
+        {"bookmaker": "api-football", "market": "btts", "selection": "yes", "odds": 1.90},
+        # Legitimate Pinnacle OU pair — kept
+        {"bookmaker": "Pinnacle", "market": "over_under_15", "selection": "over",  "odds": 1.45},
+        {"bookmaker": "Pinnacle", "market": "over_under_15", "selection": "under", "odds": 2.60},
+    ]
+    out = filter_garbage_ou_rows(rows)
+    bookmakers_kept = {(r["bookmaker"], r["market"]) for r in out}
+    # Blacklist: zero OU rows from those three sources
+    for bm in ("api-football", "William Hill", "api-football-live"):
+        for r in out:
+            assert not (r["bookmaker"] == bm and r["market"].startswith("over_under_")), (
+                f"ODDS-QUALITY-CLEANUP: blacklisted OU row leaked through: {r}"
+            )
+    # Whitelist: 1X2 + BTTS from blacklisted books still present
+    assert ("api-football", "1x2") in bookmakers_kept
+    assert ("William Hill", "1x2") in bookmakers_kept
+    assert ("api-football", "btts") in bookmakers_kept
+    # Pinnacle OU pair (valid, sum=1/1.45+1/2.60=1.075) survives
+    assert ("Pinnacle", "over_under_15") in bookmakers_kept
+
+
+@test("ODDS-QUALITY-CLEANUP — filter_garbage_ou_rows drops impossible (sum<1.02) OU pairs")
+def _():
+    from workers.utils.odds_quality import filter_garbage_ou_rows
+    rows = [
+        # Impossible market: 1/3.0 + 1/2.0 = 0.833 < 1.02 — both must be dropped
+        {"bookmaker": "Bet365", "market": "over_under_15", "selection": "over",  "odds": 3.0},
+        {"bookmaker": "Bet365", "market": "over_under_15", "selection": "under", "odds": 2.0},
+        # Borderline-impossible: 1/2.5 + 1/1.85 = 0.940 < 1.02 — both dropped
+        {"bookmaker": "Betano", "market": "over_under_25", "selection": "over",  "odds": 2.5},
+        {"bookmaker": "Betano", "market": "over_under_25", "selection": "under", "odds": 1.85},
+        # Valid market: 1/1.45 + 1/2.60 = 1.075 — both kept
+        {"bookmaker": "Pinnacle", "market": "over_under_15", "selection": "over",  "odds": 1.45},
+        {"bookmaker": "Pinnacle", "market": "over_under_15", "selection": "under", "odds": 2.60},
+    ]
+    out = filter_garbage_ou_rows(rows)
+    pairs_kept = {(r["bookmaker"], r["market"]) for r in out}
+    assert ("Bet365", "over_under_15") not in pairs_kept, "impossible OU pair kept"
+    assert ("Betano", "over_under_25") not in pairs_kept, "borderline-impossible pair kept"
+    assert ("Pinnacle", "over_under_15") in pairs_kept, "valid pair dropped"
+    assert len(out) == 2, f"expected 2 rows kept, got {len(out)}: {out}"
+
+
+@test("ODDS-QUALITY-CLEANUP — read-path SQL filter excludes blacklisted OU sources (source guard)")
+def _():
+    """Guard the SQL clause in _load_today_from_db that excludes blacklisted bookmakers
+    on OU markets. Ensures a future refactor can't silently drop the protection."""
+    import inspect
+    from workers.jobs import daily_pipeline_v2
+    src = inspect.getsource(daily_pipeline_v2._load_today_from_db)
+    assert "market LIKE 'over_under_%%'" in src, (
+        "ODDS-QUALITY-CLEANUP: read-path OU blacklist SQL clause missing"
+    )
+    for bm in ("api-football", "api-football-live", "William Hill"):
+        assert f"'{bm}'" in src, (
+            f"ODDS-QUALITY-CLEANUP: blacklisted bookmaker '{bm}' missing from "
+            "read-path OU exclusion clause in _load_today_from_db"
+        )
+    # Implied-sum sanity gate present
+    assert "1.02" in src and "OU_PAIRS" in src, (
+        "ODDS-QUALITY-CLEANUP: implied-sum sanity gate (1/over + 1/under < 1.02) "
+        "missing from _load_today_from_db"
+    )
+
+
+@test("ODDS-QUALITY-CLEANUP — write-path applies filter (fetch_odds + store_odds source guard)")
+def _():
+    """Both the bulk pre-match writer (fetch_odds.fetch_af_odds) and the
+    legacy single-bookmaker writer (supabase_client.store_odds) must call
+    filter_garbage_ou_rows before INSERT."""
+    import inspect
+    from workers.jobs import fetch_odds
+    from workers.api_clients import supabase_client
+    fo_src = inspect.getsource(fetch_odds.fetch_af_odds)
+    assert "filter_garbage_ou_rows" in fo_src, (
+        "ODDS-QUALITY-CLEANUP: fetch_af_odds no longer applies filter_garbage_ou_rows"
+    )
+    so_src = inspect.getsource(supabase_client.store_odds)
+    assert "filter_garbage_ou_rows" in so_src, (
+        "ODDS-QUALITY-CLEANUP: store_odds no longer applies filter_garbage_ou_rows"
+    )
+
+
+@test("ODDS-QUALITY-CLEANUP — pipeline skips bots flagged is_active=false")
+def _():
+    """The daily betting pipeline must respect bots.is_active so a paused bot
+    (e.g. during this cleanup) never places new bets until re-enabled."""
+    import inspect
+    from workers.jobs import daily_pipeline_v2
+    src = inspect.getsource(daily_pipeline_v2.run_morning)
+    assert "_bot_active" in src, (
+        "ODDS-QUALITY-CLEANUP: run_morning no longer reads is_active per bot"
+    )
+    assert "if not _bot_active.get(bot_name" in src, (
+        "ODDS-QUALITY-CLEANUP: run_morning loop missing is_active gate"
+    )
+
+
 @test("EMAIL-DIGEST-SMART — league_prestige_weight: Big-5 leagues weight 1.0")
 def _():
     from workers.utils.league_prestige import league_prestige_weight
