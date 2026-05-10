@@ -23,7 +23,7 @@ from psycopg2.extras import Json
 from dotenv import load_dotenv
 from rich.console import Console
 
-from workers.api_clients.db import get_conn, execute_query, execute_write, bulk_upsert
+from workers.api_clients.db import get_conn, execute_query, execute_write, execute_write_returning, bulk_upsert
 
 load_dotenv()
 
@@ -4578,6 +4578,71 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
     except Exception as e:
         console.print(f"[yellow]batch_write_morning_signals INSERT failed: {e}[/yellow]")
         return 0
+
+
+# ============================================================
+# REAL BETS — SELF-USE-VALIDATION (Phase 2.3)
+# ============================================================
+
+def compute_real_pnl(stake: float, actual_odds: float, result: str) -> float:
+    """Pure function: signed PnL for a real-money bet.
+
+    won  -> stake * (odds - 1)
+    lost -> -stake
+    void -> 0
+    half_won -> stake * (odds - 1) / 2
+    half_lost -> -stake / 2
+    pending -> 0 (placeholder)
+    """
+    r = (result or "").lower()
+    if r == "won":
+        return round(stake * (actual_odds - 1), 2)
+    if r == "lost":
+        return round(-stake, 2)
+    if r == "half_won":
+        return round(stake * (actual_odds - 1) / 2.0, 2)
+    if r == "half_lost":
+        return round(-stake / 2.0, 2)
+    return 0.0
+
+
+def store_real_bet(
+    *,
+    match_id: str,
+    market: str,
+    selection: str,
+    bookmaker: str,
+    actual_odds: float,
+    stake: float,
+    captured_odds: float | None = None,
+    bot_id: str | None = None,
+    simulated_bet_id: str | None = None,
+    notes: str | None = None,
+) -> str | None:
+    """Insert a single real-money bet, return its UUID.
+
+    `bookmaker` must exist in accessible_bookmakers (FK enforced).
+    `actual_odds` is what the user actually got at the book; `captured_odds`
+    is what our UI showed at click time (slippage_pct is a generated column
+    derived from these two).
+    """
+    if stake is None or stake <= 0:
+        raise ValueError("stake must be positive")
+    if actual_odds is None or actual_odds <= 1.0:
+        raise ValueError("actual_odds must be > 1.0")
+
+    rows = execute_write_returning(
+        """INSERT INTO real_bets
+           (match_id, market, selection, bookmaker, captured_odds, actual_odds,
+            stake, bot_id, simulated_bet_id, notes)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+           RETURNING id""",
+        [
+            match_id, market, selection.lower(), bookmaker,
+            captured_odds, actual_odds, stake, bot_id, simulated_bet_id, notes,
+        ],
+    )
+    return str(rows[0]["id"]) if rows else None
 
 
 # ============================================================

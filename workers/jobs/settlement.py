@@ -420,12 +420,70 @@ def settle_finished_matches(match_ids: list[str]):
         except Exception as e:
             console.print(f"  [yellow]User picks settlement error: {e}[/yellow]")
 
+    # SELF-USE-VALIDATION: settle any superadmin real-money bets on the same cadence.
+    try:
+        _settle_real_bets_for_matches(match_ids)
+    except Exception as e:
+        console.print(f"  [yellow]Real-bet settlement error: {e}[/yellow]")
+
     # Mark settled regardless of whether there were any pending bets/picks.
     # This stops the 15-min sweep from re-querying the same finished matches.
     execute_write(
         "UPDATE matches SET settlement_status = 'done' WHERE id = ANY(%s::uuid[])",
         [match_ids]
     )
+
+
+def _settle_real_bets_for_matches(match_ids: list[str]):
+    """SELF-USE-VALIDATION Phase 2.2 — settle real_bets for finished matches.
+
+    Mirrors _settle_simulated_bets / settle_finished_matches semantics but
+    against the real_bets table. Real bets carry actual taken odds in
+    `actual_odds` (vs simulated_bets' `odds_at_pick`); we feed it into the
+    same settle_bet_result() by aliasing.
+    """
+    if not match_ids:
+        return
+
+    pending = execute_query(
+        """SELECT rb.id, rb.match_id, rb.market, rb.selection,
+                  rb.actual_odds AS odds_at_pick, rb.stake,
+                  m.score_home, m.score_away
+           FROM real_bets rb
+           JOIN matches m ON m.id = rb.match_id
+           WHERE rb.result = 'pending'
+             AND rb.match_id = ANY(%s::uuid[])
+             AND m.status = 'finished'
+             AND m.score_home IS NOT NULL
+             AND m.score_away IS NOT NULL""",
+        [match_ids],
+    )
+    if not pending:
+        return
+
+    settled = 0
+    for bet in pending:
+        try:
+            outcome = settle_bet_result(
+                bet,
+                int(bet["score_home"]),
+                int(bet["score_away"]),
+                None,  # CLV not tracked on real_bets — taken price IS the closing line for our purposes
+            )
+            execute_write(
+                """UPDATE real_bets
+                   SET result = %s,
+                       pnl = %s,
+                       resolved_at = NOW()
+                   WHERE id = %s""",
+                [outcome["result"], outcome["pnl"], bet["id"]],
+            )
+            settled += 1
+        except Exception as e:
+            console.print(f"[yellow]Real-bet settle error for {bet['id']}: {e}[/yellow]")
+
+    if settled:
+        console.print(f"[green]Settled {settled} real bet(s) across {len(match_ids)} match(es)[/green]")
 
 
 def fix_stale_live_matches():

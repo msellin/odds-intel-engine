@@ -510,6 +510,54 @@ def _():
         raise AssertionError(f"Missing ops_snapshots columns (run migration 063): {missing}")
 
 
+@test("SELF-USE-VALIDATION — compute_real_pnl pure function (won/lost/void/half)")
+def _():
+    from workers.api_clients.supabase_client import compute_real_pnl
+    assert compute_real_pnl(2.0, 2.5, 'won') == 3.0, "won: stake*(odds-1)"
+    assert compute_real_pnl(2.0, 2.5, 'lost') == -2.0, "lost: -stake"
+    assert compute_real_pnl(2.0, 2.5, 'void') == 0.0, "void: 0"
+    assert compute_real_pnl(2.0, 2.5, 'half_won') == 1.5, "half_won: half profit"
+    assert compute_real_pnl(2.0, 2.5, 'half_lost') == -1.0, "half_lost: half stake"
+    assert compute_real_pnl(2.0, 2.5, 'pending') == 0.0, "pending: 0"
+
+
+@test("SELF-USE-VALIDATION — store_real_bet validates inputs + writes to real_bets (source inspect)")
+def _():
+    """Source guard: store_real_bet must validate stake>0, actual_odds>1.0, and
+    insert with the right column set. We inspect the function body rather than
+    making real INSERTs in CI to keep the smoke suite fast."""
+    import inspect
+    from workers.api_clients import supabase_client
+    src = inspect.getsource(supabase_client.store_real_bet)
+    assert "stake must be positive" in src, "stake validation missing"
+    assert "actual_odds must be > 1.0" in src, "odds validation missing"
+    assert "INSERT INTO real_bets" in src, "writer must INSERT into real_bets"
+    assert "RETURNING id" in src, "writer must return new bet UUID"
+
+
+@test("SELF-USE-VALIDATION — settlement wires _settle_real_bets_for_matches (source inspect)")
+def _():
+    """The 21:00 / 23:30 / 01:00 settlement chain + 15-min settle_ready sweep
+    must call into real_bets settlement so superadmin bets resolve on the same
+    cadence as paper bets."""
+    import inspect
+    from workers.jobs import settlement
+    src = inspect.getsource(settlement)
+    assert "def _settle_real_bets_for_matches" in src, "function missing"
+    assert "_settle_real_bets_for_matches(match_ids)" in src, (
+        "settle_finished_matches must call _settle_real_bets_for_matches"
+    )
+    # Real bets feed actual_odds into settle_bet_result via 'odds_at_pick' alias
+    fn = inspect.getsource(settlement._settle_real_bets_for_matches)
+    assert "actual_odds AS odds_at_pick" in fn, (
+        "_settle_real_bets_for_matches must alias actual_odds → odds_at_pick "
+        "for settle_bet_result compatibility"
+    )
+    assert "real_bets" in fn and "result = 'pending'" in fn, (
+        "function must scope to pending real_bets only"
+    )
+
+
 @test("write_ops_snapshot — wired to ops_snapshots + pipeline_runs (source inspect)")
 def _():
     """The Ops Dashboard shows '—' on every metric if no ops_snapshot row for today.
