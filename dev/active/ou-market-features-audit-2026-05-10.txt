@@ -1,0 +1,165 @@
+
+══════════════════════════════════════════════════════════════════════
+A.1 — Pinnacle 1X2 outliers (odds < 1.05 OR > 30)
+══════════════════════════════════════════════════════════════════════
+DB pool created (2-20 connections)
+⚠ 13 (match_id, selection) pairs with extreme Pinnacle 1X2 odds:
+
+┏━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━┓
+┃              ┃               ┃            ┃           ┃ odds         ┃       ┃
+┃ league       ┃ match         ┃ date       ┃ selection ┃ (min..max)   ┃ snaps ┃
+┡━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━┩
+│ Liga         │ Deportivo     │ 2026-05-10 │ away      │ 35.870..35.… │ 1     │
+│ Femenina     │ Cali W vs     │            │           │              │       │
+│              │ Real          │            │           │              │       │
+│              │ Santander W   │            │           │              │       │
+│ Primera      │ Granad.       │ 2026-05-10 │ away      │ 1.030..1.030 │ 13    │
+│ División     │ Tenerife W vs │            │           │              │       │
+│ Femenina     │ Barcelona W   │            │           │              │       │
+│ First League │ Vardar Skopje │ 2026-05-10 │ away      │ 30.850..30.… │ 12    │
+│              │ vs Sileks     │            │           │              │       │
+│ First League │ Vardar Skopje │ 2026-05-10 │ home      │ 1.040..1.040 │ 12    │
+│              │ vs Sileks     │            │           │              │       │
+│ Premier      │ SK Poltava vs │ 2026-05-10 │ away      │ 1.010..1.010 │ 26    │
+│ League       │ Shakhtar      │            │           │              │       │
+│              │ Donetsk       │            │           │              │       │
+│ Ligi kuu     │ Young         │ 2026-05-09 │ away      │ 34.010..34.… │ 9     │
+│ Bara         │ Africans vs   │            │           │              │       │
+│              │ Coastal Union │            │           │              │       │
+│ Ligi kuu     │ Young         │ 2026-05-09 │ home      │ 1.030..1.030 │ 24    │
+│ Bara         │ Africans vs   │            │           │              │       │
+│              │ Coastal Union │            │           │              │       │
+│ Meistriliiga │ FC Levadia    │ 2026-05-09 │ away      │ 34.800..34.… │ 12    │
+│              │ Tallinn vs    │            │           │              │       │
+│              │ Laagri        │            │           │              │       │
+│ Regionalliga │ Voitsberg vs  │ 2026-05-08 │ home      │ 1.030..1.040 │ 2     │
+│ - Mitte      │ Gleisdorf 09  │            │           │              │       │
+│ Damallsvens… │ Hammarby vs   │ 2026-05-06 │ away      │ 31.180..31.… │ 1     │
+│              │ Uppsala W     │            │           │              │       │
+│ Damallsvens… │ Hammarby vs   │ 2026-05-06 │ home      │ 1.040..1.040 │ 2     │
+│              │ Uppsala W     │            │           │              │       │
+│ Premier      │ Albirex       │ 2026-05-04 │ home      │ 1.040..1.040 │ 1     │
+│ League       │ Niigata S vs  │            │           │              │       │
+│              │ Young Lions   │            │           │              │       │
+│ League       │ Sama Al       │ 2026-05-03 │ away      │ 1.040..1.040 │ 1     │
+│              │ Sarhan vs Al  │            │           │              │       │
+│              │ Hussein       │            │           │              │       │
+└──────────────┴───────────────┴────────────┴───────────┴──────────────┴───────┘
+
+══════════════════════════════════════════════════════════════════════
+A.2 — Pinnacle OU 2.5 overround (last 30d)
+══════════════════════════════════════════════════════════════════════
+
+Pinnacle OU 2.5 overround (last 30d):
+  Total paired: 2,726
+  Clean (1.02-1.10): 2,660 (97.6%)
+  Overround > 1.10: 66 (2.4%)
+  Overround < 1.02: 0 (0.0%) 
+
+Sample of suspicious Pinnacle OU 2.5 pairs:
+  [King's Cup          ] Al Kholood vs Al-Hilal Saudi FC  over=1.390 under=1.750
+overround=1.2909
+  [K League 2          ] Hwaseong vs Ansan Greeners  over=1.600 under=1.710  
+overround=1.2098
+  [HNL                 ] HNK Rijeka vs Vukovar  over=1.590 under=1.740  
+overround=1.2036
+  [Serie A             ] AS Roma vs Fiorentina  over=1.410 under=2.050  
+overround=1.1970
+  [Primeira Liga       ] FC Porto vs Alverca  over=1.540 under=1.900  
+overround=1.1757
+  [Premier League      ] Everton vs Manchester City  over=1.380 under=2.400  
+overround=1.1413
+  [Serie A             ] Juventus vs Hellas Verona  over=1.580 under=1.970  
+overround=1.1405
+  [First League        ] Arsenal Tivat vs Sutjeska  over=1.630 under=1.920  
+overround=1.1343
+  [Serie D             ] Moto Club vs Sampaio Correa  over=2.580 under=1.350  
+overround=1.1283
+  [Primera División RFE] Zamora vs Ponferradina  over=2.180 under=1.520  
+overround=1.1166
+  [Premier League      ] Sitra vs Al Ahli  over=1.920 under=1.680  
+overround=1.1161
+  [Torneo Federal A    ] Tucuman Central vs Juventud Antoniana  over=2.860 
+under=1.310  overround=1.1130
+  [CONMEBOL Libertadore] Rosario Central vs Libertad Asuncion  over=1.790 
+under=1.810  overround=1.1111
+  [2. liga             ] Lokomotíva Zvolen vs Žilina II  over=1.410 under=2.490 
+overround=1.1108
+  [Super League        ] Darajani Gogo vs Equity Bank  over=1.460 under=2.350  
+overround=1.1105
+
+══════════════════════════════════════════════════════════════════════
+A.2b — OU 2.5 timestamp skew on suspicious pairs
+══════════════════════════════════════════════════════════════════════
+Of the 66 suspicious-overround OU 2.5 pairs:
+  Same timestamp (within 60s) — likely real mislabel: 66
+  Different timestamps — snapshot skew (probably benign):  0
+
+══════════════════════════════════════════════════════════════════════
+A.3 — Pinnacle BTTS overround (last 30d)
+══════════════════════════════════════════════════════════════════════
+  Total paired: 1
+  Clean (1.02-1.10): 0 (0.0%)
+  Overround > 1.10: 0 (0.0%)
+  Overround < 1.02: 0 (0.0%)
+
+══════════════════════════════════════════════════════════════════════
+A.4 — Bookmaker label hygiene (1X2, OU 2.5, BTTS — last 30d)
+══════════════════════════════════════════════════════════════════════
+
+1x2
+  api-football-live                 129,603
+  1xBet                             102,921
+  Marathonbet                       102,034
+  Dafabet                           101,384
+  Betano                            100,206
+  Bet365                             93,479
+  William Hill                       91,490
+  Pinnacle                           90,092  canonical
+  Betfair                            87,871
+  10Bet                              87,213
+  Unibet                             80,607
+  BetVictor                          76,468
+  SBO                                51,185
+  888Sport                           47,274
+  api-football                          885
+
+btts
+  Marathonbet                        68,155
+  1xBet                              65,902
+  William Hill                       60,453
+  BetVictor                          51,053
+  Betano                             46,099
+  10Bet                              45,019
+  Unibet                             43,859
+  Bet365                             37,908
+  Betfair                            35,869
+  888Sport                           31,418
+  api-football                          524
+
+over_under_25
+  Marathonbet                        60,344
+  1xBet                              58,352
+  Bet365                             54,987
+  Betano                             52,259
+  Pinnacle                           51,882  canonical
+  10Bet                              48,299
+  Unibet                             48,263
+  BetVictor                          43,822
+  Betfair                            33,350
+  888Sport                           28,188
+  SBO                                12,645
+  api-football-live                   9,098
+
+══════════════════════════════════════════════════════════════════════
+A.5 — Pinnacle pre-KO coverage on finished matches (last 90d)
+══════════════════════════════════════════════════════════════════════
+   Pinnacle pre-KO coverage on finished matches (last 90d)    
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┓
+┃ Market                    ┃ Matches with ≥1 row ┃ Coverage ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━┩
+│ Total finished (last 90d) │              11,867 │   100.0% │
+│ 1X2                       │               2,737 │    23.1% │
+│ OU 2.5                    │               2,600 │    21.9% │
+│ BTTS                      │                   0 │     0.0% │
+└───────────────────────────┴─────────────────────┴──────────┘
