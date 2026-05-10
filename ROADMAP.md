@@ -133,7 +133,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | ⑥ LivePoller (24/7, adaptive 30s live / 120s idle) | ✅ Live scores, events, lineups, in-play odds + 8 in-play bots |
 | ⑦ AI news checker (4×/day + 14:30) | ✅ Gemini 2.5 Flash, qualitative-only |
 | ⑧ Settlement (21:00 + 01:00 UTC) | ✅ Settle + CLV + Pinnacle CLV + ELO + post-mortem + weekly Platt + blend refit (Wed+Sun) + dynamic DC rho |
-| ⑨ Historical backfill (02:00 UTC Railway) | 🔄 Running — 3,474 matches done, 19 leagues in progress |
+| ⑨ Historical backfill (02:00 UTC Railway) | ✅ Complete 2026-05-10 — 47,228 finished matches; match_stats 73.4% (terminal — AF gaps), match_events 93.4%; `backfill_complete.flag` set, scheduled job auto-disabled |
 | ⑩ AI match previews (07:15 UTC) | ✅ Gemini 200-word previews for top 10 matches |
 | ⑪ Email digest (10/12/14/16 UTC slots) | ✅ Smart-slot digest — first slot whose pending-bet signal-strength score (Σ edge × prestige × kelly) clears threshold sends; T4 leagues (youth/women/lower divisions) excluded from email content (EMAIL-DIGEST-SMART) + value bet alerts (16:00/20:45) + weekly (Mon 08:00) + watchlist (08:30/14:30/20:30) |
 | 24 paper trading bots | ✅ 16 pre-match (since 2026-04-27, incl. bot_proven_leagues) + 8 in-play (since 2026-05-06, strategies A/A2/B/C/C_home/D/E/F) |
@@ -229,7 +229,7 @@ New bots planned based on live data accumulation:
 |-----|---------|-------|-----------------|
 | `bot_meta_v1` | 3000+ quality CLV rows (captured_at >= 2026-05-06) | ~May 17 | Uses logistic regression EV score instead of hardcoded thresholds. First bot learning from live data |
 | `bot_high_alignment` | 300+ settled bot bets (>= 2026-05-06) | ~June 5 | Only bets when alignment_class=HIGH. Fewer bets, higher precision |
-| `bot_retrained_xgb` | HIST-BACKFILL complete (API-Football 2020-2026) | ~June | XGBoost retrained on recent data, not 2007-2025 |
+| `bot_retrained_xgb` | ✅ HIST-BACKFILL complete 2026-05-10 — gated on ML-RETRAIN-1 run | ~June | XGBoost retrained on recent data, not 2007-2025. Backfill done; awaiting `workers/model/train.py` rerun. |
 | In-play strategies G, H | Week 2 after Phase 1A launch | ~May 13 | Shot Quality Under + Corner Pressure Over |
 | In-play strategies I, J, K | Week 3 after Phase 1A launch | ~May 20 | Possession Trap + Dominant Underdog + 2H Burst |
 

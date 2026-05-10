@@ -235,14 +235,15 @@
 - Requires `RESEND_API_KEY` in env (+ Railway env vars).
 - Manual run: `python -m workers.jobs.email_digest --dry-run`
 
-### ⑨ Historical Backfill (`backfill_historical.py`)
+### ⑨ Historical Backfill (`backfill_historical.py`) — ✅ COMPLETE 2026-05-10
+- **All 134 league/season pairs marked complete** (phase 1: 57, phase 2: 54, phase 3: 23). `backfill_complete.flag` exists; the scheduled job is auto-disabled.
+- Final coverage: 47,228 finished matches, match_stats 73.4% (34,675 distinct), match_events 93.4% (44,102 distinct). Stats coverage is terminal — remaining gaps are AF-permanent (the `/fixtures?ids=` endpoint returns the fixture but with empty `statistics` arrays for some pre-2024 matches; no retry will fill them).
 - Fetches historical fixtures, odds, statistics, events from API-Football
-- Runs during spare API quota windows (overnight + daytime gaps, 8 cron slots)
 - 3 phases: Phase 1 = top ~20 leagues (3 seasons), Phase 2 = ~30 secondary (2 seasons), Phase 3 = ~50+ remaining (1 season)
 - Budget-capped: aborts if < 10K API calls remaining; max 9K calls per run
-- Idempotent: tracks progress in `backfill_progress` table, resumes from where it left off
+- Idempotent: tracks progress in `backfill_progress` table, resumes from where it left off; per-dim AF-permanent-gap escape stops the livelock when one dim trickles in while another is permanently empty
 - Auto-disables via `backfill_complete.flag` when all phases are done
-- Manual run: `python scripts/backfill_historical.py --phase 1 --dry-run`
+- Manual run (only if flag is removed): `python scripts/backfill_historical.py --phase 1 --dry-run` or one-shot driver `python scripts/finish_backfill.py`
 
 ---
 
