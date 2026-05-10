@@ -637,10 +637,16 @@ def main():
     # 10 threads, which combined with LivePoller + Flask + InplayBot can fan out
     # to 15+ simultaneous DB conns at startup when missed jobs catch up. 4 is
     # plenty for the actual workload (most jobs are short, scheduled minutes apart).
+    # misfire_grace_time=300: APScheduler's default is 1s, which causes
+    # once-a-day jobs (Watchlist 08:30, Stripe Reconcile 09:00, Odds 11:00…) to be
+    # silently skipped when GIL contention from LivePoller/Flask/InplayBot delays
+    # the scheduler thread by 2-3s at fire time. 5 min is wider than any normal
+    # jitter and shorter than the smallest job interval (5min healthcheck), so
+    # late runs still execute promptly. coalesce=True keeps stale bursts to one run.
     scheduler = BackgroundScheduler(
         timezone="UTC",
         executors={"default": APSThreadPoolExecutor(max_workers=4)},
-        job_defaults={"coalesce": True, "max_instances": 1},
+        job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 300},
     )
 
     # ── Register all jobs ──────────────────────────────────────────────

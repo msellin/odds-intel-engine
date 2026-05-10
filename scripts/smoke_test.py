@@ -1848,6 +1848,26 @@ def _():
     )
 
 
+@test("MISFIRE-GRACE — job_defaults sets misfire_grace_time so 1-3s GIL jitter doesn't skip jobs")
+def _():
+    # APScheduler's default misfire_grace_time is 1s. Once-a-day jobs (Watchlist
+    # 08:30, Stripe Reconcile 09:00, Odds 11:00) were silently skipped on Railway
+    # when the scheduler thread slipped 2-3s under GIL contention. Widening the
+    # grace window to 5min is safe because coalesce=True collapses stale bursts.
+    from pathlib import Path
+    src = Path("workers/scheduler.py").read_text()
+    assert '"misfire_grace_time": 300' in src, (
+        "BackgroundScheduler job_defaults must set misfire_grace_time=300 — "
+        "default 1s causes once-a-day jobs to be silently skipped when the "
+        "scheduler thread slips a few seconds under GIL contention with "
+        "LivePoller / Flask / InplayBot."
+    )
+    assert '"coalesce": True' in src, (
+        "coalesce=True must remain set — without it, a wide misfire_grace_time "
+        "would let multiple stale runs all fire at once on catch-up."
+    )
+
+
 @test("POOL-FANOUT — store_match_events_batch uses execute_values (single round-trip)")
 def _():
     import inspect
