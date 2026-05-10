@@ -585,6 +585,45 @@ def _handle_signal(signum, frame):
 
 # ── Main ───────────────────────────────────────────────────────────────────
 
+def _maybe_catchup_missed_settlement():
+    """If the last successful 'settlement' run was >25h ago, a daily settlement
+    is missing. Fire one in a background thread so startup isn't blocked.
+
+    Background: every git push triggers a Railway redeploy, which kills any
+    in-flight job. With heavy dev cadence the 21:00/23:30/01:00 settlement
+    triples can all be killed mid-run. Without this catch-up, finished matches
+    sit unsettled until the next 21:00 window.
+    """
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            """SELECT MAX(completed_at) AS last_ok
+               FROM pipeline_runs
+               WHERE job_name = 'settlement' AND status = 'completed'""",
+            [],
+        )
+        last_ok = rows[0]["last_ok"] if rows else None
+        if last_ok is None:
+            console.print("[yellow]Settlement catch-up: no prior successful run on record — skipping[/yellow]")
+            return
+        from datetime import datetime, timezone, timedelta
+        age = datetime.now(timezone.utc) - last_ok
+        if age < timedelta(hours=25):
+            return
+        console.print(f"[yellow]Settlement catch-up: last successful run was {age} ago — firing now[/yellow]")
+
+        def _run_catchup():
+            time.sleep(60)  # let scheduler + health endpoint settle first
+            try:
+                _run_job("settlement", settlement_pipeline, _log_run=False)
+            except Exception as e:
+                console.print(f"[red]Settlement catch-up failed: {e}[/red]")
+
+        threading.Thread(target=_run_catchup, daemon=True).start()
+    except Exception as e:
+        console.print(f"[yellow]Settlement catch-up check errored (non-fatal): {e}[/yellow]")
+
+
 def _cleanup_stale_runs(threshold_minutes: int = 10, label: str = "scheduler restarted"):
     """Mark orphaned 'running' records as failed — called on startup and periodically."""
     try:
@@ -621,6 +660,12 @@ def main():
     # Clean up orphaned "running" records from previous process (Railway kill/restart)
     # 10-min threshold catches jobs that were <30 min old under the old logic
     _cleanup_stale_runs(threshold_minutes=10, label="scheduler restarted")
+
+    # SETTLEMENT-CATCHUP: if last night's daily settlement got killed by a deploy
+    # (frequent during active dev — every git push restarts Railway), the 21:00 /
+    # 23:30 / 01:00 redundant runs may all have been wiped. Detect that and
+    # fire one settlement run shortly after startup.
+    _maybe_catchup_missed_settlement()
 
     # Sync budget in background (API call can take 2-5s, don't block startup)
     def _initial_budget_sync():

@@ -1099,15 +1099,40 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
         (match_ids,),
     )
 
+    # OU-PINNACLE-CAP (2026-05-10): for OU markets, drop any non-Pinnacle row
+    # priced more than 2× Pinnacle's price. Caught after bot_ou15_defensive
+    # bet OU 1.5 OVER at 3.42 in the Belarus Premier League while Pinnacle
+    # had 1.45 — a non-Pinnacle book shipped a swapped/Asian-total label,
+    # MAX-across-books picked it up, the bot saw a fake 56% edge.
+    # Pinnacle is the sharpest reference; 2× is wide enough to allow legitimate
+    # soft-book overlays but tight enough to drop obvious mislabelled rows.
+    pin_ou: dict[str, dict[str, float]] = _dd(dict)  # mid -> "market_selection" -> pinnacle odds
+    for row in odds_raw:
+        if row.get("bookmaker") != "Pinnacle":
+            continue
+        if not str(row.get("market", "")).startswith("over_under_"):
+            continue
+        mid = str(row["match_id"])
+        key = f"{row['market']}_{row['selection']}"
+        try:
+            pin_ou[mid][key] = float(row["odds"])
+        except (TypeError, ValueError):
+            pass
+
     best: dict[str, dict[str, float]] = _dd(lambda: _dd(float))
     bm_sources: dict[str, set] = _dd(set)
     for row in odds_raw:
         mid = str(row["match_id"])
         key = f"{row['market']}_{row['selection']}"
         odds_val = float(row["odds"])
+        bookmaker = row.get("bookmaker") or "unknown"
+        if str(row.get("market", "")).startswith("over_under_") and bookmaker != "Pinnacle":
+            pin_price = pin_ou.get(mid, {}).get(key)
+            if pin_price and odds_val > 2.0 * pin_price:
+                continue  # OU-PINNACLE-CAP — likely mislabelled / Asian-total row
         if odds_val > best[mid][key]:
             best[mid][key] = odds_val
-        bm_sources[mid].add(row.get("bookmaker") or "unknown")
+        bm_sources[mid].add(bookmaker)
 
     # ODDS-QUALITY-CLEANUP: implied-sum sanity gate on OU pairs.
     # Drop both sides of any (over, under) where 1/over + 1/under < 1.02

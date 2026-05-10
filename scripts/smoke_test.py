@@ -535,6 +535,55 @@ def _():
     )
 
 
+@test("OPS-COVERAGE-TIMEOUT — odds_coverage query uses FILTER aggregates, not NOT EXISTS subquery")
+def _():
+    """The original odds_coverage query used a correlated NOT EXISTS subquery
+    against the full odds_snapshots table. At ~1.9M today-odds rows it timed
+    out at Postgres statement_timeout (120s), the exception was silently caught,
+    and the snapshot wrote 0 in all 8 odds columns — making the dashboard show
+    no odds while the odds-fetch jobs were succeeding. Guard the rewritten form."""
+    import pathlib
+    src = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
+    fn_start = src.index("def write_ops_snapshot(")
+    next_def = src.find("\ndef ", fn_start + 1)
+    fn_body = src[fn_start:next_def] if next_def != -1 else src[fn_start:]
+
+    # The slow form must not return.
+    assert "NOT EXISTS (\n                SELECT 1 FROM odds_snapshots o2" not in fn_body, (
+        "OPS-COVERAGE-TIMEOUT: NOT EXISTS subquery is back — odds_coverage will time out on large days"
+    )
+    # The fast form must use FILTER aggregates.
+    assert "FILTER (WHERE o.bookmaker = 'Pinnacle')" in fn_body, (
+        "OPS-COVERAGE-TIMEOUT: with_pinnacle FILTER aggregate missing"
+    )
+    # without_pinnacle is now derived in Python, not SQL.
+    assert "matches_with_odds - matches_with_pinnacle" in fn_body, (
+        "OPS-COVERAGE-TIMEOUT: without_pinnacle must be derived in Python (with_odds - with_pinnacle)"
+    )
+    # Critical-section failures must mark the pipeline run failed (not silently succeed).
+    assert "CRITICAL_SECTIONS" in fn_body and "odds_coverage" in fn_body, (
+        "OPS-COVERAGE-TIMEOUT: critical-section guard missing — silent timeouts will recur"
+    )
+
+
+@test("SETTLEMENT-CATCHUP — scheduler fires settlement on startup if last success was >25h ago (source inspect)")
+def _():
+    """Every git push redeploys the Railway scheduler, killing any in-flight job.
+    With heavy dev cadence the 21:00/23:30/01:00 redundant settlement runs can
+    all be killed mid-run, leaving finished matches unsettled until the next
+    21:00 window. This catch-up runs at startup so a missed daily settlement
+    doesn't sit waiting a full day."""
+    import pathlib
+    src = pathlib.Path("workers/scheduler.py").read_text()
+    assert "_maybe_catchup_missed_settlement" in src, (
+        "SETTLEMENT-CATCHUP: function missing from scheduler"
+    )
+    assert "timedelta(hours=25)" in src, (
+        "SETTLEMENT-CATCHUP: 25-hour 'last successful run' threshold must be present"
+    )
+    assert "settlement_pipeline" in src, (
+        "SETTLEMENT-CATCHUP: must invoke settlement_pipeline so the catch-up actually settles"
+    )
 
 
 @test("dashboard_cache_refresh — periodic job wired in scheduler (source inspect)")
@@ -1090,6 +1139,27 @@ def _():
     assert "1.02" in src and "OU_PAIRS" in src, (
         "ODDS-QUALITY-CLEANUP: implied-sum sanity gate (1/over + 1/under < 1.02) "
         "missing from _load_today_from_db"
+    )
+
+
+@test("OU-PINNACLE-CAP — non-Pinnacle OU rows >2x Pinnacle are dropped from MAX aggregation (source guard)")
+def _():
+    """Source-inspect guard: betting pipeline's odds aggregator must drop any
+    non-Pinnacle OU row whose price exceeds 2.0× Pinnacle's price for the
+    same (match, market, selection). Caught after bot_ou15_defensive bet
+    OU 1.5 OVER at 3.42 in Belarus Premier vs Pinnacle's 1.45 — a non-blacklisted
+    book mislabelled / shipped an Asian-total OU 1.5 OVER price, MAX-aggregation
+    promoted it, the bot saw a fake 56% edge."""
+    import inspect
+    from workers.jobs import daily_pipeline_v2
+    src = inspect.getsource(daily_pipeline_v2._load_today_from_db)
+    assert "OU-PINNACLE-CAP" in src, "OU-PINNACLE-CAP marker missing from _load_today_from_db"
+    assert "2.0 * pin_price" in src, (
+        "OU-PINNACLE-CAP: cap multiplier check (2.0 * pin_price) missing — "
+        "non-Pinnacle OU rows would no longer be filtered against Pinnacle"
+    )
+    assert 'bookmaker != "Pinnacle"' in src, (
+        "OU-PINNACLE-CAP: cap must only apply to non-Pinnacle rows"
     )
 
 

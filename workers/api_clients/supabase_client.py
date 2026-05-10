@@ -4692,21 +4692,22 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
         failed_sections.append("fixtures_count")
         console.print(f"[yellow]ops_snapshot: fixtures_count failed: {e}[/yellow]")
 
+    # OPS-COVERAGE-TIMEOUT (2026-05-10): the previous query used a NOT EXISTS
+    # correlated subquery to compute without_pinnacle. At ~1.9M today-odds
+    # rows that took >120s and tripped Postgres statement_timeout, leaving
+    # all 8 counters at 0 — every other ops_snapshot row showed 0 odds.
+    # Use FILTER aggregates and derive without_pinnacle = with_odds - with_pinnacle.
     try:
         r = execute_query(
             """
             SELECT
-              COUNT(DISTINCT o.match_id) AS with_odds,
-              COUNT(DISTINCT CASE WHEN o.bookmaker = 'Pinnacle' THEN o.match_id END) AS with_pinnacle,
-              COUNT(DISTINCT CASE WHEN o.bookmaker != 'Pinnacle' AND NOT EXISTS (
-                SELECT 1 FROM odds_snapshots o2
-                WHERE o2.match_id = o.match_id AND o2.bookmaker = 'Pinnacle'
-              ) THEN o.match_id END) AS without_pinnacle,
-              COUNT(*)                    AS snapshots_today,
-              COUNT(DISTINCT o.bookmaker) AS distinct_bm,
-              COUNT(DISTINCT CASE WHEN o.market = '1x2' THEN o.match_id END)             AS mkt_match_winner,
-              COUNT(DISTINCT CASE WHEN o.market = 'over_under_25' THEN o.match_id END)   AS mkt_goals_ou,
-              COUNT(DISTINCT CASE WHEN o.market = 'btts' THEN o.match_id END)            AS mkt_btts
+              COUNT(DISTINCT o.match_id)                                            AS with_odds,
+              COUNT(DISTINCT o.match_id) FILTER (WHERE o.bookmaker = 'Pinnacle')    AS with_pinnacle,
+              COUNT(*)                                                              AS snapshots_today,
+              COUNT(DISTINCT o.bookmaker)                                           AS distinct_bm,
+              COUNT(DISTINCT o.match_id) FILTER (WHERE o.market = '1x2')            AS mkt_match_winner,
+              COUNT(DISTINCT o.match_id) FILTER (WHERE o.market = 'over_under_25')  AS mkt_goals_ou,
+              COUNT(DISTINCT o.match_id) FILTER (WHERE o.market = 'btts')           AS mkt_btts
             FROM odds_snapshots o
             JOIN matches m ON m.id = o.match_id
             WHERE m.date::date = %s
@@ -4714,7 +4715,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
         if r:
             matches_with_odds        = r[0]["with_odds"]
             matches_with_pinnacle    = r[0]["with_pinnacle"]
-            matches_without_pinnacle = r[0]["without_pinnacle"]
+            matches_without_pinnacle = matches_with_odds - matches_with_pinnacle
             odds_snapshots_today     = r[0]["snapshots_today"]
             distinct_bookmakers      = r[0]["distinct_bm"]
             odds_market_match_winner = r[0]["mkt_match_winner"]
@@ -5159,12 +5160,21 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
         else:
             console.print(f"[dim]ops_snapshot written for {today}[/dim]")
 
+        # Promote critical-section failures to pipeline_runs so the dashboard
+        # surfaces them. Without this, a query timeout in odds_coverage looks
+        # like 'ok' on the Pipeline Runs widget while the snapshot row itself
+        # silently has 0s in all 8 odds columns (see OPS-COVERAGE-TIMEOUT 2026-05-10).
+        CRITICAL_SECTIONS = {"fixtures_count", "odds_coverage", "predictions_count", "signals_count"}
+        critical_failed = [s for s in failed_sections if s in CRITICAL_SECTIONS]
         if run_id:
             try:
                 metadata = {"failed_sections": failed_sections} if failed_sections else None
-                log_pipeline_complete(run_id, records_count=1, metadata=metadata)
+                if critical_failed:
+                    log_pipeline_failed(run_id, f"critical sections failed: {', '.join(critical_failed)}")
+                else:
+                    log_pipeline_complete(run_id, records_count=1, metadata=metadata)
             except Exception as e:
-                console.print(f"[yellow]ops_snapshot: failed to log pipeline_complete: {e}[/yellow]")
+                console.print(f"[yellow]ops_snapshot: failed to log pipeline status: {e}[/yellow]")
 
     except Exception as e:
         console.print(f"[red]write_ops_snapshot INSERT failed: {e}[/red]")
