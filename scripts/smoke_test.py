@@ -2987,6 +2987,50 @@ def _():
     )
 
 
+@test("BOT-AGGREGATES-NO-SILENT-CAP — getAllBets ceiling stays high enough to fit all bets")
+def _():
+    """The /admin/bots Per-Bot Performance table aggregates bets in JS from
+    getAllBets(). Until 2026-05-10 it had a silent .limit(500) that
+    truncated the oldest bets — Per-Bot table disagreed with the public
+    Bot Leaderboard (which reads pre-aggregated dashboard_cache.bot_breakdown).
+
+    This test guards the ceiling: if a low cap reappears, the per-bot
+    table will start under-reporting again. The longer-term fix is
+    BOT-AGGREGATES-SSOT (read aggregates from cache, lazy-load bet history)
+    — once that lands this test can be relaxed.
+
+    Cross-repo source inspection: skips gracefully if the sibling
+    odds-intel-web checkout isn't present (CI scenario)."""
+    import pathlib
+    web_path = pathlib.Path("../odds-intel-web/src/lib/engine-data.ts")
+    if not web_path.exists():
+        return  # CI runs without the sibling repo — skip silently
+    src = web_path.read_text()
+
+    fn_start = src.index("export async function getAllBets(")
+    fn_end = src.index("\n}\n", fn_start) + 2
+    fn_body = src[fn_start:fn_end]
+
+    # The bug pattern: any `.limit(N)` with N < 10000 in the function body
+    import re
+    limits = [int(m) for m in re.findall(r"\.limit\((\d+)\)", fn_body)]
+    bad = [n for n in limits if n < 10000]
+    assert not bad, (
+        f"getAllBets has .limit({bad[0]}) — this silently truncates per-bot "
+        "aggregates once total bets exceed the cap. Use .range(0, N-1) with "
+        "N >= 10000, or refactor to BOT-AGGREGATES-SSOT."
+    )
+
+    # Belt-and-braces: assert the ceiling constant or .range call is present
+    assert (
+        "ALL_BETS_CEILING" in fn_body
+        or ".range(0," in fn_body
+    ), (
+        "getAllBets must use ALL_BETS_CEILING or .range() to bypass "
+        "Supabase's default 1000-row db-max-rows cap"
+    )
+
+
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 def _run_one(name: str, fn) -> tuple[str, bool, str, float]:
