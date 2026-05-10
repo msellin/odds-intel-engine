@@ -2962,15 +2962,32 @@ def _():
     assert "fresh_need_events = get_af_ids_needing" in src, (
         "backfill_historical must re-query need_events AFTER the bulk write."
     )
-    assert "tolerance" in src and "0.02" in src, (
-        "backfill_historical must apply a ≤2% tolerance to fixtures/stats/events "
-        "gaps so AF data holes don't keep an L/S 'in_progress' forever."
+    assert "fix_tol" in src and "0.02" in src and "enrich_tol" in src and "0.05" in src, (
+        "backfill_historical must apply ≤2% tolerance on fixtures and ≤5% on "
+        "stats/events — AF stats/events gaps are common, fixture gaps are not."
     )
-    assert "af_permanent_gap" in src, (
-        "backfill_historical must detect the AF-permanent-gap escape — when AF "
-        "returns the fixture but the statistics/events arrays are empty, no "
-        "amount of retrying will fix it. Without this, finish_backfill.py loops "
-        "forever burning AF calls on the same impossible-to-enrich L/S."
+    assert "stats_perm_gap" in src and "events_perm_gap" in src, (
+        "backfill_historical must detect AF-permanent-gap PER DIMENSION. The "
+        "earlier joint check (both stats AND events empty) livelocked when one "
+        "dim trickled in (e.g. 1 event/pass) while the other was permanently "
+        "empty — finish_backfill burned AF calls forever on the same L/S."
+    )
+    assert "stats_attempted" in src and "events_attempted" in src, (
+        "Per-dim escape needs to know what we actually attempted, not just "
+        "what got written — otherwise stats_stored=0 with stats_attempted=0 "
+        "(skipped) would falsely flag a permanent gap."
+    )
+    assert "was_capped" in src, (
+        "Per-dim escape must NOT trigger when the union batch was capped by "
+        "budget/league_cap — a capped run only sampled a subset, so "
+        "stats_stored=0 might just mean the sampled chunk was unlucky."
+    )
+    assert "fixtures_perm_gap" in src, (
+        "backfill_historical must detect permanent fixture gaps too — when "
+        "bulk_store_matches drops some rows AF returned (missing team_id FK "
+        "or similar), re-running stores the same subset on every pass and "
+        "fix_ok is never satisfied. Without this, /fixtures keeps getting "
+        "called for L/S that can never reach completion."
     )
 
 

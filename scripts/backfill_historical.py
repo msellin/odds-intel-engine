@@ -415,6 +415,7 @@ def backfill_league_season(
     need_stats = get_af_ids_needing("match_stats", match_map) if skip_existing else set(match_af_to_uuid.keys())
     need_events = get_af_ids_needing("match_events", match_map) if skip_existing else set(match_af_to_uuid.keys())
     union_ids = list(need_stats | need_events)
+    original_union_size = len(union_ids)
 
     # Respect remaining budget: stop adding chunks of 20 once we'd cross the cap.
     chunk_size = 20
@@ -422,12 +423,15 @@ def backfill_league_season(
     remaining_league = league_cap - league_calls
     max_calls = max(0, min(remaining_budget, remaining_league))
     max_ids = max_calls * chunk_size
-    if len(union_ids) > max_ids:
+    was_capped = len(union_ids) > max_ids
+    if was_capped:
         _print(f"  [yellow]Budget/league cap limits batch to {max_ids} of {len(union_ids)} matches[/yellow]")
         union_ids = union_ids[:max_ids]
 
     stats_stored = 0
     events_stored = 0
+    stats_attempted = 0
+    events_attempted = 0
     prefetched: dict[int, dict] = {}
 
     if union_ids and not _shutdown_requested:
@@ -456,6 +460,7 @@ def backfill_league_season(
 
             # Stats — collect tuples; bulk upsert once per L/S below.
             if af_id in need_stats:
+                stats_attempted += 1
                 try:
                     parsed = parse_fixture_stats(fixture.get("statistics") or [])
                     if parsed:
@@ -471,6 +476,7 @@ def backfill_league_season(
             # every event for the league/season. Mirrors the parse_transfers
             # malformed-date skip (BACKFILL-TRANSFER-PARSE).
             if af_id in need_events:
+                events_attempted += 1
                 try:
                     parsed = parse_fixture_events(fixture.get("events") or [])
                     if parsed:
@@ -549,41 +555,68 @@ def backfill_league_season(
 
     # Check if this league/season is complete.
     #
-    # Three reasons rows used to wedge in 'in_progress' forever:
+    # Reasons rows used to wedge in 'in_progress' forever:
     #   (1) `need_stats` / `need_events` above are sets snapshotted BEFORE the
     #       bulk write — they don't reflect what we just stored. Re-query.
     #   (2) AF feed permanently lacks stats/events for some old matches. A
-    #       single missing match in a 230-fixture league should not block
-    #       completion forever. Allow up to 2% gap (or 2 matches, whichever
-    #       is larger) on either dimension.
-    #   (3) AF-permanent-gap escape hatch: if we attempted enrichment this run
-    #       (union_ids non-empty), AF actually returned every fixture we asked
-    #       for, AND the bulk write produced zero new stats AND zero new
-    #       events, the gaps are *permanent* (AF has the fixture but the
-    #       `statistics` / `events` arrays are empty). No future retry can
-    #       move the needle — mark complete to break the livelock.
+    #       handful missing in a 300-fixture league should not block completion
+    #       forever. Use 2% on fixtures (we expect AF to give us the full
+    #       fixture list), 5% on stats/events (where AF gaps are common).
+    #   (3) Per-dimension AF-permanent-gap escape: if we attempted N fixtures
+    #       for a dimension, AF actually returned all of them, AND zero rows
+    #       were written, the remaining gap on that dimension is *permanent*
+    #       (AF has the fixture but its `statistics` / `events` array is
+    #       empty). The previous version required BOTH dims to be empty
+    #       simultaneously, which livelocked when one dim still produced
+    #       trickle writes (e.g. 1 event/pass) while the other was empty.
+    #       Per-dim escape lets a permanently-empty stats dim be marked OK
+    #       even when events still trickle in.
+    #
+    #   Permanent-gap escape only trustable when the batch wasn't capped —
+    #   otherwise stats_stored=0 might just mean we sampled an unlucky
+    #   chunk, not that the rest is empty.
     progress_now = get_or_create_progress(league_id, season, phase)
     fresh_need_stats = get_af_ids_needing("match_stats", match_map)
     fresh_need_events = get_af_ids_needing("match_events", match_map)
     fixtures_in_db = progress_now.get("fixtures_done", 0)
 
-    tolerance = max(2, int(total_fixtures * 0.02)) if total_fixtures else 0
-    fixtures_ok = fixtures_in_db >= total_fixtures - tolerance
-    stats_ok = len(fresh_need_stats) <= tolerance
-    events_ok = len(fresh_need_events) <= tolerance
+    fix_tol = max(2, int(total_fixtures * 0.02)) if total_fixtures else 0
+    enrich_tol = max(2, int(total_fixtures * 0.05)) if total_fixtures else 0
 
-    af_permanent_gap = (
-        bool(union_ids)
-        and len(prefetched) >= len(union_ids)
-        and stats_stored == 0
-        and events_stored == 0
+    # Permanent fixture gap: bulk_store_matches dropped some rows AF returned
+    # (usually missing team_id FK or fixture_to_match_dict skipping a row).
+    # Re-running can't rescue these — `to_store` is the same input each pass.
+    # If we tried every finished fixture and not all stored, the unstored
+    # ones are unrecoverable; gate completion on what we did store.
+    fixtures_perm_gap = (
+        total_fixtures > 0
+        and len(to_store) >= total_fixtures
+        and fixtures_stored < total_fixtures
+    )
+    fixtures_ok = (
+        fixtures_in_db >= total_fixtures - fix_tol
+        or fixtures_perm_gap
     )
 
-    if (fixtures_ok and stats_ok and events_ok) or (fixtures_ok and af_permanent_gap):
+    stats_perm_gap = (
+        not was_capped and stats_attempted > 0 and stats_stored == 0
+    )
+    events_perm_gap = (
+        not was_capped and events_attempted > 0 and events_stored == 0
+    )
+    stats_ok = len(fresh_need_stats) <= enrich_tol or stats_perm_gap
+    events_ok = len(fresh_need_events) <= enrich_tol or events_perm_gap
+
+    if fixtures_ok and stats_ok and events_ok:
         update_progress(league_id, season, status="complete")
         gap = len(fresh_need_stats) + len(fresh_need_events)
-        if af_permanent_gap and gap:
-            suffix = f" (AF permanent gap: {gap} fixtures with empty stats/events)"
+        perm_dims = [d for d, p in (
+            ("fixtures", fixtures_perm_gap),
+            ("stats", stats_perm_gap),
+            ("events", events_perm_gap),
+        ) if p]
+        if perm_dims:
+            suffix = f" (AF permanent gap on {'+'.join(perm_dims)}; need-set residual={gap})"
         elif gap:
             suffix = f" (AF gap: {gap})"
         else:
