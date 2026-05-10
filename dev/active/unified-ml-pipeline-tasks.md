@@ -4,18 +4,18 @@
 
 ## Stage 0 — Derived-data backfills
 
-- [ ] **0a — ELO historical backfill**
+- [x] **0a — ELO historical backfill** (done 2026-05-10)
   - File: `scripts/backfill_elo_historical.py` (new)
   - Logic: walk finished matches by `date ASC` from earliest backfilled date; for each match call same K=30 / home+100 / goal-diff math from `update_elo_ratings()`; upsert into `team_elo_daily`
   - Smoke test: latest team ELO matches what `update_elo_ratings()` would produce on tomorrow's run
   - Must be idempotent (re-running shouldn't double-count)
 
-- [ ] **0b — Team form cache historical backfill**
+- [x] **0b — Team form cache historical backfill** (done 2026-05-10 — 79,619 snapshots)
   - File: `scripts/backfill_team_form_historical.py` (new)
   - Logic: walk distinct (team, date) pairs from finished matches; for each call `compute_team_form_from_db(team_id, before=date)` and upsert `team_form_cache`
   - Smoke test: form for known team on known date matches manual computation from `matches` table
 
-- [ ] **0c — Referee stats rebuild**
+- [x] **0c — Referee stats rebuild** (done 2026-05-10 — 0 → 2,515 rows; UUID cast bug fixed in build_referee_stats)
   - Action: one-off call `python -c "from workers.api_clients.supabase_client import build_referee_stats; print(build_referee_stats())"`
   - Verify count went up significantly vs pre-call snapshot
   - No new code needed — function exists at `supabase_client.py:2775`
@@ -27,7 +27,7 @@
   - Smoke test: a known team's stats match manual aggregation query
   - Note: only computes for matches that have `match_stats` rows (~73.4% coverage)
 
-- [ ] **0e — MFV historical rebuild**
+- [~] **0e — MFV historical rebuild** (in progress 2026-05-10 — running at ~+1K rows/min, will finish overnight; smoke-tested on 2026-05-09: ELO coverage went 53% → 100%)
   - File: `scripts/backfill_mfv_historical.py` (new)
   - Logic: list distinct dates where finished matches exist but no MFV row; call `build_match_feature_vectors(date)` for each
   - Smoke test: MFV row count grows from ~6,467 to ≥25,000
@@ -35,21 +35,19 @@
 
 ## Stage 1 — Wire training to production
 
-- [ ] **1a — Standardize train.py output paths**
-  - Edit `workers/model/train.py`: change `MODELS_DIR` to point at `data/models/soccer/`; accept `--version` arg; outputs go to `data/models/soccer/{version}/{result_1x2,over_under,home_goals,away_goals,feature_cols}.pkl`
-  - Match exact filenames `xgboost_ensemble.py` already loads
+- [x] **1a — Standardize train.py output paths** (done 2026-05-10)
+  - `train.py` now writes to `data/models/soccer/{version}/{result_1x2,over_under,btts,feature_cols}.pkl`. Smoke test enforces the rename.
 
-- [ ] **1b — MODEL_VERSION env var**
-  - Edit `workers/model/xgboost_ensemble.py`: read `os.environ.get("MODEL_VERSION", "v9a_202425")` instead of hard-coded `MODEL_VERSION = "v9a_202425"`
-  - Cache key includes the version so swapping doesn't break
+- [x] **1b — MODEL_VERSION env var** (done 2026-05-10)
+  - `xgboost_ensemble.py` reads `os.environ.get("MODEL_VERSION", DEFAULT_MODEL_VERSION)`. Smoke test enforces the read.
 
-- [ ] **1c — Add home_goals + away_goals models to train.py**
-  - These regression models exist in `v9a_202425/` but train.py doesn't produce them
+- [ ] **1c — Add home_goals + away_goals regression models to train.py**
+  - These exist in `v9a_202425/` but train.py doesn't produce them
   - Add `train_home_goals_model` + `train_away_goals_model` (Poisson regression on score_home / score_away)
+  - **Workaround for now**: `train_all` prints a hint to copy from v9a_202425 — works for first retrain, but blocks fully self-contained version bundles
 
-- [ ] **1d — Smoke test: round-trip**
-  - In smoke_test.py: train a tiny model, save with `--version=smoke_test`, set `MODEL_VERSION=smoke_test`, call `_load_models()`, verify it returns models without error
-  - Clean up test artifacts after
+- [x] **1d — Smoke test: train.py wiring** (done 2026-05-10)
+  - Source-inspection test asserts filenames + paths + --version arg. Full round-trip (train → save → load) deferred to Stage 4 when we have data populated.
 
 ## Stage 2 — Missing-data handling
 
@@ -64,28 +62,23 @@
 
 ## Stage 3 — A/B harness
 
-- [ ] **3a — Migration NNN: model_version columns**
-  - Add `model_version TEXT` to: `predictions`, `simulated_bets`, `live_bets` (allow NULL)
-  - Backfill existing rows with `'v9a_202425'` via UPDATE statement in the migration
-  - Add an index on `(model_version, created_at)` for compare-script queries
-  - Migration file: `supabase/migrations/087_model_version.sql`
+- [x] **3a — Migration 087: model_version columns** (done 2026-05-10)
+  - `model_version TEXT` added to `predictions` + `simulated_bets`. Existing rows backfilled to `'v9a_202425'`. Indexes on `(model_version, created_at)` and `(model_version, pick_time)`.
+  - `live_bets` table doesn't exist — only the two columns needed.
+  - Migration applies via GH Actions on push.
 
-- [ ] **3b — Live pipeline plumbing**
-  - Read `os.environ.get("MODEL_VERSION", "v9a_202425")` in `xgboost_ensemble.py` once at startup
-  - Pass version through to all `predictions` and `simulated_bets` writes
-  - Audit: every `INSERT INTO predictions` and `INSERT INTO simulated_bets` includes the column
+- [x] **3b — Live pipeline plumbing** (done 2026-05-10)
+  - `_active_model_version()` helper in `supabase_client.py` reads `MODEL_VERSION` once. `store_prediction`, `bulk_store_predictions`, and `store_bet` all stamp the row. Smoke test enforces.
 
 - [ ] **3c — Shadow mode**
-  - Read `os.environ.get("MODEL_VERSION_SHADOW")` (optional)
-  - When set, load second model, predict in parallel, write predictions row tagged `model_version=shadow_version`
-  - Shadow predictions do NOT drive `simulated_bets` — bot still uses primary `MODEL_VERSION`
+  - Deferred until first real shadow candidate (v10) exists — implementing now would be theater.
+  - Sketch: load second model bundle; produce parallel predictions; write to `predictions` with shadow tag; do NOT drive `simulated_bets`.
 
-- [ ] **3d — compare_models.py**
-  - File: `scripts/compare_models.py` (new)
-  - CLI: `compare_models.py {version_a} {version_b} [--since DATE] [--market 1x2|over_under|btts]`
-  - Pulls overlapping settled `predictions` for both versions on the same matches
-  - Computes per market: log_loss, Brier, hit_rate, ROI, CLV
-  - Output: rich table to stdout, JSON-row write to `model_comparisons` table for history (migration 088)
+- [x] **3d — compare_models.py** (done 2026-05-10)
+  - Pulls overlapping settled ensemble predictions for two versions, computes per-market log_loss + Brier + Δ. Negative Δ favours `version_a`.
+  - Optional `--since DATE` and `--market` filters. Smoke test asserts arg shape and the `source = 'ensemble'` restriction.
+  - ROI/CLV breakdown deferred — those flow from `simulated_bets` driven only by primary version, not shadow. Bot-level ROI compared via `/admin/bots` after promotion past shadow.
+  - `model_comparisons` table not added — keep results in scrollback for now; if we need history, add with migration 088 later.
 
 ## Stage 4 — First retrain
 

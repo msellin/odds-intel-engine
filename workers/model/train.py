@@ -1,11 +1,24 @@
 """
 OddsIntel — Model Training
 Trains prediction models for:
-  1. Match result (1X2) — XGBoost classifier
-  2. Over/Under 2.5 goals — XGBoost classifier
-  3. BTTS (Both Teams To Score) — XGBoost classifier
+  1. Match result (1X2) — XGBoost classifier → result_1x2.pkl
+  2. Over/Under 2.5 goals — XGBoost classifier → over_under.pkl
+  3. BTTS (Both Teams To Score) — XGBoost classifier → btts.pkl
 
-No AI/LLM needed. Pure machine learning on historical data.
+Output paths match what `xgboost_ensemble.py:_load_models()` reads, so the
+trained model can be activated by setting `MODEL_VERSION=<version>` in env.
+
+  data/models/soccer/<version>/
+    feature_cols.pkl    — list of column names the model expects
+    result_1x2.pkl      — 3-class home/draw/away
+    over_under.pkl      — binary over 2.5
+    btts.pkl            — binary both-teams-to-score
+    home_goals.pkl      — (TODO) Poisson regression
+    away_goals.pkl      — (TODO) Poisson regression
+
+NOTE: home_goals + away_goals regression models are not trained here; the
+production loader still falls back to v9a_202425 for those when missing.
+Adding them is tracked in unified-ml-pipeline-tasks.md (Stage 1c).
 
 Column names match match_feature_vectors exactly. Callers must provide:
   features_df: columns from FEATURE_COLS (allow NaN — dropped per model)
@@ -13,6 +26,7 @@ Column names match match_feature_vectors exactly. Callers must provide:
                btts = score_home > 0 AND score_away > 0 — compute at load time
 """
 
+import argparse
 import pandas as pd
 import numpy as np
 import joblib
@@ -25,8 +39,9 @@ from rich.table import Table
 
 console = Console()
 
-MODELS_DIR = Path(__file__).parent.parent.parent / "data" / "models"
-MODELS_DIR.mkdir(parents=True, exist_ok=True)
+# Output to data/models/soccer/<version>/ — the same root xgboost_ensemble.py
+# loads from. Versioned subdir lets us train v10 without overwriting v9a.
+DEFAULT_OUTPUT_ROOT = Path(__file__).parent.parent.parent / "data" / "models" / "soccer"
 
 # Features used by the model — must match match_feature_vectors column names exactly
 FEATURE_COLS = [
@@ -59,7 +74,7 @@ FEATURE_COLS = [
 ]
 
 
-def train_result_model(features_df: pd.DataFrame, targets_df: pd.DataFrame):
+def train_result_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, output_dir: Path | None = None):
     """Train 1X2 match result prediction model"""
     console.print("\n[bold cyan]Training 1X2 Result Model[/bold cyan]")
 
@@ -131,7 +146,9 @@ def train_result_model(features_df: pd.DataFrame, targets_df: pd.DataFrame):
     # Platt scaling is applied at inference — no double-calibration here.
     final_model.fit(X, y, verbose=False)
 
-    model_path = MODELS_DIR / "result_model.pkl"
+    out_dir = output_dir or DEFAULT_OUTPUT_ROOT / "untagged"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    model_path = out_dir / "result_1x2.pkl"
     joblib.dump(final_model, model_path)
     console.print(f"  Saved to: {model_path}")
 
@@ -153,7 +170,7 @@ def train_result_model(features_df: pd.DataFrame, targets_df: pd.DataFrame):
     return final_model
 
 
-def train_over25_model(features_df: pd.DataFrame, targets_df: pd.DataFrame):
+def train_over25_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, output_dir: Path | None = None):
     """Train Over/Under 2.5 goals prediction model"""
     console.print("\n[bold cyan]Training Over/Under 2.5 Model[/bold cyan]")
 
@@ -219,14 +236,16 @@ def train_over25_model(features_df: pd.DataFrame, targets_df: pd.DataFrame):
 
     final_model.fit(X, y, verbose=False)
 
-    model_path = MODELS_DIR / "over25_model.pkl"
+    out_dir = output_dir or DEFAULT_OUTPUT_ROOT / "untagged"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    model_path = out_dir / "over_under.pkl"
     joblib.dump(final_model, model_path)
     console.print(f"  Saved to: {model_path}")
 
     return final_model
 
 
-def train_btts_model(features_df: pd.DataFrame, targets_df: pd.DataFrame):
+def train_btts_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, output_dir: Path | None = None):
     """Train BTTS (Both Teams To Score) prediction model"""
     console.print("\n[bold cyan]Training BTTS Model[/bold cyan]")
 
@@ -279,7 +298,9 @@ def train_btts_model(features_df: pd.DataFrame, targets_df: pd.DataFrame):
 
     final_model.fit(X, y, verbose=False)
 
-    model_path = MODELS_DIR / "btts_model.pkl"
+    out_dir = output_dir or DEFAULT_OUTPUT_ROOT / "untagged"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    model_path = out_dir / "btts.pkl"
     joblib.dump(final_model, model_path)
     console.print(f"  Saved to: {model_path}")
 
@@ -328,25 +349,55 @@ def load_training_data() -> tuple[pd.DataFrame, pd.DataFrame]:
     return features_df, targets_df
 
 
-def train_all(features_df: pd.DataFrame | None = None, targets_df: pd.DataFrame | None = None):
-    """Train all three models. If called with no args, loads data from DB automatically."""
+def train_all(version: str = "untagged",
+              features_df: pd.DataFrame | None = None,
+              targets_df: pd.DataFrame | None = None,
+              output_root: Path | None = None):
+    """Train all three models. If called with no args, loads data from DB automatically.
+
+    Writes to output_root/<version>/ — defaults to data/models/soccer/<version>/.
+    Filenames match what xgboost_ensemble.py:_load_models() reads, so setting
+    `MODEL_VERSION=<version>` activates the freshly trained set in production.
+    """
     if features_df is None or targets_df is None:
         features_df, targets_df = load_training_data()
 
-    console.print("\n[bold green]═══ OddsIntel Model Training ═══[/bold green]")
+    output_dir = (output_root or DEFAULT_OUTPUT_ROOT) / version
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    result_model = train_result_model(features_df, targets_df)
-    over25_model = train_over25_model(features_df, targets_df)
-    btts_model = train_btts_model(features_df, targets_df)
+    console.print(f"\n[bold green]═══ OddsIntel Model Training — version={version} ═══[/bold green]")
+    console.print(f"Output: {output_dir}")
 
-    console.print("\n[bold green]All models trained and saved![/bold green]")
+    result_model = train_result_model(features_df, targets_df, output_dir)
+    over25_model = train_over25_model(features_df, targets_df, output_dir)
+    btts_model = train_btts_model(features_df, targets_df, output_dir)
+
+    # Dump feature column list — xgboost_ensemble.py loads this to align
+    # incoming feature vectors at inference time.
+    joblib.dump(FEATURE_COLS, output_dir / "feature_cols.pkl")
+    console.print(f"  Saved: {output_dir / 'feature_cols.pkl'}")
+
+    console.print(
+        f"\n[bold green]✓ All models trained and saved to {output_dir}[/bold green]\n"
+        f"[yellow]Note: home_goals.pkl + away_goals.pkl not produced here. Production[/yellow]\n"
+        f"[yellow]xgboost_ensemble.py expects them too — copy from a previous version if needed:[/yellow]\n"
+        f"[yellow]  cp data/models/soccer/v9a_202425/home_goals.pkl {output_dir}/[/yellow]\n"
+        f"[yellow]  cp data/models/soccer/v9a_202425/away_goals.pkl {output_dir}/[/yellow]\n"
+    )
 
     return {
         "result": result_model,
         "over25": over25_model,
         "btts": btts_model,
+        "version": version,
+        "output_dir": output_dir,
     }
 
 
 if __name__ == "__main__":
-    train_all()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--version", default="untagged",
+                        help="Version tag — used as the subdir under data/models/soccer/. "
+                             "Set MODEL_VERSION=<version> in env to activate.")
+    args = parser.parse_args()
+    train_all(version=args.version)

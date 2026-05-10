@@ -826,6 +826,12 @@ def get_todays_scheduled_matches() -> list[dict]:
 # PREDICTIONS
 # ============================================================
 
+def _active_model_version() -> str:
+    """Read the active MODEL_VERSION at write time. Falls back to the legacy
+    Kaggle-trained bundle so a missing env var doesn't desync the column."""
+    return os.environ.get("MODEL_VERSION", "v9a_202425")
+
+
 def store_prediction(match_id: str, market: str, prediction: dict,
                      source: str = "ensemble"):
     """
@@ -833,6 +839,10 @@ def store_prediction(match_id: str, market: str, prediction: dict,
 
     source: 'ensemble' (default) | 'poisson' | 'xgboost' | 'af'
     Each (match_id, market, source) combination is unique -- upsert on conflict.
+
+    `model_version` is auto-populated from MODEL_VERSION env var unless the
+    prediction dict overrides (used by shadow mode to tag shadow predictions
+    with their version even when MODEL_VERSION points at the primary).
     """
     row = {
         "match_id": match_id,
@@ -841,6 +851,7 @@ def store_prediction(match_id: str, market: str, prediction: dict,
         "model_probability": prediction["model_prob"],
         "confidence": prediction.get("confidence", 0.5),
         "reasoning": prediction.get("reasoning"),
+        "model_version": prediction.get("model_version", _active_model_version()),
     }
     # Only include these if actually provided (columns are NOT NULL in DB)
     if prediction.get("implied_prob") is not None:
@@ -888,6 +899,7 @@ def bulk_store_predictions(rows: list[dict]) -> int:
     if not rows:
         return 0
 
+    active_version = _active_model_version()
     tuples = []
     for r in rows:
         prob = _sanitize_for_json(r["model_prob"])
@@ -902,6 +914,7 @@ def bulk_store_predictions(rows: list[dict]) -> int:
             r.get("reasoning"),
             _sanitize_for_json(r.get("implied_prob")),
             _sanitize_for_json(r.get("edge")),
+            r.get("model_version", active_version),
         ))
 
     if not tuples:
@@ -909,14 +922,16 @@ def bulk_store_predictions(rows: list[dict]) -> int:
 
     sql = """
         INSERT INTO predictions
-            (match_id, market, source, model_probability, confidence, reasoning, implied_probability, edge_percent)
+            (match_id, market, source, model_probability, confidence, reasoning,
+             implied_probability, edge_percent, model_version)
         VALUES %s
         ON CONFLICT (match_id, market, source) DO UPDATE SET
             model_probability = EXCLUDED.model_probability,
             confidence = EXCLUDED.confidence,
             reasoning = EXCLUDED.reasoning,
             implied_probability = EXCLUDED.implied_probability,
-            edge_percent = EXCLUDED.edge_percent
+            edge_percent = EXCLUDED.edge_percent,
+            model_version = EXCLUDED.model_version
     """
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -1513,6 +1528,7 @@ def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
         "edge_percent": bet_data["edge"],
         "result": "pending",
         "reasoning": bet_data.get("reasoning") or f"Edge: {bet_data['edge']:.1%}, Model: {bet_data['model_prob']:.1%}, Implied: {bet_data['implied_prob']:.1%}",
+        "model_version": bet_data.get("model_version", _active_model_version()),
     }
 
     # Model improvement fields (P1-P4, migration 006) + BOT-TIMING (migration 032)

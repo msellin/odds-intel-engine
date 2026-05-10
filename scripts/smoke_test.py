@@ -3004,6 +3004,94 @@ def _():
     )
 
 
+@test("ML-PIPELINE-UNIFY — xgboost_ensemble reads MODEL_VERSION from env")
+def _():
+    """Stage 1b: production loader is no longer hard-coded to v9a_202425. Setting
+    MODEL_VERSION in env (e.g. 'v10_pre_shadow') flips the active model bundle.
+    Without this the harness can't run shadow mode — every prediction would
+    write the same hard-coded version tag."""
+    import pathlib
+    src = pathlib.Path("workers/model/xgboost_ensemble.py").read_text()
+    assert "os.environ.get(\"MODEL_VERSION\"" in src, (
+        "xgboost_ensemble.py must read MODEL_VERSION from env so ops can flip "
+        "the production model bundle without a code change."
+    )
+    assert "DEFAULT_MODEL_VERSION" in src, (
+        "Default version must be a named constant — exposes the fallback to "
+        "the harness so shadow-vs-default comparisons are unambiguous."
+    )
+
+
+@test("ML-PIPELINE-UNIFY — predictions + simulated_bets carry model_version")
+def _():
+    """Stage 3a/b: every prediction and simulated bet must be tagged with the
+    active MODEL_VERSION. Without this column, "did the new model help?" can
+    only be answered by date — contaminated by league mix, fixture density,
+    weather. The harness depends on it."""
+    import pathlib
+    src = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
+    assert "_active_model_version" in src, (
+        "supabase_client must expose _active_model_version() — single read of "
+        "MODEL_VERSION env at write time, used by all prediction/bet writers."
+    )
+    assert "model_version" in src and src.count('"model_version"') >= 3, (
+        "store_prediction, bulk_store_predictions, and store_bet must all set "
+        "model_version on the row they write."
+    )
+    # Migration adds the columns
+    mig = pathlib.Path("supabase/migrations/087_model_version.sql").read_text()
+    assert "ADD COLUMN IF NOT EXISTS model_version TEXT" in mig
+    assert "predictions" in mig and "simulated_bets" in mig
+    assert "v9a_202425" in mig, (
+        "Existing rows must be backfilled to v9a_202425 — without that, "
+        "compare_models.py can't establish a baseline against historic predictions."
+    )
+
+
+@test("ML-PIPELINE-UNIFY — compare_models.py exists and parses arguments")
+def _():
+    """Stage 3d: the actual A/B comparison harness. Without this, having
+    model_version columns is preparatory only — no insight produced."""
+    import pathlib
+    src = pathlib.Path("scripts/compare_models.py").read_text()
+    assert "version_a" in src and "version_b" in src, (
+        "compare_models must take two version strings and produce per-market deltas."
+    )
+    assert "log_loss" in src and "brier" in src.lower(), (
+        "Standard metrics — log_loss and Brier — must both be reported."
+    )
+    assert "source = 'ensemble'" in src, (
+        "Comparison must restrict to the ensemble source — that's what bots "
+        "actually consume. Comparing poisson/xgboost/af would mix unrelated signals."
+    )
+
+
+@test("ML-PIPELINE-UNIFY — train.py outputs match what xgboost_ensemble loads")
+def _():
+    """Stage 1a: train.py used to write to data/models/{result_model,over25_model,
+    btts_model}.pkl which xgboost_ensemble.py never reads (it loads from
+    data/models/soccer/<version>/{result_1x2,over_under,...}.pkl). The two
+    pipelines were disconnected — running train.py had zero production effect.
+    This test guards the rename so they can never silently drift apart again."""
+    import pathlib
+    src = pathlib.Path("workers/model/train.py").read_text()
+    assert "result_1x2.pkl" in src and "over_under.pkl" in src and "btts.pkl" in src, (
+        "train.py must write filenames xgboost_ensemble._load_models reads "
+        "(result_1x2.pkl, over_under.pkl, btts.pkl)."
+    )
+    assert "data\" / \"models\" / \"soccer\"" in src, (
+        "train.py must write under data/models/soccer/ — same root xgboost_ensemble loads from."
+    )
+    assert "feature_cols.pkl" in src, (
+        "train.py must dump FEATURE_COLS as feature_cols.pkl — xgboost_ensemble "
+        "loads this to align inference-time feature vectors with training."
+    )
+    assert "--version" in src, (
+        "train.py must accept --version CLI arg so multiple model bundles can "
+        "coexist (production vs shadow) under separate subdirs."
+    )
+
+
 @test("BOT-AGGREGATES-NO-SILENT-CAP — getAllBets ceiling stays high enough to fit all bets")
 def _():
     """The /admin/bots Per-Bot Performance table aggregates bets in JS from

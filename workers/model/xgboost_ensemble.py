@@ -16,6 +16,7 @@ Only works for Tier A teams (those in features_v9.csv / targets_v9.csv).
 Tier B/C teams fall back to Poisson-only (no change from current behavior).
 """
 
+import os
 import joblib
 import pandas as pd
 from pathlib import Path
@@ -24,8 +25,14 @@ ENGINE_DIR = Path(__file__).parent.parent.parent
 PROCESSED_DIR = ENGINE_DIR / "data" / "processed"
 MODELS_DIR = ENGINE_DIR / "data" / "models" / "soccer"
 
-# Use v9a_202425 — trained on all leagues, most recent season
-MODEL_VERSION = "v9a_202425"
+# Production default — trained on the Kaggle CSV cohort (2022-25).
+DEFAULT_MODEL_VERSION = "v9a_202425"
+
+# `MODEL_VERSION` is read from env at module import. Setting it on Railway
+# lets ops flip the active model without code changes; the harness exposes
+# this through the `model_version` column on `predictions` / `simulated_bets`
+# so post-hoc evaluation can compare versions on overlapping settled matches.
+MODEL_VERSION = os.environ.get("MODEL_VERSION", DEFAULT_MODEL_VERSION)
 
 # Cache loaded models and feature data (loaded once per pipeline run)
 _model_cache = {}
