@@ -3600,6 +3600,106 @@ def _():
     )
 
 
+@test("SETTLE-VOID-POSTPONED — postpone branch voids pending bets in same write")
+def _():
+    """When the stale-match check transitions a fixture to 'postponed' (AF status
+    PST/CANC/SUSP/AWD/INT), the same code path must also UPDATE simulated_bets
+    to result='void', pnl=0 for that match. Otherwise pending bets pile up
+    forever on a fixture that will never resolve — saw 7 stuck bets across 3
+    postponed fixtures (May 3, May 8, May 9) before this fix shipped."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/settlement.py").read_text()
+
+    # The branch must mention all five AF status codes that trigger postponement.
+    branch_idx = src.find('"PST", "CANC", "SUSP", "AWD", "INT"')
+    assert branch_idx > 0, "PST/CANC/SUSP/AWD/INT branch missing in settlement.py"
+
+    # Within ~80 lines after the branch, both updates must appear.
+    branch_block = src[branch_idx:branch_idx + 4000]
+    assert "UPDATE matches SET status='postponed'" in branch_block, (
+        "Postpone branch must still flip matches.status='postponed'"
+    )
+    assert "UPDATE simulated_bets" in branch_block and "result='void'" in branch_block, (
+        "SETTLE-VOID-POSTPONED: postpone branch must void pending bets on the match. "
+        "Add `UPDATE simulated_bets SET result='void', pnl=0 WHERE match_id=%s "
+        "AND result='pending'` immediately after the matches UPDATE."
+    )
+    assert "AND result='pending'" in branch_block, (
+        "Void UPDATE must be scoped to result='pending' rows only — never overwrite "
+        "settled (won/lost) bets."
+    )
+
+
+@test("P-PRED-1 — job_betting_refresh does not refetch /predictions")
+def _():
+    """AF /predictions has no bulk form (probed 2026-05-10) and updates at most
+    hourly per AF docs. Re-pulling ~3,000 fixtures × 5 betting_refresh slots was
+    burning ~10K calls/day for data identical to what's already on
+    matches.af_prediction. Predictions stay morning-only (05:30 UTC); this test
+    guards against accidentally re-introducing run_predictions in the refresh
+    path."""
+    import pathlib, re
+    src = pathlib.Path("workers/scheduler.py").read_text()
+
+    # Find the body of job_betting_refresh
+    m = re.search(
+        r"def job_betting_refresh\(\):.*?(?=\ndef [a-zA-Z_])",
+        src,
+        re.DOTALL,
+    )
+    assert m, "job_betting_refresh function not found in scheduler.py"
+    body = m.group(0)
+
+    # Match call sites only, not docstring mentions explaining the removal.
+    # Forms blocked: `run_predictions(...)`, `import run_predictions`, `from … import run_predictions`.
+    import re as _re
+    call_form = _re.search(r"run_predictions\s*\(", body)
+    import_form = _re.search(r"\bimport\s+run_predictions\b", body)
+    assert not call_form and not import_form, (
+        "P-PRED-1: job_betting_refresh must NOT call or import run_predictions. "
+        "AF predictions are fetched once at 05:30 UTC; betting_refresh slots use "
+        "the cached matches.af_prediction JSONB. Re-introducing the per-refresh "
+        "fetch silently doubles morning AF burn (3K calls × 5 slots = 15K/day)."
+    )
+    assert "run_betting" in body, (
+        "job_betting_refresh must still call run_betting()"
+    )
+
+
+@test("P-ENR-1 — _build_fixture_meta reads team_api_id/season/venue from DB, no /fixtures call")
+def _():
+    """Step ① fixtures already extracts home_team_api_id, away_team_api_id,
+    venue_af_id, season via fixture_to_match_dict and writes them to the
+    matches row (api_football.py:1547-1571). The duplicate /fixtures?date=
+    call inside _build_fixture_meta was pure waste. This test guards the
+    DB-only path stays in place."""
+    import pathlib, re
+    src = pathlib.Path("workers/jobs/fetch_enrichment.py").read_text()
+
+    # Locate the function body
+    m = re.search(
+        r"def _build_fixture_meta\(target_date: str\) -> dict\[int, dict\]:.*?(?=\ndef [a-zA-Z_])",
+        src,
+        re.DOTALL,
+    )
+    assert m, "_build_fixture_meta function not found"
+    body = m.group(0)
+
+    # Must read the four fields from DB
+    for field in ("season", "venue_af_id", "home_team_api_id", "away_team_api_id"):
+        assert field in body, (
+            f"P-ENR-1: _build_fixture_meta SQL select must include {field} so we "
+            f"can skip the AF call. See matches column list — step ① writes it."
+        )
+
+    # Must NOT make the AF /fixtures?date= call from within the function
+    assert "get_fixtures_by_date(target_date)" not in body, (
+        "P-ENR-1: _build_fixture_meta must not call get_fixtures_by_date — "
+        "step ① fixtures already wrote the four needed fields to matches. "
+        "Re-fetching here is the duplicate AF call this task removed."
+    )
+
+
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 def _run_one(name: str, fn) -> tuple[str, bool, str, float]:

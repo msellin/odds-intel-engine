@@ -70,9 +70,15 @@ def _build_fixture_meta(target_date: str) -> dict[int, dict]:
     from datetime import date as d
     next_date = d.fromordinal(next_day).isoformat()
 
-    # Get matches with their AF IDs and team/league info
+    # Get matches with their AF IDs and team/league info.
+    # P-ENR-1 (2026-05-10): also pull season / venue_af_id / home_team_api_id /
+    # away_team_api_id — step ① fixtures already wrote them via
+    # `fixture_to_match_dict` (see api_football.py:1547-1571), so the
+    # downstream `/fixtures?date=` AF call is redundant and we skip it.
     matches = execute_query(
-        "SELECT id, api_football_id, home_team_id, away_team_id, league_id FROM matches "
+        "SELECT id, api_football_id, home_team_id, away_team_id, league_id, "
+        "       season, venue_af_id, home_team_api_id, away_team_api_id "
+        "FROM matches "
         "WHERE date >= %s AND date < %s",
         [f"{target_date}T00:00:00Z", f"{next_date}T00:00:00Z"]
     )
@@ -105,7 +111,12 @@ def _build_fixture_meta(target_date: str) -> dict[int, dict]:
     for league in lr:
         league_af_ids[league["id"]] = league
 
-    # Build fixture metadata keyed by AF fixture ID
+    # Build fixture metadata keyed by AF fixture ID.
+    # P-ENR-1: read team-AF / venue / season fields directly from `matches`
+    # (populated by step ① fixtures). Skipping the previous /fixtures?date=
+    # call — same data already on the row, so the AF round-trip was pure waste.
+    # If `season` is null on the row (shouldn't happen post-fixtures-step ①),
+    # fall back to the calendar-derived season computed above.
     fixture_meta = {}
     for m in matches:
         af_id = m.get("api_football_id")
@@ -117,39 +128,13 @@ def _build_fixture_meta(target_date: str) -> dict[int, dict]:
         fixture_meta[af_id] = {
             "match_id": m["id"],
             "league_id": m["league_id"],
-            "home_team_api_id": None,  # We need AF team IDs from the raw fixture
-            "away_team_api_id": None,
+            "home_team_api_id": m.get("home_team_api_id"),
+            "away_team_api_id": m.get("away_team_api_id"),
             "league_api_id": league_info.get("api_football_id"),
             "league_tier": league_info.get("tier", 3),
-            "season": season,
+            "season": m.get("season") or season,
+            "venue_af_id": m.get("venue_af_id"),
         }
-
-    # We need AF team IDs — fetch from matches.api_football_id via AF fixtures
-    # Since we don't store AF team IDs on the teams table, we need to get them
-    # from the raw fixture data. Let's query matches that have h2h_raw or
-    # use the AF fixtures endpoint to get team IDs.
-    # For now, get AF team IDs from league_standings (team_api_id) or a direct lookup.
-
-    # Simpler approach: fetch the AF fixture data for today to get team AF IDs
-    # This costs 1 API call and gives us everything we need.
-    from workers.api_clients.api_football import get_fixtures_by_date
-    try:
-        af_fixtures = get_fixtures_by_date(target_date)
-        for af_fix in af_fixtures:
-            fid = af_fix.get("fixture", {}).get("id")
-            if fid in fixture_meta:
-                teams = af_fix.get("teams", {})
-                league = af_fix.get("league", {})
-                fixture_meta[fid]["home_team_api_id"] = teams.get("home", {}).get("id")
-                fixture_meta[fid]["away_team_api_id"] = teams.get("away", {}).get("id")
-                # Update league_api_id if we didn't have it from DB
-                if not fixture_meta[fid]["league_api_id"]:
-                    fixture_meta[fid]["league_api_id"] = league.get("id")
-                fixture_meta[fid]["season"] = league.get("season") or season
-                venue_id = af_fix.get("fixture", {}).get("venue", {}).get("id")
-                fixture_meta[fid]["venue_af_id"] = venue_id
-    except Exception as e:
-        console.print(f"  [yellow]Could not fetch AF fixtures for team IDs: {e}[/yellow]")
 
     return fixture_meta
 

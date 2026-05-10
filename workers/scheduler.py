@@ -282,20 +282,22 @@ def job_betting_refresh_wrapper():
 
 
 def job_betting_refresh():
-    """Pre-kickoff betting re-evaluation — re-run predictions + betting with fresher data."""
-    from workers.jobs.fetch_predictions import run_predictions
+    """Pre-kickoff betting re-evaluation — re-run betting with fresh odds + signals.
+
+    P-PRED-1 (2026-05-10): /predictions is no longer refetched here. AF
+    documents the predictions endpoint as updating at most hourly, and in
+    practice the values barely move once the morning fetch is in. Re-pulling
+    ~3,000 fixtures × 5 betting_refresh slots was burning ~10K AF calls/day
+    for data identical to what's already on `matches.af_prediction`. Morning
+    pipeline still calls `run_predictions` once at 05:30 UTC; the cached
+    JSONB feeds every betting_refresh below.
+    """
     from workers.jobs.betting_pipeline import run_betting
     from workers.jobs.settlement import write_dashboard_cache
     import traceback
 
     today = date.today().isoformat()
     console.print(f"[bold cyan]Pre-KO Betting Refresh: {today}[/bold cyan]")
-
-    try:
-        run_predictions(target_date=today)
-    except Exception as e:
-        console.print(f"[red]Predictions refresh failed: {e}[/red]")
-        console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
 
     try:
         run_betting()

@@ -489,12 +489,25 @@ def fix_stale_live_matches():
                               f"{status_short} {home_goals}-{away_goals}[/green]")
                 fixed += 1
             elif status_short in ("PST", "CANC", "SUSP", "AWD", "INT"):
-                # Postponed/cancelled — remove from live/scheduled without a result
+                # Postponed/cancelled — remove from live/scheduled without a result.
+                # SETTLE-VOID-POSTPONED: also void any pending paper bets on the
+                # match. Without this, bets sit as result='pending' forever and
+                # show up on bot detail pages as open positions on a fixture
+                # that will never resolve.
                 execute_write(
                     "UPDATE matches SET status='postponed' WHERE id=%s",
                     [match_id],
                 )
-                console.print(f"[yellow]Stale match {match_id} ({db_status}→postponed): {status_short}[/yellow]")
+                voided = execute_write(
+                    """UPDATE simulated_bets
+                       SET result='void', pnl=0
+                       WHERE match_id=%s AND result='pending'""",
+                    [match_id],
+                )
+                msg = f"[yellow]Stale match {match_id} ({db_status}→postponed): {status_short}"
+                if voided:
+                    msg += f" — voided {voided} pending bet(s)"
+                console.print(msg + "[/yellow]")
                 fixed += 1
         except Exception as e:
             console.print(f"[red]Stale-match fix error for {match_id}: {e}[/red]")

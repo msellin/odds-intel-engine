@@ -145,6 +145,7 @@
 - Coverage-aware: ~289 of 330 fixtures get predictions
 - Stores on `matches.af_prediction` (JSONB) + `predictions` table (source='af')
 - Readiness gate: won't run unless ① Fixtures completed
+- **Runs ONCE per day at 05:30 UTC.** P-PRED-1 (2026-05-10) removed the per-betting-refresh refetch — `/predictions` has no bulk form (probed and rejected: `ids`, `fixtures`, `date`, `league`), and AF documents the endpoint as updating at most hourly. Re-pulling ~3,000 fixtures × 5 betting_refresh slots was burning ~10K calls/day for data identical to what's already on `matches.af_prediction`. Betting refreshes now read the cached JSONB instead.
 
 ### ⑤ Betting (`betting_pipeline.py`)
 - Runs 6x/day (morning pipeline ~06:30, then 09:30, 11:00, 15:00, 19:00, 20:30 UTC) to catch all kickoff windows
