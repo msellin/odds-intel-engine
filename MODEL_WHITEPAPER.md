@@ -2,7 +2,7 @@
 
 > Technical specification of the prediction and betting system.
 > Written for data scientists, auditors, and technical stakeholders.
-> Last updated: 2026-05-06
+> Last updated: 2026-05-10
 
 ---
 
@@ -273,6 +273,8 @@ calibrated = 1 / (1 + exp(-(a * shrunk + b)))
 An additional hard filter applied after calibration, before bet placement:
 
 **Pinnacle disagreement veto (PIN-VETO, implemented 2026-05-06):** If `calibrated_prob - pinnacle_implied > 0.12` → bet is skipped entirely. Applies to all 1X2 and O/U markets (extended to draw/away/over/under via PIN-3, 2026-05-06).
+
+**Pinnacle-required gate for OU markets (OU-PIN-REQUIRED, implemented 2026-05-10):** OU price aggregation in `_load_today_from_db` skips any `(match, market, selection)` triple where Pinnacle has no row at all — not just non-Pinnacle rows that exceed the 2× cap. Without a Pinnacle reference, a single mislabelled book row (Asian-total prices stored in the OU 1.5 slot, etc.) gets promoted by MAX-across-books and the bot bets at fake prices. Coverage on next-2-day pre-match data: Pinnacle prices ~58% of OU 1.5 / ~85% of OU 2.5 matches — bots place fewer bets in small leagues but every placement is validated against the sharpest book. Together with `OU-PINNACLE-CAP` (2× cap on non-Pinnacle when Pinnacle is present, 2026-05-10), this would have blocked all 19 voids in `bot_ou15_defensive`'s pre-guard 38-bet history.
 
 Empirical validation on 77 settled home bets: all winning bets had gap ≤ 12.9%; losing bets averaged 14.1% gap (max 21.7%). Catches 22/34 losses at the cost of filtering 6/40 wins.
 

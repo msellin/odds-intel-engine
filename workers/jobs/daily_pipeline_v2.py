@@ -1099,13 +1099,17 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
         (match_ids,),
     )
 
-    # OU-PINNACLE-CAP (2026-05-10): for OU markets, drop any non-Pinnacle row
-    # priced more than 2× Pinnacle's price. Caught after bot_ou15_defensive
-    # bet OU 1.5 OVER at 3.42 in the Belarus Premier League while Pinnacle
-    # had 1.45 — a non-Pinnacle book shipped a swapped/Asian-total label,
-    # MAX-across-books picked it up, the bot saw a fake 56% edge.
-    # Pinnacle is the sharpest reference; 2× is wide enough to allow legitimate
-    # soft-book overlays but tight enough to drop obvious mislabelled rows.
+    # OU-PIN-REQUIRED (2026-05-10): for OU markets, only aggregate prices when
+    # Pinnacle has a row for the same (match, market, selection). Without that
+    # reference the cap can't fire and a single mislabelled book row gets
+    # promoted by MAX-across-books. Coverage check at ship time: Pinnacle
+    # prices ~58% of OU 1.5 / ~85% of OU 2.5 matches — the OU bots place fewer
+    # bets but every one is validated against the sharpest book. When Pinnacle
+    # IS present, also drop any non-Pinnacle row priced more than 2× Pinnacle
+    # (catches mislabelled / Asian-total rows on books that do have a price).
+    # Background: bot_ou15_defensive's pre-guard 38-bet history was 50% void
+    # (12 had no Pinnacle ref, 7 exceeded the 2× cap). This rule is what would
+    # have blocked all 19 voids at placement time.
     pin_ou: dict[str, dict[str, float]] = _dd(dict)  # mid -> "market_selection" -> pinnacle odds
     for row in odds_raw:
         if row.get("bookmaker") != "Pinnacle":
@@ -1126,9 +1130,11 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
         key = f"{row['market']}_{row['selection']}"
         odds_val = float(row["odds"])
         bookmaker = row.get("bookmaker") or "unknown"
-        if str(row.get("market", "")).startswith("over_under_") and bookmaker != "Pinnacle":
+        if str(row.get("market", "")).startswith("over_under_"):
             pin_price = pin_ou.get(mid, {}).get(key)
-            if pin_price and odds_val > 2.0 * pin_price:
+            if pin_price is None:
+                continue  # OU-PIN-REQUIRED — no Pinnacle reference for this OU selection, skip
+            if bookmaker != "Pinnacle" and odds_val > 2.0 * pin_price:
                 continue  # OU-PINNACLE-CAP — likely mislabelled / Asian-total row
         if odds_val > best[mid][key]:
             best[mid][key] = odds_val

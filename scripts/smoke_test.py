@@ -1190,18 +1190,24 @@ def _():
     )
 
 
-@test("OU-PINNACLE-CAP — non-Pinnacle OU rows >2x Pinnacle are dropped from MAX aggregation (source guard)")
+@test("OU-PIN-REQUIRED — OU markets only aggregate when Pinnacle has a row + non-Pinnacle dropped >2x Pinnacle")
 def _():
-    """Source-inspect guard: betting pipeline's odds aggregator must drop any
-    non-Pinnacle OU row whose price exceeds 2.0× Pinnacle's price for the
-    same (match, market, selection). Caught after bot_ou15_defensive bet
-    OU 1.5 OVER at 3.42 in Belarus Premier vs Pinnacle's 1.45 — a non-blacklisted
-    book mislabelled / shipped an Asian-total OU 1.5 OVER price, MAX-aggregation
-    promoted it, the bot saw a fake 56% edge."""
+    """Source-inspect guard: betting pipeline's odds aggregator must (1) skip
+    any OU row when Pinnacle has no price for that (match, market, selection),
+    and (2) when Pinnacle IS present, drop non-Pinnacle rows priced more than
+    2× Pinnacle. Together these block both classes of mislabelled OU rows that
+    bot_ou15_defensive previously bet on (12 had no Pinnacle ref, 7 exceeded
+    the 2× cap = all 19 voids in the bot's pre-guard 38-bet history)."""
     import inspect
     from workers.jobs import daily_pipeline_v2
     src = inspect.getsource(daily_pipeline_v2._load_today_from_db)
+    assert "OU-PIN-REQUIRED" in src, (
+        "OU-PIN-REQUIRED marker missing — OU rows would aggregate without Pinnacle reference"
+    )
     assert "OU-PINNACLE-CAP" in src, "OU-PINNACLE-CAP marker missing from _load_today_from_db"
+    assert "pin_price is None" in src, (
+        "OU-PIN-REQUIRED: must skip OU rows when no Pinnacle reference exists"
+    )
     assert "2.0 * pin_price" in src, (
         "OU-PINNACLE-CAP: cap multiplier check (2.0 * pin_price) missing — "
         "non-Pinnacle OU rows would no longer be filtered against Pinnacle"
