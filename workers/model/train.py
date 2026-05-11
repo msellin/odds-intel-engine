@@ -652,6 +652,11 @@ def load_training_data(include_pinnacle: bool = False,
     if include_ou_market:
         ou = _load_ou_market_features()
         if not ou.empty:
+            # Drop any pre-existing MFV columns that migration 093 added as
+            # NULLs — without this, pandas merge creates _x/_y suffix conflicts.
+            stale = [c for c in OU_MARKET_FEATURE_COLS if c in df.columns]
+            if stale:
+                df = df.drop(columns=stale)
             df = df.merge(ou, on="match_id", how="left")
             console.print(
                 f"[dim]Joined OU market features for {ou.shape[0]:,} matches "
