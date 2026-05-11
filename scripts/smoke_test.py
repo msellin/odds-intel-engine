@@ -4379,5 +4379,43 @@ def _():
     assert "recommended_bookmaker" in picks, "daily_picks.py must show recommended_bookmaker"
 
 
+@test("REAL-PERF-REPORT — real_perf_report.py structure and SQL (source inspect)")
+def test_real_perf_report_source():
+    """Phase 2.8.1 (2026-05-11): real_perf_report.py — paper vs real P&L comparison."""
+    import pathlib
+    src = pathlib.Path("scripts/real_perf_report.py").read_text()
+    assert "real_bets" in src, "must query real_bets table"
+    assert "simulated_bets" in src, "must join simulated_bets for paper comparison"
+    assert "slippage_pct" in src, "must include slippage_pct in output"
+    assert "--days" in src, "must support --days flag"
+    assert "--bookmaker" in src, "must support --bookmaker flag"
+    assert "section_summary" in src, "must have summary section"
+    assert "section_paper_vs_real" in src, "must have paper vs real section"
+    assert "section_by_bookmaker" in src, "must have by-bookmaker section"
+
+
+@test("FRESHNESS-INDICATOR + BOOKMAKER-DISPLAY — engine-data.ts exports (source inspect)")
+def test_freshness_bookmaker_engine_data():
+    """Phase 2.8.2/2.8.3 (2026-05-11): freshness indicator + bookmaker display on value-bets page."""
+    import pathlib
+    src = pathlib.Path("../odds-intel-web/src/lib/engine-data.ts").read_text()
+    assert "getOddsVerifiedAt" in src, "getOddsVerifiedAt must be exported from engine-data.ts"
+    assert "getValueBetBookOdds" in src, "getValueBetBookOdds must be exported from engine-data.ts"
+    assert "BookOddsEntry" in src, "BookOddsEntry interface must be exported"
+    assert "recommendedBookmaker" in src, "recommendedBookmaker must be in LiveBet + toBet"
+    assert "matchId" in src, "matchId must be in LiveBet interface"
+
+    page = pathlib.Path("../odds-intel-web/src/app/(app)/value-bets/page.tsx").read_text()
+    assert "getOddsVerifiedAt" in page, "page.tsx must call getOddsVerifiedAt"
+    assert "getValueBetBookOdds" in page, "page.tsx must call getValueBetBookOdds"
+    assert "oddsVerifiedAt" in page, "page.tsx must pass oddsVerifiedAt to ValueBetsLive"
+
+    comp = pathlib.Path("../odds-intel-web/src/components/value-bets-live.tsx").read_text()
+    assert "FreshnessChip" in comp, "value-bets-live.tsx must include FreshnessChip component"
+    assert "BookOddsLine" in comp, "value-bets-live.tsx must include BookOddsLine component"
+    assert "oddsVerifiedAt" in comp, "value-bets-live.tsx must accept oddsVerifiedAt prop"
+    assert "bookOdds" in comp, "value-bets-live.tsx must accept bookOdds prop"
+
+
 if __name__ == "__main__":
     main()

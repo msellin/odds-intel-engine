@@ -4,11 +4,15 @@
 
 ## State summary
 
-Created 2026-05-10. **Phase 0 + Phase 2 fully shipped. Phase 3 in progress (manual betting ritual).**
+Created 2026-05-10. **Phases 0, 2, and 2.8 fully shipped. Phase 3 is the only remaining work.**
 
 - Phase 0: sampling script done, CSV worksheet at `dev/active/self-use-validation-phase0-worksheet.csv`
 - Phase 2: DB (migrations 091–092), settlement integration, backend writer, 3 admin pages, 2 API routes all live
-- ACCESSIBLE-BM (2026-05-11): engine now only uses accessible-bookmaker odds for edge math; `recommended_bookmaker` stored per bet; `scripts/daily_picks.py` for morning ritual
+- ACCESSIBLE-BM (2026-05-11): engine only uses accessible-bookmaker odds; `recommended_bookmaker` stored per bet; `scripts/daily_picks.py`
+- Phase 2.8 (2026-05-11): all 3 remaining tasks shipped:
+  - `scripts/real_perf_report.py` — paper vs real P&L with slippage, by-bookmaker, by-market, recent bets
+  - Bookmaker display on value-bets page (Elite only): "Bet365: 2.10 · Unibet: 2.05 ← Bet365" per bet
+  - Freshness indicator: "Odds verified Xm ago" chip (green <45m, amber <90m, red ≥90m)
 - Next blocker: user manual step — start Phase 3 daily ritual (open `/admin/place`, place bets, log)
 
 ## Why this exists
@@ -58,3 +62,4 @@ After ~250 bets (~6 weeks), generate cohort report and evaluate Phase 4 pivot de
 - 2026-05-10: Phase 0.3/0.4/0.5 (CSV worksheet) marked SUPERSEDED — `/admin/place` modal captures captured_odds + actual_odds on every real bet, so `real_bets.slippage_pct` IS the proxy-quality measurement.
 - 2026-05-11: **ACCESSIBLE-BM shipped.** Core measurement fix: engine now only aggregates odds from EU/Estonia-accessible bookmakers (Bet365, Unibet, Betano, Marathonbet, 10Bet, 888Sport, Pinnacle). Previous reported CLV of +12.56% was inflated by SBO/Dafabet/1xBet odds the user can never reach. `recommended_bookmaker` stored on every new `simulated_bets` row (migration 094). `scripts/daily_picks.py` for morning ritual. Engine pushed: 0b05d3b.
 - 2026-05-11: **Strategic context:** Betfair Exchange blocked for Estonia (Dec 2025). Pinnacle API closed (July 2025). No automatable book available to Estonian residents. Both automation-era tasks (Super Elite tier) deferred until 500+ users. Current focus: validate real edge via manual betting at Coolbet + Bet365.
+- 2026-05-11: **Phase 2.8 complete.** REAL-MONEY-TRACKER (`real_perf_report.py`), BOOKMAKER-DISPLAY (Elite value-bets page, server-side `getValueBetBookOdds`), FRESHNESS-INDICATOR (header chip, `getOddsVerifiedAt`). All Phase 2 work is done. Phase 3 (manual betting) is the only next step.

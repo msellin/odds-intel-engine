@@ -62,9 +62,9 @@
 
 ## Phase 2.8 — Remaining engine work (before Phase 3 full swing)
 
-- ⬜ **2.8.1** `scripts/real_perf_report.py` — paper vs real P&L comparison showing slippage %, ROI comparison, per-bookmaker breakdown.
-- ⬜ **2.8.2** Frontend value-bets page: per-accessible-bookmaker odds breakdown ("Bet365: 2.10 | Unibet: 2.05") + "best at Bet365" label. Backend: `/api/match-bookmaker-odds`.
-- ⬜ **2.8.3** Freshness indicator: "Odds verified Xmin ago" on value-bets page — derived from `MAX(odds_snapshots.timestamp)` per match.
+- ✅ **2.8.1** `scripts/real_perf_report.py` — 5 sections: summary, paper vs real (via simulated_bet_id join), by bookmaker, by market, recent bets. `--days`, `--bookmaker`, `--min-bets` flags.
+- ✅ **2.8.2** Frontend value-bets page: per-bet "Bet365: 2.10 · Unibet: 2.05 ← Bet365" line for Elite users. Server-side via `getValueBetBookOdds()` (single round-trip). `recommended_bookmaker` + `matchId` added to `LiveBet`.
+- ✅ **2.8.3** Freshness indicator: "Odds verified Xm ago" chip in value-bets header. Green <45m, amber <90m, red ≥90m. Server-side via `getOddsVerifiedAt()`. Elite-only fetch (same path as bookOdds).
 
 ## Phase 3 — Validation period (4–6 weeks)
 
