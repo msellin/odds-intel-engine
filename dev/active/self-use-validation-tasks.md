@@ -50,6 +50,22 @@
 ### 2.6 — PRIORITY_QUEUE entry
 - ✅ **2.6.1** SELF-USE-VALIDATION promoted to ⭐ Top Priority section of `PRIORITY_QUEUE.md`. Status: 🔄 In Progress until Phase 4.
 
+## Phase 2.7 — Accessible-bookmaker filter (ACCESSIBLE-BM, 2026-05-11)
+
+- ✅ **2.7.1** `ACCESSIBLE_BOOKMAKERS` frozenset in `daily_pipeline_v2.py` — Bet365, Unibet, Betano, Marathonbet, 10Bet, 888Sport, Pinnacle.
+- ✅ **2.7.2** Odds aggregation loop: `bm_sources` still tracks all sources; `best[mid][key]` and `best_bookmaker[mid][key]` only update for accessible books. Inaccessible books (SBO, Dafabet, 1xBet, BetVictor, Betfair, William Hill) skipped after tracking.
+- ✅ **2.7.3** `bet_candidates` tuple extended to 13 elements (added `os_market`, `os_selection`) so `recommended_bookmaker` lookup is possible at `store_bet` call.
+- ✅ **2.7.4** Migration `094_simulated_bets_recommended_bookmaker.sql` — adds `recommended_bookmaker TEXT` to `simulated_bets`.
+- ✅ **2.7.5** `store_bet()` optional_fields updated; `recommended_bookmaker` passed from pipeline.
+- ✅ **2.7.6** `scripts/daily_picks.py` — morning ritual report (picks with kickoff, match, market, odds, edge, cal%, bookmaker). Flags: `--date`, `--min-edge`, `--bookmaker`.
+- ✅ **2.7.7** Smoke test `ACCESSIBLE-BM` passes. Engine pushed: 0b05d3b.
+
+## Phase 2.8 — Remaining engine work (before Phase 3 full swing)
+
+- ⬜ **2.8.1** `scripts/real_perf_report.py` — paper vs real P&L comparison showing slippage %, ROI comparison, per-bookmaker breakdown.
+- ⬜ **2.8.2** Frontend value-bets page: per-accessible-bookmaker odds breakdown ("Bet365: 2.10 | Unibet: 2.05") + "best at Bet365" label. Backend: `/api/match-bookmaker-odds`.
+- ⬜ **2.8.3** Freshness indicator: "Odds verified Xmin ago" on value-bets page — derived from `MAX(odds_snapshots.timestamp)` per match.
+
 ## Phase 3 — Validation period (4–6 weeks)
 
 - ⬜ **3.1** Daily morning ritual (~5 min): open `/admin/place`, place 5–10 bets at €1–3 each at Coolbet, log via the modal.

@@ -4,7 +4,12 @@
 
 ## State summary
 
-Created 2026-05-10 in response to a strategic conversation about pivoting from B2C SaaS to personal-use real-money betting. **Phase 0 not yet started.** No code written yet.
+Created 2026-05-10. **Phase 0 + Phase 2 fully shipped. Phase 3 in progress (manual betting ritual).**
+
+- Phase 0: sampling script done, CSV worksheet at `dev/active/self-use-validation-phase0-worksheet.csv`
+- Phase 2: DB (migrations 091–092), settlement integration, backend writer, 3 admin pages, 2 API routes all live
+- ACCESSIBLE-BM (2026-05-11): engine now only uses accessible-bookmaker odds for edge math; `recommended_bookmaker` stored per bet; `scripts/daily_picks.py` for morning ritual
+- Next blocker: user manual step — start Phase 3 daily ritual (open `/admin/place`, place bets, log)
 
 ## Why this exists
 
@@ -34,13 +39,22 @@ Margus dislikes B2C marketing. SaaS is hard to grow at small numbers. Engine + M
 
 ## Next concrete step
 
-**Phase 0.1**: Pick 20 settled paper bets from the last 2–3 days. Mix of bots and league tiers. Build the Unibet vs Bet365 vs Coolbet comparison sheet. Document gaps. ~1 evening of manual work, no code required.
+**Phase 3 daily ritual** — manual user action:
+1. Run `python3 scripts/daily_picks.py` each morning to see today's picks with bookmaker
+2. Open `/admin/place` → check Coolbet/Bet365 for each pick → click Place → log actual odds + stake
+3. Results settle automatically at 21:00 UTC; check `/admin/real-bets` for running P&L
 
-If Phase 0 is delegated to the next agent: hand them the plan + tasks files plus this context. The starting work is a SQL query against `simulated_bets` joined to `odds_snapshots`, plus manual coolbet.ee lookups, plus a results markdown.
+After ~250 bets (~6 weeks), generate cohort report and evaluate Phase 4 pivot decision.
+
+**Remaining engine work before Phase 3 begins:**
+- REAL-MONEY-TRACKER: `scripts/real_perf_report.py` (paper vs real P&L comparison)
+- BOOKMAKER-DISPLAY: frontend value-bets page showing per-book odds
+- FRESHNESS-INDICATOR: "odds verified Xmin ago" on value-bets page
 
 ## Decision log
 
 - 2026-05-10: Plan created. PRIORITY_QUEUE entry filed.
 - 2026-05-10: **Phases 0.1, 2.1, 2.2, 2.3, 2.4, 2.5 all shipped in one session.** Sampling script + migrations applied + settlement wired + backend writer + 3 admin pages (`/admin/place`, `/admin/real-bets`, bot-dashboard columns) + 2 API routes + 3 backend smoke tests. Engine pushed: ef2a671. Web pushed: d26ed3e + 7352858.
-- 2026-05-10: Phase 0.3 is the next blocker — user manual step. Open `dev/active/self-use-validation-phase0-worksheet.csv`, fill in `coolbet_actual` column from coolbet.ee for the 26 sampled rows.
-- 2026-05-10: **Plan simplified per user.** Phase 0.3/0.4/0.5 (CSV worksheet) marked SUPERSEDED. The `/admin/place` modal captures captured_odds + actual_odds on every real bet, so `real_bets.slippage_pct` IS the proxy-quality measurement. User's working ritual: Coolbet tab → place at displayed price → `/admin/place` tab → click Place → enter actual Coolbet odds + stake → submit. One workflow handles both validation and real betting. CSV preserved for future unbiased sampling but not required.
+- 2026-05-10: Phase 0.3/0.4/0.5 (CSV worksheet) marked SUPERSEDED — `/admin/place` modal captures captured_odds + actual_odds on every real bet, so `real_bets.slippage_pct` IS the proxy-quality measurement.
+- 2026-05-11: **ACCESSIBLE-BM shipped.** Core measurement fix: engine now only aggregates odds from EU/Estonia-accessible bookmakers (Bet365, Unibet, Betano, Marathonbet, 10Bet, 888Sport, Pinnacle). Previous reported CLV of +12.56% was inflated by SBO/Dafabet/1xBet odds the user can never reach. `recommended_bookmaker` stored on every new `simulated_bets` row (migration 094). `scripts/daily_picks.py` for morning ritual. Engine pushed: 0b05d3b.
+- 2026-05-11: **Strategic context:** Betfair Exchange blocked for Estonia (Dec 2025). Pinnacle API closed (July 2025). No automatable book available to Estonian residents. Both automation-era tasks (Super Elite tier) deferred until 500+ users. Current focus: validate real edge via manual betting at Coolbet + Bet365.
