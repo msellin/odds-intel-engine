@@ -4111,5 +4111,40 @@ def _():
     )
 
 
+@test("INPLAY-LIVE-DEBUG — inplay_bot has prematch fallback, per-strategy stats, and _resolve_odds helper")
+def _():
+    """INPLAY-LIVE-DEBUG (2026-05-11): Live odds coverage ~12% caused 0 fired bets.
+    Source guards:
+    1. _resolve_odds helper exists and returns (float, bool).
+    2. _strategy_stats dict tracks tried/fired per bot.
+    3. Prematch SQL LATERAL subquery fetches prematch_ou25_over.
+    4. Strategy A uses _resolve_odds (prematch fallback active).
+    5. Strategy Q uses _resolve_odds with min_val=2.30 and records odds_source in extra."""
+    import pathlib
+    inplay = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+
+    assert "def _resolve_odds(" in inplay, (
+        "_resolve_odds helper must exist for live-to-prematch fallback"
+    )
+    assert "tuple[float, bool]" in inplay, (
+        "_resolve_odds must declare return type tuple[float, bool]"
+    )
+    assert "_strategy_stats" in inplay, (
+        "_strategy_stats dict must exist for per-bot tried/fired tracking"
+    )
+    assert "strategy rates" in inplay, (
+        "heartbeat must log strategy rates from _strategy_stats"
+    )
+    assert "prematch_ou25_over" in inplay, (
+        "prematch SQL must fetch prematch_ou25_over via LATERAL subquery"
+    )
+    assert "_resolve_odds(cand.get(\"live_ou_25_over\")" in inplay, (
+        "strategy A must call _resolve_odds with live_ou_25_over for prematch fallback"
+    )
+    assert "odds_source" in inplay, (
+        "return dicts must include odds_source key to distinguish live vs prematch"
+    )
+
+
 if __name__ == "__main__":
     main()

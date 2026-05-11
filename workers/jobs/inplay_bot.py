@@ -136,6 +136,10 @@ _funnel: dict[str, int] = {
     "store_bet_error": 0,
 }
 
+# Per-strategy firing counters — tried vs fired per bot, logged on heartbeat.
+# INPLAY-LIVE-DEBUG: tells us which strategies fire at what rate vs how often they're checked.
+_strategy_stats: dict[str, dict[str, int]] = {}
+
 # Goal Contagion state — tracks first-goal events for strategy L.
 # match_id → last seen total goals (updated at end of each run_inplay_strategies cycle)
 _prev_total_goals: dict[str, int] = {}
@@ -219,6 +223,14 @@ def run_inplay_strategies():
                 f"session: {_total_bets_session} bets / {_total_candidates_session} evaluated | "
                 f"{pool_str}{pool_warn}{funnel_part}[/dim]"
             )
+            if _strategy_stats:
+                stat_parts = []
+                for sname, sdata in sorted(_strategy_stats.items()):
+                    fired = sdata.get("fired", 0)
+                    tried = sdata.get("tried", 0)
+                    pct = f"{fired*100//tried}%" if tried > 0 else "0%"
+                    stat_parts.append(f"{sname.replace('inplay_', '')}={fired}/{tried}({pct})")
+                console.print(f"[dim]InplayBot strategy rates: {', '.join(stat_parts)}[/dim]")
             for k in _funnel:
                 _funnel[k] = 0
         else:
@@ -292,9 +304,12 @@ def run_inplay_strategies():
                 continue
 
             trigger = _check_strategy(bot_name, cand, pm, has_red_card, execute_query)
+            _sstat = _strategy_stats.setdefault(bot_name, {"tried": 0, "fired": 0})
+            _sstat["tried"] += 1
             if not trigger:
                 _funnel["no_strategy_trigger"] += 1
                 continue
+            _sstat["fired"] += 1
 
             # Safety: staleness check — odds must be < 60s old
             odds_age = _odds_age_seconds(cand)
@@ -464,6 +479,22 @@ def _get_prematch_data(execute_query, match_ids: list[str]) -> dict[str, dict]:
         LEFT JOIN predictions p_btts ON p_btts.match_id = m.id AND p_btts.market = 'btts_yes' AND p_btts.source = 'ensemble'
         LEFT JOIN predictions p_home ON p_home.match_id = m.id AND p_home.market = '1x2_home' AND p_home.source = 'ensemble'
         LEFT JOIN predictions p_away ON p_away.match_id = m.id AND p_away.market = '1x2_away' AND p_away.source = 'ensemble'
+        LEFT JOIN LATERAL (
+            SELECT
+                MAX(os.odds) FILTER (WHERE os.selection = 'over'
+                    AND os.bookmaker NOT IN ('api-football', 'api-football-live'))  AS prematch_ou25_over,
+                MAX(os.odds) FILTER (WHERE os.selection = 'under'
+                    AND os.bookmaker NOT IN ('api-football', 'api-football-live'))  AS prematch_ou25_under
+            FROM odds_snapshots os
+            WHERE os.match_id = m.id AND os.market = 'over_under_25' AND os.is_closing = false
+        ) pm_ou25 ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT
+                MAX(os.odds) FILTER (WHERE os.selection = 'over'
+                    AND os.bookmaker NOT IN ('api-football', 'api-football-live'))  AS prematch_ou15_over
+            FROM odds_snapshots os
+            WHERE os.match_id = m.id AND os.market = 'over_under_15' AND os.is_closing = false
+        ) pm_ou15 ON TRUE
         WHERE m.id = ANY(%s::uuid[])
     """, (match_ids,))
 
@@ -830,6 +861,30 @@ def _bivariate_poisson_win_prob(lam_h: float, lam_a: float) -> tuple[float, floa
     return ph_win, pd_draw, pa_win
 
 
+# ── Odds Resolution ──────────────────────────────────────────────────────────
+
+def _resolve_odds(live_val, pm_val, min_val: float = 1.0) -> tuple[float, bool]:
+    """Return (odds, is_live). Live odds take priority; prematch as fallback.
+    Returns (0.0, False) if neither source meets min_val.
+
+    INPLAY-LIVE-DEBUG: live OU odds are only available for ~12% of snapshots
+    (AF live odds endpoint coverage). Prematch best odds from odds_snapshots
+    are used as fallback for paper trading — model edge still computed correctly
+    using remaining-Poisson, just without the live drift component.
+    Not used for drift-detection strategies (I, N, C) where the live odds level
+    is part of the thesis, not just an entry price.
+    """
+    if live_val is not None:
+        v = float(live_val)
+        if v > min_val:
+            return v, True
+    if pm_val is not None:
+        v = float(pm_val)
+        if v > min_val:
+            return v, False
+    return 0.0, False
+
+
 # ── Strategy Checks ──────────────────────────────────────────────────────────
 
 def _check_strategy(bot_name: str, cand: dict, pm: dict,
@@ -929,10 +984,9 @@ def _check_strategy_a(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     if pm_o25 <= 0.50:
         return None
 
-    odds = cand.get("live_ou_25_over")
-    if not odds or float(odds) <= 1.0:
+    odds, odds_is_live = _resolve_odds(cand.get("live_ou_25_over"), pm.get("prematch_ou25_over"))
+    if odds <= 1.0:
         return None
-    odds = float(odds)
 
     current_goals = sh + sa
     goals_needed = 3 - current_goals
@@ -961,6 +1015,7 @@ def _check_strategy_a(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
             "sot_combined": sot,
             "prematch_o25": round(pm_o25, 3),
             "xg_source": "live" if is_real else "shot_proxy",
+            "odds_source": "live" if odds_is_live else "prematch",
         },
     }
 
@@ -1023,10 +1078,9 @@ def _check_strategy_b(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     if pm_btts <= 0.42:
         return None
 
-    odds = cand.get("live_ou_25_over")
-    if not odds or float(odds) <= 1.0:
+    odds, odds_is_live = _resolve_odds(cand.get("live_ou_25_over"), pm.get("prematch_ou25_over"))
+    if odds <= 1.0:
         return None
-    odds = float(odds)
 
     # Edge: proper P(Over 2.5) from posterior xG (matches the market we bet)
     pm_xg_total = float(pm.get("prematch_xg_home") or 0) + float(pm.get("prematch_xg_away") or 0)
@@ -1067,6 +1121,7 @@ def _check_strategy_b(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
             "trailing_sot": trailing_sot,
             "prematch_btts": round(pm_btts, 3),
             "xg_source": "live" if is_real else "shot_proxy",
+            "odds_source": "live" if odds_is_live else "prematch",
         },
     }
 
@@ -1212,10 +1267,9 @@ def _check_strategy_d(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
             return None
         min_edge = 3.0
 
-    odds = cand.get("live_ou_25_over")
-    if not odds or float(odds) <= 2.10:
+    odds, odds_is_live = _resolve_odds(cand.get("live_ou_25_over"), pm.get("prematch_ou25_over"), min_val=2.10)
+    if odds <= 2.10:
         return None
-    odds = float(odds)
 
     pm_o25 = float(pm.get("prematch_o25_prob") or 0)
     if pm_o25 <= 0.46:
@@ -1252,6 +1306,7 @@ def _check_strategy_d(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
             "sot_total": sot,
             "prematch_o25": round(pm_o25, 3),
             "xg_source": "live" if is_real else "shot_proxy",
+            "odds_source": "live" if odds_is_live else "prematch",
         },
     }
 
@@ -1305,10 +1360,9 @@ def _check_strategy_e(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
         if corners_total > expected_corners * 0.8:
             return None
 
-    odds = cand.get("live_ou_25_under")
-    if not odds or float(odds) <= 1.0:
+    odds, odds_is_live = _resolve_odds(cand.get("live_ou_25_under"), pm.get("prematch_ou25_under"))
+    if odds <= 1.0:
         return None
-    odds = float(odds)
 
     posterior = _bayesian_posterior(pm_xg_total, live_xg, minute)
     remaining = max(1, 90 - minute)
@@ -1338,6 +1392,7 @@ def _check_strategy_e(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
             "corners_total": corners_total,
             "live_xg_total": round(live_xg, 2),
             "xg_source": "live",
+            "odds_source": "live" if odds_is_live else "prematch",
         },
     }
 
@@ -1414,10 +1469,9 @@ def _check_strategy_g(cand: dict, pm: dict, has_red_card: bool,
     if pm_xg_total <= 0:
         return None
 
-    odds = cand.get("live_ou_25_over")
-    if not odds or float(odds) < 2.10:
+    odds, odds_is_live = _resolve_odds(cand.get("live_ou_25_over"), pm.get("prematch_ou25_over"), min_val=2.10)
+    if odds < 2.10:
         return None
-    odds = float(odds)
 
     xg_h, xg_a, is_real = _compute_live_xg(cand)
     live_xg = xg_h + xg_a
@@ -1451,6 +1505,7 @@ def _check_strategy_g(cand: dict, pm: dict, has_red_card: bool,
             "score_state": f"{sh}-{sa}",
             "prematch_o25": round(pm_o25, 3),
             "xg_source": "live" if is_real else "shot_proxy",
+            "odds_source": "live" if odds_is_live else "prematch",
         },
     }
 
@@ -1505,17 +1560,17 @@ def _check_strategy_h(cand: dict, pm: dict, has_red_card: bool,
     # Dual-line selection (INPLAY-NEW-HT-RESTART, 2026-05-10):
     #   • O2.5 if its odds > 2.80 (market still drifted toward Under — strongest edge)
     #   • else O1.5 if its odds > 1.60 (more conservative when O2.5 is shorter-priced)
-    o25_odds = cand.get("live_ou_25_over")
-    o15_odds = cand.get("live_ou_15_over")
-    o25_odds = float(o25_odds) if o25_odds else 0.0
-    o15_odds = float(o15_odds) if o15_odds else 0.0
+    o25_odds, o25_is_live = _resolve_odds(cand.get("live_ou_25_over"), pm.get("prematch_ou25_over"), min_val=2.80)
+    o15_odds, o15_is_live = _resolve_odds(cand.get("live_ou_15_over"), pm.get("prematch_ou15_over"), min_val=1.60)
 
     if o25_odds > 2.80:
         line = 2.5
         odds = o25_odds
+        odds_is_live = o25_is_live
     elif o15_odds > 1.60:
         line = 1.5
         odds = o15_odds
+        odds_is_live = o15_is_live
     else:
         return None
 
@@ -1584,6 +1639,7 @@ def _check_strategy_h(cand: dict, pm: dict, has_red_card: bool,
             "ht_sot_total": ht_sot,
             "prematch_o25": round(pm_o25, 3),
             "xg_source": "live" if is_real else "shot_proxy",
+            "odds_source": "live" if odds_is_live else "prematch",
         },
     }
 
@@ -1783,9 +1839,9 @@ def _check_strategy_j(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     if pm_o25 < 0.62:
         return None
 
-    live_ou15 = float(cand.get("live_ou_15_over") or 0)
-    if live_ou15 < 2.85:
-        return None  # No edge or market not available
+    ou15, ou15_is_live = _resolve_odds(cand.get("live_ou_15_over"), pm.get("prematch_ou15_over"), min_val=2.85)
+    if ou15 < 2.85:
+        return None  # No edge or no odds available
 
     # P(≥ 2 more goals) — need 2 more for Over 1.5 total (score is 0-0)
     pm_xg_total = float(pm.get("prematch_xg_home") or 1.1) + float(pm.get("prematch_xg_away") or 1.1)
@@ -1793,7 +1849,7 @@ def _check_strategy_j(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
         pm_xg_total, minute, goals_observed=0, threshold=2,
         score_home=sh, score_away=sa,
     )
-    market_prob = _implied_prob(live_ou15)
+    market_prob = _implied_prob(ou15)
     edge_pct = (model_prob - market_prob) * 100
     if edge_pct < 3.0:
         return None
@@ -1801,7 +1857,7 @@ def _check_strategy_j(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     return {
         "market": "O/U",
         "selection": "over 1.5",
-        "odds": live_ou15,
+        "odds": ou15,
         "model_prob": round(model_prob, 4),
         "edge": round(edge_pct, 2),
         "posterior_rate": round(posterior_lam, 3),
@@ -1810,6 +1866,7 @@ def _check_strategy_j(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
             "pm_o25_prob": round(pm_o25, 3),
             "posterior_lam": round(posterior_lam, 3),
             "remaining_lam": round(remaining_lam, 3),
+            "odds_source": "live" if ou15_is_live else "prematch",
         },
     }
 
@@ -1853,9 +1910,9 @@ def _check_strategy_l(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     if pm_o25 < 0.55:
         return None
 
-    live_ou25 = float(cand.get("live_ou_25_over") or 0)
-    if live_ou25 <= 1.0:
-        return None  # No live odds available — skip
+    ou25, ou25_is_live = _resolve_odds(cand.get("live_ou_25_over"), pm.get("prematch_ou25_over"))
+    if ou25 <= 1.0:
+        return None
 
     # Need 2 more goals for Over 2.5 (1 already scored). Bayesian update with
     # goals_observed=1 reflects above-expectation pace at min 15-35 → posterior rises.
@@ -1865,7 +1922,7 @@ def _check_strategy_l(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
         pm_xg_total, minute, goals_observed=1, threshold=2,
         score_home=sh, score_away=sa,
     )
-    market_prob = _implied_prob(live_ou25)
+    market_prob = _implied_prob(ou25)
     edge_pct = (model_prob - market_prob) * 100
     if edge_pct < 4.0:
         return None
@@ -1873,7 +1930,7 @@ def _check_strategy_l(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     return {
         "market": "O/U",
         "selection": "over 2.5",
-        "odds": live_ou25,
+        "odds": ou25,
         "model_prob": round(model_prob, 4),
         "edge": round(edge_pct, 2),
         "posterior_rate": round(posterior_lam, 3),
@@ -1884,6 +1941,7 @@ def _check_strategy_l(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
             "remaining_lam": round(remaining_lam, 3),
             "goal_at_minute": minute,
             "expected_by_now": round(expected_by_now, 3),
+            "odds_source": "live" if ou25_is_live else "prematch",
         },
     }
 
@@ -1928,16 +1986,16 @@ def _check_strategy_m(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     if pm_o25 < 0.45:
         return None
 
-    live_ou25 = float(cand.get("live_ou_25_over") or 0)
-    if live_ou25 < 3.0:
-        return None  # Market hasn't drifted enough to give us an entry
+    ou25, ou25_is_live = _resolve_odds(cand.get("live_ou_25_over"), pm.get("prematch_ou25_over"), min_val=3.0)
+    if ou25 < 3.0:
+        return None  # Market hasn't drifted enough (or no odds available at this level)
 
     pm_xg_total = float(pm.get("prematch_xg_home") or 1.1) + float(pm.get("prematch_xg_away") or 1.1)
     model_prob, posterior_lam, remaining_lam = _remaining_goals_prob(
         pm_xg_total, minute, goals_observed=1, threshold=2,
         score_home=sh, score_away=sa,
     )
-    market_prob = _implied_prob(live_ou25)
+    market_prob = _implied_prob(ou25)
     edge_pct = (model_prob - market_prob) * 100
     if edge_pct < 3.0:
         return None
@@ -1945,7 +2003,7 @@ def _check_strategy_m(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     return {
         "market": "O/U",
         "selection": "over 2.5",
-        "odds": live_ou25,
+        "odds": ou25,
         "model_prob": round(model_prob, 4),
         "edge": round(edge_pct, 2),
         "posterior_rate": round(posterior_lam, 3),
@@ -1956,6 +2014,7 @@ def _check_strategy_m(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
             "pm_o25_prob": round(pm_o25, 3),
             "posterior_lam": round(posterior_lam, 3),
             "remaining_lam": round(remaining_lam, 3),
+            "odds_source": "live" if ou25_is_live else "prematch",
         },
     }
 
@@ -2109,10 +2168,9 @@ def _check_strategy_q(cand: dict, pm: dict, has_red_card: bool,
     if eleven_man_poss < 55.0:
         return None
 
-    odds = cand.get("live_ou_25_over")
-    if not odds or float(odds) <= 2.30:
+    odds, odds_is_live = _resolve_odds(cand.get("live_ou_25_over"), pm.get("prematch_ou25_over"), min_val=2.30)
+    if odds <= 2.30:
         return None
-    odds = float(odds)
 
     pm_xg_total = float(pm.get("prematch_xg_home") or 0) + float(pm.get("prematch_xg_away") or 0)
     if pm_xg_total <= 0:
@@ -2151,5 +2209,6 @@ def _check_strategy_q(cand: dict, pm: dict, has_red_card: bool,
             "eleven_man_team": eleven_man_team,
             "eleven_man_possession": round(eleven_man_poss, 1),
             "xg_source": "live" if is_real else "shot_proxy",
+            "odds_source": "live" if odds_is_live else "prematch",
         },
     }
