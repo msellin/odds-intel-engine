@@ -4542,5 +4542,20 @@ def test_bookmaker_display_v2():
     assert '"Pinnacle"' in edata, "getValueBetBookOdds must fetch Pinnacle from odds_snapshots"
 
 
+@test("AH-CALIBRATED-PROB — value-bets uses calibrated_prob not raw model_probability (source inspect)")
+def test_ah_calibrated_prob_display():
+    """AH-DISPLAY-FIX: modelProb must use calibrated_prob so AH push-normalization doesn't inflate the display."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+    web = root.parent / "odds-intel-web"
+    if not web.exists():
+        print("  [skip] odds-intel-web not present in CI")
+        return
+    edata = (web / "src" / "lib" / "engine-data.ts").read_text()
+    assert "calibrated_prob" in edata, "engine-data.ts must select calibrated_prob from simulated_bets"
+    assert "calibrated_prob ?? row.model_probability" in edata, \
+        "toBet must prefer calibrated_prob over raw model_probability"
+
+
 if __name__ == "__main__":
     main()
