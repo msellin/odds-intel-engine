@@ -11,22 +11,22 @@
 - [x] Outputs saved to `dev/active/ou-market-features-audit-2026-05-10.txt`
 - [x] Decision: proceed with OU 2.5 (overround guard) + multi-book BTTS + ou25 disagreement. Drop Pinnacle BTTS.
 
-## Phase B — Feature build (START HERE TOMORROW)
+## Phase B — Feature build ✅ DONE 2026-05-11
 
-- [ ] Migration `093_mfv_ou_market_features.sql` — add 4 columns: `pinnacle_implied_over25`, `pinnacle_implied_under25`, `ou25_bookmaker_disagreement`, `market_implied_btts_yes`
-- [ ] `_load_ou_market_features()` in `train.py` — Pinnacle OU 2.5 with `HAVING (1/over + 1/under) < 1.10` guard + ou25 disagreement + market btts_yes
-- [ ] `OU_MARKET_FEATURE_COLS` constant in `train.py` + add to `INFORMATIVE_MISSING_COLS`
-- [ ] `--include-ou-market` CLI flag + `train_all(include_ou_market=True)` parameter
-- [ ] `compute_ou25_bookmaker_disagreement` + `compute_market_implied_btts_yes` helpers in `supabase_client.py`
-- [ ] Wire new columns into MFV builder + live builder in `supabase_client.py`
-- [ ] Smoke test — source-guards: Pinnacle OU 2.5 filter + overround guard present in `_load_ou_market_features`
-- [ ] Smoke test — MFV builder computes the 4 new columns
+- [x] Migration `093_mfv_ou_market_features.sql` — add 4 columns: `pinnacle_implied_over25`, `pinnacle_implied_under25`, `ou25_bookmaker_disagreement`, `market_implied_btts_yes`
+- [x] `_load_ou_market_features()` in `train.py` — Pinnacle OU 2.5 with `HAVING (1/over + 1/under) < 1.10` guard + ou25 disagreement + market btts_yes (3 separate queries merged in Python to avoid timeout)
+- [x] `OU_MARKET_FEATURE_COLS` constant in `train.py` + add to `INFORMATIVE_MISSING_COLS`
+- [x] `--include-ou-market` CLI flag + `train_all(include_ou_market=True)` parameter
+- [x] `compute_ou25_bookmaker_disagreement` + `compute_market_implied_btts_yes` helpers in `supabase_client.py`
+- [x] Wire new columns into MFV builder (batch loads + `_build_feature_row_batched`) in `supabase_client.py`
+- [x] Smoke test — source-guards: OU_MARKET_FEATURE_COLS, overround guard, CLI flag, INFORMATIVE_MISSING_COLS
+- [x] Smoke test — MFV builder computes the 4 new columns + batch load vars present
 
 ## Phase C — Train v14
 
-- [ ] `OU_MARKET_FEATURE_COLS` constant in `train.py`
-- [ ] `--include-ou-market` CLI flag in `train.py`
-- [ ] `train_all(include_ou_market=True)` parameter wired
+- [x] `OU_MARKET_FEATURE_COLS` constant in `train.py` ← done in Phase B
+- [x] `--include-ou-market` CLI flag in `train.py` ← done in Phase B
+- [x] `train_all(include_ou_market=True)` parameter wired ← done in Phase B
 - [ ] Train v14 = v12 features + Pinnacle 1X2 + OU/BTTS market features
 - [ ] Verify auto-upload to Supabase Storage succeeded
 - [ ] Verify `model_versions` registry row created

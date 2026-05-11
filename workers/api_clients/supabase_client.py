@@ -1280,6 +1280,61 @@ def _build_mfv_rows_for_matches(matches: list[dict], date_str: str) -> int:
         for s in sr:
             signals_by_match.setdefault(s["match_id"], []).append(s)
 
+    # -- Batch load: Pinnacle OU 2.5 (latest pre-match per match_id/selection) --
+    pin_ou25_by_match: dict[str, dict] = {}
+    for chunk in _chunk_list(all_match_ids, 200):
+        pr = execute_query(
+            """SELECT DISTINCT ON (match_id, selection)
+                      match_id, selection, odds
+               FROM odds_snapshots
+               WHERE match_id = ANY(%s::uuid[])
+                 AND bookmaker = 'Pinnacle'
+                 AND market = 'over_under_25'
+                 AND is_live = false
+               ORDER BY match_id, selection, timestamp DESC""",
+            (chunk,),
+        )
+        for r in pr:
+            d = pin_ou25_by_match.setdefault(str(r["match_id"]), {})
+            d[r["selection"]] = float(r["odds"])
+
+    # -- Batch load: OU 2.5 multi-book (latest per match_id/bookmaker, over) ---
+    ou25_over_by_match: dict[str, list] = {}
+    for chunk in _chunk_list(all_match_ids, 200):
+        or_ = execute_query(
+            """SELECT DISTINCT ON (match_id, bookmaker)
+                      match_id, bookmaker, odds
+               FROM odds_snapshots
+               WHERE match_id = ANY(%s::uuid[])
+                 AND market = 'over_under_25'
+                 AND selection = 'over'
+                 AND is_live = false
+                 AND bookmaker NOT IN ('api-football', 'api-football-live', 'William Hill')
+               ORDER BY match_id, bookmaker, timestamp DESC""",
+            (chunk,),
+        )
+        for r in or_:
+            mid = str(r["match_id"])
+            ou25_over_by_match.setdefault(mid, []).append(1.0 / float(r["odds"]))
+
+    # -- Batch load: BTTS yes (latest per match_id/bookmaker) ------------------
+    btts_yes_by_match: dict[str, list] = {}
+    for chunk in _chunk_list(all_match_ids, 200):
+        br = execute_query(
+            """SELECT DISTINCT ON (match_id, bookmaker)
+                      match_id, bookmaker, odds
+               FROM odds_snapshots
+               WHERE match_id = ANY(%s::uuid[])
+                 AND market = 'btts'
+                 AND selection = 'yes'
+                 AND is_live = false
+               ORDER BY match_id, bookmaker, timestamp DESC""",
+            (chunk,),
+        )
+        for r in br:
+            mid = str(r["match_id"])
+            btts_yes_by_match.setdefault(mid, []).append(1.0 / float(r["odds"]))
+
     # -- Build rows from cached data -------------------------------------------
     upserted = 0
     batch_rows = []
@@ -1291,6 +1346,7 @@ def _build_mfv_rows_for_matches(matches: list[dict], date_str: str) -> int:
                 match, league_tier_map, preds_by_match,
                 reasoning_by_match, odds_by_match, elo_by_team,
                 form_by_team, signals_by_match,
+                pin_ou25_by_match, ou25_over_by_match, btts_yes_by_match,
             )
             if row:
                 batch_rows.append(row)
@@ -1346,6 +1402,9 @@ def _build_feature_row_batched(
     elo_by_team: dict,
     form_by_team: dict,
     signals_by_match: dict,
+    pin_ou25_by_match: dict | None = None,
+    ou25_over_by_match: dict | None = None,
+    btts_yes_by_match: dict | None = None,
 ) -> dict | None:
     """Build a single match_feature_vectors row from pre-loaded batch data."""
     match_id = match["id"]
@@ -1514,6 +1573,25 @@ def _build_feature_row_batched(
             elif name == "market_implied_away":
                 market_implied_away = fval
 
+    # -- OU market features (v14+) -------------------------------------------
+    pinnacle_implied_over25 = pinnacle_implied_under25 = None
+    pin_ou25 = (pin_ou25_by_match or {}).get(match_id, {})
+    if "over" in pin_ou25 and "under" in pin_ou25:
+        o, u = pin_ou25["over"], pin_ou25["under"]
+        if o > 1.0 and u > 1.0 and (1.0 / o + 1.0 / u) < 1.10:
+            pinnacle_implied_over25 = round(1.0 / o, 4)
+            pinnacle_implied_under25 = round(1.0 / u, 4)
+
+    ou25_bookmaker_disagreement = None
+    ou25_vals = (ou25_over_by_match or {}).get(match_id, [])
+    if len(ou25_vals) >= 2:
+        ou25_bookmaker_disagreement = round(max(ou25_vals) - min(ou25_vals), 4)
+
+    market_implied_btts_yes = None
+    btts_vals = (btts_yes_by_match or {}).get(match_id, [])
+    if btts_vals:
+        market_implied_btts_yes = round(sum(btts_vals) / len(btts_vals), 4)
+
     return {
         "match_id": match_id,
         "match_date": match_date,
@@ -1565,6 +1643,11 @@ def _build_feature_row_batched(
         "referee_cards_avg": referee_cards_avg,
         "referee_home_win_pct": referee_home_win_pct,
         "referee_over25_pct": referee_over25_pct,
+        # Group 6: OU market features (v14+)
+        "pinnacle_implied_over25": pinnacle_implied_over25,
+        "pinnacle_implied_under25": pinnacle_implied_under25,
+        "ou25_bookmaker_disagreement": ou25_bookmaker_disagreement,
+        "market_implied_btts_yes": market_implied_btts_yes,
         # Outcome labels
         "match_outcome": outcome,
         "total_goals": total_goals,
@@ -2802,6 +2885,58 @@ def compute_bookmaker_disagreement(match_id: str) -> float | None:
 
     values = list(seen.values())
     return round(max(values) - min(values), 4)
+
+
+def compute_ou25_bookmaker_disagreement(match_id: str) -> float | None:
+    """Max(implied_over25) - min(implied_over25) across bookmakers for OU 2.5.
+    Uses the most recent snapshot per bookmaker. Blacklist-filtered.
+    Requires >=2 distinct bookmakers."""
+    rows = execute_query(
+        """SELECT bookmaker, odds, timestamp
+           FROM odds_snapshots
+           WHERE match_id = %s AND market = 'over_under_25' AND selection = 'over'
+             AND is_live = false
+             AND bookmaker NOT IN ('api-football', 'api-football-live', 'William Hill')
+           ORDER BY timestamp DESC
+           LIMIT 200""",
+        (match_id,),
+    )
+    if not rows:
+        return None
+    seen: dict[str, float] = {}
+    for row in rows:
+        bk = row.get("bookmaker")
+        if bk and bk not in seen and float(row["odds"]) > 1.0:
+            seen[bk] = 1.0 / float(row["odds"])
+    if len(seen) < 2:
+        return None
+    values = list(seen.values())
+    return round(max(values) - min(values), 4)
+
+
+def compute_market_implied_btts_yes(match_id: str) -> float | None:
+    """Average 1/yes_odds across distinct bookmakers for BTTS.
+    Uses the most recent snapshot per bookmaker."""
+    rows = execute_query(
+        """SELECT bookmaker, odds, timestamp
+           FROM odds_snapshots
+           WHERE match_id = %s AND market = 'btts' AND selection = 'yes'
+             AND is_live = false
+           ORDER BY timestamp DESC
+           LIMIT 200""",
+        (match_id,),
+    )
+    if not rows:
+        return None
+    seen: dict[str, float] = {}
+    for row in rows:
+        bk = row.get("bookmaker")
+        if bk and bk not in seen and float(row["odds"]) > 1.0:
+            seen[bk] = 1.0 / float(row["odds"])
+    if not seen:
+        return None
+    values = list(seen.values())
+    return round(sum(values) / len(values), 4)
 
 
 def compute_fixture_importance(

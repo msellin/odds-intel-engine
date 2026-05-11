@@ -3706,6 +3706,82 @@ def _():
     )
 
 
+@test("OU-MARKET-FEATURES — train.py has OU_MARKET_FEATURE_COLS, _load_ou_market_features, --include-ou-market")
+def _():
+    """v14+ adds Pinnacle OU 2.5 + BTTS market features. Source-guard checks:
+    1. OU_MARKET_FEATURE_COLS constant present and contains the 4 new cols.
+    2. _load_ou_market_features helper exists with overround guard (< 1.10).
+    3. --include-ou-market CLI flag wired.
+    4. 4 new cols in INFORMATIVE_MISSING_COLS for Stage 2a _missing indicators."""
+    import pathlib
+    src = pathlib.Path("workers/model/train.py").read_text()
+
+    assert "OU_MARKET_FEATURE_COLS" in src, (
+        "train.py must expose OU_MARKET_FEATURE_COLS — keeps the new OU/BTTS "
+        "feature names in one named place, prevents stringly-typed drift."
+    )
+    assert "_load_ou_market_features" in src, (
+        "_load_ou_market_features must exist — fetches Pinnacle OU 2.5 + "
+        "multi-book BTTS from odds_snapshots, mirrors _load_pinnacle_features."
+    )
+    assert "1.10" in src, (
+        "_load_ou_market_features must contain the overround guard '< 1.10' — "
+        "2.4% of Pinnacle OU 2.5 pairs are mislabeled; guard drops them."
+    )
+    assert "include_ou_market" in src, (
+        "train_all + load_training_data must take include_ou_market flag "
+        "so v12/v13 (no OU) and v14+ (with OU) coexist cleanly."
+    )
+    assert "include-ou-market" in src, (
+        "--include-ou-market CLI flag must be present."
+    )
+    assert '"pinnacle_implied_over25"' in src, (
+        "pinnacle_implied_over25 must be listed under INFORMATIVE_MISSING_COLS — "
+        "missingness is highly informative when Pinnacle OU coverage is ~22%."
+    )
+    assert '"ou25_bookmaker_disagreement"' in src, (
+        "ou25_bookmaker_disagreement must be listed under INFORMATIVE_MISSING_COLS."
+    )
+    assert '"market_implied_btts_yes"' in src, (
+        "market_implied_btts_yes must be listed under INFORMATIVE_MISSING_COLS."
+    )
+
+
+@test("OU-MARKET-FEATURES — MFV builder computes the 4 new OU/BTTS columns")
+def _():
+    """Source-guard: supabase_client._build_feature_row_batched must output
+    all 4 new OU market feature columns, and the batch load queries for
+    Pinnacle OU 2.5, OU 2.5 disagreement, and BTTS yes must be present."""
+    import pathlib
+    src = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
+
+    for col in ("pinnacle_implied_over25", "pinnacle_implied_under25",
+                "ou25_bookmaker_disagreement", "market_implied_btts_yes"):
+        assert col in src, (
+            f"supabase_client.py must reference '{col}' — MFV builder must "
+            f"compute and store it so v14 inference can read it from MFV."
+        )
+
+    assert "pin_ou25_by_match" in src, (
+        "Batch load for Pinnacle OU 2.5 (pin_ou25_by_match) must exist in "
+        "_build_mfv_rows_for_matches."
+    )
+    assert "btts_yes_by_match" in src, (
+        "Batch load for BTTS yes (btts_yes_by_match) must exist in "
+        "_build_mfv_rows_for_matches."
+    )
+    assert "ou25_over_by_match" in src, (
+        "Batch load for OU 2.5 multi-book (ou25_over_by_match) must exist in "
+        "_build_mfv_rows_for_matches."
+    )
+    assert "compute_ou25_bookmaker_disagreement" in src, (
+        "compute_ou25_bookmaker_disagreement helper must exist in supabase_client.py."
+    )
+    assert "compute_market_implied_btts_yes" in src, (
+        "compute_market_implied_btts_yes helper must exist in supabase_client.py."
+    )
+
+
 @test("ML-INFERENCE-MFV-WIRE — v10 schema routes to MFV inference path")
 def _():
     """Live deploy of any v10+ model requires xgboost_ensemble to read its

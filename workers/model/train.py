@@ -53,6 +53,10 @@ INFORMATIVE_MISSING_COLS = [
     # Pinnacle (v11+) — coverage is sparse so the indicator carries the bulk
     # of the signal early on, with the imputed value useful where present.
     "pinnacle_implied_home", "pinnacle_implied_draw", "pinnacle_implied_away",
+    # OU market features (v14+) — Pinnacle OU 2.5 coverage ~22%; BTTS multi-book
+    # covers ~30%; disagreement follows the same sparse-but-informative pattern.
+    "pinnacle_implied_over25", "pinnacle_implied_under25",
+    "ou25_bookmaker_disagreement", "market_implied_btts_yes",
 ]
 
 
@@ -458,6 +462,11 @@ def train_away_goals_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, 
 
 PINNACLE_FEATURE_COLS = ["pinnacle_implied_home", "pinnacle_implied_draw", "pinnacle_implied_away"]
 
+OU_MARKET_FEATURE_COLS = [
+    "pinnacle_implied_over25", "pinnacle_implied_under25",
+    "ou25_bookmaker_disagreement", "market_implied_btts_yes",
+]
+
 
 def _load_pinnacle_features() -> pd.DataFrame:
     """Per-match Pinnacle pre-match 1X2 implied probabilities.
@@ -496,7 +505,100 @@ def _load_pinnacle_features() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def load_training_data(include_pinnacle: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
+def _load_ou_market_features() -> pd.DataFrame:
+    """Per-match OU 2.5 and BTTS market features from odds_snapshots.
+
+    Three separate queries merged in Python (one combined CTE can timeout on
+    the full historical dataset):
+      1. Pinnacle OU 2.5 implied over/under — latest pre-KO snapshot, with
+         overround guard (1/over + 1/under < 1.10) to drop the 2.4% bad pairs.
+      2. OU 2.5 bookmaker disagreement — max-min implied_over across distinct
+         books (blacklist-filtered: api-football, api-football-live, William Hill).
+      3. Market implied BTTS yes — avg 1/yes_odds across distinct bookmakers.
+
+    All columns are NaN for matches without the relevant data — Stage 2a
+    `_missing` indicators handle the gaps.
+    """
+    from workers.api_clients.supabase_client import execute_query
+
+    pin_sql = """
+    WITH latest AS (
+        SELECT DISTINCT ON (os.match_id, os.selection)
+               os.match_id, os.selection, os.odds
+        FROM odds_snapshots os
+        JOIN matches m ON m.id = os.match_id
+        WHERE os.bookmaker = 'Pinnacle'
+          AND os.market = 'over_under_25'
+          AND os.is_live = false
+          AND os.timestamp < m.date
+        ORDER BY os.match_id, os.selection, os.timestamp DESC
+    )
+    SELECT match_id,
+           1.0 / MAX(CASE WHEN selection = 'over'  THEN odds END) AS pinnacle_implied_over25,
+           1.0 / MAX(CASE WHEN selection = 'under' THEN odds END) AS pinnacle_implied_under25
+    FROM latest
+    GROUP BY match_id
+    HAVING COUNT(DISTINCT selection) = 2
+       AND (1.0 / MAX(CASE WHEN selection = 'over'  THEN odds END)
+          + 1.0 / MAX(CASE WHEN selection = 'under' THEN odds END)) < 1.10
+    """
+
+    disagree_sql = """
+    WITH latest_per_book AS (
+        SELECT DISTINCT ON (os.match_id, os.bookmaker)
+               os.match_id, 1.0/os.odds AS implied_over
+        FROM odds_snapshots os
+        JOIN matches m ON m.id = os.match_id
+        WHERE os.market = 'over_under_25'
+          AND os.selection = 'over'
+          AND os.is_live = false
+          AND os.timestamp < m.date
+          AND os.bookmaker NOT IN ('api-football', 'api-football-live', 'William Hill')
+        ORDER BY os.match_id, os.bookmaker, os.timestamp DESC
+    )
+    SELECT match_id,
+           ROUND((MAX(implied_over) - MIN(implied_over))::numeric, 4) AS ou25_bookmaker_disagreement
+    FROM latest_per_book
+    GROUP BY match_id
+    HAVING COUNT(*) >= 2
+    """
+
+    btts_sql = """
+    WITH latest_per_book AS (
+        SELECT DISTINCT ON (os.match_id, os.bookmaker)
+               os.match_id, 1.0/os.odds AS implied_yes
+        FROM odds_snapshots os
+        JOIN matches m ON m.id = os.match_id
+        WHERE os.market = 'btts'
+          AND os.selection = 'yes'
+          AND os.is_live = false
+          AND os.timestamp < m.date
+        ORDER BY os.match_id, os.bookmaker, os.timestamp DESC
+    )
+    SELECT match_id,
+           ROUND(AVG(implied_yes)::numeric, 4) AS market_implied_btts_yes
+    FROM latest_per_book
+    GROUP BY match_id
+    """
+
+    dfs = []
+    for sql, label in [(pin_sql, "Pinnacle OU 2.5"), (disagree_sql, "OU 2.5 disagree"), (btts_sql, "BTTS yes")]:
+        rows = execute_query(sql, ())
+        if rows:
+            dfs.append(pd.DataFrame(rows).set_index("match_id"))
+            console.print(f"  [dim]OU market features — {label}: {len(rows):,} matches[/dim]")
+
+    if not dfs:
+        return pd.DataFrame()
+
+    result = dfs[0]
+    for other in dfs[1:]:
+        result = result.join(other, how="outer")
+    return result.reset_index()
+
+
+def load_training_data(include_pinnacle: bool = False,
+                       include_ou_market: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load match_feature_vectors rows with completed outcomes from the DB.
 
     Returns (features_df, targets_df) sorted by match_date ascending.
@@ -505,6 +607,10 @@ def load_training_data(include_pinnacle: bool = False) -> tuple[pd.DataFrame, pd
     `include_pinnacle=True` left-joins per-match Pinnacle pre-match 1X2
     implied probabilities. Caller must extend FEATURE_COLS with
     PINNACLE_FEATURE_COLS before training (used for v11+).
+
+    `include_ou_market=True` left-joins Pinnacle OU 2.5 + multi-book BTTS
+    features from odds_snapshots. Caller must extend with OU_MARKET_FEATURE_COLS
+    (used for v14+).
     """
     from workers.api_clients.supabase_client import execute_query
 
@@ -543,7 +649,18 @@ def load_training_data(include_pinnacle: bool = False) -> tuple[pd.DataFrame, pd
                 f"({pin.shape[0] / len(df) * 100:.1f}% coverage)[/dim]"
             )
 
-    feature_cols = FEATURE_COLS + (PINNACLE_FEATURE_COLS if include_pinnacle else [])
+    if include_ou_market:
+        ou = _load_ou_market_features()
+        if not ou.empty:
+            df = df.merge(ou, on="match_id", how="left")
+            console.print(
+                f"[dim]Joined OU market features for {ou.shape[0]:,} matches "
+                f"({ou.shape[0] / len(df) * 100:.1f}% coverage)[/dim]"
+            )
+
+    feature_cols = (FEATURE_COLS
+                    + (PINNACLE_FEATURE_COLS if include_pinnacle else [])
+                    + (OU_MARKET_FEATURE_COLS if include_ou_market else []))
     features_df = df[feature_cols].copy()
     # Postgres NUMERIC columns come back as decimal.Decimal which pandas can't
     # `.mean()` mixed with float NaNs. Coerce all features to float64 so the
@@ -569,7 +686,8 @@ def train_all(version: str = "untagged",
               features_df: pd.DataFrame | None = None,
               targets_df: pd.DataFrame | None = None,
               output_root: Path | None = None,
-              include_pinnacle: bool = False):
+              include_pinnacle: bool = False,
+              include_ou_market: bool = False):
     """Train all three models. If called with no args, loads data from DB automatically.
 
     Writes to output_root/<version>/ — defaults to data/models/soccer/<version>/.
@@ -579,9 +697,15 @@ def train_all(version: str = "untagged",
     `include_pinnacle=True` adds Pinnacle pre-match 1X2 implied probs as
     features (used for v11+ bundles). Coverage is sparse so the indicator
     columns from Stage 2a do most of the work.
+
+    `include_ou_market=True` adds Pinnacle OU 2.5 + multi-book BTTS implied
+    probs + OU 2.5 bookmaker disagreement (used for v14+ bundles).
     """
     if features_df is None or targets_df is None:
-        features_df, targets_df = load_training_data(include_pinnacle=include_pinnacle)
+        features_df, targets_df = load_training_data(
+            include_pinnacle=include_pinnacle,
+            include_ou_market=include_ou_market,
+        )
 
     output_dir = (output_root or DEFAULT_OUTPUT_ROOT) / version
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -643,7 +767,7 @@ def train_all(version: str = "untagged",
             n_training_rows=n_rows,
             feature_cols=augmented_feature_cols,
             cv_metrics=None,  # TODO: thread per-market CV metrics through here once train_*_model returns them
-            notes=f"Auto-uploaded by train.py train_all() (include_pinnacle={include_pinnacle})",
+            notes=f"Auto-uploaded by train.py train_all() (include_pinnacle={include_pinnacle}, include_ou_market={include_ou_market})",
         )
         console.print(f"[bold green]✓ Bundle {version} uploaded + registered in model_versions[/bold green]\n")
     except Exception as e:
@@ -670,8 +794,16 @@ if __name__ == "__main__":
                         help="Add Pinnacle pre-match implied probs to FEATURE_COLS "
                              "(v11+ bundles). Coverage ~5pct; _missing indicators "
                              "carry most of the signal until coverage grows.")
+    parser.add_argument("--include-ou-market", action="store_true",
+                        help="Add Pinnacle OU 2.5 implied probs + OU 2.5 bookmaker "
+                             "disagreement + market-implied BTTS yes to FEATURE_COLS "
+                             "(v14+ bundles). Overround guard applied to Pinnacle rows.")
     parser.add_argument("--version", default="untagged",
                         help="Version tag — used as the subdir under data/models/soccer/. "
                              "Set MODEL_VERSION=<version> in env to activate.")
     args = parser.parse_args()
-    train_all(version=args.version, include_pinnacle=args.include_pinnacle)
+    train_all(
+        version=args.version,
+        include_pinnacle=args.include_pinnacle,
+        include_ou_market=args.include_ou_market,
+    )
