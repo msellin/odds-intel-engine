@@ -357,6 +357,33 @@ BOTS_CONFIG = {
         "odds_range": (1.20, 1.80),
         "min_prob": 0.65,
     },
+    "bot_ah_home_fav": {
+        "description": "AH home — favourite covers T1-2, Poisson-priced, 5%+ edge",
+        "tier_label": "elite",
+        "markets": ["ah"],
+        "selection_filter": ["Home"],
+        "tier_filter": [1, 2],
+        "edge_thresholds": {
+            1: {"ah": 0.05},
+            2: {"ah": 0.05},
+        },
+        "odds_range": (1.50, 2.20),
+        "min_prob": 0.55,
+    },
+    "bot_ah_away_dog": {
+        "description": "AH away — underdog covers T1-3, Poisson-priced, 5%+ edge",
+        "tier_label": "elite",
+        "markets": ["ah"],
+        "selection_filter": ["Away"],
+        "tier_filter": [1, 2, 3],
+        "edge_thresholds": {
+            1: {"ah": 0.05},
+            2: {"ah": 0.05},
+            3: {"ah": 0.06},
+        },
+        "odds_range": (1.70, 2.50),
+        "min_prob": 0.50,
+    },
 }
 
 
@@ -391,6 +418,9 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     # Morning — DC bots (fresh odds, full coverage)
     "bot_dc_value":        "morning",
     "bot_dc_strong_fav":   "morning",
+    # Morning — AH bots (fresh odds, Poisson needs exp_home/exp_away)
+    "bot_ah_home_fav":     "morning",
+    "bot_ah_away_dog":     "morning",
 }
 
 
@@ -533,6 +563,63 @@ def _goals_from_hist(df: pd.DataFrame, team: str) -> tuple[list[float], list[flo
             gf.append(float(m["FTAG"]))
             ga.append(float(m["FTHG"]))
     return gf, ga
+
+
+def _ah_model_prob(exp_h: float, exp_a: float, selection: str, handicap_line: float,
+                   rho: float | None = None) -> float:
+    """
+    Fair probability for an Asian Handicap bet using Poisson + Dixon-Coles scoring.
+
+    handicap_line: home team's handicap (negative = home gives goals, e.g. -1.25).
+    selection: 'home' or 'away'.
+
+    Line types handled:
+      whole (x.0)  — push when margin == spread → conditional prob (excl. push)
+      half  (x.5)  — no push; strict win/loss
+      x.25 quarter — half-loss when margin == floor(spread); EV-adjusted pricing
+      x.75 quarter — half-win when margin == floor(spread)+1; EV-adjusted pricing
+    """
+    _rho = rho if rho is not None else DIXON_COLES_RHO
+
+    # Build integer margin PMF from Poisson + Dixon-Coles
+    margin_pmf: dict[int, float] = {}
+    for h in range(8):
+        for a in range(8):
+            p = poisson.pmf(h, exp_h) * poisson.pmf(a, exp_a) * _dc_tau(h, a, exp_h, exp_a, _rho)
+            m = h - a
+            margin_pmf[m] = margin_pmf.get(m, 0.0) + p
+
+    # spread = goals home must win by for a "home" bet to win
+    spread = -handicap_line
+    floor_s = math.floor(spread)
+    frac = spread - floor_s  # always [0, 1)
+
+    if frac < 0.01:  # whole line — push at margin == spread
+        s = round(spread)
+        p_win = sum(p for m, p in margin_pmf.items() if m > s)
+        p_lose = sum(p for m, p in margin_pmf.items() if m < s)
+        total = p_win + p_lose
+        home_prob = p_win / total if total > 0 else 0.5
+    elif abs(frac - 0.5) < 0.01:  # half line — no push
+        p_win = sum(p for m, p in margin_pmf.items() if m > spread)
+        p_lose = sum(p for m, p in margin_pmf.items() if m < spread)
+        total = p_win + p_lose
+        home_prob = p_win / total if total > 0 else 0.5
+    elif frac < 0.5:  # x.25 quarter: half-loss when margin == floor_s
+        p_full_win = sum(p for m, p in margin_pmf.items() if m >= floor_s + 1)
+        p_half_loss = margin_pmf.get(floor_s, 0.0)
+        p_full_lose = sum(p for m, p in margin_pmf.items() if m <= floor_s - 1)
+        denom = p_full_win + 0.5 * p_half_loss + p_full_lose
+        home_prob = p_full_win / denom if denom > 0 else 0.5
+    else:  # x.75 quarter: half-win when margin == floor_s + 1
+        p_full_win = sum(p for m, p in margin_pmf.items() if m >= floor_s + 2)
+        p_half_win = margin_pmf.get(floor_s + 1, 0.0)
+        p_full_lose = sum(p for m, p in margin_pmf.items() if m <= floor_s)
+        numerator = p_full_win + 0.5 * p_half_win
+        denom = numerator + p_full_lose
+        home_prob = numerator / denom if denom > 0 else 0.5
+
+    return 1.0 - home_prob if selection == "away" else home_prob
 
 
 def compute_prediction(match, hist_targets, hist_targets_global=None,
@@ -994,6 +1081,7 @@ def _fetch_af_bulk_odds(today_str, af_fixtures_raw, af_id_to_match_id):
                 continue
 
             best: dict[str, float] = {}
+            ah_lines_best: dict[tuple, float] = {}  # (selection, handicap_line) -> best_odds
             for row in parsed:
                 if row["market"] == "1x2":
                     field = f"odds_{row['selection']}"
@@ -1002,6 +1090,17 @@ def _fetch_af_bulk_odds(today_str, af_fixtures_raw, af_id_to_match_id):
                 elif row["market"] == "btts":
                     field = f"odds_btts_{row['selection']}"
                     if row["odds"] > best.get(field, 0):
+                        best[field] = row["odds"]
+                elif row["market"] == "asian_handicap":
+                    hl = row.get("handicap_line")
+                    if hl is not None:
+                        ah_key = (row["selection"], float(hl))
+                        if row["odds"] > ah_lines_best.get(ah_key, 0):
+                            ah_lines_best[ah_key] = row["odds"]
+                elif row["market"] in ("double_chance",):
+                    sel_map = {"1x": "odds_dc_1x", "x2": "odds_dc_x2", "12": "odds_dc_12"}
+                    field = sel_map.get(row["selection"])
+                    if field and row["odds"] > best.get(field, 0):
                         best[field] = row["odds"]
                 else:
                     direction = "over" if row["selection"] == "over" else "under"
@@ -1024,6 +1123,10 @@ def _fetch_af_bulk_odds(today_str, af_fixtures_raw, af_id_to_match_id):
                 "id": match_id,
                 "tier": tier,
                 "bookmaker": "api-football",
+                "ah_lines": [
+                    {"selection": sel, "handicap_line": hl, "odds": odds}
+                    for (sel, hl), odds in ah_lines_best.items()
+                ],
             })
             af_odds_fetched += 1
             if match_id:
@@ -1126,7 +1229,7 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
     # (api-football synthetic, api-football-live in-play, William Hill line-shifted).
     # 1X2 and BTTS rows from the same bookmakers are kept — those markets are clean.
     odds_raw = execute_query(
-        """SELECT match_id, market, selection, odds, bookmaker
+        """SELECT match_id, market, selection, odds, bookmaker, handicap_line
            FROM odds_snapshots
            WHERE match_id = ANY(%s::uuid[]) AND is_closing = false
              AND NOT (
@@ -1162,17 +1265,28 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
 
     best: dict[str, dict[str, float]] = _dd(lambda: _dd(float))
     bm_sources: dict[str, set] = _dd(set)
+    # AH lines: {match_id -> {(selection, handicap_line) -> best_odds}}
+    ah_best: dict[str, dict[tuple, float]] = _dd(dict)
     for row in odds_raw:
         mid = str(row["match_id"])
-        key = f"{row['market']}_{row['selection']}"
+        market = str(row.get("market", ""))
+        key = f"{market}_{row['selection']}"
         odds_val = float(row["odds"])
         bookmaker = row.get("bookmaker") or "unknown"
-        if str(row.get("market", "")).startswith("over_under_"):
+        if market.startswith("over_under_"):
             pin_price = pin_ou.get(mid, {}).get(key)
             if pin_price is None:
                 continue  # OU-PIN-REQUIRED — no Pinnacle reference for this OU selection, skip
             if bookmaker != "Pinnacle" and odds_val > 2.0 * pin_price:
                 continue  # OU-PINNACLE-CAP — likely mislabelled / Asian-total row
+        if market == "asian_handicap":
+            hl = row.get("handicap_line")
+            if hl is not None:
+                ah_key = (str(row["selection"]), float(hl))
+                if odds_val > ah_best[mid].get(ah_key, 0):
+                    ah_best[mid][ah_key] = odds_val
+            bm_sources[mid].add(bookmaker)
+            continue  # don't also add to flat `best` dict
         if odds_val > best[mid][key]:
             best[mid][key] = odds_val
         bm_sources[mid].add(bookmaker)
@@ -1245,6 +1359,10 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
             "odds_over_45": 0, "odds_under_45": 0,
             "odds_btts_yes": 0, "odds_btts_no": 0,
             "odds_dc_1x": 0, "odds_dc_x2": 0, "odds_dc_12": 0,
+            "ah_lines": [
+                {"selection": sel, "handicap_line": hl, "odds": odds}
+                for (sel, hl), odds in ah_best.get(mid, {}).items()
+            ],
         }
         if match_best:
             for mkt_sel, field in MARKET_TO_FIELD.items():
@@ -1863,16 +1981,39 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                 candidate_specs.append(("BTTS", "No", match["odds_btts_no"], pred.get("btts_no_prob", 0), "btts", "no", thresholds.get("btts", 0.06)))
 
             # Double Chance (DC-BOTS): probs derived from 1X2 calibrated probs
+            # mkt = "double_chance" so settlement.py settle_bet_result matches correctly
             if "dc" in config.get("markets", []):
                 dc_1x_prob = pred["home_prob"] + pred["draw_prob"]
                 dc_x2_prob = pred["draw_prob"] + pred["away_prob"]
                 dc_12_prob = pred["home_prob"] + pred["away_prob"]
                 if match.get("odds_dc_1x", 0) > 0 and (not sel_filter or "1X" in sel_filter):
-                    candidate_specs.append(("DC", "1X", match["odds_dc_1x"], dc_1x_prob, "double_chance", "1x", thresholds.get("dc", 0.04)))
+                    candidate_specs.append(("double_chance", "1X", match["odds_dc_1x"], dc_1x_prob, "double_chance", "1x", thresholds.get("dc", 0.04)))
                 if match.get("odds_dc_x2", 0) > 0 and (not sel_filter or "X2" in sel_filter):
-                    candidate_specs.append(("DC", "X2", match["odds_dc_x2"], dc_x2_prob, "double_chance", "x2", thresholds.get("dc", 0.04)))
+                    candidate_specs.append(("double_chance", "X2", match["odds_dc_x2"], dc_x2_prob, "double_chance", "x2", thresholds.get("dc", 0.04)))
                 if match.get("odds_dc_12", 0) > 0 and (not sel_filter or "12" in sel_filter):
-                    candidate_specs.append(("DC", "12", match["odds_dc_12"], dc_12_prob, "double_chance", "12", thresholds.get("dc", 0.04)))
+                    candidate_specs.append(("double_chance", "12", match["odds_dc_12"], dc_12_prob, "double_chance", "12", thresholds.get("dc", 0.04)))
+
+            # AH (AH-BOTS): Poisson score-distribution pricing for Asian Handicap lines.
+            # Only fires when exp_home/exp_away are available (Tier A/B Poisson data).
+            # mkt = "asian_handicap" so settlement correctly routes to the AH handler.
+            if "ah" in config.get("markets", []):
+                _exp_h = poisson_pred.get("exp_home")
+                _exp_a = poisson_pred.get("exp_away")
+                if _exp_h is not None and _exp_a is not None and _exp_h > 0 and _exp_a > 0:
+                    _tier_rho = _load_dc_rho_cache().get(tier)
+                    for _ah in match.get("ah_lines", []):
+                        _sel = _ah["selection"]  # "home" or "away"
+                        _hl = float(_ah["handicap_line"])
+                        _odds = float(_ah["odds"])
+                        _sel_cap = _sel.capitalize()  # "Home" or "Away"
+                        if sel_filter and _sel_cap not in sel_filter:
+                            continue
+                        _ah_prob = _ah_model_prob(_exp_h, _exp_a, _sel, _hl, rho=_tier_rho)
+                        _sel_label = f"{_sel_cap} {_hl:+.4g}"  # e.g. "Home -1.25"
+                        candidate_specs.append((
+                            "asian_handicap", _sel_label, _odds, _ah_prob,
+                            "asian_handicap", _sel_label, thresholds.get("ah", 0.05)
+                        ))
 
             for mkt, selection, odds, raw_mp, os_market, os_selection, base_threshold in candidate_specs:
                 ip = 1 / odds

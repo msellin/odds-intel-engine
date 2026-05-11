@@ -4111,6 +4111,87 @@ def _():
     )
 
 
+@test("AH-BOTS — _ah_model_prob prices AH lines correctly + pipeline/settlement wiring")
+def _():
+    """AH-BOTS (2026-05-11): Asian Handicap bots using Poisson goal distribution.
+    Source guards:
+    1. _ah_model_prob exists and handles whole/half/quarter lines correctly.
+    2. pipeline builds ah_lines list in match dicts (DB path and AF path).
+    3. BOTS_CONFIG has bot_ah_home_fav and bot_ah_away_dog.
+    4. settlement handles asian_handicap market with push → void.
+    5. get_closing_odds handles asian_handicap selection format 'home -1.25'."""
+    import pathlib, math
+    pipe = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    settle = pathlib.Path("workers/jobs/settlement.py").read_text()
+
+    assert "def _ah_model_prob(" in pipe, "_ah_model_prob function must exist"
+    assert "ah_lines" in pipe, "pipeline must build ah_lines in match dicts"
+    assert "bot_ah_home_fav" in pipe, "BOTS_CONFIG must include bot_ah_home_fav"
+    assert "bot_ah_away_dog" in pipe, "BOTS_CONFIG must include bot_ah_away_dog"
+    assert '"asian_handicap"' in pipe, (
+        "AH candidate_specs mkt must be 'asian_handicap' for correct settlement routing"
+    )
+    assert 'market == "asian_handicap"' in settle, (
+        "settlement must handle asian_handicap market"
+    )
+    assert "won = None" in settle, (
+        "settlement must handle AH whole-line push with won=None → void"
+    )
+    assert '"void" if won is None' in settle, (
+        "settlement return must map won=None to result='void'"
+    )
+    assert "handicap_line = %s" in settle, (
+        "get_closing_odds must filter by handicap_line for AH closing odds lookup"
+    )
+
+    # Functional: test _ah_model_prob with known inputs
+    import sys; sys.path.insert(0, ".")
+    from workers.jobs.daily_pipeline_v2 import _ah_model_prob
+
+    # exp_h=1.5, exp_a=1.0 — moderate home favourite
+    # AH -0.5 (home gives 0.5 goals): home wins if margin >= 1 (home wins outright)
+    p_home_neg05 = _ah_model_prob(1.5, 1.0, "home", -0.5)
+    assert 0.45 < p_home_neg05 < 0.75, (
+        f"AH -0.5 home prob should be ~0.55 for moderate fav, got {p_home_neg05:.3f}"
+    )
+    p_away_neg05 = _ah_model_prob(1.5, 1.0, "away", -0.5)
+    assert abs(p_home_neg05 + p_away_neg05 - 1.0) < 0.01, (
+        "Home + Away probs must sum to 1.0 (no push on half lines)"
+    )
+
+    # AH 0.0 (draw no bet): whole line, push if draw
+    p_home_0 = _ah_model_prob(1.5, 1.0, "home", 0.0)
+    p_away_0 = _ah_model_prob(1.5, 1.0, "away", 0.0)
+    assert abs(p_home_0 + p_away_0 - 1.0) < 0.01, (
+        "DNB: Home + Away conditional probs must sum to 1.0 (excluding push)"
+    )
+    assert p_home_0 > p_away_0, "Home favourite should have higher DNB prob"
+
+    # x.25 quarter line: -1.25 (home gives 1.25 goals, favourites only)
+    p_home_q25 = _ah_model_prob(2.0, 0.8, "home", -1.25)
+    assert 0.35 < p_home_q25 < 0.70, (
+        f"AH -1.25 home prob for strong fav (exp 2.0 vs 0.8) should be in range, got {p_home_q25:.3f}"
+    )
+
+    # Settlement: verify whole-line push returns void
+    from workers.jobs.settlement import settle_bet_result
+    bet_push = {
+        "market": "asian_handicap", "selection": "home -1.0",
+        "stake": 10.0, "odds_at_pick": 1.90,
+    }
+    result_push = settle_bet_result(bet_push, home_goals=1, away_goals=0, closing_odds=None)
+    assert result_push["result"] == "void", f"Whole-line push must settle as void, got {result_push['result']}"
+    assert result_push["pnl"] == 0.0, "Void pnl must be 0"
+
+    bet_win = {**bet_push, "selection": "home -0.5"}
+    result_win = settle_bet_result(bet_win, home_goals=2, away_goals=0, closing_odds=None)
+    assert result_win["result"] == "won"
+
+    bet_lose = {**bet_push, "selection": "home -0.5"}
+    result_lose = settle_bet_result(bet_lose, home_goals=0, away_goals=1, closing_odds=None)
+    assert result_lose["result"] == "lost"
+
+
 @test("AH-PARSE — parse_fixture_odds parses Asian Handicap from 'Home -1.25' value format")
 def _():
     """AH-PARSE (2026-05-11): AF returns value='Home -1.25' (team + handicap in one string).

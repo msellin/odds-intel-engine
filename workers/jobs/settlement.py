@@ -12,6 +12,7 @@ Usage:
 
 import sys
 import os
+import math
 import argparse
 from pathlib import Path
 from datetime import datetime, timezone, date, timedelta
@@ -179,7 +180,43 @@ def settle_bet_result(bet: dict, home_goals: int, away_goals: int,
         elif selection == "12" and (home_wins or away_wins):
             won = True
 
-    pnl = round((odds - 1) * stake if won else -stake, 2)
+    elif market == "asian_handicap":
+        # selection = "home -1.25" or "away +0.5" (team + handicap in one string)
+        parts = selection.split(" ", 1)
+        if len(parts) == 2:
+            sel_team, hl_str = parts[0], parts[1]
+            try:
+                hl = float(hl_str)
+            except ValueError:
+                pass
+            else:
+                spread = -hl  # goals home must win by; negative spread = home receives goals
+                margin = home_goals - away_goals
+                floor_s = math.floor(spread)
+                frac = spread - floor_s  # [0, 1)
+                if frac < 0.01:  # whole line — push at margin == spread
+                    spread_int = round(spread)
+                    if sel_team == "home":
+                        if margin > spread_int:
+                            won = True
+                        elif margin == spread_int:
+                            won = None  # push → void (stake returned)
+                    else:  # away
+                        if margin < spread_int:
+                            won = True
+                        elif margin == spread_int:
+                            won = None  # push → void
+                else:
+                    # Half or quarter line — strict comparison, no push
+                    if sel_team == "home":
+                        won = margin > spread
+                    else:
+                        won = margin < spread
+
+    if won is None:
+        pnl = 0.0  # push — stake returned
+    else:
+        pnl = round((odds - 1) * stake if won else -stake, 2)
 
     # CLV: positive = we got better odds than closing line
     clv = None
@@ -187,7 +224,7 @@ def settle_bet_result(bet: dict, home_goals: int, away_goals: int,
         clv = round((float(odds) / float(closing_odds)) - 1, 4)
 
     return {
-        "result": "won" if won else "lost",
+        "result": "void" if won is None else ("won" if won else "lost"),
         "pnl": pnl,
         "clv": clv,
     }
@@ -197,6 +234,31 @@ def settle_bet_result(bet: dict, home_goals: int, away_goals: int,
 
 def get_closing_odds(match_id: str, market: str, selection: str) -> float | None:
     """Get the closing odds for a match/market/selection from odds_snapshots"""
+    if market == "asian_handicap":
+        # selection = "home -1.25" or "away +0.5" — parse team + handicap_line
+        parts = selection.split(" ", 1)
+        if len(parts) == 2:
+            sel_team, hl_str = parts[0], parts[1]
+            try:
+                hl = float(hl_str)
+            except ValueError:
+                return None
+            result = execute_query(
+                "SELECT odds FROM odds_snapshots WHERE match_id = %s AND market = %s "
+                "AND selection = %s AND handicap_line = %s AND is_closing = TRUE "
+                "ORDER BY timestamp DESC LIMIT 1",
+                [match_id, market, sel_team, hl]
+            )
+            if result:
+                return float(result[0]["odds"])
+            result2 = execute_query(
+                "SELECT odds FROM odds_snapshots WHERE match_id = %s AND market = %s "
+                "AND selection = %s AND handicap_line = %s ORDER BY timestamp DESC LIMIT 1",
+                [match_id, market, sel_team, hl]
+            )
+            return float(result2[0]["odds"]) if result2 else None
+        return None
+
     result = execute_query(
         "SELECT odds FROM odds_snapshots WHERE match_id = %s AND market = %s "
         "AND selection = %s AND is_closing = TRUE ORDER BY timestamp DESC LIMIT 1",
