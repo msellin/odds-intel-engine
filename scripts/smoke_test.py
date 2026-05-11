@@ -970,14 +970,15 @@ def _():
 @test("AH-SIGNALS — parse_fixture_odds extracts Asian Handicap rows with handicap_line")
 def _():
     from workers.api_clients.api_football import parse_fixture_odds
+    # AF API embeds handicap in the value string: "Home -0.5" (not separate field)
     raw = [{
         "bookmakers": [{
             "name": "Pinnacle",
             "bets": [{
                 "name": "Asian Handicap",
                 "values": [
-                    {"value": "Home", "odd": "1.87", "handicap": "-0.5"},
-                    {"value": "Away", "odd": "2.03", "handicap": "0.5"},
+                    {"value": "Home -0.5", "odd": "1.87"},
+                    {"value": "Away +0.5", "odd": "2.03"},
                 ]
             }]
         }]
@@ -2359,7 +2360,7 @@ def _():
     body = src[fn_start:fn_end]
     assert "if minute < 48 or minute > 80" in body, "D minute window must loosen to 48-80"
     assert "live_xg < 0.7" in body, "D real-xG floor must drop to 0.7 (was 1.0)"
-    assert "odds) <= 2.10" in body, "D OU odds floor must drop to 2.10 (was 2.50)"
+    assert "odds <= 2.10" in body, "D OU odds floor must drop to 2.10 (was 2.50)"
 
 
 @test("INPLAY-LOOSEN-B-C — B window 12-50, C possession 52/55 (real)")
@@ -2471,7 +2472,7 @@ def _():
     )
     assert "total_goals > 1" in q_body, "Q must require total goals ≤ 1"
     assert "eleven_man_poss < 55.0" in q_body, "Q must require 11-man possession ≥ 55%"
-    assert "odds) <= 2.30" in q_body, "Q must require live OU 2.5 over odds > 2.30"
+    assert "odds <= 2.30" in q_body, "Q must require live OU 2.5 over odds > 2.30"
     assert "if not has_red_card" in q_body, (
         "Q must early-out when there's no red card — opposite of every other strategy"
     )
