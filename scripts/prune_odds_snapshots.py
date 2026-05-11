@@ -1,22 +1,25 @@
 """
 Prune odds_snapshots to prevent DB bloat.
 
-Conservative strategy — data is king:
-  - NEVER touch snapshots for non-finished matches (upcoming/live/scheduled)
-  - For finished matches: keep only
-      • The opening snapshot per (match, bookmaker, market, selection) — needed for odds_drift + charts
-      • The closing snapshot per (match, bookmaker, market, selection) — needed for CLV
-      • All is_closing=true rows
-      • Delete all intermediate snapshots
+Two modes:
 
-Signals (overnight_line_move, odds_volatility, steam_move, odds_drift) are computed
-from live data at pipeline runtime and stored in match_signals before a match finishes.
-Post-settlement, only opening + closing snapshots are needed.
+  hourly (default — research phase):
+    Keep one snapshot per HOUR per (match, bookmaker, market, selection) for
+    finished matches, plus all is_closing=true rows.
+    Max 16 rows per combination (07-22 UTC) instead of the original 2-3.
+    ~8× more storage than compact, but preserves intraday shape for
+    odds_timing_analysis.py to answer when odds peak during the day.
+    Switch back to compact once the timing theory is validated.
 
-Performance: Batches by match_id to avoid massive NOT IN subqueries.
+  compact (post-validation):
+    Keep only the opening + closing snapshot per (match, bookmaker, market,
+    selection). Minimum storage. Use once timing analysis is complete and
+    you no longer need intraday shape for finished matches.
 
-Run: python scripts/prune_odds_snapshots.py [--apply]
-Scheduled: daily in settlement_pipeline() after core settlement + ML ETL.
+Usage:
+    python scripts/prune_odds_snapshots.py               # dry run, hourly mode
+    python scripts/prune_odds_snapshots.py --apply       # apply, hourly mode
+    python scripts/prune_odds_snapshots.py --mode compact --apply  # back to original
 """
 
 import argparse
@@ -31,39 +34,10 @@ load_dotenv()
 from workers.api_clients.db import execute_query, get_conn
 
 
-def prune(dry_run: bool = True):
-    print(f"{'[DRY RUN] ' if dry_run else ''}Pruning odds_snapshots (finished matches only)")
-    print("Strategy: keep first + last snapshot per (match, bookmaker, market, selection) + is_closing rows")
-    print()
-
-    # Count rows before
-    before = execute_query("SELECT COUNT(*) AS cnt FROM odds_snapshots", [])
-    before_cnt = before[0]["cnt"] if before else 0
-    print(f"Total rows before: {before_cnt:,}")
-
-    # Get finished match IDs that have odds snapshots
-    finished = execute_query("""
-        SELECT DISTINCT o.match_id
-        FROM odds_snapshots o
-        JOIN matches m ON o.match_id = m.id
-        WHERE m.status = 'finished'
-    """, [])
-    match_ids = [r["match_id"] for r in finished]
-    print(f"Finished matches with snapshots: {len(match_ids)}")
-
-    if not match_ids:
-        print("Nothing to prune.")
-        return
-
-    total_deleted = 0
-    batch_size = 50
-
-    for i in range(0, len(match_ids), batch_size):
-        batch = match_ids[i:i + batch_size]
-
-        # CTE approach: rank rows per (match, bookmaker, market, selection) by timestamp,
-        # then delete everything except first, last, and is_closing rows
-        delete_sql = """
+def _build_sql(mode: str, for_count: bool) -> str:
+    if mode == "compact":
+        # Original strategy: keep first + last + is_closing only
+        cte = """
             WITH ranked AS (
                 SELECT id,
                        ROW_NUMBER() OVER (
@@ -78,35 +52,68 @@ def prune(dry_run: bool = True):
                 FROM odds_snapshots
                 WHERE match_id = ANY(%s::uuid[])
             )
-            DELETE FROM odds_snapshots
-            WHERE id IN (
-                SELECT id FROM ranked
-                WHERE rn_first > 1
-                  AND rn_last > 1
-                  AND is_closing = false
+        """
+        condition = "rn_first > 1 AND rn_last > 1 AND NOT is_closing"
+    else:
+        # Hourly strategy: keep first snapshot per hour per combination + is_closing
+        cte = """
+            WITH hourly AS (
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY match_id, bookmaker, market, selection,
+                                        EXTRACT(HOUR FROM timestamp)::int
+                           ORDER BY timestamp ASC
+                       ) AS rn_in_hour,
+                       is_closing
+                FROM odds_snapshots
+                WHERE match_id = ANY(%s::uuid[])
             )
         """
+        condition = "rn_in_hour > 1 AND NOT is_closing"
+
+    alias = "ranked" if mode == "compact" else "hourly"
+
+    if for_count:
+        return f"{cte} SELECT COUNT(*) AS cnt FROM {alias} WHERE {condition}"
+    else:
+        return f"{cte} DELETE FROM odds_snapshots WHERE id IN (SELECT id FROM {alias} WHERE {condition})"
+
+
+def prune(dry_run: bool = True, mode: str = "hourly") -> int:
+    mode_desc = {
+        "hourly": "keep 1 snapshot/hour per (match, bookmaker, market, selection) + is_closing",
+        "compact": "keep first + last snapshot per (match, bookmaker, market, selection) + is_closing",
+    }
+    print(f"{'[DRY RUN] ' if dry_run else ''}Pruning odds_snapshots (finished matches only)")
+    print(f"Mode: {mode} — {mode_desc[mode]}")
+    print()
+
+    before = execute_query("SELECT COUNT(*) AS cnt FROM odds_snapshots", [])
+    before_cnt = before[0]["cnt"] if before else 0
+    print(f"Total rows before: {before_cnt:,}")
+
+    finished = execute_query("""
+        SELECT DISTINCT o.match_id
+        FROM odds_snapshots o
+        JOIN matches m ON o.match_id = m.id
+        WHERE m.status = 'finished'
+    """, [])
+    match_ids = [r["match_id"] for r in finished]
+    print(f"Finished matches with snapshots: {len(match_ids)}")
+
+    if not match_ids:
+        print("Nothing to prune.")
+        return 0
+
+    total_deleted = 0
+    batch_size = 50
+    delete_sql = _build_sql(mode, for_count=False)
+    count_sql = _build_sql(mode, for_count=True)
+
+    for i in range(0, len(match_ids), batch_size):
+        batch = match_ids[i:i + batch_size]
 
         if dry_run:
-            # Count instead of delete
-            count_sql = """
-                WITH ranked AS (
-                    SELECT id,
-                           ROW_NUMBER() OVER (
-                               PARTITION BY match_id, bookmaker, market, selection
-                               ORDER BY timestamp ASC
-                           ) AS rn_first,
-                           ROW_NUMBER() OVER (
-                               PARTITION BY match_id, bookmaker, market, selection
-                               ORDER BY timestamp DESC
-                           ) AS rn_last,
-                           is_closing
-                    FROM odds_snapshots
-                    WHERE match_id = ANY(%s::uuid[])
-                )
-                SELECT COUNT(*) AS cnt FROM ranked
-                WHERE rn_first > 1 AND rn_last > 1 AND is_closing = false
-            """
             result = execute_query(count_sql, [batch])
             batch_count = result[0]["cnt"] if result else 0
             total_deleted += batch_count
@@ -142,5 +149,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true",
                         help="Actually delete rows (default is dry run)")
+    parser.add_argument("--mode", choices=["hourly", "compact"], default="hourly",
+                        help="hourly=keep 1/hour (research phase); compact=keep first+last only (post-validation)")
     args = parser.parse_args()
-    prune(dry_run=not args.apply)
+    prune(dry_run=not args.apply, mode=args.mode)
