@@ -4520,5 +4520,27 @@ def test_inplay_bot_report():
     assert "--days" in src, "must support --days filter"
 
 
+@test("BOOKMAKER-DISPLAY-V2 — BookOddsLine shows Pinnacle + current edge + stale dimming (source inspect)")
+def test_bookmaker_display_v2():
+    """BOOKMAKER-DISPLAY-V2 (2026-05-12): value-bets component shows 3-bookmaker live odds + current edge."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+    web = root.parent / "odds-intel-web"
+    if not web.exists():
+        print("  [skip] odds-intel-web not present in CI")
+        return
+    src = (web / "src" / "components" / "value-bets-live.tsx").read_text()
+    assert "pinnacle" in src.lower(), "must include Pinnacle in bookmaker display"
+    assert "getBestNow" in src, "must have getBestNow helper to find best current odds"
+    assert "isEdgeStale" in src, "must have isEdgeStale helper for stale row detection"
+    assert "live" in src, "must show 'live' edge label to distinguish from bot edge"
+    assert "opacity-50" in src, "must dim stale rows with opacity-50"
+    assert "modelProb" in src, "BookOddsLine must receive modelProb to calculate current edge"
+
+    edata = (web / "src" / "lib" / "engine-data.ts").read_text()
+    assert 'pinnacle: number | null' in edata, "BookOddsEntry must have pinnacle field"
+    assert '"Pinnacle"' in edata, "getValueBetBookOdds must fetch Pinnacle from odds_snapshots"
+
+
 if __name__ == "__main__":
     main()
