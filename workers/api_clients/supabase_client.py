@@ -4781,6 +4781,29 @@ def store_real_bet(
     return str(rows[0]["id"]) if rows else None
 
 
+def upsert_inplay_bot_stats(strategy_stats: dict[str, dict[str, int]]) -> None:
+    """Upsert per-strategy tried/fired counts for today's UTC date.
+
+    Called on every inplay_bot heartbeat. Uses GREATEST so counts never decrease
+    across multiple writes from the same session (safe for retry).
+    `strategy_stats` is the module-level _strategy_stats dict: {name: {tried, fired}}.
+    """
+    if not strategy_stats:
+        return
+    import datetime
+    today = datetime.date.today().isoformat()
+    for name, d in strategy_stats.items():
+        execute_write(
+            """INSERT INTO inplay_bot_stats (stat_date, strategy, tried, fired, updated_at)
+               VALUES (%s, %s, %s, %s, NOW())
+               ON CONFLICT (stat_date, strategy) DO UPDATE SET
+                 tried      = GREATEST(inplay_bot_stats.tried, EXCLUDED.tried),
+                 fired      = GREATEST(inplay_bot_stats.fired, EXCLUDED.fired),
+                 updated_at = NOW()""",
+            [today, name, int(d.get("tried", 0)), int(d.get("fired", 0))],
+        )
+
+
 # ============================================================
 # OPS SNAPSHOT — Operational Health Dashboard
 # ============================================================

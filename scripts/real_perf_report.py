@@ -274,11 +274,14 @@ def section_recent_bets(days: int | None, bookmaker: str | None, limit: int = 15
             rb.slippage_pct,
             rb.stake,
             rb.result,
-            rb.pnl
+            rb.pnl,
+            sb.pick_time,
+            sb.edge_percent as paper_edge
         FROM real_bets rb
         JOIN matches m ON m.id = rb.match_id
         JOIN teams ht ON ht.id = m.home_team_id
         JOIN teams at ON at.id = m.away_team_id
+        LEFT JOIN simulated_bets sb ON sb.id = rb.simulated_bet_id
         {where}
         ORDER BY rb.placed_at DESC
         LIMIT %s
@@ -289,14 +292,14 @@ def section_recent_bets(days: int | None, bookmaker: str | None, limit: int = 15
         return
 
     t = Table(title=f"Recent {limit} Bets", show_lines=False)
-    t.add_column("Date", style="dim")
+    t.add_column("Placed", style="dim")
+    t.add_column("Delay", justify="right", style="dim")
     t.add_column("Match", no_wrap=True)
     t.add_column("Market")
-    t.add_column("Sel")
     t.add_column("Book", style="cyan")
     t.add_column("Odds", justify="right")
     t.add_column("Slip", justify="right")
-    t.add_column("Stake", justify="right")
+    t.add_column("Edge", justify="right")
     t.add_column("Result")
     t.add_column("P&L", justify="right")
 
@@ -305,15 +308,33 @@ def section_recent_bets(days: int | None, bookmaker: str | None, limit: int = 15
         result = r["result"]
         result_style = "green" if result == "won" else "red" if result == "lost" else "dim"
         pnl = float(r["pnl"] or 0)
+
+        # Time delay between bot pick and manual placement
+        delay_str = "-"
+        if r.get("pick_time") and r.get("placed_at"):
+            try:
+                import datetime
+                pick = r["pick_time"]
+                placed = r["placed_at"]
+                if hasattr(pick, "timestamp") and hasattr(placed, "timestamp"):
+                    delta_min = int((placed.timestamp() - pick.timestamp()) / 60)
+                    if delta_min < 60:
+                        delay_str = f"{delta_min}m"
+                    else:
+                        delay_str = f"{delta_min // 60}h{delta_min % 60:02d}m"
+            except Exception:
+                pass
+
+        edge = float(r["paper_edge"]) if r.get("paper_edge") is not None else None
         t.add_row(
-            str(r["placed_at"])[:10],
-            match[:30],
-            r["market"] or "-",
-            r["selection"] or "-",
+            str(r["placed_at"])[:16].replace("T", " "),
+            delay_str,
+            match[:28],
+            f"{r['market']} {r['selection'] or ''}".strip()[:16],
             r["bookmaker"],
             f"{float(r['actual_odds']):.2f}",
             _slip_str(float(r["slippage_pct"]) if r["slippage_pct"] is not None else None),
-            f"€{float(r['stake']):.2f}",
+            f"{edge:.1%}" if edge is not None else "-",
             Text(result, style=result_style),
             Text(f"€{pnl:+.2f}", style="green" if pnl > 0 else "red" if pnl < 0 else "dim"),
         )

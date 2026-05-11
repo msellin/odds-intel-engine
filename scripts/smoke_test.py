@@ -4394,29 +4394,39 @@ def test_real_perf_report_source():
     assert "section_by_bookmaker" in src, "must have by-bookmaker section"
 
 
-@test("FRESHNESS-INDICATOR + BOOKMAKER-DISPLAY — engine-data.ts exports (source inspect)")
-def test_freshness_bookmaker_engine_data():
-    """Phase 2.8.2/2.8.3 (2026-05-11): freshness indicator + bookmaker display on value-bets page."""
+@test("FRESHNESS-INDICATOR + BOOKMAKER-DISPLAY — daily_picks.py + real_perf_report.py (source inspect)")
+def test_freshness_bookmaker_engine_side():
+    """Phase 2.8.2/2.8.3 (2026-05-11): engine-side guards only (web repo not present in CI)."""
     import pathlib
-    web = pathlib.Path(__file__).resolve().parent.parent.parent / "odds-intel-web"
+    picks = pathlib.Path(__file__).resolve().parent / "daily_picks.py"
+    src = picks.read_text()
+    assert "recommended_bookmaker" in src, "daily_picks.py must show recommended_bookmaker"
+    assert "home_team" in src, "daily_picks.py must join teams for home_team name"
+    assert "model_probability" in src, "daily_picks.py must use model_probability not calibrated_prob"
 
-    src = (web / "src/lib/engine-data.ts").read_text()
-    assert "getOddsVerifiedAt" in src, "getOddsVerifiedAt must be exported from engine-data.ts"
-    assert "getValueBetBookOdds" in src, "getValueBetBookOdds must be exported from engine-data.ts"
-    assert "BookOddsEntry" in src, "BookOddsEntry interface must be exported"
-    assert "recommendedBookmaker" in src, "recommendedBookmaker must be in LiveBet + toBet"
-    assert "matchId" in src, "matchId must be in LiveBet interface"
+    report = pathlib.Path(__file__).resolve().parent / "real_perf_report.py"
+    rsrc = report.read_text()
+    assert "real_bets" in rsrc, "real_perf_report.py must query real_bets"
+    assert "slippage_pct" in rsrc, "real_perf_report.py must show slippage"
 
-    page = (web / "src/app/(app)/value-bets/page.tsx").read_text()
-    assert "getOddsVerifiedAt" in page, "page.tsx must call getOddsVerifiedAt"
-    assert "getValueBetBookOdds" in page, "page.tsx must call getValueBetBookOdds"
-    assert "oddsVerifiedAt" in page, "page.tsx must pass oddsVerifiedAt to ValueBetsLive"
 
-    comp = (web / "src/components/value-bets-live.tsx").read_text()
-    assert "FreshnessChip" in comp, "value-bets-live.tsx must include FreshnessChip component"
-    assert "BookOddsLine" in comp, "value-bets-live.tsx must include BookOddsLine component"
-    assert "oddsVerifiedAt" in comp, "value-bets-live.tsx must accept oddsVerifiedAt prop"
-    assert "bookOdds" in comp, "value-bets-live.tsx must accept bookOdds prop"
+@test("INPLAY-STATS-DB — upsert_inplay_bot_stats wiring (source inspect)")
+def test_inplay_stats_db():
+    """INPLAY-STATS-DB (2026-05-11): strategy tried/fired stats persisted to DB on heartbeat."""
+    import pathlib
+    client = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
+    assert "upsert_inplay_bot_stats" in client, "upsert_inplay_bot_stats must be in supabase_client.py"
+    assert "inplay_bot_stats" in client, "must target inplay_bot_stats table"
+    assert "GREATEST" in client, "must use GREATEST for safe accumulation"
+    assert "ON CONFLICT" in client, "must upsert not insert"
+
+    bot = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    assert "upsert_inplay_bot_stats" in bot, "inplay_bot.py must call upsert_inplay_bot_stats on heartbeat"
+    assert "_strategy_stats" in bot, "_strategy_stats dict must be passed to upsert"
+
+    migration = pathlib.Path("supabase/migrations/095_inplay_bot_stats.sql").read_text()
+    assert "inplay_bot_stats" in migration, "migration 095 must create inplay_bot_stats"
+    assert "UNIQUE" in migration, "must have UNIQUE(stat_date, strategy)"
 
 
 if __name__ == "__main__":

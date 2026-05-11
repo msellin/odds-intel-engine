@@ -35,23 +35,26 @@ def get_conn():
 def fetch_picks(target_date: str, min_edge: float, bookmaker_filter: str | None):
     sql = """
         SELECT
-            m.home_team_name,
-            m.away_team_name,
+            ht.name AS home_team,
+            at.name AS away_team,
             m.date AS kickoff,
-            m.league_name,
-            m.league_country,
+            l.name AS league_name,
+            l.country AS league_country,
             sb.market,
             sb.selection,
             sb.odds_at_pick,
             sb.edge_percent,
-            sb.calibrated_prob,
+            sb.model_probability,
             sb.recommended_bookmaker,
-            sb.reasoning,
             b.name AS bot_name
         FROM simulated_bets sb
         JOIN matches m ON m.id = sb.match_id
+        JOIN teams ht ON ht.id = m.home_team_id
+        JOIN teams at ON at.id = m.away_team_id
+        JOIN leagues l ON l.id = m.league_id
         JOIN bots b ON b.id = sb.bot_id
         WHERE sb.result = 'pending'
+          AND sb.xg_source IS NULL
           AND DATE(m.date AT TIME ZONE 'UTC') = %s::date
           AND sb.edge_percent >= %s
           AND (%s::text IS NULL OR sb.recommended_bookmaker = %s)
@@ -158,7 +161,7 @@ def main():
             ko_str = str(kickoff_dt)[:16]
 
         edge = float(row["edge_percent"]) if row["edge_percent"] else 0.0
-        cal = float(row["calibrated_prob"]) if row["calibrated_prob"] else 0.0
+        cal = float(row["model_probability"]) if row["model_probability"] else 0.0
         odds = float(row["odds_at_pick"]) if row["odds_at_pick"] else 0.0
         bm = row["recommended_bookmaker"] or "[dim]unknown[/dim]"
         market_label = _market_display(row["market"], row["selection"])
@@ -166,7 +169,7 @@ def main():
 
         table.add_row(
             ko_str,
-            f"{row['home_team_name']} vs {row['away_team_name']}",
+            f"{row['home_team']} vs {row['away_team']}",
             f"{row['league_country'] or ''} / {row['league_name'] or ''}",
             market_label,
             f"{odds:.2f}",

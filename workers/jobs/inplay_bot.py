@@ -192,9 +192,14 @@ def run_inplay_strategies():
     except PoolError:
         console.print("[yellow]InplayBot: pool saturated during EMA smoothing — falling back to raw xG this cycle[/yellow]")
 
-    # Heartbeat every 10 cycles — show real/proxy split + pool utilization
+    # Heartbeat every 10 cycles — show real/proxy split + pool utilization + persist stats
     if _cycle_count % 10 == 0:
         from workers.api_clients.db import get_pool_status
+        try:
+            from workers.api_clients.supabase_client import upsert_inplay_bot_stats
+            upsert_inplay_bot_stats(_strategy_stats)
+        except Exception:
+            pass  # never let stats write crash the bot loop
         pool = get_pool_status()
         pool_str = f"pool {pool['used']}/{pool['max']} ({pool['pct']}%)"
         pool_warn = " ⚠️ POOL HIGH" if pool["pct"] >= 80 else ""
