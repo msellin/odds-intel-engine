@@ -4429,5 +4429,29 @@ def test_inplay_stats_db():
     assert "UNIQUE" in migration, "must have UNIQUE(stat_date, strategy)"
 
 
+@test("PLACE-BET-UX — already-placed indicator + AH bets (source inspect)")
+def test_place_bet_ux():
+    """PLACE-BET-UX (2026-05-11): /admin/place shows already-placed badge + AH bets now visible."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+
+    # engine-data.ts: alreadyPlaced field + real_bets today query + AH k=null allowed
+    engine_data = root.parent / "odds-intel-web" / "src" / "lib" / "engine-data.ts"
+    if not engine_data.exists():
+        print("  [skip] odds-intel-web not present in CI")
+        return
+    src = engine_data.read_text()
+    assert "alreadyPlaced" in src, "PlaceableBet must have alreadyPlaced field"
+    assert "placedMatchIds" in src, "getPlaceableBets must query real_bets placed today"
+    assert "// k is null for asian_handicap" in src, "AH bets must no longer be skipped"
+
+    # place-bet-table.tsx: badge rendered + filter chip + all bets placeable
+    table = root.parent / "odds-intel-web" / "src" / "components" / "place-bet-table.tsx"
+    tsrc = table.read_text()
+    assert "alreadyPlaced" in tsrc, "table must render alreadyPlaced badge"
+    assert "Placed" in tsrc, "filter chip for already-placed bets must exist"
+    assert "Pinnacle" in tsrc, "Pinnacle must be in ACCESSIBLE_BOOKS for AH bets"
+
+
 if __name__ == "__main__":
     main()
