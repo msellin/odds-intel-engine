@@ -12,9 +12,12 @@ sigmoid after tier-specific shrinkage (improvements.py).
 
 Run manually or via the settlement workflow (Sundays at 22:00 UTC):
     python scripts/fit_platt.py
-    python scripts/fit_platt.py --min-samples 200  # override threshold
+    python scripts/fit_platt.py --model-version v14        # only v14 predictions
+    python scripts/fit_platt.py --min-samples 200          # override threshold
 
-Requires 100+ samples per market (skips markets below threshold).
+Requires 100+ samples per market per model version (skips markets below threshold).
+Always pass --model-version matching the current production model. Mixing versions
+produces a blended calibration curve that is not valid for any single version.
 """
 
 import sys
@@ -35,17 +38,19 @@ MARKETS = ["1x2_home", "1x2_draw", "1x2_away"]
 MIN_SAMPLES_DEFAULT = 100
 
 
-def fetch_labeled_predictions(source: str = "ensemble") -> list[dict]:
-    """Fetch all predictions with finished match outcomes."""
-    rows = execute_query(
-        """
+def fetch_labeled_predictions(source: str = "ensemble", model_version: str | None = None) -> list[dict]:
+    """Fetch predictions with finished match outcomes, optionally filtered to one model version."""
+    sql = """
         SELECT p.model_probability, p.market, m.result
         FROM predictions p
         INNER JOIN matches m ON m.id = p.match_id
         WHERE p.source = %s AND m.status = 'finished' AND m.result IS NOT NULL
-        """,
-        [source],
-    )
+    """
+    params: list = [source]
+    if model_version:
+        sql += " AND p.model_version = %s"
+        params.append(model_version)
+    rows = execute_query(sql, params)
 
     labeled = []
     for row in rows:
@@ -117,12 +122,13 @@ def fit_platt_params(probs: np.ndarray, outcomes: np.ndarray) -> tuple[float, fl
     return float(result.x[0]), float(result.x[1])
 
 
-def fit_and_store(min_samples: int = MIN_SAMPLES_DEFAULT):
+def fit_and_store(min_samples: int = MIN_SAMPLES_DEFAULT, model_version: str | None = None):
     """Fit Platt scaling per market and store in model_calibration."""
-    labeled = fetch_labeled_predictions()
+    labeled = fetch_labeled_predictions(model_version=model_version)
 
+    version_label = f" (model_version={model_version})" if model_version else " (all versions — mixing not recommended)"
     print(f"\n{'─'*65}")
-    print(f"  Platt Scaling Calibration — {len(labeled)} labeled predictions")
+    print(f"  Platt Scaling Calibration — {len(labeled)} labeled predictions{version_label}")
     print(f"{'─'*65}")
 
     if not labeled:
@@ -200,6 +206,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fit Platt scaling calibration")
     parser.add_argument("--min-samples", type=int, default=MIN_SAMPLES_DEFAULT,
                         help=f"Minimum samples per market (default: {MIN_SAMPLES_DEFAULT})")
+    parser.add_argument("--model-version", type=str, default=None,
+                        help="Filter to a specific model version (e.g. v14). Strongly recommended.")
     args = parser.parse_args()
 
-    fit_and_store(min_samples=args.min_samples)
+    fit_and_store(min_samples=args.min_samples, model_version=args.model_version)

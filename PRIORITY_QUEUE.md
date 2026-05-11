@@ -452,7 +452,7 @@ Normal weekday (fewer fixtures, shorter live window): ~25-35K — well within ol
 | ID | Task | ☑ | Notes |
 |----|------|----|-------|
 | MOD-1 | Dixon-Coles correction to Poisson model | ✅ | `DIXON_COLES_RHO=-0.13`. τ correction for low-score draws |
-| PLATT | Platt scaling + weekly recalibration | ✅ | `scripts/fit_platt.py`. Weekly Sunday refit |
+| PLATT | Platt scaling + weekly recalibration | ✅ | `scripts/fit_platt.py`. Weekly Sunday refit — now passes `MODEL_VERSION` env so refit is scoped to current production model. Run manually once v14 has 100+ settled predictions per market (currently ~40/market, threshold expected ~2026-05-15). |
 | BDM-1 | Bookmaker disagreement signal | ✅ | compute_bookmaker_disagreement() → match_signals |
 | FE-LIVE / ODDS-OU-CHART / ODDS-BTTS / ODDS-MARKETS | Live in-play chart, O/U 2.5 chart, BTTS/O/U 1.5/3.5 odds table | ✅ | Pro gated |
 | MKT-STR | Market-implied team strength into XGBoost | ✅ | market_implied_home/draw/away in feature row |

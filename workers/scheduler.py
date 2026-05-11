@@ -205,7 +205,7 @@ def settlement_pipeline():
     is_sunday    = date.today().weekday() == 6        # Sunday only
 
     if is_refit_day:
-        steps.append(("settlement_platt", "Platt recalibration", lambda: __import__('scripts.fit_platt', fromlist=['fit_and_store']).fit_and_store()))
+        steps.append(("settlement_platt", "Platt recalibration", lambda: __import__('scripts.fit_platt', fromlist=['fit_and_store']).fit_and_store(model_version=os.getenv("MODEL_VERSION"))))
         steps.append(("settlement_blend", "Blend weight refit",  lambda: __import__('scripts.fit_blend_weights', fromlist=['run']).run()))
     if is_sunday:
         steps.append(("settlement_dc_rho", "DC rho per tier",    lambda: __import__('scripts.fit_league_rho', fromlist=['run']).run()))
