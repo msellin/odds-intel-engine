@@ -152,7 +152,7 @@ Computes 7 independent dimension scores per bet. Currently stored but not used f
 > All open tasks with priorities are in **`PRIORITY_QUEUE.md`**. The items below are for quick reference only.
 
 **Do now (data foundation):**
-- Run `python scripts/check_calibration.py` once 200+ predictions have outcomes
+- Run `python scripts/check_calibration.py` once 200+ predictions have outcomes — **segment by `model_version`**, do not mix versions (see MODEL_WHITEPAPER.md §5.2)
 - Check readiness queries in Section 10 to know when to train meta-model
 
 **Next milestones:**
