@@ -4111,6 +4111,60 @@ def _():
     )
 
 
+@test("AH-PARSE — parse_fixture_odds parses Asian Handicap from 'Home -1.25' value format")
+def _():
+    """AH-PARSE (2026-05-11): AF returns value='Home -1.25' (team + handicap in one string).
+    Old code expected value='Home' + separate handicap field — produced 0 rows.
+    Fixed to split on first space and parse embedded handicap.
+    Source guards:
+    1. parse_fixture_odds uses exact 'Asian Handicap' name match (not substring).
+    2. Parses 'Home -1.25' format into selection='home', handicap_line=-1.25.
+    3. fetch_odds.py includes handicap_line in column list.
+    4. Migration 066 adds handicap_line column."""
+    import pathlib
+    af = pathlib.Path("workers/api_clients/api_football.py").read_text()
+    fetch = pathlib.Path("workers/jobs/fetch_odds.py").read_text()
+    mig = pathlib.Path("supabase/migrations/066_ah_signals.sql").read_text()
+
+    assert 'bet_name == "Asian Handicap"' in af, (
+        "AH parser must use exact match 'Asian Handicap', not substring — "
+        "substring would swallow Corners/Cards/Yellow variants"
+    )
+    assert 'parts = v.split(" ", 1)' in af, (
+        "AH parser must split value string on first space to extract team + handicap"
+    )
+    assert "handicap_line" in fetch, (
+        "fetch_odds.py must include handicap_line in column list for bulk insert"
+    )
+    assert "handicap_line" in mig, (
+        "migration 066 must add handicap_line column to odds_snapshots"
+    )
+
+    # Functional check: parse a synthetic AF-format AH payload
+    from workers.api_clients.api_football import parse_fixture_odds
+    fake = [{
+        "bookmakers": [{
+            "name": "TestBook",
+            "bets": [{
+                "name": "Asian Handicap",
+                "values": [
+                    {"value": "Home -1.25", "odd": "2.50"},
+                    {"value": "Away -1.25", "odd": "1.55"},
+                    {"value": "Home +0.5", "odd": "1.75"},
+                    {"value": "Away +0.5", "odd": "2.10"},
+                ],
+            }],
+        }],
+    }]
+    rows = parse_fixture_odds(fake)
+    ah = [r for r in rows if r.get("market") == "asian_handicap"]
+    assert len(ah) == 4, f"Expected 4 AH rows, got {len(ah)}"
+    home_neg = next((r for r in ah if r["selection"] == "home" and r["handicap_line"] == -1.25), None)
+    assert home_neg is not None, "Must parse 'Home -1.25' into selection='home', handicap_line=-1.25"
+    away_pos = next((r for r in ah if r["selection"] == "away" and r["handicap_line"] == 0.5), None)
+    assert away_pos is not None, "Must parse 'Away +0.5' into selection='away', handicap_line=0.5"
+
+
 @test("INPLAY-LIVE-DEBUG — inplay_bot has prematch fallback, per-strategy stats, and _resolve_odds helper")
 def _():
     """INPLAY-LIVE-DEBUG (2026-05-11): Live odds coverage ~12% caused 0 fired bets.
