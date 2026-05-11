@@ -4281,5 +4281,46 @@ def _():
     )
 
 
+@test("DNB-COMPUTE — draw_no_bet settlement and candidate_specs generation")
+def _():
+    """DNB-COMPUTE (2026-05-11): Draw No Bet bots computed from 1X2 odds.
+    Pricing: dnb_home_odds = (a+h)/a, dnb_away_odds = (a+h)/h.
+    Model prob: home_prob / (home_prob + away_prob) — draw removed.
+    Settlement: draw → void, home win → home won, away win → home lost.
+    Source guards:
+    1. draw_no_bet handler in settlement.py (draw → void).
+    2. DNB candidate_specs block in daily_pipeline_v2.py.
+    3. bot_dnb_home_value + bot_dnb_away_value in BOTS_CONFIG."""
+    import pathlib
+    pipeline = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+
+    assert 'bot_dnb_home_value' in pipeline, "bot_dnb_home_value must be in BOTS_CONFIG"
+    assert 'bot_dnb_away_value' in pipeline, "bot_dnb_away_value must be in BOTS_CONFIG"
+    assert '"draw_no_bet"' in pipeline, "DNB candidate_specs must store market as 'draw_no_bet'"
+    assert "dnb_h_odds" in pipeline, "DNB must compute dnb_h_odds from 1X2 odds"
+
+    from workers.jobs.settlement import settle_bet_result
+    base = {"market": "draw_no_bet", "stake": 10.0, "odds_at_pick": 1.80}
+
+    # Draw → void
+    r = settle_bet_result({**base, "selection": "home"}, home_goals=1, away_goals=1, closing_odds=None)
+    assert r["result"] == "void", f"Draw must settle as void, got {r['result']}"
+    assert r["pnl"] == 0.0, "Void pnl must be 0"
+
+    # Home wins → home bet won
+    r = settle_bet_result({**base, "selection": "home"}, home_goals=2, away_goals=0, closing_odds=None)
+    assert r["result"] == "won", f"Home win on home DNB bet must win, got {r['result']}"
+
+    # Away wins → home bet lost
+    r = settle_bet_result({**base, "selection": "home"}, home_goals=0, away_goals=1, closing_odds=None)
+    assert r["result"] == "lost", f"Away win on home DNB bet must lose, got {r['result']}"
+
+    # Away DNB: draw → void, away win → won
+    r = settle_bet_result({**base, "selection": "away"}, home_goals=0, away_goals=0, closing_odds=None)
+    assert r["result"] == "void"
+    r = settle_bet_result({**base, "selection": "away"}, home_goals=0, away_goals=1, closing_odds=None)
+    assert r["result"] == "won"
+
+
 if __name__ == "__main__":
     main()

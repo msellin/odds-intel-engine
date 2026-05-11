@@ -384,6 +384,33 @@ BOTS_CONFIG = {
         "odds_range": (1.70, 2.50),
         "min_prob": 0.50,
     },
+    "bot_dnb_home_value": {
+        "description": "DNB home — favourite without draw risk, T1-2, 5%+ edge",
+        "tier_label": "pro",
+        "markets": ["dnb"],
+        "selection_filter": ["Home"],
+        "tier_filter": [1, 2],
+        "edge_thresholds": {
+            1: {"dnb": 0.05},
+            2: {"dnb": 0.05},
+        },
+        "odds_range": (1.30, 1.90),
+        "min_prob": 0.60,
+    },
+    "bot_dnb_away_value": {
+        "description": "DNB away — underdog with draw insurance, T1-3, 5%+ edge",
+        "tier_label": "pro",
+        "markets": ["dnb"],
+        "selection_filter": ["Away"],
+        "tier_filter": [1, 2, 3],
+        "edge_thresholds": {
+            1: {"dnb": 0.05},
+            2: {"dnb": 0.05},
+            3: {"dnb": 0.06},
+        },
+        "odds_range": (1.60, 2.60),
+        "min_prob": 0.50,
+    },
 }
 
 
@@ -421,6 +448,9 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     # Morning — AH bots (fresh odds, Poisson needs exp_home/exp_away)
     "bot_ah_home_fav":     "morning",
     "bot_ah_away_dog":     "morning",
+    # Pre-kickoff — DNB (confirmed lineups reduce draw variance)
+    "bot_dnb_home_value":  "pre_ko",
+    "bot_dnb_away_value":  "pre_ko",
 }
 
 
@@ -2014,6 +2044,25 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                             "asian_handicap", _sel_label, _odds, _ah_prob,
                             "asian_handicap", _sel_label, thresholds.get("ah", 0.05)
                         ))
+
+            # DNB (DNB-COMPUTE): derived from 1X2 odds, no separate DB storage.
+            # Draw → void (stake returned). Model prob removes draw from Poisson probs.
+            if "dnb" in config.get("markets", []):
+                h_odds = match.get("odds_home", 0)
+                a_odds = match.get("odds_away", 0)
+                if h_odds and a_odds and h_odds > 0 and a_odds > 0:
+                    _hp = pred.get("home_prob", 0) or 0
+                    _ap = pred.get("away_prob", 0) or 0
+                    _denom = _hp + _ap
+                    if _denom > 0:
+                        dnb_h_prob = _hp / _denom
+                        dnb_a_prob = _ap / _denom
+                        dnb_h_odds = (a_odds + h_odds) / a_odds
+                        dnb_a_odds = (a_odds + h_odds) / h_odds
+                        if not sel_filter or "Home" in sel_filter:
+                            candidate_specs.append(("draw_no_bet", "Home", dnb_h_odds, dnb_h_prob, "draw_no_bet", "home", thresholds.get("dnb", 0.05)))
+                        if not sel_filter or "Away" in sel_filter:
+                            candidate_specs.append(("draw_no_bet", "Away", dnb_a_odds, dnb_a_prob, "draw_no_bet", "away", thresholds.get("dnb", 0.05)))
 
             for mkt, selection, odds, raw_mp, os_market, os_selection, base_threshold in candidate_specs:
                 ip = 1 / odds

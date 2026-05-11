@@ -213,6 +213,18 @@ def settle_bet_result(bet: dict, home_goals: int, away_goals: int,
                     else:
                         won = margin < spread
 
+    elif market == "draw_no_bet":
+        # Draw → void (stake returned); home/away win → won/lost as normal
+        home_wins = home_goals > away_goals
+        draw = home_goals == away_goals
+        away_wins = away_goals > home_goals
+        if draw:
+            won = None
+        elif selection == "home":
+            won = home_wins
+        else:  # away
+            won = away_wins
+
     if won is None:
         pnl = 0.0  # push — stake returned
     else:
