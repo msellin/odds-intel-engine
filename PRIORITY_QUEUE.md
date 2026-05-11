@@ -10,6 +10,26 @@
 
 ---
 
+## 🎯 2-Week Sprint — Market Expansion + Inplay Fix (filed 2026-05-11)
+
+> Context: 2-week window to prove the project. Pre-match CLV is +13% (real). Inplay bots placed ~0 live bets despite good replay. Focus: more pre-match bet types (quick) + unblock inplay (diagnostic first). Search for "2-WEEK SPRINT" to find all tasks in this group.
+>
+> **Data reality check (2026-05-11):**
+> - `double_chance` market: already in DB — 119K rows, 11 books, 7 days. No code needed to start.
+> - `asian_handicap` market: **not in DB at all** — AF parses it but we don't store it yet.
+> - `draw_no_bet` market: not in DB — derivable from 1X2 odds mathematically.
+> - Inplay bots: most show 0 bets in 14 live days despite good replay numbers.
+
+| ID | Task | Effort | ☑ | Ready? | Notes |
+|----|------|--------|----|--------|-------|
+| DC-BOTS | **[2-WEEK SPRINT] Double Chance bots** — data already in DB (`double_chance` market, 119K rows/7d, 11 books). Add DC placement logic to `daily_pipeline_v2._load_today_from_db` (read DC best-price from `odds_snapshots`), create 2-3 bot configs: `bot_dc_home_favourite` (back 1X when P(home+draw) > 0.70 + edge), `bot_dc_away_underdog` (back X2 when model finds value), optional `bot_dc_12` (no-draw when draw prob < 0.20). Platt calibration covers DC because P(1X) = P(home) + P(draw) which the 1X2 head already outputs. Migration adds `double_chance` to allowed markets in `simulated_bets` if not already there. | 3-4h | ⬜ | ✅ Ready | Quickest new market. No new model needed — DC probs are just sums of existing 1X2 probs. Bet placement uses DC odds from `odds_snapshots` (best price across books). |
+| AH-PARSE | **[2-WEEK SPRINT] Asian Handicap — parse + store** — AF `v3/odds` endpoint already returns AH under `Bets.name = "Asian Handicap"`. `parse_fixture_odds` in `api_football.py` doesn't currently handle it. Add parsing: extract `handicap` value from `values[].handicap`, store as `market = 'asian_handicap'`, `selection = 'home'/'away'`, `line = handicap_value` in `odds_snapshots`. Run a one-time 7-day backfill via `fetch_bulk_odds`. | 2-3h | ⬜ | ✅ Ready | Must happen before AH-BOTS. Only parsing/storage — no model or bot work. |
+| AH-BOTS | **[2-WEEK SPRINT] Asian Handicap bots** — after AH-PARSE ships. Use Poisson goal distribution (already computed) to price AH lines: `P(home wins by > handicap)` from the score distribution. Create `bot_ah_home_favourite` + `bot_ah_away_underdog`. AH is the sharpest market sharps trade — if our Poisson finds edge here it's more valuable than 1X2 edge. | 3-4h | ⏳ Waiting for AH-PARSE | |
+| INPLAY-LIVE-DEBUG | **[2-WEEK SPRINT] Why aren't inplay bots firing in live conditions?** — 14 live days, most inplay bots at 1000.00 (0 bets). Replay shows 46 bets. Hypothesis: (a) live odds poller not delivering the right fields the strategies check (e.g. `live_ou25_over` odds might be None when strategy fires), (b) thresholds too strict for real live data vs backfill data, (c) strategy conditions require a specific score state that rarely occurs. Debug: log what fraction of live events reach each strategy's condition check and where they fail. Add `inplay_strategy_miss_reason` logging to `inplay_bot.py`. | 2-3h | ✅ Ready | **Critical for 2-week window** — if inplay can be unblocked, bet frequency triples. If not, confirms pre-match is the only live signal. |
+| DNB-COMPUTE | **[2-WEEK SPRINT] Draw No Bet — computed from 1X2 odds** — DNB home = implied home_prob / (home_prob + away_prob) normalised to remove draw. No need to store separate DNB odds (AF has them but adds AF quota cost). Compute at placement time: if model's P(home)/(P(home)+P(away)) vs DNB-implied_prob shows edge > threshold, place. Add `bot_dnb_home_value` + `bot_dnb_away_value`. Use best 1X2 home/away odds from `odds_snapshots` to construct DNB price. | 2h | ✅ Ready | Lower priority than DC-BOTS since DC data is already stored. DNB computation is fully derived. |
+
+---
+
 ## ⭐ Top Priority — Strategic Pivot Validation (2026-05-10)
 
 > Decision tree: validate whether bot paper-trading edge survives real-money execution at Coolbet+Bet365. If yes, pivot the product from B2C SaaS to a personal betting tool. Coexists with SaaS during validation.
