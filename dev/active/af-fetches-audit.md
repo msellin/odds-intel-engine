@@ -147,3 +147,53 @@ Defer the actual decision to AF-BREAKDOWN-REVIEW after a full clean day of post-
 ```bash
 venv/bin/python3 scripts/af_call_breakdown.py --days 2
 ```
+
+---
+
+## Measured 2026-05-11 (Sunday, full day)
+
+Daily totals:
+
+| Date | calls_today | remaining | Note |
+|------|-------------|-----------|------|
+| 2026-05-09 (Sat) | 103,627 | 46,373 | End-of-season Saturday |
+| 2026-05-10 (Sun) | 120,573 | 29,427 | Peak season Sunday |
+| 2026-05-11 (Sun) | 129,071 | 20,929 | End-of-season Sunday |
+
+Endpoint breakdown for 2026-05-11:
+
+```
+total=129,071  attributed=3  unattributed=129,068
+```
+
+Attribution is **completely missing** for today — the Railway pod redeployed early in the day (INPLAY-LIVE-DEBUG push) and `_endpoint_counts_today` reset to `{}`. All 129K calls are pre-restart and therefore unattributed.
+
+Hourly increments for the **last 24h** (partial but clean — represents the post-restart window only):
+
+```
+fixtures/statistics    4,834  (44.7% of attributed window)
+fixtures/events        4,833  (24.9%)
+fixtures               2,949  (13.1%)
+fixtures/lineups         672   (1.2%)
+odds/live                410   (0.7%)
+standings                154   (two runs × 77)
+odds                     116   (0.0%)
+injuries                   2
+status                    24   (1/hr heartbeat)
+```
+
+### Why 129K today vs 120K yesterday?
+
+Sunday May 11 is end-of-season week in most European leagues — maximum simultaneous live matches. `fixtures/statistics` + `fixtures/events` scale linearly with HIGH-priority live match count × cycles.
+
+### Seeding bug confirmed
+
+`_endpoint_counts_today` is in-memory only. Every Railway redeploy resets it. Because we redeploy on every `git push --main` during active dev, a clean-attribution day is rare. **The fix (seed from `api_budget_log.endpoint_breakdown_today` at `BudgetTracker.__init__`) is required before this breakdown is useful.**
+
+### Decision
+
+Per decision rules in AF-BREAKDOWN-REVIEW:
+- `fixtures/statistics` and `fixtures/events` together = ~70% of the attributed post-restart window, both clearly top-2. Extrapolated: 70% × 129K ≈ **~90K/day on stats+events** — far exceeds the 40K rule (a) threshold.
+- **Decision: AF-COVERAGE-AUDIT is the correct next task** — gate per-match stats/events fetches by `coverage_events`/`coverage_lineups` flags. If 50% of leagues don't report live stats, this halves the live-poller call volume.
+
+**But**: attribution is based on partial post-restart data. Fix the seeding bug first, then confirm with one full clean day before implementing AF-COVERAGE-AUDIT. A new task `BT-SEED-FIX` (30m) is the prerequisite.

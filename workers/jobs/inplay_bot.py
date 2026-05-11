@@ -1991,8 +1991,8 @@ def _check_strategy_m(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     if pm_o25 < 0.45:
         return None
 
-    ou25, ou25_is_live = _resolve_odds(cand.get("live_ou_25_over"), pm.get("prematch_ou25_over"), min_val=3.0)
-    if ou25 < 3.0:
+    ou25, ou25_is_live = _resolve_odds(cand.get("live_ou_25_over"), pm.get("prematch_ou25_over"), min_val=2.40)
+    if ou25 < 2.40:
         return None  # Market hasn't drifted enough (or no odds available at this level)
 
     pm_xg_total = float(pm.get("prematch_xg_home") or 1.1) + float(pm.get("prematch_xg_away") or 1.1)

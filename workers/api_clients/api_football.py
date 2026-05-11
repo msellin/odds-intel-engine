@@ -52,6 +52,39 @@ class BudgetTracker:
         self._endpoint_counts: dict[str, int] = {}
         # endpoint → cumulative calls today. Reset only on new UTC day.
         self._endpoint_counts_today: dict[str, int] = {}
+        self._seed_from_db()
+
+    def _seed_from_db(self) -> None:
+        """Seed _endpoint_counts_today from the latest api_budget_log row for today.
+
+        BT-SEED-FIX: the dict is in-memory only — Railway redeploys reset it while
+        calls_today re-syncs from AF /status. This one DB read at startup closes the gap.
+        Silently skips if DB is unavailable or the latest row is from a prior day.
+        """
+        try:
+            import json as _json
+            from workers.api_clients.db import execute_query
+            rows = execute_query(
+                """
+                SELECT endpoint_breakdown_today, created_at::date AS log_date
+                FROM api_budget_log
+                WHERE endpoint_breakdown_today IS NOT NULL
+                ORDER BY created_at DESC
+                LIMIT 1
+                """
+            )
+            if not rows:
+                return
+            row = rows[0]
+            if row["log_date"] != date.today():
+                return
+            breakdown = row["endpoint_breakdown_today"]
+            if isinstance(breakdown, str):
+                breakdown = _json.loads(breakdown)
+            if isinstance(breakdown, dict):
+                self._endpoint_counts_today.update(breakdown)
+        except Exception:
+            pass
 
     def can_call(self) -> bool:
         """Check if we have budget for another API call."""

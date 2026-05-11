@@ -2761,7 +2761,7 @@ def _():
         "Strategy M must use _remaining_goals_prob (1 goal observed → P(2 more))"
     )
     assert "0.48" in fn_body, "Strategy M must require prematch_btts_prob ≥ 0.48"
-    assert "3.0" in fn_body, "Strategy M must require live_ou_25_over ≥ 3.0"
+    assert "2.40" in fn_body, "Strategy M OU floor must be 2.40 (lowered from 3.0 — INPLAY-M-THRESHOLD-FIX)"
     assert "minute < 30 or minute > 60" in fn_body, (
         "Strategy M minute window is 30-60"
     )
@@ -3310,6 +3310,18 @@ def _():
     assert snap2 == {"predictions": 1}, snap2
     today2 = bt.endpoint_counts_today()
     assert today2["predictions"] == 1 and today2["fixtures"] == 3, today2
+
+
+@test("BT-SEED-FIX — BudgetTracker has _seed_from_db method that seeds _endpoint_counts_today")
+def _():
+    """Source-inspection test: BudgetTracker must have _seed_from_db() that reads
+    api_budget_log and seeds _endpoint_counts_today to survive Railway redeploys."""
+    import pathlib
+    src = pathlib.Path("workers/api_clients/api_football.py").read_text()
+    assert "def _seed_from_db(" in src, "_seed_from_db() method must exist on BudgetTracker"
+    assert "self._seed_from_db()" in src, "__init__ must call self._seed_from_db()"
+    assert "endpoint_breakdown_today" in src, "_seed_from_db must query endpoint_breakdown_today"
+    assert "_endpoint_counts_today.update(" in src, "_seed_from_db must populate _endpoint_counts_today"
 
 
 @test("AUDIT-AF-ENDPOINTS — /sidelined bulk helper exists with N=20 chunking")
