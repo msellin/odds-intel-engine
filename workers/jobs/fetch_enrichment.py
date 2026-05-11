@@ -58,7 +58,7 @@ from workers.utils.pipeline_utils import (
 
 console = Console()
 
-ALL_COMPONENTS = {"injuries", "team_stats", "standings", "h2h", "coaches", "venues", "sidelined", "transfers"}
+ALL_COMPONENTS = {"injuries", "team_stats", "standings", "h2h", "coaches", "venues", "weather", "sidelined", "transfers"}
 
 
 def _build_fixture_meta(target_date: str) -> dict[int, dict]:
@@ -615,6 +615,10 @@ def run_enrichment(target_date: str = None, components: set = None, team_af_id: 
 
         if "venues" in components:
             total_records += fetch_venues(fixture_meta)
+
+        if "weather" in components:
+            from workers.jobs.fetch_weather import fetch_weather
+            total_records += fetch_weather(target_date)
 
         if "sidelined" in components:
             total_records += fetch_player_sidelined(fixture_meta)

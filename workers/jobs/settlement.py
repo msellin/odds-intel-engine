@@ -33,6 +33,7 @@ from workers.api_clients.supabase_client import (
     store_match_events_af,
     store_match_player_stats,
     build_match_feature_vectors,
+    build_referee_stats,
 )
 from workers.api_clients.db import execute_query, execute_write, bulk_upsert
 
@@ -904,6 +905,15 @@ def run_settlement():
         )
     except Exception as e:
         console.print(f"  [yellow]Post-match enrichment error: {e}[/yellow]")
+
+    # 11.4a: Rebuild referee_stats from all finished matches so tomorrow's signals
+    # have up-to-date cards_per_game / home_win_pct / over_25_pct.
+    console.print("\n[cyan]Rebuilding referee stats...[/cyan]")
+    try:
+        n_refs = build_referee_stats()
+        console.print(f"  {n_refs} referee records upserted")
+    except Exception as e:
+        console.print(f"  [yellow]Referee stats rebuild error (non-critical): {e}[/yellow]")
 
     # 11.4: Daily post-mortem LLM analysis
     # Note: run unconditionally — settle_ready_matches() settles bets every 15min

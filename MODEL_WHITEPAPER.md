@@ -87,7 +87,7 @@ Column names match the table exactly.
 
 The model can split on the indicator alongside the imputed value, learning that "we don't have H2H" predicts differently from "H2H exists and shows 50%". Saar-Tsechansky & Provost (2007 JMLR) shows this matches KNN imputation in accuracy at 1/100th the cost.
 
-**Base feature set (FEATURE_COLS, 28 columns):**
+**Base feature set (FEATURE_COLS, 32 columns as of v15+):**
 
 | Group | Column name(s) | Count |
 |-------|---------------|-------|
@@ -100,6 +100,7 @@ The model can split on the indicator alongside the imputed value, learning that 
 | **Injury / News** | `injury_count_home`, `injury_count_away` | 2 |
 | **Match context** | `fixture_importance` | 1 |
 | **Referee** | `referee_cards_avg`, `referee_home_win_pct`, `referee_over25_pct` | 3 |
+| **Weather** | `weather_temp_c`, `weather_wind_kmh`, `weather_rain_mm`, `weather_humidity` | 4 — Open-Meteo at kickoff; ~0% coverage on 2026-05-11, rising as venues geocode |
 | **Market** | `opening_implied_home`, `opening_implied_draw`, `opening_implied_away`, `bookmaker_disagreement` | 4 |
 | **League** | `league_tier` | 1 |
 

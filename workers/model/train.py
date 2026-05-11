@@ -148,6 +148,8 @@ FEATURE_COLS = [
     "fixture_importance",
     # Referee
     "referee_cards_avg", "referee_home_win_pct", "referee_over25_pct",
+    # Weather at kickoff (MODEL-SIGNALS — Open-Meteo, missing for ~50% until coverage builds)
+    "weather_temp_c", "weather_wind_kmh", "weather_rain_mm", "weather_humidity",
     # Market
     "opening_implied_home", "opening_implied_draw", "opening_implied_away",
     "bookmaker_disagreement",

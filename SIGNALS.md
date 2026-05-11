@@ -183,6 +183,12 @@ Data tier system:
 | Squad disruption — home | `squad_disruption_home` | Morning pipeline (batch_write block 14) | ✅ Running (data from 2026-05-07) |
 | Squad disruption — away | `squad_disruption_away` | Morning pipeline (batch_write block 14) | ✅ Running (data from 2026-05-07) |
 
+| Weather temp at kickoff | `weather_temp_c` | Enrichment pipeline (fetch_weather.py → match_weather table → MFV) | ✅ Wired 2026-05-11 — coverage builds as venues geocode |
+| Weather wind speed (km/h) | `weather_wind_kmh` | Enrichment pipeline | ✅ Wired 2026-05-11 |
+| Weather rain (mm) | `weather_rain_mm` | Enrichment pipeline | ✅ Wired 2026-05-11 |
+| Weather humidity | `weather_humidity` | Enrichment pipeline | ✅ Wired 2026-05-11 |
+| Opening odds flag | `is_opening` | First odds insert per (match, bookmaker, market, selection) in odds_snapshots | ✅ Wired 2026-05-11 — preserved through pruning |
+
 **Not yet built:**
 - `is_derby` / `travel_distance` — needs team location data
 - `venue_altitude` — needs venue metadata

@@ -93,9 +93,26 @@ def fetch_af_odds(target_date: str) -> int:
     # Previous version did one bulk_insert per fixture (~560 round-trips at
     # ~150ms pooler RTT = ~85s); a single call collapses that to ~5s.
     cols = ["match_id", "bookmaker", "market", "selection", "odds",
-            "timestamp", "is_closing", "minutes_to_kickoff", "handicap_line"]
+            "timestamp", "is_closing", "minutes_to_kickoff", "handicap_line", "is_opening"]
     all_tuples: list[tuple] = []
     fixtures_with_rows = 0
+
+    # Pre-fetch which (match_id, bookmaker, market, selection) combos already
+    # exist so we can mark truly-first inserts as is_opening=true.
+    match_ids_today = list(af_id_to_match.values())
+    existing_combos: set[tuple] = set()
+    try:
+        for i in range(0, len(match_ids_today), 200):
+            chunk = match_ids_today[i:i + 200]
+            rows = execute_query(
+                """SELECT DISTINCT match_id, bookmaker, market, selection
+                   FROM odds_snapshots WHERE match_id = ANY(%s::uuid[])""",
+                (chunk,),
+            )
+            for r in rows:
+                existing_combos.add((r["match_id"], r["bookmaker"], r["market"], r["selection"]))
+    except Exception:
+        pass  # on failure is_opening stays false — safe degradation
 
     for af_id, odds_data in bulk_odds.items():
         match_id = af_id_to_match.get(af_id)
@@ -117,6 +134,10 @@ def fetch_af_odds(target_date: str) -> int:
         minutes_to_kickoff = _compute_minutes_to_kickoff(kickoff)
 
         for row in parsed:
+            combo = (match_id, row["bookmaker"], row["market"], row["selection"])
+            is_opening = combo not in existing_combos
+            # Add to seen so later rows in same batch don't double-mark
+            existing_combos.add(combo)
             all_tuples.append((
                 match_id,
                 row["bookmaker"],
@@ -127,6 +148,7 @@ def fetch_af_odds(target_date: str) -> int:
                 False,
                 minutes_to_kickoff,
                 row.get("handicap_line"),
+                is_opening,
             ))
         fixtures_with_rows += 1
 

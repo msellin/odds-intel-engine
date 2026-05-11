@@ -670,9 +670,23 @@ def store_odds(match_id: str, match_data: dict, minutes_to_kickoff: int = None):
     odds_rows = filter_garbage_ou_rows(odds_rows)
 
     if odds_rows:
+        # Determine which (market, selection) combos already have a snapshot so
+        # we can mark truly-first inserts as is_opening=true.
+        existing_combos: set[tuple] = set()
+        try:
+            existing = execute_query(
+                """SELECT DISTINCT market, selection FROM odds_snapshots
+                   WHERE match_id = %s AND bookmaker = %s""",
+                (match_id, operator),
+            )
+            existing_combos = {(r["market"], r["selection"]) for r in existing}
+        except Exception:
+            pass  # on failure, is_opening stays false — safe to skip
+
         tuples = [
             (r["match_id"], r["bookmaker"], r["market"], r["selection"],
-             r["odds"], r["timestamp"], r["is_closing"], r["minutes_to_kickoff"])
+             r["odds"], r["timestamp"], r["is_closing"], r["minutes_to_kickoff"],
+             (r["market"], r["selection"]) not in existing_combos)
             for r in odds_rows
         ]
         with get_conn() as conn:
@@ -680,7 +694,7 @@ def store_odds(match_id: str, match_data: dict, minutes_to_kickoff: int = None):
                 psycopg2.extras.execute_values(
                     cur,
                     """INSERT INTO odds_snapshots
-                       (match_id, bookmaker, market, selection, odds, timestamp, is_closing, minutes_to_kickoff)
+                       (match_id, bookmaker, market, selection, odds, timestamp, is_closing, minutes_to_kickoff, is_opening)
                        VALUES %s""",
                     tuples,
                     page_size=500,
@@ -1221,11 +1235,15 @@ def _build_mfv_rows_for_matches(matches: list[dict], date_str: str) -> int:
             if r["match_id"] not in reasoning_by_match and r.get("reasoning"):
                 reasoning_by_match[r["match_id"]] = r["reasoning"]
 
-    # -- Batch load: odds_snapshots (1x2, earliest + latest per selection) ------
+    # -- Batch load: odds_snapshots (1x2, opening + latest per selection) -------
+    # Fetches is_opening rows (true market open) plus the latest snapshot
+    # (closing line proxy) for drift calculation. ORDER BY timestamp ASC so
+    # is_opening rows sort first within each match — _build_feature_row_batched
+    # picks snaps[0] as opening which is correct for both old and new data.
     odds_by_match: dict[str, list] = {}
     for chunk in _chunk_list(all_match_ids, 200):
         odr = execute_query(
-            """SELECT match_id, selection, odds, timestamp
+            """SELECT match_id, selection, odds, timestamp, is_opening
                FROM odds_snapshots
                WHERE match_id = ANY(%s::uuid[]) AND market = '1x2'
                ORDER BY timestamp ASC
@@ -1335,6 +1353,23 @@ def _build_mfv_rows_for_matches(matches: list[dict], date_str: str) -> int:
             mid = str(r["match_id"])
             btts_yes_by_match.setdefault(mid, []).append(1.0 / float(r["odds"]))
 
+    # -- Batch load: match_weather ---------------------------------------------
+    weather_by_match: dict[str, dict] = {}
+    for chunk in _chunk_list(all_match_ids, 200):
+        wr = execute_query(
+            """SELECT match_id, temp_c, wind_kmh, rain_mm, humidity
+               FROM match_weather
+               WHERE match_id = ANY(%s::uuid[])""",
+            (chunk,),
+        )
+        for w in wr:
+            weather_by_match[str(w["match_id"])] = {
+                "weather_temp_c": float(w["temp_c"]) if w.get("temp_c") is not None else None,
+                "weather_wind_kmh": float(w["wind_kmh"]) if w.get("wind_kmh") is not None else None,
+                "weather_rain_mm": float(w["rain_mm"]) if w.get("rain_mm") is not None else None,
+                "weather_humidity": float(w["humidity"]) if w.get("humidity") is not None else None,
+            }
+
     # -- Build rows from cached data -------------------------------------------
     upserted = 0
     batch_rows = []
@@ -1347,6 +1382,7 @@ def _build_mfv_rows_for_matches(matches: list[dict], date_str: str) -> int:
                 reasoning_by_match, odds_by_match, elo_by_team,
                 form_by_team, signals_by_match,
                 pin_ou25_by_match, ou25_over_by_match, btts_yes_by_match,
+                weather_by_match,
             )
             if row:
                 batch_rows.append(row)
@@ -1405,6 +1441,7 @@ def _build_feature_row_batched(
     pin_ou25_by_match: dict | None = None,
     ou25_over_by_match: dict | None = None,
     btts_yes_by_match: dict | None = None,
+    weather_by_match: dict | None = None,
 ) -> dict | None:
     """Build a single match_feature_vectors row from pre-loaded batch data."""
     match_id = match["id"]
@@ -1648,6 +1685,11 @@ def _build_feature_row_batched(
         "pinnacle_implied_under25": pinnacle_implied_under25,
         "ou25_bookmaker_disagreement": ou25_bookmaker_disagreement,
         "market_implied_btts_yes": market_implied_btts_yes,
+        # Group 7: Weather at kickoff (MODEL-SIGNALS)
+        **((weather_by_match or {}).get(str(match_id)) or {
+            "weather_temp_c": None, "weather_wind_kmh": None,
+            "weather_rain_mm": None, "weather_humidity": None,
+        }),
         # Outcome labels
         "match_outcome": outcome,
         "total_goals": total_goals,
@@ -2402,13 +2444,15 @@ def store_team_coaches(team_af_id: int, entries: list[dict]) -> int:
 def store_venues(venue_list: list[dict]) -> int:
     """Upsert venue records into venues table. Returns count upserted.
 
-    venue_list: list of {af_id, name, surface, capacity} from parse_venue().
+    venue_list: list of {af_id, name, surface, capacity, city, country} from parse_venue().
+    lat/lon are populated separately by the weather job after geocoding.
     """
     if not venue_list:
         return 0
     from psycopg2.extras import execute_values
     rows = [
-        (v["af_id"], v.get("name"), v.get("surface"), v.get("capacity"))
+        (v["af_id"], v.get("name"), v.get("surface"), v.get("capacity"),
+         v.get("city"), v.get("country"))
         for v in venue_list
         if v.get("af_id")
     ]
@@ -2419,15 +2463,17 @@ def store_venues(venue_list: list[dict]) -> int:
             with conn.cursor() as cur:
                 execute_values(
                     cur,
-                    """INSERT INTO venues (af_id, name, surface, capacity, fetched_at)
+                    """INSERT INTO venues (af_id, name, surface, capacity, city, country, fetched_at)
                        VALUES %s
                        ON CONFLICT (af_id)
                        DO UPDATE SET name = EXCLUDED.name,
                                      surface = EXCLUDED.surface,
                                      capacity = EXCLUDED.capacity,
+                                     city = COALESCE(EXCLUDED.city, venues.city),
+                                     country = COALESCE(EXCLUDED.country, venues.country),
                                      fetched_at = now()""",
                     rows,
-                    template="(%s, %s, %s, %s, now())",
+                    template="(%s, %s, %s, %s, %s, %s, now())",
                 )
                 conn.commit()
         return len(rows)

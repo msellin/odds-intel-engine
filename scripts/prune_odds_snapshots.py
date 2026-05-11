@@ -36,7 +36,7 @@ from workers.api_clients.db import execute_query, get_conn
 
 def _build_sql(mode: str, for_count: bool) -> str:
     if mode == "compact":
-        # Original strategy: keep first + last + is_closing only
+        # Keep first + last + is_closing + is_opening per combination.
         cte = """
             WITH ranked AS (
                 SELECT id,
@@ -48,14 +48,15 @@ def _build_sql(mode: str, for_count: bool) -> str:
                            PARTITION BY match_id, bookmaker, market, selection
                            ORDER BY timestamp DESC
                        ) AS rn_last,
-                       is_closing
+                       is_closing,
+                       is_opening
                 FROM odds_snapshots
                 WHERE match_id = ANY(%s::uuid[])
             )
         """
-        condition = "rn_first > 1 AND rn_last > 1 AND NOT is_closing"
+        condition = "rn_first > 1 AND rn_last > 1 AND NOT is_closing AND NOT is_opening"
     else:
-        # Hourly strategy: keep first snapshot per hour per combination + is_closing
+        # Hourly strategy: keep first snapshot per hour per combination + is_closing + is_opening
         cte = """
             WITH hourly AS (
                 SELECT id,
@@ -64,12 +65,13 @@ def _build_sql(mode: str, for_count: bool) -> str:
                                         EXTRACT(HOUR FROM timestamp)::int
                            ORDER BY timestamp ASC
                        ) AS rn_in_hour,
-                       is_closing
+                       is_closing,
+                       is_opening
                 FROM odds_snapshots
                 WHERE match_id = ANY(%s::uuid[])
             )
         """
-        condition = "rn_in_hour > 1 AND NOT is_closing"
+        condition = "rn_in_hour > 1 AND NOT is_closing AND NOT is_opening"
 
     alias = "ranked" if mode == "compact" else "hourly"
 

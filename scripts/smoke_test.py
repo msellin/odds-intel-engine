@@ -4557,5 +4557,82 @@ def test_ah_calibrated_prob_display():
         "toBet must prefer calibrated_prob over raw model_probability"
 
 
+@test("MODEL-SIGNALS-REFEREE — build_referee_stats called from settlement (source inspect)")
+def test_model_signals_referee():
+    """MODEL-SIGNALS (2026-05-11): referee stats rebuilt nightly via settlement so signals stay current."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+
+    settlement = (root / "workers" / "jobs" / "settlement.py").read_text()
+    assert "build_referee_stats" in settlement, \
+        "settlement.py must import and call build_referee_stats() nightly"
+    assert "build_referee_stats()" in settlement, \
+        "settlement.py must call build_referee_stats() — not just import it"
+
+    sc = (root / "workers" / "api_clients" / "supabase_client.py").read_text()
+    assert "referee_home_win_pct" in sc, "supabase_client must store referee_home_win_pct signal"
+    assert "referee_over25_pct" in sc, "supabase_client must store referee_over25_pct signal"
+
+    train = (root / "workers" / "model" / "train.py").read_text()
+    assert "referee_cards_avg" in train, "train.py FEATURE_COLS must include referee_cards_avg"
+    assert "referee_home_win_pct" in train, "train.py FEATURE_COLS must include referee_home_win_pct"
+
+
+@test("MODEL-SIGNALS-WEATHER — weather job, MFV wiring, FEATURE_COLS, enrichment hook (source inspect)")
+def test_model_signals_weather():
+    """MODEL-SIGNALS (2026-05-11): weather at kickoff wired into match_feature_vectors + train.py."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+
+    migration = root / "supabase" / "migrations" / "097_weather_signals.sql"
+    assert migration.exists(), "097_weather_signals.sql must exist"
+    mig_text = migration.read_text()
+    assert "weather_temp_c" in mig_text, "migration must add weather columns to match_feature_vectors"
+    assert "venues" in mig_text and "lat" in mig_text, "migration must add lat/lon to venues"
+
+    weather_job = root / "workers" / "jobs" / "fetch_weather.py"
+    assert weather_job.exists(), "fetch_weather.py must exist"
+    wj = weather_job.read_text()
+    assert "open-meteo.com" in wj, "weather job must call Open-Meteo"
+    assert "match_weather" in wj, "weather job must store in match_weather"
+    assert "_geocode" in wj, "weather job must geocode venues"
+
+    sc = (root / "workers" / "api_clients" / "supabase_client.py").read_text()
+    assert "weather_by_match" in sc, "supabase_client must load weather_by_match batch"
+    assert "weather_temp_c" in sc, "supabase_client must include weather_temp_c in MFV row"
+
+    train = (root / "workers" / "model" / "train.py").read_text()
+    assert "weather_temp_c" in train, "train.py FEATURE_COLS must include weather features"
+    assert "weather_wind_kmh" in train, "train.py FEATURE_COLS must include weather_wind_kmh"
+
+    enrich = (root / "workers" / "jobs" / "fetch_enrichment.py").read_text()
+    assert "weather" in enrich, "fetch_enrichment must include weather in ALL_COMPONENTS"
+    assert "fetch_weather" in enrich, "fetch_enrichment must call fetch_weather"
+
+
+@test("MODEL-SIGNALS-IS-OPENING — is_opening flag in migration, store_odds, fetch_odds, pruner (source inspect)")
+def test_model_signals_is_opening():
+    """MODEL-SIGNALS (2026-05-11): is_opening marks first snapshot per (match,bookmaker,market,selection)."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+
+    migration = root / "supabase" / "migrations" / "096_is_opening_flag.sql"
+    assert migration.exists(), "096_is_opening_flag.sql must exist"
+    mig_text = migration.read_text()
+    assert "is_opening" in mig_text, "migration must add is_opening column"
+    assert "DISTINCT ON" in mig_text, "migration must backfill earliest row per combination"
+
+    sc = (root / "workers" / "api_clients" / "supabase_client.py").read_text()
+    assert "is_opening" in sc, "supabase_client store_odds must include is_opening column"
+    assert "existing_combos" in sc, "store_odds must query existing combos before insert"
+
+    fo = (root / "workers" / "jobs" / "fetch_odds.py").read_text()
+    assert "is_opening" in fo, "fetch_odds bulk path must include is_opening"
+    assert "existing_combos" in fo, "fetch_odds must pre-fetch existing combos"
+
+    pruner = (root / "scripts" / "prune_odds_snapshots.py").read_text()
+    assert "NOT is_opening" in pruner, "pruner must never delete is_opening=true rows"
+
+
 if __name__ == "__main__":
     main()
