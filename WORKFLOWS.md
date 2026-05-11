@@ -37,7 +37,9 @@
 10:45  ① Fixtures        run_fixtures()            Status refresh — before European morning betting
 11:00  ⑨ Betting Refresh betting_refresh()         European morning KOs
 12:30  ⑦ News Checker    run_news_checker()
+12:45  ① Fixtures        run_fixtures()            Status refresh — before 13:30 betting (BET-TIMING-ANALYSIS)
 13:00  ② Enrichment      run_enrichment()          Full enrichment — all 4 components (H2H+team_stats fresh for afternoon betting)
+13:30  ⑨ Betting Refresh betting_refresh()         12:00-14:30 KO gap — aligned with 13:30 pre-KO odds run
 14:30  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts (ENG-8)
 14:30  ⑦ News Checker    run_news_checker()        Feeds 15:00 betting refresh
 14:45  ① Fixtures        run_fixtures()            Status refresh — before European afternoon betting
@@ -45,6 +47,8 @@
 16:00  ② Enrichment      run_enrichment()          Injuries + standings refresh
 16:00  ⑪ Value Bet Alert run_value_bet_alert('afternoon')  New bets since 10:00 UTC → Pro/Elite (N5)
 16:30  ⑦ News Checker    run_news_checker()
+17:15  ① Fixtures        run_fixtures()            Status refresh — before 17:30 betting (BET-TIMING-ANALYSIS)
+17:30  ⑨ Betting Refresh betting_refresh()         16:00-18:30 KO gap — aligned with 17:30 pre-KO odds run
 18:30  ⑦ News Checker    run_news_checker()        Feeds 19:00 + 20:30 betting (moved from 19:30)
 18:45  ① Fixtures        run_fixtures()            Status refresh — before European evening betting
 19:00  ⑨ Betting Refresh betting_refresh()         European early evening KOs
@@ -72,9 +76,11 @@
 |------|-------------------|-------------|
 | 06:30 (morning pipeline) | All day initial | Full enrichment + odds |
 | 09:30 | Asian (09-11 UTC) | 08:00 odds, 09:00 news |
-| 11:00 | European morning (12-13 UTC) | 10:00 odds, 10:30 enrichment |
-| 15:00 | European afternoon (15-17 UTC) | 14:00 odds, 14:30 news |
-| 19:00 | European early evening (18-20 UTC) | 18:00 odds, 18:30 news |
+| 11:00 | European morning (11-12 UTC) | 10:30 odds, 10:30 enrichment |
+| 13:30 | European midday (12:00-14:30 UTC) | 13:30 pre-KO odds, 13:00 full enrichment |
+| 15:00 | European afternoon (14:30-16 UTC) | 15:00 odds, 14:30 news |
+| 17:30 | European late-afternoon (16-18:30 UTC) | 17:30 pre-KO odds, 16:00 enrichment |
+| 19:00 | European early evening (18-20 UTC) | 18:30 odds, 18:30 news |
 | 20:30 | European prime-time (19-21 UTC) | 20:00 closing odds, 18:30 news |
 
 ---
@@ -148,7 +154,7 @@
 - **Runs ONCE per day at 05:30 UTC.** P-PRED-1 (2026-05-10) removed the per-betting-refresh refetch — `/predictions` has no bulk form (probed and rejected: `ids`, `fixtures`, `date`, `league`), and AF documents the endpoint as updating at most hourly. Re-pulling ~3,000 fixtures × 5 betting_refresh slots was burning ~10K calls/day for data identical to what's already on `matches.af_prediction`. Betting refreshes now read the cached JSONB instead.
 
 ### ⑤ Betting (`betting_pipeline.py`)
-- Runs 6x/day (morning pipeline ~06:30, then 09:30, 11:00, 15:00, 19:00, 20:30 UTC) to catch all kickoff windows
+- Runs 8x/day (morning pipeline ~06:30, then 09:30, 11:00, 13:30, 15:00, 17:30, 19:00, 20:30 UTC) to catch all kickoff windows
 - Duplicate bets prevented by DB unique constraint `(bot_id, match_id, market, selection)` — safe to run any number of times
 - Only bets on matches with `status='scheduled'` AND kickoff still in the future — never bets on live/started matches
 - Reads all data from DB — no API calls (Phase 2 complete as of 2026-04-29)

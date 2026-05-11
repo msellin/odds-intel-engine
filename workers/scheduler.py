@@ -709,10 +709,11 @@ def main():
     scheduler.add_job(job_backfill_transfers, IntervalTrigger(minutes=25),
                       id="backfill_transfers", name="Transfers Backfill")
 
-    # Fixture status refresh: 4× daily, 15 min before each betting window
+    # Fixture status refresh: 6× daily, 15 min before each betting window
     # Re-fetches today's fixtures to catch postponements/cancellations/time changes.
     # store_match() now updates status → 'postponed' for PST/CANC matches.
-    for hour, minute in [(9, 15), (10, 45), (14, 45), (18, 45)]:
+    # 12:45 + 17:15 added alongside new 13:30 + 17:30 betting slots (BET-TIMING-ANALYSIS).
+    for hour, minute in [(9, 15), (10, 45), (12, 45), (14, 45), (17, 15), (18, 45)]:
         scheduler.add_job(job_fixture_refresh, CronTrigger(hour=hour, minute=minute),
                           id=f"fixture_refresh_{hour:02d}{minute:02d}",
                           name=f"Fixture Refresh {hour:02d}:{minute:02d}")
@@ -752,13 +753,15 @@ def main():
     scheduler.add_job(job_enrichment_full, CronTrigger(hour=13, minute=0),
                       id="enrichment_full_13", name="Enrichment Full 13:00")
 
-    # Betting refreshes: 09:30, 11:00, 15:00, 19:00, 20:30 UTC
+    # Betting refreshes: 09:30, 11:00, 13:30, 15:00, 17:30, 19:00, 20:30 UTC
     # 09:30 — acts on 08:00 odds + 09:00 news; catches Asian KO window
     # 11:00 — European morning KOs; uses fresh 10:30 enrichment
+    # 13:30 — covers 12:00-14:30 KO gap; aligned with 13:30 pre-KO odds run + 13:00 full enrichment
     # 15:00 — European afternoon KOs
+    # 17:30 — covers 16:00-18:30 KO gap; aligned with 17:30 pre-KO odds run + 16:00 enrichment
     # 19:00 — European early evening KOs; uses fresh 18:30 news
     # 20:30 — European prime-time KOs (19:00-21:00); uses 20:00 closing odds
-    for hour, minute in [(9, 30), (11, 0), (15, 0), (19, 0), (20, 30)]:
+    for hour, minute in [(9, 30), (11, 0), (13, 30), (15, 0), (17, 30), (19, 0), (20, 30)]:
         scheduler.add_job(job_betting_refresh_wrapper, CronTrigger(hour=hour, minute=minute),
                           id=f"betting_refresh_{hour:02d}{minute:02d}",
                           name=f"Betting Refresh {hour:02d}:{minute:02d}")
