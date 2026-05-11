@@ -4461,5 +4461,21 @@ def test_place_bet_ux():
     assert "Pinnacle" in tsrc, "Pinnacle must be in ACCESSIBLE_BOOKS for AH bets"
 
 
+@test("INPLAY-BOT-REPORT — script structure (source inspect)")
+def test_inplay_bot_report():
+    """INPLAY-BOT-REPORT (2026-05-11): inplay_bot_report.py reads inplay_bot_stats + simulated_bets."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent / "inplay_bot_report.py").read_text()
+    assert "inplay_bot_stats" in src, "must query inplay_bot_stats table"
+    assert "simulated_bets" in src, "must join simulated_bets for P&L"
+    assert "xg_source IS NOT NULL" in src, "must filter to live bets only"
+    assert "section_summary" in src, "must have summary section"
+    assert "section_strategy_table" in src, "must have per-strategy table"
+    assert "section_daily_activity" in src, "must have daily heatmap"
+    assert "section_recent_bets" in src, "must have recent bets section"
+    assert "--strategy" in src, "must support --strategy filter"
+    assert "--days" in src, "must support --days filter"
+
+
 if __name__ == "__main__":
     main()
