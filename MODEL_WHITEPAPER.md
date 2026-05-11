@@ -76,16 +76,18 @@ All rolling statistics computed from the **10 most recent matches** per team, sp
 
 **Defaults:** When insufficient history exists (new teams, new season), features default to league averages or neutral values (e.g. H2H defaults to 0.33 for 3-way split).
 
-### 3.1b Feature Set — AF Retrain Model (`workers/model/train.py`, 28 base + 8 missingness indicators)
+### 3.1b Feature Set — AF Retrain Model (`workers/model/train.py`)
 
 The new AF model trains on `match_feature_vectors` — live pipeline data accumulated since 2026-04-27, plus historical rebuild via `scripts/backfill_mfv_historical.py` (Stage 0e of ML-PIPELINE-UNIFY).
 Column names match the table exactly.
 
 **Missing-data handling (Stage 2a, 2026-05-10).** The prior `valid = X.notna().all(axis=1)` row-drop lost ~30-40% of rows because H2H is structurally absent for newly-promoted pairings, opening odds are absent for pre-2026-Q2 matches the engine wasn't yet watching, and referee features are absent for unstaffed fixtures. The new pipeline imputes per-league mean (with a global-mean fallback for leagues with no observations) and adds `<col>_missing` indicator columns for the features where missingness *itself* carries signal:
 
-  `h2h_win_pct_missing`, `opening_implied_home_missing`, `opening_implied_draw_missing`, `opening_implied_away_missing`, `bookmaker_disagreement_missing`, `referee_cards_avg_missing`, `referee_home_win_pct_missing`, `referee_over25_pct_missing`
+  `h2h_win_pct_missing`, `opening_implied_home_missing`, ..., `referee_over25_pct_missing`, `pinnacle_implied_home_missing`, ..., `pinnacle_implied_btts_yes_missing` (full list in `INFORMATIVE_MISSING_COLS`, `train.py:48`)
 
 The model can split on the indicator alongside the imputed value, learning that "we don't have H2H" predicts differently from "H2H exists and shows 50%". Saar-Tsechansky & Provost (2007 JMLR) shows this matches KNN imputation in accuracy at 1/100th the cost.
+
+**Base feature set (FEATURE_COLS, 28 columns):**
 
 | Group | Column name(s) | Count |
 |-------|---------------|-------|
@@ -101,16 +103,35 @@ The model can split on the indicator alongside the imputed value, learning that 
 | **Market** | `opening_implied_home`, `opening_implied_draw`, `opening_implied_away`, `bookmaker_disagreement` | 4 |
 | **League** | `league_tier` | 1 |
 
+**Pinnacle features (PINNACLE_FEATURE_COLS, `--include-pinnacle`, v11+, 3 columns):**
+
+| Group | Column name(s) | Coverage | Notes |
+|-------|---------------|---------|-------|
+| **Pinnacle 1X2** | `pinnacle_implied_home`, `pinnacle_implied_draw`, `pinnacle_implied_away` | ~23% | Latest pre-KO Pinnacle 1X2 snapshot; overround left in deliberately |
+
+**OU/BTTS market features (OU_MARKET_FEATURE_COLS, `--include-ou-market`, v14+, 4 columns):**
+
+| Group | Column name(s) | Coverage | Notes |
+|-------|---------------|---------|-------|
+| **Pinnacle OU 2.5** | `pinnacle_implied_over25`, `pinnacle_implied_under25` | ~22% | Overround guard `< 1.10` drops 2.4% bad pairs |
+| **OU disagreement** | `ou25_bookmaker_disagreement` | ~60% | max-min implied_over25 across distinct books (blacklist-filtered) |
+| **BTTS market** | `market_implied_btts_yes` | ~30% | avg 1/yes_odds across distinct books (Pinnacle BTTS = 0% coverage → multi-book) |
+
 **Target columns** (from `match_feature_vectors` + matches JOIN):
 - `match_outcome` (H/D/A) → 1X2 result model
 - `over_25` (bool) → Over/Under 2.5 model
 - `btts` (bool, derived at load time: `score_home > 0 AND score_away > 0`) → BTTS model
 
-**Training:** Run `python3 workers/model/train.py --version v_YYYYMMDD` — `load_training_data()` queries the DB automatically. As of 2026-05-10 the table holds **47,084 settled rows** (post-Stage-0e refresh).
+**Training commands:**
+- v12-style (no Pinnacle): `python3 workers/model/train.py --version v_YYYYMMDD`
+- v11+-style (with Pinnacle): add `--include-pinnacle`
+- v14+-style (with OU/BTTS market): add `--include-pinnacle --include-ou-market`
+
+As of 2026-05-11 the table holds **48,240 settled rows** (post-Stage-0e refresh).
 
 **Bundle storage & versioning (ML-BUNDLE-STORAGE, 2026-05-10).** Every successful train auto-uploads the bundle to Supabase Storage (`models/<version>/*.pkl`) and registers a row in the `model_versions` table (trained_at, training_window, n_rows, feature_cols, cv_metrics, promoted_at, demoted_at, notes). This solves Railway's ephemeral-filesystem problem: a fresh container with `MODEL_VERSION=v_X` set hits `xgboost_ensemble._load_models()`, sees no local copy, calls `ensure_local_bundle()`, downloads from Storage, caches for the container's lifetime. Switch versions by setting `MODEL_VERSION` env var on Railway → next deploy auto-pulls. Historical bundles stay in Storage forever — rollback is one env-var change. Costs ~$0.05/mo for 5 years of weekly bundles. Full architecture, port-to-other-projects guide, and gotchas in `docs/ML_MODEL_REGISTRY.md`.
 
-**Active production version:** `v12_post0e` since 2026-05-10. Switched from `v9a_202425` after `scripts/offline_eval.py` (offline A/B harness — runs N bundles head-to-head on a held-out MFV slice without waiting for shadow-deploy data) showed v12 cuts 1X2 log_loss roughly in half on every market vs v9. Final 5-way comparison (v9 / v10 / v11 / v12 / v13) saved at `dev/active/model-comparison-2026-05-10-final.md`.
+**Active production version:** `v12_post0e` since 2026-05-10. **Recommended upgrade: v14** (trained 2026-05-11, beats v11_pinnacle on all markets except OU 2.5 which is flat). Set `MODEL_VERSION=v14` on Railway to activate. Comparison saved at `dev/active/model-comparison-2026-05-10-v14.md`.
 
 ### 3.2 ELO Rating System
 

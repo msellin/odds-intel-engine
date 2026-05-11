@@ -4,6 +4,7 @@
 
 ## Status
 
+- **2026-05-11** — ✅ COMPLETE. All phases done. v14 uploaded to Supabase Storage. Promote: set `MODEL_VERSION=v14` on Railway.
 - **2026-05-10** — Phase A audit complete. Dev docs written. Phase B (feature build) is next — ready to start.
 
 ## Phase A Audit Results (2026-05-10)

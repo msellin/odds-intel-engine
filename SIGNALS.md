@@ -66,6 +66,12 @@ Data tier system:
 | Pinnacle line move — home | `pinnacle_line_move_home` | Morning pipeline | ✅ Running (PIN-4) |
 | Pinnacle line move — draw | `pinnacle_line_move_draw` | Morning pipeline | ✅ Running (PIN-4) |
 | Pinnacle line move — away | `pinnacle_line_move_away` | Morning pipeline | ✅ Running (PIN-4) |
+| OU 2.5 bookmaker disagreement | `ou25_bookmaker_disagreement` | MFV builder (nightly + pre-KO) | ✅ Running (OU-MARKET-FEATURES, 2026-05-11) |
+| Market-implied BTTS yes prob | `market_implied_btts_yes` | MFV builder (nightly + pre-KO) | ✅ Running (OU-MARKET-FEATURES, 2026-05-11) |
+
+> `ou25_bookmaker_disagreement` = max(implied_over25) − min(implied_over25) across distinct bookmakers for OU 2.5. Blacklist-filtered (api-football, api-football-live, William Hill). Requires ≥2 books. Stored in `match_feature_vectors`, not `match_signals`. Used as a training feature for v14+.
+>
+> `market_implied_btts_yes` = avg(1/yes_odds) across distinct bookmakers for BTTS. Pinnacle BTTS is 0% coverage so this is multi-book. Stored in `match_feature_vectors`, not `match_signals`. Used as a training feature for v14+.
 
 > `sharp_consensus_home/draw/away` = sharp bookmaker avg implied prob − soft bookmaker avg implied prob for each 1x2 selection. Positive = sharp books back that outcome more than soft books. Sharp tier: Pinnacle, Betfair Exchange, Marathon Bet. Soft tier: Bwin, Unibet, NordicBet, 10Bet, Sportingbet, Betway, 1xBet. Requires ≥1 sharp + ≥2 soft bookmakers present per selection; otherwise skipped. Source: `data/bookmaker_sharpness_rankings.csv`.
 >

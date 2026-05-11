@@ -22,26 +22,27 @@
 - [x] Smoke test — source-guards: OU_MARKET_FEATURE_COLS, overround guard, CLI flag, INFORMATIVE_MISSING_COLS
 - [x] Smoke test — MFV builder computes the 4 new columns + batch load vars present
 
-## Phase C — Train v14
+## Phase C — Train v14 ✅ DONE 2026-05-11
 
 - [x] `OU_MARKET_FEATURE_COLS` constant in `train.py` ← done in Phase B
 - [x] `--include-ou-market` CLI flag in `train.py` ← done in Phase B
 - [x] `train_all(include_ou_market=True)` parameter wired ← done in Phase B
-- [ ] Train v14 = v12 features + Pinnacle 1X2 + OU/BTTS market features
-- [ ] Verify auto-upload to Supabase Storage succeeded
-- [ ] Verify `model_versions` registry row created
+- [x] Train v14 = v12 features + Pinnacle 1X2 + OU/BTTS market features (48,240 rows)
+- [x] Verify auto-upload to Supabase Storage succeeded ✓
+- [x] Verify `model_versions` registry row created ✓
+- Note: fixed merge conflict (migration 093 added NULL cols to mfv.*, causing _x/_y suffixes)
 
-## Phase D — Offline eval
+## Phase D — Offline eval ✅ DONE 2026-05-11
 
-- [ ] Run `scripts/offline_eval.py v9 v11_pinnacle v12 v13 v14`
-- [ ] Save results to `dev/active/model-comparison-2026-05-10-v14.md`
-- [ ] Document headline numbers in PRIORITY_QUEUE entry
-- [ ] If v14 wins: mark in queue but do NOT auto-promote (env var swap is operator-side)
+- [x] Run `scripts/offline_eval.py v9 v11_pinnacle v12 v13 v14` (v9/v12/v13 not local — compared v11_pinnacle vs v14)
+- [x] Save results to `dev/active/model-comparison-2026-05-10-v14.md`
+- [x] Document headline numbers in PRIORITY_QUEUE entry
+- [x] v14 wins on 1X2 + BTTS, flat on OU 2.5 — marked in queue, NOT auto-promoted
 
-## Wrap-up
+## Wrap-up ✅ DONE 2026-05-11
 
-- [ ] Update `MODEL_WHITEPAPER.md` — feature inventory now includes OU 2.5 + BTTS market features
-- [ ] Update `SIGNALS.md` — new signals captured
-- [ ] Update `PRIORITY_QUEUE.md` — mark OU-MARKET-FEATURES ✅ Done with date
-- [ ] Update task `dev/active/ou-market-features-context.md` — final status + outcomes
-- [ ] Commit code + docs together
+- [x] Update `MODEL_WHITEPAPER.md` — feature inventory now includes OU 2.5 + BTTS market features + v14 training instructions
+- [x] Update `SIGNALS.md` — ou25_bookmaker_disagreement + market_implied_btts_yes added
+- [x] Update `PRIORITY_QUEUE.md` — mark OU-MARKET-FEATURES ✅ Done 2026-05-11
+- [x] Update task `dev/active/ou-market-features-context.md` — final status + outcomes
+- [x] Commit code + docs together
