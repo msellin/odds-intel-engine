@@ -323,6 +323,40 @@ BOTS_CONFIG = {
         "odds_range": (1.40, 5.00),
         "min_prob": 0.28,
     },
+
+    # ─── Double Chance bots (DC-BOTS 2026-05-11) ──────────────────────────────
+    # DC probs derived at placement time from 1X2 calibrated probs:
+    #   1X = home_prob + draw_prob, X2 = draw_prob + away_prob, 12 = home_prob + away_prob.
+    # No Platt calibration or Pinnacle veto for DC (no DC Platt data yet; add after
+    # first ~200 settled bets). Edge thresholds are lower than 1X2 because DC odds
+    # are compressed (typical range 1.20-2.20), so a 3% edge at 1.30 is already
+    # meaningful.
+    "bot_dc_value": {
+        "description": "Double Chance all leagues — 1X/X2/12 at value odds",
+        "tier_label": "pro",
+        "markets": ["dc"],
+        "edge_thresholds": {
+            1: {"dc": 0.05},
+            2: {"dc": 0.04},
+            3: {"dc": 0.04},
+            4: {"dc": 0.03},
+        },
+        "odds_range": (1.25, 2.20),
+        "min_prob": 0.55,
+    },
+    "bot_dc_strong_fav": {
+        "description": "Double Chance T1-2 — strong-favorite cover (1X or X2 only), 6%+ edge",
+        "tier_label": "elite",
+        "markets": ["dc"],
+        "selection_filter": ["1X", "X2"],
+        "tier_filter": [1, 2],
+        "edge_thresholds": {
+            1: {"dc": 0.06},
+            2: {"dc": 0.06},
+        },
+        "odds_range": (1.20, 1.80),
+        "min_prob": 0.65,
+    },
 }
 
 
@@ -354,6 +388,9 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_btts_conservative":"pre_ko",
     # Midday — proven leagues run after injury-news refresh
     "bot_proven_leagues":  "midday",
+    # Morning — DC bots (fresh odds, full coverage)
+    "bot_dc_value":        "morning",
+    "bot_dc_strong_fav":   "morning",
 }
 
 
@@ -1166,6 +1203,9 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
         "over_under_35_over": "odds_over_35", "over_under_35_under": "odds_under_35",
         "over_under_45_over": "odds_over_45", "over_under_45_under": "odds_under_45",
         "btts_yes": "odds_btts_yes", "btts_no": "odds_btts_no",
+        "double_chance_1x": "odds_dc_1x",
+        "double_chance_x2": "odds_dc_x2",
+        "double_chance_12": "odds_dc_12",
     }
 
     # 3. Build match dicts
@@ -1204,6 +1244,7 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
             "odds_over_35": 0, "odds_under_35": 0,
             "odds_over_45": 0, "odds_under_45": 0,
             "odds_btts_yes": 0, "odds_btts_no": 0,
+            "odds_dc_1x": 0, "odds_dc_x2": 0, "odds_dc_12": 0,
         }
         if match_best:
             for mkt_sel, field in MARKET_TO_FIELD.items():
@@ -1820,6 +1861,18 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                 candidate_specs.append(("BTTS", "Yes", match["odds_btts_yes"], pred.get("btts_yes_prob", 0), "btts", "yes", thresholds.get("btts", 0.06)))
             if "btts" in config.get("markets", []) and match.get("odds_btts_no", 0) > 0:
                 candidate_specs.append(("BTTS", "No", match["odds_btts_no"], pred.get("btts_no_prob", 0), "btts", "no", thresholds.get("btts", 0.06)))
+
+            # Double Chance (DC-BOTS): probs derived from 1X2 calibrated probs
+            if "dc" in config.get("markets", []):
+                dc_1x_prob = pred["home_prob"] + pred["draw_prob"]
+                dc_x2_prob = pred["draw_prob"] + pred["away_prob"]
+                dc_12_prob = pred["home_prob"] + pred["away_prob"]
+                if match.get("odds_dc_1x", 0) > 0 and (not sel_filter or "1X" in sel_filter):
+                    candidate_specs.append(("DC", "1X", match["odds_dc_1x"], dc_1x_prob, "double_chance", "1x", thresholds.get("dc", 0.04)))
+                if match.get("odds_dc_x2", 0) > 0 and (not sel_filter or "X2" in sel_filter):
+                    candidate_specs.append(("DC", "X2", match["odds_dc_x2"], dc_x2_prob, "double_chance", "x2", thresholds.get("dc", 0.04)))
+                if match.get("odds_dc_12", 0) > 0 and (not sel_filter or "12" in sel_filter):
+                    candidate_specs.append(("DC", "12", match["odds_dc_12"], dc_12_prob, "double_chance", "12", thresholds.get("dc", 0.04)))
 
             for mkt, selection, odds, raw_mp, os_market, os_selection, base_threshold in candidate_specs:
                 ip = 1 / odds

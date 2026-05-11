@@ -168,6 +168,17 @@ def settle_bet_result(bet: dict, home_goals: int, away_goals: int,
         elif selection == "no" and not both_scored:
             won = True
 
+    elif market == "double_chance":
+        home_wins = home_goals > away_goals
+        draw = home_goals == away_goals
+        away_wins = away_goals > home_goals
+        if selection == "1x" and (home_wins or draw):
+            won = True
+        elif selection == "x2" and (draw or away_wins):
+            won = True
+        elif selection == "12" and (home_wins or away_wins):
+            won = True
+
     pnl = round((odds - 1) * stake if won else -stake, 2)
 
     # CLV: positive = we got better odds than closing line

@@ -4069,5 +4069,47 @@ def main():
     sys.exit(0 if failed == 0 else 1)
 
 
+@test("DC-BOTS — pipeline has DC market support: MARKET_TO_FIELD, match dict, candidate_specs, settlement")
+def _():
+    """DC-BOTS (2026-05-11): Double Chance bots backed by odds_snapshots data.
+    Source guards:
+    1. MARKET_TO_FIELD includes DC entries (odds_dc_1x/x2/12).
+    2. Match dict defaults include odds_dc_* fields.
+    3. candidate_specs loop handles 'dc' market — DC probs derived from 1X2.
+    4. settlement.py handles double_chance market (1x/x2/12 selections).
+    5. BOTS_CONFIG has bot_dc_value and bot_dc_strong_fav."""
+    import pathlib
+    pipe = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    settle = pathlib.Path("workers/jobs/settlement.py").read_text()
+
+    assert "double_chance_1x" in pipe, (
+        "MARKET_TO_FIELD must map double_chance_1x to odds_dc_1x"
+    )
+    assert "odds_dc_1x" in pipe, (
+        "match dict must default odds_dc_1x to 0"
+    )
+    assert '"dc" in config.get("markets"' in pipe, (
+        "candidate_specs must include a dc block checking config['markets'] for 'dc'"
+    )
+    assert "dc_1x_prob = pred" in pipe, (
+        "DC prob must be derived inline from pred['home_prob'] + pred['draw_prob']"
+    )
+    assert "bot_dc_value" in pipe, "BOTS_CONFIG must include bot_dc_value"
+    assert "bot_dc_strong_fav" in pipe, "BOTS_CONFIG must include bot_dc_strong_fav"
+
+    assert 'market == "double_chance"' in settle, (
+        "settle_bet_result must handle double_chance market"
+    )
+    assert 'selection == "1x"' in settle, (
+        "settlement must handle 1x selection for double_chance"
+    )
+    assert 'selection == "x2"' in settle, (
+        "settlement must handle x2 selection for double_chance"
+    )
+    assert 'selection == "12"' in settle, (
+        "settlement must handle 12 selection for double_chance"
+    )
+
+
 if __name__ == "__main__":
     main()
