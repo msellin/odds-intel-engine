@@ -4429,13 +4429,20 @@ def test_inplay_stats_db():
     assert "UNIQUE" in migration, "must have UNIQUE(stat_date, strategy)"
 
 
-@test("PLACE-BET-UX — already-placed indicator + AH bets (source inspect)")
+@test("PLACE-BET-UX — already-placed indicator + AH/DC bets (source inspect)")
 def test_place_bet_ux():
-    """PLACE-BET-UX (2026-05-11): /admin/place shows already-placed badge + AH bets now visible."""
+    """PLACE-BET-UX (2026-05-11): /admin/place shows already-placed badge + AH/DC bets now visible."""
     import pathlib
     root = pathlib.Path(__file__).resolve().parent.parent
 
-    # engine-data.ts: alreadyPlaced field + real_bets today query + AH k=null allowed
+    # engine: _store_parsed_odds must write handicap_line
+    pipe = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    assert "handicap_line" in pipe and "row.get(\"handicap_line\")" in pipe, \
+        "_store_parsed_odds must include handicap_line in INSERT"
+    assert "ahSnapMap" in pipe or "ahSnapKey" in pipe or \
+        "(match_id, bookmaker, market, selection, odds, handicap_line" in pipe, \
+        "_store_parsed_odds INSERT must include handicap_line column"
+
     engine_data = root.parent / "odds-intel-web" / "src" / "lib" / "engine-data.ts"
     if not engine_data.exists():
         print("  [skip] odds-intel-web not present in CI")
@@ -4443,9 +4450,10 @@ def test_place_bet_ux():
     src = engine_data.read_text()
     assert "alreadyPlaced" in src, "PlaceableBet must have alreadyPlaced field"
     assert "placedMatchIds" in src, "getPlaceableBets must query real_bets placed today"
-    assert "// k is null for asian_handicap" in src, "AH bets must no longer be skipped"
+    assert "ahSnapMap" in src, "getPlaceableBets must use ahSnapMap for AH 5-part key lookup"
+    assert "double_chance" in src, "_mapPaperToSnapshotKey must handle double_chance market"
 
-    # place-bet-table.tsx: badge rendered + filter chip + all bets placeable
+    # place-bet-table.tsx: badge rendered + filter chip + Pinnacle
     table = root.parent / "odds-intel-web" / "src" / "components" / "place-bet-table.tsx"
     tsrc = table.read_text()
     assert "alreadyPlaced" in tsrc, "table must render alreadyPlaced badge"

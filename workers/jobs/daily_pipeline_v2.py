@@ -774,7 +774,7 @@ def _store_parsed_odds(match_id: str, parsed_odds: list[dict]):
 
     rows = [
         (match_id, row["bookmaker"], row["market"], row["selection"],
-         row["odds"], now, False, None)
+         row["odds"], row.get("handicap_line"), now, False, None)
         for row in parsed_odds
     ]
 
@@ -785,7 +785,7 @@ def _store_parsed_odds(match_id: str, parsed_odds: list[dict]):
                     execute_values(
                         cur,
                         """INSERT INTO odds_snapshots
-                           (match_id, bookmaker, market, selection, odds, timestamp, is_closing, minutes_to_kickoff)
+                           (match_id, bookmaker, market, selection, odds, handicap_line, timestamp, is_closing, minutes_to_kickoff)
                            VALUES %s ON CONFLICT DO NOTHING""",
                         rows,
                         page_size=500,
