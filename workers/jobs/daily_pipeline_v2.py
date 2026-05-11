@@ -459,6 +459,16 @@ BOT_TIMING_COHORTS: dict[str, str] = {
 # (fit by scripts/fit_league_rho.py, refreshed weekly on Sundays alongside Platt).
 DIXON_COLES_RHO = -0.13
 
+# ACCESSIBLE-BM: bookmakers whose odds feed into edge calculation and bet recommendations.
+# Only books accessible to EU/Estonian users with a real API-Football feed. Inaccessible
+# books (SBO, Dafabet, 1xBet, William Hill, BetVictor, Betfair) are excluded so reported
+# edge is not inflated by odds the user can never actually achieve.
+# Pinnacle is included because it's available via Pinnacle Sports .com (manual) and also
+# serves as the sharpest-book quality reference throughout the pipeline.
+ACCESSIBLE_BOOKMAKERS: frozenset = frozenset({
+    "Bet365", "Unibet", "Betano", "Marathonbet", "10Bet", "888Sport", "Pinnacle"
+})
+
 # Cache: {league_tier (1-4): rho}. Loaded once per pipeline run.
 _dc_rho_cache: dict | None = None
 
@@ -1294,6 +1304,7 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
             pass
 
     best: dict[str, dict[str, float]] = _dd(lambda: _dd(float))
+    best_bookmaker: dict[str, dict[str, str]] = _dd(dict)  # ACCESSIBLE-BM: which book had best accessible odds
     bm_sources: dict[str, set] = _dd(set)
     # AH lines: {match_id -> {(selection, handicap_line) -> best_odds}}
     ah_best: dict[str, dict[tuple, float]] = _dd(dict)
@@ -1303,23 +1314,26 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
         key = f"{market}_{row['selection']}"
         odds_val = float(row["odds"])
         bookmaker = row.get("bookmaker") or "unknown"
+        bm_sources[mid].add(bookmaker)  # track all sources for display, before any filtering
         if market.startswith("over_under_"):
             pin_price = pin_ou.get(mid, {}).get(key)
             if pin_price is None:
                 continue  # OU-PIN-REQUIRED — no Pinnacle reference for this OU selection, skip
             if bookmaker != "Pinnacle" and odds_val > 2.0 * pin_price:
                 continue  # OU-PINNACLE-CAP — likely mislabelled / Asian-total row
+        # ACCESSIBLE-BM: only aggregate odds from bookmakers users can actually bet at
+        if bookmaker not in ACCESSIBLE_BOOKMAKERS:
+            continue
         if market == "asian_handicap":
             hl = row.get("handicap_line")
             if hl is not None:
                 ah_key = (str(row["selection"]), float(hl))
                 if odds_val > ah_best[mid].get(ah_key, 0):
                     ah_best[mid][ah_key] = odds_val
-            bm_sources[mid].add(bookmaker)
             continue  # don't also add to flat `best` dict
         if odds_val > best[mid][key]:
             best[mid][key] = odds_val
-        bm_sources[mid].add(bookmaker)
+            best_bookmaker[mid][key] = bookmaker
 
     # ODDS-QUALITY-CLEANUP: implied-sum sanity gate on OU pairs.
     # Drop both sides of any (over, under) where 1/over + 1/under < 1.02
@@ -2158,11 +2172,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                 if stake < 1.0:
                     continue
 
-                bet_candidates.append((mkt, selection, odds, raw_mp, cal_prob, ip, edge, kelly, alignment, odds_mv, stake))
+                bet_candidates.append((mkt, selection, odds, raw_mp, cal_prob, ip, edge, kelly, alignment, odds_mv, stake, os_market, os_selection))
 
             bet_candidates.sort(key=lambda x: x[6], reverse=True)
 
-            for mkt, selection, odds, raw_mp, cal_prob, ip, edge, kelly, alignment, odds_mv, stake in bet_candidates:
+            for mkt, selection, odds, raw_mp, cal_prob, ip, edge, kelly, alignment, odds_mv, stake, os_market, os_selection in bet_candidates:
                 # T1: AF prediction agreement
                 af_agrees = _af_agrees_with_bet(selection, af_pred)
 
@@ -2205,6 +2219,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                         "af_agrees": af_agrees,
                         # BOT-TIMING: which time-window cohort placed this bet
                         "timing_cohort": bot_cohort,
+                        # ACCESSIBLE-BM: which accessible bookmaker had the best odds
+                        "recommended_bookmaker": best_bookmaker.get(str(match_id), {}).get(f"{os_market}_{os_selection}"),
                     })
                     if bet_id:
                         total_bets += 1

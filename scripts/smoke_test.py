@@ -4343,5 +4343,41 @@ def _():
     assert "league_tier" in src or "l.tier" in src, "Must slice by league tier"
 
 
+@test("ACCESSIBLE-BM — ACCESSIBLE_BOOKMAKERS constant and recommended_bookmaker wiring")
+def _():
+    """ACCESSIBLE-BM (2026-05-11): restrict edge calculation to accessible bookmakers and
+    track which book had best odds per bet. Source guards:
+    - ACCESSIBLE_BOOKMAKERS frozenset defined in daily_pipeline_v2.py
+    - best_bookmaker dict declared and populated
+    - recommended_bookmaker passed to store_bet
+    - optional_fields in supabase_client.py includes recommended_bookmaker
+    - migration 094 adds column to simulated_bets
+    - daily_picks.py script exists with --date/--min-edge/--bookmaker flags"""
+    import pathlib
+
+    pipeline = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    assert "ACCESSIBLE_BOOKMAKERS" in pipeline, "ACCESSIBLE_BOOKMAKERS must be defined"
+    assert "frozenset" in pipeline, "ACCESSIBLE_BOOKMAKERS must be a frozenset"
+    assert "Bet365" in pipeline and "Unibet" in pipeline and "Pinnacle" in pipeline, \
+        "ACCESSIBLE_BOOKMAKERS must include Bet365, Unibet, Pinnacle"
+    assert "best_bookmaker" in pipeline, "best_bookmaker dict must be declared"
+    assert "bookmaker not in ACCESSIBLE_BOOKMAKERS" in pipeline, \
+        "inaccessible bookmakers must be filtered in odds aggregation loop"
+    assert "recommended_bookmaker" in pipeline, "recommended_bookmaker must be passed to store_bet"
+
+    client = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
+    assert "recommended_bookmaker" in client, "recommended_bookmaker must be in store_bet optional_fields"
+
+    migration = pathlib.Path("supabase/migrations/094_simulated_bets_recommended_bookmaker.sql").read_text()
+    assert "recommended_bookmaker" in migration, "migration 094 must add recommended_bookmaker column"
+    assert "simulated_bets" in migration, "migration 094 must target simulated_bets"
+
+    picks = pathlib.Path("scripts/daily_picks.py").read_text()
+    assert "--date" in picks, "daily_picks.py must support --date flag"
+    assert "--min-edge" in picks, "daily_picks.py must support --min-edge flag"
+    assert "--bookmaker" in picks, "daily_picks.py must support --bookmaker flag"
+    assert "recommended_bookmaker" in picks, "daily_picks.py must show recommended_bookmaker"
+
+
 if __name__ == "__main__":
     main()
