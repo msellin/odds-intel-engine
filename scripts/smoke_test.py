@@ -1218,6 +1218,37 @@ def _():
     )
 
 
+@test("ODDS-QUALITY-CLEANUP — filter drops unused OU markets and extreme AH lines")
+def _():
+    """filter_garbage_ou_rows must drop OU variants not in ALLOWED_OU_MARKETS
+    and AH lines beyond ±MAX_AH_LINE, while keeping the four used OU markets
+    and AH lines within range."""
+    from workers.utils.odds_quality import filter_garbage_ou_rows, ALLOWED_OU_MARKETS, MAX_AH_LINE
+    rows = [
+        # Unused OU market — must be dropped
+        {"bookmaker": "Bet365", "market": "over_under_275", "selection": "over",  "odds": 1.80},
+        {"bookmaker": "Bet365", "market": "over_under_275", "selection": "under", "odds": 2.05},
+        # Used OU market — must be kept (valid pair)
+        {"bookmaker": "Bet365", "market": "over_under_25", "selection": "over",  "odds": 1.90},
+        {"bookmaker": "Bet365", "market": "over_under_25", "selection": "under", "odds": 1.95},
+        # AH line within ±3.0 — must be kept
+        {"bookmaker": "Pinnacle", "market": "asian_handicap", "selection": "home", "odds": 1.92, "handicap_line": -1.5},
+        # AH line beyond ±3.0 — must be dropped
+        {"bookmaker": "Pinnacle", "market": "asian_handicap", "selection": "home", "odds": 1.05, "handicap_line": -5.0},
+        # 1x2 — always kept
+        {"bookmaker": "Pinnacle", "market": "1x2", "selection": "home", "odds": 2.10},
+    ]
+    out = filter_garbage_ou_rows(rows)
+    markets = [(r["market"], r.get("handicap_line")) for r in out]
+    assert ("over_under_275", None) not in [(r["market"], None) for r in out], "unused OU market must be dropped"
+    assert any(r["market"] == "over_under_25" for r in out), "allowed OU market must be kept"
+    assert any(r.get("handicap_line") == -1.5 for r in out), "AH line within ±3.0 must be kept"
+    assert not any(r.get("handicap_line") == -5.0 for r in out), "AH line beyond ±3.0 must be dropped"
+    assert any(r["market"] == "1x2" for r in out), "1x2 must always pass through"
+    assert MAX_AH_LINE == 3.0, "MAX_AH_LINE must be 3.0"
+    assert "over_under_25" in ALLOWED_OU_MARKETS and "over_under_15" in ALLOWED_OU_MARKETS
+
+
 @test("ODDS-QUALITY-CLEANUP — write-path applies filter (fetch_odds + store_odds source guard)")
 def _():
     """Both the bulk pre-match writer (fetch_odds.fetch_af_odds) and the
