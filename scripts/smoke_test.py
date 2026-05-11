@@ -4323,5 +4323,25 @@ def _():
     assert r["result"] == "won"
 
 
+@test("BOT-PERF-MONITOR — bot_perf_report.py exists with all 5 sections and --days/--bot flags")
+def _():
+    """BOT-PERF-MONITOR (2026-05-11): standalone report script for profitability validation.
+    5 slices: summary, by-bot, by-market+selection, by-tier, top-leagues.
+    Supports --days N (recency window) and --bot NAME (drill-down).
+    Source guards: all 5 section functions exist, argparse flags present."""
+    import pathlib
+    src = pathlib.Path("scripts/bot_perf_report.py").read_text()
+
+    for fn in ("section_summary", "section_by_bot", "section_by_market",
+               "section_by_tier", "section_top_leagues"):
+        assert f"def {fn}(" in src, f"{fn} must exist in bot_perf_report.py"
+
+    assert "--days" in src, "Must support --days flag for recency window"
+    assert "--bot" in src, "Must support --bot flag for drill-down"
+    assert "--min-bets" in src, "Must support --min-bets flag for significance floor"
+    assert "avg_clv" in src, "Must compute avg CLV in queries"
+    assert "league_tier" in src or "l.tier" in src, "Must slice by league tier"
+
+
 if __name__ == "__main__":
     main()
