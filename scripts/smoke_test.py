@@ -4658,5 +4658,38 @@ def test_romanian_liga_data():
     assert ro1_count >= 500, f"expected 500+ RO1 rows, got {ro1_count}"
 
 
+@test("BACKFILL-WEATHER — script structure: four phases, geocode fallbacks, archive URL, bulk upsert (source inspect)")
+def test_backfill_weather():
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+    src = (root / "scripts" / "backfill_weather.py").read_text()
+    assert "archive-api.open-meteo.com" in src, "must use Open-Meteo archive API for historical weather"
+    assert "_seed_venue_cities" in src, "must have phase 1: seed venue city from AF"
+    assert "_seed_venue_addresses" in src, "must have phase 1b: seed address for ungeocodeable venues"
+    assert "_geocode_venues" in src, "must have phase 2: geocode venues"
+    assert "_backfill_weather" in src, "must have phase 3: backfill weather"
+    assert "nominatim.openstreetmap.org" in src, "must have Nominatim fallback geocoding"
+    assert "_clean_location" in src, "must clean AF location strings before geocoding"
+    assert "Czech" in src or "replace('-', ' ')" in src, "must fix hyphenated country names"
+    assert "execute_values" in src, "must use bulk execute_values insert, not per-row"
+    assert "ON CONFLICT (match_id)" in src, "must upsert on match_id"
+    assert "dry_run" in src, "must support --dry-run flag"
+
+@test("WEATHER-GEOCODE — venue address column in migration + parse_venue + store_venues (source inspect)")
+def test_weather_geocode_address():
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+    migration = root / "supabase" / "migrations" / "098_venue_address.sql"
+    assert migration.exists(), "098_venue_address.sql must exist"
+    assert "address" in migration.read_text(), "migration must add address column to venues"
+
+    pv = (root / "workers" / "api_clients" / "api_football.py").read_text()
+    # find parse_venue and check address is included
+    assert '"address": raw.get("address")' in pv, "parse_venue must capture address from AF response"
+
+    sc = (root / "workers" / "api_clients" / "supabase_client.py").read_text()
+    assert "address" in sc, "store_venues must upsert address column"
+
+
 if __name__ == "__main__":
     main()

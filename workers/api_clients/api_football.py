@@ -748,6 +748,7 @@ def parse_venue(raw: dict) -> dict:
         "capacity": raw.get("capacity"),
         "city": raw.get("city") or None,
         "country": raw.get("country") or None,
+        "address": raw.get("address") or None,
     }
 
 

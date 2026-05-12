@@ -2444,7 +2444,7 @@ def store_team_coaches(team_af_id: int, entries: list[dict]) -> int:
 def store_venues(venue_list: list[dict]) -> int:
     """Upsert venue records into venues table. Returns count upserted.
 
-    venue_list: list of {af_id, name, surface, capacity, city, country} from parse_venue().
+    venue_list: list of {af_id, name, surface, capacity, city, country, address} from parse_venue().
     lat/lon are populated separately by the weather job after geocoding.
     """
     if not venue_list:
@@ -2452,7 +2452,7 @@ def store_venues(venue_list: list[dict]) -> int:
     from psycopg2.extras import execute_values
     rows = [
         (v["af_id"], v.get("name"), v.get("surface"), v.get("capacity"),
-         v.get("city"), v.get("country"))
+         v.get("city"), v.get("country"), v.get("address"))
         for v in venue_list
         if v.get("af_id")
     ]
@@ -2463,7 +2463,7 @@ def store_venues(venue_list: list[dict]) -> int:
             with conn.cursor() as cur:
                 execute_values(
                     cur,
-                    """INSERT INTO venues (af_id, name, surface, capacity, city, country, fetched_at)
+                    """INSERT INTO venues (af_id, name, surface, capacity, city, country, address, fetched_at)
                        VALUES %s
                        ON CONFLICT (af_id)
                        DO UPDATE SET name = EXCLUDED.name,
@@ -2471,9 +2471,10 @@ def store_venues(venue_list: list[dict]) -> int:
                                      capacity = EXCLUDED.capacity,
                                      city = COALESCE(EXCLUDED.city, venues.city),
                                      country = COALESCE(EXCLUDED.country, venues.country),
+                                     address = COALESCE(EXCLUDED.address, venues.address),
                                      fetched_at = now()""",
                     rows,
-                    template="(%s, %s, %s, %s, %s, %s, now())",
+                    template="(%s, %s, %s, %s, %s, %s, %s, now())",
                 )
                 conn.commit()
         return len(rows)
