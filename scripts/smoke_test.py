@@ -4819,5 +4819,27 @@ def test_pin4_veto_all_markets():
         "Old market-gated veto still present — BTTS/DC/AH would bypass it"
 
 
+@test("AUDIT-SILENT-EXCEPT — critical silent exceptions replaced with console.print warnings")
+def test_audit_silent_except():
+    """AUDIT-SILENT-EXCEPT: 4 data-loss-risk silent exceptions now log a warning."""
+    import pathlib
+    lp_src = (pathlib.Path(__file__).resolve().parent.parent /
+              "workers" / "live_poller.py").read_text()
+    sc_src = (pathlib.Path(__file__).resolve().parent.parent /
+              "workers" / "scheduler.py").read_text()
+
+    # live_poller.py: store_match_events_batch failure must not be silent
+    assert "store_match_events_batch failed for" in lp_src, \
+        "live_poller.py: store_match_events_batch failure is still swallowed silently"
+
+    # scheduler.py settlement pipeline: logging failures must not be silent
+    assert "log_pipeline_start failed (non-critical)" in sc_src, \
+        "scheduler.py: log_pipeline_start failure is still swallowed silently"
+    assert "log_pipeline_complete failed (non-critical)" in sc_src, \
+        "scheduler.py: log_pipeline_complete failure is still swallowed silently"
+    assert "log_pipeline_failed failed (non-critical)" in sc_src, \
+        "scheduler.py: log_pipeline_failed failure is still swallowed silently"
+
+
 if __name__ == "__main__":
     main()

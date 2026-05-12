@@ -219,8 +219,8 @@ def settlement_pipeline():
         run_id = None
         try:
             run_id = log_pipeline_start(job_name, today)
-        except Exception:
-            pass
+        except Exception as _e:
+            console.print(f"[yellow]  ⚠ log_pipeline_start failed (non-critical): {_e}[/yellow]")
         try:
             result = step_fn()
             elapsed = (datetime.now(timezone.utc) - step_start).total_seconds()
@@ -229,8 +229,8 @@ def settlement_pipeline():
                 # prune returns rows deleted; other steps return None
                 rows = result if isinstance(result, int) else None
                 log_pipeline_complete(run_id, records_count=rows)
-            except Exception:
-                pass
+            except Exception as _e:
+                console.print(f"[yellow]  ⚠ log_pipeline_complete failed (non-critical): {_e}[/yellow]")
         except Exception as e:
             elapsed = (datetime.now(timezone.utc) - step_start).total_seconds()
             failed_steps.append(step_label)
@@ -238,8 +238,8 @@ def settlement_pipeline():
             console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
             try:
                 log_pipeline_failed(run_id, str(e))
-            except Exception:
-                pass
+            except Exception as _e:
+                console.print(f"[yellow]  ⚠ log_pipeline_failed failed (non-critical): {_e}[/yellow]")
 
     if failed_steps:
         console.print(f"\n[red bold]Settlement finished with {len(failed_steps)} failure(s): {', '.join(failed_steps)}[/red bold]")

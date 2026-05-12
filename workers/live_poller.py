@@ -306,8 +306,8 @@ class LivePoller:
                     try:
                         store_match_events_batch(match_id, events,
                                                  home_team_api_id=home_api_id)
-                    except Exception:
-                        pass
+                    except Exception as _e:
+                        console.print(f"[yellow]  ⚠ store_match_events_batch failed for {match_id}: {_e}[/yellow]")
 
             # ── RAIL-11: Event-triggered snapshot on goal / red card ────────
             key_event = self._detect_key_event(match_id, af_fix)
