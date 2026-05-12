@@ -84,7 +84,7 @@ def fetch_user_saved_matches(user_id: str) -> list[dict]:
         JOIN teams    at ON at.id = m.away_team_id
         JOIN leagues  l  ON l.id  = m.league_id
         WHERE sm.user_id = %s
-          AND m.status IN ('scheduled', 'not_started')
+          AND m.status = 'scheduled'
           AND m.date > now()
         ORDER BY m.date ASC
         """,

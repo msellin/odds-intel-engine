@@ -129,7 +129,7 @@ def fetch_weather(target_date: str) -> int:
            FROM matches m
            JOIN venues v ON m.venue_af_id = v.af_id
            WHERE m.date >= %s AND m.date < %s
-             AND m.status IN ('not_started', 'scheduled', 'upcoming', 'NS')
+             AND m.status = 'scheduled'
            ORDER BY m.date""",
         [f"{target_date}T00:00:00Z", f"{next_date}T00:00:00Z"],
     )

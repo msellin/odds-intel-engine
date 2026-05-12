@@ -4819,6 +4819,21 @@ def test_pin4_veto_all_markets():
         "Old market-gated veto still present — BTTS/DC/AH would bypass it"
 
 
+@test("ENUM-NOT-STARTED — fetch_weather and watchlist_alerts use valid match_status enum values")
+def test_enum_not_started():
+    """Ensure 'not_started' (invalid enum) is not used in any SQL queries."""
+    import pathlib
+    fw_src = (pathlib.Path(__file__).resolve().parent.parent /
+              "workers" / "jobs" / "fetch_weather.py").read_text()
+    wa_src = (pathlib.Path(__file__).resolve().parent.parent /
+              "workers" / "jobs" / "watchlist_alerts.py").read_text()
+
+    assert "not_started" not in fw_src, \
+        "fetch_weather.py still uses 'not_started' — invalid match_status enum value"
+    assert "not_started" not in wa_src, \
+        "watchlist_alerts.py still uses 'not_started' — invalid match_status enum value"
+
+
 @test("AUDIT-SILENT-EXCEPT — critical silent exceptions replaced with console.print warnings")
 def test_audit_silent_except():
     """AUDIT-SILENT-EXCEPT: 4 data-loss-risk silent exceptions now log a warning."""
