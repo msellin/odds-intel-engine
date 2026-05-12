@@ -77,6 +77,7 @@ def _discover_missing_venues(dry_run: bool) -> int:
         return len(rows)
 
     fetched = []
+    no_data = []
     with Progress(TextColumn("{task.description}"), BarColumn(),
                   TextColumn("{task.completed}/{task.total}"),
                   TimeRemainingColumn(), console=console) as progress:
@@ -86,12 +87,21 @@ def _discover_missing_venues(dry_run: bool) -> int:
                 raw = get_venue(row["venue_af_id"])
                 if raw:
                     fetched.append(parse_venue(raw))
+                else:
+                    no_data.append(row["venue_af_id"])
             except Exception as e:
                 console.print(f"  [yellow]AF venue {row['venue_af_id']} failed: {e}[/yellow]")
+                no_data.append(row["venue_af_id"])
             progress.advance(task)
             time.sleep(0.07)
 
     stored = store_venues(fetched)
+
+    # Insert placeholder rows for venues AF has no data on so Phase 0 skips them next run
+    if no_data:
+        store_venues([{"af_id": vid} for vid in no_data])
+        console.print(f"  {len(no_data)} venues had no AF data — placeholder inserted")
+
     console.print(f"  {stored} new venues added")
     return stored
 
