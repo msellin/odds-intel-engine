@@ -977,6 +977,8 @@ Yellow warning if today's value < 7-day average × 0.60.
 | META-RETRAIN | B-ML3 | Weekly meta-model retraining job | 2h | ⬜ | ⏳ After B-ML3 | Re-run on all `match_feature_vectors` rows, write to `model_versions` |
 | XGB-RETRAIN | S6-P2 | Weekly XGBoost full-model retraining | 3-4h | ⬜ | ⏳ After S6-P2 | Train/val split, track feature importances over time |
 | ALN-AUTO | ALN-1 | Monthly alignment threshold refresh | 1h | ⬜ | ⏳ After ALN-1 | Bin settled bets by alignment_count → ROI per bin → update thresholds |
+| ALN-1-TUNE | ALN-1 | Tune HIGH/MEDIUM bumps in `_ALN_BUMP` based on actual ROI data | 1h | ⬜ | ⏳ When HIGH ≥ 50 settled bets AND MEDIUM ≥ 50 settled bets (currently HIGH=3, MEDIUM=11 — too small). Run `scripts/aln1_analysis.py` to check. If HIGH ROI > MEDIUM ROI > LOW ROI monotonically at that point, lower HIGH bump to -0.005 (accept at 0.5% less edge) and raise LOW bump to 0.015. If the monotonic pattern is absent, keep bumps flat and extend monitoring window. |
+| BOT-HIGH-ALIGNMENT | ALN-1 | Launch `bot_high_alignment` — only bets when alignment_class=HIGH | 2h | ⬜ | ⏳ After ALN-1-TUNE (need meaningful HIGH ROI data first; 3 bets is not enough). Gate: HIGH class ≥ 50 settled bets with ROI clearly above MEDIUM. Implementation: add new bot row to `BOT_CONFIGS` in `daily_pipeline_v2.py` with `"selection_filter_alignment": ["HIGH"]` and tighter edge thresholds than existing bots. Will produce fewer bets but should show higher precision — useful as the tips-product candidate. |
 | INPLAY-RETRAIN | P3.4 | Quarterly in-play model retraining | 2h | ⬜ | ⏳ After P3.4 | Seasonal — late-season desperation changes how game states map to results |
 
 ---
