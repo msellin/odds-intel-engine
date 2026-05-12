@@ -71,10 +71,13 @@ Submitted to 4 AI evaluators. Key verdicts that were implemented:
 │      α = model weight {T1: 0.20, T2: 0.30, T3: 0.50, T4: 0.65} │
 │      Anchor: Pinnacle-implied (soft-book fallback) ✅CAL-PIN-SHRINK │
 │      Longshot: odds>3.0 → α = max(α-0.20, 0.10) ✅CAL-ALPHA-ODDS │
-│    Stage 2: Platt sigmoid post-hoc correction                │
-│      cal = 1/(1+exp(-(a*shrunk+b))) per market              │
-│      α/β fitted weekly from settled predictions              │
-│      Upgrade path: 2-feature logistic at 300+ bets (CAL-PLATT-UPGRADE) │
+│    Stage 2: calibration correction per market                │
+│      1X2: Platt sigmoid — sigmoid(a*shrunk+b)               │
+│        α/β fitted weekly from predictions table              │
+│      O/U: 2-feature logistic ✅CAL-PLATT-UPGRADE 2026-05-12 │
+│        sigmoid(w0*shrunk + w1*log(odds) + intercept)         │
+│        Fitted from simulated_bets (needs odds at bet time)   │
+│        1X2 upgrade pending (≥300 settled 1X2 needed)         │
 │    Veto gates (1X2 home):                                    │
 │      cal_prob - pinnacle_implied > 0.12 → skip (PIN-VETO)   │
 │        Empirical: catches 22/34 losses, filters 6/40 wins    │

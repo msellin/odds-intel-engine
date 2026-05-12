@@ -177,6 +177,44 @@ def _():
     )
 
 
+@test("CAL-PLATT-UPGRADE — apply_platt uses 2-feature logistic when platt_c is set")
+def _():
+    """Guard the 2-feature logistic path in apply_platt (CAL-PLATT-UPGRADE).
+    When platt_c is non-null, apply_platt must use log(odds) as second feature.
+    When platt_c is null, must fall back to standard 1-feature Platt.
+    """
+    import math
+    from workers.model.improvements import apply_platt, reset_platt_cache
+
+    # Patch the cache with synthetic params
+    import workers.model.improvements as imp
+
+    # 1-feature case: c=None, no odds needed
+    imp._platt_params = {"1x2_home": (1.2, -0.5, None)}
+    result_1f = apply_platt(0.45, "1x2_home", odds=None)
+    expected_1f = 1.0 / (1.0 + math.exp(-(1.2 * 0.45 + (-0.5))))
+    assert abs(result_1f - expected_1f) < 1e-9, f"1-feature Platt wrong: {result_1f} vs {expected_1f}"
+
+    # 2-feature case: c=w1, odds provided
+    imp._platt_params = {"over_under_25_over": (0.9, -0.3, 0.4)}
+    result_2f = apply_platt(0.50, "over_under_25_over", odds=1.85)
+    expected_2f = 1.0 / (1.0 + math.exp(-(0.9 * 0.50 + 0.4 * math.log(1.85) + (-0.3))))
+    assert abs(result_2f - expected_2f) < 1e-9, f"2-feature logistic wrong: {result_2f} vs {expected_2f}"
+
+    # 2-feature fallback: c set but odds not provided → use 1-feature
+    result_fallback = apply_platt(0.50, "over_under_25_over", odds=None)
+    expected_fallback = 1.0 / (1.0 + math.exp(-(0.9 * 0.50 + (-0.3))))
+    assert abs(result_fallback - expected_fallback) < 1e-9, f"2-feature fallback wrong: {result_fallback} vs {expected_fallback}"
+
+    # 2-feature: different corrections at same prob but different odds
+    imp._platt_params = {"over_under_25_over": (1.0, 0.0, 0.5)}
+    cal_low_odds = apply_platt(0.55, "over_under_25_over", odds=1.60)
+    cal_high_odds = apply_platt(0.55, "over_under_25_over", odds=3.20)
+    assert cal_low_odds != cal_high_odds, "2-feature must produce different corrections at different odds"
+
+    reset_platt_cache()
+
+
 @test("OFFLINE-EVAL — bundle loader returns MFV-schema flag correctly")
 def _():
     """`_is_mfv_schema` is the dispatch gate that keeps offline_eval from

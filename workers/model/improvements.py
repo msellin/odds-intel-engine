@@ -185,8 +185,9 @@ def calibrate_prob(model_prob: float, implied_prob: float,
 
     shrunk = alpha * model_prob + (1 - alpha) * effective_anchor
 
-    # Stage 2: Platt sigmoid (if available for this market)
-    return apply_platt(shrunk, market)
+    # Stage 2: Platt sigmoid / 2-feature logistic (if available for this market)
+    # Pass odds so O/U markets can use the 2-feature logistic (CAL-PLATT-UPGRADE)
+    return apply_platt(shrunk, market, odds=odds)
 
 
 # =============================================================================
@@ -194,14 +195,18 @@ def calibrate_prob(model_prob: float, implied_prob: float,
 # =============================================================================
 
 # Cache: loaded once per pipeline run, refreshed weekly by fit_platt.py
-_platt_params: dict[str, tuple[float, float]] | None = None
+_platt_params: dict[str, tuple[float, float, float | None]] | None = None
 
 
-def load_platt_params() -> dict[str, tuple[float, float]]:
+def load_platt_params() -> dict[str, tuple[float, float, float | None]]:
     """
-    Load latest Platt α, β per market from model_calibration table.
-    Returns dict: market → (a, b). Empty dict if table doesn't exist or is empty.
-    Cached for the lifetime of the process.
+    Load latest calibration params per market from model_calibration table.
+
+    Returns dict: market → (a, b, c) where:
+      - 1-feature Platt (1X2): c=None, apply sigmoid(a*prob + b)
+      - 2-feature logistic (O/U, CAL-PLATT-UPGRADE): c=w1, apply sigmoid(a*shrunk + c*log(odds) + b)
+
+    Empty dict if table doesn't exist or is empty. Cached for process lifetime.
     """
     global _platt_params
     if _platt_params is not None:
@@ -210,14 +215,17 @@ def load_platt_params() -> dict[str, tuple[float, float]]:
     _platt_params = {}
     try:
         rows = execute_query(
-            "SELECT market, platt_a, platt_b FROM model_calibration ORDER BY fitted_at DESC LIMIT 20",
+            "SELECT market, platt_a, platt_b, platt_c FROM model_calibration ORDER BY fitted_at DESC LIMIT 30",
             [],
         )
         seen: set = set()
         for row in rows:
             mkt = row["market"]
             if mkt not in seen:
-                _platt_params[mkt] = (float(row["platt_a"]), float(row["platt_b"]))
+                a = float(row["platt_a"])
+                b = float(row["platt_b"])
+                c = float(row["platt_c"]) if row.get("platt_c") is not None else None
+                _platt_params[mkt] = (a, b, c)
                 seen.add(mkt)
     except Exception:
         pass  # Table may not exist yet — graceful no-op
@@ -225,13 +233,18 @@ def load_platt_params() -> dict[str, tuple[float, float]]:
     return _platt_params
 
 
-def apply_platt(prob: float, market: str) -> float:
+def apply_platt(prob: float, market: str, odds: float | None = None) -> float:
     """
-    Apply Platt sigmoid if parameters exist for this market.
+    Apply learned calibration correction for this market.
 
+    1-feature Platt (1X2, platt_c IS NULL):
         calibrated = 1 / (1 + exp(-(a * prob + b)))
 
-    Falls back to returning prob unchanged if no params available.
+    2-feature logistic (O/U, platt_c IS NOT NULL — CAL-PLATT-UPGRADE):
+        calibrated = 1 / (1 + exp(-(a * prob + c * log(odds) + b)))
+        Falls back to 1-feature if odds not provided.
+
+    Returns prob unchanged if no params available for this market.
     """
     if not market:
         return prob
@@ -240,9 +253,13 @@ def apply_platt(prob: float, market: str) -> float:
     if market not in params:
         return prob
 
-    a, b = params[market]
-    z = a * prob + b
-    # Clamp to prevent overflow
+    a, b, c = params[market]
+
+    if c is not None and odds is not None and odds > 1.0:
+        z = a * prob + c * math.log(odds) + b
+    else:
+        z = a * prob + b
+
     z = max(-30.0, min(30.0, z))
     return 1.0 / (1.0 + math.exp(-z))
 
