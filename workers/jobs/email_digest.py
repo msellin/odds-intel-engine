@@ -12,11 +12,13 @@ to ignore the email. Slots let the system wait until enough quality picks
 exist before sending.
 
 Qualification (signal strength, not raw count):
-    score = Σ (edge_pct × prestige_weight × kelly_fraction)
+    score = Σ ((edge_pct × 100) × prestige_weight × kelly_fraction)
 where prestige_weight comes from `workers/utils/league_prestige.py`. T4
 leagues (youth / women / lower divisions / low-coverage countries) carry
 weight 0 and are excluded from both score and email content. Threshold via
-EMAIL_DIGEST_MIN_SIGNAL env var (default 5.0).
+EMAIL_DIGEST_MIN_SIGNAL env var (default 5.0). Note: `edge_percent` in the DB
+is a decimal fraction (0.05 = 5%), so the formula scales by ×100 to put the
+threshold in human "percentage points" units (5.0 ≈ ~20 quality picks).
 
 Morning digest tier content:
   Free   — top 3 match preview teasers + site activity stats + upgrade CTA
@@ -131,7 +133,7 @@ def fetch_value_bets_summary(target_date: str) -> dict:
         JOIN leagues l  ON l.id  = m.league_id
         WHERE sb.created_at::date = %s
           AND sb.result = 'pending'
-          AND sb.edge_percent >= 3
+          AND sb.edge_percent >= 0.03
           AND ({PRESTIGE_WEIGHT_SQL}) > 0
         ORDER BY sb.edge_percent DESC
         LIMIT 10
@@ -156,7 +158,7 @@ def compute_signal_strength(target_date: str) -> dict:
             COUNT(*) FILTER (WHERE ({PRESTIGE_WEIGHT_SQL}) > 0) AS n_prestige_bets,
             COUNT(*) AS n_total_bets,
             COALESCE(SUM(
-                sb.edge_percent
+                (sb.edge_percent * 100)
                   * ({PRESTIGE_WEIGHT_SQL})
                   * COALESCE(sb.kelly_fraction, 0.05)
             ), 0)::numeric AS signal_strength
@@ -165,7 +167,7 @@ def compute_signal_strength(target_date: str) -> dict:
         JOIN leagues l ON l.id = m.league_id
         WHERE sb.created_at::date = %s
           AND sb.result = 'pending'
-          AND sb.edge_percent >= 3
+          AND sb.edge_percent >= 0.03
         """,
         [target_date],
     )
@@ -208,7 +210,7 @@ def fetch_new_value_bets(target_date: str, since_iso: str) -> dict:
         WHERE sb.created_at::date = %s
           AND sb.created_at >= %s
           AND sb.result = 'pending'
-          AND sb.edge_percent >= 3
+          AND sb.edge_percent >= 0.03
         ORDER BY sb.edge_percent DESC
         LIMIT 10
         """,

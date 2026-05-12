@@ -1380,6 +1380,32 @@ def _():
     )
 
 
+@test("EMAIL-DIGEST-EDGE-UNITS — edge_percent filter uses decimal threshold, formula scales ×100")
+def _():
+    """Regression guard: edge_percent is stored as decimal (0.05 = 5%).
+    Smart-slot qualification (introduced 2026-05-09) shipped with `>= 3` which
+    would require 300% edge — impossible, so signal_strength was always 0 and
+    no digest ever fired between 2026-05-09 and 2026-05-12. Lock in the fix:
+    (a) the min-edge filter must compare against a decimal (>= 0.03, not >= 3),
+    (b) the signal_strength formula must scale edge_percent by ×100 so the
+    documented EMAIL_DIGEST_MIN_SIGNAL=5.0 default has its intended meaning."""
+    src = open("workers/jobs/email_digest.py").read()
+    # Filter must be decimal — `>= 3` (as standalone token) would mean 300% edge
+    assert "edge_percent >= 3\n" not in src and "edge_percent >= 3 " not in src, (
+        "edge_percent >= 3 is a unit bug — edge_percent is decimal (0.05 = 5%), "
+        "use >= 0.03 to mean 3%"
+    )
+    # The fixed threshold must appear (at least once in compute_signal_strength)
+    assert "edge_percent >= 0.03" in src, (
+        "Expected `edge_percent >= 0.03` (3% threshold as decimal) after the fix"
+    )
+    # And the formula must scale edge_percent ×100 to match the documented threshold units
+    assert "sb.edge_percent * 100" in src, (
+        "compute_signal_strength formula must scale edge_percent×100 — "
+        "EMAIL_DIGEST_MIN_SIGNAL default (5.0) assumes edge in percentage-point units"
+    )
+
+
 @test("EMAIL-DIGEST-SMART — scheduler has 4 slots at 10/12/14/16 UTC")
 def _():
     """Source guard: scheduler must register four email_digest slots."""
