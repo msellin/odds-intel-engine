@@ -4699,5 +4699,29 @@ def test_weather_geocode_address():
     assert "address" in sc, "store_venues must upsert address column"
 
 
+@test("BEST-BOOKMAKER-RETURN — _load_today_from_db returns 4-tuple with best_bookmaker dict (source inspect)")
+def test_best_bookmaker_return():
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+    src = (root / "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+
+    # Return signature must include best_bookmaker as 4th element
+    assert "return odds_matches, af_only_matches, af_preds, dict(best_bookmaker)" in src, \
+        "_load_today_from_db must return best_bookmaker as 4th element"
+
+    # Caller must unpack 4 values
+    assert "odds_matches, af_only_matches, af_preds, best_bookmaker = _load_today_from_db" in src, \
+        "run_morning must unpack 4 values from _load_today_from_db"
+
+    # best_bookmaker must be initialized before the if/else so Phase 1 path is also safe
+    assert "best_bookmaker: dict[str, dict[str, str]] = {}" in src, \
+        "best_bookmaker must be initialized to {} before the skip_fetch branch"
+
+    # Early-return paths must also return 4-tuples
+    early_returns = [line.strip() for line in src.splitlines() if "return [], [], {}, {}" in line]
+    assert len(early_returns) >= 2, \
+        f"Expected >=2 early-return 4-tuples in _load_today_from_db, found {len(early_returns)}"
+
+
 if __name__ == "__main__":
     main()

@@ -1205,15 +1205,16 @@ def _next_day(date_str: str) -> str:
     return (d + timedelta(days=1)).isoformat()
 
 
-def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[str, dict]]:
+def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[str, dict], dict[str, dict]]:
     """
     PIPE-2: Load today's matches with best pre-match odds + AF predictions from DB.
     No API calls — reads odds_snapshots and predictions tables only.
     Uses direct SQL to avoid PostgREST URL length limits with large IN clauses.
-    Returns (odds_matches, af_only_matches, af_preds):
+    Returns (odds_matches, af_only_matches, af_preds, best_bookmaker):
       - odds_matches: matches with odds (used for betting + signals)
       - af_only_matches: matches with predictions but no odds (signals only, no betting)
       - af_preds: AF prediction probabilities keyed by match_id
+      - best_bookmaker: {match_id → {market_selection_key → bookmaker_name}}
     """
     from collections import defaultdict as _dd
     from workers.api_clients.db import execute_query
@@ -1240,7 +1241,7 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
     )
 
     if not matches_raw:
-        return [], {}
+        return [], [], {}, {}
 
     # Only bet on matches that haven't kicked off yet.
     # 'scheduled' status + kickoff in the future = safe to bet.
@@ -1260,7 +1261,7 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
             filtered.append(m)
 
     if not filtered:
-        return [], {}
+        return [], [], {}, {}
 
     match_ids = [m["id"] for m in filtered]
 
@@ -1441,7 +1442,7 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
     console.print(f"  {len(odds_matches)} matches with odds loaded from DB")
     console.print(f"  {len(af_only_matches)} AF-only matches (no odds) loaded from DB")
     console.print(f"  {len(af_preds)} AF predictions loaded from DB")
-    return odds_matches, af_only_matches, af_preds
+    return odds_matches, af_only_matches, af_preds, dict(best_bookmaker)
 
 
 def run_morning(skip_fetch: bool = False, cohort: str | None = None):
@@ -1487,10 +1488,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
             _bot_active[_bn] = True
 
     af_only_matches: list[dict] = []  # matches with predictions but no odds (signals only)
+    best_bookmaker: dict[str, dict[str, str]] = {}  # ACCESSIBLE-BM: set by _load_today_from_db (Phase 2) or empty (Phase 1)
     if skip_fetch:
         # Phase 2: read from DB — upstream jobs already fetched everything
         console.print("\n[cyan]Loading today's data from DB (skip_fetch=True)...[/cyan]")
-        odds_matches, af_only_matches, af_preds = _load_today_from_db(today_str)
+        odds_matches, af_only_matches, af_preds, best_bookmaker = _load_today_from_db(today_str)
         if not odds_matches and not af_only_matches:
             console.print("[yellow]No matches in DB today — pipeline skipped.[/yellow]")
             return
