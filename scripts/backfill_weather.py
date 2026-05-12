@@ -377,26 +377,33 @@ def _fetch_archive(lat: float, lon: float, start_date: str, end_date: str) -> di
     Fetch hourly weather from Open-Meteo archive for a date range.
     Returns {datetime_str: {temp_c, wind_kmh, rain_mm, humidity}} or None.
     datetime_str format: "2024-08-15T19:00" (UTC, no tz suffix).
+    Retries once after 60s on 429.
     """
-    try:
-        r = requests.get(
-            _ARCHIVE_URL,
-            params={
-                "latitude": lat,
-                "longitude": lon,
-                "start_date": start_date,
-                "end_date": end_date,
-                "hourly": "temperature_2m,precipitation,wind_speed_10m,relative_humidity_2m",
-                "timezone": "UTC",
-                "wind_speed_unit": "kmh",
-            },
-            timeout=_TIMEOUT,
-        )
-        r.raise_for_status()
-        data = r.json()
-    except Exception as e:
-        console.print(f"  [yellow]Archive fetch failed ({lat:.2f},{lon:.2f}): {e}[/yellow]")
-        return None
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "start_date": start_date,
+        "end_date": end_date,
+        "hourly": "temperature_2m,precipitation,wind_speed_10m,relative_humidity_2m",
+        "timezone": "UTC",
+        "wind_speed_unit": "kmh",
+    }
+    for attempt in range(2):
+        try:
+            r = requests.get(_ARCHIVE_URL, params=params, timeout=_TIMEOUT)
+            if r.status_code == 429:
+                if attempt == 0:
+                    console.print(f"  [yellow]429 rate limit — waiting 60s before retry[/yellow]")
+                    time.sleep(60)
+                    continue
+                console.print(f"  [yellow]Archive fetch failed ({lat:.2f},{lon:.2f}): 429 after retry[/yellow]")
+                return None
+            r.raise_for_status()
+            data = r.json()
+            break
+        except Exception as e:
+            console.print(f"  [yellow]Archive fetch failed ({lat:.2f},{lon:.2f}): {e}[/yellow]")
+            return None
 
     hourly = data.get("hourly", {})
     times = hourly.get("time", [])
