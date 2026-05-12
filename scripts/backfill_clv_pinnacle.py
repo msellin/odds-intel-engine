@@ -20,7 +20,12 @@ from dotenv import load_dotenv
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from rich.console import Console
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeRemainingColumn
+
 from workers.api_clients.db import execute_query, execute_write
+
+console = Console()
 
 
 def _normalize_market(market: str) -> str:
@@ -48,9 +53,8 @@ def _normalize_selection(selection: str) -> str:
 
 
 def run():
-    print("\n=== Backfill clv_pinnacle on settled bets ===\n")
+    console.print("[cyan]Backfill clv_pinnacle on settled bets[/cyan]")
 
-    # All settled bets missing clv_pinnacle
     bets = execute_query(
         """SELECT id, match_id, market, selection, odds_at_pick
            FROM simulated_bets
@@ -60,15 +64,12 @@ def run():
         [],
     )
     if not bets:
-        print("Nothing to backfill — all settled bets already have clv_pinnacle.")
+        console.print("[green]Nothing to backfill — all settled bets already have clv_pinnacle.[/green]")
         return
 
-    print(f"Found {len(bets)} settled bets without clv_pinnacle.")
+    console.print(f"  {len(bets):,} settled bets without clv_pinnacle")
 
-    # Bulk-load all Pinnacle closing snapshots for these matches in one query
     match_ids = list({b["match_id"] for b in bets})
-
-    # Prefer is_closing=TRUE, fall back to latest per (match_id, market, selection)
     snap_rows = execute_query(
         """SELECT DISTINCT ON (match_id, market, selection)
                match_id, market, selection, odds
@@ -81,7 +82,6 @@ def run():
         (match_ids,),
     )
 
-    # Index by (match_id, market, selection)
     snap_idx: dict[tuple, float] = {}
     for r in snap_rows:
         key = (str(r["match_id"]), r["market"], r["selection"])
@@ -90,28 +90,36 @@ def run():
     updated = 0
     missing = 0
 
-    for bet in bets:
-        mkt = _normalize_market(bet["market"])
-        sel = _normalize_selection(bet["selection"])
-        key = (str(bet["match_id"]), mkt, sel)
-        pin_close = snap_idx.get(key)
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("bets", total=len(bets))
+        for bet in bets:
+            mkt = _normalize_market(bet["market"])
+            sel = _normalize_selection(bet["selection"])
+            key = (str(bet["match_id"]), mkt, sel)
+            pin_close = snap_idx.get(key)
 
-        if pin_close is None or pin_close <= 1.0:
-            missing += 1
-            continue
+            if pin_close is None or pin_close <= 1.0:
+                missing += 1
+                progress.advance(task)
+                continue
 
-        odds_at_pick = float(bet["odds_at_pick"])
-        clv_pin = round((odds_at_pick / pin_close) - 1, 4)
+            odds_at_pick = float(bet["odds_at_pick"])
+            clv_pin = round((odds_at_pick / pin_close) - 1, 4)
 
-        execute_write(
-            "UPDATE simulated_bets SET clv_pinnacle = %s WHERE id = %s",
-            [clv_pin, bet["id"]],
-        )
-        updated += 1
+            execute_write(
+                "UPDATE simulated_bets SET clv_pinnacle = %s WHERE id = %s",
+                [clv_pin, bet["id"]],
+            )
+            updated += 1
+            progress.advance(task)
 
-    print(f"  Updated:       {updated} bets with clv_pinnacle")
-    print(f"  No Pinnacle:   {missing} bets (no Pinnacle snapshot in odds_snapshots)")
-    print("\n=== Done ===\n")
+    console.print(f"[green]Done — {updated:,} updated, {missing:,} skipped (no Pinnacle snapshot)[/green]")
 
 
 if __name__ == "__main__":

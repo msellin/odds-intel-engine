@@ -16,6 +16,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from rich.console import Console
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeRemainingColumn
 
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -33,32 +34,43 @@ def run(dry_run: bool = False):
         r["match_id"]
         for r in execute_query("SELECT DISTINCT match_id FROM odds_snapshots ORDER BY match_id")
     ]
-    console.print(f"  {len(match_ids):,} distinct match_ids")
+    total_chunks = (len(match_ids) + CHUNK - 1) // CHUNK
+    console.print(f"  {len(match_ids):,} distinct match_ids  ({total_chunks} chunks of {CHUNK})")
 
     total_updated = 0
-    for i in range(0, len(match_ids), CHUNK):
-        chunk = match_ids[i : i + CHUNK]
-        if dry_run:
-            console.print(f"  [yellow]DRY RUN: would update chunk {i}–{i+len(chunk)}[/yellow]")
-            continue
-        rows = execute_write(
-            """
-            WITH earliest AS (
-                SELECT DISTINCT ON (match_id, bookmaker, market, selection) id
-                FROM odds_snapshots
-                WHERE match_id = ANY(%s::uuid[])
-                ORDER BY match_id, bookmaker, market, selection, timestamp ASC
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("chunks", total=total_chunks)
+        for i in range(0, len(match_ids), CHUNK):
+            chunk = match_ids[i : i + CHUNK]
+            if dry_run:
+                progress.advance(task)
+                continue
+            rows = execute_write(
+                """
+                WITH earliest AS (
+                    SELECT DISTINCT ON (match_id, bookmaker, market, selection) id
+                    FROM odds_snapshots
+                    WHERE match_id = ANY(%s::uuid[])
+                    ORDER BY match_id, bookmaker, market, selection, timestamp ASC
+                )
+                UPDATE odds_snapshots SET is_opening = true
+                WHERE id IN (SELECT id FROM earliest)
+                  AND is_opening = false
+                """,
+                (chunk,),
             )
-            UPDATE odds_snapshots SET is_opening = true
-            WHERE id IN (SELECT id FROM earliest)
-              AND is_opening = false
-            """,
-            (chunk,),
-        )
-        total_updated += rows or 0
-        console.print(f"  chunk {i//CHUNK + 1}: +{rows or 0} rows  (total {total_updated:,})")
+            total_updated += rows or 0
+            progress.advance(task)
 
-    if not dry_run:
+    if dry_run:
+        console.print(f"[yellow]DRY RUN — {total_chunks} chunks, no writes[/yellow]")
+    else:
         console.print(f"[green]Done — {total_updated:,} rows marked is_opening=true[/green]")
 
 
