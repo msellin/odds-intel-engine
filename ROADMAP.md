@@ -145,7 +145,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | ML model registry (Supabase Storage + `model_versions` table) | ✅ **ML-BUNDLE-STORAGE** (2026-05-10) — every trained bundle auto-uploads to Storage + auto-registers; `_load_models()` lazy-downloads on Railway cold-start. Solves Railway's ephemeral-filesystem problem for weekly retrains. 16 bundles archived. Switch versions via `MODEL_VERSION` env var → next deploy auto-pulls. Full design in `docs/ML_MODEL_REGISTRY.md` |
 | Active production model | ✅ **`v12_post0e`** (Pinnacle-free, post-Stage-0e). Switched from v9a_202425 on 2026-05-10. Beats v9 by ~50% on every 1X2 market log_loss in offline_eval. Compare any time: `python3 scripts/offline_eval.py vA vB --include-v9` |
 | pseudo_clv | ✅ All ~280 matches/day |
-| Platt scaling (post-hoc calibration) | ✅ 2-stage: tier shrinkage → Platt sigmoid. Weekly refit (Wed+Sun) |
+| Platt scaling (post-hoc calibration) | ✅ 2-stage: tier shrinkage → Platt/logistic. 1X2: 1-feature Platt. O/U: 2-feature logistic `[shrunk_prob, log(odds)]` code deployed 2026-05-12, fit pending 300 settled O/U bets (~73 now). Weekly refit (Wed+Sun) auto-triggers once threshold met |
 | Learned blend weights | ✅ MOD-2 — optimized Poisson/XGBoost weights + per-tier alpha. Weekly refit |
 | Featured leagues (frontend filtering) | ✅ `show_on_frontend` flag. ~50 curated leagues. 6-tier priority system |
 
