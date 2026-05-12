@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from workers.api_clients.db import execute_query, execute_write
 
 console = Console()
-CHUNK = 10_000
+CHUNK = 50
 
 
 def run(dry_run: bool = False):
@@ -46,7 +46,7 @@ def run(dry_run: bool = False):
             WITH earliest AS (
                 SELECT DISTINCT ON (match_id, bookmaker, market, selection) id
                 FROM odds_snapshots
-                WHERE match_id = ANY(%s)
+                WHERE match_id = ANY(%s::uuid[])
                 ORDER BY match_id, bookmaker, market, selection, timestamp ASC
             )
             UPDATE odds_snapshots SET is_opening = true

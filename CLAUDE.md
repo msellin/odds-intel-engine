@@ -113,11 +113,11 @@ ESPN (free)                  -> Settlement results backup
                     ② Enrichment  (04:15/12:00/16:00 UTC) — standings, H2H, team stats, injuries
                     ③ Odds        (every 30min 07-22 UTC) — AF bulk odds (13 bookmakers)
                     ④ Predictions (05:30 UTC) — AF predictions
-                    ⑤ Betting     (06:00 UTC) — Poisson/XGBoost model + signals + bet placement
+                    ⑤ Betting     (06:00 UTC) — Poisson/XGBoost model + signals + bet placement (morning cohort)
                     ⑥ Live Tracker (30s/60s/5min tiered, 10-23 UTC) — live scores, odds, events, lineups
                     ⑦ News Checker (09:00/12:30/16:30/19:30 UTC) — Gemini AI analysis
                     ⑧ Settlement  (21:00 UTC) — settle bets, post-match stats, ELO, CLV
-                    ⑨ Betting Refresh (11:00/15:00/19:00 UTC) — pre-KO re-evaluation with fresh data
+                    ⑨ Betting Refresh (09:30/11:00/13:30/15:00/17:30/19:00/20:30 UTC) — re-evaluation with fresh odds per KO window
                                          |
                                Supabase Database (15 tables)
                                          |

@@ -71,7 +71,7 @@
 10-22  ⑬ Health Alert    run_snapshot_check()      Hourly: alerts if last LivePoller snapshot >25min stale
 ```
 
-### Betting refresh schedule (6x/day)
+### Betting refresh schedule (7x/day + morning pipeline = 8 total)
 | Time | KO window covered | Fresh inputs |
 |------|-------------------|-------------|
 | 06:30 (morning pipeline) | All day initial | Full enrichment + odds |
