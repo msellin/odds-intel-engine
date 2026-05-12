@@ -4620,7 +4620,11 @@ def test_model_signals_is_opening():
     assert migration.exists(), "096_is_opening_flag.sql must exist"
     mig_text = migration.read_text()
     assert "is_opening" in mig_text, "migration must add is_opening column"
-    assert "DISTINCT ON" in mig_text, "migration must backfill earliest row per combination"
+    # backfill moved to scripts/backfill_is_opening.py (inline UPDATE timed out on prod)
+    backfill = root / "scripts" / "backfill_is_opening.py"
+    assert backfill.exists(), "backfill_is_opening.py must exist"
+    bf_text = backfill.read_text()
+    assert "DISTINCT ON" in bf_text, "backfill script must mark earliest row per combination"
 
     sc = (root / "workers" / "api_clients" / "supabase_client.py").read_text()
     assert "is_opening" in sc, "supabase_client store_odds must include is_opening column"
