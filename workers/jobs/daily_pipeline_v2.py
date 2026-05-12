@@ -2117,7 +2117,9 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                 # Pinnacle disagreement veto: skip bets where our model is significantly
                 # more optimistic than Pinnacle (the sharpest book).
                 # Home: gap > 0.12 → 79% loss rate (22/28) from retrospective data.
-                # PIN-3: extended to draw/away/O/U with same 0.12 threshold (tune later).
+                # PIN-3: extended to draw/away/O/U 2.5 with same threshold.
+                # PIN-4: extended to all markets — BTTS/DC/AH/O/U non-2.5 lines have no
+                # stored Pinnacle signal, so fall back to best-book implied (ip) as anchor.
                 _pin_veto_map = {
                     "Home":      pinnacle_implied_by_match,
                     "Draw":      pinnacle_draw_by_match,
@@ -2125,12 +2127,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                     "Over 2.5":  pinnacle_over_by_match,
                     "Under 2.5": pinnacle_under_by_match,
                 }
-                if mkt in ("1X2", "O/U"):
-                    _pmap = _pin_veto_map.get(selection)
-                    if _pmap is not None:
-                        pin_implied = _pmap.get(str(match_id))
-                        if pin_implied is not None and (cal_prob - pin_implied) > PINNACLE_VETO_GAP:
-                            continue  # Pinnacle disagrees strongly — skip
+                _pmap = _pin_veto_map.get(selection) if mkt in ("1X2", "O/U") else None
+                _pin_implied = _pmap.get(str(match_id)) if _pmap is not None else None
+                _veto_anchor = _pin_implied if _pin_implied is not None else ip
+                if (cal_prob - _veto_anchor) > PINNACLE_VETO_GAP:
+                    continue  # Model too far above market anchor — skip
 
                 # CAL-SHARP-GATE: skip 1X2 home bets when sharp books collectively
                 # say home is LESS likely than soft books (sharp_consensus_home < -0.02).

@@ -4789,5 +4789,23 @@ def test_aln1_filter_active():
         "Pipeline still says LOG-ONLY — ALN-1 filter not activated"
 
 
+@test("PIN-4-VETO-ALL-MARKETS — Pinnacle veto covers BTTS/DC/AH/O/U non-2.5 via ip fallback")
+def test_pin4_veto_all_markets():
+    """PIN-4: Pinnacle veto applies to all markets (BTTS/DC/AH/O/U non-2.5), not just 1X2+O/U-2.5."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+
+    assert "PIN-4" in src, \
+        "PIN-4 comment not found — universal veto may not be implemented"
+    assert "_veto_anchor" in src, \
+        "_veto_anchor variable not found — fallback to ip for non-Pinnacle markets missing"
+    assert "cal_prob - _veto_anchor" in src, \
+        "veto check against _veto_anchor not found"
+    # Old market-gated path should be gone
+    assert 'if mkt in ("1X2", "O/U"):\n                    _pmap' not in src, \
+        "Old market-gated veto still present — BTTS/DC/AH would bypass it"
+
+
 if __name__ == "__main__":
     main()
