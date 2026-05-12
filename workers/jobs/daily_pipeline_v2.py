@@ -2158,10 +2158,17 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                 if kelly <= 0:
                     continue
 
-                # P3: Alignment — LOG-ONLY (stored but does not affect decisions)
+                # P3: Alignment — ALN-1 active (2026-05-12)
                 alignment = compute_alignment(
                     match_id, selection, odds_mv, match
                 )
+
+                # ALN-1: LOW-alignment bets require 1% extra edge.
+                # HIGH/MEDIUM unchanged — sample sizes too small to lower threshold.
+                # NONE is neutral (no signal ≠ bad signal).
+                _ALN_BUMP = {"LOW": 0.01, "MEDIUM": 0.0, "HIGH": 0.0, "NONE": 0.0}
+                if edge < me + _ALN_BUMP.get(alignment["alignment_class"], 0.0):
+                    continue
 
                 # P4: Kelly-based stake sizing with soft odds penalty
                 # Use running bankroll (reduced by stakes already placed this run)

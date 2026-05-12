@@ -375,9 +375,10 @@ def compute_alignment(
     Each dimension scores +1 (agrees with pick), 0 (neutral), or -1 (against).
     Alignment = count of agreeing dimensions / count of active dimensions.
 
-    NOTE: This is LOG-ONLY. The alignment_class is stored on the bet record
-    but does NOT modify stakes or filter bets. It will be activated once
-    we have 300+ bets showing alignment correlates with ROI.
+    NOTE: ALN-1 activated 2026-05-12. LOW-alignment bets require +1% edge
+    in the pipeline (daily_pipeline_v2.py). HIGH/MEDIUM/NONE thresholds
+    unchanged until sample sizes grow. Data at activation: 347 aligned bets,
+    HIGH=3 (+223% ROI), MEDIUM=11 (+29.6%), LOW=255 (+16.4%), NONE=78 (+19.1%).
 
     Returns:
         {

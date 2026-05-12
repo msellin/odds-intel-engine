@@ -4736,5 +4736,20 @@ def test_shrinkage_alpha_sql_bug():
         "Single % found in LIKE clause — will raise IndexError at runtime"
 
 
+@test("ALN-1 — LOW-alignment edge bump wired into pipeline and LOG-ONLY comment removed")
+def test_aln1_filter_active():
+    """ALN-1: LOW-alignment edge bump is wired into the pipeline and active (not LOG-ONLY)."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+
+    assert "_ALN_BUMP" in src, \
+        "_ALN_BUMP dict not found — ALN-1 filter not implemented"
+    assert '"LOW": 0.01' in src, \
+        "_ALN_BUMP LOW value should be 0.01 (1% extra edge for LOW-alignment bets)"
+    assert "LOG-ONLY" not in src, \
+        "Pipeline still says LOG-ONLY — ALN-1 filter not activated"
+
+
 if __name__ == "__main__":
     main()
