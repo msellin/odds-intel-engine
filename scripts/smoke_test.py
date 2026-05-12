@@ -4723,5 +4723,18 @@ def test_best_bookmaker_return():
         f"Expected >=2 early-return 4-tuples in _load_today_from_db, found {len(early_returns)}"
 
 
+@test("SHRINKAGE-ALPHA-SQL-BUG — load_shrinkage_alphas uses %% not % in LIKE clause (source inspect)")
+def test_shrinkage_alpha_sql_bug():
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+    src = (root / "workers" / "model" / "improvements.py").read_text()
+
+    assert "LIKE 'shrinkage_alpha_%%'" in src, \
+        "load_shrinkage_alphas LIKE clause must use %% (not %) — bare % is treated as a psycopg2 parameter placeholder"
+
+    assert "LIKE 'shrinkage_alpha_%'" not in src, \
+        "Single % found in LIKE clause — will raise IndexError at runtime"
+
+
 if __name__ == "__main__":
     main()

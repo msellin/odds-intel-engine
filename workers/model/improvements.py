@@ -83,7 +83,7 @@ def load_shrinkage_alphas() -> dict[str, float]:
             """
             SELECT market, platt_a, fitted_at
             FROM model_calibration
-            WHERE market LIKE 'shrinkage_alpha_%'
+            WHERE market LIKE 'shrinkage_alpha_%%'
             ORDER BY fitted_at DESC
             """,
             [],
