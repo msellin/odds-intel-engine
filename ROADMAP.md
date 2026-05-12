@@ -230,8 +230,8 @@ New bots planned based on live data accumulation:
 
 | Bot | Trigger | ~When | What's different |
 |-----|---------|-------|-----------------|
-| `bot_meta_v1` | 3000+ quality CLV rows (captured_at >= 2026-05-06) | ~May 17 | Uses logistic regression EV score instead of hardcoded thresholds. First bot learning from live data |
-| `bot_high_alignment` | 300+ settled bot bets (>= 2026-05-06) | ~June 5 | Only bets when alignment_class=HIGH. Fewer bets, higher precision |
+| `bot_meta_v1` | 3000+ quality CLV rows (created_at >= 2026-05-06, clv IS NOT NULL) | ~late June (582/3000 as of 2026-05-12, ~60/day avg) | Uses logistic regression EV score instead of hardcoded thresholds. First bot learning from live data. **Note:** original ~May 17 estimate assumed ~273/day; actual rate ~60/day. MFV row threshold (3,819) already met — CLV outcome rows are the binding constraint. |
+| `bot_high_alignment` | 300+ settled bot bets (>= 2026-05-06) | ✅ Ready now (590 settled as of 2026-05-12, was ~June 5 estimate) | Only bets when alignment_class=HIGH. Fewer bets, higher precision. Implement ALN-1 first (threshold met). |
 | `bot_retrained_xgb` | ✅ HIST-BACKFILL complete 2026-05-10 — gated on ML-RETRAIN-1 run | ~June | XGBoost retrained on recent data, not 2007-2025. Backfill done; awaiting `workers/model/train.py` rerun. |
 | In-play strategies G, H | Week 2 after Phase 1A launch | ~May 13 | Shot Quality Under + Corner Pressure Over |
 | In-play strategies I, J, K | Week 3 after Phase 1A launch | ~May 20 | Possession Trap + Dominant Underdog + 2H Burst |
