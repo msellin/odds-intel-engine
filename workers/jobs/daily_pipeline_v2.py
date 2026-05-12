@@ -2054,6 +2054,14 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                         _sel_cap = _sel.capitalize()  # "Home" or "Away"
                         if sel_filter and _sel_cap not in sel_filter:
                             continue
+                        # AH-NO-QUARTER: skip quarter lines (±.25 / ±.75).
+                        # Coolbet (our real-money book) only offers full and half lines.
+                        # Quarter-line paper bets can never be placed, so they distort
+                        # Kelly stakes (consume running bankroll) and trigger the league
+                        # exposure cap for adjacent half-line bets that ARE placeable.
+                        # If we ever add a book that supports quarter lines, remove this.
+                        if abs(_hl % 0.5) == 0.25:
+                            continue
                         _ah_prob = _ah_model_prob(_exp_h, _exp_a, _sel, _hl, rho=_tier_rho)
                         _sel_label = f"{_sel_cap} {_hl:+.4g}"  # e.g. "Home -1.25"
                         candidate_specs.append((

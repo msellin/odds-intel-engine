@@ -4789,6 +4789,18 @@ def test_aln1_filter_active():
         "Pipeline still says LOG-ONLY — ALN-1 filter not activated"
 
 
+@test("AH-NO-QUARTER — quarter lines (.25/.75) filtered from AH candidate generation")
+def test_ah_no_quarter_lines():
+    """AH-NO-QUARTER: quarter lines skipped — Coolbet only offers full/half lines."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+    assert "AH-NO-QUARTER" in src, \
+        "AH-NO-QUARTER comment not found — quarter-line filter may be missing"
+    assert "abs(_hl % 0.5) == 0.25" in src, \
+        "quarter-line filter expression not found"
+
+
 @test("PIN-4-VETO-ALL-MARKETS — Pinnacle veto covers BTTS/DC/AH/O/U non-2.5 via ip fallback")
 def test_pin4_veto_all_markets():
     """PIN-4: Pinnacle veto applies to all markets (BTTS/DC/AH/O/U non-2.5), not just 1X2+O/U-2.5."""
