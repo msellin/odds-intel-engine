@@ -3,7 +3,8 @@ OddsIntel — Weather Backfill
 
 Backfills match_weather for all finished matches with a venue_af_id.
 
-Four-phase flow:
+Five-phase flow:
+  0.  Discover venues referenced by matches but not yet in our venues table — fetch from AF
   1.  Seed venue city/country from AF /venues endpoint for venues missing city
   1b. Re-fetch ungeocodeable venues from AF to get address (used in Nominatim fallback)
   2.  Geocode venues missing lat/lon:
@@ -55,6 +56,44 @@ _ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 _TIMEOUT = 15
 _NOMINATIM_HEADERS = {"User-Agent": "OddsIntelEngine/1.0 geocoding@oddsintell.com"}
 _GEMINI_MODEL = "gemini-2.5-flash"
+
+
+# ─── Phase 0: discover unknown venues from matches ──────────────────────────
+
+def _discover_missing_venues(dry_run: bool) -> int:
+    """Fetch venues referenced by matches but not yet in our venues table."""
+    rows = execute_query(
+        """SELECT DISTINCT m.venue_af_id
+           FROM matches m
+           LEFT JOIN venues v ON v.af_id = m.venue_af_id
+           WHERE m.venue_af_id IS NOT NULL AND v.af_id IS NULL"""
+    )
+    if not rows:
+        console.print("  All match venues already in venues table — skipping")
+        return 0
+
+    console.print(f"  {len(rows)} venues in matches but not in venues table — fetching from AF")
+    if dry_run:
+        return len(rows)
+
+    fetched = []
+    with Progress(TextColumn("{task.description}"), BarColumn(),
+                  TextColumn("{task.completed}/{task.total}"),
+                  TimeRemainingColumn(), console=console) as progress:
+        task = progress.add_task("venues", total=len(rows))
+        for row in rows:
+            try:
+                raw = get_venue(row["venue_af_id"])
+                if raw:
+                    fetched.append(parse_venue(raw))
+            except Exception as e:
+                console.print(f"  [yellow]AF venue {row['venue_af_id']} failed: {e}[/yellow]")
+            progress.advance(task)
+            time.sleep(0.07)
+
+    stored = store_venues(fetched)
+    console.print(f"  {stored} new venues added")
+    return stored
 
 
 # ─── Phase 1: seed city from AF ─────────────────────────────────────────────
@@ -484,6 +523,9 @@ def _backfill_weather(coords: dict[int, tuple[float, float]], dry_run: bool) -> 
 def main(dry_run: bool = False) -> None:
     console.print("\n[bold cyan]Backfill match_weather[/bold cyan]")
 
+    console.print("\n[cyan]Phase 0 — Discover venues missing from venues table[/cyan]")
+    _discover_missing_venues(dry_run)
+
     console.print("\n[cyan]Phase 1 — Seed venue city from AF[/cyan]")
     _seed_venue_cities(dry_run)
 
@@ -498,6 +540,32 @@ def main(dry_run: bool = False) -> None:
 
     action = "would store" if dry_run else "stored"
     console.print(f"\n[bold green]Done — {action} weather for {stored} matches[/bold green]")
+
+    # Coverage summary
+    total_finished = execute_query("SELECT COUNT(*) as n FROM matches WHERE status = 'finished'")[0]["n"]
+    with_weather = execute_query("SELECT COUNT(*) as n FROM match_weather")[0]["n"]
+    no_venue = execute_query(
+        "SELECT COUNT(*) as n FROM matches WHERE status = 'finished' AND venue_af_id IS NULL"
+    )[0]["n"]
+    venue_no_coords = execute_query(
+        """SELECT COUNT(*) as n FROM matches m
+           JOIN venues v ON v.af_id = m.venue_af_id
+           LEFT JOIN match_weather mw ON mw.match_id = m.id
+           WHERE m.status = 'finished' AND v.lat IS NULL AND mw.match_id IS NULL"""
+    )[0]["n"]
+    unknown_venue = execute_query(
+        """SELECT COUNT(*) as n FROM matches m
+           LEFT JOIN venues v ON v.af_id = m.venue_af_id
+           LEFT JOIN match_weather mw ON mw.match_id = m.id
+           WHERE m.status = 'finished' AND m.venue_af_id IS NOT NULL
+             AND v.af_id IS NULL AND mw.match_id IS NULL"""
+    )[0]["n"]
+    console.print(f"\n[bold]Coverage summary[/bold]")
+    console.print(f"  Finished matches:        {total_finished:>7}")
+    console.print(f"  With weather:            {with_weather:>7}  ({with_weather/total_finished*100:.1f}%)")
+    console.print(f"  Gap — no venue_af_id:    {no_venue:>7}  (permanent, AF data missing)")
+    console.print(f"  Gap — venue no coords:   {venue_no_coords:>7}  (venue in DB but ungeocodeable)")
+    console.print(f"  Gap — venue not in DB:   {unknown_venue:>7}  (re-run to discover)")
 
 
 if __name__ == "__main__":

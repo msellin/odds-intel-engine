@@ -4664,6 +4664,7 @@ def test_backfill_weather():
     root = pathlib.Path(__file__).resolve().parent.parent
     src = (root / "scripts" / "backfill_weather.py").read_text()
     assert "archive-api.open-meteo.com" in src, "must use Open-Meteo archive API for historical weather"
+    assert "_discover_missing_venues" in src, "must have phase 0: discover venues missing from venues table"
     assert "_seed_venue_cities" in src, "must have phase 1: seed venue city from AF"
     assert "_seed_venue_addresses" in src, "must have phase 1b: seed address for ungeocodeable venues"
     assert "_geocode_venues" in src, "must have phase 2: geocode venues"
