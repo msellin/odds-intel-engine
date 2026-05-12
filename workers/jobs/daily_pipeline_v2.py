@@ -668,7 +668,7 @@ def compute_prediction(match, hist_targets, hist_targets_global=None,
     Compute Poisson prediction for a match using the best available history.
 
     Data tiers:
-      A — team found in targets_v9 (has bookmaker odds calibration)
+      A — team found in targets_poisson_history (has bookmaker odds calibration)
       B — team found only in targets_global (global results, no odds calibration)
       D — no historical data (AF prediction fallback only)
 
@@ -685,7 +685,7 @@ def compute_prediction(match, hist_targets, hist_targets_global=None,
     home = normalize_team_name(home_raw, source="default")
     away = normalize_team_name(away_raw, source="default")
 
-    # --- Tier A: search in targets_v9 ---
+    # --- Tier A: search in targets_poisson_history ---
     if _team_sets:
         v9_teams, global_teams_set = _team_sets
     else:
@@ -1567,11 +1567,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
 
     # 7. Load historical data for predictions
     console.print("\n[cyan]Loading historical data...[/cyan]")
-    targets_path = PROCESSED_DIR / "targets_v9.csv"
+    targets_path = PROCESSED_DIR / "targets_poisson_history.csv"
     if not targets_path.exists():
         targets_path = PROCESSED_DIR / "targets_fast.csv"
     hist_targets = pd.read_csv(targets_path)
-    console.print(f"  {len(hist_targets):,} Tier A matches (targets_v9)")
+    console.print(f"  {len(hist_targets):,} Tier A matches (targets_poisson_history)")
 
     hist_targets_global = None
     global_path = PROCESSED_DIR / "targets_global.csv"

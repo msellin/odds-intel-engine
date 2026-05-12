@@ -387,7 +387,7 @@ Gemini prompt rewritten to output structured JSON per bet:
 **Source: Assessment #4. Unique, highly practical.**
 **Implemented:** 2026-04-27 as `scripts/resolve_team_names.py`
 
-Script batch-resolves 204 unique unmatched team names against known teams from targets_v9.csv + targets_global.csv using Gemini Flash. Results cached in `data/processed/llm_team_name_cache.json`, optionally written to `KAMBI_TO_FOOTBALL_DATA` in `team_names.py` with `--apply` flag.
+Script batch-resolves 204 unique unmatched team names against known teams from targets_poisson_history.csv + targets_global.csv using Gemini Flash. Results cached in `data/processed/llm_team_name_cache.json`, optionally written to `KAMBI_TO_FOOTBALL_DATA` in `team_names.py` with `--apply` flag.
 
 **Validation (immediate — run now):**
 1. Before: `wc -l data/logs/unmatched_teams.log` → 2,287 entries, 204 unique teams

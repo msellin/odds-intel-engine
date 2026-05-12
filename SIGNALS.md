@@ -34,7 +34,7 @@ We do not decide upfront which signals matter. We collect everything, store it w
 | `model_disagreement` | `simulated_bets` + `match_feature_vectors` | Morning pipeline | ✅ Running |
 
 Data tier system:
-- **Tier A**: team in targets_v9.csv (European leagues) — Poisson + XGBoost available
+- **Tier A**: team in targets_poisson_history.csv (European leagues) — Poisson + XGBoost available
 - **Tier B**: team in targets_global.csv (global ELO dataset) — Poisson only
 - **Tier D**: no historical data — AF prediction only (ensemble = AF directly)
 

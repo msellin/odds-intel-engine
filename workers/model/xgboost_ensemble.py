@@ -101,7 +101,7 @@ def _load_models() -> dict:
 
 def _load_feature_data() -> dict:
     """
-    Load features_v9.csv + targets_v9.csv and build a lookup of
+    Load features_v9.csv + targets_poisson_history.csv and build a lookup of
     most recent feature vector per team. Cached after first call.
 
     Returns dict:
@@ -111,7 +111,7 @@ def _load_feature_data() -> dict:
         return _feature_cache
 
     features_path = PROCESSED_DIR / "features_v9.csv"
-    targets_path = PROCESSED_DIR / "targets_v9.csv"
+    targets_path = PROCESSED_DIR / "targets_poisson_history.csv"
 
     if not features_path.exists() or not targets_path.exists():
         return {}

@@ -2,7 +2,7 @@
 add_romanian_league_data.py
 
 Downloads Romanian Liga I (Superliga) historical data from football-data.co.uk
-and appends it to data/processed/targets_v9.csv.
+and appends it to data/processed/targets_poisson_history.csv.
 
 This gives FCSB and other Romanian Liga I teams Tier A (bookmaker-calibrated)
 predictions instead of falling back to targets_global, which mixes in European
@@ -19,7 +19,7 @@ import urllib.request
 import pandas as pd
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-V9_PATH = ROOT / "data" / "processed" / "targets_v9.csv"
+HISTORY_PATH = ROOT / "data" / "processed" / "targets_poisson_history.csv"
 
 ROU_URL = "https://www.football-data.co.uk/new/ROU.csv"
 
@@ -105,12 +105,12 @@ def build_targets_rows(rou: pd.DataFrame) -> pd.DataFrame:
 
 
 def main():
-    if not V9_PATH.exists():
-        print(f"ERROR: {V9_PATH} not found")
+    if not HISTORY_PATH.exists():
+        print(f"ERROR: {HISTORY_PATH} not found")
         sys.exit(1)
 
-    existing = pd.read_csv(V9_PATH, low_memory=False)
-    print(f"  targets_v9.csv currently: {len(existing):,} rows")
+    existing = pd.read_csv(HISTORY_PATH, low_memory=False)
+    print(f"  targets_poisson_history.csv currently: {len(existing):,} rows")
 
     # Skip if Romanian data already present
     if "RO1" in existing["league_code"].values:
@@ -145,8 +145,8 @@ def main():
     combined = combined.sort_values("Date")
     combined["Date"] = combined["Date"].dt.strftime("%Y-%m-%d")
 
-    combined.to_csv(V9_PATH, index=False)
-    print(f"\n  Written {len(combined):,} rows to {V9_PATH}")
+    combined.to_csv(HISTORY_PATH, index=False)
+    print(f"\n  Written {len(combined):,} rows to {HISTORY_PATH}")
     added = len(combined) - len(existing)
     print(f"  Net rows added: {added}")
 

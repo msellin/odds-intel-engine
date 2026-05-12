@@ -4638,18 +4638,18 @@ def test_model_signals_is_opening():
     assert "NOT is_opening" in pruner, "pruner must never delete is_opening=true rows"
 
 
-@test("ROMANIAN-LIGA-I-DATA — targets_v9.csv includes RO1 data with FCSB + Slobozia")
+@test("ROMANIAN-LIGA-I-DATA — targets_poisson_history.csv includes RO1 data with FCSB + Slobozia")
 def test_romanian_liga_data():
-    """RO1-DATA-FIX: FCSB and Unirea Slobozia must be in targets_v9 (Tier A) so Poisson
+    """RO1-DATA-FIX: FCSB and Unirea Slobozia must be in targets_poisson_history (Tier A) so Poisson
     expected goals are based on Liga I performance, not global data that mixes in European
     competition and inverts FCSB's expected goals."""
     import pathlib
     import pandas as pd
     root = pathlib.Path(__file__).resolve().parent.parent
-    v9 = root / "data" / "processed" / "targets_v9.csv"
-    assert v9.exists(), "targets_v9.csv must exist"
-    df = pd.read_csv(v9, low_memory=False)
-    assert "RO1" in df["league_code"].values, "targets_v9 must contain Romanian Liga I (RO1) rows"
+    ph = root / "data" / "processed" / "targets_poisson_history.csv"
+    assert ph.exists(), "targets_poisson_history.csv must exist"
+    df = pd.read_csv(ph, low_memory=False)
+    assert "RO1" in df["league_code"].values, "targets_poisson_history must contain Romanian Liga I (RO1) rows"
     teams = set(df[df["league_code"] == "RO1"]["home_team"].unique()) | \
             set(df[df["league_code"] == "RO1"]["away_team"].unique())
     assert "FCSB" in teams, "FCSB must be in RO1 rows"
