@@ -10,6 +10,58 @@
 
 ---
 
+## 📋 Open Work — Priority Overview
+
+> All currently open (⬜) tasks in one place. Priority reflects *right now* (2026-05-12 — self-use validation Phase 3). Update when focus shifts.
+>
+> **Priorities:** P0 = blocking or high data-loss risk · P1 = do before paid launch · P2 = do when accumulating data / useful now · P3 = defer until triggered
+
+| ID | Pri | Effort | Why now / When to do |
+|----|-----|--------|----------------------|
+| **VALIDATION** | | | |
+| SELF-USE-VALIDATION (Phase 3) | P0 | 4-6 wks elapsed | Core goal — accumulate 250 real bets |
+| ODDS-TIMING-VALIDATE | P1 | 1h | Run ~2026-05-28 after 2 weeks of hourly snapshot data |
+| INPLAY-ODDS-SOURCE | P1 | 2h research | Need per-bookmaker live odds before inplay push notifications are actionable |
+| INPLAY-AUTO-ESTONIAN | P1 | 2h research | Research automation path before inplay is proven — don't wait until last minute |
+| **QUICK AF SAVINGS (~2h total, saves ~550 calls/day)** | | | |
+| AF-CACHE-H2H | P1 | 1h | Saves ~360 AF calls/day; H2H never changes within a season |
+| AF-CACHE-TEAM-STATS | P1 | 1h | Saves ~150 AF calls/day; stats only update post-match |
+| AF-STANDINGS-DAILY | P1 | 30m | Saves ~40 calls/day; standings don't change intraday |
+| **RELIABILITY** | | | |
+| BARE-EXCEPT-AUDIT | P1 | 1h | Direct follow-up to AUDIT-SILENT-EXCEPT — audit remaining storage-path swallows |
+| BACKUP-RESTORE-DRILL | P1 | 1h | Untested backup = no backup; you're on Supabase Pro PITR, verify it works |
+| BOT-AGGREGATES-SSOT | P1 | 2-3h | /admin/bots and /performance diverge by construction; fix before paid launch |
+| SCHEMA-DRIFT-SMOKE | P1 | 30m | Cheap: 30-min smoke catches column-rename silent failures |
+| MODEL-DRIFT-ALERT | P2 | 1h | Z-score on daily predictions — catches broken feature pipeline before bots drain |
+| AF-COVERAGE-AUDIT | P2 | 1h | Validate AF coverage flags → gate live poller events/lineups → saves calls |
+| AF-QUOTA-AUDIT | P2 | 3-4h | On Mega now (150K/day); monitor + throttle system before next peak Saturday |
+| MEMORY-MONITORING | P2 | 30m | Railway pod OOM emits no Python exception — heartbeat is only defense |
+| OBS-SENTRY-BACKEND | P2 | 1.5h | Useful only when external users exist; premature at single-user stage |
+| JOB-TIMEOUT | P3 | 2h | Hung jobs hold conns; nice to have but healthchecks.io catches the symptom already |
+| WORKER-SPLIT-LIVEPOLLER | P3 | 30m+click | LivePoller crash isolation; defer unless cascade failures reappear |
+| **INPLAY ML (data-gated)** | | | |
+| INPLAY-CALIBRATION-IJL | P2 | 1h | Run ~June when bots I/J/L reach 50+ settled bets each |
+| INPLAY-BACKFILL-PERSIST | P2 | 3h | After backfill review; adds `is_backfill` flag to simulated_bets |
+| INPLAY-HT-REPRICING | P3 | 2h | After I/J/L reach 50 bets; narrow window strategy |
+| INPLAY-SOFT-GATES | P3 | 8h | Composite scoring to replace hard thresholds — wait for more data |
+| INPLAY-LAYER-ARCH | P3 | 4h | Architectural refactor; wait until ≥4 strategies are firing consistently |
+| INPLAY-NEW-POSSESSION-SWING | P3 | 4h | After corner+HT strategies are validated |
+| INPLAY-DIXON-COLES | P3 | 4h | After 1500+ bets |
+| **DEFERRED / TRIGGERED** | | | |
+| LIVE-SNAPSHOTS-PRUNE | Defer | 2-3h | DB storage is cheap; defer until query slowdowns observed |
+| OU-LINE-DRIFT-INVESTIGATE | Defer | 4h | Lower priority now Pinnacle-required gate is in place |
+| BULK-STORE-AUDIT | Defer | 2-3h | No hot paths observed post BULK-STORE-ODDS/PREDICTIONS wins |
+| JOB-IDEMPOTENT | Defer | 6h | Heavy audit; do only if re-run bugs surface in production |
+| NORDIC-BOOKS-INTEGRATION | Defer | 1-2d | Only if Nordic real-money bettability becomes a product requirement |
+| BOT-AGGREGATES-SSOT | P1 | 2-3h | See above |
+| STAGING-ENV | Defer | 3h | Build after first paid subscription |
+| SUPPORT-RUNBOOK | Defer | 1h | Write after first edge case fires, not before |
+| FAIL-OPEN-DEGRADATION | Defer | 3-4h | Polish; AF failure already degrades gracefully via exception boundaries |
+| USER-DEGRADATION-UX | Defer | 2h | UX polish; not blocking for personal-tool use |
+| EMAIL-DELIVERY-CHECK | P2 | 1h | Verify Resend DKIM/SPF before sending to more than a handful of users |
+
+---
+
 ## 🎯 2-Week Sprint — Market Expansion + Inplay Fix (filed 2026-05-11)
 
 > Context: 2-week window to prove the project. Pre-match CLV is +13% (real). Inplay bots placed ~0 live bets despite good replay. Focus: more pre-match bet types (quick) + unblock inplay (diagnostic first). Search for "2-WEEK SPRINT" to find all tasks in this group.
