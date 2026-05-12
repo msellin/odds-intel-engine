@@ -460,6 +460,7 @@ def _backfill_weather(coords: dict[int, tuple[float, float]], dry_run: bool) -> 
         return total_matches
 
     stored = 0
+    consecutive_429s = 0
     with Progress(TextColumn("{task.description}"), BarColumn(),
                   TextColumn("{task.completed}/{task.total}"),
                   TimeRemainingColumn(), console=console) as progress:
@@ -481,8 +482,16 @@ def _backfill_weather(coords: dict[int, tuple[float, float]], dry_run: bool) -> 
 
             archive = _fetch_archive(lat, lon, start_date, end_date)
             if not archive:
+                consecutive_429s += 1
+                if consecutive_429s >= 3:
+                    console.print(
+                        "  [bold red]3 consecutive failures — daily rate limit likely exhausted. "
+                        "Re-run after midnight UTC.[/bold red]"
+                    )
+                    break
                 progress.advance(task)
                 continue
+            consecutive_429s = 0
 
             rows_to_store = []
             for m in venue_matches:
