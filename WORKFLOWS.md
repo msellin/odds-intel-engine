@@ -1,7 +1,7 @@
 # OddsIntel — Workflows & Pipeline Architecture
 
 > Single source of truth for all scheduled jobs, their order, and manual run instructions.
-> Last updated: 2026-05-08 — Enrichment optimised: H2H now **Tier 1 only + same-day cache** (442 → ~50-80 calls on morning run, 0 on intraday). Transfers **capped at 100/run + 30-day cache** (was 831 calls/week). Coaches **capped at 50/run**. Periodic orphan cleanup job added to scheduler (every 30 min). Full morning enrichment target: <10 min.
+> Last updated: 2026-05-12 — AF caches shipped: H2H 7-day cross-match cache (saves ~360 calls/day), team_stats same-day DB cache (saves ~150 calls/day), standings moved to 23:30 UTC nightly (saves ~40 calls/day). Intraday enrichment refresh now injuries-only; full enrichment at 13:00 is injuries+H2H+team_stats. Total saving: ~550 AF calls/day.
 
 ### ✅ Railway Migration Complete (2026-04-30)
 
@@ -33,18 +33,18 @@
 09:00  ⑦ News Checker    run_news_checker()        Injury/lineup/news signals (Gemini)
 09:15  ① Fixtures        run_fixtures()            Status refresh — catches morning postponements
 09:30  ⑨ Betting Refresh betting_refresh()         Asian KOs + acts on fresh odds + 09:00 news
-10:30  ② Enrichment      run_enrichment()          Injuries + standings — fresh before 11:00 betting
+10:30  ② Enrichment      run_enrichment()          Injuries only — fresh before 11:00 betting (AF-STANDINGS-DAILY)
 10:45  ① Fixtures        run_fixtures()            Status refresh — before European morning betting
 11:00  ⑨ Betting Refresh betting_refresh()         European morning KOs
 12:30  ⑦ News Checker    run_news_checker()
 12:45  ① Fixtures        run_fixtures()            Status refresh — before 13:30 betting (BET-TIMING-ANALYSIS)
-13:00  ② Enrichment      run_enrichment()          Full enrichment — all 4 components (H2H+team_stats fresh for afternoon betting)
+13:00  ② Enrichment      run_enrichment()          Injuries + H2H + team_stats (standings now nightly only — AF-STANDINGS-DAILY)
 13:30  ⑨ Betting Refresh betting_refresh()         12:00-14:30 KO gap — aligned with 13:30 pre-KO odds run
 14:30  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts (ENG-8)
 14:30  ⑦ News Checker    run_news_checker()        Feeds 15:00 betting refresh
 14:45  ① Fixtures        run_fixtures()            Status refresh — before European afternoon betting
 15:00  ⑨ Betting Refresh betting_refresh()         European afternoon KOs
-16:00  ② Enrichment      run_enrichment()          Injuries + standings refresh
+16:00  ② Enrichment      run_enrichment()          Injuries only refresh (AF-STANDINGS-DAILY)
 16:00  ⑪ Value Bet Alert run_value_bet_alert('afternoon')  New bets since 10:00 UTC → Pro/Elite (N5)
 16:30  ⑦ News Checker    run_news_checker()
 17:15  ① Fixtures        run_fixtures()            Status refresh — before 17:30 betting (BET-TIMING-ANALYSIS)
@@ -61,6 +61,7 @@
                                                     + DC rho per tier (Sun only)
 21:30  ⑬ Health Alert    run_settlement_check()    Alerts if >5 pending bets on finished matches after settlement
        ⑮ Settle Recon  settle_reconcile.run()    MONEY-SETTLE-RECON: alerts if >2 finished matches have stuck pending bets
+23:30  ② Enrichment      run_enrichment()          Standings only — nightly once is enough (AF-STANDINGS-DAILY)
 23:30  ⑧c Settlement      settlement_pipeline()     Late catch-up: European evening matches finishing after 21:00
 01:00  ⑧d Settlement      settlement_pipeline()     Overnight catch-up: 21:30+ KOs finishing after extra time
 24/7   ⑥ LivePoller      live_poller.py            45s when live (scores+odds+stats), 120s idle — no time gate
@@ -128,8 +129,9 @@
 
 ### ② Enrichment (`fetch_enrichment.py`)
 - **04:15 (full):** standings (T9), H2H (T10), team stats (T2), injuries (T3), coaches (MGR-CHANGE), venues (AF-VENUES), sidelined (AF-SIDELINED), transfers (AF-TRANSFERS)
-- **10:30/16:00 (refresh):** injuries + standings only (10:30 moved from 12:00 to feed 11:00 betting)
-- **13:00 (full, N7):** all components — ensures H2H + team_stats are fresh for afternoon/evening betting refreshes
+- **10:30/16:00 (refresh):** injuries only (AF-STANDINGS-DAILY — standings no longer intraday; 10:30 moved from 12:00 to feed 11:00 betting)
+- **13:00 (full, N7):** injuries + H2H + team_stats — ensures fresh context for afternoon/evening betting refreshes (standings excluded per AF-STANDINGS-DAILY)
+- **23:30 (nightly):** standings only — standings update ~1x/week so daily once-at-night is sufficient (~40 calls/day saved)
 - **H2H (T10):** Tier 1 leagues only + same-day cache (`h2h_raw IS NOT NULL` on the match row). Morning run: ~50-80 calls. Intraday runs: 0 calls (all cached after morning). No API batching available for H2H, so scope + cache is the only optimisation.
 - Venues: one call per unique venue, cached in `venues` table; skips already-cached venues (near-zero ongoing cost)
 - Sidelined: 7-day cache per player; only fetches players currently listed as injured in today's matches (~5-20 calls/day)

@@ -4856,5 +4856,91 @@ def test_audit_silent_except():
         "scheduler.py: log_pipeline_failed failure is still swallowed silently"
 
 
+@test("AF-CACHE-TEAM-STATS — fetch_team_stats checks same-day DB cache before AF call")
+def _():
+    """Source guard: if someone removes the cached_stat_keys check, we silently
+    re-fetch every Tier-A team stat every intraday enrichment run (+150 AF calls/day)."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/fetch_enrichment.py").read_text()
+    fn_start = src.index("def fetch_team_stats(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    body = src[fn_start:fn_end]
+    assert "cached_stat_keys" in body, (
+        "fetch_team_stats must build cached_stat_keys from team_season_stats WHERE fetched_date — "
+        "without it every intraday run re-fetches all Tier-A teams from AF"
+    )
+    assert "fetched_date = %s" in body, (
+        "cache query must filter by fetched_date to scope to today's already-fetched rows"
+    )
+    assert "key in cached_stat_keys" in body, (
+        "loop must skip keys already in cached_stat_keys — the query without the check is wasted"
+    )
+
+
+@test("AF-CACHE-H2H — fetch_h2h builds 7-day cross-match cache before AF calls")
+def _():
+    """Source guard: 7-day cross-match cache reuses H2H from same team pair within the week.
+    Without it, every intraday enrichment run re-fetches H2H for returning fixtures (~360/day)."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/fetch_enrichment.py").read_text()
+    fn_start = src.index("def fetch_h2h(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    body = src[fn_start:fn_end]
+    assert "h2h_week_cache" in body, (
+        "fetch_h2h must build h2h_week_cache from matches within 7 days — "
+        "without it every intraday enrichment call hits AF for already-fetched H2H pairs"
+    )
+    assert "INTERVAL '7 days'" in body, (
+        "cross-match cache query must filter to the last 7 days — "
+        "older H2H should be re-fetched (lineup changes)"
+    )
+    assert "pair_key in h2h_week_cache" in body, (
+        "per-fixture loop must check pair_key against h2h_week_cache before calling get_h2h"
+    )
+
+
+@test("AF-STANDINGS-DAILY — standings moved to 23:30 nightly; intraday jobs no longer fetch standings")
+def _():
+    """Source guard: standings update ~1x/week; running them at 10:30/13:00/16:00 wasted
+    ~40 AF calls/day. AF-STANDINGS-DAILY moves them to a single 23:30 UTC nightly job."""
+    import pathlib
+    src = pathlib.Path("workers/scheduler.py").read_text()
+
+    # job_enrichment_refresh must use only injuries
+    refresh_start = src.index("def job_enrichment_refresh(")
+    refresh_end = src.index("\ndef ", refresh_start + 1)
+    refresh_body = src[refresh_start:refresh_end]
+    assert '"standings"' not in refresh_body, (
+        "job_enrichment_refresh must not include standings — AF-STANDINGS-DAILY moved them to 23:30"
+    )
+    assert '"injuries"' in refresh_body, (
+        "job_enrichment_refresh must still fetch injuries"
+    )
+
+    # job_enrichment_full must use explicit components without standings
+    full_start = src.index("def job_enrichment_full(")
+    full_end = src.index("\ndef ", full_start + 1)
+    full_body = src[full_start:full_end]
+    assert '"standings"' not in full_body, (
+        "job_enrichment_full must not include standings — AF-STANDINGS-DAILY moved them to 23:30"
+    )
+    assert '"h2h"' in full_body and '"team_stats"' in full_body, (
+        "job_enrichment_full must still include h2h and team_stats"
+    )
+
+    # job_standings_nightly must exist
+    assert "def job_standings_nightly(" in src, (
+        "job_standings_nightly must be defined — AF-STANDINGS-DAILY replaced intraday standings fetches"
+    )
+
+    # Nightly job registered at 23:30
+    assert 'id="standings_nightly"' in src, (
+        "standings_nightly job must be registered in the scheduler"
+    )
+    assert "CronTrigger(hour=23, minute=30)" in src, (
+        "standings_nightly must run at 23:30 UTC"
+    )
+
+
 if __name__ == "__main__":
     main()

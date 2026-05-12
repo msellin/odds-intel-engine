@@ -191,6 +191,16 @@ def fetch_team_stats(fixture_meta: dict, coverage_map: dict, team_af_id: int = N
     stored = 0
     seen: set[tuple] = set()
 
+    today_str = date.today().isoformat()
+    try:
+        cached_rows = execute_query(
+            "SELECT team_api_id, league_api_id, season FROM team_season_stats WHERE fetched_date = %s",
+            [today_str]
+        )
+        cached_stat_keys = {(r["team_api_id"], r["league_api_id"], r["season"]) for r in cached_rows}
+    except Exception:
+        cached_stat_keys = set()
+
     for fid, meta in fixture_meta.items():
         if meta.get("league_tier", 3) != 1:
             continue
@@ -206,7 +216,7 @@ def fetch_team_stats(fixture_meta: dict, coverage_map: dict, team_af_id: int = N
             if team_af_id and api_id != team_af_id:
                 continue
             key = (api_id, lg_api_id, fix_season)
-            if key in seen:
+            if key in seen or key in cached_stat_keys:
                 continue
             seen.add(key)
             try:
@@ -300,11 +310,46 @@ def fetch_h2h(fixture_meta: dict) -> int:
     if not to_fetch:
         return 0
 
+    # 7-day cross-match cache: reuse H2H from another match with same team pair fetched this week
+    try:
+        all_home = list({meta["home_team_api_id"] for meta in to_fetch.values()})
+        all_away = list({meta["away_team_api_id"] for meta in to_fetch.values()})
+        recent = execute_query(
+            """SELECT DISTINCT ON (home_team_api_id, away_team_api_id)
+                      home_team_api_id, away_team_api_id,
+                      h2h_raw, h2h_home_wins, h2h_draws, h2h_away_wins
+               FROM matches
+               WHERE home_team_api_id = ANY(%s::int[])
+                 AND away_team_api_id = ANY(%s::int[])
+                 AND h2h_raw IS NOT NULL
+                 AND date >= CURRENT_DATE - INTERVAL '7 days'
+               ORDER BY home_team_api_id, away_team_api_id, date DESC""",
+            [all_home, all_away]
+        )
+        h2h_week_cache = {
+            (r["home_team_api_id"], r["away_team_api_id"]): {
+                "h2h_raw": r["h2h_raw"],
+                "h2h_home_wins": r["h2h_home_wins"],
+                "h2h_draws": r["h2h_draws"],
+                "h2h_away_wins": r["h2h_away_wins"],
+            }
+            for r in recent
+        }
+    except Exception:
+        h2h_week_cache = {}
+
     stored = 0
+    cross_cached = 0
     for fid, meta in to_fetch.items():
         match_id = meta["match_id"]
         home_id = meta["home_team_api_id"]
         away_id = meta["away_team_api_id"]
+        pair_key = (home_id, away_id)
+        if pair_key in h2h_week_cache:
+            store_match_h2h(match_id, h2h_week_cache[pair_key])
+            cross_cached += 1
+            stored += 1
+            continue
         try:
             raw = get_h2h(home_id, away_id, last=5)
             if not raw:
@@ -316,7 +361,7 @@ def fetch_h2h(fixture_meta: dict) -> int:
             console.print(f"  [yellow]H2H failed for {home_id} vs {away_id}: {e}[/yellow]")
             continue
 
-    console.print(f"  {stored} H2H records stored")
+    console.print(f"  {stored} H2H records stored ({cross_cached} from 7-day cache, {stored - cross_cached} AF calls)")
     return stored
 
 
