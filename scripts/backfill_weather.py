@@ -6,12 +6,16 @@ Backfills match_weather for all finished matches with a venue_af_id.
 Four-phase flow:
   1.  Seed venue city/country from AF /venues endpoint for venues missing city
   1b. Re-fetch ungeocodeable venues from AF to get address (used in Nominatim fallback)
-  2.  Geocode venues missing lat/lon — Open-Meteo first, Nominatim fallback
+  2.  Geocode venues missing lat/lon:
+        a. Open-Meteo geocoding API (city-level, fast, free)
+        b. Nominatim / OpenStreetMap fallback (venue name + address, free, 1 req/s)
+        c. Gemini AI batch fallback (single prompt for all remaining — city-level OK for weather)
   3.  Fetch historical weather from Open-Meteo archive API per venue+date range,
       then upsert into match_weather for each match's kickoff hour
 
 Open-Meteo archive API is free, no key required. Handles past dates back to 1940.
 Nominatim (OpenStreetMap) is free, no key required. Rate limit: 1 req/s.
+Gemini AI batch requires GEMINI_API_KEY.
 
 Usage:
   python3 scripts/backfill_weather.py
@@ -21,6 +25,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import re
 import sys
 import time
@@ -48,6 +54,7 @@ _NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 _ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 _TIMEOUT = 15
 _NOMINATIM_HEADERS = {"User-Agent": "OddsIntelEngine/1.0 geocoding@oddsintell.com"}
+_GEMINI_MODEL = "gemini-2.5-flash"
 
 
 # ─── Phase 1: seed city from AF ─────────────────────────────────────────────
@@ -179,8 +186,75 @@ def _geocode_nominatim(venue_name: str | None, address: str | None,
     return None
 
 
+def _geocode_ai_batch(venues: list[dict]) -> dict[int, tuple[float, float]]:
+    """
+    Single Gemini prompt for all remaining ungeocodeable venues.
+    Returns {af_id: (lat, lon)} for those the model knows.
+    Venues where the model is uncertain are omitted (not null-padded).
+    """
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        console.print("  [yellow]GEMINI_API_KEY not set — skipping AI geocoding[/yellow]")
+        return {}
+
+    try:
+        from google import genai
+    except ImportError:
+        console.print("  [yellow]google-genai not installed — skipping AI geocoding[/yellow]")
+        return {}
+
+    venue_lines = "\n".join(
+        json.dumps({
+            "af_id": v["af_id"],
+            "name": v.get("name") or "",
+            "city": v.get("city") or "",
+            "country": (v.get("country") or "").replace("-", " "),
+            "address": v.get("address") or "",
+        })
+        for v in venues
+    )
+
+    prompt = f"""You are a geocoding assistant for football/soccer venues.
+
+For each venue below return its latitude and longitude.
+- City-level accuracy is fine — we only need weather data, not routing.
+- If you genuinely don't know a specific venue, use the centre of its city.
+- Only return null if you don't know the city either.
+- Return ONLY a JSON array, no markdown, no explanation.
+- Format: [{{"af_id": 123, "lat": 51.5074, "lon": -0.1278}}, ...]
+
+Venues:
+{venue_lines}"""
+
+    try:
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(model=_GEMINI_MODEL, contents=prompt)
+        raw = response.text.strip()
+        # Strip markdown code fences if present
+        raw = re.sub(r'^```[a-z]*\n?', '', raw).rstrip('`').strip()
+        data = json.loads(raw)
+    except Exception as e:
+        console.print(f"  [yellow]AI geocoding failed: {e}[/yellow]")
+        return {}
+
+    results: dict[int, tuple[float, float]] = {}
+    for item in data:
+        af_id = item.get("af_id")
+        lat = item.get("lat")
+        lon = item.get("lon")
+        if af_id and lat is not None and lon is not None:
+            # Basic sanity check — valid coordinate range
+            if -90 <= float(lat) <= 90 and -180 <= float(lon) <= 180:
+                results[int(af_id)] = (float(lat), float(lon))
+
+    return results
+
+
 def _geocode_venues(dry_run: bool) -> dict[int, tuple[float, float]]:
-    """Return {af_id: (lat, lon)} for all venues, geocoding those missing coords."""
+    """Return {af_id: (lat, lon)} for all venues, geocoding those missing coords.
+
+    Fallback chain: Open-Meteo → Nominatim → Gemini AI (single batch prompt).
+    """
     rows = execute_query(
         "SELECT af_id, name, city, country, address, lat, lon FROM venues WHERE city IS NOT NULL"
     )
@@ -200,6 +274,7 @@ def _geocode_venues(dry_run: bool) -> dict[int, tuple[float, float]]:
     if dry_run:
         return coords
 
+    still_missing = []
     resolved = 0
     with Progress(TextColumn("{task.description}"), BarColumn(),
                   TextColumn("{task.completed}/{task.total}"),
@@ -208,23 +283,39 @@ def _geocode_venues(dry_run: bool) -> dict[int, tuple[float, float]]:
         for r in to_geocode:
             city, country = _clean_location(r["city"] or "", r.get("country") or "")
 
-            # Try Open-Meteo first (city-level, fast)
             c = _geocode_open_meteo(city, country)
+            source = "open_meteo"
 
-            # Nominatim fallback using venue name / address
             if not c:
-                c = _geocode_nominatim(
-                    r.get("name"), r.get("address"), city, country
-                )
+                c = _geocode_nominatim(r.get("name"), r.get("address"), city, country)
+                source = "nominatim"
 
             if c:
                 coords[r["af_id"]] = c
                 execute_write(
-                    "UPDATE venues SET lat = %s, lon = %s WHERE af_id = %s",
-                    (c[0], c[1], r["af_id"]),
+                    "UPDATE venues SET lat = %s, lon = %s, geocode_source = %s WHERE af_id = %s",
+                    (c[0], c[1], source, r["af_id"]),
                 )
                 resolved += 1
+            else:
+                still_missing.append(r)
             progress.advance(task)
+
+    # AI batch for everything Open-Meteo + Nominatim couldn't resolve
+    if still_missing:
+        console.print(f"  {len(still_missing)} venues still unresolved — trying AI batch")
+        ai_coords = _geocode_ai_batch(still_missing)
+        if ai_coords:
+            console.print(f"  AI resolved {len(ai_coords)} venues")
+            for r in still_missing:
+                c = ai_coords.get(r["af_id"])
+                if c:
+                    coords[r["af_id"]] = c
+                    execute_write(
+                        "UPDATE venues SET lat = %s, lon = %s, geocode_source = %s WHERE af_id = %s",
+                        (c[0], c[1], "ai", r["af_id"]),
+                    )
+                    resolved += 1
 
     console.print(f"  {len(coords)} venues with coords after geocoding ({resolved} newly resolved)")
     return coords
