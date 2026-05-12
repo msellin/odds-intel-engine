@@ -36,8 +36,8 @@ ENGINE_DIR = Path(__file__).parent.parent.parent
 PROCESSED_DIR = ENGINE_DIR / "data" / "processed"
 MODELS_DIR = ENGINE_DIR / "data" / "models" / "soccer"
 
-# Production default — trained on the Kaggle CSV cohort (2022-25).
-DEFAULT_MODEL_VERSION = "v9a_202425"
+# Production default — v14 trained on MFV schema with OU market features (2026-05-11).
+DEFAULT_MODEL_VERSION = "v14"
 
 # `MODEL_VERSION` is read from env at module import. Setting it on Railway
 # lets ops flip the active model without code changes; the harness exposes

@@ -355,7 +355,7 @@ def job_weekly_retrain():
 
     def _retrain():
         version = f"v{_date.today().strftime('%Y%m%d')}"
-        production = os.getenv("MODEL_VERSION", "v9a_202425")
+        production = os.getenv("MODEL_VERSION", "v14")
 
         console.print(f"[bold cyan]Weekly retrain → {version}[/bold cyan]")
         # Subprocess so a hung XGBoost run can't block the scheduler thread

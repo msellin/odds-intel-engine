@@ -889,7 +889,7 @@ def get_todays_scheduled_matches() -> list[dict]:
 def _active_model_version() -> str:
     """Read the active MODEL_VERSION at write time. Falls back to the legacy
     Kaggle-trained bundle so a missing env var doesn't desync the column."""
-    return os.environ.get("MODEL_VERSION", "v9a_202425")
+    return os.environ.get("MODEL_VERSION", "v14")
 
 
 def store_prediction(match_id: str, market: str, prediction: dict,
