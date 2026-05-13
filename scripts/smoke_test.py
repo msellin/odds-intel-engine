@@ -3340,6 +3340,27 @@ def _():
     )
 
 
+@test("OPS-SNAPSHOT-RETIRED — ops_snapshot total_bots excludes retired bots")
+def _():
+    """ops_snapshot computes silent_bots = total_bots - active_bots. If the
+    total_bots count includes retired bots (is_active=true, retired_at NOT NULL —
+    the convention used by inplay_a2/c_home/f), silent_bots gets inflated and
+    triggers false bot-down alerts. Guard both the total count and any sibling
+    queries that filter by is_active alone."""
+    import pathlib
+    src = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
+    # The specific total_bots query inside ops_snapshot
+    needle = "SELECT COUNT(*) AS n FROM bots WHERE is_active = true"
+    idx = src.find(needle)
+    assert idx != -1, "ops_snapshot total_bots query no longer matches expected pattern"
+    # Allow either retired_at IS NULL on the same query or a refactor that scopes it
+    tail = src[idx:idx + len(needle) + 60]
+    assert "retired_at IS NULL" in tail, (
+        "ops_snapshot total_bots query must filter retired_at IS NULL — "
+        "otherwise retired bots inflate the silent_bots metric"
+    )
+
+
 @test("INJURIES-BY-DATE — both call sites use the new function (no batched leftovers)")
 def _():
     """Source-inspection guard: if anyone reverts the call site to get_injuries_batched

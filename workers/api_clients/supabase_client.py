@@ -5156,7 +5156,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
         console.print(f"[yellow]ops_snapshot: betting_counts failed: {e}[/yellow]")
 
     try:
-        total_bots = execute_query("SELECT COUNT(*) AS n FROM bots WHERE is_active = true")
+        total_bots = execute_query("SELECT COUNT(*) AS n FROM bots WHERE is_active = true AND retired_at IS NULL")
         total_bots_n = total_bots[0]["n"] if total_bots else 17
         silent_bots = max(0, total_bots_n - active_bots)
     except Exception as e:

@@ -244,7 +244,7 @@ per_bot = q("""
         sb.timing_cohort
     FROM bots b
     LEFT JOIN simulated_bets sb ON sb.bot_id = b.id
-    WHERE b.is_active = true
+    WHERE b.is_active = true AND b.retired_at IS NULL
     GROUP BY b.id, b.name, b.starting_bankroll, b.current_bankroll, sb.timing_cohort
     ORDER BY total_pnl DESC NULLS LAST
 """)
