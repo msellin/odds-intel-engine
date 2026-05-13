@@ -13,20 +13,20 @@
 
 ## Thread 2 — Identify gaps
 
-- [ ] Re-read `dev/active/inplay-bot-plan.md` + 8-AI review summaries; list strategies recommended but not shipped
-- [ ] Survey published live-betting patterns we don't trade (AH live momentum, 2nd-half handicap, HT/FT, comeback pricing, derby discount, promoted-team volatility)
-- [ ] Survey prematch gaps (corners, cards, both-halves-over, exact-score, scorecast)
-- [ ] For each gap candidate: one-line rationale + expected fire-rate
-- [ ] Append "Strategies we don't trade today" section to results doc
+- [x] Re-read `dev/active/inplay-bot-plan.md` + 8-AI review summaries; list strategies recommended but not shipped
+- [x] Survey published live-betting patterns we don't trade (AH live momentum, 2nd-half handicap, HT/FT, comeback pricing, derby discount, promoted-team volatility)
+- [x] Survey prematch gaps (corners, cards, both-halves-over, exact-score, scorecast)
+- [x] For each gap candidate: one-line rationale + expected fire-rate
+- [x] Append "Strategies we don't trade today" section to results doc
 
 ## Thread 3 — Data sufficiency
 
-- [ ] For each Thread 2 candidate: do we have signals already? If not, what's the collection lead time + API cost?
-- [ ] What's the minimum replay window before we can validate edge?
-- [ ] Append "Data readiness" column to Thread 2 list
+- [x] For each Thread 2 candidate: do we have signals already? If not, what's the collection lead time + API cost?
+- [x] What's the minimum replay window before we can validate edge?
+- [x] Append "Data readiness" column to Thread 2 list
 
 ## Wrap-up
 
-- [ ] Convert top-3 ranked adjustments + top-3 new strategies into individual `PRIORITY_QUEUE.md` tasks
-- [ ] Each follow-up task must include: smoke test plan, replay-projected ROI, fire-rate delta
+- [x] Convert top-3 ranked adjustments + top-3 new strategies into individual `PRIORITY_QUEUE.md` tasks
+- [x] Each follow-up task must include: smoke test plan, replay-projected ROI, fire-rate delta
 - [ ] Move this dev/active/ trio to `dev/archive/` once the ranked list is in PRIORITY_QUEUE

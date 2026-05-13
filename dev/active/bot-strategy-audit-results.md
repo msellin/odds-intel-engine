@@ -1,7 +1,7 @@
 # Bot Strategy Audit Results — 2026-05-13
 
 **Scope:** 23 prematch + 13 inplay bots. Last 14 days of data (May 13 back to April 29).
-**Thread 1 complete. Threads 2–3 (gap survey, data readiness) pending.**
+**All three threads complete (2026-05-13).**
 
 ---
 
@@ -238,11 +238,204 @@ The following 3 adjustments + 1 data fix should be converted to PRIORITY_QUEUE t
 
 ---
 
-## Thread 2 + Thread 3 Status
+---
 
-Not yet started. Requires reading:
-- `dev/active/inplay-bot-plan.md` + 8-AI review summaries
-- Gap survey: AH live momentum, 2nd-half handicap, HT/FT, comeback pricing, derby discount, promoted-team volatility, corners/cards/exact-score/scorecast
-- Data sufficiency check against current `live_match_snapshots`, `odds_snapshots`, `match_events`
+## Thread 2 — Strategies We Don't Trade Today
 
-Estimated: 1 session.
+### Data coverage baseline (live_match_snapshots, last 14 days, 434K snapshots)
+
+| Field | Coverage | Notes |
+|-------|----------|-------|
+| live_1x2_home | 21.6% | Best-covered — used by inplay_c/i/n |
+| live_ou_25_over | 8.9% | Poor — major inplay bottleneck |
+| shots_home | 7.8% | Sparse — AF live stats not always available |
+| possession_home | 8.4% | Sparse — same source as shots |
+| corners_home | 7.6% | Sparse — same source |
+| xg_home | 4.8% | Most sparse — real xG only available from select providers |
+
+> **Key implication:** any inplay strategy requiring shots, possession, or xG fires at <10% of its theoretical rate under current data conditions.
+
+---
+
+### A. AI panel recommended, never shipped as described
+
+The 8-AI review (2026-05-08) proposed 5 strategies for Weeks 2-3. The letters G-J were reused for **different** strategies when actually implemented. The original recommended strategies were never tested.
+
+---
+
+**G: Shot Quality Under**
+*All 4 second-round tools agreed. Never implemented as described.*
+
+Entry: min 32-52, score ≤ 1  
+Signal: combined shots ≥ 12 AND (xg_home + xg_away) / (shots_home + shots_away) < 0.07 AND live Under 2.5 ≥ 1.70  
+Skip: prematch O25 > 62%, red card  
+Thesis: market reacts to shot volume (visible, salient). Low xG/shot = teams shooting from distance. Under is mispriced.  
+Edge confidence: Medium-High per panel
+
+**Data readiness:** shots coverage 7.8%, xG coverage 4.8%. Combined "shots ≥ 12 AND xG available AND live OU2.5" — estimated ~0.5-1% of snapshots, ~200-400 qualifying per day. Enough to test but results will be noisy.  
+**Expected fire rate:** ~1-3/day at current coverage, ~10-15/day at 40% coverage.  
+**Status: BLOCKED — data coverage too sparse for reliable results. Do after improving live stats pipeline.**
+
+---
+
+**H: Corner Pressure Over**
+*3/4 second-round tools. Never implemented as described.*
+
+Entry: min 35-48, score ≤ 1  
+Signal: combined corners ≥ 8 AND xG ≥ 0.4 AND live O2.5 ≥ 1.90  
+Skip: one team ≥ 70% possession AND their corners dominant (defensive clearances not bilateral pressure)  
+Thesis: high bilateral corners = sustained set-piece pressure underweighted by xG models  
+Edge confidence: Medium per panel
+
+**Data readiness:** corners 7.6%, xG 4.8%, live OU 8.9%. Combined — effectively 0 qualifying snapshots per day. The existing `inplay_g` (Corner Cluster) already showed 0 fires due to corner data scarcity.  
+**Expected fire rate:** ~0/day at current coverage.  
+**Status: BLOCKED — data coverage blocker, same as inplay_g. Fix live stats pipeline first.**
+
+---
+
+**I: Possession Trap Under**
+*3/4 second-round tools. Never implemented as described.*
+
+Entry: min 32-55, score 0-0  
+Signal: (possession_home ≥ 62 AND xg_home ≤ 0.30) OR (possession_home ≤ 38 AND xg_away ≤ 0.30) AND live Under 2.5 ≥ 1.75  
+Thesis: market sees high possession → interprets attacking intent → misprices Under. Sterile possession is a real phenomenon.  
+Edge confidence: Medium-High per panel
+
+**Data readiness:** possession 8.4%, xG 4.8%, live OU 8.9%. Combined — <0.5% of snapshots qualify. Estimated ~0-1 fire/day.  
+**Expected fire rate:** ~0-1/day at current, ~8-12/day at 40% coverage.  
+**Status: BLOCKED — same data blocker.**
+
+---
+
+**J: Dominant Underdog Win**
+*2/4 second-round tools. Never implemented as described.*
+
+Entry: min 25-55, underdog leading 1-0  
+Signal: underdog xG > favourite xG AND possession within 10% of 50/50 AND live underdog win ≥ 2.80  
+Thesis: narrative bias ("favourite will come back") keeps underdog win odds high even when data shows deserved lead  
+Edge confidence: Medium per panel
+
+**Simplified version (no xG/possession):** Underdog leading 1-0 at min 25-55, AND prematch model probability of underdog < 35% (confirms it's a genuine underdog), AND live 1x2 underdog odds ≥ 2.80. Uses live 1x2 (21.6% coverage) — feasible.  
+**Expected fire rate (simplified):** ~2-5/day. The 21.6% live 1x2 coverage is real but still means 78% of lead-holding underdogs won't have a live price to check.  
+**Status: BUILDABLE NOW (simplified version, no xG needed).**
+
+---
+
+**K: Second-Half Kickoff Burst**
+*2/4 second-round tools. Never implemented.*
+
+Entry: min 46-54 only  
+Signal: 0-0 or 1-0 AND first-half xG ≥ 0.70 AND prematch O2.5 > 50% AND live O2.5 ≥ 1.90  
+Thesis: above-average goal rate in first 5-8 min of 2H from fresh legs + HT adjustments. Market uses smooth time-decay, misses temporal spike.  
+Edge confidence: Low-Medium per panel
+
+**Note:** Largely overlaps with `inplay_h` (HT Restart Surge, min 46-55). The differentiator is "first-half xG ≥ 0.70" — a quality gate that `inplay_h` doesn't have. But xG coverage is 4.8%.  
+**Data readiness:** xG 4.8% + live OU 8.9% → effectively 0 in the narrow window.  
+**Status: BLOCKED + OVERLAPS inplay_h.**
+
+---
+
+### B. Published live-betting patterns not in our portfolio
+
+---
+
+**Post-Equalizer Comeback**
+*Not in any current strategy. Distinct from inplay_m.*
+
+Entry: min 30-75, score just became 1-1 (from 1-0 or 0-1)  
+Signal: the team that scored the equalizer — buy their 1x2 win. Live home win or away win odds ≥ 2.30 (market slow to reprice).  
+Thesis: after equalizer, market needs 1-2 poll cycles to reprice. Equalizing team has momentum; markets still price based on prior state where the other team led.  
+Different from inplay_m: m bets Over 2.5 when a goal is likely (1-0 game). This bets on which team wins after 1-1 is on the board.  
+Data ready: live 1x2 (21.6%), score tracking (100%). Buildable immediately.  
+**Expected fire rate:** ~3-6/day. 1-1 scores happen in ~20% of matches; the narrow window where odds are still repricing is ~2-3 poll cycles.  
+**Status: BUILDABLE NOW.**
+
+---
+
+**AH Live Momentum**
+*Requires live AH odds not currently captured.*
+
+Entry: any minute, at HT preferred  
+Signal: prematch AH line X, but live match statistics suggest the weaker AH side is dominating. Buy opposite AH at current live line.  
+Thesis: AH live repricing lags 1x2 repricing. When underlying statistics strongly favor one side, the AH market is the last to adjust.  
+Data ready: **live AH odds not in `live_match_snapshots`**. We'd need to add AH live capture to the live tracker (AF `/odds/live` response).  
+**Expected fire rate:** ~5-10/day once live AH captured.  
+**Status: BLOCKED — needs schema addition + 2 months data collection.**
+
+---
+
+**Derby / Rivalry Discount**
+*Requires match classification not currently available.*
+
+Thesis: local derbies (and derby rounds) show systematically lower total goal rates than Poisson models predict. Buy Under or avoid Over in confirmed derbies.  
+Data needed: derby classification — a list of match pairs that constitute local rivalries. Partially derivable from match names/historical records.  
+**Expected fire rate:** 1-3/day during derby rounds.  
+**Status: BLOCKED — needs a derby database (1-day manual build). Low priority; season-specific.**
+
+---
+
+**Promoted Team Volatility (Prematch)**
+*Derivable from existing data.*
+
+Thesis: newly promoted teams in their first 5-8 home games of the new season have higher variance outcomes. Models trained on prior-season data don't fully price this uncertainty.  
+Data needed: `match_stats` + `standings` can identify promoted teams (club that finished top of T+1 last season now in T). Already have this data.  
+Fire rate: only valid during first 8-10 weeks of season. Season timing: most leagues start in August. Currently (May) this is late-season — end-of-season relegation battles have a similar dynamic.  
+**Status: BUILDABLE — but timing-constrained. Build for August start.**
+
+---
+
+### C. Prematch gaps
+
+| Market | Do we have odds? | Do we have a model? | Verdict |
+|--------|-----------------|---------------------|---------|
+| Corners over/under | ❌ Not stored | ❌ No | Needs AF parsing + 3 months collection + model |
+| Cards/bookings | ❌ Not stored | ❌ No | Same as corners |
+| Both-halves-over | ❌ Not stored (AF has it) | ❌ No | Derivable from match_stats history |
+| 1H / 2H split OU | ❌ Not stored | ❌ No | AF has `/half-time` market, not fetched |
+| Exact score | ❌ Not stored | ❌ Skip | House edge 15-25%, no systematic edge possible |
+| Scorecast | ❌ Not stored | ❌ Skip | Too complex, skip |
+
+**Most accessible prematch gap:** Both-halves-over. We have historical match_stats with half-time goals (match_stats has home/away goals). AF carries "Both Halves Over 0.5" odds. If AF stores these, could start collecting + build Poisson model using per-half expected goals.  
+**Lead time:** 1-2 months to collect odds + backtest. Low fire rate (~1-3/day for strong signals).
+
+---
+
+## Thread 3 — Data Readiness Summary
+
+| Strategy | Signals in DB? | Coverage | Minimum replay window | Go/No-go |
+|----------|---------------|----------|-----------------------|----------|
+| Shot Quality Under | shots 7.8%, xg 4.8% | Too sparse | Needs 30%+ coverage first | ❌ Blocked |
+| Corner Pressure Over | corners 7.6%, xg 4.8% | Too sparse | Same | ❌ Blocked |
+| Possession Trap Under | possession 8.4% | Too sparse | Same | ❌ Blocked |
+| Dominant Underdog (simplified) | live_1x2 21.6% | Usable | 2-4 weeks of live data | ✅ Buildable |
+| 2H Kickoff Burst | xg 4.8%, OU 8.9% | Too sparse | Blocked on xG | ❌ Blocked |
+| Post-Equalizer Comeback | live_1x2 21.6%, score 100% | Good | 2-4 weeks | ✅ Buildable |
+| AH Live Momentum | live AH odds | Not collected | Schema + 2 months | ❌ Blocked |
+| Derby Discount | derby DB | Not built | Build first (1 day) | ⚠️ Manual work needed |
+| Promoted Team Volatility | standings history | Available | Build for August | ⚠️ Seasonal |
+| Corners prematch | corner odds | Not stored | Start fetching + 3 months | ❌ Long lead |
+| Cards prematch | booking odds | Not stored | Start fetching + 3 months | ❌ Long lead |
+| Both-Halves-Over | match_stats half goals | Partial | AF odds needed + 2 months | ❌ Blocked on odds |
+
+### Core data quality improvement needed
+
+All the "blocked" inplay strategies share a single root cause: AF live stats (shots, xG, possession, corners) arrive in only 7-9% of snapshots. This is not a schema gap — the fields exist, they just populate rarely. Fixing this would unlock 4 blocked strategies simultaneously.
+
+**Likely causes:**
+1. AF `/fixtures?live=all` may not always return stats in the events sub-object
+2. Live tracker may be hitting rate limits or skipping the stats parsing step
+3. Some matches/leagues don't have AF stats coverage (lower-tier leagues)
+
+**Recommended investigation:** compare which leagues have stats coverage vs which don't. If it's a league-tier issue, the strategies can target only leagues where coverage is confirmed.
+
+---
+
+## Wrap-up: Top 3 New Strategies for PRIORITY_QUEUE
+
+Based on Thread 2 + Thread 3 analysis, the three highest-potential additions ranked by data readiness + expected edge:
+
+**1. INPLAY-POST-EQUALIZER** — Post-Equalizer Comeback (new inplay strategy). Data ready now (live 1x2 21.6%, score 100%). Thesis validated by behavioral finance literature: momentum and narrative bias post-equalizer. Expected ~3-6 fires/day. Build alongside INPLAY-M-LOOSEN since both involve 1-goal game states.
+
+**2. INPLAY-UNDERDOG-HOLD** — Dominant Underdog Win, simplified (original Strategy J, stripped of xG gate). Data ready: live 1x2 + prematch model probability. The xG-less version is weaker than the full panel recommendation but testable immediately. Expected ~2-5 fires/day.
+
+**3. LIVE-STATS-COVERAGE** — Investigate and fix live snapshot stats coverage (shots/xG/possession/corners at 5-9%). This single fix would unlock Shot Quality Under, Possession Trap Under, and Corner Pressure Over — 3 strategies that the 8-AI panel rated as Medium-High confidence. The root cause is almost certainly which leagues/providers AF returns live stats for, not a code bug.
