@@ -58,6 +58,24 @@ WHERE sb.result = 'pending'
 """
 
 
+# BET-TIMING-MONITOR: settle shadow_bets the same way as simulated_bets.
+# Distinct query because shadow_bets has fewer columns (no bankroll/alignment).
+_PENDING_SHADOW_BETS_SQL = """
+SELECT
+    sb.id, sb.bot_id, sb.match_id, sb.market, sb.selection, sb.stake,
+    sb.odds_at_pick, sb.model_probability, sb.edge_percent, sb.result,
+    sb.closing_odds, sb.pick_time, sb.shadow_cohort, sb.timing_cohort,
+    m.id as m_id, m.date as m_date, m.score_home, m.score_away,
+    m.result as match_result, m.status as match_status,
+    ht.name as home_team_name, ta.name as away_team_name
+FROM shadow_bets sb
+LEFT JOIN matches m ON sb.match_id = m.id
+LEFT JOIN teams ht ON m.home_team_id = ht.id
+LEFT JOIN teams ta ON m.away_team_id = ta.id
+WHERE sb.result = 'pending'
+"""
+
+
 # ─── Result matching ─────────────────────────────────────────────────────────
 
 def normalize_name(name: str) -> str:
@@ -866,6 +884,16 @@ def run_settlement():
     except Exception as e:
         console.print(f"  [yellow]User picks settlement error: {e}[/yellow]")
 
+    # 4c. BET-TIMING-MONITOR — settle shadow_bets (parallel table, no bankroll).
+    # Wrapped in its own try block: a shadow-settlement failure must NEVER block
+    # the rest of run_settlement (real-bet settlement already succeeded above).
+    try:
+        shadow_pending = execute_query(_PENDING_SHADOW_BETS_SQL, [])
+        if shadow_pending:
+            _settle_pending_shadow_bets(shadow_pending, finished)
+    except Exception as e:
+        console.print(f"  [yellow]Shadow settlement error: {e}[/yellow]")
+
     # Post-match enrichment and analytics always run (not gated on bets)
 
     # P1.3: Update ELO ratings for all finished matches
@@ -1322,6 +1350,72 @@ def _settle_pending_bets(pending: list, finished: list):
         clv_color = "green" if avg_clv > 0 else "red"
         console.print(f"  Avg CLV: [{clv_color}]{avg_clv:+.1%}[/] ({'beating' if avg_clv > 0 else 'behind'} closing line)")
 
+    return settled
+
+
+def _settle_pending_shadow_bets(pending: list, finished: list) -> int:
+    """BET-TIMING-MONITOR — settle shadow_bets against finished match results.
+
+    Mirrors _settle_pending_bets() but: targets shadow_bets table, never touches
+    bot bankrolls, no clv_pinnacle column (not needed for the timing question).
+    No fancy Rich table — only a single summary line so this never crowds out
+    the real settlement output.
+    """
+    if not pending:
+        return 0
+
+    settled = 0
+    skipped = 0
+    total_pnl = 0.0
+    clv_values: list[float] = []
+
+    for bet in pending:
+        score_home = bet.get("score_home")
+        score_away = bet.get("score_away")
+        home_name_display = bet.get("home_team_name", "?")
+        away_name_display = bet.get("away_team_name", "?")
+
+        if score_home is None:
+            result_match = find_result_for_match(home_name_display, away_name_display, finished)
+            if not result_match:
+                skipped += 1
+                continue
+            score_home = int(result_match["home_goals"])
+            score_away = int(result_match["away_goals"])
+        else:
+            score_home = int(score_home)
+            score_away = int(score_away)
+
+        match_id = bet["match_id"]
+        odds_market = _normalize_bet_market(bet["market"])
+        odds_selection = _normalize_bet_selection(bet["selection"])
+        closing_odds = get_closing_odds(match_id, odds_market, odds_selection)
+
+        settlement = settle_bet_result(bet, score_home, score_away, closing_odds)
+
+        try:
+            execute_write(
+                "UPDATE shadow_bets SET result = %s, pnl = %s, "
+                "closing_odds = %s, clv = %s WHERE id = %s",
+                [settlement["result"], settlement["pnl"],
+                 closing_odds, settlement["clv"], bet["id"]]
+            )
+        except Exception as e:
+            console.print(f"  [yellow]Shadow-settle error for {bet['id']}: {e}[/yellow]")
+            continue
+
+        settled += 1
+        total_pnl += settlement["pnl"]
+        if settlement["clv"] is not None:
+            clv_values.append(settlement["clv"])
+
+    avg_clv = (sum(clv_values) / len(clv_values)) if clv_values else None
+    clv_str = f"avg_clv={avg_clv:+.1%}" if avg_clv is not None else "avg_clv=n/a"
+    pnl_color = "green" if total_pnl >= 0 else "red"
+    console.print(
+        f"[dim]Shadow settlement: {settled} settled · {skipped} no-result · "
+        f"PnL [{pnl_color}]{total_pnl:+.2f}[/{pnl_color}] · {clv_str}[/dim]"
+    )
     return settled
 
 

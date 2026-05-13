@@ -119,7 +119,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 ---
 
-## Current System State (2026-05-06)
+## Current System State (2026-05-13)
 
 ### Backend
 | Component | Status |
@@ -137,6 +137,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | ⑩ AI match previews (07:15 UTC) | ✅ Gemini 200-word previews for top 10 matches |
 | ⑪ Email digest (10/12/14/16 UTC slots) | ✅ Smart-slot digest — first slot whose pending-bet signal-strength score (Σ edge × prestige × kelly) clears threshold sends; T4 leagues (youth/women/lower divisions) excluded from email content (EMAIL-DIGEST-SMART) + value bet alerts (16:00/20:45) + weekly (Mon 08:00) + watchlist (08:30/14:30/20:30) |
 | 24 paper trading bots | ✅ 16 pre-match (since 2026-04-27, incl. bot_proven_leagues) + 8 in-play (since 2026-05-06, strategies A/A2/B/C/C_home/D/E/F) |
+| ⑰ Shadow runs (06:30 / 11:30 / 15:30 UTC) | ✅ **BET-TIMING-MONITOR (2026-05-13)** — `shadow_bets` table mirrors `simulated_bets`; `run_morning(shadow_mode=True)` evaluates ALL 23 bots at every refresh window (no bankroll touch, no exposure cap), bulk-stored via `bulk_store_shadow_bets`. Settled by existing pipeline via `_settle_pending_shadow_bets`. `/ops` shows `shadow_runs_today` (target=3) + `shadow_bets_today`. Breaks the cohort×strategy confound in the cohort A/B — per-bot per-cohort ROI answers will be ready ~2026-06-15. See `dev/active/bet-timing-monitor-plan.md`. |
 | Accessible-bookmaker filter | ✅ **ACCESSIBLE-BM (2026-05-11)** — edge math restricted to EU/Estonia-accessible books (Bet365, Unibet, Betano, Marathonbet, 10Bet, 888Sport, Pinnacle). `recommended_bookmaker` stored per bet (migration 094). `scripts/daily_picks.py` — morning manual-betting report. Fixes reported CLV inflation from inaccessible-book odds (SBO/Dafabet/1xBet). |
 | Pinnacle signals | ✅ PIN-1 through PIN-5: implied probs (all markets), line movement, veto gate, Pinnacle-anchored CLV |
 | Calibration improvements | ✅ Pinnacle shrinkage anchor, odds-conditional alpha, sharp consensus gate, draw inflation, dynamic DC rho |

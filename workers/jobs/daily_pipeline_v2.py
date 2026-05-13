@@ -421,18 +421,23 @@ BOTS_CONFIG = {
 #   pre_ko   → 15:00-19:00 UTC (confirmed lineups, most info available)
 # 5 / 6 / 5 split across 16 bots. Track CLV+ROI per cohort to find edge-maximizing window.
 BOT_TIMING_COHORTS: dict[str, str] = {
-    # Morning — early odds capture (5 bots)
+    # Morning — early odds capture (3 bots)
+    # 2026-05-13: bot_ou25_global + bot_opt_ou_british moved from morning → midday.
+    # Phase A timing analysis: morning OU bets show -3.6% ROI (n=114) vs midday
+    # OU's +26.8% ROI (n=31). Same-bot A/B on bot_ou15_defensive confirmed
+    # direction (morning -2.1% / midday +34.1% on OU). Injury news at 11:00
+    # UTC seems to be the deciding signal for totals markets.
     "bot_v10_all":        "morning",
     "bot_lower_1x2":      "morning",
     "bot_aggressive":     "morning",
-    "bot_ou25_global":    "morning",
-    "bot_opt_ou_british": "morning",
-    # Midday — post-injury-news (6 bots)
+    # Midday — post-injury-news (8 bots, +2 OU specialists 2026-05-13)
     "bot_conservative":   "midday",
     "bot_greek_turkish":  "midday",
     "bot_high_roi_global":"midday",
     "bot_ou15_defensive": "midday",
     "bot_ou35_attacking": "midday",
+    "bot_ou25_global":    "midday",  # OU-2026-05-13: moved from morning
+    "bot_opt_ou_british": "midday",  # OU-2026-05-13: moved from morning
     "bot_draw_specialist":"midday",
     # Pre-kickoff — confirmed lineups (5 bots)
     "bot_opt_away_british":"pre_ko",
@@ -1445,7 +1450,8 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
     return odds_matches, af_only_matches, af_preds, dict(best_bookmaker)
 
 
-def run_morning(skip_fetch: bool = False, cohort: str | None = None):
+def run_morning(skip_fetch: bool = False, cohort: str | None = None,
+                shadow_mode: bool = False, shadow_cohort: str | None = None):
     """
     Fetch data → predict → store matches/odds/bets in Supabase.
 
@@ -1453,12 +1459,27 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
     skip_fetch=False (Phase 1 / manual): fetches from API-Football + Kambi first.
     cohort: if set, only run bots assigned to that timing cohort (morning/midday/pre_ko).
             None = run all bots (backward-compatible).
+    shadow_mode=True (BET-TIMING-MONITOR): evaluate ALL bots regardless of cohort;
+            write to shadow_bets instead of simulated_bets; no bankroll mutation;
+            no bot active-flag check. Used to break the cohort×strategy confound
+            in the cohort A/B. `shadow_cohort` MUST be set when shadow_mode=True
+            (the window this shadow batch represents, e.g. 'morning').
     """
     from workers.utils.kill_switches import is_disabled
     if is_disabled("paper_betting"):
         return
+    if shadow_mode and shadow_cohort not in ("morning", "midday", "pre_ko"):
+        raise ValueError(
+            f"shadow_mode=True requires shadow_cohort in {{morning, midday, pre_ko}}, got {shadow_cohort!r}"
+        )
+
+    import uuid as _uuid
+    _shadow_run_id: str | None = str(_uuid.uuid4()) if shadow_mode else None
+    _pending_shadow_rows: list[dict] = []
+
     today_str = date.today().isoformat()
-    console.print(f"[bold green]═══ OddsIntel Pipeline: {today_str} ═══[/bold green]\n")
+    mode_tag = f" [SHADOW {shadow_cohort}]" if shadow_mode else ""
+    console.print(f"[bold green]═══ OddsIntel Pipeline: {today_str}{mode_tag} ═══[/bold green]\n")
 
     # 1. Ensure bots exist in DB
     console.print("[cyan]Creating/checking bots in Supabase...[/cyan]")
@@ -1960,14 +1981,15 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
         af_pred = af_pred_for_match
 
         for bot_name, config in BOTS_CONFIG.items():
-            # ODDS-QUALITY-CLEANUP: skip bots flagged is_active=false or retired
-            # (e.g. paused during a data-quality cleanup or retired permanently).
+            # ODDS-QUALITY-CLEANUP: skip bots flagged is_active=false or retired.
+            # SHADOW: keep retired bots out too — they don't reflect current strategy.
             if not _bot_active.get(bot_name, True):
                 continue
 
-            # BOT-TIMING: skip bots not in the active cohort (None = run all)
+            # BOT-TIMING: skip bots not in the active cohort (None = run all).
+            # SHADOW: run ALL bots — that's the whole point of the factorial design.
             bot_cohort = BOT_TIMING_COHORTS.get(bot_name, "morning")
-            if cohort and bot_cohort != cohort:
+            if not shadow_mode and cohort and bot_cohort != cohort:
                 continue
 
             # Check tier filter
@@ -2198,12 +2220,32 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
                 # T1: AF prediction agreement
                 af_agrees = _af_agrees_with_bet(selection, af_pred)
 
-                # 11.6: Exposure management — halve stake for 3rd+ bet in same league per bot
+                # 11.6: Exposure management — halve stake for 3rd+ bet in same league per bot.
+                # SHADOW: skip exposure cap — shadows have fixed 10u stake, no bankroll to protect.
                 _league_key = match.get("league_path", "unknown")
                 _league_count = league_bet_counts[bot_name][_league_key]
-                if _league_count >= 2:
+                if not shadow_mode and _league_count >= 2:
                     stake = max(round(stake * 0.5, 2), 1.0)
                     console.print(f"  [dim]Exposure cap ({bot_name}): {_league_count} bets already in {_league_key} — stake halved to €{stake:.2f}[/dim]")
+
+                # SHADOW path: accumulate row, never call store_bet, never touch bankroll.
+                if shadow_mode:
+                    _pending_shadow_rows.append({
+                        "bot_id": bot_ids[bot_name],
+                        "match_id": match_id,
+                        "market": mkt,
+                        "selection": selection,
+                        "odds": odds,
+                        "model_prob": raw_mp,
+                        "calibrated_prob": round(cal_prob, 4),
+                        "edge": edge,
+                        "kelly_fraction": round(kelly, 6),
+                        "placed_at": datetime.now().isoformat(),
+                        "timing_cohort": bot_cohort,
+                        "recommended_bookmaker": best_bookmaker.get(str(match_id), {}).get(f"{os_market}_{os_selection}"),
+                    })
+                    total_bets += 1
+                    continue
 
                 try:
                     bet_id = store_bet(bot_ids[bot_name], match_id, {
@@ -2290,6 +2332,25 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None):
             import traceback
             console.print(f"  [red]bulk_store_predictions failed: {e}[/red]")
             console.print(f"  [red dim]{traceback.format_exc()}[/red dim]")
+
+    # BET-TIMING-MONITOR: flush shadow rows to shadow_bets (no bankroll touched).
+    if shadow_mode:
+        if _pending_shadow_rows:
+            try:
+                from workers.api_clients.supabase_client import bulk_store_shadow_bets
+                n = bulk_store_shadow_bets(_pending_shadow_rows, _shadow_run_id, shadow_cohort)
+                console.print(
+                    f"\n[bold green]SHADOW [{shadow_cohort}] — {n} rows stored "
+                    f"(run_id={_shadow_run_id})[/bold green]"
+                )
+            except Exception as e:
+                import traceback
+                console.print(f"  [red]bulk_store_shadow_bets failed: {e}[/red]")
+                console.print(f"  [red dim]{traceback.format_exc()}[/red dim]")
+        else:
+            console.print(f"\n[yellow]SHADOW [{shadow_cohort}] — no candidate bets[/yellow]")
+        # Skip exposure check + ops_snapshot — shadow runs piggyback on the real run's snapshot.
+        return
 
     cohort_label = f" [{cohort} cohort]" if cohort else " [all bots]"
     console.print(f"\n[bold green]Done! {total_bets} bets placed{cohort_label}[/bold green]")

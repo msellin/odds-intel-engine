@@ -2669,6 +2669,121 @@ def _():
     )
 
 
+@test("SHADOW-BETS-TABLE — migration 101 creates shadow_bets with required columns")
+def _():
+    """Source-inspect the migration. shadow_bets is queried by run_morning,
+    bulk_store_shadow_bets, settlement, and ops_snapshot — a missing column
+    here is a multi-system failure."""
+    import pathlib
+    src = pathlib.Path("supabase/migrations/101_shadow_bets.sql").read_text()
+    required_cols = [
+        "shadow_run_id", "shadow_cohort", "bot_id", "match_id", "market", "selection",
+        "odds_at_pick", "stake", "model_probability", "edge_percent",
+        "recommended_bookmaker", "kelly_fraction", "timing_cohort",
+        "closing_odds", "clv", "result", "pnl",
+    ]
+    for col in required_cols:
+        assert col in src, f"migration 101 missing shadow_bets column: {col}"
+    assert "shadow_runs_today" in src, "migration 101 must ALTER ops_snapshots ADD shadow_runs_today"
+    assert "shadow_bets_today" in src, "migration 101 must ALTER ops_snapshots ADD shadow_bets_today"
+    assert "uq_shadow_bet_per_run" in src, "missing per-run dedup constraint"
+
+
+@test("SHADOW-MODE-WIRED — run_morning accepts shadow_mode + shadow_cohort kwargs")
+def _():
+    """The whole shadow pipeline depends on this signature. If anyone reverts,
+    the scheduler call site will TypeError immediately at runtime."""
+    import inspect
+    from workers.jobs.daily_pipeline_v2 import run_morning
+    sig = inspect.signature(run_morning)
+    assert "shadow_mode" in sig.parameters, "run_morning lost shadow_mode kwarg"
+    assert "shadow_cohort" in sig.parameters, "run_morning lost shadow_cohort kwarg"
+    assert sig.parameters["shadow_mode"].default is False, "shadow_mode default must be False"
+    assert sig.parameters["shadow_cohort"].default is None, "shadow_cohort default must be None"
+
+    # Body must reference the shadow store, not store_bet for shadow rows.
+    src = inspect.getsource(run_morning)
+    assert "bulk_store_shadow_bets" in src, "run_morning must flush via bulk_store_shadow_bets"
+    assert "_pending_shadow_rows" in src, "run_morning must accumulate shadow rows in a buffer"
+
+
+@test("SHADOW-NO-BANKROLL — shadow path never touches bankroll or exposure cap")
+def _():
+    """Shadow bets are virtual — they MUST NOT subtract from _running_bankroll
+    or trigger exposure caps. Otherwise a shadow run silently corrupts the
+    real bots' next bet sizing."""
+    import inspect
+    from workers.jobs.daily_pipeline_v2 import run_morning
+    src = inspect.getsource(run_morning)
+
+    # The shadow append block must be guarded by `if shadow_mode:` and
+    # `continue` (skipping the store_bet + bankroll mutation path).
+    shadow_block_idx = src.index("if shadow_mode:")
+    after_shadow = src[shadow_block_idx:shadow_block_idx + 2000]
+    assert "_pending_shadow_rows.append" in after_shadow, (
+        "shadow path must append to buffer instead of calling store_bet"
+    )
+    assert "continue" in after_shadow, (
+        "shadow path must `continue` past the real-bet store + bankroll mutation"
+    )
+
+    # Exposure cap must be gated by `not shadow_mode`.
+    assert "not shadow_mode and _league_count >= 2" in src, (
+        "exposure cap (stake halving) must skip when shadow_mode=True"
+    )
+
+
+@test("SHADOW-SETTLE-WIRED — run_settlement settles shadow_bets after simulated_bets")
+def _():
+    """If we forget to settle shadow_bets, the analysis we built this whole
+    system for never gets closing odds / CLV / result fields populated."""
+    import inspect, pathlib
+    src = pathlib.Path("workers/jobs/settlement.py").read_text()
+    assert "_PENDING_SHADOW_BETS_SQL" in src, "missing _PENDING_SHADOW_BETS_SQL"
+    assert "_settle_pending_shadow_bets" in src, "missing _settle_pending_shadow_bets()"
+    assert "UPDATE shadow_bets SET result" in src, (
+        "shadow settlement must UPDATE shadow_bets (not simulated_bets)"
+    )
+    # And the wire-up call in run_settlement.
+    from workers.jobs.settlement import run_settlement
+    rs_src = inspect.getsource(run_settlement)
+    assert "_PENDING_SHADOW_BETS_SQL" in rs_src, (
+        "run_settlement must load shadow_pending"
+    )
+    assert "_settle_pending_shadow_bets" in rs_src, (
+        "run_settlement must invoke shadow settlement"
+    )
+
+
+@test("SHADOW-SCHEDULER — 3 shadow cron jobs registered at 06:30 / 11:30 / 15:30")
+def _():
+    """Without these, no shadow data accumulates. The ops_snapshot
+    shadow_runs_today counter is the daily health indicator."""
+    import pathlib
+    src = pathlib.Path("workers/scheduler.py").read_text()
+    assert "job_shadow_run_morning" in src, "missing morning shadow job"
+    assert "job_shadow_run_midday" in src, "missing midday shadow job"
+    assert "job_shadow_run_pre_ko" in src, "missing pre_ko shadow job"
+    assert 'CronTrigger(hour=6, minute=30)' in src, "morning shadow must fire at 06:30"
+    assert 'CronTrigger(hour=11, minute=30)' in src, "midday shadow must fire at 11:30"
+    assert 'CronTrigger(hour=15, minute=30)' in src, "pre_ko shadow must fire at 15:30"
+
+
+@test("BOT-TIMING-OU-MIDDAY — OU-specialist bots must run in midday cohort")
+def _():
+    """Phase A timing analysis (2026-05-13) showed morning OU bets at -3.6% ROI
+    vs midday OU at +26.8%. Same-bot A/B on bot_ou15_defensive: morning -2.1%,
+    midday +34.1%. Moved bot_ou25_global + bot_opt_ou_british from morning to
+    midday. This guard prevents accidental reversion."""
+    from workers.jobs.daily_pipeline_v2 import BOT_TIMING_COHORTS
+    ou_bots = ["bot_ou15_defensive", "bot_ou25_global", "bot_ou35_attacking", "bot_opt_ou_british"]
+    for bot in ou_bots:
+        assert BOT_TIMING_COHORTS.get(bot) == "midday", (
+            f"OU-specialist {bot} must be in midday cohort (currently "
+            f"{BOT_TIMING_COHORTS.get(bot)!r}). Morning OU bets have negative ROI."
+        )
+
+
 @test("RECOVER-PHASE2 — recover_today step 5 calls run_morning with skip_fetch=True")
 def _():
     """Phase 1 (skip_fetch=False) never populates best_bookmaker, so every

@@ -1788,6 +1788,70 @@ def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
         raise
 
 
+def bulk_store_shadow_bets(rows: list[dict], shadow_run_id: str, shadow_cohort: str) -> int:
+    """
+    BET-TIMING-MONITOR — bulk-insert shadow placements from one run_morning
+    pass into the shadow_bets table.
+
+    Shadow bets are evaluated for ALL bots at every refresh window (06/11/15 UTC).
+    They never affect bot bankrolls. Used to compare the same bot's ROI across
+    timing windows without the strategy confound that breaks the cohort A/B.
+
+    Each row dict mirrors what store_bet() receives, plus we record the shadow
+    metadata. ON CONFLICT (shadow_run_id, bot_id, match_id, market, selection)
+    skips duplicates from accidental retries.
+
+    Returns rows-inserted count.
+    """
+    if not rows:
+        return 0
+
+    SHADOW_STAKE = 10.00  # fixed nominal stake so ROI is comparable across cohorts
+
+    tuples = []
+    for r in rows:
+        prob = _sanitize_for_json(r["model_prob"])
+        if prob is None:
+            continue  # NOT NULL constraint
+        tuples.append((
+            shadow_run_id,
+            shadow_cohort,
+            r["bot_id"],
+            r["match_id"],
+            r["market"],
+            r["selection"].lower() if isinstance(r["selection"], str) else r["selection"],
+            _sanitize_for_json(r["odds"]),
+            r.get("placed_at", datetime.now().isoformat()),
+            SHADOW_STAKE,
+            prob,
+            _sanitize_for_json(r.get("calibrated_prob")),
+            _sanitize_for_json(r["edge"]),
+            r.get("recommended_bookmaker"),
+            _sanitize_for_json(r.get("kelly_fraction")),
+            r.get("timing_cohort"),
+            r.get("model_version", _active_model_version()),
+        ))
+
+    if not tuples:
+        return 0
+
+    sql = """
+        INSERT INTO shadow_bets
+            (shadow_run_id, shadow_cohort, bot_id, match_id, market, selection,
+             odds_at_pick, pick_time, stake,
+             model_probability, calibrated_prob, edge_percent,
+             recommended_bookmaker, kelly_fraction, timing_cohort, model_version)
+        VALUES %s
+        ON CONFLICT (shadow_run_id, bot_id, match_id, market, selection) DO NOTHING
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            psycopg2.extras.execute_values(cur, sql, tuples, page_size=5000)
+            conn.commit()
+            inserted = cur.rowcount
+    return inserted if inserted >= 0 else len(tuples)
+
+
 def store_prediction_snapshot(
     bet_id: str, stage: str, model_probability: float,
     implied_probability: float = None, edge_percent: float = None,
@@ -5099,6 +5163,28 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
         failed_sections.append("bot_count")
         console.print(f"[yellow]ops_snapshot: bot_count failed: {e}[/yellow]")
 
+    # BET-TIMING-MONITOR — shadow run daily health counters. 3 expected per day
+    # (morning/midday/pre_ko). Anything <3 by 16:00 UTC means a run failed.
+    shadow_runs_today = 0
+    shadow_bets_today = 0
+    try:
+        sr = execute_query(
+            """
+            SELECT
+              COUNT(DISTINCT shadow_cohort) AS runs_today,
+              COUNT(*)                       AS bets_today
+            FROM shadow_bets
+            WHERE pick_time::date = %s
+            """, [today])
+        if sr:
+            shadow_runs_today = int(sr[0]["runs_today"] or 0)
+            shadow_bets_today = int(sr[0]["bets_today"] or 0)
+    except Exception as e:
+        # Table may not exist yet (pre-migration-101); leave as 0 silently.
+        if "does not exist" not in str(e).lower():
+            failed_sections.append("shadow_counts")
+            console.print(f"[yellow]ops_snapshot: shadow_counts failed: {e}[/yellow]")
+
     try:
         r = execute_query(
             """
@@ -5383,7 +5469,8 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               backfill_total_done, backfill_total_finished, backfill_last_run,
               af_calls_today, af_budget_remaining,
               total_users, pro_users, elite_users, new_signups_today,
-              sidelined_players_fetched, transfers_teams_fetched
+              sidelined_players_fetched, transfers_teams_fetched,
+              shadow_runs_today, shadow_bets_today
             ) VALUES (
               %s,
               %s, %s, %s, %s, %s, %s, %s, %s,
@@ -5397,6 +5484,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               %s, %s, %s,
               %s, %s,
               %s, %s, %s, %s,
+              %s, %s,
               %s, %s
             )
             """,
@@ -5421,6 +5509,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
                 af_calls_today, af_budget_remaining,
                 total_users, pro_users, elite_users, new_signups_today,
                 sidelined_players_fetched, transfers_teams_fetched,
+                shadow_runs_today, shadow_bets_today,
             ]
         )
         if failed_sections:

@@ -325,6 +325,42 @@ def job_betting_refresh():
         console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
 
 
+def job_shadow_run_morning():
+    """BET-TIMING-MONITOR — shadow run for the morning window (06:30 UTC).
+
+    Runs run_morning(shadow_mode=True, shadow_cohort='morning') which evaluates
+    ALL bots (not just the morning cohort) with the data available at this time
+    and writes to shadow_bets. Used to compare per-bot ROI across timing windows
+    without the strategy confound. Never touches bot bankrolls.
+
+    See dev/active/bet-timing-monitor-plan.md.
+    """
+    _run_job("shadow_morning", _shadow_run, "morning")
+
+
+def job_shadow_run_midday():
+    """BET-TIMING-MONITOR — shadow run for the midday window (11:30 UTC).
+    See job_shadow_run_morning."""
+    _run_job("shadow_midday", _shadow_run, "midday")
+
+
+def job_shadow_run_pre_ko():
+    """BET-TIMING-MONITOR — shadow run for the pre-KO window (15:30 UTC).
+    See job_shadow_run_morning."""
+    _run_job("shadow_pre_ko", _shadow_run, "pre_ko")
+
+
+def _shadow_run(shadow_cohort: str):
+    """Run run_morning(shadow_mode=True, shadow_cohort=...) with error isolation."""
+    from workers.jobs.daily_pipeline_v2 import run_morning
+    import traceback
+    try:
+        run_morning(skip_fetch=True, shadow_mode=True, shadow_cohort=shadow_cohort)
+    except Exception as e:
+        console.print(f"[red]Shadow run ({shadow_cohort}) failed: {e}[/red]")
+        console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
+
+
 def job_dashboard_cache_refresh():
     """Refresh dashboard_cache snapshot independently of betting/settlement.
 
@@ -783,6 +819,20 @@ def main():
         scheduler.add_job(job_betting_refresh_wrapper, CronTrigger(hour=hour, minute=minute),
                           id=f"betting_refresh_{hour:02d}{minute:02d}",
                           name=f"Betting Refresh {hour:02d}:{minute:02d}")
+
+    # BET-TIMING-MONITOR: 3 shadow runs/day — ALL bots evaluated at each window.
+    # Fires after the corresponding cohort betting run completes so the data
+    # underlying the shadow matches what the real run saw.
+    #   06:30 — morning shadow (after 06:00 morning pipeline)
+    #   11:30 — midday shadow  (after 11:00 betting_refresh)
+    #   15:30 — pre-KO shadow  (after 15:00 betting_refresh)
+    # See dev/active/bet-timing-monitor-plan.md.
+    scheduler.add_job(job_shadow_run_morning, CronTrigger(hour=6, minute=30),
+                      id="shadow_morning", name="Shadow Run [morning] 06:30")
+    scheduler.add_job(job_shadow_run_midday, CronTrigger(hour=11, minute=30),
+                      id="shadow_midday", name="Shadow Run [midday] 11:30")
+    scheduler.add_job(job_shadow_run_pre_ko, CronTrigger(hour=15, minute=30),
+                      id="shadow_pre_ko", name="Shadow Run [pre_ko] 15:30")
 
     # News checker: 09:00, 12:30, 14:30, 16:30, 18:30 UTC
     # 14:30 added — feeds 15:00 betting (was 2.5h stale)

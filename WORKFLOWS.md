@@ -36,6 +36,9 @@
 10:30  ② Enrichment      run_enrichment()          Injuries only — fresh before 11:00 betting (AF-STANDINGS-DAILY)
 10:45  ① Fixtures        run_fixtures()            Status refresh — before European morning betting
 11:00  ⑨ Betting Refresh betting_refresh()         European morning KOs
+06:30  ⑰ Shadow Run     job_shadow_run_morning()  BET-TIMING-MONITOR: ALL bots evaluated → shadow_bets (morning window)
+11:30  ⑰ Shadow Run     job_shadow_run_midday()   BET-TIMING-MONITOR: ALL bots evaluated → shadow_bets (midday window)
+15:30  ⑰ Shadow Run     job_shadow_run_pre_ko()   BET-TIMING-MONITOR: ALL bots evaluated → shadow_bets (pre_ko window)
 12:30  ⑦ News Checker    run_news_checker()
 12:45  ① Fixtures        run_fixtures()            Status refresh — before 13:30 betting (BET-TIMING-ANALYSIS)
 13:00  ② Enrichment      run_enrichment()          Injuries + H2H + team_stats (standings now nightly only — AF-STANDINGS-DAILY)
@@ -71,6 +74,26 @@
 09:35  ⑬ Health Alert    run_morning_checks()      Alerts if 0 bets placed or >10 matches missing Pinnacle odds
 10-22  ⑬ Health Alert    run_snapshot_check()      Hourly: alerts if last LivePoller snapshot >25min stale
 ```
+
+### ⑰ Shadow Runs (`daily_pipeline_v2.run_morning(shadow_mode=True)`)
+
+BET-TIMING-MONITOR — 3 daily runs at 06:30 / 11:30 / 15:30 UTC. Each invokes
+`run_morning(skip_fetch=True, shadow_mode=True, shadow_cohort=<cohort>)` which:
+
+- Runs ALL 23 bots regardless of their `BOT_TIMING_COHORTS` assignment
+- Skips the active-cohort filter, the bot active-flag check, and the
+  per-league exposure cap
+- Never mutates `_running_bankroll` or calls `store_bet`
+- Accumulates rows in a buffer and bulk-inserts them into `shadow_bets`
+  via `bulk_store_shadow_bets()` with a fresh `shadow_run_id`
+- Fixed nominal stake of 10.00 per row for clean cross-cohort ROI math
+
+Daily health is surfaced on `/ops` via `ops_snapshots.shadow_runs_today`
+(should equal 3 by 16:00 UTC) and `shadow_bets_today`. Shadow bets are
+settled by the existing settlement pipeline via the new
+`_settle_pending_shadow_bets()` helper (wrapped in its own try/except so
+shadow-settlement issues never block real-bet settlement). See
+`dev/active/bet-timing-monitor-plan.md` for the analysis plan.
 
 ### Betting refresh schedule (7x/day + morning pipeline = 8 total)
 | Time | KO window covered | Fresh inputs |

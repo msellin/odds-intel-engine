@@ -1,6 +1,6 @@
 # OddsIntel — Infrastructure & Costs
 
-> Last updated: 2026-05-08 — healthchecks.io added (external heartbeat). Stripe webhook idempotency added. LivePoller tuned to 45s/135s. Pipeline health alerts wired (PIPE-ALERT). Total cost ~€56.20/mo.
+> Last updated: 2026-05-13 — BET-TIMING-MONITOR shadow runs added (3 extra Railway jobs/day, ~+2 min pod time, no AF calls). 2026-05-08 — healthchecks.io added (external heartbeat). Stripe webhook idempotency added. LivePoller tuned to 45s/135s. Pipeline health alerts wired (PIPE-ALERT). Total cost ~€56.20/mo (unchanged).
 
 ---
 
@@ -9,7 +9,7 @@
 | Service | Role | Plan | Status |
 |---------|------|------|--------|
 | **Supabase** | PostgreSQL DB, Auth, RLS, REST API + **Storage** (`models` bucket — ML bundle registry, ML-BUNDLE-STORAGE 2026-05-10) | **Pro ($25/mo)** | Active — upgraded 2026-04-29 |
-| **Railway** | Pipeline scheduler + LivePoller + InplayBot (long-running process) | **Hobby ($5/mo)** | Active — upgraded from Trial 2026-05-05. Auto-deploy from GitHub main (2026-05-06). All scheduled jobs + 30s/60s/5min live polling + in-play paper trading |
+| **Railway** | Pipeline scheduler + LivePoller + InplayBot (long-running process) | **Hobby ($5/mo)** | Active — upgraded from Trial 2026-05-05. Auto-deploy from GitHub main (2026-05-06). All scheduled jobs + 30s/60s/5min live polling + in-play paper trading. **2026-05-13:** +3 shadow runs/day for BET-TIMING-MONITOR (~+2 min/day pod time, no AF calls — reads from DB). |
 | **GitHub Actions** | Manual workflow_dispatch + DB migrations only | Free (public repos) | Active — crons disabled, ~100 min/month |
 | **GitHub** | Source control (2 repos, both public) | Free | Active |
 | **Vercel** | Frontend hosting (Next.js 16) | Hobby (free) | Active (oddsintel.app) |
