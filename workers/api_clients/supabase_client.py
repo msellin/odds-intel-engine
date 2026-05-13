@@ -513,7 +513,7 @@ def bulk_store_matches(match_dicts: list[dict]) -> list[str | None]:
 
             score_home = score_away = result_str = None
             status = "scheduled"
-            if md.get("home_goals") is not None:
+            if md.get("home_goals") is not None and md.get("away_goals") is not None:
                 score_home = int(md["home_goals"])
                 score_away = int(md["away_goals"])
                 result_str = "home" if score_home > score_away else "away" if score_away > score_home else "draw"
