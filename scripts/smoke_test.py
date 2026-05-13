@@ -2769,6 +2769,85 @@ def _():
     assert 'CronTrigger(hour=15, minute=30)' in src, "pre_ko shadow must fire at 15:30"
 
 
+@test("BOT-QUAL-LIB — bot-aggregates lib exports the shared helpers")
+def _():
+    """BOT-QUAL-FILTER-DUAL — both /admin/bots and /performance import their
+    aggregation helpers from src/lib/bot-aggregates.ts so the toggle has a
+    single source of truth. Source-inspect that exports + cutoff are present."""
+    import pathlib
+    p = pathlib.Path("../odds-intel-web/src/lib/bot-aggregates.ts")
+    if not p.exists():
+        return  # engine-only CI checkout — skip
+    src = p.read_text()
+    required_exports = [
+        "QUALITY_CUTOFF",
+        "filterQuality",
+        "buildBotStats",
+        "buildSummary",
+        "buildMarketStats",
+        "buildPublicBotStats",
+        "buildPerformanceStats",
+    ]
+    for sym in required_exports:
+        assert f"export function {sym}" in src or f"export const {sym}" in src, (
+            f"bot-aggregates.ts missing export: {sym}"
+        )
+    assert '"2026-05-06"' in src, "QUALITY_CUTOFF must be 2026-05-06"
+
+
+@test("BOT-QUAL-ADMIN — /admin/bots client uses the shared aggregation helpers")
+def _():
+    """Source-inspect bot-dashboard-client.tsx: must import from bot-aggregates,
+    use useMemo for filtered/aggregated state, and expose the quality toggle."""
+    import pathlib
+    p = pathlib.Path("../odds-intel-web/src/components/bot-dashboard-client.tsx")
+    if not p.exists():
+        return
+    src = p.read_text()
+    assert "from \"@/lib/bot-aggregates\"" in src, (
+        "bot-dashboard-client.tsx must import from @/lib/bot-aggregates"
+    )
+    assert "filterQuality" in src, "must call filterQuality with toggle state"
+    assert "qualityOnly" in src, "must hold qualityOnly state"
+    assert "data-testid=\"quality-only-toggle\"" in src, (
+        "toggle input must carry data-testid='quality-only-toggle' for E2E hookup"
+    )
+    # The server page must NOT pre-aggregate any more — it just hands raw bets to the client.
+    page = pathlib.Path("../odds-intel-web/src/app/(app)/admin/bots/page.tsx").read_text()
+    assert "buildBotStats" not in page, (
+        "/admin/bots/page.tsx must not pre-aggregate; aggregation lives in the client"
+    )
+    assert "buildMarketStats" not in page, (
+        "/admin/bots/page.tsx must not pre-aggregate market stats"
+    )
+
+
+@test("BOT-QUAL-PERFORMANCE — /performance wraps via PerformanceClient with toggle")
+def _():
+    """Source-inspect /performance: PerformanceClient owns the toggle and
+    feeds both hero + leaderboard so every metric on the page updates."""
+    import pathlib
+    p = pathlib.Path("../odds-intel-web/src/components/performance-client.tsx")
+    if not p.exists():
+        return
+    src = p.read_text()
+    assert "filterQuality" in src, "PerformanceClient must apply filterQuality"
+    assert "buildPerformanceStats" in src, (
+        "PerformanceClient must recompute hero stats via buildPerformanceStats"
+    )
+    assert "buildPublicBotStats" in src, (
+        "PerformanceClient must recompute leaderboard via buildPublicBotStats"
+    )
+    assert "useState(true)" in src, "qualityOnly must default to true on /performance"
+    page = pathlib.Path("../odds-intel-web/src/app/(app)/performance/page.tsx").read_text()
+    assert "PerformanceClient" in page, (
+        "/performance/page.tsx must render PerformanceClient (not PerformanceLeaderboard directly)"
+    )
+    assert "aggregateBets" in page, (
+        "/performance/page.tsx must pass aggregateBets so Pro+ users get toggle data"
+    )
+
+
 @test("BOT-TIMING-OU-MIDDAY — OU-specialist bots must run in midday cohort")
 def _():
     """Phase A timing analysis (2026-05-13) showed morning OU bets at -3.6% ROI
