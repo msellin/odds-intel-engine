@@ -1,7 +1,7 @@
 """
 OddsIntel — In-Play Paper Trading Bot (Phase 1)
 
-Rule-based in-play paper trading across 11 strategies.
+Rule-based in-play paper trading across 13 strategies.
 Reads from live_match_snapshots (populated by LivePoller every 30s), joins prematch
 data from predictions + matches.af_prediction, and logs paper bets to simulated_bets.
 
@@ -19,6 +19,8 @@ Strategies:
   I   — Favourite Stall: strong fav, 0-0 at min 42-65, live home ≥ 3.0
   J   — Goal Debt Over 1.5: 0-0 at min 30-52, prematch O25 ≥ 0.55, OU1.5 ≥ 2.85
   L   — Goal Contagion: first goal at min 15-35, O25 ≥ 0.55, OU2.5 available
+  O   — Underdog Hold: underdog leading 1-0 min 25-55, pm_win_prob < 35%, live odds ≥ 2.80
+  P   — Post-Equalizer: equalizing team at 1-1 within 4min of goal, live win odds ≥ 2.20
 
 xG source:
   All strategies now run on both real live xG (from AF stats endpoint, ~top leagues only)
@@ -95,6 +97,14 @@ INPLAY_BOTS = {
         "description": "Late Favourite Push — 0-0/1-1 min 72-80, home_win_prob ≥ 0.65, live home odds drifted ≥ 2.20, bet Home",
         "strategy": "inplay_n",
     },
+    "inplay_o": {
+        "description": "Underdog Hold — underdog leading 1-0 at min 25-55, prematch win prob < 35%, live odds ≥ 2.80",
+        "strategy": "inplay_o",
+    },
+    "inplay_p": {
+        "description": "Post-Equalizer — equalizing team at 1-1 within 4min, live win odds ≥ 2.20, Poisson edge ≥ 3%",
+        "strategy": "inplay_p",
+    },
     "inplay_q": {
         "description": "Red Card Overreaction — red 15-55, total goals ≤ 1, 11-man possession ≥ 55%, live OU2.5 over ≥ 2.30, bet Over 2.5",
         "strategy": "inplay_q",
@@ -145,6 +155,12 @@ _strategy_stats: dict[str, dict[str, int]] = {}
 _prev_total_goals: dict[str, int] = {}
 # match_id → cycle count when first goal was detected (window = 6 cycles ≈ 3 min)
 _goal_event_window: dict[str, int] = {}
+
+# Post-Equalizer state — tracks 1-0→1-1 or 0-1→1-1 transitions for strategy P.
+# match_id → (home_goals, away_goals) from previous cycle
+_prev_scores: dict[str, tuple[int, int]] = {}
+# match_id → (cycle_count_when_equalized, "home"/"away") — which team scored the equalizer
+_equalizer_event_window: dict[str, tuple[int, str]] = {}
 
 
 # ── Entrypoint (called from LivePoller) ──────────────────────────────────────
@@ -389,6 +405,26 @@ def run_inplay_strategies():
                if _cycle_count - cyc > 8]
     for mid in expired:
         _goal_event_window.pop(mid, None)
+
+    # Update post-equalizer state — detect 1-0→1-1 or 0-1→1-1 transitions for strategy P.
+    # Done AFTER strategy checks so the window is available starting next cycle.
+    for cand in candidates:
+        mid = str(cand["match_id"])
+        curr_h = cand.get("score_home") or 0
+        curr_a = cand.get("score_away") or 0
+        prev_h, prev_a = _prev_scores.get(mid, (-1, -1))
+        if curr_h == 1 and curr_a == 1 and (prev_h, prev_a) != (1, 1):
+            if prev_h == 1 and prev_a == 0:
+                _equalizer_event_window[mid] = (_cycle_count, "away")
+            elif prev_h == 0 and prev_a == 1:
+                _equalizer_event_window[mid] = (_cycle_count, "home")
+        _prev_scores[mid] = (curr_h, curr_a)
+
+    # Expire stale equalizer windows (> 8 cycles old ≈ 4 minutes)
+    expired_eq = [mid for mid, (cyc, _) in _equalizer_event_window.items()
+                  if _cycle_count - cyc > 8]
+    for mid in expired_eq:
+        _equalizer_event_window.pop(mid, None)
 
 
 # ── Data Queries ─────────────────────────────────────────────────────────────
@@ -924,6 +960,10 @@ def _check_strategy(bot_name: str, cand: dict, pm: dict,
         return _check_strategy_m(cand, pm, has_red_card)
     elif bot_name == "inplay_n":
         return _check_strategy_n(cand, pm, has_red_card)
+    elif bot_name == "inplay_o":
+        return _check_strategy_o(cand, pm, has_red_card)
+    elif bot_name == "inplay_p":
+        return _check_strategy_p(cand, pm, has_red_card)
     elif bot_name == "inplay_q":
         return _check_strategy_q(cand, pm, has_red_card, execute_query)
     # inplay_f intentionally not dispatched — dropped 2026-05-08
@@ -2215,5 +2255,198 @@ def _check_strategy_q(cand: dict, pm: dict, has_red_card: bool,
             "eleven_man_possession": round(eleven_man_poss, 1),
             "xg_source": "live" if is_real else "shot_proxy",
             "odds_source": "live" if odds_is_live else "prematch",
+        },
+    }
+
+
+def _poisson_win_prob(lambda_a: float, lambda_b: float, lead_a: int = 0,
+                      max_goals: int = 12) -> float:
+    """
+    P(team A wins) given A leads by `lead_a` goals and remaining scoring follows
+    independent Poisson(lambda_a) and Poisson(lambda_b).
+
+    lead_a=1 → underdog leads 1-0 (strategy O).
+    lead_a=0 → match level (strategy P, from 1-1 state — who wins from here?).
+
+    Computation: for each k goals scored by B, P(A scores enough to stay ahead).
+    """
+    from math import exp, factorial
+
+    def _pmf(k: int, lam: float) -> float:
+        if lam <= 0:
+            return 1.0 if k == 0 else 0.0
+        return (lam ** k) * exp(-lam) / factorial(k)
+
+    def _cdf_ge(k: int, lam: float) -> float:
+        if k <= 0:
+            return 1.0
+        return 1.0 - sum(_pmf(j, lam) for j in range(k))
+
+    total = 0.0
+    for b in range(max_goals + 1):
+        p_b = _pmf(b, lambda_b)
+        # A wins if lead_a + A_r > b, i.e. A_r > b - lead_a, i.e. A_r >= max(0, b - lead_a + 1)
+        min_a = max(0, b - lead_a + 1)
+        total += p_b * _cdf_ge(min_a, lambda_a)
+    return min(1.0, total)
+
+
+def _check_strategy_o(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
+    """
+    Strategy O: Underdog Hold.
+
+    Thesis: when a prematch underdog takes a 1-0 lead in the first half, the live
+    market anchors on the pre-match probability and keeps the underdog's win odds
+    inflated ("favourite will equalise"). Bivariate Poisson says the underdog's
+    remaining win probability is materially higher than the implied market odds —
+    especially at minute 25-55 where 35-65 minutes remain.
+
+    Entry:
+      • minute 25-55
+      • score 1-0 (home) or 0-1 (away) — exactly one side leads
+      • leading team's prematch win probability < 35% (confirmed underdog)
+      • live 1x2 odds for leading team ≥ 2.80 (market still undervaluing)
+      • no red card
+      • Poisson win probability edge ≥ 4%
+
+    Bet: leading (underdog) team to win.
+    """
+    minute = cand["minute"] or 0
+    if minute < 25 or minute > 55:
+        return None
+    if has_red_card:
+        return None
+
+    sh, sa = cand["score_home"] or 0, cand["score_away"] or 0
+    if not ((sh == 1 and sa == 0) or (sh == 0 and sa == 1)):
+        return None
+
+    pm_home = float(pm.get("prematch_home_prob") or 0)
+    pm_away = float(pm.get("prematch_away_prob") or 0)
+
+    if sh == 1 and sa == 0:
+        if pm_home >= 0.35:
+            return None  # Home is favourite, not an underdog lead
+        selection = "home"
+        live_odds_val = cand.get("live_1x2_home")
+        lambda_leader = float(pm.get("prematch_xg_home") or 1.1)
+        lambda_trailer = float(pm.get("prematch_xg_away") or 1.1)
+        pm_leader_prob = pm_home
+    else:
+        if pm_away >= 0.35:
+            return None  # Away is favourite, not an underdog lead
+        selection = "away"
+        live_odds_val = cand.get("live_1x2_away")
+        lambda_leader = float(pm.get("prematch_xg_away") or 1.1)
+        lambda_trailer = float(pm.get("prematch_xg_home") or 1.1)
+        pm_leader_prob = pm_away
+
+    if not live_odds_val:
+        return None  # Strategy requires live odds to confirm market hasn't adjusted
+    odds = float(live_odds_val)
+    if odds < 2.80:
+        return None
+
+    remaining_minutes = max(1, 90 - minute)
+    scale = remaining_minutes / 90.0
+    model_win_prob = _poisson_win_prob(lambda_leader * scale, lambda_trailer * scale, lead_a=1)
+    market_prob = _implied_prob(odds)
+    edge_pct = (model_win_prob - market_prob) * 100
+
+    if edge_pct < 4.0:
+        return None
+
+    return {
+        "market": "1x2",
+        "selection": selection,
+        "odds": odds,
+        "model_prob": round(model_win_prob, 4),
+        "edge": round(edge_pct, 2),
+        "extra": {
+            "score_state": f"{sh}-{sa}",
+            "pm_leader_prob": round(pm_leader_prob, 3),
+            "remaining_lam_leader": round(lambda_leader * scale, 3),
+            "remaining_lam_trailer": round(lambda_trailer * scale, 3),
+        },
+    }
+
+
+def _check_strategy_p(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
+    """
+    Strategy P: Post-Equalizer Comeback.
+
+    Thesis: after a team equalises to 1-1, books anchor on the draw (the current
+    visible score) and overweight P(draw). This inflates win odds for BOTH teams
+    above fair Poisson value. We specifically back the equalising team — the team
+    that had trailing momentum — because narrative bias ("they fought back") is
+    strongest for that selection.
+
+    Entry:
+      • score is 1-1 AND this match entered _equalizer_event_window ≤ 8 cycles ago
+        (i.e. the 1-1 was reached within the last ~4 minutes)
+      • minute 30-75
+      • live 1x2 odds for the equalising team ≥ 2.20
+      • no red card
+      • Poisson win probability from current 1-1 state gives edge ≥ 3%
+
+    Bet: equalising team to win.
+    """
+    mid = str(cand["match_id"])
+    eq_info = _equalizer_event_window.get(mid)
+    if eq_info is None:
+        return None
+
+    eq_cycle, eq_team = eq_info
+    if _cycle_count - eq_cycle > 8:
+        return None
+
+    minute = cand["minute"] or 0
+    if minute < 30 or minute > 75:
+        return None
+    if has_red_card:
+        return None
+
+    sh, sa = cand["score_home"] or 0, cand["score_away"] or 0
+    if sh != 1 or sa != 1:
+        return None  # Score must still be 1-1
+
+    if eq_team == "home":
+        live_odds_val = cand.get("live_1x2_home")
+        selection = "home"
+        lambda_eq = float(pm.get("prematch_xg_home") or 1.1)
+        lambda_opp = float(pm.get("prematch_xg_away") or 1.1)
+    else:
+        live_odds_val = cand.get("live_1x2_away")
+        selection = "away"
+        lambda_eq = float(pm.get("prematch_xg_away") or 1.1)
+        lambda_opp = float(pm.get("prematch_xg_home") or 1.1)
+
+    if not live_odds_val:
+        return None
+    odds = float(live_odds_val)
+    if odds < 2.20:
+        return None
+
+    remaining_minutes = max(1, 90 - minute)
+    scale = remaining_minutes / 90.0
+    model_win_prob = _poisson_win_prob(lambda_eq * scale, lambda_opp * scale, lead_a=0)
+    market_prob = _implied_prob(odds)
+    edge_pct = (model_win_prob - market_prob) * 100
+
+    if edge_pct < 3.0:
+        return None
+
+    return {
+        "market": "1x2",
+        "selection": selection,
+        "odds": odds,
+        "model_prob": round(model_win_prob, 4),
+        "edge": round(edge_pct, 2),
+        "extra": {
+            "score_state": "1-1",
+            "eq_team": eq_team,
+            "cycles_since_eq": _cycle_count - eq_cycle,
+            "remaining_lam_eq": round(lambda_eq * scale, 3),
+            "remaining_lam_opp": round(lambda_opp * scale, 3),
         },
     }

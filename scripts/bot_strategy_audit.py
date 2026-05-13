@@ -465,6 +465,24 @@ INPLAY_STRATEGIES = {
             ("home odds drifted ≥ 2.20", "COALESCE(live_1x2_home, 0) >= 2.20"),
         ],
     },
+    "inplay_o": {
+        "desc": "Underdog Hold — underdog leading 1-0, min 25-55, live odds ≥ 2.80",
+        "gates": [
+            ("minute 25-55",            "minute BETWEEN 25 AND 55"),
+            ("score 1-0 or 0-1",        "(score_home=1 AND score_away=0) OR (score_home=0 AND score_away=1)"),
+            ("has live 1x2",            "live_1x2_home IS NOT NULL"),
+            ("underdog live odds ≥ 2.80", "GREATEST(COALESCE(live_1x2_home,0), COALESCE(live_1x2_away,0)) >= 2.80"),
+        ],
+    },
+    "inplay_p": {
+        "desc": "Post-Equalizer — equalizing team at 1-1, min 30-75, live win ≥ 2.20",
+        "gates": [
+            ("minute 30-75",            "minute BETWEEN 30 AND 75"),
+            ("score 1-1",               "score_home=1 AND score_away=1"),
+            ("has live 1x2",            "live_1x2_home IS NOT NULL"),
+            ("live 1x2 winner ≥ 2.20",  "GREATEST(COALESCE(live_1x2_home,0), COALESCE(live_1x2_away,0)) >= 2.20"),
+        ],
+    },
     "inplay_q": {
         "desc": "Red Card Overreaction O2.5 — red 15-55, total ≤ 1",
         "gates": [

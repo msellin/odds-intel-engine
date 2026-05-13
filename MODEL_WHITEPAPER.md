@@ -425,7 +425,7 @@ T+FT+1h  Post-match: stats, events, player stats enrichment
 
 ## 8. Bot Strategies
 
-24 paper trading bots run simultaneously: 16 pre-match bots (same ensemble prediction, different market/league filters) + 8 in-play bots (rule-based strategies using live xG or shot-proxy + Bayesian posterior, `workers/jobs/inplay_bot.py`). Pre-match bots differ in:
+26 paper trading bots run simultaneously: 16 pre-match bots (same ensemble prediction, different market/league filters) + 10 in-play bots (rule-based strategies using live xG or shot-proxy + Bayesian posterior, `workers/jobs/inplay_bot.py`). Pre-match bots differ in:
 
 - **Which markets** they bet (1X2 home/draw/away, O/U 1.5/2.5/3.5, BTTS yes/no)
 - **Which leagues** they target (all, lower tiers only, specific countries)
@@ -460,7 +460,22 @@ All 16 bots are assigned to one of three timing windows as an A/B test to identi
 
 CLV and ROI are tracked per cohort to determine which window produces the best edge.
 
-### 8.3 Backtest Foundation
+### 8.3 In-Play Strategies
+
+In-play bots use the same ensemble model for pre-match context (xG, O/U probability, win probabilities) combined with live snapshot data. Two categories:
+
+**xG / shot-proxy strategies (stats-gated):** A, D, E, G, H, Q — require live xG or shots data; limited to ~22% of leagues where AF provides live statistics. Fall back to shot-proxy (sot×0.10 + off×0.03) with higher edge floors.
+
+**Score-state strategies (no stats needed):** B, C, I, J, L, M, N, O, P — work from live 1x2 odds + score + prematch model probabilities; available for all leagues with live 1x2 coverage (~22% of snapshots).
+
+| Strategy | Entry condition | Bet | Model |
+|----------|----------------|-----|-------|
+| O — Underdog Hold | Prematch underdog (win prob < 35%) leads 1-0 at min 25-55, live odds ≥ 2.80 | Win for leading underdog | Bivariate Poisson from 1-0: P(hold lead) > market implied |
+| P — Post-Equalizer | Team equalises to 1-1 at min 30-75 (within 4min window), live win odds ≥ 2.20 | Win for equalising team | Bivariate Poisson from 1-1: market anchors on draw, depressing win prices |
+
+Both use `_poisson_win_prob(lambda_a, lambda_b, lead_a)` — a double-Poisson convolution over remaining goals — to estimate win probability and compare to implied odds. Edge threshold: O ≥ 4%, P ≥ 3%.
+
+### 8.4 Backtest Foundation
 
 Bot strategies are validated against a 354,518-match dataset (275 leagues, 2005-2015):
 

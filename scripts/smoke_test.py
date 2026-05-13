@@ -5198,6 +5198,94 @@ def _():
     )
 
 
+@test("INPLAY-UNDERDOG-HOLD — strategy O registered, dispatched, checks prematch prob < 35% + live odds")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+
+    # Bot registered in INPLAY_BOTS
+    assert '"inplay_o"' in src, "inplay_o must be in INPLAY_BOTS"
+
+    # Dispatched in _check_strategy
+    fn_start = src.index("def _check_strategy(bot_name:")
+    fn_end = src.index("\ndef _check_strategy_a(", fn_start)
+    dispatch_body = src[fn_start:fn_end]
+    assert '"inplay_o"' in dispatch_body, "inplay_o must be dispatched in _check_strategy"
+
+    # Strategy function has correct gates
+    fn_start = src.index("def _check_strategy_o(")
+    fn_end = src.index("\ndef _check_strategy_p(", fn_start)
+    fn_body = src[fn_start:fn_end]
+    assert "pm_home >= 0.35" in fn_body, "Strategy O must gate on prematch_home_prob >= 0.35"
+    assert "pm_away >= 0.35" in fn_body, "Strategy O must gate on prematch_away_prob >= 0.35"
+    assert "2.80" in fn_body, "Strategy O must require live odds >= 2.80"
+    assert "_poisson_win_prob(" in fn_body, "Strategy O must use _poisson_win_prob for edge"
+    assert "live_1x2_home" in fn_body and "live_1x2_away" in fn_body, (
+        "Strategy O must read live_1x2_home and live_1x2_away from candidate"
+    )
+
+
+@test("INPLAY-POST-EQUALIZER — strategy P registered, dispatched, uses equalizer window + Poisson")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+
+    # Bot registered
+    assert '"inplay_p"' in src, "inplay_p must be in INPLAY_BOTS"
+
+    # Dispatched
+    fn_start = src.index("def _check_strategy(bot_name:")
+    fn_end = src.index("\ndef _check_strategy_a(", fn_start)
+    dispatch_body = src[fn_start:fn_end]
+    assert '"inplay_p"' in dispatch_body, "inplay_p must be dispatched in _check_strategy"
+
+    # Module-level state vars exist
+    assert "_equalizer_event_window" in src, "_equalizer_event_window dict must exist"
+    assert "_prev_scores" in src, "_prev_scores dict must exist"
+
+    # Strategy function checks window and 1-1 score
+    fn_start = src.index("def _check_strategy_p(")
+    try:
+        fn_end_p = src.index("\ndef ", fn_start + 1)
+    except ValueError:
+        fn_end_p = len(src)
+    fn_body = src[fn_start:fn_end_p]
+    assert "_equalizer_event_window" in fn_body, "Strategy P must check _equalizer_event_window"
+    assert "sh != 1 or sa != 1" in fn_body, "Strategy P must exit if score is not 1-1"
+    assert "2.20" in fn_body, "Strategy P must require live odds >= 2.20"
+    assert "_poisson_win_prob(" in fn_body, "Strategy P must use _poisson_win_prob for edge"
+
+    # Equalizer detection logic updates both dicts
+    update_section = src[src.index("Update post-equalizer state"):src.index("# ── Data Queries")]
+    assert "_prev_scores[mid]" in update_section, "Must update _prev_scores each cycle"
+    assert "_equalizer_event_window[mid]" in update_section, "Must record equalizer event"
+
+
+@test("INPLAY-POISSON-WIN-PROB — _poisson_win_prob helper unit tests")
+def _():
+    import sys
+    sys.path.insert(0, ".")
+    from workers.jobs.inplay_bot import _poisson_win_prob
+
+    # At 0-0, symmetric lambdas: each team wins with equal probability < 0.5
+    prob = _poisson_win_prob(0.5, 0.5, lead_a=0)
+    assert 0.20 < prob < 0.40, f"Symmetric 0-0 win prob should be ~0.3, got {prob}"
+
+    # Leading 1-0 with equal remaining lambdas: ~60-70% win probability
+    prob = _poisson_win_prob(0.6, 0.6, lead_a=1)
+    assert 0.55 < prob < 0.80, f"1-0 lead win prob should be 55-80%, got {prob}"
+
+    # Strong underdog (low lambda) leading vs strong favourite (high lambda)
+    # at 1-0 with 40 min remaining — should still be >35% (better than implied 2.80)
+    prob_strong_lead = _poisson_win_prob(0.49, 0.89, lead_a=1)  # 1.1*(40/90), 2.0*(40/90)
+    assert prob_strong_lead > 0.36, f"Underdog holding 1-0 with 40min left: {prob_strong_lead:.3f}"
+
+    # With lead_a=0 and lambda_a > lambda_b, A should have higher win prob
+    prob_a = _poisson_win_prob(1.0, 0.5, lead_a=0)
+    prob_b = _poisson_win_prob(0.5, 1.0, lead_a=0)
+    assert prob_a > prob_b, "Higher-lambda team should win more often from equal state"
+
+
 @test("OPT-AWAY-ODDS-FIX — bot_opt_away_british + europe odds_range widened to 2.20-3.50")
 def _():
     import pathlib
