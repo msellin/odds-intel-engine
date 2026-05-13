@@ -42,6 +42,7 @@
 | OBS-SENTRY-BACKEND | P2 | 1.5h | Useful only when external users exist; premature at single-user stage |
 | JOB-TIMEOUT | P3 | 2h | Hung jobs hold conns; nice to have but healthchecks.io catches the symptom already |
 | WORKER-SPLIT-LIVEPOLLER | P3 | 30m+click | LivePoller crash isolation; defer unless cascade failures reappear |
+| BOT-STRATEGY-DEEP-REVIEW | P2 | ~3-4 days | Systematic audit of all 23 prematch + 13 inplay bot filter chains. Produces ranked list: "loosen X / tighten Y" + "new strategies to consider." See `dev/active/bot-strategy-deep-review-{plan,context,tasks}.md`. Trigger: `inplay_j` 0 settled bets in 14d (gate `prematch_o25 ≥ 0.62` clears only 0.24% of mid-game snapshots) raised the systemic question. No data threshold — run when a quiet window opens. |
 | **INPLAY ML (data-gated)** | | | |
 | INPLAY-CALIBRATION-IJL | P2 | 1h | Run ~June when bots I/J/L reach 50+ settled bets each |
 | INPLAY-BACKFILL-PERSIST | P2 | 3h | After backfill review; adds `is_backfill` flag to simulated_bets |
