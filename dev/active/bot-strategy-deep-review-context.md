@@ -1,6 +1,6 @@
 # BOT-STRATEGY-DEEP-REVIEW — Context
 
-**Status:** ⬜ Not started (filed 2026-05-13)
+**Status:** 🔄 In Progress — Thread 1 complete 2026-05-13. Threads 2–3 pending.
 
 ## What triggered this
 
@@ -28,6 +28,22 @@ Concrete prompt: `inplay_j` has 0 settled bets in 14 days. Funnel diagnostic sho
 - **Don't retire any bot from the audit.** Even bots with zero fires stay in scope — knowing *why* a bot doesn't fire is part of the deliverable.
 - **No A/B tests during audit.** Replay-based estimates are sufficient for ranking. Live A/B comes when a ranked item gets implemented.
 
-## Next session start
+## Thread 1 — Complete (2026-05-13)
 
-Pick a thread (1, 2, or 3). For Thread 1, the fastest first move is to extend `bot_perf_report.py` with a `--funnel BOT_NAME` flag that prints the gate-by-gate survival rate over the last 14 days. Build that for one prematch bot + one inplay bot, verify the output reads cleanly, then iterate across the full list.
+- Script: `scripts/bot_strategy_audit.py` — all 23 prematch + 13 inplay bots, funnel + ROI/CLV
+- Results: `dev/active/bot-strategy-audit-results.md` — per-bot profiles + ranked lists
+- 4 follow-up tasks added to PRIORITY_QUEUE: OPT-AWAY-ODDS-FIX, INPLAY-M-LOOSEN, INPLAY-J-LOOSEN, INPLAY-LIVE-OU-COVERAGE
+
+## Thread 2 — Next session start
+
+Re-read `dev/active/inplay-bot-plan.md` + inplay review summaries. List strategies the 8-AI panel recommended but we didn't ship. Then survey published live patterns (AH momentum, 2H handicap, HT/FT, comeback, derby discount, promoted-team volatility) and prematch gaps (corners, cards, both-halves-over, exact-score, scorecast). For each: one-line rationale + expected fire-rate + data we need.
+
+Output goes to the "Strategies we don't trade today" section of `dev/active/bot-strategy-audit-results.md`.
+
+## Key findings from Thread 1 (don't re-derive)
+
+- **Biggest prematch dead bots:** bot_opt_away_british + bot_opt_away_europe (odds 2.50-3.00 = 0 fires), bot_conservative (0 fires despite 6 Pinnacle-passing bets — Kelly=0 needs investigation)
+- **New DC/AH/DNB bots (launched 2026-05-11):** only 2 days live, don't tune yet — dc_value, dc_strong_fav, ah_home_fav, dnb_home_value, dnb_away_value all at 0 fires; ah_away_dog has 13 settled +45.2% ROI (promising)
+- **Best performers:** bot_opt_home_lower (+73.4% ROI, +0.333 CLV, 14.5% edge), bot_lower_1x2 (+63.6%, +0.307), inplay_m (+150%, +0.515 CLV — 1 bet)
+- **Most active inplay:** inplay_e (241 fired, -2.7% ROI, CLV +0.051 — needs threshold tightening)
+- **Live OU coverage: 17%** — the dominant inplay bottleneck, affects strategies e/h/a/d/j

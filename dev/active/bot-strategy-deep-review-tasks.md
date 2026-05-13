@@ -2,14 +2,14 @@
 
 ## Thread 1 — Audit existing strategies
 
-- [ ] Build `scripts/bot_strategy_audit.py` skeleton: takes `--bot BOT_NAME`, prints filter chain + 14d funnel + ROI/CLV
-- [ ] Wire funnel SQL for one prematch bot (`bot_aggressive`) — verify output reads cleanly
-- [ ] Wire funnel SQL for one inplay bot (`inplay_a`) — verify output reads cleanly
-- [ ] Add sensitivity replay: re-evaluate last 14d with limiting gate at ±10%, project fire-rate + ROI
-- [ ] Run audit across all 23 prematch bots — save to `bot-strategy-audit-results.md`
-- [ ] Run audit across all 13 inplay bots — append to results
-- [ ] Rank bots by "loosen-this-gate-for-most-impact" (top 5)
-- [ ] Rank bots by "tighten-this-gate-it's-too-loose" (top 5)
+- [x] Build `scripts/bot_strategy_audit.py` skeleton: takes `--bot BOT_NAME`, prints filter chain + 14d funnel + ROI/CLV
+- [x] Wire funnel SQL for one prematch bot (`bot_aggressive`) — verify output reads cleanly
+- [x] Wire funnel SQL for one inplay bot (`inplay_a`) — verify output reads cleanly
+- [ ] Add sensitivity replay: re-evaluate last 14d with limiting gate at ±10%, project fire-rate + ROI (deferred — funnel data sufficient for ranking)
+- [x] Run audit across all 23 prematch bots — save to `bot-strategy-audit-results.md`
+- [x] Run audit across all 13 inplay bots — append to results
+- [x] Rank bots by "loosen-this-gate-for-most-impact" (top 5)
+- [x] Rank bots by "tighten-this-gate-it's-too-loose" (top 5)
 
 ## Thread 2 — Identify gaps
 
