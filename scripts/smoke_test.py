@@ -2669,6 +2669,21 @@ def _():
     )
 
 
+@test("RECOVER-PHASE2 — recover_today step 5 calls run_morning with skip_fetch=True")
+def _():
+    """Phase 1 (skip_fetch=False) never populates best_bookmaker, so every
+    simulated_bet ends up with recommended_bookmaker=NULL. Phase 2 reads
+    pre-fetched data from DB and fills the bookmaker correctly. Steps 1-4
+    of recover_today already populate the DB, so step 5 must use Phase 2."""
+    import pathlib
+    src = pathlib.Path("scripts/recover_today.py").read_text()
+    assert '"run_morning",     {"skip_fetch": True}' in src, (
+        "recover_today STEPS[4] must invoke run_morning with skip_fetch=True. "
+        "Without it, simulated_bets.recommended_bookmaker is always NULL and "
+        "daily_picks.py shows no bookmaker info for manual placement."
+    )
+
+
 @test("INPLAY-E-NULL-SHOTS — strategy E proxy disabled; real-xG only (no shot data access)")
 def _():
     """Proxy mode disabled 2026-05-09 — 182 bets at −4.7% ROI. Strategy E now requires

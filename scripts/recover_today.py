@@ -31,13 +31,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
 
+# Step 5 (betting) runs in Phase 2 mode (skip_fetch=True) so it reads odds/predictions
+# from DB rather than re-fetching from API-Football. This (a) saves ~10 min of duplicate
+# AF calls, (b) populates `best_bookmaker` correctly so simulated_bets.recommended_bookmaker
+# is no longer NULL. Phase 1 (skip_fetch=False) never builds best_bookmaker — see
+# daily_pipeline_v2.py:1491.
 STEPS = [
-    (1, "fixtures",    "Fixtures Fetch",    "workers.jobs.fetch_fixtures",    "run_fixtures"),
-    (2, "odds",        "Odds Fetch",         "workers.jobs.fetch_odds",         "run_odds"),
-    (3, "enrichment",  "Enrichment (full)",  "workers.jobs.fetch_enrichment",   "run_enrichment"),
-    (4, "predictions", "AF Predictions",     "workers.jobs.fetch_predictions",  "run_predictions"),
-    (5, "betting",     "Betting Pipeline",   "workers.jobs.daily_pipeline_v2",  "run_morning"),
-    (6, "snapshot",    "Ops Snapshot",       "workers.api_clients.supabase_client", "write_ops_snapshot"),
+    (1, "fixtures",    "Fixtures Fetch",    "workers.jobs.fetch_fixtures",    "run_fixtures", {}),
+    (2, "odds",        "Odds Fetch",         "workers.jobs.fetch_odds",         "run_odds",        {}),
+    (3, "enrichment",  "Enrichment (full)",  "workers.jobs.fetch_enrichment",   "run_enrichment",  {}),
+    (4, "predictions", "AF Predictions",     "workers.jobs.fetch_predictions",  "run_predictions", {}),
+    (5, "betting",     "Betting Pipeline",   "workers.jobs.daily_pipeline_v2",  "run_morning",     {"skip_fetch": True}),
+    (6, "snapshot",    "Ops Snapshot",       "workers.api_clients.supabase_client", "write_ops_snapshot", {}),
 ]
 
 
@@ -75,18 +80,24 @@ def _resolve_steps(argv: list[str]) -> list[tuple]:
     sys.exit(1)
 
 
-def _run(num: int, label: str, module: str, fn_name: str, total: int, done: int) -> bool:
-    """Run one recovery step with a background heartbeat.
+def _bar(done: int, total: int, width: int = 30) -> str:
+    """Render a unicode progress bar like ▓▓▓▓░░░░░░  4/6 (67%)."""
+    pct = done / total if total else 0.0
+    filled = int(pct * width)
+    return f"{'▓' * filled}{'░' * (width - filled)}  {done}/{total} ({pct:.0%})"
+
+
+def _run(num: int, label: str, module: str, fn_name: str, kwargs: dict, total: int, done: int) -> bool:
+    """Run one recovery step with a background heartbeat and progress bar.
 
     The heartbeat prints a "still running" line every 15s so a slow step
-    is visibly distinct from a wedged step. Without this, `recover_today.py`
-    looks frozen during the fixtures step (N×2 round-trips over the Supabase
-    pooler, 7-10 min for ~1500 fixtures).
+    is visibly distinct from a wedged step.
     """
     import threading
     remaining = total - done
     print(f"\n{'═' * 60}", flush=True)
     print(f"▶ Step {num}/{total}  —  {label}", flush=True)
+    print(f"  [{_bar(done, total)}]", flush=True)
     print(f"  {done} done · {remaining} remaining (including this one)", flush=True)
     print(f"{'═' * 60}", flush=True)
     t0 = time.monotonic()
@@ -96,8 +107,8 @@ def _run(num: int, label: str, module: str, fn_name: str, total: int, done: int)
         # First tick after 15s so fast steps don't spam.
         while not stop.wait(15.0):
             elapsed = time.monotonic() - t0
-            print(f"  ⏱  step {num} ({label}) running for {elapsed:.0f}s — "
-                  f"hit Ctrl+C if it's stuck", flush=True)
+            print(f"  ⏱  step {num} ({label}) running for {elapsed:.0f}s "
+                  f"[{_bar(done, total)}] — Ctrl+C if stuck", flush=True)
 
     hb = threading.Thread(target=_heartbeat, daemon=True, name=f"recover-heartbeat-{num}")
     hb.start()
@@ -106,7 +117,7 @@ def _run(num: int, label: str, module: str, fn_name: str, total: int, done: int)
         import importlib
         mod = importlib.import_module(module)
         fn = getattr(mod, fn_name)
-        fn()
+        fn(**kwargs)
         elapsed = time.monotonic() - t0
         print(f"\n✅ Step {num} — {label} — {elapsed:.1f}s", flush=True)
         return True
@@ -135,12 +146,14 @@ def main():
 
     results = []
     for i, step in enumerate(steps):
-        num, _key, label, module, fn_name = step
-        ok = _run(num, label, module, fn_name, total=total, done=i)
+        num, _key, label, module, fn_name, kwargs = step
+        ok = _run(num, label, module, fn_name, kwargs, total=total, done=i)
         results.append((num, label, ok))
 
+    passed = sum(ok for _, _, ok in results)
     print(f"\n{'═' * 60}")
-    print(f"Summary  —  {sum(ok for _, _, ok in results)}/{total} passed")
+    print(f"Summary  —  {passed}/{total} passed")
+    print(f"  [{_bar(passed, total)}]")
     print(f"{'═' * 60}")
     for num, label, ok in results:
         print(f"  {'✅' if ok else '❌'}  {num}. {label}")
