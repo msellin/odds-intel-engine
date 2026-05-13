@@ -1285,22 +1285,33 @@ def _settle_pending_bets(pending: list, finished: list):
         raw_selection = bet["selection"]
         odds_market = _normalize_bet_market(raw_market)
         odds_selection = _normalize_bet_selection(raw_selection)
-        closing_odds = get_closing_odds(match_id, odds_market, odds_selection)
 
-        # PIN-5: Pinnacle-anchored CLV — the industry-standard EV validator
-        pinnacle_closing = get_pinnacle_closing_odds(match_id, odds_market, odds_selection)
-        odds_at_pick = float(bet["odds_at_pick"])
-        clv_pinnacle = (
-            round((odds_at_pick / pinnacle_closing) - 1, 4)
-            if pinnacle_closing and pinnacle_closing > 1.0
-            else None
-        )
+        # Bot identity (needed before CLV computation)
+        bot_id = str(bet["bot_id"])
+        bot_name = by_bot.get(bot_id, {}).get("name", "")
+        is_inplay = bot_name.startswith("inplay_")
+
+        # CLV is meaningless for inplay bets: live odds reflect game state (goals, cards)
+        # not market efficiency, so closing_odds is just whatever snapshot happened to be
+        # last captured — producing arbitrarily large/small CLV with no signal value.
+        if is_inplay:
+            closing_odds = None
+            clv_pinnacle = None
+        else:
+            closing_odds = get_closing_odds(match_id, odds_market, odds_selection)
+            # PIN-5: Pinnacle-anchored CLV — the industry-standard EV validator
+            pinnacle_closing = get_pinnacle_closing_odds(match_id, odds_market, odds_selection)
+            odds_at_pick = float(bet["odds_at_pick"])
+            clv_pinnacle = (
+                round((odds_at_pick / pinnacle_closing) - 1, 4)
+                if pinnacle_closing and pinnacle_closing > 1.0
+                else None
+            )
 
         # Settle
         settlement = settle_bet_result(bet, score_home, score_away, closing_odds)
 
         # Bot bankroll tracking
-        bot_id = str(bet["bot_id"])
         if bot_id not in by_bot:
             by_bot[bot_id] = {"bankroll": 1000.0, "name": "unknown"}
 

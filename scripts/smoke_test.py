@@ -5319,5 +5319,31 @@ def _():
     assert "0.55" in dict_body, "INPLAY_BOTS description for inplay_j must reflect 0.55"
 
 
+@test("INPLAY-CLV-NULL — settlement skips CLV for inplay bots (live odds not a valid closing line)")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/settlement.py").read_text()
+    # is_inplay check must be present
+    assert "is_inplay = bot_name.startswith(\"inplay_\")" in src, "must detect inplay bots by name prefix"
+    # Extract just the if-branch (from 'if is_inplay:' up to 'else:')
+    inplay_if_start = src.index("if is_inplay:")
+    inplay_if_end = src.index("        else:", inplay_if_start)
+    inplay_branch = src[inplay_if_start:inplay_if_end]
+    assert "closing_odds = None" in inplay_branch, "inplay bets must set closing_odds = None"
+    assert "clv_pinnacle = None" in inplay_branch, "inplay bets must set clv_pinnacle = None"
+    assert "get_closing_odds" not in inplay_branch, "inplay if-branch must not call get_closing_odds"
+
+
+@test("INPLAY-BOT-SORT-ROI — admin bot dashboard sorts by ROI not P&L")
+def _():
+    import pathlib
+    src = pathlib.Path("../odds-intel-web/src/lib/bot-aggregates.ts").read_text()
+    sort_start = src.index(".sort((a, b) => {")
+    sort_end = src.index("});", sort_start) + 3
+    sort_block = src[sort_start:sort_end]
+    assert "b.roi" in sort_block, "buildBotStats must sort by roi"
+    assert "b.totalPnl - a.totalPnl" not in sort_block, "buildBotStats must not sort by P&L"
+
+
 if __name__ == "__main__":
     main()
