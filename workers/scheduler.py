@@ -14,7 +14,7 @@ import json
 import signal
 import threading
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
@@ -143,24 +143,26 @@ def morning_pipeline():
     04:00 UTC — Sequential chain replacing GH Actions timing gaps.
     Each step has error isolation so one failure doesn't block the rest.
     """
-    from workers.jobs.fetch_fixtures import run_fixtures
+    from workers.jobs.fetch_fixtures import run_fixtures, fetch_and_store_fixtures
     from workers.jobs.fetch_enrichment import run_enrichment
     from workers.jobs.fetch_odds import run_odds
     from workers.jobs.fetch_predictions import run_predictions
     from workers.jobs.betting_pipeline import run_betting
 
     today = date.today().isoformat()
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
     is_monday = date.today().weekday() == 0
 
     console.print(f"[bold green]═══ Morning Pipeline: {today} ═══[/bold green]\n")
 
     import traceback
     steps = [
-        ("1/5", "Fixtures",    lambda: run_fixtures(target_date=today, refresh_leagues=is_monday)),
-        ("2/5", "Enrichment",  lambda: run_enrichment(target_date=today)),
-        ("3/5", "Odds",        lambda: run_odds(target_date=today)),
-        ("4/5", "Predictions", lambda: run_predictions(target_date=today)),
-        ("5/5", "Betting",     lambda: run_betting()),
+        ("1/6", "Fixtures (today)",        lambda: run_fixtures(target_date=today, refresh_leagues=is_monday)),
+        ("2/6", "Fixtures (tomorrow rows)", lambda: fetch_and_store_fixtures(tomorrow)),
+        ("3/6", "Enrichment",              lambda: run_enrichment(target_date=today)),
+        ("4/6", "Odds",                    lambda: run_odds(target_date=today)),
+        ("5/6", "Predictions",             lambda: run_predictions(target_date=today)),
+        ("6/6", "Betting",                 lambda: run_betting()),
     ]
 
     failed_steps = []
