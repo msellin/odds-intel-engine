@@ -18,9 +18,12 @@
 
 | ID | Pri | Effort | Why now / When to do |
 |----|-----|--------|----------------------|
+| **🗓️ DATA-GATED BATCH WINDOWS** (added 2026-05-13) | | | |
+| Batch 1 — Validation Session | P0 | ~3-4h | **~2026-05-26 → 28** — resolve together: `B-ML3` (meta-model), `NEWS-LINEUP-VALIDATE` (AUC gate for B-ML3), `ODDS-TIMING-VALIDATE` (CLV by hours-before-KO). B-ML3 + NEWS already share the date by design; ODDS-TIMING is 2 days later and uses different SQL — same context window. |
+| Batch 2 — Per-bot Timing Session | P1 | ~4-6h | **~2026-06-15** — resolve together: `BET-TIMING-MONITOR` **Phase 3** (build `scripts/bot_timing_recommendation.py`; per-bot × cohort factorial ROI from 30 days of shadow_bets), `CAL-PLATT-UPGRADE-VALIDATE` (if O/U Platt has fit by then), `ENG-15` (30-day league inefficiency index). May 28's odds-timing analysis serves as a directional sanity check for Phase 3's per-bot answer. |
 | **VALIDATION** | | | |
 | SELF-USE-VALIDATION (Phase 3) | P0 | 4-6 wks elapsed | Core goal — accumulate 250 real bets |
-| ODDS-TIMING-VALIDATE | P1 | 1h | Run ~2026-05-28 after 2 weeks of hourly snapshot data |
+| ODDS-TIMING-VALIDATE | P1 | 1h | Run ~2026-05-28 — **Batch 1**. Different question from BET-TIMING-MONITOR Phase 3 (CLV-on-placed-bets vs factorial-shadow-ROI) — both stay valid, run both. |
 | INPLAY-ODDS-SOURCE | P1 | 2h research | Need per-bookmaker live odds before inplay push notifications are actionable |
 | INPLAY-AUTO-ESTONIAN | P1 | 2h research | Research automation path before inplay is proven — don't wait until last minute |
 | **QUICK AF SAVINGS (~2h total, saves ~550 calls/day)** | | | |
