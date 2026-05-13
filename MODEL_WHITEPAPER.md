@@ -441,7 +441,7 @@ T+FT+1h  Post-match: stats, events, player stats enrichment
 | Lower-tier specialist | `bot_lower_1x2`, `bot_high_roi_global` | Tiers 2-4 where pricing is softest |
 | Conservative | `bot_conservative` | 10%+ edge only, highest selectivity |
 | Country/region | `bot_greek_turkish` | Specific regions with backtest-confirmed edge |
-| Optimizer — away value | `bot_opt_away_british`, `bot_opt_away_europe` | Away wins at mid-range longshot odds in British Isles / top-5 Europe; cross-era validated (+16-19% ROI) |
+| Optimizer — away value | `bot_opt_away_british`, `bot_opt_away_europe` | Away wins at mid-range longshot odds (2.20-3.50) in British Isles / top-5 Europe; cross-era validated (+16-19% ROI) |
 | Optimizer — home underdog | `bot_opt_home_lower` | Home underdogs at longshot odds (3.00-5.00) in T2-4 Europe; cross-era +14% ROI |
 | Optimizer — O/U | `bot_opt_ou_british`, `bot_ou25_global` | Over/Under value in British lower divisions and globally |
 | Market specialist — BTTS | `bot_btts_all`, `bot_btts_conservative` | Both-teams-to-score: broad (all leagues) and selective (T1-2, 7%+ edge) |

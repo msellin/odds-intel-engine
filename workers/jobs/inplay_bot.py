@@ -17,7 +17,7 @@ Strategies:
   E   — Dead Game Unders
   F   — Odds Momentum Reversal (DROPPED 2026-05-08)
   I   — Favourite Stall: strong fav, 0-0 at min 42-65, live home ≥ 3.0
-  J   — Goal Debt Over 1.5: 0-0 at min 30-52, prematch O25 ≥ 0.62, OU1.5 ≥ 2.85
+  J   — Goal Debt Over 1.5: 0-0 at min 30-52, prematch O25 ≥ 0.55, OU1.5 ≥ 2.85
   L   — Goal Contagion: first goal at min 15-35, O25 ≥ 0.55, OU2.5 available
 
 xG source:
@@ -80,7 +80,7 @@ INPLAY_BOTS = {
         "strategy": "inplay_i",
     },
     "inplay_j": {
-        "description": "Goal Debt Over 1.5 — 0-0 min 30-52, prematch O25 ≥ 0.62, live OU1.5 ≥ 2.85",
+        "description": "Goal Debt Over 1.5 — 0-0 min 30-52, prematch O25 ≥ 0.55, live OU1.5 ≥ 2.85",
         "strategy": "inplay_j",
     },
     "inplay_l": {
@@ -1821,7 +1821,7 @@ def _check_strategy_j(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     """
     Strategy J: Goal Debt Over 1.5.
 
-    High-expectation match (prematch O25 ≥ 0.62) is 0-0 at minute 30-52.
+    High-expectation match (prematch O25 ≥ 0.55) is 0-0 at minute 30-52.
     Live Over 1.5 odds have drifted above 2.85 (Bayesian fair at min-40 0-0
     is ~2.70 — market needs to overshoot for edge to exist). Bet Over 1.5.
 
@@ -1841,7 +1841,7 @@ def _check_strategy_j(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
         return None
 
     pm_o25 = float(pm.get("prematch_o25_prob") or 0)
-    if pm_o25 < 0.62:
+    if pm_o25 < 0.55:
         return None
 
     ou15, ou15_is_live = _resolve_odds(cand.get("live_ou_15_over"), pm.get("prematch_ou15_over"), min_val=2.85)

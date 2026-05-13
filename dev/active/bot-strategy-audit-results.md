@@ -439,3 +439,37 @@ Based on Thread 2 + Thread 3 analysis, the three highest-potential additions ran
 **2. INPLAY-UNDERDOG-HOLD** — Dominant Underdog Win, simplified (original Strategy J, stripped of xG gate). Data ready: live 1x2 + prematch model probability. The xG-less version is weaker than the full panel recommendation but testable immediately. Expected ~2-5 fires/day.
 
 **3. LIVE-STATS-COVERAGE** — Investigate and fix live snapshot stats coverage (shots/xG/possession/corners at 5-9%). This single fix would unlock Shot Quality Under, Possession Trap Under, and Corner Pressure Over — 3 strategies that the 8-AI panel rated as Medium-High confidence. The root cause is almost certainly which leagues/providers AF returns live stats for, not a code bug.
+
+---
+
+## Thread 4 — P1 Root Cause Investigation (2026-05-13)
+
+### LIVE-STATS-COVERAGE: Confirmed AF data limitation
+
+**Diagnosis:** Not a code bug, not a rate-limit issue, not a parser issue.
+
+Query across 435K snapshots (14 days):
+- Leagues with `coverage_statistics_fixtures = true`: 96K snapshots → **38% shots coverage** ✅
+- Leagues with `coverage_statistics_fixtures = false`: 339K snapshots → **0.1% shots coverage** (noise)
+
+The MEDIUM_MULTIPLIER=3 design (stats every 3rd 45s cycle ≈ 135s) produces the expected ~38% hit rate within covered leagues. The overall 8% figure is because **78% of live snapshots come from leagues that AF does not provide statistics for**.
+
+Top-coverage leagues confirmed (live stats work): Egypt Premier League (58.6%), Argentina Liga Profesional (59.6%), China Super League (51.1%). Some leagues with `coverage_statistics_fixtures = true` still return empty during live play (Morocco Botola Pro, South Korea K League 1).
+
+**No code fix available.** Shots/xG-based strategies (A proxy mode, Shot Quality Under, Possession Trap Under, Corner Pressure Over) are viable only for the ~5 leagues where AF live stats actually return. The strategy gates already self-filter: `live_xg=0 → proxy xG=0 → live_xg < 0.6 gate rejects`. No false fires.
+
+**Implication:** If Shot Quality Under / Possession Trap / Corner Pressure are built, they must include a league whitelist filter (`league_name IN ('Egypt Premier League', 'Argentina Liga Profesional', ...)`) to avoid firing on matches where stats will never be populated.
+
+---
+
+### INPLAY-LIVE-OU-COVERAGE: Confirmed AF data limitation, fallback already exists
+
+**Diagnosis:** AF `/odds/live` endpoint provides OU25 odds for only 41% of fixtures that have live 1x2 odds. This is an AF coverage decision — OU markets thin out as matches progress (late 2H OU is often trivial). Coverage by period: 1H 10.9%, 2H 6.4%.
+
+**Key finding:** `_resolve_odds()` in inplay_bot.py already implements prematch Pinnacle fallback for all OU-based strategies. When `live_ou_25_over IS NULL`, the function returns `prematch_ou25_over` from `odds_snapshots`. The candidate query (`_get_live_candidates`) does NOT filter on live OU — all live matches are candidates. This is intentional and documented in the code comment: "INPLAY-LIVE-DEBUG: live OU odds are only available for ~12% of snapshots... Prematch best odds from odds_snapshots are used as fallback."
+
+**Bots already firing via prematch fallback:** A, D, E, K, M, Q. The "9% OU coverage" in snapshots does not mean 9% of eligible matches — it means 91% fire using prematch odds as the market reference.
+
+**One nuance:** Strategy M requires live OU ≥ 3.0 as evidence of market drift (market drifting to Under is the thesis). With prematch fallback, M fires on matches where prematch odds ≥ 2.40 but the market may NOT have actually drifted. This is a weaker signal. The `odds_source: "live"/"prematch"` field in bet metadata already tracks this — can filter post-hoc if M's ROI diverges between live vs prematch sources.
+
+**No code fix needed.** Both tasks confirmed as AF data limitations with existing mitigations in place.

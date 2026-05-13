@@ -430,13 +430,13 @@ INPLAY_STRATEGIES = {
         ],
     },
     "inplay_j": {
-        "desc": "Goal Debt O1.5 — 0-0 min 30-52, prematch O25 ≥ 0.62, OU15 ≥ 2.85",
+        "desc": "Goal Debt O1.5 — 0-0 min 30-52, prematch O25 ≥ 0.55, OU15 ≥ 2.85",
         "gates": [
             ("minute 30-52",            "minute BETWEEN 30 AND 52"),
             ("score 0-0",               "COALESCE(score_home,0)=0 AND COALESCE(score_away,0)=0"),
             # prematch_o25 ≥ 0.62 requires a join — use correlated subquery with
             # explicit table qualification so match_id is unambiguous.
-            ("prematch_o25 ≥ 0.62",     "EXISTS(SELECT 1 FROM predictions p2 WHERE p2.match_id=live_match_snapshots.match_id AND p2.source='ensemble' AND p2.market='over25' AND p2.model_probability>=0.62)"),
+            ("prematch_o25 ≥ 0.55",     "EXISTS(SELECT 1 FROM predictions p2 WHERE p2.match_id=live_match_snapshots.match_id AND p2.source='ensemble' AND p2.market='over25' AND p2.model_probability>=0.55)"),
             ("live_ou_15 ≥ 2.85",       "COALESCE(live_ou_15_over, 0) >= 2.85"),
         ],
     },
@@ -453,7 +453,7 @@ INPLAY_STRATEGIES = {
         "gates": [
             ("minute 30-60",            "minute BETWEEN 30 AND 60"),
             ("score 1-0 or 0-1",        "(score_home=1 AND score_away=0) OR (score_home=0 AND score_away=1)"),
-            ("live_ou_25_over ≥ 3.0",   "COALESCE(live_ou_25_over, 0) >= 3.0"),
+            ("ou_25 ≥ 2.40 (live or pm)", "COALESCE(live_ou_25_over, 0) >= 2.40"),
         ],
     },
     "inplay_n": {
@@ -500,7 +500,7 @@ def _inplay_funnel(bot_name: str, days: int, conn) -> dict:
                 JOIN predictions p ON p.match_id = lms.match_id
                   AND p.source='ensemble' AND p.market='over_under_25_over'
                 WHERE {cumulative_where}
-                  AND p.model_probability >= 0.62
+                  AND p.model_probability >= 0.55
             """)
         else:
             cur.execute(f"""

@@ -166,7 +166,7 @@ BOTS_CONFIG = {
             3: {"1x2_fav": 0.05, "1x2_long": 0.05},
             4: {"1x2_fav": 0.05, "1x2_long": 0.05},
         },
-        "odds_range": (2.50, 3.00),
+        "odds_range": (2.20, 3.50),
         "min_prob": 0.25,
     },
     "bot_opt_away_europe": {
@@ -183,7 +183,7 @@ BOTS_CONFIG = {
             3: {"1x2_fav": 0.05, "1x2_long": 0.05},
             4: {"1x2_fav": 0.05, "1x2_long": 0.05},
         },
-        "odds_range": (2.50, 3.00),
+        "odds_range": (2.20, 3.50),
         "min_prob": 0.40,
     },
     "bot_opt_home_lower": {

@@ -2917,7 +2917,7 @@ def _():
     fn_body = src[fn_start:fn_end]
     assert "live_ou_15_over" in fn_body, "Strategy J must read live_ou_15_over from candidate"
     assert "2.85" in fn_body, "Strategy J must have min odds floor of 2.85"
-    assert '0.62' in fn_body, "Strategy J must require prematch_o25_prob >= 0.62"
+    assert '0.55' in fn_body, "Strategy J must require prematch_o25_prob >= 0.55 (INPLAY-J-LOOSEN)"
     # Verify no false-trigger on 1-0 score
     assert 'sh != 0 or sa != 0' in fn_body, "Strategy J must exit early if score is not 0-0"
 
@@ -5196,6 +5196,39 @@ def _():
     assert "CronTrigger(hour=23, minute=30)" in src, (
         "standings_nightly must run at 23:30 UTC"
     )
+
+
+@test("OPT-AWAY-ODDS-FIX — bot_opt_away_british + europe odds_range widened to 2.20-3.50")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    british_start = src.index('"bot_opt_away_british"')
+    british_end = src.index('"bot_opt_away_europe"', british_start)
+    british_body = src[british_start:british_end]
+    assert "(2.20, 3.50)" in british_body, "bot_opt_away_british odds_range must be (2.20, 3.50)"
+    assert "(2.50, 3.00)" not in british_body, "bot_opt_away_british old odds_range (2.50, 3.00) still present"
+
+    europe_start = src.index('"bot_opt_away_europe"')
+    europe_end = src.index('"bot_opt_home_lower"', europe_start)
+    europe_body = src[europe_start:europe_end]
+    assert "(2.20, 3.50)" in europe_body, "bot_opt_away_europe odds_range must be (2.20, 3.50)"
+    assert "(2.50, 3.00)" not in europe_body, "bot_opt_away_europe old odds_range (2.50, 3.00) still present"
+
+
+@test("INPLAY-J-LOOSEN — strategy J prematch_o25 gate lowered to 0.55")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    fn_start = src.index("def _check_strategy_j(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    fn_body = src[fn_start:fn_end]
+    assert "pm_o25 < 0.55" in fn_body, "Strategy J must use pm_o25 < 0.55 gate (INPLAY-J-LOOSEN)"
+    assert "pm_o25 < 0.62" not in fn_body, "Strategy J old gate 0.62 still present"
+
+    dict_start = src.index('"inplay_j"')
+    dict_end = src.index('"inplay_l"', dict_start)
+    dict_body = src[dict_start:dict_end]
+    assert "0.55" in dict_body, "INPLAY_BOTS description for inplay_j must reflect 0.55"
 
 
 if __name__ == "__main__":
