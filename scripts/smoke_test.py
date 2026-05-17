@@ -3078,6 +3078,51 @@ def _():
     )
 
 
+@test("PERF-V2-BANKROLL-1K — migration 107 normalises bot_aggressive_v2 to €1000 bankroll")
+def _():
+    """bot_aggressive_v2 was created with starting_bankroll = 10000. Kelly
+    sizing on a €10k bankroll produced €36-99 stakes vs every other bot's
+    €5-10, which would have given v2 ~10× the weight in the portfolio
+    headline ROI. Migration 107 resets starting_bankroll to 1000 and
+    rescales the 11 existing v2 bets by /10."""
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/107_normalize_v2_bankroll_to_1k.sql").read_text()
+    # Must touch all four pieces: starting_bankroll, stake/pnl scale, bankroll_after, current_bankroll
+    assert "starting_bankroll = 1000" in mig, "Migration must set starting_bankroll = 1000"
+    assert "stake / 10" in mig, "Migration must scale stake /= 10"
+    assert "pnl   = sb.pnl / 10" in mig or "pnl = sb.pnl / 10" in mig, (
+        "Migration must scale pnl /= 10 for settled rows"
+    )
+    assert "bankroll_after = 1000.00 + ranked.running_pnl" in mig, (
+        "Migration must recompute bankroll_after running totals from €1000"
+    )
+    assert "current_bankroll = 1000.00 + COALESCE(" in mig, (
+        "Migration must recompute current_bankroll from €1000 + sum(pnl)"
+    )
+    assert "bot_aggressive_v2" in mig, "Migration must scope to bot_aggressive_v2"
+
+
+@test("PERF-INPLAY-CLV-NULL — migration 106 nulls legacy inplay CLV values")
+def _():
+    """settlement.py:1373 already enforces 'no CLV on inplay bets' for new
+    settlements. Older inplay bets settled before the skip got CLV values
+    computed against pre-match closing odds — meaningless for a bet placed
+    at minute 47. Migration 106 retroactively nulls those legacy values so
+    the page is consistent with the code rule (all-or-nothing)."""
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/106_null_inplay_clv.sql").read_text()
+    assert "SET clv = NULL" in mig and "clv_pinnacle = NULL" in mig, (
+        "migration 106 must null both clv and clv_pinnacle"
+    )
+    assert "b.name LIKE 'inplay" in mig, "migration 106 must scope to inplay bots"
+    # settlement.py must still enforce the rule for NEW bets — guard so a
+    # future refactor can't silently re-enable inplay CLV
+    src = pathlib.Path("workers/jobs/settlement.py").read_text()
+    assert "if is_inplay:" in src and "closing_odds = None" in src, (
+        "settlement.py must continue forcing closing_odds=None for inplay bets"
+    )
+
+
 @test("PERF-RETIRED-CLEANUP — migration 105 backfills inplay_a2/c_home/f retired_reason")
 def _():
     """Three inplay bots were soft-retired 2026-05-09 with NULL retired_reason.
