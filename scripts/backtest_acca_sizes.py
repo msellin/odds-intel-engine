@@ -25,6 +25,7 @@ import argparse
 import math
 import sys
 from collections import defaultdict
+from itertools import combinations
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -137,6 +138,92 @@ def simulate_combos(singles: list[dict], n_legs: int, selection: str):
             "legs": combo,
         })
     return combos
+
+
+# ── System bet structures (user's "safety net" combos) ──────────────────────
+#
+# A system bet = N picks + a specific subset of combo sizes covered.
+# Same EV per euro as straight combos (when book doesn't compound margin —
+# Phase A confirmed Coolbet doesn't), but lower variance because partial hits
+# still pay something. Total stake is N_BETS_IN_SYSTEM × unit_stake.
+
+SYSTEM_STRUCTURES = {
+    # name: (num_picks, list of combo sizes covered, includes_singles)
+    "trixie":     (3, [2, 3],            False),  # 3 doubles + 1 treble = 4 bets
+    "patent":     (3, [1, 2, 3],         True),   # 3 singles + Trixie = 7 bets
+    "yankee":     (4, [2, 3, 4],         False),  # 6+4+1 = 11 bets
+    "lucky_15":   (4, [1, 2, 3, 4],      True),   # 4 + 11 = 15 bets
+    "canadian":   (5, [2, 3, 4, 5],      False),  # 10+10+5+1 = 26 bets
+    "lucky_31":   (5, [1, 2, 3, 4, 5],   True),   # 5 + 26 = 31 bets
+    "heinz":      (6, [2, 3, 4, 5, 6],   False),  # 15+20+15+6+1 = 57 bets
+    "lucky_63":   (6, [1, 2, 3, 4, 5, 6], True),  # 6 + 57 = 63 bets
+}
+
+
+def simulate_system(singles: list[dict], structure: str, selection: str) -> dict:
+    """For each day with ≥ N picks, build the system bet (all sub-combos of the
+    structure's covered sizes), simulate every sub-bet's outcome, and aggregate.
+    Returns same shape as analyse() plus 'avg_stake_per_day' for variance check."""
+    n_picks, sizes_covered, _includes_singles = SYSTEM_STRUCTURES[structure]
+    by_day: dict = defaultdict(list)
+    for s in singles:
+        by_day[s["pick_date"]].append(s)
+
+    n_days_played = 0
+    total_stake = 0.0
+    total_pnl = 0.0
+    daily_pnls: list[float] = []
+    any_win_days = 0
+    biggest_day = float("-inf")
+    worst_day = float("inf")
+    max_subbet_payout = 0.0
+
+    for day, day_singles in sorted(by_day.items()):
+        picks = pick_combo(day_singles, n_picks, selection)
+        if picks is None:
+            continue
+        n_days_played += 1
+
+        day_stake = 0.0
+        day_pnl = 0.0
+        day_any_win = False
+        for size in sizes_covered:
+            for combo in combinations(picks, size):
+                day_stake += STAKE
+                odds_product = math.prod(c["odds"] for c in combo)
+                if all(c["result"] == "won" for c in combo):
+                    payout_pnl = STAKE * (odds_product - 1)
+                    day_pnl += payout_pnl
+                    day_any_win = True
+                    max_subbet_payout = max(max_subbet_payout, payout_pnl)
+                else:
+                    day_pnl -= STAKE
+
+        total_stake += day_stake
+        total_pnl += day_pnl
+        daily_pnls.append(day_pnl)
+        if day_any_win:
+            any_win_days += 1
+        biggest_day = max(biggest_day, day_pnl)
+        worst_day = min(worst_day, day_pnl)
+
+    if n_days_played == 0:
+        return {"days": 0, "structure": structure}
+
+    return {
+        "structure": structure,
+        "n_picks": n_picks,
+        "bets_per_day": sum(math.comb(n_picks, s) for s in sizes_covered),
+        "days": n_days_played,
+        "total_stake": total_stake,
+        "total_pnl": total_pnl,
+        "roi_pct": total_pnl / total_stake * 100,
+        "any_win_rate": any_win_days / n_days_played,
+        "biggest_day_pnl": biggest_day,
+        "worst_day_pnl": worst_day,
+        "max_subbet_payout": max_subbet_payout,
+        "avg_daily_stake": total_stake / n_days_played,
+    }
 
 
 def analyse(combos: list[dict]) -> dict:
@@ -264,6 +351,33 @@ def main():
         print(f"  Best fit for 'once a week' (hit_rate ≈ 14%, positive ROI):")
         print(f"    n_legs={n}  hit_rate={s['hit_rate']*100:.1f}%  ROI={s['roi_pct']:+.1f}%  "
               f"avg_odds={s['avg_combined_odds']:.2f}  biggest_hit=€{s['biggest_hit']:.2f}")
+
+    # ── System bets ──────────────────────────────────────────────────────
+    # Apply same picks logic, but cover all sub-combos of the structure's
+    # included sizes instead of just the top-level acca.
+    print()
+    print("=== SYSTEM BETS (same daily picks, different sub-combo coverage) ===")
+    print(f"{'structure':<12} {'picks':>5} {'bets/d':>6} {'days':>5} {'stake/d':>9} {'roi':>8} "
+          f"{'any_hit_rate':>13} {'big_day':>9} {'worst_day':>10} {'max_subbet':>11}")
+    print("-" * 120)
+    for name in ("trixie", "yankee", "lucky_15", "canadian", "lucky_31", "heinz", "lucky_63"):
+        s = simulate_system(singles, name, args.selection)
+        if s.get("days", 0) == 0:
+            print(f"{name:<12} (no days with enough picks)")
+            continue
+        print(
+            f"{name:<12} {s['n_picks']:>5d} {s['bets_per_day']:>6d} {s['days']:>5d} "
+            f"€{s['avg_daily_stake']:>7.0f}  {s['roi_pct']:>+7.1f}% "
+            f"{s['any_win_rate']*100:>11.1f}%  €{s['biggest_day_pnl']:>+6.0f}  €{s['worst_day_pnl']:>+7.0f}  "
+            f"€{s['max_subbet_payout']:>+8.0f}"
+        )
+    print()
+    print("Notes:")
+    print("  • bets/d  = number of separate sub-combos placed each qualifying day")
+    print("  • stake/d = total daily outlay assuming €1 per sub-bet")
+    print("  • roi     = total_pnl / total_stake — comparable to straight acca ROI per €")
+    print("  • any_hit_rate = % of days where AT LEAST ONE sub-combo won")
+    print("  • Higher any_hit_rate vs straight = the variance-reduction value")
 
     if args.show_hits:
         print()
