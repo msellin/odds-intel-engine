@@ -2848,6 +2848,25 @@ def _():
     )
 
 
+@test("INPLAY-LOOSEN-SILENT-L — Strategy L edge gate 4% → 3% so it can accumulate data")
+def _():
+    """Strategy L fired only 2 times in 14d on 1,930 first-goal events in
+    min 15-35 (the score/minute gate). Investigation pointed to the edge ≥ 4%
+    gate as the binding constraint — live OU 2.5 reprices fast after a 1-0,
+    leaving narrow edge. Loosened to ≥ 3% (matches G's real-xG floor) to let
+    L accumulate enough bets for calibration. Tighten back if 50+ bets land
+    at negative ROI."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    # Locate Strategy L block and confirm edge gate is 3.0
+    l_start = src.find("def _check_strategy_l(")
+    assert l_start >= 0, "Strategy L function missing"
+    l_end = src.find("def _check_strategy_", l_start + 1)
+    l_block = src[l_start:l_end if l_end > 0 else l_start + 5000]
+    assert "if edge_pct < 3.0:" in l_block, "Strategy L edge gate must be < 3.0 (INPLAY-LOOSEN-SILENT-L)"
+    assert "if edge_pct < 4.0:" not in l_block, "Strategy L stale < 4.0 gate found — must be removed"
+
+
 @test("INPLAY-LOOSEN-SILENT — G/H/J thresholds relaxed so silent strategies can fire")
 def _():
     """G/H/J had 0 settled bets in 14 days despite hundreds of thousands of

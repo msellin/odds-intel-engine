@@ -1941,7 +1941,7 @@ def _check_strategy_l(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     Edge: After the first goal in an open game, the scoring rate is empirically
     elevated for ~8 minutes (Dixon & Robinson 1998, Heuer 2010). The live OU 2.5
     market partially reprices but frequently overestimates the "settling" effect.
-    Only fires when model edge vs market is ≥ 4%.
+    Only fires when model edge vs market is ≥ 3% (was 4% until INPLAY-LOOSEN-SILENT-L).
 
     Uses _goal_event_window module state populated by run_inplay_strategies.
     """
@@ -1983,7 +1983,12 @@ def _check_strategy_l(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     )
     market_prob = _implied_prob(ou25)
     edge_pct = (model_prob - market_prob) * 100
-    if edge_pct < 4.0:
+    # INPLAY-LOOSEN-SILENT-L (2026-05-17): edge gate was 4% — only 2 fires in
+    # 14d despite 1,930 first-goal events meeting the score/minute gate. Live
+    # OU 2.5 reprices fast after a 1-0, leaving narrow edge; 4% is hard to
+    # clear. Aligned with G's 3% real-xG floor. Tighten back if 50+ bets at
+    # negative ROI.
+    if edge_pct < 3.0:
         return None
 
     return {
