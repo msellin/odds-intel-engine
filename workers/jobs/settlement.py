@@ -1056,12 +1056,18 @@ def write_dashboard_cache():
     """
     Pre-compute all dashboard stats and write to dashboard_cache table.
     Called at end of settlement (21:00 UTC). Frontend reads latest row — fast.
+
+    PERF-HONEST-HEADLINE (2026-05-17): writes two headlines (all-time incl.
+    retired + active strategies only) and a separate retired_bot_breakdown
+    block so /performance can show a transparent picture without re-querying
+    simulated_bets.
     """
     console.print("[cyan]Writing dashboard cache...[/cyan]")
     try:
-        # Bot performance — voids are excluded from settled/won/staked/pnl/clv.
+        # Per-bot rollup. Voids excluded from settled/won/staked/pnl/clv.
         # Void rows retain their original pnl/stake (we only flip `result`), so any
         # `result != 'pending'` filter would silently double-count voided bets.
+        # ACTIVE bots only — this feeds the per-bot leaderboard.
         bot_rows = execute_query("""
             SELECT
                 b.name,
@@ -1077,6 +1083,26 @@ def write_dashboard_cache():
             GROUP BY b.id, b.name
         """, [])
 
+        # Retired bot rollup — feeds the collapsed "Retired Strategies" section.
+        # Includes retired_at + retired_reason so the page can show *why*.
+        retired_rows = execute_query("""
+            SELECT
+                b.name,
+                b.retired_at,
+                b.retired_reason,
+                COUNT(sb.id) FILTER (WHERE sb.result IN ('won','lost')) as settled,
+                COUNT(sb.id) FILTER (WHERE sb.result = 'won') as won,
+                SUM(sb.pnl) FILTER (WHERE sb.result IN ('won','lost')) as total_pnl,
+                SUM(sb.stake) FILTER (WHERE sb.result IN ('won','lost')) as total_staked,
+                AVG(sb.clv) FILTER (WHERE sb.result IN ('won','lost') AND sb.clv IS NOT NULL) as avg_clv
+            FROM bots b
+            LEFT JOIN simulated_bets sb ON sb.bot_id = b.id
+            WHERE b.is_active = false OR b.retired_at IS NOT NULL
+            GROUP BY b.id, b.name, b.retired_at, b.retired_reason
+        """, [])
+
+        # All-time headline (incl. retired bots' historical bets). Credibility
+        # number — "we've placed N bets" — retired bets count.
         total_bets = execute_query("SELECT COUNT(*) as n FROM simulated_bets WHERE result != 'void'", [])[0]["n"]
         settled_bets = execute_query("SELECT COUNT(*) as n FROM simulated_bets WHERE result IN ('won','lost')", [])[0]["n"]
         pending_bets = int(total_bets) - int(settled_bets)
@@ -1088,6 +1114,30 @@ def write_dashboard_cache():
         avg_clv = float(staked_row["c"] or 0) if staked_row["c"] else None
         hit_rate = (int(won) / int(settled_bets) * 100) if int(settled_bets) > 0 else None
         roi_pct = (total_pnl / total_staked * 100) if total_staked > 0 and int(settled_bets) > 0 else None
+
+        # Active-only headline (excludes retired bots). The "what's currently
+        # running" number. Same math, scoped via JOIN to bots.
+        active_total_bets_row = execute_query("""
+            SELECT
+                COUNT(*) FILTER (WHERE sb.result != 'void') as total_bets,
+                COUNT(*) FILTER (WHERE sb.result IN ('won','lost')) as settled,
+                COUNT(*) FILTER (WHERE sb.result = 'won') as won,
+                COUNT(*) FILTER (WHERE sb.result = 'lost') as lost,
+                SUM(sb.stake) FILTER (WHERE sb.result IN ('won','lost')) as staked,
+                SUM(sb.pnl) FILTER (WHERE sb.result IN ('won','lost')) as pnl,
+                AVG(sb.clv) FILTER (WHERE sb.result IN ('won','lost') AND sb.clv IS NOT NULL) as avg_clv
+            FROM simulated_bets sb
+            JOIN bots b ON b.id = sb.bot_id
+            WHERE b.is_active = true AND b.retired_at IS NULL
+        """, [])[0]
+        active_total_bets = int(active_total_bets_row["total_bets"] or 0)
+        active_settled = int(active_total_bets_row["settled"] or 0)
+        active_won = int(active_total_bets_row["won"] or 0)
+        active_lost = int(active_total_bets_row["lost"] or 0)
+        active_staked = float(active_total_bets_row["staked"] or 0)
+        active_pnl = float(active_total_bets_row["pnl"] or 0)
+        active_avg_clv = float(active_total_bets_row["avg_clv"] or 0) if active_total_bets_row["avg_clv"] else None
+        active_roi_pct = (active_pnl / active_staked * 100) if active_staked > 0 and active_settled > 0 else None
 
         bot_breakdown = []
         for r in bot_rows:
@@ -1102,6 +1152,23 @@ def write_dashboard_cache():
                 "total_pnl": round(p, 2),
                 "roi_pct": round(p / st * 100, 1) if st > 0 and s > 0 else None,
                 "avg_clv": round(float(r["avg_clv"]), 4) if r.get("avg_clv") else None,
+            })
+
+        retired_bot_breakdown = []
+        for r in retired_rows:
+            s = int(r.get("settled") or 0)
+            w = int(r.get("won") or 0)
+            p = float(r.get("total_pnl") or 0)
+            st = float(r.get("total_staked") or 0)
+            retired_bot_breakdown.append({
+                "name": r["name"],
+                "settled": s,
+                "won": w,
+                "total_pnl": round(p, 2),
+                "roi_pct": round(p / st * 100, 1) if st > 0 and s > 0 else None,
+                "avg_clv": round(float(r["avg_clv"]), 4) if r.get("avg_clv") else None,
+                "retired_at": r["retired_at"].isoformat() if r.get("retired_at") else None,
+                "retired_reason": r.get("retired_reason"),
             })
 
         market_rows = execute_query("""
@@ -1151,16 +1218,25 @@ def write_dashboard_cache():
                 hit_rate, total_staked, total_pnl, roi_pct, avg_clv,
                 bot_breakdown, market_breakdown,
                 model_accuracy_pct, prediction_sample_size,
-                pseudo_clv_count, live_snapshot_matches, alignment_settled_count
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                pseudo_clv_count, live_snapshot_matches, alignment_settled_count,
+                active_total_bets, active_settled_bets, active_won_bets, active_lost_bets,
+                active_total_staked, active_total_pnl, active_roi_pct, active_avg_clv,
+                retired_bot_breakdown
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, [
             int(total_bets), int(settled_bets), int(pending_bets), int(won), int(lost),
             hit_rate, total_staked, total_pnl, roi_pct, avg_clv,
             json.dumps(bot_breakdown), json.dumps(market_breakdown),
             model_accuracy_pct, n,
-            int(pseudo_clv_count), int(live_snapshot_matches), int(alignment_settled)
+            int(pseudo_clv_count), int(live_snapshot_matches), int(alignment_settled),
+            active_total_bets, active_settled, active_won, active_lost,
+            active_staked, active_pnl, active_roi_pct, active_avg_clv,
+            json.dumps(retired_bot_breakdown),
         ])
-        console.print(f"  Dashboard cache written: {int(settled_bets)} settled bets, accuracy={model_accuracy_pct}%")
+        console.print(
+            f"  Dashboard cache written: {int(settled_bets)} settled bets (all-time) · "
+            f"{active_settled} active · accuracy={model_accuracy_pct}%"
+        )
     except Exception as e:
         console.print(f"  [yellow]Dashboard cache error (non-critical): {e}[/yellow]")
         import traceback; traceback.print_exc()

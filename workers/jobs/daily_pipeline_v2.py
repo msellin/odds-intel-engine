@@ -100,8 +100,13 @@ BOTS_CONFIG = {
         "odds_range": (1.50, 3.00),
         "min_prob": 0.40,
     },
+    # PERF-HONEST-HEADLINE (2026-05-17): retired via migration 104. Replaced by
+    # bot_aggressive_v2. -5.7% ROI / -€141 on 441 settled bets — was the single
+    # biggest drag on portfolio headline ROI. v2 keeps 129/441 of the bets at
+    # +11.6% ROI by dropping draws + under 2.5 + capping odds 1.50-3.30.
+    # Pipeline skips via `is_active=false AND retired_at IS NOT NULL` gate.
     "bot_aggressive": {
-        "description": "Low threshold (3% edge), high volume",
+        "description": "[RETIRED 2026-05-17] Low threshold (3% edge), high volume — replaced by bot_aggressive_v2",
         "tier_label": "pro",
         "markets": ["1x2", "ou"],
         "tier_filter": None,

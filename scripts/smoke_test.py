@@ -2989,6 +2989,79 @@ def _():
     )
 
 
+@test("BOT-AGGRESSIVE-RETIRE — migration 104 retires bot_aggressive with reason")
+def _():
+    """PERF-HONEST-HEADLINE: bot_aggressive (-5.7% ROI / 441 bets) was the single
+    biggest drag on portfolio headline ROI. Replaced by bot_aggressive_v2.
+    Guard the retirement at migration + BOTS_CONFIG levels so a re-import
+    can't accidentally reactivate it."""
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/104_perf_honest_headline.sql").read_text()
+    assert "bot_aggressive" in mig and "is_active = false" in mig, (
+        "migration 104 must set bot_aggressive.is_active=false"
+    )
+    assert "retired_reason" in mig, "migration 104 must populate retired_reason"
+    assert "bot_aggressive_v2" in mig, "retired_reason must reference v2 replacement"
+    # BOTS_CONFIG carries the [RETIRED ...] marker
+    src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    idx = src.find('"bot_aggressive":')
+    assert idx >= 0, "bot_aggressive missing from BOTS_CONFIG"
+    assert "[RETIRED 2026-05-17]" in src[idx:idx + 1500], (
+        "bot_aggressive description must be prefixed with [RETIRED 2026-05-17]"
+    )
+
+
+@test("PERF-RETIRED-REASON-COLUMN — migration 104 adds retired_reason column")
+def _():
+    """PERF-HONEST-HEADLINE: /performance shows *why* each retired bot was
+    retired. That requires bots.retired_reason — source-inspect the migration
+    so a schema rollback can't silently strip the column."""
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/104_perf_honest_headline.sql").read_text()
+    assert "ADD COLUMN IF NOT EXISTS retired_reason TEXT" in mig, (
+        "migration 104 must add bots.retired_reason TEXT column"
+    )
+    # All 4 previously-retired bots must get a backfill reason in this migration
+    for b in ("bot_lower_1x2", "bot_opt_home_lower", "bot_draw_specialist", "bot_conservative"):
+        assert f"'{b}'" in mig, (
+            f"migration 104 must backfill retired_reason for {b} (BOTS-RETIRE-1X2)"
+        )
+
+
+@test("PERF-HONEST-HEADLINE-ACTIVE-FIELDS — dashboard_cache writes both headlines")
+def _():
+    """PERF-HONEST-HEADLINE: /performance shows two headline rows — all-time
+    (incl. retired bots' historical bets) + active-only. settlement.write_dashboard_cache
+    must populate both. Source-inspect the writer so a refactor can't drop the
+    active_* columns or the retired_bot_breakdown JSONB."""
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/104_perf_honest_headline.sql").read_text()
+    for col in (
+        "active_total_staked", "active_total_pnl", "active_roi_pct",
+        "active_settled_bets", "active_won_bets", "active_lost_bets",
+        "active_total_bets", "active_avg_clv", "retired_bot_breakdown",
+    ):
+        assert col in mig, f"migration 104 must ADD COLUMN {col} on dashboard_cache"
+    src = pathlib.Path("workers/jobs/settlement.py").read_text()
+    # Writer must compute active-only headline (JOIN bots, filter is_active+retired_at)
+    assert "JOIN bots b ON b.id = sb.bot_id" in src, (
+        "write_dashboard_cache must JOIN bots for active-only headline query"
+    )
+    assert "is_active = true AND b.retired_at IS NULL" in src, (
+        "active-only query must filter is_active AND retired_at IS NULL"
+    )
+    # Writer must compute retired_bot_breakdown with retired_at + retired_reason
+    assert "retired_bot_breakdown" in src, "write_dashboard_cache must build retired_bot_breakdown"
+    assert "retired_reason" in src, "retired breakdown rows must include retired_reason"
+    # INSERT must include all new columns
+    for col in (
+        "active_total_bets", "active_settled_bets", "active_won_bets", "active_lost_bets",
+        "active_total_staked", "active_total_pnl", "active_roi_pct", "active_avg_clv",
+        "retired_bot_breakdown",
+    ):
+        assert col in src, f"INSERT INTO dashboard_cache must include {col}"
+
+
 @test("BOT-TIMING-OU-MIDDAY — OU-specialist bots must run in midday cohort")
 def _():
     """Phase A timing analysis (2026-05-13) showed morning OU bets at -3.6% ROI
