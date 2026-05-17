@@ -70,12 +70,21 @@ def scan() -> tuple[list[dict], list[dict]]:
     return summary or [], bot_ids
 
 
-def already_normalized(summary: list[dict]) -> bool:
-    """If any inplay bot has a settled bet stake > 1.0, the script ran before."""
-    for r in summary:
-        if float(r.get("max_stake") or 0) > 1.0:
-            return True
-    return False
+def count_legacy_rows() -> int:
+    """Count inplay bets still at stake = 1.0 — these are the legacy rows the
+    UPDATE targets. The normalize is done when this hits zero. Using a count
+    (rather than max_stake > 1.0) makes the script idempotent and tolerant of
+    new €5 inplay bets that may arrive between dry-run and --apply."""
+    row = execute_query(
+        """
+        SELECT COUNT(*) AS n
+        FROM simulated_bets sb
+        JOIN bots b ON b.id = sb.bot_id
+        WHERE b.name LIKE 'inplay%%' AND sb.stake = 1.0
+        """,
+        [],
+    )[0]
+    return int(row["n"] or 0)
 
 
 def render_summary(summary: list[dict]):
@@ -123,17 +132,19 @@ def apply_normalization(bot_ids: list[str]):
     snap_count = execute_query(f"SELECT COUNT(*) AS n FROM {SNAPSHOT_TABLE}", [])[0]["n"]
     print(f"  Snapshot: {snap_count} rows saved to {SNAPSHOT_TABLE}")
 
-    # 2. Multiply stake and pnl
+    # 2. Multiply stake and pnl — only on legacy €1 rows (skip new €5 bets
+    # that were placed after the inplay_bot.py:352 commit went live)
     affected = execute_write(
         """
         UPDATE simulated_bets
         SET stake = stake * %s,
             pnl   = CASE WHEN result IN ('won','lost') THEN pnl * %s ELSE pnl END
         WHERE bot_id = ANY(%s::uuid[])
+          AND stake = 1.0
         """,
         [MULTIPLIER, MULTIPLIER, bot_ids],
     )
-    print(f"  Multiplied stake (and pnl on settled rows) for {affected} bets")
+    print(f"  Multiplied stake (and pnl on settled rows) for {affected} legacy €1 bets")
 
     # 3. Recompute bankroll_after per bot — running sum of pnl in pick_time order
     for bot_id in bot_ids:
@@ -202,11 +213,14 @@ def main():
 
     render_summary(summary)
 
-    if already_normalized(summary) and not args.force:
+    legacy_n = count_legacy_rows()
+    print(f"\nLegacy €1 inplay rows remaining: {legacy_n}")
+
+    if legacy_n == 0 and not args.force:
         print()
-        print("[ABORT] At least one inplay bet has stake > 1.0 — the script has "
-              "already been applied. Re-running would compound the multiplier. "
-              "Use --force to override (rarely correct).")
+        print("[ABORT] No inplay bets at stake = 1.0 — normalize is already "
+              "complete (or there were no legacy rows to begin with). "
+              "Use --force to re-run (rarely correct).")
         sys.exit(1)
 
     if not args.apply:
