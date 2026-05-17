@@ -2848,6 +2848,31 @@ def _():
     )
 
 
+@test("COOLBET-SELECTION-BIAS — real_perf_report has section_selection_bias")
+def _():
+    """Diagnostic that separates 'I picked losers from the offered slips' from
+    'edge doesn't survive execution'. First run on 14d of real bets showed
+    placed -7.1% ROI vs unplaced +6.1% (13.2pp gap), confirming selection bias
+    is the dominant problem. Guard the section so it doesn't get pruned and
+    so the SQL keeps using the simulated_bet_id link."""
+    import pathlib
+    src = pathlib.Path("scripts/real_perf_report.py").read_text()
+    assert "def section_selection_bias(" in src, (
+        "section_selection_bias missing from real_perf_report.py"
+    )
+    assert "section_selection_bias(args.days)" in src, (
+        "section_selection_bias must be wired into main()"
+    )
+    # Bot filter: only pre-match bots (inplay can't be manually placed at Coolbet)
+    assert "inplay_" in src and "bo.name NOT LIKE" in src, (
+        "Selection bias section must exclude inplay_* bots (not manually placeable)"
+    )
+    # Hint message reminds user about the ranking fix
+    assert "edge" in src.lower() and "stake" in src.lower() and "/admin/place" in src, (
+        "Hint message must point user to /admin/place sort"
+    )
+
+
 @test("AGGRESSIVE-V2 — bot_aggressive_v2 config drops draws+under2.5, caps odds, raises edge")
 def _():
     """Tightened sibling of bot_aggressive. v1's 441 settled bets at -5.7% ROI

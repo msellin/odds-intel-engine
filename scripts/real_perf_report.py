@@ -342,6 +342,116 @@ def section_recent_bets(days: int | None, bookmaker: str | None, limit: int = 15
     console.print(t)
 
 
+def section_selection_bias(days: int | None):
+    """COOLBET-SELECTION-BIAS — separate "I picked losers" from "edge doesn't exist".
+
+    On busy days the engine emits more pre-match sim_bets than the user can
+    manually place at Coolbet. The placed subset's ROI is contaminated by
+    selection bias (which slips happened to be picked first). To diagnose:
+
+      placed_real_roi   — actual €P&L on real_bets that have a sim_bet link
+      placed_paper_roi  — what those same sim_bets paid on paper (slippage view)
+      unplaced_paper_roi— sim_bets you skipped — did THEY win?
+      all_paper_roi     — full pre-match cohort paper ROI
+
+    Read:
+      If unplaced_paper_roi >> placed_real_roi → systematically skipping winners
+      If similar but real << paper → execution/slippage is the problem
+      If unplaced_paper_roi also negative → edge isn't real on this cohort
+
+    Pre-match only (inplay_* bots excluded — those can't be manually placed
+    at Coolbet anyway).
+    """
+    time_filter = f"AND sb.pick_time >= now() - interval '{days} days'" if days else ""
+
+    rows = execute_query(f"""
+        WITH bot_pool AS (
+            SELECT sb.id AS sim_id, sb.match_id, sb.stake AS sim_stake,
+                   sb.result AS sim_result, sb.pnl AS sim_pnl,
+                   bo.name AS bot_name,
+                   rb.id AS real_id, rb.stake AS real_stake,
+                   rb.pnl AS real_pnl, rb.result AS real_result
+            FROM simulated_bets sb
+            JOIN bots bo ON bo.id = sb.bot_id
+            LEFT JOIN real_bets rb ON rb.simulated_bet_id = sb.id
+            WHERE bo.name NOT LIKE 'inplay_%%'
+              AND sb.result IN ('won','lost')
+              {time_filter}
+        )
+        SELECT
+            -- Placed: bets with a real_bet link
+            COUNT(*) FILTER (WHERE real_id IS NOT NULL) AS placed_n,
+            SUM(real_pnl) FILTER (WHERE real_id IS NOT NULL AND real_result IN ('won','lost')) AS placed_real_pnl,
+            SUM(real_stake) FILTER (WHERE real_id IS NOT NULL AND real_result IN ('won','lost')) AS placed_real_stake,
+            SUM(sim_pnl) FILTER (WHERE real_id IS NOT NULL) AS placed_paper_pnl,
+            SUM(sim_stake) FILTER (WHERE real_id IS NOT NULL) AS placed_paper_stake,
+            -- Unplaced: sim_bets with no real_bet link
+            COUNT(*) FILTER (WHERE real_id IS NULL) AS unplaced_n,
+            SUM(sim_pnl) FILTER (WHERE real_id IS NULL) AS unplaced_paper_pnl,
+            SUM(sim_stake) FILTER (WHERE real_id IS NULL) AS unplaced_paper_stake,
+            -- All (placed + unplaced)
+            COUNT(*) AS all_n,
+            SUM(sim_pnl) AS all_paper_pnl,
+            SUM(sim_stake) AS all_paper_stake
+        FROM bot_pool
+    """, [])
+
+    r = rows[0] if rows else {}
+    placed_n = int(r.get("placed_n") or 0)
+    unplaced_n = int(r.get("unplaced_n") or 0)
+    if placed_n == 0 and unplaced_n == 0:
+        return  # nothing to report
+
+    def _roi(pnl, stake):
+        try:
+            pnl_f = float(pnl or 0); st = float(stake or 0)
+            return pnl_f / st if st > 0 else None
+        except Exception:
+            return None
+
+    placed_real_roi = _roi(r.get("placed_real_pnl"), r.get("placed_real_stake"))
+    placed_paper_roi = _roi(r.get("placed_paper_pnl"), r.get("placed_paper_stake"))
+    unplaced_paper_roi = _roi(r.get("unplaced_paper_pnl"), r.get("unplaced_paper_stake"))
+    all_paper_roi = _roi(r.get("all_paper_pnl"), r.get("all_paper_stake"))
+
+    t = Table(title="Selection Bias — placed vs skipped (pre-match only)", show_lines=False)
+    t.add_column("Bucket", style="cyan")
+    t.add_column("Bets", justify="right")
+    t.add_column("ROI", justify="right")
+    t.add_column("P&L (€)", justify="right")
+    t.add_row(
+        "Placed (real)", str(placed_n), _roi_str(placed_real_roi),
+        f"{float(r.get('placed_real_pnl') or 0):+.2f}",
+    )
+    t.add_row(
+        "  └ same bets paper", str(placed_n), _roi_str(placed_paper_roi),
+        f"{float(r.get('placed_paper_pnl') or 0):+.2f}",
+    )
+    t.add_row(
+        "Unplaced (paper)", str(unplaced_n), _roi_str(unplaced_paper_roi),
+        f"{float(r.get('unplaced_paper_pnl') or 0):+.2f}",
+    )
+    t.add_row(
+        "All pre-match (paper)", str(int(r.get("all_n") or 0)), _roi_str(all_paper_roi),
+        f"{float(r.get('all_paper_pnl') or 0):+.2f}",
+    )
+    console.print(t)
+
+    # Diagnostic hint
+    if placed_real_roi is not None and unplaced_paper_roi is not None:
+        gap = unplaced_paper_roi - placed_real_roi
+        if unplaced_paper_roi > 0.02 and placed_real_roi < 0 and gap > 0.05:
+            console.print(
+                f"  [yellow]→ unplaced winners outpacing your picks by {gap*100:+.1f}pp.[/yellow] "
+                "Sort by edge×stake at /admin/place and place the top-ranked ones first."
+            )
+        elif placed_paper_roi is not None and (placed_paper_roi - (placed_real_roi or 0)) > 0.05:
+            console.print(
+                "  [yellow]→ real ROI lags paper ROI on the same bets — execution/slippage problem.[/yellow]"
+            )
+    console.print()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Real vs Paper P&L report")
     parser.add_argument("--days", type=int, default=None, help="Limit to last N days")
@@ -351,6 +461,7 @@ def main():
 
     section_summary(args.days, args.bookmaker)
     section_paper_vs_real(args.days, args.bookmaker)
+    section_selection_bias(args.days)
     section_by_bookmaker(args.days)
     section_by_market(args.days, args.bookmaker, args.min_bets)
     section_recent_bets(args.days, args.bookmaker)
