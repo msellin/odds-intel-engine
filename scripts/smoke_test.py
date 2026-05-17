@@ -3078,6 +3078,20 @@ def _():
     )
 
 
+@test("PERF-RETIRED-CLEANUP — migration 105 backfills inplay_a2/c_home/f retired_reason")
+def _():
+    """Three inplay bots were soft-retired 2026-05-09 with NULL retired_reason.
+    Migration 105 backfills them so the public /performance Retired Strategies
+    section never shows a row with a missing reason."""
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/105_backfill_inplay_retired_reasons.sql").read_text()
+    for b in ("inplay_a2", "inplay_c_home", "inplay_f"):
+        assert f"'{b}'" in mig, f"migration 105 must backfill retired_reason for {b}"
+    assert "AND retired_reason IS NULL" in mig, (
+        "migration 105 must guard with `AND retired_reason IS NULL` so it's idempotent"
+    )
+
+
 @test("PERF-HONEST-HEADLINE-ACTIVE-FIELDS — dashboard_cache writes both headlines")
 def _():
     """PERF-HONEST-HEADLINE: /performance shows two headline rows — all-time
