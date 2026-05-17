@@ -3078,6 +3078,46 @@ def _():
     )
 
 
+@test("COMBO-JOINT-PROB-MATH — joint probability matrix is mathematically valid")
+def _():
+    """COMBO-RESEARCH-PHASE-B: SGM bot will price multi-leg same-game bets by
+    comparing book's offered odds vs our model's joint probability. Pin the
+    underlying math so a refactor of Poisson/Dixon-Coles can't silently break
+    it. Tests are deterministic — depend only on scipy.stats.poisson."""
+    from workers.model.joint_probability import (
+        build_joint_matrix, prob_event, prob_joint, correlation_ratio
+    )
+    # Balanced match
+    M = build_joint_matrix(1.5, 1.5)
+    # 1. Matrix sums to 1.0 (within float tolerance)
+    assert abs(M.sum() - 1.0) < 1e-9, f"matrix sum {M.sum()} != 1.0"
+    # 2. 1X2 marginals sum to 1.0
+    s = prob_event(M, "home") + prob_event(M, "draw") + prob_event(M, "away")
+    assert abs(s - 1.0) < 1e-9, f"1X2 marginals sum to {s}"
+    # 3. Symmetry: balanced match → P(home) == P(away)
+    assert abs(prob_event(M, "home") - prob_event(M, "away")) < 1e-9, (
+        "balanced exp goals must give symmetric 1X2"
+    )
+    # 4. BTTS+O2.5 must be positively correlated (real-world fact about football)
+    r = correlation_ratio(M, "btts_yes", "over_2.5")
+    assert r > 1.2, f"BTTS+O2.5 should be strongly positive corr, got {r}"
+    # 5. Joint never exceeds either marginal (basic probability axiom)
+    pa = prob_event(M, "btts_yes")
+    pb = prob_event(M, "over_2.5")
+    joint = prob_joint(M, "btts_yes", "over_2.5")
+    assert joint <= pa + 1e-9 and joint <= pb + 1e-9, (
+        f"joint {joint} cannot exceed marginals {pa}, {pb}"
+    )
+    # 6. P(A and not-A) = 0 — opposite events are disjoint
+    assert prob_joint(M, "btts_yes", "btts_no") < 1e-9, (
+        "btts_yes and btts_no must be disjoint"
+    )
+    # 7. Heavy favourite + 'team scores' is positively correlated
+    M2 = build_joint_matrix(2.5, 0.7)
+    r2 = correlation_ratio(M2, "home", "home_scores")
+    assert r2 > 1.05, f"home_win+home_scores must be positive corr, got {r2}"
+
+
 @test("PERF-V2-BANKROLL-1K — migration 107 normalises bot_aggressive_v2 to €1000 bankroll")
 def _():
     """bot_aggressive_v2 was created with starting_bankroll = 10000. Kelly
