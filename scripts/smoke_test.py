@@ -2848,6 +2848,52 @@ def _():
     )
 
 
+@test("AGGRESSIVE-V2 — bot_aggressive_v2 config drops draws+under2.5, caps odds, raises edge")
+def _():
+    """Tightened sibling of bot_aggressive. v1's 441 settled bets at -5.7% ROI
+    broke down into draws (-€154), home odds≥3.30 high-edge (-€95), OU under 2.5
+    (-€46). Retroactive replay of v1 bets under v2 filters: 129 keep at +11.6%
+    ROI / +€90. Guard the four rules so they can't silently regress."""
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG, BOT_TIMING_COHORTS
+    assert "bot_aggressive_v2" in BOTS_CONFIG, "bot_aggressive_v2 missing from BOTS_CONFIG"
+    cfg = BOTS_CONFIG["bot_aggressive_v2"]
+    # Rule 1: selection_filter excludes Draw and Under 2.5
+    sel = cfg.get("selection_filter") or []
+    assert "Draw" not in sel, "v2 must exclude Draw — draws lost €154 / 61 bets in v1"
+    assert "Under 2.5" not in sel, "v2 must exclude Under 2.5 — lost €46 / 88 bets in v1"
+    assert "Home" in sel and "Over 2.5" in sel, "v2 must allow Home and Over 2.5 — these were the v1 winners"
+    # Rule 2: odds_range tightened — upper bound ≤ 3.30 cuts the losing longshot home bucket
+    omin, omax = cfg["odds_range"]
+    assert omin >= 1.50, f"v2 odds_range min must be ≥1.50 (got {omin})"
+    assert omax <= 3.30, f"v2 odds_range max must be ≤3.30 (got {omax}) — caps loss-heavy longshots"
+    # Rule 3: min edge bumped to ≥ 5% on every tier+market
+    for tier, ths in cfg["edge_thresholds"].items():
+        for key, val in ths.items():
+            assert val >= 0.05, f"v2 tier {tier} {key} edge must be ≥5% (got {val})"
+    # Rule 4: registered in morning cohort (same as v1 control)
+    assert BOT_TIMING_COHORTS.get("bot_aggressive_v2") == "morning", \
+        "v2 must run in morning cohort alongside v1 control"
+    # Rule 5: v1 must still exist (control) — v2 does not replace v1 yet
+    assert "bot_aggressive" in BOTS_CONFIG, "v1 must stay running as control for v2 comparison"
+
+
+@test("AGGRESSIVE-V2-SEL-FILTER-OU — sel_filter gates OU/BTTS sides in candidate generation")
+def _():
+    """v2 relies on selection_filter to drop 'Under 2.5'. Before AGGRESSIVE-V2,
+    the OU candidate generation ignored selection_filter (which was only used
+    for 1X2 + AH). Guard the new gate so a refactor can't silently re-enable
+    Under bets for v2."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    # The OU/BTTS branches must now check sel_filter
+    assert '"Over 2.5" in sel_filter' in src, (
+        "OU Over 2.5 candidate gen must respect selection_filter (AGGRESSIVE-V2)"
+    )
+    assert '"Under 2.5" in sel_filter' in src, (
+        "OU Under 2.5 candidate gen must respect selection_filter (AGGRESSIVE-V2)"
+    )
+
+
 @test("BOT-TIMING-OU-MIDDAY — OU-specialist bots must run in midday cohort")
 def _():
     """Phase A timing analysis (2026-05-13) showed morning OU bets at -3.6% ROI

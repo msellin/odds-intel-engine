@@ -112,6 +112,28 @@ BOTS_CONFIG = {
         "odds_range": (1.25, 5.00),
         "min_prob": 0.25,
     },
+    # AGGRESSIVE-V2 (2026-05-17): tightened sibling of bot_aggressive.
+    # v1's 441 settled bets at -5.7% ROI broke down into three loss buckets:
+    #   draws (61 bets, -€154), home odds >=3.30 high-edge (110 bets, -€95),
+    #   OU under 2.5 (88 bets, -€46). Retroactive replay of v1's bets under
+    #   v2's filters: 129/441 keep, +11.6% ROI, +€90 P&L (+€231 swing).
+    # v1 stays running as the control — do not retire until v2 has its own
+    # 100+ settled sample.
+    "bot_aggressive_v2": {
+        "description": "AGGRESSIVE-V2 — drop draws + OU under 2.5; cap odds 1.50-3.30; min edge 5%",
+        "tier_label": "pro",
+        "markets": ["1x2", "ou"],
+        "tier_filter": None,
+        "selection_filter": ["Home", "Away", "Over 2.5"],  # no Draw, no Under 2.5
+        "edge_thresholds": {
+            1: {"1x2_fav": 0.05, "1x2_long": 0.08, "ou": 0.05},
+            2: {"1x2_fav": 0.05, "1x2_long": 0.08, "ou": 0.05},
+            3: {"1x2_fav": 0.05, "1x2_long": 0.08, "ou": 0.05},
+            4: {"1x2_fav": 0.05, "1x2_long": 0.08, "ou": 0.05},
+        },
+        "odds_range": (1.50, 3.30),
+        "min_prob": 0.30,
+    },
     "bot_greek_turkish": {
         # NOTE: +ROI in 2022-25 backtest but -ROI in mega backtest (2005-15).
         # Era discrepancy — treat results here as exploratory until more live data.
@@ -430,6 +452,7 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_v10_all":        "morning",
     "bot_lower_1x2":      "morning",
     "bot_aggressive":     "morning",
+    "bot_aggressive_v2":  "morning",  # AGGRESSIVE-V2: same cohort as v1 control
     # Midday — post-injury-news (8 bots, +2 OU specialists 2026-05-13)
     "bot_conservative":   "midday",
     "bot_greek_turkish":  "midday",
@@ -2024,28 +2047,28 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             if "1x2" in config["markets"] and match["odds_away"] > 0 and (not sel_filter or "Away" in sel_filter):
                 candidate_specs.append(("1X2", "Away", match["odds_away"], pred["away_prob"], "1x2", "away", thresholds.get("1x2_long", 0.08)))
 
-            # O/U 2.5
-            if "ou" in config.get("markets", []) and match.get("odds_over_25", 0) > 0:
+            # O/U 2.5 — AGGRESSIVE-V2: sel_filter (when set) gates OU side
+            if "ou" in config.get("markets", []) and match.get("odds_over_25", 0) > 0 and (not sel_filter or "Over 2.5" in sel_filter):
                 candidate_specs.append(("O/U", "Over 2.5", match["odds_over_25"], pred["over_25_prob"], "over_under_25", "over", thresholds.get("ou", 0.05)))
-            if "ou" in config.get("markets", []) and match.get("odds_under_25", 0) > 0:
+            if "ou" in config.get("markets", []) and match.get("odds_under_25", 0) > 0 and (not sel_filter or "Under 2.5" in sel_filter):
                 candidate_specs.append(("O/U", "Under 2.5", match["odds_under_25"], pred["under_25_prob"], "over_under_25", "under", thresholds.get("ou", 0.05)))
 
             # O/U 1.5
-            if "ou15" in config.get("markets", []) and match.get("odds_over_15", 0) > 0:
+            if "ou15" in config.get("markets", []) and match.get("odds_over_15", 0) > 0 and (not sel_filter or "Over 1.5" in sel_filter):
                 candidate_specs.append(("O/U", "Over 1.5", match["odds_over_15"], pred.get("over_15_prob", 0), "over_under_15", "over", thresholds.get("ou", 0.05)))
-            if "ou15" in config.get("markets", []) and match.get("odds_under_15", 0) > 0:
+            if "ou15" in config.get("markets", []) and match.get("odds_under_15", 0) > 0 and (not sel_filter or "Under 1.5" in sel_filter):
                 candidate_specs.append(("O/U", "Under 1.5", match["odds_under_15"], pred.get("under_15_prob", 0), "over_under_15", "under", thresholds.get("ou", 0.05)))
 
             # O/U 3.5
-            if "ou35" in config.get("markets", []) and match.get("odds_over_35", 0) > 0:
+            if "ou35" in config.get("markets", []) and match.get("odds_over_35", 0) > 0 and (not sel_filter or "Over 3.5" in sel_filter):
                 candidate_specs.append(("O/U", "Over 3.5", match["odds_over_35"], pred.get("over_35_prob", 0), "over_under_35", "over", thresholds.get("ou", 0.05)))
-            if "ou35" in config.get("markets", []) and match.get("odds_under_35", 0) > 0:
+            if "ou35" in config.get("markets", []) and match.get("odds_under_35", 0) > 0 and (not sel_filter or "Under 3.5" in sel_filter):
                 candidate_specs.append(("O/U", "Under 3.5", match["odds_under_35"], pred.get("under_35_prob", 0), "over_under_35", "under", thresholds.get("ou", 0.05)))
 
             # BTTS
-            if "btts" in config.get("markets", []) and match.get("odds_btts_yes", 0) > 0:
+            if "btts" in config.get("markets", []) and match.get("odds_btts_yes", 0) > 0 and (not sel_filter or "Yes" in sel_filter):
                 candidate_specs.append(("BTTS", "Yes", match["odds_btts_yes"], pred.get("btts_yes_prob", 0), "btts", "yes", thresholds.get("btts", 0.06)))
-            if "btts" in config.get("markets", []) and match.get("odds_btts_no", 0) > 0:
+            if "btts" in config.get("markets", []) and match.get("odds_btts_no", 0) > 0 and (not sel_filter or "No" in sel_filter):
                 candidate_specs.append(("BTTS", "No", match["odds_btts_no"], pred.get("btts_no_prob", 0), "btts", "no", thresholds.get("btts", 0.06)))
 
             # Double Chance (DC-BOTS): probs derived from 1X2 calibrated probs
