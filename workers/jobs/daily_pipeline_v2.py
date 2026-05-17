@@ -71,8 +71,10 @@ BOTS_CONFIG = {
         "odds_range": (1.30, 4.50),
         "min_prob": 0.30,
     },
+    # BOTS-RETIRE-1X2 (2026-05-17): retired via migration 103. Kept in BOTS_CONFIG
+    # so historical bot_id linkages keep working — pipeline skips via is_active=false.
     "bot_lower_1x2": {
-        "description": "Tier 2-4 only, 1X2 only — our best backtest signal",
+        "description": "[RETIRED 2026-05-17] Tier 2-4 only, 1X2 only — starved by alpha_t2_1x2=0.00 after May 17 retrain (was +83% on 11 bets = variance)",
         "tier_label": "elite",
         "markets": ["1x2"],
         "tier_filter": [2, 3, 4],
@@ -85,7 +87,7 @@ BOTS_CONFIG = {
         "min_prob": 0.35,
     },
     "bot_conservative": {
-        "description": "Only bet on 10%+ edge, very selective",
+        "description": "[RETIRED 2026-05-17] Only bet on 10%+ edge, very selective — never fired in production since launch (criteria too tight)",
         "tier_label": "elite",
         "markets": ["1x2"],
         "tier_filter": None,
@@ -211,7 +213,9 @@ BOTS_CONFIG = {
     "bot_opt_home_lower": {
         # Confirmed in FD (+24.2% ROI) and BTB (+12.5% ROI, 448 bets).
         # Home underdogs in lower European divisions.
-        "description": "Optimizer: Home underdogs, T2+ Europe — cross-era +14% ROI, 244 bets",
+        # BOTS-RETIRE-1X2 (2026-05-17): retired — starved by alpha_t2_1x2=0.00 after
+        # May 17 retrain. Live ROI +73% on 15 bets was variance, not signal.
+        "description": "[RETIRED 2026-05-17] Optimizer: Home underdogs, T2+ Europe — starved by May 17 alpha_t2_1x2=0.00",
         "tier_label": "elite",
         "markets": ["1x2"],
         "selection_filter": ["Home"],
@@ -308,7 +312,7 @@ BOTS_CONFIG = {
         "min_prob": 0.30,
     },
     "bot_draw_specialist": {
-        "description": "Draw specialist T2-4 — draws underbet in lower tiers",
+        "description": "[RETIRED 2026-05-17] Draw specialist T2-4 — bot_aggressive's draw bucket lost €154/61; same thesis, same loss profile",
         "tier_label": "pro",
         "markets": ["1x2"],
         "tier_filter": [2, 3, 4],

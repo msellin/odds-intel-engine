@@ -2848,6 +2848,34 @@ def _():
     )
 
 
+@test("BOTS-RETIRE-1X2 — four bots retired via migration 103 + flagged in BOTS_CONFIG")
+def _():
+    """May 17 retrain set shrinkage_alpha_t2_1x2 = 0.00 — model has no edge over
+    market for T1-T2 1X2. Four bots that depend on T2-4 1X2 (lower_1x2,
+    opt_home_lower, draw_specialist) or wide 1X2 with 10%+ edge (conservative)
+    can never clear their thresholds. Migration 103 retires them. This test
+    pins both the migration file and the BOTS_CONFIG documentation."""
+    import pathlib
+    retired_bots = ["bot_lower_1x2", "bot_opt_home_lower", "bot_draw_specialist", "bot_conservative"]
+    # Migration exists and retires all four
+    mig = pathlib.Path("supabase/migrations/103_retire_dead_1x2_bots.sql").read_text()
+    assert "UPDATE bots" in mig and "retired_at = now()" in mig, \
+        "migration 103 must UPDATE bots ... SET retired_at = now()"
+    for b in retired_bots:
+        assert f"'{b}'" in mig, f"migration 103 missing retirement for {b}"
+    # BOTS_CONFIG carries the [RETIRED ...] description marker — keeps history searchable
+    src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    for b in retired_bots:
+        # Find the bot's config block; description must mark it RETIRED
+        idx = src.find(f'"{b}":')
+        assert idx >= 0, f"{b} missing from BOTS_CONFIG"
+        block_end = idx + 1500  # cap how far we scan into the block
+        assert "[RETIRED 2026-05-17]" in src[idx:block_end], (
+            f"{b} description must be prefixed with [RETIRED 2026-05-17] so the "
+            f"reason is visible at the config site"
+        )
+
+
 @test("COOLBET-SELECTION-BIAS — real_perf_report has section_selection_bias")
 def _():
     """Diagnostic that separates 'I picked losers from the offered slips' from
