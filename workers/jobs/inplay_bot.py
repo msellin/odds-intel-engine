@@ -1456,7 +1456,7 @@ def _check_strategy_g(cand: dict, pm: dict, has_red_card: bool,
     Entry:
       • minute 30-70
       • current total goals ≤ 1
-      • ≥ 3 corners gained in last 10 min (combined home + away)
+      • ≥ 2 corners gained in last 10 min (combined home + away) — was ≥3 until INPLAY-LOOSEN-SILENT
       • OU 2.5 over odds ≥ 2.10
       • prematch_o25 > 0.45 (filter out genuinely defensive matches)
       • no red card
@@ -1503,7 +1503,11 @@ def _check_strategy_g(cand: dict, pm: dict, has_red_card: bool,
 
     old_corners = (old["corners_home"] or 0) + (old["corners_away"] or 0)
     corners_delta = cur_corners - old_corners
-    if corners_delta < 3:
+    # INPLAY-LOOSEN-SILENT (2026-05-17): was ≥3 in 10min — too tight to ever fire
+    # in 14d of live data despite 12k candidates passing the odds gate. Lowered
+    # to ≥2 to let the strategy accumulate settled bets so we can validate the
+    # thesis. Tighten back if 50+ bets land at negative ROI.
+    if corners_delta < 2:
         return None
 
     pm_o25 = float(pm.get("prematch_o25_prob") or 0)
@@ -1573,7 +1577,8 @@ def _check_strategy_h(cand: dict, pm: dict, has_red_card: bool,
           - first-half xG total ≥ 0.7 (real)  OR
           - first-half SoT total ≥ 6 (proxy)
       • prematch_o25 > 0.50 (genuine attacking-match prior)
-      • OU 2.5 over odds ≥ 2.10
+      • OU 2.5 over odds > 2.30 (was > 2.80 until INPLAY-LOOSEN-SILENT — avg market was 2.37)
+        OR OU 1.5 over odds > 1.60 (fallback path)
       • no red card
       • edge ≥ 2% (real) / 3.5% (proxy)
 
@@ -1603,12 +1608,17 @@ def _check_strategy_h(cand: dict, pm: dict, has_red_card: bool,
         return None
 
     # Dual-line selection (INPLAY-NEW-HT-RESTART, 2026-05-10):
-    #   • O2.5 if its odds > 2.80 (market still drifted toward Under — strongest edge)
+    #   • O2.5 if its odds > 2.30 (market drifted toward Under after HT 0-0)
     #   • else O1.5 if its odds > 1.60 (more conservative when O2.5 is shorter-priced)
-    o25_odds, o25_is_live = _resolve_odds(cand.get("live_ou_25_over"), pm.get("prematch_ou25_over"), min_val=2.80)
+    # INPLAY-LOOSEN-SILENT (2026-05-17): O2.5 gate was 2.80 — only 2 snapshots in
+    # 14d met that threshold (avg live O2.5 at HT 0-0 is 2.37). Lowered to 2.30
+    # so the strategy can actually fire and accumulate data. Edge filter at
+    # end (≥2% real / ≥3.5% proxy) still controls whether we bet — this only
+    # opens the candidate pool. Tighten back if 50+ bets land at negative ROI.
+    o25_odds, o25_is_live = _resolve_odds(cand.get("live_ou_25_over"), pm.get("prematch_ou25_over"), min_val=2.30)
     o15_odds, o15_is_live = _resolve_odds(cand.get("live_ou_15_over"), pm.get("prematch_ou15_over"), min_val=1.60)
 
-    if o25_odds > 2.80:
+    if o25_odds > 2.30:
         line = 2.5
         odds = o25_odds
         odds_is_live = o25_is_live
@@ -1862,8 +1872,8 @@ def _check_strategy_j(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     Strategy J: Goal Debt Over 1.5.
 
     High-expectation match (prematch O25 ≥ 0.55) is 0-0 at minute 30-52.
-    Live Over 1.5 odds have drifted above 2.85 (Bayesian fair at min-40 0-0
-    is ~2.70 — market needs to overshoot for edge to exist). Bet Over 1.5.
+    Live Over 1.5 odds have drifted above 2.50 (was 2.85 until INPLAY-LOOSEN-SILENT
+    — avg live OU1.5 at 0-0 in this window is 2.37). Bet Over 1.5.
 
     Math basis (5-AI consensus): λ_remaining = λ_full × (90-m)/90 × Bayesian_update.
     Bayesian update for 0-0 at min 40 with λ=2.8 → posterior λ ≈ 2.29.
@@ -1884,8 +1894,12 @@ def _check_strategy_j(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     if pm_o25 < 0.55:
         return None
 
-    ou15, ou15_is_live = _resolve_odds(cand.get("live_ou_15_over"), pm.get("prematch_ou15_over"), min_val=2.85)
-    if ou15 < 2.85:
+    # INPLAY-LOOSEN-SILENT (2026-05-17): odds gate was 2.85 — only 1,325 snapshots
+    # in 14d (avg live OU1.5 at 0-0 mins 30-52 is 2.37). Lowered to 2.50 so the
+    # candidate pool actually exists. The edge ≥3% filter below still gates the
+    # actual bet. Tighten back if 50+ bets land at negative ROI.
+    ou15, ou15_is_live = _resolve_odds(cand.get("live_ou_15_over"), pm.get("prematch_ou15_over"), min_val=2.50)
+    if ou15 < 2.50:
         return None  # No edge or no odds available
 
     # P(≥ 2 more goals) — need 2 more for Over 1.5 total (score is 0-0)

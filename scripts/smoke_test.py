@@ -2848,6 +2848,29 @@ def _():
     )
 
 
+@test("INPLAY-LOOSEN-SILENT — G/H/J thresholds relaxed so silent strategies can fire")
+def _():
+    """G/H/J had 0 settled bets in 14 days despite hundreds of thousands of
+    snapshot evaluations. Funnel analysis (2026-05-17) showed each had one
+    binding operational constraint set tighter than what the live market
+    actually produces:
+      - G: corners_delta ≥3 in 10min — too rare; relaxed to ≥2
+      - H: O2.5 odds > 2.80 — only 2 candidates in 14d (avg market 2.37); to 2.30
+      - J: OU1.5 odds ≥ 2.85 — only 1,325 candidates (avg 2.37); to 2.50
+    Edge filters at end stay the same — these only open the candidate pool so
+    the strategies can accumulate enough bets to validate the thesis."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    # G — corners_delta gate is now < 2 (was < 3)
+    assert "if corners_delta < 2:" in src, "Strategy G corners_delta gate must be < 2 (INPLAY-LOOSEN-SILENT)"
+    assert "if corners_delta < 3:" not in src, "Strategy G stale < 3 gate found — must be removed"
+    # H — O2.5 path threshold is 2.30 (was 2.80)
+    assert 'min_val=2.30)' in src, "Strategy H O2.5 _resolve_odds min_val must be 2.30 (INPLAY-LOOSEN-SILENT)"
+    # J — OU1.5 threshold is 2.50 (was 2.85)
+    assert "if ou15 < 2.50:" in src, "Strategy J OU1.5 gate must be < 2.50 (INPLAY-LOOSEN-SILENT)"
+    assert "if ou15 < 2.85:" not in src, "Strategy J stale < 2.85 gate found — must be removed"
+
+
 @test("BOTS-RETIRE-1X2 — four bots retired via migration 103 + flagged in BOTS_CONFIG")
 def _():
     """May 17 retrain set shrinkage_alpha_t2_1x2 = 0.00 — model has no edge over
