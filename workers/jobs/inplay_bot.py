@@ -349,7 +349,15 @@ def run_inplay_strategies():
                 "market": trigger["market"],
                 "selection": trigger["selection"],
                 "odds": trigger["odds"],
-                "stake": 1.0,
+                # INPLAY-STAKE-5 (2026-05-17): bumped from 1.0 → 5.0 so inplay
+                # strategies contribute meaningful weight to the /performance
+                # headline ROI. Pre-match Kelly stakes land €1-10 on €1000
+                # bankrolls (median ~€5); €5 puts inplay on the same scale
+                # without the calibration risk of Kelly-on-inplay (model_prob
+                # comes from hardcoded posterior rates, not the calibrated
+                # ensemble). Historical inplay bets back-normalized via
+                # scripts/normalize_inplay_stake_to_5.py.
+                "stake": 5.0,
                 "model_prob": trigger["model_prob"],
                 "edge": trigger["edge"] / 100,  # strategies store edge as %, DB expects decimal (0.374 = 37.4%)
                 "xg_source": xg_source,

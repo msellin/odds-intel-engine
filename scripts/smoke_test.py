@@ -3028,6 +3028,56 @@ def _():
         )
 
 
+@test("INPLAY-STAKE-5-NEW — new inplay bets stake €5 (not €1)")
+def _():
+    """INPLAY-STAKE-5 (PERF-HONEST-HEADLINE follow-up): pre-match Kelly stakes
+    land €1-10 with €5 median. Inplay was fixed €1, meaning the highest-ROI
+    bots had near-zero weight in the headline ROI. Bumped to €5 so new bets
+    contribute meaningfully. Guard the new constant so a refactor can't
+    silently roll it back to €1."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    # Find the bet_data block; stake must be 5.0
+    idx = src.find('"market": trigger["market"]')
+    assert idx >= 0, "bet_data block missing from inplay_bot.py"
+    block = src[idx:idx + 800]
+    assert '"stake": 5.0' in block, (
+        "inplay bet_data must set stake=5.0 (INPLAY-STAKE-5)"
+    )
+    assert '"stake": 1.0' not in block, (
+        "inplay bet_data still has stake=1.0 — should be 5.0 after INPLAY-STAKE-5"
+    )
+
+
+@test("INPLAY-STAKE-5-NORMALIZE-SCRIPT — retroactive normalize script present and guarded")
+def _():
+    """INPLAY-STAKE-5 retroactive normalization rewrites historical inplay
+    bet rows so the /performance headline reflects €5 stakes immediately
+    instead of waiting weeks for new €5 bets to dilute the €1 history.
+    Source-inspect the script so the idempotency guard + snapshot table
+    can't silently disappear in a refactor."""
+    import pathlib
+    src = pathlib.Path("scripts/normalize_inplay_stake_to_5.py").read_text()
+    # Snapshot table for audit before destructive update
+    assert "simulated_bets_pre_inplay_normalize_2026_05_17" in src, (
+        "Normalize script must snapshot rows to an audit table before mutating"
+    )
+    # Idempotency guard prevents compounded multiplier
+    assert "already_normalized" in src and "ABORT" in src, (
+        "Normalize script must abort if max_stake > 1.0 (else re-run compounds)"
+    )
+    # Correct multiplier
+    assert "MULTIPLIER = 5.0" in src, "Multiplier must be 5.0 (€1 → €5)"
+    # Inplay-only scope — must filter by name LIKE 'inplay_%'
+    assert "name LIKE 'inplay" in src, (
+        "Script must scope updates to inplay bots only"
+    )
+    # Bankroll recompute must pull starting_bankroll from bots table, not hardcode
+    assert "b.starting_bankroll + ranked.running_pnl" in src, (
+        "bankroll_after recompute must use bots.starting_bankroll, not hardcoded value"
+    )
+
+
 @test("PERF-HONEST-HEADLINE-ACTIVE-FIELDS — dashboard_cache writes both headlines")
 def _():
     """PERF-HONEST-HEADLINE: /performance shows two headline rows — all-time
