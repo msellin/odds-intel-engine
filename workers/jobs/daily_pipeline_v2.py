@@ -2388,6 +2388,18 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
     console.print(f"\n[bold green]Done! {total_bets} bets placed{cohort_label}[/bold green]")
     console.print("[green]All data stored in Supabase — frontend can display it now[/green]")
 
+    # COMBO-PHASE-D: after singles are placed, run the cross-match acca bot.
+    # It reads today's pending singles, picks top-edge independent legs, and
+    # places one combo bet. Only fires when ≥3 qualifying legs exist.
+    # Limited to the morning cohort (or no cohort = full run) — refresh cohorts
+    # don't generate enough new pending singles to materially change the menu.
+    if cohort in (None, "morning"):
+        try:
+            from workers.jobs.acca_bot import run_acca_pass
+            run_acca_pass()
+        except Exception as e:
+            console.print(f"[yellow]Acca bot failed (non-critical): {e}[/yellow]")
+
     # 11.6: Cross-match correlation check — warn about concentrated exposure
     _check_exposure_concentration()
 

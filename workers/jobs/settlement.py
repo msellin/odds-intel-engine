@@ -14,6 +14,7 @@ import sys
 import os
 import math
 import argparse
+import json
 from pathlib import Path
 from datetime import datetime, timezone, date, timedelta
 from dotenv import load_dotenv
@@ -40,13 +41,15 @@ from workers.api_clients.db import execute_query, execute_write, bulk_upsert
 console = Console()
 
 # SQL query to load pending bets with match + team join
+# combo_legs is included so the settle loop can dispatch combo bets through
+# settle_combo_bet() instead of the single-bet path (COMBO-PHASE-D).
 _PENDING_BETS_SQL = """
 SELECT
     sb.id, sb.bot_id, sb.match_id, sb.market, sb.selection, sb.stake,
     sb.odds_at_pick, sb.model_probability, sb.edge_percent, sb.result,
     sb.pnl, sb.clv, sb.calibrated_prob, sb.alignment_class, sb.kelly_fraction,
     sb.odds_drift, sb.news_impact_score, sb.reasoning, sb.bankroll_after,
-    sb.closing_odds, sb.pick_time,
+    sb.closing_odds, sb.pick_time, sb.combo_legs, sb.combo_size,
     m.id as m_id, m.date as m_date, m.score_home, m.score_away,
     m.result as match_result, m.status as match_status,
     ht.name as home_team_name, ta.name as away_team_name
@@ -259,6 +262,60 @@ def settle_bet_result(bet: dict, home_goals: int, away_goals: int,
         "pnl": pnl,
         "clv": clv,
     }
+
+
+def settle_combo_bet(combo_bet: dict, match_scores: dict) -> dict | None:
+    """COMBO-PHASE-D: settle a multi-leg accumulator. Returns None if any leg's
+    match hasn't finished yet (combo stays pending). Returns a settlement dict
+    once all legs are decided.
+
+    Leg outcome aggregation (standard bookie rules):
+      • All legs won → combo won, pnl = stake × (combined_odds - 1)
+      • Any leg lost → combo lost, pnl = -stake
+      • Some legs voided, rest won → combo wins at the reduced combined_odds
+        (product of non-voided legs' odds); pnl = stake × (reduced_odds - 1)
+      • All legs voided → combo voided, pnl = 0
+
+    match_scores: dict mapping match_id (str) → (home_goals, away_goals) for
+    every leg's match that has finished. Pass an empty dict to defer settlement
+    (combo stays pending).
+    """
+    legs = combo_bet.get("combo_legs")
+    if isinstance(legs, str):
+        legs = json.loads(legs)
+    if not legs:
+        return None
+    stake = float(combo_bet["stake"])
+
+    # Compute each leg's outcome
+    leg_results = []
+    for leg in legs:
+        mid = str(leg["match_id"])
+        if mid not in match_scores:
+            return None  # leg's match not finished yet — combo stays pending
+        score_h, score_a = match_scores[mid]
+        # Reuse single-bet settlement logic by constructing a synthetic bet
+        synthetic = {
+            "market": leg["market"],
+            "selection": leg["selection"],
+            "stake": 1.0,  # leg-level stake unused for combo aggregation
+            "odds_at_pick": float(leg["odds"]),
+        }
+        leg_settled = settle_bet_result(synthetic, score_h, score_a, None)
+        leg_results.append((leg, leg_settled["result"]))
+
+    # Aggregate
+    if any(r == "lost" for _, r in leg_results):
+        return {"result": "lost", "pnl": round(-stake, 2), "clv": None}
+    surviving = [(leg, r) for leg, r in leg_results if r == "won"]
+    if not surviving:
+        # All legs voided
+        return {"result": "void", "pnl": 0.0, "clv": None}
+    reduced_odds = 1.0
+    for leg, _ in surviving:
+        reduced_odds *= float(leg["odds"])
+    pnl = round(stake * (reduced_odds - 1), 2)
+    return {"result": "won", "pnl": pnl, "clv": None}
 
 
 # ─── Closing odds lookup ─────────────────────────────────────────────────────
@@ -1337,23 +1394,32 @@ def _settle_pending_bets(pending: list, finished: list):
     t.add_column("CLV", justify="right")
 
     for bet in pending:
-        # Flat SQL row: score_home/score_away are directly on bet
-        score_home = bet.get("score_home")
-        score_away = bet.get("score_away")
-        home_name_display = bet.get("home_team_name", "?")
-        away_name_display = bet.get("away_team_name", "?")
-
-        # If not in DB (match not yet updated), try to find in external results
-        if score_home is None:
-            result_match = find_result_for_match(home_name_display, away_name_display, finished)
-            if not result_match:
-                skipped += 1
-                continue
-            score_home = int(result_match["home_goals"])
-            score_away = int(result_match["away_goals"])
+        # COMBO-PHASE-D: combo bets don't have a single "score" — their match_id
+        # is just the first leg's placeholder. Skip the per-bet score lookup for
+        # combos and defer entirely to the combo branch further down, which does
+        # its own per-leg match lookups.
+        is_combo_row = bet.get("combo_legs") is not None
+        if is_combo_row:
+            score_home = None
+            score_away = None
         else:
-            score_home = int(score_home)
-            score_away = int(score_away)
+            # Flat SQL row: score_home/score_away are directly on bet
+            score_home = bet.get("score_home")
+            score_away = bet.get("score_away")
+            home_name_display = bet.get("home_team_name", "?")
+            away_name_display = bet.get("away_team_name", "?")
+
+            # If not in DB (match not yet updated), try to find in external results
+            if score_home is None:
+                result_match = find_result_for_match(home_name_display, away_name_display, finished)
+                if not result_match:
+                    skipped += 1
+                    continue
+                score_home = int(result_match["home_goals"])
+                score_away = int(result_match["away_goals"])
+            else:
+                score_home = int(score_home)
+                score_away = int(score_away)
 
         # Get closing odds for CLV
         match_id = bet["match_id"]
@@ -1367,12 +1433,37 @@ def _settle_pending_bets(pending: list, finished: list):
         bot_name = by_bot.get(bot_id, {}).get("name", "")
         is_inplay = bot_name.startswith("inplay_")
 
-        # CLV is meaningless for inplay bets: live odds reflect game state (goals, cards)
-        # not market efficiency, so closing_odds is just whatever snapshot happened to be
-        # last captured — producing arbitrarily large/small CLV with no signal value.
-        if is_inplay:
+        # COMBO-PHASE-D: dispatch combo bets to settle_combo_bet.
+        # The combo's match_id is just the first leg's; settlement uses combo_legs
+        # JSON to look up each leg's match and aggregate outcomes.
+        is_combo = bet.get("combo_legs") is not None
+        if is_combo:
+            # Build match_scores dict for every leg whose match has finished.
+            legs_data = bet["combo_legs"]
+            if isinstance(legs_data, str):
+                legs_data = json.loads(legs_data)
+            leg_match_ids = [str(l["match_id"]) for l in legs_data]
+            score_rows = execute_query(
+                "SELECT id::text AS id, score_home, score_away FROM matches "
+                "WHERE id = ANY(%s::uuid[]) AND status = 'finished' "
+                "AND score_home IS NOT NULL AND score_away IS NOT NULL",
+                [leg_match_ids],
+            ) or []
+            match_scores = {r["id"]: (int(r["score_home"]), int(r["score_away"])) for r in score_rows}
+            combo_settlement = settle_combo_bet(bet, match_scores)
+            if combo_settlement is None:
+                # At least one leg's match isn't finished — combo stays pending
+                continue
+            settlement = combo_settlement
             closing_odds = None
             clv_pinnacle = None
+        elif is_inplay:
+            # CLV is meaningless for inplay bets: live odds reflect game state (goals, cards)
+            # not market efficiency, so closing_odds is just whatever snapshot happened to be
+            # last captured — producing arbitrarily large/small CLV with no signal value.
+            closing_odds = None
+            clv_pinnacle = None
+            settlement = settle_bet_result(bet, score_home, score_away, closing_odds)
         else:
             closing_odds = get_closing_odds(match_id, odds_market, odds_selection)
             # PIN-5: Pinnacle-anchored CLV — the industry-standard EV validator
@@ -1383,9 +1474,7 @@ def _settle_pending_bets(pending: list, finished: list):
                 if pinnacle_closing and pinnacle_closing > 1.0
                 else None
             )
-
-        # Settle
-        settlement = settle_bet_result(bet, score_home, score_away, closing_odds)
+            settlement = settle_bet_result(bet, score_home, score_away, closing_odds)
 
         # Bot bankroll tracking
         if bot_id not in by_bot:

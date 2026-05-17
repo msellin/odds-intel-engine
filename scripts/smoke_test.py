@@ -3078,6 +3078,79 @@ def _():
     )
 
 
+@test("COMBO-ACCA-BOT-PRESENT — bot_acca_value module + migration shipped")
+def _():
+    """COMBO-RESEARCH-PHASE-D: paper acca bot generates a multi-leg combo from
+    today's top-edge singles. Source-inspect the module + migration so a
+    refactor can't silently drop the integration."""
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/108_combo_legs.sql").read_text()
+    assert "ADD COLUMN IF NOT EXISTS combo_legs JSONB" in mig, (
+        "migration 108 must add combo_legs JSONB column"
+    )
+    assert "ADD COLUMN IF NOT EXISTS combo_size INTEGER" in mig, (
+        "migration 108 must add combo_size INTEGER column"
+    )
+    assert "INSERT INTO bots" in mig and "'bot_acca_value'" in mig, (
+        "migration 108 must register bot_acca_value"
+    )
+    bot = pathlib.Path("workers/jobs/acca_bot.py").read_text()
+    assert "def run_acca_pass" in bot, "acca_bot.py must define run_acca_pass"
+    assert "min_legs" in bot and "max_legs" in bot, "ACCA_CONFIG must define min/max legs"
+    # Independence enforcement: must dedupe by match_id
+    assert "seen_matches" in bot, "Acca bot must enforce one leg per match (independence)"
+    # Hook in daily_pipeline_v2
+    pipeline = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    assert "from workers.jobs.acca_bot import run_acca_pass" in pipeline, (
+        "daily_pipeline_v2 must call run_acca_pass after singles are placed"
+    )
+
+
+@test("COMBO-SETTLE-COMBO-BET — combo settlement aggregates leg outcomes")
+def _():
+    """settle_combo_bet must:
+      - return None if any leg's match hasn't finished (combo stays pending)
+      - return 'lost' if any leg lost
+      - return 'won' with correct pnl if all legs won
+      - handle voided legs (settle at reduced odds)
+    """
+    from workers.jobs.settlement import settle_combo_bet
+    import json as _json
+
+    combo = {
+        "stake": 10.0,
+        "combo_legs": _json.dumps([
+            {"match_id": "m1", "market": "1x2", "selection": "home", "odds": 2.0},
+            {"match_id": "m2", "market": "1x2", "selection": "draw", "odds": 3.0},
+            {"match_id": "m3", "market": "1x2", "selection": "away", "odds": 4.0},
+        ]),
+    }
+    # 1. All legs win — pnl = 10 × (2×3×4 - 1) = 230
+    won = settle_combo_bet(combo, {
+        "m1": (2, 0),  # home wins
+        "m2": (1, 1),  # draw
+        "m3": (0, 2),  # away wins
+    })
+    assert won is not None and won["result"] == "won", f"all-win must settle as won, got {won}"
+    assert won["pnl"] == 230.0, f"all-win pnl must be 230 (10 × 23), got {won['pnl']}"
+
+    # 2. One leg loses — combo loses, pnl = -stake
+    lost = settle_combo_bet(combo, {
+        "m1": (0, 2),  # home loses
+        "m2": (1, 1),
+        "m3": (0, 2),
+    })
+    assert lost["result"] == "lost", f"any-loss must settle as lost, got {lost}"
+    assert lost["pnl"] == -10.0, f"loss pnl must be -10, got {lost['pnl']}"
+
+    # 3. One leg not yet finished — combo stays pending (returns None)
+    pending = settle_combo_bet(combo, {"m1": (2, 0), "m2": (1, 1)})  # missing m3
+    assert pending is None, "combo with unfinished leg must defer to None"
+
+    # 4. CLV is None for combos (no per-match closing line analog)
+    assert won.get("clv") is None, "combo CLV must be None"
+
+
 @test("COMBO-JOINT-PROB-MATH — joint probability matrix is mathematically valid")
 def _():
     """COMBO-RESEARCH-PHASE-B: SGM bot will price multi-leg same-game bets by
