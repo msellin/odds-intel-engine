@@ -40,6 +40,7 @@ import json
 import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from itertools import combinations
 
 from rich.console import Console
 
@@ -49,22 +50,56 @@ from workers.model.improvements import compute_kelly
 console = Console()
 
 
-# ── Acca bot config — keep here, not in BOTS_CONFIG, since the bot lives
-#    outside the per-match BOTS_CONFIG iteration loop in daily_pipeline_v2.
-ACCA_CONFIG = {
-    "name":               "bot_acca_value",
-    "min_legs":           3,
-    "max_legs":           5,
-    "min_per_leg_edge":   0.05,    # Each leg needs ≥5% EV (matches min single-bet threshold)
-    "max_per_leg_odds":   2.50,    # Cap per-leg odds — balanced selection bias toward
-                                    # higher hit rate over bigger payout (backtest insight)
-    "min_per_leg_odds":   1.40,    # Skip near-certain legs that add nothing to payout
-    "min_combined_edge":  0.10,    # Combo must show ≥10% combined edge (compounded)
-    "max_combined_odds":  50.0,    # Cap to avoid absurd-odds combos (variance protection)
-    "kelly_fraction":     0.05,    # 1/3 of singles' Kelly fraction — combos = higher variance
-    "max_stake_pct":      0.005,   # Cap stake at 0.5% bankroll (vs singles' 1%)
-    "min_stake":          1.0,
+# ── Acca bot variants. Both share picking logic (same N legs/day) but place
+#    their stake differently — straight = one max-leg combo, no_singles =
+#    spread across all sub-combos of size 2..N (Trixie / Yankee / Canadian /
+#    Heinz depending on N). Running both as paper bots lets us compare
+#    variance-reduction value of system bets vs straight EV per €.
+ACCA_VARIANTS = {
+    "bot_acca_value": {
+        "structure":          "straight",   # one combo at max-leg N
+        "min_legs":           3,
+        "max_legs":           5,
+        "min_per_leg_edge":   0.05,
+        "max_per_leg_odds":   2.50,
+        "min_per_leg_odds":   1.40,
+        "min_combined_edge":  0.10,
+        "max_combined_odds":  50.0,
+        "kelly_fraction":     0.05,
+        "max_stake_pct":      0.005,
+        "min_stake":          1.0,
+    },
+    "bot_combo_system": {
+        "structure":          "no_singles",  # all sub-combos of size 2..N
+        "min_legs":           3,
+        "max_legs":           5,
+        "min_per_leg_edge":   0.05,
+        "max_per_leg_odds":   2.50,
+        "min_per_leg_odds":   1.40,
+        "min_combined_edge":  0.10,
+        "max_combined_odds":  50.0,
+        "kelly_fraction":     0.05,
+        "max_stake_pct":      0.005,
+        # System bets deploy more total stake (N_subcombos × per_sub). At N=5
+        # that's 26 sub-combos. To keep daily-budget comparable to the straight
+        # variant, the per-sub stake is total_stake / num_sub_combos.
+        "min_stake":          1.0,
+    },
 }
+
+
+# Back-compat alias for existing callers; equals the straight variant config.
+ACCA_CONFIG = ACCA_VARIANTS["bot_acca_value"]
+
+
+def _subcombo_count(n_legs: int, structure: str) -> int:
+    """Number of sub-bets a structure produces for N picks."""
+    if structure == "straight":
+        return 1
+    if structure == "no_singles":
+        # All combos of size 2..N
+        return sum(math.comb(n_legs, k) for k in range(2, n_legs + 1))
+    raise ValueError(f"Unknown structure: {structure}")
 
 
 @dataclass
@@ -158,43 +193,49 @@ def _get_bot_id(bot_name: str) -> str | None:
     return rows[0]["id"] if rows else None
 
 
-def run_acca_pass(dry_run: bool = False) -> dict:
-    """Generate today's combo bet if criteria are met. Returns a dict with
-    `placed` (bool), `legs`, `combined_odds`, `combined_edge`, `stake`, etc.
-    Called from daily_pipeline_v2.run_morning after singles are placed."""
-    cfg = ACCA_CONFIG
-    bot_id = _get_bot_id(cfg["name"])
+_STRUCTURE_NAME = {
+    3: "Trixie",
+    4: "Yankee",
+    5: "Canadian",
+    6: "Heinz",
+    7: "Super Heinz",
+    8: "Goliath",
+}
+
+
+def _place_one(bot_name: str, cfg: dict, legs: list[CandidateLeg]) -> dict:
+    """Place one combo or system bet for the given variant.
+
+    Both variants share the same picks/legs (already chosen by `_pick_legs`).
+    The structure determines stake allocation:
+      • straight     → one row at the max-leg combined odds
+      • no_singles   → one row representing the system ticket; settlement
+                       enumerates sub-combos at payout time
+    """
+    bot_id = _get_bot_id(bot_name)
     if not bot_id:
-        console.print(f"[yellow]Acca bot: {cfg['name']} not registered — migration 108 not applied?[/yellow]")
-        return {"placed": False, "reason": "bot_not_registered"}
+        console.print(f"[yellow]Acca: {bot_name} not registered. Skipping.[/yellow]")
+        return {"placed": False, "reason": "bot_not_registered", "bot": bot_name}
 
-    candidates = _fetch_todays_singles()
-    legs = _pick_legs(candidates, cfg)
-
-    if len(legs) < cfg["min_legs"]:
-        console.print(f"[dim]Acca bot: only {len(legs)} qualifying legs today (need ≥{cfg['min_legs']}). Skipping.[/dim]")
-        return {"placed": False, "reason": "not_enough_legs", "legs": len(legs)}
-
+    n_legs = len(legs)
     combined_odds = math.prod(l.odds for l in legs)
     combined_prob = math.prod(l.prob for l in legs)
     combined_edge = combined_prob * combined_odds - 1
 
     if combined_edge < cfg["min_combined_edge"]:
-        console.print(f"[dim]Acca bot: combined edge {combined_edge:.2%} below threshold {cfg['min_combined_edge']:.2%}. Skipping.[/dim]")
-        return {"placed": False, "reason": "edge_below_threshold", "combined_edge": combined_edge}
+        return {"placed": False, "reason": "edge_below_threshold", "bot": bot_name}
+    if combined_odds > cfg["max_combined_odds"] and cfg["structure"] == "straight":
+        # Cap only applies to straight (system bets distribute across smaller sub-combos)
+        return {"placed": False, "reason": "odds_above_cap", "bot": bot_name}
 
-    if combined_odds > cfg["max_combined_odds"]:
-        console.print(f"[dim]Acca bot: combined odds {combined_odds:.2f} above cap {cfg['max_combined_odds']}. Skipping.[/dim]")
-        return {"placed": False, "reason": "odds_above_cap", "combined_odds": combined_odds}
-
-    bankroll = _get_bankroll(cfg["name"]) or 1000.0
+    bankroll = _get_bankroll(bot_name) or 1000.0
     kelly = compute_kelly(combined_prob, combined_odds)
     if kelly <= 0:
-        return {"placed": False, "reason": "non_positive_kelly"}
+        return {"placed": False, "reason": "non_positive_kelly", "bot": bot_name}
     stake = min(kelly * cfg["kelly_fraction"] * bankroll, cfg["max_stake_pct"] * bankroll)
     stake = round(stake, 2)
     if stake < cfg["min_stake"]:
-        return {"placed": False, "reason": "stake_below_minimum", "stake": stake}
+        return {"placed": False, "reason": "stake_below_minimum", "bot": bot_name}
 
     legs_json = [
         {
@@ -209,53 +250,87 @@ def run_acca_pass(dry_run: bool = False) -> dict:
         for l in legs
     ]
 
-    summary = {
-        "placed": True,
-        "n_legs": len(legs),
-        "combined_odds": round(combined_odds, 4),
-        "combined_prob": round(combined_prob, 4),
-        "combined_edge": round(combined_edge, 4),
-        "stake": stake,
-        "legs": legs_json,
-    }
+    structure = cfg["structure"]
+    n_subbets = _subcombo_count(n_legs, structure)
+
+    if structure == "straight":
+        selection_label = f"{n_legs}-leg"
+        system_type = None
+        display_odds = combined_odds
+        log_prefix = "ACCA"
+    elif structure == "no_singles":
+        struct_name = _STRUCTURE_NAME.get(n_legs, f"{n_legs}-pick system")
+        selection_label = f"{struct_name} ({n_legs} picks, {n_subbets} sub-combos)"
+        system_type = "no_singles"
+        # display_odds is informational for system bets — store the max-leg
+        # combined odds (what the biggest sub-combo could pay)
+        display_odds = combined_odds
+        log_prefix = f"SYSTEM ({struct_name})"
+    else:
+        return {"placed": False, "reason": f"unknown_structure_{structure}", "bot": bot_name}
 
     console.print(
-        f"[bold green]ACCA: {len(legs)} legs @ combined odds {combined_odds:.2f}, "
-        f"edge {combined_edge:+.1%}, stake €{stake:.2f}[/bold green]"
+        f"[bold green]{log_prefix}: {bot_name} | {n_legs} legs | {n_subbets} sub-bet(s) | "
+        f"combined odds {combined_odds:.2f} | edge {combined_edge:+.1%} | stake €{stake:.2f}[/bold green]"
     )
-    for l in legs:
-        console.print(f"  • {l.bot_source}: {l.market}/{l.selection} @ {l.odds:.2f} (edge {l.edge:+.1%})")
 
-    if dry_run:
-        return {**summary, "dry_run": True}
-
-    # Store the combo bet. Use first leg's match_id as placeholder (settlement
-    # uses combo_legs JSON for actual outcomes).
     execute_write(
         """
         INSERT INTO simulated_bets (
             bot_id, match_id, market, selection,
             odds_at_pick, model_probability, calibrated_prob,
-            stake, result, combo_legs, combo_size,
+            stake, result, combo_legs, combo_size, system_type,
             reasoning
-        ) VALUES (%s, %s, 'combo', %s, %s, %s, %s, %s, 'pending', %s, %s, %s)
+        ) VALUES (%s, %s, 'combo', %s, %s, %s, %s, %s, 'pending', %s, %s, %s, %s)
         """,
         [
             bot_id,
             legs[0].match_id,
-            f"{len(legs)}-leg",
-            combined_odds,
+            selection_label,
+            display_odds,
             combined_prob,
             combined_prob,
             stake,
             json.dumps(legs_json),
-            len(legs),
+            n_legs,
+            system_type,
             json.dumps({
-                "strategy": "bot_acca_value",
+                "strategy": bot_name,
+                "structure": structure,
+                "n_subbets": n_subbets,
                 "combined_edge": round(combined_edge, 4),
                 "kelly": round(kelly, 4),
                 "leg_summary": [f"{l.bot_source}:{l.market}/{l.selection}" for l in legs],
             }),
         ],
     )
-    return summary
+    return {
+        "placed": True, "bot": bot_name, "structure": structure,
+        "n_legs": n_legs, "n_subbets": n_subbets, "stake": stake,
+        "combined_odds": round(combined_odds, 4), "combined_edge": round(combined_edge, 4),
+    }
+
+
+def run_acca_pass(dry_run: bool = False) -> dict:
+    """Run the acca-style bots for the day. Picks legs ONCE, places one bet per
+    registered variant so the two paper bots run on identical picks (clean
+    side-by-side comparison of straight vs no_singles system).
+
+    Returns dict with `picks_summary` and per-bot `placed/reason`.
+    """
+    # Pick legs once — shared across all variants
+    primary_cfg = ACCA_VARIANTS["bot_acca_value"]
+    candidates = _fetch_todays_singles()
+    legs = _pick_legs(candidates, primary_cfg)
+
+    if len(legs) < primary_cfg["min_legs"]:
+        console.print(f"[dim]Acca pass: only {len(legs)} qualifying legs today (need ≥{primary_cfg['min_legs']}). Skipping all variants.[/dim]")
+        return {"placed": False, "reason": "not_enough_legs", "n_legs": len(legs)}
+
+    if dry_run:
+        return {"dry_run": True, "n_legs": len(legs), "legs": [l.__dict__ for l in legs]}
+
+    results = {}
+    for bot_name, cfg in ACCA_VARIANTS.items():
+        results[bot_name] = _place_one(bot_name, cfg, legs)
+    return {"n_legs": len(legs), "variants": results}

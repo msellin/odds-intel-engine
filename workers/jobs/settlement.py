@@ -49,7 +49,7 @@ SELECT
     sb.odds_at_pick, sb.model_probability, sb.edge_percent, sb.result,
     sb.pnl, sb.clv, sb.calibrated_prob, sb.alignment_class, sb.kelly_fraction,
     sb.odds_drift, sb.news_impact_score, sb.reasoning, sb.bankroll_after,
-    sb.closing_odds, sb.pick_time, sb.combo_legs, sb.combo_size,
+    sb.closing_odds, sb.pick_time, sb.combo_legs, sb.combo_size, sb.system_type,
     m.id as m_id, m.date as m_date, m.score_home, m.score_away,
     m.result as match_result, m.status as match_status,
     ht.name as home_team_name, ta.name as away_team_name
@@ -265,20 +265,28 @@ def settle_bet_result(bet: dict, home_goals: int, away_goals: int,
 
 
 def settle_combo_bet(combo_bet: dict, match_scores: dict) -> dict | None:
-    """COMBO-PHASE-D: settle a multi-leg accumulator. Returns None if any leg's
-    match hasn't finished yet (combo stays pending). Returns a settlement dict
-    once all legs are decided.
+    """COMBO-PHASE-D: settle a multi-leg accumulator or system bet.
 
-    Leg outcome aggregation (standard bookie rules):
-      • All legs won → combo won, pnl = stake × (combined_odds - 1)
-      • Any leg lost → combo lost, pnl = -stake
-      • Some legs voided, rest won → combo wins at the reduced combined_odds
-        (product of non-voided legs' odds); pnl = stake × (reduced_odds - 1)
-      • All legs voided → combo voided, pnl = 0
+    Branches on `system_type`:
+      • NULL or 'straight' → standard accumulator (all-win or all-lose)
+      • 'no_singles'       → system bet covering all sub-combos of size 2..N
+                              (Trixie/Yankee/Canadian/Heinz depending on N)
 
-    match_scores: dict mapping match_id (str) → (home_goals, away_goals) for
-    every leg's match that has finished. Pass an empty dict to defer settlement
-    (combo stays pending).
+    Returns None if any leg's match hasn't finished yet (bet stays pending).
+
+    Straight accumulator rules:
+      • All legs won → won at full combined odds
+      • Any leg lost → lost (-stake)
+      • Voided legs → reduce combined odds, settle on remaining winners
+
+    No-singles system rules:
+      • For each sub-combo of size 2..N: if all its legs won, it pays at its
+        own product odds; else it loses its share of the stake
+      • Total stake split equally across sub-combos: per_sub = stake / N_subs
+      • Result reported as 'won' if total_payout > total_stake, else 'lost'
+        (or 'void' if every leg voided)
+
+    match_scores: dict mapping match_id (str) → (home_goals, away_goals).
     """
     legs = combo_bet.get("combo_legs")
     if isinstance(legs, str):
@@ -286,36 +294,88 @@ def settle_combo_bet(combo_bet: dict, match_scores: dict) -> dict | None:
     if not legs:
         return None
     stake = float(combo_bet["stake"])
+    system_type = combo_bet.get("system_type")
 
     # Compute each leg's outcome
     leg_results = []
     for leg in legs:
         mid = str(leg["match_id"])
         if mid not in match_scores:
-            return None  # leg's match not finished yet — combo stays pending
+            return None  # leg's match not finished yet — bet stays pending
         score_h, score_a = match_scores[mid]
-        # Reuse single-bet settlement logic by constructing a synthetic bet
         synthetic = {
             "market": leg["market"],
             "selection": leg["selection"],
-            "stake": 1.0,  # leg-level stake unused for combo aggregation
+            "stake": 1.0,
             "odds_at_pick": float(leg["odds"]),
         }
         leg_settled = settle_bet_result(synthetic, score_h, score_a, None)
         leg_results.append((leg, leg_settled["result"]))
 
-    # Aggregate
+    if system_type == "no_singles":
+        return _settle_system_no_singles(leg_results, stake)
+
+    # Default: straight accumulator
     if any(r == "lost" for _, r in leg_results):
         return {"result": "lost", "pnl": round(-stake, 2), "clv": None}
     surviving = [(leg, r) for leg, r in leg_results if r == "won"]
     if not surviving:
-        # All legs voided
         return {"result": "void", "pnl": 0.0, "clv": None}
     reduced_odds = 1.0
     for leg, _ in surviving:
         reduced_odds *= float(leg["odds"])
     pnl = round(stake * (reduced_odds - 1), 2)
     return {"result": "won", "pnl": pnl, "clv": None}
+
+
+def _settle_system_no_singles(leg_results: list, total_stake: float) -> dict:
+    """Settle a no-singles system bet (Trixie/Yankee/Canadian/Heinz).
+
+    Enumerates all sub-combos of size 2..N. Per-sub-combo stake is
+    total_stake / num_sub_combos. Each sub-combo wins (pays at product odds)
+    only if every leg in it won (voided legs treated as not-won-not-lost:
+    they reduce the sub-combo's effective product or void the sub-combo).
+
+    Simplification used here: voided legs are dropped from any sub-combo they
+    appear in. A sub-combo with only voided legs is itself voided. The
+    surviving sub-combos settle on their non-voided product.
+    """
+    from itertools import combinations as _combos
+
+    n_legs = len(leg_results)
+    n_sub_combos = sum(math.comb(n_legs, k) for k in range(2, n_legs + 1))
+    if n_sub_combos == 0:
+        return {"result": "void", "pnl": 0.0, "clv": None}
+    per_sub_stake = total_stake / n_sub_combos
+
+    total_payout = 0.0   # gross payout from winning sub-combos (includes stake)
+    voided_subs = 0
+    for size in range(2, n_legs + 1):
+        for sub in _combos(leg_results, size):
+            statuses = [r for _, r in sub]
+            if any(s == "lost" for s in statuses):
+                continue  # this sub-combo lost its per_sub stake
+            non_void = [(leg, r) for leg, r in sub if r == "won"]
+            if not non_void:
+                voided_subs += 1
+                total_payout += per_sub_stake  # void = stake refunded
+                continue
+            # All non-voided legs won → sub-combo pays at product odds of the
+            # winning legs only (void legs drop out, standard bookie rule)
+            prod = 1.0
+            for leg, _ in non_void:
+                prod *= float(leg["odds"])
+            total_payout += per_sub_stake * prod
+
+    pnl = round(total_payout - total_stake, 2)
+    if pnl > 0:
+        result = "won"
+    elif pnl < 0:
+        result = "lost"
+    else:
+        # All sub-combos voided → stake refunded, pnl = 0
+        result = "void" if voided_subs == n_sub_combos else "lost"
+    return {"result": result, "pnl": pnl, "clv": None}
 
 
 # ─── Closing odds lookup ─────────────────────────────────────────────────────

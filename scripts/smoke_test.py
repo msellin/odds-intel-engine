@@ -3106,6 +3106,76 @@ def _():
     )
 
 
+@test("COMBO-SYSTEM-BOT-PRESENT — bot_combo_system module + migration 109 shipped")
+def _():
+    """Mirror of bot_acca_value but uses no-singles system stake distribution
+    (Trixie/Yankee/Canadian/Heinz depending on N picks). Same picks per day
+    so the two bots run as paper-parallel comparison."""
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/109_combo_system_type.sql").read_text()
+    assert "ADD COLUMN IF NOT EXISTS system_type TEXT" in mig
+    assert "'bot_combo_system'" in mig, "migration 109 must register bot_combo_system"
+    bot = pathlib.Path("workers/jobs/acca_bot.py").read_text()
+    assert "ACCA_VARIANTS" in bot, "acca_bot must define both variants in one dict"
+    assert '"bot_acca_value"' in bot and '"bot_combo_system"' in bot, (
+        "Both variants must be present as ACCA_VARIANTS keys"
+    )
+    assert '"no_singles"' in bot, "bot_combo_system must use structure=no_singles"
+    assert "_subcombo_count" in bot, "must define sub-combo enumeration helper"
+    # Critical: picks are shared across variants. run_acca_pass must pick legs
+    # ONCE then place a bet per variant on the same legs.
+    assert "for bot_name, cfg in ACCA_VARIANTS.items():" in bot, (
+        "run_acca_pass must iterate ACCA_VARIANTS placing each on the same picks"
+    )
+
+
+@test("COMBO-SETTLE-SYSTEM-NO-SINGLES — system bet enumerates sub-combos")
+def _():
+    """No-singles system settlement: 4 picks → 11 sub-combos (Yankee). If 3/4
+    win, 4 sub-combos pay (the 3 doubles among winners + the 1 treble of all
+    winners). Test the math holds."""
+    from workers.jobs.settlement import settle_combo_bet
+    import json as _json
+
+    combo = {
+        "stake": 11.0,  # €1 per sub-bet × 11 Yankee sub-bets
+        "system_type": "no_singles",
+        "combo_legs": _json.dumps([
+            {"match_id": "m1", "market": "1x2", "selection": "home", "odds": 2.0},
+            {"match_id": "m2", "market": "1x2", "selection": "home", "odds": 2.0},
+            {"match_id": "m3", "market": "1x2", "selection": "home", "odds": 2.0},
+            {"match_id": "m4", "market": "1x2", "selection": "home", "odds": 2.0},
+        ]),
+    }
+    # 1. All 4 win → ALL 11 sub-combos pay at their respective product odds.
+    #    Total payout: 6 doubles × (2×2)=4 + 4 trebles × (2×2×2)=8 + 1 fourfold × 16
+    #    = 24 + 32 + 16 = 72 (per €1 per sub-bet).
+    #    Net pnl = 72 - 11 = +61
+    all_win = settle_combo_bet(combo, {f"m{i}": (1, 0) for i in range(1, 5)})
+    assert all_win is not None and all_win["result"] == "won"
+    assert abs(all_win["pnl"] - 61.0) < 0.01, f"all-win Yankee pnl must be +61, got {all_win['pnl']}"
+
+    # 2. 3 of 4 win → only sub-combos NOT containing the loser pay.
+    #    Among 4 legs, fix m4 as loser. Surviving sub-combos:
+    #    Doubles using {m1,m2,m3}: 3 doubles, each pays 4 → 12
+    #    Trebles using {m1,m2,m3}: 1 treble, pays 8 → 8
+    #    No fourfold (must include all 4)
+    #    Total payout: 12 + 8 = 20 (per €1 sub-bet).
+    #    Net = 20 - 11 = +9
+    three_win = settle_combo_bet(combo, {"m1":(1,0), "m2":(1,0), "m3":(1,0), "m4":(0,1)})
+    assert three_win is not None and three_win["result"] == "won"
+    assert abs(three_win["pnl"] - 9.0) < 0.01, f"3/4 Yankee pnl must be +9, got {three_win['pnl']}"
+
+    # 3. 2 of 4 win → 1 double pays 4. Net = 4 - 11 = -7.
+    two_win = settle_combo_bet(combo, {"m1":(1,0), "m2":(1,0), "m3":(0,1), "m4":(0,1)})
+    assert two_win["result"] == "lost", f"2/4 Yankee must be net-loss, got {two_win}"
+    assert abs(two_win["pnl"] - (-7.0)) < 0.01
+
+    # 4. Any pending leg → settle returns None (defer)
+    pending = settle_combo_bet(combo, {"m1":(1,0), "m2":(1,0), "m3":(1,0)})  # m4 missing
+    assert pending is None, "missing leg must defer settlement"
+
+
 @test("COMBO-SETTLE-COMBO-BET — combo settlement aggregates leg outcomes")
 def _():
     """settle_combo_bet must:
