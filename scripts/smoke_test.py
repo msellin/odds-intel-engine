@@ -5910,8 +5910,8 @@ def _():
     assert "(1.80, 3.50)" not in ou35, "bot_ou35_attacking old odds_range (1.80, 3.50) still present"
 
     btts_all = bot_body("bot_btts_all", "bot_btts_conservative")
-    assert "(1.50, 2.00)" in btts_all, "bot_btts_all odds_range must be capped at 2.00 (2.00-2.50 bucket -6.5% ROI)"
-    assert "(1.50, 2.80)" not in btts_all, "bot_btts_all old odds_range (1.50, 2.80) still present"
+    assert "(1.50, 2.80)" in btts_all, "bot_btts_all odds_range must be (1.50, 2.80) — backtest tightening reverted after live data showed 2.00-2.50 bucket at +20.5% ROI (41 bets)"
+    assert "(1.50, 2.00)" not in btts_all, "bot_btts_all old tightened range (1.50, 2.00) still present — should be reverted to (1.50, 2.80)"
 
     btts_cons = bot_body("bot_btts_conservative", "bot_ou15_defensive")
     assert "(1.60, 2.00)" in btts_cons, "bot_btts_conservative odds_range must be capped at 2.00 (2.00-2.50 bucket -14% ROI)"

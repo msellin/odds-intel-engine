@@ -254,7 +254,9 @@ BOTS_CONFIG = {
     # ─── New bots (2026-04-30): BTTS, O/U 1.5/3.5, draw, O/U 2.5 global ────
 
     "bot_btts_all": {
-        # PER-BOT-SLICE-TIGHTEN 2026-05-17: odds 2.00-2.50 = -6.5% ROI (722 bets, -€470) → cap at 2.00.
+        # PER-BOT-SLICE-TIGHTEN reverted 2026-05-18: backtest said 2.00-2.50 loses (-6.5%),
+        # but live v14 data (41 bets) shows that bucket at +20.5% ROI. Poisson backfill
+        # miscalibrated at those odds; live filter stack (Pinnacle veto) fixes it. Keep (1.50, 2.80).
         "description": "BTTS all leagues — new market, zero overlap with 1X2 bets",
         "tier_label": "pro",
         "markets": ["btts"],
@@ -264,7 +266,7 @@ BOTS_CONFIG = {
             3: {"btts": 0.03},
             4: {"btts": 0.03},
         },
-        "odds_range": (1.50, 2.00),
+        "odds_range": (1.50, 2.80),
         "min_prob": 0.30,
     },
     "bot_btts_conservative": {
