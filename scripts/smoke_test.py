@@ -3106,6 +3106,25 @@ def _():
     )
 
 
+@test("COMBO-HIDE-FROM-PUBLIC — combo bots filtered out of dashboard_cache bot_breakdown")
+def _():
+    """Combo/acca bots are paper experiments with 0 settled bets. They don't
+    belong on the public /performance leaderboard until they accumulate
+    enough settled bets to prove themselves. settlement.write_dashboard_cache
+    must exclude any bot whose name starts with bot_acca_ or bot_combo_ from
+    the per-bot rollup. /admin/bots reads via getAllBotsFromDB (separate
+    path) and continues to show them."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/settlement.py").read_text()
+    # The active-bots bot_rows query must exclude combo/acca names
+    assert "b.name NOT LIKE 'bot_acca" in src, (
+        "dashboard_cache bot_breakdown query must exclude bot_acca_*"
+    )
+    assert "b.name NOT LIKE 'bot_combo" in src, (
+        "dashboard_cache bot_breakdown query must exclude bot_combo_*"
+    )
+
+
 @test("COMBO-PROVEN-VARIANTS — bot_acca_proven + bot_combo_proven_system registered")
 def _():
     """Two whitelist-restricted variants that combine legs ONLY from bots with

@@ -1185,6 +1185,10 @@ def write_dashboard_cache():
         # Void rows retain their original pnl/stake (we only flip `result`), so any
         # `result != 'pending'` filter would silently double-count voided bets.
         # ACTIVE bots only — this feeds the per-bot leaderboard.
+        # COMBO-HIDE-FROM-PUBLIC (2026-05-18): exclude combo/acca bots from the
+        # public leaderboard — they're paper experiments with 0 settled bets,
+        # don't belong on /performance until they prove themselves. Still
+        # visible on /admin/bots (different query path).
         bot_rows = execute_query("""
             SELECT
                 b.name,
@@ -1197,6 +1201,8 @@ def write_dashboard_cache():
             LEFT JOIN simulated_bets sb ON sb.bot_id = b.id
             WHERE b.is_active = true
               AND b.retired_at IS NULL
+              AND b.name NOT LIKE 'bot_acca%%'
+              AND b.name NOT LIKE 'bot_combo%%'
             GROUP BY b.id, b.name
         """, [])
 
