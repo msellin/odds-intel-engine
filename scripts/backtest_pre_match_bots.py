@@ -65,10 +65,15 @@ CANDIDATE_SPECS = [
 
 
 def _outcome(market: str, selection: str, sh: int, sa: int) -> bool:
+    # BACKTEST-ZERO-WIN-INVESTIGATE (2026-05-18): selection comes in lowercase
+    # (the CANDIDATE_SPECS tuples' 6th element is "home"/"draw"/"away"). Previous
+    # code compared to "Home"/"Draw"/"Away" — every 1X2 bet failed the match and
+    # fell through to `return False`, producing impossible 0-win rates for any
+    # 1X2-heavy bot. Lowercase fix unblocks 1X2 evaluation. OU/BTTS were fine.
     if market == "1x2":
-        if selection == "Home": return sh > sa
-        if selection == "Draw": return sh == sa
-        if selection == "Away": return sh < sa
+        if selection == "home": return sh > sa
+        if selection == "draw": return sh == sa
+        if selection == "away": return sh < sa
     if market == "over_under_25":
         return (sh + sa > 2.5) if selection == "over" else (sh + sa < 2.5)
     if market == "over_under_15":
