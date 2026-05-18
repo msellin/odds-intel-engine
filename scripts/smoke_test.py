@@ -5891,5 +5891,36 @@ def _():
     assert "b.totalPnl - a.totalPnl" not in sort_block, "buildBotStats must not sort by P&L"
 
 
+@test("PER-BOT-SLICE-TIGHTEN — odds_range caps applied to 5 bots from slice analysis")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+
+    def bot_body(name: str, next_name: str) -> str:
+        start = src.index(f'"{name}"')
+        end = src.index(f'"{next_name}"', start)
+        return src[start:end]
+
+    ou25 = bot_body("bot_ou25_global", "bot_draw_specialist")
+    assert "(1.60, 2.50)" in ou25, "bot_ou25_global odds_range must be capped at 2.50 (2.50-3.00 bucket -8% ROI)"
+    assert "(1.60, 3.00)" not in ou25, "bot_ou25_global old odds_range (1.60, 3.00) still present"
+
+    ou35 = bot_body("bot_ou35_attacking", "bot_ou25_global")
+    assert "(1.80, 3.00)" in ou35, "bot_ou35_attacking odds_range must be capped at 3.00 (over @ 3.00-3.50 -38% ROI)"
+    assert "(1.80, 3.50)" not in ou35, "bot_ou35_attacking old odds_range (1.80, 3.50) still present"
+
+    btts_all = bot_body("bot_btts_all", "bot_btts_conservative")
+    assert "(1.50, 2.00)" in btts_all, "bot_btts_all odds_range must be capped at 2.00 (2.00-2.50 bucket -6.5% ROI)"
+    assert "(1.50, 2.80)" not in btts_all, "bot_btts_all old odds_range (1.50, 2.80) still present"
+
+    btts_cons = bot_body("bot_btts_conservative", "bot_ou15_defensive")
+    assert "(1.60, 2.00)" in btts_cons, "bot_btts_conservative odds_range must be capped at 2.00 (2.00-2.50 bucket -14% ROI)"
+    assert "(1.60, 2.50)" not in btts_cons, "bot_btts_conservative old odds_range (1.60, 2.50) still present"
+
+    greek = bot_body("bot_greek_turkish", "bot_high_roi_global")
+    assert "(1.40, 3.50)" in greek, "bot_greek_turkish odds_range must be capped at 3.50 (3.50+ bucket -30% ROI)"
+    assert "(1.40, 4.00)" not in greek, "bot_greek_turkish old odds_range (1.40, 4.00) still present"
+
+
 if __name__ == "__main__":
     main()

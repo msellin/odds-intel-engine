@@ -144,6 +144,7 @@ BOTS_CONFIG = {
     "bot_greek_turkish": {
         # NOTE: +ROI in 2022-25 backtest but -ROI in mega backtest (2005-15).
         # Era discrepancy — treat results here as exploratory until more live data.
+        # PER-BOT-SLICE-TIGHTEN 2026-05-17: odds 3.50+ = -30% ROI (33 bets, -€99) → cap at 3.50.
         "description": "Only Greek + Turkish leagues — profitable in 2022-25 backtest (era-sensitive)",
         "tier_label": "elite",
         "markets": ["1x2"],
@@ -152,7 +153,7 @@ BOTS_CONFIG = {
         "edge_thresholds": {
             1: {"1x2_fav": 0.04, "1x2_long": 0.06},
         },
-        "odds_range": (1.40, 4.00),
+        "odds_range": (1.40, 3.50),
         "min_prob": 0.30,
     },
     "bot_high_roi_global": {
@@ -253,6 +254,7 @@ BOTS_CONFIG = {
     # ─── New bots (2026-04-30): BTTS, O/U 1.5/3.5, draw, O/U 2.5 global ────
 
     "bot_btts_all": {
+        # PER-BOT-SLICE-TIGHTEN 2026-05-17: odds 2.00-2.50 = -6.5% ROI (722 bets, -€470) → cap at 2.00.
         "description": "BTTS all leagues — new market, zero overlap with 1X2 bets",
         "tier_label": "pro",
         "markets": ["btts"],
@@ -262,10 +264,11 @@ BOTS_CONFIG = {
             3: {"btts": 0.03},
             4: {"btts": 0.03},
         },
-        "odds_range": (1.50, 2.80),
+        "odds_range": (1.50, 2.00),
         "min_prob": 0.30,
     },
     "bot_btts_conservative": {
+        # PER-BOT-SLICE-TIGHTEN 2026-05-17: odds 2.00-2.50 = -14.3% ROI (290 bets, -€415) → cap at 2.00.
         "description": "BTTS top leagues only — selective, 7%+ edge",
         "tier_label": "elite",
         "markets": ["btts"],
@@ -274,7 +277,7 @@ BOTS_CONFIG = {
             1: {"btts": 0.07},
             2: {"btts": 0.07},
         },
-        "odds_range": (1.60, 2.50),
+        "odds_range": (1.60, 2.00),
         "min_prob": 0.35,
     },
     "bot_ou15_defensive": {
@@ -291,6 +294,7 @@ BOTS_CONFIG = {
         "min_prob": 0.30,
     },
     "bot_ou35_attacking": {
+        # PER-BOT-SLICE-TIGHTEN 2026-05-17: over @ 3.00-3.50 = -38.3% ROI (30 bets, -€115) → cap at 3.00.
         "description": "O/U 3.5 — over 3.5 in high-scoring leagues, under 3.5 at value",
         "tier_label": "pro",
         "markets": ["ou35"],
@@ -300,10 +304,11 @@ BOTS_CONFIG = {
             3: {"ou": 0.05},
             4: {"ou": 0.05},
         },
-        "odds_range": (1.80, 3.50),
+        "odds_range": (1.80, 3.00),
         "min_prob": 0.30,
     },
     "bot_ou25_global": {
+        # PER-BOT-SLICE-TIGHTEN 2026-05-17: odds 2.50-3.00 = -8.0% ROI (802 bets, -€643) → cap at 2.50.
         "description": "O/U 2.5 all leagues — extends bot_opt_ou_british globally",
         "tier_label": "pro",
         "markets": ["ou"],
@@ -313,7 +318,7 @@ BOTS_CONFIG = {
             3: {"ou": 0.05},
             4: {"ou": 0.04},
         },
-        "odds_range": (1.60, 3.00),
+        "odds_range": (1.60, 2.50),
         "min_prob": 0.30,
     },
     "bot_draw_specialist": {
