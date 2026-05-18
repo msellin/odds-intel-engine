@@ -5922,5 +5922,15 @@ def _():
     assert "(1.40, 4.00)" not in greek, "bot_greek_turkish old odds_range (1.40, 4.00) still present"
 
 
+@test("FIT-RHO-COLNAMES — fit_league_rho.py uses score_home/score_away not home_score/away_score")
+def _():
+    import pathlib
+    src = pathlib.Path("scripts/fit_league_rho.py").read_text()
+    assert "score_home" in src, "fit_league_rho.py must use score_home (actual column name)"
+    assert "score_away" in src, "fit_league_rho.py must use score_away (actual column name)"
+    assert "home_score IS NOT NULL" not in src, "fit_league_rho.py still references non-existent column home_score"
+    assert "away_score IS NOT NULL" not in src, "fit_league_rho.py still references non-existent column away_score"
+
+
 if __name__ == "__main__":
     main()

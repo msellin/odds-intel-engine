@@ -98,12 +98,12 @@ def run(min_matches: int = MIN_MATCHES_DEFAULT, dry_run: bool = False) -> dict:
 
     rows = execute_query(
         """
-        SELECT m.home_score, m.away_score, l.tier
+        SELECT m.score_home AS home_score, m.score_away AS away_score, l.tier
         FROM matches m
         LEFT JOIN leagues l ON m.league_id = l.id
         WHERE m.status = 'finished'
-          AND m.home_score IS NOT NULL
-          AND m.away_score IS NOT NULL
+          AND m.score_home IS NOT NULL
+          AND m.score_away IS NOT NULL
           AND l.tier IS NOT NULL
         """,
         [],
@@ -165,7 +165,7 @@ def run(min_matches: int = MIN_MATCHES_DEFAULT, dry_run: bool = False) -> dict:
                     (market, platt_a, platt_b, sample_count, fitted_at)
                 VALUES (%s, %s, 0.0, %s, %s)
                 """,
-                (market_key, round(rho, 6), n, now.isoformat()),
+                (market_key, float(round(rho, 6)), int(n), now.isoformat()),
             )
             print(f"    → Stored as '{market_key}'")
 
