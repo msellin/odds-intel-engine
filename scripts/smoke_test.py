@@ -3106,6 +3106,27 @@ def _():
     )
 
 
+@test("COMBO-PROVEN-VARIANTS — bot_acca_proven + bot_combo_proven_system registered")
+def _():
+    """Two whitelist-restricted variants that combine legs ONLY from bots with
+    confirmed +EV. After 249-day backtest showed unrestricted combos at
+    -38% to -60% ROI while restricted-to-good-legs combos showed +6% to
+    +301% — these variants test whether good-legs-only holds up live."""
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/110_combo_proven_variants.sql").read_text()
+    assert "'bot_acca_proven'" in mig and "'bot_combo_proven_system'" in mig
+    bot = pathlib.Path("workers/jobs/acca_bot.py").read_text()
+    assert "PROVEN_BOTS_WHITELIST" in bot, "whitelist constant must be defined"
+    # Must include the 2 backtest-confirmed bots
+    assert '"bot_ou15_defensive"' in bot and '"bot_ou35_attacking"' in bot, (
+        "whitelist must include backtest-confirmed bots"
+    )
+    # _fetch_todays_singles must support whitelist parameter
+    assert "def _fetch_todays_singles(whitelist:" in bot
+    # run_acca_pass must use per-variant leg pools
+    assert "leg_cache" in bot, "run_acca_pass must cache leg pool per whitelist"
+
+
 @test("COMBO-SYSTEM-BOT-PRESENT — bot_combo_system module + migration 109 shipped")
 def _():
     """Mirror of bot_acca_value but uses no-singles system stake distribution

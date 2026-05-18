@@ -55,9 +55,31 @@ console = Console()
 #    spread across all sub-combos of size 2..N (Trixie / Yankee / Canadian /
 #    Heinz depending on N). Running both as paper bots lets us compare
 #    variance-reduction value of system bets vs straight EV per €.
+# Whitelist of "proven" source bots — used by the bot_acca_proven /
+# bot_combo_proven_system variants. Selection criteria (decided 2026-05-18
+# after the expanded historical backtest):
+#   • bot_ou15_defensive — +86% backtest / +47% live / +18% CLV (strongest dual)
+#   • bot_ou35_attacking — +27% backtest (deep historical edge in OU 3.5)
+#   • bot_v10_all        — -56% raw / +30% live / +22% CLV (filter-stack wins)
+#   • bot_ou25_global    — -2% raw / +29% live / +6.5% CLV
+#   • bot_ah_away_dog    — +45% live / +8% CLV (AH not in backtest scope)
+#   • bot_btts_all       — flat raw / +14% live / +4.4% CLV (volume contributor)
+# Other bots excluded — either raw-pessimistic without live filter-stack
+# benefit, or insufficient sample to trust.
+PROVEN_BOTS_WHITELIST = {
+    "bot_ou15_defensive",
+    "bot_ou35_attacking",
+    "bot_v10_all",
+    "bot_ou25_global",
+    "bot_ah_away_dog",
+    "bot_btts_all",
+}
+
+
 ACCA_VARIANTS = {
     "bot_acca_value": {
         "structure":          "straight",   # one combo at max-leg N
+        "bot_whitelist":      None,         # None = all bots
         "min_legs":           3,
         "max_legs":           5,
         "min_per_leg_edge":   0.05,
@@ -71,6 +93,7 @@ ACCA_VARIANTS = {
     },
     "bot_combo_system": {
         "structure":          "no_singles",  # all sub-combos of size 2..N
+        "bot_whitelist":      None,
         "min_legs":           3,
         "max_legs":           5,
         "min_per_leg_edge":   0.05,
@@ -83,6 +106,37 @@ ACCA_VARIANTS = {
         # System bets deploy more total stake (N_subcombos × per_sub). At N=5
         # that's 26 sub-combos. To keep daily-budget comparable to the straight
         # variant, the per-sub stake is total_stake / num_sub_combos.
+        "min_stake":          1.0,
+    },
+    # COMBO-PROVEN (2026-05-18): same picking + structure logic, restricted
+    # to legs from PROVEN_BOTS_WHITELIST. Tests whether the "good legs only"
+    # combo strategy holds up live.
+    "bot_acca_proven": {
+        "structure":          "straight",
+        "bot_whitelist":      PROVEN_BOTS_WHITELIST,
+        "min_legs":           2,   # fewer source bots = some days only 2 legs available
+        "max_legs":           5,
+        "min_per_leg_edge":   0.05,
+        "max_per_leg_odds":   2.50,
+        "min_per_leg_odds":   1.40,
+        "min_combined_edge":  0.10,
+        "max_combined_odds":  50.0,
+        "kelly_fraction":     0.05,
+        "max_stake_pct":      0.005,
+        "min_stake":          1.0,
+    },
+    "bot_combo_proven_system": {
+        "structure":          "no_singles",
+        "bot_whitelist":      PROVEN_BOTS_WHITELIST,
+        "min_legs":           2,
+        "max_legs":           5,
+        "min_per_leg_edge":   0.05,
+        "max_per_leg_odds":   2.50,
+        "min_per_leg_odds":   1.40,
+        "min_combined_edge":  0.10,
+        "max_combined_odds":  50.0,
+        "kelly_fraction":     0.05,
+        "max_stake_pct":      0.005,
         "min_stake":          1.0,
     },
 }
@@ -114,15 +168,18 @@ class CandidateLeg:
     bot_source: str       # which bot placed this single (for context only)
 
 
-def _fetch_todays_singles() -> list[CandidateLeg]:
+def _fetch_todays_singles(whitelist: set | None = None) -> list[CandidateLeg]:
     """Pull today's pending pre-match singles. Excludes:
       • Inplay bets (different cohort / not combinable with pre-match)
       • Combo bets themselves (no nested combos)
       • Bets that already settled (we want forward-looking)
+      • All acca/combo bots' own bets (filter via name NOT LIKE)
+
+    `whitelist`: optional set of bot names to restrict to (for proven variants).
     """
     today_utc = datetime.now(timezone.utc).date().isoformat()
-    rows = execute_query(
-        """
+    params = [today_utc]
+    sql = """
         SELECT sb.id::text       AS bet_id,
                sb.match_id::text AS match_id,
                sb.market,
@@ -136,10 +193,13 @@ def _fetch_todays_singles() -> list[CandidateLeg]:
           AND sb.combo_legs IS NULL
           AND DATE(sb.pick_time AT TIME ZONE 'UTC') = %s
           AND b.name NOT LIKE 'inplay%%'
-          AND b.name <> %s
-        """,
-        [today_utc, ACCA_CONFIG["name"]],
-    ) or []
+          AND b.name NOT LIKE 'bot_acca%%'
+          AND b.name NOT LIKE 'bot_combo%%'
+    """
+    if whitelist:
+        sql += " AND b.name = ANY(%s)"
+        params.append(list(whitelist))
+    rows = execute_query(sql, params) or []
     out: list[CandidateLeg] = []
     for r in rows:
         odds = float(r["odds"] or 0)
@@ -312,25 +372,36 @@ def _place_one(bot_name: str, cfg: dict, legs: list[CandidateLeg]) -> dict:
 
 
 def run_acca_pass(dry_run: bool = False) -> dict:
-    """Run the acca-style bots for the day. Picks legs ONCE, places one bet per
-    registered variant so the two paper bots run on identical picks (clean
-    side-by-side comparison of straight vs no_singles system).
+    """Run the acca-style bots for the day. Each variant uses its own leg pool
+    based on its `bot_whitelist`:
+      • bot_acca_value / bot_combo_system  → whitelist=None → all bots' legs
+      • bot_acca_proven / bot_combo_proven_system → restricted to proven bots
+    Variants sharing the same whitelist get identical legs (clean comparison
+    between straight vs system stake distribution on the same picks).
 
-    Returns dict with `picks_summary` and per-bot `placed/reason`.
+    Returns dict with per-variant `placed/reason`.
     """
-    # Pick legs once — shared across all variants
-    primary_cfg = ACCA_VARIANTS["bot_acca_value"]
-    candidates = _fetch_todays_singles()
-    legs = _pick_legs(candidates, primary_cfg)
+    # Cache leg pools by whitelist tuple (so each unique whitelist only queries DB once)
+    leg_cache: dict = {}
 
-    if len(legs) < primary_cfg["min_legs"]:
-        console.print(f"[dim]Acca pass: only {len(legs)} qualifying legs today (need ≥{primary_cfg['min_legs']}). Skipping all variants.[/dim]")
-        return {"placed": False, "reason": "not_enough_legs", "n_legs": len(legs)}
+    def _legs_for(cfg: dict) -> list[CandidateLeg]:
+        wl = cfg.get("bot_whitelist")
+        cache_key = "ALL" if wl is None else tuple(sorted(wl))
+        if cache_key not in leg_cache:
+            candidates = _fetch_todays_singles(wl)
+            leg_cache[cache_key] = _pick_legs(candidates, cfg)
+        return leg_cache[cache_key]
 
     if dry_run:
-        return {"dry_run": True, "n_legs": len(legs), "legs": [l.__dict__ for l in legs]}
+        out_legs = {name: [l.__dict__ for l in _legs_for(cfg)] for name, cfg in ACCA_VARIANTS.items()}
+        return {"dry_run": True, "legs_per_variant": out_legs}
 
     results = {}
     for bot_name, cfg in ACCA_VARIANTS.items():
+        legs = _legs_for(cfg)
+        if len(legs) < cfg["min_legs"]:
+            console.print(f"[dim]Acca {bot_name}: only {len(legs)} qualifying legs (need ≥{cfg['min_legs']}). Skipping.[/dim]")
+            results[bot_name] = {"placed": False, "reason": "not_enough_legs", "n_legs": len(legs)}
+            continue
         results[bot_name] = _place_one(bot_name, cfg, legs)
-    return {"n_legs": len(legs), "variants": results}
+    return {"variants": results}
