@@ -19,16 +19,19 @@ Pick **3 unrelated single bets** from today's Coolbet menu. Different matches, i
 
 | Leg | Match | Selection | Single odds |
 |-----|-------|-----------|-------------|
-| 1   |       |           |             |
-| 2   |       |           |             |
-| 3   |       |           |             |
+| 1   |  FC P.Ferreira
+         Penafiel     |    draw       |      3.75       |
+| 2   |   Portimonense
+          SC Farense    |    draw       |     3.4        |
+| 3   |   Atletico Sarmiento de la Banda
+          Tucuman Central    |    draw       |     3.3        |
 
 Now combine them on the Coolbet slip as a 3-fold acca. Note the offered combo odds:
 
 | Calculation | Value |
 |---|---|
 | Product of single odds (leg1 × leg2 × leg3) |  |
-| Coolbet's offered acca odds |  |
+| Coolbet's offered acca odds | 42.07 |
 | Ratio (offered / product) |  |
 
 **Interpretation:**
@@ -44,11 +47,14 @@ Repeat the test with another 3-fold to confirm (sometimes one leg's market has w
 
 Pick **one match where Coolbet supports SGMs** (look for "Bet Builder" / "Same Game Multi" / "Combo" on the match page). The strongest correlated pair to test is **BTTS + Over 2.5**:
 
+game: Argentinos Juniors
+      Belgrano
+
 | Single-leg odds | Value |
 |---|---|
-| BTTS Yes |  |
-| Over 2.5 |  |
-| Product (BTTS × Over 2.5) |  |
+| BTTS Yes | 2.45 |
+| Over 2.5 | 2.95 |
+| Product (BTTS × Over 2.5) | 3.25 | ---- bet builder
 | Coolbet's offered SGM odds (BTTS + Over 2.5) |  |
 
 **Interpretation:**
@@ -58,11 +64,15 @@ Pick **one match where Coolbet supports SGMs** (look for "Bet Builder" / "Same G
 
 For the **strongest possible test**, take a heavy home favourite (e.g., home win at 1.30) and combine with "home team to score 2+ goals." These are massively correlated (if the heavy favourite wins, they usually score multiple goals). Note the SGM price vs the product — if Coolbet doesn't deflate the price meaningfully, we have a smoking gun.
 
+
+game: Inter Miami CF vs
+      Portland Timbers
+
 | Strong-correlation pair | Value |
 |---|---|
-| Home win (heavy favourite) |  |
-| Home team 2+ goals |  |
-| Product |  |
+| Home win (heavy favourite) | 1.27 |
+| Home team 2+ goals |  | over 2 - 1.27, over 2.5 - 1.61
+| Product | 1.75  |
 | Coolbet SGM |  |
 | Ratio (Coolbet / product) |  |
 
