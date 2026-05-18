@@ -235,6 +235,49 @@ def print_bot_report(bot: str, bot_rows: list[dict], min_bets: int) -> list[dict
     return buckets
 
 
+def all_slices_for_bot(bot: str, bot_rows: list[dict]) -> list[dict]:
+    """Return stats for every slice (not just loss buckets) for CSV export."""
+    out = []
+
+    def emit(slice_type: str, label: str, rows: list[dict]):
+        s = slice_stats(rows)
+        out.append({
+            "bot": bot,
+            "slice_type": slice_type,
+            "label": label,
+            "backtest_n": s["n"],
+            "backtest_wins": s["wins"],
+            "backtest_roi": round(s["roi"], 2),
+            "backtest_pnl": round(s["pnl"], 2),
+        })
+
+    # Overall
+    emit("overall", "all", bot_rows)
+
+    # By selection
+    by_sel = defaultdict(list)
+    for r in bot_rows:
+        by_sel[r["selection"]].append(r)
+    for sel, rows in by_sel.items():
+        emit("selection", sel, rows)
+
+    # By odds bucket
+    by_odds = defaultdict(list)
+    for r in bot_rows:
+        by_odds[r["odds_bucket"]].append(r)
+    for bucket, rows in by_odds.items():
+        emit("odds_bucket", bucket, rows)
+
+    # By tier group
+    by_tier = defaultdict(list)
+    for r in bot_rows:
+        by_tier[r["tier_group"]].append(r)
+    for tg, rows in by_tier.items():
+        emit("tier", tg, rows)
+
+    return out
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--min-bets", type=int, default=30,
@@ -242,6 +285,9 @@ def main():
     p.add_argument("--bot", default=None, help="Filter to a single bot")
     p.add_argument("--show-all", action="store_true",
                    help="Show all bots including those with no loss buckets")
+    p.add_argument("--csv-out", default=None, metavar="PATH",
+                   help="Write full slice table (all bots × all slices) to this CSV path "
+                        "for use by slice_live_validate.py")
     args = p.parse_args()
 
     rows = load_rows()
@@ -255,6 +301,8 @@ def main():
     bots = [args.bot] if args.bot else sorted(by_bot.keys(), key=lambda b: -len(by_bot[b]))
 
     summary: list[dict] = []
+    all_slice_rows: list[dict] = []
+
     for bot in bots:
         bot_rows = by_bot.get(bot, [])
         if not bot_rows:
@@ -269,6 +317,7 @@ def main():
             "pnl": s["pnl"],
             "loss_buckets": len(buckets) if buckets else 0,
         })
+        all_slice_rows.extend(all_slices_for_bot(bot, bot_rows))
 
     if not args.bot:
         print(f"\n{'━'*80}")
@@ -278,6 +327,17 @@ def main():
         for s in sorted(summary, key=lambda x: x["pnl"]):
             bucket_flag = f"  ← {s['loss_buckets']} bucket(s)" if s["loss_buckets"] > 0 else ""
             print(f"{s['bot']:<30} {s['n']:>6d} {s['roi']:>+7.1f}% €{s['pnl']:>+8.0f}{bucket_flag}")
+
+    if args.csv_out:
+        import csv as _csv
+        out_path = Path(args.csv_out)
+        fieldnames = ["bot", "slice_type", "label", "backtest_n", "backtest_wins",
+                      "backtest_roi", "backtest_pnl"]
+        with out_path.open("w", newline="") as f:
+            w = _csv.DictWriter(f, fieldnames=fieldnames)
+            w.writeheader()
+            w.writerows(all_slice_rows)
+        print(f"\nSlice table written → {out_path}  ({len(all_slice_rows)} rows)")
 
 
 if __name__ == "__main__":
