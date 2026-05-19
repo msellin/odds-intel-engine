@@ -565,6 +565,25 @@ def _dc_tau(h: int, a: int, exp_h: float, exp_a: float, rho: float) -> float:
     return 1.0
 
 
+def _parse_af_xg(val) -> float | None:
+    """Parse an AF expected-goals field ('1.7', 1.7, etc.) into a float.
+
+    Returns None when the value is missing, non-numeric, or outside the
+    plausible per-team xG range [0.1, 6.0]. AF occasionally returns blank
+    strings for matches with no team-stats coverage — those collapse to None
+    so the Tier C fallback (TIER-C-AF-XG) keeps using its hardcoded prior.
+    """
+    if val is None:
+        return None
+    try:
+        f = float(str(val).strip().rstrip("%"))
+    except (ValueError, TypeError):
+        return None
+    if not (0.1 <= f <= 6.0):
+        return None
+    return f
+
+
 def _poisson_probs(exp_h: float, exp_a: float, rho: float | None = None, league_draw_pct: float | None = None) -> dict:
     """Compute 1X2 + O/U (1.5, 2.5, 3.5) + BTTS probabilities from expected goals.
 
@@ -1852,26 +1871,56 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 total = hp + dp + ap
                 if total > 0:
                     hp, dp, ap = hp / total, dp / total, ap / total
-                # Tier C: AF-only fallback.
-                # - 1x2: AF win probabilities (normalised)
-                # - O/U 2.5: neutral 50/50 prior (AF doesn't give goals model)
-                # - BTTS: league-average historical BTTS rate as prior.
-                #   Czech Republic averages 35.8% BTTS; Sweden 63.7%. This is
-                #   real signal vs the market's implied probability, even without
-                #   match-specific Poisson expected-goals data.
+
+                # TIER-C-AF-XG (2026-05-19): when AF supplies its own expected-goals
+                # (af_goals_home / af_goals_away — e.g. "1.7" / "1.2"), feed them
+                # into _poisson_probs() instead of using the hardcoded 50/50 OU prior
+                # and league-average BTTS. Same scoring grid as Tier A; same DC rho;
+                # same DRAW-PER-LEAGUE inflation. Unlocks OU 1.5/2.5/3.5/4.5, BTTS,
+                # and AH markets (which gate on exp_home/exp_away) for every Tier C
+                # match where AF returns a goals model. Falls back to the old prior
+                # path when AF gives 1X2 but no xG (rare — small leagues with
+                # team-stats gaps). The +8% Tier C edge bump in DATA_TIER_EDGE_BUMP
+                # is kept unchanged here — that's a separate calibration decision.
+                xg_h = _parse_af_xg(af_pred_for_match.get("af_goals_home"))
+                xg_a = _parse_af_xg(af_pred_for_match.get("af_goals_away"))
                 league_id_str = str(match.get("league_id", ""))
                 btts_rate = _league_btts_rates.get(league_id_str, _global_btts_rate)
-                poisson_pred = {
-                    "home_prob": hp,
-                    "draw_prob": dp,
-                    "away_prob": ap,
-                    "over_25_prob": 0.50, "under_25_prob": 0.50,  # neutral prior
-                    "btts_yes_prob": btts_rate,
-                    "btts_no_prob": 1.0 - btts_rate,
-                    "exp_home": None,
-                    "exp_away": None,
-                    "data_tier": "C",
-                }
+
+                if xg_h is not None and xg_a is not None:
+                    league_tier = int(match.get("tier") or 1)
+                    tier_rho = _load_dc_rho_cache().get(league_tier)
+                    poisson_pred = _poisson_probs(xg_h, xg_a, rho=tier_rho, league_draw_pct=_ldp)
+                    # AF 1X2 percentages are usually close to but not identical to the
+                    # Poisson grid's renormalised probs. Trust the AF percentages for
+                    # the 1X2 markets (the /predictions endpoint blends form + H2H +
+                    # standings — more signal than xG alone), use the Poisson grid for
+                    # the goals/BTTS markets (which the AF response doesn't price).
+                    poisson_pred["home_prob"] = hp
+                    poisson_pred["draw_prob"] = dp
+                    poisson_pred["away_prob"] = ap
+                    poisson_pred["exp_home"] = xg_h
+                    poisson_pred["exp_away"] = xg_a
+                    poisson_pred["data_tier"] = "C"
+                else:
+                    # Fallback: AF gave us 1X2 but no usable xG.
+                    # - 1x2: AF win probabilities (normalised)
+                    # - O/U 2.5: neutral 50/50 prior (no goals model)
+                    # - BTTS: league-average historical BTTS rate as prior.
+                    #   Czech Republic averages 35.8% BTTS; Sweden 63.7%. This is
+                    #   real signal vs the market's implied probability, even without
+                    #   match-specific Poisson expected-goals data.
+                    poisson_pred = {
+                        "home_prob": hp,
+                        "draw_prob": dp,
+                        "away_prob": ap,
+                        "over_25_prob": 0.50, "under_25_prob": 0.50,  # neutral prior
+                        "btts_yes_prob": btts_rate,
+                        "btts_no_prob": 1.0 - btts_rate,
+                        "exp_home": None,
+                        "exp_away": None,
+                        "data_tier": "C",
+                    }
             else:
                 continue  # No Poisson data AND no AF prediction — truly skip
 

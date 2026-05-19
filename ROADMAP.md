@@ -172,6 +172,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 - Fixtures with any model data: ~200/467 (43%)
 - Matches with Tier A predictions: ~50-100/day
 - Matches with Tier B predictions: ~180/day
+- Matches with Tier C predictions (AF xG → Poisson grid since TIER-C-AF-XG 2026-05-19): every fixture where AF returns `af_goals_home/_away` — typically the rest of the slate, including small leagues like Syria/Gabon/Uganda/Iraq. OU/BTTS/AH now fire here instead of being hardcoded to a 50/50 prior.
 - Singapore S.League (+27.5% ROI): no live odds feed — biggest gap
 
 ---

@@ -5973,6 +5973,65 @@ def _():
     assert "(1.40, 4.00)" not in greek, "bot_greek_turkish old odds_range (1.40, 4.00) still present"
 
 
+@test("TIER-C-AF-XG — Tier C fallback feeds AF expected-goals into _poisson_probs")
+def _():
+    """Tier C matches (no historical CSV coverage for either team) used to get
+    a hardcoded 50/50 OU prior + league-avg BTTS, and no AH/OU 1.5/3.5 at all
+    because exp_home/exp_away stayed None. AF's /predictions endpoint already
+    gives us per-team expected goals (af_goals_home / af_goals_away) — feed
+    those into the same Poisson grid Tier A uses so OU, BTTS, and AH markets
+    all get model-priced for every match where AF supplies xG.
+    """
+    import pathlib
+    from workers.jobs.daily_pipeline_v2 import _parse_af_xg, _poisson_probs
+
+    # 1. Parser: rejects garbage, accepts plausible xG, clamps unreasonable ones.
+    assert _parse_af_xg("1.7") == 1.7
+    assert _parse_af_xg(1.2) == 1.2
+    assert _parse_af_xg("1.2%") == 1.2  # tolerate stray % suffix
+    assert _parse_af_xg(None) is None
+    assert _parse_af_xg("") is None
+    assert _parse_af_xg("not-a-number") is None
+    assert _parse_af_xg("-0.5") is None  # negative
+    assert _parse_af_xg("7.0") is None   # outside plausible per-team range
+
+    # 2. _poisson_probs on AF xG must produce non-trivial markets (not the old
+    #    hardcoded 0.50 / 0.50 OU prior).
+    probs = _poisson_probs(1.7, 1.2)
+    assert abs(probs["over_25_prob"] - 0.50) > 0.02, (
+        f"over_25_prob too close to the legacy 0.50 prior (got {probs['over_25_prob']:.3f}) — "
+        "Poisson grid should produce something meaningful for xG (1.7, 1.2)"
+    )
+    assert 0.0 < probs["btts_yes_prob"] < 1.0
+    assert 0.0 < probs["over_15_prob"] < 1.0
+    assert 0.0 < probs["over_35_prob"] < 1.0
+
+    # 3. Source guard: the Tier C fallback must call _poisson_probs and set
+    #    exp_home/exp_away when AF supplies xG. Without this, AH bots stay
+    #    stuck at zero candidates for Tier C and OU bets keep using the
+    #    coin-flip prior.
+    src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    start = src.index("# TIER-C-AF-XG")
+    end = src.index("# Fallback: AF gave us 1X2 but no usable xG", start)
+    block = src[start:end]
+    assert "_parse_af_xg(af_pred_for_match.get(\"af_goals_home\"))" in block, (
+        "Tier C fallback must parse af_goals_home via _parse_af_xg"
+    )
+    assert "_parse_af_xg(af_pred_for_match.get(\"af_goals_away\"))" in block, (
+        "Tier C fallback must parse af_goals_away via _parse_af_xg"
+    )
+    assert "_poisson_probs(xg_h, xg_a" in block, (
+        "Tier C fallback must feed AF xG into _poisson_probs (not the hardcoded prior)"
+    )
+    assert "poisson_pred[\"exp_home\"] = xg_h" in block and \
+           "poisson_pred[\"exp_away\"] = xg_a" in block, (
+        "Tier C fallback must set exp_home/exp_away so AH bots can fire"
+    )
+    assert 'poisson_pred["data_tier"] = "C"' in block, (
+        "Tier C path must still tag data_tier='C' so DATA_TIER_EDGE_BUMP applies"
+    )
+
+
 @test("FIT-RHO-COLNAMES — fit_league_rho.py uses score_home/score_away not home_score/away_score")
 def _():
     import pathlib

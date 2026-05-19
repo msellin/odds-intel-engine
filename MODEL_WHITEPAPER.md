@@ -232,7 +232,10 @@ Not all matches have sufficient data for both models:
 |------|-------------|-------------|-----------------|
 | A | Full historical stats + odds (18 leagues) | Poisson + XGBoost ensemble | 100% |
 | B | Results-only history (22+ leagues) | Poisson only | 50% |
-| D | No history | API-Football prediction only | Not bet on |
+| C | No history, AF supplies xG (af_goals_home/_away) | AF 1X2 + Poisson grid driven by AF xG | 20% |
+| D | No history and AF has no xG | Skipped — no model can fire | Not bet on |
+
+**TIER-C-AF-XG (2026-05-19):** Tier C was previously hardcoded to a 50/50 OU prior + league-average BTTS with `exp_home/exp_away = None` (so AH and OU 1.5/3.5 never fired). API-Football's `/predictions` endpoint actually returns per-team expected goals (`af_goals_home`, `af_goals_away`) for every match it covers — typically ~70-80% of fixtures including most non-CSV-covered leagues. The fallback now parses those xG values and feeds them into the same `_poisson_probs()` grid Tier A uses (same Dixon-Coles rho, same per-league draw inflation). 1X2 probabilities still come from AF's blended percentages (form + H2H + standings — stronger than xG alone); OU 1.5/2.5/3.5/4.5, BTTS, and AH are now model-priced. The +8% `DATA_TIER_EDGE_BUMP` for Tier C is kept unchanged so the existing safety margin still applies.
 
 ---
 
@@ -623,7 +626,7 @@ Alignment will be activated (move from log-only to staking modifier) after:
 | **Edge** | `model_probability - implied_probability`. Positive = model thinks outcome is more likely than the market. |
 | **Platt scaling** | Post-hoc sigmoid calibration: `1/(1+exp(-(a*p+b)))`. Used for 1X2 markets. O/U uses a 2-feature logistic `sigmoid(w0*p + w1*log(odds) + b)` to handle odds-conditional miscalibration. |
 | **Dixon-Coles** | Correction to bivariate Poisson for low-scoring outcomes (0-0, 1-0, 0-1, 1-1) where independence assumption fails. |
-| **Data tier** | Classification of prediction quality: A (full data), B (results-only), D (API-Football prediction only). |
+| **Data tier** | Classification of prediction quality: A (full data, ensemble), B (results-only, Poisson), C (no history, AF xG drives Poisson grid + AF 1X2), D (no history and no AF xG — skipped). |
 | **Pseudo-CLV** | CLV computed for ALL matches (not just bets) by comparing opening and closing implied probabilities. Used as ML training target. |
 
 ---
