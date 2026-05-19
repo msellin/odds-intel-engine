@@ -6191,7 +6191,13 @@ def _():
 
     cli_src = pathlib.Path("scripts/place_coolbet_bets.py").read_text()
     assert "--execute" in cli_src, "CLI must have --execute flag"
+    assert "--record" in cli_src, "CLI must have --record flag"
     assert "place_all_bets" in cli_src, "CLI must call place_all_bets"
+
+    # Three-mode design: record=, execute=, dry-run default
+    assert "record=args.record" in placer_src or "record=" in placer_src, \
+        "place_all_bets must accept record= param"
+    assert "if execute:" in placer_src, "execute mode must imply record mode"
 
 
 if __name__ == "__main__":

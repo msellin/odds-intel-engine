@@ -579,17 +579,29 @@ def _place_bet_api(
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-def place_all_bets(execute: bool = False, min_edge: float | None = None) -> list[dict]:
+def place_all_bets(
+    record: bool = False,
+    execute: bool = False,
+    min_edge: float | None = None,
+) -> list[dict]:
     """
-    Run the full placement cycle.
+    Run the placement cycle in one of three modes:
+
+        record=False, execute=False  →  dry-run: print candidates, no DB writes
+        record=True,  execute=False  →  write real_bets only (replaces manual admin work)
+        record=True,  execute=True   →  write real_bets + place bet at Coolbet API
+
+    All modes are idempotent: already-recorded bets are filtered out by the
+    NOT EXISTS check in load_qualified_bets().
 
     Args:
-        execute: False = dry-run (print only); True = call API and write real_bets.
+        record:   Write matching records to real_bets table.
+        execute:  Also call the Coolbet API to place the bet (implies record=True).
         min_edge: Override COOLBET_MIN_EDGE for this run (fraction, e.g. 0.03).
-
-    Returns:
-        List of result dicts per candidate bet.
     """
+    if execute:
+        record = True
+
     global _MIN_EDGE
     if min_edge is not None:
         _MIN_EDGE = min_edge
@@ -603,7 +615,7 @@ def place_all_bets(execute: bool = False, min_edge: float | None = None) -> list
 
     log.info("Found %d qualifying simulated_bets to evaluate", len(pending))
 
-    # fo-category fallback: load once if search fails for any bet
+    # fo-category fallback: loaded lazily if search misses
     _category_events: list[dict] | None = None
 
     results = []
@@ -616,7 +628,7 @@ def place_all_bets(execute: bool = False, min_edge: float | None = None) -> list
         edge_pct   = float(bet["edge_percent"])
         label      = f"{home} vs {away} | {mkt} {sel} @ {model_odds:.3f} (edge {edge_pct:+.2f}%)"
 
-        # 1. Find Coolbet event — search first (fast), fall back to fo-category tree
+        # 1. Find Coolbet event
         ev = search_coolbet_event(session, home, away)
         if ev is None:
             if _category_events is None:
@@ -630,10 +642,9 @@ def place_all_bets(execute: bool = False, min_edge: float | None = None) -> list
 
         coolbet_match_id = ev["id"]
 
-        # 2. Get market details — sidebets has full offer list for a single match
+        # 2. Get full market list for this match
         bet_offers = fetch_sidebets(session, coolbet_match_id)
         if not bet_offers:
-            # sidebets failed; fall back to basic offers from event discovery
             bet_offers = ev["bet_offers"]
 
         bo_id, oc_id, ev_odds = find_market_outcome(bet_offers, mkt, sel)
@@ -643,38 +654,42 @@ def place_all_bets(execute: bool = False, min_edge: float | None = None) -> list
             results.append({**bet, "outcome": "no_market"})
             continue
 
-        if not execute:
-            print(f"  [DRY-RUN] {label}  →  coolbet_match={coolbet_match_id} "
-                  f"bo={bo_id} oc={oc_id} coolbet_odds={ev_odds:.3f} "
-                  f"stake=€{_DEFAULT_STAKE:.2f}")
+        # ── DRY-RUN ──────────────────────────────────────────────────────────
+        if not record:
+            coolbet_odds_str = f"{ev_odds:.3f}" if ev_odds else "?"
+            print(f"  [DRY-RUN] {label}  →  match={coolbet_match_id} "
+                  f"bo={bo_id} oc={oc_id} odds={coolbet_odds_str} stake=€{_DEFAULT_STAKE:.2f}")
             results.append({**bet, "outcome": "dry_run",
                              "coolbet_match_id": coolbet_match_id,
                              "bet_offer_id": bo_id, "outcome_id": oc_id,
                              "ev_odds": ev_odds})
             continue
 
-        # 3. Verify live odds and get oddsId UUID (required for bet payload)
+        # ── RECORD / EXECUTE ─────────────────────────────────────────────────
+        # Get live odds (validates they haven't dropped; also gets oddsId for execute)
         live_odds, odds_uuid = get_live_odds_and_id(session, bo_id, oc_id, model_odds)
         if live_odds is None:
-            results.append({**bet, "outcome": "odds_dropped"})
-            continue
-        if odds_uuid is None:
-            log.warning("Could not get oddsId UUID for %s — cannot place bet", label)
-            results.append({**bet, "outcome": "no_odds_uuid"})
-            continue
+            # Odds dropped too far — still record at model odds so data is tracked
+            live_odds = ev_odds or model_odds
+            odds_uuid = None
+            log.info("Odds dropped vs model — recording at last-known Coolbet odds %.3f", live_odds)
 
-        # 4. Place bet
-        match_name = f"{ev['home']} - {ev['away']}"
-        try:
-            ticket_id = _place_bet_api(
-                session, oc_id, odds_uuid, _DEFAULT_STAKE, match_name, f"{mkt} {sel}"
-            )
-        except Exception as e:
-            log.error("Placement failed for %s: %s", label, e)
-            results.append({**bet, "outcome": "api_error", "error": str(e)})
-            continue
+        ticket_id = None
 
-        # 5. Write to real_bets
+        if execute:
+            if odds_uuid is None:
+                log.warning("No oddsId UUID for %s — cannot place at Coolbet, recording only", label)
+            else:
+                match_name = f"{ev['home']} - {ev['away']}"
+                try:
+                    ticket_id = _place_bet_api(
+                        session, oc_id, odds_uuid, _DEFAULT_STAKE, match_name, f"{mkt} {sel}"
+                    )
+                    log.info("✓ Coolbet ticket placed: %s", ticket_id)
+                except Exception as e:
+                    log.error("Coolbet placement failed for %s: %s — recording only", label, e)
+
+        # Write to real_bets (always in record mode)
         real_bet_id = store_real_bet(
             match_id=str(bet["match_id"]),
             market=mkt,
