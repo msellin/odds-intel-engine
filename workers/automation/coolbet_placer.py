@@ -34,7 +34,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from rapidfuzz import fuzz, process as rfprocess
 from workers.api_clients.db import execute_query
-from workers.api_clients.supabase_client import store_real_bet
+from workers.api_clients.supabase_client import store_coolbet_odds_snapshot, store_real_bet
 from workers.automation.coolbet_session import CoolbetSession
 
 log = logging.getLogger(__name__)
@@ -653,6 +653,25 @@ def place_all_bets(
                      mkt, sel, label, coolbet_match_id)
             results.append({**bet, "outcome": "no_market"})
             continue
+
+        # ── Snapshot Coolbet odds (all modes, including dry-run) ─────────────
+        if ev_odds:
+            match_date = bet.get("match_date")
+            mins_to_ko = None
+            if match_date:
+                import math
+                if match_date.tzinfo is None:
+                    match_date = match_date.replace(tzinfo=timezone.utc)
+                delta_mins = (match_date - datetime.now(timezone.utc)).total_seconds() / 60
+                mins_to_ko = -int(math.ceil(delta_mins))  # negative = pre-match
+            try:
+                store_coolbet_odds_snapshot(
+                    str(bet["match_id"]), mkt, sel, ev_odds, mins_to_ko
+                )
+                log.debug("Snapshot stored: %s %s %s %.3f (%s min to KO)",
+                          home, mkt, sel, ev_odds, mins_to_ko)
+            except Exception as e:
+                log.warning("Failed to store Coolbet odds snapshot: %s", e)
 
         # ── DRY-RUN ──────────────────────────────────────────────────────────
         if not record:

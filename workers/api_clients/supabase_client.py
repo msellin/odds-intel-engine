@@ -702,6 +702,34 @@ def store_odds(match_id: str, match_data: dict, minutes_to_kickoff: int = None):
                 conn.commit()
 
 
+def store_coolbet_odds_snapshot(
+    match_id: str,
+    market: str,
+    selection: str,
+    odds: float,
+    minutes_to_kickoff: int | None = None,
+) -> None:
+    """
+    Insert a single Coolbet odds row into odds_snapshots.
+    Called by the Coolbet placer on every run (including dry-runs) so we build
+    a Coolbet odds time-series over time.
+    """
+    from workers.api_clients.db import get_conn
+    now = datetime.now(timezone.utc).isoformat()
+    is_closing = minutes_to_kickoff is not None and abs(minutes_to_kickoff) <= 5
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO odds_snapshots
+                   (match_id, bookmaker, market, selection, odds, timestamp,
+                    is_closing, minutes_to_kickoff)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                (match_id, "Coolbet", market, selection, odds, now,
+                 is_closing, minutes_to_kickoff),
+            )
+            conn.commit()
+
+
 # ============================================================
 # LIVE TRACKING
 # ============================================================

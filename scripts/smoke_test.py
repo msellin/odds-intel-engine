@@ -6199,6 +6199,13 @@ def _():
         "place_all_bets must accept record= param"
     assert "if execute:" in placer_src, "execute mode must imply record mode"
 
+    # Coolbet odds snapshot on every run
+    assert "store_coolbet_odds_snapshot" in placer_src, \
+        "placer must capture Coolbet odds snapshot on every run"
+    assert "store_coolbet_odds_snapshot" in pathlib.Path(
+        "workers/api_clients/supabase_client.py"
+    ).read_text(), "store_coolbet_odds_snapshot must exist in supabase_client"
+
 
 if __name__ == "__main__":
     main()
