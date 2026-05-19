@@ -174,7 +174,7 @@ def load_qualified_bets() -> list[dict]:
 
     rows = execute_query(
         """
-        SELECT
+        SELECT DISTINCT ON (sb.match_id, sb.market, sb.selection)
             sb.id             AS simulated_bet_id,
             sb.match_id,
             sb.market,
@@ -187,7 +187,8 @@ def load_qualified_bets() -> list[dict]:
             b.name            AS bot_name,
             ht.name           AS home_team,
             at2.name          AS away_team,
-            m.date            AS match_date
+            m.date            AS match_date,
+            COUNT(*) OVER (PARTITION BY sb.match_id, sb.market, sb.selection) AS bot_count
         FROM simulated_bets sb
         JOIN bots          b   ON b.id   = sb.bot_id
         JOIN matches       m   ON m.id   = sb.match_id
@@ -204,11 +205,17 @@ def load_qualified_bets() -> list[dict]:
                 AND rb.selection = sb.selection
                 AND DATE(rb.placed_at) = CURRENT_DATE
           )
-        ORDER BY sb.edge_percent DESC
+        ORDER BY sb.match_id, sb.market, sb.selection, sb.edge_percent DESC
         """,
         (_MIN_EDGE,),
     )
-    return [dict(r) for r in rows]
+    results = [dict(r) for r in rows]
+    for r in results:
+        if int(r.get("bot_count", 1)) > 1:
+            log.info("  %s vs %s | %s %s — %s bots agree, using highest-edge row",
+                     r["home_team"], r["away_team"], r["market"], r["selection"],
+                     r["bot_count"])
+    return results
 
 
 # ── Coolbet event fetcher ─────────────────────────────────────────────────────
