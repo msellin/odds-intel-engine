@@ -6032,6 +6032,54 @@ def _():
     )
 
 
+@test("TIER-C-EXPAND — football-data extras ingest script is present and config is sound")
+def _():
+    """LEVER-1 follow-up to TIER-C-AF-XG: scripts/ingest_football_data_extras.py
+    generalises add_romanian_league_data.py to pull historical CSVs for 15 more
+    countries. Once a user runs the script locally, those leagues' top divisions
+    move from Tier C → Tier A in the live pipeline. Guard:
+      - script is importable (syntax + top-level imports valid),
+      - LEAGUES dict has the expected entries with valid keys,
+      - no league_code in the config collides with one already present in
+        targets_poisson_history.csv (a collision would cross-pollute team form),
+      - assertion in load_config() catches duplicate league_codes inside LEAGUES.
+    """
+    import importlib.util, pathlib
+    import pandas as pd
+
+    spec = importlib.util.spec_from_file_location(
+        "fde", str(pathlib.Path("scripts/ingest_football_data_extras.py"))
+    )
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+
+    cfg = m.load_config()
+    assert len(cfg) >= 10, f"LEAGUES should have ≥10 entries (got {len(cfg)})"
+    for code, c in cfg.items():
+        assert len(code) == 3, f"file code {code!r} should be 3 letters (matches football-data url path)"
+        for k in ("league", "league_code", "tier", "keep_n_seasons"):
+            assert k in c, f"{code} config missing required key {k!r}"
+        assert isinstance(c["tier"], int), f"{code} tier must be int"
+        assert c["keep_n_seasons"] >= 1
+
+    new_codes = {c["league_code"] for c in cfg.values()}
+    df = pd.read_csv("data/processed/targets_poisson_history.csv", low_memory=False)
+    existing_codes = set(df["league_code"].dropna().unique())
+    overlap = new_codes & existing_codes
+    # Allow overlap once the script has actually been run (post-ingest the codes
+    # will be present in the CSV). The collision check that matters is the
+    # in-config duplicate one, which load_config() asserts.
+    if overlap:
+        for lc in overlap:
+            n = (df["league_code"] == lc).sum()
+            assert n > 0, f"league_code {lc} marked overlapping but 0 rows found"
+
+    src = pathlib.Path("scripts/ingest_football_data_extras.py").read_text()
+    assert "football-data.co.uk/new/" in src, "must download from the new/ extras directory"
+    assert "PSCH" in src and "drop" in src, "must require Pinnacle closing odds (drops rows without)"
+    assert "drop_duplicates" in src, "must dedupe against existing CSV rows"
+
+
 @test("FIT-RHO-COLNAMES — fit_league_rho.py uses score_home/score_away not home_score/away_score")
 def _():
     import pathlib

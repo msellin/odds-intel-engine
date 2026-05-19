@@ -34,7 +34,7 @@ We do not decide upfront which signals matter. We collect everything, store it w
 | `model_disagreement` | `simulated_bets` + `match_feature_vectors` | Morning pipeline | ✅ Running |
 
 Data tier system:
-- **Tier A**: team in targets_poisson_history.csv (European leagues) — Poisson + XGBoost available
+- **Tier A**: team in targets_poisson_history.csv — Poisson + XGBoost available. European leagues + Romania (RO1, since 2026-05-12); TIER-C-EXPAND (2026-05-19) ships a parameterised ingest script (`scripts/ingest_football_data_extras.py`) for 15 more top divisions — ARG/AUT/BRA/CHE/CHN/DNK/FIN/IRL/JPN/MEX/NOR/POL/RUS/SWE/USA — that need a local run to populate the CSV.
 - **Tier B**: team in targets_global.csv (global ELO dataset) — Poisson only
 - **Tier C** (since TIER-C-AF-XG 2026-05-19): no historical CSV, but AF supplies xG (`af_goals_home/_away`). AF 1X2 percentages + `_poisson_probs(af_xg_home, af_xg_away)` for OU 1.5/2.5/3.5/4.5, BTTS, AH. `data_tier_mult = 0.20`, `+8%` edge bump.
 - **Tier D**: no historical data **and** AF has no xG — skipped entirely (no model can fire).
