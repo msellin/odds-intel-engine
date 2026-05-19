@@ -319,25 +319,31 @@ def search_coolbet_event(
         "layout":   "EUROPEAN",
     })
     if resp.status_code != 200:
-        log.debug("Search %d for '%s'", resp.status_code, query)
+        log.info("Search HTTP %d for query '%s' ('%s vs %s') — will try fo-category",
+                 resp.status_code, query, home, away)
         return None
 
     data = resp.json()
-    # Response may be a flat list of events or wrapped — handle both
     raw_events = (
         data if isinstance(data, list)
         else data.get("events") or data.get("results") or []
     )
 
-    # Parse each raw event and fuzzy-match
     candidates = [e for e in (_parse_event(ev) for ev in raw_events) if e]
     if not candidates:
-        log.debug("Search for '%s' returned 0 parseable events", query)
+        log.info("Search for '%s' returned 0 events ('%s vs %s') — will try fo-category",
+                 query, home, away)
         return None
 
     match = fuzzy_match_event(home, away, candidates)
     if match:
-        log.debug("Search found event %s for '%s vs %s'", match["id"], home, away)
+        log.info("Search matched '%s vs %s' → Coolbet '%s vs %s' (id=%s)",
+                 home, away, match["home"], match["away"], match["id"])
+    else:
+        best = f"{candidates[0]['home']} vs {candidates[0]['away']}" if candidates else "—"
+        log.info("Search found %d events for '%s' but none matched '%s vs %s' "
+                 "(best candidate: '%s') — will try fo-category",
+                 len(candidates), query, home, away, best)
     return match
 
 
@@ -395,9 +401,10 @@ def fuzzy_match_event(
         return None
     _, score, idx = result
     if score < _FUZZY_THRESHOLD:
-        log.debug("No Coolbet event for '%s vs %s' (best %d)", home, away, score)
+        log.info("Fuzzy match FAILED for '%s vs %s' — best was '%s' (score %d < threshold %d)",
+                 home, away, event_keys[idx], score, _FUZZY_THRESHOLD)
         return None
-    log.debug("Matched '%s vs %s' → '%s' (score %d)", home, away, event_keys[idx], score)
+    log.info("Fuzzy matched '%s vs %s' → Coolbet '%s' (score %d)", home, away, event_keys[idx], score)
     return events[idx]
 
 
@@ -649,8 +656,10 @@ def place_all_bets(
 
         bo_id, oc_id, ev_odds = find_market_outcome(bet_offers, mkt, sel)
         if bo_id is None:
-            log.info("Market %s/%s not found for %s (Coolbet matchId=%s)",
-                     mkt, sel, label, coolbet_match_id)
+            available = [bo["criterion_label"] for bo in bet_offers]
+            log.info("Market %s/%s not found for %s (Coolbet matchId=%s) — "
+                     "available markets: %s",
+                     mkt, sel, label, coolbet_match_id, available or "none")
             results.append({**bet, "outcome": "no_market"})
             continue
 
