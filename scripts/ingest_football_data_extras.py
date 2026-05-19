@@ -69,8 +69,11 @@ LEAGUES: dict[str, dict] = {
     "POL": {"league": "Ekstraklasa",          "league_code": "PL1", "tier": 1, "keep_n_seasons": 5},
     "RUS": {"league": "Premier League (RU)",  "league_code": "RU1", "tier": 1, "keep_n_seasons": 5},
     "SWE": {"league": "Allsvenskan",          "league_code": "SE1", "tier": 1, "keep_n_seasons": 5},
-    "CHE": {"league": "Super League (CH)",    "league_code": "CH1", "tier": 1, "keep_n_seasons": 5},
     "USA": {"league": "Major League Soccer",  "league_code": "US1", "tier": 1, "keep_n_seasons": 5},
+    # NOTE: football-data.co.uk does not appear to publish Switzerland under
+    # the obvious 3-letter codes — `new/CHE.csv` returns the Chinese Super
+    # League data (the same content as `new/CHN.csv`), and `SUI` 404s. Drop
+    # Switzerland from this batch; add manually if a correct URL surfaces.
 }
 
 
