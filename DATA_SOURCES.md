@@ -61,6 +61,56 @@ Remaining headroom: ~60K req/day. AF Ultra required — **do NOT downgrade to Pr
 
 ---
 
+## Backfill state — what's actually in the DB (audit 2026-05-19)
+
+Audit triggered by TIER-C-EXPAND debugging surfaced several non-obvious facts about our historical data state. Captured here so future agents (and the human) don't re-derive them.
+
+### `backfill_historical.py` is "complete" but partial
+
+- `backfill_complete.flag` (repo root, dated 2026-05-10) makes the script short-circuit. **To force a re-run: `rm backfill_complete.flag`.** Rarely useful — see next bullet.
+- Every `backfill_progress` row is marked `status='complete'` and has `fixtures_done == fixtures_total`. So all PHASE 1/2/3 leagues were processed.
+- BUT `stats_done < fixtures_done` for many rows (e.g. Mexico Liga MX 2025: 327 fixtures, 147 stats — 45%). The `ROADMAP.md` figure of "73.4% match_stats coverage" is the global aggregate of this. **The 27% gap is irreducible** — AF doesn't supply stats for many small-league / lower-tier / women's / U-21 matches. Re-running the backfill won't add data AF doesn't have.
+- **Critically**: every row has `odds_done = 0`. The historical-odds path was never wired up in `backfill_historical.py` — the comment in the code reads `"AF doesn't serve historical odds for completed fixtures"`. This is the gap that `scripts/ingest_football_data_extras_odds.py` (TIER-C-EXPAND-ODDS) closes for the 14 TIER-C-EXPAND countries by pulling Pinnacle / Bet365 closing odds from football-data.co.uk.
+
+### DB match coverage for the TIER-C-EXPAND countries
+
+Snapshot 2026-05-19 (top division + tier-0 catch-all leagues):
+
+| Country | League | AF ID | Finished matches in DB |
+|---|---|---|---|
+| USA | MLS | 253 | 1,641 |
+| Argentina | Liga Profesional | 128 | 1,297 |
+| Argentina | Primera Nacional | 129 | 1,433 |
+| Brazil | Série A | 71 | 1,170 |
+| Brazil | Série B | 72 | 790 |
+| Mexico | Liga MX | 262 | 1,015 |
+| Japan | J1 League | 98 | 811 |
+| Sweden | Allsvenskan | 113 | 754 |
+| Norway | Eliteserien | 103 | 749 |
+| Switzerland | Super League | 207 | 689 |
+| Poland | Ekstraklasa | 106 | 603 |
+| Austria | Bundesliga | 218 | 582 |
+| Denmark | Superliga | 119 | 578 |
+| Czech | Liga | 345 | 546 |
+| China | Super League | 169 | 516 |
+| Russia | Premier League | 235 | 484 |
+
+All dating back to 2023-01-26. Total finished matches in DB across all leagues: ~52K.
+
+### football-data.co.uk gotchas
+
+- `/new/CHE.csv` returns **Chinese Super League** data (collision with `/new/CHN.csv`). Switzerland is unavailable via this directory. Use the mainstream `mmz4281/<season>/SC0.csv` route if needed.
+- `/new/<CODE>.csv` files contain **all seasons in one file**, columns: `Country, League, Season, Date, Time, Home, Away, HG, AG, Res, PSCH/D/A, MaxCH/D/A, AvgCH/D/A, BFECH/D/A, B365CH/D/A`. No separate file per season (unlike the mainstream `E0/SP1/D1` style which has one CSV per season).
+- Team-name churn across seasons is real: Norway has both `"Ham-Kam"` and `"HamKam"` strings; Russia has `"Arsenal Tula"` which can fuzzy-collide with English `"Arsenal"`. Existing `normalize_team_name` + `resolve_team` (with `rapidfuzz`) handles most cases; watch the `unmatched_teams` log on each ingest run.
+
+### Training-pipeline data sources (clarification)
+
+The Sunday weekly retrains (`fit_platt_offline.py`, `fit_league_rho.py`, `train.py`) all read from the **DB** (`matches`, `predictions`, `odds_snapshots`). They do NOT read `targets_poisson_history.csv` directly.
+
+The CSVs only feed `daily_pipeline_v2.compute_prediction()` at runtime for team-form lookup on live matches. Expanding the CSV (Lever 1 / TIER-C-EXPAND) helps live inference; it does not by itself feed training. The chain that feeds training is: backfill matches → backfill odds → backfill predictions → Sunday retrains pick up the new rows.
+
+---
+
 ## Remaining Cleanup
 
 - [x] ~~Remove `betexplorer_odds.py`~~ Done 2026-04-29

@@ -6080,6 +6080,64 @@ def _():
     assert "drop_duplicates" in src, "must dedupe against existing CSV rows"
 
 
+@test("TIER-C-EXPAND-ODDS — extras odds ingest script is present and uses in-memory match join")
+def _():
+    """LEVER-1 follow-up: scripts/ingest_football_data_extras_odds.py joins
+    football-data /new/ extras CSV closing odds to DB matches and inserts into
+    odds_snapshots. Key correctness properties guarded here:
+      - EXTRAS dict covers the 14 countries from TIER-C-EXPAND
+      - Uses load_all_matches_for_leagues() + find_match_in_memory() (one bulk
+        SELECT per league + in-memory dict lookup) instead of one DB query per
+        CSV row. Without this the EU-pooler latency × ~37k rows took >1h;
+        in-memory takes ~70s for the whole batch.
+      - Reuses the proven resolve_team / extract_odds_rows helpers from
+        ingest_football_data_csvs.py — same fuzzy team-name and odds parsing.
+      - Dedupes against existing odds_snapshots rows via existing_snapshot_keys.
+    """
+    import pathlib, importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "ifeo", str(pathlib.Path("scripts/ingest_football_data_extras_odds.py"))
+    )
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+
+    # 1. EXTRAS dict covers the TIER-C-EXPAND countries.
+    expected = {"ARG", "AUT", "BRA", "CHN", "DNK", "FIN", "IRL", "JPN",
+                "MEX", "NOR", "POL", "RUS", "SWE", "USA"}
+    assert set(m.EXTRAS) == expected, (
+        f"EXTRAS must cover the 14 TIER-C-EXPAND countries. "
+        f"Missing: {expected - set(m.EXTRAS)}, Extra: {set(m.EXTRAS) - expected}"
+    )
+    for code, cfg in m.EXTRAS.items():
+        for k in ("country", "league_names", "label"):
+            assert k in cfg, f"{code} cfg missing {k!r}"
+        assert isinstance(cfg["league_names"], list) and cfg["league_names"], (
+            f"{code} league_names must be non-empty list"
+        )
+
+    # 2. In-memory match-join helpers exist and are wired into ingest_one.
+    src = pathlib.Path("scripts/ingest_football_data_extras_odds.py").read_text()
+    assert "def load_all_matches_for_leagues(" in src, (
+        "load_all_matches_for_leagues() must exist (bulk DB read)"
+    )
+    assert "def find_match_in_memory(" in src, (
+        "find_match_in_memory() must exist (in-memory lookup)"
+    )
+    assert "matches_by_teams = load_all_matches_for_leagues(" in src, (
+        "ingest_one must call load_all_matches_for_leagues — without it the join "
+        "falls back to one DB query per row (~1h runtime instead of ~70s)"
+    )
+    assert "find_match_in_memory(kickoff_utc, home_id, away_id, matches_by_teams)" in src, (
+        "ingest_one must use find_match_in_memory inside the row loop"
+    )
+
+    # 3. Defensive guards we want to stay in.
+    assert "existing_snapshot_keys" in src, "must dedupe against existing odds_snapshots rows"
+    assert "from scripts.ingest_football_data_csvs import" in src, (
+        "should reuse resolve_team / extract_odds_rows from the mainstream ingest"
+    )
+
+
 @test("FIT-RHO-COLNAMES — fit_league_rho.py uses score_home/score_away not home_score/away_score")
 def _():
     import pathlib
