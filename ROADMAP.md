@@ -119,37 +119,35 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 ---
 
-## Current System State (2026-05-13)
+## Current System State (2026-05-18)
 
 ### Backend
 | Component | Status |
 |-----------|--------|
-| API-Football Ultra ($29/mo) | ✅ Primary data source (Kambi removed 2026-05-06 — empirically redundant) |
+| API-Football Ultra ($29/mo) | ✅ Primary data source |
 | ① Fixtures (04:00 + 4 refreshes/day) | ✅ AF fixtures + league coverage + postponement detection |
 | ② Enrichment (04:15/10:30/13:00/16:00 UTC) | ✅ Standings, H2H, team stats, injuries |
 | ③ Odds (every 30min 07-22 UTC + closing odds 13:30/17:30/20:00) | ✅ AF bulk odds, 13 bookmakers |
 | ④ Predictions (05:30 UTC) | ✅ AF predictions (coverage-aware) |
 | ⑤ Betting (8×/day: 06:00/09:30/11:00/13:30/15:00/17:30/19:00/20:30 UTC) | ✅ Poisson/XGBoost + Pinnacle anchor + sharp consensus gate + veto filters |
-| ⑥ LivePoller (24/7, adaptive 30s live / 120s idle) | ✅ Live scores, events, lineups, in-play odds + 8 in-play bots |
+| ⑥ LivePoller (24/7, adaptive 30s live / 120s idle) | ✅ Live scores, events, lineups, in-play odds + in-play bots |
 | ⑦ AI news checker (4×/day + 14:30) | ✅ Gemini 2.5 Flash, qualitative-only |
 | ⑧ Settlement (21:00 + 01:00 UTC) | ✅ Settle + CLV + Pinnacle CLV + ELO + post-mortem + weekly Platt + blend refit (Wed+Sun) + dynamic DC rho |
-| ⑨ Historical backfill (02:00 UTC Railway) | ✅ Complete 2026-05-10 — 47,228 finished matches; match_stats 73.4% (terminal — AF gaps), match_events 93.4%; `backfill_complete.flag` set, scheduled job auto-disabled |
+| ⑨ Historical backfill | ✅ Complete 2026-05-10 — 47,228 finished matches; `backfill_complete.flag` set, job auto-disabled |
 | ⑩ AI match previews (07:15 UTC) | ✅ Gemini 200-word previews for top 10 matches |
-| ⑪ Email digest (10/12/14/16 UTC slots) | ✅ Smart-slot digest — first slot whose pending-bet signal-strength score (Σ edge × prestige × kelly) clears threshold sends; T4 leagues (youth/women/lower divisions) excluded from email content (EMAIL-DIGEST-SMART) + value bet alerts (16:00/20:45) + weekly (Mon 08:00) + watchlist (08:30/14:30/20:30) |
-| 24 paper trading bots | ✅ 16 pre-match (since 2026-04-27, incl. bot_proven_leagues) + 8 in-play (since 2026-05-06, strategies A/A2/B/C/C_home/D/E/F). **2026-05-17:** bot_aggressive retired (PERF-HONEST-HEADLINE, migration 104) — replaced by bot_aggressive_v2. 5 bots now retired total (4 from BOTS-RETIRE-1X2 + bot_aggressive); each carries `retired_reason` in DB, surfaced in collapsed `/performance` "Retired Strategies" section. |
-| `dashboard_cache` honest headline | ✅ **PERF-HONEST-HEADLINE (2026-05-17)** — migration 104 adds 9 active-only columns + `retired_bot_breakdown` JSONB. `settlement.write_dashboard_cache` writes both all-time (incl. retired bots' historical bets — credibility number "1k+ bets placed") and active-strategies-only (for "what's currently running" ROI). Eliminates the misleading single-row headline that mixed dead experiments with live strategies. |
-| ⑰ Shadow runs (06:30 / 11:30 / 15:30 UTC) | ✅ **BET-TIMING-MONITOR (2026-05-13)** — `shadow_bets` table mirrors `simulated_bets`; `run_morning(shadow_mode=True)` evaluates ALL 23 bots at every refresh window (no bankroll touch, no exposure cap), bulk-stored via `bulk_store_shadow_bets`. Settled by existing pipeline via `_settle_pending_shadow_bets`. `/ops` shows `shadow_runs_today` (target=3) + `shadow_bets_today`. Breaks the cohort×strategy confound in the cohort A/B — per-bot per-cohort ROI answers will be ready ~2026-06-15. See `dev/active/bet-timing-monitor-plan.md`. |
-| Accessible-bookmaker filter | ✅ **ACCESSIBLE-BM (2026-05-11)** — edge math restricted to EU/Estonia-accessible books (Bet365, Unibet, Betano, Marathonbet, 10Bet, 888Sport, Pinnacle). `recommended_bookmaker` stored per bet (migration 094). `scripts/daily_picks.py` — morning manual-betting report. Fixes reported CLV inflation from inaccessible-book odds (SBO/Dafabet/1xBet). |
-| Pinnacle signals | ✅ PIN-1 through PIN-5: implied probs (all markets), line movement, veto gate, Pinnacle-anchored CLV |
-| Calibration improvements | ✅ Pinnacle shrinkage anchor, odds-conditional alpha, sharp consensus gate, draw inflation, dynamic DC rho |
-| match_signals (EAV signal store) | ✅ 30+ signals per match (incl. sharp_consensus, Pinnacle implied, Pinnacle line move, injury_recurrence, h1_shot_dominance, squad_disruption) |
-| match_feature_vectors (ML training table) | ✅ Nightly ETL for finished matches + **MFV-LIVE-BUILD** (2026-05-10) writes pre-KO rows on every betting refresh so v10+ XGBoost finds a row at inference instead of falling back to Poisson |
-| ML model registry (Supabase Storage + `model_versions` table) | ✅ **ML-BUNDLE-STORAGE** (2026-05-10) — every trained bundle auto-uploads to Storage + auto-registers; `_load_models()` lazy-downloads on Railway cold-start. Solves Railway's ephemeral-filesystem problem for weekly retrains. 16 bundles archived. Switch versions via `MODEL_VERSION` env var → next deploy auto-pulls. Full design in `docs/ML_MODEL_REGISTRY.md` |
-| Active production model | ✅ **`v12_post0e`** (Pinnacle-free, post-Stage-0e). Switched from v9a_202425 on 2026-05-10. Beats v9 by ~50% on every 1X2 market log_loss in offline_eval. Compare any time: `python3 scripts/offline_eval.py vA vB --include-v9` |
+| ⑪ Email digest (10/12/14/16 UTC slots) | ✅ Smart-slot digest + value bet alerts (16:00/20:45) + weekly (Mon 08:00) + watchlist (08:30/14:30/20:30) |
+| Pre-match bots (active) | ✅ 17 active: bot_v10_all, bot_aggressive_v2, bot_high_roi_global, bot_proven_leagues, bot_ou15_defensive, bot_ou35_attacking, bot_ou25_global, bot_btts_all, bot_btts_conservative, bot_greek_turkish, bot_opt_away_british, bot_opt_away_europe, bot_opt_ou_british, bot_ah_home_fav, bot_ah_away_dog, bot_dc_value, bot_dc_strong_fav |
+| Pre-match bots (retired) | 5 retired: bot_aggressive, bot_lower_1x2, bot_opt_home_lower, bot_draw_specialist, bot_conservative. Reasons in DB, collapsed in /performance. |
+| Odds-range tightening | ✅ **PER-BOT-SLICE-TIGHTEN 2026-05-18**: bot_ou25_global (cap 2.50), bot_ou35_attacking (cap 3.00), bot_btts_conservative (cap 2.00), bot_greek_turkish (cap 3.50). bot_btts_all reverted (live data contradicted backtest). Baseline + comparison tool in `dev/active/backtest-slice-baseline.csv` + `scripts/slice_live_validate.py`. |
+| Shadow runs (06:30 / 11:30 / 15:30 UTC) | ✅ `shadow_bets` — all bots at every window. Per-bot per-cohort factorial ROI ready ~2026-06-15. |
+| Accessible-bookmaker filter | ✅ Edge math restricted to EU/Estonia-accessible books. `recommended_bookmaker` per bet. |
+| Active production model | ✅ **`v14`** — Poisson + XGBoost ensemble, per-tier Platt scaling (1X2 + OU 2.5), Dixon-Coles ρ. Active since ~2026-05-13. Full history in `docs/MODEL_HISTORY.md`. |
+| ML model registry | ✅ Supabase Storage auto-upload + lazy Railway download. 16 bundles archived. `MODEL_VERSION` env var. |
+| match_feature_vectors | ✅ Nightly ETL + live-build on every betting refresh |
+| Calibration | ✅ Per-tier Platt (1X2 1-feature, OU 2.5 2-feature). Blend weights optimized. Dynamic DC rho. Weekly refit. |
+| Pinnacle signals | ✅ Implied probs, line movement, veto gate, Pinnacle-anchored CLV |
 | pseudo_clv | ✅ All ~280 matches/day |
-| Platt scaling (post-hoc calibration) | ✅ 2-stage: tier shrinkage → Platt/logistic. 1X2: 1-feature Platt. O/U: 2-feature logistic `[shrunk_prob, log(odds)]` code deployed 2026-05-12, fit pending 300 settled O/U bets (~73 now). Weekly refit (Wed+Sun) auto-triggers once threshold met |
-| Learned blend weights | ✅ MOD-2 — optimized Poisson/XGBoost weights + per-tier alpha. Weekly refit |
-| Featured leagues (frontend filtering) | ✅ `show_on_frontend` flag. ~50 curated leagues. 6-tier priority system |
+| Featured leagues | ✅ `show_on_frontend` flag. ~50 curated leagues. |
 
 ### Frontend (odds-intel-web)
 | Page | Status |

@@ -2918,6 +2918,29 @@ def _():
         )
 
 
+@test("BOTS-RETIRE-DC-DNB — three DC/DNB bots retired via migration 111 + flagged in BOTS_CONFIG")
+def _():
+    """1-year backtest (25K bets / 22 bots) showed bot_dc_value (-2.8% ROI),
+    bot_dc_strong_fav (-3.4% ROI), and bot_dnb_away_value (-7.9% ROI) are
+    structural losers — no edge threshold rescues them. Migration 111 retires
+    them. BOTS_CONFIG descriptions carry the [RETIRED 2026-05-19] marker."""
+    import pathlib
+    retired_bots = ["bot_dc_value", "bot_dc_strong_fav", "bot_dnb_away_value"]
+    mig = pathlib.Path("supabase/migrations/111_retire_dc_dnb_away_bots.sql").read_text()
+    assert "UPDATE bots" in mig and "retired_at" in mig and "now()" in mig, \
+        "migration 111 must UPDATE bots ... SET retired_at = now()"
+    for b in retired_bots:
+        assert f"'{b}'" in mig, f"migration 111 missing retirement for {b}"
+    src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    for b in retired_bots:
+        idx = src.find(f'"{b}":')
+        assert idx >= 0, f"{b} missing from BOTS_CONFIG"
+        block_end = idx + 1500
+        assert "[RETIRED 2026-05-19]" in src[idx:block_end], (
+            f"{b} description must be prefixed with [RETIRED 2026-05-19]"
+        )
+
+
 @test("COOLBET-SELECTION-BIAS — real_perf_report has section_selection_bias")
 def _():
     """Diagnostic that separates 'I picked losers from the offered slips' from

@@ -370,7 +370,7 @@ BOTS_CONFIG = {
     # are compressed (typical range 1.20-2.20), so a 3% edge at 1.30 is already
     # meaningful.
     "bot_dc_value": {
-        "description": "Double Chance all leagues — 1X/X2/12 at value odds",
+        "description": "[RETIRED 2026-05-19] Double Chance all leagues — 1X/X2/12 at value odds",
         "tier_label": "pro",
         "markets": ["dc"],
         "edge_thresholds": {
@@ -383,7 +383,7 @@ BOTS_CONFIG = {
         "min_prob": 0.55,
     },
     "bot_dc_strong_fav": {
-        "description": "Double Chance T1-2 — strong-favorite cover (1X or X2 only), 6%+ edge",
+        "description": "[RETIRED 2026-05-19] Double Chance T1-2 — strong-favorite cover (1X or X2 only), 6%+ edge",
         "tier_label": "elite",
         "markets": ["dc"],
         "selection_filter": ["1X", "X2"],
@@ -436,7 +436,7 @@ BOTS_CONFIG = {
         "min_prob": 0.60,
     },
     "bot_dnb_away_value": {
-        "description": "DNB away — underdog with draw insurance, T1-3, 5%+ edge",
+        "description": "[RETIRED 2026-05-19] DNB away — underdog with draw insurance, T1-3, 5%+ edge",
         "tier_label": "pro",
         "markets": ["dnb"],
         "selection_filter": ["Away"],
