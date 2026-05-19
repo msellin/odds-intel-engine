@@ -350,12 +350,25 @@ def main():
     if needs_ah:
         console.print(f"  AH odds for {len(ah_odds_lookup):,} matches")
 
-    # For AH: re-compute Poisson exp_home/exp_away from hist_targets CSVs
+    # For AH: re-compute Poisson exp_home/exp_away from hist_targets CSVs.
+    # PERF-AH-SKIP-EMPTY (2026-05-19): only build the Poisson lookup for matches
+    # that ACTUALLY have AH odds. Without this we paid ~15min of fuzzy-team-match
+    # + DataFrame-scan across 28k matches even when ah_odds_lookup was empty
+    # (football-data ingest doesn't ship AH lines → all-zero coverage).
     poisson_lookup: dict[str, dict] = {}
-    if needs_ah:
-        console.print("[cyan]Pre-computing Poisson goals for AH bots (uses targets CSVs)…[/cyan]")
-        poisson_lookup = _build_poisson_lookup(matches)
-        console.print(f"  Poisson computed for {len(poisson_lookup):,} / {len(matches):,} matches")
+    if needs_ah and ah_odds_lookup:
+        matches_with_ah = [m for m in matches if m["match_id"] in ah_odds_lookup]
+        console.print(
+            f"[cyan]Pre-computing Poisson goals for {len(matches_with_ah):,} matches "
+            f"with AH odds (uses targets CSVs)…[/cyan]"
+        )
+        poisson_lookup = _build_poisson_lookup(matches_with_ah)
+        console.print(f"  Poisson computed for {len(poisson_lookup):,} / {len(matches_with_ah):,} matches")
+    elif needs_ah:
+        console.print(
+            "[yellow]AH bots active but no AH odds in scope — "
+            "skipping the Poisson pre-compute pass entirely.[/yellow]"
+        )
 
     # DC rho cache (needed for AH _ah_model_prob)
     dc_rho_cache: dict = _load_dc_rho_cache() if needs_ah else {}
