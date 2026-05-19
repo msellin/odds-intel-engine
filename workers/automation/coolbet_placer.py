@@ -117,7 +117,8 @@ def load_qualified_bets() -> list[dict]:
     if diag and int(diag[0]["not_kicked_off"] or 0) > 0 and int(diag[0]["pass_edge"] or 0) == 0:
         below_edge = execute_query(
             """
-            SELECT ht.name AS home_team, at2.name AS away_team,
+            SELECT DISTINCT ON (sb.match_id, sb.market, sb.selection)
+                   ht.name AS home_team, at2.name AS away_team,
                    sb.market, sb.selection,
                    ROUND(sb.edge_percent::numeric, 2) AS edge_pct,
                    sb.odds_at_pick
@@ -128,7 +129,7 @@ def load_qualified_bets() -> list[dict]:
             WHERE sb.result    = 'pending'
               AND DATE(m.date) = CURRENT_DATE
               AND m.date       > NOW()
-            ORDER BY sb.edge_percent DESC
+            ORDER BY sb.match_id, sb.market, sb.selection, sb.edge_percent DESC
             """,
             (),
         )
