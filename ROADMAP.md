@@ -2,7 +2,7 @@
 
 > Product vision, tier structure, milestone goals, and open decisions.
 > Task tracking lives in PRIORITY_QUEUE.md — not here.
-> Last updated: 2026-05-06
+> Last updated: 2026-05-19
 
 ---
 
@@ -119,7 +119,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 ---
 
-## Current System State (2026-05-18)
+## Current System State (2026-05-19)
 
 ### Backend
 | Component | Status |
@@ -136,8 +136,8 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | ⑨ Historical backfill | ✅ Complete 2026-05-10 — 47,228 finished matches; `backfill_complete.flag` set, job auto-disabled |
 | ⑩ AI match previews (07:15 UTC) | ✅ Gemini 200-word previews for top 10 matches |
 | ⑪ Email digest (10/12/14/16 UTC slots) | ✅ Smart-slot digest + value bet alerts (16:00/20:45) + weekly (Mon 08:00) + watchlist (08:30/14:30/20:30) |
-| Pre-match bots (active) | ✅ 17 active: bot_v10_all, bot_aggressive_v2, bot_high_roi_global, bot_proven_leagues, bot_ou15_defensive, bot_ou35_attacking, bot_ou25_global, bot_btts_all, bot_btts_conservative, bot_greek_turkish, bot_opt_away_british, bot_opt_away_europe, bot_opt_ou_british, bot_ah_home_fav, bot_ah_away_dog, bot_dc_value, bot_dc_strong_fav |
-| Pre-match bots (retired) | 5 retired: bot_aggressive, bot_lower_1x2, bot_opt_home_lower, bot_draw_specialist, bot_conservative. Reasons in DB, collapsed in /performance. |
+| Pre-match bots (active) | ✅ 16 active: bot_v10_all, bot_aggressive_v2, bot_high_roi_global, bot_proven_leagues, bot_ou15_defensive, bot_ou35_attacking, bot_ou25_global, bot_btts_all, bot_btts_conservative, bot_greek_turkish, bot_opt_away_british, bot_opt_away_europe, bot_opt_ou_british, bot_ah_home_fav, bot_ah_away_dog, bot_dnb_home_value |
+| Pre-match bots (retired) | 8 retired: bot_aggressive, bot_lower_1x2, bot_opt_home_lower, bot_draw_specialist, bot_conservative (2026-05-17); bot_dc_value, bot_dc_strong_fav, bot_dnb_away_value (2026-05-19 — structural -EV at all thresholds, migration 111). Reasons in DB, collapsed in /performance. |
 | Odds-range tightening | ✅ **PER-BOT-SLICE-TIGHTEN 2026-05-18**: bot_ou25_global (cap 2.50), bot_ou35_attacking (cap 3.00), bot_btts_conservative (cap 2.00), bot_greek_turkish (cap 3.50). bot_btts_all reverted (live data contradicted backtest). Baseline + comparison tool in `dev/active/backtest-slice-baseline.csv` + `scripts/slice_live_validate.py`. |
 | Shadow runs (06:30 / 11:30 / 15:30 UTC) | ✅ `shadow_bets` — all bots at every window. Per-bot per-cohort factorial ROI ready ~2026-06-15. |
 | Accessible-bookmaker filter | ✅ Edge math restricted to EU/Estonia-accessible books. `recommended_bookmaker` per bet. |
@@ -218,9 +218,9 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 ## Bot Strategy
 
-**24 paper trading bots** running across two categories:
+**24 paper trading bots** running across two categories (8 retired, 16 pre-match + 8 in-play active):
 
-**Pre-match (16 bots, since 2026-04-27):** Based on historical backtest data — edge thresholds and league filters derived from football-data.co.uk 2007-2025 and beat_the_bookie 2005-2015. Includes `bot_proven_leagues` (5 cross-era confirmed leagues). 5 morning / 6 midday / 5 pre-KO timing cohorts.
+**Pre-match (16 active, since 2026-04-27):** Based on historical backtest data — edge thresholds and league filters derived from football-data.co.uk 2007-2025 and beat_the_bookie 2005-2015. Includes `bot_proven_leagues` (5 cross-era confirmed leagues). 5 morning / 6 midday / 5 pre-KO timing cohorts. 8 retired (reasons in DB). Per-bot threshold tightening deferred to Batch 2 ~2026-06-15.
 
 **In-play (8 bots, since 2026-05-06):** Rule-based strategies A, A2, B, C, C_home, D, E, F using Bayesian xG posterior. Run inside LivePoller every 30s. See § INPLAY Plan in PRIORITY_QUEUE.md.
 
