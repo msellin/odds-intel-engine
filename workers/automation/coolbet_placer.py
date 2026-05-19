@@ -3,12 +3,13 @@ Coolbet automated bet placer.
 
 Flow:
   1. Query DB for today's simulated_bets with edge > threshold and no real_bet yet.
-  2. Fetch Coolbet football events (fo-category endpoint).
-  3. Fuzzy-match team names → Coolbet matchId.
-  4. Get market details via fo-market/sidebets → betOfferId + outcomeId.
-  5. Verify current odds via sb-odds/current/fo → also gets oddsId UUID needed for bet.
-  6. Place bet via POST /s/bets/bets.
-  7. Write to real_bets table.
+  2. Find each match on Coolbet: search by home team name (v2 search endpoint),
+     fuzzy-match results to confirm home+away pair.  Falls back to loading the
+     full fo-category tree if search returns nothing.
+  3. Get market details via fo-market/sidebets → betOfferId + outcomeId.
+  4. Verify current odds via sb-odds/current/fo → also gets oddsId UUID needed for bet.
+  5. Place bet via POST /s/bets/bets.
+  6. Write to real_bets table.
 
 Required .env:
     COOLBET_USER, COOLBET_PASS, COOLBET_IMPERVA_COOKIES   (see coolbet_session.py)
@@ -38,6 +39,7 @@ from workers.automation.coolbet_session import CoolbetSession
 
 log = logging.getLogger(__name__)
 
+_SEARCH_URL    = "https://www.coolbet.com/s/sbgate/sports/search/v2"
 _CATEGORY_URL  = "https://www.coolbet.com/s/sbgate/sports/fo-category/"
 _SIDEBETS_URL  = "https://www.coolbet.com/s/sbgate/sports/fo-market/sidebets"
 _ODDS_URL      = "https://www.coolbet.com/s/sb-odds/odds/current/fo"
@@ -192,6 +194,50 @@ def _parse_event(ev: dict) -> dict | None:
         "start":      ev.get("start"),
         "bet_offers": bet_offers,
     }
+
+
+def search_coolbet_event(
+    session: CoolbetSession, home: str, away: str
+) -> dict | None:
+    """
+    Use GET /s/sbgate/sports/search/v2?search=<query> to find the Coolbet event
+    for a specific match.  Searches for the home team name (first word of it),
+    then fuzzy-matches all returned events against home+away pair.
+
+    Returns a parsed event dict (same format as _parse_event) or None.
+    Much faster than loading the full fo-category tree.
+    """
+    # Use the first "word" of the home team name as the search query —
+    # enough to narrow results without risking zero hits on short names.
+    query = home.split()[0] if home.split() else home
+
+    resp = session.get(_SEARCH_URL, params={
+        "search":   query,
+        "country":  "EE",
+        "language": "en",
+        "layout":   "EUROPEAN",
+    })
+    if resp.status_code != 200:
+        log.debug("Search %d for '%s'", resp.status_code, query)
+        return None
+
+    data = resp.json()
+    # Response may be a flat list of events or wrapped — handle both
+    raw_events = (
+        data if isinstance(data, list)
+        else data.get("events") or data.get("results") or []
+    )
+
+    # Parse each raw event and fuzzy-match
+    candidates = [e for e in (_parse_event(ev) for ev in raw_events) if e]
+    if not candidates:
+        log.debug("Search for '%s' returned 0 parseable events", query)
+        return None
+
+    match = fuzzy_match_event(home, away, candidates)
+    if match:
+        log.debug("Search found event %s for '%s vs %s'", match["id"], home, away)
+    return match
 
 
 def fetch_sidebets(session: CoolbetSession, match_id: int) -> list[dict]:
@@ -455,7 +501,9 @@ def place_all_bets(execute: bool = False, min_edge: float | None = None) -> list
         return []
 
     log.info("Found %d qualifying simulated_bets to evaluate", len(pending))
-    events = fetch_coolbet_events(session)
+
+    # fo-category fallback: load once if search fails for any bet
+    _category_events: list[dict] | None = None
 
     results = []
     for bet in pending:
@@ -467,8 +515,13 @@ def place_all_bets(execute: bool = False, min_edge: float | None = None) -> list
         edge_pct   = float(bet["edge_percent"])
         label      = f"{home} vs {away} | {mkt} {sel} @ {model_odds:.3f} (edge {edge_pct:+.2f}%)"
 
-        # 1. Find Coolbet event
-        ev = fuzzy_match_event(home, away, events)
+        # 1. Find Coolbet event — search first (fast), fall back to fo-category tree
+        ev = search_coolbet_event(session, home, away)
+        if ev is None:
+            if _category_events is None:
+                log.info("Search miss — loading full fo-category tree")
+                _category_events = fetch_coolbet_events(session)
+            ev = fuzzy_match_event(home, away, _category_events)
         if ev is None:
             log.info("No Coolbet event for %s — skipping", label)
             results.append({**bet, "outcome": "no_event"})
@@ -476,11 +529,11 @@ def place_all_bets(execute: bool = False, min_edge: float | None = None) -> list
 
         coolbet_match_id = ev["id"]
 
-        # 2. Get market details — use sidebets for richer data, fall back to fo-category
-        if execute:
-            bet_offers = fetch_sidebets(session, coolbet_match_id)
-        else:
-            bet_offers = ev["bet_offers"]  # fo-category already has basic offers
+        # 2. Get market details — sidebets has full offer list for a single match
+        bet_offers = fetch_sidebets(session, coolbet_match_id)
+        if not bet_offers:
+            # sidebets failed; fall back to basic offers from event discovery
+            bet_offers = ev["bet_offers"]
 
         bo_id, oc_id, ev_odds = find_market_outcome(bet_offers, mkt, sel)
         if bo_id is None:
