@@ -113,7 +113,8 @@ def _find_matches_needing_predictions(limit: int | None):
 def _team_form_from_db(team_id: str, before_date: str, n: int = 10):
     """Return (goals_for[], goals_against[]) from the team's last N finished
     matches strictly before `before_date`. Lookahead-free at the per-match
-    level."""
+    level. Kept as a fallback / single-match path; the bulk path used by
+    main() is _load_all_team_form + _team_form_from_cache."""
     rows = execute_query(
         """
         SELECT
@@ -133,11 +134,82 @@ def _team_form_from_db(team_id: str, before_date: str, n: int = 10):
     return gf, ga
 
 
-def _compute_match_prediction(home_id: str, away_id: str, kickoff: str, tier: int):
+def _load_all_team_form(team_ids: list[str]) -> dict[str, list[tuple]]:
+    """Bulk-load every (date, gf, ga) finished-match record for each team
+    into memory in a single SELECT. Replaces N per-match form lookups
+    (~150ms × 2 × 10k matches = ~50 min on EU pooler) with one bulk query
+    and dict-keyed in-memory filtering (~30s end-to-end).
+
+    Returns: {team_id: [(date, gf, ga), ...]} sorted ascending by date.
+    """
+    if not team_ids:
+        return {}
+    rows = execute_query(
+        """
+        SELECT
+            home_team_id::text AS h,
+            away_team_id::text AS a,
+            date,
+            score_home,
+            score_away
+        FROM matches
+        WHERE (home_team_id = ANY(%s::uuid[]) OR away_team_id = ANY(%s::uuid[]))
+          AND status = 'finished'
+          AND score_home IS NOT NULL
+        ORDER BY date
+        """,
+        [team_ids, team_ids],
+    )
+    ids = set(team_ids)
+    out: dict[str, list[tuple]] = {tid: [] for tid in team_ids}
+    for r in rows:
+        h, a = r["h"], r["a"]
+        d = r["date"]
+        sh = float(r["score_home"])
+        sa = float(r["score_away"])
+        # Same team can appear as home or away — record each from the team's POV.
+        if h in ids:
+            out[h].append((d, sh, sa))  # team is home → GF=score_home, GA=score_away
+        if a in ids:
+            out[a].append((d, sa, sh))  # team is away → flip
+    return out
+
+
+def _team_form_from_cache(team_id: str, before_dt, cache: dict[str, list[tuple]],
+                          n: int = 10) -> tuple[list[float], list[float]]:
+    """In-memory equivalent of _team_form_from_db using the bulk-loaded cache.
+    `before_dt` must be a tz-aware datetime."""
+    records = cache.get(team_id, [])
+    if not records:
+        return [], []
+    # records sorted ascending by date — walk forward, keep last n strictly before
+    relevant: list[tuple[float, float]] = []
+    for d, gf, ga in records:
+        if d >= before_dt:
+            break
+        relevant.append((gf, ga))
+    relevant = relevant[-n:]
+    return [r[0] for r in relevant], [r[1] for r in relevant]
+
+
+def _compute_match_prediction(home_id: str, away_id: str, kickoff: str, tier: int,
+                              form_cache: dict | None = None):
     """Replica of daily_pipeline_v2.compute_prediction but sources team form
-    from our matches table (consistent names) instead of CSV (mismatched names)."""
-    home_gf, home_ga = _team_form_from_db(home_id, kickoff, 10)
-    away_gf, away_ga = _team_form_from_db(away_id, kickoff, 10)
+    from our matches table (consistent names) instead of CSV (mismatched names).
+
+    If `form_cache` is provided, looks up team history in memory (fast).
+    Falls back to per-team DB queries if not provided (slow — original path).
+    """
+    if form_cache is not None:
+        from datetime import datetime as _dt
+        kickoff_dt = kickoff if hasattr(kickoff, "tzinfo") else _dt.fromisoformat(
+            kickoff.replace("Z", "+00:00") if isinstance(kickoff, str) else kickoff
+        )
+        home_gf, home_ga = _team_form_from_cache(home_id, kickoff_dt, form_cache, 10)
+        away_gf, away_ga = _team_form_from_cache(away_id, kickoff_dt, form_cache, 10)
+    else:
+        home_gf, home_ga = _team_form_from_db(home_id, kickoff, 10)
+        away_gf, away_ga = _team_form_from_db(away_id, kickoff, 10)
     if len(home_gf) < 3 or len(away_gf) < 3:
         return None
 
@@ -168,47 +240,70 @@ def main():
         print("Nothing to do.")
         return
 
+    # Bulk-load team form once. ~30s vs ~50min for per-row DB lookups.
+    team_ids = sorted({m["home_team_id"] for m in matches} |
+                      {m["away_team_id"] for m in matches})
+    print(f"\nBulk-loading team form for {len(team_ids):,} unique teams…")
+    import time
+    _t0 = time.time()
+    form_cache = _load_all_team_form(team_ids)
+    total_records = sum(len(v) for v in form_cache.values())
+    print(f"  Loaded {total_records:,} (team, match) records in {time.time() - _t0:.1f}s")
+
     pred_rows: list[dict] = []
     skipped_no_data = 0
     predicted_count = 0
-    batch_counter = 0
     inserted_total = 0
 
-    print(f"\nPredicting (batch size {args.batch_size})…")
-    for i, m in enumerate(matches, 1):
-        kickoff = m["date"].isoformat() if hasattr(m["date"], "isoformat") else str(m["date"])
-        pred = _compute_match_prediction(
-            home_id=m["home_team_id"],
-            away_id=m["away_team_id"],
-            kickoff=kickoff,
-            tier=m["tier"],
-        )
-        if pred is None:
-            skipped_no_data += 1
-            continue
-        for prob_key, market_key in MARKETS_TO_STORE:
-            prob = pred.get(prob_key)
-            if prob is None:
-                continue
-            pred_rows.append({
-                "match_id": m["match_id"],
-                "market":   market_key,
-                "source":   "ensemble",
-                "model_prob": float(prob),
-                "confidence": 0.5,
-                "reasoning": f"Historical backfill — Poisson+DC (data_tier={pred.get('data_tier', '?')})",
-                "model_version": "poisson_backfill",
-            })
-        predicted_count += 1
+    from rich.progress import Progress, BarColumn, MofNCompleteColumn, TimeRemainingColumn, TextColumn
 
-        # Flush in batches to keep memory bounded
-        if not args.dry_run and len(pred_rows) >= args.batch_size:
-            n = bulk_store_predictions(pred_rows)
-            inserted_total += n
-            pred_rows = []
-            batch_counter += 1
-            if batch_counter % 4 == 0:
-                print(f"  …{i:,}/{len(matches):,} matches scanned, {inserted_total:,} prediction rows inserted")
+    print(f"\nPredicting (batch size {args.batch_size})…")
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TextColumn("•"),
+        TextColumn("inserted={task.fields[inserted]}"),
+        TextColumn("•"),
+        TextColumn("skipped={task.fields[skipped]}"),
+        TextColumn("•"),
+        TimeRemainingColumn(),
+    ) as prog:
+        task_id = prog.add_task("Matches", total=len(matches), inserted=0, skipped=0)
+        for m in matches:
+            kickoff = m["date"]  # datetime from psycopg2 (tz-aware)
+            pred = _compute_match_prediction(
+                home_id=m["home_team_id"],
+                away_id=m["away_team_id"],
+                kickoff=kickoff,
+                tier=m["tier"],
+                form_cache=form_cache,
+            )
+            if pred is None:
+                skipped_no_data += 1
+                prog.update(task_id, advance=1, skipped=skipped_no_data)
+                continue
+            for prob_key, market_key in MARKETS_TO_STORE:
+                prob = pred.get(prob_key)
+                if prob is None:
+                    continue
+                pred_rows.append({
+                    "match_id": m["match_id"],
+                    "market":   market_key,
+                    "source":   "ensemble",
+                    "model_prob": float(prob),
+                    "confidence": 0.5,
+                    "reasoning": f"Historical backfill — Poisson+DC (data_tier={pred.get('data_tier', '?')})",
+                    "model_version": "poisson_backfill",
+                })
+            predicted_count += 1
+
+            # Flush in batches to keep memory bounded
+            if not args.dry_run and len(pred_rows) >= args.batch_size:
+                n = bulk_store_predictions(pred_rows)
+                inserted_total += n
+                pred_rows = []
+            prog.update(task_id, advance=1, inserted=inserted_total)
 
     # Final flush
     if not args.dry_run and pred_rows:
