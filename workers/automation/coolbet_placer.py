@@ -113,6 +113,33 @@ def load_qualified_bets() -> list[dict]:
             d["pass_no_real_bet"],
         )
 
+    # Show edge values of the bets that failed the edge filter
+    if diag and int(diag[0]["not_kicked_off"] or 0) > 0 and int(diag[0]["pass_edge"] or 0) == 0:
+        below_edge = execute_query(
+            """
+            SELECT ht.name AS home_team, at2.name AS away_team,
+                   sb.market, sb.selection,
+                   ROUND(sb.edge_percent::numeric, 2) AS edge_pct,
+                   sb.odds_at_pick
+            FROM simulated_bets sb
+            JOIN matches m   ON m.id   = sb.match_id
+            JOIN teams   ht  ON ht.id  = m.home_team_id
+            JOIN teams   at2 ON at2.id = m.away_team_id
+            WHERE sb.result    = 'pending'
+              AND DATE(m.date) = CURRENT_DATE
+              AND m.date       > NOW()
+            ORDER BY sb.edge_percent DESC
+            """,
+            (),
+        )
+        if below_edge:
+            log.info("Bets below edge threshold (top edges shown):")
+            for r in below_edge:
+                log.info("  %s vs %s | %s %s  edge=%s%%  @ %s",
+                         r["home_team"], r["away_team"],
+                         r["market"], r["selection"],
+                         r["edge_pct"], r["odds_at_pick"])
+
     # ── Blocked by real_bets: show which ones were already placed ─────────
     already = execute_query(
         """
