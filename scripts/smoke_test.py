@@ -3430,6 +3430,20 @@ def _():
         )
 
 
+@test("BTTS-TIMING — BTTS bots must run at all cohorts to capture morning soft odds")
+def _():
+    """BTTS bots were pre_ko-only, missing morning soft odds window. Changed to
+    'all' so the first cohort that clears the edge threshold places the bet;
+    dedup (uq_bet) prevents duplicates. Pre-KO confirmed lineups remain the
+    fallback if morning threshold isn't met."""
+    from workers.jobs.daily_pipeline_v2 import BOT_TIMING_COHORTS
+    for bot in ("bot_btts_all", "bot_btts_conservative"):
+        assert BOT_TIMING_COHORTS.get(bot) == "all", (
+            f"{bot} must be cohort='all' so morning odds are captured; "
+            f"currently {BOT_TIMING_COHORTS.get(bot)!r}"
+        )
+
+
 @test("RECOVER-PHASE2 — recover_today step 5 calls run_morning with skip_fetch=True")
 def _():
     """Phase 1 (skip_fetch=False) never populates best_bookmaker, so every

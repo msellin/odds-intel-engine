@@ -457,9 +457,11 @@ BOTS_CONFIG = {
 #   morning  → 06:00 UTC (full match slate, fresh opening odds)
 #   midday   → 11:00 UTC (injury news refreshed, standings updated)
 #   pre_ko   → 15:00-19:00 UTC (confirmed lineups, most info available)
-# 5 / 6 / 5 split across 16 bots. Track CLV+ROI per cohort to find edge-maximizing window.
+#   all      → run at every cohort window; dedup (uq_bet) prevents duplicate bets —
+#              first run that clears the edge threshold wins, rest are no-ops.
+#              Use for bets where early soft odds outweigh lineup uncertainty.
 BOT_TIMING_COHORTS: dict[str, str] = {
-    # Morning — early odds capture (3 bots)
+    # Morning — early odds capture
     # 2026-05-13: bot_ou25_global + bot_opt_ou_british moved from morning → midday.
     # Phase A timing analysis: morning OU bets show -3.6% ROI (n=114) vs midday
     # OU's +26.8% ROI (n=31). Same-bot A/B on bot_ou15_defensive confirmed
@@ -469,7 +471,7 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_lower_1x2":      "morning",
     "bot_aggressive":     "morning",
     "bot_aggressive_v2":  "morning",  # AGGRESSIVE-V2: same cohort as v1 control
-    # Midday — post-injury-news (8 bots, +2 OU specialists 2026-05-13)
+    # Midday — post-injury-news
     "bot_conservative":   "midday",
     "bot_greek_turkish":  "midday",
     "bot_high_roi_global":"midday",
@@ -478,12 +480,15 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_ou25_global":    "midday",  # OU-2026-05-13: moved from morning
     "bot_opt_ou_british": "midday",  # OU-2026-05-13: moved from morning
     "bot_draw_specialist":"midday",
-    # Pre-kickoff — confirmed lineups (5 bots)
+    # Pre-kickoff — confirmed lineups benefit
     "bot_opt_away_british":"pre_ko",
     "bot_opt_away_europe": "pre_ko",
     "bot_opt_home_lower":  "pre_ko",
-    "bot_btts_all":        "pre_ko",
-    "bot_btts_conservative":"pre_ko",
+    # BTTS-TIMING: "all" so morning soft odds are captured first; pre_ko confirmed
+    # lineups remain the fallback if morning edge threshold is not met. Dedup ensures
+    # only one bet per match regardless of how many cohorts fire.
+    "bot_btts_all":        "all",
+    "bot_btts_conservative":"all",
     # Midday — proven leagues run after injury-news refresh
     "bot_proven_leagues":  "midday",
     # Morning — DC bots (fresh odds, full coverage)
@@ -2072,10 +2077,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             if not _bot_active.get(bot_name, True):
                 continue
 
-            # BOT-TIMING: skip bots not in the active cohort (None = run all).
+            # BOT-TIMING: skip bots not in the active cohort.
+            # "all" = run at every cohort; dedup prevents duplicate bets.
             # SHADOW: run ALL bots — that's the whole point of the factorial design.
             bot_cohort = BOT_TIMING_COHORTS.get(bot_name, "morning")
-            if not shadow_mode and cohort and bot_cohort != cohort:
+            if not shadow_mode and cohort and bot_cohort != "all" and bot_cohort != cohort:
                 continue
 
             # Check tier filter
