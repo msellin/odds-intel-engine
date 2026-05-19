@@ -32,30 +32,22 @@
 08:30  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts (ENG-8)
 09:00  ⑦ News Checker    run_news_checker()        Injury/lineup/news signals (Gemini)
 09:15  ① Fixtures        run_fixtures()            Status refresh — catches morning postponements
-09:30  ⑨ Betting Refresh betting_refresh()         Asian KOs + acts on fresh odds + 09:00 news
-10:30  ② Enrichment      run_enrichment()          Injuries only — fresh before 11:00 betting (AF-STANDINGS-DAILY)
-10:45  ① Fixtures        run_fixtures()            Status refresh — before European morning betting
-11:00  ⑨ Betting Refresh betting_refresh()         European morning KOs
-06:30  ⑰ Shadow Run     job_shadow_run_morning()  BET-TIMING-MONITOR: ALL bots evaluated → shadow_bets (morning window)
-11:30  ⑰ Shadow Run     job_shadow_run_midday()   BET-TIMING-MONITOR: ALL bots evaluated → shadow_bets (midday window)
-15:30  ⑰ Shadow Run     job_shadow_run_pre_ko()   BET-TIMING-MONITOR: ALL bots evaluated → shadow_bets (pre_ko window)
+:05/:35 ⑨ Betting Refresh betting_refresh()         Every 30 min, 5 min after odds refresh (07:05–22:35 UTC). DB-only, 0 AF calls. Dedup prevents duplicates. Cohort auto-detected from UTC hour.
+:05/:35 ⑰ Shadow Run     job_shadow_run_interval() Every 30 min, concurrent with betting refresh. ALL bots evaluated → shadow_bets. Cohort = 'HHMM' UTC string. 32 snapshots/day.
+10:30  ② Enrichment      run_enrichment()          Injuries only — fresh before betting (AF-STANDINGS-DAILY)
+10:45  ① Fixtures        run_fixtures()            Status refresh — catches morning postponements
 12:30  ⑦ News Checker    run_news_checker()
-12:45  ① Fixtures        run_fixtures()            Status refresh — before 13:30 betting (BET-TIMING-ANALYSIS)
+12:45  ① Fixtures        run_fixtures()            Status refresh
 13:00  ② Enrichment      run_enrichment()          Injuries + H2H + team_stats (standings now nightly only — AF-STANDINGS-DAILY)
-13:30  ⑨ Betting Refresh betting_refresh()         12:00-14:30 KO gap — aligned with 13:30 pre-KO odds run
 14:30  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts (ENG-8)
-14:30  ⑦ News Checker    run_news_checker()        Feeds 15:00 betting refresh
-14:45  ① Fixtures        run_fixtures()            Status refresh — before European afternoon betting
-15:00  ⑨ Betting Refresh betting_refresh()         European afternoon KOs
+14:30  ⑦ News Checker    run_news_checker()
+14:45  ① Fixtures        run_fixtures()            Status refresh
 16:00  ② Enrichment      run_enrichment()          Injuries only refresh (AF-STANDINGS-DAILY)
 16:00  ⑪ Value Bet Alert run_value_bet_alert('afternoon')  New bets since 10:00 UTC → Pro/Elite (N5)
 16:30  ⑦ News Checker    run_news_checker()
-17:15  ① Fixtures        run_fixtures()            Status refresh — before 17:30 betting (BET-TIMING-ANALYSIS)
-17:30  ⑨ Betting Refresh betting_refresh()         16:00-18:30 KO gap — aligned with 17:30 pre-KO odds run
-18:30  ⑦ News Checker    run_news_checker()        Feeds 19:00 + 20:30 betting (moved from 19:30)
+17:15  ① Fixtures        run_fixtures()            Status refresh
+18:30  ⑦ News Checker    run_news_checker()        Feeds evening betting
 18:45  ① Fixtures        run_fixtures()            Status refresh — before European evening betting
-19:00  ⑨ Betting Refresh betting_refresh()         European early evening KOs
-20:30  ⑨ Betting Refresh betting_refresh()         European prime-time KOs — uses 20:00 closing odds
 20:35  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts — after betting (ENG-8)
 20:45  ⑪ Value Bet Alert run_value_bet_alert('evening')    New bets since 17:00 UTC → Pro/Elite (N5)
          ⑧a Live settle   settle_finished_matches()  Per-match: triggered by LivePoller on FT (instant, 24/7)
@@ -77,25 +69,20 @@
 
 ### ⑰ Shadow Runs (`daily_pipeline_v2.run_morning(shadow_mode=True)`)
 
-BET-TIMING-MONITOR — 3 daily runs at 06:30 / 11:30 / 15:30 UTC. Each invokes
-`run_morning(skip_fetch=True, shadow_mode=True, shadow_cohort=<cohort>)` which:
+BET-TIMING-MONITOR — 32 runs/day at :05/:35 past each hour 07–22 UTC. Each invokes
+`run_morning(skip_fetch=True, shadow_mode=True, shadow_cohort=<HHMM>)` which:
 
-- Runs ALL 23 bots regardless of their `BOT_TIMING_COHORTS` assignment
+- Runs ALL bots regardless of their `BOT_TIMING_COHORTS` assignment
 - Skips the active-cohort filter, the bot active-flag check, and the
   per-league exposure cap
 - Never mutates `_running_bankroll` or calls `store_bet`
-- Accumulates rows in a buffer and bulk-inserts them into `shadow_bets`
-  via `bulk_store_shadow_bets()` with a fresh `shadow_run_id`
-- Fixed nominal stake of 10.00 per row for clean cross-cohort ROI math
+- Bulk-inserts into `shadow_bets` with a fresh `shadow_run_id`
+- Fixed nominal stake of 10.00 per row for clean cross-hour ROI math
+- Cohort label = 'HHMM' UTC (e.g. '0705', '1435') — enables per-hour ROI analysis
 
-Daily health is surfaced on `/ops` via `ops_snapshots.shadow_runs_today`
-(should equal 3 by 16:00 UTC) and `shadow_bets_today`. Shadow bets are
-settled by the existing settlement pipeline via the new
-`_settle_pending_shadow_bets()` helper (wrapped in its own try/except so
-shadow-settlement issues never block real-bet settlement). See
-`dev/active/bet-timing-monitor-plan.md` for the analysis plan.
+Shadow bets are settled nightly. Analysis: `scripts/shadow_timing_report.py`.
 
-### Betting refresh schedule (7x/day + morning pipeline = 8 total)
+### Betting refresh schedule (32x/day — every 30 min after odds refresh)
 | Time | KO window covered | Fresh inputs |
 |------|-------------------|-------------|
 | 06:30 (morning pipeline) | All day initial | Full enrichment + odds |

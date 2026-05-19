@@ -325,29 +325,16 @@ def job_betting_refresh():
         console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
 
 
-def job_shadow_run_morning():
-    """BET-TIMING-MONITOR — shadow run for the morning window (06:30 UTC).
+def job_shadow_run_interval():
+    """BET-TIMING-MONITOR — 30-min shadow run, fires at :05/:35 past each hour 07–22 UTC.
 
-    Runs run_morning(shadow_mode=True, shadow_cohort='morning') which evaluates
-    ALL bots (not just the morning cohort) with the data available at this time
-    and writes to shadow_bets. Used to compare per-bot ROI across timing windows
-    without the strategy confound. Never touches bot bankrolls.
-
-    See dev/active/bet-timing-monitor-plan.md.
+    Cohort label = 'HHMM' UTC string (e.g. '0705', '1435') so each run is
+    independently analysable. All bots are evaluated regardless of cohort —
+    shadow mode has no bankroll impact. Writes to shadow_bets only.
     """
-    _run_job("shadow_morning", _shadow_run, "morning")
-
-
-def job_shadow_run_midday():
-    """BET-TIMING-MONITOR — shadow run for the midday window (11:30 UTC).
-    See job_shadow_run_morning."""
-    _run_job("shadow_midday", _shadow_run, "midday")
-
-
-def job_shadow_run_pre_ko():
-    """BET-TIMING-MONITOR — shadow run for the pre-KO window (15:30 UTC).
-    See job_shadow_run_morning."""
-    _run_job("shadow_pre_ko", _shadow_run, "pre_ko")
+    from datetime import datetime, timezone
+    cohort = datetime.now(timezone.utc).strftime("%H%M")
+    _run_job(f"shadow_{cohort}", _shadow_run, cohort)
 
 
 def _shadow_run(shadow_cohort: str):
@@ -807,32 +794,20 @@ def main():
     scheduler.add_job(job_standings_nightly, CronTrigger(hour=23, minute=30),
                       id="standings_nightly", name="Standings Nightly 23:30")
 
-    # Betting refreshes: 09:30, 11:00, 13:30, 15:00, 17:30, 19:00, 20:30 UTC
-    # 09:30 — acts on 08:00 odds + 09:00 news; catches Asian KO window
-    # 11:00 — European morning KOs; uses fresh 10:30 enrichment
-    # 13:30 — covers 12:00-14:30 KO gap; aligned with 13:30 pre-KO odds run + 13:00 full enrichment
-    # 15:00 — European afternoon KOs
-    # 17:30 — covers 16:00-18:30 KO gap; aligned with 17:30 pre-KO odds run + 16:00 enrichment
-    # 19:00 — European early evening KOs; uses fresh 18:30 news
-    # 20:30 — European prime-time KOs (19:00-21:00); uses 20:00 closing odds
-    for hour, minute in [(9, 30), (11, 0), (13, 30), (15, 0), (17, 30), (19, 0), (20, 30)]:
-        scheduler.add_job(job_betting_refresh_wrapper, CronTrigger(hour=hour, minute=minute),
-                          id=f"betting_refresh_{hour:02d}{minute:02d}",
-                          name=f"Betting Refresh {hour:02d}:{minute:02d}")
+    # Betting refresh: every 30 min, 5 min after each odds refresh (07:05–22:35 UTC).
+    # run_betting() is DB-only (skip_fetch=True), zero AF calls. Hard dedup on
+    # (bot_id, match_id, market, selection) means no duplicate bets ever written.
+    # New bets only appear when fresh odds create a new edge or a new match is priced.
+    # Cohort (morning/midday/pre_ko) is auto-detected from UTC hour by _current_cohort().
+    scheduler.add_job(job_betting_refresh_wrapper, CronTrigger(hour="7-22", minute="5,35"),
+                      id="betting_refresh_interval", name="Betting Refresh [30min]")
 
-    # BET-TIMING-MONITOR: 3 shadow runs/day — ALL bots evaluated at each window.
-    # Fires after the corresponding cohort betting run completes so the data
-    # underlying the shadow matches what the real run saw.
-    #   06:30 — morning shadow (after 06:00 morning pipeline)
-    #   11:30 — midday shadow  (after 11:00 betting_refresh)
-    #   15:30 — pre-KO shadow  (after 15:00 betting_refresh)
-    # See dev/active/bet-timing-monitor-plan.md.
-    scheduler.add_job(job_shadow_run_morning, CronTrigger(hour=6, minute=30),
-                      id="shadow_morning", name="Shadow Run [morning] 06:30")
-    scheduler.add_job(job_shadow_run_midday, CronTrigger(hour=11, minute=30),
-                      id="shadow_midday", name="Shadow Run [midday] 11:30")
-    scheduler.add_job(job_shadow_run_pre_ko, CronTrigger(hour=15, minute=30),
-                      id="shadow_pre_ko", name="Shadow Run [pre_ko] 15:30")
+    # BET-TIMING-MONITOR: shadow runs every 30 min, 5 min after each odds refresh.
+    # Cohort label = 'HHMM' UTC — each run is a snapshot of the full bot universe
+    # at that moment. Settlement runs nightly to compute per-hour ROI.
+    # Replaces the old 3-slot (06:30/11:30/15:30) design — now 32 snapshots/day.
+    scheduler.add_job(job_shadow_run_interval, CronTrigger(hour="7-22", minute="5,35"),
+                      id="shadow_interval", name="Shadow Run [30min]")
 
     # News checker: 09:00, 12:30, 14:30, 16:30, 18:30 UTC
     # 14:30 added — feeds 15:00 betting (was 2.5h stale)

@@ -2755,18 +2755,16 @@ def _():
     )
 
 
-@test("SHADOW-SCHEDULER — 3 shadow cron jobs registered at 06:30 / 11:30 / 15:30")
+@test("SHADOW-SCHEDULER — 30-min interval shadow job registered (07:05–22:35 UTC)")
 def _():
-    """Without these, no shadow data accumulates. The ops_snapshot
-    shadow_runs_today counter is the daily health indicator."""
+    """Shadow runs every 30 min after odds refresh. Cohort = HHMM time string.
+    Replaces the old 3-slot design (06:30/11:30/15:30)."""
     import pathlib
     src = pathlib.Path("workers/scheduler.py").read_text()
-    assert "job_shadow_run_morning" in src, "missing morning shadow job"
-    assert "job_shadow_run_midday" in src, "missing midday shadow job"
-    assert "job_shadow_run_pre_ko" in src, "missing pre_ko shadow job"
-    assert 'CronTrigger(hour=6, minute=30)' in src, "morning shadow must fire at 06:30"
-    assert 'CronTrigger(hour=11, minute=30)' in src, "midday shadow must fire at 11:30"
-    assert 'CronTrigger(hour=15, minute=30)' in src, "pre_ko shadow must fire at 15:30"
+    assert "job_shadow_run_interval" in src, "missing interval shadow job function"
+    assert "shadow_interval" in src, "missing shadow_interval job id"
+    assert '"7-22"' in src, "interval shadow must cover hours 7-22"
+    assert '"5,35"' in src, "interval shadow must fire at :05 and :35"
 
 
 @test("BOT-QUAL-LIB — bot-aggregates lib exports the shared helpers")

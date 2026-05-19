@@ -1526,10 +1526,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
     from workers.utils.kill_switches import is_disabled
     if is_disabled("paper_betting"):
         return
-    if shadow_mode and shadow_cohort not in ("morning", "midday", "pre_ko"):
-        raise ValueError(
-            f"shadow_mode=True requires shadow_cohort in {{morning, midday, pre_ko}}, got {shadow_cohort!r}"
-        )
+    if shadow_mode and not shadow_cohort:
+        raise ValueError("shadow_mode=True requires shadow_cohort to be set")
 
     import uuid as _uuid
     _shadow_run_id: str | None = str(_uuid.uuid4()) if shadow_mode else None
