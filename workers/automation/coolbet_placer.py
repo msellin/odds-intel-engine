@@ -78,6 +78,72 @@ _SELECTION_OUTCOME: dict[str, str] = {
 
 def load_qualified_bets() -> list[dict]:
     """Return today's simulated_bets qualifying for automated placement."""
+
+    # ── Diagnostic: show what each filter removes ─────────────────────────
+    diag = execute_query(
+        """
+        SELECT
+            COUNT(*)                                                        AS total_pending_today,
+            COUNT(*) FILTER (WHERE m.date > NOW())                          AS not_kicked_off,
+            COUNT(*) FILTER (WHERE m.date > NOW()
+                               AND sb.edge_percent >= %s * 100)             AS pass_edge,
+            COUNT(*) FILTER (WHERE m.date > NOW()
+                               AND sb.edge_percent >= %s * 100
+                               AND NOT EXISTS (
+                                   SELECT 1 FROM real_bets rb
+                                   WHERE rb.match_id  = sb.match_id
+                                     AND rb.market    = sb.market
+                                     AND rb.selection = sb.selection
+                                     AND DATE(rb.placed_at) = CURRENT_DATE
+                               ))                                           AS pass_no_real_bet
+        FROM simulated_bets sb
+        JOIN matches m ON m.id = sb.match_id
+        WHERE sb.result    = 'pending'
+          AND DATE(m.date) = CURRENT_DATE
+        """,
+        (_MIN_EDGE, _MIN_EDGE),
+    )
+    if diag:
+        d = diag[0]
+        log.info(
+            "Today's simulated_bets: %s pending | %s not kicked off | "
+            "%s pass edge≥%.0f%% | %s pass no-real-bet → qualifying",
+            d["total_pending_today"], d["not_kicked_off"],
+            d["pass_edge"], _MIN_EDGE * 100,
+            d["pass_no_real_bet"],
+        )
+
+    # ── Blocked by real_bets: show which ones were already placed ─────────
+    already = execute_query(
+        """
+        SELECT
+            ht.name AS home_team, at2.name AS away_team,
+            sb.market, sb.selection,
+            ROUND(sb.edge_percent::numeric, 1) AS edge_pct,
+            rb.actual_odds, rb.placed_at::time AS placed_time
+        FROM simulated_bets sb
+        JOIN matches m   ON m.id   = sb.match_id
+        JOIN teams   ht  ON ht.id  = m.home_team_id
+        JOIN teams   at2 ON at2.id = m.away_team_id
+        JOIN real_bets rb ON rb.match_id  = sb.match_id
+                          AND rb.market    = sb.market
+                          AND rb.selection = sb.selection
+                          AND DATE(rb.placed_at) = CURRENT_DATE
+        WHERE sb.result    = 'pending'
+          AND DATE(m.date) = CURRENT_DATE
+          AND m.date       > NOW()
+          AND sb.edge_percent >= %s * 100
+        ORDER BY sb.edge_percent DESC
+        """,
+        (_MIN_EDGE,),
+    )
+    if already:
+        log.info("Skipped — real bet already placed today:")
+        for r in already:
+            log.info("  ✓ already placed  %s vs %s | %s %s  edge=%s%%  @ %s  (%s)",
+                     r["home_team"], r["away_team"], r["market"], r["selection"],
+                     r["edge_pct"], r["actual_odds"], r["placed_time"])
+
     rows = execute_query(
         """
         SELECT

@@ -63,6 +63,15 @@ class CoolbetSession:
     def __init__(self):
         self._email = os.getenv("COOLBET_USER", os.getenv("COOLBET_EMAIL", ""))
         self._password = os.getenv("COOLBET_PASS", os.getenv("COOLBET_PASSWORD", ""))
+        # Individual cookie vars (preferred — easier to update when one expires)
+        # Falls back to the legacy combined COOLBET_IMPERVA_COOKIES string
+        self._imperva_cookies_individual = {
+            "reese84":                 os.getenv("COOLBET_COOKIE_REESE84", ""),
+            "visid_incap_723517":      os.getenv("COOLBET_COOKIE_VISID_INCAP", ""),
+            "nlbi_723517":             os.getenv("COOLBET_COOKIE_NLBI", ""),
+            "nlbi_723517_2147483392":  os.getenv("COOLBET_COOKIE_NLBI2", ""),
+            "incap_ses_1099_723517":   os.getenv("COOLBET_COOKIE_INCAP_SES", ""),
+        }
         self._imperva_cookies_raw = os.getenv("COOLBET_IMPERVA_COOKIES", "")
 
         if not self._email or not self._password:
@@ -80,8 +89,14 @@ class CoolbetSession:
     # ── setup ────────────────────────────────────────────────────────────────
 
     def _apply_imperva_cookies(self) -> None:
+        # Individual vars take priority; fall back to combined string
+        individual = {k: v for k, v in self._imperva_cookies_individual.items() if v}
+        if individual:
+            for name, value in individual.items():
+                self._http.cookies.set(name, value, domain="www.coolbet.com")
+            return
         if not self._imperva_cookies_raw:
-            log.warning("COOLBET_IMPERVA_COOKIES not set — Imperva may block requests")
+            log.warning("No Imperva cookies set — Imperva may block requests")
             return
         for part in self._imperva_cookies_raw.split(";"):
             part = part.strip()
