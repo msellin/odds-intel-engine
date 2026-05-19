@@ -6160,5 +6160,36 @@ def _():
     assert "away_score IS NOT NULL" not in src, "fit_league_rho.py still references non-existent column away_score"
 
 
+@test("COOLBET-PLACER — automation module structure")
+def _():
+    import pathlib
+
+    session_src = pathlib.Path("workers/automation/coolbet_session.py").read_text()
+    assert "class CoolbetSession" in session_src, "CoolbetSession class missing"
+    assert "_LOGIN_URL" in session_src, "_LOGIN_URL not defined"
+    assert "def _login" in session_src, "_login method missing"
+    assert "def _ensure_auth" in session_src, "_ensure_auth missing"
+    assert "COOLBET_USER" in session_src, "must read COOLBET_USER from env"
+    assert "COOLBET_IMPERVA_COOKIES" in session_src, "must read COOLBET_IMPERVA_COOKIES from env"
+
+    placer_src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
+    assert "_BET_URL" in placer_src, "_BET_URL constant missing"
+    assert "/s/bets/bets" in placer_src, "bet placement URL must be /s/bets/bets"
+    assert "def load_qualified_bets" in placer_src, "load_qualified_bets missing"
+    assert "def fetch_coolbet_events" in placer_src, "fetch_coolbet_events missing"
+    assert "def fuzzy_match_event" in placer_src, "fuzzy_match_event missing"
+    assert "def find_market_outcome" in placer_src, "find_market_outcome missing"
+    assert "def get_live_odds_and_id" in placer_src, "get_live_odds_and_id missing"
+    assert "def _place_bet_api" in placer_src, "_place_bet_api missing"
+    assert "def place_all_bets" in placer_src, "place_all_bets missing"
+    assert "oddsIdByOutcomeId" in placer_src, "bet payload must include oddsIdByOutcomeId"
+    assert "store_real_bet" in placer_src, "must write to real_bets on success"
+    assert "NOT EXISTS" in placer_src, "dedup guard (NOT EXISTS real_bets) missing"
+
+    cli_src = pathlib.Path("scripts/place_coolbet_bets.py").read_text()
+    assert "--execute" in cli_src, "CLI must have --execute flag"
+    assert "place_all_bets" in cli_src, "CLI must call place_all_bets"
+
+
 if __name__ == "__main__":
     main()

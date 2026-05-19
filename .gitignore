@@ -33,3 +33,4 @@ lighthouse-*.html
 dev/active/inplay-backfill-*.csv
 dev/active/inplay-backfill-*.txt
 .claude/settings.local.json
+.coolbet_session/
