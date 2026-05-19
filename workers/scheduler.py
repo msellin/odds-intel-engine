@@ -337,6 +337,30 @@ def job_shadow_run_interval():
     _run_job(f"shadow_{cohort}", _shadow_run, cohort)
 
 
+def job_coolbet_odds_snapshot():
+    """COOLBET-ODDS-SNAPSHOT — 30-min Coolbet odds ingest, fires at :03/:33 UTC.
+
+    Matches upcoming matches in our DB (next 2 days) against Coolbet's fo-category
+    tree, then pulls sidebets per match to get full market depth (1X2, OU 0.5–4.5,
+    BTTS, double_chance, asian_handicap). Stores in odds_snapshots with
+    bookmaker='Coolbet'. Lands before the :05/:35 betting refresh so the same
+    cycle's edge math sees the latest Coolbet prices.
+
+    Error-isolated — a Coolbet auth/Imperva blowup never blocks other jobs.
+    """
+    from workers.automation.coolbet_explorer import run_bulk
+    import traceback
+    try:
+        run_bulk(days=2, dry_run=False, sleep_s=0.25, limit=None)
+    except Exception as e:
+        console.print(f"[red]Coolbet odds snapshot failed: {e}[/red]")
+        console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
+
+
+def _coolbet_odds_snapshot_wrapper():
+    _run_job("coolbet_odds_snapshot", job_coolbet_odds_snapshot)
+
+
 def _shadow_run(shadow_cohort: str):
     """Run run_morning(shadow_mode=True, shadow_cohort=...) with error isolation."""
     from workers.jobs.daily_pipeline_v2 import run_morning
@@ -806,6 +830,14 @@ def main():
     # Cohort label = 'HHMM' UTC — each run is a snapshot of the full bot universe
     # at that moment. Settlement runs nightly to compute per-hour ROI.
     # Replaces the old 3-slot (06:30/11:30/15:30) design — now 32 snapshots/day.
+    # Coolbet odds snapshot: every 30 min at :03/:33, between odds refresh (:00/:30)
+    # and betting refresh (:05/:35). Builds a Coolbet odds time-series in
+    # odds_snapshots — feeds the planned COOLBET-OR-PIN-REQUIRED data-quality
+    # gate so OU/AH bots can lean on Coolbet (our actual placement venue)
+    # instead of being Pinnacle-only.
+    scheduler.add_job(_coolbet_odds_snapshot_wrapper, CronTrigger(hour="7-22", minute="3,33"),
+                      id="coolbet_odds_interval", name="Coolbet Odds Snapshot [30min]")
+
     scheduler.add_job(job_shadow_run_interval, CronTrigger(hour="7-22", minute="5,35"),
                       id="shadow_interval", name="Shadow Run [30min]")
 

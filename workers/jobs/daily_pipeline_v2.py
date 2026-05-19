@@ -2073,8 +2073,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
 
         for bot_name, config in BOTS_CONFIG.items():
             # ODDS-QUALITY-CLEANUP: skip bots flagged is_active=false or retired.
-            # SHADOW: keep retired bots out too — they don't reflect current strategy.
-            if not _bot_active.get(bot_name, True):
+            # SHADOW-RETIRED-OK (2026-05-20): retired bots still produce shadow_bets
+            # so the retirement-note recovery criterion ("≥30 bets at ≥3% ROI in
+            # shadow_bets") is actually measurable. They never produce live
+            # simulated_bets — only shadow rows feeding the alpha-recovery check.
+            if not shadow_mode and not _bot_active.get(bot_name, True):
                 continue
 
             # BOT-TIMING: skip bots not in the active cohort.

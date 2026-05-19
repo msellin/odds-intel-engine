@@ -32,6 +32,7 @@
 08:30  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts (ENG-8)
 09:00  ⑦ News Checker    run_news_checker()        Injury/lineup/news signals (Gemini)
 09:15  ① Fixtures        run_fixtures()            Status refresh — catches morning postponements
+:03/:33 ⑱ Coolbet Odds    job_coolbet_odds_snapshot() Every 30 min, between AF odds (:00/:30) and betting refresh (:05/:35). Walks Coolbet fo-category + per-match sidebets, stores Coolbet OU/1X2/BTTS/AH/DC odds in odds_snapshots so the same cycle's edge math sees fresh prices on our actual placement venue. Lays the data foundation for the planned COOLBET-OR-PIN-REQUIRED quality gate (replaces Pinnacle-only OU veto). Error-isolated.
 :05/:35 ⑨ Betting Refresh betting_refresh()         Every 30 min, 5 min after odds refresh (07:05–22:35 UTC). DB-only, 0 AF calls. Dedup prevents duplicates. Cohort auto-detected from UTC hour.
 :05/:35 ⑰ Shadow Run     job_shadow_run_interval() Every 30 min, concurrent with betting refresh. ALL bots evaluated → shadow_bets. Cohort = 'HHMM' UTC string. 32 snapshots/day.
 10:30  ② Enrichment      run_enrichment()          Injuries only — fresh before betting (AF-STANDINGS-DAILY)

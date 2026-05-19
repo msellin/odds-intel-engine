@@ -2767,6 +2767,90 @@ def _():
     assert '"5,35"' in src, "interval shadow must fire at :05 and :35"
 
 
+@test("COOLBET-ODDS-SNAPSHOT — parser maps Coolbet bet_offers to our market shape")
+def _():
+    """COOLBET-ODDS-SNAPSHOT (2026-05-20) — coolbet_explorer.parse_bet_offer must
+    convert Coolbet criterion_label + outcomes into (market, selection, odds,
+    handicap_line) tuples that match our odds_snapshots conventions.
+    Guards: 1X2 selections, OU 1.5 line parsing, BTTS yes/no, AH home-perspective
+    handicap_line (away `2 +1.25` must store as home -1.25)."""
+    from workers.automation.coolbet_explorer import parse_bet_offer
+
+    # 1X2
+    rows = parse_bet_offer({"criterion_label": "full time result", "outcomes": [
+        {"label": "1", "odds_decimal": 2.10},
+        {"label": "X", "odds_decimal": 3.40},
+        {"label": "2", "odds_decimal": 3.20},
+    ]})
+    assert rows == [
+        ("1x2", "Home", 2.10, None),
+        ("1x2", "Draw", 3.40, None),
+        ("1x2", "Away", 3.20, None),
+    ], f"1X2 parse wrong: {rows}"
+
+    # OU 1.5
+    rows = parse_bet_offer({"criterion_label": "total goals over/under 1.5", "outcomes": [
+        {"label": "Over", "odds_decimal": 1.45},
+        {"label": "Under", "odds_decimal": 2.60},
+    ]})
+    assert rows[0] == ("over_under_15", "over", 1.45, None), f"OU 1.5 over wrong: {rows}"
+    assert rows[1] == ("over_under_15", "under", 2.60, None), f"OU 1.5 under wrong: {rows}"
+
+    # BTTS
+    rows = parse_bet_offer({"criterion_label": "both teams to score", "outcomes": [
+        {"label": "Yes", "odds_decimal": 1.85},
+        {"label": "No", "odds_decimal": 1.90},
+    ]})
+    assert rows == [
+        ("btts", "yes", 1.85, None),
+        ("btts", "no", 1.90, None),
+    ], f"BTTS parse wrong: {rows}"
+
+    # AH format B — line on each outcome (per-team perspective)
+    rows = parse_bet_offer({"criterion_label": "asian handicap", "outcomes": [
+        {"label": "1 -1.25", "odds_decimal": 1.95},
+        {"label": "2 +1.25", "odds_decimal": 1.85},
+    ]})
+    assert rows[0] == ("asian_handicap", "home", 1.95, -1.25), f"AH-B home wrong: {rows}"
+    assert rows[1] == ("asian_handicap", "away", 1.85, -1.25), (
+        f"AH-B away handicap_line must flip to home perspective (-1.25), got {rows[1]}"
+    )
+
+    # AH format A — line in criterion_label (already home-perspective), both
+    # outcomes share the same line.
+    rows = parse_bet_offer({"criterion_label": "asian handicap -1.25", "outcomes": [
+        {"label": "Home", "odds_decimal": 1.95},
+        {"label": "Away", "odds_decimal": 1.85},
+    ]})
+    assert rows == [
+        ("asian_handicap", "home", 1.95, -1.25),
+        ("asian_handicap", "away", 1.85, -1.25),
+    ], f"AH-A parse wrong (line in criterion_label): {rows}"
+
+    # Scheduler registration
+    import pathlib
+    src = pathlib.Path("workers/scheduler.py").read_text()
+    assert "_coolbet_odds_snapshot_wrapper" in src, "missing wrapper function"
+    assert "coolbet_odds_interval" in src, "missing coolbet_odds_interval job id"
+    assert '"3,33"' in src, "Coolbet snapshot must fire at :03 and :33"
+
+
+@test("SHADOW-RETIRED-OK — retired bots still produce shadow_bets")
+def _():
+    """Retired bot notes promise '≥30 bets at ≥3% ROI in shadow_bets' as a
+    recovery criterion. That criterion is only measurable if retired bots
+    still run in shadow_mode. The gate must skip retired bots only when
+    shadow_mode=False, not unconditionally."""
+    import inspect
+    from workers.jobs.daily_pipeline_v2 import run_morning
+    src = inspect.getsource(run_morning)
+    assert "if not shadow_mode and not _bot_active.get(bot_name, True):" in src, (
+        "retired-bot gate must be `if not shadow_mode and not _bot_active...` — "
+        "otherwise the shadow-bets recovery path described in retired bots' "
+        "notes (bot_lower_1x2, bot_opt_home_lower) can never trigger."
+    )
+
+
 @test("BOT-QUAL-LIB — bot-aggregates lib exports the shared helpers")
 def _():
     """BOT-QUAL-FILTER-DUAL — both /admin/bots and /performance import their
