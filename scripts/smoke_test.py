@@ -4717,6 +4717,34 @@ def _():
     )
 
 
+@test("BACKTEST-DC-DNB-AH — backtester covers DC, DNB, AH markets")
+def _():
+    """DC/DNB probs derived inline from 1x2 predictions. AH uses Poisson
+    re-computation. Void handling for DNB draws and AH pushes."""
+    import pathlib
+    src = pathlib.Path("scripts/backtest_pre_match_bots.py").read_text()
+    assert "double_chance" in src, (
+        "Backtester must handle double_chance market for DC bots."
+    )
+    assert "draw_no_bet" in src, (
+        "Backtester must handle draw_no_bet market for DNB bots."
+    )
+    assert "_ah_model_prob" in src, (
+        "Backtester must use _ah_model_prob for AH bots — same Poisson logic as live pipeline."
+    )
+    assert "_load_ah_odds" in src, (
+        "Backtester must load AH odds separately via _load_ah_odds."
+    )
+    assert "return None" in src, (
+        "Backtester _outcome must return None for voids (DNB draw, AH push) — "
+        "voids must be excluded from ROI, not counted as losses."
+    )
+    assert "_build_poisson_lookup" in src, (
+        "Backtester must pre-compute Poisson exp_home/exp_away for AH bots "
+        "since these are not stored in the DB."
+    )
+
+
 @test("MATCH-DUPES — bulk_store_matches dedup uses api_football_id first")
 def _():
     """The bug that created 1,425 dupe groups: bulk_store_matches keyed dedup on
