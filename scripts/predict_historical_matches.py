@@ -310,6 +310,30 @@ def main():
         n = bulk_store_predictions(pred_rows)
         inserted_total += n
 
+    # Backdate created_at on inserted rows so the backtest (which filters
+    # p.created_at < m.date for lookahead safety) actually picks them up.
+    # These predictions were generated using only pre-kickoff team form, so
+    # they're lookahead-free at the per-match level — set created_at to
+    # one hour before the match's kickoff to reflect that.
+    if not args.dry_run and inserted_total > 0:
+        from workers.api_clients.db import execute_write
+        try:
+            n_updated = execute_write(
+                """
+                UPDATE predictions
+                SET created_at = m.date - INTERVAL '1 hour'
+                FROM matches m
+                WHERE predictions.match_id = m.id
+                  AND predictions.model_version = 'poisson_backfill'
+                  AND predictions.created_at > m.date
+                """,
+                [],
+            )
+            print(f"  Backdated created_at for {n_updated:,} backfilled prediction rows "
+                  f"(matches backtest's p.created_at < m.date filter).")
+        except Exception as e:
+            print(f"  [warn] backdate UPDATE failed: {e}")
+
     print()
     print("=" * 70)
     print(f"Matches scanned:           {len(matches):,}")
