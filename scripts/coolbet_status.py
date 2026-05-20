@@ -54,6 +54,43 @@ def _fmt_time(dt) -> str:
     return dt.strftime("%H:%M:%S UTC")
 
 
+def section_daemon_state() -> None:
+    """Read ~/.coolbet-daemon/state.json (written by daemon) to show internal
+    timing — sweep cycle, last placement attempt, etc."""
+    import json
+    state_path = Path.home() / ".coolbet-daemon" / "state.json"
+    if not state_path.exists():
+        return  # daemon hasn't written one yet
+    try:
+        st = json.loads(state_path.read_text())
+    except Exception:
+        return
+    console.print("\n[bold cyan]Daemon state (from state.json)[/bold cyan]")
+    def _ts(key):
+        e = st.get(key)
+        if not e: return None
+        try:
+            return datetime.fromisoformat(e["ts"])
+        except Exception:
+            return None
+    start = _ts("last_start")
+    ka    = _ts("last_keepalive")
+    s_s   = _ts("last_sweep_started")
+    s_f   = _ts("last_sweep_finished")
+    p_a   = _ts("last_place_attempt")
+    if start: console.print(f"  started:           {_fmt_time(start)} ({_fmt_age(start)})")
+    if ka:    console.print(f"  last keepalive:    {_fmt_time(ka)} ({_fmt_age(ka)})  "
+                            f"JWT TTL ≈ {st.get('last_keepalive',{}).get('jwt_ttl_s','?')}s")
+    if s_s:
+        line = f"  last sweep started: {_fmt_time(s_s)} ({_fmt_age(s_s)})"
+        if s_f and s_f >= s_s:
+            line += f"  → finished {_fmt_age(s_f)}"
+        else:
+            line += "  [yellow](in progress)[/yellow]"
+        console.print(line)
+    if p_a:   console.print(f"  last placement attempt: {_fmt_time(p_a)} ({_fmt_age(p_a)})")
+
+
 def section_session() -> None:
     console.print("\n[bold cyan]Session[/bold cyan]")
     # The daemon's keepalive doesn't write to any table directly — but every
@@ -207,6 +244,7 @@ def main() -> None:
     console.print(f"\n[bold green]Coolbet daemon status[/bold green] · "
                   f"now {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}")
     section_session()
+    section_daemon_state()
     section_tmux()
     section_sweep()
     section_pending()

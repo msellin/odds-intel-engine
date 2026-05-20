@@ -31,7 +31,10 @@ Ctrl-C stops cleanly.
 """
 
 import argparse
+import json
 import logging
+import logging.handlers
+import os
 import signal
 import sys
 import threading
@@ -44,12 +47,52 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from workers.automation.coolbet_session import CoolbetSession
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
+# ── Logging: stdout + rotating daily file (COOLBET-PERSISTENT-LOG) ───────────
+# Daily rotation, keep 14 days. File path: ~/.coolbet-daemon/coolbet.log.
+# Survives tmux kills, daemon restarts, mac reboots.
+_LOG_DIR = Path.home() / ".coolbet-daemon"
+_LOG_DIR.mkdir(exist_ok=True)
+_LOG_PATH = _LOG_DIR / "coolbet.log"
+
+_fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s",
+                         datefmt="%Y-%m-%d %H:%M:%S")
+_stdout = logging.StreamHandler(sys.stdout)
+_stdout.setFormatter(_fmt)
+_file = logging.handlers.TimedRotatingFileHandler(
+    _LOG_PATH, when="midnight", backupCount=14, encoding="utf-8",
 )
+_file.setFormatter(_fmt)
+logging.basicConfig(level=logging.INFO, handlers=[_stdout, _file])
 log = logging.getLogger("coolbet_daemon")
+
+# ── State persistence (COOLBET-STATE-PERSISTENCE) ────────────────────────────
+# JSON state lives at ~/.coolbet-daemon/state.json. Restarts pick up
+# last-event timestamps + counters from disk so the status CLI keeps a
+# coherent history across daemon kills.
+_STATE_PATH = _LOG_DIR / "state.json"
+
+
+def _load_state() -> dict:
+    try:
+        return json.loads(_STATE_PATH.read_text())
+    except Exception:
+        return {}
+
+
+def _save_state(state: dict) -> None:
+    try:
+        # Write-then-rename for atomic replacement
+        tmp = _STATE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state, indent=2))
+        os.replace(tmp, _STATE_PATH)
+    except Exception as e:
+        log.warning("state.json write failed: %s", e)
+
+
+def _stamp(state: dict, key: str, extra: dict | None = None) -> None:
+    """Update state[key] = {ts: now, ...extra} and persist."""
+    state[key] = {"ts": datetime.now(timezone.utc).isoformat(), **(extra or {})}
+    _save_state(state)
 
 _STOP = False
 _SWEEP_THREAD: threading.Thread | None = None
@@ -102,6 +145,61 @@ def _task_odds_snapshot(mode: str, days: int, require_pinnacle: bool) -> str:
     except Exception as e:
         log.warning("odds snapshot raised: %s", e)
         return f"odds snapshot ✗ ({e})"
+
+
+def _task_daily_summary() -> bool:
+    """COOLBET-DAILY-SUMMARY — once per UTC day, Telegram digest of:
+      • Coolbet odds rows + distinct matches ingested today
+      • auto-placed real_bets today + total stake
+      • pending value bets at ≥5% edge not yet placed
+      • last keepalive timestamp (so operator knows session is alive)
+
+    Returns True on send, False if skipped / failed."""
+    from workers.api_clients.supabase_client import execute_query
+    from workers.notify.telegram import send_telegram
+    try:
+        # Today's Coolbet ingest volume
+        r1 = (execute_query("""
+            SELECT COUNT(*) AS rows, COUNT(DISTINCT match_id) AS matches
+            FROM odds_snapshots
+            WHERE bookmaker = 'Coolbet'
+              AND DATE(timestamp AT TIME ZONE 'UTC') = CURRENT_DATE
+        """, ()) or [{}])[0]
+        # Today's auto-placements
+        r2 = (execute_query("""
+            SELECT COUNT(*) AS bets, COALESCE(SUM(stake),0)::float AS stake
+            FROM real_bets
+            WHERE bookmaker = 'Coolbet'
+              AND DATE(placed_at) = CURRENT_DATE
+              AND notes LIKE 'auto ticket=%%'
+        """, ()) or [{}])[0]
+        # Pending unplaced
+        r3 = (execute_query("""
+            SELECT COUNT(*) AS unplaced
+            FROM simulated_bets sb
+            JOIN matches m ON m.id = sb.match_id
+            WHERE sb.result = 'pending'
+              AND DATE(m.date) = CURRENT_DATE
+              AND m.date > NOW()
+              AND sb.edge_percent >= 0.05
+              AND NOT EXISTS (
+                SELECT 1 FROM real_bets rb
+                WHERE rb.simulated_bet_id = sb.id
+                  AND DATE(rb.placed_at) = CURRENT_DATE
+              )
+        """, ()) or [{}])[0]
+        msg = (
+            "📊 <b>Coolbet daemon — daily summary</b>\n"
+            f"Odds ingested today: <b>{r1.get('rows', 0)}</b> rows "
+            f"on <b>{r1.get('matches', 0)}</b> matches\n"
+            f"Auto-placed: <b>{r2.get('bets', 0)}</b> bets, "
+            f"total stake €<b>{float(r2.get('stake') or 0):.2f}</b>\n"
+            f"Pending ≥5% edge, not yet placed: <b>{r3.get('unplaced', 0)}</b>"
+        )
+        return send_telegram(msg, silent=True)
+    except Exception as e:
+        log.warning("daily summary raised: %s", e)
+        return False
 
 
 def _task_place(mode: str, guard, min_edge: float | None) -> str:
@@ -179,6 +277,8 @@ def main() -> None:
                          "betting and just burn API budget.")
     ap.add_argument("--place-min", type=int, default=5,
                     help="Placement loop cadence in minutes (default 5)")
+    ap.add_argument("--summary-hour", type=int, default=21,
+                    help="UTC hour to send the daily Telegram summary (default 21 = 23/24 EEST)")
     ap.add_argument("--min-edge", type=float, default=0.05,
                     help="Minimum edge to auto-place (decimal — 0.05 = 5%%, "
                          "the default). Overrides COOLBET_MIN_EDGE env. "
@@ -272,9 +372,17 @@ def main() -> None:
     except Exception:
         pass  # never block startup on notify
 
+    state = _load_state()
+    _stamp(state, "last_start", {
+        "odds_mode": args.odds_mode, "odds_min": args.odds_min,
+        "place_mode": args.place_mode, "place_min": args.place_min,
+        "min_edge": args.min_edge,
+    })
+
     session = CoolbetSession()
     # Force initial login so the first keepalive doesn't surprise on auth.
     log.info(_task_keepalive(session))
+    _stamp(state, "last_keepalive", {"ok": True, "jwt_ttl_s": int(session.jwt_seconds_remaining)})
 
     now = time.time()
     next_keepalive = now + args.keepalive_min * 60
@@ -286,6 +394,7 @@ def main() -> None:
 
         if now >= next_keepalive:
             log.info(_task_keepalive(session))
+            _stamp(state, "last_keepalive", {"jwt_ttl_s": int(session.jwt_seconds_remaining)})
             next_keepalive = now + args.keepalive_min * 60
 
         # ODDS sweep — runs in a background thread so keepalive + placement
@@ -297,6 +406,7 @@ def main() -> None:
             if _sweep_running():
                 log.info("odds snapshot ⏸  previous sweep still running — skipping")
             else:
+                _stamp(state, "last_sweep_started", {"mode": args.odds_mode})
                 def _sweep_runner():
                     try:
                         log.info(_task_odds_snapshot(
@@ -304,8 +414,10 @@ def main() -> None:
                             days=args.odds_days,
                             require_pinnacle=args.require_pinnacle,
                         ))
+                        _stamp(state, "last_sweep_finished", {"ok": True})
                     except Exception as e:
                         log.warning("sweep thread crashed: %s\n%s", e, traceback.format_exc())
+                        _stamp(state, "last_sweep_finished", {"ok": False, "error": str(e)[:200]})
                 _SWEEP_THREAD = threading.Thread(target=_sweep_runner, daemon=True,
                                                  name="coolbet-odds-sweep")
                 _SWEEP_THREAD.start()
@@ -320,7 +432,23 @@ def main() -> None:
                 log.info("place ⏸  skipped (sweep in progress); retry in %d min", args.place_min)
             else:
                 log.info(_task_place(args.place_mode, guard, args.min_edge))
+                _stamp(state, "last_place_attempt", {"mode": args.place_mode})
             next_place = now + args.place_min * 60
+
+        # DAILY-SUMMARY — once per UTC day at the configured hour. Uses state
+        # to track "last summary date" so a daemon restart doesn't re-send
+        # the same day's summary.
+        now_utc = datetime.now(timezone.utc)
+        if now_utc.hour >= args.summary_hour:
+            today_iso = now_utc.date().isoformat()
+            last_done = (state.get("last_daily_summary") or {}).get("date")
+            if last_done != today_iso:
+                if _task_daily_summary():
+                    log.info("daily summary ✓ pushed to Telegram")
+                state["last_daily_summary"] = {
+                    "ts": now_utc.isoformat(), "date": today_iso,
+                }
+                _save_state(state)
 
         # Sleep until the soonest next task, but check stop signal every 30s.
         next_due = min(

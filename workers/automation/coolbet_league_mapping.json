@@ -825,17 +825,6 @@
     "match_score": 0.92
   },
   {
-    "db_league_id": "4e627dac-a2c9-4949-9f99-4df2e92596ca",
-    "db_league_name": "Kakkonen - Lohko A",
-    "db_country": "Finland",
-    "cb_league_id": 20509,
-    "cb_league_name": "Kolmonen Itä AC1",
-    "cb_full_slug": "jalgpall/soome/kolmonen-ita-ac1",
-    "confidence": "low",
-    "review_note": "AF has no 3rd-tier Finnish league; mapped to closest Kakkonen",
-    "match_score": 0.5
-  },
-  {
     "db_league_id": "6fa42fe3-7713-4d08-a43a-e0830056a4c9",
     "db_league_name": "AFC Women's Champions League",
     "db_country": "World",
@@ -845,17 +834,6 @@
     "confidence": "high",
     "review_note": "",
     "match_score": 1.0
-  },
-  {
-    "db_league_id": "2c06986e-42a0-43bf-9afd-46dda25969a5",
-    "db_league_name": "Kakkonen - Lohko B",
-    "db_country": "Finland",
-    "cb_league_id": 20510,
-    "cb_league_name": "Kolmonen Itä B",
-    "cb_full_slug": "jalgpall/soome/kolmonen-ita-b",
-    "confidence": "low",
-    "review_note": "AF has no 3rd-tier Finnish league; mapped to closest Kakkonen",
-    "match_score": 0.533
   },
   {
     "db_league_id": "4e627dac-a2c9-4949-9f99-4df2e92596ca",
@@ -891,17 +869,6 @@
     "match_score": 0.562
   },
   {
-    "db_league_id": "504094f7-4be0-4d32-88bd-1e9e6c5717c9",
-    "db_league_name": "Kansallinen Liiga",
-    "db_country": "Finland",
-    "cb_league_id": 46629,
-    "cb_league_name": "Nelonen Etelä 1",
-    "cb_full_slug": "jalgpall/soome/nelonen-etela-1",
-    "confidence": "low",
-    "review_note": "AF has no 4th-tier Finnish league (Nelonen); best-guess match",
-    "match_score": 0.5
-  },
-  {
     "db_league_id": "195eca3c-9714-492e-aed0-bf2c078d1791",
     "db_league_name": "NM Cupen",
     "db_country": "Norway",
@@ -913,105 +880,6 @@
     "match_score": 1.0
   },
   {
-    "db_league_id": "504094f7-4be0-4d32-88bd-1e9e6c5717c9",
-    "db_league_name": "Kansallinen Liiga",
-    "db_country": "Finland",
-    "cb_league_id": 46619,
-    "cb_league_name": "Nelonen Etelä 2",
-    "cb_full_slug": "jalgpall/soome/nelonen-etela-2",
-    "confidence": "low",
-    "review_note": "AF has no 4th-tier Finnish league (Nelonen); best-guess match",
-    "match_score": 0.5
-  },
-  {
-    "db_league_id": "504094f7-4be0-4d32-88bd-1e9e6c5717c9",
-    "db_league_name": "Kansallinen Liiga",
-    "db_country": "Finland",
-    "cb_league_id": 46618,
-    "cb_league_name": "Nelonen Etelä 3",
-    "cb_full_slug": "jalgpall/soome/nelonen-etela-3",
-    "confidence": "low",
-    "review_note": "AF has no 4th-tier Finnish league (Nelonen); best-guess match",
-    "match_score": 0.5
-  },
-  {
-    "db_league_id": "504094f7-4be0-4d32-88bd-1e9e6c5717c9",
-    "db_league_name": "Kansallinen Liiga",
-    "db_country": "Finland",
-    "cb_league_id": 46630,
-    "cb_league_name": "Nelonen Etelä 4",
-    "cb_full_slug": "jalgpall/soome/nelonen-uusimaa-4",
-    "confidence": "low",
-    "review_note": "AF has no 4th-tier Finnish league (Nelonen); best-guess match",
-    "match_score": 0.5
-  },
-  {
-    "db_league_id": "504094f7-4be0-4d32-88bd-1e9e6c5717c9",
-    "db_league_name": "Kansallinen Liiga",
-    "db_country": "Finland",
-    "cb_league_id": 46620,
-    "cb_league_name": "Nelonen Itä A",
-    "cb_full_slug": "jalgpall/soome/nelonen-ita-a",
-    "confidence": "low",
-    "review_note": "AF has no 4th-tier Finnish league (Nelonen); best-guess match",
-    "match_score": 0.533
-  },
-  {
-    "db_league_id": "504094f7-4be0-4d32-88bd-1e9e6c5717c9",
-    "db_league_name": "Kansallinen Liiga",
-    "db_country": "Finland",
-    "cb_league_id": 46621,
-    "cb_league_name": "Nelonen Itä B",
-    "cb_full_slug": "jalgpall/soome/nelonen-ita-b",
-    "confidence": "low",
-    "review_note": "AF has no 4th-tier Finnish league (Nelonen); best-guess match",
-    "match_score": 0.533
-  },
-  {
-    "db_league_id": "504094f7-4be0-4d32-88bd-1e9e6c5717c9",
-    "db_league_name": "Kansallinen Liiga",
-    "db_country": "Finland",
-    "cb_league_id": 46623,
-    "cb_league_name": "Nelonen Itä C",
-    "cb_full_slug": "jalgpall/soome/nelonen-ita-c",
-    "confidence": "low",
-    "review_note": "AF has no 4th-tier Finnish league (Nelonen); best-guess match",
-    "match_score": 0.533
-  },
-  {
-    "db_league_id": "2c06986e-42a0-43bf-9afd-46dda25969a5",
-    "db_league_name": "Kakkonen - Lohko B",
-    "db_country": "Finland",
-    "cb_league_id": 46628,
-    "cb_league_name": "Nelonen Länsi B",
-    "cb_full_slug": "jalgpall/soome/nelonen-lansi-b",
-    "confidence": "low",
-    "review_note": "AF has no 4th-tier Finnish league (Nelonen); best-guess match",
-    "match_score": 0.516
-  },
-  {
-    "db_league_id": "f6f8fa53-0026-4cb9-99df-174aaf01c322",
-    "db_league_name": "Kakkonen - Lohko C",
-    "db_country": "Finland",
-    "cb_league_id": 46631,
-    "cb_league_name": "Nelonen Länsi C1",
-    "cb_full_slug": "jalgpall/soome/nelonen-lansi-c1",
-    "confidence": "low",
-    "review_note": "AF has no 4th-tier Finnish league (Nelonen); best-guess match",
-    "match_score": 0.5
-  },
-  {
-    "db_league_id": "f6f8fa53-0026-4cb9-99df-174aaf01c322",
-    "db_league_name": "Kakkonen - Lohko C",
-    "db_country": "Finland",
-    "cb_league_id": 46622,
-    "cb_league_name": "Nelonen Länsi C2",
-    "cb_full_slug": "jalgpall/soome/nelonen-lansi-c2",
-    "confidence": "low",
-    "review_note": "AF has no 4th-tier Finnish league (Nelonen); best-guess match",
-    "match_score": 0.5
-  },
-  {
     "db_league_id": "55dbe9c9-2e4e-4b49-bb59-20178db56af1",
     "db_league_name": "2. Division - Group 1",
     "db_country": "Norway",
@@ -1021,17 +889,6 @@
     "confidence": "high",
     "review_note": "Norway 'Lower Leagues' is generic; mapped to 2. Division Group 1 as best lower-tier",
     "match_score": 1.0
-  },
-  {
-    "db_league_id": "fe74882f-c4c2-4177-b347-63f1d8550633",
-    "db_league_name": "National 2 - Group C",
-    "db_country": "France",
-    "cb_league_id": 19316,
-    "cb_league_name": "Coupe de France",
-    "cb_full_slug": "jalgpall/prantsusmaa/coupe-de-france",
-    "confidence": "low",
-    "review_note": "AF has no Coupe de France row; consider leaving unmapped",
-    "match_score": 0.303
   },
   {
     "db_league_id": "01c7bf8f-bcd8-4342-81bd-939c33780d7b",
@@ -1054,17 +911,6 @@
     "confidence": "high",
     "review_note": "",
     "match_score": 1.15
-  },
-  {
-    "db_league_id": "3022f063-b707-4725-8a34-2e90b1f8b361",
-    "db_league_name": "J2/J3 League",
-    "db_country": "Japan",
-    "cb_league_id": 71763,
-    "cb_league_name": "Japan J. League Special Tournament",
-    "cb_full_slug": "jalgpall/jaapan/Japan-J.-League-Special-Tournament",
-    "confidence": "low",
-    "review_note": "AF has no J. League Special Tournament; mapped to J2/J3 as best Japan match",
-    "match_score": 0.444
   },
   {
     "db_league_id": "15e39393-fa9e-470f-8fba-a7dfcdbc8a3a",
@@ -1329,17 +1175,6 @@
     "confidence": "high",
     "review_note": "",
     "match_score": 1.15
-  },
-  {
-    "db_league_id": "1f74f5e5-d70f-47b3-bca6-b098282ffaea",
-    "db_league_name": "Pro League A",
-    "db_country": "Uzbekistan",
-    "cb_league_id": 25240,
-    "cb_league_name": "Uzbekistani Cup",
-    "cb_full_slug": "jalgpall/usbekistan/uzbekistani-cup",
-    "confidence": "low",
-    "review_note": "AF has no Cup row for Uzbekistan; mapped to Pro League A as country fallback",
-    "match_score": 0.231
   },
   {
     "db_league_id": "80889736-4c77-4e02-adae-4bfd782c85bc",

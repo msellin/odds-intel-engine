@@ -212,13 +212,31 @@ class CoolbetSession:
     def keep_alive(self) -> bool:
         """Heartbeat — does a lightweight authenticated GET that updates the
         server-side session's last-activity timestamp, preventing the
-        idle-logout that fires after ~20-30 min of no traffic. Uses search/v2
-        with a trivial query (cheap on Coolbet's side, no caching concerns).
+        idle-logout that fires after ~20-30 min of no traffic.
 
-        Returns True on 200, False on any error. _ensure_auth() inside .get()
-        will refresh the JWT first if it's near expiry, so this also
-        keeps the JWT fresh as a side effect.
+        KEEPALIVE-RESILIENCE (2026-05-20): tries two endpoints in order so
+        a temporary Imperva block on one doesn't fail the whole heartbeat.
+        Returns True if either succeeds.
+
+        Both endpoints are real production calls that the daemon uses
+        anyway — heartbeat just ensures we exercise them periodically.
         """
+        # 1) fo-category for English Premier League (18975) — heavy use endpoint
+        #    with the browser-matching params + slug referer.
+        try:
+            resp = self.get(
+                "https://www.coolbet.com/s/sbgate/sports/fo-category/",
+                params={"categoryId": 18975, "country": "EE", "isMobile": 0,
+                        "language": "et", "layout": "EUROPEAN", "limit": 6},
+                headers={"referer": "https://www.coolbet.com/et/sport/jalgpall/inglismaa/meistriliiga"},
+            )
+            if resp.status_code == 200:
+                return True
+            log.debug("keep_alive: fo-category %d, trying search fallback", resp.status_code)
+        except Exception as e:
+            log.debug("keep_alive: fo-category raised %s, trying search fallback", e)
+
+        # 2) Fallback: search/v2 (lighter but more Imperva-sensitive)
         try:
             resp = self.get(
                 "https://www.coolbet.com/s/sbgate/sports/search/v2",
@@ -227,5 +245,5 @@ class CoolbetSession:
             )
             return resp.status_code == 200
         except Exception as e:
-            log.warning("Coolbet keep_alive failed: %s", e)
+            log.warning("Coolbet keep_alive failed (both endpoints): %s", e)
             return False
