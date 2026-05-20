@@ -198,6 +198,46 @@ def _task_jwt_browser_refresh(session: CoolbetSession) -> str:
         return f"jwt_renew ✗ ({msg[:120]})"
 
 
+def _send_inplay_ping(snap: dict, mode: str) -> None:
+    """Telegram notification for a successful inplay snapshot capture.
+    Only called for capture_outcome=captured (filtered upstream)."""
+    try:
+        from workers.notify.telegram import send_telegram
+        home   = snap.get("_home_team") or "?"
+        away   = snap.get("_away_team") or "?"
+        market = snap.get("_market") or "?"
+        sel    = snap.get("_selection") or "?"
+        bot    = snap.get("_bot_name") or "?"
+        stake  = snap.get("_stake") or 0
+        m_odds = snap.get("model_odds")
+        c_odds = snap.get("coolbet_odds")
+        latency = snap.get("latency_ms") or 0
+
+        slippage_part = ""
+        if m_odds and c_odds:
+            slip_pct = (m_odds - c_odds) / m_odds * 100
+            slippage_part = f"  model {m_odds:.3f} → coolbet {c_odds:.3f} (Δ{slip_pct:+.1f}%)\n"
+        else:
+            slippage_part = f"  coolbet {c_odds:.3f}\n" if c_odds else ""
+
+        label_map = {
+            "capture": "📡 <b>INPLAY</b> snapshot (data only)",
+            "paper":   "📡 <b>INPLAY</b> paper trade",
+            "execute": "💸 <b>INPLAY · REAL MONEY</b>",
+        }
+        label = label_map.get(mode, "📡 INPLAY")
+        msg = (
+            f"{label}\n"
+            f"  <b>{home} vs {away}</b>\n"
+            f"  {market} {sel}\n"
+            f"{slippage_part}"
+            f"  €{stake:.2f}  ·  bot {bot}  ·  latency {latency}ms"
+        )
+        send_telegram(msg)
+    except Exception as e:
+        log.warning("inplay telegram ping failed: %s", e)
+
+
 def _inplay_listener_loop(session, default_mode: str) -> None:
     """Long-running listener thread for inplay snapshot capture.
 
@@ -251,6 +291,11 @@ def _inplay_listener_loop(session, default_mode: str) -> None:
                             snap_id, snap["capture_outcome"], snap["latency_ms"],
                             mode, snap["simulated_bet_id"],
                         )
+                        # Notify only on successful captures (skip no_match /
+                        # no_market / api_error / odds_drop_too_large — those
+                        # are noise) AND skip if conflict-skipped (snap_id None).
+                        if snap_id and snap.get("capture_outcome") == "captured":
+                            _send_inplay_ping(snap, mode)
                     except Exception as e:
                         log.error("inplay listener: payload %s raised %s",
                                   (notify.payload or "")[:200], e)

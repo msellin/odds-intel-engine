@@ -6777,6 +6777,16 @@ def _():
     assert "REAL MONEY" in handlers_src, \
         "/inplay_mode execute warning must mention REAL MONEY"
 
+    # Telegram ping on successful captures
+    assert "_send_inplay_ping" in daemon_src, "telegram ping helper missing"
+    assert "capture_outcome\") == \"captured\"" in daemon_src, \
+        "ping must only fire on capture_outcome=captured"
+    # Display context fields populated for the notification
+    assert "_resolve_decision_context" in cap_src, \
+        "capture must fetch team + bot context for the Telegram ping"
+    assert "_home_team" in cap_src and "_bot_name" in cap_src, \
+        "snap must include display-only context fields for the ping"
+
 
 @test("COOLBET-MAINTENANCE-KEEPALIVE — keepalive uses 5-min /casino/fo/maintenance ping")
 def _():

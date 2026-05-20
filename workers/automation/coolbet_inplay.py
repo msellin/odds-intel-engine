@@ -55,6 +55,34 @@ def _resolve_match_teams(match_id: str) -> tuple[str, str] | None:
     return rows[0]["home"], rows[0]["away"]
 
 
+def _resolve_decision_context(bet_id: str) -> dict[str, Any]:
+    """Pull everything we'll need for the Telegram notification + mode B/C
+    side effects in one DB round-trip: team names, bot id+name, stake.
+    Returns {} on lookup miss."""
+    rows = execute_query(
+        """SELECT ht.name AS home, at2.name AS away,
+                  sb.bot_id::text AS bot_id, sb.stake,
+                  b.name AS bot_name
+             FROM simulated_bets sb
+             JOIN matches m  ON m.id = sb.match_id
+             JOIN teams ht   ON ht.id = m.home_team_id
+             JOIN teams at2  ON at2.id = m.away_team_id
+             LEFT JOIN bots b ON b.id = sb.bot_id
+            WHERE sb.id = %s""",
+        (bet_id,),
+    )
+    if not rows:
+        return {}
+    r = dict(rows[0])
+    return {
+        "home_team": r.get("home"),
+        "away_team": r.get("away"),
+        "bot_id":    r.get("bot_id"),
+        "bot_name":  r.get("bot_name") or "?",
+        "stake":     float(r.get("stake") or 0) or 5.0,
+    }
+
+
 def _decision_payload_to_pick_time_iso(payload: dict[str, Any]) -> str | None:
     """pick_time arrives as a Postgres timestamptz JSON-serialized — typically
     a string like '2026-05-20T19:42:33.456+00:00'. Return as-is for re-insert."""
@@ -89,6 +117,10 @@ def capture_inplay_snapshot(
     selection     = payload["selection"]
     model_odds    = float(payload.get("odds_at_pick") or 0) or None
 
+    # Single round-trip: team names + bot + stake (replaces _resolve_match_teams
+    # + the mode-B/C lookup that used to fire later)
+    ctx = _resolve_decision_context(bet_id)
+
     snap: dict[str, Any] = {
         "simulated_bet_id":    bet_id,
         "decision_pick_time":  _decision_payload_to_pick_time_iso(payload),
@@ -101,17 +133,25 @@ def capture_inplay_snapshot(
         "error":               None,
         "inplay_mode":         mode,
         "real_bet_id":         None,
+        # Display-only fields (NOT persisted by insert_snapshot — leading _
+        # marks them as call-site-only; used for Telegram notification)
+        "_home_team":  ctx.get("home_team"),
+        "_away_team":  ctx.get("away_team"),
+        "_market":     market,
+        "_selection":  selection,
+        "_bot_name":   ctx.get("bot_name") or "?",
+        "_bot_id":     ctx.get("bot_id"),
+        "_stake":      ctx.get("stake") or 5.0,
         # latency_ms set just before return
     }
 
     # Resolve team names
-    teams = _resolve_match_teams(match_id)
-    if not teams:
+    if not ctx or not ctx.get("home_team"):
         snap["capture_outcome"] = "no_match"
-        snap["error"] = f"matches row not found for {match_id}"
+        snap["error"] = f"simulated_bets / matches row not found for bet {bet_id}"
         snap["latency_ms"] = int((time.time() - t0) * 1000)
         return snap
-    home, away = teams
+    home, away = ctx["home_team"], ctx["away_team"]
 
     # Find Coolbet live match (search/v2 returns matches in any status)
     try:
@@ -181,14 +221,10 @@ def capture_inplay_snapshot(
     # safety (don't place real money on collapsed odds).
     if snap["capture_outcome"] == "captured" and mode in ("paper", "execute"):
         try:
-            # Pull bot_id from the simulated_bets row so the real_bets row
-            # attributes correctly.
-            rows = execute_query(
-                "SELECT bot_id::text AS bot_id, stake FROM simulated_bets WHERE id = %s",
-                (bet_id,),
-            )
-            bot_id = rows[0]["bot_id"] if rows else None
-            stake = float(rows[0]["stake"]) if rows and rows[0].get("stake") else 5.0
+            # Already fetched in ctx at the top of the function — reuse to
+            # save a DB round-trip on the time-critical path.
+            bot_id = snap.get("_bot_id")
+            stake  = snap.get("_stake") or 5.0
 
             ticket_id = None
             notes = "inplay paper"
