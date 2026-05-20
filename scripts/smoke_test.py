@@ -6761,5 +6761,25 @@ def _():
         "/relogin must route through browser refresher"
 
 
+@test("SHADOW-DEDUP — cohort-scoped unique constraint in migration + ON CONFLICT clause")
+def _():
+    """SHADOW-DEDUP (2026-05-20): Railway rolling restarts briefly run two scheduler
+    instances that both fire the same shadow window, producing duplicate shadow_bets.
+    Fix: unique constraint on (shadow_cohort, bot_id, match_id, market, selection)
+    and matching ON CONFLICT in bulk_store_shadow_bets."""
+    import pathlib
+    migration = pathlib.Path("supabase/migrations/114_shadow_bets_dedup_unique.sql").read_text()
+    assert "uq_shadow_bet_per_cohort" in migration, \
+        "migration 114 must create uq_shadow_bet_per_cohort index"
+    assert "shadow_cohort, bot_id, match_id, market, selection" in migration, \
+        "cohort-scoped unique index must cover (shadow_cohort, bot_id, match_id, market, selection)"
+    assert "DROP INDEX IF EXISTS uq_shadow_bet_per_run" in migration, \
+        "migration 114 must drop the superseded run-scoped index"
+
+    sc_src = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
+    assert "ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection) DO NOTHING" in sc_src, \
+        "bulk_store_shadow_bets ON CONFLICT must use cohort-scoped key, not shadow_run_id"
+
+
 if __name__ == "__main__":
     main()

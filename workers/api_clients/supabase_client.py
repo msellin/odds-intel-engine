@@ -1826,8 +1826,9 @@ def bulk_store_shadow_bets(rows: list[dict], shadow_run_id: str, shadow_cohort: 
     timing windows without the strategy confound that breaks the cohort A/B.
 
     Each row dict mirrors what store_bet() receives, plus we record the shadow
-    metadata. ON CONFLICT (shadow_run_id, bot_id, match_id, market, selection)
-    skips duplicates from accidental retries.
+    metadata. ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection)
+    skips duplicates — including from Railway rolling-restart double-fires where
+    two scheduler instances briefly overlap and both complete the same shadow window.
 
     Returns rows-inserted count.
     """
@@ -1870,7 +1871,7 @@ def bulk_store_shadow_bets(rows: list[dict], shadow_run_id: str, shadow_cohort: 
              model_probability, calibrated_prob, edge_percent,
              recommended_bookmaker, kelly_fraction, timing_cohort, model_version)
         VALUES %s
-        ON CONFLICT (shadow_run_id, bot_id, match_id, market, selection) DO NOTHING
+        ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection) DO NOTHING
     """
     with get_conn() as conn:
         with conn.cursor() as cur:
