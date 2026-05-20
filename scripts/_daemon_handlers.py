@@ -16,7 +16,8 @@ _HELP = (
     "<code>/status</code>     — daemon health snapshot\n"
     "<code>/pause</code>      — stop the placement loop (sweep keeps going)\n"
     "<code>/resume</code>     — re-enable placement\n"
-    "<code>/place_mode dry|record|execute</code> — change mode at runtime\n"
+    "<code>/place_mode dry|record|execute</code> — change prematch mode at runtime\n"
+    "<code>/inplay_mode capture|paper|execute</code> — change inplay mode at runtime\n"
     "<code>/summary</code>    — force-send the daily summary now\n"
     "<code>/relogin</code>    — force a fresh JWT now via /s/auth/renew-token\n"
     "                  (auto-runs every 20 min — use this to force-early)\n"
@@ -86,13 +87,32 @@ def build_handlers(args, ctrl: dict) -> dict[str, Callable[[list[str]], Optional
         ctrl["force_login"] = True
         return "🔄 Login refresh queued — will fire on the next loop iteration."
 
+    def _inplay_mode(cmd_args):
+        if not cmd_args or cmd_args[0] not in ("capture", "paper", "execute"):
+            current = ctrl.get("inplay_mode") or getattr(args, "inplay_mode", "capture")
+            return ("Usage: <code>/inplay_mode capture|paper|execute</code>\n"
+                    f"Current: <b>{current}</b>\n"
+                    "capture = snapshot only; paper = + real_bets row no POST; "
+                    "execute = + POST /s/bets/bets (REAL MONEY)")
+        new = cmd_args[0]
+        if new == "execute":
+            # Same belt-and-braces as /place_mode — refuse REAL MONEY flip
+            # via Telegram without a stake cap configured at launch.
+            if not getattr(args, "max_stake_per_bet", None):
+                return ("⛔ Refusing to flip inplay <b>execute</b> via Telegram — "
+                        "daemon was launched without <code>--max-stake-per-bet</code>. "
+                        "Restart with a cap (eg <code>--max-stake-per-bet 2</code>) first.")
+        ctrl["inplay_mode"] = new
+        return f"✓ Inplay mode set to <b>{new}</b> for this session."
+
     return {
-        "/help":       _help,
-        "/start":      _help,
-        "/status":     _status,
-        "/pause":      _pause,
-        "/resume":     _resume,
-        "/place_mode": _place_mode,
-        "/summary":    _summary,
-        "/relogin":    _relogin,
+        "/help":         _help,
+        "/start":        _help,
+        "/status":       _status,
+        "/pause":        _pause,
+        "/resume":       _resume,
+        "/place_mode":   _place_mode,
+        "/inplay_mode":  _inplay_mode,
+        "/summary":      _summary,
+        "/relogin":      _relogin,
     }

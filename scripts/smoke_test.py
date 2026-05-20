@@ -6720,6 +6720,64 @@ def _():
     ).read_text(), "store_coolbet_odds_snapshot must exist in supabase_client"
 
 
+@test("COOLBET-INPLAY-SNAPSHOTS — LISTEN/NOTIFY inplay capture with capture/paper/execute modes")
+def _():
+    """COOLBET-INPLAY-SNAPSHOTS (2026-05-20) — measures slippage between an
+    inplay bot's decision and what Coolbet's live markets show at that
+    moment. Postgres trigger on simulated_bets fires NOTIFY inplay_bet_fired
+    on every inplay decision (xg_source IS NOT NULL); coolbet_daemon's
+    dedicated LISTEN thread does ONE Coolbet GET per signal and writes a
+    snapshot row. Three modes shipped: capture (A, default — snapshot only),
+    paper (B — A + real_bets row, no POST), execute (C — A + POST + real_bets).
+    Zero polling on either side."""
+    import pathlib
+    # Migration shipped
+    mig = pathlib.Path("supabase/migrations/115_coolbet_inplay_snapshots.sql")
+    assert mig.exists(), "migration 115_coolbet_inplay_snapshots.sql missing"
+    mig_src = mig.read_text()
+    assert "CREATE TABLE" in mig_src and "coolbet_inplay_snapshots" in mig_src
+    assert "notify_inplay_bet_fired" in mig_src, "trigger function missing"
+    assert "pg_notify" in mig_src and "inplay_bet_fired" in mig_src, "NOTIFY missing"
+    assert "AFTER INSERT" in mig_src, "trigger must fire AFTER INSERT"
+    assert "xg_source IS NOT NULL" in mig_src, "must gate on xg_source"
+    assert "inplay_mode" in mig_src, "inplay_mode column missing"
+
+    # Capture module
+    cap = pathlib.Path("workers/automation/coolbet_inplay.py")
+    assert cap.exists(), "workers/automation/coolbet_inplay.py missing"
+    cap_src = cap.read_text()
+    assert "def capture_inplay_snapshot" in cap_src
+    assert "def insert_snapshot" in cap_src
+    assert "matchStatus=LIVE" in cap_src or "live=True" in cap_src, \
+        "capture must request LIVE markets"
+    # All three modes wired
+    for mode in ("capture", "paper", "execute"):
+        assert f"'{mode}'" in cap_src or f'"{mode}"' in cap_src, f"mode {mode} not wired"
+    # execute mode actually POSTs
+    assert "_place_bet_api" in cap_src, "execute mode must call _place_bet_api"
+
+    # Live-markets support in explorer
+    exp_src = pathlib.Path("workers/automation/coolbet_explorer.py").read_text()
+    assert "live: bool" in exp_src, \
+        "fetch_match_markets must accept live=True for matchStatus=LIVE"
+    assert '"LIVE" if live else "OPEN"' in exp_src, \
+        "fetch_match_markets must switch matchStatus on the live flag"
+
+    # Daemon listener + CLI flag
+    daemon_src = pathlib.Path("scripts/coolbet_daemon.py").read_text()
+    assert "def _inplay_listener_loop" in daemon_src, "listener thread function missing"
+    assert "LISTEN inplay_bet_fired" in daemon_src, "daemon must LISTEN inplay_bet_fired"
+    assert "--inplay-mode" in daemon_src, "--inplay-mode CLI flag missing"
+    assert '"inplay_mode"' in daemon_src or "'inplay_mode'" in daemon_src, \
+        "_CTRL['inplay_mode'] flag missing"
+
+    # Telegram command
+    handlers_src = pathlib.Path("scripts/_daemon_handlers.py").read_text()
+    assert '"/inplay_mode"' in handlers_src, "/inplay_mode Telegram command missing"
+    assert "REAL MONEY" in handlers_src, \
+        "/inplay_mode execute warning must mention REAL MONEY"
+
+
 @test("COOLBET-MAINTENANCE-KEEPALIVE — keepalive uses 5-min /casino/fo/maintenance ping")
 def _():
     """COOLBET-MAINTENANCE-KEEPALIVE (2026-05-20) — replaced the heavier

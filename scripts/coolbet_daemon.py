@@ -106,6 +106,7 @@ _CTRL = {
     "place_mode":   None,              # /place_mode overrides args.place_mode
     "force_login":  False,             # /relogin sets True; daemon resets after consuming
     "force_summary": False,            # /summary sets True; daemon fires + clears
+    "inplay_mode":  None,              # /inplay_mode overrides args.inplay_mode (capture/paper/execute)
 }
 
 
@@ -195,6 +196,74 @@ def _task_jwt_browser_refresh(session: CoolbetSession) -> str:
             return "jwt_renew ✗ (current JWT dead — operator alerted)"
         log.warning("jwt_renew: %s", msg[:200])
         return f"jwt_renew ✗ ({msg[:120]})"
+
+
+def _inplay_listener_loop(session, default_mode: str) -> None:
+    """Long-running listener thread for inplay snapshot capture.
+
+    Connects to Postgres via a dedicated psycopg2 connection (NOT pooled —
+    LISTEN holds the conn for the thread's lifetime), runs `LISTEN
+    inplay_bet_fired`, and dispatches each notification to
+    capture_inplay_snapshot() + insert_snapshot().
+
+    The effective mode is read PER NOTIFICATION from _CTRL["inplay_mode"]
+    or, if unset, from the daemon's CLI default. This lets Telegram
+    /inplay_mode flip the mode mid-run without restarting the listener.
+
+    Connection survives DB reconnect storms by sleeping briefly and
+    re-establishing on InterfaceError/OperationalError.
+    """
+    import json as _json
+    import select as _select
+    import psycopg2 as _psycopg2
+    import psycopg2.extensions as _pgext
+    from workers.automation.coolbet_inplay import (
+        capture_inplay_snapshot, insert_snapshot,
+    )
+
+    db_url = os.environ.get("DATABASE_URL", "")
+    if not db_url:
+        log.warning("inplay listener: DATABASE_URL not set — skipping")
+        return
+
+    while not _STOP:
+        conn = None
+        try:
+            conn = _psycopg2.connect(db_url)
+            conn.set_isolation_level(_pgext.ISOLATION_LEVEL_AUTOCOMMIT)
+            cur = conn.cursor()
+            cur.execute("LISTEN inplay_bet_fired;")
+            log.info("inplay listener: LISTEN inplay_bet_fired (default_mode=%s)", default_mode)
+            while not _STOP:
+                # 5-sec select() so we re-check _STOP for clean shutdown
+                if _select.select([conn], [], [], 5) == ([], [], []):
+                    continue
+                conn.poll()
+                while conn.notifies:
+                    notify = conn.notifies.pop(0)
+                    try:
+                        payload = _json.loads(notify.payload)
+                        mode = _CTRL.get("inplay_mode") or default_mode
+                        snap = capture_inplay_snapshot(session, payload, mode=mode)
+                        snap_id = insert_snapshot(snap)
+                        log.info(
+                            "inplay snapshot %s outcome=%s latency=%dms mode=%s bet=%s",
+                            snap_id, snap["capture_outcome"], snap["latency_ms"],
+                            mode, snap["simulated_bet_id"],
+                        )
+                    except Exception as e:
+                        log.error("inplay listener: payload %s raised %s",
+                                  (notify.payload or "")[:200], e)
+        except (_psycopg2.InterfaceError, _psycopg2.OperationalError) as e:
+            log.warning("inplay listener: DB connection lost (%s) — reconnecting in 10s", e)
+            time.sleep(10)
+        except Exception as e:
+            log.error("inplay listener: unexpected error %s — restarting loop in 30s", e)
+            time.sleep(30)
+        finally:
+            if conn is not None:
+                try: conn.close()
+                except Exception: pass
 
 
 def _task_daily_summary() -> bool:
@@ -351,6 +420,15 @@ def main() -> None:
                          "Don't flip execute until COOLBET-SAFETY-GUARDRAILS ships.")
     ap.add_argument("--no-place", action="store_true",
                     help="Disable the placement loop entirely")
+    ap.add_argument("--inplay-mode", choices=("capture", "paper", "execute"),
+                    default="capture",
+                    help="Inplay snapshot mode. capture (default)=write snapshot row "
+                         "with Coolbet odds at decision moment, no real_bets, no POST. "
+                         "paper=A + write real_bets row with notes='inplay paper', no POST. "
+                         "execute=A + POST /s/bets/bets (REAL MONEY) + write real_bets. "
+                         "Toggleable via Telegram /inplay_mode.")
+    ap.add_argument("--no-inplay-listener", action="store_true",
+                    help="Disable the inplay LISTEN/NOTIFY listener thread entirely.")
     ap.add_argument("--skip-preflight", action="store_true",
                     help="Skip COOLBET-PREFLIGHT checks at startup. NOT "
                          "recommended — preflight catches expired cookies "
@@ -455,6 +533,19 @@ def main() -> None:
     # Force initial login so the first keepalive doesn't surprise on auth.
     log.info(_task_keepalive(session))
     _stamp(state, "last_keepalive", {"ok": True, "jwt_ttl_s": int(session.jwt_seconds_remaining)})
+
+    # COOLBET-INPLAY-SNAPSHOTS — start the LISTEN/NOTIFY listener thread.
+    # Event-driven: each inplay bot decision INSERT fires a Postgres NOTIFY
+    # which this thread picks up and dispatches to capture_inplay_snapshot().
+    # Mode defaults to args.inplay_mode (CLI), runtime-overridable via
+    # Telegram /inplay_mode. Thread is daemon=True so process exit kills it.
+    if not args.no_inplay_listener:
+        inplay_thread = threading.Thread(
+            target=_inplay_listener_loop, args=(session, args.inplay_mode),
+            daemon=True, name="coolbet-inplay-listener",
+        )
+        inplay_thread.start()
+        log.info("Inplay listener thread started (mode=%s)", args.inplay_mode)
 
     now = time.time()
     next_keepalive   = now + args.keepalive_min * 60

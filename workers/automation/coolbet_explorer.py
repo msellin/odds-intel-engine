@@ -79,10 +79,18 @@ console = Console()
 # Kambi-style criterion-label substring matching.
 
 
-def fetch_match_markets(session: CoolbetSession, match_id: int) -> list[dict]:
+def fetch_match_markets(
+    session: CoolbetSession, match_id: int, live: bool = False,
+) -> list[dict]:
     """Combine fo-match + sidebets into one flat list of markets for a match.
     Each market: {id, name, line, market_type_id, outcomes:[{id, name, result_key}]}.
-    Odds are NOT included — call fetch_odds_for_markets to fill those in."""
+    Odds are NOT included — call fetch_odds_for_markets to fill those in.
+
+    `live=True` switches sidebets to `matchStatus=LIVE` (vs default OPEN) and
+    uses `limit=13` (matches the browser's live-page request). Used by the
+    inplay snapshot capture flow. Per browser curl 2026-05-20, only the
+    sidebets endpoint's matchStatus param needs flipping; fo-match returns
+    the same shape for live + prematch matches."""
     flat: list[dict] = []
 
     # fo-match: main markets (1X2 + headline OU/BTTS for the league)
@@ -100,7 +108,8 @@ def fetch_match_markets(session: CoolbetSession, match_id: int) -> list[dict]:
     # `markets[].markets[]` (group → line variants). Flatten.
     r = session.get(_SIDEBETS_URL, params={
         "matchId": match_id, "country": "EE", "language": "en",
-        "layout": "EUROPEAN", "limit": 13, "matchStatus": "OPEN",
+        "layout": "EUROPEAN", "limit": 13,
+        "matchStatus": "LIVE" if live else "OPEN",
     })
     if r.status_code == 200:
         for group in (r.json().get("markets") or []):
@@ -110,7 +119,7 @@ def fetch_match_markets(session: CoolbetSession, match_id: int) -> list[dict]:
                     sub["market_type_id"] = mtid
                 flat.append(sub)
     else:
-        log.warning("sidebets %s returned %d", match_id, r.status_code)
+        log.warning("sidebets %s (live=%s) returned %d", match_id, live, r.status_code)
     return flat
 
 
