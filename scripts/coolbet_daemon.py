@@ -79,13 +79,16 @@ def _task_odds_snapshot(bets_only: bool, days: int) -> str:
         return f"odds snapshot ✗ ({e})"
 
 
-def _task_place(mode: str, guard) -> str:
-    """mode ∈ {'dry', 'record', 'execute'}. guard = PlacementGuard or None."""
+def _task_place(mode: str, guard, min_edge: float | None) -> str:
+    """mode ∈ {'dry', 'record', 'execute'}. guard = PlacementGuard or None.
+    min_edge: decimal fraction (0.05 = 5%); overrides COOLBET_MIN_EDGE env."""
     from workers.automation.coolbet_placer import place_all_bets
     record  = mode in ("record", "execute")
     execute = mode == "execute"
     try:
-        results = place_all_bets(record=record, execute=execute, guard=guard)
+        results = place_all_bets(
+            record=record, execute=execute, guard=guard, min_edge=min_edge,
+        )
         if not results:
             return f"place ({mode}) ✓ — no qualifying bets"
         outcomes: dict[str, int] = {}
@@ -117,6 +120,11 @@ def main() -> None:
                     help="Days ahead to fetch odds for (default 2)")
     ap.add_argument("--place-min", type=int, default=5,
                     help="Placement loop cadence in minutes (default 5)")
+    ap.add_argument("--min-edge", type=float, default=0.05,
+                    help="Minimum edge to auto-place (decimal — 0.05 = 5%%, "
+                         "the default). Overrides COOLBET_MIN_EDGE env. "
+                         "Same threshold the admin /place page uses for the "
+                         "'Edge ≥5%%' filter chip.")
     ap.add_argument("--place-mode", choices=("dry", "record", "execute"),
                     default="dry",
                     help="Placer behaviour. dry=print only (default). "
@@ -216,7 +224,7 @@ def main() -> None:
             next_odds = now + args.odds_min * 60
 
         if not args.no_place and now >= next_place:
-            log.info(_task_place(args.place_mode, guard))
+            log.info(_task_place(args.place_mode, guard, args.min_edge))
             next_place = now + args.place_min * 60
 
         # Sleep until the soonest next task, but check stop signal every 30s.
