@@ -97,6 +97,17 @@ def _stamp(state: dict, key: str, extra: dict | None = None) -> None:
 _STOP = False
 _SWEEP_THREAD: threading.Thread | None = None
 
+# ── Runtime control (TELEGRAM-COMMANDS) ──────────────────────────────────────
+# Mutable flags Telegram commands can flip mid-run. Daemon main loop reads
+# these on each tick. Guarded by simple GIL semantics — single-process daemon
+# means we don't need a lock for these scalar reads.
+_CTRL = {
+    "paused":       False,             # /pause sets True, /resume sets False
+    "place_mode":   None,              # /place_mode overrides args.place_mode
+    "force_login":  False,             # /relogin sets True; daemon resets after consuming
+    "force_summary": False,            # /summary sets True; daemon fires + clears
+}
+
 
 def _handle_signal(signum, frame):
     global _STOP
@@ -221,18 +232,25 @@ def _task_place(mode: str, guard, min_edge: float | None) -> str:
         summary = ", ".join(f"{k}={v}" for k, v in sorted(outcomes.items()))
 
         # Notify on every successful placement in record/execute mode so the
-        # operator sees real bets landing in real time. No dedup — each
-        # placement is its own event.
+        # operator sees bets landing in real time. No dedup — each placement
+        # is its own event.
         if mode in ("record", "execute"):
             placed = [r for r in results if r.get("outcome") == "placed"]
+            # Header icon + label tells the operator at a glance whether this
+            # was a paper trade (record, no money moved) or real placement
+            # (execute, money moved at Coolbet).
+            if mode == "execute":
+                icon, label = "💸", "<b>REAL MONEY</b> @ Coolbet"
+            else:
+                icon, label = "📝", "PAPER (record-only, no money moved)"
             for r in placed:
                 stake = float(r.get("stake") or 0)
                 edge  = float(r.get("edge_percent") or 0) * 100
                 odds  = float(r.get("live_odds") or r.get("ev_odds") or 0)
-                ticket = r.get("ticket_id") or "(record)"
+                ticket = r.get("ticket_id") or "(record only)"
                 send_telegram(
-                    f"💰 <b>{mode.upper()}</b>: {r.get('home_team','?')} vs "
-                    f"{r.get('away_team','?')}\n"
+                    f"{icon} {label}\n"
+                    f"  <b>{r.get('home_team','?')} vs {r.get('away_team','?')}</b>\n"
                     f"  {r.get('market','?')} {r.get('selection','?')} @ {odds:.3f}\n"
                     f"  €{stake:.2f}  ·  edge {edge:+.1f}%  ·  bot {r.get('bot_name','?')}\n"
                     f"  ticket {ticket}",
@@ -372,6 +390,19 @@ def main() -> None:
     except Exception:
         pass  # never block startup on notify
 
+    # TELEGRAM-COMMANDS — start the two-way bot listener (background thread).
+    # Lets the operator control the daemon from their phone:
+    #   /help, /status, /pause, /resume, /place_mode <dry|record|execute>,
+    #   /relogin, /summary
+    try:
+        from workers.notify.telegram_bot import start_listener
+        from scripts._daemon_handlers import build_handlers  # noqa: F401
+        ok = start_listener(build_handlers(args, _CTRL))
+        if ok:
+            log.info("Telegram command listener started")
+    except Exception as e:
+        log.warning("Telegram command listener failed to start: %s", e)
+
     state = _load_state()
     _stamp(state, "last_start", {
         "odds_mode": args.odds_mode, "odds_min": args.odds_min,
@@ -427,12 +458,31 @@ def main() -> None:
         # PLACEMENT — skipped while sweep is running so we don't have two
         # Coolbet sessions calling concurrently (each session has its own
         # throttle; concurrent = 2× rate = Imperva risk).
+        # Respect Telegram /relogin — force a fresh JWT before next call
+        if _CTRL.get("force_login"):
+            _CTRL["force_login"] = False
+            try:
+                session._login()  # force, bypass TTL check
+                log.info("Telegram /relogin: forced JWT refresh")
+            except Exception as e:
+                log.warning("Telegram /relogin failed: %s", e)
+
+        # Respect Telegram /summary — force the daily summary out now
+        if _CTRL.get("force_summary"):
+            _CTRL["force_summary"] = False
+            if _task_daily_summary():
+                log.info("Telegram /summary: pushed daily summary")
+
         if not args.no_place and now >= next_place:
-            if _sweep_running():
+            if _CTRL.get("paused"):
+                log.info("place ⏸  skipped (Telegram /pause)")
+            elif _sweep_running():
                 log.info("place ⏸  skipped (sweep in progress); retry in %d min", args.place_min)
             else:
-                log.info(_task_place(args.place_mode, guard, args.min_edge))
-                _stamp(state, "last_place_attempt", {"mode": args.place_mode})
+                # Telegram /place_mode override takes precedence over CLI arg
+                effective_mode = _CTRL.get("place_mode") or args.place_mode
+                log.info(_task_place(effective_mode, guard, args.min_edge))
+                _stamp(state, "last_place_attempt", {"mode": effective_mode})
             next_place = now + args.place_min * 60
 
         # DAILY-SUMMARY — once per UTC day at the configured hour. Uses state

@@ -37,15 +37,67 @@ from rich.table import Table
 from workers.automation.coolbet_session import CoolbetSession
 from workers.automation.coolbet_placer import (
     PlacementGuard, fetch_coolbet_events, fuzzy_match_event,
-    search_coolbet_event, _place_bet_api, load_qualified_bets,
+    search_coolbet_event, _place_bet_api,
 )
 from workers.automation.coolbet_explorer import (
     fetch_match_markets, fetch_odds_for_markets, resolve_placement_target,
 )
-from workers.api_clients.supabase_client import store_real_bet, store_coolbet_odds_snapshot
+from workers.api_clients.supabase_client import (
+    execute_query, store_real_bet, store_coolbet_odds_snapshot,
+)
 from workers.notify.telegram import send_telegram
 
 console = Console()
+
+
+def _load_value_bets(min_edge: float, include_placed: bool) -> list[dict]:
+    """Today's pending value bets. By default excludes ones already in real_bets
+    (matches placer's dedup). --include-placed bypasses that so you can place
+    a bet again for real even after it landed via record/paper-trade mode."""
+    dedup = "" if include_placed else """
+        AND NOT EXISTS (
+          SELECT 1 FROM real_bets rb
+          WHERE rb.match_id = sb.match_id
+            AND rb.market   = sb.market
+            AND rb.selection = sb.selection
+            AND DATE(rb.placed_at) = CURRENT_DATE
+        )
+    """
+    rows = execute_query(
+        f"""
+        SELECT DISTINCT ON (sb.match_id, sb.market, sb.selection)
+            sb.id::text       AS simulated_bet_id,
+            sb.match_id::text AS match_id,
+            sb.market, sb.selection,
+            sb.odds_at_pick   AS model_odds,
+            sb.edge_percent,
+            sb.stake          AS model_stake,
+            sb.bot_id::text   AS bot_id,
+            b.name            AS bot_name,
+            ht.name           AS home_team,
+            at2.name          AS away_team,
+            EXISTS (
+              SELECT 1 FROM real_bets rb
+              WHERE rb.match_id = sb.match_id
+                AND rb.market   = sb.market
+                AND rb.selection = sb.selection
+                AND DATE(rb.placed_at) = CURRENT_DATE
+            ) AS already_placed_today
+        FROM simulated_bets sb
+        JOIN bots b      ON b.id  = sb.bot_id
+        JOIN matches m   ON m.id  = sb.match_id
+        JOIN teams ht    ON ht.id = m.home_team_id
+        JOIN teams at2   ON at2.id = m.away_team_id
+        WHERE sb.result = 'pending'
+          AND DATE(m.date) = CURRENT_DATE
+          AND m.date > NOW()
+          AND sb.edge_percent >= %s
+          {dedup}
+        ORDER BY sb.match_id, sb.market, sb.selection, sb.edge_percent DESC
+        """,
+        (min_edge,),
+    )
+    return [dict(r) for r in rows]
 
 
 def main() -> int:
@@ -56,14 +108,18 @@ def main() -> int:
                     help="Cap on per-bet stake regardless of Kelly (default €2)")
     ap.add_argument("--use-kelly-stake", action="store_true", default=True,
                     help="Use Kelly stake from simulated_bets (default on)")
+    ap.add_argument("--include-placed", action="store_true",
+                    help="Include bets that already have a real_bets row today "
+                         "(useful when the daemon's record-mode already wrote a paper "
+                         "trade and you want to ALSO place it for real money). The "
+                         "previously-placed status is shown in the menu so you know.")
     args = ap.parse_args()
 
-    # 1. Find qualifying bets
-    import workers.automation.coolbet_placer as cp
-    cp._MIN_EDGE = args.min_edge   # placer reads this module-level constant
-    pending = load_qualified_bets()
+    pending = _load_value_bets(args.min_edge, args.include_placed)
     if not pending:
         console.print("[yellow]No qualifying pending bets at this edge threshold.[/yellow]")
+        if not args.include_placed:
+            console.print("[dim]Tip: pass --include-placed to consider bets already in real_bets today.[/dim]")
         return 0
 
     guard = PlacementGuard(
@@ -79,9 +135,11 @@ def main() -> int:
     t.add_column("Bet")
     t.add_column("Model odds", justify="right")
     t.add_column("Edge", justify="right")
-    t.add_column("Kelly stake", justify="right")
+    t.add_column("Stake", justify="right")
+    t.add_column("Status")
     for i, b in enumerate(pending, 1):
         kelly = guard.stake_for(b)
+        already = "[yellow]paper-placed today[/yellow]" if b.get("already_placed_today") else ""
         t.add_row(
             str(i),
             f"{b['home_team']} vs {b['away_team']}",
@@ -89,6 +147,7 @@ def main() -> int:
             f"{float(b['model_odds']):.3f}",
             f"{float(b['edge_percent']) * 100:.2f}%",
             f"€{kelly:.2f}",
+            already,
         )
     console.print(t)
 
@@ -186,10 +245,11 @@ def main() -> int:
 
     # 9. Telegram ping
     send_telegram(
-        f"💰 <b>FIRST EXECUTE</b> — manually placed:\n"
-        f"  {ev['home']} vs {ev['away']}\n"
+        f"💸 <b>REAL MONEY</b> @ Coolbet (manual one-bet trial)\n"
+        f"  <b>{ev['home']} vs {ev['away']}</b>\n"
         f"  {bet['market']} {bet['selection']} @ {current_odds:.3f}\n"
-        f"  €{stake:.2f}  ticket {ticket_id}"
+        f"  €{stake:.2f}  ·  edge {float(bet['edge_percent'])*100:+.1f}%  ·  bot {bet.get('bot_name','?')}\n"
+        f"  ticket {ticket_id}"
     )
     return 0
 
