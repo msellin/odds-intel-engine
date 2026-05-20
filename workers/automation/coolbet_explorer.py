@@ -116,10 +116,14 @@ def fetch_match_markets(session: CoolbetSession, match_id: int) -> list[dict]:
 
 def fetch_odds_for_markets(
     session: CoolbetSession, markets: list[dict],
-) -> dict[int, float]:
+) -> dict[int, dict]:
     """Resolve odds for every outcome across the given markets. Splits market_ids
     by simple (line==0) vs line (line!=0) and POSTs to the matching endpoint.
-    Returns {outcome_id: decimal_odds}."""
+    Returns {outcome_id: {value, odds_id, market_id, status}} — full odds row,
+    not just the decimal. Placer needs the odds_id UUID for the bet payload.
+
+    Backwards-compat for explorer: callers that just want the price do
+    `odds_map[oid]['value']`."""
     simple_ids: list[int] = []
     line_ids:   list[int] = []
     for mkt in markets:
@@ -131,7 +135,7 @@ def fetch_odds_for_markets(
         else:
             line_ids.append(int(mid))
 
-    out: dict[int, float] = {}
+    out: dict[int, dict] = {}
     if simple_ids:
         r = session.post(_ODDS_URL, json={
             "where": {"market_id": {"in": simple_ids}},
@@ -157,9 +161,9 @@ def _is_simple(mkt: dict) -> bool:
         return str(line).strip() in ("", "0", "0.0")
 
 
-def _harvest_odds(payload, into: dict[int, float]) -> None:
-    """Flatten Coolbet's {outcome_id_str: {value, ...}} odds responses into a
-    single int→float map."""
+def _harvest_odds(payload, into: dict[int, dict]) -> None:
+    """Flatten Coolbet's {outcome_id_str: {value, odds_id, ...}} odds responses
+    into {int(outcome_id): {value: float, odds_id: str, market_id: int, status: str}}."""
     if not isinstance(payload, dict):
         return
     for k, v in payload.items():
@@ -167,14 +171,21 @@ def _harvest_odds(payload, into: dict[int, float]) -> None:
             oid = int(k)
         except (TypeError, ValueError):
             continue
-        if isinstance(v, dict):
-            val = v.get("value")
-            if val is None:
-                continue
-            try:
-                into[oid] = float(val)
-            except (TypeError, ValueError):
-                pass
+        if not isinstance(v, dict):
+            continue
+        val = v.get("value")
+        if val is None:
+            continue
+        try:
+            fval = float(val)
+        except (TypeError, ValueError):
+            continue
+        into[oid] = {
+            "value":      fval,
+            "odds_id":    v.get("odds_id") or v.get("oddsId") or "",
+            "market_id":  v.get("market_id") or v.get("marketId"),
+            "status":     v.get("status") or "",
+        }
 
 
 # ── Market → our schema mapping ───────────────────────────────────────────────
@@ -207,9 +218,10 @@ def _ou_market_for_line(line: float) -> str | None:
     return f"over_under_{cents:02d}"
 
 
-def parse_market(mkt: dict, odds_map: dict[int, float]) -> list[tuple[str, str, float, float | None]]:
+def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, float, float | None]]:
     """Return list of (market_name, selection, odds, handicap_line) rows
-    for one Coolbet market dict, looking up odds by outcome_id."""
+    for one Coolbet market dict, looking up odds by outcome_id.
+    odds_map values are dicts ({value, odds_id, ...}) from fetch_odds_for_markets."""
     rows: list[tuple[str, str, float, float | None]] = []
     mtid = mkt.get("market_type_id")
     name = (mkt.get("name") or "").lower()
@@ -221,11 +233,15 @@ def parse_market(mkt: dict, odds_map: dict[int, float]) -> list[tuple[str, str, 
 
     def _add(market: str, selection: str, oid, hline: float | None = None) -> None:
         try:
-            odds = odds_map.get(int(oid))
+            entry = odds_map.get(int(oid))
         except (TypeError, ValueError):
             return
+        if not entry:
+            return
+        # Backwards-compat: accept either {value: float} (new) or raw float (old).
+        odds = entry.get("value") if isinstance(entry, dict) else entry
         if odds and odds > 1.0:
-            rows.append((market, selection, odds, hline))
+            rows.append((market, selection, float(odds), hline))
 
     is_1x2  = mtid in _MTID_1X2  or "match result" in name or "1x2" in name
     is_ou   = mtid in _MTID_OU   or "total goals over" in name or "over / under" in name
@@ -286,6 +302,144 @@ def parse_market(mkt: dict, odds_map: dict[int, float]) -> list[tuple[str, str, 
         return rows
 
     return rows  # Unknown — degrade silently
+
+
+def resolve_placement_target(
+    markets: list[dict],
+    odds_map: dict[int, dict],
+    our_market: str,
+    our_selection: str,
+) -> tuple[int, int, str, float] | None:
+    """For a bot's (market, selection) bet, find the Coolbet
+    (market_id, outcome_id, odds_id, current_decimal_odds).
+
+    our_market:    "1X2" | "O/U" | "BTTS" | "double_chance" | "asian_handicap"
+    our_selection: "Home" | "Over 1.5" | "Yes" | "1X" | "Home -1.25" | ...
+
+    Returns None if no matching market+outcome was found OR the outcome has
+    no odds entry (suspended / dropped).
+
+    Used by coolbet_placer.place_all_bets to resolve a paper bet into the
+    actual Coolbet IDs needed for placement.
+    """
+    target_market, target_sel, target_line = _normalise_our_target(our_market, our_selection)
+    if target_market is None:
+        return None
+    for mkt in markets:
+        for parsed_market, parsed_sel, _odds, parsed_line in parse_market(mkt, odds_map):
+            if parsed_market != target_market:
+                continue
+            if parsed_sel != target_sel:
+                continue
+            if target_line is not None and not _lines_equal(parsed_line, target_line):
+                continue
+            # Find the outcome_id whose result_key matches parsed_sel.
+            oid = _outcome_id_for_selection(mkt, parsed_market, parsed_sel)
+            if oid is None:
+                continue
+            entry = odds_map.get(int(oid))
+            if not entry:
+                continue
+            return (
+                int(mkt.get("id") or 0),
+                int(oid),
+                str(entry.get("odds_id") or ""),
+                float(entry.get("value") or 0),
+            )
+    return None
+
+
+def _lines_equal(a: float | None, b: float | None) -> bool:
+    if a is None or b is None:
+        return False
+    return abs(float(a) - float(b)) < 1e-6
+
+
+def _normalise_our_target(
+    our_market: str, our_selection: str,
+) -> tuple[str | None, str | None, float | None]:
+    """Map our (market, selection) into the (parsed_market, parsed_sel, line)
+    tuple shape that parse_market emits. Returns (None, None, None) if the
+    market type isn't supported."""
+    m = our_market.strip()
+    s = our_selection.strip()
+
+    if m in ("1X2", "1x2"):
+        if s.lower() in ("home", "draw", "away"):
+            return ("1x2", s.title(), None)
+        return (None, None, None)
+
+    if m in ("O/U", "OU", "ou"):
+        # selection like "Over 1.5" / "Under 2.5"
+        parts = s.split()
+        if len(parts) != 2:
+            return (None, None, None)
+        side, line_str = parts[0].lower(), parts[1]
+        try:
+            line = float(line_str)
+        except ValueError:
+            return (None, None, None)
+        market = _ou_market_for_line(line)
+        if market is None or side not in ("over", "under"):
+            return (None, None, None)
+        return (market, side, None)
+
+    if m == "BTTS":
+        if s.lower() in ("yes", "no"):
+            return ("btts", s.lower(), None)
+        return (None, None, None)
+
+    if m == "double_chance":
+        if s in ("1X", "X2", "12"):
+            return ("double_chance", s, None)
+        return (None, None, None)
+
+    if m == "asian_handicap":
+        # selection like "Home -1.25" / "Away +0.5" — line is home-perspective
+        parts = s.split()
+        if len(parts) != 2:
+            return (None, None, None)
+        side = parts[0].lower()
+        try:
+            line = float(parts[1])
+        except ValueError:
+            return (None, None, None)
+        if side not in ("home", "away"):
+            return (None, None, None)
+        return ("asian_handicap", side, line)
+
+    return (None, None, None)
+
+
+def _outcome_id_for_selection(mkt: dict, parsed_market: str, parsed_sel: str) -> int | None:
+    """Given a Coolbet market dict and our (parsed_market, parsed_sel), find
+    the outcome_id whose result_key matches. Mirrors the parsing in
+    parse_market but returns the outcome_id instead of the (market, sel,
+    odds, line) tuple."""
+    sel_to_key = {
+        ("1x2",          "Home"):    "Home",
+        ("1x2",          "Draw"):    "Draw",
+        ("1x2",          "Away"):    "Away",
+        ("btts",         "yes"):     "yes",
+        ("btts",         "no"):      "no",
+        ("double_chance","1X"):      "1x",
+        ("double_chance","X2"):      "x2",
+        ("double_chance","12"):      "12",
+        ("asian_handicap","home"):   "Home",
+        ("asian_handicap","away"):   "Away",
+    }
+    # OU selections are dynamic (over/under across multiple lines)
+    if parsed_market.startswith("over_under_"):
+        target_key = parsed_sel.lower()  # "over" or "under"
+    else:
+        target_key = sel_to_key.get((parsed_market, parsed_sel))
+        if target_key is None:
+            return None
+    for oc in mkt.get("outcomes") or []:
+        rk = (oc.get("result_key") or "").strip("[]").lower()
+        if rk == target_key.lower():
+            return oc.get("id")
+    return None
 
 
 # ── DB layer ──────────────────────────────────────────────────────────────────

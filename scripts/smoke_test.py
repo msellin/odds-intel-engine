@@ -2781,8 +2781,14 @@ def _():
     """
     from workers.automation.coolbet_explorer import parse_market
 
-    # 1X2 (market_type_id 81, real Coolbet shape from probe)
-    odds = {1502758378: 2.25, 1502758379: 3.20, 1502758380: 3.10}
+    # 1X2 (market_type_id 81, real Coolbet shape from probe).
+    # odds_map values are now dicts ({value, odds_id, ...}) — placer needs odds_id
+    # for the placement payload; explorer just reads .value.
+    odds = {
+        1502758378: {"value": 2.25, "odds_id": "uuid-h", "market_id": 598381104, "status": "OPEN"},
+        1502758379: {"value": 3.20, "odds_id": "uuid-d", "market_id": 598381104, "status": "OPEN"},
+        1502758380: {"value": 3.10, "odds_id": "uuid-a", "market_id": 598381104, "status": "OPEN"},
+    }
     rows = parse_market({
         "id": 598381104, "line": 0, "name": "Match Result (1X2)",
         "market_type_id": 81,
@@ -2799,7 +2805,10 @@ def _():
     ], f"1X2 parse wrong: {rows}"
 
     # OU 1.5 (market_type_id 818, line='1.5')
-    odds = {1502775086: 1.05, 1502775087: 7.00}
+    odds = {
+        1502775086: {"value": 1.05, "odds_id": "uuid-o", "market_id": 598387279, "status": "OPEN"},
+        1502775087: {"value": 7.00, "odds_id": "uuid-u", "market_id": 598387279, "status": "OPEN"},
+    }
     rows = parse_market({
         "id": 598387279, "line": "1.5", "name": "Total Goals Over / Under",
         "market_type_id": 818,
@@ -2814,7 +2823,10 @@ def _():
     ], f"OU 1.5 parse wrong: {rows}"
 
     # BTTS — falls back to name-based detection (mtid set is still empty)
-    odds = {9001: 1.85, 9002: 1.90}
+    odds = {
+        9001: {"value": 1.85, "odds_id": "b1", "market_id": 1, "status": "OPEN"},
+        9002: {"value": 1.90, "odds_id": "b2", "market_id": 1, "status": "OPEN"},
+    }
     rows = parse_market({
         "id": 1, "line": 0, "name": "Both Teams to Score", "market_type_id": 999,
         "outcomes": [
@@ -2828,7 +2840,10 @@ def _():
     ], f"BTTS fallback wrong: {rows}"
 
     # AH — line is home-perspective; both outcomes share it
-    odds = {7001: 1.95, 7002: 1.85}
+    odds = {
+        7001: {"value": 1.95, "odds_id": "a1", "market_id": 1, "status": "OPEN"},
+        7002: {"value": 1.85, "odds_id": "a2", "market_id": 1, "status": "OPEN"},
+    }
     rows = parse_market({
         "id": 1, "line": "-1.25", "name": "Asian Handicap", "market_type_id": 999,
         "outcomes": [
@@ -2849,7 +2864,7 @@ def _():
             {"id": 2, "result_key": "Draw"},
             {"id": 3, "result_key": "[Away]"},
         ],
-    }, {1: 2.0})  # only home has odds
+    }, {1: {"value": 2.0, "odds_id": "x", "market_id": 1, "status": "OPEN"}})  # only home
     assert rows == [("1x2", "Home", 2.0, None)], (
         f"missing odds must drop, not zero-fill: {rows}"
     )
@@ -2866,6 +2881,103 @@ def _():
     assert "_ODDS_LINE_URL" in explorer_src, "missing /fo-line/ URL constant"
     assert "fetch_match_markets" in explorer_src, "missing fetch_match_markets"
     assert "fetch_odds_for_markets" in explorer_src, "missing fetch_odds_for_markets"
+
+
+@test("COOLBET-PLACER-NEW-SCHEMA — resolve_placement_target + placer wired to new helpers")
+def _():
+    """COOLBET-PLACER-NEW-SCHEMA (2026-05-20) — Coolbet split markets and odds
+    into separate endpoints and dropped `criterion_label`. resolve_placement_target
+    maps our paper-bet (market, selection) → Coolbet (market_id, outcome_id,
+    odds_id, current_odds) using the new markets/outcomes/result_key/line shape.
+    place_all_bets's per-bet loop must use the new helpers, not the dead
+    find_market_outcome path."""
+    from workers.automation.coolbet_explorer import resolve_placement_target
+
+    # 1X2 Home — full real-shape sample from probe
+    markets = [{
+        "id": 598381104, "line": 0, "name": "Match Result (1X2)",
+        "market_type_id": 81,
+        "outcomes": [
+            {"id": 1502758378, "result_key": "[Home]"},
+            {"id": 1502758379, "result_key": "Draw"},
+            {"id": 1502758380, "result_key": "[Away]"},
+        ],
+    }]
+    odds = {
+        1502758378: {"value": 2.25, "odds_id": "uuid-h", "market_id": 598381104, "status": "OPEN"},
+        1502758379: {"value": 3.20, "odds_id": "uuid-d", "market_id": 598381104, "status": "OPEN"},
+        1502758380: {"value": 3.10, "odds_id": "uuid-a", "market_id": 598381104, "status": "OPEN"},
+    }
+    res = resolve_placement_target(markets, odds, "1X2", "Home")
+    assert res == (598381104, 1502758378, "uuid-h", 2.25), f"1X2 Home wrong: {res}"
+
+    res = resolve_placement_target(markets, odds, "1X2", "Draw")
+    assert res == (598381104, 1502758379, "uuid-d", 3.20), f"1X2 Draw wrong: {res}"
+
+    # OU 1.5 Over
+    markets = [{
+        "id": 598387279, "line": "1.5", "name": "Total Goals Over / Under",
+        "market_type_id": 818,
+        "outcomes": [
+            {"id": 1502775086, "result_key": "Over"},
+            {"id": 1502775087, "result_key": "Under"},
+        ],
+    }]
+    odds = {
+        1502775086: {"value": 1.05, "odds_id": "uuid-o", "market_id": 598387279, "status": "OPEN"},
+        1502775087: {"value": 7.00, "odds_id": "uuid-u", "market_id": 598387279, "status": "OPEN"},
+    }
+    res = resolve_placement_target(markets, odds, "O/U", "Over 1.5")
+    assert res == (598387279, 1502775086, "uuid-o", 1.05), f"OU Over 1.5 wrong: {res}"
+
+    # OU line mismatch — same market, different line — must return None
+    res = resolve_placement_target(markets, odds, "O/U", "Over 2.5")
+    assert res is None, f"OU line mismatch must return None, got {res}"
+
+    # Outcome with no odds entry → None (suspended / dropped)
+    res = resolve_placement_target(markets, {}, "O/U", "Over 1.5")
+    assert res is None, f"empty odds_map must return None, got {res}"
+
+    # AH home -1.25
+    markets = [{
+        "id": 1, "line": "-1.25", "name": "Asian Handicap", "market_type_id": 999,
+        "outcomes": [
+            {"id": 7001, "result_key": "[Home]"},
+            {"id": 7002, "result_key": "[Away]"},
+        ],
+    }]
+    odds = {
+        7001: {"value": 1.95, "odds_id": "ah1", "market_id": 1, "status": "OPEN"},
+        7002: {"value": 1.85, "odds_id": "ah2", "market_id": 1, "status": "OPEN"},
+    }
+    res = resolve_placement_target(markets, odds, "asian_handicap", "Home -1.25")
+    assert res == (1, 7001, "ah1", 1.95), f"AH home wrong: {res}"
+
+    # AH line mismatch
+    res = resolve_placement_target(markets, odds, "asian_handicap", "Home -1.5")
+    assert res is None, f"AH line mismatch must return None, got {res}"
+
+    # Placer per-bet loop wiring
+    import pathlib
+    placer = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
+    assert "from workers.automation.coolbet_explorer import" in placer, (
+        "placer must import the new-schema helpers from coolbet_explorer"
+    )
+    assert "resolve_placement_target" in placer, "placer must call resolve_placement_target"
+    assert "fetch_match_markets" in placer, "placer must call fetch_match_markets"
+    assert "fetch_odds_for_markets" in placer, "placer must call fetch_odds_for_markets"
+    # Make sure the per-bet loop no longer relies on criterion_label
+    # (legacy find_market_outcome may still exist for back-compat but must not
+    # be in the active placement path).
+    in_place_all = placer[placer.index("def place_all_bets"):]
+    # Comments referencing the old field are fine; what's forbidden is
+    # actually accessing it as a dict key, since the new schema has no such field.
+    assert 'bo["criterion_label"]' not in in_place_all, (
+        "place_all_bets must not read bo['criterion_label'] — field doesn't exist on new schema"
+    )
+    assert 'bo[\'criterion_label\']' not in in_place_all, (
+        "place_all_bets must not read bo['criterion_label'] — field doesn't exist on new schema"
+    )
 
 
 @test("COOLBET-DAEMON-CLI — daemon exposes three loops + dry default")

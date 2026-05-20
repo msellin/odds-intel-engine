@@ -14,15 +14,15 @@
 |---|---|---|
 | Session manager (auth, JWT refresh, Imperva cookies, `keep_alive()`, `jwt_seconds_remaining`) | `workers/automation/coolbet_session.py` | ✅ Working |
 | Odds ingester — new schema (markets + odds endpoints, parse_market) | `workers/automation/coolbet_explorer.py` | ✅ Working |
-| Placer — `place_all_bets()` with dry/record/execute modes | `workers/automation/coolbet_placer.py` | ❌ Broken on new schema |
+| Placer — `place_all_bets()` with dry/record/execute modes | `workers/automation/coolbet_placer.py` | ✅ Working on new schema (2026-05-20) |
 | Foreground daemon — keepalive + odds + placement | `scripts/coolbet_daemon.py` | ✅ Working (placement loop runs but no-ops) |
 | Audit — silent-bots diagnostic | `scripts/audit_silent_bots.py` | ✅ Working |
 | Scheduler: `_coolbet_odds_snapshot_wrapper` every 30m | `workers/scheduler.py` | ⚠️ Likely 403s from Railway IP (Imperva tied to home IP). Error-isolated. |
 | Scheduler: `_coolbet_keepalive_wrapper` every 20m | `workers/scheduler.py` | ⚠️ Same |
 
-## The one thing blocking real-money auto-placement
+## Path to live auto-placement
 
-**COOLBET-PLACER-NEW-SCHEMA** — until this ships, `--place-mode=execute` is physically incapable of placing real bets. Everything else (safety, observability, polish) sits behind it because there's no point hardening a placement path that doesn't place.
+✅ **COOLBET-PLACER-NEW-SCHEMA shipped 2026-05-20.** `--place-mode=execute` now physically capable of placing real bets via the new markets+odds schema. **Do not flip execute mode until COOLBET-SAFETY-GUARDRAILS lands** — that's the next P0.
 
 ---
 
@@ -32,7 +32,7 @@
 
 | ID | Effort | Impact | Description |
 |---|---|---|---|
-| **COOLBET-PLACER-NEW-SCHEMA** | 1-2h | Unblocks live auto-place | Refactor `coolbet_placer.find_market_outcome` + `fetch_sidebets` for new Coolbet shape (markets/outcomes/`market_type_id`/`result_key`/`line`, no `criterion_label`). Capture `odds_id` UUID from `/sb-odds/odds/current/fo` — required in bet placement payload. Reuse `coolbet_explorer.parse_market` logic. Smoke must cover the placement path end-to-end with a synthetic markets+odds fixture. |
+| ✅ **COOLBET-PLACER-NEW-SCHEMA** | Done 2026-05-20 | — | Placer per-bet loop in `place_all_bets` now uses `coolbet_explorer.fetch_match_markets` + `fetch_odds_for_markets` + `resolve_placement_target` (new function — maps our `(market, selection)` → Coolbet `(market_id, outcome_id, odds_id, current_odds)`). `fetch_odds_for_markets` extended to return `{outcome_id: {value, odds_id, market_id, status}}` so the placer has the UUID required for the bet payload. Legacy `find_market_outcome` / `fetch_sidebets` left in place as dead code (no callers). Smoke: COOLBET-PLACER-NEW-SCHEMA. |
 | **COOLBET-PREFLIGHT** | 30m | Fails fast instead of silent dud runs | At daemon startup: verify Coolbet balance via `/s/user/balance`, decode JWT to confirm Imperva cookies aren't days from expiry, sanity-check bot universe. Refuse to start if any check fails (loud error). |
 | **COOLBET-SAFETY-GUARDRAILS** | 1-2h | Difference between auto-placer and auto-bankroll-killer | Before flipping `--place-mode=execute` for real, add: `--max-bets-per-hour N`, `--max-stake-per-bet €X` override, `--bot-filter`, `--pause-after-loss €N`, `--max-edge-pct N` (refuse bets with absurd edge — model bug or odds error), and `--require-confirm` (y/n prompt per bet for first live runs). |
 
@@ -72,7 +72,7 @@
 
 Single ordered list, optimised for "least time to a safe live auto-placer running unattended":
 
-1. **COOLBET-PLACER-NEW-SCHEMA** (P0, 1-2h) — *blocks everything*
+1. ✅ ~~COOLBET-PLACER-NEW-SCHEMA~~ — done 2026-05-20
 2. **COOLBET-PREFLIGHT** (P0, 30m) — fail-fast before anything else runs
 3. **COOLBET-SAFETY-GUARDRAILS** (P0, 1-2h) — must precede first live `execute` run
 4. **COOLBET-IMPERVA-ALERT** (P1, 30m) — only loud-failure operational mode

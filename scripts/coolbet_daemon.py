@@ -14,14 +14,12 @@ About odds refresh cadence:
   get_live_odds_and_id — the 30-min snapshot is for time-series / signal use,
   not for placement freshness.
 
-PLACEMENT MODE — IMPORTANT:
-  Defaults to --place-mode=dry. The placer's market-resolution code still
-  reads the old Coolbet schema (`criterion_label` from Kambi-style betOffers)
-  and the new schema removed that field. So even with --place-mode=execute
-  the placer currently logs "no_market" for everything and places nothing.
-  Auto-placement becomes real after coolbet_placer.find_market_outcome is
-  rewritten against the new markets/outcomes shape — tracked as
-  COOLBET-PLACER-NEW-SCHEMA in PRIORITY_QUEUE.md.
+PLACEMENT MODE:
+  Defaults to --place-mode=dry. With --place-mode=execute the placer now
+  uses the new Coolbet markets+odds schema (COOLBET-PLACER-NEW-SCHEMA,
+  shipped 2026-05-20) and can place real money. Before flipping execute
+  for real, ship COOLBET-SAFETY-GUARDRAILS first (--max-bets-per-hour,
+  --max-stake-per-bet, --require-confirm). See dev/active/coolbet-roadmap.md.
 
 Run:
   python3 scripts/coolbet_daemon.py                       # safe defaults
