@@ -283,14 +283,22 @@ BOTS_CONFIG = {
         "min_prob": 0.35,
     },
     "bot_ou15_defensive": {
-        "description": "O/U 1.5 — under 1.5 in defensive leagues, over 1.5 at value odds",
+        # BOT-OU15-EDGE-REPAIR (2026-05-20): bot silent since 2026-05-08.
+        # BOT-FUNNEL-DIAGNOSTIC pinpointed the cause — 97/98 candidates die
+        # at the edge threshold (cal_prob within 5% of implied, was previously
+        # > 6%). Calibration tightened sometime around the May 7-8 commits
+        # (VIG-REMOVE / DRAW-PER-LEAGUE / H2H-SPLITS) so the bot found nothing.
+        # Thresholds dropped 6% → 4% (T1-T2) and 5% → 3% (T3-T4) as a 2-week
+        # paper-trade experiment. If post-relaxation ROI on ≥30 settled bets
+        # is ≥3% real ROI the loosened bot stays; if not, retire.
+        "description": "O/U 1.5 — under 1.5 in defensive leagues, over 1.5 at value odds (BOT-OU15-EDGE-REPAIR: thresholds relaxed 2026-05-20)",
         "tier_label": "pro",
         "markets": ["ou15"],
         "edge_thresholds": {
-            1: {"ou": 0.06},
-            2: {"ou": 0.06},
-            3: {"ou": 0.05},
-            4: {"ou": 0.05},
+            1: {"ou": 0.04},
+            2: {"ou": 0.04},
+            3: {"ou": 0.03},
+            4: {"ou": 0.03},
         },
         "odds_range": (1.80, 3.50),
         "min_prob": 0.30,

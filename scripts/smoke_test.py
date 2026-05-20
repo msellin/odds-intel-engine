@@ -3035,6 +3035,46 @@ def _():
     assert '"*/20"' in sched_src, "keepalive must fire every 20 min"
 
 
+@test("BOT-OU15-EDGE-REPAIR — thresholds relaxed (4/4/3/3) per diagnostic finding")
+def _():
+    """BOT-OU15-EDGE-REPAIR (2026-05-20) — bot_ou15_defensive was silent since
+    May 8 because 97/98 candidates failed the 5-6% edge threshold (per
+    BOT-FUNNEL-DIAGNOSTIC). Thresholds relaxed to 4% (T1/T2) and 3% (T3/T4)
+    as a 2-week paper-trade experiment. Guard the new values so a future
+    refactor doesn't silently revert them while the experiment is running."""
+    # Load the BOTS_CONFIG dict directly and inspect the live values — far
+    # more robust than regex-scanning the source for nested-brace patterns.
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG
+    cfg = BOTS_CONFIG["bot_ou15_defensive"]
+    t = cfg["edge_thresholds"]
+    assert t[1]["ou"] == 0.04, f"T1 must be 0.04 (was 0.06), got {t[1]}"
+    assert t[2]["ou"] == 0.04, f"T2 must be 0.04 (was 0.06), got {t[2]}"
+    assert t[3]["ou"] == 0.03, f"T3 must be 0.03 (was 0.05), got {t[3]}"
+    assert t[4]["ou"] == 0.03, f"T4 must be 0.03 (was 0.05), got {t[4]}"
+    # Sanity — don't accidentally widen odds_range or drop min_prob
+    assert cfg["odds_range"] == (1.80, 3.50), "odds_range must stay (1.80, 3.50)"
+    assert cfg["min_prob"] == 0.30, "min_prob must stay 0.30"
+
+
+@test("SHADOW-COHORT-CONSTRAINT — migration 112 accepts HHMM scheduler labels")
+def _():
+    """SHADOW-COHORT-CONSTRAINT (2026-05-20) — scheduler writes HHMM-format
+    shadow_cohort but migration 101's CHECK rejected them. Migration 112
+    re-adds the constraint accepting both ('morning','midday','pre_ko') and
+    HHMM. Guard the migration file shape so it doesn't get reverted."""
+    import pathlib
+    p = pathlib.Path("supabase/migrations/112_shadow_cohort_allow_hhmm.sql")
+    assert p.exists(), "migration 112 missing"
+    sql = p.read_text()
+    assert "DROP CONSTRAINT IF EXISTS shadow_bets_shadow_cohort_check" in sql, (
+        "must drop the old constraint"
+    )
+    assert "'^[0-9]{4}$'" in sql, "new constraint must allow HHMM"
+    assert "IN ('morning', 'midday', 'pre_ko')" in sql, (
+        "named cohorts must still be allowed for manual / funnel_diagnostic invocations"
+    )
+
+
 @test("BOT-FUNNEL-DIAGNOSTIC — run_morning instruments per-bot candidate funnel")
 def _():
     """BOT-FUNNEL-DIAGNOSTIC (2026-05-20) — verbose_funnel + verbose_funnel_bot
