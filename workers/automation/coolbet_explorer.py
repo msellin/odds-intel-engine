@@ -217,6 +217,34 @@ def load_matches_in_window(days: int) -> list[dict]:
     )
 
 
+def load_value_bet_matches(days: int) -> list[dict]:
+    """Pull matches that currently have at least one pending value bet from any
+    active bot, kicking off within `days` days. This is the actionable set —
+    matches we'd actually place real money on. Far smaller (and far better-
+    targeted) than `load_matches_in_window`."""
+    return execute_query(
+        """
+        SELECT DISTINCT m.id::text AS id, m.date AS date,
+               ht.name AS home, at2.name AS away,
+               l.name AS league,
+               COUNT(*) OVER (PARTITION BY m.id) AS bet_count
+        FROM simulated_bets sb
+        JOIN bots b   ON b.id = sb.bot_id
+        JOIN matches m ON m.id = sb.match_id
+        JOIN teams ht  ON ht.id = m.home_team_id
+        JOIN teams at2 ON at2.id = m.away_team_id
+        JOIN leagues l ON l.id = m.league_id
+        WHERE sb.result = 'pending'
+          AND m.date > NOW()
+          AND m.date < NOW() + INTERVAL '%s days'
+          AND b.is_active = true
+          AND b.retired_at IS NULL
+        ORDER BY m.date
+        """ % int(days),
+        (),
+    )
+
+
 def store_coolbet_snapshots_for_match(
     match_id: str,
     coolbet_event: dict,
@@ -281,14 +309,19 @@ def _minutes_to_kickoff(iso: str) -> int | None:
 # ── Bulk + one-shot drivers ───────────────────────────────────────────────────
 
 
-def run_bulk(days: int, dry_run: bool, sleep_s: float, limit: int | None) -> None:
-    matches = load_matches_in_window(days)
+def run_bulk(
+    days: int, dry_run: bool, sleep_s: float, limit: int | None,
+    *, bets_only: bool = False,
+) -> None:
+    matches = load_value_bet_matches(days) if bets_only else load_matches_in_window(days)
     if limit:
         matches = matches[:limit]
     if not matches:
-        console.print("[yellow]No upcoming matches in DB window.[/yellow]")
+        msg = "No pending value-bet matches in window." if bets_only else "No upcoming matches in DB window."
+        console.print(f"[yellow]{msg}[/yellow]")
         return
-    console.print(f"[cyan]Loaded {len(matches)} matches from DB (window={days}d){' [DRY-RUN]' if dry_run else ''}[/cyan]")
+    label = "value-bet matches" if bets_only else "matches from DB"
+    console.print(f"[cyan]Loaded {len(matches)} {label} (window={days}d){' [DRY-RUN]' if dry_run else ''}[/cyan]")
 
     session = CoolbetSession()
     category_cache: list[dict] | None = None
@@ -297,9 +330,12 @@ def run_bulk(days: int, dry_run: bool, sleep_s: float, limit: int | None) -> Non
     parsed_total = 0
     stored_total = 0
     by_market: dict[str, int] = {}
+    missed_leagues: dict[str, int] = {}
+    matched_leagues: dict[str, int] = {}
 
     for i, m in enumerate(matches, 1):
         home, away = m["home"], m["away"]
+        league = m.get("league") or "—"
         ev = search_coolbet_event(session, home, away)
         if ev is None:
             if category_cache is None:
@@ -314,8 +350,10 @@ def run_bulk(days: int, dry_run: bool, sleep_s: float, limit: int | None) -> Non
                     category_cache = []
             ev = fuzzy_match_event(home, away, category_cache) if category_cache else None
         if ev is None:
-            log.info("[%d/%d] no Coolbet event: %s vs %s", i, len(matches), home, away)
+            missed_leagues[league] = missed_leagues.get(league, 0) + 1
+            log.info("[%d/%d] no Coolbet event: %s vs %s (%s)", i, len(matches), home, away, league)
             continue
+        matched_leagues[league] = matched_leagues.get(league, 0) + 1
 
         # search/fo-category only returns top-level markets. Grab full depth.
         ev["bet_offers"] = fetch_sidebets(session, ev["id"]) or ev.get("bet_offers", [])
@@ -347,6 +385,22 @@ def run_bulk(days: int, dry_run: bool, sleep_s: float, limit: int | None) -> Non
         for k, v in sorted(by_market.items(), key=lambda kv: -kv[1]):
             t2.add_row(k, str(v))
         console.print(t2)
+
+    # League-level match/miss split — most actionable view for "what does
+    # Coolbet actually cover for us".
+    all_leagues = sorted(set(matched_leagues) | set(missed_leagues))
+    if all_leagues:
+        t3 = Table(show_header=True, title="By league (matched / missed)")
+        t3.add_column("League")
+        t3.add_column("Matched", justify="right")
+        t3.add_column("Missed", justify="right")
+        t3.add_column("Match %", justify="right")
+        for lg in all_leagues:
+            mt = matched_leagues.get(lg, 0)
+            ms = missed_leagues.get(lg, 0)
+            pct = 100.0 * mt / (mt + ms) if (mt + ms) else 0
+            t3.add_row(lg, str(mt), str(ms), f"{pct:.0f}%")
+        console.print(t3)
 
 
 def run_one_shot(match_id: str) -> None:
@@ -406,12 +460,14 @@ def main() -> None:
     ap.add_argument("--limit", type=int, help="Cap bulk to first N matches (testing)")
     ap.add_argument("--sleep", type=float, default=0.25, help="Seconds between sidebets calls")
     ap.add_argument("--dry-run", action="store_true", help="Parse but don't write")
+    ap.add_argument("--bets-only", action="store_true",
+                    help="Bulk only over matches that have a pending value bet (active bots)")
     args = ap.parse_args()
 
     if args.match_id:
         run_one_shot(args.match_id)
     else:
-        run_bulk(args.days, args.dry_run, args.sleep, args.limit)
+        run_bulk(args.days, args.dry_run, args.sleep, args.limit, bets_only=args.bets_only)
 
 
 if __name__ == "__main__":
