@@ -421,11 +421,13 @@ def main() -> None:
     ap.add_argument("--no-place", action="store_true",
                     help="Disable the placement loop entirely")
     ap.add_argument("--inplay-mode", choices=("capture", "paper", "execute"),
-                    default="capture",
-                    help="Inplay snapshot mode. capture (default)=write snapshot row "
-                         "with Coolbet odds at decision moment, no real_bets, no POST. "
-                         "paper=A + write real_bets row with notes='inplay paper', no POST. "
-                         "execute=A + POST /s/bets/bets (REAL MONEY) + write real_bets. "
+                    default="paper",
+                    help="Inplay snapshot mode. capture=write snapshot row with Coolbet "
+                         "odds at decision moment, NO real_bets row, no POST (pure data). "
+                         "paper (default)=capture + write real_bets row with "
+                         "notes='inplay paper' so it surfaces in existing dashboards / "
+                         "daily summary / bot ROI reports, no POST. "
+                         "execute=paper + POST /s/bets/bets (REAL MONEY) + record ticket. "
                          "Toggleable via Telegram /inplay_mode.")
     ap.add_argument("--no-inplay-listener", action="store_true",
                     help="Disable the inplay LISTEN/NOTIFY listener thread entirely.")
