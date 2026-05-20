@@ -2868,6 +2868,22 @@ def _():
     assert "fetch_odds_for_markets" in explorer_src, "missing fetch_odds_for_markets"
 
 
+@test("COOLBET-DAEMON-CLI — daemon exposes three loops + dry default")
+def _():
+    """COOLBET-DAEMON-CLI (2026-05-20) — scripts/coolbet_daemon.py is the
+    foreground sibling of the Railway scheduler. Guards: --place-mode defaults
+    to 'dry' so accidental run doesn't place real bets, --no-place flag exists,
+    and the three tasks (keepalive / odds / place) are all wired."""
+    import pathlib
+    src = pathlib.Path("scripts/coolbet_daemon.py").read_text()
+    assert "_task_keepalive" in src, "missing keepalive task"
+    assert "_task_odds_snapshot" in src, "missing odds task"
+    assert "_task_place" in src, "missing place task"
+    assert 'choices=("dry", "record", "execute")' in src, "place modes must be dry/record/execute"
+    assert 'default="dry"' in src, "place-mode must default to dry (safety)"
+    assert "--no-place" in src, "--no-place flag must exist"
+
+
 @test("COOLBET-KEEPALIVE — session exposes TTL + heartbeat + scheduler wired")
 def _():
     """COOLBET-KEEPALIVE (2026-05-20) — Coolbet JWT TTL is 1820s with
