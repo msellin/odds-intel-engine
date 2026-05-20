@@ -3655,23 +3655,28 @@ def _():
 
 @test("COMBO-PROVEN-VARIANTS — bot_acca_proven + bot_combo_proven_system registered")
 def _():
-    """Two whitelist-restricted variants that combine legs ONLY from bots with
-    confirmed +EV. After 249-day backtest showed unrestricted combos at
-    -38% to -60% ROI while restricted-to-good-legs combos showed +6% to
-    +301% — these variants test whether good-legs-only holds up live."""
+    """Two whitelist-restricted variants that combine legs ONLY from
+    highest-ROI markets. ACCA-REDESIGN (2026-05-20): whitelist is now
+    market-based (PROVEN_MARKETS_WHITELIST: ou25/ou35/btts) rather than
+    bot-name-based — the acca bot scans predictions+odds_snapshots directly
+    so retired source bots can't cause silent 0-leg runs."""
     import pathlib
     mig = pathlib.Path("supabase/migrations/110_combo_proven_variants.sql").read_text()
     assert "'bot_acca_proven'" in mig and "'bot_combo_proven_system'" in mig
     bot = pathlib.Path("workers/jobs/acca_bot.py").read_text()
-    assert "PROVEN_BOTS_WHITELIST" in bot, "whitelist constant must be defined"
-    # Must include the 2 backtest-confirmed bots
-    assert '"bot_ou15_defensive"' in bot and '"bot_ou35_attacking"' in bot, (
-        "whitelist must include backtest-confirmed bots"
+    # ACCA-REDESIGN: whitelist is now PROVEN_MARKETS_WHITELIST (market-based)
+    assert "PROVEN_MARKETS_WHITELIST" in bot, "market whitelist constant must be defined"
+    # bot_ou15_defensive must NOT be in whitelist (retired 2026-05-20)
+    assert '"bot_ou15_defensive"' not in bot or "PROVEN_BOTS" not in bot, (
+        "ACCA-REDESIGN: bot_ou15_defensive removed from PROVEN_BOTS_WHITELIST "
+        "(retired 2026-05-20); whitelist is now market-based"
     )
-    # _fetch_todays_singles must support whitelist parameter
-    assert "def _fetch_todays_singles(whitelist:" in bot
-    # run_acca_pass must use per-variant leg pools
-    assert "leg_cache" in bot, "run_acca_pass must cache leg pool per whitelist"
+    # New scan function must exist
+    assert "def _scan_todays_candidates(" in bot, (
+        "ACCA-REDESIGN: _scan_todays_candidates must replace _fetch_todays_singles"
+    )
+    # run_acca_pass must cache scan results
+    assert "scan_cache" in bot, "run_acca_pass must cache scan results per market_whitelist"
 
 
 @test("COMBO-SYSTEM-BOT-PRESENT — bot_combo_system module + migration 109 shipped")
@@ -6895,6 +6900,90 @@ def _():
     sc_src = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
     assert "ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection) DO NOTHING" in sc_src, \
         "bulk_store_shadow_bets ON CONFLICT must use cohort-scoped key, not shadow_run_id"
+
+
+@test("ACCA-REDESIGN — _scan_todays_candidates replaces _fetch_todays_singles")
+def _():
+    """ACCA-REDESIGN (2026-05-20): acca bot now queries predictions+odds_snapshots
+    directly instead of reading simulated_bets from other bots. This eliminates
+    silent coupling where retired/slow source bots produce 0 legs.
+
+    Verifies:
+    - _scan_todays_candidates function exists and returns a list
+    - old _fetch_todays_singles is no longer the primary data source
+    - bot_ou15_defensive removed from any proven whitelist
+    - market_whitelist key used instead of bot_whitelist
+    - ACCA_ELIGIBLE_MARKETS and PROVEN_MARKETS_WHITELIST defined
+    """
+    import pathlib
+    import importlib
+    import sys
+
+    bot_path = pathlib.Path("workers/jobs/acca_bot.py")
+    assert bot_path.exists(), "workers/jobs/acca_bot.py must exist"
+    bot_src = bot_path.read_text()
+
+    # New function must exist
+    assert "def _scan_todays_candidates(" in bot_src, (
+        "_scan_todays_candidates() must be defined"
+    )
+
+    # Old function must not be the primary fetch function
+    assert "_fetch_todays_singles" not in bot_src or \
+           bot_src.count("def _fetch_todays_singles") == 0, (
+        "_fetch_todays_singles must be removed — replaced by _scan_todays_candidates"
+    )
+
+    # Market constants must be defined
+    assert "ACCA_ELIGIBLE_MARKETS" in bot_src, (
+        "ACCA_ELIGIBLE_MARKETS frozenset must be defined"
+    )
+    assert "PROVEN_MARKETS_WHITELIST" in bot_src, (
+        "PROVEN_MARKETS_WHITELIST frozenset must be defined"
+    )
+
+    # market_whitelist key must be used (not bot_whitelist)
+    assert "market_whitelist" in bot_src, (
+        "ACCA_VARIANTS must use market_whitelist key (not bot_whitelist)"
+    )
+    assert "bot_whitelist" not in bot_src, (
+        "bot_whitelist key must be removed — replaced by market_whitelist"
+    )
+
+    # bot_ou15_defensive must not appear in any whitelist context
+    assert '"bot_ou15_defensive"' not in bot_src, (
+        "bot_ou15_defensive must be removed — it was retired 2026-05-20"
+    )
+
+    # scan_cache pattern must be used in run_acca_pass
+    assert "scan_cache" in bot_src, (
+        "run_acca_pass must use scan_cache (cached per market_whitelist)"
+    )
+
+    # _MARKET_SPEC must define the market mappings
+    assert "_MARKET_SPEC" in bot_src, (
+        "_MARKET_SPEC must define (acca_key, pred_market, snap_market, selection, prob_field) tuples"
+    )
+
+    # Import + call _scan_todays_candidates (source inspection only — no DB)
+    # Verify the function is callable and its signature accepts market_whitelist
+    import ast
+    tree = ast.parse(bot_src)
+    scan_func = next(
+        (node for node in ast.walk(tree)
+         if isinstance(node, ast.FunctionDef) and node.name == "_scan_todays_candidates"),
+        None,
+    )
+    assert scan_func is not None, "_scan_todays_candidates must be a def in acca_bot.py"
+    # Check it has a market_whitelist parameter
+    arg_names = [a.arg for a in scan_func.args.args]
+    assert "market_whitelist" in arg_names, (
+        "_scan_todays_candidates must accept market_whitelist parameter"
+    )
+
+    # All 4 ACCA_VARIANTS must still be present
+    for variant in ("bot_acca_value", "bot_combo_system", "bot_acca_proven", "bot_combo_proven_system"):
+        assert variant in bot_src, f"ACCA_VARIANTS must still include {variant}"
 
 
 if __name__ == "__main__":

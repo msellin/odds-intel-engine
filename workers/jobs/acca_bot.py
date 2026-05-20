@@ -1,17 +1,28 @@
 """
 COMBO-RESEARCH-PHASE-D — paper acca bot.
 
-Runs after the morning betting pipeline. Reads today's freshly placed
-pending bets, picks the top-edge ones (one per match, independence enforced),
-and stores a single combo bet covering 3-5 legs.
+ACCA-REDESIGN (2026-05-20): data source changed from simulated_bets to
+direct DB scan of predictions + odds_snapshots.
 
-Why this design (post-processor vs deeply integrated):
-  • Other bots run their own candidate generation; copying that logic into a
-    combo-aware variant would multiply the per-match-per-bot loop's complexity.
-  • Reading already-placed bets gives us a clean, deduplicated single-bet menu
-    to combine from.
-  • Independence (one match per leg) is enforced by GROUP BY match_id with
-    edge-descending selection.
+Original design read today's pending singles from simulated_bets. Problem:
+silent coupling — if source bots are retired, skipped, or slow, acca bots
+see 0 legs and silently skip with no diagnostic output. A retired source
+bot (e.g. bot_ou15_defensive) produces no rows at all, so the combo bot
+degrades invisibly.
+
+New design: _scan_todays_candidates() queries the DB directly.
+  • predictions table: latest ensemble probability per market for today's
+    pre-KO matches (source='ensemble', created before kickoff).
+  • odds_snapshots: best pre-kickoff odds for each (match, market, selection).
+  • Compute edge = model_prob × bookmaker_odds - 1 inline.
+  • Filter: edge ≥ 5%, odds 1.40–2.50, market in (btts, ou25, ou35, ou15).
+  • Exclude 1x2/DC/DNB — 3-year backtest shows -62/-69% ROI for 1x2 combos
+    and negative combo ROI for DC/DNB.
+  • One candidate per match (best edge per match).
+
+This makes the acca bot independent of source bot execution order, cohort
+timing, or retirement status. If there are qualifying +EV matches today, the
+acca bot finds them regardless of what other bots did.
 
 Storage: one row in simulated_bets per combo, with:
   market       = 'combo'
@@ -40,7 +51,6 @@ import json
 import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from itertools import combinations
 
 from rich.console import Console
 
@@ -55,89 +65,99 @@ console = Console()
 #    spread across all sub-combos of size 2..N (Trixie / Yankee / Canadian /
 #    Heinz depending on N). Running both as paper bots lets us compare
 #    variance-reduction value of system bets vs straight EV per €.
-# Whitelist of "proven" source bots — used by the bot_acca_proven /
-# bot_combo_proven_system variants. Selection criteria (decided 2026-05-18
-# after the expanded historical backtest):
-#   • bot_ou15_defensive — +86% backtest / +47% live / +18% CLV (strongest dual)
-#   • bot_ou35_attacking — +27% backtest (deep historical edge in OU 3.5)
-#   • bot_v10_all        — -56% raw / +30% live / +22% CLV (filter-stack wins)
-#   • bot_ou25_global    — -2% raw / +29% live / +6.5% CLV
-#   • bot_ah_away_dog    — +45% live / +8% CLV (AH not in backtest scope)
-#   • bot_btts_all       — flat raw / +14% live / +4.4% CLV (volume contributor)
-# Other bots excluded — either raw-pessimistic without live filter-stack
-# benefit, or insufficient sample to trust.
-PROVEN_BOTS_WHITELIST = {
-    "bot_ou15_defensive",
-    "bot_ou35_attacking",
-    "bot_v10_all",
-    "bot_ou25_global",
-    "bot_ah_away_dog",
-    "bot_btts_all",
-}
+# Markets eligible for acca legs. Excludes 1x2/DC/DNB — 3-year backtest
+# shows those markets have -62/-69% ROI in combo context (1x2 home/away
+# combo ROI is deeply negative; DC/DNB similarly). OU and BTTS are the
+# only markets where the Poisson model has reliable edge for combos.
+ACCA_ELIGIBLE_MARKETS = frozenset({"btts", "ou25", "ou35", "ou15"})
+
+# Market label → (predictions.market key, odds_snapshots.market, selection)
+# Used by _scan_todays_candidates to map from probability fields to odds fields.
+_MARKET_SPEC = [
+    # (acca_market_key, pred_market, odds_market, selection, prob_field)
+    ("ou25",  "over25",   "over_under_25", "over",  "over_25_prob"),
+    ("ou25",  "under25",  "over_under_25", "under", "under_25_prob"),
+    ("ou35",  "over35",   "over_under_35", "over",  "over_35_prob"),
+    ("ou35",  "under35",  "over_under_35", "under", "under_35_prob"),
+    ("ou15",  "over15",   "over_under_15", "over",  "over_15_prob"),
+    ("ou15",  "under15",  "over_under_15", "under", "under_15_prob"),
+    ("btts",  "btts_yes", "btts",          "yes",   "btts_yes_prob"),
+    ("btts",  "btts_no",  "btts",          "no",    "btts_no_prob"),
+]
+
+# Whitelist of "proven" markets/bots for the bot_acca_proven /
+# bot_combo_proven_system variants. With the ACCA-REDESIGN, the whitelist
+# concept now filters by acca_market_key rather than source bot name —
+# the acca bot scans candidates directly, not via simulated_bets.
+# NOTE: bot_ou15_defensive was retired 2026-05-20; ou15 market still
+# eligible but only included if shadow_bets show recovery (≥30 bets ≥3% ROI).
+# For now "proven" restricts to the highest-ROI markets from backtest.
+PROVEN_MARKETS_WHITELIST = frozenset({"ou25", "ou35", "btts"})
 
 
 ACCA_VARIANTS = {
     "bot_acca_value": {
-        "structure":          "straight",   # one combo at max-leg N
-        "bot_whitelist":      None,         # None = all bots
-        "min_legs":           3,
-        "max_legs":           5,
-        "min_per_leg_edge":   0.05,
-        "max_per_leg_odds":   2.50,
-        "min_per_leg_odds":   1.40,
-        "min_combined_edge":  0.10,
-        "max_combined_odds":  50.0,
-        "kelly_fraction":     0.05,
-        "max_stake_pct":      0.005,
-        "min_stake":          1.0,
+        "structure":           "straight",   # one combo at max-leg N
+        "market_whitelist":    None,         # None = all ACCA_ELIGIBLE_MARKETS
+        "min_legs":            3,
+        "max_legs":            5,
+        "min_per_leg_edge":    0.05,
+        "max_per_leg_odds":    2.50,
+        "min_per_leg_odds":    1.40,
+        "min_combined_edge":   0.10,
+        "max_combined_odds":   50.0,
+        "kelly_fraction":      0.05,
+        "max_stake_pct":       0.005,
+        "min_stake":           1.0,
     },
     "bot_combo_system": {
-        "structure":          "no_singles",  # all sub-combos of size 2..N
-        "bot_whitelist":      None,
-        "min_legs":           3,
-        "max_legs":           5,
-        "min_per_leg_edge":   0.05,
-        "max_per_leg_odds":   2.50,
-        "min_per_leg_odds":   1.40,
-        "min_combined_edge":  0.10,
-        "max_combined_odds":  50.0,
-        "kelly_fraction":     0.05,
-        "max_stake_pct":      0.005,
+        "structure":           "no_singles",  # all sub-combos of size 2..N
+        "market_whitelist":    None,
+        "min_legs":            3,
+        "max_legs":            5,
+        "min_per_leg_edge":    0.05,
+        "max_per_leg_odds":    2.50,
+        "min_per_leg_odds":    1.40,
+        "min_combined_edge":   0.10,
+        "max_combined_odds":   50.0,
+        "kelly_fraction":      0.05,
+        "max_stake_pct":       0.005,
         # System bets deploy more total stake (N_subcombos × per_sub). At N=5
         # that's 26 sub-combos. To keep daily-budget comparable to the straight
         # variant, the per-sub stake is total_stake / num_sub_combos.
-        "min_stake":          1.0,
+        "min_stake":           1.0,
     },
     # COMBO-PROVEN (2026-05-18): same picking + structure logic, restricted
-    # to legs from PROVEN_BOTS_WHITELIST. Tests whether the "good legs only"
-    # combo strategy holds up live.
+    # to PROVEN_MARKETS_WHITELIST (ou25, ou35, btts — highest backtest ROI).
+    # ACCA-REDESIGN (2026-05-20): whitelist was previously bot-name-based
+    # (bot_ou15_defensive etc.); now market-based since we scan DB directly.
     "bot_acca_proven": {
-        "structure":          "straight",
-        "bot_whitelist":      PROVEN_BOTS_WHITELIST,
-        "min_legs":           2,   # fewer source bots = some days only 2 legs available
-        "max_legs":           5,
-        "min_per_leg_edge":   0.05,
-        "max_per_leg_odds":   2.50,
-        "min_per_leg_odds":   1.40,
-        "min_combined_edge":  0.10,
-        "max_combined_odds":  50.0,
-        "kelly_fraction":     0.05,
-        "max_stake_pct":      0.005,
-        "min_stake":          1.0,
+        "structure":           "straight",
+        "market_whitelist":    PROVEN_MARKETS_WHITELIST,
+        "min_legs":            2,   # narrower market pool = some days only 2 legs
+        "max_legs":            5,
+        "min_per_leg_edge":    0.05,
+        "max_per_leg_odds":    2.50,
+        "min_per_leg_odds":    1.40,
+        "min_combined_edge":   0.10,
+        "max_combined_odds":   50.0,
+        "kelly_fraction":      0.05,
+        "max_stake_pct":       0.005,
+        "min_stake":           1.0,
     },
     "bot_combo_proven_system": {
-        "structure":          "no_singles",
-        "bot_whitelist":      PROVEN_BOTS_WHITELIST,
-        "min_legs":           2,
-        "max_legs":           5,
-        "min_per_leg_edge":   0.05,
-        "max_per_leg_odds":   2.50,
-        "min_per_leg_odds":   1.40,
-        "min_combined_edge":  0.10,
-        "max_combined_odds":  50.0,
-        "kelly_fraction":     0.05,
-        "max_stake_pct":      0.005,
-        "min_stake":          1.0,
+        "structure":           "no_singles",
+        "market_whitelist":    PROVEN_MARKETS_WHITELIST,
+        "min_legs":            2,
+        "max_legs":            5,
+        "min_per_leg_edge":    0.05,
+        "max_per_leg_odds":    2.50,
+        "min_per_leg_odds":    1.40,
+        "min_combined_edge":   0.10,
+        "max_combined_odds":   50.0,
+        "kelly_fraction":      0.05,
+        "max_stake_pct":       0.005,
+        "min_stake":           1.0,
     },
 }
 
@@ -168,51 +188,136 @@ class CandidateLeg:
     bot_source: str       # which bot placed this single (for context only)
 
 
-def _fetch_todays_singles(whitelist: set | None = None) -> list[CandidateLeg]:
-    """Pull today's pending pre-match singles. Excludes:
-      • Inplay bets (different cohort / not combinable with pre-match)
-      • Combo bets themselves (no nested combos)
-      • Bets that already settled (we want forward-looking)
-      • All acca/combo bots' own bets (filter via name NOT LIKE)
+def _scan_todays_candidates(
+    market_whitelist: frozenset | None = None,
+) -> list[CandidateLeg]:
+    """Scan today's pre-KO matches directly from predictions + odds_snapshots.
 
-    `whitelist`: optional set of bot names to restrict to (for proven variants).
+    ACCA-REDESIGN (2026-05-20): replaces _fetch_todays_singles() which read
+    from simulated_bets of other bots — creating silent coupling where retired
+    or slow source bots caused 0 legs with no diagnostic output.
+
+    This function queries the DB directly:
+      • predictions (source='ensemble', created before kickoff) for model probs
+      • odds_snapshots for best pre-kickoff odds per (match, market, selection)
+      • Inline edge = model_prob × bookmaker_odds - 1
+      • Filters: edge ≥ 5%, odds 1.40–2.50, market in ACCA_ELIGIBLE_MARKETS
+      • One candidate per match (best edge wins)
+
+    market_whitelist: optional frozenset of acca_market_key strings to restrict
+    to (e.g. PROVEN_MARKETS_WHITELIST = {'ou25', 'ou35', 'btts'}).
+    None = all ACCA_ELIGIBLE_MARKETS.
     """
     today_utc = datetime.now(timezone.utc).date().isoformat()
-    params = [today_utc]
-    sql = """
-        SELECT sb.id::text       AS bet_id,
-               sb.match_id::text AS match_id,
-               sb.market,
-               sb.selection,
-               sb.odds_at_pick   AS odds,
-               COALESCE(sb.calibrated_prob, sb.model_probability) AS prob,
-               b.name            AS bot_source
-        FROM simulated_bets sb
-        JOIN bots b ON b.id = sb.bot_id
-        WHERE sb.result = 'pending'
-          AND sb.combo_legs IS NULL
-          AND DATE(sb.pick_time AT TIME ZONE 'UTC') = %s
-          AND b.name NOT LIKE 'inplay%%'
-          AND b.name NOT LIKE 'bot_acca%%'
-          AND b.name NOT LIKE 'bot_combo%%'
-    """
-    if whitelist:
-        sql += " AND b.name = ANY(%s)"
-        params.append(list(whitelist))
-    rows = execute_query(sql, params) or []
-    out: list[CandidateLeg] = []
-    for r in rows:
-        odds = float(r["odds"] or 0)
-        prob = float(r["prob"] or 0)
-        if odds <= 1.0 or prob <= 0 or prob >= 1:
+    eligible = market_whitelist if market_whitelist is not None else ACCA_ELIGIBLE_MARKETS
+
+    # Step 1: load today's pre-KO match IDs
+    match_rows = execute_query(
+        """SELECT m.id::text AS match_id
+           FROM matches m
+           WHERE DATE(m.date AT TIME ZONE 'UTC') = %s
+             AND m.status NOT IN ('finished', 'cancelled', 'postponed')
+        """,
+        [today_utc],
+    ) or []
+    if not match_rows:
+        return []
+    match_ids = [r["match_id"] for r in match_rows]
+
+    # Step 2: load latest ensemble predictions for each match × market
+    placeholders = ",".join(["%s"] * len(match_ids))
+    pred_rows = execute_query(
+        f"""SELECT DISTINCT ON (p.match_id, p.market)
+               p.match_id::text AS match_id,
+               p.market,
+               p.model_probability
+           FROM predictions p
+           JOIN matches m ON m.id = p.match_id
+           WHERE p.match_id::text IN ({placeholders})
+             AND p.source = 'ensemble'
+             AND p.created_at < m.date
+           ORDER BY p.match_id, p.market, p.created_at DESC
+        """,
+        match_ids,
+    ) or []
+    # {match_id: {pred_market_key: prob}}
+    probs_by_match: dict[str, dict[str, float]] = {}
+    for r in pred_rows:
+        mid = r["match_id"]
+        prob = float(r["model_probability"]) if r["model_probability"] is not None else None
+        if prob is None:
             continue
-        edge = prob * odds - 1
-        out.append(CandidateLeg(
-            bet_id=r["bet_id"], match_id=r["match_id"], market=r["market"],
-            selection=r["selection"], odds=odds, prob=prob, edge=edge,
-            bot_source=r["bot_source"],
-        ))
-    return out
+        if mid not in probs_by_match:
+            probs_by_match[mid] = {}
+        probs_by_match[mid][r["market"]] = prob
+
+    # Step 3: load best pre-kickoff odds for the relevant markets
+    # Use the same pattern as _load_pre_kickoff_odds in backtest_pre_match_bots.py
+    eligible_snap_markets = set()
+    for spec in _MARKET_SPEC:
+        if spec[0] in eligible:
+            eligible_snap_markets.add(spec[2])  # odds_snapshots.market value
+    if not eligible_snap_markets:
+        return []
+    market_placeholders = ",".join(["%s"] * len(eligible_snap_markets))
+    odds_rows = execute_query(
+        f"""SELECT os.match_id::text AS match_id,
+               os.market,
+               os.selection,
+               MAX(os.odds) AS odds
+           FROM odds_snapshots os
+           JOIN matches m ON m.id = os.match_id
+           WHERE os.match_id::text IN ({placeholders})
+             AND os.market IN ({market_placeholders})
+             AND os.is_live = false
+             AND os.timestamp < m.date
+           GROUP BY os.match_id, os.market, os.selection
+        """,
+        match_ids + list(eligible_snap_markets),
+    ) or []
+    # {match_id: {(market, selection): odds}}
+    odds_by_match: dict[str, dict[tuple, float]] = {}
+    for r in odds_rows:
+        mid = r["match_id"]
+        if mid not in odds_by_match:
+            odds_by_match[mid] = {}
+        odds_by_match[mid][(r["market"].lower(), (r["selection"] or "").lower())] = float(r["odds"])
+
+    # Step 4: build candidates
+    # {match_id: best CandidateLeg} — one per match
+    best_by_match: dict[str, CandidateLeg] = {}
+    for spec in _MARKET_SPEC:
+        acca_key, pred_key, snap_market, snap_sel, prob_field = spec
+        if acca_key not in eligible:
+            continue
+        for mid in match_ids:
+            prob = probs_by_match.get(mid, {}).get(pred_key)
+            if prob is None:
+                continue
+            odds = odds_by_match.get(mid, {}).get((snap_market.lower(), snap_sel.lower()))
+            if not odds or odds <= 1.0:
+                continue
+            edge = prob * odds - 1
+            if edge < 0.05:
+                continue
+            if not (1.40 <= odds <= 2.50):
+                continue
+            leg = CandidateLeg(
+                bet_id="",           # no source bet — scanned from predictions
+                match_id=mid,
+                market=acca_key,
+                selection=snap_sel,
+                odds=odds,
+                prob=prob,
+                edge=edge,
+                bot_source=f"scan:{pred_key}",
+            )
+            # One candidate per match: keep the one with best edge
+            existing = best_by_match.get(mid)
+            if existing is None or edge > existing.edge:
+                best_by_match[mid] = leg
+
+    return list(best_by_match.values())
 
 
 def _pick_legs(candidates: list[CandidateLeg], config: dict) -> list[CandidateLeg]:
@@ -373,24 +478,27 @@ def _place_one(bot_name: str, cfg: dict, legs: list[CandidateLeg]) -> dict:
 
 def run_acca_pass(dry_run: bool = False) -> dict:
     """Run the acca-style bots for the day. Each variant uses its own leg pool
-    based on its `bot_whitelist`:
-      • bot_acca_value / bot_combo_system  → whitelist=None → all bots' legs
-      • bot_acca_proven / bot_combo_proven_system → restricted to proven bots
-    Variants sharing the same whitelist get identical legs (clean comparison
-    between straight vs system stake distribution on the same picks).
+    based on its `market_whitelist`:
+      • bot_acca_value / bot_combo_system  → market_whitelist=None → all eligible markets
+      • bot_acca_proven / bot_combo_proven_system → PROVEN_MARKETS_WHITELIST
+
+    ACCA-REDESIGN (2026-05-20): leg pool now comes from _scan_todays_candidates()
+    (direct DB scan of predictions + odds_snapshots) rather than _fetch_todays_singles()
+    (read from simulated_bets of other bots). Variants sharing the same market_whitelist
+    get identical legs — clean comparison between straight vs system structures.
 
     Returns dict with per-variant `placed/reason`.
     """
-    # Cache leg pools by whitelist tuple (so each unique whitelist only queries DB once)
-    leg_cache: dict = {}
+    # Cache scan results by market_whitelist (frozenset or None → "ALL")
+    scan_cache: dict = {}
 
     def _legs_for(cfg: dict) -> list[CandidateLeg]:
-        wl = cfg.get("bot_whitelist")
-        cache_key = "ALL" if wl is None else tuple(sorted(wl))
-        if cache_key not in leg_cache:
-            candidates = _fetch_todays_singles(wl)
-            leg_cache[cache_key] = _pick_legs(candidates, cfg)
-        return leg_cache[cache_key]
+        mwl = cfg.get("market_whitelist")
+        cache_key = "ALL" if mwl is None else tuple(sorted(mwl))
+        if cache_key not in scan_cache:
+            candidates = _scan_todays_candidates(mwl)
+            scan_cache[cache_key] = _pick_legs(candidates, cfg)
+        return scan_cache[cache_key]
 
     if dry_run:
         out_legs = {name: [l.__dict__ for l in _legs_for(cfg)] for name, cfg in ACCA_VARIANTS.items()}
