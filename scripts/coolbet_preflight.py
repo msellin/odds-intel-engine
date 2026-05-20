@@ -95,7 +95,10 @@ def check_credentials() -> bool:
     if not user or not pwd:
         _fail("COOLBET_USER / COOLBET_PASS missing from .env (or set COOLBET_MANUAL_JWT to bypass)")
         return False
-    _ok(f"COOLBET_USER={user[:3]}…")
+    _ok(f"COOLBET_USER={user[:3]}… (password mode — will call /s/auth/login)")
+    print("    ⚠  Coolbet may have disabled password login on this account (Smart-ID / 2FA users).")
+    print("       If section 3 fails with 403/401, paste your `cbauth` Bearer from browser into")
+    print("       COOLBET_MANUAL_JWT and rerun — that bypasses /s/auth/login entirely.")
     return True
 
 
