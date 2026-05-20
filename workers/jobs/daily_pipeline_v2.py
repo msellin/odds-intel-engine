@@ -283,15 +283,13 @@ BOTS_CONFIG = {
         "min_prob": 0.35,
     },
     "bot_ou15_defensive": {
-        # BOT-OU15-EDGE-REPAIR (2026-05-20): bot silent since 2026-05-08.
-        # BOT-FUNNEL-DIAGNOSTIC pinpointed the cause — 97/98 candidates die
-        # at the edge threshold (cal_prob within 5% of implied, was previously
-        # > 6%). Calibration tightened sometime around the May 7-8 commits
-        # (VIG-REMOVE / DRAW-PER-LEAGUE / H2H-SPLITS) so the bot found nothing.
-        # Thresholds dropped 6% → 4% (T1-T2) and 5% → 3% (T3-T4) as a 2-week
-        # paper-trade experiment. If post-relaxation ROI on ≥30 settled bets
-        # is ≥3% real ROI the loosened bot stays; if not, retire.
-        "description": "O/U 1.5 — under 1.5 in defensive leagues, over 1.5 at value odds (BOT-OU15-EDGE-REPAIR: thresholds relaxed 2026-05-20)",
+        # BOT-OU15-RETIRE (2026-05-20): retired. Silent since 2026-05-08;
+        # BOT-FUNNEL-DIAGNOSTIC confirmed 97/98 candidates die at ↓edge.
+        # Relaxed thresholds (6%→4%, 5%→3%) recovered 0 of 104 candidates
+        # in shadow run — calibration drift killed the bot's edge entirely.
+        # Config kept in BOTS_CONFIG so historical bet_id linkage survives;
+        # migration 113 flipped is_active=false + retired_at=now().
+        "description": "[RETIRED 2026-05-20] O/U 1.5 — model calibration tightened past viable edge threshold",
         "tier_label": "pro",
         "markets": ["ou15"],
         "edge_thresholds": {
