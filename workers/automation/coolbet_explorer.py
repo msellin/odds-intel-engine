@@ -488,6 +488,83 @@ def load_matches_in_window(days: int) -> list[dict]:
     )
 
 
+def load_today_active_leagues() -> list[dict]:
+    """LEAGUE-MAPPED ingest mode: only fetch Coolbet leagues where AF has
+    today's matches WITH odds. Skips leagues with no activity today —
+    much smaller API footprint than iterating all 132 mapped leagues.
+
+    Returns rows: {af_league_id, cb_league_id, cb_full_slug, cb_name,
+                   match_count, with_odds_count}
+    """
+    import json
+    mapping_path = Path(__file__).parent / "coolbet_league_mapping.json"
+    if not mapping_path.exists():
+        log.warning("coolbet_league_mapping.json not found — no leagues to fetch")
+        return []
+    mapping = json.loads(mapping_path.read_text())
+    # Build af_league_id → list of cb mappings (some AF leagues map to multiple CB)
+    by_af: dict[str, list[dict]] = {}
+    for m in mapping:
+        by_af.setdefault(m["db_league_id"], []).append(m)
+
+    # AF leagues with today's matches that have any odds in odds_snapshots
+    rows = execute_query(
+        """
+        SELECT m.league_id::text AS af_league_id,
+               COUNT(DISTINCT m.id)                                AS match_count,
+               COUNT(DISTINCT m.id) FILTER (
+                 WHERE EXISTS (SELECT 1 FROM odds_snapshots os
+                               WHERE os.match_id = m.id)
+               )                                                    AS with_odds_count
+        FROM matches m
+        WHERE m.date > NOW()
+          AND DATE(m.date AT TIME ZONE 'UTC') = CURRENT_DATE
+          AND m.status = 'scheduled'
+        GROUP BY m.league_id
+        HAVING COUNT(DISTINCT m.id) FILTER (
+                 WHERE EXISTS (SELECT 1 FROM odds_snapshots os
+                               WHERE os.match_id = m.id)
+               ) > 0
+        ORDER BY COUNT(DISTINCT m.id) DESC
+        """,
+        (),
+    )
+    out: list[dict] = []
+    for r in rows:
+        af_id = r["af_league_id"]
+        cb_mappings = by_af.get(af_id, [])
+        for cb in cb_mappings:
+            out.append({
+                "af_league_id":   af_id,
+                "cb_league_id":   cb["cb_league_id"],
+                "cb_full_slug":   cb["cb_full_slug"],
+                "cb_name":        cb["cb_league_name"],
+                "confidence":     cb.get("confidence", "high"),
+                "match_count":    int(r["match_count"] or 0),
+                "with_odds_count":int(r["with_odds_count"] or 0),
+            })
+    return out
+
+
+def load_today_matches_for_league(af_league_id: str) -> list[dict]:
+    """Today's AF matches in a specific league."""
+    return execute_query(
+        """
+        SELECT m.id::text AS id, m.date AS date,
+               ht.name AS home, at2.name AS away
+        FROM matches m
+        JOIN teams ht ON ht.id = m.home_team_id
+        JOIN teams at2 ON at2.id = m.away_team_id
+        WHERE m.league_id = %s::uuid
+          AND m.date > NOW()
+          AND DATE(m.date AT TIME ZONE 'UTC') = CURRENT_DATE
+          AND m.status = 'scheduled'
+        ORDER BY m.date
+        """,
+        (af_league_id,),
+    )
+
+
 def load_value_bet_matches(days: int) -> list[dict]:
     """Pull matches that currently have at least one pending value bet from any
     active bot, kicking off within `days` days. This is the actionable set —
@@ -578,6 +655,123 @@ def _minutes_to_kickoff(iso: str) -> int | None:
         return None
     delta = ko - datetime.now(timezone.utc)
     return int(delta.total_seconds() // 60)
+
+
+# ── League-sweep (LEAGUE-MAPPED 2026-05-20) ───────────────────────────────────
+
+
+def run_league_sweep(
+    *,
+    dry_run: bool = False,
+    sleep_s: float = 1.5,
+    require_pinnacle: bool = False,
+) -> None:
+    """Today's AF matches → group by league → look up mapped Coolbet league →
+    fetch its events in one call → match events within-league by team names →
+    pull markets+odds for matched pairs → store.
+
+    Far fewer API calls than per-match search (one fo-category call per active
+    league vs one search call per match). Within-league matching is reliable
+    because both AF and Coolbet ship clean team names — fuzzy threshold can be
+    low (65) without false positives.
+
+    require_pinnacle: if True, only consider AF matches that have Pinnacle
+    odds. Default False (any-odds is broader and matches bot universe).
+    """
+    from workers.automation.coolbet_session import CoolbetSession
+    from workers.automation.coolbet_placer import fetch_events_for_league
+    from rapidfuzz import fuzz
+
+    active = load_today_active_leagues()
+    if require_pinnacle:
+        # Filter to leagues where at least one of today's matches has Pinnacle
+        from workers.api_clients.supabase_client import execute_query as _q
+        pin_ok = {r["af_league_id"] for r in _q(
+            """
+            SELECT DISTINCT m.league_id::text AS af_league_id
+            FROM matches m
+            JOIN odds_snapshots os ON os.match_id = m.id
+            WHERE m.date > NOW()
+              AND DATE(m.date AT TIME ZONE 'UTC') = CURRENT_DATE
+              AND m.status = 'scheduled'
+              AND os.bookmaker = 'Pinnacle'
+            """, (),
+        )}
+        before = len(active)
+        active = [r for r in active if r["af_league_id"] in pin_ok]
+        log.info("Pinnacle filter: %d → %d leagues", before, len(active))
+
+    if not active:
+        console.print("[yellow]No active leagues today.[/yellow]")
+        return
+
+    log.info("League sweep — %d Coolbet leagues to fetch (today's AF matches)", len(active))
+    session = CoolbetSession()
+
+    matched_total = 0
+    parsed_total = 0
+    stored_total = 0
+    by_market: dict[str, int] = {}
+
+    seen_cb_ids: set[int] = set()  # dedup if same CB league mapped from multiple AF leagues
+
+    for i, league in enumerate(active, 1):
+        cb_id = league["cb_league_id"]
+        cb_slug = league["cb_full_slug"]
+        if cb_id in seen_cb_ids:
+            continue
+        seen_cb_ids.add(cb_id)
+
+        af_matches = load_today_matches_for_league(league["af_league_id"])
+        if not af_matches:
+            continue
+
+        cb_events = fetch_events_for_league(session, cb_id, league_slug=cb_slug)
+        log.info("[%d/%d] %s (cb=%d) → AF matches=%d, CB events=%d",
+                 i, len(active), league["cb_name"], cb_id, len(af_matches), len(cb_events))
+        if not cb_events:
+            continue
+
+        # Within-league fuzzy match (high precision because same league)
+        for af_m in af_matches:
+            af_key = f"{af_m['home']} vs {af_m['away']}".lower()
+            best, best_score = None, 0
+            for cb_e in cb_events:
+                cb_key = f"{cb_e['home']} vs {cb_e['away']}".lower()
+                sc = fuzz.token_sort_ratio(af_key, cb_key)
+                if sc > best_score:
+                    best, best_score = cb_e, sc
+            if not best or best_score < 65:
+                continue
+
+            matched_total += 1
+            # Pull markets+odds, store
+            markets = fetch_match_markets(session, int(best["id"]))
+            odds_map = fetch_odds_for_markets(session, markets)
+            parsed, stored, mkt_counts = store_coolbet_snapshots_for_match(
+                af_m["id"], markets, odds_map,
+                dry_run=dry_run, kickoff_iso=best.get("start") or "",
+            )
+            parsed_total += parsed
+            stored_total += stored
+            for k, v in mkt_counts.items():
+                by_market[k] = by_market.get(k, 0) + v
+        time.sleep(sleep_s)
+
+    t = Table(show_header=True, title=f"League-sweep summary {'[DRY-RUN]' if dry_run else ''}")
+    t.add_column("Metric"); t.add_column("Value", justify="right")
+    t.add_row("Active leagues iterated", str(len(seen_cb_ids)))
+    t.add_row("AF↔CB match pairs",       str(matched_total))
+    t.add_row("Odds rows parsed",        str(parsed_total))
+    t.add_row("Odds rows stored",        "0 (dry-run)" if dry_run else str(stored_total))
+    console.print(t)
+
+    if by_market:
+        t2 = Table(show_header=True, title="By market")
+        t2.add_column("Market"); t2.add_column("Rows", justify="right")
+        for k, v in sorted(by_market.items(), key=lambda kv: -kv[1]):
+            t2.add_row(k, str(v))
+        console.print(t2)
 
 
 # ── Bulk + one-shot drivers ───────────────────────────────────────────────────

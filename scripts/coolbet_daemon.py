@@ -68,12 +68,17 @@ def _task_keepalive(session: CoolbetSession) -> str:
     return f"keepalive {'✓' if ok else '✗'}  (JWT TTL ≈ {int(ttl)}s)"
 
 
-def _task_odds_snapshot(bets_only: bool, days: int) -> str:
-    # Import inside so a transient bug in the explorer doesn't block daemon startup.
-    from workers.automation.coolbet_explorer import run_bulk
+def _task_odds_snapshot(mode: str, days: int, require_pinnacle: bool) -> str:
+    """mode: 'wide' | 'bets-only' | 'league-mapped'"""
     try:
-        run_bulk(days=days, dry_run=False, sleep_s=0.25, limit=None, bets_only=bets_only)
-        return f"odds snapshot ✓ ({'bets-only' if bets_only else 'wide'}, {days}d)"
+        if mode == "league-mapped":
+            from workers.automation.coolbet_explorer import run_league_sweep
+            run_league_sweep(dry_run=False, sleep_s=1.5, require_pinnacle=require_pinnacle)
+            return f"odds snapshot ✓ (league-mapped, today)"
+        from workers.automation.coolbet_explorer import run_bulk
+        run_bulk(days=days, dry_run=False, sleep_s=0.25, limit=None,
+                 bets_only=(mode == "bets-only"))
+        return f"odds snapshot ✓ ({mode}, {days}d)"
     except Exception as e:
         log.warning("odds snapshot raised: %s", e)
         return f"odds snapshot ✗ ({e})"
@@ -110,12 +115,19 @@ def main() -> None:
                     help="Heartbeat cadence in minutes (default 20)")
     ap.add_argument("--odds-min", type=int, default=30,
                     help="Odds snapshot cadence in minutes (default 30)")
-    ap.add_argument("--odds-mode", choices=("wide", "bets-only"), default="wide",
-                    help="wide=fetch Coolbet odds for every upcoming match in DB "
-                         "(default; matches AF cadence — feeds the betting "
-                         "pipeline's edge math via ACCESSIBLE_BOOKMAKERS). "
-                         "bets-only=fetch only for matches with pending value bets "
-                         "(smaller API load, but Coolbet can't surface new edges).")
+    ap.add_argument("--odds-mode", choices=("wide", "bets-only", "league-mapped"), default="wide",
+                    help="wide=per-match search across all upcoming DB matches "
+                         "(legacy, has false negatives). "
+                         "bets-only=fetch only matches with pending value bets "
+                         "(smallest API load). "
+                         "league-mapped=use coolbet_league_mapping.json — group "
+                         "today's AF matches by league, fetch each mapped Coolbet "
+                         "league once, match within-league. Best coverage + lowest "
+                         "API load. RECOMMENDED.")
+    ap.add_argument("--require-pinnacle", action="store_true",
+                    help="In league-mapped mode, only fetch Coolbet leagues where "
+                         "at least one of today's AF matches has Pinnacle odds. "
+                         "Smaller set; broader filter when off (default).")
     ap.add_argument("--odds-days", type=int, default=1,
                     help="How far ahead to fetch odds. 1 = today only (UTC, "
                          "strict DATE filter). 2+ = rolling N-day window. "
@@ -221,8 +233,9 @@ def main() -> None:
 
         if now >= next_odds:
             log.info(_task_odds_snapshot(
-                bets_only=(args.odds_mode == "bets-only"),
+                mode=args.odds_mode,
                 days=args.odds_days,
+                require_pinnacle=args.require_pinnacle,
             ))
             next_odds = now + args.odds_min * 60
 
