@@ -208,26 +208,22 @@ def main() -> int:
         console.print("[yellow]Cancelled — no bet placed.[/yellow]")
         return 0
 
-    # 7. POST to Coolbet — use Coolbet's REAL market + outcome names from the
-    # markets data (not our bot's internal labels). Coolbet 400's on empty
-    # outcomeName.
+    # 7. POST to Coolbet — use Coolbet's REAL market name from markets data
+    # (NOT our bot's internal label). outcomeName is sent empty to match a
+    # captured browser bet (Coolbet's schema accepts "" and may strict-reject
+    # if our value differs from their internal canonical form).
     cb_market_name = ""
-    cb_outcome_name = ""
     for mkt in markets:
         if int(mkt.get("id") or 0) != market_id:
             continue
         cb_market_name = mkt.get("name") or ""
-        for oc in mkt.get("outcomes") or []:
-            if int(oc.get("id") or 0) == outcome_id:
-                cb_outcome_name = oc.get("name") or ""
-                break
         break
-    console.print(f"[cyan]Placing bet at Coolbet…  (market={cb_market_name!r} outcome={cb_outcome_name!r})[/cyan]")
+    console.print(f"[cyan]Placing bet at Coolbet…  (market={cb_market_name!r})[/cyan]")
     try:
         match_name = f"{ev['home']} - {ev['away']}"
         ticket_id = _place_bet_api(
             session, outcome_id, odds_id, stake, match_name,
-            cb_market_name, cb_outcome_name,
+            cb_market_name, "",
         )
     except Exception as e:
         console.print(f"[red]Coolbet API error: {e}[/red]")

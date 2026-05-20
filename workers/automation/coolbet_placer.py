@@ -862,22 +862,20 @@ def _place_bet_api(
     POST /s/bets/bets — place a single bet.
     Returns the ticket_id (UUID string) on success. Raises on failure.
 
-    Payload structure (confirmed from captured network request):
+    Payload structure matches a captured browser bet (2026-05-20):
       ticketType: "single"
-      bets[].oddsIdByOutcomeId: {outcomeId: oddsId_uuid}
-      deviceId: uuid cookie value
       foTranslationsByOutcomeId: {outcomeId: {matchName, marketName, outcomeName}}
-
-    market_name + outcome_name must be Coolbet's REAL names from the markets
-    payload (eg "Total Goals Over / Under" + "Over"), not our bot's internal
-    labels. Coolbet 400's on empty outcomeName. Lookup helper below extracts
-    them from the markets dict returned by fetch_match_markets.
+        — outcomeName CAN be empty; browser sends "" and it works.
+      language: "en"  (NOT "et" — Estonia site, but bet API still wants en)
+      No `currency` / `acceptOddsChanges` keys — Coolbet's schema strict-rejects
+        unknown fields with GenericBadRequestError("Invalid request") and no
+        further detail. Send EXACTLY the keys the browser sends.
     """
     device_id = session._http.cookies.get("uuid", "")
 
     payload = {
         "ticketType": "single",
-        "timestamp":  datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        "timestamp":  datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
         "copiedFrom": None,
         "foTranslationsByOutcomeId": {
             str(outcome_id): {
@@ -898,13 +896,29 @@ def _place_bet_api(
         }],
     }
 
-    resp = session.post(_BET_URL, json=payload)
+    headers = {
+        "accept-language":    "en-GB,en-US;q=0.9,en;q=0.8,da;q=0.7",
+        "priority":           "u=1, i",
+        "referer":            "https://www.coolbet.com/en/sports/football",
+    }
+    resp = session.post(_BET_URL, json=payload, headers=headers)
     log.debug("POST /s/bets/bets → %d  %s", resp.status_code, resp.text[:300])
 
+    # Dump payload + response to disk on any non-success so we can diff against
+    # a browser curl without re-running the (real-money) call.
     if resp.status_code not in (200, 201):
-        # Full body — Coolbet echoes our payload in `meta._original` then puts
-        # the actual error code/message after. Don't truncate; we'd lose
-        # exactly the info we need to fix the call.
+        try:
+            import json as _json
+            from pathlib import Path as _Path
+            dump_dir = _Path.home() / ".coolbet-daemon"
+            dump_dir.mkdir(exist_ok=True)
+            (dump_dir / "last-failed-placement.json").write_text(_json.dumps({
+                "request": payload,
+                "response_status": resp.status_code,
+                "response_body": resp.text,
+            }, indent=2))
+        except Exception:
+            pass
         raise RuntimeError(
             f"Bet placement failed ({resp.status_code}): {resp.text}"
         )
@@ -1084,23 +1098,17 @@ def place_all_bets(
                 results.append({**bet, "outcome": "confirm_declined"})
                 continue
             match_name = f"{ev['home']} - {ev['away']}"
-            # Look up Coolbet's real market+outcome names from the markets
-            # data (not our bot's internal labels). Coolbet 400's on empty
-            # outcomeName — fixed 2026-05-20.
+            # Look up Coolbet's real marketName from markets data.
+            # outcomeName is sent as "" to match a captured browser bet.
             cb_market_name = ""
-            cb_outcome_name = ""
             for _m in markets:
                 if int(_m.get("id") or 0) != bo_id: continue
                 cb_market_name = _m.get("name") or ""
-                for _oc in _m.get("outcomes") or []:
-                    if int(_oc.get("id") or 0) == oc_id:
-                        cb_outcome_name = _oc.get("name") or ""
-                        break
                 break
             try:
                 ticket_id = _place_bet_api(
                     session, oc_id, odds_uuid, stake, match_name,
-                    cb_market_name, cb_outcome_name,
+                    cb_market_name, "",
                 )
                 log.info("✓ Coolbet ticket placed: %s", ticket_id)
             except Exception as e:

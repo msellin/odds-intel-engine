@@ -73,6 +73,7 @@ Each piece can be invoked on its own — daemon is just the convenient bundle.
 | **BOT-OU15-EDGE-REPAIR** | 2026-05-20 | Thresholds relaxed (T1/T2 4%, T3/T4 3%) as 2-week paper experiment. |
 | **BOT-COHORTS-ALL** | 2026-05-20 | All bots set to cohort='all' — fire at every betting_refresh window. Dedup prevents duplicates. |
 | **SHADOW-COHORT-CONSTRAINT** | 2026-05-20 | Migration 112 — shadow_bets accepts HHMM scheduler labels (was silently failing). |
+| **COOLBET-PLACE-PAYLOAD-MATCHED** | 2026-05-20 | Bet placement POST body + headers matched byte-for-byte against a captured browser bet curl. Earlier 400 (`GenericBadRequestError "Invalid request"`) traced to extra schema keys (`currency`, `acceptOddsChanges`) + populated `outcomeName` (browser sends `""`). Now sends only the keys the browser sends; `last-failed-placement.json` dumped to `~/.coolbet-daemon/` on any non-2xx for future diffing. Awaits next interactive trial via `place_one_real_bet.py`. |
 
 ---
 
