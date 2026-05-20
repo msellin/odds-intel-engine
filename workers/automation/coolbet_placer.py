@@ -24,6 +24,7 @@ import logging
 import os
 import re
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -50,6 +51,102 @@ _DEFAULT_STAKE   = float(os.getenv("COOLBET_STAKE",        "10.0"))
 _MIN_EDGE        = float(os.getenv("COOLBET_MIN_EDGE",      "0.03"))
 _ODDS_TOLERANCE  = float(os.getenv("COOLBET_ODDS_TOLERANCE","0.05"))
 _FUZZY_THRESHOLD = 70
+
+
+# COOLBET-SAFETY-GUARDRAILS (2026-05-20): instances live for one invocation of
+# place_all_bets and track state across the per-bet loop (rate limit + total
+# stake). Daemon constructs from CLI flags and passes via place_all_bets kwargs.
+# All limits are optional (None = disabled) so existing callers keep working.
+class PlacementGuard:
+    def __init__(
+        self,
+        *,
+        use_kelly_stake: bool = False,
+        fixed_stake: float | None = None,         # overrides _DEFAULT_STAKE when not using Kelly
+        max_stake_per_bet: float | None = None,   # absolute cap (clamps Kelly or fixed)
+        max_bets_per_hour: int | None = None,     # rolling 60-min rate limit
+        max_total_stake: float | None = None,     # cumulative session stake cap
+        max_edge_pct: float | None = None,        # refuse absurd-edge bets (model bug guard)
+        require_confirm: bool = False,            # y/n per bet (execute mode only)
+        bot_filter: list[str] | None = None,      # only place bets from these bots
+    ):
+        self.use_kelly_stake     = use_kelly_stake
+        self.fixed_stake         = fixed_stake
+        self.max_stake_per_bet   = max_stake_per_bet
+        self.max_bets_per_hour   = max_bets_per_hour
+        self.max_total_stake     = max_total_stake
+        self.max_edge_pct        = max_edge_pct
+        self.require_confirm     = require_confirm
+        self.bot_filter          = set(bot_filter) if bot_filter else None
+        # Tracking
+        self._placement_times: list[float] = []   # for rate limit
+        self._total_stake: float = 0.0            # for session-stake cap
+
+    def stake_for(self, bet: dict) -> float:
+        """Return stake to use for `bet`, clamped to max_stake_per_bet."""
+        if self.use_kelly_stake:
+            base = float(bet.get("model_stake") or 0)
+            if base <= 0:
+                base = _DEFAULT_STAKE  # Kelly was zero/missing — fall back to fixed
+        else:
+            base = self.fixed_stake if self.fixed_stake is not None else _DEFAULT_STAKE
+        if self.max_stake_per_bet is not None:
+            base = min(base, self.max_stake_per_bet)
+        return round(max(base, 1.0), 2)  # never go below €1
+
+    def can_place(self, bet: dict, stake: float) -> tuple[bool, str]:
+        """Pre-flight check before each placement attempt. Returns (allowed, reason)."""
+        bot = bet.get("bot_name") or ""
+        if self.bot_filter and bot not in self.bot_filter:
+            return False, f"bot {bot!r} not in --bot-filter"
+
+        edge = float(bet.get("edge_percent") or 0)
+        if self.max_edge_pct is not None and edge > self.max_edge_pct:
+            return False, f"edge {edge:.1f}% > --max-edge-pct {self.max_edge_pct} (likely model bug)"
+
+        if self.max_total_stake is not None:
+            if (self._total_stake + stake) > self.max_total_stake:
+                return False, (
+                    f"placing this bet would exceed --max-total-stake "
+                    f"(would be €{self._total_stake + stake:.2f} vs cap €{self.max_total_stake:.2f})"
+                )
+
+        if self.max_bets_per_hour is not None:
+            cutoff = time.time() - 3600
+            self._placement_times = [t for t in self._placement_times if t >= cutoff]
+            if len(self._placement_times) >= self.max_bets_per_hour:
+                return False, (
+                    f"--max-bets-per-hour {self.max_bets_per_hour} hit "
+                    f"(placed {len(self._placement_times)} in last 60 min)"
+                )
+
+        return True, ""
+
+    def record_placement(self, stake: float) -> None:
+        """Call after a successful placement (or even a recorded one) so the
+        rate / total-stake counters track reality."""
+        self._placement_times.append(time.time())
+        self._total_stake += stake
+
+    def prompt_confirm(self, bet: dict, stake: float, odds: float) -> bool:
+        """If --require-confirm, prompt y/n in the terminal. Returns True if
+        the user accepts. Non-interactive sessions (e.g. tmux send-keys with no
+        TTY) return False to avoid placing without confirmation."""
+        if not self.require_confirm:
+            return True
+        if not sys.stdin.isatty():
+            log.warning("--require-confirm set but stdin is not a TTY — skipping placement to be safe")
+            return False
+        msg = (
+            f"\n  CONFIRM: place €{stake:.2f} on "
+            f"{bet['home_team']} vs {bet['away_team']} | "
+            f"{bet['market']} {bet['selection']} @ {odds:.3f}? [y/N] "
+        )
+        try:
+            ans = input(msg).strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return False
+        return ans in ("y", "yes")
 
 
 # ── Market / selection mapping ────────────────────────────────────────────────
@@ -652,6 +749,8 @@ def place_all_bets(
     record: bool = False,
     execute: bool = False,
     min_edge: float | None = None,
+    *,
+    guard: PlacementGuard | None = None,
 ) -> list[dict]:
     """
     Run the placement cycle in one of three modes:
@@ -681,6 +780,11 @@ def place_all_bets(
     if not pending:
         log.info("No qualifying bets found for today.")
         return []
+
+    # COOLBET-SAFETY-GUARDRAILS: default guard = no limits (preserves
+    # behavior for callers that don't pass one).
+    if guard is None:
+        guard = PlacementGuard()
 
     log.info("Found %d qualifying simulated_bets to evaluate", len(pending))
 
@@ -760,19 +864,31 @@ def place_all_bets(
             except Exception as e:
                 log.warning("Failed to store Coolbet odds snapshot: %s", e)
 
+        # COOLBET-SAFETY-GUARDRAILS: stake comes from the guard
+        # (Kelly-derived or fixed, capped by --max-stake-per-bet).
+        stake = guard.stake_for(bet)
+
         # ── DRY-RUN ──────────────────────────────────────────────────────────
         if not record:
             coolbet_odds_str = f"{ev_odds:.3f}" if ev_odds else "?"
             print(f"  [DRY-RUN] {label}  →  match={coolbet_match_id} "
                   f"market_id={bo_id} outcome_id={oc_id} odds={coolbet_odds_str} "
-                  f"stake=€{_DEFAULT_STAKE:.2f}")
+                  f"stake=€{stake:.2f}")
             results.append({**bet, "outcome": "dry_run",
                              "coolbet_match_id": coolbet_match_id,
                              "market_id": bo_id, "outcome_id": oc_id,
-                             "ev_odds": ev_odds})
+                             "ev_odds": ev_odds, "stake": stake})
             continue
 
         # ── RECORD / EXECUTE ─────────────────────────────────────────────────
+        # SAFETY-GUARDRAILS pre-flight: bot filter, rate limit, session-stake
+        # cap, absurd-edge guard.
+        allowed, reason = guard.can_place(bet, stake)
+        if not allowed:
+            log.info("Skip %s — %s", label, reason)
+            results.append({**bet, "outcome": "guard_skip", "reason": reason})
+            continue
+
         # Odds-drop check: refuse placement if Coolbet price fell more than
         # _ODDS_TOLERANCE below model_odds. (We already have current odds from
         # the resolve step — no second fetch needed.)
@@ -785,10 +901,15 @@ def place_all_bets(
 
         ticket_id = None
         if execute and odds_ok and odds_uuid:
+            # --require-confirm prompts y/n in the TTY (skipped if non-interactive)
+            if not guard.prompt_confirm(bet, stake, live_odds):
+                log.info("Skip %s — confirm declined / no TTY for --require-confirm", label)
+                results.append({**bet, "outcome": "confirm_declined"})
+                continue
             match_name = f"{ev['home']} - {ev['away']}"
             try:
                 ticket_id = _place_bet_api(
-                    session, oc_id, odds_uuid, _DEFAULT_STAKE, match_name, f"{mkt} {sel}"
+                    session, oc_id, odds_uuid, stake, match_name, f"{mkt} {sel}"
                 )
                 log.info("✓ Coolbet ticket placed: %s", ticket_id)
             except Exception as e:
@@ -804,14 +925,17 @@ def place_all_bets(
             bookmaker="Coolbet",
             captured_odds=ev_odds,
             actual_odds=live_odds,
-            stake=_DEFAULT_STAKE,
+            stake=stake,
             bot_id=str(bet["bot_id"]),
             simulated_bet_id=str(bet["simulated_bet_id"]),
             notes=f"auto ticket={ticket_id} edge={edge_pct:+.2f}%",
         )
-        log.info("✓ Placed %s  ticket=%s real_bet=%s", label, ticket_id, real_bet_id)
+        # Track the placement against rate-limit + total-stake counters
+        guard.record_placement(stake)
+        log.info("✓ Placed %s  stake=€%.2f  ticket=%s real_bet=%s",
+                 label, stake, ticket_id, real_bet_id)
         results.append({**bet, "outcome": "placed",
                          "ticket_id": ticket_id, "real_bet_id": real_bet_id,
-                         "live_odds": live_odds})
+                         "live_odds": live_odds, "stake": stake})
 
     return results

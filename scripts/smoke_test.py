@@ -2998,6 +2998,75 @@ def _():
     )
 
 
+@test("COOLBET-SAFETY-GUARDRAILS — PlacementGuard stake + rate + total + edge + bot-filter")
+def _():
+    """COOLBET-SAFETY-GUARDRAILS (2026-05-20) — PlacementGuard holds the
+    runtime limits + tracking state for live placement. Verifies stake
+    selection (fixed/Kelly/cap), rate limit, session-stake cap, edge guard,
+    bot-filter, and the daemon CLI wiring."""
+    from workers.automation.coolbet_placer import PlacementGuard
+
+    # Fixed stake — default fallback
+    g = PlacementGuard()
+    bet = {"model_stake": 7.0, "edge_percent": 5.0, "bot_name": "x"}
+    s = g.stake_for(bet)
+    assert s == 10.0, f"default = COOLBET_STAKE env (10.0), got {s}"
+
+    # Kelly stake used when flag on
+    g = PlacementGuard(use_kelly_stake=True)
+    s = g.stake_for(bet)
+    assert s == 7.0, f"Kelly stake from bet['model_stake'], got {s}"
+
+    # Per-bet cap clamps both sources
+    g = PlacementGuard(use_kelly_stake=True, max_stake_per_bet=5.0)
+    assert g.stake_for(bet) == 5.0, "cap must clamp Kelly stake"
+    g = PlacementGuard(fixed_stake=20.0, max_stake_per_bet=5.0)
+    assert g.stake_for(bet) == 5.0, "cap must clamp fixed stake too"
+
+    # Edge guard refuses absurd-edge bets
+    g = PlacementGuard(max_edge_pct=20.0)
+    high_edge_bet = {"model_stake": 5.0, "edge_percent": 50.0, "bot_name": "x"}
+    ok, reason = g.can_place(high_edge_bet, 5.0)
+    assert not ok and "edge" in reason.lower(), f"max_edge_pct must fire: {reason}"
+
+    # Bot filter
+    g = PlacementGuard(bot_filter=["bot_a", "bot_b"])
+    ok, reason = g.can_place({"bot_name": "bot_z", "edge_percent": 5}, 5.0)
+    assert not ok and "bot-filter" in reason, f"bot_filter must reject: {reason}"
+    ok, _ = g.can_place({"bot_name": "bot_a", "edge_percent": 5}, 5.0)
+    assert ok, "bot_filter must allow whitelisted"
+
+    # Total session-stake cap (record_placement adds to running total)
+    g = PlacementGuard(max_total_stake=12.0)
+    g.record_placement(5.0)  # total now 5
+    g.record_placement(5.0)  # total now 10
+    ok, reason = g.can_place({"bot_name": "x", "edge_percent": 5}, 5.0)  # would be 15
+    assert not ok and "max-total-stake" in reason, f"total cap must fire: {reason}"
+    ok, _ = g.can_place({"bot_name": "x", "edge_percent": 5}, 2.0)  # would be 12
+    assert ok, "total cap allows when still under"
+
+    # Rate limit — 2 bets max in window
+    g = PlacementGuard(max_bets_per_hour=2)
+    g.record_placement(1.0)
+    g.record_placement(1.0)
+    ok, reason = g.can_place({"bot_name": "x", "edge_percent": 5}, 1.0)
+    assert not ok and "max-bets-per-hour" in reason, f"rate limit must fire: {reason}"
+
+    # Daemon wiring
+    import pathlib
+    daemon = pathlib.Path("scripts/coolbet_daemon.py").read_text()
+    for flag in ("--use-kelly-stake", "--max-stake-per-bet", "--max-bets-per-hour",
+                 "--max-total-stake", "--max-edge-pct", "--require-confirm",
+                 "--bot-filter", "PlacementGuard"):
+        assert flag in daemon, f"daemon must wire {flag!r}"
+
+    # Placer accepts guard kwarg
+    import inspect
+    from workers.automation.coolbet_placer import place_all_bets
+    sig = inspect.signature(place_all_bets)
+    assert "guard" in sig.parameters, "place_all_bets must accept guard kwarg"
+
+
 @test("COOLBET-PREFLIGHT — checks cookies+creds+login+heartbeat+bots, daemon gates on it")
 def _():
     """COOLBET-PREFLIGHT (2026-05-20) — scripts/coolbet_preflight.py runs all

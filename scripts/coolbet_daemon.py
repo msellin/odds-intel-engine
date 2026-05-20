@@ -79,13 +79,13 @@ def _task_odds_snapshot() -> str:
         return f"odds snapshot ✗ ({e})"
 
 
-def _task_place(mode: str) -> str:
-    """mode ∈ {'dry', 'record', 'execute'}."""
+def _task_place(mode: str, guard) -> str:
+    """mode ∈ {'dry', 'record', 'execute'}. guard = PlacementGuard or None."""
     from workers.automation.coolbet_placer import place_all_bets
     record  = mode in ("record", "execute")
     execute = mode == "execute"
     try:
-        results = place_all_bets(record=record, execute=execute)
+        results = place_all_bets(record=record, execute=execute, guard=guard)
         if not results:
             return f"place ({mode}) ✓ — no qualifying bets"
         outcomes: dict[str, int] = {}
@@ -121,7 +121,45 @@ def main() -> None:
                     help="Skip COOLBET-PREFLIGHT checks at startup. NOT "
                          "recommended — preflight catches expired cookies "
                          "before the daemon enters its run loop.")
+    # COOLBET-SAFETY-GUARDRAILS — only enforced in execute mode (record/dry just
+    # use stake-for-display). For first live runs combine: --use-kelly-stake
+    # --max-stake-per-bet 5 --max-bets-per-hour 3 --require-confirm.
+    g = ap.add_argument_group("safety guardrails (execute mode)")
+    g.add_argument("--use-kelly-stake", action="store_true",
+                   help="Use Kelly-derived stake from simulated_bets.stake "
+                        "(default: fixed €10 from COOLBET_STAKE env)")
+    g.add_argument("--stake", type=float,
+                   help="Fixed stake when not using Kelly (overrides "
+                        "COOLBET_STAKE env)")
+    g.add_argument("--max-stake-per-bet", type=float,
+                   help="Hard cap on per-bet stake regardless of source")
+    g.add_argument("--max-bets-per-hour", type=int,
+                   help="Rolling 60-min rate limit on placements")
+    g.add_argument("--max-total-stake", type=float,
+                   help="Cumulative session-stake cap (pause placement when hit)")
+    g.add_argument("--max-edge-pct", type=float,
+                   help="Refuse bets with edge above this %% (model-bug guard, "
+                        "eg --max-edge-pct 25)")
+    g.add_argument("--require-confirm", action="store_true",
+                   help="Prompt y/n in the TTY before each real placement. "
+                        "Essential for first live runs. Non-TTY = auto-decline.")
+    g.add_argument("--bot-filter",
+                   help="Comma-separated list of bot names to allow (eg "
+                        "'bot_ou15_defensive,bot_btts_conservative')")
     args = ap.parse_args()
+
+    from workers.automation.coolbet_placer import PlacementGuard
+    bot_filter = [b.strip() for b in args.bot_filter.split(",")] if args.bot_filter else None
+    guard = PlacementGuard(
+        use_kelly_stake   = args.use_kelly_stake,
+        fixed_stake       = args.stake,
+        max_stake_per_bet = args.max_stake_per_bet,
+        max_bets_per_hour = args.max_bets_per_hour,
+        max_total_stake   = args.max_total_stake,
+        max_edge_pct      = args.max_edge_pct,
+        require_confirm   = args.require_confirm,
+        bot_filter        = bot_filter,
+    )
 
     signal.signal(signal.SIGINT,  _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
@@ -167,7 +205,7 @@ def main() -> None:
             next_odds = now + args.odds_min * 60
 
         if not args.no_place and now >= next_place:
-            log.info(_task_place(args.place_mode))
+            log.info(_task_place(args.place_mode, guard))
             next_place = now + args.place_min * 60
 
         # Sleep until the soonest next task, but check stop signal every 30s.
