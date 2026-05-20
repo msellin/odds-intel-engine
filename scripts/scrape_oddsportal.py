@@ -63,8 +63,10 @@ LEAGUES = [
 LEAGUE_SLUGS = {slug for slug, _ in LEAGUES}
 LEAGUE_NAMES = {slug: name for slug, name in LEAGUES}
 
-# All football markets OddsHarvester supports
-MARKETS = "1x2,btts,double_chance,dnb,over_under,asian_handicap"
+# Football markets — exact names required by OddsHarvester CLI.
+# OU lines: 1.5, 2.5, 3.5 cover our three OU bots.
+# AH: the 5 most common handicap lines. Skipping exotic lines to keep job time reasonable.
+MARKETS = "1x2,btts,double_chance,dnb,over_under_1_5,over_under_2_5,over_under_3_5,asian_handicap_-1,asian_handicap_-0_5,asian_handicap_0,asian_handicap_+0_5,asian_handicap_+1"
 
 DELAY_BETWEEN_JOBS_S = 5   # polite pause between scrape jobs
 
@@ -81,6 +83,8 @@ def run_job(slug: str, season: str, dest: Path, dry_run: bool = False) -> tuple[
         "-f", "json",
         "-o", str(dest),
         "--headless",
+        "-c", "3",           # 3 concurrent match pages per job
+        "--request-delay", "0.8",
     ]
 
     if dry_run:
