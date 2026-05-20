@@ -3070,6 +3070,43 @@ def _():
     assert "guard" in sig.parameters, "place_all_bets must accept guard kwarg"
 
 
+@test("TELEGRAM-NOTIFY — send-only Telegram with dedup + daemon hooks")
+def _():
+    """TELEGRAM-NOTIFY (2026-05-20) — send_telegram is the single ingress for
+    daemon alerts. No env vars = silent skip (returns False, no exceptions).
+    Daemon hooks: keepalive fail (Imperva alert), placement success in
+    record/execute mode, place crash. Plus startup ping."""
+    import inspect
+    from workers.notify import telegram as _tg
+    # Function exists with expected signature
+    sig = inspect.signature(_tg.send_telegram)
+    for kw in ("dedup_key", "dedup_window_s", "silent"):
+        assert kw in sig.parameters, f"send_telegram missing kwarg: {kw}"
+
+    # No env = silent skip
+    import os
+    saved = (os.environ.pop("TELEGRAM_BOT_TOKEN", None), os.environ.pop("TELEGRAM_CHAT_ID", None))
+    try:
+        assert _tg.send_telegram("smoke") is False, "should return False without env"
+    finally:
+        if saved[0]: os.environ["TELEGRAM_BOT_TOKEN"] = saved[0]
+        if saved[1]: os.environ["TELEGRAM_CHAT_ID"] = saved[1]
+
+    # Daemon wires it in three places
+    import pathlib
+    daemon = pathlib.Path("scripts/coolbet_daemon.py").read_text()
+    assert "from workers.notify.telegram import send_telegram" in daemon, (
+        "daemon must import send_telegram"
+    )
+    assert "Coolbet keepalive failed" in daemon, "missing Imperva-keepalive alert"
+    assert "Coolbet daemon started" in daemon, "missing startup ping"
+    assert '"coolbet-keepalive-fail"' in daemon, "missing dedup key for keepalive alerts"
+
+    # Preflight surfaces TG status
+    pf = pathlib.Path("scripts/coolbet_preflight.py").read_text()
+    assert "TELEGRAM_BOT_TOKEN" in pf, "preflight should show TG cred status"
+
+
 @test("COOLBET-PREFLIGHT — checks cookies+creds+login+heartbeat+bots, daemon gates on it")
 def _():
     """COOLBET-PREFLIGHT (2026-05-20) — scripts/coolbet_preflight.py runs all

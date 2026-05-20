@@ -72,6 +72,19 @@ def _sweep_running() -> bool:
 def _task_keepalive(session: CoolbetSession) -> str:
     ok = session.keep_alive()
     ttl = session.jwt_seconds_remaining
+    if not ok:
+        # Imperva 403 / cookie expiry / network blip — alert the operator
+        # so they don't discover overnight that the daemon was zombied.
+        # Dedup so a multi-hour outage sends 1 alert, not 60.
+        from workers.notify.telegram import send_telegram
+        send_telegram(
+            "⚠ Coolbet keepalive failed — likely Imperva 403 / cookies expired. "
+            "Stop daemon (<code>tmux kill-session -t coolbet</code>), refresh "
+            "<code>COOLBET_COOKIE_*</code> in .env from browser, run "
+            "<code>python3 scripts/coolbet_preflight.py</code>, restart.",
+            dedup_key="coolbet-keepalive-fail",
+            dedup_window_s=3600,
+        )
     return f"keepalive {'✓' if ok else '✗'}  (JWT TTL ≈ {int(ttl)}s)"
 
 
@@ -95,6 +108,7 @@ def _task_place(mode: str, guard, min_edge: float | None) -> str:
     """mode ∈ {'dry', 'record', 'execute'}. guard = PlacementGuard or None.
     min_edge: decimal fraction (0.05 = 5%); overrides COOLBET_MIN_EDGE env."""
     from workers.automation.coolbet_placer import place_all_bets
+    from workers.notify.telegram import send_telegram
     record  = mode in ("record", "execute")
     execute = mode == "execute"
     try:
@@ -107,9 +121,32 @@ def _task_place(mode: str, guard, min_edge: float | None) -> str:
         for r in results:
             outcomes[r.get("outcome", "?")] = outcomes.get(r.get("outcome", "?"), 0) + 1
         summary = ", ".join(f"{k}={v}" for k, v in sorted(outcomes.items()))
+
+        # Notify on every successful placement in record/execute mode so the
+        # operator sees real bets landing in real time. No dedup — each
+        # placement is its own event.
+        if mode in ("record", "execute"):
+            placed = [r for r in results if r.get("outcome") == "placed"]
+            for r in placed:
+                stake = float(r.get("stake") or 0)
+                edge  = float(r.get("edge_percent") or 0) * 100
+                odds  = float(r.get("live_odds") or r.get("ev_odds") or 0)
+                ticket = r.get("ticket_id") or "(record)"
+                send_telegram(
+                    f"💰 <b>{mode.upper()}</b>: {r.get('home_team','?')} vs "
+                    f"{r.get('away_team','?')}\n"
+                    f"  {r.get('market','?')} {r.get('selection','?')} @ {odds:.3f}\n"
+                    f"  €{stake:.2f}  ·  edge {edge:+.1f}%  ·  bot {r.get('bot_name','?')}\n"
+                    f"  ticket {ticket}",
+                )
         return f"place ({mode}) ✓ — {len(results)} evaluated [{summary}]"
     except Exception as e:
         log.warning("place raised: %s\n%s", e, traceback.format_exc())
+        send_telegram(
+            f"❌ place ({mode}) raised: {str(e)[:300]}",
+            dedup_key="coolbet-place-crash",
+            dedup_window_s=600,
+        )
         return f"place ({mode}) ✗ ({e})"
 
 
@@ -215,12 +252,25 @@ def main() -> None:
     log.info("─" * 78)
     log.info("Coolbet daemon starting")
     log.info("  keepalive every %d min", args.keepalive_min)
-    log.info("  odds      every %d min", args.odds_min)
+    log.info("  odds      every %d min  (mode=%s)", args.odds_min, args.odds_mode)
     if args.no_place:
         log.info("  place     DISABLED (--no-place)")
     else:
         log.info("  place     every %d min  (mode=%s)", args.place_min, args.place_mode)
     log.info("─" * 78)
+
+    # Startup ping so the operator knows the daemon (re)started. Silent so it
+    # doesn't buzz unnecessarily when relaunched mid-day. No-op when
+    # TELEGRAM_* env vars aren't set.
+    try:
+        from workers.notify.telegram import send_telegram
+        send_telegram(
+            f"🟢 Coolbet daemon started — odds={args.odds_mode}/{args.odds_min}m, "
+            f"place={args.place_mode}/{args.place_min}m, min_edge={args.min_edge}",
+            silent=True,
+        )
+    except Exception:
+        pass  # never block startup on notify
 
     session = CoolbetSession()
     # Force initial login so the first keepalive doesn't surprise on auth.

@@ -161,6 +161,20 @@ def check_balance(session) -> bool:
     return True
 
 
+def check_telegram() -> bool:
+    """Non-critical: surface whether Telegram alerts are wired."""
+    _section("6. Telegram notifications (optional)")
+    have_token = bool(os.getenv("TELEGRAM_BOT_TOKEN"))
+    have_chat  = bool(os.getenv("TELEGRAM_CHAT_ID"))
+    if have_token and have_chat:
+        _ok("TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID set — daemon will ping on placements + Imperva 403")
+    elif have_token or have_chat:
+        _warn("Only one of TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID set — alerts disabled")
+    else:
+        _warn("Telegram alerts not configured — set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in .env")
+    return True
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--quiet", action="store_true",
@@ -175,7 +189,8 @@ def main() -> int:
     session_ok, session = check_session_works()
     critical.append(session_ok)
     critical.append(check_bot_universe())
-    check_balance(session)  # never critical
+    check_balance(session)   # never critical
+    check_telegram()         # never critical — informational
 
     print()
     if all(critical):
