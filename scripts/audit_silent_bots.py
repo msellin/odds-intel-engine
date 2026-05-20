@@ -293,12 +293,103 @@ def s5_bot_ou15_league_cross() -> None:
     console.print(t)
 
 
+ACCESSIBLE_BOOKMAKERS = frozenset({
+    "Bet365", "Unibet", "Betano", "Marathonbet", "10Bet", "888Sport", "Pinnacle"
+})
+
+
+def s6_best_ou15_book_accessibility() -> None:
+    section("6) ACCESSIBLE-BM hypothesis: who has the best Over 1.5 price in bot_ou15_defensive's home leagues?")
+    # Hypothesis: commit 0b05d3b (2026-05-11) restricted edge math to a 7-book
+    # accessible list. If the best Over 1.5 prices in this bot's home leagues
+    # come from books OUTSIDE that list, ACCESSIBLE-BM silently eliminated
+    # every edge source and explains the May 8 silence.
+    rows = execute_query(
+        """
+        WITH bot_leagues AS (
+            SELECT DISTINCT m.league_id
+            FROM simulated_bets sb
+            JOIN bots b ON b.id = sb.bot_id
+            JOIN matches m ON m.id = sb.match_id
+            WHERE b.name = 'bot_ou15_defensive'
+              AND sb.pick_time < '2026-05-10'
+              AND sb.pick_time >= '2026-04-01'
+        ),
+        candidate_matches AS (
+            SELECT m.id
+            FROM matches m
+            JOIN bot_leagues bl ON bl.league_id = m.league_id
+            WHERE m.date > NOW()
+              AND m.date < NOW() + INTERVAL '7 days'
+              AND m.status = 'scheduled'
+        ),
+        ranked AS (
+            SELECT os.match_id,
+                   os.selection,
+                   os.bookmaker,
+                   os.odds,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY os.match_id, os.selection
+                     ORDER BY os.odds DESC, os.bookmaker ASC
+                   ) AS rn
+            FROM odds_snapshots os
+            JOIN candidate_matches cm ON cm.id = os.match_id
+            WHERE os.market = 'over_under_15'
+              AND os.selection = 'over'
+              AND os.odds IS NOT NULL
+        )
+        SELECT bookmaker, COUNT(*) AS best_count
+        FROM ranked
+        WHERE rn = 1
+        GROUP BY bookmaker
+        ORDER BY best_count DESC
+        """,
+        (),
+    )
+    if not rows:
+        console.print(
+            "[yellow]No Over 1.5 odds in bot_ou15_defensive's home leagues over the next 7 days.[/yellow]"
+        )
+        return
+    t = Table(show_header=True)
+    t.add_column("Bookmaker")
+    t.add_column("Best-price (match, over) count", justify="right")
+    t.add_column("Accessible?", justify="center")
+    total = 0
+    accessible_total = 0
+    for r in rows:
+        bm = r["bookmaker"] or "—"
+        n = int(r["best_count"] or 0)
+        total += n
+        is_accessible = bm in ACCESSIBLE_BOOKMAKERS
+        if is_accessible:
+            accessible_total += n
+        t.add_row(bm, str(n), "✓" if is_accessible else "✗")
+    console.print(t)
+    non_accessible = total - accessible_total
+    pct_non = (100.0 * non_accessible / total) if total else 0.0
+    console.print(
+        f"\n[dim]Total best-price (match, over) pairs: {total} | "
+        f"accessible: {accessible_total} | non-accessible: {non_accessible} "
+        f"({pct_non:.1f}% non-accessible)[/dim]"
+    )
+    if pct_non > 50.0:
+        console.print(
+            "[bold red]Verdict: ACCESSIBLE-BM is the cause.[/bold red]"
+        )
+    else:
+        console.print(
+            "[bold yellow]Verdict: Look elsewhere — try PIN-VETO-EXT or May 17 retrain effects.[/bold yellow]"
+        )
+
+
 def main() -> None:
     s1_daily_bet_counts()
     s2_shadow_bets()
     s3_ou15_coverage_by_book()
     s4_ah_quarter_vs_full()
     s5_bot_ou15_league_cross()
+    s6_best_ou15_book_accessibility()
 
 
 if __name__ == "__main__":
