@@ -100,9 +100,11 @@ class PlacementGuard:
         if self.bot_filter and bot not in self.bot_filter:
             return False, f"bot {bot!r} not in --bot-filter"
 
-        edge = float(bet.get("edge_percent") or 0)
-        if self.max_edge_pct is not None and edge > self.max_edge_pct:
-            return False, f"edge {edge:.1f}% > --max-edge-pct {self.max_edge_pct} (likely model bug)"
+        # edge_percent stored as decimal fraction (0.09 = 9%); max_edge_pct
+        # is user-supplied percentage (e.g. 25). Compare in percentage units.
+        edge_pct = float(bet.get("edge_percent") or 0) * 100
+        if self.max_edge_pct is not None and edge_pct > self.max_edge_pct:
+            return False, f"edge {edge_pct:.1f}% > --max-edge-pct {self.max_edge_pct} (likely model bug)"
 
         if self.max_total_stake is not None:
             if (self._total_stake + stake) > self.max_total_stake:
@@ -174,7 +176,15 @@ _SELECTION_OUTCOME: dict[str, str] = {
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
 def load_qualified_bets() -> list[dict]:
-    """Return today's simulated_bets qualifying for automated placement."""
+    """Return today's simulated_bets qualifying for automated placement.
+
+    COOLBET-EDGE-UNITS-FIX (2026-05-20): `simulated_bets.edge_percent` is
+    stored as a DECIMAL FRACTION (0.09 = 9%), not a percentage value (despite
+    the column name). The original SQL used `>= %s * 100` which inadvertently
+    compared decimal to percentage units — so e.g. _MIN_EDGE=0.03 → filter
+    `>= 3.0` → real values like 0.05/0.09/0.20 were ALL rejected → placer
+    silently never placed any auto-bet since shipping. Fixed to compare in
+    decimal units throughout."""
 
     # ── Diagnostic: show what each filter removes ─────────────────────────
     diag = execute_query(
@@ -183,9 +193,9 @@ def load_qualified_bets() -> list[dict]:
             COUNT(*)                                                        AS total_pending_today,
             COUNT(*) FILTER (WHERE m.date > NOW())                          AS not_kicked_off,
             COUNT(*) FILTER (WHERE m.date > NOW()
-                               AND sb.edge_percent >= %s * 100)             AS pass_edge,
+                               AND sb.edge_percent >= %s)                   AS pass_edge,
             COUNT(*) FILTER (WHERE m.date > NOW()
-                               AND sb.edge_percent >= %s * 100
+                               AND sb.edge_percent >= %s
                                AND NOT EXISTS (
                                    SELECT 1 FROM real_bets rb
                                    WHERE rb.match_id  = sb.match_id
@@ -233,10 +243,11 @@ def load_qualified_bets() -> list[dict]:
         if below_edge:
             log.info("Bets below edge threshold (top edges shown):")
             for r in below_edge:
-                log.info("  %s vs %s | %s %s  edge=%s%%  @ %s",
+                # edge_pct stored as decimal — display × 100 for the %-suffixed log line.
+                log.info("  %s vs %s | %s %s  edge=%.2f%%  @ %s",
                          r["home_team"], r["away_team"],
                          r["market"], r["selection"],
-                         r["edge_pct"], r["odds_at_pick"])
+                         float(r["edge_pct"]) * 100, r["odds_at_pick"])
 
     # ── Blocked by real_bets: show which ones were already placed ─────────
     already = execute_query(
@@ -244,7 +255,7 @@ def load_qualified_bets() -> list[dict]:
         SELECT
             ht.name AS home_team, at2.name AS away_team,
             sb.market, sb.selection,
-            ROUND(sb.edge_percent::numeric, 1) AS edge_pct,
+            ROUND(sb.edge_percent::numeric, 4) AS edge_pct,
             rb.actual_odds, rb.placed_at::time AS placed_time
         FROM simulated_bets sb
         JOIN matches m   ON m.id   = sb.match_id
@@ -257,7 +268,7 @@ def load_qualified_bets() -> list[dict]:
         WHERE sb.result    = 'pending'
           AND DATE(m.date) = CURRENT_DATE
           AND m.date       > NOW()
-          AND sb.edge_percent >= %s * 100
+          AND sb.edge_percent >= %s
         ORDER BY sb.edge_percent DESC
         """,
         (_MIN_EDGE,),
@@ -265,9 +276,9 @@ def load_qualified_bets() -> list[dict]:
     if already:
         log.info("Skipped — real bet already placed today:")
         for r in already:
-            log.info("  ✓ already placed  %s vs %s | %s %s  edge=%s%%  @ %s  (%s)",
+            log.info("  ✓ already placed  %s vs %s | %s %s  edge=%.2f%%  @ %s  (%s)",
                      r["home_team"], r["away_team"], r["market"], r["selection"],
-                     r["edge_pct"], r["actual_odds"], r["placed_time"])
+                     float(r["edge_pct"]) * 100, r["actual_odds"], r["placed_time"])
 
     rows = execute_query(
         """
@@ -294,7 +305,7 @@ def load_qualified_bets() -> list[dict]:
         WHERE sb.result          = 'pending'
           AND DATE(m.date)       = CURRENT_DATE
           AND m.date             > NOW()
-          AND sb.edge_percent    >= %s * 100
+          AND sb.edge_percent    >= %s
           AND NOT EXISTS (
               SELECT 1 FROM real_bets rb
               WHERE rb.match_id  = sb.match_id
@@ -809,7 +820,8 @@ def place_all_bets(
         mkt        = bet["market"]
         sel        = bet["selection"]
         model_odds = float(bet["model_odds"])
-        edge_pct   = float(bet["edge_percent"])
+        # edge_percent stored as decimal fraction (0.09 = 9%); ×100 for display.
+        edge_pct   = float(bet["edge_percent"]) * 100
         label      = f"{home} vs {away} | {mkt} {sel} @ {model_odds:.3f} (edge {edge_pct:+.2f}%)"
 
         # 1. Find Coolbet event

@@ -3023,11 +3023,14 @@ def _():
     g = PlacementGuard(fixed_stake=20.0, max_stake_per_bet=5.0)
     assert g.stake_for(bet) == 5.0, "cap must clamp fixed stake too"
 
-    # Edge guard refuses absurd-edge bets
+    # Edge guard refuses absurd-edge bets — edge_percent is DECIMAL (0.50 = 50%)
     g = PlacementGuard(max_edge_pct=20.0)
-    high_edge_bet = {"model_stake": 5.0, "edge_percent": 50.0, "bot_name": "x"}
+    high_edge_bet = {"model_stake": 5.0, "edge_percent": 0.50, "bot_name": "x"}
     ok, reason = g.can_place(high_edge_bet, 5.0)
     assert not ok and "edge" in reason.lower(), f"max_edge_pct must fire: {reason}"
+    # And a normal-edge bet (0.05 = 5%) must pass when cap is 20%
+    ok, _ = g.can_place({"model_stake": 5.0, "edge_percent": 0.05, "bot_name": "x"}, 5.0)
+    assert ok, "normal-edge bet (5%) must pass when --max-edge-pct=20"
 
     # Bot filter
     g = PlacementGuard(bot_filter=["bot_a", "bot_b"])
