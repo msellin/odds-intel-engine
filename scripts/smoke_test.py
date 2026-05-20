@@ -3035,6 +3035,23 @@ def _():
     assert '"*/20"' in sched_src, "keepalive must fire every 20 min"
 
 
+@test("BOT-COHORTS-ALL — every bot fires at every cohort window")
+def _():
+    """BOT-COHORTS-ALL (2026-05-20) — all entries in BOT_TIMING_COHORTS set
+    to 'all' so bots evaluate at every betting_refresh window. Dedup prevents
+    duplicate placements. BET-TIMING-MONITOR Phase 3 (~2026-06-15) will
+    re-impose cohort gating ONLY where shadow_bets factorial data shows it
+    actually helps. Guard against accidental revert."""
+    from workers.jobs.daily_pipeline_v2 import BOT_TIMING_COHORTS
+    non_all = {k: v for k, v in BOT_TIMING_COHORTS.items() if v != "all"}
+    assert not non_all, (
+        f"All bots must be cohort='all' (per BOT-COHORTS-ALL 2026-05-20). "
+        f"Found non-'all' entries: {non_all}. If reverting any bot to a "
+        f"specific cohort, add a comment explaining what shadow_bets data "
+        f"justified the gating."
+    )
+
+
 @test("BOT-OU15-EDGE-REPAIR — thresholds relaxed (4/4/3/3) per diagnostic finding")
 def _():
     """BOT-OU15-EDGE-REPAIR (2026-05-20) — bot_ou15_defensive was silent since

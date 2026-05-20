@@ -469,45 +469,46 @@ BOTS_CONFIG = {
 #              first run that clears the edge threshold wins, rest are no-ops.
 #              Use for bets where early soft odds outweigh lineup uncertainty.
 BOT_TIMING_COHORTS: dict[str, str] = {
-    # Morning — early odds capture
-    # 2026-05-13: bot_ou25_global + bot_opt_ou_british moved from morning → midday.
-    # Phase A timing analysis: morning OU bets show -3.6% ROI (n=114) vs midday
-    # OU's +26.8% ROI (n=31). Same-bot A/B on bot_ou15_defensive confirmed
-    # direction (morning -2.1% / midday +34.1% on OU). Injury news at 11:00
-    # UTC seems to be the deciding signal for totals markets.
-    "bot_v10_all":        "morning",
-    "bot_lower_1x2":      "morning",
-    "bot_aggressive":     "morning",
-    "bot_aggressive_v2":  "morning",  # AGGRESSIVE-V2: same cohort as v1 control
-    # Midday — post-injury-news
-    "bot_conservative":   "midday",
-    "bot_greek_turkish":  "midday",
-    "bot_high_roi_global":"midday",
-    "bot_ou15_defensive": "midday",
-    "bot_ou35_attacking": "midday",
-    "bot_ou25_global":    "midday",  # OU-2026-05-13: moved from morning
-    "bot_opt_ou_british": "midday",  # OU-2026-05-13: moved from morning
-    "bot_draw_specialist":"midday",
-    # Pre-kickoff — confirmed lineups benefit
-    "bot_opt_away_british":"pre_ko",
-    "bot_opt_away_europe": "pre_ko",
-    "bot_opt_home_lower":  "pre_ko",
-    # BTTS-TIMING: "all" so morning soft odds are captured first; pre_ko confirmed
-    # lineups remain the fallback if morning edge threshold is not met. Dedup ensures
-    # only one bet per match regardless of how many cohorts fire.
-    "bot_btts_all":        "all",
+    # BOT-COHORTS-ALL (2026-05-20): all bots set to "all" so they fire at every
+    # cohort window. Dedup (commit aa799cf — "keep highest-edge bot" on
+    # bot/match/market/selection) prevents duplicate bets. Prior cohort
+    # assignments were based on Phase A timing analysis with small samples
+    # (n=114 morning vs n=31 midday for OU bets). That data was suggestive
+    # but not decisive; the May 17 retrain and May 7-8 calibration changes
+    # likely shifted it anyway. Now that migration 112 fixed the
+    # shadow_cohort constraint, BET-TIMING-MONITOR Phase 3 (~2026-06-15)
+    # can accumulate proper factorial data per (bot, cohort) to re-impose
+    # gating ONLY where it demonstrably helps.
+    #
+    # Bots known to benefit from late-window data (confirmed lineups for
+    # DNB / "opt_away" / "opt_home_lower") are kept on "all" — the bet
+    # still fires from morning onwards but the pre_ko evaluation catches
+    # any edge that only appears once lineups land. Dedup prevents double
+    # placement; if morning fires first, that's the price we get.
+    "bot_v10_all":          "all",
+    "bot_lower_1x2":        "all",
+    "bot_aggressive":       "all",
+    "bot_aggressive_v2":    "all",
+    "bot_conservative":     "all",
+    "bot_greek_turkish":    "all",
+    "bot_high_roi_global":  "all",
+    "bot_ou15_defensive":   "all",
+    "bot_ou35_attacking":   "all",
+    "bot_ou25_global":      "all",
+    "bot_opt_ou_british":   "all",
+    "bot_draw_specialist":  "all",
+    "bot_opt_away_british": "all",
+    "bot_opt_away_europe":  "all",
+    "bot_opt_home_lower":   "all",
+    "bot_btts_all":         "all",
     "bot_btts_conservative":"all",
-    # Midday — proven leagues run after injury-news refresh
-    "bot_proven_leagues":  "midday",
-    # Morning — DC bots (fresh odds, full coverage)
-    "bot_dc_value":        "morning",
-    "bot_dc_strong_fav":   "morning",
-    # Morning — AH bots (fresh odds, Poisson needs exp_home/exp_away)
-    "bot_ah_home_fav":     "morning",
-    "bot_ah_away_dog":     "morning",
-    # Pre-kickoff — DNB (confirmed lineups reduce draw variance)
-    "bot_dnb_home_value":  "pre_ko",
-    "bot_dnb_away_value":  "pre_ko",
+    "bot_proven_leagues":   "all",
+    "bot_dc_value":         "all",
+    "bot_dc_strong_fav":    "all",
+    "bot_ah_home_fav":      "all",
+    "bot_ah_away_dog":      "all",
+    "bot_dnb_home_value":   "all",
+    "bot_dnb_away_value":   "all",
 }
 
 
