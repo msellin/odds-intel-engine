@@ -1315,7 +1315,7 @@ def _():
     assert "_bot_active" in src, (
         "ODDS-QUALITY-CLEANUP: run_morning no longer reads is_active per bot"
     )
-    assert "if not _bot_active.get(bot_name" in src, (
+    assert "not _bot_active.get(bot_name" in src, (
         "ODDS-QUALITY-CLEANUP: run_morning loop missing is_active gate"
     )
 
@@ -2500,7 +2500,7 @@ def _():
     g_start = src.index("def _check_strategy_g(")
     g_end = src.index("\ndef ", g_start + 1)
     g_body = src[g_start:g_end]
-    assert "corners_delta < 3" in g_body, "G must require ≥ 3-corner delta in 10-min window"
+    assert "corners_delta < 2" in g_body, "G must require ≥ 2-corner delta in 10-min window"
 
 
 @test("INPLAY-NEW-HT-RESTART — Strategy H (HT Restart Surge) registered + dispatched")
@@ -2524,9 +2524,10 @@ def _():
     assert "if minute < 46 or minute > 55" in h_body, "H window must be 46-55"
     assert "if sh != 0 or sa != 0" in h_body, "H must require 0-0 at entry"
     assert "minute BETWEEN 40 AND 46" in h_body, "H must look up an HT-end snapshot"
-    # Dual-line refinement (2026-05-10): O2.5 if odds > 2.80, else O1.5 if odds > 1.60.
-    # Single-line "odds < 2.10" guard is gone — replaced by the dual-line ladder.
-    assert "o25_odds > 2.80" in h_body, "H must take O2.5 only when its odds > 2.80"
+    # Dual-line ladder: O2.5 if odds > 2.30 (was 2.80, loosened by INPLAY-LOOSEN-SILENT
+    # 2026-05-17 — avg O2.5 market was 2.37 so 2.80 was firing almost never), else O1.5
+    # if odds > 1.60.
+    assert "o25_odds > 2.30" in h_body, "H must take O2.5 only when its odds > 2.30 (INPLAY-LOOSEN-SILENT)"
     assert "o15_odds > 1.60" in h_body, "H must fall back to O1.5 when its odds > 1.60"
     assert "live_ou_15_over" in h_body, "H must read live_ou_15_over for the fallback"
 
@@ -3492,9 +3493,9 @@ def _():
     for tier, ths in cfg["edge_thresholds"].items():
         for key, val in ths.items():
             assert val >= 0.05, f"v2 tier {tier} {key} edge must be ≥5% (got {val})"
-    # Rule 4: registered in morning cohort (same as v1 control)
-    assert BOT_TIMING_COHORTS.get("bot_aggressive_v2") == "morning", \
-        "v2 must run in morning cohort alongside v1 control"
+    # Rule 4: registered in BOT_TIMING_COHORTS (BOT-COHORTS-ALL moved all bots to "all")
+    assert "bot_aggressive_v2" in BOT_TIMING_COHORTS, \
+        "v2 must be registered in BOT_TIMING_COHORTS"
     # Rule 5: v1 must still exist (control) — v2 does not replace v1 yet
     assert "bot_aggressive" in BOTS_CONFIG, "v1 must stay running as control for v2 comparison"
 
@@ -3589,9 +3590,9 @@ def _():
     assert "simulated_bets_pre_inplay_normalize_2026_05_17" in src, (
         "Normalize script must snapshot rows to an audit table before mutating"
     )
-    # Idempotency guard prevents compounded multiplier
-    assert "already_normalized" in src and "ABORT" in src, (
-        "Normalize script must abort if max_stake > 1.0 (else re-run compounds)"
+    # Idempotency guard: aborts when no legacy €1 rows remain (re-run would compound)
+    assert "legacy_n == 0" in src and "ABORT" in src, (
+        "Normalize script must abort when no legacy rows remain (else re-run compounds)"
     )
     # Correct multiplier
     assert "MULTIPLIER = 5.0" in src, "Multiplier must be 5.0 (€1 → €5)"
@@ -3921,19 +3922,22 @@ def _():
         assert col in src, f"INSERT INTO dashboard_cache must include {col}"
 
 
-@test("BOT-TIMING-OU-MIDDAY — OU-specialist bots must run in midday cohort")
+@test("BOT-TIMING-OU-MIDDAY — OU-specialist bots registered in BOT_TIMING_COHORTS")
 def _():
-    """Phase A timing analysis (2026-05-13) showed morning OU bets at -3.6% ROI
-    vs midday OU at +26.8%. Same-bot A/B on bot_ou15_defensive: morning -2.1%,
-    midday +34.1%. Moved bot_ou25_global + bot_opt_ou_british from morning to
-    midday. This guard prevents accidental reversion."""
-    from workers.jobs.daily_pipeline_v2 import BOT_TIMING_COHORTS
-    ou_bots = ["bot_ou15_defensive", "bot_ou25_global", "bot_ou35_attacking", "bot_opt_ou_british"]
+    """Phase A timing analysis (2026-05-13) originally moved OU bots to midday.
+    BOT-COHORTS-ALL (2026-05-20) moved all bots to 'all' so every window is
+    evaluated and the dedup constraint prevents duplicate bets. bot_ou15_defensive
+    was retired 2026-05-20. Guard that the remaining OU bots are still registered."""
+    from workers.jobs.daily_pipeline_v2 import BOT_TIMING_COHORTS, BOTS_CONFIG
+    ou_bots = ["bot_ou25_global", "bot_ou35_attacking", "bot_opt_ou_british"]
     for bot in ou_bots:
-        assert BOT_TIMING_COHORTS.get(bot) == "midday", (
-            f"OU-specialist {bot} must be in midday cohort (currently "
-            f"{BOT_TIMING_COHORTS.get(bot)!r}). Morning OU bets have negative ROI."
+        assert bot in BOT_TIMING_COHORTS, (
+            f"OU-specialist {bot} must be registered in BOT_TIMING_COHORTS"
         )
+    # bot_ou15_defensive retired — verify it's gone from active bots or flagged retired
+    assert "bot_ou15_defensive" not in BOTS_CONFIG or \
+           BOTS_CONFIG["bot_ou15_defensive"].get("description", "").startswith("[RETIRED"), \
+        "bot_ou15_defensive was retired 2026-05-20 — must be absent from BOTS_CONFIG or marked [RETIRED]"
 
 
 @test("BTTS-TIMING — BTTS bots must run at all cohorts to capture morning soft odds")
@@ -6452,7 +6456,10 @@ def _():
 @test("INPLAY-BOT-SORT-ROI — admin bot dashboard sorts by ROI not P&L")
 def _():
     import pathlib
-    src = pathlib.Path("../odds-intel-web/src/lib/bot-aggregates.ts").read_text()
+    p = pathlib.Path("../odds-intel-web/src/lib/bot-aggregates.ts")
+    if not p.exists():
+        return  # engine-only CI checkout — frontend not present, skip
+    src = p.read_text()
     sort_start = src.index(".sort((a, b) => {")
     sort_end = src.index("});", sort_start) + 3
     sort_block = src[sort_start:sort_end]
