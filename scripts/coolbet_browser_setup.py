@@ -84,15 +84,15 @@ def _ensure_uc_distutils_shim() -> None:
     pkg_dir = Path(list(spec.submodule_search_locations)[0])
     patcher_py = pkg_dir / "patcher.py"
     src = patcher_py.read_text()
-    if _UC_LOOSEVERSION_SHIM in src:
-        return  # already up-to-date
-    # Upgrade-path: replace either the original import OR the thin shim
-    if _UC_OLD_THIN_SHIM in src:
-        new = src.replace(_UC_OLD_THIN_SHIM, _UC_LOOSEVERSION_SHIM, 1)
-    elif _UC_ORIGINAL_IMPORT in src:
-        new = src.replace(_UC_ORIGINAL_IMPORT, _UC_LOOSEVERSION_SHIM, 1)
-    else:
+    # ROBUST idempotency: if ANY LooseVersion class definition is already in
+    # the file (from a previous patch run, manual edit, or even an upstream
+    # change), don't touch it. Byte-exact comparisons fail on comment drift
+    # and have re-patched live files into double-try corruption before.
+    if "class LooseVersion" in src or "except ImportError" in src:
+        return  # already patched in some form — leave alone
+    if _UC_ORIGINAL_IMPORT not in src:
         return  # unrecognised state, leave alone
+    new = src.replace(_UC_ORIGINAL_IMPORT, _UC_LOOSEVERSION_SHIM, 1)
     patcher_py.write_text(new)
     print(f"  (auto-patched {patcher_py.name} for Python 3.12+ distutils removal)")
 

@@ -69,11 +69,11 @@ def _ensure_uc_distutils_shim() -> None:
     pkg_dir = Path(list(spec.submodule_search_locations)[0])
     patcher_py = pkg_dir / "patcher.py"
     src = patcher_py.read_text()
-    if _UC_LOOSEVERSION_SHIM in src:
+    # Robust idempotency — any LooseVersion class / except ImportError block
+    # means it's already patched somehow. Don't risk double-application.
+    if "class LooseVersion" in src or "except ImportError" in src:
         return
-    if _UC_OLD_THIN_SHIM in src:
-        patcher_py.write_text(src.replace(_UC_OLD_THIN_SHIM, _UC_LOOSEVERSION_SHIM, 1))
-    elif _UC_ORIGINAL_IMPORT in src:
+    if _UC_ORIGINAL_IMPORT in src:
         patcher_py.write_text(src.replace(_UC_ORIGINAL_IMPORT, _UC_LOOSEVERSION_SHIM, 1))
 
 
