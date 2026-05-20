@@ -67,7 +67,12 @@ Each piece can be invoked on its own — daemon is just the convenient bundle.
 | **COOLBET-PLACER-NEW-SCHEMA** | 2026-05-20 | Placer per-bet loop rewritten for new Coolbet schema. resolve_placement_target maps our bet → Coolbet (market_id, outcome_id, odds_id, current_odds). |
 | **COOLBET-HUMAN-PACED** | 2026-05-20 | Every CoolbetSession.get/post routes through _throttle() with 0.8–2.0s jittered gap. Anti-scraper defense. |
 | **COOLBET-DELETE-REDUNDANT** | 2026-05-20 | Deleted coolbet_keepalive.py + probe_coolbet.py — daemon supersedes them. |
+| **COOLBET-PREFLIGHT** | 2026-05-20 | `scripts/coolbet_preflight.py` runs 5 checks before daemon starts. Daemon aborts if critical checks fail. |
 | **BOT-OU15-DIAGNOSE (section 6)** | 2026-05-20 | Audit section 6 tests ACCESSIBLE-BM hypothesis. Verdict: 13.3% non-accessible — ACCESSIBLE-BM not the cause. |
+| **BOT-FUNNEL-DIAGNOSTIC** | 2026-05-20 | Per-bot candidate-funnel logging. Smoking gun on bot_ou15_defensive: 97/98 candidates die at ↓edge — pure threshold starvation. |
+| **BOT-OU15-EDGE-REPAIR** | 2026-05-20 | Thresholds relaxed (T1/T2 4%, T3/T4 3%) as 2-week paper experiment. |
+| **BOT-COHORTS-ALL** | 2026-05-20 | All bots set to cohort='all' — fire at every betting_refresh window. Dedup prevents duplicates. |
+| **SHADOW-COHORT-CONSTRAINT** | 2026-05-20 | Migration 112 — shadow_bets accepts HHMM scheduler labels (was silently failing). |
 
 ---
 
@@ -75,15 +80,14 @@ Each piece can be invoked on its own — daemon is just the convenient bundle.
 
 | ID | Pri | Effort | Impact | Description |
 |---|---|---|---|---|
-| **COOLBET-PREFLIGHT** | P0 | 30m | High — fail fast on bad state | At daemon startup: verify Coolbet balance via `/s/user/balance`, decode JWT to confirm Imperva cookies aren't days from expiry, sanity-check active bot set. Refuse to start if any check fails (loud error). |
 | **COOLBET-SAFETY-GUARDRAILS** | P0 | 1-2h | Critical — gates first real-money runs | `--max-bets-per-hour N` throttle, `--max-stake-per-bet €X` override, `--bot-filter bot1,bot2`, `--pause-after-loss €N` kill-switch, `--max-edge-pct N` (refuse absurd edges = model bug / odds error), `--require-confirm` (y/n prompt per bet for first live runs). Must precede first `--place-mode=execute`. |
-| **COOLBET-IMPERVA-ALERT** | P0 | 30m | Loud failure on the biggest operational risk | When login fails with 403 (Imperva cookies expired), daemon must (a) stop placement loop, (b) emit loud notification (terminal bell + log entry + Slack/email if wired). Currently a silent dud. |
+| **TELEGRAM-NOTIFY** | P1 | 30m–1h | Observable without being at the laptop | Send-only Telegram from daemon. Three notifications: (1) Imperva 403 = cookies expired (loud), (2) placement success/failure in execute mode (so you know real money moved), (3) end-of-day summary. Reuses user's existing IBKR Telegram bot (just add `[OI]` prefix) or new chat. ~50 lines, `requests` only (no new deps). Subsumes COOLBET-IMPERVA-ALERT + COOLBET-DAILY-SUMMARY's delivery channel. |
 
 ## ⬜ Open — operational visibility (do before leaving daemon unattended)
 
 | ID | Pri | Effort | Impact | Description |
 |---|---|---|---|---|
-| **COOLBET-DAILY-SUMMARY** | P1 | 1h | Operator visibility | At UTC end-of-day: print one summary — bets placed, total stake, paper-vs-real ROI delta, anomalies (skipped due to odds drop, no_market, etc.). |
+| **COOLBET-DAILY-SUMMARY** | P1 | 1h | Operator visibility | At UTC end-of-day: emit one summary — bets placed, total stake, paper-vs-real ROI delta, anomalies (skipped due to odds drop, no_market, etc.). Goes to Telegram if TELEGRAM-NOTIFY is wired; stdout/file otherwise. |
 | **COOLBET-PERSISTENT-LOG** | P1 | 30m | After-the-fact diagnosis | `logs/coolbet_daemon-YYYY-MM-DD.log` rotating file alongside stdout. |
 | **COOLBET-HEALTHCHECK** | P2 | 30m | External monitoring | HTTP `/healthz` on localhost:8765 returning JSON `{jwt_ttl, last_keepalive, last_odds, last_place, errors_last_hour}`. |
 | **COOLBET-STATE-PERSISTENCE** | P2 | 1h | Clean resume after restart | `~/.coolbet-daemon-state.json` holding last timestamps + bets-seen set. Restart picks up where it left off. |
@@ -107,20 +111,45 @@ Each piece can be invoked on its own — daemon is just the convenient bundle.
 | **COOLBET-TWO-TIER-POLL** | P3 | 1h | Coverage + cost balance | Bets-only every 30m + nightly wide sweep at 04:00. Better historical coverage. |
 | **COOLBET-LEAGUE-FILTER** | P3 | 30m | Trim API calls | Limit odds polling to top-tier leagues we'd actually bet on. Niche if `--bets-only` is default. |
 | **COOLBET-MULTI-MODES** | P3 | 30m | Dev ergonomics | `--once`, `--odds-only`, `--place-only`, `--no-keepalive`. |
+| **TELEGRAM-COMMANDS** | P3 | 3-4h | Control daemon from phone | Two-way commands: `/status`, `/preflight`, `/pause`, `/resume`, `/place_mode dry\|record\|execute`, `/relogin`, `/balance`. Uses `python-telegram-bot` polling. Daemon needs runtime-mutable flags. Whitelist user_id for security. Only worth it after TELEGRAM-NOTIFY proves Telegram-as-channel works. |
 
 ---
 
 ## Recommended sequence (toward live auto-placement)
 
-1. **COOLBET-PREFLIGHT** (30m) — fail fast on bad state
+1. ✅ ~~COOLBET-PREFLIGHT~~ — done 2026-05-20
 2. **COOLBET-SAFETY-GUARDRAILS** (1-2h) — non-negotiable before first `--execute`
-3. **COOLBET-IMPERVA-ALERT** (30m) — only loud-failure operational mode
+3. **TELEGRAM-NOTIFY** (30m-1h) — Imperva alerts + placement notifications + observable without laptop
 4. *Flip to:* `--place-mode=execute --require-confirm --max-bets-per-hour 3 --max-stake-per-bet 5` → first live placements with training wheels
 5. **COOLBET-DAILY-SUMMARY** (1h) + **COOLBET-PERSISTENT-LOG** (30m) — close observability
 6. *Loosen training-wheel limits as confidence grows*
 7. Everything else (P2/P3) — as needs surface
 
-Total to safe-live: **~3-5h of focused work** + paper-test cycle after step 4.
+Total remaining to safe-live: **~2-4h of focused work** + paper-test cycle after step 4.
+
+---
+
+## Current state (live)
+
+As of 2026-05-20 ~12:00 UTC, the daemon is running in tmux session `coolbet` in dry mode:
+
+```
+tmux new -s coolbet                    # already running
+python3 scripts/coolbet_daemon.py      # already executing inside tmux
+                                       # detached: Ctrl-B then D
+```
+
+Cadences confirmed live:
+- KEEPALIVE every 20m — first heartbeat ✓ at startup, JWT TTL ~30 min
+- ODDS SNAPSHOT every 30m — first cycle found 4 value-bet matches
+- PLACEMENT every 5m — `--place-mode=dry`, fuzzy-matching successfully
+
+What to do today:
+- Leave it running. Watch logs via `tmux attach -t coolbet` whenever curious.
+- After tomorrow's pipeline cohorts, check `python3 scripts/audit_silent_bots.py` → expect bot_ou15_defensive firing again (BOT-OU15-EDGE-REPAIR + BOT-COHORTS-ALL changes should kick in immediately at next betting_refresh).
+
+What NOT to do today:
+- Don't flip `--place-mode=execute` until COOLBET-SAFETY-GUARDRAILS ships. Dry-run is the only safe live mode currently.
 
 ---
 
