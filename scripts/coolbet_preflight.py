@@ -70,10 +70,30 @@ def check_cookies() -> bool:
 
 def check_credentials() -> bool:
     _section("2. Credentials")
+    manual_jwt = os.getenv("COOLBET_MANUAL_JWT", "").strip()
+    if manual_jwt:
+        # Decode the JWT to surface its expiry — we don't actually need
+        # email/password when running in manual-JWT mode.
+        try:
+            import base64, json as _json
+            tok = manual_jwt[7:] if manual_jwt.startswith("Bearer ") else manual_jwt
+            payload_b64 = tok.split(".")[1] + "=="
+            payload = _json.loads(base64.b64decode(payload_b64))
+            import time as _time
+            ttl = float(payload.get("exp", 0)) - _time.time()
+            if ttl <= 0:
+                _fail(f"COOLBET_MANUAL_JWT is EXPIRED. Paste a fresh `cbauth` Bearer from browser.")
+                return False
+            _ok(f"COOLBET_MANUAL_JWT set — TTL ≈ {int(ttl)}s ({ttl/60:.1f} min) — skipping /s/auth/login")
+            return True
+        except Exception as e:
+            _fail(f"COOLBET_MANUAL_JWT set but unparseable: {e}")
+            return False
+
     user = os.getenv("COOLBET_USER") or os.getenv("COOLBET_EMAIL")
     pwd  = os.getenv("COOLBET_PASS") or os.getenv("COOLBET_PASSWORD")
     if not user or not pwd:
-        _fail("COOLBET_USER / COOLBET_PASS missing from .env")
+        _fail("COOLBET_USER / COOLBET_PASS missing from .env (or set COOLBET_MANUAL_JWT to bypass)")
         return False
     _ok(f"COOLBET_USER={user[:3]}…")
     return True

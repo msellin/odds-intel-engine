@@ -79,8 +79,23 @@ class CoolbetSession:
         }
         self._imperva_cookies_raw = os.getenv("COOLBET_IMPERVA_COOKIES", "")
 
-        if not self._email or not self._password:
-            raise RuntimeError("COOLBET_USER and COOLBET_PASS must be set in .env")
+        # Manual-JWT mode (MANUAL-JWT, 2026-05-20): when COOLBET_MANUAL_JWT is
+        # set, skip /s/auth/login entirely and use the pasted token. Use this
+        # whenever Coolbet's email/password endpoint is rate-limited or blocked
+        # (eg user logged in via Smart-ID and password login is now disabled).
+        # Token lifetime is the JWT's `exp` (~30 min). On expiry we raise a
+        # clear error so the operator pastes a fresh `cbauth` from browser
+        # DevTools. This is the exact seam a future headless-Chrome refresher
+        # would write into — same code path, just automated capture.
+        self._manual_jwt = os.getenv("COOLBET_MANUAL_JWT", "").strip()
+        if self._manual_jwt.startswith("Bearer "):
+            self._manual_jwt = self._manual_jwt[7:]
+
+        if not self._manual_jwt and (not self._email or not self._password):
+            raise RuntimeError(
+                "Auth misconfigured: set COOLBET_MANUAL_JWT (pasted from browser) "
+                "OR set COOLBET_USER + COOLBET_PASS for API login."
+            )
 
         self._jwt: str | None = None
         self._jwt_exp: float = 0.0
@@ -122,8 +137,35 @@ class CoolbetSession:
 
     # ── auth ─────────────────────────────────────────────────────────────────
 
+    def _adopt_manual_jwt(self) -> None:
+        """Use the JWT pasted into COOLBET_MANUAL_JWT instead of calling
+        /s/auth/login. user_id + login_session_id are extracted from the JWT
+        payload itself (`sub` + `login_session_id`)."""
+        token = self._manual_jwt
+        payload = _decode_jwt_payload(token)
+        self._jwt = token
+        self._user_id = payload.get("sub") or ""
+        self._login_session_id = payload.get("login_session_id") or ""
+        self._jwt_exp = float(payload.get("exp", 0))
+        ttl = self._jwt_exp - time.time()
+        if ttl <= 0:
+            raise RuntimeError(
+                f"COOLBET_MANUAL_JWT is expired (exp={datetime.fromtimestamp(self._jwt_exp, tz=timezone.utc).isoformat()}). "
+                "Paste a fresh `cbauth` Bearer from browser DevTools and restart."
+            )
+        log.info(
+            "Using manual JWT — user=%s ttl=%.0fs (exp=%s)",
+            self._user_id, ttl,
+            datetime.fromtimestamp(self._jwt_exp, tz=timezone.utc).isoformat(),
+        )
+
     def _login(self) -> None:
-        log.info("Refreshing Coolbet JWT...")
+        # Manual-JWT path takes priority when configured.
+        if self._manual_jwt:
+            self._adopt_manual_jwt()
+            return
+
+        log.info("Refreshing Coolbet JWT via /s/auth/login...")
         resp = self._http.post(_LOGIN_URL, json={
             "email": self._email,
             "password": self._password,
@@ -132,6 +174,15 @@ class CoolbetSession:
             raise RuntimeError(
                 "Coolbet login blocked (403) — Imperva cookies likely expired. "
                 "Re-login in your browser and update COOLBET_IMPERVA_COOKIES in .env."
+            )
+        if resp.status_code in (401, 423) or (
+            resp.status_code == 400 and "banned" in resp.text.lower()
+        ):
+            raise RuntimeError(
+                f"Coolbet API login refused ({resp.status_code}): {resp.text[:200]}. "
+                "If you're on Smart-ID / 2FA, password login may be disabled — "
+                "set COOLBET_MANUAL_JWT in .env (paste `cbauth` Bearer from browser) "
+                "to bypass /s/auth/login entirely."
             )
         resp.raise_for_status()
 
