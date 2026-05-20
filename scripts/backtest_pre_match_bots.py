@@ -37,6 +37,7 @@ import csv
 import math
 import sys
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -44,7 +45,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pandas as pd
 from rich.console import Console
-from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 from rich.table import Table
 
 from workers.api_clients.supabase_client import execute_query
@@ -333,20 +334,59 @@ def main():
                    if args.bot_filter is None or name == args.bot_filter]
     needs_ah = any("ah" in cfg.get("markets", []) for _, cfg in active_bots)
 
-    # Bulk-load predictions + odds in chunks of 4000 IDs
+    # Bulk-load predictions + odds in parallel chunks.
+    # Chunk size 8000: larger than the old 4000 — fewer round-trips, Supabase handles it fine.
+    # Predictions and odds are independent so we fire both in a thread pool per chunk.
     preds: dict[str, dict] = {}
     odds_lookup: dict[str, dict] = {}
     ah_odds_lookup: dict[str, list] = {}
-    chunk = 4000
-    for i in range(0, len(match_ids), chunk):
-        ids = match_ids[i:i + chunk]
-        preds.update(_load_predictions(ids))
-        odds_lookup.update(_load_pre_kickoff_odds(ids))
-        if needs_ah:
-            ah_odds_lookup.update(_load_ah_odds(ids))
+    chunk = 8000
+    chunks = [match_ids[i:i + chunk] for i in range(0, len(match_ids), chunk)]
+    n_tasks = len(chunks) * (3 if needs_ah else 2)
 
-    console.print(f"  Predictions for {len(preds):,} / {len(matches):,} matches")
-    console.print(f"  Pre-kickoff odds for {len(odds_lookup):,} / {len(matches):,} matches")
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold cyan]loading data"),
+        BarColumn(bar_width=36),
+        MofNCompleteColumn(),
+        TextColumn("queries"),
+        TimeElapsedColumn(),
+        console=console,
+    ) as load_bar:
+        load_task = load_bar.add_task("load", total=n_tasks)
+
+        def _fetch_preds(ids):
+            result = _load_predictions(ids)
+            load_bar.advance(load_task)
+            return result
+
+        def _fetch_odds(ids):
+            result = _load_pre_kickoff_odds(ids)
+            load_bar.advance(load_task)
+            return result
+
+        def _fetch_ah(ids):
+            result = _load_ah_odds(ids)
+            load_bar.advance(load_task)
+            return result
+
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            fut_preds = {pool.submit(_fetch_preds, ids): ids for ids in chunks}
+            fut_odds  = {pool.submit(_fetch_odds,  ids): ids for ids in chunks}
+            fut_ah    = ({pool.submit(_fetch_ah, ids): ids for ids in chunks}
+                         if needs_ah else {})
+
+            for fut in as_completed({**fut_preds, **fut_odds, **fut_ah}):
+                result = fut.result()
+                if fut in fut_preds:
+                    preds.update(result)
+                elif fut in fut_odds:
+                    odds_lookup.update(result)
+                else:
+                    ah_odds_lookup.update(result)
+
+    console.print(f"  Predictions for [green]{len(preds):,}[/green] / {len(matches):,} matches")
+    console.print(f"  Pre-kickoff odds for [green]{len(odds_lookup):,}[/green] / {len(matches):,} matches")
     if needs_ah:
         console.print(f"  AH odds for {len(ah_odds_lookup):,} matches")
 
@@ -379,11 +419,24 @@ def main():
 
     rows_out: list[dict] = []
     summary: dict[str, dict] = defaultdict(lambda: {"n_bets": 0, "wins": 0, "voids": 0, "stake": 0.0, "pnl": 0.0})
+    _bets_found = 0
 
-    with Progress(TextColumn("[bold blue]backtest"), BarColumn(),
-                  TextColumn("{task.completed}/{task.total} matches"),
-                  TimeRemainingColumn(), console=console) as bar:
-        task = bar.add_task("walk", total=len(matches))
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold blue]backtest"),
+        BarColumn(bar_width=36),
+        MofNCompleteColumn(),
+        TextColumn("•"),
+        TimeElapsedColumn(),
+        TextColumn("eta"),
+        TimeRemainingColumn(),
+        TextColumn("•  [yellow]{task.fields[cur_date]}[/yellow]  [green]{task.fields[bets_found]} bets[/green]"),
+        console=console,
+        refresh_per_second=8,
+    ) as bar:
+        task = bar.add_task("walk", total=len(matches),
+                            cur_date=str(matches[0]["date"])[:10] if matches else "",
+                            bets_found=0)
 
         for m in matches:
             mid = m["match_id"]
@@ -396,6 +449,7 @@ def main():
             match_odds = odds_lookup.get(mid, {})
             if not pred or not match_odds:
                 bar.advance(task)
+                bar.update(task, cur_date=str(m["date"])[:10])
                 continue
 
             for bot_name, cfg in active_bots:
@@ -539,7 +593,10 @@ def main():
                 s["stake"] += args.stake
                 s["pnl"] += pnl
 
-            bar.advance(task)
+            _bets_found += 1 if rows_out and rows_out[-1].get("match_id") == mid else 0
+            bar.update(task, advance=1,
+                       cur_date=str(m["date"])[:10],
+                       bets_found=len(rows_out))
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
