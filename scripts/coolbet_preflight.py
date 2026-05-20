@@ -25,6 +25,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Load .env BEFORE any os.getenv() calls. coolbet_session.py also calls
+# load_dotenv() at module-import time, but checks 1+2 fire before that
+# import — without this they'd fail even when env is set correctly.
+from dotenv import load_dotenv as _load_dotenv  # noqa: E402
+_load_dotenv()
+
 logging.basicConfig(level=logging.WARNING, format="%(message)s")
 
 
