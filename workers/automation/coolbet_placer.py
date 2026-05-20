@@ -369,31 +369,56 @@ def fetch_coolbet_events(session: CoolbetSession) -> list[dict]:
 #        — all current/upcoming events in that league, no fuzzy matching needed
 
 _LEAGUES_URL = "https://www.coolbet.com/s/sports/category/order/explicit/category-page-leagues"
+_LEAGUES_CACHE_PATH = Path(__file__).parent / "coolbet_leagues_cache.json"
+
+
+def _load_leagues_cache() -> list[dict]:
+    """Fallback: read the static leagues list cached in the repo."""
+    try:
+        import json as _json
+        with open(_LEAGUES_CACHE_PATH, "r") as f:
+            data = _json.load(f)
+        return [
+            {"id": int(e["id"]),
+             "name": e.get("name") or "",
+             "fullSlug": e.get("fullSlug") or "",
+             "sportCategoryId": e.get("sportCategoryId")}
+            for e in data if e.get("id")
+        ]
+    except Exception as e:
+        log.warning("Could not load leagues cache from %s: %s", _LEAGUES_CACHE_PATH, e)
+        return []
 
 
 def fetch_coolbet_leagues(session: CoolbetSession) -> list[dict]:
-    """Return the full list of Coolbet football leagues currently exposed
-    to the EE locale. Each entry: {id, name, fullSlug, sportCategoryId}.
-    ~136 entries as of 2026-05-20. Call once and cache; refresh weekly."""
+    """Return the full list of Coolbet football leagues exposed to the EE locale.
+    Each entry: {id, name, fullSlug, sportCategoryId}. ~132 leagues.
+
+    Tries the live POST endpoint first; falls back to the static cache at
+    `coolbet_leagues_cache.json` if Imperva 403's (which it does for our
+    Python session as of 2026-05-20 — endpoint has stricter TLS fingerprinting
+    than other Coolbet API calls). Cache is curated from the user's browser
+    curl and refreshed manually when leagues change (rarely)."""
     resp = session.post(_LEAGUES_URL, json={
         "sportCategoryId": _FOOTBALL_CATEGORY_ID,
         "country":         "EE",
-        "locale":          "et",  # endpoint requires Estonian locale; field names are stable
+        "locale":          "et",
     })
-    if resp.status_code != 200:
-        log.warning("category-page-leagues returned %d: %s", resp.status_code, resp.text[:200])
-        return []
-    payload = resp.json()
-    if not isinstance(payload, list):
-        log.warning("category-page-leagues unexpected shape: %s", type(payload).__name__)
-        return []
-    return [
-        {"id": int(e["id"]),
-         "name": e.get("name") or "",
-         "fullSlug": e.get("fullSlug") or "",
-         "sportCategoryId": e.get("sportCategoryId")}
-        for e in payload if e.get("id")
-    ]
+    if resp.status_code == 200:
+        payload = resp.json()
+        if isinstance(payload, list) and payload:
+            log.info("fetch_coolbet_leagues — live endpoint returned %d leagues", len(payload))
+            return [
+                {"id": int(e["id"]),
+                 "name": e.get("name") or "",
+                 "fullSlug": e.get("fullSlug") or "",
+                 "sportCategoryId": e.get("sportCategoryId")}
+                for e in payload if e.get("id")
+            ]
+    # Live endpoint failed (403 Imperva, network, schema change) — fall back.
+    log.info("fetch_coolbet_leagues — live endpoint returned %d, falling back to cache",
+             resp.status_code)
+    return _load_leagues_cache()
 
 
 def fetch_events_for_league(session: CoolbetSession, league_id: int) -> list[dict]:
