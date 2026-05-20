@@ -90,7 +90,10 @@ MARKETS = "1x2,btts,double_chance,dnb,over_under_1_5,over_under_2_5,over_under_3
 DELAY_BETWEEN_JOBS_S = 5   # polite pause between scrape jobs
 
 
-def run_job(slug: str, season: str, dest: Path, dry_run: bool = False) -> tuple[bool, str]:
+def run_job(slug: str, season: str, dest: Path, markets: str = MARKETS,
+            timeout_s: int = 2400, concurrency: int = 6,
+            bar=None, task_id=None,
+            dry_run: bool = False) -> tuple[bool, str]:
     """Run one oddsharvester historic job. Returns (success, message)."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
@@ -98,37 +101,60 @@ def run_job(slug: str, season: str, dest: Path, dry_run: bool = False) -> tuple[
         "-s", "football",
         "-l", slug,
         "--season", season,
-        "-m", MARKETS,
+        "-m", markets,
         "-f", "json",
         "-o", str(dest),
         "--headless",
-        "-c", "3",           # 3 concurrent match pages per job
-        "--request-delay", "0.8",
+        "-c", str(concurrency),
+        "--request-delay", "0.5",
     ]
 
     if dry_run:
         return True, "dry-run"
 
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            timeout=600,   # 10 min per job max
         )
-        if result.returncode != 0:
-            # grab last meaningful error line
-            err_lines = [l.strip() for l in (result.stderr or result.stdout).splitlines() if l.strip()]
-            msg = err_lines[-1][:80] if err_lines else "non-zero exit"
-            return False, msg
+        start = time.monotonic()
+        output_lines: list[str] = []
+        deadline = start + timeout_s
+
+        while True:
+            elapsed = time.monotonic() - start
+            if time.monotonic() > deadline:
+                proc.kill()
+                proc.wait()
+                return False, f"timeout (>{timeout_s // 60} min)"
+
+            try:
+                line = proc.stdout.readline()
+            except Exception:
+                break
+            if line:
+                output_lines.append(line.rstrip())
+                if bar is not None and task_id is not None:
+                    bar.update(task_id, last=f"[dim]{int(elapsed)}s elapsed[/dim]")
+            elif proc.poll() is not None:
+                break
+            else:
+                time.sleep(0.2)
+                if bar is not None and task_id is not None:
+                    bar.update(task_id, last=f"[dim]{int(elapsed)}s elapsed[/dim]")
+
+        proc.wait()
+        if proc.returncode != 0:
+            err = next((l for l in reversed(output_lines) if l.strip()), "non-zero exit")
+            return False, err[:80]
 
         if dest.exists() and dest.stat().st_size > 200:
             size_kb = dest.stat().st_size // 1024
             return True, f"{size_kb} KB"
         return False, "output file empty or missing"
 
-    except subprocess.TimeoutExpired:
-        return False, "timeout (>10 min)"
     except FileNotFoundError:
         return False, "oddsharvester not installed — run: pip install oddsharvester"
     except Exception as e:
@@ -158,6 +184,10 @@ def main() -> None:
                     help="Output directory (default: data/raw/oddsportal)")
     ap.add_argument("--skip-existing", action="store_true", default=True,
                     help="Skip already-scraped files (default: true)")
+    ap.add_argument("--timeout", type=int, default=2400, metavar="SECONDS",
+                    help="Timeout per job in seconds (default: 2400 = 40 min; EPL needs ~25 min)")
+    ap.add_argument("--concurrency", type=int, default=6, metavar="N",
+                    help="Concurrent match pages per job (default: 6)")
     ap.add_argument("--dry-run", action="store_true",
                     help="Print jobs without running them")
     args = ap.parse_args()
@@ -182,13 +212,14 @@ def main() -> None:
         sys.exit(1)
 
     total = len(leagues) * len(seasons)
-    est_minutes = total * 3  # ~3 min per job
+    est_minutes = total * 20  # ~20 min per job (large leagues can take 25-30 min)
     console.print(f"\n[bold]OddsPortal scraper (via OddsHarvester)[/bold]")
-    console.print(f"  Leagues:  {len(leagues)}")
-    console.print(f"  Seasons:  {seasons[0]} → {seasons[-1]}  ({len(seasons)} seasons)")
-    console.print(f"  Markets:  {args.markets}")
-    console.print(f"  Total:    {total} jobs  (~{est_minutes // 60}h {est_minutes % 60}m estimated)")
-    console.print(f"  Output:   {args.out_dir}")
+    console.print(f"  Leagues:     {len(leagues)}")
+    console.print(f"  Seasons:     {seasons[0]} → {seasons[-1]}  ({len(seasons)} seasons)")
+    console.print(f"  Markets:     {args.markets}")
+    console.print(f"  Concurrency: {args.concurrency}  |  Timeout: {args.timeout // 60} min/job")
+    console.print(f"  Total:       {total} jobs  (~{est_minutes // 60}h {est_minutes % 60}m worst-case)")
+    console.print(f"  Output:      {args.out_dir}")
     if args.dry_run:
         console.print("[yellow]  DRY RUN — no scraping[/yellow]")
     console.print()
@@ -221,8 +252,13 @@ def main() -> None:
                     bar.update(task, advance=1, last=f"skip {label}")
                     continue
 
-                bar.update(task, description=f"[yellow]{name}[/yellow]  {season}", last="")
-                ok, msg = run_job(slug, season, dest, dry_run=args.dry_run)
+                bar.update(task, description=f"[yellow]{name}[/yellow]  {season}", last="0s elapsed")
+                ok, msg = run_job(slug, season, dest,
+                                  markets=args.markets,
+                                  timeout_s=args.timeout,
+                                  concurrency=args.concurrency,
+                                  bar=bar, task_id=task,
+                                  dry_run=args.dry_run)
 
                 if ok:
                     results["done"] += 1

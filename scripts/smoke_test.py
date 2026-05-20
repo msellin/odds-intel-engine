@@ -6986,5 +6986,40 @@ def _():
         assert variant in bot_src, f"ACCA_VARIANTS must still include {variant}"
 
 
+@test("FDCO-ANALYSIS — fdco analysis script structure and CLV mappings")
+def _():
+    """FDCO-ANALYSIS (2026-05-21): analyse_football_data_co_uk.py runs offline
+    calibration + CLV analysis of our predictions vs Pinnacle closing odds.
+
+    Verifies:
+    - Script exists with correct functions
+    - CLV market maps include under25 (added 2026-05-21)
+    - Both fdco prob and odds columns mapped correctly
+    - No debug prints left in run_clv_analysis
+    """
+    import pathlib
+
+    src_path = pathlib.Path("scripts/analyse_football_data_co_uk.py")
+    assert src_path.exists(), "scripts/analyse_football_data_co_uk.py must exist"
+    src = src_path.read_text()
+
+    # Key functions must exist
+    for fn in ("add_pinnacle_probs", "add_outcomes", "run_clv_analysis",
+               "fuzzy_match_teams", "load_or_export_our_predictions"):
+        assert f"def {fn}(" in src, f"{fn} must be defined"
+
+    # CLV market maps must include under25
+    assert '"under25": "prob_pc_under25"' in src, \
+        "MARKET_TO_FDCO_PROB must map under25 → prob_pc_under25"
+    assert '"under25": "MaxC<2.5"' in src, \
+        "MARKET_TO_FDCO_ODDS must map under25 → MaxC<2.5"
+    assert '"under25": "outcome_under25"' in src, \
+        "MARKET_TO_OUTCOME must map under25 → outcome_under25"
+
+    # No debug prints should remain
+    assert "_dbg_fdco_miss" not in src, "debug counter _dbg_fdco_miss must be removed"
+    assert "DEBUG CLV loop done" not in src, "debug print must be removed"
+
+
 if __name__ == "__main__":
     main()
