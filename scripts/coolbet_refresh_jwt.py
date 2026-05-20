@@ -29,6 +29,32 @@ sys.path.insert(0, str(ROOT))
 
 load_dotenv()
 
+
+def _ensure_uc_distutils_shim() -> None:
+    """Patch undetected-chromedriver's distutils import for Python 3.12+.
+    See scripts/coolbet_browser_setup.py for the full explanation."""
+    try:
+        import undetected_chromedriver.patcher  # noqa: F401
+        return
+    except ModuleNotFoundError as e:
+        if "distutils" not in str(e):
+            raise
+    import importlib.util
+    spec = importlib.util.find_spec("undetected_chromedriver")
+    if not spec or not spec.submodule_search_locations:
+        raise RuntimeError("undetected_chromedriver not installed in this Python")
+    pkg_dir = Path(list(spec.submodule_search_locations)[0])
+    patcher_py = pkg_dir / "patcher.py"
+    src = patcher_py.read_text()
+    if "from distutils.version import LooseVersion" in src:
+        patcher_py.write_text(src.replace(
+            "from distutils.version import LooseVersion",
+            "try:\n    from distutils.version import LooseVersion\nexcept ImportError:\n    from packaging.version import Version as LooseVersion",
+            1,
+        ))
+
+
+_ensure_uc_distutils_shim()
 import undetected_chromedriver as uc  # type: ignore
 
 PROFILE_DIR = Path.home() / ".coolbet-daemon" / "chrome-profile"

@@ -41,6 +41,46 @@ sys.path.insert(0, str(ROOT))
 
 load_dotenv()
 
+
+def _ensure_uc_distutils_shim() -> None:
+    """undetected-chromedriver 3.5.5 imports `distutils.version.LooseVersion`,
+    but Python 3.12+ removed distutils. If the import would fail, patch the
+    package file in-place — one line. Idempotent: safe to call repeatedly."""
+    try:
+        import undetected_chromedriver  # noqa: F401
+        return  # already importable
+    except ImportError:
+        pass
+    try:
+        import undetected_chromedriver.patcher  # noqa: F401  # triggers the failing import
+        return
+    except ModuleNotFoundError as e:
+        if "distutils" not in str(e):
+            raise
+    # Apply the shim
+    import importlib, importlib.util
+    spec = importlib.util.find_spec("undetected_chromedriver")
+    if not spec or not spec.submodule_search_locations:
+        raise RuntimeError("undetected_chromedriver not found in this Python — "
+                           "run `venv/bin/pip install undetected-chromedriver`")
+    pkg_dir = Path(list(spec.submodule_search_locations)[0])
+    patcher_py = pkg_dir / "patcher.py"
+    src = patcher_py.read_text()
+    if "from distutils.version import LooseVersion" not in src:
+        return  # already patched
+    new = src.replace(
+        "from distutils.version import LooseVersion",
+        "try:\n"
+        "    from distutils.version import LooseVersion\n"
+        "except ImportError:\n"
+        "    from packaging.version import Version as LooseVersion",
+        1,
+    )
+    patcher_py.write_text(new)
+    print(f"  (auto-patched {patcher_py.name} for Python 3.12+ distutils removal)")
+
+
+_ensure_uc_distutils_shim()
 import undetected_chromedriver as uc  # type: ignore
 
 PROFILE_DIR = Path.home() / ".coolbet-daemon" / "chrome-profile"
