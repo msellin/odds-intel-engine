@@ -2998,6 +2998,26 @@ def _():
     )
 
 
+@test("COOLBET-PREFLIGHT — checks cookies+creds+login+heartbeat+bots, daemon gates on it")
+def _():
+    """COOLBET-PREFLIGHT (2026-05-20) — scripts/coolbet_preflight.py runs all
+    critical checks (Imperva cookies present, credentials present, login +
+    heartbeat succeeds, JWT TTL > 0, ≥5 active bots) and exits 1 if any
+    critical check fails. coolbet_daemon.py runs preflight as a subprocess
+    before entering its loop; failure aborts startup."""
+    import pathlib
+    src = pathlib.Path("scripts/coolbet_preflight.py").read_text()
+    for fn in ("check_cookies", "check_credentials", "check_session_works",
+               "check_bot_universe", "check_balance"):
+        assert f"def {fn}" in src, f"missing preflight check: {fn}"
+    assert 'sys.exit(' in src, "preflight must exit with a meaningful code"
+    assert 'return 1' in src, "preflight must return 1 on critical failure"
+
+    daemon = pathlib.Path("scripts/coolbet_daemon.py").read_text()
+    assert "--skip-preflight" in daemon, "daemon must expose --skip-preflight escape hatch"
+    assert "coolbet_preflight.py" in daemon, "daemon must invoke coolbet_preflight.py at startup"
+
+
 @test("COOLBET-DAEMON-CLI — daemon exposes three loops + dry default")
 def _():
     """COOLBET-DAEMON-CLI (2026-05-20) — scripts/coolbet_daemon.py is the

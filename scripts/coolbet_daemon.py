@@ -111,14 +111,30 @@ def main() -> None:
                     help="Placement loop cadence in minutes (default 5)")
     ap.add_argument("--place-mode", choices=("dry", "record", "execute"),
                     default="dry",
-                    help="Placer behaviour (default dry; execute requires the "
-                         "new-schema placer fix — see COOLBET-PLACER-NEW-SCHEMA)")
+                    help="Placer behaviour. dry=print only (default). "
+                         "record=write real_bets, don't POST to Coolbet. "
+                         "execute=write real_bets AND POST to Coolbet (real money). "
+                         "Don't flip execute until COOLBET-SAFETY-GUARDRAILS ships.")
     ap.add_argument("--no-place", action="store_true",
                     help="Disable the placement loop entirely")
+    ap.add_argument("--skip-preflight", action="store_true",
+                    help="Skip COOLBET-PREFLIGHT checks at startup. NOT "
+                         "recommended — preflight catches expired cookies "
+                         "before the daemon enters its run loop.")
     args = ap.parse_args()
 
     signal.signal(signal.SIGINT,  _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
+
+    if not args.skip_preflight:
+        log.info("Running COOLBET-PREFLIGHT (use --skip-preflight to bypass)…")
+        # Run as a subprocess so its exit code is decisive — and so its
+        # output renders cleanly without interleaving with daemon logs.
+        import subprocess
+        rc = subprocess.call([sys.executable, str(Path(__file__).parent / "coolbet_preflight.py")])
+        if rc != 0:
+            log.error("Preflight failed (exit=%d). Daemon refusing to start.", rc)
+            sys.exit(rc)
 
     log.info("─" * 78)
     log.info("Coolbet daemon starting")
