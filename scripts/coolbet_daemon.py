@@ -310,8 +310,10 @@ def _task_place(mode: str, guard, min_edge: float | None) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--keepalive-min", type=int, default=20,
-                    help="Heartbeat cadence in minutes (default 20)")
+    ap.add_argument("--keepalive-min", type=int, default=5,
+                    help="Heartbeat cadence in minutes (default 5 — matches "
+                         "Coolbet frontend's 5-min maintenance ping for "
+                         "perfect fingerprint alignment with browser traffic)")
     ap.add_argument("--odds-min", type=int, default=30,
                     help="Odds snapshot cadence in minutes (default 30)")
     ap.add_argument("--odds-mode", choices=("wide", "bets-only", "league-mapped"), default="wide",

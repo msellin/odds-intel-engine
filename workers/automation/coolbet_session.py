@@ -358,38 +358,38 @@ class CoolbetSession:
         return self._jwt_exp - time.time()
 
     def keep_alive(self) -> bool:
-        """Heartbeat — does a lightweight authenticated GET that updates the
-        server-side session's last-activity timestamp, preventing the
-        idle-logout that fires after ~20-30 min of no traffic.
+        """Heartbeat — pings Coolbet's casino-maintenance status endpoint to
+        update the server-side session's last-activity timestamp. This is
+        the *exact* endpoint Coolbet's frontend hits every 5 min while a
+        user is browsing, so it produces a fingerprint that perfectly
+        matches normal traffic (Imperva-friendly).
 
-        KEEPALIVE-RESILIENCE (2026-05-20): tries two endpoints in order so
-        a temporary Imperva block on one doesn't fail the whole heartbeat.
+        KEEPALIVE-MAINTENANCE-PING (2026-05-20): replaced the heavier
+        /fo-category heartbeat with this 2-KB maintenance probe. Endpoint
+        is authenticated, so it doubles as proof-of-life to Coolbet's
+        session policy at no functional cost. fo-category retained as
+        a Plan-B fallback when maintenance 4xx's for any reason.
         Returns True if either succeeds.
-
-        Both endpoints are real production calls that the daemon uses
-        anyway — heartbeat just ensures we exercise them periodically.
         """
-        # 1) fo-category for English Premier League (18975) — heavy use endpoint
-        #    with the browser-matching params + slug referer.
+        # 1) /s/casino/fo/maintenance — what the browser pings every 5 min.
+        try:
+            resp = self.get(
+                "https://www.coolbet.com/s/casino/fo/maintenance",
+                params={"licence": "EE"},
+            )
+            if resp.status_code == 200:
+                return True
+            log.debug("keep_alive: maintenance %d, trying fo-category fallback", resp.status_code)
+        except Exception as e:
+            log.debug("keep_alive: maintenance raised %s, trying fo-category fallback", e)
+
+        # 2) Fallback: fo-category (heavier but production-tested)
         try:
             resp = self.get(
                 "https://www.coolbet.com/s/sbgate/sports/fo-category/",
                 params={"categoryId": 18975, "country": "EE", "isMobile": 0,
                         "language": "et", "layout": "EUROPEAN", "limit": 6},
                 headers={"referer": "https://www.coolbet.com/et/sport/jalgpall/inglismaa/meistriliiga"},
-            )
-            if resp.status_code == 200:
-                return True
-            log.debug("keep_alive: fo-category %d, trying search fallback", resp.status_code)
-        except Exception as e:
-            log.debug("keep_alive: fo-category raised %s, trying search fallback", e)
-
-        # 2) Fallback: search/v2 (lighter but more Imperva-sensitive)
-        try:
-            resp = self.get(
-                "https://www.coolbet.com/s/sbgate/sports/search/v2",
-                params={"search": "a", "country": "EE", "language": "en",
-                        "layout": "EUROPEAN"},
             )
             return resp.status_code == 200
         except Exception as e:

@@ -6720,6 +6720,29 @@ def _():
     ).read_text(), "store_coolbet_odds_snapshot must exist in supabase_client"
 
 
+@test("COOLBET-MAINTENANCE-KEEPALIVE — keepalive uses 5-min /casino/fo/maintenance ping")
+def _():
+    """COOLBET-MAINTENANCE-KEEPALIVE (2026-05-20) — replaced the heavier
+    /fo-category keepalive endpoint with /s/casino/fo/maintenance, which is
+    what Coolbet's frontend pings every 5 min. Two wins: (1) much smaller
+    payload (~2KB vs ~50KB+), (2) request pattern matches browser exactly,
+    reducing Imperva detection risk. fo-category retained as a Plan-B
+    fallback when maintenance 4xx's. Daemon cadence tightened 20m → 5m."""
+    import inspect, pathlib
+    from workers.automation.coolbet_session import CoolbetSession
+    src = inspect.getsource(CoolbetSession.keep_alive)
+    assert "/s/casino/fo/maintenance" in src, \
+        "keep_alive must call maintenance endpoint as primary heartbeat"
+    assert "licence" in src and "EE" in src, \
+        "keep_alive must include licence=EE param (matches browser request)"
+    # fo-category retained as fallback
+    assert "fo-category" in src, "fo-category must remain as Plan-B fallback"
+
+    daemon_src = pathlib.Path("scripts/coolbet_daemon.py").read_text()
+    assert '"--keepalive-min", type=int, default=5' in daemon_src, \
+        "daemon default keepalive cadence should be 5 min (matches browser)"
+
+
 @test("COOLBET-JWT-API-RENEW — pure-Python JWT renewal via /s/auth/renew-token")
 def _():
     """COOLBET-JWT-API-RENEW (2026-05-20) — Coolbet exposes /s/auth/renew-token
