@@ -24,8 +24,10 @@ WHERE id IN (
     WHERE rn > 1
 );
 
--- 2. Drop the run-scoped unique index (superseded below).
-DROP INDEX IF EXISTS uq_shadow_bet_per_run;
+-- 2. Drop the run-scoped unique constraint (superseded below).
+--    Must use ALTER TABLE DROP CONSTRAINT because it was created as a table
+--    constraint, not a bare index — DROP INDEX would fail with 2BP01.
+ALTER TABLE shadow_bets DROP CONSTRAINT IF EXISTS uq_shadow_bet_per_run;
 
 -- 3. Cohort-scoped unique constraint: one bet per bot per match per market per window.
 CREATE UNIQUE INDEX uq_shadow_bet_per_cohort

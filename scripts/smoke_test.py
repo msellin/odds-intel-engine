@@ -6773,8 +6773,8 @@ def _():
         "migration 114 must create uq_shadow_bet_per_cohort index"
     assert "shadow_cohort, bot_id, match_id, market, selection" in migration, \
         "cohort-scoped unique index must cover (shadow_cohort, bot_id, match_id, market, selection)"
-    assert "DROP INDEX IF EXISTS uq_shadow_bet_per_run" in migration, \
-        "migration 114 must drop the superseded run-scoped index"
+    assert "DROP CONSTRAINT IF EXISTS uq_shadow_bet_per_run" in migration, \
+        "migration 114 must drop the superseded run-scoped constraint"
 
     sc_src = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
     assert "ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection) DO NOTHING" in sc_src, \
