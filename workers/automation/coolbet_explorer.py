@@ -446,7 +446,30 @@ def _outcome_id_for_selection(mkt: dict, parsed_market: str, parsed_sel: str) ->
 
 
 def load_matches_in_window(days: int) -> list[dict]:
-    """Pull pre-KO matches from our DB kicking off within `days` days."""
+    """Pull pre-KO matches from our DB kicking off within `days` days.
+
+    TODAY-ONLY-SHORTCUT (2026-05-20): when `days` <= 1 we use a strict
+    "today UTC" filter (`DATE(m.date) = CURRENT_DATE`) instead of a rolling
+    24-hour window. Tomorrow's matches don't help today's betting and
+    iterating them just burns API budget. For multi-day windows the old
+    rolling-interval behaviour is preserved."""
+    if int(days) <= 1:
+        return execute_query(
+            """
+            SELECT m.id::text AS id, m.date AS date,
+                   ht.name AS home, at2.name AS away,
+                   l.name AS league
+            FROM matches m
+            JOIN teams ht ON ht.id = m.home_team_id
+            JOIN teams at2 ON at2.id = m.away_team_id
+            JOIN leagues l ON l.id = m.league_id
+            WHERE m.date > NOW()
+              AND DATE(m.date AT TIME ZONE 'UTC') = CURRENT_DATE
+              AND m.status = 'scheduled'
+            ORDER BY m.date
+            """,
+            (),
+        )
     return execute_query(
         """
         SELECT m.id::text AS id, m.date AS date,

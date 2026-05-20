@@ -405,21 +405,8 @@ def _parse_event(ev: dict) -> dict | None:
     }
 
 
-def search_coolbet_event(
-    session: CoolbetSession, home: str, away: str
-) -> dict | None:
-    """
-    Use GET /s/sbgate/sports/search/v2?search=<query> to find the Coolbet event
-    for a specific match.  Searches for the home team name (first word of it),
-    then fuzzy-matches all returned events against home+away pair.
-
-    Returns a parsed event dict (same format as _parse_event) or None.
-    Much faster than loading the full fo-category tree.
-    """
-    # Use the first "word" of the home team name as the search query —
-    # enough to narrow results without risking zero hits on short names.
-    query = home.split()[0] if home.split() else home
-
+def _do_search(session: CoolbetSession, query: str) -> list[dict]:
+    """Single search call. Returns parsed event candidates (possibly empty)."""
     resp = session.get(_SEARCH_URL, params={
         "search":   query,
         "country":  "EE",
@@ -427,32 +414,83 @@ def search_coolbet_event(
         "layout":   "EUROPEAN",
     })
     if resp.status_code != 200:
-        log.info("Search HTTP %d for query '%s' ('%s vs %s') — will try fo-category",
-                 resp.status_code, query, home, away)
-        return None
-
+        log.debug("Search HTTP %d for query %r", resp.status_code, query)
+        return []
     data = resp.json()
     raw_events = (
         data if isinstance(data, list)
         else data.get("events") or data.get("results") or []
     )
+    return [e for e in (_parse_event(ev) for ev in raw_events) if e]
 
-    candidates = [e for e in (_parse_event(ev) for ev in raw_events) if e]
-    if not candidates:
-        log.info("Search for '%s' returned 0 events ('%s vs %s') — will try fo-category",
-                 query, home, away)
+
+def search_coolbet_event(
+    session: CoolbetSession, home: str, away: str
+) -> dict | None:
+    """
+    Multi-pass team-name search against /s/sbgate/sports/search/v2.
+
+    SEARCH-MULTIPASS (2026-05-20): single-word search was missing real
+    European top-flight matches (Ajax-Groningen, Wolfsburg-Paderborn,
+    Hammarby etc.) that Coolbet does cover. Now widens progressively
+    until a fuzzy match passes the threshold:
+
+        1. home first 3 letters    (short prefix, broad result set)
+        2. home first 4 letters
+        3. home first 5 letters
+        4. away first 3 letters    (fallback — useful when home name is generic)
+        5. away first 4 letters
+        6. away first 5 letters
+        7. full home name (whitespace-stripped)
+
+    Aggregates all unique candidates across passes and fuzzy-matches once.
+    Stops early as soon as a match clears _FUZZY_THRESHOLD.
+    """
+    def _prefix(name: str, n: int) -> str | None:
+        # Strip whitespace + take first n alphabetic chars (skip "FC ", "SC ", etc.)
+        clean = "".join(c for c in (name or "") if c.isalpha())
+        return clean[:n] if len(clean) >= n else None
+
+    queries: list[str] = []
+    seen: set[str] = set()
+    for q in (
+        _prefix(home, 3), _prefix(home, 4), _prefix(home, 5),
+        _prefix(away, 3), _prefix(away, 4), _prefix(away, 5),
+        home.strip() if home else None,
+    ):
+        if q and q.lower() not in seen:
+            seen.add(q.lower())
+            queries.append(q)
+
+    if not queries:
         return None
 
-    match = fuzzy_match_event(home, away, candidates)
-    if match:
-        log.info("Search matched '%s vs %s' → Coolbet '%s vs %s' (id=%s)",
-                 home, away, match["home"], match["away"], match["id"])
-    else:
-        best = f"{candidates[0]['home']} vs {candidates[0]['away']}" if candidates else "—"
-        log.info("Search found %d events for '%s' but none matched '%s vs %s' "
-                 "(best candidate: '%s') — will try fo-category",
-                 len(candidates), query, home, away, best)
-    return match
+    # Run progressively. Stop as soon as fuzzy match clears threshold.
+    aggregate: dict[int, dict] = {}  # de-dup by event id
+    for q in queries:
+        cands = _do_search(session, q)
+        for ev in cands:
+            try:
+                aggregate[int(ev["id"])] = ev
+            except (TypeError, ValueError, KeyError):
+                continue
+        match = fuzzy_match_event(home, away, list(aggregate.values())) if aggregate else None
+        if match:
+            log.info("Search matched '%s vs %s' → Coolbet '%s vs %s' (id=%s) "
+                     "via query=%r (queries tried=%d, candidates=%d)",
+                     home, away, match["home"], match["away"], match["id"],
+                     q, queries.index(q) + 1, len(aggregate))
+            return match
+
+    # All queries exhausted without a fuzzy hit
+    best = "—"
+    if aggregate:
+        sample = next(iter(aggregate.values()))
+        best = f"{sample['home']} vs {sample['away']}"
+    log.info("Search exhausted %d queries for '%s vs %s' — best candidate '%s' "
+             "(%d unique events scanned)",
+             len(queries), home, away, best, len(aggregate))
+    return None
 
 
 _FO_MATCH_URL = "https://www.coolbet.com/s/sbgate/sports/fo-match"

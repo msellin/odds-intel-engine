@@ -116,8 +116,11 @@ def main() -> None:
                          "pipeline's edge math via ACCESSIBLE_BOOKMAKERS). "
                          "bets-only=fetch only for matches with pending value bets "
                          "(smaller API load, but Coolbet can't surface new edges).")
-    ap.add_argument("--odds-days", type=int, default=2,
-                    help="Days ahead to fetch odds for (default 2)")
+    ap.add_argument("--odds-days", type=int, default=1,
+                    help="How far ahead to fetch odds. 1 = today only (UTC, "
+                         "strict DATE filter). 2+ = rolling N-day window. "
+                         "Default 1 — tomorrow's odds don't help today's "
+                         "betting and just burn API budget.")
     ap.add_argument("--place-min", type=int, default=5,
                     help="Placement loop cadence in minutes (default 5)")
     ap.add_argument("--min-edge", type=float, default=0.05,
