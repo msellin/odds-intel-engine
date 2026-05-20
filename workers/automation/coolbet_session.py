@@ -159,6 +159,22 @@ class CoolbetSession:
             datetime.fromtimestamp(self._jwt_exp, tz=timezone.utc).isoformat(),
         )
 
+    def reload_manual_jwt(self) -> float:
+        """Re-read COOLBET_MANUAL_JWT from .env and adopt it without restart.
+        Used by the daemon's headless-browser JWT refresher: refresher writes
+        fresh JWT → calls this → session swaps token transparently.
+        Returns the new TTL in seconds. Raises if no JWT in env or expired."""
+        from dotenv import load_dotenv as _ld  # local import to dodge global cache
+        _ld(override=True)
+        fresh = os.getenv("COOLBET_MANUAL_JWT", "").strip()
+        if fresh.startswith("Bearer "):
+            fresh = fresh[7:]
+        if not fresh:
+            raise RuntimeError("COOLBET_MANUAL_JWT empty after reload — refresher likely failed.")
+        self._manual_jwt = fresh
+        self._adopt_manual_jwt()
+        return self.jwt_seconds_remaining
+
     def _login(self) -> None:
         # Manual-JWT path takes priority when configured.
         if self._manual_jwt:

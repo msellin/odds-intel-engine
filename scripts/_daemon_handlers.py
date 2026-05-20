@@ -18,7 +18,8 @@ _HELP = (
     "<code>/resume</code>     — re-enable placement\n"
     "<code>/place_mode dry|record|execute</code> — change mode at runtime\n"
     "<code>/summary</code>    — force-send the daily summary now\n"
-    "<code>/relogin</code>    — force a fresh JWT (use if cookies smell stale)\n"
+    "<code>/relogin</code>    — force a fresh JWT now via headless Chrome\n"
+    "                  (auto-runs every 25 min — use this to force-early)\n"
     "<code>/help</code>       — this message"
 )
 

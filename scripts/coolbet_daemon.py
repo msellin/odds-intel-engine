@@ -158,6 +158,65 @@ def _task_odds_snapshot(mode: str, days: int, require_pinnacle: bool) -> str:
         return f"odds snapshot ✗ ({e})"
 
 
+def _task_jwt_browser_refresh(session: CoolbetSession) -> str:
+    """COOLBET-AUTO-COOKIE-REFRESH — invoke the headless browser refresher
+    as a subprocess (it needs venv-only deps: undetected-chromedriver) and,
+    on success, hot-swap the daemon's JWT via `session.reload_manual_jwt()`.
+
+    Exit codes from coolbet_refresh_jwt.py:
+      0 — fresh JWT in .env, ready to adopt
+      2 — Chrome session expired (rerun coolbet_browser_setup.py)
+      3 — Chrome / refresher error
+
+    On 2 we Telegram-alert the operator with the recovery command; on 3 we
+    log and fall through (next cycle retries). On 0 we adopt + Telegram OK.
+    """
+    import subprocess
+    from workers.notify.telegram import send_telegram
+
+    venv_python = str(Path(__file__).resolve().parent.parent / "venv" / "bin" / "python3")
+    refresher   = str(Path(__file__).resolve().parent / "coolbet_refresh_jwt.py")
+    if not Path(venv_python).exists():
+        log.warning("venv python missing at %s — skipping JWT refresh", venv_python)
+        return "jwt_refresh ✗ (venv missing)"
+
+    try:
+        rc = subprocess.run(
+            [venv_python, refresher],
+            capture_output=True, text=True, timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        log.warning("jwt_refresh: refresher timed out (>120s)")
+        return "jwt_refresh ✗ (timeout)"
+
+    if rc.returncode == 0:
+        try:
+            ttl = session.reload_manual_jwt()
+            return f"jwt_refresh ✓ (TTL ≈ {int(ttl)}s)"
+        except Exception as e:
+            log.warning("jwt_refresh adoption failed: %s", e)
+            return f"jwt_refresh ✗ (adopt {e})"
+
+    if rc.returncode == 2:
+        log.warning("jwt_refresh: session expired in Chrome profile (rc=2)")
+        send_telegram(
+            "🔐 <b>Coolbet session expired</b>\n"
+            "Headless refresh can no longer grab a fresh JWT — the Chrome profile's "
+            "Coolbet session has expired.\n\n"
+            "Recover (one-minute task at your laptop):\n"
+            "<code>venv/bin/python3 scripts/coolbet_browser_setup.py</code>\n\n"
+            "After Smart-ID PIN tap, daemon resumes silent refresh automatically.",
+            dedup_key="coolbet-session-expired",
+            dedup_window_s=3600,
+        )
+        return "jwt_refresh ✗ (session expired — operator alerted)"
+
+    # rc == 3 or anything else — generic error, log + retry next cycle
+    err = (rc.stderr or rc.stdout or "(no output)")[:200]
+    log.warning("jwt_refresh: refresher failed rc=%d  %s", rc.returncode, err)
+    return f"jwt_refresh ✗ (rc={rc.returncode})"
+
+
 def _task_daily_summary() -> bool:
     """COOLBET-DAILY-SUMMARY — once per UTC day, Telegram digest of:
       • Coolbet odds rows + distinct matches ingested today
@@ -416,9 +475,14 @@ def main() -> None:
     _stamp(state, "last_keepalive", {"ok": True, "jwt_ttl_s": int(session.jwt_seconds_remaining)})
 
     now = time.time()
-    next_keepalive = now + args.keepalive_min * 60
-    next_odds      = now            # run odds immediately on start
-    next_place     = now            # run place immediately on start
+    next_keepalive   = now + args.keepalive_min * 60
+    next_odds        = now            # run odds immediately on start
+    next_place       = now            # run place immediately on start
+    # JWT auto-refresh every 25 min (JWT TTL is ~30 min, refresh 5 min before).
+    # Only meaningful when COOLBET_MANUAL_JWT is in use; if password-login is
+    # working, _ensure_auth handles its own refresh. The first refresh fires
+    # at start+25m — initial JWT from .env carries the daemon through that.
+    next_jwt_refresh = now + 25 * 60
 
     while not _STOP:
         now = time.time()
@@ -458,14 +522,21 @@ def main() -> None:
         # PLACEMENT — skipped while sweep is running so we don't have two
         # Coolbet sessions calling concurrently (each session has its own
         # throttle; concurrent = 2× rate = Imperva risk).
-        # Respect Telegram /relogin — force a fresh JWT before next call
+
+        # Periodic JWT refresh via headless Chrome (manual-JWT mode only).
+        # Skipped silently if Chrome / undetected-chromedriver / profile aren't
+        # set up — operator hasn't bootstrapped browser auth yet.
+        if now >= next_jwt_refresh:
+            log.info(_task_jwt_browser_refresh(session))
+            _stamp(state, "last_jwt_refresh", {"jwt_ttl_s": int(session.jwt_seconds_remaining)})
+            next_jwt_refresh = now + 25 * 60
+
+        # Respect Telegram /relogin — same path as periodic refresh
         if _CTRL.get("force_login"):
             _CTRL["force_login"] = False
-            try:
-                session._login()  # force, bypass TTL check
-                log.info("Telegram /relogin: forced JWT refresh")
-            except Exception as e:
-                log.warning("Telegram /relogin failed: %s", e)
+            log.info("Telegram /relogin: %s", _task_jwt_browser_refresh(session))
+            _stamp(state, "last_jwt_refresh", {"jwt_ttl_s": int(session.jwt_seconds_remaining)})
+            next_jwt_refresh = now + 25 * 60
 
         # Respect Telegram /summary — force the daily summary out now
         if _CTRL.get("force_summary"):
