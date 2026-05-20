@@ -1,100 +1,143 @@
 # Coolbet Automation Roadmap
 
-> Single source of truth for everything Coolbet-related — what exists, what's
-> broken, what's queued, what's idea-stage. Priority/effort/impact on every row.
-> Update as tasks ship.
+> Single source of truth for everything Coolbet-related. Architecture, status,
+> done tasks, queued tasks, ideas. Update as work ships.
 >
 > Last updated: 2026-05-20
 
 ---
 
-## What exists today
+## Architecture
 
-| Component | File | Status |
+**One daemon, many separately-callable pieces.** Already shipped.
+
+```
+                  ┌────────────────────────────────────────┐
+                  │  scripts/coolbet_daemon.py             │
+                  │  (foreground, all-in-one loop)         │
+                  │  ─ keepalive  every 20m                │
+                  │  ─ odds       every 30m                │
+                  │  ─ placement  every  5m                │
+                  └─────────┬──────────────────────────────┘
+                            │   calls
+                            ▼
+            ┌───────────────────────────────────────────┐
+            │  workers/automation/         (libraries)  │
+            │   ├ coolbet_session.py    auth + throttle │
+            │   ├ coolbet_explorer.py   odds + markets  │
+            │   └ coolbet_placer.py     place_all_bets  │
+            └───────────────────────────────────────────┘
+                            ▲
+                            │   also used standalone:
+            ┌───────────────┴───────────────────────────┐
+            │ python3 -m workers.automation.coolbet_explorer ...│
+            │ python3 scripts/place_coolbet_bets.py     │
+            │ python3 scripts/audit_silent_bots.py      │
+            │ (Railway scheduler jobs — same libraries) │
+            └───────────────────────────────────────────┘
+```
+
+Each piece can be invoked on its own — daemon is just the convenient bundle.
+
+---
+
+## Current status by component
+
+| Component | Path | Status |
 |---|---|---|
-| Session manager (auth, JWT refresh, Imperva cookies, `keep_alive()`, `jwt_seconds_remaining`) | `workers/automation/coolbet_session.py` | ✅ Working |
-| Odds ingester — new schema (markets + odds endpoints, parse_market) | `workers/automation/coolbet_explorer.py` | ✅ Working |
-| Placer — `place_all_bets()` with dry/record/execute modes | `workers/automation/coolbet_placer.py` | ✅ Working on new schema (2026-05-20) |
-| Foreground daemon — keepalive + odds + placement | `scripts/coolbet_daemon.py` | ✅ Working (placement loop runs but no-ops) |
-| Audit — silent-bots diagnostic | `scripts/audit_silent_bots.py` | ✅ Working |
-| Scheduler: `_coolbet_odds_snapshot_wrapper` every 30m | `workers/scheduler.py` | ⚠️ Likely 403s from Railway IP (Imperva tied to home IP). Error-isolated. |
-| Scheduler: `_coolbet_keepalive_wrapper` every 20m | `workers/scheduler.py` | ⚠️ Same |
-
-## Path to live auto-placement
-
-✅ **COOLBET-PLACER-NEW-SCHEMA shipped 2026-05-20.** `--place-mode=execute` now physically capable of placing real bets via the new markets+odds schema. **Do not flip execute mode until COOLBET-SAFETY-GUARDRAILS lands** — that's the next P0.
+| Session (auth, JWT 30m, Imperva cookies, keep_alive, jwt_seconds_remaining, **throttle**) | `workers/automation/coolbet_session.py` | ✅ Working |
+| Odds explorer (markets+odds new schema, parse_market, resolve_placement_target, fetch_match_markets, fetch_odds_for_markets) | `workers/automation/coolbet_explorer.py` | ✅ Working |
+| Placer (`place_all_bets` dry/record/execute, new-schema market resolution) | `workers/automation/coolbet_placer.py` | ✅ Working (don't `--execute` until guardrails) |
+| Foreground daemon (3 loops, --place-mode safety default) | `scripts/coolbet_daemon.py` | ✅ Working |
+| Audit script | `scripts/audit_silent_bots.py` | ✅ Working (6 sections) |
+| Scheduler — odds snapshot every 30m | `workers/scheduler.py` | ⚠️ May 403 from Railway IP (Imperva). Error-isolated. |
+| Scheduler — keepalive every 20m | `workers/scheduler.py` | ⚠️ Same |
 
 ---
 
-## Tasks
+## ✅ Done
 
-### P0 — Critical path to live auto-placement
-
-| ID | Effort | Impact | Description |
-|---|---|---|---|
-| ✅ **COOLBET-PLACER-NEW-SCHEMA** | Done 2026-05-20 | — | Placer per-bet loop in `place_all_bets` now uses `coolbet_explorer.fetch_match_markets` + `fetch_odds_for_markets` + `resolve_placement_target` (new function — maps our `(market, selection)` → Coolbet `(market_id, outcome_id, odds_id, current_odds)`). `fetch_odds_for_markets` extended to return `{outcome_id: {value, odds_id, market_id, status}}` so the placer has the UUID required for the bet payload. Legacy `find_market_outcome` / `fetch_sidebets` left in place as dead code (no callers). Smoke: COOLBET-PLACER-NEW-SCHEMA. |
-| **COOLBET-PREFLIGHT** | 30m | Fails fast instead of silent dud runs | At daemon startup: verify Coolbet balance via `/s/user/balance`, decode JWT to confirm Imperva cookies aren't days from expiry, sanity-check bot universe. Refuse to start if any check fails (loud error). |
-| **COOLBET-SAFETY-GUARDRAILS** | 1-2h | Difference between auto-placer and auto-bankroll-killer | Before flipping `--place-mode=execute` for real, add: `--max-bets-per-hour N`, `--max-stake-per-bet €X` override, `--bot-filter`, `--pause-after-loss €N`, `--max-edge-pct N` (refuse bets with absurd edge — model bug or odds error), and `--require-confirm` (y/n prompt per bet for first live runs). |
-
-### P1 — Operational visibility (do before leaving daemon unattended)
-
-| ID | Effort | Impact | Description |
-|---|---|---|---|
-| **COOLBET-IMPERVA-ALERT** | 30m | Biggest operational risk caught loud | Imperva cookies expire silently every few weeks. When login fails with 403, daemon must (a) stop the placement loop and (b) emit a loud notification (terminal beep + persistent log entry + Slack/email if wired). Currently a silent dud is the worst-case. |
-| **COOLBET-DAILY-SUMMARY** | 1h | Operator visibility | At UTC end-of-day: print one summary line — bets placed today, total stake, paper-vs-real ROI delta, anomalies (skipped due to odds drop, no_market, etc.). Without it, daemon just hums silently and you forget it exists. |
-| **COOLBET-PERSISTENT-LOG** | 30m | Diagnose after-the-fact | `logs/coolbet_daemon-YYYY-MM-DD.log` rotating file alongside stdout. Without it, a crash investigation needs reproducing the issue. |
-
-### P2 — Reliability + state
-
-| ID | Effort | Impact | Description |
-|---|---|---|---|
-| **COOLBET-STATE-PERSISTENCE** | 1h | Resume cleanly after restart | `~/.coolbet-daemon-state.json` holding last-keepalive timestamp, last odds-snapshot match count, set of bets seen. Restart picks up where it left off instead of re-flushing the placement loop. |
-| **COOLBET-HEALTHCHECK** | 30m | External monitoring | HTTP `/healthz` on localhost:8765 returning JSON `{jwt_ttl, last_keepalive, last_odds, last_place, errors_last_hour}`. Lets a cron / Uptime Robot / `tmux` status bar surface daemon health. |
-| **COOLBET-WIDER-ODDS-POLL** | 30m | More signal data | Add `--odds-mode=bets-only|wide|leagues` flag. `wide` = all upcoming matches in `--days` window. Useful when seeding historical Coolbet coverage for COOLBET-OR-PIN-REQUIRED-style analyses. |
-| **COOLBET-BTTS-DC-AH-MTIDS** | 30m | Cleaner parsing | Once we observe Coolbet BTTS / DC / AH markets (didn't appear in the 3 small-league matches today), capture their `market_type_id` values and add to `_MTID_BTTS` / `_MTID_DC` / `_MTID_AH` in `coolbet_explorer.py`. Today's name-based fallback works but is locale-fragile. |
-| **COOLBET-DEDUP-DUPES** | 30m | Storage hygiene | OU lines appear in both `fo-match` (main) and `sidebets` (depth) so each (match, market, selection) gets two rows per ingest cycle. De-dup by (market_id, outcome_id) inside `store_coolbet_snapshots_for_match` before insert. Not breaking — `odds_snapshots` is time-series — but unnecessary 2× write volume. |
-| **COOLBET-ACTIVE-HOURS** | 30m | Quiet overnight | Add `--active-hours 6-23` to skip keepalive + polling overnight. Matches existing scheduler windows. Minor API/log noise reduction. |
-
-### P3 — Speed + latency (only matters once placement is live)
-
-| ID | Effort | Impact | Description |
-|---|---|---|---|
-| **COOLBET-FAST-PLACE** | 1h | React quicker to new bets | Tighten placement loop from 5m → 1m, OR adaptive: 1m for the first 5 min after each `betting_refresh` finishes, 10m otherwise. Useful only after live placement is on and we care about CLV. |
-| **COOLBET-EVENT-DRIVEN-PLACE** | 2-3h | Zero-lag placement | Postgres `LISTEN`/`NOTIFY` from `betting_refresh` → daemon fires placement immediately on new bet. Real-time but requires scheduler-to-daemon plumbing. Defer until single-digit-minute latency proves insufficient. |
-| **COOLBET-TWO-TIER-POLL** | 1h | Coverage + cost balance | Bets-only every 30 min + nightly wide sweep at 04:00 UTC. Better historical coverage without proportional cost. |
-| **COOLBET-LEAGUE-FILTER** | 30m | Trim API calls | Limit odds polling to top-tier leagues we'd actually bet on. Niche if `--bets-only` is already the default. |
-| **COOLBET-MULTI-MODES** | 30m | Testing + CI | `--once` (single cycle and exit), `--odds-only`, `--place-only`, `--no-keepalive` (for use alongside Railway scheduler). Mostly developer ergonomics. |
-| **COOLBET-RAILWAY-KILL** | 5m | Reduce noise | If Railway-scheduled Coolbet jobs 403 every cycle (confirm in logs after deploy), remove them. Currently error-isolated so cost is just log noise. |
+| ID | Date | Description |
+|---|---|---|
+| **COOLBET-ODDS-SNAPSHOT** | 2026-05-20 | Markets+odds ingest on new Coolbet schema. fo-match + sidebets + odds (simple + line endpoints). parse_market maps to our shape. |
+| **COOLBET-OR-PIN-REQUIRED** | 2026-05-20 ❌ dropped | Audit showed Pinnacle covers bot leagues; Coolbet uplift = 0. Not the blocker. |
+| **SHADOW-RETIRED-OK** | 2026-05-20 | Retired bots produce shadow_bets so the alpha-recovery criterion is measurable. |
+| **COOLBET-DAEMON** | 2026-05-20 | Foreground daemon — 3 loops on independent cadences. Safe default placement mode. |
+| **COOLBET-KEEPALIVE** | 2026-05-20 | session.keep_alive() + jwt_seconds_remaining + scheduler job every 20m. JWT TTL is 1820s. |
+| **COOLBET-PLACER-NEW-SCHEMA** | 2026-05-20 | Placer per-bet loop rewritten for new Coolbet schema. resolve_placement_target maps our bet → Coolbet (market_id, outcome_id, odds_id, current_odds). |
+| **COOLBET-HUMAN-PACED** | 2026-05-20 | Every CoolbetSession.get/post routes through _throttle() with 0.8–2.0s jittered gap. Anti-scraper defense. |
+| **COOLBET-DELETE-REDUNDANT** | 2026-05-20 | Deleted coolbet_keepalive.py + probe_coolbet.py — daemon supersedes them. |
+| **BOT-OU15-DIAGNOSE (section 6)** | 2026-05-20 | Audit section 6 tests ACCESSIBLE-BM hypothesis. Verdict: 13.3% non-accessible — ACCESSIBLE-BM not the cause. |
 
 ---
 
-## Recommended sequence
+## ⬜ Open — critical path to live auto-placement
 
-Single ordered list, optimised for "least time to a safe live auto-placer running unattended":
+| ID | Pri | Effort | Impact | Description |
+|---|---|---|---|---|
+| **COOLBET-PREFLIGHT** | P0 | 30m | High — fail fast on bad state | At daemon startup: verify Coolbet balance via `/s/user/balance`, decode JWT to confirm Imperva cookies aren't days from expiry, sanity-check active bot set. Refuse to start if any check fails (loud error). |
+| **COOLBET-SAFETY-GUARDRAILS** | P0 | 1-2h | Critical — gates first real-money runs | `--max-bets-per-hour N` throttle, `--max-stake-per-bet €X` override, `--bot-filter bot1,bot2`, `--pause-after-loss €N` kill-switch, `--max-edge-pct N` (refuse absurd edges = model bug / odds error), `--require-confirm` (y/n prompt per bet for first live runs). Must precede first `--place-mode=execute`. |
+| **COOLBET-IMPERVA-ALERT** | P0 | 30m | Loud failure on the biggest operational risk | When login fails with 403 (Imperva cookies expired), daemon must (a) stop placement loop, (b) emit loud notification (terminal bell + log entry + Slack/email if wired). Currently a silent dud. |
 
-1. ✅ ~~COOLBET-PLACER-NEW-SCHEMA~~ — done 2026-05-20
-2. **COOLBET-PREFLIGHT** (P0, 30m) — fail-fast before anything else runs
-3. **COOLBET-SAFETY-GUARDRAILS** (P0, 1-2h) — must precede first live `execute` run
-4. **COOLBET-IMPERVA-ALERT** (P1, 30m) — only loud-failure operational mode
-5. *Flip to `--place-mode=execute --require-confirm --max-bets-per-hour 5 --max-stake-per-bet 5`* — first live placements with training wheels on
-6. **COOLBET-DAILY-SUMMARY** (P1, 1h) — visibility while observing first live cycles
-7. **COOLBET-PERSISTENT-LOG** (P1, 30m) — close the observability loop
-8. **COOLBET-STATE-PERSISTENCE** (P2, 1h) — first chance restart hygiene matters
-9. *Loosen training-wheel limits as confidence grows*
-10. Everything else (P2/P3) — as needs surface
+## ⬜ Open — operational visibility (do before leaving daemon unattended)
 
-Total to safe-live: ~3-5h of focused work, plus a paper-test cycle after step 5.
+| ID | Pri | Effort | Impact | Description |
+|---|---|---|---|---|
+| **COOLBET-DAILY-SUMMARY** | P1 | 1h | Operator visibility | At UTC end-of-day: print one summary — bets placed, total stake, paper-vs-real ROI delta, anomalies (skipped due to odds drop, no_market, etc.). |
+| **COOLBET-PERSISTENT-LOG** | P1 | 30m | After-the-fact diagnosis | `logs/coolbet_daemon-YYYY-MM-DD.log` rotating file alongside stdout. |
+| **COOLBET-HEALTHCHECK** | P2 | 30m | External monitoring | HTTP `/healthz` on localhost:8765 returning JSON `{jwt_ttl, last_keepalive, last_odds, last_place, errors_last_hour}`. |
+| **COOLBET-STATE-PERSISTENCE** | P2 | 1h | Clean resume after restart | `~/.coolbet-daemon-state.json` holding last timestamps + bets-seen set. Restart picks up where it left off. |
+
+## ⬜ Open — coverage + cleanup
+
+| ID | Pri | Effort | Impact | Description |
+|---|---|---|---|---|
+| **COOLBET-WIDER-ODDS-POLL** | P2 | 30m | More signal data | `--odds-mode=bets-only\|wide\|leagues`. `wide` = all upcoming matches in `--days` window. Useful for seeding historical Coolbet coverage. |
+| **COOLBET-BTTS-DC-AH-MTIDS** | P2 | 30m | Cleaner parsing, locale-stable | Once we observe Coolbet BTTS / DC / AH markets (haven't appeared yet in small-league test matches), capture their `market_type_id` values and add to `_MTID_BTTS` / `_MTID_DC` / `_MTID_AH` in `coolbet_explorer.py`. Name-based fallback works but is locale-fragile. |
+| **COOLBET-DEDUP-DUPES** | P2 | 30m | Storage hygiene | OU lines appear in both fo-match (main) and sidebets (depth) → 2× rows per ingest. Dedup by (market_id, outcome_id) inside `store_coolbet_snapshots_for_match` before insert. Not breaking, just wasteful. |
+| **COOLBET-ACTIVE-HOURS** | P3 | 30m | Quiet overnight | `--active-hours 6-23` skips keepalive + polling overnight. Minor API/log noise reduction. Also less obviously bot-like. |
+| **COOLBET-RAILWAY-KILL** | P3 | 5m | Reduce noise | If Railway-scheduled jobs 403 every cycle, remove them. Currently error-isolated so cost is just log noise. |
+
+## ⬜ Open — speed/latency (defer until placement is live and CLV matters)
+
+| ID | Pri | Effort | Impact | Description |
+|---|---|---|---|---|
+| **COOLBET-FAST-PLACE** | P3 | 1h | React quicker to new bets | Tighten placement loop 5m → 1m, OR adaptive: 1m for first 5m after each `betting_refresh`, 10m otherwise. |
+| **COOLBET-EVENT-DRIVEN-PLACE** | P3 | 2-3h | Zero-lag placement | Postgres `LISTEN`/`NOTIFY` from `betting_refresh` → daemon fires placement immediately. Defer until single-digit-minute lag proves insufficient. |
+| **COOLBET-TWO-TIER-POLL** | P3 | 1h | Coverage + cost balance | Bets-only every 30m + nightly wide sweep at 04:00. Better historical coverage. |
+| **COOLBET-LEAGUE-FILTER** | P3 | 30m | Trim API calls | Limit odds polling to top-tier leagues we'd actually bet on. Niche if `--bets-only` is default. |
+| **COOLBET-MULTI-MODES** | P3 | 30m | Dev ergonomics | `--once`, `--odds-only`, `--place-only`, `--no-keepalive`. |
 
 ---
 
-## Verification before any of this
+## Recommended sequence (toward live auto-placement)
 
-Confirm the *existing* path actually does what's intended:
+1. **COOLBET-PREFLIGHT** (30m) — fail fast on bad state
+2. **COOLBET-SAFETY-GUARDRAILS** (1-2h) — non-negotiable before first `--execute`
+3. **COOLBET-IMPERVA-ALERT** (30m) — only loud-failure operational mode
+4. *Flip to:* `--place-mode=execute --require-confirm --max-bets-per-hour 3 --max-stake-per-bet 5` → first live placements with training wheels
+5. **COOLBET-DAILY-SUMMARY** (1h) + **COOLBET-PERSISTENT-LOG** (30m) — close observability
+6. *Loosen training-wheel limits as confidence grows*
+7. Everything else (P2/P3) — as needs surface
 
-- [ ] `python3 scripts/coolbet_daemon.py` runs for ≥1 hour without crashing
-- [ ] Keepalive log shows `JWT TTL ≈ <1820`, decreasing then refreshing
-- [ ] Odds snapshot log shows non-zero rows stored per cycle
-- [ ] Placement log shows `no qualifying bets` OR `no_market` for each candidate (no exceptions)
-- [ ] `odds_snapshots` row count grows over time (sanity check via psql)
+Total to safe-live: **~3-5h of focused work** + paper-test cycle after step 4.
 
-If any of these fail, stop and fix before touching the roadmap.
+---
+
+## Out-of-band: bot_ou15_defensive silence investigation
+
+This sits adjacent to Coolbet but the silence isn't a Coolbet problem. Status of the investigation as of 2026-05-20:
+
+- ❌ OU-PIN-REQUIRED (May 10) — Pinnacle covers 80–100% of bot leagues, not the cause
+- ❌ COOLBET-OR-PIN-REQUIRED — would not move the needle (0 uplift)
+- ❌ ACCESSIBLE-BM (May 11) — only 13.3% non-accessible. Not the cause.
+- ❌ PIN-VETO-EXT (May 12) — bot silent since May 8, can't explain pre-shipping
+- ❌ ALN-1 (May 12) — same, ships post-silence
+- ❌ MFV inference activation (May 10) — same
+- ❌ May 17 retrain — bot silent 9 days before retrain
+- ❓ KILL-SWITCH-FLAGS (May 8) — could `paper_betting` or similar have been inadvertently set?
+- ❓ STAKE-RANK / API-RETRY-WRAPPER (May 8) — unlikely to affect candidate generation
+- ❓ Pure variance — bot had earlier 0-bet days (May 2, 7) so noise is possible, but 12 consecutive zeros vs a 22-bet day before is suspicious
+- ❓ **Most likely remaining**: candidate generation funnel — log per-bot, per-filter, how many candidates fall out where. Requires either temporary `--verbose-funnel` pipeline flag or a new audit section replicating `_load_today_from_db` logic.
+
+**Next step (if continuing):** add a `--verbose-funnel` flag to `daily_pipeline_v2.run_morning` that logs per-bot candidate count at each filter step (markets present → in odds_range → above edge threshold → not vetoed → final). Run morning pipeline once with the flag; output tells us definitively where bot_ou15_defensive's candidates die.

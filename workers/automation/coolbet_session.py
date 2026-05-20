@@ -20,6 +20,7 @@ import base64
 import json
 import logging
 import os
+import random
 import time
 from datetime import datetime, timezone
 
@@ -81,6 +82,17 @@ class CoolbetSession:
         self._jwt_exp: float = 0.0
         self._login_session_id: str | None = None
         self._user_id: str | None = None
+
+        # COOLBET-HUMAN-PACED (2026-05-20): every authenticated call goes
+        # through _throttle() which enforces a randomised gap so our request
+        # pattern doesn't look like a scraper to Imperva's anti-bot stack.
+        # Defaults: 0.8–2.0s between calls + small jitter on the floor.
+        # Override via env if a workload needs faster (CI tests) or slower
+        # (deeper paranoia). The minimum is still enforced — set both equal
+        # for a constant gap.
+        self._min_call_gap = float(os.getenv("COOLBET_MIN_CALL_GAP_S", "0.8"))
+        self._max_call_gap = float(os.getenv("COOLBET_MAX_CALL_GAP_S", "2.0"))
+        self._last_call_t  = 0.0
 
         self._http = requests.Session()
         self._http.headers.update(_HEADERS_BASE)
@@ -163,14 +175,26 @@ class CoolbetSession:
             "user_id": self._user_id or "",
         })
 
+    def _throttle(self) -> None:
+        """Sleep so the next request lands at a humanly-paced gap after the
+        previous one. Adds jitter so consecutive calls aren't perfectly
+        periodic (a periodic pattern is itself a scraper signature)."""
+        target_gap = random.uniform(self._min_call_gap, self._max_call_gap)
+        elapsed = time.time() - self._last_call_t
+        if elapsed < target_gap:
+            time.sleep(target_gap - elapsed)
+        self._last_call_t = time.time()
+
     # ── public request helpers ────────────────────────────────────────────────
 
     def get(self, url: str, **kwargs) -> requests.Response:
         self._ensure_auth()
+        self._throttle()
         return self._http.get(url, **kwargs)
 
     def post(self, url: str, **kwargs) -> requests.Response:
         self._ensure_auth()
+        self._throttle()
         return self._http.post(url, **kwargs)
 
     @property

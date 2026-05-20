@@ -2883,6 +2883,24 @@ def _():
     assert "fetch_odds_for_markets" in explorer_src, "missing fetch_odds_for_markets"
 
 
+@test("COOLBET-HUMAN-PACED — every CoolbetSession call routes through _throttle()")
+def _():
+    """COOLBET-HUMAN-PACED (2026-05-20) — Coolbet has Imperva-class anti-bot
+    in front of the API. Every authenticated call must go through _throttle()
+    which enforces a randomised gap (default 0.8–2.0s) between consecutive
+    requests so we don't look like a scraper. Centralised in CoolbetSession so
+    new daemon/scheduler/explorer features can't bypass it accidentally."""
+    import inspect
+    from workers.automation.coolbet_session import CoolbetSession
+    assert hasattr(CoolbetSession, "_throttle"), "missing _throttle()"
+    get_src = inspect.getsource(CoolbetSession.get)
+    post_src = inspect.getsource(CoolbetSession.post)
+    assert "self._throttle()" in get_src, "get() must call _throttle"
+    assert "self._throttle()" in post_src, "post() must call _throttle"
+    src = inspect.getsource(CoolbetSession._throttle)
+    assert "random.uniform" in src, "_throttle must use jitter (random.uniform), not constant gap"
+
+
 @test("COOLBET-PLACER-NEW-SCHEMA — resolve_placement_target + placer wired to new helpers")
 def _():
     """COOLBET-PLACER-NEW-SCHEMA (2026-05-20) — Coolbet split markets and odds
