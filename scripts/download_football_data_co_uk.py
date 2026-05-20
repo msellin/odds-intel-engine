@@ -1,13 +1,20 @@
 """
 Download historical match + odds CSVs from football-data.co.uk.
 
-Output: data/raw/football_data_co_uk/<league_code>/<season>.csv
-  e.g.  data/raw/football_data_co_uk/E0/2324.csv
+Two URL patterns:
+  Main leagues:  /mmz4281/YYRR/CODE.csv  — one file per season
+  Extra leagues: /new/CODE.csv           — single file, all seasons combined
+
+Output:
+  data/raw/football_data_co_uk/main/<CODE>/<season>.csv
+  data/raw/football_data_co_uk/extra/<CODE>.csv
 
 Usage:
     python3 scripts/download_football_data_co_uk.py
     python3 scripts/download_football_data_co_uk.py --from-season 2015
     python3 scripts/download_football_data_co_uk.py --leagues E0 D1 SP1
+    python3 scripts/download_football_data_co_uk.py --extra-only
+    python3 scripts/download_football_data_co_uk.py --dry-run
 """
 
 from __future__ import annotations
@@ -35,14 +42,24 @@ from rich.table import Table
 
 console = Console()
 
-# ── League definitions ────────────────────────────────────────────────────────
-# (code, display_name)  — only leagues with reliable odds data
-LEAGUES = [
+BASE_URL  = "https://www.football-data.co.uk/mmz4281"
+EXTRA_URL = "https://www.football-data.co.uk/new"
+DELAY_S   = 0.8   # polite delay between requests
+
+# ── Main leagues — one CSV per season, back to ~1993 ─────────────────────────
+# (code, display_name)
+MAIN_LEAGUES = [
     # England
     ("E0",  "England Premier League"),
     ("E1",  "England Championship"),
     ("E2",  "England League 1"),
     ("E3",  "England League 2"),
+    ("EC",  "England Conference / National League"),
+    # Scotland
+    ("SC0", "Scotland Premiership"),
+    ("SC1", "Scotland Div 1"),
+    ("SC2", "Scotland Div 2"),
+    ("SC3", "Scotland Div 3"),
     # Germany
     ("D1",  "Germany Bundesliga"),
     ("D2",  "Germany 2. Bundesliga"),
@@ -65,35 +82,48 @@ LEAGUES = [
     ("T1",  "Turkey Super Lig"),
     # Greece
     ("G1",  "Greece Super League"),
-    # Scotland
-    ("SC0", "Scotland Premiership"),
 ]
 
-LEAGUE_CODES = {code for code, _ in LEAGUES}
-LEAGUE_NAMES = {code: name for code, name in LEAGUES}
+# ── Extra leagues — single CSV file, all seasons ──────────────────────────────
+# (code, display_name)  — codes follow football-data.co.uk's /new/ naming
+EXTRA_LEAGUES = [
+    ("ARG", "Argentina Primera Division"),
+    ("AUT", "Austria Bundesliga"),
+    ("BRA", "Brazil Serie A"),
+    ("CHN", "China Super League"),
+    ("DNK", "Denmark Superliga"),
+    ("FIN", "Finland Veikkausliiga"),
+    ("IRL", "Ireland Premier Division"),
+    ("JPN", "Japan J-League"),
+    ("MEX", "Mexico Liga MX"),
+    ("NOR", "Norway Eliteserien"),
+    ("POL", "Poland Ekstraklasa"),
+    ("ROU", "Romania Liga 1"),
+    ("RUS", "Russia Premier League"),
+    ("SWE", "Sweden Allsvenskan"),
+    ("SWI", "Switzerland Super League"),
+    ("USA", "USA MLS"),
+]
 
-BASE_URL = "https://www.football-data.co.uk/mmz4281"
-DELAY_S  = 0.8   # polite delay between requests
+ALL_CODES = {c for c, _ in MAIN_LEAGUES} | {c for c, _ in EXTRA_LEAGUES}
 
 
 def season_code(start_year: int) -> str:
     """2023 → '2324',  2000 → '0001',  1999 → '9900'"""
-    y1 = start_year % 100
-    y2 = (start_year + 1) % 100
-    return f"{y1:02d}{y2:02d}"
+    return f"{start_year % 100:02d}{(start_year + 1) % 100:02d}"
 
 
 def season_label(start_year: int) -> str:
     return f"{start_year}/{str(start_year + 1)[-2:]}"
 
 
-def download_csv(url: str, dest: Path) -> tuple[bool, str]:
-    """Download one CSV. Returns (success, status_message)."""
+def download_file(url: str, dest: Path) -> tuple[bool, str]:
+    """Download one file. Returns (success, status_message)."""
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = resp.read()
-        if len(data) < 100:  # empty / placeholder file
+        if len(data) < 100:
             return False, "empty"
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(data)
@@ -104,61 +134,62 @@ def download_csv(url: str, dest: Path) -> tuple[bool, str]:
             return False, "404"
         return False, f"HTTP {e.code}"
     except Exception as e:
-        return False, str(e)[:40]
+        return False, str(e)[:50]
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Download football-data.co.uk CSVs")
     ap.add_argument("--from-season", type=int, default=2005, metavar="YEAR",
-                    help="Start year of earliest season to download (default: 2005)")
+                    help="Earliest season start year for main leagues (default: 2005)")
     ap.add_argument("--to-season", type=int, default=2025, metavar="YEAR",
-                    help="Start year of latest season to download (default: 2025)")
+                    help="Latest season start year (default: 2025 = 2025/26)")
     ap.add_argument("--leagues", nargs="+", metavar="CODE",
-                    help="League codes to download (default: all). E.g. E0 D1 SP1")
+                    help="Specific league codes to download (default: all)")
+    ap.add_argument("--main-only",  action="store_true", help="Only download main leagues")
+    ap.add_argument("--extra-only", action="store_true", help="Only download extra leagues")
     ap.add_argument("--out-dir", type=Path,
                     default=Path("data/raw/football_data_co_uk"),
-                    help="Output directory (default: data/raw/football_data_co_uk)")
-    ap.add_argument("--skip-existing", action="store_true", default=True,
-                    help="Skip files already downloaded (default: true)")
+                    help="Output root directory (default: data/raw/football_data_co_uk)")
+    ap.add_argument("--skip-existing", action="store_true", default=True)
     ap.add_argument("--dry-run", action="store_true",
-                    help="Print job list without downloading")
+                    help="Print jobs without downloading")
     args = ap.parse_args()
 
-    leagues = [(c, n) for c, n in LEAGUES
-               if args.leagues is None or c in args.leagues]
-    seasons = list(range(args.from_season, args.to_season + 1))
-
     if args.leagues:
-        unknown = set(args.leagues) - LEAGUE_CODES
+        unknown = set(args.leagues) - ALL_CODES
         if unknown:
-            console.print(f"[red]Unknown league codes: {unknown}[/red]")
-            console.print(f"Valid codes: {sorted(LEAGUE_CODES)}")
+            console.print(f"[red]Unknown codes: {unknown}[/red]")
             sys.exit(1)
 
-    total = len(leagues) * len(seasons)
+    do_main  = not args.extra_only
+    do_extra = not args.main_only
+
+    main_leagues  = [(c, n) for c, n in MAIN_LEAGUES
+                     if args.leagues is None or c in args.leagues] if do_main else []
+    extra_leagues = [(c, n) for c, n in EXTRA_LEAGUES
+                     if args.leagues is None or c in args.leagues] if do_extra else []
+    seasons       = list(range(args.from_season, args.to_season + 1))
+
+    total = len(main_leagues) * len(seasons) + len(extra_leagues)
+
     console.print(f"\n[bold]football-data.co.uk downloader[/bold]")
-    console.print(f"  Leagues:  {len(leagues)}  ({', '.join(c for c, _ in leagues)})")
-    console.print(f"  Seasons:  {season_label(seasons[0])} → {season_label(seasons[-1])}  ({len(seasons)} seasons)")
-    console.print(f"  Total:    {total} files  →  {args.out_dir}")
+    if do_main:
+        console.print(f"  Main leagues:  {len(main_leagues)} × {len(seasons)} seasons "
+                      f"= {len(main_leagues) * len(seasons)} files")
+    if do_extra:
+        console.print(f"  Extra leagues: {len(extra_leagues)} single files")
+    console.print(f"  Total:         {total} files  →  {args.out_dir}")
     if args.dry_run:
-        console.print("[yellow]  DRY RUN — no downloading[/yellow]")
-        for code, name in leagues:
-            for yr in seasons:
-                sc = season_code(yr)
-                url = f"{BASE_URL}/{sc}/{code}.csv"
-                dest = args.out_dir / code / f"{sc}.csv"
-                status = "[dim]exists[/dim]" if dest.exists() else "to download"
-                console.print(f"  {code:4s}  {season_label(yr)}  {status}  {url}")
-        return
-    console.print()
+        console.print("[yellow]  DRY RUN[/yellow]\n")
+    else:
+        console.print()
 
     results = {"downloaded": 0, "skipped": 0, "missing": 0, "error": 0}
-    log_rows = []
 
     with Progress(
         SpinnerColumn(),
-        TextColumn("[bold cyan]{task.description}"),
-        BarColumn(bar_width=40),
+        TextColumn("[bold cyan]{task.description:<35}"),
+        BarColumn(bar_width=36),
         MofNCompleteColumn(),
         TextColumn("•"),
         TimeElapsedColumn(),
@@ -170,53 +201,75 @@ def main() -> None:
     ) as bar:
         task = bar.add_task("downloading", total=total, last="")
 
-        for code, name in leagues:
+        # ── Main leagues (per-season files) ───────────────────────────────────
+        for code, name in main_leagues:
             for yr in seasons:
-                sc = season_code(yr)
-                dest = args.out_dir / code / f"{sc}.csv"
-                label = f"{code} {season_label(yr)}"
+                sc   = season_code(yr)
+                dest = args.out_dir / "main" / code / f"{sc}.csv"
+                lbl  = f"{code} {season_label(yr)}"
 
                 if args.skip_existing and dest.exists():
                     results["skipped"] += 1
-                    bar.update(task, advance=1, last=f"skip {label}")
+                    bar.update(task, advance=1, last=f"skip {lbl}")
+                    continue
+
+                if args.dry_run:
+                    console.print(f"  {BASE_URL}/{sc}/{code}.csv  →  {dest}")
+                    bar.update(task, advance=1, last=lbl)
                     continue
 
                 url = f"{BASE_URL}/{sc}/{code}.csv"
-                bar.update(task, description=f"downloading  [yellow]{label}[/yellow]", last="")
-                ok, msg = download_csv(url, dest)
+                bar.update(task, description=f"[yellow]{lbl}[/yellow]", last="")
+                ok, msg = download_file(url, dest)
 
-                if ok:
-                    results["downloaded"] += 1
-                    log_rows.append((code, season_label(yr), "✓", msg))
-                elif msg == "404":
-                    results["missing"] += 1
-                    log_rows.append((code, season_label(yr), "–", "not available"))
+                if ok:                results["downloaded"] += 1
+                elif msg == "404":   results["missing"] += 1
                 else:
                     results["error"] += 1
-                    log_rows.append((code, season_label(yr), "✗", msg))
-                    console.print(f"[red]  ERROR {label}: {msg}[/red]")
+                    console.print(f"[red]  ✗ {lbl}: {msg}[/red]")
 
-                bar.update(task, advance=1, last=f"{label} → {msg}")
+                bar.update(task, advance=1, last=f"{lbl} → {msg}")
                 time.sleep(DELAY_S)
 
+        # ── Extra leagues (single files) ──────────────────────────────────────
+        for code, name in extra_leagues:
+            dest = args.out_dir / "extra" / f"{code}.csv"
+            lbl  = f"{code} ({name})"
+
+            if args.skip_existing and dest.exists():
+                results["skipped"] += 1
+                bar.update(task, advance=1, last=f"skip {code}")
+                continue
+
+            if args.dry_run:
+                console.print(f"  {EXTRA_URL}/{code}.csv  →  {dest}")
+                bar.update(task, advance=1, last=lbl)
+                continue
+
+            url = f"{EXTRA_URL}/{code}.csv"
+            bar.update(task, description=f"[yellow]{lbl}[/yellow]", last="")
+            ok, msg = download_file(url, dest)
+
+            if ok:              results["downloaded"] += 1
+            elif msg == "404":  results["missing"] += 1
+            else:
+                results["error"] += 1
+                console.print(f"[red]  ✗ {lbl}: {msg}[/red]")
+
+            bar.update(task, advance=1, last=f"{code} → {msg}")
+            time.sleep(DELAY_S)
+
     # ── Summary ───────────────────────────────────────────────────────────────
-    console.print()
-    t = Table(show_header=False, box=None, padding=(0, 2))
-    t.add_row("[green]Downloaded[/green]", str(results["downloaded"]))
-    t.add_row("[dim]Skipped (exists)[/dim]", str(results["skipped"]))
-    t.add_row("[dim]Not available[/dim]",   str(results["missing"]))
-    t.add_row("[red]Errors[/red]",          str(results["error"]))
-    console.print(t)
-
-    # Show a few errors if any
-    errors = [(c, s, m) for c, s, st, m in log_rows if st == "✗"]
-    if errors:
-        console.print("\n[red]Failed downloads:[/red]")
-        for c, s, m in errors[:10]:
-            console.print(f"  {c} {s}: {m}")
-
-    downloaded_count = results["downloaded"] + results["skipped"]
-    console.print(f"\n[bold green]✓ {downloaded_count} CSV files ready in {args.out_dir}[/bold green]")
+    if not args.dry_run:
+        console.print()
+        t = Table(show_header=False, box=None, padding=(0, 2))
+        t.add_row("[green]Downloaded[/green]",    str(results["downloaded"]))
+        t.add_row("[dim]Skipped (exists)[/dim]",  str(results["skipped"]))
+        t.add_row("[dim]Not available (404)[/dim]", str(results["missing"]))
+        t.add_row("[red]Errors[/red]",            str(results["error"]))
+        console.print(t)
+        done = results["downloaded"] + results["skipped"]
+        console.print(f"\n[bold green]✓ {done} files ready in {args.out_dir}[/bold green]")
 
 
 if __name__ == "__main__":
