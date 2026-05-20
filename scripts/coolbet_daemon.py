@@ -34,6 +34,7 @@ import argparse
 import logging
 import signal
 import sys
+import threading
 import time
 import traceback
 from datetime import datetime, timezone
@@ -51,12 +52,18 @@ logging.basicConfig(
 log = logging.getLogger("coolbet_daemon")
 
 _STOP = False
+_SWEEP_THREAD: threading.Thread | None = None
 
 
 def _handle_signal(signum, frame):
     global _STOP
     log.info("Signal %s received — finishing current task and stopping", signum)
     _STOP = True
+
+
+def _sweep_running() -> bool:
+    """True if odds sweep thread is still active (started but not done)."""
+    return _SWEEP_THREAD is not None and _SWEEP_THREAD.is_alive()
 
 
 # ── Tasks ────────────────────────────────────────────────────────────────────
@@ -231,16 +238,38 @@ def main() -> None:
             log.info(_task_keepalive(session))
             next_keepalive = now + args.keepalive_min * 60
 
+        # ODDS sweep — runs in a background thread so keepalive + placement
+        # keep firing on schedule. If a previous sweep is still running, skip
+        # this fire (cycle longer than --odds-min just means we sweep less
+        # often, never queue up two sweeps).
         if now >= next_odds:
-            log.info(_task_odds_snapshot(
-                mode=args.odds_mode,
-                days=args.odds_days,
-                require_pinnacle=args.require_pinnacle,
-            ))
+            global _SWEEP_THREAD
+            if _sweep_running():
+                log.info("odds snapshot ⏸  previous sweep still running — skipping")
+            else:
+                def _sweep_runner():
+                    try:
+                        log.info(_task_odds_snapshot(
+                            mode=args.odds_mode,
+                            days=args.odds_days,
+                            require_pinnacle=args.require_pinnacle,
+                        ))
+                    except Exception as e:
+                        log.warning("sweep thread crashed: %s\n%s", e, traceback.format_exc())
+                _SWEEP_THREAD = threading.Thread(target=_sweep_runner, daemon=True,
+                                                 name="coolbet-odds-sweep")
+                _SWEEP_THREAD.start()
+                log.info("odds snapshot ▶  started in background thread")
             next_odds = now + args.odds_min * 60
 
+        # PLACEMENT — skipped while sweep is running so we don't have two
+        # Coolbet sessions calling concurrently (each session has its own
+        # throttle; concurrent = 2× rate = Imperva risk).
         if not args.no_place and now >= next_place:
-            log.info(_task_place(args.place_mode, guard, args.min_edge))
+            if _sweep_running():
+                log.info("place ⏸  skipped (sweep in progress); retry in %d min", args.place_min)
+            else:
+                log.info(_task_place(args.place_mode, guard, args.min_edge))
             next_place = now + args.place_min * 60
 
         # Sleep until the soonest next task, but check stop signal every 30s.
