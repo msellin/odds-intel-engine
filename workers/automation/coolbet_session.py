@@ -176,3 +176,32 @@ class CoolbetSession:
     @property
     def user_id(self) -> str | None:
         return self._user_id
+
+    @property
+    def jwt_seconds_remaining(self) -> float:
+        """Seconds until the JWT expires. Negative if expired / no JWT yet.
+        Coolbet issues 30-min JWTs; renewal_date sits at the 20-min mark."""
+        if self._jwt is None:
+            return -1.0
+        return self._jwt_exp - time.time()
+
+    def keep_alive(self) -> bool:
+        """Heartbeat — does a lightweight authenticated GET that updates the
+        server-side session's last-activity timestamp, preventing the
+        idle-logout that fires after ~20-30 min of no traffic. Uses search/v2
+        with a trivial query (cheap on Coolbet's side, no caching concerns).
+
+        Returns True on 200, False on any error. _ensure_auth() inside .get()
+        will refresh the JWT first if it's near expiry, so this also
+        keeps the JWT fresh as a side effect.
+        """
+        try:
+            resp = self.get(
+                "https://www.coolbet.com/s/sbgate/sports/search/v2",
+                params={"search": "a", "country": "EE", "language": "en",
+                        "layout": "EUROPEAN"},
+            )
+            return resp.status_code == 200
+        except Exception as e:
+            log.warning("Coolbet keep_alive failed: %s", e)
+            return False

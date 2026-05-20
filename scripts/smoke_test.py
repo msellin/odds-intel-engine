@@ -2868,6 +2868,27 @@ def _():
     assert "fetch_odds_for_markets" in explorer_src, "missing fetch_odds_for_markets"
 
 
+@test("COOLBET-KEEPALIVE — session exposes TTL + heartbeat + scheduler wired")
+def _():
+    """COOLBET-KEEPALIVE (2026-05-20) — Coolbet JWT TTL is 1820s with
+    server-side idle-logout after ~30 min. CoolbetSession.keep_alive() does
+    a heartbeat; the scheduler fires it every 20 min so manual / placer /
+    explorer flows never see a re-login mid-session."""
+    import inspect, pathlib
+    from workers.automation.coolbet_session import CoolbetSession
+    assert hasattr(CoolbetSession, "keep_alive"), "CoolbetSession.keep_alive missing"
+    assert hasattr(CoolbetSession, "jwt_seconds_remaining"), (
+        "CoolbetSession.jwt_seconds_remaining missing"
+    )
+    src = inspect.getsource(CoolbetSession.keep_alive)
+    assert "self.get" in src, "keep_alive must call self.get (so _ensure_auth fires)"
+
+    sched_src = pathlib.Path("workers/scheduler.py").read_text()
+    assert "_coolbet_keepalive_wrapper" in sched_src, "missing keepalive wrapper"
+    assert "coolbet_keepalive_interval" in sched_src, "missing scheduler job id"
+    assert '"*/20"' in sched_src, "keepalive must fire every 20 min"
+
+
 @test("SHADOW-RETIRED-OK — retired bots still produce shadow_bets")
 def _():
     """Retired bot notes promise '≥30 bets at ≥3% ROI in shadow_bets' as a
