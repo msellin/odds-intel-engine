@@ -421,23 +421,31 @@ def fetch_coolbet_leagues(session: CoolbetSession) -> list[dict]:
     return _load_leagues_cache()
 
 
-def fetch_events_for_league(session: CoolbetSession, league_id: int) -> list[dict]:
+def fetch_events_for_league(
+    session: CoolbetSession, league_id: int, league_slug: str | None = None,
+) -> list[dict]:
     """Return all matches in one Coolbet league.
 
     Each match dict has at minimum: {id, name, home_team_name, away_team_name,
     match_start, status}. Status='OPEN' = pre-match or live; others (closed,
     etc.) are skipped by caller.
 
-    Wraps the fo-category endpoint with a specific league_id (the one
-    discovered via fetch_coolbet_leagues). Coolbet returns 404 for the root
-    categoryId=62, but specific league IDs work fine.
+    LEAGUE-EVENTS-PARAMS-FIX (2026-05-20): replicates the browser's exact
+    fo-category request shape — `language=et`, `isMobile=0`, `limit=6`, and
+    a league-specific referer header. Without these Imperva 403's; with them
+    the endpoint works. `league_slug` is optional but improves the referer.
     """
+    extra_headers: dict[str, str] = {}
+    if league_slug:
+        extra_headers["referer"] = f"https://www.coolbet.com/et/sport/{league_slug}"
     resp = session.get(_CATEGORY_URL, params={
         "categoryId": league_id,
         "country":    "EE",
-        "language":   "en",
+        "isMobile":   0,
+        "language":   "et",  # Estonian locale to match browser fingerprint
         "layout":     "EUROPEAN",
-    })
+        "limit":      6,
+    }, headers=extra_headers or None)
     if resp.status_code != 200:
         log.debug("fo-category(league=%d) returned %d", league_id, resp.status_code)
         return []
