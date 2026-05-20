@@ -347,24 +347,86 @@ def search_coolbet_event(
     return match
 
 
+_FO_MATCH_URL = "https://www.coolbet.com/s/sbgate/sports/fo-match"
+
+
 def fetch_sidebets(session: CoolbetSession, match_id: int) -> list[dict]:
     """
     GET /s/sbgate/sports/fo-market/sidebets?matchId=... for a single match.
     Returns bet_offers in same format as _parse_event.
+
+    SIDEBETS-PARAMS-FIX (2026-05-20): live capture from Coolbet DevTools shows
+    the site sends `marketTypeGroupId=15` + `matchStatus=OPEN` — without them
+    the endpoint silently returns empty `betOffers`. Group 15 appears to be
+    "all open side markets" (OU/BTTS/AH/etc.). The main 1X2 market comes
+    from fetch_main_markets() (POST /fo-match), not from here.
     """
     resp = session.get(_SIDEBETS_URL, params={
-        "matchId":    match_id,
-        "country":    "EE",
-        "language":   "en",
-        "layout":     "EUROPEAN",
+        "matchId":            match_id,
+        "country":            "EE",
+        "language":           "en",
+        "layout":             "EUROPEAN",
+        "marketTypeGroupId":  15,
+        "matchStatus":        "OPEN",
     })
     if resp.status_code != 200:
         log.warning("sidebets %d returned %d", match_id, resp.status_code)
         return []
+    return _parse_bet_offers_payload(resp.json().get("betOffers") or [])
 
-    data = resp.json()
+
+def fetch_main_markets(session: CoolbetSession, match_ids: list[int]) -> dict[int, list[dict]]:
+    """
+    POST /s/sbgate/sports/fo-match — main markets (1X2, OU 2.5, etc.) per match.
+    Replacement for the now-404 fo-category endpoint discovered 2026-05-20.
+    Body: {language, country, layout, locale, matchIds: [...]}
+    Returns: {match_id: [bet_offer, ...]} in same shape as fetch_sidebets.
+
+    Batches well — caller can pass many matchIds at once.
+    """
+    if not match_ids:
+        return {}
+    body = {
+        "language": "en",
+        "country":  "EE",
+        "layout":   "EUROPEAN",
+        "locale":   "en",
+        "matchIds": [str(mid) for mid in match_ids],
+    }
+    resp = session.post(_FO_MATCH_URL, json=body)
+    if resp.status_code != 200:
+        log.warning("fo-match POST %s returned %d: %s",
+                    match_ids[:3], resp.status_code, resp.text[:200])
+        return {}
+    payload = resp.json()
+    # Response shape varies. Either a list of {matchId, betOffers} OR a dict
+    # keyed by matchId OR a single bag of betOffers. Handle all three.
+    out: dict[int, list[dict]] = {}
+    if isinstance(payload, list):
+        for entry in payload:
+            mid = int(entry.get("matchId") or entry.get("id") or 0)
+            if mid:
+                out[mid] = _parse_bet_offers_payload(entry.get("betOffers") or [])
+    elif isinstance(payload, dict):
+        if "betOffers" in payload and len(match_ids) == 1:
+            out[int(match_ids[0])] = _parse_bet_offers_payload(payload["betOffers"])
+        else:
+            for k, v in payload.items():
+                try:
+                    mid = int(k)
+                except (TypeError, ValueError):
+                    continue
+                bo = v.get("betOffers") if isinstance(v, dict) else (v if isinstance(v, list) else [])
+                out[mid] = _parse_bet_offers_payload(bo or [])
+    return out
+
+
+def _parse_bet_offers_payload(raw_offers: list[dict]) -> list[dict]:
+    """Shared parser — turns raw Coolbet betOffers list into the standard
+    {id, criterion_label, outcomes:[...]} shape used by both sidebets and
+    fo-match callers."""
     bet_offers = []
-    for bo in data.get("betOffers") or []:
+    for bo in raw_offers:
         if bo.get("suspended"):
             continue
         criterion = bo.get("criterion") or {}

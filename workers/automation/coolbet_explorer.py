@@ -48,6 +48,7 @@ from workers.automation.coolbet_session import CoolbetSession
 from workers.automation.coolbet_placer import (
     _parse_event,
     fetch_coolbet_events,
+    fetch_main_markets,
     fetch_sidebets,
     fuzzy_match_event,
     search_coolbet_event,
@@ -355,8 +356,12 @@ def run_bulk(
             continue
         matched_leagues[league] = matched_leagues.get(league, 0) + 1
 
-        # search/fo-category only returns top-level markets. Grab full depth.
-        ev["bet_offers"] = fetch_sidebets(session, ev["id"]) or ev.get("bet_offers", [])
+        # search doesn't include bet_offers. fo-match POST gives main markets
+        # (1X2 + main OU 2.5 etc.); sidebets gives the rest (OU other lines,
+        # BTTS, AH, DC, ...). Concat both — duplicates are rare and harmless.
+        main_offers = fetch_main_markets(session, [ev["id"]]).get(int(ev["id"]), [])
+        side_offers = fetch_sidebets(session, ev["id"])
+        ev["bet_offers"] = main_offers + side_offers
         parsed, stored = store_coolbet_snapshots_for_match(m["id"], ev, dry_run=dry_run)
         matched += 1
         parsed_total += parsed
@@ -436,7 +441,9 @@ def run_one_shot(match_id: str) -> None:
         console.print("[yellow]No matching Coolbet event.[/yellow]")
         return
 
-    ev["bet_offers"] = fetch_sidebets(session, ev["id"]) or ev.get("bet_offers", [])
+    main_offers = fetch_main_markets(session, [ev["id"]]).get(int(ev["id"]), [])
+    side_offers = fetch_sidebets(session, ev["id"])
+    ev["bet_offers"] = main_offers + side_offers
     t = Table(show_header=True, title=f"Coolbet markets for event #{ev['id']}")
     t.add_column("Market")
     t.add_column("Selection")

@@ -2834,6 +2834,21 @@ def _():
     assert "coolbet_odds_interval" in src, "missing coolbet_odds_interval job id"
     assert '"3,33"' in src, "Coolbet snapshot must fire at :03 and :33"
 
+    # SIDEBETS-PARAMS-FIX guard: Coolbet returns 0 betOffers without these
+    # two params. Caught only after live DevTools capture from the user — make
+    # sure they don't get refactored out.
+    placer_src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
+    assert '"marketTypeGroupId":  15' in placer_src, (
+        "sidebets must send marketTypeGroupId=15 (silently returns empty betOffers without it)"
+    )
+    assert '"matchStatus":        "OPEN"' in placer_src, (
+        "sidebets must send matchStatus=OPEN"
+    )
+    assert "fetch_main_markets" in placer_src, (
+        "fetch_main_markets (POST /fo-match) replaces the 404'd fo-category for "
+        "1X2 main markets — keep it wired"
+    )
+
 
 @test("SHADOW-RETIRED-OK — retired bots still produce shadow_bets")
 def _():
