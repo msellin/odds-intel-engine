@@ -48,9 +48,13 @@ def main() -> None:
         "verbose_funnel_bot": args.bot,
     }
     if args.shadow:
-        from datetime import datetime, timezone
         kwargs["shadow_mode"]   = True
-        kwargs["shadow_cohort"] = datetime.now(timezone.utc).strftime("%H%M")
+        # DB constraint shadow_bets_shadow_cohort_check restricts to
+        # ('morning', 'midday', 'pre_ko'). Scheduler uses HHMM labels — a
+        # separate bug, queued as SHADOW-COHORT-CONSTRAINT. For the diagnostic
+        # use a valid label so writes go through; the cohort field is
+        # informational for funnel-purpose runs.
+        kwargs["shadow_cohort"] = "morning"
 
     run_morning(**kwargs)
 
