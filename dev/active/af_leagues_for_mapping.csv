@@ -1,0 +1,669 @@
+db_league_id,name,country,matches_30d,bets_30d
+0cfb91ae-0f59-4278-8229-ef92118960c3,La Liga,Spain,60,42
+3d4bc7a4-5b30-4eaf-973f-504090638f9f,Premiership,Scotland,33,39
+69dccc79-b4a0-4f06-99b4-4c0044498cef,Super League 1,Greece,37,31
+01c7bf8f-bcd8-4342-81bd-939c33780d7b,Ligue 1,France,41,30
+1cdec207-a82a-4ab7-9365-3b411d066b93,2. Bundesliga,Germany,36,29
+be4b77a9-1652-41f9-9c7b-601e5a01fd04,Major League Soccer,USA,58,29
+af0326f0-941d-4c9a-b64f-bc992c1c6189,Segunda División,Spain,42,29
+e6a70a69-7a51-4c26-a368-6491f2dab815,Ekstraklasa,Poland,37,27
+73c57213-6829-4c04-b5aa-04db792b98e8,Premier League,England,42,26
+69715cfa-fa42-4009-a13b-5175758d6dc4,Premier Division,Ireland,21,25
+0ff858ff-d911-4d7e-a3ef-b3cae1ef1af4,Super League,Switzerland,32,25
+eb39f011-6493-4e06-8c50-56034e1a3e37,Primeira Liga,Portugal,40,24
+fc8d465e-202a-48d4-9ef3-512e84f854d9,Serie A,Italy,41,24
+81156b2d-bc31-4c38-9f28-873a5158b873,Serie B,Italy,37,24
+2e2ed439-78e2-46e2-97b8-37fcdf47b3c0,3. Liga,Germany,40,22
+1d3bbab9-ace2-4dc9-9dfe-5f0f18d73bc0,Primera División,Venezuela,16,22
+de5e09eb-62af-4adf-871a-36bcfe75a34b,Süper Lig,Turkey,37,22
+3a05f941-ee5f-44c4-8c9d-67ecf8ea5b3b,Eredivisie,Netherlands,45,21
+c71c0b50-6631-4c34-b2cc-205f117793f8,Jupiler Pro League,Belgium,47,21
+3bf0f9a7-ff03-406c-b0d2-aebcf0b8d782,Ligue 2,France,29,21
+e8094a6f-70b5-4c9d-ba89-4ed16fe29403,Bundesliga,Germany,37,17
+9c8e4836-482a-43fa-abc1-be203ca12341,K League 1,South-Korea,30,17
+24a45c29-b2e4-4620-97ee-11de7e09dc63,Campionato Primavera - 2,Italy,38,16
+680fb879-0ac5-47b1-9ccf-3e5c8979475f,MLS Next Pro,USA,51,16
+b25ad12d-fb30-4393-9779-395952b1b79d,First League,Bulgaria,37,14
+f7fee3ac-88bc-4d69-a151-41b0f8b4d2d9,Premier League,Egypt,48,14
+b9074c9d-13c0-4afa-82b3-5665b646099b,Segunda División,Venezuela,28,13
+6e619cd9-b9d7-4bd7-9956-6e440e63e474,Úrvalsdeild,Iceland,24,13
+13d646e2-8751-4e64-bf30-c2559aa2ffa9,2. Liga,Austria,31,12
+87c6bd66-a245-4317-9e02-2f0736b99592,Bundesliga,Austria,31,12
+94a0beb9-62b8-4e8c-bc44-415cbb66cf75,Liga Profesional Argentina,Argentina,31,12
+65dceb6c-af0e-42b9-b505-822ef0532afd,Super League Women,Belgium,13,12
+dc084ae8-ff54-4263-be44-8323fc9d44ae,1. Deild,Iceland,18,11
+01ba89d6-1b7b-4ee7-95e9-adf8cd617afc,Championship,England,40,11
+fdd0d136-600f-4b97-bdc4-e8e1c5253ce6,FA WSL,England,15,11
+ce7b2670-2ed8-4a35-9f31-1cfeae687a1a,Primera División - Apertura,Uruguay,24,11
+b8b57287-d983-4711-8b3d-80c0082fb91d,Victoria NPL 2,Australia,21,11
+b4155492-e0ef-4be6-b535-f18887bd159f,Virsliga,Latvia,28,11
+b52ebc8a-8c93-493c-ace3-562e68a3be40,Cup,Iceland,8,10
+554a5bf1-c4c1-4e95-92b1-c7d85866e7ef,Eliteserien,Norway,27,10
+19777580-b659-4ab4-83c7-148be535b27d,Frauen Bundesliga,Germany,21,10
+c5069e46-4f5f-41e1-a45d-e891b8facc74,Liga I,Romania,34,10
+d2a0000c-415c-466b-aba2-40c90f39ce43,Primera División RFEF - Group 1,Spain,30,10
+3022f063-b707-4725-8a34-2e90b1f8b361,J2/J3 League,Japan,101,9
+693ccabd-af82-45f7-8849-f0b438bbdeb0,National 1,France,35,9
+75f4f1d0-4441-4094-b07c-c1ec093856fa,Premier League,Ukraine,43,9
+ab3738c5-cfe4-4072-a404-a4b4fa78a7f2,South Australia NPL,Australia,14,9
+cfe61322-06e6-460f-a421-4634b4224016,Super Liga,Serbia,40,9
+4bd09038-37ed-4946-abab-0c60c28aaf47,CONMEBOL Libertadores,World,46,8
+b5468903-3cf8-44a6-a2f1-a2f82be26630,Division Intermedia,Paraguay,34,8
+41c7b3e0-637e-4b3a-8d64-4d832ea413b7,HNL,Croatia,25,8
+17ded9fd-c713-4e03-979f-2cfaf0abafe7,K League 2,South-Korea,24,8
+12289db7-bfa5-4bcf-ae6e-693245abfa7f,Regionalliga - Nordost,Germany,27,8
+2b751aba-29eb-4ce5-bdd5-8537062aa40a,Serie B,Brazil,30,8
+b1eb2f6a-77d3-412a-9c67-5c8818dd6bd2,Superettan,Sweden,33,8
+260d464f-11ef-4c35-8130-b6396e8a9fed,Capital Territory NPL,Australia,20,7
+0bcf80ef-8787-4194-9cab-3b3f39fb61c9,Ettan - Norra,Sweden,33,7
+4235a6b7-19f8-4c9a-bdee-ab85220b8eb5,New South Wales NPL 2,Australia,23,7
+e77ab582-6f07-4ffc-876b-f0e4fdb4f485,Primera A,Colombia,21,7
+5c816839-dac4-490b-a2ab-2341d7d5116c,Primera División RFEF - Group 2,Spain,30,7
+f929ca53-28d4-4016-853d-98c4149f544e,Serie A Women,Italy,17,7
+977b3b8c-d0e9-47cf-ab2c-a51432ba4e52,Superliga,Denmark,32,7
+e42b7af4-cbb1-43ad-9086-9e57cb610c82,Tweede Divisie,Netherlands,18,7
+395710c0-a5d1-4a5b-a85a-0f70b78a142f,1. Division,Cyprus,25,6
+db440d96-9150-4717-8f18-e77512896e5d,Allsvenskan,Sweden,31,6
+c7483064-f6f4-44d8-b708-8bff85bcdaf1,CONMEBOL Sudamericana,World,45,6
+87356367-7ea3-4ae8-9c2d-dc1874b5798b,Czech Liga,Czech-Republic,35,6
+54bd8c4e-bd8c-4b0b-b9bf-58ea474e95d3,Damallsvenskan,Sweden,21,6
+f8f311bf-6afc-446a-842c-38a3e6ead10e,Eerste Divisie,Netherlands,15,6
+f44bfd13-2966-4f4a-9b41-3aab65c6dda2,Erovnuli Liga,Georgia,27,6
+2b153e8c-a38e-4fcf-8b16-9cb79fc543ca,Premyer Liqa,Azerbaijan,22,6
+ec372bf5-16e0-47f4-8197-0f44d02b3b37,Second League,Egypt,25,6
+6e8e7214-1fd0-4ad7-a509-960d183aad96,Segunda Liga,Portugal,35,6
+75c9c1e6-b2f8-45eb-a8fa-11b89c9ed377,Serie A,Brazil,30,6
+b50a4b1a-3fb4-4192-be40-25edb18d19ba,1. Division,Denmark,30,5
+d0f8a993-8f2b-4deb-9e79-ced014e865ec,2. Division,Denmark,23,5
+d00ab752-f164-4415-a460-0e8253ba8df4,Challenge League,Switzerland,27,5
+68a6a6d5-5695-4f07-ae8f-834adacaba1d,Copa Colombia,Colombia,31,5
+99b81d2e-a0ef-48af-8468-25af6feafdb0,Ettan - Södra,Sweden,32,5
+4cec09e2-75d4-4790-a64c-285ab6be6930,Feminine Division 1,France,8,5
+0454a5e2-826a-4ee9-9621-df4a82f11f5b,III Liga - Group 3,Poland,33,5
+57ac2b84-63ea-41de-aea7-d817eda98a7b,League One,England,37,5
+bb1f3bf3-7d06-434b-9872-cd8a4c8d8a0d,League Two,China,34,5
+ad269eb4-70dc-49d4-bbf7-9805e643ac9d,Liga Pro Serie B,Ecuador,26,5
+b3477afe-36da-4ef3-a31b-57af46a2a06e,Premier League 2 Division One,England,6,5
+ea2f6741-908e-4cff-8f7d-3d3c46a00691,Pro League,Saudi-Arabia,48,5
+933a7c6a-ed5a-4d0b-a9fa-53ce06daeda8,1. Deild,Faroe-Islands,17,4
+39b9895f-040a-44c0-982f-befe2dd6716c,2. Division - Group 2,Norway,21,4
+655e42e5-5bb8-4051-a256-55a2e9ab9421,3. Division - Girone 6,Norway,22,4
+cff21977-1ba3-44cf-bb91-30877d10b8d9,Campionato Primavera - 1,Italy,33,4
+3108acb0-b8c2-45c6-b727-45b013ddc549,Cup,Serbia,3,4
+904ffc7f-f517-4c93-8f34-39d86e6497e1,Division 2 - Östra Götaland,Sweden,21,4
+196cf9ec-b598-44d7-91b5-58a2dd22bce8,Esiliiga A,Estonia,16,4
+e1047498-88e9-46cc-8a4c-9de3f512570b,First Division,Ireland,18,4
+cc6dbc77-99ce-40a4-a386-4a395373d1f7,First NL,Croatia,18,4
+b31c9cee-03af-4180-9fa5-0eff3399d873,I Liga,Poland,39,4
+8df05921-36b8-4471-aca0-f32bfbc64d0a,Indian Super League,India,24,4
+5942e66a-a5d4-443a-8c95-85d80587b17c,Liga 1,Indonesia,36,4
+5618df61-a734-44d9-bdcb-728b6cb735ea,Meistriliiga,Estonia,18,4
+fe74882f-c4c2-4177-b347-63f1d8550633,National 2 - Group C,France,24,4
+735015f9-c9fb-4e90-8c5d-069e59539f3a,NB I,Hungary,18,4
+77a9871b-fb26-47c4-9ca1-ac85a7b58173,Queensland NPL,Australia,12,4
+95a95d24-d372-49a6-8e36-47b9e351f924,Queensland Premier League,Australia,14,4
+5ae60e67-92fb-4ae3-bbd1-419e28469b76,Regionalliga - SudWest,Germany,27,4
+71fbb4d7-3b6c-44e9-9813-b9b54739b762,Ykkönen,Finland,17,4
+afdcc4a2-90c6-40e2-94f5-bd20d8752e7a,1 Lyga,Lithuania,24,3
+04936edb-baf3-4e95-b8f4-8b9e6c2dd5a5,1. Division,Norway,33,3
+32fc0f86-c76c-473e-a64c-add4d019c1fb,1. Liga,Latvia,21,3
+6fc7872c-1a77-4a08-a32f-ee0d82bcd33b,1. SNL,Slovenia,14,3
+4f8a0a31-7df1-433b-b11e-a7d99e66fca5,3. Division,Denmark,17,3
+fa97ec76-9e88-47f8-8702-76f551655930,Cup,Luxembourg,2,3
+22096bb5-7a69-4da2-9558-20100f29207e,FA Cup,England,1,3
+14b46567-5c45-4fd0-81e7-cdfd23b37f1f,FA Cup,China,16,3
+8d98c4e8-c548-4a82-ae68-cc53cdd3a4c3,III Liga - Group 4,Poland,35,3
+2425baed-e4df-4b6d-97cd-dac30f8f68b9,K3 League,South-Korea,21,3
+2c06986e-42a0-43bf-9afd-46dda25969a5,Kakkonen - Lohko B,Finland,15,3
+b6cba5c7-793d-400e-8bf5-814bb1ca520e,Liga MX Femenil,Mexico,14,3
+dbb04bd2-6966-47c9-88e6-2b745acb4851,Ligat Ha'al,Israel,39,3
+9f898687-0ed8-45ca-929d-0c84b5d86652,Meistaradeildin,Faroe-Islands,15,3
+a8a0176e-027d-4ec1-887f-137245a0d813,National 2 - Group A,France,24,3
+12cb7d9d-8a2a-4aa0-89ab-2a97f44fbc04,NWSL Women,USA,33,3
+59240292-7eb5-46d6-9e4e-58608bcd86f4,Premier League,Kazakhstan,25,3
+4a4515bf-85f1-4206-a13b-db1a626049af,Premier League,Hong-Kong,12,3
+84539407-5637-4490-b716-64c9eb49f041,Premier League,Uganda,32,3
+3a3e9586-7526-4721-85cd-2b7db394bbb7,Primera B,Chile,27,3
+5caa5931-6bcf-4027-8082-6b5bec612721,Primera División Femenina,Spain,23,3
+757e9ca8-d723-4cc8-b007-6cad33d0e757,Pro League,United-Arab-Emirates,22,3
+bbc9fade-4f2b-4857-a06a-bee9c49e2ea2,Serie D,Brazil,145,3
+8b7c282c-baab-4cd6-9fa0-5aab576de1fb,Suomen Cup,Finland,44,3
+80889736-4c77-4e02-adae-4bfd782c85bc,USL League Two,USA,113,3
+ce5180af-8d76-4025-bd59-049a45283856,V.League 1,Vietnam,21,3
+8564582a-8fe1-4a50-8652-57446a126615,Victoria NPL,Australia,19,3
+5d55f05b-135b-46fb-9ed5-4eff7b6fbd62,1. Liga Promotion,Switzerland,27,2
+f49b4b0e-fbb3-450e-920a-78d9f1b26205,1a Divisió,Andorra,8,2
+ae38fa1b-34bf-4e0f-8612-17c9535bba5e,1st Division,South-Africa,25,2
+55dbe9c9-2e4e-4b49-bb59-20178db56af1,2. Division - Group 1,Norway,21,2
+3c947533-ea6f-4200-8778-09d56b559b9e,Birinci Dasta,Azerbaijan,17,2
+eb59525f-b737-47b9-81a1-d081f55ae919,Botola Pro,Morocco,32,2
+b20591b7-cea2-4381-9627-e12b727764d3,Canadian Premier League,Canada,8,2
+61dffbc9-72a7-4f0e-b47c-dc064cdca015,Copa Do Brasil,Brazil,16,2
+61c44e76-e472-4fd5-9f80-847e47c54916,Copa Ecuador,Ecuador,16,2
+85025b77-e5ea-41a9-a06c-4c3b23863f34,Cupa României,Romania,1,2
+c95be23c-6070-485b-b882-88d6383b0c36,Division 2 - Norra Svealand,Sweden,21,2
+2eeeb001-0a33-4247-a74f-0e84bb96506e,Division 2 - Södra Svealand,Sweden,21,2
+b670b3e9-652c-445b-a1ce-860860deec35,Elite One,Cameroon,48,2
+111e429a-b4dc-4214-807f-1d433fdc5480,FA Women's Cup,England,2,2
+1de58ed9-de17-4671-8a61-e715320b5423,GFA League,Gambia,32,2
+32be5c36-2098-4441-9e62-b3d65a490270,Iraqi League,Iraq,56,2
+666e94fb-a08c-4197-9ae2-4c10724a002e,Júniores U19,Portugal,13,2
+4e627dac-a2c9-4949-9f99-4df2e92596ca,Kakkonen - Lohko A,Finland,15,2
+17465c70-0aa0-4698-b99d-ed036b5efc88,League One,Scotland,11,2
+10ed64c3-874a-42a2-83a8-502e07b86480,League One,China,16,2
+ce157ff0-a636-488a-9dbe-2b29cae71540,League Two,Scotland,8,2
+05a6abca-88b5-4b13-8a7a-a7410d81af55,Liga II,Romania,40,2
+f4b6eea8-b114-4ff2-b653-99909a141722,Liga MX,Mexico,30,2
+da90d223-0909-48ea-8fa4-c15f729c6044,National 2 - Group B,France,24,2
+185294fb-d306-4fc1-8391-5376a46c14f5,Northern NSW NPL,Australia,19,2
+149812e6-c16c-434a-b4a4-7e61eca45571,Premier League,Singapore,13,2
+10e0aa11-f4fb-4ff7-87f3-386866b2157b,Premier League,Belarus,24,2
+d824abf7-0c25-4124-8d25-48dd3c170c50,Premier League,Bangladesh,15,2
+52afb357-bce5-476f-b6e4-7ae1da8e776c,Premier League Cup,England,1,2
+c64fe0b9-1e4e-4332-b17d-18647c25ba9c,Premier Soccer League,South-Africa,26,2
+a45a17f5-c995-4c5e-a734-9a108317b7d7,Premijer Liga,Bosnia,16,2
+4e297da1-f982-49ad-a79e-f84b1b05d450,Primera B,Colombia,20,2
+6902384d-5da7-4a41-96bf-bf0543c7aaf2,Primera División,Peru,29,2
+499938fc-34ee-4230-b3df-093b6ea7e789,Primera Nacional,Argentina,55,2
+d5afadc3-42e9-48f2-a2e5-76ecd2c0a928,Professional League,Oman,26,2
+fe8911dc-7e63-49c4-af35-0ee3d6bdcd87,Regionalliga - Mitte,Austria,25,2
+bcf5f642-4438-4feb-a6f8-047c71b0e001,Regionalliga - Nord,Germany,31,2
+d861d01a-c770-4ee3-b1cf-7cdf3d19c106,Regionalliga - West,Germany,30,2
+a1e97c06-e5e3-4982-932f-163a1c340f43,Reserve League,Argentina,70,2
+41e7b261-054d-4033-ac93-e0bf42abc5e0,Second NL,Croatia,24,2
+36729513-144e-4fe0-a54e-c37725fda22a,Serie C,Brazil,30,2
+31d8e60a-96e8-4a2d-b46e-5be789c5f8aa,South Australia State League 1,Australia,16,2
+8af1c49f-ac66-4c2b-a429-23ab7ac1147b,Super League,China,40,2
+8ea52ae3-dfdf-41c5-8e20-51aa7715af4e,USL League One Cup,USA,20,2
+4427be68-e7ea-484f-8bb1-f145d13a48e0,Ykkösliiga,Finland,15,2
+60851ffd-2fca-44f5-91f9-ab32b22ef1a8,1. Division Women,Norway,17,1
+acc4faad-a780-4c50-847c-5e9e7705feb2,1. Lig,Turkey,24,1
+a7cd669e-eae9-4146-aa81-b41f66e932ed,1. Liga Classic - Group 1,Switzerland,24,1
+c32f7c72-ae2f-45d0-bf62-695fa70eb6d3,1. Liga U19,Czech-Republic,24,1
+a2c24e28-ea37-4d23-867f-c7f211fce3ce,1a Divisão - Women,Portugal,10,1
+0016b5d8-bc77-419e-ad8f-67caf9fb05eb,2. SNL,Slovenia,32,1
+fa675734-3c88-4e58-9bd3-d7fdecb9ec48,3. Division - Girone 1,Norway,21,1
+9520ac31-c3ef-41d0-aa90-d5f99cf50d4a,3. Division - Girone 2,Norway,22,1
+d6a8e44c-136e-4ee6-9775-7ff0a1712483,3. Division - Girone 5,Norway,21,1
+ab5eb6ae-9f51-4ff7-89dd-2bf1b94f605a,4. liga - Divizie B,Czech-Republic,25,1
+595c07d6-7557-4792-951b-364dd060f507,A Lyga,Lithuania,20,1
+c336f599-9667-48ae-94c0-35cd10bfb816,A-League,Australia,12,1
+54850926-b9d8-47cc-8c59-3eb91a528e7e,AFC Champions League Two,World,1,1
+a0f4c62e-bc8a-4297-a1f2-65aa811eab6f,Botola 2,Morocco,16,1
+5fde30b2-d21d-4619-a37d-1408f0b96d9a,Campionato,San-Marino,16,1
+2542a744-e91a-4cb3-8c82-884f827cfecf,Cearense - 2,Brazil,16,1
+c44f4af7-ad82-4455-94ed-0f68734db163,Championship,Scotland,17,1
+6146e737-50fe-40af-b3c8-e556bab18de9,Copa Argentina,Argentina,4,1
+5a0b1154-c37a-41fa-8340-a501708b7ebf,Copa do Nordeste,Brazil,16,1
+8ace5842-e0c4-4dac-b97e-a6c97eeb762f,Copa Espírito Santo,Brazil,13,1
+3b41d308-503e-4bfa-bc3b-04ee538b8d0b,Coppa Italia,Italy,3,1
+be3f75a2-5ae3-4734-9b33-f2f2aadb4106,Cup,Lithuania,17,1
+5504ea47-312f-465b-8490-c8540c4dfd0e,Cup,Armenia,3,1
+b9ce25ce-2a96-40fc-ad35-81cd0a198292,Cup,Belgium,1,1
+4573ea02-7b52-487c-9067-1d1d5bcad389,Cup,Morocco,16,1
+9a6ff7df-7bf3-4115-8f09-7be3c9a4cf17,DFB Pokal - Women,Germany,1,1
+1a59a517-cf8a-4234-8bf6-8ade5460d111,Division 1,Saudi-Arabia,35,1
+6b20d02a-0418-4853-a736-a46542bb6561,Division 1 (W),France,1,1
+ec6f743e-7a26-431d-a688-a3ec6e2d94f6,Division 2 - Norra Götaland,Sweden,22,1
+5610167d-b969-4fae-a7b6-2edfa2a19322,Division 2 - Norrland,Sweden,24,1
+afe05e30-1cff-447e-8730-4cf7781bbaab,Division di Honor,Aruba,28,1
+8e8abe26-27eb-4001-9e19-3d937d8c4e08,Division Profesional - Apertura,Paraguay,17,1
+fa28fcc6-5da6-4220-8977-5b275b2305f5,Emir Cup,Qatar,7,1
+f65054eb-4f55-43f7-957d-0b04da0bf2e0,Erovnuli Liga 2,Georgia,25,1
+c1d44ad0-5a10-486a-8348-a5f6df544283,Esiliiga B,Estonia,19,1
+5d076265-0c45-4d2d-974b-3c8a03353401,First League,Montenegro,20,1
+eec8082d-b21c-444b-b288-8e88223493c4,First League,Russia,28,1
+c8578388-393c-47be-a4c8-20b714627fa8,FNL,Czech-Republic,39,1
+99aa3400-ee95-43c0-afde-089dca041978,Friendlies,World,11,1
+dfc8755a-6a7d-447e-8461-6bbd39358246,I-League,India,16,1
+1ea42ace-747f-4902-ba9e-c8a205af0560,II Liga - East,Poland,26,1
+7bbeb23d-6091-49de-8f9b-80e567a63d0e,III Liga - Group 2,Poland,35,1
+e4226c0b-2845-422d-9e10-53d3209af661,J1 League,Japan,51,1
+f6f8fa53-0026-4cb9-99df-174aaf01c322,Kakkonen - Lohko C,Finland,16,1
+0f8c338e-2683-44e1-9574-b5320ad1d00c,Liga 2,Indonesia,14,1
+9779c368-ddcb-4c83-8603-0d395bfaeb00,Liga 2,Portugal,4,1
+d9075f2b-20dc-431f-a696-bad0bad57885,Liga 3,Portugal,19,1
+c6d890f5-7e95-4cb3-b764-4825659c31ee,Ligi kuu Bara,Tanzania,38,1
+5bf6ec5f-fb83-4ecf-b2bc-6a7be7429cb8,Ligue 1,Senegal,32,1
+864ef02d-cff4-4a6d-b92f-b045ceb3c146,Løgmanssteypid,Faroe-Islands,6,1
+db0d6757-2da3-47a8-a190-48939fadff71,National Soccer League,Rwanda,37,1
+32a10fab-f488-4c3c-8b75-d65b0f06dc4f,NB II,Hungary,25,1
+a32e3ac9-88c6-4aea-b489-0e91854060f9,NB III - Northeast,Hungary,24,1
+961c2896-b55a-491b-bd0d-3e9b461fb437,New South Wales NPL,Australia,22,1
+de82d413-e358-4518-a7bf-c122de0fd761,Persha Liga,Ukraine,24,1
+aab72f17-6183-443a-9409-dd52f69f5767,Premier League,Russia,42,1
+cbe6d173-9d8d-4d83-b2ce-16890babf6d0,Premier League,Ethiopia,50,1
+6ca93302-5c9d-45b2-a1f2-8abf8f4c8876,Premier League,Mongolia,20,1
+d02a5a69-6595-4cec-9714-22fe240f744d,Premier League,Bahrain,26,1
+da60424d-48c1-462f-b738-52550af204c3,Premier League 2 U21 (Division 1),England,1,1
+ef75166b-e981-4dc9-9dbd-60aae5e1204e,Premier Soccer League,Zimbabwe,36,1
+9f70c0c6-dd8b-4ccc-a99d-238be1eb29f0,Première Division,Mali,27,1
+04c608e9-de99-4db3-8f64-87e693754571,Premiership,Northern-Ireland,5,1
+64d25e60-8f3c-4e3c-ae05-01640f889d15,Primera B Metropolitana,Argentina,32,1
+0a185187-1ad7-4d6c-bbd0-201b4f4d0848,Primera C,Argentina,43,1
+940727f2-283f-4a38-b22f-48917c27e5ba,Primera División,Chile,9,1
+2d530b4b-c28a-4b3e-9fc9-b6d47e0f539a,Primera División,Bolivia,32,1
+5ea76d5e-d350-4df6-b9a7-8ccf86247483,Professional Development League,England,13,1
+1332d5b8-b363-4403-bc5f-9bfe2487c401,Regionalliga - Bayern,Germany,30,1
+6a28a19b-2c37-4512-9ab9-51add7e053b3,Regionalliga - Ost,Austria,26,1
+f9133db6-a019-4f23-af10-84eed95bb3c4,Regionalliga - West,Austria,24,1
+d6587882-e807-4b84-8855-95ca7b60721d,Second League - Group 3,Russia,24,1
+55362076-734a-471e-be52-19ce2ad6ee06,Segunda División RFEF - Play-offs,Spain,24,1
+ed3030bd-40e9-4562-975e-b640bae83e54,Serie C - Promotion - Play-offs,Italy,33,1
+08d7032b-7edb-4554-a425-a9edf7529e2a,Serie D - Girone A,Italy,14,1
+0d29d796-d9f2-4420-84d4-e84162727374,Serie D - Girone I,Italy,14,1
+9ab2e20d-f1df-468b-badb-58f7807f006d,Super League,Malawi,24,1
+e788db60-1283-4c09-99cb-a27c170b6745,Super Liga,Slovakia,25,1
+df862dcd-1c4a-4754-823f-0aa369b4a7c0,Superliga,Kosovo,20,1
+7dbc8167-3f89-476d-bbe5-d9f48d723b9b,Tasmania Southern Championship,Australia,10,1
+794ec058-29fe-416a-9bf5-edbef3276ede,Tercera División RFEF - Group 13,Spain,20,1
+6422b919-6235-4469-a621-901a8338fc61,Thai League 1,Thailand,19,1
+533855f1-613e-4da7-90a3-812ada779f74,Thai League 2,Thailand,5,1
+00b32f2f-0feb-4801-aef2-cd4b006d74c4,Torneo Federal A,Argentina,51,1
+4050334d-8a6e-4a5e-9ef5-bf2d2f7b11c1,Türkiye Kupası,Turkey,2,1
+2e168310-2ebd-4864-836e-7bb3f817292f,U19 Bundesliga,Germany,86,1
+c94f1f6a-dfd1-4545-9ae3-21893aab7a8a,UEFA Europa Conference League,World,4,1
+005091b9-30f5-4a90-9a88-786a819263d8,UEFA Europa Cup - Women,World,1,1
+627937cc-6c56-482d-a769-a8d83c9fcacf,UEFA Europa League,World,5,1
+d9380e18-6309-4f69-8005-d377d0968931,UEFA U19 Championship - Qualification,World,6,1
+bdd22999-19ed-4fc7-94ab-4d64996f13c1,V.League 2,Vietnam,18,1
+1064838b-66cb-4df0-8968-1fbce77303b7,Veikkausliiga,Finland,21,1
+21b02c7a-acf2-4ee5-9a2f-05fa77dd8b5c,Victoria Premier League 2,Australia,21,1
+e8da7d80-87f4-4ab6-8def-ffeda6d78b26,Western Australia NPL,Australia,12,1
+6dc4914f-3dd2-4bb3-94d2-e48ad61137ba,Western Australia State League 1,Australia,19,1
+786965bf-bee3-45a7-8dd8-949cbc8687ae,1. Division,Kazakhstan,25,0
+389f3268-1632-4fee-97b4-d65d6e2082aa,1. Division,Belarus,27,0
+8eb7aaf0-6f3f-4ea3-9954-2d6dbefbc284,1. Liga Classic - Group 2,Switzerland,24,0
+73686905-6ad5-40ee-85c1-9a12257abb08,1. Liga Classic - Group 3,Switzerland,25,0
+61c3540a-bb8d-47c0-ab60-656f57b2566a,1. Liga Women,Czech-Republic,8,0
+382eef0f-814c-469e-bee4-a9ca4434cf91,1st Division,Albania,8,0
+e2231404-2940-4080-8512-d9d37c11a7e1,1st Division,Ireland,2,0
+724ed999-7fdc-411f-834c-7df02a81bab5,1st League - FBiH,Bosnia,21,0
+6cb98745-4168-48ee-965b-c431cd15369d,1st League - RS,Bosnia,19,0
+5024905b-d456-4f3e-9272-ff493615ffd7,2. Deild,Iceland,19,0
+e1b6d2b1-731f-476f-9d4b-fb52fdea1929,2. Frauen Bundesliga,Germany,21,0
+b196638b-2787-4f55-a34e-7bfe99c1bfa1,2. Lig,Turkey,10,0
+186abd82-4e60-49de-b38b-7b7a756049b3,2. liga,Slovakia,25,0
+7b52eba5-4257-44f9-82e9-400668dff786,2nd Division,Denmark,1,0
+0450db78-52bc-447c-9778-77e1cc4cb13b,2nd Division,Egypt,2,0
+d175f8c5-2586-4cce-8111-fbcd3fbd5002,3. Division - Girone 3,Norway,20,0
+38dd6346-d806-45a7-b7a6-c6a6db3aec05,3. Division - Girone 4,Norway,21,0
+2165ff29-f8ca-457c-94ea-ba6850a67454,3. Lig - Play-offs,Turkey,12,0
+1e440523-d449-480d-9438-bab2cd28ee70,3. liga - Center,Slovakia,21,0
+b2e6a4bc-acfd-4832-b899-2879496646ac,3. liga - CFL A,Czech-Republic,38,0
+c2e81006-6733-458c-9e1b-b3201d15828f,3. liga - CFL B,Czech-Republic,39,0
+ff4b4968-4438-4f66-a3e2-2c73ff421a4a,3. liga - East,Slovakia,21,0
+f9ee4751-343e-4bae-8c92-2082bd9c3664,3. liga - MSFL,Czech-Republic,45,0
+02657fd9-8361-4927-93d6-43e19e390d8d,3. liga - West,Slovakia,24,0
+5b8eb20d-b2ec-4cd9-b9a8-e723dc527b67,3. Ligi,Turkey,6,0
+2ce4d499-63a4-4ff2-adb3-6985c97eff00,3. SNL - East,Slovenia,21,0
+90a516b4-73b5-47e4-83bf-32642efb8629,3. SNL - West,Slovenia,21,0
+4be7dd2a-5449-424f-9927-a2c5aa87e380,3rd Division,Denmark,1,0
+177e3c89-b578-4866-a4c8-0073de9c951d,4. liga - Divizie A,Czech-Republic,24,0
+2a7e5d95-aafb-4fe5-9ab6-0a03832cfb5f,4. liga - Divizie C,Czech-Republic,24,0
+635d3b24-3ce4-4eb2-91f2-4ffc89158ae3,4. liga - Divizie D,Czech-Republic,24,0
+da58ba21-4e27-4ab3-8c03-46df8edce012,4. liga - Divizie E,Czech-Republic,22,0
+6a199ee2-25a4-4dc9-9509-8847931a8409,4. liga - Divizie F,Czech-Republic,24,0
+696e08eb-970d-427f-a007-a3bd1599849b,A-League (W),Australia,1,0
+3026fd38-2779-4918-9ba3-7ebc32503707,A-League Women,Australia,4,0
+7210b7c3-def0-4596-9186-3c10b3ec5a62,AFC Challenge League,World,1,0
+929446ff-12b4-43e0-bb28-9a4d0c406a02,AFC U17 Asian Cup,World,30,0
+9eeb8394-07d5-4b86-a27b-0d47b3bd3a46,AFC U17 Asian Cup - Women,World,25,0
+6fa42fe3-7713-4d08-a43a-e0830056a4c9,AFC Women's Champions League,World,2,0
+0f639d2c-e98b-4236-9151-7bc10786be85,Alagoano - 2,Brazil,7,0
+93a4c309-eb16-4c10-82e8-e289dd28d7d4,All-Island Cup - Women,World,8,0
+7f54cc49-7b47-4fcd-8f72-3b62fef6404d,ASEAN Club Championship,World,5,0
+26c4a617-60fc-47aa-bb7c-1b4fb9982b0c,AXA Women’s Super League,Switzerland,18,0
+ed87a73c-162a-457b-9cc6-4b5912ad0858,Azadegan League,Iran,18,0
+50400e8a-c8bc-43e4-8f6f-71078a3a19c5,Baiano - 2,Brazil,15,0
+cbd31941-e3ee-4b31-9de9-56b99cd36651,Baiano U20,Brazil,24,0
+68682f46-2caf-4cb3-a087-548a38bce0a1,Brasileirao Serie B,Brazil,1,0
+716c7210-147f-499c-81f6-8ac1c076e080,Brasileirao Serie C,Brazil,2,0
+a2984559-0095-4e53-9a22-fb85e8451e49,Brasileiro U20 A,Brazil,48,0
+6eae7a19-df94-4889-8cc6-bee75b83b33a,Brasileiro U20 B,Brazil,21,0
+745be8e6-eb9d-492f-9322-04113f20a414,Brasileiro Women,Brazil,31,0
+0c74676e-0d04-43ca-a448-81b7f5bfb59c,Brasiliense U20,Brazil,10,0
+e615980c-5cf4-4436-8d2e-c559f483ecb1,Bundesliga (W),Germany,2,0
+600d6d10-79ab-47cd-869c-2d2858fa559a,C-League,Cambodia,15,0
+efdb865a-a650-4b52-abf9-8b02fec75ff5,CAF Champions League,World,1,0
+3a84a98b-aa87-48b2-9b58-0dc00712d34f,CAF Confederation Cup,World,2,0
+e114b1ab-3870-4888-9d6d-a8d5fcfbec4f,CAF Cup of Nations - U17,World,24,0
+9fedf3ed-316f-4a11-948c-741a1c9bef0b,Campeonato de Portugal Prio - Promotion Round,Portugal,12,0
+c6472261-2efe-466e-a7f8-50cbfd13b33f,Campeonato Uruguayo,Uruguay,1,0
+7b6bbfd3-c3ba-40e6-ad2d-d9ae825fa041,Canadian Championship,Canada,7,0
+865db6af-6a64-4d21-8644-98871f85b767,Carioca A2,Brazil,23,0
+bf78e916-9201-4bf3-8f74-cd69bec02c66,Catarinense - 2,Brazil,23,0
+5d1c209f-138d-402e-a9ea-18a0e990b591,Catarinense U20,Brazil,15,0
+9012d149-f527-47ac-b1a3-5d4974e8c99f,Cearense U20,Brazil,9,0
+c97a91ff-545d-475c-8eff-094259cd404d,Central Youth League,Poland,24,0
+123580f3-e2c1-4115-b596-3b2a0c84032f,ČFL,Czech Republic,2,0
+89f8fe47-98d6-4280-b531-bead3f18c202,Challenge Cup,Malta,1,0
+e5f9438e-bab0-4bc6-96cc-1e6fb28b22aa,Challenger Pro League,Belgium,2,0
+b4e8d342-9c57-4b0b-9fe2-9bb9a4d4c8f7,Championnat D1,Gabon,44,0
+78262e37-52ad-4a6b-8f61-260f29e588f1,Championnat National,Benin,27,0
+00744dc7-bee5-4883-82bc-71600b1592ca,Champions League (W),Unknown,1,0
+8d31c7e0-da67-4d69-bc81-cd489c4064a7,CONCACAF Champions League,World,4,0
+15e39393-fa9e-470f-8fba-a7dfcdbc8a3a,CONCACAF W Champions Cup,World,2,0
+95e084a4-ca65-4ef3-bb07-223d9a3be9b2,Copa Centro-Oeste,Brazil,9,0
+df816ebc-554f-4614-b9fc-78f4d41f0094,Copa Constitució,Andorra,2,0
+797c3020-7764-474f-9313-5096474c81fd,Copa De La Liga,Chile,16,0
+db0c35fa-f7df-4322-b56d-cc60bbd50786,Copa do Brasil U17,Brazil,12,0
+a2739829-456a-4063-a3f9-c6fdd6c37248,Copa Gaúcha,Brazil,6,0
+3d68c307-603e-4fff-8f94-6451b8c2829b,Copa Norte,Brazil,9,0
+11531de0-8546-4060-93ee-ec3f1051de7f,Copa Presidente,El-Salvador,8,0
+c8f82af7-9255-4a36-8f0a-8e04ac096e9b,Copa Rio U20,Brazil,2,0
+22e796dd-de07-427f-86c1-79d1dec08319,Copa Sul-Sudeste,Brazil,14,0
+94d197d6-7de3-4f63-a8f7-01389f75fd35,Coppa,Belarus,6,0
+50e45b52-a095-4a81-a187-fe4438dcff1d,Coppa Italia Primavera,Italy,1,0
+6c2ad710-626d-4d6c-a2ab-c573f8dbedcb,Coupe Nationale,Algeria,1,0
+826ad35a-6137-41f9-b6e6-fe418b2de69c,Crown Prince Cup,Kuwait,1,0
+ba4ecc37-03c3-434c-b51c-ae09b6f9639f,Cup,Bosnia,2,0
+06c17889-a96e-4f4d-b908-cedbac492472,Cup,Ukraine,1,0
+0fb87efc-ed36-4e35-aa45-bd3a0a808b42,Cup,Macedonia,3,0
+f22495a7-f96a-4b35-ad7d-0df00dda5025,Cup,Egypt,1,0
+f1467543-9ccc-4b7b-a5c8-345095da639e,Cup,South-Africa,1,0
+8de172d7-3ac7-4227-adbc-48c54ea6e2ee,Cup,Kazakhstan,12,0
+f0680c89-9097-40db-a172-f0cfb4b10846,Cup,Slovakia,1,0
+78d119a8-e738-474b-ba77-a41280574d7f,Cup,Tunisia,5,0
+eb7ed631-5031-4ac9-86c1-a9fd0a70193d,Cup,Albania,1,0
+7264aa23-5e50-41b4-8a9e-febbdfb2399a,Cup,Russia,2,0
+14db97ac-4571-40a8-a21e-bb6ffabff97d,Cup,Kosovo,1,0
+7046a3d5-9a18-4ec9-b5cc-14680141484c,Cup,Czech-Republic,1,0
+9bbd21c8-5249-47c5-ab4a-5959d130fbc1,Cup,Slovenia,1,0
+21fa253d-a615-4801-af7b-1a0fbe479d65,Cup,Jordan,4,0
+aee1527d-d44d-41e1-a48e-e155ef87d89c,Cup,Bulgaria,3,0
+3d486f97-72df-4bdf-8036-4f22bd65ae66,Cup,Austria,1,0
+23fd554a-7368-42ab-ba77-df2acbfb65e3,Cup,Poland,1,0
+6b89891d-2dfb-4f44-b75f-68ed4ad7b1ae,Cup,Liechtenstein,1,0
+a0bdf7e8-be65-430f-9ce3-2099a7fbd25c,Cup,Croatia,1,0
+6298c950-fec0-4acc-8a24-80d07b88332c,Cup,Montenegro,2,0
+d6a0eeea-a9c2-4d11-adca-750348914edf,Cup,Cyprus,1,0
+2df95b2e-9eee-4375-8c33-0996f6a08433,Cup,Azerbaijan,1,0
+64af18c9-a674-4028-a6f8-767960cc2b62,Cup,Estonia,2,0
+72084f6c-79a6-400b-b53c-c7186a489bb7,Cupa,Moldova,4,0
+93b0e124-cfce-49ff-b227-8e99a7550139,DBU Pokalen,Denmark,1,0
+db9ef753-7750-4cfc-8d98-ff9dcb93fad4,Derde Divisie - Saturday,Netherlands,19,0
+9cd40cba-c291-4f51-97f3-b1a016a0bc28,Derde Divisie - Sunday,Netherlands,18,0
+975ac0a1-f58c-4069-9a7a-7854db5787fe,Diski Challenge,South-Africa,16,0
+72f740c3-833c-4629-8e1d-75a9826588c0,Division 1,United-Arab-Emirates,22,0
+732608d0-fd6f-47a0-b9e9-5537e8d7d0d0,Division 2 - Västra Götaland,Sweden,21,0
+d99c46f9-d1b4-4eca-adab-1a0523a18c6a,Division One League,Ghana,57,0
+35d06339-068a-4f20-b4c7-435f0027500d,Druha Liga,Ukraine,41,0
+c06aa7e5-a5b6-4b55-8585-cd86d43091a6,Eerste Divisie,Suriname,13,0
+a1d62b3d-5532-4789-8bd1-fdd725884321,Ekstraliga Women,Poland,15,0
+b5e1c246-00fa-4e50-a195-adf859cef003,Elite Two,Cameroon,32,0
+8274c94e-41ad-46a9-9b0a-86ec963ab32c,Elitedivisionen (W),Denmark,1,0
+5e69e405-c86a-4827-abcc-3b6e27d1141d,Elitettan,Sweden,21,0
+cff357db-f1d5-4e5d-af2a-30b4a561dccc,Eredivisie Women,Netherlands,13,0
+35e83ac0-4486-4acf-a1ca-8b925e10492b,Esiliiga,Estonia,3,0
+053cbd66-46fe-4dbe-b3b0-e0f1cb1c2dd4,Estadual Junior U20,Brazil,16,0
+d8e735a7-cd7a-47e4-ae01-e661745be226,FA Cup,Oman,1,0
+8a15b265-d72a-46f8-b31d-194b02739f07,FA Cup,Thailand,2,0
+b00aea28-588b-4084-be73-429764606188,FA Trophy,England,1,0
+7b1dd58d-1227-4b1b-b49a-d4adbc8657cb,FA Youth Cup,England,1,0
+3e1a80e1-e8b6-4423-84d4-6fdc3e1ca9ed,FAI Cup,Ireland,11,0
+93b639b2-1ece-46bc-897f-ac5a5305a877,Federation Cup,Bangladesh,6,0
+71d8fde8-85c0-4190-9d70-872ef1ea85c7,First Amateur Division,Belgium,12,0
+5112f5f5-c77d-4ac3-9b4f-440511cefd55,First League,Czech Republic,2,0
+ad574489-8872-4418-b801-3433557e372c,First League,Armenia,32,0
+3ee08145-f2ac-4bec-bc74-5624b3d6074a,First League,Macedonia,20,0
+37902052-edda-4e11-a56e-4fe3df3019c8,FKF Premier League,Kenya,27,0
+7d9aafea-fa03-45e2-afff-6b9945a4d1c2,Frauenliga,Austria,15,0
+41dc5d40-50e8-4bd0-84d6-b8b25cb659d4,Friendlies Clubs,World,4,0
+a6c2dbed-f7d8-45e3-9105-662a284c6e7c,Gamma Ethniki - Promotion Group,Greece,19,0
+aefdd674-a41a-4953-a459-02babe701259,Girabola,Angola,41,0
+3c8701b5-40b7-4566-a931-980e4195e95e,Goiano U20,Brazil,19,0
+c1a16418-b8db-41de-937d-46e825003675,Hun Sen Cup,Cambodia,3,0
+98e972a3-9ef0-46ce-be54-c305af87434f,I Liga - Women,Slovakia,14,0
+9cec0ef0-2061-4e9c-83a8-d784f2a50993,I-League - 2nd Division,India,14,0
+2d3fe844-a376-42b5-9c7e-41e94f4c0f82,II Liga,Poland,1,0
+c0199e72-5005-49a5-b7ba-a052af376332,III Liga,Poland,6,0
+929d7904-bab9-4594-9478-64b537c5a2af,III Liga - Group 1,Poland,36,0
+3978c74d-343d-41fc-ba55-88a335eae45d,Irish Cup,Northern-Ireland,1,0
+504094f7-4be0-4d32-88bd-1e9e6c5717c9,Kansallinen Liiga,Finland,13,0
+942d8b8b-66dc-4f63-b651-3b0f278b33a8,King's Cup,Saudi-Arabia,1,0
+dc948f20-48a6-4328-b34e-8493dbe04911,Kvindeliga,Denmark,12,0
+8f7b46bf-0753-4f52-b365-6f313001ba8b,La Liga 2,Spain,3,0
+ef39c9e3-b705-42ee-8b64-bd3d36cabd96,Landesliga - Burgenland,Austria,24,0
+cb8aa7a7-0c9f-4142-8e2a-f221a3b797ad,Landesliga - Karnten,Austria,40,0
+10b25178-d4d3-4f67-80ac-ffd298394c5e,Landesliga - Niederosterreich,Austria,24,0
+9fe9b591-4998-41fa-8bf9-237084d8a288,Landesliga - Oberosterreich,Austria,24,0
+4c5dc63a-3747-4e2f-8b8f-9ae5d7e92cf1,Landesliga - Salzburg,Austria,24,0
+6a6a8dbb-fe86-4baf-9285-c0bac1b596d4,Landesliga - Steiermark,Austria,32,0
+71986342-e110-4eab-8561-ce960dbe6c55,Landesliga - Tirol,Austria,21,0
+5b44ddb3-f5ec-49c6-822f-274a697bb248,Landesliga - Vorarlbergliga,Austria,21,0
+b16741d1-b743-4b49-af42-e6d5c942dcde,Landesliga - Wien,Austria,24,0
+5c9b02e1-7bd3-45f8-9bac-ae3485a39540,League,Jordan,11,0
+9d3ace64-e931-4ba0-bb4d-d069c5df9b45,League Cup,United-Arab-Emirates,1,0
+e9095165-3e24-40ea-b474-f3c4c3381994,League Two,England,30,0
+c00b2cb1-3381-4d4c-8fde-b856581a727c,LFA First Division,Liberia,20,0
+3f76a5fc-4744-4408-92d7-6bd5f9dc46eb,Liga 1 Feminin,Romania,12,0
+8933a5f8-162b-4de9-9b46-b3d7c6d0d2e5,Liga 3,Georgia,40,0
+8544b1ed-dac9-4891-9eee-e78b7dfae37f,Liga de Ascenso,Costa-Rica,6,0
+179d1e47-6bba-4c77-980e-473755f38750,Liga de Expansión MX,Mexico,7,0
+10ac6575-676f-4107-8cca-3837eb0c1158,Liga E Pare,Kosovo,27,0
+0ff73122-094b-4ead-aa6d-4bbf83c77bf7,Liga Femenina,Colombia,25,0
+2bc3bc01-9fb0-4295-8c0c-89f250917efc,Liga III - Play-offs,Romania,49,0
+0aa71d53-d5f3-4942-a2c1-a516686f531d,Liga III - Serie 1,Romania,12,0
+cb0225d4-32ac-46e5-948c-4bc84c7078b7,Liga III - Serie 2,Romania,12,0
+760b9886-c8b0-49e8-aaa7-1cfddf694f25,Liga III - Serie 3,Romania,12,0
+e9493743-91f6-4b79-b1bc-ebe12ba9964a,Liga III - Serie 4,Romania,12,0
+20ce5ed8-f103-421f-9d38-16647c185b73,Liga III - Serie 5,Romania,9,0
+405f4714-a518-47f1-b922-6aa43c5221c5,Liga III - Serie 6,Romania,12,0
+d7601bd8-807e-4484-ae6e-0d3b3e606c35,Liga III - Serie 7,Romania,9,0
+b588d8e0-74da-4380-9869-1772a0f31ad5,Liga III - Serie 8,Romania,9,0
+874a4fb1-8d99-4b47-b1bb-be7955a35ebe,Liga Leumit,Israel,37,0
+c09ea6dd-1a77-49ed-a49a-bf8172333eb8,Liga Mayor,Dominican-Republic,5,0
+2d1bcf45-2680-42be-b995-f67021c7aa1b,Liga MX U21,Mexico,14,0
+47163753-f29d-4292-8251-b864489afbb3,Liga Nacional,Guatemala,13,0
+6ed9c517-b1c6-4f96-b4c1-e5e615a2c247,Liga Nacional,Honduras,27,0
+2fddf47e-ab55-4ac3-8b1c-46689a849ff3,Liga Panameña de Fútbol,Panama,12,0
+92db761b-08dc-4823-95cf-f652080bae4f,Liga Premier Serie A,Mexico,6,0
+96a5b809-969b-4c61-bb0e-6e062103b5fd,Liga Pro,Ecuador,26,0
+bea1beb2-e7f1-49ba-8c02-00383f3ec664,Liga Profesional Bolivia,Bolivia,1,0
+22037b4d-dfb0-4e71-9138-bf3fd9e2661e,Liga Revelação U23,Portugal,8,0
+9ec1cfe6-01d8-4ec6-a023-6c9f51c14ba7,Ligue 1,Algeria,24,0
+16b90826-54b6-4191-a045-35dc7454a135,Ligue 1,Congo-DR,23,0
+8e4a16c9-9e68-4adc-af91-a60fbff3f9cc,Ligue 1,Tunisia,32,0
+b0c8de60-6a69-4601-8c73-51f076f127d7,Ligue 1,Burkina-Faso,17,0
+5db6e7af-836e-4aed-bc26-e2b37456ea6f,Ligue 1,Ivory-Coast,25,0
+a45b481b-cb0a-4c07-8c81-93b1c903ef8b,Ligue 2,Tunisia,42,0
+68166cc6-24db-4776-a18d-1ca8eb4e5558,Ligue 2,Algeria,35,0
+2381311d-47e7-4307-9959-a231f93ee13f,Ligue A,Burundi,9,0
+ca3243c0-f170-4307-9a5c-73f25d130b69,Magyar Kupa,Hungary,1,0
+8f952a6f-6bb2-45ae-a1ad-2cc7e5c47068,Matogrossense 2,Brazil,15,0
+d6ee8db0-2041-4c69-b14a-4409407d5b3c,Mineiro U20,Brazil,14,0
+91c4bdbe-d297-436c-b1d9-6b68a31c4df3,MLS,USA,1,0
+78d381fd-9cfd-4116-a2e0-55cceeae395d,Nasjonal U19 Champions League,Norway,8,0
+8b6f338d-2964-4454-8094-c1f6bf4435bc,National 3 - Group A,France,14,0
+e9e45fbc-44b8-41ae-964e-57d8d3009a2a,National 3 - Group B,France,14,0
+18482ac4-bfb0-4397-899c-4aceb7b3991d,National 3 - Group C,France,11,0
+a2af935c-4dbc-46bc-917c-c0d7b46b10db,National 3 - Group D,France,14,0
+a92a6143-1fe5-4e0d-96b5-efcdd7db778e,National 3 - Group E,France,14,0
+37fcaa20-c563-46bf-955c-202b62050d1b,National 3 - Group F,France,14,0
+3d4456f8-5a22-4d49-92c6-e31b2bb43604,National 3 - Group G,France,14,0
+7aa56692-3deb-448b-9a02-dc11d8bf353e,National 3 - Group H,France,14,0
+0fb9dadf-50db-465b-be0c-23fecd65c5b6,National Division,Luxembourg,24,0
+dc2b0ad9-4baf-4a46-9e3a-7674af2c56a4,National Football League,Czech Republic,2,0
+24146838-6c73-4c4a-ad5c-51402f6e57b7,National League,England,18,0
+37742a92-d719-4574-b1a3-3132ee7b2c3f,National League - North,England,5,0
+b4df8f40-ab54-40ea-ab95-f04f4f658ed1,National League - South,England,5,0
+a0d060c9-f41a-4096-b93a-96572bce2d64,NB III - Northwest,Hungary,24,0
+e51a4793-32c9-4ae6-af5c-b939ab1e3c43,NB III - Southeast,Hungary,24,0
+98d94811-46a6-4a2a-a27d-1eb13796cc8c,NB III - Southwest,Hungary,24,0
+195eca3c-9714-492e-aed0-bf2c078d1791,NM Cupen,Norway,1,0
+3409add0-8b8f-4796-8317-79ee59fb623c,NNSW League 1,Australia,10,0
+12eb907f-1ca0-47bf-bc86-3bebebdf7dff,Non League Premier - Isthmian,England,3,0
+b2d165a1-d199-4a03-a715-002665005c51,Non League Premier - Northern,England,2,0
+1477d84c-fe46-4ecf-8557-8dd210008f0e,Non League Premier - Southern Central,England,1,0
+0cbe73de-301c-45ab-b5da-227e5cf51dcb,Non League Premier - Southern South,England,3,0
+50df64c2-cb33-4efe-8dd1-8b5edbcdc5ba,Northern League Premier Division,England,1,0
+b0cb8a39-d315-4372-aadd-1b8caa4e46e9,Northern Super League,Canada,8,0
+3e06246d-eec7-4d43-88ed-037300c1e5c6,NPFL,Nigeria,20,0
+6c23e746-6ab3-43cb-9a62-3efdb9886f13,NPL NSW,Australia,2,0
+a6b24fb8-414b-4525-a65b-26e790345951,NPL South Australia,Australia,4,0
+aac5811c-4e1d-4708-a6f1-73dc4b808955,NPL Tasmania,Australia,1,0
+52185b1d-459d-4f23-bf06-74df6a0029c4,NPL Victoria,Australia,2,0
+4931122c-77b3-48b8-b8bf-05b2c7e80d38,NSW League 1,Australia,1,0
+690fb7f8-26d1-4cdc-a157-23dac308f0ee,Oberliga - Baden-Württemberg,Germany,29,0
+5ad01d53-98cf-4bad-addf-e4e0061b8fe3,Oberliga - Bayern Nord,Germany,24,0
+53fab50a-dd0f-465d-a874-8b22e06f8bd4,Oberliga - Bayern Süd,Germany,26,0
+62fa7ffe-8da5-4fc3-b2fa-251532e7a2a8,Oberliga - Bremen,Germany,33,0
+be169967-381d-43d6-9d07-811a5649bb2f,Oberliga - Hamburg,Germany,38,0
+7637a150-b3b9-41cc-8a09-aa30f39c6bd1,Oberliga - Hessen,Germany,29,0
+b94131f2-d5ad-4117-9e49-a3b5951956a9,Oberliga - Mittelrhein,Germany,24,0
+2a8c4bfd-9ba0-4261-9f1c-251e3eeaee6c,Oberliga - Niederrhein,Germany,27,0
+174ceb17-3a30-4287-b841-1401d2dcb1b4,Oberliga - Niedersachsen,Germany,32,0
+5bd71772-1971-44e8-927d-2cf091093e4b,Oberliga - Nordost-Nord,Germany,24,0
+14416f62-5fce-4506-aadc-c8a855925b07,Oberliga - Nordost-Süd,Germany,27,0
+60868f5f-614d-49bc-b8b2-f510f47906ac,Oberliga - Schleswig-Holstein,Germany,28,0
+53ddab6d-85bd-41eb-b5e4-9060377e6899,Oberliga - Westfalen,Germany,32,0
+655a0c95-dc74-495d-a999-5951fac011b8,OBOS-ligaen,Norway,1,0
+9d865f35-eb9f-4436-a445-b767e18fe281,OFC Pro League,World,15,0
+b04ca120-b616-45d9-9174-903582f0bd5e,Paranaense - 2,Brazil,10,0
+0049d981-b7d0-4705-bae0-43cbacbe1da8,Paranaense U20,Brazil,19,0
+0bc444b5-468c-4247-92a7-e47079ad4a92,Paulista - A2,Brazil,4,0
+55f487eb-9384-424a-a47e-f7272a81a296,Paulista - A4,Brazil,4,0
+30911c53-e02f-4354-8bd8-c0e099f7f0c3,Paulista Série B,Brazil,36,0
+78f24825-89c4-47a7-9e00-f8b99049ae9b,PFL,Philippines,17,0
+f7950082-6649-4ade-b531-1e21c47d7314,PFL 1,Bulgaria,1,0
+9df00e10-6dd2-4fdc-8a56-2a675762daec,PFL 2,Bulgaria,1,0
+c2fc68ac-eda3-4cb2-ad4c-aa2ab16050c2,Premier Division,Antigua-And-Barbuda,4,0
+95eef2e3-760f-485d-954f-458f2a86f7fb,Premier Intermediate League,Northern-Ireland,9,0
+82913dd2-452d-4e24-864a-14ca92d289d4,Premier League,Lebanon,7,0
+d79ebd7c-50ca-418f-9752-3ae43586543f,Premier League,Lesotho,24,0
+82dcdbf0-e8cb-4528-9d7a-a40501fa1c79,Premier League,Mauritania,24,0
+0d1d633f-85a2-48f6-9f9b-f83ddf499c7d,Premier League,Ghana,34,0
+3be6573e-48e3-45af-b1c5-fed44a7774e7,Premier League,Botswana,9,0
+e7486bcf-f275-443d-80ca-a060d77492a7,Premier League,Jamaica,25,0
+bc57f166-15bc-44a9-9d00-14e55c7f8ce2,Premier League,Armenia,17,0
+f86acc16-2662-44fc-8bbb-b2ddffac9138,Premier League,Eswatini,26,0
+07d3324a-6ccb-4b2c-bd05-4a067b4440cb,Premier League,Kuwait,6,0
+1f9a2219-4139-4f5a-b89d-1a9a56517aa5,Premier League,Kyrgyzstan,26,0
+6eaa7b33-d44b-40e7-a76a-1e9eaf4ea37f,Premier League,Barbados,19,0
+02c7a16f-6e9f-4dee-a0fd-799bb8ad7fe6,Premier League,Wales,1,0
+01bf4348-a13c-4393-a1ee-93352b3dcff8,Premier League,Bhutan,14,0
+8664e4d6-6ca7-4549-8a0d-4fd1e754c31b,Premier League,Malta,13,0
+fff2942e-81f3-4500-948f-73cf9ed97eaa,Premier League,Syria,44,0
+4ab3eff3-d461-48b1-b95a-7e72c5f61c98,Premier League International Cup,World,3,0
+2cae2bd8-9046-41a6-8669-29437e002b21,Premiership Women,Northern-Ireland,10,0
+f3717460-f8dc-4b94-9dc7-8b30aaa46102,Premijer Liga,Bosnia & Herzegovina,1,0
+fa70f1cc-6cab-4bed-b28a-f44720ce4dae,Primeira Divisão,Macao,10,0
+aa853215-4836-48f1-8001-b91f0a6c8efd,Primera Division,El-Salvador,18,0
+19f5b26e-da79-47d0-8875-7309550ecede,Primera Division,Nicaragua,9,0
+dc8c58c1-5916-4394-b4ac-a80c9daeb922,Primera División,Costa-Rica,6,0
+61d92cb0-e537-46f6-818b-ffad46b5e520,Primera División (W),Spain,1,0
+ad5fe7f7-783f-4d6e-9025-94e4f7c08548,Primera Paraguay,Paraguay,1,0
+1f74f5e5-d70f-47b3-bca6-b098282ffaea,Pro League A,Uzbekistan,14,0
+160be0e6-3100-4069-b85d-5afcf3fc3fc9,Pro League U23,United-Arab-Emirates,20,0
+aa1d2fbb-f095-441f-9867-4abc85d2a849,Prva Liga,Serbia,29,0
+ddfe81e7-ba88-46c6-a5fd-8ed9af80763e,Prva Liga,Slovenia,1,0
+d20537d4-c318-4503-94b5-67dff2f74270,Qatargas League,Qatar,1,0
+0d05c32b-f1e6-412e-bea2-000f36f6b25a,Regionsligaen avd. 1,Norway,1,0
+4f9d1d23-e8b2-4fcd-984e-5d4d7f0e4b66,Regionsligaen avd. 2,Norway,1,0
+91b6237f-5c7a-4657-af59-76f7f649d22f,Regionsligaen avd. 3,Norway,1,0
+5355aa3e-e529-48c6-be74-9cbf0a2dec1a,Regionsligaen avd. 4,Norway,1,0
+bdc5b25a-7862-45be-8fd0-a11aa141c586,Regionsligaen avd. 6,Norway,2,0
+ece495be-f977-49f2-bb2c-571e1011c01e,Reserve Pro League,Belgium,11,0
+a70bc64b-6112-4c51-99a1-9729fd58b045,SA Premier Soccer League,South Africa,1,0
+a6ab83fa-e4fc-4ab2-ad46-0106647fc63e,Saar,Germany,30,0
+17439f88-0235-4c7d-a1a8-251648c6b5e8,Scottish Premiership,Scotland,2,0
+ea4c272c-3b17-4703-ba61-57bc162e0514,Second Amateur Division - ACFF,Belgium,2,0
+9f0ab4a9-c2a8-4c1a-9006-15cf238cdf11,Second Division,Qatar,2,0
+8dff7b49-d999-41e4-acae-7edada6dca67,Second League,Bulgaria,24,0
+6eb8a14c-e49d-406b-996d-476a62dc9f75,Second League,Macedonia,24,0
+e131b92c-1a0b-409c-ad8d-170e7d35942d,Second League,Montenegro,20,0
+079ad11b-9e1b-40e0-be7d-e49e8fa00cbf,Second League - Group 1,Russia,24,0
+355a6990-ecbe-49b7-9c70-70a6cfffd979,Second League - Group 2,Russia,23,0
+a5110686-9a70-436d-a1ce-136c71c801ee,Second League - Group 4,Russia,24,0
+04d24739-f852-4388-ae6a-c27d77d0319c,Second League A - Division A Gold,Russia,15,0
+3814cc06-6e4b-491a-bdcb-43656c51e2fa,Second League A - Division A Silver,Russia,20,0
+9bdcc38e-23d0-4b78-89b5-65bd522cf2ea,Segunda División,Uruguay,17,0
+c14cb218-5f2a-4ae1-90c2-925a9c8167a1,Segunda División,Chile,14,0
+fd4f7be2-fe3e-404a-aa4a-f8dcf3ad7018,Segunda División,Peru,23,0
+b3ff6e16-c0be-40a8-8ab0-45d426a0b9bf,Segunda División RFEF - Group 1,Spain,7,0
+da411ba7-eaa9-4613-9f5c-805d15c6c783,Segunda División RFEF - Group 2,Spain,9,0
+b63fc0f1-0c10-4794-a74b-8f4933e77ca8,Segunda División RFEF - Group 3,Spain,9,0
+6ae68643-a56f-4c7f-b1ce-c2368d23ab6e,Segunda División RFEF - Group 4,Spain,9,0
+7edcdb01-607c-41fd-8c0f-693faa0ec9b1,Segunda División RFEF - Group 5,Spain,9,0
+a0aa6ad6-bace-4092-b2a8-d0e8bdaf786c,Serie A (W),Italy,1,0
+602b4384-a2ba-4c68-b99c-d6b9514cf426,Serie C - Relegation - Play-offs,Italy,1,0
+5d96b586-5e12-4886-b079-36f008c34746,Serie C - Supercoppa Lega Finals,Italy,3,0
+2bb8e9cd-5857-4832-a9cc-90e4ad2c5033,Serie D - Championship Round,Italy,9,0
+dd189963-8615-4c6a-b5ed-f4136c6edfa7,Serie D - Girone B,Italy,14,0
+6d8e1a9d-b041-4151-a78a-5a8a087105e8,Serie D - Girone C,Italy,15,0
+a3206833-b742-4768-b79d-a3e1543f08e2,Serie D - Girone D,Italy,14,0
+740e7584-090c-454e-9d33-a8ab73f712b5,Serie D - Girone E,Italy,14,0
+881c4b09-9717-411b-95a9-2c30216b267b,Serie D - Girone F,Italy,15,0
+31b94a1e-9cf3-4d64-a7c5-24e271579eda,Serie D - Girone G,Italy,14,0
+96ef67c5-a2e3-475d-ad79-21323b8da642,Serie D - Girone H,Italy,14,0
+16a0d50c-953c-448c-bc98-6cab71f1a854,Shield Cup,Kenya,6,0
+b152cc6b-ff3c-42f8-a411-aaae69a6126b,Singapore Premier League,Singapore,1,0
+2e27f91b-b32f-441a-85b4-168fe833e778,Southern League Premier Division Central,England,2,0
+8bfaf85a-c2e3-4797-99d8-c0698cc5f301,Srpska Liga - Belgrade,Serbia,20,0
+8debd561-e7d8-49e4-9321-072182cb8bd1,Srpska Liga - East,Serbia,24,0
+989bd70f-7b10-4a36-a46a-703cebddaf49,Srpska Liga - Vojvodina,Serbia,24,0
+b562ce7c-d1d9-42c2-ae46-9f95009bdf46,Srpska Liga - West,Serbia,24,0
+ecff894a-9a57-46e7-bf03-d332c185b504,Stars League,Qatar,7,0
+e3aa1fb6-2485-4fa8-8363-107a1776f7f5,Sudani Premier League,Sudan,8,0
+becbbe8a-ed8a-4094-8d1f-36477cbe1332,Super League,Malaysia,19,0
+30ee923c-ded6-420a-ad92-90556f825c4b,Super League,Uzbekistan,16,0
+36bcb217-06f9-4ffb-9503-3a5e6095e750,Super League,Kenya,31,0
+b1c934a8-abf5-4669-abd2-4d778444a569,Super League,India,1,0
+b7a47ade-5d7d-4c3b-b6cc-8fde3cfdaa92,Super League,Zambia,37,0
+00f0b829-dba4-438c-854d-030cacdc7072,Super Liga,Moldova,26,0
+72c02308-8862-4a32-a746-02b72ee0a3ff,Supercopa de Ecuador,Ecuador,1,0
+1491877c-3edf-4f0a-a512-87b7fe511a5a,Superliga,Albania,23,0
+8764a776-bc0f-4549-bbee-f4d37a7434d7,Supreme Division Women,Russia,18,0
+91db8122-fa51-4089-b185-816e0ef87634,Svenska Cupen,Sweden,1,0
+50912c0c-1d1d-4872-ab99-53782ecf879a,Svenska Cupen - Women,Sweden,1,0
+c98776a4-7efc-4ce7-9281-721e84104f83,Taça Revelação U23,Portugal,10,0
+b5c5dd1f-00c4-46df-a8b0-df1f4b746c2a,Taiwan Football Premier League,Chinese-Taipei,13,0
+121bb698-d6c1-44ba-aa55-55f964cba8cb,Tasmania Northern Championship,Australia,8,0
+c15da30d-5e19-4881-8f08-32b889fb29c3,Tasmania NPL,Australia,9,0
+fabbbf43-d8bd-4193-99fb-f8b624034f42,Tercera División RFEF - Group 1,Spain,20,0
+e3d4ef9e-06d8-4ec1-a57f-b0c9af35a6e2,Tercera División RFEF - Group 10,Spain,20,0
+aa62cdaf-394a-4695-84b4-7662ec0fcbac,Tercera División RFEF - Group 11,Spain,21,0
+6ae975a8-b2e7-42d2-a710-632f08a049b1,Tercera División RFEF - Group 12,Spain,20,0
+a5d6ddf0-8e20-4f62-8fd1-1a1efe52499a,Tercera División RFEF - Group 14,Spain,20,0
+a51e0069-5e20-4a5a-88b0-1649a6558ea6,Tercera División RFEF - Group 15,Spain,20,0
+1619d4b2-dc6e-4832-82c5-e7fb9dc0f422,Tercera División RFEF - Group 16,Spain,19,0
+2dce152c-cf0c-4e94-ae45-713b941697cd,Tercera División RFEF - Group 17,Spain,20,0
+49088902-02cd-4fb5-9553-0b2b7407db3d,Tercera División RFEF - Group 18,Spain,20,0
+e7767d34-0cd3-4b52-8a01-9dec806885f4,Tercera División RFEF - Group 2,Spain,19,0
+1ae10fde-9987-46d6-9ed0-7824fb317e55,Tercera División RFEF - Group 3,Spain,20,0
+6d324468-2e86-49dd-9921-21720c0dcc8e,Tercera División RFEF - Group 4,Spain,20,0
+65ef7476-bb81-4c4f-8690-0eff785315b2,Tercera División RFEF - Group 5,Spain,19,0
+9fe3f8a8-36b4-444a-92b4-1a408a8bc772,Tercera División RFEF - Group 6,Spain,20,0
+181bca24-b9b1-4e97-9b48-2856ebe85135,Tercera División RFEF - Group 7,Spain,19,0
+3355330e-c4ea-42b7-af36-6e13f2a24d24,Tercera División RFEF - Group 8,Spain,19,0
+501e9fcd-4d3d-4d8b-891f-7bf1bf89741d,Tercera División RFEF - Group 9,Spain,20,0
+408af257-b339-44f9-9aed-ea2986d38727,Tercera RFEF 16,Spain,1,0
+404b217e-89e6-452f-ab7c-a0a9ebed4f81,The Championship (W),England,2,0
+ebe5e312-657d-4788-89a7-89b035ebeaad,Third League - Northeast,Bulgaria,36,0
+81dff2c9-aeca-4ecc-a2a3-46a09e65e137,Third League - Northwest,Bulgaria,18,0
+cd4efa9b-8276-4a07-a5e4-0fd072159eb0,Third League - Southeast,Bulgaria,45,0
+14b99757-9d76-4ba7-836c-a27c48dfee99,Third League - Southwest,Bulgaria,29,0
+45fd615e-8461-4d62-a7cf-41377400e23e,Third NL - Jug,Croatia,24,0
+04bc2b02-1557-4318-882f-24c408b12775,Toppserien,Norway,20,0
+d0adec96-114c-4cf1-8ed2-88569d55e60f,U18 Premier League - North,England,19,0
+fb178bea-ea09-44ed-8a5a-7322e3436f33,U18 Premier League - South,England,26,0
+558ce45f-8c50-4c06-a90e-50048f7169b3,U19 Divisie 1,Netherlands,16,0
+bcd2908f-166f-4da6-b933-7f401e56b158,U19 League,Ukraine,32,0
+b721faed-cea9-477a-ab95-a19fde26266d,U21 Divisie 1,Netherlands,12,0
+1647d87e-ebbe-4a79-b0a7-4f4d7babb2d9,U23 Pro League,United Arab Emirates,1,0
+1bb28d8a-8b00-436b-aef7-7ba9c86dcc3f,UEFA Champions League,World,4,0
+41efc4a2-51eb-4644-b070-35546dc3836a,UEFA Champions League Women,World,1,0
+9b4e0e0f-a660-4288-825c-67ff4abdf383,UEFA U17 Championship - Qualification,World,4,0
+dc431cae-8dcd-404c-92d9-2bc0c84a17bc,UEFA U17 Championship - Women,World,16,0
+6f74e12b-57a9-4139-bc22-d0ccaa483186,US Open Cup,USA,12,0
+85666955-2586-4073-86d5-9dd34d760f98,USL Championship,USA,26,0
+de9dc4ac-34e2-4dd4-872e-3fefead007ef,USL League One,USA,24,0
+35a57280-84f1-4702-884c-9ae8cbc0548d,USL Super League,USA,13,0
+10721db3-abe9-4b65-9873-a87f1d3c8495,USL W League,USA,63,0
+279bbe7c-91d3-4c81-aa67-08325e86c15b,Vysshaya Liga,Tajikistan,18,0
+0d0b558e-ef7f-4643-ba26-d1062d15327e,WE League,Japan,18,0
+f9f9810c-2587-4b4b-8f09-d0c5ed5b619d,WK-League,South-Korea,16,0
+b4b5f03a-3268-4eac-9431-6c63362abf78,Women's Championship,England,4,0
+c0c618da-b150-4fde-bfaf-f26b640ca905,Ýokary Liga,Turkmenistan,16,0
+c41b58eb-2f14-4aef-841f-15451ca12e7a,Youth Championship,Russia,25,0

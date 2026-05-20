@@ -1,0 +1,133 @@
+cb_league_id,name,country_slug,full_slug
+19128,UEFA Meistrite Liiga,euroopa,jalgpall/euroopa/uefa-meistrite-liiga
+18975,Premier League,inglismaa,jalgpall/inglismaa/meistriliiga
+19104,La Liga,hispaania,jalgpall/hispaania/la-liga
+18994,Serie A,itaalia,jalgpall/itaalia/serie-a
+19129,UEFA Euroopa Liiga,euroopa,jalgpall/euroopa/uefa-euroopa-liiga
+60740,UEFA Konverentsiliiga,euroopa,jalgpall/euroopa/konverentsiliiga
+19932,UEFA Meistrite Liiga - Naised,euroopa,jalgpall/euroopa/uefa-meistrite-liiga-naised
+18925,Premium Liiga,eesti,jalgpall/eesti/premium-liiga
+46803,MM Mängud,Jalgpalli-MM,jalgpall/Jalgpalli-MM/mm-matsid
+18880,Veikkausliiga,soome,jalgpall/soome/veikkausliiga
+18974,Liga Pro,ecuador,jalgpall/ecuador/liga-pro
+19904,Liga MX,mehhiko,jalgpall/mehhiko/liga-mx
+18892,Saudi Pro League,saudi-araabia,jalgpall/saudi-araabia/saudi-professional-league
+19091,Premier League,ukraina,jalgpall/ukraina/premier-league
+18917,Eredivisie,Holland,jalgpall/Holland/eredivisie
+18912,1. HNL,horvaatia,jalgpall/horvaatia/1-hnl
+18936,1.CFL,montenegro,jalgpall/montenegro/1cfl
+18910,Airtricity Premier League,iirimaa,jalgpall/iirimaa/airtricity-premier-league
+18967,Liga Águila,kolumbia,jalgpall/kolumbia/liga-aguila
+19348,Liga Leumit,iisrael,jalgpall/iisrael/liga-leumit
+18900,Jupiler Pro League,belgia,jalgpall/belgia/jupiler-pro-league
+18928,1. Division,kupros,jalgpall/kupros/1-division
+18940,Ligue 1 (Algeria),alzeeria,jalgpall/alzeeria/ligue-1
+19081,Superliga,serbia,jalgpall/serbia/superliga
+18926,A PFG,bulgaaria,jalgpall/bulgaaria/a-pfg
+19014,Umaglesi Liga,gruusia,jalgpall/gruusia/umaglesi-liga
+18761,Super League (Uganda),uganda,jalgpall/uganda/uganda-super-league
+19041,Liga 1 (Romania),rumeenia,jalgpall/rumeenia/liga-1-bergembier
+19150,Premier League (Kazakhstan),kasahstan,jalgpall/kasahstan/kasahstan-premier-league
+19085,Prva Liga,sloveenia,jalgpall/sloveenia/prva-liga
+18860,Bundesliga (Austria),austria,jalgpall/austria/bundesliga
+25152,Série A,brasiilia,jalgpall/brasiilia/serie-a
+18970,Superliga (Denmark),taani,jalgpall/taani/superliga
+19514,Copa Libertadores,ameerika,jalgpall/ameerika/copa-libertadores
+19093,MLS,usa,jalgpall/usa/mls
+19111,Allsvenskan,rootsi,jalgpall/rootsi/allsvenskan
+19225,T-Mobile Ekstraklasa,poola,jalgpall/poola/t-mobile-ekstraklasa
+18882,A-League,austraalia,jalgpall/austraalia/a-league
+19054,Super League (Greece),kreeka,jalgpall/kreeka/super-league-kreeka
+19901,Icelandic Premier League,island,jalgpall/island/besta-deild-men
+18875,1. Liga,tsehhi-vabariik,jalgpall/tsehhi-vabariik/1-liga
+18884,Super League (China),hiina,jalgpall/hiina/chinese-super-league
+18963,Premijer Liga,bosnia-ja-hertsegoviina,jalgpall/bosnia-ja-hertsegoviina/premijer-liga
+19309,Virsliga,lati,jalgpall/lati/virsliga
+18906,PTT 1. Lig,turgi,jalgpall/turgi/ptt-1-lig
+19059,Cup (Czech),tsehhi-vabariik,jalgpall/tsehhi-vabariik/cup
+18956,Primera División (Argentina),argentiina,jalgpall/argentiina/primera-division
+28551,Copa Sudamericana,ameerika,jalgpall/ameerika/copa-sudamericana
+20501,Série B,brasiilia,jalgpall/brasiilia/serie-b
+19139,Football Federation Cup,leedu,jalgpall/leedu/leedu-football-federation-cup
+18971,1. Division (Denmark),taani,jalgpall/taani/1-division
+19331,K -League 2,louna-korea,jalgpall/louna-korea/korea-republic-k-league-challenge
+19197,Copa Postobón,kolumbia,jalgpall/kolumbia/copa-postobon
+18916,Airtricity League First Division,iirimaa,jalgpall/iirimaa/airtricity-league-first-division
+19112,Superettan,rootsi,jalgpall/rootsi/superettan
+18976,Championship,inglismaa,jalgpall/inglismaa/championship
+19226,DFB Pokal,saksamaa,jalgpall/saksamaa/dfb-pokal
+20138,Copa Argentina,argentiina,jalgpall/argentiina/copa-argentina
+19094,USL Pro,usa,jalgpall/usa/usl-pro
+20191,1. Division (Iceland),island,jalgpall/island/1-division
+18995,Serie B,itaalia,jalgpall/itaalia/serie-b
+18770,League One,inglismaa,jalgpall/inglismaa/league-one
+20136,Damallsvenskan,rootsi,jalgpall/rootsi/swedish-damallsvenskan
+18982,League Two,inglismaa,jalgpall/inglismaa/league-two
+25195,Bundesliga Edendamise/Taandamise Playoff,saksamaa,jalgpall/saksamaa/bundesliga-edendamisetaandamise-playoff
+42880,Elitettan,rootsi,jalgpall/rootsi/elitettan
+25221,2.Bundesliga Edendamise/Taandamise Playoff,saksamaa,jalgpall/saksamaa/2bundesliga-edendamisetaandamise-playoff
+20495,Icelandic Úrvalsdeild Naised,island,jalgpall/island/icelandic-urvalsdeild-naised
+19258,Ettan Norra,rootsi,jalgpall/rootsi/division-1-norra
+19256,Division 2 Norra Svealand,rootsi,jalgpall/rootsi/division-2-norra-svealand
+19254,Division 2 Södra Svealand,rootsi,jalgpall/rootsi/division-2-sodra-svealand
+20323,Kolmonen Etelä B,soome,jalgpall/soome/kolmonen-etela-2
+19262,Division 2 Norra Götaland,rootsi,jalgpall/rootsi/division-2-norra-gotaland
+19261,Division 2 Västra Götaland,rootsi,jalgpall/rootsi/division-2-vastra-gotaland
+20509,Kolmonen Itä AC1,soome,jalgpall/soome/kolmonen-ita-ac1
+19255,Division 2 Södra Götaland,rootsi,jalgpall/rootsi/division-2-sodra-gotaland
+65195,AFC Women's Champions League,aasia,jalgpall/aasia/AFC-Women's-Champions-League
+20510,Kolmonen Itä B,soome,jalgpall/soome/kolmonen-ita-b
+20225,Kolmonen Länsi A,soome,jalgpall/soome/kolmonen-lansi-a
+20322,Kolmonen Länsi B,soome,jalgpall/soome/kolmonen-lansi-b
+20324,Kolmonen Länsi C,soome,jalgpall/soome/kolmonen-lansi-c
+46629,Nelonen Etelä 1,soome,jalgpall/soome/nelonen-etela-1
+46619,Nelonen Etelä 2,soome,jalgpall/soome/nelonen-etela-2
+46618,Nelonen Etelä 3,soome,jalgpall/soome/nelonen-etela-3
+46630,Nelonen Etelä 4,soome,jalgpall/soome/nelonen-uusimaa-4
+46620,Nelonen Itä A,soome,jalgpall/soome/nelonen-ita-a
+46621,Nelonen Itä B,soome,jalgpall/soome/nelonen-ita-b
+46623,Nelonen Itä C,soome,jalgpall/soome/nelonen-ita-c
+46628,Nelonen Länsi B,soome,jalgpall/soome/nelonen-lansi-b
+46631,Nelonen Länsi C1,soome,jalgpall/soome/nelonen-lansi-c1
+46622,Nelonen Länsi C2,soome,jalgpall/soome/nelonen-lansi-c2
+25158,Italy Lega Pro Prima Divisione Promotion Playoff,itaalia,jalgpall/itaalia/italy-lega-pro-prima-divisione-promotion-playoff
+19316,Coupe de France,prantsusmaa,jalgpall/prantsusmaa/coupe-de-france
+43120,France Ligue 1 Promotion/Relegation,prantsusmaa,jalgpall/prantsusmaa/france-ligue-1-promotionrelegation
+72432,Brazil Copa Sul-Sudeste,brasiilia,jalgpall/brasiilia/Brazil-Copa-Sul-Sudeste
+20378,Brazilian Carioca 2,brasiilia,jalgpall/brasiilia/brazilian-carioca-2
+42497,Tunisia Cup,tuneesia,jalgpall/tuneesia/tunisia-cup
+19880,CONCACAF Champions League,ameerika,jalgpall/ameerika/concacaf-champions-league
+19838,Torneo de Reserva Primera B,argentiina,jalgpall/argentiina/argentina-torneo-de-reserva-primera-b
+25255,Lamar Hunt U.S. Open Cup,usa,jalgpall/usa/lamar-hunt-us-open-cup
+19951,National Soccer League - Naised,usa,jalgpall/usa/national-soccer-league-naised
+20284,USL Premier Development League,usa,jalgpall/usa/usl-premier-development-league
+50813,US USL League One,usa,jalgpall/usa/us-usl-league-one
+64996,CONCACAF W Champions Cup Women,ameerika,jalgpall/ameerika/CONCACAF-W-Champions-Cup-Women
+25240,Uzbekistani Cup,usbekistan,jalgpall/usbekistan/uzbekistani-cup
+28854,Georgian Pirveli Liga,gruusia,jalgpall/gruusia/georgian-pirveli-liga
+60115,Portugal Primeira Liga Promotion/Relegation,portugal,jalgpall/portugal/Portugal-Primeira-Liga-PromotionRelegation
+19968,Liga de Ascenso,tsiili,jalgpall/tsiili/Liga-de-Ascenso
+18965,Liga de Primera (Chile),tsiili,jalgpall/tsiili/Liga-de-Primera
+19050,Eliteserien,norra,jalgpall/norra/eliteserien
+46717,Lower Leagues (Norway),norra,jalgpall/norra/lower-leagues
+19383,Primera División (Peru),peruu,jalgpall/peruu/primera-division-peruana
+71763,Japan J. League Special Tournament,jaapan,jalgpall/jaapan/Japan-J.-League-Special-Tournament
+19051,First Division (Norway),norra,jalgpall/norra/first-division
+19886,NM Cupen - Naised,norra,jalgpall/norra/nm-cupen-naised
+29399,Indian Super League,india,jalgpall/india/hero-indian-super-league
+18943,Premier League (Egypt),egiptus,jalgpall/egiptus/premier-league
+20494,Cup (Ukraine),ukraina,jalgpall/ukraina/Cup
+19997,Eerste Divisie Playoff,Holland,jalgpall/Holland/Eerste-Divisie-playoff
+25291,Tanzania Premier League,tansaania,jalgpall/tansaania/tanzania-premier-league
+19955,Philippines UFL Division 1,filipiinid,jalgpall/filipiinid/philippines-ufl-division-1
+20033,Primera B (Ecuador),ecuador,jalgpall/ecuador/ecuador-primera-b
+51290,Ecuador Cup,ecuador,jalgpall/ecuador/ecuador-cup
+52550,Bhutan Premier League,bhutan,jalgpall/bhutan/bhutan-premier-league
+19385,Red Stripe Premier League,jamaika,jalgpall/jamaika/red-stripe-premier-league
+20406,Paraguay Segunda Division,paraguay,jalgpall/paraguay/paraguay-segunda-division
+48624,Argentina National B Division Reserves,argentiina,jalgpall/argentiina/argentina-national-b-division-reserves
+20128,Premiership Edendamine/Taandamine,sotimaa,jalgpall/sotimaa/scottish-premiership-edendaminetaandamine
+19715,Liga Profesional de Primera División (Uruguay),uruguay,jalgpall/uruguay/liga-profesional-de-primera-division
+37075,Copa do Nordeste de Futebol,brasiilia,jalgpall/brasiilia/copa-do-nordeste-de-futebol
+47140,Ethiopian Premier League,ethiopia,jalgpall/ethiopia/ethiopian-premier-league
+19357,Cup (Bulgaria),bulgaaria,jalgpall/bulgaaria/bulgaaria-cup
