@@ -334,6 +334,11 @@ def fetch_coolbet_events(session: CoolbetSession) -> list[dict]:
     Returns flat list of {id, home, away, start, bet_offers}.
 
     bet_offers: [{id, criterion_label, outcomes: [{id, label, odds_decimal}]}]
+
+    NB: legacy single-call sweep at categoryId=62 (football root) — Coolbet
+    deprecated this in early 2026 and now returns 404. Kept as a fallback
+    for old call sites; new code should use fetch_coolbet_leagues +
+    fetch_events_for_league instead.
     """
     resp = session.get(_CATEGORY_URL, params={
         "categoryId": _FOOTBALL_CATEGORY_ID,
@@ -348,6 +353,85 @@ def fetch_coolbet_events(session: CoolbetSession) -> list[dict]:
     _walk_group(data.get("group") or data, events)
     log.info("Fetched %d Coolbet football events from fo-category", len(events))
     return events
+
+
+# ── League-based ingest (COOLBET-LEAGUE-INGEST 2026-05-20) ────────────────────
+#
+# Single category=62 sweep is dead; per-match search has false negatives.
+# Two-endpoint architecture replaces both:
+#
+#   1. POST /s/sports/category/order/explicit/category-page-leagues
+#        body: {sportCategoryId: 62, country: "EE", locale: "et"}
+#        returns: list of {id, name, fullSlug, ...} — ~136 leagues
+#
+#   2. GET /s/sbgate/sports/fo-category/?categoryId=<league_id>
+#        returns: [{matches: [{id, name, home_team_name, away_team_name, start}]}]
+#        — all current/upcoming events in that league, no fuzzy matching needed
+
+_LEAGUES_URL = "https://www.coolbet.com/s/sports/category/order/explicit/category-page-leagues"
+
+
+def fetch_coolbet_leagues(session: CoolbetSession) -> list[dict]:
+    """Return the full list of Coolbet football leagues currently exposed
+    to the EE locale. Each entry: {id, name, fullSlug, sportCategoryId}.
+    ~136 entries as of 2026-05-20. Call once and cache; refresh weekly."""
+    resp = session.post(_LEAGUES_URL, json={
+        "sportCategoryId": _FOOTBALL_CATEGORY_ID,
+        "country":         "EE",
+        "locale":          "et",  # endpoint requires Estonian locale; field names are stable
+    })
+    if resp.status_code != 200:
+        log.warning("category-page-leagues returned %d: %s", resp.status_code, resp.text[:200])
+        return []
+    payload = resp.json()
+    if not isinstance(payload, list):
+        log.warning("category-page-leagues unexpected shape: %s", type(payload).__name__)
+        return []
+    return [
+        {"id": int(e["id"]),
+         "name": e.get("name") or "",
+         "fullSlug": e.get("fullSlug") or "",
+         "sportCategoryId": e.get("sportCategoryId")}
+        for e in payload if e.get("id")
+    ]
+
+
+def fetch_events_for_league(session: CoolbetSession, league_id: int) -> list[dict]:
+    """Return all matches in one Coolbet league.
+
+    Each match dict has at minimum: {id, name, home_team_name, away_team_name,
+    match_start, status}. Status='OPEN' = pre-match or live; others (closed,
+    etc.) are skipped by caller.
+
+    Wraps the fo-category endpoint with a specific league_id (the one
+    discovered via fetch_coolbet_leagues). Coolbet returns 404 for the root
+    categoryId=62, but specific league IDs work fine.
+    """
+    resp = session.get(_CATEGORY_URL, params={
+        "categoryId": league_id,
+        "country":    "EE",
+        "language":   "en",
+        "layout":     "EUROPEAN",
+    })
+    if resp.status_code != 200:
+        log.debug("fo-category(league=%d) returned %d", league_id, resp.status_code)
+        return []
+    data = resp.json()
+    matches: list[dict] = []
+    # Response is a list of category objects, each with a matches[] array.
+    for cat in (data if isinstance(data, list) else [data]):
+        for m in (cat.get("matches") or []):
+            if not m.get("id"):
+                continue
+            matches.append({
+                "id":         int(m["id"]),
+                "home":       (m.get("home_team_name") or "").strip(),
+                "away":       (m.get("away_team_name") or "").strip(),
+                "start":      m.get("match_start") or m.get("start"),
+                "status":     m.get("status"),
+                "name":       m.get("name"),
+            })
+    return matches
 
 
 def _walk_group(group: dict, out: list) -> None:
