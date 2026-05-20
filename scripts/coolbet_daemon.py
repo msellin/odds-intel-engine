@@ -68,12 +68,12 @@ def _task_keepalive(session: CoolbetSession) -> str:
     return f"keepalive {'✓' if ok else '✗'}  (JWT TTL ≈ {int(ttl)}s)"
 
 
-def _task_odds_snapshot() -> str:
+def _task_odds_snapshot(bets_only: bool, days: int) -> str:
     # Import inside so a transient bug in the explorer doesn't block daemon startup.
     from workers.automation.coolbet_explorer import run_bulk
     try:
-        run_bulk(days=2, dry_run=False, sleep_s=0.25, limit=None, bets_only=True)
-        return "odds snapshot ✓"
+        run_bulk(days=days, dry_run=False, sleep_s=0.25, limit=None, bets_only=bets_only)
+        return f"odds snapshot ✓ ({'bets-only' if bets_only else 'wide'}, {days}d)"
     except Exception as e:
         log.warning("odds snapshot raised: %s", e)
         return f"odds snapshot ✗ ({e})"
@@ -107,6 +107,14 @@ def main() -> None:
                     help="Heartbeat cadence in minutes (default 20)")
     ap.add_argument("--odds-min", type=int, default=30,
                     help="Odds snapshot cadence in minutes (default 30)")
+    ap.add_argument("--odds-mode", choices=("wide", "bets-only"), default="wide",
+                    help="wide=fetch Coolbet odds for every upcoming match in DB "
+                         "(default; matches AF cadence — feeds the betting "
+                         "pipeline's edge math via ACCESSIBLE_BOOKMAKERS). "
+                         "bets-only=fetch only for matches with pending value bets "
+                         "(smaller API load, but Coolbet can't surface new edges).")
+    ap.add_argument("--odds-days", type=int, default=2,
+                    help="Days ahead to fetch odds for (default 2)")
     ap.add_argument("--place-min", type=int, default=5,
                     help="Placement loop cadence in minutes (default 5)")
     ap.add_argument("--place-mode", choices=("dry", "record", "execute"),
@@ -201,7 +209,10 @@ def main() -> None:
             next_keepalive = now + args.keepalive_min * 60
 
         if now >= next_odds:
-            log.info(_task_odds_snapshot())
+            log.info(_task_odds_snapshot(
+                bets_only=(args.odds_mode == "bets-only"),
+                days=args.odds_days,
+            ))
             next_odds = now + args.odds_min * 60
 
         if not args.no_place and now >= next_place:

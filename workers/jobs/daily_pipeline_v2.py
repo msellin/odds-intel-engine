@@ -524,7 +524,14 @@ DIXON_COLES_RHO = -0.13
 # Pinnacle is included because it's available via Pinnacle Sports .com (manual) and also
 # serves as the sharpest-book quality reference throughout the pipeline.
 ACCESSIBLE_BOOKMAKERS: frozenset = frozenset({
-    "Bet365", "Unibet", "Betano", "Marathonbet", "10Bet", "888Sport", "Pinnacle"
+    "Bet365", "Unibet", "Betano", "Marathonbet", "10Bet", "888Sport", "Pinnacle",
+    # COOLBET-AS-ACCESSIBLE (2026-05-20): Coolbet is our actual placement
+    # venue and now ingested every 30m by the daemon's wide odds mode. Adding
+    # it here so its prices feed edge math — if Coolbet has the best price on
+    # a match where soft books are weaker, that becomes a real bet candidate.
+    # The feedback loop: Coolbet odds in → new edges discovered → bets
+    # generated → daemon places them at Coolbet (best available price).
+    "Coolbet",
 })
 
 # Cache: {league_tier (1-4): rho}. Loaded once per pipeline run.
