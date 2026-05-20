@@ -902,35 +902,66 @@ def _place_bet_api(
         "referer":            "https://www.coolbet.com/en/sports/football",
     }
     resp = session.post(_BET_URL, json=payload, headers=headers)
-    log.debug("POST /s/bets/bets → %d  %s", resp.status_code, resp.text[:300])
+    log.info("POST /s/bets/bets → %d  %s", resp.status_code, resp.text[:300])
 
-    # Dump payload + response to disk on any non-success so we can diff against
-    # a browser curl without re-running the (real-money) call.
+    # Always dump payload + response so we can audit what Coolbet returned.
+    # Critical for real-money calls: even on "success" the response shape may
+    # not match our parser — if the bet landed but we crashed on parse,
+    # the dump tells us the bet exists at Coolbet's side.
+    try:
+        import json as _json
+        from pathlib import Path as _Path
+        dump_dir = _Path.home() / ".coolbet-daemon"
+        dump_dir.mkdir(exist_ok=True)
+        suffix = "failed" if resp.status_code not in (200, 201) else "success"
+        (dump_dir / f"last-placement-{suffix}.json").write_text(_json.dumps({
+            "request": payload,
+            "response_status": resp.status_code,
+            "response_body": resp.text,
+        }, indent=2))
+    except Exception:
+        pass
+
     if resp.status_code not in (200, 201):
-        try:
-            import json as _json
-            from pathlib import Path as _Path
-            dump_dir = _Path.home() / ".coolbet-daemon"
-            dump_dir.mkdir(exist_ok=True)
-            (dump_dir / "last-failed-placement.json").write_text(_json.dumps({
-                "request": payload,
-                "response_status": resp.status_code,
-                "response_body": resp.text,
-            }, indent=2))
-        except Exception:
-            pass
         raise RuntimeError(
             f"Bet placement failed ({resp.status_code}): {resp.text}"
         )
 
-    data = resp.json()
-    ticket_id = (
-        data.get("ticketId")
-        or data.get("ticket_id")
-        or data.get("id")
-        or str(data)[:40]
-    )
-    return ticket_id
+    # Response shape is whatever Coolbet returns — could be a dict, list,
+    # bare string (ticket UUID), or wrapped in {ticket: ...}. Walk through
+    # likely shapes; if none match, return the whole body so we can see it.
+    try:
+        data = resp.json()
+    except Exception:
+        # Plain-text response — return as-is
+        return resp.text.strip().strip('"')[:60]
+
+    def _extract_ticket_id(obj) -> str | None:
+        if isinstance(obj, str):
+            return obj
+        if isinstance(obj, list) and obj:
+            return _extract_ticket_id(obj[0])
+        if isinstance(obj, dict):
+            for k in ("ticketId", "ticket_id", "id", "uuid"):
+                v = obj.get(k)
+                if isinstance(v, (str, int)):
+                    return str(v)
+            # Common nested shapes
+            for k in ("ticket", "data", "result"):
+                v = obj.get(k)
+                if v is not None:
+                    nested = _extract_ticket_id(v)
+                    if nested:
+                        return nested
+        return None
+
+    ticket_id = _extract_ticket_id(data)
+    if ticket_id:
+        return ticket_id
+    # Last resort — return a JSON snippet so caller sees something useful
+    # AND the bet is still recorded in our DB (since the POST succeeded).
+    import json as _json
+    return _json.dumps(data)[:120]
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
