@@ -42,23 +42,41 @@ sys.path.insert(0, str(ROOT))
 load_dotenv()
 
 
+_UC_LOOSEVERSION_SHIM = '''try:
+    from distutils.version import LooseVersion  # Python <=3.11
+except ImportError:  # Python >=3.12 removed distutils
+    from packaging.version import Version as _PkgVersion
+    class LooseVersion:
+        def __init__(self, vstring):
+            self._v = _PkgVersion(str(vstring))
+            self.version = list(self._v.release)
+            self.vstring = str(vstring)
+        def __str__(self):  return str(self._v)
+        def __repr__(self): return f"LooseVersion('{self._v}')"
+        def _cmp(self, other):
+            try:
+                ov = other._v if isinstance(other, LooseVersion) else _PkgVersion(str(other))
+            except Exception:
+                return NotImplemented
+            return (self._v > ov) - (self._v < ov)
+        def __lt__(self, other): r=self._cmp(other); return NotImplemented if r is NotImplemented else r<0
+        def __le__(self, other): r=self._cmp(other); return NotImplemented if r is NotImplemented else r<=0
+        def __gt__(self, other): r=self._cmp(other); return NotImplemented if r is NotImplemented else r>0
+        def __ge__(self, other): r=self._cmp(other); return NotImplemented if r is NotImplemented else r>=0
+        def __eq__(self, other): r=self._cmp(other); return NotImplemented if r is NotImplemented else r==0
+        def __hash__(self): return hash(self._v)'''
+
+_UC_OLD_THIN_SHIM = "try:\n    from distutils.version import LooseVersion\nexcept ImportError:\n    from packaging.version import Version as LooseVersion"
+_UC_ORIGINAL_IMPORT = "from distutils.version import LooseVersion"
+
+
 def _ensure_uc_distutils_shim() -> None:
     """undetected-chromedriver 3.5.5 imports `distutils.version.LooseVersion`,
-    but Python 3.12+ removed distutils. If the import would fail, patch the
-    package file in-place — one line. Idempotent: safe to call repeatedly."""
-    try:
-        import undetected_chromedriver  # noqa: F401
-        return  # already importable
-    except ImportError:
-        pass
-    try:
-        import undetected_chromedriver.patcher  # noqa: F401  # triggers the failing import
-        return
-    except ModuleNotFoundError as e:
-        if "distutils" not in str(e):
-            raise
-    # Apply the shim
-    import importlib, importlib.util
+    but Python 3.12+ removed distutils. Patch patcher.py with a full
+    LooseVersion-compatible shim (the thin `Version as LooseVersion` rename
+    won't work — patcher.py reads `version.version[0]` for major-version
+    access, which packaging.Version doesn't expose). Idempotent."""
+    import importlib.util
     spec = importlib.util.find_spec("undetected_chromedriver")
     if not spec or not spec.submodule_search_locations:
         raise RuntimeError("undetected_chromedriver not found in this Python — "
@@ -66,16 +84,15 @@ def _ensure_uc_distutils_shim() -> None:
     pkg_dir = Path(list(spec.submodule_search_locations)[0])
     patcher_py = pkg_dir / "patcher.py"
     src = patcher_py.read_text()
-    if "from distutils.version import LooseVersion" not in src:
-        return  # already patched
-    new = src.replace(
-        "from distutils.version import LooseVersion",
-        "try:\n"
-        "    from distutils.version import LooseVersion\n"
-        "except ImportError:\n"
-        "    from packaging.version import Version as LooseVersion",
-        1,
-    )
+    if _UC_LOOSEVERSION_SHIM in src:
+        return  # already up-to-date
+    # Upgrade-path: replace either the original import OR the thin shim
+    if _UC_OLD_THIN_SHIM in src:
+        new = src.replace(_UC_OLD_THIN_SHIM, _UC_LOOSEVERSION_SHIM, 1)
+    elif _UC_ORIGINAL_IMPORT in src:
+        new = src.replace(_UC_ORIGINAL_IMPORT, _UC_LOOSEVERSION_SHIM, 1)
+    else:
+        return  # unrecognised state, leave alone
     patcher_py.write_text(new)
     print(f"  (auto-patched {patcher_py.name} for Python 3.12+ distutils removal)")
 

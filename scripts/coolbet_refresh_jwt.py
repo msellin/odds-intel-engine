@@ -30,15 +30,38 @@ sys.path.insert(0, str(ROOT))
 load_dotenv()
 
 
+_UC_LOOSEVERSION_SHIM = '''try:
+    from distutils.version import LooseVersion  # Python <=3.11
+except ImportError:  # Python >=3.12 removed distutils
+    from packaging.version import Version as _PkgVersion
+    class LooseVersion:
+        def __init__(self, vstring):
+            self._v = _PkgVersion(str(vstring))
+            self.version = list(self._v.release)
+            self.vstring = str(vstring)
+        def __str__(self):  return str(self._v)
+        def __repr__(self): return f"LooseVersion('{self._v}')"
+        def _cmp(self, other):
+            try:
+                ov = other._v if isinstance(other, LooseVersion) else _PkgVersion(str(other))
+            except Exception:
+                return NotImplemented
+            return (self._v > ov) - (self._v < ov)
+        def __lt__(self, other): r=self._cmp(other); return NotImplemented if r is NotImplemented else r<0
+        def __le__(self, other): r=self._cmp(other); return NotImplemented if r is NotImplemented else r<=0
+        def __gt__(self, other): r=self._cmp(other); return NotImplemented if r is NotImplemented else r>0
+        def __ge__(self, other): r=self._cmp(other); return NotImplemented if r is NotImplemented else r>=0
+        def __eq__(self, other): r=self._cmp(other); return NotImplemented if r is NotImplemented else r==0
+        def __hash__(self): return hash(self._v)'''
+
+_UC_OLD_THIN_SHIM = "try:\n    from distutils.version import LooseVersion\nexcept ImportError:\n    from packaging.version import Version as LooseVersion"
+_UC_ORIGINAL_IMPORT = "from distutils.version import LooseVersion"
+
+
 def _ensure_uc_distutils_shim() -> None:
-    """Patch undetected-chromedriver's distutils import for Python 3.12+.
-    See scripts/coolbet_browser_setup.py for the full explanation."""
-    try:
-        import undetected_chromedriver.patcher  # noqa: F401
-        return
-    except ModuleNotFoundError as e:
-        if "distutils" not in str(e):
-            raise
+    """Patch undetected-chromedriver's distutils import for Python 3.12+ with a
+    full LooseVersion-compatible shim (not just rename). See
+    scripts/coolbet_browser_setup.py for explanation. Idempotent."""
     import importlib.util
     spec = importlib.util.find_spec("undetected_chromedriver")
     if not spec or not spec.submodule_search_locations:
@@ -46,12 +69,12 @@ def _ensure_uc_distutils_shim() -> None:
     pkg_dir = Path(list(spec.submodule_search_locations)[0])
     patcher_py = pkg_dir / "patcher.py"
     src = patcher_py.read_text()
-    if "from distutils.version import LooseVersion" in src:
-        patcher_py.write_text(src.replace(
-            "from distutils.version import LooseVersion",
-            "try:\n    from distutils.version import LooseVersion\nexcept ImportError:\n    from packaging.version import Version as LooseVersion",
-            1,
-        ))
+    if _UC_LOOSEVERSION_SHIM in src:
+        return
+    if _UC_OLD_THIN_SHIM in src:
+        patcher_py.write_text(src.replace(_UC_OLD_THIN_SHIM, _UC_LOOSEVERSION_SHIM, 1))
+    elif _UC_ORIGINAL_IMPORT in src:
+        patcher_py.write_text(src.replace(_UC_ORIGINAL_IMPORT, _UC_LOOSEVERSION_SHIM, 1))
 
 
 _ensure_uc_distutils_shim()
