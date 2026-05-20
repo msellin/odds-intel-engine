@@ -304,8 +304,15 @@ def run_bulk(days: int, dry_run: bool, sleep_s: float, limit: int | None) -> Non
         if ev is None:
             if category_cache is None:
                 console.print("[dim]Search miss — loading full fo-category once[/dim]")
-                category_cache = fetch_coolbet_events(session)
-            ev = fuzzy_match_event(home, away, category_cache)
+                try:
+                    category_cache = fetch_coolbet_events(session)
+                except Exception as e:
+                    # fo-category endpoint has 404'd in production at least once
+                    # (Coolbet seems to have moved or retired it). Degrade to
+                    # search-only — matches the search misses are skipped.
+                    log.warning("fo-category unavailable (%s) — falling back to search-only", e)
+                    category_cache = []
+            ev = fuzzy_match_event(home, away, category_cache) if category_cache else None
         if ev is None:
             log.info("[%d/%d] no Coolbet event: %s vs %s", i, len(matches), home, away)
             continue
@@ -366,7 +373,11 @@ def run_one_shot(match_id: str) -> None:
     ev = search_coolbet_event(session, m["home"], m["away"])
     if ev is None:
         console.print("[dim]Search miss — loading full fo-category[/dim]")
-        ev = fuzzy_match_event(m["home"], m["away"], fetch_coolbet_events(session))
+        try:
+            ev = fuzzy_match_event(m["home"], m["away"], fetch_coolbet_events(session))
+        except Exception as e:
+            console.print(f"[yellow]fo-category unavailable ({e}). Search-only mode.[/yellow]")
+            ev = None
     if ev is None:
         console.print("[yellow]No matching Coolbet event.[/yellow]")
         return
