@@ -6720,13 +6720,42 @@ def _():
     ).read_text(), "store_coolbet_odds_snapshot must exist in supabase_client"
 
 
-@test("COOLBET-AUTO-COOKIE-REFRESH — headless JWT refresher wired into daemon + session")
+@test("COOLBET-JWT-API-RENEW — pure-Python JWT renewal via /s/auth/renew-token")
 def _():
-    """COOLBET-AUTO-COOKIE-REFRESH (2026-05-20) — manual JWT paste every 30
-    min is the last operational chore. This task automates it: persistent
-    Chrome profile (created by scripts/coolbet_browser_setup.py) + headless
-    refresher (scripts/coolbet_refresh_jwt.py) + daemon task that runs every
-    25 min and on Telegram /relogin. CoolbetSession.reload_manual_jwt()
+    """COOLBET-JWT-API-RENEW (2026-05-20) — Coolbet exposes /s/auth/renew-token
+    which accepts a soon-to-expire JWT and returns a fresh one. The frontend
+    uses this same endpoint every ~20 min while a user is browsing. We
+    hooked into it from Python, eliminating the need for headless Chrome
+    / undetected-chromedriver / persistent profile. Daemon renews JWT
+    silently every 20 min for as long as the underlying Smart-ID session
+    at Coolbet stays alive (typically all day). Operator only needs to
+    re-Smart-ID + paste a fresh JWT when renewal returns 401/403."""
+    import pathlib
+    src = pathlib.Path("workers/automation/coolbet_session.py").read_text()
+    assert "_RENEW_URL" in src, "renewal endpoint URL constant missing"
+    assert "/s/auth/renew-token" in src, "renewal URL must be /s/auth/renew-token"
+    assert "def renew_jwt_via_api" in src, "renew_jwt_via_api method missing"
+    assert "self._http.post(_RENEW_URL" in src, \
+        "renew_jwt_via_api must POST to _RENEW_URL"
+    assert "self._adopt_manual_jwt()" in src, \
+        "renew_jwt_via_api must adopt the new JWT after extraction"
+    assert "set_key" in src, "renew_jwt_via_api must persist new JWT to .env"
+
+    daemon = pathlib.Path("scripts/coolbet_daemon.py").read_text()
+    assert "renew_jwt_via_api" in daemon, \
+        "daemon must call renew_jwt_via_api in the periodic refresh task"
+    assert "_task_jwt_browser_refresh" in daemon, \
+        "renewal task entrypoint missing (back-compat name with /relogin)"
+
+
+@test("COOLBET-AUTO-COOKIE-REFRESH — headless JWT refresher wired into daemon + session (legacy)")
+def _():
+    """COOLBET-AUTO-COOKIE-REFRESH (2026-05-20) — superseded by
+    COOLBET-JWT-API-RENEW. The headless-Chrome path turned out non-viable
+    (Coolbet session doesn't survive Chrome process restarts). Kept the
+    setup + refresh scripts as a fallback discovery tool but the daemon
+    no longer depends on them. Test relaxed: scripts exist, but no longer
+    required to be wired into the daemon's renewal path.
     hot-swaps the new token in-process — no daemon restart needed."""
     import pathlib
 
@@ -6739,30 +6768,19 @@ def _():
     assert "jwt-location.json" in setup_src, "setup must persist JWT location for refresher"
 
     refresher = pathlib.Path("scripts/coolbet_refresh_jwt.py")
-    assert refresher.exists(), "scripts/coolbet_refresh_jwt.py missing — headless JWT refresher"
-    ref_src = refresher.read_text()
-    assert "--headless" in ref_src, "refresher must run headless"
-    assert "user-data-dir" in ref_src, "refresher must reuse persistent profile"
-    assert "set_key" in ref_src, "refresher must write fresh JWT back to .env"
-    # Exit-code protocol so daemon can react correctly
-    assert "return 2" in ref_src, "refresher must exit(2) when session expired"
-    assert "return 3" in ref_src, "refresher must exit(3) on other errors"
+    assert refresher.exists(), "scripts/coolbet_refresh_jwt.py missing — kept as fallback discovery tool"
 
     session_src = pathlib.Path("workers/automation/coolbet_session.py").read_text()
     assert "def reload_manual_jwt" in session_src, \
-        "CoolbetSession.reload_manual_jwt() missing — needed for hot-swap"
-    assert "override=True" in session_src, \
-        "reload_manual_jwt must force-re-read .env (load_dotenv override)"
+        "CoolbetSession.reload_manual_jwt() missing — still used as a safety net"
 
     daemon_src = pathlib.Path("scripts/coolbet_daemon.py").read_text()
     assert "_task_jwt_browser_refresh" in daemon_src, \
-        "daemon must define _task_jwt_browser_refresh"
+        "renewal task entrypoint missing (back-compat name with /relogin)"
     assert "next_jwt_refresh" in daemon_src, \
         "daemon must schedule periodic JWT refresh"
-    assert "coolbet_refresh_jwt.py" in daemon_src, \
-        "daemon must invoke the refresher script"
-    assert "session.reload_manual_jwt" in daemon_src, \
-        "daemon must hot-swap JWT after refresh succeeds"
+    # NOTE: assertions about subprocess-invoking the refresher script are
+    # intentionally dropped — superseded by COOLBET-JWT-API-RENEW.
     # /relogin Telegram command now uses the browser refresh path, not _login()
     assert "_task_jwt_browser_refresh(session))" in daemon_src, \
         "/relogin must route through browser refresher"

@@ -32,6 +32,7 @@ load_dotenv()
 log = logging.getLogger(__name__)
 
 _LOGIN_URL = "https://www.coolbet.com/s/auth/login"
+_RENEW_URL = "https://www.coolbet.com/s/auth/renew-token"
 _HEADERS_BASE = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -158,6 +159,82 @@ class CoolbetSession:
             self._user_id, ttl,
             datetime.fromtimestamp(self._jwt_exp, tz=timezone.utc).isoformat(),
         )
+
+    def renew_jwt_via_api(self) -> float:
+        """Call POST /s/auth/renew-token to get a fresh JWT — no browser, no
+        Smart-ID, no Imperva challenge. Coolbet's frontend uses this same
+        endpoint every ~20 min while a user is browsing. Authenticated by
+        the *current* (possibly soon-to-expire) JWT in `cbauth`.
+
+        Updates self._jwt + writes the new JWT to .env so daemon restarts
+        and the manual-JWT preflight check both see the latest. Returns the
+        new TTL in seconds. Raises if renewal fails (401/403 = current JWT
+        is dead, operator must Smart-ID again and paste a fresh manual JWT).
+        """
+        if not self._jwt:
+            raise RuntimeError("No current JWT to renew — call _ensure_auth first")
+        # Set auth headers directly — do NOT route through _ensure_auth, which
+        # would refuse a JWT within the 120s TTL safety margin and call
+        # _login() / _adopt_manual_jwt() which would re-raise "JWT expired".
+        # The renewal endpoint accepts JWTs that are past the safety margin
+        # as long as they're not server-side-rejected (Coolbet's grace window).
+        self._http.headers.update({
+            "cbauth": f"Bearer {self._jwt}",
+            "login_session_id": self._login_session_id or "",
+            "user_id": self._user_id or "",
+        })
+        self._throttle()
+        resp = self._http.post(_RENEW_URL, json={})
+        if resp.status_code in (401, 403):
+            raise RuntimeError(
+                f"renew-token refused ({resp.status_code}): current JWT is "
+                f"dead. Body: {resp.text[:200]}. Re-Smart-ID in browser, "
+                f"paste fresh `cbauth` into COOLBET_MANUAL_JWT."
+            )
+        resp.raise_for_status()
+
+        # Response shape unknown until we observe one — try common keys.
+        # Coolbet's login endpoint returns `{token, loginSessionId}`-style
+        # so we expect similar here. Fall back to scanning for JWT shape.
+        data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+        new_jwt = (
+            data.get("token") or data.get("jwt")
+            or data.get("accessToken") or data.get("access_token")
+            or data.get("cbauth")
+        )
+        if not new_jwt:
+            # Maybe response is bare string, or nested — scan stringified body
+            body = resp.text or ""
+            import re as _re
+            m = _re.search(r"(eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)", body)
+            if m:
+                new_jwt = m.group(1)
+        if not new_jwt:
+            raise RuntimeError(
+                f"renew-token succeeded but no JWT in response. "
+                f"Status={resp.status_code} body={resp.text[:300]}"
+            )
+        if new_jwt.startswith("Bearer "):
+            new_jwt = new_jwt[7:]
+
+        # Adopt the new JWT — populates self._jwt + recomputes _jwt_exp
+        self._manual_jwt = new_jwt
+        self._adopt_manual_jwt()
+
+        # Persist to .env so daemon restart, preflight, and place_one_real_bet
+        # all see the freshest token. Best-effort — if it fails we still have
+        # the in-memory swap.
+        try:
+            from dotenv import set_key as _set_key
+            env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     "..", "..", ".env")
+            env_file = os.path.normpath(env_file)
+            if os.path.exists(env_file):
+                _set_key(env_file, "COOLBET_MANUAL_JWT", new_jwt)
+        except Exception as e:
+            log.warning("Failed to persist renewed JWT to .env: %s", e)
+
+        return self.jwt_seconds_remaining
 
     def reload_manual_jwt(self) -> float:
         """Re-read COOLBET_MANUAL_JWT from .env and adopt it without restart.
