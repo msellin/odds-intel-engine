@@ -895,8 +895,11 @@ def _place_bet_api(
     log.debug("POST /s/bets/bets → %d  %s", resp.status_code, resp.text[:300])
 
     if resp.status_code not in (200, 201):
+        # Full body — Coolbet echoes our payload in `meta._original` then puts
+        # the actual error code/message after. Don't truncate; we'd lose
+        # exactly the info we need to fix the call.
         raise RuntimeError(
-            f"Bet placement failed ({resp.status_code}): {resp.text[:400]}"
+            f"Bet placement failed ({resp.status_code}): {resp.text}"
         )
 
     data = resp.json()

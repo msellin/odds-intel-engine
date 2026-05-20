@@ -65,13 +65,17 @@ class CoolbetSession:
         self._email = os.getenv("COOLBET_USER", os.getenv("COOLBET_EMAIL", ""))
         self._password = os.getenv("COOLBET_PASS", os.getenv("COOLBET_PASSWORD", ""))
         # Individual cookie vars (preferred — easier to update when one expires)
-        # Falls back to the legacy combined COOLBET_IMPERVA_COOKIES string
+        # Falls back to the legacy combined COOLBET_IMPERVA_COOKIES string.
+        # `uuid` (deviceId) is a Coolbet-side cookie, not Imperva — required
+        # in the bet placement payload (POST /s/bets/bets sends it as
+        # `deviceId`). Without it Coolbet 400's the bet.
         self._imperva_cookies_individual = {
             "reese84":                 os.getenv("COOLBET_COOKIE_REESE84", ""),
             "visid_incap_723517":      os.getenv("COOLBET_COOKIE_VISID_INCAP", ""),
             "nlbi_723517":             os.getenv("COOLBET_COOKIE_NLBI", ""),
             "nlbi_723517_2147483392":  os.getenv("COOLBET_COOKIE_NLBI2", ""),
             "incap_ses_1099_723517":   os.getenv("COOLBET_COOKIE_INCAP_SES", ""),
+            "uuid":                    os.getenv("COOLBET_COOKIE_UUID", ""),
         }
         self._imperva_cookies_raw = os.getenv("COOLBET_IMPERVA_COOKIES", "")
 
