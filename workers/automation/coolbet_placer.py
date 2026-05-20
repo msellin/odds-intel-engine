@@ -856,15 +856,22 @@ def _place_bet_api(
     stake: float,
     match_name: str,
     market_name: str,
+    outcome_name: str = "",
 ) -> str:
     """
     POST /s/bets/bets — place a single bet.
     Returns the ticket_id (UUID string) on success. Raises on failure.
 
-    Payload structure confirmed from captured network request:
+    Payload structure (confirmed from captured network request):
       ticketType: "single"
       bets[].oddsIdByOutcomeId: {outcomeId: oddsId_uuid}
       deviceId: uuid cookie value
+      foTranslationsByOutcomeId: {outcomeId: {matchName, marketName, outcomeName}}
+
+    market_name + outcome_name must be Coolbet's REAL names from the markets
+    payload (eg "Total Goals Over / Under" + "Over"), not our bot's internal
+    labels. Coolbet 400's on empty outcomeName. Lookup helper below extracts
+    them from the markets dict returned by fetch_match_markets.
     """
     device_id = session._http.cookies.get("uuid", "")
 
@@ -876,7 +883,7 @@ def _place_bet_api(
             str(outcome_id): {
                 "matchName":   match_name,
                 "marketName":  market_name,
-                "outcomeName": "",
+                "outcomeName": outcome_name,
             }
         },
         "oddsFormat":       "DECIMAL",
@@ -1077,9 +1084,23 @@ def place_all_bets(
                 results.append({**bet, "outcome": "confirm_declined"})
                 continue
             match_name = f"{ev['home']} - {ev['away']}"
+            # Look up Coolbet's real market+outcome names from the markets
+            # data (not our bot's internal labels). Coolbet 400's on empty
+            # outcomeName — fixed 2026-05-20.
+            cb_market_name = ""
+            cb_outcome_name = ""
+            for _m in markets:
+                if int(_m.get("id") or 0) != bo_id: continue
+                cb_market_name = _m.get("name") or ""
+                for _oc in _m.get("outcomes") or []:
+                    if int(_oc.get("id") or 0) == oc_id:
+                        cb_outcome_name = _oc.get("name") or ""
+                        break
+                break
             try:
                 ticket_id = _place_bet_api(
-                    session, oc_id, odds_uuid, stake, match_name, f"{mkt} {sel}"
+                    session, oc_id, odds_uuid, stake, match_name,
+                    cb_market_name, cb_outcome_name,
                 )
                 log.info("✓ Coolbet ticket placed: %s", ticket_id)
             except Exception as e:
