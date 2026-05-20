@@ -42,22 +42,41 @@ console = Console()
 # ── League definitions ─────────────────────────────────────────────────────────
 # (oddsportal_slug, display_name)
 LEAGUES = [
+    # Top 5 European leagues
     ("england-premier-league",      "England Premier League"),
     ("england-championship",        "England Championship"),
     ("germany-bundesliga",          "Germany Bundesliga"),
-    ("germany-2-bundesliga",        "Germany 2. Bundesliga"),
+    ("germany-bundesliga-2",        "Germany 2. Bundesliga"),
     ("spain-laliga",                "Spain La Liga"),
     ("spain-laliga2",               "Spain La Liga 2"),
     ("italy-serie-a",               "Italy Serie A"),
     ("italy-serie-b",               "Italy Serie B"),
     ("france-ligue-1",              "France Ligue 1"),
     ("france-ligue-2",              "France Ligue 2"),
-    ("netherlands-eredivisie",      "Netherlands Eredivisie"),
-    ("belgium-jupiler-pro-league",  "Belgium Jupiler Pro League"),
-    ("portugal-liga-portugal",      "Portugal Liga Portugal"),
+    # Other European
+    ("eredivisie",                  "Netherlands Eredivisie"),
+    ("jupiler-pro-league",          "Belgium Jupiler Pro League"),
+    ("liga-portugal",               "Portugal Liga Portugal"),
     ("turkey-super-lig",            "Turkey Super Lig"),
     ("greece-super-league",         "Greece Super League"),
     ("scotland-premiership",        "Scotland Premiership"),
+    ("austria-bundesliga",          "Austria Bundesliga"),
+    ("switzerland-super-league",    "Switzerland Super League"),
+    ("denmark-superliga",           "Denmark Superliga"),
+    ("poland-ekstraklasa",          "Poland Ekstraklasa"),
+    ("ireland-premier-division",    "Ireland Premier Division"),
+    ("russia-premier-league",       "Russia Premier League"),
+    # European cups
+    ("champions-league",            "UEFA Champions League"),
+    ("europa-league",               "UEFA Europa League"),
+    ("conference-league",           "UEFA Conference League"),
+    # Americas / Asia
+    ("argentina-liga-profesional",  "Argentina Liga Profesional"),
+    ("brazil-serie-a",              "Brazil Serie A"),
+    ("usa-mls",                     "USA MLS"),
+    ("mexico-liga-mx",              "Mexico Liga MX"),
+    ("japan-j1-league",             "Japan J1 League"),
+    ("china-super-league",          "China Super League"),
 ]
 
 LEAGUE_SLUGS = {slug for slug, _ in LEAGUES}
