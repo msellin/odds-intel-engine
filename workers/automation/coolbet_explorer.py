@@ -47,53 +47,158 @@ from workers.api_clients.supabase_client import (
 from workers.automation.coolbet_session import CoolbetSession
 from workers.automation.coolbet_placer import (
     _parse_event,
+    _FO_MATCH_URL,
+    _ODDS_URL,
+    _SIDEBETS_URL,
     fetch_coolbet_events,
-    fetch_main_markets,
-    fetch_sidebets,
     fuzzy_match_event,
     search_coolbet_event,
 )
+
+# Odds for line markets (OU, AH, handicap) live at a different endpoint than
+# simple markets (1X2, BTTS, DC). Discovered 2026-05-20 via DevTools capture.
+_ODDS_LINE_URL = "https://www.coolbet.com/s/sb-odds/odds/current/fo-line/"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("coolbet_explorer")
 console = Console()
 
 
-# ── Market parsing ────────────────────────────────────────────────────────────
+# ── Coolbet API: markets + odds (new schema, 2026-05-20) ─────────────────────
 #
-# Coolbet bet_offers come in as { criterion_label, outcomes: [{label, odds_decimal, ...}] }.
-# Map each to one or more (market, selection, handicap_line) tuples in our schema.
-# `criterion_label` is already lower-cased by _parse_event/fetch_sidebets.
+# Coolbet now serves markets and odds from separate endpoints:
+#   POST /s/sbgate/sports/fo-match               → matches[].markets[] (no odds)
+#   GET  /s/sbgate/sports/fo-market/sidebets     → markets[].markets[] (no odds)
+#   POST /s/sb-odds/odds/current/fo              → simple-market odds (line=0)
+#   POST /s/sb-odds/odds/current/fo-line/        → line-market odds (OU, AH)
+#
+# Both odds endpoints return: { "<outcome_id>": {value: <decimal>, status, ...} }
+# Markets carry `market_type_id` (stable, locale-independent) and outcomes carry
+# `result_key` ("[Home]"/"Draw"/"[Away]"/"Over"/"Under"/"Yes"/"No"/"1X"/...).
+# Mapping by these instead of English labels is way more robust than the old
+# Kambi-style criterion-label substring matching.
 
-_OU_LINE_RE = re.compile(r"(\d+(?:[.,]\d+)?)")
-_AH_LINE_RE = re.compile(r"([+-]?\d+(?:[.,]\d+)?)")
+
+def fetch_match_markets(session: CoolbetSession, match_id: int) -> list[dict]:
+    """Combine fo-match + sidebets into one flat list of markets for a match.
+    Each market: {id, name, line, market_type_id, outcomes:[{id, name, result_key}]}.
+    Odds are NOT included — call fetch_odds_for_markets to fill those in."""
+    flat: list[dict] = []
+
+    # fo-match: main markets (1X2 + headline OU/BTTS for the league)
+    r = session.post(_FO_MATCH_URL, json={
+        "language": "en", "country": "EE", "layout": "EUROPEAN",
+        "locale": "en", "matchIds": [str(match_id)],
+    })
+    if r.status_code == 200:
+        for m in (r.json().get("matches") or []):
+            flat.extend(m.get("markets") or [])
+    else:
+        log.warning("fo-match %s returned %d", match_id, r.status_code)
+
+    # sidebets: side markets. Response groups individual line-markets under
+    # `markets[].markets[]` (group → line variants). Flatten.
+    r = session.get(_SIDEBETS_URL, params={
+        "matchId": match_id, "country": "EE", "language": "en",
+        "layout": "EUROPEAN", "limit": 13, "matchStatus": "OPEN",
+    })
+    if r.status_code == 200:
+        for group in (r.json().get("markets") or []):
+            mtid = group.get("market_type_id")
+            for sub in (group.get("markets") or []):
+                if mtid and "market_type_id" not in sub:
+                    sub["market_type_id"] = mtid
+                flat.append(sub)
+    else:
+        log.warning("sidebets %s returned %d", match_id, r.status_code)
+    return flat
 
 
-def _to_line(text: str) -> float | None:
-    m = _OU_LINE_RE.search(text or "")
-    if not m:
-        return None
+def fetch_odds_for_markets(
+    session: CoolbetSession, markets: list[dict],
+) -> dict[int, float]:
+    """Resolve odds for every outcome across the given markets. Splits market_ids
+    by simple (line==0) vs line (line!=0) and POSTs to the matching endpoint.
+    Returns {outcome_id: decimal_odds}."""
+    simple_ids: list[int] = []
+    line_ids:   list[int] = []
+    for mkt in markets:
+        mid = mkt.get("id")
+        if not mid:
+            continue
+        if _is_simple(mkt):
+            simple_ids.append(int(mid))
+        else:
+            line_ids.append(int(mid))
+
+    out: dict[int, float] = {}
+    if simple_ids:
+        r = session.post(_ODDS_URL, json={
+            "where": {"market_id": {"in": simple_ids}},
+        })
+        if r.status_code == 200:
+            _harvest_odds(r.json(), out)
+    if line_ids:
+        # /fo-line/ takes a nested array (groups of related lines). Single group
+        # of everything works in practice and avoids guessing the grouping.
+        r = session.post(_ODDS_LINE_URL, json={"marketIds": [line_ids]})
+        if r.status_code == 200:
+            _harvest_odds(r.json(), out)
+    return out
+
+
+def _is_simple(mkt: dict) -> bool:
+    line = mkt.get("line")
+    if line is None:
+        return True
     try:
-        return float(m.group(1).replace(",", "."))
-    except ValueError:
+        return float(line) == 0.0
+    except (TypeError, ValueError):
+        return str(line).strip() in ("", "0", "0.0")
+
+
+def _harvest_odds(payload, into: dict[int, float]) -> None:
+    """Flatten Coolbet's {outcome_id_str: {value, ...}} odds responses into a
+    single int→float map."""
+    if not isinstance(payload, dict):
+        return
+    for k, v in payload.items():
+        try:
+            oid = int(k)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(v, dict):
+            val = v.get("value")
+            if val is None:
+                continue
+            try:
+                into[oid] = float(val)
+            except (TypeError, ValueError):
+                pass
+
+
+# ── Market → our schema mapping ───────────────────────────────────────────────
+#
+# Map (market_type_id, result_key, line) → our (market_name, selection,
+# handicap_line). Fallbacks on market.name when market_type_id is unknown so
+# new markets degrade gracefully instead of silently dropping.
+#
+# Known market_type_ids (confirmed from probe responses):
+#   81  → Match Result (1X2)
+#   818 → Total Goals Over / Under
+# More will be added as we observe them.
+
+_MTID_1X2  = {81}
+_MTID_OU   = {818}
+_MTID_BTTS = set()          # populate when observed
+_MTID_DC   = set()
+_MTID_AH   = set()
+
+
+def _ou_market_for_line(line: float) -> str | None:
+    """OU .5 lines we ingest: 0.5, 1.5, 2.5, 3.5, 4.5."""
+    if line is None:
         return None
-
-
-def _signed_line(text: str) -> float | None:
-    """Pull a signed line (eg -1.25, +0.5) out of a criterion label like
-    'asian handicap -1.25'. Returns None if none found."""
-    m = _AH_LINE_RE.search(text or "")
-    if not m:
-        return None
-    try:
-        return float(m.group(1).replace(",", "."))
-    except ValueError:
-        return None
-
-
-def _market_for_ou_line(line: float) -> str | None:
-    """Map an OU line float to our market name."""
-    # We only track .5 lines (we don't bet AH-style quarter-totals here).
     if abs(line * 10 - round(line * 10)) > 1e-6:
         return None
     cents = round(line * 10)
@@ -102,97 +207,85 @@ def _market_for_ou_line(line: float) -> str | None:
     return f"over_under_{cents:02d}"
 
 
-def parse_bet_offer(bo: dict) -> list[tuple[str, str, float, float | None]]:
-    """Return list of (market, selection, odds, handicap_line_or_None) tuples
-    for one Coolbet bet_offer. Empty list if criterion is unknown / unsupported."""
-    label = bo.get("criterion_label", "")
-    outs = bo.get("outcomes") or []
+def parse_market(mkt: dict, odds_map: dict[int, float]) -> list[tuple[str, str, float, float | None]]:
+    """Return list of (market_name, selection, odds, handicap_line) rows
+    for one Coolbet market dict, looking up odds by outcome_id."""
     rows: list[tuple[str, str, float, float | None]] = []
+    mtid = mkt.get("market_type_id")
+    name = (mkt.get("name") or "").lower()
+    line_raw = mkt.get("line")
+    try:
+        line_val = float(line_raw) if line_raw not in (None, "") else None
+    except (TypeError, ValueError):
+        line_val = None
 
-    def _add(market: str, selection: str, odds: float, line: float | None = None) -> None:
+    def _add(market: str, selection: str, oid, hline: float | None = None) -> None:
+        try:
+            odds = odds_map.get(int(oid))
+        except (TypeError, ValueError):
+            return
         if odds and odds > 1.0:
-            rows.append((market, selection, odds, line))
+            rows.append((market, selection, odds, hline))
 
-    # ── 1X2 ────────────────────────────────────────────────────────────────
-    if any(p in label for p in ("match result", "full time result", "1x2")):
-        for oc in outs:
-            ol = (oc.get("label") or "").strip().lower()
-            if ol in {"1", "home"}:
-                _add("1x2", "Home", oc["odds_decimal"])
-            elif ol in {"x", "draw"}:
-                _add("1x2", "Draw", oc["odds_decimal"])
-            elif ol in {"2", "away"}:
-                _add("1x2", "Away", oc["odds_decimal"])
+    is_1x2  = mtid in _MTID_1X2  or "match result" in name or "1x2" in name
+    is_ou   = mtid in _MTID_OU   or "total goals over" in name or "over / under" in name
+    is_btts = mtid in _MTID_BTTS or "both teams to score" in name or "btts" in name
+    is_dc   = mtid in _MTID_DC   or "double chance" in name
+    is_ah   = mtid in _MTID_AH   or "asian handicap" in name
+
+    if is_1x2:
+        for oc in mkt.get("outcomes") or []:
+            rk = (oc.get("result_key") or "").strip("[]")
+            if rk == "Home":
+                _add("1x2", "Home", oc.get("id"))
+            elif rk == "Draw":
+                _add("1x2", "Draw", oc.get("id"))
+            elif rk == "Away":
+                _add("1x2", "Away", oc.get("id"))
         return rows
 
-    # ── OU total goals ─────────────────────────────────────────────────────
-    if any(p in label for p in ("over/under", "total goals", "goal line")):
-        line = _to_line(label)
-        if line is None:
-            return rows
-        market = _market_for_ou_line(line)
+    if is_ou:
+        market = _ou_market_for_line(line_val) if line_val is not None else None
         if market is None:
             return rows
-        for oc in outs:
-            ol = (oc.get("label") or "").lower()
-            if "over" in ol:
-                _add(market, "over", oc["odds_decimal"])
-            elif "under" in ol:
-                _add(market, "under", oc["odds_decimal"])
+        for oc in mkt.get("outcomes") or []:
+            rk = (oc.get("result_key") or "").lower()
+            if rk == "over":
+                _add(market, "over", oc.get("id"))
+            elif rk == "under":
+                _add(market, "under", oc.get("id"))
         return rows
 
-    # ── BTTS ───────────────────────────────────────────────────────────────
-    if any(p in label for p in ("both teams to score", "btts")):
-        for oc in outs:
-            ol = (oc.get("label") or "").lower()
-            if ol == "yes":
-                _add("btts", "yes", oc["odds_decimal"])
-            elif ol == "no":
-                _add("btts", "no", oc["odds_decimal"])
+    if is_btts:
+        for oc in mkt.get("outcomes") or []:
+            rk = (oc.get("result_key") or "").lower()
+            if rk == "yes":
+                _add("btts", "yes", oc.get("id"))
+            elif rk == "no":
+                _add("btts", "no", oc.get("id"))
         return rows
 
-    # ── Double chance ──────────────────────────────────────────────────────
-    if "double chance" in label:
-        for oc in outs:
-            ol = (oc.get("label") or "").strip()
-            if ol in {"1X", "X2", "12"}:
-                _add("double_chance", ol, oc["odds_decimal"])
+    if is_dc:
+        for oc in mkt.get("outcomes") or []:
+            rk = (oc.get("result_key") or "").strip()
+            if rk in {"1X", "X2", "12"}:
+                _add("double_chance", rk, oc.get("id"))
         return rows
 
-    # ── Asian handicap ─────────────────────────────────────────────────────
-    if "asian handicap" in label:
-        # Two layouts seen on Kambi-stack books like Coolbet:
-        #   A) one bet_offer per line: criterion_label = "asian handicap -1.25"
-        #      (signed from home perspective), outcomes = [{label:"Home"|"1"},
-        #      {label:"Away"|"2"}]. Both home/away rows share the same line.
-        #   B) outcomes carry side AND line: [{label:"1 -1.25"}, {label:"2 +1.25"}].
-        #      Each outcome's line is from its own team's perspective; flip the
-        #      away one so handicap_line always describes home (pipeline convention).
-        criterion_line = _signed_line(label)
-        for oc in outs:
-            tokens = (oc.get("label") or "").strip().split()
-            side = tokens[0].lower() if tokens else ""
-            per_outcome_line: float | None = None
-            if len(tokens) >= 2:
-                try:
-                    per_outcome_line = float(tokens[-1].replace(",", "."))
-                except ValueError:
-                    per_outcome_line = None
-
-            if side in {"1", "home"}:
-                line = per_outcome_line if per_outcome_line is not None else criterion_line
-                if line is not None:
-                    _add("asian_handicap", "home", oc["odds_decimal"], line)
-            elif side in {"2", "away"}:
-                if per_outcome_line is not None:
-                    line = -per_outcome_line  # away-perspective → home-perspective
-                else:
-                    line = criterion_line     # already home-perspective from criterion
-                if line is not None:
-                    _add("asian_handicap", "away", oc["odds_decimal"], line)
+    if is_ah:
+        # AH: market.line is the home-perspective handicap. Outcomes are Home/Away.
+        # Both rows share the same handicap_line (already home-perspective).
+        if line_val is None:
+            return rows
+        for oc in mkt.get("outcomes") or []:
+            rk = (oc.get("result_key") or "").strip("[]")
+            if rk == "Home":
+                _add("asian_handicap", "home", oc.get("id"), line_val)
+            elif rk == "Away":
+                _add("asian_handicap", "away", oc.get("id"), line_val)
         return rows
 
-    return rows  # Unknown / unsupported market — skip silently
+    return rows  # Unknown — degrade silently
 
 
 # ── DB layer ──────────────────────────────────────────────────────────────────
@@ -248,19 +341,22 @@ def load_value_bet_matches(days: int) -> list[dict]:
 
 def store_coolbet_snapshots_for_match(
     match_id: str,
-    coolbet_event: dict,
+    coolbet_markets: list[dict],
+    odds_map: dict[int, float],
     *,
     dry_run: bool,
-) -> tuple[int, int]:
-    """Store all parsable bet_offers for one match. Returns (parsed, stored)."""
+    kickoff_iso: str = "",
+) -> tuple[int, int, dict[str, int]]:
+    """Parse + store all markets for one match. Returns (parsed, stored, by_market)."""
     parsed = 0
     stored = 0
-    kickoff_iso = coolbet_event.get("start") or ""
+    by_market: dict[str, int] = {}
     minutes_to_ko = _minutes_to_kickoff(kickoff_iso)
 
-    for bo in coolbet_event.get("bet_offers") or []:
-        for market, selection, odds, line in parse_bet_offer(bo):
+    for mkt in coolbet_markets:
+        for market, selection, odds, line in parse_market(mkt, odds_map):
             parsed += 1
+            by_market[market] = by_market.get(market, 0) + 1
             if dry_run:
                 continue
             try:
@@ -271,7 +367,7 @@ def store_coolbet_snapshots_for_match(
                 stored += 1
             except Exception as e:
                 log.warning("Store failed for %s %s: %s", market, selection, e)
-    return parsed, stored
+    return parsed, stored, by_market
 
 
 def _store_with_handicap(
@@ -356,21 +452,21 @@ def run_bulk(
             continue
         matched_leagues[league] = matched_leagues.get(league, 0) + 1
 
-        # search doesn't include bet_offers. fo-match POST gives main markets
-        # (1X2 + main OU 2.5 etc.); sidebets gives the rest (OU other lines,
-        # BTTS, AH, DC, ...). Concat both — duplicates are rare and harmless.
-        main_offers = fetch_main_markets(session, [ev["id"]]).get(int(ev["id"]), [])
-        side_offers = fetch_sidebets(session, ev["id"])
-        ev["bet_offers"] = main_offers + side_offers
-        parsed, stored = store_coolbet_snapshots_for_match(m["id"], ev, dry_run=dry_run)
+        # New flow: fetch markets (fo-match + sidebets), then fetch odds
+        # (split by simple vs line endpoint), then stitch.
+        markets = fetch_match_markets(session, int(ev["id"]))
+        odds_map = fetch_odds_for_markets(session, markets)
+        parsed, stored, mkt_counts = store_coolbet_snapshots_for_match(
+            m["id"], markets, odds_map,
+            dry_run=dry_run, kickoff_iso=ev.get("start") or "",
+        )
         matched += 1
         parsed_total += parsed
         stored_total += stored
-        for bo in ev.get("bet_offers") or []:
-            for market, *_ in parse_bet_offer(bo):
-                by_market[market] = by_market.get(market, 0) + 1
-        log.info("[%d/%d] %s vs %s → %d markets parsed, %d stored",
-                 i, len(matches), home, away, parsed, stored)
+        for k, v in mkt_counts.items():
+            by_market[k] = by_market.get(k, 0) + v
+        log.info("[%d/%d] %s vs %s → %d markets, %d odds, %d stored",
+                 i, len(matches), home, away, len(markets), parsed, stored)
         time.sleep(sleep_s)
 
     console.print()
@@ -441,21 +537,22 @@ def run_one_shot(match_id: str) -> None:
         console.print("[yellow]No matching Coolbet event.[/yellow]")
         return
 
-    main_offers = fetch_main_markets(session, [ev["id"]]).get(int(ev["id"]), [])
-    side_offers = fetch_sidebets(session, ev["id"])
-    ev["bet_offers"] = main_offers + side_offers
+    markets = fetch_match_markets(session, int(ev["id"]))
+    odds_map = fetch_odds_for_markets(session, markets)
     t = Table(show_header=True, title=f"Coolbet markets for event #{ev['id']}")
     t.add_column("Market")
     t.add_column("Selection")
     t.add_column("Line", justify="right")
     t.add_column("Odds", justify="right")
     seen = 0
-    for bo in ev.get("bet_offers") or []:
-        for market, selection, odds, line in parse_bet_offer(bo):
+    for mkt in markets:
+        for market, selection, odds, line in parse_market(mkt, odds_map):
             t.add_row(market, selection, f"{line:+.2f}" if line is not None else "—", f"{odds:.3f}")
             seen += 1
     if seen == 0:
-        console.print("[yellow]Event found but no parseable markets.[/yellow]")
+        console.print(f"[yellow]Event found ({len(markets)} markets / {len(odds_map)} odds) "
+                      f"but parser recognised none. Probable cause: market_type_id mappings "
+                      f"need extension. Run probe and update _MTID_* sets.[/yellow]")
         return
     console.print(t)
 

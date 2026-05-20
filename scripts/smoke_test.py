@@ -2767,65 +2767,92 @@ def _():
     assert '"5,35"' in src, "interval shadow must fire at :05 and :35"
 
 
-@test("COOLBET-ODDS-SNAPSHOT — parser maps Coolbet bet_offers to our market shape")
+@test("COOLBET-ODDS-SNAPSHOT — parse_market maps new Coolbet schema to our shape")
 def _():
-    """COOLBET-ODDS-SNAPSHOT (2026-05-20) — coolbet_explorer.parse_bet_offer must
-    convert Coolbet criterion_label + outcomes into (market, selection, odds,
-    handicap_line) tuples that match our odds_snapshots conventions.
-    Guards: 1X2 selections, OU 1.5 line parsing, BTTS yes/no, AH home-perspective
-    handicap_line (away `2 +1.25` must store as home -1.25)."""
-    from workers.automation.coolbet_explorer import parse_bet_offer
+    """COOLBET-ODDS-SNAPSHOT (2026-05-20) — Coolbet API restructured: markets
+    + odds now served from separate endpoints. parse_market reads the new
+    `{market_type_id, line, outcomes:[{id, result_key}]}` shape and looks
+    odds up from a separate {outcome_id: decimal} map. Guards:
+      - market_type_id 81 → 1x2 with result_key [Home]/Draw/[Away]
+      - market_type_id 818 + line=1.5 → over_under_15 with result_key Over/Under
+      - Unknown markets fall back to name-based detection
+      - Outcomes missing from odds_map are dropped (no 0-odds rows)
+      - AH stores handicap_line from home perspective
+    """
+    from workers.automation.coolbet_explorer import parse_market
 
-    # 1X2
-    rows = parse_bet_offer({"criterion_label": "full time result", "outcomes": [
-        {"label": "1", "odds_decimal": 2.10},
-        {"label": "X", "odds_decimal": 3.40},
-        {"label": "2", "odds_decimal": 3.20},
-    ]})
+    # 1X2 (market_type_id 81, real Coolbet shape from probe)
+    odds = {1502758378: 2.25, 1502758379: 3.20, 1502758380: 3.10}
+    rows = parse_market({
+        "id": 598381104, "line": 0, "name": "Match Result (1X2)",
+        "market_type_id": 81,
+        "outcomes": [
+            {"id": 1502758378, "name": "SC Grobinas", "result_key": "[Home]"},
+            {"id": 1502758379, "name": "Draw",        "result_key": "Draw"},
+            {"id": 1502758380, "name": "SK Super Nova","result_key": "[Away]"},
+        ],
+    }, odds)
     assert rows == [
-        ("1x2", "Home", 2.10, None),
-        ("1x2", "Draw", 3.40, None),
-        ("1x2", "Away", 3.20, None),
+        ("1x2", "Home", 2.25, None),
+        ("1x2", "Draw", 3.20, None),
+        ("1x2", "Away", 3.10, None),
     ], f"1X2 parse wrong: {rows}"
 
-    # OU 1.5
-    rows = parse_bet_offer({"criterion_label": "total goals over/under 1.5", "outcomes": [
-        {"label": "Over", "odds_decimal": 1.45},
-        {"label": "Under", "odds_decimal": 2.60},
-    ]})
-    assert rows[0] == ("over_under_15", "over", 1.45, None), f"OU 1.5 over wrong: {rows}"
-    assert rows[1] == ("over_under_15", "under", 2.60, None), f"OU 1.5 under wrong: {rows}"
+    # OU 1.5 (market_type_id 818, line='1.5')
+    odds = {1502775086: 1.05, 1502775087: 7.00}
+    rows = parse_market({
+        "id": 598387279, "line": "1.5", "name": "Total Goals Over / Under",
+        "market_type_id": 818,
+        "outcomes": [
+            {"id": 1502775086, "result_key": "Over"},
+            {"id": 1502775087, "result_key": "Under"},
+        ],
+    }, odds)
+    assert rows == [
+        ("over_under_15", "over", 1.05, None),
+        ("over_under_15", "under", 7.00, None),
+    ], f"OU 1.5 parse wrong: {rows}"
 
-    # BTTS
-    rows = parse_bet_offer({"criterion_label": "both teams to score", "outcomes": [
-        {"label": "Yes", "odds_decimal": 1.85},
-        {"label": "No", "odds_decimal": 1.90},
-    ]})
+    # BTTS — falls back to name-based detection (mtid set is still empty)
+    odds = {9001: 1.85, 9002: 1.90}
+    rows = parse_market({
+        "id": 1, "line": 0, "name": "Both Teams to Score", "market_type_id": 999,
+        "outcomes": [
+            {"id": 9001, "result_key": "Yes"},
+            {"id": 9002, "result_key": "No"},
+        ],
+    }, odds)
     assert rows == [
         ("btts", "yes", 1.85, None),
         ("btts", "no", 1.90, None),
-    ], f"BTTS parse wrong: {rows}"
+    ], f"BTTS fallback wrong: {rows}"
 
-    # AH format B — line on each outcome (per-team perspective)
-    rows = parse_bet_offer({"criterion_label": "asian handicap", "outcomes": [
-        {"label": "1 -1.25", "odds_decimal": 1.95},
-        {"label": "2 +1.25", "odds_decimal": 1.85},
-    ]})
-    assert rows[0] == ("asian_handicap", "home", 1.95, -1.25), f"AH-B home wrong: {rows}"
-    assert rows[1] == ("asian_handicap", "away", 1.85, -1.25), (
-        f"AH-B away handicap_line must flip to home perspective (-1.25), got {rows[1]}"
-    )
-
-    # AH format A — line in criterion_label (already home-perspective), both
-    # outcomes share the same line.
-    rows = parse_bet_offer({"criterion_label": "asian handicap -1.25", "outcomes": [
-        {"label": "Home", "odds_decimal": 1.95},
-        {"label": "Away", "odds_decimal": 1.85},
-    ]})
+    # AH — line is home-perspective; both outcomes share it
+    odds = {7001: 1.95, 7002: 1.85}
+    rows = parse_market({
+        "id": 1, "line": "-1.25", "name": "Asian Handicap", "market_type_id": 999,
+        "outcomes": [
+            {"id": 7001, "result_key": "[Home]"},
+            {"id": 7002, "result_key": "[Away]"},
+        ],
+    }, odds)
     assert rows == [
         ("asian_handicap", "home", 1.95, -1.25),
         ("asian_handicap", "away", 1.85, -1.25),
-    ], f"AH-A parse wrong (line in criterion_label): {rows}"
+    ], f"AH parse wrong: {rows}"
+
+    # Outcome with no odds entry must be dropped, not stored at 0
+    rows = parse_market({
+        "id": 1, "line": 0, "name": "Match Result (1X2)", "market_type_id": 81,
+        "outcomes": [
+            {"id": 1, "result_key": "[Home]"},
+            {"id": 2, "result_key": "Draw"},
+            {"id": 3, "result_key": "[Away]"},
+        ],
+    }, {1: 2.0})  # only home has odds
+    assert rows == [("1x2", "Home", 2.0, None)], (
+        f"missing odds must drop, not zero-fill: {rows}"
+    )
 
     # Scheduler registration
     import pathlib
@@ -2834,20 +2861,11 @@ def _():
     assert "coolbet_odds_interval" in src, "missing coolbet_odds_interval job id"
     assert '"3,33"' in src, "Coolbet snapshot must fire at :03 and :33"
 
-    # SIDEBETS-PARAMS-FIX guard: Coolbet returns 0 betOffers without these
-    # two params. Caught only after live DevTools capture from the user — make
-    # sure they don't get refactored out.
-    placer_src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
-    assert '"marketTypeGroupId":  15' in placer_src, (
-        "sidebets must send marketTypeGroupId=15 (silently returns empty betOffers without it)"
-    )
-    assert '"matchStatus":        "OPEN"' in placer_src, (
-        "sidebets must send matchStatus=OPEN"
-    )
-    assert "fetch_main_markets" in placer_src, (
-        "fetch_main_markets (POST /fo-match) replaces the 404'd fo-category for "
-        "1X2 main markets — keep it wired"
-    )
+    # Endpoint constants must exist (used by the new fetcher)
+    explorer_src = pathlib.Path("workers/automation/coolbet_explorer.py").read_text()
+    assert "_ODDS_LINE_URL" in explorer_src, "missing /fo-line/ URL constant"
+    assert "fetch_match_markets" in explorer_src, "missing fetch_match_markets"
+    assert "fetch_odds_for_markets" in explorer_src, "missing fetch_odds_for_markets"
 
 
 @test("SHADOW-RETIRED-OK — retired bots still produce shadow_bets")
