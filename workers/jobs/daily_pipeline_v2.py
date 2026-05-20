@@ -1513,8 +1513,57 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
     return odds_matches, af_only_matches, af_preds, dict(best_bookmaker)
 
 
+def _print_funnel(funnel: dict, only_bot: str | None) -> None:
+    """Print a per-bot candidate funnel table — shows how many candidates each
+    bot generated and where in the filter chain they were dropped. Used to
+    diagnose silent bots like bot_ou15_defensive.
+
+    only_bot: if set, only print that one bot's row (cleaner output for
+    targeted investigations)."""
+    from rich.table import Table as _Table
+    bots = sorted(funnel.keys()) if not only_bot else (
+        [only_bot] if only_bot in funnel else []
+    )
+    if not bots:
+        console.print(f"\n[yellow]No funnel data for bot '{only_bot}' "
+                      f"(bot not in run universe — check cohort + tier filters).[/yellow]")
+        return
+
+    # Columns are ordered as they appear in the filter chain.
+    columns = [
+        ("candidates",        "Cand"),
+        ("drop_nan_raw",      "NaN-raw"),
+        ("drop_nan_cal",      "NaN-cal"),
+        ("drop_edge",         "↓edge"),
+        ("drop_odds_too_low", "odds<min"),
+        ("drop_odds_too_high","odds>max"),
+        ("drop_min_prob",     "<minP"),
+        ("drop_pin_veto",     "PIN-veto"),
+        ("drop_sharp_gate",   "sharp"),
+        ("drop_odds_mv",      "odds-mv"),
+        ("drop_kelly_zero",   "kelly≤0"),
+        ("drop_aln1",         "ALN-1"),
+        ("drop_stake_low",    "stake<1"),
+        ("accepted",          "✓ acc"),
+    ]
+    t = _Table(show_header=True, title="Candidate funnel per bot")
+    t.add_column("Bot")
+    for _, label in columns:
+        t.add_column(label, justify="right")
+    for bot in bots:
+        c = funnel[bot]
+        # Skip bots that generated zero candidates AND have nothing dropped —
+        # that's a bot filtered out at the cohort/tier/league level.
+        if sum(c.values()) == 0:
+            continue
+        t.add_row(bot, *[str(c.get(k, 0)) for k, _ in columns])
+    console.print()
+    console.print(t)
+
+
 def run_morning(skip_fetch: bool = False, cohort: str | None = None,
-                shadow_mode: bool = False, shadow_cohort: str | None = None):
+                shadow_mode: bool = False, shadow_cohort: str | None = None,
+                verbose_funnel: bool = False, verbose_funnel_bot: str | None = None):
     """
     Fetch data → predict → store matches/odds/bets in Supabase.
 
@@ -1527,6 +1576,16 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             no bot active-flag check. Used to break the cohort×strategy confound
             in the cohort A/B. `shadow_cohort` MUST be set when shadow_mode=True
             (the window this shadow batch represents, e.g. 'morning').
+    verbose_funnel=True (BOT-FUNNEL-DIAGNOSTIC): at end of run, print a per-bot
+            candidate funnel table showing how many candidates were generated
+            and where in the filter chain they were dropped. Used to diagnose
+            silent bots (eg bot_ou15_defensive since 2026-05-08). Counters
+            track every drop point: NaN guards, edge/odds/prob threshold,
+            Pinnacle veto, sharp-consensus gate, odds-movement veto, Kelly,
+            ALN-1, stake-too-small. The accepted row is what made it to
+            placement / shadow_bets.
+    verbose_funnel_bot: if set, only print that one bot's funnel (cleaner
+            output when only one bot's silence is being investigated).
     """
     from workers.utils.kill_switches import is_disabled
     if is_disabled("paper_betting"):
@@ -1535,8 +1594,10 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         raise ValueError("shadow_mode=True requires shadow_cohort to be set")
 
     import uuid as _uuid
+    from collections import Counter as _Counter, defaultdict as _dd_ct
     _shadow_run_id: str | None = str(_uuid.uuid4()) if shadow_mode else None
     _pending_shadow_rows: list[dict] = []
+    _funnel: dict[str, _Counter] = _dd_ct(_Counter)  # bot_name → Counter(step → n)
 
     today_str = date.today().isoformat()
     mode_tag = f" [SHADOW {shadow_cohort}]" if shadow_mode else ""
@@ -2206,10 +2267,12 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                             candidate_specs.append(("draw_no_bet", "Away", dnb_a_odds, dnb_a_prob, "draw_no_bet", "away", thresholds.get("dnb", 0.05)))
 
             for mkt, selection, odds, raw_mp, os_market, os_selection, base_threshold in candidate_specs:
+                _funnel[bot_name]["candidates"] += 1
                 ip = 1 / odds
 
                 # Guard: skip if raw model probability is NaN
                 if math.isnan(raw_mp):  # NaN guard
+                    _funnel[bot_name]["drop_nan_raw"] += 1
                     continue
 
                 # P1: Calibrate probability (tier-specific shrinkage + Platt sigmoid)
@@ -2230,6 +2293,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
 
                 # Guard: skip if calibration produced NaN
                 if math.isnan(cal_prob):
+                    _funnel[bot_name]["drop_nan_cal"] += 1
                     continue
 
                 # Use calibrated probability for edge calculation
@@ -2237,6 +2301,14 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 me = base_threshold + edge_bump
 
                 if edge < me or odds < odds_min or odds > odds_max or cal_prob < min_prob:
+                    if edge < me:
+                        _funnel[bot_name]["drop_edge"] += 1
+                    elif odds < odds_min:
+                        _funnel[bot_name]["drop_odds_too_low"] += 1
+                    elif odds > odds_max:
+                        _funnel[bot_name]["drop_odds_too_high"] += 1
+                    else:
+                        _funnel[bot_name]["drop_min_prob"] += 1
                     continue
 
                 # Pinnacle disagreement veto: skip bets where our model is significantly
@@ -2256,6 +2328,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 _pin_implied = _pmap.get(str(match_id)) if _pmap is not None else None
                 _veto_anchor = _pin_implied if _pin_implied is not None else ip
                 if (cal_prob - _veto_anchor) > PINNACLE_VETO_GAP:
+                    _funnel[bot_name]["drop_pin_veto"] += 1
                     continue  # Model too far above market anchor — skip
 
                 # CAL-SHARP-GATE: skip 1X2 home bets when sharp books collectively
@@ -2266,6 +2339,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 if mkt == "1X2" and selection == "Home":
                     sc = sharp_consensus_by_match.get(str(match_id))
                     if sc is not None and sc < -0.02:
+                        _funnel[bot_name]["drop_sharp_gate"] += 1
                         continue  # Sharps say home is less likely — skip
 
                 # P2: Odds movement — soft penalty, hard veto only >10%
@@ -2277,11 +2351,13 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 odds_mv = odds_movement_cache[mv_key]
 
                 if odds_mv["veto"]:
+                    _funnel[bot_name]["drop_odds_mv"] += 1
                     continue  # Market moved >10% against pick — hard skip
 
                 # P4: Kelly fraction (using calibrated prob)
                 kelly = compute_kelly(cal_prob, odds)
                 if kelly <= 0:
+                    _funnel[bot_name]["drop_kelly_zero"] += 1
                     continue
 
                 # P3: Alignment — ALN-1 active (2026-05-12)
@@ -2294,6 +2370,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 # NONE is neutral (no signal ≠ bad signal).
                 _ALN_BUMP = {"LOW": 0.01, "MEDIUM": 0.0, "HIGH": 0.0, "NONE": 0.0}
                 if edge < me + _ALN_BUMP.get(alignment["alignment_class"], 0.0):
+                    _funnel[bot_name]["drop_aln1"] += 1
                     continue
 
                 # P4: Kelly-based stake sizing with soft odds penalty
@@ -2305,8 +2382,10 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                     odds_penalty=odds_mv.get("penalty", 0.0),
                 )
                 if stake < 1.0:
+                    _funnel[bot_name]["drop_stake_low"] += 1
                     continue
 
+                _funnel[bot_name]["accepted"] += 1
                 bet_candidates.append((mkt, selection, odds, raw_mp, cal_prob, ip, edge, kelly, alignment, odds_mv, stake, os_market, os_selection))
 
             bet_candidates.sort(key=lambda x: x[6], reverse=True)
@@ -2444,11 +2523,15 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 console.print(f"  [red dim]{traceback.format_exc()}[/red dim]")
         else:
             console.print(f"\n[yellow]SHADOW [{shadow_cohort}] — no candidate bets[/yellow]")
+        if verbose_funnel:
+            _print_funnel(_funnel, verbose_funnel_bot)
         # Skip exposure check + ops_snapshot — shadow runs piggyback on the real run's snapshot.
         return
 
     cohort_label = f" [{cohort} cohort]" if cohort else " [all bots]"
     console.print(f"\n[bold green]Done! {total_bets} bets placed{cohort_label}[/bold green]")
+    if verbose_funnel:
+        _print_funnel(_funnel, verbose_funnel_bot)
     console.print("[green]All data stored in Supabase — frontend can display it now[/green]")
 
     # COMBO-PHASE-D: after singles are placed, run the cross-match acca bot.

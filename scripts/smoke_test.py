@@ -3035,6 +3035,42 @@ def _():
     assert '"*/20"' in sched_src, "keepalive must fire every 20 min"
 
 
+@test("BOT-FUNNEL-DIAGNOSTIC — run_morning instruments per-bot candidate funnel")
+def _():
+    """BOT-FUNNEL-DIAGNOSTIC (2026-05-20) — verbose_funnel + verbose_funnel_bot
+    kwargs on run_morning track every drop point in the candidate evaluation
+    loop and print a per-bot funnel table. Used to diagnose silent bots like
+    bot_ou15_defensive (silent since 2026-05-08; 5 hypotheses ruled out by
+    audit_silent_bots.py). Funnel must cover every continue point in the
+    candidate-evaluation loop and the accepted counter at the end."""
+    import inspect
+    from workers.jobs.daily_pipeline_v2 import run_morning, _print_funnel
+    sig = inspect.signature(run_morning)
+    assert "verbose_funnel" in sig.parameters, "run_morning missing verbose_funnel kwarg"
+    assert "verbose_funnel_bot" in sig.parameters, "run_morning missing verbose_funnel_bot kwarg"
+    assert sig.parameters["verbose_funnel"].default is False, "verbose_funnel must default False"
+    src = inspect.getsource(run_morning)
+    required_counters = [
+        '_funnel[bot_name]["candidates"]',
+        '_funnel[bot_name]["drop_edge"]',
+        '_funnel[bot_name]["drop_pin_veto"]',
+        '_funnel[bot_name]["drop_odds_mv"]',
+        '_funnel[bot_name]["drop_kelly_zero"]',
+        '_funnel[bot_name]["drop_aln1"]',
+        '_funnel[bot_name]["drop_stake_low"]',
+        '_funnel[bot_name]["accepted"]',
+    ]
+    for c in required_counters:
+        assert c in src, f"missing funnel counter: {c}"
+    assert "_print_funnel" in src, "run_morning must call _print_funnel when verbose"
+
+    # CLI runner exposes the flag
+    import pathlib
+    cli = pathlib.Path("scripts/funnel_diagnostic.py").read_text()
+    assert "verbose_funnel" in cli, "CLI must pass verbose_funnel=True"
+    assert "--bot" in cli, "CLI must expose --bot for focused output"
+
+
 @test("SHADOW-RETIRED-OK — retired bots still produce shadow_bets")
 def _():
     """Retired bot notes promise '≥30 bets at ≥3% ROI in shadow_bets' as a
