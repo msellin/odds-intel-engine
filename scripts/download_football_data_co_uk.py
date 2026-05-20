@@ -101,7 +101,7 @@ EXTRA_LEAGUES = [
     ("ROU", "Romania Liga 1"),
     ("RUS", "Russia Premier League"),
     ("SWE", "Sweden Allsvenskan"),
-    ("SWI", "Switzerland Super League"),
+    ("SWZ", "Switzerland Super League"),
     ("USA", "USA MLS"),
 ]
 
