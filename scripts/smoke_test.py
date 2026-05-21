@@ -3165,6 +3165,51 @@ def _():
     assert '"*/20"' in sched_src, "keepalive must fire every 20 min"
 
 
+@test("COOLBET-MARKET-TYPE-IDS — AH/BTTS/DC market_type_ids wired from observed API response")
+def _():
+    """COOLBET-MARKET-TYPE-IDS (2026-05-21) — market_type_ids confirmed from
+    DevTools on Brighton vs Man Utd (Premier League, May 2026):
+      1086 = Asian Handicap  (line field is display string "0 - 4"; raw_line=-4)
+      1377 = Both Teams To Score
+      1484 = Double Chance   (result_keys use [Home]/Draw not 1X)
+    parse_market must fall back to raw_line when line string can't be parsed."""
+    from workers.automation.coolbet_explorer import (
+        _MTID_AH, _MTID_BTTS, _MTID_DC, parse_market,
+    )
+    assert 1086 in _MTID_AH,  "_MTID_AH must contain 1086 (Asian Handicap)"
+    assert 1377 in _MTID_BTTS, "_MTID_BTTS must contain 1377 (Both Teams To Score)"
+    assert 1484 in _MTID_DC,  "_MTID_DC must contain 1484 (Double Chance)"
+
+    # AH: line is display string, raw_line has the number
+    ah_mkt = {
+        "market_type_id": 1086, "name": "Asian Handicap",
+        "line": "0 - 1.5", "raw_line": -1.5,
+        "outcomes": [
+            {"id": 1, "result_key": "[Home]"},
+            {"id": 2, "result_key": "[Away]"},
+        ],
+    }
+    odds_map = {1: {"value": 1.85, "odds_id": "a"}, 2: {"value": 2.10, "odds_id": "b"}}
+    rows = parse_market(ah_mkt, odds_map)
+    assert len(rows) == 2, f"AH should yield 2 rows, got {rows}"
+    assert rows[0][3] == -1.5, f"AH line should be -1.5, got {rows[0][3]}"
+
+    # DC: result_keys use [Home]/Draw not 1X
+    dc_mkt = {
+        "market_type_id": 1484, "name": "Double Chance",
+        "line": 0, "raw_line": 0,
+        "outcomes": [
+            {"id": 10, "result_key": "[Home]/Draw"},
+            {"id": 11, "result_key": "[Away]/Draw"},
+            {"id": 12, "result_key": "[Home]/[Away]"},
+        ],
+    }
+    odds_map_dc = {10: {"value": 1.30}, 11: {"value": 1.40}, 12: {"value": 1.20}}
+    dc_rows = parse_market(dc_mkt, odds_map_dc)
+    labels = {r[1] for r in dc_rows}
+    assert labels == {"1X", "X2", "12"}, f"DC labels should be 1X/X2/12, got {labels}"
+
+
 @test("COOLBET-SWEEP-PACING — run_bulk sleeps after every match + breathing pauses + shared session")
 def _():
     """COOLBET-SWEEP-PACING (2026-05-21) — run_bulk used to sleep only after

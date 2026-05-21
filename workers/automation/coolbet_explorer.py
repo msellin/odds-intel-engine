@@ -211,9 +211,9 @@ def _harvest_odds(payload, into: dict[int, dict]) -> None:
 
 _MTID_1X2  = {81}
 _MTID_OU   = {818}
-_MTID_BTTS = set()          # populate when observed
-_MTID_DC   = set()
-_MTID_AH   = set()
+_MTID_BTTS = {1377}         # "Both Teams To Score"
+_MTID_DC   = {1484}         # "Double Chance"
+_MTID_AH   = {1086}         # "Asian Handicap"
 
 
 def _ou_market_for_line(line: float) -> str | None:
@@ -240,6 +240,13 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
         line_val = float(line_raw) if line_raw not in (None, "") else None
     except (TypeError, ValueError):
         line_val = None
+    # AH lines use a display string ("0 - 4") that can't be parsed; fall back
+    # to raw_line which carries the numeric value (-4.0 = home -4 handicap).
+    if line_val is None and mkt.get("raw_line") is not None:
+        try:
+            line_val = float(mkt["raw_line"])
+        except (TypeError, ValueError):
+            pass
 
     def _add(market: str, selection: str, oid, hline: float | None = None) -> None:
         try:
@@ -292,10 +299,18 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
         return rows
 
     if is_dc:
+        # Coolbet DC result_keys use team placeholders: "[Home]/Draw",
+        # "[Away]/Draw", "[Home]/[Away]". Map to our canonical 1X/X2/12.
+        _dc_key_map = {
+            "[home]/draw":   "1X",
+            "[away]/draw":   "X2",
+            "[home]/[away]": "12",
+        }
         for oc in mkt.get("outcomes") or []:
-            rk = (oc.get("result_key") or "").strip()
-            if rk in {"1X", "X2", "12"}:
-                _add("double_chance", rk, oc.get("id"))
+            rk = (oc.get("result_key") or "").lower()
+            label = _dc_key_map.get(rk)
+            if label:
+                _add("double_chance", label, oc.get("id"))
         return rows
 
     if is_ah:
@@ -432,9 +447,10 @@ def _outcome_id_for_selection(mkt: dict, parsed_market: str, parsed_sel: str) ->
         ("1x2",          "Away"):    "Away",
         ("btts",         "yes"):     "yes",
         ("btts",         "no"):      "no",
-        ("double_chance","1X"):      "1x",
-        ("double_chance","X2"):      "x2",
-        ("double_chance","12"):      "12",
+        # Coolbet DC result_keys use team placeholders, not 1X/X2/12
+        ("double_chance","1X"):      "[home]/draw",
+        ("double_chance","X2"):      "[away]/draw",
+        ("double_chance","12"):      "[home]/[away]",
         ("asian_handicap","home"):   "Home",
         ("asian_handicap","away"):   "Away",
     }
