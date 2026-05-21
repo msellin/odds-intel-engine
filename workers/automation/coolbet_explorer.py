@@ -674,6 +674,7 @@ def run_league_sweep(
     dry_run: bool = False,
     sleep_s: float = 1.5,
     require_pinnacle: bool = False,
+    session: "CoolbetSession | None" = None,
 ) -> None:
     """Today's AF matches → group by league → look up mapped Coolbet league →
     fetch its events in one call → match events within-league by team names →
@@ -715,7 +716,8 @@ def run_league_sweep(
         return
 
     log.info("League sweep — %d Coolbet leagues to fetch (today's AF matches)", len(active))
-    session = CoolbetSession()
+    if session is None:
+        session = CoolbetSession()
 
     matched_total = 0
     parsed_total = 0
@@ -790,6 +792,7 @@ def run_bulk(
     days: int, dry_run: bool, sleep_s: float, limit: int | None,
     *, bets_only: bool = False,
     long_pause_every: int = 15, long_pause_s: float = 20.0,
+    session: "CoolbetSession | None" = None,
 ) -> None:
     matches = load_value_bet_matches(days) if bets_only else load_matches_in_window(days)
     if limit:
@@ -801,7 +804,8 @@ def run_bulk(
     label = "value-bet matches" if bets_only else "matches from DB"
     console.print(f"[cyan]Loaded {len(matches)} {label} (window={days}d){' [DRY-RUN]' if dry_run else ''}[/cyan]")
 
-    session = CoolbetSession()
+    if session is None:
+        session = CoolbetSession()
     category_cache: list[dict] | None = None
 
     matched = 0

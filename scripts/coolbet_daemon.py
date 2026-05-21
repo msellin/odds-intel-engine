@@ -143,16 +143,17 @@ def _task_keepalive(session: CoolbetSession) -> str:
     return f"keepalive {'✓' if ok else '✗'}  (JWT TTL ≈ {int(ttl)}s)"
 
 
-def _task_odds_snapshot(mode: str, days: int, require_pinnacle: bool) -> str:
+def _task_odds_snapshot(session: "CoolbetSession", mode: str, days: int, require_pinnacle: bool) -> str:
     """mode: 'wide' | 'bets-only' | 'league-mapped'"""
     try:
         if mode == "league-mapped":
             from workers.automation.coolbet_explorer import run_league_sweep
-            run_league_sweep(dry_run=False, sleep_s=1.5, require_pinnacle=require_pinnacle)
+            run_league_sweep(dry_run=False, sleep_s=1.5, require_pinnacle=require_pinnacle,
+                             session=session)
             return f"odds snapshot ✓ (league-mapped, today)"
         from workers.automation.coolbet_explorer import run_bulk
         run_bulk(days=days, dry_run=False, sleep_s=3.0, limit=None,
-                 bets_only=(mode == "bets-only"))
+                 bets_only=(mode == "bets-only"), session=session)
         return f"odds snapshot ✓ ({mode}, {days}d)"
     except Exception as e:
         log.warning("odds snapshot raised: %s", e)
@@ -454,8 +455,8 @@ def main() -> None:
                          "strict DATE filter). 2+ = rolling N-day window. "
                          "Default 1 — tomorrow's odds don't help today's "
                          "betting and just burn API budget.")
-    ap.add_argument("--place-min", type=int, default=5,
-                    help="Placement loop cadence in minutes (default 5)")
+    ap.add_argument("--place-min", type=int, default=15,
+                    help="Placement loop cadence in minutes (default 15)")
     ap.add_argument("--summary-hour", type=int, default=21,
                     help="UTC hour to send the daily Telegram summary (default 21 = 23/24 EEST)")
     ap.add_argument("--min-edge", type=float, default=0.05,
@@ -623,15 +624,19 @@ def main() -> None:
         # keep firing on schedule. If a previous sweep is still running, skip
         # this fire (cycle longer than --odds-min just means we sweep less
         # often, never queue up two sweeps).
+        # Sweep shares the daemon's session — CoolbetSession._throttle() is
+        # locked so sweep thread + main thread calls are serialised safely.
         if now >= next_odds:
             global _SWEEP_THREAD
             if _sweep_running():
                 log.info("odds snapshot ⏸  previous sweep still running — skipping")
             else:
                 _stamp(state, "last_sweep_started", {"mode": args.odds_mode})
+                _session_ref = session  # capture for closure
                 def _sweep_runner():
                     try:
                         log.info(_task_odds_snapshot(
+                            _session_ref,
                             mode=args.odds_mode,
                             days=args.odds_days,
                             require_pinnacle=args.require_pinnacle,
@@ -645,10 +650,6 @@ def main() -> None:
                 _SWEEP_THREAD.start()
                 log.info("odds snapshot ▶  started in background thread")
             next_odds = now + args.odds_min * 60
-
-        # PLACEMENT — skipped while sweep is running so we don't have two
-        # Coolbet sessions calling concurrently (each session has its own
-        # throttle; concurrent = 2× rate = Imperva risk).
 
         # Periodic JWT refresh via headless Chrome (manual-JWT mode only).
         # Skipped silently if Chrome / undetected-chromedriver / profile aren't
@@ -674,8 +675,6 @@ def main() -> None:
         if not args.no_place and now >= next_place:
             if _CTRL.get("paused"):
                 log.info("place ⏸  skipped (Telegram /pause)")
-            elif _sweep_running():
-                log.info("place ⏸  skipped (sweep in progress); retry in %d min", args.place_min)
             else:
                 # Telegram /place_mode override takes precedence over CLI arg
                 effective_mode = _CTRL.get("place_mode") or args.place_mode

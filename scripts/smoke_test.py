@@ -3165,24 +3165,36 @@ def _():
     assert '"*/20"' in sched_src, "keepalive must fire every 20 min"
 
 
-@test("COOLBET-SWEEP-PACING — run_bulk sleeps after every match + breathing pauses")
+@test("COOLBET-SWEEP-PACING — run_bulk sleeps after every match + breathing pauses + shared session")
 def _():
     """COOLBET-SWEEP-PACING (2026-05-21) — run_bulk used to sleep only after
     matched matches (0.25s), leaving misses firing search queries back-to-back.
-    A 127-match sweep triggered an Imperva block. Fix: sleep after every match
-    (hit or miss) with jitter, plus a long breathing pause every 15 matches.
-    Daemon default bumped to 3.0s."""
+    A 127-match sweep triggered an Imperva block. Fixes:
+    - Sleep after every match (hit or miss) with jitter
+    - Long breathing pause every 15 matches
+    - Accept caller-provided session so daemon shares one CoolbetSession
+    - Placement no longer blocked while sweep runs (throttle lock serialises)
+    - Placement cadence bumped from 5 → 15 min"""
     import inspect
-    from workers.automation.coolbet_explorer import run_bulk
-    src = inspect.getsource(run_bulk)
-    assert "long_pause_every" in src, "run_bulk must accept long_pause_every"
-    assert "long_pause_s" in src, "run_bulk must accept long_pause_s"
-    assert "breathing pause" in src, "run_bulk must log breathing pauses"
-    assert "random.uniform" in src, "run_bulk must add jitter to sleeps"
+    from workers.automation.coolbet_explorer import run_bulk, run_league_sweep
+    bulk_src = inspect.getsource(run_bulk)
+    assert "long_pause_every" in bulk_src, "run_bulk must accept long_pause_every"
+    assert "long_pause_s" in bulk_src, "run_bulk must accept long_pause_s"
+    assert "breathing pause" in bulk_src, "run_bulk must log breathing pauses"
+    assert "random.uniform" in bulk_src, "run_bulk must add jitter to sleeps"
+    assert "session" in inspect.signature(run_bulk).parameters, "run_bulk must accept session="
+    assert "session" in inspect.signature(run_league_sweep).parameters, "run_league_sweep must accept session="
+
+    from workers.automation.coolbet_session import CoolbetSession
+    import inspect as _i
+    throttle_src = _i.getsource(CoolbetSession._throttle)
+    assert "_throttle_lock" in throttle_src, "CoolbetSession._throttle must hold _throttle_lock"
 
     import pathlib
     daemon = pathlib.Path("scripts/coolbet_daemon.py").read_text()
     assert "sleep_s=3.0" in daemon, "daemon must use sleep_s=3.0 for run_bulk"
+    assert "default=15" in daemon, "placement cadence must default to 15 min"
+    assert "sweep in progress" not in daemon, "placement must no longer be blocked by sweep"
 
 
 @test("COOLBET-JWT-ENV-PROPAGATION — renew_jwt_via_api updates os.environ so fresh sessions see new token")

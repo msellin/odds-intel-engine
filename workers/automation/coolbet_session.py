@@ -113,6 +113,7 @@ class CoolbetSession:
         self._min_call_gap = float(os.getenv("COOLBET_MIN_CALL_GAP_S", "0.8"))
         self._max_call_gap = float(os.getenv("COOLBET_MAX_CALL_GAP_S", "2.0"))
         self._last_call_t  = 0.0
+        self._throttle_lock = __import__("threading").Lock()
 
         self._http = requests.Session()
         self._http.headers.update(_HEADERS_BASE)
@@ -333,12 +334,15 @@ class CoolbetSession:
     def _throttle(self) -> None:
         """Sleep so the next request lands at a humanly-paced gap after the
         previous one. Adds jitter so consecutive calls aren't perfectly
-        periodic (a periodic pattern is itself a scraper signature)."""
-        target_gap = random.uniform(self._min_call_gap, self._max_call_gap)
-        elapsed = time.time() - self._last_call_t
-        if elapsed < target_gap:
-            time.sleep(target_gap - elapsed)
-        self._last_call_t = time.time()
+        periodic (a periodic pattern is itself a scraper signature).
+        Lock ensures sweep thread + main thread sharing one session can't
+        both pass the gap check simultaneously and fire concurrent requests."""
+        with self._throttle_lock:
+            target_gap = random.uniform(self._min_call_gap, self._max_call_gap)
+            elapsed = time.time() - self._last_call_t
+            if elapsed < target_gap:
+                time.sleep(target_gap - elapsed)
+            self._last_call_t = time.time()
 
     # ── public request helpers ────────────────────────────────────────────────
 
