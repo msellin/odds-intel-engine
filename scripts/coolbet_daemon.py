@@ -627,12 +627,14 @@ def main() -> None:
     next_keepalive   = now + args.keepalive_min * 60
     next_odds        = now if not args.no_sweep else float("inf")
     next_place       = now            # run place immediately on start
-    # JWT auto-renewal cadence: 20 min matches Coolbet's frontend (per the
-    # JWT's `renewal_date` field, which sits at the 20-min mark). JWT TTL
-    # is 30 min, so renewing at 20 min gives 10 min headroom and mimics the
-    # normal browser traffic pattern. First refresh fires at start+20m;
-    # the initial JWT from .env carries the daemon through that.
-    next_jwt_refresh = now + 20 * 60
+    # JWT auto-renewal: target 8 min of headroom before expiry. On startup
+    # the pasted JWT may already be 15-25 min old, so schedule the FIRST
+    # renewal based on remaining TTL (not a fixed +20 min offset) to avoid
+    # the renewal firing after the JWT is already dead. Subsequent renewals
+    # are +20 min from each successful renewal (fresh 30-min JWT → 10 min
+    # headroom, matching Coolbet's browser renewal_date pattern).
+    _jwt_remaining = session.jwt_seconds_remaining
+    next_jwt_refresh = now + max(60.0, _jwt_remaining - 480.0)
 
     while not _STOP:
         now = time.time()
