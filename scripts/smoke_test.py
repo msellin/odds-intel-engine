@@ -7299,5 +7299,18 @@ def _():
     )
 
 
+@test("SIM-BETS-COHORT-CHECK — simulated_bets timing_cohort constraint allows 'all'")
+def _():
+    """Migration 116 guard: BOT-COHORTS-ALL sets timing_cohort='all' on every bot.
+    If the simulated_bets check constraint doesn't include 'all', every store_bet()
+    call fails silently and zero bets are ever placed."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "supabase" / "migrations" / "116_simulated_bets_timing_cohort_allow_all.sql").read_text()
+    assert "'all'" in src, "migration 116 must include 'all' in the timing_cohort check"
+    assert "simulated_bets" in src, "migration 116 must target simulated_bets"
+    assert "DROP CONSTRAINT" in src, "migration 116 must drop the old constraint first"
+
+
 if __name__ == "__main__":
     main()

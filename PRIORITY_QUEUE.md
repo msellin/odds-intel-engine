@@ -20,6 +20,7 @@
 
 | ID | Pri | Effort | Why now / When to do |
 |----|-----|--------|----------------------|
+| **SIM-BETS-COHORT-CONSTRAINT** | ✅ Done 2026-05-21 | 15m | **Silent zero-bets bug fixed.** BOT-COHORTS-ALL (migration 112) set all bots to `timing_cohort='all'` and updated the `shadow_bets` check constraint — but missed `simulated_bets`. Every `store_bet()` call was failing with `simulated_bets_timing_cohort_check` violation since that change, silently producing 0 pre-match bets. Migration 116 drops and recreates the constraint to allow `'all'` and HHMM labels, matching migration 112. Smoke: SIM-BETS-COHORT-CHECK. |
 | **AH-HOME-BIAS** | ✅ Done 2026-05-21 | 2h | Fixed. AH bots now use `_solve_lambdas_calibrated(pred["home_prob"], pred["draw_prob"])` — inverts Platt-corrected 1x2 probs → lambdas instead of raw Poisson `exp_home`/`exp_away`. Removes ~7.5% systematic home-bias from AH pricing. `bot_ah_away_dog` re-enabled. Both AH storage block and bot edge-computation block updated. Smoke: PIPELINE-AH. |
 | **🗓️ DATA-GATED BATCH WINDOWS** (added 2026-05-13) | | | |
 | Batch 1 — Validation Session | P0 | ~3-4h | **~2026-05-26 → 28** — resolve together: `B-ML3` (meta-model), `NEWS-LINEUP-VALIDATE` (AUC gate for B-ML3), `ODDS-TIMING-VALIDATE` (CLV by hours-before-KO). B-ML3 + NEWS already share the date by design; ODDS-TIMING is 2 days later and uses different SQL — same context window. |
