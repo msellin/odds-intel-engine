@@ -7358,6 +7358,19 @@ def _():
     )
 
 
+@test("ACCA-EDGE-PERCENT — acca/combo _place_one INSERT includes edge_percent")
+def _():
+    """_place_one was missing edge_percent in its INSERT column list, causing a
+    NOT NULL constraint violation on every combo bet placed."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "jobs" / "acca_bot.py").read_text()
+    insert_start = src.index("INSERT INTO simulated_bets")
+    insert_block = src[insert_start: insert_start + 400]
+    assert "edge_percent" in insert_block, \
+        "acca_bot._place_one INSERT must include edge_percent in column list"
+
+
 @test("SIM-BETS-COHORT-CHECK — simulated_bets timing_cohort constraint allows 'all'")
 def _():
     """Migration 116 guard: BOT-COHORTS-ALL sets timing_cohort='all' on every bot.

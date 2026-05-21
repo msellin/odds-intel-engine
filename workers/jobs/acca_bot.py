@@ -444,9 +444,10 @@ def _place_one(bot_name: str, cfg: dict, legs: list[CandidateLeg]) -> dict:
         INSERT INTO simulated_bets (
             bot_id, match_id, market, selection,
             odds_at_pick, model_probability, calibrated_prob,
+            edge_percent,
             stake, result, combo_legs, combo_size, system_type,
             reasoning
-        ) VALUES (%s, %s, 'combo', %s, %s, %s, %s, %s, 'pending', %s, %s, %s, %s)
+        ) VALUES (%s, %s, 'combo', %s, %s, %s, %s, %s, %s, 'pending', %s, %s, %s, %s)
         """,
         [
             bot_id,
@@ -455,6 +456,7 @@ def _place_one(bot_name: str, cfg: dict, legs: list[CandidateLeg]) -> dict:
             display_odds,
             combined_prob,
             combined_prob,
+            round(combined_edge, 4),
             stake,
             json.dumps(legs_json),
             n_legs,
