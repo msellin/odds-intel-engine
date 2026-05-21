@@ -7189,5 +7189,74 @@ def _():
         "AH predictions must use source=poisson"
 
 
+@test("COOLBET-IMPERVA-BACKOFF — daemon enters quiet backoff after threshold keepalive failures")
+def _():
+    """COOLBET-IMPERVA-BACKOFF (2026-05-21) — after IMPERVA_FAIL_THRESHOLD
+    consecutive keepalive failures the daemon must stop all activity
+    (sweep, placement, JWT renewal) and enter a timed backoff window.
+    Backoff doubles on each continued block (capped at IMPERVA_BACKOFF_MAX_S).
+    Telegram alerts on enter, probe, and exit. Without this, the daemon hammers
+    blocked endpoints every 5 min and keeps the Imperva session frozen longer."""
+    import pathlib
+    src = pathlib.Path("scripts/coolbet_daemon.py").read_text()
+
+    # Backoff globals must exist with the right values
+    assert "IMPERVA_FAIL_THRESHOLD" in src, "IMPERVA_FAIL_THRESHOLD constant missing"
+    assert "IMPERVA_BACKOFF_MIN_S" in src, "IMPERVA_BACKOFF_MIN_S constant missing"
+    assert "IMPERVA_BACKOFF_MAX_S" in src, "IMPERVA_BACKOFF_MAX_S constant missing"
+    assert "_imperva_fail_streak" in src, "_imperva_fail_streak state var missing"
+    assert "_imperva_backoff_until" in src, "_imperva_backoff_until state var missing"
+    assert "_imperva_backoff_duration" in src, "_imperva_backoff_duration state var missing"
+
+    # Main loop must check backoff BEFORE normal keepalive/sweep/placement
+    backoff_check_pos = src.find("if _imperva_backoff_until > 0:")
+    keepalive_check_pos = src.find("if now >= next_keepalive:")
+    assert backoff_check_pos != -1, "backoff guard missing from main loop"
+    assert keepalive_check_pos != -1, "keepalive schedule check missing"
+    assert backoff_check_pos < keepalive_check_pos, (
+        "backoff guard must come before keepalive/sweep/placement in the loop"
+    )
+
+    # After N failures the daemon must enter backoff (not just log and continue)
+    assert "_imperva_fail_streak >= IMPERVA_FAIL_THRESHOLD" in src, (
+        "must enter backoff when streak reaches threshold"
+    )
+    assert "_imperva_backoff_until = now + _imperva_backoff_duration" in src, (
+        "must set _imperva_backoff_until to arm the backoff window"
+    )
+
+    # Backoff must double on continued block, capped at max
+    assert "_imperva_backoff_duration * 2" in src, "backoff must double on each continued block"
+    assert "IMPERVA_BACKOFF_MAX_S" in src, "backoff must be capped at IMPERVA_BACKOFF_MAX_S"
+
+    # Clear state when block resolves
+    assert "_imperva_backoff_until = 0.0" in src, (
+        "must clear _imperva_backoff_until when keepalive probe succeeds"
+    )
+    assert "_imperva_backoff_duration = IMPERVA_BACKOFF_MIN_S" in src, (
+        "must reset duration to IMPERVA_BACKOFF_MIN_S on recovery so next block starts fresh"
+    )
+    assert "_imperva_fail_streak = 0" in src, "must reset fail streak on recovery"
+
+    # Telegram alerts on all three transitions
+    assert '"coolbet-imperva-block"' in src, (
+        "must send Telegram with dedup_key='coolbet-imperva-block' on entry"
+    )
+    assert '"coolbet-imperva-cleared"' in src, (
+        "must send Telegram with dedup_key='coolbet-imperva-cleared' on recovery"
+    )
+    assert '"coolbet-imperva-extend"' in src, (
+        "must send Telegram with dedup_key='coolbet-imperva-extend' on doubled backoff"
+    )
+
+    # While in backoff the main loop must not advance sweep/placement next times
+    # (i.e. it must `continue` the loop, not fall through to sweep/placement code)
+    backoff_block = src[backoff_check_pos: keepalive_check_pos]
+    assert "continue" in backoff_block, (
+        "backoff block must `continue` the loop so sweep/placement are never reached "
+        "while Imperva-blocked"
+    )
+
+
 if __name__ == "__main__":
     main()

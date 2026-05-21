@@ -97,6 +97,19 @@ def _stamp(state: dict, key: str, extra: dict | None = None) -> None:
 _STOP = False
 _SWEEP_THREAD: threading.Thread | None = None
 
+# ── Imperva backoff state ─────────────────────────────────────────────────────
+# Tracks consecutive keepalive failures. After IMPERVA_FAIL_THRESHOLD failures
+# the daemon enters a quiet backoff period (no sweeps, no placements, no JWT
+# renewal — just wait). Backoff starts at IMPERVA_BACKOFF_MIN_S and doubles on
+# each continued block, capped at IMPERVA_BACKOFF_MAX_S.
+IMPERVA_FAIL_THRESHOLD  = 3      # failures before entering backoff
+IMPERVA_BACKOFF_MIN_S   = 900    # 15 min initial backoff
+IMPERVA_BACKOFF_MAX_S   = 3600   # 60 min max backoff
+
+_imperva_fail_streak: int   = 0
+_imperva_backoff_until: float = 0.0   # epoch seconds; 0 = not in backoff
+_imperva_backoff_duration: float = IMPERVA_BACKOFF_MIN_S
+
 # ── Runtime control (TELEGRAM-COMMANDS) ──────────────────────────────────────
 # Mutable flags Telegram commands can flip mid-run. Daemon main loop reads
 # these on each tick. Guarded by simple GIL semantics — single-process daemon
@@ -614,10 +627,82 @@ def main() -> None:
 
     while not _STOP:
         now = time.time()
+        global _imperva_fail_streak, _imperva_backoff_until, _imperva_backoff_duration
+
+        # ── Imperva backoff check ─────────────────────────────────────────────
+        # If we're in backoff, only run the keepalive probe once the window
+        # has elapsed. Everything else (sweep, placement, JWT renewal) is
+        # skipped entirely so we go completely quiet.
+        if _imperva_backoff_until > 0:
+            remaining = _imperva_backoff_until - now
+            if remaining > 0:
+                log.info("imperva backoff — quiet for %.0fs more", remaining)
+                sleep_for = max(min(remaining, 30.0), 1.0)
+                time.sleep(sleep_for)
+                continue
+            # Backoff window elapsed — probe with a single keepalive
+            log.info("imperva backoff elapsed — probing keepalive")
+            result = _task_keepalive(session)
+            log.info(result)
+            ok = "✓" in result
+            _stamp(state, "last_keepalive", {
+                "jwt_ttl_s": int(session.jwt_seconds_remaining),
+                "backoff_probe": True, "ok": ok,
+            })
+            if ok:
+                from workers.notify.telegram import send_telegram
+                send_telegram(
+                    "✅ Coolbet Imperva block cleared — resuming normal operation",
+                    dedup_key="coolbet-imperva-cleared",
+                    dedup_window_s=300,
+                )
+                _imperva_fail_streak = 0
+                _imperva_backoff_until = 0.0
+                _imperva_backoff_duration = IMPERVA_BACKOFF_MIN_S
+                next_keepalive = now + args.keepalive_min * 60
+                next_odds = now        # sweep immediately once unblocked
+                next_place = now
+                next_jwt_refresh = now + 20 * 60
+                log.info("imperva backoff cleared — resuming")
+            else:
+                # Still blocked — double the backoff, alert again
+                _imperva_backoff_duration = min(
+                    _imperva_backoff_duration * 2, IMPERVA_BACKOFF_MAX_S
+                )
+                _imperva_backoff_until = now + _imperva_backoff_duration
+                from workers.notify.telegram import send_telegram
+                send_telegram(
+                    f"🔴 Coolbet still Imperva-blocked after probe — "
+                    f"extending backoff to {int(_imperva_backoff_duration // 60)} min",
+                    dedup_key="coolbet-imperva-extend",
+                    dedup_window_s=300,
+                )
+                log.warning("imperva still blocked — backoff extended to %.0fs", _imperva_backoff_duration)
+            continue
 
         if now >= next_keepalive:
-            log.info(_task_keepalive(session))
+            result = _task_keepalive(session)
+            log.info(result)
+            ok = "✓" in result
             _stamp(state, "last_keepalive", {"jwt_ttl_s": int(session.jwt_seconds_remaining)})
+            if ok:
+                _imperva_fail_streak = 0
+            else:
+                _imperva_fail_streak += 1
+                if _imperva_fail_streak >= IMPERVA_FAIL_THRESHOLD:
+                    _imperva_backoff_until = now + _imperva_backoff_duration
+                    from workers.notify.telegram import send_telegram
+                    send_telegram(
+                        f"🔴 Coolbet Imperva block detected ({_imperva_fail_streak} consecutive "
+                        f"keepalive failures) — going quiet for "
+                        f"{int(_imperva_backoff_duration // 60)} min",
+                        dedup_key="coolbet-imperva-block",
+                        dedup_window_s=300,
+                    )
+                    log.warning(
+                        "imperva block — entering backoff for %.0fs (streak=%d)",
+                        _imperva_backoff_duration, _imperva_fail_streak,
+                    )
             next_keepalive = now + args.keepalive_min * 60
 
         # ODDS sweep — runs in a background thread so keepalive + placement
