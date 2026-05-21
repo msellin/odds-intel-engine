@@ -937,6 +937,30 @@ def run_one_shot(match_id: str) -> None:
 
     markets = fetch_match_markets(session, int(ev["id"]))
     odds_map = fetch_odds_for_markets(session, markets)
+
+    # --raw: dump every market's name + type_id before parsing, so unknown
+    # markets (AH, DC, etc.) can be identified and _MTID_* sets updated.
+    if getattr(args, "raw", False):
+        tr = Table(show_header=True, title=f"RAW markets — event #{ev['id']}")
+        tr.add_column("market_type_id", justify="right")
+        tr.add_column("name")
+        tr.add_column("line", justify="right")
+        tr.add_column("outcomes")
+        for mkt in markets:
+            ocs = ", ".join(
+                f"{o.get('result_key','?')}(id={o.get('id','?')})"
+                for o in (mkt.get("outcomes") or [])[:4]
+            )
+            tr.add_row(
+                str(mkt.get("market_type_id") or "—"),
+                mkt.get("name") or "—",
+                str(mkt.get("line") or "—"),
+                ocs,
+            )
+        console.print(tr)
+        console.print(f"[dim]{len(odds_map)} odds entries fetched[/dim]")
+        return
+
     t = Table(show_header=True, title=f"Coolbet markets for event #{ev['id']}")
     t.add_column("Market")
     t.add_column("Selection")
@@ -950,7 +974,7 @@ def run_one_shot(match_id: str) -> None:
     if seen == 0:
         console.print(f"[yellow]Event found ({len(markets)} markets / {len(odds_map)} odds) "
                       f"but parser recognised none. Probable cause: market_type_id mappings "
-                      f"need extension. Run probe and update _MTID_* sets.[/yellow]")
+                      f"need extension. Run with --raw to see all market names + type_ids.[/yellow]")
         return
     console.print(t)
 
@@ -962,6 +986,10 @@ def main() -> None:
     ap.add_argument("--limit", type=int, help="Cap bulk to first N matches (testing)")
     ap.add_argument("--sleep", type=float, default=0.25, help="Seconds between sidebets calls")
     ap.add_argument("--dry-run", action="store_true", help="Parse but don't write")
+    ap.add_argument("--raw", action="store_true",
+                    help="With --match-id: dump all raw market names + type_ids before parsing. "
+                         "Use this to discover unknown market_type_ids (AH, DC, etc.) so "
+                         "_MTID_* sets can be updated.")
     ap.add_argument("--bets-only", action="store_true",
                     help="Bulk only over matches that have a pending value bet (active bots)")
     args = ap.parse_args()
