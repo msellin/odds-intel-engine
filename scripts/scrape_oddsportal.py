@@ -121,6 +121,7 @@ def run_job(slug: str, season: str, dest: Path, markets: str = MARKETS,
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         start = time.monotonic()
         deadline = start + timeout_s
+        output_lines: list[str] = []
 
         while True:
             if time.monotonic() > deadline:
@@ -131,14 +132,18 @@ def run_job(slug: str, season: str, dest: Path, markets: str = MARKETS,
                 line = proc.stdout.readline()
             except Exception:
                 break
-            if not line and proc.poll() is not None:
+            if line:
+                output_lines.append(line.rstrip())
+            elif proc.poll() is not None:
                 break
-            if not line:
+            else:
                 time.sleep(0.2)
 
         proc.wait()
         if proc.returncode != 0:
-            return False, f"exit {proc.returncode}"
+            # Return last non-empty line of output as the error message
+            last = next((l for l in reversed(output_lines) if l.strip()), f"exit {proc.returncode}")
+            return False, last[:80]
 
         if dest.exists() and dest.stat().st_size > 200:
             return True, f"{dest.stat().st_size // 1024} KB"
@@ -179,8 +184,8 @@ def _build_table(
         for season in seasons:
             state, detail = job_status.get((slug, season), ("pending", ""))
             sym, style = _SYM[state]
-            if state == "running" and detail:
-                cells.append(Text(f"{sym}{detail}", style=style))
+            if state in ("running", "error") and detail:
+                cells.append(Text(f"{sym}{detail[:12]}", style=style))
             else:
                 cells.append(Text(sym, style=style))
         t.add_row(*cells)
@@ -209,6 +214,8 @@ def main() -> None:
                     help="Concurrent match pages per job (default: 6)")
     ap.add_argument("--parallel", type=int, default=3, metavar="N",
                     help="Jobs to run simultaneously (default: 3)")
+    ap.add_argument("--stagger", type=int, default=15, metavar="SECONDS",
+                    help="Seconds to wait before starting each parallel job (default: 15)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -268,8 +275,20 @@ def main() -> None:
         def _refresh():
             live.update(_build_table(job_status, leagues, seasons, n_done, n_total_display, start_ts))
 
+        _job_index = 0
+        _job_index_lock = threading.Lock()
+
         def _run(job: tuple[str, str, str, Path]) -> tuple[bool, str, str, str]:
+            nonlocal _job_index
             slug, name, season, dest = job
+
+            # Stagger starts to avoid simultaneous browser launches hitting rate limits
+            with _job_index_lock:
+                idx = _job_index
+                _job_index += 1
+            if idx > 0 and args.stagger > 0 and not args.dry_run:
+                time.sleep(idx * args.stagger % (args.parallel * args.stagger))
+
             with _lock:
                 job_status[(slug, season)] = ("running", "")
                 _refresh()
