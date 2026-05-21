@@ -414,20 +414,24 @@ BOTS_CONFIG = {
         "odds_range": (1.50, 2.20),
         "min_prob": 0.55,
     },
-    "bot_ah_away_dog": {
-        "description": "AH away — underdog covers T1-3, Poisson-priced, 5%+ edge",
-        "tier_label": "elite",
-        "markets": ["ah"],
-        "selection_filter": ["Away"],
-        "tier_filter": [1, 2, 3],
-        "edge_thresholds": {
-            1: {"ah": 0.05},
-            2: {"ah": 0.05},
-            3: {"ah": 0.06},
-        },
-        "odds_range": (1.70, 2.50),
-        "min_prob": 0.50,
-    },
+    # bot_ah_away_dog DISABLED 2026-05-21: fdco CLV analysis showed Poisson model
+    # systematically overestimates away AH coverage by +5.71% vs Pinnacle closing
+    # (home bias artifact — raw lambdas bypass Platt correction). Re-enable after
+    # AH-HOME-BIAS fix: invert from Platt-corrected probs not raw exp_h/exp_a.
+    # "bot_ah_away_dog": {
+    #     "description": "AH away — underdog covers T1-3, Poisson-priced, 5%+ edge",
+    #     "tier_label": "elite",
+    #     "markets": ["ah"],
+    #     "selection_filter": ["Away"],
+    #     "tier_filter": [1, 2, 3],
+    #     "edge_thresholds": {
+    #         1: {"ah": 0.05},
+    #         2: {"ah": 0.05},
+    #         3: {"ah": 0.06},
+    #     },
+    #     "odds_range": (1.70, 2.50),
+    #     "min_prob": 0.50,
+    # },
     "bot_dnb_home_value": {
         "description": "DNB home — favourite without draw risk, T1-2, 5%+ edge",
         "tier_label": "pro",
@@ -504,7 +508,7 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_dc_value":         "all",
     "bot_dc_strong_fav":    "all",
     "bot_ah_home_fav":      "all",
-    "bot_ah_away_dog":      "all",
+    # bot_ah_away_dog disabled — see comment in BOTS_CONFIG above
     "bot_dnb_home_value":   "all",
     "bot_dnb_away_value":   "all",
 }
