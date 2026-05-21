@@ -7205,6 +7205,38 @@ def _():
         "old disable comment must be removed"
 
 
+@test("COOLBET-UNICODE-FUZZY — ø/å/æ/ü chars normalized before fuzzy match; token_set_ratio scorer; away team search fallback")
+def _():
+    """COOLBET-UNICODE-FUZZY (2026-05-21) — Brøndby IF FC København failed to
+    match 'Brondby FC Copenhagen' because ø/ø were stripped to nothing by NFKD
+    and token_sort_ratio scored 68 (below threshold 70). Fix: map ø→o/å→a/etc
+    via translate table, switch scorer to token_set_ratio (scores 77 on the
+    Brondby case), add full away name as search query fallback."""
+    from rapidfuzz import fuzz
+    from workers.automation.coolbet_placer import _ascii, _UNICODE_MAP
+
+    # ø→o, å→a, æ→ae, ü→u etc.
+    assert _ascii("Brøndby IF") == "Brondby IF", f"got {_ascii('Brøndby IF')}"
+    assert _ascii("FC København") == "FC Kobenhavn", f"got {_ascii('FC Kobenhavn')}"
+    assert _ascii("Malmö FF") == "Malmo FF"
+    assert _ascii("Köln") == "Koln"
+
+    # token_set_ratio clears threshold 70 for the Brondby case
+    score = fuzz.token_set_ratio(
+        _ascii("Brondby FC Copenhagen"),
+        _ascii("Brøndby IF FC København"),
+    )
+    assert score >= 70, f"Brondby score {score} still below threshold after fix"
+
+    # Away team search fallback present
+    import inspect
+    from workers.automation.coolbet_placer import search_coolbet_event, fuzzy_match_event
+    assert "away.strip()" in inspect.getsource(search_coolbet_event), \
+        "away full name must be a search fallback query"
+    assert "token_set_ratio" in inspect.getsource(fuzzy_match_event), \
+        "fuzzy_match_event must use token_set_ratio"
+
+
 @test("COOLBET-NO-SWEEP — --no-sweep flag disables odds loop; placer already stores snapshot per bet")
 def _():
     """COOLBET-NO-SWEEP (2026-05-21) — when Coolbet is used as a placement-only

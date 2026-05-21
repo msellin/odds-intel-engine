@@ -25,6 +25,7 @@ import os
 import re
 import sys
 import time
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -574,6 +575,7 @@ def search_coolbet_event(
         _prefix(home, 3), _prefix(home, 4), _prefix(home, 5),
         _prefix(away, 3), _prefix(away, 4), _prefix(away, 5),
         home.strip() if home else None,
+        away.strip() if away else None,
     ):
         if q and q.lower() not in seen:
             seen.add(q.lower())
@@ -714,13 +716,33 @@ def _parse_bet_offers_payload(raw_offers: list[dict]) -> list[dict]:
 
 # ── Matching ──────────────────────────────────────────────────────────────────
 
+_UNICODE_MAP = str.maketrans({
+    'ø': 'o', 'Ø': 'O', 'å': 'a', 'Å': 'A',
+    'ö': 'o', 'Ö': 'O', 'ü': 'u', 'Ü': 'U',
+    'ä': 'a', 'Ä': 'A', 'é': 'e', 'è': 'e',
+    'ê': 'e', 'ë': 'e', 'à': 'a', 'â': 'a',
+    'î': 'i', 'ï': 'i', 'ô': 'o', 'ù': 'u',
+    'û': 'u', 'ç': 'c', 'ñ': 'n', 'æ': 'ae', 'Æ': 'Ae',
+})
+
+
+def _ascii(s: str) -> str:
+    """Map European chars to ASCII equivalents for fuzzy matching (ø→o, å→a, etc.)."""
+    return s.translate(_UNICODE_MAP)
+
+
 def fuzzy_match_event(
     home: str, away: str, events: list[dict]
 ) -> dict | None:
     """Find the Coolbet event whose home+away names best match ours."""
     event_keys = [f"{e['home']} {e['away']}" for e in events]
+    # Normalize both query and candidates to ASCII so ø/ü/å/é don't tank scores.
+    # token_set_ratio handles extra tokens (IF, FC, United suffixes) better than
+    # token_sort_ratio for club name matching.
+    query_ascii = _ascii(f"{home} {away}")
+    event_keys_ascii = [_ascii(k) for k in event_keys]
     result = rfprocess.extractOne(
-        f"{home} {away}", event_keys, scorer=fuzz.token_sort_ratio
+        query_ascii, event_keys_ascii, scorer=fuzz.token_set_ratio
     )
     if result is None:
         return None
