@@ -7050,5 +7050,67 @@ def _():
     assert "DEBUG CLV loop done" not in src, "debug print must be removed"
 
 
+@test("FDCO-AH-CLV — run_ah_clv_analysis defined and wired into main()")
+def _():
+    """FDCO-AH-CLV (2026-05-21): AH CLV analysis is defined, wired into main(), and
+    write_findings accepts the ah_clv parameter."""
+    import pathlib
+
+    src_path = pathlib.Path("scripts/analyse_football_data_co_uk.py")
+    src = src_path.read_text()
+
+    assert "def run_ah_clv_analysis(" in src, "run_ah_clv_analysis must be defined"
+    assert "ah_clv_results = run_ah_clv_analysis(" in src, \
+        "run_ah_clv_analysis must be called in main()"
+    assert "write_findings(findings_path, summary, calib, clv_results, ah_clv_results, args)" in src, \
+        "write_findings must receive ah_clv_results"
+    assert "def write_findings(" in src, "write_findings must be defined"
+    # write_findings must accept ah_clv parameter
+    import re
+    sig_match = re.search(r"def write_findings\((.*?)\) -> None:", src, re.DOTALL)
+    assert sig_match and "ah_clv" in sig_match.group(1), \
+        "write_findings must accept ah_clv parameter"
+
+    # AH section must appear in findings body
+    assert "## AH CLV analysis" in src, "write_findings must write AH CLV section"
+
+
+@test("BACKFILL-AH — backfill_ah_predictions.py structure")
+def _():
+    """BACKFILL-AH (2026-05-21): backfill_ah_predictions.py exists with correct structure."""
+    import pathlib
+
+    src_path = pathlib.Path("scripts/backfill_ah_predictions.py")
+    assert src_path.exists(), "scripts/backfill_ah_predictions.py must exist"
+    src = src_path.read_text()
+
+    assert "def solve_lambdas(" in src, "solve_lambdas must be defined"
+    assert "def _ah_model_prob(" in src, "_ah_model_prob must be defined"
+    assert "bulk_store_predictions" in src, "must use bulk_store_predictions"
+    assert "market LIKE 'ah_%'" in src, \
+        "SQL must filter for existing AH predictions"
+    assert "--dry-run" in src, "must support --dry-run"
+    assert "source='poisson'" in src or '"source": "poisson"' in src, \
+        "predictions must be stored with source=poisson"
+
+
+@test("PIPELINE-AH — daily_pipeline_v2.py stores AH predictions for each match")
+def _():
+    """PIPELINE-AH (2026-05-21): daily_pipeline_v2.py stores 14 AH prediction rows
+    (7 lines × 2 sides) per match when exp_home/exp_away are available."""
+    import pathlib
+
+    src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+
+    assert "AH predictions: store Poisson probabilities" in src, \
+        "AH predictions block comment must be present"
+    assert "_ah_line in (-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5)" in src, \
+        "must iterate over 7 standard AH lines"
+    assert 'f"ah_{_ah_sel}_{_ah_line:.2f}"' in src, \
+        "market key must be ah_{sel}_{line:.2f}"
+    assert '"source": "poisson"' in src or "source.*poisson" in src, \
+        "AH predictions must use source=poisson"
+
+
 if __name__ == "__main__":
     main()

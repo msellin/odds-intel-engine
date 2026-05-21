@@ -854,6 +854,99 @@ def fuzzy_match_teams(preds_df: pd.DataFrame, fdco_df: pd.DataFrame,
 
 
 # ---------------------------------------------------------------------------
+# Poisson helpers (copied from daily_pipeline_v2 to avoid import side-effects)
+# ---------------------------------------------------------------------------
+_DIXON_COLES_RHO = -0.13
+
+
+def _dc_tau_local(h: int, a: int, exp_h: float, exp_a: float, rho: float) -> float:
+    if h == 0 and a == 0:
+        return 1.0 - exp_h * exp_a * rho
+    if h == 1 and a == 0:
+        return 1.0 + exp_a * rho
+    if h == 0 and a == 1:
+        return 1.0 + exp_h * rho
+    if h == 1 and a == 1:
+        return 1.0 - rho
+    return 1.0
+
+
+def _poisson_probs_local(exp_h: float, exp_a: float,
+                         rho: float = _DIXON_COLES_RHO) -> dict:
+    from scipy.stats import poisson as sp_poisson
+    p_h = p_d = p_a = 0.0
+    for h in range(8):
+        for a in range(8):
+            p = sp_poisson.pmf(h, exp_h) * sp_poisson.pmf(a, exp_a)
+            p *= _dc_tau_local(h, a, exp_h, exp_a, rho)
+            if h > a:
+                p_h += p
+            elif h == a:
+                p_d += p
+            else:
+                p_a += p
+    total = p_h + p_d + p_a
+    if total > 0:
+        p_h /= total; p_d /= total; p_a /= total
+    p_d_inf = p_d * 1.08
+    scale = (1.0 - p_d_inf) / (p_h + p_a) if (p_h + p_a) > 0 else 1.0
+    return {"home_prob": p_h * scale, "draw_prob": p_d_inf, "away_prob": p_a * scale}
+
+
+def _ah_model_prob_local(exp_h: float, exp_a: float, selection: str,
+                         handicap_line: float, rho: float = _DIXON_COLES_RHO) -> float:
+    from scipy.stats import poisson as sp_poisson
+    margin_pmf: dict[int, float] = {}
+    for h in range(8):
+        for a in range(8):
+            p = sp_poisson.pmf(h, exp_h) * sp_poisson.pmf(a, exp_a) * _dc_tau_local(h, a, exp_h, exp_a, rho)
+            m = h - a
+            margin_pmf[m] = margin_pmf.get(m, 0.0) + p
+    spread = -handicap_line
+    floor_s = math.floor(spread)
+    frac = spread - floor_s
+    if frac < 0.01:
+        s = round(spread)
+        p_win = sum(p for m, p in margin_pmf.items() if m > s)
+        p_lose = sum(p for m, p in margin_pmf.items() if m < s)
+        total = p_win + p_lose
+        home_prob = p_win / total if total > 0 else 0.5
+    elif abs(frac - 0.5) < 0.01:
+        p_win = sum(p for m, p in margin_pmf.items() if m > spread)
+        p_lose = sum(p for m, p in margin_pmf.items() if m < spread)
+        total = p_win + p_lose
+        home_prob = p_win / total if total > 0 else 0.5
+    elif frac < 0.5:
+        p_full_win = sum(p for m, p in margin_pmf.items() if m >= floor_s + 1)
+        p_half_loss = margin_pmf.get(floor_s, 0.0)
+        p_full_lose = sum(p for m, p in margin_pmf.items() if m <= floor_s - 1)
+        denom = p_full_win + 0.5 * p_half_loss + p_full_lose
+        home_prob = p_full_win / denom if denom > 0 else 0.5
+    else:
+        p_full_win = sum(p for m, p in margin_pmf.items() if m >= floor_s + 2)
+        p_half_win = margin_pmf.get(floor_s + 1, 0.0)
+        p_full_lose = sum(p for m, p in margin_pmf.items() if m <= floor_s)
+        numerator = p_full_win + 0.5 * p_half_win
+        denom = numerator + p_full_lose
+        home_prob = numerator / denom if denom > 0 else 0.5
+    return 1.0 - home_prob if selection == "away" else home_prob
+
+
+def solve_poisson_lambdas(p_home: float, p_draw: float) -> tuple[float, float]:
+    """Invert stored 1x2 ensemble probs to recover approximate (exp_h, exp_a)."""
+    from scipy.optimize import minimize
+
+    def loss(x: list) -> float:
+        eh, ea = max(0.15, x[0]), max(0.15, x[1])
+        r = _poisson_probs_local(eh, ea)
+        return (r["home_prob"] - p_home) ** 2 + (r["draw_prob"] - p_draw) ** 2
+
+    res = minimize(loss, [1.3, 1.0], method="Nelder-Mead",
+                   options={"xatol": 0.002, "fatol": 1e-5, "maxiter": 400})
+    return max(0.15, res.x[0]), max(0.15, res.x[1])
+
+
+# ---------------------------------------------------------------------------
 # CLV analysis
 # ---------------------------------------------------------------------------
 MARKET_TO_FDCO_PROB = {
@@ -1011,6 +1104,133 @@ def run_clv_analysis(preds_df: pd.DataFrame, fdco_df: pd.DataFrame,
     return results
 
 
+def run_ah_clv_analysis(preds_df: pd.DataFrame, fdco_df: pd.DataFrame,
+                        mapping_df: pd.DataFrame) -> dict:
+    """AH CLV: invert stored 1x2 ensemble probs → Poisson lambdas → AH probability,
+    then compare against Pinnacle closing AH vig-adjusted implied probability."""
+    console.rule("[bold]AH CLV analysis[/bold]")
+
+    # Build pivot: one row per (date, home, away) with home/draw/away probs
+    p1x2 = preds_df[preds_df["market"].isin(["1x2_home", "1x2_draw", "1x2_away"])].copy()
+    p1x2["pred_date"] = p1x2["match_date"].dt.date
+    pivot = p1x2.pivot_table(
+        index=["pred_date", "home_team", "away_team"],
+        columns="market", values="our_prob", aggfunc="first",
+    )
+    pivot.columns = [c.replace("1x2_", "p_") for c in pivot.columns]  # p_home, p_draw, p_away
+    pivot = pivot.reset_index()
+
+    probs_idx: dict[tuple, dict] = {}
+    for row in pivot.itertuples(index=False):
+        k = (row.pred_date, row.home_team, row.away_team)
+        probs_idx[k] = {"p_home": row.p_home, "p_draw": row.p_draw}
+
+    # Filter fdco to rows with AH closing odds and no push
+    fdco_ah = fdco_df[fdco_df.get("has_ah", pd.Series(False, index=fdco_df.index))].copy()
+    # Exclude pushes (AHCh is whole line, margin exactly cancels handicap)
+    if "outcome_ah_push" in fdco_ah.columns:
+        fdco_ah = fdco_ah[fdco_ah["outcome_ah_push"] == 0]
+    fdco_keyed = fdco_ah.set_index(["match_date", "HomeTeam", "AwayTeam"])
+
+    clv_rows: list[dict] = []
+    n_no_fdco = n_no_pred = n_no_ah_col = 0
+
+    with Progress(
+        TextColumn("[cyan]AH CLV join[/cyan]"),
+        BarColumn(), MofNCompleteColumn(), TimeElapsedColumn(),
+        console=console, transient=True,
+    ) as prog:
+        task = prog.add_task("", total=len(mapping_df))
+        for _, mrow in mapping_df.iterrows():
+            prog.advance(task)
+            fdco_key = (mrow["fdco_date"], mrow["fdco_home"], mrow["fdco_away"])
+            if fdco_key not in fdco_keyed.index:
+                n_no_fdco += 1
+                continue
+            fdco_row = fdco_keyed.loc[fdco_key]
+            if isinstance(fdco_row, pd.DataFrame):
+                fdco_row = fdco_row.iloc[0]
+
+            ah_line = fdco_row.get("AHCh")
+            pin_home_prob = fdco_row.get("prob_pcah_home")
+            pin_away_prob = fdco_row.get("prob_pcah_away")
+            if any(v is None or (isinstance(v, float) and math.isnan(v))
+                   for v in [ah_line, pin_home_prob, pin_away_prob]):
+                n_no_ah_col += 1
+                continue
+
+            our_date = mrow["our_date"]
+            k = (our_date, mrow["our_home"], mrow["our_away"])
+            if k not in probs_idx:
+                n_no_pred += 1
+                continue
+            p = probs_idx[k]
+            if any(math.isnan(v) for v in [p["p_home"], p["p_draw"]]):
+                continue
+
+            try:
+                exp_h, exp_a = solve_poisson_lambdas(p["p_home"], p["p_draw"])
+            except Exception:
+                continue
+
+            ah_line_f = float(ah_line)
+            our_home = _ah_model_prob_local(exp_h, exp_a, "home", ah_line_f)
+            our_away = _ah_model_prob_local(exp_h, exp_a, "away", ah_line_f)
+
+            out_home = fdco_row.get("outcome_ah_home")
+            out_away = fdco_row.get("outcome_ah_away")
+            max_home = fdco_row.get("MaxCAHH")
+            max_away = fdco_row.get("MaxCAHA")
+
+            clv_rows.append({
+                "market": "ah_home",
+                "our_prob": float(our_home),
+                "sharp_prob": float(pin_home_prob),
+                "clv": float(our_home) - float(pin_home_prob),
+                "outcome": float(out_home) if out_home is not None and not (isinstance(out_home, float) and math.isnan(out_home)) else np.nan,
+                "max_odds": float(max_home) if max_home and not (isinstance(max_home, float) and math.isnan(max_home)) else np.nan,
+            })
+            clv_rows.append({
+                "market": "ah_away",
+                "our_prob": float(our_away),
+                "sharp_prob": float(pin_away_prob),
+                "clv": float(our_away) - float(pin_away_prob),
+                "outcome": float(out_away) if out_away is not None and not (isinstance(out_away, float) and math.isnan(out_away)) else np.nan,
+                "max_odds": float(max_away) if max_away and not (isinstance(max_away, float) and math.isnan(max_away)) else np.nan,
+            })
+
+    if not clv_rows:
+        console.print("[yellow]No AH CLV rows computed (no matched fdco AH data).[/yellow]")
+        return {}
+
+    clv_df = pd.DataFrame(clv_rows)
+    clv_df["max_odds"] = pd.to_numeric(clv_df["max_odds"], errors="coerce")
+
+    t = Table(title="AH CLV (Poisson λ inverted from ensemble 1x2)", show_header=True)
+    t.add_column("Market")
+    t.add_column("N", justify="right")
+    t.add_column("Mean CLV", justify="right")
+    t.add_column("% CLV > 0", justify="right")
+    t.add_column("% CLV > 3%", justify="right")
+
+    clv_summary: list[dict] = []
+    for mkt in ["ah_home", "ah_away"]:
+        sub = clv_df[clv_df["market"] == mkt]
+        if sub.empty:
+            continue
+        mean_clv = sub["clv"].mean()
+        pct_pos = (sub["clv"] > 0).mean() * 100
+        pct_3 = (sub["clv"] > 0.03).mean() * 100
+        t.add_row(mkt, f"{len(sub):,}", f"{mean_clv*100:+.2f}%",
+                  f"{pct_pos:.1f}%", f"{pct_3:.1f}%")
+        clv_summary.append({"market": mkt, "n": len(sub), "mean_clv": mean_clv,
+                             "pct_pos": pct_pos, "pct_3pct": pct_3})
+    console.print(t)
+
+    console.print(f"[dim]Note: lambdas inverted from ensemble 1x2 probs (approximate)[/dim]")
+    return {"n_matched": len(clv_df), "markets": clv_summary}
+
+
 # ---------------------------------------------------------------------------
 # Dataset summary
 # ---------------------------------------------------------------------------
@@ -1083,6 +1303,7 @@ def write_findings(
     summary: dict,
     calib: dict,
     clv: dict | None,
+    ah_clv: dict | None,
     args: argparse.Namespace,
 ) -> None:
     lines = []
@@ -1169,6 +1390,18 @@ def write_findings(
         if rr is not None and not math.isnan(rr):
             lines.append(f"- All matched bets (random baseline): ROI = {rr*100:+.2f}%")
 
+    if ah_clv:
+        lines.append("\n## AH CLV analysis (Poisson λ inverted from 1x2)")
+        lines.append(f"- Matched AH rows: {ah_clv.get('n_matched', 0):,}")
+        lines.append("- Note: lambdas inverted from ensemble 1x2 probs (approximate)")
+        lines.append("\n| Market | N | Mean CLV | % CLV > 0 | % CLV > 3% |")
+        lines.append("|--------|---|----------|-----------|------------|")
+        for m in ah_clv.get("markets", []):
+            lines.append(
+                f"| {m['market']} | {m['n']:,} | {m['mean_clv']*100:+.2f}% | "
+                f"{m['pct_pos']:.1f}% | {m['pct_3pct']:.1f}% |"
+            )
+
     lines.append("\n## Key conclusions")
     lines.append("- Pinnacle closing 1x2 is well-calibrated (Brier/LogLoss close to theoretical minimum for football)")
     lines.append("- Flat-bet ROI on highest-prob outcome vs Max closing is negative (as expected — we're paying Max vig)")
@@ -1187,6 +1420,11 @@ def write_findings(
                 lines.append(f"- Model CLV edge is marginal: value bets ROI = {vr*100:+.2f}% vs baseline {rr*100:+.2f}%")
     else:
         lines.append("- CLV analysis skipped (no DB export or --skip-our-model)")
+
+    if ah_clv and ah_clv.get("markets"):
+        ah_means = [m["mean_clv"] for m in ah_clv["markets"]]
+        avg_ah = sum(ah_means) / len(ah_means) if ah_means else 0.0
+        lines.append(f"- AH CLV (inverted Poisson): avg across ah_home/ah_away = {avg_ah*100:+.2f}%")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(lines) + "\n")
@@ -1208,6 +1446,7 @@ def main() -> None:
     calib = run_calibration(df)
 
     clv_results = None
+    ah_clv_results = None
 
     if not args.skip_our_model:
         predictions_path = args.out_dir / "fdco_our_predictions.csv"
@@ -1223,6 +1462,7 @@ def main() -> None:
                 mapping_df["fdco_date"] = pd.to_datetime(mapping_df["fdco_date"]).dt.date
                 mapping_df["our_date"] = pd.to_datetime(mapping_df["our_date"]).dt.date
                 clv_results = run_clv_analysis(preds_df, df, mapping_df)
+                ah_clv_results = run_ah_clv_analysis(preds_df, df, mapping_df)
             else:
                 console.print("[yellow]No team mapping available — skipping CLV.[/yellow]")
         else:
@@ -1230,7 +1470,7 @@ def main() -> None:
 
     if not args.no_findings:
         findings_path = REPO_ROOT / "dev" / "active" / "fdco_analysis_findings.md"
-        write_findings(findings_path, summary, calib, clv_results, args)
+        write_findings(findings_path, summary, calib, clv_results, ah_clv_results, args)
 
     console.print("\n[bold green]Analysis complete.[/bold green]")
 

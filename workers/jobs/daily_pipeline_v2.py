@@ -2128,6 +2128,25 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                     "reasoning": f"data_tier={data_tier}",
                 })
 
+        # AH predictions: store Poisson probabilities for standard lines so they
+        # can be used for CLV analysis and future AH model evaluation.
+        _exp_h = poisson_pred.get("exp_home")
+        _exp_a = poisson_pred.get("exp_away")
+        if _exp_h and _exp_a and _exp_h > 0 and _exp_a > 0:
+            _tier_rho = _load_dc_rho_cache().get(match.get("tier", 1))
+            for _ah_line in (-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5):
+                for _ah_sel in ("home", "away"):
+                    _ah_prob = _ah_model_prob(_exp_h, _exp_a, _ah_sel, _ah_line, rho=_tier_rho)
+                    pending_pred_rows.append({
+                        "match_id": match_id,
+                        "market": f"ah_{_ah_sel}_{_ah_line:.2f}",
+                        "source": "poisson",
+                        "model_prob": float(_ah_prob),
+                        "implied_prob": None,
+                        "edge": None,
+                        "reasoning": f"data_tier={data_tier}",
+                    })
+
         # Place bets for each bot
         tier = match.get("tier", 1)
         country = match.get("league_path", "").split(" / ")[0] if " / " in match.get("league_path", "") else ""
