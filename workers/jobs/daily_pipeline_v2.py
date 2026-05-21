@@ -414,24 +414,20 @@ BOTS_CONFIG = {
         "odds_range": (1.50, 2.20),
         "min_prob": 0.55,
     },
-    # bot_ah_away_dog DISABLED 2026-05-21: fdco CLV analysis showed Poisson model
-    # systematically overestimates away AH coverage by +5.71% vs Pinnacle closing
-    # (home bias artifact — raw lambdas bypass Platt correction). Re-enable after
-    # AH-HOME-BIAS fix: invert from Platt-corrected probs not raw exp_h/exp_a.
-    # "bot_ah_away_dog": {
-    #     "description": "AH away — underdog covers T1-3, Poisson-priced, 5%+ edge",
-    #     "tier_label": "elite",
-    #     "markets": ["ah"],
-    #     "selection_filter": ["Away"],
-    #     "tier_filter": [1, 2, 3],
-    #     "edge_thresholds": {
-    #         1: {"ah": 0.05},
-    #         2: {"ah": 0.05},
-    #         3: {"ah": 0.06},
-    #     },
-    #     "odds_range": (1.70, 2.50),
-    #     "min_prob": 0.50,
-    # },
+    "bot_ah_away_dog": {
+        "description": "AH away — underdog covers T1-3, calibrated-lambda pricing, 5%+ edge",
+        "tier_label": "elite",
+        "markets": ["ah"],
+        "selection_filter": ["Away"],
+        "tier_filter": [1, 2, 3],
+        "edge_thresholds": {
+            1: {"ah": 0.05},
+            2: {"ah": 0.05},
+            3: {"ah": 0.06},
+        },
+        "odds_range": (1.70, 2.50),
+        "min_prob": 0.50,
+    },
     "bot_dnb_home_value": {
         "description": "DNB home — favourite without draw risk, T1-2, 5%+ edge",
         "tier_label": "pro",
@@ -508,7 +504,7 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_dc_value":         "all",
     "bot_dc_strong_fav":    "all",
     "bot_ah_home_fav":      "all",
-    # bot_ah_away_dog disabled — see comment in BOTS_CONFIG above
+    "bot_ah_away_dog":      "all",
     "bot_dnb_home_value":   "all",
     "bot_dnb_away_value":   "all",
 }
@@ -746,6 +742,46 @@ def _ah_model_prob(exp_h: float, exp_a: float, selection: str, handicap_line: fl
         home_prob = numerator / denom if denom > 0 else 0.5
 
     return 1.0 - home_prob if selection == "away" else home_prob
+
+
+# Per-pipeline-run cache: (round(p_home,3), round(p_draw,3)) → (exp_h, exp_a)
+# Populated lazily during prediction loop; cleared between runs automatically
+# since it's module-level but only filled within a run's match iteration.
+_ah_lambda_cache: dict[tuple[float, float], tuple[float, float]] = {}
+
+
+def _solve_lambdas_calibrated(p_home: float, p_draw: float) -> tuple[float, float] | None:
+    """Invert Platt-calibrated 1x2 probs → Poisson (exp_h, exp_a) with caching.
+
+    Using calibrated probs corrects the systematic home-advantage underestimation
+    in raw Poisson lambdas (~7.5% bias measured vs Pinnacle closing, 2026-05-21).
+    Returns None if optimisation fails.
+    """
+    from scipy.optimize import minimize
+
+    key = (round(p_home, 3), round(p_draw, 3))
+    if key in _ah_lambda_cache:
+        return _ah_lambda_cache[key]
+
+    p_away = max(0.01, 1.0 - p_home - p_draw)
+    ratio = p_home / p_away
+    exp_total = max(0.8, 2.8 - 3.0 * max(0.0, p_draw - 0.25))
+    exp_h0 = exp_total * (ratio ** 0.55) / (1.0 + ratio ** 0.55)
+    x0 = [max(0.2, exp_h0), max(0.2, exp_total - exp_h0)]
+
+    def _loss(x: list) -> float:
+        eh, ea = max(0.15, x[0]), max(0.15, x[1])
+        r = _poisson_probs(eh, ea)
+        return (r["home_prob"] - p_home) ** 2 + (r["draw_prob"] - p_draw) ** 2
+
+    try:
+        res = minimize(_loss, x0, method="Powell",
+                       options={"xtol": 0.002, "ftol": 1e-5, "maxiter": 200})
+        result = (max(0.15, res.x[0]), max(0.15, res.x[1]))
+        _ah_lambda_cache[key] = result
+        return result
+    except Exception:
+        return None
 
 
 def compute_prediction(match, hist_targets, hist_targets_global=None,
@@ -2132,24 +2168,28 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                     "reasoning": f"data_tier={data_tier}",
                 })
 
-        # AH predictions: store Poisson probabilities for standard lines so they
-        # can be used for CLV analysis and future AH model evaluation.
-        _exp_h = poisson_pred.get("exp_home")
-        _exp_a = poisson_pred.get("exp_away")
-        if _exp_h and _exp_a and _exp_h > 0 and _exp_a > 0:
-            _tier_rho = _load_dc_rho_cache().get(match.get("tier", 1))
-            for _ah_line in (-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5):
-                for _ah_sel in ("home", "away"):
-                    _ah_prob = _ah_model_prob(_exp_h, _exp_a, _ah_sel, _ah_line, rho=_tier_rho)
-                    pending_pred_rows.append({
-                        "match_id": match_id,
-                        "market": f"ah_{_ah_sel}_{_ah_line:.2f}",
-                        "source": "poisson",
-                        "model_prob": float(_ah_prob),
-                        "implied_prob": None,
-                        "edge": None,
-                        "reasoning": f"data_tier={data_tier}",
-                    })
+        # AH predictions: store calibrated-lambda AH probabilities for CLV analysis.
+        # Uses Platt-corrected 1x2 probs (pred) to invert → lambdas, fixing the
+        # ~7.5% home-advantage underestimation in raw Poisson (AH-HOME-BIAS 2026-05-21).
+        _cal_ph = pred.get("home_prob")
+        _cal_pd = pred.get("draw_prob")
+        if _cal_ph and _cal_pd and _cal_ph > 0 and _cal_pd > 0:
+            _cal_lambdas = _solve_lambdas_calibrated(float(_cal_ph), float(_cal_pd))
+            if _cal_lambdas:
+                _exp_h_cal, _exp_a_cal = _cal_lambdas
+                _tier_rho = _load_dc_rho_cache().get(match.get("tier", 1))
+                for _ah_line in (-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5):
+                    for _ah_sel in ("home", "away"):
+                        _ah_prob = _ah_model_prob(_exp_h_cal, _exp_a_cal, _ah_sel, _ah_line, rho=_tier_rho)
+                        pending_pred_rows.append({
+                            "match_id": match_id,
+                            "market": f"ah_{_ah_sel}_{_ah_line:.2f}",
+                            "source": "poisson",
+                            "model_prob": float(_ah_prob),
+                            "implied_prob": None,
+                            "edge": None,
+                            "reasoning": f"data_tier={data_tier}",
+                        })
 
         # Place bets for each bot
         tier = match.get("tier", 1)
@@ -2254,13 +2294,20 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 if match.get("odds_dc_12", 0) > 0 and (not sel_filter or "12" in sel_filter):
                     candidate_specs.append(("double_chance", "12", match["odds_dc_12"], dc_12_prob, "double_chance", "12", thresholds.get("dc", 0.04)))
 
-            # AH (AH-BOTS): Poisson score-distribution pricing for Asian Handicap lines.
-            # Only fires when exp_home/exp_away are available (Tier A/B Poisson data).
+            # AH (AH-BOTS): calibrated-lambda AH pricing (AH-HOME-BIAS fix 2026-05-21).
+            # Inverts Platt-corrected pred["home_prob"/"draw_prob"] → lambdas via
+            # _solve_lambdas_calibrated, fixing ~7.5% raw-Poisson home-bias.
             # mkt = "asian_handicap" so settlement correctly routes to the AH handler.
             if "ah" in config.get("markets", []):
-                _exp_h = poisson_pred.get("exp_home")
-                _exp_a = poisson_pred.get("exp_away")
-                if _exp_h is not None and _exp_a is not None and _exp_h > 0 and _exp_a > 0:
+                _cal_ph = pred.get("home_prob")
+                _cal_pd = pred.get("draw_prob")
+                _cal_lambdas = (
+                    _solve_lambdas_calibrated(float(_cal_ph), float(_cal_pd))
+                    if _cal_ph and _cal_pd and _cal_ph > 0 and _cal_pd > 0
+                    else None
+                )
+                if _cal_lambdas:
+                    _exp_h_cal, _exp_a_cal = _cal_lambdas
                     _tier_rho = _load_dc_rho_cache().get(tier)
                     for _ah in match.get("ah_lines", []):
                         _sel = _ah["selection"]  # "home" or "away"
@@ -2277,7 +2324,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         # If we ever add a book that supports quarter lines, remove this.
                         if abs(_hl % 0.5) == 0.25:
                             continue
-                        _ah_prob = _ah_model_prob(_exp_h, _exp_a, _sel, _hl, rho=_tier_rho)
+                        _ah_prob = _ah_model_prob(_exp_h_cal, _exp_a_cal, _sel, _hl, rho=_tier_rho)
                         _sel_label = f"{_sel_cap} {_hl:+.4g}"  # e.g. "Home -1.25"
                         candidate_specs.append((
                             "asian_handicap", _sel_label, _odds, _ah_prob,

@@ -7171,22 +7171,38 @@ def _():
         "predictions must be stored with source=poisson"
 
 
-@test("PIPELINE-AH — daily_pipeline_v2.py stores AH predictions for each match")
+@test("PIPELINE-AH — daily_pipeline_v2.py stores AH predictions using calibrated lambdas")
 def _():
-    """PIPELINE-AH (2026-05-21): daily_pipeline_v2.py stores 14 AH prediction rows
-    (7 lines × 2 sides) per match when exp_home/exp_away are available."""
+    """PIPELINE-AH (updated 2026-05-21 AH-HOME-BIAS fix): daily_pipeline_v2.py stores
+    14 AH prediction rows per match using Platt-corrected 1x2 probs → lambda inversion,
+    not raw Poisson exp_home/exp_away."""
     import pathlib
 
     src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
 
-    assert "AH predictions: store Poisson probabilities" in src, \
-        "AH predictions block comment must be present"
     assert "_ah_line in (-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5)" in src, \
         "must iterate over 7 standard AH lines"
     assert 'f"ah_{_ah_sel}_{_ah_line:.2f}"' in src, \
         "market key must be ah_{sel}_{line:.2f}"
-    assert '"source": "poisson"' in src or "source.*poisson" in src, \
+    assert '"source": "poisson"' in src, \
         "AH predictions must use source=poisson"
+
+    # AH-HOME-BIAS fix: must use calibrated lambda solver, not raw poisson_pred lambdas
+    assert "def _solve_lambdas_calibrated(" in src, \
+        "_solve_lambdas_calibrated must be defined in pipeline"
+    assert "_solve_lambdas_calibrated(float(_cal_ph), float(_cal_pd))" in src, \
+        "AH storage block must call _solve_lambdas_calibrated"
+
+    # AH bots must use calibrated lambdas too, not poisson_pred.get('exp_home')
+    ah_bot_block = src[src.find("AH (AH-BOTS)"):]
+    assert "_solve_lambdas_calibrated" in ah_bot_block[:500], \
+        "AH bot edge block must use _solve_lambdas_calibrated"
+
+    # bot_ah_away_dog must be re-enabled
+    assert '"bot_ah_away_dog"' in src, \
+        "bot_ah_away_dog must be re-enabled after AH-HOME-BIAS fix"
+    assert "# bot_ah_away_dog DISABLED" not in src, \
+        "old disable comment must be removed"
 
 
 @test("COOLBET-IMPERVA-BACKOFF — daemon enters quiet backoff after threshold keepalive failures")
