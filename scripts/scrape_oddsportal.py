@@ -12,6 +12,7 @@ Usage:
     python3 scripts/scrape_oddsportal.py
     python3 scripts/scrape_oddsportal.py --from-season 2021
     python3 scripts/scrape_oddsportal.py --leagues england-premier-league germany-bundesliga
+    python3 scripts/scrape_oddsportal.py --parallel 4   # run 4 jobs at once (default: 3)
     python3 scripts/scrape_oddsportal.py --dry-run       # print jobs, don't run
 """
 
@@ -21,11 +22,15 @@ import argparse
 import subprocess
 import sys
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from rich.console import Console
+from rich.live import Live
+from rich.panel import Panel
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -36,65 +41,64 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 from rich.table import Table
+from rich.text import Text
+from rich import box
 
 console = Console()
 
 # ── League definitions ─────────────────────────────────────────────────────────
-# (oddsportal_slug, display_name)
 LEAGUES = [
-    # Top 5 European leagues
-    ("england-premier-league",      "England Premier League"),
+    ("england-premier-league",      "England PL"),
     ("england-championship",        "England Championship"),
     ("germany-bundesliga",          "Germany Bundesliga"),
-    ("germany-bundesliga-2",        "Germany 2. Bundesliga"),
+    ("germany-bundesliga-2",        "Germany Bund. 2"),
     ("spain-laliga",                "Spain La Liga"),
     ("spain-laliga2",               "Spain La Liga 2"),
     ("italy-serie-a",               "Italy Serie A"),
     ("italy-serie-b",               "Italy Serie B"),
     ("france-ligue-1",              "France Ligue 1"),
     ("france-ligue-2",              "France Ligue 2"),
-    # Other European
-    ("eredivisie",                  "Netherlands Eredivisie"),
-    ("jupiler-pro-league",          "Belgium Jupiler Pro League"),
-    ("liga-portugal",               "Portugal Liga Portugal"),
-    ("turkey-super-lig",            "Turkey Super Lig"),
-    ("greece-super-league",         "Greece Super League"),
-    ("scotland-premiership",        "Scotland Premiership"),
-    ("austria-bundesliga",          "Austria Bundesliga"),
-    ("switzerland-super-league",    "Switzerland Super League"),
-    ("denmark-superliga",           "Denmark Superliga"),
-    ("poland-ekstraklasa",          "Poland Ekstraklasa"),
-    ("ireland-premier-division",    "Ireland Premier Division"),
-    ("russia-premier-league",       "Russia Premier League"),
-    # European cups
-    ("champions-league",            "UEFA Champions League"),
-    ("europa-league",               "UEFA Europa League"),
-    ("conference-league",           "UEFA Conference League"),
-    # Americas / Asia
-    ("argentina-liga-profesional",  "Argentina Liga Profesional"),
-    ("brazil-serie-a",              "Brazil Serie A"),
+    ("eredivisie",                  "Netherlands"),
+    ("jupiler-pro-league",          "Belgium"),
+    ("liga-portugal",               "Portugal"),
+    ("turkey-super-lig",            "Turkey"),
+    ("greece-super-league",         "Greece"),
+    ("scotland-premiership",        "Scotland"),
+    ("austria-bundesliga",          "Austria"),
+    ("switzerland-super-league",    "Switzerland"),
+    ("denmark-superliga",           "Denmark"),
+    ("poland-ekstraklasa",          "Poland"),
+    ("ireland-premier-division",    "Ireland"),
+    ("russia-premier-league",       "Russia"),
+    ("champions-league",            "UCL"),
+    ("europa-league",               "UEL"),
+    ("conference-league",           "UECL"),
+    ("argentina-liga-profesional",  "Argentina"),
+    ("brazil-serie-a",              "Brazil"),
     ("usa-mls",                     "USA MLS"),
-    ("mexico-liga-mx",              "Mexico Liga MX"),
-    ("japan-j1-league",             "Japan J1 League"),
-    ("china-super-league",          "China Super League"),
+    ("mexico-liga-mx",              "Mexico"),
+    ("japan-j1-league",             "Japan"),
+    ("china-super-league",          "China"),
 ]
 
 LEAGUE_SLUGS = {slug for slug, _ in LEAGUES}
 LEAGUE_NAMES = {slug: name for slug, name in LEAGUES}
 
-# Football markets — exact names required by OddsHarvester CLI.
-# OU lines: 1.5, 2.5, 3.5 cover our three OU bots.
-# AH: the 5 most common handicap lines. Skipping exotic lines to keep job time reasonable.
 MARKETS = "1x2,btts,double_chance,dnb,over_under_1_5,over_under_2_5,over_under_3_5,asian_handicap_-1,asian_handicap_-0_5,asian_handicap_0,asian_handicap_+0_5,asian_handicap_+1"
 
-DELAY_BETWEEN_JOBS_S = 5   # polite pause between scrape jobs
+# Status symbols
+_SYM = {
+    "pending":  ("⬜", "dim"),
+    "running":  ("⏳", "yellow"),
+    "done":     ("✓",  "green"),
+    "skip":     ("–",  "dim"),
+    "error":    ("✗",  "red"),
+}
 
 
 def run_job(slug: str, season: str, dest: Path, markets: str = MARKETS,
             timeout_s: int = 2400, concurrency: int = 6,
-            bar=None, task_id=None,
             dry_run: bool = False) -> tuple[bool, str]:
-    """Run one oddsharvester historic job. Returns (success, message)."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         "oddsharvester", "historic",
@@ -110,55 +114,40 @@ def run_job(slug: str, season: str, dest: Path, markets: str = MARKETS,
     ]
 
     if dry_run:
+        time.sleep(0.05)
         return True, "dry-run"
 
     try:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         start = time.monotonic()
-        output_lines: list[str] = []
         deadline = start + timeout_s
 
         while True:
-            elapsed = time.monotonic() - start
             if time.monotonic() > deadline:
                 proc.kill()
                 proc.wait()
-                return False, f"timeout (>{timeout_s // 60} min)"
-
+                return False, f"timeout (>{timeout_s // 60}min)"
             try:
                 line = proc.stdout.readline()
             except Exception:
                 break
-            if line:
-                output_lines.append(line.rstrip())
-                if bar is not None and task_id is not None:
-                    bar.update(task_id, last=f"[dim]{int(elapsed)}s elapsed[/dim]")
-            elif proc.poll() is not None:
+            if not line and proc.poll() is not None:
                 break
-            else:
+            if not line:
                 time.sleep(0.2)
-                if bar is not None and task_id is not None:
-                    bar.update(task_id, last=f"[dim]{int(elapsed)}s elapsed[/dim]")
 
         proc.wait()
         if proc.returncode != 0:
-            err = next((l for l in reversed(output_lines) if l.strip()), "non-zero exit")
-            return False, err[:80]
+            return False, f"exit {proc.returncode}"
 
         if dest.exists() and dest.stat().st_size > 200:
-            size_kb = dest.stat().st_size // 1024
-            return True, f"{size_kb} KB"
-        return False, "output file empty or missing"
+            return True, f"{dest.stat().st_size // 1024} KB"
+        return False, "empty output"
 
     except FileNotFoundError:
-        return False, "oddsharvester not installed — run: pip install oddsharvester"
+        return False, "oddsharvester not installed"
     except Exception as e:
-        return False, str(e)[:80]
+        return False, str(e)[:60]
 
 
 def check_oddsharvester() -> bool:
@@ -169,27 +158,58 @@ def check_oddsharvester() -> bool:
         return False
 
 
+def _build_table(
+    job_status: dict[tuple[str, str], tuple[str, str]],
+    leagues: list[tuple[str, str]],
+    seasons: list[str],
+    n_done: int,
+    n_total: int,
+    start_ts: float,
+) -> Table:
+    """Build the live status grid — leagues as rows, seasons as columns."""
+    short_seasons = [s.split("-")[0] for s in seasons]  # "2020" instead of "2020-2021"
+
+    t = Table(box=box.SIMPLE_HEAD, padding=(0, 1), expand=False, show_footer=False)
+    t.add_column("League", style="bold", min_width=16, no_wrap=True)
+    for s in short_seasons:
+        t.add_column(s, justify="center", min_width=6, no_wrap=True)
+
+    for slug, name in leagues:
+        cells = [name]
+        for season in seasons:
+            state, detail = job_status.get((slug, season), ("pending", ""))
+            sym, style = _SYM[state]
+            if state == "running" and detail:
+                cells.append(Text(f"{sym}{detail}", style=style))
+            else:
+                cells.append(Text(sym, style=style))
+        t.add_row(*cells)
+
+    elapsed = int(time.monotonic() - start_ts)
+    h, m, s = elapsed // 3600, (elapsed % 3600) // 60, elapsed % 60
+    footer = f"  {n_done}/{n_total} done  •  {h:02d}:{m:02d}:{s:02d} elapsed"
+    if n_done > 0 and n_done < n_total:
+        eta_s = int(elapsed / n_done * (n_total - n_done))
+        eh, em = eta_s // 3600, (eta_s % 3600) // 60
+        footer += f"  •  ~{eh}h{em:02d}m remaining"
+
+    return Panel(t, title=f"[bold]OddsPortal scrape[/bold]", subtitle=footer, border_style="cyan")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Scrape OddsPortal historical odds via OddsHarvester")
-    ap.add_argument("--from-season", type=int, default=2020, metavar="YEAR",
-                    help="Start year of earliest season to scrape (default: 2020)")
-    ap.add_argument("--to-season", type=int, default=2025, metavar="YEAR",
-                    help="Start year of latest season to scrape (default: 2025 = 2024/25)")
-    ap.add_argument("--leagues", nargs="+", metavar="SLUG",
-                    help="League slugs to scrape (default: all). E.g. england-premier-league")
-    ap.add_argument("--markets", default=MARKETS,
-                    help=f"Comma-separated markets (default: {MARKETS})")
-    ap.add_argument("--out-dir", type=Path,
-                    default=Path("data/raw/oddsportal"),
-                    help="Output directory (default: data/raw/oddsportal)")
-    ap.add_argument("--skip-existing", action="store_true", default=True,
-                    help="Skip already-scraped files (default: true)")
-    ap.add_argument("--timeout", type=int, default=2400, metavar="SECONDS",
-                    help="Timeout per job in seconds (default: 2400 = 40 min; EPL needs ~25 min)")
+    ap.add_argument("--from-season", type=int, default=2020, metavar="YEAR")
+    ap.add_argument("--to-season", type=int, default=2025, metavar="YEAR")
+    ap.add_argument("--leagues", nargs="+", metavar="SLUG")
+    ap.add_argument("--markets", default=MARKETS)
+    ap.add_argument("--out-dir", type=Path, default=Path("data/raw/oddsportal"))
+    ap.add_argument("--skip-existing", action="store_true", default=True)
+    ap.add_argument("--timeout", type=int, default=2400, metavar="SECONDS")
     ap.add_argument("--concurrency", type=int, default=6, metavar="N",
                     help="Concurrent match pages per job (default: 6)")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="Print jobs without running them")
+    ap.add_argument("--parallel", type=int, default=3, metavar="N",
+                    help="Jobs to run simultaneously (default: 3)")
+    ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
     leagues = [(s, n) for s, n in LEAGUES
@@ -200,96 +220,112 @@ def main() -> None:
         unknown = set(args.leagues) - LEAGUE_SLUGS
         if unknown:
             console.print(f"[red]Unknown league slugs: {unknown}[/red]")
-            console.print(f"Valid slugs: {sorted(LEAGUE_SLUGS)}")
+            console.print(f"Valid: {sorted(LEAGUE_SLUGS)}")
             sys.exit(1)
 
-    # ── Pre-flight check ───────────────────────────────────────────────────────
     if not args.dry_run and not check_oddsharvester():
-        console.print("[bold red]oddsharvester not found.[/bold red]")
-        console.print("Install with:")
-        console.print("  pip install oddsharvester")
-        console.print("  playwright install chromium")
+        console.print("[bold red]oddsharvester not found — pip install oddsharvester[/bold red]")
         sys.exit(1)
 
-    total = len(leagues) * len(seasons)
-    est_minutes = total * 20  # ~20 min per job (large leagues can take 25-30 min)
-    console.print(f"\n[bold]OddsPortal scraper (via OddsHarvester)[/bold]")
-    console.print(f"  Leagues:     {len(leagues)}")
-    console.print(f"  Seasons:     {seasons[0]} → {seasons[-1]}  ({len(seasons)} seasons)")
-    console.print(f"  Markets:     {args.markets}")
-    console.print(f"  Concurrency: {args.concurrency}  |  Timeout: {args.timeout // 60} min/job")
-    console.print(f"  Total:       {total} jobs  (~{est_minutes // 60}h {est_minutes % 60}m worst-case)")
-    console.print(f"  Output:      {args.out_dir}")
+    # Build initial status map
+    job_status: dict[tuple[str, str], tuple[str, str]] = {}
+    jobs_to_run: list[tuple[str, str, str, Path]] = []
+
+    for slug, name in leagues:
+        for season in seasons:
+            dest = args.out_dir / slug / f"{season}.json"
+            if args.skip_existing and dest.exists() and dest.stat().st_size > 200:
+                job_status[(slug, season)] = ("skip", f"{dest.stat().st_size // 1024}k")
+            else:
+                job_status[(slug, season)] = ("pending", "")
+                jobs_to_run.append((slug, name, season, dest))
+
+    n_skip = sum(1 for v in job_status.values() if v[0] == "skip")
+    n_todo = len(jobs_to_run)
+    n_total_display = n_skip + n_todo
+
+    est_min = n_todo * 20 // max(1, args.parallel)
+    console.print(f"\n[bold]OddsPortal scraper[/bold]  "
+                  f"{len(leagues)} leagues · {len(seasons)} seasons · "
+                  f"{n_todo} jobs to run ({n_skip} already done) · "
+                  f"parallel={args.parallel} · ~{est_min // 60}h{est_min % 60:02d}m est.")
     if args.dry_run:
-        console.print("[yellow]  DRY RUN — no scraping[/yellow]")
+        console.print("[yellow]DRY RUN[/yellow]")
     console.print()
 
-    results = {"done": 0, "skipped": 0, "error": 0}
+    _lock = threading.Lock()
+    n_done = n_skip
     errors: list[tuple[str, str, str]] = []
+    start_ts = time.monotonic()
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold cyan]{task.description}"),
-        BarColumn(bar_width=36),
-        MofNCompleteColumn(),
-        TextColumn("•"),
-        TimeElapsedColumn(),
-        TextColumn("eta"),
-        TimeRemainingColumn(),
-        TextColumn("• [dim]{task.fields[last]}[/dim]"),
+    with Live(
+        _build_table(job_status, leagues, seasons, n_done, n_total_display, start_ts),
         console=console,
-        refresh_per_second=4,
-    ) as bar:
-        task = bar.add_task("scraping", total=total, last="")
+        refresh_per_second=2,
+        vertical_overflow="visible",
+    ) as live:
 
-        for slug, name in leagues:
-            for season in seasons:
-                dest = args.out_dir / slug / f"{season}.json"
-                label = f"{slug.split('-')[0].title()} {season}"
+        def _refresh():
+            live.update(_build_table(job_status, leagues, seasons, n_done, n_total_display, start_ts))
 
-                if args.skip_existing and dest.exists() and dest.stat().st_size > 200:
-                    results["skipped"] += 1
-                    bar.update(task, advance=1, last=f"skip {label}")
-                    continue
+        def _run(job: tuple[str, str, str, Path]) -> tuple[bool, str, str, str]:
+            slug, name, season, dest = job
+            with _lock:
+                job_status[(slug, season)] = ("running", "")
+                _refresh()
 
-                bar.update(task, description=f"[yellow]{name}[/yellow]  {season}", last="0s elapsed")
-                ok, msg = run_job(slug, season, dest,
-                                  markets=args.markets,
-                                  timeout_s=args.timeout,
-                                  concurrency=args.concurrency,
-                                  bar=bar, task_id=task,
-                                  dry_run=args.dry_run)
+            job_start = time.monotonic()
 
-                if ok:
-                    results["done"] += 1
-                    bar.update(task, advance=1, last=f"✓ {label}  {msg}")
-                else:
-                    results["error"] += 1
-                    errors.append((slug, season, msg))
-                    bar.update(task, advance=1, last=f"[red]✗ {label}[/red]")
-                    console.print(f"  [red]✗ {name} {season}: {msg}[/red]")
+            # Ticker: update elapsed time while job runs
+            stop_ticker = threading.Event()
+            def _tick():
+                while not stop_ticker.wait(timeout=15):
+                    with _lock:
+                        elapsed = int(time.monotonic() - job_start)
+                        job_status[(slug, season)] = ("running", f" {elapsed}s")
+                        _refresh()
+            ticker = threading.Thread(target=_tick, daemon=True)
+            ticker.start()
 
-                if not args.dry_run:
-                    time.sleep(DELAY_BETWEEN_JOBS_S)
+            ok, msg = run_job(slug, season, dest,
+                              markets=args.markets,
+                              timeout_s=args.timeout,
+                              concurrency=args.concurrency,
+                              dry_run=args.dry_run)
+            stop_ticker.set()
+            return ok, msg, slug, season
+
+        with ThreadPoolExecutor(max_workers=args.parallel) as pool:
+            futures = {pool.submit(_run, job): job for job in jobs_to_run}
+
+            for fut in as_completed(futures):
+                ok, msg, slug, season = fut.result()
+                with _lock:
+                    if ok:
+                        n_done += 1
+                        job_status[(slug, season)] = ("done", msg)
+                    else:
+                        n_done += 1
+                        job_status[(slug, season)] = ("error", msg)
+                        errors.append((slug, season, msg))
+                    _refresh()
 
     # ── Summary ────────────────────────────────────────────────────────────────
     console.print()
     t = Table(show_header=False, box=None, padding=(0, 2))
-    t.add_row("[green]Scraped[/green]",        str(results["done"]))
-    t.add_row("[dim]Skipped (exists)[/dim]",   str(results["skipped"]))
-    t.add_row("[red]Errors[/red]",             str(results["error"]))
+    t.add_row("[green]Scraped[/green]",        str(sum(1 for v in job_status.values() if v[0] == "done")))
+    t.add_row("[dim]Skipped (exists)[/dim]",   str(n_skip))
+    t.add_row("[red]Errors[/red]",             str(len(errors)))
     console.print(t)
 
     if errors:
         console.print("\n[red]Failed jobs:[/red]")
         for slug, season, msg in errors:
             console.print(f"  {slug} {season}: {msg}")
-        console.print("\nRetry failed jobs with:")
         slugs_str = " ".join(sorted({s for s, _, _ in errors}))
-        console.print(f"  python3 scripts/scrape_oddsportal.py --leagues {slugs_str}")
+        console.print(f"\nRetry: python3 scripts/scrape_oddsportal.py --leagues {slugs_str}")
 
-    done_total = results["done"] + results["skipped"]
-    console.print(f"\n[bold green]✓ {done_total} files ready in {args.out_dir}[/bold green]")
+    console.print(f"\n[bold green]✓ {n_done} jobs complete — files in {args.out_dir}[/bold green]")
 
 
 if __name__ == "__main__":
