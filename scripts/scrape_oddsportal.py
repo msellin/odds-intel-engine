@@ -98,6 +98,7 @@ _SYM = {
 
 def run_job(slug: str, season: str, dest: Path, markets: str = MARKETS,
             timeout_s: int = 2400, concurrency: int = 6,
+            max_pages: int | None = None,
             dry_run: bool = False) -> tuple[bool, str]:
     dest.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
@@ -112,6 +113,8 @@ def run_job(slug: str, season: str, dest: Path, markets: str = MARKETS,
         "-c", str(concurrency),
         "--request-delay", "0.5",
     ]
+    if max_pages is not None:
+        cmd += ["--max-pages", str(max_pages)]
 
     if dry_run:
         time.sleep(0.05)
@@ -217,6 +220,8 @@ def main() -> None:
                     help="Jobs to run simultaneously (default: 1 — avoids rate-limiting)")
     ap.add_argument("--stagger", type=int, default=15, metavar="SECONDS",
                     help="Seconds to wait before starting each parallel job (default: 15)")
+    ap.add_argument("--max-pages", type=int, default=None, metavar="N",
+                    help="Limit results pages per job (e.g. --max-pages 1 for ~50 matches, useful for testing)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -311,6 +316,7 @@ def main() -> None:
                               markets=args.markets,
                               timeout_s=args.timeout,
                               concurrency=args.concurrency,
+                              max_pages=args.max_pages,
                               dry_run=args.dry_run)
             stop_ticker.set()
             return ok, msg, slug, season
