@@ -156,7 +156,13 @@ def _task_odds_snapshot(mode: str, days: int, require_pinnacle: bool) -> str:
         return f"odds snapshot ✓ ({mode}, {days}d)"
     except Exception as e:
         log.warning("odds snapshot raised: %s", e)
-        return f"odds snapshot ✗ ({e})"
+        from workers.notify.telegram import send_telegram
+        send_telegram(
+            f"⚠ Coolbet odds snapshot failed: {str(e)[:300]}",
+            dedup_key="coolbet-odds-snapshot-fail",
+            dedup_window_s=3600,
+        )
+        raise
 
 
 def _task_jwt_browser_refresh(session: CoolbetSession) -> str:

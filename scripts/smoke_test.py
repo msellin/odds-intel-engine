@@ -3165,6 +3165,35 @@ def _():
     assert '"*/20"' in sched_src, "keepalive must fire every 20 min"
 
 
+@test("COOLBET-JWT-ENV-PROPAGATION — renew_jwt_via_api updates os.environ so fresh sessions see new token")
+def _():
+    """COOLBET-JWT-ENV-PROPAGATION (2026-05-21) — renew_jwt_via_api must update
+    os.environ after renewal so any CoolbetSession() created later in the same
+    process (e.g. the odds sweep) picks up the fresh JWT instead of the expired
+    one from .env. Without this, the odds sweep fails every 30 min with
+    'COOLBET_MANUAL_JWT is expired' while the daemon keepalive succeeds."""
+    import inspect
+    from workers.automation.coolbet_session import CoolbetSession
+    src = inspect.getsource(CoolbetSession.renew_jwt_via_api)
+    assert 'os.environ["COOLBET_MANUAL_JWT"]' in src, (
+        "renew_jwt_via_api must update os.environ so new CoolbetSession() "
+        "instances in the same process see the renewed token"
+    )
+
+    # Odds snapshot must re-raise so the sweep runner stamps ok=False and
+    # Telegram alert fires (not swallowed with a log.warning only)
+    daemon_src = open("scripts/coolbet_daemon.py").read()
+    assert '"coolbet-odds-snapshot-fail"' in daemon_src, (
+        "_task_odds_snapshot must send a Telegram alert on failure"
+    )
+    # The sweep runner's except branch stamps ok=False — this only works if
+    # _task_odds_snapshot re-raises (not just returns an ✗ string)
+    assert "last_sweep_finished" in daemon_src, "sweep runner must stamp last_sweep_finished"
+    assert '"ok": False' in daemon_src or '"ok": true' not in daemon_src.lower(), (
+        "sweep runner should be able to stamp ok=False on failure"
+    )
+
+
 @test("BOT-COHORTS-ALL — every bot fires at every cohort window")
 def _():
     """BOT-COHORTS-ALL (2026-05-20) — all entries in BOT_TIMING_COHORTS set

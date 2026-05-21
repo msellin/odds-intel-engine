@@ -224,6 +224,13 @@ class CoolbetSession:
         # Persist to .env so daemon restart, preflight, and place_one_real_bet
         # all see the freshest token. Best-effort — if it fails we still have
         # the in-memory swap.
+        # Update os.environ immediately so any CoolbetSession() created in the
+        # same process after this renewal sees the fresh token (not just the
+        # in-memory session that called renew). set_key writes the file but
+        # doesn't touch os.environ — that gap is what caused the odds sweep to
+        # keep failing after renewal.
+        os.environ["COOLBET_MANUAL_JWT"] = new_jwt
+
         try:
             from dotenv import set_key as _set_key
             env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),
