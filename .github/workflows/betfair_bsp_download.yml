@@ -1,0 +1,58 @@
+name: Betfair BSP Download
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Days of BSP history to download (max 365)'
+        required: false
+        default: '90'
+        type: string
+
+jobs:
+  download-bsp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install requests rich
+
+      - name: Probe connectivity
+        run: python scripts/probe_betfair_data.py
+
+      - name: Download BSP files
+        run: |
+          python scripts/probe_betfair_data.py \
+            --download \
+            --days "${{ inputs.days || '90' }}" \
+            --out-dir data/raw/betfair_bsp
+
+      - name: Summary
+        run: |
+          DIR=data/raw/betfair_bsp
+          COUNT=$(ls "$DIR"/*.csv 2>/dev/null | wc -l | tr -d ' ')
+          SIZE=$(du -sh "$DIR" 2>/dev/null | cut -f1)
+          echo "Downloaded: $COUNT files, $SIZE total"
+          LATEST=$(ls "$DIR"/*.csv 2>/dev/null | sort | tail -1)
+          if [ -n "$LATEST" ]; then
+            echo "--- header ---"
+            head -1 "$LATEST"
+            echo "--- football sample (up to 3 rows) ---"
+            grep -m 3 ",SOC,\|,SOCCER,\|Football" "$LATEST" || echo "(no football rows — check header)"
+          fi
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: betfair-bsp-${{ github.run_id }}
+          path: data/raw/betfair_bsp/
+          retention-days: 90
+          if-no-files-found: warn
