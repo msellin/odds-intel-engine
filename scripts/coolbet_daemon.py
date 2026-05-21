@@ -485,6 +485,11 @@ def main() -> None:
                          "Don't flip execute until COOLBET-SAFETY-GUARDRAILS ships.")
     ap.add_argument("--no-place", action="store_true",
                     help="Disable the placement loop entirely")
+    ap.add_argument("--no-sweep", action="store_true",
+                    help="Disable the odds snapshot sweep entirely. "
+                         "Use when Coolbet is the placement bookmaker only — "
+                         "live odds are still fetched per-bet at placement time "
+                         "and stored in odds_snapshots by the placer.")
     ap.add_argument("--inplay-mode", choices=("capture", "paper", "execute"),
                     default="paper",
                     help="Inplay snapshot mode. capture=write snapshot row with Coolbet "
@@ -556,7 +561,10 @@ def main() -> None:
     log.info("─" * 78)
     log.info("Coolbet daemon starting")
     log.info("  keepalive every %d min", args.keepalive_min)
-    log.info("  odds      every %d min  (mode=%s)", args.odds_min, args.odds_mode)
+    if args.no_sweep:
+        log.info("  odds      DISABLED (--no-sweep) — live price check at placement time only")
+    else:
+        log.info("  odds      every %d min  (mode=%s)", args.odds_min, args.odds_mode)
     if args.no_place:
         log.info("  place     DISABLED (--no-place)")
     else:
@@ -568,8 +576,9 @@ def main() -> None:
     # TELEGRAM_* env vars aren't set.
     try:
         from workers.notify.telegram import send_telegram
+        odds_desc = "no-sweep" if args.no_sweep else f"{args.odds_mode}/{args.odds_min}m"
         send_telegram(
-            f"🟢 Coolbet daemon started — odds={args.odds_mode}/{args.odds_min}m, "
+            f"🟢 Coolbet daemon started — odds={odds_desc}, "
             f"place={args.place_mode}/{args.place_min}m, min_edge={args.min_edge}",
             silent=True,
         )
@@ -616,7 +625,7 @@ def main() -> None:
 
     now = time.time()
     next_keepalive   = now + args.keepalive_min * 60
-    next_odds        = now            # run odds immediately on start
+    next_odds        = now if not args.no_sweep else float("inf")
     next_place       = now            # run place immediately on start
     # JWT auto-renewal cadence: 20 min matches Coolbet's frontend (per the
     # JWT's `renewal_date` field, which sits at the 20-min mark). JWT TTL
@@ -705,13 +714,10 @@ def main() -> None:
                     )
             next_keepalive = now + args.keepalive_min * 60
 
-        # ODDS sweep — runs in a background thread so keepalive + placement
-        # keep firing on schedule. If a previous sweep is still running, skip
-        # this fire (cycle longer than --odds-min just means we sweep less
-        # often, never queue up two sweeps).
-        # Sweep shares the daemon's session — CoolbetSession._throttle() is
-        # locked so sweep thread + main thread calls are serialised safely.
-        if now >= next_odds:
+        # ODDS sweep — disabled when --no-sweep; next_odds is float("inf").
+        # Runs in a background thread so keepalive + placement keep firing on
+        # schedule. If a previous sweep is still running, skip this fire.
+        if not args.no_sweep and now >= next_odds:
             global _SWEEP_THREAD
             if _sweep_running():
                 log.info("odds snapshot ⏸  previous sweep still running — skipping")

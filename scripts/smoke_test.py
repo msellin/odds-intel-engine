@@ -7205,6 +7205,31 @@ def _():
         "old disable comment must be removed"
 
 
+@test("COOLBET-NO-SWEEP — --no-sweep flag disables odds loop; placer already stores snapshot per bet")
+def _():
+    """COOLBET-NO-SWEEP (2026-05-21) — when Coolbet is used as a placement-only
+    bookmaker the 29-league sweep is unnecessary and risks Imperva blocks.
+    --no-sweep must disable the entire sweep loop while keepalive + placement
+    continue unchanged. Live odds are still captured at placement time via
+    store_coolbet_odds_snapshot() already called in the placer."""
+    import pathlib
+    daemon_src = pathlib.Path("scripts/coolbet_daemon.py").read_text()
+    placer_src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
+
+    assert "--no-sweep" in daemon_src, "--no-sweep arg missing from daemon"
+    assert "args.no_sweep" in daemon_src, "daemon must check args.no_sweep"
+    assert 'float("inf")' in daemon_src, (
+        "next_odds must be float(\"inf\") when --no-sweep so the sweep block never fires"
+    )
+    assert "not args.no_sweep and now >= next_odds" in daemon_src, (
+        "sweep block must be gated on `not args.no_sweep`"
+    )
+    assert "store_coolbet_odds_snapshot" in placer_src, (
+        "placer must call store_coolbet_odds_snapshot so CLV data is captured "
+        "even when the background sweep is disabled"
+    )
+
+
 @test("COOLBET-IMPERVA-BACKOFF — daemon enters quiet backoff after threshold keepalive failures")
 def _():
     """COOLBET-IMPERVA-BACKOFF (2026-05-21) — after IMPERVA_FAIL_THRESHOLD
