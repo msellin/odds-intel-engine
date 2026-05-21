@@ -733,6 +733,22 @@ def main():
     console.print("[bold green]═══════════════════════════════════════════════[/bold green]")
     console.print("[bold green]   OddsIntel Railway Scheduler starting...    [/bold green]")
     console.print("[bold green]═══════════════════════════════════════════════[/bold green]")
+
+    # TEMP PROBE — remove after checking Railway logs
+    try:
+        import subprocess
+        r = subprocess.run(
+            [sys.executable, "scripts/probe_betfair_data.py"],
+            capture_output=True, text=True, timeout=120,
+        )
+        console.print("[cyan]── BETFAIR PROBE OUTPUT ──[/cyan]")
+        console.print(r.stdout or "(no stdout)")
+        if r.stderr:
+            console.print(f"[dim]{r.stderr[:500]}[/dim]")
+        console.print("[cyan]── END BETFAIR PROBE ──[/cyan]")
+    except Exception as _e:
+        console.print(f"[yellow]Betfair probe failed: {_e}[/yellow]")
+    # END TEMP PROBE
     if SHADOW_MODE:
         console.print("[yellow]SHADOW MODE: job names prefixed with 'railway_'[/yellow]")
 
