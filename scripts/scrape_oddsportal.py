@@ -209,11 +209,12 @@ def main() -> None:
     ap.add_argument("--markets", default=MARKETS)
     ap.add_argument("--out-dir", type=Path, default=Path("data/raw/oddsportal"))
     ap.add_argument("--skip-existing", action="store_true", default=True)
-    ap.add_argument("--timeout", type=int, default=2400, metavar="SECONDS")
+    ap.add_argument("--timeout", type=int, default=7200, metavar="SECONDS",
+                    help="Max seconds per job (default: 7200 = 2h)")
     ap.add_argument("--concurrency", type=int, default=6, metavar="N",
                     help="Concurrent match pages per job (default: 6)")
-    ap.add_argument("--parallel", type=int, default=3, metavar="N",
-                    help="Jobs to run simultaneously (default: 3)")
+    ap.add_argument("--parallel", type=int, default=1, metavar="N",
+                    help="Jobs to run simultaneously (default: 1 — avoids rate-limiting)")
     ap.add_argument("--stagger", type=int, default=15, metavar="SECONDS",
                     help="Seconds to wait before starting each parallel job (default: 15)")
     ap.add_argument("--dry-run", action="store_true")
@@ -251,7 +252,7 @@ def main() -> None:
     n_todo = len(jobs_to_run)
     n_total_display = n_skip + n_todo
 
-    est_min = n_todo * 20 // max(1, args.parallel)
+    est_min = n_todo * 10 // max(1, args.parallel)
     console.print(f"\n[bold]OddsPortal scraper[/bold]  "
                   f"{len(leagues)} leagues · {len(seasons)} seasons · "
                   f"{n_todo} jobs to run ({n_skip} already done) · "
