@@ -4,7 +4,7 @@ Backfill Asian Handicap predictions for historical matches.
 For each finished match that has Poisson 1x2 predictions but no AH predictions,
 this script:
   1. Reads stored Poisson home/draw/away probabilities
-  2. Inverts them numerically to recover (exp_home, exp_away) Poisson lambdas
+  2. Deduplicates unique (p_home, p_draw) pairs and solves them in parallel
   3. Computes AH probabilities for lines: -1.5, -1.0, -0.5, 0.0, +0.5, +1.0, +1.5
   4. Stores with source='poisson', market='ah_{home|away}_{line:.2f}'
 
@@ -15,12 +15,15 @@ Usage:
     python3 scripts/backfill_ah_predictions.py --dry-run
     python3 scripts/backfill_ah_predictions.py --limit 500      # test with 500 matches
     python3 scripts/backfill_ah_predictions.py --from-date 2023-01-01
+    python3 scripts/backfill_ah_predictions.py --workers 8      # parallel workers (default: cpu_count)
 """
 
 from __future__ import annotations
 
 import argparse
 import math
+import multiprocessing
+import os
 import sys
 from pathlib import Path
 
@@ -134,6 +137,17 @@ def _ah_model_prob(exp_h: float, exp_a: float, selection: str, handicap_line: fl
     return 1.0 - home_prob if selection == "away" else home_prob
 
 
+def _initial_guess(p_home: float, p_draw: float) -> list[float]:
+    """Rough analytical starting point to cut optimizer iterations in half."""
+    p_away = max(0.01, 1.0 - p_home - p_draw)
+    ratio = p_home / p_away
+    # Higher draws → lower-scoring game → lower total goals
+    exp_total = max(0.8, 2.8 - 3.0 * max(0.0, p_draw - 0.25))
+    exp_h = exp_total * (ratio ** 0.55) / (1.0 + ratio ** 0.55)
+    exp_a = exp_total - exp_h
+    return [max(0.2, exp_h), max(0.2, exp_a)]
+
+
 def solve_lambdas(p_home: float, p_draw: float) -> tuple[float, float]:
     """Numerically invert Poisson 1x2 probs to recover (exp_h, exp_a)."""
     from scipy.optimize import minimize
@@ -143,11 +157,19 @@ def solve_lambdas(p_home: float, p_draw: float) -> tuple[float, float]:
         r = _poisson_probs(eh, ea)
         return (r["home_prob"] - p_home) ** 2 + (r["draw_prob"] - p_draw) ** 2
 
-    # Initial guess: home advantage ~1.3/1.0, scale by draw prob
-    x0 = [1.3, 1.0]
-    result = minimize(loss, x0, method="Nelder-Mead",
-                      options={"xatol": 0.002, "fatol": 1e-5, "maxiter": 400})
+    x0 = _initial_guess(p_home, p_draw)
+    result = minimize(loss, x0, method="Powell",
+                      options={"xtol": 0.002, "ftol": 1e-5, "maxiter": 200})
     return max(0.15, result.x[0]), max(0.15, result.x[1])
+
+
+def _solve_worker(args: tuple[float, float]) -> tuple[tuple[float, float], tuple[float, float] | None]:
+    """Worker function for multiprocessing: returns (key, result) or (key, None) on failure."""
+    ph, pd = args
+    try:
+        return (ph, pd), solve_lambdas(ph, pd)
+    except Exception:
+        return (ph, pd), None
 
 
 def main() -> None:
@@ -157,6 +179,8 @@ def main() -> None:
                     help="Process at most N matches (for testing)")
     ap.add_argument("--from-date", default=None, metavar="YYYY-MM-DD",
                     help="Only process matches on or after this date")
+    ap.add_argument("--workers", type=int, default=max(1, os.cpu_count() or 4), metavar="N",
+                    help="Parallel workers for lambda solving (default: cpu_count)")
     args = ap.parse_args()
 
     date_filter = f"AND m.date >= '{args.from_date}'" if args.from_date else ""
@@ -191,7 +215,17 @@ def main() -> None:
     console.print(f"[green]Matches to process: {len(complete):,}[/green]")
     console.print(f"[dim]Lines per match: {len(AH_LINES)} × 2 sides = {len(AH_LINES) * 2} predictions[/dim]")
 
-    pred_rows: list[dict] = []
+    # Deduplicate: round to 3dp — many matches share identical model outputs
+    unique_pairs: list[tuple[float, float]] = list({
+        (round(p["1x2_home"], 3), round(p["1x2_draw"], 3))
+        for p in complete.values()
+    })
+    console.print(f"[dim]Unique (p_home, p_draw) pairs: {len(unique_pairs):,} "
+                  f"(dedup ratio: {len(unique_pairs)/len(complete)*100:.0f}%) "
+                  f"| workers={args.workers}[/dim]")
+
+    # Solve unique pairs in parallel
+    lambda_cache: dict[tuple[float, float], tuple[float, float]] = {}
     n_failed = 0
 
     with Progress(
@@ -203,34 +237,42 @@ def main() -> None:
         TimeElapsedColumn(),
         console=console,
     ) as bar:
-        task = bar.add_task("solving lambdas", total=len(complete))
+        solve_task = bar.add_task("solving lambdas", total=len(unique_pairs))
 
-        for match_id, probs in complete.items():
-            bar.advance(task)
-            p_home = probs["1x2_home"]
-            p_draw = probs["1x2_draw"]
+        with multiprocessing.Pool(processes=args.workers) as pool:
+            for key, result in pool.imap_unordered(_solve_worker, unique_pairs, chunksize=32):
+                bar.advance(solve_task)
+                if result is not None:
+                    lambda_cache[key] = result
+                else:
+                    n_failed += 1
 
-            try:
-                exp_h, exp_a = solve_lambdas(p_home, p_draw)
-            except Exception:
-                n_failed += 1
-                continue
+    console.print(f"[dim]Solved {len(lambda_cache):,} / {len(unique_pairs):,} pairs[/dim]")
 
-            for ah_line in AH_LINES:
-                for sel in ("home", "away"):
-                    try:
-                        ah_prob = _ah_model_prob(exp_h, exp_a, sel, ah_line)
-                        pred_rows.append({
-                            "match_id": match_id,
-                            "market": f"ah_{sel}_{ah_line:.2f}",
-                            "source": "poisson",
-                            "model_prob": float(ah_prob),
-                            "implied_prob": None,
-                            "edge": None,
-                            "reasoning": "backfill_ah",
-                        })
-                    except Exception:
-                        n_failed += 1
+    # Generate prediction rows using cached lambdas
+    pred_rows: list[dict] = []
+    for match_id, probs in complete.items():
+        key = (round(probs["1x2_home"], 3), round(probs["1x2_draw"], 3))
+        cached = lambda_cache.get(key)
+        if cached is None:
+            n_failed += 1
+            continue
+        exp_h, exp_a = cached
+        for ah_line in AH_LINES:
+            for sel in ("home", "away"):
+                try:
+                    ah_prob = _ah_model_prob(exp_h, exp_a, sel, ah_line)
+                    pred_rows.append({
+                        "match_id": match_id,
+                        "market": f"ah_{sel}_{ah_line:.2f}",
+                        "source": "poisson",
+                        "model_prob": float(ah_prob),
+                        "implied_prob": None,
+                        "edge": None,
+                        "reasoning": "backfill_ah",
+                    })
+                except Exception:
+                    n_failed += 1
 
     console.print(f"\n[green]Generated {len(pred_rows):,} AH prediction rows[/green]")
     if n_failed:
