@@ -151,7 +151,7 @@ def _task_odds_snapshot(mode: str, days: int, require_pinnacle: bool) -> str:
             run_league_sweep(dry_run=False, sleep_s=1.5, require_pinnacle=require_pinnacle)
             return f"odds snapshot ✓ (league-mapped, today)"
         from workers.automation.coolbet_explorer import run_bulk
-        run_bulk(days=days, dry_run=False, sleep_s=0.25, limit=None,
+        run_bulk(days=days, dry_run=False, sleep_s=3.0, limit=None,
                  bets_only=(mode == "bets-only"))
         return f"odds snapshot ✓ ({mode}, {days}d)"
     except Exception as e:

@@ -789,6 +789,7 @@ def run_league_sweep(
 def run_bulk(
     days: int, dry_run: bool, sleep_s: float, limit: int | None,
     *, bets_only: bool = False,
+    long_pause_every: int = 15, long_pause_s: float = 20.0,
 ) -> None:
     matches = load_value_bet_matches(days) if bets_only else load_matches_in_window(days)
     if limit:
@@ -829,25 +830,37 @@ def run_bulk(
         if ev is None:
             missed_leagues[league] = missed_leagues.get(league, 0) + 1
             log.info("[%d/%d] no Coolbet event: %s vs %s (%s)", i, len(matches), home, away, league)
-            continue
-        matched_leagues[league] = matched_leagues.get(league, 0) + 1
+        else:
+            matched_leagues[league] = matched_leagues.get(league, 0) + 1
 
-        # New flow: fetch markets (fo-match + sidebets), then fetch odds
-        # (split by simple vs line endpoint), then stitch.
-        markets = fetch_match_markets(session, int(ev["id"]))
-        odds_map = fetch_odds_for_markets(session, markets)
-        parsed, stored, mkt_counts = store_coolbet_snapshots_for_match(
-            m["id"], markets, odds_map,
-            dry_run=dry_run, kickoff_iso=ev.get("start") or "",
-        )
-        matched += 1
-        parsed_total += parsed
-        stored_total += stored
-        for k, v in mkt_counts.items():
-            by_market[k] = by_market.get(k, 0) + v
-        log.info("[%d/%d] %s vs %s → %d markets, %d odds, %d stored",
-                 i, len(matches), home, away, len(markets), parsed, stored)
-        time.sleep(sleep_s)
+            # New flow: fetch markets (fo-match + sidebets), then fetch odds
+            # (split by simple vs line endpoint), then stitch.
+            markets = fetch_match_markets(session, int(ev["id"]))
+            odds_map = fetch_odds_for_markets(session, markets)
+            parsed, stored, mkt_counts = store_coolbet_snapshots_for_match(
+                m["id"], markets, odds_map,
+                dry_run=dry_run, kickoff_iso=ev.get("start") or "",
+            )
+            matched += 1
+            parsed_total += parsed
+            stored_total += stored
+            for k, v in mkt_counts.items():
+                by_market[k] = by_market.get(k, 0) + v
+            log.info("[%d/%d] %s vs %s → %d markets, %d odds, %d stored",
+                     i, len(matches), home, away, len(markets), parsed, stored)
+
+        # Sleep after every match (hit or miss) so misses don't fire search
+        # queries back-to-back without any gap. Jitter breaks the fixed-period
+        # pattern that Imperva's bot-detection looks for.
+        time.sleep(sleep_s + random.uniform(0, sleep_s * 0.5))
+
+        # Breathing pause every N matches — simulates a user scrolling around
+        # between bouts of checking matches. Keeps the hourly request rate
+        # well below scraper-flagging thresholds for long sweeps.
+        if long_pause_every > 0 and i % long_pause_every == 0 and i < len(matches):
+            pause = long_pause_s + random.uniform(0, long_pause_s * 0.3)
+            log.info("breathing pause %.0fs after %d matches", pause, i)
+            time.sleep(pause)
 
     console.print()
     t = Table(show_header=True, title="Coolbet ingest summary")

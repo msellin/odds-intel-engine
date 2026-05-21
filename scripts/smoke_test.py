@@ -3165,6 +3165,26 @@ def _():
     assert '"*/20"' in sched_src, "keepalive must fire every 20 min"
 
 
+@test("COOLBET-SWEEP-PACING — run_bulk sleeps after every match + breathing pauses")
+def _():
+    """COOLBET-SWEEP-PACING (2026-05-21) — run_bulk used to sleep only after
+    matched matches (0.25s), leaving misses firing search queries back-to-back.
+    A 127-match sweep triggered an Imperva block. Fix: sleep after every match
+    (hit or miss) with jitter, plus a long breathing pause every 15 matches.
+    Daemon default bumped to 3.0s."""
+    import inspect
+    from workers.automation.coolbet_explorer import run_bulk
+    src = inspect.getsource(run_bulk)
+    assert "long_pause_every" in src, "run_bulk must accept long_pause_every"
+    assert "long_pause_s" in src, "run_bulk must accept long_pause_s"
+    assert "breathing pause" in src, "run_bulk must log breathing pauses"
+    assert "random.uniform" in src, "run_bulk must add jitter to sleeps"
+
+    import pathlib
+    daemon = pathlib.Path("scripts/coolbet_daemon.py").read_text()
+    assert "sleep_s=3.0" in daemon, "daemon must use sleep_s=3.0 for run_bulk"
+
+
 @test("COOLBET-JWT-ENV-PROPAGATION — renew_jwt_via_api updates os.environ so fresh sessions see new token")
 def _():
     """COOLBET-JWT-ENV-PROPAGATION (2026-05-21) — renew_jwt_via_api must update
