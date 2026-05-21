@@ -1175,7 +1175,7 @@ def place_all_bets(
             market=mkt,
             selection=sel,
             bookmaker="Coolbet",
-            captured_odds=ev_odds,
+            captured_odds=float(bet.get("odds_at_pick") or ev_odds),
             actual_odds=live_odds,
             stake=stake,
             bot_id=str(bet["bot_id"]),

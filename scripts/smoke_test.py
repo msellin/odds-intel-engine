@@ -7331,6 +7331,33 @@ def _():
     )
 
 
+@test("COOLBET-SLIPPAGE — captured_odds uses odds_at_pick (bot edge odds), not live placement odds")
+def _():
+    """COOLBET-SLIPPAGE (2026-05-21) — automated Coolbet bets showed SLIP=0 because
+    captured_odds was set to ev_odds (same as actual_odds), making slippage always zero.
+    Fix: pass bet['odds_at_pick'] as captured_odds so slippage = (edge_odds - live_odds)/edge_odds.
+    """
+    import ast, pathlib
+    src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
+
+    # captured_odds must use odds_at_pick (with ev_odds fallback), not bare ev_odds
+    assert "bet.get(\"odds_at_pick\")" in src or "bet['odds_at_pick']" in src, (
+        "store_real_bet call must use bet['odds_at_pick'] for captured_odds "
+        "(not ev_odds) so slippage reflects drift from bot edge discovery to placement"
+    )
+    # The fallback pattern `or ev_odds` must be present so it doesn't break on missing key
+    assert ("odds_at_pick\") or ev_odds") in src or ("odds_at_pick'] or ev_odds") in src, (
+        "captured_odds must fall back to ev_odds if odds_at_pick is absent: "
+        "`float(bet.get('odds_at_pick') or ev_odds)`"
+    )
+    # actual_odds must remain live_odds (unchanged)
+    store_call_pos = src.index("store_real_bet(")
+    store_call = src[store_call_pos: store_call_pos + 400]
+    assert "actual_odds=live_odds" in store_call, (
+        "actual_odds must stay as live_odds (the real Coolbet placement odds)"
+    )
+
+
 @test("SIM-BETS-COHORT-CHECK — simulated_bets timing_cohort constraint allows 'all'")
 def _():
     """Migration 116 guard: BOT-COHORTS-ALL sets timing_cohort='all' on every bot.
