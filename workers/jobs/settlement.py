@@ -1513,9 +1513,13 @@ def _normalize_bet_market(market: str) -> str:
     m = market.strip().lower()
     if m in ("1x2", "1×2"):
         return "1x2"
-    if m in ("o/u", "ou", "over/under"):
+    if m in ("o/u", "ou", "over/under", "ou25"):
         return "over_under_25"
-    # Already in DB format (e.g. "over_under_25")
+    if m == "ou15":
+        return "over_under_15"
+    if m == "ou35":
+        return "over_under_35"
+    # Already in DB format (e.g. "over_under_25", "btts", "asian_handicap")
     return m
 
 
@@ -1969,7 +1973,7 @@ def compute_model_evaluations():
     from collections import defaultdict
     by_market: dict[str, list] = defaultdict(list)
     for b in bets:
-        by_market[b["market"]].append(b)
+        by_market[_normalize_bet_market(b["market"])].append(b)
 
     # Delete today's auto-generated records before re-inserting.
     # Prevents duplicate rows when run_settlement() runs twice (21:00 + 23:30).
