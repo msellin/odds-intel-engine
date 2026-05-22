@@ -7659,6 +7659,8 @@ def test_admin_real_bets_insights():
     assert "Max potential payout" in page_src, "exposure must show max potential payout"
     assert "Paper vs real" in page_src, "page must show paper-vs-real block"
     assert "Slippage cost" in page_src, "paper-vs-real must surface slippage cost in €"
+    assert "Stake parity" in page_src, "paper-vs-real must surface stake parity badge"
+    assert "stakeParityDiverged" in page_src, "page must count divergent stakes (real vs Kelly)"
     assert "Last " in page_src and "days (UTC)" in page_src, "page must show last-N-days table"
 
     # log filters
