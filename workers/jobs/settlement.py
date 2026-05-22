@@ -314,6 +314,8 @@ def settle_combo_bet(combo_bet: dict, match_scores: dict) -> dict | None:
 
     if system_type == "no_singles":
         return _settle_system_no_singles(leg_results, stake)
+    if system_type == "fours_up":
+        return _settle_system_fours_up(leg_results, stake)
 
     # Default: straight accumulator
     if any(r == "lost" for _, r in leg_results):
@@ -374,6 +376,49 @@ def _settle_system_no_singles(leg_results: list, total_stake: float) -> dict:
         result = "lost"
     else:
         # All sub-combos voided → stake refunded, pnl = 0
+        result = "void" if voided_subs == n_sub_combos else "lost"
+    return {"result": result, "pnl": pnl, "clv": None}
+
+
+def _settle_system_fours_up(leg_results: list, total_stake: float) -> dict:
+    """Settle a fours_up system bet: all sub-combos of size 4..N.
+
+    For N=5: 5 four-folds + 1 five-fold = 6 tickets. Tolerates one losing leg
+    (the five 4-folds that don't include the loser still pay). Same void logic
+    as no_singles: voided legs drop out of each sub-combo.
+    """
+    from itertools import combinations as _combos
+
+    n_legs = len(leg_results)
+    min_size = min(4, n_legs)
+    n_sub_combos = sum(math.comb(n_legs, k) for k in range(min_size, n_legs + 1))
+    if n_sub_combos == 0:
+        return {"result": "void", "pnl": 0.0, "clv": None}
+    per_sub_stake = total_stake / n_sub_combos
+
+    total_payout = 0.0
+    voided_subs = 0
+    for size in range(min_size, n_legs + 1):
+        for sub in _combos(leg_results, size):
+            statuses = [r for _, r in sub]
+            if any(s == "lost" for s in statuses):
+                continue
+            non_void = [(leg, r) for leg, r in sub if r == "won"]
+            if not non_void:
+                voided_subs += 1
+                total_payout += per_sub_stake
+                continue
+            prod = 1.0
+            for leg, _ in non_void:
+                prod *= float(leg["odds"])
+            total_payout += per_sub_stake * prod
+
+    pnl = round(total_payout - total_stake, 2)
+    if pnl > 0:
+        result = "won"
+    elif pnl < 0:
+        result = "lost"
+    else:
         result = "void" if voided_subs == n_sub_combos else "lost"
     return {"result": result, "pnl": pnl, "clv": None}
 
@@ -658,53 +703,114 @@ def settle_finished_matches(match_ids: list[str]):
 def _settle_real_bets_for_matches(match_ids: list[str]):
     """SELF-USE-VALIDATION Phase 2.2 — settle real_bets for finished matches.
 
-    Mirrors _settle_simulated_bets / settle_finished_matches semantics but
-    against the real_bets table. Real bets carry actual taken odds in
-    `actual_odds` (vs simulated_bets' `odds_at_pick`); we feed it into the
-    same settle_bet_result() by aliasing.
+    Handles both singles and combo real_bets:
+    - Singles: settled directly against match score (unchanged behaviour).
+    - Combos (combo_legs IS NOT NULL): only settle when ALL leg matches are
+      finished, regardless of which match_ids triggered this call.
     """
     if not match_ids:
         return
 
-    pending = execute_query(
+    # ── Singles ────────────────────────────────────────────────────────────
+    pending_singles = execute_query(
         """SELECT rb.id, rb.match_id, rb.market, rb.selection,
                   rb.actual_odds AS odds_at_pick, rb.stake,
                   m.score_home, m.score_away
            FROM real_bets rb
            JOIN matches m ON m.id = rb.match_id
            WHERE rb.result = 'pending'
+             AND rb.combo_legs IS NULL
              AND rb.match_id = ANY(%s::uuid[])
              AND m.status = 'finished'
              AND m.score_home IS NOT NULL
              AND m.score_away IS NOT NULL""",
         [match_ids],
     )
-    if not pending:
-        return
-
     settled = 0
-    for bet in pending:
+    for bet in (pending_singles or []):
         try:
             outcome = settle_bet_result(
                 bet,
                 int(bet["score_home"]),
                 int(bet["score_away"]),
-                None,  # CLV not tracked on real_bets — taken price IS the closing line for our purposes
+                None,
             )
             execute_write(
-                """UPDATE real_bets
-                   SET result = %s,
-                       pnl = %s,
-                       resolved_at = NOW()
-                   WHERE id = %s""",
+                """UPDATE real_bets SET result=%s, pnl=%s, resolved_at=NOW()
+                   WHERE id=%s""",
                 [outcome["result"], outcome["pnl"], bet["id"]],
             )
             settled += 1
         except Exception as e:
             console.print(f"[yellow]Real-bet settle error for {bet['id']}: {e}[/yellow]")
 
+    # ── Combos ─────────────────────────────────────────────────────────────
+    settled += _settle_real_combo_bets()
+
     if settled:
         console.print(f"[green]Settled {settled} real bet(s) across {len(match_ids)} match(es)[/green]")
+
+
+def _settle_real_combo_bets() -> int:
+    """Settle any pending combo real_bets whose ALL leg matches are now finished.
+
+    Called from _settle_real_bets_for_matches on every settlement run. Scans
+    all pending combo rows, checks if every leg's match has a final score, and
+    settles using settle_combo_bet() (same logic as simulated combo bets).
+    """
+    pending = execute_query(
+        """SELECT rb.id, rb.stake, rb.combo_legs, rb.system_type
+           FROM real_bets rb
+           WHERE rb.result = 'pending'
+             AND rb.combo_legs IS NOT NULL""",
+        [],
+    )
+    if not pending:
+        return 0
+
+    settled = 0
+    for bet in pending:
+        legs = bet["combo_legs"]
+        if isinstance(legs, str):
+            import json as _json
+            legs = _json.loads(legs)
+        if not legs:
+            continue
+
+        leg_match_ids = [str(l["match_id"]) for l in legs]
+        score_rows = execute_query(
+            """SELECT id::text AS match_id, score_home, score_away
+               FROM matches
+               WHERE id = ANY(%s::uuid[])
+                 AND status = 'finished'
+                 AND score_home IS NOT NULL
+                 AND score_away IS NOT NULL""",
+            [leg_match_ids],
+        )
+        match_scores = {r["match_id"]: (int(r["score_home"]), int(r["score_away"]))
+                        for r in (score_rows or [])}
+
+        if len(match_scores) < len(leg_match_ids):
+            continue  # not all legs finished yet
+
+        try:
+            outcome = settle_combo_bet(
+                {"combo_legs": legs, "stake": float(bet["stake"]),
+                 "system_type": bet.get("system_type")},
+                match_scores,
+            )
+            if outcome is None:
+                continue
+            execute_write(
+                """UPDATE real_bets SET result=%s, pnl=%s, resolved_at=NOW()
+                   WHERE id=%s""",
+                [outcome["result"], outcome["pnl"], bet["id"]],
+            )
+            settled += 1
+        except Exception as e:
+            console.print(f"[yellow]Real-combo settle error for {bet['id']}: {e}[/yellow]")
+
+    return settled
 
 
 def fix_stale_live_matches():

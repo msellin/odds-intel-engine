@@ -478,6 +478,31 @@ In-play bots use the same ensemble model for pre-match context (xG, O/U probabil
 
 Both use `_poisson_win_prob(lambda_a, lambda_b, lead_a)` — a double-Poisson convolution over remaining goals — to estimate win probability and compare to implied odds. Edge threshold: O ≥ 4%, P ≥ 3%.
 
+### 8.3.5 Cross-Match Accumulator Bots (COMBO-RESTRUCTURE 2026-05-22)
+
+Four additional bots (`bot_acca_value`, `bot_acca_proven`, `bot_combo_system`, `bot_combo_proven_system`) build cross-match accumulators from the same day's predictions. All four share a common post-COMBO-RESTRUCTURE config:
+
+- **N=5 fixed** (min_legs=5, max_legs=5) — 3yr backtest showed N=3/4 are marginally -EV; N=5 captures the compound edge
+- **OU15/over required in pool** — the entire accumulator edge concentrates in days where OU15/over qualifies (73.3% leg win rate vs 44.3% without it; without OU15 all structures are approx -EV)
+- **≥8% per-leg edge** — tighter than single-bet bots; reduces leg count but raises hit rate
+- Source: `_scan_todays_candidates()` queries `predictions` + `odds_snapshots` directly (not dependent on other bots' `simulated_bets`)
+
+| Bot | Structure | Tickets | Leg pool |
+|-----|-----------|---------|----------|
+| `bot_acca_value` | `straight` (5-fold) | 1 | All acca-eligible markets (btts, ou25, ou35, ou15) |
+| `bot_acca_proven` | `straight` (5-fold) | 1 | Proven markets only (ou25, ou35, btts) + OU15/over |
+| `bot_combo_system` | `fours_up` | 6 | All acca-eligible markets |
+| `bot_combo_proven_system` | `fours_up` | 6 | Proven markets only + OU15/over |
+
+**fours_up structure:** generates all sub-combos of size 4..N. For N=5: five 4-folds + one 5-fold = 6 tickets, each staked at `total_stake/6`. Tolerates one losing leg (the five 4-folds that don't include the loser still pay). Settlement dispatches to `_settle_system_fours_up()` in `settlement.py`.
+
+**Backtest basis** (`scripts/backtest_system_variants.py`, 3yr data, normalised €1/day stake):
+- N=5 + OU15 + straight: +1199% ROI (9 qualifying days)
+- N=5 + OU15 + fours_up: +791% ROI (risk/reward tradeoff: lower variance than straight)
+- N=5 without OU15: straight −0.9%, fours_up −19.4% (no edge without OU15)
+
+**Admin recording:** manually placed combo bets can be logged via the `/admin/place-bets` table — click "Record" on any combo row to open `RecordComboModal`, enter actual Coolbet odds + stake. Stores to `real_bets` with `combo_legs JSONB` + `system_type TEXT` and settles automatically once all legs finish.
+
 ### 8.4 Backtest Foundation
 
 Bot strategies are validated against a 354,518-match dataset (275 leagues, 2005-2015):

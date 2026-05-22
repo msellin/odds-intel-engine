@@ -4894,28 +4894,33 @@ def store_real_bet(
     bot_id: str | None = None,
     simulated_bet_id: str | None = None,
     notes: str | None = None,
+    combo_legs: list | None = None,
+    system_type: str | None = None,
 ) -> str | None:
-    """Insert a single real-money bet, return its UUID.
+    """Insert a real-money bet (single or combo), return its UUID.
 
-    `bookmaker` must exist in accessible_bookmakers (FK enforced).
-    `actual_odds` is what the user actually got at the book; `captured_odds`
-    is what our UI showed at click time (slippage_pct is a generated column
-    derived from these two).
+    For combo bets: pass combo_legs (list of leg dicts) and system_type
+    ('straight' / 'fours_up' / 'no_singles'). match_id should be the first
+    leg's match_id as a placeholder — settlement reads combo_legs directly.
     """
     if stake is None or stake <= 0:
         raise ValueError("stake must be positive")
     if actual_odds is None or actual_odds <= 1.0:
         raise ValueError("actual_odds must be > 1.0")
 
+    import json as _json
+    legs_json = _json.dumps(combo_legs) if combo_legs else None
+
     rows = execute_write_returning(
         """INSERT INTO real_bets
            (match_id, market, selection, bookmaker, captured_odds, actual_odds,
-            stake, bot_id, simulated_bet_id, notes)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            stake, bot_id, simulated_bet_id, notes, combo_legs, system_type)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
            RETURNING id""",
         [
             match_id, market, selection.lower(), bookmaker,
             captured_odds, actual_odds, stake, bot_id, simulated_bet_id, notes,
+            legs_json, system_type,
         ],
     )
     return str(rows[0]["id"]) if rows else None

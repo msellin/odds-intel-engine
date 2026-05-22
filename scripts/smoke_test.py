@@ -7405,5 +7405,78 @@ def _():
     assert "DROP CONSTRAINT" in src, "migration 116 must drop the old constraint first"
 
 
+@test("COMBO-RESTRUCTURE-BOT-CONFIG — all 4 combo variants N=5, require_ou15, correct structure")
+def _():
+    """COMBO-RESTRUCTURE (2026-05-22): all 4 combo bots restructured to require N=5 legs,
+    OU15/over in pool, and either straight (acca variants) or fours_up (system variants)."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "jobs" / "acca_bot.py").read_text()
+
+    for variant in ("bot_acca_value", "bot_acca_proven", "bot_combo_system", "bot_combo_proven_system"):
+        assert variant in src, f"ACCA_VARIANTS must contain {variant}"
+
+    assert '"require_ou15"' in src and "True" in src, \
+        "ACCA_VARIANTS must have require_ou15=True for combo bots"
+
+    assert '"min_legs"' in src and "5" in src, \
+        "ACCA_VARIANTS must set min_legs=5 for all variants"
+
+    assert '"structure"' in src and '"fours_up"' in src, \
+        "ACCA_VARIANTS must have at least one fours_up structure variant"
+
+    assert '"structure"' in src and '"straight"' in src, \
+        "ACCA_VARIANTS must have at least one straight structure variant"
+
+
+@test("COMBO-RESTRUCTURE-FOURS-UP-SETTLEMENT — settlement.py handles fours_up system bets")
+def _():
+    """COMBO-RESTRUCTURE (2026-05-22): settlement.py must dispatch fours_up system type
+    and implement _settle_system_fours_up() that only combines sub-combos of size >= 4."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "jobs" / "settlement.py").read_text()
+
+    assert "_settle_system_fours_up" in src, \
+        "settlement.py must define _settle_system_fours_up()"
+
+    assert 'system_type == "fours_up"' in src, \
+        "settle_combo_bet() must dispatch fours_up system_type"
+
+    fours_idx = src.index("def _settle_system_fours_up")
+    fours_block = src[fours_idx: fours_idx + 600]
+    assert "min_size" in fours_block or "range(4" in fours_block, \
+        "_settle_system_fours_up must gate sub-combo sizes at 4"
+    assert "range(min_size" in fours_block or "range(4" in fours_block, \
+        "_settle_system_fours_up must iterate sub-combos starting from size 4"
+
+
+@test("COMBO-RESTRUCTURE-REAL-BETS-SCHEMA — migration 118 adds combo_legs + system_type to real_bets")
+def _():
+    """COMBO-RESTRUCTURE (2026-05-22): real_bets needs combo_legs JSONB and system_type TEXT
+    so manually placed combo bets can be stored and settled like simulated combos."""
+    import pathlib
+    sql = (pathlib.Path(__file__).resolve().parent.parent /
+           "supabase" / "migrations" / "118_real_bets_combo.sql").read_text()
+
+    assert "combo_legs" in sql, "migration 118 must add combo_legs column to real_bets"
+    assert "system_type" in sql, "migration 118 must add system_type column to real_bets"
+    assert "real_bets" in sql, "migration 118 must target real_bets table"
+
+
+@test("COMBO-RESTRUCTURE-RECORD-COMBO-ROUTE — record-combo API route exists and requires superadmin")
+def _():
+    """COMBO-RESTRUCTURE (2026-05-22): admin UI needs a record-combo API route so manually
+    placed combo bets can be logged against simulated_bets for tracking."""
+    import pathlib
+    route = (pathlib.Path(__file__).resolve().parent.parent.parent /
+             "odds-intel-web" / "src" / "app" / "api" / "admin" / "record-combo" / "route.ts")
+    assert route.exists(), "record-combo route.ts must exist"
+    src = route.read_text()
+    assert "is_superadmin" in src, "record-combo route must check is_superadmin"
+    assert "combo_legs" in src, "record-combo route must insert combo_legs"
+    assert "system_type" in src, "record-combo route must insert system_type"
+
+
 if __name__ == "__main__":
     main()

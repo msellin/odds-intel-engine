@@ -95,66 +95,88 @@ _MARKET_SPEC = [
 PROVEN_MARKETS_WHITELIST = frozenset({"ou25", "ou35", "btts"})
 
 
+# COMBO-RESTRUCTURE (2026-05-22): backtest over 3 years + multiple edge-filter
+# cuts showed two clear findings:
+#
+#   1. N=5 is the only leg count with consistently positive ROI. N=3 and N=4
+#      are negative on the full 3-year window; only go positive in recent 12mo
+#      which is too short to trust. All variants now require exactly 5 legs.
+#
+#   2. OU15/over is the edge driver. Days with OU15/over in the top-5 legs
+#      have 73% avg leg win rate vs 44% without it, and straight N=5 ROI
+#      of +1199% vs -0.9%. All variants now require OU15/over in the picked
+#      legs (`require_ou15=True`). On days without OU15, no combo fires.
+#
+#   3. Fewer sub-combos = higher ROI. `no_singles` (26 tickets for N=5) is
+#      consistently 5-60 ROI-points worse than `fours_up` (6 tickets). The
+#      system bots switch to `fours_up` (5-fold + five 4-folds). For 8% edge
+#      filter, fours_up/top2_sizes delivers +95% ROI vs +37% for no_singles.
+#
+#   Script: scripts/backtest_system_variants.py
+
 ACCA_VARIANTS = {
+    # Pure 5-fold. All 5 legs must win. Highest ROI (+101-177% at 8% edge),
+    # ~17-24 day dry streaks on qualifying days.
     "bot_acca_value": {
-        "structure":           "straight",   # one combo at max-leg N
-        "market_whitelist":    None,         # None = all ACCA_ELIGIBLE_MARKETS
-        "min_legs":            3,
-        "max_legs":            5,
-        "min_per_leg_edge":    0.05,
-        "max_per_leg_odds":    2.50,
-        "min_per_leg_odds":    1.40,
-        "min_combined_edge":   0.10,
-        "max_combined_odds":   50.0,
-        "kelly_fraction":      0.05,
-        "max_stake_pct":       0.005,
-        "min_stake":           1.0,
-    },
-    "bot_combo_system": {
-        "structure":           "no_singles",  # all sub-combos of size 2..N
+        "structure":           "straight",
         "market_whitelist":    None,
-        "min_legs":            3,
+        "require_ou15":        True,
+        "min_legs":            5,
         "max_legs":            5,
-        "min_per_leg_edge":    0.05,
+        "min_per_leg_edge":    0.08,
         "max_per_leg_odds":    2.50,
         "min_per_leg_odds":    1.40,
         "min_combined_edge":   0.10,
-        "max_combined_odds":   50.0,
+        "max_combined_odds":   100.0,
         "kelly_fraction":      0.05,
         "max_stake_pct":       0.005,
-        # System bets deploy more total stake (N_subcombos × per_sub). At N=5
-        # that's 26 sub-combos. To keep daily-budget comparable to the straight
-        # variant, the per-sub stake is total_stake / num_sub_combos.
         "min_stake":           1.0,
     },
-    # COMBO-PROVEN (2026-05-18): same picking + structure logic, restricted
-    # to PROVEN_MARKETS_WHITELIST (ou25, ou35, btts — highest backtest ROI).
-    # ACCA-REDESIGN (2026-05-20): whitelist was previously bot-name-based
-    # (bot_ou15_defensive etc.); now market-based since we scan DB directly.
+    # 5-fold + five 4-folds = 6 tickets. Tolerates one leg failing.
+    # +49-95% ROI at 8% edge, ~12 day dry streaks on qualifying days.
+    "bot_combo_system": {
+        "structure":           "fours_up",
+        "market_whitelist":    None,
+        "require_ou15":        True,
+        "min_legs":            5,
+        "max_legs":            5,
+        "min_per_leg_edge":    0.08,
+        "max_per_leg_odds":    2.50,
+        "min_per_leg_odds":    1.40,
+        "min_combined_edge":   0.10,
+        "max_combined_odds":   100.0,
+        "kelly_fraction":      0.05,
+        "max_stake_pct":       0.005,
+        "min_stake":           1.0,
+    },
+    # Straight 5-fold, proven markets only (ou25, ou35, btts + ou15 required).
     "bot_acca_proven": {
         "structure":           "straight",
         "market_whitelist":    PROVEN_MARKETS_WHITELIST,
-        "min_legs":            2,   # narrower market pool = some days only 2 legs
+        "require_ou15":        True,
+        "min_legs":            5,
         "max_legs":            5,
-        "min_per_leg_edge":    0.05,
+        "min_per_leg_edge":    0.08,
         "max_per_leg_odds":    2.50,
         "min_per_leg_odds":    1.40,
         "min_combined_edge":   0.10,
-        "max_combined_odds":   50.0,
+        "max_combined_odds":   100.0,
         "kelly_fraction":      0.05,
         "max_stake_pct":       0.005,
         "min_stake":           1.0,
     },
+    # fours_up, proven markets only.
     "bot_combo_proven_system": {
-        "structure":           "no_singles",
+        "structure":           "fours_up",
         "market_whitelist":    PROVEN_MARKETS_WHITELIST,
-        "min_legs":            2,
+        "require_ou15":        True,
+        "min_legs":            5,
         "max_legs":            5,
-        "min_per_leg_edge":    0.05,
+        "min_per_leg_edge":    0.08,
         "max_per_leg_odds":    2.50,
         "min_per_leg_odds":    1.40,
         "min_combined_edge":   0.10,
-        "max_combined_odds":   50.0,
+        "max_combined_odds":   100.0,
         "kelly_fraction":      0.05,
         "max_stake_pct":       0.005,
         "min_stake":           1.0,
@@ -171,8 +193,10 @@ def _subcombo_count(n_legs: int, structure: str) -> int:
     if structure == "straight":
         return 1
     if structure == "no_singles":
-        # All combos of size 2..N
         return sum(math.comb(n_legs, k) for k in range(2, n_legs + 1))
+    if structure == "fours_up":
+        # All combos of size 4..N  (for N=5: 5 four-folds + 1 five-fold = 6)
+        return sum(math.comb(n_legs, k) for k in range(4, n_legs + 1))
     raise ValueError(f"Unknown structure: {structure}")
 
 
@@ -323,13 +347,17 @@ def _scan_todays_candidates(
 def _pick_legs(candidates: list[CandidateLeg], config: dict) -> list[CandidateLeg]:
     """Pick N legs from different matches. Balanced selection: prefer shorter
     odds where edge is at-or-above threshold (higher hit rate, smaller payout
-    — but compound EV is the same)."""
+    — but compound EV is the same).
+
+    If require_ou15=True: returns [] unless at least one OU15/over leg is among
+    the top-N picks. Backtest showed the entire positive ROI for N=5 comes from
+    days with OU15/over in the pool (73% avg leg win rate vs 44% without it).
+    """
     qualified = [
         c for c in candidates
         if c.edge >= config["min_per_leg_edge"]
         and config["min_per_leg_odds"] <= c.odds <= config["max_per_leg_odds"]
     ]
-    # Balanced selection: short-odds first, edge as tiebreaker
     qualified.sort(key=lambda c: (c.odds, -c.edge))
     legs: list[CandidateLeg] = []
     seen_matches: set[str] = set()
@@ -340,6 +368,15 @@ def _pick_legs(candidates: list[CandidateLeg], config: dict) -> list[CandidateLe
         seen_matches.add(c.match_id)
         if len(legs) >= config["max_legs"]:
             break
+
+    if config.get("require_ou15"):
+        has_ou15 = any(
+            l.market == "ou15" and l.selection.lower() == "over"
+            for l in legs
+        )
+        if not has_ou15:
+            return []
+
     return legs
 
 
@@ -427,10 +464,14 @@ def _place_one(bot_name: str, cfg: dict, legs: list[CandidateLeg]) -> dict:
         struct_name = _STRUCTURE_NAME.get(n_legs, f"{n_legs}-pick system")
         selection_label = f"{struct_name} ({n_legs} picks, {n_subbets} sub-combos)"
         system_type = "no_singles"
-        # display_odds is informational for system bets — store the max-leg
-        # combined odds (what the biggest sub-combo could pay)
         display_odds = combined_odds
         log_prefix = f"SYSTEM ({struct_name})"
+    elif structure == "fours_up":
+        # For N=5: 5 four-folds + 1 five-fold = 6 tickets. Tolerates one failure.
+        selection_label = f"fours_up ({n_legs} picks, {n_subbets} sub-combos)"
+        system_type = "fours_up"
+        display_odds = combined_odds
+        log_prefix = f"FOURS-UP ({n_legs}-pick)"
     else:
         return {"placed": False, "reason": f"unknown_structure_{structure}", "bot": bot_name}
 
