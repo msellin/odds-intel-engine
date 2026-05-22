@@ -181,6 +181,18 @@ def clean_and_dedup(df: pd.DataFrame) -> pd.DataFrame:
     df = df[df["odds"] >= 1.01]
     df = df[df["edge"] > 0]   # only positive-edge candidates
 
+    # Normalize market names — three writers, three conventions
+    _MARKET_NORM = {
+        "1X2": "1x2", "1x2": "1x2",
+        "O/U": "over_under_25", "o/u": "over_under_25",
+        "ou25": "over_under_25",
+        "ou15": "over_under_15",
+        "ou35": "over_under_35",
+        "BTTS": "btts",
+    }
+    df["market"] = df["market"].map(lambda m: _MARKET_NORM.get(m, m))
+    df["market_base"] = df["market"]  # reset market_base to normalized name
+
     # Deduplicate: one row per unique (match, market, selection)
     df = df.sort_values("edge", ascending=False)
     if "match_id" in df.columns:
