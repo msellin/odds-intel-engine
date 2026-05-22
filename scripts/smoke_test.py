@@ -7485,5 +7485,21 @@ def _():
     assert "system_type" in src, "record-combo route must insert system_type"
 
 
+@test("DISCOVER-STRATEGIES — script exists and has required analysis functions")
+def _():
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent /
+           "discover_strategies.py").read_text()
+    assert "def segment_analysis" in src, "must define segment_analysis()"
+    assert "def ml_analysis" in src, "must define ml_analysis()"
+    assert "def suggest_configs" in src, "must define suggest_configs()"
+    assert "def load_csv_data" in src, "must define load_csv_data()"
+    assert "def load_db_data" in src, "must define load_db_data()"
+    assert "TRAIN_CUTOFF" in src, "must define TRAIN_CUTOFF for train/test split"
+    assert "XGBRegressor" in src, "must use XGBoost for feature importance"
+    assert "return_per_unit" in src, "must use return_per_unit as ML target"
+    assert "--db" in src, "must support --db flag for AF feature enrichment"
+
+
 if __name__ == "__main__":
     main()
