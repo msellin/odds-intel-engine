@@ -7697,5 +7697,97 @@ def test_admin_real_bets_insights():
     assert "anyFilter" in log_src and "clear" in log_src, "log must have a clear-filters affordance"
 
 
+@test("PUBLIC-PERF-EXTRAS — cumulative chart, calibration, streaks on /performance (source inspect)")
+def test_public_performance_extras():
+    """Public-page upgrade: /performance shows a 90-day cumulative P&L chart at
+    the top, plus streak badges and a calibration table. Visible to all tiers."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    web = root.parent / "odds-intel-web" / "src"
+    page = web / "app" / "(app)" / "performance" / "page.tsx"
+    extras = web / "components" / "performance-extras.tsx"
+    chart = web / "components" / "performance-pnl-chart.tsx"
+    engine_data = web / "lib" / "engine-data.ts"
+    retired = web / "components" / "retired-strategies-section.tsx"
+    if not page.exists() or not engine_data.exists():
+        print("  [skip] odds-intel-web not present in CI")
+        return
+
+    ed = engine_data.read_text()
+    assert "getPublicPerformanceExtras" in ed, "engine-data must export getPublicPerformanceExtras"
+    assert "PublicPnlPoint" in ed and "CalibrationBucket" in ed and "Streaks" in ed, (
+        "engine-data must export PublicPnlPoint + CalibrationBucket + Streaks"
+    )
+    assert "botRecentRoi" in ed, "extras must compute per-bot 30-day ROI map"
+
+    page_src = page.read_text()
+    assert "getPublicPerformanceExtras" in page_src, "page must call getPublicPerformanceExtras"
+    assert "<PerformanceExtras data={extras} />" in page_src, "page must render <PerformanceExtras>"
+
+    assert extras.exists() and chart.exists(), "performance-extras + chart components must exist"
+    extras_src = extras.read_text()
+    assert "PerformancePnlChart" in extras_src, "extras must render the chart"
+    assert "Streaks" in extras_src and "Calibration" in extras_src, "extras must include both cards"
+    assert "longestWin" in extras_src and "longestLoss" in extras_src, "streaks must surface longest W and L"
+    assert "Variance is real" in extras_src, "streak card must include variance disclaimer"
+
+    chart_src = chart.read_text()
+    assert '"use client"' in chart_src, "chart must be a client component"
+    assert "ResponsiveContainer" in chart_src, "chart must be responsive (mobile)"
+
+    retired_src = retired.read_text()
+    assert "useState(true)" in retired_src, "retired-strategies section must default open"
+
+
+@test("VB-CONSENSUS-CLV-BESTBOOK — consensus, line direction, kickoff/best-book on /value-bets (source inspect)")
+def test_value_bets_consensus_clv():
+    """Value-bets public-page upgrade: bot consensus chip + line direction arrow
+    on every row (all tiers), time-to-kickoff + best book in compact row header,
+    and a per-bot 30-day ROI hook on the free tier's single unmasked pick."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    web = root.parent / "odds-intel-web" / "src"
+    live = web / "components" / "value-bets-live.tsx"
+    page = web / "app" / "(app)" / "value-bets" / "page.tsx"
+    if not live.exists() or not page.exists():
+        print("  [skip] odds-intel-web not present in CI")
+        return
+
+    live_src = live.read_text()
+    page_src = page.read_text()
+
+    assert "botRecentRoi={extras.botRecentRoi}" in page_src, (
+        "page must pass botRecentRoi to ValueBetsLive"
+    )
+    assert "fetchBookOdds" in page_src, (
+        "page must compute fetchBookOdds so Pro/Free also get current market odds"
+    )
+
+    assert "LineDirChip" in live_src, "must have a LineDirChip component"
+    assert "lineDirection" in live_src, "must have a lineDirection helper"
+    assert "bots agree" in live_src, "consensus chip must read '<N> bots agree'"
+    assert "isElite && bet.botCount > 1" not in live_src, (
+        "consensus chip must not be Elite-gated — show to all tiers"
+    )
+    assert "kickoffLabel" in live_src, "must compute a kickoff countdown label"
+    assert "best at" in live_src, "row header must surface recommended bookmaker"
+    assert "botRoi.roi" in live_src, "free-tier teaser must surface the bot's recent ROI"
+    assert "30d" in live_src, "ROI hook must label the window (e.g. '30d')"
+
+
+@test("BOTS-UNRETIRE-WEEKEND — migration 120 un-retires bot_aggressive + inplay merges")
+def test_unretire_weekend_migration():
+    """Migration 120: override migration 117 + migration 104 carve-outs so
+    bot_aggressive + 3 inplay merge variants fire across this weekend's cohort.
+    Duplicate-bet noise accepted; data feeds upcoming calibration work."""
+    import pathlib
+    mig = pathlib.Path(__file__).resolve().parents[1] / "supabase" / "migrations" / "120_unretire_remaining_bots.sql"
+    src = mig.read_text()
+    for name in ("bot_aggressive", "inplay_a2", "inplay_c_home", "inplay_f"):
+        assert name in src, f"migration 120 must un-retire {name}"
+    assert "is_active" in src and "true" in src, "migration must set is_active=true"
+    assert "retired_at = NULL" in src, "migration must null retired_at"
+
+
 if __name__ == "__main__":
     main()
