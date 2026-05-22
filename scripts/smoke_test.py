@@ -1722,9 +1722,13 @@ def _():
 @test("INPLAY-EDGE — simulated_bets.edge_percent stored as decimal not percent (bug: inplay bot was * 100)")
 def _():
     from workers.api_clients.db import execute_query
+    # Exclude combo bets (market='combo'): combined edge across 5 legs can legitimately exceed 1.5
+    # e.g. five legs each at 21% edge → combined = (1.21)^5 - 1 ≈ 1.59. The bug to catch is
+    # single/inplay bets storing 15.9 instead of 0.159 (the old `edge * 100` path).
     rows = execute_query(
         """SELECT id, edge_percent FROM simulated_bets
            WHERE edge_percent IS NOT NULL AND edge_percent > 1.5
+             AND market != 'combo'
            LIMIT 5""",
         []
     )
@@ -7469,8 +7473,11 @@ def _():
     """COMBO-RESTRUCTURE (2026-05-22): admin UI needs a record-combo API route so manually
     placed combo bets can be logged against simulated_bets for tracking."""
     import pathlib
-    route = (pathlib.Path(__file__).resolve().parent.parent.parent /
-             "odds-intel-web" / "src" / "app" / "api" / "admin" / "record-combo" / "route.ts")
+    web = pathlib.Path(__file__).resolve().parent.parent.parent / "odds-intel-web"
+    if not web.exists():
+        print("  [skip] odds-intel-web not present in CI")
+        return
+    route = web / "src" / "app" / "api" / "admin" / "record-combo" / "route.ts"
     assert route.exists(), "record-combo route.ts must exist"
     src = route.read_text()
     assert "is_superadmin" in src, "record-combo route must check is_superadmin"
