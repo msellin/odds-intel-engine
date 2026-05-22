@@ -144,7 +144,7 @@ def fetch_settled_ou_bets(model_version: str | None = None) -> list[dict]:
                  WHEN selection ILIKE 'under%%' THEN 'over_under_25_under'
                END AS market
         FROM simulated_bets
-        WHERE market = 'O/U'
+        WHERE LOWER(market) IN ('o/u', 'over_under_25')
           AND result IN ('won', 'lost')
           AND calibrated_prob IS NOT NULL
           AND odds_at_pick IS NOT NULL
