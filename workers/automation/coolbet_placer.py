@@ -1090,7 +1090,15 @@ def place_all_bets(
         bo_id, oc_id, odds_uuid, ev_odds = target
 
         # ── Snapshot Coolbet odds (all modes, including dry-run) ─────────────
+        # Normalise market/selection to the canonical odds_snapshots format so
+        # the frontend's bot-book-odds lookup (which normalises "o/u"/"under 3.5"
+        # → "over_under_35"/"under") can find the row. The explorer's scheduled
+        # snapshot job already stores in this format; the placer must match it.
         if ev_odds:
+            from workers.automation.coolbet_explorer import _normalise_our_target
+            norm = _normalise_our_target(mkt, sel)
+            snap_market = norm[0] if norm[0] else mkt
+            snap_sel    = norm[1] if norm[1] else sel
             match_date = bet.get("match_date")
             mins_to_ko = None
             if match_date:
@@ -1101,10 +1109,10 @@ def place_all_bets(
                 mins_to_ko = -int(math.ceil(delta_mins))  # negative = pre-match
             try:
                 store_coolbet_odds_snapshot(
-                    str(bet["match_id"]), mkt, sel, ev_odds, mins_to_ko
+                    str(bet["match_id"]), snap_market, snap_sel, ev_odds, mins_to_ko
                 )
                 log.debug("Snapshot stored: %s %s %s %.3f (%s min to KO)",
-                          home, mkt, sel, ev_odds, mins_to_ko)
+                          home, snap_market, snap_sel, ev_odds, mins_to_ko)
             except Exception as e:
                 log.warning("Failed to store Coolbet odds snapshot: %s", e)
 
