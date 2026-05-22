@@ -83,22 +83,31 @@ def load_db_data(date_from: str, date_to: str) -> pd.DataFrame:
 
     # One row per (match, market, selection) with outcome + model prediction
     # + match-level features. Covers all predictions, not just bot picks.
+    # Use simulated_bets (real placement odds + settled outcomes) joined with
+    # match_feature_vectors (AF features: ELO, form, model disagreement, etc.).
+    # This gives genuine bet data — not prediction artifacts with stale odds.
+    # CLV is included as a secondary target alongside ROI.
     sql = """
         SELECT
-            m.id        AS match_id,
-            m.date,
-            m.score_home, m.score_away,
-            l.name      AS league,
+            sb.match_id,
+            sb.pick_time            AS date,
+            sb.market,
+            sb.selection,
+            sb.odds_at_pick         AS odds,
+            sb.model_probability    AS model_prob,
+            sb.edge_percent         AS edge,
+            sb.result,
+            sb.pnl,
+            sb.stake,
+            sb.clv,
+            sb.clv_pinnacle,
+            b.name                  AS bot,
+            l.name                  AS league,
             l.country,
             l.tier,
             m.season,
-            p.market,
-            p.model_probability   AS model_prob,
-            p.implied_probability AS implied_prob,
-            p.edge_percent        AS edge,
-            -- outcome (computed below in Python for flexibility)
-            m.score_home IS NOT NULL AND m.score_away IS NOT NULL AS has_result,
-            -- match-level AF features
+            m.score_home,
+            m.score_away,
             fv.elo_home, fv.elo_away, fv.elo_diff,
             fv.form_ppg_home, fv.form_ppg_away,
             fv.form_momentum_home, fv.form_momentum_away,
@@ -109,61 +118,48 @@ def load_db_data(date_from: str, date_to: str) -> pd.DataFrame:
             fv.news_impact_score,
             fv.injury_severity_home, fv.injury_severity_away,
             fv.lineup_confirmed
-        FROM predictions p
-        JOIN matches m ON m.id = p.match_id
-        JOIN leagues l ON l.id = m.league_id
-        LEFT JOIN match_feature_vectors fv ON fv.match_id = m.id
-        WHERE m.status = 'finished'
-          AND m.score_home IS NOT NULL
-          AND m.date >= %s
-          AND m.date <= %s
-          AND p.source = 'ensemble'
-          AND p.edge_percent > 0
-        ORDER BY m.date ASC
+        FROM simulated_bets sb
+        JOIN bots b           ON b.id  = sb.bot_id
+        JOIN matches m        ON m.id  = sb.match_id
+        JOIN leagues l        ON l.id  = m.league_id
+        LEFT JOIN match_feature_vectors fv ON fv.match_id = sb.match_id
+        WHERE sb.result IN ('won', 'lost')
+          AND sb.market != 'combo'
+          AND sb.pick_time >= %s
+          AND sb.pick_time <= %s
+        ORDER BY sb.pick_time ASC
     """
     rows = execute_query(sql, (f"{date_from}T00:00:00", f"{date_to}T23:59:59"))
     if not rows:
-        console.print("[red]No rows returned from DB.[/red]")
+        console.print("[red]No settled bets found in simulated_bets for this range.[/red]")
         sys.exit(1)
 
     df = pd.DataFrame(rows)
     df["date"] = pd.to_datetime(df["date"], utc=True)
-    console.print(f"  DB rows: {len(df):,}")
+    console.print(f"  Settled bets: {len(df):,}")
 
-    # Compute outcomes and derive selection/odds from market name
-    # (DB mode doesn't have per-selection odds directly — use implied_prob as odds proxy)
-    df["odds"] = 1.0 / df["implied_prob"].clip(lower=0.01)
-    df["selection"] = df["market"].str.extract(r"_(home|draw|away|over|under|yes|no)$")
-    df["market_base"] = df["market"].str.replace(r"_(home|draw|away|over|under|yes|no)$", "", regex=True)
-    df["won"] = _compute_outcomes(df)
-    df["stake"] = 10.0
-    df["pnl"] = np.where(df["won"], (df["odds"] - 1) * df["stake"], -df["stake"])
-    # bot column not present in DB mode — set placeholder
-    df["bot"] = "db_mode"
+    # PostgreSQL numeric → float
+    numeric_cols = [
+        "odds", "model_prob", "edge", "pnl", "stake", "clv", "clv_pinnacle",
+        "score_home", "score_away",
+        "elo_home", "elo_away", "elo_diff",
+        "form_ppg_home", "form_ppg_away",
+        "form_momentum_home", "form_momentum_away",
+        "model_disagreement", "odds_drift_home",
+        "news_impact_score", "injury_severity_home", "injury_severity_away",
+    ]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # market / selection already in correct convention from simulated_bets
+    df["market_base"] = df["market"]
+    df["implied_prob"] = 1.0 / df["odds"].clip(lower=1.01)
+    df["won"] = df["result"] == "won"
 
     return df
 
 
-def _compute_outcomes(df: pd.DataFrame) -> pd.Series:
-    """Compute won from score + market + selection for DB-mode rows."""
-    won = pd.Series(False, index=df.index)
-    sh, sa = df["score_home"].astype(float), df["score_away"].astype(float)
-    total = sh + sa
-
-    m = df["market"]
-    won = np.where(m.str.endswith("_home"), sh > sa, won)
-    won = np.where(m.str.endswith("_draw"), sh == sa, won)
-    won = np.where(m.str.endswith("_away"), sh < sa, won)
-    won = np.where(m.str.contains("over25$|over_under_25") & m.str.endswith("_over"), total > 2.5, won)
-    won = np.where(m.str.contains("over25$|over_under_25") & m.str.endswith("_under"), total < 2.5, won)
-    won = np.where(m.str.contains("over15$|over_under_15") & m.str.endswith("_over"), total > 1.5, won)
-    won = np.where(m.str.contains("over15$|over_under_15") & m.str.endswith("_under"), total < 1.5, won)
-    won = np.where(m.str.contains("over35$|over_under_35") & m.str.endswith("_over"), total > 3.5, won)
-    won = np.where(m.str.contains("over35$|over_under_35") & m.str.endswith("_under"), total < 3.5, won)
-    btts = (sh > 0) & (sa > 0)
-    won = np.where(m.str.contains("btts") & m.str.endswith("_yes"), btts, won)
-    won = np.where(m.str.contains("btts") & m.str.endswith("_no"), ~btts, won)
-    return pd.Series(won, index=df.index).astype(bool)
 
 
 # ── Cleaning & feature engineering ───────────────────────────────────────────
@@ -278,7 +274,11 @@ def roi_stats(g: pd.DataFrame) -> dict:
 
 
 def segment_analysis(df: pd.DataFrame, min_bets: int, train_only: bool = True) -> None:
-    subset = df[df["is_train"]] if train_only else df
+    train = df[df["is_train"]]
+    if train_only and len(train) < 100:
+        console.print(f"  [yellow]Train set too small ({len(train)} rows) — using all data for segments.[/yellow]")
+        train_only = False
+    subset = train if train_only else df
 
     # ── Level 1: by market ──────────────────────────────────────────────────
     console.print(f"\n[bold cyan]== ROI by Market (n≥{min_bets}) ==[/bold cyan]")
@@ -350,6 +350,24 @@ def segment_analysis(df: pd.DataFrame, min_bets: int, train_only: bool = True) -
                    f"{s['avg_odds']:.2f}", note)
     console.print(t4)
 
+    # ── CLV by market (DB mode only — tells us bet quality, not just luck) ──
+    if "clv" in df.columns and df["clv"].notna().sum() > 50:
+        console.print(f"\n[bold cyan]== CLV by Market (positive = beat closing line) ==[/bold cyan]")
+        tc = Table(show_header=True, header_style="bold")
+        for col in ["Market", "N w/CLV", "Avg CLV%", "ROI%", "Note"]:
+            tc.add_column(col, justify="right" if col not in ("Market", "Note") else "left")
+        for mkt, g in subset.groupby("market_base"):
+            clv_g = g["clv"].dropna()
+            if len(clv_g) < 20:
+                continue
+            avg_clv = clv_g.mean() * 100
+            s = roi_stats(g)
+            note = "[green]skill[/green]" if avg_clv > 0 else "[red]no edge[/red]"
+            roi_str = f"[green]+{s['roi']:.1f}%[/green]" if s["roi"] > 0 else f"[red]{s['roi']:.1f}%[/red]"
+            clv_str = f"[green]+{avg_clv:.2f}%[/green]" if avg_clv > 0 else f"[red]{avg_clv:.2f}%[/red]"
+            tc.add_row(mkt, str(len(clv_g)), clv_str, roi_str, note)
+        console.print(tc)
+
     # ── Out-of-sample check ─────────────────────────────────────────────────
     oos = df[~df["is_train"]]
     if len(oos) > 100:
@@ -384,6 +402,8 @@ DB_EXTRA_FEATURES = [
     "odds_drift_home",
     "news_impact_score",
     "injury_severity_home", "injury_severity_away",
+    "clv",          # closing line value — best signal of bet quality
+    "clv_pinnacle", # Pinnacle-specific CLV
 ]
 
 
