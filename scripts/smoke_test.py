@@ -7586,5 +7586,35 @@ def test_market_case_normalize():
         "store_bet must normalize market to lowercase to prevent duplicate rows in market breakdown"
 
 
+@test("ADMIN-REAL-BETS-PAGE — daily stats + collapsed bet log, per-book table removed (source inspect)")
+def test_admin_real_bets_page():
+    """Admin /admin/real-bets page polish (2026-05-22): drop per-book (Coolbet only),
+    add Today (UTC) stats row alongside Overall, default bet log to 50 with expand."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    page = root.parent / "odds-intel-web" / "src" / "app" / "(app)" / "admin" / "real-bets" / "page.tsx"
+    log = root.parent / "odds-intel-web" / "src" / "components" / "real-bets-log.tsx"
+    if not page.exists() or not log.exists():
+        print("  [skip] odds-intel-web not present in CI")
+        return
+    page_src = page.read_text()
+    # per-book block removed
+    assert "Per-book" not in page_src, "per-book table must be removed (Coolbet-only)"
+    assert "byBook" not in page_src, "byBook aggregation must be removed"
+    # daily stats present
+    assert "todayBets" in page_src, "page must compute todayBets"
+    assert "Date.UTC" in page_src, "today boundary must be in UTC"
+    assert "StatRow" in page_src, "must use StatRow component for Overall + Today rows"
+    assert "Today (UTC" in page_src, "must label the daily stat row"
+    # log moved to client component
+    assert 'from "@/components/real-bets-log"' in page_src, "page must import RealBetsLog"
+    assert "<RealBetsLog bets={bets} />" in page_src, "page must render RealBetsLog"
+
+    log_src = log.read_text()
+    assert '"use client"' in log_src, "real-bets-log must be a client component"
+    assert "INITIAL_VISIBLE = 50" in log_src, "log must default to 50 visible rows"
+    assert "Show all" in log_src, "log must have a Show all expand button"
+
+
 if __name__ == "__main__":
     main()
