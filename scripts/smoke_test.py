@@ -3075,6 +3075,33 @@ def _():
     assert "guard" in sig.parameters, "place_all_bets must accept guard kwarg"
 
 
+@test("COOLBET-MARKET-NORM — _normalise_our_target handles lowercase DB values")
+def _():
+    """COOLBET-MARKET-NORM (2026-05-22) — simulated_bets stores market as 'o/u'
+    and 'btts' (lowercase). _normalise_our_target was only checking uppercase
+    variants ('O/U', 'BTTS'), so all OU and BTTS placements silently returned
+    no_market. Fixed by lowercasing m before checks."""
+    from workers.automation.coolbet_explorer import _normalise_our_target
+
+    cases = [
+        ("o/u",  "under 2.5", ("over_under_25", "under", None)),
+        ("o/u",  "over 3.5",  ("over_under_35", "over",  None)),
+        ("o/u",  "under 3.5", ("over_under_35", "under", None)),
+        ("o/u",  "over 1.5",  ("over_under_15", "over",  None)),
+        ("O/U",  "Under 2.5", ("over_under_25", "under", None)),
+        ("btts", "yes",       ("btts", "yes", None)),
+        ("btts", "no",        ("btts", "no",  None)),
+        ("BTTS", "Yes",       ("btts", "yes", None)),
+        ("1x2",  "home",      ("1x2",  "Home", None)),
+        ("1X2",  "Away",      ("1x2",  "Away", None)),
+    ]
+    for mkt, sel, expected in cases:
+        result = _normalise_our_target(mkt, sel)
+        assert result == expected, (
+            f"_normalise_our_target({mkt!r}, {sel!r}) = {result}, want {expected}"
+        )
+
+
 @test("TELEGRAM-NOTIFY — send-only Telegram with dedup + daemon hooks")
 def _():
     """TELEGRAM-NOTIFY (2026-05-20) — send_telegram is the single ingress for

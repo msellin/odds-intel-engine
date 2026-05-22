@@ -1024,10 +1024,10 @@ def place_all_bets(
         log.info("No qualifying bets found for today.")
         return []
 
-    # COOLBET-SAFETY-GUARDRAILS: default guard = no limits (preserves
-    # behavior for callers that don't pass one).
+    # COOLBET-SAFETY-GUARDRAILS: default guard uses Kelly stakes so manual
+    # calls without an explicit guard still size correctly.
     if guard is None:
-        guard = PlacementGuard()
+        guard = PlacementGuard(use_kelly_stake=True)
 
     log.info("Found %d qualifying simulated_bets to evaluate", len(pending))
 

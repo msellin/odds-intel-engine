@@ -386,15 +386,18 @@ def _normalise_our_target(
     """Map our (market, selection) into the (parsed_market, parsed_sel, line)
     tuple shape that parse_market emits. Returns (None, None, None) if the
     market type isn't supported."""
-    m = our_market.strip()
+    # Normalise to lowercase so DB values ("o/u", "btts", "1x2") match
+    # regardless of how they were stored (uppercase variants were the original
+    # assumption but the pipeline writes lowercase).
+    m = our_market.strip().lower()
     s = our_selection.strip()
 
-    if m in ("1X2", "1x2"):
+    if m in ("1x2",):
         if s.lower() in ("home", "draw", "away"):
             return ("1x2", s.title(), None)
         return (None, None, None)
 
-    if m in ("O/U", "OU", "ou"):
+    if m in ("o/u", "ou"):
         # selection like "Over 1.5" / "Under 2.5"
         parts = s.split()
         if len(parts) != 2:
@@ -409,7 +412,7 @@ def _normalise_our_target(
             return (None, None, None)
         return (market, side, None)
 
-    if m == "BTTS":
+    if m == "btts":
         if s.lower() in ("yes", "no"):
             return ("btts", s.lower(), None)
         return (None, None, None)
