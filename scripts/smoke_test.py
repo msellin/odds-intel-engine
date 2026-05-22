@@ -7775,13 +7775,14 @@ def test_value_bets_consensus_clv():
     assert "30d" in live_src, "ROI hook must label the window (e.g. '30d')"
 
 
-@test("BOTS-UNRETIRE-WEEKEND — migration 120 un-retires bot_aggressive + inplay merges")
+@test("BOTS-UNRETIRE-WEEKEND — migration 122 un-retires bot_aggressive + inplay merges")
 def test_unretire_weekend_migration():
-    """Migration 120: override migration 117 + migration 104 carve-outs so
-    bot_aggressive + 3 inplay merge variants fire across this weekend's cohort.
-    Duplicate-bet noise accepted; data feeds upcoming calibration work."""
+    """Migration 122 (was 120, renumbered to clear a slot collision): override
+    migration 117 + migration 104 carve-outs so bot_aggressive + 3 inplay merge
+    variants fire across this weekend's cohort. Duplicate-bet noise accepted;
+    data feeds upcoming calibration work."""
     import pathlib
-    mig = pathlib.Path(__file__).resolve().parents[1] / "supabase" / "migrations" / "120_unretire_remaining_bots.sql"
+    mig = pathlib.Path(__file__).resolve().parents[1] / "supabase" / "migrations" / "122_unretire_remaining_bots.sql"
     src = mig.read_text()
     for name in ("bot_aggressive", "inplay_a2", "inplay_c_home", "inplay_f"):
         assert name in src, f"migration 120 must un-retire {name}"
