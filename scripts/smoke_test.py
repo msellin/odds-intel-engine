@@ -3488,6 +3488,16 @@ def _():
         "getAllBets select must include combo_legs/combo_size/system_type columns"
     )
     assert "legMatchIds" in dsrc, "getAllBets must batch-fetch leg match names"
+    # Per-leg W/L: leg rows must carry a result so users see which legs killed the combo.
+    assert "settleComboLeg" in dsrc, (
+        "engine-data must settle each combo leg from match score (won/lost/pending/void)"
+    )
+    assert "score_home, score_away" in dsrc, (
+        "leg match batch query must include score_home/score_away for per-leg settlement"
+    )
+    assert "resultBadge(leg.result)" in msrc, (
+        "modal leg sub-row must render resultBadge(leg.result) so each leg shows W/L"
+    )
 
 
 @test("BOT-QUAL-PERFORMANCE — /performance wraps via PerformanceClient with toggle")
