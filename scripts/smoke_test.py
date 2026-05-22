@@ -7499,6 +7499,23 @@ def _():
     assert "XGBRegressor" in src, "must use XGBoost for feature importance"
     assert "return_per_unit" in src, "must use return_per_unit as ML target"
     assert "--db" in src, "must support --db flag for AF feature enrichment"
+    assert "--fd" in src, "must support --fd flag for football-data CSV"
+    assert "CSV_FD" in src, "must reference football-data CSV path"
+    assert "include_fd" in src, "load_csv_data must accept include_fd param"
+
+
+@test("BACKTEST-FD — football_data script exists and has required structure")
+def _():
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent /
+           "backtest_football_data.py").read_text()
+    assert "LEAGUES" in src, "must define LEAGUES dict"
+    assert "SEASONS" in src, "must define SEASONS list"
+    assert "fair_probs_3way" in src, "must implement Buchdahl margin stripping"
+    assert "fair_probs_2way" in src, "must handle 2-way markets"
+    assert "PSCH" in src, "must use Pinnacle closing columns"
+    assert "clv" in src, "must compute CLV (B365 / Pinnacle closing)"
+    assert "backtest-football-data.csv" in src, "must write output CSV"
 
 
 if __name__ == "__main__":

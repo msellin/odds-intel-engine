@@ -46,6 +46,7 @@ console = Console()
 ROOT = Path(__file__).parent.parent
 CSV_3YEAR   = ROOT / "dev/active/backtest-3year.csv"
 CSV_4WEEK   = ROOT / "dev/active/backtest-retired-4weeks.csv"
+CSV_FD      = ROOT / "dev/active/backtest-football-data.csv"  # from backtest_football_data.py
 DEFAULT_OUT = ROOT / "dev/active/strategy-discovery-report.txt"
 
 TRAIN_CUTOFF  = "2025-01-01"
@@ -58,7 +59,7 @@ MARKET_ORDER = ["1x2", "btts", "over_under_25", "over_under_15",
 
 # ── Data loading ──────────────────────────────────────────────────────────────
 
-def load_csv_data() -> pd.DataFrame:
+def load_csv_data(include_fd: bool = False) -> pd.DataFrame:
     console.print("\n[bold]Loading backtest CSVs…[/bold]")
     dfs = []
     for path in [CSV_3YEAR, CSV_4WEEK]:
@@ -68,10 +69,19 @@ def load_csv_data() -> pd.DataFrame:
             dfs.append(df)
         else:
             console.print(f"  [yellow]Not found: {path.name}[/yellow]")
+    if include_fd:
+        if CSV_FD.exists():
+            df_fd = pd.read_csv(CSV_FD, parse_dates=["date"])
+            console.print(f"  {CSV_FD.name}: {len(df_fd):,} rows [cyan](football-data)[/cyan]")
+            dfs.append(df_fd)
+        else:
+            console.print(f"  [yellow]football-data CSV not found — run backtest_football_data.py first[/yellow]")
     if not dfs:
         console.print("[red]No CSV files found. Run backtest_pre_match_bots.py first.[/red]")
         sys.exit(1)
     df = pd.concat(dfs, ignore_index=True)
+    # Normalize all dates to UTC-aware (original CSVs have +00:00, fd CSV is naive)
+    df["date"] = pd.to_datetime(df["date"], utc=True)
     console.print(f"  Combined: {len(df):,} rows")
     return df
 
@@ -607,21 +617,26 @@ def main() -> None:
                         help="Save text report to this path")
     parser.add_argument("--no-ml", action="store_true",
                         help="Skip ML analysis (segment analysis only)")
+    parser.add_argument("--fd", action="store_true",
+                        help="Include football-data.co.uk CSV (run backtest_football_data.py first)")
     args = parser.parse_args()
 
     # Optionally capture output to file
     buf = StringIO() if args.out else None
     out_console = Console(file=buf, width=120) if buf else console
 
+    mode = "DB (all predictions + AF features)" if args.db else "CSV (backtest files)"
+    if getattr(args, "fd", False) and not args.db:
+        mode += " + football-data"
     console.rule("[bold]Strategy Discovery — Stage 1[/bold]")
-    console.print(f"  Mode: {'DB (all predictions + AF features)' if args.db else 'CSV (backtest files)'}")
+    console.print(f"  Mode: {mode}")
     console.print(f"  Min bets per segment: {args.min_bets}")
     console.print(f"  Train/test split: pre-{TRAIN_CUTOFF} / {TRAIN_CUTOFF}+")
 
     if args.db:
         df_raw = load_db_data(args.date_from, args.date_to)
     else:
-        df_raw = load_csv_data()
+        df_raw = load_csv_data(include_fd=getattr(args, "fd", False))
 
     df = clean_and_dedup(df_raw)
     df = engineer_features(df)
