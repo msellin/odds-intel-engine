@@ -1762,7 +1762,7 @@ def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
     row = {
         "bot_id": bot_id,
         "match_id": match_id,
-        "market": bet_data["market"],
+        "market": bet_data["market"].lower(),
         "selection": bet_data["selection"].lower(),
         "odds_at_pick": bet_data["odds"],
         "pick_time": bet_data.get("placed_at", datetime.now().isoformat()),

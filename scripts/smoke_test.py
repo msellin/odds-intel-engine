@@ -7550,5 +7550,14 @@ def _():
     assert "minute < 72" not in n_body, "inplay_n must not still have old 72-min gate"
 
 
+@test("MARKET-CASE-NORMALIZE — store_bet normalizes market to lowercase")
+def test_market_case_normalize():
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parents[1] /
+           "workers" / "api_clients" / "supabase_client.py").read_text()
+    assert '"market": bet_data["market"].lower()' in src, \
+        "store_bet must normalize market to lowercase to prevent duplicate rows in market breakdown"
+
+
 if __name__ == "__main__":
     main()
