@@ -1366,7 +1366,12 @@ def _check_strategy_d(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
 
 def _check_strategy_e(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     """
-    Strategy E: Dead Game Unders — tempo collapse signals Under 2.5 (min 25-50).
+    Strategy E: Dead Game Unders — tempo collapse signals Under 2.5 (min 25-30).
+
+    Window tightened 2026-05-22: was 25-50, minute-bucket ROI showed ≤30 at
+    +17.7% and every later bucket negative. Keeping only the high-edge early
+    window avoids the pattern where sluggish pace metrics in later minutes
+    reflect game-state management, not a genuine dead-game.
 
     Real xG only. Proxy mode disabled 2026-05-09: the shot-based formula
     `expected_shots = (pm_xg_total / 0.10) * (minute/90)` used 0.10 xG/shot
@@ -1375,7 +1380,7 @@ def _check_strategy_e(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     bets placed 2026-05-09 at −8.49 pnl (−4.7% ROI). Voided via migration 079.
     """
     minute = cand["minute"] or 0
-    if minute < 25 or minute > 50:
+    if minute < 25 or minute > 30:
         return None
     if has_red_card:
         return None
@@ -2032,7 +2037,9 @@ def _check_strategy_m(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
       • minute 30-60
       • score is 1-0 or 0-1 (one goal scored)
       • prematch_btts_prob ≥ 0.48
-      • live_ou_25_over ≥ 3.0 (market drifted into Under bias)
+      • live_ou_25_over ≥ 2.20 (was 2.40 until 2026-05-22; funnel showed only
+        10% of candidates passing 2.40 vs 18% at 2.20; edge check below still
+        prevents bets without genuine value)
       • prematch_o25 ≥ 0.45 (don't fire on grind-it-out match types)
       • no red card
       • model edge ≥ 3% via _remaining_goals_prob
@@ -2058,8 +2065,8 @@ def _check_strategy_m(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     if pm_o25 < 0.45:
         return None
 
-    ou25, ou25_is_live = _resolve_odds(cand.get("live_ou_25_over"), pm.get("prematch_ou25_over"), min_val=2.40)
-    if ou25 < 2.40:
+    ou25, ou25_is_live = _resolve_odds(cand.get("live_ou_25_over"), pm.get("prematch_ou25_over"), min_val=2.20)
+    if ou25 < 2.20:
         return None  # Market hasn't drifted enough (or no odds available at this level)
 
     pm_xg_total = float(pm.get("prematch_xg_home") or 1.1) + float(pm.get("prematch_xg_away") or 1.1)
@@ -2093,83 +2100,83 @@ def _check_strategy_m(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
 
 def _check_strategy_n(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     """
-    Strategy N: Late Favourite Push — bet Home Win in 0-0 / 1-1 at min 72-80.
+    Strategy N: Late Favourite Push — bet strong favourite (home OR away) at
+    level score, minute 65-82.
 
-    Thesis (9-AI round-2 consensus): in a match where the home side was a strong
-    prematch favourite (win prob ≥ 0.65), the live 1x2 market drifts the home
-    odds upward as time passes scoreless or level. By minute 72-80 the drift
-    often overshoots — bivariate Poisson on the remaining minutes still gives
-    home a higher win probability than the implied market odds.
+    Thesis (9-AI round-2 consensus): when a strong prematch favourite (win prob
+    ≥ 0.62) is stuck at a level score in the final quarter, the live 1x2 market
+    overshoots the drift — bivariate Poisson on the remaining minutes gives the
+    favourite a higher win probability than the implied odds.
 
-    Window 72-80 is intentionally tight: before 72 the market is still pricing
-    efficiently; after 80 the upside is gone (too few minutes left to score).
-    Spec deliberately home-only — away-favourite extension is a separate task.
+    Window expanded 2026-05-22: was 72-80. Funnel analysis showed only 5,059
+    candidates (14d). Wider 65-82 window yields 11,109 — 2.2× more. Before
+    minute 65 the market still prices efficiently; after 82 the upside is gone.
+    Away-favourite path added at the same time (was home-only as a separate task).
 
     Entry:
-      • minute 72-80
-      • score 0-0 or 1-1 (level)
-      • prematch_home_prob ≥ 0.65
-      • live_1x2_home ≥ 2.20 (drifted from the prematch ~1.45 implied)
+      • minute 65-82
+      • level score (0-0 or 1-1)
+      • prematch_home_prob ≥ 0.62 (home fav) OR prematch_away_prob ≥ 0.62 (away fav)
+      • live odds for the favourite ≥ 2.20 (drifted up at level score)
       • no red card
       • bivariate Poisson edge ≥ 3%
     """
     minute = cand["minute"] or 0
-    if minute < 72 or minute > 80:
+    if minute < 65 or minute > 82:
         return None
     if has_red_card:
         return None
 
     sh, sa = cand["score_home"] or 0, cand["score_away"] or 0
-    if not ((sh == 0 and sa == 0) or (sh == 1 and sa == 1)):
-        return None  # Level scoreline only
+    if sh != sa:
+        return None  # Level scoreline only (0-0 or 1-1 or 2-2)
 
     pm_home_prob = float(pm.get("prematch_home_prob") or 0)
-    if pm_home_prob < 0.65:
+    pm_away_prob = float(pm.get("prematch_away_prob") or 0)
+
+    if pm_home_prob >= 0.62:
+        fav_side = "home"
+        live_fav_odds = float(cand.get("live_1x2_home") or 0)
+        pm_fav_prob = pm_home_prob
+    elif pm_away_prob >= 0.62:
+        fav_side = "away"
+        live_fav_odds = float(cand.get("live_1x2_away") or 0)
+        pm_fav_prob = pm_away_prob
+    else:
         return None
 
-    live_home_odds = float(cand.get("live_1x2_home") or 0)
-    if live_home_odds < 2.20:
+    if live_fav_odds < 2.20:
         return None  # Hasn't drifted enough — no edge
 
-    # Bivariate Poisson on the remaining minutes. h2_uplift always engages
-    # at minute 72-80; lambda also gets a period multiplier (INPLAY-PERIOD-RATES,
-    # 1.20× ≥ minute 76) and a per-team score-state multiplier
-    # (INPLAY-LAMBDA-STATE — late level → +5%/+5%; late imbalance → trailing
-    # +15%, leader −10%).
     pm_xg_h = float(pm.get("prematch_xg_home") or 1.1)
     pm_xg_a = float(pm.get("prematch_xg_away") or 1.1)
     remaining_frac = (90.0 - minute) / 90.0
-    h2_uplift = 1.05  # always in second half at minute 72-80
+    h2_uplift = 1.05
     period_mult = _period_multiplier(minute)
-    if sh > sa:
-        home_state, away_state = "leading", "trailing"
-    elif sh < sa:
-        home_state, away_state = "trailing", "leading"
-    else:
-        home_state = away_state = "level"
+    home_state = away_state = "level"
     state_mult_h = _state_multiplier_team(minute, home_state)
     state_mult_a = _state_multiplier_team(minute, away_state)
     lam_h = pm_xg_h * remaining_frac * h2_uplift * period_mult * state_mult_h
     lam_a = pm_xg_a * remaining_frac * h2_uplift * period_mult * state_mult_a
 
-    ph_win, _, _ = _bivariate_poisson_win_prob(lam_h, lam_a)
-    # When level at 1-1, home still needs to outscore in the remaining time;
-    # bivariate result is the right model regardless of current scoreline since
-    # we're pricing the remaining-minutes match outcome.
-    market_prob = _implied_prob(live_home_odds)
-    edge_pct = (ph_win - market_prob) * 100
+    ph_win, _, pa_win = _bivariate_poisson_win_prob(lam_h, lam_a)
+    model_fav_win = ph_win if fav_side == "home" else pa_win
+
+    market_prob = _implied_prob(live_fav_odds)
+    edge_pct = (model_fav_win - market_prob) * 100
     if edge_pct < 3.0:
         return None
 
     return {
         "market": "1X2",
-        "selection": "home",
-        "odds": live_home_odds,
-        "model_prob": round(ph_win, 4),
+        "selection": fav_side,
+        "odds": live_fav_odds,
+        "model_prob": round(model_fav_win, 4),
         "edge": round(edge_pct, 2),
         "extra": {
             "score_state": f"{sh}-{sa}",
-            "pm_home_prob": round(pm_home_prob, 3),
+            "pm_fav_prob": round(pm_fav_prob, 3),
+            "fav_side": fav_side,
             "lam_h_remaining": round(lam_h, 3),
             "lam_a_remaining": round(lam_a, 3),
         },

@@ -17,7 +17,7 @@ WHERE name = 'inplay_a';
 
 UPDATE bots SET strategy_description = 'Bet: Over 2.5 goals.
 Entry: Minutes 12–50, score is 1-0 (either team leading). The trailing team is pressing — showing xG ≥ 0.20 or SoT ≥ 1. Prematch BTTS prob ≥ 42% (this is a match where both teams were expected to score).
-Edge thesis: Trailing-team pressure signals an equaliser is coming. With prematch xG elevated, the Bayesian model gives enough remaining lambda for 2 more goals. Bet Over 2.5 when the market hasn't priced in the comeback momentum.'
+Edge thesis: Trailing-team pressure signals an equaliser is coming. With prematch xG elevated, the Bayesian model gives enough remaining lambda for 2 more goals. Bet Over 2.5 when the market hasn''t priced in the comeback momentum.'
 WHERE name = 'inplay_b';
 
 UPDATE bots SET strategy_description = 'Bet: The pre-match favourite to win (1X2).

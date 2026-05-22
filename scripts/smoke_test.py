@@ -7518,5 +7518,37 @@ def _():
     assert "backtest-football-data.csv" in src, "must write output CSV"
 
 
+@test("INPLAY-CONFIG-LOOSEN — inplay_e window 25-30, inplay_m OU 2.20, inplay_n window 65-82 + away")
+def _():
+    """INPLAY-CONFIG-LOOSEN (2026-05-22): three inplay bot configs loosened based on
+    funnel analysis of live_match_snapshots. Verifies exact threshold values in source."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parents[1] /
+           "workers" / "jobs" / "inplay_bot.py").read_text()
+
+    # inplay_e: window tightened to 25-30
+    e_start = src.index("def _check_strategy_e(")
+    e_end = src.index("\ndef _check_strategy_g(")
+    e_body = src[e_start:e_end]
+    assert "minute > 30" in e_body, "inplay_e upper window must be 30 (INPLAY-CONFIG-LOOSEN)"
+    assert "minute > 50" not in e_body, "inplay_e must not still have old 50-min gate"
+
+    # inplay_m: OU floor 2.20
+    m_start = src.index("def _check_strategy_m(")
+    m_end = src.index("\ndef _check_strategy_n(")
+    m_body = src[m_start:m_end]
+    assert "min_val=2.20" in m_body, "inplay_m must use min_val=2.20 (INPLAY-CONFIG-LOOSEN)"
+    assert "min_val=2.40" not in m_body, "inplay_m must not still have old 2.40 floor"
+
+    # inplay_n: window 65-82, away-favourite path
+    n_start = src.index("def _check_strategy_n(")
+    n_end = src.index("\ndef _check_strategy_q(")
+    n_body = src[n_start:n_end]
+    assert "minute < 65" in n_body, "inplay_n lower window must be 65 (INPLAY-CONFIG-LOOSEN)"
+    assert "minute > 82" in n_body, "inplay_n upper window must be 82 (INPLAY-CONFIG-LOOSEN)"
+    assert "pm_away_prob" in n_body, "inplay_n must check away-favourite path (INPLAY-CONFIG-LOOSEN)"
+    assert "minute < 72" not in n_body, "inplay_n must not still have old 72-min gate"
+
+
 if __name__ == "__main__":
     main()
