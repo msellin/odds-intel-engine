@@ -3552,6 +3552,27 @@ def _():
         )
 
 
+@test("BOTS-UNRETIRE-ALL — migration 117 un-retires all 8 main bots for analysis volume")
+def _():
+    """2026-05-22: all 8 previously-retired main bots un-retired so simulated_bets
+    accumulates more data for analysis. Migration sets is_active=true, retired_at=NULL.
+    Inplay merge bots (inplay_a2, inplay_c_home, inplay_f) excluded intentionally."""
+    import pathlib
+    unretired = [
+        "bot_lower_1x2", "bot_opt_home_lower", "bot_draw_specialist", "bot_conservative",
+        "bot_dc_value", "bot_dc_strong_fav", "bot_dnb_away_value", "bot_ou15_defensive",
+    ]
+    mig = pathlib.Path("supabase/migrations/117_unretire_all_bots.sql").read_text()
+    assert "retired_at = NULL" in mig, "migration 117 must SET retired_at = NULL"
+    assert "is_active  = true" in mig or "is_active = true" in mig, \
+        "migration 117 must SET is_active = true"
+    for b in unretired:
+        assert f"'{b}'" in mig, f"migration 117 missing un-retire entry for {b}"
+    # Inplay merge bots must NOT be un-retired — they'd duplicate surviving inplay bots
+    for b in ("inplay_a2", "inplay_c_home", "inplay_f"):
+        assert f"'{b}'" not in mig, f"migration 117 must not un-retire {b} (merged bot)"
+
+
 @test("COOLBET-SELECTION-BIAS — real_perf_report has section_selection_bias")
 def _():
     """Diagnostic that separates 'I picked losers from the offered slips' from
