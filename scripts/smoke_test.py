@@ -3464,6 +3464,32 @@ def _():
     )
 
 
+@test("ADMIN-BOTS-COMBO-LEGS — bot detail modal expands combo bets into per-leg sub-rows")
+def _():
+    """Combo/system bets used to render as one row with the placeholder first-leg match
+    name — user couldn't see what the other 4 legs were. Modal now flatMaps each combo
+    bet into a header row + N indented leg rows, and engine-data resolves leg match_ids
+    to "Home vs Away" via a batched matches lookup so the legs aren't anonymous."""
+    import pathlib
+    modal = pathlib.Path("../odds-intel-web/src/components/bot-dashboard-client.tsx")
+    if not modal.exists():
+        return
+    msrc = modal.read_text()
+    assert "bet.comboLegs" in msrc, "modal must branch on bet.comboLegs to render leg sub-rows"
+    assert "botBets.flatMap" in msrc, "modal must flatMap so each combo can emit multiple rows"
+    assert "${bet.id}-leg-" in msrc, "leg sub-rows must use a stable per-leg key"
+
+    data = pathlib.Path("../odds-intel-web/src/lib/engine-data.ts")
+    if not data.exists():
+        return
+    dsrc = data.read_text()
+    assert "comboLegs:" in dsrc, "LiveBet must expose comboLegs"
+    assert "combo_legs, combo_size, system_type" in dsrc, (
+        "getAllBets select must include combo_legs/combo_size/system_type columns"
+    )
+    assert "legMatchIds" in dsrc, "getAllBets must batch-fetch leg match names"
+
+
 @test("BOT-QUAL-PERFORMANCE — /performance wraps via PerformanceClient with toggle")
 def _():
     """Source-inspect /performance: PerformanceClient owns the toggle and
