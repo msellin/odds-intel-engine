@@ -7616,5 +7616,58 @@ def test_admin_real_bets_page():
     assert "Show all" in log_src, "log must have a Show all expand button"
 
 
+@test("ADMIN-REAL-BETS-INSIGHTS — chart, daily breakdown, exposure, paper-vs-real, log filters (source inspect)")
+def test_admin_real_bets_insights():
+    """Admin /admin/real-bets insights expansion (2026-05-22): cumulative P&L chart
+    (real vs paper), last-14-days breakdown, open exposure panel, paper-vs-real
+    summary, and bot/result/market filters on the bet log."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    web = root.parent / "odds-intel-web" / "src"
+    page = web / "app" / "(app)" / "admin" / "real-bets" / "page.tsx"
+    log = web / "components" / "real-bets-log.tsx"
+    chart = web / "components" / "real-bets-chart.tsx"
+    engine_data = web / "lib" / "engine-data.ts"
+    if not page.exists() or not log.exists() or not engine_data.exists():
+        print("  [skip] odds-intel-web not present in CI")
+        return
+
+    # engine-data: RealBet now carries paper outcome via simulated_bet_id join
+    ed = engine_data.read_text()
+    assert "paper:simulated_bet_id" in ed, (
+        "getRealBets must nested-select the paired simulated_bets row via simulated_bet_id"
+    )
+    assert "paper: {" in ed and "} | null" in ed, "RealBet interface must declare paper field"
+
+    # chart component
+    assert chart.exists(), "real-bets-chart.tsx must exist"
+    chart_src = chart.read_text()
+    assert '"use client"' in chart_src, "chart must be a client component"
+    assert "RealBetsChartPoint" in chart_src, "chart must export RealBetsChartPoint type"
+    assert 'dataKey="real"' in chart_src and 'dataKey="paper"' in chart_src, (
+        "chart must plot both real and paper cumulative P&L lines"
+    )
+
+    # page wiring
+    page_src = page.read_text()
+    assert "buildCumulativeSeries" in page_src, "page must build cumulative series"
+    assert "buildDailyBreakdown" in page_src, "page must build daily breakdown"
+    assert "buildExposure" in page_src, "page must build open-exposure summary"
+    assert "buildPaperVsReal" in page_src, "page must build paper-vs-real summary"
+    assert "<RealBetsChart data={series} />" in page_src, "page must render the chart"
+    assert "Open exposure" in page_src, "page must show the open exposure panel"
+    assert "Max potential payout" in page_src, "exposure must show max potential payout"
+    assert "Paper vs real" in page_src, "page must show paper-vs-real block"
+    assert "Slippage cost" in page_src, "paper-vs-real must surface slippage cost in €"
+    assert "Last " in page_src and "days (UTC)" in page_src, "page must show last-N-days table"
+
+    # log filters
+    log_src = log.read_text()
+    assert "FilterSelect" in log_src, "log must include FilterSelect component"
+    for opt in ("Bot", "Result", "Market"):
+        assert f'label="{opt}"' in log_src, f"log must have a {opt} filter"
+    assert "anyFilter" in log_src and "clear" in log_src, "log must have a clear-filters affordance"
+
+
 if __name__ == "__main__":
     main()
