@@ -260,9 +260,21 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
         if odds and odds > 1.0:
             rows.append((market, selection, float(odds), hline))
 
-    is_1x2  = mtid in _MTID_1X2  or "match result" in name or "1x2" in name
-    is_ou   = mtid in _MTID_OU   or "total goals over" in name or "over / under" in name
-    is_btts = mtid in _MTID_BTTS or "both teams to score" in name or "btts" in name
+    # COOLBET-MARKET-NAMES (2026-05-23): Coolbet labels the same market type
+    # differently across leagues (e.g. "Total Goals" in Brasileirão vs
+    # "Total Goals Over/Under" elsewhere; "Match Winner (3-way)" vs "Match
+    # Result"). Keep mtid as the primary key and broaden the name-fallback
+    # so leagues with unfamiliar mtids still resolve. Discovered when Gremio
+    # vs Santos was found on Coolbet but every selection skipped as
+    # "no_market" — Coolbet returned `Match Winner (3-way)` + `Total Goals`.
+    is_1x2  = (mtid in _MTID_1X2
+               or "match result" in name or "1x2" in name
+               or "match winner" in name)
+    is_ou   = (mtid in _MTID_OU
+               or "total goals" in name
+               or "over / under" in name or "over/under" in name)
+    is_btts = (mtid in _MTID_BTTS
+               or "both teams to score" in name or "btts" in name)
     is_dc   = mtid in _MTID_DC   or "double chance" in name
     is_ah   = mtid in _MTID_AH   or "asian handicap" in name
 

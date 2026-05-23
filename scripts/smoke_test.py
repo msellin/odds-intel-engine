@@ -7548,6 +7548,28 @@ def _():
     assert "system_type" in src, "record-combo route must insert system_type"
 
 
+@test("COOLBET-MARKET-NAMES — parse_market recognizes Coolbet's per-league naming variants")
+def _():
+    """COOLBET-MARKET-NAMES (2026-05-23): the Brazilian Serie A endpoint
+    returns market names like 'Match Winner (3-way)' and 'Total Goals'
+    instead of the 'Match Result' / 'Total Goals Over/Under' variants
+    parse_market originally hard-coded. Result was Gremio vs Santos skipped
+    as no_market across all 3 picks despite the match being on Coolbet."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "automation" / "coolbet_explorer.py").read_text()
+    # name-based fallbacks must include the Brasileirão variants
+    assert "\"match winner\" in name" in src, (
+        "parse_market must accept 'Match Winner' as a 1x2 market name"
+    )
+    # OU must accept the bare 'total goals' substring (covers 'Total Goals',
+    # 'Total Goals Over/Under', etc.) — old check required 'total goals over'
+    # which excluded the bare form.
+    assert "\"total goals\" in name" in src, (
+        "parse_market must accept 'total goals' as an OU market name"
+    )
+
+
 @test("REAL-BETS-CLV-EDGE-SCHEMA — migration 125 + placer + settlement + frontend wire CLV / edge / slippage")
 def _():
     """REAL-BETS-CLV-EDGE (2026-05-23): real_bets needs clv + edge_pct_taken
