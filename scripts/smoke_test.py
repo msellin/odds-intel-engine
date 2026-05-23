@@ -7563,8 +7563,20 @@ def _():
 
     sc = (root / "workers" / "api_clients" / "supabase_client.py").read_text()
     assert "edge_pct_taken" in sc, "store_real_bet must write edge_pct_taken"
-    assert "model_probability FROM simulated_bets" in sc, (
-        "store_real_bet must read model_probability from simulated_bets to compute edge_pct_taken"
+    # EFFECTIVE-PROB-FIX: derive prob from bot's stored edge_percent +
+    # odds_at_pick rather than raw model_probability (which doesn't match
+    # what the bot's pipeline used).
+    assert "edge_percent, odds_at_pick FROM simulated_bets" in sc, (
+        "store_real_bet must derive effective_prob from sb.edge_percent + odds_at_pick"
+    )
+    assert "effective_prob" in sc, (
+        "store_real_bet must use effective_prob = (1 + edge_percent) / odds_at_pick"
+    )
+    # CLOSING-PRE-KO-FALLBACK: get_closing_odds fallback must require
+    # timestamp <= kickoff so in-play api-football-live ticks don't poison CLV.
+    settle = (root / "workers" / "jobs" / "settlement.py").read_text()
+    assert "os.timestamp <= m.date" in settle, (
+        "get_closing_odds fallback must filter to pre-kickoff snapshots only"
     )
 
     settle = (root / "workers" / "jobs" / "settlement.py").read_text()

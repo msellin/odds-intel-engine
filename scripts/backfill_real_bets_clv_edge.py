@@ -54,7 +54,8 @@ def main() -> int:
                    rb.captured_odds, rb.actual_odds, rb.simulated_bet_id,
                    rb.slippage_pct, rb.edge_pct_taken, rb.clv,
                    rb.result, rb.combo_legs,
-                   sb.model_probability, sb.odds_at_pick
+                   sb.edge_percent AS sb_edge_at_pick,
+                   sb.odds_at_pick
             FROM real_bets rb
             LEFT JOIN simulated_bets sb ON sb.id = rb.simulated_bet_id
             {where_sql}
@@ -80,21 +81,33 @@ def main() -> int:
             if cap is None or abs(float(cap) - sim_cap_f) > 1e-4:
                 updates.append(("captured_odds", sim_cap_f))
 
-        # edge_pct_taken
-        mp = r.get("model_probability")
-        if mp is not None and (r.get("edge_pct_taken") is None):
-            new_edge = round(float(mp) * actual - 1, 5)
-            updates.append(("edge_pct_taken", new_edge))
+        # edge_pct_taken — derive from the bot's stored edge_percent +
+        # odds_at_pick (effective probability) rather than the raw
+        # model_probability column which doesn't match what the bot's full
+        # pipeline used (Pinnacle veto / blending / shrinkage etc.).
+        sb_edge = r.get("sb_edge_at_pick")
+        op = r.get("odds_at_pick")
+        if sb_edge is not None and op is not None and float(op) > 0:
+            effective_prob = (1.0 + float(sb_edge)) / float(op)
+            new_edge = round(effective_prob * actual - 1, 5)
+            cur = r.get("edge_pct_taken")
+            if cur is None or abs(float(cur) - new_edge) > 1e-5:
+                updates.append(("edge_pct_taken", new_edge))
 
-        # clv — only for settled singles where we can pull a closing line
-        if r.get("clv") is None and r.get("combo_legs") is None and r.get("result") in ("won", "lost", "void"):
+        # clv — settled singles, idempotent recompute via fixed
+        # get_closing_odds (CLOSING-PRE-KO-FALLBACK). Existing values may
+        # have been contaminated by in-play snapshots before the fix, so
+        # update whenever the recomputed value differs.
+        if r.get("combo_legs") is None and r.get("result") in ("won", "lost", "void"):
             try:
                 closing = get_closing_odds(str(r["match_id"]), r["market"], r["selection"])
             except Exception:
                 closing = None
             if closing and float(closing) > 1.0:
                 new_clv = round(actual / float(closing) - 1, 5)
-                updates.append(("clv", new_clv))
+                cur_clv = r.get("clv")
+                if cur_clv is None or abs(float(cur_clv) - new_clv) > 1e-5:
+                    updates.append(("clv", new_clv))
 
         if not updates:
             continue

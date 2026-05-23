@@ -460,10 +460,19 @@ def get_closing_odds(match_id: str, market: str, selection: str) -> float | None
     if result:
         return float(result[0]["odds"])
 
-    # Fallback: use the latest snapshot (closest to closing)
+    # CLOSING-PRE-KO-FALLBACK (2026-05-23): when no is_closing snapshot
+    # exists, use the latest snapshot taken *before kickoff*. The previous
+    # fallback returned the absolute-latest snapshot which could be an
+    # in-play tick from the api-football-live feed (legitimate live price,
+    # e.g. 151.0 mid-match) — that produced garbage CLV (-98%) for any
+    # match where pre-KO snapshotting hadn't fired.
     result2 = execute_query(
-        "SELECT odds FROM odds_snapshots WHERE match_id = %s AND market = %s "
-        "AND selection = %s ORDER BY timestamp DESC LIMIT 1",
+        """SELECT os.odds
+           FROM odds_snapshots os
+           JOIN matches m ON m.id = os.match_id
+           WHERE os.match_id = %s AND os.market = %s AND os.selection = %s
+             AND os.timestamp <= m.date
+           ORDER BY os.timestamp DESC LIMIT 1""",
         [match_id, market, selection]
     )
     return float(result2[0]["odds"]) if result2 else None

@@ -4903,12 +4903,19 @@ def store_real_bet(
     ('straight' / 'fours_up' / 'no_singles'). match_id should be the first
     leg's match_id as a placeholder — settlement reads combo_legs directly.
 
-    REAL-BETS-CLV-EDGE (2026-05-23): also computes and writes
-    edge_pct_taken = model_probability × actual_odds − 1 (decimal fraction)
-    when simulated_bet_id is provided so we can read the bot's model
-    probability. NULL for manual/orphan rows. slippage_pct is a GENERATED
-    column (DB auto-computes from captured_odds + actual_odds) so we don't
-    write it directly here.
+    REAL-BETS-CLV-EDGE (2026-05-23, EFFECTIVE-PROB-FIX): writes
+    edge_pct_taken — the edge implied by the price we actually got — using
+    the bot's *effective* probability rather than the raw model output.
+    Neither `model_probability` nor `calibrated_prob` matches the
+    probability the bot's full pipeline used (which goes through Pinnacle
+    veto, blending, shrinkage, etc.). The simplest stable derivation is to
+    invert from the bot's own stored numbers:
+
+        effective_prob = (1 + edge_percent) / odds_at_pick
+        edge_pct_taken = effective_prob × actual_odds − 1
+
+    Equivalent to: edge_pct_taken = (1 + edge_at_pick) × actual_odds/odds_at_pick − 1.
+    NULL for manual/orphan rows. slippage_pct is a generated column.
     """
     if stake is None or stake <= 0:
         raise ValueError("stake must be positive")
@@ -4918,17 +4925,26 @@ def store_real_bet(
     import json as _json
     legs_json = _json.dumps(combo_legs) if combo_legs else None
 
-    # Edge implied by the price we actually got, using the bot's model
-    # probability. Only computable when we have a simulated_bet_id to look up.
+    # Edge implied by the price we actually got, derived from the bot's own
+    # edge_at_pick + odds_at_pick numbers so it matches what value-bets
+    # surfaces (rather than the raw model output which the bot doesn't use
+    # directly).
     edge_pct_taken = None
     if simulated_bet_id:
         sim_rows = execute_query(
-            "SELECT model_probability FROM simulated_bets WHERE id = %s",
+            "SELECT edge_percent, odds_at_pick FROM simulated_bets WHERE id = %s",
             [simulated_bet_id],
         )
-        if sim_rows and sim_rows[0].get("model_probability") is not None:
-            mp = float(sim_rows[0]["model_probability"])
-            edge_pct_taken = round(mp * float(actual_odds) - 1, 5)
+        if (sim_rows
+                and sim_rows[0].get("edge_percent") is not None
+                and sim_rows[0].get("odds_at_pick") is not None):
+            edge_at_pick = float(sim_rows[0]["edge_percent"])
+            odds_at_pick = float(sim_rows[0]["odds_at_pick"])
+            if odds_at_pick > 0:
+                effective_prob = (1.0 + edge_at_pick) / odds_at_pick
+                edge_pct_taken = round(
+                    effective_prob * float(actual_odds) - 1, 5
+                )
 
     rows = execute_write_returning(
         """INSERT INTO real_bets
