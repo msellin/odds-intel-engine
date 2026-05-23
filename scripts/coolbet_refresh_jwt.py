@@ -151,7 +151,7 @@ def main() -> int:
     options.add_argument("--headless=new")  # headless mode for unattended refresh
 
     try:
-        driver = uc.Chrome(options=options, use_subprocess=False)
+        driver = uc.Chrome(options=options, use_subprocess=False, version_main=148)
     except Exception as e:
         print(f"✗ Chrome launch failed: {e}", file=sys.stderr)
         return 3

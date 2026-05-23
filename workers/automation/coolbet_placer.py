@@ -1180,17 +1180,14 @@ def place_all_bets(
         elif execute and not odds_uuid:
             log.warning("No oddsId UUID for %s — cannot place at Coolbet, leaving for manual placement", label)
 
-        # DUPE-FIX-2: only record to real_bets when we actually placed a ticket
-        # at Coolbet. Previously we wrote a phantom row with notes="ticket=None"
-        # whenever the auto path bailed (no odds_uuid / odds dropped / placement
-        # error), which (a) polluted the dataset with bets that weren't placed
-        # and (b) blocked the same bet from being placed manually via
-        # /admin/place (because the NOT EXISTS guard in load_qualified_bets +
-        # the new dedup guard on /api/admin/real-bet both treat any same-day
-        # real_bets row as "already placed"). If we couldn't place, log it and
-        # leave the simulated_bet pending — the manual placer can pick it up.
-        if ticket_id is None:
-            log.info("Skip real_bets write for %s — no ticket placed (manual placement still possible)", label)
+        # DUPE-FIX-2 (scoped to --execute): if we tried to place at Coolbet and
+        # got no ticket (no odds_uuid / odds dropped / placement error), skip
+        # the real_bets write so we don't pollute the dataset with phantom
+        # rows + block the same bet from manual placement via /admin/place.
+        # --record mode never gets a ticket by design (it's the paper-trade
+        # tracking workflow), so we MUST write the row in that mode.
+        if execute and ticket_id is None:
+            log.info("Skip real_bets write for %s — execute mode but no Coolbet ticket (manual placement still possible)", label)
             results.append({**bet, "outcome": "not_placed",
                              "reason": "no_ticket",
                              "live_odds": live_odds, "stake": stake})
@@ -1201,7 +1198,7 @@ def place_all_bets(
             market=mkt,
             selection=sel,
             bookmaker="Coolbet",
-            captured_odds=float(bet.get("odds_at_pick") or ev_odds),
+            captured_odds=float(bet.get("model_odds") or ev_odds),
             actual_odds=live_odds,
             stake=stake,
             bot_id=str(bet["bot_id"]),

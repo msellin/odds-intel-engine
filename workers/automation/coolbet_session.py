@@ -149,6 +149,20 @@ class CoolbetSession:
         self._user_id = payload.get("sub") or ""
         self._login_session_id = payload.get("login_session_id") or ""
         self._jwt_exp = float(payload.get("exp", 0))
+        # renewal_date is "YYYYMMDDHHMMSSffffff" UTC — Coolbet rejects with 401
+        # "Token has expired" once past this, even though `exp` is later.
+        # Parse to epoch seconds so _ensure_auth can renew proactively.
+        self._jwt_renewal_ts = 0.0
+        rd = payload.get("renewal_date") or ""
+        if isinstance(rd, str) and len(rd) >= 14 and rd[:14].isdigit():
+            try:
+                self._jwt_renewal_ts = datetime(
+                    int(rd[0:4]), int(rd[4:6]), int(rd[6:8]),
+                    int(rd[8:10]), int(rd[10:12]), int(rd[12:14]),
+                    tzinfo=timezone.utc,
+                ).timestamp()
+            except Exception:
+                self._jwt_renewal_ts = 0.0
         ttl = self._jwt_exp - time.time()
         if ttl <= 0:
             raise RuntimeError(
@@ -325,6 +339,15 @@ class CoolbetSession:
     def _ensure_auth(self) -> None:
         if self._jwt is None or time.time() > self._jwt_exp - 120:
             self._login()
+        # Coolbet rejects JWTs once past their `renewal_date` (~5–6 min after
+        # issue) with 401 "Token has expired", even though `exp` is far out.
+        # Pre-emptively renew when within 30s of renewal_date.
+        rts = getattr(self, "_jwt_renewal_ts", 0.0) or 0.0
+        if rts and time.time() > rts - 30 and self._manual_jwt:
+            try:
+                self.renew_jwt_via_api()
+            except Exception as e:
+                log.warning("Pre-emptive JWT renewal failed: %s — proceeding with current token", e)
         self._http.headers.update({
             "cbauth": f"Bearer {self._jwt}",
             "login_session_id": self._login_session_id or "",

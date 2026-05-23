@@ -7548,6 +7548,54 @@ def _():
     assert "system_type" in src, "record-combo route must insert system_type"
 
 
+@test("REAL-BETS-CLV-EDGE-SCHEMA — migration 125 + placer + settlement + frontend wire CLV / edge / slippage")
+def _():
+    """REAL-BETS-CLV-EDGE (2026-05-23): real_bets needs clv + edge_pct_taken
+    columns. Placer must populate slippage_pct + edge_pct_taken at insert.
+    Settlement must populate clv at settle. Frontend must surface all three."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+
+    mig = (root / "supabase" / "migrations" / "125_real_bets_clv_edge.sql").read_text()
+    assert "edge_pct_taken" in mig, "migration 125 must add edge_pct_taken"
+    assert "clv" in mig, "migration 125 must add clv"
+    assert "real_bets" in mig, "migration 125 must target real_bets"
+
+    sc = (root / "workers" / "api_clients" / "supabase_client.py").read_text()
+    assert "edge_pct_taken" in sc, "store_real_bet must write edge_pct_taken"
+    assert "model_probability FROM simulated_bets" in sc, (
+        "store_real_bet must read model_probability from simulated_bets to compute edge_pct_taken"
+    )
+
+    settle = (root / "workers" / "jobs" / "settlement.py").read_text()
+    # The real_bets settle loop must now pull closing_odds + write clv.
+    assert "UPDATE real_bets SET result=%s, pnl=%s, resolved_at=NOW(),\n                                        clv=%s" in settle, (
+        "_settle_real_bets_for_matches must update real_bets.clv at settlement"
+    )
+
+    backfill = root / "scripts" / "backfill_real_bets_clv_edge.py"
+    assert backfill.exists(), "backfill script must exist"
+
+    web = root.parent / "odds-intel-web"
+    if not web.exists():
+        print("  [skip frontend checks] odds-intel-web not present in CI")
+        return
+    ed = (web / "src" / "lib" / "engine-data.ts").read_text()
+    assert "edgePctTaken" in ed and "clv:" in ed, (
+        "RealBet type must expose edgePctTaken + clv fields"
+    )
+    assert "edge_pct_taken" in ed and ", clv," in ed, (
+        "getRealBets() select must include edge_pct_taken and clv columns"
+    )
+    log = (web / "src" / "components" / "real-bets-log.tsx").read_text()
+    assert ">Edge<" in log and ">CLV<" in log, (
+        "real-bets-log.tsx must render Edge and CLV column headers"
+    )
+    assert "edgePctTaken" in log and "b.clv" in log, (
+        "real-bets-log.tsx must render Edge + CLV cell values"
+    )
+
+
 @test("DISCOVER-STRATEGIES — script exists and has required analysis functions")
 def _():
     import pathlib

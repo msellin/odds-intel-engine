@@ -729,16 +729,23 @@ def _settle_real_bets_for_matches(match_ids: list[str]):
     settled = 0
     for bet in (pending_singles or []):
         try:
+            # REAL-BETS-CLV-EDGE (2026-05-23): pull closing line so
+            # settle_bet_result() can compute CLV against actual_odds.
+            closing_odds = get_closing_odds(
+                str(bet["match_id"]), bet["market"], bet["selection"]
+            )
             outcome = settle_bet_result(
                 bet,
                 int(bet["score_home"]),
                 int(bet["score_away"]),
-                None,
+                closing_odds,
             )
             execute_write(
-                """UPDATE real_bets SET result=%s, pnl=%s, resolved_at=NOW()
+                """UPDATE real_bets SET result=%s, pnl=%s, resolved_at=NOW(),
+                                        clv=%s
                    WHERE id=%s""",
-                [outcome["result"], outcome["pnl"], bet["id"]],
+                [outcome["result"], outcome["pnl"], outcome.get("clv"),
+                 bet["id"]],
             )
             settled += 1
         except Exception as e:

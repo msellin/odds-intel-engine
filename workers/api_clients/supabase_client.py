@@ -4902,6 +4902,13 @@ def store_real_bet(
     For combo bets: pass combo_legs (list of leg dicts) and system_type
     ('straight' / 'fours_up' / 'no_singles'). match_id should be the first
     leg's match_id as a placeholder — settlement reads combo_legs directly.
+
+    REAL-BETS-CLV-EDGE (2026-05-23): also computes and writes
+    edge_pct_taken = model_probability × actual_odds − 1 (decimal fraction)
+    when simulated_bet_id is provided so we can read the bot's model
+    probability. NULL for manual/orphan rows. slippage_pct is a GENERATED
+    column (DB auto-computes from captured_odds + actual_odds) so we don't
+    write it directly here.
     """
     if stake is None or stake <= 0:
         raise ValueError("stake must be positive")
@@ -4911,15 +4918,29 @@ def store_real_bet(
     import json as _json
     legs_json = _json.dumps(combo_legs) if combo_legs else None
 
+    # Edge implied by the price we actually got, using the bot's model
+    # probability. Only computable when we have a simulated_bet_id to look up.
+    edge_pct_taken = None
+    if simulated_bet_id:
+        sim_rows = execute_query(
+            "SELECT model_probability FROM simulated_bets WHERE id = %s",
+            [simulated_bet_id],
+        )
+        if sim_rows and sim_rows[0].get("model_probability") is not None:
+            mp = float(sim_rows[0]["model_probability"])
+            edge_pct_taken = round(mp * float(actual_odds) - 1, 5)
+
     rows = execute_write_returning(
         """INSERT INTO real_bets
            (match_id, market, selection, bookmaker, captured_odds, actual_odds,
-            stake, bot_id, simulated_bet_id, notes, combo_legs, system_type)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            edge_pct_taken, stake, bot_id, simulated_bet_id,
+            notes, combo_legs, system_type)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
            RETURNING id""",
         [
             match_id, market, selection.lower(), bookmaker,
-            captured_odds, actual_odds, stake, bot_id, simulated_bet_id, notes,
+            captured_odds, actual_odds, edge_pct_taken,
+            stake, bot_id, simulated_bet_id, notes,
             legs_json, system_type,
         ],
     )
