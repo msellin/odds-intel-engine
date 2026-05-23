@@ -305,6 +305,7 @@ def load_qualified_bets() -> list[dict]:
           JOIN teams         ht  ON ht.id  = m.home_team_id
           JOIN teams         at2 ON at2.id = m.away_team_id
           WHERE sb.result          = 'pending'
+            AND sb.combo_legs IS NULL                    -- COMBO-SINGLES-SEPARATION (2026-05-23): combos handled by load_qualified_combo_bets()
             AND DATE(m.date)       = CURRENT_DATE
             AND m.date             > NOW()
             AND sb.edge_percent    >= %s
