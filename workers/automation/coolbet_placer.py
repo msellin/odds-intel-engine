@@ -330,6 +330,57 @@ def load_qualified_bets() -> list[dict]:
     return results
 
 
+def load_qualified_combo_bets() -> list[dict]:
+    """COMBO-PLACER (2026-05-23): qualifying combo simulated_bets.
+
+    Returns combo bets whose:
+      - simulated_bet.result = 'pending'
+      - combo_legs IS NOT NULL
+      - edge_percent >= _MIN_EDGE
+      - ALL leg matches have a future kickoff (no leg has started yet)
+      - No existing real_bet uses this simulated_bet_id today
+
+    Each row carries combo_legs (already JSONB), system_type, combo_size,
+    bot info, stake, and edge_percent so the placer loop can resolve each
+    leg's Coolbet outcome and write a single multi-leg real_bet.
+    """
+    rows = execute_query(
+        """
+        SELECT sb.id          AS simulated_bet_id,
+               sb.match_id    AS placeholder_match_id,
+               sb.combo_legs,
+               sb.combo_size,
+               sb.system_type,
+               sb.odds_at_pick AS combined_model_odds,
+               sb.edge_percent,
+               sb.stake        AS model_stake,
+               sb.bot_id,
+               b.name          AS bot_name
+        FROM simulated_bets sb
+        JOIN bots b ON b.id = sb.bot_id
+        WHERE sb.result = 'pending'
+          AND sb.combo_legs IS NOT NULL
+          AND sb.edge_percent >= %s
+          AND NOT EXISTS (
+              SELECT 1 FROM real_bets rb
+              WHERE rb.simulated_bet_id = sb.id
+                AND DATE(rb.placed_at) = CURRENT_DATE
+          )
+          AND NOT EXISTS (
+              -- any leg already kicked off → drop the combo, can't place it
+              SELECT 1
+              FROM jsonb_array_elements(sb.combo_legs) AS leg
+              JOIN matches m ON m.id = (leg->>'match_id')::uuid
+              WHERE m.date <= NOW()
+                 OR DATE(m.date) <> CURRENT_DATE
+          )
+        ORDER BY sb.edge_percent DESC
+        """,
+        (_MIN_EDGE,),
+    )
+    return [dict(r) for r in rows]
+
+
 # ── Coolbet event fetcher ─────────────────────────────────────────────────────
 
 def fetch_coolbet_events(session: CoolbetSession) -> list[dict]:
@@ -1212,5 +1263,170 @@ def place_all_bets(
         results.append({**bet, "outcome": "placed",
                          "ticket_id": ticket_id, "real_bet_id": real_bet_id,
                          "live_odds": live_odds, "stake": stake})
+
+    # ── Combo bets (COMBO-PLACER, 2026-05-23) ─────────────────────────────────
+    # Singles loop done — now process qualifying combo simulated_bets the
+    # same way: resolve every leg's Coolbet outcome, then either write a
+    # paper bet (--record) or warn that the Coolbet combo POST schema is
+    # still pending (--execute, follow-up task).
+    combo_results = _place_combo_bets(
+        session, guard, fetch_match_markets, fetch_odds_for_markets,
+        resolve_placement_target, record=record, execute=execute,
+    )
+    results.extend(combo_results)
+
+    return results
+
+
+def _place_combo_bets(
+    session: "CoolbetSession",
+    guard: PlacementGuard,
+    fetch_match_markets,
+    fetch_odds_for_markets,
+    resolve_placement_target,
+    *,
+    record: bool,
+    execute: bool,
+) -> list[dict]:
+    """COMBO-PLACER (2026-05-23): resolve qualifying combo simulated_bets
+    against Coolbet and write a single multi-leg real_bet per combo.
+
+    Per-leg Coolbet resolution reuses the same path as singles
+    (search → fetch_match_markets → resolve_placement_target). A combo
+    requires ALL legs to resolve cleanly; if any leg can't be priced on
+    Coolbet, the whole combo is skipped.
+
+    --execute is not yet wired: the Coolbet combo POST payload shape is
+    captured-browser-bet territory and we have a single's shape only. For
+    now --execute on a combo falls back to record-only and emits a warning.
+    Tracked as COMBO-EXECUTE-COOLBET-API follow-up.
+    """
+    combos = load_qualified_combo_bets()
+    if not combos:
+        log.info("No qualifying combo bets to evaluate")
+        return []
+    log.info("Found %d qualifying combo simulated_bet(s) to evaluate", len(combos))
+
+    results: list[dict] = []
+    for combo in combos:
+        legs = combo["combo_legs"]
+        if isinstance(legs, str):
+            import json as _json
+            legs = _json.loads(legs)
+        if not legs:
+            continue
+
+        sim_id      = str(combo["simulated_bet_id"])
+        bot_id      = str(combo["bot_id"])
+        bot_name    = combo.get("bot_name") or ""
+        system_type = combo.get("system_type") or "straight"
+        combined_model_odds = float(combo.get("combined_model_odds") or 0)
+        edge_pct    = float(combo["edge_percent"]) * 100
+        stake       = guard.stake_for({"model_stake": combo.get("model_stake")})
+        label_head  = f"COMBO[{system_type}] {bot_name} edge {edge_pct:+.2f}% ({len(legs)} legs)"
+
+        # Resolve every leg against Coolbet
+        resolved_legs: list[dict] = []
+        skip_reason = None
+        for i, leg in enumerate(legs, 1):
+            leg_match_id = str(leg["match_id"])
+            leg_market   = leg["market"]
+            leg_sel      = leg["selection"]
+            # Look up team names + kickoff
+            team_rows = execute_query(
+                """SELECT ht.name AS home, at2.name AS away, m.date AS kick
+                   FROM matches m
+                   JOIN teams ht  ON ht.id  = m.home_team_id
+                   JOIN teams at2 ON at2.id = m.away_team_id
+                   WHERE m.id = %s""",
+                (leg_match_id,),
+            )
+            if not team_rows:
+                skip_reason = f"leg {i}: match {leg_match_id} not in DB"
+                break
+            home, away = team_rows[0]["home"], team_rows[0]["away"]
+
+            ev = search_coolbet_event(session, home, away)
+            if ev is None:
+                skip_reason = f"leg {i}: no Coolbet event for {home} vs {away}"
+                break
+            cb_match_id = int(ev["id"])
+            markets  = fetch_match_markets(session, cb_match_id)
+            odds_map = fetch_odds_for_markets(session, markets)
+            target = resolve_placement_target(markets, odds_map, leg_market, leg_sel)
+            if target is None:
+                skip_reason = f"leg {i}: market {leg_market}/{leg_sel} not on Coolbet for {home} vs {away}"
+                break
+            bo_id, oc_id, odds_uuid, ev_odds = target
+            resolved_legs.append({
+                "match_id": leg_match_id,
+                "market":   leg_market,
+                "selection": leg_sel,
+                "odds":     float(leg.get("odds") or 0),
+                "prob":     float(leg.get("prob") or 0),
+                "bot_source": leg.get("bot_source") or "",
+                "coolbet_match_id": cb_match_id,
+                "coolbet_market_id": bo_id,
+                "coolbet_outcome_id": oc_id,
+                "coolbet_odds_id": odds_uuid,
+                "coolbet_odds":   ev_odds,
+            })
+
+        if skip_reason:
+            log.info("%s — skipping: %s", label_head, skip_reason)
+            results.append({**combo, "outcome": "no_market",
+                             "reason": skip_reason})
+            continue
+
+        # Combined live odds (straight accumulator product).
+        live_combined = 1.0
+        for rl in resolved_legs:
+            live_combined *= float(rl["coolbet_odds"] or 1.0)
+
+        allowed, reason = guard.can_place(combo, stake)
+        if not allowed:
+            log.info("Skip %s — %s", label_head, reason)
+            results.append({**combo, "outcome": "guard_skip", "reason": reason})
+            continue
+
+        if not record:
+            log.info("[DRY-RUN] %s  combined live=%.3f stake=€%.2f",
+                     label_head, live_combined, stake)
+            results.append({**combo, "outcome": "dry_run",
+                             "live_combined_odds": live_combined, "stake": stake})
+            continue
+
+        ticket_id = None
+        if execute:
+            # COMBO-EXECUTE-COOLBET-API (follow-up): the bet API's POST
+            # payload shape for combo tickets isn't captured yet. Recording
+            # only — manual placement still possible at coolbet.com.
+            log.warning(
+                "%s — --execute requested but Coolbet combo POST schema "
+                "not implemented; recording only (manual placement still "
+                "possible at coolbet.com).",
+                label_head,
+            )
+
+        real_bet_id = store_real_bet(
+            match_id=str(combo["placeholder_match_id"]),
+            market="combo",
+            selection=system_type,
+            bookmaker="Coolbet",
+            captured_odds=combined_model_odds if combined_model_odds > 0 else None,
+            actual_odds=live_combined,
+            stake=stake,
+            bot_id=bot_id,
+            simulated_bet_id=sim_id,
+            notes=f"auto-combo ticket={ticket_id} edge={edge_pct:+.2f}% legs={len(resolved_legs)}",
+            combo_legs=resolved_legs,
+            system_type=system_type,
+        )
+        guard.record_placement(stake)
+        log.info("✓ Recorded %s  combined live=%.3f  stake=€%.2f  real_bet=%s",
+                 label_head, live_combined, stake, real_bet_id)
+        results.append({**combo, "outcome": "placed",
+                         "ticket_id": ticket_id, "real_bet_id": real_bet_id,
+                         "live_combined_odds": live_combined, "stake": stake})
 
     return results

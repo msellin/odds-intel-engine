@@ -7548,6 +7548,35 @@ def _():
     assert "system_type" in src, "record-combo route must insert system_type"
 
 
+@test("COMBO-PLACER — placer iterates qualifying combo simulated_bets and writes multi-leg real_bets")
+def _():
+    """COMBO-PLACER (2026-05-23): the auto-placer needs to handle combo
+    simulated_bets (combo_legs JSONB) the same way as singles — resolve every
+    leg's Coolbet outcome and write a multi-leg real_bet via store_real_bet().
+    --execute is deferred until the Coolbet combo POST schema is captured."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "automation" / "coolbet_placer.py").read_text()
+    assert "def load_qualified_combo_bets" in src, (
+        "load_qualified_combo_bets() must exist"
+    )
+    assert "sb.combo_legs IS NOT NULL" in src, (
+        "combo query must filter combo_legs IS NOT NULL"
+    )
+    assert "jsonb_array_elements(sb.combo_legs)" in src, (
+        "combo query must verify every leg's match hasn't kicked off"
+    )
+    assert "def _place_combo_bets" in src, (
+        "_place_combo_bets() must exist"
+    )
+    assert "combo_legs=resolved_legs" in src, (
+        "combo path must pass resolved_legs into store_real_bet"
+    )
+    assert "COMBO-EXECUTE-COOLBET-API" in src, (
+        "combo --execute must be flagged as follow-up (no Coolbet schema yet)"
+    )
+
+
 @test("COOLBET-MARKET-NAMES — parse_market recognizes Coolbet's per-league naming variants")
 def _():
     """COOLBET-MARKET-NAMES (2026-05-23): the Brazilian Serie A endpoint
