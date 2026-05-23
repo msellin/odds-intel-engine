@@ -590,6 +590,22 @@ def _place_one(bot_name: str, cfg: dict, legs: list[CandidateLeg]) -> dict:
         console.print(f"[yellow]Acca: {bot_name} not registered. Skipping.[/yellow]")
         return {"placed": False, "reason": "bot_not_registered", "bot": bot_name}
 
+    # COMBO-DEDUP (2026-05-23): one combo per bot per UTC day. Without this,
+    # running run_acca_pass twice today would duplicate every existing combo
+    # — exactly the failure mode we have to clean up below. Cheap idempotency
+    # check; bot table has bot_name → bot_id mapping cached.
+    existing = execute_query(
+        """SELECT id FROM simulated_bets
+           WHERE bot_id = %s
+             AND market = 'combo'
+             AND DATE(pick_time AT TIME ZONE 'UTC') = (NOW() AT TIME ZONE 'UTC')::date
+           LIMIT 1""",
+        [bot_id],
+    ) or []
+    if existing:
+        return {"placed": False, "reason": "already_placed_today", "bot": bot_name,
+                "existing_id": str(existing[0]["id"])}
+
     n_legs = len(legs)
     combined_odds = math.prod(l.odds for l in legs)
     combined_prob = math.prod(l.prob for l in legs)
