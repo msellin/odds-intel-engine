@@ -82,26 +82,39 @@ def main():
     print(f"\n{'=' * 60}")
     print(f"Mode: {mode_label}")
 
+    # COMBO-PRINT-SAFE (2026-05-23): combo result dicts don't carry
+    # home_team / away_team / market / selection — they have combo_legs +
+    # system_type + bot_name. Helper formats either shape without KeyError.
+    def _label(r: dict) -> str:
+        legs = r.get("combo_legs")
+        if legs:
+            n_legs = len(legs) if isinstance(legs, list) else "?"
+            sys = r.get("system_type") or "straight"
+            bot = r.get("bot_name") or "?"
+            return f"COMBO[{sys}] {bot} ({n_legs} legs)"
+        home = r.get("home_team", "?")
+        away = r.get("away_team", "?")
+        return f"{home} vs {away} | {r.get('market', '?')} {r.get('selection', '?')}"
+
     if args.execute:
         print(f"Results: {len(placed)} placed, {len(skipped)} skipped")
         for r in placed:
             ticket = r.get("ticket_id") or "record-only"
-            print(f"  ✓  {r['home_team']} vs {r['away_team']} | {r['market']} {r['selection']} "
-                  f"@ {r.get('live_odds', 0):.3f}  ticket={ticket}  real_bet={r.get('real_bet_id', '?')}")
+            odds = r.get("live_odds") or r.get("live_combined_odds") or 0
+            print(f"  ✓  {_label(r)} @ {odds:.3f}  ticket={ticket}  real_bet={r.get('real_bet_id', '?')}")
     elif args.record:
         print(f"Recorded: {len(placed)} bets written to real_bets, {len(skipped)} skipped")
         for r in placed:
-            print(f"  ✓  {r['home_team']} vs {r['away_team']} | {r['market']} {r['selection']} "
-                  f"@ {r.get('live_odds', 0):.3f}  real_bet={r.get('real_bet_id', '?')}")
+            odds = r.get("live_odds") or r.get("live_combined_odds") or 0
+            print(f"  ✓  {_label(r)} @ {odds:.3f}  real_bet={r.get('real_bet_id', '?')}")
     else:
         print(f"Dry-run: {len(dry_run)} bets would be placed")
         for r in dry_run:
-            print(f"  →  {r['home_team']} vs {r['away_team']} | {r['market']} {r['selection']} "
-                  f"@ model={r.get('model_odds', 0):.3f}  coolbet={r.get('ev_odds') or '?'}")
+            odds = r.get("live_combined_odds") or r.get("model_odds") or 0
+            print(f"  →  {_label(r)} @ model={odds:.3f}  coolbet={r.get('ev_odds') or '?'}")
 
     for r in skipped:
-        print(f"  ✗  {r['home_team']} vs {r['away_team']} | {r['market']} {r['selection']} "
-              f"— {r['outcome']}")
+        print(f"  ✗  {_label(r)} — {r['outcome']}")
 
     print("=" * 60)
 

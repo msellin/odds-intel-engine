@@ -7548,6 +7548,42 @@ def _():
     assert "system_type" in src, "record-combo route must insert system_type"
 
 
+@test("COMBO-LEG-MARKETS — _normalise_our_target handles ou15/ou25/ou35/ou45 leg-market names")
+def _():
+    """COMBO-LEG-MARKETS (2026-05-23): combo bots write per-leg market as
+    'ou25' (etc.) with selection 'over' / 'under' — no embedded line. Singles
+    use 'o/u' + 'Over 2.5'. _normalise_our_target needs to recognise both."""
+    import pathlib, sys
+    root = pathlib.Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root))
+    from workers.automation.coolbet_explorer import _normalise_our_target
+    # ou25 / under → over_under_25 / under
+    assert _normalise_our_target("ou25", "under") == ("over_under_25", "under", None), (
+        "ou25/under must normalise to (over_under_25, under, None)"
+    )
+    assert _normalise_our_target("ou35", "over") == ("over_under_35", "over", None)
+    assert _normalise_our_target("ou15", "Over") == ("over_under_15", "over", None)
+    # Singles path still works
+    assert _normalise_our_target("o/u", "Over 2.5") == ("over_under_25", "over", None)
+
+
+@test("COMBO-PRINT-SAFE — place_coolbet_bets.py result printer handles combo result dicts")
+def _():
+    """COMBO-PRINT-SAFE (2026-05-23): combo result dicts don't carry
+    home_team / market / selection — they have combo_legs / system_type.
+    The summary printer must format both shapes without KeyError."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "scripts" / "place_coolbet_bets.py").read_text()
+    assert "def _label" in src, (
+        "place_coolbet_bets.py must define a _label helper that handles "
+        "combo dicts (no home_team key)"
+    )
+    assert "combo_legs" in src and "live_combined_odds" in src, (
+        "_label must branch on combo_legs presence and use live_combined_odds"
+    )
+
+
 @test("COMBO-PLACER — placer iterates qualifying combo simulated_bets and writes multi-leg real_bets")
 def _():
     """COMBO-PLACER (2026-05-23): the auto-placer needs to handle combo

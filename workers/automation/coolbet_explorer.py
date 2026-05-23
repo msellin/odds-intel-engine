@@ -409,6 +409,24 @@ def _normalise_our_target(
             return ("1x2", s.title(), None)
         return (None, None, None)
 
+    # COMBO-LEG-MARKETS (2026-05-23): combo bots write per-leg markets as
+    # "ou15"/"ou25"/"ou35"/"ou45"/"ou05" with selection "over"/"under"
+    # (no embedded line — line is encoded in the market suffix). Singles
+    # use "o/u" + "Over 2.5"; map both shapes here.
+    if m in ("ou05", "ou15", "ou25", "ou35", "ou45"):
+        side = s.lower().strip()
+        if side not in ("over", "under"):
+            return (None, None, None)
+        suffix = m[2:]
+        try:
+            line = float(suffix[0]) + (0.5 if suffix[1] == "5" else 0.0)
+        except (IndexError, ValueError):
+            return (None, None, None)
+        market = _ou_market_for_line(line)
+        if market is None:
+            return (None, None, None)
+        return (market, side, None)
+
     if m in ("o/u", "ou"):
         # selection like "Over 1.5" / "Under 2.5"
         parts = s.split()
