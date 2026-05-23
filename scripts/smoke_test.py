@@ -7785,6 +7785,93 @@ def test_value_bets_consensus_clv():
     assert "30d" in live_src, "ROI hook must label the window (e.g. '30d')"
 
 
+@test("COMBO-FIX-1 — proven variants merge ou15 into scan when require_ou15 set")
+def test_combo_proven_ou15_fix():
+    """bot_acca_proven + bot_combo_proven_system had market_whitelist excluding
+    ou15 but require_ou15=True → mutually exclusive, never fired. _scan_todays_
+    candidates now accepts always_include_markets so the proven variants can
+    merge ou15 into their candidate pool just for the gate."""
+    import inspect
+    from workers.jobs import acca_bot
+    src = inspect.getsource(acca_bot._scan_todays_candidates)
+    assert "always_include_markets" in src, (
+        "_scan_todays_candidates must accept always_include_markets kwarg"
+    )
+    assert "base_eligible | (always_include_markets or frozenset())" in src, (
+        "scan must union always_include_markets into eligible set"
+    )
+    run_src = inspect.getsource(acca_bot.run_acca_pass)
+    assert 'cfg.get("require_ou15")' in run_src and 'frozenset({"ou15"})' in run_src, (
+        "run_acca_pass must pass always_include={'ou15'} when require_ou15=True"
+    )
+
+
+@test("COMBO-NEW — bot_acca_coolbet config + Coolbet match filter")
+def test_combo_acca_coolbet():
+    """New variant whose candidate pool is limited to matches in Coolbet
+    leagues (per coolbet_leagues_cache.json). Gates relaxed (no require_ou15,
+    min_per_leg_odds=1.25) because Coolbet's top-league pool prices OU15 below
+    1.40; documented as paper-only until ≥30 settled combos."""
+    from workers.jobs.acca_bot import ACCA_VARIANTS, _coolbet_match_ids
+    assert "bot_acca_coolbet" in ACCA_VARIANTS, "bot_acca_coolbet must be in ACCA_VARIANTS"
+    cfg = ACCA_VARIANTS["bot_acca_coolbet"]
+    assert cfg.get("coolbet_only") is True, "config must have coolbet_only=True"
+    assert cfg["min_per_leg_odds"] == 1.25, (
+        "min_per_leg_odds must be relaxed to 1.25 (Coolbet OU15 prices below 1.40)"
+    )
+    assert cfg["require_ou15"] is False, (
+        "require_ou15 must be False on Coolbet variant (OU15 unavailable in pool)"
+    )
+    import pathlib
+    mig = pathlib.Path(__file__).resolve().parents[1] / "supabase" / "migrations" / "124_bot_acca_coolbet.sql"
+    assert mig.exists(), "migration 124 must register bot_acca_coolbet"
+    assert "bot_acca_coolbet" in mig.read_text(), "migration 124 must insert the bot row"
+    assert callable(_coolbet_match_ids), "_coolbet_match_ids helper must be exported"
+
+
+@test("DUPE-FIX-1 — /api/admin/real-bet has NOT EXISTS dedup guard")
+def test_real_bet_api_dedup():
+    """Web API must return 409 when same (match, market, selection) already
+    has a real_bet today. Prevents manual click from racing the auto placer."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    route = root.parent / "odds-intel-web" / "src" / "app" / "api" / "admin" / "real-bet" / "route.ts"
+    if not route.exists():
+        print("  [skip] odds-intel-web not present in CI")
+        return
+    src = route.read_text()
+    assert "already_placed" in src, "dedup guard must return 'already_placed' error"
+    assert "existingId" in src, "dedup response must surface existingId for UI to link to"
+    assert "status: 409" in src, "must return 409 Conflict"
+
+
+@test("DUPE-FIX-2 — coolbet_placer skips store_real_bet when ticket_id is None")
+def test_placer_no_phantom_record():
+    """coolbet_placer used to write a phantom real_bets row even when no
+    Coolbet ticket was placed (no odds_uuid / odds drift / placement error).
+    That blocked manual placement of the same selection and polluted the
+    dataset. Now: skip the write and let the manual placer pick it up."""
+    import inspect
+    from workers.automation import coolbet_placer
+    src = inspect.getsource(coolbet_placer.place_all_bets)
+    assert "Skip real_bets write for" in src, (
+        "placer must explicitly skip store_real_bet when ticket_id is None"
+    )
+    assert '"reason": "no_ticket"' in src, (
+        "skipped placement must surface reason='no_ticket' in results dict"
+    )
+
+
+@test("DUPE-CLEAN — migration 123 voids the Joondalup phantom real_bet")
+def test_phantom_void_migration():
+    import pathlib
+    mig = pathlib.Path(__file__).resolve().parents[1] / "supabase" / "migrations" / "123_void_phantom_real_bet.sql"
+    src = mig.read_text()
+    assert "c3acf4e7" in src, "migration 123 must target the specific phantom row id"
+    assert "ticket=None" in src, "safety guard must restrict to ticket=None notes"
+    assert "result      = 'void'" in src or "result = 'void'" in src, "must set result='void'"
+
+
 @test("BOTS-UNRETIRE-WEEKEND — migration 122 un-retires bot_aggressive + inplay merges")
 def test_unretire_weekend_migration():
     """Migration 122 (was 120, renumbered to clear a slot collision): override

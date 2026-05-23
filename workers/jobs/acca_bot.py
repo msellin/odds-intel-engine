@@ -181,6 +181,33 @@ ACCA_VARIANTS = {
         "max_stake_pct":       0.005,
         "min_stake":           1.0,
     },
+    # COMBO-NEW (2026-05-23): straight 5-fold restricted to matches in leagues
+    # that exist on Coolbet — so the user can actually place the combo.
+    # Tradeoff vs bot_acca_value:
+    #   - Coolbet's coverage is ~130 leagues (top tiers only), giving 50-80
+    #     pre-KO matches/day vs ~1100 across our full API-Football feed.
+    #   - In that smaller pool, OU15/over is priced below 1.40 (top-league
+    #     tightness), so require_ou15=True + min_per_leg_odds=1.40 produces
+    #     0 fires. We drop require_ou15 here and lower min_per_leg_odds to
+    #     1.25 to let it fire. That's a deviation from the backtest-validated
+    #     "OU15 drives ROI" finding — Coolbet variant should be treated as
+    #     paper-only until ≥30 settled combos accumulate, then re-evaluate.
+    "bot_acca_coolbet": {
+        "structure":           "straight",
+        "market_whitelist":    None,
+        "coolbet_only":        True,
+        "require_ou15":        False,
+        "min_legs":            5,
+        "max_legs":            5,
+        "min_per_leg_edge":    0.08,
+        "max_per_leg_odds":    2.50,
+        "min_per_leg_odds":    1.25,
+        "min_combined_edge":   0.10,
+        "max_combined_odds":   100.0,
+        "kelly_fraction":      0.05,
+        "max_stake_pct":       0.005,
+        "min_stake":           1.0,
+    },
 }
 
 
@@ -200,6 +227,136 @@ def _subcombo_count(n_legs: int, structure: str) -> int:
     raise ValueError(f"Unknown structure: {structure}")
 
 
+# ── Coolbet league filter ─────────────────────────────────────────────────────
+# COMBO-NEW (2026-05-23): bot_acca_coolbet restricts candidates to matches whose
+# league is offered on Coolbet, so the resulting combo is actually placeable by
+# the user. Coolbet's league cache stores names + slugs in Estonian (e.g.
+# "jalgpall/inglismaa/meistriliiga" for the Premier League) — we map both the
+# English-ish translated names and the slug's country segment to filter our
+# matches table.
+
+# Estonian country slug → English country name (covers the ~60 football leagues
+# in coolbet_leagues_cache.json; safe to extend over time).
+_COOLBET_COUNTRY_SLUG_TO_EN = {
+    "inglismaa": "England",
+    "hispaania": "Spain",
+    "itaalia": "Italy",
+    "saksamaa": "Germany",
+    "prantsusmaa": "France",
+    "holland": "Netherlands",
+    "portugal": "Portugal",
+    "belgia": "Belgium",
+    "tuerkei": "Turkey", "tuerki": "Turkey", "turki": "Turkey",
+    "shotimaa": "Scotland",
+    "iirimaa": "Ireland",
+    "norra": "Norway",
+    "rootsi": "Sweden",
+    "soome": "Finland",
+    "taani": "Denmark",
+    "island": "Iceland",
+    "poola": "Poland",
+    "ungari": "Hungary",
+    "tsehhi": "Czech-Republic",
+    "slovakkia": "Slovakia",
+    "rumeenia": "Romania",
+    "bulgaaria": "Bulgaria",
+    "horvaatia": "Croatia",
+    "serbia": "Serbia",
+    "kreeka": "Greece",
+    "shveits": "Switzerland",
+    "austria": "Austria",
+    "ukraina": "Ukraine",
+    "venemaa": "Russia",
+    "eesti": "Estonia",
+    "laeti": "Latvia", "lati": "Latvia",
+    "leedu": "Lithuania",
+    "usa": "USA",
+    "mehhiko": "Mexico",
+    "brasiilia": "Brazil",
+    "argentina": "Argentina",
+    "tshiili": "Chile",
+    "uruguay": "Uruguay",
+    "kolumbia": "Colombia",
+    "peruu": "Peru",
+    "jaapan": "Japan",
+    "lounakorea": "South-Korea",
+    "hiina": "China",
+    "austraalia": "Australia",
+    "euroopa": "World",  # UEFA competitions show as "World" in API-Football leagues
+    "maailm": "World",
+}
+
+
+def _coolbet_match_ids() -> set[str]:
+    """Set of match_id strings for today's pre-KO matches whose league is on
+    Coolbet (per coolbet_leagues_cache.json, football sportCategoryId=62).
+
+    Match heuristic: a DB league is considered Coolbet-covered if a Coolbet
+    league exists where (a) the country segment of the Coolbet slug maps to the
+    DB league's country (via _COOLBET_COUNTRY_SLUG_TO_EN), AND (b) the Coolbet
+    league name appears (case-insensitive) as a substring of the DB league name
+    or vice versa. Loose match on purpose — Estonian vs English label drift
+    means we'd miss most leagues with exact equality.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    cache_path = (_Path(__file__).resolve().parents[1] / "automation"
+                  / "coolbet_leagues_cache.json")
+    try:
+        coolbet = _json.loads(cache_path.read_text())
+    except Exception as e:
+        console.print(f"[yellow]bot_acca_coolbet: cache read failed ({e}) — empty filter[/yellow]")
+        return set()
+
+    # Build {country_en: [normalized_league_name, ...]} from Coolbet football entries.
+    cb_by_country: dict[str, list[str]] = {}
+    for row in coolbet:
+        if int(row.get("sportCategoryId") or 0) != 62:
+            continue
+        slug = (row.get("fullSlug") or "").lower()
+        parts = slug.split("/")
+        if len(parts) < 3:
+            continue
+        country_slug = parts[1]
+        country_en = _COOLBET_COUNTRY_SLUG_TO_EN.get(country_slug)
+        if not country_en:
+            continue
+        name = (row.get("name") or "").lower().strip()
+        if not name:
+            continue
+        cb_by_country.setdefault(country_en, []).append(name)
+
+    if not cb_by_country:
+        return set()
+
+    today_utc = datetime.now(timezone.utc).date().isoformat()
+    rows = execute_query(
+        """SELECT m.id::text AS match_id, l.name AS league_name, l.country
+           FROM matches m
+           JOIN leagues l ON l.id = m.league_id
+           WHERE DATE(m.date AT TIME ZONE 'UTC') = %s
+             AND m.status NOT IN ('finished', 'cancelled', 'postponed')
+        """,
+        [today_utc],
+    ) or []
+
+    matched: set[str] = set()
+    for r in rows:
+        country = (r["country"] or "").strip()
+        names = cb_by_country.get(country)
+        if not names:
+            continue
+        db_name = (r["league_name"] or "").lower().strip()
+        if not db_name:
+            continue
+        for cb_name in names:
+            if cb_name in db_name or db_name in cb_name:
+                matched.add(r["match_id"])
+                break
+    return matched
+
+
 @dataclass
 class CandidateLeg:
     bet_id: str
@@ -214,6 +371,9 @@ class CandidateLeg:
 
 def _scan_todays_candidates(
     market_whitelist: frozenset | None = None,
+    *,
+    always_include_markets: frozenset | None = None,
+    match_id_filter: set | None = None,
 ) -> list[CandidateLeg]:
     """Scan today's pre-KO matches directly from predictions + odds_snapshots.
 
@@ -233,7 +393,14 @@ def _scan_todays_candidates(
     None = all ACCA_ELIGIBLE_MARKETS.
     """
     today_utc = datetime.now(timezone.utc).date().isoformat()
-    eligible = market_whitelist if market_whitelist is not None else ACCA_ELIGIBLE_MARKETS
+    # COMBO-FIX-1 (2026-05-23): `eligible` filters which markets we return as
+    # candidates. `always_include_markets` is a separate union that gets merged
+    # in regardless of whitelist — used by callers like the "proven" variants
+    # which require an ou15 leg (via require_ou15=True) but otherwise only want
+    # to consider proven markets {ou25, ou35, btts}. Without this, the proven
+    # variants could never satisfy require_ou15 and silently fired 0 combos.
+    base_eligible = market_whitelist if market_whitelist is not None else ACCA_ELIGIBLE_MARKETS
+    eligible = base_eligible | (always_include_markets or frozenset())
 
     # Step 1: load today's pre-KO match IDs
     match_rows = execute_query(
@@ -247,6 +414,10 @@ def _scan_todays_candidates(
     if not match_rows:
         return []
     match_ids = [r["match_id"] for r in match_rows]
+    if match_id_filter is not None:
+        match_ids = [mid for mid in match_ids if mid in match_id_filter]
+        if not match_ids:
+            return []
 
     # Step 2: load latest ensemble predictions for each match × market
     placeholders = ",".join(["%s"] * len(match_ids))
@@ -532,14 +703,30 @@ def run_acca_pass(dry_run: bool = False) -> dict:
 
     Returns dict with per-variant `placed/reason`.
     """
-    # Cache scan results by market_whitelist (frozenset or None → "ALL")
+    # Cache scan results by (market_whitelist, require_ou15, match_filter).
+    # COMBO-FIX-1 (2026-05-23): require_ou15 forces ou15 into the candidate
+    # pool even when market_whitelist excludes it, so the proven variants
+    # can actually satisfy their gate.
+    # COMBO-NEW (2026-05-23): coolbet_only restricts the candidate pool to
+    # matches whose league has a Coolbet mapping (see _coolbet_match_ids).
     scan_cache: dict = {}
 
     def _legs_for(cfg: dict) -> list[CandidateLeg]:
         mwl = cfg.get("market_whitelist")
-        cache_key = "ALL" if mwl is None else tuple(sorted(mwl))
+        always_include = frozenset({"ou15"}) if cfg.get("require_ou15") else frozenset()
+        coolbet_only = cfg.get("coolbet_only", False)
+        cache_key = (
+            "ALL" if mwl is None else tuple(sorted(mwl)),
+            tuple(sorted(always_include)),
+            coolbet_only,
+        )
         if cache_key not in scan_cache:
-            candidates = _scan_todays_candidates(mwl)
+            match_filter = _coolbet_match_ids() if coolbet_only else None
+            candidates = _scan_todays_candidates(
+                mwl,
+                always_include_markets=always_include,
+                match_id_filter=match_filter,
+            )
             scan_cache[cache_key] = _pick_legs(candidates, cfg)
         return scan_cache[cache_key]
 

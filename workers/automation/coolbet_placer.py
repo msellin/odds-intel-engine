@@ -283,38 +283,41 @@ def load_qualified_bets() -> list[dict]:
 
     rows = execute_query(
         """
-        SELECT DISTINCT ON (sb.match_id, sb.market, sb.selection)
-            sb.id             AS simulated_bet_id,
-            sb.match_id,
-            sb.market,
-            sb.selection,
-            sb.odds_at_pick   AS model_odds,
-            sb.edge_percent,
-            sb.kelly_fraction,
-            sb.stake          AS model_stake,
-            sb.bot_id,
-            b.name            AS bot_name,
-            ht.name           AS home_team,
-            at2.name          AS away_team,
-            m.date            AS match_date,
-            COUNT(*) OVER (PARTITION BY sb.match_id, sb.market, sb.selection) AS bot_count
-        FROM simulated_bets sb
-        JOIN bots          b   ON b.id   = sb.bot_id
-        JOIN matches       m   ON m.id   = sb.match_id
-        JOIN teams         ht  ON ht.id  = m.home_team_id
-        JOIN teams         at2 ON at2.id = m.away_team_id
-        WHERE sb.result          = 'pending'
-          AND DATE(m.date)       = CURRENT_DATE
-          AND m.date             > NOW()
-          AND sb.edge_percent    >= %s
-          AND NOT EXISTS (
-              SELECT 1 FROM real_bets rb
-              WHERE rb.match_id  = sb.match_id
-                AND rb.market    = sb.market
-                AND rb.selection = sb.selection
-                AND DATE(rb.placed_at) = CURRENT_DATE
-          )
-        ORDER BY sb.match_id, sb.market, sb.selection, sb.edge_percent DESC
+        SELECT * FROM (
+          SELECT DISTINCT ON (sb.match_id, sb.market, sb.selection)
+              sb.id             AS simulated_bet_id,
+              sb.match_id,
+              sb.market,
+              sb.selection,
+              sb.odds_at_pick   AS model_odds,
+              sb.edge_percent,
+              sb.kelly_fraction,
+              sb.stake          AS model_stake,
+              sb.bot_id,
+              b.name            AS bot_name,
+              ht.name           AS home_team,
+              at2.name          AS away_team,
+              m.date            AS match_date,
+              COUNT(*) OVER (PARTITION BY sb.match_id, sb.market, sb.selection) AS bot_count
+          FROM simulated_bets sb
+          JOIN bots          b   ON b.id   = sb.bot_id
+          JOIN matches       m   ON m.id   = sb.match_id
+          JOIN teams         ht  ON ht.id  = m.home_team_id
+          JOIN teams         at2 ON at2.id = m.away_team_id
+          WHERE sb.result          = 'pending'
+            AND DATE(m.date)       = CURRENT_DATE
+            AND m.date             > NOW()
+            AND sb.edge_percent    >= %s
+            AND NOT EXISTS (
+                SELECT 1 FROM real_bets rb
+                WHERE rb.match_id  = sb.match_id
+                  AND rb.market    = sb.market
+                  AND rb.selection = sb.selection
+                  AND DATE(rb.placed_at) = CURRENT_DATE
+            )
+          ORDER BY sb.match_id, sb.market, sb.selection, sb.edge_percent DESC
+        ) q
+        ORDER BY q.match_date ASC, q.edge_percent DESC
         """,
         (_MIN_EDGE,),
     )
@@ -1175,9 +1178,24 @@ def place_all_bets(
             except Exception as e:
                 log.error("Coolbet placement failed for %s: %s — recording only", label, e)
         elif execute and not odds_uuid:
-            log.warning("No oddsId UUID for %s — cannot place at Coolbet, recording only", label)
+            log.warning("No oddsId UUID for %s — cannot place at Coolbet, leaving for manual placement", label)
 
-        # Write to real_bets (always in record mode)
+        # DUPE-FIX-2: only record to real_bets when we actually placed a ticket
+        # at Coolbet. Previously we wrote a phantom row with notes="ticket=None"
+        # whenever the auto path bailed (no odds_uuid / odds dropped / placement
+        # error), which (a) polluted the dataset with bets that weren't placed
+        # and (b) blocked the same bet from being placed manually via
+        # /admin/place (because the NOT EXISTS guard in load_qualified_bets +
+        # the new dedup guard on /api/admin/real-bet both treat any same-day
+        # real_bets row as "already placed"). If we couldn't place, log it and
+        # leave the simulated_bet pending — the manual placer can pick it up.
+        if ticket_id is None:
+            log.info("Skip real_bets write for %s — no ticket placed (manual placement still possible)", label)
+            results.append({**bet, "outcome": "not_placed",
+                             "reason": "no_ticket",
+                             "live_odds": live_odds, "stake": stake})
+            continue
+
         real_bet_id = store_real_bet(
             match_id=str(bet["match_id"]),
             market=mkt,
