@@ -19,6 +19,12 @@ if not _unmatched_logger.handlers:
     _handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
     _unmatched_logger.addHandler(_handler)
     _unmatched_logger.setLevel(logging.INFO)
+# UNMATCHED-LOG-QUIET (2026-05-24): don't propagate to the root logger —
+# unmatched team names are expected daily noise for lower-tier / women's /
+# U20 matches that aren't in our historical training data. The dedicated
+# file handler (data/logs/unmatched_teams.log) still captures them for
+# manual review, but we don't want them in Railway's stdout stream.
+_unmatched_logger.propagate = False
 
 # Canonical team name mapping (common variants → DB standard name)
 # Add mappings as we discover mismatches

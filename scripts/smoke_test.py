@@ -6641,6 +6641,22 @@ def test_ah_away_line_filter():
         "candidate-gen must apply the floor check"
 
 
+@test("UNMATCHED-LOG-QUIET — unmatched team-name logger doesn't propagate to stdout")
+def test_unmatched_log_quiet():
+    """UNMATCHED-LOG-QUIET (2026-05-24): the unmatched_teams logger writes to
+    data/logs/unmatched_teams.log but had propagate=True by default, so its
+    INFO messages reached the root logger and cluttered Railway stdout.
+    Fixed by setting propagate=False — file handler still captures them."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "utils" / "team_names.py").read_text()
+    assert "UNMATCHED-LOG-QUIET" in src, "tag missing"
+    assert "_unmatched_logger.propagate = False" in src, "propagation must be disabled"
+    # Behavioural check
+    from workers.utils.team_names import _unmatched_logger
+    assert _unmatched_logger.propagate is False, "live logger must have propagate=False"
+
+
 @test("CV-METRICS-PERSIST — train.py threads CV metrics into model_versions.cv_metrics")
 def test_cv_metrics_persist():
     """CV-METRICS-PERSIST (2026-05-24): train_result_model + train_over25_model
