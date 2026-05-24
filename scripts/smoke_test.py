@@ -6049,6 +6049,21 @@ def test_real_perf_report_source():
     assert "section_by_bookmaker" in src, "must have by-bookmaker section"
 
 
+@test("COOLBET-PHASE3.5 — real_perf_split_by_source.py structure (source inspect)")
+def test_real_perf_split_by_source():
+    """COOLBET-PHASE3.5 (2026-05-24): split placer (--record, notes LIKE 'auto%')
+    vs manual (/admin/place) real_bets to isolate the rule-driven Q1 signal
+    from the user-selected biased subset. Used at 2026-06-07 readout for new-model
+    baseline."""
+    import pathlib
+    src = pathlib.Path("scripts/real_perf_split_by_source.py").read_text()
+    assert "real_bets" in src, "must query real_bets"
+    assert "notes" in src and "auto" in src, "must filter by notes LIKE 'auto%' to identify placer rows"
+    assert "PLACER" in src and "MANUAL" in src, "must label both subsets in output"
+    assert "by_bot" in src, "must include per-bot breakdown"
+    assert "by_market" in src, "must include per-market breakdown"
+
+
 @test("FRESHNESS-INDICATOR + BOOKMAKER-DISPLAY — daily_picks.py + real_perf_report.py (source inspect)")
 def test_freshness_bookmaker_engine_side():
     """Phase 2.8.2/2.8.3 (2026-05-11): engine-side guards only (web repo not present in CI)."""

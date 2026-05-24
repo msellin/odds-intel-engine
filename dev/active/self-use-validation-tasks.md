@@ -66,18 +66,30 @@
 - ✅ **2.8.2** Frontend value-bets page: per-bet "Bet365: 2.10 · Unibet: 2.05 ← Bet365" line for Elite users. Server-side via `getValueBetBookOdds()` (single round-trip). `recommended_bookmaker` + `matchId` added to `LiveBet`.
 - ✅ **2.8.3** Freshness indicator: "Odds verified Xm ago" chip in value-bets header. Green <45m, amber <90m, red ≥90m. Server-side via `getOddsVerifiedAt()`. Elite-only fetch (same path as bookOdds).
 
-## Phase 3 — Validation period (4–6 weeks)
+## Phase 3 — Validation period (PARTIAL RUN 2026-05-11 → 2026-05-24)
 
-- ⬜ **3.1** Daily morning ritual (~5 min): open `/admin/place`, place 5–10 bets at €1–3 each at Coolbet, log via the modal.
-- ⬜ **3.2** Daily afternoon ritual (~3 min): same again for late-day matches.
-- ⬜ **3.3** Weekly review: check `/admin/real-bets`, note any per-book limit warnings, update `accessible_bookmakers.status` if a book starts limiting you.
-- ⬜ **3.4** Track "couldn't place" reasons in a separate notes file or just the `notes` column. Quantify execution friction.
-- ⬜ **3.5** After ~250 bets, generate `dev/active/self-use-validation-results.md` cohort report.
+> **Result:** 476 bets logged but NO real money staked. Reframed as paper-with-Coolbet-odds. See `self-use-validation-context.md` for full findings. Original real-money task list below is preserved for historical context — it was NOT executed as designed.
 
-## Phase 4 — Decision
+- ⏭ **3.1** Daily morning ritual at `/admin/place` — superseded by Coolbet placer `--record` (auto runs)
+- ⏭ **3.2** Daily afternoon ritual at `/admin/place` — same
+- ⬜ **3.3** Weekly review of `/admin/real-bets` — paused during 3.5 window
+- ⏭ **3.4** Track "couldn't place" reasons — deferred (placer enrichment to be done post-window)
+- ⏭ **3.5** Cohort report at 250 bets — replaced by 3.5 readout below
 
-- ⬜ **4.1** Cohort report drafted with real ROI, slippage, hit rate, per-book breakdown.
-- ⬜ **4.2** Compare against pivot decision matrix in plan. Document the chosen direction.
-- ⬜ **4.3** If pivoting: file new tasks for stake scaling, account rotation, SaaS-deprioritisation strategy.
-- ⬜ **4.4** If not pivoting: file `bot-edge-debug.md` with the analysis of why paper-trading edge didn't survive — feeds back into model improvements.
-- ⬜ **4.5** Move all phase docs from `dev/active/` to `dev/done/` (creating `done/` if needed).
+## Phase 3.5 — New-model evaluation window (2026-05-24 → 2026-06-07)
+
+> Reason: modeling agent shipped `v20260524_market` with 5 bug fixes on 2026-05-24. Old-model placer baseline -8.13% is partly bug-artifact. Wait 2 weeks for new model to produce a clean baseline.
+
+- ⬜ **3.5.1** Run Coolbet placer `--record` ~3x/day at morning/midday/pre-KO when JWT is fresh. Broad rule: all bots, 5% edge minimum. No bot-level filtering.
+- ⬜ **3.5.2** Do NOT use `/admin/place` during window. Avoid adding selection-biased rows to the same `real_bets` table.
+- ⬜ **3.5.3** Do NOT stake real money. No `--execute` mode until Phase 4 verdict.
+- ⬜ **3.5.4** Monitor modeling agent's 2026-05-31 retrain — `v20260531` should land via Sunday cron with full feature set.
+- ⬜ **3.5.5** On 2026-06-07: run `python3 scripts/real_perf_split_by_source.py --days 14` to get new-model-only placer numbers.
+
+## Phase 4 — Decision (planned 2026-06-07)
+
+- ⬜ **4.1** Run split-by-source report on last 14 days (new-model window only).
+- ⬜ **4.2** Apply Phase 3.5 decision matrix from `self-use-validation-context.md` ("What to do on 2026-06-07" section).
+- ⬜ **4.3** If verdict = no pivot: file `bot-edge-debug.md`, move files to `dev/done/`, close PRIORITY_QUEUE entry.
+- ⬜ **4.4** If verdict = marginal: extend window 2-4 weeks, consider narrowing placer to confirmed positive bots.
+- ⬜ **4.5** If verdict = strong: lock bot list, decide whether to flip placer to `--execute` for real-money execution-friction measurement.
