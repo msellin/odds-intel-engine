@@ -2138,6 +2138,16 @@ def run_post_mortem():
 
     prompt = f"""You are a sports betting analyst performing a daily post-mortem.
 
+CONTEXT (POST-MORTEM-CONTEXT, 2026-05-24): Bets come from an INDEPENDENT PORTFOLIO of
+~24 active bots, each with its own strategy (different markets, edges, league filters,
+selection sides). It is NORMAL and EXPECTED for two different bots to back opposite
+sides of the same match — e.g., one bot betting Home @5.00 and another betting Away
+@4.33 in the same fixture. That is portfolio diversification, NOT a bug in probability
+generation or bet selection. Do not flag opposite-side picks across different bots as
+"contradictory" or "non-normalized probabilities." Only flag conflicts when the SAME
+bot has placed mutually exclusive bets on a single match (which the dedup constraint
+prevents anyway).
+
 TODAY'S SETTLED BETS ({len(bets)} total: {len(wins)} won, {len(losses)} lost):
 
 {chr(10).join(bet_summaries)}
@@ -2200,8 +2210,24 @@ Respond with ONLY a JSON object:
             if suggestion:
                 console.print(f"  [bold]Suggestion:[/bold] {suggestion}")
 
-            # Store in model_evaluations
+            # Store in model_evaluations.
+            # POST-MORTEM-SCHEMA (2026-05-24): the previous `[:2000]` slice truncated
+            # JSON mid-string on days with 6+ losses (5 of 14 historical rows ended
+            # up unparseable as a result). `notes` is TEXT (no DB-side limit), so we
+            # serialize in full and validate the JSON round-trips before insert. If
+            # validation fails, store a sanitized minimal payload rather than corrupt
+            # JSON so downstream consumers (val_post_mortem.py, future meta-tuner)
+            # always get parseable data.
             try:
+                notes_str = json.dumps(analysis, ensure_ascii=False)
+                try:
+                    json.loads(notes_str)  # validate round-trip
+                except Exception:
+                    notes_str = json.dumps({
+                        "loss_classifications": [],
+                        "daily_summary": "[post-mortem validation failed — see settlement logs]",
+                        "raw_text_preview": text[:500],
+                    })
                 store_model_evaluation(
                     eval_date=today_str,
                     league_id=None,
@@ -2210,7 +2236,7 @@ Respond with ONLY a JSON object:
                     hits=len(wins),
                     roi=sum(b["pnl"] or 0 for b in bets) / max(sum(b["stake"] for b in bets), 1) * 100,
                     avg_clv=None,
-                    notes=json.dumps(analysis, ensure_ascii=False)[:2000],
+                    notes=notes_str,
                 )
             except Exception as e:
                 console.print(f"  [yellow]Post-mortem store error: {e}[/yellow]")

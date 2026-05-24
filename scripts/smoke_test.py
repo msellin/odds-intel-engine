@@ -6393,6 +6393,77 @@ def test_pin4_veto_all_markets():
         "Old market-gated veto still present — BTTS/DC/AH would bypass it"
 
 
+@test("POST-MORTEM-SCHEMA — settlement.py serializes full JSON (no [:2000] slice) + validates round-trip")
+def test_post_mortem_schema():
+    """POST-MORTEM-SCHEMA: 5 of 14 historical rows had truncated JSON due to a
+    `[:2000]` slice on the serialized notes. Fix removes the slice and adds a
+    json.loads() round-trip validation before insert.
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "jobs" / "settlement.py").read_text()
+    assert "POST-MORTEM-SCHEMA" in src, "POST-MORTEM-SCHEMA tag missing"
+    # The buggy slice must be gone
+    assert "json.dumps(analysis, ensure_ascii=False)[:2000]" not in src, \
+        "The truncating `[:2000]` slice is still present — busy days will still emit invalid JSON"
+    # Round-trip validation present
+    assert "notes_str = json.dumps(analysis" in src, "Full-serialization line missing"
+    assert "json.loads(notes_str)  # validate round-trip" in src, \
+        "JSON round-trip validation missing — corrupt JSON could still reach DB"
+
+
+@test("POST-MORTEM-CONTEXT — settlement.py prompt explains bot portfolio independence")
+def test_post_mortem_context():
+    """POST-MORTEM-CONTEXT: LLM hallucinated a "conflicting bets bug" on 2026-05-18 because
+    the prompt didn't mention bots are an independent portfolio. Two different bots
+    backing opposite sides is normal — only same-bot conflicts are bugs (and the dedup
+    constraint prevents those).
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "jobs" / "settlement.py").read_text()
+    assert "POST-MORTEM-CONTEXT" in src, "POST-MORTEM-CONTEXT tag missing"
+    assert "INDEPENDENT PORTFOLIO" in src, \
+        "Prompt should state explicitly that bots run as an independent portfolio"
+    assert "opposite" in src.lower() and "opposite-side picks" in src.lower(), \
+        "Prompt should clarify that opposite-side picks across bots are normal"
+
+
+@test("OU-UNDER-CAP — audit script exists; investigation closed (no cap applied, see PRIORITY_QUEUE)")
+def test_ou_under_cap_audit():
+    """OU-UNDER-CAP: VAL-POST-MORTEM hypothesised that high-conviction OU-under
+    is miscalibrated. Audit disproved it — the 43 "losses" flagged by the LLM
+    were ALL from inplay_e (a separate code path) which is +1.3% ROI on its
+    high-conviction subset. No cap applied; follow-up POST-MORTEM-BALANCE
+    addresses the underlying LLM availability bias.
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "scripts" / "ou_under_cap_audit.py").read_text()
+    assert "OU-UNDER-CAP" in src, "OU-UNDER-CAP tag missing from audit script"
+    assert "calibrated_prob" in src, "Audit must read calibrated_prob from simulated_bets"
+    assert "predicted_pct" in src and "actual_pct" in src, \
+        "Audit should report predicted-vs-actual hit rate per bucket"
+    assert "selection LIKE 'under%'" in src, "Audit must scope to under selections"
+
+
+@test("CALIB-DIVERGENCE-LOG — audit script exists and reads from existing raw + cal columns")
+def test_calib_divergence_audit():
+    """CALIB-DIVERGENCE-LOG: original ticket assumed we needed a new column, but
+    simulated_bets already stores BOTH model_probability (raw) and calibrated_prob.
+    Re-scoped to an audit script that buckets settled v14 bets by |cal - raw|.
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "scripts" / "calib_divergence_audit.py").read_text()
+    assert "CALIB-DIVERGENCE-LOG" in src, "CALIB-DIVERGENCE-LOG tag missing"
+    assert "model_probability" in src and "calibrated_prob" in src, \
+        "Audit should read both raw and calibrated prob from simulated_bets"
+    assert "ABS(calibrated_prob - model_probability)" in src, \
+        "Audit must compute divergence magnitude"
+    assert "model_version = 'v14'" in src, "Audit must scope to v14 only (current production)"
+
+
 @test("VAL-POST-MORTEM — review script parses 14+ days and surfaces category aggregation")
 def test_val_post_mortem():
     """VAL-POST-MORTEM: the review script exists, parses notes via JSON+regex fallback,
