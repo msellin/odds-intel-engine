@@ -119,7 +119,6 @@ Respond with ONLY a JSON object. No other text.
   "players_out": [],
   "players_doubtful": [],
   "players_returning": [],
-  "lineup_confidence": float 0.0 to 1.0,
   "home_net_impact": float -1.0 to +1.0,
   "away_net_impact": float -1.0 to +1.0
 }}
@@ -130,12 +129,6 @@ RULES for confidence_adjustment:
 - European fatigue (played 3 days ago): -0.03 to -0.07
 - Derby/high-pressure atmosphere favouring home side: +0.02 to +0.05
 - No notable signal: 0.0
-
-RULES for lineup_confidence:
-- Confirmed XI available: 1.0
-- Most expected starters known, 1-2 doubts: 0.7-0.9
-- Significant uncertainty (3+ unknowns): 0.4-0.6
-- No lineup info at all: 0.5 (neutral)
 
 RULES for flag:
 - "ok": no notable qualitative signal, or signal neutral for our bet
@@ -176,13 +169,11 @@ If no qualitative signal is found, set flag "ok", confidence_adjustment 0.0, imp
             result.setdefault("players_out", [])
             result.setdefault("players_doubtful", [])
             result.setdefault("players_returning", [])
-            result.setdefault("lineup_confidence", 0.5)
             result.setdefault("home_net_impact", 0.0)
             result.setdefault("away_net_impact", 0.0)
 
             # Clamp values to valid ranges
             result["confidence_adjustment"] = max(-0.15, min(0.05, float(result["confidence_adjustment"])))
-            result["lineup_confidence"] = max(0.0, min(1.0, float(result["lineup_confidence"])))
             result["home_net_impact"] = max(-1.0, min(1.0, float(result["home_net_impact"])))
             result["away_net_impact"] = max(-1.0, min(1.0, float(result["away_net_impact"])))
 
@@ -194,7 +185,7 @@ If no qualitative signal is found, set flag "ok", confidence_adjustment 0.0, imp
     return {
         "flag": "ok", "reason": "AI check unavailable", "confidence_adjustment": 0,
         "tokens_used": 0, "players_out": [], "players_doubtful": [], "players_returning": [],
-        "lineup_confidence": 0.5, "home_net_impact": 0.0, "away_net_impact": 0.0,
+        "home_net_impact": 0.0, "away_net_impact": 0.0,
     }
 
 
@@ -275,7 +266,6 @@ def run_news_checker(dry_run: bool = False):
         flag = ai_result.get("flag", "ok")
         reason = ai_result.get("reason", "")
         adj = ai_result.get("confidence_adjustment", 0)
-        lineup_conf = ai_result.get("lineup_confidence", 0.5)
         home_impact = ai_result.get("home_net_impact", 0.0)
         away_impact = ai_result.get("away_net_impact", 0.0)
         players_out = ai_result.get("players_out", [])
@@ -297,7 +287,7 @@ def run_news_checker(dry_run: bool = False):
             names = [f"{p.get('name', '?')}({p.get('impact', 0):+.2f})" for p in players_returning[:2]]
             player_summary += f" | Back: {', '.join(names)}"
 
-        console.print(f"  {flag_display} — {reason} [dim]lineup_conf={lineup_conf:.1f}{player_summary}[/dim]")
+        console.print(f"  {flag_display} — {reason} [dim]{player_summary}[/dim]")
 
         results_table.append({
             "match": f"{home_team[:12]} v {away_team[:12]}",
@@ -305,7 +295,6 @@ def run_news_checker(dry_run: bool = False):
             "flag": flag,
             "reason": reason[:60],
             "adj": adj,
-            "lineup_conf": lineup_conf,
         })
 
         # Update bet in DB with structured news data
@@ -335,9 +324,14 @@ def run_news_checker(dry_run: bool = False):
                 "news_triggered": flag in ("warning", "skip"),
             }
 
-            # Store structured fields (migration 006 columns)
+            # Store structured fields (migration 006 columns).
+            # LINEUP-CONFIDENCE-CLEANUP (2026-05-24): removed `bet_update["lineup_confirmed"]
+            # = lineup_conf >= 0.9` — lineup_conf was locked at Gemini's 0.5 default
+            # (no lineup data access), so this was always False. Real lineup signal is
+            # derived from matches.lineups_fetched_at; alignment dim_lineup now reads it
+            # there directly. simulated_bets.lineup_confirmed column kept for backwards
+            # compat but no longer written.
             bet_update["news_impact_score"] = round(news_impact, 4)
-            bet_update["lineup_confirmed"] = lineup_conf >= 0.9
 
             set_clauses = ", ".join(f"{k} = %s" for k in bet_update)
             params = list(bet_update.values()) + [bet["id"]]
@@ -351,8 +345,8 @@ def run_news_checker(dry_run: bool = False):
                                    round(home_impact, 4), "information", "gemini")
                 store_match_signal(match_id, "news_impact_away",
                                    round(away_impact, 4), "information", "gemini")
-                store_match_signal(match_id, "lineup_confidence",
-                                   round(lineup_conf, 3), "information", "gemini")
+                # LINEUP-CONFIDENCE-CLEANUP (2026-05-24): no longer write
+                # 'lineup_confidence' to match_signals — was always 0.5 (Gemini default).
                 if players_out or players_doubtful:
                     home_out = sum(1 for p in players_out
                                   if p.get("team", "").lower() in ("home", bet.get("home_team_name", "").lower()))
@@ -403,7 +397,6 @@ def run_news_checker(dry_run: bool = False):
                         "ai_flag": flag,
                         "ai_reason": reason[:200],
                         "confidence_adjustment": adj,
-                        "lineup_confidence": lineup_conf,
                         "home_net_impact": home_impact,
                         "away_net_impact": away_impact,
                         "news_impact_score": round(news_impact, 4),
@@ -435,7 +428,6 @@ def run_news_checker(dry_run: bool = False):
                             metadata={
                                 "hours_to_kickoff": round(hours_to_kickoff, 2),
                                 "ai_flag": flag,
-                                "lineup_confidence": lineup_conf,
                                 "news_impact_score": round(news_impact, 4),
                             },
                         )
@@ -450,13 +442,10 @@ def run_news_checker(dry_run: bool = False):
     t.add_column("Flag")
     t.add_column("Reason")
     t.add_column("Adj", justify="right")
-    t.add_column("Lineup", justify="right")
 
     for r in results_table:
         flag_cell = {"ok": "[green]OK[/green]", "warning": "[yellow]WARN[/yellow]", "skip": "[red]SKIP[/red]"}.get(r["flag"], r["flag"])
-        lc = r.get("lineup_conf", 0.5)
-        lc_cell = f"[green]{lc:.0%}[/green]" if lc >= 0.9 else f"[yellow]{lc:.0%}[/yellow]" if lc >= 0.6 else f"[red]{lc:.0%}[/red]"
-        t.add_row(r["match"], r["bet"], flag_cell, r["reason"], f"{r['adj']:+.1%}" if r["adj"] != 0 else "-", lc_cell)
+        t.add_row(r["match"], r["bet"], flag_cell, r["reason"], f"{r['adj']:+.1%}" if r["adj"] != 0 else "-")
 
     console.print(t)
 

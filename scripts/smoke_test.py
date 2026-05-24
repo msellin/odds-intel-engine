@@ -6453,6 +6453,56 @@ def test_post_mortem_context():
         "Prompt should clarify that opposite-side picks across bots are normal"
 
 
+@test("SCOTTISH-PREM-LEAGUE-GATE — daily_pipeline_v2 hard-skips Scottish Premiership matches")
+def test_scottish_prem_league_gate():
+    """SCOTTISH-PREM-LEAGUE-GATE: INFO-GAP-LEAGUE-AUDIT found Scottish Premiership is the
+    only league with systematically sharp pre-KO CLV at n>=20 (n=41, median CLV -25.7%,
+    ROI -48.6%). Hard skip in the main pipeline until confirmed-lineup gate ships.
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+    assert "SCOTTISH-PREM-LEAGUE-GATE" in src, "tag missing"
+    # Check both halves of the guard exist together
+    assert 'country == "Scotland"' in src and 'league_name == "Premiership"' in src, \
+        "Skip guard must check country == Scotland AND league_name == Premiership"
+
+
+@test("LINEUP-CONFIDENCE-CLEANUP — broken Gemini lineup_confidence removed; _dim_lineup reads matches.lineups_fetched_at")
+def test_lineup_confidence_cleanup():
+    """LINEUP-CONFIDENCE-CLEANUP: news_checker.py asked Gemini for lineup_confidence
+    but Gemini has no lineup-data access — every row stored at 0.5 default.
+    Fix: drop the field from the Gemini prompt + downstream writes; rewire
+    _dim_lineup (alignment dimension 3) to read matches.lineups_fetched_at directly.
+    """
+    import pathlib
+    base = pathlib.Path(__file__).resolve().parent.parent
+    news_src = (base / "workers" / "jobs" / "news_checker.py").read_text()
+    impr_src = (base / "workers" / "model" / "improvements.py").read_text()
+
+    # Gemini prompt no longer requests it
+    assert '"lineup_confidence": float 0.0 to 1.0' not in news_src, \
+        "Gemini prompt should no longer request lineup_confidence"
+    assert 'RULES for lineup_confidence:' not in news_src, \
+        "RULES block for lineup_confidence must be removed from prompt"
+    # No active assignment of lineup_conf variable; only comment references allowed
+    assert 'lineup_conf = ai_result.get("lineup_confidence"' not in news_src, \
+        "lineup_conf variable should no longer be pulled from ai_result"
+    # No write to match_signals "lineup_confidence"
+    assert 'store_match_signal(match_id, "lineup_confidence"' not in news_src, \
+        "lineup_confidence signal write must be removed"
+    # No write to simulated_bets.lineup_confirmed from broken Gemini value
+    assert 'bet_update["lineup_confirmed"] = lineup_conf' not in news_src, \
+        "simulated_bets.lineup_confirmed write from Gemini value must be removed"
+
+    # _dim_lineup reads from matches table directly
+    assert "LINEUP-CONFIDENCE-CLEANUP" in impr_src, "improvements.py tag missing"
+    assert "lineups_fetched_at IS NOT NULL" in impr_src, \
+        "_dim_lineup must read matches.lineups_fetched_at as the source of truth"
+    assert "FROM simulated_bets WHERE match_id = %s AND lineup_confirmed = true" not in impr_src, \
+        "Old _dim_lineup query against simulated_bets.lineup_confirmed must be removed"
+
+
 @test("MFV-LINEUP-WIRE — match_feature_vectors.lineup_confirmed derived from matches.lineups_fetched_at")
 def test_mfv_lineup_wire():
     """MFV-LINEUP-WIRE: NEWS-LINEUP-VALIDATE found that lineup_confirmed was 100% NULL

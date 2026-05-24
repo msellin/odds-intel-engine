@@ -2194,6 +2194,17 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         # Place bets for each bot
         tier = match.get("tier", 1)
         country = match.get("league_path", "").split(" / ")[0] if " / " in match.get("league_path", "") else ""
+        league_name = match.get("league_path", "").split(" / ")[-1] if " / " in match.get("league_path", "") else ""
+
+        # SCOTTISH-PREM-LEAGUE-GATE (2026-05-24): INFO-GAP-LEAGUE-AUDIT flagged
+        # Scottish Premiership as the ONLY league with systematically sharp pre-KO
+        # CLV at n>=20 (n=41, median CLV -25.7%, ROI -48.6%, hit rate 26.9% vs ~40%
+        # portfolio baseline). Markets there move ~25pp against us pre-KO from lineup
+        # / fitness info we can't see in time. Hard skip until we ship a confirmed-
+        # lineup gate. Aggregate ex-SPL portfolio ROI = +2.6%; including SPL drags
+        # to ~0%. Re-evaluate at 2026-07 (need ~6 weeks of post-fix data).
+        if country == "Scotland" and league_name == "Premiership":
+            continue  # skip match entirely, no bots get to evaluate it
 
         # Data-tier adjustments (conservative stake / extra edge for lower-quality data):
         #   A — our CSV + odds history, full calibration → no bump, full stake

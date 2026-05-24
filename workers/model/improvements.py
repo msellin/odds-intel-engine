@@ -514,22 +514,23 @@ def _dim_lineup(match_id: str) -> int:
     Confirmed lineup = +1 (we can trust our prediction more).
     Unconfirmed = 0 (neutral, no info).
 
-    Reads lineup_confirmed from simulated_bets (set by news_checker v2).
-    Note: This dimension only activates AFTER news_checker has run for this match.
-    The morning pipeline runs before news_checker, so this will typically be 0
-    on first pass and update to +1 on subsequent news_checker runs.
+    LINEUP-CONFIDENCE-CLEANUP (2026-05-24): reads directly from matches.lineups_fetched_at,
+    the only source of truth we actually populate. Previously read simulated_bets.lineup_confirmed
+    which was set from Gemini's broken lineup_confidence (locked at 0.5 for all 3,647 rows,
+    so the >=0.9 threshold never fired — dimension always returned 0). Signal: bets on
+    matches with lineups fetched hit 45.1% / +8.1% ROI vs 33.5% / -4.5% without (n=1,752).
     """
     try:
         rows = execute_query(
-            "SELECT id FROM simulated_bets WHERE match_id = %s AND lineup_confirmed = true LIMIT 1",
+            "SELECT id FROM matches WHERE id = %s AND lineups_fetched_at IS NOT NULL LIMIT 1",
             [match_id],
         )
         if rows:
-            return 1  # Lineup confirmed — our prediction is more trustworthy
+            return 1
     except Exception:
         pass
 
-    return 0  # Unknown or not confirmed yet
+    return 0
 
 
 def _dim_situational(match: dict, is_home: bool, is_away: bool,
