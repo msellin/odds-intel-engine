@@ -7935,6 +7935,42 @@ def _():
     )
 
 
+@test("DC-CASE-AND-RESULTKEY-FIX — double_chance bets resolve against Coolbet's bracketed result_keys")
+def _():
+    """DC-CASE-FIX + DC-RESULTKEY-FIX (2026-05-24): two bugs caused every
+    double_chance bet to silently return no_market.
+      (1) _normalise_our_target required uppercase "1X"/"X2"/"12" but paper
+          bets write lowercase — uppercase normalisation now applied.
+      (2) _outcome_id_for_selection used .strip("[]") which only strips
+          leading/trailing brackets, so Coolbet's "[Home]/Draw" became
+          "Home]/Draw" — never matched the "[home]/draw" target. Fixed by
+          storing target_keys without brackets ("home/draw") and using
+          .replace to remove every bracket in the outcome result_key.
+    Confirmed live on Gagra vs Dila — DC 1x now resolves at 1.78."""
+    import sys, pathlib
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+    from workers.automation.coolbet_explorer import (
+        _normalise_our_target, _outcome_id_for_selection,
+    )
+
+    # (1) lowercase DC selections must normalise to uppercase
+    assert _normalise_our_target("double_chance", "1x") == ("double_chance", "1X", None)
+    assert _normalise_our_target("double_chance", "x2") == ("double_chance", "X2", None)
+    assert _normalise_our_target("double_chance", "12") == ("double_chance", "12", None)
+
+    # (2) Coolbet's bracketed result_keys must match our (bracket-stripped) targets
+    fake_dc_market = {
+        "outcomes": [
+            {"id": 111, "result_key": "[Home]/Draw"},
+            {"id": 222, "result_key": "[Away]/Draw"},
+            {"id": 333, "result_key": "[Home]/[Away]"},
+        ],
+    }
+    assert _outcome_id_for_selection(fake_dc_market, "double_chance", "1X") == 111
+    assert _outcome_id_for_selection(fake_dc_market, "double_chance", "X2") == 222
+    assert _outcome_id_for_selection(fake_dc_market, "double_chance", "12") == 333
+
+
 @test("REAL-BETS-CLV-EDGE-SCHEMA — migration 125 + placer + settlement + frontend wire CLV / edge / slippage")
 def _():
     """REAL-BETS-CLV-EDGE (2026-05-23): real_bets needs clv + edge_pct_taken

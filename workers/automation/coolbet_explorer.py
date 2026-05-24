@@ -448,8 +448,15 @@ def _normalise_our_target(
         return (None, None, None)
 
     if m == "double_chance":
-        if s in ("1X", "X2", "12"):
-            return ("double_chance", s, None)
+        # DC-CASE-FIX (2026-05-24): paper bets write lowercase "1x"/"x2"/"12"
+        # but parse_market / _outcome_id_for_selection both expect uppercase
+        # "1X"/"X2"/"12". Without this `.upper()` every DC bet returned
+        # no_market even when Coolbet offered Double Chance (confirmed live
+        # on Gagra vs Dila — 42 markets including "Double Chance" line=0,
+        # but bot_dc_value 1x was skipped). Accept any case.
+        s_up = s.upper()
+        if s_up in ("1X", "X2", "12"):
+            return ("double_chance", s_up, None)
         return (None, None, None)
 
     if m == "asian_handicap":
@@ -480,10 +487,18 @@ def _outcome_id_for_selection(mkt: dict, parsed_market: str, parsed_sel: str) ->
         ("1x2",          "Away"):    "Away",
         ("btts",         "yes"):     "yes",
         ("btts",         "no"):      "no",
-        # Coolbet DC result_keys use team placeholders, not 1X/X2/12
-        ("double_chance","1X"):      "[home]/draw",
-        ("double_chance","X2"):      "[away]/draw",
-        ("double_chance","12"):      "[home]/[away]",
+        # DC-RESULTKEY-FIX (2026-05-24): Coolbet DC result_keys use bracketed
+        # team placeholders like `[Home]/Draw`, `[Home]/[Away]`. The old
+        # `.strip("[]")` only stripped *leading/trailing* brackets, so
+        # `[Home]/Draw` → `Home]/Draw` (still has the `]`) and `[Home]/[Away]`
+        # → `Home]/[Away]` — neither equalled the sel_to_key target. Result:
+        # DC bets have been silently returning no_market against any Coolbet
+        # match that did offer Double Chance (confirmed live on Gagra vs Dila).
+        # Fix: store target_key without brackets and use `.replace` on the
+        # outcome's result_key to remove *all* brackets, not just edges.
+        ("double_chance","1X"):      "home/draw",
+        ("double_chance","X2"):      "away/draw",
+        ("double_chance","12"):      "home/away",
         ("asian_handicap","home"):   "Home",
         ("asian_handicap","away"):   "Away",
     }
@@ -495,7 +510,7 @@ def _outcome_id_for_selection(mkt: dict, parsed_market: str, parsed_sel: str) ->
         if target_key is None:
             return None
     for oc in mkt.get("outcomes") or []:
-        rk = (oc.get("result_key") or "").strip("[]").lower()
+        rk = (oc.get("result_key") or "").replace("[", "").replace("]", "").lower()
         if rk == target_key.lower():
             return oc.get("id")
     return None
