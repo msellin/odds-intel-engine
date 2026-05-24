@@ -46,17 +46,29 @@ DEFAULT_MODEL_VERSION = "v14"
 MODEL_VERSION = os.environ.get("MODEL_VERSION", DEFAULT_MODEL_VERSION)
 
 # PER-MARKET-VERSION (Phase C-light, 2026-05-24): allow MODEL_VERSION_1X2 /
-# MODEL_VERSION_OU / MODEL_VERSION_BTTS to override the global MODEL_VERSION
-# for specific markets. AH-AWAY-MODEL-AUDIT exposed v20260517 as better than
+# MODEL_VERSION_OU / MODEL_VERSION_GOALS to override the global MODEL_VERSION
+# for specific heads. AH-AWAY-MODEL-AUDIT exposed v20260517 as better than
 # v14 on 1X2 (~10% better log-loss) but worse on O/U (calibration drifted
 # toward unders). Per-market routing lets us promote 1X2 to v20260517 while
 # keeping O/U on v14 — no need for the heavyweight per-market-head refactor
 # yet. The bundle structure is the same; we just load the right bundle for
 # the right head.
+#
+# Three env vars are actually read at inference time (see get_xgboost_prediction):
+#   MODEL_VERSION_1X2    → result_1x2.pkl bundle
+#   MODEL_VERSION_OU     → over_under.pkl bundle
+#   MODEL_VERSION_GOALS  → home_goals.pkl + away_goals.pkl (feeds the Poisson
+#                          joint matrix used to derive BTTS, AH, OU 1.5/3.5)
+#
+# Note: there is NO MODEL_VERSION_BTTS routing. Production BTTS comes from the
+# Poisson joint matrix (built from the GOALS regressors), not from the
+# orphaned btts.pkl. Setting MODEL_VERSION_BTTS would do nothing — to change
+# BTTS inference, set MODEL_VERSION_GOALS.
 def _resolve_version(market_kind: str) -> str:
     """Returns the model version to use for a given market head.
-    market_kind: '1x2' | 'ou' | 'btts' | 'goals' (goal-regressor heads).
-    Falls back to global MODEL_VERSION if no override is set."""
+    market_kind: '1x2' | 'ou' | 'goals' (only these three are read in
+    inference; see comment above). Falls back to global MODEL_VERSION if no
+    override is set."""
     env_name = f"MODEL_VERSION_{market_kind.upper()}"
     return os.environ.get(env_name, MODEL_VERSION)
 

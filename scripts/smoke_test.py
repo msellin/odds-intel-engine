@@ -6701,6 +6701,26 @@ def test_cv_metrics_persist():
     assert "cv_metrics=None" not in src, "TODO marker should be gone"
 
 
+@test("WEEKLY-RETRAIN-OU-FEATURES — scheduler invokes train.py with both market-feature flags")
+def test_weekly_retrain_ou_features():
+    """WEEKLY-RETRAIN-OU-FEATURES (2026-05-24). job_weekly_retrain previously
+    invoked train.py with just --version, silently dropping the 14
+    pinnacle_implied_* / ou25_bookmaker_disagreement / market_implied_btts_yes
+    columns that v14 was trained with. Cost: +9 to +13% log-loss on the
+    over_under XGBoost head for every weekly bundle since this job shipped
+    (visible in the MARKET-EVAL output for v20260517 / v20260524). This guard
+    fails if anyone removes the flags from the subprocess invocation.
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "scheduler.py").read_text()
+    assert "WEEKLY-RETRAIN-OU-FEATURES" in src, "tag missing"
+    assert '"--include-pinnacle"' in src, \
+        "weekly retrain must pass --include-pinnacle"
+    assert '"--include-ou-market"' in src, \
+        "weekly retrain must pass --include-ou-market"
+
+
 @test("WEEKLY-EVAL — cron uses weekly_eval_and_compare.py with holdout MFV rows")
 def test_weekly_eval():
     import pathlib
@@ -6769,8 +6789,15 @@ def test_promote_model_script():
     assert "--dry-run" in src, "dry-run flag required"
 
 
-@test("PER-MARKET-VERSION — xgboost_ensemble supports MODEL_VERSION_1X2/OU/BTTS overrides")
+@test("PER-MARKET-VERSION — xgboost_ensemble supports MODEL_VERSION_1X2/OU/GOALS overrides")
 def test_per_market_version():
+    """PER-MARKET-VERSION (Phase C-light, 2026-05-24). Three env vars are
+    actually read at inference time: MODEL_VERSION_1X2, MODEL_VERSION_OU,
+    MODEL_VERSION_GOALS. BTTS / AH are derived from the GOALS bundle's
+    Poisson joint matrix — there is intentionally no MODEL_VERSION_BTTS
+    routing. Setting MODEL_VERSION_BTTS today does nothing; the comment
+    + this test name were updated to stop misleading future readers.
+    """
     import pathlib
     src = (pathlib.Path(__file__).resolve().parent.parent /
            "workers" / "model" / "xgboost_ensemble.py").read_text()
@@ -6779,15 +6806,25 @@ def test_per_market_version():
     assert "MODEL_VERSION_" in src, "per-market env var pattern missing"
     assert "_bundles: dict[str, dict]" in src, "per-version bundle cache missing"
     assert "_load_bundle(version" in src, "per-version bundle loader missing"
-    # Behavioural assertion
+    # The three heads that are actually routed at inference.
+    assert '_resolve_version("1x2")' in src, "1X2 head must be resolved per-market"
+    assert '_resolve_version("ou")' in src, "OU head must be resolved per-market"
+    assert '_resolve_version("goals")' in src, "goals head must be resolved per-market"
+    # BTTS deliberately NOT in the inference path — flag drift if someone adds it.
+    assert '_resolve_version("btts")' not in src, \
+        "BTTS routing must not be wired — production BTTS comes from the GOALS bundle's Poisson joint matrix"
+    # Behavioural assertions
     import os
     from workers.model.xgboost_ensemble import _resolve_version, MODEL_VERSION
-    os.environ.pop("MODEL_VERSION_1X2", None)
-    assert _resolve_version("1x2") == MODEL_VERSION, "no override → fallback to MODEL_VERSION"
+    for kind in ("1x2", "ou", "goals"):
+        env = f"MODEL_VERSION_{kind.upper()}"
+        os.environ.pop(env, None)
+        assert _resolve_version(kind) == MODEL_VERSION, f"no override → fallback (kind={kind})"
     os.environ["MODEL_VERSION_1X2"] = "v20260517"
     try:
-        assert _resolve_version("1x2") == "v20260517", "override → returns the env value"
+        assert _resolve_version("1x2") == "v20260517", "override → returns env value"
         assert _resolve_version("ou") == MODEL_VERSION, "OU unaffected by 1X2 override"
+        assert _resolve_version("goals") == MODEL_VERSION, "goals unaffected by 1X2 override"
     finally:
         os.environ.pop("MODEL_VERSION_1X2", None)
 

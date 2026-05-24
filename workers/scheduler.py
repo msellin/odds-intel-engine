@@ -443,8 +443,18 @@ def job_weekly_retrain():
         # Subprocess so a hung XGBoost run can't block the scheduler thread
         # any longer than the 30-min wallclock here. Lives outside the cron
         # process so a crash bubbles up cleanly.
+        # WEEKLY-RETRAIN-OU-FEATURES (2026-05-24): explicitly pass the
+        # --include-pinnacle + --include-ou-market flags so the retrain
+        # produces a v14-feature-equivalent bundle. The flags were missing
+        # since this job first shipped, which silently dropped 14 market-data
+        # columns (pinnacle_implied_*, ou25_bookmaker_disagreement,
+        # market_implied_btts_yes) from every weekly bundle. The MARKET-EVAL
+        # eval surfaced the cost: v20260517 and v20260524 are +9 to +13%
+        # worse than v14 on the over_under XGBoost head despite being better
+        # on every other market head. Root cause traced to this flag omission.
         result = subprocess.run(
-            [sys.executable, "-m", "workers.model.train", "--version", version],
+            [sys.executable, "-m", "workers.model.train", "--version", version,
+             "--include-pinnacle", "--include-ou-market"],
             cwd=str(Path(__file__).parent.parent),
             timeout=1800,
             capture_output=True,

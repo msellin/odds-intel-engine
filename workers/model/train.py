@@ -609,9 +609,23 @@ def _load_ou_market_features() -> pd.DataFrame:
     GROUP BY match_id
     """
 
+    # WEEKLY-RETRAIN-OU-FEATURES (2026-05-24): each of these queries scans
+    # the full odds_snapshots window-DISTINCT-ON-aggregated history (>500K
+    # rows for Pinnacle OU 2.5 alone) and routinely exceeds the 60s DB-level
+    # statement_timeout that DB-STMT-TIMEOUT set as the default. Use a
+    # per-transaction SET LOCAL to give these specific queries 10 minutes —
+    # they only run during the weekly retrain (Sunday 03:00 UTC), so the
+    # longer ceiling doesn't affect any hot path.
+    from workers.api_clients.db import get_conn
+    import psycopg2.extras
     dfs = []
     for sql, label in [(pin_sql, "Pinnacle OU 2.5"), (disagree_sql, "OU 2.5 disagree"), (btts_sql, "BTTS yes")]:
-        rows = execute_query(sql, ())
+        with get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SET LOCAL statement_timeout = '600s'")
+                cur.execute(sql)
+                rows = [dict(r) for r in cur.fetchall()]
+            conn.commit()
         if rows:
             dfs.append(pd.DataFrame(rows).set_index("match_id"))
             console.print(f"  [dim]OU market features — {label}: {len(rows):,} matches[/dim]")
