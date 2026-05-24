@@ -74,7 +74,10 @@ BOTS_CONFIG = {
     # BOTS-RETIRE-1X2 (2026-05-17): retired via migration 103. Kept in BOTS_CONFIG
     # so historical bot_id linkages keep working — pipeline skips via is_active=false.
     "bot_lower_1x2": {
-        "description": "[RETIRED 2026-05-17] Tier 2-4 only, 1X2 only — starved by alpha_t2_1x2=0.00 after May 17 retrain (was +83% on 11 bets = variance)",
+        # Currently active. Originally retired 2026-05-17 (alpha_t2_1x2=0.00 after
+        # May 17 retrain starved it; +83% on 11 bets was variance). Re-activated
+        # 2026-05-22 via migration 122 for weekend signal gathering.
+        "description": "Tier 2-4 only, 1X2 only — odds 1.35-3.50, edge 3-7%. Re-enabled 2026-05-22 (migration 122).",
         "tier_label": "elite",
         "markets": ["1x2"],
         "tier_filter": [2, 3, 4],
@@ -87,7 +90,10 @@ BOTS_CONFIG = {
         "min_prob": 0.35,
     },
     "bot_conservative": {
-        "description": "[RETIRED 2026-05-17] Only bet on 10%+ edge, very selective — never fired in production since launch (criteria too tight)",
+        # Currently active. Originally retired 2026-05-17 (criteria too tight,
+        # never fired in production since launch). Re-activated 2026-05-22 via
+        # migration 122; expected to still fire rarely given the 10%+ edge gate.
+        "description": "10%+ edge required, very selective — odds 1.50-3.00, min_prob 0.40. Re-enabled 2026-05-22.",
         "tier_label": "elite",
         "markets": ["1x2"],
         "tier_filter": None,
@@ -106,7 +112,7 @@ BOTS_CONFIG = {
     # +11.6% ROI by dropping draws + under 2.5 + capping odds 1.50-3.30.
     # Pipeline skips via `is_active=false AND retired_at IS NOT NULL` gate.
     "bot_aggressive": {
-        "description": "[RETIRED 2026-05-17] Low threshold (3% edge), high volume — replaced by bot_aggressive_v2",
+        "description": "Low threshold (3% edge), high volume — odds 1.40-3.00, min_prob 0.45. Originally retired 2026-05-17 (-5.7% ROI on 441 settled), re-enabled 2026-05-22 via migration 122 for weekend v1-vs-v2 A/B over the ~1000-match cohort.",
         "tier_label": "pro",
         "markets": ["1x2", "ou"],
         "tier_filter": None,
@@ -221,7 +227,7 @@ BOTS_CONFIG = {
         # Home underdogs in lower European divisions.
         # BOTS-RETIRE-1X2 (2026-05-17): retired — starved by alpha_t2_1x2=0.00 after
         # May 17 retrain. Live ROI +73% on 15 bets was variance, not signal.
-        "description": "[RETIRED 2026-05-17] Optimizer: Home underdogs, T2+ Europe — starved by May 17 alpha_t2_1x2=0.00",
+        "description": "Optimizer: Home underdogs, T2+ Europe. FD backtest +24.2% ROI, BTB +12.5%. Originally retired 2026-05-17 (alpha_t2_1x2 starved it post-retrain); re-enabled 2026-05-22 via migration 122.",
         "tier_label": "elite",
         "markets": ["1x2"],
         "selection_filter": ["Home"],
@@ -289,7 +295,7 @@ BOTS_CONFIG = {
         # in shadow run — calibration drift killed the bot's edge entirely.
         # Config kept in BOTS_CONFIG so historical bet_id linkage survives;
         # migration 113 flipped is_active=false + retired_at=now().
-        "description": "[RETIRED 2026-05-20] O/U 1.5 — model calibration tightened past viable edge threshold",
+        "description": "O/U 1.5 — odds 1.10-1.60, edge 3-4%. Originally retired 2026-05-20 (calibration drift killed edge), re-enabled 2026-05-22 via migration 122; expect minimal firings until calibration shifts.",
         "tier_label": "pro",
         "markets": ["ou15"],
         "edge_thresholds": {
@@ -330,7 +336,7 @@ BOTS_CONFIG = {
         "min_prob": 0.30,
     },
     "bot_draw_specialist": {
-        "description": "[RETIRED 2026-05-17] Draw specialist T2-4 — bot_aggressive's draw bucket lost €154/61; same thesis, same loss profile",
+        "description": "Draw specialist T2-4 — odds 2.50-4.00, 5%+ edge. Originally retired 2026-05-17 (bot_aggressive's draw bucket -€154/61 settled); re-enabled 2026-05-22 via migration 122. Subset of bot_aggressive's draws → highly correlated; watch for overlap.",
         "tier_label": "pro",
         "markets": ["1x2"],
         "tier_filter": [2, 3, 4],
@@ -376,7 +382,10 @@ BOTS_CONFIG = {
     # are compressed (typical range 1.20-2.20), so a 3% edge at 1.30 is already
     # meaningful.
     "bot_dc_value": {
-        "description": "[RETIRED 2026-05-19] Double Chance all leagues — 1X/X2/12 at value odds",
+        # BOT-RETIRE-DESC-DRIFT (2026-05-24): config tag removed — bot was retired
+        # 2026-05-19 (BOTS-RETIRE-DC-DNB) but migration 122_unretire_remaining_bots
+        # re-activated it. Currently active, firing again post AH-CAL-BYPASS.
+        "description": "Double Chance all leagues — 1X/X2/12 at value odds. Loose: T1-4, edge 3-5%, odds 1.25-2.20, min_prob 0.55.",
         "tier_label": "pro",
         "markets": ["dc"],
         "edge_thresholds": {
@@ -389,7 +398,13 @@ BOTS_CONFIG = {
         "min_prob": 0.55,
     },
     "bot_dc_strong_fav": {
-        "description": "[RETIRED 2026-05-19] Double Chance T1-2 — strong-favorite cover (1X or X2 only), 6%+ edge",
+        # BOT-RETIRE-DESC-DRIFT (2026-05-24): same as bot_dc_value above. Note
+        # this bot is a TIGHTENED SUBSET of bot_dc_value — every pick it makes,
+        # bot_dc_value also makes (selection ⊆ {1X,X2,12} since this excludes 12,
+        # tier ⊆ {1,2,3,4} since 1-2, edge 6%+ ≥ value's 5%, etc.). So "2 bots
+        # agree" badges on shared picks are misleading. Considered for re-retire
+        # under AH-AWAY-MODEL-AUDIT 2026-05-24 follow-up.
+        "description": "Double Chance T1-2 — strong-favorite cover (1X/X2 only), 6%+ edge. Tightened subset of bot_dc_value.",
         "tier_label": "elite",
         "markets": ["dc"],
         "selection_filter": ["1X", "X2"],
@@ -460,7 +475,7 @@ BOTS_CONFIG = {
         "min_prob": 0.60,
     },
     "bot_dnb_away_value": {
-        "description": "[RETIRED 2026-05-19] DNB away — underdog with draw insurance, T1-3, 5%+ edge",
+        "description": "DNB away — underdog with draw insurance, T1-3, 5-6%+ edge, odds 1.60-2.60. Originally retired 2026-05-19 (DNB-DC retirement batch); re-enabled 2026-05-22 via migration 122.",
         "tier_label": "pro",
         "markets": ["dnb"],
         "selection_filter": ["Away"],
