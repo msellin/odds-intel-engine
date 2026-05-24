@@ -6620,20 +6620,21 @@ def test_val_post_mortem():
         f"findings doc missing: {findings}"
 
 
-@test("AH-AWAY-LINE-FILTER — bot_ah_away_dog only accepts handicap_line >= 0")
+@test("AH-AWAY-LINE-FILTER — bot_ah_away_dog only accepts handicap_line >= +0.5")
 def test_ah_away_line_filter():
     """AH-AWAY-LINE-FILTER (2026-05-24): AH-AWAY-MODEL-AUDIT slice-1 showed
     bot_ah_away_dog was catastrophic on negative handicaps (away-favorite picks):
     -0.5 line -46% ROI on 300 bets, -1.0 line -74% ROI on 122. Positive handicaps
-    (away-underdog with head start) were +42% ROI at +0.5 line. Restricting to
-    handicap_line_min=0.0 keeps the profitable segment, drops the loser segments.
+    were +42% ROI at +0.5 line. Initial filter hl>=0 gave +26% ROI; candidate-bot
+    backtest then showed tightening to hl>=+0.5 (drops the breakeven-negative
+    hl=0.0 bucket on n=61) jumps ROI to +43%.
     """
     import pathlib
     src = (pathlib.Path(__file__).resolve().parent.parent /
            "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
     assert "AH-AWAY-LINE-FILTER" in src, "tag missing"
-    assert '"handicap_line_min": 0.0' in src, \
-        "bot_ah_away_dog must declare handicap_line_min=0.0"
+    assert '"handicap_line_min": 0.5' in src, \
+        "bot_ah_away_dog must declare handicap_line_min=0.5 (post-TIGHTEN)"
     assert '_hl_min = config.get("handicap_line_min")' in src, \
         "candidate-gen loop must read handicap_line_min from config"
     assert "if _hl_min is not None and _hl < _hl_min:" in src, \

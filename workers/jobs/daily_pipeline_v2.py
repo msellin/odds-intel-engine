@@ -436,11 +436,15 @@ BOTS_CONFIG = {
         # Slice-1 of AH-AWAY-MODEL-AUDIT (scripts/ah_away_model_audit.py):
         #   +1.0 line: hit 100% / ROI +111% (n=1)
         #   +0.5 line: hit 62.0% / ROI +42.4% (n=108)
-        #   +0.0 line: hit 43.6% / ROI -4.2%  (n=61, ~breakeven)
+        #   +0.0 line: hit 43.6% / ROI -4.2%  (n=61, ~breakeven) ← drop
         #   -0.5 line: hit 26.7% / ROI -45.9% (n=300) ← drop
         #   -1.0 line: hit 10.6% / ROI -74.4% (n=122) ← drop
         #   -1.5 line: hit 11.1% / ROI -81.1% (n=9)   ← drop
-        "handicap_line_min": 0.0,
+        # AH-AWAY-LINE-FILTER-TIGHTEN (2026-05-24, same day): candidate-bot
+        # backtest (scripts/backtest_ah_new_bots.py) showed tightening from
+        # hl>=0 to hl>=+0.5 moves ROI from +26.1% to +43.0%. The hl=0.0 bucket
+        # is breakeven-negative on its own, dropping it is the right trade.
+        "handicap_line_min": 0.5,
     },
     "bot_dnb_home_value": {
         "description": "DNB home — favourite without draw risk, T1-2, 5%+ edge",
