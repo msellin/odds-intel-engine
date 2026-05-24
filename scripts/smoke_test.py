@@ -8094,8 +8094,13 @@ def _():
 @test("ADMIN-PLACE-SKIP-REASON — per-row auto-placer status badge on /admin/place")
 def _():
     """ADMIN-PLACE-SKIP-REASON (2026-05-24): /admin/place must show why each
-    bet would or wouldn't be auto-placed (below_min / edge_eroded / no_coolbet /
-    ready). Backend computes the status; frontend renders the badge."""
+    bet would or wouldn't be auto-placed (below_min / edge_eroded / no_event /
+    no_market / ready). Backend computes the status; frontend renders the
+    badge. The `no_coolbet` umbrella status was split into `no_event` (no
+    Coolbet/Unibet snapshot for this match at all — fuzzy match likely failed)
+    vs `no_market` (match has snapshots but not for this market/selection) so
+    the user can manually spot-check fuzzy-matching gaps separately from
+    bookmaker market-coverage gaps."""
     import pathlib
     root = pathlib.Path(__file__).resolve().parent.parent
     web = root.parent / "odds-intel-web"
@@ -8107,10 +8112,26 @@ def _():
     assert "COOLBET_AUTO_MIN_EDGE" in ed, (
         "engine-data must export COOLBET_AUTO_MIN_EDGE so UI mirrors placer threshold"
     )
-    for status in ("below_min", "edge_eroded", "no_coolbet", "ready"):
+    for status in ("below_min", "edge_eroded", "no_event", "no_market", "ready"):
         assert f'"{status}"' in ed, f"autoPlaceStatus must include {status!r}"
+    # The old umbrella status should be gone — split into no_event / no_market.
+    assert '"no_coolbet"' not in ed, (
+        "autoPlaceStatus 'no_coolbet' should be split into 'no_event' / 'no_market'"
+    )
+    # Backend must track which match_ids have ANY Coolbet/Unibet snapshot so it
+    # can pick between no_event and no_market when livePrice is null.
+    assert "matchIdsWithCoolbetEvent" in ed, (
+        "engine-data must track match_ids with Coolbet/Unibet snapshots to "
+        "distinguish no_event from no_market"
+    )
     tbl = (web / "src" / "components" / "place-bet-table.tsx").read_text()
     assert "AutoPlaceStatusBadge" in tbl, "place-bet-table must render AutoPlaceStatusBadge"
+    # Both chips must render with distinct copy so the user can scan the table
+    # and tell which rows to spot-check for fuzzy-match issues vs market gaps.
+    assert '"no_event"' in tbl, "place-bet-table must render a chip for no_event"
+    assert '"no_market"' in tbl, "place-bet-table must render a chip for no_market"
+    assert "⚠ no match" in tbl, "no_event chip should label as '⚠ no match'"
+    assert "⚠ no market" in tbl, "no_market chip should label as '⚠ no market'"
 
 
 @test("COOLBET-SEARCH-LAVAL — per-team partial_ratio handles short-vs-full club names")
