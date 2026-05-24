@@ -6679,6 +6679,23 @@ def test_ah_away_line_filter():
         "candidate-gen must apply the floor check"
 
 
+@test("STAKE-KELLY-SAFETY-AUDIT — pre-real-money sanity audit script exists + 6-check structure")
+def test_stake_kelly_safety_audit():
+    """STAKE-KELLY-SAFETY-AUDIT (2026-05-25): read-only audit script runs before
+    real-money execution to flag stake-sizing anomalies (per-bet cap, daily
+    exposure, Kelly recompute sanity, negative-EV bets). Findings documented
+    in PRIORITY_QUEUE — does NOT auto-fix anything."""
+    import pathlib
+    script = pathlib.Path(__file__).resolve().parent.parent / "scripts" / "stake_kelly_safety_audit.py"
+    assert script.exists(), "stake_kelly_safety_audit.py missing"
+    src = script.read_text()
+    # 6 distinct safety checks present
+    for check in ("Stake distribution", "MAX_STAKE_PCT", "exceed 5%",
+                  "Kelly recompute", "Negative-EV", "open_exposure"):
+        assert check in src, f"safety audit must include '{check}' check"
+    assert "VERDICT" in src, "audit must print a verdict"
+
+
 @test("LEAGUE-CLV-EFFICIENCY — per-league CLV index script + weekly cron wired")
 def test_league_clv_efficiency():
     """LEAGUE-CLV-EFFICIENCY (2026-05-25): per-league CLV beatability index
