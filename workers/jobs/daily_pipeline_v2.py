@@ -10,6 +10,7 @@ Usage:
 """
 
 import math
+import os
 import sys
 import numpy as np
 import pandas as pd
@@ -45,7 +46,7 @@ from workers.model.improvements import (
     compute_kelly, compute_stake,
 )
 from workers.model.xgboost_ensemble import (
-    get_xgboost_prediction, ensemble_prediction,
+    get_xgboost_prediction, ensemble_prediction, _resolve_version,
 )
 
 console = Console()
@@ -2187,6 +2188,14 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 })
 
         # S1-XGB: XGBoost individual predictions — buffered for bulk write.
+        # PER-MARKET-VERSION-TAG (2026-05-24): tag each prediction with the
+        # actual version that produced it via _resolve_version(market_kind).
+        # Previously rows were silently tagged with global MODEL_VERSION even
+        # when per-market env overrides (MODEL_VERSION_1X2 etc.) routed
+        # inference to a different bundle — masking the per-market promotion
+        # in the predictions table audit.
+        _v_1x2 = _resolve_version("1x2")
+        _v_ou = _resolve_version("ou")
         if xgb_pred:
             for market, xgb_key, odds_field in (
                 ("1x2_home", "xgb_home_prob", "odds_home"),
@@ -2204,6 +2213,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         "implied_prob": 1 / odds_val,
                         "edge": p - (1 / odds_val),
                         "reasoning": f"data_tier={data_tier}",
+                        "model_version": _v_1x2,
                     })
 
         # S1-XGB-SHADOW (Phase B, 2026-05-24): if shadow inference ran, write
@@ -2272,7 +2282,17 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         console.print(f"  [yellow]Prediction missing prob key '{prob_key}' for {match_id}/{market} (tier={data_tier}) — skipping[/yellow]")
                     continue
                 prob = float(prob)  # ensure plain Python float — numpy floats break psycopg2
-                pending_pred_rows.append({
+                # PER-MARKET-VERSION-TAG: ensemble for 1X2 uses v_1x2's XGBoost
+                # head; ensemble for O/U 2.5 uses v_ou's head. Other markets
+                # (15/35/BTTS) are Poisson-only in ensemble and fall back to
+                # the global MODEL_VERSION default.
+                if market in ("1x2_home", "1x2_draw", "1x2_away"):
+                    _ens_ver = _v_1x2
+                elif market in ("over25", "under25"):
+                    _ens_ver = _v_ou
+                else:
+                    _ens_ver = None  # default to _active_model_version() in writer
+                _row = {
                     "match_id": match_id,
                     "market": market,
                     "source": "ensemble",
@@ -2280,7 +2300,10 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                     "implied_prob": 1 / odds_val,
                     "edge": prob - (1 / odds_val),
                     "reasoning": f"data_tier={data_tier}",
-                })
+                }
+                if _ens_ver:
+                    _row["model_version"] = _ens_ver
+                pending_pred_rows.append(_row)
 
         # AH predictions: store calibrated-lambda AH probabilities for CLV analysis.
         # Uses Platt-corrected 1x2 probs (pred) to invert → lambdas, fixing the
