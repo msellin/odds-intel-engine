@@ -130,17 +130,23 @@ def _():
     )
 
 
-@test("ML-BUNDLE-STORAGE — _load_models() routes through ensure_local_bundle on cache miss")
+@test("ML-BUNDLE-STORAGE — bundle loader routes through ensure_local_bundle on cache miss")
 def _():
     import inspect
     from workers.model import xgboost_ensemble
-    src = inspect.getsource(xgboost_ensemble._load_models)
+    # PER-MARKET-VERSION (2026-05-24): the ensure_local_bundle wire moved
+    # from _load_models into _load_bundle so per-market overrides can also
+    # hydrate from Storage. Check both — at least one must have it.
+    legacy_src = inspect.getsource(xgboost_ensemble._load_models)
+    per_market_src = inspect.getsource(xgboost_ensemble._load_bundle)
     # Without this wire, a fresh Railway container with MODEL_VERSION set to a
     # bundle not on disk falls through to {} and silently degrades to Poisson.
-    assert "ensure_local_bundle" in src, (
-        "_load_models must call ensure_local_bundle when the bundle dir is missing — "
+    assert "ensure_local_bundle" in per_market_src, (
+        "_load_bundle must call ensure_local_bundle when the bundle dir is missing — "
         "otherwise Railway redeploys lose bundles silently."
     )
+    # The legacy wrapper should delegate to _load_bundle (so the wire is preserved transitively).
+    assert "_load_bundle" in legacy_src, "_load_models must delegate to _load_bundle"
 
 
 @test("ML-BUNDLE-STORAGE — train.py uploads to Storage and registers on success")
@@ -8865,6 +8871,59 @@ def test_unretire_weekend_migration():
         assert name in src, f"migration 120 must un-retire {name}"
     assert "is_active" in src and "true" in src, "migration must set is_active=true"
     assert "retired_at = NULL" in src, "migration must null retired_at"
+
+
+@test("PER-BOT-EDGE-THRESHOLD-APPLY — per-bot edge thresholds match 25K backtest sweep findings")
+def _():
+    """PER-BOT-EDGE-THRESHOLD-APPLY (2026-05-25) — apply the 2026-05-19 sweep
+    findings (25K backtest rows / 22 bots) to BOTS_CONFIG. Guard the new
+    values so they don't silently revert.
+
+    Sweep optima (ROI gain in pp over baseline at sweep threshold):
+      bot_aggressive       → 15% (baseline +0.4% → +9.0% ROI, n=2802)
+      bot_aggressive_v2    → 15% (baseline -4.1% → +2.1% ROI, n= 647)
+      bot_btts_all         → 12% (baseline -0.3% → +5.8% ROI, n= 331)
+      bot_btts_conservative→  8% (baseline -2.2% → +3.6% ROI, n= 142)
+      bot_ou35_attacking   → 14% (baseline +30.6%→ +40.0% ROI, n= 199)
+    """
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG
+
+    # bot_aggressive — 15% across all market_type buckets, all tiers.
+    cfg = BOTS_CONFIG["bot_aggressive"]["edge_thresholds"]
+    for tier in (1, 2, 3, 4):
+        for market in ("1x2_fav", "1x2_long", "ou"):
+            assert cfg[tier][market] == 0.15, (
+                f"bot_aggressive tier {tier}/{market} must be 0.15, got {cfg[tier][market]}"
+            )
+
+    # bot_aggressive_v2 — 15% across all market_type buckets, all tiers.
+    cfg = BOTS_CONFIG["bot_aggressive_v2"]["edge_thresholds"]
+    for tier in (1, 2, 3, 4):
+        for market in ("1x2_fav", "1x2_long", "ou"):
+            assert cfg[tier][market] == 0.15, (
+                f"bot_aggressive_v2 tier {tier}/{market} must be 0.15, got {cfg[tier][market]}"
+            )
+
+    # bot_btts_all — 12% across all tiers.
+    cfg = BOTS_CONFIG["bot_btts_all"]["edge_thresholds"]
+    for tier in (1, 2, 3, 4):
+        assert cfg[tier]["btts"] == 0.12, (
+            f"bot_btts_all tier {tier} btts must be 0.12, got {cfg[tier]['btts']}"
+        )
+
+    # bot_btts_conservative — 8% across T1-T2 (only active tiers).
+    cfg = BOTS_CONFIG["bot_btts_conservative"]["edge_thresholds"]
+    for tier in (1, 2):
+        assert cfg[tier]["btts"] == 0.08, (
+            f"bot_btts_conservative tier {tier} btts must be 0.08, got {cfg[tier]['btts']}"
+        )
+
+    # bot_ou35_attacking — 14% across all tiers.
+    cfg = BOTS_CONFIG["bot_ou35_attacking"]["edge_thresholds"]
+    for tier in (1, 2, 3, 4):
+        assert cfg[tier]["ou"] == 0.14, (
+            f"bot_ou35_attacking tier {tier} ou must be 0.14, got {cfg[tier]['ou']}"
+        )
 
 
 if __name__ == "__main__":

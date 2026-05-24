@@ -223,7 +223,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 **24 paper trading bots** running across two categories (8 retired, 16 pre-match + 8 in-play active):
 
-**Pre-match (16 active, since 2026-04-27):** Based on historical backtest data — edge thresholds and league filters derived from football-data.co.uk 2007-2025 and beat_the_bookie 2005-2015. Includes `bot_proven_leagues` (5 cross-era confirmed leagues). 5 morning / 6 midday / 5 pre-KO timing cohorts. 8 retired (reasons in DB). Per-bot threshold tightening deferred to Batch 2 ~2026-06-15.
+**Pre-match (16 active, since 2026-04-27):** Based on historical backtest data — edge thresholds and league filters derived from football-data.co.uk 2007-2025 and beat_the_bookie 2005-2015. Includes `bot_proven_leagues` (5 cross-era confirmed leagues). 5 morning / 6 midday / 5 pre-KO timing cohorts. 8 retired (reasons in DB). **PER-BOT-EDGE-THRESHOLD-APPLY 2026-05-25**: applied 25K-row sweep optima pre Phase 3.5 — bot_aggressive/v2 → 15%, bot_ou35_attacking → 14%, bot_btts_all → 12%, bot_btts_conservative → 8%.
 
 **In-play (8 bots, since 2026-05-06):** Rule-based strategies A, A2, B, C, C_home, D, E, F using Bayesian xG posterior. Run inside LivePoller every 30s. See § INPLAY Plan in PRIORITY_QUEUE.md.
 

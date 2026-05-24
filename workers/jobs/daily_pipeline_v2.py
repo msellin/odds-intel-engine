@@ -113,15 +113,17 @@ BOTS_CONFIG = {
     # +11.6% ROI by dropping draws + under 2.5 + capping odds 1.50-3.30.
     # Pipeline skips via `is_active=false AND retired_at IS NOT NULL` gate.
     "bot_aggressive": {
-        "description": "Low threshold (3% edge), high volume — odds 1.40-3.00, min_prob 0.45. Originally retired 2026-05-17 (-5.7% ROI on 441 settled), re-enabled 2026-05-22 via migration 122 for weekend v1-vs-v2 A/B over the ~1000-match cohort.",
+        # PER-BOT-EDGE-THRESHOLD-APPLY (2026-05-25): 25K-row sweep optimum = 15% edge
+        # (baseline +0.4% → +9.0% ROI, n=2802). Tightened from 3-5% across all tiers.
+        "description": "PER-BOT-EDGE-THRESHOLD-APPLY 2026-05-25: 15% edge across all tiers (sweep optimum on 25K backtest rows, baseline +0.4% → +9.0% ROI). Odds 1.25-5.00.",
         "tier_label": "pro",
         "markets": ["1x2", "ou"],
         "tier_filter": None,
         "edge_thresholds": {
-            1: {"1x2_fav": 0.03, "1x2_long": 0.05, "ou": 0.03},
-            2: {"1x2_fav": 0.03, "1x2_long": 0.04, "ou": 0.03},
-            3: {"1x2_fav": 0.03, "1x2_long": 0.04, "ou": 0.03},
-            4: {"1x2_fav": 0.03, "1x2_long": 0.04, "ou": 0.03},
+            1: {"1x2_fav": 0.15, "1x2_long": 0.15, "ou": 0.15},
+            2: {"1x2_fav": 0.15, "1x2_long": 0.15, "ou": 0.15},
+            3: {"1x2_fav": 0.15, "1x2_long": 0.15, "ou": 0.15},
+            4: {"1x2_fav": 0.15, "1x2_long": 0.15, "ou": 0.15},
         },
         "odds_range": (1.25, 5.00),
         "min_prob": 0.25,
@@ -134,16 +136,20 @@ BOTS_CONFIG = {
     # v1 stays running as the control — do not retire until v2 has its own
     # 100+ settled sample.
     "bot_aggressive_v2": {
-        "description": "AGGRESSIVE-V2 — drop draws + OU under 2.5; cap odds 1.50-3.30; min edge 5%",
+        # PER-BOT-EDGE-THRESHOLD-APPLY (2026-05-25): 25K-row sweep optimum = 15% edge
+        # (baseline -4.1% → +2.1% ROI, n=647). Tightened from 5-8% across all tiers.
+        # Volume drops from 3548 → 647 backtest bets at 15%; intermediate buckets
+        # (8-11%) stay -EV, so don't compromise.
+        "description": "PER-BOT-EDGE-THRESHOLD-APPLY 2026-05-25: 15% edge across all tiers (sweep optimum on 25K backtest rows, baseline -4.1% → +2.1% ROI). Odds 1.50-3.30, no Draw, no Under 2.5.",
         "tier_label": "pro",
         "markets": ["1x2", "ou"],
         "tier_filter": None,
         "selection_filter": ["Home", "Away", "Over 2.5"],  # no Draw, no Under 2.5
         "edge_thresholds": {
-            1: {"1x2_fav": 0.05, "1x2_long": 0.08, "ou": 0.05},
-            2: {"1x2_fav": 0.05, "1x2_long": 0.08, "ou": 0.05},
-            3: {"1x2_fav": 0.05, "1x2_long": 0.08, "ou": 0.05},
-            4: {"1x2_fav": 0.05, "1x2_long": 0.08, "ou": 0.05},
+            1: {"1x2_fav": 0.15, "1x2_long": 0.15, "ou": 0.15},
+            2: {"1x2_fav": 0.15, "1x2_long": 0.15, "ou": 0.15},
+            3: {"1x2_fav": 0.15, "1x2_long": 0.15, "ou": 0.15},
+            4: {"1x2_fav": 0.15, "1x2_long": 0.15, "ou": 0.15},
         },
         "odds_range": (1.50, 3.30),
         "min_prob": 0.30,
@@ -264,27 +270,31 @@ BOTS_CONFIG = {
         # PER-BOT-SLICE-TIGHTEN reverted 2026-05-18: backtest said 2.00-2.50 loses (-6.5%),
         # but live v14 data (41 bets) shows that bucket at +20.5% ROI. Poisson backfill
         # miscalibrated at those odds; live filter stack (Pinnacle veto) fixes it. Keep (1.50, 2.80).
-        "description": "BTTS all leagues — new market, zero overlap with 1X2 bets",
+        # PER-BOT-EDGE-THRESHOLD-APPLY (2026-05-25): 25K-row sweep optimum = 12% edge
+        # (baseline -0.3% → +5.8% ROI, n=331). Tightened from 3-4% across all tiers.
+        "description": "BTTS all leagues. PER-BOT-EDGE-THRESHOLD-APPLY 2026-05-25: 12% edge across all tiers (sweep optimum on 25K backtest rows, baseline -0.3% → +5.8% ROI).",
         "tier_label": "pro",
         "markets": ["btts"],
         "edge_thresholds": {
-            1: {"btts": 0.04},
-            2: {"btts": 0.04},
-            3: {"btts": 0.03},
-            4: {"btts": 0.03},
+            1: {"btts": 0.12},
+            2: {"btts": 0.12},
+            3: {"btts": 0.12},
+            4: {"btts": 0.12},
         },
         "odds_range": (1.50, 2.80),
         "min_prob": 0.30,
     },
     "bot_btts_conservative": {
         # PER-BOT-SLICE-TIGHTEN 2026-05-17: odds 2.00-2.50 = -14.3% ROI (290 bets, -€415) → cap at 2.00.
-        "description": "BTTS top leagues only — selective, 7%+ edge",
+        # PER-BOT-EDGE-THRESHOLD-APPLY (2026-05-25): 25K-row sweep optimum = 8% edge
+        # (baseline -2.2% → +3.6% ROI, n=142). Tightened from 7% (small but consistent gain).
+        "description": "BTTS top leagues only. PER-BOT-EDGE-THRESHOLD-APPLY 2026-05-25: 8% edge across all tiers (sweep optimum on 25K backtest rows, baseline -2.2% → +3.6% ROI).",
         "tier_label": "elite",
         "markets": ["btts"],
         "tier_filter": [1, 2],
         "edge_thresholds": {
-            1: {"btts": 0.07},
-            2: {"btts": 0.07},
+            1: {"btts": 0.08},
+            2: {"btts": 0.08},
         },
         "odds_range": (1.60, 2.00),
         "min_prob": 0.35,
@@ -310,14 +320,16 @@ BOTS_CONFIG = {
     },
     "bot_ou35_attacking": {
         # PER-BOT-SLICE-TIGHTEN 2026-05-17: over @ 3.00-3.50 = -38.3% ROI (30 bets, -€115) → cap at 3.00.
-        "description": "O/U 3.5 — over 3.5 in high-scoring leagues, under 3.5 at value",
+        # PER-BOT-EDGE-THRESHOLD-APPLY (2026-05-25): 25K-row sweep optimum = 14% edge
+        # (baseline +30.6% → +40.0% ROI, n=199). Tightened from 5-6% across all tiers.
+        "description": "O/U 3.5. PER-BOT-EDGE-THRESHOLD-APPLY 2026-05-25: 14% edge across all tiers (sweep optimum on 25K backtest rows, baseline +30.6% → +40.0% ROI).",
         "tier_label": "pro",
         "markets": ["ou35"],
         "edge_thresholds": {
-            1: {"ou": 0.06},
-            2: {"ou": 0.06},
-            3: {"ou": 0.05},
-            4: {"ou": 0.05},
+            1: {"ou": 0.14},
+            2: {"ou": 0.14},
+            3: {"ou": 0.14},
+            4: {"ou": 0.14},
         },
         "odds_range": (1.80, 3.00),
         "min_prob": 0.30,
