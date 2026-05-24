@@ -6453,6 +6453,64 @@ def test_post_mortem_context():
         "Prompt should clarify that opposite-side picks across bots are normal"
 
 
+@test("MFV-LINEUP-WIRE — match_feature_vectors.lineup_confirmed derived from matches.lineups_fetched_at")
+def test_mfv_lineup_wire():
+    """MFV-LINEUP-WIRE: NEWS-LINEUP-VALIDATE found that lineup_confirmed was 100% NULL
+    in match_feature_vectors because nothing wrote a 'lineup_confirmed' signal to
+    match_signals. Real lineup data lives in matches.lineups_fetched_at — that's
+    the source of truth. Fix: MFV builder pulls lineups_fetched_at from matches
+    and derives lineup_confirmed = (lineups_fetched_at IS NOT NULL).
+
+    Source signal in audit: bets on matches with lineups fetched hit 45.1% / +8.1%
+    ROI vs 33.5% / -4.5% without (n=1,752 settled bets) — a real, useful B-ML3
+    feature once correctly wired.
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "api_clients" / "supabase_client.py").read_text()
+    assert "MFV-LINEUP-WIRE" in src, "MFV-LINEUP-WIRE tag missing"
+    # Both SELECT statements (nightly + live) must include lineups_fetched_at
+    assert src.count("lineups_fetched_at") >= 3, (
+        "Both SELECTs in MFV builders + the row-build override must reference "
+        "lineups_fetched_at (expected >=3 occurrences)"
+    )
+    # Direct derivation in row build
+    assert 'match.get("lineups_fetched_at") is not None' in src, \
+        "Row build must derive lineup_confirmed from match.lineups_fetched_at"
+    # Old signal-name lookup must be gone (it was always NULL)
+    assert 'name == "lineup_confirmed"' not in src, \
+        "Dead lineup_confirmed signal lookup must be removed — nothing writes that signal"
+
+
+@test("INFO-GAP-LEAGUE-AUDIT — audit script exists and flags sharp markets via CLV distribution")
+def test_info_gap_league_audit():
+    """INFO-GAP-LEAGUE-AUDIT: per-league CLV distribution review from VAL-POST-MORTEM.
+    Found one flagged league (Scottish Premiership: n=41, median CLV -25.7%, ROI -48.6%).
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "scripts" / "info_gap_league_audit.py").read_text()
+    assert "INFO-GAP-LEAGUE-AUDIT" in src, "tag missing"
+    assert "percentile_cont(0.5)" in src, "median CLV computation must use percentile_cont"
+    assert "median_clv" in src and "roi_pct" in src, \
+        "per-league output must include median CLV and ROI"
+
+
+@test("NEWS-LINEUP-VALIDATE — validation script exists; runs AUC against home/away/CLV targets")
+def test_news_lineup_validate():
+    """NEWS-LINEUP-VALIDATE: gate test for B-ML3 feature selection. Verdict 2026-05-24:
+    news_impact_score FAILS the 0.52 AUC gate (against home_win AND against bet outcome).
+    lineup_confirmed in MFV was 100% NULL (separate bug, fixed by MFV-LINEUP-WIRE).
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "scripts" / "news_lineup_validate.py").read_text()
+    assert "NEWS-LINEUP-VALIDATE" in src, "tag missing"
+    assert "auc_rank" in src or "AUC" in src, "AUC computation must be implemented"
+    assert "news_impact_score" in src and "lineup_confidence" in src, \
+        "Both signals must be validated"
+
+
 @test("OU-UNDER-CAP — audit script exists; investigation closed (no cap applied, see PRIORITY_QUEUE)")
 def test_ou_under_cap_audit():
     """OU-UNDER-CAP: VAL-POST-MORTEM hypothesised that high-conviction OU-under

@@ -1160,10 +1160,15 @@ def build_match_feature_vectors(client, date_str: str) -> int:
     Returns count of rows upserted.
     """
     # Fetch finished matches for this date
+    # MFV-LINEUP-WIRE (2026-05-24): include lineups_fetched_at so the row build
+    # can populate lineup_confirmed from actual data (the match_signals
+    # 'lineup_confirmed' signal is never written; Gemini's 'lineup_confidence'
+    # is bet-relative and locked to 0.5 default).
     matches = execute_query(
         """SELECT id, date, result, score_home, score_away,
                   home_team_id, away_team_id, league_id,
-                  pseudo_clv_home, pseudo_clv_draw, pseudo_clv_away
+                  pseudo_clv_home, pseudo_clv_draw, pseudo_clv_away,
+                  lineups_fetched_at
            FROM matches
            WHERE status = 'finished'
              AND date >= %s AND date <= %s""",
@@ -1198,10 +1203,13 @@ def build_match_feature_vectors_live(client, date_str: str) -> int:
 
     Returns count of rows upserted.
     """
+    # MFV-LINEUP-WIRE (2026-05-24): include lineups_fetched_at so live MFV
+    # rows populate lineup_confirmed correctly. See note in nightly builder.
     matches = execute_query(
         """SELECT id, date, result, score_home, score_away,
                   home_team_id, away_team_id, league_id,
-                  pseudo_clv_home, pseudo_clv_draw, pseudo_clv_away
+                  pseudo_clv_home, pseudo_clv_draw, pseudo_clv_away,
+                  lineups_fetched_at
            FROM matches
            WHERE status != 'finished'
              AND date >= %s AND date <= %s""",
@@ -1565,7 +1573,13 @@ def _build_feature_row_batched(
     # -- Signals ---------------------------------------------------------------
     fixture_importance = bookmaker_disagreement = referee_cards_avg = None
     injury_count_home = injury_count_away = None
-    news_impact_score = lineup_confirmed = None
+    news_impact_score = None
+    # MFV-LINEUP-WIRE (2026-05-24): lineup_confirmed derived from the match's
+    # lineups_fetched_at — the only source we actually populate. The match_signals
+    # 'lineup_confirmed' signal is never written, and Gemini's 'lineup_confidence'
+    # is bet-relative and stuck at 0.5 default. Signal: bets on matches with
+    # lineups fetched hit 45.1% / +8.1% ROI vs 33.5% / -4.5% without (n=1,752).
+    lineup_confirmed = match.get("lineups_fetched_at") is not None
     league_position_home = league_position_away = None
     points_to_relegation_home = points_to_relegation_away = None
     points_to_title_home = points_to_title_away = None
@@ -1597,8 +1611,8 @@ def _build_feature_row_batched(
                 injury_count_away = ival
             elif name == "news_impact_score":
                 news_impact_score = fval
-            elif name == "lineup_confirmed":
-                lineup_confirmed = bool(val) if val is not None else None
+            # MFV-LINEUP-WIRE: 'lineup_confirmed' signal is never written; lineup_confirmed
+            # is derived directly from match.lineups_fetched_at above. Skip signal lookup.
             elif name == "league_position_home":
                 league_position_home = fval
             elif name == "league_position_away":
