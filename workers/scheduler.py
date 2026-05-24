@@ -528,6 +528,29 @@ def job_weekly_meta_retrain():
     _run_job("weekly_meta_retrain", _meta_retrain)
 
 
+def job_league_clv_efficiency():
+    """LEAGUE-CLV-EFFICIENCY (2026-05-25): weekly compute of per-league CLV
+    beatability index. Runs Sunday 02:30 UTC, before the weekly_retrain at
+    03:00 so the freshly-computed league_clv_efficiency signal is in
+    match_signals before MFV gets rebuilt. Persists to match_signals as
+    a per-match league-inherited signal.
+    """
+    import subprocess
+    def _run():
+        result = subprocess.run(
+            [sys.executable, "scripts/compute_league_clv_efficiency.py", "--days", "60", "--write"],
+            cwd=str(Path(__file__).parent.parent),
+            timeout=600,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[yellow]league_clv_efficiency exit {result.returncode}: {result.stderr[-1000:]}[/yellow]")
+            raise RuntimeError(f"league_clv_efficiency failed: exit {result.returncode}")
+        console.print(result.stdout[-2000:])
+    _run_job("league_clv_efficiency", _run)
+
+
 def job_daily_real_perf_email():
     """DAILY-REAL-PERF-EMAIL (2026-05-25): captures yesterday + 7d real-bet
     performance split (placer vs manual) and emails the summary via Resend.
@@ -998,6 +1021,12 @@ def main():
     # yesterday's bets are final. Captures placer-vs-manual split + 7d rollup.
     scheduler.add_job(job_daily_real_perf_email, CronTrigger(hour=23, minute=30),
                       id="daily_real_perf_email", name="Daily Real-Perf Email 23:30")
+
+    # LEAGUE-CLV-EFFICIENCY (2026-05-25) — Sunday 02:30 UTC, before weekly_retrain
+    # at 03:00 so the per-league CLV index is in match_signals before MFV rebuild.
+    scheduler.add_job(job_league_clv_efficiency,
+                      CronTrigger(day_of_week="sun", hour=2, minute=30),
+                      id="league_clv_efficiency", name="League CLV Efficiency Sun 02:30")
 
     # ENG-8: Watchlist alerts — 08:30, 14:30, 20:35 UTC
     # 20:35 staggered 5 min after 20:30 betting refresh (N9 fix — avoids simultaneous heavy jobs)

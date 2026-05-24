@@ -6679,6 +6679,28 @@ def test_ah_away_line_filter():
         "candidate-gen must apply the floor check"
 
 
+@test("LEAGUE-CLV-EFFICIENCY — per-league CLV index script + weekly cron wired")
+def test_league_clv_efficiency():
+    """LEAGUE-CLV-EFFICIENCY (2026-05-25): per-league CLV beatability index
+    computed from matches.pseudo_clv_*, persisted to match_signals as
+    'league_clv_efficiency'. Weekly cron Sun 02:30 UTC fires the script.
+    Feeds future B-ML3 training as a categorical-via-numeric signal.
+    """
+    import pathlib
+    base = pathlib.Path(__file__).resolve().parent.parent
+    script = base / "scripts" / "compute_league_clv_efficiency.py"
+    assert script.exists(), "compute_league_clv_efficiency.py missing"
+    src = script.read_text()
+    assert "league_clv_efficiency" in src
+    assert "pseudo_clv_home" in src and "pseudo_clv_draw" in src and "pseudo_clv_away" in src
+    assert "INSERT INTO match_signals" in src
+    assert "MIN_MATCHES_FOR_SIGNAL" in src, "sample-size guard required"
+    sched = (base / "workers" / "scheduler.py").read_text()
+    assert "job_league_clv_efficiency" in sched
+    assert 'CronTrigger(day_of_week="sun", hour=2, minute=30)' in sched
+    assert 'id="league_clv_efficiency"' in sched
+
+
 @test("META-RETRAIN — weekly B-ML3 retrain cron registered Sunday 04:00 UTC")
 def test_meta_retrain():
     """META-RETRAIN (2026-05-25): Sunday 04:00 UTC retrain job invokes
