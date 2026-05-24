@@ -6702,6 +6702,27 @@ def test_backup_restore_drill():
     assert "VERDICT" in src
 
 
+@test("BUNDLE-STORAGE-SYNC — meta-model bundle upload/download helpers + auto-mirror wired")
+def test_bundle_storage_sync():
+    """BUNDLE-STORAGE-SYNC (2026-05-25): meta-model bundles mirror to Supabase
+    Storage under prefix 'meta/<version>/'. _load_bundle hydrates from Storage
+    on cache miss. Weekly meta-retrain auto-uploads new bundles after training."""
+    import pathlib, inspect
+    storage_src = (pathlib.Path(__file__).resolve().parent.parent /
+                   "workers" / "model" / "storage.py").read_text()
+    assert "def upload_meta_bundle" in storage_src
+    assert "def ensure_local_meta_bundle" in storage_src
+    assert 'f"meta/{version}/' in storage_src
+    # Meta loader hydrates from storage
+    meta_src = (pathlib.Path(__file__).resolve().parent.parent /
+                "workers" / "model" / "meta_b_ml3.py").read_text()
+    assert "ensure_local_meta_bundle" in meta_src
+    # Weekly retrain auto-uploads
+    sched = (pathlib.Path(__file__).resolve().parent.parent /
+             "workers" / "scheduler.py").read_text()
+    assert "upload_meta_bundle" in sched, "weekly meta retrain must auto-upload to Storage"
+
+
 @test("MFV-NIGHTLY-REFRESH — B-ML3 v2 + form_momentum backfills wired to nightly cron")
 def test_mfv_nightly_refresh():
     """MFV-B-ML3-V2-NIGHTLY-REFRESH + MFV-FORM-MOMENTUM-NIGHTLY-REFRESH

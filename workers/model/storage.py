@@ -125,6 +125,98 @@ def upload_bundle(version: str, local_dir: str | Path) -> int:
     return n
 
 
+def upload_meta_bundle(version: str, local_dir: str | Path) -> int:
+    """B-ML3 / meta-model bundle uploader (2026-05-25).
+
+    Mirrors upload_bundle() but for the smaller meta-model artefacts
+    (b_ml3.pkl, scaler.pkl, feature_cols.pkl, threshold.json,
+    coefficients.json) and uses prefix `meta/<version>/` instead of the
+    xgboost bundles' `<version>/`. This separates meta bundles from
+    primary 1X2/OU/Goals bundles in the same Storage bucket.
+
+    Idempotent — re-uploads overwrite. Returns count of files uploaded.
+    Raises if any of the four required files is missing locally.
+    """
+    local_dir = Path(local_dir)
+    if not local_dir.exists():
+        raise FileNotFoundError(f"Meta bundle dir not found: {local_dir}")
+
+    REQUIRED_META = ("b_ml3.pkl", "scaler.pkl", "feature_cols.pkl", "threshold.json")
+    OPTIONAL_META = ("coefficients.json",)
+
+    missing = [f for f in REQUIRED_META if not (local_dir / f).exists()]
+    if missing:
+        raise FileNotFoundError(
+            f"Meta bundle {version} missing required files: {missing}. "
+            f"Re-train via scripts/train_b_ml3.py before uploading."
+        )
+
+    sb = _client()
+    n = 0
+    for fname in REQUIRED_META + OPTIONAL_META:
+        local_file = local_dir / fname
+        if not local_file.exists():
+            continue
+        remote_path = f"meta/{version}/{fname}"
+        with open(local_file, "rb") as f:
+            data = f.read()
+        try:
+            sb.storage.from_(BUCKET).upload(
+                path=remote_path,
+                file=data,
+                file_options={"upsert": "true", "content-type": "application/octet-stream"},
+            )
+        except Exception as e:
+            try:
+                sb.storage.from_(BUCKET).remove([remote_path])
+                sb.storage.from_(BUCKET).upload(
+                    path=remote_path, file=data,
+                    file_options={"content-type": "application/octet-stream"},
+                )
+            except Exception as e2:
+                console.print(f"  [yellow]upload meta {remote_path} failed: {e2}[/yellow]")
+                continue
+        n += 1
+        console.print(f"  [green]→[/green] uploaded {remote_path} ({len(data):,} bytes)")
+    return n
+
+
+def ensure_local_meta_bundle(version: str, meta_dir: str | Path) -> bool:
+    """Mirrors ensure_local_bundle for meta-model bundles. Returns True if
+    `<meta_dir>/<version>/b_ml3.pkl` is present (whether cached or freshly
+    downloaded)."""
+    bundle_dir = Path(meta_dir) / version
+    if bundle_dir.exists() and (bundle_dir / "b_ml3.pkl").exists():
+        return True
+    console.print(f"[cyan]Meta bundle {version} not on local disk — pulling from Storage...[/cyan]")
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    sb = _client()
+    try:
+        listed = sb.storage.from_(BUCKET).list(f"meta/{version}")
+    except Exception as e:
+        console.print(f"  [yellow]Storage list failed for meta/{version}: {e}[/yellow]")
+        return False
+    if not listed:
+        return False
+    n = 0
+    for entry in listed:
+        fname = entry["name"] if isinstance(entry, dict) else entry.name
+        if fname.startswith("."):
+            continue
+        local_file = bundle_dir / fname
+        if local_file.exists():
+            continue
+        remote_path = f"meta/{version}/{fname}"
+        try:
+            data = sb.storage.from_(BUCKET).download(remote_path)
+            local_file.write_bytes(data)
+            n += 1
+            console.print(f"  [green]←[/green] downloaded {remote_path} ({len(data):,} bytes)")
+        except Exception as e:
+            console.print(f"  [yellow]Download failed for {remote_path}: {e}[/yellow]")
+    return (bundle_dir / "b_ml3.pkl").exists()
+
+
 def download_bundle(version: str, local_dir: str | Path) -> int:
     """Pull every file under `models/<version>/` to `local_dir`.
 

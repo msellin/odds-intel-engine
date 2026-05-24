@@ -43,16 +43,26 @@ _cache: dict = {}
 
 
 def _load_bundle(version: str) -> Optional[dict]:
-    """Load (and cache) a meta-model bundle by version. Returns None if missing."""
+    """Load (and cache) a meta-model bundle by version. Returns None if missing.
+
+    BUNDLE-STORAGE-SYNC (2026-05-25): if the bundle dir isn't local, attempt
+    to hydrate from Supabase Storage via storage.ensure_local_meta_bundle.
+    Mirrors the pattern xgboost_ensemble uses for the main bundles so
+    Railway redeploys don't lose meta bundles silently."""
     if version in _cache:
         return _cache[version]
 
     bp = _BUNDLE_DIR / version
     if not bp.exists() or not (bp / "b_ml3.pkl").exists():
-        # Future enhancement: pull from Supabase Storage via storage.ensure_local_bundle
-        # for now we expect the bundle to be on disk locally OR mirrored to Railway via repo.
-        _cache[version] = None
-        return None
+        try:
+            from workers.model.storage import ensure_local_meta_bundle
+            present = ensure_local_meta_bundle(version, _BUNDLE_DIR)
+            if not present:
+                _cache[version] = None
+                return None
+        except Exception:
+            _cache[version] = None
+            return None
     try:
         bundle = {
             "model": joblib.load(bp / "b_ml3.pkl"),

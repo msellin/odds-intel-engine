@@ -525,6 +525,15 @@ def job_weekly_meta_retrain():
             raise RuntimeError(f"weekly meta retrain failed: exit {result.returncode}")
         # Tail the output so the new bundle's CV AUC is visible in pipeline_runs metadata.
         console.print(result.stdout[-3000:])
+        # BUNDLE-STORAGE-SYNC (2026-05-25): mirror the new bundle to Supabase
+        # Storage so future Railway redeploys can hydrate it on cache miss.
+        try:
+            from workers.model.storage import upload_meta_bundle
+            local_dir = Path(__file__).parent.parent / "data" / "models" / "meta" / version
+            count = upload_meta_bundle(version, local_dir)
+            console.print(f"[green]Uploaded {count} meta bundle files to Storage[/green]")
+        except Exception as e:
+            console.print(f"[yellow]Meta bundle Storage upload skipped: {e} — bundle remains on local disk only[/yellow]")
     _run_job("weekly_meta_retrain", _meta_retrain)
 
 
