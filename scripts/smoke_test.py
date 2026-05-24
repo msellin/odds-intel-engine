@@ -6656,6 +6656,29 @@ def test_ah_away_line_filter():
         "candidate-gen must apply the floor check"
 
 
+@test("META-FEATURE-DESIGN — B-ML3 feature list is documented + grounded in coverage data")
+def test_meta_feature_design():
+    """META-FEATURE-DESIGN (2026-05-24): finalize the B-ML3 feature list before
+    training. The 14-feature shortlist must be documented in MODEL_WHITEPAPER.md
+    so any drift (e.g. someone re-adding news_impact_score) gets caught.
+    Today's NEWS-LINEUP-VALIDATE finding (drop news_impact_score, +12pp ROI
+    signal on lineup_confirmed) is the load-bearing rationale and must be
+    referenced.
+    """
+    import pathlib
+    base = pathlib.Path(__file__).resolve().parent.parent
+    wp = (base / "MODEL_WHITEPAPER.md").read_text()
+    assert "3.4 Meta-model Feature Set" in wp, "section header missing"
+    assert "META-FEATURE-DESIGN" in wp, "tag missing"
+    assert "lineup_confirmed" in wp, "lineup_confirmed must be in the documented list (+12pp ROI signal)"
+    assert "ensemble_prob" in wp, "the edge-proxy feature must be present"
+    # Explicit drop rationales we want preserved
+    assert "news_impact_score" in wp, "news_impact_score must appear with its drop rationale"
+    assert "AUC 0.30" in wp, "must cite the NEWS-LINEUP-VALIDATE AUC finding"
+    # Confirm the doc tracks coverage minimum so future agents apply the same gate
+    assert "Coverage" in wp and "30" in wp, "30% coverage threshold must be documented"
+
+
 @test("AH-HOME-LINE-FILTER — bot_ah_home_fav only accepts handicap_line <= -0.5")
 def test_ah_home_line_filter():
     """AH-HOME-LINE-FILTER (2026-05-24): AH-AWAY-MODEL-AUDIT live-data follow-up

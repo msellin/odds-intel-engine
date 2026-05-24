@@ -165,6 +165,56 @@ ELO ratings are updated daily during settlement (21:00 UTC) after match results 
 
 **TURF-FAMILIARITY:** Away team's `away_team_turf_games_ytd` counts finished away matches on artificial turf this season. Quantifies visitor unfamiliarity — two home teams on turf = no signal; English visitor to Scandinavian turf = real edge.
 
+### 3.4 Meta-model Feature Set (META-FEATURE-DESIGN, 2026-05-24)
+
+This subsection is the finalized feature list for **B-ML3** — the Stage-3 meta-model that scores each emitted bet on `P(this bet beats closing line)`. The meta-model is a downstream classifier; it does NOT replace the primary 1X2/OU/BTTS/AH heads, it filters their output before placement.
+
+**Goal of B-ML3:** binary classifier with `target = (pseudo_clv > 0)` evaluated per (match × selection) row in `match_feature_vectors`. Output is a per-bet score in [0, 1]; production placer accepts bets above a threshold (tuned post-training on holdout). Training cohort filter: `match_date >= '2026-05-06'` (pre-cutoff rows lack key signals); current cohort size is 9,971 rows / 5,572 with `opening_implied_home IS NOT NULL`.
+
+**The shortlist had to satisfy three constraints, in order:**
+
+1. **Coverage ≥ 30%** in the training window. Features below this threshold can't be learned reliably even with `_missing` indicators because the imputation would dominate the signal.
+2. **Has to add information beyond the closing line.** ELO/form/position are partially redundant with the closing line itself (the bookmaker already prices them in). We keep some quality proxies but lean toward market-microstructure features the closing line doesn't fully capture.
+3. **Empirical evidence of signal** when available — features that passed an AUC > 0.52 gate against pseudo_clv beat, OR have a clear validated mechanistic story.
+
+**Final feature list (14 features):**
+
+| # | Feature | Coverage | Why it's in |
+|---|---|---|---|
+| 1 | `ensemble_prob_<selection> − opening_implied_<selection>` (computed at train time) | 56% | The OPENING-LINE-BEAT proxy. Single likely-strongest feature. Captures the model's claimed edge directly. |
+| 2 | `opening_implied_<selection>` | 56% | Raw market-implied prob at opening — calibration anchor and a strong proxy for "how confident does the market start at?". |
+| 3 | `bookmaker_disagreement` | 46% | Spread between best and worst implied across accessible books. Higher = more inefficiency to exploit. |
+| 4 | `odds_drift_home` | 56% | Post-opening movement. Sharp money pushing the line is informative independent of where it ends. |
+| 5 | `steam_move` | 56% | Binary flag for fast/large drift. Coarser than #4 but more interpretable. |
+| 6 | `elo_diff` | 98% | Quality differential. Even though closing line absorbs ELO, the residual matters in tier-3/4 leagues where pricing is thinner. |
+| 7 | `form_ppg_home` | 65% | Recent points-per-game. Quality proxy but distinct from ELO in capturing in-season trajectory. |
+| 8 | `form_ppg_away` | 66% | Same, away side. |
+| 9 | `lineup_confirmed` | **100%** | **NEW (2026-05-24 NEWS-LINEUP-VALIDATE)**. Bets on matches with confirmed lineups hit +8.1% ROI vs −4.5% without (n=1,752 settled). +12pp ROI signal — the single strongest discovered feature. |
+| 10 | `rest_days_home`, `rest_days_away` (2 cols) | 80% | Fatigue / rotation risk. Strong empirical signal in football. |
+| 11 | `fixture_importance` | 58% | Cup vs league vs friendly weighting. |
+| 12 | `league_position_home` | 61% | Table context for the home side. Captures relegation-fight / title-race intensity that's not fully in ELO. |
+| 13 | `time_to_kickoff` (computed at train time, from `pick_time` vs `m.date`) | n/a (derived) | Hours before kickoff. Bets placed close to KO have different CLV characteristics. |
+| 14 | `league_tier` (joined from `leagues`) | 100% | Bookmakers price T1 differently from T3/T4. Categorical with 4 levels. |
+
+**Explicitly dropped from the initial proposal (with reason):**
+
+| Feature | Reason |
+|---|---|
+| `news_impact_score` | **2026-05-24 NEWS-LINEUP-VALIDATE: AUC 0.30 vs home_win, 0.49 vs bet outcome.** Neither CI clears 0.50. Only 4.8% of matches carry non-zero values. Dropped from B-ML3 v1; revisit if news collection improves. |
+| `model_disagreement` | 6.4% coverage. Too thin for reliable learning. |
+| `form_momentum_home` | 0% coverage — column is empty. Latent bug in `_build_feature_row_batched`. |
+| `overnight_line_move` | 0.2% coverage — capture is broken. |
+| `injury_count_home/away` | 3% coverage. Filed under `INJURY-SEVERITY` for later refit when severity tagging lands. |
+| `referee_cards_avg` | 4.8% coverage. Needs `BACKFILL-REFEREE-RECENT` to populate properly. |
+| `weather_temp_c` / `weather_wind_kmh` / `weather_rain_mm` | 16% coverage. Defer until weather pipeline ships v2. |
+| `pinnacle_line_move_home`, `pinnacle_ah_line_move`, `odds_volatility`, `sharp_consensus_home`, `importance_diff`, `venue_surface_artificial` | Not present as MFV columns. Required if 4-AI consensus list is used as-is — defer until pipeline produces them. |
+| `pinnacle_implied_over25`, `ou25_bookmaker_disagreement`, `market_implied_btts_yes` | OU/BTTS-specific features. B-ML3 v1 scores 1X2-style outcomes; OU-specific meta-model (B-ML3-OU) would consume these in a follow-up. |
+| ELO / form combined into a single quality score | Considered. Kept ELO and form as separate features — the meta-model can learn the interaction. Coefficient inspection post-training will reveal if both are pulling weight or one is redundant. |
+
+**Post-training feature audit:** after the first B-ML3 fit, inspect logistic regression coefficients. Features with |coefficient| < 0.05 are candidates to drop for v2. Re-fit weekly via `META-RETRAIN` once the lifecycle wires up.
+
+**Why not just train on every column with coverage > 30%?** Per the original META-FEATURE-DESIGN note: 12-15 features × 50 examples per feature = ~750 minimum rows for stable coefficients. We have 5,572 usable rows, so we could support up to ~110 features — but feature-bloat trades model interpretability for marginal signal. Holding to 14 leaves headroom for AH-XGBOOST features when those train into a B-ML3 v2.
+
 ---
 
 ## 4. Model Architecture
