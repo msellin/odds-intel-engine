@@ -6702,6 +6702,23 @@ def test_backup_restore_drill():
     assert "VERDICT" in src
 
 
+@test("MFV-NIGHTLY-REFRESH — B-ML3 v2 + form_momentum backfills wired to nightly cron")
+def test_mfv_nightly_refresh():
+    """MFV-B-ML3-V2-NIGHTLY-REFRESH + MFV-FORM-MOMENTUM-NIGHTLY-REFRESH
+    (2026-05-25): nightly cron re-runs both backfills so MFV rows for matches
+    that finished today settle into the new columns. Replaces a direct live-
+    MFV-builder modification (which has T-6h snapshot ordering issues)."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "scheduler.py").read_text()
+    assert "job_nightly_mfv_b_ml3_refresh" in src
+    assert "job_nightly_mfv_form_momentum_refresh" in src
+    assert "backfill_mfv_b_ml3_v2_features.py" in src
+    assert "backfill_mfv_form_momentum.py" in src
+    assert 'CronTrigger(hour=22, minute=30)' in src
+    assert 'CronTrigger(hour=22, minute=45)' in src
+
+
 @test("STAKE-KELLY-SAFETY-AUDIT — pre-real-money sanity audit script exists + 6-check structure")
 def test_stake_kelly_safety_audit():
     """STAKE-KELLY-SAFETY-AUDIT (2026-05-25): read-only audit script runs before

@@ -559,6 +559,48 @@ def job_daily_real_perf_email():
     _run_job("daily_real_perf_email", send_daily_real_perf)
 
 
+def job_nightly_mfv_b_ml3_refresh():
+    """MFV-B-ML3-V2-NIGHTLY-REFRESH (2026-05-25): re-runs the B-ML3 v2 feature
+    backfill nightly so MFV rows for matches that just finished settle into
+    the new columns. Cheaper than modifying the live MFV builder which has
+    ordering issues with T-6h snapshot availability at build time. Idempotent
+    via WHERE …_at_t6h IS NULL guard in the backfill script.
+    """
+    import subprocess
+    def _run():
+        # Roll a 7-day window so we backfill recent settled matches + any
+        # earlier ones still NULL (covers cron misfires).
+        result = subprocess.run(
+            [sys.executable, "scripts/backfill_mfv_b_ml3_v2_features.py",
+             "--since", "2026-05-06"],
+            cwd=str(Path(__file__).parent.parent),
+            timeout=1200,
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[yellow]mfv_b_ml3_refresh exit {result.returncode}: {result.stderr[-1000:]}[/yellow]")
+        console.print(result.stdout[-1500:])
+    _run_job("mfv_b_ml3_nightly_refresh", _run)
+
+
+def job_nightly_mfv_form_momentum_refresh():
+    """MFV-FORM-MOMENTUM-NIGHTLY-REFRESH (2026-05-25): same pattern for the
+    form_momentum_home/away columns. Idempotent via NULL guards."""
+    import subprocess
+    def _run():
+        result = subprocess.run(
+            [sys.executable, "scripts/backfill_mfv_form_momentum.py",
+             "--since", "2026-05-06"],
+            cwd=str(Path(__file__).parent.parent),
+            timeout=600,
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[yellow]mfv_form_momentum_refresh exit {result.returncode}: {result.stderr[-1000:]}[/yellow]")
+        console.print(result.stdout[-1500:])
+    _run_job("mfv_form_momentum_nightly_refresh", _run)
+
+
 def job_watchlist_alerts():
     from workers.jobs.watchlist_alerts import run_watchlist_alerts
     _run_job("watchlist_alerts", run_watchlist_alerts)
@@ -1027,6 +1069,18 @@ def main():
     scheduler.add_job(job_league_clv_efficiency,
                       CronTrigger(day_of_week="sun", hour=2, minute=30),
                       id="league_clv_efficiency", name="League CLV Efficiency Sun 02:30")
+
+    # MFV-B-ML3-V2-NIGHTLY-REFRESH (2026-05-25): re-runs the B-ML3 v2 feature
+    # backfill nightly at 22:30 UTC so MFV rows for matches that finished today
+    # get the new _at_t6h columns populated. Cheaper than modifying the live MFV
+    # builder which has ordering issues with T-6h snapshot availability.
+    scheduler.add_job(job_nightly_mfv_b_ml3_refresh, CronTrigger(hour=22, minute=30),
+                      id="mfv_b_ml3_refresh", name="MFV B-ML3 v2 Refresh 22:30")
+
+    # MFV-FORM-MOMENTUM-NIGHTLY-REFRESH (2026-05-25): same pattern for form_momentum.
+    scheduler.add_job(job_nightly_mfv_form_momentum_refresh,
+                      CronTrigger(hour=22, minute=45),
+                      id="mfv_form_momentum_refresh", name="MFV Form Momentum Refresh 22:45")
 
     # ENG-8: Watchlist alerts — 08:30, 14:30, 20:35 UTC
     # 20:35 staggered 5 min after 20:30 betting refresh (N9 fix — avoids simultaneous heavy jobs)
