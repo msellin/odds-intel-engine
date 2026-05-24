@@ -3624,7 +3624,7 @@ def _():
     for b in retired_bots:
         assert f"'{b}'" in mig, f"migration 111 missing retirement for {b}"
     # If un-retire migration exists, skip description-prefix check
-    if not pathlib.Path("supabase/migrations/117_unretire_bots_for_analysis.sql").exists():
+    if not pathlib.Path("supabase/migrations/117_unretire_all_bots.sql").exists():
         src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
         for b in retired_bots:
             idx = src.find(f'"{b}":')
@@ -3739,7 +3739,7 @@ def _():
     assert "bot_aggressive_v2" in mig, "retired_reason must reference v2 replacement"
     # If un-retire migration exists (BOTS-UNRETIRE-WEEKEND), description prefix
     # was removed when the bot came back online. Migration file is the audit trail.
-    if not pathlib.Path("supabase/migrations/122_unretire_weekend_bots.sql").exists():
+    if not pathlib.Path("supabase/migrations/122_unretire_remaining_bots.sql").exists():
         src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
         idx = src.find('"bot_aggressive":')
         assert idx >= 0, "bot_aggressive missing from BOTS_CONFIG"
@@ -8990,6 +8990,27 @@ def test_bot_ou15_diagnose_close_migration():
     # Sanity DO block must fail loudly if the row isn't retired post-migration.
     assert "RAISE EXCEPTION" in src, (
         "migration 129 must include a sanity check that aborts if retire failed"
+    )
+
+
+@test("ODDS-TIMING-VALIDATE — odds_timing_analysis.py exposes hours-before-KO CLV by bucket")
+def test_odds_timing_validate_script():
+    """ODDS-TIMING-VALIDATE (2026-05-25) — ran the analysis on 963 settled bets
+    over 14 days. The 2-4h-before-KO bucket has CLV +7.4% but does not beat the
+    6-9h (+5.7%), 9-12h (+6.4%), or 12h+ (+17.1%) buckets by >2pp, so no
+    scheduler change. Smoke test asserts the script still ships and exposes
+    the hours-before-KO CLV query so future re-runs are possible."""
+    import pathlib
+    p = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "odds_timing_analysis.py"
+    assert p.exists(), "scripts/odds_timing_analysis.py missing"
+    src = p.read_text()
+    # Match-relative bucket logic must still be present.
+    assert "hours before kickoff" in src.lower(), (
+        "odds_timing_analysis.py must keep the hours-before-KO CLV section"
+    )
+    # Must still hit the settled-bets table (CLV requires settled outcomes).
+    assert "simulated_bets" in src or "real_bets" in src, (
+        "odds_timing_analysis.py must read from a settled-bets table"
     )
 
 
