@@ -8119,11 +8119,28 @@ def _():
     assert '"no_coolbet"' not in ed, (
         "autoPlaceStatus 'no_coolbet' should be split into 'no_event' / 'no_market'"
     )
-    # Backend must track which match_ids have ANY Coolbet/Unibet snapshot so it
-    # can pick between no_event and no_market when livePrice is null.
+    # Backend must track which match_ids have ANY Coolbet/Unibet evidence so
+    # it can pick between no_event and no_market when livePrice is null. Two
+    # evidence sources must both feed the set, because the original snaps-only
+    # detection mis-classified matches whose Coolbet snapshots fell off the
+    # 10k row cap (user saw a 1x2 home bet "✓ Placed" at Coolbet while a
+    # sibling double_chance row on the same match showed "⚠ no match"):
+    #   (a) dedicated lightweight odds_snapshots query (`coolbetEventRows`)
+    #       — separate from the 10k-capped main snaps query so older Coolbet
+    #       snapshots can't be pushed off the bottom.
+    #   (b) real_bets at Coolbet today — ground truth, since a placed bet
+    #       proves Coolbet has the event regardless of snapshot state.
     assert "matchIdsWithCoolbetEvent" in ed, (
-        "engine-data must track match_ids with Coolbet/Unibet snapshots to "
+        "engine-data must track match_ids with Coolbet/Unibet evidence to "
         "distinguish no_event from no_market"
+    )
+    assert "coolbetEventRows" in ed, (
+        "engine-data must run a dedicated lightweight query for event-existence "
+        "(separate from the 10k-capped snaps query) to avoid false `no_event` chips"
+    )
+    assert 'r.bookmaker === "Coolbet"' in ed, (
+        "engine-data must treat real_bets placed at Coolbet as ground truth that "
+        "the event exists at Coolbet"
     )
     tbl = (web / "src" / "components" / "place-bet-table.tsx").read_text()
     assert "AutoPlaceStatusBadge" in tbl, "place-bet-table must render AutoPlaceStatusBadge"
