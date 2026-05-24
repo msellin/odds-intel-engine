@@ -6641,6 +6641,100 @@ def test_ah_away_line_filter():
         "candidate-gen must apply the floor check"
 
 
+@test("CV-METRICS-PERSIST — train.py threads CV metrics into model_versions.cv_metrics")
+def test_cv_metrics_persist():
+    """CV-METRICS-PERSIST (2026-05-24): train_result_model + train_over25_model
+    attach _cv_metrics to the model object; train_all reads them and passes
+    to register_version. Previously cv_metrics was always None on weekly
+    retrain rows, making compare_models.py structurally non-functional.
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "model" / "train.py").read_text()
+    assert "CV-METRICS-PERSIST" in src, "tag missing"
+    assert "_cv_metrics" in src, "metrics attribute must be set on model objects"
+    assert "cv_log_loss_mean" in src, "log_loss CV metric missing"
+    assert "cv_brier_mean" in src, "brier CV metric missing"
+    assert "cv_metrics_combined" in src, "train_all must combine result + over_under metrics"
+    assert "cv_metrics=None" not in src, "TODO marker should be gone"
+
+
+@test("WEEKLY-EVAL — cron uses weekly_eval_and_compare.py with holdout MFV rows")
+def test_weekly_eval():
+    import pathlib
+    base = pathlib.Path(__file__).resolve().parent.parent
+    sched = (base / "workers" / "scheduler.py").read_text()
+    eval_src = (base / "scripts" / "weekly_eval_and_compare.py").read_text()
+    assert "WEEKLY-EVAL" in sched, "scheduler tag missing"
+    assert "scripts/weekly_eval_and_compare.py" in sched, "scheduler must call the new eval script"
+    assert '"scripts/compare_models.py"' not in sched, "legacy compare_models.py call must be removed"
+    assert "SUMMARY_JSON" in eval_src, "eval must emit SUMMARY_JSON line for email digest"
+
+
+@test("WEEKLY-EVAL-EMAIL — Resend digest after retrain")
+def test_weekly_eval_email():
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "jobs" / "weekly_retrain_email.py").read_text()
+    assert "RESEND_API_KEY" in src, "must use Resend"
+    assert "_extract_summary" in src, "summary parser missing"
+    assert "send_weekly_retrain_email" in src, "public entry point missing"
+    sched = (pathlib.Path(__file__).resolve().parent.parent / "workers" / "scheduler.py").read_text()
+    assert "send_weekly_retrain_email" in sched, "scheduler must invoke email digest"
+
+
+@test("PROMOTE-MODEL-SCRIPT — scripts/promote_model.py supports per-market scope + dry-run")
+def test_promote_model_script():
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "scripts" / "promote_model.py").read_text()
+    assert "promoted_at = COALESCE(promoted_at, NOW())" in src, "promotion timestamp logic missing"
+    assert "demoted_at = NOW()" in src, "demotion of previous prod missing"
+    assert "--market" in src, "per-market promotion flag required"
+    assert "MODEL_VERSION_" in src, "must reference per-market env var pattern"
+    assert "--dry-run" in src, "dry-run flag required"
+
+
+@test("PER-MARKET-VERSION — xgboost_ensemble supports MODEL_VERSION_1X2/OU/BTTS overrides")
+def test_per_market_version():
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "model" / "xgboost_ensemble.py").read_text()
+    assert "PER-MARKET-VERSION" in src, "tag missing"
+    assert "_resolve_version" in src, "version resolver missing"
+    assert "MODEL_VERSION_" in src, "per-market env var pattern missing"
+    assert "_bundles: dict[str, dict]" in src, "per-version bundle cache missing"
+    assert "_load_bundle(version" in src, "per-version bundle loader missing"
+    # Behavioural assertion
+    import os
+    from workers.model.xgboost_ensemble import _resolve_version, MODEL_VERSION
+    os.environ.pop("MODEL_VERSION_1X2", None)
+    assert _resolve_version("1x2") == MODEL_VERSION, "no override → fallback to MODEL_VERSION"
+    os.environ["MODEL_VERSION_1X2"] = "v20260517"
+    try:
+        assert _resolve_version("1x2") == "v20260517", "override → returns the env value"
+        assert _resolve_version("ou") == MODEL_VERSION, "OU unaffected by 1X2 override"
+    finally:
+        os.environ.pop("MODEL_VERSION_1X2", None)
+
+
+@test("SHADOW-PREDICTIONS — predictions allows multi-version + pipeline writes shadow rows")
+def test_shadow_predictions():
+    import pathlib
+    base = pathlib.Path(__file__).resolve().parent.parent
+    mig = (base / "supabase" / "migrations" / "127_predictions_unique_per_model_version.sql").read_text()
+    assert "uq_prediction_match_market_source_version" in mig, "new constraint name missing"
+    assert "UNIQUE (match_id, market, source, model_version)" in mig, "constraint must include model_version"
+    client_src = (base / "workers" / "api_clients" / "supabase_client.py").read_text()
+    assert "ON CONFLICT (match_id, market, source, model_version)" in client_src, \
+        "bulk_store_predictions ON CONFLICT must include model_version"
+    pipe_src = (base / "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+    assert "SHADOW-INFERENCE" in pipe_src, "pipeline tag missing"
+    assert 'os.environ.get("SHADOW_MODEL_VERSION"' in pipe_src, "pipeline must check SHADOW_MODEL_VERSION env"
+    assert "xgb_pred_shadow" in pipe_src, "shadow prediction variable missing"
+    assert '"model_version": _sv' in pipe_src, "shadow rows must carry candidate model_version"
+
+
 @test("AH-CAL-BYPASS — calibrate_prob skips stage-1 shrinkage for AH/DC markets")
 def test_ah_cal_bypass():
     """AH-CAL-BYPASS: AH probs are derived from already-Platt-calibrated 1X2 lambdas

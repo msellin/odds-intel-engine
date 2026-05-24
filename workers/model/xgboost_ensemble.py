@@ -45,58 +45,83 @@ DEFAULT_MODEL_VERSION = "v14"
 # so post-hoc evaluation can compare versions on overlapping settled matches.
 MODEL_VERSION = os.environ.get("MODEL_VERSION", DEFAULT_MODEL_VERSION)
 
-# Cache loaded models and feature data (loaded once per pipeline run)
-_model_cache = {}
+# PER-MARKET-VERSION (Phase C-light, 2026-05-24): allow MODEL_VERSION_1X2 /
+# MODEL_VERSION_OU / MODEL_VERSION_BTTS to override the global MODEL_VERSION
+# for specific markets. AH-AWAY-MODEL-AUDIT exposed v20260517 as better than
+# v14 on 1X2 (~10% better log-loss) but worse on O/U (calibration drifted
+# toward unders). Per-market routing lets us promote 1X2 to v20260517 while
+# keeping O/U on v14 — no need for the heavyweight per-market-head refactor
+# yet. The bundle structure is the same; we just load the right bundle for
+# the right head.
+def _resolve_version(market_kind: str) -> str:
+    """Returns the model version to use for a given market head.
+    market_kind: '1x2' | 'ou' | 'btts' | 'goals' (goal-regressor heads).
+    Falls back to global MODEL_VERSION if no override is set."""
+    env_name = f"MODEL_VERSION_{market_kind.upper()}"
+    return os.environ.get(env_name, MODEL_VERSION)
+
+
+# Per-version model cache. Each version maps to its loaded bundle dict
+# {feature_cols, result_1x2, over_under, home_goals, away_goals}.
+# Cached for the container's lifetime (same as the legacy single-version cache).
+_bundles: dict[str, dict] = {}
 _feature_cache = {}
 
 
-def _load_models() -> dict:
-    """Load saved XGBoost models from disk. Cached after first call.
+def _load_bundle(version: str) -> dict:
+    """Load (and cache) a model bundle by version name. PER-MARKET-VERSION-aware:
+    callers pass the resolved version, this just loads + caches.
 
     ML-BUNDLE-STORAGE: if the bundle dir doesn't exist locally, attempt to
-    pull it from Supabase Storage first (`workers/model/storage.py`). This
-    is what makes ephemeral Railway deploys safe: a fresh container with
-    `MODEL_VERSION=v_20260517` set won't have the bundle on its filesystem,
-    so we hydrate from Storage on the first prediction. Cached for the
-    container's lifetime after that. Falls back to empty (Poisson-only)
-    if the version is in neither place — caller logs a warning."""
-    if _model_cache:
-        return _model_cache
+    pull it from Supabase Storage first. Cached for the container's lifetime."""
+    if version in _bundles:
+        return _bundles[version]
 
-    model_path = MODELS_DIR / MODEL_VERSION
+    model_path = MODELS_DIR / version
     if not model_path.exists() or not (model_path / "feature_cols.pkl").exists():
-        # Lazy import — Storage is only reached when the cache is cold AND
-        # the bundle isn't on local disk (i.e. once per container lifetime
-        # in production).
         try:
             from workers.model.storage import ensure_local_bundle
-            present = ensure_local_bundle(MODEL_VERSION, MODELS_DIR)
+            present = ensure_local_bundle(version, MODELS_DIR)
         except Exception as e:
             from rich.console import Console
             Console().print(
-                f"[yellow]Bundle {MODEL_VERSION} not local and Storage hydration "
+                f"[yellow]Bundle {version} not local and Storage hydration "
                 f"failed: {e} — falling back to Poisson-only.[/yellow]"
             )
+            _bundles[version] = {}
             return {}
         if not present:
             from rich.console import Console
             Console().print(
-                f"[yellow]Bundle {MODEL_VERSION} not in local disk OR Supabase "
+                f"[yellow]Bundle {version} not in local disk OR Supabase "
                 f"Storage — falling back to Poisson-only.[/yellow]"
             )
+            _bundles[version] = {}
             return {}
 
     try:
-        _model_cache["feature_cols"] = joblib.load(model_path / "feature_cols.pkl")
-        _model_cache["result_1x2"] = joblib.load(model_path / "result_1x2.pkl")
-        _model_cache["over_under"] = joblib.load(model_path / "over_under.pkl")
-        _model_cache["home_goals"] = joblib.load(model_path / "home_goals.pkl")
-        _model_cache["away_goals"] = joblib.load(model_path / "away_goals.pkl")
+        bundle = {
+            "feature_cols": joblib.load(model_path / "feature_cols.pkl"),
+            "result_1x2":   joblib.load(model_path / "result_1x2.pkl"),
+            "over_under":   joblib.load(model_path / "over_under.pkl"),
+            "home_goals":   joblib.load(model_path / "home_goals.pkl"),
+            "away_goals":   joblib.load(model_path / "away_goals.pkl"),
+        }
+        _bundles[version] = bundle
     except Exception:
-        _model_cache.clear()
+        _bundles[version] = {}
         return {}
 
-    return _model_cache
+    return _bundles[version]
+
+
+def _load_models() -> dict:
+    """Legacy single-version loader. Kept for callers that don't care about
+    per-market routing. Returns the bundle for the global MODEL_VERSION env.
+
+    New code should call `_load_bundle(_resolve_version(market_kind))` to
+    pick up per-market overrides."""
+    return _load_bundle(MODEL_VERSION)
 
 
 def _load_feature_data() -> dict:
@@ -274,11 +299,17 @@ def get_xgboost_prediction(home_team: str, away_team: str,
         "xgb_exp_away": float,
     }
     """
-    models = _load_models()
-    if not models:
-        return None
+    # PER-MARKET-VERSION (2026-05-24): pick the model version per head.
+    # Defaults to MODEL_VERSION for every head; overrides via env let us
+    # promote 1X2 to a new version without simultaneously promoting O/U.
+    v_1x2 = _resolve_version("1x2")
+    v_ou = _resolve_version("ou")
+    v_goals = _resolve_version("goals")  # for the expected-goals regressors
 
-    feature_cols = models["feature_cols"]
+    bundle_1x2 = _load_bundle(v_1x2)
+    if not bundle_1x2:
+        return None
+    feature_cols = bundle_1x2["feature_cols"]
 
     if _is_mfv_schema(feature_cols):
         # v10+ path — fetch the raw MFV row by match_id.
@@ -300,8 +331,8 @@ def get_xgboost_prediction(home_team: str, away_team: str,
         return None
 
     try:
-        # 1X2 classifier
-        result_model = models["result_1x2"]
+        # 1X2 classifier (from v_1x2 bundle)
+        result_model = bundle_1x2["result_1x2"]
         probs_1x2 = result_model.predict_proba(X)[0]
         # Classes are typically [A, D, H] or [0, 1, 2] — check model classes
         classes = list(result_model.classes_)
@@ -316,20 +347,56 @@ def get_xgboost_prediction(home_team: str, away_team: str,
             draw_prob = probs_1x2[1] if len(probs_1x2) > 1 else 0.3
             away_prob = probs_1x2[0]
 
-        # O/U classifier
-        over_model = models["over_under"]
-        probs_ou = over_model.predict_proba(X)[0]
+        # O/U classifier (from v_ou bundle, may be a different version)
+        bundle_ou = _load_bundle(v_ou) if v_ou != v_1x2 else bundle_1x2
+        if not bundle_ou:
+            return None
+        # Build X again if the OU bundle has different feature_cols
+        ou_feature_cols = bundle_ou["feature_cols"]
+        if ou_feature_cols == feature_cols:
+            X_ou = X
+        else:
+            if _is_mfv_schema(ou_feature_cols):
+                row_ou = _build_row_from_mfv(match_id, ou_feature_cols, tier) if match_id else None
+            else:
+                row_ou = _build_row_from_legacy_cache(home_team, away_team, tier, ou_feature_cols)
+            if row_ou is None:
+                return None
+            try:
+                X_ou = pd.DataFrame([row_ou])[ou_feature_cols].fillna(0)
+            except KeyError:
+                return None
+
+        over_model = bundle_ou["over_under"]
+        probs_ou = over_model.predict_proba(X_ou)[0]
         ou_classes = list(over_model.classes_)
         if True in ou_classes or 1 in ou_classes:
             over25_prob = probs_ou[ou_classes.index(True)] if True in ou_classes else probs_ou[ou_classes.index(1)]
         else:
             over25_prob = probs_ou[-1]  # assume last class is "over"
 
-        # Poisson goal regressors (for expected goals)
-        hg_model = models["home_goals"]
-        ag_model = models["away_goals"]
-        exp_home = max(0.1, float(hg_model.predict(X)[0]))
-        exp_away = max(0.1, float(ag_model.predict(X)[0]))
+        # Poisson goal regressors — bundled with the 1X2 head's version
+        # (treat goals_home/goals_away as part of "1x2" family for now since
+        # they share feature schema with result_1x2). Per-market goals
+        # routing can be added if a future refit needs it.
+        bundle_goals = _load_bundle(v_goals) if v_goals != v_1x2 else bundle_1x2
+        if bundle_goals.get("home_goals") is not None:
+            hg_model = bundle_goals["home_goals"]
+            ag_model = bundle_goals["away_goals"]
+            X_goals = X if bundle_goals["feature_cols"] == feature_cols else None
+            if X_goals is None:
+                goals_feature_cols = bundle_goals["feature_cols"]
+                if _is_mfv_schema(goals_feature_cols):
+                    row_goals = _build_row_from_mfv(match_id, goals_feature_cols, tier) if match_id else None
+                else:
+                    row_goals = _build_row_from_legacy_cache(home_team, away_team, tier, goals_feature_cols)
+                if row_goals is None:
+                    return None
+                X_goals = pd.DataFrame([row_goals])[goals_feature_cols].fillna(0)
+            exp_home = max(0.1, float(hg_model.predict(X_goals)[0]))
+            exp_away = max(0.1, float(ag_model.predict(X_goals)[0]))
+        else:
+            exp_home = exp_away = 1.3
 
         return {
             "xgb_home_prob": float(home_prob),

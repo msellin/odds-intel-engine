@@ -2080,6 +2080,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         # Try XGBoost ensemble for Tier A teams
         pred = poisson_pred  # default: Poisson-only
         xgb_pred = None
+        xgb_pred_shadow = None  # Phase B shadow candidate predictions
         if data_tier == "A":
             from workers.utils.team_names import normalize_team_name
             home_norm = normalize_team_name(match["home_team"], source="default")
@@ -2106,6 +2107,62 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 )
                 if xgb_pred:
                     pred = ensemble_prediction(poisson_pred, xgb_pred, tier=_tier)
+
+            # SHADOW-INFERENCE (Phase B, 2026-05-24): if SHADOW_MODEL_VERSION
+            # env is set to a different version than production, also run
+            # inference with the candidate and write its predictions with
+            # the candidate's model_version. compare_models.py can then diff
+            # production vs candidate on overlapping settled matches —
+            # finally fixing the "0 overlap" bug. Cost: ~2x XGBoost inference
+            # for Tier A matches only (a few hundred per pipeline run).
+            _shadow_ver = os.environ.get("SHADOW_MODEL_VERSION", "").strip()
+            from workers.model.xgboost_ensemble import MODEL_VERSION as _prod_ver
+            if _shadow_ver and _shadow_ver != _prod_ver:
+                # Temporarily route a clean call through _load_bundle to
+                # produce candidate predictions. We call get_xgboost_prediction
+                # again but with the candidate version pinned via a thread-
+                # local override (simpler: just call the per-version helper).
+                from workers.model.xgboost_ensemble import _load_bundle as _lb
+                _shadow_bundle = _lb(_shadow_ver)
+                if _shadow_bundle:
+                    # Manually replicate the relevant slice of
+                    # get_xgboost_prediction using the shadow bundle.
+                    try:
+                        _fc = _shadow_bundle["feature_cols"]
+                        from workers.model.xgboost_ensemble import (
+                            _is_mfv_schema as _ism, _build_row_from_mfv as _brm,
+                            _build_row_from_legacy_cache as _brl,
+                        )
+                        if _ism(_fc) and _mid:
+                            _row_s = _brm(_mid, _fc, _tier)
+                        elif not _ism(_fc):
+                            _row_s = _brl(home_norm, away_norm, _tier, _fc)
+                        else:
+                            _row_s = None
+                        if _row_s is not None:
+                            _X_s = pd.DataFrame([_row_s])[_fc].fillna(0)
+                            _r_s = _shadow_bundle["result_1x2"]
+                            _probs_s = _r_s.predict_proba(_X_s)[0]
+                            _cls = list(_r_s.classes_)
+                            if "H" in _cls:
+                                _hp_s = _probs_s[_cls.index("H")]; _dp_s = _probs_s[_cls.index("D")]; _ap_s = _probs_s[_cls.index("A")]
+                            else:
+                                _hp_s = _probs_s[2] if len(_probs_s) > 2 else _probs_s[0]
+                                _dp_s = _probs_s[1] if len(_probs_s) > 1 else 0.3
+                                _ap_s = _probs_s[0]
+                            _ou_s = _shadow_bundle["over_under"]
+                            _po_s = _ou_s.predict_proba(_X_s)[0]
+                            _oc = list(_ou_s.classes_)
+                            _o25_s = _po_s[_oc.index(True)] if True in _oc else (_po_s[_oc.index(1)] if 1 in _oc else _po_s[-1])
+                            xgb_pred_shadow = {
+                                "xgb_home_prob": float(_hp_s),
+                                "xgb_draw_prob": float(_dp_s),
+                                "xgb_away_prob": float(_ap_s),
+                                "xgb_over25_prob": float(_o25_s),
+                                "_shadow_version": _shadow_ver,
+                            }
+                    except Exception:
+                        xgb_pred_shadow = None
 
         # Store predictions
         data_tier = pred.get("data_tier", "A")
@@ -2147,6 +2204,30 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         "implied_prob": 1 / odds_val,
                         "edge": p - (1 / odds_val),
                         "reasoning": f"data_tier={data_tier}",
+                    })
+
+        # S1-XGB-SHADOW (Phase B, 2026-05-24): if shadow inference ran, write
+        # its predictions with model_version=<shadow> so compare_models.py
+        # has data to diff against production rows.
+        if xgb_pred_shadow:
+            _sv = xgb_pred_shadow.get("_shadow_version")
+            for market, xgb_key, odds_field in (
+                ("1x2_home", "xgb_home_prob", "odds_home"),
+                ("1x2_draw", "xgb_draw_prob", "odds_draw"),
+                ("1x2_away", "xgb_away_prob", "odds_away"),
+            ):
+                odds_val = match.get(odds_field, 0)
+                if odds_val > 0 and xgb_pred_shadow.get(xgb_key) is not None:
+                    p = float(xgb_pred_shadow[xgb_key])
+                    pending_pred_rows.append({
+                        "match_id": match_id,
+                        "market": market,
+                        "source": "xgboost",
+                        "model_prob": p,
+                        "implied_prob": 1 / odds_val,
+                        "edge": p - (1 / odds_val),
+                        "reasoning": f"data_tier={data_tier} shadow={_sv}",
+                        "model_version": _sv,
                     })
 
         # Store ensemble predictions for every market where we have both a model

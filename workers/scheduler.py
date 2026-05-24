@@ -455,19 +455,32 @@ def job_weekly_retrain():
             raise RuntimeError(f"weekly retrain failed: exit {result.returncode}")
         console.print(result.stdout[-2000:])
 
-        # Auto-comparison — best-effort. A retrain that lands without anyone
-        # reading the diff is still a win (the bundle is on disk for next week).
+        # Auto-comparison — best-effort.
+        # WEEKLY-EVAL (2026-05-24): switched from compare_models.py to
+        # weekly_eval_and_compare.py. The legacy script needed OVERLAPPING
+        # predictions in the predictions table between candidate and prod,
+        # but candidate bundles are never inferenced so it always returned
+        # "0 overlap". The new script loads each bundle directly and scores
+        # held-out settled MFV rows, then persists cv_metrics to model_versions
+        # for audit. Output is parsed by the email digest below.
         try:
             cmp = subprocess.run(
-                [sys.executable, "scripts/compare_models.py", version, production],
+                [sys.executable, "scripts/weekly_eval_and_compare.py", version, production],
                 cwd=str(Path(__file__).parent.parent),
-                timeout=600,
+                timeout=900,
                 capture_output=True,
                 text=True,
             )
             console.print(cmp.stdout[-3000:])
             if cmp.returncode != 0:
-                console.print(f"[yellow]compare_models.py exit {cmp.returncode}: {cmp.stderr[-1000:]}[/yellow]")
+                console.print(f"[yellow]weekly_eval_and_compare.py exit {cmp.returncode}: {cmp.stderr[-1000:]}[/yellow]")
+            # WEEKLY-EVAL-EMAIL (2026-05-24): send Resend digest with the
+            # SUMMARY_JSON the eval script prints on its final line.
+            try:
+                from workers.jobs.weekly_retrain_email import send_weekly_retrain_email
+                send_weekly_retrain_email(version, production, cmp.stdout)
+            except Exception as ee:
+                console.print(f"[yellow]Email digest failed (non-blocking): {ee}[/yellow]")
         except Exception as e:
             console.print(f"[yellow]Auto-comparison skipped: {e}[/yellow]")
 

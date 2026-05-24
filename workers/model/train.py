@@ -210,6 +210,17 @@ def train_result_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, outp
 
     console.print(f"\n  [green]Mean accuracy: {np.mean(accuracies):.3f}[/green]")
     console.print(f"  [green]Mean log_loss: {np.mean(log_losses):.4f}[/green]")
+    # CV-METRICS-PERSIST (2026-05-24): stash on the model object so train_all
+    # can pull it without changing the public return type (other callers use
+    # the bare model).
+    _result_cv_metrics = {
+        "cv_accuracy_mean": float(np.mean(accuracies)),
+        "cv_accuracy_std": float(np.std(accuracies)),
+        "cv_log_loss_mean": float(np.mean(log_losses)),
+        "cv_log_loss_std": float(np.std(log_losses)),
+        "cv_log_loss_folds": [float(x) for x in log_losses],
+        "n_folds": len(log_losses),
+    }
 
     # Train final model on all data with calibration
     final_model = XGBClassifier(
@@ -250,6 +261,10 @@ def train_result_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, outp
 
     console.print(imp_table)
 
+    # CV-METRICS-PERSIST: attach metrics to the model object so train_all can
+    # read them via getattr without changing the function signature (avoids
+    # breaking any external callers that just expect the model object).
+    final_model._cv_metrics = _result_cv_metrics  # type: ignore[attr-defined]
     return final_model
 
 
@@ -299,6 +314,15 @@ def train_over25_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, outp
 
     console.print(f"\n  [green]Mean accuracy: {np.mean(accuracies):.3f}[/green]")
     console.print(f"  [green]Mean brier score: {np.mean(brier_scores):.4f}[/green]")
+    _ou_cv_metrics = {
+        "cv_accuracy_mean": float(np.mean(accuracies)),
+        "cv_accuracy_std": float(np.std(accuracies)),
+        "cv_brier_mean": float(np.mean(brier_scores)),
+        "cv_brier_std": float(np.std(brier_scores)),
+        "cv_brier_folds": [float(x) for x in brier_scores],
+        "over25_rate": float(y.mean()),
+        "n_folds": len(brier_scores),
+    }
 
     # Final calibrated model
     final_model = XGBClassifier(
@@ -321,6 +345,8 @@ def train_over25_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, outp
     joblib.dump(final_model, model_path)
     console.print(f"  Saved to: {model_path}")
 
+    # CV-METRICS-PERSIST: see notes on train_result_model.
+    final_model._cv_metrics = _ou_cv_metrics  # type: ignore[attr-defined]
     return final_model
 
 
@@ -767,13 +793,22 @@ def train_all(version: str = "untagged",
                     win_end = str(dates.max())[:10]
         except Exception:
             pass
+        # CV-METRICS-PERSIST (2026-05-24): pull metrics off the model objects
+        # (attached by train_result_model + train_over25_model) so the row in
+        # model_versions actually has comparison data. Previously NULL for
+        # every weekly retrain, which made compare_models.py / Sunday's auto-
+        # comparison structurally non-functional.
+        cv_metrics_combined = {
+            "result_1x2": getattr(result_model, "_cv_metrics", None),
+            "over_under": getattr(over25_model, "_cv_metrics", None),
+        }
         register_version(
             version,
             training_window_start=win_start,
             training_window_end=win_end,
             n_training_rows=n_rows,
             feature_cols=augmented_feature_cols,
-            cv_metrics=None,  # TODO: thread per-market CV metrics through here once train_*_model returns them
+            cv_metrics=cv_metrics_combined,
             notes=f"Auto-uploaded by train.py train_all() (include_pinnacle={include_pinnacle}, include_ou_market={include_ou_market})",
         )
         console.print(f"[bold green]✓ Bundle {version} uploaded + registered in model_versions[/bold green]\n")

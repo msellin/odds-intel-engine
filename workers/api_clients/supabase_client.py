@@ -1016,13 +1016,14 @@ def bulk_store_predictions(rows: list[dict]) -> int:
             (match_id, market, source, model_probability, confidence, reasoning,
              implied_probability, edge_percent, model_version)
         VALUES %s
-        ON CONFLICT (match_id, market, source) DO UPDATE SET
+        -- SHADOW-PREDICTIONS-UNIQUE (migration 127): conflict key includes
+        -- model_version so candidate/shadow runs don't overwrite production.
+        ON CONFLICT (match_id, market, source, model_version) DO UPDATE SET
             model_probability = EXCLUDED.model_probability,
             confidence = EXCLUDED.confidence,
             reasoning = EXCLUDED.reasoning,
             implied_probability = EXCLUDED.implied_probability,
-            edge_percent = EXCLUDED.edge_percent,
-            model_version = EXCLUDED.model_version
+            edge_percent = EXCLUDED.edge_percent
     """
     with get_conn() as conn:
         with conn.cursor() as cur:
