@@ -7650,14 +7650,15 @@ def _():
 
     sc = (root / "workers" / "api_clients" / "supabase_client.py").read_text()
     assert "edge_pct_taken" in sc, "store_real_bet must write edge_pct_taken"
-    # EFFECTIVE-PROB-FIX: derive prob from bot's stored edge_percent +
-    # odds_at_pick rather than raw model_probability (which doesn't match
-    # what the bot's pipeline used).
-    assert "edge_percent, odds_at_pick FROM simulated_bets" in sc, (
-        "store_real_bet must derive effective_prob from sb.edge_percent + odds_at_pick"
+    # REAL-BETS-EDGE-FORMULA-FIX (2026-05-24): use the same additive-edge
+    # formula the bot itself uses (`cal_prob - 1/odds`). The earlier
+    # multiplicative back-derivation disagreed with the bot's convention
+    # by a factor of ~odds.
+    assert "calibrated_prob, model_probability FROM simulated_bets" in sc, (
+        "store_real_bet must read calibrated_prob (with model_probability fallback)"
     )
-    assert "effective_prob" in sc, (
-        "store_real_bet must use effective_prob = (1 + edge_percent) / odds_at_pick"
+    assert "1.0 / float(actual_odds)" in sc, (
+        "store_real_bet must compute additive edge: calibrated_prob - 1/actual_odds"
     )
     # CLOSING-PRE-KO-FALLBACK: get_closing_odds fallback must require
     # timestamp <= kickoff so in-play api-football-live ticks don't poison CLV.
@@ -7692,6 +7693,35 @@ def _():
     )
     assert "edgePctTaken" in log and "b.clv" in log, (
         "real-bets-log.tsx must render Edge + CLV cell values"
+    )
+
+
+@test("REAL-BETS-EDGE-FORMULA-FIX — additive edge formula + placer edge-aware gate")
+def _():
+    """REAL-BETS-EDGE-FORMULA-FIX (2026-05-24):
+    1. store_real_bet must compute edge_pct_taken additively from calibrated_prob.
+    2. coolbet_placer must gate placement on edge at the current price,
+       not slippage, and must skip the real_bets row when edge < threshold."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+
+    placer = (root / "workers" / "automation" / "coolbet_placer.py").read_text()
+    assert "_MIN_REMAINING_EDGE" in placer, (
+        "placer must define _MIN_REMAINING_EDGE env-driven gate"
+    )
+    assert "COOLBET_MIN_REMAINING_EDGE" in placer, (
+        "placer must read COOLBET_MIN_REMAINING_EDGE from env"
+    )
+    assert "edge_eroded" in placer, (
+        "placer must emit outcome='edge_eroded' when bet skipped due to edge"
+    )
+    # SQL must pull calibrated_prob so the gate can compute edge at live odds.
+    assert "sb.calibrated_prob" in placer and "sb.model_probability" in placer, (
+        "load_qualified_bets must SELECT calibrated_prob + model_probability"
+    )
+    # Old slippage gate in the main path must no longer block placement.
+    assert 'odds_ok = drop <= _ODDS_TOLERANCE' not in placer, (
+        "main placement path must not gate on slippage tolerance"
     )
 
 

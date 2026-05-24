@@ -15,7 +15,8 @@ Required .env:
     COOLBET_USER, COOLBET_PASS, COOLBET_IMPERVA_COOKIES   (see coolbet_session.py)
     COOLBET_STAKE           — stake per bet in EUR (default: 10.0)
     COOLBET_MIN_EDGE        — minimum edge% to place (default: 0.03)
-    COOLBET_ODDS_TOLERANCE  — max odds slippage fraction before skipping (default: 0.05)
+    COOLBET_MIN_REMAINING_EDGE — minimum edge at placement price; rows below this are
+                                 not written to real_bets (default: 0.0 = skip only -EV)
 """
 
 from __future__ import annotations
@@ -51,6 +52,13 @@ _FOOTBALL_CATEGORY_ID = 62
 _DEFAULT_STAKE   = float(os.getenv("COOLBET_STAKE",        "10.0"))
 _MIN_EDGE        = float(os.getenv("COOLBET_MIN_EDGE",      "0.03"))
 _ODDS_TOLERANCE  = float(os.getenv("COOLBET_ODDS_TOLERANCE","0.05"))
+# REAL-BETS-EDGE-FORMULA-FIX (2026-05-24): supersedes the old fixed-%
+# `_ODDS_TOLERANCE` slippage gate in the main placement path. We now gate
+# on edge at the placement price (additive, same convention as the bot).
+# Default 0.0 = skip only strictly -EV bets; raise to e.g. 0.02 to also
+# skip near-zero edge. `_ODDS_TOLERANCE` kept for `get_live_odds_and_id`
+# (unused but live in legacy flow).
+_MIN_REMAINING_EDGE = float(os.getenv("COOLBET_MIN_REMAINING_EDGE", "0.0"))
 _FUZZY_THRESHOLD = 70
 
 
@@ -291,6 +299,8 @@ def load_qualified_bets() -> list[dict]:
               sb.selection,
               sb.odds_at_pick   AS model_odds,
               sb.edge_percent,
+              sb.calibrated_prob,
+              sb.model_probability,
               sb.kelly_fraction,
               sb.stake          AS model_stake,
               sb.bot_id,
@@ -1196,18 +1206,32 @@ def place_all_bets(
             results.append({**bet, "outcome": "guard_skip", "reason": reason})
             continue
 
-        # Odds-drop check: refuse placement if Coolbet price fell more than
-        # _ODDS_TOLERANCE below model_odds. (We already have current odds from
-        # the resolve step — no second fetch needed.)
-        drop = (model_odds - ev_odds) / model_odds if model_odds > 0 else 0
-        odds_ok = drop <= _ODDS_TOLERANCE
+        # REAL-BETS-EDGE-FORMULA-FIX (2026-05-24): gate on edge at the
+        # placement price, not slippage. Compute additive edge using the
+        # bot's calibrated_prob (same formula as daily_pipeline_v2.py:2384
+        # and store_real_bet). Skip the row entirely if the bet is no
+        # longer above `_MIN_REMAINING_EDGE` — that mirrors what would
+        # happen in execute mode (no Coolbet placement = no real_bets row)
+        # and stops paper-tracking from being polluted with bets we never
+        # would have taken.
+        cal_prob = float(bet.get("calibrated_prob") or 0)
+        if not cal_prob:
+            cal_prob = float(bet.get("model_probability") or 0)
         live_odds = ev_odds
-        if not odds_ok:
-            log.info("Odds dropped %.1f%% > %.1f%% tolerance — recording only, no execute",
-                     drop * 100, _ODDS_TOLERANCE * 100)
+        live_edge = (cal_prob - 1.0 / ev_odds) if (cal_prob > 0 and ev_odds > 1.0) else None
+        if live_edge is not None and live_edge < _MIN_REMAINING_EDGE:
+            log.info(
+                "Skip %s — edge at placement %.2f%% < %.2f%% min "
+                "(pick %.3f → live %.3f)",
+                label, live_edge * 100, _MIN_REMAINING_EDGE * 100,
+                model_odds, ev_odds,
+            )
+            results.append({**bet, "outcome": "edge_eroded",
+                             "live_odds": ev_odds, "live_edge": live_edge})
+            continue
 
         ticket_id = None
-        if execute and odds_ok and odds_uuid:
+        if execute and odds_uuid:
             # --require-confirm prompts y/n in the TTY (skipped if non-interactive)
             if not guard.prompt_confirm(bet, stake, live_odds):
                 log.info("Skip %s — confirm declined / no TTY for --require-confirm", label)

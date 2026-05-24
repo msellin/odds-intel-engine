@@ -4903,19 +4903,15 @@ def store_real_bet(
     ('straight' / 'fours_up' / 'no_singles'). match_id should be the first
     leg's match_id as a placeholder — settlement reads combo_legs directly.
 
-    REAL-BETS-CLV-EDGE (2026-05-23, EFFECTIVE-PROB-FIX): writes
-    edge_pct_taken — the edge implied by the price we actually got — using
-    the bot's *effective* probability rather than the raw model output.
-    Neither `model_probability` nor `calibrated_prob` matches the
-    probability the bot's full pipeline used (which goes through Pinnacle
-    veto, blending, shrinkage, etc.). The simplest stable derivation is to
-    invert from the bot's own stored numbers:
-
-        effective_prob = (1 + edge_percent) / odds_at_pick
-        edge_pct_taken = effective_prob × actual_odds − 1
-
-    Equivalent to: edge_pct_taken = (1 + edge_at_pick) × actual_odds/odds_at_pick − 1.
-    NULL for manual/orphan rows. slippage_pct is a generated column.
+    REAL-BETS-EDGE-FORMULA-FIX (2026-05-24): writes edge_pct_taken using
+    the same ADDITIVE-edge formula the bot itself uses
+    (`daily_pipeline_v2.py:2384`): `edge = calibrated_prob − 1/odds`. The
+    previous EFFECTIVE-PROB-FIX (2026-05-23) used a multiplicative form
+    `(1 + edge_at_pick) × actual/odds_at_pick − 1` that disagreed with the
+    bot's convention by a factor of `~odds`, making slippage look like edge
+    erosion (e.g. Hellas Verona btts no: stored +2.88% vs canonical +5.29%
+    at the same price). NULL for manual/orphan rows and combo bets that
+    don't have a single calibrated_prob.
     """
     if stake is None or stake <= 0:
         raise ValueError("stake must be positive")
@@ -4925,25 +4921,22 @@ def store_real_bet(
     import json as _json
     legs_json = _json.dumps(combo_legs) if combo_legs else None
 
-    # Edge implied by the price we actually got, derived from the bot's own
-    # edge_at_pick + odds_at_pick numbers so it matches what value-bets
-    # surfaces (rather than the raw model output which the bot doesn't use
-    # directly).
+    # Additive edge at the price we got, using the bot's own calibrated
+    # probability so it matches what the bot used to decide. Falls back to
+    # model_probability if calibrated is missing.
     edge_pct_taken = None
-    if simulated_bet_id:
+    if simulated_bet_id and not combo_legs:
         sim_rows = execute_query(
-            "SELECT edge_percent, odds_at_pick FROM simulated_bets WHERE id = %s",
+            "SELECT calibrated_prob, model_probability FROM simulated_bets WHERE id = %s",
             [simulated_bet_id],
         )
-        if (sim_rows
-                and sim_rows[0].get("edge_percent") is not None
-                and sim_rows[0].get("odds_at_pick") is not None):
-            edge_at_pick = float(sim_rows[0]["edge_percent"])
-            odds_at_pick = float(sim_rows[0]["odds_at_pick"])
-            if odds_at_pick > 0:
-                effective_prob = (1.0 + edge_at_pick) / odds_at_pick
+        if sim_rows:
+            prob_raw = sim_rows[0].get("calibrated_prob")
+            if prob_raw is None:
+                prob_raw = sim_rows[0].get("model_probability")
+            if prob_raw is not None and float(actual_odds) > 0:
                 edge_pct_taken = round(
-                    effective_prob * float(actual_odds) - 1, 5
+                    float(prob_raw) - 1.0 / float(actual_odds), 5
                 )
 
     rows = execute_write_returning(
