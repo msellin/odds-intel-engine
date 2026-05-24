@@ -2687,6 +2687,37 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 # T1: AF prediction agreement
                 af_agrees = _af_agrees_with_bet(selection, af_pred)
 
+                # B-ML3-V2-ACTIVE (2026-05-25): meta-model scoring + optional
+                # filtering. Score every candidate for retrospective analysis;
+                # gating only happens if META_B_ML3_ENABLED=true env is set.
+                # Maps selection labels to home/draw/away — meta-model expects
+                # those exact selection values (one-hot encoded at training).
+                meta_score: float | None = None
+                try:
+                    from workers.model import meta_b_ml3 as _meta
+                    _meta_sel = selection.lower()
+                    if "home" in _meta_sel:
+                        _meta_sel = "home"
+                    elif "draw" in _meta_sel:
+                        _meta_sel = "draw"
+                    elif "away" in _meta_sel:
+                        _meta_sel = "away"
+                    else:
+                        _meta_sel = None  # OU/BTTS/AH selections not in v2.1 training
+                    if _meta_sel is not None:
+                        meta_score = _meta.score_bet(
+                            match_id=str(match_id),
+                            selection=_meta_sel,
+                            ensemble_prob=cal_prob,
+                            opening_implied=ip,
+                        )
+                        if not _meta.should_fire(meta_score):
+                            _funnel[bot_name]["drop_meta_b_ml3"] = _funnel[bot_name].get("drop_meta_b_ml3", 0) + 1
+                            continue
+                except Exception:
+                    # Never let meta scoring kill a placement — graceful fallthrough.
+                    pass
+
                 # 11.6: Exposure management — halve stake for 3rd+ bet in same league per bot.
                 # SHADOW: skip exposure cap — shadows have fixed 10u stake, no bankroll to protect.
                 _league_key = match.get("league_path", "unknown")
@@ -2710,6 +2741,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         "placed_at": datetime.now().isoformat(),
                         "timing_cohort": bot_cohort,
                         "recommended_bookmaker": best_bookmaker.get(str(match_id), {}).get(f"{os_market}_{os_selection}"),
+                        "meta_clv_score": round(meta_score, 4) if meta_score is not None else None,
                     })
                     total_bets += 1
                     continue
@@ -2748,6 +2780,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         "timing_cohort": bot_cohort,
                         # ACCESSIBLE-BM: which accessible bookmaker had the best odds
                         "recommended_bookmaker": best_bookmaker.get(str(match_id), {}).get(f"{os_market}_{os_selection}"),
+                        # B-ML3-V2-ACTIVE: meta-model score for this bet (None if scoring unavailable)
+                        "meta_clv_score": round(meta_score, 4) if meta_score is not None else None,
                     })
                     if bet_id:
                         total_bets += 1

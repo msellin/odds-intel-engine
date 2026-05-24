@@ -71,6 +71,9 @@ MATCH_LEVEL_FEATURES = [
     # B-ML3 v2 (2026-05-24): leak-free market microstructure features.
     "odds_drift_home_at_t6h",
     "steam_move_at_t6h",              # bool
+    # B-ML3 v2.1 (2026-05-25): form momentum from matches table
+    "form_momentum_home",
+    "form_momentum_away",
 ]
 
 # Selection-aware market features added in v2 — pivoted into per-selection rows.
@@ -119,7 +122,10 @@ def _load_training_data():
           mfv.sharp_consensus_away_at_t6h,
           mfv.odds_volatility_home_at_t6h,
           mfv.odds_volatility_draw_at_t6h,
-          mfv.odds_volatility_away_at_t6h
+          mfv.odds_volatility_away_at_t6h,
+          -- B-ML3 v2.1: form_momentum (B) — backfilled 2026-05-25
+          mfv.form_momentum_home,
+          mfv.form_momentum_away
         FROM match_feature_vectors mfv
         JOIN matches m ON m.id = mfv.match_id
         LEFT JOIN leagues l ON l.id = m.league_id

@@ -1801,6 +1801,7 @@ def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
         "timing_cohort",
         "xg_source",  # inplay bots: 'live' | 'shot_proxy' (migration 057)
         "recommended_bookmaker",  # ACCESSIBLE-BM: which accessible book had best odds (migration 094)
+        "meta_clv_score",  # B-ML3-V2-ACTIVE: meta-model score (migration 130)
     ]
     for field in optional_fields:
         if field in bet_data and bet_data[field] is not None:
@@ -1877,6 +1878,7 @@ def bulk_store_shadow_bets(rows: list[dict], shadow_run_id: str, shadow_cohort: 
             _sanitize_for_json(r.get("kelly_fraction")),
             r.get("timing_cohort"),
             r.get("model_version", _active_model_version()),
+            _sanitize_for_json(r.get("meta_clv_score")),  # B-ML3-V2-ACTIVE (migration 130)
         ))
 
     if not tuples:
@@ -1887,7 +1889,8 @@ def bulk_store_shadow_bets(rows: list[dict], shadow_run_id: str, shadow_cohort: 
             (shadow_run_id, shadow_cohort, bot_id, match_id, market, selection,
              odds_at_pick, pick_time, stake,
              model_probability, calibrated_prob, edge_percent,
-             recommended_bookmaker, kelly_fraction, timing_cohort, model_version)
+             recommended_bookmaker, kelly_fraction, timing_cohort, model_version,
+             meta_clv_score)
         VALUES %s
         ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection) DO NOTHING
     """

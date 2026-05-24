@@ -6679,6 +6679,43 @@ def test_ah_away_line_filter():
         "candidate-gen must apply the floor check"
 
 
+@test("B-ML3-V2-ACTIVE — meta-model scorer wired into daily_pipeline_v2 with env gating")
+def test_b_ml3_v2_active():
+    """B-ML3-V2-ACTIVE (2026-05-25): the trained v2.1 meta-model scores every
+    candidate bet during placement. Default META_B_ML3_ENABLED=false keeps the
+    filter OFF — scores are logged passively to simulated_bets.meta_clv_score
+    for retrospective analysis. Flipping META_B_ML3_ENABLED=true activates
+    pre-placement filtering at the chosen threshold (default 0.475).
+    """
+    import pathlib
+    base = pathlib.Path(__file__).resolve().parent.parent
+    # Bundle artifacts shipped with the repo for Railway deploy
+    bundle = base / "data" / "models" / "meta" / "v_20260525_v21"
+    assert (bundle / "b_ml3.pkl").exists(), "v_20260525_v21 model pickle must be committed"
+    assert (bundle / "scaler.pkl").exists(), "scaler must be committed"
+    assert (bundle / "feature_cols.pkl").exists(), "feature_cols must be committed"
+    assert (bundle / "threshold.json").exists(), "threshold.json must be committed"
+    # Inference module
+    meta_src = (base / "workers" / "model" / "meta_b_ml3.py").read_text()
+    assert "def score_bet" in meta_src and "def should_fire" in meta_src
+    assert "META_B_ML3_ENABLED" in meta_src and "META_B_ML3_THRESHOLD" in meta_src
+    # Pipeline wires the scorer
+    pipe = (base / "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+    assert "B-ML3-V2-ACTIVE" in pipe
+    assert "_meta.should_fire" in pipe
+    # Migration 130 ships the score column
+    mig = (base / "supabase" / "migrations" / "130_meta_clv_score_column.sql").read_text()
+    assert "meta_clv_score FLOAT" in mig
+    assert "simulated_bets" in mig and "shadow_bets" in mig
+    # Behavioural — disabled-default fires every bet
+    import os, importlib
+    os.environ.pop("META_B_ML3_ENABLED", None)
+    from workers.model import meta_b_ml3
+    importlib.reload(meta_b_ml3)
+    assert meta_b_ml3.should_fire(None) is True
+    assert meta_b_ml3.should_fire(0.1) is True
+
+
 @test("OVERNIGHT-ODDS-CAPTURE — scheduler adds 02:00 + 04:00 UTC odds_refresh slots")
 def test_overnight_odds_capture():
     """OVERNIGHT-ODDS-CAPTURE (2026-05-25): the 22:00-07:00 UTC gap left
