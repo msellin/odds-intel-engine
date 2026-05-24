@@ -415,7 +415,12 @@ BOTS_CONFIG = {
         "min_prob": 0.55,
     },
     "bot_ah_away_dog": {
-        "description": "AH away — underdog covers T1-3, calibrated-lambda pricing, 5%+ edge",
+        "description": "AH away (UNDERDOG ONLY) — handicap_line >= 0 (away gets head start). "
+                       "Original config (no line filter) lost -31.8% ROI over 12-day silent-period "
+                       "backtest because 1X2_away Platt over-predicts at 40-60%+ predicted (actual "
+                       "8-18pp below predicted). Negative handicaps (away-favorite) were catastrophic "
+                       "(-46% to -81% ROI). Positive handicaps (+0.5) were +42.4% ROI. AH-AWAY-LINE-FILTER "
+                       "restricts to the profitable segment until CAL-PLATT-UPGRADE refits 1X2_away.",
         "tier_label": "elite",
         "markets": ["ah"],
         "selection_filter": ["Away"],
@@ -427,6 +432,15 @@ BOTS_CONFIG = {
         },
         "odds_range": (1.70, 2.50),
         "min_prob": 0.50,
+        # AH-AWAY-LINE-FILTER (2026-05-24): hard floor on handicap line.
+        # Slice-1 of AH-AWAY-MODEL-AUDIT (scripts/ah_away_model_audit.py):
+        #   +1.0 line: hit 100% / ROI +111% (n=1)
+        #   +0.5 line: hit 62.0% / ROI +42.4% (n=108)
+        #   +0.0 line: hit 43.6% / ROI -4.2%  (n=61, ~breakeven)
+        #   -0.5 line: hit 26.7% / ROI -45.9% (n=300) ← drop
+        #   -1.0 line: hit 10.6% / ROI -74.4% (n=122) ← drop
+        #   -1.5 line: hit 11.1% / ROI -81.1% (n=9)   ← drop
+        "handicap_line_min": 0.0,
     },
     "bot_dnb_home_value": {
         "description": "DNB home — favourite without draw risk, T1-2, 5%+ edge",
@@ -2320,6 +2334,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 if _cal_lambdas:
                     _exp_h_cal, _exp_a_cal = _cal_lambdas
                     _tier_rho = _load_dc_rho_cache().get(tier)
+                    _hl_min = config.get("handicap_line_min")
+                    _hl_max = config.get("handicap_line_max")
                     for _ah in match.get("ah_lines", []):
                         _sel = _ah["selection"]  # "home" or "away"
                         _hl = float(_ah["handicap_line"])
@@ -2334,6 +2350,12 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         # exposure cap for adjacent half-line bets that ARE placeable.
                         # If we ever add a book that supports quarter lines, remove this.
                         if abs(_hl % 0.5) == 0.25:
+                            continue
+                        # AH-AWAY-LINE-FILTER (2026-05-24): per-bot handicap-line bounds.
+                        # See bot_ah_away_dog config note. Defaults to no filter.
+                        if _hl_min is not None and _hl < _hl_min:
+                            continue
+                        if _hl_max is not None and _hl > _hl_max:
                             continue
                         _ah_prob = _ah_model_prob(_exp_h_cal, _exp_a_cal, _sel, _hl, rho=_tier_rho)
                         _sel_label = f"{_sel_cap} {_hl:+.4g}"  # e.g. "Home -1.25"
