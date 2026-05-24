@@ -164,6 +164,19 @@ def calibrate_prob(model_prob: float, implied_prob: float,
     if implied_prob <= 0 or implied_prob >= 1:
         return model_prob
     mkt_lower = market.lower()
+
+    # AH-CAL-BYPASS (2026-05-24): AH and DC market probabilities are DERIVED from
+    # already-Platt-calibrated 1X2 outputs (AH via _solve_lambdas_calibrated inverting
+    # pred["home_prob"]/draw_prob → lambdas; DC via direct sums like home_prob+draw_prob).
+    # Applying tier shrinkage a SECOND time toward `ip` is double-discounting our model
+    # signal — confirmed empirically by the post-AH-HOME-BIAS-fix bot silence (May 21+):
+    # ~170 AH-away candidates per day, ALL killed at the post-shrinkage 5% edge gate.
+    # Pre-fix the AH home bias inflated raw probs ~7.5pp which masked the issue.
+    # Skip stage 1 here; apply_platt below is already a no-op for these markets
+    # (no Platt fit stored for `asian_handicap_*` or `double_chance_*`).
+    if mkt_lower.startswith("asian_handicap") or mkt_lower.startswith("double_chance"):
+        return apply_platt(model_prob, market, odds=odds)
+
     goalline = any(mkt_lower.startswith(p) for p in _GOALLINE_PREFIXES)
     alpha = _get_shrinkage_alpha(tier, goalline)
 

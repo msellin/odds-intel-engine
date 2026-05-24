@@ -6620,6 +6620,36 @@ def test_val_post_mortem():
         f"findings doc missing: {findings}"
 
 
+@test("AH-CAL-BYPASS — calibrate_prob skips stage-1 shrinkage for AH/DC markets")
+def test_ah_cal_bypass():
+    """AH-CAL-BYPASS: AH probs are derived from already-Platt-calibrated 1X2 lambdas
+    via _solve_lambdas_calibrated; DC probs are direct sums of calibrated 1X2 probs.
+    Applying tier shrinkage a second time was double-discounting the model and
+    killed all ~170 daily AH-away candidates at the 5% edge gate (verified via
+    funnel diagnostic on 2026-05-24 — all 1xx candidates died at ↓edge, zero
+    PIN-VETO drops). Skip stage-1 shrinkage for these markets; apply_platt is
+    already a no-op since no Platt fits exist for them.
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "model" / "improvements.py").read_text()
+    assert "AH-CAL-BYPASS" in src, "tag missing"
+    assert 'mkt_lower.startswith("asian_handicap")' in src, \
+        "calibrate_prob must early-return for asian_handicap markets"
+    assert 'mkt_lower.startswith("double_chance")' in src, \
+        "calibrate_prob must also early-return for double_chance markets"
+
+    # Behavioural assertion — load the function and verify shrinkage is skipped
+    from workers.model.improvements import calibrate_prob
+    # raw=0.55, ip=0.50, T1: WITH shrinkage (α=0.20) → 0.51; WITHOUT shrinkage → 0.55
+    result = calibrate_prob(0.55, 0.50, tier=1, market="asian_handicap_Away +0.50",
+                            anchor_implied=None, odds=2.00)
+    assert abs(result - 0.55) < 1e-6, f"AH should bypass shrinkage; got {result}"
+    # Non-AH non-DC market should still shrink toward implied
+    result_1x2 = calibrate_prob(0.55, 0.50, tier=1, market="1x2_home", odds=2.00)
+    assert result_1x2 < 0.55, f"1x2_home should still shrink; got {result_1x2}"
+
+
 @test("AH-VETO-WIDEN — AH/DC use wider 0.22 veto gap (was 0.12, killed bot_ah_away_dog)")
 def test_ah_veto_widen():
     """AH-VETO-WIDEN: spread markets (AH, DC) use a wider veto gap than 1X2/O/U.
