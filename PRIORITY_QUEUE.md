@@ -8,10 +8,10 @@
 >
 > Also in this batch — **REAL-BETS-CLV-NORMALIZE** — `_settle_real_bets_for_matches` was calling `get_closing_odds(rb.match_id, rb.market, rb.selection)` with the raw real_bets labels ('1X2', 'O/U', 'o/u' + 'over 2.5'), but odds_snapshots uses canonical labels ('1x2', 'over_under_25', selection='over'). 279 of 359 settled real_bets had NULL clv. Bonus: `_normalize_bet_market` was hardcoding `over_under_25` for every "o/u" bet — OU 3.5 / 1.5 sim_bets were pulling closing odds from the OU 2.5 line, producing +59-76% bogus CLV (also affects simulated_bets / shadow_bets). Fix parses the OU line from selection. Backfilled 278 real_bets clv values. Sim_bets / shadow_bets settle calls now also pass selection so future OU 3.5 / 1.5 bets compute against the right line. Smoke: REAL-BETS-CLV-NORMALIZE. Backfill: `scripts/backfill_real_bets_clv.py`.
 >
-> Follow-ups (P2):
-> - **COOLBET-SEARCH-LAVAL** — `search_coolbet_event` returns the right candidate ("Stade Lavallois FC Rouen") but the fuzzy score is 62 (< 70 threshold). Fuzzy comparison "Laval vs Rouen" against "Stade Lavallois FC Rouen" is penalized by missing "Stade", "vs", "FC". Likely fix: use rapidfuzz `token_set_ratio` or compare each team name independently with `partial_ratio` instead of one whole-string `ratio`.
-> - **ADMIN-PLACE-SKIP-REASON** — admin /admin/place could surface per-row "would auto-placer skip this?" indicator (e.g. "edge<min", "no_coolbet_event", "edge_eroded_now") alongside the existing "✓ Placed" badge so the user knows why a bet isn't being auto-placed.
-> - **SIM-BETS-CLV-OU-LINE-BACKFILL** — `_normalize_bet_market` bug above also poisoned simulated_bets/shadow_bets CLV for any OU bet on a line other than 2.5 (14 OU 3.5 sim_bets show +60-76% CLV — bogus, computed against OU 2.5 closing). Fix landed; backfill for sim_bets/shadow_bets CLV is deferred since it shifts historical bot ROI numbers (~14+20 affected rows by line, possibly more once 1.5/3.5/4.5 are factored).
+> Follow-ups landed in same session:
+> - **COOLBET-SEARCH-LAVAL** — done. `fuzzy_match_event` now scores each team independently with `rapidfuzz.partial_ratio` (instead of one whole-string `token_set_ratio`) and uses `min(home_score, away_score)` so a great home match can't paper over a bad away match. Laval vs Rouen → Stade Lavallois vs FC Rouen scores 100 (was 62). U. Catolica vs Colo Colo → Universidad Católica vs Colo-Colo scores 80 (was 60). Negative tests still reject unrelated fixtures. Smoke: COOLBET-SEARCH-LAVAL.
+> - **ADMIN-PLACE-SKIP-REASON** — done. `PlaceableBet` now has `autoPlaceStatus` ("placed" / "below_min" / "edge_eroded" / "no_coolbet" / "ready") + `liveEdge` computed server-side in `getPlaceableBets()`. New `AutoPlaceStatusBadge` in `place-bet-table.tsx` shows the auto-placer's verdict per row (mobile + desktop) — e.g. "✗ edge < 5%", "⚠ no Coolbet odds", "✗ edge eroded", "⏵ auto-place". `COOLBET_AUTO_MIN_EDGE` exported from `engine-data.ts` so the threshold stays in sync with the placer's env. Smoke: ADMIN-PLACE-SKIP-REASON.
+> - **SIM-BETS-CLV-OU-LINE-BACKFILL** — done. Recomputed clv on 75 simulated_bets + 85 shadow_bets that had OU 1.5 / 3.5 closing odds wrong (old hardcoded over_under_25 lookup). Backfill script: `scripts/backfill_clv_ou_line_fix.py`. Bot ROI numbers for OU 3.5 / 1.5 strategies will move materially — e.g. one OU 3.5 row went from +56.9% CLV (bogus) to -4.7% (real).
 >
 > Last updated (prev): 2026-05-23 — **COOLBET-MARKET-NAMES + COMBO-PLACER done.**
 > (a) **COOLBET-MARKET-NAMES** — `parse_market` (coolbet_explorer.py:264) was missing Brasileirão's `"Match Winner (3-way)"` and `"Total Goals"` (without the `over` suffix) variants. Every Brasileirão pick was silently skipped as `no_market` even when the match was found on Coolbet. Discovered when Gremio vs Santos's 3 picks (o/u over 2.5 ×2, btts yes) all dropped despite the match resolving fine. Fixed: broaden name-fallback to accept `"match winner"` for 1x2 and bare `"total goals"` for OU. Smoke: COOLBET-MARKET-NAMES.
@@ -1200,21 +1200,23 @@ Yellow warning if today's value < 7-day average × 0.60.
 
 ## Key Thresholds to Watch
 
-| Milestone | Query | Target | Status (2026-05-08) | ETA |
+| Milestone | Query | Target | Status (2026-05-24) | ETA |
 |-----------|-------|--------|---------------------|-----|
-| **Platt scaling ready** | Predictions with finished match outcomes | 500+ | ✅ Done 2026-04-30 | Done |
-| **In-play model live** | Distinct matches in live_match_snapshots WITH xG | 500+ | ✅ ~400+ (live 1x2/O/U odds fixed 2026-05-07) | Done |
-| Meta-model Phase 1 ready (B-ML3) | `match_feature_vectors WHERE match_date >= '2026-05-06'` | 3,000+ | **3,819 ✅** (2,266 with opening_implied) | ✅ Data ready — run NEWS-LINEUP-VALIDATE first |
-| Post-mortem patterns readable | `model_evaluations WHERE market='post_mortem'` | 14+ | ~11 | ~May 13 |
-| BOT-QUAL-FILTER ready | `simulated_bets WHERE result!='pending' AND created_at >= 2026-05-06` | 100+ | **590 ✅** | ✅ Done |
-| Alignment threshold validation (ALN-1) | `simulated_bets WHERE result IN ('won','lost','void') AND created_at >= '2026-05-06'` | 300+ | **590 ✅** | ✅ Ready now — was ~June 5 estimate |
-| News/lineup signal validation | Distinct match_ids with news/lineup signals | 100+ | **415 ✅** | ✅ Ready now — no task was tracking this |
-| XGBoost retrain on backfill (ML-RETRAIN-1) | match_stats coverage | ~80% of finished | **73.4% (34,675 / 47,228) — terminal** | ✅ Ready 2026-05-10 |
-| CAL-PLATT-UPGRADE ready — O/U | `SELECT COUNT(*) FROM simulated_bets WHERE market='O/U' AND result IN ('won','lost') AND model_version='v14' AND calibrated_prob IS NOT NULL AND odds_at_pick IS NOT NULL` per selection | 300+ per selection | **v14: over 41 / under 72** — 2026-05-17 | ~6-8 weeks at current pace (~50 v14 OU bets/wk across both sides). Refit auto-attempts every settlement run. |
-| CAL-PLATT-UPGRADE ready — 1X2 | `SELECT COUNT(*) FROM simulated_bets WHERE market='1X2' AND result IN ('won','lost') AND model_version='v14'` | 300+ per outcome | **v14 home/away/draw growing** — 2026-05-17. 1X2 uses 1-feature Platt from predictions (already fitting weekly). | 1-feature 1X2 Platt already fits; this row is only relevant if/when 1X2 is upgraded to 2-feature too. |
-| CAL-PLATT-UPGRADE ready — AH/BTTS | Settled AH/BTTS bets since May 6 | 300+ each | AH: 13, BTTS: 81 — 2026-05-17 | AH: months away (slow accumulation). BTTS: ~12 weeks at current pace. |
-| CLV rows for bot_meta_v1 | `simulated_bets WHERE clv IS NOT NULL AND created_at >= '2026-05-06'` | 3,000+ | **582** (~60/day avg) | ~late June |
-| Meta-model Phase 2 ready | Settled bets with dimension_scores + CLV | 1,000+ | 590 (59%) | ~mid-June |
+| **Platt scaling ready** | Predictions with finished match outcomes | 500+ | ✅ **386,292** | Done |
+| **In-play model live** | Distinct matches in live_match_snapshots WITH xG | 500+ | ✅ **922** | Done |
+| Meta-model Phase 1 ready (B-ML3) | `match_feature_vectors WHERE match_date >= '2026-05-06'` | 3,000+ | ✅ **9,971** (5,572 with opening_implied_home) | ✅ Data ready — run NEWS-LINEUP-VALIDATE first |
+| Post-mortem patterns readable | `model_evaluations WHERE market='post_mortem'` | 14+ | ✅ **14** (just crossed) | Done 2026-05-24 |
+| BOT-QUAL-FILTER ready | `simulated_bets WHERE result!='pending' AND created_at >= 2026-05-06` | 100+ | ✅ **1,749** | Done |
+| Alignment threshold validation (ALN-1) | `simulated_bets WHERE result IN ('won','lost','void') AND created_at >= '2026-05-06'` | 300+ | ✅ **1,749** | Done |
+| News/lineup signal validation | Distinct matches with news/lineup signals in `match_signals` | 100+ | ✅ **849 each** (news_impact_score / lineup_confidence) | Done — `news_events` table is empty; signals live in `match_signals` |
+| XGBoost retrain on backfill (ML-RETRAIN-1) | match_stats coverage | ~80% of finished | ⚠️ **66.0% (35,607 / 53,985)** — regressed from 73.4% (denominator grew +6.8k, numerator only +0.9k) | Investigate ingest gap — see MATCH-STATS-COVERAGE-REGRESSION below |
+| CAL-PLATT-UPGRADE ready — O/U | `SELECT COUNT(*) FROM simulated_bets WHERE market='o/u' AND result IN ('won','lost') AND model_version='v14' AND calibrated_prob IS NOT NULL AND odds_at_pick IS NOT NULL` per selection (NB: `market` lowercase in DB) | 300+ per selection | **v14: over 2.5 = 111, under 2.5 = 140** (+70/+68 in week); over 3.5 = 12, under 3.5 = 14 | ~3 weeks for 2.5 lines at current pace |
+| CAL-PLATT-UPGRADE ready — 1X2 | `SELECT COUNT(*) FROM simulated_bets WHERE market='1x2' AND result IN ('won','lost') AND model_version='v14'` | 300+ per outcome | **v14 home=237, away=193, draw=95** | home ~1-2 wk, away ~2 wk, draw ~4-5 wk. (1-feature Platt already fits; this row matters only if upgraded to 2-feature.) |
+| CAL-PLATT-UPGRADE ready — AH/BTTS | Settled AH/BTTS bets since May 6 (`market` is `asian_handicap` / `btts` lowercase) | 300+ each | AH: **15** (+2 in wk), BTTS: **175** (+94 in wk) | BTTS: ~1.5 wk. AH: stalled, months out — consider dropping AH from v14 mix |
+| CLV rows for bot_meta_v1 | `simulated_bets WHERE clv IS NOT NULL AND created_at >= '2026-05-06'` | 3,000+ | **1,069** (~36%, +487 in wk) | ~4 weeks at current pace |
+| Meta-model Phase 2 ready | Settled bets with dimension_scores + CLV | 1,000+ | ✅ **1,069** | Done 2026-05-24 |
+
+> Run `python3 scripts/threshold_check.py` to refresh these numbers any time.
 
 ---
 

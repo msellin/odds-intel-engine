@@ -7696,6 +7696,55 @@ def _():
     )
 
 
+@test("ADMIN-PLACE-SKIP-REASON — per-row auto-placer status badge on /admin/place")
+def _():
+    """ADMIN-PLACE-SKIP-REASON (2026-05-24): /admin/place must show why each
+    bet would or wouldn't be auto-placed (below_min / edge_eroded / no_coolbet /
+    ready). Backend computes the status; frontend renders the badge."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+    web = root.parent / "odds-intel-web"
+    if not web.exists():
+        print("  [skip frontend checks] odds-intel-web not present in CI")
+        return
+    ed = (web / "src" / "lib" / "engine-data.ts").read_text()
+    assert "autoPlaceStatus" in ed, "PlaceableBet must expose autoPlaceStatus"
+    assert "COOLBET_AUTO_MIN_EDGE" in ed, (
+        "engine-data must export COOLBET_AUTO_MIN_EDGE so UI mirrors placer threshold"
+    )
+    for status in ("below_min", "edge_eroded", "no_coolbet", "ready"):
+        assert f'"{status}"' in ed, f"autoPlaceStatus must include {status!r}"
+    tbl = (web / "src" / "components" / "place-bet-table.tsx").read_text()
+    assert "AutoPlaceStatusBadge" in tbl, "place-bet-table must render AutoPlaceStatusBadge"
+
+
+@test("COOLBET-SEARCH-LAVAL — per-team partial_ratio handles short-vs-full club names")
+def _():
+    """COOLBET-SEARCH-LAVAL (2026-05-24): the previous whole-string
+    token_set_ratio scored 'Laval vs Rouen' against 'Stade Lavallois FC Rouen'
+    at 62 because 'Laval' and 'Lavallois' share no tokens. Per-team
+    partial_ratio handles that case (Laval inside Lavallois = 100)."""
+    import sys, pathlib
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+    from workers.automation.coolbet_placer import fuzzy_match_event
+
+    # The bug case: short club name matched against full name with prefix.
+    events = [
+        {"id": 1, "home": "Stade Lavallois", "away": "FC Rouen"},
+        {"id": 2, "home": "AC Milan",        "away": "Inter"},
+    ]
+    matched = fuzzy_match_event("Laval", "Rouen", events)
+    assert matched is not None and matched["id"] == 1, (
+        f"Laval/Rouen must match Stade Lavallois/FC Rouen, got {matched}"
+    )
+
+    # Negative: completely unrelated teams must NOT match.
+    no_match = fuzzy_match_event(
+        "Real Madrid", "Barcelona", [{"id": 9, "home": "Lazio", "away": "Roma"}]
+    )
+    assert no_match is None, f"Real Madrid/Barcelona must not match Lazio/Roma, got {no_match}"
+
+
 @test("REAL-BETS-CLV-NORMALIZE — real_bets settle normalizes market/selection + OU-line aware")
 def _():
     """REAL-BETS-CLV-NORMALIZE (2026-05-24): real_bets stores raw labels

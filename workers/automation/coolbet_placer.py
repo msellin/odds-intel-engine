@@ -799,25 +799,53 @@ def _ascii(s: str) -> str:
 def fuzzy_match_event(
     home: str, away: str, events: list[dict]
 ) -> dict | None:
-    """Find the Coolbet event whose home+away names best match ours."""
-    event_keys = [f"{e['home']} {e['away']}" for e in events]
-    # Normalize both query and candidates to ASCII so ø/ü/å/é don't tank scores.
-    # token_set_ratio handles extra tokens (IF, FC, United suffixes) better than
-    # token_sort_ratio for club name matching.
-    query_ascii = _ascii(f"{home} {away}")
-    event_keys_ascii = [_ascii(k) for k in event_keys]
-    result = rfprocess.extractOne(
-        query_ascii, event_keys_ascii, scorer=fuzz.token_set_ratio
+    """Find the Coolbet event whose home+away names best match ours.
+
+    COOLBET-SEARCH-LAVAL (2026-05-24): the previous whole-string
+    token_set_ratio failed when our short club names ("Laval", "Rouen")
+    matched against Coolbet's full names ("Stade Lavallois", "FC Rouen") —
+    score 62 < threshold 70 because "Laval" and "Lavallois" don't share
+    tokens. Per-team partial_ratio handles prefix/substring overlap
+    correctly: partial_ratio("Laval", "Stade Lavallois") = 100 (Laval is
+    inside Lavallois). We score each event by min(home_score, away_score)
+    so a great home match can't paper over a bad away match.
+    """
+    if not events:
+        return None
+    query_home = _ascii(home)
+    query_away = _ascii(away)
+
+    best_event = None
+    best_score = -1
+    for ev in events:
+        ev_home = _ascii(ev.get("home") or "")
+        ev_away = _ascii(ev.get("away") or "")
+        # Each side can match either Coolbet's home or away (handles flipped fixtures).
+        home_score = max(
+            fuzz.partial_ratio(query_home, ev_home),
+            fuzz.partial_ratio(query_home, ev_away),
+        )
+        away_score = max(
+            fuzz.partial_ratio(query_away, ev_home),
+            fuzz.partial_ratio(query_away, ev_away),
+        )
+        score = min(home_score, away_score)
+        if score > best_score:
+            best_score = score
+            best_event = ev
+
+    if best_event is None or best_score < _FUZZY_THRESHOLD:
+        best_label = f"{best_event['home']} {best_event['away']}" if best_event else "—"
+        log.info(
+            "Fuzzy match FAILED for '%s vs %s' — best was '%s' (score %d < threshold %d)",
+            home, away, best_label, best_score, _FUZZY_THRESHOLD,
+        )
+        return None
+    log.info(
+        "Fuzzy matched '%s vs %s' → Coolbet '%s vs %s' (score %d)",
+        home, away, best_event["home"], best_event["away"], best_score,
     )
-    if result is None:
-        return None
-    _, score, idx = result
-    if score < _FUZZY_THRESHOLD:
-        log.info("Fuzzy match FAILED for '%s vs %s' — best was '%s' (score %d < threshold %d)",
-                 home, away, event_keys[idx], score, _FUZZY_THRESHOLD)
-        return None
-    log.info("Fuzzy matched '%s vs %s' → Coolbet '%s' (score %d)", home, away, event_keys[idx], score)
-    return events[idx]
+    return best_event
 
 
 def find_market_outcome(
