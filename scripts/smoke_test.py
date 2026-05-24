@@ -4394,12 +4394,15 @@ def _():
         fn_end = len(src)
     fn_body = src[fn_start:fn_end]
     assert "_bivariate_poisson_win_prob(" in fn_body, (
-        "Strategy N must price the home win via _bivariate_poisson_win_prob"
+        "Strategy N must price the favourite win via _bivariate_poisson_win_prob"
     )
-    assert "0.65" in fn_body, "Strategy N must require prematch_home_prob ≥ 0.65"
-    assert "2.20" in fn_body, "Strategy N must require live_1x2_home ≥ 2.20"
-    assert "minute < 72 or minute > 80" in fn_body, (
-        "Strategy N minute window is 72-80 (intentionally tight)"
+    # Window expanded 2026-05-22 from 72-80 to 65-82 (funnel showed 2.2× more
+    # candidates); threshold lowered 0.65 → 0.62 so the away-favourite path
+    # has enough sample to fire. Guard the current values.
+    assert "0.62" in fn_body, "Strategy N must require prematch fav prob ≥ 0.62"
+    assert "2.20" in fn_body, "Strategy N must require live favourite odds ≥ 2.20"
+    assert "minute < 65 or minute > 82" in fn_body, (
+        "Strategy N minute window is 65-82 (widened from 72-80 on 2026-05-22)"
     )
 
 
@@ -4518,15 +4521,22 @@ def _():
             f"{fn} must pass score_away= to _remaining_goals_prob (LAMBDA-STATE)"
         )
 
-    # N must apply per-team multipliers
+    # N must apply per-team multipliers. By construction N only fires at level
+    # scores (`if sh != sa: return None`), so both home_state and away_state
+    # resolve to "level" — the trailing/leading branches can never run inside
+    # N. The helper is still exercised through home_state/away_state vars so
+    # the multiplier infrastructure (shared with J/L/M) stays wired.
     n_start = src.index("def _check_strategy_n(")
     n_end = src.index("\ndef ", n_start + 1)
     n_body = src[n_start:n_end]
     assert "_state_multiplier_team(" in n_body, (
         "Strategy N must apply per-team state multipliers to bivariate lambdas"
     )
-    assert '"trailing"' in n_body and '"leading"' in n_body and '"level"' in n_body, (
-        "Strategy N must classify each side as trailing/leading/level"
+    assert "home_state" in n_body and "away_state" in n_body, (
+        "Strategy N must classify each side via home_state/away_state vars"
+    )
+    assert '"level"' in n_body, (
+        "Strategy N body must mention 'level' state (level scores are its entry condition)"
     )
 
 
@@ -7991,26 +8001,42 @@ def _():
     )
 
 
-@test("COOLBET-SLIPPAGE — captured_odds uses odds_at_pick (bot edge odds), not live placement odds")
+@test("COOLBET-SLIPPAGE — captured_odds uses bot-edge odds (odds_at_pick), not live placement odds")
 def _():
-    """COOLBET-SLIPPAGE (2026-05-21) — automated Coolbet bets showed SLIP=0 because
-    captured_odds was set to ev_odds (same as actual_odds), making slippage always zero.
-    Fix: pass bet['odds_at_pick'] as captured_odds so slippage = (edge_odds - live_odds)/edge_odds.
-    """
-    import ast, pathlib
+    """COOLBET-SLIPPAGE (2026-05-21, asserts updated 2026-05-25) — automated
+    Coolbet bets showed SLIP=0 because captured_odds was set to ev_odds (same
+    as actual_odds), making slippage always zero. Fix: pass the bot-edge odds
+    as captured_odds so slippage = (edge_odds − live_odds) / edge_odds.
+
+    The SELECT in the placer aliases `sb.odds_at_pick AS model_odds`, so since
+    commit 0fc822b (2026-05-23) the placer reads `bet["model_odds"]` rather
+    than `bet["odds_at_pick"]` — both refer to the same simulated_bets column.
+    Either literal is acceptable as long as the value isn't bare `ev_odds`."""
+    import pathlib
     src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
 
-    # captured_odds must use odds_at_pick (with ev_odds fallback), not bare ev_odds
-    assert "bet.get(\"odds_at_pick\")" in src or "bet['odds_at_pick']" in src, (
-        "store_real_bet call must use bet['odds_at_pick'] for captured_odds "
-        "(not ev_odds) so slippage reflects drift from bot edge discovery to placement"
+    # captured_odds must source from the bot-edge column (with ev_odds fallback),
+    # not bare ev_odds. Accept either the SQL alias (model_odds) or the raw
+    # column name (odds_at_pick) — they're the same field, just renamed.
+    bot_edge_patterns = (
+        'bet.get("odds_at_pick")', "bet['odds_at_pick']",
+        'bet.get("model_odds")',   "bet['model_odds']",
     )
-    # The fallback pattern `or ev_odds` must be present so it doesn't break on missing key
-    assert ("odds_at_pick\") or ev_odds") in src or ("odds_at_pick'] or ev_odds") in src, (
-        "captured_odds must fall back to ev_odds if odds_at_pick is absent: "
-        "`float(bet.get('odds_at_pick') or ev_odds)`"
+    assert any(p in src for p in bot_edge_patterns), (
+        "store_real_bet captured_odds must read the bot-edge column "
+        "(odds_at_pick / model_odds), not bare ev_odds, so slippage reflects "
+        "drift from bot edge discovery to placement."
     )
-    # actual_odds must remain live_odds (unchanged)
+    # Fallback to ev_odds must be present so a missing field doesn't crash.
+    fallback_patterns = (
+        'odds_at_pick") or ev_odds', "odds_at_pick'] or ev_odds",
+        'model_odds") or ev_odds',   "model_odds'] or ev_odds",
+    )
+    assert any(p in src for p in fallback_patterns), (
+        "captured_odds must fall back to ev_odds if the bot-edge field is "
+        "absent, e.g. `float(bet.get('model_odds') or ev_odds)`"
+    )
+    # actual_odds must remain live_odds (unchanged).
     store_call_pos = src.index("store_real_bet(")
     store_call = src[store_call_pos: store_call_pos + 400]
     assert "actual_odds=live_odds" in store_call, (
