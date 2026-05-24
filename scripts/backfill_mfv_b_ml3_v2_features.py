@@ -161,32 +161,38 @@ def _compute_sharp_vs_soft(snaps_pre: list) -> dict:
     return out
 
 
-def _compute_pinnacle_ah_line_move(match_id, kickoff) -> dict:
-    """G — Pinnacle AH line move from opening to T-6h.
-
-    Uses Pinnacle's HOME-handicap=0 line as the proxy "main line". When
-    handicap_line=0, both sides are simply backing the team to win outright
-    (push on draw), so home implied prob at that line is directly comparable
-    over time. Drift = (latest implied at T-6h) - (opening implied).
-    """
-    cutoff = kickoff - timedelta(hours=6)
+def _fetch_pinnacle_ah_snaps_batch(match_ids: list) -> dict:
+    """Batch-fetch Pinnacle AH home @ handicap=0 snapshots for a list of matches.
+    Returns {match_id: [snapshot_row, ...]}. ORDER BY timestamp ASC."""
+    if not match_ids:
+        return {}
     rows = execute_query("""
-        SELECT timestamp, odds, handicap_line
+        SELECT match_id, timestamp, odds
         FROM odds_snapshots
-        WHERE match_id = %s
+        WHERE match_id = ANY(%s::uuid[])
           AND bookmaker = 'Pinnacle'
           AND market = 'asian_handicap'
           AND selection = 'home'
           AND is_live = false
           AND ABS(handicap_line) < 0.01
-          AND timestamp <= %s
-        ORDER BY timestamp ASC
-    """, (match_id, cutoff))
-    if len(rows) < 2:
+        ORDER BY match_id, timestamp ASC
+    """, (match_ids,))
+    by_match: dict = defaultdict(list)
+    for r in rows:
+        by_match[r["match_id"]].append(r)
+    return by_match
+
+
+def _compute_pinnacle_ah_line_move_from_snaps(snaps: list, kickoff) -> dict:
+    """G — Pinnacle AH line move from opening to T-6h, computed from
+    pre-fetched batched snapshots (cuts ~10K per-match queries down to 20)."""
+    cutoff = kickoff - timedelta(hours=6)
+    pre = [s for s in snaps if s["timestamp"] <= cutoff]
+    if len(pre) < 2:
         return {}
     try:
-        opening = 1.0 / float(rows[0]["odds"])
-        latest = 1.0 / float(rows[-1]["odds"])
+        opening = 1.0 / float(pre[0]["odds"])
+        latest = 1.0 / float(pre[-1]["odds"])
         return {
             "pinnacle_ah_line_at_t6h": round(latest, 5),
             "pinnacle_ah_line_move": round(latest - opening, 5),
@@ -212,7 +218,8 @@ def main():
           AND (mfv.odds_drift_home_at_t6h IS NULL
                OR mfv.pinnacle_line_move_home_at_t6h IS NULL
                OR mfv.sharp_consensus_home_at_t6h IS NULL
-               OR mfv.odds_volatility_home_at_t6h IS NULL)
+               OR mfv.odds_volatility_home_at_t6h IS NULL
+               OR mfv.pinnacle_ah_line_at_t6h IS NULL)
         ORDER BY m.date ASC
     """, (args.since,))
     console.print(f"  {len(rows):,} MFV rows to backfill")
@@ -228,7 +235,7 @@ def main():
             match_ids = [r["match_id"] for r in chunk]
             kickoffs = {r["match_id"]: r["kickoff"] for r in chunk}
 
-            # Batch fetch snapshots
+            # Batch fetch 1x2 snapshots
             snaps = execute_query("""
                 SELECT match_id, selection, bookmaker, timestamp, odds, is_live
                 FROM odds_snapshots
@@ -238,6 +245,9 @@ def main():
             by_match: dict = defaultdict(list)
             for s in snaps:
                 by_match[s["match_id"]].append(s)
+
+            # Batch fetch Pinnacle AH snapshots for G (one query per chunk vs per-match)
+            ah_snaps_by_match = _fetch_pinnacle_ah_snaps_batch(match_ids)
 
             # Compute features + collect update payloads
             updates = []
@@ -250,25 +260,64 @@ def main():
                        and not s.get("is_live", False)]
                 sharp_vs_soft = _compute_sharp_vs_soft(pre)
                 feats.update(sharp_vs_soft)
-                # G — Pinnacle AH line move (separate SQL — different market)
-                ah = _compute_pinnacle_ah_line_move(mid, kickoff)
+                # G — Pinnacle AH line move (from batched fetch, not per-match SQL)
+                ah_snaps = ah_snaps_by_match.get(mid, [])
+                ah = _compute_pinnacle_ah_line_move_from_snaps(ah_snaps, kickoff)
                 feats.update(ah)
                 if feats:
                     updates.append((mid, feats))
 
             if updates and not args.dry_run:
-                # Bulk UPDATE — one per row since columns may differ
+                # COPY-into-temp + UPDATE FROM temp = single round-trip per chunk.
+                # Previous per-row UPDATE pattern was 80-100ms each over the EU
+                # pooler → 13+ min for 10K rows and prone to statement_timeout.
+                # This pattern is ~50× faster.
+                all_cols = [
+                    "odds_drift_home_at_t6h", "steam_move_at_t6h",
+                    "pinnacle_line_move_home_at_t6h", "pinnacle_line_move_draw_at_t6h",
+                    "pinnacle_line_move_away_at_t6h",
+                    "sharp_consensus_home_at_t6h", "sharp_consensus_draw_at_t6h",
+                    "sharp_consensus_away_at_t6h",
+                    "odds_volatility_home_at_t6h", "odds_volatility_draw_at_t6h",
+                    "odds_volatility_away_at_t6h",
+                    "pinnacle_ah_line_at_t6h", "pinnacle_ah_line_move",
+                ]
+                # Build rows as (match_id, val_col1, val_col2, ...) with NULL
+                # for any column the compute didn't produce.
+                rows_to_copy = []
+                for mid, feats in updates:
+                    row_vals = [str(mid)] + [feats.get(c) for c in all_cols]
+                    rows_to_copy.append(row_vals)
+
                 with get_conn() as conn:
                     with conn.cursor() as cur:
-                        for mid, feats in updates:
-                            set_parts = []
-                            values = []
-                            for col, val in feats.items():
-                                set_parts.append(f"{col} = %s")
-                                values.append(val)
-                            values.append(mid)
-                            sql = f"UPDATE match_feature_vectors SET {', '.join(set_parts)} WHERE match_id = %s"
-                            cur.execute(sql, values)
+                        # Temp table — auto-dropped on COMMIT
+                        col_defs = ", ".join([f"{c} FLOAT" if c != "steam_move_at_t6h" else f"{c} BOOLEAN" for c in all_cols])
+                        cur.execute(f"""
+                            CREATE TEMP TABLE _bf_v2_chunk (
+                                match_id UUID PRIMARY KEY,
+                                {col_defs}
+                            ) ON COMMIT DROP
+                        """)
+                        # Use execute_values to insert into temp — much faster than per-row
+                        import psycopg2.extras as _pgext
+                        _pgext.execute_values(
+                            cur,
+                            f"INSERT INTO _bf_v2_chunk (match_id, {', '.join(all_cols)}) VALUES %s",
+                            rows_to_copy,
+                            page_size=500,
+                        )
+                        # Single UPDATE FROM. COALESCE so NULLs in temp don't wipe
+                        # existing values — only computed-non-NULL overwrites.
+                        set_clauses = ", ".join([
+                            f"{c} = COALESCE(t.{c}, mfv.{c})" for c in all_cols
+                        ])
+                        cur.execute(f"""
+                            UPDATE match_feature_vectors AS mfv
+                            SET {set_clauses}
+                            FROM _bf_v2_chunk AS t
+                            WHERE mfv.match_id = t.match_id
+                        """)
                     conn.commit()
                 total_updated += len(updates)
 
