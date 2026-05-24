@@ -74,6 +74,9 @@ MATCH_LEVEL_FEATURES = [
     # B-ML3 v2.1 (2026-05-25): form momentum from matches table
     "form_momentum_home",
     "form_momentum_away",
+    # B-ML3 v2.2 (2026-05-25): Pinnacle AH cross-market signal (G fixed)
+    "pinnacle_ah_line_at_t6h",
+    "pinnacle_ah_line_move",
 ]
 
 # Selection-aware market features added in v2 — pivoted into per-selection rows.
@@ -125,7 +128,10 @@ def _load_training_data():
           mfv.odds_volatility_away_at_t6h,
           -- B-ML3 v2.1: form_momentum (B) — backfilled 2026-05-25
           mfv.form_momentum_home,
-          mfv.form_momentum_away
+          mfv.form_momentum_away,
+          -- B-ML3 v2.2 (2026-05-25): Pinnacle AH main-line drift (G fixed)
+          mfv.pinnacle_ah_line_at_t6h,
+          mfv.pinnacle_ah_line_move
         FROM match_feature_vectors mfv
         JOIN matches m ON m.id = mfv.match_id
         LEFT JOIN leagues l ON l.id = m.league_id
@@ -210,6 +216,8 @@ def _build_feature_matrix(long_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Serie
         "league_position_home", "rest_days_home", "rest_days_away",
         "pinnacle_line_move", "sharp_consensus", "odds_volatility",
         "odds_drift_home_at_t6h",
+        # B-ML3 v2.2: low-coverage market features get missing indicators
+        "pinnacle_ah_line_at_t6h", "pinnacle_ah_line_move",
     ]
     for col in THIN_FEATURES_FOR_INDICATORS:
         if col in feature_frame.columns:

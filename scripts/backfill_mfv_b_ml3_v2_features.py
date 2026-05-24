@@ -162,19 +162,25 @@ def _compute_sharp_vs_soft(snaps_pre: list) -> dict:
 
 
 def _fetch_pinnacle_ah_snaps_batch(match_ids: list) -> dict:
-    """Batch-fetch Pinnacle AH home @ handicap=0 snapshots for a list of matches.
-    Returns {match_id: [snapshot_row, ...]}. ORDER BY timestamp ASC."""
+    """Batch-fetch Pinnacle AH HOME snapshots for matches.
+    Returns {match_id: [row, ...]} where row has timestamp, odds, handicap_line.
+
+    B-ML3-V2-G-MAIN-LINE (2026-05-25): the previous version filtered to
+    handicap_line=0 only, which Pinnacle rarely offers (yielded ~3% coverage).
+    Now fetches ALL handicap lines per (match, bookmaker, timestamp) so the
+    main-line picker can pick the most-balanced line at each timestamp.
+    """
     if not match_ids:
         return {}
     rows = execute_query("""
-        SELECT match_id, timestamp, odds
+        SELECT match_id, timestamp, odds, handicap_line
         FROM odds_snapshots
         WHERE match_id = ANY(%s::uuid[])
           AND bookmaker = 'Pinnacle'
           AND market = 'asian_handicap'
           AND selection = 'home'
           AND is_live = false
-          AND ABS(handicap_line) < 0.01
+          AND odds BETWEEN 1.2 AND 2.8
         ORDER BY match_id, timestamp ASC
     """, (match_ids,))
     by_match: dict = defaultdict(list)
@@ -184,21 +190,64 @@ def _fetch_pinnacle_ah_snaps_batch(match_ids: list) -> dict:
 
 
 def _compute_pinnacle_ah_line_move_from_snaps(snaps: list, kickoff) -> dict:
-    """G — Pinnacle AH line move from opening to T-6h, computed from
-    pre-fetched batched snapshots (cuts ~10K per-match queries down to 20)."""
+    """G — Pinnacle AH main-line drift, computed from pre-fetched batched
+    snapshots. Replaces the broken handicap=0-only logic.
+
+    Algorithm:
+      1. Group snapshots by timestamp (each timestamp = a multi-line offering).
+      2. At each timestamp, pick the "main line" = the handicap_line whose
+         home_odds is closest to 1.95 (Pinnacle's balanced-line target).
+      3. Track main-line implied prob over time.
+      4. Drift = (T-6h main implied) − (opening main implied).
+      5. Also store the chosen handicap_line at T-6h as a categorical feature.
+
+    Expected coverage 25-40% (limited by Pinnacle 1X2/AH snapshot presence
+    pre-T6h), vs ~3% for the old version. Expected signal lift on B-ML3 v2.2
+    AUC: small but real (~1-2% if it works).
+    """
     cutoff = kickoff - timedelta(hours=6)
     pre = [s for s in snaps if s["timestamp"] <= cutoff]
     if len(pre) < 2:
         return {}
-    try:
-        opening = 1.0 / float(pre[0]["odds"])
-        latest = 1.0 / float(pre[-1]["odds"])
-        return {
-            "pinnacle_ah_line_at_t6h": round(latest, 5),
-            "pinnacle_ah_line_move": round(latest - opening, 5),
-        }
-    except (TypeError, ValueError, ZeroDivisionError):
+
+    # Group by timestamp; pick main line per group
+    from collections import defaultdict as _dd
+    by_ts: dict = _dd(list)
+    for s in pre:
+        by_ts[s["timestamp"]].append(s)
+
+    main_per_ts = []  # list of (timestamp, handicap_line, implied)
+    for ts, rows in sorted(by_ts.items(), key=lambda kv: kv[0]):
+        best = None
+        best_dist = 1e9
+        for r in rows:
+            try:
+                o = float(r["odds"])
+                d = abs(o - 1.95)
+                if d < best_dist:
+                    best_dist = d
+                    best = r
+            except (TypeError, ValueError):
+                continue
+        if best is None:
+            continue
+        try:
+            implied = 1.0 / float(best["odds"])
+            hcp = float(best["handicap_line"]) if best["handicap_line"] is not None else 0.0
+            main_per_ts.append((ts, hcp, implied))
+        except (TypeError, ValueError, ZeroDivisionError):
+            continue
+
+    if len(main_per_ts) < 2:
         return {}
+
+    opening_implied = main_per_ts[0][2]
+    latest_hcp = main_per_ts[-1][1]
+    latest_implied = main_per_ts[-1][2]
+    return {
+        "pinnacle_ah_line_at_t6h": round(latest_hcp, 4),  # the handicap value, not implied
+        "pinnacle_ah_line_move": round(latest_implied - opening_implied, 5),
+    }
 
 
 def main():
