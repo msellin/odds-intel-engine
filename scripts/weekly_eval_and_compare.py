@@ -41,11 +41,19 @@ def _load_bundle(version: str) -> dict | None:
     bp = MODELS_DIR / version
     if not (bp / "feature_cols.pkl").exists():
         return None
-    return {
+    bundle = {
         "feature_cols": joblib.load(bp / "feature_cols.pkl"),
         "result_1x2":   joblib.load(bp / "result_1x2.pkl"),
         "over_under":   joblib.load(bp / "over_under.pkl"),
     }
+    # MARKET-EVAL-BTTS-AH (2026-05-24): also load the Poisson goal regressors
+    # so we can derive BTTS / AH probabilities from the joint goal distribution —
+    # same path production uses for those markets. Missing files are OK on
+    # legacy v9* bundles; the BTTS/AH eval branches skip them in that case.
+    for fname, key in [("home_goals.pkl", "home_goals"), ("away_goals.pkl", "away_goals")]:
+        fp = bp / fname
+        bundle[key] = joblib.load(fp) if fp.exists() else None
+    return bundle
 
 
 def _truth_1x2(sh, sa):
@@ -56,6 +64,37 @@ def _truth_1x2(sh, sa):
 
 def _truth_ou25(sh, sa):
     return [1, 0] if (sh + sa) > 2.5 else [0, 1]
+
+
+def _truth_btts(sh, sa):
+    """[btts_yes, btts_no] one-hot truth."""
+    return [1, 0] if (sh > 0 and sa > 0) else [0, 1]
+
+
+# AH lines we score. Half-lines only — they never push, so the binary truth
+# label is well-defined and log-loss is interpretable. Integer lines (0/1/2)
+# are skipped here to avoid the half-win/push complication.
+_AH_LINES = [
+    ("ah_home_-0.5", -0.5),  # home -0.5: covers iff home wins
+    ("ah_home_+0.5",  0.5),  # home +0.5: covers iff home wins or draws
+    ("ah_home_-1.5", -1.5),  # home -1.5: covers iff home wins by 2+
+    ("ah_home_+1.5",  1.5),  # home +1.5: covers iff home loses by ≤1 (or wins/draws)
+]
+
+
+def _ah_truth_home(sh: int, sa: int, line: float) -> int:
+    """1 if home covers the AH line, 0 otherwise. Half-lines never push."""
+    margin = sh - sa  # positive = home wins by N
+    return 1 if (margin + line) > 0 else 0
+
+
+def _ah_prob_home(matrix, line: float) -> float:
+    """P(home covers AH `line`) from the joint goal matrix."""
+    n = matrix.shape[0]
+    h_grid, a_grid = np.meshgrid(np.arange(n), np.arange(n), indexing="ij")
+    margin = h_grid - a_grid
+    mask = (margin + line) > 0
+    return float(matrix[mask].sum())
 
 
 def _safe_log(p, eps=1e-7):
@@ -89,11 +128,19 @@ def evaluate(version: str, rows: list) -> dict | None:
     if not bundle:
         return None
     fc = bundle["feature_cols"]
+
+    # MARKET-EVAL-BTTS-AH: import the same joint-matrix builder production uses
+    # for BTTS / AH derivation, so the offline eval matches inference path.
+    from workers.model.joint_probability import build_joint_matrix
+
+    can_score_goals = bundle.get("home_goals") is not None and bundle.get("away_goals") is not None
+
     metrics = defaultdict(lambda: {"ll": 0.0, "brier": 0.0, "hits": 0, "n": 0, "pred_sum": 0.0})
     for r in rows:
         sh, sa = int(r["score_home"]), int(r["score_away"])
         truth_3 = _truth_1x2(sh, sa)
         truth_2 = _truth_ou25(sh, sa)
+        truth_btts = _truth_btts(sh, sa)
         tier = r.get("tier") or 1
         row = _build_row(dict(r), fc, tier)
         X = np.array([[row[c] for c in fc]], dtype=float)
@@ -118,6 +165,46 @@ def evaluate(version: str, rows: list) -> dict | None:
             m["ll"] += -_safe_log(p) if truth_2[i] else -_safe_log(1 - p)
             m["brier"] += (p - truth_2[i]) ** 2
             m["hits"] += truth_2[i]
+
+        # MARKET-EVAL-BTTS-AH — score the Poisson-derived markets.
+        # Production builds the DC-corrected joint matrix from
+        # (home_goals, away_goals) regressors → derives BTTS + every AH line
+        # from that matrix. We mirror that here exactly so a bundle's
+        # BTTS/AH log-loss in eval reflects what it would produce in prod.
+        if not can_score_goals:
+            continue
+        try:
+            exp_h = max(0.05, float(bundle["home_goals"].predict(X)[0]))
+            exp_a = max(0.05, float(bundle["away_goals"].predict(X)[0]))
+            matrix = build_joint_matrix(exp_h, exp_a)
+        except Exception:
+            continue
+
+        # BTTS: P(both teams score). Truth = score_home > 0 AND score_away > 0.
+        n = matrix.shape[0]
+        h_grid, a_grid = np.meshgrid(np.arange(n), np.arange(n), indexing="ij")
+        p_btts_yes = float(matrix[(h_grid >= 1) & (a_grid >= 1)].sum())
+        p_btts_no = 1.0 - p_btts_yes
+        for i, (mkt, p) in enumerate([("btts_yes", p_btts_yes), ("btts_no", p_btts_no)]):
+            m = metrics[mkt]
+            m["n"] += 1
+            m["pred_sum"] += p
+            m["ll"] += -_safe_log(p) if truth_btts[i] else -_safe_log(1 - p)
+            m["brier"] += (p - truth_btts[i]) ** 2
+            m["hits"] += truth_btts[i]
+
+        # AH half-lines: no pushes, clean binary outcome. Only score the home
+        # side of each line — the away-side probability is 1 - P(home covers)
+        # and would just duplicate the log-loss signal.
+        for mkt, line in _AH_LINES:
+            p_home_covers = _ah_prob_home(matrix, line)
+            truth = _ah_truth_home(sh, sa, line)
+            m = metrics[mkt]
+            m["n"] += 1
+            m["pred_sum"] += p_home_covers
+            m["ll"] += -_safe_log(p_home_covers) if truth else -_safe_log(1 - p_home_covers)
+            m["brier"] += (p_home_covers - truth) ** 2
+            m["hits"] += truth
     # Aggregate
     out = {}
     for mkt, m in metrics.items():
@@ -197,10 +284,16 @@ def main():
 
     # Print comparison
     console.print(f"\n[bold]CANDIDATE {args.candidate} vs PRODUCTION {args.production}[/bold]\n")
-    print(f"  {'market':<12}{'log_loss_cand':>14}{'log_loss_prod':>15}{'Δll%':>8}{'Δbrier%':>10}{'verdict':>12}")
-    print("  " + "-" * 72)
+    print(f"  {'market':<16}{'log_loss_cand':>14}{'log_loss_prod':>15}{'Δll%':>8}{'Δbrier%':>10}{'verdict':>12}")
+    print("  " + "-" * 76)
     market_verdicts = {}
-    for mkt in ["1x2_home", "1x2_draw", "1x2_away", "over25", "under25"]:
+    eval_markets = [
+        "1x2_home", "1x2_draw", "1x2_away",
+        "over25", "under25",
+        "btts_yes", "btts_no",
+        "ah_home_-0.5", "ah_home_+0.5", "ah_home_-1.5", "ah_home_+1.5",
+    ]
+    for mkt in eval_markets:
         c = cand_metrics.get(mkt); p = prod_metrics.get(mkt)
         if not c or not p:
             continue
@@ -208,7 +301,7 @@ def main():
         br_delta = 100 * (c["brier"] - p["brier"]) / p["brier"]
         verdict = "BETTER" if ll_delta < -1 else ("WORSE" if ll_delta > 1 else "TIE")
         market_verdicts[mkt] = verdict
-        print(f"  {mkt:<12}{c['log_loss']:>14.4f}{p['log_loss']:>15.4f}{ll_delta:>+7.1f}%{br_delta:>+9.1f}%{verdict:>12}")
+        print(f"  {mkt:<16}{c['log_loss']:>14.4f}{p['log_loss']:>15.4f}{ll_delta:>+7.1f}%{br_delta:>+9.1f}%{verdict:>12}")
 
     # Headline summary for cron output
     better = sum(1 for v in market_verdicts.values() if v == "BETTER")

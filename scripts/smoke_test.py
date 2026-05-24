@@ -6687,6 +6687,38 @@ def test_weekly_eval():
     assert "SUMMARY_JSON" in eval_src, "eval must emit SUMMARY_JSON line for email digest"
 
 
+@test("MARKET-EVAL-BTTS-AH — weekly eval scores BTTS + AH half-lines via joint goal matrix")
+def test_market_eval_btts_ah():
+    import pathlib
+    base = pathlib.Path(__file__).resolve().parent.parent
+    src = (base / "scripts" / "weekly_eval_and_compare.py").read_text()
+    # Source-inspection guards so the new scoring paths can't silently regress.
+    assert "MARKET-EVAL-BTTS-AH" in src, "tag missing"
+    assert "build_joint_matrix" in src, "must import production joint-matrix builder"
+    assert "_truth_btts" in src, "BTTS truth label helper missing"
+    assert "_ah_truth_home" in src, "AH truth helper missing"
+    assert "_ah_prob_home" in src, "AH probability helper missing"
+    assert '"home_goals.pkl"' in src and '"away_goals.pkl"' in src, \
+        "must load Poisson goal regressors for BTTS/AH derivation"
+    assert "ah_home_-0.5" in src and "ah_home_+0.5" in src, "0.5 AH lines must be scored"
+    assert "ah_home_-1.5" in src and "ah_home_+1.5" in src, "1.5 AH lines must be scored"
+    assert '"btts_yes"' in src and '"btts_no"' in src, "BTTS markets must be in eval_markets"
+    # Behavioural assertion — half-lines should never push, so truth is binary.
+    from scripts.weekly_eval_and_compare import _ah_truth_home, _ah_prob_home
+    import numpy as np
+    assert _ah_truth_home(2, 0, -0.5) == 1, "home -0.5 covers when home wins"
+    assert _ah_truth_home(1, 1, -0.5) == 0, "home -0.5 loses on draw"
+    assert _ah_truth_home(1, 1,  0.5) == 1, "home +0.5 covers on draw"
+    assert _ah_truth_home(0, 2, -1.5) == 0, "home -1.5 loses when home loses by 2"
+    assert _ah_truth_home(0, 1,  1.5) == 1, "home +1.5 covers when home loses by 1"
+    # Symmetric joint matrix: P(home covers -0.5) = P(home wins) ≈ P(away wins)
+    # on equal lambdas, so should sit near 0.5 minus the draw mass.
+    from workers.model.joint_probability import build_joint_matrix
+    matrix = build_joint_matrix(1.4, 1.4)
+    p = _ah_prob_home(matrix, -0.5)
+    assert 0.20 < p < 0.45, f"home -0.5 on equal lambdas should be ~0.3-0.4, got {p:.3f}"
+
+
 @test("WEEKLY-EVAL-EMAIL — Resend digest after retrain")
 def test_weekly_eval_email():
     import pathlib
