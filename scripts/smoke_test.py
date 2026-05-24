@@ -7696,6 +7696,31 @@ def _():
     )
 
 
+@test("REAL-BETS-CLV-NORMALIZE — real_bets settle normalizes market/selection + OU-line aware")
+def _():
+    """REAL-BETS-CLV-NORMALIZE (2026-05-24): real_bets stores raw labels
+    ('1X2', 'O/U', 'o/u' + 'over 2.5') that don't match odds_snapshots
+    canonical labels. _settle_real_bets_for_matches must normalize before
+    calling get_closing_odds. _normalize_bet_market must also inspect
+    selection to pick the right OU line (over_under_35 for 'over 3.5'
+    not the hardcoded over_under_25)."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+
+    settle = (root / "workers" / "jobs" / "settlement.py").read_text()
+    assert "_normalize_bet_market(bet[\"market\"], bet[\"selection\"])" in settle, (
+        "_settle_real_bets_for_matches must normalize market/selection before "
+        "calling get_closing_odds (CLV-NORMALIZE)"
+    )
+    # OU-line awareness: normalizer must accept selection argument and parse line
+    assert "def _normalize_bet_market(market: str, selection: str" in settle, (
+        "_normalize_bet_market must accept selection so OU-line can be parsed"
+    )
+    assert 'over_under_{line_str}' in settle, (
+        "_normalize_bet_market must build 'over_under_{NN}' from the line in selection"
+    )
+
+
 @test("REAL-BETS-EDGE-FORMULA-FIX — additive edge formula + placer edge-aware gate")
 def _():
     """REAL-BETS-EDGE-FORMULA-FIX (2026-05-24):

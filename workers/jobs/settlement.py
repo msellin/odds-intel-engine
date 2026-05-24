@@ -740,8 +740,13 @@ def _settle_real_bets_for_matches(match_ids: list[str]):
         try:
             # REAL-BETS-CLV-EDGE (2026-05-23): pull closing line so
             # settle_bet_result() can compute CLV against actual_odds.
+            # REAL-BETS-CLV-NORMALIZE (2026-05-24): real_bets market/selection
+            # come in as raw labels ('1X2', 'O/U', 'o/u', 'over 2.5') that
+            # don't match odds_snapshots canonical form — normalize first.
             closing_odds = get_closing_odds(
-                str(bet["match_id"]), bet["market"], bet["selection"]
+                str(bet["match_id"]),
+                _normalize_bet_market(bet["market"], bet["selection"]),
+                _normalize_bet_selection(bet["selection"]),
             )
             outcome = settle_bet_result(
                 bet,
@@ -1521,20 +1526,38 @@ def run_ml_etl():
     console.print("\n[bold green]ML ETL complete.[/bold green]")
 
 
-def _normalize_bet_market(market: str) -> str:
+def _normalize_bet_market(market: str, selection: str | None = None) -> str:
     """
-    Map bet market strings (as stored in simulated_bets) to odds_snapshots market values.
-    e.g. "1X2" → "1x2", "O/U" → "over_under_25"
+    Map bet market strings (as stored in simulated_bets / real_bets) to
+    odds_snapshots market values. Handles uppercase and inspects `selection`
+    for the OU line (e.g. "o/u" + "over 3.5" → "over_under_35"), so OU bets
+    on lines other than 2.5 get CLV computed against the correct closing line.
+
+    CLV-OU-LINE-FIX (2026-05-24): previous version returned a hardcoded
+    "over_under_25" for every "o/u" bet — sim_bets on OU 3.5 / 1.5 were
+    pulling closing odds from the OU 2.5 line, producing bogus +59-76% CLV.
     """
-    m = market.strip().lower()
+    m = (market or "").strip().lower()
     if m in ("1x2", "1×2"):
         return "1x2"
-    if m in ("o/u", "ou", "over/under", "ou25"):
-        return "over_under_25"
     if m == "ou15":
         return "over_under_15"
     if m == "ou35":
         return "over_under_35"
+    if m == "ou25":
+        return "over_under_25"
+    if m in ("o/u", "ou", "over/under"):
+        # Pull the line from selection ("over 2.5" / "under 3.5" / etc.).
+        if selection:
+            import re
+            mo = re.match(r"^\s*(over|under)\s+(\d+(?:\.\d+)?)\s*$",
+                          selection.strip().lower())
+            if mo:
+                line = float(mo.group(2))
+                # 2.5 → "25", 3.5 → "35", 1.5 → "15", 0.5 → "05", 1.25 → "125"
+                line_str = str(int(round(line * 10))).zfill(2)
+                return f"over_under_{line_str}"
+        return "over_under_25"  # fallback
     # Already in DB format (e.g. "over_under_25", "btts", "asian_handicap")
     return m
 
@@ -1617,7 +1640,7 @@ def _settle_pending_bets(pending: list, finished: list):
         match_id = bet["match_id"]
         raw_market = bet["market"]
         raw_selection = bet["selection"]
-        odds_market = _normalize_bet_market(raw_market)
+        odds_market = _normalize_bet_market(raw_market, raw_selection)
         odds_selection = _normalize_bet_selection(raw_selection)
 
         # Bot identity (needed before CLV computation)
@@ -1755,7 +1778,7 @@ def _settle_pending_shadow_bets(pending: list, finished: list) -> int:
             score_away = int(score_away)
 
         match_id = bet["match_id"]
-        odds_market = _normalize_bet_market(bet["market"])
+        odds_market = _normalize_bet_market(bet["market"], bet["selection"])
         odds_selection = _normalize_bet_selection(bet["selection"])
         closing_odds = get_closing_odds(match_id, odds_market, odds_selection)
 
