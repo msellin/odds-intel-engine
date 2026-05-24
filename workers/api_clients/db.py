@@ -396,8 +396,11 @@ def store_live_odds_batch(odds_rows: list[dict]) -> int:
         return 0
 
     now = datetime.now(timezone.utc).isoformat()
+    # LIVE-BTTS-AH-FIX (2026-05-24): include handicap_line so AH rows persist
+    # the line. NULL for non-AH markets.
     columns = ["match_id", "bookmaker", "market", "selection", "odds",
-               "timestamp", "is_live", "is_closing", "minutes_to_kickoff"]
+               "timestamp", "is_live", "is_closing", "minutes_to_kickoff",
+               "handicap_line"]
 
     rows = []
     for r in odds_rows:
@@ -411,6 +414,7 @@ def store_live_odds_batch(odds_rows: list[dict]) -> int:
             True,
             False,
             r.get("minute"),
+            r.get("handicap_line"),
         ))
 
     return bulk_insert("odds_snapshots", columns, rows)

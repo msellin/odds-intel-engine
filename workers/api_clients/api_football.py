@@ -1117,7 +1117,13 @@ def parse_live_odds(live_odds_response: list[dict]) -> dict[int, list[dict]]:
                     except ValueError:
                         pass
 
-            elif market_name == "Both Teams Score":
+            # LIVE-BTTS-AH-FIX (2026-05-24): AF returns "Both Teams to Score"
+            # with "to", not "Both Teams Score". The old condition never matched,
+            # so live BTTS rows were silently dropped. Match either spelling
+            # plus the bet id (69) for defence in depth.
+            elif bet.get("id") == 69 or market_name in (
+                "Both Teams to Score", "Both Teams Score"
+            ):
                 for val in bet.get("values", []):
                     if val.get("suspended"):
                         continue
@@ -1127,6 +1133,34 @@ def parse_live_odds(live_odds_response: list[dict]) -> dict[int, list[dict]]:
                         "selection": val["value"].lower(),
                         "odds": float(val["odd"]),
                         "minute": minute,
+                    })
+
+            # LIVE-BTTS-AH-FIX (2026-05-24): AF live id=33 "Asian Handicap" was
+            # never parsed even though every live fixture ships it. AH values
+            # come as value="Home"/"Away", handicap="5.0"/"-5.0", with multiple
+            # lines per fixture. main=true marks the currently published line —
+            # we only keep that one to bound row volume (≈2 rows/fixture/poll
+            # rather than 10-20).
+            elif bet.get("id") == 33 or market_name == "Asian Handicap":
+                for val in bet.get("values", []):
+                    if val.get("suspended"):
+                        continue
+                    if not val.get("main"):
+                        continue
+                    side = (val.get("value") or "").lower()
+                    if side not in ("home", "away"):
+                        continue
+                    try:
+                        hl = float(val.get("handicap"))
+                    except (TypeError, ValueError):
+                        continue
+                    rows.append({
+                        "bookmaker": "api-football-live",
+                        "market": "asian_handicap",
+                        "selection": side,
+                        "odds": float(val["odd"]),
+                        "minute": minute,
+                        "handicap_line": hl,
                     })
 
             # AF market id=65 — "Next 10 Minutes Total" (Over/Under 0.5 goals

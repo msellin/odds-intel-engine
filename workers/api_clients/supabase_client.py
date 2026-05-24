@@ -2299,6 +2299,9 @@ def store_live_odds(match_id: str, odds_rows: list[dict], minute: int = None):
     """
     now = datetime.now(timezone.utc).isoformat()
 
+    # LIVE-BTTS-AH-FIX (2026-05-24): asian_handicap rows carry handicap_line
+    # — must be persisted so settlement / inplay-bot edge calcs can find the
+    # right line later. Defaults to NULL for non-AH markets.
     rows = []
     for r in odds_rows:
         rows.append((
@@ -2311,6 +2314,7 @@ def store_live_odds(match_id: str, odds_rows: list[dict], minute: int = None):
             True,
             False,
             r.get("minute"),  # minute elapsed during match
+            r.get("handicap_line"),
         ))
 
     if rows:
@@ -2321,7 +2325,8 @@ def store_live_odds(match_id: str, odds_rows: list[dict], minute: int = None):
                         cur,
                         """INSERT INTO odds_snapshots
                            (match_id, bookmaker, market, selection, odds,
-                            timestamp, is_live, is_closing, minutes_to_kickoff)
+                            timestamp, is_live, is_closing, minutes_to_kickoff,
+                            handicap_line)
                            VALUES %s""",
                         rows,
                         page_size=500,

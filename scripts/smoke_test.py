@@ -7975,6 +7975,40 @@ def _():
     )
 
 
+@test("LIVE-BTTS-AH-FIX — parser captures BTTS + Asian Handicap from /odds/live")
+def _():
+    """LIVE-BTTS-AH-FIX (2026-05-24): parse_live_odds must emit BTTS rows
+    (string was 'Both Teams Score' but AF returns 'Both Teams to Score' — old
+    branch never matched). Same for Asian Handicap (id=33) — previously
+    unhandled. handicap_line must be propagated through store_live_odds and
+    store_live_odds_batch so AH lines persist."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+
+    af = (root / "workers" / "api_clients" / "api_football.py").read_text()
+    assert '"Both Teams to Score"' in af, (
+        "parse_live_odds must accept AF's actual BTTS market name 'Both Teams to Score'"
+    )
+    assert 'bet.get("id") == 33' in af or '"Asian Handicap"' in af, (
+        "parse_live_odds must include an Asian Handicap branch"
+    )
+    assert '"market": "asian_handicap"' in af, (
+        "parse_live_odds AH branch must emit market='asian_handicap'"
+    )
+    assert '"handicap_line"' in af, (
+        "parse_live_odds AH branch must emit handicap_line"
+    )
+
+    sc = (root / "workers" / "api_clients" / "supabase_client.py").read_text()
+    assert "handicap_line" in sc.split("def store_live_odds(")[1].split("def ")[0], (
+        "store_live_odds must include handicap_line in INSERT"
+    )
+    db = (root / "workers" / "api_clients" / "db.py").read_text()
+    assert "handicap_line" in db.split("def store_live_odds_batch(")[1].split("def ")[0], (
+        "store_live_odds_batch must include handicap_line in INSERT"
+    )
+
+
 @test("ADMIN-PLACE-SKIP-REASON — per-row auto-placer status badge on /admin/place")
 def _():
     """ADMIN-PLACE-SKIP-REASON (2026-05-24): /admin/place must show why each
