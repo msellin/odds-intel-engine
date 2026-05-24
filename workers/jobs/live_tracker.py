@@ -114,6 +114,12 @@ def build_snapshot(af_fix: dict, fixture_odds: list[dict],
     }
 
     # Embed live odds
+    # INPLAY-BTTS-AH-BOTS (2026-05-24): also embed BTTS yes/no and the AH
+    # main line (the line marked main=true by AF, which is the currently
+    # published price). Bots read these via the snapshot dict — no extra
+    # query needed.
+    ah_home = None
+    ah_away = None
     for row in fixture_odds:
         mkt = row.get("market", "")
         sel = row.get("selection", "")
@@ -124,6 +130,24 @@ def build_snapshot(af_fix: dict, fixture_odds: list[dict],
             snapshot[f"live_1x2_{sel}"] = row["odds"]
         elif mkt == "next10" and sel in ("over", "under"):
             snapshot[f"live_next10_{sel}"] = row["odds"]
+        elif mkt == "btts" and sel in ("yes", "no"):
+            snapshot[f"live_btts_{sel}"] = row["odds"]
+        elif mkt == "asian_handicap" and sel in ("home", "away"):
+            if sel == "home":
+                ah_home = row
+            else:
+                ah_away = row
+    # Only persist the AH triple when both sides report the *same* main line.
+    # AF returns home/away with opposite-sign handicaps for the same line; if
+    # they disagree (rare) we drop the row rather than write half-data.
+    if ah_home and ah_away:
+        hl_h = ah_home.get("handicap_line")
+        hl_a = ah_away.get("handicap_line")
+        if (hl_h is not None and hl_a is not None
+                and abs(float(hl_h) + float(hl_a)) < 1e-6):
+            snapshot["live_ah_main_line"] = float(hl_h)
+            snapshot["live_ah_home_odds"] = ah_home["odds"]
+            snapshot["live_ah_away_odds"] = ah_away["odds"]
 
     # Embed stats if available
     if stats:

@@ -109,6 +109,18 @@ INPLAY_BOTS = {
         "description": "Red Card Overreaction — red 15-55, total goals ≤ 1, 11-man possession ≥ 55%, live OU2.5 over ≥ 2.30, bet Over 2.5",
         "strategy": "inplay_q",
     },
+    # INPLAY-BTTS-AH-BOTS (2026-05-24): first BTTS-Yes inplay bots. Uncalibrated
+    # v1 — entry rules are intuition + analogous OU bots, not backtested. The
+    # `_v1` suffix is intentional: in ~5-7 days once 50-100 settled rows exist,
+    # ship calibrated `_v2` variants and retire these.
+    "inplay_btts_press_v1": {
+        "description": "BTTS Yes Late Press — score 1-0/0-1 min 35-75, both teams creating ≥3 SoT total, prematch BTTS ≥ 0.42, live BTTS Yes ≥ 1.90, bet BTTS Yes",
+        "strategy": "inplay_btts_press_v1",
+    },
+    "inplay_btts_dryspell_v1": {
+        "description": "BTTS Yes Dry Spell — 0-0 min 55-80, both teams creating ≥5 SoT total, prematch BTTS ≥ 0.50, live BTTS Yes ≥ 2.80, bet BTTS Yes",
+        "strategy": "inplay_btts_dryspell_v1",
+    },
     # inplay_f (Odds Momentum Reversal) was DROPPED 2026-05-08 after the
     # 11-day backfill replay placed 78 settled F-bets at -6.4% ROI. 4/5
     # AI tools (replies 1, 2, 4-probation, 5) recommended drop; reply 5's
@@ -974,8 +986,187 @@ def _check_strategy(bot_name: str, cand: dict, pm: dict,
         return _check_strategy_p(cand, pm, has_red_card)
     elif bot_name == "inplay_q":
         return _check_strategy_q(cand, pm, has_red_card, execute_query)
+    elif bot_name == "inplay_btts_press_v1":
+        return _check_strategy_btts_press_v1(cand, pm, has_red_card)
+    elif bot_name == "inplay_btts_dryspell_v1":
+        return _check_strategy_btts_dryspell_v1(cand, pm, has_red_card)
     # inplay_f intentionally not dispatched — dropped 2026-05-08
     return None
+
+
+# ── INPLAY-BTTS-AH-BOTS helpers (2026-05-24) ─────────────────────────────────
+
+def _btts_yes_remaining_prob(pm_xg_home: float, pm_xg_away: float,
+                              minute: int,
+                              score_home: int, score_away: int) -> float:
+    """
+    P(BTTS=Yes at full-time | current state) assuming independent Poisson
+    goal processes per team. Uses prematch xG as the per-team posterior (no
+    live xG blending in v1 — keeps the bot simple; v2 will blend).
+
+    Cases:
+      - Both teams already scored → 1.0 (already BTTS Yes)
+      - Score is 0-0  → need each team to score ≥ 1: p_h × p_a
+      - Score is X-0  → need only away to score: p_a
+      - Score is 0-X  → need only home to score: p_h
+      where p_team = 1 − exp(−lambda_remaining_team).
+
+    Each side's remaining lambda is scaled with the standard `_scaled_remaining_lam`
+    multipliers (h2_uplift × period_mult × state_mult) so the BTTS estimate
+    shares the same time-of-match calibration as the OU strategies.
+    """
+    if score_home > 0 and score_away > 0:
+        return 1.0
+    if minute >= 90:
+        return 0.0
+    rem_h = _scaled_remaining_lam(max(pm_xg_home, 0.05),
+                                  minute, score_home, score_away)
+    rem_a = _scaled_remaining_lam(max(pm_xg_away, 0.05),
+                                  minute, score_home, score_away)
+    p_h = 1.0 - math.exp(-rem_h)
+    p_a = 1.0 - math.exp(-rem_a)
+    if score_home == 0 and score_away == 0:
+        return p_h * p_a
+    if score_home > 0:
+        return p_a
+    return p_h
+
+
+def _check_strategy_btts_press_v1(cand: dict, pm: dict,
+                                  has_red_card: bool) -> dict | None:
+    """
+    BTTS-Yes Late Press (v1). Uncalibrated — intuition-based entry rules.
+
+    Thesis: when one team has already scored and both sides are creating
+    meaningful chances (≥3 SoT combined), the scoreless side's catch-up
+    probability is higher than the live BTTS-Yes price implies. The market
+    anchors on "one team blanked = BTTS No" while the underlying remaining-xG
+    distribution still gives BTTS Yes meaningful probability.
+
+    Entry:
+      • minute 35-75
+      • score is 1-0 or 0-1 (exactly one team has scored)
+      • shots_on_target_home + shots_on_target_away ≥ 3
+      • prematch_btts_prob ≥ 0.42
+      • live BTTS Yes odds ≥ 1.90
+      • no red card
+      • model edge ≥ 3%
+    """
+    minute = cand.get("minute") or 0
+    if minute < 35 or minute > 75:
+        return None
+    if has_red_card:
+        return None
+
+    sh = cand.get("score_home") or 0
+    sa = cand.get("score_away") or 0
+    if not ((sh == 1 and sa == 0) or (sh == 0 and sa == 1)):
+        return None
+
+    sot_total = (cand.get("shots_on_target_home") or 0) + (cand.get("shots_on_target_away") or 0)
+    if sot_total < 3:
+        return None
+
+    pm_btts = float(pm.get("prematch_btts_prob") or 0)
+    if pm_btts < 0.42:
+        return None
+
+    btts_yes_odds = cand.get("live_btts_yes")
+    if btts_yes_odds is None or float(btts_yes_odds) < 1.90:
+        return None
+    btts_yes_odds = float(btts_yes_odds)
+
+    pm_xg_h = float(pm.get("prematch_xg_home") or 1.1)
+    pm_xg_a = float(pm.get("prematch_xg_away") or 1.1)
+    model_prob = _btts_yes_remaining_prob(pm_xg_h, pm_xg_a, minute, sh, sa)
+    market_prob = _implied_prob(btts_yes_odds)
+    edge_pct = (model_prob - market_prob) * 100
+    if edge_pct < 3.0:
+        return None
+
+    return {
+        "market": "BTTS",
+        "selection": "yes",
+        "odds": btts_yes_odds,
+        "model_prob": round(model_prob, 4),
+        "edge": round(edge_pct, 2),
+        "extra": {
+            "score_state": f"{sh}-{sa}",
+            "sot_total": sot_total,
+            "pm_btts_prob": round(pm_btts, 3),
+            "pm_xg_home": round(pm_xg_h, 2),
+            "pm_xg_away": round(pm_xg_a, 2),
+            "version": "v1",
+        },
+    }
+
+
+def _check_strategy_btts_dryspell_v1(cand: dict, pm: dict,
+                                     has_red_card: bool) -> dict | None:
+    """
+    BTTS-Yes Dry Spell (v1). Uncalibrated — intuition-based entry rules.
+
+    Thesis: 0-0 deep into a match where both sides have been creating big
+    chances (≥5 SoT combined) — market reads "scoreless = BTTS No" but the
+    underlying lambda doesn't drop. Both teams still need ≥1 each, so the
+    edge is in fading the market's overshoot on BTTS-Yes price.
+
+    Entry:
+      • minute 55-80
+      • score is 0-0
+      • shots_on_target_home + shots_on_target_away ≥ 5
+      • prematch_btts_prob ≥ 0.50
+      • live BTTS Yes odds ≥ 2.80
+      • no red card
+      • model edge ≥ 3%
+    """
+    minute = cand.get("minute") or 0
+    if minute < 55 or minute > 80:
+        return None
+    if has_red_card:
+        return None
+
+    sh = cand.get("score_home") or 0
+    sa = cand.get("score_away") or 0
+    if not (sh == 0 and sa == 0):
+        return None
+
+    sot_total = (cand.get("shots_on_target_home") or 0) + (cand.get("shots_on_target_away") or 0)
+    if sot_total < 5:
+        return None
+
+    pm_btts = float(pm.get("prematch_btts_prob") or 0)
+    if pm_btts < 0.50:
+        return None
+
+    btts_yes_odds = cand.get("live_btts_yes")
+    if btts_yes_odds is None or float(btts_yes_odds) < 2.80:
+        return None
+    btts_yes_odds = float(btts_yes_odds)
+
+    pm_xg_h = float(pm.get("prematch_xg_home") or 1.1)
+    pm_xg_a = float(pm.get("prematch_xg_away") or 1.1)
+    model_prob = _btts_yes_remaining_prob(pm_xg_h, pm_xg_a, minute, sh, sa)
+    market_prob = _implied_prob(btts_yes_odds)
+    edge_pct = (model_prob - market_prob) * 100
+    if edge_pct < 3.0:
+        return None
+
+    return {
+        "market": "BTTS",
+        "selection": "yes",
+        "odds": btts_yes_odds,
+        "model_prob": round(model_prob, 4),
+        "edge": round(edge_pct, 2),
+        "extra": {
+            "score_state": f"{sh}-{sa}",
+            "sot_total": sot_total,
+            "pm_btts_prob": round(pm_btts, 3),
+            "pm_xg_home": round(pm_xg_h, 2),
+            "pm_xg_away": round(pm_xg_a, 2),
+            "version": "v1",
+        },
+    }
 
 
 def _check_strategy_a(cand: dict, pm: dict, has_red_card: bool) -> dict | None:

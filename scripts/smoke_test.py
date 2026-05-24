@@ -7975,6 +7975,68 @@ def _():
     )
 
 
+@test("INPLAY-BTTS-BOTS-V1 — two BTTS-Yes inplay bots ship with migration 126 + dispatch")
+def _():
+    """INPLAY-BTTS-AH-BOTS (2026-05-24): ship inplay_btts_press_v1 +
+    inplay_btts_dryspell_v1 as uncalibrated first-cut bots. Verify
+    migration adds the bot rows + snapshot columns, INPLAY_BOTS lists
+    them, dispatcher routes them, and the prob helper exists."""
+    import pathlib, sys
+    root = pathlib.Path(__file__).resolve().parent.parent
+
+    mig = (root / "supabase" / "migrations" / "126_inplay_btts_bots.sql").read_text()
+    assert "live_btts_yes" in mig and "live_btts_no" in mig, (
+        "migration 126 must add live_btts_yes/no columns to live_match_snapshots"
+    )
+    assert "live_ah_main_line" in mig and "live_ah_home_odds" in mig and "live_ah_away_odds" in mig, (
+        "migration 126 must add AH triple columns to live_match_snapshots"
+    )
+    assert "inplay_btts_press_v1" in mig and "inplay_btts_dryspell_v1" in mig, (
+        "migration 126 must INSERT both BTTS bot rows"
+    )
+
+    sys.path.insert(0, str(root))
+    from workers.jobs import inplay_bot as ib
+    assert "inplay_btts_press_v1" in ib.INPLAY_BOTS, "INPLAY_BOTS must list inplay_btts_press_v1"
+    assert "inplay_btts_dryspell_v1" in ib.INPLAY_BOTS, "INPLAY_BOTS must list inplay_btts_dryspell_v1"
+    assert hasattr(ib, "_btts_yes_remaining_prob"), "prob helper _btts_yes_remaining_prob must exist"
+    assert hasattr(ib, "_check_strategy_btts_press_v1"), "strategy fn must exist"
+    assert hasattr(ib, "_check_strategy_btts_dryspell_v1"), "strategy fn must exist"
+
+    # Smoke the prob helper with hand-picked inputs.
+    p_both_score = ib._btts_yes_remaining_prob(1.5, 1.5, 60, 0, 0)
+    p_one_left   = ib._btts_yes_remaining_prob(1.5, 1.5, 60, 1, 0)
+    p_already    = ib._btts_yes_remaining_prob(1.5, 1.5, 60, 1, 1)
+    assert 0.0 < p_both_score < p_one_left < 1.0, (
+        f"BTTS prob monotonicity broken: 0-0={p_both_score:.3f} 1-0={p_one_left:.3f}"
+    )
+    assert p_already == 1.0, "Already-BTTS-Yes must return 1.0"
+
+    # Dispatcher must route both new names.
+    inplay_src = (root / "workers" / "jobs" / "inplay_bot.py").read_text()
+    assert '"inplay_btts_press_v1"' in inplay_src and '_check_strategy_btts_press_v1' in inplay_src, (
+        "dispatcher must route inplay_btts_press_v1"
+    )
+    assert '"inplay_btts_dryspell_v1"' in inplay_src and '_check_strategy_btts_dryspell_v1' in inplay_src, (
+        "dispatcher must route inplay_btts_dryspell_v1"
+    )
+
+    # build_snapshot must embed BTTS + AH fields (BTTS via f"live_btts_{sel}").
+    lt = (root / "workers" / "jobs" / "live_tracker.py").read_text()
+    assert 'live_btts_' in lt and 'live_ah_main_line' in lt, (
+        "build_snapshot must embed BTTS + AH fields from parsed live odds"
+    )
+    # store_live_snapshots_batch + store_live_snapshot must persist them.
+    sc = (root / "workers" / "api_clients" / "supabase_client.py").read_text()
+    assert 'live_btts_yes' in sc and 'live_ah_main_line' in sc, (
+        "store_live_snapshot optional_fields must include BTTS + AH cols"
+    )
+    dbf = (root / "workers" / "api_clients" / "db.py").read_text()
+    assert 'live_btts_yes' in dbf and 'live_ah_main_line' in dbf, (
+        "store_live_snapshots_batch columns must include BTTS + AH cols"
+    )
+
+
 @test("LIVE-BTTS-AH-FIX — parser captures BTTS + Asian Handicap from /odds/live")
 def _():
     """LIVE-BTTS-AH-FIX (2026-05-24): parse_live_odds must emit BTTS rows

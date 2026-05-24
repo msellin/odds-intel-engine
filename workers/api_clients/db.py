@@ -372,6 +372,9 @@ def store_live_snapshots_batch(snapshots: list[dict]) -> int:
         "live_ou_45_over", "live_ou_45_under",
         "live_1x2_home", "live_1x2_draw", "live_1x2_away",
         "live_next10_over", "live_next10_under",
+        # INPLAY-BTTS-AH-BOTS (2026-05-24): added by migration 126.
+        "live_btts_yes", "live_btts_no",
+        "live_ah_main_line", "live_ah_home_odds", "live_ah_away_odds",
         "model_xg_home", "model_xg_away", "model_ou25_prob",
     ]
 
