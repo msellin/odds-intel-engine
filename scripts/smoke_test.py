@@ -6393,6 +6393,30 @@ def test_pin4_veto_all_markets():
         "Old market-gated veto still present — BTTS/DC/AH would bypass it"
 
 
+@test("VAL-POST-MORTEM — review script parses 14+ days and surfaces category aggregation")
+def test_val_post_mortem():
+    """VAL-POST-MORTEM: the review script exists, parses notes via JSON+regex fallback,
+    and surfaces category totals (MODEL_ERROR / VARIANCE / INFORMATION_GAP).
+
+    Source-inspection only — running the script needs DB credentials. The findings
+    document lives at dev/active/val-post-mortem-2026-05-24.md.
+    """
+    import pathlib
+    base = pathlib.Path(__file__).resolve().parent.parent
+    script = (base / "scripts" / "val_post_mortem.py").read_text()
+    findings = base / "dev" / "active" / "val-post-mortem-2026-05-24.md"
+
+    assert "VAL-POST-MORTEM" in script, "VAL-POST-MORTEM tag missing"
+    assert "model_evaluations" in script and "post_mortem" in script, \
+        "script should read from model_evaluations WHERE market='post_mortem'"
+    assert "MODEL_ERROR" in script and "VARIANCE" in script and "INFORMATION_GAP" in script, \
+        "script should aggregate the three main LLM categories"
+    assert "def parse_notes" in script, \
+        "parse_notes() with JSON+regex fallback expected — 5 of 14 rows need regex"
+    assert findings.exists(), \
+        f"findings doc missing: {findings}"
+
+
 @test("AH-VETO-WIDEN — AH/DC use wider 0.22 veto gap (was 0.12, killed bot_ah_away_dog)")
 def test_ah_veto_widen():
     """AH-VETO-WIDEN: spread markets (AH, DC) use a wider veto gap than 1X2/O/U.
