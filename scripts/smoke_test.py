@@ -6679,6 +6679,29 @@ def test_ah_away_line_filter():
         "candidate-gen must apply the floor check"
 
 
+@test("BACKUP-RESTORE-DRILL — read-only backup viability check + runbook documented")
+def test_backup_restore_drill():
+    """BACKUP-RESTORE-DRILL (2026-05-25): read-only drill that verifies all
+    critical tables exist, are populated, and prints the manual restore
+    procedure. Run quarterly or before risky migrations. Does NOT actually
+    restore anything — that's a manual Supabase dashboard operation."""
+    import pathlib
+    script = pathlib.Path(__file__).resolve().parent.parent / "scripts" / "backup_restore_drill.py"
+    assert script.exists(), "backup_restore_drill.py missing"
+    src = script.read_text()
+    assert "CRITICAL_TABLES" in src
+    # All actually-critical tables must be in the census
+    for name in ("matches", "simulated_bets", "real_bets", "predictions",
+                 "odds_snapshots", "match_signals", "match_feature_vectors",
+                 "model_versions", "bots", "leagues"):
+        assert f'"{name}"' in src, f"critical table {name} missing from census"
+    # Runbook is in the script
+    assert "Point in Time Recovery" in src
+    assert "Restore procedure" in src
+    assert "7-day retention" in src
+    assert "VERDICT" in src
+
+
 @test("STAKE-KELLY-SAFETY-AUDIT — pre-real-money sanity audit script exists + 6-check structure")
 def test_stake_kelly_safety_audit():
     """STAKE-KELLY-SAFETY-AUDIT (2026-05-25): read-only audit script runs before
