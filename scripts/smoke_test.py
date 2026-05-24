@@ -1456,8 +1456,13 @@ def _():
     assert len(sig.parameters) == 1, "bulk_store_predictions takes one arg (rows list)"
     src = inspect.getsource(fn)
     assert "execute_values" in src, "bulk_store_predictions must use execute_values"
-    assert "ON CONFLICT (match_id, market, source) DO UPDATE" in src, (
-        "bulk_store_predictions must upsert on the existing unique key"
+    # SHADOW-PREDICTIONS (2026-05-24, migration 127): unique key extended to include
+    # model_version so shadow runs can coexist with production rows. Old constraint
+    # was (match_id, market, source). New constraint is (match_id, market, source,
+    # model_version) — bulk upsert must match.
+    assert "ON CONFLICT (match_id, market, source, model_version) DO UPDATE" in src, (
+        "bulk_store_predictions must upsert on the SHADOW-PREDICTIONS unique key "
+        "(match_id, market, source, model_version)"
     )
     # Empty list is a no-op, returns 0
     assert fn([]) == 0
@@ -3574,32 +3579,35 @@ def _():
     assert "if ou15 < 2.85:" not in src, "Strategy J stale < 2.85 gate found — must be removed"
 
 
-@test("BOTS-RETIRE-1X2 — four bots retired via migration 103 + flagged in BOTS_CONFIG")
+@test("BOTS-RETIRE-1X2 — migration 103 retirement preserved in history")
 def _():
     """May 17 retrain set shrinkage_alpha_t2_1x2 = 0.00 — model has no edge over
-    market for T1-T2 1X2. Four bots that depend on T2-4 1X2 (lower_1x2,
-    opt_home_lower, draw_specialist) or wide 1X2 with 10%+ edge (conservative)
-    can never clear their thresholds. Migration 103 retires them. This test
-    pins both the migration file and the BOTS_CONFIG documentation."""
+    market for T1-T2 1X2. Migration 103 retired four bots. Migration 117
+    (BOTS-UNRETIRE-ALL, 2026-05-22) subsequently brought them back to accumulate
+    analysis volume. The [RETIRED] description prefixes were removed at that
+    point — historical migration files remain as the audit trail."""
     import pathlib
     retired_bots = ["bot_lower_1x2", "bot_opt_home_lower", "bot_draw_specialist", "bot_conservative"]
-    # Migration exists and retires all four
+    # Migration exists and retires all four — this is the historical record
     mig = pathlib.Path("supabase/migrations/103_retire_dead_1x2_bots.sql").read_text()
     assert "UPDATE bots" in mig and "retired_at = now()" in mig, \
         "migration 103 must UPDATE bots ... SET retired_at = now()"
     for b in retired_bots:
         assert f"'{b}'" in mig, f"migration 103 missing retirement for {b}"
-    # BOTS_CONFIG carries the [RETIRED ...] description marker — keeps history searchable
-    src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
-    for b in retired_bots:
-        # Find the bot's config block; description must mark it RETIRED
-        idx = src.find(f'"{b}":')
-        assert idx >= 0, f"{b} missing from BOTS_CONFIG"
-        block_end = idx + 1500  # cap how far we scan into the block
-        assert "[RETIRED 2026-05-17]" in src[idx:block_end], (
-            f"{b} description must be prefixed with [RETIRED 2026-05-17] so the "
-            f"reason is visible at the config site"
-        )
+    # Un-retire migration must exist
+    unretire = pathlib.Path("supabase/migrations/117_unretire_bots_for_analysis.sql")
+    if unretire.exists():
+        # Bots are active again — no description check needed
+        pass
+    else:
+        # Original retirement still active — old description check applies
+        src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+        for b in retired_bots:
+            idx = src.find(f'"{b}":')
+            assert idx >= 0, f"{b} missing from BOTS_CONFIG"
+            assert "[RETIRED 2026-05-17]" in src[idx:idx + 1500], (
+                f"{b} description must be prefixed with [RETIRED 2026-05-17]"
+            )
 
 
 @test("BOTS-RETIRE-DC-DNB — three DC/DNB bots retired via migration 111 + flagged in BOTS_CONFIG")
@@ -8924,6 +8932,39 @@ def _():
         assert cfg[tier]["ou"] == 0.14, (
             f"bot_ou35_attacking tier {tier} ou must be 0.14, got {cfg[tier]['ou']}"
         )
+
+
+@test("SLICE-LIVE-VALIDATE — leaker slices retired on bot_aggressive + bot_btts_all")
+def _():
+    """SLICE-LIVE-VALIDATE (2026-05-25) — retired slices where live ROI
+    confirmed sustained leakage at ≥50 settled bets:
+
+      bot_aggressive selection:draw  live ROI -32.7% (n=89)  → no Draw in selection_filter
+      bot_aggressive odds 2.50-3.00  live ROI  -6.3% (n=150) → odds_range capped at 2.50
+      bot_aggressive odds 3.50+      live ROI -13.9% (n=273) → odds_range capped at 2.50 (subsumed)
+      bot_btts_all   odds 1.50-2.00  live ROI -13.9% (n=69)  → odds_range floor lifted to 2.00
+
+    Guard the new ranges/filters so a future refactor doesn't silently revert.
+    """
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG
+
+    agg = BOTS_CONFIG["bot_aggressive"]
+    assert agg["odds_range"] == (1.25, 2.50), (
+        f"bot_aggressive odds_range must be (1.25, 2.50) after SLICE-LIVE-VALIDATE, "
+        f"got {agg['odds_range']}"
+    )
+    assert "selection_filter" in agg, (
+        "bot_aggressive must have selection_filter excluding Draw"
+    )
+    assert "Draw" not in agg["selection_filter"], (
+        f"bot_aggressive selection_filter must exclude Draw, got {agg['selection_filter']}"
+    )
+
+    btts = BOTS_CONFIG["bot_btts_all"]
+    assert btts["odds_range"] == (2.00, 2.80), (
+        f"bot_btts_all odds_range must be (2.00, 2.80) after SLICE-LIVE-VALIDATE, "
+        f"got {btts['odds_range']}"
+    )
 
 
 if __name__ == "__main__":

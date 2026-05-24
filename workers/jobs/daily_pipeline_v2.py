@@ -115,17 +115,25 @@ BOTS_CONFIG = {
     "bot_aggressive": {
         # PER-BOT-EDGE-THRESHOLD-APPLY (2026-05-25): 25K-row sweep optimum = 15% edge
         # (baseline +0.4% → +9.0% ROI, n=2802). Tightened from 3-5% across all tiers.
-        "description": "PER-BOT-EDGE-THRESHOLD-APPLY 2026-05-25: 15% edge across all tiers (sweep optimum on 25K backtest rows, baseline +0.4% → +9.0% ROI). Odds 1.25-5.00.",
+        # SLICE-LIVE-VALIDATE (2026-05-25): retired two leaker slices on live evidence:
+        #   selection:draw  live ROI -32.7% (n=89,  €-159) → exclude Draw via selection_filter
+        #   odds  2.50-3.00 live ROI  -6.3% (n=150, €-57)  → cap odds_range at 2.50
+        #   odds  3.50+     live ROI -13.9% (n=273, €-198) → cap odds_range at 2.50 (subsumed)
+        # Tradeoff: capping at 2.50 also drops the 3.00-3.50 bucket which was +15.4%
+        # on n=97 (€+71). Net live P&L delta if we'd applied this cap on the historical
+        # window: +€343 from killing the leakers minus €71 lost = +€272 net positive.
+        "description": "PER-BOT-EDGE-THRESHOLD-APPLY + SLICE-LIVE-VALIDATE 2026-05-25: 15% edge all tiers; odds capped 1.25-2.50; no Draw selection (live ROI -32.7%).",
         "tier_label": "pro",
         "markets": ["1x2", "ou"],
         "tier_filter": None,
+        "selection_filter": ["Home", "Away", "Over 2.5", "Under 2.5"],  # no Draw
         "edge_thresholds": {
             1: {"1x2_fav": 0.15, "1x2_long": 0.15, "ou": 0.15},
             2: {"1x2_fav": 0.15, "1x2_long": 0.15, "ou": 0.15},
             3: {"1x2_fav": 0.15, "1x2_long": 0.15, "ou": 0.15},
             4: {"1x2_fav": 0.15, "1x2_long": 0.15, "ou": 0.15},
         },
-        "odds_range": (1.25, 5.00),
+        "odds_range": (1.25, 2.50),
         "min_prob": 0.25,
     },
     # AGGRESSIVE-V2 (2026-05-17): tightened sibling of bot_aggressive.
@@ -272,7 +280,10 @@ BOTS_CONFIG = {
         # miscalibrated at those odds; live filter stack (Pinnacle veto) fixes it. Keep (1.50, 2.80).
         # PER-BOT-EDGE-THRESHOLD-APPLY (2026-05-25): 25K-row sweep optimum = 12% edge
         # (baseline -0.3% → +5.8% ROI, n=331). Tightened from 3-4% across all tiers.
-        "description": "BTTS all leagues. PER-BOT-EDGE-THRESHOLD-APPLY 2026-05-25: 12% edge across all tiers (sweep optimum on 25K backtest rows, baseline -0.3% → +5.8% ROI).",
+        # SLICE-LIVE-VALIDATE (2026-05-25): odds 1.50-2.00 bucket live ROI -13.9% on
+        # n=69 (€-68) — cap odds_range floor at 2.00. The 2.00-2.50 bucket stays
+        # (live +1.4% on n=67) and 2.50-2.80 stays.
+        "description": "BTTS all leagues. PER-BOT-EDGE-THRESHOLD-APPLY + SLICE-LIVE-VALIDATE 2026-05-25: 12% edge all tiers; odds 2.00-2.80 (1.50-2.00 retired, live ROI -13.9%).",
         "tier_label": "pro",
         "markets": ["btts"],
         "edge_thresholds": {
@@ -281,7 +292,7 @@ BOTS_CONFIG = {
             3: {"btts": 0.12},
             4: {"btts": 0.12},
         },
-        "odds_range": (1.50, 2.80),
+        "odds_range": (2.00, 2.80),
         "min_prob": 0.30,
     },
     "bot_btts_conservative": {
