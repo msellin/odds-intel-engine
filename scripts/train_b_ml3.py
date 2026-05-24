@@ -50,10 +50,16 @@ MODELS_DIR = Path(__file__).resolve().parent.parent / "data" / "models" / "meta"
 # Match-level features are repeated across all 3 selection rows for the same match.
 
 # Match-level numeric features (same value for all 3 rows of a match).
+#
+# DATA-LEAK NOTE (2026-05-24, B-ML3 v1 training): the original
+# odds_drift_home / steam_move MFV fields are derived from the LATEST snapshot
+# at MFV-build time — on historical (settled) rows that IS the closing line,
+# which is what pseudo_clv (the target) is computed against. So they leaked.
+# Replaced by the *_at_t6h columns (migration 128) which use snapshots
+# WHERE timestamp <= match.date - 6h, eliminating the leak. v2 trains on
+# the _at_t6h variants. v1's odds_drift_home is excluded entirely.
 MATCH_LEVEL_FEATURES = [
     "bookmaker_disagreement",
-    "odds_drift_home",       # only _home flavor stored; reflects HOME odds drift but is a market-level signal
-    "steam_move",            # bool
     "elo_diff",
     "form_ppg_home",
     "form_ppg_away",
@@ -62,6 +68,16 @@ MATCH_LEVEL_FEATURES = [
     "rest_days_away",
     "fixture_importance",
     "league_position_home",
+    # B-ML3 v2 (2026-05-24): leak-free market microstructure features.
+    "odds_drift_home_at_t6h",
+    "steam_move_at_t6h",              # bool
+]
+
+# Selection-aware market features added in v2 — pivoted into per-selection rows.
+SELECTION_AWARE_V2 = [
+    "pinnacle_line_move",      # _<sel>_at_t6h in MFV
+    "sharp_consensus",         # _<sel>_at_t6h
+    "odds_volatility",         # _<sel>_at_t6h
 ]
 
 # Selection-aware features: ensemble_prob_<sel> + opening_implied_<sel> + the
@@ -83,8 +99,6 @@ def _load_training_data():
           mfv.opening_implied_home, mfv.opening_implied_draw, mfv.opening_implied_away,
           mfv.pseudo_clv_home, mfv.pseudo_clv_draw, mfv.pseudo_clv_away,
           mfv.bookmaker_disagreement,
-          mfv.odds_drift_home,
-          mfv.steam_move,
           mfv.elo_diff,
           mfv.form_ppg_home, mfv.form_ppg_away,
           mfv.lineup_confirmed,
@@ -93,7 +107,19 @@ def _load_training_data():
           mfv.league_position_home,
           mfv.built_at,
           l.tier AS league_tier,
-          m.date AS match_kickoff
+          m.date AS match_kickoff,
+          -- B-ML3 v2 (2026-05-24): leak-free market microstructure features
+          mfv.odds_drift_home_at_t6h,
+          mfv.steam_move_at_t6h,
+          mfv.pinnacle_line_move_home_at_t6h,
+          mfv.pinnacle_line_move_draw_at_t6h,
+          mfv.pinnacle_line_move_away_at_t6h,
+          mfv.sharp_consensus_home_at_t6h,
+          mfv.sharp_consensus_draw_at_t6h,
+          mfv.sharp_consensus_away_at_t6h,
+          mfv.odds_volatility_home_at_t6h,
+          mfv.odds_volatility_draw_at_t6h,
+          mfv.odds_volatility_away_at_t6h
         FROM match_feature_vectors mfv
         JOIN matches m ON m.id = mfv.match_id
         LEFT JOIN leagues l ON l.id = m.league_id
@@ -128,6 +154,10 @@ def _load_training_data():
                 "ensemble_prob": ens,
                 "opening_implied": imp,
                 "edge_proxy": ens - imp,
+                # B-ML3 v2 selection-aware market microstructure (pivoted)
+                "pinnacle_line_move": m.get(f"pinnacle_line_move_{sel}_at_t6h"),
+                "sharp_consensus": m.get(f"sharp_consensus_{sel}_at_t6h"),
+                "odds_volatility": m.get(f"odds_volatility_{sel}_at_t6h"),
                 # Match-level (replicated)
                 **{c: m[c] for c in MATCH_LEVEL_FEATURES},
                 "time_to_kickoff_h": ttk,
@@ -149,6 +179,8 @@ def _build_feature_matrix(long_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Serie
     feature_frame = pd.concat([
         long_df[[
             "edge_proxy", "ensemble_prob", "opening_implied",
+            # v2 selection-aware (pivoted from _<sel>_at_t6h)
+            "pinnacle_line_move", "sharp_consensus", "odds_volatility",
             *MATCH_LEVEL_FEATURES,
             "time_to_kickoff_h",
             "league_tier",
@@ -162,10 +194,16 @@ def _build_feature_matrix(long_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Serie
             feature_frame[col] = feature_frame[col].astype(int)
         feature_frame[col] = pd.to_numeric(feature_frame[col], errors="coerce")
 
-    # Median imputation per column. Indicators for missingness on the 6 most-thin features.
+    # Median imputation per column. Indicators for missingness on the thin features.
+    # B-ML3 v2 (2026-05-24): the *_at_t6h features have ~38-56% coverage in MFV
+    # (depends on Pinnacle / sharp / accessible book presence per match).
+    # Their missingness is informative (matches without sharp-book coverage are
+    # systematically different) so we add indicators for them too.
     THIN_FEATURES_FOR_INDICATORS = [
-        "odds_drift_home", "bookmaker_disagreement", "fixture_importance",
+        "bookmaker_disagreement", "fixture_importance",
         "league_position_home", "rest_days_home", "rest_days_away",
+        "pinnacle_line_move", "sharp_consensus", "odds_volatility",
+        "odds_drift_home_at_t6h",
     ]
     for col in THIN_FEATURES_FOR_INDICATORS:
         if col in feature_frame.columns:

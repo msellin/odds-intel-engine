@@ -121,6 +121,80 @@ def _compute_match_features(snaps: list, kickoff) -> dict:
     return out
 
 
+# Books treated as "soft" (retail) for the sharp_vs_soft comparison.
+# Mirrors workers/api_clients/supabase_client.py:_SOFT_BMS.
+SOFT_BOOKS = frozenset({
+    "Bet365", "Unibet", "Betano", "Marathonbet", "10Bet", "888Sport",
+})
+
+
+def _compute_sharp_vs_soft(snaps_pre: list) -> dict:
+    """Pinnacle implied minus soft-book-avg implied at the latest pre-cutoff snapshot,
+    per selection. Matches the existing match_signals computation at
+    supabase_client.py:4018 but with the T-6h cutoff applied.
+    """
+    by_sel_book: dict[tuple, list] = defaultdict(list)
+    for s in snaps_pre:
+        by_sel_book[(s["selection"].lower(), s["bookmaker"])].append(s)
+
+    out = {}
+    for sel in ("home", "draw", "away"):
+        # Latest Pinnacle snapshot pre-cutoff
+        pin = by_sel_book.get((sel, "Pinnacle"), [])
+        if not pin:
+            continue
+        try:
+            pin_impl = 1.0 / float(pin[-1]["odds"])
+        except (TypeError, ValueError, ZeroDivisionError):
+            continue
+        # Avg soft-book latest implied
+        softs = []
+        for book in SOFT_BOOKS:
+            sn = by_sel_book.get((sel, book), [])
+            if sn:
+                try:
+                    softs.append(1.0 / float(sn[-1]["odds"]))
+                except (TypeError, ValueError, ZeroDivisionError):
+                    continue
+        if len(softs) >= 2:
+            out[f"sharp_consensus_{sel}_at_t6h"] = round(pin_impl - (sum(softs) / len(softs)), 5)
+    return out
+
+
+def _compute_pinnacle_ah_line_move(match_id, kickoff) -> dict:
+    """G — Pinnacle AH line move from opening to T-6h.
+
+    Uses Pinnacle's HOME-handicap=0 line as the proxy "main line". When
+    handicap_line=0, both sides are simply backing the team to win outright
+    (push on draw), so home implied prob at that line is directly comparable
+    over time. Drift = (latest implied at T-6h) - (opening implied).
+    """
+    cutoff = kickoff - timedelta(hours=6)
+    rows = execute_query("""
+        SELECT timestamp, odds, handicap_line
+        FROM odds_snapshots
+        WHERE match_id = %s
+          AND bookmaker = 'Pinnacle'
+          AND market = 'asian_handicap'
+          AND selection = 'home'
+          AND is_live = false
+          AND ABS(handicap_line) < 0.01
+          AND timestamp <= %s
+        ORDER BY timestamp ASC
+    """, (match_id, cutoff))
+    if len(rows) < 2:
+        return {}
+    try:
+        opening = 1.0 / float(rows[0]["odds"])
+        latest = 1.0 / float(rows[-1]["odds"])
+        return {
+            "pinnacle_ah_line_at_t6h": round(latest, 5),
+            "pinnacle_ah_line_move": round(latest - opening, 5),
+        }
+    except (TypeError, ValueError, ZeroDivisionError):
+        return {}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--since", default="2026-05-06", help="Backfill MFV rows with match_date >= this")
@@ -168,7 +242,17 @@ def main():
             # Compute features + collect update payloads
             updates = []
             for mid in match_ids:
-                feats = _compute_match_features(by_match.get(mid, []), kickoffs[mid])
+                snaps = by_match.get(mid, [])
+                kickoff = kickoffs[mid]
+                feats = _compute_match_features(snaps, kickoff)
+                # Overlay sharp-vs-soft (sharp_consensus = sharp_avg - soft_avg)
+                pre = [s for s in snaps if s["timestamp"] <= kickoff - timedelta(hours=6)
+                       and not s.get("is_live", False)]
+                sharp_vs_soft = _compute_sharp_vs_soft(pre)
+                feats.update(sharp_vs_soft)
+                # G — Pinnacle AH line move (separate SQL — different market)
+                ah = _compute_pinnacle_ah_line_move(mid, kickoff)
+                feats.update(ah)
                 if feats:
                     updates.append((mid, feats))
 
