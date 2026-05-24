@@ -418,7 +418,13 @@ BOTS_CONFIG = {
         "min_prob": 0.65,
     },
     "bot_ah_home_fav": {
-        "description": "AH home — favourite covers T1-2, Poisson-priced, 5%+ edge",
+        "description": "AH home — favourite covers T1-2, Poisson-priced, 5%+ edge. "
+                       "AH-HOME-LINE-FILTER (2026-05-24): handicap_line_max=-0.5 so "
+                       "the bot only fires when home is actually a favourite (giving "
+                       "goals). The +0 line specifically was -54% ROI on 8 bets — "
+                       "structurally miscalibrated when used by a favourite-specialist "
+                       "(see scripts/ah_model_audit_live.py). Symmetric with "
+                       "bot_ah_away_dog's handicap_line_min=+0.5.",
         "tier_label": "elite",
         "markets": ["ah"],
         "selection_filter": ["Home"],
@@ -429,6 +435,16 @@ BOTS_CONFIG = {
         },
         "odds_range": (1.50, 2.20),
         "min_prob": 0.55,
+        # AH-HOME-LINE-FILTER (2026-05-24): hard ceiling on handicap line.
+        # AH-AWAY-MODEL-AUDIT live-data follow-up showed both bots have ROI
+        # ~-50% on the +0 line (home_fav 8 bets / -54%; away_dog 5 bets / -47%).
+        # +0 is a DNB-equivalent line and is structurally over-priced by the
+        # joint goal model when applied to a heavy favourite (push-adjusted
+        # prob over-amplifies the imperfect favourite-longshot bias correction).
+        # Restricting to handicap_line <= -0.5 forces home to be a true
+        # favourite (giving goals). Symmetric with bot_ah_away_dog's
+        # handicap_line_min=+0.5.
+        "handicap_line_max": -0.5,
     },
     "bot_ah_away_dog": {
         "description": "AH away (UNDERDOG ONLY) — handicap_line >= 0 (away gets head start). "

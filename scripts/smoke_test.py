@@ -6641,6 +6641,32 @@ def test_ah_away_line_filter():
         "candidate-gen must apply the floor check"
 
 
+@test("AH-HOME-LINE-FILTER — bot_ah_home_fav only accepts handicap_line <= -0.5")
+def test_ah_home_line_filter():
+    """AH-HOME-LINE-FILTER (2026-05-24): AH-AWAY-MODEL-AUDIT live-data follow-up
+    (scripts/ah_model_audit_live.py) found the asymmetry resolved post-AH-CAL-BYPASS
+    (home_fav +12.1% / away_dog +9.4% on 62 settled bets) BUT both bots had ROI
+    ~-50% on the +0 line (DNB-equivalent). Root cause: the joint goal model's
+    push-adjusted probability over-amplifies the imperfect favourite-longshot bias
+    correction. Symmetric fix to handicap_line_min on bot_ah_away_dog: cap
+    bot_ah_home_fav at handicap_line <= -0.5 so it only fires when home is a true
+    favourite (giving goals).
+    """
+    import pathlib
+    base = pathlib.Path(__file__).resolve().parent.parent
+    src = (base / "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+    assert "AH-HOME-LINE-FILTER" in src, "tag missing"
+    assert '"handicap_line_max": -0.5' in src, \
+        "bot_ah_home_fav must declare handicap_line_max=-0.5"
+    assert '_hl_max = config.get("handicap_line_max")' in src, \
+        "candidate-gen loop must read handicap_line_max from config"
+    assert "if _hl_max is not None and _hl > _hl_max:" in src, \
+        "candidate-gen must apply the ceiling check"
+    # Live-data audit script exists + is referenced
+    assert (base / "scripts" / "ah_model_audit_live.py").exists(), \
+        "live audit script must exist"
+
+
 @test("UNMATCHED-LOG-QUIET — unmatched team-name logger doesn't propagate to stdout")
 def test_unmatched_log_quiet():
     """UNMATCHED-LOG-QUIET (2026-05-24): the unmatched_teams logger writes to
