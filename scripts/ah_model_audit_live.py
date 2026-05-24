@@ -130,7 +130,10 @@ def main():
             t.add_row(r["bot_name"], r["selection"], str(r["pick_time"])[:19],
                       r["result"], f"{float(r['odds_at_pick']):.2f}",
                       f"{float(r['cal_prob'])*100:.1f}",
-                      f"{float(r['edge_percent']):.1f}",
+                      # edge_percent is stored as a fraction (0.17 = 17.3%); the original
+                      # audit displayed it raw, making +17% edges look like 0.2% and
+                      # spawning a spurious AH-EDGE-STORAGE-AUDIT investigation. Multiply.
+                      f"{float(r['edge_percent'])*100:.1f}",
                       f"{float(r['pnl']):+.2f}")
         console.print(t)
 

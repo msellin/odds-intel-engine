@@ -718,9 +718,15 @@ def load_training_data(include_pinnacle: bool = False,
     # Carry score_home/score_away through to targets so the goal regressors
     # (1c) can train on the same dataframe. league_tier is duplicated into
     # targets so the imputation helper can group on it without joining.
+    # match_date is also carried so (a) train_all can populate the
+    # training_window_start/end metadata in model_versions (was always NULL
+    # before because the column was missing), and (b) callers can filter the
+    # frame by date for diagnostics like scripts/diag_ou_data_drift.py.
     target_cols = ["match_outcome", "over_25", "btts", "score_home", "score_away"]
     if "league_tier" in df.columns:
         target_cols.append("league_tier")
+    if "match_date" in df.columns:
+        target_cols.append("match_date")
     targets_df = df[target_cols].copy()
     targets_df["score_home"] = pd.to_numeric(targets_df["score_home"], errors="coerce")
     targets_df["score_away"] = pd.to_numeric(targets_df["score_away"], errors="coerce")
