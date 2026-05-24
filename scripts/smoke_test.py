@@ -6393,6 +6393,28 @@ def test_pin4_veto_all_markets():
         "Old market-gated veto still present — BTTS/DC/AH would bypass it"
 
 
+@test("AH-VETO-WIDEN — AH/DC use wider 0.22 veto gap (was 0.12, killed bot_ah_away_dog)")
+def test_ah_veto_widen():
+    """AH-VETO-WIDEN: spread markets (AH, DC) use a wider veto gap than 1X2/O/U.
+
+    PIN-VETO-EXT (2026-05-12) extended the 0.12 cal_prob-vs-ip veto to AH using
+    best-book ip as fallback anchor. But AH model probs vs single-book ip routinely
+    differ by 15-25pp due to AH spread-betting mechanics, so the bot placed 0 bets
+    in 12 days. Wider 0.22 gap restores bot activity while still catching the
+    pathological +40-60% EV outliers PIN-VETO-EXT originally targeted.
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+
+    assert "AH-VETO-WIDEN" in src, \
+        "AH-VETO-WIDEN tag not found in daily_pipeline_v2.py"
+    assert '_veto_gap = 0.22 if mkt in ("asian_handicap", "double_chance") else PINNACLE_VETO_GAP' in src, \
+        "AH/DC veto-gap branch missing — bot_ah_away_dog will stay silent"
+    assert "(cal_prob - _veto_anchor) > _veto_gap" in src, \
+        "Veto check should use the per-market _veto_gap, not the fixed PINNACLE_VETO_GAP"
+
+
 @test("ENUM-NOT-STARTED — fetch_weather and watchlist_alerts use valid match_status enum values")
 def test_enum_not_started():
     """Ensure 'not_started' (invalid enum) is not used in any SQL queries."""

@@ -2401,6 +2401,15 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 # PIN-3: extended to draw/away/O/U 2.5 with same threshold.
                 # PIN-4: extended to all markets — BTTS/DC/AH/O/U non-2.5 lines have no
                 # stored Pinnacle signal, so fall back to best-book implied (ip) as anchor.
+                # AH-VETO-WIDEN (2026-05-24): AH spread markets have intrinsically wider
+                # gaps between model prob and best-book ip than 1X2 (wider book vig + spread
+                # mechanics), so the 0.12 1X2-tuned threshold killed every AH candidate.
+                # Bot bot_ah_away_dog placed 0 bets in the 12 days since PIN-VETO-EXT
+                # (2026-05-12) despite 200+ daily candidates passing the 5% edge gate.
+                # Wider 0.22 gap still catches the pathological +40-60% EV outliers that
+                # motivated PIN-VETO-EXT in the first place (those were 23pp+ on O/U
+                # non-2.5 lines, not AH). Same widening applied to double_chance for
+                # symmetry — also no Pinnacle anchor, same wide-book problem.
                 _pin_veto_map = {
                     "Home":      pinnacle_implied_by_match,
                     "Draw":      pinnacle_draw_by_match,
@@ -2411,7 +2420,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 _pmap = _pin_veto_map.get(selection) if mkt in ("1X2", "O/U") else None
                 _pin_implied = _pmap.get(str(match_id)) if _pmap is not None else None
                 _veto_anchor = _pin_implied if _pin_implied is not None else ip
-                if (cal_prob - _veto_anchor) > PINNACLE_VETO_GAP:
+                _veto_gap = 0.22 if mkt in ("asian_handicap", "double_chance") else PINNACLE_VETO_GAP
+                if (cal_prob - _veto_anchor) > _veto_gap:
                     _funnel[bot_name]["drop_pin_veto"] += 1
                     continue  # Model too far above market anchor — skip
 
