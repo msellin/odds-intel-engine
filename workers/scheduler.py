@@ -497,6 +497,45 @@ def job_weekly_retrain():
     _run_job("weekly_retrain", _retrain)
 
 
+def job_weekly_meta_retrain():
+    """META-RETRAIN (2026-05-25): weekly retrain of the B-ML3 meta-model.
+    Runs Sunday 04:00 UTC, AFTER the main XGBoost weekly_retrain at 03:00 UTC
+    finishes (the meta-model consumes MFV features built/refreshed by the
+    main retrain pipeline).
+
+    Train script writes the bundle to data/models/meta/<version>/. No
+    promotion — the operator inspects the new bundle's threshold.json and
+    decides whether to flip META_B_ML3_VERSION on Railway.
+    """
+    import subprocess
+    from datetime import date as _date
+
+    def _meta_retrain():
+        version = f"v_{_date.today().strftime('%Y%m%d')}_meta"
+        console.print(f"[bold cyan]Weekly META retrain → {version}[/bold cyan]")
+        result = subprocess.run(
+            [sys.executable, "scripts/train_b_ml3.py", "--version", version],
+            cwd=str(Path(__file__).parent.parent),
+            timeout=900,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[red]meta retrain exit {result.returncode}: {result.stderr[-2000:]}[/red]")
+            raise RuntimeError(f"weekly meta retrain failed: exit {result.returncode}")
+        # Tail the output so the new bundle's CV AUC is visible in pipeline_runs metadata.
+        console.print(result.stdout[-3000:])
+    _run_job("weekly_meta_retrain", _meta_retrain)
+
+
+def job_daily_real_perf_email():
+    """DAILY-REAL-PERF-EMAIL (2026-05-25): captures yesterday + 7d real-bet
+    performance split (placer vs manual) and emails the summary via Resend.
+    Runs after settlement so yesterday's results are final."""
+    from workers.jobs.daily_real_perf_email import send_daily_real_perf
+    _run_job("daily_real_perf_email", send_daily_real_perf)
+
+
 def job_watchlist_alerts():
     from workers.jobs.watchlist_alerts import run_watchlist_alerts
     _run_job("watchlist_alerts", run_watchlist_alerts)
@@ -947,6 +986,18 @@ def main():
     scheduler.add_job(job_weekly_retrain, CronTrigger(day_of_week="sun", hour=3, minute=0),
                       id="weekly_retrain", name="Weekly Retrain Sunday 03:00",
                       max_instances=1, misfire_grace_time=3600)
+
+    # META-RETRAIN (2026-05-25) — weekly B-ML3 meta-model retrain Sunday 04:00 UTC,
+    # an hour after the main retrain (which refreshes MFV features the meta
+    # model consumes). Promotion stays manual (flip META_B_ML3_VERSION on Railway).
+    scheduler.add_job(job_weekly_meta_retrain, CronTrigger(day_of_week="sun", hour=4, minute=0),
+                      id="weekly_meta_retrain", name="Weekly META Retrain Sunday 04:00",
+                      max_instances=1, misfire_grace_time=3600)
+
+    # DAILY-REAL-PERF-EMAIL (2026-05-25) — 23:30 UTC after settlement so
+    # yesterday's bets are final. Captures placer-vs-manual split + 7d rollup.
+    scheduler.add_job(job_daily_real_perf_email, CronTrigger(hour=23, minute=30),
+                      id="daily_real_perf_email", name="Daily Real-Perf Email 23:30")
 
     # ENG-8: Watchlist alerts — 08:30, 14:30, 20:35 UTC
     # 20:35 staggered 5 min after 20:30 betting refresh (N9 fix — avoids simultaneous heavy jobs)

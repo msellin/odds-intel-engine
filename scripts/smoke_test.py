@@ -6679,6 +6679,39 @@ def test_ah_away_line_filter():
         "candidate-gen must apply the floor check"
 
 
+@test("META-RETRAIN — weekly B-ML3 retrain cron registered Sunday 04:00 UTC")
+def test_meta_retrain():
+    """META-RETRAIN (2026-05-25): Sunday 04:00 UTC retrain job invokes
+    scripts/train_b_ml3.py with a versioned tag and logs to pipeline_runs.
+    Promotion stays manual — operator inspects new bundle's threshold.json
+    and decides whether to flip META_B_ML3_VERSION on Railway.
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "scheduler.py").read_text()
+    assert "job_weekly_meta_retrain" in src, "job function missing"
+    assert "scripts/train_b_ml3.py" in src, "scheduler must invoke train_b_ml3"
+    assert 'CronTrigger(day_of_week="sun", hour=4, minute=0)' in src, \
+        "Sunday 04:00 UTC slot missing"
+    assert 'id="weekly_meta_retrain"' in src
+
+
+@test("DAILY-REAL-PERF-EMAIL — 23:30 UTC daily summary via Resend wired")
+def test_daily_real_perf_email():
+    """DAILY-REAL-PERF-EMAIL (2026-05-25): captures yesterday + 7d
+    real_perf_split_by_source output and emails the summary. Runs after
+    settlement so the data is final."""
+    import pathlib
+    base = pathlib.Path(__file__).resolve().parent.parent
+    src = (base / "workers" / "jobs" / "daily_real_perf_email.py").read_text()
+    assert "def send_daily_real_perf" in src
+    assert "real_perf_split_by_source" in src
+    assert "RESEND_API_KEY" in src
+    sched = (base / "workers" / "scheduler.py").read_text()
+    assert "job_daily_real_perf_email" in sched
+    assert 'CronTrigger(hour=23, minute=30)' in sched
+
+
 @test("HEALTH-ALERTS-MONITORING — 5 new checks (memory, refresh-dead-man, AF quota, model drift, meta drift)")
 def test_health_alerts_monitoring():
     """MEMORY-MONITORING + PIPELINE-DEAD-MAN'S-SWITCH + OBS-BUDGET-ALERT +
