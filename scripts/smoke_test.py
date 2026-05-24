@@ -6656,6 +6656,22 @@ def test_ah_away_line_filter():
         "candidate-gen must apply the floor check"
 
 
+@test("OVERNIGHT-ODDS-CAPTURE — scheduler adds 02:00 + 04:00 UTC odds_refresh slots")
+def test_overnight_odds_capture():
+    """OVERNIGHT-ODDS-CAPTURE (2026-05-25): the 22:00-07:00 UTC gap left
+    MFV.overnight_line_move 0.2% populated because no snapshots were captured
+    overnight to compare against today's morning prices. Adding 02:00 + 04:00 UTC
+    slots starts collecting that data for the B-ML3 clean retrain on 2026-06-08+.
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "scheduler.py").read_text()
+    assert "OVERNIGHT-ODDS-CAPTURE" in src, "tag missing"
+    assert 'CronTrigger(hour=2, minute=0)' in src, "02:00 UTC overnight slot must be registered"
+    assert 'CronTrigger(hour=4, minute=0)' in src, "04:00 UTC overnight slot must be registered"
+    assert 'id="odds_0200"' in src and 'id="odds_0400"' in src, "overnight job IDs must be set"
+
+
 @test("META-FEATURE-DESIGN — B-ML3 feature list is documented + grounded in coverage data")
 def test_meta_feature_design():
     """META-FEATURE-DESIGN (2026-05-24): finalize the B-ML3 feature list before

@@ -837,6 +837,18 @@ def main():
             scheduler.add_job(job_odds_refresh, CronTrigger(hour=hour, minute=minute),
                               id=f"odds_{hour:02d}{minute:02d}", name=f"Odds {hour:02d}:{minute:02d}")
 
+    # OVERNIGHT-ODDS-CAPTURE (2026-05-25): two slots in the 22:00-07:00 UTC gap so
+    # the "yesterday → today" line movement can actually be observed. Prior to this
+    # the schedule was 07-22 UTC with a 9-hour overnight gap → MFV.overnight_line_move
+    # was 0.2% populated (META-FEATURE-DESIGN coverage audit, 2026-05-24). The B-ML3
+    # clean retrain on 2026-06-08+ needs the overnight delta as a feature; without
+    # these slots the data continues to be absent. 02:00 captures "morning of match
+    # day" for European afternoon KOs; 04:00 captures pre-morning-pipeline movement.
+    scheduler.add_job(job_odds_refresh, CronTrigger(hour=2, minute=0),
+                      id="odds_0200", name="Odds 02:00 (overnight)")
+    scheduler.add_job(job_odds_refresh, CronTrigger(hour=4, minute=0),
+                      id="odds_0400", name="Odds 04:00 (overnight)")
+
     # Odds pre-kickoff (mark_closing): 13:30, 17:30, 20:00 UTC
     # 20:00 covers 19:00-21:00 KO window (replaces regular 20:00 refresh — marks CLV closing line)
     scheduler.add_job(job_odds_pre_kickoff, CronTrigger(hour=13, minute=30),
