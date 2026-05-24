@@ -216,6 +216,221 @@ def check_odds_bloat() -> None:
         )
 
 
+def check_memory_usage() -> None:
+    """MEMORY-MONITORING (2026-05-25): Railway pod OOM is silent — process gets
+    killed without emitting a Python exception, the pipeline just stops. This
+    check reads the current process RSS via psutil and alerts at >85% of the
+    Railway pod limit (default 1 GiB). The check runs every 30 min via
+    scheduler so an OOM trajectory can be caught before the kill.
+    """
+    try:
+        import psutil
+        proc = psutil.Process(os.getpid())
+        rss_mb = proc.memory_info().rss / 1024 / 1024
+    except Exception:
+        # psutil may not be installed locally; fall back to /proc/self/status (Linux only)
+        try:
+            with open("/proc/self/status") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        rss_kb = int(line.split()[1])
+                        rss_mb = rss_kb / 1024
+                        break
+                else:
+                    return  # No VmRSS field — skip
+        except FileNotFoundError:
+            return  # Not on Linux — skip silently (Mac dev env)
+
+    # Railway "Hobby" pod gives 8 GiB by default; we're conservative at 1 GiB
+    # for the engine service since LivePoller + scheduler share the container.
+    limit_mb = int(os.getenv("RAILWAY_POD_MEM_LIMIT_MB", "1024"))
+    pct = rss_mb / limit_mb * 100
+    console.print(f"[dim]health_alerts: process RSS = {rss_mb:.0f} MB / {limit_mb} MB ({pct:.0f}%)[/dim]")
+
+    if pct >= 85:
+        _alert_once(
+            "memory_high",
+            f"Memory pressure — {rss_mb:.0f} MB / {limit_mb} MB ({pct:.0f}%)",
+            f"<p>The engine process is using <b>{rss_mb:.0f} MB</b> of memory ({pct:.0f}% of "
+            f"the {limit_mb} MB cap). Railway will kill the pod near 100%.</p>"
+            f"<p>Likely cause: a backfill or batch job is loading large in-memory dicts. "
+            f"Check the most recent pipeline_runs entries for any memory-heavy job.</p>"
+            f"<p>Quick mitigation: restart the engine service on Railway.</p>",
+        )
+
+
+def check_betting_refresh_stale() -> None:
+    """PIPELINE-DEAD-MAN'S-SWITCH (2026-05-25): the betting_refresh cron runs
+    every 30 min between 07-22 UTC. If two cycles miss (60+ min gap), the
+    pipeline is silently broken — bets aren't being placed, edges aren't being
+    re-evaluated, the engine is dark even though OBS-HEARTBEAT is still pinging.
+    This check fires only during the active 07-22 UTC window.
+    """
+    now_utc = datetime.now(timezone.utc)
+    if now_utc.hour < 7 or now_utc.hour >= 22:
+        return  # Outside active window — refreshes paused legitimately
+
+    rows = execute_query("""
+        SELECT MAX(completed_at) AS last_done
+        FROM pipeline_runs
+        WHERE job_name = 'betting_refresh'
+          AND status = 'completed'
+          AND completed_at >= NOW() - INTERVAL '4 hours'
+    """)
+    last = rows[0]["last_done"] if rows else None
+    if last is None:
+        # No completed run in 4h is itself the alert
+        _alert_once(
+            "betting_refresh_dead",
+            "betting_refresh has not completed in 4+ hours during active window",
+            f"<p>At {now_utc.strftime('%H:%M UTC')} no betting_refresh job has completed in the "
+            f"last 4 hours.</p>"
+            f"<p>Either APScheduler is stuck, the betting_pipeline is erroring out before commit, "
+            f"or the engine is OOMed. Check Railway logs.</p>",
+        )
+        return
+
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    age_min = (now_utc - last).total_seconds() / 60
+    console.print(f"[dim]health_alerts: last betting_refresh = {age_min:.0f} min ago[/dim]")
+    if age_min > 60:
+        _alert_once(
+            "betting_refresh_stale",
+            f"betting_refresh stale — last run {age_min:.0f} min ago",
+            f"<p>It is {now_utc.strftime('%H:%M UTC')} and the last successful betting_refresh "
+            f"completed {age_min:.0f} minutes ago (expected every 30 min in the active window).</p>"
+            f"<p>2 consecutive cycles have been missed. Pipeline likely degraded — check Railway logs "
+            f"for stack traces in betting_pipeline or shadow_* jobs.</p>",
+        )
+
+
+def check_af_quota() -> None:
+    """OBS-BUDGET-ALERT (2026-05-25): API-Football quota is 150K calls/day. The
+    pipeline burns ~30-60K on a calm day, ~80-100K on busy Saturdays. If usage
+    exceeds 80% of the cap with >6h left in the UTC day, alert — the rest of
+    the day's jobs may halt mid-stride. Reads from api_budget_log.
+    """
+    now_utc = datetime.now(timezone.utc)
+    hours_remaining = 24 - now_utc.hour
+    if hours_remaining < 6:
+        return  # Late in the day — too late to throttle, alert would be noise
+
+    rows = execute_query("""
+        SELECT COALESCE(SUM(calls_made), 0) AS used
+        FROM api_budget_log
+        WHERE log_date = CURRENT_DATE
+    """)
+    used = (rows[0]["used"] if rows else 0) or 0
+    cap = int(os.getenv("AF_DAILY_QUOTA", "150000"))
+    pct = used / cap * 100
+    console.print(f"[dim]health_alerts: AF quota = {used:,} / {cap:,} ({pct:.0f}%), {hours_remaining}h remaining[/dim]")
+    if pct >= 80:
+        _alert_once(
+            "af_quota_high",
+            f"AF quota at {pct:.0f}% with {hours_remaining}h remaining",
+            f"<p>API-Football usage is <b>{used:,} / {cap:,}</b> ({pct:.0f}%) at "
+            f"{now_utc.strftime('%H:%M UTC')}. {hours_remaining}h remain in the UTC day.</p>"
+            f"<p>If usage trends linear, today's odds-refresh + settlement-enrichment jobs may "
+            f"exhaust the budget before completing. Consider pausing non-critical fetches.</p>",
+        )
+
+
+def check_model_drift() -> None:
+    """MODEL-DRIFT-ALERT (2026-05-25): catch broken feature pipelines BEFORE
+    bots drain bankroll. Compares the mean P(home win) on today's predictions
+    to the rolling 7-day mean. A 2-sigma shift signals the model has changed
+    inputs unexpectedly — exactly the kind of regression that the dropped-OU-
+    features bug went 13 weeks unnoticed (WEEKLY-RETRAIN-OU-FEATURES, 2026-05-24).
+    """
+    rows = execute_query("""
+        WITH daily AS (
+            SELECT created_at::date AS d, AVG(probability) AS mean_prob
+            FROM predictions
+            WHERE market = '1x2_home'
+              AND created_at >= NOW() - INTERVAL '14 days'
+            GROUP BY d
+        ),
+        stats AS (
+            SELECT AVG(mean_prob) AS mu, STDDEV(mean_prob) AS sigma
+            FROM daily WHERE d < CURRENT_DATE AND d >= CURRENT_DATE - INTERVAL '7 days'
+        )
+        SELECT
+            (SELECT mean_prob FROM daily WHERE d = CURRENT_DATE) AS today,
+            mu, sigma
+        FROM stats
+    """)
+    if not rows:
+        return
+    today = rows[0].get("today")
+    mu = rows[0].get("mu")
+    sigma = rows[0].get("sigma")
+    if today is None or mu is None or sigma is None or sigma < 1e-6:
+        return
+    today, mu, sigma = float(today), float(mu), float(sigma)
+    z = (today - mu) / sigma
+    console.print(f"[dim]health_alerts: 1x2_home mean prob today={today:.4f}, 7d mu={mu:.4f}, sigma={sigma:.4f}, z={z:+.2f}[/dim]")
+    if abs(z) >= 2.0:
+        _alert_once(
+            "model_drift",
+            f"Model drift — 1x2_home mean shifted {z:+.2f} sigma vs 7d baseline",
+            f"<p>Today's mean P(home win) on 1X2 predictions is <b>{today:.3f}</b>, vs the "
+            f"7-day baseline of {mu:.3f} ± {sigma:.3f} (z={z:+.2f}).</p>"
+            f"<p>This is the kind of distribution shift that signals a broken feature pipeline "
+            f"or a silent retrain regression. Investigate the most recent model_version + MFV "
+            f"builder changes.</p>"
+            f"<p>Reference: WEEKLY-RETRAIN-OU-FEATURES (2026-05-24) — dropped-features bug went "
+            f"13 weeks unnoticed before this alert existed.</p>",
+        )
+
+
+def check_meta_score_drift() -> None:
+    """B-ML3 score-distribution drift alert (2026-05-25). Compares the mean
+    meta_clv_score on today's bets vs the 7-day rolling baseline. If the
+    distribution shifts >2 sigma, the meta-model's feature inputs likely
+    changed — possibly because MFV got new columns or live builder changed.
+    """
+    rows = execute_query("""
+        WITH daily AS (
+            SELECT pick_time::date AS d, AVG(meta_clv_score) AS mean_score, COUNT(*) AS n
+            FROM simulated_bets
+            WHERE pick_time >= NOW() - INTERVAL '14 days'
+              AND meta_clv_score IS NOT NULL
+            GROUP BY d
+        ),
+        stats AS (
+            SELECT AVG(mean_score) AS mu, STDDEV(mean_score) AS sigma
+            FROM daily WHERE d < CURRENT_DATE AND d >= CURRENT_DATE - INTERVAL '7 days'
+        )
+        SELECT
+            (SELECT mean_score FROM daily WHERE d = CURRENT_DATE) AS today,
+            (SELECT n FROM daily WHERE d = CURRENT_DATE) AS today_n,
+            mu, sigma
+        FROM stats
+    """)
+    if not rows:
+        return
+    today = rows[0].get("today")
+    today_n = rows[0].get("today_n") or 0
+    mu = rows[0].get("mu")
+    sigma = rows[0].get("sigma")
+    if today is None or mu is None or sigma is None or sigma < 1e-6 or today_n < 20:
+        return  # Not enough data
+    today, mu, sigma = float(today), float(mu), float(sigma)
+    z = (today - mu) / sigma
+    console.print(f"[dim]health_alerts: meta_clv_score today={today:.4f}, 7d mu={mu:.4f}, sigma={sigma:.4f}, z={z:+.2f}[/dim]")
+    if abs(z) >= 2.0:
+        _alert_once(
+            "meta_score_drift",
+            f"B-ML3 meta score drifted {z:+.2f} sigma vs 7d baseline",
+            f"<p>Today's mean meta_clv_score on {today_n} bets is <b>{today:.3f}</b>, vs the "
+            f"7-day baseline of {mu:.3f} ± {sigma:.3f} (z={z:+.2f}).</p>"
+            f"<p>This means either the meta-model's input features shifted (MFV column added, "
+            f"upstream pipeline change) or the prediction distribution itself moved. If "
+            f"META_B_ML3_ENABLED=true is also set, this directly affects which bets get filtered.</p>",
+        )
+
+
 def run_morning_checks() -> None:
     """09:30 UTC check — run after the morning betting pipeline."""
     console.print("[cyan]health_alerts: running morning checks[/cyan]")
@@ -230,11 +445,24 @@ def run_morning_checks() -> None:
 
 
 def run_snapshot_check() -> None:
-    """Hourly 10-23 UTC — LivePoller staleness check."""
-    try:
-        check_snapshot_staleness()
-    except Exception as e:
-        console.print(f"[yellow]health_alerts snapshot check error: {e}[/yellow]")
+    """Hourly 10-23 UTC — LivePoller staleness check + companion alerts.
+    Extended 2026-05-25 to include the new monitoring checks (MEMORY, BETTING
+    REFRESH DEAD-MAN'S, AF QUOTA, MODEL DRIFT, META SCORE DRIFT). All are
+    quick reads + email-only on threshold breach; safe to bundle here so we
+    don't add 5 new scheduler entries.
+    """
+    for fn_name, fn in [
+        ("snapshot_staleness", check_snapshot_staleness),
+        ("memory_usage", check_memory_usage),
+        ("betting_refresh_stale", check_betting_refresh_stale),
+        ("af_quota", check_af_quota),
+        ("model_drift", check_model_drift),
+        ("meta_score_drift", check_meta_score_drift),
+    ]:
+        try:
+            fn()
+        except Exception as e:
+            console.print(f"[yellow]health_alerts {fn_name} error: {e}[/yellow]")
 
 
 def run_settlement_check() -> None:

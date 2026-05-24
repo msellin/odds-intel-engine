@@ -16,6 +16,9 @@ xgboost>=2.1.0
 scipy>=1.14.0
 shap>=0.46.0
 
+# Process / memory monitoring (MEMORY-MONITORING in health_alerts)
+psutil>=5.9.0
+
 # Database
 supabase>=2.0.0
 psycopg2-binary>=2.9.0

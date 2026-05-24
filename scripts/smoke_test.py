@@ -6679,6 +6679,30 @@ def test_ah_away_line_filter():
         "candidate-gen must apply the floor check"
 
 
+@test("HEALTH-ALERTS-MONITORING — 5 new checks (memory, refresh-dead-man, AF quota, model drift, meta drift)")
+def test_health_alerts_monitoring():
+    """MEMORY-MONITORING + PIPELINE-DEAD-MAN'S-SWITCH + OBS-BUDGET-ALERT +
+    MODEL-DRIFT-ALERT + B-ML3 SCORE-DRIFT — all five new check functions ship
+    in health_alerts.py and are wired into run_snapshot_check (hourly cadence
+    via job_health_alerts_snapshot in scheduler.py).
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "jobs" / "health_alerts.py").read_text()
+    for name in ("check_memory_usage", "check_betting_refresh_stale",
+                 "check_af_quota", "check_model_drift", "check_meta_score_drift"):
+        assert f"def {name}" in src, f"{name} function missing"
+        assert name in src.split("def run_snapshot_check")[1], \
+            f"{name} not wired into run_snapshot_check"
+    # Alert IDs are unique so dedup works
+    for alert_id in ("memory_high", "betting_refresh_stale", "af_quota_high",
+                     "model_drift", "meta_score_drift"):
+        assert f'"{alert_id}"' in src, f"alert dedup key '{alert_id}' missing"
+    # psutil in requirements (with /proc fallback for envs that don't have it)
+    reqs = (pathlib.Path(__file__).resolve().parent.parent / "requirements.txt").read_text()
+    assert "psutil" in reqs, "psutil must be declared (MEMORY-MONITORING uses it on Railway)"
+
+
 @test("B-ML3-V2-ACTIVE — meta-model scorer wired into daily_pipeline_v2 with env gating")
 def test_b_ml3_v2_active():
     """B-ML3-V2-ACTIVE (2026-05-25): the trained v2.1 meta-model scores every
