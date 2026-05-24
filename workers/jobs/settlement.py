@@ -2136,6 +2136,49 @@ def run_post_mortem():
             summary += f", Align: {b['alignment_class']}"
         bet_summaries.append(summary)
 
+    # POST-MORTEM-BALANCE (2026-05-24): pre-compute a per-conviction-bucket hit-rate
+    # table from today's bets so the LLM can ground MODEL_ERROR vs VARIANCE judgments
+    # in empirical baseline data rather than narrative cherry-picking. The OU-UNDER-CAP
+    # investigation showed the LLM was flagging "high conviction model error" on
+    # losses without checking that the bot was actually winning at similar confidence
+    # on the same day — pure availability bias.
+    def _conv_bucket(p):
+        if p is None:
+            return None
+        p = float(p)
+        if p < 0.40: return "<40%"
+        if p < 0.50: return "40-50%"
+        if p < 0.60: return "50-60%"
+        if p < 0.70: return "60-70%"
+        if p < 0.80: return "70-80%"
+        return ">=80%"
+
+    bucket_stats: dict[str, dict] = {}
+    for b in bets:
+        if b["result"] not in ("won", "lost"):
+            continue
+        p = b.get("calibrated_prob") or b.get("model_probability")
+        bucket = _conv_bucket(p)
+        if bucket is None:
+            continue
+        s = bucket_stats.setdefault(bucket, {"n": 0, "wins": 0, "total_pred": 0.0})
+        s["n"] += 1
+        s["wins"] += 1 if b["result"] == "won" else 0
+        s["total_pred"] += float(p)
+
+    calib_rows = []
+    for bucket in ["<40%", "40-50%", "50-60%", "60-70%", "70-80%", ">=80%"]:
+        s = bucket_stats.get(bucket)
+        if not s or s["n"] == 0:
+            continue
+        pred = 100.0 * s["total_pred"] / s["n"]
+        actual = 100.0 * s["wins"] / s["n"]
+        delta = actual - pred
+        calib_rows.append(
+            f"  {bucket:<8}  n={s['n']:>3}  predicted={pred:5.1f}%  actual={actual:5.1f}%  Δ={delta:+5.1f}pp"
+        )
+    calib_block = "\n".join(calib_rows) if calib_rows else "  (no calibrated bets today)"
+
     prompt = f"""You are a sports betting analyst performing a daily post-mortem.
 
 CONTEXT (POST-MORTEM-CONTEXT, 2026-05-24): Bets come from an INDEPENDENT PORTFOLIO of
@@ -2152,11 +2195,20 @@ TODAY'S SETTLED BETS ({len(bets)} total: {len(wins)} won, {len(losses)} lost):
 
 {chr(10).join(bet_summaries)}
 
+DAILY CALIBRATION SNAPSHOT (POST-MORTEM-BALANCE, 2026-05-24): per-confidence-bucket
+hit rate from today's settled bets — predicted % is the avg model conviction in the
+bucket, actual % is the realised win rate. Use this BEFORE classifying any loss as
+MODEL_ERROR.
+
+{calib_block}
+
 For each LOST bet, classify the likely cause into exactly one category:
-- VARIANCE: Model assessment was reasonable (good edge, maybe good CLV) but result went against us. Bad luck, not a model flaw.
+- VARIANCE: Model assessment was reasonable (good edge, maybe good CLV) but result went against us. Bad luck, not a model flaw. **Default to VARIANCE when the bet's confidence bucket above shows actual ≈ predicted (Δ within ±10pp on n≥5 bets).** A high-conviction loss is not by itself MODEL_ERROR; check the bucket's win rate first.
 - INFORMATION_GAP: Odds moved against us (negative drift) or news impacted the match in a way our model didn't capture. We were missing information.
-- MODEL_ERROR: Model probability was significantly wrong — the team was simply not as strong/weak as predicted. The pick was bad, not unlucky.
+- MODEL_ERROR: Model probability was significantly wrong — the team was simply not as strong/weak as predicted. **Only assign MODEL_ERROR when the bet's confidence bucket as a WHOLE underperforms its predicted hit rate by 15pp+, OR when the loss is structurally extreme (e.g., 91% under that ended 4-4) AND the bucket has too few wins to call it VARIANCE.** Do not call MODEL_ERROR for a single loss when other bets in the same conviction bucket won today.
 - TIMING: The pick might have been right earlier but conditions changed (lineup, late injury). Better timing would have helped.
+
+If today's settled count is small (n < 20), buckets will be sparse and you should default to VARIANCE for losses unless the score is structurally extreme — the LLM availability bias caught on 2026-05-24 came from over-confident MODEL_ERROR calls on small-sample days. Note this in `patterns_noticed` if applicable.
 
 Also provide:
 1. A one-paragraph overall assessment of today's performance

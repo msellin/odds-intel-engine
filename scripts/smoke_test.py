@@ -6412,6 +6412,30 @@ def test_post_mortem_schema():
         "JSON round-trip validation missing — corrupt JSON could still reach DB"
 
 
+@test("POST-MORTEM-BALANCE — settlement.py computes per-conviction calibration table and references it in the prompt")
+def test_post_mortem_balance():
+    """POST-MORTEM-BALANCE: the OU-UNDER-CAP investigation revealed the LLM was
+    flagging MODEL_ERROR on losses without checking that the bot won at similar
+    confidence on the same day (availability bias). Fix: pre-compute a per-
+    confidence-bucket hit rate from the day's settled bets and inject it into
+    the prompt with explicit guidance.
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "jobs" / "settlement.py").read_text()
+    assert "POST-MORTEM-BALANCE" in src, "POST-MORTEM-BALANCE tag missing"
+    assert "_conv_bucket" in src, "Per-confidence bucketing helper missing"
+    assert "bucket_stats" in src and "total_pred" in src, \
+        "Bucket aggregation (predicted vs actual hit rate) must be computed"
+    assert "DAILY CALIBRATION SNAPSHOT" in src, \
+        "Prompt must include the DAILY CALIBRATION SNAPSHOT block"
+    # Guard rails on the guidance update
+    assert "Default to VARIANCE" in src, \
+        "Loss-classification guidance must default to VARIANCE when bucket calibration is normal"
+    assert "underperforms its predicted hit rate by 15pp+" in src, \
+        "MODEL_ERROR threshold (bucket-level 15pp+ underperformance) must be explicit"
+
+
 @test("POST-MORTEM-CONTEXT — settlement.py prompt explains bot portfolio independence")
 def test_post_mortem_context():
     """POST-MORTEM-CONTEXT: LLM hallucinated a "conflicting bets bug" on 2026-05-18 because
