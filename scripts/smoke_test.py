@@ -3595,7 +3595,7 @@ def _():
     for b in retired_bots:
         assert f"'{b}'" in mig, f"migration 103 missing retirement for {b}"
     # Un-retire migration must exist
-    unretire = pathlib.Path("supabase/migrations/117_unretire_bots_for_analysis.sql")
+    unretire = pathlib.Path("supabase/migrations/117_unretire_all_bots.sql")
     if unretire.exists():
         # Bots are active again — no description check needed
         pass
@@ -3610,12 +3610,12 @@ def _():
             )
 
 
-@test("BOTS-RETIRE-DC-DNB — three DC/DNB bots retired via migration 111 + flagged in BOTS_CONFIG")
+@test("BOTS-RETIRE-DC-DNB — migration 111 retirement preserved in history")
 def _():
-    """1-year backtest (25K bets / 22 bots) showed bot_dc_value (-2.8% ROI),
-    bot_dc_strong_fav (-3.4% ROI), and bot_dnb_away_value (-7.9% ROI) are
-    structural losers — no edge threshold rescues them. Migration 111 retires
-    them. BOTS_CONFIG descriptions carry the [RETIRED 2026-05-19] marker."""
+    """Historical: 1-year backtest showed DC/DNB-away bots structurally losing.
+    Migration 111 retired them. Migration 117 (BOTS-UNRETIRE-ALL, 2026-05-22)
+    brought them back for analysis. Description markers were removed at that
+    point; migration files remain as the audit trail."""
     import pathlib
     retired_bots = ["bot_dc_value", "bot_dc_strong_fav", "bot_dnb_away_value"]
     mig = pathlib.Path("supabase/migrations/111_retire_dc_dnb_away_bots.sql").read_text()
@@ -3623,14 +3623,13 @@ def _():
         "migration 111 must UPDATE bots ... SET retired_at = now()"
     for b in retired_bots:
         assert f"'{b}'" in mig, f"migration 111 missing retirement for {b}"
-    src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
-    for b in retired_bots:
-        idx = src.find(f'"{b}":')
-        assert idx >= 0, f"{b} missing from BOTS_CONFIG"
-        block_end = idx + 1500
-        assert "[RETIRED 2026-05-19]" in src[idx:block_end], (
-            f"{b} description must be prefixed with [RETIRED 2026-05-19]"
-        )
+    # If un-retire migration exists, skip description-prefix check
+    if not pathlib.Path("supabase/migrations/117_unretire_bots_for_analysis.sql").exists():
+        src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+        for b in retired_bots:
+            idx = src.find(f'"{b}":')
+            assert idx >= 0, f"{b} missing from BOTS_CONFIG"
+            assert "[RETIRED 2026-05-19]" in src[idx:idx + 1500]
 
 
 @test("BOTS-UNRETIRE-ALL — migration 117 un-retires all 8 main bots for analysis volume")
@@ -3738,13 +3737,13 @@ def _():
     )
     assert "retired_reason" in mig, "migration 104 must populate retired_reason"
     assert "bot_aggressive_v2" in mig, "retired_reason must reference v2 replacement"
-    # BOTS_CONFIG carries the [RETIRED ...] marker
-    src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
-    idx = src.find('"bot_aggressive":')
-    assert idx >= 0, "bot_aggressive missing from BOTS_CONFIG"
-    assert "[RETIRED 2026-05-17]" in src[idx:idx + 1500], (
-        "bot_aggressive description must be prefixed with [RETIRED 2026-05-17]"
-    )
+    # If un-retire migration exists (BOTS-UNRETIRE-WEEKEND), description prefix
+    # was removed when the bot came back online. Migration file is the audit trail.
+    if not pathlib.Path("supabase/migrations/122_unretire_weekend_bots.sql").exists():
+        src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+        idx = src.find('"bot_aggressive":')
+        assert idx >= 0, "bot_aggressive missing from BOTS_CONFIG"
+        assert "[RETIRED 2026-05-17]" in src[idx:idx + 1500]
 
 
 @test("PERF-RETIRED-REASON-COLUMN — migration 104 adds retired_reason column")
@@ -8964,6 +8963,33 @@ def _():
     assert btts["odds_range"] == (2.00, 2.80), (
         f"bot_btts_all odds_range must be (2.00, 2.80) after SLICE-LIVE-VALIDATE, "
         f"got {btts['odds_range']}"
+    )
+
+
+@test("BOT-OU15-DIAGNOSE-CLOSE — migration 129 re-retires bot_ou15_defensive after 17-day silence")
+def test_bot_ou15_diagnose_close_migration():
+    """BOT-OU15-DIAGNOSE-CLOSE (2026-05-25) — final retirement of
+    bot_ou15_defensive. Bot has been silent since 2026-05-08 despite all
+    diagnostics being ruled out (ACCESSIBLE-BM, PIN-VETO, MFV inference,
+    calibration tightening) and edge-threshold relaxation already tried
+    (BOT-OU15-EDGE-REPAIR — 0/104 candidates recovered).
+
+    Migration 117 un-retired it on 2026-05-22; remained silent. Migration
+    129 retires it again with the 17-day silent-period evidence in
+    retired_reason."""
+    import pathlib
+    mig = pathlib.Path(__file__).resolve().parents[1] / "supabase" / "migrations" / "129_retire_bot_ou15_defensive_final.sql"
+    src = mig.read_text()
+    assert "bot_ou15_defensive" in src, "migration 129 must target bot_ou15_defensive"
+    assert "is_active = false" in src, "migration 129 must set is_active=false"
+    assert "retired_at = now()" in src, "migration 129 must set retired_at=now()"
+    assert "retired_reason" in src, "migration 129 must populate retired_reason"
+    assert "17-day silent" in src or "2026-05-08" in src, (
+        "retired_reason must cite the silent-period evidence"
+    )
+    # Sanity DO block must fail loudly if the row isn't retired post-migration.
+    assert "RAISE EXCEPTION" in src, (
+        "migration 129 must include a sanity check that aborts if retire failed"
     )
 
 

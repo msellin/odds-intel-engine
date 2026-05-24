@@ -317,7 +317,11 @@ BOTS_CONFIG = {
         # in shadow run — calibration drift killed the bot's edge entirely.
         # Config kept in BOTS_CONFIG so historical bet_id linkage survives;
         # migration 113 flipped is_active=false + retired_at=now().
-        "description": "O/U 1.5 — odds 1.10-1.60, edge 3-4%. Originally retired 2026-05-20 (calibration drift killed edge), re-enabled 2026-05-22 via migration 122; expect minimal firings until calibration shifts.",
+        # BOT-OU15-DIAGNOSE-CLOSE (2026-05-25): final re-retirement via migration 129.
+        # Migration 117 un-retired it 2026-05-22 to gather signal — still silent
+        # through 2026-05-25 (17-day total silence). Re-enable trigger unchanged:
+        # 30+ shadow_bets at ≥3% real ROI sustained over a week.
+        "description": "[RETIRED 2026-05-25] O/U 1.5 — odds 1.10-1.60. Retired via migration 129 after 17-day silent period (2026-05-08 → 2026-05-25). All diagnostics ruled out; calibration drift killed OU 1.5 edge structurally. Re-enable trigger: 30+ shadow_bets at ≥3% real ROI over a week.",
         "tier_label": "pro",
         "markets": ["ou15"],
         "edge_thresholds": {
