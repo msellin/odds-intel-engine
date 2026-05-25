@@ -117,8 +117,18 @@ N=49,539, Brier=0.2493, LogLoss=0.6918, ROI=-4.71%
 - Value bets (CLV > 3%): 28,817, ROI = -6.15%
 - All matched bets (random baseline): ROI = -2.42%
 
+## AH CLV analysis (Poisson λ inverted from 1x2)
+- Matched AH rows: 18,606
+- Note: lambdas inverted from ensemble 1x2 probs (approximate)
+
+| Market | N | Mean CLV | % CLV > 0 | % CLV > 3% |
+|--------|---|----------|-----------|------------|
+| ah_home | 9,303 | -5.71% | 32.1% | 25.1% |
+| ah_away | 9,303 | +5.71% | 67.9% | 59.7% |
+
 ## Key conclusions
 - Pinnacle closing 1x2 is well-calibrated (Brier/LogLoss close to theoretical minimum for football)
 - Flat-bet ROI on highest-prob outcome vs Max closing is negative (as expected — we're paying Max vig)
 - OU2.5: Brier = 0.2410
 - Model CLV edge is marginal: value bets ROI = -6.15% vs baseline -2.42%
+- AH CLV (inverted Poisson): avg across ah_home/ah_away = -0.00%

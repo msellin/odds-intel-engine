@@ -532,6 +532,29 @@ BOTS_CONFIG = {
         "odds_range": (1.60, 2.60),
         "min_prob": 0.50,
     },
+    "bot_high_alignment": {
+        # BOT-HIGH-ALIGNMENT (2026-05-25): paper bot that fires only when
+        # alignment_class == HIGH. The hypothesis is that HIGH alignment marks
+        # the strongest signal stack (most dimensions agree), so even modest
+        # edge bets should be +EV here. Sample is too small in current 30-day
+        # data (n=27 HIGH bets, mostly losing — noisy), so this bot is the
+        # accumulator. Picks all markets the other bots cover, with a low
+        # 3% edge floor; min_alignment_class enforces the gate.
+        # Tier B (50% stake) and recorded as paper-only until 100+ settled.
+        "description": "BOT-HIGH-ALIGNMENT 2026-05-25: paper bot, alignment_class=HIGH only, 3% edge floor across all markets. Tier B stake (50%). Re-evaluate after 100 settled bets.",
+        "tier_label": "pro",
+        "markets": ["1x2", "ou", "btts", "ah", "dnb", "dc"],
+        "tier_filter": None,
+        "min_alignment_class": "HIGH",
+        "edge_thresholds": {
+            1: {"1x2_fav": 0.03, "1x2_long": 0.03, "ou": 0.03, "btts": 0.03, "ah": 0.03, "dnb": 0.03, "dc": 0.03},
+            2: {"1x2_fav": 0.03, "1x2_long": 0.03, "ou": 0.03, "btts": 0.03, "ah": 0.03, "dnb": 0.03, "dc": 0.03},
+            3: {"1x2_fav": 0.03, "1x2_long": 0.03, "ou": 0.03, "btts": 0.03, "ah": 0.03, "dnb": 0.03, "dc": 0.03},
+            4: {"1x2_fav": 0.03, "1x2_long": 0.03, "ou": 0.03, "btts": 0.03, "ah": 0.03, "dnb": 0.03, "dc": 0.03},
+        },
+        "odds_range": (1.30, 4.50),
+        "min_prob": 0.25,
+    },
 }
 
 
@@ -584,6 +607,7 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_ah_away_dog":      "all",
     "bot_dnb_home_value":   "all",
     "bot_dnb_away_value":   "all",
+    "bot_high_alignment":   "all",
 }
 
 
@@ -2705,6 +2729,19 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 if edge < me + _ALN_BUMP.get(alignment["alignment_class"], 0.0):
                     _funnel[bot_name]["drop_aln1"] += 1
                     continue
+
+                # BOT-HIGH-ALIGNMENT (2026-05-25): per-bot minimum alignment-class
+                # filter. Bots can set "min_alignment_class" in their config to
+                # only fire when N+ alignment dimensions agree. Order:
+                # NONE < LOW < MEDIUM < HIGH.
+                _ALN_RANK = {"NONE": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3}
+                _min_aln = config.get("min_alignment_class")
+                if _min_aln is not None:
+                    cur_rank = _ALN_RANK.get(alignment["alignment_class"], 0)
+                    min_rank = _ALN_RANK.get(_min_aln, 0)
+                    if cur_rank < min_rank:
+                        _funnel[bot_name]["drop_min_alignment"] = _funnel[bot_name].get("drop_min_alignment", 0) + 1
+                        continue
 
                 # P4: Kelly-based stake sizing with soft odds penalty
                 # Use running bankroll (reduced by stakes already placed this run)

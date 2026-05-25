@@ -3740,6 +3740,34 @@ def _():
     )
 
 
+@test("BOT-HIGH-ALIGNMENT — only fires on alignment_class=HIGH, all markets, 3pp edge floor")
+def _():
+    """BOT-HIGH-ALIGNMENT 2026-05-25 — paper bot. Hypothesis: HIGH alignment
+    (most signal dimensions agree) is strong enough that a 3% edge floor is
+    safe across all markets. Guards: (1) min_alignment_class set; (2) 3% floor
+    on every tier+market; (3) covers 1x2/ou/btts/ah/dnb/dc; (4) registered in
+    BOT_TIMING_COHORTS; (5) the pipeline applies the filter (not just config).
+    """
+    import inspect
+    from workers.jobs import daily_pipeline_v2
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG, BOT_TIMING_COHORTS
+    assert "bot_high_alignment" in BOTS_CONFIG, "bot_high_alignment missing from BOTS_CONFIG"
+    cfg = BOTS_CONFIG["bot_high_alignment"]
+    assert cfg.get("min_alignment_class") == "HIGH", "min_alignment_class must be HIGH"
+    for tier, ths in cfg["edge_thresholds"].items():
+        for key, val in ths.items():
+            assert abs(val - 0.03) < 1e-6, f"tier {tier} {key} edge must be 3% (got {val})"
+    expected_markets = {"1x2", "ou", "btts", "ah", "dnb", "dc"}
+    assert set(cfg["markets"]) == expected_markets, f"markets mismatch: {cfg['markets']}"
+    assert "bot_high_alignment" in BOT_TIMING_COHORTS, "must be registered in BOT_TIMING_COHORTS"
+    # Guard the filter logic exists in the pipeline (not just config dropped on the floor)
+    src = inspect.getsource(daily_pipeline_v2)
+    assert 'config.get("min_alignment_class")' in src, \
+        "pipeline must read min_alignment_class from bot config"
+    assert "drop_min_alignment" in src, \
+        "pipeline must record drops under drop_min_alignment funnel bucket"
+
+
 @test("AGGRESSIVE-V2 — bot_aggressive_v2 config drops draws+under2.5, caps odds, raises edge")
 def _():
     """Tightened sibling of bot_aggressive. v1's 441 settled bets at -5.7% ROI

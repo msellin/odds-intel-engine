@@ -1,0 +1,27 @@
+kickoff_utc,league,match,bot,market,sel,bot_odds,unibet,bet365,pinnacle,coolbet_actual,unibet_vs_bot_%,bet365_vs_bot_%,stake_eur_2-3,match_id,bet_id
+2026-05-10 16:00,Montenegro / First League,Jedinstvo vs Buducnost Podgorica,bot_aggressive,1X2,home,3.6,,3.0,3.12,,,-16.67,,1dffc553-5613-4f71-8dd5-e0bbffc59743,d3ef0b74-cc09-426d-b093-66e219a31613
+2026-05-10 16:00,Italy / Serie A Women,Lazio W vs Ternana W,bot_aggressive,O/U,under 2.5,2.1,2.07,2.1,2.08,,-1.43,0.0,,9197f89a-319e-411f-bb5a-d7034b248a52,024c9d33-1a5f-40bc-96ca-855c4094945c
+2026-05-10 16:30,Rwanda / National Soccer League,APR vs AS Kigali,bot_btts_all,BTTS,no,1.65,,,,,,,,f791dd49-6231-461f-8bd2-2b389304becf,dfb48506-423a-4b6c-9b3e-ce682e92642e
+2026-05-10 16:30,Spain / La Liga,Oviedo vs Getafe,bot_aggressive,1X2,home,2.84,2.8,2.62,2.77,,-1.41,-7.75,,d6cb3ce1-66eb-457a-88aa-de65fb4b32c8,fc259028-af9e-49cf-a145-2c7ba2d17854
+2026-05-10 16:30,Spain / Segunda División,Mirandes vs Eibar,bot_aggressive,1X2,home,2.85,2.6,2.55,2.65,,-8.77,-10.53,,614b6f9f-fdd6-4a7e-a66d-07682f84580e,a4b8448c-7f79-4bb2-9d17-4aeecd0463ee
+2026-05-10 16:30,Serbia / Super Liga,Radnički Niš vs Mladost Lučani,bot_aggressive,1X2,away,4.9,4.0,4.75,4.9,,-18.37,-3.06,,f0bf3c16-19d3-446c-9da2-195eafa88a80,725cb000-135b-4e01-ac15-b58f541e63fa
+2026-05-10 16:30,Spain / Segunda División,Cordoba vs Granada CF,bot_aggressive,1X2,away,4.68,4.25,4.5,4.65,,-9.19,-3.85,,18f320b5-1878-4926-8099-81879e0bffca,1500fd33-e713-4642-a571-8774ca2e1931
+2026-05-10 16:30,Greece / Super League 1,Olympiakos Piraeus vs PAOK,bot_btts_all,BTTS,yes,2.1,1.88,2.05,,,-10.48,-2.38,,e847b658-80ef-43a7-8714-58572e01c91f,2a1a3198-3c29-4fc7-8d4c-9e54c58bdeef
+2026-05-10 16:30,Greece / Super League 1,AEK Athens FC vs Panathinaikos,bot_btts_all,BTTS,yes,2.3,2.0,2.05,,,-13.04,-10.87,,5c8d750c-f5e6-4166-b284-30300f5a2e28,90056dca-6a22-47fa-9e98-d406bd3f3c0d
+2026-05-10 16:30,Greece / Super League 1,Olympiakos Piraeus vs PAOK,bot_aggressive,O/U,over 2.5,2.13,1.9,2.1,2.12,,-10.8,-1.41,,e847b658-80ef-43a7-8714-58572e01c91f,d0ae59ed-4c90-4ccb-aed3-fffd1ac0bb65
+2026-05-10 16:45,Spain / Primera División RFEF - Group 2,Real Murcia vs Real Betis II,bot_btts_all,BTTS,yes,2.0,1.8,1.8,,,-10.0,-10.0,,feb66914-726e-46f3-a155-a217dd1c239e,1e623b2e-385f-4d1d-95dd-2137055d377d
+2026-05-10 17:00,Spain / Primera División Femenina,Granad. Tenerife W vs Barcelona W,bot_aggressive,O/U,under 2.5,4.0,3.35,3.5,,,-16.25,-12.5,,0b40b549-d3d4-473a-b8e6-babacc6b9528,b19c7890-4c59-432a-b08b-c7a2c7b143cc
+2026-05-10 17:00,Portugal / Primeira Liga,AVS vs FC Porto,bot_aggressive,O/U,under 2.5,2.63,2.35,2.4,2.53,,-10.65,-8.75,,1b8fcba5-78dc-41d8-b72b-03958017c96e,8c6953ed-2ec2-4400-82b7-d52f24bce77b
+2026-05-10 17:30,Germany / 3. Liga,Hoffenheim II vs FC Saarbrücken,bot_aggressive,1X2,home,2.96,2.7,2.75,2.96,,-8.78,-7.09,,a1742a76-32a0-4747-9e3f-cdf4c1fb9ed0,8342b601-17c4-439b-836d-d570005d6589
+2026-05-10 18:00,USA / MLS Next Pro,New England II vs New York City II,bot_aggressive,1X2,away,4.35,4.35,3.8,4.14,,0.0,-12.64,,6e774731-5a5e-4c59-8c29-835bc05a12c8,14d2737b-1e1d-44ba-8f77-6b874d4c9719
+2026-05-10 19:00,France / Ligue 1,Angers vs Strasbourg,bot_aggressive,1X2,home,2.98,2.85,2.75,2.83,,-4.36,-7.72,,4696a62e-db7f-4c7e-9d96-d353238c350d,e6d3b524-9a98-4e49-9f3d-8a510941e8b3
+2026-05-10 19:00,Spain / La Liga,Barcelona vs Real Madrid,bot_aggressive,1X2,away,4.64,4.3,4.2,4.32,,-7.33,-9.48,,2f9f62d5-5f6f-4a06-a40e-992531509a4b,29312b89-ce16-41e7-83ab-9cc906ec5489
+2026-05-10 19:00,France / Ligue 1,Paris Saint Germain vs Stade Brestois 29,bot_btts_all,BTTS,yes,1.95,1.84,1.91,,,-5.64,-2.05,,0adbbdb3-5bab-4c91-ae90-7c702613e264,9a567d36-5cfc-40d4-914e-3ed486c91609
+2026-05-10 19:00,France / Ligue 1,Metz vs Lorient,bot_btts_all,BTTS,yes,1.62,1.57,1.57,,,-3.09,-3.09,,16b72d82-e1f4-4302-9ab1-4fa8e3cde9c2,3f977ad2-98e9-4b0c-adc7-ca55a2987052
+2026-05-10 19:00,France / Ligue 1,Monaco vs Lille,bot_btts_all,BTTS,no,2.63,2.5,2.38,,,-4.94,-9.51,,31855e02-7e6b-4476-a0ca-7112fbccd591,956e4bd8-50a5-4b98-a0f3-11b17f7c2a1c
+2026-05-10 19:30,Venezuela / Segunda División,Puerto Cabello II vs Atletico el Vigia FC,bot_aggressive,1X2,away,4.89,,4.5,,,,-7.98,,6f1f8a8d-f50f-4b32-a54a-181abeee25bd,846f5631-defa-431d-9884-b4daf782c1d9
+2026-05-10 20:00,Venezuela / Segunda División,Petare FC vs Maritimo,bot_ou25_global,O/U,over 2.5,2.5,,2.5,,,,0.0,,95db6747-8451-4e69-9df6-c13af68aa2e1,e37e80a7-7c76-41d8-9bc6-2ebbc1685fab
+2026-05-10 20:00,Venezuela / Segunda División,Petare FC vs Maritimo,bot_aggressive,O/U,over 2.5,2.5,,2.5,,,,0.0,,95db6747-8451-4e69-9df6-c13af68aa2e1,9ed54d76-540b-496e-92e2-b48cc5a5a203
+2026-05-10 20:00,Venezuela / Segunda División,Petare FC vs Maritimo,bot_btts_all,BTTS,yes,2.09,,,,,,,,95db6747-8451-4e69-9df6-c13af68aa2e1,038bc8ba-d597-4364-bdb7-9ac435d84642
+2026-05-10 23:00,USA / MLS Next Pro,Atlanta United II vs Orlando City II,bot_aggressive,1X2,away,4.6,4.6,3.9,4.29,,0.0,-15.22,,55c840de-a990-480c-b203-d095aa1019cd,a664996b-5218-4604-b185-e7d4b0371f34
+2026-05-10 23:00,USA / MLS Next Pro,Atlanta United II vs Orlando City II,bot_aggressive,O/U,under 2.5,3.25,2.8,2.75,,,-13.85,-15.38,,55c840de-a990-480c-b203-d095aa1019cd,03dcad5f-8341-469f-8a21-b30dcd5c4754
