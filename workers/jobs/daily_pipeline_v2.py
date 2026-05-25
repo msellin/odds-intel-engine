@@ -2726,8 +2726,32 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 # HIGH/MEDIUM unchanged — sample sizes too small to lower threshold.
                 # NONE is neutral (no signal ≠ bad signal).
                 _ALN_BUMP = {"LOW": 0.01, "MEDIUM": 0.0, "HIGH": 0.0, "NONE": 0.0}
-                if edge < me + _ALN_BUMP.get(alignment["alignment_class"], 0.0):
-                    _funnel[bot_name]["drop_aln1"] += 1
+                aln_bump = _ALN_BUMP.get(alignment["alignment_class"], 0.0)
+
+                # ENG-15 (2026-05-25): per-league market inefficiency index.
+                # Continuous version of ELITE_LEAGUE_FILTER. Reads
+                # match["_league_clv_efficiency"] (mean pseudo_clv over 60d
+                # for the league) and bumps the edge requirement up/down:
+                #   high efficiency  (≥+2%)  → -1% edge required (more bets)
+                #   neutral          (-1%..+2%) → 0
+                #   low/sharp        (<-1%)  → +1% edge required (fewer bets)
+                # Env-gated OFF during Phase 3.5 validation. Activate via
+                # LEAGUE_EFF_EDGE_BUMP_ENABLED=true post-2026-06-07.
+                eff_bump = 0.0
+                if os.getenv("LEAGUE_EFF_EDGE_BUMP_ENABLED", "false").lower() in ("true", "1", "yes"):
+                    eff = match.get("_league_clv_efficiency")
+                    if eff is not None:
+                        if eff >= 0.02:
+                            eff_bump = -0.01
+                        elif eff <= -0.01:
+                            eff_bump = 0.01
+
+                if edge < me + aln_bump + eff_bump:
+                    # Charge the funnel bucket whose bump made the difference.
+                    if eff_bump > 0 and edge >= me + aln_bump:
+                        _funnel[bot_name]["drop_league_eff_edge"] = _funnel[bot_name].get("drop_league_eff_edge", 0) + 1
+                    else:
+                        _funnel[bot_name]["drop_aln1"] += 1
                     continue
 
                 # BOT-HIGH-ALIGNMENT (2026-05-25): per-bot minimum alignment-class

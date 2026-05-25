@@ -3740,6 +3740,30 @@ def _():
     )
 
 
+@test("ENG-15 — league market-inefficiency index bumps edge requirement up/down per league")
+def _():
+    """ENG-15 2026-05-25 — continuous version of ELITE_LEAGUE_FILTER. The
+    pipeline reads match['_league_clv_efficiency'] (60d mean pseudo_clv per
+    league, populated by scripts/compute_league_clv_efficiency.py + Sunday
+    job_league_clv_efficiency) and bumps the per-candidate edge requirement:
+        eff ≥ +2%        → eff_bump = -1% (less edge required)
+        -1% < eff < +2%  → eff_bump = 0
+        eff ≤ -1%        → eff_bump = +1% (more edge required)
+    Env-gated: LEAGUE_EFF_EDGE_BUMP_ENABLED=true to activate. Default OFF
+    so Phase 3.5 isn't disturbed.
+    """
+    import inspect
+    from workers.jobs import daily_pipeline_v2
+    src = inspect.getsource(daily_pipeline_v2)
+    assert "LEAGUE_EFF_EDGE_BUMP_ENABLED" in src, "env var gate missing"
+    assert "_league_clv_efficiency" in src, "match key for the signal missing"
+    assert "eff_bump" in src, "the bump variable must be present"
+    assert "drop_league_eff_edge" in src, "funnel bucket must be present"
+    # Default-off guarantee: the env-var check should default to 'false'
+    assert 'os.getenv("LEAGUE_EFF_EDGE_BUMP_ENABLED", "false")' in src, \
+        "env var must default to 'false' (Phase 3.5 lock)"
+
+
 @test("BOT-HIGH-ALIGNMENT — only fires on alignment_class=HIGH, all markets, 3pp edge floor")
 def _():
     """BOT-HIGH-ALIGNMENT 2026-05-25 — paper bot. Hypothesis: HIGH alignment
