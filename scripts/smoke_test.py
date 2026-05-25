@@ -3740,6 +3740,27 @@ def _():
     )
 
 
+@test("ALN-AUTO — monthly alignment-bump tuner wired into scheduler with email diff")
+def _():
+    """ALN-AUTO 2026-05-25 — monthly cron wrapping aln1_tune_analysis.py.
+    Emails a Resend diff when any alignment class needs |Δ| ≥ 0.005 with
+    n ≥ 100. Never auto-applies (human approves). Guards: job file
+    exists with correct entrypoint, scheduler registers it on day=1,
+    diff thresholds match spec.
+    """
+    from pathlib import Path as _Path
+    job_path = _Path(__file__).resolve().parent.parent / "workers" / "jobs" / "aln_auto_tune.py"
+    assert job_path.exists(), "workers/jobs/aln_auto_tune.py missing"
+    job_src = job_path.read_text()
+    assert "def run_aln_auto_tune" in job_src
+    assert ">= 0.005" in job_src, "diff threshold must be 0.005"
+    assert ">= 100" in job_src, "n threshold must be 100"
+    assert "_send_email" in job_src, "must email via Resend"
+    sched_src = (_Path(__file__).resolve().parent.parent / "workers" / "scheduler.py").read_text()
+    assert "job_aln_auto_tune" in sched_src, "scheduler must register the job"
+    assert 'CronTrigger(day="1"' in sched_src, "scheduler must use day=1 (monthly)"
+
+
 @test("SCHEMA-DRIFT-SMOKE — every column the model trains on still exists in MFV")
 def _():
     """SCHEMA-DRIFT-SMOKE 2026-05-25 — detect column renames / removals

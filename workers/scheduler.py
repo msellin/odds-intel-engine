@@ -613,6 +613,14 @@ def job_daily_real_perf_email():
     _run_job("daily_real_perf_email", send_daily_real_perf)
 
 
+def job_aln_auto_tune():
+    """ALN-AUTO (2026-05-25): monthly alignment bump re-tune. Runs aln1_tune
+    analysis on a 60d window; emails a diff if any class needs |Δ| ≥ 0.005
+    with n ≥ 100. Never auto-applies — human approves the bump."""
+    from workers.jobs.aln_auto_tune import run_aln_auto_tune
+    _run_job("aln_auto_tune", run_aln_auto_tune)
+
+
 def job_nightly_mfv_b_ml3_refresh():
     """MFV-B-ML3-V2-NIGHTLY-REFRESH (2026-05-25): re-runs the B-ML3 v2 feature
     backfill nightly so MFV rows for matches that just finished settle into
@@ -1153,6 +1161,16 @@ def main():
                       CronTrigger(hour=22, minute=55),
                       id="injury_severity",
                       name="Injury Severity Bucketing 22:55")
+
+    # ALN-AUTO (2026-05-25): 1st of each month at 03:30 UTC. Runs the
+    # alignment-bump tuner over a 60d window; emails a diff via Resend
+    # if any class needs |Δ| ≥ 0.005 with n ≥ 100. Never auto-applies
+    # — human approves the bump because alignment directly affects
+    # bet placement.
+    scheduler.add_job(job_aln_auto_tune,
+                      CronTrigger(day="1", hour=3, minute=30),
+                      id="aln_auto_tune",
+                      name="ALN-AUTO Monthly 1st 03:30")
 
     # ENG-8: Watchlist alerts — 08:30, 14:30, 20:35 UTC
     # 20:35 staggered 5 min after 20:30 betting refresh (N9 fix — avoids simultaneous heavy jobs)
