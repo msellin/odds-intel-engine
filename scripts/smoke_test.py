@@ -3740,6 +3740,29 @@ def _():
     )
 
 
+@test("META-BOT-PORTFOLIO — meta_bot_picks.py scaffolding present + bot list gates execution")
+def _():
+    """META-BOT-PORTFOLIO 2026-05-25 — scaffolding committed but bot selection
+    is deferred until the 200-bet cohort report (~2026-06-30). Guard that:
+    (1) the script file exists, (2) the seven algorithm steps are
+    implemented (key function names), (3) running without --bots prints the
+    WAITING message and exits 0 instead of crashing.
+    """
+    import subprocess, sys, inspect, importlib.util
+    from pathlib import Path as _Path
+    script_path = _Path(__file__).resolve().parent / "meta_bot_picks.py"
+    assert script_path.exists(), "scripts/meta_bot_picks.py is missing"
+    spec = importlib.util.spec_from_file_location("meta_bot_picks", script_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    for fn in ("fetch_pending_bets", "resolve_conflicts", "correlation_discount", "simultaneous_kelly", "main"):
+        assert hasattr(mod, fn), f"meta_bot_picks.{fn} missing — Step coverage incomplete"
+    # Running without --bots must succeed (default WAITING mode)
+    res = subprocess.run([sys.executable, str(script_path)], capture_output=True, text=True, timeout=30)
+    assert res.returncode == 0, f"WAITING-mode crashed: {res.stderr[-300:]}"
+    assert "WAITING" in res.stdout, "default mode must announce WAITING status"
+
+
 @test("ENG-15 — league market-inefficiency index bumps edge requirement up/down per league")
 def _():
     """ENG-15 2026-05-25 — continuous version of ELITE_LEAGUE_FILTER. The
