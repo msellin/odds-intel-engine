@@ -27,6 +27,7 @@ Column names match match_feature_vectors exactly. Callers must provide:
 """
 
 import argparse
+import os
 import pandas as pd
 import numpy as np
 import joblib
@@ -170,6 +171,37 @@ FEATURE_COLS = [
 ]
 
 
+# CANDIDATE-VARIANT-TRAINS (2026-05-25): env-driven feature subset + depth override.
+# Used by experimental candidate runs:
+#   FEATURE_SUBSET='form_momentum_home,form_momentum_away,...'  → narrow training cols
+#   FEATURE_SUBSET='v3_signals_only'                            → just today's 10 new features
+#   XGB_MAX_DEPTH=8                                              → override default 6/5
+# Default unset = no change.
+_V3_SIGNALS_ONLY = [
+    "form_momentum_home", "form_momentum_away",
+    "injury_severity_score_home", "injury_severity_score_away",
+    "league_draw_rate_ytd", "season_progress", "line_velocity",
+    "xg_overperf_home", "xg_overperf_away",
+    "league_clv_efficiency",
+    "team_avg_player_rating_home", "team_avg_player_rating_away",
+]
+_subset_env = os.getenv("FEATURE_SUBSET", "").strip()
+if _subset_env == "v3_signals_only":
+    FEATURE_COLS = list(_V3_SIGNALS_ONLY)
+    console.print(f"[yellow]CANDIDATE-VARIANT: FEATURE_COLS narrowed to v3_signals_only ({len(FEATURE_COLS)} cols)[/yellow]")
+elif _subset_env:
+    FEATURE_COLS = [c.strip() for c in _subset_env.split(",") if c.strip()]
+    console.print(f"[yellow]CANDIDATE-VARIANT: FEATURE_COLS overridden from env ({len(FEATURE_COLS)} cols)[/yellow]")
+
+
+def _xgb_depth(default: int) -> int:
+    """Env-overridable max_depth so candidate variants can train deeper trees."""
+    try:
+        return int(os.getenv("XGB_MAX_DEPTH", str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 def train_result_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, output_dir: Path | None = None):
     """Train 1X2 match result prediction model"""
     console.print("\n[bold cyan]Training 1X2 Result Model[/bold cyan]")
@@ -195,7 +227,7 @@ def train_result_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, outp
 
         model = XGBClassifier(
             n_estimators=200,
-            max_depth=6,
+            max_depth=_xgb_depth(6),
             learning_rate=0.05,
             subsample=0.8,
             colsample_bytree=0.8,
@@ -237,7 +269,7 @@ def train_result_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, outp
     # Train final model on all data with calibration
     final_model = XGBClassifier(
         n_estimators=200,
-        max_depth=6,
+        max_depth=_xgb_depth(6),
         learning_rate=0.05,
         subsample=0.8,
         colsample_bytree=0.8,
@@ -300,7 +332,7 @@ def train_over25_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, outp
 
         model = XGBClassifier(
             n_estimators=200,
-            max_depth=5,
+            max_depth=_xgb_depth(5),
             learning_rate=0.05,
             subsample=0.8,
             colsample_bytree=0.8,
@@ -339,7 +371,7 @@ def train_over25_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, outp
     # Final calibrated model
     final_model = XGBClassifier(
         n_estimators=200,
-        max_depth=5,
+        max_depth=_xgb_depth(5),
         learning_rate=0.05,
         subsample=0.8,
         colsample_bytree=0.8,
@@ -381,7 +413,7 @@ def train_btts_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, output
 
         model = XGBClassifier(
             n_estimators=200,
-            max_depth=5,
+            max_depth=_xgb_depth(5),
             learning_rate=0.05,
             subsample=0.8,
             colsample_bytree=0.8,
@@ -403,7 +435,7 @@ def train_btts_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, output
     console.print(f"\n  [green]Mean accuracy: {np.mean(accuracies):.3f}[/green]")
 
     final_model = XGBClassifier(
-        n_estimators=200, max_depth=5, learning_rate=0.05,
+        n_estimators=200, max_depth=_xgb_depth(5), learning_rate=0.05,
         subsample=0.8, colsample_bytree=0.8,
         objective="binary:logistic", eval_metric="logloss",
         random_state=42, verbosity=0,
@@ -446,7 +478,7 @@ def _train_goals_regressor(features_df: pd.DataFrame, targets_df: pd.DataFrame,
         y_tr, y_val = y.iloc[train_idx], y.iloc[val_idx]
         m = XGBRegressor(
             n_estimators=200,
-            max_depth=5,
+            max_depth=_xgb_depth(5),
             learning_rate=0.05,
             subsample=0.8,
             colsample_bytree=0.8,
@@ -471,7 +503,7 @@ def _train_goals_regressor(features_df: pd.DataFrame, targets_df: pd.DataFrame,
 
     final = XGBRegressor(
         n_estimators=200,
-        max_depth=5,
+        max_depth=_xgb_depth(5),
         learning_rate=0.05,
         subsample=0.8,
         colsample_bytree=0.8,
