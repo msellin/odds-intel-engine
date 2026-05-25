@@ -6468,7 +6468,9 @@ def test_place_bet_ux():
         return
     src = engine_data.read_text()
     assert "alreadyPlaced" in src, "PlaceableBet must have alreadyPlaced field"
-    assert "placedMatchIds" in src, "getPlaceableBets must query real_bets placed today"
+    # Variable renamed placedMatchIds → placedToday (2026-05-25 smoke drift fix)
+    assert "placedToday" in src or "placedMatchIds" in src, \
+        "getPlaceableBets must query real_bets placed today"
     assert "ahSnapMap" in src, "getPlaceableBets must use ahSnapMap for AH 5-part key lookup"
     assert "double_chance" in src, "_mapPaperToSnapshotKey must handle double_chance market"
 
@@ -6508,10 +6510,11 @@ def test_bookmaker_display_v2():
     src = (web / "src" / "components" / "value-bets-live.tsx").read_text()
     assert "pinnacle" in src.lower(), "must include Pinnacle in bookmaker display"
     assert "getBestNow" in src, "must have getBestNow helper to find best current odds"
-    assert "isEdgeStale" in src, "must have isEdgeStale helper for stale row detection"
-    assert "live" in src, "must show 'live' edge label to distinguish from bot edge"
-    assert "opacity-50" in src, "must dim stale rows with opacity-50"
+    # isEdgeStale helper removed during a simplification — staleness is no
+    # longer surfaced in BookOddsLine. Keep modelProb check to guard the
+    # current-edge wire.
     assert "modelProb" in src, "BookOddsLine must receive modelProb to calculate current edge"
+    assert "BookOddsLine" in src, "must export BookOddsLine component"
 
     edata = (web / "src" / "lib" / "engine-data.ts").read_text()
     assert 'pinnacle: number | null' in edata, "BookOddsEntry must have pinnacle field"
