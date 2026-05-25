@@ -265,6 +265,22 @@ def job_odds_pre_kickoff():
     _run_job("odds_pre_kickoff", run_odds, mark_closing=True)
 
 
+def job_odds_tomorrow():
+    """OPENING-LINE-MOVE-CAPTURE (2026-05-25): fetch odds for TOMORROW's
+    matches at 22:00 UTC. The match-day morning fetch at 04:00 UTC then
+    produces a 'yesterday → today' delta in odds_snapshots that
+    batch_write_morning_signals translates into overnight_line_move.
+
+    Pre-fix coverage: 0.2% (48 / 13,500 MFV rows since 2026-05-01).
+    The earlier OVERNIGHT-ODDS-CAPTURE at 02:00/04:00 UTC fetched
+    today's matches but they had no prior snapshot to diff against.
+    """
+    from workers.jobs.fetch_odds import run_odds
+    from datetime import date, timedelta
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    _run_job("odds_tomorrow", lambda: run_odds(target_date=tomorrow))
+
+
 def job_enrichment_refresh():
     from workers.jobs.fetch_enrichment import run_enrichment
     _run_job("enrichment_refresh", run_enrichment,
@@ -1025,17 +1041,18 @@ def main():
             scheduler.add_job(job_odds_refresh, CronTrigger(hour=hour, minute=minute),
                               id=f"odds_{hour:02d}{minute:02d}", name=f"Odds {hour:02d}:{minute:02d}")
 
-    # OVERNIGHT-ODDS-CAPTURE (2026-05-25): two slots in the 22:00-07:00 UTC gap so
-    # the "yesterday → today" line movement can actually be observed. Prior to this
-    # the schedule was 07-22 UTC with a 9-hour overnight gap → MFV.overnight_line_move
-    # was 0.2% populated (META-FEATURE-DESIGN coverage audit, 2026-05-24). The B-ML3
-    # clean retrain on 2026-06-08+ needs the overnight delta as a feature; without
-    # these slots the data continues to be absent. 02:00 captures "morning of match
-    # day" for European afternoon KOs; 04:00 captures pre-morning-pipeline movement.
-    scheduler.add_job(job_odds_refresh, CronTrigger(hour=2, minute=0),
-                      id="odds_0200", name="Odds 02:00 (overnight)")
-    scheduler.add_job(job_odds_refresh, CronTrigger(hour=4, minute=0),
-                      id="odds_0400", name="Odds 04:00 (overnight)")
+    # OPENING-LINE-MOVE-CAPTURE (2026-05-25, rev 2): the earlier overnight slots
+    # at 02:00 + 04:00 UTC fetched TODAY's matches — but today's matches had no
+    # prior snapshot to diff against (~0% MFV.overnight_line_move coverage). Fix:
+    # at 22:00 UTC fetch TOMORROW's odds (using the fixture rows just stored by
+    # job_morning step 2 of the SAME day). The next morning's 04:00 fetch then
+    # produces the 'yesterday → today' delta that batch_write_morning_signals
+    # converts into match_signals.overnight_line_move. Removed the redundant
+    # 02:00 + 04:00 odds_refresh slots — morning_pipeline already includes
+    # run_odds for today at 04:00 (step 4/6).
+    scheduler.add_job(job_odds_tomorrow, CronTrigger(hour=22, minute=0),
+                      id="odds_tomorrow_2200",
+                      name="Odds (tomorrow) 22:00 — OPENING-LINE-MOVE-CAPTURE")
 
     # Odds pre-kickoff (mark_closing): 13:30, 17:30, 20:00 UTC
     # 20:00 covers 19:00-21:00 KO window (replaces regular 20:00 refresh — marks CLV closing line)

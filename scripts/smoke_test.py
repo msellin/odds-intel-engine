@@ -3740,6 +3740,28 @@ def _():
     )
 
 
+@test("OPENING-LINE-MOVE-CAPTURE — tomorrow-odds fetch at 22:00 UTC, no race vs morning pipeline")
+def _():
+    """OPENING-LINE-MOVE-CAPTURE 2026-05-25 — fix the 0.2% overnight_line_move
+    coverage. Root cause: the prior overnight slots at 02:00/04:00 UTC fetched
+    TODAY's matches, but today's matches had no prior snapshot. Fix: 22:00 UTC
+    fetch TOMORROW's matches so the next morning's 04:00 fetch produces the
+    delta. Guards: job exists, schedules at 22:00, uses tomorrow target_date,
+    redundant 02:00/04:00 slots removed.
+    """
+    from pathlib import Path as _Path
+    sched_path = _Path(__file__).resolve().parent.parent / "workers" / "scheduler.py"
+    src = sched_path.read_text()
+    assert "def job_odds_tomorrow" in src, "must define the tomorrow-odds job"
+    assert "tomorrow = (date.today() + timedelta(days=1))" in src, \
+        "job must compute tomorrow's date"
+    assert "id=\"odds_tomorrow_2200\"" in src, "scheduler must register at 22:00"
+    assert "OPENING-LINE-MOVE-CAPTURE" in src
+    # Confirm the redundant 02:00 + 04:00 redundant slots are gone
+    assert 'id="odds_0200"' not in src, "remove redundant 02:00 slot"
+    assert 'id="odds_0400"' not in src, "remove redundant 04:00 slot"
+
+
 @test("SIG-12 — xG overperformance script + scheduler job + signal naming")
 def _():
     """SIG-12 2026-05-25 — rolling 10-match team xG overperformance signal.
