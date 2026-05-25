@@ -3852,6 +3852,38 @@ def _():
         assert needed in text, f"email_delivery_check missing {needed!r}"
 
 
+@test("CAL-ALPHA-ODDS-V2 — graduated longshot shrinkage scaffolding, env-gated OFF")
+def _():
+    """CAL-ALPHA-ODDS-V2 2026-05-25 — odds-bucketed shrinkage replaces the
+    single -0.20 step at odds > 3.0. Activated post-Phase-3.5 via
+    CAL_ALPHA_ODDS_V2_ENABLED=true env. Default OFF preserves current
+    single-step behaviour.
+
+    platt_overconfidence_deepdive.py audit:
+      odds 2.5-3.0: -10pp gap
+      odds 3.0-3.5: +2.3pp (well-calibrated by current -0.20)
+      odds 3.5-4.0: -12pp gap
+      odds 4.0+:   -20pp gap (catastrophic)
+    """
+    import inspect, os as _os
+    from workers.model import improvements
+    # Restore env to default before any check
+    prev = _os.environ.pop("CAL_ALPHA_ODDS_V2_ENABLED", None)
+    try:
+        src = inspect.getsource(improvements.calibrate_prob)
+        assert "CAL_ALPHA_ODDS_V2_ENABLED" in src, "env flag missing"
+        assert "alpha - 0.35" in src, "must use -0.35 pull for odds >= 4.0"
+        assert "alpha - 0.25" in src, "must use -0.25 pull for odds 3.5-4.0"
+        assert "alpha - 0.10" in src, "must use -0.10 pull for odds 2.5-3.0"
+        assert 'os.getenv("CAL_ALPHA_ODDS_V2_ENABLED", "false")' in src, \
+            "default must be 'false' (Phase 3.5 lock)"
+        # And the legacy single -0.20 step must still be reachable when env unset
+        assert "elif odds > 3.0:" in src, "fallback single-step path must remain"
+    finally:
+        if prev is not None:
+            _os.environ["CAL_ALPHA_ODDS_V2_ENABLED"] = prev
+
+
 @test("COOLBET-FIRST-SORT — value-bets sorts Coolbet-recommended first, then edge desc")
 def _():
     """COOLBET-FIRST-SORT 2026-05-25 — /value-bets puts Coolbet-recommended

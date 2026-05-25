@@ -190,8 +190,28 @@ def calibrate_prob(model_prob: float, implied_prob: float,
     # task spec used the inverse convention, so "alpha + 0.20" in the task meant
     # "more market trust" — achieved here by decreasing alpha.
     # Floor of 0.10 ensures we never fully discard the model signal.
-    if odds is not None and odds > 3.0:
-        alpha = max(alpha - 0.20, 0.10)
+    #
+    # CAL-ALPHA-ODDS-V2 (2026-05-25): graduated by odds bucket. The
+    # platt_overconfidence_deepdive.py audit found odds is the dominant
+    # explainer of the 30-50% bin overconfidence:
+    #   odds 2.5-3.0: -10pp gap (needs modest extra pull)
+    #   odds 3.0-3.5: +2.3pp (already well-calibrated by current -0.20)
+    #   odds 3.5-4.0: -12pp (needs more pull)
+    #   odds 4.0+:   -20pp (catastrophic; current -0.20 is insufficient)
+    # Env-gated: CAL_ALPHA_ODDS_V2_ENABLED=true activates graduated buckets.
+    # Default OFF — preserves the current single -0.20 step.
+    if odds is not None:
+        if os.getenv("CAL_ALPHA_ODDS_V2_ENABLED", "false").lower() in ("true", "1", "yes"):
+            if odds >= 4.0:
+                alpha = max(alpha - 0.35, 0.10)    # longshots: harder pull
+            elif odds >= 3.5:
+                alpha = max(alpha - 0.25, 0.10)
+            elif odds >= 3.0:
+                alpha = max(alpha - 0.20, 0.10)    # current behaviour kept here
+            elif odds >= 2.5:
+                alpha = max(alpha - 0.10, 0.10)    # mild pull on mid-low odds
+        elif odds > 3.0:
+            alpha = max(alpha - 0.20, 0.10)
 
     # CAL-PIN-SHRINK: use Pinnacle-implied as shrinkage anchor when available
     effective_anchor = (
