@@ -1324,6 +1324,46 @@ def _build_mfv_rows_for_matches(matches: list[dict], date_str: str) -> int:
             if f["team_id"] not in form_by_team:
                 form_by_team[f["team_id"]] = f.get("ppg")
 
+    # MFV-FORM-MOMENTUM-BUG fix (2026-05-25): batch-compute form_momentum =
+    # (last-3 ppg) − (last-10 ppg) per team. The nightly backfill at 22:45
+    # UTC catches this for yesterday's matches; this loader populates today's
+    # MFV rows at build time so meta-model features aren't NULL between
+    # 07:00 and 22:45 UTC. One SQL per 200-team chunk; in-Python aggregation.
+    form_momentum_by_team: dict[str, float] = {}
+    for chunk in _chunk_list(list(all_team_ids), 200):
+        history = execute_query(
+            """SELECT id, home_team_id, away_team_id, date, score_home, score_away
+               FROM matches
+               WHERE status = 'finished'
+                 AND score_home IS NOT NULL AND score_away IS NOT NULL
+                 AND date < %s
+                 AND (home_team_id = ANY(%s::uuid[]) OR away_team_id = ANY(%s::uuid[]))
+               ORDER BY date DESC
+               LIMIT 100000""",
+            (date_str, chunk, chunk),
+        )
+        # Group by team (each match counts for whichever side this team played)
+        by_team: dict = {}
+        for m in history:
+            sh, sa = m["score_home"], m["score_away"]
+            for tid in (m["home_team_id"], m["away_team_id"]):
+                if tid not in chunk:
+                    continue
+                if m["home_team_id"] == tid:
+                    pts = 3 if sh > sa else (1 if sh == sa else 0)
+                else:
+                    pts = 3 if sa > sh else (1 if sh == sa else 0)
+                by_team.setdefault(tid, []).append((m["date"], pts))
+        for tid, results in by_team.items():
+            # Already sorted DESC by date; take first 3 and first 10
+            results.sort(key=lambda r: r[0], reverse=True)
+            last_3 = [r[1] for r in results[:3]]
+            last_10 = [r[1] for r in results[:10]]
+            if len(last_3) >= 3 and len(last_10) >= 10:
+                ppg_3 = sum(last_3) / 3.0
+                ppg_10 = sum(last_10) / 10.0
+                form_momentum_by_team[tid] = round(ppg_3 - ppg_10, 4)
+
     # -- Batch load: match_signals ---------------------------------------------
     signals_by_match: dict[str, list] = {}
     for chunk in _chunk_list(all_match_ids, 200):
@@ -1423,6 +1463,7 @@ def _build_mfv_rows_for_matches(matches: list[dict], date_str: str) -> int:
                 form_by_team, signals_by_match,
                 pin_ou25_by_match, ou25_over_by_match, btts_yes_by_match,
                 weather_by_match,
+                form_momentum_by_team=form_momentum_by_team,
             )
             if row:
                 batch_rows.append(row)
@@ -1482,6 +1523,7 @@ def _build_feature_row_batched(
     ou25_over_by_match: dict | None = None,
     btts_yes_by_match: dict | None = None,
     weather_by_match: dict | None = None,
+    form_momentum_by_team: dict | None = None,
 ) -> dict | None:
     """Build a single match_feature_vectors row from pre-loaded batch data."""
     match_id = match["id"]
@@ -1703,6 +1745,10 @@ def _build_feature_row_batched(
         "elo_diff": elo_diff,
         "form_ppg_home": float(form_ppg_home) if form_ppg_home is not None else None,
         "form_ppg_away": float(form_ppg_away) if form_ppg_away is not None else None,
+        # MFV-FORM-MOMENTUM-BUG fix (2026-05-25): live-write form_momentum
+        # so today's MFV rows aren't NULL between MFV-build and nightly backfill.
+        "form_momentum_home": (form_momentum_by_team or {}).get(home_team_id),
+        "form_momentum_away": (form_momentum_by_team or {}).get(away_team_id),
         "league_position_home": league_position_home,
         "league_position_away": league_position_away,
         "points_to_relegation_home": points_to_relegation_home,

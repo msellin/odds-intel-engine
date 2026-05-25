@@ -3740,6 +3740,32 @@ def _():
     )
 
 
+@test("MFV-FORM-MOMENTUM-BUG — live MFV builder writes form_momentum_{home,away}")
+def _():
+    """Bug discovered 2026-05-24: form_momentum_* columns exist in MFV but
+    `_build_feature_row_batched` never wrote them — 100% NULL on today's
+    rows until the nightly 22:45 backfill caught up. Fix: live builder
+    now batch-computes (last-3 ppg) − (last-10 ppg) per team in a single
+    SQL per chunk and writes the values at MFV build time. Guards:
+    (1) function signature accepts form_momentum_by_team, (2) the output
+    row dict contains form_momentum_home/away keys, (3) the live builder
+    populates the map via the new SQL.
+    """
+    import inspect
+    from workers.api_clients import supabase_client
+    sig = inspect.signature(supabase_client._build_feature_row_batched)
+    assert "form_momentum_by_team" in sig.parameters, "param must be added"
+    src = inspect.getsource(supabase_client._build_feature_row_batched)
+    assert '"form_momentum_home"' in src, "row dict must include form_momentum_home"
+    assert '"form_momentum_away"' in src, "row dict must include form_momentum_away"
+    # The shared helper (_build_mfv_rows_for_matches) — called by both
+    # build_match_feature_vectors and build_match_feature_vectors_live —
+    # must populate the form_momentum map.
+    helper_src = inspect.getsource(supabase_client._build_mfv_rows_for_matches)
+    assert "form_momentum_by_team" in helper_src, "shared helper must compute the map"
+    assert "ppg_3" in helper_src, "must compute ppg_3 vs ppg_10 momentum"
+
+
 @test("ML-NEW-FEATURES — migration 132 + backfill script signal→MFV mapping")
 def _():
     """ML-NEW-FEATURES 2026-05-25 — pivots the new match_signals into 5 new
