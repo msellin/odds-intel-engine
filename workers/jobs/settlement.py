@@ -772,6 +772,42 @@ def _settle_real_bets_for_matches(match_ids: list[str]):
         console.print(f"[green]Settled {settled} real bet(s) across {len(match_ids)} match(es)[/green]")
 
 
+def _void_real_bets_on_dead_matches() -> int:
+    """Void any pending real_bet whose match was postponed / cancelled / abandoned.
+
+    Mirrors what Coolbet (and every other book) does automatically: stake is
+    refunded, pnl = 0. Singles only — combo legs are handled inside
+    settle_combo_bet (a postponed leg makes the combo settle on the remaining
+    legs at the reduced product odds, not a flat void).
+    """
+    # match_status enum has 'postponed' and 'cancelled'. store_match() collapses
+    # AF's PST/CANC/ABD/WO/AWD all to 'postponed', so 'postponed' is what we
+    # actually see today; 'cancelled' is covered for completeness.
+    rows = execute_query(
+        """SELECT rb.id
+           FROM real_bets rb
+           JOIN matches m ON m.id = rb.match_id
+           WHERE rb.result = 'pending'
+             AND rb.combo_legs IS NULL
+             AND m.status IN ('postponed', 'cancelled')""",
+        [],
+    )
+    if not rows:
+        return 0
+    ids = [r["id"] for r in rows]
+    execute_write(
+        """UPDATE real_bets
+           SET result='void', pnl=0, resolved_at=NOW(),
+               notes = COALESCE(notes,'') ||
+                       CASE WHEN notes IS NULL OR notes='' THEN '' ELSE ' | ' END ||
+                       'auto-voided: match postponed/cancelled'
+           WHERE id = ANY(%s::uuid[])""",
+        [ids],
+    )
+    console.print(f"[green]Voided {len(ids)} real bet(s) on postponed/cancelled match(es)[/green]")
+    return len(ids)
+
+
 def _settle_real_combo_bets() -> int:
     """Settle any pending combo real_bets whose ALL leg matches are now finished.
 
@@ -941,6 +977,15 @@ def settle_ready_matches():
     """
     # First: fix any matches stuck on 'live' that have actually finished
     fix_stale_live_matches()
+
+    # SETTLEMENT-POSTPONED-VOID (2026-05-25): scan-and-void real_bets on
+    # postponed/cancelled/abandoned matches. Independent of the finished-match
+    # path below — postponed matches never reach status='finished', so without
+    # this they sit pending forever.
+    try:
+        _void_real_bets_on_dead_matches()
+    except Exception as e:
+        console.print(f"  [yellow]Postponed-void sweep error: {e}[/yellow]")
 
     yesterday = (date.today() - timedelta(days=1)).isoformat()
     today = date.today().isoformat()

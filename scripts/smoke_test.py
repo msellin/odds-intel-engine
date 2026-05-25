@@ -602,6 +602,36 @@ def _():
     )
 
 
+@test("SETTLEMENT-POSTPONED-VOID — postponed/cancelled real_bets get auto-voided (source inspect)")
+def _():
+    """Singles real_bets on matches that move to status='postponed'/'cancelled'/
+    'abandoned' must be voided (result='void', pnl=0) on every 15-min sweep —
+    otherwise they sit pending forever (7 stuck bets on Estudiantes Mérida vs
+    Metropolitanos burned this on 2026-05-24). Bookmaker always refunds, so
+    voiding is the safe mirror.
+    """
+    import inspect
+    from workers.jobs import settlement
+    fn = inspect.getsource(settlement._void_real_bets_on_dead_matches)
+    assert "postponed" in fn and "cancelled" in fn, (
+        "_void_real_bets_on_dead_matches must cover postponed + cancelled "
+        "(the only dead match_status enum values; AF PST/CANC/ABD/WO/AWD all "
+        "collapse to 'postponed' in store_match)"
+    )
+    assert "result='void'" in fn and "pnl=0" in fn, (
+        "void must set result='void' AND pnl=0"
+    )
+    assert "combo_legs IS NULL" in fn, (
+        "must only void singles — combos use settle_combo_bet's reduced-product rule"
+    )
+    # Wired into the 15-min sweep so postponed matches don't need a separate
+    # finished-match trigger to clear.
+    sweep = inspect.getsource(settlement.settle_ready_matches)
+    assert "_void_real_bets_on_dead_matches" in sweep, (
+        "settle_ready_matches must call _void_real_bets_on_dead_matches"
+    )
+
+
 @test("write_ops_snapshot — wired to ops_snapshots + pipeline_runs (source inspect)")
 def _():
     """The Ops Dashboard shows '—' on every metric if no ops_snapshot row for today.
