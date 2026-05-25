@@ -37,6 +37,12 @@ SIGNAL_TO_COLUMN = {
     "injury_severity_score_home": "injury_severity_score_home",
     "injury_severity_score_away": "injury_severity_score_away",
     "league_clv_efficiency": "league_clv_efficiency",
+    # MFV-V3-PIVOT-EXTEND (2026-05-25) — 4 new signals shipped today
+    "league_draw_rate_ytd": "league_draw_rate_ytd",
+    "season_progress": "season_progress",
+    "line_velocity": "line_velocity",
+    "xg_overperf_home": "xg_overperf_home",
+    "xg_overperf_away": "xg_overperf_away",
 }
 
 
