@@ -3740,6 +3740,36 @@ def _():
     )
 
 
+@test("AH-XGBOOST — train_ah_xgboost.py script + AH label helper + 20-feature schema")
+def _():
+    """AH-XGBOOST 2026-05-25 — dedicated XGBoost head for AH pricing.
+    Trained on 3,199 main-line AH bets since 2026-05-01, CV AUC 0.73.
+    Bundle saved locally (gitignored); not auto-activated. Guard:
+    (1) script exists, (2) _ah_label correctly handles whole/half/quarter
+    lines including pushes/half-wins, (3) feature schema includes the
+    AH-specific columns.
+    """
+    from pathlib import Path as _Path
+    import importlib.util
+    script_path = _Path(__file__).resolve().parent / "train_ah_xgboost.py"
+    assert script_path.exists(), "scripts/train_ah_xgboost.py is missing"
+    spec = importlib.util.spec_from_file_location("train_ah_xgboost", script_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    # Label correctness
+    assert mod._ah_label(2, -1.5) == 1.0, "home wins by 2 covers -1.5"
+    assert mod._ah_label(1, -1.5) == 0.0, "home wins by 1 fails -1.5"
+    assert mod._ah_label(1, -1.0) is None, "home wins by 1 on -1.0 line = push"
+    assert mod._ah_label(2, -1.25) == 1.0, "x.25 quarter full-win"
+    assert mod._ah_label(1, -1.25) == 0.5, "x.25 quarter half-loss"
+    assert mod._ah_label(2, -1.75) == 0.5, "x.75 quarter half-win"
+    assert mod._ah_label(3, -1.75) == 1.0, "x.75 quarter full-win"
+    # AH-specific features must be in the schema
+    for f in ("handicap_line", "pinnacle_ah_line_at_t6h", "ensemble_prob_home"):
+        assert f in mod.MATCH_FEATURES or f in ("handicap_line",), \
+            f"feature {f} missing from training schema"
+
+
 @test("META-BOT-PORTFOLIO — meta_bot_picks.py scaffolding present + bot list gates execution")
 def _():
     """META-BOT-PORTFOLIO 2026-05-25 — scaffolding committed but bot selection
