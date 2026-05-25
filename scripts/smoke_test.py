@@ -6702,6 +6702,27 @@ def test_backup_restore_drill():
     assert "VERDICT" in src
 
 
+@test("COMPARE-META-BUNDLES — side-by-side bundle comparison script for swap decisions")
+def test_compare_meta_bundles():
+    """COMPARE-META-BUNDLES (2026-05-25): scripts/compare_meta_bundles.py loads
+    every bundle in data/models/meta/, scores them on the same training cohort,
+    prints AUC/Brier/log-loss + threshold sweep. Used to make data-driven
+    META_B_ML3_VERSION swap decisions instead of guessing."""
+    import pathlib
+    script = pathlib.Path(__file__).resolve().parent.parent / "scripts" / "compare_meta_bundles.py"
+    assert script.exists()
+    src = script.read_text()
+    # Must support both logistic + xgboost bundles
+    assert "model_type.txt" in src
+    assert "scaler.transform" in src and "if scaler is None" in src
+    # Must report key metrics + threshold sweep
+    assert "roc_auc_score" in src
+    assert "brier_score_loss" in src
+    assert "threshold sweep" in src.lower()
+    # Must handle feature schema drift across bundle versions
+    assert "X_aligned" in src and "bundle_features" in src
+
+
 @test("ELITE-LEAGUE-FILTER — env-gated league_clv_efficiency filter in candidate eval")
 def test_elite_league_filter():
     """ELITE-LEAGUE-FILTER (2026-05-25): data-driven generalisation of
