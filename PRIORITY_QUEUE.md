@@ -2,6 +2,39 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-05-25 — Queue triage (mid-session)
+>
+> **9 stale 'waiting' labels — ACTUALLY UNLOCKED. Treat as ✅ Ready immediately:**
+> - **ENG-15** — 30d data accumulated (2,203 settled bets since 2026-05-01). High-value: market inefficiency index per league.
+> - **SIG-12** — 829 post-match xG rows in 14d. Regression-to-mean signal ready.
+> - **OTC-1** — 4.28M odds snapshots (1000× the original 1k threshold).
+> - **INJURY-SEVERITY** — meta-model dependency cleared (B-ML3 v2.1 shipped today). Severity tagging is a real feature lift over raw count.
+> - **ALN-1-TUNE / BOT-HIGH-ALIGNMENT / ALN-AUTO** — 1,456 settled bets with alignment_class (need 300+). All three pickup-and-ship.
+> - **INPLAY-LAYER-ARCH / INPLAY-SOFT-GATES** — 5 inplay strategies firing 10+ bets/14d (p, e, o, c, l). The ≥4-strategies gate is met.
+>
+> **21 tasks DROPPED 2026-05-25 — no longer pursuing. Rationale per task:**
+> - Vague / never scoped: **B6, WTH, INFRA-12, AUDIT-LONG-FUNCS, TELEGRAM-COMMANDS, P3.3**
+> - Required infra never built: **MTI** (no transcript source), **RVB** (no venue stats), **SIG-DERBY** (no team locations), **SLM** (no opening-odds timestamp), **CUP-ROTATION** (no fixture-tier data), **SUSPENSION-SIGNAL** (no per-player yellow cards), **GOALKEEPER-SIGNAL** (rolls under AF-PLAYER-RATINGS), **INPLAY-TWO-BOOK-ARB** (no 2nd odds feed)
+> - Legacy sprint markers (M3 milestone never happened): **INFRA-7, INFRA-9, INFRA-10**
+> - No business need (not pursuing B2C SaaS / Nordic / external users): **ENG-17** (Year in Review), **NORDIC-BOOKS-INTEGRATION**, **OBS-SENTRY-BACKEND**, **STAGING-ENV**, **SUPPORT-RUNBOOK**
+> - Non-profit work: **CODE-RADON**, **F7** (awaiting designs that aren't coming)
+>
+> Net effect: 108 open → ~87 open (9 promoted, 21 dropped). The bottom of the queue is now leaner.
+>
+> Top 10 next-most-profitable tasks (filtered for bet-quality / model lift):
+> 1. **ALN-1-TUNE** (2h) — re-tune _ALN_BUMP from 1,456 settled bets; direct edge-gate effect
+> 2. **ENG-15** (1d) — per-league market inefficiency index; routes stake to beatable leagues
+> 3. **META-BOT-PORTFOLIO** (1-2d) — portfolio Kelly across best bots, gated to ~2026-06-30
+> 4. **BOT-HIGH-ALIGNMENT** (1h) — new bot betting only on HIGH alignment
+> 5. **AH-XGBOOST** (2h) — dedicated AH classifier head
+> 6. **AF-PLAYER-RATINGS** (1d) — feeds B-ML3 v3+ training
+> 7. **INJURY-SEVERITY** (3h) — severity bucketing replaces raw count
+> 8. **INPLAY-SOFT-GATES** (8h) — composite weighted scoring for inplay
+> 9. **INPLAY-LAYER-ARCH** (4h) — decouple candidate detection from execution
+> 10. **ML-NEW-FEATURES** (1d) — fresh feature batch for next retrain
+>
+> ---
+>
 > Last updated: 2026-05-25 — **Autonomous run shipped 17 modelling/safety tasks** (commits 087ee6c → 2028b01 → e183ac1 + this commit). Highlights: 5 new health-alert checks (memory, refresh dead-man's, AF quota, model drift, meta drift), DAILY-REAL-PERF-EMAIL cron, META-RETRAIN weekly cron, LEAGUE-CLV-EFFICIENCY (with per-match signal + weekly cron), STAKE-KELLY-SAFETY-AUDIT, BACKUP-RESTORE-DRILL, MFV nightly refresh (2 jobs), BUNDLE-STORAGE-SYNC (meta bundles to Supabase Storage), B-ML3-V2-G-MAIN-LINE + v2.2 bundle, S6-P2 XGBoost meta + v23_xgb bundle, META-LOADER-XGBOOST-BRANCH (loader supports both logistic and xgboost bundles), ELITE-LEAGUE-FILTER (env-gated, OFF by default), COMPARE-META-BUNDLES side-by-side decision script. **3 meta-bundle candidates** now in Storage: v21 (logistic, AUC 0.569), v22 (logistic + G, AUC 0.572), v23_xgb (XGBoost, AUC 0.587 = best). Each is env-var swappable on Railway. **Phase 3.5 paper-only window opened 2026-05-25** — user runs coolbet_placer --record 3x/day until 2026-06-07 verdict. **All shipped behaviour is env-gated OFF by default** so the controlled comparison isn't contaminated.
 >
 > Last updated (prev): 2026-05-24 — **META-FEATURE-DESIGN done — B-ML3's 14-feature shortlist documented in MODEL_WHITEPAPER §3.4.** Cross-checked coverage on 9,971 training rows; dropped 6 of the 4-AI consensus features whose MFV columns either don't exist (`pinnacle_line_move_home`, `odds_volatility`, `sharp_consensus_home`, `importance_diff`, `venue_surface_artificial`) or have <30% coverage. Final list keeps: edge proxy (ensemble_prob − opening_implied), opening_implied_<sel>, bookmaker_disagreement, odds_drift_home, steam_move, elo_diff, form_ppg_home/away, **lineup_confirmed** (today's +12pp ROI signal), rest_days_home/away, fixture_importance, league_position_home, plus time_to_kickoff + league_tier computed at train time. **Latent bugs surfaced by the coverage audit (filed as follow-ups):** `form_momentum_home` is 0% populated despite the column existing — `_build_feature_row_batched` never writes it (`MFV-FORM-MOMENTUM-BUG` P2); `overnight_line_move` is 0.2% — opening-snapshot capture is broken (`OPENING-LINE-MOVE-CAPTURE` P2). Smoke: META-FEATURE-DESIGN. **Unblocks B-ML3 training (next).**
