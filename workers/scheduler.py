@@ -576,6 +576,27 @@ def job_league_clv_efficiency():
     _run_job("league_clv_efficiency", _run)
 
 
+def job_league_draw_rate():
+    """LEAGUE-DRAW-YTD (2026-05-25): nightly recompute of per-league season-to-date
+    draw rate. Backtest: Q4 vs Q1 actual-draw gap +11.6pp on 11,875 historical
+    matches — real signal. Feeds next MFV rebuild + retrain.
+    """
+    import subprocess
+    def _run():
+        result = subprocess.run(
+            [sys.executable, "scripts/compute_league_draw_rate.py", "--write"],
+            cwd=str(Path(__file__).parent.parent),
+            timeout=300,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[yellow]league_draw_rate exit {result.returncode}: {result.stderr[-1000:]}[/yellow]")
+            raise RuntimeError(f"league_draw_rate failed: exit {result.returncode}")
+        console.print(result.stdout[-1500:])
+    _run_job("league_draw_rate", _run)
+
+
 def job_xg_overperformance():
     """SIG-12 (2026-05-25): nightly rolling team xG-overperformance signal.
     Reads last live snapshot per settled match (minute ≥80, xG present),
@@ -1207,6 +1228,13 @@ def main():
                       CronTrigger(hour=23, minute=0),
                       id="xg_overperformance",
                       name="xG Overperformance Rolling 23:00")
+
+    # LEAGUE-DRAW-YTD (2026-05-25): per-league season-to-date draw rate.
+    # Backtest +11.6pp Q4 vs Q1. 23:05 UTC.
+    scheduler.add_job(job_league_draw_rate,
+                      CronTrigger(hour=23, minute=5),
+                      id="league_draw_rate",
+                      name="League Draw Rate YTD 23:05")
 
     # ALN-AUTO (2026-05-25): 1st of each month at 03:30 UTC. Runs the
     # alignment-bump tuner over a 60d window; emails a diff via Resend

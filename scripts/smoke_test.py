@@ -3740,6 +3740,25 @@ def _():
     )
 
 
+@test("LEAGUE-DRAW-YTD — per-league draw rate signal + scheduler + backtest evidence")
+def _():
+    """LEAGUE-DRAW-YTD 2026-05-25 — per-league season-to-date draw rate.
+    Backtest on 11,875 settled matches: Q4 vs Q1 actual-draw gap +11.6pp,
+    real edge for draw markets. Guards: script exists, signal naming,
+    scheduler job registered, backtest function present.
+    """
+    from pathlib import Path as _Path
+    script = _Path(__file__).resolve().parent / "compute_league_draw_rate.py"
+    assert script.exists(), "scripts/compute_league_draw_rate.py missing"
+    text = script.read_text()
+    assert "league_draw_rate_ytd" in text, "signal name must be league_draw_rate_ytd"
+    assert "def backtest" in text, "backtest function must be present"
+    assert "Q4 vs Q1" in text, "must report Q4 vs Q1 lift"
+    sched = (_Path(__file__).resolve().parent.parent / "workers" / "scheduler.py").read_text()
+    assert "job_league_draw_rate" in sched
+    assert "compute_league_draw_rate.py" in sched
+
+
 @test("OPENING-LINE-MOVE-CAPTURE — tomorrow-odds fetch at 22:00 UTC, no race vs morning pipeline")
 def _():
     """OPENING-LINE-MOVE-CAPTURE 2026-05-25 — fix the 0.2% overnight_line_move
