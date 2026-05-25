@@ -3740,6 +3740,24 @@ def _():
     )
 
 
+@test("LEAGUE-SEASON-PHASE — season-progress signal + scheduler + multi-market backtest")
+def _():
+    """LEAGUE-SEASON-PHASE 2026-05-25 — per-match season_progress [0..1].
+    Backtest on 6,880 matches since 2026-03-01: late vs early matches
+    show +7.7pp Over 2.5, +6.0pp BTTS, +6.7pp home win. Signal feeds
+    OU + BTTS + 1X2 models alike.
+    """
+    from pathlib import Path as _Path
+    script = _Path(__file__).resolve().parent / "compute_league_season_phase.py"
+    assert script.exists()
+    text = script.read_text()
+    assert '"season_progress"' in text, "signal name must be season_progress"
+    assert "early" in text and "mid" in text and "late" in text, "must bucket into 3 phases"
+    sched = (_Path(__file__).resolve().parent.parent / "workers" / "scheduler.py").read_text()
+    assert "job_league_season_phase" in sched
+    assert "compute_league_season_phase.py" in sched
+
+
 @test("LINE-VELOCITY — Pinnacle home slope T-12h..T-2h + scheduler + REVERSE-signal backtest")
 def _():
     """LINE-VELOCITY 2026-05-25 — linear-regression slope of Pinnacle home

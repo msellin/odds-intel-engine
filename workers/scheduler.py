@@ -576,6 +576,27 @@ def job_league_clv_efficiency():
     _run_job("league_clv_efficiency", _run)
 
 
+def job_league_season_phase():
+    """LEAGUE-SEASON-PHASE (2026-05-25): per-match season-progress signal.
+    Backtest: late-vs-early shifts +7.7pp Over 2.5, +6.0pp BTTS, +6.7pp home
+    — materially affects OU + BTTS + 1X2 markets.
+    """
+    import subprocess
+    def _run():
+        result = subprocess.run(
+            [sys.executable, "scripts/compute_league_season_phase.py", "--write"],
+            cwd=str(Path(__file__).parent.parent),
+            timeout=300,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[yellow]league_season_phase exit {result.returncode}: {result.stderr[-1000:]}[/yellow]")
+            raise RuntimeError(f"league_season_phase failed: exit {result.returncode}")
+        console.print(result.stdout[-1500:])
+    _run_job("league_season_phase", _run)
+
+
 def job_line_velocity():
     """LINE-VELOCITY (2026-05-25): nightly Pinnacle line slope.
     Backtest: Q4 |v| vs Q1 → -6.6pp CLV-beat — REVERSE signal. Meta-model
@@ -1263,6 +1284,13 @@ def main():
                       CronTrigger(hour=23, minute=10),
                       id="line_velocity",
                       name="Line Velocity 23:10")
+
+    # LEAGUE-SEASON-PHASE (2026-05-25): per-match season_progress [0..1].
+    # Backtest: late vs early +7.7pp Over 2.5, +6.0pp BTTS, +6.7pp home win.
+    scheduler.add_job(job_league_season_phase,
+                      CronTrigger(hour=23, minute=15),
+                      id="league_season_phase",
+                      name="League Season Phase 23:15")
 
     # ALN-AUTO (2026-05-25): 1st of each month at 03:30 UTC. Runs the
     # alignment-bump tuner over a 60d window; emails a diff via Resend
