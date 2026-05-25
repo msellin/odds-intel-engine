@@ -3852,6 +3852,28 @@ def _():
         assert needed in text, f"email_delivery_check missing {needed!r}"
 
 
+@test("COOLBET-FIRST-SORT — value-bets sorts Coolbet-recommended first, then edge desc")
+def _():
+    """COOLBET-FIRST-SORT 2026-05-25 — /value-bets puts Coolbet-recommended
+    bets ahead of others (within group, edge desc preserved). Reduces
+    placement friction for the operator who uses Coolbet as primary venue.
+    Replaces the dropped B2C BM-FILTER task.
+    """
+    from pathlib import Path as _Path
+    page = _Path(__file__).resolve().parent.parent.parent / "odds-intel-web" / "src" / "app" / "(app)" / "value-bets" / "page.tsx"
+    if not page.exists():
+        print("  [skip] odds-intel-web not present in CI")
+        return
+    src = page.read_text()
+    assert "COOLBET-FIRST-SORT" in src, "must reference the task tag"
+    assert "recommendedBookmaker" in src, "sort must consult recommendedBookmaker"
+    assert '"coolbet"' in src, "must compare against literal coolbet (lowercased)"
+    # The Coolbet flag must influence sort BEFORE edge — find the order
+    cb_pos = src.find("aCoolbet !== bCoolbet")
+    edge_pos = src.find("b.edge - a.edge")
+    assert cb_pos > 0 and edge_pos > cb_pos, "Coolbet check must come before edge sort"
+
+
 @test("BOT-BANKROLL-DRIFT — every active bot's current_bankroll matches starting + sum(pnl)")
 def _():
     """BOT-BANKROLL-DRIFT 2026-05-25 — un-retire/re-retire cycles previously
