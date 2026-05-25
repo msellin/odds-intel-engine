@@ -117,6 +117,14 @@ Data tier system:
 | Rest days away | `rest_days_away` | Morning pipeline | ✅ Running |
 | Rest days log-transformed home (REST-NONLINEAR) | `rest_days_norm_home` | Morning pipeline (block 8) | ✅ Running |
 | Rest days log-transformed away | `rest_days_norm_away` | Morning pipeline (block 8) | ✅ Running |
+| Form momentum (last-3 ppg − last-10 ppg) home | `form_momentum_home` | MFV builder (live, 2026-05-25) | ✅ Running (MFV-FORM-MOMENTUM-BUG fix) |
+| Form momentum away | `form_momentum_away` | MFV builder (live, 2026-05-25) | ✅ Running |
+| Rolling avg AF player rating (last 10 matches) home | `team_avg_player_rating_home` | 22:50 UTC nightly | ✅ Running (AF-PLAYER-RATINGS 2026-05-25, n=1,696 entries) |
+| Rolling avg AF player rating away | `team_avg_player_rating_away` | 22:50 UTC nightly | ✅ Running |
+| Injury severity score (SEVERE×3, MODERATE×1.5, MINOR×0.5) home | `injury_severity_score_home` | 22:55 UTC nightly | ✅ Running (INJURY-SEVERITY 2026-05-25) |
+| Injury severity score away | `injury_severity_score_away` | 22:55 UTC nightly | ✅ Running |
+| xG overperformance (rolling 10-match: goals − xG) home | `xg_overperf_home` | 23:00 UTC nightly | ✅ Running (SIG-12 2026-05-25, +0.17 mean, regression-to-mean indicator) |
+| xG overperformance away | `xg_overperf_away` | 23:00 UTC nightly | ✅ Running |
 
 **Not yet built:**
 - `xg_proxy_home/away` (shots-based xG estimate) — needs match_stats from prior matches
@@ -181,6 +189,10 @@ Data tier system:
 | Pinnacle BTTS yes probability | `pinnacle_btts_yes_prob` | Morning pipeline (batch_write block 3e) | ✅ Running (data from 2026-05-07) |
 | H1 shot dominance — home | `h1_shot_dominance_home` | Morning pipeline (batch_write block 13) | ✅ Running (data from 2026-05-07) |
 | H1 shot dominance — away | `h1_shot_dominance_away` | Morning pipeline (batch_write block 13) | ✅ Running (data from 2026-05-07) |
+| League season-to-date draw rate (current season only) | `league_draw_rate_ytd` | 23:05 UTC nightly | ✅ Running (LEAGUE-DRAW-YTD 2026-05-25, **+11.6pp Q4 vs Q1 lift**) |
+| League CLV-efficiency (60d mean pseudo_clv, league beatability) | `league_clv_efficiency` | Sun 02:30 UTC weekly | ✅ Running (LEAGUE-CLV-EFFICIENCY 2026-05-25, 4,159 entries) |
+| Pinnacle home implied-prob slope T-12h..T-2h | `line_velocity` | 23:10 UTC nightly | ✅ Running (LINE-VELOCITY 2026-05-25, **REVERSE signal -6.6pp CLV-beat Q4 |v|**) |
+| Season progress within (league, season) window [0..1] | `season_progress` | 23:15 UTC nightly | ✅ Running (LEAGUE-SEASON-PHASE 2026-05-25, +7.7pp Over 2.5 late vs early) |
 | Squad disruption — home | `squad_disruption_home` | Morning pipeline (batch_write block 14) | ✅ Running (data from 2026-05-07) |
 | Squad disruption — away | `squad_disruption_away` | Morning pipeline (batch_write block 14) | ✅ Running (data from 2026-05-07) |
 

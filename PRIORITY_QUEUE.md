@@ -1226,6 +1226,17 @@ Yellow warning if today's value < 7-day average × 0.60.
 | ELITE-LEAGUE-FILTER | League performance filter for Elite value bets | 1 day | ⬜ | ✅ Ready (120 days of finished-match data accumulated, well past 3mo threshold) | "Show only leagues where model hit rate > 45%". Per-league hit-rate computable from `simulated_bets` joined to `leagues`. |
 | ELITE-ALERT-STACK | Custom multi-signal alert stacking (Elite) | 2-3 days | ⬜ | ⏳ After ENG-8 | "Alert when confidence > 65% AND edge > 8% AND line moved in model's direction" |
 
+### Signal follow-ups (filed 2026-05-25 after backtest validation)
+
+| ID | Task | Effort | ☑ | Ready? | Notes |
+|----|------|--------|----|--------|-------|
+| MFV-V3-PIVOT-EXTEND | Extend `scripts/backfill_mfv_v3_signals.py` SIGNAL_TO_COLUMN mapping to include `league_draw_rate_ytd`, `season_progress`, `line_velocity`, `xg_overperf_home/away`. Add the matching columns to MFV via migration 133. Run backfill so the 2026-06-08 retrain trains on them. | 1h | ⬜ | ✅ Ready | Same pattern as migration 132. The compute scripts already write to match_signals — this just pivots them to MFV. |
+| LEAGUE-DRAW-YTD-VALIDATE | After 2026-06-08 weekly_retrain produces v_20260608, run `model_comparison.py v_20260608 v_20260524_market` and check whether draw-market log-loss improved by ≥1%. If yes, the +11.6pp signal landed in the model. If no, the model already prices league draw rates and we should drop the signal from MFV. | 30m | ⬜ | ⏳ 2026-06-08 | Targeted follow-up — answers "did the strongest signal of the batch actually help?". |
+| LINE-VELOCITY-META-DOWNWEIGHT | LINE-VELOCITY backtest is REVERSE (-6.6pp CLV-beat at Q4 \|v\|). After Phase 3.5 ends, consider adding a meta-model filter: `if abs(line_velocity) > P75: down_weight_bet`. First validate the signal generalizes in B-ML3 v3 training (2026-06-08). | 1h | ⬜ | ⏳ After 2026-06-08 + B-ML3-VALIDATE-ACTIVATION | The signal is already in match_signals → MFV → B-ML3 v3 will learn the relationship. This task is the optional layered filter on top. |
+| LEAGUE-SEASON-PHASE-OU-BOT-TUNE | Late-season matches show +7.7pp Over 2.5. Check whether bot_ou25_global / bot_ou35_attacking ROI shifts by `season_progress` quartile. If +EV concentrates in late-season slice, add `min_season_progress` to those bot configs. | 2h | ⬜ | ⏳ After 2026-06-07 | Phase 3.5 lock blocks bot-config changes; pull live ROI data after the window closes. |
+| TIER-C-ALIAS-NEXT-BATCH | Re-run `scripts/audit_unmatched_extras.py` against next month's accumulated football-data; the long-tail still has ~9K unmatched rows. Focus on Russia (Pari NN, M. Saransk, SKA Khabarovsk), Turkey (Kasimpasa, Buyuksehyr, Istanbul Basaksehir), France (Troyes, Brest), Greek (AEK, OFI Crete). Each needs DB-existence verification. | 1h | ⬜ | ✅ Ready | Diminishing returns vs first batch — each fix typically adds 200-300 rows now (vs 250+ avg in first batch). |
+| MFV-FORM-MOMENTUM-LIVE-WRITER-VERIFY | Verify tomorrow's MFV rows pick up form_momentum at build time (07:00 UTC) instead of waiting for the 22:45 backfill. Spot-check: 2026-05-26 morning rows should have form_momentum_home coverage >80% by 08:00 UTC. | 15m | ⬜ | ⏳ 2026-05-26 morning | Verifies the bae61f9 fix actually works in prod. If still NULL, check Railway logs for SQL errors in the new batch loader. |
+
 ---
 
 ## Infrastructure & Platform Optimization

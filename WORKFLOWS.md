@@ -57,9 +57,22 @@
                                                     + DC rho per tier (Sun only)
 21:30  ⑬ Health Alert    run_settlement_check()    Alerts if >5 pending bets on finished matches after settlement
        ⑮ Settle Recon  settle_reconcile.run()    MONEY-SETTLE-RECON: alerts if >2 finished matches have stuck pending bets
+22:00  ⑲ Tomorrow odds   job_odds_tomorrow()        OPENING-LINE-MOVE-CAPTURE 2026-05-25 — fetch odds for tomorrow's matches; gives the next morning's 04:00 fetch a yesterday→today delta to compute `overnight_line_move`. Replaces the broken 02:00/04:00 OVERNIGHT slots that fetched today's matches (no prior snapshot existed).
+22:30  ⑳ MFV B-ML3 v2   job_nightly_mfv_b_ml3_refresh()  Refreshes B-ML3 v2 *_at_t6h feature columns for matches that finished today
+22:45  ㉑ MFV form mom. job_nightly_mfv_form_momentum_refresh()  Catches form_momentum for any matches that the live MFV builder missed
+22:50  ㉒ Team rating    job_team_avg_player_rating()    AF-PLAYER-RATINGS 2026-05-25 — rolling 10-match team avg AF player rating → match_signals
+22:55  ㉓ Injury severity job_injury_severity()         INJURY-SEVERITY 2026-05-25 — bucket match_injuries by severity, weighted score → match_signals
+23:00  ㉔ xG overperf    job_xg_overperformance()        SIG-12 2026-05-25 — (goals − xG) rolling 10-match per team → match_signals
+23:05  ㉕ League draw rt job_league_draw_rate()          LEAGUE-DRAW-YTD 2026-05-25 — per-league season-to-date draw rate → match_signals (backtest: +11.6pp Q4 vs Q1)
+23:10  ㉖ Line velocity  job_line_velocity()             LINE-VELOCITY 2026-05-25 — Pinnacle home implied-prob slope T-12h..T-2h → match_signals (REVERSE signal -6.6pp CLV-beat)
+23:15  ㉗ Season phase   job_league_season_phase()       LEAGUE-SEASON-PHASE 2026-05-25 — per-match season_progress [0..1] → match_signals (+7.7pp Over 2.5 late vs early)
 23:30  ② Enrichment      run_enrichment()          Standings only — nightly once is enough (AF-STANDINGS-DAILY)
 23:30  ⑧c Settlement      settlement_pipeline()     Late catch-up: European evening matches finishing after 21:00
+23:30  ㉘ Daily perf     job_daily_real_perf_email()     DAILY-REAL-PERF-EMAIL — yesterday + 7d real-bet ROI split (placer vs manual) via Resend
 01:00  ⑧d Settlement      settlement_pipeline()     Overnight catch-up: 21:30+ KOs finishing after extra time
+1st 03:30 ㉙ ALN auto    job_aln_auto_tune()             ALN-AUTO 2026-05-25 — monthly alignment-bump retune; emails diff if any class needs |Δ|≥0.005 with n≥100
+Sun 02:30 ㉚ League CLV  job_league_clv_efficiency()     LEAGUE-CLV-EFFICIENCY — weekly per-league CLV beatability index → match_signals
+Sun 04:00 ㉛ Meta retrain job_weekly_meta_retrain()      META-RETRAIN 2026-05-25 — weekly B-ML3 retrain → Supabase Storage, email verdict
 24/7   ⑥ LivePoller      live_poller.py            45s when live (scores+odds+stats), 120s idle — no time gate
          ⑫ InplayBot      inplay_bot.py             Paper trading: 8 strategies (A-F + A2 + C_home), runs after each LivePoller snapshot store
 */30   ⑯ Dash Cache Ref  write_dashboard_cache()   Rebuilds dashboard_cache at :15 and :45 — keeps /performance fresh
