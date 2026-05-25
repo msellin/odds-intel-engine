@@ -4124,14 +4124,25 @@ def _():
     spec = importlib.util.spec_from_file_location("backfill_mfv_v3_signals", backfill)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    expected = {
+    # Original migration 132 columns — must be present
+    expected_v132 = {
         "team_avg_player_rating_home": "team_avg_player_rating_home",
         "team_avg_player_rating_away": "team_avg_player_rating_away",
         "injury_severity_score_home": "injury_severity_score_home",
         "injury_severity_score_away": "injury_severity_score_away",
         "league_clv_efficiency": "league_clv_efficiency",
     }
-    assert mod.SIGNAL_TO_COLUMN == expected, "signal→column mapping mismatch"
+    # Migration 133 extension (MFV-V3-PIVOT-EXTEND, 2026-05-25 evening) added 5 more
+    expected_v133 = {
+        "league_draw_rate_ytd": "league_draw_rate_ytd",
+        "season_progress": "season_progress",
+        "line_velocity": "line_velocity",
+        "xg_overperf_home": "xg_overperf_home",
+        "xg_overperf_away": "xg_overperf_away",
+    }
+    for sig, col in {**expected_v132, **expected_v133}.items():
+        assert mod.SIGNAL_TO_COLUMN.get(sig) == col, \
+            f"signal→column mapping missing {sig}→{col}"
 
 
 @test("INPLAY-LAYER-ARCH — _build_inplay_bet_data is a pure function that produces correct payload")

@@ -1330,17 +1330,32 @@ def _build_mfv_rows_for_matches(matches: list[dict], date_str: str) -> int:
     # MFV rows at build time so meta-model features aren't NULL between
     # 07:00 and 22:45 UTC. One SQL per 200-team chunk; in-Python aggregation.
     form_momentum_by_team: dict[str, float] = {}
+    # MFV-FORM-MOMENTUM-BUG perf fix (2026-05-25): bound scan to last 270 days
+    # AND split OR into UNION so both home_team_id + away_team_id indexes are
+    # used. Prior query (`WHERE ... AND date < %s AND (home=ANY OR away=ANY)`)
+    # did a full table scan — 147s timeout in CI on the May-6 smoke test.
+    # Form_momentum only needs last 10 played matches; 270 days is enough
+    # buffer for active teams' season + cup runs.
     for chunk in _chunk_list(list(all_team_ids), 200):
         history = execute_query(
-            """SELECT id, home_team_id, away_team_id, date, score_home, score_away
-               FROM matches
-               WHERE status = 'finished'
-                 AND score_home IS NOT NULL AND score_away IS NOT NULL
-                 AND date < %s
-                 AND (home_team_id = ANY(%s::uuid[]) OR away_team_id = ANY(%s::uuid[]))
+            """(SELECT id, home_team_id, away_team_id, date, score_home, score_away
+                FROM matches
+                WHERE status = 'finished'
+                  AND score_home IS NOT NULL AND score_away IS NOT NULL
+                  AND date < %s
+                  AND date >= %s::date - INTERVAL '270 days'
+                  AND home_team_id = ANY(%s::uuid[]))
+               UNION
+               (SELECT id, home_team_id, away_team_id, date, score_home, score_away
+                FROM matches
+                WHERE status = 'finished'
+                  AND score_home IS NOT NULL AND score_away IS NOT NULL
+                  AND date < %s
+                  AND date >= %s::date - INTERVAL '270 days'
+                  AND away_team_id = ANY(%s::uuid[]))
                ORDER BY date DESC
                LIMIT 100000""",
-            (date_str, chunk, chunk),
+            (date_str, date_str, chunk, date_str, date_str, chunk),
         )
         # Group by team (each match counts for whichever side this team played)
         by_team: dict = {}
