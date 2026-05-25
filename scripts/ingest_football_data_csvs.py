@@ -135,6 +135,31 @@ TEAM_ALIASES = {
     "Paris SG":            "Paris Saint Germain",       # 247 FD rows
     # England Championship/L1/L2 — DB uses short names; only add if FD-side abbrev differs
     "Peterboro":           "Peterborough",              # 311 FD rows
+    # TIER-C-ALIAS-NEXT-BATCH (2026-05-25): second-round audit on remaining 9K
+    # unmatched. Each verified against `SELECT name FROM teams WHERE name = ...`.
+    "Kasimpasa":           "Kasımpaşa",                 # 256 FD rows
+    "Buyuksehyr":          "Başakşehir",                # 256
+    "Troyes":              "Estac Troyes",              # 251
+    "Brest":               "Stade Brestois 29",         # 248
+    "AEK":                 "AEK Athens FC",             # 242
+    "Hoffenheim":          "1899 Hoffenheim",           # 238 (overrides Tier-C first batch — DB has '1899 Hoffenheim' not 'TSG Hoffenheim')
+    "Nurnberg":            "1. FC Nürnberg",            # 238
+    "Mainz":               "FSV Mainz 05",              # 238
+    "Hamburg":             "Hamburger SV",              # 238
+    "Bochum":              "Vfl Bochum",                # 238 (note lowercase 'fl' in DB)
+    "Greuther Furth":      "SpVgg Greuther Fürth",      # 238
+    "Darmstadt":           "SV Darmstadt 98",           # 238
+    "Paderborn":           "SC Paderborn 07",           # 238
+    "Porto":               "FC Porto",                  # 238
+    "Gaziantep":           "Gaziantep FK",              # 222
+    "Mechelen":            "KV Mechelen",               # 211
+    "Cartagena":           "FC Cartagena",              # 210
+    "Regensburg":          "SSV Jahn Regensburg",       # 204
+    "Karlsruhe":           "Karlsruher SC",             # 204
+    "Zwolle":              "PEC Zwolle",                # 196
+    "Sandhausen":          "SV Sandhausen",             # 170
+    "Bielefeld":           "Arminia Bielefeld",         # 170
+    "Santander":           "Racing Santander",          # 168
 }
 
 
