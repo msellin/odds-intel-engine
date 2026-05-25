@@ -2029,11 +2029,37 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         except Exception as e:
             console.print(f"  [red]Bulk store_matches failed: {e}[/red]")
 
+    # ELITE-LEAGUE-FILTER (2026-05-25): batch-load latest league_clv_efficiency
+    # per match from match_signals so each candidate-eval iteration has the
+    # signal in O(1). One query per run, not per match. Env-gated filter
+    # reads from match["_league_clv_efficiency"] downstream.
+    league_clv_by_match: dict = {}
+    if odds_matches:
+        try:
+            from workers.api_clients.supabase_client import execute_query as _eq
+            _ids = [m["id"] for m in odds_matches if m.get("id")]
+            if _ids:
+                _rows = _eq(
+                    """SELECT DISTINCT ON (match_id) match_id, signal_value
+                       FROM match_signals
+                       WHERE match_id = ANY(%s::uuid[])
+                         AND signal_name = 'league_clv_efficiency'
+                       ORDER BY match_id, captured_at DESC""",
+                    (_ids,),
+                )
+                for r in _rows or []:
+                    league_clv_by_match[str(r["match_id"])] = float(r["signal_value"]) if r.get("signal_value") is not None else None
+        except Exception as _e:
+            console.print(f"  [yellow]league_clv_efficiency batch-load failed (non-blocking): {_e}[/yellow]")
+
     for match in odds_matches:
         match_id = match.get("id")
         if not match_id:
             # Bulk store either failed for this row or input was malformed.
             continue
+        # ELITE-LEAGUE-FILTER: attach the per-match league CLV signal so the
+        # filter check downstream reads it from the match dict directly.
+        match["_league_clv_efficiency"] = league_clv_by_match.get(str(match_id))
 
         # Store odds — skipped when loading from DB (fetch_odds.py already stored them).
         # Original guard was `if not match.get("id")` — true only for matches not
@@ -2385,6 +2411,20 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         # to ~0%. Re-evaluate at 2026-07 (need ~6 weeks of post-fix data).
         if country == "Scotland" and league_name == "Premiership":
             continue  # skip match entirely, no bots get to evaluate it
+
+        # ELITE-LEAGUE-FILTER (2026-05-25): generalises SCOTTISH-PREM-LEAGUE-GATE
+        # into a data-driven filter using the league_clv_efficiency signal
+        # (computed weekly by scripts/compute_league_clv_efficiency.py). Skips
+        # matches whose league's rolling mean CLV is below the threshold.
+        # Env-gated — default OFF so it doesn't contaminate Phase 3.5 verdict.
+        # To activate post-2026-06-07:
+        #   ELITE_LEAGUE_FILTER_ENABLED=true on Railway
+        #   (optional) ELITE_LEAGUE_FILTER_THRESHOLD=-0.005 (default -0.01)
+        if os.getenv("ELITE_LEAGUE_FILTER_ENABLED", "false").lower() in ("true", "1", "yes"):
+            league_clv_threshold = float(os.getenv("ELITE_LEAGUE_FILTER_THRESHOLD", "-0.01"))
+            league_clv = match.get("_league_clv_efficiency")
+            if league_clv is not None and league_clv < league_clv_threshold:
+                continue  # skip — league has sharper closing line than we beat on average
 
         # Data-tier adjustments (conservative stake / extra edge for lower-quality data):
         #   A — our CSV + odds history, full calibration → no bump, full stake

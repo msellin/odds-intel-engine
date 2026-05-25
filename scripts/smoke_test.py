@@ -6702,6 +6702,25 @@ def test_backup_restore_drill():
     assert "VERDICT" in src
 
 
+@test("ELITE-LEAGUE-FILTER — env-gated league_clv_efficiency filter in candidate eval")
+def test_elite_league_filter():
+    """ELITE-LEAGUE-FILTER (2026-05-25): data-driven generalisation of
+    SCOTTISH-PREM-LEAGUE-GATE. Reads the league_clv_efficiency signal
+    written by LEAGUE-CLV-EFFICIENCY and skips matches whose league rolling
+    mean CLV is below a threshold. Env-gated OFF by default; activation is
+    a Phase 4 (post-2026-06-07) decision.
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+    assert "ELITE-LEAGUE-FILTER" in src, "tag missing"
+    assert 'ELITE_LEAGUE_FILTER_ENABLED' in src, "env-gate must exist"
+    assert 'ELITE_LEAGUE_FILTER_THRESHOLD' in src, "threshold env must exist"
+    assert "_league_clv_efficiency" in src, "per-match cache attribute missing"
+    assert "league_clv_by_match" in src, "batch loader must populate the dict"
+    assert "signal_name = 'league_clv_efficiency'" in src, "must read the right signal"
+
+
 @test("META-LOADER-XGBOOST-BRANCH — loader handles both logistic and xgboost bundles")
 def test_meta_loader_xgboost_branch():
     """META-LOADER-XGBOOST-BRANCH (2026-05-25): meta_b_ml3._load_bundle reads
