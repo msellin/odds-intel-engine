@@ -560,6 +560,28 @@ def job_league_clv_efficiency():
     _run_job("league_clv_efficiency", _run)
 
 
+def job_xg_overperformance():
+    """SIG-12 (2026-05-25): nightly rolling team xG-overperformance signal.
+    Reads last live snapshot per settled match (minute ≥80, xG present),
+    computes per-team (goals - xG) rolling 10-match mean, writes to
+    match_signals as xg_overperf_home/away. Feeds next MFV rebuild +
+    next B-ML3 retrain."""
+    import subprocess
+    def _run():
+        result = subprocess.run(
+            [sys.executable, "scripts/compute_xg_overperformance.py", "--write"],
+            cwd=str(Path(__file__).parent.parent),
+            timeout=600,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[yellow]xg_overperformance exit {result.returncode}: {result.stderr[-1000:]}[/yellow]")
+            raise RuntimeError(f"xg_overperformance failed: exit {result.returncode}")
+        console.print(result.stdout[-1500:])
+    _run_job("xg_overperformance", _run)
+
+
 def job_injury_severity():
     """INJURY-SEVERITY (2026-05-25): nightly bucketing of match_injuries by
     severity (SEVERE 3× / MODERATE 1.5× / MINOR 0.5× / UNKNOWN 1×). Writes
@@ -1161,6 +1183,13 @@ def main():
                       CronTrigger(hour=22, minute=55),
                       id="injury_severity",
                       name="Injury Severity Bucketing 22:55")
+
+    # SIG-12 (2026-05-25): rolling xG-overperformance signal.
+    # Runs at 23:00 UTC nightly — final slot in the signal-builder chain.
+    scheduler.add_job(job_xg_overperformance,
+                      CronTrigger(hour=23, minute=0),
+                      id="xg_overperformance",
+                      name="xG Overperformance Rolling 23:00")
 
     # ALN-AUTO (2026-05-25): 1st of each month at 03:30 UTC. Runs the
     # alignment-bump tuner over a 60d window; emails a diff via Resend

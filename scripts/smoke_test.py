@@ -3740,6 +3740,25 @@ def _():
     )
 
 
+@test("SIG-12 — xG overperformance script + scheduler job + signal naming")
+def _():
+    """SIG-12 2026-05-25 — rolling 10-match team xG overperformance signal.
+    Positive = team scoring more than xG (regression-to-mean: expect
+    downward correction). First production run: 368 entries, mean +0.17,
+    range -1.22 .. +2.27.
+    """
+    from pathlib import Path as _Path
+    script = _Path(__file__).resolve().parent / "compute_xg_overperformance.py"
+    assert script.exists(), "scripts/compute_xg_overperformance.py missing"
+    text = script.read_text()
+    assert "xg_overperf_home" in text and "xg_overperf_away" in text, \
+        "signal names must be xg_overperf_{home,away}"
+    assert "WINDOW = 10" in text, "rolling window must be 10 matches"
+    sched_src = (_Path(__file__).resolve().parent.parent / "workers" / "scheduler.py").read_text()
+    assert "job_xg_overperformance" in sched_src
+    assert "compute_xg_overperformance.py" in sched_src
+
+
 @test("ALN-AUTO — monthly alignment-bump tuner wired into scheduler with email diff")
 def _():
     """ALN-AUTO 2026-05-25 — monthly cron wrapping aln1_tune_analysis.py.
