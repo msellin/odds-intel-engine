@@ -215,6 +215,39 @@ This subsection is the finalized feature list for **B-ML3** — the Stage-3 meta
 
 **Why not just train on every column with coverage > 30%?** Per the original META-FEATURE-DESIGN note: 12-15 features × 50 examples per feature = ~750 minimum rows for stable coefficients. We have 5,572 usable rows, so we could support up to ~110 features — but feature-bloat trades model interpretability for marginal signal. Holding to 14 leaves headroom for AH-XGBOOST features when those train into a B-ML3 v2.
 
+### 3.5 B-ML3 Activation Validation (B-ML3-VALIDATE-ACTIVATION, 2026-05-25)
+
+The decision to flip `META_B_ML3_ENABLED=true` on Railway is **gated on empirical validation**, not theoretical AUC. CV AUC of 0.57-0.59 is borderline — real out-of-sample precision could be anywhere from 53% (basically noise) to 70% (strong filter). Without empirical data we can't distinguish.
+
+**Methodology** (implemented in `scripts/validate_meta_b_ml3.py`):
+
+1. **Cohort**: every settled `simulated_bets` row since `pick_time >= 2026-05-25` (the day META_B_ML3_ACTIVE wiring shipped). Filter to bets where the underlying match has a populated `match_feature_vectors` row with `opening_implied_home IS NOT NULL`.
+
+2. **Per-bundle re-scoring**: for each meta bundle on disk (v_20260525_v21, _v22, _v23_xgb, and any future versions), reconstruct the feature vector that would have been computed at placement time and re-score the bet with `predict_proba`. We use the bundle's `feature_cols` and align the runtime row to that schema — schemas drift between bundle versions so the script aligns defensively.
+
+3. **Per-bundle quintile binning**: sort scored bets into 5 score-quantile bins per bundle. For each bin compute:
+   - `n` — sample count
+   - `hit_rate` — % of settled bets that won
+   - `clv_beat_rate` — % of bets where `pseudo_clv > 0` (the model's actual training target)
+   - `roi_per_bet` — Σ pnl / Σ stake
+   - `mean_score` and `mean_clv`
+
+4. **Verdict per bundle**:
+   - **PASS** if top quintile's `clv_beat_rate` exceeds bottom quintile by **≥5pp**
+   - **MARGINAL** if separation is 2–5pp
+   - **FAIL** if < 2pp (the model is noise on this cohort)
+
+5. **Activation rule**:
+   - **PASS bundle exists** → recommend `META_B_ML3_VERSION=<best bundle>` + `META_B_ML3_ENABLED=true`
+   - **Only MARGINAL** → keep filter OFF, wait for more data, re-run script in 1 week
+   - **All FAIL** → keep filter OFF, retrain v3 with more features or more data
+
+**Why CLV-beat-rate, not hit-rate, is the load-bearing metric:** B-ML3 was trained on `target = (pseudo_clv > 0)`. The model can be optimal for CLV without lifting raw win rate (e.g. it picks bets where the closing line shortens, which means we got a better price than the market thinks is correct — that's the edge). Validating on the same target the model was trained on is the honest test.
+
+**Sample-size minimum:** ≥200 settled bets total, ≥30 bets per quintile bin. Below that, separation is dominated by variance, not signal. With ~30-50 bets/day during Phase 3.5, threshold is hit around 2026-06-04 to 2026-06-07; the script aborts gracefully below the minimum.
+
+**Cadence:** first run at ~2026-06-10 (3 days after the Phase 4 verdict on 2026-06-07 — gives a buffer to act on the MAIN-model decision first, then validate meta). Re-run weekly thereafter while `META_B_ML3_ENABLED=false`. Once activated, the same script becomes the regression guard: a drop from PASS to MARGINAL/FAIL signals the meta-model has drifted out of regime.
+
 ---
 
 ## 4. Model Architecture

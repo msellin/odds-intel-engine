@@ -6732,6 +6732,32 @@ def test_backup_restore_drill():
     assert "VERDICT" in src
 
 
+@test("B-ML3-VALIDATE-ACTIVATION — meta-model real-world validation script + methodology")
+def test_b_ml3_validate_activation():
+    """B-ML3-VALIDATE-ACTIVATION (2026-05-25): the activation gate for
+    META_B_ML3_ENABLED=true. Bins settled bets by meta_clv_score quintile,
+    computes CLV-beat rate per bin, verdicts PASS / MARGINAL / FAIL.
+    Methodology must also be documented in MODEL_WHITEPAPER §3.5."""
+    import pathlib
+    base = pathlib.Path(__file__).resolve().parent.parent
+    script = base / "scripts" / "validate_meta_b_ml3.py"
+    assert script.exists(), "validation script missing"
+    src = script.read_text()
+    # Core methodology pins
+    assert "B-ML3-VALIDATE-ACTIVATION" in src
+    assert "pseudo_clv" in src or "clv_pinnacle" in src
+    assert "qcut" in src or "quintile" in src.lower()
+    assert "PASS" in src and "MARGINAL" in src and "FAIL" in src
+    # Bundle-aware (logistic + xgboost)
+    assert "model_type.txt" in src
+    assert "scaler" in src
+    # Whitepaper section must exist with same rules
+    wp = (base / "MODEL_WHITEPAPER.md").read_text()
+    assert "3.5 B-ML3 Activation Validation" in wp
+    assert "B-ML3-VALIDATE-ACTIVATION" in wp
+    assert "PASS" in wp
+
+
 @test("COMPARE-META-BUNDLES — side-by-side bundle comparison script for swap decisions")
 def test_compare_meta_bundles():
     """COMPARE-META-BUNDLES (2026-05-25): scripts/compare_meta_bundles.py loads
