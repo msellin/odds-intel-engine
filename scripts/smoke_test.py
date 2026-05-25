@@ -3740,6 +3740,25 @@ def _():
     )
 
 
+@test("LINE-VELOCITY — Pinnacle home slope T-12h..T-2h + scheduler + REVERSE-signal backtest")
+def _():
+    """LINE-VELOCITY 2026-05-25 — linear-regression slope of Pinnacle home
+    implied prob over T-12h..T-2h snapshots. Backtest: Q4 |v| → −6.6pp
+    CLV-beat (REVERSE signal — high velocity = we're on the wrong side
+    by close). Meta-model should down-weight high-|v| bets.
+    """
+    from pathlib import Path as _Path
+    script = _Path(__file__).resolve().parent / "compute_line_velocity.py"
+    assert script.exists(), "scripts/compute_line_velocity.py missing"
+    text = script.read_text()
+    assert '"line_velocity"' in text, "signal name must be line_velocity"
+    assert "_linear_slope" in text, "must compute linear-regression slope"
+    assert "BETWEEN 120 AND 720" in text, "must use T-12h..T-2h window"
+    sched = (_Path(__file__).resolve().parent.parent / "workers" / "scheduler.py").read_text()
+    assert "job_line_velocity" in sched
+    assert "compute_line_velocity.py" in sched
+
+
 @test("LEAGUE-DRAW-YTD — per-league draw rate signal + scheduler + backtest evidence")
 def _():
     """LEAGUE-DRAW-YTD 2026-05-25 — per-league season-to-date draw rate.

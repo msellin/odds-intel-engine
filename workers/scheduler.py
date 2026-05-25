@@ -576,6 +576,27 @@ def job_league_clv_efficiency():
     _run_job("league_clv_efficiency", _run)
 
 
+def job_line_velocity():
+    """LINE-VELOCITY (2026-05-25): nightly Pinnacle line slope.
+    Backtest: Q4 |v| vs Q1 → -6.6pp CLV-beat — REVERSE signal. Meta-model
+    should down-weight high-|v| bets (we end up wrong side at close).
+    """
+    import subprocess
+    def _run():
+        result = subprocess.run(
+            [sys.executable, "scripts/compute_line_velocity.py", "--write"],
+            cwd=str(Path(__file__).parent.parent),
+            timeout=600,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[yellow]line_velocity exit {result.returncode}: {result.stderr[-1000:]}[/yellow]")
+            raise RuntimeError(f"line_velocity failed: exit {result.returncode}")
+        console.print(result.stdout[-1500:])
+    _run_job("line_velocity", _run)
+
+
 def job_league_draw_rate():
     """LEAGUE-DRAW-YTD (2026-05-25): nightly recompute of per-league season-to-date
     draw rate. Backtest: Q4 vs Q1 actual-draw gap +11.6pp on 11,875 historical
@@ -1235,6 +1256,13 @@ def main():
                       CronTrigger(hour=23, minute=5),
                       id="league_draw_rate",
                       name="League Draw Rate YTD 23:05")
+
+    # LINE-VELOCITY (2026-05-25): Pinnacle home implied-prob slope T-12h..T-2h.
+    # Backtest: Q4 |v| → -6.6pp CLV-beat (REVERSE signal). 23:10 UTC.
+    scheduler.add_job(job_line_velocity,
+                      CronTrigger(hour=23, minute=10),
+                      id="line_velocity",
+                      name="Line Velocity 23:10")
 
     # ALN-AUTO (2026-05-25): 1st of each month at 03:30 UTC. Runs the
     # alignment-bump tuner over a 60d window; emails a diff via Resend
