@@ -3852,6 +3852,55 @@ def _():
         assert needed in text, f"email_delivery_check missing {needed!r}"
 
 
+@test("BOT-AGGREGATES-SSOT — dashboard_cache.bot_breakdown reconciles to live simulated_bets aggregates")
+def _():
+    """BOT-AGGREGATES-SSOT 2026-05-25 — guard the divergence the original task
+    was filed for. Failure here means /performance (cache-backed) and
+    /admin/bots (live-aggregated) will show different numbers for the same bot.
+    Threshold: cache pnl must match live pnl within 1% (or €1, whichever larger).
+    Bankroll drift is checked separately and warned but doesn't fail (it's a
+    distinct issue tracked as BOT-BANKROLL-DRIFT).
+    """
+    import json
+    from workers.api_clients.db import execute_query
+    cache = execute_query("""
+        SELECT bot_breakdown FROM dashboard_cache
+        ORDER BY computed_at DESC LIMIT 1
+    """)
+    if not cache or not cache[0]["bot_breakdown"]:
+        return  # no cache row yet — skip
+    breakdown = cache[0]["bot_breakdown"]
+    if isinstance(breakdown, str):
+        breakdown = json.loads(breakdown)
+    live = execute_query("""
+        SELECT b.name,
+               COUNT(sb.id) FILTER (WHERE sb.result IN ('won','lost')) as settled,
+               COALESCE(SUM(sb.pnl) FILTER (WHERE sb.result IN ('won','lost')), 0) as total_pnl
+        FROM bots b
+        LEFT JOIN simulated_bets sb ON sb.bot_id = b.id
+        WHERE b.is_active = true AND b.retired_at IS NULL
+          AND b.name NOT LIKE 'bot_acca%%'
+          AND b.name NOT LIKE 'bot_combo%%'
+        GROUP BY b.id, b.name
+    """)
+    live_by_name = {r["name"]: r for r in live}
+    drifted = []
+    for c in breakdown:
+        name = c.get("name")
+        l = live_by_name.get(name)
+        if not l:
+            continue
+        c_pnl = float(c.get("total_pnl") or 0)
+        l_pnl = float(l["total_pnl"])
+        # Allow €1 absolute slack OR 1% relative
+        if abs(c_pnl - l_pnl) > max(1.0, abs(l_pnl) * 0.01):
+            drifted.append((name, c_pnl, l_pnl))
+    assert not drifted, (
+        f"dashboard_cache.bot_breakdown drift on {len(drifted)} bots: "
+        f"{[(n, f'{c:.2f}→{l:.2f}') for n,c,l in drifted[:5]]}"
+    )
+
+
 @test("EMAIL-FROM-FALLBACK — aln_auto_tune falls back to DIGEST_FROM_EMAIL when ALERT_FROM_EMAIL unset")
 def _():
     """Railway has DIGEST_FROM_EMAIL configured (not ALERT_FROM_EMAIL).
