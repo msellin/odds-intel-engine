@@ -3852,6 +3852,34 @@ def _():
         assert needed in text, f"email_delivery_check missing {needed!r}"
 
 
+@test("BOT-BANKROLL-DRIFT — every active bot's current_bankroll matches starting + sum(pnl)")
+def _():
+    """BOT-BANKROLL-DRIFT 2026-05-25 — un-retire/re-retire cycles previously
+    left current_bankroll out of sync with bet history. Fixed by
+    scripts/fix_bot_bankroll_drift.py --apply. Smoke catches regression
+    if a future migration or settlement bug introduces drift again.
+
+    Tolerance: ±€0.50 per bot.
+    """
+    from workers.api_clients.db import execute_query
+    rows = execute_query("""
+        SELECT b.name,
+               ABS(b.current_bankroll
+                   - (b.starting_bankroll
+                      + COALESCE(SUM(sb.pnl) FILTER (WHERE sb.result IN ('won','lost')), 0))) AS drift
+        FROM bots b
+        LEFT JOIN simulated_bets sb ON sb.bot_id = b.id
+        WHERE b.is_active = true AND b.retired_at IS NULL
+        GROUP BY b.id, b.name, b.current_bankroll, b.starting_bankroll
+        HAVING ABS(b.current_bankroll
+                   - (b.starting_bankroll
+                      + COALESCE(SUM(sb.pnl) FILTER (WHERE sb.result IN ('won','lost')), 0))) > 0.50
+    """)
+    if rows:
+        names = [(r["name"], f"€{float(r['drift']):.2f}") for r in rows[:5]]
+        assert False, f"{len(rows)} bots drifted: {names} — run scripts/fix_bot_bankroll_drift.py --apply"
+
+
 @test("BOT-AGGREGATES-SSOT — dashboard_cache.bot_breakdown reconciles to live simulated_bets aggregates")
 def _():
     """BOT-AGGREGATES-SSOT 2026-05-25 — guard the divergence the original task
