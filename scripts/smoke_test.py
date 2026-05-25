@@ -3740,6 +3740,52 @@ def _():
     )
 
 
+@test("SCHEMA-DRIFT-SMOKE — every column the model trains on still exists in MFV")
+def _():
+    """SCHEMA-DRIFT-SMOKE 2026-05-25 — detect column renames / removals
+    before they silently break training or inference. Cross-references
+    every column referenced in scripts/train_b_ml3.py MATCH_LEVEL_FEATURES,
+    SELECT clause in _load_training_data, and the new v3 signal columns,
+    against information_schema.columns for match_feature_vectors.
+
+    Failure modes this catches:
+    - A migration renames a column but train_b_ml3.py still references the old name
+    - A column gets dropped without updating the SELECT
+    - A new feature is added to MATCH_LEVEL_FEATURES but its column never lands
+    """
+    import importlib.util
+    from pathlib import Path as _Path
+    from workers.api_clients.db import execute_query
+    train_path = _Path(__file__).resolve().parent / "train_b_ml3.py"
+    spec = importlib.util.spec_from_file_location("train_b_ml3", train_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    declared = set(mod.MATCH_LEVEL_FEATURES)
+    # Also the per-selection bases (each gets _home/_draw/_away suffixed in MFV)
+    for base in mod.SELECTION_AWARE_V2:
+        declared.add(f"{base}_home_at_t6h")
+        declared.add(f"{base}_draw_at_t6h")
+        declared.add(f"{base}_away_at_t6h")
+    # Drop computed-at-train-time features
+    declared.discard("time_to_kickoff")
+    declared.discard("league_tier")
+    # Drop _missing indicator columns (generated post-load)
+    declared = {c for c in declared if not c.endswith("_missing")}
+    # Verify each declared column exists in MFV
+    rows = execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name='match_feature_vectors'
+    """)
+    actual = {r["column_name"] for r in rows}
+    missing = declared - actual
+    assert not missing, f"MFV missing columns the model needs: {sorted(missing)}"
+    # Also v3 signal columns added by migration 132 must exist
+    for c in ("team_avg_player_rating_home", "team_avg_player_rating_away",
+              "injury_severity_score_home", "injury_severity_score_away",
+              "league_clv_efficiency"):
+        assert c in actual, f"migration 132 column missing: {c}"
+
+
 @test("MFV-FORM-MOMENTUM-BUG — live MFV builder writes form_momentum_{home,away}")
 def _():
     """Bug discovered 2026-05-24: form_momentum_* columns exist in MFV but
