@@ -131,6 +131,8 @@ FEATURE_COLS = [
     "elo_home", "elo_away", "elo_diff",
     # Form
     "form_ppg_home", "form_ppg_away",
+    # Form momentum (MFV-FORM-MOMENTUM-BUG 2026-05-25): last-3 ppg − last-10 ppg
+    "form_momentum_home", "form_momentum_away",
     # Goals
     "goals_for_avg_home", "goals_for_avg_away",
     "goals_against_avg_home", "goals_against_avg_away",
@@ -144,6 +146,8 @@ FEATURE_COLS = [
     "rest_days_home", "rest_days_away",
     # Injuries / news
     "injury_count_home", "injury_count_away",
+    # INJURY-SEVERITY (2026-05-25): severity-weighted vs raw count
+    "injury_severity_score_home", "injury_severity_score_away",
     # Match context
     "fixture_importance",
     # Referee
@@ -155,6 +159,14 @@ FEATURE_COLS = [
     "bookmaker_disagreement",
     # League
     "league_tier",
+    # MFV-V3 batch (2026-05-25): backtest-validated signals
+    "league_draw_rate_ytd",            # +11.6pp Q4 vs Q1 actual-draw lift
+    "season_progress",                 # late vs early +7.7pp Over 2.5
+    "line_velocity",                   # REVERSE -6.6pp CLV-beat Q4 |v|
+    "xg_overperf_home", "xg_overperf_away",  # regression-to-mean indicator
+    "league_clv_efficiency",           # 60d mean pseudo_clv per league
+    # AF player ratings (2026-05-25) — sparse coverage (~5%); model learns to handle NaN
+    "team_avg_player_rating_home", "team_avg_player_rating_away",
 ]
 
 
