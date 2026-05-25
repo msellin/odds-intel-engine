@@ -3740,6 +3740,41 @@ def _():
     )
 
 
+@test("AF-COVERAGE-AUDIT — script exists + confusion matrix structure")
+def _():
+    from pathlib import Path as _Path
+    script = _Path(__file__).resolve().parent / "af_coverage_audit.py"
+    assert script.exists(), "scripts/af_coverage_audit.py missing"
+    text = script.read_text()
+    for needed in ("coverage_events", "coverage_lineups", "_audit_one",
+                   "flag_accuracy", "fixtures/events", "fixtures/lineups"):
+        assert needed in text, f"af_coverage_audit missing {needed!r}"
+
+
+@test("EMAIL-DELIVERY-CHECK — script exists with env, SPF, DKIM, send-test phases")
+def _():
+    from pathlib import Path as _Path
+    script = _Path(__file__).resolve().parent / "email_delivery_check.py"
+    assert script.exists(), "scripts/email_delivery_check.py missing"
+    text = script.read_text()
+    for needed in ("_check_env", "_check_spf", "_check_dkim", "_send_test",
+                   "resend._domainkey", "v=spf1", "_spf.resend.com"):
+        assert needed in text, f"email_delivery_check missing {needed!r}"
+
+
+@test("WORKER-SPLIT-LIVEPOLLER — standalone entrypoint + env-gated in-scheduler thread")
+def _():
+    from pathlib import Path as _Path
+    main = _Path(__file__).resolve().parent.parent / "workers" / "live_poller_main.py"
+    assert main.exists(), "workers/live_poller_main.py missing"
+    msrc = main.read_text()
+    assert "from workers.live_poller import LivePoller" in msrc
+    assert "signal.SIGTERM" in msrc, "must handle SIGTERM for graceful shutdown"
+    sched = (_Path(__file__).resolve().parent.parent / "workers" / "scheduler.py").read_text()
+    assert "LIVE_POLLER_IN_SCHEDULER" in sched, "scheduler must env-gate the in-process thread"
+    assert 'os.getenv("LIVE_POLLER_IN_SCHEDULER", "true")' in sched, "default must be true (no behaviour change)"
+
+
 @test("TIER-C-EXPAND-ALIASES — removes 6 broken aliases + adds verified high-yield entries")
 def _():
     """TIER-C-EXPAND-ALIASES 2026-05-25 — alias batch + cleanup.

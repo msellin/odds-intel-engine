@@ -78,6 +78,17 @@ MATCH_LEVEL_FEATURES = [
     # B-ML3 v2.2 (2026-05-25): Pinnacle AH cross-market signal (G fixed)
     "pinnacle_ah_line_at_t6h",
     "pinnacle_ah_line_move",
+    # B-ML3 v3 (2026-05-25): MFV-V3 signal batch — backtest-validated lifts.
+    "league_draw_rate_ytd",            # +11.6pp Q4 vs Q1 draw lift (LEAGUE-DRAW-YTD)
+    "season_progress",                 # late vs early +7.7pp Over 2.5 (LEAGUE-SEASON-PHASE)
+    "line_velocity",                   # REVERSE -6.6pp CLV-beat Q4 |v| (LINE-VELOCITY)
+    "xg_overperf_home",                # regression-to-mean indicator (SIG-12)
+    "xg_overperf_away",
+    "league_clv_efficiency",           # 60d mean pseudo_clv per league
+    "injury_severity_score_home",      # SEVERE×3 + MODERATE×1.5 + MINOR×0.5 + UNKNOWN×1
+    "injury_severity_score_away",
+    "team_avg_player_rating_home",     # AF player ratings (sparse ~5% coverage)
+    "team_avg_player_rating_away",
 ]
 
 # Selection-aware market features added in v2 — pivoted into per-selection rows.
@@ -132,7 +143,18 @@ def _load_training_data():
           mfv.form_momentum_away,
           -- B-ML3 v2.2 (2026-05-25): Pinnacle AH main-line drift (G fixed)
           mfv.pinnacle_ah_line_at_t6h,
-          mfv.pinnacle_ah_line_move
+          mfv.pinnacle_ah_line_move,
+          -- B-ML3 v3 (2026-05-25): MFV-V3 signal batch
+          mfv.league_draw_rate_ytd,
+          mfv.season_progress,
+          mfv.line_velocity,
+          mfv.xg_overperf_home,
+          mfv.xg_overperf_away,
+          mfv.league_clv_efficiency,
+          mfv.injury_severity_score_home,
+          mfv.injury_severity_score_away,
+          mfv.team_avg_player_rating_home,
+          mfv.team_avg_player_rating_away
         FROM match_feature_vectors mfv
         JOIN matches m ON m.id = mfv.match_id
         LEFT JOIN leagues l ON l.id = m.league_id

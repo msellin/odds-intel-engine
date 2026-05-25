@@ -1380,21 +1380,29 @@ def main():
         console.print(f"  [dim]{next_run}[/dim]  {job.name}")
 
     # ── Start LivePoller in background thread ──────────────────────────
-    from workers.live_poller import LivePoller
-    from workers.api_clients.api_football import budget
+    # WORKER-SPLIT-LIVEPOLLER (2026-05-25): env-gate so this scheduler
+    # service can be deployed without the in-process poller. Default ON
+    # (matches pre-split behaviour); set LIVE_POLLER_IN_SCHEDULER=false
+    # on the scheduler service when running `workers/live_poller_main.py`
+    # as a separate Railway service.
+    if os.getenv("LIVE_POLLER_IN_SCHEDULER", "true").lower() in ("true", "1", "yes"):
+        from workers.live_poller import LivePoller
+        from workers.api_clients.api_football import budget
 
-    poller = LivePoller(
-        budget_tracker=budget,
-        shutdown_flag_fn=lambda: _shutdown_requested,
-    )
-    poller_thread = threading.Thread(target=poller.run_forever, daemon=True, name="live-poller")
-    poller_thread.start()
+        poller = LivePoller(
+            budget_tracker=budget,
+            shutdown_flag_fn=lambda: _shutdown_requested,
+        )
+        poller_thread = threading.Thread(target=poller.run_forever, daemon=True, name="live-poller")
+        poller_thread.start()
 
-    console.print(f"\n[bold green]Scheduler + LivePoller running 24/7. "
-                  f"Live={poller.FAST_INTERVAL}s, "
-                  f"Idle={poller.IDLE_INTERVAL}s, "
-                  f"Stats={poller.FAST_INTERVAL * poller.MEDIUM_MULTIPLIER}s, "
-                  f"Lineups={poller.FAST_INTERVAL * poller.SLOW_MULTIPLIER}s[/bold green]\n")
+        console.print(f"\n[bold green]Scheduler + LivePoller running 24/7. "
+                      f"Live={poller.FAST_INTERVAL}s, "
+                      f"Idle={poller.IDLE_INTERVAL}s, "
+                      f"Stats={poller.FAST_INTERVAL * poller.MEDIUM_MULTIPLIER}s, "
+                      f"Lineups={poller.FAST_INTERVAL * poller.SLOW_MULTIPLIER}s[/bold green]\n")
+    else:
+        console.print("\n[bold green]Scheduler running 24/7 (LivePoller disabled — running in separate service)[/bold green]\n")
 
     # Keep alive until shutdown
     try:
