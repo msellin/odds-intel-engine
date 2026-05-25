@@ -221,6 +221,52 @@ _equalizer_event_window: dict[str, tuple[int, str]] = {}
 
 # ── Entrypoint (called from LivePoller) ──────────────────────────────────────
 
+def _build_inplay_bet_data(
+    *, trigger: dict, cand: dict, xg_h: float, xg_a: float, is_real: bool,
+    odds_age: float | None, bot_name: str,
+) -> dict:
+    """INPLAY-LAYER-ARCH (2026-05-25): pure builder for the bet payload.
+
+    Extracted from run_inplay_strategies() so the same dict shape can be
+    produced by future layers (e.g. an explorer / backtester) without
+    duplicating the JSON-encoding rules. Pure — no DB access, no console
+    output, no side effects. Target architecture:
+
+      Stage 1 — collect snapshots / prematch / red-card flags  (I/O)
+      Stage 2 — _check_strategy(...) → trigger dict             (pure)
+      Stage 3 — _build_inplay_bet_data(...) → bet payload       (pure)  ← this
+      Stage 4 — staleness re-check + score_recheck              (I/O)
+      Stage 5 — store_bet(...) + log                            (I/O)
+
+    Today only Stage 3 is extracted. Stages 1-2 and 4-5 still live inside
+    run_inplay_strategies(); they should be migrated out incrementally so
+    each stage can be unit-tested in isolation.
+    """
+    return {
+        "market": trigger["market"],
+        "selection": trigger["selection"],
+        "odds": trigger["odds"],
+        # INPLAY-STAKE-5: 5.0 puts inplay on the same scale as pre-match
+        # Kelly stakes; see run_inplay_strategies' comment for the history.
+        "stake": 5.0,
+        "model_prob": trigger["model_prob"],
+        "edge": trigger["edge"] / 100,  # strategies store edge as %, DB expects decimal
+        "xg_source": "live" if is_real else "shot_proxy",
+        "reasoning": json.dumps({
+            "strategy": bot_name,
+            "minute": cand["minute"],
+            "score": f"{cand['score_home']}-{cand['score_away']}",
+            "xg_home": round(xg_h, 3),
+            "xg_away": round(xg_a, 3),
+            "xg_source": "live" if is_real else "shot_proxy",
+            "posterior_rate": trigger.get("posterior_rate"),
+            "prematch_xg_total": trigger.get("prematch_xg_total"),
+            "odds_age_ms": int(odds_age * 1000) if odds_age else None,
+            **{k: v for k, v in trigger.get("extra", {}).items()},
+        }),
+    }
+
+
 def run_inplay_strategies():
     """
     Main entrypoint — called every 30s from LivePoller after snapshots are stored.
@@ -400,36 +446,13 @@ def run_inplay_strategies():
                 continue
 
             xg_h, xg_a, is_real = _compute_live_xg(cand)
-            xg_source = "live" if is_real else "shot_proxy"
-            bet_data = {
-                "market": trigger["market"],
-                "selection": trigger["selection"],
-                "odds": trigger["odds"],
-                # INPLAY-STAKE-5 (2026-05-17): bumped from 1.0 → 5.0 so inplay
-                # strategies contribute meaningful weight to the /performance
-                # headline ROI. Pre-match Kelly stakes land €1-10 on €1000
-                # bankrolls (median ~€5); €5 puts inplay on the same scale
-                # without the calibration risk of Kelly-on-inplay (model_prob
-                # comes from hardcoded posterior rates, not the calibrated
-                # ensemble). Historical inplay bets back-normalized via
-                # scripts/normalize_inplay_stake_to_5.py.
-                "stake": 5.0,
-                "model_prob": trigger["model_prob"],
-                "edge": trigger["edge"] / 100,  # strategies store edge as %, DB expects decimal (0.374 = 37.4%)
-                "xg_source": xg_source,
-                "reasoning": json.dumps({
-                    "strategy": bot_name,
-                    "minute": cand["minute"],
-                    "score": f"{cand['score_home']}-{cand['score_away']}",
-                    "xg_home": round(xg_h, 3),
-                    "xg_away": round(xg_a, 3),
-                    "xg_source": "live" if is_real else "shot_proxy",
-                    "posterior_rate": trigger.get("posterior_rate"),
-                    "prematch_xg_total": trigger.get("prematch_xg_total"),
-                    "odds_age_ms": int(odds_age * 1000) if odds_age else None,
-                    **{k: v for k, v in trigger.get("extra", {}).items()},
-                }),
-            }
+            # INPLAY-LAYER-ARCH: extract bet-payload construction into a pure
+            # function so the same dict shape can be reused by the
+            # explorer/backtester without duplicating JSON-encoding rules.
+            bet_data = _build_inplay_bet_data(
+                trigger=trigger, cand=cand, xg_h=xg_h, xg_a=xg_a,
+                is_real=is_real, odds_age=odds_age, bot_name=bot_name,
+            )
 
             try:
                 bet_id = store_bet(bot_id, mid, bet_data)

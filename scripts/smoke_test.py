@@ -3740,6 +3740,42 @@ def _():
     )
 
 
+@test("INPLAY-LAYER-ARCH — _build_inplay_bet_data is a pure function that produces correct payload")
+def _():
+    """INPLAY-LAYER-ARCH 2026-05-25 — first extracted stage: bet-payload
+    construction. Pure function (no DB / no console / no globals). Guards:
+    (1) function exists, (2) produces the same dict shape as the inline
+    code used to, (3) edge is %→decimal correctly, (4) JSON reasoning
+    fields preserved.
+    """
+    import json as _json
+    from workers.jobs.inplay_bot import _build_inplay_bet_data
+    trigger = {
+        "market": "1x2", "selection": "home", "odds": 1.80,
+        "model_prob": 0.62, "edge": 8.5,
+        "posterior_rate": 0.030, "prematch_xg_total": 2.7,
+        "extra": {"foo": "bar"},
+    }
+    cand = {"minute": 67, "score_home": 1, "score_away": 0}
+    out = _build_inplay_bet_data(
+        trigger=trigger, cand=cand, xg_h=1.4, xg_a=0.6, is_real=True,
+        odds_age=2.5, bot_name="inplay_c",
+    )
+    assert out["market"] == "1x2"
+    assert out["selection"] == "home"
+    assert out["odds"] == 1.80
+    assert out["stake"] == 5.0, "INPLAY-STAKE-5 must hold"
+    assert out["model_prob"] == 0.62
+    assert abs(out["edge"] - 0.085) < 1e-9, "edge must be converted % → decimal"
+    assert out["xg_source"] == "live"
+    reasoning = _json.loads(out["reasoning"])
+    assert reasoning["strategy"] == "inplay_c"
+    assert reasoning["minute"] == 67
+    assert reasoning["score"] == "1-0"
+    assert reasoning["foo"] == "bar", "extra fields must be merged"
+    assert reasoning["odds_age_ms"] == 2500
+
+
 @test("INPLAY-SOFT-GATES — _gate_score helper + env-gated reference impl in strategy_c")
 def _():
     """INPLAY-SOFT-GATES 2026-05-25 — continuous closeness score replaces
