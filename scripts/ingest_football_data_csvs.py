@@ -74,38 +74,45 @@ TEAM_ALIASES = {
     "Spurs":               "Tottenham",
     "Nott'm Forest":       "Nottingham Forest",
     "Newcastle":           "Newcastle United",
-    "Brighton":            "Brighton & Hove Albion",
     "West Ham":            "West Ham United",
     "Sheffield Utd":       "Sheffield United",
     "Sheffield Weds":      "Sheffield Wednesday",
-    "Leicester":           "Leicester City",
-    "Norwich":             "Norwich City",
-    "Cardiff":             "Cardiff City",
     "Stoke":               "Stoke City",
     "Hull":                "Hull City",
-    "QPR":                 "Queens Park Rangers",
-    # NB: AF DB uses "Wolves" directly, NOT "Wolverhampton Wanderers" — no alias needed
+    # TIER-C-EXPAND-ALIASES (2026-05-25): REMOVED 6 broken aliases that pointed
+    # to long names not in our DB — Brighton, Leicester, Norwich, Cardiff,
+    # QPR, Inter. DB uses the short names; normalize-only path now matches them.
     # La Liga
     "Atletico Madrid":     "Atlético Madrid",
-    "Real Sociedad":       "Real Sociedad",
     "Ath Bilbao":          "Athletic Club",
     "Ath Madrid":          "Atlético Madrid",
     "Celta":               "Celta Vigo",
+    "Espanol":             "Espanyol",                  # 274 FD rows
+    "Vallecano":           "Rayo Vallecano",            # 274 FD rows
+    "Betis":               "Real Betis",                # 266 FD rows
+    "Sociedad":            "Real Sociedad",             # 266 FD rows
     # Italy
-    "Inter":               "Internazionale",
     "Roma":                "AS Roma",
     "Verona":              "Hellas Verona",
+    "Milan":               "AC Milan",                  # 266 FD rows
     "Spal":                "SPAL",
     # Germany
     "Bayern Munich":       "Bayern München",
     "Dortmund":            "Borussia Dortmund",
     "M'gladbach":          "Borussia Monchengladbach",
     "Leverkusen":          "Bayer Leverkusen",
-    "Hertha":              "Hertha Berlin",
+    "Hertha":              "Hertha BSC",                # 238 FD rows (was: Hertha Berlin — wrong)
     "Ein Frankfurt":       "Eintracht Frankfurt",
     "FC Koln":             "1. FC Köln",
     "Heidenheim":          "1. FC Heidenheim",
     "St Pauli":            "FC St. Pauli",
+    "Hoffenheim":          "TSG Hoffenheim",            # 238 FD rows
+    "Augsburg":            "FC Augsburg",               # 238 FD rows
+    "Freiburg":            "SC Freiburg",               # 238 FD rows
+    "Hannover":            "Hannover 96",               # 238 FD rows
+    "Wolfsburg":           "VfL Wolfsburg",             # 238 FD rows
+    "Schalke 04":          "FC Schalke 04",             # 238 FD rows
+    "Stuttgart":           "VfB Stuttgart",             # 238 FD rows
     # Spain
     "Sp Gijon":            "Sporting Gijon",
     "Villarreal B":        "Villarreal II",
@@ -115,6 +122,8 @@ TEAM_ALIASES = {
     # Belgium
     "St Truiden":          "St. Truiden",
     "RAAL La Louviere":    "RAAL La Louvière",
+    "Club Brugge":         "Club Brugge KV",            # 241 FD rows
+    "Standard":            "Standard Liege",            # 240 FD rows
     # Portugal
     "Sp Braga":            "SC Braga",
     "Sp Lisbon":           "Sporting CP",
@@ -123,7 +132,9 @@ TEAM_ALIASES = {
     "Karagumruk":          "Fatih Karagümrük",
     # France
     "St Etienne":          "Saint-Étienne",
-    # Add more as ingestion reveals mismatches
+    "Paris SG":            "Paris Saint Germain",       # 247 FD rows
+    # England Championship/L1/L2 — DB uses short names; only add if FD-side abbrev differs
+    "Peterboro":           "Peterborough",              # 311 FD rows
 }
 
 

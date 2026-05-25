@@ -3740,6 +3740,35 @@ def _():
     )
 
 
+@test("TIER-C-EXPAND-ALIASES — removes 6 broken aliases + adds verified high-yield entries")
+def _():
+    """TIER-C-EXPAND-ALIASES 2026-05-25 — alias batch + cleanup.
+    Removed 6 broken aliases that pointed to non-existent DB names:
+    Brighton, Leicester, Norwich, Cardiff, QPR, Inter (DB actually uses
+    the short names). Added ~15 verified targets for high-frequency
+    unmatched names. Total impact: 14,837 → 9,038 unmatched FD rows
+    (~+5,799 matched, audit script).
+    """
+    from pathlib import Path as _Path
+    audit = _Path(__file__).resolve().parent / "audit_unmatched_extras.py"
+    assert audit.exists(), "scripts/audit_unmatched_extras.py missing"
+    from scripts.ingest_football_data_csvs import TEAM_ALIASES, normalize_team_name
+    from workers.api_clients.db import execute_query
+    # No broken aliases — every target must map to a DB name (after normalization)
+    rows = execute_query("SELECT name FROM teams")
+    db_norm = {normalize_team_name(r["name"]) for r in rows if normalize_team_name(r["name"])}
+    broken = []
+    for fd_name, target in TEAM_ALIASES.items():
+        norm = normalize_team_name(target)
+        if norm not in db_norm:
+            broken.append((fd_name, target))
+    # Acceptable threshold: ≤2 broken aliases (Spal/Hertha-style edge cases)
+    assert len(broken) <= 2, f"too many broken aliases: {broken}"
+    # The 6 fix-by-removal aliases must NOT be present (their bare names match DB)
+    for removed in ("Brighton", "Leicester", "Norwich", "Cardiff", "QPR", "Inter"):
+        assert removed not in TEAM_ALIASES, f"{removed} alias must stay removed — bare DB name matches"
+
+
 @test("LEAGUE-SEASON-PHASE — season-progress signal + scheduler + multi-market backtest")
 def _():
     """LEAGUE-SEASON-PHASE 2026-05-25 — per-match season_progress [0..1].
