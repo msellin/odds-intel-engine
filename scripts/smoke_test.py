@@ -3740,6 +3740,40 @@ def _():
     )
 
 
+@test("ML-NEW-FEATURES — migration 132 + backfill script signal→MFV mapping")
+def _():
+    """ML-NEW-FEATURES 2026-05-25 — pivots the new match_signals into 5 new
+    MFV columns ready for the next B-ML3 retrain (v3+). Guards:
+    (1) migration 132 file exists and adds all 5 columns,
+    (2) backfill script maps each signal name to the matching MFV column.
+    """
+    from pathlib import Path as _Path
+    repo_root = _Path(__file__).resolve().parent.parent
+    mig = repo_root / "supabase" / "migrations" / "132_mfv_v3_signal_columns.sql"
+    assert mig.exists(), "migration 132_mfv_v3_signal_columns.sql is missing"
+    mig_text = mig.read_text()
+    for col in (
+        "team_avg_player_rating_home", "team_avg_player_rating_away",
+        "injury_severity_score_home", "injury_severity_score_away",
+        "league_clv_efficiency",
+    ):
+        assert col in mig_text, f"migration must ADD COLUMN {col}"
+    backfill = repo_root / "scripts" / "backfill_mfv_v3_signals.py"
+    assert backfill.exists(), "backfill script missing"
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("backfill_mfv_v3_signals", backfill)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    expected = {
+        "team_avg_player_rating_home": "team_avg_player_rating_home",
+        "team_avg_player_rating_away": "team_avg_player_rating_away",
+        "injury_severity_score_home": "injury_severity_score_home",
+        "injury_severity_score_away": "injury_severity_score_away",
+        "league_clv_efficiency": "league_clv_efficiency",
+    }
+    assert mod.SIGNAL_TO_COLUMN == expected, "signal→column mapping mismatch"
+
+
 @test("INPLAY-LAYER-ARCH — _build_inplay_bet_data is a pure function that produces correct payload")
 def _():
     """INPLAY-LAYER-ARCH 2026-05-25 — first extracted stage: bet-payload
