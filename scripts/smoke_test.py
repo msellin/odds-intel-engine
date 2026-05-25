@@ -3740,6 +3740,37 @@ def _():
     )
 
 
+@test("INJURY-SEVERITY — keyword classifier maps reasons to SEVERE/MODERATE/MINOR/UNKNOWN")
+def _():
+    """INJURY-SEVERITY 2026-05-25 — replaces raw injury count with
+    severity-weighted score (SEVERE 3×, MODERATE 1.5×, MINOR 0.5×, UNKNOWN 1×).
+    Guards: classifier maps each major real reason correctly, scheduler
+    job registered.
+    """
+    from pathlib import Path as _Path
+    import importlib.util
+    script_path = _Path(__file__).resolve().parent / "compute_injury_severity.py"
+    assert script_path.exists(), "scripts/compute_injury_severity.py missing"
+    spec = importlib.util.spec_from_file_location("compute_injury_severity", script_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.classify("ACL Knee Injury") == "SEVERE"
+    assert mod.classify("Achilles Tendon Injury") == "SEVERE"
+    assert mod.classify("Hamstring Injury") == "MODERATE"
+    assert mod.classify("Knee Injury") == "MODERATE"
+    assert mod.classify("Knock") == "MINOR"
+    assert mod.classify("Illness") == "MINOR"
+    assert mod.classify("Yellow Cards") == "MINOR"
+    assert mod.classify("Injury") == "UNKNOWN", "generic 'Injury' falls through to UNKNOWN"
+    assert mod.classify(None) == "UNKNOWN"
+    assert mod.WEIGHTS == {"SEVERE": 3.0, "MODERATE": 1.5, "MINOR": 0.5, "UNKNOWN": 1.0}
+    # Scheduler wired
+    sched_path = _Path(__file__).resolve().parent.parent / "workers" / "scheduler.py"
+    sched_src = sched_path.read_text()
+    assert "job_injury_severity" in sched_src
+    assert "compute_injury_severity.py" in sched_src
+
+
 @test("AF-PLAYER-RATINGS — compute_team_avg_player_rating.py + scheduler job + signal name pattern")
 def _():
     """AF-PLAYER-RATINGS 2026-05-25 — rolling per-team AF player rating

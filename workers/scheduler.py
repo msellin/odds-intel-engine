@@ -560,6 +560,28 @@ def job_league_clv_efficiency():
     _run_job("league_clv_efficiency", _run)
 
 
+def job_injury_severity():
+    """INJURY-SEVERITY (2026-05-25): nightly bucketing of match_injuries by
+    severity (SEVERE 3× / MODERATE 1.5× / MINOR 0.5× / UNKNOWN 1×). Writes
+    weighted score per (match, team_side) to match_signals
+    (injury_severity_score_home/away). Feeds next MFV rebuild + B-ML3 v3+.
+    """
+    import subprocess
+    def _run():
+        result = subprocess.run(
+            [sys.executable, "scripts/compute_injury_severity.py", "--write"],
+            cwd=str(Path(__file__).parent.parent),
+            timeout=300,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[yellow]injury_severity exit {result.returncode}: {result.stderr[-1000:]}[/yellow]")
+            raise RuntimeError(f"injury_severity failed: exit {result.returncode}")
+        console.print(result.stdout[-1500:])
+    _run_job("injury_severity", _run)
+
+
 def job_team_avg_player_rating():
     """AF-PLAYER-RATINGS (2026-05-25): nightly rolling-team-rating refresh.
     Computes per-team last-10-match average AF player rating from
@@ -1123,6 +1145,14 @@ def main():
                       CronTrigger(hour=22, minute=50),
                       id="team_avg_player_rating",
                       name="AF Player Ratings Rolling 22:50")
+
+    # INJURY-SEVERITY (2026-05-25): nightly bucketing of match_injuries.
+    # 22:55 slot keeps the nightly-feature jobs strictly ordered before any
+    # downstream MFV consumer.
+    scheduler.add_job(job_injury_severity,
+                      CronTrigger(hour=22, minute=55),
+                      id="injury_severity",
+                      name="Injury Severity Bucketing 22:55")
 
     # ENG-8: Watchlist alerts — 08:30, 14:30, 20:35 UTC
     # 20:35 staggered 5 min after 20:30 betting refresh (N9 fix — avoids simultaneous heavy jobs)
