@@ -706,6 +706,85 @@ def _place_one(bot_name: str, cfg: dict, legs: list[CandidateLeg]) -> dict:
     }
 
 
+# ACCA-LEG-SHADOW (2026-05-25): map our internal acca market keys to the
+# canonical odds_snapshots market labels used by singles bots — so shadow_bets
+# rows group cleanly with bot_ou25_global / bot_btts_all / etc. in slice
+# analysis. Settlement's _normalize_bet_market handles both forms but reports
+# and `slice_live_validate.py` key off the stored value as-is.
+_SHADOW_MARKET_MAP = {
+    "ou15": "over_under_15",
+    "ou25": "over_under_25",
+    "ou35": "over_under_35",
+    "btts": "btts",
+}
+
+
+def _write_legs_as_shadow(legs_by_variant: dict) -> int:
+    """ACCA-LEG-SHADOW — write each picked leg as a shadow_bets row attributed
+    to virtual bot `bot_acca_leg_shadow`.
+
+    Treats each leg as a hypothetical single bet at the acca leg odds (MAX
+    across accessible books). After settlement, lets us answer: "if we widened
+    the singles bots' filters to include these matches, would the singles have
+    been +EV?". Acca uses looser filters than singles (no Platt calibration,
+    no Pinnacle-disagreement veto, no sharp-consensus gate) — so this is a
+    controlled way to gather settled evidence before touching singles config.
+
+    Dedupes across variants by (match_id, market, selection): if multiple acca
+    variants pick the same leg, only one shadow_bet row is written.
+
+    One shadow_run_id per acca pass. `shadow_cohort='morning'` because acca
+    runs from `run_morning(cohort='morning')` only. Settlement is wired via
+    the existing `_settle_pending_shadow_bets` pass — no extra work needed.
+    """
+    import uuid as _uuid
+    from workers.api_clients.supabase_client import bulk_store_shadow_bets
+
+    shadow_bot_id = _get_bot_id("bot_acca_leg_shadow")
+    if not shadow_bot_id:
+        console.print("[dim]acca leg shadow: bot_acca_leg_shadow not registered — skip[/dim]")
+        return 0
+
+    seen: set = set()
+    unique_legs: list = []
+    for legs in legs_by_variant.values():
+        for leg in legs:
+            key = (leg.match_id, leg.market, leg.selection)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique_legs.append(leg)
+    if not unique_legs:
+        return 0
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    rows = []
+    for leg in unique_legs:
+        rows.append({
+            "bot_id": shadow_bot_id,
+            "match_id": leg.match_id,
+            "market": _SHADOW_MARKET_MAP.get(leg.market, leg.market),
+            "selection": leg.selection,
+            "odds": leg.odds,
+            "model_prob": leg.prob,
+            "calibrated_prob": leg.prob,  # acca skips Platt — store raw prob in both slots
+            "edge": round(leg.edge, 4),
+            "kelly_fraction": None,
+            "placed_at": now_iso,
+            "timing_cohort": "all",
+            "recommended_bookmaker": None,
+        })
+
+    shadow_run_id = str(_uuid.uuid4())
+    try:
+        n = bulk_store_shadow_bets(rows, shadow_run_id, "morning")
+    except Exception as e:
+        console.print(f"[yellow]acca leg shadow: write failed ({e})[/yellow]")
+        return 0
+    console.print(f"[dim]acca leg shadow: {n} unique leg(s) written (run_id={shadow_run_id[:8]})[/dim]")
+    return n
+
+
 def run_acca_pass(dry_run: bool = False) -> dict:
     """Run the acca-style bots for the day. Each variant uses its own leg pool
     based on its `market_whitelist`:
@@ -751,11 +830,21 @@ def run_acca_pass(dry_run: bool = False) -> dict:
         return {"dry_run": True, "legs_per_variant": out_legs}
 
     results = {}
+    legs_by_variant: dict = {}
     for bot_name, cfg in ACCA_VARIANTS.items():
         legs = _legs_for(cfg)
+        legs_by_variant[bot_name] = legs
         if len(legs) < cfg["min_legs"]:
             console.print(f"[dim]Acca {bot_name}: only {len(legs)} qualifying legs (need ≥{cfg['min_legs']}). Skipping.[/dim]")
             results[bot_name] = {"placed": False, "reason": "not_enough_legs", "n_legs": len(legs)}
             continue
         results[bot_name] = _place_one(bot_name, cfg, legs)
-    return {"variants": results}
+
+    # ACCA-LEG-SHADOW (2026-05-25): write each picked leg as a hypothetical
+    # single for later ROI evaluation. Never blocks placement; non-critical.
+    try:
+        shadow_n = _write_legs_as_shadow(legs_by_variant)
+    except Exception as e:
+        console.print(f"[yellow]acca leg shadow non-critical failure: {e}[/yellow]")
+        shadow_n = 0
+    return {"variants": results, "leg_shadow_written": shadow_n}

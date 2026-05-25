@@ -83,6 +83,13 @@ BET-TIMING-MONITOR — 32 runs/day at :05/:35 past each hour 07–22 UTC. Each i
 
 Shadow bets are settled nightly. Analysis: `scripts/shadow_timing_report.py`.
 
+**Acca leg shadows (ACCA-LEG-SHADOW, 2026-05-25):** `run_acca_pass` also writes
+every picked leg (across all 5 acca variants, deduped) as a `shadow_bets` row
+attributed to virtual bot `bot_acca_leg_shadow` with `shadow_cohort='morning'`.
+These rows ride the same settlement pass. Used to evaluate whether widening
+singles-bot filters to catch the acca's matches would be +EV — revisit cadence
+tracked under `ACCA-LEG-SHADOW-EVAL` in `PRIORITY_QUEUE.md`.
+
 ### Betting refresh schedule (32x/day — every 30 min after odds refresh)
 | Time | KO window covered | Fresh inputs |
 |------|-------------------|-------------|

@@ -8503,6 +8503,35 @@ def _():
         "acca_bot._place_one INSERT must include edge_percent in column list"
 
 
+@test("ACCA-LEG-SHADOW — run_acca_pass writes each leg to shadow_bets via _write_legs_as_shadow")
+def _():
+    """ACCA-LEG-SHADOW (2026-05-25): every leg picked by any acca variant gets
+    logged as a shadow_bets row attributed to virtual bot bot_acca_leg_shadow.
+    Lets us measure, after settlement, whether the legs the acca catches
+    would have been +EV if singles bots had picked them up. Revisit cadence
+    tracked under ACCA-LEG-SHADOW-EVAL in PRIORITY_QUEUE.md."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "jobs" / "acca_bot.py").read_text()
+
+    assert "_write_legs_as_shadow" in src, \
+        "acca_bot.py must define _write_legs_as_shadow"
+    assert "bot_acca_leg_shadow" in src, \
+        "acca_bot.py must reference virtual bot bot_acca_leg_shadow"
+    assert "bulk_store_shadow_bets" in src, \
+        "_write_legs_as_shadow must call bulk_store_shadow_bets"
+    assert "_write_legs_as_shadow(legs_by_variant)" in src, \
+        "run_acca_pass must call _write_legs_as_shadow(legs_by_variant) after placing variants"
+    assert "(leg.match_id, leg.market, leg.selection)" in src, \
+        "_write_legs_as_shadow must dedup legs by (match_id, market, selection)"
+
+    mig = (pathlib.Path(__file__).resolve().parent.parent /
+           "supabase" / "migrations" / "131_bot_acca_leg_shadow.sql").read_text()
+    assert "bot_acca_leg_shadow" in mig, "migration 131 must register bot_acca_leg_shadow"
+    assert "ON CONFLICT (name) DO NOTHING" in mig, \
+        "migration 131 must be idempotent (re-runnable)"
+
+
 @test("SIM-BETS-COHORT-CHECK — simulated_bets timing_cohort constraint allows 'all'")
 def _():
     """Migration 116 guard: BOT-COHORTS-ALL sets timing_cohort='all' on every bot.
