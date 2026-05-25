@@ -119,7 +119,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 ---
 
-## Current System State (2026-05-22)
+## Current System State (2026-05-25)
 
 ### Backend
 | Component | Status |
@@ -142,7 +142,10 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | Odds-range tightening | ✅ **PER-BOT-SLICE-TIGHTEN 2026-05-18**: bot_ou25_global (cap 2.50), bot_ou35_attacking (cap 3.00), bot_btts_conservative (cap 2.00), bot_greek_turkish (cap 3.50). bot_btts_all reverted (live data contradicted backtest). ✅ **SLICE-LIVE-VALIDATE 2026-05-25** (pre Phase 3.5): bot_aggressive odds (1.25, 5.00) → (1.25, 2.50) [retired 2.50-3.00 and 3.50+ leakers], `selection_filter` excludes Draw (live ROI -32.7% on n=89); bot_btts_all odds (1.50, 2.80) → (2.00, 2.80) [retired 1.50-2.00 bucket at live ROI -13.9%]. Net retroactive live P&L delta: +€272 net positive. Baseline + comparison tool in `dev/active/backtest-slice-baseline.csv` + `scripts/slice_live_validate.py`. |
 | Shadow runs (06:30 / 11:30 / 15:30 UTC) | ✅ `shadow_bets` — all bots at every window. Per-bot per-cohort factorial ROI ready ~2026-06-15. |
 | Accessible-bookmaker filter | ✅ Edge math restricted to EU/Estonia-accessible books. `recommended_bookmaker` per bet. |
-| Active production model | ✅ **`v14`** — Poisson + XGBoost ensemble, per-tier Platt scaling (1X2 + OU 2.5), Dixon-Coles ρ. Active since ~2026-05-13. Full history in `docs/MODEL_HISTORY.md`. |
+| Active production model | ✅ **`v20260524_market`** (since 2026-05-24) — Poisson + XGBoost ensemble, per-tier Platt scaling, Dixon-Coles ρ, full market features. Candidate `v_20260525_signals` trained 2026-05-25 with 10 new features (form momentum, injury severity, league draw rate YTD, season progress, line velocity, xG overperf, league CLV efficiency, AF player ratings) — beats production on 4/5 markets in offline eval (1X2 -6.5% to -7.8%, BTTS -2.9%, OU 2.5 tied). NOT deployed mid-Phase-3.5; 2026-06-08 3-way comparison decides. Full history in `docs/MODEL_HISTORY.md`. |
+| Meta-model (B-ML3) | ✅ **3 candidate bundles in Storage** — v21 (logistic, CV AUC 0.569), v22 (logistic + G fixed, 0.572), v23_xgb (XGBoost, 0.587). Currently in PASSIVE scoring (`META_B_ML3_ENABLED=false`). Activation gate at 2026-06-10 via `scripts/validate_meta_b_ml3.py` per-quintile CLV-beat ≥5pp test. |
+| BOT-HIGH-ALIGNMENT | ✅ Live since 2026-05-25 07:05 UTC. New paper bot fires only on alignment_class=HIGH across all markets, 3% edge floor. Pipeline supports per-bot `min_alignment_class` config. |
+| Phase 3.5 paper window | 🔄 **2026-05-25 → 2026-06-07** controlled paper-only validation. No mid-window config changes; new signals + features ship as DATA (match_signals + MFV columns) but never as live placement gates. |
 | ML model registry | ✅ Supabase Storage auto-upload + lazy Railway download. 16 bundles archived. `MODEL_VERSION` env var. |
 | match_feature_vectors | ✅ Nightly ETL + live-build on every betting refresh |
 | Calibration | ✅ Per-tier Platt (1X2 1-feature, OU 2.5 2-feature). Blend weights optimized. Dynamic DC rho. Weekly refit. |

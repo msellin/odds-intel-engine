@@ -87,7 +87,8 @@ Column names match the table exactly.
 
 The model can split on the indicator alongside the imputed value, learning that "we don't have H2H" predicts differently from "H2H exists and shows 50%". Saar-Tsechansky & Provost (2007 JMLR) shows this matches KNN imputation in accuracy at 1/100th the cost.
 
-**Base feature set (FEATURE_COLS, 32 columns as of v15+):**
+**Base feature set (FEATURE_COLS, 42 columns as of `v_20260525_signals`+):**
+*(was 32 columns in v15+ → added 10 more in the 2026-05-25 signal batch — see "MFV-V3 batch" rows below)*
 
 | Group | Column name(s) | Count |
 |-------|---------------|-------|
@@ -103,6 +104,10 @@ The model can split on the indicator alongside the imputed value, learning that 
 | **Weather** | `weather_temp_c`, `weather_wind_kmh`, `weather_rain_mm`, `weather_humidity` | 4 — Open-Meteo at kickoff; ~0% coverage on 2026-05-11, rising as venues geocode |
 | **Market** | `opening_implied_home`, `opening_implied_draw`, `opening_implied_away`, `bookmaker_disagreement` | 4 |
 | **League** | `league_tier` | 1 |
+| **Form momentum (MFV-V3 batch 2026-05-25)** | `form_momentum_home`, `form_momentum_away` (= last-3 ppg − last-10 ppg) | 2 |
+| **Injury severity (MFV-V3 batch)** | `injury_severity_score_home`, `injury_severity_score_away` (SEVERE×3 + MODERATE×1.5 + MINOR×0.5 + UNKNOWN×1) | 2 |
+| **League market signals (MFV-V3 batch)** | `league_draw_rate_ytd` (backtest +11.6pp Q4-vs-Q1 draw lift), `season_progress` (late vs early +7.7pp Over 2.5), `line_velocity` (Pinnacle T-12h→T-2h slope; REVERSE signal -6.6pp CLV-beat at high \|v\|), `league_clv_efficiency` (60d mean pseudo_clv per league) | 4 |
+| **Team xG / ratings (MFV-V3 batch)** | `xg_overperf_home/away` (rolling 10-match goals − xG, regression-to-mean indicator), `team_avg_player_rating_home/away` (AF player ratings, sparse ~5% coverage) | 4 |
 
 **Pinnacle features (PINNACLE_FEATURE_COLS, `--include-pinnacle`, v11+, 3 columns):**
 
@@ -132,7 +137,7 @@ As of 2026-05-11 the table holds **48,240 settled rows** (post-Stage-0e refresh)
 
 **Bundle storage & versioning (ML-BUNDLE-STORAGE, 2026-05-10).** Every successful train auto-uploads the bundle to Supabase Storage (`models/<version>/*.pkl`) and registers a row in the `model_versions` table (trained_at, training_window, n_rows, feature_cols, cv_metrics, promoted_at, demoted_at, notes). This solves Railway's ephemeral-filesystem problem: a fresh container with `MODEL_VERSION=v_X` set hits `xgboost_ensemble._load_models()`, sees no local copy, calls `ensure_local_bundle()`, downloads from Storage, caches for the container's lifetime. Switch versions by setting `MODEL_VERSION` env var on Railway → next deploy auto-pulls. Historical bundles stay in Storage forever — rollback is one env-var change. Costs ~$0.05/mo for 5 years of weekly bundles. Full architecture, port-to-other-projects guide, and gotchas in `docs/ML_MODEL_REGISTRY.md`.
 
-**Active production version:** `v12_post0e` since 2026-05-10. **Recommended upgrade: v14** (trained 2026-05-11, beats v11_pinnacle on all markets except OU 2.5 which is flat). Set `MODEL_VERSION=v14` on Railway to activate. Comparison saved at `dev/active/model-comparison-2026-05-10-v14.md`.
+**Active production version:** `v20260524_market` since 2026-05-24. **Candidate queued for 2026-06-08:** `v_20260525_signals` — trained 2026-05-25 on the extended FEATURE_COLS (42 columns, adds 10 over the v14-era 32 — form_momentum, injury_severity_score, league_draw_rate_ytd, season_progress, line_velocity, xg_overperf, league_clv_efficiency, team_avg_player_rating). Offline eval vs production on 2,522 matches in 2026-05-20..05-24: **beats production on 4/5 markets** (1X2 −6.5% to −7.8% log-loss, BTTS −2.9%, OU 2.5 tied). Calibration regresses slightly on draw + over_25 — likely to be fixed by the standard 2026-06-08 weekly_retrain with a clean week of post-signal data. **Not deployed mid-Phase-3.5** (lock until 2026-06-07). Decision rule on 2026-06-08: run `offline_eval v_20260608 v_20260525_signals v20260524_market` three-way and deploy market-by-market via per-market `MODEL_VERSION_*` env overrides if calibration is mixed. Full report: `dev/active/model-comparison-20260525-signals-vs-market.md`.
 
 **Per-market evaluation (MARKET-EVAL-BTTS-AH, 2026-05-24).** The weekly held-out eval at `scripts/weekly_eval_and_compare.py` originally scored only the `result_1x2` and `over_under` XGBoost heads, leaving BTTS and AH unmeasured — those markets are derived in production from the Poisson `home_goals` + `away_goals` regressors via `workers.model.joint_probability.build_joint_matrix()`, and a new bundle could move them in either direction without the eval noticing. The script now also loads `home_goals.pkl` + `away_goals.pkl` from each bundle, builds the same DC-corrected joint matrix used at inference, and scores `btts_yes/no` log-loss against `(score_home > 0 AND score_away > 0)` truth plus four AH half-lines (`ah_home_±0.5`, `ah_home_±1.5`) against `(score_home − score_away + line) > 0`. Half-lines only so binary log-loss is unambiguous (no push complication). First retro run on the 2026-05-10..05-24 holdout (n=7,246) revealed both candidate bundles materially improve all derived markets vs v14: v20260524 is BETTER on 9 of 11 markets (1X2 −19 to −26%, AH −9 to −11%, BTTS −2%; OU 2.5 +9% worse, the same calibration drift previously seen on v20260517). v20260517 mirrors the shape (1X2 −13 to −20%, AH −6 to −11%, BTTS −1.3%, OU +13% worse). The AH gain in particular was previously invisible — production AH bots route through the same goals regressors but no held-out metric existed to compare them across versions. Future Sunday retrains report all 11 markets in the SUMMARY_JSON + email digest, so promotion decisions are no longer blind to BTTS/AH.
 
