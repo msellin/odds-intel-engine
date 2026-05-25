@@ -35,6 +35,7 @@ import pandas as pd
 from rich.console import Console
 from rich.table import Table
 from sklearn.linear_model import LogisticRegression
+import xgboost as xgb  # S6-P2 (2026-05-25): XGBoost meta-model option
 from sklearn.metrics import roc_auc_score, brier_score_loss, log_loss
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
@@ -231,9 +232,16 @@ def _build_feature_matrix(long_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Serie
     return X, y, feature_cols
 
 
-def _train_and_evaluate(X: pd.DataFrame, y: pd.Series, feature_cols: list[str]):
-    """5-fold TimeSeriesSplit CV → final fit on all data. Returns model + metrics."""
-    console.print("\n[bold]CV evaluation (TimeSeriesSplit, n_splits=5)[/bold]")
+def _train_and_evaluate(X: pd.DataFrame, y: pd.Series, feature_cols: list[str],
+                        model_type: str = "logistic"):
+    """5-fold TimeSeriesSplit CV → final fit on all data. Returns model + metrics.
+
+    S6-P2 (2026-05-25): supports `model_type="xgboost"` for non-linear meta-model.
+    XGBoost can pick up feature interactions logistic can't (e.g.
+    `lineup_confirmed × league_tier × form_ppg_diff`) without us having to
+    enumerate them. Trade-off: less interpretable per-feature coefficients.
+    """
+    console.print(f"\n[bold]CV evaluation (TimeSeriesSplit, n_splits=5, model={model_type})[/bold]")
 
     tscv = TimeSeriesSplit(n_splits=5)
     cv_aucs = []
@@ -242,15 +250,31 @@ def _train_and_evaluate(X: pd.DataFrame, y: pd.Series, feature_cols: list[str]):
     for fold, (tr, va) in enumerate(tscv.split(X)):
         Xtr, Xva = X.iloc[tr], X.iloc[va]
         ytr, yva = y.iloc[tr], y.iloc[va]
-        scaler = StandardScaler()
-        Xtr_s = scaler.fit_transform(Xtr)
-        Xva_s = scaler.transform(Xva)
-        clf = LogisticRegression(
-            max_iter=1000, C=1.0, solver="lbfgs",
-            class_weight="balanced",
-        )
-        clf.fit(Xtr_s, ytr)
-        proba = clf.predict_proba(Xva_s)[:, 1]
+        if model_type == "xgboost":
+            # S6-P2: XGBoost doesn't need scaling. class_weight surrogate via
+            # scale_pos_weight = neg / pos.
+            scaler = None
+            pos = max(int((ytr == 1).sum()), 1)
+            neg = max(int((ytr == 0).sum()), 1)
+            clf = xgb.XGBClassifier(
+                n_estimators=100, max_depth=4, learning_rate=0.08,
+                subsample=0.8, colsample_bytree=0.8,
+                objective="binary:logistic", eval_metric="logloss",
+                scale_pos_weight=neg / pos,
+                random_state=42, verbosity=0, n_jobs=-1,
+            )
+            clf.fit(Xtr, ytr)
+            proba = clf.predict_proba(Xva)[:, 1]
+        else:
+            scaler = StandardScaler()
+            Xtr_s = scaler.fit_transform(Xtr)
+            Xva_s = scaler.transform(Xva)
+            clf = LogisticRegression(
+                max_iter=1000, C=1.0, solver="lbfgs",
+                class_weight="balanced",
+            )
+            clf.fit(Xtr_s, ytr)
+            proba = clf.predict_proba(Xva_s)[:, 1]
         auc = roc_auc_score(yva, proba)
         brier = brier_score_loss(yva, proba)
         ll = log_loss(yva, proba)
@@ -265,24 +289,44 @@ def _train_and_evaluate(X: pd.DataFrame, y: pd.Series, feature_cols: list[str]):
 
     # Final model on all training data
     console.print("\n[bold]Final fit on all training data[/bold]")
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-    final_model = LogisticRegression(
-        max_iter=1000, C=1.0, solver="lbfgs",
-        class_weight="balanced",
-    )
-    final_model.fit(X_scaled, y)
-
-    # Coefficient inspection
-    coefs = dict(zip(feature_cols, final_model.coef_[0]))
-    console.print("\n[bold]Feature coefficients (sorted by |coef|)[/bold]")
-    t = Table()
-    for col in ("feature", "coef", "|coef|"):
-        t.add_column(col)
-    sorted_coefs = sorted(coefs.items(), key=lambda kv: abs(kv[1]), reverse=True)
-    for feat, c in sorted_coefs:
-        t.add_row(feat, f"{c:+.4f}", f"{abs(c):.4f}")
-    console.print(t)
+    if model_type == "xgboost":
+        scaler = None
+        pos = max(int((y == 1).sum()), 1)
+        neg = max(int((y == 0).sum()), 1)
+        final_model = xgb.XGBClassifier(
+            n_estimators=100, max_depth=4, learning_rate=0.08,
+            subsample=0.8, colsample_bytree=0.8,
+            objective="binary:logistic", eval_metric="logloss",
+            scale_pos_weight=neg / pos,
+            random_state=42, verbosity=0, n_jobs=-1,
+        )
+        final_model.fit(X, y)
+        # Feature importance instead of coefficients
+        importances = dict(zip(feature_cols, final_model.feature_importances_))
+        coefs = importances  # store under same key so threshold.json is consistent
+        console.print("\n[bold]Feature importances (XGBoost gain, sorted)[/bold]")
+        t = Table()
+        for col in ("feature", "importance"):
+            t.add_column(col)
+        for feat, c in sorted(importances.items(), key=lambda kv: kv[1], reverse=True):
+            t.add_row(feat, f"{c:.4f}")
+        console.print(t)
+    else:
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+        final_model = LogisticRegression(
+            max_iter=1000, C=1.0, solver="lbfgs",
+            class_weight="balanced",
+        )
+        final_model.fit(X_scaled, y)
+        coefs = dict(zip(feature_cols, final_model.coef_[0]))
+        console.print("\n[bold]Feature coefficients (sorted by |coef|)[/bold]")
+        t = Table()
+        for col in ("feature", "coef", "|coef|"):
+            t.add_column(col)
+        for feat, c in sorted(coefs.items(), key=lambda kv: abs(kv[1]), reverse=True):
+            t.add_row(feat, f"{c:+.4f}", f"{abs(c):.4f}")
+        console.print(t)
 
     near_zero = [f for f, c in coefs.items() if abs(c) < 0.05]
     if near_zero:
@@ -303,8 +347,10 @@ def _train_and_evaluate(X: pd.DataFrame, y: pd.Series, feature_cols: list[str]):
 
 def _pick_threshold(model, scaler, X, y) -> dict:
     """Choose firing threshold by maximizing precision-at-volume on holdout.
-    Default 0.5 if no clear winner. Returns threshold and metrics at chosen value."""
-    proba = model.predict_proba(scaler.transform(X))[:, 1]
+    Default 0.5 if no clear winner. Returns threshold and metrics at chosen value.
+    Scaler may be None (XGBoost path)."""
+    X_eval = X if scaler is None else scaler.transform(X)
+    proba = model.predict_proba(X_eval)[:, 1]
     # Sweep thresholds 0.30..0.70 in 0.025 steps
     best = {"threshold": 0.5, "score": -1e9, "metrics": {}}
     for t in np.arange(0.30, 0.71, 0.025):
@@ -332,6 +378,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--version", default=f"v_{_date.today().strftime('%Y%m%d')}",
                     help="Version tag — produces data/models/meta/<version>/")
+    ap.add_argument("--model", choices=("logistic", "xgboost"), default="logistic",
+                    help="Meta-model architecture. S6-P2 (2026-05-25) added xgboost.")
     ap.add_argument("--dry-run", action="store_true", help="Train but don't save the bundle")
     args = ap.parse_args()
 
@@ -344,7 +392,7 @@ def main():
     console.print(f"\n[bold]Feature matrix: {X.shape[0]:,} rows × {X.shape[1]} features[/bold]")
     console.print(f"  Features: {feature_cols}")
 
-    model, scaler, metrics = _train_and_evaluate(X, y, feature_cols)
+    model, scaler, metrics = _train_and_evaluate(X, y, feature_cols, model_type=args.model)
     thresh = _pick_threshold(model, scaler, X, y)
     console.print(f"\n[bold]Chosen firing threshold: {thresh['threshold']:.3f}[/bold]")
     console.print(f"  At threshold: n_fired={thresh['metrics']['n_fired']:,}  "
@@ -355,12 +403,16 @@ def main():
         console.print("\n[yellow]--dry-run: not saving bundle[/yellow]")
         return
 
-    # Save bundle
+    # Save bundle. For xgboost path scaler is None; still serialize None so
+    # the loader contract stays uniform (None means no scaling needed).
     out_dir = MODELS_DIR / args.version
     out_dir.mkdir(parents=True, exist_ok=True)
     joblib.dump(model, out_dir / "b_ml3.pkl")
     joblib.dump(scaler, out_dir / "scaler.pkl")
     joblib.dump(feature_cols, out_dir / "feature_cols.pkl")
+    # Record the model architecture so meta_b_ml3.score_bet can branch correctly.
+    with open(out_dir / "model_type.txt", "w") as f:
+        f.write(args.model)
     with open(out_dir / "threshold.json", "w") as f:
         json.dump({
             "chosen_threshold": thresh["threshold"],
