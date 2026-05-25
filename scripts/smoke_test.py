@@ -3751,6 +3751,54 @@ def _():
         assert needed in text, f"af_coverage_audit missing {needed!r}"
 
 
+@test("ODDS-TIMING-COHORT-PREP — BOT_COHORT_OVERRIDES env parses + overrides timing")
+def _():
+    """Env-driven override for BOT_TIMING_COHORTS. Lets us flip bot cohort
+    on 2026-06-07 via env (no code change). Format:
+    'bot_a:morning,bot_b:morning'.
+    """
+    import inspect
+    from workers.jobs import daily_pipeline_v2
+    src = inspect.getsource(daily_pipeline_v2)
+    assert "BOT_COHORT_OVERRIDES" in src, "env var must be referenced"
+    assert 'os.getenv("BOT_COHORT_OVERRIDES"' in src
+    assert "ovr_bot, ovr_cohort = pair.split" in src, "must parse 'bot:cohort' format"
+
+
+@test("LIVEPOLLER-EVENTS-GATE-IMPL — env gate + coverage_events check + default off")
+def _():
+    """Env-gated skip of /fixtures/events when leagues.coverage_events=false.
+    Activate via GATE_EVENTS_BY_COVERAGE=true on 2026-06-07. Default OFF.
+    AF-COVERAGE-AUDIT 2026-05-25 verified events flag is 95% accurate.
+    """
+    import inspect
+    from workers.jobs import live_tracker
+    src = inspect.getsource(live_tracker)
+    assert "GATE_EVENTS_BY_COVERAGE" in src, "env var must be referenced"
+    assert 'getenv("GATE_EVENTS_BY_COVERAGE", "false")' in src, "default must be false"
+    assert 'coverage_events' in src, "must check db_match['coverage_events']"
+    # The SELECT in db.py must include the join
+    from workers.api_clients import db as _db
+    db_src = inspect.getsource(_db.build_af_id_map)
+    assert "coverage_events" in db_src, "SELECT must include coverage_events"
+
+
+@test("DEPLOY-READINESS-20260608 — 9-check script exists + uses real queries")
+def _():
+    """Script that operator runs on 2026-06-08 morning before flipping env vars.
+    Validates candidate bundle, isotonic pickles, B-ML3 cohort, signal freshness,
+    Pinnacle coverage, Phase 4 verdict, etc. before going live with the deploy.
+    """
+    from pathlib import Path as _Path
+    script = _Path(__file__).resolve().parent / "deploy_readiness_20260608.py"
+    assert script.exists(), "deploy_readiness_20260608.py missing"
+    text = script.read_text()
+    for needed in ("check_candidate_bundle", "check_isotonic_pickles",
+                   "check_meta_validation", "check_aln1_recommendation",
+                   "check_pinnacle_today_coverage", "Env flips for 2026-06-08"):
+        assert needed in text, f"deploy_readiness missing: {needed}"
+
+
 @test("CALIBRATION-ISOTONIC-IMPL — dispatcher + per-market isotonic load + env gate default off")
 def _():
     """CALIBRATION-ISOTONIC-IMPL 2026-05-25 — adds isotonic as an alternative

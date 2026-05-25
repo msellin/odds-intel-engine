@@ -2477,6 +2477,22 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             # "all" = run at every cohort; dedup prevents duplicate bets.
             # SHADOW: run ALL bots — that's the whole point of the factorial design.
             bot_cohort = BOT_TIMING_COHORTS.get(bot_name, "morning")
+
+            # ODDS-TIMING-COHORT-PREP (2026-05-25): env-driven override so the
+            # 2026-06-07 cohort reassignment is a deploy-time env change instead
+            # of a code edit. Format: "bot_name:cohort,bot_name:cohort" e.g.
+            #   BOT_COHORT_OVERRIDES="bot_opt_away_british:morning,bot_opt_away_europe:morning"
+            # When set, overrides the in-code BOT_TIMING_COHORTS for matching bots.
+            _ovr = os.getenv("BOT_COHORT_OVERRIDES", "")
+            if _ovr:
+                for pair in _ovr.split(","):
+                    pair = pair.strip()
+                    if ":" in pair:
+                        ovr_bot, ovr_cohort = pair.split(":", 1)
+                        if ovr_bot.strip() == bot_name:
+                            bot_cohort = ovr_cohort.strip()
+                            break
+
             if not shadow_mode and cohort and bot_cohort != "all" and bot_cohort != cohort:
                 continue
 

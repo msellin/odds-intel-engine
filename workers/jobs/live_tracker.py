@@ -437,7 +437,19 @@ def run_live_tracker(dry_run: bool = False):
         new_events = 0
         red_cards_home = 0
         red_cards_away = 0
-        if db_match and not dry_run and af_id:
+        # LIVEPOLLER-EVENTS-GATE-IMPL (2026-05-25): env-gated coverage check.
+        # AF-COVERAGE-AUDIT (2026-05-25) found leagues.coverage_events flag is
+        # 95% accurate. When GATE_EVENTS_BY_COVERAGE=true, skip the /fixtures/events
+        # call for leagues flagged coverage_events=false — saves ~30 AF calls per
+        # live match in no-events leagues. Default OFF (no behaviour change).
+        import os as _os
+        _gate_on = _os.getenv("GATE_EVENTS_BY_COVERAGE", "false").lower() in ("true", "1", "yes")
+        _skip_events = (
+            _gate_on
+            and db_match is not None
+            and db_match.get("coverage_events") is False
+        )
+        if db_match and not dry_run and af_id and not _skip_events:
             try:
                 raw_events = get_fixture_events(af_id)
                 parsed_events = parse_fixture_events(raw_events)

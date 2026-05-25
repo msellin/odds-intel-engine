@@ -320,12 +320,16 @@ def build_af_id_map(target_date: str = None) -> dict[int, dict]:
     from datetime import timedelta
     today = target_date or date.today().isoformat()
     yesterday = (date.fromisoformat(today) - timedelta(days=1)).isoformat()
+    # LIVEPOLLER-EVENTS-GATE-IMPL (2026-05-25): league_id added so live_tracker
+    # can gate /fixtures/events fetch by league coverage_events flag.
     rows = execute_query(
-        """SELECT id, api_football_id, home_team_id, away_team_id,
-                  date, status, lineups_fetched_at
-           FROM matches
-           WHERE date::date IN (%s, %s)
-             AND api_football_id IS NOT NULL""",
+        """SELECT m.id, m.api_football_id, m.home_team_id, m.away_team_id,
+                  m.date, m.status, m.lineups_fetched_at,
+                  m.league_id, l.coverage_events
+           FROM matches m
+           LEFT JOIN leagues l ON l.id = m.league_id
+           WHERE m.date::date IN (%s, %s)
+             AND m.api_football_id IS NOT NULL""",
         (today, yesterday)
     )
     return {int(r["api_football_id"]): r for r in rows}
