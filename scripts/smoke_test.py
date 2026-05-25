@@ -7421,20 +7421,25 @@ def test_b_ml3_v2_active():
     assert meta_b_ml3.should_fire(0.1) is True
 
 
-@test("OVERNIGHT-ODDS-CAPTURE — scheduler adds 02:00 + 04:00 UTC odds_refresh slots")
+@test("OVERNIGHT-ODDS-CAPTURE — superseded by OPENING-LINE-MOVE-CAPTURE")
 def test_overnight_odds_capture():
-    """OVERNIGHT-ODDS-CAPTURE (2026-05-25): the 22:00-07:00 UTC gap left
-    MFV.overnight_line_move 0.2% populated because no snapshots were captured
-    overnight to compare against today's morning prices. Adding 02:00 + 04:00 UTC
-    slots starts collecting that data for the B-ML3 clean retrain on 2026-06-08+.
+    """OVERNIGHT-ODDS-CAPTURE 2026-05-25 was first shipped with 02:00 + 04:00
+    UTC slots fetching TODAY's odds — but today's matches had no prior
+    snapshot to diff against (verified 2026-05-25: 0 of 178 today-kickoff
+    matches had any yesterday snapshot). Superseded same day by
+    OPENING-LINE-MOVE-CAPTURE which fetches TOMORROW's odds at 22:00 UTC
+    instead, so the match-day morning fetch produces a real delta. The
+    OPENING-LINE-MOVE-CAPTURE smoke now guards the correct schedule;
+    this test only ensures the old broken slots stay removed.
     """
     import pathlib
     src = (pathlib.Path(__file__).resolve().parent.parent /
            "workers" / "scheduler.py").read_text()
-    assert "OVERNIGHT-ODDS-CAPTURE" in src, "tag missing"
-    assert 'CronTrigger(hour=2, minute=0)' in src, "02:00 UTC overnight slot must be registered"
-    assert 'CronTrigger(hour=4, minute=0)' in src, "04:00 UTC overnight slot must be registered"
-    assert 'id="odds_0200"' in src and 'id="odds_0400"' in src, "overnight job IDs must be set"
+    assert 'id="odds_0200"' not in src, "old broken 02:00 slot must stay removed"
+    assert 'id="odds_0400"' not in src, "old broken 04:00 slot must stay removed"
+    # The replacement must be wired
+    assert "OPENING-LINE-MOVE-CAPTURE" in src
+    assert "job_odds_tomorrow" in src
 
 
 @test("META-FEATURE-DESIGN — B-ML3 feature list is documented + grounded in coverage data")
