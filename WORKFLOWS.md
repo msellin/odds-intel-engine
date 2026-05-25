@@ -117,6 +117,25 @@ tracked under `ACCA-LEG-SHADOW-EVAL` in `PRIORITY_QUEUE.md`.
 
 ---
 
+## Service topology (WORKER-SPLIT-LIVEPOLLER, 2026-05-25)
+
+Two Railway service deployment is now supported:
+
+  **Service A — Scheduler (`python -m workers.scheduler`)**
+    Owns all cron jobs and the scheduled betting pipeline. Set
+    `LIVE_POLLER_IN_SCHEDULER=false` to skip starting the in-process
+    LivePoller thread (a crash in the poller won't take down the scheduler).
+
+  **Service B — LivePoller (`python -m workers.live_poller_main`)**
+    Standalone 24/7 LivePoller. SIGTERM/SIGINT graceful shutdown.
+    Independent Railway crash-restart cycle.
+
+Default config (single service) still works: scheduler starts the
+in-process poller because `LIVE_POLLER_IN_SCHEDULER` defaults to `true`.
+To switch, deploy Service B from the same repo with the alternate CMD,
+then flip `LIVE_POLLER_IN_SCHEDULER=false` on Service A. Cost +$2-3/mo
+on Hobby plan; blast radius isolated.
+
 ## Execution: Railway vs GitHub Actions
 
 | Component | Runs on | How |

@@ -253,6 +253,35 @@ The decision to flip `META_B_ML3_ENABLED=true` on Railway is **gated on empirica
 
 **Cadence:** first run at ~2026-06-10 (3 days after the Phase 4 verdict on 2026-06-07 — gives a buffer to act on the MAIN-model decision first, then validate meta). Re-run weekly thereafter while `META_B_ML3_ENABLED=false`. Once activated, the same script becomes the regression guard: a drop from PASS to MARGINAL/FAIL signals the meta-model has drifted out of regime.
 
+### 3.6 B-ML3 v3 — Null Result on MFV-V3 Features (2026-05-25)
+
+After shipping the MFV-V3 signal batch on 2026-05-25 (LEAGUE-DRAW-YTD, LEAGUE-SEASON-PHASE, LINE-VELOCITY, SIG-12 xG overperf, INJURY-SEVERITY, AF-PLAYER-RATINGS), we retrained B-ML3 with all 10 new features added to `MATCH_LEVEL_FEATURES`. Bundle `v_20260525_v3_xgb` produced **CV AUC 0.5879 ± 0.0534** — virtually identical to v23_xgb's 0.587.
+
+**Interpretation:** the new signals improve the MAIN model where they add raw outcome information (1X2 log_loss -6.5% to -7.8% in the corresponding v_20260525_signals MAIN bundle). But the meta-model can't extract additional CLV-beat signal from them because those signals partly *define* closing-line movement — they predict the same target Pinnacle's market-maker is reacting to. There's nothing left for the meta to learn after the MAIN model already consumes them.
+
+**Action:** **keep v_20260525_v23_xgb as the active candidate** for the 2026-06-10 B-ML3-VALIDATE-ACTIVATION decision. Future meta-model improvements should target signals that the MAIN model *doesn't* consume — e.g. bet-time-specific features (recommendation order, exposure tier, bot identity, time-since-last-fire), not match-time signals.
+
+### 3.7 LONGSHOT-GEO-AUDIT — Global Platt Overconfidence (2026-05-25)
+
+Audit of 563 settled 1X2 bets over the last 60 days, binned by `calibrated_prob` in 5pp steps:
+
+| Bin | n | avg predicted | actual win % | gap |
+|---|---|---|---|---|
+| 0.25-0.30 | 77 | 28.1% | 23.4% | -4.7pp |
+| 0.30-0.35 | 100 | 30.7% | 15.0% | **-15.7pp** |
+| 0.35-0.40 | 103 | 38.4% | 26.2% | **-12.1pp** |
+| 0.40-0.45 | 243 | 42.5% | 36.2% | -6.2pp |
+| 0.45-0.50 | 39 | 46.4% | 30.8% | **-15.6pp** |
+
+**The 30-50% probability range is systematically overconfident by 12-16pp.** Originally hypothesized as geographically concentrated (South American / Eastern European home-advantage inflation) — per-country breakdown rejects that: no country diverges by ≥5pp from the global average in the 0.30-0.40 focus bin.
+
+**Implication:** the bias is at the **global Platt calibration** layer, not per-country. Per-tier Platt isn't catching it. Filed `GLOBAL-PLATT-OVERCONFIDENCE` follow-up for the next post-Phase-3.5 weekly retrain — should consider:
+- Re-fit Platt with stronger regularization on the 30-50% bins
+- Switch Stage-2 calibrator from Platt to isotonic regression (handles non-monotonic miscalibration)
+- Add an explicit 2-parameter (intercept + slope) Platt per (tier × bin) instead of the current per-tier scalar
+
+Currently the bot edge gate compensates partially: a 5% min-edge requirement on a 30%-predicted bet implies the model needs `cal_prob > 0.30 + 0.05 = 0.35`, and the actual hit rate at predicted 0.35 is 26% — so the edge is mostly being eaten by the calibration error rather than translating to real ROI. Fixing Platt should mechanically improve real-money ROI on the 30-50% slice.
+
 ---
 
 ## 4. Model Architecture
