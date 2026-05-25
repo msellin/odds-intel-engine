@@ -602,6 +602,38 @@ def _():
     )
 
 
+@test("COOLBET-NO-MARKET-PRESENCE — no_market path writes a presence-marker snapshot (source inspect)")
+def _():
+    """When Coolbet has the event but not the bet's specific market+selection,
+    the placer must still write one canonical odds_snapshot so the frontend's
+    `matchIdsWithCoolbetEvent` proxy can chip the row as `no_market` instead of
+    the misleading `no_event` ('⚠ no match'). Discovered when Sportivo Carapeguá
+    vs Atlético Tembetary showed '⚠ no match' for `double_chance x2` even
+    though the match exists on Coolbet — Coolbet just doesn't offer DC for the
+    Paraguay D. Intermedia league.
+    """
+    import inspect
+    from workers.automation import coolbet_placer
+    src = inspect.getsource(coolbet_placer)
+    assert "def _write_presence_marker_snapshot" in src, (
+        "presence-marker helper must exist in coolbet_placer"
+    )
+    # The helper has to be called from the no_market branch BEFORE the continue,
+    # so a single source-walk verifies the order.
+    no_mkt_idx = src.index('"outcome": "no_market"')
+    presence_idx = src.rindex("_write_presence_marker_snapshot", 0, no_mkt_idx)
+    assert presence_idx > 0 and presence_idx < no_mkt_idx, (
+        "presence marker must be written before the no_market continue"
+    )
+    fn = inspect.getsource(coolbet_placer._write_presence_marker_snapshot)
+    assert '"1x2"' in fn and '"Home"' in fn, (
+        "helper must prefer 1x2 Home (universally available across leagues)"
+    )
+    assert "store_coolbet_odds_snapshot" in fn, (
+        "helper must write to odds_snapshots (the frontend's evidence source)"
+    )
+
+
 @test("SETTLEMENT-POSTPONED-VOID — postponed/cancelled real_bets get auto-voided (source inspect)")
 def _():
     """Singles real_bets on matches that move to status='postponed'/'cancelled'/

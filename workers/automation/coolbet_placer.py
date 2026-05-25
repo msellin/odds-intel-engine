@@ -848,6 +848,53 @@ def fuzzy_match_event(
     return best_event
 
 
+def _write_presence_marker_snapshot(
+    match_id: str,
+    markets: list[dict],
+    odds_map: dict[int, dict],
+    match_date,
+) -> None:
+    """Write one canonical odds_snapshot proving the event exists on Coolbet.
+
+    Used in the no_market path so the frontend can distinguish "event present
+    but doesn't offer this market" from "event not at Coolbet at all".
+    Prefers 1X2 Home; falls back to the first parseable market+selection.
+    Errors are swallowed — this is a UX hint, never a correctness path.
+    """
+    from workers.automation.coolbet_explorer import parse_market
+
+    mins_to_ko: int | None = None
+    if match_date is not None:
+        if match_date.tzinfo is None:
+            match_date = match_date.replace(tzinfo=timezone.utc)
+        import math as _math
+        mins_to_ko = -int(_math.ceil(
+            (match_date - datetime.now(timezone.utc)).total_seconds() / 60
+        ))
+
+    chosen: tuple[str, str, float] | None = None  # (market, selection, odds)
+    for mkt in markets:
+        rows = parse_market(mkt, odds_map)
+        for market, selection, odds, _hline in rows:
+            if market == "1x2" and selection == "Home":
+                chosen = (market, selection, odds)
+                break
+            if chosen is None:
+                chosen = (market, selection, odds)
+        if chosen and chosen[0] == "1x2":
+            break
+
+    if chosen is None:
+        return
+    try:
+        from workers.api_clients.supabase_client import store_coolbet_odds_snapshot
+        store_coolbet_odds_snapshot(match_id, chosen[0], chosen[1], chosen[2], mins_to_ko)
+        log.debug("Presence marker snapshot written: %s %s %s %.3f",
+                  match_id, chosen[0], chosen[1], chosen[2])
+    except Exception as e:
+        log.warning("Presence marker snapshot failed for %s: %s", match_id, e)
+
+
 def find_market_outcome(
     bet_offers: list[dict], our_market: str, our_selection: str
 ) -> tuple[int | None, int | None, float | None]:
@@ -1178,6 +1225,13 @@ def place_all_bets(
             log.info("Market %s/%s not found for %s (matchId=%s) — "
                      "available markets: %s",
                      mkt, sel, label, coolbet_match_id, available or "none")
+            # COOLBET-NO-MARKET-PRESENCE (2026-05-25): even though this specific
+            # market+selection failed, the event itself exists on Coolbet. Write
+            # one canonical snapshot (1X2 home if available) so the frontend's
+            # `matchIdsWithCoolbetEvent` set can correctly chip this as
+            # "no_market" instead of the misleading "no_event" / "⚠ no match".
+            _write_presence_marker_snapshot(str(bet["match_id"]), markets, odds_map,
+                                            bet.get("match_date"))
             results.append({**bet, "outcome": "no_market"})
             continue
         bo_id, oc_id, odds_uuid, ev_odds = target
