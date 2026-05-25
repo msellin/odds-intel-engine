@@ -337,6 +337,28 @@ Gradient boosted decision tree trained on historical match data:
 
 Regressor hyperparameters mirror the classifiers (`n_estimators=200`, `max_depth=5`, `lr=0.05`, `subsample=0.8`, `colsample_bytree=0.8`) with `objective="count:poisson"` + `eval_metric="poisson-nloglik"`. CV reports per-fold RMSE and Poisson deviance.
 
+### 4.1c How Each Market Gets Its Probability (2026-05-25)
+
+Production routes the 6 market families through 3 distinct computational paths inside a single MAIN bundle:
+
+| Market | Computational path | Calibration |
+|---|---|---|
+| **1X2** (home / draw / away) | `result_1x2.pkl` classifier head (XGBoost multi:softprob) | Stage 1 tier-shrinkage + Stage 2 Platt/isotonic |
+| **OU 2.5** | `over_under.pkl` classifier head | Stage 1 tier-shrinkage + Stage 2 Platt/isotonic |
+| **BTTS yes/no** | `btts.pkl` classifier head | Stage 1 tier-shrinkage + Stage 2 Platt/isotonic |
+| **OU 1.5 / 3.5 / 4.5** | Derived from `home_goals.pkl` + `away_goals.pkl` Poisson regressors → Dixon-Coles joint goal matrix → integrate margin distribution above/below the line | No separate fit — λ already came from a calibrated 1X2 inversion (`_solve_lambdas_calibrated`) |
+| **Asian Handicap** | Same Poisson + DC joint matrix → `_ah_model_prob()` integrates margin distribution over the handicap line, handling whole/half/quarter line push-adjustments | **AH-CAL-BYPASS** (2026-05-24): Stage 1 shrinkage SKIPPED (would double-shrink because λ already came from already-Platt-calibrated 1X2 probs). Stage 2 `apply_platt` is a no-op for AH (no fit stored). |
+| **Double Chance** (1X / X2 / 12) | Direct sums of Stage-2-calibrated 1X2 probabilities | Inherits 1X2 calibration; no separate fit. **AH-CAL-BYPASS** also applies (Stage 1 skipped). |
+
+So when `MODEL_VERSION=v_20260525_depth8` is set, the same 5-file bundle drives all 6 market families. Improving the goal regressors (`home_goals.pkl`, `away_goals.pkl`) automatically improves AH + OU 1.5/3.5/4.5 via the joint matrix.
+
+**Dedicated AH classifier head (candidate, 2026-05-25).** `scripts/train_ah_xgboost.py` trains a standalone XGBoost AH classifier on `main-line` AH cohort (~3,200 settled matches). First bundle `data/models/ah_xgb/v_20260525` produced **CV AUC 0.7308 ± 0.0205**. NOT wired into production yet — would require:
+1. Inference router that picks AH-XGBoost output over `_ah_model_prob()` when bundle present
+2. Env gate (`AH_XGB_ENABLED=true`)
+3. A/B comparison vs the Poisson-derived path on settled AH bets
+
+Filed as future work. Production AH stays on the Poisson-derived path. The MARKET-EVAL-BTTS-AH eval (2026-05-24) showed Poisson-derived AH log-loss already improves -9 to -11% in candidate vs v14, so the dedicated head isn't urgent.
+
 ### 4.2 Ensemble
 
 ```
