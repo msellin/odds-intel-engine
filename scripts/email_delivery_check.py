@@ -27,15 +27,21 @@ console = Console()
 def _check_env() -> tuple[str, str, str] | None:
     api = os.getenv("RESEND_API_KEY", "")
     admin = os.getenv("ADMIN_ALERT_EMAIL", "")
-    from_email = os.getenv("ALERT_FROM_EMAIL", "")
-    missing = [n for n, v in (("RESEND_API_KEY", api), ("ADMIN_ALERT_EMAIL", admin), ("ALERT_FROM_EMAIL", from_email)) if not v]
+    # Resolve from-address: ALERT_FROM_EMAIL → DIGEST_FROM_EMAIL → fail.
+    # On Railway today, DIGEST_FROM_EMAIL is the configured sender used by
+    # the daily perf email job; we use the same address for alerts.
+    from_email = os.getenv("ALERT_FROM_EMAIL", "") or os.getenv("DIGEST_FROM_EMAIL", "")
+    from_source = "ALERT_FROM_EMAIL" if os.getenv("ALERT_FROM_EMAIL") else "DIGEST_FROM_EMAIL"
+    missing = [n for n, v in (("RESEND_API_KEY", api), ("ADMIN_ALERT_EMAIL", admin)) if not v]
+    if not from_email:
+        missing.append("ALERT_FROM_EMAIL or DIGEST_FROM_EMAIL")
     if missing:
         console.print(f"[red]✗ Missing env vars: {missing}[/red]")
         return None
     console.print(f"[green]✓ env vars present[/green]")
-    console.print(f"    RESEND_API_KEY  set ({len(api)} chars)")
+    console.print(f"    RESEND_API_KEY     set ({len(api)} chars)")
     console.print(f"    ADMIN_ALERT_EMAIL  {admin}")
-    console.print(f"    ALERT_FROM_EMAIL   {from_email}")
+    console.print(f"    from-address       {from_email}  (via {from_source})")
     return api, admin, from_email
 
 

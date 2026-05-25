@@ -3847,8 +3847,25 @@ def _():
     assert script.exists(), "scripts/email_delivery_check.py missing"
     text = script.read_text()
     for needed in ("_check_env", "_check_spf", "_check_dkim", "_send_test",
-                   "resend._domainkey", "v=spf1", "_spf.resend.com"):
+                   "resend._domainkey", "v=spf1", "_spf.resend.com",
+                   "DIGEST_FROM_EMAIL"):
         assert needed in text, f"email_delivery_check missing {needed!r}"
+
+
+@test("EMAIL-FROM-FALLBACK — aln_auto_tune falls back to DIGEST_FROM_EMAIL when ALERT_FROM_EMAIL unset")
+def _():
+    """Railway has DIGEST_FROM_EMAIL configured (not ALERT_FROM_EMAIL).
+    All new email jobs must fall back so emails don't silently drop.
+    """
+    from pathlib import Path as _Path
+    aln = _Path(__file__).resolve().parent.parent / "workers" / "jobs" / "aln_auto_tune.py"
+    src = aln.read_text()
+    assert 'os.getenv("ALERT_FROM_EMAIL")' in src and 'os.getenv("DIGEST_FROM_EMAIL")' in src, \
+        "aln_auto_tune must consult both ALERT_FROM_EMAIL + DIGEST_FROM_EMAIL"
+    # Order matters — ALERT_FROM_EMAIL is checked first, then falls back
+    a_pos = src.find('os.getenv("ALERT_FROM_EMAIL")')
+    d_pos = src.find('os.getenv("DIGEST_FROM_EMAIL")')
+    assert a_pos < d_pos, "ALERT_FROM_EMAIL must be the primary; DIGEST_FROM_EMAIL the fallback"
 
 
 @test("WORKER-SPLIT-LIVEPOLLER — standalone entrypoint + env-gated in-scheduler thread")
