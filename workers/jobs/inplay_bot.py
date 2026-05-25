@@ -31,10 +31,54 @@ xG source:
 
 import json
 import math
+import os
 from datetime import datetime, timezone
 from rich.console import Console
 
 console = Console()
+
+
+# ── INPLAY-SOFT-GATES (2026-05-25) ───────────────────────────────────────────
+# Helpers to replace boolean cliff-edge gates with continuous closeness scores.
+# Strategies wired to soft gates aggregate component scores into a single
+# total and fire only if total >= threshold. Default mode is DISABLED — boolean
+# behaviour preserved everywhere except where _SOFT_GATES_ENABLED is consulted
+# and a strategy has explicitly opted in. Activate via INPLAY_SOFT_GATES_ENABLED=true.
+_SOFT_GATES_ENABLED = os.getenv("INPLAY_SOFT_GATES_ENABLED", "false").lower() in ("true", "1", "yes")
+
+
+def _gate_score(value: float | int | None, threshold: float, *, side: str = "above",
+                tolerance_pct: float = 0.10) -> float:
+    """Continuous closeness score [0..1] vs a boolean threshold.
+
+    side="above": value >= threshold → 1.0; value <= threshold*(1-tolerance) → 0.0;
+                  linear ramp in between.
+    side="below": value <= threshold → 1.0; value >= threshold*(1+tolerance) → 0.0.
+
+    tolerance_pct: how far below (above) the threshold still earns partial credit.
+    Use 0.10 for a 10pp tolerance band. None / NaN values score 0.0.
+    """
+    if value is None:
+        return 0.0
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if math.isnan(v):
+        return 0.0
+    tol = max(1e-6, abs(threshold) * tolerance_pct)
+    if side == "above":
+        if v >= threshold:
+            return 1.0
+        if v <= threshold - tol:
+            return 0.0
+        return (v - (threshold - tol)) / tol
+    # side == "below"
+    if v <= threshold:
+        return 1.0
+    if v >= threshold + tol:
+        return 0.0
+    return ((threshold + tol) - v) / tol
 
 # ── Bot Configs ──────────────────────────────────────────────────────────────
 
@@ -1421,21 +1465,37 @@ def _check_strategy_c(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
 
     # Dominance check (loosened possession 2026-05-08: home 55→52, away 60→55)
     if is_real:
-        if fav_xg <= opp_xg:
-            return None
         min_poss = 52.0 if home_is_fav else 55.0
     else:
-        # Proxy: use SoT differential instead; raise possession threshold
-        if fav_sot <= opp_sot:
-            return None
         min_poss = 55.0 if home_is_fav else 58.0
 
-    if fav_poss < min_poss:
-        return None
-
-    # SoT guard: favourite must not be losing the shots battle
-    if fav_sot < opp_sot:
-        return None
+    # INPLAY-SOFT-GATES (2026-05-25): aggregate near-miss scoring instead of
+    # boolean cliff-edge gates. Each component scores [0..1] continuously; we
+    # fire iff the total ≥ 2.5 (out of 3 components). Default mode keeps the
+    # original boolean gates so this path only activates with the env flag.
+    # Strategy_d is the reference impl; other strategies stay boolean.
+    if _SOFT_GATES_ENABLED:
+        if is_real:
+            dom_score = _gate_score(fav_xg - opp_xg, 0.0, side="above", tolerance_pct=1.0)
+        else:
+            dom_score = _gate_score(fav_sot - opp_sot, 0.0, side="above", tolerance_pct=1.0)
+        poss_score = _gate_score(fav_poss, min_poss, side="above", tolerance_pct=0.10)
+        sot_score = _gate_score(fav_sot - opp_sot, 0.0, side="above", tolerance_pct=1.0)
+        total = dom_score + poss_score + sot_score
+        if total < 2.5:
+            return None
+    else:
+        # Boolean path (default — preserved exactly).
+        if is_real:
+            if fav_xg <= opp_xg:
+                return None
+        else:
+            if fav_sot <= opp_sot:
+                return None
+        if fav_poss < min_poss:
+            return None
+        if fav_sot < opp_sot:
+            return None
 
     if home_is_fav:
         odds = cand.get("live_1x2_home")

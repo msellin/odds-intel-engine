@@ -3740,6 +3740,43 @@ def _():
     )
 
 
+@test("INPLAY-SOFT-GATES — _gate_score helper + env-gated reference impl in strategy_c")
+def _():
+    """INPLAY-SOFT-GATES 2026-05-25 — continuous closeness score replaces
+    boolean cliff-edge gates in inplay strategies. Default OFF (boolean
+    path preserved); INPLAY_SOFT_GATES_ENABLED=true activates the soft
+    path. Guards: helper math, env-flag default, strategy_d wired to use
+    the helper, boolean fallback preserved (anti-regression).
+    """
+    import importlib
+    from workers.jobs import inplay_bot
+    importlib.reload(inplay_bot)
+    gs = inplay_bot._gate_score
+    # Hard pass / fail
+    assert gs(60, 55, side="above") == 1.0, "value above threshold = full credit"
+    # tolerance band = |threshold|*tolerance_pct → 55*0.10 = 5.5
+    assert gs(40, 55, side="above", tolerance_pct=0.10) == 0.0, "value far below band = no credit"
+    # Ramp in tolerance band
+    score = gs(52, 55, side="above", tolerance_pct=0.10)
+    assert 0.0 < score < 1.0, f"in-band should ramp, got {score}"
+    # Below side
+    assert gs(40, 55, side="below") == 1.0
+    assert gs(80, 55, side="below", tolerance_pct=0.10) == 0.0
+    # None / NaN safety
+    assert gs(None, 55) == 0.0
+    assert gs(float("nan"), 55) == 0.0
+    # Default OFF
+    assert inplay_bot._SOFT_GATES_ENABLED is False, \
+        "INPLAY_SOFT_GATES_ENABLED must default to False"
+    # Strategy_c (favourite-leading-loser) wired as the reference impl
+    import inspect
+    src = inspect.getsource(inplay_bot._check_strategy_c)
+    assert "_SOFT_GATES_ENABLED" in src, "strategy_c must consult the env flag"
+    assert "_gate_score(" in src, "strategy_c must use _gate_score"
+    # Boolean fallback still present (so default behaviour is unchanged)
+    assert "if fav_sot < opp_sot:" in src, "boolean SoT guard must be preserved"
+
+
 @test("INJURY-SEVERITY — keyword classifier maps reasons to SEVERE/MODERATE/MINOR/UNKNOWN")
 def _():
     """INJURY-SEVERITY 2026-05-25 — replaces raw injury count with
