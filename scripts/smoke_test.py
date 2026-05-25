@@ -3740,6 +3740,27 @@ def _():
     )
 
 
+@test("AF-PLAYER-RATINGS — compute_team_avg_player_rating.py + scheduler job + signal name pattern")
+def _():
+    """AF-PLAYER-RATINGS 2026-05-25 — rolling per-team AF player rating
+    written to match_signals nightly. Guards: (1) script exists, (2)
+    writes team_avg_player_rating_{home,away}, not some other name,
+    (3) scheduler has a job registered at 22:50.
+    """
+    from pathlib import Path as _Path
+    script_path = _Path(__file__).resolve().parent / "compute_team_avg_player_rating.py"
+    assert script_path.exists(), "scripts/compute_team_avg_player_rating.py is missing"
+    text = script_path.read_text()
+    assert "team_avg_player_rating_home" in text and "team_avg_player_rating_away" in text, \
+        "signal names must match the home/away naming pattern"
+    # scheduler.py is text-grep'd (not imported) to avoid pulling apscheduler
+    # into the local test env.
+    sched_path = _Path(__file__).resolve().parent.parent / "workers" / "scheduler.py"
+    sched_src = sched_path.read_text()
+    assert "job_team_avg_player_rating" in sched_src, "scheduler must register the job"
+    assert "compute_team_avg_player_rating.py" in sched_src, "scheduler must invoke the script"
+
+
 @test("AH-XGBOOST — train_ah_xgboost.py script + AH label helper + 20-feature schema")
 def _():
     """AH-XGBOOST 2026-05-25 — dedicated XGBoost head for AH pricing.

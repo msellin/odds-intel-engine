@@ -560,6 +560,29 @@ def job_league_clv_efficiency():
     _run_job("league_clv_efficiency", _run)
 
 
+def job_team_avg_player_rating():
+    """AF-PLAYER-RATINGS (2026-05-25): nightly rolling-team-rating refresh.
+    Computes per-team last-10-match average AF player rating from
+    match_player_stats and stores as match_signals rows
+    (team_avg_player_rating_home/away). Feeds the next MFV rebuild / B-ML3
+    v3+ training cohort.
+    """
+    import subprocess
+    def _run():
+        result = subprocess.run(
+            [sys.executable, "scripts/compute_team_avg_player_rating.py", "--write"],
+            cwd=str(Path(__file__).parent.parent),
+            timeout=900,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[yellow]team_avg_player_rating exit {result.returncode}: {result.stderr[-1000:]}[/yellow]")
+            raise RuntimeError(f"team_avg_player_rating failed: exit {result.returncode}")
+        console.print(result.stdout[-1500:])
+    _run_job("team_avg_player_rating", _run)
+
+
 def job_daily_real_perf_email():
     """DAILY-REAL-PERF-EMAIL (2026-05-25): captures yesterday + 7d real-bet
     performance split (placer vs manual) and emails the summary via Resend.
@@ -1090,6 +1113,16 @@ def main():
     scheduler.add_job(job_nightly_mfv_form_momentum_refresh,
                       CronTrigger(hour=22, minute=45),
                       id="mfv_form_momentum_refresh", name="MFV Form Momentum Refresh 22:45")
+
+    # AF-PLAYER-RATINGS (2026-05-25): rolling team rating refresh 22:50 UTC.
+    # Reads match_player_stats (AF /fixtures/players already ingested for
+    # every ~191/280 matches/day) and writes team_avg_player_rating_home/away
+    # to match_signals. Slot between the two MFV refreshes to keep nightly
+    # data-pipeline jobs ordered.
+    scheduler.add_job(job_team_avg_player_rating,
+                      CronTrigger(hour=22, minute=50),
+                      id="team_avg_player_rating",
+                      name="AF Player Ratings Rolling 22:50")
 
     # ENG-8: Watchlist alerts — 08:30, 14:30, 20:35 UTC
     # 20:35 staggered 5 min after 20:30 betting refresh (N9 fix — avoids simultaneous heavy jobs)
