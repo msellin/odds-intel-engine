@@ -22,6 +22,10 @@ DB access (2026-05-03): All DB queries use direct psycopg2 via execute_query()
 """
 
 import math
+import os
+
+from rich.console import Console
+console = Console()
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -175,7 +179,7 @@ def calibrate_prob(model_prob: float, implied_prob: float,
     # Skip stage 1 here; apply_platt below is already a no-op for these markets
     # (no Platt fit stored for `asian_handicap_*` or `double_chance_*`).
     if mkt_lower.startswith("asian_handicap") or mkt_lower.startswith("double_chance"):
-        return apply_platt(model_prob, market, odds=odds)
+        return _apply_stage2(model_prob, market, odds=odds)
 
     goalline = any(mkt_lower.startswith(p) for p in _GOALLINE_PREFIXES)
     alpha = _get_shrinkage_alpha(tier, goalline)
@@ -198,9 +202,9 @@ def calibrate_prob(model_prob: float, implied_prob: float,
 
     shrunk = alpha * model_prob + (1 - alpha) * effective_anchor
 
-    # Stage 2: Platt sigmoid / 2-feature logistic (if available for this market)
-    # Pass odds so O/U markets can use the 2-feature logistic (CAL-PLATT-UPGRADE)
-    return apply_platt(shrunk, market, odds=odds)
+    # Stage 2: Platt sigmoid / 2-feature logistic / isotonic (if available)
+    # Dispatcher reads STAGE2_CALIBRATOR env var; default 'platt' = no change.
+    return _apply_stage2(shrunk, market, odds=odds)
 
 
 # =============================================================================
@@ -281,6 +285,103 @@ def reset_platt_cache():
     """Force reload of Platt params on next call. Used by tests."""
     global _platt_params
     _platt_params = None
+
+
+# =============================================================================
+# P1c: ISOTONIC CALIBRATION (CALIBRATION-ISOTONIC-IMPL, 2026-05-25)
+# =============================================================================
+#
+# Isotonic regression as an alternative Stage-2 calibrator. Found 2026-05-25
+# via LONGSHOT-GEO-AUDIT + calibrate_isotonic_test.py: isotonic beats Platt
+# by +0.0115 ECE on the candidate bundle (20% relative). The 30-50% predicted-
+# prob bin (where most bot edges live) is where Platt is systematically -12 to
+# -16pp overconfident; isotonic closes most of that gap.
+#
+# Env gate: STAGE2_CALIBRATOR
+#   'platt'    (default) — existing behaviour, no changes
+#   'isotonic' — load and apply per-market isotonic models from the active
+#                bundle's data/models/soccer/<version>/isotonic_<market>.pkl
+#
+# Falls back to Platt when:
+#   - env var unset or 'platt'
+#   - isotonic file missing for the market (graceful fallback, logs once)
+#   - load failure
+#
+# Fit via scripts/fit_isotonic_offline.py — produces one .pkl per market.
+
+_isotonic_models: dict[str, object] | None = None
+_isotonic_missing_logged: set[str] = set()
+
+
+def load_isotonic_models() -> dict[str, object]:
+    """Load per-market IsotonicRegression instances from the active bundle dir.
+
+    Reads from data/models/soccer/<MODEL_VERSION>/isotonic_<market>.pkl.
+    Empty dict if no isotonic models present — apply_isotonic then falls
+    back to Platt.
+
+    Cached for process lifetime; reset via reset_isotonic_cache().
+    """
+    global _isotonic_models
+    if _isotonic_models is not None:
+        return _isotonic_models
+    _isotonic_models = {}
+    try:
+        from pathlib import Path
+        import joblib
+        version = os.getenv("MODEL_VERSION", "")
+        if not version:
+            return _isotonic_models
+        bundle_dir = Path(__file__).resolve().parent.parent.parent / "data" / "models" / "soccer" / version
+        if not bundle_dir.exists():
+            return _isotonic_models
+        for f in bundle_dir.glob("isotonic_*.pkl"):
+            market = f.stem.replace("isotonic_", "")
+            try:
+                _isotonic_models[market] = joblib.load(f)
+            except Exception as e:
+                console.print(f"[yellow]Failed to load {f.name}: {e}[/yellow]")
+    except Exception as e:
+        console.print(f"[yellow]load_isotonic_models error: {e}[/yellow]")
+    return _isotonic_models
+
+
+def apply_isotonic(prob: float, market: str) -> float:
+    """Apply isotonic calibration for this market. Falls back to Platt
+    if no isotonic model is loaded for the market.
+    """
+    if not market:
+        return prob
+    models = load_isotonic_models()
+    model = models.get(market)
+    if model is None:
+        if market not in _isotonic_missing_logged:
+            _isotonic_missing_logged.add(market)
+            console.print(f"[dim]isotonic: no model for '{market}' — falling back to Platt[/dim]")
+        return apply_platt(prob, market)
+    try:
+        calibrated = float(model.predict([prob])[0])
+        return max(0.0, min(1.0, calibrated))
+    except Exception:
+        return apply_platt(prob, market)
+
+
+def reset_isotonic_cache():
+    """Force reload of isotonic models on next call. Used by tests."""
+    global _isotonic_models, _isotonic_missing_logged
+    _isotonic_models = None
+    _isotonic_missing_logged = set()
+
+
+def _apply_stage2(prob: float, market: str, odds: float | None = None) -> float:
+    """Stage-2 calibration dispatch — picks isotonic or Platt based on
+    STAGE2_CALIBRATOR env var. Default = 'platt' (no behaviour change).
+    Activate isotonic on 2026-06-08 via `STAGE2_CALIBRATOR=isotonic`.
+    """
+    mode = os.getenv("STAGE2_CALIBRATOR", "platt").lower()
+    if mode == "isotonic":
+        return apply_isotonic(prob, market)
+    return apply_platt(prob, market, odds=odds)
 
 
 # =============================================================================

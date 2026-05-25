@@ -59,7 +59,13 @@ REQUIRED_FILES = (
     "home_goals.pkl",
     "away_goals.pkl",
 )
-OPTIONAL_FILES = ("btts.pkl", "platt.pkl")
+OPTIONAL_FILES = (
+    "btts.pkl", "platt.pkl",
+    # CALIBRATION-ISOTONIC-IMPL (2026-05-25): per-market isotonic
+    # calibrators. Picked up by improvements.py when STAGE2_CALIBRATOR=isotonic.
+    "isotonic_1x2_home.pkl", "isotonic_1x2_draw.pkl", "isotonic_1x2_away.pkl",
+    "isotonic_over_25.pkl", "isotonic_btts_yes.pkl",
+)
 
 
 def _client():

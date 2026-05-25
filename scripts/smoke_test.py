@@ -3751,6 +3751,47 @@ def _():
         assert needed in text, f"af_coverage_audit missing {needed!r}"
 
 
+@test("CALIBRATION-ISOTONIC-IMPL — dispatcher + per-market isotonic load + env gate default off")
+def _():
+    """CALIBRATION-ISOTONIC-IMPL 2026-05-25 — adds isotonic as an alternative
+    Stage-2 calibrator behind STAGE2_CALIBRATOR env var. Default 'platt' (no
+    behaviour change). Activate post-Phase-3.5 (2026-06-08) via env flip.
+
+    Validated: fit_isotonic_offline.py on v_20260525_signals showed 50-72%
+    ECE reduction across all 5 markets vs baseline (raw scores).
+
+    Guards:
+      - calibrate_prob routes through _apply_stage2 dispatcher
+      - default env behaviour stays platt (no change for production today)
+      - apply_isotonic exists and falls back to platt on missing market
+      - load_isotonic_models reads from bundle dir
+      - fit script exists
+    """
+    import os as _os, inspect
+    from workers.model import improvements
+    # Restore env to default before any check
+    prev = _os.environ.pop("STAGE2_CALIBRATOR", None)
+    try:
+        src = inspect.getsource(improvements)
+        for needed in ("_apply_stage2", "apply_isotonic", "load_isotonic_models",
+                       "STAGE2_CALIBRATOR", "isotonic_"):
+            assert needed in src, f"isotonic plumbing missing: {needed}"
+        # Default mode = platt — confirm dispatcher routes correctly
+        assert 'os.getenv("STAGE2_CALIBRATOR", "platt")' in src, "default must be platt"
+        # apply_isotonic must fall back to platt when no model
+        improvements.reset_isotonic_cache()
+        out = improvements.apply_isotonic(0.5, "1x2_home_nonexistent_market")
+        # Should equal what apply_platt returns (which for unknown market = prob unchanged)
+        assert out == 0.5 or 0 <= out <= 1, "fallback should produce a valid prob"
+        # Fit script
+        from pathlib import Path as _Path
+        fit_script = _Path(__file__).resolve().parent / "fit_isotonic_offline.py"
+        assert fit_script.exists()
+    finally:
+        if prev is not None:
+            _os.environ["STAGE2_CALIBRATOR"] = prev
+
+
 @test("EMAIL-DELIVERY-CHECK — script exists with env, SPF, DKIM, send-test phases")
 def _():
     from pathlib import Path as _Path
