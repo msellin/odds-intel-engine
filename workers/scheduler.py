@@ -618,6 +618,27 @@ def job_line_velocity():
     _run_job("line_velocity", _run)
 
 
+def job_prune_live_snapshots():
+    """LIVE-SNAPSHOTS-PRUNE (2026-05-25): weekly prune of live_match_snapshots.
+    Keeps 5-min boundaries + event-adjacent rows for matches finished ≥48h ago.
+    Expected ~50% reduction. Runs Sunday 01:00 UTC, before weekly_retrain at 03:00.
+    """
+    import subprocess
+    def _run():
+        result = subprocess.run(
+            [sys.executable, "scripts/prune_live_snapshots.py", "--apply"],
+            cwd=str(Path(__file__).parent.parent),
+            timeout=900,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[yellow]prune_live_snapshots exit {result.returncode}: {result.stderr[-1000:]}[/yellow]")
+            raise RuntimeError(f"prune_live_snapshots failed: exit {result.returncode}")
+        console.print(result.stdout[-1500:])
+    _run_job("prune_live_snapshots", _run)
+
+
 def job_league_draw_rate():
     """LEAGUE-DRAW-YTD (2026-05-25): nightly recompute of per-league season-to-date
     draw rate. Backtest: Q4 vs Q1 actual-draw gap +11.6pp on 11,875 historical
@@ -1270,6 +1291,14 @@ def main():
                       CronTrigger(hour=23, minute=0),
                       id="xg_overperformance",
                       name="xG Overperformance Rolling 23:00")
+
+    # LIVE-SNAPSHOTS-PRUNE (2026-05-25): weekly prune.
+    # Sunday 01:00 UTC — before weekly_retrain at 03:00 so MFV builder
+    # reads from the already-trimmed table (faster queries).
+    scheduler.add_job(job_prune_live_snapshots,
+                      CronTrigger(day_of_week="sun", hour=1, minute=0),
+                      id="prune_live_snapshots",
+                      name="Prune live_match_snapshots Sun 01:00")
 
     # LEAGUE-DRAW-YTD (2026-05-25): per-league season-to-date draw rate.
     # Backtest +11.6pp Q4 vs Q1. 23:05 UTC.

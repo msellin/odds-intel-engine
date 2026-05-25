@@ -3841,6 +3841,23 @@ def _():
     assert "compute_line_velocity.py" in sched
 
 
+@test("LIVE-SNAPSHOTS-PRUNE — weekly prune of live_match_snapshots wired into scheduler")
+def _():
+    """LIVE-SNAPSHOTS-PRUNE 2026-05-25 — keep 5-min boundaries + event-adjacent
+    rows for matches finished ≥48h ago. Dry-run found 51% (377K of 736K rows)
+    pruneable. Sunday 01:00 UTC cron.
+    """
+    from pathlib import Path as _Path
+    script = _Path(__file__).resolve().parent / "prune_live_snapshots.py"
+    assert script.exists(), "prune_live_snapshots.py missing"
+    text = script.read_text()
+    assert "minute %% 5" in text, "must use 5-minute boundary rule"
+    assert "match_events" in text and "ev.minute" in text, "must use event-adjacency"
+    sched = (_Path(__file__).resolve().parent.parent / "workers" / "scheduler.py").read_text()
+    assert "job_prune_live_snapshots" in sched
+    assert "Sun 01:00" in sched
+
+
 @test("LEAGUE-DRAW-YTD — per-league draw rate signal + scheduler + backtest evidence")
 def _():
     """LEAGUE-DRAW-YTD 2026-05-25 — per-league season-to-date draw rate.
