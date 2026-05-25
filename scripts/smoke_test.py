@@ -6702,6 +6702,25 @@ def test_backup_restore_drill():
     assert "VERDICT" in src
 
 
+@test("META-LOADER-XGBOOST-BRANCH — loader handles both logistic and xgboost bundles")
+def test_meta_loader_xgboost_branch():
+    """META-LOADER-XGBOOST-BRANCH (2026-05-25): meta_b_ml3._load_bundle reads
+    model_type.txt and skips scaler.transform on xgboost bundles. Required so
+    META_B_ML3_VERSION=v_20260525_v23_xgb can actually load without scaler
+    AttributeError."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "model" / "meta_b_ml3.py").read_text()
+    assert "META-LOADER-XGBOOST-BRANCH" in src, "loader tag missing"
+    assert 'model_type.txt' in src, "loader must read model_type.txt"
+    assert 'bundle.get("scaler") is None' in src, "scoring path must branch on scaler=None"
+    # The v23_xgb bundle ships model_type.txt with content 'xgboost'
+    bundle_dir = pathlib.Path(__file__).resolve().parent.parent / "data" / "models" / "meta" / "v_20260525_v23_xgb"
+    if bundle_dir.exists():
+        mt = (bundle_dir / "model_type.txt").read_text().strip()
+        assert mt == "xgboost", f"v23 bundle must declare model_type=xgboost (got {mt})"
+
+
 @test("BUNDLE-STORAGE-SYNC — meta-model bundle upload/download helpers + auto-mirror wired")
 def test_bundle_storage_sync():
     """BUNDLE-STORAGE-SYNC (2026-05-25): meta-model bundles mirror to Supabase

@@ -64,9 +64,18 @@ def _load_bundle(version: str) -> Optional[dict]:
             _cache[version] = None
             return None
     try:
+        # META-LOADER-XGBOOST-BRANCH (2026-05-25): read model_type.txt to know
+        # whether this bundle is logistic (needs scaler.transform) or xgboost
+        # (raw X). Default to logistic for backward compat with v21/v22.
+        model_type_path = bp / "model_type.txt"
+        model_type = "logistic"
+        if model_type_path.exists():
+            model_type = model_type_path.read_text().strip()
+        scaler = joblib.load(bp / "scaler.pkl") if model_type == "logistic" else None
         bundle = {
             "model": joblib.load(bp / "b_ml3.pkl"),
-            "scaler": joblib.load(bp / "scaler.pkl"),
+            "scaler": scaler,
+            "model_type": model_type,
             "feature_cols": joblib.load(bp / "feature_cols.pkl"),
             "threshold": json.loads((bp / "threshold.json").read_text()).get("chosen_threshold", 0.5),
         }
@@ -196,8 +205,10 @@ def score_bet(match_id: str, selection: str, ensemble_prob: float,
     if X is None:
         return None
     try:
-        X_scaled = bundle["scaler"].transform(X)
-        score = float(bundle["model"].predict_proba(X_scaled)[0, 1])
+        # META-LOADER-XGBOOST-BRANCH (2026-05-25): scaler is None on XGBoost
+        # bundles; in that case feed raw X. Logistic bundles still scale.
+        X_eval = X if bundle.get("scaler") is None else bundle["scaler"].transform(X)
+        score = float(bundle["model"].predict_proba(X_eval)[0, 1])
         return score
     except Exception:
         return None
