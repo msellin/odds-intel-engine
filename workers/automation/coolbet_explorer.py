@@ -808,11 +808,25 @@ def run_league_sweep(
         if not cb_events:
             continue
 
-        # Within-league fuzzy match (high precision because same league)
+        # Within-league fuzzy match (high precision because same league).
+        # COOLBET-FUZZY-DATE-GUARD: also enforce kickoff within ±6h so a
+        # two-leg cup tie or rescheduled fixture can't match the wrong leg.
+        from datetime import datetime as _dt, timezone as _tz
+        from workers.automation.coolbet_placer import (
+            _parse_iso_start, _FUZZY_DATE_TOLERANCE_HOURS,
+        )
+        _tol_s = _FUZZY_DATE_TOLERANCE_HOURS * 3600
         for af_m in af_matches:
             af_key = f"{af_m['home']} vs {af_m['away']}".lower()
+            af_date = af_m.get("date")
+            if af_date is not None and getattr(af_date, "tzinfo", None) is None:
+                af_date = af_date.replace(tzinfo=_tz.utc)
             best, best_score = None, 0
             for cb_e in cb_events:
+                if af_date is not None:
+                    cb_start = _parse_iso_start(cb_e.get("start"))
+                    if cb_start is not None and abs((cb_start - af_date).total_seconds()) > _tol_s:
+                        continue
                 cb_key = f"{cb_e['home']} vs {cb_e['away']}".lower()
                 sc = fuzz.token_sort_ratio(af_key, cb_key)
                 if sc > best_score:
@@ -883,7 +897,11 @@ def run_bulk(
     for i, m in enumerate(matches, 1):
         home, away = m["home"], m["away"]
         league = m.get("league") or "—"
-        ev = search_coolbet_event(session, home, away)
+        # COOLBET-FUZZY-DATE-GUARD: pass DB kickoff so the matcher can reject
+        # same-team different-day candidates (reserves vs first team, multi-leg
+        # ties, women vs men).
+        match_date = m.get("date")
+        ev = search_coolbet_event(session, home, away, match_date)
         if ev is None:
             if category_cache is None:
                 console.print("[dim]Search miss — loading full fo-category once[/dim]")
@@ -895,7 +913,7 @@ def run_bulk(
                     # search-only — matches the search misses are skipped.
                     log.warning("fo-category unavailable (%s) — falling back to search-only", e)
                     category_cache = []
-            ev = fuzzy_match_event(home, away, category_cache) if category_cache else None
+            ev = fuzzy_match_event(home, away, category_cache, match_date) if category_cache else None
         if ev is None:
             missed_leagues[league] = missed_leagues.get(league, 0) + 1
             log.info("[%d/%d] no Coolbet event: %s vs %s (%s)", i, len(matches), home, away, league)
@@ -987,11 +1005,12 @@ def run_one_shot(match_id: str) -> None:
     console.print(f"[cyan]{m['home']} vs {m['away']} — {m['league']} — {m['date']}[/cyan]")
 
     session = CoolbetSession()
-    ev = search_coolbet_event(session, m["home"], m["away"])
+    match_date = m.get("date")
+    ev = search_coolbet_event(session, m["home"], m["away"], match_date)
     if ev is None:
         console.print("[dim]Search miss — loading full fo-category[/dim]")
         try:
-            ev = fuzzy_match_event(m["home"], m["away"], fetch_coolbet_events(session))
+            ev = fuzzy_match_event(m["home"], m["away"], fetch_coolbet_events(session), match_date)
         except Exception as e:
             console.print(f"[yellow]fo-category unavailable ({e}). Search-only mode.[/yellow]")
             ev = None

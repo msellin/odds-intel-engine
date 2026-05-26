@@ -629,7 +629,8 @@ def _do_search(session: CoolbetSession, query: str) -> list[dict]:
 
 
 def search_coolbet_event(
-    session: CoolbetSession, home: str, away: str
+    session: CoolbetSession, home: str, away: str,
+    match_date: datetime | None = None,
 ) -> dict | None:
     """
     Multi-pass team-name search against /s/sbgate/sports/search/v2.
@@ -679,7 +680,7 @@ def search_coolbet_event(
                 aggregate[int(ev["id"])] = ev
             except (TypeError, ValueError, KeyError):
                 continue
-        match = fuzzy_match_event(home, away, list(aggregate.values())) if aggregate else None
+        match = fuzzy_match_event(home, away, list(aggregate.values()), match_date) if aggregate else None
         if match:
             log.info("Search matched '%s vs %s' → Coolbet '%s vs %s' (id=%s) "
                      "via query=%r (queries tried=%d, candidates=%d)",
@@ -817,8 +818,31 @@ def _ascii(s: str) -> str:
     return s.translate(_UNICODE_MAP)
 
 
+# COOLBET-FUZZY-DATE-GUARD (2026-05-26): match team names AND kickoff date.
+# Same-team double-headers (Reserve vs first team, women vs men, multiple
+# legs on different days) were resolving to the wrong event because the
+# fuzzy matcher only scored names. Reject any candidate whose kickoff is
+# more than this many hours away from our DB match date.
+_FUZZY_DATE_TOLERANCE_HOURS = 6
+
+
+def _parse_iso_start(start: str | None) -> datetime | None:
+    if not start:
+        return None
+    try:
+        # Coolbet `start` is ISO-8601 with trailing Z; fromisoformat handles "+00:00".
+        s = start.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (ValueError, TypeError):
+        return None
+
+
 def fuzzy_match_event(
-    home: str, away: str, events: list[dict]
+    home: str, away: str, events: list[dict],
+    match_date: datetime | None = None,
 ) -> dict | None:
     """Find the Coolbet event whose home+away names best match ours.
 
@@ -830,15 +854,31 @@ def fuzzy_match_event(
     correctly: partial_ratio("Laval", "Stade Lavallois") = 100 (Laval is
     inside Lavallois). We score each event by min(home_score, away_score)
     so a great home match can't paper over a bad away match.
+
+    COOLBET-FUZZY-DATE-GUARD (2026-05-26): when `match_date` is supplied,
+    only candidate events whose `start` is within ±6h are considered. Stops
+    same-team-different-day false matches (e.g. Coolbet has Racing Club's
+    first-team fixture tomorrow but not today's reserves fixture — names
+    score 100 but the date is wrong).
     """
     if not events:
         return None
     query_home = _ascii(home)
     query_away = _ascii(away)
+    if match_date is not None and match_date.tzinfo is None:
+        match_date = match_date.replace(tzinfo=timezone.utc)
+    tol_seconds = _FUZZY_DATE_TOLERANCE_HOURS * 3600
 
     best_event = None
     best_score = -1
+    skipped_date = 0
     for ev in events:
+        if match_date is not None:
+            ev_start = _parse_iso_start(ev.get("start"))
+            if ev_start is not None:
+                if abs((ev_start - match_date).total_seconds()) > tol_seconds:
+                    skipped_date += 1
+                    continue
         ev_home = _ascii(ev.get("home") or "")
         ev_away = _ascii(ev.get("away") or "")
         # Each side can match either Coolbet's home or away (handles flipped fixtures).
@@ -858,13 +898,13 @@ def fuzzy_match_event(
     if best_event is None or best_score < _FUZZY_THRESHOLD:
         best_label = f"{best_event['home']} {best_event['away']}" if best_event else "—"
         log.info(
-            "Fuzzy match FAILED for '%s vs %s' — best was '%s' (score %d < threshold %d)",
-            home, away, best_label, best_score, _FUZZY_THRESHOLD,
+            "Fuzzy match FAILED for '%s vs %s' — best was '%s' (score %d < threshold %d, %d candidates rejected on date)",
+            home, away, best_label, best_score, _FUZZY_THRESHOLD, skipped_date,
         )
         return None
     log.info(
-        "Fuzzy matched '%s vs %s' → Coolbet '%s vs %s' (score %d)",
-        home, away, best_event["home"], best_event["away"], best_score,
+        "Fuzzy matched '%s vs %s' → Coolbet '%s vs %s' (score %d, %d date-mismatched candidates skipped)",
+        home, away, best_event["home"], best_event["away"], best_score, skipped_date,
     )
     return best_event
 
@@ -1218,9 +1258,10 @@ def place_all_bets(
         edge_pct   = float(bet["edge_percent"]) * 100
         label      = f"{home} vs {away} | {mkt} {sel} @ {model_odds:.3f} (edge {edge_pct:+.2f}%)"
 
-        # 1. Find Coolbet event
+        # 1. Find Coolbet event (date-guarded — see COOLBET-FUZZY-DATE-GUARD)
+        match_date = bet.get("match_date")
         try:
-            ev = search_coolbet_event(session, home, away)
+            ev = search_coolbet_event(session, home, away, match_date)
         except CoolbetSearchBlocked as e:
             log.error("Coolbet search blocked — aborting singles loop after "
                       "%d/%d bets evaluated. %s", idx, len(pending), e)
@@ -1238,7 +1279,7 @@ def place_all_bets(
                 except Exception as e:
                     log.warning("fo-category unavailable (%s) — search-only", e)
                     _category_events = []
-            ev = fuzzy_match_event(home, away, _category_events) if _category_events else None
+            ev = fuzzy_match_event(home, away, _category_events, match_date) if _category_events else None
         if ev is None:
             log.info("No Coolbet event for %s — skipping", label)
             results.append({**bet, "outcome": "no_event"})

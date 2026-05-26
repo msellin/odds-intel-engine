@@ -9751,6 +9751,20 @@ def _():
         "_mapPaperToSnapshotKey must map draw_no_bet so DNB rows look up "
         "real Coolbet/Bet365/Pinnacle prices"
     )
+    # ADMIN-PLACE-COOLBET-ONLY-EVIDENCE (2026-05-26): `matchIdsWithCoolbetEvent`
+    # must be Coolbet-only. Unibet snapshots come from AF's bulk-odds endpoint
+    # (no fuzzy match — fixture identity is known) and Unibet covers leagues
+    # Estonian Coolbet does not (Argentina Primera B reserves, women's lower
+    # divisions). Treating Unibet evidence as "Coolbet has this event"
+    # flipped legitimate no_event rows to false-positive no_market chips.
+    assert '.eq("bookmaker", "Coolbet")' in ed, (
+        "coolbetEventRows query must filter to bookmaker=Coolbet only "
+        "(Unibet doesn't prove Coolbet has the event)"
+    )
+    assert '.in("bookmaker", ["Coolbet", "Unibet"])' not in ed, (
+        "Unibet must not contribute to Coolbet event-presence detection — "
+        "see ADMIN-PLACE-COOLBET-ONLY-EVIDENCE"
+    )
     tbl = (web / "src" / "components" / "place-bet-table.tsx").read_text()
     assert "AutoPlaceStatusBadge" in tbl, "place-bet-table must render AutoPlaceStatusBadge"
     # Both chips must render with distinct copy so the user can scan the table
@@ -9759,6 +9773,61 @@ def _():
     assert '"no_market"' in tbl, "place-bet-table must render a chip for no_market"
     assert "⚠ no match" in tbl, "no_event chip should label as '⚠ no match'"
     assert "⚠ no market" in tbl, "no_market chip should label as '⚠ no market'"
+
+
+@test("COOLBET-FUZZY-DATE-GUARD — fuzzy_match_event rejects same-team candidates on wrong date")
+def _():
+    """COOLBET-FUZZY-DATE-GUARD (2026-05-26): names alone aren't enough.
+    Coolbet often has the first-team fixture for "Racing Club vs Tigre" on
+    one day and nothing on the day our DB has the reserves fixture. Without
+    a date guard the matcher would resolve the reserves bet to the first-team
+    event, then write a misleading Coolbet snapshot under our reserves
+    match_id — flipping the /admin/place chip from `⚠ no match` (correct) to
+    `⚠ no market` (wrong). Guard is ±6h around the DB match date."""
+    import sys, pathlib
+    from datetime import datetime, timezone, timedelta
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+    from workers.automation.coolbet_placer import (
+        fuzzy_match_event, _FUZZY_DATE_TOLERANCE_HOURS,
+    )
+    assert _FUZZY_DATE_TOLERANCE_HOURS == 6, (
+        "tolerance window should be 6h — wide enough for tz/reschedule "
+        "drift, narrow enough to reject different-day fixtures"
+    )
+
+    our_kickoff = datetime(2026, 5, 26, 21, 0, tzinfo=timezone.utc)
+    events = [
+        # Same teams, but Coolbet's fixture is tomorrow — must be rejected.
+        {"id": 1, "home": "Racing Club", "away": "Tigre",
+         "start": (our_kickoff + timedelta(hours=24)).isoformat()},
+        # Same teams, same kickoff — must be accepted.
+        {"id": 2, "home": "Racing Club", "away": "Tigre",
+         "start": our_kickoff.isoformat()},
+    ]
+    matched = fuzzy_match_event("Racing Club Res.", "Tigre Res.", events, our_kickoff)
+    assert matched is not None and matched["id"] == 2, (
+        f"must prefer the same-day event over the +24h event, got {matched}"
+    )
+
+    # All candidates outside the window → no match (no fallback to name-only).
+    far_events = [
+        {"id": 9, "home": "Racing Club", "away": "Tigre",
+         "start": (our_kickoff + timedelta(hours=24)).isoformat()},
+    ]
+    no_match = fuzzy_match_event("Racing Club Res.", "Tigre Res.", far_events, our_kickoff)
+    assert no_match is None, (
+        f"all candidates >6h away must yield no match, got {no_match}"
+    )
+
+    # Missing match_date → date guard disabled, name match still works.
+    legacy = fuzzy_match_event(
+        "Racing Club Res.", "Tigre Res.",
+        [{"id": 3, "home": "Racing Club", "away": "Tigre", "start": None}],
+        None,
+    )
+    assert legacy is not None and legacy["id"] == 3, (
+        "no-date call must keep working (back-compat for callers without kickoff)"
+    )
 
 
 @test("COOLBET-SEARCH-LAVAL — per-team partial_ratio handles short-vs-full club names")

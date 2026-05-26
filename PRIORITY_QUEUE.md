@@ -2,6 +2,12 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-05-26 — ADMIN-PLACE-COOLBET-ONLY-EVIDENCE + COOLBET-FUZZY-DATE-GUARD done
+>
+> Two more follow-ups on /admin/place after ADMIN-PLACE-STRICT-COOLBET landed.
+> - **ADMIN-PLACE-COOLBET-ONLY-EVIDENCE** — done. User flagged Racing Club Res. vs Tigre Res. (Argentina Primera B Metropolitana Reserves) showing `⚠ no market` across all four bot picks (bot_high_alignment BTTS no, bot_dc_value DC x2, bot_v10_all + bot_ou25_global O/U under 2.5) when in fact Coolbet doesn't carry that league at all. Root cause: `matchIdsWithCoolbetEvent` was built from snapshots in `bookmaker IN ("Coolbet", "Unibet")`. Unibet (global) has the fixture via AF's bulk-odds endpoint — no fuzzy match involved — so Unibet rows existed even though Estonian Coolbet has nothing. The set therefore claimed Coolbet "has the event", and rows where Coolbet has no snapshot for the specific market resolved to `no_market` instead of the correct `no_event`. Fix: query is now `.eq("bookmaker", "Coolbet")`. Real_bets ground truth (Coolbet bookmaker only) was already correct. The placer writes a presence-marker snapshot (1X2 home) at no_market time, so legitimate Coolbet-no-market rows still chip correctly. Smoke: ADMIN-PLACE-SKIP-REASON (extended).
+> - **COOLBET-FUZZY-DATE-GUARD** — done. User asked: "when you find a match, also validate the date of the match is the same." Same-team double-headers (reserves vs first team, two-leg cup ties, women vs men) were vulnerable to name-only fuzzy matches resolving to the wrong-day event. The placer would then write a Coolbet snapshot under our match_id pointing at the wrong fixture, masking it on /admin/place as `no_market` and risking a real-money placement on the wrong game in `--execute` mode. Fix: `fuzzy_match_event` now takes an optional `match_date`; candidates whose `start` is more than ±6h away are rejected before scoring. Tolerance covers tz/reschedule drift but rejects different-day fixtures. Threaded through all four call sites — `search_coolbet_event` (placer's pre-match search), placer's category-tree fallback (`run_singles_loop`), explorer's bulk `run_bulk` sweep, and explorer's `--odds-mode league-mapped` (default in production). Smoke: COOLBET-FUZZY-DATE-GUARD.
+>
 > ## 2026-05-26 — ADMIN-PLACE-STRICT-COOLBET + DNB-MAP done
 >
 > Two follow-ups on /admin/place after user spotted false-positive "⏵ auto-place" badges.
