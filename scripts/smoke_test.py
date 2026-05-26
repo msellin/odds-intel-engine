@@ -1118,6 +1118,35 @@ def _():
     assert len(ah_rows) == 0, "First Half AH should be skipped"
 
 
+@test("DNB-PARSE — parse_fixture_odds extracts Draw No Bet rows as market=draw_no_bet")
+def _():
+    """DNB-PARSE (2026-05-26): API-Football exposes "Draw No Bet" (bet id 11) with
+    values "Home" and "Away". Previously the parser ignored it and the pipeline
+    fell back to synthetic DNB odds derived from 1X2. With parsing in place,
+    real bookmaker DNB prices land in odds_snapshots for comparison/usage."""
+    from workers.api_clients.api_football import parse_fixture_odds
+    raw = [{
+        "bookmakers": [{
+            "name": "Pinnacle",
+            "bets": [{
+                "name": "Draw No Bet",
+                "values": [
+                    {"value": "Home", "odd": "1.55"},
+                    {"value": "Away", "odd": "2.45"},
+                ]
+            }]
+        }]
+    }]
+    rows = parse_fixture_odds(raw)
+    dnb_rows = [r for r in rows if r["market"] == "draw_no_bet"]
+    assert len(dnb_rows) == 2, f"Expected 2 DNB rows, got {len(dnb_rows)}"
+    home = next(r for r in dnb_rows if r["selection"] == "home")
+    away = next(r for r in dnb_rows if r["selection"] == "away")
+    assert home["odds"] == 1.55
+    assert away["odds"] == 2.45
+    assert home["bookmaker"] == "Pinnacle"
+
+
 @test("AH-SIGNALS — parse_fixture_odds skips AH rows with missing handicap field")
 def _():
     from workers.api_clients.api_football import parse_fixture_odds

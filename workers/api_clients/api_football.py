@@ -584,6 +584,21 @@ def parse_fixture_odds(odds_response: list[dict]) -> list[dict]:
                                 "odds": float(val["odd"]),
                             })
 
+                elif bet_name == "Draw No Bet":
+                    for val in bet.get("values", []):
+                        sel_map = {"Home": "home", "Away": "away"}
+                        sel = sel_map.get(val["value"])
+                        if sel:
+                            try:
+                                rows.append({
+                                    "bookmaker": bm_name,
+                                    "market": "draw_no_bet",
+                                    "selection": sel,
+                                    "odds": float(val["odd"]),
+                                })
+                            except (ValueError, TypeError):
+                                pass
+
                 elif bet_name == "Asian Handicap":
                     # AF returns value="Home -1.25" or value="Away +0.5" (team + handicap
                     # in one string, no separate handicap field). Only exact "Asian Handicap"
