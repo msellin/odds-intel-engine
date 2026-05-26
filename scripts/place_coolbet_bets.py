@@ -113,8 +113,18 @@ def main():
             odds = r.get("live_combined_odds") or r.get("model_odds") or 0
             print(f"  →  {_label(r)} @ model={odds:.3f}  coolbet={r.get('ev_odds') or '?'}")
 
+    blocked = [r for r in skipped if r["outcome"] == "search_blocked"]
+    if blocked:
+        print()
+        print(f"⚠  Coolbet search refused {len(blocked)} bet(s) — session/JWT "
+              "appears dead (Incapsula or expired cbauth).")
+        print("    Fix: Smart-ID in browser → copy fresh `cbauth` cookie → "
+              "set COOLBET_MANUAL_JWT → re-run.")
+
     for r in skipped:
-        print(f"  ✗  {_label(r)} — {r['outcome']}")
+        reason = r.get("reason")
+        suffix = f"{r['outcome']}" + (f" ({reason})" if reason else "")
+        print(f"  ✗  {_label(r)} — {suffix}")
 
     print("=" * 60)
 

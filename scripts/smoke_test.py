@@ -3105,6 +3105,67 @@ def _():
     )
 
 
+@test("COOLBET-SEARCH-BLOCKED — non-200 raises, placer aborts loop, summary names it")
+def test_coolbet_search_blocked():
+    """COOLBET-SEARCH-BLOCKED (2026-05-26): a dead cbauth JWT or Incapsula
+    challenge returns 4xx/5xx from /search/v2. Previously swallowed at DEBUG,
+    making 18 doomed searches look like 18 genuine no-coverage misses. The
+    placer now raises CoolbetSearchBlocked, marks the current + remaining
+    bets as 'search_blocked', and skips the combo phase."""
+    import inspect, pathlib
+
+    # Module-level exception is exported
+    from workers.automation.coolbet_placer import CoolbetSearchBlocked  # noqa: F401
+
+    placer_src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
+
+    # _do_search must raise (not swallow) on non-200
+    do_search = placer_src[placer_src.index("def _do_search"):
+                            placer_src.index("def search_coolbet_event")]
+    assert "raise CoolbetSearchBlocked" in do_search, (
+        "_do_search must raise CoolbetSearchBlocked on non-200, not return []"
+    )
+    assert "log.warning" in do_search, (
+        "_do_search must log non-200 at WARNING (not DEBUG) so blocks are visible"
+    )
+
+    # Singles loop must catch + mark remaining bets as search_blocked + break
+    in_place_all = placer_src[placer_src.index("def place_all_bets"):]
+    singles_catch = in_place_all[:in_place_all.index("_place_combo_bets") + 200]
+    assert "except CoolbetSearchBlocked" in singles_catch, (
+        "singles loop must catch CoolbetSearchBlocked"
+    )
+    assert '"outcome": "search_blocked"' in singles_catch, (
+        "blocked bet rows must use outcome='search_blocked' (not 'no_event')"
+    )
+    assert "pending[idx:]" in singles_catch, (
+        "remaining unprocessed bets must be marked as search_blocked, not silently dropped"
+    )
+
+    # Combo phase is skipped when singles loop tripped the block
+    assert "if search_blocked:" in singles_catch, (
+        "place_all_bets must skip combo phase when singles tripped the block"
+    )
+
+    # Combo loop has matching handling
+    combo_src = placer_src[placer_src.index("def _place_combo_bets"):]
+    assert "except CoolbetSearchBlocked" in combo_src, (
+        "combo loop must also catch CoolbetSearchBlocked"
+    )
+    assert "combos[cidx:]" in combo_src, (
+        "remaining combos must be marked as search_blocked on mid-run block"
+    )
+
+    # CLI summary surfaces the block prominently
+    cli_src = pathlib.Path("scripts/place_coolbet_bets.py").read_text()
+    assert "search_blocked" in cli_src, (
+        "place_coolbet_bets.py summary must recognise search_blocked outcome"
+    )
+    assert "COOLBET_MANUAL_JWT" in cli_src, (
+        "CLI must tell user how to fix it (refresh COOLBET_MANUAL_JWT)"
+    )
+
+
 @test("COOLBET-SAFETY-GUARDRAILS — PlacementGuard stake + rate + total + edge + bot-filter")
 def _():
     """COOLBET-SAFETY-GUARDRAILS (2026-05-20) — PlacementGuard holds the

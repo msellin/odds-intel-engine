@@ -588,8 +588,23 @@ def _parse_event(ev: dict) -> dict | None:
     }
 
 
+class CoolbetSearchBlocked(Exception):
+    """Coolbet /search/v2 refused the request (non-200).
+
+    Why: a dead `cbauth` JWT or Incapsula bot challenge returns 4xx/5xx —
+    previously swallowed at DEBUG, making 18 doomed searches look like 18
+    genuine no-coverage misses (silent-failure trap, 2026-05-26).
+    Raising forces the placer to stop after the first failure with a clear
+    "refresh COOLBET_MANUAL_JWT" signal.
+    """
+
+
 def _do_search(session: CoolbetSession, query: str) -> list[dict]:
-    """Single search call. Returns parsed event candidates (possibly empty)."""
+    """Single search call. Returns parsed event candidates (possibly empty).
+
+    Raises CoolbetSearchBlocked on non-200 so a dead session cannot
+    masquerade as a string of "no event" misses.
+    """
     resp = session.get(_SEARCH_URL, params={
         "search":   query,
         "country":  "EE",
@@ -597,8 +612,14 @@ def _do_search(session: CoolbetSession, query: str) -> list[dict]:
         "layout":   "EUROPEAN",
     })
     if resp.status_code != 200:
-        log.debug("Search HTTP %d for query %r", resp.status_code, query)
-        return []
+        body_snip = (resp.text or "")[:200].replace("\n", " ")
+        log.warning("Search HTTP %d for query %r — body: %s",
+                    resp.status_code, query, body_snip or "<empty>")
+        raise CoolbetSearchBlocked(
+            f"search/v2 returned HTTP {resp.status_code} for query {query!r}. "
+            f"Likely Incapsula challenge or dead cbauth JWT — re-Smart-ID in "
+            f"browser and refresh COOLBET_MANUAL_JWT, then re-run."
+        )
     data = resp.json()
     raw_events = (
         data if isinstance(data, list)
@@ -1186,7 +1207,8 @@ def place_all_bets(
     )
 
     results = []
-    for bet in pending:
+    search_blocked = False
+    for idx, bet in enumerate(pending):
         home       = bet["home_team"]
         away       = bet["away_team"]
         mkt        = bet["market"]
@@ -1197,7 +1219,17 @@ def place_all_bets(
         label      = f"{home} vs {away} | {mkt} {sel} @ {model_odds:.3f} (edge {edge_pct:+.2f}%)"
 
         # 1. Find Coolbet event
-        ev = search_coolbet_event(session, home, away)
+        try:
+            ev = search_coolbet_event(session, home, away)
+        except CoolbetSearchBlocked as e:
+            log.error("Coolbet search blocked — aborting singles loop after "
+                      "%d/%d bets evaluated. %s", idx, len(pending), e)
+            for rb in pending[idx:]:
+                results.append({**rb, "outcome": "search_blocked",
+                                "reason": "coolbet search HTTP-refused "
+                                          "(dead JWT / Incapsula)"})
+            search_blocked = True
+            break
         if ev is None:
             if _category_events is None:
                 try:
@@ -1376,11 +1408,15 @@ def place_all_bets(
     # same way: resolve every leg's Coolbet outcome, then either write a
     # paper bet (--record) or warn that the Coolbet combo POST schema is
     # still pending (--execute, follow-up task).
-    combo_results = _place_combo_bets(
-        session, guard, fetch_match_markets, fetch_odds_for_markets,
-        resolve_placement_target, record=record, execute=execute,
-    )
-    results.extend(combo_results)
+    if search_blocked:
+        log.warning("Skipping combo phase — Coolbet search is blocked; "
+                    "refresh JWT and re-run.")
+    else:
+        combo_results = _place_combo_bets(
+            session, guard, fetch_match_markets, fetch_odds_for_markets,
+            resolve_placement_target, record=record, execute=execute,
+        )
+        results.extend(combo_results)
 
     return results
 
@@ -1415,7 +1451,7 @@ def _place_combo_bets(
     log.info("Found %d qualifying combo simulated_bet(s) to evaluate", len(combos))
 
     results: list[dict] = []
-    for combo in combos:
+    for cidx, combo in enumerate(combos):
         legs = combo["combo_legs"]
         if isinstance(legs, str):
             import json as _json
@@ -1453,7 +1489,17 @@ def _place_combo_bets(
                 break
             home, away = team_rows[0]["home"], team_rows[0]["away"]
 
-            ev = search_coolbet_event(session, home, away)
+            try:
+                ev = search_coolbet_event(session, home, away)
+            except CoolbetSearchBlocked as e:
+                log.error("Coolbet search blocked during combo leg %d — "
+                          "aborting combo phase after %d/%d combos. %s",
+                          i, cidx, len(combos), e)
+                for rc in combos[cidx:]:
+                    results.append({**rc, "outcome": "search_blocked",
+                                     "reason": "coolbet search HTTP-refused "
+                                               "(dead JWT / Incapsula)"})
+                return results
             if ev is None:
                 skip_reason = f"leg {i}: no Coolbet event for {home} vs {away}"
                 break
