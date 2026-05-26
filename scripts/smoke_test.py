@@ -9727,6 +9727,30 @@ def _():
         "engine-data must treat real_bets placed at Coolbet as ground truth that "
         "the event exists at Coolbet"
     )
+    # ADMIN-PLACE-STRICT-COOLBET (2026-05-26): the auto-place gate must use
+    # `coolbetOdds` strictly — the Unibet proxy cannot stand in for "Coolbet
+    # supports this market". Coolbet (Estonia) and Unibet (global) share the
+    # Kambi backend but have different regional market catalogs (Coolbet often
+    # lacks DC, AH quarter lines, exotics). Previous code used
+    # `livePrice = coolbetOdds ?? unibetOdds` and gated on `livePrice == null`,
+    # which produced false-positive "⏵ auto-place" badges on bot_dc_value
+    # rows for matches where Coolbet only offers 1X2.
+    assert "coolbetGateEdge" in ed, (
+        "engine-data must compute a strict-Coolbet edge for the auto-place gate "
+        "(no Unibet proxy fallback)"
+    )
+    assert "coolbetOdds == null" in ed, (
+        "no_market / no_event branch must check coolbetOdds directly, not the "
+        "Unibet-proxy livePrice"
+    )
+    # DNB-PARSE follow-on: real Draw No Bet odds now land in odds_snapshots
+    # (market="draw_no_bet", selection="home"/"away"). The paper→snapshot key
+    # mapping must surface them so DNB rows on /admin/place show Coolbet/
+    # Bet365/Pinnacle prices instead of always "—".
+    assert 'm === "draw_no_bet"' in ed, (
+        "_mapPaperToSnapshotKey must map draw_no_bet so DNB rows look up "
+        "real Coolbet/Bet365/Pinnacle prices"
+    )
     tbl = (web / "src" / "components" / "place-bet-table.tsx").read_text()
     assert "AutoPlaceStatusBadge" in tbl, "place-bet-table must render AutoPlaceStatusBadge"
     # Both chips must render with distinct copy so the user can scan the table

@@ -2,6 +2,13 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-05-26 — ADMIN-PLACE-STRICT-COOLBET + DNB-MAP done
+>
+> Two follow-ups on /admin/place after user spotted false-positive "⏵ auto-place" badges.
+> - **ADMIN-PLACE-STRICT-COOLBET** — done. Cape Town City vs Milford FC (South-Africa PSL) showed `⏵ auto-place` on a `bot_dc_value` x2 row where Coolbet doesn't carry the DC market at all — the 1.70 displayed in the Coolbet column was the Unibet proxy fallback (`*` marker), not real Coolbet pricing. Estonian Coolbet and global Unibet share Kambi but expose different regional market catalogs (Coolbet often lacks DC, AH quarter lines, exotics). `getPlaceableBets`' status logic was using `livePrice = coolbetOdds ?? unibetOdds` and gating no_market on `livePrice == null`, so the Unibet proxy was being mistreated as proof Coolbet supports the market. Fix: the auto-place gate now uses `coolbetOdds` strictly (new `coolbetGateEdge` for the edge_eroded check); the Unibet proxy continues to render in the Coolbet column for display only. Result: rows where Coolbet has the event (presence-marker snapshot + real_bets ground truth) but no `coolbetOdds` for this exact `(market, selection)` now correctly show `⚠ no market`. Smoke: ADMIN-PLACE-SKIP-REASON (extended with `coolbetGateEdge` + strict-`coolbetOdds == null` assertions).
+> - **DNB-MAP** — done. `_mapPaperToSnapshotKey` in `engine-data.ts` had no case for `draw_no_bet`, so even after yesterday's DNB-PARSE landed real DNB rows in `odds_snapshots`, the /admin/place table couldn't surface them — Mariehamn vs Lahti (`bot_high_alignment`, DNB home) showed `— — —` across Coolbet / Bet365 / Pinnacle despite Coolbet carrying the market. Added `draw_no_bet` → `(market="draw_no_bet", selection="home"|"away")` mapping. Smoke: ADMIN-PLACE-SKIP-REASON (extended with `m === "draw_no_bet"` assertion).
+> - **5% edge threshold** unchanged. Mariehamn DNB at 4.0% pick edge correctly shows `✗ edge < 5%` — `coolbet_daemon.py --min-edge=0.05` filters it at the SQL level so the placer never tries, and that's the intended behavior.
+>
 > ## 2026-05-25 — Queue triage (mid-session)
 >
 > **9 stale 'waiting' labels — ACTUALLY UNLOCKED. Treat as ✅ Ready immediately:**
