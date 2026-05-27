@@ -10521,6 +10521,30 @@ def _():
         "BTTS retired_reason must explain calibration problem"
 
 
+@test("FIX-LEAGUE-TIERS-140 — migration 140 fixes Saudi-Arabia/South-Africa dash variants + extra top divisions")
+def _():
+    """Migration 140 must fix the country-name dash variants missed by 138 (Saudi-Arabia,
+    South-Africa, United-Arab-Emirates) and add Egypt, Bolivia, Algeria, Tunisia, Kosovo,
+    Malaysia top divisions. Must also promote Argentina Primera Nacional and Belgium
+    Challenger Pro League to tier=2. All with WHERE tier=0 guard."""
+    import pathlib
+    migration = pathlib.Path("supabase/migrations/140_fix_more_league_tiers.sql").read_text()
+    # Must use exact dash-variant country names
+    assert "Saudi-Arabia" in migration, "Migration 140 must handle Saudi-Arabia (dash variant)"
+    assert "South-Africa" in migration, "Migration 140 must handle South-Africa (dash variant)"
+    assert "United-Arab-Emirates" in migration, "Migration 140 must handle UAE dash variant"
+    # Must promote additional top divisions
+    for league in ("egypt", "bolivia", "algeria", "tunisia", "kosovo"):
+        assert league.lower() in migration.lower(), f"Migration 140 must handle {league}"
+    # Must promote second divisions
+    assert "primera nacional" in migration.lower(), \
+        "Migration 140 must promote Argentina Primera Nacional to tier=2"
+    assert "challenger pro league" in migration.lower(), \
+        "Migration 140 must promote Belgium Challenger Pro League to tier=2"
+    # Must guard with tier=0
+    assert "WHERE tier = 0" in migration, "Migration 140 must guard with WHERE tier = 0"
+
+
 @test("FIX-LEAGUE-TIERS — migration 138 uses name+country WHERE clauses, not placeholder UUIDs")
 def _():
     """Migration 138 must fix tier=0 misclassifications for top-division leagues using
