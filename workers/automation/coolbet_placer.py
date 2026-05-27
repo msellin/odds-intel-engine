@@ -1319,6 +1319,7 @@ def place_all_bets(
             norm = _normalise_our_target(mkt, sel)
             snap_market = norm[0] if norm[0] else mkt
             snap_sel    = norm[1] if norm[1] else sel
+            snap_line   = norm[2]  # handicap line for AH; None for all other markets
             match_date = bet.get("match_date")
             mins_to_ko = None
             if match_date:
@@ -1329,7 +1330,8 @@ def place_all_bets(
                 mins_to_ko = -int(math.ceil(delta_mins))  # negative = pre-match
             try:
                 store_coolbet_odds_snapshot(
-                    str(bet["match_id"]), snap_market, snap_sel, ev_odds, mins_to_ko
+                    str(bet["match_id"]), snap_market, snap_sel, ev_odds, mins_to_ko,
+                    handicap_line=snap_line,
                 )
                 log.debug("Snapshot stored: %s %s %s %.3f (%s min to KO)",
                           home, snap_market, snap_sel, ev_odds, mins_to_ko)

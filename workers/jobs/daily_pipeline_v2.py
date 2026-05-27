@@ -41,7 +41,7 @@ from workers.api_clients.supabase_client import (
     batch_write_morning_signals,
     build_match_feature_vectors_live,
 )
-from workers.notify.telegram import send_telegram
+from workers.notify.telegram import send_telegram, send_telegram_to_users
 from workers.model.improvements import (
     calibrate_prob, compute_odds_movement, compute_alignment,
     compute_kelly, compute_stake,
@@ -2917,6 +2917,16 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                             f"  <b>{match['home_team']} vs {match['away_team']}</b>\n"
                             f"  {mkt} {selection} @ {odds:.2f}\n"
                             f"  edge {edge*100:+.1f}%  ·  align {alignment['alignment_class']}  ·  {bm}"
+                        )
+                        _league = match.get("league_path") or ""
+                        send_telegram_to_users(
+                            f"🔔 <b>New value bet</b>\n"
+                            f"<b>{match['home_team']} vs {match['away_team']}</b>\n"
+                            f"{mkt} {selection} @ {odds:.2f}\n"
+                            f"{edge*100:+.1f}% edge"
+                            + (f" · {_league}" if _league else ""),
+                            tier_minimum="pro",
+                            dedup_key=f"user-bet-{bet_id}",
                         )
                         # Save Stage 1 snapshot: stats-only probability
                         try:

@@ -708,6 +708,7 @@ def store_coolbet_odds_snapshot(
     selection: str,
     odds: float,
     minutes_to_kickoff: int | None = None,
+    handicap_line: float | None = None,
 ) -> None:
     """
     Insert a single Coolbet odds row into odds_snapshots.
@@ -722,10 +723,10 @@ def store_coolbet_odds_snapshot(
             cur.execute(
                 """INSERT INTO odds_snapshots
                    (match_id, bookmaker, market, selection, odds, timestamp,
-                    is_closing, minutes_to_kickoff)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                    is_closing, minutes_to_kickoff, handicap_line)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (match_id, "Coolbet", market, selection, odds, now,
-                 is_closing, minutes_to_kickoff),
+                 is_closing, minutes_to_kickoff, handicap_line),
             )
             conn.commit()
 

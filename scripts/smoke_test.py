@@ -10588,5 +10588,44 @@ def _():
         "135_rls_missing_tables.sql must be removed (renamed to 139) to fix duplicate key error"
 
 
+@test("USER-TELE-NOTIFY — migration 141 adds telegram_chat_id; send_telegram_to_users in notify module; pipeline + inplay_bot wire user notifications; webhook route exists")
+def test_user_tele_notify():
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+
+    # Migration
+    migration = (root / "supabase" / "migrations" / "141_profiles_telegram_chat_id.sql").read_text()
+    assert "telegram_chat_id" in migration, "migration must add telegram_chat_id column"
+    assert "BIGINT" in migration.upper(), "telegram_chat_id must be BIGINT (Telegram chat IDs are large)"
+
+    # send_telegram_to_users in notify module
+    notify_src = (root / "workers" / "notify" / "telegram.py").read_text()
+    assert "def send_telegram_to_users" in notify_src, "telegram.py must export send_telegram_to_users"
+    assert "telegram_chat_id" in notify_src, "send_telegram_to_users must query telegram_chat_id column"
+    assert "tier = ANY" in notify_src, "send_telegram_to_users must filter by tier"
+
+    # daily_pipeline_v2 wires user notifications
+    pipeline_src = (root / "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+    assert "send_telegram_to_users" in pipeline_src, \
+        "daily_pipeline_v2.py must call send_telegram_to_users for user bet alerts"
+
+    # inplay_bot wires user notifications
+    bot_src = (root / "workers" / "jobs" / "inplay_bot.py").read_text()
+    assert "send_telegram_to_users" in bot_src, \
+        "inplay_bot.py must call send_telegram_to_users for user bet alerts"
+
+    # Webhook route exists in frontend (source-inspect via relative path guess)
+    web_root = root.parent / "odds-intel-web"
+    if web_root.exists():
+        webhook = web_root / "src" / "app" / "api" / "telegram" / "webhook" / "route.ts"
+        disconnect = web_root / "src" / "app" / "api" / "telegram" / "disconnect" / "route.ts"
+        assert webhook.exists(), "webhook route.ts must exist at /api/telegram/webhook"
+        assert disconnect.exists(), "disconnect route.ts must exist at /api/telegram/disconnect"
+        webhook_src = webhook.read_text()
+        assert "/start" in webhook_src, "webhook must handle /start command"
+        assert "/stop" in webhook_src, "webhook must handle /stop command"
+        assert "telegram_chat_id" in webhook_src, "webhook must update telegram_chat_id"
+
+
 if __name__ == "__main__":
     main()

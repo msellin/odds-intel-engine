@@ -688,36 +688,13 @@ def store_coolbet_snapshots_for_match(
             if dry_run:
                 continue
             try:
-                if market == "asian_handicap":
-                    _store_with_handicap(match_id, market, selection, odds, line, minutes_to_ko)
-                else:
-                    store_coolbet_odds_snapshot(match_id, market, selection, odds, minutes_to_ko)
+                store_coolbet_odds_snapshot(match_id, market, selection, odds,
+                                            minutes_to_ko, handicap_line=line)
                 stored += 1
             except Exception as e:
                 log.warning("Store failed for %s %s: %s", market, selection, e)
     return parsed, stored, by_market
 
-
-def _store_with_handicap(
-    match_id: str, market: str, selection: str, odds: float,
-    line: float | None, minutes_to_ko: int | None,
-) -> None:
-    """AH rows need handicap_line populated. store_coolbet_odds_snapshot doesn't
-    expose handicap_line, so insert directly."""
-    from workers.api_clients.db import get_conn
-    now = datetime.now(timezone.utc).isoformat()
-    is_closing = minutes_to_ko is not None and abs(minutes_to_ko) <= 5
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """INSERT INTO odds_snapshots
-                   (match_id, bookmaker, market, selection, odds, timestamp,
-                    is_closing, minutes_to_kickoff, handicap_line)
-                   VALUES (%s, 'Coolbet', %s, %s, %s, %s, %s, %s, %s)""",
-                (match_id, market, selection, odds, now,
-                 is_closing, minutes_to_ko, line),
-            )
-            conn.commit()
 
 
 def _minutes_to_kickoff(iso: str) -> int | None:

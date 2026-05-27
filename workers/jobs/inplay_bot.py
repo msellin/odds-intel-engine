@@ -34,7 +34,7 @@ import math
 import os
 from datetime import datetime, timezone
 from rich.console import Console
-from workers.notify.telegram import send_telegram
+from workers.notify.telegram import send_telegram, send_telegram_to_users
 
 console = Console()
 
@@ -476,6 +476,18 @@ def run_inplay_strategies():
                         f"  {trigger['market']} {trigger['selection']} @ {trigger['odds']:.2f}\n"
                         f"  edge {trigger['edge']:+.1f}%  ·  min {cand['minute']}  ·  score {cand['score_home']}-{cand['score_away']}\n"
                         f"  bot {bot_name}{src_tag}"
+                    )
+                    _league = pm.get("league_name") or ""
+                    _country = pm.get("league_country") or ""
+                    _league_str = f"{_country} / {_league}" if _country and _league else _league
+                    send_telegram_to_users(
+                        f"🔔 <b>Live value bet</b>\n"
+                        f"<b>{home} vs {away}</b>\n"
+                        f"{trigger['market']} {trigger['selection']} @ {trigger['odds']:.2f}\n"
+                        f"{trigger['edge']:+.1f}% edge · min {cand['minute']} ({cand['score_home']}-{cand['score_away']})"
+                        + (f" · {_league_str}" if _league_str else ""),
+                        tier_minimum="pro",
+                        dedup_key=f"user-bet-{bet_id}",
                     )
             except Exception as e:
                 _funnel["store_bet_error"] += 1

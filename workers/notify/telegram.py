@@ -32,6 +32,11 @@ log = logging.getLogger(__name__)
 _API_URL = "https://api.telegram.org/bot{token}/sendMessage"
 _LAST_SENT: dict[str, float] = {}  # dedup window: key → unix ts of last send
 
+_TIER_SETS = {
+    "pro":   ("pro", "elite"),
+    "elite": ("elite",),
+}
+
 
 def send_telegram(
     msg: str,
@@ -85,3 +90,64 @@ def send_telegram(
     except Exception as e:
         log.warning("Telegram send failed: %s", e)
         return False
+
+
+def send_telegram_to_users(
+    msg: str,
+    *,
+    tier_minimum: str = "pro",
+    dedup_key: Optional[str] = None,
+    dedup_window_s: int = 600,
+) -> int:
+    """Send `msg` to every Pro/Elite user who has connected their Telegram account.
+
+    tier_minimum: "pro" (sends to pro+elite) or "elite" (sends to elite only).
+    dedup_key: same semantics as send_telegram — prevents double-sends on pipeline retries.
+    Returns the number of users successfully notified.
+    """
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not token:
+        return 0
+
+    if dedup_key is not None:
+        last = _LAST_SENT.get(dedup_key, 0)
+        if time.time() - last < dedup_window_s:
+            return 0
+        _LAST_SENT[dedup_key] = time.time()
+
+    tiers = _TIER_SETS.get(tier_minimum, ("pro", "elite"))
+
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            "SELECT telegram_chat_id FROM profiles WHERE telegram_chat_id IS NOT NULL AND tier = ANY(%s)",
+            (list(tiers),),
+        )
+    except Exception as e:
+        log.warning("send_telegram_to_users: DB query failed: %s", e)
+        return 0
+
+    sent = 0
+    url = _API_URL.format(token=token)
+    for row in rows:
+        chat_id = row.get("telegram_chat_id")
+        if not chat_id:
+            continue
+        try:
+            resp = requests.post(
+                url,
+                json={
+                    "chat_id": chat_id,
+                    "text": msg[:4000],
+                    "parse_mode": "HTML",
+                },
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                sent += 1
+            else:
+                log.warning("send_telegram_to_users chat_id=%s: %d %s", chat_id, resp.status_code, resp.text[:100])
+        except Exception as e:
+            log.warning("send_telegram_to_users chat_id=%s failed: %s", chat_id, e)
+
+    return sent
