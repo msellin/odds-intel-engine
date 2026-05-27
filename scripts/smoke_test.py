@@ -10438,5 +10438,23 @@ def test_maturity_label_migration():
     assert "inplay_btts_dryspell_v1" in sql, "inplay_btts_dryspell_v1 must be set to beta"
 
 
+@test("SETTLEMENT-EXCL-EXPERIMENTAL — headline ROI/CLV queries exclude experimental bots")
+def _():
+    """All three headline number paths in write_dashboard_cache must exclude
+    experimental (acca/combo) bots so the cached roi_pct, avg_clv, and
+    settled_bets figures reflect only real strategies."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/settlement.py").read_text()
+    # The all-time and active headline queries now join bots and filter
+    assert "maturity_label != 'experimental'" in src, (
+        "settlement headline queries must exclude experimental bots via maturity_label"
+    )
+    # Active-only query must have the same guard
+    active_section = src[src.index("Active-only headline"):]
+    assert "maturity_label != 'experimental'" in active_section[:1200], (
+        "active-only headline query must also exclude experimental bots"
+    )
+
+
 if __name__ == "__main__":
     main()

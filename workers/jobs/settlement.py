@@ -1396,14 +1396,16 @@ def write_dashboard_cache():
             GROUP BY b.id, b.name, b.retired_at, b.retired_reason
         """, [])
 
-        # All-time headline (incl. retired bots' historical bets). Credibility
-        # number — "we've placed N bets" — retired bets count.
-        total_bets = execute_query("SELECT COUNT(*) as n FROM simulated_bets WHERE result != 'void'", [])[0]["n"]
-        settled_bets = execute_query("SELECT COUNT(*) as n FROM simulated_bets WHERE result IN ('won','lost')", [])[0]["n"]
+        # All-time headline — exclude experimental (acca/combo) bots so the
+        # headline ROI/CLV reflects real strategies only.
+        _excl = "AND b.maturity_label != 'experimental'"
+        _bets_join = "FROM simulated_bets sb JOIN bots b ON b.id = sb.bot_id"
+        total_bets = execute_query(f"SELECT COUNT(*) as n {_bets_join} WHERE sb.result != 'void' {_excl}", [])[0]["n"]
+        settled_bets = execute_query(f"SELECT COUNT(*) as n {_bets_join} WHERE sb.result IN ('won','lost') {_excl}", [])[0]["n"]
         pending_bets = int(total_bets) - int(settled_bets)
-        won = execute_query("SELECT COUNT(*) as n FROM simulated_bets WHERE result = 'won'", [])[0]["n"]
-        lost = execute_query("SELECT COUNT(*) as n FROM simulated_bets WHERE result = 'lost'", [])[0]["n"]
-        staked_row = execute_query("SELECT SUM(stake) as s, SUM(pnl) as p, AVG(clv) as c FROM simulated_bets WHERE result IN ('won','lost')", [])[0]
+        won = execute_query(f"SELECT COUNT(*) as n {_bets_join} WHERE sb.result = 'won' {_excl}", [])[0]["n"]
+        lost = execute_query(f"SELECT COUNT(*) as n {_bets_join} WHERE sb.result = 'lost' {_excl}", [])[0]["n"]
+        staked_row = execute_query(f"SELECT SUM(sb.stake) as s, SUM(sb.pnl) as p, AVG(sb.clv) as c {_bets_join} WHERE sb.result IN ('won','lost') {_excl}", [])[0]
         total_staked = float(staked_row["s"] or 0)
         total_pnl = float(staked_row["p"] or 0)
         avg_clv = float(staked_row["c"] or 0) if staked_row["c"] else None
@@ -1424,6 +1426,7 @@ def write_dashboard_cache():
             FROM simulated_bets sb
             JOIN bots b ON b.id = sb.bot_id
             WHERE b.is_active = true AND b.retired_at IS NULL
+              AND b.maturity_label != 'experimental'
         """, [])[0]
         active_total_bets = int(active_total_bets_row["total_bets"] or 0)
         active_settled = int(active_total_bets_row["settled"] or 0)
