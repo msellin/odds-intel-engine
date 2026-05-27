@@ -10521,5 +10521,48 @@ def _():
         "BTTS retired_reason must explain calibration problem"
 
 
+@test("FIX-LEAGUE-TIERS — migration 138 uses name+country WHERE clauses, not placeholder UUIDs")
+def _():
+    """Migration 138 must fix tier=0 misclassifications for top-division leagues using
+    portable name+country ILIKE clauses (not UUID placeholders which caused the original
+    broken version of this migration)."""
+    import pathlib
+    migration = pathlib.Path("supabase/migrations/138_fix_league_tiers.sql").read_text()
+    # Must use name+country pattern, not UUID placeholders
+    assert "xxxx" not in migration, \
+        "Migration 138 must not contain placeholder UUIDs (xxxx)"
+    assert "ILIKE" in migration, \
+        "Migration 138 must use ILIKE name matching"
+    assert "country" in migration, \
+        "Migration 138 must filter by country to avoid false matches"
+    # Must promote known top divisions to tier=1
+    for league in ("j1 league", "eredivisie", "liga profesional", "liga pro", "primera a"):
+        assert league.lower() in migration.lower(), \
+            f"Migration 138 must handle '{league}'"
+    # Must promote known second divisions to tier=2
+    for league in ("championship", "superettan", "eerste divisie"):
+        assert league.lower() in migration.lower(), \
+            f"Migration 138 must handle second-division '{league}'"
+    # Must only promote tier=0 leagues (not accidentally demote existing ones)
+    assert "WHERE tier = 0" in migration, \
+        "Migration 138 must guard with WHERE tier = 0"
+
+
+@test("RLS-MISSING-TABLES — migration 139 enables RLS on tables missing it")
+def _():
+    """Migration 139 (renamed from the duplicate 135_rls_missing_tables.sql) must enable
+    RLS on all previously unprotected public and internal tables."""
+    import pathlib
+    migration = pathlib.Path("supabase/migrations/139_rls_missing_tables.sql").read_text()
+    for tbl in ("matches", "leagues", "teams", "predictions", "odds_snapshots", "bots"):
+        assert tbl in migration, f"Migration 139 must enable RLS on {tbl}"
+    assert "ENABLE ROW LEVEL SECURITY" in migration
+    assert "public_read" in migration, "Migration 139 must create public_read SELECT policies"
+    # Old duplicate file must be gone
+    old_path = pathlib.Path("supabase/migrations/135_rls_missing_tables.sql")
+    assert not old_path.exists(), \
+        "135_rls_missing_tables.sql must be removed (renamed to 139) to fix duplicate key error"
+
+
 if __name__ == "__main__":
     main()
