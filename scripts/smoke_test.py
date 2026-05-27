@@ -10456,5 +10456,32 @@ def _():
     )
 
 
+@test("RETIRE-BAD-PERFORMERS — migration 135 retires 4 chronically negative-ROI bots")
+def _():
+    """bot_aggressive_v2, bot_ou35_attacking, bot_high_roi_global, bot_proven_leagues
+    must have retired_at set and is_active = false after migration 135."""
+    import pathlib
+    # Verify migration file exists and targets the right bots
+    migration = pathlib.Path("supabase/migrations/135_retire_bad_performers.sql").read_text()
+    for bot in ("bot_aggressive_v2", "bot_ou35_attacking", "bot_high_roi_global", "bot_proven_leagues"):
+        assert bot in migration, f"Migration 135 must retire {bot}"
+    assert "retired_at = NOW()" in migration, "Migration 135 must set retired_at"
+    assert "is_active = false" in migration, "Migration 135 must set is_active = false"
+
+    # Verify settlement.py grand total counts have no experimental exclusion
+    src = pathlib.Path("workers/jobs/settlement.py").read_text()
+    # Grand total settled_bets count query must NOT apply _excl
+    grand_total_section = src[src.index("Grand total counts"):]
+    no_excl_block = grand_total_section[:grand_total_section.index("ROI/CLV math")]
+    assert "_excl" not in no_excl_block, (
+        "Grand total count queries must not use _excl — they should count all bots"
+    )
+    # ROI/CLV math section must still exclude experimental
+    roi_section = grand_total_section[grand_total_section.index("ROI/CLV math"):]
+    assert "maturity_label != 'experimental'" in roi_section[:800], (
+        "ROI/CLV math must still exclude experimental bots"
+    )
+
+
 if __name__ == "__main__":
     main()

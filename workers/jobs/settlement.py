@@ -1396,21 +1396,27 @@ def write_dashboard_cache():
             GROUP BY b.id, b.name, b.retired_at, b.retired_reason
         """, [])
 
-        # All-time headline — exclude experimental (acca/combo) bots so the
-        # headline ROI/CLV reflects real strategies only.
-        _excl = "AND b.maturity_label != 'experimental'"
+        # Grand total counts — ALL bots including experimental and retired.
+        # Shown on /performance as "Settled Bets" to represent total work done,
+        # not filtered performance. Experimental bots are excluded from ROI/CLV
+        # math below so the headline numbers stay meaningful.
         _bets_join = "FROM simulated_bets sb JOIN bots b ON b.id = sb.bot_id"
-        total_bets = execute_query(f"SELECT COUNT(*) as n {_bets_join} WHERE sb.result != 'void' {_excl}", [])[0]["n"]
-        settled_bets = execute_query(f"SELECT COUNT(*) as n {_bets_join} WHERE sb.result IN ('won','lost') {_excl}", [])[0]["n"]
+        total_bets = execute_query(f"SELECT COUNT(*) as n {_bets_join} WHERE sb.result != 'void'", [])[0]["n"]
+        settled_bets = execute_query(f"SELECT COUNT(*) as n {_bets_join} WHERE sb.result IN ('won','lost')", [])[0]["n"]
         pending_bets = int(total_bets) - int(settled_bets)
+
+        # ROI/CLV math — still excludes experimental (acca/combo) bots whose
+        # results would drag the headline into a misleading number.
+        _excl = "AND b.maturity_label != 'experimental'"
         won = execute_query(f"SELECT COUNT(*) as n {_bets_join} WHERE sb.result = 'won' {_excl}", [])[0]["n"]
         lost = execute_query(f"SELECT COUNT(*) as n {_bets_join} WHERE sb.result = 'lost' {_excl}", [])[0]["n"]
         staked_row = execute_query(f"SELECT SUM(sb.stake) as s, SUM(sb.pnl) as p, AVG(sb.clv) as c {_bets_join} WHERE sb.result IN ('won','lost') {_excl}", [])[0]
         total_staked = float(staked_row["s"] or 0)
         total_pnl = float(staked_row["p"] or 0)
         avg_clv = float(staked_row["c"] or 0) if staked_row["c"] else None
-        hit_rate = (int(won) / int(settled_bets) * 100) if int(settled_bets) > 0 else None
-        roi_pct = (total_pnl / total_staked * 100) if total_staked > 0 and int(settled_bets) > 0 else None
+        non_exp_settled = execute_query(f"SELECT COUNT(*) as n {_bets_join} WHERE sb.result IN ('won','lost') {_excl}", [])[0]["n"]
+        hit_rate = (int(won) / int(non_exp_settled) * 100) if int(non_exp_settled) > 0 else None
+        roi_pct = (total_pnl / total_staked * 100) if total_staked > 0 and int(non_exp_settled) > 0 else None
 
         # Active-only headline (excludes retired bots). The "what's currently
         # running" number. Same math, scoped via JOIN to bots.
