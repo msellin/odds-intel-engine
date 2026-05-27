@@ -10414,5 +10414,29 @@ def test_telegram_bet_notify():
         "daemon must not send keepalive-fail Telegram alerts"
 
 
+@test("MATURITY-LABEL-MIGRATION — migration 134 adds maturity_label column and correct bot assignments")
+def test_maturity_label_migration():
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    sql = (root / "supabase" / "migrations" / "134_maturity_label.sql").read_text()
+
+    assert "ADD COLUMN IF NOT EXISTS maturity_label" in sql, \
+        "migration must add maturity_label column"
+    assert "'calibrated'" in sql, \
+        "migration must set calibrated label"
+    assert "'experimental'" in sql, \
+        "migration must set experimental label"
+    assert "'beta'" in sql, \
+        "migration must set beta label"
+
+    # Spot-check a few key bots in each tier
+    assert "bot_aggressive" in sql, "bot_aggressive must be set to calibrated"
+    assert "inplay_e" in sql, "inplay_e must be set to calibrated"
+    assert "bot_acca_value" in sql, "bot_acca_value must be set to experimental"
+    assert "bot_combo_system" in sql, "bot_combo_system must be set to experimental"
+    assert "bot_high_alignment" in sql, "bot_high_alignment must be set to beta"
+    assert "inplay_btts_dryspell_v1" in sql, "inplay_btts_dryspell_v1 must be set to beta"
+
+
 if __name__ == "__main__":
     main()
