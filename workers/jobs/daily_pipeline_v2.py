@@ -41,6 +41,7 @@ from workers.api_clients.supabase_client import (
     batch_write_morning_signals,
     build_match_feature_vectors_live,
 )
+from workers.notify.telegram import send_telegram
 from workers.model.improvements import (
     calibrate_prob, compute_odds_movement, compute_alignment,
     compute_kelly, compute_stake,
@@ -2910,6 +2911,13 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                             f"edge {edge*100:+.1f}% | {bot_name}"
                         )
                         _running_bankroll[bot_name] = max(0.0, _running_bankroll.get(bot_name, 1000.0) - stake)
+                        bm = best_bookmaker.get(str(match_id), {}).get(f"{os_market}_{os_selection}") or "—"
+                        send_telegram(
+                            f"🎯 <b>PRE-MATCH</b> {bot_name}\n"
+                            f"  <b>{match['home_team']} vs {match['away_team']}</b>\n"
+                            f"  {mkt} {selection} @ {odds:.2f}\n"
+                            f"  edge {edge*100:+.1f}%  ·  align {alignment['alignment_class']}  ·  {bm}"
+                        )
                         # Save Stage 1 snapshot: stats-only probability
                         try:
                             store_prediction_snapshot(
@@ -2985,13 +2993,12 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
     console.print("[green]All data stored in Supabase — frontend can display it now[/green]")
 
     if _new_bet_lines:
-        from workers.notify.telegram import send_telegram
         bet_block = "\n".join(_new_bet_lines)
         send_telegram(
-            f"🎯 <b>{total_bets} value bet(s) found</b>{cohort_label}\n{bet_block}"
+            f"🎯 <b>{total_bets} value bet(s) found</b>{cohort_label}\n{bet_block}",
+            silent=True,  # summary is redundant — per-bet alerts already sent
         )
     else:
-        from workers.notify.telegram import send_telegram
         send_telegram(
             f"📭 Pipeline run complete{cohort_label} — 0 new value bets",
             silent=True,
