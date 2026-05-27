@@ -10483,6 +10483,25 @@ def _():
     )
 
 
+@test("BTTS-PLATT-CAL — fit_platt.py adds BTTS 1-feature Platt calibration")
+def _():
+    """fit_platt.py must include fetch_settled_btts_bets() and a BTTS calibration
+    section in fit_and_store(). The calibration corrects ~15pp BTTS overestimation."""
+    import pathlib
+    src = pathlib.Path("scripts/fit_platt.py").read_text()
+    assert "fetch_settled_btts_bets" in src, "fit_platt.py must define fetch_settled_btts_bets()"
+    assert "btts_yes" in src, "fit_platt.py must handle btts_yes market"
+    assert "BTTS_MARKETS" in src, "fit_platt.py must define BTTS_MARKETS list"
+    # Confirm BTTS fetches calibrated_prob (post-shrinkage), not raw model_probability
+    btts_fn_start = src.index("def fetch_settled_btts_bets")
+    btts_fn_end = src.index("\ndef ", btts_fn_start + 1)
+    btts_fn = src[btts_fn_start:btts_fn_end]
+    assert "calibrated_prob" in btts_fn, \
+        "fetch_settled_btts_bets() must use calibrated_prob as input feature"
+    assert "model_probability" not in btts_fn, \
+        "fetch_settled_btts_bets() must NOT use raw model_probability — use calibrated_prob"
+
+
 @test("RETIRE-DC-BTTS — migration 137 retires bot_dc_value + both BTTS bots with reasons")
 def _():
     """DC (derived market, no model-native edge) and BTTS (model 15.6pp miscalibrated)

@@ -16,6 +16,16 @@ O/U markets (over_under_25_over / over_under_25_under) — CAL-PLATT-UPGRADE:
     Applied in improvements.apply_platt() when platt_c is non-null.
     Threshold: ≥ 300 settled bets per selection. O/U met this threshold 2026-05-12.
 
+BTTS market (btts_yes / btts_no) — BTTS-PLATT-CAL:
+    1-feature Platt fitted on simulated_bets using calibrated_prob as input.
+    BTTS probability is derived from the joint Poisson goal matrix (not a direct
+    XGBoost output), so the model systematically overestimates BTTS — 62.1%
+    predicted vs 46.5% actual hit rate on 217 settled bets. The Platt sigmoid
+    corrects this systematic bias without requiring a full model retrain.
+    Input: calibrated_prob (= post-shrinkage prob; no prior Platt for BTTS).
+    Stored as: market='btts_yes', platt_a=α, platt_b=β, platt_c=NULL.
+    Min samples: 100 (same as 1X2).
+
 Run manually or via the settlement workflow (Sundays at 22:00 UTC):
     python scripts/fit_platt.py
     python scripts/fit_platt.py --model-version v14        # only v14 predictions
@@ -41,6 +51,7 @@ from workers.api_clients.db import execute_query, execute_write
 
 MARKETS = ["1x2_home", "1x2_draw", "1x2_away"]
 OU_MARKETS = ["over_under_25_over", "over_under_25_under"]
+BTTS_MARKETS = ["btts_yes"]  # btts_no is the complement — fit yes, derive no understanding from it
 MIN_SAMPLES_DEFAULT = 100
 MIN_SAMPLES_OU = 300  # higher threshold for 2-feature logistic to avoid overfitting
 
@@ -163,6 +174,44 @@ def fetch_settled_ou_bets(model_version: str | None = None) -> list[dict]:
         labeled.append({
             "prob": float(row["calibrated_prob"]),
             "odds": float(row["odds_at_pick"]),
+            "won": row["result"] == "won",
+            "market": mkt,
+        })
+    return labeled
+
+
+def fetch_settled_btts_bets(model_version: str | None = None) -> list[dict]:
+    """
+    Fetch settled BTTS bets from simulated_bets for 1-feature Platt fitting.
+
+    Uses calibrated_prob as input (= post-shrinkage prob; no prior Platt for BTTS).
+    This matches the pipeline where apply_platt receives the shrunk probability.
+
+    BTTS probability is derived from the joint Poisson goal matrix — the model
+    overestimates BTTS probability by ~15pp. The Platt sigmoid corrects this
+    systematic bias without a full retrain.
+    """
+    sql = """
+        SELECT calibrated_prob, result,
+               CASE WHEN LOWER(selection) = 'yes' THEN 'btts_yes' ELSE 'btts_no' END AS market
+        FROM simulated_bets
+        WHERE LOWER(market) = 'btts'
+          AND result IN ('won', 'lost')
+          AND calibrated_prob IS NOT NULL
+    """
+    params: list = []
+    if model_version:
+        sql += " AND model_version = %s"
+        params.append(model_version)
+    rows = execute_query(sql, params)
+
+    labeled = []
+    for row in rows:
+        mkt = row.get("market")
+        if not mkt:
+            continue
+        labeled.append({
+            "prob": float(row["calibrated_prob"]),
             "won": row["result"] == "won",
             "market": mkt,
         })
@@ -343,8 +392,62 @@ def fit_and_store(min_samples: int = MIN_SAMPLES_DEFAULT, model_version: str | N
             results.append({"market": market})
             print("    → Stored in model_calibration (platt_a=w0, platt_b=intercept, platt_c=w1)")
 
+    # --- BTTS: 1-feature Platt from simulated_bets (BTTS-PLATT-CAL) ---
+    # Input: calibrated_prob (post-shrinkage, no prior Platt).
+    # Fixes the systematic ~15pp overestimation in the joint Poisson BTTS derivation.
+    btts_labeled = fetch_settled_btts_bets(model_version=model_version)
+
     print(f"\n{'─'*65}")
-    total_markets = len(MARKETS) + len(OU_MARKETS)
+    print(f"  BTTS Platt Calibration — {len(btts_labeled)} settled bets{version_label}")
+    print(f"{'─'*65}")
+
+    if not btts_labeled:
+        print("  No settled BTTS bets found.")
+    else:
+        btts_by_market: dict[str, list[dict]] = {}
+        for item in btts_labeled:
+            btts_by_market.setdefault(item["market"], []).append(item)
+
+        for market in BTTS_MARKETS:
+            items = btts_by_market.get(market, [])
+            n = len(items)
+
+            if n < min_samples:
+                print(f"\n  {market}: {n} samples (need {min_samples}) — SKIPPED")
+                continue
+
+            probs = np.array([x["prob"] for x in items])
+            outcomes = np.array([1.0 if x["won"] else 0.0 for x in items])
+
+            ece_before = compute_ece(probs, outcomes)
+            a, b = fit_platt_params(probs, outcomes)
+            cal_probs = platt_transform(probs, a, b)
+            ece_after = compute_ece(cal_probs, outcomes)
+
+            mean_raw = float(probs.mean())
+            mean_cal = float(cal_probs.mean())
+            actual_rate = float(outcomes.mean())
+
+            print(f"\n  {market} (n={n}):")
+            print(f"    α = {a:.6f}, β = {b:.6f}")
+            print(f"    Mean input prob:  {mean_raw*100:.1f}%")
+            print(f"    Mean calibrated:  {mean_cal*100:.1f}%")
+            print(f"    Actual hit rate:  {actual_rate*100:.1f}%")
+            print(f"    ECE before: {ece_before:.4f} ({ece_before*100:.1f}%)")
+            print(f"    ECE after:  {ece_after:.4f} ({ece_after*100:.1f}%)")
+
+            improvement = ece_before - ece_after
+            if improvement > 0:
+                print(f"    ✅ Improvement: {improvement:.4f} ({improvement/ece_before*100:.0f}% relative)")
+            else:
+                print("    ⚠  No improvement — Platt params stored but BTTS may need model retrain")
+
+            _store_calibration(market, a, b, ece_before, ece_after, n)
+            results.append({"market": market})
+            print("    → Stored in model_calibration")
+
+    print(f"\n{'─'*65}")
+    total_markets = len(MARKETS) + len(OU_MARKETS) + len(BTTS_MARKETS)
     if results:
         print(f"  ✅ Fitted {len(results)}/{total_markets} markets")
     else:

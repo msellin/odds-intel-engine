@@ -2,6 +2,16 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-05-27 — BTTS-PLATT-CAL done
+>
+> Added BTTS 1-feature Platt calibration to `scripts/fit_platt.py`. Run result:
+> - 139 settled btts_yes bets, ECE 15.4% → 0.0% (100% improvement)
+> - Mean shrunk prob: 59.7% → calibrated: 47.5% → actual hit rate: 47.5% — perfect alignment
+> - Key finding: **calibration confirms retirement was correct**. Calibrated BTTS prob (~47.5%) is
+>   *below* market implied (~48.7% at avg odds 2.055) → most BTTS bets had negative real edge all along.
+>   The positive CLV was an artifact of the miscalibrated prob inflating edge calculations.
+> - Smoke: BTTS-PLATT-CAL.
+>
 > ## 2026-05-27 — RETIRE-DC-BTTS done
 >
 > Retired `bot_dc_value`, `bot_btts_all`, `bot_btts_conservative` via migration 137.
