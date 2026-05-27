@@ -10483,5 +10483,24 @@ def _():
     )
 
 
+@test("RETIRE-DC-BTTS — migration 137 retires bot_dc_value + both BTTS bots with reasons")
+def _():
+    """DC (derived market, no model-native edge) and BTTS (model 15.6pp miscalibrated)
+    must be retired by migration 137 with retired_reason populated."""
+    import pathlib
+    migration = pathlib.Path("supabase/migrations/137_retire_dc_btts_bots.sql").read_text()
+    for bot in ("bot_dc_value", "bot_btts_all", "bot_btts_conservative"):
+        assert bot in migration, f"Migration 137 must retire {bot}"
+    assert "retired_at" in migration, "Migration 137 must set retired_at"
+    assert "is_active" in migration, "Migration 137 must set is_active"
+    assert "retired_reason" in migration, "Migration 137 must populate retired_reason"
+    # DC reason must mention derived market
+    assert "Derived market" in migration or "derived market" in migration, \
+        "DC retired_reason must explain derived-market problem"
+    # BTTS reason must mention calibration
+    assert "miscalibrated" in migration or "calibrat" in migration, \
+        "BTTS retired_reason must explain calibration problem"
+
+
 if __name__ == "__main__":
     main()

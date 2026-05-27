@@ -2,6 +2,14 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-05-27 — RETIRE-DC-BTTS done
+>
+> Retired `bot_dc_value`, `bot_btts_all`, `bot_btts_conservative` via migration 137.
+> - **bot_dc_value**: DC is a derived market (computed from 1x2 probs, not a trained market). Edge signal unreliable. -16.7% ROI on 55 v2 bets; edge threshold of 3-5% is firmly negative-ROI territory. No DC-specific model planned until June 8 retrain adds it.
+> - **bot_btts_all / bot_btts_conservative**: Model overestimates BTTS hit rate by 15.6pp (predicted 62.1%, actual 46.5%). Edge signal is fake — computed against an overestimated prob. v2 BTTS bets have *negative* CLV (-1.81%), meaning the market prices BTTS better than our model. Paused until June 8 retrain adds BTTS-specific calibration.
+> - Both retired with `retired_reason` in DB (first time using that column).
+> - Smoke: RETIRE-DC-BTTS.
+>
 > ## 2026-05-27 — TELE-BET-NOTIFY done
 >
 > Telegram notifications wired directly into the pipeline (no daemon required):
