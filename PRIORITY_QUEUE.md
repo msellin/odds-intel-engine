@@ -2,6 +2,15 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-05-27 — TELE-BET-NOTIFY done
+>
+> Telegram notifications wired directly into the pipeline (no daemon required):
+> - **inplay_bot.py**: `send_telegram()` fires on every successful inplay paper bet with team names (home/away joined from teams table), market/selection/odds/edge, minute, score, and bot name.
+> - **coolbet_placer.py**: `send_telegram()` fires on every `store_real_bet()` write with team names, market/selection/odds/edge/stake/bot and ticket id. 📝 = paper, 💸 = real money.
+> - Team names added to `_get_prematch_data` query in inplay_bot (JOIN teams th/ta).
+> - TELEGRAM-COMMANDS was already dropped (daemon never runs); two-way bot code left in place but not wired anywhere active.
+> - Smoke: TELE-BET-NOTIFY.
+>
 > ## 2026-05-26 — ADMIN-PLACE-COOLBET-ONLY-EVIDENCE + COOLBET-FUZZY-DATE-GUARD done
 >
 > Two more follow-ups on /admin/place after ADMIN-PLACE-STRICT-COOLBET landed.

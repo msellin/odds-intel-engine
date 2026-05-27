@@ -10384,5 +10384,22 @@ def test_odds_timing_validate_script():
     )
 
 
+@test("TELE-BET-NOTIFY — send_telegram imported in inplay_bot + placer; team names in prematch query")
+def test_telegram_bet_notify():
+    import pathlib, ast
+    bot_src = (pathlib.Path(__file__).resolve().parents[1] / "workers" / "jobs" / "inplay_bot.py").read_text()
+    placer_src = (pathlib.Path(__file__).resolve().parents[1] / "workers" / "automation" / "coolbet_placer.py").read_text()
+    assert "from workers.notify.telegram import send_telegram" in bot_src, \
+        "inplay_bot.py must import send_telegram"
+    assert "from workers.notify.telegram import send_telegram" in placer_src, \
+        "coolbet_placer.py must import send_telegram"
+    assert "home_name" in bot_src and "away_name" in bot_src, \
+        "prematch query must select home_name / away_name from teams"
+    assert "INPLAY" in bot_src and "send_telegram" in bot_src, \
+        "inplay_bot.py must call send_telegram after bet placement"
+    assert "send_telegram" in placer_src and "mode_label" in placer_src, \
+        "coolbet_placer.py must call send_telegram after store_real_bet"
+
+
 if __name__ == "__main__":
     main()

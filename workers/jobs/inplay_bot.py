@@ -34,6 +34,7 @@ import math
 import os
 from datetime import datetime, timezone
 from rich.console import Console
+from workers.notify.telegram import send_telegram
 
 console = Console()
 
@@ -467,6 +468,15 @@ def run_inplay_strategies():
                         f"xG {xg_h:.2f}-{xg_a:.2f}"
                         f"[/bold green]"
                     )
+                    home = pm.get("home_name") or "?"
+                    away = pm.get("away_name") or "?"
+                    send_telegram(
+                        f"📡 <b>INPLAY</b> paper bet\n"
+                        f"  <b>{home} vs {away}</b>\n"
+                        f"  {trigger['market']} {trigger['selection']} @ {trigger['odds']:.2f}\n"
+                        f"  edge {trigger['edge']:+.1f}%  ·  min {cand['minute']}  ·  score {cand['score_home']}-{cand['score_away']}\n"
+                        f"  bot {bot_name}{src_tag}"
+                    )
             except Exception as e:
                 _funnel["store_bet_error"] += 1
                 console.print(f"[red]InplayBot store_bet error ({bot_name}): {e}[/red]")
@@ -576,6 +586,8 @@ def _get_prematch_data(execute_query, match_ids: list[str]) -> dict[str, dict]:
             m.league_id,
             m.home_team_id,
             m.away_team_id,
+            th.name AS home_name,
+            ta.name AS away_name,
             l.tier AS league_tier,
             COALESCE(tss_h.goals_for_avg::numeric, la.league_avg::numeric, 1.1) AS prematch_xg_home,
             COALESCE(tss_a.goals_for_avg::numeric, la.league_avg::numeric, 1.1) AS prematch_xg_away,
@@ -585,7 +597,9 @@ def _get_prematch_data(execute_query, match_ids: list[str]) -> dict[str, dict]:
             p_home.model_probability AS prematch_home_prob,
             p_away.model_probability AS prematch_away_prob
         FROM matches m
-        JOIN leagues l ON l.id = m.league_id
+        JOIN leagues l  ON l.id  = m.league_id
+        JOIN teams   th ON th.id = m.home_team_id
+        JOIN teams   ta ON ta.id = m.away_team_id
         LEFT JOIN LATERAL (
             SELECT AVG(goals_for_avg) AS league_avg
             FROM team_season_stats

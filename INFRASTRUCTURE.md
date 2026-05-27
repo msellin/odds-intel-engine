@@ -1,6 +1,6 @@
 # OddsIntel — Infrastructure & Costs
 
-> Last updated: 2026-05-13 — BET-TIMING-MONITOR shadow runs added (3 extra Railway jobs/day, ~+2 min pod time, no AF calls). 2026-05-08 — healthchecks.io added (external heartbeat). Stripe webhook idempotency added. LivePoller tuned to 45s/135s. Pipeline health alerts wired (PIPE-ALERT). Total cost ~€56.20/mo (unchanged).
+> Last updated: 2026-05-27 — Corrected API-Football plan to 150K tier ($39/mo). Total cost ~€65/mo.
 
 ---
 
@@ -16,7 +16,7 @@
 | **Gemini API** | news_checker (2.5 Flash), match_previews, settlement loss classifier, bet-explain (2.5 Flash Lite) | **Pay-as-you-go** (~$0.20-0.30/mo) | Active — billing enabled 2026-05-05. Free tier RPD=20 was too low (news_checker alone needs 64+/day). |
 | **Kambi API** | Odds for 41 leagues (public) | Free (no key) | Active |
 | **ESPN API** | Settlement results backup (public) | Free (no key) | Active |
-| **API-Football** | PRIMARY: fixtures, results, odds, lineups, injuries, live stats | Ultra ($29/mo) | Active — ⚠️ **Do NOT downgrade to Pro** — 15s live polling needs 18K-45K calls/day (Pro limit: 7.5K) |
+| **API-Football** | PRIMARY: fixtures, results, odds, lineups, injuries, live stats | **150K tier ($39/mo)** | Active — ⚠️ **Do NOT downgrade to Pro** — 15s live polling needs 18K-45K calls/day (Pro limit: 7.5K) |
 | **Sentry** | Error monitoring & alerting (frontend only) | Free (5K errors/mo) | Active — removed from engine/Railway (cron monitors were exceeding free budget) |
 | **healthchecks.io** | External scheduler heartbeat — pings every 5min, emails if Railway goes silent | Free | Active 2026-05-08. `HEALTHCHECKS_IO_PING_URL` env var on Railway. Would have caught the 2026-05-08 pool outage in 5 min vs 11h. |
 | **Stripe** | Payment processing (Pro/Elite tiers) | No monthly fee | **Live mode** ✅ — production keys active 2026-05-04. Pro €4.99/mo, Elite €14.99/mo + annual + founding rates. Promo code `REDDIT` (100% off first month). Webhook idempotency added 2026-05-08 (processed_events table). |
@@ -63,24 +63,21 @@ All scheduled jobs moved to Railway. GitHub Actions used only for manual trigger
 
 ## Supabase Usage (Pro plan — upgraded 2026-04-29)
 
-| Resource | Pro Limit | Current Usage (2026-04-29) | Headroom |
+| Resource | Pro Limit | Current Usage (2026-05-27) | Headroom |
 |----------|-----------|---------------------------|----------|
-| Database size | **8 GB** | ~150-200 MB (845K odds_snapshots rows, 2 days data) | Massive — years |
-| Database (rows) | — | odds_snapshots 845K, matches 885, predictions 590, match_signals 2,701 | Fine |
-| Auth MAU | 100,000 | 2 users | Plenty |
-| Storage | 100 GB | ~100 MB (16 model bundles in `models` bucket) | Plenty — ~5MB/bundle, ~52 bundles/year at weekly retrain |
+| Database size | **8 GB** (Pro limit) | **~10 GB used / 16 GB disk** ⚠️ over limit | **Exceeded — overage at $0.125/GB (~$0.25/mo now)** |
+| Auth MAU | 100,000 | Few users | Plenty |
+| Storage | 100 GB | ~100 MB (model bundles in `models` bucket) | Plenty |
 | Bandwidth | 5 GB/mo | Low | Plenty |
 | Backups | ✅ Daily automated + PITR (7 days) | Active | — |
 | Project pausing | Never pauses | Active | — |
 | Custom SMTP | ✅ Available | Not yet configured | Needed for STRIPE-EMAIL task |
 
-**Odds snapshot growth pattern** (observed): Pipeline started April 27 — 845K rows in 2 days.
-- Steady-state: ~600 scheduled matches × ~1,400 rows each = ~840K rows constant for upcoming matches
-- After finishing + pruning: scheduled matches shrink from ~1,400 rows to ~22 rows (opening + closing only)
-- Daily pruning runs after settlement (21:00 UTC) via `scripts/prune_odds_snapshots.py --apply`
-- At 120 bytes/row steady state: ~100-200 MB for odds_snapshots. Well within 8 GB Pro limit.
-
-**When to watch next:** If expanding to new sports (tennis, basketball) — each adds a comparable snapshot volume.
+**⚠️ DB size over Pro limit (2026-05-27):** Actual usage is ~10 GB vs 8 GB Pro limit. Overage is ~$0.25/mo right now but will grow. Likely driven by odds_snapshots accumulation. Action items:
+- Check actual table sizes: `SELECT relname, pg_size_pretty(pg_total_relation_size(oid)) FROM pg_class ORDER BY pg_total_relation_size(oid) DESC LIMIT 10;`
+- Verify pruning job (`prune_odds_snapshots.py`) is running and effective
+- Consider more aggressive retention (e.g. keep only last N snapshots per match instead of all)
+- At ~$0.125/GB overage, 10 GB = ~$25.25/mo (barely above). At 20 GB = ~$26.50. Not urgent but worth monitoring.
 
 ---
 
@@ -88,12 +85,12 @@ All scheduled jobs moved to Railway. GitHub Actions used only for manual trigger
 
 | Service | Plan | Monthly Cost |
 |---------|------|-------------|
-| API-Football | Ultra | ~€27 ($29) |
+| API-Football | 150K tier | ~€36 ($39) |
 | Supabase | Pro | ~€23 ($25) |
 | Railway | Hobby | ~€5 ($5) |
 | Gemini API | Pay-as-you-go | ~€0.20 ($0.20) |
 | Domain | oddsintel.app | ~€1 amortized |
-| **Total** | | **~€56.20/mo** |
+| **Total** | | **~€65/mo** |
 
 > Gemini cost: ~75 calls/day × ~500 tokens/call = ~1.1M tokens/month. Flash at $0.15/1M input + $0.60/1M output ≈ $0.20-0.30/mo. Essentially free but billing must be enabled — free tier RPD cap is only 20/day.
 
@@ -117,9 +114,9 @@ See `DATA_SOURCES.md` for full data architecture, migration plan, and alternativ
 | Sentry | Free | €0 |
 | GitHub Actions | Free (public) | €0 |
 | Gemini API | Pay-as-you-go | ~€0.20 |
-| **API-Football** | **Ultra** | **~€27 ($29)** |
+| **API-Football** | **150K tier** | **~€36 ($39)** |
 | Domain | oddsintel.app | ~€1/mo amortized |
-| **Total** | | **~€52.20/mo** |
+| **Total** | | **~€61/mo** |
 
 ### Phase 3: Growing (50-200 users)
 
@@ -151,14 +148,14 @@ See `DATA_SOURCES.md` for full data architecture, migration plan, and alternativ
 
 | Subscribers | Plan Mix | Monthly Revenue | Monthly Costs | Net |
 |-------------|----------|----------------|---------------|-----|
-| 0 | — | €0 | ~€52 | **-€52** |
-| 5 | 5 Pro | €25 | ~€52 | **-€27** |
-| 11+1 | 11 Pro, 1 Elite | €70 | ~€52 | **~break-even** |
-| 20+3 | 20 Pro, 3 Elite | €145 | ~€55 | **+€90** |
+| 0 | — | €0 | ~€65 | **-€65** |
+| 5 | 5 Pro | €25 | ~€65 | **-€40** |
+| 13+1 | 13 Pro, 1 Elite | €80 | ~€65 | **~break-even** |
+| 20+3 | 20 Pro, 3 Elite | €145 | ~€65 | **+€80** |
 | 50+10 | 50 Pro, 10 Elite | €400 | ~€75 | **+€325** |
 | 200+50 | 200 Pro, 50 Elite | €1,748 | ~€200 | **+€1,548** |
 
-> Break-even is 11 Pro + 1 Elite subscribers, or ~14 Pro-equivalent subscriptions. Costs based on current stack: API-Football Ultra ($29) + Supabase Pro ($25) + domain (€1).
+> Break-even is ~13 Pro + 1 Elite subscribers. Costs based on current stack: API-Football 150K ($39) + Supabase Pro ($25) + Railway ($5) + domain (€1).
 
 > Stripe takes 1.5% + €0.25/txn for EU cards, 2.9% + €0.25 for non-EU. Revenue based on Pro €4.99/mo, Elite €14.99/mo.
 
