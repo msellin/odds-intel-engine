@@ -10521,6 +10521,33 @@ def _():
         "BTTS retired_reason must explain calibration problem"
 
 
+@test("COOLBET-AH-LINE — store_coolbet_odds_snapshot accepts handicap_line and includes it in INSERT")
+def _():
+    """store_coolbet_odds_snapshot must accept a handicap_line kwarg and write it to
+    odds_snapshots. Without this, Coolbet AH rows miss the line value, making it
+    impossible to match them against predictions (which embed the line in the market
+    name, e.g. 'ah_away_0.50')."""
+    import pathlib
+    src = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
+    fn_start = src.index("def store_coolbet_odds_snapshot")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    fn_src = src[fn_start:fn_end]
+    assert "handicap_line" in fn_src, \
+        "store_coolbet_odds_snapshot must have a handicap_line parameter"
+    # Explorer must call with handicap_line= kwarg (not use old _store_with_handicap workaround)
+    explorer_src = pathlib.Path("workers/automation/coolbet_explorer.py").read_text()
+    assert "_store_with_handicap" not in explorer_src, \
+        "coolbet_explorer.py must not use _store_with_handicap workaround"
+    assert "handicap_line=line" in explorer_src, \
+        "coolbet_explorer.py must pass handicap_line=line to store_coolbet_odds_snapshot"
+    # Placer must extract line from _normalise_our_target and pass it through
+    placer_src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
+    assert "snap_line" in placer_src, \
+        "coolbet_placer.py must extract snap_line from _normalise_our_target"
+    assert "handicap_line=snap_line" in placer_src, \
+        "coolbet_placer.py must pass handicap_line=snap_line to store_coolbet_odds_snapshot"
+
+
 @test("FIX-LEAGUE-TIERS-140 — migration 140 fixes Saudi-Arabia/South-Africa dash variants + extra top divisions")
 def _():
     """Migration 140 must fix the country-name dash variants missed by 138 (Saudi-Arabia,
