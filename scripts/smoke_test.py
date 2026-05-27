@@ -10384,21 +10384,34 @@ def test_odds_timing_validate_script():
     )
 
 
-@test("TELE-BET-NOTIFY — send_telegram imported in inplay_bot + placer; team names in prematch query")
+@test("TELE-BET-NOTIFY — send_telegram in inplay_bot + daily_pipeline; team names in prematch query; daemon Telegram removed")
 def test_telegram_bet_notify():
-    import pathlib, ast
-    bot_src = (pathlib.Path(__file__).resolve().parents[1] / "workers" / "jobs" / "inplay_bot.py").read_text()
-    placer_src = (pathlib.Path(__file__).resolve().parents[1] / "workers" / "automation" / "coolbet_placer.py").read_text()
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    bot_src = (root / "workers" / "jobs" / "inplay_bot.py").read_text()
+    pipeline_src = (root / "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+    placer_src = (root / "workers" / "automation" / "coolbet_placer.py").read_text()
+    daemon_src = (root / "scripts" / "coolbet_daemon.py").read_text()
+
     assert "from workers.notify.telegram import send_telegram" in bot_src, \
         "inplay_bot.py must import send_telegram"
-    assert "from workers.notify.telegram import send_telegram" in placer_src, \
-        "coolbet_placer.py must import send_telegram"
     assert "home_name" in bot_src and "away_name" in bot_src, \
         "prematch query must select home_name / away_name from teams"
-    assert "INPLAY" in bot_src and "send_telegram" in bot_src, \
+    assert "send_telegram" in bot_src, \
         "inplay_bot.py must call send_telegram after bet placement"
-    assert "send_telegram" in placer_src and "mode_label" in placer_src, \
-        "coolbet_placer.py must call send_telegram after store_real_bet"
+
+    assert "_new_bet_lines" in pipeline_src, \
+        "daily_pipeline_v2.py must accumulate _new_bet_lines for Telegram summary"
+    assert "value bet" in pipeline_src, \
+        "daily_pipeline_v2.py must send Telegram summary with 'value bet' label"
+
+    assert "from workers.notify.telegram import send_telegram" not in placer_src, \
+        "coolbet_placer.py must NOT import send_telegram (placer is run manually)"
+
+    assert "coolbet-imperva" not in daemon_src, \
+        "daemon must not send Imperva Telegram alerts (daemon not in active use)"
+    assert "coolbet-keepalive-fail" not in daemon_src, \
+        "daemon must not send keepalive-fail Telegram alerts"
 
 
 if __name__ == "__main__":

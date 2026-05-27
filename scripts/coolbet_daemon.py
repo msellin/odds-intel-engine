@@ -140,19 +140,6 @@ def _sweep_running() -> bool:
 def _task_keepalive(session: CoolbetSession) -> str:
     ok = session.keep_alive()
     ttl = session.jwt_seconds_remaining
-    if not ok:
-        # Imperva 403 / cookie expiry / network blip — alert the operator
-        # so they don't discover overnight that the daemon was zombied.
-        # Dedup so a multi-hour outage sends 1 alert, not 60.
-        from workers.notify.telegram import send_telegram
-        send_telegram(
-            "⚠ Coolbet keepalive failed — likely Imperva 403 / cookies expired. "
-            "Stop daemon (<code>tmux kill-session -t coolbet</code>), refresh "
-            "<code>COOLBET_COOKIE_*</code> in .env from browser, run "
-            "<code>python3 scripts/coolbet_preflight.py</code>, restart.",
-            dedup_key="coolbet-keepalive-fail",
-            dedup_window_s=3600,
-        )
     return f"keepalive {'✓' if ok else '✗'}  (JWT TTL ≈ {int(ttl)}s)"
 
 
@@ -170,12 +157,6 @@ def _task_odds_snapshot(session: "CoolbetSession", mode: str, days: int, require
         return f"odds snapshot ✓ ({mode}, {days}d)"
     except Exception as e:
         log.warning("odds snapshot raised: %s", e)
-        from workers.notify.telegram import send_telegram
-        send_telegram(
-            f"⚠ Coolbet odds snapshot failed: {str(e)[:300]}",
-            dedup_key="coolbet-odds-snapshot-fail",
-            dedup_window_s=3600,
-        )
         raise
 
 
@@ -192,28 +173,11 @@ def _task_jwt_browser_refresh(session: CoolbetSession) -> str:
     Smart-ID again and paste a fresh JWT; that's the only manual touchpoint
     left in the operation loop.
     """
-    from workers.notify.telegram import send_telegram
     try:
         ttl = session.renew_jwt_via_api()
         return f"jwt_renew ✓ (TTL ≈ {int(ttl)}s)"
     except Exception as e:
         msg = str(e)
-        # Dead-JWT case: 401/403 means our current JWT is past its grace
-        # window — only way back is a fresh Smart-ID login.
-        if "401" in msg or "403" in msg or "refused" in msg.lower():
-            log.warning("jwt_renew: current JWT dead — operator must re-Smart-ID")
-            send_telegram(
-                "🔐 <b>Coolbet JWT dead</b>\n"
-                "Renewal refused — current JWT has expired past the grace window.\n\n"
-                "Recover (~30 sec):\n"
-                "1. Log into coolbet.com via Smart-ID (PIN1 on phone)\n"
-                "2. DevTools → Network → any request → copy <code>cbauth</code> Bearer\n"
-                "3. Update <code>COOLBET_MANUAL_JWT</code> in .env\n"
-                "4. Daemon picks it up automatically on next renewal cycle",
-                dedup_key="coolbet-jwt-dead",
-                dedup_window_s=3600,
-            )
-            return "jwt_renew ✗ (current JWT dead — operator alerted)"
         log.warning("jwt_renew: %s", msg[:200])
         return f"jwt_renew ✗ ({msg[:120]})"
 
@@ -390,7 +354,6 @@ def _task_place(mode: str, guard, min_edge: float | None) -> str:
     """mode ∈ {'dry', 'record', 'execute'}. guard = PlacementGuard or None.
     min_edge: decimal fraction (0.05 = 5%); overrides COOLBET_MIN_EDGE env."""
     from workers.automation.coolbet_placer import place_all_bets
-    from workers.notify.telegram import send_telegram
     record  = mode in ("record", "execute")
     execute = mode == "execute"
     try:
@@ -403,39 +366,9 @@ def _task_place(mode: str, guard, min_edge: float | None) -> str:
         for r in results:
             outcomes[r.get("outcome", "?")] = outcomes.get(r.get("outcome", "?"), 0) + 1
         summary = ", ".join(f"{k}={v}" for k, v in sorted(outcomes.items()))
-
-        # Notify on every successful placement in record/execute mode so the
-        # operator sees bets landing in real time. No dedup — each placement
-        # is its own event.
-        if mode in ("record", "execute"):
-            placed = [r for r in results if r.get("outcome") == "placed"]
-            # Header icon + label tells the operator at a glance whether this
-            # was a paper trade (record, no money moved) or real placement
-            # (execute, money moved at Coolbet).
-            if mode == "execute":
-                icon, label = "💸", "<b>REAL MONEY</b> @ Coolbet"
-            else:
-                icon, label = "📝", "PAPER (record-only, no money moved)"
-            for r in placed:
-                stake = float(r.get("stake") or 0)
-                edge  = float(r.get("edge_percent") or 0) * 100
-                odds  = float(r.get("live_odds") or r.get("ev_odds") or 0)
-                ticket = r.get("ticket_id") or "(record only)"
-                send_telegram(
-                    f"{icon} {label}\n"
-                    f"  <b>{r.get('home_team','?')} vs {r.get('away_team','?')}</b>\n"
-                    f"  {r.get('market','?')} {r.get('selection','?')} @ {odds:.3f}\n"
-                    f"  €{stake:.2f}  ·  edge {edge:+.1f}%  ·  bot {r.get('bot_name','?')}\n"
-                    f"  ticket {ticket}",
-                )
         return f"place ({mode}) ✓ — {len(results)} evaluated [{summary}]"
     except Exception as e:
         log.warning("place raised: %s\n%s", e, traceback.format_exc())
-        send_telegram(
-            f"❌ place ({mode}) raised: {str(e)[:300]}",
-            dedup_key="coolbet-place-crash",
-            dedup_window_s=600,
-        )
         return f"place ({mode}) ✗ ({e})"
 
 
@@ -571,19 +504,7 @@ def main() -> None:
         log.info("  place     every %d min  (mode=%s)", args.place_min, args.place_mode)
     log.info("─" * 78)
 
-    # Startup ping so the operator knows the daemon (re)started. Silent so it
-    # doesn't buzz unnecessarily when relaunched mid-day. No-op when
-    # TELEGRAM_* env vars aren't set.
-    try:
-        from workers.notify.telegram import send_telegram
-        odds_desc = "no-sweep" if args.no_sweep else f"{args.odds_mode}/{args.odds_min}m"
-        send_telegram(
-            f"🟢 Coolbet daemon started — odds={odds_desc}, "
-            f"place={args.place_mode}/{args.place_min}m, min_edge={args.min_edge}",
-            silent=True,
-        )
-    except Exception:
-        pass  # never block startup on notify
+    pass  # startup Telegram ping removed — daemon not in active use
 
     # TELEGRAM-COMMANDS — start the two-way bot listener (background thread).
     # Lets the operator control the daemon from their phone:
@@ -661,12 +582,6 @@ def main() -> None:
                 "backoff_probe": True, "ok": ok,
             })
             if ok:
-                from workers.notify.telegram import send_telegram
-                send_telegram(
-                    "✅ Coolbet Imperva block cleared — resuming normal operation",
-                    dedup_key="coolbet-imperva-cleared",
-                    dedup_window_s=300,
-                )
                 _imperva_fail_streak = 0
                 _imperva_backoff_until = 0.0
                 _imperva_backoff_duration = IMPERVA_BACKOFF_MIN_S
@@ -681,13 +596,6 @@ def main() -> None:
                     _imperva_backoff_duration * 2, IMPERVA_BACKOFF_MAX_S
                 )
                 _imperva_backoff_until = now + _imperva_backoff_duration
-                from workers.notify.telegram import send_telegram
-                send_telegram(
-                    f"🔴 Coolbet still Imperva-blocked after probe — "
-                    f"extending backoff to {int(_imperva_backoff_duration // 60)} min",
-                    dedup_key="coolbet-imperva-extend",
-                    dedup_window_s=300,
-                )
                 log.warning("imperva still blocked — backoff extended to %.0fs", _imperva_backoff_duration)
             continue
 
@@ -702,14 +610,6 @@ def main() -> None:
                 _imperva_fail_streak += 1
                 if _imperva_fail_streak >= IMPERVA_FAIL_THRESHOLD:
                     _imperva_backoff_until = now + _imperva_backoff_duration
-                    from workers.notify.telegram import send_telegram
-                    send_telegram(
-                        f"🔴 Coolbet Imperva block detected ({_imperva_fail_streak} consecutive "
-                        f"keepalive failures) — going quiet for "
-                        f"{int(_imperva_backoff_duration // 60)} min",
-                        dedup_key="coolbet-imperva-block",
-                        dedup_window_s=300,
-                    )
                     log.warning(
                         "imperva block — entering backoff for %.0fs (streak=%d)",
                         _imperva_backoff_duration, _imperva_fail_streak,

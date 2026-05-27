@@ -1941,6 +1941,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
     # 8. Process each match with odds
     console.print("\n[cyan]Processing matches with odds...[/cyan]")
     total_bets = 0
+    _new_bet_lines: list[str] = []  # accumulate for Telegram summary
     # 11.6: Track placed bets per bot per league for exposure management
     from collections import defaultdict
     league_bet_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
@@ -2903,6 +2904,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                     if bet_id:
                         total_bets += 1
                         league_bet_counts[bot_name][_league_key] += 1
+                        _new_bet_lines.append(
+                            f"  {match['home_team']} vs {match['away_team']} | "
+                            f"{mkt} {selection} @ {odds:.2f} | "
+                            f"edge {edge*100:+.1f}% | {bot_name}"
+                        )
                         _running_bankroll[bot_name] = max(0.0, _running_bankroll.get(bot_name, 1000.0) - stake)
                         # Save Stage 1 snapshot: stats-only probability
                         try:
@@ -2977,6 +2983,19 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
     if verbose_funnel:
         _print_funnel(_funnel, verbose_funnel_bot)
     console.print("[green]All data stored in Supabase — frontend can display it now[/green]")
+
+    if _new_bet_lines:
+        from workers.notify.telegram import send_telegram
+        bet_block = "\n".join(_new_bet_lines)
+        send_telegram(
+            f"🎯 <b>{total_bets} value bet(s) found</b>{cohort_label}\n{bet_block}"
+        )
+    else:
+        from workers.notify.telegram import send_telegram
+        send_telegram(
+            f"📭 Pipeline run complete{cohort_label} — 0 new value bets",
+            silent=True,
+        )
 
     # COMBO-PHASE-D: after singles are placed, run the cross-match acca bot.
     # It reads today's pending singles, picks top-edge independent legs, and

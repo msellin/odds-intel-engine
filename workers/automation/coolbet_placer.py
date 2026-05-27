@@ -39,7 +39,6 @@ from rapidfuzz import fuzz, process as rfprocess
 from workers.api_clients.db import execute_query
 from workers.api_clients.supabase_client import store_coolbet_odds_snapshot, store_real_bet
 from workers.automation.coolbet_session import CoolbetSession
-from workers.notify.telegram import send_telegram
 
 log = logging.getLogger(__name__)
 
@@ -1441,15 +1440,6 @@ def place_all_bets(
         guard.record_placement(stake)
         log.info("✓ Placed %s  stake=€%.2f  ticket=%s real_bet=%s",
                  label, stake, ticket_id, real_bet_id)
-        icon = "💸" if execute else "📝"
-        mode_label = "<b>REAL MONEY</b> @ Coolbet" if execute else "paper (record-only)"
-        send_telegram(
-            f"{icon} {mode_label}\n"
-            f"  <b>{bet.get('home_team','?')} vs {bet.get('away_team','?')}</b>\n"
-            f"  {mkt} {sel} @ {live_odds:.3f}\n"
-            f"  €{stake:.2f}  ·  edge {edge_pct:+.1f}%  ·  bot {bet.get('bot_name','?')}\n"
-            f"  ticket {ticket_id or '(record only)'}"
-        )
         results.append({**bet, "outcome": "placed",
                          "ticket_id": ticket_id, "real_bet_id": real_bet_id,
                          "live_odds": live_odds, "stake": stake})
