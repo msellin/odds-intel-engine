@@ -2,19 +2,17 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
-> ## 2026-05-28 — INPLAY-BOT-AUDIT + INPLAY-BTTS-QUERY-FIX + INPLAY-P-CAP + INPLAY-J-FIX + INPLAY-Q-FIX done
+> ## 2026-05-28 — Full Inplay Bot Audit done
 >
-> Full inplay bot audit. Key fixes shipped 2026-05-28:
+> **INPLAY-BTTS-QUERY-FIX** — `_get_live_candidates()` SELECT was missing `live_btts_yes`, `live_btts_no`, `live_ah_main_line`, `live_ah_home_odds`, `live_ah_away_odds`. BTTS inplay bots (btts_press_v1, btts_dryspell_v1) had 0 bets in 4 days because the strategy read cand keys that were always None. Fixed. Smoke: INPLAY-BTTS-BOTS-V1 (extended).
 >
-> **INPLAY-BTTS-QUERY-FIX** — `_get_live_candidates()` SELECT was missing `live_btts_yes`, `live_btts_no`, `live_ah_main_line`, `live_ah_home_odds`, `live_ah_away_odds`. BTTS inplay bots (btts_press_v1, btts_dryspell_v1) had 0 bets in 4 days because the strategy read cand keys that were always None. Fixed: 5 columns added to SELECT. Smoke: INPLAY-BTTS-BOTS-V1 (extended).
+> **INPLAY-P-ODDS-CAP** — strategy P bleeding at 5.0+: -50% (22 bets, 5.0–6.0) and -58.9% (45 bets, 6.0+). Added `if odds > 5.0: return None`. Smoke: INPLAY-P-ODDS-CAP.
 >
-> **INPLAY-P-ODDS-CAP** — strategy P (Post-Equalizer) was bleeding at high odds: 5.0–6.0 = -50% ROI (22 bets), 6.0+ = -58.9% (45 bets). Added `if odds > 5.0: return None` after the existing 2.20 floor. Smoke: INPLAY-P-ODDS-CAP.
+> **INPLAY-J/Q/A/D/G/H XG FALLBACKS** — root cause of 7 low-fire bots identified: `predictions` table only covers 38% of matches. Six strategies were silently rejecting 62% of candidates. Fixes: (1) Strategies A, D, G, H, J — when pm_o25 is 0, fall back to prematch xG total vs Poisson-derived threshold. (2) Strategies I, N — when pm_home/away_prob both 0, derive fav probs via bivariate Poisson from xG. (3) Strategy Q — skip possession check when NULL (9.5% coverage), rely on edge model. Strategy F unchanged (15% drift is deliberately rare). Smoke: INPLAY-LOW-FIRE-XG-FALLBACKS + individual tests.
 >
-> **INPLAY-J-XG-FALLBACK** — strategy J (Goal Debt O1.5) never fired despite 6,873 historical candidates. Root cause: `prematch_o25_prob` only covers 38% of matches; 62% returned 0.0 and failed the ≥0.55 gate. Fix: when pm_o25 is absent (0), fall back to `prematch_xg_home + prematch_xg_away >= 2.90` (λ≥2.90 ≈ P(O2.5)≥0.55 via Poisson). Smoke: INPLAY-J-XG-FALLBACK.
+> **INPLAY-A2/C-HOME-RETIRE** — retired `inplay_a2` and `inplay_c_home` in DB via migration 144. Both merged into parent strategies 2026-05-08, not dispatched in code. Retirement stops ops_snapshot counting them as active.
 >
-> **INPLAY-Q-POSS-OPTIONAL** — strategy Q (Red Card Overreaction) never fired despite 799 red card events in 14d. Root cause: `possession_home` only in 9.5% of snapshots; old code defaulted NULL → 50%, which always failed the ≥55% eleven-man-team gate. Fix: skip possession check entirely when field is NULL; rely on Bayesian edge model to gate quality. Smoke: INPLAY-Q-POSS-OPTIONAL.
->
-> **INPLAY-A2/C-HOME-RETIRE** — retired `inplay_a2` and `inplay_c_home` in DB via migration 144. Both were merged into parent strategies on 2026-05-08 and already not dispatched in code. Retirement stops ops_snapshot counting them as active.
+> CHANGELOG.md updated with user-facing summary.
 >
 > ## 2026-05-28 — PROVEN-LEAGUES-V2-CONFIG + HRG-V2 + PLATT-LIVE-FIT done
 >

@@ -5,6 +5,43 @@ Newest entries at the top. Internal refactors and infrastructure changes are not
 
 ---
 
+## 2026-05-28 — Inplay Bot Audit
+
+### Inplay — Critical query fix: BTTS bots had 0 bets in 4 days (INPLAY-BTTS-QUERY-FIX)
+
+`_get_live_candidates()` was missing five columns from its SELECT: `live_btts_yes`, `live_btts_no`, `live_ah_main_line`, `live_ah_home_odds`, `live_ah_away_odds`. Both BTTS inplay bots (`inplay_btts_press_v1`, `inplay_btts_dryspell_v1`) launched on 2026-05-24 but never fired — the strategy was reading candidate keys that were always `None`. Columns added, bots now active.
+
+### Inplay — Strategy P: odds cap at 5.0 (INPLAY-P-ODDS-CAP)
+
+`inplay_p` (Post-Equalizer) was bleeding at high odds despite being profitable up to 5.0:
+
+| Odds bucket | Bets | Wins | ROI |
+|-------------|------|------|-----|
+| 2.20–4.00 | 50 | 17 | +7.4% |
+| 4.00–5.00 | 39 | 12 | +36.5% |
+| 5.00–6.00 | 22 | 2 | **-50.0%** |
+| 6.00+ | 45 | 2 | **-58.9%** |
+
+Added `if odds > 5.0: return None` after the existing 2.20 floor. At 5.0+ the remaining-minutes Poisson model loses predictive power relative to market pricing.
+
+### Inplay — Low-fire bot audit: predictions coverage was 38% (INPLAY-BOT-AUDIT)
+
+Seven bots had only 1–3 bets each in a month despite >1,000 matches per weekend. Root cause: `prematch_o25_prob`, `prematch_home_prob`, and `prematch_away_prob` come from the `predictions` table (API-Football ML endpoint), which only covers ~38% of matches. Six strategies were silently rejecting 62% of candidates because missing predictions returned `0.0`, always failing the threshold.
+
+Fixes applied:
+
+- **Strategies A, D, G, H** (Over 2.5 strategies): when `prematch_o25_prob` is absent, fall back to prematch xG total threshold derived from Poisson (λ≥2.70 for 0.50 threshold; λ≥2.55 for 0.45–0.46 threshold). The xG comes from `team_season_stats`, which has ~100% coverage.
+- **Strategies I, N** (Favourite Stall / Late Favourite Push): when `prematch_home_prob` and `prematch_away_prob` are both absent, derive win probabilities from prematch xG via bivariate Poisson — the same function already used for the in-play edge model.
+- **Strategy J** (Goal Debt O1.5): same xG fallback applied in the previous session (λ≥2.90 for 0.55 threshold).
+- **Strategy Q** (Red Card Overreaction): possession check made optional — when `possession_home` is NULL (90% of snapshots), skip the check and rely on the Bayesian edge model alone.
+- **Strategy F** (Odds Momentum Reversal): no change — 15% OU drift in 10 minutes is intentionally rare; 3 bets in a month is expected behaviour.
+
+### Inplay — Retired merged bots: inplay_a2 and inplay_c_home (INPLAY-A2/C-HOME-RETIRE)
+
+`inplay_a2` and `inplay_c_home` were merged into `inplay_a` and `inplay_c` on 2026-05-08 but remained `is_active = true` in the DB, inflating the "active bot count" on ops_snapshot and /performance. Formally retired via migration 144.
+
+---
+
 ## 2026-05-06 (5)
 
 ### Performance — DB query audit (PERF-FE-1..5, PERF-PY-1)

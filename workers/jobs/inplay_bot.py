@@ -1324,7 +1324,11 @@ def _check_strategy_a(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
 
     pm_o25 = float(pm.get("prematch_o25_prob") or 0)
     if pm_o25 <= 0.50:
-        return None
+        # Fallback: prematch_o25_prob ~38% coverage. λ≥2.70 ≈ P(O2.5)≥0.50 via Poisson.
+        # INPLAY-A-XG-FALLBACK 2026-05-28.
+        _fb_xg = float(pm.get("prematch_xg_home") or 0) + float(pm.get("prematch_xg_away") or 0)
+        if _fb_xg < 2.70:
+            return None
 
     odds, odds_is_live = _resolve_odds(cand.get("live_ou_25_over"), pm.get("prematch_ou25_over"))
     if odds <= 1.0:
@@ -1631,7 +1635,11 @@ def _check_strategy_d(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
 
     pm_o25 = float(pm.get("prematch_o25_prob") or 0)
     if pm_o25 <= 0.46:
-        return None
+        # Fallback: prematch_o25_prob ~38% coverage. λ≥2.55 ≈ P(O2.5)≥0.47 via Poisson.
+        # INPLAY-D-XG-FALLBACK 2026-05-28.
+        _fb_xg = float(pm.get("prematch_xg_home") or 0) + float(pm.get("prematch_xg_away") or 0)
+        if _fb_xg < 2.55:
+            return None
 
     pm_xg_total = float(pm.get("prematch_xg_home") or 0) + float(pm.get("prematch_xg_away") or 0)
     if pm_xg_total <= 0:
@@ -1830,7 +1838,11 @@ def _check_strategy_g(cand: dict, pm: dict, has_red_card: bool,
 
     pm_o25 = float(pm.get("prematch_o25_prob") or 0)
     if pm_o25 <= 0.45:
-        return None
+        # Fallback: prematch_o25_prob ~38% coverage. λ≥2.55 ≈ P(O2.5)≥0.47 via Poisson.
+        # INPLAY-G-XG-FALLBACK 2026-05-28.
+        _fb_xg = float(pm.get("prematch_xg_home") or 0) + float(pm.get("prematch_xg_away") or 0)
+        if _fb_xg < 2.55:
+            return None
 
     pm_xg_total = float(pm.get("prematch_xg_home") or 0) + float(pm.get("prematch_xg_away") or 0)
     if pm_xg_total <= 0:
@@ -1919,7 +1931,11 @@ def _check_strategy_h(cand: dict, pm: dict, has_red_card: bool,
 
     pm_o25 = float(pm.get("prematch_o25_prob") or 0)
     if pm_o25 <= 0.50:
-        return None
+        # Fallback: prematch_o25_prob ~38% coverage. λ≥2.70 ≈ P(O2.5)≥0.50 via Poisson.
+        # INPLAY-H-XG-FALLBACK 2026-05-28.
+        _fb_xg = float(pm.get("prematch_xg_home") or 0) + float(pm.get("prematch_xg_away") or 0)
+        if _fb_xg < 2.70:
+            return None
 
     pm_xg_total = float(pm.get("prematch_xg_home") or 0) + float(pm.get("prematch_xg_away") or 0)
     if pm_xg_total <= 0:
@@ -2138,6 +2154,14 @@ def _check_strategy_i(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
 
     pm_home_prob = float(pm.get("prematch_home_prob") or 0)
     pm_away_prob = float(pm.get("prematch_away_prob") or 0)
+
+    # Fallback: predictions ~38% coverage. Derive from prematch xG via bivariate Poisson.
+    # INPLAY-I-FAV-FALLBACK 2026-05-28.
+    if pm_home_prob == 0 and pm_away_prob == 0:
+        _fb_h = float(pm.get("prematch_xg_home") or 1.1)
+        _fb_a = float(pm.get("prematch_xg_away") or 1.1)
+        _ph, _, _pa = _bivariate_poisson_win_prob(_fb_h, _fb_a)
+        pm_home_prob, pm_away_prob = _ph, _pa
 
     # Identify which side is the strong favourite
     if pm_home_prob >= 0.62:
@@ -2443,6 +2467,14 @@ def _check_strategy_n(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
 
     pm_home_prob = float(pm.get("prematch_home_prob") or 0)
     pm_away_prob = float(pm.get("prematch_away_prob") or 0)
+
+    # Fallback: predictions ~38% coverage. Derive from prematch xG via bivariate Poisson.
+    # INPLAY-N-FAV-FALLBACK 2026-05-28.
+    if pm_home_prob == 0 and pm_away_prob == 0:
+        _fb_h = float(pm.get("prematch_xg_home") or 1.1)
+        _fb_a = float(pm.get("prematch_xg_away") or 1.1)
+        _ph, _, _pa = _bivariate_poisson_win_prob(_fb_h, _fb_a)
+        pm_home_prob, pm_away_prob = _ph, _pa
 
     if pm_home_prob >= 0.62:
         fav_side = "home"

@@ -10715,6 +10715,44 @@ def test_hrg_v2():
     assert '"Away"' in pipeline or "'Away'" in pipeline, "Away selection must be included"
 
 
+@test("INPLAY-LOW-FIRE-XG-FALLBACKS — A/D/G/H/I/N unlock 62% of matches missing predictions data")
+def test_inplay_low_fire_xg_fallbacks():
+    import pathlib
+    src = pathlib.Path(__file__).resolve().parents[1].joinpath(
+        "workers/jobs/inplay_bot.py"
+    ).read_text()
+
+    def get_fn_body(name):
+        start = src.index(f"def _check_strategy_{name}(")
+        try:
+            end = src.index(f"\ndef _check_strategy_", start + 1)
+        except ValueError:
+            end = len(src)
+        return src[start:end]
+
+    # A, D, G, H: xG fallback when prematch_o25_prob absent
+    for letter, threshold in [("a", "2.70"), ("d", "2.55"), ("g", "2.55"), ("h", "2.70")]:
+        body = get_fn_body(letter)
+        assert threshold in body, (
+            f"Strategy {letter.upper()} must have xG fallback at {threshold}"
+            f" — INPLAY-{letter.upper()}-XG-FALLBACK 2026-05-28"
+        )
+        assert "_fb_xg" in body, (
+            f"Strategy {letter.upper()} must use _fb_xg variable for xG fallback"
+        )
+
+    # I, N: bivariate Poisson fallback when prematch_home/away_prob absent
+    for letter in ("i", "n"):
+        body = get_fn_body(letter)
+        assert "_bivariate_poisson_win_prob" in body, (
+            f"Strategy {letter.upper()} must call _bivariate_poisson_win_prob for fav fallback"
+            f" — INPLAY-{letter.upper()}-FAV-FALLBACK 2026-05-28"
+        )
+        assert "pm_home_prob == 0 and pm_away_prob == 0" in body, (
+            f"Strategy {letter.upper()} must guard fallback with both probs == 0 check"
+        )
+
+
 @test("INPLAY-P-ODDS-CAP — strategy P rejects odds > 5.0 (5.0-6.0=-50%,6.0+=-59% ROI 2026-05-28)")
 def test_inplay_p_odds_cap():
     import pathlib
