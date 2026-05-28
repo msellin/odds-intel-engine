@@ -52,6 +52,10 @@ Fixes applied:
 
 `inplay_a2` and `inplay_c_home` were merged into `inplay_a` and `inplay_c` on 2026-05-08 but remained `is_active = true` in the DB, inflating the "active bot count" on ops_snapshot and /performance. Formally retired via migration 144.
 
+### Bots — Bankroll drift corrected on 6 bots (BOT-BANKROLL-DRIFT)
+
+`current_bankroll` on 6 bots was drifting from `starting_bankroll + SUM(pnl)` by up to €16.50. Root cause: un-retire/re-retire cycles in earlier migrations (117, 122) reset `current_bankroll` without rebuilding from bet history. Fixed with a one-off UPDATE setting `current_bankroll = starting_bankroll + COALESCE(SUM(pnl), 0)` for all active bots with drift > €0.10. Affects display only — stake sizing is hardcoded and does not use `current_bankroll`. Smoke: BOT-BANKROLL-DRIFT now passes at ±€0.50 tolerance.
+
 ---
 
 ## 2026-05-06 (5)

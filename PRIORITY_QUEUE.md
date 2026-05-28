@@ -339,7 +339,7 @@
 | JOB-IDEMPOTENT | ❌ Dropped 2026-05-25 | 6h | Vague 6h audit; re-file as targeted task if a re-run bug actually surfaces |
 | NORDIC-BOOKS-INTEGRATION | ❌ Dropped 2026-05-25 | 1-2d | Not pursuing B2C / Nordic-user features; re-file if Coolbet/Paf becomes a primary placement venue |
 | BOT-AGGREGATES-SSOT | ✅ Done 2026-05-25 | 2h | See detail row + commit. |
-| BOT-BANKROLL-DRIFT | 11 active bots have `current_bankroll - starting_bankroll` ≠ `SUM(pnl)`. Worst: bot_aggressive +€25, inplay_c +€20, bot_dc_value +€12. Likely from un-retire/re-retire cycles (migrations 117, 122) resetting bankroll without rebuilding from bet history. **Fix:** one-time backfill script that does `UPDATE bots SET current_bankroll = starting_bankroll + (SELECT COALESCE(SUM(pnl),0) FROM simulated_bets WHERE bot_id=b.id AND result IN ('won','lost'))`. Affects display only — bots don't use current_bankroll for sizing (stake comes from a hardcoded base). | 30m | ⬜ | ✅ Ready | Run `scripts/bot_aggregates_reconcile.py` to see current drift. After fix, re-run should report 0 drift. |
+| BOT-BANKROLL-DRIFT | ✅ Done 2026-05-28 | 30m | Fixed all 6 drifted bots via `execute_write()` UPDATE: `current_bankroll = starting_bankroll + SUM(pnl WHERE result IN ('won','lost'))`. Drift was from un-retire/re-retire migration cycles. Smoke BOT-BANKROLL-DRIFT passes at ±€0.50 tolerance. |
 | STAGING-ENV | Defer | 3h | Build after first paid subscription |
 | SUPPORT-RUNBOOK | Defer | 1h | Write after first edge case fires, not before |
 | FAIL-OPEN-DEGRADATION | ❌ Dropped 2026-05-25 | 3-4h | AF failure already degrades gracefully via exception boundaries; re-file if a real cascade is observed |
