@@ -287,10 +287,18 @@ def apply_platt(prob: float, market: str, odds: float | None = None) -> float:
         return prob
 
     params = load_platt_params()
-    if market not in params:
+    # Try exact key first; fall back to the market root so aggregate Platt
+    # (e.g. "asian_handicap") covers all line-specific keys until per-line
+    # data is sufficient to fit individually.
+    _MARKET_ROOTS = ("asian_handicap", "double_chance", "btts", "1x2",
+                     "over_under", "draw_no_bet")
+    key = market
+    if key not in params:
+        key = next((r for r in _MARKET_ROOTS if market.startswith(r)), market)
+    if key not in params:
         return prob
 
-    a, b, c = params[market]
+    a, b, c = params[key]
 
     if c is not None and odds is not None and odds > 1.0:
         z = a * prob + c * math.log(odds) + b

@@ -10675,6 +10675,23 @@ def test_proven_leagues_v2():
     assert "[RETIRED 2026-05-28]" in pipeline, "retired bots must have RETIRED marker in description"
 
 
+@test("PLATT-LIVE-FIT — apply_platt fallback covers asian_handicap aggregate key")
+def test_platt_live_fit():
+    import pathlib, importlib.util
+    root = pathlib.Path(__file__).resolve().parents[1]
+
+    imp = root / "workers" / "model" / "improvements.py"
+    src = imp.read_text()
+    assert "_MARKET_ROOTS" in src, "apply_platt must define _MARKET_ROOTS fallback"
+    assert "asian_handicap" in src, "asian_handicap must be in _MARKET_ROOTS"
+
+    script = root / "scripts" / "fit_platt_live.py"
+    assert script.exists(), "fit_platt_live.py must exist"
+    script_src = script.read_text()
+    assert "double_chance" in script_src, "fit_platt_live must handle double_chance"
+    assert "asian_handicap" in script_src, "fit_platt_live must handle asian_handicap"
+
+
 @test("HRG-V2 — migration 143 creates bot_high_roi_global_v2 with Spain/Australia/Iceland")
 def test_hrg_v2():
     import pathlib
