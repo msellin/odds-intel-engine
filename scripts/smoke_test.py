@@ -11180,5 +11180,25 @@ def test_1x2_dc_specialist_bots():
     assert "bot_dc_specialist"  in BOT_TIMING_COHORTS
 
 
+@test("COOLBET-AUTO-RECORD — _run_coolbet_record wired into betting_pipeline after run_morning")
+def test_coolbet_auto_record():
+    import inspect
+    from workers.jobs import betting_pipeline
+
+    # _run_coolbet_record() must be called inside run_betting, after run_morning
+    run_betting_src = inspect.getsource(betting_pipeline.run_betting)
+    assert "run_morning(" in run_betting_src, "run_morning call missing from run_betting"
+    assert "_run_coolbet_record()" in run_betting_src, "_run_coolbet_record() not called in run_betting"
+    run_morning_pos = run_betting_src.index("run_morning(")
+    record_call_pos = run_betting_src.index("_run_coolbet_record()")
+    assert record_call_pos > run_morning_pos, "_run_coolbet_record must be called after run_morning"
+
+    fn_src = inspect.getsource(betting_pipeline._run_coolbet_record)
+    assert "place_all_bets(record=True)" in fn_src, "must call place_all_bets(record=True)"
+    assert "send_telegram" in fn_src, "must send admin Telegram"
+    assert "placed" in fn_src, "must count placed bets"
+    assert "search_blocked" in fn_src, "must handle search_blocked outcome"
+
+
 if __name__ == "__main__":
     main()
