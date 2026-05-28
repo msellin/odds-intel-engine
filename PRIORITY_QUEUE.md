@@ -2,6 +2,21 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-05-28 — SPECIALIST-BOTS-WHITELIST done
+>
+> **Full backtest analysis (2023–2026, 119K matches, 45K bets, women's/youth/cups excluded) + 5 bot changes:**
+>
+> 3 reformed bots:
+> - `bot_draw_specialist`: replaced `tier_filter=[2,3,4]` with 12-league whitelist. Was blocking Austria Bundesliga + Brazil Serie A (T1, both +40–46% ROI); was including Hungary NB II (-66.8%), Portugal Segunda Liga (-88.4%), Slovenia (-35%), Slovakia (-53.6%). Backtest: -6.7% → **+26.8%** ROI on 410 bets.
+> - `bot_dnb_away_value`: replaced `tier_filter=[1,2,3]` with 5-league whitelist. England League Two (T4, +25.4%, 99 bets) was a complete gap — tier filter blocked it. Killing Italy/France/Netherlands/Turkey bleeding. Backtest: -4.8% → **+9.7%**.
+> - `bot_dnb_home_value`: replaced `tier_filter=[1,2]` with 5-league whitelist. Austria Bundesliga (+19%), Mexico Liga MX (+43.8%), Russia/Israel/Uruguay. Backtest: -2.0% → **+12.9%**.
+>
+> 2 new bots:
+> - `bot_under25_specialist`: England Championship (+19%), Poland Ekstraklasa (+25.9%), Sweden Ettan Norra (+33.3%). Subset of bot_ou25_global but filtered to profitable leagues only.
+> - `bot_sweden_over25`: paper bot, Superettan + Allsvenskan over 2.5 (23+15 bets below threshold). Accumulating live data.
+>
+> Infrastructure: `league_name_filter` added to pipeline + backtest — takes (country, league_name) tuples. Migration 147.
+>
 > ## 2026-05-28 — FIX-PHASE45-TIERS done
 >
 > **Migration 146** — phase 4+5 extended leagues were all stored at tier=0 or tier=1 (default). Bulgaria 2nd League, Hungary NB II, Russia/Ukraine 2nd divs etc. were at tier=1 so `bot_opt_home_lower` (tier_filter=[2,3,4]) silently missed them; Poland III Liga and Spain 3rd tier at tier=1 made `bot_btts_conservative` fire on leagues it shouldn't. Fixed in migration 146: T2 for ~14 second divisions, T3 for Czech/Finnish/Spanish/Swedish 3rd tiers, T4 for Brazil Série D / Poland III Liga / USA USL League Two. Backtest fix also landed: `backtest_pre_match_bots.py` now loads `targets_extended.csv` like the live pipeline.

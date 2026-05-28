@@ -451,6 +451,7 @@ def main():
             mid = m["match_id"]
             tier = m["tier"]
             country = m["country"]
+            league_name = m.get("league_name", "")
             sh = int(m["score_home"])
             sa = int(m["score_away"])
 
@@ -465,6 +466,8 @@ def main():
                 if cfg.get("tier_filter") and tier not in cfg["tier_filter"]:
                     continue
                 if cfg.get("league_filter") and country not in cfg["league_filter"]:
+                    continue
+                if cfg.get("league_name_filter") and (country, league_name) not in cfg["league_name_filter"]:
                     continue
 
                 thresholds = cfg["edge_thresholds"].get(tier, {})

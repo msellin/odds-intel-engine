@@ -10938,5 +10938,67 @@ def test_inplay_coolbet_url():
     assert "except Exception" in src, "_coolbet_match_url must catch all exceptions and return None"
 
 
+@test("SPECIALIST-BOTS-WHITELIST — migration 147, league_name_filter in pipeline + backtest, new bots in config")
+def test_specialist_bots_whitelist():
+    import re
+    from pathlib import Path
+
+    # Migration 147 exists
+    mig = Path(__file__).parent.parent / "supabase" / "migrations" / "147_specialist_bots_whitelist.sql"
+    assert mig.exists(), "migration 147_specialist_bots_whitelist.sql must exist"
+    mig_src = mig.read_text()
+    assert "bot_under25_specialist" in mig_src, "migration must insert bot_under25_specialist"
+    assert "bot_sweden_over25" in mig_src, "migration must insert bot_sweden_over25"
+    assert "DRAW-LEAGUE-WHITELIST" in mig_src, "migration must update bot_draw_specialist"
+    assert "DNB-AWAY-WHITELIST" in mig_src, "migration must update bot_dnb_away_value"
+    assert "DNB-HOME-WHITELIST" in mig_src, "migration must update bot_dnb_home_value"
+
+    # Pipeline has league_name_filter check
+    pipeline = Path(__file__).parent.parent / "workers" / "jobs" / "daily_pipeline_v2.py"
+    pipe_src = pipeline.read_text()
+    assert "league_name_filter" in pipe_src, "pipeline must support league_name_filter"
+    assert "(country, league_name) not in config" in pipe_src, "pipeline must check (country, league_name) tuples"
+
+    # Backtest has league_name_filter check
+    backtest = Path(__file__).parent / "backtest_pre_match_bots.py"
+    bt_src = backtest.read_text()
+    assert "league_name_filter" in bt_src, "backtest must support league_name_filter"
+    assert "(country, league_name) not in cfg" in bt_src, "backtest must check (country, league_name) tuples"
+
+    # bot_draw_specialist uses league_name_filter and has no tier_filter
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG
+    draw = BOTS_CONFIG["bot_draw_specialist"]
+    assert draw.get("tier_filter") is None, "bot_draw_specialist must have tier_filter=None after whitelist reform"
+    assert draw.get("league_name_filter"), "bot_draw_specialist must have league_name_filter"
+    assert len(draw["league_name_filter"]) >= 10, "draw specialist must whitelist at least 10 leagues"
+    # Key leagues that were previously excluded (T1) must now be included
+    assert ("Austria", "Bundesliga") in draw["league_name_filter"], "Austria Bundesliga must be in draw whitelist"
+    assert ("Brazil", "Serie A") in draw["league_name_filter"], "Brazil Serie A must be in draw whitelist"
+    # Confirmed positive leagues must be included
+    assert ("Israel", "Liga Leumit") in draw["league_name_filter"], "Israel Liga Leumit must be in draw whitelist"
+    assert ("England", "Championship") in draw["league_name_filter"], "England Championship must be in draw whitelist"
+
+    # bot_dnb_away_value now includes England League Two (T4 — was blocked by old tier_filter)
+    dnb_away = BOTS_CONFIG["bot_dnb_away_value"]
+    assert dnb_away.get("tier_filter") is None, "bot_dnb_away_value must have tier_filter=None"
+    assert ("England", "League Two") in dnb_away["league_name_filter"], "England League Two must be in dnb_away whitelist"
+
+    # New bots exist in config
+    assert "bot_under25_specialist" in BOTS_CONFIG, "bot_under25_specialist must be in BOTS_CONFIG"
+    assert "bot_sweden_over25" in BOTS_CONFIG, "bot_sweden_over25 must be in BOTS_CONFIG"
+    u25 = BOTS_CONFIG["bot_under25_specialist"]
+    assert ("England", "Championship") in u25["league_name_filter"]
+    assert ("Poland", "Ekstraklasa") in u25["league_name_filter"]
+    assert ("Sweden", "Ettan - Norra") in u25["league_name_filter"]
+    sw = BOTS_CONFIG["bot_sweden_over25"]
+    assert ("Sweden", "Superettan") in sw["league_name_filter"]
+    assert ("Sweden", "Allsvenskan") in sw["league_name_filter"]
+
+    # BOT_TIMING_COHORTS includes new bots
+    from workers.jobs.daily_pipeline_v2 import BOT_TIMING_COHORTS
+    assert "bot_under25_specialist" in BOT_TIMING_COHORTS
+    assert "bot_sweden_over25" in BOT_TIMING_COHORTS
+
+
 if __name__ == "__main__":
     main()

@@ -360,18 +360,85 @@ BOTS_CONFIG = {
         "min_prob": 0.30,
     },
     "bot_draw_specialist": {
-        "description": "Draw specialist T2-4 — odds 2.50-4.00, 5%+ edge. Originally retired 2026-05-17 (bot_aggressive's draw bucket -€154/61 settled); re-enabled 2026-05-22 via migration 122. Subset of bot_aggressive's draws → highly correlated; watch for overlap.",
+        # DRAW-LEAGUE-WHITELIST 2026-05-28: replaced tier_filter=[2,3,4] with an explicit
+        # league_name_filter built from the 2023-2026 backtest (clean data, 30+ bets each).
+        # Old tier filter blocked Brazil Serie A / Austria Bundesliga (T1) which both show
+        # strong draw signals, while including Hungary NB II (-66.8%), Portugal Segunda
+        # Liga (-88.4%), Slovenia 2.SNL (-35%), Bulgaria Second League (-64.9%) etc.
+        # Whitelist keeps only confirmed-positive leagues; T1 thresholds added for new leagues.
+        "description": "DRAW-LEAGUE-WHITELIST 2026-05-28: draw specialist — 12 leagues confirmed by 2023-2026 clean backtest. Replaced tier_filter=[2,3,4] with explicit league_name_filter. Drops Hungary/Portugal/Slovenia/Bulgaria leakers; adds Austria Bundesliga + Brazil Serie A (T1, previously blocked).",
         "tier_label": "pro",
         "markets": ["1x2"],
-        "tier_filter": [2, 3, 4],
+        "tier_filter": None,
         "selection_filter": ["Draw"],
+        "league_name_filter": [
+            ("Israel",         "Liga Leumit"),           # T2 — 128 bets +58.9%
+            ("Austria",        "Bundesliga"),             # T1 — 73 bets  +46.6%
+            ("Sweden",         "Ettan - Norra"),          # T3 — 82 bets  +43.6%
+            ("Czech-Republic", "3. liga - CFL B"),        # T3 — 87 bets  +37.6%
+            ("Brazil",         "Serie D"),                # T4 — 321 bets +32.5%
+            ("Uruguay",        "Segunda División"),       # T2 — 61 bets  +24.3%
+            ("Scotland",       "Championship"),           # T2 — 45 bets  +95.9%
+            ("Sweden",         "Superettan"),             # T2 — 75 bets  +20.3%
+            ("England",        "League Two"),             # T4 — 198 bets +17.9%
+            ("Argentina",      "Primera B Metropolitana"),# T3 — 112 bets +17.0%
+            ("England",        "Championship"),           # T2 — 227 bets +15.6%
+            ("Brazil",         "Serie A"),                # T1 — 141 bets +12.5%
+        ],
         "edge_thresholds": {
+            1: {"1x2_long": 0.06},
             2: {"1x2_long": 0.05},
             3: {"1x2_long": 0.05},
             4: {"1x2_long": 0.04},
         },
         "odds_range": (2.80, 4.50),
         "min_prob": 0.22,
+    },
+    "bot_under25_specialist": {
+        # UNDER25-SPECIALIST 2026-05-28: three leagues with confirmed OU2.5 under
+        # signals from 2023-2026 clean backtest (women's/youth/cups excluded).
+        # bot_ou25_global fires on these too but is -6.2% ROI overall because it
+        # covers losing leagues like Spain Segunda División (-50.9%), Portugal (-19.5%),
+        # France Ligue 1 under (-5.7%). This specialist keeps only the confirmed pockets.
+        "description": "UNDER25-SPECIALIST 2026-05-28: OU2.5 under in 3 confirmed leagues (Eng Championship +19%, Poland Ekstraklasa +25.9%, Sweden Ettan Norra +33.3%). Subset of bot_ou25_global but filtered to profitable leagues only.",
+        "tier_label": "pro",
+        "markets": ["ou"],
+        "selection_filter": ["Under 2.5"],
+        "tier_filter": None,
+        "league_name_filter": [
+            ("England",  "Championship"),  # T2 — 242 bets +19.0%
+            ("Poland",   "Ekstraklasa"),   # T1 — 33 bets  +25.9%
+            ("Sweden",   "Ettan - Norra"), # T3 — 32 bets  +33.3%
+        ],
+        "edge_thresholds": {
+            1: {"ou": 0.05},
+            2: {"ou": 0.05},
+            3: {"ou": 0.05},
+        },
+        "odds_range": (1.60, 2.50),
+        "min_prob": 0.40,
+    },
+    "bot_sweden_over25": {
+        # SWEDEN-OVER25 2026-05-28: paper bot targeting over 2.5 goals in Sweden's
+        # top two divisions. Both show positive signal in backtest but below the
+        # 30-bet validation threshold (Superettan: 23 bets +51.2%, Allsvenskan: 15
+        # bets +40.0%). Creating now to accumulate live evidence; graduate to real
+        # bets once 30+ settled with ≥+5% ROI.
+        "description": "SWEDEN-OVER25 2026-05-28: paper bet on Over 2.5 in Superettan + Allsvenskan. Below 30-bet validation threshold (23+15 bets) but both strongly positive. Accumulating live data; graduate at 30+ settled + ≥+5% ROI.",
+        "tier_label": "pro",
+        "markets": ["ou"],
+        "selection_filter": ["Over 2.5"],
+        "tier_filter": None,
+        "league_name_filter": [
+            ("Sweden", "Superettan"),   # T2 — 23 bets +51.2% (below threshold — paper)
+            ("Sweden", "Allsvenskan"),  # T1 — 15 bets +40.0% (below threshold — paper)
+        ],
+        "edge_thresholds": {
+            1: {"ou": 0.05},
+            2: {"ou": 0.05},
+        },
+        "odds_range": (1.50, 2.50),
+        "min_prob": 0.35,
     },
     "bot_proven_leagues": {
         # RETIRED 2026-05-28 via migration 142. Config kept for bet_id linkage.
@@ -548,11 +615,21 @@ BOTS_CONFIG = {
         "handicap_line_min": 0.5,
     },
     "bot_dnb_home_value": {
-        "description": "DNB home — favourite without draw risk, T1-2, 5%+ edge",
+        # DNB-HOME-WHITELIST 2026-05-28: replaced tier_filter=[1,2] with league_name_filter.
+        # Previous T1-2 broad filter generated many losing bets across top European leagues.
+        # Confirmed home DNB signals from 2023-2026 backtest (30+ bets, >10% ROI each).
+        "description": "DNB-HOME-WHITELIST 2026-05-28: home DNB in 5 confirmed leagues. Replaced tier_filter=[1,2] with explicit whitelist from 2023-2026 backtest.",
         "tier_label": "pro",
         "markets": ["dnb"],
         "selection_filter": ["Home"],
-        "tier_filter": [1, 2],
+        "tier_filter": None,
+        "league_name_filter": [
+            ("Austria",  "Bundesliga"),       # T1 — 92 bets  +19.0%
+            ("Mexico",   "Liga MX"),           # T1 — 30 bets  +43.8%
+            ("Russia",   "Premier League"),    # T1 — 44 bets  +11.5%
+            ("Israel",   "Liga Leumit"),       # T2 — 37 bets  +11.4%
+            ("Uruguay",  "Segunda División"),  # T2 — 32 bets  +11.5%
+        ],
         "edge_thresholds": {
             1: {"dnb": 0.05},
             2: {"dnb": 0.05},
@@ -561,15 +638,28 @@ BOTS_CONFIG = {
         "min_prob": 0.60,
     },
     "bot_dnb_away_value": {
-        "description": "DNB away — underdog with draw insurance, T1-3, 5-6%+ edge, odds 1.60-2.60. Originally retired 2026-05-19 (DNB-DC retirement batch); re-enabled 2026-05-22 via migration 122.",
+        # DNB-AWAY-WHITELIST 2026-05-28: replaced tier_filter=[1,2,3] with league_name_filter.
+        # Old T1-3 filter caused massive losses on Italy (-16.9%), Netherlands (-19.8%),
+        # France (-16.6%), Turkey (-18.9%), Poland (-16.1%), Belgium (-10.8%) and more.
+        # Also missed England League Two (T4 — tier filter blocked it, but it was the
+        # STRONGEST signal at +25.4% / 99 bets, zero coverage from this bot).
+        "description": "DNB-AWAY-WHITELIST 2026-05-28: away DNB in 5 confirmed leagues only. Dropped tier_filter; kills Italian/French/Turkish bleeding (~-350 PnL). Adds England League Two (T4, +25.4% — was blocked by tier filter).",
         "tier_label": "pro",
         "markets": ["dnb"],
         "selection_filter": ["Away"],
-        "tier_filter": [1, 2, 3],
+        "tier_filter": None,
+        "league_name_filter": [
+            ("England",   "League Two"),          # T4 — 99 bets  +25.4% (was a gap!)
+            ("Sweden",    "Allsvenskan"),          # T1 — 168 bets +20.6%
+            ("Brazil",    "Serie B"),              # T1 — 34 bets  +26.6%
+            ("England",   "Championship"),         # T2 — 71 bets  +10.3%
+            ("Argentina", "Primera Nacional"),     # T2 — 42 bets  +13.2%
+        ],
         "edge_thresholds": {
             1: {"dnb": 0.05},
             2: {"dnb": 0.05},
             3: {"dnb": 0.06},
+            4: {"dnb": 0.06},
         },
         "odds_range": (1.60, 2.60),
         "min_prob": 0.50,
@@ -638,7 +728,9 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_ou35_attacking":   "all",
     "bot_ou25_global":      "all",
     "bot_opt_ou_british":   "all",
-    "bot_draw_specialist":  "all",
+    "bot_draw_specialist":      "all",
+    "bot_under25_specialist":   "all",
+    "bot_sweden_over25":        "all",
     "bot_opt_away_british": "all",
     "bot_opt_away_europe":  "all",
     "bot_opt_home_lower":   "all",
@@ -2556,6 +2648,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
 
             # Check league filter
             if config.get("league_filter") and country not in config.get("league_filter", []):
+                continue
+
+            # Check league_name_filter — list of (country, league_name) tuples.
+            # Takes precedence over tier_filter for fine-grained league selection.
+            if config.get("league_name_filter") and (country, league_name) not in config["league_name_filter"]:
                 continue
 
             thresholds = config["edge_thresholds"].get(tier, {})
