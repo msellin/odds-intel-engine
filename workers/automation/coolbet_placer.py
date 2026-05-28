@@ -1218,7 +1218,12 @@ def place_all_bets(
     if min_edge is not None:
         _MIN_EDGE = min_edge
 
-    session = CoolbetSession()
+    # ANON-READ: --record only needs public read endpoints (search, fo-match,
+    # sidebets, odds) — those work with Imperva cookies alone, no JWT.
+    # --execute needs the full authenticated session to POST bets.
+    session = CoolbetSession(require_auth=execute)
+    if not execute:
+        log.info("Anon-read mode: no JWT required — using Imperva cookies only (--record)")
     pending = load_qualified_bets()
 
     if not pending:

@@ -60,9 +60,16 @@ def _decode_jwt_payload(token: str) -> dict:
 
 
 class CoolbetSession:
-    """Thread-safe(ish) Coolbet API session with auto JWT refresh."""
+    """Thread-safe(ish) Coolbet API session with auto JWT refresh.
 
-    def __init__(self):
+    require_auth=False (ANON-READ mode): skips JWT entirely — only Imperva
+    cookies are applied. Sufficient for all public read endpoints (search/v2,
+    fo-match, sidebets, odds). Use for --record mode so a valid Imperva cookie
+    set is enough without a COOLBET_MANUAL_JWT.
+    """
+
+    def __init__(self, *, require_auth: bool = True):
+        self._require_auth = require_auth
         self._email = os.getenv("COOLBET_USER", os.getenv("COOLBET_EMAIL", ""))
         self._password = os.getenv("COOLBET_PASS", os.getenv("COOLBET_PASSWORD", ""))
         # Individual cookie vars (preferred — easier to update when one expires)
@@ -92,7 +99,7 @@ class CoolbetSession:
         if self._manual_jwt.startswith("Bearer "):
             self._manual_jwt = self._manual_jwt[7:]
 
-        if not self._manual_jwt and (not self._email or not self._password):
+        if require_auth and not self._manual_jwt and (not self._email or not self._password):
             raise RuntimeError(
                 "Auth misconfigured: set COOLBET_MANUAL_JWT (pasted from browser) "
                 "OR set COOLBET_USER + COOLBET_PASS for API login."
@@ -337,6 +344,8 @@ class CoolbetSession:
         )
 
     def _ensure_auth(self) -> None:
+        if not self._require_auth:
+            return  # anon-read mode: Imperva cookies only, no JWT needed
         if self._jwt is None or time.time() > self._jwt_exp - 120:
             self._login()
         # Coolbet rejects JWTs once past their `renewal_date` (~5–6 min after

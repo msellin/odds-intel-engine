@@ -10855,6 +10855,32 @@ def test_coverage_extended():
     )
 
 
+@test("COOLBET-ANON-READ — CoolbetSession(require_auth=False) skips JWT for --record mode")
+def test_coolbet_anon_read():
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    session_src = (root / "workers" / "automation" / "coolbet_session.py").read_text()
+    placer_src  = (root / "workers" / "automation" / "coolbet_placer.py").read_text()
+
+    # CoolbetSession accepts require_auth kwarg
+    assert "require_auth" in session_src, "CoolbetSession must accept require_auth parameter"
+
+    # _ensure_auth short-circuits when require_auth is False
+    assert "if not self._require_auth" in session_src, (
+        "_ensure_auth must return early when require_auth=False"
+    )
+
+    # Credential check is gated on require_auth
+    assert "if require_auth and not self._manual_jwt" in session_src, (
+        "RuntimeError on missing creds must be gated by require_auth"
+    )
+
+    # placer wires require_auth=execute (False for --record, True for --execute)
+    assert "CoolbetSession(require_auth=execute)" in placer_src, (
+        "place_all_bets must pass require_auth=execute to CoolbetSession"
+    )
+
+
 @test("INPLAY-COOLBET-URL — _coolbet_match_url reads Imperva cookies from env, falls back gracefully")
 def test_inplay_coolbet_url():
     import pathlib
