@@ -393,20 +393,22 @@ BOTS_CONFIG = {
     },
     "bot_proven_leagues_v2": {
         # PROVEN-V2 2026-05-28: Successor to bot_proven_leagues + bot_high_roi_global.
-        # League list built from live Pinnacle CLV scan across all 23 leagues with
-        # ≥8 settled 1x2 bets. Kept only leagues with Pinnacle CLV ≥ +5%:
-        #   Italy (Serie B +9.3%, Serie C +18.6%)
-        #   France (Ligue 1 +5.1%, Ligue 2 +11.4%)
-        #   USA (MLS +10.0%, MLS Next Pro +6.7%)
-        #   Austria (2. Liga +6.7%)
-        #   Ireland (Premier Division +5.0%)
-        # All picks were home underdogs at 3–5 odds. Odds range tightened to 2.80–5.00.
-        # maturity_label=beta — review at 50+ bets.
-        "description": "PROVEN-V2: Italy/France/USA/Austria/Ireland — live Pinnacle CLV ≥ +5% across 23-league scan. Home/away underdogs at 2.80-5.00 odds.",
+        # Core leagues validated against BOTH live Pinnacle CLV AND historical backtest
+        # (214 bets, all settled matches back to 2023 in target countries):
+        #   USA   (77 bets, +31.7% historical ROI, +10% live CLV)   ✓ validated
+        #   France (35 bets, +39.2% historical ROI, +5-11% live CLV) ✓ validated
+        #   Italy  (68 bets,  +4.6% historical ROI, +9-18% live CLV) ✓ validated
+        #   Austria (23 bets, -32.1% historical ROI all-selection; home-only: +6.7% live CLV, 10 bets) ← beta
+        #   Belgium (5 bets, +5.7% live CLV, Jupiler Pro League) ← beta, calibrate at 20+ bets
+        #
+        # Selection: Home ONLY. Historical split: Home +44.1% ROI (61 bets),
+        # Away -0.6% ROI (153 bets). Away has no edge at these odds.
+        "description": "PROVEN-V2: USA/France/Italy/Austria/Belgium home underdogs at 2.80-5.00. Core leagues validated: live Pinnacle CLV ≥+5% AND 214-bet historical backtest. Austria/Belgium added as beta expansion based on live CLV signal — calibrate at 20+ bets each.",
         "tier_label": "elite",
         "markets": ["1x2"],
+        "selection_filter": ["Home"],
         "tier_filter": None,
-        "league_filter": ["Italy", "France", "USA", "Austria", "Ireland"],
+        "league_filter": ["Italy", "France", "USA", "Austria", "Belgium"],
         "edge_thresholds": {
             1: {"1x2_fav": 0.06, "1x2_long": 0.09},
             2: {"1x2_fav": 0.05, "1x2_long": 0.08},

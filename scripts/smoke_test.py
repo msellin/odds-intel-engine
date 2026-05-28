@@ -10654,7 +10654,7 @@ def test_user_tele_notify():
         assert "telegram_chat_id" in webhook_src, "webhook must update telegram_chat_id"
 
 
-@test("PROVEN-LEAGUES-V2 — migration 142 retires old league bots; creates bot_proven_leagues_v2 with Italy/France/USA/Austria/Ireland")
+@test("PROVEN-LEAGUES-V2 — migration 142 retires old league bots; creates bot_proven_leagues_v2 with Italy/France/USA + Austria/Belgium beta")
 def test_proven_leagues_v2():
     import pathlib
     root = pathlib.Path(__file__).resolve().parents[1]
