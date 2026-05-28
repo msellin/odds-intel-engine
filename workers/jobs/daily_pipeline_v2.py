@@ -179,15 +179,10 @@ BOTS_CONFIG = {
         "min_prob": 0.30,
     },
     "bot_high_roi_global": {
-        # Based on mega backtest findings (354K matches, 275 leagues, 2005-15).
-        # Targets leagues where even a basic Poisson model found consistent edge.
-        # Scotland all divs: covers League Two (+12.3% ROI, cross-era confirmed).
-        # Austria all divs: covers Erste Liga (+5.5% ROI, 5/7 seasons).
-        # Ireland: Division 1 showed +2.7% ROI (4/7 seasons).
-        # South Korea: K League Challenge +3.2% ROI (3/3 seasons).
-        # Singapore: S.League +27.5% ROI (5/5 seasons) — need odds source, tracked for data.
-        # Tier B stake cap (50%) applied since these use targets_global history only.
-        "description": "Mega backtest confirmed leagues — Scotland/Austria/Ireland/Korea (Tier B)",
+        # RETIRED 2026-05-28 via migration 142. Config kept for bet_id linkage.
+        # Live data: Scotland -78% Pinnacle CLV, Ireland -10% CLV. Austria +9% CLV
+        # preserved in bot_proven_leagues_v2. Replaced by data-driven league selection.
+        "description": "[RETIRED 2026-05-28] Mega backtest leagues — Scotland/Austria/Ireland/Korea. Scotland/Ireland showed strongly negative live Pinnacle CLV. Replaced by bot_proven_leagues_v2.",
         "tier_label": "elite",
         "markets": ["1x2"],
         "tier_filter": None,
@@ -379,16 +374,10 @@ BOTS_CONFIG = {
         "min_prob": 0.22,
     },
     "bot_proven_leagues": {
-        # Targets only the 5 leagues with cross-era, cross-dataset profitable signals
-        # from the 354K-match mega backtest (2005-15) AND 2022-25 football-data validation:
-        #   Singapore S.League: +27.5% ROI, 5/5 seasons, strongest signal
-        #   Scotland L2+:       +12.3% ROI, cross-era confirmed
-        #   Austria Erste Liga: +5.5% ROI, 5/7 seasons positive
-        #   Ireland:            +2.7% ROI (League 1), 4/7 seasons positive
-        #   South Korea:        K League Challenge +3.2%, 3/3 seasons
-        # Purpose: clean isolated performance track for the best backtest signals.
-        # Tier B multiplier applied (50% stake) — these teams use targets_global only.
-        "description": "Proven leagues only — Singapore/Scotland/Austria/Ireland/Korea, cross-era confirmed edge",
+        # RETIRED 2026-05-28 via migration 142. Config kept for bet_id linkage.
+        # Scotland (-78% Pinnacle CLV) and Ireland (-28% CLV) killed performance.
+        # Replaced by bot_proven_leagues_v2.
+        "description": "[RETIRED 2026-05-28] Proven leagues — Scotland/Austria/Ireland/Korea. Scotland/Ireland showed strongly negative live CLV; replaced by bot_proven_leagues_v2 with data-driven league selection.",
         "tier_label": "elite",
         "markets": ["1x2"],
         "tier_filter": None,
@@ -400,6 +389,30 @@ BOTS_CONFIG = {
             4: {"1x2_fav": 0.03, "1x2_long": 0.05},
         },
         "odds_range": (1.40, 5.00),
+        "min_prob": 0.28,
+    },
+    "bot_proven_leagues_v2": {
+        # PROVEN-V2 2026-05-28: Successor to bot_proven_leagues + bot_high_roi_global.
+        # League list built from live Pinnacle CLV scan across all 23 leagues with
+        # ≥8 settled 1x2 bets. Kept only leagues with Pinnacle CLV ≥ +5%:
+        #   Italy (Serie B +9.3%, Serie C +18.6%)
+        #   France (Ligue 1 +5.1%, Ligue 2 +11.4%)
+        #   USA (MLS +10.0%, MLS Next Pro +6.7%)
+        #   Austria (2. Liga +6.7%)
+        #   Ireland (Premier Division +5.0%)
+        # All picks were home underdogs at 3–5 odds. Odds range tightened to 2.80–5.00.
+        # maturity_label=beta — review at 50+ bets.
+        "description": "PROVEN-V2: Italy/France/USA/Austria/Ireland — live Pinnacle CLV ≥ +5% across 23-league scan. Home/away underdogs at 2.80-5.00 odds.",
+        "tier_label": "elite",
+        "markets": ["1x2"],
+        "tier_filter": None,
+        "league_filter": ["Italy", "France", "USA", "Austria", "Ireland"],
+        "edge_thresholds": {
+            1: {"1x2_fav": 0.06, "1x2_long": 0.09},
+            2: {"1x2_fav": 0.05, "1x2_long": 0.08},
+            3: {"1x2_fav": 0.05, "1x2_long": 0.08},
+        },
+        "odds_range": (2.80, 5.00),
         "min_prob": 0.28,
     },
 
@@ -590,6 +603,7 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_aggressive_v2":    "all",
     "bot_conservative":     "all",
     "bot_greek_turkish":    "all",
+    "bot_proven_leagues_v2": "all",
     "bot_high_roi_global":  "all",
     "bot_ou15_defensive":   "all",
     "bot_ou35_attacking":   "all",

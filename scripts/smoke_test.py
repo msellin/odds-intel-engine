@@ -10654,5 +10654,26 @@ def test_user_tele_notify():
         assert "telegram_chat_id" in webhook_src, "webhook must update telegram_chat_id"
 
 
+@test("PROVEN-LEAGUES-V2 — migration 142 retires old league bots; creates bot_proven_leagues_v2 with Italy/France/USA/Austria/Ireland")
+def test_proven_leagues_v2():
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+
+    migration = (root / "supabase" / "migrations" / "142_proven_leagues_v2.sql").read_text()
+    assert "bot_proven_leagues_v2" in migration, "migration must create bot_proven_leagues_v2"
+    assert "bot_high_roi_global" in migration, "migration must retire bot_high_roi_global"
+    assert "bot_proven_leagues" in migration, "migration must retire bot_proven_leagues"
+    assert "is_active" in migration and "false" in migration, "migration must set is_active=false"
+    assert "retired_reason" in migration, "migration must set retired_reason"
+
+    pipeline = (root / "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+    assert "bot_proven_leagues_v2" in pipeline, "bot_proven_leagues_v2 must be in BOTS_CONFIG"
+    # New bot uses live-validated leagues, not the old backtest list
+    assert '"Italy"' in pipeline or "'Italy'" in pipeline, "bot_proven_leagues_v2 must include Italy"
+    assert '"France"' in pipeline or "'France'" in pipeline, "bot_proven_leagues_v2 must include France"
+    # Old bots must be marked retired in config
+    assert "[RETIRED 2026-05-28]" in pipeline, "retired bots must have RETIRED marker in description"
+
+
 if __name__ == "__main__":
     main()
