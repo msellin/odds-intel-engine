@@ -346,8 +346,10 @@ BOTS_CONFIG = {
         "min_prob": 0.30,
     },
     "bot_ou25_global": {
-        # PER-BOT-SLICE-TIGHTEN 2026-05-17: odds 2.50-3.00 = -8.0% ROI (802 bets, -€643) → cap at 2.50.
-        "description": "O/U 2.5 all leagues — extends bot_opt_ou_british globally",
+        # RETIRED 2026-05-29 via migration 149. Config kept for bet_id linkage.
+        # -6.2% ROI on broad coverage; replaced by bot_ou25_specialist with confirmed league whitelists.
+        "description": "[RETIRED 2026-05-29] O/U 2.5 all leagues — -6.2% ROI. Replaced by bot_ou25_specialist with confirmed league whitelists.",
+        "is_active": False,
         "tier_label": "pro",
         "markets": ["ou"],
         "edge_thresholds": {
@@ -395,20 +397,18 @@ BOTS_CONFIG = {
         "min_prob": 0.22,
     },
     "bot_under25_specialist": {
-        # UNDER25-SPECIALIST 2026-05-28: three leagues with confirmed OU2.5 under
-        # signals from 2023-2026 clean backtest (women's/youth/cups excluded).
-        # bot_ou25_global fires on these too but is -6.2% ROI overall because it
-        # covers losing leagues like Spain Segunda División (-50.9%), Portugal (-19.5%),
-        # France Ligue 1 under (-5.7%). This specialist keeps only the confirmed pockets.
-        "description": "UNDER25-SPECIALIST 2026-05-28: OU2.5 under in 3 confirmed leagues (Eng Championship +19%, Poland Ekstraklasa +25.9%, Sweden Ettan Norra +33.3%). Subset of bot_ou25_global but filtered to profitable leagues only.",
+        # RETIRED 2026-05-29 via migration 149. Config kept for bet_id linkage.
+        # Merged into bot_ou25_specialist as "Under 2.5 Specialist" profile.
+        "description": "[RETIRED 2026-05-29] UNDER25-SPECIALIST: OU2.5 under in 3 confirmed leagues. Merged into bot_ou25_specialist with multi-strategy profiles.",
         "tier_label": "pro",
         "markets": ["ou"],
         "selection_filter": ["Under 2.5"],
+        "is_active": False,
         "tier_filter": None,
         "league_name_filter": [
-            ("England",  "Championship"),  # T2 — 242 bets +19.0%
-            ("Poland",   "Ekstraklasa"),   # T1 — 33 bets  +25.9%
-            ("Sweden",   "Ettan - Norra"), # T3 — 32 bets  +33.3%
+            ("England",  "Championship"),
+            ("Poland",   "Ekstraklasa"),
+            ("Sweden",   "Ettan - Norra"),
         ],
         "edge_thresholds": {
             1: {"ou": 0.05},
@@ -419,19 +419,17 @@ BOTS_CONFIG = {
         "min_prob": 0.40,
     },
     "bot_sweden_over25": {
-        # SWEDEN-OVER25 2026-05-28: paper bot targeting over 2.5 goals in Sweden's
-        # top two divisions. Both show positive signal in backtest but below the
-        # 30-bet validation threshold (Superettan: 23 bets +51.2%, Allsvenskan: 15
-        # bets +40.0%). Creating now to accumulate live evidence; graduate to real
-        # bets once 30+ settled with ≥+5% ROI.
-        "description": "SWEDEN-OVER25 2026-05-28: paper bet on Over 2.5 in Superettan + Allsvenskan. Below 30-bet validation threshold (23+15 bets) but both strongly positive. Accumulating live data; graduate at 30+ settled + ≥+5% ROI.",
+        # RETIRED 2026-05-29 via migration 149. Config kept for bet_id linkage.
+        # Merged into bot_ou25_specialist as "Over 2.5 Sweden" profile.
+        "description": "[RETIRED 2026-05-29] SWEDEN-OVER25: Over 2.5 in Superettan + Allsvenskan. Merged into bot_ou25_specialist with multi-strategy profiles.",
         "tier_label": "pro",
         "markets": ["ou"],
         "selection_filter": ["Over 2.5"],
+        "is_active": False,
         "tier_filter": None,
         "league_name_filter": [
-            ("Sweden", "Superettan"),   # T2 — 23 bets +51.2% (below threshold — paper)
-            ("Sweden", "Allsvenskan"),  # T1 — 15 bets +40.0% (below threshold — paper)
+            ("Sweden", "Superettan"),
+            ("Sweden", "Allsvenskan"),
         ],
         "edge_thresholds": {
             1: {"ou": 0.05},
@@ -439,6 +437,51 @@ BOTS_CONFIG = {
         },
         "odds_range": (1.50, 2.50),
         "min_prob": 0.35,
+    },
+    "bot_ou25_specialist": {
+        # OU25-SPECIALIST 2026-05-29: merges bot_under25_specialist + bot_sweden_over25
+        # into one fat bot with two named profiles.
+        # "Under 2.5 Specialist": 3 leagues confirmed (2023-2026 clean backtest, 30+ bets each).
+        # "Over 2.5 Sweden": 2 Swedish leagues below 30-bet threshold — paper only until graduation.
+        "description": "OU25-SPECIALIST 2026-05-29: merges Under 2.5 specialist + Over 2.5 Sweden into one bot. Profile 'Under 2.5 Specialist': Eng Championship (+19%), Poland Ekstraklasa (+25.9%), Sweden Ettan Norra (+33.3%). Profile 'Over 2.5 Sweden': Superettan (+51.2% paper) + Allsvenskan (+40% paper). Per-profile ROI queryable via strategy_profile column.",
+        "tier_label": "pro",
+        "markets": ["ou"],
+        "tier_filter": None,
+        "edge_thresholds": {},      # placeholder — overridden by each strategy
+        "odds_range": (1.0, 99.0),  # placeholder — overridden by each strategy
+        "min_prob": 0.0,            # placeholder — overridden by each strategy
+        "strategies": [
+            {
+                "alias": "Under 2.5 Specialist",
+                "selection_filter": ["Under 2.5"],
+                "league_name_filter": [
+                    ("England", "Championship"),   # T2 — 242 bets +19.0%
+                    ("Poland",  "Ekstraklasa"),    # T1 — 33 bets  +25.9%
+                    ("Sweden",  "Ettan - Norra"),  # T3 — 32 bets  +33.3%
+                ],
+                "edge_thresholds": {
+                    1: {"ou": 0.05},
+                    2: {"ou": 0.05},
+                    3: {"ou": 0.05},
+                },
+                "odds_range": (1.60, 2.50),
+                "min_prob": 0.40,
+            },
+            {
+                "alias": "Over 2.5 Sweden",
+                "selection_filter": ["Over 2.5"],
+                "league_name_filter": [
+                    ("Sweden", "Superettan"),   # T2 — 23 bets +51.2% (below threshold — paper)
+                    ("Sweden", "Allsvenskan"),  # T1 — 15 bets +40.0% (below threshold — paper)
+                ],
+                "edge_thresholds": {
+                    1: {"ou": 0.05},
+                    2: {"ou": 0.05},
+                },
+                "odds_range": (1.50, 2.50),
+                "min_prob": 0.35,
+            },
+        ],
     },
     "bot_proven_leagues": {
         # RETIRED 2026-05-28 via migration 142. Config kept for bet_id linkage.
@@ -757,11 +800,12 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_high_roi_global_v2":   "all",
     "bot_ou15_defensive":   "all",
     "bot_ou35_attacking":   "all",
-    "bot_ou25_global":      "all",
-    "bot_opt_ou_british":   "all",
+    "bot_ou25_global":          "all",   # RETIRED 2026-05-29 — kept for shadow tracking
+    "bot_opt_ou_british":       "all",
     "bot_draw_specialist":      "all",
-    "bot_under25_specialist":   "all",
-    "bot_sweden_over25":        "all",
+    "bot_under25_specialist":   "all",   # RETIRED 2026-05-29 — kept for shadow tracking
+    "bot_sweden_over25":        "all",   # RETIRED 2026-05-29 — kept for shadow tracking
+    "bot_ou25_specialist":      "all",
     "bot_opt_away_british": "all",
     "bot_opt_away_europe":  "all",
     "bot_opt_home_lower":   "all",

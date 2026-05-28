@@ -11063,5 +11063,60 @@ def test_multi_strategy_bots():
     assert "bot_dnb_specialist" in BOT_TIMING_COHORTS
 
 
+@test("OU25-SPECIALIST — bot_ou25_specialist with Under/Over profiles, retired bots")
+def test_ou25_specialist_bots():
+    from pathlib import Path
+
+    # Migration 149 exists and covers required retirements + creation
+    mig = Path(__file__).parent.parent / "supabase" / "migrations" / "149_ou25_specialist_bot.sql"
+    assert mig.exists(), "migration 149_ou25_specialist_bot.sql must exist"
+    mig_src = mig.read_text()
+    assert "bot_ou25_specialist" in mig_src, "migration must create bot_ou25_specialist"
+    assert "bot_ou25_global" in mig_src, "migration must retire bot_ou25_global"
+    assert "bot_under25_specialist" in mig_src, "migration must retire bot_under25_specialist"
+    assert "bot_sweden_over25" in mig_src, "migration must retire bot_sweden_over25"
+
+    # bot_ou25_specialist has two strategies in BOTS_CONFIG
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG, BOT_TIMING_COHORTS
+    assert "bot_ou25_specialist" in BOTS_CONFIG
+    ou25 = BOTS_CONFIG["bot_ou25_specialist"]
+    assert "strategies" in ou25, "bot_ou25_specialist must have strategies list"
+    assert len(ou25["strategies"]) == 2, "must have exactly 2 strategies"
+    aliases = [s["alias"] for s in ou25["strategies"]]
+    assert "Under 2.5 Specialist" in aliases, "must have Under 2.5 Specialist profile"
+    assert "Over 2.5 Sweden" in aliases, "must have Over 2.5 Sweden profile"
+
+    # Strategy expansion produces 2 entries for bot_ou25_specialist
+    expanded = []
+    for bn, bc in BOTS_CONFIG.items():
+        for st in (bc.get("strategies") or [{}]):
+            scfg = {k: v for k, v in bc.items() if k != "strategies"}
+            scfg.update(st)
+            expanded.append((bn, scfg, st.get("alias", "")))
+    ou25_expanded = [(bn, alias) for bn, _, alias in expanded if bn == "bot_ou25_specialist"]
+    assert len(ou25_expanded) == 2
+    assert ou25_expanded[0][1] == "Under 2.5 Specialist"
+    assert ou25_expanded[1][1] == "Over 2.5 Sweden"
+
+    # Each strategy has correct selection_filter and league_name_filter
+    under_cfg = next(cfg for bn, cfg, alias in expanded if bn == "bot_ou25_specialist" and alias == "Under 2.5 Specialist")
+    over_cfg  = next(cfg for bn, cfg, alias in expanded if bn == "bot_ou25_specialist" and alias == "Over 2.5 Sweden")
+    assert under_cfg["selection_filter"] == ["Under 2.5"]
+    assert over_cfg["selection_filter"] == ["Over 2.5"]
+    assert ("England", "Championship") in under_cfg["league_name_filter"]
+    assert ("Poland",  "Ekstraklasa")  in under_cfg["league_name_filter"]
+    assert ("Sweden",  "Ettan - Norra") in under_cfg["league_name_filter"]
+    assert ("Sweden", "Superettan")   in over_cfg["league_name_filter"]
+    assert ("Sweden", "Allsvenskan")  in over_cfg["league_name_filter"]
+
+    # Retired bots have is_active=False in config
+    assert BOTS_CONFIG["bot_ou25_global"].get("is_active") is False
+    assert BOTS_CONFIG["bot_under25_specialist"].get("is_active") is False
+    assert BOTS_CONFIG["bot_sweden_over25"].get("is_active") is False
+
+    # bot_ou25_specialist in BOT_TIMING_COHORTS
+    assert "bot_ou25_specialist" in BOT_TIMING_COHORTS
+
+
 if __name__ == "__main__":
     main()
