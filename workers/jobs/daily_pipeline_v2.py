@@ -698,10 +698,11 @@ BOTS_CONFIG = {
         "tier_label": "elite",
         "markets": ["ah"],
         "selection_filter": ["Home"],
-        "tier_filter": [1, 2],
+        "tier_filter": [1, 2, 3],  # expanded from [1,2] 2026-05-29 to accumulate more per-league data
         "edge_thresholds": {
             1: {"ah": 0.05},
             2: {"ah": 0.05},
+            3: {"ah": 0.05},
         },
         "odds_range": (1.50, 2.20),
         "min_prob": 0.55,
