@@ -9618,8 +9618,14 @@ def _():
     )
     assert p_already == 1.0, "Already-BTTS-Yes must return 1.0"
 
+    # Candidate SELECT must include live_btts_yes so strategy reads it (INPLAY-BTTS-QUERY-FIX 2026-05-28)
+    ib_src = (root / "workers" / "jobs" / "inplay_bot.py").read_text()
+    assert "lms.live_btts_yes" in ib_src, (
+        "_get_live_candidates SELECT must include lms.live_btts_yes — INPLAY-BTTS-QUERY-FIX 2026-05-28"
+    )
+
     # Dispatcher must route both new names.
-    inplay_src = (root / "workers" / "jobs" / "inplay_bot.py").read_text()
+    inplay_src = ib_src
     assert '"inplay_btts_press_v1"' in inplay_src and '_check_strategy_btts_press_v1' in inplay_src, (
         "dispatcher must route inplay_btts_press_v1"
     )

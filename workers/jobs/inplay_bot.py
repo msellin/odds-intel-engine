@@ -568,6 +568,11 @@ def _get_live_candidates(execute_query) -> list[dict]:
             lms.live_1x2_away,
             lms.live_next10_over,
             lms.live_next10_under,
+            lms.live_btts_yes,
+            lms.live_btts_no,
+            lms.live_ah_main_line,
+            lms.live_ah_home_odds,
+            lms.live_ah_away_odds,
             lms.captured_at,
             (lms.xg_home IS NOT NULL) AS has_live_xg
         FROM live_match_snapshots lms
