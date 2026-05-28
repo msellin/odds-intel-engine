@@ -2210,7 +2210,12 @@ def _check_strategy_j(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
 
     pm_o25 = float(pm.get("prematch_o25_prob") or 0)
     if pm_o25 < 0.55:
-        return None
+        # Fallback: prematch_o25_prob only covers ~38% of matches; derive from xG when absent.
+        # λ≥2.90 total ≈ P(O2.5)≥0.55 via Poisson. INPLAY-J-XG-FALLBACK 2026-05-28.
+        pm_xg_h = float(pm.get("prematch_xg_home") or 0)
+        pm_xg_a = float(pm.get("prematch_xg_away") or 0)
+        if pm_xg_h + pm_xg_a < 2.90:
+            return None
 
     # INPLAY-LOOSEN-SILENT (2026-05-17): odds gate was 2.85 — only 1,325 snapshots
     # in 14d (avg live OU1.5 at 0-0 mins 30-52 is 2.37). Lowered to 2.50 so the
@@ -2547,10 +2552,15 @@ def _check_strategy_q(cand: dict, pm: dict, has_red_card: bool,
 
     eleven_man_team = "away" if red_team == "home" else "home"
 
-    poss_h = float(cand["possession_home"] or 50)
-    eleven_man_poss = poss_h if eleven_man_team == "home" else (100.0 - poss_h)
-    if eleven_man_poss < 55.0:
-        return None
+    # Possession check: skip when data unavailable (only 9.5% snapshot coverage).
+    # Defaulting to 50 would block every data-absent match — let the edge model gate instead.
+    # INPLAY-Q-POSS-OPTIONAL 2026-05-28.
+    poss_h_raw = cand["possession_home"]
+    if poss_h_raw is not None:
+        poss_h = float(poss_h_raw)
+        eleven_man_poss = poss_h if eleven_man_team == "home" else (100.0 - poss_h)
+        if eleven_man_poss < 55.0:
+            return None
 
     odds, odds_is_live = _resolve_odds(cand.get("live_ou_25_over"), pm.get("prematch_ou25_over"), min_val=2.30)
     if odds <= 2.30:
@@ -2765,6 +2775,8 @@ def _check_strategy_p(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     odds = float(live_odds_val)
     if odds < 2.20:
         return None
+    if odds > 5.0:
+        return None  # INPLAY-P-ODDS-CAP: 5.0-6.0 = -50% ROI, 6.0+ = -59% ROI (2026-05-28 data)
 
     remaining_minutes = max(1, 90 - minute)
     scale = remaining_minutes / 90.0

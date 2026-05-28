@@ -10715,5 +10715,66 @@ def test_hrg_v2():
     assert '"Away"' in pipeline or "'Away'" in pipeline, "Away selection must be included"
 
 
+@test("INPLAY-P-ODDS-CAP — strategy P rejects odds > 5.0 (5.0-6.0=-50%,6.0+=-59% ROI 2026-05-28)")
+def test_inplay_p_odds_cap():
+    import pathlib
+    src = pathlib.Path(__file__).resolve().parents[1].joinpath(
+        "workers/jobs/inplay_bot.py"
+    ).read_text()
+    fn_start = src.index("def _check_strategy_p(")
+    try:
+        fn_end = src.index("\ndef ", fn_start + 1)
+    except ValueError:
+        fn_end = len(src)
+    fn_body = src[fn_start:fn_end]
+    assert "odds > 5.0" in fn_body, (
+        "Strategy P must reject odds > 5.0 — INPLAY-P-ODDS-CAP 2026-05-28"
+    )
+
+
+@test("INPLAY-J-XG-FALLBACK — strategy J derives O25 from prematch xG when prob unavailable")
+def test_inplay_j_xg_fallback():
+    import pathlib
+    src = pathlib.Path(__file__).resolve().parents[1].joinpath(
+        "workers/jobs/inplay_bot.py"
+    ).read_text()
+    fn_start = src.index("def _check_strategy_j(")
+    try:
+        fn_end = src.index("\ndef ", fn_start + 1)
+    except ValueError:
+        fn_end = len(src)
+    fn_body = src[fn_start:fn_end]
+    assert "2.90" in fn_body, (
+        "Strategy J must fall back to xG total >= 2.90 when prematch_o25_prob absent"
+        " — INPLAY-J-XG-FALLBACK 2026-05-28"
+    )
+    assert "prematch_xg_home" in fn_body, (
+        "Strategy J xG fallback must read prematch_xg_home — INPLAY-J-XG-FALLBACK 2026-05-28"
+    )
+
+
+@test("INPLAY-Q-POSS-OPTIONAL — strategy Q skips possession gate when data absent")
+def test_inplay_q_poss_optional():
+    import pathlib
+    src = pathlib.Path(__file__).resolve().parents[1].joinpath(
+        "workers/jobs/inplay_bot.py"
+    ).read_text()
+    fn_start = src.index("def _check_strategy_q(")
+    try:
+        fn_end = src.index("\ndef ", fn_start + 1)
+    except ValueError:
+        fn_end = len(src)
+    fn_body = src[fn_start:fn_end]
+    assert "poss_h_raw is not None" in fn_body, (
+        "Strategy Q must guard possession_home with 'is not None' check"
+        " — INPLAY-Q-POSS-OPTIONAL 2026-05-28"
+    )
+    # Old default-to-50 pattern must be gone
+    assert "or 50)" not in fn_body, (
+        "Strategy Q must NOT default possession to 50 — silently blocks all data-absent matches"
+        " — INPLAY-Q-POSS-OPTIONAL 2026-05-28"
+    )
+
+
 if __name__ == "__main__":
     main()
