@@ -11180,6 +11180,77 @@ def test_1x2_dc_specialist_bots():
     assert "bot_dc_specialist"  in BOT_TIMING_COHORTS
 
 
+@test("OU-DC-CONSOLIDATION — bot_ou_specialist (3 profiles) + bot_dc_specialist DC Global, retirements")
+def test_ou_dc_consolidation():
+    import inspect
+    from workers.jobs import daily_pipeline_v2 as pipe
+
+    BOTS_CONFIG       = pipe.BOTS_CONFIG
+    BOT_TIMING_COHORTS = pipe.BOT_TIMING_COHORTS
+
+    # Strategy expansion helper (mirrors pipeline logic)
+    expanded: list[tuple[str, dict, str]] = []
+    for bn, bc in BOTS_CONFIG.items():
+        for st in (bc.get("strategies") or [{}]):
+            scfg = {k: v for k, v in bc.items() if k != "strategies"}
+            scfg.update(st)
+            expanded.append((bn, scfg, st.get("alias", "")))
+
+    mig_src = open("supabase/migrations/152_ou_dc_specialist_consolidation.sql").read()
+
+    # --- bot_ou_specialist exists with 3 profiles ---
+    assert "bot_ou_specialist" in BOTS_CONFIG, "bot_ou_specialist missing from BOTS_CONFIG"
+    ou = BOTS_CONFIG["bot_ou_specialist"]
+    assert "strategies" in ou, "bot_ou_specialist must have strategies"
+    ou_aliases = [s["alias"] for s in ou["strategies"]]
+    assert "Under 2.5 Specialist" in ou_aliases
+    assert "Over 2.5 Sweden"      in ou_aliases
+    assert "Over 3.5 Global"      in ou_aliases
+
+    # Under 2.5 Specialist — league whitelist
+    under_cfg = next(cfg for bn, cfg, alias in expanded if bn == "bot_ou_specialist" and alias == "Under 2.5 Specialist")
+    assert ("England", "Championship")  in under_cfg["league_name_filter"]
+    assert ("Poland",  "Ekstraklasa")   in under_cfg["league_name_filter"]
+    assert ("Sweden",  "Ettan - Norra") in under_cfg["league_name_filter"]
+    assert under_cfg["selection_filter"] == ["Under 2.5"]
+
+    # Over 2.5 Sweden — two Swedish leagues, no global
+    ov25_cfg = next(cfg for bn, cfg, alias in expanded if bn == "bot_ou_specialist" and alias == "Over 2.5 Sweden")
+    assert ("Sweden", "Superettan")  in ov25_cfg["league_name_filter"]
+    assert ("Sweden", "Allsvenskan") in ov25_cfg["league_name_filter"]
+
+    # Over 3.5 Global — no league_name_filter (fires globally)
+    ov35_cfg = next(cfg for bn, cfg, alias in expanded if bn == "bot_ou_specialist" and alias == "Over 3.5 Global")
+    assert not ov35_cfg.get("league_name_filter"), "Over 3.5 Global must have no league_name_filter"
+    assert ov35_cfg.get("edge_thresholds", {}).get(1, {}).get("ou") == 0.14
+
+    # --- bot_dc_specialist now has 3 profiles including DC Global ---
+    sdc = BOTS_CONFIG["bot_dc_specialist"]
+    dc_aliases = [s["alias"] for s in sdc["strategies"]]
+    assert "X2 Value"  in dc_aliases
+    assert "1X Israel" in dc_aliases
+    assert "DC Global" in dc_aliases, "bot_dc_specialist must include DC Global profile"
+
+    dc_global_cfg = next(cfg for bn, cfg, alias in expanded if bn == "bot_dc_specialist" and alias == "DC Global")
+    assert not dc_global_cfg.get("league_name_filter"),   "DC Global must fire globally"
+    assert not dc_global_cfg.get("selection_filter"),     "DC Global must have no selection_filter"
+
+    # --- Retired bots are inactive ---
+    for retired in ("bot_ou25_specialist", "bot_ou35_attacking", "bot_dc_value", "bot_dc_strong_fav"):
+        assert retired in BOTS_CONFIG, f"{retired} missing from BOTS_CONFIG (must be kept for shadow bets)"
+        assert not BOTS_CONFIG[retired].get("is_active", True), f"{retired} must be marked is_active=False"
+
+    # --- Migration retires the same bots ---
+    assert "bot_ou25_specialist" in mig_src
+    assert "bot_ou35_attacking"  in mig_src
+    assert "bot_dc_value"        in mig_src
+    assert "bot_dc_strong_fav"   in mig_src
+    assert "bot_ou_specialist"   in mig_src
+
+    # --- bot_ou_specialist in BOT_TIMING_COHORTS ---
+    assert "bot_ou_specialist" in BOT_TIMING_COHORTS
+
+
 @test("COOLBET-AUTO-RECORD — _run_coolbet_record wired into betting_pipeline after run_morning")
 def test_coolbet_auto_record():
     import inspect

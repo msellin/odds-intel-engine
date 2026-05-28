@@ -330,10 +330,10 @@ BOTS_CONFIG = {
         "min_prob": 0.30,
     },
     "bot_ou35_attacking": {
-        # PER-BOT-SLICE-TIGHTEN 2026-05-17: over @ 3.00-3.50 = -38.3% ROI (30 bets, -€115) → cap at 3.00.
-        # PER-BOT-EDGE-THRESHOLD-APPLY (2026-05-25): 25K-row sweep optimum = 14% edge
-        # (baseline +30.6% → +40.0% ROI, n=199). Tightened from 5-6% across all tiers.
-        "description": "O/U 3.5. PER-BOT-EDGE-THRESHOLD-APPLY 2026-05-25: 14% edge across all tiers (sweep optimum on 25K backtest rows, baseline +30.6% → +40.0% ROI).",
+        # RETIRED 2026-05-29 via migration 152. Config kept for bet_id linkage.
+        # Merged into bot_ou_specialist as "Over 3.5 Global" profile.
+        "description": "[RETIRED 2026-05-29] O/U 3.5. Merged into bot_ou_specialist as 'Over 3.5 Global' profile.",
+        "is_active": False,
         "tier_label": "pro",
         "markets": ["ou35"],
         "edge_thresholds": {
@@ -442,17 +442,41 @@ BOTS_CONFIG = {
         "min_prob": 0.35,
     },
     "bot_ou25_specialist": {
-        # OU25-SPECIALIST 2026-05-29: merges bot_under25_specialist + bot_sweden_over25
-        # into one fat bot with two named profiles.
-        # "Under 2.5 Specialist": 3 leagues confirmed (2023-2026 clean backtest, 30+ bets each).
-        # "Over 2.5 Sweden": 2 Swedish leagues below 30-bet threshold — paper only until graduation.
-        "description": "OU25-SPECIALIST 2026-05-29: merges Under 2.5 specialist + Over 2.5 Sweden into one bot. Profile 'Under 2.5 Specialist': Eng Championship (+19%), Poland Ekstraklasa (+25.9%), Sweden Ettan Norra (+33.3%). Profile 'Over 2.5 Sweden': Superettan (+51.2% paper) + Allsvenskan (+40% paper). Per-profile ROI queryable via strategy_profile column.",
+        # RETIRED 2026-05-29 via migration 152. Config kept for bet_id linkage.
+        # Merged into bot_ou_specialist with Under 2.5 Specialist + Over 2.5 Sweden profiles.
+        "description": "[RETIRED 2026-05-29] OU25 specialist. Merged into bot_ou_specialist.",
+        "is_active": False,
         "tier_label": "pro",
         "markets": ["ou"],
         "tier_filter": None,
-        "edge_thresholds": {},      # placeholder — overridden by each strategy
-        "odds_range": (1.0, 99.0),  # placeholder — overridden by each strategy
-        "min_prob": 0.0,            # placeholder — overridden by each strategy
+        "edge_thresholds": {},
+        "odds_range": (1.0, 99.0),
+        "min_prob": 0.0,
+        "strategies": [
+            {"alias": "Under 2.5 Specialist", "selection_filter": ["Under 2.5"],
+             "league_name_filter": [("England","Championship"),("Poland","Ekstraklasa"),("Sweden","Ettan - Norra")],
+             "edge_thresholds": {1:{"ou":0.05},2:{"ou":0.05},3:{"ou":0.05}},
+             "odds_range": (1.60, 2.50), "min_prob": 0.40},
+            {"alias": "Over 2.5 Sweden", "selection_filter": ["Over 2.5"],
+             "league_name_filter": [("Sweden","Superettan"),("Sweden","Allsvenskan")],
+             "edge_thresholds": {1:{"ou":0.05},2:{"ou":0.05}},
+             "odds_range": (1.50, 2.50), "min_prob": 0.35},
+        ],
+    },
+    "bot_ou_specialist": {
+        # OU-SPECIALIST 2026-05-29: consolidates all OU bots into one fat bot.
+        # Replaces bot_ou25_specialist + bot_ou35_attacking.
+        # "Under 2.5 Specialist": confirmed league whitelist (3 leagues, 2023-2026 backtest).
+        # "Over 2.5 Sweden": below threshold but strongly positive (paper until graduation).
+        # "Over 3.5 Global": no whitelist — +35% backtest ROI but no confirmed per-league
+        #   signals yet (max 11 bets/league in backtest). Fires to accumulate data.
+        "description": "OU-SPECIALIST 2026-05-29: all OU markets in one bot. Profile 'Under 2.5 Specialist': Eng Championship (+19%), Poland (+25.9%), Sweden Ettan Norra (+33.3%). Profile 'Over 2.5 Sweden': Superettan+Allsvenskan (paper). Profile 'Over 3.5 Global': all leagues, +35% backtest, no whitelist yet. Per-profile ROI via strategy_profile.",
+        "tier_label": "pro",
+        "markets": ["ou", "ou35"],
+        "tier_filter": None,
+        "edge_thresholds": {},
+        "odds_range": (1.0, 99.0),
+        "min_prob": 0.0,
         "strategies": [
             {
                 "alias": "Under 2.5 Specialist",
@@ -483,6 +507,21 @@ BOTS_CONFIG = {
                 },
                 "odds_range": (1.50, 2.50),
                 "min_prob": 0.35,
+            },
+            {
+                "alias": "Over 3.5 Global",
+                # No league_name_filter — fires all leagues. +35% backtest ROI at 14% edge
+                # but no confirmed per-league signals (max 11 bets/league in backtest).
+                # 14% edge threshold is high intentionally — calibration sweep optimum.
+                "selection_filter": ["Over 3.5"],
+                "edge_thresholds": {
+                    1: {"ou": 0.14},
+                    2: {"ou": 0.14},
+                    3: {"ou": 0.14},
+                    4: {"ou": 0.14},
+                },
+                "odds_range": (1.80, 3.00),
+                "min_prob": 0.30,
             },
         ],
     },
@@ -565,10 +604,10 @@ BOTS_CONFIG = {
     # are compressed (typical range 1.20-2.20), so a 3% edge at 1.30 is already
     # meaningful.
     "bot_dc_value": {
-        # BOT-RETIRE-DESC-DRIFT (2026-05-24): config tag removed — bot was retired
-        # 2026-05-19 (BOTS-RETIRE-DC-DNB) but migration 122_unretire_remaining_bots
-        # re-activated it. Currently active, firing again post AH-CAL-BYPASS.
-        "description": "Double Chance all leagues — 1X/X2/12 at value odds. Loose: T1-4, edge 3-5%, odds 1.25-2.20, min_prob 0.55.",
+        # RETIRED 2026-05-29 via migration 152. Config kept for bet_id linkage.
+        # Merged into bot_dc_specialist as "DC Global" profile.
+        "description": "[RETIRED 2026-05-29] Double Chance all leagues. Merged into bot_dc_specialist as 'DC Global' profile.",
+        "is_active": False,
         "tier_label": "pro",
         "markets": ["dc"],
         "edge_thresholds": {
@@ -581,13 +620,11 @@ BOTS_CONFIG = {
         "min_prob": 0.55,
     },
     "bot_dc_strong_fav": {
-        # BOT-RETIRE-DESC-DRIFT (2026-05-24): same as bot_dc_value above. Note
-        # this bot is a TIGHTENED SUBSET of bot_dc_value — every pick it makes,
-        # bot_dc_value also makes (selection ⊆ {1X,X2,12} since this excludes 12,
-        # tier ⊆ {1,2,3,4} since 1-2, edge 6%+ ≥ value's 5%, etc.). So "2 bots
-        # agree" badges on shared picks are misleading. Considered for re-retire
-        # under AH-AWAY-MODEL-AUDIT 2026-05-24 follow-up.
-        "description": "Double Chance T1-2 — strong-favorite cover (1X/X2 only), 6%+ edge. Tightened subset of bot_dc_value.",
+        # RETIRED 2026-05-29 via migration 152. Config kept for bet_id linkage.
+        # Was a subset of bot_dc_value (caused misleading "2 bots agree" badges).
+        # Dropped entirely — not merged since it's fully covered by DC Global.
+        "description": "[RETIRED 2026-05-29] DC strong fav. Redundant subset of bot_dc_value; retired without merge.",
+        "is_active": False,
         "tier_label": "elite",
         "markets": ["dc"],
         "selection_filter": ["1X", "X2"],
@@ -651,7 +688,10 @@ BOTS_CONFIG = {
         # as broad paper-trading bots; this specialist is the real-money candidate.
         # Profile "X2 Value": bet away-or-draw in Brazil Serie B + China Super League.
         # Profile "1X Israel": bet home-or-draw in Israel Liga Leumit only.
-        "description": "DC-SPECIALIST 2026-05-29: double-chance specialist with confirmed league whitelists. Profile 'X2 Value': Brazil Serie B (+20.1%), China Super League (+13.7%). Profile '1X Israel': Israel Liga Leumit (+13.3%). Per-profile ROI queryable via strategy_profile.",
+        # Profile "DC Global": absorbs bot_dc_value — all leagues, all DC selections.
+        #   Fires 21/wk in backtest at -3.9% ROI; kept for data accumulation but not
+        #   recommended for real-money betting until per-league signals confirm.
+        "description": "DC-SPECIALIST 2026-05-29: all DC bots in one. Profile 'X2 Value': Brazil Serie B (+20.1%), China Super League (+13.7%). Profile '1X Israel': Israel Liga Leumit (+13.3%). Profile 'DC Global': all leagues (data collection, was bot_dc_value). Per-profile ROI via strategy_profile.",
         "tier_label": "pro",
         "markets": ["dc"],
         "tier_filter": None,
@@ -684,6 +724,19 @@ BOTS_CONFIG = {
                 },
                 "odds_range": (1.20, 1.80),
                 "min_prob": 0.65,
+            },
+            {
+                "alias": "DC Global",
+                # No selection_filter → fires 1X, X2, 12. No league_name_filter → all leagues.
+                # Absorbs bot_dc_value. 21/wk backtest, -3.9% overall — data collection only.
+                "edge_thresholds": {
+                    1: {"dc": 0.05},
+                    2: {"dc": 0.04},
+                    3: {"dc": 0.04},
+                    4: {"dc": 0.03},
+                },
+                "odds_range": (1.25, 2.20),
+                "min_prob": 0.55,
             },
         ],
     },
@@ -897,7 +950,8 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_draw_specialist":      "all",
     "bot_under25_specialist":   "all",   # RETIRED 2026-05-29 — kept for shadow tracking
     "bot_sweden_over25":        "all",   # RETIRED 2026-05-29 — kept for shadow tracking
-    "bot_ou25_specialist":      "all",
+    "bot_ou25_specialist":      "all",   # RETIRED 2026-05-29 — kept for shadow tracking
+    "bot_ou_specialist":        "all",
     "bot_opt_away_british": "all",
     "bot_opt_away_europe":  "all",
     "bot_opt_home_lower":   "all",
