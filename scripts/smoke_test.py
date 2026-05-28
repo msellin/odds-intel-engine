@@ -10855,6 +10855,15 @@ def test_coverage_extended():
         "--phase argparse must include choices 4 and 5"
     )
 
+    # Backtest also loads targets_extended.csv (mirrors pipeline)
+    backtest_src = (root / "scripts" / "backtest_pre_match_bots.py").read_text()
+    assert "targets_extended.csv" in backtest_src, (
+        "backtest_pre_match_bots.py must load targets_extended.csv like the live pipeline"
+    )
+    assert "targets_extended" in backtest_src and "concat" in backtest_src, (
+        "backtest_pre_match_bots.py must pd.concat targets_extended into hist_targets_global"
+    )
+
 
 @test("COOLBET-ANON-READ — CoolbetSession(require_auth=False) skips JWT for --record mode")
 def test_coolbet_anon_read():

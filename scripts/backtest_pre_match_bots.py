@@ -17,8 +17,8 @@ The point is "did this bot ever have edge in this league/era?" — not
 
 DC/DNB probs are derived inline from 1x2 ensemble predictions (same as live
 pipeline). AH probs use Poisson re-computation via `compute_prediction()` +
-the same `targets_poisson_history.csv` / `targets_global.csv` the live
-pipeline uses — `exp_home`/`exp_away` are not stored in the DB so must be
+the same `targets_poisson_history.csv` / `targets_global.csv` / `targets_extended.csv`
+the live pipeline uses — `exp_home`/`exp_away` are not stored in the DB so must be
 reconstructed here.
 
 Output: CSV at dev/active/backtest-pre-match-results.csv with one row per
@@ -274,6 +274,7 @@ def _build_poisson_lookup(matches: list[dict]) -> dict[str, dict]:
     Re-compute Poisson exp_home/exp_away for every match using the same
     targets_poisson_history.csv + targets_global.csv the live pipeline uses.
     Returns {match_id: {"exp_home": float, "exp_away": float}}.
+    Mirrors pipeline startup: loads targets_global.csv + targets_extended.csv into hist_targets_global.
     """
     targets_path = PROCESSED_DIR / "targets_poisson_history.csv"
     if not targets_path.exists():
@@ -284,6 +285,14 @@ def _build_poisson_lookup(matches: list[dict]) -> dict[str, dict]:
     global_path = PROCESSED_DIR / "targets_global.csv"
     if global_path.exists():
         hist_targets_global = pd.read_csv(global_path)
+
+    extended_path = PROCESSED_DIR / "targets_extended.csv"
+    if extended_path.exists():
+        extended_df = pd.read_csv(extended_path)
+        if hist_targets_global is not None:
+            hist_targets_global = pd.concat([hist_targets_global, extended_df], ignore_index=True)
+        else:
+            hist_targets_global = extended_df
 
     v9_teams = set(hist_targets["home_team"].unique()) | set(hist_targets["away_team"].unique())
     global_teams: set | None = None
