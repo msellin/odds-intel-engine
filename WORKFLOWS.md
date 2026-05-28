@@ -300,15 +300,22 @@ on Hobby plan; blast radius isolated.
 - Requires `RESEND_API_KEY` in env (+ Railway env vars).
 - Manual run: `python -m workers.jobs.email_digest --dry-run`
 
-### ⑨ Historical Backfill (`backfill_historical.py`) — ✅ COMPLETE 2026-05-10
-- **All 134 league/season pairs marked complete** (phase 1: 57, phase 2: 54, phase 3: 23). `backfill_complete.flag` exists; the scheduled job is auto-disabled.
-- Final coverage: 47,228 finished matches, match_stats 73.4% (34,675 distinct), match_events 93.4% (44,102 distinct). Stats coverage is terminal — remaining gaps are AF-permanent (the `/fixtures?ids=` endpoint returns the fixture but with empty `statistics` arrays for some pre-2024 matches; no retry will fill them).
-- Fetches historical fixtures, odds, statistics, events from API-Football
-- 3 phases: Phase 1 = top ~20 leagues (3 seasons), Phase 2 = ~30 secondary (2 seasons), Phase 3 = ~50+ remaining (1 season)
-- Budget-capped: aborts if < 10K API calls remaining; max 9K calls per run
-- Idempotent: tracks progress in `backfill_progress` table, resumes from where it left off; per-dim AF-permanent-gap escape stops the livelock when one dim trickles in while another is permanently empty
-- Auto-disables via `backfill_complete.flag` when all phases are done
-- Manual run (only if flag is removed): `python scripts/backfill_historical.py --phase 1 --dry-run` or one-shot driver `python scripts/finish_backfill.py`
+### ⑨ Historical Backfill (`backfill_historical.py`) — ✅ COMPLETE 2026-05-28
+- **All 5 phases complete** (phase 1: 57, phase 2: 54, phase 3: 23, phase 4: 176, phase 5: 123 combos). `backfill_complete.flag` exists; the scheduled job is auto-disabled.
+- Phase 1–3 (original): 47,228 finished matches. Phase 4–5 (added 2026-05-28, COVERAGE-EXTENDED): 86 additional leagues, 73K+ more fixtures.
+- Stats/events coverage is terminal for many lower-tier leagues — AF-permanent gap (empty `statistics` arrays). Fixtures + scores always present, which is all the Poisson model needs.
+- 5 phases: Phase 1 = top ~20 leagues (3 seasons), Phase 2 = ~30 secondary (2 seasons), Phase 3 = ~50 remaining (1 season), Phase 4 = 44 extended global leagues (4 seasons, 2022–2025), Phase 5 = 42 depth/lower-tier leagues (3 seasons, 2023–2025)
+- Budget-capped: aborts if < 10K API calls remaining; idempotent — resumes from `backfill_progress` table
+- Auto-disables via `backfill_complete.flag`; stale flag auto-removed if new phases have work
+- Manual run: `python scripts/backfill_historical.py --phase 4 --max-requests 5000 --batch-size 2000`
+
+### ⑩ Extended CSV Export (`generate_targets_extended.py`) — run after any new backfill
+- Exports all finished DB matches not already in `targets_poisson_history.csv` or `targets_global.csv` to `data/processed/targets_extended.csv`
+- Single PostgreSQL `COPY TO STDOUT` — no Python row loops; completes in seconds
+- **426 leagues, 85,379 rows** as of 2026-05-28
+- `daily_pipeline_v2.py` `pd.concat`s this into `hist_targets_global` at startup → those teams become Tier B (+2% edge bump) instead of Tier C (+8%)
+- Manual run: `python scripts/generate_targets_extended.py`
+- After regenerating, force-commit: `git add -f data/processed/targets_extended.csv && git push`
 
 ---
 

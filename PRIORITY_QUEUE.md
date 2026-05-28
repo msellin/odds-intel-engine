@@ -2,6 +2,10 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-05-28 — COVERAGE-EXTENDED done
+>
+> **Root cause**: zero bets on 2026-05-28 despite normal game count — today's slate was niche leagues (Kazakhstan, Estonia, Georgia, Ethiopia etc.) with no Poisson history → all Tier C → +8% edge bump → nothing passes. Fix: backfill phases 4+5 (86 leagues), export `targets_extended.csv` (85,379 rows, 426 leagues), load into pipeline as Tier B. Next cohort run will evaluate these leagues at +2% bump instead of +8%.
+>
 > ## 2026-05-28 — Full Inplay Bot Audit done
 >
 > **INPLAY-BTTS-QUERY-FIX** — `_get_live_candidates()` SELECT was missing `live_btts_yes`, `live_btts_no`, `live_ah_main_line`, `live_ah_home_odds`, `live_ah_away_odds`. BTTS inplay bots (btts_press_v1, btts_dryspell_v1) had 0 bets in 4 days because the strategy read cand keys that were always None. Fixed. Smoke: INPLAY-BTTS-BOTS-V1 (extended).
