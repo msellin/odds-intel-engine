@@ -5,6 +5,21 @@ Newest entries at the top. Internal refactors and infrastructure changes are not
 
 ---
 
+## 2026-05-28 — Extended League Coverage (COVERAGE-EXTENDED)
+
+### Model — 426 new leagues now Tier B instead of Tier C
+
+**Root cause of zero bets on 2026-05-28:** today's slate was dominated by niche leagues (Kazakhstan, Estonia, Georgia, Ethiopia, Iraq etc.) with no Poisson training data. Every match fell to Tier C, which requires +8% edge above the bookmaker's implied probability — nearly impossible to achieve with API-Football's placeholder predictions (45/45/10). The pipeline was working correctly; it just had no data for these leagues.
+
+**Fix:** backfilled 86 new leagues from API-Football Ultra and promoted them to Tier B (+2% bump).
+
+- **Phase 4** (44 leagues, 2022–2025): South America depth (Peru, Uruguay, Paraguay, Bolivia, Venezuela, Ecuador, CONMEBOL cups), USA (MLS Next Pro, USL Championship/League One/Two), Middle East/Africa (Saudi Arabia, UAE, Egypt, Israel, Morocco, Iraq, South Africa, Nigeria, Senegal, Ghana, Ethiopia, Tanzania), Eastern Europe (Azerbaijan, Albania, Armenia, Slovenia, Bulgaria 2nd), Baltic/Nordic (Estonia, Finland), Central Asia (Indonesia, Kazakhstan)
+- **Phase 5** (42 leagues, 2023–2025): Czech/Polish/Spanish 3rd tiers, Nordic depth (Finland 2nd/3rd, Sweden 2nd, Iceland 2nd, Faroe Islands), Georgia, Eastern Europe (Russia 2nd, Belarus, Serbia 2nd, Hungary 2nd, Slovakia 2nd, Lithuania, Moldova, North Macedonia, Montenegro, Luxembourg, Armenia 2nd), Africa/Asia (Tunisia, India ISL, Vietnam, Kyrgyzstan, Kuwait, China 2nd)
+
+**Result:** `targets_extended.csv` — 85,379 rows across 426 leagues dating back to 2021. Combined Tier B training data ~136K rows (up from 52K). Teams from these leagues drop from +8% to +2% edge requirement.
+
+---
+
 ## 2026-05-28 — DNB Odds Analysis + Inplay Bot Audit
 
 ### Data — DNB naming bug fixed + synthetic odds confirmed (DNB-BOT-REAL-ODDS)
