@@ -399,13 +399,14 @@ def check_meta_score_drift() -> None:
             GROUP BY d
         ),
         stats AS (
-            SELECT AVG(mean_score) AS mu, STDDEV(mean_score) AS sigma
+            SELECT AVG(mean_score) AS mu, STDDEV(mean_score) AS sigma,
+                   COUNT(*) AS baseline_days
             FROM daily WHERE d < CURRENT_DATE AND d >= CURRENT_DATE - INTERVAL '7 days'
         )
         SELECT
             (SELECT mean_score FROM daily WHERE d = CURRENT_DATE) AS today,
             (SELECT n FROM daily WHERE d = CURRENT_DATE) AS today_n,
-            mu, sigma
+            mu, sigma, baseline_days
         FROM stats
     """)
     if not rows:
@@ -414,7 +415,10 @@ def check_meta_score_drift() -> None:
     today_n = rows[0].get("today_n") or 0
     mu = rows[0].get("mu")
     sigma = rows[0].get("sigma")
-    if today is None or mu is None or sigma is None or sigma < 1e-6 or today_n < 20:
+    baseline_days = rows[0].get("baseline_days") or 0
+    # Require ≥5 baseline days — fewer days means σ is computed from too small
+    # a sample and any minor shift produces an absurdly large z-score.
+    if today is None or mu is None or sigma is None or sigma < 1e-6 or today_n < 20 or baseline_days < 5:
         return  # Not enough data
     today, mu, sigma = float(today), float(mu), float(sigma)
     z = (today - mu) / sigma
