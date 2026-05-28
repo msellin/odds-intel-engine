@@ -584,7 +584,11 @@ def parse_fixture_odds(odds_response: list[dict]) -> list[dict]:
                                 "odds": float(val["odd"]),
                             })
 
-                elif bet_name == "Draw No Bet":
+                elif bet_name in ("Draw No Bet", "Home/Away"):
+                    # AF bulk /odds endpoint calls this "Home/Away" (bet id 2).
+                    # The per-fixture endpoint uses "Draw No Bet" (bet id 11).
+                    # Both are full-time DNB — same selection names, same logic.
+                    # DNB-PARSE-NAMING-FIX 2026-05-28.
                     for val in bet.get("values", []):
                         sel_map = {"Home": "home", "Away": "away"}
                         sel = sel_map.get(val["value"])
