@@ -13,7 +13,7 @@ data/logs/
 
 # Model artifacts needed on Railway — force-tracked with `git add -f` (gitignore
 # negation doesn't work inside ignored directories; once tracked, git keeps them)
-# Files: data/processed/{features_v9,targets_poisson_history,targets_global}.csv
+# Files: data/processed/{features_v9,targets_poisson_history,targets_global,targets_extended}.csv
 #        data/models/soccer/v9a_202425/*.pkl
 .DS_Store
 /.idea/
