@@ -338,9 +338,15 @@ def main():
 
     match_ids = [m["match_id"] for m in matches]
 
-    # Determine which market types are needed across active bots
-    active_bots = [(name, cfg) for name, cfg in BOTS_CONFIG.items()
-                   if args.bot_filter is None or name == args.bot_filter]
+    # Expand multi-strategy bots into (name, effective_config) pairs — mirrors pipeline logic.
+    _raw_bots = [(name, cfg) for name, cfg in BOTS_CONFIG.items()
+                 if args.bot_filter is None or name == args.bot_filter]
+    active_bots: list[tuple[str, dict]] = []
+    for _bn, _bc in _raw_bots:
+        for _st in (_bc.get("strategies") or [{}]):
+            _scfg: dict = {k: v for k, v in _bc.items() if k != "strategies"}
+            _scfg.update(_st)
+            active_bots.append((_bn, _scfg))
     needs_ah = any("ah" in cfg.get("markets", []) for _, cfg in active_bots)
 
     # Bulk-load predictions + odds in parallel chunks.

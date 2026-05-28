@@ -615,54 +615,85 @@ BOTS_CONFIG = {
         "handicap_line_min": 0.5,
     },
     "bot_dnb_home_value": {
-        # DNB-HOME-WHITELIST 2026-05-28: replaced tier_filter=[1,2] with league_name_filter.
-        # Previous T1-2 broad filter generated many losing bets across top European leagues.
-        # Confirmed home DNB signals from 2023-2026 backtest (30+ bets, >10% ROI each).
-        "description": "DNB-HOME-WHITELIST 2026-05-28: home DNB in 5 confirmed leagues. Replaced tier_filter=[1,2] with explicit whitelist from 2023-2026 backtest.",
+        # RETIRED 2026-05-29 via migration 148. Merged into bot_dnb_specialist.
+        # Config kept for historical bet_id linkage — pipeline skips via is_active=false.
+        "description": "[RETIRED 2026-05-29] DNB home — merged into bot_dnb_specialist (DNB Home profile).",
         "tier_label": "pro",
         "markets": ["dnb"],
         "selection_filter": ["Home"],
         "tier_filter": None,
         "league_name_filter": [
-            ("Austria",  "Bundesliga"),       # T1 — 92 bets  +19.0%
-            ("Mexico",   "Liga MX"),           # T1 — 30 bets  +43.8%
-            ("Russia",   "Premier League"),    # T1 — 44 bets  +11.5%
-            ("Israel",   "Liga Leumit"),       # T2 — 37 bets  +11.4%
-            ("Uruguay",  "Segunda División"),  # T2 — 32 bets  +11.5%
+            ("Austria",  "Bundesliga"),
+            ("Mexico",   "Liga MX"),
+            ("Russia",   "Premier League"),
+            ("Israel",   "Liga Leumit"),
+            ("Uruguay",  "Segunda División"),
         ],
-        "edge_thresholds": {
-            1: {"dnb": 0.05},
-            2: {"dnb": 0.05},
-        },
+        "edge_thresholds": {1: {"dnb": 0.05}, 2: {"dnb": 0.05}},
         "odds_range": (1.30, 1.90),
         "min_prob": 0.60,
     },
     "bot_dnb_away_value": {
-        # DNB-AWAY-WHITELIST 2026-05-28: replaced tier_filter=[1,2,3] with league_name_filter.
-        # Old T1-3 filter caused massive losses on Italy (-16.9%), Netherlands (-19.8%),
-        # France (-16.6%), Turkey (-18.9%), Poland (-16.1%), Belgium (-10.8%) and more.
-        # Also missed England League Two (T4 — tier filter blocked it, but it was the
-        # STRONGEST signal at +25.4% / 99 bets, zero coverage from this bot).
-        "description": "DNB-AWAY-WHITELIST 2026-05-28: away DNB in 5 confirmed leagues only. Dropped tier_filter; kills Italian/French/Turkish bleeding (~-350 PnL). Adds England League Two (T4, +25.4% — was blocked by tier filter).",
+        # RETIRED 2026-05-29 via migration 148. Merged into bot_dnb_specialist.
+        # Config kept for historical bet_id linkage — pipeline skips via is_active=false.
+        "description": "[RETIRED 2026-05-29] DNB away — merged into bot_dnb_specialist (DNB Away profile).",
         "tier_label": "pro",
         "markets": ["dnb"],
         "selection_filter": ["Away"],
         "tier_filter": None,
         "league_name_filter": [
-            ("England",   "League Two"),          # T4 — 99 bets  +25.4% (was a gap!)
-            ("Sweden",    "Allsvenskan"),          # T1 — 168 bets +20.6%
-            ("Brazil",    "Serie B"),              # T1 — 34 bets  +26.6%
-            ("England",   "Championship"),         # T2 — 71 bets  +10.3%
-            ("Argentina", "Primera Nacional"),     # T2 — 42 bets  +13.2%
+            ("England",   "League Two"),
+            ("Sweden",    "Allsvenskan"),
+            ("Brazil",    "Serie B"),
+            ("England",   "Championship"),
+            ("Argentina", "Primera Nacional"),
         ],
-        "edge_thresholds": {
-            1: {"dnb": 0.05},
-            2: {"dnb": 0.05},
-            3: {"dnb": 0.06},
-            4: {"dnb": 0.06},
-        },
+        "edge_thresholds": {1: {"dnb": 0.05}, 2: {"dnb": 0.05}, 3: {"dnb": 0.06}, 4: {"dnb": 0.06}},
         "odds_range": (1.60, 2.60),
         "min_prob": 0.50,
+    },
+    "bot_dnb_specialist": {
+        # MULTI-STRATEGY-BOTS 2026-05-29: merges bot_dnb_home_value + bot_dnb_away_value
+        # into one bot with two named profiles. Each profile has its own league whitelist,
+        # thresholds, odds range, and selection filter. Per-profile ROI is queryable via
+        # strategy_profile column on simulated_bets.
+        "description": "MULTI-STRATEGY-BOTS 2026-05-29: DNB specialist with 'DNB Home' and 'DNB Away' profiles. Each profile has its own league whitelist and config. Replaces bot_dnb_home_value + bot_dnb_away_value.",
+        "tier_label": "pro",
+        "markets": ["dnb"],
+        "tier_filter": None,
+        "edge_thresholds": {},  # per-strategy only — required key but overridden by each strategy
+        "odds_range": (1.0, 99.0),  # placeholder — overridden by each strategy
+        "min_prob": 0.0,            # placeholder — overridden by each strategy
+        "strategies": [
+            {
+                "alias": "DNB Home",
+                "selection_filter": ["Home"],
+                "league_name_filter": [
+                    ("Austria",  "Bundesliga"),       # T1 — 92 bets  +19.0%
+                    ("Mexico",   "Liga MX"),           # T1 — 30 bets  +43.8%
+                    ("Russia",   "Premier League"),    # T1 — 44 bets  +11.5%
+                    ("Israel",   "Liga Leumit"),       # T2 — 37 bets  +11.4%
+                    ("Uruguay",  "Segunda División"),  # T2 — 32 bets  +11.5%
+                ],
+                "edge_thresholds": {1: {"dnb": 0.05}, 2: {"dnb": 0.05}},
+                "odds_range": (1.30, 1.90),
+                "min_prob": 0.60,
+            },
+            {
+                "alias": "DNB Away",
+                "selection_filter": ["Away"],
+                "league_name_filter": [
+                    ("England",   "League Two"),       # T4 — 99 bets  +25.4%
+                    ("Sweden",    "Allsvenskan"),       # T1 — 168 bets +20.6%
+                    ("Brazil",    "Serie B"),           # T1 — 34 bets  +26.6%
+                    ("England",   "Championship"),      # T2 — 71 bets  +10.3%
+                    ("Argentina", "Primera Nacional"),  # T2 — 42 bets  +13.2%
+                ],
+                "edge_thresholds": {1: {"dnb": 0.05}, 2: {"dnb": 0.05}, 3: {"dnb": 0.06}, 4: {"dnb": 0.06}},
+                "odds_range": (1.60, 2.60),
+                "min_prob": 0.50,
+            },
+        ],
     },
     "bot_high_alignment": {
         # BOT-HIGH-ALIGNMENT (2026-05-25): paper bot that fires only when
@@ -741,8 +772,9 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_dc_strong_fav":    "all",
     "bot_ah_home_fav":      "all",
     "bot_ah_away_dog":      "all",
-    "bot_dnb_home_value":   "all",
-    "bot_dnb_away_value":   "all",
+    "bot_dnb_home_value":   "all",   # RETIRED 2026-05-29 — kept for shadow tracking
+    "bot_dnb_away_value":   "all",   # RETIRED 2026-05-29 — kept for shadow tracking
+    "bot_dnb_specialist":   "all",
     "bot_high_alignment":   "all",
 }
 
@@ -2222,6 +2254,19 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         except Exception as _e:
             console.print(f"  [yellow]league_clv_efficiency batch-load failed (non-blocking): {_e}[/yellow]")
 
+    # MULTI-STRATEGY-BOTS: expand BOTS_CONFIG into (bot_name, effective_config, alias) tuples.
+    # Bots with a "strategies" list emit one tuple per strategy; each strategy overrides
+    # selected top-level keys (selection_filter, league_name_filter, edge_thresholds,
+    # odds_range, min_prob, alias). Single-strategy bots emit one tuple with alias="".
+    # Computed once here so the match loop just iterates the pre-built list.
+    _bot_strategy_iter: list[tuple[str, dict, str]] = []
+    for _bn, _bc in BOTS_CONFIG.items():
+        _strategies = _bc.get("strategies") or [{}]
+        for _st in _strategies:
+            _scfg: dict = {k: v for k, v in _bc.items() if k != "strategies"}
+            _scfg.update(_st)
+            _bot_strategy_iter.append((_bn, _scfg, _st.get("alias", "")))
+
     for match in odds_matches:
         match_id = match.get("id")
         if not match_id:
@@ -2610,7 +2655,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         # T1: AF prediction for this match (already looked up for Tier D above)
         af_pred = af_pred_for_match
 
-        for bot_name, config in BOTS_CONFIG.items():
+        for bot_name, config, _strategy_alias in _bot_strategy_iter:
             # ODDS-QUALITY-CLEANUP: skip bots flagged is_active=false or retired.
             # SHADOW-RETIRED-OK (2026-05-20): retired bots still produce shadow_bets
             # so the retirement-note recovery criterion ("≥30 bets at ≥3% ROI in
@@ -3010,6 +3055,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         "timing_cohort": bot_cohort,
                         "recommended_bookmaker": best_bookmaker.get(str(match_id), {}).get(f"{os_market}_{os_selection}"),
                         "meta_clv_score": round(meta_score, 4) if meta_score is not None else None,
+                        "strategy_profile": _strategy_alias or None,
                     })
                     total_bets += 1
                     continue
@@ -3024,7 +3070,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         "edge": edge,
                         "stake": stake,
                         "placed_at": datetime.now().isoformat(),
-                        "reasoning": f"{tier_tag}{match['home_team']} vs {match['away_team']} | edge={edge:.3f} cal={cal_prob:.3f} kelly={kelly:.4f} align={alignment['alignment_class']}",
+                        "reasoning": f"{tier_tag}{f'[{_strategy_alias}] ' if _strategy_alias else ''}{match['home_team']} vs {match['away_team']} | edge={edge:.3f} cal={cal_prob:.3f} kelly={kelly:.4f} align={alignment['alignment_class']}",
+                        "strategy_profile": _strategy_alias or None,
                         # P1: Calibration
                         "calibrated_prob": round(cal_prob, 4),
                         # P2: Odds movement

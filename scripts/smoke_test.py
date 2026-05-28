@@ -11000,5 +11000,68 @@ def test_specialist_bots_whitelist():
     assert "bot_sweden_over25" in BOT_TIMING_COHORTS
 
 
+@test("MULTI-STRATEGY-BOTS — strategy expansion, bot_dnb_specialist, strategy_profile in store_bet")
+def test_multi_strategy_bots():
+    from pathlib import Path
+
+    # Migration 148 exists and covers required changes
+    mig = Path(__file__).parent.parent / "supabase" / "migrations" / "148_multi_strategy_bots.sql"
+    assert mig.exists(), "migration 148_multi_strategy_bots.sql must exist"
+    mig_src = mig.read_text()
+    assert "strategy_profile" in mig_src, "migration must add strategy_profile column"
+    assert "bot_dnb_specialist" in mig_src, "migration must create bot_dnb_specialist"
+    assert "bot_dnb_home_value" in mig_src and "bot_dnb_away_value" in mig_src, \
+        "migration must retire the two old DNB bots"
+
+    # Pipeline has _bot_strategy_iter expansion
+    pipeline = Path(__file__).parent.parent / "workers" / "jobs" / "daily_pipeline_v2.py"
+    pipe_src = pipeline.read_text()
+    assert "_bot_strategy_iter" in pipe_src, "pipeline must have _bot_strategy_iter expansion"
+    assert "for bot_name, config, _strategy_alias in _bot_strategy_iter" in pipe_src, \
+        "pipeline must iterate over (bot_name, config, alias) tuples"
+    assert "strategy_profile" in pipe_src, "pipeline must store strategy_profile on bets"
+    assert "_strategy_alias" in pipe_src, "pipeline must use _strategy_alias in reasoning"
+
+    # Backtest also expands strategies
+    bt = Path(__file__).parent / "backtest_pre_match_bots.py"
+    bt_src = bt.read_text()
+    assert "_bot_strategy_iter" in bt_src or "strategies" in bt_src, \
+        "backtest must support multi-strategy expansion"
+
+    # bot_dnb_specialist has two strategies in BOTS_CONFIG
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG, BOT_TIMING_COHORTS
+    assert "bot_dnb_specialist" in BOTS_CONFIG
+    dnb = BOTS_CONFIG["bot_dnb_specialist"]
+    assert "strategies" in dnb, "bot_dnb_specialist must have strategies list"
+    assert len(dnb["strategies"]) == 2, "must have exactly 2 strategies"
+    aliases = [s["alias"] for s in dnb["strategies"]]
+    assert "DNB Home" in aliases and "DNB Away" in aliases, "strategies must be aliased DNB Home / DNB Away"
+
+    # Strategy expansion produces 2 entries for bot_dnb_specialist
+    expanded = []
+    for bn, bc in BOTS_CONFIG.items():
+        for st in (bc.get("strategies") or [{}]):
+            scfg = {k: v for k, v in bc.items() if k != "strategies"}
+            scfg.update(st)
+            expanded.append((bn, scfg, st.get("alias", "")))
+    dnb_expanded = [(bn, alias) for bn, _, alias in expanded if bn == "bot_dnb_specialist"]
+    assert len(dnb_expanded) == 2
+    assert dnb_expanded[0][1] == "DNB Home"
+    assert dnb_expanded[1][1] == "DNB Away"
+
+    # Each strategy has its own selection_filter, league_name_filter, odds_range
+    home_cfg = next(cfg for bn, cfg, alias in expanded if bn == "bot_dnb_specialist" and alias == "DNB Home")
+    away_cfg = next(cfg for bn, cfg, alias in expanded if bn == "bot_dnb_specialist" and alias == "DNB Away")
+    assert home_cfg["selection_filter"] == ["Home"]
+    assert away_cfg["selection_filter"] == ["Away"]
+    assert home_cfg["odds_range"] == (1.30, 1.90)
+    assert away_cfg["odds_range"] == (1.60, 2.60)
+    assert ("England", "League Two") in away_cfg["league_name_filter"]
+    assert ("Austria", "Bundesliga") in home_cfg["league_name_filter"]
+
+    # bot_dnb_specialist in BOT_TIMING_COHORTS
+    assert "bot_dnb_specialist" in BOT_TIMING_COHORTS
+
+
 if __name__ == "__main__":
     main()
