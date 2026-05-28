@@ -10855,5 +10855,29 @@ def test_coverage_extended():
     )
 
 
+@test("INPLAY-COOLBET-URL — _coolbet_match_url reads Imperva cookies from env, falls back gracefully")
+def test_inplay_coolbet_url():
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parents[1] / "workers" / "jobs" / "inplay_bot.py").read_text()
+
+    # Function exists
+    assert "_coolbet_match_url" in src, "_coolbet_match_url must be defined in inplay_bot.py"
+
+    # Reads Imperva env vars (same as CoolbetSession)
+    assert "COOLBET_COOKIE_REESE84" in src, "_coolbet_match_url must read COOLBET_COOKIE_REESE84"
+    assert "COOLBET_COOKIE_VISID_INCAP" in src, "_coolbet_match_url must read COOLBET_COOKIE_VISID_INCAP"
+    assert "COOLBET_IMPERVA_COOKIES" in src, "_coolbet_match_url must fall back to COOLBET_IMPERVA_COOKIES"
+
+    # Returns coolbet match URL format
+    assert "coolbet.com/et/sport/match/" in src, "_coolbet_match_url must return /et/sport/match/{id} URL"
+
+    # Wired into admin Telegram send_telegram call
+    assert 'cb_url = _coolbet_match_url' in src, "_coolbet_match_url must be called in the bet placement block"
+    assert 'Open on Coolbet' in src, "admin Telegram alert must include 'Open on Coolbet' link when cb_url is set"
+
+    # Never raises (try/except)
+    assert "except Exception" in src, "_coolbet_match_url must catch all exceptions and return None"
+
+
 if __name__ == "__main__":
     main()

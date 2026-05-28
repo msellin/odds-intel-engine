@@ -36,6 +36,77 @@ from datetime import datetime, timezone
 from rich.console import Console
 from workers.notify.telegram import send_telegram, send_telegram_to_users
 
+import logging
+log = logging.getLogger(__name__)
+
+_COOLBET_SEARCH_URL = "https://www.coolbet.com/s/sbgate/sports/search/v2"
+
+
+def _coolbet_match_url(home: str, away: str) -> str | None:
+    """Best-effort: search Coolbet for the live match and return its URL.
+    Returns None on any failure — never raises.
+    Uses Imperva cookies from env (same vars as CoolbetSession) to bypass bot protection.
+    The search endpoint is public — no JWT required."""
+    try:
+        import requests
+        from rapidfuzz import fuzz
+
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+            ),
+            "x-device": "DESKTOP",
+            "accept": "*/*",
+            "sec-fetch-site": "same-origin",
+            "sec-fetch-mode": "cors",
+            "referer": "https://www.coolbet.com/et/sport/recommendations",
+            "origin": "https://www.coolbet.com",
+        })
+        # Apply Imperva cookies from env (same vars CoolbetSession reads)
+        imperva = {
+            "reese84":                 os.getenv("COOLBET_COOKIE_REESE84", ""),
+            "visid_incap_723517":      os.getenv("COOLBET_COOKIE_VISID_INCAP", ""),
+            "nlbi_723517":             os.getenv("COOLBET_COOKIE_NLBI", ""),
+            "nlbi_723517_2147483392":  os.getenv("COOLBET_COOKIE_NLBI2", ""),
+            "incap_ses_1099_723517":   os.getenv("COOLBET_COOKIE_INCAP_SES", ""),
+        }
+        # Fall back to combined cookie string if individual vars not set
+        raw = os.getenv("COOLBET_IMPERVA_COOKIES", "")
+        individual = {k: v for k, v in imperva.items() if v}
+        if individual:
+            for name, value in individual.items():
+                session.cookies.set(name, value, domain="www.coolbet.com")
+        elif raw:
+            for part in raw.split(";"):
+                part = part.strip()
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    session.cookies.set(k.strip(), v.strip(), domain="www.coolbet.com")
+
+        resp = session.get(
+            _COOLBET_SEARCH_URL,
+            params={"country": "EE", "language": "et", "layout": "EUROPEAN", "search": home.split()[0]},
+            timeout=5,
+        )
+        if resp.status_code != 200:
+            log.debug("Coolbet search returned %d", resp.status_code)
+            return None
+        target = f"{home} - {away}".lower()
+        best_id, best_score = None, 0
+        for ev in resp.json():
+            if ev.get("sport_icon") != "football":
+                continue
+            score = fuzz.token_set_ratio(target, (ev.get("name") or "").lower())
+            if score > best_score:
+                best_score, best_id = score, ev.get("id")
+        if best_id and best_score >= 60:
+            return f"https://www.coolbet.com/et/sport/match/{best_id}"
+    except Exception as e:
+        log.debug("Coolbet URL lookup failed: %s", e)
+    return None
+
 console = Console()
 
 
@@ -470,12 +541,14 @@ def run_inplay_strategies():
                     )
                     home = pm.get("home_name") or "?"
                     away = pm.get("away_name") or "?"
+                    cb_url = _coolbet_match_url(home, away)
                     send_telegram(
                         f"📡 <b>INPLAY</b> paper bet\n"
                         f"  <b>{home} vs {away}</b>\n"
                         f"  {trigger['market']} {trigger['selection']} @ {trigger['odds']:.2f}\n"
                         f"  edge {trigger['edge']:+.1f}%  ·  min {cand['minute']}  ·  score {cand['score_home']}-{cand['score_away']}\n"
                         f"  bot {bot_name}{src_tag}"
+                        + (f"\n  <a href=\"{cb_url}\">Open on Coolbet →</a>" if cb_url else "")
                     )
                     _league = pm.get("league_name") or ""
                     _country = pm.get("league_country") or ""
