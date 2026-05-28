@@ -475,12 +475,21 @@ INPLAY_STRATEGIES = {
         ],
     },
     "inplay_p": {
-        "desc": "Post-Equalizer — equalizing team at 1-1, min 30-75, live win ≥ 2.20",
+        "desc": "Post-Equalizer (RETIRED 2026-05-28) — equalizing team at 1-1, min 30-75, live win ≥ 2.20",
         "gates": [
             ("minute 30-75",            "minute BETWEEN 30 AND 75"),
             ("score 1-1",               "score_home=1 AND score_away=1"),
             ("has live 1x2",            "live_1x2_home IS NOT NULL"),
             ("live 1x2 winner ≥ 2.20",  "GREATEST(COALESCE(live_1x2_home,0), COALESCE(live_1x2_away,0)) >= 2.20"),
+        ],
+    },
+    "inplay_p_v2": {
+        "desc": "Post-Equalizer v2 — equalizing team at 1-1, min 30-75, live win 2.20-2.49 or 3.00-5.00",
+        "gates": [
+            ("minute 30-75",                    "minute BETWEEN 30 AND 75"),
+            ("score 1-1",                       "score_home=1 AND score_away=1"),
+            ("has live 1x2",                    "live_1x2_home IS NOT NULL"),
+            ("odds 2.20-2.49 or 3.00-5.00",    "GREATEST(COALESCE(live_1x2_home,0), COALESCE(live_1x2_away,0)) >= 2.20 AND NOT (GREATEST(COALESCE(live_1x2_home,0), COALESCE(live_1x2_away,0)) >= 2.50 AND GREATEST(COALESCE(live_1x2_home,0), COALESCE(live_1x2_away,0)) < 3.00) AND GREATEST(COALESCE(live_1x2_home,0), COALESCE(live_1x2_away,0)) < 5.0"),
         ],
     },
     "inplay_q": {

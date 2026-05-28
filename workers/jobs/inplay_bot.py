@@ -217,9 +217,11 @@ INPLAY_BOTS = {
         "description": "Underdog Hold — underdog leading 1-0 at min 25-55, prematch win prob < 35%, live odds ≥ 2.80",
         "strategy": "inplay_o",
     },
-    "inplay_p": {
-        "description": "Post-Equalizer — equalizing team at 1-1 within 4min, live win odds ≥ 2.20, Poisson edge ≥ 3%",
-        "strategy": "inplay_p",
+    # inplay_p retired 2026-05-28: -15.4% ROI (192 bets). 2.50-2.99 odds bucket
+    # was -49.1% ROI (27 bets) and 5.0+ was -56% (67 bets). Replaced by inplay_p_v2.
+    "inplay_p_v2": {
+        "description": "Post-Equalizer v2 — equalizing team at 1-1 within 4min, live win odds 2.20-2.49 or 3.00-5.00, Poisson edge ≥ 3%",
+        "strategy": "inplay_p_v2",
     },
     "inplay_q": {
         "description": "Red Card Overreaction — red 15-55, total goals ≤ 1, 11-man possession ≥ 55%, live OU2.5 over ≥ 2.30, bet Over 2.5",
@@ -1153,8 +1155,9 @@ def _check_strategy(bot_name: str, cand: dict, pm: dict,
         return _check_strategy_n(cand, pm, has_red_card)
     elif bot_name == "inplay_o":
         return _check_strategy_o(cand, pm, has_red_card)
-    elif bot_name == "inplay_p":
-        return _check_strategy_p(cand, pm, has_red_card)
+    elif bot_name == "inplay_p_v2":
+        return _check_strategy_p_v2(cand, pm, has_red_card)
+    # inplay_p retired 2026-05-28 — not dispatched
     elif bot_name == "inplay_q":
         return _check_strategy_q(cand, pm, has_red_card, execute_query)
     elif bot_name == "inplay_btts_press_v1":
@@ -2882,6 +2885,81 @@ def _check_strategy_p(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
         return None
     if odds > 5.0:
         return None  # INPLAY-P-ODDS-CAP: 5.0-6.0 = -50% ROI, 6.0+ = -59% ROI (2026-05-28 data)
+
+    remaining_minutes = max(1, 90 - minute)
+    scale = remaining_minutes / 90.0
+    model_win_prob = _poisson_win_prob(lambda_eq * scale, lambda_opp * scale, lead_a=0)
+    market_prob = _implied_prob(odds)
+    edge_pct = (model_win_prob - market_prob) * 100
+
+    if edge_pct < 3.0:
+        return None
+
+    return {
+        "market": "1x2",
+        "selection": selection,
+        "odds": odds,
+        "model_prob": round(model_win_prob, 4),
+        "edge": round(edge_pct, 2),
+        "extra": {
+            "score_state": "1-1",
+            "eq_team": eq_team,
+            "cycles_since_eq": _cycle_count - eq_cycle,
+            "remaining_lam_eq": round(lambda_eq * scale, 3),
+            "remaining_lam_opp": round(lambda_opp * scale, 3),
+        },
+    }
+
+
+def _check_strategy_p_v2(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
+    """
+    Strategy P v2: Post-Equalizer Comeback — calibrated odds filter.
+
+    Same thesis as inplay_p but excludes the 2.50-2.99 odds bucket which showed
+    -49.1% ROI across 27 bets (5/27 win rate vs expected 33-40%). Valid windows:
+    2.20-2.49 (+45.8% ROI) and 3.00-5.00 (+6-36% ROI). Retired inplay_p 2026-05-28.
+    """
+    mid = str(cand["match_id"])
+    eq_info = _equalizer_event_window.get(mid)
+    if eq_info is None:
+        return None
+
+    eq_cycle, eq_team = eq_info
+    if _cycle_count - eq_cycle > 8:
+        return None
+
+    minute = cand["minute"] or 0
+    if minute < 30 or minute > 75:
+        return None
+    if has_red_card:
+        return None
+
+    sh, sa = cand["score_home"] or 0, cand["score_away"] or 0
+    if sh != 1 or sa != 1:
+        return None
+
+    if eq_team == "home":
+        live_odds_val = cand.get("live_1x2_home")
+        selection = "home"
+        lambda_eq = float(pm.get("prematch_xg_home") or 1.1)
+        lambda_opp = float(pm.get("prematch_xg_away") or 1.1)
+    else:
+        live_odds_val = cand.get("live_1x2_away")
+        selection = "away"
+        lambda_eq = float(pm.get("prematch_xg_away") or 1.1)
+        lambda_opp = float(pm.get("prematch_xg_home") or 1.1)
+
+    if not live_odds_val:
+        return None
+    odds = float(live_odds_val)
+
+    # Exclude 2.50-2.99 bucket (-49.1% ROI, 27 bets) and cap at 5.0 (-56% ROI, 67 bets)
+    if odds < 2.20:
+        return None
+    if 2.50 <= odds < 3.00:
+        return None
+    if odds >= 5.0:
+        return None
 
     remaining_minutes = max(1, 90 - minute)
     scale = remaining_minutes / 90.0

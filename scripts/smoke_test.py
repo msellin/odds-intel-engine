@@ -8349,35 +8349,36 @@ def _():
     )
 
 
-@test("INPLAY-POST-EQUALIZER — strategy P registered, dispatched, uses equalizer window + Poisson")
+@test("INPLAY-POST-EQUALIZER — strategy P_v2 registered, dispatched, uses equalizer window + Poisson")
 def _():
     import pathlib
     src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
 
-    # Bot registered
-    assert '"inplay_p"' in src, "inplay_p must be in INPLAY_BOTS"
+    # v2 bot registered
+    assert '"inplay_p_v2"' in src, "inplay_p_v2 must be in INPLAY_BOTS"
 
-    # Dispatched
+    # v2 dispatched
     fn_start = src.index("def _check_strategy(bot_name:")
     fn_end = src.index("\ndef _check_strategy_a(", fn_start)
     dispatch_body = src[fn_start:fn_end]
-    assert '"inplay_p"' in dispatch_body, "inplay_p must be dispatched in _check_strategy"
+    assert '"inplay_p_v2"' in dispatch_body, "inplay_p_v2 must be dispatched in _check_strategy"
+    assert "inplay_p_v2" in dispatch_body, "inplay_p not dispatched (retired)"
 
     # Module-level state vars exist
     assert "_equalizer_event_window" in src, "_equalizer_event_window dict must exist"
     assert "_prev_scores" in src, "_prev_scores dict must exist"
 
-    # Strategy function checks window and 1-1 score
-    fn_start = src.index("def _check_strategy_p(")
+    # v2 strategy function checks window and 1-1 score
+    fn_start = src.index("def _check_strategy_p_v2(")
     try:
         fn_end_p = src.index("\ndef ", fn_start + 1)
     except ValueError:
         fn_end_p = len(src)
     fn_body = src[fn_start:fn_end_p]
-    assert "_equalizer_event_window" in fn_body, "Strategy P must check _equalizer_event_window"
-    assert "sh != 1 or sa != 1" in fn_body, "Strategy P must exit if score is not 1-1"
-    assert "2.20" in fn_body, "Strategy P must require live odds >= 2.20"
-    assert "_poisson_win_prob(" in fn_body, "Strategy P must use _poisson_win_prob for edge"
+    assert "_equalizer_event_window" in fn_body, "Strategy P v2 must check _equalizer_event_window"
+    assert "sh != 1 or sa != 1" in fn_body, "Strategy P v2 must exit if score is not 1-1"
+    assert "2.20" in fn_body, "Strategy P v2 must require live odds >= 2.20"
+    assert "_poisson_win_prob(" in fn_body, "Strategy P v2 must use _poisson_win_prob for edge"
 
     # Equalizer detection logic updates both dicts
     update_section = src[src.index("Update post-equalizer state"):src.index("# ── Data Queries")]
@@ -10755,21 +10756,21 @@ def test_inplay_low_fire_xg_fallbacks():
         )
 
 
-@test("INPLAY-P-ODDS-CAP — strategy P rejects odds > 5.0 (5.0-6.0=-50%,6.0+=-59% ROI 2026-05-28)")
-def test_inplay_p_odds_cap():
+@test("INPLAY-P-V2-ODDS-FILTER — v2 excludes 2.50-2.99 bucket and caps at 5.0 (retirement data 2026-05-28)")
+def test_inplay_p_v2_odds_filter():
     import pathlib
     src = pathlib.Path(__file__).resolve().parents[1].joinpath(
         "workers/jobs/inplay_bot.py"
     ).read_text()
-    fn_start = src.index("def _check_strategy_p(")
+    fn_start = src.index("def _check_strategy_p_v2(")
     try:
         fn_end = src.index("\ndef ", fn_start + 1)
     except ValueError:
         fn_end = len(src)
     fn_body = src[fn_start:fn_end]
-    assert "odds > 5.0" in fn_body, (
-        "Strategy P must reject odds > 5.0 — INPLAY-P-ODDS-CAP 2026-05-28"
-    )
+    assert "2.50" in fn_body, "Strategy P v2 must reference 2.50 (exclude 2.50-2.99 bucket)"
+    assert "3.00" in fn_body, "Strategy P v2 must reference 3.00 (exclude 2.50-2.99 bucket)"
+    assert "odds >= 5.0" in fn_body, "Strategy P v2 must cap at 5.0"
 
 
 @test("INPLAY-J-XG-FALLBACK — strategy J derives O25 from prematch xG when prob unavailable")

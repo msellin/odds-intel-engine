@@ -5,6 +5,16 @@ Newest entries at the top. Internal refactors and infrastructure changes are not
 
 ---
 
+## 2026-05-28 — Inplay Post-Equalizer v2 (INPLAY-P-V2)
+
+### Bots — inplay_p retired, inplay_p_v2 live
+
+**Root cause of inplay_p underperformance:** after 192 settled bets (-15.4% ROI), two odds buckets were responsible for all losses — the 2.50–2.99 range (-49.1% ROI, 27 bets) and the 5.0+ range (-56% ROI, 67 bets). The remaining buckets (2.20–2.49 and 3.00–4.99) combined for +6.3% ROI on 125 bets.
+
+**Fix:** retired `inplay_p` and created `inplay_p_v2` which excludes both bad ranges. The underlying thesis (equalizing team gets overpriced after 1-1) is confirmed valid in the good odds ranges; the 2.50–2.99 bucket likely reflects matches where books had already priced both teams fairly close to equal (no mispricing to exploit).
+
+---
+
 ## 2026-05-28 — Extended League Coverage (COVERAGE-EXTENDED)
 
 ### Model — 426 new leagues now Tier B instead of Tier C

@@ -6,6 +6,10 @@
 >
 > **Root cause**: zero bets on 2026-05-28 despite normal game count — today's slate was niche leagues (Kazakhstan, Estonia, Georgia, Ethiopia etc.) with no Poisson history → all Tier C → +8% edge bump → nothing passes. Fix: backfill phases 4+5 (86 leagues), export `targets_extended.csv` (85,379 rows, 426 leagues), load into pipeline as Tier B. Next cohort run will evaluate these leagues at +2% bump instead of +8%.
 >
+> ## 2026-05-28 — INPLAY-P-V2 done
+>
+> **INPLAY-P-V2** — Retired `inplay_p` (-15.4% ROI, 192 bets). Root cause: 2.50–2.99 bucket -49.1% ROI (27 bets) + 5.0+ bucket -56% ROI (67 bets). Remaining buckets combined +6.3% ROI. Created `inplay_p_v2` excluding both bad ranges (valid: 2.20–2.49 and 3.00–5.00). Migration 145, smoke: INPLAY-POST-EQUALIZER + INPLAY-P-V2-ODDS-FILTER.
+>
 > ## 2026-05-28 — Full Inplay Bot Audit done
 >
 > **INPLAY-BTTS-QUERY-FIX** — `_get_live_candidates()` SELECT was missing `live_btts_yes`, `live_btts_no`, `live_ah_main_line`, `live_ah_home_odds`, `live_ah_away_odds`. BTTS inplay bots (btts_press_v1, btts_dryspell_v1) had 0 bets in 4 days because the strategy read cand keys that were always None. Fixed. Smoke: INPLAY-BTTS-BOTS-V1 (extended).
