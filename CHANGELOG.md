@@ -5,6 +5,18 @@ Newest entries at the top. Internal refactors and infrastructure changes are not
 
 ---
 
+## 2026-05-28 — DNB Odds Analysis + Inplay Bot Audit
+
+### Data — DNB naming bug fixed + synthetic odds confirmed (DNB-BOT-REAL-ODDS)
+
+`parse_fixture_odds` was silently storing zero DNB rows since DNB-PARSE launched (2026-05-26). AF's bulk `/odds` endpoint calls the market **"Home/Away"** (bet id 2), not "Draw No Bet" (bet id 11) — the parser was matching the wrong name. Fixed: both names now map to `market=draw_no_bet`. Real DNB data will land in `odds_snapshots` from the next odds run.
+
+Decision on switching bots to real prices: **keep synthetic**. Analysis across 312 fixture × bookmaker pairs (Bet365, Unibet, William Hill, Betano, 10Bet, BetVictor, Betfair, 888Sport, SBO): real Home/Away odds average **-7.77%** below synthetic for home DNB and **-10.71%** for away DNB. Only 1-2% of cases had real odds above synthetic. Bookmakers build their own DNB margin on top of the 1X2 market — synthetic `(h+a)/a` from Pinnacle 1X2 is a tighter reference price. `bot_dnb_home_value` and `bot_dnb_away_value` stay on synthetic.
+
+Coolbet-specific DNB bot: Coolbet does not appear in AF's Home/Away bulk data, so deferred indefinitely.
+
+---
+
 ## 2026-05-28 — Inplay Bot Audit
 
 ### Inplay — Critical query fix: BTTS bots had 0 bets in 4 days (INPLAY-BTTS-QUERY-FIX)
