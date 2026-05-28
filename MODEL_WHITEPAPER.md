@@ -347,8 +347,8 @@ Production routes the 6 market families through 3 distinct computational paths i
 | **OU 2.5** | `over_under.pkl` classifier head | Stage 1 tier-shrinkage + Stage 2 Platt/isotonic |
 | **BTTS yes/no** | `btts.pkl` classifier head | Stage 1 tier-shrinkage + Stage 2 Platt/isotonic |
 | **OU 1.5 / 3.5 / 4.5** | Derived from `home_goals.pkl` + `away_goals.pkl` Poisson regressors → Dixon-Coles joint goal matrix → integrate margin distribution above/below the line | No separate fit — λ already came from a calibrated 1X2 inversion (`_solve_lambdas_calibrated`) |
-| **Asian Handicap** | Same Poisson + DC joint matrix → `_ah_model_prob()` integrates margin distribution over the handicap line, handling whole/half/quarter line push-adjustments | **AH-CAL-BYPASS** (2026-05-24): Stage 1 shrinkage SKIPPED (would double-shrink because λ already came from already-Platt-calibrated 1X2 probs). Stage 2 `apply_platt` is a no-op for AH (no fit stored). |
-| **Double Chance** (1X / X2 / 12) | Direct sums of Stage-2-calibrated 1X2 probabilities | Inherits 1X2 calibration; no separate fit. **AH-CAL-BYPASS** also applies (Stage 1 skipped). |
+| **Asian Handicap** | Same Poisson + DC joint matrix → `_ah_model_prob()` integrates margin distribution over the handicap line, handling whole/half/quarter line push-adjustments | **AH-CAL-BYPASS** (2026-05-24): Stage 1 shrinkage SKIPPED (would double-shrink because λ already came from already-Platt-calibrated 1X2 probs). Stage 2: aggregate `asian_handicap` Platt fitted 2026-05-28 from live settled simulated_bets (n=128). Per-line keys (e.g. `asian_handicap_Home -0.5`) had <50 samples each — one aggregate key used instead. `apply_platt()` has `_MARKET_ROOTS` fallback: if specific key not found, tries startswith-match on the market root before returning raw prob. |
+| **Double Chance** (1X / X2 / 12) | Direct sums of Stage-2-calibrated 1X2 probabilities | Stage 1 skipped (**AH-CAL-BYPASS** — same double-shrink risk). Stage 2: per-selection Platt fitted 2026-05-28 from live settled simulated_bets — `double_chance_1x` (n=58), `double_chance_x2` (n=105). Was urgent: uncalibrated DC had model_prob 0.791 vs actual hit rate 0.595 = 19.6pp gap. `double_chance_12` skipped (insufficient data). |
 
 So when `MODEL_VERSION=v_20260525_depth8` is set, the same 5-file bundle drives all 6 market families. Improving the goal regressors (`home_goals.pkl`, `away_goals.pkl`) automatically improves AH + OU 1.5/3.5/4.5 via the joint matrix.
 
@@ -444,7 +444,7 @@ The `log(odds)` feature allows the correction to learn that "model says 40% at o
 
 **Model-version segmentation (important):** Every `simulated_bets` row carries a `model_version` column. Platt/logistic fitting must be run on a single model version at a time. Mixing versions produces a blended curve that is not valid for any individual version. Filter: `WHERE model_version = 'vX'`. Minimum sample size applies per version, not in aggregate.
 
-Current status (2026-05-12): O/U 2-feature logistic deployed with 353 settled bets. 1X2 upgrade pending (~223 bets, need 300). AH/BTTS not ready (months away).
+Current status (2026-05-28): O/U 2-feature logistic deployed. BTTS 1-feature Platt fitted 2026-05-27 (offline holdout, n=139). DC per-selection Platt and AH aggregate Platt fitted 2026-05-28 via `scripts/fit_platt_live.py` (MLE Nelder-Mead fit directly on `model_probability + result` from settled `simulated_bets` — no odds feature, simpler than the logistic path but effective as an ad-hoc stopgap). 1X2 upgrade (add log-odds feature) pending (~300 settled bets). DNB pending (insufficient data). `fit_platt_live.py` supports `--dry-run` and `--markets` flags; re-run any time after batch settlements to refresh DC/AH/BTTS params before the next weekly retrain.
 
 ### 5.3 Stage 3 — Veto Gate
 
