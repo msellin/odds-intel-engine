@@ -368,23 +368,26 @@ BOTS_CONFIG = {
         # strong draw signals, while including Hungary NB II (-66.8%), Portugal Segunda
         # Liga (-88.4%), Slovenia 2.SNL (-35%), Bulgaria Second League (-64.9%) etc.
         # Whitelist keeps only confirmed-positive leagues; T1 thresholds added for new leagues.
-        "description": "DRAW-LEAGUE-WHITELIST 2026-05-28: draw specialist — 12 leagues confirmed by 2023-2026 clean backtest. Replaced tier_filter=[2,3,4] with explicit league_name_filter. Drops Hungary/Portugal/Slovenia/Bulgaria leakers; adds Austria Bundesliga + Brazil Serie A (T1, previously blocked).",
+        "description": "DRAW-LEAGUE-WHITELIST 2026-05-29: draw specialist — 15 leagues confirmed by 2023-2026 clean backtest. Replaced tier_filter=[2,3,4] with explicit league_name_filter. +3 leagues added 2026-05-29: China Super League (+73.8%), USA USL League Two (+29.2%), Azerbaijan Birinci Dasta (+13.3%).",
         "tier_label": "pro",
         "markets": ["1x2"],
         "tier_filter": None,
         "selection_filter": ["Draw"],
         "league_name_filter": [
             ("Israel",         "Liga Leumit"),           # T2 — 128 bets +58.9%
+            ("Scotland",       "Championship"),           # T2 — 45 bets  +95.9%
+            ("China",          "Super League"),           # T2 — 36 bets  +73.8%
             ("Austria",        "Bundesliga"),             # T1 — 73 bets  +46.6%
             ("Sweden",         "Ettan - Norra"),          # T3 — 82 bets  +43.6%
             ("Czech-Republic", "3. liga - CFL B"),        # T3 — 87 bets  +37.6%
             ("Brazil",         "Serie D"),                # T4 — 321 bets +32.5%
+            ("USA",            "USL League Two"),         # T4 — 33 bets  +29.2%
             ("Uruguay",        "Segunda División"),       # T2 — 61 bets  +24.3%
-            ("Scotland",       "Championship"),           # T2 — 45 bets  +95.9%
             ("Sweden",         "Superettan"),             # T2 — 75 bets  +20.3%
             ("England",        "League Two"),             # T4 — 198 bets +17.9%
             ("Argentina",      "Primera B Metropolitana"),# T3 — 112 bets +17.0%
             ("England",        "Championship"),           # T2 — 227 bets +15.6%
+            ("Azerbaijan",     "Birinci Dasta"),          # T2 — 39 bets  +13.3%
             ("Brazil",         "Serie A"),                # T1 — 141 bets +12.5%
         ],
         "edge_thresholds": {
@@ -595,6 +598,94 @@ BOTS_CONFIG = {
         },
         "odds_range": (1.20, 1.80),
         "min_prob": 0.65,
+    },
+    "bot_1x2_specialist": {
+        # 1X2-SPECIALIST 2026-05-29: confirmed home/away signals from 2023-2026 clean
+        # backtest — none covered by any existing 1x2 specialist with league_name_filter.
+        # "Away Value": 3 leagues, 312 bets combined. "Home Value": 2 leagues, 90 bets.
+        # Broad bots (bot_opt_away_british, bot_opt_away_europe, bot_opt_home_lower) use
+        # country+tier filters and still cover many losing leagues alongside these winners.
+        "description": "1X2-SPECIALIST 2026-05-29: home/away value specialist with confirmed league whitelists. Profile 'Away Value': Arg Liga Profesional (+26.4%), Eng League Two (+18.3%), France Ligue 1 (+12%). Profile 'Home Value': Austria Bundesliga (+57.6%), Spain Segunda (+15.1%). Per-profile ROI queryable via strategy_profile.",
+        "tier_label": "pro",
+        "markets": ["1x2"],
+        "tier_filter": None,
+        "edge_thresholds": {},
+        "odds_range": (1.0, 99.0),
+        "min_prob": 0.0,
+        "strategies": [
+            {
+                "alias": "Away Value",
+                "selection_filter": ["Away"],
+                "league_name_filter": [
+                    ("Argentina", "Liga Profesional Argentina"),  # T1 — 41 bets  +26.4%
+                    ("England",   "League Two"),                  # T4 — 168 bets +18.3%
+                    ("France",    "Ligue 1"),                     # T1 — 103 bets +12.0%
+                ],
+                "edge_thresholds": {
+                    1: {"1x2_fav": 0.06, "1x2_long": 0.06},
+                    2: {"1x2_fav": 0.05, "1x2_long": 0.05},
+                    4: {"1x2_fav": 0.04, "1x2_long": 0.04},
+                },
+                "odds_range": (1.80, 4.50),
+                "min_prob": 0.25,
+            },
+            {
+                "alias": "Home Value",
+                "selection_filter": ["Home"],
+                "league_name_filter": [
+                    ("Austria", "Bundesliga"),        # T1 — 56 bets  +57.6%
+                    ("Spain",   "Segunda División"),  # T1 — 34 bets  +15.1%
+                ],
+                "edge_thresholds": {
+                    1: {"1x2_fav": 0.06, "1x2_long": 0.06},
+                    2: {"1x2_fav": 0.05, "1x2_long": 0.05},
+                },
+                "odds_range": (1.40, 2.80),
+                "min_prob": 0.40,
+            },
+        ],
+    },
+    "bot_dc_specialist": {
+        # DC-SPECIALIST 2026-05-29: only 3 confirmed signals in the 2023-2026 backtest
+        # with 30+ bets and >10% ROI. bot_dc_value + bot_dc_strong_fav are kept active
+        # as broad paper-trading bots; this specialist is the real-money candidate.
+        # Profile "X2 Value": bet away-or-draw in Brazil Serie B + China Super League.
+        # Profile "1X Israel": bet home-or-draw in Israel Liga Leumit only.
+        "description": "DC-SPECIALIST 2026-05-29: double-chance specialist with confirmed league whitelists. Profile 'X2 Value': Brazil Serie B (+20.1%), China Super League (+13.7%). Profile '1X Israel': Israel Liga Leumit (+13.3%). Per-profile ROI queryable via strategy_profile.",
+        "tier_label": "pro",
+        "markets": ["dc"],
+        "tier_filter": None,
+        "edge_thresholds": {},
+        "odds_range": (1.0, 99.0),
+        "min_prob": 0.0,
+        "strategies": [
+            {
+                "alias": "X2 Value",
+                "selection_filter": ["X2"],
+                "league_name_filter": [
+                    ("Brazil", "Serie B"),        # T2 — 40 bets +20.1%
+                    ("China",  "Super League"),   # T2 — 32 bets +13.7%
+                ],
+                "edge_thresholds": {
+                    1: {"dc": 0.05},
+                    2: {"dc": 0.04},
+                },
+                "odds_range": (1.25, 2.20),
+                "min_prob": 0.55,
+            },
+            {
+                "alias": "1X Israel",
+                "selection_filter": ["1X"],
+                "league_name_filter": [
+                    ("Israel", "Liga Leumit"),    # T2 — 30 bets +13.3%
+                ],
+                "edge_thresholds": {
+                    2: {"dc": 0.04},
+                },
+                "odds_range": (1.20, 1.80),
+                "min_prob": 0.65,
+            },
+        ],
     },
     "bot_ah_home_fav": {
         "description": "AH home — favourite covers T1-2, Poisson-priced, 5%+ edge. "
@@ -819,6 +910,8 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_dnb_home_value":   "all",   # RETIRED 2026-05-29 — kept for shadow tracking
     "bot_dnb_away_value":   "all",   # RETIRED 2026-05-29 — kept for shadow tracking
     "bot_dnb_specialist":   "all",
+    "bot_1x2_specialist":   "all",
+    "bot_dc_specialist":    "all",
     "bot_high_alignment":   "all",
 }
 

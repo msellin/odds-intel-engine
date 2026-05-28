@@ -11118,5 +11118,67 @@ def test_ou25_specialist_bots():
     assert "bot_ou25_specialist" in BOT_TIMING_COHORTS
 
 
+@test("1X2-DC-SPECIALIST — new bots, draw expansion, strategy profiles")
+def test_1x2_dc_specialist_bots():
+    from pathlib import Path
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG, BOT_TIMING_COHORTS
+
+    # Migration 150 exists and covers new bots
+    mig = Path(__file__).parent.parent / "supabase" / "migrations" / "150_1x2_dc_specialist_bots.sql"
+    assert mig.exists(), "migration 150_1x2_dc_specialist_bots.sql must exist"
+    mig_src = mig.read_text()
+    assert "bot_1x2_specialist" in mig_src
+    assert "bot_dc_specialist" in mig_src
+    assert "bot_draw_specialist" in mig_src
+
+    # draw specialist has 15 leagues including the 3 new ones
+    draw = BOTS_CONFIG["bot_draw_specialist"]
+    assert ("China",      "Super League")   in draw["league_name_filter"]
+    assert ("USA",        "USL League Two") in draw["league_name_filter"]
+    assert ("Azerbaijan", "Birinci Dasta")  in draw["league_name_filter"]
+    assert len(draw["league_name_filter"]) == 15
+
+    # bot_1x2_specialist has two strategies
+    s1x2 = BOTS_CONFIG["bot_1x2_specialist"]
+    assert "strategies" in s1x2
+    aliases = [s["alias"] for s in s1x2["strategies"]]
+    assert "Away Value" in aliases and "Home Value" in aliases
+
+    expanded = []
+    for bn, bc in BOTS_CONFIG.items():
+        for st in (bc.get("strategies") or [{}]):
+            scfg = {k: v for k, v in bc.items() if k != "strategies"}
+            scfg.update(st)
+            expanded.append((bn, scfg, st.get("alias", "")))
+
+    away_cfg = next(cfg for bn, cfg, alias in expanded if bn == "bot_1x2_specialist" and alias == "Away Value")
+    home_cfg = next(cfg for bn, cfg, alias in expanded if bn == "bot_1x2_specialist" and alias == "Home Value")
+    assert away_cfg["selection_filter"] == ["Away"]
+    assert home_cfg["selection_filter"] == ["Home"]
+    assert ("Argentina", "Liga Profesional Argentina") in away_cfg["league_name_filter"]
+    assert ("England",   "League Two")                 in away_cfg["league_name_filter"]
+    assert ("France",    "Ligue 1")                    in away_cfg["league_name_filter"]
+    assert ("Austria",   "Bundesliga")                 in home_cfg["league_name_filter"]
+    assert ("Spain",     "Segunda División")           in home_cfg["league_name_filter"]
+
+    # bot_dc_specialist has two strategies
+    sdc = BOTS_CONFIG["bot_dc_specialist"]
+    assert "strategies" in sdc
+    dc_aliases = [s["alias"] for s in sdc["strategies"]]
+    assert "X2 Value" in dc_aliases and "1X Israel" in dc_aliases
+
+    x2_cfg  = next(cfg for bn, cfg, alias in expanded if bn == "bot_dc_specialist" and alias == "X2 Value")
+    i1x_cfg = next(cfg for bn, cfg, alias in expanded if bn == "bot_dc_specialist" and alias == "1X Israel")
+    assert x2_cfg["selection_filter"]  == ["X2"]
+    assert i1x_cfg["selection_filter"] == ["1X"]
+    assert ("Brazil", "Serie B")      in x2_cfg["league_name_filter"]
+    assert ("China",  "Super League") in x2_cfg["league_name_filter"]
+    assert ("Israel", "Liga Leumit")  in i1x_cfg["league_name_filter"]
+
+    # Both new bots in BOT_TIMING_COHORTS
+    assert "bot_1x2_specialist" in BOT_TIMING_COHORTS
+    assert "bot_dc_specialist"  in BOT_TIMING_COHORTS
+
+
 if __name__ == "__main__":
     main()
