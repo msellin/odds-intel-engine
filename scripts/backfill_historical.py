@@ -664,8 +664,7 @@ def backfill_league_season(
     )
     _print(f"  → {stats_stored} stats, {events_stored} events written ({len(union_ids)} fixtures)")
 
-    if bar is not None and task_id is not None and stats["matches_enriched"]:
-        bar.advance(task_id, stats["matches_enriched"])
+    # Caller advances the bar by combo (1 per league/season), not by match count.
 
     # Check if this league/season is complete.
     #
@@ -797,18 +796,13 @@ def run_backfill(phase: int | None = None, batch_size: int = 500, league_cap: in
         leagues = phase_leagues[phase]
         seasons = PHASE_SEASONS[phase]
 
+        total_combos = len(leagues) * len(seasons)
         console.print(f"Target: {len(leagues)} leagues × {len(seasons)} seasons = "
-                      f"{len(leagues) * len(seasons)} league/season combos")
-
-        # Pre-count matches missing stats or events for this phase — drives the
-        # progress-bar total. May undercount if new league/seasons are touched
-        # for the first time this run (their fixtures aren't in `matches` yet);
-        # the bar will simply extend past 100% in that case rather than freeze.
-        total_matches = count_matches_needing_enrichment(leagues, seasons)
-        console.print(f"Matches missing stats/events: ~{total_matches:,}\n")
+                      f"{total_combos} combos\n")
 
         budget_tracker = {"used": 1, "max": max_requests}  # 1 for the status check
         totals = {"fixtures": 0, "odds": 0, "stats": 0, "events": 0, "api_calls": 1}
+        combos_done = 0
 
         with Progress(
             SpinnerColumn(),
@@ -816,13 +810,15 @@ def run_backfill(phase: int | None = None, batch_size: int = 500, league_cap: in
             BarColumn(),
             MofNCompleteColumn(),
             TextColumn("[progress.percentage]{task.percentage:>5.1f}%"),
+            TextColumn("[cyan]{task.fields[api_calls]} AF calls"),
             TimeRemainingColumn(),
             console=console,
             transient=False,
         ) as bar:
             task_id = bar.add_task(
                 f"Phase {phase}",
-                total=max(total_matches, 1),
+                total=total_combos,
+                api_calls=1,
             )
 
             for league_id in leagues:
@@ -837,6 +833,8 @@ def run_backfill(phase: int | None = None, batch_size: int = 500, league_cap: in
                         break
                     if budget_tracker["used"] >= budget_tracker["max"]:
                         break
+
+                    bar.update(task_id, description=f"Phase {phase}  L{league_id}/S{season}")
 
                     result = backfill_league_season(
                         league_id=league_id,
@@ -856,6 +854,8 @@ def run_backfill(phase: int | None = None, batch_size: int = 500, league_cap: in
                     totals["stats"] += result["stats_stored"]
                     totals["events"] += result["events_stored"]
                     totals["api_calls"] += result["api_calls"]
+                    combos_done += 1
+                    bar.update(task_id, advance=1, api_calls=totals["api_calls"])
 
         # Final summary
         console.print("\n[bold green]═══ Backfill Complete ═══[/bold green]")
