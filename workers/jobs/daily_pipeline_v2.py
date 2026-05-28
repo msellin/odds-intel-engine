@@ -1925,6 +1925,15 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
     else:
         console.print("  [yellow]targets_global.csv not found — Tier B unavailable[/yellow]")
 
+    extended_path = PROCESSED_DIR / "targets_extended.csv"
+    if extended_path.exists():
+        extended_df = pd.read_csv(extended_path)
+        if hist_targets_global is not None:
+            hist_targets_global = pd.concat([hist_targets_global, extended_df], ignore_index=True)
+        else:
+            hist_targets_global = extended_df
+        console.print(f"  +{len(extended_df):,} Tier B rows from targets_extended (total Tier B: {len(hist_targets_global):,})")
+
     # Pre-compute team name sets once (avoid rebuilding per match — saves ~30s)
     v9_teams = set(hist_targets["home_team"].unique()) | set(hist_targets["away_team"].unique())
     global_teams = None

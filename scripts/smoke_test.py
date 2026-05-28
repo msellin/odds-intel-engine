@@ -10816,5 +10816,44 @@ def test_inplay_q_poss_optional():
     )
 
 
+@test("COVERAGE-EXTENDED — generate_targets_extended.py script present and pipeline loads targets_extended.csv")
+def test_coverage_extended():
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+
+    # Script exists
+    script = root / "scripts" / "generate_targets_extended.py"
+    assert script.exists(), "generate_targets_extended.py must exist"
+    src = script.read_text()
+
+    # Uses COPY not fetchall loops
+    assert "COPY (" in src or "copy_expert" in src, (
+        "generate_targets_extended.py must use COPY for bulk export, not fetchall loops"
+    )
+
+    # Outputs to targets_extended.csv
+    assert "targets_extended.csv" in src, (
+        "generate_targets_extended.py must write to targets_extended.csv"
+    )
+
+    # Pipeline loads the file
+    pipeline_src = (root / "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+    assert "targets_extended.csv" in pipeline_src, (
+        "daily_pipeline_v2.py must load targets_extended.csv into hist_targets_global"
+    )
+    # Loaded via concat so it actually merges with targets_global
+    assert "targets_extended" in pipeline_src and "concat" in pipeline_src, (
+        "daily_pipeline_v2.py must pd.concat targets_extended into hist_targets_global"
+    )
+
+    # backfill phases 4+5 are defined
+    backfill_src = (root / "scripts" / "backfill_historical.py").read_text()
+    assert "PHASE_4_LEAGUES" in backfill_src, "PHASE_4_LEAGUES must be defined in backfill_historical.py"
+    assert "PHASE_5_LEAGUES" in backfill_src, "PHASE_5_LEAGUES must be defined in backfill_historical.py"
+    assert "choices=[1, 2, 3, 4, 5]" in backfill_src, (
+        "--phase argparse must include choices 4 and 5"
+    )
+
+
 if __name__ == "__main__":
     main()

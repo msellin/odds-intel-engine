@@ -154,11 +154,120 @@ PHASE_3_LEAGUES = [
     284,  # Australia: A-League Women (skip if not relevant)
 ]
 
+# Phase 4 — extended global coverage: leagues with regular odds feed presence
+# not captured by phases 1-3. Sourced from 30-day odds volume audit 2026-05-28.
+PHASE_4_LEAGUES = [
+    # South America
+    76,   # Brazil: Série D
+    131,  # Argentina: Primera B Metropolitana (alt AF ID)
+    132,  # Argentina: Primera C
+    134,  # Argentina: Torneo Federal A
+    11,   # CONMEBOL Sudamericana
+    13,   # CONMEBOL Libertadores
+    268,  # Uruguay: Primera División
+    250,  # Paraguay: División Profesional
+    251,  # Paraguay: División Intermedia
+    344,  # Bolivia: Primera División
+    281,  # Peru: Liga 1
+    282,  # Peru: Segunda División
+    242,  # Ecuador: Liga Pro
+    299,  # Venezuela: Primera División
+    # USA / North America
+    909,  # USA: MLS Next Pro
+    255,  # USA: USL Championship
+    256,  # USA: USL League Two
+    489,  # USA: USL League One
+    # Middle East / Africa
+    307,  # Saudi Arabia: Pro League
+    301,  # UAE: Pro League
+    291,  # Iran: Azadegan League (2nd div)
+    233,  # Egypt: Premier League
+    542,  # Iraq: Iraqi League
+    383,  # Israel: Ligat Ha'al
+    382,  # Israel: Liga Leumit
+    200,  # Morocco: Botola Pro
+    567,  # Tanzania: Ligi kuu Bara
+    288,  # South Africa: Premier Soccer League
+    363,  # Ethiopia: Premier League
+    399,  # Nigeria: NPFL
+    403,  # Senegal: Ligue 1
+    570,  # Ghana: Premier League
+    # Eastern Europe / Balkans
+    172,  # Bulgaria: First League
+    173,  # Bulgaria: Second League
+    419,  # Azerbaijan: Premyer Liqa
+    310,  # Albania: Superliga
+    374,  # Slovenia: 2. SNL
+    342,  # Armenia: Premier League
+    # Baltic / Nordic
+    329,  # Estonia: Meistriliiga
+    328,  # Estonia: Esiliiga A
+    244,  # Finland: Veikkausliiga
+    # Asia / Central Asia
+    274,  # Indonesia: Liga 1
+    389,  # Kazakhstan: Premier League
+    388,  # Kazakhstan: 1. Division
+]
+
+# Phase 5 — depth expansion: lower tiers and additional global leagues.
+PHASE_5_LEAGUES = [
+    # Czech third tier
+    685,  # Czech: 3. liga - CFL B
+    349,  # Czech: 3. liga - MSFL
+    348,  # Czech: 3. liga - CFL A
+    # Poland third tier
+    780,  # Poland: III Liga - Group 1
+    781,  # Poland: III Liga - Group 2
+    782,  # Poland: III Liga - Group 3
+    783,  # Poland: III Liga - Group 4
+    # Spain third tier
+    435,  # Spain: Primera RFEF - Group 1
+    436,  # Spain: Primera RFEF - Group 2
+    # Nordic / Baltic
+    245,  # Finland: Ykkönen
+    247,  # Finland: Kakkonen - Lohko A
+    248,  # Finland: Kakkonen - Lohko B
+    249,  # Finland: Kakkonen - Lohko C
+    563,  # Sweden: Ettan - Norra
+    564,  # Sweden: Ettan - Södra
+    165,  # Iceland: 1. Deild
+    367,  # Faroe Islands: Meistaradeildin
+    1126, # Estonia: Esiliiga B
+    418,  # Azerbaijan: Birindi Dasta (2nd div)
+    326,  # Georgia: Erovnuli Liga 2
+    327,  # Georgia: Erovnuli Liga
+    1104, # Georgia: Liga 3
+    # Eastern Europe
+    236,  # Russia: First League (2nd div)
+    334,  # Ukraine: Persha Liga
+    116,  # Belarus: Premier League
+    287,  # Serbia: Prva Liga (2nd div)
+    272,  # Hungary: NB II
+    506,  # Slovakia: 2. Liga
+    361,  # Lithuania: 1 Lyga
+    362,  # Lithuania: A Lyga
+    394,  # Moldova: Super Liga
+    371,  # North Macedonia: First League
+    355,  # Montenegro: First League
+    261,  # Luxembourg: National Division
+    343,  # Armenia: First League
+    # Africa / Middle East extras
+    202,  # Tunisia: Ligue 1
+    # Asia
+    323,  # India: ISL
+    340,  # Vietnam: V.League 1
+    929,  # China: League Two
+    569,  # Kyrgyzstan: Premier League
+    330,  # Kuwait: Premier League
+]
+
 # Seasons to backfill per phase
 PHASE_SEASONS = {
     1: [2023, 2024, 2025],
     2: [2024, 2025],
     3: [2025],
+    4: [2022, 2023, 2024, 2025],
+    5: [2023, 2024, 2025],
 }
 
 # ─── Graceful shutdown ──────────────────────────────────────────────────────
@@ -212,11 +321,13 @@ def update_progress(league_api_id: int, season: int, **kwargs):
 
 
 def check_all_complete() -> bool:
-    """Check if all 3 phases are fully done (every league/season row complete)."""
-    total_expected = (
-        len(PHASE_1_LEAGUES) * len(PHASE_SEASONS[1]) +
-        len(PHASE_2_LEAGUES) * len(PHASE_SEASONS[2]) +
-        len(PHASE_3_LEAGUES) * len(PHASE_SEASONS[3])
+    """Check if all 5 phases are fully done (every league/season row complete)."""
+    total_expected = sum(
+        len(leagues) * len(PHASE_SEASONS[p])
+        for p, leagues in {
+            1: PHASE_1_LEAGUES, 2: PHASE_2_LEAGUES, 3: PHASE_3_LEAGUES,
+            4: PHASE_4_LEAGUES, 5: PHASE_5_LEAGUES,
+        }.items()
     )
     rows = execute_query(
         "SELECT COUNT(*) AS cnt FROM backfill_progress WHERE status = 'complete'",
@@ -229,10 +340,13 @@ def check_all_complete() -> bool:
 def detect_next_phase() -> int | None:
     """
     Detect which phase should run next.
-    Returns 1, 2, or 3 if that phase has incomplete work, None if all done.
+    Returns 1–5 if that phase has incomplete work, None if all done.
     """
-    phase_leagues = {1: PHASE_1_LEAGUES, 2: PHASE_2_LEAGUES, 3: PHASE_3_LEAGUES}
-    for phase in [1, 2, 3]:
+    phase_leagues = {
+        1: PHASE_1_LEAGUES, 2: PHASE_2_LEAGUES, 3: PHASE_3_LEAGUES,
+        4: PHASE_4_LEAGUES, 5: PHASE_5_LEAGUES,
+    }
+    for phase in [1, 2, 3, 4, 5]:
         expected = len(phase_leagues[phase]) * len(PHASE_SEASONS[phase])
         rows = execute_query(
             "SELECT COUNT(*) AS cnt FROM backfill_progress WHERE phase = %s AND status = 'complete'",
@@ -636,11 +750,17 @@ def run_backfill(phase: int | None = None, batch_size: int = 500, league_cap: in
     phase=None (Railway default): auto-detects the next phase that needs work,
     advancing 1→2→3 automatically. Explicit phase= overrides (CLI / GH Actions use).
     """
-    # Skip if already complete
+    # Skip if already complete — but re-check when new phases have been added.
+    # If the flag exists but detect_next_phase() finds work to do (e.g. phases 4/5
+    # were added after the flag was written), remove the stale flag and continue.
     flag_path = Path(__file__).parent.parent / "backfill_complete.flag"
     if flag_path.exists():
-        console.print("[green]✓ Backfill already complete (flag file exists) — skipping[/green]")
-        return
+        if detect_next_phase() is None and phase is None:
+            console.print("[green]✓ Backfill already complete (flag file exists) — skipping[/green]")
+            return
+        elif phase is None:
+            console.print("[yellow]⚠ Flag exists but new phases detected — removing stale flag[/yellow]")
+            flag_path.unlink()
 
     # Auto-detect phase when called from scheduler (phase=None)
     if phase is None:
@@ -670,7 +790,10 @@ def run_backfill(phase: int | None = None, batch_size: int = 500, league_cap: in
 
     try:
         # Select leagues for this phase
-        phase_leagues = {1: PHASE_1_LEAGUES, 2: PHASE_2_LEAGUES, 3: PHASE_3_LEAGUES}
+        phase_leagues = {
+            1: PHASE_1_LEAGUES, 2: PHASE_2_LEAGUES, 3: PHASE_3_LEAGUES,
+            4: PHASE_4_LEAGUES, 5: PHASE_5_LEAGUES,
+        }
         leagues = phase_leagues[phase]
         seasons = PHASE_SEASONS[phase]
 
@@ -779,8 +902,8 @@ def run_backfill(phase: int | None = None, batch_size: int = 500, league_cap: in
 
 def main():
     parser = argparse.ArgumentParser(description="Historical data backfill from API-Football")
-    parser.add_argument("--phase", type=int, choices=[1, 2, 3], default=1,
-                        help="Which league tier to process (1=top, 2=secondary, 3=remaining)")
+    parser.add_argument("--phase", type=int, choices=[1, 2, 3, 4, 5], default=1,
+                        help="Which league tier to process (1=top, 2=secondary, 3=remaining, 4=extended global, 5=depth expansion)")
     parser.add_argument("--batch-size", type=int, default=500,
                         help="Max matches to process per league/season (default 500)")
     parser.add_argument("--league-cap", type=int, default=200,
