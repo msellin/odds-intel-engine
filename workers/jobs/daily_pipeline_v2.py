@@ -418,6 +418,32 @@ BOTS_CONFIG = {
         "min_prob": 0.28,
     },
 
+    "bot_high_roi_global_v2": {
+        # HRG-V2 2026-05-28: Successor to bot_high_roi_global (retired migration 142).
+        # Original HRG used 2005-2015 mega-backtest countries — now sharp. V2 rebuilt
+        # from live Pinnacle CLV scan + 3-year historical data:
+        #   Spain:     44 live bets, +5.7% avg CLV. Away underdogs: La Liga away +7.8%,
+        #              Segunda away +5.8% CLV, avg odds 4.61-4.67. Historical Pinnacle
+        #              naive away-backing +1.8% ROI on 1145 bets (3yr). Key gap: these
+        #              bets are UNCOVERED — aggressive_v2 caps at 3.30, proven_v2 home-only.
+        #   Australia: 21 live bets, +13% CLV (+15.1% home). Beta — only 1 month data.
+        #   Iceland:   12 live bets, +11.5% CLV. Beta — 1 month data.
+        # Home/Away only (Draw CLV inconsistent, small sample).
+        "description": "HRG-V2: Spain/Australia/Iceland — globally soft markets rebuild. Spain validated (44 live bets, +5.7% CLV; away underdogs at +9.4% CLV, historical Pinnacle +1.8% on 1145 bets). Australia/Iceland beta (1-month sample, high CLV). Home/away at 1.50-5.50.",
+        "tier_label": "elite",
+        "markets": ["1x2"],
+        "selection_filter": ["Home", "Away"],
+        "tier_filter": None,
+        "league_filter": ["Spain", "Australia", "Iceland"],
+        "edge_thresholds": {
+            1: {"1x2_fav": 0.06, "1x2_long": 0.09},
+            2: {"1x2_fav": 0.05, "1x2_long": 0.08},
+            3: {"1x2_fav": 0.05, "1x2_long": 0.08},
+        },
+        "odds_range": (1.50, 5.50),
+        "min_prob": 0.28,
+    },
+
     # ─── Double Chance bots (DC-BOTS 2026-05-11) ──────────────────────────────
     # DC probs derived at placement time from 1X2 calibrated probs:
     #   1X = home_prob + draw_prob, X2 = draw_prob + away_prob, 12 = home_prob + away_prob.
@@ -606,7 +632,8 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_conservative":     "all",
     "bot_greek_turkish":    "all",
     "bot_proven_leagues_v2": "all",
-    "bot_high_roi_global":  "all",
+    "bot_high_roi_global":      "all",
+    "bot_high_roi_global_v2":   "all",
     "bot_ou15_defensive":   "all",
     "bot_ou35_attacking":   "all",
     "bot_ou25_global":      "all",

@@ -10675,5 +10675,22 @@ def test_proven_leagues_v2():
     assert "[RETIRED 2026-05-28]" in pipeline, "retired bots must have RETIRED marker in description"
 
 
+@test("HRG-V2 — migration 143 creates bot_high_roi_global_v2 with Spain/Australia/Iceland")
+def test_hrg_v2():
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+
+    migration = (root / "supabase" / "migrations" / "143_high_roi_global_v2.sql").read_text()
+    assert "bot_high_roi_global_v2" in migration, "migration must create bot_high_roi_global_v2"
+    assert "Spain" in migration, "migration must mention Spain (core validated league)"
+
+    pipeline = (root / "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+    assert "bot_high_roi_global_v2" in pipeline, "bot_high_roi_global_v2 must be in BOTS_CONFIG"
+    assert '"Spain"' in pipeline or "'Spain'" in pipeline, "Spain must be in league_filter"
+    assert '"Australia"' in pipeline or "'Australia'" in pipeline, "Australia must be in league_filter"
+    # Home/Away selection filter (no Draw)
+    assert '"Away"' in pipeline or "'Away'" in pipeline, "Away selection must be included"
+
+
 if __name__ == "__main__":
     main()
