@@ -2,6 +2,10 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-05-28 — FIX-PHASE45-TIERS done
+>
+> **Migration 146** — phase 4+5 extended leagues were all stored at tier=0 or tier=1 (default). Bulgaria 2nd League, Hungary NB II, Russia/Ukraine 2nd divs etc. were at tier=1 so `bot_opt_home_lower` (tier_filter=[2,3,4]) silently missed them; Poland III Liga and Spain 3rd tier at tier=1 made `bot_btts_conservative` fire on leagues it shouldn't. Fixed in migration 146: T2 for ~14 second divisions, T3 for Czech/Finnish/Spanish/Swedish 3rd tiers, T4 for Brazil Série D / Poland III Liga / USA USL League Two. Backtest fix also landed: `backtest_pre_match_bots.py` now loads `targets_extended.csv` like the live pipeline.
+>
 > ## 2026-05-28 — COVERAGE-EXTENDED done
 >
 > **Root cause**: zero bets on 2026-05-28 despite normal game count — today's slate was niche leagues (Kazakhstan, Estonia, Georgia, Ethiopia etc.) with no Poisson history → all Tier C → +8% edge bump → nothing passes. Fix: backfill phases 4+5 (86 leagues), export `targets_extended.csv` (85,379 rows, 426 leagues), load into pipeline as Tier B. Next cohort run will evaluate these leagues at +2% bump instead of +8%.

@@ -10865,6 +10865,29 @@ def test_coverage_extended():
     )
 
 
+@test("FIX-PHASE45-TIERS — migration 146 exists and covers key phase 4+5 tier corrections")
+def test_fix_phase45_tiers():
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    mig = root / "supabase" / "migrations" / "146_fix_phase45_league_tiers.sql"
+    assert mig.exists(), "migration 146_fix_phase45_league_tiers.sql must exist"
+    sql = mig.read_text()
+
+    # Must fix second divisions
+    assert "second league" in sql.lower() and "bulgaria" in sql.lower(), "Bulgaria Second League must be corrected to tier=2"
+    assert "persha liga" in sql.lower() and "ukraine" in sql.lower(), "Ukraine Persha Liga must be corrected to tier=2"
+    assert "first league" in sql.lower() and "russia" in sql.lower(), "Russia First League must be corrected to tier=2"
+
+    # Must fix third divisions
+    assert "rfef" in sql.lower() and "spain" in sql.lower(), "Spain Primera RFEF must be corrected to tier=3"
+    assert "kakkonen" in sql.lower() and "finland" in sql.lower(), "Finland Kakkonen must be corrected to tier=3"
+    assert "ettan" in sql.lower() and "sweden" in sql.lower(), "Sweden Ettan must be corrected to tier=3"
+
+    # Must fix fourth divisions
+    assert "serie d" in sql.lower() and "brazil" in sql.lower(), "Brazil Serie D must be corrected to tier=4"
+    assert "iii liga" in sql.lower() and "poland" in sql.lower(), "Poland III Liga must be corrected to tier=4"
+
+
 @test("COOLBET-ANON-READ — CoolbetSession(require_auth=False) skips JWT for --record mode")
 def test_coolbet_anon_read():
     import pathlib
