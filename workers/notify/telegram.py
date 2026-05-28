@@ -120,7 +120,7 @@ def send_telegram_to_users(
     try:
         from workers.api_clients.db import execute_query
         rows = execute_query(
-            "SELECT telegram_chat_id FROM profiles WHERE telegram_chat_id IS NOT NULL AND tier = ANY(%s)",
+            "SELECT telegram_chat_id FROM profiles WHERE telegram_chat_id IS NOT NULL AND tier::text = ANY(%s)",
             (list(tiers),),
         )
     except Exception as e:
