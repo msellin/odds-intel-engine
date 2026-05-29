@@ -2311,6 +2311,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
     console.print("\n[cyan]Processing matches with odds...[/cyan]")
     total_bets = 0
     _new_bet_lines: list[str] = []  # accumulate for Telegram summary
+    _tele_bets: dict = {}           # (match_id, market, selection) → consolidated alert data
     # 11.6: Track placed bets per bot per league for exposure management
     from collections import defaultdict
     league_bet_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
@@ -3300,22 +3301,17 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         )
                         _running_bankroll[bot_name] = max(0.0, _running_bankroll.get(bot_name, 1000.0) - stake)
                         bm = best_bookmaker.get(str(match_id), {}).get(f"{os_market}_{os_selection}") or "—"
-                        send_telegram(
-                            f"🎯 <b>PRE-MATCH</b> {bot_name}\n"
-                            f"  <b>{match['home_team']} vs {match['away_team']}</b>\n"
-                            f"  {mkt} {selection} @ {odds:.2f}\n"
-                            f"  edge {edge*100:+.1f}%  ·  align {alignment['alignment_class']}  ·  {bm}"
-                        )
-                        _league = match.get("league_path") or ""
-                        send_telegram_to_users(
-                            f"🔔 <b>New value bet</b>\n"
-                            f"<b>{match['home_team']} vs {match['away_team']}</b>\n"
-                            f"{mkt} {selection} @ {odds:.2f}\n"
-                            f"{edge*100:+.1f}% edge"
-                            + (f" · {_league}" if _league else ""),
-                            tier_minimum="pro",
-                            dedup_key=f"user-bet-{bet_id}",
-                        )
+                        _tele_key = (match_id, os_market, os_selection)
+                        if _tele_key not in _tele_bets:
+                            _tele_bets[_tele_key] = {
+                                "home": match["home_team"], "away": match["away_team"],
+                                "mkt": mkt, "selection": selection, "odds": odds,
+                                "edge": edge, "alignment": alignment["alignment_class"],
+                                "bm": bm,
+                                "league": match.get("league_path") or "",
+                                "bots": [],
+                            }
+                        _tele_bets[_tele_key]["bots"].append(bot_name)
                         # Save Stage 1 snapshot: stats-only probability
                         try:
                             store_prediction_snapshot(
@@ -3390,11 +3386,35 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         _print_funnel(_funnel, verbose_funnel_bot)
     console.print("[green]All data stored in Supabase — frontend can display it now[/green]")
 
+    # Flush consolidated per-position alerts (one per match+market+selection,
+    # listing all agreeing bots so multi-bot agreement shows in a single message).
+    for _tk, _tb in _tele_bets.items():
+        _n = len(_tb["bots"])
+        _bot_str = _tb["bots"][0] + (f" +{_n-1} more" if _n > 1 else "")
+        _bots_line = "  bots: " + ", ".join(_tb["bots"]) if _n > 1 else ""
+        send_telegram(
+            f"🎯 <b>PRE-MATCH</b> {_bot_str}\n"
+            f"  <b>{_tb['home']} vs {_tb['away']}</b>\n"
+            f"  {_tb['mkt']} {_tb['selection']} @ {_tb['odds']:.2f}\n"
+            f"  edge {_tb['edge']*100:+.1f}%  ·  align {_tb['alignment']}  ·  {_tb['bm']}"
+            + (f"\n{_bots_line}" if _bots_line else ""),
+        )
+        send_telegram_to_users(
+            f"🔔 <b>New value bet</b>"
+            + (f" <i>({_n} bots agree)</i>" if _n > 1 else "") + "\n"
+            f"<b>{_tb['home']} vs {_tb['away']}</b>\n"
+            f"{_tb['mkt']} {_tb['selection']} @ {_tb['odds']:.2f}\n"
+            f"{_tb['edge']*100:+.1f}% edge"
+            + (f" · {_tb['league']}" if _tb['league'] else ""),
+            tier_minimum="pro",
+            dedup_key=f"user-bet-{_tk[0]}-{_tk[1]}-{_tk[2]}",
+        )
+
     if _new_bet_lines:
         bet_block = "\n".join(_new_bet_lines)
         send_telegram(
             f"🎯 <b>{total_bets} value bet(s) found</b>{cohort_label}\n{bet_block}",
-            silent=True,  # summary is redundant — per-bet alerts already sent
+            silent=True,
         )
     else:
         send_telegram(

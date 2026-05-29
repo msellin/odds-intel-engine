@@ -11275,5 +11275,28 @@ def test_coolbet_auto_record():
     assert "search_blocked" in fn_src, "must handle search_blocked outcome"
 
 
+@test("TELE-DEDUP-MULTI-BOT — per-position alert consolidation: one message per match+market+selection")
+def test_tele_dedup_multi_bot():
+    import inspect
+    import pathlib
+    src = (pathlib.Path(__file__).parent.parent / "workers/jobs/daily_pipeline_v2.py").read_text()
+
+    # Buffer must be initialised
+    assert "_tele_bets: dict" in src, "_tele_bets buffer not initialised"
+    # Must accumulate bots per key, not send immediately
+    assert '_tele_bets[_tele_key]["bots"].append(bot_name)' in src, "must append bot to _tele_bets"
+    # Flush loop must send one alert per position
+    assert "for _tk, _tb in _tele_bets.items():" in src, "_tele_bets flush loop missing"
+    # Must show bot count and list bots
+    assert "+{_n-1} more" in src, "must show +N more for multi-bot agreement"
+    assert '", ".join(_tb["bots"])' in src, "must list all bots when N > 1"
+    # User alert must be deduped per position not per bet_id
+    assert 'dedup_key=f"user-bet-{_tk[0]}-{_tk[1]}-{_tk[2]}"' in src, \
+        "user alert dedup_key must be match+market+selection, not bet_id"
+    # Per-bet immediate send_telegram calls must be gone
+    assert 'f"🎯 <b>PRE-MATCH</b> {bot_name}' not in src, \
+        "old per-bot immediate send_telegram must be removed"
+
+
 if __name__ == "__main__":
     main()
