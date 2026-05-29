@@ -1631,3 +1631,184 @@ def _place_combo_bets(
                          "live_combined_odds": live_combined, "stake": stake})
 
     return results
+
+
+# ── INPLAY-COOLBET-PLACER ──────────────────────────────────────────────────────
+
+def load_qualified_inplay_bets(window_minutes: int = 5) -> list[dict]:
+    """Return inplay simulated_bets placed within the last window_minutes that
+    haven't been recorded to real_bets yet.
+
+    Unlike load_qualified_bets() (pre-match: m.date > NOW()), inplay bets are
+    for matches that have already kicked off (m.date <= NOW()). Deduped via
+    simulated_bet_id so each inplay bet is recorded at most once.
+    """
+    rows = execute_query(
+        """
+        SELECT
+            sb.id             AS simulated_bet_id,
+            sb.match_id,
+            sb.market,
+            sb.selection,
+            sb.odds_at_pick   AS model_odds,
+            sb.edge_percent,
+            sb.calibrated_prob,
+            sb.model_probability,
+            sb.kelly_fraction,
+            sb.stake          AS model_stake,
+            sb.bot_id,
+            b.name            AS bot_name,
+            ht.name           AS home_team,
+            at2.name          AS away_team,
+            m.date            AS match_date
+        FROM simulated_bets sb
+        JOIN bots          b   ON b.id   = sb.bot_id
+        JOIN matches       m   ON m.id   = sb.match_id
+        JOIN teams         ht  ON ht.id  = m.home_team_id
+        JOIN teams         at2 ON at2.id = m.away_team_id
+        WHERE sb.result        = 'pending'
+          AND sb.combo_legs IS NULL
+          AND DATE(m.date)     = CURRENT_DATE
+          AND m.date           <= NOW()
+          AND sb.pick_time     >= NOW() - (%s * INTERVAL '1 minute')
+          AND sb.edge_percent  >= %s
+          AND NOT EXISTS (
+              SELECT 1 FROM real_bets rb
+              WHERE rb.simulated_bet_id = sb.id
+          )
+        ORDER BY sb.pick_time DESC
+        """,
+        (window_minutes, _MIN_EDGE),
+    )
+    return [dict(r) for r in rows] if rows else []
+
+
+def place_all_inplay_bets(
+    record: bool = False,
+    execute: bool = False,
+    window_minutes: int = 5,
+    *,
+    guard: PlacementGuard | None = None,
+) -> list[dict]:
+    """Record inplay simulated_bets against live Coolbet odds.
+
+    Mirrors place_all_bets() but targets kicked-off matches. Call this
+    immediately after inplay_bot stores new bets — the live Coolbet price
+    is captured at that moment for CLV tracking.
+
+    record=True  → write real_bets row with live Coolbet odds (paper-only)
+    execute=True → also POST bet to Coolbet API (implies record=True)
+    """
+    if execute:
+        record = True
+
+    session = CoolbetSession(require_auth=execute)
+    if not execute:
+        log.info("Inplay anon-read: no JWT required — using Imperva cookies only")
+
+    pending = load_qualified_inplay_bets(window_minutes=window_minutes)
+    if not pending:
+        log.info("No qualifying inplay bets in last %d minutes.", window_minutes)
+        return []
+
+    if guard is None:
+        guard = PlacementGuard(use_kelly_stake=True)
+
+    log.info("Found %d qualifying inplay simulated_bet(s) to evaluate", len(pending))
+
+    from workers.automation.coolbet_explorer import (
+        fetch_match_markets,
+        fetch_odds_for_markets,
+        resolve_placement_target,
+    )
+
+    results = []
+    search_blocked = False
+    for idx, bet in enumerate(pending):
+        home       = bet["home_team"]
+        away       = bet["away_team"]
+        mkt        = bet["market"]
+        sel        = bet["selection"]
+        model_odds = float(bet["model_odds"])
+        edge_pct   = float(bet["edge_percent"]) * 100
+        sim_id     = str(bet["simulated_bet_id"])
+        bot_id     = str(bet["bot_id"])
+        label      = f"{home} vs {away} | {mkt} {sel} @ {model_odds:.3f} (edge {edge_pct:+.2f}%)"
+        match_date = bet.get("match_date")
+
+        try:
+            ev = search_coolbet_event(session, home, away, match_date)
+        except CoolbetSearchBlocked as e:
+            log.error("Coolbet search blocked (inplay) after %d/%d bets. %s",
+                      idx, len(pending), e)
+            for rb in pending[idx:]:
+                results.append({**rb, "outcome": "search_blocked",
+                                 "reason": "coolbet search refused (Imperva)"})
+            search_blocked = True
+            break
+
+        if ev is None:
+            log.info("No Coolbet event for inplay %s — skipping", label)
+            results.append({**bet, "outcome": "no_event"})
+            continue
+
+        cb_match_id = ev["id"]
+        markets = fetch_match_markets(session, cb_match_id)
+        if not markets:
+            log.info("No markets for inplay %s (matchId=%s)", label, cb_match_id)
+            results.append({**bet, "outcome": "no_market"})
+            continue
+
+        odds_data = fetch_odds_for_markets(session, markets)
+        target = resolve_placement_target(mkt, sel, markets, odds_data)
+        if target is None:
+            avail = [(m.get("name"), m.get("line")) for m in markets]
+            log.info("Market %s/%s not found for inplay %s — available: %s",
+                     mkt, sel, label, avail)
+            results.append({**bet, "outcome": "no_market"})
+            continue
+
+        bo_id, outcome_id, odds_uuid, ev_odds = (
+            target["market_id"], target["outcome_id"],
+            target["odds_id"], target["odds"],
+        )
+
+        # Edge check at live Coolbet price
+        cal_prob = float(bet.get("calibrated_prob") or 0)
+        if not cal_prob:
+            cal_prob = float(bet.get("model_probability") or 0)
+        live_edge = (cal_prob - 1.0 / ev_odds) if (cal_prob > 0 and ev_odds > 1.0) else None
+        if live_edge is not None and live_edge < _MIN_REMAINING_EDGE:
+            log.info("Skip inplay %s — edge at Coolbet %.2f%% < %.2f%% min",
+                     label, live_edge * 100, _MIN_REMAINING_EDGE * 100)
+            results.append({**bet, "outcome": "edge_eroded",
+                             "live_odds": ev_odds, "live_edge": live_edge})
+            continue
+
+        stake = guard.stake_for({"model_stake": bet.get("model_stake")})
+
+        if not record:
+            results.append({**bet, "outcome": "dry_run",
+                             "live_odds": ev_odds, "stake": stake})
+            continue
+
+        real_bet_id = store_real_bet(
+            match_id=str(bet["match_id"]),
+            market=mkt,
+            selection=sel,
+            bookmaker="Coolbet",
+            captured_odds=model_odds,
+            actual_odds=ev_odds,
+            stake=stake,
+            bot_id=bot_id,
+            simulated_bet_id=sim_id,
+            notes=f"inplay-auto edge={edge_pct:+.2f}% cb_match={cb_match_id}",
+        )
+        guard.record_placement(stake)
+        log.info("✓ Inplay recorded %s @ %.3f  stake=€%.2f  real_bet=%s",
+                 label, ev_odds, stake, real_bet_id)
+        results.append({**bet, "outcome": "placed",
+                         "live_odds": ev_odds, "stake": stake,
+                         "real_bet_id": real_bet_id})
+
+    return results

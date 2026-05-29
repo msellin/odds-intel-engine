@@ -507,6 +507,32 @@ def run_inplay_strategies():
 
     if bets_placed > 0:
         console.print(f"[bold green]InplayBot: {bets_placed} paper bet(s) placed this cycle[/bold green]")
+        try:
+            from workers.automation.coolbet_placer import place_all_inplay_bets
+            inplay_results = place_all_inplay_bets(record=True)
+            if inplay_results:
+                placed   = [r for r in inplay_results if r["outcome"] == "placed"]
+                eroded   = [r for r in inplay_results if r["outcome"] == "edge_eroded"]
+                blocked  = [r for r in inplay_results if r["outcome"] == "search_blocked"]
+                no_event = [r for r in inplay_results if r["outcome"] == "no_event"]
+                parts = [f"🤖 <b>Inplay --record: {len(placed)} placed</b>"]
+                if eroded:   parts.append(f"{len(eroded)} eroded")
+                if no_event: parts.append(f"{len(no_event)} no_event")
+                if blocked:  parts.append(f"⚠️ {len(blocked)} blocked")
+                lines = []
+                for r in placed:
+                    edge = float(r.get("edge_percent") or 0) * 100
+                    lines.append(
+                        f"  {r['home_team']} vs {r['away_team']} | "
+                        f"{r['market']} {r['selection']} @ {float(r.get('live_odds') or 0):.2f} | "
+                        f"edge {edge:+.1f}%"
+                    )
+                msg = " | ".join(parts)
+                if lines:
+                    msg += "\n" + "\n".join(lines)
+                send_telegram(msg, silent=not blocked)
+        except Exception as e:
+            log.warning("Inplay Coolbet record failed: %s", e)
 
     # Update goal contagion state — do this AFTER strategy checks so goal_just_scored
     # is still True for strategy L on the cycle the goal is first detected.

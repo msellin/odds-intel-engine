@@ -11298,5 +11298,33 @@ def test_tele_dedup_multi_bot():
         "old per-bot immediate send_telegram must be removed"
 
 
+@test("INPLAY-COOLBET-PLACER — load_qualified_inplay_bets + place_all_inplay_bets wired into inplay_bot")
+def test_inplay_coolbet_placer():
+    import inspect
+    from workers.automation.coolbet_placer import (
+        load_qualified_inplay_bets, place_all_inplay_bets, PlacementGuard,
+    )
+    # load query must filter for kicked-off matches and time window
+    load_src = inspect.getsource(load_qualified_inplay_bets)
+    assert "m.date           <= NOW()" in load_src, "must filter for kicked-off matches"
+    assert "sb.pick_time     >= NOW()" in load_src, "must have time window filter"
+    assert "rb.simulated_bet_id = sb.id" in load_src, "must dedup via simulated_bet_id"
+    assert "_MIN_EDGE" in load_src, "must apply edge filter"
+
+    # place function must check edge at live price
+    place_src = inspect.getsource(place_all_inplay_bets)
+    assert "edge_eroded" in place_src, "must handle edge_eroded outcome"
+    assert "_MIN_REMAINING_EDGE" in place_src, "must apply remaining edge floor"
+    assert "search_blocked" in place_src, "must handle search_blocked"
+    assert 'notes=f"inplay-auto' in place_src, "must tag real_bets as inplay-auto"
+    assert "simulated_bet_id=sim_id" in place_src, "must link real_bet to simulated_bet"
+
+    # inplay_bot must call place_all_inplay_bets after bets_placed > 0
+    import pathlib
+    bot_src = (pathlib.Path(__file__).parent.parent / "workers/jobs/inplay_bot.py").read_text()
+    assert "place_all_inplay_bets" in bot_src, "inplay_bot must call place_all_inplay_bets"
+    assert "bets_placed > 0" in bot_src, "call must be gated on bets_placed > 0"
+
+
 if __name__ == "__main__":
     main()
