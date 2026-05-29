@@ -1381,13 +1381,19 @@ def place_all_bets(
             cal_prob = float(bet.get("model_probability") or 0)
         live_odds = ev_odds
         live_edge = (cal_prob - 1.0 / ev_odds) if (cal_prob > 0 and ev_odds > 1.0) else None
-        if live_edge is not None and live_edge < _MIN_REMAINING_EDGE:
-            log.info(
-                "Skip %s — edge at placement %.2f%% < %.2f%% min "
-                "(pick %.3f → live %.3f)",
-                label, live_edge * 100, _MIN_REMAINING_EDGE * 100,
-                model_odds, ev_odds,
-            )
+        # Fail closed: when live_edge is uncomputable (missing calibrated_prob +
+        # model_probability) we can't verify the live price still has edge, so
+        # skip rather than record a bet we never would have taken.
+        if live_edge is None or live_edge < _MIN_REMAINING_EDGE:
+            if live_edge is None:
+                log.info("Skip %s — live_edge uncomputable (no cal_prob/model_prob)", label)
+            else:
+                log.info(
+                    "Skip %s — edge at placement %.2f%% < %.2f%% min "
+                    "(pick %.3f → live %.3f)",
+                    label, live_edge * 100, _MIN_REMAINING_EDGE * 100,
+                    model_odds, ev_odds,
+                )
             results.append({**bet, "outcome": "edge_eroded",
                              "live_odds": ev_odds, "live_edge": live_edge})
             continue
@@ -1778,9 +1784,13 @@ def place_all_inplay_bets(
         if not cal_prob:
             cal_prob = float(bet.get("model_probability") or 0)
         live_edge = (cal_prob - 1.0 / ev_odds) if (cal_prob > 0 and ev_odds > 1.0) else None
-        if live_edge is not None and live_edge < _MIN_REMAINING_EDGE:
-            log.info("Skip inplay %s — edge at Coolbet %.2f%% < %.2f%% min",
-                     label, live_edge * 100, _MIN_REMAINING_EDGE * 100)
+        # Fail closed when live_edge is uncomputable — see pre-match path above.
+        if live_edge is None or live_edge < _MIN_REMAINING_EDGE:
+            if live_edge is None:
+                log.info("Skip inplay %s — live_edge uncomputable (no cal_prob/model_prob)", label)
+            else:
+                log.info("Skip inplay %s — edge at Coolbet %.2f%% < %.2f%% min",
+                         label, live_edge * 100, _MIN_REMAINING_EDGE * 100)
             results.append({**bet, "outcome": "edge_eroded",
                              "live_odds": ev_odds, "live_edge": live_edge})
             continue

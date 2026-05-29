@@ -9910,6 +9910,14 @@ def _():
     assert 'odds_ok = drop <= _ODDS_TOLERANCE' not in placer, (
         "main placement path must not gate on slippage tolerance"
     )
+    # Fail-closed when live_edge is uncomputable — bets with no cal_prob/model_prob
+    # must skip, not slip through.
+    assert "live_edge is None or live_edge <" in placer, (
+        "placer must fail closed when live_edge is uncomputable (cal_prob == 0)"
+    )
+    assert "live_edge uncomputable" in placer, (
+        "placer must log the uncomputable-edge skip path"
+    )
 
 
 @test("DISCOVER-STRATEGIES — script exists and has required analysis functions")
