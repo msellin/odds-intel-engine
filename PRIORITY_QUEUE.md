@@ -2,6 +2,10 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-05-29 — SEARCH-RETRY-TRANSIENT done
+>
+> User flagged that the admin Telegram summary said "search blocked" while Coolbet's search endpoint was actually fine (live probe returned HTTP 200). Root cause: `_do_search` raised `CoolbetSearchBlocked` on *any* non-200, including transient 429/5xx — a single hiccup tripped the singles loop's `except`, which then marked every remaining bet in the batch as `search_blocked` and bailed before the combo phase. The error text also told the user to refresh `COOLBET_MANUAL_JWT`, but `--record` runs in anon-read mode since COOLBET-ANON-READ (commit `673b9e1`) — no JWT involved. Fix: `_do_search` now retries once with 1s sleep on `{429, 500, 502, 503, 504}` before raising; the exception message drops the cbauth/JWT advice and points at Imperva/Kambi + `COOLBET_IMPERVA_COOKIES` instead. Persistent failures still abort the batch as designed. Smoke: SEARCH-RETRY-TRANSIENT.
+>
 > ## 2026-05-28 — SPECIALIST-BOTS-WHITELIST done
 >
 > **Full backtest analysis (2023–2026, 119K matches, 45K bets, women's/youth/cups excluded) + 5 bot changes:**

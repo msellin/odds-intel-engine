@@ -599,33 +599,51 @@ class CoolbetSearchBlocked(Exception):
     """
 
 
+_SEARCH_RETRY_STATUSES = {429, 500, 502, 503, 504}
+
+
 def _do_search(session: CoolbetSession, query: str) -> list[dict]:
     """Single search call. Returns parsed event candidates (possibly empty).
 
-    Raises CoolbetSearchBlocked on non-200 so a dead session cannot
-    masquerade as a string of "no event" misses.
+    SEARCH-RETRY-TRANSIENT: retry once with a short backoff on transient 5xx /
+    429 from Coolbet — Imperva occasionally hiccups and a clean second attempt
+    succeeds. Persistent non-200 (4xx other than 429, or 5xx that survives the
+    retry) still raises CoolbetSearchBlocked so a hard block bails the batch
+    rather than masquerading as no-event misses.
     """
-    resp = session.get(_SEARCH_URL, params={
-        "search":   query,
-        "country":  "EE",
-        "language": "en",
-        "layout":   "EUROPEAN",
-    })
-    if resp.status_code != 200:
-        body_snip = (resp.text or "")[:200].replace("\n", " ")
-        log.warning("Search HTTP %d for query %r — body: %s",
-                    resp.status_code, query, body_snip or "<empty>")
-        raise CoolbetSearchBlocked(
-            f"search/v2 returned HTTP {resp.status_code} for query {query!r}. "
-            f"Likely Incapsula challenge or dead cbauth JWT — re-Smart-ID in "
-            f"browser and refresh COOLBET_MANUAL_JWT, then re-run."
-        )
-    data = resp.json()
-    raw_events = (
-        data if isinstance(data, list)
-        else data.get("events") or data.get("results") or []
+    last_status = None
+    last_body = ""
+    for attempt in (1, 2):
+        resp = session.get(_SEARCH_URL, params={
+            "search":   query,
+            "country":  "EE",
+            "language": "en",
+            "layout":   "EUROPEAN",
+        })
+        if resp.status_code == 200:
+            data = resp.json()
+            raw_events = (
+                data if isinstance(data, list)
+                else data.get("events") or data.get("results") or []
+            )
+            return [e for e in (_parse_event(ev) for ev in raw_events) if e]
+
+        last_status = resp.status_code
+        last_body = (resp.text or "")[:200].replace("\n", " ")
+        if attempt == 1 and resp.status_code in _SEARCH_RETRY_STATUSES:
+            log.info("Search HTTP %d for query %r — retrying once after 1s",
+                     resp.status_code, query)
+            time.sleep(1.0)
+            continue
+        break
+
+    log.warning("Search HTTP %d for query %r (after retry) — body: %s",
+                last_status, query, last_body or "<empty>")
+    raise CoolbetSearchBlocked(
+        f"search/v2 returned HTTP {last_status} for query {query!r} "
+        f"(--record uses anon-read so this is Imperva/Kambi, not a JWT issue). "
+        f"If this persists, check Coolbet status or refresh COOLBET_IMPERVA_COOKIES."
     )
-    return [e for e in (_parse_event(ev) for ev in raw_events) if e]
 
 
 def search_coolbet_event(

@@ -3168,6 +3168,54 @@ def test_coolbet_search_blocked():
     )
 
 
+@test("SEARCH-RETRY-TRANSIENT — _do_search retries once on 5xx/429, error text drops JWT advice")
+def test_search_retry_transient():
+    """SEARCH-RETRY-TRANSIENT (2026-05-29): one transient 5xx/429 from
+    Coolbet's search endpoint used to mark every remaining bet in the batch as
+    search_blocked and tell the user to refresh COOLBET_MANUAL_JWT — even
+    though --record runs in anon-read mode (no JWT used). _do_search now
+    retries once with a short backoff on transient statuses, and the error
+    text no longer mentions the cbauth JWT."""
+    import pathlib
+    from workers.automation.coolbet_placer import _SEARCH_RETRY_STATUSES
+
+    # Retry covers the actual transient statuses (429 rate-limit + 5xx server)
+    for code in (429, 500, 502, 503, 504):
+        assert code in _SEARCH_RETRY_STATUSES, (
+            f"_SEARCH_RETRY_STATUSES must include {code} (transient)"
+        )
+
+    placer_src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
+    do_search = placer_src[placer_src.index("def _do_search"):
+                            placer_src.index("def search_coolbet_event")]
+
+    # Retry loop is present (two attempts) and gated on the transient set
+    assert "for attempt in (1, 2):" in do_search, (
+        "_do_search must loop attempts so one transient 5xx/429 doesn't kill the batch"
+    )
+    assert "_SEARCH_RETRY_STATUSES" in do_search, (
+        "_do_search must consult _SEARCH_RETRY_STATUSES to decide whether to retry"
+    )
+    assert "time.sleep" in do_search, (
+        "_do_search must sleep between attempts (short backoff)"
+    )
+
+    # The CoolbetSearchBlocked raise still fires (persistent failures must abort
+    # the batch — we're only smoothing transients, not silencing real blocks)
+    assert "raise CoolbetSearchBlocked" in do_search, (
+        "_do_search must still raise on persistent failure"
+    )
+
+    # Stale JWT advice removed — --record uses anon-read mode (no cbauth JWT)
+    assert "COOLBET_MANUAL_JWT" not in do_search, (
+        "_do_search error text must not advise refreshing COOLBET_MANUAL_JWT "
+        "— anon-read mode doesn't use the JWT, so the advice is misleading"
+    )
+    assert "cbauth JWT" not in do_search, (
+        "_do_search error text must not mention cbauth JWT (stale since COOLBET-ANON-READ)"
+    )
+
+
 @test("COOLBET-SAFETY-GUARDRAILS — PlacementGuard stake + rate + total + edge + bot-filter")
 def _():
     """COOLBET-SAFETY-GUARDRAILS (2026-05-20) — PlacementGuard holds the
