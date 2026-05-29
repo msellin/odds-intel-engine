@@ -465,13 +465,27 @@ def coolbet_match_url(home: str, away: str) -> str | None:
             "referer": "https://www.coolbet.com/et/sport/recommendations",
             "origin": "https://www.coolbet.com",
         })
-        raw = os.getenv("COOLBET_IMPERVA_COOKIES", "")
-        if raw:
-            for part in raw.split(";"):
-                part = part.strip()
-                if "=" in part:
-                    k, v = part.split("=", 1)
-                    session.cookies.set(k.strip(), v.strip(), domain="www.coolbet.com")
+        # Prefer split env vars (same as CoolbetSession.__init__); fall back to
+        # the legacy combined COOLBET_IMPERVA_COOKIES string.
+        imperva = {
+            "reese84":                 os.getenv("COOLBET_COOKIE_REESE84", ""),
+            "visid_incap_723517":      os.getenv("COOLBET_COOKIE_VISID_INCAP", ""),
+            "nlbi_723517":             os.getenv("COOLBET_COOKIE_NLBI", ""),
+            "nlbi_723517_2147483392":  os.getenv("COOLBET_COOKIE_NLBI2", ""),
+            "incap_ses_1099_723517":   os.getenv("COOLBET_COOKIE_INCAP_SES", ""),
+        }
+        individual = {k: v for k, v in imperva.items() if v}
+        if individual:
+            for name, value in individual.items():
+                session.cookies.set(name, value, domain="www.coolbet.com")
+        else:
+            raw = os.getenv("COOLBET_IMPERVA_COOKIES", "")
+            if raw:
+                for part in raw.split(";"):
+                    part = part.strip()
+                    if "=" in part:
+                        k, v = part.split("=", 1)
+                        session.cookies.set(k.strip(), v.strip(), domain="www.coolbet.com")
 
         resp = session.get(
             _SEARCH_URL,

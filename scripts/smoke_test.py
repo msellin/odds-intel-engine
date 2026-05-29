@@ -3267,12 +3267,13 @@ def _():
         )
 
 
-@test("TELEGRAM-NOTIFY — send-only Telegram with dedup + daemon hooks")
+@test("TELEGRAM-NOTIFY — send-only Telegram with dedup + preflight surface")
 def _():
-    """TELEGRAM-NOTIFY (2026-05-20) — send_telegram is the single ingress for
-    daemon alerts. No env vars = silent skip (returns False, no exceptions).
-    Daemon hooks: keepalive fail (Imperva alert), placement success in
-    record/execute mode, place crash. Plus startup ping."""
+    """TELEGRAM-NOTIFY (2026-05-20, narrowed 2026-05-29) — send_telegram is the
+    single ingress for alerts. No env vars = silent skip (returns False, no
+    exceptions). Daemon-specific keepalive/Imperva alerts were deliberately
+    removed in TELE-BET-NOTIFY-V2 (commit a818c18, daemon not in active use);
+    that retirement is enforced by the TELE-BET-NOTIFY test below."""
     import inspect
     from workers.notify import telegram as _tg
     # Function exists with expected signature
@@ -3289,17 +3290,8 @@ def _():
         if saved[0]: os.environ["TELEGRAM_BOT_TOKEN"] = saved[0]
         if saved[1]: os.environ["TELEGRAM_CHAT_ID"] = saved[1]
 
-    # Daemon wires it in three places
-    import pathlib
-    daemon = pathlib.Path("scripts/coolbet_daemon.py").read_text()
-    assert "from workers.notify.telegram import send_telegram" in daemon, (
-        "daemon must import send_telegram"
-    )
-    assert "Coolbet keepalive failed" in daemon, "missing Imperva-keepalive alert"
-    assert "Coolbet daemon started" in daemon, "missing startup ping"
-    assert '"coolbet-keepalive-fail"' in daemon, "missing dedup key for keepalive alerts"
-
     # Preflight surfaces TG status
+    import pathlib
     pf = pathlib.Path("scripts/coolbet_preflight.py").read_text()
     assert "TELEGRAM_BOT_TOKEN" in pf, "preflight should show TG cred status"
 
@@ -3340,13 +3332,14 @@ def _():
     assert "--no-place" in src, "--no-place flag must exist"
 
 
-@test("COOLBET-KEEPALIVE — session exposes TTL + heartbeat + scheduler wired")
+@test("COOLBET-KEEPALIVE — session exposes TTL + heartbeat (scheduler job retired)")
 def _():
-    """COOLBET-KEEPALIVE (2026-05-20) — Coolbet JWT TTL is 1820s with
-    server-side idle-logout after ~30 min. CoolbetSession.keep_alive() does
-    a heartbeat; the scheduler fires it every 20 min so manual / placer /
-    explorer flows never see a re-login mid-session."""
-    import inspect, pathlib
+    """COOLBET-KEEPALIVE (2026-05-20, narrowed 2026-05-29) — CoolbetSession
+    still exposes keep_alive() + jwt_seconds_remaining, used by the daemon
+    main loop. The scheduler-level 20-min keepalive job was retired in
+    REMOVE-KEEPALIVE (commit a8753ac) — Imperva cookies + anon /record mode
+    made it dead weight on Railway."""
+    import inspect
     from workers.automation.coolbet_session import CoolbetSession
     assert hasattr(CoolbetSession, "keep_alive"), "CoolbetSession.keep_alive missing"
     assert hasattr(CoolbetSession, "jwt_seconds_remaining"), (
@@ -3354,11 +3347,6 @@ def _():
     )
     src = inspect.getsource(CoolbetSession.keep_alive)
     assert "self.get" in src, "keep_alive must call self.get (so _ensure_auth fires)"
-
-    sched_src = pathlib.Path("workers/scheduler.py").read_text()
-    assert "_coolbet_keepalive_wrapper" in sched_src, "missing keepalive wrapper"
-    assert "coolbet_keepalive_interval" in sched_src, "missing scheduler job id"
-    assert '"*/20"' in sched_src, "keepalive must fire every 20 min"
 
 
 @test("COOLBET-MARKET-TYPE-IDS — AH/BTTS/DC market_type_ids wired from observed API response")
@@ -3440,11 +3428,12 @@ def _():
 
 @test("COOLBET-JWT-ENV-PROPAGATION — renew_jwt_via_api updates os.environ so fresh sessions see new token")
 def _():
-    """COOLBET-JWT-ENV-PROPAGATION (2026-05-21) — renew_jwt_via_api must update
-    os.environ after renewal so any CoolbetSession() created later in the same
-    process (e.g. the odds sweep) picks up the fresh JWT instead of the expired
-    one from .env. Without this, the odds sweep fails every 30 min with
-    'COOLBET_MANUAL_JWT is expired' while the daemon keepalive succeeds."""
+    """COOLBET-JWT-ENV-PROPAGATION (2026-05-21, narrowed 2026-05-29) —
+    renew_jwt_via_api must update os.environ after renewal so any
+    CoolbetSession() created later in the same process (e.g. the odds sweep)
+    picks up the fresh JWT instead of the expired one from .env. The
+    daemon-Telegram-on-failure assertion was dropped in TELE-BET-NOTIFY-V2
+    (commit a818c18) — daemon Telegram noise was deliberately retired."""
     import inspect
     from workers.automation.coolbet_session import CoolbetSession
     src = inspect.getsource(CoolbetSession.renew_jwt_via_api)
@@ -3453,18 +3442,11 @@ def _():
         "instances in the same process see the renewed token"
     )
 
-    # Odds snapshot must re-raise so the sweep runner stamps ok=False and
-    # Telegram alert fires (not swallowed with a log.warning only)
+    # The sweep runner still stamps ok=False on failure via state.json, even
+    # though the Telegram alert was retired.
     daemon_src = open("scripts/coolbet_daemon.py").read()
-    assert '"coolbet-odds-snapshot-fail"' in daemon_src, (
-        "_task_odds_snapshot must send a Telegram alert on failure"
-    )
-    # The sweep runner's except branch stamps ok=False — this only works if
-    # _task_odds_snapshot re-raises (not just returns an ✗ string)
     assert "last_sweep_finished" in daemon_src, "sweep runner must stamp last_sweep_finished"
-    assert '"ok": False' in daemon_src or '"ok": true' not in daemon_src.lower(), (
-        "sweep runner should be able to stamp ok=False on failure"
-    )
+    assert '"ok": False' in daemon_src, "sweep runner must stamp ok=False on failure"
 
 
 @test("BOT-COHORTS-ALL — every bot fires at every cohort window")
@@ -8166,15 +8148,27 @@ def test_ah_cal_bypass():
     assert 'mkt_lower.startswith("double_chance")' in src, \
         "calibrate_prob must also early-return for double_chance markets"
 
-    # Behavioural assertion — load the function and verify shrinkage is skipped
-    from workers.model.improvements import calibrate_prob
-    # raw=0.55, ip=0.50, T1: WITH shrinkage (α=0.20) → 0.51; WITHOUT shrinkage → 0.55
+    # Behavioural assertion — load the function and verify shrinkage is skipped.
+    # AH/DC may still have stage-2 Platt applied (PLATT-LIVE-FIT 2026-05 added
+    # an aggregate `asian_handicap` Platt fit), so compare against stage-2 only.
+    from workers.model.improvements import calibrate_prob, _apply_stage2
+    expected = _apply_stage2(0.55, "asian_handicap_Away +0.50", odds=2.00)
     result = calibrate_prob(0.55, 0.50, tier=1, market="asian_handicap_Away +0.50",
                             anchor_implied=None, odds=2.00)
-    assert abs(result - 0.55) < 1e-6, f"AH should bypass shrinkage; got {result}"
-    # Non-AH non-DC market should still shrink toward implied
+    assert abs(result - expected) < 1e-6, (
+        f"AH should bypass stage-1 shrinkage and only apply stage-2; "
+        f"got {result}, expected {expected}"
+    )
+    # Non-AH non-DC market should still go through stage-1 shrinkage —
+    # compare against stage-2-only on the same inputs to isolate that effect.
+    # Shrinkage pulls 0.55 toward implied=0.50, and Platt is monotonic in its
+    # input, so the calibrated value must come out below the stage-2-only baseline.
     result_1x2 = calibrate_prob(0.55, 0.50, tier=1, market="1x2_home", odds=2.00)
-    assert result_1x2 < 0.55, f"1x2_home should still shrink; got {result_1x2}"
+    stage2_only_1x2 = _apply_stage2(0.55, "1x2_home", odds=2.00)
+    assert result_1x2 < stage2_only_1x2, (
+        f"1x2_home should still shrink (stage-1 then stage-2); "
+        f"got {result_1x2}, stage-2-only baseline {stage2_only_1x2}"
+    )
 
 
 @test("AH-VETO-WIDEN — AH/DC use wider 0.22 veto gap (was 0.12, killed bot_ah_away_dog)")
@@ -9206,16 +9200,10 @@ def _():
     )
     assert "_imperva_fail_streak = 0" in src, "must reset fail streak on recovery"
 
-    # Telegram alerts on all three transitions
-    assert '"coolbet-imperva-block"' in src, (
-        "must send Telegram with dedup_key='coolbet-imperva-block' on entry"
-    )
-    assert '"coolbet-imperva-cleared"' in src, (
-        "must send Telegram with dedup_key='coolbet-imperva-cleared' on recovery"
-    )
-    assert '"coolbet-imperva-extend"' in src, (
-        "must send Telegram with dedup_key='coolbet-imperva-extend' on doubled backoff"
-    )
+    # Telegram alerts on backoff transitions were retired in TELE-BET-NOTIFY-V2
+    # (commit a818c18) — daemon Telegram noise was deliberately removed. The
+    # backoff state machine still functions; only the alert side was retired.
+    # The TELE-BET-NOTIFY test below enforces those strings are absent.
 
     # While in backoff the main loop must not advance sweep/placement next times
     # (i.e. it must `continue` the loop, not fall through to sweep/placement code)
@@ -10642,7 +10630,8 @@ def test_user_tele_notify():
     notify_src = (root / "workers" / "notify" / "telegram.py").read_text()
     assert "def send_telegram_to_users" in notify_src, "telegram.py must export send_telegram_to_users"
     assert "telegram_chat_id" in notify_src, "send_telegram_to_users must query telegram_chat_id column"
-    assert "tier = ANY" in notify_src, "send_telegram_to_users must filter by tier"
+    assert "tier::text = ANY" in notify_src or "tier = ANY" in notify_src, \
+        "send_telegram_to_users must filter by tier"
 
     # daily_pipeline_v2 wires user notifications
     pipeline_src = (root / "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
@@ -10918,28 +10907,42 @@ def test_coolbet_anon_read():
     )
 
 
-@test("INPLAY-COOLBET-URL — _coolbet_match_url reads Imperva cookies from env, falls back gracefully")
+@test("INPLAY-COOLBET-URL — coolbet_match_url reads Imperva cookies from env, falls back gracefully")
 def test_inplay_coolbet_url():
+    """Helper moved from inplay_bot.py to coolbet_session.py (TELE-COOLBET-URL,
+    commit ab46c53) — inspect the new home and confirm inplay_bot still wires it."""
     import pathlib
-    src = (pathlib.Path(__file__).resolve().parents[1] / "workers" / "jobs" / "inplay_bot.py").read_text()
+    root = pathlib.Path(__file__).resolve().parents[1]
+    bot_src = (root / "workers" / "jobs" / "inplay_bot.py").read_text()
+    helper_src = (root / "workers" / "automation" / "coolbet_session.py").read_text()
 
-    # Function exists
-    assert "_coolbet_match_url" in src, "_coolbet_match_url must be defined in inplay_bot.py"
+    # Helper exists (now in coolbet_session.py, imported as _coolbet_match_url)
+    assert "def coolbet_match_url" in helper_src, \
+        "coolbet_match_url must be defined in workers/automation/coolbet_session.py"
+    assert "_coolbet_match_url" in bot_src, \
+        "inplay_bot.py must import the helper as _coolbet_match_url"
 
     # Reads Imperva env vars (same as CoolbetSession)
-    assert "COOLBET_COOKIE_REESE84" in src, "_coolbet_match_url must read COOLBET_COOKIE_REESE84"
-    assert "COOLBET_COOKIE_VISID_INCAP" in src, "_coolbet_match_url must read COOLBET_COOKIE_VISID_INCAP"
-    assert "COOLBET_IMPERVA_COOKIES" in src, "_coolbet_match_url must fall back to COOLBET_IMPERVA_COOKIES"
+    assert "COOLBET_COOKIE_REESE84" in helper_src, \
+        "coolbet_match_url must read COOLBET_COOKIE_REESE84"
+    assert "COOLBET_COOKIE_VISID_INCAP" in helper_src, \
+        "coolbet_match_url must read COOLBET_COOKIE_VISID_INCAP"
+    assert "COOLBET_IMPERVA_COOKIES" in helper_src, \
+        "coolbet_match_url must fall back to COOLBET_IMPERVA_COOKIES"
 
     # Returns coolbet match URL format
-    assert "coolbet.com/et/sport/match/" in src, "_coolbet_match_url must return /et/sport/match/{id} URL"
+    assert "coolbet.com/et/sport/match/" in helper_src, \
+        "coolbet_match_url must return /et/sport/match/{id} URL"
 
-    # Wired into admin Telegram send_telegram call
-    assert 'cb_url = _coolbet_match_url' in src, "_coolbet_match_url must be called in the bet placement block"
-    assert 'Open on Coolbet' in src, "admin Telegram alert must include 'Open on Coolbet' link when cb_url is set"
+    # Wired into admin Telegram send_telegram call from inplay_bot
+    assert 'cb_url = _coolbet_match_url' in bot_src, \
+        "_coolbet_match_url must be called in the bet placement block"
+    assert 'Open on Coolbet' in bot_src, \
+        "admin Telegram alert must include 'Open on Coolbet' link when cb_url is set"
 
     # Never raises (try/except)
-    assert "except Exception" in src, "_coolbet_match_url must catch all exceptions and return None"
+    assert "except Exception" in helper_src, \
+        "coolbet_match_url must catch all exceptions and return None"
 
 
 @test("SPECIALIST-BOTS-WHITELIST — migration 147, league_name_filter in pipeline + backtest, new bots in config")
