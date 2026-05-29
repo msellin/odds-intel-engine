@@ -3388,16 +3388,19 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
 
     # Flush consolidated per-position alerts (one per match+market+selection,
     # listing all agreeing bots so multi-bot agreement shows in a single message).
+    from workers.automation.coolbet_session import coolbet_match_url
     for _tk, _tb in _tele_bets.items():
         _n = len(_tb["bots"])
         _bot_str = _tb["bots"][0] + (f" +{_n-1} more" if _n > 1 else "")
         _bots_line = "  bots: " + ", ".join(_tb["bots"]) if _n > 1 else ""
+        _cb_url = coolbet_match_url(_tb["home"], _tb["away"])
         send_telegram(
             f"🎯 <b>PRE-MATCH</b> {_bot_str}\n"
             f"  <b>{_tb['home']} vs {_tb['away']}</b>\n"
             f"  {_tb['mkt']} {_tb['selection']} @ {_tb['odds']:.2f}\n"
             f"  edge {_tb['edge']*100:+.1f}%  ·  align {_tb['alignment']}  ·  {_tb['bm']}"
-            + (f"\n{_bots_line}" if _bots_line else ""),
+            + (f"\n{_bots_line}" if _bots_line else "")
+            + (f"\n  <a href=\"{_cb_url}\">Open on Coolbet →</a>" if _cb_url else ""),
         )
         send_telegram_to_users(
             f"🔔 <b>New value bet</b>"

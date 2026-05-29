@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 
 import requests
 from dotenv import load_dotenv
+from rapidfuzz import fuzz
 
 load_dotenv()
 
@@ -438,3 +439,58 @@ class CoolbetSession:
         except Exception as e:
             log.warning("Coolbet keep_alive failed (both endpoints): %s", e)
             return False
+
+
+_SEARCH_URL = "https://www.coolbet.com/s/sbgate/sports/search/v2"
+
+
+def coolbet_match_url(home: str, away: str) -> str | None:
+    """Search Coolbet for a match and return its URL. Returns None on any failure.
+
+    Uses Imperva cookies from env — no JWT required. Safe to call from any
+    context; failures are swallowed so a missing/expired cookie never breaks
+    the caller.
+    """
+    try:
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+            ),
+            "x-device": "DESKTOP",
+            "accept": "*/*",
+            "sec-fetch-site": "same-origin",
+            "sec-fetch-mode": "cors",
+            "referer": "https://www.coolbet.com/et/sport/recommendations",
+            "origin": "https://www.coolbet.com",
+        })
+        raw = os.getenv("COOLBET_IMPERVA_COOKIES", "")
+        if raw:
+            for part in raw.split(";"):
+                part = part.strip()
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    session.cookies.set(k.strip(), v.strip(), domain="www.coolbet.com")
+
+        resp = session.get(
+            _SEARCH_URL,
+            params={"country": "EE", "language": "et", "layout": "EUROPEAN",
+                    "search": home.split()[0]},
+            timeout=5,
+        )
+        if resp.status_code != 200:
+            return None
+        target = f"{home} - {away}".lower()
+        best_id, best_score = None, 0
+        for ev in resp.json():
+            if ev.get("sport_icon") != "football":
+                continue
+            score = fuzz.token_set_ratio(target, (ev.get("name") or "").lower())
+            if score > best_score:
+                best_score, best_id = score, ev.get("id")
+        if best_id and best_score >= 60:
+            return f"https://www.coolbet.com/et/sport/match/{best_id}"
+    except Exception as e:
+        log.debug("coolbet_match_url failed: %s", e)
+    return None
