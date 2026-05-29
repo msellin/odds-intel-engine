@@ -618,6 +618,101 @@ def job_prune_live_snapshots():
     _run_job("prune_live_snapshots", _run)
 
 
+def _drain_manual_placement_queue():
+    """MANUAL-PLACE (2026-05-29): drain admin "Record at Coolbet" requests.
+
+    The Vercel webhook (Telegram callback_query handler) inserts a row into
+    manual_placement_queue when the admin taps the inline button on a value-bet
+    alert. This job runs every 10s, claims pending rows, calls the placer
+    with --bet-id filter, and edits the original Telegram message with the
+    outcome.
+
+    Stays silent when there's nothing pending (no pipeline_runs entries, no
+    console output). Idempotency: place_bet_by_id() short-circuits to
+    `already_recorded` when a real_bet row already exists for the
+    simulated_bet_id, so double-taps or auto-record racing the button are
+    both safe.
+    """
+    from workers.api_clients.db import execute_write, execute_write_returning
+    from workers.automation.coolbet_placer import place_bet_by_id
+    from workers.notify.telegram import edit_telegram_message
+
+    # Claim up to 3 pending rows in one tick — keeps Telegram round-trips
+    # serialised but lets a burst of taps drain quickly.
+    claimed = execute_write_returning(
+        """
+        UPDATE manual_placement_queue
+           SET status = 'processing'
+         WHERE id IN (
+             SELECT id FROM manual_placement_queue
+              WHERE status = 'pending'
+              ORDER BY requested_at
+              LIMIT 3
+         )
+        RETURNING id, simulated_bet_id, telegram_chat_id, telegram_message_id
+        """,
+    )
+    if not claimed:
+        return
+
+    for row in claimed:
+        queue_id = row["id"]
+        sim_id = str(row["simulated_bet_id"])
+        chat_id = row.get("telegram_chat_id")
+        message_id = row.get("telegram_message_id")
+        try:
+            result = place_bet_by_id(sim_id)
+        except Exception as e:
+            console.print(f"[red]manual_placement_drain {sim_id} failed: {e}[/red]")
+            result = {"outcome": "error", "reason": str(e)[:300]}
+
+        outcome = result.get("outcome") or "error"
+        # Build status line for Telegram edit. Keep it short — fits as a tail line.
+        if outcome == "placed":
+            stake = float(result.get("stake") or 0)
+            odds = float(result.get("live_odds") or result.get("model_odds") or 0)
+            status_line = f"✓ Recorded €{stake:.2f} @ {odds:.2f}"
+        elif outcome == "already_recorded":
+            status_line = "✓ Already recorded"
+        elif outcome == "no_event":
+            status_line = "✗ no_event (Coolbet doesn't list this match)"
+        elif outcome == "no_market":
+            reason = result.get("reason") or ""
+            status_line = f"✗ no_market{f' — {reason}' if reason else ''}"[:200]
+        elif outcome == "search_blocked":
+            status_line = "✗ search_blocked (refresh Imperva cookies)"
+        elif outcome == "edge_eroded":
+            status_line = "✗ edge_eroded (odds moved against us)"
+        elif outcome == "guard_skip":
+            status_line = f"✗ guard_skip — {result.get('reason') or ''}"[:200]
+        elif outcome == "not_found":
+            status_line = "✗ bet not in DB (settled or deleted?)"
+        else:
+            status_line = f"✗ {outcome}"
+
+        # Edit the original message: append status, remove the button
+        if chat_id and message_id:
+            edited = edit_telegram_message(
+                chat_id, int(message_id),
+                f"<b>{status_line}</b>\n\n<i>(original alert via MANUAL-PLACE)</i>",
+                remove_buttons=True,
+            )
+            if not edited:
+                console.print(f"[yellow]Telegram edit failed for queue={queue_id}[/yellow]")
+
+        execute_write(
+            """
+            UPDATE manual_placement_queue
+               SET status = 'done',
+                   result = %s,
+                   result_detail = %s,
+                   processed_at = NOW()
+             WHERE id = %s
+            """,
+            (outcome, status_line[:500], queue_id),
+        )
+
+
 def job_league_draw_rate():
     """LEAGUE-DRAW-YTD (2026-05-25): nightly recompute of per-league season-to-date
     draw rate. Backtest: Q4 vs Q1 actual-draw gap +11.6pp on 11,875 historical
@@ -1068,6 +1163,12 @@ def main():
     )
 
     # ── Register all jobs ──────────────────────────────────────────────
+
+    # MANUAL-PLACE drain: 10s tick to consume admin "Record at Coolbet" taps.
+    # Stays silent when empty — only logs when there's work. Skips _run_job
+    # so the pipeline_runs table isn't flooded with 8640 entries/day.
+    scheduler.add_job(_drain_manual_placement_queue, IntervalTrigger(seconds=10),
+                      id="manual_placement_drain", name="Manual Placement Drain [10s]")
 
     # Backfill jobs — micro-batch, runs every 25min.
     # If a run fails, only ~25-30 API calls are lost. Progress tracked in DB.

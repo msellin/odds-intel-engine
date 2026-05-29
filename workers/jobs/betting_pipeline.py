@@ -58,9 +58,15 @@ def _current_cohort() -> str:
 
 def _run_coolbet_record() -> None:
     """After the pipeline stores bets to simulated_bets, auto-run the Coolbet
-    placer in --record mode and send the admin a Coolbet-specific summary."""
+    placer in --record mode. Edits each per-bet alert in place with the
+    outcome (✓ recorded / ✗ no_event / etc.) so the admin scrolling the chat
+    sees status per bet at a glance, instead of having to cross-reference a
+    summary list (ADMIN-TG-CLARITY 2026-05-29).
+
+    The summary message itself collapses to a single counter line — silent
+    when everything placed cleanly, loud only on search_blocked."""
     from workers.automation.coolbet_placer import place_all_bets
-    from workers.notify.telegram import send_telegram
+    from workers.notify.telegram import send_telegram, edit_bet_alert_outcome
 
     try:
         results = place_all_bets(record=True)
@@ -78,31 +84,43 @@ def _run_coolbet_record() -> None:
     blocked   = [r for r in results if r["outcome"] == "search_blocked"]
     other     = [r for r in results if r["outcome"] not in ("placed", "no_event", "no_market", "search_blocked")]
 
-    parts = [f"🤖 <b>Coolbet --record: {len(placed)} placed</b>"]
-    if no_event:
-        parts.append(f"{len(no_event)} no_event")
-    if no_market:
-        parts.append(f"{len(no_market)} no_market")
-    if other:
-        parts.append(f"{len(other)} skipped")
-    if blocked:
-        parts.append(f"⚠️ {len(blocked)} search_blocked")
+    # ADMIN-TG-CLARITY: edit each per-bet alert with its outcome. Done per
+    # result, not per (match,market,selection), so combos + singles both flow
+    # through naturally.
+    for r in results:
+        sim_id = str(r.get("simulated_bet_id") or "")
+        if not sim_id:
+            continue
+        outcome = r.get("outcome") or "error"
+        if outcome == "placed":
+            stake = float(r.get("stake") or 0)
+            odds = float(r.get("live_odds") or r.get("model_odds") or 0)
+            status = f"✓ Auto-recorded €{stake:.2f} @ {odds:.2f}"
+        elif outcome == "no_event":
+            status = "✗ no_event (Coolbet didn't list this match)"
+        elif outcome == "no_market":
+            reason = r.get("reason") or ""
+            status = f"✗ no_market{f' — {reason}' if reason else ''}"[:200]
+        elif outcome == "search_blocked":
+            status = "⚠️ search_blocked (Imperva — cookies?)"
+        elif outcome == "edge_eroded":
+            live_odds = float(r.get("live_odds") or 0)
+            status = f"✗ edge_eroded (live odds {live_odds:.2f})"
+        elif outcome == "guard_skip":
+            status = f"✗ guard_skip — {r.get('reason') or ''}"[:200]
+        elif outcome == "dry_run":
+            continue  # nothing to update in dry mode
+        else:
+            status = f"✗ {outcome}"
+        edit_bet_alert_outcome(sim_id, status)
 
-    lines = []
-    for r in placed:
-        home  = r.get("home_team") or "?"
-        away  = r.get("away_team") or "?"
-        mkt   = r.get("market") or ""
-        sel   = r.get("selection") or ""
-        odds  = r.get("live_odds") or r.get("model_odds") or 0
-        edge  = float(r.get("edge_percent") or 0) * 100
-        lines.append(f"  {home} vs {away} | {mkt} {sel} @ {float(odds):.2f} | edge {edge:+.1f}%")
-
-    msg = " | ".join(parts)
-    if lines:
-        msg += "\n" + "\n".join(lines)
-
-    send_telegram(msg, silent=not blocked)  # urgent only when search is blocked
+    # Compact admin summary — one line of counters. Silent unless something's blocked.
+    parts = [f"🤖 Coolbet: {len(placed)} placed"]
+    if no_event:  parts.append(f"{len(no_event)} no_event")
+    if no_market: parts.append(f"{len(no_market)} no_market")
+    if other:     parts.append(f"{len(other)} skipped")
+    if blocked:   parts.append(f"⚠️ {len(blocked)} search_blocked")
+    send_telegram(" · ".join(parts), silent=not blocked)
 
 
 def run_betting(cohort: str | None = None):

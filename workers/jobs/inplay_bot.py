@@ -478,7 +478,11 @@ def run_inplay_strategies():
                     home = pm.get("home_name") or "?"
                     away = pm.get("away_name") or "?"
                     cb_url = _coolbet_match_url(home, away)
-                    send_telegram(
+                    # MANUAL-PLACE: button to record this inplay bet on demand.
+                    from workers.notify.telegram import place_button_markup as _place_btn
+                    from workers.notify.telegram import record_bet_alert as _rec_alert
+                    _markup = _place_btn(str(bet_id)) if bet_id else None
+                    _inplay_text = (
                         f"📡 <b>INPLAY</b> paper bet\n"
                         f"  <b>{home} vs {away}</b>\n"
                         f"  {trigger['market']} {trigger['selection']} @ {trigger['odds']:.2f}\n"
@@ -486,6 +490,11 @@ def run_inplay_strategies():
                         f"  bot {bot_name}{src_tag}"
                         + (f"\n  <a href=\"{cb_url}\">Open on Coolbet →</a>" if cb_url else "")
                     )
+                    _msg_id = send_telegram(_inplay_text, reply_markup=_markup)
+                    if _msg_id and bet_id:
+                        import os as _os
+                        _prefix = (_os.getenv("TELEGRAM_PREFIX", "[OI]") + " ") if _os.getenv("TELEGRAM_PREFIX", "[OI]") else ""
+                        _rec_alert(str(bet_id), _msg_id, _prefix + _inplay_text)
                     _league = pm.get("league_name") or ""
                     _country = pm.get("league_country") or ""
                     _league_str = f"{_country} / {_league}" if _country and _league else _league
@@ -509,28 +518,44 @@ def run_inplay_strategies():
         console.print(f"[bold green]InplayBot: {bets_placed} paper bet(s) placed this cycle[/bold green]")
         try:
             from workers.automation.coolbet_placer import place_all_inplay_bets
+            from workers.notify.telegram import edit_bet_alert_outcome as _edit_outcome
             inplay_results = place_all_inplay_bets(record=True)
             if inplay_results:
+                # ADMIN-TG-CLARITY (2026-05-29): edit each per-bet alert in
+                # place with the recording outcome so the admin sees status
+                # per bet at a glance instead of cross-referencing a list.
+                for r in inplay_results:
+                    sim_id = str(r.get("simulated_bet_id") or "")
+                    if not sim_id:
+                        continue
+                    outcome = r.get("outcome") or "error"
+                    if outcome == "placed":
+                        stake = float(r.get("stake") or 0)
+                        odds = float(r.get("live_odds") or 0)
+                        status = f"✓ Auto-recorded €{stake:.2f} @ {odds:.2f}"
+                    elif outcome == "edge_eroded":
+                        live_odds = float(r.get("live_odds") or 0)
+                        status = f"✗ edge_eroded (live {live_odds:.2f})"
+                    elif outcome == "no_event":
+                        status = "✗ no_event"
+                    elif outcome == "no_market":
+                        status = "✗ no_market"
+                    elif outcome == "search_blocked":
+                        status = "⚠️ search_blocked"
+                    else:
+                        status = f"✗ {outcome}"
+                    _edit_outcome(sim_id, status)
+
                 placed   = [r for r in inplay_results if r["outcome"] == "placed"]
                 eroded   = [r for r in inplay_results if r["outcome"] == "edge_eroded"]
                 blocked  = [r for r in inplay_results if r["outcome"] == "search_blocked"]
                 no_event = [r for r in inplay_results if r["outcome"] == "no_event"]
-                parts = [f"🤖 <b>Inplay --record: {len(placed)} placed</b>"]
+                # Compact one-liner — silent unless blocked
+                parts = [f"🤖 Inplay: {len(placed)} placed"]
                 if eroded:   parts.append(f"{len(eroded)} eroded")
                 if no_event: parts.append(f"{len(no_event)} no_event")
                 if blocked:  parts.append(f"⚠️ {len(blocked)} blocked")
-                lines = []
-                for r in placed:
-                    edge = float(r.get("edge_percent") or 0) * 100
-                    lines.append(
-                        f"  {r['home_team']} vs {r['away_team']} | "
-                        f"{r['market']} {r['selection']} @ {float(r.get('live_odds') or 0):.2f} | "
-                        f"edge {edge:+.1f}%"
-                    )
-                msg = " | ".join(parts)
-                if lines:
-                    msg += "\n" + "\n".join(lines)
-                send_telegram(msg, silent=not blocked)
+                send_telegram(" · ".join(parts), silent=not blocked)
         except Exception as e:
             log.warning("Inplay Coolbet record failed: %s", e)
 

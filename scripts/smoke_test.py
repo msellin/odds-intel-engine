@@ -3216,6 +3216,138 @@ def test_search_retry_transient():
     )
 
 
+@test("ADMIN-TG-CLARITY — per-bet alerts edited with outcome + admin double-notify skipped + summaries collapsed")
+def test_admin_tg_clarity():
+    """ADMIN-TG-CLARITY (2026-05-29): the admin Telegram chat used to fire
+    three messages per cohort (user broadcast, admin per-bet, batch list)
+    plus a fourth coolbet --record summary, all listing the same bets.
+    For ~50 bets/day that becomes unreadable. Now:
+      • per-bet alerts are edited in-place with the recording outcome
+      • admin chat is suppressed from `send_telegram_to_users` broadcasts
+      • batch + record summaries collapse to single-line counters
+    """
+    import pathlib
+    # 1. Migration for the side table
+    mig = pathlib.Path("supabase/migrations/154_bet_telegram_alerts.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS bet_telegram_alerts" in mig
+    for col in ("simulated_bet_id", "chat_id", "message_id", "original_text", "sent_at"):
+        assert col in mig, f"migration must define {col}"
+
+    # 2. Notify module exposes the helpers
+    from workers.notify import telegram as _tg
+    for fn in ("record_bet_alert", "edit_bet_alert_outcome"):
+        assert hasattr(_tg, fn), f"telegram.{fn} missing"
+
+    # 3. send_telegram_to_users skips the admin chat id
+    notify_src = pathlib.Path("workers/notify/telegram.py").read_text()
+    users_block = notify_src[notify_src.index("def send_telegram_to_users"):
+                              notify_src.index("def send_telegram_to_users") + 4000]
+    assert "TELEGRAM_CHAT_ID" in users_block, \
+        "send_telegram_to_users must compare against admin TELEGRAM_CHAT_ID to skip duplicates"
+
+    # 4. Per-bet alert sites persist via record_bet_alert
+    pipeline_src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    assert "record_bet_alert" in pipeline_src, \
+        "daily_pipeline_v2 must call record_bet_alert after sending the per-bet alert"
+    inplay_src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    assert "record_bet_alert" in inplay_src, \
+        "inplay_bot must call record_bet_alert after sending the per-bet alert"
+
+    # 5. Auto-record (pre-match + inplay) edits per-bet messages with outcome
+    bp_src = pathlib.Path("workers/jobs/betting_pipeline.py").read_text()
+    assert "edit_bet_alert_outcome" in bp_src, \
+        "betting_pipeline._run_coolbet_record must call edit_bet_alert_outcome per result"
+    assert "edit_bet_alert_outcome" in inplay_src, \
+        "inplay_bot must call edit_bet_alert_outcome after place_all_inplay_bets"
+
+    # 6. Pre-match batch summary collapsed (no more bet_block list)
+    assert "bet_block" not in pipeline_src or \
+        "f\"🎯 <b>{total_bets} value bet(s) found</b>\"" not in pipeline_src, \
+        "long bet_block summary must be removed (replaced with one-liner)"
+    assert "f\"🎯 {total_bets} value bet(s) found{cohort_label}\"" in pipeline_src, \
+        "pre-match summary must be a one-line counter"
+
+    # 7. Coolbet --record summary collapsed (one-line counter, no per-bet lines)
+    record_block = bp_src[bp_src.index("def _run_coolbet_record"):]
+    assert "lines.append(" not in record_block, \
+        "_run_coolbet_record must not build per-bet lines in the summary anymore"
+    assert "\" · \".join(parts)" in record_block, \
+        "summary must collapse to a ` · ` joined counter line"
+
+
+@test("MANUAL-PLACE — admin button + webhook + drain loop end-to-end wiring")
+def test_manual_place_wiring():
+    """MANUAL-PLACE (2026-05-29): admin taps Telegram inline-keyboard button
+    on a value-bet alert; Vercel webhook queues, Railway scheduler drains
+    every 10s, edits the message with the outcome. Source-inspection only
+    (live flow runs across two services + a Telegram callback)."""
+    import inspect
+    import pathlib
+
+    # 1. Migration exists and creates the queue table
+    mig = pathlib.Path("supabase/migrations/153_manual_placement_queue.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS manual_placement_queue" in mig
+    for col in ("simulated_bet_id", "requested_by_chat_id", "telegram_message_id",
+                "telegram_chat_id", "status", "result", "processed_at"):
+        assert col in mig, f"migration must define {col}"
+    assert "CHECK (status IN ('pending', 'processing', 'done', 'failed'))" in mig
+
+    # 2. Placer exposes place_bet_by_id + bet_id_filter
+    from workers.automation import coolbet_placer
+    assert hasattr(coolbet_placer, "place_bet_by_id"), \
+        "placer must expose place_bet_by_id for MANUAL-PLACE"
+    for fn_name in ("load_qualified_bets", "load_qualified_combo_bets",
+                    "load_qualified_inplay_bets", "place_all_bets",
+                    "place_all_inplay_bets"):
+        sig = inspect.signature(getattr(coolbet_placer, fn_name))
+        assert "bet_id_filter" in sig.parameters, \
+            f"{fn_name} must accept bet_id_filter for MANUAL-PLACE"
+
+    # 3. Notify helpers — button markup builder + edit fn
+    from workers.notify import telegram as _tg
+    assert hasattr(_tg, "place_button_markup"), "telegram.place_button_markup missing"
+    assert hasattr(_tg, "edit_telegram_message"), "telegram.edit_telegram_message missing"
+    markup = _tg.place_button_markup("00000000-0000-0000-0000-000000000000")
+    assert markup["inline_keyboard"][0][0]["callback_data"] == \
+        "place:00000000-0000-0000-0000-000000000000"
+
+    # 4. Alert sites attach the button — pre-match + inplay
+    pipeline_src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    assert "place_button_markup" in pipeline_src, \
+        "daily_pipeline_v2 must attach inline_keyboard via place_button_markup"
+    assert "first_bet_id" in pipeline_src, \
+        "_tele_bets must capture first_bet_id for the button callback_data"
+    inplay_src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    assert "place_button_markup" in inplay_src, \
+        "inplay_bot must attach inline_keyboard for live value bets"
+
+    # 5. Scheduler registers the 10s drain
+    sched_src = pathlib.Path("workers/scheduler.py").read_text()
+    assert "_drain_manual_placement_queue" in sched_src, \
+        "scheduler must define _drain_manual_placement_queue"
+    assert "manual_placement_drain" in sched_src, \
+        "scheduler must register the drain job id"
+    assert "IntervalTrigger(seconds=10)" in sched_src, \
+        "drain must fire on a 10-second interval"
+    # Drain wrapper imports placer + notify pieces
+    drain_block = sched_src[sched_src.index("def _drain_manual_placement_queue"):
+                             sched_src.index("def _drain_manual_placement_queue")
+                             + 4000]
+    assert "place_bet_by_id" in drain_block
+    assert "edit_telegram_message" in drain_block
+    assert "manual_placement_queue" in drain_block
+
+    # 6. Webhook handles callback_query and admin-gates by TELEGRAM_CHAT_ID
+    webhook_src = pathlib.Path(
+        "../odds-intel-web/src/app/api/telegram/webhook/route.ts"
+    ).read_text()
+    assert "callback_query" in webhook_src, "webhook must handle callback_query"
+    assert "TELEGRAM_CHAT_ID" in webhook_src, "webhook must admin-gate by TELEGRAM_CHAT_ID"
+    assert "answerCallbackQuery" in webhook_src, "webhook must ack the callback"
+    assert "manual_placement_queue" in webhook_src, "webhook must insert into the queue"
+    assert "place:" in webhook_src, "webhook must parse the place: callback_data prefix"
+
+
 @test("COOLBET-FUZZY-CASE-INSENSITIVE — _ascii lowercases so 'Pepo' fuzzy-matches 'PEPO'")
 def test_coolbet_fuzzy_case_insensitive():
     """COOLBET-FUZZY-CASE-INSENSITIVE (2026-05-29): rapidfuzz.partial_ratio
@@ -3393,22 +3525,26 @@ def _():
 @test("TELEGRAM-NOTIFY — send-only Telegram with dedup + preflight surface")
 def _():
     """TELEGRAM-NOTIFY (2026-05-20, narrowed 2026-05-29) — send_telegram is the
-    single ingress for alerts. No env vars = silent skip (returns False, no
+    single ingress for alerts. No env vars = silent skip (returns None, no
     exceptions). Daemon-specific keepalive/Imperva alerts were deliberately
     removed in TELE-BET-NOTIFY-V2 (commit a818c18, daemon not in active use);
-    that retirement is enforced by the TELE-BET-NOTIFY test below."""
+    that retirement is enforced by the TELE-BET-NOTIFY test below.
+
+    MANUAL-PLACE (2026-05-29) changed the return type: success → message_id (int),
+    failure/skip → None. Callers that ignored the return value (all of them
+    pre-MANUAL-PLACE) keep working unchanged."""
     import inspect
     from workers.notify import telegram as _tg
-    # Function exists with expected signature
+    # Function exists with expected signature (+ reply_markup added 2026-05-29)
     sig = inspect.signature(_tg.send_telegram)
-    for kw in ("dedup_key", "dedup_window_s", "silent"):
+    for kw in ("dedup_key", "dedup_window_s", "silent", "reply_markup"):
         assert kw in sig.parameters, f"send_telegram missing kwarg: {kw}"
 
     # No env = silent skip
     import os
     saved = (os.environ.pop("TELEGRAM_BOT_TOKEN", None), os.environ.pop("TELEGRAM_CHAT_ID", None))
     try:
-        assert _tg.send_telegram("smoke") is False, "should return False without env"
+        assert _tg.send_telegram("smoke") is None, "should return None without env"
     finally:
         if saved[0]: os.environ["TELEGRAM_BOT_TOKEN"] = saved[0]
         if saved[1]: os.environ["TELEGRAM_CHAT_ID"] = saved[1]

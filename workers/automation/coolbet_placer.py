@@ -184,8 +184,13 @@ _SELECTION_OUTCOME: dict[str, str] = {
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
-def load_qualified_bets() -> list[dict]:
+def load_qualified_bets(bet_id_filter: str | None = None) -> list[dict]:
     """Return today's simulated_bets qualifying for automated placement.
+
+    bet_id_filter (MANUAL-PLACE 2026-05-29): when set, returns ONLY the bet
+    with that simulated_bet_id and bypasses the date/edge/dedup filters.
+    Admin override used by `place_bet_by_id()` — caller is responsible for
+    idempotency checks before invoking.
 
     COOLBET-EDGE-UNITS-FIX (2026-05-20): `simulated_bets.edge_percent` is
     stored as a DECIMAL FRACTION (0.09 = 9%), not a percentage value (despite
@@ -194,6 +199,36 @@ def load_qualified_bets() -> list[dict]:
     `>= 3.0` → real values like 0.05/0.09/0.20 were ALL rejected → placer
     silently never placed any auto-bet since shipping. Fixed to compare in
     decimal units throughout."""
+    if bet_id_filter is not None:
+        rows = execute_query(
+            """
+            SELECT sb.id          AS simulated_bet_id,
+                   sb.match_id,
+                   sb.market,
+                   sb.selection,
+                   sb.odds_at_pick AS model_odds,
+                   sb.edge_percent,
+                   sb.calibrated_prob,
+                   sb.model_probability,
+                   sb.kelly_fraction,
+                   sb.stake        AS model_stake,
+                   sb.bot_id,
+                   b.name          AS bot_name,
+                   ht.name         AS home_team,
+                   at2.name        AS away_team,
+                   m.date          AS match_date,
+                   1               AS bot_count
+            FROM simulated_bets sb
+            JOIN bots          b   ON b.id   = sb.bot_id
+            JOIN matches       m   ON m.id   = sb.match_id
+            JOIN teams         ht  ON ht.id  = m.home_team_id
+            JOIN teams         at2 ON at2.id = m.away_team_id
+            WHERE sb.id = %s
+              AND sb.combo_legs IS NULL
+            """,
+            (bet_id_filter,),
+        )
+        return [dict(r) for r in rows] if rows else []
 
     # ── Diagnostic: show what each filter removes ─────────────────────────
     diag = execute_query(
@@ -341,8 +376,12 @@ def load_qualified_bets() -> list[dict]:
     return results
 
 
-def load_qualified_combo_bets() -> list[dict]:
+def load_qualified_combo_bets(bet_id_filter: str | None = None) -> list[dict]:
     """COMBO-PLACER (2026-05-23): qualifying combo simulated_bets.
+
+    bet_id_filter (MANUAL-PLACE 2026-05-29): when set, return ONLY that
+    combo bet, bypassing edge/leg-kickoff/dedup filters. Admin override
+    used by `place_bet_by_id()`.
 
     Returns combo bets whose:
       - simulated_bet.result = 'pending'
@@ -355,6 +394,27 @@ def load_qualified_combo_bets() -> list[dict]:
     bot info, stake, and edge_percent so the placer loop can resolve each
     leg's Coolbet outcome and write a single multi-leg real_bet.
     """
+    if bet_id_filter is not None:
+        rows = execute_query(
+            """
+            SELECT sb.id          AS simulated_bet_id,
+                   sb.match_id    AS placeholder_match_id,
+                   sb.combo_legs,
+                   sb.combo_size,
+                   sb.system_type,
+                   sb.odds_at_pick AS combined_model_odds,
+                   sb.edge_percent,
+                   sb.stake        AS model_stake,
+                   sb.bot_id,
+                   b.name          AS bot_name
+            FROM simulated_bets sb
+            JOIN bots b ON b.id = sb.bot_id
+            WHERE sb.id = %s
+              AND sb.combo_legs IS NOT NULL
+            """,
+            (bet_id_filter,),
+        )
+        return [dict(r) for r in rows] if rows else []
     rows = execute_query(
         """
         SELECT sb.id          AS simulated_bet_id,
@@ -1220,6 +1280,7 @@ def place_all_bets(
     min_edge: float | None = None,
     *,
     guard: PlacementGuard | None = None,
+    bet_id_filter: str | None = None,
 ) -> list[dict]:
     """
     Run the placement cycle in one of three modes:
@@ -1249,7 +1310,7 @@ def place_all_bets(
     session = CoolbetSession(require_auth=execute)
     if not execute:
         log.info("Anon-read mode: no JWT required — using Imperva cookies only (--record)")
-    pending = load_qualified_bets()
+    pending = load_qualified_bets(bet_id_filter=bet_id_filter)
 
     if not pending:
         log.info("No qualifying bets found for today.")
@@ -1494,6 +1555,7 @@ def place_all_bets(
         combo_results = _place_combo_bets(
             session, guard, fetch_match_markets, fetch_odds_for_markets,
             resolve_placement_target, record=record, execute=execute,
+            bet_id_filter=bet_id_filter,
         )
         results.extend(combo_results)
 
@@ -1509,6 +1571,7 @@ def _place_combo_bets(
     *,
     record: bool,
     execute: bool,
+    bet_id_filter: str | None = None,
 ) -> list[dict]:
     """COMBO-PLACER (2026-05-23): resolve qualifying combo simulated_bets
     against Coolbet and write a single multi-leg real_bet per combo.
@@ -1523,7 +1586,7 @@ def _place_combo_bets(
     now --execute on a combo falls back to record-only and emits a warning.
     Tracked as COMBO-EXECUTE-COOLBET-API follow-up.
     """
-    combos = load_qualified_combo_bets()
+    combos = load_qualified_combo_bets(bet_id_filter=bet_id_filter)
     if not combos:
         log.info("No qualifying combo bets to evaluate")
         return []
@@ -1687,14 +1750,48 @@ def _place_combo_bets(
 
 # ── INPLAY-COOLBET-PLACER ──────────────────────────────────────────────────────
 
-def load_qualified_inplay_bets(window_minutes: int = 5) -> list[dict]:
+def load_qualified_inplay_bets(window_minutes: int = 5,
+                                bet_id_filter: str | None = None) -> list[dict]:
     """Return inplay simulated_bets placed within the last window_minutes that
     haven't been recorded to real_bets yet.
+
+    bet_id_filter (MANUAL-PLACE 2026-05-29): when set, return ONLY that one
+    inplay bet, bypassing the window/edge/dedup filters. Admin override.
 
     Unlike load_qualified_bets() (pre-match: m.date > NOW()), inplay bets are
     for matches that have already kicked off (m.date <= NOW()). Deduped via
     simulated_bet_id so each inplay bet is recorded at most once.
     """
+    if bet_id_filter is not None:
+        rows = execute_query(
+            """
+            SELECT
+                sb.id             AS simulated_bet_id,
+                sb.match_id,
+                sb.market,
+                sb.selection,
+                sb.odds_at_pick   AS model_odds,
+                sb.edge_percent,
+                sb.calibrated_prob,
+                sb.model_probability,
+                sb.kelly_fraction,
+                sb.stake          AS model_stake,
+                sb.bot_id,
+                b.name            AS bot_name,
+                ht.name           AS home_team,
+                at2.name          AS away_team,
+                m.date            AS match_date
+            FROM simulated_bets sb
+            JOIN bots          b   ON b.id   = sb.bot_id
+            JOIN matches       m   ON m.id   = sb.match_id
+            JOIN teams         ht  ON ht.id  = m.home_team_id
+            JOIN teams         at2 ON at2.id = m.away_team_id
+            WHERE sb.id = %s
+              AND sb.combo_legs IS NULL
+            """,
+            (bet_id_filter,),
+        )
+        return [dict(r) for r in rows] if rows else []
     rows = execute_query(
         """
         SELECT
@@ -1741,6 +1838,7 @@ def place_all_inplay_bets(
     window_minutes: int = 5,
     *,
     guard: PlacementGuard | None = None,
+    bet_id_filter: str | None = None,
 ) -> list[dict]:
     """Record inplay simulated_bets against live Coolbet odds.
 
@@ -1758,7 +1856,8 @@ def place_all_inplay_bets(
     if not execute:
         log.info("Inplay anon-read: no JWT required — using Imperva cookies only")
 
-    pending = load_qualified_inplay_bets(window_minutes=window_minutes)
+    pending = load_qualified_inplay_bets(window_minutes=window_minutes,
+                                          bet_id_filter=bet_id_filter)
     if not pending:
         log.info("No qualifying inplay bets in last %d minutes.", window_minutes)
         return []
@@ -1868,3 +1967,92 @@ def place_all_inplay_bets(
                          "real_bet_id": real_bet_id})
 
     return results
+
+
+# ── MANUAL-PLACE entrypoint ───────────────────────────────────────────────────
+
+def place_bet_by_id(simulated_bet_id: str) -> dict:
+    """Manual-place a single simulated_bet by id, bypassing the qualifying
+    filters (date, edge, dedup). Used by the Telegram inline-keyboard
+    "Record at Coolbet" button → webhook queue → scheduler drain.
+
+    Routes the bet to the correct placer (single pre-match, combo pre-match,
+    inplay) and returns one result dict with the final outcome:
+        placed, no_event, no_market, search_blocked, already_recorded,
+        not_found, dry_run, edge_eroded, guard_skip, error.
+
+    Always runs in --record mode (paper bet only — never --execute).
+    """
+    # Idempotency: already in real_bets? Don't re-run the placer.
+    existing = execute_query(
+        "SELECT id FROM real_bets WHERE simulated_bet_id = %s LIMIT 1",
+        (simulated_bet_id,),
+    )
+    if existing:
+        return {
+            "outcome": "already_recorded",
+            "simulated_bet_id": simulated_bet_id,
+            "real_bet_id": str(existing[0]["id"]),
+        }
+
+    # Probe the bet to decide which placer to use (single vs combo, prematch vs inplay)
+    probe = execute_query(
+        """
+        SELECT sb.combo_legs IS NOT NULL AS is_combo,
+               m.date <= NOW()            AS is_inplay,
+               ht.name AS home_team, at2.name AS away_team,
+               sb.market, sb.selection
+        FROM simulated_bets sb
+        JOIN matches m   ON m.id  = sb.match_id
+        JOIN teams   ht  ON ht.id = m.home_team_id
+        JOIN teams   at2 ON at2.id = m.away_team_id
+        WHERE sb.id = %s
+        """,
+        (simulated_bet_id,),
+    )
+    if not probe:
+        return {"outcome": "not_found", "simulated_bet_id": simulated_bet_id}
+
+    meta = probe[0]
+    is_combo = bool(meta.get("is_combo"))
+    is_inplay = bool(meta.get("is_inplay"))
+
+    try:
+        if is_inplay and not is_combo:
+            # Inplay bet — use the inplay placer; window_minutes ignored when filter set
+            results = place_all_inplay_bets(
+                record=True, execute=False,
+                bet_id_filter=simulated_bet_id,
+            )
+        else:
+            # Pre-match single OR combo — place_all_bets handles both phases;
+            # the loaders only return the matching row, the other phase is empty.
+            results = place_all_bets(
+                record=True, execute=False,
+                bet_id_filter=simulated_bet_id,
+            )
+    except Exception as e:
+        log.exception("place_bet_by_id failed for %s", simulated_bet_id)
+        return {
+            "outcome": "error",
+            "simulated_bet_id": simulated_bet_id,
+            "reason": str(e)[:300],
+            "home_team": meta.get("home_team"),
+            "away_team": meta.get("away_team"),
+            "market": meta.get("market"),
+            "selection": meta.get("selection"),
+        }
+
+    # The relevant placer returned a list — find our bet's outcome.
+    for r in results:
+        if str(r.get("simulated_bet_id") or "") == str(simulated_bet_id):
+            return r
+
+    # No row came back — means the loader's filter found nothing, which
+    # shouldn't happen after the probe succeeded. Surface as not_found so the
+    # caller can decide whether to retry.
+    return {
+        "outcome": "not_found",
+        "simulated_bet_id": simulated_bet_id,
+        "reason": "bet matched probe but placer returned no result",
+    }

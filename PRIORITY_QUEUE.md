@@ -2,6 +2,14 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-05-29 — MANUAL-PLACE + ADMIN-TG-CLARITY done
+>
+> Two stacked changes to the admin Telegram experience after user flagged that ~50 bets/day was becoming unreadable noise.
+>
+> **MANUAL-PLACE** — Telegram inline-keyboard button on every admin pre-match + inplay alert. Admin taps "📝 Record at Coolbet" → Vercel webhook (`/api/telegram/webhook` extended for `callback_query`) admin-gates by `TELEGRAM_CHAT_ID`, inserts a row into `manual_placement_queue` (migration 153). Railway scheduler runs `_drain_manual_placement_queue` every 10s — claims pending rows via `UPDATE … WHERE status='pending' RETURNING`, calls new `coolbet_placer.place_bet_by_id(simulated_bet_id)` which routes singles/combos/inplay to the right placer with a new `bet_id_filter` parameter on each loader (bypasses the date/edge/dedup qualifying filters since admin already authorised). Idempotency: short-circuits to `already_recorded` when a `real_bets` row already exists for the bet, so double-taps + auto-record racing the button are both safe. Outcome edits the Telegram message in place. Smoke: MANUAL-PLACE.
+>
+> **ADMIN-TG-CLARITY** — three-message-per-cohort firehose (user broadcast → admin per-bet → batch list → coolbet --record summary) collapses to one alert + a counter. New side table `bet_telegram_alerts` (migration 154) maps `simulated_bet_id → (chat_id, message_id, original_text)`. Per-bet sites in `daily_pipeline_v2` + `inplay_bot` write the row right after `send_telegram` returns the new `message_id`. Auto-record (`_run_coolbet_record` + the inplay path) edits each per-bet alert with the outcome (`✓ Auto-recorded €X.XX` / `✗ no_event` / `⚠️ search_blocked`), removing the inline button. Also: `send_telegram_to_users` skips the admin chat id so the "🔔 New value bet" duplicate broadcast stops. Pre-match + Coolbet --record summaries collapse to single-line counters (`🎯 5 found` / `🤖 Coolbet: 3 placed · 2 no_event`), silent unless something's blocked. Smoke: ADMIN-TG-CLARITY.
+>
 > ## 2026-05-29 — COOLBET-FUZZY-CASE-INSENSITIVE done
 >
 > Follow-up to COMBO-FALLBACK-FO-CATEGORY — the fo-category fallback never even got reached for MyPa vs Pepo because Coolbet's `/search/v2` was already returning the correct candidate (`home="MyPa"`, `away="PEPO"`), but the fuzzy matcher was rejecting it. Production log: `Fuzzy match FAILED for 'MyPa vs Pepo' — best was 'MyPa PEPO' (score 40 < threshold 70)`. Root cause: `rapidfuzz.fuzz.partial_ratio` is case-sensitive — `partial_ratio("Pepo", "PEPO")` = 40, well below the 70 threshold. `_ascii()` was diacritic-normalising but not lowercasing. Fix: one-liner in `_ascii()` — `.lower()` at the end. Both query and candidate names already flow through `_ascii()` symmetrically, so the change is safe. Smoke: COOLBET-FUZZY-CASE-INSENSITIVE.

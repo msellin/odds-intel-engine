@@ -44,7 +44,8 @@ def send_telegram(
     dedup_key: Optional[str] = None,
     dedup_window_s: int = 600,
     silent: bool = False,
-) -> bool:
+    reply_markup: Optional[dict] = None,
+) -> Optional[int]:
     """Send `msg` to the configured Telegram chat.
 
     dedup_key + dedup_window_s: if set, skip the send when an identical
@@ -56,39 +57,170 @@ def send_telegram(
     silent: maps to Telegram's `disable_notification` — message lands in
         the chat but doesn't ping. Useful for routine summary messages.
 
-    Returns True on 200, False otherwise (or when env missing).
+    reply_markup (MANUAL-PLACE 2026-05-29): optional Telegram reply_markup
+        dict — typically `{"inline_keyboard": [[{"text":..., "callback_data":...}]]}`.
+        Forwarded verbatim to sendMessage.
+
+    Returns the Telegram message_id on 200, None otherwise (or when env
+    missing / dedup-skipped). Callers that need to edit the message later
+    (e.g. MANUAL-PLACE) store this id alongside the chat id.
     """
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
-        return False  # no creds — silently skip (don't spam logs)
+        return None  # no creds — silently skip (don't spam logs)
 
     if dedup_key is not None:
         last = _LAST_SENT.get(dedup_key, 0)
         if time.time() - last < dedup_window_s:
-            return False
+            return None
         _LAST_SENT[dedup_key] = time.time()
 
     prefix = os.getenv("TELEGRAM_PREFIX", "[OI]")
     body = f"{prefix} {msg}" if prefix else msg
 
+    payload = {
+        "chat_id": chat_id,
+        "text": body[:4000],   # Telegram caps at 4096; leave headroom
+        "disable_notification": silent,
+        "parse_mode": "HTML",
+    }
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
+
     try:
         resp = requests.post(
             _API_URL.format(token=token),
-            json={
-                "chat_id": chat_id,
-                "text": body[:4000],   # Telegram caps at 4096; leave headroom
-                "disable_notification": silent,
-                "parse_mode": "HTML",
-            },
+            json=payload,
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            try:
+                return int(resp.json().get("result", {}).get("message_id") or 0) or None
+            except Exception:
+                return None
+        log.warning("Telegram sendMessage %d: %s", resp.status_code, resp.text[:200])
+        return None
+    except Exception as e:
+        log.warning("Telegram send failed: %s", e)
+        return None
+
+
+def record_bet_alert(
+    simulated_bet_id: str,
+    message_id: int,
+    original_text: str,
+    chat_id: int | str | None = None,
+) -> None:
+    """Persist a (simulated_bet_id → message_id) mapping so the auto-record
+    step and the manual-place drain can later edit this alert in place with
+    the recording outcome. Stores the original text so the edit can keep the
+    bet context visible above the status line. Best-effort: failures log a
+    warning and return.
+    """
+    if not message_id:
+        return
+    if chat_id is None:
+        chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        if not chat_id:
+            return
+    try:
+        from workers.api_clients.db import execute_write
+        execute_write(
+            """
+            INSERT INTO bet_telegram_alerts (simulated_bet_id, chat_id, message_id, original_text)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (simulated_bet_id, int(chat_id), int(message_id), original_text or ""),
+        )
+    except Exception as e:
+        log.warning("record_bet_alert(%s) failed: %s", simulated_bet_id, e)
+
+
+def edit_bet_alert_outcome(simulated_bet_id: str, status_line: str) -> bool:
+    """Look up the latest Telegram message for this bet and append a status
+    line (replaces the inline button). No-op if no mapping exists. Returns
+    True on successful edit.
+    """
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            """
+            SELECT chat_id, message_id, original_text
+            FROM bet_telegram_alerts
+            WHERE simulated_bet_id = %s
+            ORDER BY sent_at DESC
+            LIMIT 1
+            """,
+            (simulated_bet_id,),
+        )
+    except Exception as e:
+        log.warning("edit_bet_alert_outcome lookup failed: %s", e)
+        return False
+    if not rows:
+        return False
+    chat_id = rows[0]["chat_id"]
+    message_id = rows[0]["message_id"]
+    original = rows[0].get("original_text") or ""
+    # Keep original above the status so admin still sees what the bet was
+    new_text = (original + f"\n\n<b>{status_line}</b>") if original else f"<b>{status_line}</b>"
+    return edit_telegram_message(
+        chat_id, int(message_id),
+        new_text,
+        remove_buttons=True,
+    )
+
+
+def place_button_markup(simulated_bet_id: str, *, label: str = "📝 Record at Coolbet") -> dict:
+    """Build the inline_keyboard markup that triggers MANUAL-PLACE for a bet.
+
+    The webhook at /api/telegram/webhook parses callback_data prefix "place:"
+    and queues the placement; only the admin TELEGRAM_CHAT_ID is honored.
+    """
+    return {
+        "inline_keyboard": [[{
+            "text": label,
+            "callback_data": f"place:{simulated_bet_id}",
+        }]]
+    }
+
+
+def edit_telegram_message(
+    chat_id: int | str,
+    message_id: int,
+    text: str,
+    *,
+    remove_buttons: bool = True,
+) -> bool:
+    """Edit an earlier sendMessage. Used by MANUAL-PLACE to swap the inline
+    button for a "✓ Recorded" / "✗ no_event" status line once placement runs.
+
+    remove_buttons=True replaces reply_markup with an empty inline_keyboard so
+    the button can't be tapped again.
+    """
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not token:
+        return False
+    payload = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": text[:4000],
+        "parse_mode": "HTML",
+    }
+    if remove_buttons:
+        payload["reply_markup"] = {"inline_keyboard": []}
+    try:
+        resp = requests.post(
+            f"https://api.telegram.org/bot{token}/editMessageText",
+            json=payload,
             timeout=10,
         )
         if resp.status_code == 200:
             return True
-        log.warning("Telegram sendMessage %d: %s", resp.status_code, resp.text[:200])
+        log.warning("Telegram editMessageText %d: %s", resp.status_code, resp.text[:200])
         return False
     except Exception as e:
-        log.warning("Telegram send failed: %s", e)
+        log.warning("Telegram editMessageText failed: %s", e)
         return False
 
 
@@ -127,12 +259,19 @@ def send_telegram_to_users(
         log.warning("send_telegram_to_users: DB query failed: %s", e)
         return 0
 
+    # ADMIN-NO-DOUBLE-NOTIFY (2026-05-29): admin already gets the per-bet
+    # admin alert (with the manual-place inline button); the user broadcast
+    # would be a near-identical duplicate. Skip the admin chat here.
+    admin_chat_id = os.getenv("TELEGRAM_CHAT_ID")
+
     sent = 0
     url = _API_URL.format(token=token)
     for row in rows:
         chat_id = row.get("telegram_chat_id")
         if not chat_id:
             continue
+        if admin_chat_id and str(chat_id) == str(admin_chat_id):
+            continue  # skip duplicate to admin chat
         try:
             resp = requests.post(
                 url,

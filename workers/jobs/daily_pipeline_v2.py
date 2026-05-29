@@ -3310,6 +3310,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                                 "bm": bm,
                                 "league": match.get("league_path") or "",
                                 "bots": [],
+                                # MANUAL-PLACE (2026-05-29): first bot's bet_id powers the
+                                # admin "Record at Coolbet" inline button; additional bots
+                                # converging on the same (match, market, selection) just
+                                # append to the bot list — placer dedups via NOT EXISTS rb.
+                                "first_bet_id": str(bet_id),
                             }
                         _tele_bets[_tele_key]["bots"].append(bot_name)
                         # Save Stage 1 snapshot: stats-only probability
@@ -3394,14 +3399,28 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         _bot_str = _tb["bots"][0] + (f" +{_n-1} more" if _n > 1 else "")
         _bots_line = "  bots: " + ", ".join(_tb["bots"]) if _n > 1 else ""
         _cb_url = coolbet_match_url(_tb["home"], _tb["away"])
-        send_telegram(
+        # MANUAL-PLACE: attach "Record at Coolbet" button when we have a bet_id.
+        # send_telegram only sends to the admin chat (TELEGRAM_CHAT_ID); user
+        # broadcasts use send_telegram_to_users below, which doesn't get a button.
+        from workers.notify.telegram import place_button_markup as _place_btn
+        from workers.notify.telegram import record_bet_alert as _rec_alert
+        _first_bet_id = _tb.get("first_bet_id")
+        _markup = _place_btn(_first_bet_id) if _first_bet_id else None
+        _alert_text = (
             f"🎯 <b>PRE-MATCH</b> {_bot_str}\n"
             f"  <b>{_tb['home']} vs {_tb['away']}</b>\n"
             f"  {_tb['mkt']} {_tb['selection']} @ {_tb['odds']:.2f}\n"
             f"  edge {_tb['edge']*100:+.1f}%  ·  align {_tb['alignment']}  ·  {_tb['bm']}"
             + (f"\n{_bots_line}" if _bots_line else "")
-            + (f"\n  <a href=\"{_cb_url}\">Open on Coolbet →</a>" if _cb_url else ""),
+            + (f"\n  <a href=\"{_cb_url}\">Open on Coolbet →</a>" if _cb_url else "")
         )
+        _msg_id = send_telegram(_alert_text, reply_markup=_markup)
+        # Persist so _run_coolbet_record can edit this message with the outcome
+        if _msg_id and _first_bet_id:
+            # original_text includes the TELEGRAM_PREFIX so the editMessageText
+            # call keeps the "[OI]" tag visible
+            _prefix = (os.getenv("TELEGRAM_PREFIX", "[OI]") + " ") if os.getenv("TELEGRAM_PREFIX", "[OI]") else ""
+            _rec_alert(_first_bet_id, _msg_id, _prefix + _alert_text)
         send_telegram_to_users(
             f"🔔 <b>New value bet</b>"
             + (f" <i>({_n} bots agree)</i>" if _n > 1 else "") + "\n"
@@ -3413,15 +3432,17 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             dedup_key=f"user-bet-{_tk[0]}-{_tk[1]}-{_tk[2]}",
         )
 
+    # ADMIN-TG-CLARITY (2026-05-29): collapse the long bet-block list into
+    # a one-line counter. Per-bet status now shows up inline on each alert
+    # via edit_bet_alert_outcome after auto-record runs — no need to repeat.
     if _new_bet_lines:
-        bet_block = "\n".join(_new_bet_lines)
         send_telegram(
-            f"🎯 <b>{total_bets} value bet(s) found</b>{cohort_label}\n{bet_block}",
+            f"🎯 {total_bets} value bet(s) found{cohort_label}",
             silent=True,
         )
     else:
         send_telegram(
-            f"📭 Pipeline run complete{cohort_label} — 0 new value bets",
+            f"📭 Pipeline complete{cohort_label} — 0 new bets",
             silent=True,
         )
 
