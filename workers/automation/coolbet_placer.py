@@ -1911,7 +1911,12 @@ def place_all_inplay_bets(
             continue
 
         odds_data = fetch_odds_for_markets(session, markets)
-        target = resolve_placement_target(mkt, sel, markets, odds_data)
+        # INPLAY-RESOLVE-ARGS-FIX (2026-05-29): resolve_placement_target's
+        # signature is (markets, odds_map, our_market, our_selection); the
+        # inplay caller had them swapped — masked while search_blocked aborted
+        # the run before reaching this line. Surfaced once Imperva cookies
+        # were refreshed and the placer started reaching the markets step.
+        target = resolve_placement_target(markets, odds_data, mkt, sel)
         if target is None:
             avail = [(m.get("name"), m.get("line")) for m in markets]
             log.info("Market %s/%s not found for inplay %s — available: %s",
@@ -1919,10 +1924,9 @@ def place_all_inplay_bets(
             results.append({**bet, "outcome": "no_market"})
             continue
 
-        bo_id, outcome_id, odds_uuid, ev_odds = (
-            target["market_id"], target["outcome_id"],
-            target["odds_id"], target["odds"],
-        )
+        # resolve_placement_target returns a 4-tuple
+        # (market_id, outcome_id, odds_id, current_decimal_odds)
+        bo_id, outcome_id, odds_uuid, ev_odds = target
 
         # Edge check at live Coolbet price
         cal_prob = float(bet.get("calibrated_prob") or 0)

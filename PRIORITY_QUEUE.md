@@ -2,6 +2,10 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-05-29 — INPLAY-RESOLVE-ARGS-FIX + CLI inplay flag done
+>
+> Two stacked silent-failure bugs in `place_all_inplay_bets` surfaced the moment Imperva cookies were refreshed and the placer started reaching the markets step (search_blocked had been aborting the run early on every recent attempt). (a) `resolve_placement_target` was being called with args reversed — function signature is `(markets, odds_map, our_market, our_selection)`, caller had `(mkt, sel, markets, odds_data)`. (b) The return value (a 4-tuple) was being treated as a dict with `target["market_id"]`. Both fixed. First clean inplay placement after the fix: `Shelbourne vs Galway United | o/u under 2.5 @ 1.47, edge +26%, €5 paper`. Same `place_all_inplay_bets` is the one `inplay_bot.py:511` calls per inplay-bet alert — so this also unblocks the live auto-record loop. Smoke: INPLAY-RESOLVE-ARGS. Also added `--include-inplay` / `--inplay-only` flags to `scripts/place_coolbet_bets.py` for manual catch-up.
+>
 > ## 2026-05-29 — MANUAL-PLACE + ADMIN-TG-CLARITY done
 >
 > Two stacked changes to the admin Telegram experience after user flagged that ~50 bets/day was becoming unreadable noise.

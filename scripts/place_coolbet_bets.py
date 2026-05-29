@@ -8,6 +8,13 @@ Usage:
     # Record mode — write to real_bets table (replaces daily manual admin work):
     venv/bin/python scripts/place_coolbet_bets.py --record
 
+    # Record pre-match AND inplay in one run (inplay auto-runs from inplay_bot,
+    # this is for manual catch-up):
+    venv/bin/python scripts/place_coolbet_bets.py --record --include-inplay
+
+    # Inplay only:
+    venv/bin/python scripts/place_coolbet_bets.py --record --inplay-only
+
     # Execute mode — record + place actual bet at Coolbet:
     venv/bin/python scripts/place_coolbet_bets.py --execute
 
@@ -36,7 +43,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from workers.automation.coolbet_placer import place_all_bets
+from workers.automation.coolbet_placer import place_all_bets, place_all_inplay_bets
 
 logging.basicConfig(
     level=logging.INFO,
@@ -53,6 +60,15 @@ def main():
                    help="Record + place bets at Coolbet API (implies --record)")
     p.add_argument("--min-edge", type=float, default=None,
                    help="Min edge fraction, e.g. 0.03 = 3%% (overrides .env)")
+    p.add_argument("--include-inplay", action="store_true",
+                   help="Also run the inplay placer (kicked-off matches). "
+                        "Default is pre-match only. Inplay normally runs auto "
+                        "from inplay_bot.py — use this for manual catch-up.")
+    p.add_argument("--inplay-only", action="store_true",
+                   help="Skip pre-match; run only the inplay placer.")
+    p.add_argument("--inplay-window", type=int, default=30,
+                   help="Minutes since pick_time to consider for inplay catch-up "
+                        "(default 30, vs the 5-min default in the auto loop).")
     args = p.parse_args()
 
     if args.execute:
@@ -65,11 +81,20 @@ def main():
         print("    --record  →  write to real_bets table")
         print("    --execute →  record + place at Coolbet\n")
 
-    results = place_all_bets(
-        record=args.record,
-        execute=args.execute,
-        min_edge=args.min_edge,
-    )
+    results: list[dict] = []
+    if not args.inplay_only:
+        results.extend(place_all_bets(
+            record=args.record,
+            execute=args.execute,
+            min_edge=args.min_edge,
+        ))
+    if args.include_inplay or args.inplay_only:
+        print(f"\n--- Inplay pass (window={args.inplay_window}min) ---")
+        results.extend(place_all_inplay_bets(
+            record=args.record,
+            execute=args.execute,
+            window_minutes=args.inplay_window,
+        ))
 
     if not results:
         print("No qualifying bets found for today.")

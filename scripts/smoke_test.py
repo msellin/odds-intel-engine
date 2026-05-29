@@ -3216,6 +3216,42 @@ def test_search_retry_transient():
     )
 
 
+@test("INPLAY-RESOLVE-ARGS — place_all_inplay_bets calls resolve_placement_target correctly + unpacks 4-tuple")
+def test_inplay_resolve_args():
+    """INPLAY-RESOLVE-ARGS-FIX (2026-05-29): two silent bugs in the inplay
+    placer were masked while search_blocked aborted runs early. Once Imperva
+    cookies were refreshed and the placer reached the markets step, both
+    surfaced at once:
+      (a) resolve_placement_target args were swapped — the function expects
+          (markets, odds_map, our_market, our_selection); the caller had
+          (mkt, sel, markets, odds_data).
+      (b) The return value (a 4-tuple) was being subscripted as a dict.
+    Source-inspection: prevents both regressions silently re-appearing if
+    someone re-orders the call.
+    """
+    import inspect
+    import pathlib
+    from workers.automation import coolbet_placer
+    from workers.automation.coolbet_explorer import resolve_placement_target
+
+    # Function signature is the contract: positional order must be markets first
+    sig = inspect.signature(resolve_placement_target)
+    params = list(sig.parameters)
+    assert params[:4] == ["markets", "odds_map", "our_market", "our_selection"], \
+        f"resolve_placement_target signature changed: {params}"
+
+    placer_src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
+    # Inplay caller: `resolve_placement_target(markets, odds_data, mkt, sel)` — NOT (mkt, sel, ...)
+    inplay_fn = placer_src[placer_src.index("def place_all_inplay_bets"):]
+    assert "resolve_placement_target(markets, odds_data, mkt, sel)" in inplay_fn, \
+        "place_all_inplay_bets must pass (markets, odds_data, mkt, sel) — args were swapped pre-fix"
+    # And the return must be unpacked as a tuple, not dict-indexed
+    assert "bo_id, outcome_id, odds_uuid, ev_odds = target" in inplay_fn, \
+        "resolve_placement_target returns a 4-tuple — must be unpacked, not indexed as dict"
+    assert "target[\"market_id\"]" not in inplay_fn, \
+        "inplay caller must NOT treat the return value as a dict"
+
+
 @test("ADMIN-TG-CLARITY — per-bet alerts edited with outcome + admin double-notify skipped + summaries collapsed")
 def test_admin_tg_clarity():
     """ADMIN-TG-CLARITY (2026-05-29): the admin Telegram chat used to fire
