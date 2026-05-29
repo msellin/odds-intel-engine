@@ -377,27 +377,6 @@ def _coolbet_odds_snapshot_wrapper():
     _run_job("coolbet_odds_snapshot", job_coolbet_odds_snapshot)
 
 
-def job_coolbet_keepalive():
-    """COOLBET-KEEPALIVE — every 20 min, ping Coolbet to prevent the
-    server-side idle-logout (~30 min). Coolbet JWT TTL = 1820s, renewal_date
-    sits at the 20-min mark; a heartbeat well inside that window keeps the
-    session indefinitely warm so manual / placer work doesn't hit a re-login
-    prompt mid-flow. Error-isolated.
-    """
-    from workers.automation.coolbet_session import CoolbetSession
-    import traceback
-    try:
-        ok = CoolbetSession().keep_alive()
-        if not ok:
-            console.print("[yellow]Coolbet keepalive call returned non-200[/yellow]")
-    except Exception as e:
-        console.print(f"[red]Coolbet keepalive failed: {e}[/red]")
-        console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
-
-
-def _coolbet_keepalive_wrapper():
-    _run_job("coolbet_keepalive", job_coolbet_keepalive)
-
 
 def _shadow_run(shadow_cohort: str):
     """Run run_morning(shadow_mode=True, shadow_cohort=...) with error isolation."""
@@ -1185,12 +1164,7 @@ def main():
     scheduler.add_job(_coolbet_odds_snapshot_wrapper, CronTrigger(hour="7-22", minute="3,33"),
                       id="coolbet_odds_interval", name="Coolbet Odds Snapshot [30min]")
 
-    # Coolbet keepalive: every 20 min. JWT TTL is 1820s with renewal_date at
-    # the 20-min mark — pinging inside that window keeps the server-side
-    # session alive so manual / placer / explorer work never hits an
-    # unexpected re-login. Round-the-clock so the session stays warm overnight.
-    scheduler.add_job(_coolbet_keepalive_wrapper, CronTrigger(minute="*/20"),
-                      id="coolbet_keepalive_interval", name="Coolbet Keepalive [20min]")
+
 
     scheduler.add_job(job_shadow_run_interval, CronTrigger(hour="7-22", minute="5,35"),
                       id="shadow_interval", name="Shadow Run [30min]")
