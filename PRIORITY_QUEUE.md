@@ -2,6 +2,10 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-05-29 — COMBO-FALLBACK-FO-CATEGORY done
+>
+> User flagged that a Coolbet `--record` run skipped 4 combos with `leg 2: no Coolbet event for MyPa vs Pepo` even though the match is live on Coolbet (URL `/sport/match/5545414`, Finland Kakkonen - Lohko A). Root cause: the combo placer's per-leg resolution only used `search_coolbet_event` and gave up on a search miss — unlike the singles loop, which falls back to the full `fo-category` tree when `/search/v2` returns nothing. Coolbet's search/v2 doesn't index lower-tier Finnish football, so every combo containing one of those legs was killed at leg 2. Fix in `_place_combo_bets`: lazy-load `_category_events` once per run, fuzzy-match remaining legs against the full tree on a search miss. Also fixed a related silent gap — combo legs were calling `search_coolbet_event(session, home, away)` without `match_date`, bypassing the COOLBET-FUZZY-DATE-GUARD for same-team-different-day candidates. Now passes `leg_kick` from the existing team_rows query. Smoke: COMBO-FALLBACK-FO-CATEGORY.
+>
 > ## 2026-05-29 — SEARCH-RETRY-TRANSIENT done
 >
 > User flagged that the admin Telegram summary said "search blocked" while Coolbet's search endpoint was actually fine (live probe returned HTTP 200). Root cause: `_do_search` raised `CoolbetSearchBlocked` on *any* non-200, including transient 429/5xx — a single hiccup tripped the singles loop's `except`, which then marked every remaining bet in the batch as `search_blocked` and bailed before the combo phase. The error text also told the user to refresh `COOLBET_MANUAL_JWT`, but `--record` runs in anon-read mode since COOLBET-ANON-READ (commit `673b9e1`) — no JWT involved. Fix: `_do_search` now retries once with 1s sleep on `{429, 500, 502, 503, 504}` before raising; the exception message drops the cbauth/JWT advice and points at Imperva/Kambi + `COOLBET_IMPERVA_COOKIES` instead. Persistent failures still abort the batch as designed. Smoke: SEARCH-RETRY-TRANSIENT.

@@ -1523,6 +1523,12 @@ def _place_combo_bets(
     log.info("Found %d qualifying combo simulated_bet(s) to evaluate", len(combos))
 
     results: list[dict] = []
+    # fo-category fallback shared across combos: same shape as the singles
+    # loop above. COMBO-FALLBACK-FO-CATEGORY (2026-05-29) — search/v2 misses
+    # lower-tier leagues (e.g. Finland Kakkonen MyPa vs Pepo) that the
+    # full football tree does cover. Without this, a single search-miss leg
+    # killed every combo it was part of.
+    _category_events: list[dict] | None = None
     for cidx, combo in enumerate(combos):
         legs = combo["combo_legs"]
         if isinstance(legs, str):
@@ -1560,9 +1566,10 @@ def _place_combo_bets(
                 skip_reason = f"leg {i}: match {leg_match_id} not in DB"
                 break
             home, away = team_rows[0]["home"], team_rows[0]["away"]
+            leg_kick = team_rows[0].get("kick")
 
             try:
-                ev = search_coolbet_event(session, home, away)
+                ev = search_coolbet_event(session, home, away, leg_kick)
             except CoolbetSearchBlocked as e:
                 log.error("Coolbet search blocked during combo leg %d — "
                           "aborting combo phase after %d/%d combos. %s",
@@ -1572,6 +1579,20 @@ def _place_combo_bets(
                                      "reason": "coolbet search HTTP-refused "
                                                "(dead JWT / Incapsula)"})
                 return results
+            if ev is None:
+                # COMBO-FALLBACK-FO-CATEGORY: mirror the singles loop —
+                # load full tree once, fuzzy-match remaining legs against it.
+                if _category_events is None:
+                    try:
+                        log.info("Combo search miss — loading full fo-category tree")
+                        _category_events = fetch_coolbet_events(session)
+                    except Exception as e:
+                        log.warning("fo-category unavailable for combo fallback (%s) — search-only", e)
+                        _category_events = []
+                ev = (
+                    fuzzy_match_event(home, away, _category_events, leg_kick)
+                    if _category_events else None
+                )
             if ev is None:
                 skip_reason = f"leg {i}: no Coolbet event for {home} vs {away}"
                 break

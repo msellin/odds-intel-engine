@@ -3216,6 +3216,50 @@ def test_search_retry_transient():
     )
 
 
+@test("COMBO-FALLBACK-FO-CATEGORY — combo leg falls back to fo-category like singles + passes match_date")
+def test_combo_fallback_fo_category():
+    """COMBO-FALLBACK-FO-CATEGORY (2026-05-29): the combo placer was killing
+    every combo that had even one leg in a league Coolbet's `/search/v2`
+    doesn't index (e.g. Finland Kakkonen — MyPa vs Pepo). Singles already
+    handle this by falling back to the full `fo-category` tree; combos now
+    mirror that flow. Also: search call now passes `match_date` so the
+    fuzzy date guard runs on combo legs too (was silently bypassed)."""
+    import pathlib
+    placer_src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
+
+    combo_fn = placer_src[placer_src.index("def _place_combo_bets"):
+                          placer_src.index("# ── Refresh utility")
+                          if "# ── Refresh utility" in placer_src
+                          else len(placer_src)]
+
+    # Combo loop must capture leg kickoff and pass it to search_coolbet_event
+    assert 'team_rows[0].get("kick")' in combo_fn or 'team_rows[0]["kick"]' in combo_fn, (
+        "Combo leg must pull `kick` from the team_rows query so it can be "
+        "passed as match_date to the search/fuzzy match"
+    )
+    assert "search_coolbet_event(session, home, away, leg_kick)" in combo_fn, (
+        "Combo leg must pass leg_kick as match_date to search_coolbet_event "
+        "— without it the COOLBET-FUZZY-DATE-GUARD is bypassed for combos"
+    )
+
+    # fo-category fallback must exist in the combo loop (was singles-only before)
+    assert "fetch_coolbet_events(session)" in combo_fn, (
+        "Combo loop must fall back to fetch_coolbet_events when search "
+        "returns None — without this, any leg in a league not indexed by "
+        "/search/v2 (e.g. lower-tier Finland) kills the whole combo"
+    )
+    assert "fuzzy_match_event(home, away, _category_events, leg_kick)" in combo_fn, (
+        "Combo fo-category fallback must use fuzzy_match_event with leg_kick "
+        "so the date guard runs against same-team-different-day candidates"
+    )
+
+    # Cache loaded lazily and shared across combos (one fo-category call per run, not per leg)
+    assert "_category_events: list[dict] | None = None" in combo_fn, (
+        "Combo loop must declare _category_events cache at function scope "
+        "so the fo-category tree is fetched at most once per run"
+    )
+
+
 @test("COOLBET-SAFETY-GUARDRAILS — PlacementGuard stake + rate + total + edge + bot-filter")
 def _():
     """COOLBET-SAFETY-GUARDRAILS (2026-05-20) — PlacementGuard holds the
