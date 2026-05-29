@@ -16,7 +16,7 @@ Required .env:
     COOLBET_STAKE           — stake per bet in EUR (default: 10.0)
     COOLBET_MIN_EDGE        — minimum edge% to place (default: 0.03)
     COOLBET_MIN_REMAINING_EDGE — minimum edge at placement price; rows below this are
-                                 not written to real_bets (default: 0.0 = skip only -EV)
+                                 not written to real_bets (default: 0.03 = same floor as COOLBET_MIN_EDGE)
 """
 
 from __future__ import annotations
@@ -55,10 +55,10 @@ _ODDS_TOLERANCE  = float(os.getenv("COOLBET_ODDS_TOLERANCE","0.05"))
 # REAL-BETS-EDGE-FORMULA-FIX (2026-05-24): supersedes the old fixed-%
 # `_ODDS_TOLERANCE` slippage gate in the main placement path. We now gate
 # on edge at the placement price (additive, same convention as the bot).
-# Default 0.0 = skip only strictly -EV bets; raise to e.g. 0.02 to also
-# skip near-zero edge. `_ODDS_TOLERANCE` kept for `get_live_odds_and_id`
-# (unused but live in legacy flow).
-_MIN_REMAINING_EDGE = float(os.getenv("COOLBET_MIN_REMAINING_EDGE", "0.0"))
+# Default matches COOLBET_MIN_EDGE (3%) so only bets that still have live
+# edge ≥ 3% at the Coolbet price get recorded. `_ODDS_TOLERANCE` kept for
+# `get_live_odds_and_id` (unused but live in legacy flow).
+_MIN_REMAINING_EDGE = float(os.getenv("COOLBET_MIN_REMAINING_EDGE", str(_MIN_EDGE)))
 _FUZZY_THRESHOLD = 70
 
 

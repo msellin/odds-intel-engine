@@ -9907,6 +9907,10 @@ def _():
     assert "COOLBET_MIN_REMAINING_EDGE" in placer, (
         "placer must read COOLBET_MIN_REMAINING_EDGE from env"
     )
+    # Default must match _MIN_EDGE (3%) so live odds drift doesn't bypass the edge floor
+    assert 'str(_MIN_EDGE)' in placer, (
+        "_MIN_REMAINING_EDGE default must be str(_MIN_EDGE), not hardcoded 0.0"
+    )
     assert "edge_eroded" in placer, (
         "placer must emit outcome='edge_eroded' when bet skipped due to edge"
     )
