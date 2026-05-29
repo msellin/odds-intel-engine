@@ -3216,6 +3216,37 @@ def test_search_retry_transient():
     )
 
 
+@test("COOLBET-FUZZY-CASE-INSENSITIVE — _ascii lowercases so 'Pepo' fuzzy-matches 'PEPO'")
+def test_coolbet_fuzzy_case_insensitive():
+    """COOLBET-FUZZY-CASE-INSENSITIVE (2026-05-29): rapidfuzz.partial_ratio
+    is case-sensitive — `partial_ratio('Pepo', 'PEPO')` is 40, below the 70
+    threshold. MyPa vs Pepo (Finland Kakkonen) was killing combos for this
+    reason. _ascii() now lowercases so the case mismatch can't reject a
+    real match."""
+    from workers.automation.coolbet_placer import _ascii, fuzzy_match_event
+
+    # Direct: _ascii normalises case
+    assert _ascii("Pepo") == "pepo", "_ascii must lowercase"
+    assert _ascii("PEPO") == "pepo", "_ascii must lowercase (uppercase input)"
+    # Accent normalisation still works
+    assert _ascii("Sölvesborg") == "solvesborg", "_ascii must still strip diacritics"
+    assert _ascii("Hørsholm-Usserød") == "horsholm-usserod", "_ascii must still strip diacritics"
+
+    # End-to-end: the real-world failing case from production logs
+    cands = [{"id": 1, "home": "MyPa", "away": "PEPO", "start": None}]
+    ev = fuzzy_match_event("MyPa", "Pepo", cands)
+    assert ev is not None, (
+        "fuzzy_match_event must match 'MyPa' vs 'Pepo' against Coolbet's "
+        "'MyPa' vs 'PEPO' — case mismatch was rejecting it at score 40"
+    )
+    assert ev["id"] == 1
+
+    # The 'Hørsholm-Usserød' kind of name still matches itself after stripping
+    cands = [{"id": 2, "home": "Hørsholm-Usserød", "away": "FA 2000", "start": None}]
+    ev = fuzzy_match_event("HORSHOLM-USSEROD", "fa 2000", cands)
+    assert ev is not None, "fuzzy_match_event must be case- AND diacritic-insensitive"
+
+
 @test("COMBO-FALLBACK-FO-CATEGORY — combo leg falls back to fo-category like singles + passes match_date")
 def test_combo_fallback_fo_category():
     """COMBO-FALLBACK-FO-CATEGORY (2026-05-29): the combo placer was killing

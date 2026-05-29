@@ -832,8 +832,15 @@ _UNICODE_MAP = str.maketrans({
 
 
 def _ascii(s: str) -> str:
-    """Map European chars to ASCII equivalents for fuzzy matching (ø→o, å→a, etc.)."""
-    return s.translate(_UNICODE_MAP)
+    """Lowercase + map European chars to ASCII for fuzzy matching (ø→o, å→a, etc.).
+
+    COOLBET-FUZZY-CASE-INSENSITIVE (2026-05-29): rapidfuzz.partial_ratio is
+    case-sensitive — `partial_ratio("Pepo", "PEPO")` returns 40, below the
+    70 threshold, even though it's clearly the same team. MyPa vs Pepo
+    (Finland Kakkonen) was killing combos this way. Lowercasing here fixes
+    every consumer of _ascii in one place.
+    """
+    return s.translate(_UNICODE_MAP).lower()
 
 
 # COOLBET-FUZZY-DATE-GUARD (2026-05-26): match team names AND kickoff date.

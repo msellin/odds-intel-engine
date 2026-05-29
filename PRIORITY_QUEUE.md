@@ -2,6 +2,10 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-05-29 — COOLBET-FUZZY-CASE-INSENSITIVE done
+>
+> Follow-up to COMBO-FALLBACK-FO-CATEGORY — the fo-category fallback never even got reached for MyPa vs Pepo because Coolbet's `/search/v2` was already returning the correct candidate (`home="MyPa"`, `away="PEPO"`), but the fuzzy matcher was rejecting it. Production log: `Fuzzy match FAILED for 'MyPa vs Pepo' — best was 'MyPa PEPO' (score 40 < threshold 70)`. Root cause: `rapidfuzz.fuzz.partial_ratio` is case-sensitive — `partial_ratio("Pepo", "PEPO")` = 40, well below the 70 threshold. `_ascii()` was diacritic-normalising but not lowercasing. Fix: one-liner in `_ascii()` — `.lower()` at the end. Both query and candidate names already flow through `_ascii()` symmetrically, so the change is safe. Smoke: COOLBET-FUZZY-CASE-INSENSITIVE.
+>
 > ## 2026-05-29 — COMBO-FALLBACK-FO-CATEGORY done
 >
 > User flagged that a Coolbet `--record` run skipped 4 combos with `leg 2: no Coolbet event for MyPa vs Pepo` even though the match is live on Coolbet (URL `/sport/match/5545414`, Finland Kakkonen - Lohko A). Root cause: the combo placer's per-leg resolution only used `search_coolbet_event` and gave up on a search miss — unlike the singles loop, which falls back to the full `fo-category` tree when `/search/v2` returns nothing. Coolbet's search/v2 doesn't index lower-tier Finnish football, so every combo containing one of those legs was killed at leg 2. Fix in `_place_combo_bets`: lazy-load `_category_events` once per run, fuzzy-match remaining legs against the full tree on a search miss. Also fixed a related silent gap — combo legs were calling `search_coolbet_event(session, home, away)` without `match_date`, bypassing the COOLBET-FUZZY-DATE-GUARD for same-team-different-day candidates. Now passes `leg_kick` from the existing team_rows query. Smoke: COMBO-FALLBACK-FO-CATEGORY.
