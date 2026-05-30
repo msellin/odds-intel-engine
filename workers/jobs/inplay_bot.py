@@ -453,6 +453,16 @@ def run_inplay_strategies():
                 _funnel["score_changed"] += 1
                 continue
 
+            # INPLAY-SCORE-ODDS-CONSISTENCY: catch the ghost-goal window
+            # where bookie odds have reacted to a goal but our score column
+            # hasn't refreshed yet (43s gap observed in production).
+            if not _score_odds_consistent(cand):
+                _funnel["score_odds_inconsistent"] = _funnel.get("score_odds_inconsistent", 0) + 1
+                continue
+            if _odds_drift_recent(execute_query, mid):
+                _funnel["odds_drift_event"] = _funnel.get("odds_drift_event", 0) + 1
+                continue
+
             xg_h, xg_a, is_real = _compute_live_xg(cand)
             # INPLAY-LAYER-ARCH: extract bet-payload construction into a pure
             # function so the same dict shape can be reused by the
@@ -801,6 +811,71 @@ def _score_recheck(execute_query, match_id: str,
 
     return (rows[0]["score_home"] == expected_home and
             rows[0]["score_away"] == expected_away)
+
+
+# INPLAY-SCORE-ODDS-CONSISTENCY (2026-05-30): bookmaker odds typically react
+# to a goal within seconds; our score column lags by 30-60s in API-Football's
+# feed. That creates a window where a snapshot has the post-goal odds with
+# pre-goal score — bot reads "away leading 0-1 + away still @ 4.00" and sees
+# fictional 56% edge. Caught in production via Yanbian Longding vs Changchun
+# Yatai 2026-05-30 07:25 UTC (home equalised 23', odds moved by 07:25:10,
+# score field caught up at 07:25:53). Both helpers below close that window.
+
+# Drift threshold: 1X2 legs moving >30% in 60s = a goal/red card just landed.
+# 30% is well above noise (typical inplay tick = a few %) and well below
+# typical goal-driven moves (40-100%+ on the affected legs).
+_ODDS_DRIFT_THRESHOLD = 0.30
+_ODDS_DRIFT_WINDOW_SEC = 60
+
+
+def _score_odds_consistent(cand: dict) -> bool:
+    """Cheap in-memory check: do the score and live 1X2 odds agree about
+    which team is winning? Returns False on disagreement (data mid-update;
+    skip the candidate this tick and retry next).
+
+    Allows through when:
+      • score is tied (no winner-implied ranking to check)
+      • either side of the check is missing
+    Rejects only the unambiguous case: leading team has *longer* 1X2 odds
+    than the trailing team — physically impossible if the data is fresh.
+    """
+    h = cand.get("score_home")
+    a = cand.get("score_away")
+    home_odds = cand.get("live_1x2_home")
+    away_odds = cand.get("live_1x2_away")
+    if h is None or a is None or not home_odds or not away_odds:
+        return True
+    if h == a:
+        return True
+    score_leader_is_home = h > a
+    odds_leader_is_home = float(home_odds) < float(away_odds)
+    return score_leader_is_home == odds_leader_is_home
+
+
+def _odds_drift_recent(execute_query, match_id: str) -> bool:
+    """Returns True if any 1X2 leg moved by ≥_ODDS_DRIFT_THRESHOLD within
+    the last _ODDS_DRIFT_WINDOW_SEC. A 1X2 leg swinging 30%+ in a minute is
+    the unmistakable signature of a goal/red card/penalty — even if our
+    score column hasn't caught up yet, the bookie already has. Treat as
+    stale: skip the candidate this tick.
+    """
+    rows = execute_query("""
+        SELECT live_1x2_home, live_1x2_draw, live_1x2_away
+        FROM live_match_snapshots
+        WHERE match_id = %s
+          AND captured_at >= NOW() - (%s * INTERVAL '1 second')
+        ORDER BY captured_at
+    """, (match_id, _ODDS_DRIFT_WINDOW_SEC))
+    if len(rows) < 2:
+        return False
+    for leg in ("live_1x2_home", "live_1x2_draw", "live_1x2_away"):
+        values = [float(r[leg]) for r in rows if r.get(leg)]
+        if len(values) < 2:
+            continue
+        lo, hi = min(values), max(values)
+        if lo > 0 and (hi - lo) / lo >= _ODDS_DRIFT_THRESHOLD:
+            return True
+    return False
 
 
 # ── Math Helpers ─────────────────────────────────────────────────────────────

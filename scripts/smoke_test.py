@@ -3216,6 +3216,96 @@ def test_search_retry_transient():
     )
 
 
+@test("INPLAY-SCORE-ODDS-CONSISTENCY — guard rejects stale-score/fresh-odds snapshots + 1X2 drift events")
+def test_inplay_score_odds_consistency():
+    """INPLAY-SCORE-ODDS-CONSISTENCY (2026-05-30): bookmaker odds react to a
+    goal within seconds; API-Football's score field lags by 30-60s. That
+    window let the bot fire a fictional +56% edge bet on Yanbian Longding vs
+    Changchun Yatai (home equalised at 23', snapshot at 07:25:10 had post-goal
+    odds but score still 0-1, bot fired at 07:25:19, score corrected at
+    07:25:53). Two new guards:
+      • _score_odds_consistent: leading-team-implied-by-score must have
+        shorter 1X2 odds than trailing team. Disagreement → skip.
+      • _odds_drift_recent: any 1X2 leg moving ≥30% in 60s = goal-event
+        signature → skip.
+    """
+    from workers.jobs.inplay_bot import (
+        _score_odds_consistent,
+        _odds_drift_recent,
+        _ODDS_DRIFT_THRESHOLD,
+        _ODDS_DRIFT_WINDOW_SEC,
+    )
+
+    # The exact bug from production: score 0-1, but home odds shorter than away
+    bad = {"score_home": 0, "score_away": 1,
+           "live_1x2_home": 2.10, "live_1x2_draw": 3.00, "live_1x2_away": 4.00}
+    assert _score_odds_consistent(bad) is False, \
+        "must reject when leading team (away, 0-1) has longer 1X2 odds (4.00) than trailing (2.10)"
+
+    # Pre-goal snapshot in the same match — consistent, allow through
+    ok = {"score_home": 0, "score_away": 1,
+          "live_1x2_home": 3.75, "live_1x2_draw": 3.40, "live_1x2_away": 1.95}
+    assert _score_odds_consistent(ok) is True, "leading away (1.95) shorter than trailing home (3.75) — fresh"
+
+    # Tied score: no winner-implied check; always allow
+    tied = {"score_home": 1, "score_away": 1,
+            "live_1x2_home": 2.00, "live_1x2_draw": 3.00, "live_1x2_away": 4.33}
+    assert _score_odds_consistent(tied) is True, "tied scores have no implied leader"
+
+    # Missing odds — allow (no signal to disagree)
+    missing = {"score_home": 0, "score_away": 1,
+               "live_1x2_home": None, "live_1x2_away": None}
+    assert _score_odds_consistent(missing) is True
+
+    # Mirror case: home leading 1-0 but home odds longer than away → reject
+    mirror = {"score_home": 1, "score_away": 0,
+              "live_1x2_home": 4.00, "live_1x2_draw": 3.00, "live_1x2_away": 2.10}
+    assert _score_odds_consistent(mirror) is False, \
+        "must reject when leading home (1-0) has longer odds (4.00) than away (2.10)"
+
+    # Drift threshold sanity
+    assert _ODDS_DRIFT_THRESHOLD == 0.30
+    assert _ODDS_DRIFT_WINDOW_SEC == 60
+
+    # _odds_drift_recent uses a real query — fake the execute_query to exercise
+    # the calculation logic without hitting Postgres.
+    class _FakeQuery:
+        def __init__(self, rows): self.rows = rows
+        def __call__(self, sql, params): return self.rows
+
+    # Goal-event signature: home 3.75 → 2.10 (44% move, exceeds 30%)
+    goal = _FakeQuery([
+        {"live_1x2_home": 3.75, "live_1x2_draw": 3.40, "live_1x2_away": 1.95},
+        {"live_1x2_home": 2.10, "live_1x2_draw": 3.00, "live_1x2_away": 4.00},
+    ])
+    assert _odds_drift_recent(goal, "mid") is True, \
+        "44% move on home leg must trigger drift guard"
+
+    # Quiet game: legs drift a few percent — allow
+    quiet = _FakeQuery([
+        {"live_1x2_home": 2.10, "live_1x2_draw": 3.30, "live_1x2_away": 3.80},
+        {"live_1x2_home": 2.08, "live_1x2_draw": 3.30, "live_1x2_away": 3.90},
+    ])
+    assert _odds_drift_recent(quiet, "mid") is False, \
+        "sub-threshold drift must not trigger guard"
+
+    # Single-row window — can't compute drift; allow through
+    one = _FakeQuery([
+        {"live_1x2_home": 2.00, "live_1x2_draw": 3.00, "live_1x2_away": 4.00},
+    ])
+    assert _odds_drift_recent(one, "mid") is False
+
+    # Funnel wiring: candidate-eval loop checks both guards
+    import pathlib
+    bot_src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    assert "_score_odds_consistent(cand)" in bot_src, \
+        "inplay_bot must call _score_odds_consistent inside the candidate eval loop"
+    assert "_odds_drift_recent(execute_query, mid)" in bot_src, \
+        "inplay_bot must call _odds_drift_recent inside the candidate eval loop"
+    assert 'score_odds_inconsistent' in bot_src
+    assert 'odds_drift_event' in bot_src
+
+
 @test("INPLAY-RESOLVE-ARGS — place_all_inplay_bets calls resolve_placement_target correctly + unpacks 4-tuple")
 def test_inplay_resolve_args():
     """INPLAY-RESOLVE-ARGS-FIX (2026-05-29): two silent bugs in the inplay
