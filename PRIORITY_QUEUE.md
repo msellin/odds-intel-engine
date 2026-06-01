@@ -2,6 +2,21 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-06-01 — RETIRE-DC-SPECIALIST + META-VALIDATOR-FIXES + OU-MODEL-PIN-RUNBOOK done
+>
+> Three follow-ups after analysing Sunday 2026-05-31's auto-retrain (`v20260531`) against production `v20260524_market`. Held-out window 2026-05-17..2026-05-31, n=5,506 matches. New bundle wins on 9/11 markets (1X2 log_loss −10%, AH −2.5–2.8%, BTTS −1.3%) and regresses **over_under +2.7%** (predicts under at 56.3% vs actual 44.4% — TIER-C-EXPAND drag, exactly what `OU-TIER-C-DRAG-AUDIT` predicted). Production prematch ROI since v2 deploy: −4.5% on 871 settled bets but **CLV +6.83%** — model is on the right side of Pinnacle, just miscalibrated. Inplay decoupled (no prematch heads on the read path): +41% ROI on 212 bets.
+>
+> **RETIRE-DC-SPECIALIST** — `bot_dc_specialist` paused via migration 155. −7.53% ROI on 58 settled bets since 2026-05-24, +3.68% CLV. DC is a derived market computed from 1x2 outputs; `v20260524_market` has no DC training target or Platt calibration, so the bot's "edge" is a derived-prob artefact (same root cause that retired `bot_dc_value` in migration 137). The three profiles (X2 Value, 1X Israel, DC Global) all paused — strategy_profile was NULL on all 62 production bets so we can't surgically isolate the loser, and the league-whitelist profiles inherit the same probabilistic foundation as the broad one. Re-activation trigger documented in retired_reason: June 8 retrain ships DC-specific calibration OR shadow_bets shows X2 Value / 1X Israel holding ROI > 5% on n≥30. Smoke: RETIRE-DC-SPECIALIST.
+>
+> **META-VALIDATOR-FIXES** — `scripts/validate_meta_b_ml3.py` had two latent bugs that surfaced on first non-trivial pre-flight (`--since 2026-05-25`, n=657 settled bets): (a) `_score_one` passed NaN-containing rows directly to LogisticRegression bundles (5 of 7 bundles rejected the matrix); training imputes MFV nulls like `form_momentum_*` to 0, inference now mirrors via `aligned.fillna(0.0)`. (b) `df["clv_used"].mean()` crashed with `Decimal + float` because psycopg2 returns numeric columns as Decimal; coerced via `pd.to_numeric(..., errors="coerce").astype(float)`. **Pre-flight verdict at n=657: all 7 bundles FAIL the 5pp gate** — top quintile CLV-beat rate is INVERSELY related to bottom quintile (Δ = −7 to −20 pp across bundles). Signal is anti-predictive on real data. Keep `META_B_ML3_ENABLED=false`; the formal verdict still runs on 2026-06-10 but the data so far says retrain v3 with more data rather than activate any current bundle. Smoke: META-VALIDATOR-FIXES.
+>
+> **OU-MODEL-PIN-RUNBOOK** — when v20260531 (or whichever Sunday retrain we ultimately promote) is flipped on Railway, OU must be pinned to v20260524_market via the existing per-market routing in `workers/model/xgboost_ensemble.py` (Phase C-light, 2026-05-24). Promotion env vars on Railway:
+>   • `MODEL_VERSION=v20260531`  (or later)
+>   • `MODEL_VERSION_OU=v20260524_market`  (pin OU to today's production)
+>   • `MODEL_VERSION_GOALS=v20260524_market` (BTTS derives from joint goals matrix — pin together so BTTS doesn't quietly inherit v20260531's regressed OU head)
+>   • leave `MODEL_VERSION_1X2` unset (inherits global v20260531 — the 1X2 head is the −10% log-loss win)
+> Unpin OU only after `OU-TIER-C-DRAG-AUDIT` ships a fix or a later retrain (v_20260607+) reverses the regression. Smoke: OU-MODEL-PIN-RUNBOOK.
+>
 > ## 2026-05-30 — INPLAY-SCORE-ODDS-CONSISTENCY done
 >
 > User flagged a bogus +56.3% edge inplay bet on Yanbian Longding vs Changchun Yatai (1x2 away @ 4.00, min 25, claimed score 0-1). Real state was 1-1 — home equalised at 23'. Production data: at `07:25:10` our snapshot had post-goal odds (home 2.10 / away 4.00) but `score_home`/`score_away` still showed 0-1; bot fired at `07:25:19`; score column corrected at `07:25:53`. **Root cause: 43-second lag between API-Football's odds feed and score feed.** Bookmaker reacted to the goal within seconds; our score column was the laggard. Bot saw "away leading 0-1 at min 25 + away still @ 4.00" → fictional edge. Fix: two new safety checks in `inplay_bot._evaluate_candidates` candidate-eval loop:

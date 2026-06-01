@@ -683,15 +683,14 @@ BOTS_CONFIG = {
         ],
     },
     "bot_dc_specialist": {
-        # DC-SPECIALIST 2026-05-29: only 3 confirmed signals in the 2023-2026 backtest
-        # with 30+ bets and >10% ROI. bot_dc_value + bot_dc_strong_fav are kept active
-        # as broad paper-trading bots; this specialist is the real-money candidate.
-        # Profile "X2 Value": bet away-or-draw in Brazil Serie B + China Super League.
-        # Profile "1X Israel": bet home-or-draw in Israel Liga Leumit only.
-        # Profile "DC Global": absorbs bot_dc_value — all leagues, all DC selections.
-        #   Fires 21/wk in backtest at -3.9% ROI; kept for data accumulation but not
-        #   recommended for real-money betting until per-league signals confirm.
-        "description": "DC-SPECIALIST 2026-05-29: all DC bots in one. Profile 'X2 Value': Brazil Serie B (+20.1%), China Super League (+13.7%). Profile '1X Israel': Israel Liga Leumit (+13.3%). Profile 'DC Global': all leagues (data collection, was bot_dc_value). Per-profile ROI via strategy_profile.",
+        # [RETIRED 2026-06-01 — RETIRE-DC-SPECIALIST, migration 155]
+        # Paper ROI -7.53% on 58 settled bets since 2026-05-24 (+3.68% CLV — strong
+        # line agreement, weak outcome conversion). DC is a derived market; the
+        # v20260524_market model has no DC training target or Platt calibration.
+        # Same root cause as bot_dc_value retirement (migration 137). All three
+        # profiles paused. Revive if June 8 retrain adds DC calibration OR
+        # shadow_bets shows X2 Value / 1X Israel holding ROI > 5% on n≥30.
+        "description": "[RETIRED 2026-06-01] DC specialist. -7.53% ROI on 58 bets (+3.68% CLV) — DC is a derived market with no model-native edge on v20260524_market. Re-evaluate after June 8 retrain.",
         "tier_label": "pro",
         "markets": ["dc"],
         "tier_filter": None,

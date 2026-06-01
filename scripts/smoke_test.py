@@ -11722,5 +11722,84 @@ def test_inplay_coolbet_placer():
     assert "bets_placed > 0" in bot_src, "call must be gated on bets_placed > 0"
 
 
+@test("RETIRE-DC-SPECIALIST — migration 155 retires bot_dc_specialist; daily_pipeline_v2 description marked retired")
+def _():
+    """bot_dc_specialist hit -7.53% ROI on n=58 (+3.68% CLV) since 2026-05-24.
+    DC is a derived market — same root cause that retired bot_dc_value (migration
+    137). Migration 155 must mark is_active=false with a retired_reason that
+    mentions the derived-market problem and a re-activation trigger. The
+    daily_pipeline_v2 config description must carry the [RETIRED] prefix so
+    operators reading BOTS_CONFIG see the state without consulting the DB."""
+    import pathlib
+
+    mig = pathlib.Path("supabase/migrations/155_retire_dc_specialist.sql").read_text()
+    assert "bot_dc_specialist" in mig, "Migration 155 must target bot_dc_specialist"
+    assert "is_active     = false" in mig or "is_active = false" in mig, \
+        "Migration 155 must set is_active=false"
+    assert "retired_at" in mig, "Migration 155 must set retired_at"
+    assert "retired_reason" in mig, "Migration 155 must populate retired_reason"
+    assert "derived" in mig.lower(), \
+        "retired_reason must explain the derived-market root cause"
+    assert "june 8" in mig.lower() or "shadow_bets" in mig.lower(), \
+        "retired_reason must name a re-activation trigger"
+
+    pipeline_src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    dc_block_start = pipeline_src.index('"bot_dc_specialist": {')
+    dc_block_end = pipeline_src.index('"description":', dc_block_start)
+    dc_description_end = pipeline_src.index('\n', dc_block_end + 100)
+    dc_block = pipeline_src[dc_block_start:dc_description_end]
+    assert "[RETIRED 2026-06-01]" in dc_block, \
+        "bot_dc_specialist description must be prefixed [RETIRED 2026-06-01]"
+
+
+@test("META-VALIDATOR-FIXES — validate_meta_b_ml3 handles NaN features + Decimal CLV")
+def _():
+    """Pre-flight run of B-ML3-VALIDATE-ACTIVATION on 2026-06-01 surfaced two
+    bugs in scripts/validate_meta_b_ml3.py:
+      (a) LogisticRegression bundles rejected the feature matrix because MFV
+          columns like form_momentum_* / pinnacle_line_move legitimately arrive
+          as NaN. Training imputes to 0 — inference must mirror.
+      (b) psycopg2 returns numeric columns as Decimal. df['clv_used'].mean()
+          raised "unsupported operand type(s) for +: 'Decimal' and 'float'"
+          inside pandas/numpy aggregation.
+    Both must stay fixed so the validator can run weekly without a manual
+    intervention; the activation verdict on 2026-06-10 depends on it."""
+    import pathlib
+    src = pathlib.Path("scripts/validate_meta_b_ml3.py").read_text()
+
+    # NaN imputation in _score_one
+    score_start = src.index("def _score_one(")
+    score_end = src.index("\ndef ", score_start + 1)
+    score_src = src[score_start:score_end]
+    assert "fillna(0.0)" in score_src, \
+        "_score_one must fillna(0.0) on aligned features (logistic bundles reject NaN)"
+
+    # Decimal → float coercion on clv_used
+    main_start = src.index("def main(")
+    main_src = src[main_start:]
+    assert "pd.to_numeric" in main_src and "clv_used" in main_src, \
+        "main() must coerce clv_used to float via pd.to_numeric"
+    assert 'errors="coerce"' in main_src, \
+        "pd.to_numeric must use errors='coerce' to handle null/Decimal mix"
+
+
+@test("OU-MODEL-PIN-RUNBOOK — PRIORITY_QUEUE captures MODEL_VERSION_OU pin for v20260531 promotion")
+def _():
+    """Sunday's retrain v20260531 improves 1X2/AH/BTTS by 2.5-10% log_loss but
+    REGRESSES over_under by 2.7% (predicted_rate 43.7% vs actual 55.6%). When
+    we eventually promote v20260531 we must pin OU to the well-calibrated
+    v20260524_market via MODEL_VERSION_OU — per-market routing already exists
+    in xgboost_ensemble.py (Phase C-light, 2026-05-24). The PRIORITY_QUEUE must
+    document this so promotion day doesn't quietly degrade OU."""
+    import pathlib
+    pq = pathlib.Path("PRIORITY_QUEUE.md").read_text()
+    assert "MODEL_VERSION_OU" in pq, \
+        "PRIORITY_QUEUE must mention MODEL_VERSION_OU env override for OU pinning"
+    assert "v20260524_market" in pq, \
+        "PRIORITY_QUEUE must name v20260524_market as the OU pin target"
+    assert "v20260531" in pq, \
+        "PRIORITY_QUEUE must reference v20260531 as the candidate being promoted"
+
+
 if __name__ == "__main__":
     main()

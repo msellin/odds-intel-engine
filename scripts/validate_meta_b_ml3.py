@@ -78,6 +78,10 @@ def _score_one(bundle: dict, X: pd.DataFrame) -> np.ndarray:
     for c in bundle["feature_cols"]:
         if c in X.columns:
             aligned[c] = X[c].values
+    # Logistic bundles (StandardScaler + LogisticRegression) reject NaN. MFV-derived
+    # features like form_momentum / pinnacle_line_move can legitimately be NaN when
+    # upstream data is thin; training imputes to 0, so we mirror that here.
+    aligned = aligned.fillna(0.0)
     X_eval = aligned.values if bundle["scaler"] is None else bundle["scaler"].transform(aligned)
     return bundle["model"].predict_proba(X_eval)[:, 1]
 
@@ -211,10 +215,16 @@ def main():
 
     # Outcomes
     df["won"] = (df["result"] == "won").astype(int)
-    # CLV-beat: prefer pinnacle_clv if present, else simulated_bets.clv
-    df["clv_used"] = df["clv_pinnacle"].fillna(df["clv"])
+    # CLV-beat: prefer pinnacle_clv if present, else simulated_bets.clv. psycopg2
+    # returns Decimal for numeric columns; pandas .mean() on a Decimal column
+    # raises "unsupported operand type(s) for +: 'Decimal' and 'float'", so we
+    # coerce to float here once.
+    df["clv_used"] = pd.to_numeric(
+        df["clv_pinnacle"].fillna(df["clv"]), errors="coerce"
+    ).astype(float)
     df["clv_beat"] = (df["clv_used"].fillna(0) > 0).astype(int)
-    df["roi_per_bet"] = df["pnl"].astype(float) / df["stake"].astype(float)
+    df["roi_per_bet"] = pd.to_numeric(df["pnl"], errors="coerce").astype(float) / \
+                       pd.to_numeric(df["stake"], errors="coerce").astype(float)
 
     # Load every bundle
     bundles = []
