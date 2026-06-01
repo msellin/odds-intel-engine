@@ -2,6 +2,19 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-06-01 — Cherry-pick Phase 2 open questions (decide 2026-06-05/06)
+>
+> User confirmed direction: real_bets should follow most-profitable bots / profiles, decision target = post-Phase-3.5 (2026-06-08). Two unresolved design choices need a call BEFORE the 06-08 env flip, otherwise the gate behaves in ways we didn't intend.
+>
+> **Q1 — bot-level vs profile-level gate.** Phase 1 filter is `bots.maturity_label = ANY(...)`, per-bot. But several active bots have multiple `strategy_profile` values (bot_ou_specialist has Under 2.5 Specialist + Over 2.5 Sweden + Over 3.5 Global; bot_dnb_specialist had DNB Home + DNB Away). Per-bot promotion includes profiles that haven't earned it (e.g. Over 3.5 Global is unproven). Per-profile promotion would need a new column or a `(bot_id, strategy_profile)` allowlist. Recommend: per-bot in Phase 1, add per-profile in Phase 2 only if a multi-profile bot has clear winning + losing profile splits in shadow_bets. Filed as ⬜ open.
+>
+> **Q2 — starting allowlist is currently too narrow.** Today only 3 *actively-firing* bots are tagged `calibrated`: bot_v10_all (strong), bot_1x2_specialist (n=4 last 30d, marginal), inplay_e (n=215 / +8% ROI). Flipping `COOLBET_RECORD_ALLOWED_MATURITY=calibrated` on 06-08 would shrink real_bets to ~5-10 bets/day. Two paths to widen sensibly:
+>   • Promote 2-3 more bots to `calibrated` via `/admin/promotion-candidates` (Phase 2 ships 06-05/06). Likely candidates per today's data: bot_aggressive_v2 (+57% last 7d but n=8 — needs more samples), bot_high_roi_global_v2 (+35% last 30d on n=12), bot_opt_home_lower (+52% n=20 last 30d).
+>   • Start with `active,calibrated` as the env value; tighten to `calibrated` only after a week of clean data.
+> Recommend path 1 (manual promotion) so the maturity_label semantics stay tight — but the decision waits until promotion criteria are written in Phase 2.
+>
+> Both questions land in `dev/active/cherry-pick-placer-plan.md` for the Phase 2 work.
+>
 > ## 2026-06-01 — EMAIL-DELIVERY-CHECK ran live; DMARC gap surfaced
 >
 > Verified Resend deliverability for `oddsintel.app` via the rewritten `scripts/check_email_deliverability.py`. Script now uses Resend's `/domains` API as authoritative record list (avoids guessing selector / subdomain) and cross-checks each expected record against live DNS. Live run:
