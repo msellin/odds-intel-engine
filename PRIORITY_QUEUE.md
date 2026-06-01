@@ -2,6 +2,14 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-06-01 — PERF-PAGE-ATTRACTIVENESS Change 1 of 6 done (PERF-HERO-COHORT-SPLIT)
+>
+> Performance page improvements being shipped one change at a time, each gated on a live data check. Plan + criteria + per-change ship-gates in `dev/active/performance-page-attractiveness-plan.md`. Six proposed changes, each must pass its data gate before code lands.
+>
+> **Change 1/6 — PERF-HERO-COHORT-SPLIT — done.** Hero split into separate Pre-match (−1.2% / n=1,974) and In-play (+14.5% / n=861) ROI tiles for last-30d window. Gap is 15.7pp on 30d, 21pp on 14d, 43.7pp on 7d — robust across windows. Migration 157 adds cohort columns to `dashboard_cache`; settlement.py computes them (excludes retired + experimental + uses 30d window — same scope as the active headline); hero.tsx renders two tiles when both fields are present and falls back to combined "System ROI" for legacy cache rows. In-play CLV intentionally NOT surfaced — semantics differ (live vs pre-match closing line) and produce misleading aggregates; revisit after defining inplay-CLV properly. Smoke: PERF-HERO-COHORT-SPLIT.
+>
+> Remaining: Change 2 (30d rolling headline), Change 3 (equity sparkline), Change 4 (maturity badges), Change 5 (recent wins reel), Change 6 (calibration callout). Each gets its own data check before implementation.
+>
 > ## 2026-06-01 — CHERRY-PICK-PLACER planned
 >
 > Strategic separation between paper firing (broad, all bots → simulated_bets → honest performance page + retraining volume) and real-money placement (curated subset → real_bets only from bots that pass an explicit maturity bar). Gate column = existing `bots.maturity_label`. New env var `COOLBET_RECORD_ALLOWED_MATURITY=calibrated` filters the three placer loaders (singles + combos + inplay). Defaults to no-filter so the code can ship safely before Phase 3.5 closes; gate flips to `calibrated` on 2026-06-08 after promotion criteria are written and 2-4 bots are manually promoted. Plan + context + tasks in `dev/active/cherry-pick-placer-{plan,context,tasks}.md`. Three phases: P1 code lands (06-02→06-04), P2 promotion surface + rules (06-05→06-06), P3 gate flip + 7-day monitor (06-08+). Status: ⬜ ready to start P1.

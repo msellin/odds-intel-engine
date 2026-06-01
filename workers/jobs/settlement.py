@@ -1443,6 +1443,44 @@ def write_dashboard_cache():
         active_avg_clv = float(active_total_bets_row["avg_clv"] or 0) if active_total_bets_row["avg_clv"] else None
         active_roi_pct = (active_pnl / active_staked * 100) if active_staked > 0 and active_settled > 0 else None
 
+        # PERF-HERO-COHORT-SPLIT (2026-06-01) — split last-30d ROI by cohort so
+        # /performance can render separate Pre-match and In-play hero tiles.
+        # Excludes experimental and retired bots (same scope as active headline).
+        cohort_rows = execute_query("""
+            SELECT
+                CASE WHEN b.name LIKE 'inplay_%%' THEN 'inplay' ELSE 'prematch' END AS cohort,
+                COUNT(*) FILTER (WHERE sb.result IN ('won','lost')) AS settled,
+                COUNT(*) FILTER (WHERE sb.result = 'won') AS won,
+                SUM(sb.stake) FILTER (WHERE sb.result IN ('won','lost')) AS staked,
+                SUM(sb.pnl) FILTER (WHERE sb.result IN ('won','lost')) AS pnl,
+                AVG(sb.clv) FILTER (WHERE sb.result IN ('won','lost') AND sb.clv IS NOT NULL) AS avg_clv
+            FROM simulated_bets sb
+            JOIN bots b ON b.id = sb.bot_id
+            WHERE b.is_active = true
+              AND b.retired_at IS NULL
+              AND b.maturity_label != 'experimental'
+              AND sb.pick_time >= now() - interval '30 days'
+            GROUP BY 1
+        """, [])
+        cohort_map = {r["cohort"]: r for r in cohort_rows}
+
+        def _cohort_fields(label: str, include_clv: bool):
+            r = cohort_map.get(label) or {}
+            settled = int(r.get("settled") or 0)
+            won = int(r.get("won") or 0)
+            staked = float(r.get("staked") or 0)
+            pnl = float(r.get("pnl") or 0)
+            roi = (pnl / staked * 100) if staked > 0 and settled > 0 else None
+            clv = float(r["avg_clv"]) if include_clv and r.get("avg_clv") is not None else None
+            return settled, won, staked, pnl, roi, clv
+
+        prematch_settled, prematch_won, prematch_staked, prematch_pnl, prematch_roi, prematch_clv = \
+            _cohort_fields("prematch", include_clv=True)
+        # Inplay CLV intentionally excluded — semantics differ (live closing vs
+        # pre-match closing) and produce misleading aggregates.
+        inplay_settled,  inplay_won,  inplay_staked,  inplay_pnl,  inplay_roi,  _ = \
+            _cohort_fields("inplay", include_clv=False)
+
         bot_breakdown = []
         for r in bot_rows:
             s = int(r.get("settled") or 0)
@@ -1525,8 +1563,12 @@ def write_dashboard_cache():
                 pseudo_clv_count, live_snapshot_matches, alignment_settled_count,
                 active_total_bets, active_settled_bets, active_won_bets, active_lost_bets,
                 active_total_staked, active_total_pnl, active_roi_pct, active_avg_clv,
-                retired_bot_breakdown
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                retired_bot_breakdown,
+                prematch_settled_bets, prematch_won_bets, prematch_total_staked,
+                prematch_total_pnl, prematch_roi_pct, prematch_avg_clv,
+                inplay_settled_bets, inplay_won_bets, inplay_total_staked,
+                inplay_total_pnl, inplay_roi_pct
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, [
             int(total_bets), int(settled_bets), int(pending_bets), int(won), int(lost),
             hit_rate, total_staked, total_pnl, roi_pct, avg_clv,
@@ -1536,6 +1578,10 @@ def write_dashboard_cache():
             active_total_bets, active_settled, active_won, active_lost,
             active_staked, active_pnl, active_roi_pct, active_avg_clv,
             json.dumps(retired_bot_breakdown),
+            prematch_settled, prematch_won, prematch_staked,
+            prematch_pnl, prematch_roi, prematch_clv,
+            inplay_settled, inplay_won, inplay_staked,
+            inplay_pnl, inplay_roi,
         ])
         console.print(
             f"  Dashboard cache written: {int(settled_bets)} settled bets (all-time) · "

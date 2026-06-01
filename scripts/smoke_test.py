@@ -11857,5 +11857,63 @@ def _():
         "bot_lower_1x2 description must be prefixed [RETIRED 2026-06-01]"
 
 
+@test("PERF-HERO-COHORT-SPLIT — dashboard_cache stores pre-match + in-play ROI; hero renders split tiles")
+def _():
+    """Last-30d data check (run 2026-06-01): in-play +14.5% ROI on n=861,
+    pre-match -1.2% on n=1,974. The 15.7pp gap is stable across 7/14/30d
+    windows. Splitting the hero tile surfaces in-play instead of averaging it
+    away. Migration 157 adds the rollup columns; settlement.py computes them
+    (excludes experimental + retired bots, 30d window); hero.tsx renders two
+    tiles when both fields are present. Falls back to combined "System ROI"
+    when cohort fields are null (legacy cache rows)."""
+    import pathlib
+
+    mig = pathlib.Path("supabase/migrations/157_dashboard_cache_cohort_split.sql").read_text()
+    for col in ("prematch_settled_bets", "prematch_roi_pct", "prematch_avg_clv",
+                "inplay_settled_bets",  "inplay_roi_pct"):
+        assert col in mig, f"Migration 157 must add column {col}"
+    # In-play CLV intentionally NOT in the schema
+    assert "inplay_avg_clv" not in mig, \
+        "Migration 157 must NOT add inplay_avg_clv (semantics differ — pre/live closing line)"
+
+    settle = pathlib.Path("workers/jobs/settlement.py").read_text()
+    assert "PERF-HERO-COHORT-SPLIT" in settle, \
+        "settlement.py must reference the cohort split task tag"
+    assert "LIKE 'inplay_%%'" in settle, \
+        "settlement.py must classify cohort via bot name LIKE 'inplay_%'"
+    # The cohort query must respect the existing active+non-experimental scope
+    cohort_idx = settle.index("PERF-HERO-COHORT-SPLIT")
+    cohort_block = settle[cohort_idx:cohort_idx + 2500]
+    assert "b.is_active = true" in cohort_block, \
+        "cohort query must filter b.is_active = true"
+    assert "b.retired_at IS NULL" in cohort_block, \
+        "cohort query must exclude retired bots"
+    assert "maturity_label != 'experimental'" in cohort_block, \
+        "cohort query must exclude experimental bots"
+    assert "interval '30 days'" in cohort_block, \
+        "cohort query must be a 30-day rolling window"
+    # The INSERT must include the new columns
+    insert_idx = settle.index("INTO dashboard_cache")
+    insert_block = settle[insert_idx:insert_idx + 2500]
+    for col in ("prematch_roi_pct", "inplay_roi_pct"):
+        assert col in insert_block, f"INSERT must include {col}"
+
+    hero = pathlib.Path("../odds-intel-web/src/components/performance-hero.tsx").read_text()
+    assert "hasCohortSplit" in hero, \
+        "performance-hero must gate split tiles on hasCohortSplit"
+    assert "Pre-match ROI · 30d" in hero, \
+        "performance-hero must render the Pre-match tile"
+    assert "In-play ROI · 30d" in hero, \
+        "performance-hero must render the In-play tile"
+    # Combined "System ROI" tile remains as the legacy fallback
+    assert "System ROI" in hero, \
+        "performance-hero must keep the combined System ROI fallback for legacy cache rows"
+
+    data = pathlib.Path("../odds-intel-web/src/lib/engine-data.ts").read_text()
+    for col in ("prematch_roi_pct", "prematch_settled_bets",
+                "inplay_roi_pct",   "inplay_settled_bets"):
+        assert col in data, f"DashboardCache interface must include {col}"
+
+
 if __name__ == "__main__":
     main()
