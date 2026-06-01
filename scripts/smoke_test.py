@@ -12098,5 +12098,40 @@ def _():
         "DashboardCache interface must include upcoming_model_summary"
 
 
+@test("STALE-FLAG-AUDIT-MIGRATION-162 — retires 2 bleeders, clears retired_reason on 2 recovered bots")
+def _():
+    """Audit triggered by 3 stale-flag fixes today (migrations 155, 156, 160).
+    Found 4 more bots with retired_reason populated + is_active=true. Two are
+    still bleeding and should be retired (bot_draw_specialist -100% ROI on n=4
+    last 30d, inplay_f de facto retired since 2026-05-09). Two recovered after
+    migration 122 re-enabled them but the reason text was never cleared
+    (bot_conservative +104% ROI n=8, bot_opt_home_lower +51.9% n=20). Different
+    treatments: retire vs clear-reason."""
+    import pathlib
+
+    mig = pathlib.Path("supabase/migrations/162_stale_flag_audit_cleanup.sql").read_text()
+    # Two retirements
+    assert "bot_draw_specialist" in mig and "is_active = false" in mig, \
+        "Migration 162 must retire bot_draw_specialist"
+    assert "inplay_f" in mig and "is_active = false" in mig, \
+        "Migration 162 must retire inplay_f"
+    # Two reason-clears
+    assert "bot_conservative" in mig, "Migration 162 must reference bot_conservative"
+    assert "bot_opt_home_lower" in mig, "Migration 162 must reference bot_opt_home_lower"
+    assert "retired_reason = NULL" in mig, \
+        "Migration 162 must clear retired_reason on recovered bots"
+    # Idempotency guards
+    assert "AND is_active = true" in mig, \
+        "Migration 162 must use AND is_active = true guards (idempotent)"
+
+    pipeline_src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    block_start = pipeline_src.index('"bot_draw_specialist": {')
+    block_desc = pipeline_src.index('"description":', block_start)
+    block_end = pipeline_src.index('\n', block_desc + 100)
+    block = pipeline_src[block_start:block_end]
+    assert "[RETIRED 2026-06-01]" in block, \
+        "bot_draw_specialist description must be prefixed [RETIRED 2026-06-01]"
+
+
 if __name__ == "__main__":
     main()

@@ -364,13 +364,13 @@ BOTS_CONFIG = {
         "min_prob": 0.30,
     },
     "bot_draw_specialist": {
-        # DRAW-LEAGUE-WHITELIST 2026-05-28: replaced tier_filter=[2,3,4] with an explicit
-        # league_name_filter built from the 2023-2026 backtest (clean data, 30+ bets each).
-        # Old tier filter blocked Brazil Serie A / Austria Bundesliga (T1) which both show
-        # strong draw signals, while including Hungary NB II (-66.8%), Portugal Segunda
-        # Liga (-88.4%), Slovenia 2.SNL (-35%), Bulgaria Second League (-64.9%) etc.
-        # Whitelist keeps only confirmed-positive leagues; T1 thresholds added for new leagues.
-        "description": "DRAW-LEAGUE-WHITELIST 2026-05-29: draw specialist — 15 leagues confirmed by 2023-2026 clean backtest. Replaced tier_filter=[2,3,4] with explicit league_name_filter. +3 leagues added 2026-05-29: China Super League (+73.8%), USA USL League Two (+29.2%), Azerbaijan Birinci Dasta (+13.3%).",
+        # [RETIRED 2026-06-01 — STALE-FLAG-AUDIT, migration 162]
+        # retired_reason populated by migration 104 on 2026-05-17 ("Draws are
+        # the worst 1X2 selection under May 17 calibration"). Bot stopped
+        # firing 2026-05-13; last 30d shows n=4 / -100% ROI / -39.6% CLV
+        # confirming the original diagnosis. Flag fix. Training data preserved
+        # via shadow_bets (SHADOW-RETIRED-OK 2026-05-20).
+        "description": "[RETIRED 2026-06-01] Draw specialist — confirmed loser. -100% ROI / -39.6% CLV on n=4 last 30d. Bot stopped firing 2026-05-13.",
         "tier_label": "pro",
         "markets": ["1x2"],
         "tier_filter": None,

@@ -2,6 +2,30 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-06-01 — STALE-FLAG-AUDIT + Task A specialist funnel diag + Task B edge calibration on shadow
+>
+> User asked "do all three investigation tasks" (A specialist funnel, B edge calibration, C stale-flag audit) after spotting the +0.7% pre-match ROI on the hero looked inconsistent with the bot leaderboard.
+>
+> **Cache freshness issue**: the +0.7% the user saw came from a stale 14:15 UTC cache row (pre-bot_aggressive-retirement). Cache refresh on Railway stopped running after 14:45 UTC (3h gap). Triggered a fresh write via local run; live data shows pre-match 30d active ROI is actually **+3.38% on n=616**, much closer to the lifetime bot-weighted ~+5.9%. **Railway `dashboard_cache_refresh` cron health needs investigation** — separate issue.
+>
+> **Task C — stale-flag audit. Migration 162** retires 2 more bots (bot_draw_specialist, inplay_f — match the original retired_reason: -100% / -17% ROI, last fires May 13 / May 8) and clears retired_reason on 2 recovered bots (bot_conservative +104% ROI n=8 last 30d, bot_opt_home_lower +51.9% ROI n=20 — both were re-enabled via migration 122 but the stale reason text was never cleared). Smoke: STALE-FLAG-AUDIT-MIGRATION-162.
+>
+> **Task A — specialist funnel**: the multi-profile specialists fire MUCH less than expected:
+>   • `bot_ou_specialist`: **0 simulated, 0 shadow** in 14d. Root cause: "Over 3.5 Global" profile requires 14% edge; zero candidates pass that bar in 30d shadow data. League-whitelist profiles ("Under 2.5 Specialist" + "Over 2.5 Sweden") may also see no qualifying matches.
+>   • `bot_dnb_specialist`: **0 simulated, 0 shadow** in 14d. Root cause: DNB odds coverage is thin in whitelist leagues — Austria Bundesliga 0/3 matches with DNB odds, Mexico Liga MX 0/2, Russia 0/4, Israel 0/16, England Champ 0/2. Only Argentina Primera Nacional, Brazil Serie B, Sweden Allsvenskan, Uruguay Segunda have partial DNB odds coverage (~40-50% of matches). After 5% edge filter, few qualify.
+>   • `bot_1x2_specialist`: 35 shadow / 4 simulated in 14d. Filter at a later cohort/eligibility step (not yet root-caused). Maturity calibrated, 30d ROI +13.1% on n=4 — too small to act on.
+>
+>   **Conclusion**: the specialists are real coverage placeholders but constrained by data availability + tight edge thresholds. Don't aggressively retire bot_high_alignment until the specialist filters are loosened OR the underlying DNB/OU3.5 data coverage improves. Specifically: lowering bot_ou_specialist "Over 3.5 Global" edge from 14% to 10% would surface more candidates (still needs a backtest on shadow to confirm those are profitable).
+>
+> **Task B — edge calibration on shadow_bets** (much larger sample, n=10K+ across buckets). Findings UPEND the earlier simulated_bets "5-12% is dead, 12-20% is sweet spot" narrative:
+>   • `<5%` edge: -36.2% ROI on n=370 (consistent with simulated)
+>   • `5-8%`: -5.6% on n=3,457
+>   • `8-12%`: -7.6% on n=4,470
+>   • **`12-20%`: -13.9% on n=1,982** (vs simulated's +20.3%)
+>   • **`20%+`: +14.7% on n=328** (only universally-positive bucket)
+>
+>   The "12-20% is the sweet spot" was a **bot-mix artefact**, not a universal edge-bucket truth. Shadow data shows even 12-20% edge calls are mostly losing — the active bots in simulated_bets happen to be the ones whose 12-20% edge calls win. After v20260531 promotion (calibrated 1X2 head) re-evaluate; do NOT raise edge floors globally on the current model.
+>
 > ## 2026-06-01 — RETIRE-BOT-AGGRESSIVE done (third stale-flag fix in 24h)
 >
 > Third stale-flag retirement in 24 hours. `bot_aggressive` had its retired_reason populated by migration 104 on 2026-05-17 ("Replaced by bot_aggressive_v2. -5.7% ROI / -€141 on 441 settled bets") but `is_active=true` was never flipped. The bot self-stopped firing on 2026-05-24 (last `simulated_bets` AND last `shadow_bets` both 2026-05-24 19:38 UTC) — likely caused by SLICE-LIVE-VALIDATE on 2026-05-25 tightening odds range (1.25,5.00) → (1.25,2.50) and excluding Draw selection, leaving 0 eligible matches per day. Despite zero new firings, 705 settled bets from May 23-24 were still being counted in the active-cohort /performance headline at -€75 P&L / -1.92% ROI. Migration 160 flips is_active=false and stamps retired_at. Training data preserved via shadow_bets (SHADOW-RETIRED-OK 2026-05-20). Coverage gap created: 1X2 and O/U lose bot_aggressive's volume, but 1X2 has 8 backfill bots and O/U has bot_v10_all + bot_aggressive_v2 + bot_high_alignment. Bigger coverage gap (specialists not firing into simulated_bets despite firing in shadow_bets) filed for diagnosis. Smoke: RETIRE-BOT-AGGRESSIVE.
