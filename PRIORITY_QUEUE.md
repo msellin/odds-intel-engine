@@ -2,6 +2,20 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-06-01 — bot_high_alignment RETIREMENT-TRIGGER recorded
+>
+> Explicit decision locked in before context fades. `bot_high_alignment` is the current biggest paper-prematch firehose (n=210+ last 7d) and is bleeding −5% ROI. BUT it's the only bot firing on BTTS / DC / DNB markets (the multi-profile specialists are starved by data availability + tight edge thresholds — see Task A funnel diag above). Therefore: do NOT retire today. CLV is positive +8.9% so the model is finding sharp picks; the calibration miss is what v20260531 promotion is expected to fix.
+>
+> **Retirement trigger** (operator decision, not automated): retire `bot_high_alignment` if, after the v20260531 promotion (target 2026-06-08), BOTH conditions hold over a 7-day window starting from the promotion date:
+>   • Live ROI < −2% on n ≥ 50 settled bets
+>   • Avg CLV < +5% (calibration failed to recover — picks no longer sharp)
+>
+> **Hold trigger**: if CLV stays ≥ +5% but ROI is still negative, do NOT retire — the picks are still sharp and the variance can flip; wait another 7 days. Only retire when both signals agree.
+>
+> **Don't-retire-because-coverage trigger** still applies: if `bot_ou_specialist` Over 3.5 Global (now at 10% edge after today's loosen) + a DNB-coverage solution still aren't firing on BTTS/DC/DNB, hold bot_high_alignment regardless — coverage trumps performance until specialists can pick up the slack.
+>
+> Re-evaluate this rule on 2026-06-15 after the first post-promotion week. Filed as ⬜ scheduled.
+>
 > ## 2026-06-01 — STALE-FLAG-WATCHDOG + CACHE-FRESHNESS-WATCHDOG + AF-COVERAGE-AUDIT
 >
 > Three observability + decision-prep items after today's process gaps (5 stale-flag retirements + 3h cache staleness incident).

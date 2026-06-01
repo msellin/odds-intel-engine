@@ -12240,5 +12240,50 @@ def _():
     assert "DO NOT GATE" in src, "Verdict must include the do-not-gate copy"
 
 
+@test("PERF-HERO-WINDOW-LABEL + RECENT-WINS-FLAGS — cohort tiles say 'last 30d' in subtitle; reel shows country flags")
+def _():
+    """Two tiny perf-page polish items:
+    P — cohort tile subtitles need "last 30d" so the n-count doesn't look like
+        a lifetime number (the same confusion that triggered today's audit).
+    Q — RecentWinsReel renders a country flag emoji next to the country name
+        for visual punch on the "edge globally" story.
+    """
+    import pathlib
+    hero = pathlib.Path("../odds-intel-web/src/components/performance-hero.tsx").read_text()
+    assert "before kickoff · last 30d" in hero, \
+        "Pre-match subtitle must include '· last 30d'"
+    assert "during the match · last 30d" in hero, \
+        "In-play subtitle must include '· last 30d'"
+
+    reel = pathlib.Path("../odds-intel-web/src/components/recent-wins-reel.tsx").read_text()
+    assert "COUNTRY_FLAGS" in reel, "RecentWinsReel must define COUNTRY_FLAGS map"
+    assert "flagFor" in reel, "RecentWinsReel must use a flagFor() helper"
+    # Spot-check a few flag mappings (these specific countries appeared in
+    # today's top-8 wins reel, so they must be in the map)
+    for country in ("Argentina", "Paraguay", "Netherlands", "Ecuador", "Sweden",
+                    "United-Arab-Emirates", "Australia", "Uruguay", "Brazil"):
+        assert country in reel, f"COUNTRY_FLAGS must include {country}"
+    # World fallback for "World Friendlies" league wins
+    assert '"World": "🌍"' in reel or "'World': '🌍'" in reel, \
+        "World → 🌍 mapping required (covers World Friendlies)"
+
+
+@test("BOT-HIGH-ALIGNMENT-TRIGGER — explicit retirement gate recorded in PRIORITY_QUEUE")
+def _():
+    """Lock the 2026-06-01 decision: don't retire bot_high_alignment today
+    (only BTTS/DC/DNB bot; specialists are starved) but retire 7 days after
+    v20260531 promotion if both ROI < -2% AND CLV < +5% on n ≥ 50."""
+    import pathlib
+    pq = pathlib.Path("PRIORITY_QUEUE.md").read_text()
+    assert "RETIREMENT-TRIGGER" in pq, "Trigger header must be in queue"
+    assert "bot_high_alignment" in pq, "Must reference bot_high_alignment"
+    # Both conditions (ROI AND CLV) must be documented
+    assert "ROI < −2%" in pq or "ROI < -2%" in pq, \
+        "ROI condition must be specified"
+    assert "+5%" in pq, "CLV condition must be specified"
+    assert "n ≥ 50" in pq or "n >= 50" in pq, "Sample-size threshold required"
+    assert "2026-06-15" in pq, "Re-evaluation date must be set"
+
+
 if __name__ == "__main__":
     main()
