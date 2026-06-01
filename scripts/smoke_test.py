@@ -12316,5 +12316,55 @@ def _():
         "Listener handler must be named _on_max_instances_blocked"
 
 
+@test("CHERRY-PICK-PLACER-P1 — env-gated maturity filter on all three placer loaders, default unset = no filter")
+def _():
+    """Cherry-pick Phase 1: code lands with COOLBET_RECORD_ALLOWED_MATURITY
+    unset by default so behaviour is unchanged. Three loaders gated:
+      • load_qualified_bets (singles)
+      • load_qualified_combo_bets (combos)
+      • load_qualified_inplay_bets (inplay)
+    All three skip the gate when bet_id_filter is set (admin override).
+    Flip happens on 2026-06-08 by setting the env to 'calibrated' on Railway."""
+    import pathlib, os, inspect
+    from workers.automation import coolbet_placer
+
+    # Helper exists and treats unset/empty/'*' as None (no filter)
+    assert hasattr(coolbet_placer, "_allowed_maturity_labels"), \
+        "Helper _allowed_maturity_labels must exist"
+    for raw in ("", "  ", "*"):
+        os.environ["COOLBET_RECORD_ALLOWED_MATURITY"] = raw
+        assert coolbet_placer._allowed_maturity_labels() is None, \
+            f"_allowed_maturity_labels must return None for {raw!r}"
+    os.environ["COOLBET_RECORD_ALLOWED_MATURITY"] = "calibrated"
+    assert coolbet_placer._allowed_maturity_labels() == ["calibrated"], \
+        "Single-value parsing must return ['calibrated']"
+    os.environ["COOLBET_RECORD_ALLOWED_MATURITY"] = "active,calibrated"
+    assert coolbet_placer._allowed_maturity_labels() == ["active", "calibrated"], \
+        "Comma list parsing must return ['active','calibrated']"
+    # Reset to no-filter so other tests don't see the env
+    del os.environ["COOLBET_RECORD_ALLOWED_MATURITY"]
+
+    # All three loaders thread the filter in the SQL
+    for fn_name in ("load_qualified_bets", "load_qualified_combo_bets",
+                    "load_qualified_inplay_bets"):
+        fn = getattr(coolbet_placer, fn_name)
+        src = inspect.getsource(fn)
+        assert "_allowed_maturity_labels()" in src, \
+            f"{fn_name} must call _allowed_maturity_labels()"
+        assert "b.maturity_label = ANY(" in src, \
+            f"{fn_name} must filter on b.maturity_label = ANY(...)"
+        assert "CHERRY-PICK-PLACER" in src, \
+            f"{fn_name} must reference the task tag in a comment"
+
+    # bet_id_filter path bypasses the gate — admin override (verified by inspecting
+    # that the bet_id_filter branch does NOT include the maturity clause)
+    bets_src = inspect.getsource(coolbet_placer.load_qualified_bets)
+    bet_id_branch_idx = bets_src.index("if bet_id_filter is not None:")
+    main_branch_idx = bets_src.index("# ── Diagnostic")
+    bet_id_branch = bets_src[bet_id_branch_idx:main_branch_idx]
+    assert "_allowed_maturity_labels" not in bet_id_branch, \
+        "bet_id_filter branch must NOT call _allowed_maturity_labels (admin override)"
+
+
 if __name__ == "__main__":
     main()

@@ -1,27 +1,17 @@
 # Cherry-pick placer — tasks
 
-## Phase 1 — Code lands, gate disabled (target: 2026-06-02 → 06-04)
+## Phase 1 — Code lands, gate disabled (done 2026-06-01) ✅
 
-- [ ] **P1.1** Add `_allowed_maturity_labels()` helper in `coolbet_placer.py`
+- [x] **P1.1** Added `_allowed_maturity_labels()` helper in `coolbet_placer.py`
   - Reads `COOLBET_RECORD_ALLOWED_MATURITY` env, parses comma-separated list
   - Empty / unset / `*` returns `None` (no filter)
-  - Returns list of strings otherwise
-- [ ] **P1.2** Thread the helper into `load_qualified_bets()` (singles)
-  - SQL: `AND (%s::text[] IS NULL OR b.maturity_label = ANY(%s))` (NULL = no filter)
-  - Skip the filter entirely when `bet_id_filter` is set (admin override)
-- [ ] **P1.3** Thread the helper into `load_qualified_combo_bets()` (combos)
-  - Same gate, same admin bypass
-- [ ] **P1.4** Thread the helper into `load_qualified_inplay_bets()` in `inplay_bot.py`
-  - Same gate. Inplay's `bet_id_filter` path also bypasses.
-- [ ] **P1.5** Add diagnostic log when filter drops candidates
-  - `log.info("Cherry-pick gate: dropped %d candidates with maturity in {%s}", n, blocked_labels)` — visibility for ops
-- [ ] **P1.6** Smoke tests:
-  - `CHERRY-PICK-GATE-DEFAULT-OPEN` — no env var → no filter applied (source-inspect)
-  - `CHERRY-PICK-GATE-FILTERS` — env=`calibrated` → SQL contains the ANY check
-  - `CHERRY-PICK-GATE-ADMIN-BYPASS` — `bet_id_filter` set → gate skipped
-  - `CHERRY-PICK-GATE-ALL-LOADERS` — all three loaders include the gate
-- [ ] **P1.7** Commit + push. Verify Railway picks up the code with `COOLBET_RECORD_ALLOWED_MATURITY` UNSET (no behaviour change).
-- [ ] **P1.8** Update PRIORITY_QUEUE + WORKFLOWS.md (placer section). Mark Phase 1 done.
+- [x] **P1.2** Threaded into `load_qualified_bets()` (singles). SQL uses `AND b.maturity_label = ANY(%s)` only when allowlist is non-None. Skipped when `bet_id_filter` is set (admin override).
+- [x] **P1.3** Threaded into `load_qualified_combo_bets()` (combos). Same pattern.
+- [x] **P1.4** Threaded into `load_qualified_inplay_bets()`. Inplay's `bet_id_filter` path also bypasses.
+- [x] **P1.5** Diagnostic log on each loader when filter is active (`Cherry-pick gate active: maturity ∈ ['calibrated'] — N passed`).
+- [x] **P1.6** Smoke: `CHERRY-PICK-PLACER-P1` covers default-open, allowlist parsing, all three loaders, admin bypass on `bet_id_filter`.
+- [x] **P1.7** Shipped on 2026-06-01 with `COOLBET_RECORD_ALLOWED_MATURITY` unset on Railway = no behaviour change.
+- [x] **P1.8** PRIORITY_QUEUE updated.
 
 ## Phase 2 — Promotion surface + written rule (target: 2026-06-05 → 06-06)
 

@@ -62,6 +62,29 @@ _MIN_REMAINING_EDGE = float(os.getenv("COOLBET_MIN_REMAINING_EDGE", str(_MIN_EDG
 _FUZZY_THRESHOLD = 70
 
 
+# CHERRY-PICK-PLACER (2026-06-01) — gate the placer's bet loaders by the
+# `bots.maturity_label` column so the curated subset of strategies (default:
+# 'calibrated' only) reaches real_bets while every bot keeps firing into
+# simulated_bets. See dev/active/cherry-pick-placer-plan.md.
+#
+# Env var: COOLBET_RECORD_ALLOWED_MATURITY
+#   • Unset / empty / '*' — no filter (Phase 1 default; ships safely)
+#   • Comma list (e.g. 'calibrated,active') — only those maturity labels
+#     are eligible for placement. Used to flip the gate on after Phase 3.5
+#     closes 2026-06-07.
+#
+# Admin manual placement (bet_id_filter mode) ALWAYS bypasses this gate —
+# the operator is explicitly authorising that one bet.
+def _allowed_maturity_labels() -> list[str] | None:
+    """Parsed allowlist of maturity_label values. Returns None when no filter
+    is configured (default: all bots eligible)."""
+    raw = (os.getenv("COOLBET_RECORD_ALLOWED_MATURITY") or "").strip()
+    if not raw or raw == "*":
+        return None
+    labels = [s.strip() for s in raw.split(",") if s.strip()]
+    return labels or None
+
+
 # COOLBET-SAFETY-GUARDRAILS (2026-05-20): instances live for one invocation of
 # place_all_bets and track state across the per-bet loop (rate limit + total
 # stake). Daemon constructs from CLI flags and passes via place_all_bets kwargs.
@@ -324,8 +347,10 @@ def load_qualified_bets(bet_id_filter: str | None = None) -> list[dict]:
                      r["home_team"], r["away_team"], r["market"], r["selection"],
                      float(r["edge_pct"]) * 100, r["actual_odds"], r["placed_time"])
 
+    allowed_maturity = _allowed_maturity_labels()
+    maturity_clause = "" if allowed_maturity is None else "AND b.maturity_label = ANY(%s)"
     rows = execute_query(
-        """
+        f"""
         SELECT * FROM (
           SELECT DISTINCT ON (sb.match_id, sb.market, sb.selection)
               sb.id             AS simulated_bet_id,
@@ -354,6 +379,7 @@ def load_qualified_bets(bet_id_filter: str | None = None) -> list[dict]:
             AND DATE(m.date)       = CURRENT_DATE
             AND m.date             > NOW()
             AND sb.edge_percent    >= %s
+            {maturity_clause}                            -- CHERRY-PICK-PLACER (2026-06-01): default unset = no filter
             AND NOT EXISTS (
                 SELECT 1 FROM real_bets rb
                 WHERE rb.match_id  = sb.match_id
@@ -365,9 +391,12 @@ def load_qualified_bets(bet_id_filter: str | None = None) -> list[dict]:
         ) q
         ORDER BY q.match_date ASC, q.edge_percent DESC
         """,
-        (_MIN_EDGE,),
+        (_MIN_EDGE, allowed_maturity) if allowed_maturity is not None else (_MIN_EDGE,),
     )
     results = [dict(r) for r in rows]
+    if allowed_maturity is not None:
+        log.info("Cherry-pick gate active: maturity ∈ %s — %d singles passed",
+                 allowed_maturity, len(results))
     for r in results:
         if int(r.get("bot_count", 1)) > 1:
             log.info("  %s vs %s | %s %s — %s bots agree, using highest-edge row",
@@ -415,8 +444,10 @@ def load_qualified_combo_bets(bet_id_filter: str | None = None) -> list[dict]:
             (bet_id_filter,),
         )
         return [dict(r) for r in rows] if rows else []
+    allowed_maturity = _allowed_maturity_labels()
+    maturity_clause = "" if allowed_maturity is None else "AND b.maturity_label = ANY(%s)"
     rows = execute_query(
-        """
+        f"""
         SELECT sb.id          AS simulated_bet_id,
                sb.match_id    AS placeholder_match_id,
                sb.combo_legs,
@@ -432,6 +463,7 @@ def load_qualified_combo_bets(bet_id_filter: str | None = None) -> list[dict]:
         WHERE sb.result = 'pending'
           AND sb.combo_legs IS NOT NULL
           AND sb.edge_percent >= %s
+          {maturity_clause}                            -- CHERRY-PICK-PLACER (2026-06-01): default unset = no filter
           AND NOT EXISTS (
               SELECT 1 FROM real_bets rb
               WHERE rb.simulated_bet_id = sb.id
@@ -447,8 +479,11 @@ def load_qualified_combo_bets(bet_id_filter: str | None = None) -> list[dict]:
           )
         ORDER BY sb.edge_percent DESC
         """,
-        (_MIN_EDGE,),
+        (_MIN_EDGE, allowed_maturity) if allowed_maturity is not None else (_MIN_EDGE,),
     )
+    if allowed_maturity is not None:
+        log.info("Cherry-pick gate active: maturity ∈ %s — %d combos passed",
+                 allowed_maturity, len(rows))
     return [dict(r) for r in rows]
 
 
@@ -1792,8 +1827,13 @@ def load_qualified_inplay_bets(window_minutes: int = 5,
             (bet_id_filter,),
         )
         return [dict(r) for r in rows] if rows else []
+    allowed_maturity = _allowed_maturity_labels()
+    maturity_clause = "" if allowed_maturity is None else "AND b.maturity_label = ANY(%s)"
+    params: tuple = (window_minutes, _MIN_EDGE)
+    if allowed_maturity is not None:
+        params = (window_minutes, _MIN_EDGE, allowed_maturity)
     rows = execute_query(
-        """
+        f"""
         SELECT
             sb.id             AS simulated_bet_id,
             sb.match_id,
@@ -1821,14 +1861,18 @@ def load_qualified_inplay_bets(window_minutes: int = 5,
           AND m.date           <= NOW()
           AND sb.pick_time     >= NOW() - (%s * INTERVAL '1 minute')
           AND sb.edge_percent  >= %s
+          {maturity_clause}                            -- CHERRY-PICK-PLACER (2026-06-01): default unset = no filter
           AND NOT EXISTS (
               SELECT 1 FROM real_bets rb
               WHERE rb.simulated_bet_id = sb.id
           )
         ORDER BY sb.pick_time DESC
         """,
-        (window_minutes, _MIN_EDGE),
+        params,
     )
+    if allowed_maturity is not None:
+        log.info("Cherry-pick gate active: maturity ∈ %s — %d inplay passed",
+                 allowed_maturity, len(rows or []))
     return [dict(r) for r in rows] if rows else []
 
 

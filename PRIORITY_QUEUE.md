@@ -2,6 +2,10 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-06-01 — CHERRY-PICK-PLACER Phase 1 shipped
+>
+> Per `dev/active/cherry-pick-placer-plan.md`. Adds an env-gated `bots.maturity_label` filter to all three placer bet loaders (singles + combos + inplay) so the placer can record real_bets from a curated subset while every bot keeps firing into simulated_bets. Default behaviour unchanged: `COOLBET_RECORD_ALLOWED_MATURITY` unset on Railway means no filter applies. Phase 2 (admin promotion view) and Phase 3 (env flip to `calibrated`) scheduled for 2026-06-05/06 and 2026-06-08 respectively. Admin manual placement (`bet_id_filter` path) bypasses the gate — the operator is explicitly authorising. Smoke: CHERRY-PICK-PLACER-P1.
+>
 > ## 2026-06-01 — SCHEDULER-HANG-MITIGATION post-mortem + partial fix
 >
 > Root cause of the 14:35 UTC scheduler hang identified. APScheduler is configured with `max_workers=4` in the default executor (workers/scheduler.py:1161). Three long-running jobs share the same 30-min firing minute under that constraint:
