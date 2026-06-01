@@ -20,7 +20,9 @@
 >
 > **Change 5/6 — PERF-HERO-RECENT-WINS — done.** Top 8 deduped wins last 14d span **8 countries** (Argentina, UAE, Paraguay, World Friendlies, Netherlands, Ecuador, Australia, Sweden), CLV +30% to +55%, odds 1.78 to 4.25. Migration 159 adds `recent_top_wins JSONB` to `dashboard_cache`; settlement.py builds the array with `DISTINCT ON (match, market, selection)` so same call from multiple bots appears once. New `RecentWinsReel` component renders a 4-column grid between hero and the existing `PerformanceExtras`. Free-tier visible — only odds, market, CLV-beat surfaced (no stake/P&L). Smoke: PERF-HERO-RECENT-WINS.
 >
-> Remaining: Change 6 (calibration callout — expand the existing Model v2 strip with v20260531 retrain numbers). Data check + decision pending.
+> **Change 6/6 — PERF-HERO-NEXT-MODEL — done.** New "Next upgrade" callout strip below the existing Model v2 callout. Data check from `model_versions.cv_metrics`: v20260531 beats v20260524_market on 9/11 markets (1X2 avg log_loss −10.0%, AH −2.6%, BTTS −1.3%, OU +2.7% regression). Migration 161 adds `upcoming_model_summary JSONB` to dashboard_cache. New `_build_upcoming_model_summary()` helper in settlement.py reads `MODEL_VERSION` env to identify production, finds the newest unpromoted candidate trained AFTER production with cv_metrics populated, computes per-head log_loss deltas (grouped 1x2 / ah / btts / ou), counts markets better/worse, returns None when no candidate is improving (avoids misleading callout). Frontend `NextModelCallout` in performance-hero.tsx renders the headline best-head delta + the better/worse counter + an "offline tests" caveat so we're not claiming production data we don't have. Markets_worse is surfaced so the OU regression isn't hidden — honest, not cherry-picked. Smoke: PERF-HERO-NEXT-MODEL.
+>
+> **All 6 perf-page-attractiveness changes resolved**: 4 shipped (cohort split, equity sparkline, recent wins reel, next-model callout), 1 already in place (maturity badges), 1 shelved on data gate (30d rolling — would have been a no-op).
 >
 > ## 2026-06-01 — CHERRY-PICK-PLACER planned
 >

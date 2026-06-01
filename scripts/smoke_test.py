@@ -12046,5 +12046,57 @@ def _():
         "bot_aggressive description must be prefixed [RETIRED 2026-06-01]"
 
 
+@test("PERF-HERO-NEXT-MODEL — dashboard_cache surfaces unpromoted model offline-eval; hero renders Next upgrade callout")
+def _():
+    """Live offline-eval check (2026-06-01): v20260531 beats v20260524_market
+    on 9/11 markets, 1X2 avg log_loss -10%, AH -2.6%, BTTS -1.3%, OU +2.7%.
+    Migration 161 adds upcoming_model_summary JSONB; settlement.py builds it
+    from model_versions.cv_metrics; performance-hero NextModelCallout renders
+    the deltas with an honest 'offline tests' caveat."""
+    import pathlib
+
+    mig = pathlib.Path("supabase/migrations/161_dashboard_cache_upcoming_model.sql").read_text()
+    assert "upcoming_model_summary" in mig, "Migration 161 must add upcoming_model_summary"
+    assert "JSONB" in mig, "upcoming_model_summary must be JSONB"
+
+    settle = pathlib.Path("workers/jobs/settlement.py").read_text()
+    assert "_build_upcoming_model_summary" in settle, \
+        "settlement.py must define the helper"
+    helper_idx = settle.index("def _build_upcoming_model_summary")
+    helper_block = settle[helper_idx:helper_idx + 4500]
+    # Must derive production version from env (operator-controlled)
+    assert 'os.environ.get("MODEL_VERSION"' in helper_block, \
+        "helper must read production version from MODEL_VERSION env"
+    # Must skip promoted/demoted candidates
+    assert "promoted_at IS NULL" in helper_block, \
+        "helper must exclude promoted candidates"
+    assert "demoted_at IS NULL" in helper_block, \
+        "helper must exclude demoted candidates"
+    # Must compare on log_loss
+    assert "log_loss" in helper_block, "helper must compute log_loss deltas"
+    # Must group by head (1x2, ah, btts, ou) — these are the user-facing labels
+    for head in ("1x2", "ah", "btts", "ou"):
+        assert f'"{head}"' in helper_block, f"helper must group market {head}"
+    # Must return None when no candidate is better
+    assert "if better == 0" in helper_block, \
+        "helper must return None when zero markets improve (avoid misleading callout)"
+
+    # Hero renders the callout
+    hero = pathlib.Path("../odds-intel-web/src/components/performance-hero.tsx").read_text()
+    assert "NextModelCallout" in hero, "performance-hero must include NextModelCallout"
+    assert "cache?.upcoming_model_summary" in hero, \
+        "hero must read upcoming_model_summary from cache"
+    # Honest framing required — "offline" caveat present
+    assert "offline tests" in hero, \
+        "callout copy must include 'offline tests' caveat (not yet live data)"
+    # Must show better/worse counts (no cherry-picking)
+    assert "markets_better" in hero and "markets_worse" in hero, \
+        "callout must surface markets_worse so the OU regression isn't hidden"
+
+    data = pathlib.Path("../odds-intel-web/src/lib/engine-data.ts").read_text()
+    assert "upcoming_model_summary" in data, \
+        "DashboardCache interface must include upcoming_model_summary"
+
+
 if __name__ == "__main__":
     main()

@@ -1341,6 +1341,114 @@ def _compute_pseudo_clv_batched(fetch_dates: list[str]) -> tuple[int, int]:
     return computed, skipped
 
 
+def _build_upcoming_model_summary() -> dict | None:
+    """PERF-HERO-NEXT-MODEL (2026-06-01) — compare the newest unpromoted model
+    against current production using model_versions.cv_metrics offline eval.
+
+    Returns a dict for the /performance "Next upgrade" callout, or None when:
+      • no candidate model exists (e.g. just after promotion)
+      • candidate or production cv_metrics are unparseable
+      • candidate has zero markets improving vs production
+
+    Production version is the one whose name matches MODEL_VERSION env. The
+    candidate is the most recent model_versions row trained strictly after
+    production AND containing offline-eval metrics (cv_metrics.metrics shape).
+    """
+    import os, json
+    production_version = os.environ.get("MODEL_VERSION", "v14")
+
+    rows = execute_query("""
+        SELECT version, trained_at, cv_metrics, notes
+        FROM model_versions
+        WHERE cv_metrics IS NOT NULL
+          AND promoted_at IS NULL
+          AND demoted_at IS NULL
+        ORDER BY trained_at DESC NULLS LAST
+        LIMIT 10
+    """, [])
+
+    def _metrics(cv):
+        if cv is None:
+            return None
+        if isinstance(cv, str):
+            try:
+                cv = json.loads(cv)
+            except Exception:
+                return None
+        m = cv.get("metrics") if isinstance(cv, dict) else None
+        return m if isinstance(m, dict) and m else None
+
+    prod_row = execute_query(
+        "SELECT cv_metrics, trained_at FROM model_versions WHERE version = %s LIMIT 1",
+        (production_version,),
+    )
+    prod_metrics = _metrics(prod_row[0]["cv_metrics"]) if prod_row else None
+    if not prod_metrics:
+        return None
+
+    candidate = None
+    for r in rows:
+        if r["version"] == production_version:
+            continue
+        if r["trained_at"] and prod_row and prod_row[0]["trained_at"] and \
+           r["trained_at"] <= prod_row[0]["trained_at"]:
+            continue
+        m = _metrics(r["cv_metrics"])
+        if m:
+            candidate = (r["version"], r["trained_at"], m)
+            break
+    if not candidate:
+        return None
+
+    cand_version, cand_trained_at, cand_metrics = candidate
+
+    # Group markets by head. Average log_loss delta per group, count wins/losses.
+    groups = {
+        "1x2": ["1x2_home", "1x2_draw", "1x2_away"],
+        "ah":  ["ah_home_+0.5", "ah_home_+1.5", "ah_home_-0.5", "ah_home_-1.5"],
+        "btts": ["btts_yes", "btts_no"],
+        "ou":  ["over25", "under25"],
+    }
+
+    group_deltas: dict[str, float] = {}
+    better = worse = ties = 0
+    for label, markets in groups.items():
+        cand_lls = [cand_metrics[m]["log_loss"] for m in markets
+                    if m in cand_metrics and m in prod_metrics and prod_metrics[m].get("log_loss")]
+        prod_lls = [prod_metrics[m]["log_loss"] for m in markets
+                    if m in cand_metrics and m in prod_metrics and prod_metrics[m].get("log_loss")]
+        if not cand_lls:
+            continue
+        cand_avg = sum(cand_lls) / len(cand_lls)
+        prod_avg = sum(prod_lls) / len(prod_lls)
+        delta_pct = (cand_avg - prod_avg) / prod_avg * 100
+        group_deltas[label] = round(delta_pct, 1)
+
+    for mkt in cand_metrics:
+        if mkt not in prod_metrics: continue
+        c = cand_metrics[mkt].get("log_loss")
+        p = prod_metrics[mkt].get("log_loss")
+        if c is None or p is None: continue
+        delta_pct = (c - p) / p * 100
+        if delta_pct < -1: better += 1
+        elif delta_pct > 1: worse += 1
+        else: ties += 1
+
+    if better == 0:
+        return None
+
+    return {
+        "candidate":   cand_version,
+        "production":  production_version,
+        "trained_at":  cand_trained_at.date().isoformat() if cand_trained_at else None,
+        "markets_better": better,
+        "markets_worse":  worse,
+        "markets_tied":   ties,
+        "group_deltas": group_deltas,
+        "holdout_n": cand_metrics.get(next(iter(cand_metrics))).get("n") if cand_metrics else None,
+    }
+
+
 def write_dashboard_cache():
     """
     Pre-compute all dashboard stats and write to dashboard_cache table.
@@ -1557,6 +1665,14 @@ def write_dashboard_cache():
             for r in recent_top_wins_rows
         ]
 
+        # PERF-HERO-NEXT-MODEL (2026-06-01) — build summary of the most-recent
+        # candidate model's offline eval vs production. Surfaces the "next
+        # upgrade" callout on /performance. Null when no fresh candidate
+        # exists. Production model is identified by MODEL_VERSION env (the
+        # operator-controlled flag); candidate is the latest model_versions
+        # row newer than production with cv_metrics populated.
+        upcoming_model_summary = _build_upcoming_model_summary()
+
         bot_breakdown = []
         for r in bot_rows:
             s = int(r.get("settled") or 0)
@@ -1645,8 +1761,9 @@ def write_dashboard_cache():
                 inplay_settled_bets, inplay_won_bets, inplay_total_staked,
                 inplay_total_pnl, inplay_roi_pct,
                 daily_pnl_curve_30d,
-                recent_top_wins
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                recent_top_wins,
+                upcoming_model_summary
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, [
             int(total_bets), int(settled_bets), int(pending_bets), int(won), int(lost),
             hit_rate, total_staked, total_pnl, roi_pct, avg_clv,
@@ -1662,6 +1779,7 @@ def write_dashboard_cache():
             inplay_pnl, inplay_roi,
             json.dumps(daily_pnl_curve_30d),
             json.dumps(recent_top_wins),
+            json.dumps(upcoming_model_summary) if upcoming_model_summary else None,
         ])
         console.print(
             f"  Dashboard cache written: {int(settled_bets)} settled bets (all-time) · "
