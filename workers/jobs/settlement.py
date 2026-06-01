@@ -1481,6 +1481,30 @@ def write_dashboard_cache():
         inplay_settled,  inplay_won,  inplay_staked,  inplay_pnl,  inplay_roi,  _ = \
             _cohort_fields("inplay", include_clv=False)
 
+        # PERF-HERO-EQUITY-SPARKLINE (2026-06-01) — daily cumulative P&L for
+        # last 30d on the active+non-experimental cohort. Tiny SVG sparkline on
+        # /performance turns the headline number into a trajectory.
+        daily_pnl_rows = execute_query("""
+            SELECT
+                DATE(sb.pick_time) AS d,
+                ROUND(SUM(sb.pnl)::numeric, 2) AS daily_pnl
+            FROM simulated_bets sb
+            JOIN bots b ON b.id = sb.bot_id
+            WHERE sb.result IN ('won','lost')
+              AND b.is_active = true AND b.retired_at IS NULL
+              AND b.maturity_label != 'experimental'
+              AND sb.pick_time >= now() - interval '30 days'
+            GROUP BY 1 ORDER BY 1
+        """, [])
+        cum = 0.0
+        daily_pnl_curve_30d = []
+        for r in daily_pnl_rows:
+            cum += float(r["daily_pnl"] or 0)
+            daily_pnl_curve_30d.append({
+                "d": r["d"].isoformat(),
+                "cum": round(cum, 2),
+            })
+
         bot_breakdown = []
         for r in bot_rows:
             s = int(r.get("settled") or 0)
@@ -1567,8 +1591,9 @@ def write_dashboard_cache():
                 prematch_settled_bets, prematch_won_bets, prematch_total_staked,
                 prematch_total_pnl, prematch_roi_pct, prematch_avg_clv,
                 inplay_settled_bets, inplay_won_bets, inplay_total_staked,
-                inplay_total_pnl, inplay_roi_pct
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                inplay_total_pnl, inplay_roi_pct,
+                daily_pnl_curve_30d
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, [
             int(total_bets), int(settled_bets), int(pending_bets), int(won), int(lost),
             hit_rate, total_staked, total_pnl, roi_pct, avg_clv,
@@ -1582,6 +1607,7 @@ def write_dashboard_cache():
             prematch_pnl, prematch_roi, prematch_clv,
             inplay_settled, inplay_won, inplay_staked,
             inplay_pnl, inplay_roi,
+            json.dumps(daily_pnl_curve_30d),
         ])
         console.print(
             f"  Dashboard cache written: {int(settled_bets)} settled bets (all-time) · "

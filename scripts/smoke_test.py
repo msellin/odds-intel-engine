@@ -11915,5 +11915,53 @@ def _():
         assert col in data, f"DashboardCache interface must include {col}"
 
 
+@test("PERF-HERO-EQUITY-SPARKLINE — dashboard_cache stores daily cumulative P&L; hero renders sparkline")
+def _():
+    """Data check (run 2026-06-01): cumulative P&L over last 30d = +€815 with
+    a clean upward trajectory (dip to -€127 May 7, recovery + growth thereafter).
+    Migration 158 adds daily_pnl_curve_30d JSONB; settlement.py builds the
+    array (active+non-experimental, settled bets only); EquitySparkline
+    component renders an inline SVG with no chart library."""
+    import pathlib
+
+    mig = pathlib.Path("supabase/migrations/158_dashboard_cache_equity_curve.sql").read_text()
+    assert "daily_pnl_curve_30d" in mig, "Migration 158 must add daily_pnl_curve_30d"
+    assert "JSONB" in mig, "daily_pnl_curve_30d must be JSONB"
+
+    settle = pathlib.Path("workers/jobs/settlement.py").read_text()
+    assert "PERF-HERO-EQUITY-SPARKLINE" in settle, \
+        "settlement.py must reference the equity sparkline task"
+    assert "daily_pnl_curve_30d" in settle, \
+        "settlement.py must build the daily_pnl_curve_30d array"
+    # Must respect the same scope as the cohort split (active+non-experimental,
+    # settled-only) so the headline tile and sparkline tell the same story
+    sparkline_idx = settle.index("PERF-HERO-EQUITY-SPARKLINE")
+    sparkline_block = settle[sparkline_idx:sparkline_idx + 2000]
+    assert "b.is_active = true" in sparkline_block, "sparkline must filter active bots"
+    assert "b.retired_at IS NULL" in sparkline_block, "sparkline must exclude retired"
+    assert "maturity_label != 'experimental'" in sparkline_block, \
+        "sparkline must exclude experimental"
+    assert "interval '30 days'" in sparkline_block, "sparkline window must be 30 days"
+    # cumulative not raw daily — the visual story is the running total
+    assert '"cum": round(cum' in sparkline_block, \
+        "sparkline payload must store cumulative P&L, not raw daily values"
+
+    # Frontend component exists and is wired
+    spark = pathlib.Path("../odds-intel-web/src/components/equity-sparkline.tsx").read_text()
+    assert "<polyline" in spark, "EquitySparkline must render an SVG polyline"
+    assert "preserveAspectRatio" in spark, "SVG must use viewBox + preserveAspectRatio for responsive rendering"
+    assert 'role="img"' in spark, "Sparkline must expose role and aria-label for accessibility"
+    assert "curve.length < 2" in spark, "Sparkline must early-return on insufficient data"
+
+    hero = pathlib.Path("../odds-intel-web/src/components/performance-hero.tsx").read_text()
+    assert "EquitySparkline" in hero, "performance-hero must import EquitySparkline"
+    assert "cache?.daily_pnl_curve_30d" in hero, \
+        "performance-hero must pass daily_pnl_curve_30d to the sparkline"
+
+    data = pathlib.Path("../odds-intel-web/src/lib/engine-data.ts").read_text()
+    assert "daily_pnl_curve_30d" in data, \
+        "DashboardCache interface must include daily_pnl_curve_30d"
+
+
 if __name__ == "__main__":
     main()

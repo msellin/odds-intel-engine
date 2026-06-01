@@ -8,7 +8,11 @@
 >
 > **Change 1/6 — PERF-HERO-COHORT-SPLIT — done.** Hero split into separate Pre-match (−1.2% / n=1,974) and In-play (+14.5% / n=861) ROI tiles for last-30d window. Gap is 15.7pp on 30d, 21pp on 14d, 43.7pp on 7d — robust across windows. Migration 157 adds cohort columns to `dashboard_cache`; settlement.py computes them (excludes retired + experimental + uses 30d window — same scope as the active headline); hero.tsx renders two tiles when both fields are present and falls back to combined "System ROI" for legacy cache rows. In-play CLV intentionally NOT surfaced — semantics differ (live vs pre-match closing line) and produce misleading aggregates; revisit after defining inplay-CLV properly. Smoke: PERF-HERO-COHORT-SPLIT.
 >
-> Remaining: Change 2 (30d rolling headline), Change 3 (equity sparkline), Change 4 (maturity badges), Change 5 (recent wins reel), Change 6 (calibration callout). Each gets its own data check before implementation.
+> **Change 2/6 — 30d rolling headline ROI — SHELVED.** Data check fails its ship gate. Live cache shows active all-time ROI = +8.40% on n=1,740 vs active last-30d ROI = +8.53% on n=1,739 — essentially identical (most of the active-bot history is already in the 30d window). Gate required ≥ 3pp improvement on last-30d. CLV is also flat (9.80% all-time / 9.80% 30d / 7.80% 14d / 9.90% 7d). Change 1's cohort split already gave the rolling-window story for the two ROI tiles that matter. No work needed.
+>
+> **Change 3/6 — PERF-HERO-EQUITY-SPARKLINE — done.** Cumulative P&L over last 30d = **+€815** on active bots with a clean "up and to the right" trajectory (dip to −€127 around May 7, recovery + steady growth thereafter). Migration 158 adds `daily_pnl_curve_30d` JSONB to `dashboard_cache`; settlement.py builds the array (same active+non-experimental scope as the cohort split); new `EquitySparkline` component renders an inline SVG (no chart library — ~60 lines incl. accessibility). Placed between hero tiles and the Model v2 callout. Falls back gracefully (early-return) if the curve has < 2 points. Smoke: PERF-HERO-EQUITY-SPARKLINE.
+>
+> Remaining: Change 4 (maturity badges), Change 5 (recent wins reel), Change 6 (calibration callout). Each gets its own data check before implementation.
 >
 > ## 2026-06-01 — CHERRY-PICK-PLACER planned
 >
