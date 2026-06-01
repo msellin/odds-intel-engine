@@ -2,6 +2,14 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-06-01 — RETIRE-LOWER-1X2 + PERF-PAGE-LIVE-RETIRED-FILTER done
+>
+> Stale-flag retirement plus a small frontend defence so future retirements show up immediately on /performance.
+>
+> **RETIRE-LOWER-1X2** — `bot_lower_1x2` had its retired_reason fully populated on 2026-05-17 ("shrinkage_alpha_t2_1x2 = 0.00; model has no real edge over Pinnacle on T1-T2 1X2") but `is_active=true` was never flipped. Bot kept firing 44 bets at -7.58% ROI / +6.16% CLV since 2026-05-24 (last fire 2026-05-31). Migration 156 flips `is_active=false` + stamps `retired_at`. Description in `daily_pipeline_v2.py` prepended with [RETIRED 2026-06-01]. Re-activation trigger from the original diagnosis is preserved. Smoke: RETIRE-LOWER-1X2.
+>
+> **PERF-PAGE-LIVE-RETIRED-FILTER** (odds-intel-web) — page.tsx already filtered retired_breakdown against the live DB so un-retired bots disappear immediately; the inverse filter for newly-retired bots in the active leaderboard was missing. A bot retired between cache rebuilds (every 30 min via `job_dashboard_cache_refresh`) would still appear in the active list. Now `cachedBots` is filtered through `liveRetiredNames` upstream of the leaderboard. Free users still see slightly stale `cache.active_roi_pct` for up to 30 min until the next cache rebuild, but the leaderboard rows themselves are correct immediately. Pro users were already fine — `PerformanceClient` recomputes from `aggregateBets` filtered by `activeBotNames` (line 88-91). Smoke: PERF-PAGE-LIVE-RETIRED-FILTER.
+>
 > ## 2026-06-01 — RETIRE-DC-SPECIALIST + META-VALIDATOR-FIXES + OU-MODEL-PIN-RUNBOOK done
 >
 > Three follow-ups after analysing Sunday 2026-05-31's auto-retrain (`v20260531`) against production `v20260524_market`. Held-out window 2026-05-17..2026-05-31, n=5,506 matches. New bundle wins on 9/11 markets (1X2 log_loss −10%, AH −2.5–2.8%, BTTS −1.3%) and regresses **over_under +2.7%** (predicts under at 56.3% vs actual 44.4% — TIER-C-EXPAND drag, exactly what `OU-TIER-C-DRAG-AUDIT` predicted). Production prematch ROI since v2 deploy: −4.5% on 871 settled bets but **CLV +6.83%** — model is on the right side of Pinnacle, just miscalibrated. Inplay decoupled (no prematch heads on the read path): +41% ROI on 212 bets.

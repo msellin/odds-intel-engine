@@ -73,13 +73,15 @@ BOTS_CONFIG = {
         "odds_range": (1.30, 4.50),
         "min_prob": 0.30,
     },
-    # BOTS-RETIRE-1X2 (2026-05-17): retired via migration 103. Kept in BOTS_CONFIG
-    # so historical bot_id linkages keep working — pipeline skips via is_active=false.
+    # [RETIRED 2026-06-01 — RETIRE-LOWER-1X2, migration 156]
+    # Original 2026-05-17 retirement (alpha_t2_1x2=0.00 after May 17 retrain
+    # starved it; +83% on 11 bets was variance) was re-activated 2026-05-22 by
+    # migration 122 for weekend signal gathering. The retired_reason was
+    # already populated since then but is_active was never flipped — bot kept
+    # firing 44 bets at -7.58% ROI (+6.16% CLV) since 2026-05-24. Retired via
+    # migration 156 today. Re-enable trigger in retired_reason.
     "bot_lower_1x2": {
-        # Currently active. Originally retired 2026-05-17 (alpha_t2_1x2=0.00 after
-        # May 17 retrain starved it; +83% on 11 bets was variance). Re-activated
-        # 2026-05-22 via migration 122 for weekend signal gathering.
-        "description": "Tier 2-4 only, 1X2 only — odds 1.35-3.50, edge 3-7%. Re-enabled 2026-05-22 (migration 122).",
+        "description": "[RETIRED 2026-06-01] T2-4 1X2-only — stale-flag fix. -7.58% ROI / +6.16% CLV on 44 bets since v2 deploy. Model has no edge over Pinnacle on T1-T2 1X2 (alpha=0.00).",
         "tier_label": "elite",
         "markets": ["1x2"],
         "tier_filter": [2, 3, 4],

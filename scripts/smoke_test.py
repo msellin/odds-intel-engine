@@ -11801,5 +11801,61 @@ def _():
         "PRIORITY_QUEUE must reference v20260531 as the candidate being promoted"
 
 
+@test("PERF-PAGE-LIVE-RETIRED-FILTER — /performance drops freshly-retired bots from active leaderboard without waiting for cache rebuild")
+def _():
+    """The retired_bot_breakdown filter against liveRetiredNames has existed
+    since RetiredStrategiesSection landed; the inverse filter for the active
+    leaderboard was missing, so a bot retired between cache rebuilds (every
+    30 min via job_dashboard_cache_refresh) would still show in the active
+    leaderboard until the next rebuild. The fix applies liveRetiredNames as
+    an upstream filter on cachedBots in page.tsx."""
+    import pathlib
+    page = pathlib.Path("../odds-intel-web/src/app/(app)/performance/page.tsx").read_text()
+
+    # liveRetiredNames must be defined once and consumed by both the active and retired filters
+    assert "liveRetiredNames" in page, "page.tsx must define liveRetiredNames from botsDB"
+    assert "retiredAt" in page, "liveRetiredNames must derive from botsDB[].retiredAt"
+
+    # cachedBots construction must include the .filter against liveRetiredNames
+    cb_start = page.index("const cachedBots = buildCachedBotStats(")
+    cb_end = page.index(";", cb_start)
+    cb_block = page[cb_start:cb_end]
+    assert "liveRetiredNames" in cb_block, \
+        "cachedBots must filter out names in liveRetiredNames (active leaderboard freshness)"
+    assert "experimental" in cb_block, \
+        "cachedBots must still filter experimental bots"
+
+
+@test("RETIRE-LOWER-1X2 — migration 156 retires bot_lower_1x2; daily_pipeline_v2 description marked retired")
+def _():
+    """bot_lower_1x2 had its retired_reason populated on 2026-05-17 but
+    is_active was never flipped — bot kept firing 44 bets at -7.58% ROI
+    since v2 deploy. Migration 156 must flip is_active=false, stamp
+    retired_at, and preserve the original re-activation trigger
+    (alpha recovery or shadow_bets validation). The daily_pipeline_v2
+    config description must carry [RETIRED 2026-06-01] so operators see
+    the state without consulting the DB."""
+    import pathlib
+
+    mig = pathlib.Path("supabase/migrations/156_retire_lower_1x2.sql").read_text()
+    assert "bot_lower_1x2" in mig, "Migration 156 must target bot_lower_1x2"
+    assert "is_active     = false" in mig or "is_active = false" in mig, \
+        "Migration 156 must set is_active=false"
+    assert "retired_at" in mig, "Migration 156 must set retired_at"
+    assert "shadow_bets" in mig.lower() or "alpha" in mig.lower(), \
+        "retired_reason must preserve re-activation trigger from original diagnosis"
+    # Guard against double-retiring something already retired (safety on rerun)
+    assert "AND is_active = true" in mig, \
+        "Migration 156 must guard the UPDATE with AND is_active = true (idempotent)"
+
+    pipeline_src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    block_start = pipeline_src.index('"bot_lower_1x2": {')
+    block_desc = pipeline_src.index('"description":', block_start)
+    block_end = pipeline_src.index('\n', block_desc + 100)
+    block = pipeline_src[block_start:block_end]
+    assert "[RETIRED 2026-06-01]" in block, \
+        "bot_lower_1x2 description must be prefixed [RETIRED 2026-06-01]"
+
+
 if __name__ == "__main__":
     main()
