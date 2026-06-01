@@ -435,6 +435,85 @@ def check_meta_score_drift() -> None:
         )
 
 
+def check_stale_retirement_flags() -> None:
+    """STALE-FLAG-WATCHDOG 2026-06-01 — five bots in 24h had retired_reason
+    populated but is_active=true (the migration prepared the reason text but
+    never flipped the flag). Performance page kept counting them as active and
+    /performance ROI math was wrong. This check catches the next occurrence
+    automatically: any bot with a populated retired_reason that is still
+    is_active=true with no retired_at stamp gets flagged.
+
+    Note: clearing retired_reason on a recovered bot is a valid operator
+    action — see migration 162 STALE-FLAG-AUDIT bot_conservative /
+    bot_opt_home_lower. The check only triggers when the reason is set AND
+    the bot is still considered active by the pipeline.
+    """
+    rows = execute_query("""
+        SELECT name, maturity_label, LEFT(retired_reason, 120) AS reason
+        FROM bots
+        WHERE retired_reason IS NOT NULL
+          AND is_active = true
+          AND retired_at IS NULL
+        ORDER BY name
+    """)
+    if not rows:
+        console.print("[dim]health_alerts: no stale retirement flags[/dim]")
+        return
+
+    bot_list_html = "<ul>" + "".join(
+        f"<li><b>{r['name']}</b> ({r['maturity_label']}) — {r['reason']}…</li>"
+        for r in rows
+    ) + "</ul>"
+
+    _alert_once(
+        "stale_retirement_flags",
+        f"Stale retirement flags — {len(rows)} bot(s) need attention",
+        f"<p>The following bots have <code>retired_reason</code> set but are "
+        f"still <code>is_active=true</code> with no <code>retired_at</code> "
+        f"stamp. They are still firing into the active /performance cohort.</p>"
+        f"{bot_list_html}"
+        f"<p>Action: either flip <code>is_active=false</code> + stamp "
+        f"<code>retired_at=NOW()</code> (true retirement), or clear "
+        f"<code>retired_reason = NULL</code> (bot recovered).</p>"
+    )
+
+
+def check_dashboard_cache_stale() -> None:
+    """CACHE-FRESHNESS-WATCHDOG 2026-06-01 — Railway dashboard_cache_refresh
+    job stopped running 14:35 UTC today; the staleness went unnoticed until a
+    user spotted misleading numbers on /performance 3h later. This check fires
+    a Telegram alert when the latest dashboard_cache row is > 60 min old —
+    well outside the 30-min cron cadence, conservatively avoids false positives
+    during scheduler restarts.
+    """
+    rows = execute_query("SELECT MAX(computed_at) AS t FROM dashboard_cache")
+    last = rows[0]["t"] if rows else None
+    if last is None:
+        return  # No cache yet — separate problem, surfaced elsewhere
+
+    now_utc = datetime.now(timezone.utc)
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    age_min = (now_utc - last).total_seconds() / 60
+    console.print(f"[dim]health_alerts: dashboard_cache age {age_min:.1f} min[/dim]")
+
+    if age_min > 60:
+        _alert_once(
+            "dashboard_cache_stale",
+            f"Dashboard cache stale — {age_min:.0f} min old",
+            f"<p>The <code>dashboard_cache</code> table's most recent row is "
+            f"{age_min:.0f} minutes old (last write {last.strftime('%H:%M UTC')}). "
+            f"The cron is supposed to run every 30 minutes via "
+            f"<code>job_dashboard_cache_refresh</code>.</p>"
+            f"<p>Likely causes: APScheduler hung (check <code>pipeline_runs</code> "
+            f"for jobs stuck in 'running'), Railway service crash, or "
+            f"<code>write_dashboard_cache()</code> raising silently.</p>"
+            f"<p>The /performance page is currently showing the stale row, which "
+            f"may confuse visitors. Restart Railway or investigate the scheduler "
+            f"thread pool.</p>"
+        )
+
+
 def run_morning_checks() -> None:
     """09:30 UTC check — run after the morning betting pipeline."""
     console.print("[cyan]health_alerts: running morning checks[/cyan]")
@@ -462,6 +541,8 @@ def run_snapshot_check() -> None:
         ("af_quota", check_af_quota),
         ("model_drift", check_model_drift),
         ("meta_score_drift", check_meta_score_drift),
+        ("stale_retirement_flags", check_stale_retirement_flags),
+        ("dashboard_cache_stale", check_dashboard_cache_stale),
     ]:
         try:
             fn()

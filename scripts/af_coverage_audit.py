@@ -115,20 +115,27 @@ def main():
             t.add_row(market, key, str(n))
     console.print(t)
 
-    # Verdict
+    # Verdict — the DANGEROUS case is no→yes (flag says skip, AF has data).
+    # yes→no is just a wasted call (flag says fetch, AF returns empty).
+    # Fixed 2026-06-01: prior wording reversed these and produced a backwards verdict.
     for market in ("events", "lineups"):
         m = truth[market]
-        true_pos = m.get("yes→yes", 0)
-        false_neg = m.get("yes→no", 0)
-        false_pos = m.get("no→yes", 0)
-        true_neg = m.get("no→no", 0)
-        flag_accuracy = (true_pos + true_neg) / max(sum(m.values()), 1)
-        console.print(f"  {market}: flag accuracy {flag_accuracy*100:.1f}% — "
-                      f"safe-to-gate? {'✓' if flag_accuracy >= 0.95 else '✗ false-negatives would skip real data'}")
-        if false_neg > 0:
-            console.print(f"    [yellow]{false_neg} matches flagged false but AF actually returned data — flag is OVER-conservative[/yellow]")
+        true_pos  = m.get("yes→yes", 0)
+        false_pos = m.get("yes→no", 0)   # flag=true, actual=no — wasted call
+        false_neg = m.get("no→yes", 0)   # flag=false, actual=yes — DANGEROUS, would skip real data
+        true_neg  = m.get("no→no", 0)
+        total = sum(m.values())
+        flag_accuracy = (true_pos + true_neg) / max(total, 1)
+        fn_rate = false_neg / max(total, 1)
+        verdict = ("[green]✓ SAFE TO GATE[/green]" if fn_rate < 0.05
+                   else "[yellow]⚠ MARGINAL[/yellow]" if fn_rate < 0.10
+                   else "[red]✗ DO NOT GATE — would skip real data[/red]")
+        console.print(f"  {market}: accuracy {flag_accuracy*100:.1f}% · "
+                      f"false-negative (dangerous) rate {fn_rate*100:.1f}% · {verdict}")
         if false_pos > 0:
-            console.print(f"    [red]{false_pos} matches flagged true but AF returned 0 — gate would waste calls[/red]")
+            console.print(f"    [dim]{false_pos} wasted calls (flag=true but AF empty) — minor inefficiency only[/dim]")
+        if false_neg > 0:
+            console.print(f"    [red]{false_neg} matches with flag=false but AF returned data — gating would skip these[/red]")
 
 
 if __name__ == "__main__":

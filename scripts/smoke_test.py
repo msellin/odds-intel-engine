@@ -12174,5 +12174,71 @@ def _():
         "Comment must document the before/after thresholds"
 
 
+@test("STALE-FLAG-WATCHDOG — health_alerts.check_stale_retirement_flags + cache staleness checks wired into hourly run")
+def _():
+    """Two new health checks added 2026-06-01 after five stale-flag retirements
+    + a 3h dashboard_cache staleness incident went unnoticed:
+
+    • check_stale_retirement_flags — DB query for bots with retired_reason
+      populated AND is_active=true AND retired_at IS NULL. Fires Telegram
+      alert when any exist (clearing the reason on a recovered bot is the
+      operator's other valid response).
+    • check_dashboard_cache_stale — alerts when MAX(dashboard_cache.computed_at)
+      is > 60 min old. 60min threshold sits well outside the 30-min cron cadence
+      so we don't false-positive during restarts.
+
+    Both wired into run_snapshot_check (hourly, 10-23 UTC) alongside the
+    existing memory/AF-quota/model-drift checks."""
+    import pathlib, inspect
+    from workers.jobs import health_alerts
+
+    assert hasattr(health_alerts, "check_stale_retirement_flags"), \
+        "health_alerts must define check_stale_retirement_flags"
+    assert hasattr(health_alerts, "check_dashboard_cache_stale"), \
+        "health_alerts must define check_dashboard_cache_stale"
+
+    flags_src = inspect.getsource(health_alerts.check_stale_retirement_flags)
+    assert "retired_reason IS NOT NULL" in flags_src, \
+        "stale-flag check must look for populated retired_reason"
+    assert "is_active = true" in flags_src, \
+        "stale-flag check must filter is_active = true"
+    assert "retired_at IS NULL" in flags_src, \
+        "stale-flag check must require retired_at IS NULL (so cleared rows don't refire)"
+    assert "_alert_once" in flags_src, \
+        "stale-flag check must use _alert_once for dedup"
+
+    cache_src = inspect.getsource(health_alerts.check_dashboard_cache_stale)
+    assert "dashboard_cache" in cache_src, "cache check must query dashboard_cache"
+    assert "age_min > 60" in cache_src, "cache check must use 60-min threshold"
+    assert "_alert_once" in cache_src, "cache check must use _alert_once for dedup"
+
+    # Both wired into the hourly run
+    runner_src = inspect.getsource(health_alerts.run_snapshot_check)
+    assert "check_stale_retirement_flags" in runner_src, \
+        "run_snapshot_check must call check_stale_retirement_flags"
+    assert "check_dashboard_cache_stale" in runner_src, \
+        "run_snapshot_check must call check_dashboard_cache_stale"
+
+
+@test("AF-COVERAGE-AUDIT-VERDICT-FIX — danger case is no→yes (skipped real data), not yes→no (wasted call)")
+def _():
+    """The existing script's verdict logic had the false-negative direction
+    reversed: it labeled `yes→no` (flag=true, AF empty — wasted call) as the
+    dangerous case when in fact `no→yes` (flag=false, AF returns data —
+    skipping real data because of the gate) is the dangerous one. Fix
+    re-labels and uses fn_rate = no→yes / total. Verdict thresholds:
+    < 5% safe, 5-10% marginal, ≥ 10% do-not-gate."""
+    import pathlib
+    src = pathlib.Path("scripts/af_coverage_audit.py").read_text()
+
+    assert 'false_pos = m.get("yes→no", 0)' in src, \
+        "yes→no must be labeled false_pos (wasted call), not false_neg"
+    assert 'false_neg = m.get("no→yes", 0)' in src, \
+        "no→yes must be labeled false_neg (DANGEROUS — skipped real data)"
+    assert "fn_rate < 0.05" in src, \
+        "Verdict must use <5% FN-rate threshold for SAFE TO GATE"
+    assert "DO NOT GATE" in src, "Verdict must include the do-not-gate copy"
+
+
 if __name__ == "__main__":
     main()

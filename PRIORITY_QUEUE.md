@@ -2,6 +2,16 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-06-01 — STALE-FLAG-WATCHDOG + CACHE-FRESHNESS-WATCHDOG + AF-COVERAGE-AUDIT
+>
+> Three observability + decision-prep items after today's process gaps (5 stale-flag retirements + 3h cache staleness incident).
+>
+> **STALE-FLAG-WATCHDOG** — `health_alerts.check_stale_retirement_flags()` queries for bots with `retired_reason IS NOT NULL AND is_active = true AND retired_at IS NULL` and fires a Telegram alert when any exist. Wired into `run_snapshot_check` (hourly 10-23 UTC). The next migration that forgets to flip is_active will be caught within an hour instead of 5 stacking up before someone notices. Dry-run on production: 0 stale flags (today's migrations 155/156/160/162 closed them all). Smoke: STALE-FLAG-WATCHDOG.
+>
+> **CACHE-FRESHNESS-WATCHDOG** — `health_alerts.check_dashboard_cache_stale()` alerts when `MAX(dashboard_cache.computed_at) > 60 min ago` (well outside the 30-min cron cadence, conservative to avoid false-positives during restarts). Would have caught today's 3h staleness within 60 min instead of 3h. Wired same hourly run. Smoke covered by STALE-FLAG-WATCHDOG.
+>
+> **AF-COVERAGE-AUDIT** (n=24, run 2026-06-01 post-Railway-restart) — feeds `LIVEPOLLER-EVENTS-GATE-DEPLOY` decision on 2026-06-07. Found a **logic bug** in the existing `scripts/af_coverage_audit.py` (verdict treated `yes→no` wasted-call as a false-negative when the dangerous case is `no→yes` skipping real data — verdict was reversed; fixed). Corrected results: events flag 91.7% accurate, FN rate 0%, ✓ SAFE TO GATE. Lineups flag 70.8% accurate, FN rate 0% in this sample but smaller historical sample previously showed 4/20 FN — recommend re-running with n≥50 before gating lineups. **Decision for 2026-06-07**: flip `GATE_EVENTS_BY_COVERAGE=true` only; keep lineups ungated pending larger audit. Smoke: AF-COVERAGE-AUDIT-VERDICT-FIX.
+>
 > ## 2026-06-01 — OU35-EDGE-LOOSEN + RAILWAY-SCHEDULER-HUNG (incident)
 >
 > **RAILWAY-SCHEDULER-HUNG** — at 14:35 UTC three jobs (`betting_pipeline`, `shadow_1435`, `betting_refresh`) entered "running" state and never completed (still showing 22+ minutes runtime). After 14:45 the scheduler stopped accepting new jobs entirely. Last DB writes by major path: simulated_bets 12:08, shadow_bets 14:11, live_match_snapshots 14:56, dashboard_cache 14:48. Diagnostic via `pipeline_runs` table. **Action required: restart Railway service** (cannot trigger from local session). Suspect process death or deadlock — three jobs hung simultaneously suggests shared resource (DB pool exhaustion, AF rate limit lock, or worker thread starvation). Filed for post-restart investigation: review APScheduler timeout config + identify whether the three jobs share a thread group. ⚠️ STATUS: ⏳ awaiting Railway restart.
