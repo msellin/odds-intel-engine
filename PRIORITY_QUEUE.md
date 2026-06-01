@@ -2,6 +2,10 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-06-01 — CHERRY-PICK-PLACER planned
+>
+> Strategic separation between paper firing (broad, all bots → simulated_bets → honest performance page + retraining volume) and real-money placement (curated subset → real_bets only from bots that pass an explicit maturity bar). Gate column = existing `bots.maturity_label`. New env var `COOLBET_RECORD_ALLOWED_MATURITY=calibrated` filters the three placer loaders (singles + combos + inplay). Defaults to no-filter so the code can ship safely before Phase 3.5 closes; gate flips to `calibrated` on 2026-06-08 after promotion criteria are written and 2-4 bots are manually promoted. Plan + context + tasks in `dev/active/cherry-pick-placer-{plan,context,tasks}.md`. Three phases: P1 code lands (06-02→06-04), P2 promotion surface + rules (06-05→06-06), P3 gate flip + 7-day monitor (06-08+). Status: ⬜ ready to start P1.
+>
 > ## 2026-06-01 — RETIRE-LOWER-1X2 + PERF-PAGE-LIVE-RETIRED-FILTER done
 >
 > Stale-flag retirement plus a small frontend defence so future retirements show up immediately on /performance.
