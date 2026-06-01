@@ -281,20 +281,29 @@ def job_odds_tomorrow():
     _run_job("odds_tomorrow", lambda: run_odds(target_date=tomorrow))
 
 
-def job_enrichment_refresh():
+def job_injuries_morning():
+    """AF-INJURIES-LATE (2026-06-01): single morning injury fetch at 08:00 UTC.
+    Replaces the previous 10:30 + 13:00 + 16:00 schedule. Most injury news
+    breaks overnight / pre-match; the 08:00 fetch keeps the morning betting
+    pipeline at 11:00 within 3h of the last injury data, which is plenty for
+    football's injury news cadence. Saves ~30 AF calls/day. News-event-
+    triggered refresh path is filed as a follow-up but not wired today.
+    """
     from workers.jobs.fetch_enrichment import run_enrichment
-    _run_job("enrichment_refresh", run_enrichment,
+    _run_job("injuries_morning", run_enrichment,
              components={"injuries"})
 
 
 def job_enrichment_full():
-    """13:00 UTC full enrichment — injuries, H2H, team_stats.
+    """13:00 UTC full enrichment — H2H + team_stats only.
+    AF-INJURIES-LATE (2026-06-01): injuries dropped from this slot; they're
+    now fetched once at 08:00 UTC by job_injuries_morning. H2H + team_stats
+    still refreshed here for afternoon/evening betting refreshes (N7 fix).
     Standings moved to job_standings_nightly (23:30 UTC, AF-STANDINGS-DAILY).
-    Ensures H2H + team_stats are fresh for afternoon/evening betting refreshes (N7 fix).
     """
     from workers.jobs.fetch_enrichment import run_enrichment
     _run_job("enrichment_full", run_enrichment,
-             components={"injuries", "h2h", "team_stats"})
+             components={"h2h", "team_stats"})
 
 
 def job_standings_nightly():
@@ -1287,12 +1296,11 @@ def main():
     scheduler.add_job(job_odds_pre_kickoff, CronTrigger(hour=20, minute=0),
                       id="odds_prekick_2000", name="Odds Pre-KO 20:00")
 
-    # Enrichment refresh: 10:30, 16:00 UTC (injuries only — AF-STANDINGS-DAILY)
-    # 10:30 moved from 12:00 so injury data is fresh before the 11:00 betting refresh
-    scheduler.add_job(job_enrichment_refresh, CronTrigger(hour=10, minute=30),
-                      id="enrichment_1030", name="Enrichment 10:30")
-    scheduler.add_job(job_enrichment_refresh, CronTrigger(hour=16, minute=0),
-                      id="enrichment_16", name="Enrichment 16:00")
+    # AF-INJURIES-LATE (2026-06-01): single 08:00 UTC injury fetch replaces
+    # the previous 10:30 + 13:00 + 16:00 schedule. ~30 AF calls/day saved.
+    # News-event-triggered refresh path filed as follow-up.
+    scheduler.add_job(job_injuries_morning, CronTrigger(hour=8, minute=0),
+                      id="injuries_morning", name="Injuries (morning) 08:00")
 
     # Full enrichment: 13:00 UTC — injuries, H2H, team_stats (standings moved to 23:30)
     # N7 fix: H2H + team_stats were only fetched in morning pipeline; this refresh

@@ -12408,5 +12408,76 @@ def _():
     assert rows[0]["delta_pp"] == -7.5, "Parser must read delta_pp correctly"
 
 
+@test("AF-INJURIES-LATE — 08:00 UTC single injury fetch; 10:30/16:00 enrichment_refresh removed; 13:00 enrichment_full drops injuries")
+def _():
+    """Consolidate the three daily injury fetches (10:30, 13:00, 16:00) into
+    one at 08:00 UTC. Saves ~30 AF calls/day. News-event refresh is a
+    follow-up. enrichment_full (13:00) still runs but only fetches h2h +
+    team_stats, not injuries."""
+    import pathlib
+    src = pathlib.Path("workers/scheduler.py").read_text()
+
+    # New morning injury job
+    assert "def job_injuries_morning" in src, "Must define job_injuries_morning"
+    assert 'id="injuries_morning"' in src, "Must register id=injuries_morning"
+    assert "CronTrigger(hour=8, minute=0)" in src, "Must fire at 08:00 UTC"
+
+    # job_injuries_morning body must call run_enrichment with components={"injuries"}
+    job_start = src.index("def job_injuries_morning")
+    job_end = src.index("\ndef ", job_start + 1)
+    job_body = src[job_start:job_end]
+    assert 'components={"injuries"}' in job_body, \
+        "job_injuries_morning must call run_enrichment(components={'injuries'})"
+
+    # enrichment_full (13:00) must NOT include injuries anymore
+    full_start = src.index("def job_enrichment_full")
+    full_end = src.index("\ndef ", full_start + 1)
+    full_body = src[full_start:full_end]
+    assert '"injuries"' not in full_body, \
+        "job_enrichment_full must drop injuries (now fetched at 08:00 only)"
+    assert '"h2h"' in full_body and '"team_stats"' in full_body, \
+        "job_enrichment_full must still fetch h2h + team_stats"
+
+    # The 10:30 and 16:00 enrichment_refresh registrations must be gone
+    assert 'id="enrichment_1030"' not in src, \
+        "10:30 enrichment_refresh cron must be removed"
+    assert 'id="enrichment_16"' not in src, \
+        "16:00 enrichment_refresh cron must be removed"
+
+
+@test("EMAIL-DELIVERY-CHECK — Resend records cross-checked against DNS; DMARC gap surfaced")
+def _():
+    """Script at scripts/check_email_deliverability.py:
+    1. Queries Resend /domains for the authoritative record list (DKIM, SPF MX,
+       SPF TXT) — Resend tells us exactly what records it expects.
+    2. Looks up each via `dig` and compares observed vs expected. Handles the
+       fact that DKIM lives at root (resend._domainkey.<domain> TXT) while SPF
+       is on the `send` subdomain (the structure Resend actually uses).
+    3. Separately checks DMARC because Resend doesn't require it but big
+       mailbox providers do, and recommends a starter `p=none` policy when missing.
+
+    Today's live run: DKIM ✓, SPF MX ✓, SPF TXT ✓, DMARC ✗ (missing — filed)."""
+    import pathlib, importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "check_email_deliverability",
+        "scripts/check_email_deliverability.py",
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    assert hasattr(mod, "_check_resend_record"), "Helper _check_resend_record must exist"
+    assert hasattr(mod, "check_dns"), "check_dns must accept Resend records"
+    assert hasattr(mod, "check_resend_api"), "Resend API check must exist"
+    assert hasattr(mod, "_from_email_domain"), "Domain parser must exist"
+
+    # _from_email_domain handles both name + email forms
+    import os
+    os.environ["DIGEST_FROM_EMAIL"] = "OddsIntel <digest@oddsintel.app>"
+    assert mod._from_email_domain() == "oddsintel.app"
+    os.environ["DIGEST_FROM_EMAIL"] = "bare@example.com"
+    assert mod._from_email_domain() == "example.com"
+    del os.environ["DIGEST_FROM_EMAIL"]
+
+
 if __name__ == "__main__":
     main()

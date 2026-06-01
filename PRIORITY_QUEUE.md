@@ -2,6 +2,24 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-06-01 — EMAIL-DELIVERY-CHECK ran live; DMARC gap surfaced
+>
+> Verified Resend deliverability for `oddsintel.app` via the rewritten `scripts/check_email_deliverability.py`. Script now uses Resend's `/domains` API as authoritative record list (avoids guessing selector / subdomain) and cross-checks each expected record against live DNS. Live run:
+>   • ✅ DKIM TXT at `resend._domainkey.oddsintel.app` (root) — matches Resend key
+>   • ✅ SPF MX at `send.oddsintel.app` → `feedback-smtp.eu-west-1.amazonses.com`
+>   • ✅ SPF TXT at `send.oddsintel.app` → `v=spf1 include:amazonses.com ~all`
+>   • **❌ DMARC missing** at both root and `send` subdomain — recommended fix surfaced in script output
+>
+> **Action item for operator** (Cloudflare DNS — manual): add TXT record:
+>   ```
+>   _dmarc.oddsintel.app  TXT  "v=DMARC1; p=none; rua=mailto:postmaster@oddsintel.app; pct=100"
+>   ```
+> Start with `p=none` (monitoring-only — no impact on delivery). After 14d of clean DMARC aggregate reports, raise to `p=quarantine`. Major mailbox providers (Gmail, Outlook, Yahoo) increasingly require DMARC for senders >5K msgs/day. We're well below that, but with the Telegram alerts + value bet emails this trip threshold faster than expected. Original script had bugs (looked for DKIM as CNAME when Resend uses TXT, checked SPF on root domain when Resend uses `send` subdomain) — both fixed. Smoke: EMAIL-DELIVERY-CHECK.
+>
+> ## 2026-06-01 — AF-INJURIES-LATE shipped
+>
+> Consolidated the three daily injury fetches (10:30 + 13:00 + 16:00) into one at 08:00 UTC via new `job_injuries_morning` cron. `enrichment_full` (13:00) drops injuries from its components and now fetches only H2H + team_stats. The two `enrichment_refresh` crons at 10:30 + 16:00 (injuries-only) removed entirely. Net savings: ~30 AF calls/day (~3-4% of daily AF budget). WORKFLOWS.md updated. News-event-triggered injury refresh path is the unfinished half — filed as a separate task: when news_checker detects injury-related events at 09:00 / 12:30 / 16:30 / 18:30, fire a targeted refresh on the affected fixture(s). Until then, accept up to 14h injury staleness for late-evening matches. Smoke: AF-INJURIES-LATE.
+>
 > ## 2026-06-01 — META-VALIDATE-WEEKLY cron shipped
 >
 > New Sunday 05:00 UTC cron runs `scripts/validate_meta_b_ml3.py` after `weekly_meta_retrain` (04:00) and emails the per-bundle verdict via Resend. Stops the 2026-06-10 activation decision (and every future one) from being a manual checkpoint. Email helper at `workers/jobs/weekly_meta_validate_email.py` parses the script's rich-table stdout, renders an HTML digest with the per-bundle Δ-pp column + a top-line recommendation, ships to `ADMIN_ALERT_EMAIL`. Even FAIL-only weeks land a digest so we can track the delta over time. Smoke: META-VALIDATE-WEEKLY.
