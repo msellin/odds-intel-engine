@@ -12133,5 +12133,46 @@ def _():
         "bot_draw_specialist description must be prefixed [RETIRED 2026-06-01]"
 
 
+@test("OU35-EDGE-LOOSEN — bot_ou_specialist Over 3.5 Global edge floor lowered 14% → 10%")
+def _():
+    """The Over 3.5 Global profile fired ZERO candidates at the 14% edge floor
+    in 30d of shadow data — the 2023-2026 backtest optimum is no longer
+    reachable under current calibration. Lowered to 10% to surface candidates
+    and observe live ROI. Other two profiles (Under 2.5 Specialist, Over 2.5
+    Sweden) untouched — they have league whitelists + 5% edge floors that
+    already work. Iteration plan documented in code comment."""
+    import workers.jobs.daily_pipeline_v2 as dp
+    cfg = dp.BOTS_CONFIG.get("bot_ou_specialist", {})
+    strategies = cfg.get("strategies", [])
+
+    by_alias = {s.get("alias"): s for s in strategies}
+    over35 = by_alias.get("Over 3.5 Global")
+    assert over35 is not None, "Over 3.5 Global profile must exist on bot_ou_specialist"
+
+    edges = over35.get("edge_thresholds", {})
+    for tier in (1, 2, 3, 4):
+        assert tier in edges, f"Over 3.5 Global must have tier {tier} edge threshold"
+        v = edges[tier].get("ou")
+        assert v is not None and abs(v - 0.10) < 1e-6, \
+            f"Tier {tier} 'ou' edge must be 0.10 (was lowered from 0.14), got {v}"
+
+    # Confirm the other two profiles are NOT changed
+    under25 = by_alias.get("Under 2.5 Specialist")
+    assert under25 is not None and under25["edge_thresholds"][1]["ou"] == 0.05, \
+        "Under 2.5 Specialist edge must stay at 0.05"
+    over25 = by_alias.get("Over 2.5 Sweden")
+    assert over25 is not None and over25["edge_thresholds"][1]["ou"] == 0.05, \
+        "Over 2.5 Sweden edge must stay at 0.05"
+
+    # The code comment must explain the rationale + iteration plan
+    import pathlib, inspect
+    src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    idx = src.index('"alias": "Over 3.5 Global"')
+    block = src[idx:idx + 1200]
+    assert "OU35-EDGE-LOOSEN" in block, "Code comment must reference task tag"
+    assert "14%" in block and "10%" in block, \
+        "Comment must document the before/after thresholds"
+
+
 if __name__ == "__main__":
     main()

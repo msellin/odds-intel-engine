@@ -2,6 +2,12 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-06-01 — OU35-EDGE-LOOSEN + RAILWAY-SCHEDULER-HUNG (incident)
+>
+> **RAILWAY-SCHEDULER-HUNG** — at 14:35 UTC three jobs (`betting_pipeline`, `shadow_1435`, `betting_refresh`) entered "running" state and never completed (still showing 22+ minutes runtime). After 14:45 the scheduler stopped accepting new jobs entirely. Last DB writes by major path: simulated_bets 12:08, shadow_bets 14:11, live_match_snapshots 14:56, dashboard_cache 14:48. Diagnostic via `pipeline_runs` table. **Action required: restart Railway service** (cannot trigger from local session). Suspect process death or deadlock — three jobs hung simultaneously suggests shared resource (DB pool exhaustion, AF rate limit lock, or worker thread starvation). Filed for post-restart investigation: review APScheduler timeout config + identify whether the three jobs share a thread group. ⚠️ STATUS: ⏳ awaiting Railway restart.
+>
+> **OU35-EDGE-LOOSEN** — `bot_ou_specialist` "Over 3.5 Global" profile edge threshold lowered 14% → 10%. Diagnostic showed **ZERO candidates** passed 14% in 30d of shadow data, despite the bot being designed to cover the over 3.5 market globally. 14% was a 2023-2026 backtest sweep optimum; calibration drift since then means no live candidates clear that bar. 10% is the first iteration — paper bot, safe to observe live ROI. Adjustment plan in code comment: if -ROI consistent, raise back to 14%; if ROI ≥ 5% on n ≥ 30, try 8%. Takes effect after Railway scheduler restart. Smoke: OU35-EDGE-LOOSEN.
+>
 > ## 2026-06-01 — STALE-FLAG-AUDIT + Task A specialist funnel diag + Task B edge calibration on shadow
 >
 > User asked "do all three investigation tasks" (A specialist funnel, B edge calibration, C stale-flag audit) after spotting the +0.7% pre-match ROI on the hero looked inconsistent with the bot leaderboard.

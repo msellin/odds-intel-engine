@@ -512,15 +512,21 @@ BOTS_CONFIG = {
             },
             {
                 "alias": "Over 3.5 Global",
-                # No league_name_filter — fires all leagues. +35% backtest ROI at 14% edge
-                # but no confirmed per-league signals (max 11 bets/league in backtest).
-                # 14% edge threshold is high intentionally — calibration sweep optimum.
+                # No league_name_filter — fires all leagues.
+                # OU35-EDGE-LOOSEN 2026-06-01: lowered edge threshold 14% → 10%
+                # after the funnel diagnostic showed ZERO candidates passed 14%
+                # in 30d of shadow data. The original 14% was a backtest sweep
+                # optimum (+35% backtest ROI), but with calibration drift since
+                # then, no live candidates clear that bar. Try 10% to surface
+                # candidates and observe live ROI — paper bot, safe to iterate.
+                # If 10% produces consistent -ROI, raise back; if 5%+ ROI on
+                # n≥30, lower further to 8%.
                 "selection_filter": ["Over 3.5"],
                 "edge_thresholds": {
-                    1: {"ou": 0.14},
-                    2: {"ou": 0.14},
-                    3: {"ou": 0.14},
-                    4: {"ou": 0.14},
+                    1: {"ou": 0.10},
+                    2: {"ou": 0.10},
+                    3: {"ou": 0.10},
+                    4: {"ou": 0.10},
                 },
                 "odds_range": (1.80, 3.00),
                 "min_prob": 0.30,
