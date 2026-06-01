@@ -2,6 +2,26 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-06-01 — SCHEDULER-HANG-MITIGATION post-mortem + partial fix
+>
+> Root cause of the 14:35 UTC scheduler hang identified. APScheduler is configured with `max_workers=4` in the default executor (workers/scheduler.py:1161). Three long-running jobs share the same 30-min firing minute under that constraint:
+>   • `betting_refresh_interval` — fires `:05/:35` every hour 07-22 UTC
+>   • `shadow_interval` — fires `:05/:35` every hour 07-22 UTC
+>   • `coolbet_odds_interval` — fires `:03/:33` every hour 07-22 UTC (often still running into `:05/:35`)
+>
+> Plus `manual_placement_drain` (every 10s) and `hist_backfill` / `backfill_coaches` / `backfill_transfers` (every 25 min). On a normal day this is fine because each long-running job finishes in 1-5 min; but if any one of them hangs on a shared resource (Coolbet session lock waiting on Imperva refresh, AF rate-limit semaphore, or DB pool exhaustion), the others queue up. Once three of four worker threads are occupied, the fourth typically also blocks on the same shared resource — full deadlock. APScheduler doesn't kill long-running jobs; the rows stayed in `pipeline_runs.status='running'` for 22+ minutes until Railway's auto-redeploy reset them.
+>
+> **Partial fix shipped today** (workers/scheduler.py):
+>   1. **Staggered `shadow_interval` to :10/:40** (was :05/:35). Removes the 0-second overlap between betting_refresh + shadow at the same firing minute. Worst-case overlap drops from "simultaneous" to "5 min apart". Doesn't eliminate the shared-resource bug but reduces the chance two long-running siblings collide.
+>   2. **Added `EVENT_JOB_MAX_INSTANCES` listener** that logs to console + `_recent_errors` whenever APScheduler skips a fire because the previous instance is still running. On 2026-06-01 this would have produced visible warnings at 14:50, 15:05, 15:20 etc. instead of silent thread-pool exhaustion.
+>
+> **Still TBD** (would need Railway log access I don't have):
+>   • **Identify the actual shared lock** that all three jobs waited on. Strong suspects: Coolbet `CoolbetSession.refresh_jwt_if_needed()` which retries with exponential backoff up to ~10 min; AF `RateLimitedSession` semaphore; DB pool at 20-connection ceiling.
+>   • **Per-job timeout**. APScheduler has no built-in per-job timeout. Options: wrap each job body in `concurrent.futures.ThreadPoolExecutor.submit(...).result(timeout=…)`, or use a signal-based watchdog (Unix only). Either requires substantial refactor; recommend deferring until the shared-lock root cause is confirmed.
+>   • **Separate executor for placer-touching jobs** so they can't starve the rest of the pool. E.g. `executors={"default": ThreadPoolExecutor(4), "placer": ThreadPoolExecutor(1)}` and assign `betting_pipeline`, `betting_refresh`, `coolbet_odds_snapshot`, `shadow_interval` to `placer`. Forces them to serialize, freeing the default pool. Worth a follow-up dev/active/ plan if the hang repeats.
+>
+> Smoke: SCHEDULER-HANG-MITIGATION.
+>
 > ## 2026-06-01 — bot_high_alignment RETIREMENT-TRIGGER recorded
 >
 > Explicit decision locked in before context fades. `bot_high_alignment` is the current biggest paper-prematch firehose (n=210+ last 7d) and is bleeding −5% ROI. BUT it's the only bot firing on BTTS / DC / DNB markets (the multi-profile specialists are starved by data availability + tight edge thresholds — see Task A funnel diag above). Therefore: do NOT retire today. CLV is positive +8.9% so the model is finding sharp picks; the calibration miss is what v20260531 promotion is expected to fix.

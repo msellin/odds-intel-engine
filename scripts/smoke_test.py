@@ -12285,5 +12285,36 @@ def _():
     assert "2026-06-15" in pq, "Re-evaluation date must be set"
 
 
+@test("SCHEDULER-HANG-MITIGATION — shadow_interval staggered :10/:40; EVENT_JOB_MAX_INSTANCES listener installed")
+def _():
+    """Post-mortem of 2026-06-01 14:35 UTC scheduler hang. Three jobs sharing
+    a firing minute (:05/:35) under max_workers=4 created a deadlock when any
+    one hung on a shared lock. Two mitigations shipped:
+
+    1. shadow_interval moved to :10/:40 so it doesn't compete with
+       betting_refresh_interval at the same minute.
+    2. EVENT_JOB_MAX_INSTANCES listener logs to console + _recent_errors
+       when APScheduler skips a fire because the previous instance is still
+       running — surfaces the next hang immediately instead of waiting hours.
+    """
+    import pathlib
+    src = pathlib.Path("workers/scheduler.py").read_text()
+
+    # Stagger
+    assert 'minute="10,40"' in src and 'id="shadow_interval"' in src, \
+        "shadow_interval must fire at :10/:40 (staggered from :05/:35)"
+    # Confirm the betting_refresh still fires at :05/:35 (we only moved shadow)
+    assert 'minute="5,35"' in src and 'id="betting_refresh_interval"' in src, \
+        "betting_refresh_interval must keep its :05/:35 schedule"
+
+    # Listener
+    assert "EVENT_JOB_MAX_INSTANCES" in src, \
+        "Must import + use EVENT_JOB_MAX_INSTANCES event"
+    assert "scheduler.add_listener(" in src, \
+        "Must register the listener on the scheduler"
+    assert "_on_max_instances_blocked" in src, \
+        "Listener handler must be named _on_max_instances_blocked"
+
+
 if __name__ == "__main__":
     main()

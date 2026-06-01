@@ -1162,6 +1162,31 @@ def main():
         job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 300},
     )
 
+    # SCHEDULER-HANG-MITIGATION (2026-06-01) — listener fires whenever a job
+    # is blocked from starting because the previous instance is still
+    # "running" (i.e. consuming a worker thread). On the 2026-06-01 hang at
+    # 14:35 UTC, three jobs occupied 3 of 4 threads and downstream jobs were
+    # silently dropped. With this listener, the next scheduler hang surfaces
+    # in stdout + _recent_errors immediately rather than going unnoticed
+    # until /performance numbers stay frozen.
+    from apscheduler.events import EVENT_JOB_MAX_INSTANCES, EVENT_JOB_ERROR
+    def _on_max_instances_blocked(event):
+        msg = (
+            f"max_instances blocked: job_id={event.job_id} — a previous run "
+            f"is still occupying its worker. Likely a hung job or a slow "
+            f"shared lock (Coolbet session / AF semaphore / DB pool). "
+            f"Check pipeline_runs for rows in 'running' state >5 min."
+        )
+        console.print(f"[red bold]SCHEDULER WARNING[/red bold] {msg}")
+        _recent_errors.append({
+            "job": event.job_id,
+            "error": msg[:500],
+            "at": datetime.now(timezone.utc).isoformat(),
+        })
+        if len(_recent_errors) > _MAX_RECENT_ERRORS:
+            _recent_errors.pop(0)
+    scheduler.add_listener(_on_max_instances_blocked, EVENT_JOB_MAX_INSTANCES)
+
     # ── Register all jobs ──────────────────────────────────────────────
 
     # MANUAL-PLACE drain: 10s tick to consume admin "Record at Coolbet" taps.
@@ -1267,7 +1292,16 @@ def main():
 
 
 
-    scheduler.add_job(job_shadow_run_interval, CronTrigger(hour="7-22", minute="5,35"),
+    # SCHEDULER-HANG-MITIGATION (2026-06-01) — staggered :10/:40 instead of
+    # :05/:35 so it doesn't share a firing minute with betting_refresh_interval.
+    # On 2026-06-01 at 14:35 UTC, betting_pipeline + betting_refresh + shadow_1435
+    # all hung simultaneously, consuming 3 of 4 executor threads; after that
+    # the scheduler stopped accepting jobs entirely. Three jobs sharing a
+    # 30-min firing minute under max_workers=4 is too tight when any one of
+    # them takes >5 min on a shared lock (Coolbet session / AF semaphore / DB
+    # pool). Staggering doesn't eliminate the underlying shared-resource bug
+    # but reduces the worst-case overlap window from 0s to 5min.
+    scheduler.add_job(job_shadow_run_interval, CronTrigger(hour="7-22", minute="10,40"),
                       id="shadow_interval", name="Shadow Run [30min]")
 
     # News checker: 09:00, 12:30, 14:30, 16:30, 18:30 UTC
