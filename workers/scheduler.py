@@ -532,6 +532,41 @@ def job_weekly_meta_retrain():
     _run_job("weekly_meta_retrain", _meta_retrain)
 
 
+def job_weekly_meta_validate():
+    """META-VALIDATE-WEEKLY (2026-06-01): weekly run of validate_meta_b_ml3.
+    Runs Sunday 05:00 UTC, AFTER weekly_meta_retrain (04:00). Scores all
+    available meta bundles on real settled bets and emails the verdict so
+    the 2026-06-10 activation decision (and every future one) stops being
+    a manual checkpoint.
+
+    Output is the script's stdout — captured into pipeline_runs.metadata via
+    the email helper, which parses the verdict table and renders an HTML
+    summary. Even if no bundle passes the 5pp gate (the 2026-06-01 pre-flight
+    verdict), the report still lands so we can track the delta over time.
+    """
+    import subprocess
+
+    def _meta_validate():
+        console.print("[bold cyan]Weekly meta validate — scoring bundles vs settled bets[/bold cyan]")
+        result = subprocess.run(
+            [sys.executable, "scripts/validate_meta_b_ml3.py", "--since", "2026-05-25"],
+            cwd=str(Path(__file__).parent.parent),
+            timeout=600,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[red]meta validate exit {result.returncode}: {result.stderr[-2000:]}[/red]")
+            raise RuntimeError(f"weekly meta validate failed: exit {result.returncode}")
+        console.print(result.stdout[-4000:])
+        try:
+            from workers.jobs.weekly_meta_validate_email import send_weekly_meta_validate_email
+            send_weekly_meta_validate_email(result.stdout)
+        except Exception as e:
+            console.print(f"[yellow]Weekly meta validate email skipped: {e}[/yellow]")
+    _run_job("weekly_meta_validate", _meta_validate)
+
+
 def job_league_clv_efficiency():
     """LEAGUE-CLV-EFFICIENCY (2026-05-25): weekly compute of per-league CLV
     beatability index. Runs Sunday 02:30 UTC, before the weekly_retrain at
@@ -1349,6 +1384,13 @@ def main():
     # META-RETRAIN (2026-05-25) — weekly B-ML3 meta-model retrain Sunday 04:00 UTC,
     # an hour after the main retrain (which refreshes MFV features the meta
     # model consumes). Promotion stays manual (flip META_B_ML3_VERSION on Railway).
+    # META-VALIDATE-WEEKLY (2026-06-01) — runs Sunday 05:00 UTC after
+    # weekly_meta_retrain finishes, scores all bundles on real settled bets
+    # and emails the verdict. Replaces the 2026-06-10 manual checkpoint.
+    scheduler.add_job(job_weekly_meta_validate, CronTrigger(day_of_week="sun", hour=5, minute=0),
+                      id="weekly_meta_validate", name="Weekly META Validate Sunday 05:00",
+                      max_instances=1, misfire_grace_time=1800)
+
     scheduler.add_job(job_weekly_meta_retrain, CronTrigger(day_of_week="sun", hour=4, minute=0),
                       id="weekly_meta_retrain", name="Weekly META Retrain Sunday 04:00",
                       max_instances=1, misfire_grace_time=3600)

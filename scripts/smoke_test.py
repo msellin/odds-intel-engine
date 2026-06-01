@@ -12366,5 +12366,47 @@ def _():
         "bet_id_filter branch must NOT call _allowed_maturity_labels (admin override)"
 
 
+@test("META-VALIDATE-WEEKLY — Sunday 05:00 UTC cron runs validate_meta_b_ml3 + emails verdict")
+def _():
+    """Sunday 04:00 UTC: weekly_meta_retrain. New sibling at 05:00 UTC:
+    weekly_meta_validate — runs scripts/validate_meta_b_ml3.py and emails the
+    per-bundle verdict via weekly_meta_validate_email.send_weekly_meta_validate_email.
+    Stops the 2026-06-10 activation decision (and every future one) from being
+    a manual checkpoint.
+
+    Smoke is source-inspect for the scheduler (apscheduler not in local venv)
+    plus a real parser test on the email helper."""
+    import pathlib
+    src = pathlib.Path("workers/scheduler.py").read_text()
+
+    assert "def job_weekly_meta_validate" in src, \
+        "scheduler must define job_weekly_meta_validate"
+    # Job body must call the script + the email helper
+    job_start = src.index("def job_weekly_meta_validate")
+    job_end = src.index("\ndef ", job_start + 1)
+    job_body = src[job_start:job_end]
+    assert "validate_meta_b_ml3.py" in job_body, \
+        "job must call validate_meta_b_ml3.py"
+    assert "send_weekly_meta_validate_email" in job_body, \
+        "job must trigger the email helper after the script finishes"
+
+    assert 'id="weekly_meta_validate"' in src, "cron must register with id weekly_meta_validate"
+    assert 'CronTrigger(day_of_week="sun", hour=5, minute=0)' in src, \
+        "cron must run Sunday 05:00 UTC (after meta_retrain at 04:00)"
+
+    # Email helper exists + parses verdict rows
+    from workers.jobs import weekly_meta_validate_email
+    assert hasattr(weekly_meta_validate_email, "send_weekly_meta_validate_email"), \
+        "Email helper must expose send_weekly_meta_validate_email"
+    sample = (
+        "Activation verdict per bundle\n"
+        "│ v_20260525_v23_xgb │ xgboost  │ 56.3 │ 63.8 │ -7.5 │ FAIL │\n"
+    )
+    rows = weekly_meta_validate_email._parse_summary(sample)
+    assert len(rows) == 1 and rows[0]["bundle"] == "v_20260525_v23_xgb", \
+        "Parser must extract a verdict row from the script's rich-table stdout"
+    assert rows[0]["delta_pp"] == -7.5, "Parser must read delta_pp correctly"
+
+
 if __name__ == "__main__":
     main()

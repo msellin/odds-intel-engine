@@ -2,6 +2,10 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-06-01 — META-VALIDATE-WEEKLY cron shipped
+>
+> New Sunday 05:00 UTC cron runs `scripts/validate_meta_b_ml3.py` after `weekly_meta_retrain` (04:00) and emails the per-bundle verdict via Resend. Stops the 2026-06-10 activation decision (and every future one) from being a manual checkpoint. Email helper at `workers/jobs/weekly_meta_validate_email.py` parses the script's rich-table stdout, renders an HTML digest with the per-bundle Δ-pp column + a top-line recommendation, ships to `ADMIN_ALERT_EMAIL`. Even FAIL-only weeks land a digest so we can track the delta over time. Smoke: META-VALIDATE-WEEKLY.
+>
 > ## 2026-06-01 — CHERRY-PICK-PLACER Phase 1 shipped
 >
 > Per `dev/active/cherry-pick-placer-plan.md`. Adds an env-gated `bots.maturity_label` filter to all three placer bet loaders (singles + combos + inplay) so the placer can record real_bets from a curated subset while every bot keeps firing into simulated_bets. Default behaviour unchanged: `COOLBET_RECORD_ALLOWED_MATURITY` unset on Railway means no filter applies. Phase 2 (admin promotion view) and Phase 3 (env flip to `calibrated`) scheduled for 2026-06-05/06 and 2026-06-08 respectively. Admin manual placement (`bet_id_filter` path) bypasses the gate — the operator is explicitly authorising. Smoke: CHERRY-PICK-PLACER-P1.
