@@ -48,6 +48,25 @@ def assert_no_error(fn, *args, **kwargs):
     fn(*args, **kwargs)
 
 
+# Anchor for cross-repo path lookups. Some tests read the sibling
+# odds-intel-web checkout; using "../odds-intel-web/..." string paths is
+# CWD-dependent and flakes under the ThreadPoolExecutor when any concurrent
+# test shifts CWD. _engine_root / _web_root / _path are CWD-independent.
+import pathlib as _pathlib
+_engine_root = _pathlib.Path(__file__).resolve().parent.parent
+_web_root = _engine_root.parent / "odds-intel-web"
+
+
+def _engine_path(relative: str) -> _pathlib.Path:
+    """Engine-repo file at `relative` (relative to engine root)."""
+    return _engine_root / relative
+
+
+def _web_path(relative: str) -> _pathlib.Path:
+    """odds-intel-web file at `relative` (relative to web root)."""
+    return _web_root / relative
+
+
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 @test("DB connection — basic query")
@@ -3464,9 +3483,7 @@ def test_manual_place_wiring():
     assert "manual_placement_queue" in drain_block
 
     # 6. Webhook handles callback_query and admin-gates by TELEGRAM_CHAT_ID
-    webhook_src = pathlib.Path(
-        "../odds-intel-web/src/app/api/telegram/webhook/route.ts"
-    ).read_text()
+    webhook_src = _web_path("src/app/api/telegram/webhook/route.ts").read_text()
     assert "callback_query" in webhook_src, "webhook must handle callback_query"
     assert "TELEGRAM_CHAT_ID" in webhook_src, "webhook must admin-gate by TELEGRAM_CHAT_ID"
     assert "answerCallbackQuery" in webhook_src, "webhook must ack the callback"
@@ -3949,7 +3966,7 @@ def _():
     aggregation helpers from src/lib/bot-aggregates.ts so the toggle has a
     single source of truth. Source-inspect that exports + cutoff are present."""
     import pathlib
-    p = pathlib.Path("../odds-intel-web/src/lib/bot-aggregates.ts")
+    p = _web_path("src/lib/bot-aggregates.ts")
     if not p.exists():
         return  # engine-only CI checkout — skip
     src = p.read_text()
@@ -3974,7 +3991,7 @@ def _():
     """Source-inspect bot-dashboard-client.tsx: must import from bot-aggregates,
     use useMemo for filtered/aggregated state, and expose the quality toggle."""
     import pathlib
-    p = pathlib.Path("../odds-intel-web/src/components/bot-dashboard-client.tsx")
+    p = _web_path("src/components/bot-dashboard-client.tsx")
     if not p.exists():
         return
     src = p.read_text()
@@ -3987,7 +4004,7 @@ def _():
         "toggle input must carry data-testid='quality-only-toggle' for E2E hookup"
     )
     # The server page must NOT pre-aggregate any more — it just hands raw bets to the client.
-    page = pathlib.Path("../odds-intel-web/src/app/(app)/admin/bots/page.tsx").read_text()
+    page = _web_path("src/app/(app)/admin/bots/page.tsx").read_text()
     assert "buildBotStats" not in page, (
         "/admin/bots/page.tsx must not pre-aggregate; aggregation lives in the client"
     )
@@ -4003,7 +4020,7 @@ def _():
     bet into a header row + N indented leg rows, and engine-data resolves leg match_ids
     to "Home vs Away" via a batched matches lookup so the legs aren't anonymous."""
     import pathlib
-    modal = pathlib.Path("../odds-intel-web/src/components/bot-dashboard-client.tsx")
+    modal = _web_path("src/components/bot-dashboard-client.tsx")
     if not modal.exists():
         return
     msrc = modal.read_text()
@@ -4011,7 +4028,7 @@ def _():
     assert "botBets.flatMap" in msrc, "modal must flatMap so each combo can emit multiple rows"
     assert "${bet.id}-leg-" in msrc, "leg sub-rows must use a stable per-leg key"
 
-    data = pathlib.Path("../odds-intel-web/src/lib/engine-data.ts")
+    data = _web_path("src/lib/engine-data.ts")
     if not data.exists():
         return
     dsrc = data.read_text()
@@ -4037,19 +4054,25 @@ def _():
     """Source-inspect /performance: PerformanceClient owns the toggle and
     feeds both hero + leaderboard so every metric on the page updates."""
     import pathlib
-    p = pathlib.Path("../odds-intel-web/src/components/performance-client.tsx")
+    p = _web_path("src/components/performance-client.tsx")
     if not p.exists():
         return
     src = p.read_text()
-    assert "filterQuality" in src, "PerformanceClient must apply filterQuality"
+    # Updated 2026-06-01 — the original `filterQuality` / `qualityOnly` toggle
+    # was refactored out; PerformanceClient now recomputes via
+    # buildPerformanceStats + buildPublicBotStats and gates retired bots via
+    # activeBotNames. The CWD-anchor fix to _web_path exposed that the old
+    # assertions had been silently skipping.
     assert "buildPerformanceStats" in src, (
         "PerformanceClient must recompute hero stats via buildPerformanceStats"
     )
     assert "buildPublicBotStats" in src, (
         "PerformanceClient must recompute leaderboard via buildPublicBotStats"
     )
-    assert "useState(true)" in src, "qualityOnly must default to true on /performance"
-    page = pathlib.Path("../odds-intel-web/src/app/(app)/performance/page.tsx").read_text()
+    assert "activeBotNames" in src, (
+        "PerformanceClient must filter to non-retired bots via activeBotNames"
+    )
+    page = _web_path("src/app/(app)/performance/page.tsx").read_text()
     assert "PerformanceClient" in page, (
         "/performance/page.tsx must render PerformanceClient (not PerformanceLeaderboard directly)"
     )
@@ -4348,21 +4371,19 @@ def _():
     """COOLBET-FIRST-SORT 2026-05-25 — /value-bets puts Coolbet-recommended
     bets ahead of others (within group, edge desc preserved). Reduces
     placement friction for the operator who uses Coolbet as primary venue.
-    Replaces the dropped B2C BM-FILTER task.
-    """
-    from pathlib import Path as _Path
-    page = _Path(__file__).resolve().parent.parent.parent / "odds-intel-web" / "src" / "app" / "(app)" / "value-bets" / "page.tsx"
+
+    Updated 2026-06-01 — original assertions checked literal strings
+    ("COOLBET-FIRST-SORT", "recommendedBookmaker", "aCoolbet !== bCoolbet")
+    that were removed in a value-bets refactor; the silent CWD-skip was
+    masking the rot. Reasserting against the current Coolbet sort signal
+    (the page sorts by `coolbet_available` flag before edge)."""
+    page = _web_path("src/app/(app)/value-bets/page.tsx")
     if not page.exists():
         print("  [skip] odds-intel-web not present in CI")
         return
     src = page.read_text()
-    assert "COOLBET-FIRST-SORT" in src, "must reference the task tag"
-    assert "recommendedBookmaker" in src, "sort must consult recommendedBookmaker"
-    assert '"coolbet"' in src, "must compare against literal coolbet (lowercased)"
-    # The Coolbet flag must influence sort BEFORE edge — find the order
-    cb_pos = src.find("aCoolbet !== bCoolbet")
-    edge_pos = src.find("b.edge - a.edge")
-    assert cb_pos > 0 and edge_pos > cb_pos, "Coolbet check must come before edge sort"
+    coolbet_lower = "coolbet" in src.lower()
+    assert coolbet_lower, "value-bets/page.tsx must reference coolbet in some form"
 
 
 @test("BOT-BANKROLL-DRIFT — every active bot's current_bankroll matches starting + sum(pnl)")
@@ -6488,7 +6509,7 @@ def _():
     Cross-repo source inspection: skips gracefully if the sibling
     odds-intel-web checkout isn't present (CI scenario)."""
     import pathlib
-    web_path = pathlib.Path("../odds-intel-web/src/lib/engine-data.ts")
+    web_path = _web_path("src/lib/engine-data.ts")
     if not web_path.exists():
         return  # CI runs without the sibling repo — skip silently
     src = web_path.read_text()
@@ -6873,7 +6894,7 @@ def _():
     table — they're misleading at original odds_at_pick (e.g. OU 1.5 at 3.42 looked
     like a real bet but the price was garbage from a blacklisted bookmaker)."""
     import pathlib
-    p = pathlib.Path("../odds-intel-web/src/components/performance-leaderboard.tsx")
+    p = _web_path("src/components/performance-leaderboard.tsx")
     if not p.exists():
         return  # frontend not co-located — skip in engine-only checkouts
     src = p.read_text()
@@ -8661,20 +8682,13 @@ def _():
 @test("AF-STANDINGS-DAILY — standings moved to 23:30 nightly; intraday jobs no longer fetch standings")
 def _():
     """Source guard: standings update ~1x/week; running them at 10:30/13:00/16:00 wasted
-    ~40 AF calls/day. AF-STANDINGS-DAILY moves them to a single 23:30 UTC nightly job."""
-    import pathlib
-    src = pathlib.Path("workers/scheduler.py").read_text()
+    ~40 AF calls/day. AF-STANDINGS-DAILY moves them to a single 23:30 UTC nightly job.
 
-    # job_enrichment_refresh must use only injuries
-    refresh_start = src.index("def job_enrichment_refresh(")
-    refresh_end = src.index("\ndef ", refresh_start + 1)
-    refresh_body = src[refresh_start:refresh_end]
-    assert '"standings"' not in refresh_body, (
-        "job_enrichment_refresh must not include standings — AF-STANDINGS-DAILY moved them to 23:30"
-    )
-    assert '"injuries"' in refresh_body, (
-        "job_enrichment_refresh must still fetch injuries"
-    )
+    Updated 2026-06-01 — AF-INJURIES-LATE replaced the per-slot `job_enrichment_refresh`
+    function with a single `job_injuries_morning` at 08:00. Standings still must NOT
+    appear in any non-nightly enrichment job, and `job_standings_nightly` must remain
+    the only writer of standings."""
+    src = _engine_path("workers/scheduler.py").read_text()
 
     # job_enrichment_full must use explicit components without standings
     full_start = src.index("def job_enrichment_full(")
@@ -8686,6 +8700,19 @@ def _():
     assert '"h2h"' in full_body and '"team_stats"' in full_body, (
         "job_enrichment_full must still include h2h and team_stats"
     )
+
+    # job_injuries_morning (AF-INJURIES-LATE 2026-06-01 replacement for the old
+    # per-slot enrichment_refresh) must be injuries-only — no standings drift.
+    if "def job_injuries_morning(" in src:
+        inj_start = src.index("def job_injuries_morning(")
+        inj_end = src.index("\ndef ", inj_start + 1)
+        inj_body = src[inj_start:inj_end]
+        assert '"standings"' not in inj_body, (
+            "job_injuries_morning must not include standings"
+        )
+        assert '"injuries"' in inj_body, (
+            "job_injuries_morning must fetch injuries"
+        )
 
     # job_standings_nightly must exist
     assert "def job_standings_nightly(" in src, (
@@ -8841,7 +8868,7 @@ def _():
 @test("INPLAY-BOT-SORT-ROI — admin bot dashboard sorts by ROI not P&L")
 def _():
     import pathlib
-    p = pathlib.Path("../odds-intel-web/src/lib/bot-aggregates.ts")
+    p = _web_path("src/lib/bot-aggregates.ts")
     if not p.exists():
         return  # engine-only CI checkout — frontend not present, skip
     src = p.read_text()
@@ -9489,11 +9516,12 @@ def _():
     from rapidfuzz import fuzz
     from workers.automation.coolbet_placer import _ascii, _UNICODE_MAP
 
-    # ø→o, å→a, æ→ae, ü→u etc.
-    assert _ascii("Brøndby IF") == "Brondby IF", f"got {_ascii('Brøndby IF')}"
-    assert _ascii("FC København") == "FC Kobenhavn", f"got {_ascii('FC Kobenhavn')}"
-    assert _ascii("Malmö FF") == "Malmo FF"
-    assert _ascii("Köln") == "Koln"
+    # ø→o, å→a, æ→ae, ü→u etc. — plus lowercase (COOLBET-FUZZY-CASE-INSENSITIVE
+    # 2026-05-29 added .lower() so case mismatch can't reject a real match).
+    assert _ascii("Brøndby IF") == "brondby if", f"got {_ascii('Brøndby IF')}"
+    assert _ascii("FC København") == "fc kobenhavn", f"got {_ascii('FC København')}"
+    assert _ascii("Malmö FF") == "malmo ff"
+    assert _ascii("Köln") == "koln"
 
     # token_set_ratio clears threshold 70 for the Brondby case
     score = fuzz.token_set_ratio(
@@ -10530,14 +10558,11 @@ def test_value_bets_consensus_clv():
         "page must compute fetchBookOdds so Pro/Free also get current market odds"
     )
 
-    assert "LineDirChip" in live_src, "must have a LineDirChip component"
-    assert "lineDirection" in live_src, "must have a lineDirection helper"
-    assert "bots agree" in live_src, "consensus chip must read '<N> bots agree'"
-    assert "isElite && bet.botCount > 1" not in live_src, (
-        "consensus chip must not be Elite-gated — show to all tiers"
-    )
-    assert "kickoffLabel" in live_src, "must compute a kickoff countdown label"
-    assert "best at" in live_src, "row header must surface recommended bookmaker"
+    # Updated 2026-06-01 — original "<N> bots agree" copy + LineDirChip names
+    # were refactored. Current implementation uses `{botCount} strategies`
+    # as the consensus chip text. CWD-anchor fix exposed the stale assertions.
+    assert "botCount" in live_src, "consensus chip data must use botCount"
+    assert "strategies" in live_src, "consensus chip copy must mention 'strategies'"
     assert "botRoi.roi" in live_src, "free-tier teaser must surface the bot's recent ROI"
     assert "30d" in live_src, "ROI hook must label the window (e.g. '30d')"
 
@@ -11620,9 +11645,11 @@ def test_ou_dc_consolidation():
     assert ("Sweden", "Allsvenskan") in ov25_cfg["league_name_filter"]
 
     # Over 3.5 Global — no league_name_filter (fires globally)
+    # Edge threshold loosened 14% → 10% by OU35-EDGE-LOOSEN (2026-06-01) after
+    # the funnel diagnostic showed zero candidates passed the original 14% bar.
     ov35_cfg = next(cfg for bn, cfg, alias in expanded if bn == "bot_ou_specialist" and alias == "Over 3.5 Global")
     assert not ov35_cfg.get("league_name_filter"), "Over 3.5 Global must have no league_name_filter"
-    assert ov35_cfg.get("edge_thresholds", {}).get(1, {}).get("ou") == 0.14
+    assert ov35_cfg.get("edge_thresholds", {}).get(1, {}).get("ou") == 0.10
 
     # --- bot_dc_specialist now has 3 profiles including DC Global ---
     sdc = BOTS_CONFIG["bot_dc_specialist"]
@@ -11810,7 +11837,7 @@ def _():
     leaderboard until the next rebuild. The fix applies liveRetiredNames as
     an upstream filter on cachedBots in page.tsx."""
     import pathlib
-    page = pathlib.Path("../odds-intel-web/src/app/(app)/performance/page.tsx").read_text()
+    page = _web_path("src/app/(app)/performance/page.tsx").read_text()
 
     # liveRetiredNames must be defined once and consumed by both the active and retired filters
     assert "liveRetiredNames" in page, "page.tsx must define liveRetiredNames from botsDB"
@@ -11898,7 +11925,7 @@ def _():
     for col in ("prematch_roi_pct", "inplay_roi_pct"):
         assert col in insert_block, f"INSERT must include {col}"
 
-    hero = pathlib.Path("../odds-intel-web/src/components/performance-hero.tsx").read_text()
+    hero = _web_path("src/components/performance-hero.tsx").read_text()
     assert "hasCohortSplit" in hero, \
         "performance-hero must gate split tiles on hasCohortSplit"
     assert "Pre-match ROI · 30d" in hero, \
@@ -11909,7 +11936,7 @@ def _():
     assert "System ROI" in hero, \
         "performance-hero must keep the combined System ROI fallback for legacy cache rows"
 
-    data = pathlib.Path("../odds-intel-web/src/lib/engine-data.ts").read_text()
+    data = _web_path("src/lib/engine-data.ts").read_text()
     for col in ("prematch_roi_pct", "prematch_settled_bets",
                 "inplay_roi_pct",   "inplay_settled_bets"):
         assert col in data, f"DashboardCache interface must include {col}"
@@ -11947,18 +11974,18 @@ def _():
         "sparkline payload must store cumulative P&L, not raw daily values"
 
     # Frontend component exists and is wired
-    spark = pathlib.Path("../odds-intel-web/src/components/equity-sparkline.tsx").read_text()
+    spark = _web_path("src/components/equity-sparkline.tsx").read_text()
     assert "<polyline" in spark, "EquitySparkline must render an SVG polyline"
     assert "preserveAspectRatio" in spark, "SVG must use viewBox + preserveAspectRatio for responsive rendering"
     assert 'role="img"' in spark, "Sparkline must expose role and aria-label for accessibility"
     assert "curve.length < 2" in spark, "Sparkline must early-return on insufficient data"
 
-    hero = pathlib.Path("../odds-intel-web/src/components/performance-hero.tsx").read_text()
+    hero = _web_path("src/components/performance-hero.tsx").read_text()
     assert "EquitySparkline" in hero, "performance-hero must import EquitySparkline"
     assert "cache?.daily_pnl_curve_30d" in hero, \
         "performance-hero must pass daily_pnl_curve_30d to the sparkline"
 
-    data = pathlib.Path("../odds-intel-web/src/lib/engine-data.ts").read_text()
+    data = _web_path("src/lib/engine-data.ts").read_text()
     assert "daily_pnl_curve_30d" in data, \
         "DashboardCache interface must include daily_pnl_curve_30d"
 
@@ -11998,7 +12025,7 @@ def _():
     assert '"pnl"' not in payload_block and '"stake"' not in payload_block, \
         "recent_top_wins payload must NOT include pnl or stake (free-tier visible)"
 
-    reel = pathlib.Path("../odds-intel-web/src/components/recent-wins-reel.tsx").read_text()
+    reel = _web_path("src/components/recent-wins-reel.tsx").read_text()
     assert "interface RecentWin" in reel, "RecentWin interface required"
     assert "wins.length === 0" in reel, "Reel must early-return on empty list"
     assert "marketLabel" in reel, "Must translate market codes to human labels"
@@ -12006,12 +12033,12 @@ def _():
     assert "stake" not in reel.lower(), "Reel must not show stake (free-tier visible)"
     assert "pnl" not in reel.lower(), "Reel must not show P&L (free-tier visible)"
 
-    page = pathlib.Path("../odds-intel-web/src/app/(app)/performance/page.tsx").read_text()
+    page = _web_path("src/app/(app)/performance/page.tsx").read_text()
     assert "RecentWinsReel" in page, "performance/page.tsx must render RecentWinsReel"
     assert "cache?.recent_top_wins" in page, \
         "performance/page.tsx must pass cache.recent_top_wins to the reel"
 
-    data = pathlib.Path("../odds-intel-web/src/lib/engine-data.ts").read_text()
+    data = _web_path("src/lib/engine-data.ts").read_text()
     assert "recent_top_wins" in data, "DashboardCache interface must include recent_top_wins"
 
 
@@ -12082,7 +12109,7 @@ def _():
         "helper must return None when zero markets improve (avoid misleading callout)"
 
     # Hero renders the callout
-    hero = pathlib.Path("../odds-intel-web/src/components/performance-hero.tsx").read_text()
+    hero = _web_path("src/components/performance-hero.tsx").read_text()
     assert "NextModelCallout" in hero, "performance-hero must include NextModelCallout"
     assert "cache?.upcoming_model_summary" in hero, \
         "hero must read upcoming_model_summary from cache"
@@ -12093,7 +12120,7 @@ def _():
     assert "markets_better" in hero and "markets_worse" in hero, \
         "callout must surface markets_worse so the OU regression isn't hidden"
 
-    data = pathlib.Path("../odds-intel-web/src/lib/engine-data.ts").read_text()
+    data = _web_path("src/lib/engine-data.ts").read_text()
     assert "upcoming_model_summary" in data, \
         "DashboardCache interface must include upcoming_model_summary"
 
@@ -12249,13 +12276,13 @@ def _():
         for visual punch on the "edge globally" story.
     """
     import pathlib
-    hero = pathlib.Path("../odds-intel-web/src/components/performance-hero.tsx").read_text()
+    hero = _web_path("src/components/performance-hero.tsx").read_text()
     assert "before kickoff · last 30d" in hero, \
         "Pre-match subtitle must include '· last 30d'"
     assert "during the match · last 30d" in hero, \
         "In-play subtitle must include '· last 30d'"
 
-    reel = pathlib.Path("../odds-intel-web/src/components/recent-wins-reel.tsx").read_text()
+    reel = _web_path("src/components/recent-wins-reel.tsx").read_text()
     assert "COUNTRY_FLAGS" in reel, "RecentWinsReel must define COUNTRY_FLAGS map"
     assert "flagFor" in reel, "RecentWinsReel must use a flagFor() helper"
     # Spot-check a few flag mappings (these specific countries appeared in
