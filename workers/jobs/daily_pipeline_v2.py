@@ -116,16 +116,16 @@ BOTS_CONFIG = {
     # +11.6% ROI by dropping draws + under 2.5 + capping odds 1.50-3.30.
     # Pipeline skips via `is_active=false AND retired_at IS NOT NULL` gate.
     "bot_aggressive": {
-        # PER-BOT-EDGE-THRESHOLD-APPLY (2026-05-25): 25K-row sweep optimum = 15% edge
-        # (baseline +0.4% → +9.0% ROI, n=2802). Tightened from 3-5% across all tiers.
-        # SLICE-LIVE-VALIDATE (2026-05-25): retired two leaker slices on live evidence:
-        #   selection:draw  live ROI -32.7% (n=89,  €-159) → exclude Draw via selection_filter
-        #   odds  2.50-3.00 live ROI  -6.3% (n=150, €-57)  → cap odds_range at 2.50
-        #   odds  3.50+     live ROI -13.9% (n=273, €-198) → cap odds_range at 2.50 (subsumed)
-        # Tradeoff: capping at 2.50 also drops the 3.00-3.50 bucket which was +15.4%
-        # on n=97 (€+71). Net live P&L delta if we'd applied this cap on the historical
-        # window: +€343 from killing the leakers minus €71 lost = +€272 net positive.
-        "description": "PER-BOT-EDGE-THRESHOLD-APPLY + SLICE-LIVE-VALIDATE 2026-05-25: 15% edge all tiers; odds capped 1.25-2.50; no Draw selection (live ROI -32.7%).",
+        # [RETIRED 2026-06-01 — RETIRE-BOT-AGGRESSIVE, migration 160]
+        # retired_reason was populated by migration 104 (PERF-HONEST-HEADLINE
+        # 2026-05-17): replaced by bot_aggressive_v2 after -5.7% ROI / -€141
+        # on 441 settled bets. The bot self-stopped firing on 2026-05-24 after
+        # SLICE-LIVE-VALIDATE tightened odds range + excluded Draw, leaving no
+        # eligible matches per day. is_active flag was never flipped; the 705
+        # stale settled bets (last 30d, -€75) were still being counted in the
+        # active /performance headline. Retiring cleans the math. Training
+        # data preserved via shadow_bets (SHADOW-RETIRED-OK 2026-05-20).
+        "description": "[RETIRED 2026-06-01] aggressive v1. Replaced by bot_aggressive_v2; self-stopped firing 2026-05-24 after odds-range tightening; flag fix only.",
         "tier_label": "pro",
         "markets": ["1x2", "ou"],
         "tier_filter": None,

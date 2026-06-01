@@ -12015,5 +12015,36 @@ def _():
     assert "recent_top_wins" in data, "DashboardCache interface must include recent_top_wins"
 
 
+@test("RETIRE-BOT-AGGRESSIVE — migration 160 flips bot_aggressive is_active=false; preserves retired_reason from migration 104")
+def _():
+    """bot_aggressive's retired_reason was populated by migration 104 on
+    2026-05-17 but is_active=true was never flipped. Bot self-stopped firing
+    on 2026-05-24 after SLICE-LIVE-VALIDATE tightened its odds range; 705
+    stale settled bets continued to drag the /performance active cohort.
+    Migration 160 flips the flag without rewriting the existing reason
+    (preserves the original migration 104 wording about bot_aggressive_v2
+    replacement). Idempotent via AND is_active = true."""
+    import pathlib
+
+    mig = pathlib.Path("supabase/migrations/160_retire_bot_aggressive.sql").read_text()
+    assert "bot_aggressive" in mig, "Migration 160 must target bot_aggressive"
+    assert "is_active     = false" in mig or "is_active = false" in mig, \
+        "Migration 160 must set is_active=false"
+    assert "retired_at" in mig, "Migration 160 must set retired_at"
+    assert "AND is_active = true" in mig, \
+        "Migration 160 must be idempotent (AND is_active = true)"
+    # Migration must NOT rewrite retired_reason (it was already correct from migration 104)
+    assert "SET retired_reason" not in mig, \
+        "Migration 160 must NOT rewrite retired_reason — migration 104's text is the source of truth"
+
+    pipeline_src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    block_start = pipeline_src.index('"bot_aggressive": {')
+    block_desc = pipeline_src.index('"description":', block_start)
+    block_end = pipeline_src.index('\n', block_desc + 100)
+    block = pipeline_src[block_start:block_end]
+    assert "[RETIRED 2026-06-01]" in block, \
+        "bot_aggressive description must be prefixed [RETIRED 2026-06-01]"
+
+
 if __name__ == "__main__":
     main()

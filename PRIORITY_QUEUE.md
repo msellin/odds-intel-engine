@@ -2,6 +2,10 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+> ## 2026-06-01 — RETIRE-BOT-AGGRESSIVE done (third stale-flag fix in 24h)
+>
+> Third stale-flag retirement in 24 hours. `bot_aggressive` had its retired_reason populated by migration 104 on 2026-05-17 ("Replaced by bot_aggressive_v2. -5.7% ROI / -€141 on 441 settled bets") but `is_active=true` was never flipped. The bot self-stopped firing on 2026-05-24 (last `simulated_bets` AND last `shadow_bets` both 2026-05-24 19:38 UTC) — likely caused by SLICE-LIVE-VALIDATE on 2026-05-25 tightening odds range (1.25,5.00) → (1.25,2.50) and excluding Draw selection, leaving 0 eligible matches per day. Despite zero new firings, 705 settled bets from May 23-24 were still being counted in the active-cohort /performance headline at -€75 P&L / -1.92% ROI. Migration 160 flips is_active=false and stamps retired_at. Training data preserved via shadow_bets (SHADOW-RETIRED-OK 2026-05-20). Coverage gap created: 1X2 and O/U lose bot_aggressive's volume, but 1X2 has 8 backfill bots and O/U has bot_v10_all + bot_aggressive_v2 + bot_high_alignment. Bigger coverage gap (specialists not firing into simulated_bets despite firing in shadow_bets) filed for diagnosis. Smoke: RETIRE-BOT-AGGRESSIVE.
+>
 > ## 2026-06-01 — PERF-PAGE-ATTRACTIVENESS Change 1 of 6 done (PERF-HERO-COHORT-SPLIT)
 >
 > Performance page improvements being shipped one change at a time, each gated on a live data check. Plan + criteria + per-change ship-gates in `dev/active/performance-page-attractiveness-plan.md`. Six proposed changes, each must pass its data gate before code lands.
