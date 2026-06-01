@@ -12,7 +12,11 @@
 >
 > **Change 3/6 — PERF-HERO-EQUITY-SPARKLINE — done.** Cumulative P&L over last 30d = **+€815** on active bots with a clean "up and to the right" trajectory (dip to −€127 around May 7, recovery + steady growth thereafter). Migration 158 adds `daily_pnl_curve_30d` JSONB to `dashboard_cache`; settlement.py builds the array (same active+non-experimental scope as the cohort split); new `EquitySparkline` component renders an inline SVG (no chart library — ~60 lines incl. accessibility). Placed between hero tiles and the Model v2 callout. Falls back gracefully (early-return) if the curve has < 2 points. Smoke: PERF-HERO-EQUITY-SPARKLINE.
 >
-> Remaining: Change 4 (maturity badges), Change 5 (recent wins reel), Change 6 (calibration callout). Each gets its own data check before implementation.
+> **Change 4/6 — Maturity badges on leaderboard — already done.** `MaturityChip` component + legend strip explaining the scale ("calibrated · beta · testing") already shipped in `performance-leaderboard.tsx` lines 91-96 and 363-372. Data gate passes today: 6 calibrated bots, 11 active, 17 beta, 2 testing — distribution is meaningful, not all-one-bucket. No work needed.
+>
+> **Change 5/6 — PERF-HERO-RECENT-WINS — done.** Top 8 deduped wins last 14d span **8 countries** (Argentina, UAE, Paraguay, World Friendlies, Netherlands, Ecuador, Australia, Sweden), CLV +30% to +55%, odds 1.78 to 4.25. Migration 159 adds `recent_top_wins JSONB` to `dashboard_cache`; settlement.py builds the array with `DISTINCT ON (match, market, selection)` so same call from multiple bots appears once. New `RecentWinsReel` component renders a 4-column grid between hero and the existing `PerformanceExtras`. Free-tier visible — only odds, market, CLV-beat surfaced (no stake/P&L). Smoke: PERF-HERO-RECENT-WINS.
+>
+> Remaining: Change 6 (calibration callout — expand the existing Model v2 strip with v20260531 retrain numbers). Data check + decision pending.
 >
 > ## 2026-06-01 — CHERRY-PICK-PLACER planned
 >

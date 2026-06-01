@@ -11963,5 +11963,57 @@ def _():
         "DashboardCache interface must include daily_pnl_curve_30d"
 
 
+@test("PERF-HERO-RECENT-WINS — dashboard_cache stores top-8 14d wins; /performance renders RecentWinsReel")
+def _():
+    """Data check (run 2026-06-01): top 8 deduped wins last 14d span 8 countries
+    (Argentina, UAE, Paraguay, World Friendlies, Netherlands, Ecuador, Australia,
+    Sweden), CLV +30% to +55%, odds 1.78 to 4.25. Concrete "model picked these"
+    stories for new visitors.
+
+    Migration 159 adds recent_top_wins JSONB; settlement.py builds the array
+    with DISTINCT ON (match, market, selection) so same call from multiple bots
+    appears once; RecentWinsReel renders a 4-column grid (free-tier visible —
+    no stake/P&L exposed)."""
+    import pathlib
+
+    mig = pathlib.Path("supabase/migrations/159_dashboard_cache_recent_wins.sql").read_text()
+    assert "recent_top_wins" in mig, "Migration 159 must add recent_top_wins"
+    assert "JSONB" in mig, "recent_top_wins must be JSONB"
+
+    settle = pathlib.Path("workers/jobs/settlement.py").read_text()
+    assert "PERF-HERO-RECENT-WINS" in settle, \
+        "settlement.py must reference the recent-wins task"
+    wins_idx = settle.index("PERF-HERO-RECENT-WINS")
+    wins_block = settle[wins_idx:wins_idx + 3500]
+    assert "DISTINCT ON (sb.match_id, sb.market, sb.selection)" in wins_block, \
+        "wins query must dedupe by (match, market, selection)"
+    assert "interval '14 days'" in wins_block, "wins window must be 14 days"
+    assert "result = 'won'" in wins_block, "must filter to wins only"
+    assert "maturity_label != 'experimental'" in wins_block, \
+        "must exclude experimental bots"
+    assert "LIMIT 8" in wins_block, "must limit to 8 wins"
+    # P&L / stake must NOT be included in the payload (free-tier visible)
+    payload_idx = settle.index("recent_top_wins = [", wins_idx)
+    payload_block = settle[payload_idx:payload_idx + 1200]
+    assert '"pnl"' not in payload_block and '"stake"' not in payload_block, \
+        "recent_top_wins payload must NOT include pnl or stake (free-tier visible)"
+
+    reel = pathlib.Path("../odds-intel-web/src/components/recent-wins-reel.tsx").read_text()
+    assert "interface RecentWin" in reel, "RecentWin interface required"
+    assert "wins.length === 0" in reel, "Reel must early-return on empty list"
+    assert "marketLabel" in reel, "Must translate market codes to human labels"
+    # No stake/pnl rendering
+    assert "stake" not in reel.lower(), "Reel must not show stake (free-tier visible)"
+    assert "pnl" not in reel.lower(), "Reel must not show P&L (free-tier visible)"
+
+    page = pathlib.Path("../odds-intel-web/src/app/(app)/performance/page.tsx").read_text()
+    assert "RecentWinsReel" in page, "performance/page.tsx must render RecentWinsReel"
+    assert "cache?.recent_top_wins" in page, \
+        "performance/page.tsx must pass cache.recent_top_wins to the reel"
+
+    data = pathlib.Path("../odds-intel-web/src/lib/engine-data.ts").read_text()
+    assert "recent_top_wins" in data, "DashboardCache interface must include recent_top_wins"
+
+
 if __name__ == "__main__":
     main()

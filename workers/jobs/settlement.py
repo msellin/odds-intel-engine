@@ -1505,6 +1505,58 @@ def write_dashboard_cache():
                 "cum": round(cum, 2),
             })
 
+        # PERF-HERO-RECENT-WINS (2026-06-01) — top 8 unique wins last 14d by
+        # CLV beat. Story = "model picked these and was right + beat closing
+        # line by X%". Deduplicated by (match, market, selection) so the same
+        # call from multiple bots renders once. No P&L / stake (free-tier
+        # visible).
+        recent_top_wins_rows = execute_query("""
+            WITH ranked AS (
+                SELECT DISTINCT ON (sb.match_id, sb.market, sb.selection)
+                    sb.id,
+                    sb.market,
+                    sb.selection,
+                    sb.odds_at_pick AS odds,
+                    COALESCE(sb.clv_pinnacle, sb.clv) AS clv_used,
+                    ht.name AS home,
+                    at2.name AS away,
+                    l.name AS league,
+                    l.country AS country,
+                    sb.pick_time
+                FROM simulated_bets sb
+                JOIN bots b ON b.id = sb.bot_id
+                JOIN matches m ON m.id = sb.match_id
+                JOIN teams ht ON ht.id = m.home_team_id
+                JOIN teams at2 ON at2.id = m.away_team_id
+                LEFT JOIN leagues l ON l.id = m.league_id
+                WHERE sb.result = 'won'
+                  AND sb.pick_time >= now() - interval '14 days'
+                  AND b.is_active = true AND b.retired_at IS NULL
+                  AND b.maturity_label != 'experimental'
+                  AND COALESCE(sb.clv_pinnacle, sb.clv) IS NOT NULL
+                  AND sb.odds_at_pick >= 1.50
+                ORDER BY sb.match_id, sb.market, sb.selection,
+                         COALESCE(sb.clv_pinnacle, sb.clv) DESC
+            )
+            SELECT * FROM ranked
+            ORDER BY clv_used DESC
+            LIMIT 8
+        """, [])
+        recent_top_wins = [
+            {
+                "home":      r["home"],
+                "away":      r["away"],
+                "league":    r["league"],
+                "country":   r["country"],
+                "market":    r["market"],
+                "selection": r["selection"],
+                "odds":      float(r["odds"] or 0),
+                "clv":       float(r["clv_used"] or 0),
+                "pick_time": r["pick_time"].isoformat() if r["pick_time"] else None,
+            }
+            for r in recent_top_wins_rows
+        ]
+
         bot_breakdown = []
         for r in bot_rows:
             s = int(r.get("settled") or 0)
@@ -1592,8 +1644,9 @@ def write_dashboard_cache():
                 prematch_total_pnl, prematch_roi_pct, prematch_avg_clv,
                 inplay_settled_bets, inplay_won_bets, inplay_total_staked,
                 inplay_total_pnl, inplay_roi_pct,
-                daily_pnl_curve_30d
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                daily_pnl_curve_30d,
+                recent_top_wins
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, [
             int(total_bets), int(settled_bets), int(pending_bets), int(won), int(lost),
             hit_rate, total_staked, total_pnl, roi_pct, avg_clv,
@@ -1608,6 +1661,7 @@ def write_dashboard_cache():
             inplay_settled, inplay_won, inplay_staked,
             inplay_pnl, inplay_roi,
             json.dumps(daily_pnl_curve_30d),
+            json.dumps(recent_top_wins),
         ])
         console.print(
             f"  Dashboard cache written: {int(settled_bets)} settled bets (all-time) · "
