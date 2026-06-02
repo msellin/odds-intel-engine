@@ -62,7 +62,52 @@ Cap displayed `model_prob` at 0.70 in the UI. When model says 85%, page shows "7
 - **Trade-off:** Hides real confidence variation in the 70-95% band. Some users prefer raw numbers.
 - **What changes:** Trust narrative — we never overclaim. "Sustained CLV +14%" stays the headline; raw prob disappears from view above 0.70.
 
-### Option B: Activate isotonic in production (MODERATE RISK)
+### Option B: Activate isotonic in production — ❌ ABORTED 2026-06-02
+
+**Update 2026-06-02 — tested, broken, don't ship.**
+
+User authorised Option B. Ran `scripts/fit_isotonic_offline.py --version v20260524_market --days 60` to generate isotonic .pkl files for the current production model (none existed before — only v_20260525_signals and v_20260525_depth8 had them).
+
+Fitter results (60d holdout, ECE = Expected Calibration Error, lower is better):
+
+  Market    | ECE Platt  | ECE Isotonic
+  1x2_home  | 0.0248     | 0.0913  (4× WORSE)
+  1x2_draw  | 0.0380     | 0.0689
+  1x2_away  | 0.0313     | 0.0691
+  over_25   | 0.1109     | 0.0834  (better)
+  btts_yes  | 0.0912     | 0.0651  (better)
+
+ECE averages across buckets — could go up while the tail gets fixed. Drilled into per-bucket calibration for 1x2_home (n=736 settled):
+
+  Bucket       n     RAW    Platt   Isotonic    Actual
+  0.0-0.4      185   0.297  0.350   0.146       0.216    Iso: −7pp UNDER
+  0.4-0.5      353   0.338  0.437   0.181       0.331    Iso: −15pp UNDER ← bad
+  0.5-0.6      154   0.434  0.537   0.289       0.494    Iso: −20pp UNDER ← worse
+  0.6-0.7      30    0.621  0.642   0.654       0.500    Iso: +15pp OVER (worse than Platt)
+  0.7-0.8      13    0.753  0.753   0.867       0.462    Iso: +40pp CATASTROPHIC
+
+The isotonic fit:
+- under-corrects severely at low–mid probabilities (says 0.18 when reality is 0.33)
+- over-corrects MORE at the high-confidence tail than Platt (0.87 when reality is 0.46)
+- doesn't fix the tail it was meant to fix
+
+Root cause: only **13 samples at 0.7-0.8 bucket**. Isotonic regression is non-parametric — needs density at the tail to learn the shape. With this little data it overfits noise and produces wild boundary extrapolations.
+
+**Activating `STAGE2_CALIBRATOR=isotonic` on Railway right now would make calibration measurably worse, including at the tail we were trying to fix. DO NOT FLIP.**
+
+The local `.pkl` files in `data/models/soccer/v20260524_market/isotonic_*.pkl` are inert until someone uploads them to Railway bundles. Leaving in place as evidence; safe to delete locally.
+
+**When to revisit Option B:**
+- After 90+ more days of settled high-confidence (≥0.7) production data (post-WC)
+- OR train on a longer history (e.g. 180d) instead of 60d
+- OR fit with sample weighting that gives extra weight to the tail
+- OR move to a different stage-2 method (e.g. beta calibration, sigmoid+iso ensemble)
+
+For now, Option A (display cap) is the only honest path. Reverting recommendation: **ship A, defer B post-WC + after we have more high-conf settled samples**.
+
+---
+
+### Option B (original spec — kept for reference, do not use):
 
 Set `STAGE2_CALIBRATOR=isotonic` on Railway. Existing `.pkl` files do the work.
 
