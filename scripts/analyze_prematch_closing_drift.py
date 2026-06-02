@@ -61,7 +61,12 @@ ANCHORS: tuple[tuple[str, int, int], ...] = (
     ("T-0",      0,  5),
 )
 
-BOOKMAKER_PRIORITY = ("Coolbet", "Unibet", "Bet365", "Pinnacle")
+DEFAULT_BOOKMAKERS = ("Coolbet", "Unibet", "Bet365", "Pinnacle")
+# Mutable at module scope when --bookmaker is passed on the CLI. The
+# snapshot query and pick_best() both read from this list, so passing
+# `--bookmaker Pinnacle` turns the analysis into a strict CLV test
+# against the sharp closing book.
+ACTIVE_BOOKMAKERS: tuple[str, ...] = DEFAULT_BOOKMAKERS
 
 
 def _snap_key(market: str, selection: str):
@@ -142,7 +147,7 @@ def fetch_snap_at(conn, match_id, market, selection, hl, kickoff, mins_before, s
                   AND bookmaker = ANY(%s)
                 ORDER BY bookmaker, ABS(EXTRACT(EPOCH FROM (timestamp - %s))) ASC
                 """,
-                (match_id, selection, hl, lo, hi, list(BOOKMAKER_PRIORITY), target),
+                (match_id, selection, hl, lo, hi, list(ACTIVE_BOOKMAKERS), target),
             )
         else:
             cur.execute(
@@ -155,13 +160,13 @@ def fetch_snap_at(conn, match_id, market, selection, hl, kickoff, mins_before, s
                   AND bookmaker = ANY(%s)
                 ORDER BY bookmaker, ABS(EXTRACT(EPOCH FROM (timestamp - %s))) ASC
                 """,
-                (match_id, market, selection, lo, hi, list(BOOKMAKER_PRIORITY), target),
+                (match_id, market, selection, lo, hi, list(ACTIVE_BOOKMAKERS), target),
             )
         return {bm: float(o) for bm, o in cur.fetchall()}
 
 
 def pick_best(snaps: dict[str, float]) -> Optional[tuple[str, float]]:
-    for bm in BOOKMAKER_PRIORITY:
+    for bm in ACTIVE_BOOKMAKERS:
         if bm in snaps:
             return bm, snaps[bm]
     return None
@@ -312,9 +317,26 @@ def main() -> int:
     ap.add_argument("--days", type=int, default=30)
     ap.add_argument("--markets", nargs="+", default=None)
     ap.add_argument("--out", type=str, default=None)
+    ap.add_argument(
+        "--bookmaker",
+        nargs="+",
+        default=None,
+        help="Restrict snapshot lookup to specific bookmakers (default: Coolbet, "
+             "Unibet, Bet365, Pinnacle priority). Passing 'Pinnacle' alone turns "
+             "this into a strict CLV test against the sharp book."
+    )
     args = ap.parse_args()
 
-    csv_path = Path(args.out) if args.out else OUT_DIR / f"prematch-closing-drift-{args.days}d.csv"
+    global ACTIVE_BOOKMAKERS
+    if args.bookmaker:
+        ACTIVE_BOOKMAKERS = tuple(args.bookmaker)
+
+    suffix = f"-{'_'.join(args.bookmaker).lower()}" if args.bookmaker else ""
+    csv_path = (
+        Path(args.out)
+        if args.out
+        else OUT_DIR / f"prematch-closing-drift-{args.days}d{suffix}.csv"
+    )
     csv_path.parent.mkdir(parents=True, exist_ok=True)
 
     with get_conn() as conn:
