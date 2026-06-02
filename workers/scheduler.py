@@ -423,6 +423,26 @@ def job_match_previews():
     _run_job("match_previews", run_match_previews)
 
 
+# WC-AI-PREVIEW (2026-06-02): tournament-window gate. Runs only between
+# 7 days pre-tournament and the final inclusive (2026-06-04 → 2026-07-19).
+# Outside that window the job exits immediately as a no-op so APScheduler
+# isn't burning Gemini quota the other ~340 days of the year.
+_WC_PREVIEW_WINDOW_START = date(2026, 6, 4)
+_WC_PREVIEW_WINDOW_END = date(2026, 7, 19)
+
+
+def job_wc_match_previews():
+    """WC-AI-PREVIEW: daily Gemini-generated previews for every WC fixture
+    in the next 7 days. Gated to the WC window because there's nothing to
+    preview outside it. Idempotent — < 24h-old previews are skipped inside
+    the job itself."""
+    today = date.today()
+    if not (_WC_PREVIEW_WINDOW_START <= today <= _WC_PREVIEW_WINDOW_END):
+        return
+    from workers.jobs.wc_match_previews import run_wc_match_previews
+    _run_job("wc_match_previews", run_wc_match_previews)
+
+
 def job_email_digest():
     from workers.jobs.email_digest import run_email_digest
     _run_job("email_digest", run_email_digest)
@@ -1382,6 +1402,17 @@ def main():
     # ENG-3: AI match previews — 07:15 UTC (after morning pipeline + 07:00 odds refresh settle)
     scheduler.add_job(job_match_previews, CronTrigger(hour=7, minute=15),
                       id="match_previews", name="Match Previews 07:15")
+
+    # WC-AI-PREVIEW (2026-06-02): Daily Gemini-generated previews for every
+    # World Cup fixture in the next 7 days. 07:30 UTC = after fetch_predictions
+    # (04:00) and the national-team predictor (04:00 morning_pipeline step) have
+    # settled, before the email digest slots (10:00 onwards). Gated inside
+    # job_wc_match_previews to the WC window (2026-06-04 → 2026-07-19) so it
+    # no-ops the rest of the year. Idempotent — < 24h-old previews skip the
+    # Gemini call inside the job.
+    scheduler.add_job(job_wc_match_previews, CronTrigger(hour=7, minute=30),
+                      id="wc_match_previews",
+                      name="WC AI Previews 07:30 [WC window]")
 
     # EMAIL-DIGEST-SMART (ENG-4): four qualification slots, 10/12/14/16 UTC.
     # First slot whose pending-bet signal-strength score clears

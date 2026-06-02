@@ -13132,5 +13132,132 @@ def _():
         "share API must delegate to getOrCreateShareToken server action"
 
 
+# ── WC AI Match Previews (WC-AI-PREVIEW) — 2026-06-02 ──────────────────────
+@test("WC-AI-PREVIEW-JOB — wc_match_previews.py exists, queries WC league, calls Gemini, writes match_previews")
+def _():
+    """WC-AI-PREVIEW (2026-06-02): Gemini-generated 80-120 word pre-match
+    previews for every WC fixture in the next 7 days. Source-inspection
+    guards the load-bearing pieces: WC league filter, Gemini call,
+    `match_previews` upsert, idempotent staleness gate, cliché blacklist.
+    Reuses the existing ENG-3 `match_previews` table (distinct match_ids
+    so no clash with the daily club preview job)."""
+    p = _engine_path("workers/jobs/wc_match_previews.py")
+    assert p.exists(), "workers/jobs/wc_match_previews.py must exist"
+    src = p.read_text()
+
+    # Callable entry point — scheduler imports this directly.
+    assert "def run_wc_match_previews(" in src, \
+        "wc_match_previews must expose run_wc_match_previews() callable"
+
+    # WC league anchor (api_football_id=1) — same as wc_bracket_scoring.py.
+    assert "WC_LEAGUE_AF_ID = 1" in src, \
+        "WC league anchor (api_football_id=1) must be defined"
+    assert "l.api_football_id = %s" in src, \
+        "fixture query must filter on leagues.api_football_id"
+
+    # National-team predictor source — pulls 1X2 from predictions table.
+    assert "national_team_v1" in src, \
+        "must pull predictions from source='national_team_v1' (WC-PHASE-3 model)"
+
+    # Gemini wiring — flash-lite is the cheapest tier for the 728-call cycle.
+    assert "gemini-2.5-flash-lite" in src, \
+        "WC preview job must use gemini-2.5-flash-lite (cheapest tier)"
+    assert "gemini_client.models.generate_content" in src, \
+        "must call Gemini generate_content"
+
+    # Idempotency — < 24h-old previews skip the Gemini call.
+    assert "REFRESH_AFTER_HOURS" in src, \
+        "must define a staleness threshold for idempotent runs"
+    assert "preview_generated_at" in src, \
+        "selection must look at existing match_previews.generated_at for staleness"
+
+    # Storage — upsert into the existing match_previews table.
+    assert "INSERT INTO match_previews" in src, \
+        "must write to the existing match_previews table"
+    assert "ON CONFLICT (match_id, match_date)" in src, \
+        "upsert must use the (match_id, match_date) unique key"
+
+    # Cliché blacklist — both prompt-side and a scrub pass on output.
+    assert "_BANNED_PHRASES" in src, "must define a cliché blacklist"
+    assert "clash of titans" in src.lower(), \
+        "cliché blacklist must include 'clash of titans'"
+    assert "should be a cracker" in src.lower(), \
+        "cliché blacklist must include 'should be a cracker'"
+    assert "_scrub_cliches" in src, \
+        "must scrub clichés from Gemini output before storage"
+
+    # Rate limit guard — 1 req/sec defends against the daily-quota wall.
+    assert "GEMINI_MIN_INTERVAL_S" in src, \
+        "must define a rate-limit interval between Gemini calls"
+
+    # Graceful degradation — Gemini errors are caught + the loop continues.
+    assert "except Exception" in src, \
+        "Gemini call must catch broad Exception and continue"
+
+
+@test("WC-AI-PREVIEW-CRON — scheduler registers wc_match_previews daily 07:30 UTC with WC-window gate")
+def _():
+    """WC-AI-PREVIEW cron: daily 07:30 UTC after fetch_predictions (04:00)
+    and the national-team predictor settle, before the email digest slots
+    (10:00+). Gated inside job_wc_match_previews to the 7-days-pre-WC
+    window (2026-06-04 → 2026-07-19) — APScheduler still fires it outside
+    the window but it exits before any Gemini call so quota isn't burned."""
+    src = _engine_path("workers/scheduler.py").read_text()
+
+    # Job function exists + delegates to the run callable.
+    assert "def job_wc_match_previews(" in src, \
+        "scheduler must define job_wc_match_previews()"
+    assert "from workers.jobs.wc_match_previews import run_wc_match_previews" in src, \
+        "scheduler must import run_wc_match_previews from the WC preview module"
+
+    # Window gate dates — starts 7d pre-tournament (2026-06-04), ends with the final.
+    assert "_WC_PREVIEW_WINDOW_START = date(2026, 6, 4)" in src, \
+        "WC preview window must start 2026-06-04 (7d pre-kickoff)"
+    assert "_WC_PREVIEW_WINDOW_END = date(2026, 7, 19)" in src, \
+        "WC preview window must end 2026-07-19 (FIFA final date)"
+
+    # Cron registration — 07:30 UTC daily.
+    assert "CronTrigger(hour=7, minute=30)" in src, \
+        "WC preview cron must fire daily at 07:30 UTC"
+    assert 'id="wc_match_previews"' in src, \
+        "WC preview cron must be registered with id='wc_match_previews'"
+
+
+@test("WC-AI-PREVIEW-FE — getWorldCupPreviews batch-loads previews + WCSchedule renders expander")
+def _():
+    """WC-AI-PREVIEW frontend: `getWorldCupPreviews` in src/lib/world-cup.ts
+    batch-loads previews from `match_previews` for every WC fixture id;
+    `wc-schedule.tsx` and `wc-group-card.tsx` render an expandable
+    `<details>` element under each fixture row that shows the full
+    Gemini-generated preview."""
+    lib = _web_path("src/lib/world-cup.ts")
+    assert lib.exists(), "src/lib/world-cup.ts must exist"
+    lib_src = lib.read_text()
+    assert "export async function getWorldCupPreviews(" in lib_src, \
+        "world-cup.ts must export getWorldCupPreviews"
+    assert "export interface WCMatchPreview" in lib_src, \
+        "world-cup.ts must export WCMatchPreview interface"
+    assert '.from("match_previews")' in lib_src, \
+        "getWorldCupPreviews must read from match_previews table"
+
+    sched = _web_path("src/components/wc-schedule.tsx")
+    assert sched.exists(), "wc-schedule.tsx must exist"
+    sched_src = sched.read_text()
+    assert "WCMatchPreview" in sched_src, \
+        "wc-schedule.tsx must import WCMatchPreview type"
+    assert "AI preview" in sched_src, \
+        "wc-schedule.tsx must render an 'AI preview' expander label"
+    assert "<details" in sched_src, \
+        "wc-schedule.tsx must use a native <details> element for the expander"
+
+    card = _web_path("src/components/wc-group-card.tsx")
+    assert card.exists(), "wc-group-card.tsx must exist"
+    card_src = card.read_text()
+    assert "WCMatchPreview" in card_src, \
+        "wc-group-card.tsx must import WCMatchPreview type"
+    assert "AI preview" in card_src, \
+        "wc-group-card.tsx must render an 'AI preview' expander label"
+
+
 if __name__ == "__main__":
     main()

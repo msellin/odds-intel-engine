@@ -26,6 +26,7 @@
 07-22  ③ Odds            run_odds()                Every 30min (:00 and :30) — AF bulk odds, 13 bookmakers
                                                     + mark_closing runs at 13:30, 17:30, 20:00 (pre-KO windows)
 07:15  ⑩ Match Previews  run_match_previews()      Top 10 matches → Gemini 200-word previews (ENG-3)
+07:30  ⑲ WC AI Previews  run_wc_match_previews()   Every WC fixture in next 7d → Gemini 80-120 word previews. Gated to WC window (2026-06-04 → 2026-07-19); no-op outside. Idempotent (<24h-old previews skip Gemini call). Reuses `match_previews` table — distinct match_ids so no clash with club preview job. (WC-AI-PREVIEW)
 10/12/14/16  ⑪ Email Digest Slots  run_email_digest()  Smart-slot digest — first slot whose pending-bet signal score ≥ EMAIL_DIGEST_MIN_SIGNAL sends; later slots see per-user lock and skip (ENG-4 / EMAIL-DIGEST-SMART)
 03:00  ⑭ Weekly Retrain  job_weekly_retrain()      Sunday only — runs `train.py --version v{YYYYMMDD}` then auto-`compare_models.py {new} {production}`. Promotion stays manual (operator flips MODEL_VERSION env). ML-PIPELINE-UNIFY Stage 5a/5b.
 08:00  ⑫ Weekly Digest   run_weekly_digest()       Monday only — model week review + upcoming matches (ENG-10)
@@ -275,6 +276,18 @@ on Hobby plan; blast radius isolated.
 - Upserts into `match_previews` table (migration 033) — idempotent, safe to re-run
 - Content is triple-duty: match detail page (Free sees teaser, Pro/Elite see full), email digest, social posts
 - Manual run: `python -m workers.jobs.match_previews --dry-run`
+
+### ⑲ WC AI Match Previews (`wc_match_previews.py`) — WC-AI-PREVIEW
+- Runs at 07:30 UTC daily, after fetch_predictions (04:00) + the national-team predictor have settled
+- **Window-gated**: no-op outside `2026-06-04 → 2026-07-19` so APScheduler doesn't burn Gemini quota the rest of the year
+- Selects every WC fixture (`leagues.api_football_id=1`) in the next 7 days
+- For each: pulls international ELO (`team_elo_international`), last-5 internationals form, H2H from `matches.h2h_*`, our model's 1X2 from `predictions` (`source='national_team_v1'`), venue, derived bracket stage
+- Calls Gemini 2.5 Flash-Lite: 80-120 word preview + 30-50 word teaser, OddsIntel voice, cliché blacklist baked into the prompt + scrubbed on output (no "clash of titans", no "should be a cracker", no "guaranteed")
+- **Idempotent**: skips fixtures whose existing preview is < 24h old; `--force` regenerates everything in the window
+- Rate-limited to 1 req/sec; Gemini errors caught + the loop continues (never crashes the cron)
+- Reuses the existing `match_previews` table (migration 033) — distinct match_ids so no clash with the daily club preview job. Frontend `getMatchPreview()` and `getWorldCupPreviews()` both pick this up automatically.
+- **Cost**: ~728 calls per tournament cycle (104 matches × ~7 refreshes each) at ~$0.01 / call on flash-lite ≈ **~$7 for the whole World Cup**
+- Manual run: `python -m workers.jobs.wc_match_previews --dry-run`
 
 ### ⑪ Email Digest + Value Bet Alerts (`email_digest.py`) — ENG-4 + N5
 
