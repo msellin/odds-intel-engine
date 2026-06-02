@@ -1673,6 +1673,45 @@ def write_dashboard_cache():
         # row newer than production with cv_metrics populated.
         upcoming_model_summary = _build_upcoming_model_summary()
 
+        # PRO-TIER-V2 (2026-06-02) — rolling-30d hero stats per /value-bets tier.
+        # Pro hero shows calibrated-cohort stats; Elite hero shows all-active.
+        # See migration 168_dashboard_cache_value_bets_cohort.sql.
+        def _value_bets_cohort(where_clause: str) -> dict | None:
+            row = execute_query(f"""
+                SELECT
+                    COUNT(*) FILTER (WHERE sb.result IN ('won','lost'))             AS n,
+                    COUNT(*) FILTER (WHERE sb.result = 'won')                       AS won,
+                    SUM(sb.stake) FILTER (WHERE sb.result IN ('won','lost'))        AS staked,
+                    SUM(sb.pnl)   FILTER (WHERE sb.result IN ('won','lost'))        AS pnl,
+                    AVG(sb.clv)   FILTER (WHERE sb.result IN ('won','lost') AND sb.clv IS NOT NULL) AS avg_clv
+                FROM simulated_bets sb
+                JOIN bots b ON b.id = sb.bot_id
+                WHERE sb.pick_time >= now() - interval '30 days'
+                  AND {where_clause}
+            """, [])[0]
+            n = int(row["n"] or 0)
+            if n == 0:
+                return None
+            won = int(row["won"] or 0)
+            staked = float(row["staked"] or 0)
+            pnl = float(row["pnl"] or 0)
+            roi = (pnl / staked * 100) if staked > 0 else None
+            clv = float(row["avg_clv"]) * 100 if row.get("avg_clv") is not None else None
+            return {
+                "n":            n,
+                "won":          won,
+                "win_rate_pct": round(won / n * 100, 1) if n > 0 else None,
+                "roi_pct":      round(roi, 2) if roi is not None else None,
+                "clv_pct":      round(clv, 2) if clv is not None else None,
+            }
+
+        pro_value_bets_30d = _value_bets_cohort(
+            "b.is_active = true AND b.maturity_label = 'calibrated'"
+        )
+        elite_value_bets_30d = _value_bets_cohort(
+            "b.is_active = true"
+        )
+
         bot_breakdown = []
         for r in bot_rows:
             s = int(r.get("settled") or 0)
@@ -1762,8 +1801,10 @@ def write_dashboard_cache():
                 inplay_total_pnl, inplay_roi_pct,
                 daily_pnl_curve_30d,
                 recent_top_wins,
-                upcoming_model_summary
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                upcoming_model_summary,
+                pro_value_bets_30d,
+                elite_value_bets_30d
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, [
             int(total_bets), int(settled_bets), int(pending_bets), int(won), int(lost),
             hit_rate, total_staked, total_pnl, roi_pct, avg_clv,
@@ -1780,6 +1821,8 @@ def write_dashboard_cache():
             json.dumps(daily_pnl_curve_30d),
             json.dumps(recent_top_wins),
             json.dumps(upcoming_model_summary) if upcoming_model_summary else None,
+            json.dumps(pro_value_bets_30d) if pro_value_bets_30d else None,
+            json.dumps(elite_value_bets_30d) if elite_value_bets_30d else None,
         ])
         console.print(
             f"  Dashboard cache written: {int(settled_bets)} settled bets (all-time) · "

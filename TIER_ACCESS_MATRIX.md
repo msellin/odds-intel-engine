@@ -83,13 +83,15 @@ Access levels for anonymous visitors, free signed-in users, and paid subscribers
 | Track record — today's picks (+ best odds revealed) | — | — | Y | Y |
 | Track record — today's picks (+ Kelly stake revealed) | — | — | — | Y |
 | Value bets page — stats only (bet count, edge tiers, leagues) | — | Y | Y | Y |
-| Value bets page — directional (match + market + edge tier, no selection) | — | — | Y | — |
-| Value bets page — full (match + selection + odds + model prob + exact edge % + stake) | — | — | — | Y |
-| Value bets page — **prematch bots only** (inplay hidden until tuning is done — see INPLAY-HIDE-VALUEBETS). Performance page is the place for inplay history; it tags inplay rows with a `live` badge. | — | Prematch only | Prematch only | Prematch only |
+| Value bets page — full picks from CALIBRATED bots (side + odds + model % + edge %) | — | — | Y | Y |
+| Value bets page — full picks from ALL active bots (calibrated + active + experimental incl. inplay) | — | — | — | Y |
+| Value bets page — Kelly stake revealed | — | — | — | Y |
+| Value bets page — Live picks section (inplay bots, auto-refresh every 60s, stale badge at >120s) | — | — | Y (calibrated cohort) | Y (all active) |
+| Value bets page — rolling-30d hero stats (ROI + CLV + win rate + n settled) — Pro shows calibrated cohort, Elite shows all-active | — | — | Y | Y |
 | Model probability + edge % per match | — | — | — | Y |
 | CLV tracking per bet (Pro on track record, Elite on match detail) | — | — | Y | Y |
 | Full bot ROI analytics + strategy breakdown | — | — | — | Y |
-| Bankroll analytics dashboard (/bankroll) — cumulative chart, drawdown, ROI, CLV, model benchmark, per-league | — | — | — | Y |
+| Bankroll analytics dashboard (/bankroll) — page still exists but unlinked from nav as of 2026-06-02 (PRO-TIER-V2). Direct URL access only. | — | — | — | Y (direct URL) |
 
 ### Engagement & Social Proof (ENG-* tasks, docs/ENGAGEMENT_PLAYBOOK.md)
 
