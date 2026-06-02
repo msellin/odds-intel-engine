@@ -52,15 +52,29 @@ BEST_PARAMS = {
 FORM_WINDOW = 20
 
 
+def run_predictions(days: int = 30, dry_run: bool = False) -> dict:
+    """
+    Callable entry point — also wraps CLI `main()`. The scheduler imports
+    this directly (workers/scheduler.py morning_pipeline step) so we
+    don't have to spawn a subprocess.
+
+    Returns: {"upcoming": N, "predicted": N, "skipped_no_elo": N, "rows": N}
+    """
+    console.print(f"[bold cyan]═══ Write national-team predictions ═══[/bold cyan]")
+    console.print(f"  window: next {days} days; params: {BEST_PARAMS}\n")
+    return _do_run(days=days, dry_run=dry_run)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--days", type=int, default=30,
                         help="Predict matches in the next N days (default 30)")
     args = parser.parse_args()
+    run_predictions(days=args.days, dry_run=args.dry_run)
 
-    console.print(f"[bold cyan]═══ Write national-team predictions ═══[/bold cyan]")
-    console.print(f"  window: next {args.days} days; params: {BEST_PARAMS}\n")
+
+def _do_run(days: int, dry_run: bool) -> dict:
 
     # Load upcoming international matches
     upcoming = execute_query("""
@@ -74,7 +88,7 @@ def main():
           AND m.status = 'scheduled'
           AND m.date::date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL %s
         ORDER BY m.date ASC
-    """, [list(COMP_CATEGORY.keys()), f"{args.days} days"])
+    """, [list(COMP_CATEGORY.keys()), f"{days} days"])
 
     console.print(f"  {len(upcoming)} upcoming international matches to predict")
 
@@ -187,16 +201,24 @@ def main():
 
     console.print(f"  prepared {len(pred_rows)} prediction rows ({len(upcoming) - skipped_no_elo} fixtures, {skipped_no_elo} skipped for missing ELO)")
 
-    if args.dry_run:
+    stats = {
+        "upcoming": len(upcoming),
+        "predicted": len(upcoming) - skipped_no_elo,
+        "skipped_no_elo": skipped_no_elo,
+        "rows": len(pred_rows),
+    }
+
+    if dry_run:
         console.print("[yellow]Dry run — not writing.[/yellow]")
-        # Print a sample
         for r in pred_rows[:7]:
             console.print(f"  sample: {r['market']:<10} p={r['model_prob']:.3f}  match={r['match_id'][:8]}")
-        return
+        return stats
 
     n = bulk_store_predictions(pred_rows)
     console.print(f"[green]✓ wrote {n} prediction rows to `predictions`[/green]")
     console.print(f"  (source='national_team_v1', model_version='national_team_v1')")
+    stats["written"] = n
+    return stats
 
 
 if __name__ == "__main__":

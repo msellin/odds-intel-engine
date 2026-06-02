@@ -4386,6 +4386,177 @@ def _():
     assert coolbet_lower, "value-bets/page.tsx must reference coolbet in some form"
 
 
+@test("PRO-TIER-V2 — page selects cohort by tier (calibrated for Pro, active for Elite)")
+def _():
+    """PRO-TIER-V2 2026-06-02 — /value-bets gates the BOT cohort server-side
+    per tier. Pro → calibrated bots only; Elite → all active bots. Free →
+    legacy prematch teaser. The page must (a) read tier server-side, (b)
+    pass a cohort literal into getTodayBets(), (c) cover both 'calibrated'
+    and 'active' branches.
+
+    Source-inspect — engine doesn't have the web build runner; we ensure
+    the wiring exists and won't silently drift back to a tier-blind query.
+    """
+    page = _web_path("src/app/(app)/value-bets/page.tsx")
+    if not page.exists():
+        print("  [skip] odds-intel-web not present in CI")
+        return
+    src = page.read_text()
+    # Cohort literal MUST appear and be tied to the tier branches
+    assert '"calibrated"' in src, "Pro cohort literal 'calibrated' must be present"
+    assert '"active"' in src, "Elite cohort literal 'active' must be present"
+    # Tier resolution must run on the server
+    assert "getUserTier" in src, "page must call getUserTier (server-side tier resolution)"
+    # getTodayBets must accept the cohort
+    assert "getTodayBets(cohort)" in src or "getTodayBets( cohort )" in src, (
+        "page must thread the cohort var through getTodayBets()"
+    )
+
+    # engine-data.ts: the function signature + DB filter must match
+    engine = _web_path("src/lib/engine-data.ts")
+    assert engine.exists(), "engine-data.ts must exist"
+    edata = engine.read_text()
+    assert "BetCohort" in edata, "BetCohort type union must be exported"
+    assert 'maturity_label' in edata and 'is_active' in edata, (
+        "engine-data must filter bots by maturity_label + is_active for tier cohorts"
+    )
+    assert "'calibrated'" in edata, "calibrated literal must appear in the cohort filter"
+
+    # Page must no longer strip Pro fields the way the legacy sanitizeBets did
+    # (selection/odds/modelProb set to 0/'' for Pro). Guard against regression
+    # by asserting the old strip-block is gone.
+    assert 'selection: "",\n      odds: 0,\n      modelProb: 0,' not in src, (
+        "Legacy Pro field-strip block must be removed — Pro now sees full pick data"
+    )
+
+
+@test("PRO-TIER-V2 — TIER_ACCESS_MATRIX updated with calibrated + active cohort rows")
+def _():
+    """PRO-TIER-V2 2026-06-02 — the matrix must reflect what Pro / Elite
+    actually see on /value-bets. The old 'directional (no selection)' row
+    is gone. New rows: CALIBRATED bots row (Pro+Elite), ALL active bots row
+    (Elite only), and a Live picks row.
+    """
+    matrix = _engine_path("TIER_ACCESS_MATRIX.md")
+    assert matrix.exists(), "TIER_ACCESS_MATRIX.md must exist"
+    src = matrix.read_text()
+    assert "CALIBRATED bots" in src, "Pro+Elite calibrated cohort row missing"
+    assert "ALL active bots" in src, "Elite all-active cohort row missing"
+    assert "Live picks section" in src, "Live picks row missing"
+    assert "directional (match + market + edge tier, no selection)" not in src, (
+        "Legacy 'directional' Pro row must be removed"
+    )
+
+
+@test("INPLAY-TIMING — /api/value-bets/live route exists + server-anchored stale gate")
+def _():
+    """INPLAY-TIMING 2026-06-02 — inplay picks are time-critical; the
+    /value-bets page renders a separate auto-refreshing "Live now" section
+    powered by GET /api/value-bets/live. Stale badge must use server-side
+    `now`, not Date.now() on the client (clock spoofing).
+
+    Asserts: route exists, returns server `now`, gates by tier server-side,
+    and the client section reads serverNow + has the >120s amber warning.
+    """
+    web = _web_root
+    if not web.exists():
+        print("  [skip] odds-intel-web not present in CI")
+        return
+
+    # API route
+    route = web / "src" / "app" / "api" / "value-bets" / "live" / "route.ts"
+    assert route.exists(), "API route /api/value-bets/live must exist at src/app/api/value-bets/live/route.ts"
+    route_src = route.read_text()
+    assert "getUserTier" in route_src, "live route must check tier server-side"
+    assert "isPro" in route_src, "live route must gate on Pro tier"
+    assert "isInplay" in route_src, "live route must filter to inplay picks only"
+    assert "now: new Date().toISOString()" in route_src, (
+        "live route must return a server-anchored `now` for the stale gate"
+    )
+    # Cohort selection must remain consistent with the page
+    assert '"active"' in route_src and '"calibrated"' in route_src, (
+        "live route must pick cohort by tier: Elite→active, Pro→calibrated"
+    )
+
+    # Client component
+    section = web / "src" / "components" / "value-bets-live-section.tsx"
+    assert section.exists(), "ValueBetsLiveSection client component must exist"
+    section_src = section.read_text()
+    assert "STALE_MS" in section_src, "Section must define a stale threshold constant"
+    assert "120_000" in section_src or "120000" in section_src, (
+        "Stale threshold must be 120s (>2x the refresh interval)"
+    )
+    assert "POLL_MS" in section_src and ("60_000" in section_src or "60000" in section_src), (
+        "Section must poll the live API at 60s"
+    )
+    assert "serverNow" in section_src, "Section must use server-anchored now (NOT Date.now alone)"
+    # Edge-may-have-moved warning string (the stale UX)
+    assert "Edge may have moved" in section_src, (
+        "Stale badge copy must warn that the edge may have moved"
+    )
+
+    # Page wires both
+    page = _web_path("src/app/(app)/value-bets/page.tsx")
+    page_src = page.read_text()
+    assert "ValueBetsLiveSection" in page_src, "page must render ValueBetsLiveSection"
+    assert "serverNow" in page_src, "page must pass server-anchored serverNow to the section"
+
+
+@test("PRO-TIER-V2 — dashboard_cache has rolling-30d cohort columns (migration 168)")
+def _():
+    """PRO-TIER-V2 2026-06-02 — /value-bets hero card reads rolling stats from
+    dashboard_cache. Migration 168 adds pro_value_bets_30d + elite_value_bets_30d
+    JSONB columns; settlement.write_dashboard_cache populates both.
+    """
+    mig = _engine_path("supabase/migrations/168_dashboard_cache_value_bets_cohort.sql")
+    assert mig.exists(), "migration 168 must exist"
+    sql = mig.read_text()
+    assert "pro_value_bets_30d" in sql, "migration must add pro_value_bets_30d column"
+    assert "elite_value_bets_30d" in sql, "migration must add elite_value_bets_30d column"
+    assert "JSONB" in sql.upper(), "cohort stats stored as JSONB"
+
+    # settlement must write both
+    settlement = _engine_path("workers/jobs/settlement.py")
+    s_src = settlement.read_text()
+    assert "pro_value_bets_30d" in s_src, "settlement must populate pro_value_bets_30d"
+    assert "elite_value_bets_30d" in s_src, "settlement must populate elite_value_bets_30d"
+    assert "maturity_label = 'calibrated'" in s_src, (
+        "Pro cohort query must filter to maturity_label='calibrated'"
+    )
+
+
+@test("PRO-TIER-V2 — community-vote removed from match-detail page render")
+def _():
+    """PRO-TIER-V2 2026-06-02 — CommunityVote no longer renders on match
+    detail. Component file kept for potential WC re-introduction. Only check
+    that the page no longer renders <CommunityVote.../>.
+    """
+    page = _web_path("src/app/(app)/matches/[id]/page.tsx")
+    if not page.exists():
+        print("  [skip] odds-intel-web not present in CI")
+        return
+    src = page.read_text()
+    # Allow comments to mention it; the render itself must be gone
+    import re
+    rendered = re.search(r"^\s*<CommunityVote\b", src, re.MULTILINE)
+    assert rendered is None, "CommunityVote must NOT be rendered on the regular match detail page"
+
+
+@test("PRO-TIER-V2 — /bankroll unlinked from nav user dropdown (desktop + mobile)")
+def _():
+    """PRO-TIER-V2 2026-06-02 — /bankroll deprecated from nav. Page still
+    exists; just no menu entry pointing at it. Asserting absence is enough.
+    """
+    nav = _web_path("src/components/nav.tsx")
+    if not nav.exists():
+        print("  [skip] odds-intel-web not present in CI")
+        return
+    src = nav.read_text()
+    assert 'href="/bankroll"' not in src, (
+        "/bankroll link must be removed from nav (both desktop dropdown and mobile menu)"
+    )
+
+
 @test("BOT-BANKROLL-DRIFT — every active bot's current_bankroll matches starting + sum(pnl)")
 def _():
     """BOT-BANKROLL-DRIFT 2026-05-25 — un-retire/re-retire cycles previously
@@ -12709,6 +12880,30 @@ def _():
     assert "status = 'scheduled'" in src
     # Idempotent path
     assert "bulk_store_predictions" in src
+
+
+@test("WC-PHASE-3-CRON — national-team predictor wired into morning_pipeline step 6/7")
+def _():
+    """WC-PHASE-3-CRON (2026-06-02): close the loop on the prediction job.
+    `scripts/write_national_team_predictions.py` was the one-shot CLI; this
+    test asserts it's also importable + scheduled.
+
+    The job runs at 04:00 UTC after fetch_fixtures + fetch_predictions
+    (club model), before betting_pipeline. Daily refresh = WC + intl
+    matches get predictions written for the next 30 days, idempotent
+    via store_prediction upsert on (match_id, market, source)."""
+    src = _engine_path("workers/scheduler.py").read_text()
+    assert "from scripts.write_national_team_predictions import run_predictions as run_national_team_predictions" in src, \
+        "morning_pipeline must import the national-team predictor wrapper"
+    assert "\"Predictions (national)\"" in src, \
+        "step label 'Predictions (national)' must appear in morning_pipeline steps"
+    assert "run_national_team_predictions(days=30)" in src, \
+        "scheduler must call run_national_team_predictions with 30-day window"
+
+    # Script must expose the callable, not just the CLI
+    script = _engine_path("scripts/write_national_team_predictions.py").read_text()
+    assert "def run_predictions(days: int = 30, dry_run: bool = False) -> dict:" in script, \
+        "script must expose run_predictions() callable for scheduler import"
 
 
 if __name__ == "__main__":

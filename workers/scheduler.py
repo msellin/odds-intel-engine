@@ -148,6 +148,10 @@ def morning_pipeline():
     from workers.jobs.fetch_odds import run_odds
     from workers.jobs.fetch_predictions import run_predictions
     from workers.jobs.betting_pipeline import run_betting
+    # WC-PHASE-3-CRON (2026-06-02): national-team predictor writes WC + intl
+    # 1X2/OU/BTTS predictions after fixtures land + AF predictions run. Source
+    # = 'national_team_v1' so /world-cup picks up the rows.
+    from scripts.write_national_team_predictions import run_predictions as run_national_team_predictions
 
     today = date.today().isoformat()
     tomorrow = (date.today() + timedelta(days=1)).isoformat()
@@ -157,12 +161,13 @@ def morning_pipeline():
 
     import traceback
     steps = [
-        ("1/6", "Fixtures (today)",        lambda: run_fixtures(target_date=today, refresh_leagues=is_monday)),
-        ("2/6", "Fixtures (tomorrow rows)", lambda: fetch_and_store_fixtures(tomorrow)),
-        ("3/6", "Enrichment",              lambda: run_enrichment(target_date=today)),
-        ("4/6", "Odds",                    lambda: run_odds(target_date=today)),
-        ("5/6", "Predictions",             lambda: run_predictions(target_date=today)),
-        ("6/6", "Betting",                 lambda: run_betting()),
+        ("1/7", "Fixtures (today)",        lambda: run_fixtures(target_date=today, refresh_leagues=is_monday)),
+        ("2/7", "Fixtures (tomorrow rows)", lambda: fetch_and_store_fixtures(tomorrow)),
+        ("3/7", "Enrichment",              lambda: run_enrichment(target_date=today)),
+        ("4/7", "Odds",                    lambda: run_odds(target_date=today)),
+        ("5/7", "Predictions (club)",      lambda: run_predictions(target_date=today)),
+        ("6/7", "Predictions (national)",  lambda: run_national_team_predictions(days=30)),
+        ("7/7", "Betting",                 lambda: run_betting()),
     ]
 
     failed_steps = []
