@@ -115,6 +115,30 @@ python3 scripts/generate_targets_extended.py
 
 The script auto-discovers eligible leagues from the DB (≥10 finished matches, not in existing CSVs) — no code change needed when new leagues are added.
 
+### National-team data — WC 2026 prep (added 2026-06-02, WC-PHASE-2)
+
+The original `backfill_historical.py` is club-league focused. National-team competitions sit under AF country=`"World"` and have to be opted in separately. Before 2026-06-02 the DB had only `Friendlies` (73 matches, all 2026-04 onward) — no World Cups, no Euros, no qualifiers. This is a problem because the existing prediction model is trained on club-level features (`league_tier`, season-form), and we have nothing to train a national-team variant on either.
+
+`scripts/backfill_internationals.py` (WC-PHASE-2) pulls 59 (league, season) tuples covering:
+
+- World Cup 2018, 2022 (group + knockout)
+- Euro 2020 (+ qualification), Euro 2024 (+ qualification)
+- Copa America 2021, 2024
+- AFCON 2019, 2021, 2023, 2025
+- Asian Cup 2019, 2023 (+ qualification)
+- CONCACAF Gold Cup 2019-2025 (all 4 editions), CONCACAF Nations League 2022-2024
+- UEFA Nations League — all 4 editions (2018-19, 2020-21, 2022-23, 2024-25)
+- WC 2022 qualifiers — all 6 confederations + intercontinental playoffs
+- WC 2026 qualifiers — all 6 confederations + intercontinental playoffs
+- Friendlies 2022-2025 (deduplicated against the 2026 set already in DB)
+- Regional: ASEAN Championship, Gulf Cup, SAFF Championship, CAFA Nations Cup, Arab Cup, Finalissima
+
+Total: ~3,000+ finished international matches. Two-phase: (A) fixtures via `get_fixtures_by_league_season` + `bulk_store_matches`, (B) nested data (lineups, events, statistics, player stats) via `get_fixtures_batch` for finished matches only. Idempotent — re-running skips already-stored fixtures (upsert on `api_football_id`) and already-enriched matches (filter on existing `match_stats` rows).
+
+WC 2026 group-stage fixtures (72 matches, league=1 season=2026) were backfilled separately under WC-PHASE-1 via the new `fetch_fixtures --league/--season` mode. They land in DB with `season=2025` per our football-season convention (June = previous year); frontend filters by date + `show_on_frontend`, not season.
+
+**Gap that remains:** no AF bookmaker odds for WC 2026 (`leagues.coverage_odds = false` on the WC row, and AF's `/odds?fixture=` returns 0 books). Either add `soccer_fifa_world_cup` to The Odds API client (`workers/api_clients/odds_api.py`) or accept "predictions only, no value bets" for WC. Decision deferred to WC-PHASE-4b.
+
 ### Training-pipeline data sources (clarification)
 
 The Sunday weekly retrains (`fit_platt_offline.py`, `fit_league_rho.py`, `train.py`) all read from the **DB** (`matches`, `predictions`, `odds_snapshots`). They do NOT read `targets_poisson_history.csv` directly.

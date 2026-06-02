@@ -55,11 +55,18 @@ User wants OddsIntel to be ready for the 2026 World Cup (starts 2026-06-11). The
 
 `workers/jobs/fetch_fixtures.py` is invoked at 06:00 UTC daily and pulls **today's date only** (`get_fixtures_by_date`). It does NOT auto-backfill future fixtures. So even if WC league is included in the featured set, matches don't appear in DB until kickoff day unless we explicitly backfill via `get_fixtures_by_league_season`. **Phase 1 is essentially a one-time call.**
 
+## What's been done
+
+- **WC-PHASE-1 (2026-06-02)**: 72 WC 2026 group-stage fixtures backfilled. Migration 163 flips `show_on_frontend=true`. Committed `94eb355`. Smoke: WC-FIXTURES-IN-DB.
+- **WC-PHASE-2 fixtures (2026-06-02)**: 6,921 international fixtures across 25 competitions, 6,651 finished — Friendlies 1,923, UEFA NL 668, WC Qual Europe 463, AFCON Qual 460, WC Qual Asia 459, WC Qual Africa 431, Euro+Quals 603, AFCON 358, WC 200, Asian Cup 102, Copa America 60. Smoke: INTL-BACKFILL.
+- **WC-PHASE-2 enrichment**: partial (293 lineups, 1,576 stats, 25,759 events) and running in background ~25h ETA. Phase 3 doesn't depend on this.
+
 ## Critical caveats
 
 - **Backtest CSV ≠ production reality.** Discovered during retired-bot investigation. The `backtest-2023plus.csv` file used by /tmp/top5_validate.py uses model output that doesn't apply production calibration. Any Pro-tier validation built on this CSV is suspect. **Use live `simulated_bets` table for honest validation** — not the backtest CSV.
 - **Per-day ranking is anti-selection.** Confirmed across 3 years and every ranking metric tried (edge, prob, edge×prob). Do not propose "top N picks per day" again.
 - **The model has a calibration ceiling at ~66% WR.** No high-confidence cohort exceeds this. Don't promise hit-rate-based products.
+- **`backfill_internationals.py` enrichment is per-match-storage-bottlenecked.** Each match takes ~13 seconds for lineups + N events + stats + ~22 player_stats rows. With 6,628 matches, full enrichment is ~25 hours. Phase 3 (ELO + Poisson) doesn't need this — only scores + dates + teams + competition, all in DB from Phase A. Follow-up `OPT-BACKFILL-INTL`: parallelise via ThreadPoolExecutor + batch player_stats inserts via `execute_values` + add `--skip-players` flag. Deferred to post-WC.
 
 ## Snapshot of validation queries used
 

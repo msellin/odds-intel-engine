@@ -12540,5 +12540,63 @@ def _():
     assert "api_football_id = 1" in mig
 
 
+@test("INTL-BACKFILL — historical national-team backfill script structure + competition coverage")
+def _():
+    """WC-PHASE-2 (2026-06-02): scripts/backfill_internationals.py pulls
+    historical fixtures + nested data (lineups, events, statistics, player
+    stats) for ~59 national-team competitions (WC 2018/2022, Euro 2020/2024,
+    Copa America, AFCON, Asian Cup, Gold Cup, all UEFA Nations League
+    editions, WC 2022 + WC 2026 qualifiers across all 6 confederations,
+    Friendlies, regional comps).
+
+    Required because the regular fetch_fixtures cron only pulls today, so
+    the engine has no historical international data to train a national-
+    team predictor on for WC 2026.
+
+    Tests:
+      - Script + competition list exist with the key high-volume comps
+      - backfill_fixtures + enrich_finished_matches functions present
+      - CLI: --no-enrichment / --dry-run / --filter
+      - Enrichment is idempotent (skips matches that already have stats)"""
+    src = _engine_path("scripts/backfill_internationals.py").read_text()
+
+    # Key competitions we depend on for WC training data
+    for must_have in [
+        "World Cup 2022",       # 64 fixtures, key training set
+        "Euro 2024",            # 51 fixtures, most recent Euro
+        "UEFA Nations League",  # ~670 fixtures across 4 editions
+        "WC 2026 Qual",         # current cycle, all confederations
+        "WC 2022 Qual",         # previous cycle for training
+        "Africa Cup of Nations",
+        "Asian Cup",
+        "Copa America",
+        "Friendlies",
+    ]:
+        assert must_have in src, f"backfill_internationals.py missing competition '{must_have}'"
+
+    # Function + CLI surface
+    assert "def backfill_fixtures(" in src
+    assert "def enrich_finished_matches(" in src
+    assert "get_fixtures_batch" in src, "Must batch-fetch nested data (one AF call per 20 fixtures)"
+    assert "bulk_store_matches" in src, "Must use bulk_store_matches for fixtures (handles upsert)"
+
+    # Idempotency: enrichment must skip matches that already have stats
+    assert "FROM match_stats WHERE match_id" in src, \
+        "Enrichment must check existing match_stats rows to avoid re-fetching"
+
+    # CLI args
+    assert "--no-enrichment" in src
+    assert "--dry-run" in src
+    assert "--filter" in src
+
+    # Helpers wired
+    for fn in ["parse_fixture_lineups", "parse_fixture_events",
+               "parse_fixture_stats", "parse_fixture_players"]:
+        assert fn in src, f"backfill must call {fn}"
+    for fn in ["store_match_lineups", "store_match_events_af",
+               "store_match_stats_full", "store_match_player_stats"]:
+        assert fn in src, f"backfill must call {fn}"
+
+
 if __name__ == "__main__":
     main()

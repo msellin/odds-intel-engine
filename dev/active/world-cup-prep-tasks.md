@@ -22,14 +22,21 @@
 - [x] Smoke test: WC-FIXTURES-IN-DB (source-inspection of CLI args + migration file)
 - [ ] Commit + push (this commit)
 
-## Phase 2 — Historical internationals backfill (1 day)
+## Phase 2 — Historical internationals backfill (DONE 2026-06-02; enrichment continuing in background)
 
-- [ ] Decide which competitions to enable. Candidates: Euro 2024 (id=4), WC 2022 (id=1 s2022), WC Quals Europe (id=32), WC Quals S.America (id=29), WC Quals Asia (id=35), WC Quals Africa (id=36), Nations League (id=5)
-- [ ] Confirm AF id list and fixture availability per `/tmp/wc_af_probe.py`
-- [ ] Backfill script — one-off `scripts/backfill_internationals.py` calling `get_fixtures_by_league_season` for each (lid, season)
-- [ ] Store via `bulk_store_matches`
-- [ ] Run + verify ~400+ international matches now in DB with results
-- [ ] Smoke test: INTL-BACKFILL (count + sanity row check)
+- [x] Probe AF for available comps (`/tmp/probe_intl.py`) — 79 senior men's national-team competitions found, 59 selected for backfill
+- [x] Backfill script `scripts/backfill_internationals.py` with 59 (league, season) tuples (WC 2018/2022, Euro 2020/2024 + qual, Copa America 2021/2024, AFCON 2019/2021/2023/2025, Asian Cup 2019/2023 + qual, Gold Cup 2019/2021/2023/2025, CONCACAF Nations League, UEFA Nations League ×4, WC 2022 + 2026 qualifiers all 6 confederations, Friendlies 2022-25, regional comps)
+- [x] Two-phase: (A) fixtures via `get_fixtures_by_league_season` + `bulk_store_matches`, (B) nested data (lineups, events, statistics, player stats) via `get_fixtures_batch` for finished matches
+- [x] Idempotent: bulk_store_matches upserts on api_football_id; enrichment skips matches that already have `match_stats` rows
+- [x] CLI: `--no-enrichment`, `--dry-run`, `--filter` for partial runs
+- [x] **Phase A complete: 6,921 fixtures stored across 25 competitions (6,651 finished).** Key buckets: Friendlies 1,923 / UEFA NL 668 / WC Qual Europe 463 / AFCON Qual 460 / WC Qual Asia 459 / WC Qual Africa 431 / Euro+Quals 603 / AFCON 358 / WC 200 / Asian Cup 102 / Copa America 60. All confederations' WC qualifiers covered for 2022 + 2026 cycles.
+- [~] **Phase B partial: enrichment runs at ~4 fixtures/min (per-match storage cost is the bottleneck: lineups + N events + stats + ~22 player_stats rows × 6,628 matches). Full enrichment ETA ~25 hours.** After ~38 min: 293 lineups, 1,576 match_stats, 25,759 match_events (most events pre-existing from prior live_tracker / settlement runs). Script is **left running in background (PID 4606)** — will keep adding data over the next hours. Phase 3 (ELO + Poisson) does NOT depend on lineups/stats; it only needs scores + dates + teams which Phase A already produced.
+- [x] Smoke test: INTL-BACKFILL (source inspection)
+- [x] Verification: counts per competition (see `dev/active/world-cup-prep-context.md`)
+- [x] Commit + push
+
+### Follow-up filed (post-WC)
+- **OPT-BACKFILL-INTL** — optimise the enrichment phase: parallelise with ThreadPoolExecutor (settlement.py uses 2 workers), batch player_stats inserts via `execute_values`, optionally add `--skip-players` flag. Not blocking Phase 3 or any WC ship work.
 
 ## Phase 3 — National-team predictor (2-3 days)
 

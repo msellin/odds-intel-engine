@@ -9,7 +9,7 @@
 >
 > **✅ WC-PHASE-1 Done 2026-06-02** — Backfilled 72 WC 2026 group-stage fixtures. Added `--league`/`--season` CLI to `workers/jobs/fetch_fixtures.py` (backfill mode skips daily-featured + ops_snapshot, passes today's date as log run_date to satisfy DATE column). Migration 163 flips `show_on_frontend=true` on the WC league row (was hidden despite `is_active=true` + `coverage_predictions=true`). Matches land with `season=2025` (our football-season convention: June = previous year) — this is correct and the frontend filters by date+`show_on_frontend`, not season. Smoke: WC-FIXTURES-IN-DB.
 >
-> **🔄 WC-PHASE-2 In Progress** — Backfill historical internationals (Euro 2024, WC 2022, WC quals, Nations League, Copa America, AFCON) + nested data (lineups, events, statistics). Started 2026-06-02.
+> **✅ WC-PHASE-2 Done 2026-06-02** — `scripts/backfill_internationals.py` ran across 59 (league, season) tuples, **6,921 fixtures stored (6,651 finished)** covering WC 2018/2022, Euro 2020/2024 + qual, Copa America, AFCON, Asian Cup, Gold Cup, all 4 UEFA Nations League editions, all 6 confederations' WC qualifiers for 2022 + 2026 cycles, Friendlies 2022-25, regional comps. Phase A (fixtures) complete; Phase B (lineups/events/stats/players) runs at ~4 matches/min because of per-match SQL fan-out — left running in background (~25h ETA), but Phase 3 (ELO + Poisson predictor) only needs scores + dates + teams which are all already in. Follow-up `OPT-BACKFILL-INTL` filed in `dev/active/world-cup-prep-tasks.md` to parallelise the enrichment post-WC. Smoke: INTL-BACKFILL.
 >
 > **⬜ WC-PHASE-3** — National-team predictor (ELO + Poisson, separate model). Validation on Euro 2024 + WC 2022 holdouts. 2-3 days.
 >

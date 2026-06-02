@@ -175,6 +175,12 @@ on Hobby plan; blast radius isolated.
 - Stores in `matches` table (~300 fixtures/day)
 - On Mondays: refreshes league coverage from AF `/leagues` (1223 leagues)
 - Logs to `pipeline_runs` table
+- **Backfill mode (WC-PHASE-1, 2026-06-02):** `--league NN --season YYYY` switches
+  to `get_fixtures_by_league_season()` and skips daily-featured + ops_snapshot
+  (those are date-scoped). Used to pre-load WC 2026 group stage in advance of
+  kickoff, and any other competition the daily date-mode wouldn't pick up
+  ahead of time. Same logging + bulk_store_matches path, idempotent on
+  `api_football_id`.
 
 ### ② Enrichment (`fetch_enrichment.py`)
 - **04:15 (full):** standings (T9), H2H (T10), team stats (T2), injuries (T3), coaches (MGR-CHANGE), venues (AF-VENUES), sidelined (AF-SIDELINED), transfers (AF-TRANSFERS)
@@ -307,6 +313,14 @@ on Hobby plan; blast radius isolated.
 - Budget-capped: aborts if < 10K API calls remaining; idempotent — resumes from `backfill_progress` table
 - Auto-disables via `backfill_complete.flag`; stale flag auto-removed if new phases have work
 - Manual run: `python scripts/backfill_historical.py --phase 4 --max-requests 5000 --batch-size 2000`
+
+### ⑨b Internationals Backfill (`backfill_internationals.py`) — WC-PHASE-2 (2026-06-02)
+- One-off script to pull historical national-team competition fixtures (WC 2018/2022, Euro 2020/2024, Copa America, AFCON, Asian Cup, Gold Cup, all UEFA Nations League editions, WC 2022 + 2026 qualifiers across all 6 confederations, Friendlies). Required because the regular date-mode `fetch_fixtures` only pulls today and never sees historical international matches.
+- 59 (league, season) tuples → ~3,000 finished matches.
+- Phase A: fixtures via `get_fixtures_by_league_season` + `bulk_store_matches` (idempotent upsert).
+- Phase B: nested data (lineups, events, statistics, player stats) via `get_fixtures_batch(20-at-a-time)` for finished matches only. Skips matches that already have a `match_stats` row.
+- Manual run: `python scripts/backfill_internationals.py` (full) or `--filter "World Cup,Euro"` for a subset, or `--dry-run` / `--no-enrichment` to scope down.
+- Not in the cron schedule — invoke once after each WC qualification cycle / major tournament finishes.
 
 ### ⑩ Extended CSV Export (`generate_targets_extended.py`) — run after any new backfill
 - Exports all finished DB matches not already in `targets_poisson_history.csv` or `targets_global.csv` to `data/processed/targets_extended.csv`
