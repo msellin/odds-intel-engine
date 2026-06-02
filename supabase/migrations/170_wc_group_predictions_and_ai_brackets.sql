@@ -101,12 +101,23 @@ ALTER TABLE wc_bracket_meta
 ALTER TABLE wc_bracket_meta
     ADD COLUMN IF NOT EXISTS ai_label text;
 
--- AI ghost rows have user_id IS NULL.
-ALTER TABLE wc_bracket_meta ALTER COLUMN user_id DROP NOT NULL;
+-- ── Re-key wc_bracket_meta so AI ghost rows can have user_id NULL ─────────
+-- ORDER MATTERS:
+--   1. Add the new `id` surrogate column (idempotent)
+--   2. Backfill any existing rows' id
+--   3. Lift the existing PK off user_id (Postgres won't let us drop NOT NULL
+--      on a column that's still part of a primary key — sqlstate 42P16, which
+--      is exactly the error this migration first failed on)
+--   4. NOW drop NOT NULL on user_id
+--   5. Promote `id` to the new PK
+--   6. Re-establish per-user uniqueness via a partial unique index
 
--- Existing PK was (user_id) — must move to a synthetic id so AI rows can exist
--- with user_id NULL. We keep the surrogate uuid and enforce uniqueness via
--- partial indexes (mirrors the picks table pattern above).
+-- Step 1+2 — surrogate column + backfill
+ALTER TABLE wc_bracket_meta ADD COLUMN IF NOT EXISTS id uuid DEFAULT gen_random_uuid();
+UPDATE wc_bracket_meta SET id = COALESCE(id, gen_random_uuid()) WHERE id IS NULL;
+ALTER TABLE wc_bracket_meta ALTER COLUMN id SET NOT NULL;
+
+-- Step 3 — drop the existing PK off user_id (if it exists)
 DO $$
 BEGIN
     IF EXISTS (
@@ -117,10 +128,10 @@ BEGIN
     END IF;
 END$$;
 
-ALTER TABLE wc_bracket_meta ADD COLUMN IF NOT EXISTS id uuid DEFAULT gen_random_uuid();
-UPDATE wc_bracket_meta SET id = COALESCE(id, gen_random_uuid()) WHERE id IS NULL;
-ALTER TABLE wc_bracket_meta ALTER COLUMN id SET NOT NULL;
+-- Step 4 — NOW we can drop NOT NULL on user_id. AI ghost rows store user_id NULL.
+ALTER TABLE wc_bracket_meta ALTER COLUMN user_id DROP NOT NULL;
 
+-- Step 5 — promote `id` to the new PK
 DO $$
 BEGIN
     IF NOT EXISTS (
