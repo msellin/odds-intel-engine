@@ -13056,5 +13056,81 @@ def _():
         "WC bracket scoring cron must be registered with id='wc_bracket_scoring'"
 
 
+# ── WC bracket social sharing (BRACKET-SHARE) — 2026-06-02 ─────────────────
+@test("BRACKET-SHARE-ROUTE — share/[token]/page.tsx exists, server-rendered, loads by token")
+def _():
+    """BRACKET-SHARE (2026-06-02): viral share page for WC brackets. Public
+    route — anonymous viewers can see someone else's bracket via an
+    unguessable UUID token in the URL. Server-rendered (force-dynamic) so the
+    OG image picks up fresh score/rank on each unfurl."""
+    p = _web_path("src/app/(app)/world-cup/bracket/share/[token]/page.tsx")
+    assert p.exists(), "share page.tsx must exist at world-cup/bracket/share/[token]/page.tsx"
+    src = p.read_text()
+    # Server-rendered: force-dynamic AND no "use client" at the top.
+    first_lines = [ln.strip() for ln in src.splitlines()[:5] if ln.strip()]
+    assert not (first_lines and first_lines[0].startswith('"use client"')), \
+        "share page must be server-rendered (no `use client` directive)"
+    assert 'export const dynamic = "force-dynamic"' in src, \
+        "share page must export `dynamic = \"force-dynamic\"` so OG/metadata reflect live score"
+    # Must load the bracket by token (token-bearer authorisation).
+    assert "loadBracketByShareToken" in src, \
+        "share page must call loadBracketByShareToken(token)"
+    # Metadata wiring — title/description/og are required for unfurl quality.
+    assert "generateMetadata" in src, "share page must export generateMetadata"
+    assert "openGraph" in src, "share page metadata must set openGraph block"
+    assert 'card: "summary_large_image"' in src or "summary_large_image" in src, \
+        "share page metadata must set twitter card to summary_large_image"
+
+
+@test("BRACKET-SHARE-OG — opengraph-image.tsx exists, uses next/og, in same folder as share page")
+def _():
+    """BRACKET-SHARE OG image route — Next 15's built-in opengraph-image.tsx
+    convention. Co-located in the [token] folder so it's auto-attached to the
+    share page's metadata.openGraph.images by the framework."""
+    p = _web_path("src/app/(app)/world-cup/bracket/share/[token]/opengraph-image.tsx")
+    assert p.exists(), "opengraph-image.tsx must exist next to the share page"
+    src = p.read_text()
+    assert 'from "next/og"' in src, "opengraph-image must import ImageResponse from next/og"
+    assert "ImageResponse" in src, "opengraph-image must use ImageResponse"
+    # 1200x630 size convention — platforms expect this for summary_large_image.
+    assert "1200" in src and "630" in src, \
+        "opengraph-image must produce a 1200x630 PNG (twitter large-card spec)"
+    # Token-bearer authorisation reuses the same loader as the page.
+    assert "loadBracketByShareToken" in src, \
+        "opengraph-image must call loadBracketByShareToken to render the owner's data"
+
+
+@test("BRACKET-SHARE-MIGRATION — migration adds share_token column on wc_bracket_meta (idempotent)")
+def _():
+    """BRACKET-SHARE migration: add wc_bracket_meta.share_token (uuid). The
+    token is the URL-bearer for the public read-only share page. Must be
+    idempotent so the migrate.yml worker can replay without erroring."""
+    p = _engine_path("supabase/migrations/169_wc_bracket_share_token.sql")
+    assert p.exists(), "migration 169_wc_bracket_share_token.sql must exist"
+    src = p.read_text()
+    assert "ADD COLUMN IF NOT EXISTS share_token" in src, \
+        "migration must add share_token via ADD COLUMN IF NOT EXISTS"
+    assert "wc_bracket_meta" in src, "migration must target wc_bracket_meta"
+    # Index for token lookup — uniqueness only enforced when set.
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS" in src, \
+        "migration must create unique index idempotently"
+    assert "share_token" in src, "index must cover share_token"
+
+
+@test("BRACKET-SHARE-API — POST /api/wc-bracket/share endpoint exists and delegates to action")
+def _():
+    """BRACKET-SHARE API route: the in-page "Share my bracket" button POSTs
+    here to receive the share URL (creates a token on first call). The route
+    is a thin adapter over the server action, which owns auth + champion-pick
+    gating."""
+    p = _web_path("src/app/api/wc-bracket/share/route.ts")
+    assert p.exists(), "POST /api/wc-bracket/share route.ts must exist"
+    src = p.read_text()
+    assert "export async function POST" in src, \
+        "share API must export POST (not GET — share-link creation is a write)"
+    assert "getOrCreateShareToken" in src, \
+        "share API must delegate to getOrCreateShareToken server action"
+
+
 if __name__ == "__main__":
     main()
