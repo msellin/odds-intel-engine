@@ -82,6 +82,39 @@ AI_STRATEGIES: list[str] = [
     "Chalk",
 ]
 
+# WC-GHOSTS-LAYER-2 (2026-06-02): anonymous AI variants that fill out the
+# leaderboard so it doesn't feel empty pre-WC. Each "Player 001..040" is a
+# real bracket — same scoring path as the 5 named strategies — but its
+# strength score is the Elite/Pro/Free/Chalk baseline (rotated by seed)
+# PLUS a deterministic per-team gaussian perturbation. Different seed →
+# different bracket. Frontend muted-greys these so they look like ordinary
+# players ranking around the user, not blatantly labelled "AI variants".
+#
+# Why mixing baselines instead of just perturbing Elite: real users have
+# varied prediction quality. If all 40 variants are Elite-perturbed they
+# cluster at the top and the leaderboard feels like "AI on top, human at
+# bottom". Rotating across 4 baselines spreads variants across the score
+# range naturally.
+ANONYMOUS_VARIANT_COUNT = 40
+ANONYMOUS_BASELINES: list[str] = [
+    "OddsIntel Elite AI",
+    "OddsIntel Pro AI",
+    "OddsIntel Free AI",
+    "Chalk",
+]
+
+
+def _anonymous_variant_labels() -> list[str]:
+    """Stable label set: 'Player 001' .. 'Player 040'."""
+    return [f"Player {i:03d}" for i in range(1, ANONYMOUS_VARIANT_COUNT + 1)]
+
+
+def is_anonymous_variant(ai_label: str | None) -> bool:
+    """Pattern detection for the frontend / scoring code. Anonymous = the
+    'Player NNN' pattern. Named strategies use proper names like
+    'OddsIntel Elite AI'."""
+    return bool(ai_label) and ai_label.startswith("Player ") and ai_label[7:].isdigit()
+
 # Lock anchor — same as wc-bracket lock (frontend `WC_FIRST_KICKOFF_ISO`).
 WC_FIRST_KICKOFF = datetime(2026, 6, 11, 19, 0, 0, tzinfo=timezone.utc)
 
@@ -199,7 +232,7 @@ def _load_national_team_predictions(match_ids: set[str]) -> dict[str, dict]:
         return {}
     rows = execute_query(
         """
-        SELECT match_id::text AS match_id, market, model_prob
+        SELECT match_id::text AS match_id, market, model_probability
         FROM predictions
         WHERE source = 'national_team_v1'
           AND match_id = ANY(%s::uuid[])
@@ -209,11 +242,11 @@ def _load_national_team_predictions(match_ids: set[str]) -> dict[str, dict]:
     out: dict[str, dict] = defaultdict(dict)
     for r in rows:
         if r["market"] == "1x2_home":
-            out[r["match_id"]]["home"] = float(r["model_prob"])
+            out[r["match_id"]]["home"] = float(r["model_probability"])
         elif r["market"] == "1x2_draw":
-            out[r["match_id"]]["draw"] = float(r["model_prob"])
+            out[r["match_id"]]["draw"] = float(r["model_probability"])
         elif r["market"] == "1x2_away":
-            out[r["match_id"]]["away"] = float(r["model_prob"])
+            out[r["match_id"]]["away"] = float(r["model_probability"])
     # Only keep matches with all 3 probs.
     return {k: v for k, v in out.items() if {"home", "draw", "away"} <= set(v)}
 
@@ -370,6 +403,34 @@ def _strategy_strength(
     if strategy == "Chalk":
         # Naive baseline. Pure ELO ranking.
         return _strength_from_elo(elo, team_ids)
+
+    # Anonymous variant — pattern: "Player NNN". Strength = rotated
+    # baseline strategy + deterministic per-team gaussian noise. The seed
+    # is the variant index (1..40); both baseline rotation and the noise
+    # RNG seed from it, so re-running produces the SAME variant brackets.
+    if strategy.startswith("Player ") and strategy[7:].isdigit():
+        import random as _r
+        seed = int(strategy[7:])
+        baseline_name = ANONYMOUS_BASELINES[(seed - 1) % len(ANONYMOUS_BASELINES)]
+        base = _strategy_strength(
+            baseline_name, team_ids, group_fixtures, elo, af_probs, nt_probs, market_probs,
+        )
+        rng = _r.Random(seed * 9973 + 1)
+        values = list(base.values())
+        if values:
+            spread = max(values) - min(values) or 1.0
+        else:
+            spread = 1.0
+        # 25% of spread as noise standard deviation — large enough that
+        # variants don't collapse to the same picks, small enough that
+        # the picks still look plausible (no "Player 023 picks San Marino
+        # to win Group A").
+        sigma = 0.25 * spread
+        return {
+            tid: base.get(tid, sum(base.values()) / max(1, len(base)))
+                 + rng.gauss(0, sigma)
+            for tid in team_ids
+        }
 
     raise ValueError(f"unknown strategy: {strategy}")
 
@@ -639,7 +700,8 @@ def _generate_for_round(
 
     results: list[dict] = []
     for strat in strategies:
-        if strat not in AI_STRATEGIES:
+        # Accept named strategies + anonymous variant labels.
+        if strat not in AI_STRATEGIES and not is_anonymous_variant(strat):
             console.print(f"[yellow]skip unknown strategy: {strat}[/yellow]")
             continue
         strength = _strategy_strength(
@@ -736,7 +798,9 @@ def generate_all(
     When `round_key` is None, falls back to the pre-tournament full-bracket
     generation (group standings + greedy R32→Champion ranking from the
     pre-group-stage strength score)."""
-    strategies = strategies or list(AI_STRATEGIES)
+    # Default: the 5 named strategies + 40 anonymous variants ("Player 001"
+    # ... "Player 040"). Explicit --strategy flag(s) override this default.
+    strategies = strategies or (list(AI_STRATEGIES) + _anonymous_variant_labels())
 
     # Lock gate — refuse to overwrite once the WC has started, EXCEPT when
     # we're targeting a specific (still-unlocked) round. Per-round mode is
@@ -779,7 +843,8 @@ def generate_all(
 
     out: list[dict] = []
     for strat in strategies:
-        if strat not in AI_STRATEGIES:
+        # Accept named strategies + anonymous variant labels ("Player NNN").
+        if strat not in AI_STRATEGIES and not is_anonymous_variant(strat):
             console.print(f"[yellow]skip unknown strategy: {strat}[/yellow]")
             continue
         strength = _strategy_strength(

@@ -13733,5 +13733,41 @@ def _():
         "CLI --round choices must cover r32/r16/qf/sf/final"
 
 
+@test("WC-GHOSTS-LAYER-2 — anonymous variant generator (40 'Player NNN' brackets + frontend gray treatment)")
+def _():
+    """WC-GHOSTS-LAYER-2 (2026-06-02): in addition to the 5 named AI
+    strategies (Elite AI / Pro AI / Free AI / Market / Chalk), generate
+    40 anonymous variants labelled 'Player 001' .. 'Player 040'. Each
+    has a deterministic per-team gaussian perturbation of a rotated
+    baseline strategy. Frontend renders these WITHOUT the 🤖/AI badge
+    and with extra-muted text so they fill the leaderboard naturally —
+    not labelled "AI variant 23" which would tip off the trick.
+
+    Default --strategy invocation generates ALL 45 (5 named + 40
+    variants). Operator can still target subsets via --strategy.
+
+    Asserts:
+      - generator constants ANONYMOUS_VARIANT_COUNT = 40 + label format
+      - is_anonymous_variant() helper recognises "Player NNN" pattern
+      - _strategy_strength accepts "Player NNN" strategies
+      - leaderboard renderer hides the AI badge for anonymous variants
+        and applies the dimmer text class."""
+    gen = _engine_path("scripts/generate_ai_brackets.py").read_text()
+    assert "ANONYMOUS_VARIANT_COUNT = 40" in gen
+    assert 'f"Player {i:03d}"' in gen, "labels must be zero-padded 'Player NNN'"
+    assert "def is_anonymous_variant" in gen
+    assert "ANONYMOUS_BASELINES" in gen, "rotate variant baselines so the spread doesn't cluster at top"
+    # _strategy_strength must handle anonymous variants
+    assert 'strategy.startswith("Player ") and strategy[7:].isdigit()' in gen, \
+        "_strategy_strength must accept anonymous variant labels"
+    # Default strategies = 5 named + 40 anonymous = 45 total
+    assert "list(AI_STRATEGIES) + _anonymous_variant_labels()" in gen
+    # Front-end render must distinguish anonymous from named AI
+    fe = _web_path("src/app/(app)/world-cup/bracket/leaderboard/page.tsx").read_text()
+    assert "isAnonymousVariant" in fe, "leaderboard must detect anonymous variants"
+    assert "/^Player \\d+$/" in fe, "anonymous-variant pattern must match generator label format"
+    assert "anonymousVariant" in fe, "leaderboard must render anonymous variants with dimmer text"
+
+
 if __name__ == "__main__":
     main()
