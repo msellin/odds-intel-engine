@@ -314,6 +314,14 @@ on Hobby plan; blast radius isolated.
 - Auto-disables via `backfill_complete.flag`; stale flag auto-removed if new phases have work
 - Manual run: `python scripts/backfill_historical.py --phase 4 --max-requests 5000 --batch-size 2000`
 
+### ⑫ WC Bracket Scoring (`wc_bracket_scoring.py`) — WC-BRACKET-SCORING (2026-06-02)
+- Every 30 min at `:05/:35` UTC (lands after settlement + live-tracker writes at `:00/:30`)
+- Gated on `2026-06-11 ≤ today ≤ 2026-07-19` — APScheduler still fires outside the window but the job returns immediately with no DB work
+- For each user with bracket picks: derive who advanced from finished WC matches (group stage by points → GD → GF; knockouts by match winner), score against the user's picks using R32=1, R16=2, QF=4, SF=8, F=16, Champion=32, Golden Boot=10 (max 122 — fixes the `/world-cup/bracket` legend's "83 max" typo)
+- Bulk-upserts `wc_bracket_meta.{current_score, current_rank}`; idempotent (same input state = same output)
+- Manual run: `python -m workers.jobs.wc_bracket_scoring`
+- Golden Boot actual winner read from `app_settings` key `wc_golden_boot_actual` (manual operator stamp); AF top-scorer endpoint automation filed as WC-GOLDEN-BOOT-AUTO
+
 ### ⑨b Internationals Backfill (`backfill_internationals.py`) — WC-PHASE-2 (2026-06-02)
 - One-off script to pull historical national-team competition fixtures (WC 2018/2022, Euro 2020/2024, Copa America, AFCON, Asian Cup, Gold Cup, all UEFA Nations League editions, WC 2022 + 2026 qualifiers across all 6 confederations, Friendlies). Required because the regular date-mode `fetch_fixtures` only pulls today and never sees historical international matches.
 - 59 (league, season) tuples → ~3,000 finished matches.

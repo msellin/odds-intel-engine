@@ -12965,5 +12965,96 @@ def _():
     assert "<svg" in src, "win-probability-chart.tsx must render an SVG"
 
 
+# ── WC bracket scoring (WC-BRACKET-SCORING) — 2026-06-02 ───────────────────
+@test("WC-BRACKET-SCORING-LIB — module exports compute_user_score + recompute_all_brackets with correct round points")
+def _():
+    """Recompute job for wc_bracket_meta.current_score / current_rank. The
+    UI scoring legend says "Max possible: 83 pts" but the per-round arithmetic
+    (also shown on the same page) sums to 122 — this module uses 122 as the
+    authoritative value (the 83 is a UI typography bug, not a scoring rule)."""
+    src = _engine_path("workers/jobs/wc_bracket_scoring.py").read_text()
+
+    # Surface — both callables must exist for the cron + ad-hoc invocation.
+    assert "def compute_user_score(" in src, \
+        "wc_bracket_scoring must export compute_user_score()"
+    assert "def recompute_all_brackets(" in src, \
+        "wc_bracket_scoring must export recompute_all_brackets()"
+    assert "def build_advancers(" in src, \
+        "wc_bracket_scoring must export build_advancers() for testability"
+
+    # Round-point values are load-bearing — the UI promises this scale.
+    # Use the canonical dict form to avoid matching e.g. comment text.
+    for key, pts in [('"r32"', 1), ('"r16"', 2), ('"qf"', 4),
+                     ('"sf"', 8), ('"final"', 16), ('"champion"', 32)]:
+        assert f"{key}: {pts}" in src, \
+            f"ROUND_POINTS must map {key} → {pts}"
+    assert "GOLDEN_BOOT_POINTS = 10" in src, \
+        "Golden Boot bonus must be 10pt"
+
+    # Importable + the module's own arithmetic agrees with 122.
+    from workers.jobs.wc_bracket_scoring import (
+        ROUND_POINTS, GOLDEN_BOOT_POINTS, MAX_POSSIBLE_SCORE,
+        compute_user_score,
+    )
+    expected_max = (
+        ROUND_POINTS["r32"] * 16
+        + ROUND_POINTS["r16"] * 8
+        + ROUND_POINTS["qf"] * 4
+        + ROUND_POINTS["sf"] * 2
+        + ROUND_POINTS["final"] * 1
+        + ROUND_POINTS["champion"] * 1
+        + GOLDEN_BOOT_POINTS
+    )
+    assert MAX_POSSIBLE_SCORE == expected_max == 122, \
+        f"MAX_POSSIBLE_SCORE should be 122 (arithmetic), got {MAX_POSSIBLE_SCORE}"
+
+    # Pre-tournament safety: empty advancers + a pick → 0pts, no crash.
+    res = compute_user_score(
+        user_picks=[{"round": "r32", "position": 0, "picked_team_id": "team-A"}],
+        advancers={},
+        golden_boot_user=None,
+        golden_boot_actual=None,
+    )
+    assert res["score"] == 0, f"pre-tournament must yield 0, got {res}"
+
+    # A correct champion pick scores 32; golden boot is case-insensitive.
+    res = compute_user_score(
+        user_picks=[{"round": "champion", "position": 0, "picked_team_id": "team-Z"}],
+        advancers={"champion": {"team-Z"}},
+        golden_boot_user="kylian mbappé",
+        golden_boot_actual="Kylian Mbappé",
+    )
+    assert res["score"] == 32 + 10, \
+        f"champion + golden boot should be 42, got {res}"
+
+
+@test("WC-BRACKET-SCORING-CRON — scheduler registers wc_bracket_scoring with 30-min cadence and WC-window gate")
+def _():
+    """The job is wired into workers/scheduler.py as a 30-min cron (matches
+    :05/:35 so it lands after settlement/live-tracker writes). The job
+    function gates on date.today() ∈ [2026-06-11, 2026-07-19] so it's a
+    no-op outside the tournament — APScheduler still fires it but it
+    exits before any DB work."""
+    src = _engine_path("workers/scheduler.py").read_text()
+
+    # Job function exists + delegates to the recompute callable.
+    assert "def job_wc_bracket_scoring(" in src, \
+        "scheduler must define job_wc_bracket_scoring()"
+    assert "from workers.jobs.wc_bracket_scoring import recompute_all_brackets" in src, \
+        "scheduler must import recompute_all_brackets from the scoring module"
+
+    # Window gate dates must match the FIFA-published WC 2026 schedule.
+    assert "_WC_SCORING_WINDOW_START = date(2026, 6, 11)" in src, \
+        "WC scoring window must start 2026-06-11 (FIFA first kickoff date)"
+    assert "_WC_SCORING_WINDOW_END = date(2026, 7, 19)" in src, \
+        "WC scoring window must end 2026-07-19 (FIFA final date)"
+
+    # Cron registration — 30-min cadence on :05 / :35 every hour.
+    assert 'CronTrigger(hour="*", minute="5,35")' in src, \
+        "WC bracket scoring cron must fire every 30 min at :05/:35 UTC"
+    assert 'id="wc_bracket_scoring"' in src, \
+        "WC bracket scoring cron must be registered with id='wc_bracket_scoring'"
+
+
 if __name__ == "__main__":
     main()

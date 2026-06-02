@@ -1003,6 +1003,25 @@ def job_settle_reconcile():
     _run_job("settle_reconcile", settle_reconcile_run)
 
 
+# WC-BRACKET-SCORING (2026-06-02): tournament-window gate. Runs only between
+# the first kickoff date (2026-06-11) and the final date inclusive (2026-07-19).
+# Outside that window the job exits immediately as a no-op so APScheduler isn't
+# generating useless pipeline_runs rows for the other ~340 days of the year.
+_WC_SCORING_WINDOW_START = date(2026, 6, 11)
+_WC_SCORING_WINDOW_END = date(2026, 7, 19)
+
+
+def job_wc_bracket_scoring():
+    """WC-BRACKET-SCORING: recompute every user's bracket score + leaderboard
+    rank. Gated to the WC window because there's nothing to score outside it.
+    Idempotent — `recompute_all_brackets` is set-based, not accumulative."""
+    today = date.today()
+    if not (_WC_SCORING_WINDOW_START <= today <= _WC_SCORING_WINDOW_END):
+        return
+    from workers.jobs.wc_bracket_scoring import recompute_all_brackets
+    _run_job("wc_bracket_scoring", recompute_all_brackets)
+
+
 def job_health_alerts_morning():
     from workers.jobs.health_alerts import run_morning_checks
     _run_job("health_alerts_morning", run_morning_checks)
@@ -1562,6 +1581,17 @@ def main():
     # MONEY-SETTLE-RECON: verify no stuck pending bets after settlement (21:30 UTC)
     scheduler.add_job(job_settle_reconcile, CronTrigger(hour=21, minute=30),
                       id="settle_reconcile", name="Settlement Reconcile 21:30")
+
+    # WC-BRACKET-SCORING (2026-06-02): recompute every user's bracket score +
+    # leaderboard rank every 30 minutes during the WC window (2026-06-11 →
+    # 2026-07-19, gated inside job_wc_bracket_scoring). Idempotent. Offset to
+    # :05/:35 — settlement / live tracker writes match results either via the
+    # live poller (real-time) or the :00 / :30 settlement runs, so :05/:35 is
+    # the freshest window. Cheap (~one read + one bulk upsert) so 30-min
+    # cadence is safe even though most slots pre-tournament are no-ops.
+    scheduler.add_job(job_wc_bracket_scoring, CronTrigger(hour="*", minute="5,35"),
+                      id="wc_bracket_scoring",
+                      name="WC Bracket Scoring [30min, WC window]")
 
     # ── Start scheduler ────────────────────────────────────────────────
     scheduler.start()
