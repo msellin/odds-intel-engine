@@ -551,25 +551,209 @@ def _write_ai_strategy(ai_label: str, group_rows: list[dict], bracket_rows: list
     }
 
 
+# ── Stage-gated per-round generation (WC-BRACKET-STAGE-GATED) ──────────────
+
+def _load_slot_assignments_for_round(round_key: str) -> list[dict]:
+    """Return [{position, match_id, home_team_id, away_team_id, locked_at, status}]
+    for one bracket round. Only slots with seeded match_id are returned —
+    unseeded slots have no matchup to predict against."""
+    from workers.api_clients.db import execute_query
+    try:
+        return execute_query(
+            """
+            SELECT s.position,
+                   s.match_id::text AS match_id,
+                   s.locked_at,
+                   m.home_team_id::text AS home_team_id,
+                   m.away_team_id::text AS away_team_id,
+                   m.status
+            FROM wc_bracket_slot_assignments s
+            JOIN matches m ON m.id = s.match_id
+            WHERE s.round = %s
+              AND s.match_id IS NOT NULL
+            ORDER BY s.position ASC
+            """,
+            (round_key,),
+        )
+    except Exception:
+        # Migration 171 not yet applied → empty list.
+        return []
+
+
+def _generate_for_round(
+    round_key: str,
+    strategies: list[str],
+    dry_run: bool,
+    force: bool,
+) -> dict:
+    """Per-round AI pick generation. Each strategy picks the winner of every
+    seeded matchup in `round_key` by looking up its per-team strength
+    (same scoring as the pre-tournament full-bracket path).
+
+    Lock: refuses to overwrite if the round's `locked_at` is already in
+    the past (unless --force). Idempotent before lock — DELETE + re-INSERT.
+    """
+    if round_key not in {"r32", "r16", "qf", "sf", "final"}:
+        return {"ok": False, "error": f"unknown round_key: {round_key}"}
+
+    slots = _load_slot_assignments_for_round(round_key)
+    if not slots:
+        return {"ok": True, "results": [], "round": round_key,
+                "note": "no seeded slots yet"}
+
+    # Per-round lock gate — `locked_at` is the same across all slots in a
+    # round (first kickoff). Read it from any slot.
+    now = datetime.now(timezone.utc)
+    locked_at = slots[0].get("locked_at")
+    if locked_at and hasattr(locked_at, "timestamp") and locked_at <= now and not force:
+        return {
+            "ok": False,
+            "error": f"round {round_key} is locked (locked_at={locked_at.isoformat()})",
+            "round": round_key,
+        }
+
+    # Pre-tournament data drives the strength score (same model as full
+    # bracket mode). Once the WC kicks off the strength is frozen at the
+    # pre-tournament value — which is fine: AI ghosts are deterministic
+    # ghosts of the pre-tournament model, not adaptive opponents.
+    fixtures = _load_wc_group_fixtures()
+    if not fixtures:
+        return {"ok": False, "error": "no WC group fixtures in DB"}
+
+    groups = _build_groups(fixtures)
+    team_ids = sorted({t for _, ts in groups for t in ts})
+
+    # Include the teams in the round's matchups (R16+ knockout teams may
+    # not be in the group-fixture set if AF labels are weird).
+    round_team_ids: set[str] = set()
+    for s in slots:
+        round_team_ids.add(s["home_team_id"])
+        round_team_ids.add(s["away_team_id"])
+    team_ids_combined = sorted(set(team_ids) | round_team_ids)
+
+    elo = _load_international_elo(set(team_ids_combined))
+    match_ids = {fx["id"] for fx in fixtures}
+    af_probs = _load_af_predictions(match_ids)
+    nt_probs = _load_national_team_predictions(match_ids)
+    market_probs = _load_market_implied(match_ids)
+
+    results: list[dict] = []
+    for strat in strategies:
+        if strat not in AI_STRATEGIES:
+            console.print(f"[yellow]skip unknown strategy: {strat}[/yellow]")
+            continue
+        strength = _strategy_strength(
+            strat, team_ids_combined, fixtures, elo, af_probs, nt_probs, market_probs,
+        )
+
+        rows: list[dict] = []
+        for s in slots:
+            h, a = s["home_team_id"], s["away_team_id"]
+            # Higher-strength team wins; tie-break by team_id (deterministic).
+            picked = h if (strength.get(h, 0.0), -ord(h[0])) >= (
+                strength.get(a, 0.0), -ord(a[0])
+            ) else a
+            rows.append({
+                "round": round_key,
+                "position": s["position"],
+                "picked_team_id": picked,
+            })
+
+        # Also derive Champion when the round is the Final.
+        if round_key == "final":
+            final_pick = rows[0] if rows else None
+            if final_pick:
+                rows.append({
+                    "round": "champion",
+                    "position": 0,
+                    "picked_team_id": final_pick["picked_team_id"],
+                })
+
+        if dry_run:
+            results.append({"ai_label": strat, "round": round_key,
+                            "n_picks": len(rows), "written": False})
+            continue
+
+        # Idempotent write: delete this strategy's existing picks for this
+        # round (+ champion if round=final), then insert fresh.
+        from workers.api_clients.db import execute_write, get_conn
+        import psycopg2.extras
+        execute_write(
+            "DELETE FROM wc_bracket_picks WHERE ai_label = %s AND round = %s",
+            (strat, round_key),
+        )
+        if round_key == "final":
+            execute_write(
+                "DELETE FROM wc_bracket_picks WHERE ai_label = %s AND round = 'champion'",
+                (strat,),
+            )
+        if rows:
+            tuples = [(strat, r["round"], r["position"], r["picked_team_id"]) for r in rows]
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    psycopg2.extras.execute_values(
+                        cur,
+                        """INSERT INTO wc_bracket_picks
+                           (ai_label, round, position, picked_team_id)
+                           VALUES %s""",
+                        tuples,
+                    )
+                    conn.commit()
+
+        # Make sure a meta row exists for the leaderboard.
+        execute_write(
+            """INSERT INTO wc_bracket_meta (ai_label, current_score, current_rank,
+                                            group_standings_score, total_score)
+               VALUES (%s, 0, NULL, 0, 0)
+               ON CONFLICT (ai_label) DO NOTHING""",
+            (strat,),
+        )
+
+        results.append({"ai_label": strat, "round": round_key,
+                        "n_picks": len(rows), "written": True})
+        console.print(f"  [green]{strat}[/green] · {round_key}: {len(rows)} picks")
+
+    return {"ok": True, "results": results, "round": round_key, "dry_run": dry_run}
+
+
 # ── Top-level orchestration ───────────────────────────────────────────────
 
 def generate_all(
     strategies: Optional[list[str]] = None,
     dry_run: bool = False,
     force: bool = False,
+    round_key: Optional[str] = None,
 ) -> dict:
-    """Build + write picks for the given strategies (default: all 5)."""
+    """Build + write picks for the given strategies (default: all 5).
+
+    When `round_key` is set, generates POSITIONAL picks for ONLY that
+    round (WC-BRACKET-STAGE-GATED). Picks are looked up against
+    wc_bracket_slot_assignments — for each (round, position) with a seeded
+    `match_id`, the strategy picks the higher-strength team between that
+    match's home/away. Existing AI rows for `(round_key, *)` are
+    DELETE'd + re-inserted (idempotent before that round's lock).
+
+    When `round_key` is None, falls back to the pre-tournament full-bracket
+    generation (group standings + greedy R32→Champion ranking from the
+    pre-group-stage strength score)."""
     strategies = strategies or list(AI_STRATEGIES)
 
-    # Lock gate — refuse to overwrite once the WC has started.
+    # Lock gate — refuse to overwrite once the WC has started, EXCEPT when
+    # we're targeting a specific (still-unlocked) round. Per-round mode is
+    # the whole point of the stage-gated rewrite, so we must allow it
+    # post-kickoff for rounds whose `locked_at` is still in the future.
     now = datetime.now(timezone.utc)
-    if now >= WC_FIRST_KICKOFF and not force:
+    if round_key is None and now >= WC_FIRST_KICKOFF and not force:
         return {
             "ok": False,
             "error": "WC has started — refusing to overwrite AI brackets. Use --force to override.",
             "now": now.isoformat(),
             "lock": WC_FIRST_KICKOFF.isoformat(),
         }
+
+    # ── Per-round mode (stage-gated) ─────────────────────────────────────
+    if round_key is not None:
+        return _generate_for_round(round_key, strategies, dry_run, force)
 
     # Load shared data once.
     fixtures = _load_wc_group_fixtures()
@@ -619,6 +803,11 @@ def main():
     parser.add_argument("--strategy", action="append",
                         help=("Specific strategy to (re)generate. Repeatable. "
                               "Default: all 5."))
+    parser.add_argument("--round",
+                        choices=["r32", "r16", "qf", "sf", "final"],
+                        help=("Stage-gated mode: generate picks ONLY for the "
+                              "named round, using seeded wc_bracket_slot_assignments. "
+                              "Re-runs are idempotent until the round locks."))
     parser.add_argument("--dry-run", action="store_true",
                         help="Don't write to DB.")
     parser.add_argument("--force", action="store_true",
@@ -629,6 +818,7 @@ def main():
         strategies=args.strategy,
         dry_run=args.dry_run,
         force=args.force,
+        round_key=args.round,
     )
     console.print(result)
     if not result.get("ok"):

@@ -13508,5 +13508,230 @@ def _():
         "saveGroupStandings must reject duplicate teams per group"
 
 
+# ── WC-BRACKET-STAGE-GATED (2026-06-02) ────────────────────────────────────
+
+
+@test("WC-BRACKET-STAGE-GATED-MIGRATION — migration 171 adds wc_bracket_slot_assignments + matches.round_label")
+def _():
+    """Migration 171 is the additive scaffolding for the stage-gated rewrite:
+      • new table wc_bracket_slot_assignments mapping (round, position) →
+        matches.id + locked_at
+      • matches.round_label column to store AF's free-text round name
+      • RLS public-read on slot_assignments (it's just AF schedule data)
+      • seed-empty inserts for all 31 slots (16+8+4+2+1) so the FE renders
+        a complete skeleton before AF seeds anything
+    Source inspection only — we don't apply migrations during smoke runs.
+    """
+    p = _engine_path("supabase/migrations/171_wc_bracket_stage_gated.sql")
+    assert p.exists(), "migration 171 must exist"
+    src = p.read_text()
+    assert "CREATE TABLE IF NOT EXISTS wc_bracket_slot_assignments" in src, \
+        "migration 171 must create wc_bracket_slot_assignments"
+    for col in ["round", "position", "match_id", "seeded_at", "locked_at"]:
+        assert col in src, f"slot_assignments must declare column {col}"
+    # Round enum must match scoring code.
+    assert "CHECK (round IN ('r32','r16','qf','sf','final'))" in src, \
+        "slot_assignments must constrain round to r32/r16/qf/sf/final"
+    # matches.round_label column added idempotently.
+    assert "ADD COLUMN IF NOT EXISTS round_label text" in src, \
+        "migration 171 must add matches.round_label idempotently"
+    # Public-read RLS so anonymous viewers can render the bracket skeleton.
+    assert "FOR SELECT USING (true)" in src, \
+        "slot_assignments must allow public read"
+    # Skeleton seeding (16+8+4+2+1 = 31 slot rows).
+    for round_key, n in [("r32", 16), ("r16", 8), ("qf", 4), ("sf", 2)]:
+        assert f"generate_series(0, {n - 1})" in src, \
+            f"migration must seed {n} {round_key} slots"
+    assert "'final', 0" in src, "migration must seed the final slot"
+
+
+@test("WC-BRACKET-SLOT-SYNC — slot-sync job parses AF round labels + maps to bracket slots")
+def _():
+    """workers/jobs/wc_bracket_slot_sync.py is the scheduled job that
+    populates wc_bracket_slot_assignments from `matches.round_label`.
+    AF stores text like 'Round of 32 - 1', 'Final' — the job parses these
+    into (round_key, position) and upserts the slot row. It refuses to
+    overwrite a locked_at that's already in the past (audit integrity).
+    """
+    p = _engine_path("workers/jobs/wc_bracket_slot_sync.py")
+    assert p.exists(), "wc_bracket_slot_sync.py must exist"
+    src = p.read_text()
+
+    # Public API for callers + scheduler.
+    assert "def sync_slot_assignments(" in src, \
+        "module must export sync_slot_assignments()"
+    assert "def run_slot_sync_and_ai_refresh(" in src, \
+        "module must export the scheduler entry-point"
+    assert "def parse_round_label(" in src, \
+        "module must export parse_round_label() for testability"
+
+    # Round patterns cover all 5 knockout rounds.
+    for needle in ["Round of 32", "Round of 16", "Quarter", "Semi", "Final"]:
+        assert needle in src, f"round-label parser must handle {needle!r}"
+
+    # Importable + parser handles canonical AF strings.
+    from workers.jobs.wc_bracket_slot_sync import parse_round_label
+    assert parse_round_label("Round of 32 - 1") == ("r32", 0), \
+        "Round of 32 - 1 must parse to (r32, 0)"
+    assert parse_round_label("Round of 16 - 8") == ("r16", 7), \
+        "Round of 16 - 8 must parse to (r16, 7)"
+    assert parse_round_label("Quarter-finals - 3") == ("qf", 2), \
+        "Quarter-finals - 3 must parse to (qf, 2)"
+    assert parse_round_label("Semi-finals - 2") == ("sf", 1), \
+        "Semi-finals - 2 must parse to (sf, 1)"
+    assert parse_round_label("Final") == ("final", 0), \
+        "Final must parse to (final, 0)"
+    # Unknowns return None — third-place playoff is intentionally unmapped.
+    assert parse_round_label("3rd Place Final") is None, \
+        "third-place playoff must be unmapped (not part of the bracket)"
+    assert parse_round_label(None) is None, \
+        "null label must return None"
+
+    # Scheduler wiring — slot-sync runs every 30 min during the WC window,
+    # offset 5 min after wc_bracket_scoring so the slot map is the freshest
+    # possible for the *next* scoring run.
+    sch = _engine_path("workers/scheduler.py").read_text()
+    assert "def job_wc_bracket_slot_sync(" in sch, \
+        "scheduler must define job_wc_bracket_slot_sync()"
+    assert "id=\"wc_bracket_slot_sync\"" in sch, \
+        "scheduler must register the slot-sync job with id='wc_bracket_slot_sync'"
+
+
+@test("WC-BRACKET-POSITIONAL-SCORING — compute_user_score_positional uses slot.match.winner not advancers-set")
+def _():
+    """Stage-gated scoring (WC-BRACKET-STAGE-GATED) replaces set-membership
+    scoring with POSITIONAL: for each (round, position) pick, look up the
+    seeded match_id and check whether the picked team is the ACTUAL winner
+    of that specific match. Champion is derived from the (final, 0) pick.
+    Pre-seed slots (match_id IS NULL) silently score 0 — no error."""
+    from workers.jobs.wc_bracket_scoring import compute_user_score_positional
+
+    # Build a fake slot assignment map: (round, position) → slot dict.
+    # The contract here is the dict shape returned by _load_slot_assignments
+    # (round, position, match_id, locked_at, home_team_id, away_team_id, status, result).
+    slots = {
+        ("r32", 0): {
+            "round": "r32", "position": 0, "match_id": "m-1", "locked_at": None,
+            "home_team_id": "team-A", "away_team_id": "team-B",
+            "status": "finished", "result": "home",
+        },
+        ("r32", 1): {
+            "round": "r32", "position": 1, "match_id": "m-2", "locked_at": None,
+            "home_team_id": "team-C", "away_team_id": "team-D",
+            "status": "finished", "result": "away",
+        },
+        # Unseeded slot — match_id is None, must yield 0.
+        ("r16", 0): {
+            "round": "r16", "position": 0, "match_id": None, "locked_at": None,
+            "home_team_id": None, "away_team_id": None,
+            "status": None, "result": None,
+        },
+        # Final settled (used to derive champion).
+        ("final", 0): {
+            "round": "final", "position": 0, "match_id": "m-final", "locked_at": None,
+            "home_team_id": "team-Z", "away_team_id": "team-Y",
+            "status": "finished", "result": "home",
+        },
+    }
+
+    # Picks: 1 correct R32 (team-A wins m-1), 1 wrong R32 (picked team-C but
+    # team-D won m-2), 1 unseeded R16 (no points), 1 correct final (team-Z).
+    picks = [
+        {"round": "r32", "position": 0, "picked_team_id": "team-A"},  # +1
+        {"round": "r32", "position": 1, "picked_team_id": "team-C"},  # +0
+        {"round": "r16", "position": 0, "picked_team_id": "team-X"},  # +0 (unseeded)
+        {"round": "final", "position": 0, "picked_team_id": "team-Z"}, # +16 + +32 champion (derived)
+    ]
+    res = compute_user_score_positional(
+        user_picks=picks,
+        slot_assignments=slots,
+        golden_boot_user=None,
+        golden_boot_actual=None,
+    )
+    # 1 (r32) + 16 (final) + 32 (champion derived) = 49
+    assert res["score"] == 49, \
+        f"expected 49 (1 R32 + 16 Final + 32 champion derived), got {res}"
+    assert res["by_round"]["r32"] == 1, "r32 contribution must be 1pt"
+    assert res["by_round"]["r16"] == 0, "unseeded r16 must contribute 0pt"
+    assert res["by_round"]["final"] == 16, "final contribution must be 16pt"
+    assert res["by_round"]["champion"] == 32, \
+        "champion must be derived from the (final,0) pick + winner"
+
+    # Pre-tournament safety: empty slots map yields 0.
+    empty_res = compute_user_score_positional(
+        user_picks=picks,
+        slot_assignments={},
+        golden_boot_user=None,
+        golden_boot_actual=None,
+    )
+    assert empty_res["score"] == 0, \
+        f"empty slot map must yield 0, got {empty_res}"
+
+
+@test("WC-BRACKET-PHASED-UI — bracket page + board consume per-round state")
+def _():
+    """The phased bracket UI is two pieces:
+      • src/app/(app)/world-cup/bracket/page.tsx loads roundStates via
+        loadBracketState() and passes it to <WCBracketBoard>.
+      • src/components/wc-bracket-board.tsx renders ONE column per round
+        with state-dependent UI (unseeded / open / locked / settled).
+    """
+    page = _web_path("src/app/(app)/world-cup/bracket/page.tsx")
+    page_src = page.read_text()
+    assert "loadBracketState" in page_src, \
+        "bracket page must call loadBracketState()"
+    assert "roundStates" in page_src, \
+        "bracket page must pass roundStates to WCBracketBoard"
+    assert "Stage-gated" in page_src or "stage-by-stage" in page_src or "each knockout round opens" in page_src, \
+        "bracket page must mention stage-gated/stage-by-stage flow"
+
+    board = _web_path("src/components/wc-bracket-board.tsx")
+    board_src = board.read_text()
+    assert "roundStates" in board_src, \
+        "WCBracketBoard must accept roundStates prop"
+    assert "BracketRoundState" in board_src, \
+        "WCBracketBoard must import BracketRoundState type"
+    for state in ['"unseeded"', '"open"', '"locked"', '"settled"']:
+        assert state in board_src, \
+            f"WCBracketBoard must handle state {state}"
+
+    # Loader exists with the right return shape (knockout rounds, no champion).
+    lib = _web_path("src/lib/wc-bracket.ts").read_text()
+    assert "export async function loadBracketState" in lib, \
+        "loadBracketState must be exported from wc-bracket.ts"
+    assert "KNOCKOUT_ROUNDS_ORDER" in lib, \
+        "loader must use KNOCKOUT_ROUNDS_ORDER (excludes champion — derived)"
+
+    # The legacy "Max possible: 83 pts" string must be fixed.
+    assert "Max possible: 83" not in page_src, \
+        "the 83pt typo must be corrected to 122"
+    assert "Max possible: 122" in page_src, \
+        "page must declare max possible = 122pt"
+
+
+@test("WC-BRACKET-AI-PER-ROUND — generate_ai_brackets supports --round mode against slot assignments")
+def _():
+    """The AI ghost generator gains a per-round mode: when called with
+    `--round r32` (etc) it pulls wc_bracket_slot_assignments for that round,
+    picks the higher-strength team in each seeded matchup, and writes
+    positional rows under ai_label. Idempotent before round lock; refuses
+    after."""
+    p = _engine_path("scripts/generate_ai_brackets.py")
+    src = p.read_text()
+    assert "def _generate_for_round(" in src, \
+        "generator must define _generate_for_round()"
+    assert "round_key" in src, \
+        "generate_all must accept round_key kwarg"
+    assert "wc_bracket_slot_assignments" in src, \
+        "per-round generator must query wc_bracket_slot_assignments"
+    # Lock gate per-round.
+    assert "is locked (locked_at=" in src, \
+        "per-round generator must refuse after that round's locked_at"
+    # CLI surface.
+    assert "--round" in src, "CLI must expose --round flag"
+    assert '"r32", "r16", "qf", "sf", "final"' in src, \
+        "CLI --round choices must cover r32/r16/qf/sf/final"
+
+
 if __name__ == "__main__":
     main()

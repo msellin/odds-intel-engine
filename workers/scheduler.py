@@ -1042,6 +1042,18 @@ def job_wc_bracket_scoring():
     _run_job("wc_bracket_scoring", recompute_all_brackets)
 
 
+def job_wc_bracket_slot_sync():
+    """WC-BRACKET-STAGE-GATED: seed wc_bracket_slot_assignments from AF round
+    labels on `matches`, then refresh AI ghost picks for any round that
+    NEWLY seeded this run. Idempotent. Gated to WC window — pre-tournament
+    AF hasn't published knockout fixtures so this is a clean no-op."""
+    today = date.today()
+    if not (_WC_SCORING_WINDOW_START <= today <= _WC_SCORING_WINDOW_END):
+        return
+    from workers.jobs.wc_bracket_slot_sync import run_slot_sync_and_ai_refresh
+    _run_job("wc_bracket_slot_sync", run_slot_sync_and_ai_refresh)
+
+
 def job_health_alerts_morning():
     from workers.jobs.health_alerts import run_morning_checks
     _run_job("health_alerts_morning", run_morning_checks)
@@ -1623,6 +1635,15 @@ def main():
     scheduler.add_job(job_wc_bracket_scoring, CronTrigger(hour="*", minute="5,35"),
                       id="wc_bracket_scoring",
                       name="WC Bracket Scoring [30min, WC window]")
+
+    # WC-BRACKET-STAGE-GATED (2026-06-02): seed wc_bracket_slot_assignments
+    # from AF round labels every 30 min during the WC window. Fires at
+    # :10/:40 — five minutes after wc_bracket_scoring so the slot map is the
+    # freshest possible for the *next* scoring run. After a NEW knockout
+    # round seeds, the job inline-fires generate_ai_brackets --round <r>.
+    scheduler.add_job(job_wc_bracket_slot_sync, CronTrigger(hour="*", minute="10,40"),
+                      id="wc_bracket_slot_sync",
+                      name="WC Bracket Slot Sync [30min, WC window]")
 
     # ── Start scheduler ────────────────────────────────────────────────
     scheduler.start()

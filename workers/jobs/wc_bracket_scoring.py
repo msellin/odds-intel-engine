@@ -555,7 +555,12 @@ def compute_user_score(
     golden_boot_actual: Optional[str] = None,
 ) -> dict:
     """
-    Compute one user's bracket score.
+    Compute one user's bracket score — SET-MEMBERSHIP (legacy mode).
+
+    Used as a fallback when positional slot assignments are not yet
+    populated (`wc_bracket_slot_assignments.match_id` IS NULL). The
+    stage-gated rewrite (WC-BRACKET-STAGE-GATED, 2026-06-02) prefers
+    `compute_user_score_positional` whenever slot data is available.
 
     Args:
         user_picks: list of {round, position, picked_team_id} rows.
@@ -591,6 +596,119 @@ def compute_user_score(
     return {"score": total, "by_round": by_round, "golden_boot_hit": golden_hit}
 
 
+# ── Positional scoring (WC-BRACKET-STAGE-GATED — 2026-06-02) ────────────────
+
+def _load_slot_assignments() -> dict[tuple[str, int], dict]:
+    """Return {(round, position): {match_id, locked_at, home_team_id,
+    away_team_id, status, result}}. Slots with NULL match_id are still
+    returned (FE renders them as "coming soon") but scoring skips them.
+    """
+    try:
+        rows = execute_query(
+            """
+            SELECT s.round, s.position,
+                   s.match_id::text AS match_id,
+                   s.locked_at,
+                   m.home_team_id::text AS home_team_id,
+                   m.away_team_id::text AS away_team_id,
+                   m.status,
+                   m.result
+            FROM wc_bracket_slot_assignments s
+            LEFT JOIN matches m ON m.id = s.match_id
+            """,
+            (),
+        )
+    except Exception:
+        # Migration 171 may not be applied yet — graceful no-op so the
+        # job falls back to set-membership scoring.
+        return {}
+    out: dict[tuple[str, int], dict] = {}
+    for r in rows:
+        out[(r["round"], r["position"])] = r
+    return out
+
+
+def _winner_team_id(slot_row: dict) -> Optional[str]:
+    """Resolve the actual winning team_id for a settled knockout slot.
+    Returns None if the slot's match is unfinished, unseeded, or drew."""
+    if not slot_row or slot_row.get("status") != "finished":
+        return None
+    if slot_row.get("result") == "home":
+        return slot_row.get("home_team_id")
+    if slot_row.get("result") == "away":
+        return slot_row.get("away_team_id")
+    # 'draw' on a knockout = penalty result not yet reflected — skip.
+    return None
+
+
+def compute_user_score_positional(
+    user_picks: list[dict],
+    slot_assignments: dict[tuple[str, int], dict],
+    golden_boot_user: Optional[str] = None,
+    golden_boot_actual: Optional[str] = None,
+) -> dict:
+    """Stage-gated POSITIONAL scoring (WC-BRACKET-STAGE-GATED).
+
+    For each user pick (round, position, picked_team_id):
+      • Look up the slot's seeded `match_id` and its actual winner.
+      • Award round-points only if the pick equals the winner of THAT
+        specific matchup.
+      • Champion (R=champion, P=0) is derived: if the pick equals the
+        winner of the (final, 0) slot, award champion points.
+
+    Slots with NULL match_id (round not yet seeded by AF) → 0 points,
+    silent.
+
+    The smoke test relies on the exact return shape — keep keys stable.
+    """
+    by_round: dict[str, int] = {k: 0 for k in ROUND_POINTS}
+
+    # Champion uses the SAME pick as (final, 0). Look up final winner.
+    final_slot = slot_assignments.get(("final", 0))
+    final_winner = _winner_team_id(final_slot) if final_slot else None
+
+    for p in user_picks:
+        rk = p["round"]
+        if rk not in ROUND_POINTS:
+            continue
+
+        # Champion is derived from the user's (final, 0) pick — but the FE
+        # also stores it explicitly so existing wc_bracket_picks rows from
+        # the old "pick champion separately" UI remain scoreable. Both
+        # variants converge on the same outcome.
+        if rk == "champion":
+            if final_winner and p["picked_team_id"] == final_winner:
+                by_round["champion"] += ROUND_POINTS["champion"]
+            continue
+
+        slot = slot_assignments.get((rk, p["position"]))
+        if not slot or not slot.get("match_id"):
+            continue
+        winner = _winner_team_id(slot)
+        if winner and p["picked_team_id"] == winner:
+            by_round[rk] += ROUND_POINTS[rk]
+
+    # If the user explicitly picked (final, 0) but NOT a separate champion
+    # row, still award the champion bonus from that pick (FE no longer
+    # surfaces a "Champion" slot — it's derived).
+    has_explicit_champion = any(p["round"] == "champion" for p in user_picks)
+    if not has_explicit_champion and final_winner:
+        final_pick = next(
+            (p for p in user_picks if p["round"] == "final" and p["position"] == 0),
+            None,
+        )
+        if final_pick and final_pick["picked_team_id"] == final_winner:
+            by_round["champion"] += ROUND_POINTS["champion"]
+
+    golden_hit = False
+    if golden_boot_user and golden_boot_actual:
+        if golden_boot_user.strip().lower() == golden_boot_actual.strip().lower():
+            golden_hit = True
+
+    total = sum(by_round.values()) + (GOLDEN_BOOT_POINTS if golden_hit else 0)
+    return {"score": total, "by_round": by_round, "golden_boot_hit": golden_hit}
+
+
 # ── Bulk recompute ─────────────────────────────────────────────────────────
 
 def recompute_all_brackets() -> dict:
@@ -616,6 +734,16 @@ def recompute_all_brackets() -> dict:
     """
     advancers = build_advancers()
     actual_standings = build_actual_group_standings()
+
+    # WC-BRACKET-STAGE-GATED: load positional slot assignments. When any
+    # slot has a settled match, positional scoring takes precedence over
+    # set-membership for that round. Pre-tournament this is {} and we fall
+    # back to the legacy compute_user_score path.
+    slot_assignments = _load_slot_assignments()
+    use_positional = any(
+        sa.get("match_id") and sa.get("status") == "finished"
+        for sa in slot_assignments.values()
+    )
 
     # ── Human users ────────────────────────────────────────────────────────
     picks_by_user = _load_all_picks()
@@ -657,32 +785,37 @@ def recompute_all_brackets() -> dict:
     #                 ("ai",   ai_label, bracket, group, total) for AI.
     scored: list[tuple[str, str, int, int, int]] = []
 
-    for user_id in all_user_ids:
-        bracket_res = compute_user_score(
-            user_picks=picks_by_user.get(user_id, []),
+    def _score_entry(picks: list[dict], golden_user: Optional[str]) -> int:
+        if use_positional:
+            return compute_user_score_positional(
+                user_picks=picks,
+                slot_assignments=slot_assignments,
+                golden_boot_user=golden_user,
+                golden_boot_actual=golden_actual,
+            )["score"]
+        return compute_user_score(
+            user_picks=picks,
             advancers=advancers,
-            golden_boot_user=golden_by_user.get(user_id),
+            golden_boot_user=golden_user,
             golden_boot_actual=golden_actual,
-        )
+        )["score"]
+
+    for user_id in all_user_ids:
+        b = _score_entry(picks_by_user.get(user_id, []), golden_by_user.get(user_id))
         group_res = compute_group_standings_score(
             picks=group_picks_by_user.get(user_id, []),
             actuals=actual_standings,
         )
-        b, g = bracket_res["score"], group_res["score"]
+        g = group_res["score"]
         scored.append(("user", user_id, b, g, b + g))
 
     for ai_label in all_ai_labels:
-        bracket_res = compute_user_score(
-            user_picks=ai_picks.get(ai_label, []),
-            advancers=advancers,
-            golden_boot_user=None,
-            golden_boot_actual=golden_actual,
-        )
+        b = _score_entry(ai_picks.get(ai_label, []), None)
         group_res = compute_group_standings_score(
             picks=ai_group_picks.get(ai_label, []),
             actuals=actual_standings,
         )
-        b, g = bracket_res["score"], group_res["score"]
+        g = group_res["score"]
         scored.append(("ai", ai_label, b, g, b + g))
 
     # ── Combined rank (dense) + percentile ────────────────────────────────
