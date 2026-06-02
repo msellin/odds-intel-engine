@@ -124,9 +124,15 @@ WC_LEAGUE_AF_ID = 1
 # ── Data loaders ──────────────────────────────────────────────────────────
 
 def _load_wc_group_fixtures() -> list[dict]:
-    """All WC group-stage fixtures (date < 2026-06-28). Returns:
+    """WC 2026 group-stage fixtures only. Returns:
         [{id, date, home_team_id, away_team_id, league_id}]
-    """
+
+    Same league_id as WC 2018 + WC 2022 (AF uses one league per
+    competition with different seasons). Without the `date >= 2026-06-01`
+    floor this query also returns ~200 historical WC fixtures from prior
+    tournaments, which fuses the union-find across all 3 WCs into 1
+    giant "group". Same fix the frontend hotfix (commit fa913d6) applied
+    to /lib/world-cup.ts."""
     from workers.api_clients.db import execute_query
     return execute_query(
         """
@@ -137,7 +143,8 @@ def _load_wc_group_fixtures() -> list[dict]:
         FROM matches m
         JOIN leagues l ON l.id = m.league_id
         WHERE l.api_football_id = %s
-          AND m.date::date < DATE '2026-06-28'
+          AND m.date::date >= DATE '2026-06-01'
+          AND m.date::date <  DATE '2026-06-28'
         ORDER BY m.date ASC
         """,
         (WC_LEAGUE_AF_ID,),
@@ -594,14 +601,20 @@ def _write_ai_strategy(ai_label: str, group_rows: list[dict], bracket_rows: list
 
     # Meta — upsert by ai_label. Score columns are recomputed by the
     # scoring job; we write 0 here just to seed the row so the leaderboard
-    # picks it up immediately.
-    bulk_upsert(
-        table="wc_bracket_meta",
-        columns=["ai_label", "current_score", "current_rank",
-                 "group_standings_score", "total_score"],
-        rows=[(ai_label, 0, None, 0, 0)],
-        conflict_columns=["ai_label"],
-        update_columns=["current_score", "group_standings_score", "total_score"],
+    # picks it up immediately. Migration 170 dropped the user_id PK and
+    # uses a partial-unique-index on ai_label (no traditional UNIQUE
+    # constraint), so `bulk_upsert`'s `ON CONFLICT (ai_label)` doesn't
+    # match. Do a plain INSERT…ON CONFLICT against the partial index
+    # name instead.
+    from workers.api_clients.db import execute_write
+    execute_write(
+        """
+        INSERT INTO wc_bracket_meta (ai_label, current_score, current_rank,
+                                     group_standings_score, total_score)
+        VALUES (%s, 0, NULL, 0, 0)
+        ON CONFLICT (ai_label) WHERE ai_label IS NOT NULL DO NOTHING
+        """,
+        (ai_label,),
     )
 
     return {
