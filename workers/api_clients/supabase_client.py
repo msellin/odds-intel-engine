@@ -235,11 +235,23 @@ def store_match(match_data: dict) -> str:
             )
         return match_id
 
-    try:
-        dt = datetime.fromisoformat(match_date.replace("Z", "+00:00"))
-        season = dt.year if dt.month >= 7 else dt.year - 1
-    except (ValueError, AttributeError):
-        season = date.today().year if date.today().month >= 7 else date.today().year - 1
+    # SEASON-CONVENTION-FIX (2026-06-02): prefer AF's `league.season` value
+    # (already present in `match_data["season"]` via `fixture_to_match_dict`).
+    # Fall back to the football-season convention (Jan-Jun = previous year)
+    # only when AF didn't provide one — which is the historic-CSV /
+    # backfill path. The convention is correct for club leagues but inverts
+    # the year for summer tournaments (WC, Euro, Copa America, AFCON,
+    # Asian Cup, Gold Cup) — see WC-PHASE-1 where 2026-06 fixtures landed
+    # under season=2025 and bricked the frontend filter.
+    af_season = match_data.get("season")
+    if af_season is not None:
+        season = int(af_season)
+    else:
+        try:
+            dt = datetime.fromisoformat(match_date.replace("Z", "+00:00"))
+            season = dt.year if dt.month >= 7 else dt.year - 1
+        except (ValueError, AttributeError):
+            season = date.today().year if date.today().month >= 7 else date.today().year - 1
 
     match_record = {
         "date": match_date if match_date else datetime.now().isoformat(),
@@ -504,12 +516,19 @@ def bulk_store_matches(match_dicts: list[dict]) -> list[str | None]:
                 "input_indices": [idx],
             }
         else:
-            try:
-                dt = datetime.fromisoformat(p["match_date"].replace("Z", "+00:00"))
-                season = dt.year if dt.month >= 7 else dt.year - 1
-            except (ValueError, AttributeError):
-                today = date.today()
-                season = today.year if today.month >= 7 else today.year - 1
+            # SEASON-CONVENTION-FIX (2026-06-02): same logic as store_match —
+            # prefer AF's season, fall back to date-derived convention. See
+            # the comment in store_match for the why.
+            af_season = md.get("season")
+            if af_season is not None:
+                season = int(af_season)
+            else:
+                try:
+                    dt = datetime.fromisoformat(p["match_date"].replace("Z", "+00:00"))
+                    season = dt.year if dt.month >= 7 else dt.year - 1
+                except (ValueError, AttributeError):
+                    today = date.today()
+                    season = today.year if today.month >= 7 else today.year - 1
 
             score_home = score_away = result_str = None
             status = "scheduled"

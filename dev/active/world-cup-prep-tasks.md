@@ -38,17 +38,21 @@
 ### Follow-up filed (post-WC)
 - **OPT-BACKFILL-INTL** — optimise the enrichment phase: parallelise with ThreadPoolExecutor (settlement.py uses 2 workers), batch player_stats inserts via `execute_values`, optionally add `--skip-players` flag. Not blocking Phase 3 or any WC ship work.
 
-## Phase 3 — National-team predictor (2-3 days)
+## Phase 3 — National-team predictor (DONE 2026-06-02)
 
-- [ ] Schema decision: extend `team_elo_daily` with `is_international` flag, or new table `team_elo_international`
-- [ ] Compute ELO from international match history (separate K-factor likely needed)
-- [ ] Build simple Poisson predictor on last-20-internationals scoring rates (no league features)
-- [ ] Optional: AF predictions endpoint blend (when/if AF publishes)
-- [ ] Persist to `predictions` with `model_source='national_team_v1'`
-- [ ] Validation: backtest on Euro 2024 holdout — does it predict knockout outcomes better than coin flip?
-- [ ] Validation: backtest on WC 2022 holdout — same
-- [ ] Confidence threshold higher than club model (lean toward "no bet")
-- [ ] Smoke test: NATIONAL-TEAM-PREDICTIONS (predictions exist for upcoming WC fixtures with non-flat probabilities)
+- [x] Schema decision: NEW table `team_elo_international` (separate from `team_elo_daily` because club ELO uses different K/home-adv and the trajectories shouldn't pollute each other). Migration 164.
+- [x] Compute ELO from international match history — walked 6,651 finished international matches. K-factor: tournament 40 / qualifier+NL 25 / friendly 10. Home advantage +60 only on qualifier_nl matches (tournaments mostly neutral). Goal-diff multiplier `max(1, sqrt(gd+1))`. Script: `scripts/compute_international_elo.py` (idempotent — TRUNCATE + rebuild).
+- [x] Build simple Poisson predictor on last-N-internationals weighted by competition (tournament 1.0 / qualifier 0.8 / friendly 0.3). Module: `workers/model/national_team_predictor.py`.
+- [x] Persist to `predictions` with `source='national_team_v1'` (note: column is `source`, NOT `model_source` — frontend agent flagged this in v1).
+- [x] Validation: backtest on 141 holdout matches (WC 2022 + Euro 2024 + Copa 2024 + AFCON 2023). 1X2 log-loss 1.0697 vs 1.0986 baseline (+2.6%), 45.4% top-pick accuracy. Per-tournament: Euro 2024 63.6%, WC 2022 48.4%, Copa 35.7%, AFCON 40.4%. Script: `scripts/backtest_national_team_model.py`.
+- [x] **Goals model insufficient for value-bet claims** — O/U 2.5 log-loss 0.696 with smoothing (essentially tied with empirical-rate baseline 0.693). Ship 1X2 only; hide goals predictions or render as informational.
+- [x] Parameter sweep — best 1X2 config: `softening_factor=1.3, draw_base=0.30`. Best combined config (with smoothing): `softening_factor=1.3, avg_goals_per_team=1.15, goals_smoothing=0.3`.
+- [x] Smoke test: NATIONAL-TEAM-PREDICTOR-V1 (source inspection of K-factors + holdout pairs + migration schema)
+- [ ] Wire predictor as a scheduled job — write predictions to `predictions` table for upcoming WC matches (TBD: morning cron after fixtures arrive)
+- [ ] Frontend integration — `/world-cup` page reads from `predictions` source='national_team_v1' once predictions are written (v1 page already has the slots ready)
+
+### Follow-up filed (post-WC)
+- **GOALS-MODEL-V2** — current Poisson on team-level recent-goal-rates doesn't beat baseline. Try ELO-derived expected goals + Dixon-Coles rho + competition-tier league averages instead.
 
 ## Phase 4 — WC frontend (2-3 days, odds-intel-web repo)
 

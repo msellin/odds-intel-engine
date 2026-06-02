@@ -12598,5 +12598,89 @@ def _():
         assert fn in src, f"backfill must call {fn}"
 
 
+@test("SEASON-CONVENTION-FIX — bulk_store_matches / store_match prefer AF league.season over date-derived convention")
+def _():
+    """SEASON-CONVENTION-FIX (2026-06-02): the daily fixtures pipeline used to
+    compute season from match_date alone (Jan-Jun → year-1, Jul-Dec → year).
+    That's correct for club leagues (PL 2024-25 = season=2024) but inverts
+    the year for summer tournaments: WC 2026 fixtures (June 2026) landed
+    under season=2025, WC 2018 was split between season=2017 and 2018, Euro
+    2024 (June-July) partially under 2023.
+
+    AF's `/fixtures?league=N&season=Y` response provides the correct
+    `league.season` value — `fixture_to_match_dict` already passes it
+    through as `match_dict["season"]`. The fix is to PREFER that value
+    instead of unconditionally recomputing from date.
+
+    Migration 167 renormalises existing rows for tournament leagues
+    (WC, Euro, Copa, AFCON, Asian Cup, Gold Cup). Qualifiers are not
+    touched because they run multi-year and the convention works there."""
+    src = _engine_path("workers/api_clients/supabase_client.py").read_text()
+    # Two call sites — store_match + bulk_store_matches — both must prefer the AF value
+    assert src.count("SEASON-CONVENTION-FIX") >= 2, \
+        "Both store_match + bulk_store_matches must carry the SEASON-CONVENTION-FIX comment"
+    assert "af_season = match_data.get(\"season\")" in src, \
+        "store_match must read AF's season from the match_data dict"
+    assert "af_season = md.get(\"season\")" in src, \
+        "bulk_store_matches must read AF's season from the per-row dict"
+
+    mig = _engine_path("supabase/migrations/167_fix_tournament_season_convention.sql").read_text()
+    assert "EXTRACT(YEAR FROM m.date)" in mig
+    # Tournament IDs that must be in the renormalisation set
+    for af_id in ["1", "4", "6", "7", "9", "22"]:
+        assert af_id in mig, f"Migration must include AF league id {af_id} in the tournament set"
+
+
+@test("NATIONAL-TEAM-PREDICTOR-V1 — ELO + Poisson predictor for WC, backtest holds out WC 2022 + Euro 2024 + Copa 2024 + AFCON 2023")
+def _():
+    """WC-PHASE-3 (2026-06-02): national-team prediction model. Separate from
+    the club model because the latter's features (league_tier, season form,
+    league H2H, league-specific venue splits) don't map to international
+    football.
+
+    Stack:
+      - ELO from international match history (K-factor by competition:
+        tournament 40, qualifier_nl 25, friendly 10; home_advantage +60
+        only on qualifier_nl matches)
+      - Poisson goals model using last-20-internationals weighted by comp
+      - 1X2 from ELO differential with softening_factor=1.3 and draw_base
+        0.30 (sweep-validated against 141 holdout matches: log-loss 1.0697
+        vs baseline 1.0986 = +2.6% improvement, 45.4% top-pick accuracy)
+      - O/U 2.5 + BTTS predictions hidden by default — backtest shows
+        the goals model isn't worth marketing (log-loss ~= 50/50 baseline)
+
+    Smoke tests source structure only — full backtest is the validation
+    run by `scripts/backtest_national_team_model.py`."""
+    pred_src = _engine_path("workers/model/national_team_predictor.py").read_text()
+    assert "def predict_match" in pred_src
+    assert "softening_factor" in pred_src
+    assert "draw_base" in pred_src
+    assert "elo_goal_factor" in pred_src
+    assert "goals_smoothing" in pred_src
+
+    elo_src = _engine_path("scripts/compute_international_elo.py").read_text()
+    assert "COMP_CATEGORY" in elo_src
+    assert "K_BY_CAT" in elo_src
+    # K-factor mapping must be present
+    for tier, K in [("tournament", "40"), ("qualifier_nl", "25"), ("friendly", "10")]:
+        assert tier in elo_src
+        assert K in elo_src
+    # All 6 confederations of WC qualifiers + Nations League
+    for af_id in ["29", "30", "31", "32", "33", "34", "37", "5", "536", "960"]:
+        assert af_id in elo_src, f"compute_international_elo must categorise AF league {af_id}"
+
+    bt_src = _engine_path("scripts/backtest_national_team_model.py").read_text()
+    assert "predict_match" in bt_src
+    assert "DEFAULT_HOLDOUT" in bt_src
+    # Tournament holdout pairs
+    assert "(1, 2022)" in bt_src or "1, 2022" in bt_src
+    assert "(4, 2024)" in bt_src or "4, 2024" in bt_src
+
+    mig = _engine_path("supabase/migrations/164_team_elo_international.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS team_elo_international" in mig
+    assert "UNIQUE (team_id, match_date)" in mig
+    assert "ENABLE ROW LEVEL SECURITY" in mig
+
+
 if __name__ == "__main__":
     main()
