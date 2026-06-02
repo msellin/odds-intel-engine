@@ -176,6 +176,17 @@ def main():
         console.print("\n[yellow]Dry run — no writes.[/yellow]")
         return
 
+    # Deduplicate (team_id, match_date) — keep the chronologically LAST update.
+    # A team can play more than once on the same date in qualifier doubleheaders
+    # or congested tournament schedules. `rows` is built in chronological order
+    # so the last entry per key is the correct post-day ELO.
+    dedup: dict[tuple, tuple] = {}
+    for row in rows:
+        dedup[(row[0], row[1])] = row
+    deduped_rows = list(dedup.values())
+    if len(deduped_rows) != len(rows):
+        console.print(f"  deduped {len(rows) - len(deduped_rows)} same-day double-up rows")
+
     # Clear + bulk upsert
     console.print("\n[cyan]Clearing team_elo_international and writing fresh rows...[/cyan]")
     execute_write("TRUNCATE team_elo_international")
@@ -183,7 +194,7 @@ def main():
     updated = bulk_upsert(
         table="team_elo_international",
         columns=["team_id", "match_date", "elo_rating", "n_matches", "last_comp"],
-        rows=rows,
+        rows=deduped_rows,
         conflict_columns=["team_id", "match_date"],
         update_columns=["elo_rating", "n_matches", "last_comp"],
     )

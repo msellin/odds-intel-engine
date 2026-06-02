@@ -12682,5 +12682,34 @@ def _():
     assert "ENABLE ROW LEVEL SECURITY" in mig
 
 
+@test("PHASE-3-WRITE-PREDICTIONS — national-team predictions written to `predictions` table for upcoming WC + intl matches")
+def _():
+    """WC-PHASE-3 prediction job (2026-06-02). Closes the loop between the
+    predictor module + ELO table and the frontend's `/world-cup` page,
+    which has prediction slots waiting on `source='national_team_v1'`.
+
+    The job is a one-off CLI today (scheduled wiring deferred); operator
+    runs after each fixtures fetch. Idempotent — store_prediction upserts
+    on (match_id, market, source).
+
+    Best params from sweep validation against the 141-match holdout:
+      softening_factor=1.3, draw_base=0.30, avg_goals_per_team=1.15,
+      elo_goal_factor=0, goals_smoothing=0.3."""
+    src = _engine_path("scripts/write_national_team_predictions.py").read_text()
+    # Correct source string — frontend filters by `source='national_team_v1'`
+    # (the v2 agent baked this in to src/lib/world-cup.ts)
+    assert '"source": "national_team_v1"' in src, \
+        "Must write source='national_team_v1' to match frontend filter"
+    # Best-params block from the parameter sweep
+    assert "softening_factor" in src and "1.3" in src
+    assert "draw_base" in src and "0.30" in src
+    assert "goals_smoothing" in src and "0.3" in src
+    # Iterates upcoming international matches by COMP_CATEGORY league set
+    assert "COMP_CATEGORY" in src
+    assert "status = 'scheduled'" in src
+    # Idempotent path
+    assert "bulk_store_predictions" in src
+
+
 if __name__ == "__main__":
     main()
