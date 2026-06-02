@@ -13769,5 +13769,97 @@ def _():
     assert "anonymousVariant" in fe, "leaderboard must render anonymous variants with dimmer text"
 
 
+# ── WC Achievements (WC-ACHIEVEMENTS) — 2026-06-02 ─────────────────────────
+@test("WC-ACHIEVEMENTS-MIGRATION — migration 172 creates wc_user_achievements with public-read RLS")
+def _():
+    """WC-ACHIEVEMENTS (2026-06-02): WC-themed achievement & streak badges.
+    Public-read RLS so leaderboard rows can render any user's badges;
+    writes go through service-role (the detection job)."""
+    p = _engine_path("supabase/migrations/172_wc_achievements.sql")
+    assert p.exists(), "migration 172_wc_achievements.sql must exist"
+    src = p.read_text()
+    assert "CREATE TABLE IF NOT EXISTS wc_user_achievements" in src, \
+        "migration must create wc_user_achievements table"
+    assert "uq_wc_user_achievement UNIQUE (user_id, slug)" in src, \
+        "table must have UNIQUE (user_id, slug) to make detection idempotent"
+    assert "references profiles(id) on delete cascade" in src, \
+        "user_id must FK to profiles with ON DELETE CASCADE"
+    assert "earned_at" in src and "detail" in src, \
+        "table must include earned_at + detail columns"
+    assert "ENABLE ROW LEVEL SECURITY" in src, "RLS must be enabled"
+    assert 'CREATE POLICY "wc_ach_public_select"' in src, \
+        "must add public-read policy so leaderboard can render any user's badges"
+    assert "FOR SELECT USING (true)" in src, \
+        "select policy must allow all (USING true)"
+
+
+@test("WC-ACHIEVEMENTS-DETECTION — detection module has detect_for_user + detect_for_all_users, scheduler wires :15 cadence")
+def _():
+    """The detection job lives at workers/jobs/wc_achievement_detection.py
+    and is scheduled every 15 min during the WC window. Idempotent — the
+    UNIQUE constraint in migration 172 means a badge is never doubled."""
+    job = _engine_path("workers/jobs/wc_achievement_detection.py")
+    assert job.exists(), "wc_achievement_detection.py must exist"
+    src = job.read_text()
+
+    # Function surface.
+    assert "def detect_for_user(" in src, "must export detect_for_user(user_id)"
+    assert "def detect_for_all_users(" in src, "must export detect_for_all_users()"
+    # Idempotent insert path.
+    assert "ON CONFLICT (user_id, slug) DO NOTHING" in src, \
+        "award path must use ON CONFLICT DO NOTHING for idempotency"
+    # Import is reachable from the running interpreter.
+    from workers.jobs.wc_achievement_detection import (  # noqa: F401
+        detect_for_user, detect_for_all_users, ACHIEVEMENT_SLUGS,
+    )
+
+    # Scheduler wiring — 15-min cadence + WC-window gate.
+    sched_src = _engine_path("workers/scheduler.py").read_text()
+    assert "def job_wc_achievement_detection(" in sched_src, \
+        "scheduler must define job_wc_achievement_detection()"
+    assert "from workers.jobs.wc_achievement_detection import detect_for_all_users" in sched_src, \
+        "scheduler must import detect_for_all_users"
+    assert 'id="wc_achievement_detection"' in sched_src, \
+        "scheduler must register cron with id='wc_achievement_detection'"
+    assert 'CronTrigger(hour="*", minute="0,15,30,45")' in sched_src, \
+        "WC achievement cron must fire every 15 min at :00/:15/:30/:45"
+    # WC-window gate reuses the bracket-scoring constants.
+    assert "_WC_SCORING_WINDOW_START <= today <= _WC_SCORING_WINDOW_END" in sched_src, \
+        "scheduler job_wc_achievement_detection must gate on the WC window"
+
+
+@test("WC-ACHIEVEMENTS-CATALOG — slug catalog covers 10+ achievements incl. high-value ones")
+def _():
+    """The catalog must include the high-value badges the FE renders.
+    Engine + frontend both consult the slug list; if the engine drops a
+    slug the FE component will display 'unknown' which is the wrong
+    failure mode."""
+    from workers.jobs.wc_achievement_detection import ACHIEVEMENT_SLUGS
+
+    assert len(ACHIEVEMENT_SLUGS) >= 10, \
+        f"catalog must define >=10 slugs (got {len(ACHIEVEMENT_SLUGS)})"
+
+    required = {
+        "champion_correct",
+        "r32_beat_ai",
+        "groups_perfect_one",
+        "final_called",
+        "called_the_upset",
+        "vs_you_streak_5",
+        "early_bird",
+    }
+    missing = required - set(ACHIEVEMENT_SLUGS)
+    assert not missing, f"high-value slugs missing from catalog: {sorted(missing)}"
+
+    # FE badge component recognises the same slugs.
+    badge = _web_path("src/components/wc-achievement-badge.tsx")
+    assert badge.exists(), \
+        "wc-achievement-badge.tsx must exist in odds-intel-web"
+    badge_src = badge.read_text()
+    for slug in required:
+        assert slug in badge_src, \
+            f"wc-achievement-badge.tsx must handle slug '{slug}'"
+
+
 if __name__ == "__main__":
     main()

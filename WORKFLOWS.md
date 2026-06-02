@@ -336,6 +336,14 @@ on Hobby plan; blast radius isolated.
 - Golden Boot actual winner read from `app_settings` key `wc_golden_boot_actual` (manual operator stamp); AF top-scorer endpoint automation filed as WC-GOLDEN-BOOT-AUTO
 - Manual run: `python -m workers.jobs.wc_bracket_scoring`
 
+### ⑫b WC Achievement Detection (`wc_achievement_detection.py`) — WC-ACHIEVEMENTS (2026-06-02)
+- Every 15 min at `:00/:15/:30/:45` UTC, gated on the same `2026-06-11 ≤ today ≤ 2026-07-19` window
+- PARALLEL to scoring — never mutates `wc_bracket_meta`; adds idempotent rows only to `wc_user_achievements`
+- 15-slug catalog: submission timing (`first_to_lock`, `early_bird`, `last_minute`), groups (`groups_perfect_one`, `groups_perfect_three`, `groups_all_perfect`), bracket skill (`r32_beat_ai` vs OddsIntel Elite AI, `final_called`, `champion_correct`, `called_the_upset` — lower-ELO winner from `team_elo_international`), per-match (`vs_you_streak_5`, `vs_you_streak_10`, `vs_you_perfect_day`), engagement (`viewed_all_groups` — reads optional `wc_group_views` table, silent no-op when absent), `golden_boot_correct`
+- AI ghosts excluded — achievements are a user-engagement loop, not a benchmark
+- Idempotent via UNIQUE (user_id, slug) in migration 172 — re-runs are safe
+- Manual run: `python -m workers.jobs.wc_achievement_detection`
+
 ### One-shot: WC AI Ghost Generator (`generate_ai_brackets.py`) — WC-AI-GHOSTS (2026-06-02)
 - One-off, not on cron. Run before WC kickoff (2026-06-11 19:00 UTC) to seed the 5 AI ghost entries on the leaderboard
 - Strategies: `OddsIntel Elite AI`, `OddsIntel Pro AI`, `OddsIntel Free AI`, `Market Implied`, `Chalk` — each writes a complete bracket + 48-row group-standings prediction. AI rows have `ai_label` set and `user_id` NULL

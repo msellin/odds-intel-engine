@@ -1054,6 +1054,20 @@ def job_wc_bracket_slot_sync():
     _run_job("wc_bracket_slot_sync", run_slot_sync_and_ai_refresh)
 
 
+def job_wc_achievement_detection():
+    """WC-ACHIEVEMENTS (2026-06-02): scan current state + award badges in
+    wc_user_achievements. Idempotent via UNIQUE (user_id, slug). Gated to
+    the WC window — pre-tournament there's almost nothing to detect
+    (early_bird + first_to_lock can fire from the lock-in day onwards but
+    those are cheap enough to run inside the window). Cheap query — a few
+    table scans per run."""
+    today = date.today()
+    if not (_WC_SCORING_WINDOW_START <= today <= _WC_SCORING_WINDOW_END):
+        return
+    from workers.jobs.wc_achievement_detection import detect_for_all_users
+    _run_job("wc_achievement_detection", detect_for_all_users)
+
+
 def job_health_alerts_morning():
     from workers.jobs.health_alerts import run_morning_checks
     _run_job("health_alerts_morning", run_morning_checks)
@@ -1644,6 +1658,17 @@ def main():
     scheduler.add_job(job_wc_bracket_slot_sync, CronTrigger(hour="*", minute="10,40"),
                       id="wc_bracket_slot_sync",
                       name="WC Bracket Slot Sync [30min, WC window]")
+
+    # WC-ACHIEVEMENTS (2026-06-02): detect + award WC bracket/streak badges
+    # every 15 min during the WC window. Idempotent — UNIQUE (user_id, slug)
+    # in wc_user_achievements means a badge is never double-awarded.
+    # Cheap (few table scans, per-user inserts on conflict-do-nothing).
+    # Fires at :00/:15/:30/:45 — offset from scoring (:05/:35) and slot sync
+    # (:10/:40) so the three WC jobs don't pile onto the same DB connections.
+    scheduler.add_job(job_wc_achievement_detection,
+                      CronTrigger(hour="*", minute="0,15,30,45"),
+                      id="wc_achievement_detection",
+                      name="WC Achievement Detection [15min, WC window]")
 
     # ── Start scheduler ────────────────────────────────────────────────
     scheduler.start()
