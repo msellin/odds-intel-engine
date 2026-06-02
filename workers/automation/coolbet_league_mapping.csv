@@ -6,7 +6,7 @@ cb_league_id,cb_name_en,cb_name_et,cb_country_slug,cb_full_slug,cb_country_canon
 19129,UEFA Europa League,UEFA Euroopa Liiga,europe,football/europe/uefa-europa-league,World,627937cc-6c56-482d-a769-a8d83c9fcacf,UEFA Europa League,World,5,1,1.000,high,,yes,manual override
 60740,UEFA Europa Conference League,UEFA Konverentsiliiga,europe,football/europe/UEFA-Europa-Conference-League,World,c94f1f6a-dfd1-4545-9ae3-21893aab7a8a,UEFA Europa Conference League,World,4,1,1.000,high,,yes,manual override
 19932,UEFA Women's Champions League,UEFA Meistrite Liiga - Naised,europe,football/europe/uefa-womens-champions-league,World,41efc4a2-51eb-4644-b070-35546dc3836a,UEFA Champions League Women,World,1,0,1.000,high,,yes,manual override
-46803,World Cup Matches,MM Mängud,world-cup,football/world-cup/matches,World,99aa3400-ee95-43c0-afde-089dca041978,Friendlies,World,11,1,1.000,high,AF has no World Cup row; mapped to Friendlies as international-bucket fallback,yes,manual override
+46803,World Cup Matches,MM Mängud,world-cup,football/world-cup/matches,World,108e7471-93af-42bb-81b6-841b9acfa985,World Cup,World,11,1,1.000,high,WC-COOLBET-REMAP 2026-06-02: remapped to real WC league row,yes,manual override
 19050,Eliteserien,Eliteserien,norway,football/norway/eliteserien,Norway,554a5bf1-c4c1-4e95-92b1-c7d85866e7ef,Eliteserien,Norway,27,10,1.150,high,,yes,sim=1.00 tok=1.00 contain=0.15
 19111,Allsvenskan,Allsvenskan,sweden,football/sweden/allsvenskan,Sweden,db440d96-9150-4717-8f18-e77512896e5d,Allsvenskan,Sweden,31,6,1.150,high,,yes,sim=1.00 tok=1.00 contain=0.15
 18880,Veikkausliiga,Veikkausliiga,finland,football/finland/veikkausliiga,Finland,1064838b-66cb-4df0-8968-1fbce77303b7,Veikkausliiga,Finland,21,1,1.150,high,,yes,sim=1.00 tok=1.00 contain=0.15
@@ -43,7 +43,7 @@ cb_league_id,cb_name_en,cb_name_et,cb_country_slug,cb_full_slug,cb_country_canon
 19150,Premier League,Premier League (Kazakhstan),kazakhstan,football/kazakhstan/kazakhstan-premier-league,Kazakhstan,59240292-7eb5-46d6-9e4e-58608bcd86f4,Premier League,Kazakhstan,25,3,1.150,high,,yes,sim=1.00 tok=1.00 contain=0.15
 19085,Prva Liga,Prva Liga,slovenia,football/slovenia/prva-liga,Slovenia,ddfe81e7-ba88-46c6-a5fd-8ed9af80763e,Prva Liga,Slovenia,1,0,1.150,high,,yes,sim=1.00 tok=1.00 contain=0.15
 19093,MLS,MLS,usa,football/usa/mls,USA,be4b77a9-1652-41f9-9c7b-601e5a01fd04,Major League Soccer,USA,58,29,1.000,high,,yes,manual override
-51930,World Cup Specials,,world-cup,football/world-cup/world-cup-specials,World,99aa3400-ee95-43c0-afde-089dca041978,Friendlies,World,11,1,1.000,high,AF has no World Cup row; mapped to Friendlies as international-bucket fallback,yes,manual override
+51930,World Cup Specials,,world-cup,football/world-cup/world-cup-specials,World,,,,0,0,0,low,FUTURES MARKET (outright/long-term bets) — no per-fixture match to map to. Skipped.,yes,manual override
 19112,Superettan,Superettan,sweden,football/sweden/superettan,Sweden,b1eb2f6a-77d3-412a-9c67-5c8818dd6bd2,Superettan,Sweden,33,8,1.150,high,,yes,sim=1.00 tok=1.00 contain=0.15
 18916,Airtricity League First Division,Airtricity League First Division,ireland,football/ireland/airtricity-league-first-division,Ireland,e1047498-88e9-46cc-8a4c-9de3f512570b,First Division,Ireland,18,4,1.150,high,,yes,sim=1.00 tok=1.00 contain=0.15
 20501,Série B,Série B,brazil,football/brazil/serie-b,Brazil,2b751aba-29eb-4ce5-bdd5-8537062aa40a,Serie B,Brazil,30,8,1.150,high,,yes,sim=1.00 tok=1.00 contain=0.15
@@ -60,12 +60,12 @@ cb_league_id,cb_name_en,cb_name_et,cb_country_slug,cb_full_slug,cb_country_canon
 20191,1. Division,1. Division (Iceland),iceland,football/iceland/1-division,Iceland,dc084ae8-ff54-4263-be44-8323fc9d44ae,1. Deild,Iceland,18,11,1.000,high,,yes,manual override
 19226,DFB Pokal,DFB Pokal,germany,football/germany/dfb-pokal,Germany,9a6ff7df-7bf3-4115-8f09-7be3c9a4cf17,DFB Pokal - Women,Germany,1,1,0.900,high,,yes,sim=0.75 tok=0.67 contain=0.15
 20138,Copa Argentina,Copa Argentina,argentina,football/argentina/copa-argentina,Argentina,6146e737-50fe-40af-b3c8-e556bab18de9,Copa Argentina,Argentina,4,1,1.000,high,,yes,manual override
-61856,Group Stage Specials,,world-cup,football/world-cup/Group-Stage-Specials,World,99aa3400-ee95-43c0-afde-089dca041978,Friendlies,World,11,1,1.000,high,AF has no World Cup row; mapped to Friendlies as international-bucket fallback,yes,manual override
+61856,Group Stage Specials,,world-cup,football/world-cup/Group-Stage-Specials,World,,,,0,0,0,low,FUTURES MARKET (group winner / advancement specials) — no per-fixture match to map to. Skipped.,yes,manual override
 18995,Serie B,Serie B,italy,football/italy/serie-b,Italy,81156b2d-bc31-4c38-9f28-873a5158b873,Serie B,Italy,37,24,1.150,high,,yes,sim=1.00 tok=1.00 contain=0.15
 18770,League One,League One,england,football/england/league-one,England,57ac2b84-63ea-41de-aea7-d817eda98a7b,League One,England,37,5,1.150,high,,yes,sim=1.00 tok=1.00 contain=0.15
 20136,Damallsvenskan,Damallsvenskan,sweden,football/sweden/swedish-damallsvenskan,Sweden,54bd8c4e-bd8c-4b0b-b9bf-58ea474e95d3,Damallsvenskan,Sweden,21,6,1.150,high,,yes,sim=1.00 tok=1.00 contain=0.15
 18982,League Two,League Two,england,football/england/league-two,England,e9095165-3e24-40ea-b474-f3c4c3381994,League Two,England,30,0,1.150,high,,yes,sim=1.00 tok=1.00 contain=0.15
-61857,Nation Specials,,world-cup,football/world-cup/World-Cup-Nation-Specials,World,99aa3400-ee95-43c0-afde-089dca041978,Friendlies,World,11,1,1.000,high,AF has no World Cup row; mapped to Friendlies as international-bucket fallback,yes,manual override
+61857,Nation Specials,,world-cup,football/world-cup/World-Cup-Nation-Specials,World,,,,0,0,0,low,FUTURES MARKET (per-nation specials — top scorer in squad etc) — no per-fixture match to map to. Skipped.,yes,manual override
 42880,Elitettan,Elitettan,sweden,football/sweden/elitettan,Sweden,5e69e405-c86a-4827-abcc-3b6e27d1141d,Elitettan,Sweden,21,0,1.150,high,,yes,sim=1.00 tok=1.00 contain=0.15
 25195,Bundesliga Promotion/Relegation Playoff,Bundesliga Edendamise/Taandamise Playoff,germany,football/germany/bundesliga-promotionrelegation-playoff,Germany,e8094a6f-70b5-4c9d-ba89-4ed16fe29403,Bundesliga,Germany,37,17,0.558,medium,,yes,sim=0.41 tok=0.25 contain=0.15
 19258,Ettan Norra,Ettan Norra,sweden,football/sweden/division-1-norra,Sweden,0bcf80ef-8787-4194-9cab-3b3f39fb61c9,Ettan - Norra,Sweden,33,7,1.150,high,,yes,sim=1.00 tok=1.00 contain=0.15

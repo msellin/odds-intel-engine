@@ -77,14 +77,14 @@
     "match_score": 1.0
   },
   {
-    "db_league_id": "99aa3400-ee95-43c0-afde-089dca041978",
-    "db_league_name": "Friendlies",
+    "db_league_id": "108e7471-93af-42bb-81b6-841b9acfa985",
+    "db_league_name": "World Cup",
     "db_country": "World",
     "cb_league_id": 46803,
     "cb_league_name": "MM Mängud",
     "cb_full_slug": "jalgpall/Jalgpalli-MM/mm-matsid",
     "confidence": "high",
-    "review_note": "AF has no World Cup row; mapped to Friendlies as international-bucket fallback",
+    "review_note": "WC-COOLBET-REMAP (2026-06-02): remapped from Friendlies to the real WC league row (created in WC-PHASE-1). Coolbet's MM Mängud = FIFA World Cup matches.",
     "match_score": 1.0
   },
   {
