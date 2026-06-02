@@ -2,6 +2,25 @@
 
 > Single source of truth for ALL open tasks. Every actionable item across all docs lives here.
 > Other docs may describe features but ONLY this file tracks task status.
+
+> ## 2026-06-02 — WORLD-CUP-PREP spike done; phased plan filed; Pro tier rethink deferred
+>
+> 9 days from kickoff. Spike (2026-06-02) confirmed: AF has 72 WC group-stage fixtures available via `get_fixtures_by_league_season(1, 2026)` but **zero are currently in our DB** (pipeline only pulls today's date). National-team data thin (73 friendlies in DB; AF has Euro 2024 + WC 2022 + WC quals ~320 matches available to backfill). Existing club-trained model won't handle national teams — needs separate ELO + Poisson predictor. No bookmaker odds (AF says no, Odds API not configured for WC). Pro tier rethink ran in parallel — Top-N hypothesis killed (-10% ROI over 3 years), "95% bankers" killed (model calibration ceiling at 66% WR), bot-maturity + prob-threshold intersection is the best lead (+10.36% ROI n=314 backtest, but needs re-validation against live simulated_bets). **All findings written to `dev/active/world-cup-prep-{plan,context,tasks}.md` + `dev/active/pro-tier-rethink-findings.md`** so we don't lose state across context compressions.
+>
+> **✅ WC-PHASE-1 Done 2026-06-02** — Backfilled 72 WC 2026 group-stage fixtures. Added `--league`/`--season` CLI to `workers/jobs/fetch_fixtures.py` (backfill mode skips daily-featured + ops_snapshot, passes today's date as log run_date to satisfy DATE column). Migration 163 flips `show_on_frontend=true` on the WC league row (was hidden despite `is_active=true` + `coverage_predictions=true`). Matches land with `season=2025` (our football-season convention: June = previous year) — this is correct and the frontend filters by date+`show_on_frontend`, not season. Smoke: WC-FIXTURES-IN-DB.
+>
+> **🔄 WC-PHASE-2 In Progress** — Backfill historical internationals (Euro 2024, WC 2022, WC quals, Nations League, Copa America, AFCON) + nested data (lineups, events, statistics). Started 2026-06-02.
+>
+> **⬜ WC-PHASE-3** — National-team predictor (ELO + Poisson, separate model). Validation on Euro 2024 + WC 2022 holdouts. 2-3 days.
+>
+> **⬜ WC-PHASE-4** — `/world-cup` landing page on odds-intel-web. Group standings, advancement probabilities, tiered access (free=group / Pro=knockout). 2-3 days.
+>
+> **⬜ WC-PHASE-4b** — Odds source decision: add `soccer_fifa_world_cup` to Odds API client / scrape / accept "no odds for WC." Decide before Phase 4.
+>
+> **⬜ WC-PHASE-5** — Marketing (Reddit playbook adapted, daily tweets, signup hook, underdog email, optional public WC bot).
+>
+> **⏸ PRO-TIER-REDESIGN** — Deferred to post-WC. Findings preserved in `dev/active/pro-tier-rethink-findings.md`. Three things killed (Top-N per day, hit-rate bankers, retired-bot revival except bot_ou15_defensive). One lead worth re-validating against live `simulated_bets`: bot-maturity gate + prob ≥ 0.65. Plus a real product-strategy question (Free vs Pro gap with only 2-5 picks/day differential — does that justify €5/mo, or does Pro need a different axis like depth/data instead of pick volume?).
+>
 > ## 2026-06-01 — Cherry-pick Phase 2 open questions (decide 2026-06-05/06)
 >
 > User confirmed direction: real_bets should follow most-profitable bots / profiles, decision target = post-Phase-3.5 (2026-06-08). Two unresolved design choices need a call BEFORE the 06-08 env flip, otherwise the gate behaves in ways we didn't intend.

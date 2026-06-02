@@ -12506,5 +12506,39 @@ def _():
     del os.environ["DIGEST_FROM_EMAIL"]
 
 
+@test("WC-FIXTURES-IN-DB — World Cup 2026 backfilled + show_on_frontend flipped via migration 163")
+def _():
+    """WC-PHASE-1 (2026-06-02): the regular fetch_fixtures cron only pulls
+    today's fixtures, so the 72 group-stage WC 2026 matches would not appear
+    on the site until kickoff day (2026-06-11) unless we explicitly backfill.
+
+    Two things had to happen:
+      1. `fetch_fixtures.py` grew `--league` + `--season` CLI args so we can
+         call `get_fixtures_by_league_season` from the same code path that
+         pipeline_runs / log_pipeline_complete already cover.
+      2. Migration 163 flipped `leagues.show_on_frontend = true WHERE
+         api_football_id = 1` (the WC row existed with priority/coverage but
+         was hidden from the frontend filter).
+
+    This test verifies:
+      a. CLI args exist on fetch_fixtures (source inspection)
+      b. log_pipeline_start gets a date-shaped run_date in backfill mode
+         (the column is DATE — earlier draft passed "league=1 season=2026"
+         and the migration broke at INSERT time)
+      c. Migration 163 file exists with the expected UPDATE statement"""
+    src = _engine_path("workers/jobs/fetch_fixtures.py").read_text()
+    assert "--league" in src, "Backfill --league arg missing"
+    assert "--season" in src, "Backfill --season arg missing"
+    assert "get_fixtures_by_league_season" in src, "Backfill path must call the league/season AF endpoint"
+    assert "backfill_mode = league is not None and season is not None" in src, \
+        "Mode flag must guard date-scoped operations (daily-featured, ops_snapshot)"
+    assert "run_date_for_log = date.today().isoformat()" in src, \
+        "Backfill mode must pass a date to log_pipeline_start (column is DATE, not text)"
+
+    mig = _engine_path("supabase/migrations/163_world_cup_show_on_frontend.sql").read_text()
+    assert "show_on_frontend = true" in mig
+    assert "api_football_id = 1" in mig
+
+
 if __name__ == "__main__":
     main()

@@ -24,7 +24,7 @@ from rich.console import Console
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from workers.api_clients.api_football import get_fixtures_by_date, fixture_to_match_dict, get_leagues
+from workers.api_clients.api_football import get_fixtures_by_date, get_fixtures_by_league_season, fixture_to_match_dict, get_leagues
 from workers.api_clients.supabase_client import bulk_store_matches
 from workers.utils.pipeline_utils import (
     log_pipeline_start, log_pipeline_complete, log_pipeline_failed,
@@ -34,18 +34,28 @@ from workers.utils.pipeline_utils import (
 console = Console()
 
 
-def fetch_and_store_fixtures(target_date: str) -> tuple[int, dict[int, str], list[dict]]:
+def fetch_and_store_fixtures(target_date: str | None = None, league: int | None = None, season: int | None = None) -> tuple[int, dict[int, str], list[dict]]:
     """
-    Fetch all fixtures for a date from API-Football.
-    Store in Supabase matches table.
+    Fetch fixtures from API-Football and store in Supabase matches table.
+
+    Two modes:
+      - by date (default): pass target_date, leave league/season None
+      - by league+season (backfill): pass league + season, leave target_date None
 
     Returns: (stored_count, af_id_to_match_id, af_fixtures_raw)
     """
-    console.print(f"\n[cyan]Fetching fixtures for {target_date}...[/cyan]")
+    if league is not None and season is not None:
+        label = f"league={league} season={season}"
+    else:
+        label = target_date or "today"
+    console.print(f"\n[cyan]Fetching fixtures for {label}...[/cyan]")
 
     af_fixtures_raw = []
     try:
-        af_fixtures_raw = get_fixtures_by_date(target_date)
+        if league is not None and season is not None:
+            af_fixtures_raw = get_fixtures_by_league_season(league, season)
+        else:
+            af_fixtures_raw = get_fixtures_by_date(target_date)
         console.print(f"  {len(af_fixtures_raw)} fixtures from API-Football")
     except Exception as e:
         console.print(f"  [red]API-Football error: {e}[/red]")
@@ -102,12 +112,26 @@ def refresh_league_coverage():
         return 0
 
 
-def run_fixtures(target_date: str = None, refresh_leagues: bool = False):
-    """Run fixture fetch pipeline. Callable by scheduler or CLI."""
-    target_date = target_date or date.today().isoformat()
-    console.print(f"[bold green]═══ OddsIntel Fixture Fetch: {target_date} ═══[/bold green]")
+def run_fixtures(target_date: str = None, refresh_leagues: bool = False, league: int | None = None, season: int | None = None):
+    """Run fixture fetch pipeline. Callable by scheduler or CLI.
 
-    run_id = log_pipeline_start("fetch_fixtures", target_date)
+    Default mode: fetches all fixtures for `target_date` (or today).
+    Backfill mode: pass league+season → fetches the full competition (skip
+    date logic, daily-featured, ops snapshot — those are date-scoped).
+    """
+    backfill_mode = league is not None and season is not None
+    if backfill_mode:
+        label = f"league={league} season={season}"
+        # pipeline_runs.run_date is a DATE column — use today's date as the
+        # logical run_date in backfill mode (the actual league/season lives in metadata).
+        run_date_for_log = date.today().isoformat()
+    else:
+        target_date = target_date or date.today().isoformat()
+        label = target_date
+        run_date_for_log = target_date
+    console.print(f"[bold green]═══ OddsIntel Fixture Fetch: {label} ═══[/bold green]")
+
+    run_id = log_pipeline_start("fetch_fixtures", run_date_for_log)
 
     try:
         # Refresh league coverage if requested (weekly on Mondays)
@@ -116,12 +140,17 @@ def run_fixtures(target_date: str = None, refresh_leagues: bool = False):
             leagues_count = refresh_league_coverage()
 
         # Fetch and store fixtures
-        stored, af_id_to_match_id, af_fixtures_raw = fetch_and_store_fixtures(target_date)
-
-        # Set daily featured leagues (continental cups with matches today → priority 1)
-        featured = set_daily_featured_leagues(af_fixtures_raw)
-        if featured:
-            console.print(f"\n[yellow]Featured today:[/yellow] {', '.join(featured)}")
+        if backfill_mode:
+            stored, af_id_to_match_id, af_fixtures_raw = fetch_and_store_fixtures(
+                league=league, season=season
+            )
+            featured = []
+        else:
+            stored, af_id_to_match_id, af_fixtures_raw = fetch_and_store_fixtures(target_date)
+            # Daily-featured + ops snapshot only apply to date-mode runs
+            featured = set_daily_featured_leagues(af_fixtures_raw)
+            if featured:
+                console.print(f"\n[yellow]Featured today:[/yellow] {', '.join(featured)}")
 
         log_pipeline_complete(
             run_id,
@@ -132,13 +161,17 @@ def run_fixtures(target_date: str = None, refresh_leagues: bool = False):
                 "af_id_mappings": len(af_id_to_match_id),
                 "leagues_refreshed": leagues_count,
                 "featured_leagues": featured,
+                "backfill_mode": backfill_mode,
+                "backfill_league": league,
+                "backfill_season": season,
             }
         )
 
         console.print(f"\n[bold green]Done. {stored} fixtures stored.[/bold green]")
 
-        from workers.api_clients.supabase_client import write_ops_snapshot
-        write_ops_snapshot(target_date)
+        if not backfill_mode:
+            from workers.api_clients.supabase_client import write_ops_snapshot
+            write_ops_snapshot(target_date)
 
     except Exception as e:
         console.print(f"\n[red]Pipeline failed: {e}[/red]")
@@ -151,8 +184,13 @@ def main():
     parser = argparse.ArgumentParser(description="Fetch fixtures and optionally refresh league coverage")
     parser.add_argument("--date", type=str, default=None, help="Date to fetch (YYYY-MM-DD, default: today)")
     parser.add_argument("--refresh-leagues", action="store_true", help="Also refresh league coverage data")
+    parser.add_argument("--league", type=int, default=None, help="Backfill mode: AF league id (use with --season)")
+    parser.add_argument("--season", type=int, default=None, help="Backfill mode: season year (use with --league)")
     args = parser.parse_args()
-    run_fixtures(target_date=args.date, refresh_leagues=args.refresh_leagues)
+    if (args.league is None) != (args.season is None):
+        parser.error("--league and --season must be used together")
+    run_fixtures(target_date=args.date, refresh_leagues=args.refresh_leagues,
+                 league=args.league, season=args.season)
 
 
 if __name__ == "__main__":
