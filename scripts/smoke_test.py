@@ -12906,5 +12906,64 @@ def _():
         "script must expose run_predictions() callable for scheduler import"
 
 
+# ── Win-probability chart (FotMob-style) — Phase 1 (free+pro), 2026-06-02 ──
+@test("WP-CURVE-LIB — win-probability.ts exports computeWP + chase/shell + ≥90 handling")
+def _():
+    """The pure WP function lives in odds-intel-web/src/lib/win-probability.ts.
+    Source-inspection guards the three load-bearing pieces:
+      1. `computeWP` is exported (called by the API route + series builder).
+      2. The score-state adjustment constants are present (chase / shell).
+      3. Full-time short-circuit handles minute >= 90 deterministically."""
+    p = _web_path("src/lib/win-probability.ts")
+    assert p.exists(), "win-probability.ts must exist in odds-intel-web/src/lib"
+    src = p.read_text()
+    assert "export function computeWP" in src, \
+        "win-probability.ts must export computeWP"
+    assert "CHASE_FACTOR" in src and "SHELL_FACTOR" in src, \
+        "win-probability.ts must define CHASE_FACTOR + SHELL_FACTOR for score-state adjustment"
+    assert "minute >= 90" in src or "minute >= 90" in src.replace(" ", "") or "minute>=90" in src.replace(" ", ""), \
+        "win-probability.ts must short-circuit when the match is over (minute >= 90)"
+    assert "ELO_LAMBDA_SCALE" in src, \
+        "win-probability.ts must expose ELO_LAMBDA_SCALE for tunability"
+
+
+@test("WP-API-ROUTE — /api/matches/[id]/wp exists and is GET-only")
+def _():
+    """The polling endpoint that returns live win probability for a match.
+    Free-tier (no auth required) — the basic WP pill is part of the free
+    feature surface; Pro adds chart annotations client-side."""
+    p = _web_path("src/app/api/matches/[id]/wp/route.ts")
+    assert p.exists(), "wp route.ts must exist at src/app/api/matches/[id]/wp/route.ts"
+    src = p.read_text()
+    assert "export async function GET" in src, \
+        "wp route must export GET handler"
+    # Must NOT export POST/PUT/DELETE — pure read endpoint.
+    assert "export async function POST" not in src, "wp route must not export POST"
+    assert "export async function PUT" not in src, "wp route must not export PUT"
+    assert "export async function DELETE" not in src, "wp route must not export DELETE"
+    # Must call computeWP from the pure library.
+    assert "computeWP" in src, "wp route must call computeWP"
+
+
+@test("WP-CHART-COMPONENT — win-probability-chart.tsx exists and is server-rendered")
+def _():
+    """The chart component is a Server Component — no `"use client"` at the
+    top of the file. The live pill refresh is handled by a separate thin
+    client wrapper (win-probability-chart-live.tsx) that's mounted only when
+    the match is live."""
+    p = _web_path("src/components/win-probability-chart.tsx")
+    assert p.exists(), "win-probability-chart.tsx must exist in odds-intel-web/src/components"
+    src = p.read_text()
+    # Strip leading whitespace/comments before checking — a "use client"
+    # directive must be the *first* statement to take effect.
+    first_lines = [ln.strip() for ln in src.splitlines()[:5] if ln.strip()]
+    assert not (first_lines and first_lines[0].startswith('"use client"')), \
+        "win-probability-chart.tsx must be server-rendered (no `use client` directive)"
+    assert "export function WinProbabilityChart" in src, \
+        "win-probability-chart.tsx must export WinProbabilityChart"
+    # Sanity: it actually uses the series + computes paths.
+    assert "<svg" in src, "win-probability-chart.tsx must render an SVG"
+
+
 if __name__ == "__main__":
     main()
