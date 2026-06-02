@@ -13259,5 +13259,254 @@ def _():
         "wc-group-card.tsx must render an 'AI preview' expander label"
 
 
+# ── WC Group Standings Predictor + AI Ghosts (2026-06-02) ───────────────────
+
+@test("WC-GROUP-PREDICTOR-MIGRATION — migration 170 adds group predictions table + meta extensions")
+def _():
+    """Migration 170 introduces the second WC game (group-standings predictor)
+    plus the shared scaffolding for AI ghost entries on the leaderboard:
+      • new table `wc_group_predictions` with XOR constraint on (user_id,
+        ai_label), partial-unique indexes per owner type, RLS that fails
+        closed for anonymous viewers reading other users' picks
+      • wc_bracket_meta gains `group_standings_score`, `total_score`,
+        `current_percentile`, `ai_label`, drops user_id NOT NULL
+      • wc_bracket_picks accepts AI ghost rows (user_id nullable + ai_label)
+    Source-inspection only (we don't apply migrations during smoke runs).
+    """
+    p = _engine_path("supabase/migrations/170_wc_group_predictions_and_ai_brackets.sql")
+    assert p.exists(), "migration 170_wc_group_predictions_and_ai_brackets.sql must exist"
+    src = p.read_text()
+    assert "CREATE TABLE IF NOT EXISTS wc_group_predictions" in src, \
+        "migration must create wc_group_predictions"
+    assert "CHECK (position BETWEEN 1 AND 4)" in src, \
+        "wc_group_predictions must enforce position 1..4"
+    assert "CHECK (group_letter ~ '^[A-L]$')" in src, \
+        "wc_group_predictions must enforce group_letter A..L"
+    assert "chk_wc_grp_owner" in src and "XOR" in src.upper().replace("XOR", "XOR"), \
+        "wc_group_predictions must enforce XOR(user_id, ai_label)"
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_wc_grp_user" in src, \
+        "partial-unique index on (user_id, group_letter, position) required"
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_wc_grp_ai" in src, \
+        "partial-unique index on (ai_label, group_letter, position) required"
+    # meta extensions
+    assert "ADD COLUMN IF NOT EXISTS group_standings_score" in src, \
+        "wc_bracket_meta must gain group_standings_score"
+    assert "ADD COLUMN IF NOT EXISTS total_score" in src, \
+        "wc_bracket_meta must gain total_score"
+    assert "ADD COLUMN IF NOT EXISTS current_percentile" in src, \
+        "wc_bracket_meta must gain current_percentile"
+    assert "ADD COLUMN IF NOT EXISTS ai_label" in src, \
+        "wc_bracket_meta must gain ai_label"
+    assert "idx_wc_bracket_meta_total" in src, \
+        "leaderboard sort index on total_score required"
+    # bracket_picks accepts AI rows
+    assert "ALTER TABLE wc_bracket_picks ALTER COLUMN user_id DROP NOT NULL" in src, \
+        "wc_bracket_picks must drop NOT NULL on user_id"
+    assert "ALTER TABLE wc_bracket_picks ADD COLUMN IF NOT EXISTS ai_label" in src, \
+        "wc_bracket_picks must add ai_label column"
+    # RLS — fails closed for AI rows (user_id IS NOT NULL gate)
+    assert "ENABLE ROW LEVEL SECURITY" in src, "RLS must be enabled on group predictions"
+
+
+@test("WC-GROUP-PREDICTOR-SCORING — compute_group_standings_score handles correct/wrong/perfect-group cases")
+def _():
+    """compute_group_standings_score() — pure scoring function. Validates:
+      • 1st=5, 2nd=3, 3rd=2, 4th=1 (single-position correct cases)
+      • perfect-group bonus = +5 when all 4 positions match
+      • pre-tournament safety: empty actuals → 0
+      • missing actual for a group → that group scores 0
+      • Per-group cap = 16; total cap = 192 across 12 groups
+    """
+    from workers.jobs.wc_bracket_scoring import (
+        compute_group_standings_score,
+        GROUP_POS_POINTS,
+        PERFECT_GROUP_BONUS,
+        MAX_PER_GROUP_SCORE,
+        MAX_GROUP_STANDINGS_SCORE,
+        build_actual_group_standings,
+    )
+
+    # Constants — load-bearing for the UI legend.
+    assert GROUP_POS_POINTS == {1: 5, 2: 3, 3: 2, 4: 1}, \
+        f"GROUP_POS_POINTS must be 5/3/2/1, got {GROUP_POS_POINTS}"
+    assert PERFECT_GROUP_BONUS == 5, "perfect-group bonus must be 5pt"
+    assert MAX_PER_GROUP_SCORE == 16, f"max per group must be 16, got {MAX_PER_GROUP_SCORE}"
+    assert MAX_GROUP_STANDINGS_SCORE == 192, \
+        f"max total must be 192, got {MAX_GROUP_STANDINGS_SCORE}"
+
+    # Pre-tournament — actuals={} → zero, no crash.
+    res = compute_group_standings_score(
+        picks=[{"group_letter": "A", "position": 1, "picked_team_id": "team-A"}],
+        actuals={},
+    )
+    assert res["score"] == 0, f"empty actuals must yield 0, got {res}"
+    assert res["perfect_groups"] == 0
+
+    # Single correct position scores its point value, no bonus.
+    res = compute_group_standings_score(
+        picks=[
+            {"group_letter": "A", "position": 1, "picked_team_id": "team-A"},
+            {"group_letter": "A", "position": 2, "picked_team_id": "WRONG"},
+            {"group_letter": "A", "position": 3, "picked_team_id": "WRONG"},
+            {"group_letter": "A", "position": 4, "picked_team_id": "WRONG"},
+        ],
+        actuals={"A": {1: "team-A", 2: "team-B", 3: "team-C", 4: "team-D"}},
+    )
+    assert res["score"] == 5, f"only 1st correct should score 5, got {res}"
+    assert res["perfect_groups"] == 0
+
+    # Perfect group: all four positions correct → 5+3+2+1 + 5 bonus = 16.
+    res = compute_group_standings_score(
+        picks=[
+            {"group_letter": "B", "position": 1, "picked_team_id": "X"},
+            {"group_letter": "B", "position": 2, "picked_team_id": "Y"},
+            {"group_letter": "B", "position": 3, "picked_team_id": "Z"},
+            {"group_letter": "B", "position": 4, "picked_team_id": "W"},
+        ],
+        actuals={"B": {1: "X", 2: "Y", 3: "Z", 4: "W"}},
+    )
+    assert res["score"] == 16, f"perfect group must score 16, got {res}"
+    assert res["perfect_groups"] == 1
+
+    # Build_actual_group_standings is callable + returns dict (pre-tournament
+    # this will be empty — no group has all 6 fixtures finished yet).
+    actuals = build_actual_group_standings()
+    assert isinstance(actuals, dict), "build_actual_group_standings must return dict"
+
+
+@test("WC-AI-GHOSTS-GENERATOR — generate_ai_brackets.py defines 5 strategies + writes ai_label rows")
+def _():
+    """scripts/generate_ai_brackets.py is the one-shot AI ghost generator.
+    Validates that:
+      • the 5 named strategies are declared (Elite/Pro/Free AI, Market
+        Implied, Chalk)
+      • the script exposes a `generate_all()` callable + CLI entry point
+      • lock anchor matches the bracket lock (2026-06-11 19:00 UTC)
+      • writes target the shared tables (wc_group_predictions +
+        wc_bracket_picks + wc_bracket_meta) with `ai_label` set
+    """
+    p = _engine_path("scripts/generate_ai_brackets.py")
+    assert p.exists(), "scripts/generate_ai_brackets.py must exist"
+    src = p.read_text()
+
+    # All 5 strategies — labels are leaderboard-facing strings.
+    for label in [
+        "OddsIntel Elite AI",
+        "OddsIntel Pro AI",
+        "OddsIntel Free AI",
+        "Market Implied",
+        "Chalk",
+    ]:
+        assert label in src, f"strategy label '{label}' must be declared"
+
+    # Module-level API
+    assert "def generate_all(" in src, "must expose generate_all() entry"
+    assert "if __name__" in src and "main()" in src, "must have CLI main()"
+
+    # Lock anchor — same as the bracket's WC_FIRST_KICKOFF_ISO.
+    assert "datetime(2026, 6, 11, 19, 0, 0" in src, \
+        "lock anchor must be 2026-06-11 19:00 UTC (matches bracket)"
+
+    # Writes target shared tables with ai_label set + user_id NULL implied
+    # by partial-unique indexes from migration 170.
+    assert "INSERT INTO wc_group_predictions" in src, \
+        "must INSERT into wc_group_predictions"
+    assert "INSERT INTO wc_bracket_picks" in src, \
+        "must INSERT into wc_bracket_picks"
+    assert "ai_label" in src, "must write ai_label"
+    assert "DELETE FROM wc_group_predictions WHERE ai_label" in src, \
+        "idempotent re-run must wipe-and-replace AI rows"
+
+    # Importable sanity — strength function + helpers exist.
+    from scripts.generate_ai_brackets import (
+        AI_STRATEGIES, generate_all, _bracket_for_strategy,
+        _group_standings_for_strategy, _strategy_strength,
+    )
+    assert len(AI_STRATEGIES) == 5, f"must declare 5 strategies, got {len(AI_STRATEGIES)}"
+
+    # Bracket builder produces 32 R32-pool rows expanded into UI slots.
+    # We exercise it with a tiny synthetic 2-group / 8-team fixture to ensure
+    # it doesn't crash on small data — pre-tournament reality may have only
+    # a partial fixture set in dev DBs.
+    strength = {f"t{i}": 8 - i for i in range(8)}
+    groups = [("A", ["t0", "t1", "t2", "t3"]), ("B", ["t4", "t5", "t6", "t7"])]
+    bracket = _bracket_for_strategy(strength, groups)
+    rounds = {r["round"] for r in bracket}
+    # With only 2 groups (8 teams), R32 emits all 16 candidates - but our
+    # pool only has 8 teams. The helper just emits what it can — must NOT crash
+    # and must produce a champion.
+    assert "champion" in rounds, "bracket builder must produce a champion pick"
+
+    grp = _group_standings_for_strategy(strength, groups)
+    assert len(grp) == 8, f"2 groups × 4 positions = 8 group rows, got {len(grp)}"
+
+
+@test("WC-LEADERBOARD-AI — loadBracketLeaderboard returns ai_label + is_ai flag")
+def _():
+    """Combined leaderboard query. Validates source has:
+      • SELECT pulls total_score, group_standings_score, ai_label,
+        current_percentile from wc_bracket_meta
+      • orders by total_score DESC
+      • return shape includes `isAi` + `aiLabel` + `bracketScore` +
+        `groupScore` + `totalScore` + `currentPercentile`
+      • exports PERCENTILE_DISPLAY_THRESHOLD constant (200) per the spec
+      • the pin-current-user path exists
+      • the leaderboard PAGE renders the 🤖 / AI badge + "not eligible" footnote
+    """
+    lib = _web_path("src/lib/wc-bracket.ts")
+    assert lib.exists(), "src/lib/wc-bracket.ts must exist"
+    src = lib.read_text()
+
+    assert "total_score, current_rank, current_percentile" in src or \
+           "total_score" in src and "current_percentile" in src, \
+        "leaderboard query must SELECT total_score + current_percentile"
+    assert "group_standings_score" in src, \
+        "leaderboard query must SELECT group_standings_score"
+    assert "ai_label" in src, "leaderboard query must SELECT ai_label"
+    assert '.order("total_score"' in src, \
+        "leaderboard must order by total_score DESC"
+    assert "isAi:" in src or "isAi :" in src, \
+        "LeaderboardEntry shape must include isAi flag"
+    assert "aiLabel:" in src or "aiLabel :" in src, \
+        "LeaderboardEntry shape must include aiLabel"
+    assert "PERCENTILE_DISPLAY_THRESHOLD" in src, \
+        "must export PERCENTILE_DISPLAY_THRESHOLD"
+    assert "= 200" in src, "PERCENTILE_DISPLAY_THRESHOLD must be 200"
+    assert "isCurrentUser" in src, "must support pin-current-user shape"
+    assert "loadWcActivityStats" in src, \
+        "must export loadWcActivityStats for the activity tiles"
+
+    # Page renders AI affordances.
+    page = _web_path("src/app/(app)/world-cup/bracket/leaderboard/page.tsx")
+    assert page.exists(), "leaderboard page must exist"
+    page_src = page.read_text()
+    assert "not eligible for prizes" in page_src, \
+        "leaderboard page must show 'not eligible for prizes' footnote"
+    # AI badge visual — robot glyph or Bot icon.
+    assert "Bot" in page_src or "🤖" in page_src, \
+        "leaderboard page must show a robot/AI badge"
+
+    # Group standings predictor route + picker exist.
+    predictor = _web_path("src/app/(app)/world-cup/groups-predictor/page.tsx")
+    assert predictor.exists(), \
+        "/world-cup/groups-predictor route page must exist"
+    picker = _web_path("src/components/wc-group-standings-picker.tsx")
+    assert picker.exists(), "wc-group-standings-picker.tsx must exist"
+    picker_src = picker.read_text()
+    # UX: up/down arrows + per-group Save (no DnD library).
+    assert "ChevronUp" in picker_src and "ChevronDown" in picker_src, \
+        "picker must use up/down arrow buttons"
+    assert "saveGroupStandings" in picker_src, \
+        "picker must call the saveGroupStandings server action"
+
+    # Server action exists with validation.
+    actions = _web_path("src/app/(app)/world-cup/actions.ts")
+    actions_src = actions.read_text()
+    assert "export async function saveGroupStandings" in actions_src, \
+        "saveGroupStandings server action must be exported"
+    assert "Each team can only appear once per group" in actions_src, \
+        "saveGroupStandings must reject duplicate teams per group"
+
+
 if __name__ == "__main__":
     main()

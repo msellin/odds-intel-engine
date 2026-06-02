@@ -114,6 +114,22 @@ Access levels for anonymous visitors, free signed-in users, and paid subscribers
 | Market inefficiency index (ENG-15) | — | Labels only | + edge %s | + per-market |
 | "Ask AI" expanded chat (ENG-16) | — | 3 Q/day | 20 Q/day | Unlimited |
 
+### World Cup 2026 Games (WC-PHASE-4 / WC-GROUP-PREDICTOR / WC-AI-GHOSTS)
+
+| Feature | Anonymous | Free | Pro | Elite |
+|---------|:---------:|:------------:|:-------------:|:-------------:|
+| Browse `/world-cup` hub (schedule, groups, AI previews) | Y | Y | Y | Y |
+| Knockout bracket picker (`/world-cup/bracket`) | Preview only | Save picks | Save picks | Save picks |
+| Group standings predictor (`/world-cup/groups-predictor`) | Preview only | Save picks | Save picks | Save picks |
+| Combined leaderboard (`/world-cup/bracket/leaderboard`) | Y | Y | Y | Y |
+| AI ghost entries on leaderboard (5 named models) | Y | Y | Y | Y |
+| Eligible for top-3 prize (1 month Elite, free) | — | Y | Y | Y |
+
+Notes:
+- AI ghost rows on the leaderboard (`wc_bracket_meta.ai_label IS NOT NULL`) are NOT eligible for prizes — the prize SQL filter is `WHERE ai_label IS NULL`. UI shows "🤖 — not eligible" footnote.
+- Both games lock at the same instant: 2026-06-11 19:00 UTC (first WC kickoff). Lock is server-enforced in `saveBracketPick` + `saveGroupStandings` actions.
+- Group-standings scoring resolves when each group's six fixtures all finish (~Jun 27). Bracket scoring runs continuously through the tournament.
+
 ---
 
 ## Conversion Hooks

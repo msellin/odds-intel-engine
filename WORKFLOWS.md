@@ -327,13 +327,20 @@ on Hobby plan; blast radius isolated.
 - Auto-disables via `backfill_complete.flag`; stale flag auto-removed if new phases have work
 - Manual run: `python scripts/backfill_historical.py --phase 4 --max-requests 5000 --batch-size 2000`
 
-### ⑫ WC Bracket Scoring (`wc_bracket_scoring.py`) — WC-BRACKET-SCORING (2026-06-02)
+### ⑫ WC Bracket + Group-Standings Scoring (`wc_bracket_scoring.py`) — WC-BRACKET-SCORING / WC-GROUP-PREDICTOR (2026-06-02)
 - Every 30 min at `:05/:35` UTC (lands after settlement + live-tracker writes at `:00/:30`)
 - Gated on `2026-06-11 ≤ today ≤ 2026-07-19` — APScheduler still fires outside the window but the job returns immediately with no DB work
-- For each user with bracket picks: derive who advanced from finished WC matches (group stage by points → GD → GF; knockouts by match winner), score against the user's picks using R32=1, R16=2, QF=4, SF=8, F=16, Champion=32, Golden Boot=10 (max 122 — fixes the `/world-cup/bracket` legend's "83 max" typo)
-- Bulk-upserts `wc_bracket_meta.{current_score, current_rank}`; idempotent (same input state = same output)
-- Manual run: `python -m workers.jobs.wc_bracket_scoring`
+- **Bracket score** (max 122, includes Golden Boot 10): derive who advanced from finished WC matches (group stage by points → GD → GF; knockouts by match winner), score user picks using R32=1, R16=2, QF=4, SF=8, F=16, Champion=32
+- **Group-standings score** (max 192 across 12 groups): per-group 1st=5 / 2nd=3 / 3rd=2 / 4th=1, +5 perfect-group bonus. Gated on all six fixtures in the group being finished — partial standings would bounce mid-stage
+- Iterates over **both real users AND AI ghost entries** (rows with `ai_label IS NOT NULL`) in `wc_bracket_meta`. Writes `current_score` (bracket), `group_standings_score`, `total_score = sum`, `current_rank` (dense, combined ranking), `current_percentile` (Top X% — used by UI when total entries < 200)
 - Golden Boot actual winner read from `app_settings` key `wc_golden_boot_actual` (manual operator stamp); AF top-scorer endpoint automation filed as WC-GOLDEN-BOOT-AUTO
+- Manual run: `python -m workers.jobs.wc_bracket_scoring`
+
+### One-shot: WC AI Ghost Generator (`generate_ai_brackets.py`) — WC-AI-GHOSTS (2026-06-02)
+- One-off, not on cron. Run before WC kickoff (2026-06-11 19:00 UTC) to seed the 5 AI ghost entries on the leaderboard
+- Strategies: `OddsIntel Elite AI`, `OddsIntel Pro AI`, `OddsIntel Free AI`, `Market Implied`, `Chalk` — each writes a complete bracket + 48-row group-standings prediction. AI rows have `ai_label` set and `user_id` NULL
+- Idempotent until lock: each re-run wipes-and-replaces AI rows. After lock the script refuses to overwrite (use `--force` for dev override)
+- Manual run: `python scripts/generate_ai_brackets.py` (all 5) · `--strategy chalk` · `--dry-run`
 
 ### ⑨b Internationals Backfill (`backfill_internationals.py`) — WC-PHASE-2 (2026-06-02)
 - One-off script to pull historical national-team competition fixtures (WC 2018/2022, Euro 2020/2024, Copa America, AFCON, Asian Cup, Gold Cup, all UEFA Nations League editions, WC 2022 + 2026 qualifiers across all 6 confederations, Friendlies). Required because the regular date-mode `fetch_fixtures` only pulls today and never sees historical international matches.
