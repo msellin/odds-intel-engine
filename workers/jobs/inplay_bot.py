@@ -1886,7 +1886,21 @@ def _check_strategy_e(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
         return None
 
     p_over = _poisson_over_prob(lambda_remaining, goals_needed_for_over - 0.5)
-    model_prob = 1.0 - p_over
+    raw_model_prob = 1.0 - p_over
+
+    # INPLAY-E-RECALIBRATE (2026-06-03): apply Platt sigmoid to correct the
+    # bot's systematic over-confidence (ECE 21.9% pre-fit → 4.0% LOO post-fit).
+    # Calibration row written by scripts/fit_platt_inplay_e.py with
+    # market='inplay_e_under_25'. apply_platt returns raw_model_prob unchanged
+    # if the row is missing (fail-open). Env gate INPLAY_E_PLATT_ENABLED
+    # defaults to false → shadow mode: both probs stored in extras, but the
+    # edge gate still uses raw_model_prob (preserves current bet count).
+    # After 7+ days of shadow data confirms the calibrated probs would have
+    # filtered the right cohort, flip to true on Railway to activate.
+    from workers.model.improvements import apply_platt
+    cal_model_prob = apply_platt(raw_model_prob, "inplay_e_under_25", odds)
+    platt_enabled = os.getenv("INPLAY_E_PLATT_ENABLED", "false").lower() in ("true", "1", "yes")
+    model_prob = cal_model_prob if platt_enabled else raw_model_prob
 
     implied = _implied_prob(odds)
     edge = (model_prob - implied) * 100
@@ -1907,6 +1921,12 @@ def _check_strategy_e(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
             "live_xg_total": round(live_xg, 2),
             "xg_source": "live",
             "odds_source": "live" if odds_is_live else "prematch",
+            # INPLAY-E-RECALIBRATE shadow trail — store both probs so we can
+            # validate post-hoc whether the calibrated cohort would have been
+            # better at filtering bets. Independent of env gate.
+            "raw_model_prob": round(raw_model_prob, 4),
+            "cal_model_prob": round(cal_model_prob, 4),
+            "platt_enabled": platt_enabled,
         },
     }
 

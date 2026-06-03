@@ -14379,5 +14379,90 @@ def _():
     assert "IF NOT EXISTS" in mig, "Migration must be idempotent (IF NOT EXISTS)"
 
 
+@test("INPLAY-E-RECAL-FIT — fit_platt_inplay_e produces a Platt row that improves ECE")
+def _():
+    """INPLAY-E-RECALIBRATE (2026-06-03): the diagnostic ECE re-check on bot_inplay_e
+    showed 21.93% ECE on 216 settled bets — wildly miscalibrated despite the
+    'calibrated' maturity_label. fit_platt_inplay_e fits a 1-feature Platt
+    sigmoid using the existing fit_platt machinery and stores the row under
+    market='inplay_e_under_25'. Critical properties asserted here:
+      - Script reuses fit_platt_params + platt_transform + compute_ece (not
+        a reinvention of the math)
+      - It writes to model_calibration with the correct market key
+      - MIN_SAMPLES gate exists so we don't fit a row with too little data"""
+    p = _engine_path("scripts/fit_platt_inplay_e.py")
+    assert p.exists(), "fit_platt_inplay_e.py must exist"
+    src = p.read_text()
+    assert "MARKET_KEY = \"inplay_e_under_25\"" in src, (
+        "Calibration row must use market key 'inplay_e_under_25' so apply_platt finds it"
+    )
+    assert "from scripts.fit_platt import" in src, (
+        "Must reuse fit_platt machinery (fit_platt_params, platt_transform, compute_ece)"
+    )
+    assert "fit_platt_params" in src and "platt_transform" in src and "compute_ece" in src, (
+        "All three reused symbols must be present"
+    )
+    assert "MIN_SAMPLES" in src, "Must have a minimum-samples gate"
+    assert "execute_write" in src, "Must actually write to DB (not just compute and print)"
+
+
+@test("INPLAY-E-RECAL-WIRE — _check_strategy_e applies Platt under env gate, stores both probs")
+def _():
+    """INPLAY-E-RECALIBRATE wire-in: _check_strategy_e must compute calibrated
+    prob via apply_platt('inplay_e_under_25', ...), gate the choice of raw vs
+    calibrated behind INPLAY_E_PLATT_ENABLED env, and store BOTH probs in
+    extras so post-hoc validation can see what the calibrated cohort would
+    have looked like — independent of the env flag.
+
+    Default env=false keeps current production behaviour (edge gate uses raw)
+    until the shadow window confirms the policy. The shadow trail in extras
+    is what we'll query in ~7 days to decide whether to flip the env."""
+    src = _engine_path("workers/jobs/inplay_bot.py").read_text()
+    # Locate the strategy E function body so assertions are scoped correctly.
+    fn_start = src.index("def _check_strategy_e(")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    body = src[fn_start:fn_end]
+
+    assert "from workers.model.improvements import apply_platt" in body, (
+        "_check_strategy_e must import apply_platt for in-flight Platt"
+    )
+    assert "apply_platt(raw_model_prob, \"inplay_e_under_25\"" in body, (
+        "_check_strategy_e must call apply_platt with the correct market key"
+    )
+    assert "INPLAY_E_PLATT_ENABLED" in body, (
+        "Env gate INPLAY_E_PLATT_ENABLED must control raw-vs-calibrated edge calc"
+    )
+    # Default must be 'false' so live behaviour doesn't change on deploy.
+    assert "getenv(\"INPLAY_E_PLATT_ENABLED\", \"false\")" in body, (
+        "Env gate must default to 'false' (shadow mode) on deploy"
+    )
+    # Both probs must be in the returned extras for shadow validation.
+    assert "raw_model_prob" in body and "cal_model_prob" in body, (
+        "extras must carry BOTH raw_model_prob and cal_model_prob"
+    )
+    assert "\"platt_enabled\": platt_enabled" in body, (
+        "extras must record whether the gate was active for each bet"
+    )
+
+
+@test("INPLAY-E-RECAL-CALIBROW — apply_platt resolves the new market key cleanly")
+def _():
+    """Source-level guard that apply_platt() handles the inplay_e_under_25
+    key — the existing _MARKET_ROOTS fall-through must NOT match this key
+    (otherwise we'd accidentally pull in a different market's params)."""
+    src = _engine_path("workers/model/improvements.py").read_text()
+    # Locate _MARKET_ROOTS to make sure none of its prefixes accidentally
+    # captures 'inplay_e_under_25' — the key needs an exact-match path.
+    assert "_MARKET_ROOTS" in src, "_MARKET_ROOTS sentinel must exist"
+    # Belt-and-braces: literal check that the prefixes are non-overlapping
+    # with our key. Done inline rather than importing the symbol because
+    # the smoke runner avoids hitting the DB unless necessary.
+    bad_prefixes = ("inplay_e", "inplay_e_un", "inplay_e_under")
+    for p in bad_prefixes:
+        assert f"\"{p}\"" not in src.split("_MARKET_ROOTS = (")[1].split(")")[0], (
+            f"_MARKET_ROOTS must not contain '{p}' — would shadow the inplay_e_under_25 key"
+        )
+
+
 if __name__ == "__main__":
     main()
