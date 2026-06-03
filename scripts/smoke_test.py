@@ -13906,6 +13906,76 @@ def _():
             f"wc-achievement-badge.tsx must handle slug '{slug}'"
 
 
+@test("INPLAY-J-LIGHT-SHRINKAGE — strategy J uses local Gamma update, not _remaining_goals_prob")
+def _():
+    """INPLAY-J-LIGHT-SHRINKAGE 2026-06-03. After INPLAY-J-SILENT-FAILURE
+    diagnosed that the portfolio's `_time_decay_weight` was shrinking
+    strategy J's posterior so aggressively it could never fire, the
+    strategy switched to a local conjugate Gamma update with prior
+    strength s=2 (matches worth). Guards:
+
+    1. The function does NOT call `_remaining_goals_prob` (would re-apply
+       the heavy shrinkage).
+    2. It uses `J_PRIOR_STRENGTH` constant in the local Gamma formula.
+    3. The known-good case (pm_xg_total=2.8, minute=40, 0-0) yields
+       posterior ≈ 2.29 and fires when market odds ≥ ~3.20.
+
+    Math sanity (no DB hit): import the strategy, build a synthetic
+    `cand` and `pm`, call it, check the posterior + edge values.
+    """
+    import importlib
+    sys.path.insert(0, str(_engine_path("").parent.resolve()))
+    inplay = importlib.import_module("workers.jobs.inplay_bot")
+
+    src = _engine_path("workers/jobs/inplay_bot.py").read_text()
+    j_block_start = src.index("def _check_strategy_j(")
+    j_block_end = src.index("\ndef ", j_block_start + 10)
+    j_block = src[j_block_start:j_block_end]
+
+    # 1. Does NOT call _remaining_goals_prob (would re-apply heavy shrinkage)
+    assert "_remaining_goals_prob(" not in j_block, (
+        "strategy_j must NOT call _remaining_goals_prob — INPLAY-J-LIGHT-SHRINKAGE "
+        "uses a local Gamma update to avoid the heavy posterior shrinkage that "
+        "previously caused INPLAY-J-SILENT-FAILURE (zero bets in 25+ days)."
+    )
+    # 2. Uses local J_PRIOR_STRENGTH constant + the Gamma formula
+    assert "J_PRIOR_STRENGTH" in j_block, (
+        "strategy_j must define J_PRIOR_STRENGTH constant for the local "
+        "Gamma update (matches worth of prior information)."
+    )
+    assert "_scaled_remaining_lam" in j_block, (
+        "strategy_j must reuse _scaled_remaining_lam so the h2/period/state "
+        "multipliers stay consistent with the other inplay strategies."
+    )
+
+    # 3. Known-good case: pm_xg_total=2.8, minute=40, 0-0, odds 3.50
+    # Expected: posterior ≈ 2.29, remaining ≈ 1.27, model_prob ≈ 0.37,
+    # market_prob ≈ 0.286, edge ≈ +8pp → should fire.
+    cand = {
+        "minute": 40,
+        "score_home": 0,
+        "score_away": 0,
+        "live_ou_15_over": 3.50,
+    }
+    pm = {
+        "prematch_o25_prob": 0.60,
+        "prematch_xg_home": 1.4,
+        "prematch_xg_away": 1.4,
+        "prematch_ou15_over": None,
+    }
+    trigger = inplay._check_strategy_j(cand, pm, has_red_card=False)
+    assert trigger is not None, (
+        "known-good case (pm_xg_total=2.8, min=40, 0-0, odds=3.50) must fire"
+    )
+    assert trigger["market"] == "O/U"
+    assert trigger["selection"] == "over 1.5"
+    # posterior at min 40 with pm_xg_total=2.8 and s=2:
+    # (2.8 * 2 + 0) / (2 + 40/90) = 5.6 / 2.444 ≈ 2.29
+    assert 2.20 <= trigger["posterior_rate"] <= 2.40, (
+        f"posterior_rate ~2.29 expected, got {trigger['posterior_rate']}"
+    )
+
+
 @test("INPLAY-L-PROMOTE — migration 174 flips bot_inplay_l maturity to calibrated")
 def _():
     """INPLAY-L-PROMOTE 2026-06-03. After INPLAY-CALIBRATION-IJL surfaced

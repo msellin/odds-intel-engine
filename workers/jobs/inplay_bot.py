@@ -2360,10 +2360,25 @@ def _check_strategy_j(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     Live Over 1.5 odds have drifted above 2.50 (was 2.85 until INPLAY-LOOSEN-SILENT
     — avg live OU1.5 at 0-0 in this window is 2.37). Bet Over 1.5.
 
-    Math basis (5-AI consensus): λ_remaining = λ_full × (90-m)/90 × Bayesian_update.
-    Bayesian update for 0-0 at min 40 with λ=2.8 → posterior λ ≈ 2.29.
-    Remaining λ at min 40 = 2.29 × 50/90 = 1.27. P(≥2 more) = 0.37 → fair 2.70.
-    Enter only when market ≥ 2.85 (8-12% edge on soft/medium books).
+    INPLAY-J-LIGHT-SHRINKAGE (2026-06-03): the strategy's thesis ("soft
+    books overprice Over 1.5 when high-scoring matches stay goalless
+    mid-half") depends on a LIGHTER Bayesian prior shrinkage than the
+    portfolio default in `_remaining_goals_prob`. We use a local conjugate
+    Gamma update with moderate prior strength (s=2 "matches worth"),
+    which gives posterior λ ≈ pm_rate × 0.82 at minute 40 with 0 goals —
+    matching the strategy's docstring intent.
+
+    The portfolio default (`_time_decay_weight`) shrinks posterior to
+    pm_rate × 0.26 at the same point. That's correct for strategies that
+    bet WITH the live evidence (e.g. inplay_l betting Over 2.5 after a
+    goal). For this strategy it destroys the edge before it can be
+    tested. INPLAY-J-SILENT-FAILURE diagnostic 2026-06-03 confirmed the
+    bot had 0 bets in 25+ days under the heavier shrinkage.
+
+    Math (5-AI consensus): λ_remaining = posterior × (90-m)/90 × multipliers.
+    Posterior Gamma update: posterior = (pm_rate × s + goals_observed) / (s + m/90).
+    For 0-0 at min 40 with pm_rate=2.8, s=2 → posterior 2.29, remaining 1.27,
+    P(≥2 more)=0.37 → fair odds 2.70. Enter at market ≥ 3% edge.
     """
     minute = cand["minute"] or 0
     if minute < 30 or minute > 52:
@@ -2392,12 +2407,19 @@ def _check_strategy_j(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     if ou15 < 2.50:
         return None  # No edge or no odds available
 
-    # P(≥ 2 more goals) — need 2 more for Over 1.5 total (score is 0-0)
+    # INPLAY-J-LIGHT-SHRINKAGE (2026-06-03): local conjugate Gamma update
+    # with moderate prior strength. Replaces the heavy `_remaining_goals_prob`
+    # shrinkage for this strategy only — see docstring + INPLAY-J-SILENT-FAILURE
+    # for the full diagnosis.
     pm_xg_total = float(pm.get("prematch_xg_home") or 1.1) + float(pm.get("prematch_xg_away") or 1.1)
-    model_prob, posterior_lam, remaining_lam = _remaining_goals_prob(
-        pm_xg_total, minute, goals_observed=0, threshold=2,
-        score_home=sh, score_away=sa,
-    )
+    J_PRIOR_STRENGTH = 2.0  # "matches worth" of prior information
+    goals_observed = sh + sa  # 0 here by the gate above; explicit for clarity
+    posterior_lam = (pm_xg_total * J_PRIOR_STRENGTH + goals_observed) / (J_PRIOR_STRENGTH + minute / 90.0)
+    # Reuse the shared remaining-time scaler so we still pick up the
+    # h2_uplift / period_mult / state_mult multipliers the other strategies use.
+    remaining_lam = _scaled_remaining_lam(posterior_lam, minute, sh, sa)
+    model_prob = _poisson_over_prob(remaining_lam, 1.5)  # P(≥ 2 remaining goals)
+
     market_prob = _implied_prob(ou15)
     edge_pct = (model_prob - market_prob) * 100
     if edge_pct < 3.0:
@@ -2416,6 +2438,7 @@ def _check_strategy_j(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
             "posterior_lam": round(posterior_lam, 3),
             "remaining_lam": round(remaining_lam, 3),
             "odds_source": "live" if ou15_is_live else "prematch",
+            "j_prior_strength": J_PRIOR_STRENGTH,
         },
     }
 
