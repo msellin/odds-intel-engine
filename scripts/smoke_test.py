@@ -25,6 +25,19 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 _registry: list[tuple[str, object]] = []
 
 
+class SkipTest(Exception):
+    """Raise inside a @test to mark it as skipped rather than failed.
+
+    CI doesn't check out the sibling `odds-intel-web` repo (smoke_tests.yml
+    only checks out this engine repo), so any test that greps web-repo files
+    is structurally unable to pass in CI. Tests using `_web_path()` now raise
+    SkipTest via that helper instead of `FileNotFoundError`, which keeps CI
+    output truthful — failures mean failures, not absent dependencies.
+
+    Locally, where the user does have both repos side by side, these tests
+    still execute normally."""
+
+
 def test(name: str):
     """Decorator — registers the test for parallel execution in main()."""
     def decorator(fn):
@@ -63,7 +76,14 @@ def _engine_path(relative: str) -> _pathlib.Path:
 
 
 def _web_path(relative: str) -> _pathlib.Path:
-    """odds-intel-web file at `relative` (relative to web root)."""
+    """odds-intel-web file at `relative` (relative to web root).
+
+    Raises SkipTest immediately when the sibling repo isn't on disk (CI
+    runs from a single-repo checkout). The test runner records that as a
+    skip, not a failure — so CI's red Xs only fire on genuine regressions.
+    """
+    if not _web_root.exists():
+        raise SkipTest("odds-intel-web not present (CI single-repo checkout)")
     return _web_root / relative
 
 
@@ -1536,9 +1556,12 @@ def _():
     assert 'id=f"email_digest_{hour:02d}"' in src, (
         "Expected formatted slot id `id=f\"email_digest_{hour:02d}\"`"
     )
-    # Old single 07:30 hardcoded entry must be gone
-    assert 'CronTrigger(hour=7, minute=30)' not in src or "email_digest_07" in src, (
-        "Old single 07:30 email_digest cron is back — should be replaced by 4 slot entries"
+    # Old single 07:30 hardcoded email_digest entry must be gone. Anchor the
+    # check on the `email_digest` id — earlier loose `'CronTrigger(hour=7, minute=30)'`
+    # match misfired once WC-AI-PREVIEW added its own 07:30 cron for a
+    # totally unrelated job (wc_match_previews).
+    assert 'id="email_digest"' not in src and 'id=\'email_digest\'' not in src, (
+        "Old single email_digest cron is back — should be replaced by 4 slot entries"
     )
 
 
@@ -7183,14 +7206,17 @@ def _():
 
 # ── Runner ────────────────────────────────────────────────────────────────────
 
-def _run_one(name: str, fn) -> tuple[str, bool, str, float]:
+def _run_one(name: str, fn) -> tuple[str, str, str, float]:
+    """Return (name, status, error, elapsed). status ∈ {"pass","fail","skip"}."""
     import time
     t = time.monotonic()
     try:
         fn()
-        return (name, True, "", time.monotonic() - t)
+        return (name, "pass", "", time.monotonic() - t)
+    except SkipTest as e:
+        return (name, "skip", str(e), time.monotonic() - t)
     except Exception as e:
-        return (name, False, f"{type(e).__name__}: {e}", time.monotonic() - t)
+        return (name, "fail", f"{type(e).__name__}: {e}", time.monotonic() - t)
 
 
 def main():
@@ -7225,25 +7251,32 @@ def main():
     order = {name: i for i, (name, _) in enumerate(_registry)}
     results.sort(key=lambda r: order.get(r[0], 9999))
 
-    passed = sum(1 for _, ok, _, _ in results if ok)
-    failed = sum(1 for _, ok, _, _ in results if not ok)
+    passed  = sum(1 for _, s, _, _ in results if s == "pass")
+    failed  = sum(1 for _, s, _, _ in results if s == "fail")
+    skipped = sum(1 for _, s, _, _ in results if s == "skip")
 
     print("\n" + "═" * 60)
     print("  OddsIntel Smoke Tests")
     print("═" * 60)
 
-    for name, ok, error, t in results:
-        status = "✓" if ok else "✗"
-        color_on = "\033[32m" if ok else "\033[31m"
+    _GLYPH = {"pass": "✓", "fail": "✗", "skip": "⊘"}
+    _COLOR = {"pass": "\033[32m", "fail": "\033[31m", "skip": "\033[90m"}
+
+    for name, status, error, t in results:
+        glyph = _GLYPH[status]
+        color_on = _COLOR[status]
         slow = f"  \033[33m({t:.1f}s)\033[0m" if t > 5 else ""
-        print(f"  {color_on}{status}\033[0m  {name}{slow}")
-        if error:
+        print(f"  {color_on}{glyph}\033[0m  {name}{slow}")
+        if status == "fail" and error:
             print(f"       \033[31m{error}\033[0m")
+        elif status == "skip" and error:
+            print(f"       \033[90m[skip] {error}\033[0m")
 
     print("═" * 60)
     slowest = sorted(results, key=lambda r: r[3], reverse=True)[:3]
     color = "\033[32m" if failed == 0 else "\033[31m"
-    print(f"  {color}{passed} passed, {failed} failed\033[0m  ({elapsed:.1f}s)")
+    skip_suffix = f", {skipped} skipped" if skipped else ""
+    print(f"  {color}{passed} passed, {failed} failed{skip_suffix}\033[0m  ({elapsed:.1f}s)")
     print(f"  Slowest: " + " | ".join(f"{r[0][:40]} {r[3]:.1f}s" for r in slowest))
     print("═" * 60 + "\n")
 
@@ -14024,6 +14057,46 @@ def _():
         "root layout must keep the Organization schema"
     assert "logo:" in root_layout and "icon-512.png" in root_layout, \
         "root Organization must include a logo URL (icon-512.png)"
+
+
+@test("SMOKE-SKIPTEST — _web_path raises SkipTest when odds-intel-web is absent; runner counts skips separately from failures")
+def _():
+    """SMOKE-SKIPTEST (2026-06-03): smoke_tests.yml only checks out this engine
+    repo, but ~18 tests grep the sibling `odds-intel-web` checkout. Before
+    this contract they all hard-failed in CI with FileNotFoundError, drowning
+    real regressions under expected noise. Now:
+      - `_web_path()` raises `SkipTest` if `_web_root` is absent.
+      - `_run_one` catches SkipTest and returns status='skip'.
+      - `main()` reports skips with a third counter (`⊘`), separate from `✗`.
+    Pin the contract here so a future refactor of the runner doesn't silently
+    re-collapse skip into pass or fail."""
+    import inspect
+    # Sentinel exists and is an Exception subclass
+    assert issubclass(SkipTest, Exception), "SkipTest must be an Exception subclass"
+
+    # _web_path raises SkipTest when web is missing
+    import pathlib
+    original = sys.modules[__name__].__dict__.get("_web_root")
+    try:
+        sys.modules[__name__]._web_root = pathlib.Path("/definitely/not/here")
+        try:
+            _web_path("anything.tsx")
+        except SkipTest:
+            pass  # expected
+        else:
+            raise AssertionError("_web_path must raise SkipTest when _web_root absent")
+    finally:
+        sys.modules[__name__]._web_root = original
+
+    # Runner has the skip branch wired through
+    src = inspect.getsource(_run_one)
+    assert "SkipTest" in src, "_run_one must catch SkipTest and return status='skip'"
+    assert '"skip"' in src, "_run_one must distinguish skip from pass/fail"
+
+    main_src = inspect.getsource(main)
+    assert 'status == "skip"' in main_src or '"skip"' in main_src, (
+        "main() must surface skip in the summary so CI output is truthful"
+    )
 
 
 @test("COOLBET-SELECTION-CASE — Coolbet snapshot selections lowercase, matching other bookmakers + frontend lookup")
