@@ -13861,5 +13861,31 @@ def _():
             f"wc-achievement-badge.tsx must handle slug '{slug}'"
 
 
+@test("NULL-BOOKMAKER-AH-FIX — Asian Handicap rows populate recommended_bookmaker")
+def _():
+    """100% of AH simulated_bets in the prior 60d had NULL
+    recommended_bookmaker because daily_pipeline_v2._load_today_from_db
+    only wrote AH best-odds to `ah_best` and never to `best_bookmaker`.
+    The storage call looks up `best_bookmaker[mid][f"asian_handicap_{Sel} {hl:+.4g}"]`,
+    so the field landed as None for every AH pick.
+
+    Fix: write to `best_bookmaker` alongside `ah_best`, keyed in the
+    storage-call format so the lookup at L3297 resolves."""
+    src = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text()
+    # The AH branch must populate `best_bookmaker` with the storage key.
+    ah_block_start = src.index("if market == \"asian_handicap\":")
+    ah_block_end = src.index("continue", ah_block_start)
+    ah_block = src[ah_block_start:ah_block_end]
+    assert "best_bookmaker[mid][" in ah_block, (
+        "AH branch must populate best_bookmaker[mid][...] so AH picks "
+        "get a non-NULL recommended_bookmaker"
+    )
+    # Key format must mirror storage call (asian_handicap_<Sel> <hl:+.4g>).
+    assert "f\"asian_handicap_{_sel_cap} {float(hl):+.4g}\"" in ah_block, (
+        "AH bookmaker storage key must mirror the storage-call format "
+        "f\"asian_handicap_{Sel} {hl:+.4g}\" so the lookup resolves"
+    )
+
+
 if __name__ == "__main__":
     main()

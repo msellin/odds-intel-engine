@@ -7,6 +7,39 @@
 
 ---
 
+## REVISED 2026-06-03 (Pinnacle-coverage bias correction)
+
+The original report's "+30.2% Pinnacle CLV for bot_v10_all" and "+5.0% ALL MARKETS ROI vs Pinnacle close" were biased by Pinnacle coverage. The script only counted bets that had a Pinnacle T-0 snapshot, which silently dropped picks on markets/leagues Pinnacle doesn't price. **Honest total ROI** (no Pinnacle filter, same 60d window, n=full):
+
+```
+bot                  nTot  roiTotal  nPin   roiPin  nNoPin  roiNoPin  biasPP
+bot_v10_all           157   +17.5%    76   +30.2%     81   +4.9%    +12.7
+bot_lower_1x2          56   +18.8%    27   +20.1%     29  +17.8%     +1.3
+bot_aggressive        682    −2.2%   251   +4.8%     431  −6.1%      +7.0
+bot_high_alignment    228    −6.1%    95   +5.2%    133  −14.2%     +11.4
+bot_ou35_attacking     33   −40.9%    16  −51.0%      17 −31.0%     −10.1
+bot_ou15_defensive     20   +57.8%     0   —          20 +57.8%       —
+bot_opt_home_lower     20   +51.9%     3  +17.1%      17 +56.5%     −34.9
+```
+
+Three revised conclusions:
+
+- **bot_v10_all** still has real edge: **+17.5% ROI total**, n=157. The Pinnacle-only +30.2% overstated by ~13pp because Pinnacle-covered markets (1x2, big leagues) happen to be where the model is strongest.
+- **bot_lower_1x2** looks legitimately profitable on the 60d window: **+18.8% ROI on n=56**. Its retirement reason (2026-06-01, migration 156) cited "-7.58% on 44 bets" — different time slice. **Worth reviewing the retirement.** Investigate before unretiring.
+- **bot_aggressive retirement was correct**: total ROI **-2.2% on n=682**. The Pinnacle-matched +4.8% was misleading.
+
+Bias direction varied by bot — Pinnacle-matched ROI was higher for bot_v10_all / bot_aggressive / bot_high_alignment / bot_aggressive_v2 (positive coverage bias), but LOWER for bot_proven_leagues / bot_high_roi_global / bot_opt_home_lower / bot_ou25_global (negative — they bet markets Pinnacle skips but our model happens to nail).
+
+The headline "+5.0% ALL MARKETS vs Pinnacle close" is therefore not an honest portfolio CLV number — it's the ROI on the Pinnacle-covered subset. A true portfolio CLV would need a sharp benchmark that prices every market we touch (which doesn't exist for niche markets).
+
+Also fixed today: **AH `recommended_bookmaker` 100% NULL bug**. 276/276 Asian Handicap simulated_bets in the prior 60d had NULL bookmaker — the AH branch in `_load_today_from_db` only wrote to `ah_best`, never to `best_bookmaker`. Fix shipped. Smoke test NULL-BOOKMAKER-AH-FIX guards.
+
+Remaining real follow-ups (filed as MODEL-CLV-FOLLOWUP P1 + a new BOOKMAKER-NULL-NON-AH P2):
+- Investigate bot_lower_1x2 retirement: is the +18.8% / 60d real, or window-dependent?
+- 1x2 and o/u also have ~33-36% NULL recommended_bookmaker (not 100% like AH). Separate root cause — likely accessible-book filter dropping picks, or strategy_profile rewrites bypassing the bookmaker join.
+
+---
+
 ## TL;DR — three things worth acting on
 
 1. **The model DOES beat Pinnacle's closing line.** ALL-MARKETS ROI vs Pinnacle close is **+5.0%** (n=517, 60d). The earlier all-books finding (-2.2% ROI) was contaminated by inaccessible bookmakers (SBO/Dafabet/etc) inflating reported edge. When you measure against the sharp book on the markets it actually covers, we are net positive.

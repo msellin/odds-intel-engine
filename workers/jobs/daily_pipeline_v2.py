@@ -1921,6 +1921,17 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
                 ah_key = (str(row["selection"]), float(hl))
                 if odds_val > ah_best[mid].get(ah_key, 0):
                     ah_best[mid][ah_key] = odds_val
+                    # NULL-BOOKMAKER-AH-FIX (2026-06-03): also expose the
+                    # AH best bookmaker via the storage-time flat key
+                    # f"asian_handicap_{Sel} {hl:+.4g}" so the
+                    # `recommended_bookmaker` field doesn't silently land
+                    # as NULL on every AH pick. 100% of AH simulated_bets
+                    # in the prior 60d had NULL bookmaker because this
+                    # branch only wrote to `ah_best`. Storage call at
+                    # ~L3297 looks the key up via `best_bookmaker`.
+                    _sel_cap = str(row["selection"]).capitalize()
+                    _storage_key = f"asian_handicap_{_sel_cap} {float(hl):+.4g}"
+                    best_bookmaker[mid][_storage_key] = bookmaker
             continue  # don't also add to flat `best` dict
         if odds_val > best[mid][key]:
             best[mid][key] = odds_val
