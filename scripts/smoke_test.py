@@ -645,8 +645,9 @@ def _():
         "presence marker must be written before the no_market continue"
     )
     fn = inspect.getsource(coolbet_placer._write_presence_marker_snapshot)
-    assert '"1x2"' in fn and '"Home"' in fn, (
-        "helper must prefer 1x2 Home (universally available across leagues)"
+    # COOLBET-SELECTION-CASE (2026-06-03): 1x2 selections lowercase now.
+    assert '"1x2"' in fn and '"home"' in fn, (
+        "helper must prefer 1x2 home (universally available across leagues)"
     )
     assert "store_coolbet_odds_snapshot" in fn, (
         "helper must write to odds_snapshots (the frontend's evidence source)"
@@ -2926,10 +2927,11 @@ def _():
             {"id": 1502758380, "name": "SK Super Nova","result_key": "[Away]"},
         ],
     }, odds)
+    # COOLBET-SELECTION-CASE (2026-06-03): emit lowercase to match other bookmakers.
     assert rows == [
-        ("1x2", "Home", 2.25, None),
-        ("1x2", "Draw", 3.20, None),
-        ("1x2", "Away", 3.10, None),
+        ("1x2", "home", 2.25, None),
+        ("1x2", "draw", 3.20, None),
+        ("1x2", "away", 3.10, None),
     ], f"1X2 parse wrong: {rows}"
 
     # OU 1.5 (market_type_id 818, line='1.5')
@@ -2993,7 +2995,7 @@ def _():
             {"id": 3, "result_key": "[Away]"},
         ],
     }, {1: {"value": 2.0, "odds_id": "x", "market_id": 1, "status": "OPEN"}})  # only home
-    assert rows == [("1x2", "Home", 2.0, None)], (
+    assert rows == [("1x2", "home", 2.0, None)], (
         f"missing odds must drop, not zero-fill: {rows}"
     )
 
@@ -3646,6 +3648,9 @@ def _():
     no_market. Fixed by lowercasing m before checks."""
     from workers.automation.coolbet_explorer import _normalise_our_target
 
+    # COOLBET-SELECTION-CASE (2026-06-03): 1X2 / DC selections normalise to
+    # LOWERCASE to match every other bookmaker's snapshot convention + the
+    # frontend's lowercase lookup in `_mapPaperToSnapshotKey`.
     cases = [
         ("o/u",  "under 2.5", ("over_under_25", "under", None)),
         ("o/u",  "over 3.5",  ("over_under_35", "over",  None)),
@@ -3655,8 +3660,8 @@ def _():
         ("btts", "yes",       ("btts", "yes", None)),
         ("btts", "no",        ("btts", "no",  None)),
         ("BTTS", "Yes",       ("btts", "yes", None)),
-        ("1x2",  "home",      ("1x2",  "Home", None)),
-        ("1X2",  "Away",      ("1x2",  "Away", None)),
+        ("1x2",  "home",      ("1x2",  "home", None)),
+        ("1X2",  "Away",      ("1x2",  "away", None)),
     ]
     for mkt, sel, expected in cases:
         result = _normalise_our_target(mkt, sel)
@@ -3793,7 +3798,8 @@ def _():
     odds_map_dc = {10: {"value": 1.30}, 11: {"value": 1.40}, 12: {"value": 1.20}}
     dc_rows = parse_market(dc_mkt, odds_map_dc)
     labels = {r[1] for r in dc_rows}
-    assert labels == {"1X", "X2", "12"}, f"DC labels should be 1X/X2/12, got {labels}"
+    # COOLBET-SELECTION-CASE (2026-06-03): lowercase to match other bookmakers.
+    assert labels == {"1x", "x2", "12"}, f"DC labels should be 1x/x2/12, got {labels}"
 
 
 @test("COOLBET-SWEEP-PACING — run_bulk sleeps after every match + breathing pauses + shared session")
@@ -10061,10 +10067,14 @@ def _():
 
 @test("DC-CASE-AND-RESULTKEY-FIX — double_chance bets resolve against Coolbet's bracketed result_keys")
 def _():
-    """DC-CASE-FIX + DC-RESULTKEY-FIX (2026-05-24): two bugs caused every
-    double_chance bet to silently return no_market.
-      (1) _normalise_our_target required uppercase "1X"/"X2"/"12" but paper
-          bets write lowercase — uppercase normalisation now applied.
+    """DC-CASE-FIX + DC-RESULTKEY-FIX (2026-05-24, lowercased 2026-06-03 by
+    COOLBET-SELECTION-CASE): two bugs caused every double_chance bet to
+    silently return no_market.
+      (1) _normalise_our_target's case-handling: paper bets write lowercase
+          "1x"/"x2"/"12". Originally the function required uppercase, then was
+          changed to uppercase the input; now (COOLBET-SELECTION-CASE) it
+          emits lowercase so the snapshot it produces matches the lookup the
+          frontend does in `_mapPaperToSnapshotKey`.
       (2) _outcome_id_for_selection used .strip("[]") which only strips
           leading/trailing brackets, so Coolbet's "[Home]/Draw" became
           "Home]/Draw" — never matched the "[home]/draw" target. Fixed by
@@ -10077,10 +10087,12 @@ def _():
         _normalise_our_target, _outcome_id_for_selection,
     )
 
-    # (1) lowercase DC selections must normalise to uppercase
-    assert _normalise_our_target("double_chance", "1x") == ("double_chance", "1X", None)
-    assert _normalise_our_target("double_chance", "x2") == ("double_chance", "X2", None)
+    # (1) DC selections (any case) normalise to lowercase
+    assert _normalise_our_target("double_chance", "1x") == ("double_chance", "1x", None)
+    assert _normalise_our_target("double_chance", "x2") == ("double_chance", "x2", None)
     assert _normalise_our_target("double_chance", "12") == ("double_chance", "12", None)
+    assert _normalise_our_target("double_chance", "1X") == ("double_chance", "1x", None)
+    assert _normalise_our_target("double_chance", "X2") == ("double_chance", "x2", None)
 
     # (2) Coolbet's bracketed result_keys must match our (bracket-stripped) targets
     fake_dc_market = {
@@ -10090,8 +10102,8 @@ def _():
             {"id": 333, "result_key": "[Home]/[Away]"},
         ],
     }
-    assert _outcome_id_for_selection(fake_dc_market, "double_chance", "1X") == 111
-    assert _outcome_id_for_selection(fake_dc_market, "double_chance", "X2") == 222
+    assert _outcome_id_for_selection(fake_dc_market, "double_chance", "1x") == 111
+    assert _outcome_id_for_selection(fake_dc_market, "double_chance", "x2") == 222
     assert _outcome_id_for_selection(fake_dc_market, "double_chance", "12") == 333
 
 
@@ -13985,6 +13997,89 @@ def _():
     assert "publicMatch.homeTeam" in src and "publicMatch.awayTeam" in src, \
         "SportsEvent must be populated from publicMatch (team names)"
     assert "application/ld+json" in src, "must render via <script type=application/ld+json>"
+    # Optional SportsEvent fields Google's Rich Results Test flagged on 2026-06-03.
+    # All three add eligibility for richer rich-result surfaces; `offers` is
+    # intentionally NOT added because schema.org/offers is for ticket sales,
+    # not betting odds — using it for odds would be misuse.
+    assert "endDate:" in src, \
+        "SportsEvent must include endDate (kickoff + ~115min) — flagged by Rich Results Test"
+    assert "image:" in src, \
+        "SportsEvent must include image (team logos / OG fallback) — flagged by Rich Results Test"
+    assert "performer:" in src, \
+        "SportsEvent must include performer alongside competitor — flagged by Rich Results Test"
+
+
+@test("COOLBET-SELECTION-CASE — Coolbet snapshot selections lowercase, matching other bookmakers + frontend lookup")
+def _():
+    """COOLBET-SELECTION-CASE (2026-06-03): Coolbet's `parse_market` +
+    `_normalise_our_target` previously emitted Title-case 1X2 selections
+    ("Home"/"Draw"/"Away") and uppercase DC ("1X"/"X2") that got written
+    into `odds_snapshots` via `store_coolbet_odds_snapshot` + the presence-
+    marker path in the placer. Every OTHER bookmaker in the table writes
+    lowercase ("home"/"away"/"1x"/"x2"), and the frontend's
+    `_mapPaperToSnapshotKey` lowercases on lookup — so all Coolbet 1X2/DC
+    snapshots were invisible. /admin/place then mis-labelled every bet as
+    `⚠ no market` because the match had a Coolbet row (counted via
+    `matchIdsWithCoolbetEvent`) but the per-(market, selection) lookup
+    missed.
+
+    Locked here so the next refactor can't silently re-uppercase:
+      - parse_market emits "home"/"draw"/"away" + "1x"/"x2"/"12".
+      - _normalise_our_target returns the same lowercase form.
+      - resolve_placement_target still resolves end-to-end.
+    """
+    from workers.automation.coolbet_explorer import (
+        _normalise_our_target, parse_market, resolve_placement_target,
+    )
+
+    # 1X2: every input case maps to lowercase output
+    assert _normalise_our_target("1x2", "home") == ("1x2", "home", None)
+    assert _normalise_our_target("1X2", "Home") == ("1x2", "home", None)
+    assert _normalise_our_target("1x2", "Away") == ("1x2", "away", None)
+    assert _normalise_our_target("1x2", "DRAW") == ("1x2", "draw", None)
+
+    # DC: every input case maps to lowercase output
+    assert _normalise_our_target("double_chance", "1x") == ("double_chance", "1x", None)
+    assert _normalise_our_target("double_chance", "X2") == ("double_chance", "x2", None)
+
+    # parse_market emits lowercase for both market types
+    mkt_1x2 = {
+        "id": 1, "line": 0, "name": "Match Result", "market_type_id": 81,
+        "outcomes": [
+            {"id": 10, "result_key": "[Home]"},
+            {"id": 20, "result_key": "Draw"},
+            {"id": 30, "result_key": "[Away]"},
+        ],
+    }
+    odds_1x2 = {
+        10: {"value": 2.0, "odds_id": "h"},
+        20: {"value": 3.4, "odds_id": "d"},
+        30: {"value": 3.6, "odds_id": "a"},
+    }
+    sels_1x2 = {r[1] for r in parse_market(mkt_1x2, odds_1x2)}
+    assert sels_1x2 == {"home", "draw", "away"}, (
+        f"1X2 parse_market must emit lowercase selections, got {sels_1x2}"
+    )
+
+    mkt_dc = {
+        "id": 2, "line": 0, "name": "Double Chance", "market_type_id": 1484,
+        "outcomes": [
+            {"id": 11, "result_key": "[Home]/Draw"},
+            {"id": 22, "result_key": "[Away]/Draw"},
+            {"id": 33, "result_key": "[Home]/[Away]"},
+        ],
+    }
+    odds_dc = {11: {"value": 1.3}, 22: {"value": 1.4}, 33: {"value": 1.2}}
+    sels_dc = {r[1] for r in parse_market(mkt_dc, odds_dc)}
+    assert sels_dc == {"1x", "x2", "12"}, (
+        f"DC parse_market must emit lowercase selections, got {sels_dc}"
+    )
+
+    # End-to-end resolve still works with mixed-case input (paper-bet shape)
+    res = resolve_placement_target([mkt_1x2], odds_1x2, "1X2", "Home")
+    assert res == (1, 10, "h", 2.0), f"resolve 1X2 Home wrong after lowercase: {res}"
+    res = resolve_placement_target([mkt_dc], odds_dc, "double_chance", "1x")
+    assert res is not None and res[1] == 11, f"resolve DC 1x wrong: {res}"
 
 
 if __name__ == "__main__":
