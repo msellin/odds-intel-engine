@@ -36,7 +36,7 @@ Also fixed today: **AH `recommended_bookmaker` 100% NULL bug**. 276/276 Asian Ha
 
 Remaining real follow-ups (filed as MODEL-CLV-FOLLOWUP P1 + a new BOOKMAKER-NULL-NON-AH P2):
 - ~~Investigate bot_lower_1x2 retirement~~ — **DONE 2026-06-03.** Retirement stands. Weekly decomposition: 2026-05-04 ROI +63.6% (n=10), 2026-05-11 +215% (n=1, single outlier), 2026-05-25 -4.3% (n=45) — only the last week is statistically meaningful and confirms the retirement decision. The "+18.8% / 60d" total was outlier-dominated by 11 small-sample early-period bets. CLV +6.0% in the retirement window matches the cited +6.16% so retirement is well-grounded on the actual data, not a stale finding.
-- 1x2 and o/u also have ~33-36% NULL recommended_bookmaker (not 100% like AH). Separate root cause — likely accessible-book filter dropping picks, or strategy_profile rewrites bypassing the bookmaker join.
+- ~~1x2 and o/u 33-36% NULL recommended_bookmaker~~ — **CLOSED 2026-06-03 (not a bug).** Weekly decomposition showed 100% NULL pre-2026-05-11 and 0% NULL from 2026-05-18 onward. The 60d aggregate is lookback dilution; the ACCESSIBLE-BM ship on 2026-05-11 (migration 094) added the column write at `store_bet()` time. Combined with the AH fix shipped today (cc991a7), all markets now write `recommended_bookmaker` correctly. Future bets will have 0% NULL.
 
 ## Pinnacle cohort split — confirmed real per-bot signal
 
