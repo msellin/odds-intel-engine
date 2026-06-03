@@ -35,8 +35,28 @@ The headline "+5.0% ALL MARKETS vs Pinnacle close" is therefore not an honest po
 Also fixed today: **AH `recommended_bookmaker` 100% NULL bug**. 276/276 Asian Handicap simulated_bets in the prior 60d had NULL bookmaker — the AH branch in `_load_today_from_db` only wrote to `ah_best`, never to `best_bookmaker`. Fix shipped. Smoke test NULL-BOOKMAKER-AH-FIX guards.
 
 Remaining real follow-ups (filed as MODEL-CLV-FOLLOWUP P1 + a new BOOKMAKER-NULL-NON-AH P2):
-- Investigate bot_lower_1x2 retirement: is the +18.8% / 60d real, or window-dependent?
+- ~~Investigate bot_lower_1x2 retirement~~ — **DONE 2026-06-03.** Retirement stands. Weekly decomposition: 2026-05-04 ROI +63.6% (n=10), 2026-05-11 +215% (n=1, single outlier), 2026-05-25 -4.3% (n=45) — only the last week is statistically meaningful and confirms the retirement decision. The "+18.8% / 60d" total was outlier-dominated by 11 small-sample early-period bets. CLV +6.0% in the retirement window matches the cited +6.16% so retirement is well-grounded on the actual data, not a stale finding.
 - 1x2 and o/u also have ~33-36% NULL recommended_bookmaker (not 100% like AH). Separate root cause — likely accessible-book filter dropping picks, or strategy_profile rewrites bypassing the bookmaker join.
+
+## Pinnacle cohort split — confirmed real per-bot signal
+
+The morning-report "narrowed +12.3% / widened -24.2%" finding wasn't bot-mix confound. Per-bot decomposition (2026-06-03):
+
+```
+bot                  narrowed_n  narrow_ROI   widened_n   wide_ROI
+bot_v10_all              59         +36.6%        17         +9.1%
+bot_aggressive          179         +10.3%        72         -9.8%
+bot_aggressive_v2        26          +3.4%         8        -25.9%
+bot_high_alignment       60         +11.3%        35         -4.8%
+bot_ah_home_fav          10         +18.5%        12        -22.6%
+bot_ou25_global          19         +34.9%        13        -63.2%
+```
+
+6 of 8 bots with both cohorts show narrowed > widened, often by 20-90pp. The two exceptions (bot_ah_away_dog, bot_lower_1x2) have widened-cohort n=5-6 so not robust.
+
+**Implication**: when Pinnacle's line moves *toward* our pick by close (the bet's "edge widens" against the close), ROI drops. When Pinnacle moves *against* our pick (edge narrows), ROI improves. This is potentially tradeable as a **delayed-placement filter** — wait N minutes after pick, check if Pinnacle has moved against us, only place if it has. But the win is conditional on detecting Pinnacle movement within a small window, which requires reliable inplay Pinnacle snapshots that we don't currently have (Pinnacle's market depth on niche fixtures is thin).
+
+**Not in scope for action right now.** Filing as PINNACLE-COHORT-FILTER (P3 / research) for re-evaluation once we have better Pinnacle snapshot coverage.
 
 ---
 
