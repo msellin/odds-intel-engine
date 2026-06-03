@@ -260,6 +260,13 @@ def _build_inplay_bet_data(
         "model_prob": trigger["model_prob"],
         "edge": trigger["edge"] / 100,  # strategies store edge as %, DB expects decimal
         "xg_source": "live" if is_real else "shot_proxy",
+        # INPLAY-METADATA-STALENESS (2026-06-03): promote minute + score from
+        # the `reasoning` JSON to first-class columns so the UI can render an
+        # "In-play · 23' · 0-1" chip without parsing JSON, and so we can run
+        # per-minute / per-score ROI analysis directly in SQL.
+        "match_minute_at_pick": cand.get("minute"),
+        "score_home_at_pick": cand.get("score_home"),
+        "score_away_at_pick": cand.get("score_away"),
         "reasoning": json.dumps({
             "strategy": bot_name,
             "minute": cand["minute"],

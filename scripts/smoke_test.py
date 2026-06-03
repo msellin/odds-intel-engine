@@ -13861,6 +13861,52 @@ def _():
             f"wc-achievement-badge.tsx must handle slug '{slug}'"
 
 
+@test("INPLAY-METADATA-STALENESS — inplay picks write match minute + score to first-class columns")
+def _():
+    """Inplay picks should populate `match_minute_at_pick`,
+    `score_home_at_pick`, `score_away_at_pick` so the UI can show
+    'In-play · 23' · 0-1' without parsing the reasoning JSON.
+
+    Guards three places:
+      1. Migration 173 adds the three columns.
+      2. inplay_bot._build_inplay_bet_data includes them in the payload.
+      3. store_bet's optional_fields whitelist accepts them.
+    """
+    # 1. Migration
+    mig = _engine_path("supabase/migrations/173_inplay_pick_minute_score.sql")
+    assert mig.exists(), "migration 173 must exist"
+    mig_src = mig.read_text()
+    for col in ("match_minute_at_pick", "score_home_at_pick", "score_away_at_pick"):
+        assert col in mig_src, f"migration 173 must add column {col}"
+
+    # 2. Builder includes the fields
+    builder_src = _engine_path("workers/jobs/inplay_bot.py").read_text()
+    builder_block_start = builder_src.index("def _build_inplay_bet_data")
+    builder_block_end = builder_src.index("\ndef ", builder_block_start + 10)
+    builder_block = builder_src[builder_block_start:builder_block_end]
+    assert "\"match_minute_at_pick\": cand.get(\"minute\")" in builder_block, (
+        "_build_inplay_bet_data must include match_minute_at_pick from cand['minute']"
+    )
+    assert "\"score_home_at_pick\": cand.get(\"score_home\")" in builder_block, (
+        "_build_inplay_bet_data must include score_home_at_pick from cand['score_home']"
+    )
+    assert "\"score_away_at_pick\": cand.get(\"score_away\")" in builder_block, (
+        "_build_inplay_bet_data must include score_away_at_pick from cand['score_away']"
+    )
+
+    # 3. store_bet whitelists the fields. The file has two `optional_fields`
+    # lists; we need the one inside store_bet, not the earlier helper.
+    sb_src = _engine_path("workers/api_clients/supabase_client.py").read_text()
+    sb_fn_start = sb_src.index("def store_bet(")
+    sb_optional_start = sb_src.index("optional_fields = [", sb_fn_start)
+    sb_optional_end = sb_src.index("]", sb_optional_start)
+    sb_optional_block = sb_src[sb_optional_start:sb_optional_end]
+    for field in ("match_minute_at_pick", "score_home_at_pick", "score_away_at_pick"):
+        assert f"\"{field}\"" in sb_optional_block, (
+            f"store_bet's optional_fields must include {field} so it's persisted"
+        )
+
+
 @test("NULL-BOOKMAKER-AH-FIX — Asian Handicap rows populate recommended_bookmaker")
 def _():
     """100% of AH simulated_bets in the prior 60d had NULL

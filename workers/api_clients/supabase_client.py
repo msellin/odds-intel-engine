@@ -1883,6 +1883,11 @@ def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
         "xg_source",  # inplay bots: 'live' | 'shot_proxy' (migration 057)
         "recommended_bookmaker",  # ACCESSIBLE-BM: which accessible book had best odds (migration 094)
         "meta_clv_score",  # B-ML3-V2-ACTIVE: meta-model score (migration 130)
+        # INPLAY-METADATA-STALENESS (migration 173, 2026-06-03): match minute
+        # and score at pick time, only set by inplay bots; NULL for prematch.
+        "match_minute_at_pick",
+        "score_home_at_pick",
+        "score_away_at_pick",
     ]
     for field in optional_fields:
         if field in bet_data and bet_data[field] is not None:
