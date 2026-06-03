@@ -13998,15 +13998,32 @@ def _():
         "SportsEvent must be populated from publicMatch (team names)"
     assert "application/ld+json" in src, "must render via <script type=application/ld+json>"
     # Optional SportsEvent fields Google's Rich Results Test flagged on 2026-06-03.
-    # All three add eligibility for richer rich-result surfaces; `offers` is
-    # intentionally NOT added because schema.org/offers is for ticket sales,
-    # not betting odds — using it for odds would be misuse.
+    # Each adds eligibility for richer rich-result surfaces.
     assert "endDate:" in src, \
         "SportsEvent must include endDate (kickoff + ~115min) — flagged by Rich Results Test"
     assert "image:" in src, \
         "SportsEvent must include image (team logos / OG fallback) — flagged by Rich Results Test"
     assert "performer:" in src, \
         "SportsEvent must include performer alongside competitor — flagged by Rich Results Test"
+    # offers here represents free access to OddsIntel's predictions for this
+    # match (NOT a ticket to the event); category disambiguates from ticket
+    # sellers so Google doesn't pull us into ticket rich results.
+    assert "offers:" in src and "\"Offer\"" in src, \
+        "SportsEvent must include an Offer (free predictions access for this match)"
+    assert "category:" in src and "predictions" in src.lower(), \
+        "Offer must set category so Google doesn't misclassify us as a ticket seller"
+    # organizer.url is linked ONLY for featured leagues that have a known
+    # predictions slug — never fabricated for unknown leagues.
+    assert "PREDICTION_LEAGUES.find" in src, \
+        "organizer.url must be derived from PREDICTION_LEAGUES (no fake URLs)"
+
+    # Root Organization must carry a logo URL — Search Console flags it as
+    # missing when Organization schema is in root layout without a logo.
+    root_layout = _web_path("src/app/layout.tsx").read_text()
+    assert "\"@type\": \"Organization\"" in root_layout, \
+        "root layout must keep the Organization schema"
+    assert "logo:" in root_layout and "icon-512.png" in root_layout, \
+        "root Organization must include a logo URL (icon-512.png)"
 
 
 @test("COOLBET-SELECTION-CASE — Coolbet snapshot selections lowercase, matching other bookmakers + frontend lookup")
