@@ -1057,7 +1057,8 @@ def _write_presence_marker_snapshot(
     for mkt in markets:
         rows = parse_market(mkt, odds_map)
         for market, selection, odds, _hline in rows:
-            if market == "1x2" and selection == "Home":
+            # COOLBET-SELECTION-CASE (2026-06-03): parse_market emits lowercase.
+            if market == "1x2" and selection == "home":
                 chosen = (market, selection, odds)
                 break
             if chosen is None:

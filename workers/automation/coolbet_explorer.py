@@ -279,14 +279,19 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
     is_ah   = mtid in _MTID_AH   or "asian handicap" in name
 
     if is_1x2:
+        # COOLBET-SELECTION-CASE (2026-06-03): emit lowercase to match every
+        # OTHER bookmaker in odds_snapshots (Bet365/Pinnacle/Betano/… all store
+        # `home`/`draw`/`away`). The /admin/place lookup lowercases via
+        # `_mapPaperToSnapshotKey` so anything stored capital here is invisible
+        # to the frontend → bet shows `⚠ no market` even when Coolbet priced it.
         for oc in mkt.get("outcomes") or []:
             rk = (oc.get("result_key") or "").strip("[]")
             if rk == "Home":
-                _add("1x2", "Home", oc.get("id"))
+                _add("1x2", "home", oc.get("id"))
             elif rk == "Draw":
-                _add("1x2", "Draw", oc.get("id"))
+                _add("1x2", "draw", oc.get("id"))
             elif rk == "Away":
-                _add("1x2", "Away", oc.get("id"))
+                _add("1x2", "away", oc.get("id"))
         return rows
 
     if is_ou:
@@ -312,10 +317,12 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
 
     if is_dc:
         # Coolbet DC result_keys use team placeholders: "[Home]/Draw",
-        # "[Away]/Draw", "[Home]/[Away]". Map to our canonical 1X/X2/12.
+        # "[Away]/Draw", "[Home]/[Away]". Map to our canonical 1x/x2/12
+        # lowercase — matches the snapshot convention every other bookmaker
+        # uses (see COOLBET-SELECTION-CASE above for the 1X2 explanation).
         _dc_key_map = {
-            "[home]/draw":   "1X",
-            "[away]/draw":   "X2",
+            "[home]/draw":   "1x",
+            "[away]/draw":   "x2",
             "[home]/[away]": "12",
         }
         for oc in mkt.get("outcomes") or []:
@@ -405,8 +412,11 @@ def _normalise_our_target(
     s = our_selection.strip()
 
     if m in ("1x2",):
-        if s.lower() in ("home", "draw", "away"):
-            return ("1x2", s.title(), None)
+        # COOLBET-SELECTION-CASE (2026-06-03): return lowercase to match
+        # parse_market's lowercase emit + the frontend snapshot lookup.
+        sl = s.lower()
+        if sl in ("home", "draw", "away"):
+            return ("1x2", sl, None)
         return (None, None, None)
 
     # COMBO-LEG-MARKETS (2026-05-23): combo bots write per-leg markets as
@@ -448,15 +458,14 @@ def _normalise_our_target(
         return (None, None, None)
 
     if m == "double_chance":
-        # DC-CASE-FIX (2026-05-24): paper bets write lowercase "1x"/"x2"/"12"
-        # but parse_market / _outcome_id_for_selection both expect uppercase
-        # "1X"/"X2"/"12". Without this `.upper()` every DC bet returned
-        # no_market even when Coolbet offered Double Chance (confirmed live
-        # on Gagra vs Dila — 42 markets including "Double Chance" line=0,
-        # but bot_dc_value 1x was skipped). Accept any case.
-        s_up = s.upper()
-        if s_up in ("1X", "X2", "12"):
-            return ("double_chance", s_up, None)
+        # COOLBET-SELECTION-CASE (2026-06-03): emit lowercase to match
+        # parse_market + the snapshot convention every other bookmaker uses.
+        # Previously returned uppercase ("1X"/"X2"/"12") which got written
+        # into odds_snapshots and was invisible to the frontend's lowercase
+        # lookup, so Coolbet DC bets all surfaced as `⚠ no market`.
+        s_lo = s.lower()
+        if s_lo in ("1x", "x2", "12"):
+            return ("double_chance", s_lo, None)
         return (None, None, None)
 
     if m == "asian_handicap":
@@ -482,9 +491,11 @@ def _outcome_id_for_selection(mkt: dict, parsed_market: str, parsed_sel: str) ->
     parse_market but returns the outcome_id instead of the (market, sel,
     odds, line) tuple."""
     sel_to_key = {
-        ("1x2",          "Home"):    "Home",
-        ("1x2",          "Draw"):    "Draw",
-        ("1x2",          "Away"):    "Away",
+        # COOLBET-SELECTION-CASE (2026-06-03): keyed on lowercase parsed_sel —
+        # parse_market + _normalise_our_target both emit lowercase now.
+        ("1x2",          "home"):    "Home",
+        ("1x2",          "draw"):    "Draw",
+        ("1x2",          "away"):    "Away",
         ("btts",         "yes"):     "yes",
         ("btts",         "no"):      "no",
         # DC-RESULTKEY-FIX (2026-05-24): Coolbet DC result_keys use bracketed
@@ -496,8 +507,8 @@ def _outcome_id_for_selection(mkt: dict, parsed_market: str, parsed_sel: str) ->
         # match that did offer Double Chance (confirmed live on Gagra vs Dila).
         # Fix: store target_key without brackets and use `.replace` on the
         # outcome's result_key to remove *all* brackets, not just edges.
-        ("double_chance","1X"):      "home/draw",
-        ("double_chance","X2"):      "away/draw",
+        ("double_chance","1x"):      "home/draw",
+        ("double_chance","x2"):      "away/draw",
         ("double_chance","12"):      "home/away",
         ("asian_handicap","home"):   "Home",
         ("asian_handicap","away"):   "Away",
