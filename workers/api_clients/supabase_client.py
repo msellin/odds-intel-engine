@@ -1888,6 +1888,11 @@ def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
         "match_minute_at_pick",
         "score_home_at_pick",
         "score_away_at_pick",
+        # PIN-CROSS-DRIFT (migration 175, 2026-06-03): shadow flag for the
+        # cross-market drift veto. TRUE means the veto would have fired but
+        # was suppressed (shadow mode). Used to validate the policy against
+        # live results before activating PIN_CROSS_DRIFT_VETO_ENABLED.
+        "pin_cross_drift_shadow_flag",
     ]
     for field in optional_fields:
         if field in bet_data and bet_data[field] is not None:

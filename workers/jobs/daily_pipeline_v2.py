@@ -2863,6 +2863,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         # P2: Compute odds movement for this match (once per match, cached per market)
         odds_movement_cache = {}
 
+        # PIN-CROSS-DRIFT (2026-06-03): cache MFV drift+news columns once per match
+        # so the cross-market veto can fire without repeated DB hits per bot.
+        # Refresh-only — morning bets at T-12h+ have NULL drift (fail-open in helper).
+        _pin_cross_drift_mfv: dict | None = None  # lazy-loaded on first non-1X2 bet
+
         # T1: AF prediction for this match (already looked up for Tier D above)
         af_pred = af_pred_for_match
 
@@ -3134,6 +3139,48 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                     _funnel[bot_name]["drop_odds_mv"] += 1
                     continue  # Market moved >10% against pick — hard skip
 
+                # PIN-CROSS-DRIFT (2026-06-03): cross-market veto for non-1X2 bets.
+                # If Pinnacle's 1X2 line drifted significantly without our news
+                # pipeline explaining it, the same match's BTTS / DC / O/U / AH
+                # lines are likely stale too. Per-market thresholds picked from
+                # 60d backtest (scripts/pin_drift_veto_analysis.py).
+                # Shadow mode (default) logs but does not actually veto — see env
+                # gate below. Activate via PIN_CROSS_DRIFT_VETO_ENABLED=true after
+                # 7-day shadow run confirms predictions.
+                _pin_cross_drift_decision = None
+                if os_market != "1x2":
+                    if _pin_cross_drift_mfv is None:
+                        _mfv_rows = execute_query(
+                            """SELECT pinnacle_line_move_home_at_t6h,
+                                      pinnacle_line_move_draw_at_t6h,
+                                      pinnacle_line_move_away_at_t6h,
+                                      news_impact_score
+                               FROM match_feature_vectors WHERE match_id = %s""",
+                            [match_id],
+                        )
+                        _pin_cross_drift_mfv = _mfv_rows[0] if _mfv_rows else {}
+                    from workers.model.pin_cross_drift_veto import check_pin_cross_drift_veto
+                    _pin_cross_drift_decision = check_pin_cross_drift_veto(
+                        market=os_market,
+                        pin_line_move_home_at_t6h=_pin_cross_drift_mfv.get("pinnacle_line_move_home_at_t6h"),
+                        pin_line_move_draw_at_t6h=_pin_cross_drift_mfv.get("pinnacle_line_move_draw_at_t6h"),
+                        pin_line_move_away_at_t6h=_pin_cross_drift_mfv.get("pinnacle_line_move_away_at_t6h"),
+                        news_impact_score=_pin_cross_drift_mfv.get("news_impact_score"),
+                    )
+                    if _pin_cross_drift_decision["should_veto"]:
+                        # Always log so we can validate shadow predictions.
+                        _funnel[bot_name]["drop_pin_cross_drift_shadow"] = (
+                            _funnel[bot_name].get("drop_pin_cross_drift_shadow", 0) + 1
+                        )
+                        if os.getenv("PIN_CROSS_DRIFT_VETO_ENABLED", "false").lower() in ("true", "1", "yes"):
+                            _funnel[bot_name]["drop_pin_cross_drift"] = (
+                                _funnel[bot_name].get("drop_pin_cross_drift", 0) + 1
+                            )
+                            continue
+                        # Shadow mode: bet still placed; we attach the decision
+                        # to reasoning so we can query "which bets would have
+                        # been vetoed?" against settled results in 7 days.
+
                 # P4: Kelly fraction (using calibrated prob)
                 kelly = compute_kelly(cal_prob, odds)
                 if kelly <= 0:
@@ -3271,6 +3318,13 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                     total_bets += 1
                     continue
 
+                # PIN-CROSS-DRIFT shadow flag — TRUE means the veto would have
+                # fired in active mode. Used to validate against live results
+                # before flipping PIN_CROSS_DRIFT_VETO_ENABLED.
+                _pin_shadow_flag = bool(
+                    _pin_cross_drift_decision and _pin_cross_drift_decision.get("should_veto")
+                )
+
                 try:
                     bet_id = store_bet(bot_ids[bot_name], match_id, {
                         "market": mkt,
@@ -3281,6 +3335,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         "edge": edge,
                         "stake": stake,
                         "placed_at": datetime.now().isoformat(),
+                        "pin_cross_drift_shadow_flag": _pin_shadow_flag,
                         "reasoning": f"{tier_tag}{f'[{_strategy_alias}] ' if _strategy_alias else ''}{match['home_team']} vs {match['away_team']} | edge={edge:.3f} cal={cal_prob:.3f} kelly={kelly:.4f} align={alignment['alignment_class']}",
                         "strategy_profile": _strategy_alias or None,
                         # P1: Calibration

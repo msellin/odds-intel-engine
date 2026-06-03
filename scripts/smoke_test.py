@@ -14257,5 +14257,106 @@ def _():
     assert res is not None and res[1] == 11, f"resolve DC 1x wrong: {res}"
 
 
+@test("PIN-CROSS-DRIFT-HELPER — per-market thresholds + news skip + fail-open behaviour")
+def _():
+    """PIN-CROSS-DRIFT (2026-06-03): the helper deciding whether a non-1X2 bet
+    should be vetoed because Pinnacle's 1X2 line drifted significantly
+    pre-KO without our news pipeline explaining it. Backtest:
+    scripts/pin_drift_veto_analysis.py.
+
+    Per-market thresholds (locked-in from 60d analysis):
+      btts/o/u           → veto at abs_drift >= 0.03
+      double_chance/AH   → veto at abs_drift >= 0.01
+      1x2 + everything else → no veto (drift feature lives on 1x2; cross-market
+        leak doesn't apply).
+
+    Critical invariant: helper must fail-open when drift data is NULL
+    (morning bets at T-12h have NULL pinnacle_line_move_*_at_t6h), and must
+    NOT veto when news_impact_score explains the move."""
+    from workers.model.pin_cross_drift_veto import check_pin_cross_drift_veto, get_thresholds
+
+    # Thresholds match the empirical cohort split.
+    th = get_thresholds()
+    assert th["btts"] == 0.03 and th["o/u"] == 0.03, (
+        "btts + o/u thresholds must be 0.03 — that's the empirical break in 60d data"
+    )
+    assert th["double_chance"] == 0.01 and th["asian_handicap"] == 0.01, (
+        "DC + AH thresholds must be 0.01 — DC fails from 1% upward, AH leak is in 1-3% bucket"
+    )
+    assert "1x2" not in th, "1x2 must not have a veto threshold — no leak in that cohort"
+
+    # ── Veto fires when drift exceeds threshold and no news ──
+    d = check_pin_cross_drift_veto("btts", 0.05, 0.0, -0.04, None)
+    assert d["should_veto"] is True, "BTTS @ 5% drift with no news should veto"
+    assert d["reason"] == "pin_cross_drift_unexplained"
+
+    d = check_pin_cross_drift_veto("double_chance", 0.02, 0.0, 0.0, None)
+    assert d["should_veto"] is True, "DC @ 2% drift with no news should veto (threshold 1%)"
+
+    # ── Below threshold: no veto ──
+    d = check_pin_cross_drift_veto("btts", 0.02, 0.0, 0.0, None)
+    assert d["should_veto"] is False, "BTTS @ 2% drift is below 3% threshold — no veto"
+    assert d["reason"] == "below_threshold"
+
+    # ── News explains the move: no veto ──
+    d = check_pin_cross_drift_veto("btts", 0.05, 0.0, 0.0, 0.4)
+    assert d["should_veto"] is False, "Even at 5% drift, non-trivial news_impact must suppress veto"
+    assert d["reason"] == "news_explained"
+
+    # ── 1X2 never veto'd (no entry in thresholds) ──
+    d = check_pin_cross_drift_veto("1x2", 0.10, -0.05, -0.05, None)
+    assert d["should_veto"] is False, "1X2 never vetoed — drift feature lives on this market"
+
+    # ── Fail-open when no drift data (morning bets) ──
+    d = check_pin_cross_drift_veto("o/u", None, None, None, None)
+    assert d["should_veto"] is False, "All-NULL drift (morning) must NOT veto — fail-open"
+    assert d["reason"] == "no_drift_data"
+
+    # ── Unknown market (combo, draw_no_bet): no veto, no error ──
+    d = check_pin_cross_drift_veto("combo", 0.50, 0.50, -0.50, None)
+    assert d["should_veto"] is False, "Unknown markets are not vetoed"
+
+
+@test("PIN-CROSS-DRIFT-PIPELINE — daily_pipeline_v2 calls helper + writes shadow flag + gates on env")
+def _():
+    """The veto helper must be wired into daily_pipeline_v2 so it actually
+    runs on bet emission. Properties asserted:
+      - Helper is imported and called for non-1X2 bets.
+      - Env gate PIN_CROSS_DRIFT_VETO_ENABLED defaults to false (shadow only).
+      - Shadow flag (`pin_cross_drift_shadow_flag`) is written on the bet row
+        regardless of activation, so we can validate the policy against
+        live results before flipping the gate.
+      - Migration 175 adds the shadow flag column."""
+    pipeline = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text()
+    assert "from workers.model.pin_cross_drift_veto import check_pin_cross_drift_veto" in pipeline, (
+        "daily_pipeline_v2 must import the veto helper"
+    )
+    assert "PIN_CROSS_DRIFT_VETO_ENABLED" in pipeline, (
+        "daily_pipeline_v2 must gate active veto behind PIN_CROSS_DRIFT_VETO_ENABLED env"
+    )
+    assert "drop_pin_cross_drift_shadow" in pipeline, (
+        "Pipeline must emit a 'drop_pin_cross_drift_shadow' funnel bucket on shadow hits"
+    )
+    assert "pin_cross_drift_shadow_flag" in pipeline, (
+        "Bet payload must carry the shadow flag for downstream validation"
+    )
+
+    # store_bet must whitelist the new field so the column is actually written.
+    sb = _engine_path("workers/api_clients/supabase_client.py").read_text()
+    sb_fn_start = sb.index("def store_bet(")
+    optional_start = sb.index("optional_fields = [", sb_fn_start)
+    optional_end = sb.index("]", optional_start)
+    assert "pin_cross_drift_shadow_flag" in sb[optional_start:optional_end], (
+        "store_bet's optional_fields must include pin_cross_drift_shadow_flag"
+    )
+
+    # Migration must add the column with the right type.
+    mig = _engine_path("supabase/migrations/175_pin_cross_drift_shadow_flag.sql").read_text()
+    assert "pin_cross_drift_shadow_flag boolean" in mig, (
+        "Migration 175 must add `pin_cross_drift_shadow_flag boolean`"
+    )
+    assert "IF NOT EXISTS" in mig, "Migration must be idempotent (IF NOT EXISTS)"
+
+
 if __name__ == "__main__":
     main()
