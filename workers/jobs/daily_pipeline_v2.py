@@ -3150,7 +3150,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 _pin_cross_drift_decision = None
                 if os_market != "1x2":
                     if _pin_cross_drift_mfv is None:
-                        _mfv_rows = execute_query(
+                        from workers.api_clients.db import execute_query as _eq_pin_cross
+                        _mfv_rows = _eq_pin_cross(
                             """SELECT pinnacle_line_move_home_at_t6h,
                                       pinnacle_line_move_draw_at_t6h,
                                       pinnacle_line_move_away_at_t6h,

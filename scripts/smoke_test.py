@@ -14341,6 +14341,27 @@ def _():
         "Bet payload must carry the shadow flag for downstream validation"
     )
 
+    # POST-INCIDENT GUARD (2026-06-03 11:05 UTC): the initial PIN-CROSS-DRIFT
+    # commit called bare execute_query() in the veto block. execute_query is
+    # only imported locally inside specific functions of daily_pipeline_v2,
+    # NOT at module level — so the run_morning bot loop had no execute_query
+    # symbol in scope. First production run NameError'd and killed the 11:05
+    # betting_pipeline. Fix: local-import alias `_eq_pin_cross`. This assertion
+    # locks the pattern so a future refactor reverting to bare execute_query()
+    # fails CI before it ships.
+    _veto_start = pipeline.index("_pin_cross_drift_decision = None")
+    _veto_end = pipeline.index("# P4: Kelly fraction", _veto_start)
+    _veto_block = pipeline[_veto_start:_veto_end]
+    assert "from workers.api_clients.db import execute_query as _eq_pin_cross" in _veto_block, (
+        "PIN-CROSS-DRIFT veto block must import execute_query via local alias "
+        "(_eq_pin_cross). Bare execute_query() NameError'd in production on "
+        "2026-06-03 — do not regress."
+    )
+    assert "_eq_pin_cross(" in _veto_block, (
+        "PIN-CROSS-DRIFT veto block must call the local _eq_pin_cross alias, "
+        "not bare execute_query() — the latter is not in scope in run_morning."
+    )
+
     # store_bet must whitelist the new field so the column is actually written.
     sb = _engine_path("workers/api_clients/supabase_client.py").read_text()
     sb_fn_start = sb.index("def store_bet(")
