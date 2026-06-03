@@ -13933,5 +13933,59 @@ def _():
     )
 
 
+@test("SEO-SITEMAP-MATCHES — sitemap.ts includes match detail URLs from getMatchIdsForSitemap")
+def _():
+    """Pre-fix: sitemap only listed static + predictions + glossary pages, so
+    Google had no way to discover /matches/[id] URLs — the highest-volume
+    indexable surface. Symptom: low coverage in Search Console.
+
+    Fix: sitemap.ts calls getMatchIdsForSitemap() (a 44-day window helper in
+    engine-data.ts) and emits one entry per fixture with the row's real
+    updated_at as lastModified. Sitemap revalidates hourly."""
+    sitemap = _web_path("src/app/sitemap.ts")
+    if not sitemap.exists():
+        print("  [skip] odds-intel-web not present in CI")
+        return
+    src = sitemap.read_text()
+    assert "getMatchIdsForSitemap" in src, "sitemap.ts must import getMatchIdsForSitemap"
+    assert "matchPages" in src or "/matches/${" in src, \
+        "sitemap.ts must emit per-match URLs"
+    assert "export const revalidate" in src, \
+        "sitemap.ts must export `revalidate` so new fixtures appear without a redeploy"
+
+    helper = _web_path("src/lib/engine-data.ts").read_text()
+    assert "export async function getMatchIdsForSitemap" in helper, \
+        "engine-data.ts must export getMatchIdsForSitemap()"
+    # Helper must filter to active leagues — otherwise sitemap fills with
+    # fixtures from leagues we don't actually surface in the UI.
+    helper_fn_start = helper.index("export async function getMatchIdsForSitemap")
+    helper_fn_block = helper[helper_fn_start:helper_fn_start + 1200]
+    assert "is_active" in helper_fn_block, \
+        "getMatchIdsForSitemap must filter to is_active leagues"
+
+
+@test("SEO-MATCH-DETAIL-JSONLD — /matches/[id] emits SportsEvent + BreadcrumbList structured data")
+def _():
+    """Pre-fix: only Organization JSON-LD existed (in root layout). Match detail
+    pages — the highest-traffic SEO surface — had no per-page structured data,
+    so they were ineligible for SportsEvent rich results in Google.
+
+    Fix: inject SportsEvent (homeTeam/awayTeam/startDate/location) and
+    BreadcrumbList (Home → Matches → fixture) into the page's JSX."""
+    page = _web_path("src/app/(app)/matches/[id]/page.tsx")
+    if not page.exists():
+        print("  [skip] odds-intel-web not present in CI")
+        return
+    src = page.read_text()
+    assert "\"@type\": \"SportsEvent\"" in src, \
+        "match detail must emit SportsEvent JSON-LD"
+    assert "\"@type\": \"BreadcrumbList\"" in src, \
+        "match detail must emit BreadcrumbList JSON-LD"
+    # Both schemas must use the live publicMatch data, not hardcoded values.
+    assert "publicMatch.homeTeam" in src and "publicMatch.awayTeam" in src, \
+        "SportsEvent must be populated from publicMatch (team names)"
+    assert "application/ld+json" in src, "must render via <script type=application/ld+json>"
+
+
 if __name__ == "__main__":
     main()
