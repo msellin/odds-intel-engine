@@ -13906,6 +13906,21 @@ def _():
             f"wc-achievement-badge.tsx must handle slug '{slug}'"
 
 
+@test("INPLAY-L-PROMOTE — migration 174 flips bot_inplay_l maturity to calibrated")
+def _():
+    """INPLAY-L-PROMOTE 2026-06-03. After INPLAY-CALIBRATION-IJL surfaced
+    ECE 4.96% / ROI +25.8% on n=31 for bot_inplay_l, the bot was promoted
+    to the calibrated cohort. Migration 174 carries the change."""
+    mig = _engine_path("supabase/migrations/174_promote_inplay_l_calibrated.sql")
+    assert mig.exists(), "migration 174 must exist"
+    src = mig.read_text()
+    assert "UPDATE bots" in src, "migration must UPDATE the bots table"
+    assert "maturity_label = 'calibrated'" in src, (
+        "migration must set maturity_label to 'calibrated'"
+    )
+    assert "name = 'inplay_l'" in src, "migration must target bot_inplay_l (table stores name as 'inplay_l')"
+
+
 @test("INPLAY-METADATA-STALENESS — inplay picks write match minute + score to first-class columns")
 def _():
     """Inplay picks should populate `match_minute_at_pick`,
