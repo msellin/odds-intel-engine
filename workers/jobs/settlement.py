@@ -1955,6 +1955,11 @@ def _settle_pending_bets(pending: list, finished: list):
         # combos and defer entirely to the combo branch further down, which does
         # its own per-leg match lookups.
         is_combo_row = bet.get("combo_legs") is not None
+        # Hoisted above the branch so the per-bet display row below works for
+        # combo bets too (combos used to UnboundLocalError on the rich table
+        # render — see SETTLE-READY-UNBOUNDLOCAL).
+        home_name_display = bet.get("home_team_name", "?")
+        away_name_display = bet.get("away_team_name", "?")
         if is_combo_row:
             score_home = None
             score_away = None
@@ -1962,8 +1967,6 @@ def _settle_pending_bets(pending: list, finished: list):
             # Flat SQL row: score_home/score_away are directly on bet
             score_home = bet.get("score_home")
             score_away = bet.get("score_away")
-            home_name_display = bet.get("home_team_name", "?")
-            away_name_display = bet.get("away_team_name", "?")
 
             # If not in DB (match not yet updated), try to find in external results
             if score_home is None:

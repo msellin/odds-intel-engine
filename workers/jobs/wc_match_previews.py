@@ -130,7 +130,7 @@ def select_wc_fixtures(days: int, force: bool) -> list[dict]:
         WHERE l.api_football_id = %s
           AND m.date::date >= %s
           AND m.date::date <= %s
-          AND m.status IN ('scheduled', 'live', 'TBD', 'NS')
+          AND m.status IN ('scheduled', 'live')
         GROUP BY m.id, m.date, m.venue_name, m.h2h_home_wins, m.h2h_draws,
                  m.h2h_away_wins, ht.id, ht.name, at.id, at.name, l.name,
                  l.country, mp.generated_at
@@ -190,7 +190,7 @@ def fetch_recent_intl_form(team_id: str, n: int = 5) -> str:
         FROM matches m
         JOIN leagues l ON l.id = m.league_id
         WHERE (m.home_team_id = %s OR m.away_team_id = %s)
-          AND m.status IN ('finished', 'FT')
+          AND m.status = 'finished'
           AND m.result IS NOT NULL
           AND l.api_football_id IN (1, 4, 9, 10, 32, 34, 37)
         ORDER BY m.date DESC

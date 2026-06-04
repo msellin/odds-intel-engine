@@ -7134,6 +7134,36 @@ def _():
     )
 
 
+@test("SETTLE-READY-UNBOUNDLOCAL — home_name_display assigned for combo + non-combo bets")
+def _():
+    """SETTLE-READY-UNBOUNDLOCAL (2026-06-04): the per-bet display row at the
+    bottom of `_settle_pending_bets` calls `home_name_display[:10]` for every
+    bet — including combos. Previously the assignment only happened inside the
+    `else` branch of `is_combo_row`, so combo bets raised UnboundLocalError
+    on the rich-table render (failed runs 2026-06-04 01:15 + 01:30 UTC).
+
+    Pin the assignment so a future refactor can't quietly re-introduce the bug."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/settlement.py").read_text()
+
+    # Locate the `is_combo_row` branch in _settle_pending_bets.
+    branch_idx = src.find("is_combo_row = bet.get(\"combo_legs\") is not None")
+    assert branch_idx > 0, "is_combo_row branch missing in settlement.py"
+
+    # `home_name_display` must be assigned BEFORE the branch (so combos get it).
+    pre_branch = src[max(0, branch_idx - 800):branch_idx]
+    post_branch_through_assign = src[branch_idx:branch_idx + 800]
+    # Old broken state: assignment lives inside `else:` only. New state: lives
+    # right after the `is_combo_row =` line, BEFORE the `if is_combo_row:`.
+    assert (
+        "home_name_display = bet.get(\"home_team_name\"" in post_branch_through_assign[:500]
+        and "if is_combo_row:" in post_branch_through_assign
+    ), (
+        "home_name_display must be assigned BEFORE `if is_combo_row:` so combo "
+        "bets don't UnboundLocalError on the per-bet display row."
+    )
+
+
 @test("P-PRED-1 — job_betting_refresh does not refetch /predictions")
 def _():
     """AF /predictions has no bulk form (probed 2026-05-10) and updates at most
@@ -13238,6 +13268,21 @@ def _():
     # Graceful degradation — Gemini errors are caught + the loop continues.
     assert "except Exception" in src, \
         "Gemini call must catch broad Exception and continue"
+
+    # WC-MATCH-PREVIEWS-ENUM (2026-06-04): the previous queries filtered on
+    # `m.status IN ('scheduled', 'live', 'TBD', 'NS')` and `('finished', 'FT')`
+    # — those raw API-Football values are not in the `match_status` enum, so
+    # Postgres rejected the whole query. Pin the enum-valid filters so a
+    # future refactor doesn't re-introduce the AF status leak.
+    assert "'TBD'" not in src and "'NS'" not in src, (
+        "WC-MATCH-PREVIEWS-ENUM: filters must use enum values "
+        "(scheduled/live/finished), not raw AF statuses 'TBD'/'NS'"
+    )
+    assert "'FT'" not in src, (
+        "WC-MATCH-PREVIEWS-ENUM: use 'finished' instead of raw AF 'FT' value"
+    )
+    assert "m.status IN ('scheduled', 'live')" in src, \
+        "fixture-side query must filter on enum-valid scheduled+live statuses"
 
 
 @test("WC-AI-PREVIEW-CRON — scheduler registers wc_match_previews daily 07:30 UTC with WC-window gate")
