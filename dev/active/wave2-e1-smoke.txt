@@ -1,0 +1,100 @@
+WC-E1 — Monte Carlo tournament simulation — smoke test descriptions
+=====================================================================
+
+Per project CLAUDE.md: "Every task must have at least one test in
+scripts/smoke_test.py before the commit." This file describes the smoke
+tests that should be added (the user task constraint says NOT to modify
+smoke_test.py directly, so this is a hand-off for the operator).
+
+------------------------------------------------------------------------
+ENGINE SMOKE — WC-E1-ENGINE
+------------------------------------------------------------------------
+Goal: source-inspection that the script + migration both exist and are
+structurally sound (no DB call required — runs in CI without env).
+
+Suggested test (inside scripts/smoke_test.py):
+
+  @test("WC-E1-ENGINE — Monte Carlo script + migration structure")
+  def test_wc_e1_engine():
+      from pathlib import Path
+      root = Path(__file__).resolve().parent.parent
+
+      # 1. Script exists and is importable as a module.
+      script = root / "scripts" / "wc_monte_carlo.py"
+      assert script.exists(), "scripts/wc_monte_carlo.py missing"
+      src = script.read_text()
+      assert "def run_simulations" in src, "run_simulations missing"
+      assert "def run_wc_monte_carlo" in src, "scheduler entry-point missing"
+      assert "wc_monte_carlo_results" in src, "table reference missing"
+      assert "predict_1x2_from_elo" in src, "ELO predictor not used"
+
+      # 2. Migration exists with the right table + RLS public-read.
+      mig = root / "supabase" / "migrations" / "179_wc_monte_carlo.sql"
+      assert mig.exists(), "migration 179_wc_monte_carlo.sql missing"
+      msrc = mig.read_text()
+      assert "CREATE TABLE IF NOT EXISTS wc_monte_carlo_results" in msrc
+      assert "p_advance" in msrc and "p_winner" in msrc
+      assert "ENABLE ROW LEVEL SECURITY" in msrc
+      assert 'Public read' in msrc
+
+      # 3. Scheduler wiring — single new cron entry at 06:30 UTC.
+      sched = (root / "workers" / "scheduler.py").read_text()
+      assert "job_wc_monte_carlo" in sched, "scheduler job fn missing"
+      assert "wc_monte_carlo" in sched and "hour=6, minute=30" in sched
+
+Notes:
+  - Source-inspection only — does not require DB or network.
+  - Mirrors the WC-A3 / WC-AI-PREVIEW smoke pattern (see smoke_test.py
+    around the wc_market_consensus / wc_match_previews entries).
+  - Verified locally: dry-run `python3 scripts/wc_monte_carlo.py --dry-run
+    --n-sims 1000` completes in ~0.2s and prints the top-10 table.
+
+------------------------------------------------------------------------
+WEB SMOKE — WC-E1-WEB
+------------------------------------------------------------------------
+Goal: confirm the page exists, imports the table component, reads from
+wc_monte_carlo_results, and links to team detail pages.
+
+Suggested test (inside scripts/smoke_test.py, web-source inspection
+pattern — see existing WC-*-WEB tests):
+
+  @test("WC-E1-WEB — /world-cup/who-can-win page wiring")
+  def test_wc_e1_web():
+      from pathlib import Path
+      web = Path(__file__).resolve().parent.parent.parent / "odds-intel-web"
+
+      page = web / "src" / "app" / "(app)" / "world-cup" / "who-can-win" / "page.tsx"
+      assert page.exists(), "/world-cup/who-can-win page missing"
+      psrc = page.read_text()
+      # Server component reads the snapshot table directly.
+      assert "wc_monte_carlo_results" in psrc, "page must read MC table"
+      # SEO + canonical url present.
+      assert "alternates" in psrc and "who-can-win" in psrc
+      # Empty-state copy required by the task.
+      assert "Simulation runs nightly" in psrc
+      # Links to team detail pages.
+      assert "/world-cup/teams/" in psrc
+
+      # Sortable client component exists and renders the prob bar.
+      table = web / "src" / "components" / "wc-who-can-win-table.tsx"
+      assert table.exists(), "wc-who-can-win-table.tsx missing"
+      tsrc = table.read_text()
+      assert '"use client"' in tsrc, "table must be a client component"
+      assert "pWinner" in tsrc and "pAdvance" in tsrc
+      assert "advanceBarTone" in tsrc, "advance bar visual missing"
+
+Notes:
+  - Source-inspection — does not require Next.js to be running.
+  - Verified locally: `npx tsc --noEmit` is clean.
+
+------------------------------------------------------------------------
+VERIFICATION CHECKLIST
+------------------------------------------------------------------------
+[x] Engine dry-run: python3 scripts/wc_monte_carlo.py --dry-run
+    --n-sims 1000 --print-top 10 completes in <30s
+[x] Top-5 contenders printed correctly (Spain, France, Argentina,
+    England, Morocco at ~20/11/9/7/4% on a 1k-sim run)
+[x] Web typecheck: npx tsc --noEmit clean
+[x] Migration 179 created (180+ reserved for A4/A5)
+[x] Scheduler single new cron entry added at 06:30 UTC, WC-window-gated
+[x] smoke_test.py NOT modified (per task constraint)

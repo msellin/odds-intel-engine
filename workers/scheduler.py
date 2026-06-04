@@ -457,6 +457,20 @@ def job_wc_market_consensus():
     _run_job("wc_market_consensus", run_wc_market_consensus)
 
 
+def job_wc_monte_carlo():
+    """WC-E1 (2026-06-04): nightly 10k Monte Carlo simulation of WC2026 —
+    per-team probabilities of advancing, R16, QF, SF, Final, Winner. Gated
+    to the WC window. Reads group-stage predictions from `predictions`
+    (national_team_v1_blended preferred, else national_team_v1) and ELO
+    from `team_elo_international` for knockout sims. Writes one snapshot
+    into `wc_monte_carlo_results`. Powers /world-cup/who-can-win."""
+    today = date.today()
+    if not (_WC_PREVIEW_WINDOW_START <= today <= _WC_PREVIEW_WINDOW_END):
+        return
+    from scripts.wc_monte_carlo import run_wc_monte_carlo
+    _run_job("wc_monte_carlo", run_wc_monte_carlo)
+
+
 def job_email_digest():
     from workers.jobs.email_digest import run_email_digest
     _run_job("email_digest", run_email_digest)
@@ -1463,6 +1477,14 @@ def main():
     scheduler.add_job(job_wc_market_consensus, CronTrigger(hour=6, minute=0),
                       id="wc_market_consensus",
                       name="WC Market Consensus 06:00 [WC window]")
+
+    # WC-E1 (2026-06-04): nightly Monte Carlo (10k sims) at 06:30 UTC, after
+    # the morning predictions refresh (04:00 → fetch_predictions + national-
+    # team predictor). Writes one snapshot to wc_monte_carlo_results which
+    # powers /world-cup/who-can-win. Gated inside the job to the WC window.
+    scheduler.add_job(job_wc_monte_carlo, CronTrigger(hour=6, minute=30),
+                      id="wc_monte_carlo",
+                      name="WC Monte Carlo 06:30 [WC window]")
 
     # EMAIL-DIGEST-SMART (ENG-4): four qualification slots, 10/12/14/16 UTC.
     # First slot whose pending-bet signal-strength score clears
