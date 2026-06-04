@@ -1,0 +1,81 @@
+WC-A3-FIX — smoke test additions for scripts/smoke_test.py
+==========================================================
+
+Context
+-------
+Wave 1 of WC-A3 shipped scripts/scrape_wc_market_consensus.py + the
+wc_market_consensus table + a 06:00 UTC daily cron in the scheduler, but
+the per-source HTML scrapers (eloratings/forebet/oddsportal/betfair)
+returned 0 fixtures because every one of those pages is either a JS SPA,
+behind Cloudflare, or 404s the slug.
+
+WC-A3-FIX replaces the per-source extractors with three working JSON/TSV
+sources:
+  - eloratings.net  — fixtures.tsv (model-based 1X2; ~75 WC rows in 1 req)
+  - Pinnacle public — guest.api.arcadia.pinnacle.com /matchups + /markets/
+                      (American moneylines; sharpest market; ~70 fixtures)
+  - Smarkets API    — exchange last-executed prices in 1/100ths of % per
+                      contract (HOME/DRAW/AWAY); 64-72 fixtures
+
+A consensus row writes when ≥2 of those three sources match a DB fixture
+on (home_team_slug, away_team_slug) using diacritic-stripped, alias-aware
+matching.
+
+Suggested smoke tests
+---------------------
+
+1) WC-A3-FIX-SOURCES  (source-inspection — fast, no network)
+   - Import scripts.scrape_wc_market_consensus and assert the three
+     scrape_* fns exist:
+       scrape_eloratings, scrape_pinnacle, scrape_smarkets
+   - Assert MIN_SOURCES == 2 (the gate that blocks A4 if a source dies)
+   - Assert the public endpoint constants are present:
+       ELORATINGS_FIXTURES_TSV, ELORATINGS_TEAMS_TSV,
+       PINNACLE_MATCHUPS_URL, PINNACLE_MARKETS_URL,
+       SMARKETS_EVENTS_URL
+   - Assert PINNACLE_WC_LEAGUE_ID == 2686 (FIFA World Cup; if Pinnacle
+     ever moves the league we want the smoke to fail loud, not silently
+     pull 0 fixtures the way the Wave-1 code did).
+
+2) WC-A3-FIX-VIG-REMOVE  (pure-function, no network)
+   - vig_remove(60, 20, 25) must return a triple summing to 1.0 ±1e-9.
+   - vig_remove(None, 20, 25) must return None (degenerate handling).
+   - vig_remove(0.6, 0.2, 0.25) must also normalise to sum 1.0 — i.e.
+     the scaler must work for both [0,1] and [0,100] inputs.
+   - american_to_decimal(-155) ≈ 1.6452; american_to_decimal(+283) ≈ 3.83;
+     american_to_decimal(0) is None.
+
+3) WC-A3-FIX-NAME-ALIASES  (pure-function, no network)
+   - _names_match('Bosnia & Herzegovina', 'Bosnia and Herzegovina') must be True
+   - _names_match('Türkiye', 'Turkey')              must be True
+   - _names_match('Czech Republic', 'Czechia')      must be True
+   - _names_match('USA', 'United States')           must be True
+   - _names_match('Ivory Coast', "Cote d'Ivoire")   must be True
+   - _names_match('South Korea', 'Korea Republic')  must be True
+   - _names_match('Cape Verde Islands', 'Cape Verde') must be True
+   - _names_match('Brazil', 'Germany')              must be False
+   These cover the alias map for every team in the 2026-06-11 → 06-15 window.
+
+4) WC-A3-FIX-AGGREGATE  (pure-function, no network)
+   - aggregate({'a': (0.5, 0.25, 0.25)}) → None  (single source < MIN_SOURCES)
+   - aggregate({'a': (0.6, 0.2, 0.2), 'b': (0.5, 0.3, 0.2)}) → triple summing to 1.0
+   - Resulting h ≈ 0.55, d ≈ 0.25, a ≈ 0.20 (within VIG_TOL).
+
+Optional (slow — skipped under --filter normally, gated on a flag)
+------------------------------------------------------------------
+
+5) WC-A3-FIX-LIVE  (live network — only when an integration flag is set)
+   - Run run_wc_market_consensus(max_fixtures=3, dry_run=True) and assert
+     per_source_counts['eloratings'] >= 50 and per_source_counts['pinnacle'] >= 50
+     (smarkets may rate-limit so we only require ≥1 of {pinnacle, smarkets}
+     to hit ≥50 — the OR gate is the actual production invariant).
+   - This guards against silent endpoint moves (the smoke that Wave-1
+     lacked).
+
+Files touched
+-------------
+- scripts/scrape_wc_market_consensus.py  (per-source extractors replaced)
+
+Files NOT touched (per instructions)
+------------------------------------
+- scripts/smoke_test.py — Margus to add the above tests manually.

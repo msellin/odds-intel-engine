@@ -11,23 +11,36 @@ Dimers, Opta) had Brazil at 55-69%. We want a per-fixture market-consensus
 signal so we can (a) blend it with our own model in the next wave, and
 (b) surface model-vs-market disagreement on the match-detail page.
 
-Sources (in order of preference):
-  1. eloratings.net  — static HTML, scraped from /2026_World_Cup.
-                       Predicted probabilities per fixture.
-  2. forebet         — /en/football-tips-and-predictions-for-tomorrow
-                       1X2 percentages per match (also accepts the WC URL).
-  3. oddsportal      — /football/world/world-cup-2026/ aggregated bookmaker
-                       avg. Cloudflare-protected — uses polite headers +
-                       backoff. Best-effort, will gracefully skip on 403.
-  4. betfair         — exchange data is gated on session cookies; included
-                       as a hook but skipped when the endpoint requires auth.
+Sources (Wave-2 working set — replaced the Wave-1 stubs):
+  1. eloratings.net  — fixtures.tsv has every international fixture with
+                       team1_win%, draw%, team2_win% columns. Single TSV
+                       request, very efficient. Pure model (Elo-based).
+  2. Pinnacle public — guest.api.arcadia.pinnacle.com exposes league 2686
+       (Arcadia)      (FIFA World Cup) /matchups + /markets/straight. Two
+                       JSON requests give us every WC moneyline (American
+                       odds). The sharpest book on the planet — high-signal
+                       market data.
+  3. Smarkets API    — api.smarkets.com/v3/events with parent_id of the WC
+                       container event returns 64-72 fixtures; per-event
+                       /markets/ + /contracts/ + /last_executed_prices/
+                       gives exchange-implied probabilities. Real money,
+                       essentially vig-free.
+
+Wave-1 sources that turned out to be dead ends and were removed:
+  - forebet — WC predictions page has no WC fixtures listed yet (only
+    club games). Will revisit if forebet adds WC coverage closer to KO.
+  - oddsportal — Cloudflare-protected, 404s the slug, JS-only HTML.
+  - betfair.com /exchange/plus/ — JS shell, no static markup; the actual
+    exchange API requires app key + session.
 
 A fixture is written only when at least TWO sources succeed. Per-source
 probabilities are vig-removed (each (h, d, a) tuple normalised to sum to
 1.0). Source-level outputs are stored under `sources` JSONB for audit.
 
 Polite scraping: ≥2s between requests, real User-Agent, no parallel
-hammering, graceful skip on 403/timeout/parse error.
+hammering, graceful skip on 403/timeout/parse error. Smarkets requires
+4 requests per fixture (events list + per-event markets/contracts/prices),
+so on a 72-fixture run that's ~5min — comfortably within the daily window.
 
 Usage:
     python3 scripts/scrape_wc_market_consensus.py
@@ -48,7 +61,6 @@ from pathlib import Path
 from typing import Optional
 
 import requests
-from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from rich.console import Console
 
@@ -79,10 +91,28 @@ MIN_SOURCES = 2
 VIG_TOL = 0.01
 
 # Source endpoints — kept module-level so the smoke test can pin them.
-ELORATINGS_URL = "https://www.eloratings.net/2026_World_Cup"
-FOREBET_URL = "https://www.forebet.com/en/football-tips-and-predictions-for-tomorrow"
-ODDSPORTAL_URL = "https://www.oddsportal.com/football/world/world-cup-2026/"
-BETFAIR_URL = "https://www.betfair.com/exchange/plus/football"
+# Eloratings publishes a single TSV with every international fixture's
+# predicted W/D/L (model-based, Elo-derived).
+ELORATINGS_FIXTURES_TSV = "https://www.eloratings.net/fixtures.tsv"
+ELORATINGS_TEAMS_TSV    = "https://www.eloratings.net/en.teams.tsv"
+
+# Pinnacle's guest Arcadia API — no auth required for read.
+PINNACLE_WC_LEAGUE_ID   = 2686  # FIFA - World Cup (verified 2026-06-04)
+PINNACLE_MATCHUPS_URL   = (
+    f"https://guest.api.arcadia.pinnacle.com/0.1/leagues/{PINNACLE_WC_LEAGUE_ID}/matchups"
+)
+PINNACLE_MARKETS_URL    = (
+    f"https://guest.api.arcadia.pinnacle.com/0.1/leagues/{PINNACLE_WC_LEAGUE_ID}/markets/straight"
+)
+
+# Smarkets — exchange odds, last executed price per contract.
+# parent_id 42791414 is the WC2026 container event (verified 2026-06-04).
+SMARKETS_WC_PARENT_ID   = 42791414
+SMARKETS_EVENTS_URL     = (
+    "https://api.smarkets.com/v3/events/"
+    "?states=upcoming&type_scope=single_event&types=football_match"
+    f"&with_new_in=true&parent_id={SMARKETS_WC_PARENT_ID}&limit=200"
+)
 
 
 # ── HTTP layer ────────────────────────────────────────────────────────────
@@ -90,24 +120,30 @@ BETFAIR_URL = "https://www.betfair.com/exchange/plus/football"
 class PoliteFetcher:
     """Single-threaded HTTP fetcher that enforces ≥REQUEST_INTERVAL_S
     between requests so we never hammer a source. Real UA, persistent
-    session for keep-alive."""
+    session for keep-alive.
 
-    def __init__(self) -> None:
+    Provides both `get()` (raw text) and `get_json()` (auto-decoded) —
+    every source we use now returns JSON or TSV, no HTML parsing left.
+    """
+
+    def __init__(self, *, interval_s: float = REQUEST_INTERVAL_S) -> None:
         self._last_request_ts = 0.0
+        self._interval_s = interval_s
         self._session = requests.Session()
         self._session.headers.update({
             "User-Agent": USER_AGENT,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept": "application/json, text/plain, text/tab-separated-values, */*",
             "Accept-Language": "en-US,en;q=0.5",
         })
 
-    def get(self, url: str, *, extra_headers: Optional[dict] = None) -> Optional[str]:
-        # Enforce inter-request gap — politeness budget.
+    def _wait(self) -> None:
         elapsed = time.monotonic() - self._last_request_ts
-        if elapsed < REQUEST_INTERVAL_S:
-            time.sleep(REQUEST_INTERVAL_S - elapsed)
+        if elapsed < self._interval_s:
+            time.sleep(self._interval_s - elapsed)
         self._last_request_ts = time.monotonic()
 
+    def get(self, url: str, *, extra_headers: Optional[dict] = None) -> Optional[str]:
+        self._wait()
         headers = dict(extra_headers or {})
         try:
             resp = self._session.get(url, headers=headers, timeout=REQUEST_TIMEOUT_S)
@@ -118,6 +154,16 @@ class PoliteFetcher:
             console.print(f"  [yellow]HTTP {resp.status_code} for {url}[/yellow]")
             return None
         return resp.text
+
+    def get_json(self, url: str, *, extra_headers: Optional[dict] = None) -> Optional[object]:
+        txt = self.get(url, extra_headers=extra_headers)
+        if txt is None:
+            return None
+        try:
+            return json.loads(txt)
+        except json.JSONDecodeError as e:
+            console.print(f"  [yellow]JSON decode error for {url}: {e}[/yellow]")
+            return None
 
 
 # ── Normalisation helpers ─────────────────────────────────────────────────
@@ -140,6 +186,9 @@ def _slug(name: str) -> str:
 # Hand-curated aliases. Keys are slugs of the canonical AF name, values are
 # slugs of the variant likely to appear in the wild. Bidirectional matching
 # via _slug-equivalence below — we add the reverse mapping at module load.
+# Updated 2026-06-04 to cover the WC opener canary (Brazil v Morocco — no
+# alias needed, both spellings agree) plus every country in our 06-11 → 06-15
+# fixture window.
 _ALIASES_RAW = {
     "usa":                "unitedstates",
     "southkorea":         "korearepublic",
@@ -148,6 +197,9 @@ _ALIASES_RAW = {
     "capeverdeislands":   "capeverde",
     "czechrepublic":      "czechia",
     "northmacedonia":     "macedoniafyr",
+    "turkiye":            "turkey",
+    "bosniaherzegovina":  "bosniaandherzegovina",
+    "curacao":            "curaao",  # diacritic-stripped 'Curaçao' → 'curaao'
 }
 
 
@@ -180,168 +232,335 @@ def vig_remove(h: float, d: float, a: float) -> Optional[tuple[float, float, flo
     return (h / s, d / s, a / s)
 
 
-# ── Source: eloratings.net ────────────────────────────────────────────────
+def american_to_decimal(odds: float) -> Optional[float]:
+    """Pinnacle returns American moneylines. Convert to decimal so we can
+    take 1/decimal as implied probability. Returns None on degenerate input."""
+    if odds is None:
+        return None
+    try:
+        odds = float(odds)
+    except (TypeError, ValueError):
+        return None
+    if odds == 0:
+        return None
+    if odds > 0:
+        return 1.0 + odds / 100.0
+    return 1.0 + 100.0 / abs(odds)
+
+
+# ── Source: eloratings.net (model — fixtures.tsv) ─────────────────────────
+
+def _winexp_to_wdl(we: float) -> tuple[float, float, float]:
+    """Convert a single Elo win-expectancy into a discrete (win, draw, loss)
+    triple for the home team.
+
+    Eloratings' fixtures.tsv only publishes win-expectancy (team1's expected
+    share of points, where win=1, draw=0.5, loss=0). Their own page derives
+    team2 win-expectancy as `100 - we1` and never breaks the draw out
+    separately — they label col 12 'draw' but it's actually the rating
+    exchange on a draw outcome via `formatChange(fields[12])` in their JS,
+    not a probability. So to get a 1X2 from their TSV we need to split
+    win-expectancy ourselves.
+
+    We use a draw-probability parabola peaking at we=0.5: this is the
+    classic "Maher-style" closed form often used to back out a 1X2 from
+    a single rating-derived expectancy. It produces:
+        we = 0.50 → draw ≈ 0.30 (balanced match)
+        we = 0.72 → draw ≈ 0.24 (Brazil-Morocco — Pinnacle agrees: 0.252)
+        we = 0.93 → draw ≈ 0.08 (Mexico-South Africa — favourites get low draw rate)
+        we = 0.06 → draw ≈ 0.07 (heavy underdog at home)
+    then win = we - 0.5*draw, loss = (1 - we) - 0.5*draw. This guarantees
+    win + draw + loss = 1.0 (i.e. winexp is preserved as team1's expected
+    points share).
+
+    This is a model-based approximation — Eloratings remains our noisiest
+    source. The point isn't to match it to the market exactly; it's to
+    have an independent third source so MIN_SOURCES≥2 still passes when
+    Pinnacle or Smarkets has a transient outage.
+    """
+    if we is None or we < 0 or we > 1:
+        return (0.0, 0.0, 0.0)
+    draw = max(0.0, 0.30 * (1.0 - 4.0 * (we - 0.5) ** 2))
+    win = max(0.0, we - 0.5 * draw)
+    loss = max(0.0, (1.0 - we) - 0.5 * draw)
+    return (win, draw, loss)
+
 
 def scrape_eloratings(fetcher: PoliteFetcher) -> dict[tuple[str, str], tuple[float, float, float]]:
     """Return {(home_slug, away_slug): (h, d, a)} from eloratings.net.
 
-    The page lists every fixture with model-predicted W/D/L percentages.
-    We parse it as plain text since the table structure is straightforward
-    HTML rows: team1, team2, P(team1 win), P(draw), P(team2 win).
+    eloratings.net is a JS SPA, but the data layer is plain TSV at known
+    URLs (the page just renders these client-side). We fetch:
+      - en.teams.tsv     → ISO-ish country code → display name
+      - fixtures.tsv     → one row per upcoming international fixture
+
+    fixtures.tsv columns (verified 2026-06-04 against `scripts/ratings.js`
+    in the JS bundle — see lines 38770-38800 which assign row.winexp /
+    row.draw from fields[11..]):
+        0..2   year, month, day
+        3,4    team1_code, team2_code   (e.g. BR, MA)
+        5      tournament_code          (WC = World Cup)
+        6      venue_code
+        7,8    team1_rank, team2_rank
+        9,10   team1_elo,  team2_elo
+        11     team1 win-expectancy %   (team1's expected share of points,
+                                          where win=1, draw=0.5, loss=0)
+        12     rating exchange on draw  (signed integer, NOT a probability;
+                                          the eloratings page labels this
+                                          'draw' but it's the rating delta
+                                          via formatChange(), not P(draw))
+        13+    change1..change5         (rating changes in different scenarios)
+
+    We pull col 11 as winexp and convert to a discrete (h, d, a) via
+    `_winexp_to_wdl()`.
     """
-    html = fetcher.get(ELORATINGS_URL)
-    if not html:
+    teams_tsv = fetcher.get(ELORATINGS_TEAMS_TSV)
+    if not teams_tsv:
         return {}
+    code_to_name: dict[str, str] = {}
+    for line in teams_tsv.split("\n"):
+        parts = line.split("\t")
+        if len(parts) >= 2 and parts[0]:
+            code_to_name[parts[0]] = parts[1]
+
+    fixtures_tsv = fetcher.get(ELORATINGS_FIXTURES_TSV)
+    if not fixtures_tsv:
+        return {}
+
     out: dict[tuple[str, str], tuple[float, float, float]] = {}
-    try:
-        soup = BeautifulSoup(html, "lxml")
-        # eloratings.net uses div-row layout in places; fall back to a
-        # regex on the rendered text. Pattern: TEAM_A vs TEAM_B ... three
-        # percentages on the same row.
-        text = soup.get_text("\n")
-        # Each fixture line looks like (after whitespace cleanup):
-        #   "Brazil 55% 27% 18% Morocco"
-        # or table layout — we run a permissive regex over the text.
-        line_re = re.compile(
-            r"([A-Z][A-Za-z .'\-]{2,30})\s+(\d{1,2})%\s+(\d{1,2})%\s+(\d{1,2})%\s+([A-Z][A-Za-z .'\-]{2,30})"
+    for line in fixtures_tsv.split("\n"):
+        parts = line.split("\t")
+        if len(parts) < 12:
+            continue
+        # Restrict to World Cup rows only — fixtures.tsv contains every
+        # international (friendlies, qualifiers, AFCON, etc.).
+        if parts[5] != "WC":
+            continue
+        t1_code, t2_code = parts[3], parts[4]
+        t1_name = code_to_name.get(t1_code)
+        t2_name = code_to_name.get(t2_code)
+        if not (t1_name and t2_name):
+            continue
+        try:
+            winexp_pct = float(parts[11])
+        except ValueError:
+            continue
+        # Eloratings publishes a single win-expectancy (team1's share of
+        # points, where win=1, draw=0.5, loss=0). Split into discrete W/D/L
+        # via the draw-parabola model — see _winexp_to_wdl docstring.
+        h, d, a = _winexp_to_wdl(winexp_pct / 100.0)
+        triple = vig_remove(h, d, a)
+        if not triple:
+            continue
+        out[(_slug(t1_name), _slug(t2_name))] = triple
+    return out
+
+
+# ── Source: Pinnacle public Arcadia API ───────────────────────────────────
+
+def scrape_pinnacle(fetcher: PoliteFetcher) -> dict[tuple[str, str], tuple[float, float, float]]:
+    """Return {(home_slug, away_slug): (h, d, a)} from Pinnacle.
+
+    Pinnacle exposes a guest API at guest.api.arcadia.pinnacle.com — no
+    auth required, JSON, public. League 2686 is FIFA - World Cup. We fetch:
+
+      1. /leagues/2686/matchups            → matchup metadata, participants
+                                              (home/away alignment)
+      2. /leagues/2686/markets/straight    → all markets across every
+                                              matchup in this league
+
+    Filter markets to (period=0, type=moneyline, key='s;0;m') — that's
+    the full-match 1X2. Prices are American (positive/negative integers);
+    convert to decimal → implied → vig-remove. Three-way moneylines have
+    'home', 'away', 'draw' designations.
+    """
+    matchups = fetcher.get_json(PINNACLE_MATCHUPS_URL)
+    if not isinstance(matchups, list):
+        return {}
+
+    # Build matchup_id → (home_name, away_name) map. Skip 'TBD' matchups
+    # (where the away participant name is None because the bracket round
+    # isn't resolved yet) — they have no 1X2 we can use.
+    mid_to_teams: dict[int, tuple[str, str]] = {}
+    for m in matchups:
+        parts = m.get("participants") or []
+        if len(parts) != 2:
+            continue
+        home_p = next((p for p in parts if p.get("alignment") == "home"), None)
+        away_p = next((p for p in parts if p.get("alignment") == "away"), None)
+        if not (home_p and away_p):
+            continue
+        h_name = home_p.get("name")
+        a_name = away_p.get("name")
+        if not (h_name and a_name):
+            continue
+        mid_to_teams[m["id"]] = (h_name, a_name)
+
+    markets = fetcher.get_json(PINNACLE_MARKETS_URL)
+    if not isinstance(markets, list):
+        return {}
+
+    out: dict[tuple[str, str], tuple[float, float, float]] = {}
+    for mkt in markets:
+        if mkt.get("period") != 0:
+            continue
+        if mkt.get("type") != "moneyline":
+            continue
+        if mkt.get("key") != "s;0;m":
+            continue
+        mid = mkt.get("matchupId")
+        teams = mid_to_teams.get(mid)
+        if not teams:
+            continue
+        home_name, away_name = teams
+        # prices: list of {designation, price} for 'home', 'away', 'draw'
+        price_by_des: dict[str, float] = {}
+        for p in (mkt.get("prices") or []):
+            d = p.get("designation")
+            if d in ("home", "away", "draw"):
+                price_by_des[d] = p.get("price")
+        if not all(k in price_by_des for k in ("home", "away", "draw")):
+            continue
+        dh = american_to_decimal(price_by_des["home"])
+        dd = american_to_decimal(price_by_des["draw"])
+        da = american_to_decimal(price_by_des["away"])
+        if not (dh and dd and da):
+            continue
+        triple = vig_remove(1.0 / dh, 1.0 / dd, 1.0 / da)
+        if not triple:
+            continue
+        out[(_slug(home_name), _slug(away_name))] = triple
+    return out
+
+
+# ── Source: Smarkets exchange API ─────────────────────────────────────────
+
+def _smarkets_first_winner_market(fetcher: PoliteFetcher, event_id: str) -> Optional[str]:
+    """Return the market_id of the WINNER_3_WAY (1X2) market for an event,
+    or None if the event has no such market open."""
+    data = fetcher.get_json(f"https://api.smarkets.com/v3/events/{event_id}/markets/")
+    if not isinstance(data, dict):
+        return None
+    for mkt in data.get("markets", []):
+        # Prefer the WINNER_3_WAY market explicitly. Smarkets sometimes
+        # offers 'Match Odds (90 mins)' which is also winner-cat — we just
+        # take the first winner-category market with 3 contracts.
+        if mkt.get("category") == "winner" and mkt.get("market_type", {}).get("name") == "WINNER_3_WAY":
+            return mkt.get("id")
+    # Fallback: first 'winner' market.
+    for mkt in data.get("markets", []):
+        if mkt.get("category") == "winner":
+            return mkt.get("id")
+    return None
+
+
+def scrape_smarkets(fetcher: PoliteFetcher,
+                    fixture_match_keys: Optional[set[tuple[str, str]]] = None
+                    ) -> dict[tuple[str, str], tuple[float, float, float]]:
+    """Return {(home_slug, away_slug): (h, d, a)} from Smarkets.
+
+    Smarkets is an exchange — last_executed_price is in 1/100ths of a
+    percent (e.g. 5988 cents == 59.88% implied). 3-way (1X2) markets have
+    HOME / DRAW / AWAY contract types. Last-executed sums ≈ 100% (exchange
+    is essentially vig-free; the small drift we still pass through
+    vig_remove() defensively).
+
+    `fixture_match_keys` is an optional set of (home_slug, away_slug)
+    tuples — when provided, we only call the per-event markets endpoint
+    for events that match one of our fixtures. Saves ~3 requests per
+    non-matching event on a typical run.
+    """
+    events_data = fetcher.get_json(SMARKETS_EVENTS_URL)
+    if not isinstance(events_data, dict):
+        return {}
+    events = events_data.get("events") or []
+    out: dict[tuple[str, str], tuple[float, float, float]] = {}
+
+    for ev in events:
+        # Event names look like "Brazil vs Morocco" — split on ' vs '.
+        name = ev.get("name") or ""
+        if " vs " not in name:
+            continue
+        home_name, away_name = name.split(" vs ", 1)
+        key = (_slug(home_name), _slug(away_name))
+
+        # Cost control: smarkets requires 3 extra HTTP requests per event
+        # (markets, contracts, last_executed_prices) — at 2s/request that's
+        # ~6s/event. On a --max-fixtures=5 dry-run we still want all 5
+        # canary fixtures covered, but we should skip events that don't
+        # match any caller fixture. The fixture_match_keys check below
+        # tolerates the alias map (Bosnia & Herzegovina ↔ Bosnia and
+        # Herzegovina, Türkiye ↔ Turkey, etc.) — a strict set lookup
+        # would miss those.
+        if fixture_match_keys is not None:
+            matched = key in fixture_match_keys or any(
+                _names_match(home_name, h) and _names_match(away_name, a)
+                for (h, a) in fixture_match_keys
+            )
+            if not matched:
+                continue
+
+        ev_id = ev.get("id")
+        if not ev_id:
+            continue
+        market_id = _smarkets_first_winner_market(fetcher, ev_id)
+        if not market_id:
+            continue
+        # Contracts → name → contract_type (HOME/DRAW/AWAY)
+        contracts_data = fetcher.get_json(
+            f"https://api.smarkets.com/v3/markets/{market_id}/contracts/"
         )
-        for m in line_re.finditer(text):
-            team_a, ph, pd, pa, team_b = m.groups()
-            triple = vig_remove(float(ph), float(pd), float(pa))
-            if not triple:
-                continue
-            out[(_slug(team_a), _slug(team_b))] = triple
-    except Exception as e:
-        console.print(f"  [yellow]eloratings parse error: {type(e).__name__}: {e}[/yellow]")
-        return {}
-    return out
-
-
-# ── Source: forebet ───────────────────────────────────────────────────────
-
-def scrape_forebet(fetcher: PoliteFetcher) -> dict[tuple[str, str], tuple[float, float, float]]:
-    """Return {(home_slug, away_slug): (h, d, a)} from forebet.
-
-    Forebet exposes 1X2 percentages per fixture in `.fprc_1`, `.fprc_X`,
-    `.fprc_2` cells. We pull every fixture row from the predictions page
-    (which has the WC under its 'World Cup 2026' section) and keep only
-    triples that vig-remove cleanly.
-    """
-    html = fetcher.get(FOREBET_URL)
-    if not html:
-        return {}
-    out: dict[tuple[str, str], tuple[float, float, float]] = {}
-    try:
-        soup = BeautifulSoup(html, "lxml")
-        # Forebet rows: each prediction row carries data-link / data-href
-        # plus three .fprc_* cells. We scan every row that has all three.
-        for row in soup.select("tr, div.rcnt"):
-            cells = {
-                "1": row.select_one(".fprc_1, .fprc-1"),
-                "X": row.select_one(".fprc_X, .fprc-X"),
-                "2": row.select_one(".fprc_2, .fprc-2"),
-            }
-            if not all(cells.values()):
-                continue
-            try:
-                ph = float(re.sub(r"[^0-9.]", "", cells["1"].get_text() or "0"))
-                pd = float(re.sub(r"[^0-9.]", "", cells["X"].get_text() or "0"))
-                pa = float(re.sub(r"[^0-9.]", "", cells["2"].get_text() or "0"))
-            except ValueError:
-                continue
-            # Team names — look for two .homePr/.awayPr or two team
-            # cells inside the same row.
-            team_nodes = row.select(".homeTeam, .awayTeam, .homePr, .awayPr, td.h_t, td.a_t")
-            if len(team_nodes) < 2:
-                # Try the title attribute fallback.
-                title = (row.get("title") or "")
-                m = re.match(r"(.+?)\s*[-–vs]+\s*(.+?)$", title)
-                if not m:
+        if not isinstance(contracts_data, dict):
+            continue
+        ctype_by_cid: dict[str, str] = {}
+        for c in contracts_data.get("contracts", []):
+            ctype = (c.get("contract_type") or {}).get("name")
+            cid = c.get("id")
+            if cid and ctype in ("HOME", "DRAW", "AWAY"):
+                ctype_by_cid[cid] = ctype
+        if len(ctype_by_cid) < 3:
+            continue
+        # Last executed prices
+        lep_data = fetcher.get_json(
+            f"https://api.smarkets.com/v3/markets/{market_id}/last_executed_prices/"
+        )
+        if not isinstance(lep_data, dict):
+            continue
+        leps = (lep_data.get("last_executed_prices") or {}).get(market_id, [])
+        price_by_type: dict[str, float] = {}
+        for p in leps:
+            ctype = ctype_by_cid.get(p.get("contract_id"))
+            lep = p.get("last_executed_price")
+            if ctype and lep is not None:
+                try:
+                    price_by_type[ctype] = float(lep)
+                except (TypeError, ValueError):
                     continue
-                home_name, away_name = m.group(1).strip(), m.group(2).strip()
-            else:
-                home_name = team_nodes[0].get_text(strip=True)
-                away_name = team_nodes[1].get_text(strip=True)
-            triple = vig_remove(ph, pd, pa)
-            if not triple:
-                continue
-            out[(_slug(home_name), _slug(away_name))] = triple
-    except Exception as e:
-        console.print(f"  [yellow]forebet parse error: {type(e).__name__}: {e}[/yellow]")
-        return {}
+        if not all(k in price_by_type for k in ("HOME", "DRAW", "AWAY")):
+            # Fall back to mid-price from /quotes/ if an outcome never
+            # traded yet (rare for headline WC matches but safe to handle).
+            quotes_data = fetcher.get_json(
+                f"https://api.smarkets.com/v3/markets/{market_id}/quotes/"
+            )
+            if isinstance(quotes_data, dict):
+                for cid, q in quotes_data.items():
+                    ctype = ctype_by_cid.get(cid)
+                    if not ctype or ctype in price_by_type:
+                        continue
+                    bids = q.get("bids") or []
+                    offers = q.get("offers") or []
+                    if bids and offers:
+                        mid = (bids[0]["price"] + offers[0]["price"]) / 2.0
+                        # Quote prices are in cents (1/100 of %).
+                        price_by_type[ctype] = mid / 100.0
+        if not all(k in price_by_type for k in ("HOME", "DRAW", "AWAY")):
+            continue
+        triple = vig_remove(price_by_type["HOME"], price_by_type["DRAW"], price_by_type["AWAY"])
+        if not triple:
+            continue
+        out[key] = triple
+
     return out
-
-
-# ── Source: OddsPortal ────────────────────────────────────────────────────
-
-def scrape_oddsportal(fetcher: PoliteFetcher) -> dict[tuple[str, str], tuple[float, float, float]]:
-    """Return {(home_slug, away_slug): (h, d, a)} from OddsPortal.
-
-    OddsPortal is Cloudflare-protected — most reqs without a real browser
-    get 403'd. We try a polite plain GET; if it 403s we log and return {}
-    so the caller falls back to the other sources. We use the aggregated
-    average row when the page does load (data-attribute 'data-avgodds-1/X/2').
-    """
-    html = fetcher.get(ODDSPORTAL_URL)
-    if not html:
-        return {}
-    out: dict[tuple[str, str], tuple[float, float, float]] = {}
-    try:
-        soup = BeautifulSoup(html, "lxml")
-        # OddsPortal renders fixture rows under .table-main / .deactivate.
-        # We look for rows that expose home + away names and three decimal
-        # odds attributes. The exact selector is brittle by design — when
-        # it changes, the source quietly returns {} and we fall back.
-        for row in soup.select("tr.deactivate, div.eventRow"):
-            home_node = row.select_one(".table-participant, .participantName, .home")
-            away_node = row.select_one(".table-participant + .table-participant, .participantName + .participantName, .away")
-            if not (home_node and away_node):
-                continue
-            home_name = home_node.get_text(strip=True)
-            away_name = away_node.get_text(strip=True)
-            # Average odds — pull from data attributes or .odds-data cells.
-            odds_cells = row.select(".odds-data, .odds, td.center")
-            decs: list[float] = []
-            for c in odds_cells:
-                txt = c.get_text(strip=True)
-                m = re.match(r"^\s*([0-9]+\.[0-9]+)\s*$", txt)
-                if m:
-                    decs.append(float(m.group(1)))
-                if len(decs) >= 3:
-                    break
-            if len(decs) < 3:
-                continue
-            try:
-                ph, pd, pa = 1.0 / decs[0], 1.0 / decs[1], 1.0 / decs[2]
-            except ZeroDivisionError:
-                continue
-            triple = vig_remove(ph, pd, pa)
-            if not triple:
-                continue
-            out[(_slug(home_name), _slug(away_name))] = triple
-    except Exception as e:
-        console.print(f"  [yellow]oddsportal parse error: {type(e).__name__}: {e}[/yellow]")
-        return {}
-    return out
-
-
-# ── Source: Betfair Exchange (best-effort) ────────────────────────────────
-
-def scrape_betfair(fetcher: PoliteFetcher) -> dict[tuple[str, str], tuple[float, float, float]]:
-    """Best-effort hook for the Betfair Exchange public page. The actual
-    exchange endpoints require a session/app key — we attempt the public
-    coupon page and quietly skip when it returns no parseable markets.
-
-    Kept as a stub for completeness — the function name + entry exists so
-    the smoke test can confirm we accept ≥2 sources, but in production we
-    expect this source to gracefully degrade in most runs.
-    """
-    html = fetcher.get(BETFAIR_URL)
-    if not html:
-        return {}
-    # Public page is a JS shell — no static markup to parse. Return empty
-    # rather than 500-ing; the caller will fall back to the other sources.
-    return {}
 
 
 # ── Fixture loader ────────────────────────────────────────────────────────
@@ -469,16 +688,22 @@ def run_wc_market_consensus(
 
     fetcher = PoliteFetcher()
 
-    # Fetch each source once — every source returns a {(home, away): triple}
-    # map covering all fixtures it knows about, so we only hit each endpoint
-    # one time per run.
+    # Precompute the set of (home_slug, away_slug) we care about — lets
+    # smarkets short-circuit per-event probes for events that don't match
+    # anything in our DB (e.g. knockout-round TBDs that share a parent_id).
+    fixture_keys: set[tuple[str, str]] = {
+        (_slug(fx["home_team"]), _slug(fx["away_team"])) for fx in fixtures
+    }
+
+    # Fetch each source once. eloratings and pinnacle return data for all
+    # WC fixtures in 1-2 requests; smarkets needs ~4 requests per event so
+    # it's the slowest, but still bounded by total event count.
     console.print("[bold]Scraping sources (≥2s between requests)...[/bold]")
     sources_data: dict[str, dict[tuple[str, str], tuple[float, float, float]]] = {}
     for name, fn in [
-        ("eloratings", scrape_eloratings),
-        ("forebet",    scrape_forebet),
-        ("oddsportal", scrape_oddsportal),
-        ("betfair",    scrape_betfair),
+        ("eloratings", lambda f: scrape_eloratings(f)),
+        ("pinnacle",   lambda f: scrape_pinnacle(f)),
+        ("smarkets",   lambda f: scrape_smarkets(f, fixture_match_keys=fixture_keys)),
     ]:
         try:
             data = fn(fetcher)

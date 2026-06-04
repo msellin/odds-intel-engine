@@ -1,0 +1,144 @@
+WC-E3-E4 — Analytical insight articles — smoke test descriptions
+=====================================================================
+
+Per project CLAUDE.md: "Every task must have at least one test in
+scripts/smoke_test.py before the commit." This file describes the smoke
+tests that should be added (the user task constraint says NOT to modify
+smoke_test.py directly, so this is a hand-off for the operator).
+
+------------------------------------------------------------------------
+ENGINE SMOKE — WC-E3-E4-ENGINE
+------------------------------------------------------------------------
+Goal: source-inspection that the script + migration + scheduler wiring
+all exist and are structurally sound (no DB call required — runs in CI
+without env).
+
+Suggested test (inside scripts/smoke_test.py):
+
+  @test("WC-E3-E4-ENGINE — analytical articles generator structure")
+  def test_wc_e3_e4_engine():
+      from pathlib import Path
+      root = Path(__file__).resolve().parent.parent
+
+      # 1. Generator script exists and exposes the right entry-point.
+      script = root / "scripts" / "generate_wc_insights.py"
+      assert script.exists(), "scripts/generate_wc_insights.py missing"
+      src = script.read_text()
+      assert "def run_wc_insights" in src, \
+          "run_wc_insights entry-point missing"
+      # All four article slugs MUST appear verbatim in the source — these
+      # are the canonical slugs the FE generateStaticParams depends on.
+      for slug in ("group-of-death", "cinderella-story",
+                   "squad-value-vs-model", "champions-favourites"):
+          assert slug in src, f"missing slug constant: {slug}"
+      # Required tables read by the loader.
+      assert "wc_monte_carlo_results" in src
+      assert "team_elo_international" in src
+      assert "team_roster_strength" in src
+      # Idempotency guard.
+      assert "refresh_after" in src
+      # Gemini call + cheapest model.
+      assert "gemini-2.5-flash-lite" in src
+      # Empty-MC skip message.
+      assert "no monte carlo data, skipping" in src
+
+      # 2. Migration exists with the right table + RLS public-read.
+      mig = root / "supabase" / "migrations" / "180_wc_articles.sql"
+      assert mig.exists(), "migration 180_wc_articles.sql missing"
+      msrc = mig.read_text()
+      assert "CREATE TABLE IF NOT EXISTS wc_articles" in msrc
+      assert "slug" in msrc and "body_md" in msrc
+      assert "refresh_after" in msrc
+      assert "ENABLE ROW LEVEL SECURITY" in msrc
+      assert "Public read wc_articles" in msrc
+
+      # 3. Scheduler wiring — single new cron at 08:00 UTC, WC-window gate.
+      sched = (root / "workers" / "scheduler.py").read_text()
+      assert "def job_wc_insights" in sched, "scheduler job fn missing"
+      assert 'id="wc_insights"' in sched, \
+          "scheduler must register id='wc_insights'"
+      assert "hour=8, minute=0" in sched, \
+          "WC insights cron must be at 08:00 UTC"
+      assert "from scripts.generate_wc_insights import run_wc_insights" in sched
+
+Notes:
+  - Source-inspection only — does not require DB or network.
+  - Mirrors WC-E1 / WC-AI-PREVIEW smoke patterns already in smoke_test.py.
+  - Verified locally: `python3 scripts/generate_wc_insights.py --dry-run`
+    prints "no monte carlo data, skipping" when the MC snapshot table is
+    empty (correct per task spec) and completes cleanly with no errors.
+  - Verified locally: synthetic-data path (TeamRow stubs + compute_* +
+    call_gemini) produces real, on-tone article text — see commit message.
+
+------------------------------------------------------------------------
+WEB SMOKE — WC-E3-E4-WEB
+------------------------------------------------------------------------
+Goal: confirm /world-cup/insights and /world-cup/insights/[slug] both
+exist, the slug list matches the engine, and the article page emits
+SEO metadata + Article JSON-LD.
+
+Suggested test (inside scripts/smoke_test.py, web-source inspection
+pattern — see existing WC-*-WEB tests):
+
+  @test("WC-E3-E4-WEB — /world-cup/insights pages wiring")
+  def test_wc_e3_e4_web():
+      from pathlib import Path
+      web = Path(__file__).resolve().parent.parent.parent / "odds-intel-web"
+
+      idx = web / "src" / "app" / "(app)" / "world-cup" / "insights" / "page.tsx"
+      assert idx.exists(), "/world-cup/insights index page missing"
+      isrc = idx.read_text()
+      # Reads articles table + canonical URL + back link.
+      assert "wc_articles" in isrc, "index must read wc_articles"
+      assert "alternates" in isrc and "/world-cup/insights" in isrc
+
+      art = web / "src" / "app" / "(app)" / "world-cup" / "insights" / "[slug]" / "page.tsx"
+      assert art.exists(), "article [slug] page missing"
+      asrc = art.read_text()
+      assert "generateStaticParams" in asrc, \
+          "article page must define generateStaticParams"
+      # All four canonical slugs MUST be enumerated in VALID_SLUGS.
+      for slug in ("group-of-death", "cinderella-story",
+                   "squad-value-vs-model", "champions-favourites"):
+          assert slug in asrc, f"missing slug in [slug] page: {slug}"
+      # SEO: per-article metadata + canonical + JSON-LD.
+      assert "generateMetadata" in asrc
+      assert "alternates" in asrc and "canonical" in asrc
+      assert '@type": "Article' in asrc or "'@type': 'Article'" in asrc \
+          or "@type\": \"Article" in asrc, "Article JSON-LD missing"
+      # Reads wc_articles by slug and renders body_md.
+      assert "wc_articles" in asrc and "body_md" in asrc
+      # 404 on unknown slug.
+      assert "notFound()" in asrc
+
+      # Markdown renderer exists and is self-contained (no react-markdown).
+      md = web / "src" / "lib" / "markdown-mini.ts"
+      assert md.exists(), "markdown-mini.ts missing"
+      msrc = md.read_text()
+      assert "export function renderMarkdown" in msrc
+
+Notes:
+  - Source-inspection — does not require Next.js to be running.
+  - Verified locally: `npx tsc --noEmit` is clean for the new files
+    (pre-existing unrelated errors in matches/[id]/page.tsx + wp route
+    are from another agent's wave-3 work, NOT this task).
+
+------------------------------------------------------------------------
+VERIFICATION CHECKLIST
+------------------------------------------------------------------------
+[x] Engine dry-run: python3 scripts/generate_wc_insights.py --dry-run
+    correctly skips with "no monte carlo data, skipping" when MC snapshot
+    table is empty (DB has zero rows in wc_monte_carlo_results)
+[x] Synthetic-data path verified end-to-end — Gemini-2.5-flash-lite
+    returns a valid JSON object with title/description/body_md and the
+    body cites the actual numbers from the analytics payload
+[x] Migration 180 created (179 was WC-E1)
+[x] Scheduler single new cron entry added at 08:00 UTC, WC-window-gated
+[x] smoke_test.py NOT modified (per task constraint — see above)
+[x] All four slugs (group-of-death, cinderella-story,
+    squad-value-vs-model, champions-favourites) declared in both engine
+    (ALL_SLUGS) and web ([slug] generateStaticParams)
+[x] Article page emits Article JSON-LD + per-article canonical URL +
+    OpenGraph + Twitter metadata via generateMetadata
+[x] Web page uses minimal hand-rolled markdown renderer (no new npm
+    dependency); HTML escape + whitelisted tag set

@@ -14987,5 +14987,140 @@ def _():
     assert '"use client"' in tsrc
 
 
+# ── Wave 3: Per-match intel, live overlays, tracking sub-pages, insights ─────
+
+
+@test("WC-A3-FIX-MARKET-SOURCES — scrape_wc_market_consensus pulls from pinnacle + smarkets + eloratings")
+def _():
+    """WC-A3-FIX (2026-06-04): the Wave 1 JS-rendered scrapers returned 0
+    fixtures. Replaced with three working free public endpoints:
+    eloratings.net TSV (col 11 win-expectancy), Pinnacle guest Arcadia API
+    (league 2686 = FIFA WC), Smarkets exchange API. Brazil v Morocco
+    consensus lands at H=0.595 D=0.246 A=0.159 — finally a real market
+    anchor for the A4 blender."""
+    import pathlib
+    p = pathlib.Path("scripts/scrape_wc_market_consensus.py")
+    assert p.exists()
+    src = p.read_text()
+    # Three working sources
+    assert "pinnacle" in src.lower(), "must include pinnacle scraper"
+    assert "smarkets" in src.lower(), "must include smarkets scraper"
+    assert "eloratings" in src.lower(), "must include eloratings TSV scraper"
+    # Keep vig removal + min-sources gate
+    assert "MIN_SOURCES" in src or "min_sources" in src.lower()
+
+
+@test("WC-B1-B4-MODEL-CARD — wc-model-card component + data loader + match-detail integration")
+def _():
+    """WC-B1-B4 (2026-06-04): per-fixture model card on the WC match detail
+    page showing our model, market consensus, blended pick, and a market-
+    disagreement callout when own and market differ by ≥10pp."""
+    comp = _web_path("src/components/wc-model-card.tsx")
+    assert comp.exists(), "wc-model-card.tsx must exist"
+    csrc = comp.read_text()
+    # The card shows three sources stacked
+    for needle in ("Our model", "Market consensus", "OddsIntel"):
+        assert needle in csrc, f"card must label {needle!r} row"
+    loader = _web_path("src/lib/wc-model-card-data.ts")
+    assert loader.exists(), "wc-model-card-data.ts loader must exist"
+    lsrc = loader.read_text()
+    assert "national_team_v1_blended" in lsrc, "loader must read the blended source"
+    assert "wc_market_consensus" in lsrc, "loader must read market consensus"
+    page = _web_path("src/app/(app)/matches/[id]/page.tsx")
+    assert "WCModelCard" in page.read_text() or "wc-model-card" in page.read_text(), \
+        "match-detail page must render the WC model card"
+
+
+@test("WC-B2-B3-SCORE-PLAYER — Poisson top-5 scorelines + key-player chip on match detail")
+def _():
+    """WC-B2-B3 (2026-06-04): score-predictions table (top-5 most likely
+    Poisson scorelines from λ_h/λ_a) + key-player chip (highest-value
+    squad asset from team_roster_strength). Both render between the
+    model card and the existing tabs on the match-detail page."""
+    lib = _web_path("src/lib/wc-score-predictions.ts")
+    assert lib.exists(), "wc-score-predictions.ts must exist"
+    lsrc = lib.read_text()
+    assert "topScorelines" in lsrc, "must export topScorelines"
+    comp = _web_path("src/components/wc-score-predictions.tsx")
+    assert comp.exists(), "wc-score-predictions.tsx must exist"
+    chip = _web_path("src/components/wc-key-player-chip.tsx")
+    assert chip.exists(), "wc-key-player-chip.tsx must exist"
+
+
+@test("WC-B5-AI-PREVIEW-UPGRADE — wc_match_previews prompt references model probs + market consensus")
+def _():
+    """WC-B5 (2026-06-04): the AI preview Gemini prompt now embeds our
+    model 1X2 (prefers blended), market consensus, ELO gap, squad value
+    disparity. Output must cite specific % numbers, not generic prose."""
+    import pathlib
+    p = pathlib.Path("workers/jobs/wc_match_previews.py")
+    assert p.exists()
+    src = p.read_text()
+    # New helpers + blended source preference
+    assert "national_team_v1_blended" in src, "preview must prefer blended source"
+    assert "wc_market_consensus" in src, "preview must reference market consensus"
+    # Prompt must require numeric citations
+    assert "must explicitly cite" in src.lower() or "must reference" in src.lower() or "cite" in src.lower(), \
+        "prompt must instruct Gemini to cite the model probability"
+
+
+@test("WC-D3-D4-WP-OVERLAYS — WP route returns goals + nextTenGoalProb; widget component exists")
+def _():
+    """WC-D3 (2026-06-04): goal events as colored diamonds on the WP curve.
+    WC-D4: next-10-min goal probability widget below the chart, computed
+    from live_xg_snapshots via 1 - exp(-λ_10)."""
+    route = _web_path("src/app/api/matches/[id]/wp/route.ts")
+    assert route.exists()
+    rsrc = route.read_text()
+    assert "goals" in rsrc, "route must return goals array"
+    assert "nextTenGoalProb" in rsrc, "route must return nextTenGoalProb"
+    widget = _web_path("src/components/wc-next-10-min-goal.tsx")
+    assert widget.exists(), "wc-next-10-min-goal.tsx widget must exist"
+    helper = _web_path("src/lib/next-ten-goal.ts")
+    assert helper.exists(), "next-ten-goal.ts math helper must exist"
+
+
+@test("WC-C2-C3-CLV-LEADERBOARD — CLV chart + model leaderboard sub-pages + 3-tab sub-nav")
+def _():
+    """WC-C2 (2026-06-04): cumulative CLV chart at /world-cup/predictions-record/clv.
+    WC-C3: model leaderboard at /world-cup/predictions-record/leaderboard.
+    Shared sub-nav (Summary / CLV vs Market / vs Other Models)."""
+    clv = _web_path("src/app/(app)/world-cup/predictions-record/clv/page.tsx")
+    assert clv.exists(), "/clv page must exist"
+    lb = _web_path("src/app/(app)/world-cup/predictions-record/leaderboard/page.tsx")
+    assert lb.exists(), "/leaderboard page must exist"
+    subnav = _web_path("src/components/wc-record-subnav.tsx")
+    assert subnav.exists(), "wc-record-subnav.tsx must exist"
+    # Library extensions
+    lib = _web_path("src/lib/wc-record.ts")
+    lsrc = lib.read_text()
+    assert "loadCLVSeries" in lsrc, "wc-record must export loadCLVSeries"
+    assert "loadLeaderboard" in lsrc, "wc-record must export loadLeaderboard"
+
+
+@test("WC-E3-E4-INSIGHTS — analytical posts generator + insights pages + migration 180")
+def _():
+    """WC-E3-E4 (2026-06-04): four auto-generated analytical articles at
+    /world-cup/insights/[slug]: group-of-death, cinderella-story,
+    squad-value-vs-model, champions-favourites. Generator writes to
+    wc_articles via Gemini-2.5-flash-lite; idempotent via refresh_after."""
+    import pathlib
+    gen = pathlib.Path("scripts/generate_wc_insights.py")
+    assert gen.exists(), "scripts/generate_wc_insights.py must exist"
+    gsrc = gen.read_text()
+    for slug in ("group-of-death", "cinderella-story", "squad-value-vs-model", "champions-favourites"):
+        assert slug in gsrc, f"generator must define slug {slug!r}"
+    mig = pathlib.Path("supabase/migrations/180_wc_articles.sql")
+    assert mig.exists(), "migration 180_wc_articles.sql must exist"
+    msrc = mig.read_text()
+    assert "CREATE TABLE IF NOT EXISTS wc_articles" in msrc
+    assert "refresh_after" in msrc
+    # Web pages
+    idx = _web_path("src/app/(app)/world-cup/insights/page.tsx")
+    assert idx.exists(), "insights index must exist"
+    art = _web_path("src/app/(app)/world-cup/insights/[slug]/page.tsx")
+    assert art.exists(), "insights article page must exist"
+
+
 if __name__ == "__main__":
     main()

@@ -477,6 +477,19 @@ def job_wc_monte_carlo():
     _run_job("wc_monte_carlo", run_wc_monte_carlo)
 
 
+def job_wc_insights():
+    """WC-E3-E4 (2026-06-04): Gemini-generated analytical SEO articles for
+    WC2026 — group of death, cinderella story, squad value vs model,
+    champions favourites. Daily at 08:00 UTC, after the Monte Carlo snapshot
+    (06:30 UTC) so the articles cite fresh numbers. Gated to the WC window
+    and idempotent inside the script via refresh_after (24h)."""
+    today = date.today()
+    if not (_WC_PREVIEW_WINDOW_START <= today <= _WC_PREVIEW_WINDOW_END):
+        return
+    from scripts.generate_wc_insights import run_wc_insights
+    _run_job("wc_insights", run_wc_insights)
+
+
 def job_email_digest():
     from workers.jobs.email_digest import run_email_digest
     _run_job("email_digest", run_email_digest)
@@ -1513,6 +1526,14 @@ def main():
     scheduler.add_job(job_wc_monte_carlo, CronTrigger(hour=6, minute=30),
                       id="wc_monte_carlo",
                       name="WC Monte Carlo 06:30 [WC window]")
+
+    # WC-E3-E4 (2026-06-04): Gemini-generated analytical insight articles.
+    # 08:00 UTC = after Monte Carlo (06:30) so articles cite the latest
+    # numbers. Idempotent inside the script (24h refresh_after) so re-runs
+    # are cheap. WC-window-gated inside job_wc_insights.
+    scheduler.add_job(job_wc_insights, CronTrigger(hour=8, minute=0),
+                      id="wc_insights",
+                      name="WC Insights Articles 08:00 [WC window]")
 
     # WC-A5 (2026-06-04): T-60min lineup-aware refresh. Every 5min during the
     # live window the job scans WC fixtures kicking off in the next 90min,
