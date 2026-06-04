@@ -3270,6 +3270,69 @@ def test_search_retry_transient():
     )
 
 
+@test("COOLBET-INGEST-ANON — snapshot ingest entry points use require_auth=False")
+def test_coolbet_ingest_anon():
+    """COOLBET-INGEST-ANON (2026-06-04): the 30-min Coolbet snapshot job and
+    its sister entry points only do reads — search/v2, fo-category, fo-match,
+    sidebets — all of which work with Imperva cookies only. Defaulting to
+    authed CoolbetSession() coupled the entire ingest to a live JWT, so once
+    COOLBET_MANUAL_JWT expired (2026-05-28) every new fixture appeared in
+    /admin/place tagged ⚠ no match — no Coolbet odds_snapshots had been
+    written for any match added after that date.
+
+    Pins every ingest-side construction of CoolbetSession to
+    require_auth=False so an expired JWT can no longer block ingest. The
+    placer's bet-placement path keeps the authed default (POST /s/bets/bets
+    genuinely needs a live cbauth)."""
+    import pathlib
+
+    explorer_src = pathlib.Path("workers/automation/coolbet_explorer.py").read_text()
+    # Strip comments (anything from `#` to EOL) before checking so a historical
+    # mention of `CoolbetSession()` in a comment doesn't trip the assertion.
+    explorer_code = "\n".join(
+        line.split("#", 1)[0] for line in explorer_src.splitlines()
+    )
+    # Every CoolbetSession() construction in the explorer is on the read-only
+    # ingest path. None of them should be authed.
+    assert "CoolbetSession()" not in explorer_code, (
+        "coolbet_explorer.py must construct CoolbetSession(require_auth=False) "
+        "for ingest entry points — bare CoolbetSession() couples ingest to a "
+        "live JWT and the 30-min sweep dies silently when the token expires"
+    )
+    # And the anon-read constructor must actually appear (sanity that we
+    # didn't just delete the construction).
+    assert explorer_code.count("CoolbetSession(require_auth=False)") >= 3, (
+        "explorer should construct anon-read sessions in run_league_sweep, "
+        "run_bulk, and the single-match CLI debug path (3 sites)"
+    )
+
+    # Diagnostic probe must also be anon — the whole point is to work when
+    # the operator is debugging a stale-JWT situation.
+    probe_src = pathlib.Path("scripts/coolbet_match_probe.py").read_text()
+    probe_code = "\n".join(
+        line.split("#", 1)[0] for line in probe_src.splitlines()
+    )
+    assert "CoolbetSession(require_auth=False)" in probe_code, (
+        "coolbet_match_probe.py must use anon-read so it can diagnose match "
+        "matching even when COOLBET_MANUAL_JWT is stale"
+    )
+    assert "CoolbetSession()" not in probe_code, (
+        "probe should not construct an authed session — JWT is irrelevant "
+        "for the reads the probe performs"
+    )
+
+    # And the session class still exposes the require_auth=False contract
+    # the ingest path depends on.
+    session_src = pathlib.Path("workers/automation/coolbet_session.py").read_text()
+    assert "require_auth: bool = True" in session_src, (
+        "CoolbetSession.__init__ must accept require_auth (kwarg-only) — "
+        "ingest sites pass require_auth=False to skip JWT requirements"
+    )
+    assert "if not self._require_auth:" in session_src, (
+        "_ensure_auth must short-circuit when require_auth=False"
+    )
+
+
 @test("INPLAY-SCORE-ODDS-CONSISTENCY — guard rejects stale-score/fresh-odds snapshots + 1X2 drift events")
 def test_inplay_score_odds_consistency():
     """INPLAY-SCORE-ODDS-CONSISTENCY (2026-05-30): bookmaker odds react to a
@@ -15120,6 +15183,39 @@ def _():
     assert idx.exists(), "insights index must exist"
     art = _web_path("src/app/(app)/world-cup/insights/[slug]/page.tsx")
     assert art.exists(), "insights article page must exist"
+
+
+@test("GROWTH-CLAIMS-PARITY — landing surfaces accuracy + 10yr-data + no-human-bias")
+def _():
+    """CLAIMS-PARITY (2026-06-04): landing trust block now leads with the
+    backtested accuracy number (75% on OU 1.5 across 21,831 matches),
+    demoted the '16 AI strategies running live' stat (which was the
+    GROWTH-SIMPLIFY-BOTS-NARRATIVE target), and added the '10+ yrs data /
+    no human bias' parity claim. FAQ on 'How do the AI picks work?' now
+    pre-empts the accuracy-vs-profitability objection. Pinned because the
+    headline number must keep its source documentation:
+      - 75% accuracy → dev/active/accuracy-backtest.md (GROWTH-ACCURACY-BACKTEST)
+      - 21,831 sample size → same doc
+    If those numbers change in the backtest re-run, this test forces the
+    landing copy to be updated in lock-step."""
+    landing = _web_path("src/app/page.tsx")
+    src = landing.read_text()
+    assert "75%" in src, "landing must show 75% accuracy stat"
+    assert "Over/Under 1.5" in src, "landing must specify the market (Over/Under 1.5)"
+    assert "21,831" in src or "21831" in src, "landing must cite the sample size from backtest"
+    assert "10+ years of historical match data" in src, "landing must include the 10-yr-data parity claim"
+    assert "no human bias" in src.lower() or "No tipsters, no human bias" in src, \
+        "landing must include the 'no human bias' framing"
+    assert "16 AI strategies running live" not in src, (
+        "GROWTH-SIMPLIFY-BOTS-NARRATIVE: '16 AI strategies' must NOT be a "
+        "headline stat anymore — it stays in /track-record for transparency, "
+        "but should not lead on the landing page"
+    )
+    # FAQ updated to pre-empt accuracy-vs-profitability objection
+    assert "Accuracy is not the same as profitability" in src, (
+        "FAQ on AI picks must explain that accuracy != profitability "
+        "(the whole honesty positioning depends on this distinction)"
+    )
 
 
 @test("GROWTH-ACCURACY-BACKTEST — script exists and exposes the public API")

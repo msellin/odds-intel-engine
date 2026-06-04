@@ -64,7 +64,10 @@ def main() -> int:
         format="%(levelname)s %(name)s: %(message)s",
     )
 
-    session = CoolbetSession()
+    # Probe is a diagnostic — Coolbet's search / fo-category / fo-match /
+    # sidebets endpoints all work with Imperva cookies only, no JWT.
+    # Anon-read keeps the probe usable even when COOLBET_MANUAL_JWT is stale.
+    session = CoolbetSession(require_auth=False)
 
     # ── Step 1: search ─────────────────────────────────────────────────────
     print(f"\n[1/4] search_coolbet_event({args.home!r}, {args.away!r})")

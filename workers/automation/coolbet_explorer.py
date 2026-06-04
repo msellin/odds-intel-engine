@@ -770,7 +770,12 @@ def run_league_sweep(
 
     log.info("League sweep — %d Coolbet leagues to fetch (today's AF matches)", len(active))
     if session is None:
-        session = CoolbetSession()
+        # COOLBET-INGEST-ANON (2026-06-04): snapshot ingest is reads-only, no
+        # JWT needed. Previously defaulted to authed CoolbetSession() which
+        # blew the entire 30-min sweep when COOLBET_MANUAL_JWT expired — every
+        # new fixture then showed ⚠ no match in /admin/place because no
+        # Coolbet odds_snapshots ever got written.
+        session = CoolbetSession(require_auth=False)
 
     matched_total = 0
     parsed_total = 0
@@ -872,7 +877,8 @@ def run_bulk(
     console.print(f"[cyan]Loaded {len(matches)} {label} (window={days}d){' [DRY-RUN]' if dry_run else ''}[/cyan]")
 
     if session is None:
-        session = CoolbetSession()
+        # COOLBET-INGEST-ANON: see run_league_sweep — reads-only path.
+        session = CoolbetSession(require_auth=False)
     category_cache: list[dict] | None = None
 
     matched = 0
@@ -992,7 +998,8 @@ def run_one_shot(match_id: str) -> None:
     m = rows[0]
     console.print(f"[cyan]{m['home']} vs {m['away']} — {m['league']} — {m['date']}[/cyan]")
 
-    session = CoolbetSession()
+    # COOLBET-INGEST-ANON: single-match CLI debug — pure read path.
+    session = CoolbetSession(require_auth=False)
     match_date = m.get("date")
     ev = search_coolbet_event(session, m["home"], m["away"], match_date)
     if ev is None:
