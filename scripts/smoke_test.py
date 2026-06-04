@@ -107,11 +107,21 @@ def _():
     assert isinstance(count, int), f"Expected int, got {type(count)}"
 
 
-@test("build_match_feature_vectors — returns rows for known date (May 6)")
+@test("build_match_feature_vectors — returns rows for a known finished date")
 def _():
+    """Verifies the nightly MFV builder produces rows for a date with known
+    finished matches. We pin a specific date rather than `today - N days` so
+    the test is deterministic.
+
+    The date was bumped from 2026-05-06 → 2026-06-02 in MFV-MAY6-TIMEOUT
+    (2026-06-04): the original date kept slipping into the 60s postgres
+    statement_timeout window as the signals + odds_snapshots tables grew. If
+    a date with ~70 fixtures starts timing out too, the slowdown is in the
+    builder itself and that's the real bug — don't bump the date again,
+    investigate query plans."""
     from workers.api_clients.supabase_client import build_match_feature_vectors
-    count = build_match_feature_vectors(None, "2026-05-06")
-    assert_gt(count, 0, "Expected feature vectors for 2026-05-06")
+    count = build_match_feature_vectors(None, "2026-06-02")
+    assert_gt(count, 0, "Expected feature vectors for 2026-06-02")
 
 
 @test("MFV-LIVE-BUILD — build_match_feature_vectors_live runs and returns int")
@@ -5845,29 +5855,29 @@ def _():
     )
 
 
-@test("INPLAY-BAYESIAN-ENGINE — _remaining_goals_prob helper extracted, J/L call it")
+@test("INPLAY-BAYESIAN-ENGINE — _remaining_goals_prob helper extracted, L/M call it")
 def _():
-    """Shared Bayesian remaining-goals helper. Strategies J and L now share one
-    code path so future strategies (M/N/O) can adopt the same machinery."""
+    """Shared Bayesian remaining-goals helper used by the "soft attack" family
+    of strategies (L, M, future ones). Strategy J originally used this helper
+    too, but INPLAY-J-LIGHT-SHRINKAGE (2026-06-03, commit b216574) replaced
+    J's heavy posterior with a local conjugate Gamma update — the helper
+    deliberately doesn't fit J's thesis anymore. The INPLAY-J-LIGHT-SHRINKAGE
+    smoke pins that new behaviour; this one pins the helper + its other
+    callers (L, M)."""
     import pathlib
     src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
     assert "def _remaining_goals_prob(" in src, (
-        "_remaining_goals_prob helper must exist (used by strategies J, L, future M/N/O)"
+        "_remaining_goals_prob helper must exist (used by strategies L, M, future N/O)"
     )
-    # Strategies J and L must call the helper rather than duplicate the math
-    j_start = src.index("def _check_strategy_j(")
-    j_end = src.index("\ndef ", j_start + 1)
-    assert "_remaining_goals_prob(" in src[j_start:j_end], (
-        "Strategy J must use _remaining_goals_prob helper"
-    )
-    l_start = src.index("def _check_strategy_l(")
-    try:
-        l_end = src.index("\ndef ", l_start + 1)
-    except ValueError:
-        l_end = len(src)
-    assert "_remaining_goals_prob(" in src[l_start:l_end], (
-        "Strategy L must use _remaining_goals_prob helper"
-    )
+    for fn in ("_check_strategy_l", "_check_strategy_m"):
+        fs = src.index(f"def {fn}(")
+        try:
+            fe = src.index("\ndef ", fs + 1)
+        except ValueError:
+            fe = len(src)
+        assert "_remaining_goals_prob(" in src[fs:fe], (
+            f"Strategy {fn[-1].upper()} must use _remaining_goals_prob helper"
+        )
 
 
 @test("INPLAY-EQUALIZER-MAGNET — strategy M registered, dispatched, uses _remaining_goals_prob")
@@ -6031,8 +6041,10 @@ def _():
     assert spec._state_multiplier_team(70, "level") == 1.05
     assert spec._state_multiplier_team(45, "trailing") == 1.0  # pre-60 disabled
 
-    # J/L/M must pass score_home/score_away to _remaining_goals_prob
-    for fn in ("_check_strategy_j", "_check_strategy_l", "_check_strategy_m"):
+    # L/M must pass score_home/score_away to _remaining_goals_prob.
+    # J intentionally bypasses the helper (INPLAY-J-LIGHT-SHRINKAGE) and is
+    # pinned by its own smoke instead — see INPLAY-BAYESIAN-ENGINE.
+    for fn in ("_check_strategy_l", "_check_strategy_m"):
         fs = src.index(f"def {fn}(")
         fe = src.index("\ndef ", fs + 1)
         body = src[fs:fe]
@@ -13349,6 +13361,65 @@ def _():
         "wc-group-card.tsx must render an 'AI preview' expander label"
 
 
+@test("WC-PROB-DISPLAY-SHARED — wc-prob-display module exports ProbBar/ProbNumbersRow/AiPickPill/favouriteClass")
+def _():
+    """WC-SCHEDULE-VITALITY-V2 follow-up (2026-06-04, user feedback "bars
+    are pale, what do colors mean?"): bar without numbers/legend is not
+    self-explanatory on mobile (no hover) so we ship ProbNumbersRow under
+    it (colour-coded percentages match bar bands) and an AiPickPill that
+    shows the team NAME, not just H/D/A. favouriteClass bolds the
+    favourite team in the scan row so even without the bar the row
+    signals who the model favours.
+
+    Both wc-schedule.tsx and wc-group-card.tsx pull from this shared
+    module — pin its exports so the two views can't drift visually."""
+    p = _web_path("src/components/wc-prob-display.tsx")
+    assert p.exists(), "wc-prob-display.tsx must exist"
+    src = p.read_text()
+    for needle in ("export function ProbBar(", "export function ProbNumbersRow(",
+                   "export function AiPickPill(", "export function favouriteClass("):
+        assert needle in src, f"wc-prob-display.tsx must export {needle.split('(')[0].split()[-1]}"
+    # Bar band colours must use the tournament tokens so the percentage row
+    # underneath can match them.
+    assert "--color-tournament-green" in src, "ProbBar must use tournament-green for home band"
+    assert "--color-tournament-gold" in src, "ProbBar must use tournament-gold for away band"
+    # AI pill shows the team name, not the abstract H/D/A initial. The user
+    # called this out as confusing ("Brazil is underdog?") — the team-name
+    # label is what makes the pill scannable.
+    assert "homeName" in src and "awayName" in src, (
+        "AiPickPill must accept homeName + awayName so it can render the team "
+        "name the model favours, not just H/D/A."
+    )
+
+
+@test("WC-GROUPCARD-VITALITY-V2 — group fixture row uses shared prob-display + inline picker")
+def _():
+    """The Group cards (`wc-group-card.tsx`) read identically to the Schedule
+    tab — same engagement strip, same bar/numbers/pill/picker, same grid
+    alignment. Pin all four pieces so a future fix in one view can't
+    silently regress the other."""
+    p = _web_path("src/components/wc-group-card.tsx")
+    assert p.exists(), "wc-group-card.tsx must exist"
+    src = p.read_text()
+    assert "from \"@/components/wc-prob-display\"" in src, (
+        "wc-group-card.tsx must consume the shared prob-display primitives"
+    )
+    assert "<ProbBar" in src and "<ProbNumbersRow" in src and "<AiPickPill" in src, (
+        "Group fixture row must render ProbBar + ProbNumbersRow + AiPickPill"
+    )
+    assert "<WCVsYouPicker" in src and "variant=\"compact\"" in src, (
+        "Group fixture row must render the compact WCVsYouPicker so the "
+        "engagement hook matches the Schedule tab."
+    )
+    assert "favouriteClass(modelPick" in src, (
+        "Group fixture row must bold the favourite team via favouriteClass"
+    )
+    # Grid alignment — same trick as the Schedule row (1fr-auto-1fr).
+    assert "grid-cols-[44px_1fr_auto_1fr_auto]" in src, (
+        "Group fixture row must use grid with 1fr-auto-1fr team cells"
+    )
+
+
 @test("WC-SCHEDULE-VITALITY-V2 — schedule row carries group chip, prob bar, AI pick, inline picker")
 def _():
     """WC-SCHEDULE-VITALITY-V2 (2026-06-04): the Schedule tab row was visually
@@ -13375,11 +13446,17 @@ def _():
     assert "<WCVsYouPicker" in src and "variant=\"compact\"" in src, \
         "WCVsYouPicker must render in compact variant on the schedule row"
 
-    # 3-band probability bar — coloured per outcome, not three text numbers.
-    assert "function ProbBar(" in src, \
-        "ProbBar component must exist (the visual centrepiece of the row)"
-    assert "--color-tournament-green" in src and "--color-tournament-gold" in src, \
-        "ProbBar must use the tournament colour tokens for the home + away bands"
+    # 3-band probability bar + supporting numbers/pill — all from the shared
+    # wc-prob-display module so both views read identically.
+    assert "from \"@/components/wc-prob-display\"" in src, (
+        "wc-schedule.tsx must consume the shared prob-display primitives"
+    )
+    assert "<ProbBar" in src and "<ProbNumbersRow" in src and "<AiPickPill" in src, (
+        "Schedule row must render ProbBar + ProbNumbersRow + AiPickPill"
+    )
+    assert "favouriteClass(modelPick" in src, (
+        "Schedule row must bold the favourite team via favouriteClass"
+    )
 
     # Group chip on the row — table-stakes WC context everyone else surfaces.
     assert "function GroupChip(" in src, "GroupChip must exist"
