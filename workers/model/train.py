@@ -539,6 +539,15 @@ OU_MARKET_FEATURE_COLS = [
     "ou25_bookmaker_disagreement", "market_implied_btts_yes",
 ]
 
+# DRIFT-FEATURE (2026-06-04). Pinnacle implied probability drift from match
+# opening to match closing per 1X2 selection. Empirical: top vs bottom quintile
+# of `pinnacle_drift_home` produces an +8.76pp home win-rate spread on 8,850
+# matches (CSV-FULL-EXTRACT backtest). Populated by
+# scripts/backfill_pinnacle_drift.py from odds_snapshots is_opening + is_closing
+# Pinnacle 1X2 rows; coverage is ~10K paired matches from CSV-historical data
+# plus the live pipeline's pre-kickoff opening snapshots going forward.
+DRIFT_FEATURE_COLS = ["pinnacle_drift_home", "pinnacle_drift_draw", "pinnacle_drift_away"]
+
 
 def _load_pinnacle_features() -> pd.DataFrame:
     """Per-match Pinnacle pre-match 1X2 implied probabilities.
@@ -684,7 +693,8 @@ def _load_ou_market_features() -> pd.DataFrame:
 
 
 def load_training_data(include_pinnacle: bool = False,
-                       include_ou_market: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
+                       include_ou_market: bool = False,
+                       include_drift: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load match_feature_vectors rows with completed outcomes from the DB.
 
     Returns (features_df, targets_df) sorted by match_date ascending.
@@ -697,6 +707,10 @@ def load_training_data(include_pinnacle: bool = False,
     `include_ou_market=True` left-joins Pinnacle OU 2.5 + multi-book BTTS
     features from odds_snapshots. Caller must extend with OU_MARKET_FEATURE_COLS
     (used for v14+).
+
+    `include_drift=True` adds Pinnacle open→close drift columns from MFV
+    (DRIFT_FEATURE_COLS). These come straight from MFV — no join needed —
+    populated by scripts/backfill_pinnacle_drift.py (DRIFT-FEATURE).
     """
     from workers.api_clients.supabase_client import execute_query
 
@@ -751,7 +765,8 @@ def load_training_data(include_pinnacle: bool = False,
 
     feature_cols = (FEATURE_COLS
                     + (PINNACLE_FEATURE_COLS if include_pinnacle else [])
-                    + (OU_MARKET_FEATURE_COLS if include_ou_market else []))
+                    + (OU_MARKET_FEATURE_COLS if include_ou_market else [])
+                    + (DRIFT_FEATURE_COLS if include_drift else []))
     features_df = df[feature_cols].copy()
     # Postgres NUMERIC columns come back as decimal.Decimal which pandas can't
     # `.mean()` mixed with float NaNs. Coerce all features to float64 so the
@@ -784,7 +799,8 @@ def train_all(version: str = "untagged",
               targets_df: pd.DataFrame | None = None,
               output_root: Path | None = None,
               include_pinnacle: bool = False,
-              include_ou_market: bool = False):
+              include_ou_market: bool = False,
+              include_drift: bool = False):
     """Train all three models. If called with no args, loads data from DB automatically.
 
     Writes to output_root/<version>/ — defaults to data/models/soccer/<version>/.
@@ -797,11 +813,15 @@ def train_all(version: str = "untagged",
 
     `include_ou_market=True` adds Pinnacle OU 2.5 + multi-book BTTS implied
     probs + OU 2.5 bookmaker disagreement (used for v14+ bundles).
+
+    `include_drift=True` adds Pinnacle open→close drift columns (DRIFT-FEATURE).
+    Empirical: +8.76pp home WR spread top vs bottom quintile on 8,850 matches.
     """
     if features_df is None or targets_df is None:
         features_df, targets_df = load_training_data(
             include_pinnacle=include_pinnacle,
             include_ou_market=include_ou_market,
+            include_drift=include_drift,
         )
 
     output_dir = (output_root or DEFAULT_OUTPUT_ROOT) / version
@@ -904,6 +924,10 @@ if __name__ == "__main__":
                         help="Add Pinnacle OU 2.5 implied probs + OU 2.5 bookmaker "
                              "disagreement + market-implied BTTS yes to FEATURE_COLS "
                              "(v14+ bundles). Overround guard applied to Pinnacle rows.")
+    parser.add_argument("--include-drift", action="store_true",
+                        help="Add Pinnacle open→close drift columns (DRIFT-FEATURE). "
+                             "Empirical: +8.76pp home WR spread top vs bottom quintile "
+                             "on 8,850 matches. Coverage depends on backfill_pinnacle_drift.py.")
     parser.add_argument("--version", default="untagged",
                         help="Version tag — used as the subdir under data/models/soccer/. "
                              "Set MODEL_VERSION=<version> in env to activate.")
@@ -912,4 +936,5 @@ if __name__ == "__main__":
         version=args.version,
         include_pinnacle=args.include_pinnacle,
         include_ou_market=args.include_ou_market,
+        include_drift=args.include_drift,
     )

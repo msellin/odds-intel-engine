@@ -32,7 +32,7 @@ from dotenv import load_dotenv
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from workers.api_clients.db import execute_query, _pool  # noqa: E402
+from workers.api_clients.db import execute_query, get_pool  # noqa: E402
 
 
 def compute_drifts(since: str | None) -> list[tuple[str, float, float, float]]:
@@ -98,7 +98,8 @@ def main():
 
     # Bulk UPSERT via UPDATE FROM VALUES — single round-trip.
     from psycopg2.extras import execute_values
-    conn = _pool.getconn()
+    p = get_pool()
+    conn = p.getconn()
     try:
         with conn.cursor() as cur:
             execute_values(
@@ -124,7 +125,7 @@ def main():
         conn.rollback()
         raise
     finally:
-        _pool.putconn(conn)
+        p.putconn(conn)
 
 
 if __name__ == "__main__":
