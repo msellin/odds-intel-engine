@@ -1,0 +1,57 @@
+WC-F1 — SEO sitemap + JSON-LD structured data — smoke description
+==================================================================
+
+Scope: odds-intel-web only. No engine code touched. No scripts/smoke_test.py
+changes (per task constraints).
+
+What was added
+--------------
+1. src/app/sitemap.ts — WC routes now in the sitemap:
+   - /world-cup                                (priority 0.9)
+   - /world-cup/teams                           (priority 0.8)
+   - /world-cup/teams/[slug]   × 48 nations     (priority 0.8, dynamic)
+   - /world-cup/who-can-win                     (priority 0.8)
+   - /world-cup/groups-predictor                (priority 0.7)
+   - /world-cup/bracket                         (priority 0.7)
+   - /world-cup/bracket/leaderboard             (priority 0.6)
+   - /world-cup/insights                        (priority 0.7)
+   - /world-cup/insights/[slug] × 4 articles    (priority 0.7, hardcoded list)
+   - /world-cup/predictions-record              (priority 0.7)
+   - /world-cup/predictions-record/clv          (priority 0.6)
+   - /world-cup/predictions-record/leaderboard  (priority 0.6)
+
+   The 48 team slugs are derived from getWorldCupFixtures() (build-safe
+   try/catch — empty list if the engine query fails). The slug helper
+   mirrors slugifyTeam() in src/app/(app)/world-cup/teams/[name]/page.tsx.
+
+2. JSON-LD <script type="application/ld+json"> added to:
+   - /world-cup/teams/[name]               — SportsTeam (Soccer, memberOf WC2026)
+   - /world-cup/who-can-win                — SportsEvent (WC2026, top-5 competitors)
+   - /world-cup/predictions-record         — WebPage (about: WC2026)
+   - /world-cup/predictions-record/clv     — WebPage (about: WC2026)
+   - /world-cup/predictions-record/leaderboard — WebPage (about: WC2026)
+
+   Already had JSON-LD (untouched):
+   - /world-cup/insights/[slug] — Article schema with datePublished
+
+Verification
+------------
+- npx tsc --noEmit → exit 0 (clean).
+- generateStaticParams for /world-cup/teams/[name] produces one entry per
+  unique slugified team name across all WC fixtures (48 nations once
+  fixtures are loaded). Verified by inspection — the loop in
+  generateStaticParams uses the same dedupe-by-slug logic the sitemap uses.
+- JSON-LD presence verified by grep for `application/ld+json` on each of
+  the 5 newly-instrumented page files.
+
+robots.txt
+----------
+public/robots.txt allows /world-cup/* (no Disallow rule for WC). Confirmed.
+
+Manual smoke (local)
+--------------------
+  npm run dev
+  curl -s http://localhost:3000/sitemap.xml | grep -c world-cup
+    # expect ≥ 60 (10 static WC pages + 48 team pages + 4 insight pages)
+  curl -s http://localhost:3000/world-cup/who-can-win | grep '"@type":"SportsEvent"'
+  curl -s http://localhost:3000/world-cup/teams/argentina | grep '"@type":"SportsTeam"'
