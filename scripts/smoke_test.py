@@ -15020,8 +15020,8 @@ def _():
     assert "def run_wc_monte_carlo" in src
     assert "wc_monte_carlo_results" in src
     assert "predict_1x2_from_elo" in src
-    mig = pathlib.Path("supabase/migrations/179_wc_monte_carlo.sql")
-    assert mig.exists(), "migration 179_wc_monte_carlo.sql must exist"
+    mig = pathlib.Path("supabase/migrations/184_wc_monte_carlo.sql")
+    assert mig.exists(), "migration 184_wc_monte_carlo.sql must exist"
     msrc = mig.read_text()
     assert "CREATE TABLE IF NOT EXISTS wc_monte_carlo_results" in msrc
     for col in ("p_advance", "p_r16", "p_qf", "p_sf", "p_final", "p_winner"):

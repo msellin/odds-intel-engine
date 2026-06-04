@@ -24,15 +24,6 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
-          # WAVE2-179-REPAIR (2026-06-04): version 179's row was registered
-          # in supabase_migrations.schema_migrations during an earlier partial
-          # run, but the CLI now tries to re-insert it every push and fails on
-          # the PK conflict. Mark it as applied (idempotent — does nothing if
-          # already in 'applied' state) before the push so 180-182 can land.
-          # Safe to keep as a permanent step: `repair --status applied <v>` is
-          # a no-op when the version isn't pending. Remove this block after
-          # one successful run if you want, or leave it as a defensive net.
-          supabase migration repair --status applied 179 || true
           # --include-all (MIGRATE-OUT-OF-ORDER-FIX, 2026-06-02): the Supabase
           # CLI refuses to apply migrations whose version-prefix is earlier
           # than the latest already-applied migration. This bit us when
