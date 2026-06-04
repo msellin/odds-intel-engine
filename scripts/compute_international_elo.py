@@ -64,8 +64,141 @@ COMP_CATEGORY = {
     913: "friendly",     # Finalissima (single match)
 }
 
-K_BY_CAT = {"tournament": 40, "qualifier_nl": 25, "friendly": 10}
+K_BY_CAT = {"tournament": 30, "qualifier_nl": 25, "friendly": 10}
 HOME_ADV_BY_CAT = {"tournament": 0, "qualifier_nl": 60, "friendly": 0}
+# WC-A1 (2026-06-04): tournament K reduced from 40 → 30 to match the
+# eloratings.net convention. K=40 over-rewarded deep tournament runs
+# (Morocco's WC22 semi-final pushed them to ~2030, ~270pts above their
+# real-world ~1757 anchor) which then made our predictor favour Morocco
+# over Brazil in the WC2026 opener. K=30 still rewards tournament results
+# meaningfully but doesn't compound away from market reality.
+
+# INITIAL_ELO_SEEDS (WC-A1, 2026-06-04) — anchor each major national side at a
+# realistic starting rating so the walk doesn't have to "discover" that Brazil
+# > San Marino from scratch. Sourced from eloratings.net snapshot circa 2017
+# (start of our backfill window) and rounded to the nearest 10. The walk
+# proceeds normally from these seeds; teams not listed start at the legacy
+# 1500 default. This single change fixes the Morocco-1940 / Brazil-1759
+# inversion bug because Morocco's WC22 gains land on a realistic base instead
+# of compounding from 1500, while Brazil's recent qualifier wobbles only nudge
+# them off the correct ~2050 anchor instead of falling from 1500.
+#
+# Format: team name (matches `teams.name` in our DB) → starting ELO at 2017-01-01.
+INITIAL_ELO_SEEDS: dict[str, int] = {
+    # Top tier — South America
+    "Brazil": 2080,
+    "Argentina": 2010,
+    "Colombia": 1830,
+    "Uruguay": 1840,
+    "Chile": 1820,
+    "Peru": 1740,
+    "Paraguay": 1720,
+    "Ecuador": 1740,
+    "Venezuela": 1680,
+    "Bolivia": 1660,
+    # Top tier — Europe
+    "Germany": 2050,
+    "Spain": 2010,
+    "France": 1980,
+    "Belgium": 2020,
+    "Portugal": 1940,
+    "Italy": 1900,
+    "England": 1900,
+    "Netherlands": 1880,
+    "Croatia": 1850,
+    "Switzerland": 1830,
+    "Poland": 1810,
+    "Wales": 1800,
+    "Sweden": 1790,
+    "Denmark": 1780,
+    "Austria": 1770,
+    "Czech Republic": 1770,
+    "Türkiye": 1760,
+    "Turkey": 1760,
+    "Ukraine": 1760,
+    "Russia": 1760,
+    "Slovakia": 1740,
+    "Republic of Ireland": 1740,
+    "Ireland": 1740,
+    "Romania": 1730,
+    "Iceland": 1730,
+    "Hungary": 1720,
+    "Serbia": 1720,
+    "Norway": 1720,
+    "Greece": 1720,
+    "Scotland": 1710,
+    "Finland": 1670,
+    "Bosnia and Herzegovina": 1690,
+    "Northern Ireland": 1680,
+    "Slovenia": 1670,
+    "Albania": 1660,
+    "Bulgaria": 1620,
+    "Israel": 1700,
+    "North Macedonia": 1680,
+    "Georgia": 1640,
+    # Top tier — CONCACAF
+    "Mexico": 1820,
+    "USA": 1790,
+    "United States": 1790,
+    "Costa Rica": 1740,
+    "Panama": 1640,
+    "Jamaica": 1620,
+    "Canada": 1610,
+    "Honduras": 1610,
+    "Haiti": 1570,
+    "El Salvador": 1570,
+    # Africa
+    "Senegal": 1730,
+    "Tunisia": 1730,
+    "Egypt": 1720,
+    "Morocco": 1720,
+    "Algeria": 1720,
+    "Nigeria": 1720,
+    "Ivory Coast": 1710,
+    "Côte d'Ivoire": 1710,
+    "Ghana": 1710,
+    "Cameroon": 1700,
+    "DR Congo": 1650,
+    "Congo DR": 1650,
+    "Mali": 1660,
+    "Burkina Faso": 1660,
+    "South Africa": 1620,
+    "Cape Verde Islands": 1600,
+    "Cape Verde": 1600,
+    # Asia
+    "Iran": 1770,
+    "Japan": 1740,
+    "South Korea": 1740,
+    "Korea Republic": 1740,
+    "Australia": 1720,
+    "Saudi Arabia": 1670,
+    "Uzbekistan": 1640,
+    "Qatar": 1650,
+    "Iraq": 1620,
+    "United Arab Emirates": 1620,
+    "Jordan": 1610,
+    "China PR": 1600,
+    "China": 1600,
+    # Oceania
+    "New Zealand": 1620,
+}
+
+
+def initial_elo(team_name: str | None) -> float:
+    """Look up the seeded starting ELO for a national side, falling back to
+    the legacy 1500 for unseeded teams (mostly smaller federations / non-WC
+    sides). Case-insensitive on the name; ' ' / '-' normalised."""
+    if not team_name:
+        return 1500.0
+    norm = team_name.strip()
+    if norm in INITIAL_ELO_SEEDS:
+        return float(INITIAL_ELO_SEEDS[norm])
+    # Cheap case-insensitive fallback for capitalisation drift.
+    lower = norm.lower()
+    for k, v in INITIAL_ELO_SEEDS.items():
+        if k.lower() == lower:
+            return float(v)
+    return 1500.0
 
 
 def category_for_league(league_af_id: int | None) -> str:
@@ -86,9 +219,12 @@ def main():
         SELECT m.id, m.date::date AS match_date,
                m.home_team_id, m.away_team_id,
                m.score_home, m.score_away,
+               ht.name AS home_name, at.name AS away_name,
                l.api_football_id AS league_af_id, l.name AS league_name
         FROM matches m
         JOIN leagues l ON l.id = m.league_id
+        JOIN teams ht ON ht.id = m.home_team_id
+        JOIN teams at ON at.id = m.away_team_id
         WHERE l.country = 'World'
           AND m.status = 'finished'
           AND m.score_home IS NOT NULL
@@ -102,12 +238,16 @@ def main():
         console.print("[red]No matches found — backfill internationals first[/red]")
         return
 
-    # ELO walk
+    # ELO walk — seed each team's starting rating from INITIAL_ELO_SEEDS the
+    # first time we see them. Teams not in the seed table start at 1500 (old
+    # default) — that's fine for minor federations whose absolute level
+    # doesn't matter for our prediction surface.
     elo: dict[str, float] = {}   # team_id → current rating
     n: dict[str, int] = {}        # team_id → matches played
     last_comp: dict[str, str] = {}
     rows: list[tuple] = []        # (team_id, match_date, elo, n, last_comp)
     counts_by_cat = {"tournament": 0, "qualifier_nl": 0, "friendly": 0}
+    seeded_count = 0
 
     for m in matches:
         cat = category_for_league(m["league_af_id"])
@@ -116,8 +256,18 @@ def main():
 
         h_id = m["home_team_id"]
         a_id = m["away_team_id"]
-        h_elo = elo.get(h_id, 1500.0) + h_adv
-        a_elo = elo.get(a_id, 1500.0)
+        # First-touch seed: anchor each side at a realistic starting rating
+        # before the walk's first update touches it.
+        if h_id not in elo:
+            elo[h_id] = initial_elo(m["home_name"])
+            if elo[h_id] != 1500.0:
+                seeded_count += 1
+        if a_id not in elo:
+            elo[a_id] = initial_elo(m["away_name"])
+            if elo[a_id] != 1500.0:
+                seeded_count += 1
+        h_elo = elo[h_id] + h_adv
+        a_elo = elo[a_id]
 
         # Expected scores from rating differential
         exp_h = 1.0 / (1 + 10 ** ((a_elo - h_elo) / 400))
@@ -134,8 +284,8 @@ def main():
         else:
             act_h, act_a = 0.5, 0.5
 
-        new_h = elo.get(h_id, 1500.0) + K * gd_mult * (act_h - exp_h)
-        new_a = elo.get(a_id, 1500.0) + K * gd_mult * (act_a - exp_a)
+        new_h = elo[h_id] + K * gd_mult * (act_h - exp_h)
+        new_a = elo[a_id] + K * gd_mult * (act_a - exp_a)
 
         elo[h_id] = new_h
         elo[a_id] = new_a
@@ -152,6 +302,7 @@ def main():
                   f"{counts_by_cat['qualifier_nl']} qualifier/NL, "
                   f"{counts_by_cat['friendly']} friendly matches")
     console.print(f"  unique teams with ELO: {len(elo)}")
+    console.print(f"  teams seeded from INITIAL_ELO_SEEDS: {seeded_count}")
     console.print(f"  total ELO update rows to write: {len(rows)}")
 
     # Top + bottom ratings sanity check

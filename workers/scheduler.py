@@ -443,6 +443,20 @@ def job_wc_match_previews():
     _run_job("wc_match_previews", run_wc_match_previews)
 
 
+def job_wc_market_consensus():
+    """WC-A3 (2026-06-04): scrape 1X2 market consensus from 2-3 free public
+    sources (eloratings.net, forebet, oddsportal) for every upcoming WC2026
+    fixture. Vig-removes per source, aggregates by mean, upserts into
+    `wc_market_consensus`. Gated to the WC window for the same reason as
+    the AI preview job — nothing to scrape outside it. Polite scraping
+    (≥2s between requests, real UA) is enforced inside the script."""
+    today = date.today()
+    if not (_WC_PREVIEW_WINDOW_START <= today <= _WC_PREVIEW_WINDOW_END):
+        return
+    from scripts.scrape_wc_market_consensus import run_wc_market_consensus
+    _run_job("wc_market_consensus", run_wc_market_consensus)
+
+
 def job_email_digest():
     from workers.jobs.email_digest import run_email_digest
     _run_job("email_digest", run_email_digest)
@@ -1439,6 +1453,16 @@ def main():
     scheduler.add_job(job_wc_match_previews, CronTrigger(hour=7, minute=30),
                       id="wc_match_previews",
                       name="WC AI Previews 07:30 [WC window]")
+
+    # WC-A3 (2026-06-04): Daily market consensus scrape — pulls 1X2
+    # implied probs from 2-3 free public sources (eloratings, forebet,
+    # oddsportal), vig-removes per source, aggregates by mean, upserts
+    # into `wc_market_consensus`. 06:00 UTC sits before the WC preview
+    # cron (07:30) so previews could one day include market context.
+    # Window-gated inside job_wc_market_consensus to 2026-06-04 → 2026-07-19.
+    scheduler.add_job(job_wc_market_consensus, CronTrigger(hour=6, minute=0),
+                      id="wc_market_consensus",
+                      name="WC Market Consensus 06:00 [WC window]")
 
     # EMAIL-DIGEST-SMART (ENG-4): four qualification slots, 10/12/14/16 UTC.
     # First slot whose pending-bet signal-strength score clears

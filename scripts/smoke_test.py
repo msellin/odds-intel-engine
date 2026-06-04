@@ -14681,5 +14681,106 @@ def _():
         )
 
 
+
+# ── WC Team Detail Pages (WC-E2) — 2026-06-04 ──────────────────────────────
+@test("WC-TEAM-PAGES — per-nation team detail page exists, generateStaticParams + notFound wired, all sections present")
+def _():
+    """WC-E2 (2026-06-04): per-nation team detail pages let users drill in from
+    a group card or schedule row and see one team's WC story — group, model
+    ELO, fixtures, recent form. The page is server-rendered, generates static
+    params from the WC fixture team set, and 404s on unknown slugs.
+
+    Source-level guards on the new page:
+      - file exists at the WC route
+      - `export const dynamic = "force-dynamic"` (data freshness > static-cache)
+      - `generateStaticParams` exported (so the 48 nations pre-render)
+      - `notFound` imported from "next/navigation" + actually called
+      - hero section (flag + name + group + ELO)
+      - group standings context (reuses derived group)
+      - fixtures section (re-uses ProbBar + AiPickPill + WCVsYouPicker)
+      - recent form section (reads matches table with league.country='World')
+    """
+    page = _web_path("src/app/(app)/world-cup/teams/[name]/page.tsx")
+    assert page.exists(), "WC team detail page must exist at src/app/(app)/world-cup/teams/[name]/page.tsx"
+    src = page.read_text()
+
+    # Routing knobs
+    assert 'export const dynamic = "force-dynamic"' in src, (
+        "team page must declare dynamic = 'force-dynamic' — standings update "
+        "frequently and the static cache would serve stale rows"
+    )
+    assert "export async function generateStaticParams" in src, (
+        "team page must export generateStaticParams() to pre-render the 48 "
+        "WC nations as static routes"
+    )
+
+    # 404 on unknown slugs
+    assert 'from "next/navigation"' in src and "notFound" in src, (
+        "team page must import notFound from next/navigation"
+    )
+    assert "notFound()" in src, (
+        "team page must call notFound() when the slug doesn't resolve to a WC team"
+    )
+
+    # Data plumbing — reuses shared WC helpers (no copy-paste of derivation logic)
+    for helper in (
+        "getWorldCupFixtures",
+        "deriveGroups",
+        "getWorldCupPredictions",
+        "getInternationalElos",
+    ):
+        assert helper in src, f"team page must reuse {helper} from @/lib/world-cup"
+
+    # Recent-form query — last N finished international matches
+    assert 'league:league_id!inner(country)' in src, (
+        "recent form query must inner-join leagues so we can filter to "
+        "international matches via league.country"
+    )
+    assert '"World"' in src, (
+        "recent form must filter league.country = 'World' (the AF convention "
+        "for international fixtures)"
+    )
+    assert 'home_team_id.eq.' in src and 'away_team_id.eq.' in src, (
+        "recent form must OR-filter on home_team_id OR away_team_id so both "
+        "home and away results appear in the team's form sequence"
+    )
+
+    # Sections — source-level markers we use as visual anchors so a refactor
+    # can't silently drop the hero / group / fixtures / form blocks.
+    for marker in ("data-hero", "data-group-context", "data-fixtures", "data-form"):
+        assert marker in src, (
+            f"team page must include {marker} attribute on its section block — "
+            f"smoke needs a stable anchor across refactors"
+        )
+
+    # Reused engagement primitives so the fixture rows read identically to
+    # the Schedule and Group views
+    for needle in ("ProbBar", "ProbNumbersRow", "AiPickPill", "WCVsYouPicker"):
+        assert needle in src, (
+            f"team page must reuse {needle} so a future visual tweak in the "
+            f"shared component flows through to per-team fixtures"
+        )
+
+    # Flag rendering — page must use the shared flagForTeam lookup, not a
+    # hand-rolled emoji map
+    assert "flagForTeam" in src, (
+        "team page must use flagForTeam from @/lib/wc-flags for the hero "
+        "flag + standings/fixture flags"
+    )
+
+    # Metadata block
+    assert "export async function generateMetadata" in src, (
+        "team page must export generateMetadata() so per-team title/description "
+        "are emitted for SEO"
+    )
+    assert "FIFA World Cup 2026" in src and "OddsIntel" in src, (
+        "metadata title must include 'FIFA World Cup 2026' and 'OddsIntel' "
+        "(brand + tournament — drives organic search match)"
+    )
+    assert "canonical" in src, (
+        "metadata must declare a canonical URL per team page"
+    )
+
+
 if __name__ == "__main__":
     main()
