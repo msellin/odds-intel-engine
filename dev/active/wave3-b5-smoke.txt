@@ -1,0 +1,106 @@
+WC-B5 — AI preview prompt with model numbers + market consensus — smoke test description
+============================================================================================
+
+The operator will add these as tests in scripts/smoke_test.py. Per the project's
+smoke convention each test is a source-inspection check or a fast Python eval
+against the worktree — no DB calls, no Gemini calls.
+
+
+1) WC-B5-MODULE — source inspection
+   File: workers/jobs/wc_match_previews.py imports cleanly and exports the
+   public surface the next-wave callers depend on.
+   Assert (importlib + getattr):
+     - build_gemini_prompt is callable
+     - generate_preview is callable
+     - select_wc_fixtures is callable
+     - fetch_market_consensus is callable
+     - fetch_roster_strength is callable
+     - fetch_intl_elo_row is callable
+     - GEMINI_MODEL == "gemini-2.5-flash-lite"
+     - REFRESH_AFTER_HOURS == 24
+
+
+2) WC-B5-PROMPT-CITES-MODEL-PCT — pure Python eval, no DB
+   Build a prompt for a synthetic Brazil v Morocco match with model probs
+   (home=0.337, draw=0.297, away=0.366) and market=None.
+   Call: build_gemini_prompt(match, home_elo_info={"elo":2050,"n_matches":1200},
+                             away_elo_info={"elo":1840,"n_matches":720},
+                             home_form="WWDLW", away_form="WWWDW",
+                             home_inj=[], away_inj=[],
+                             home_roster=None, away_roster=None, market=None)
+   Assert the returned string contains all of:
+     - "Brazil 34%"            (rounded from 0.337)
+     - "Morocco 37%"           (rounded from 0.366)
+     - "draw 30%"              (rounded from 0.297)
+     - "Brazil holds a 210-point advantage" (qualitative ELO line)
+     - "Market consensus not yet scraped"   (fallback line)
+     - "Our model gives"       (the explicit prompt instruction)
+     - "DO NOT invent player names"          (cliché-blacklist + voice rules preserved)
+
+
+3) WC-B5-PROMPT-FALLBACK — clean degradation when nothing is populated
+   Build a prompt for a fixture with all optional context missing:
+     match = {"id":"x","home_team":"Iran","home_id":"h","away_team":"Tunisia",
+              "away_id":"a","kickoff":"TBD","venue_name":None,
+              "h2h_home_wins":None,"h2h_draws":None,"h2h_away_wins":None,
+              "home_win_prob":None,"draw_prob":None,"away_win_prob":None}
+   Call: build_gemini_prompt(match)
+   Assert the returned string:
+     - contains "Iran vs Tunisia"
+     - contains "Our model has not generated a 1X2 for this fixture yet."
+     - contains "Market consensus not yet scraped"
+     - contains "no recent head-to-head data"
+     - DOES NOT contain "%" (no probabilities fabricated when none are known)
+     - DOES NOT raise (helper tolerates missing rosters / ELO / market)
+
+
+4) WC-B5-PROMPT-MARKET-DIVERGENCE — flags ≥10-pt disagreements
+   Same Brazil v Morocco probs (home=0.337) but pass a market dict where
+   market home = 0.55 (Brazil 55% to the market vs 34% to the model).
+   Call: build_gemini_prompt(match, market={"home":0.55,"draw":0.25,
+                                            "away":0.20,"n_sources":4})
+   Assert the rendered prompt contains:
+     - "Market consensus (4 sources)"
+     - "Brazil 55%"
+     - "disagree materially"            (21-point gap — flagged in prompt)
+
+
+5) WC-B5-PROMPT-SQUAD-RATIO — squad-value disparity only above 1.5x
+   Brazil €1.2B vs Morocco €320M = 3.75x → MUST appear in prompt.
+   Brazil €1.0B vs Argentina €900M = 1.11x → MUST NOT appear.
+   Assert:
+     - first prompt contains "Brazil's pool is 3.8× more valuable"
+     - second prompt does NOT contain "more valuable"
+
+
+6) WC-B5-PERCENT-HELPER — _percent extracts numbers from prediction rows
+   from workers.jobs.wc_match_previews import _percent
+   Assert:
+     - _percent(0.337) == 34
+     - _percent(0.366) == 37
+     - _percent(None) is None
+     - _percent("0.5") == 50   (handles psycopg2 Decimal/string rows)
+     - _percent("not a number") is None  (defensive — no crash on garbage)
+
+
+7) WC-B5-SELECT-SQL — source inspection of select_wc_fixtures()
+   Open workers/jobs/wc_match_previews.py and assert the SQL contains:
+     - "national_team_v1_blended"          (blended source preferred)
+     - "national_team_v1"                  (raw source fallback in COALESCE)
+     - "wc_market_consensus"               (market timestamp joined)
+     - "prediction_updated_at"             (staleness check field)
+     - "market_updated_at"                 (staleness check field)
+   Assert select_wc_fixtures.__doc__ mentions both "prediction" and
+   "market-consensus" staleness behaviour.
+
+
+------------------------------------------------------------------
+Follow-up (separate task — do NOT include in WC-B5 smoke set):
+
+  WC-B5-LIVE-PROMPT-AUDIT:
+    Once wc_market_consensus has rows for at least 4 fixtures, run
+      python -m workers.jobs.wc_match_previews --dry-run --days 14
+    and spot-check that 3-4 sample previews actually reference the model %
+    and market % numbers (Gemini follows the new instructions, not just
+    the old generic narrative). If Gemini regularly skips the numbers,
+    tighten the prompt with a one-shot example.
