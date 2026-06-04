@@ -1,0 +1,65 @@
+WC-D1 — WP curve extended to international matches
+====================================================
+
+Date: 2026-06-04
+Scope: Frontend-only change (no engine changes). Touches:
+  - /Users/margussellin/www/odds-intel-web/src/app/api/matches/[id]/wp/route.ts
+  - /Users/margussellin/www/odds-intel-web/src/lib/wp-series.ts
+  - /Users/margussellin/www/odds-intel-web/src/app/(app)/matches/[id]/page.tsx
+
+What changed
+------------
+1. WC detection now branches on `leagues.api_football_id = 1` (the FIFA
+   World Cup row), not on the looser `country='World'` string match. The
+   country fallback is still kept so non-WC international fixtures stay on
+   the international code path.
+
+2. For WC fixtures the API route + wp-series builder read live data from
+   `live_xg_snapshots` (written by workers/jobs/wc_live_xg_poller.py every
+   60s during live WC matches). Club fixtures still read from
+   `live_match_snapshots`.
+
+3. `team_elo_international` keeps powering the WC ELO baseline — already
+   in place. The detection switch above now anchors on `api_football_id=1`
+   so the wiring is explicit rather than coincidental.
+
+4. The /api/matches/[id]/wp response shape is unchanged
+   ({ minute, homeProb, drawProb, awayProb, scoreHome, scoreAway,
+   serverNow }). The chart components were NOT modified.
+
+5. The match-detail page renders <WinProbabilityChart> above the tab strip
+   for any WC fixture (status: scheduled / live / finished). Club fixtures
+   keep the chart inside the MATCH tab. For WC fixtures we suppress the
+   in-tab render to avoid a duplicate.
+
+Smoke description
+-----------------
+- API route handles WC fixtures by branching on api_football_id=1.
+- When WC: ELO read from team_elo_international, live data from
+  live_xg_snapshots (minute-only; score carries from matches.score_home /
+  matches.score_away which the live tracker keeps fresh).
+- When club: ELO from team_elo_daily, live data from live_match_snapshots
+  (unchanged).
+- Returns the same JSON shape regardless. No FE chart changes.
+- Match-detail page renders the WP chart above the tabs for WC fixtures
+  on every status (scheduled / live / finished).
+- Tolerates empty live_xg_snapshots (pre-KO and pre-tournament): the chart
+  still renders pre-match anchor (from priors or ELO fallback) and the
+  trailing "current" point when there is one. Pre-tournament with no
+  snapshots → curve = pre-match anchor only, chart shows its scheduled
+  teaser.
+
+Verification
+------------
+- `cd /Users/margussellin/www/odds-intel-web && npx tsc --noEmit` → clean.
+- Hit /api/matches/<mexico-v-south-africa-id>/wp locally → returns
+  { minute, homeProb, drawProb, awayProb, scoreHome, scoreAway,
+  serverNow } with priors anchored by international ELO when no
+  national_team_v1 prediction row exists yet (Phase 3 in progress).
+
+Constraints respected
+---------------------
+- win-probability-chart.tsx / -live.tsx — untouched.
+- win-probability.ts (computeWP math) — untouched.
+- wc-prob-display / wc-schedule / wc-group-card / wc-bracket-board —
+  untouched.
