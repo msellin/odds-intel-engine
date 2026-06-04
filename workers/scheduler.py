@@ -528,13 +528,18 @@ def job_weekly_retrain():
         # eval surfaced the cost: v20260517 and v20260524 are +9 to +13%
         # worse than v14 on the over_under XGBoost head despite being better
         # on every other market head. Root cause traced to this flag omission.
-        # DRIFT-FEATURE (2026-06-04): --include-drift adds the Pinnacle
-        # open→close drift columns (DRIFT_FEATURE_COLS in train.py). Empirical
-        # justification in dev/active/csv-full-extract-backtest-results.md —
-        # +8.76pp WR spread top vs bottom quintile on 8,850 matches.
+        # DRIFT-FEATURE flag intentionally OMITTED here (2026-06-04 revert).
+        # The DRIFT-FEATURE backfill currently only covers 260/10K matches
+        # (rest don't have MFV rows yet), and the June 8 / June 15 calibration
+        # + bot-threshold work needs clean apples-to-apples comparison vs the
+        # prior bundle. Re-enable via DRIFT-FEATURE-REENABLE in PRIORITY_QUEUE
+        # once MFV coverage on drift columns is ≥30% and the Batch 2
+        # calibration eval is baselined. Until then, drift remains available
+        # for ad-hoc training runs via `--include-drift` but not on the
+        # auto-Sunday-retrain.
         result = subprocess.run(
             [sys.executable, "-m", "workers.model.train", "--version", version,
-             "--include-pinnacle", "--include-ou-market", "--include-drift"],
+             "--include-pinnacle", "--include-ou-market"],
             cwd=str(Path(__file__).parent.parent),
             timeout=1800,
             capture_output=True,
