@@ -152,6 +152,11 @@ def morning_pipeline():
     # 1X2/OU/BTTS predictions after fixtures land + AF predictions run. Source
     # = 'national_team_v1' so /world-cup picks up the rows.
     from scripts.write_national_team_predictions import run_predictions as run_national_team_predictions
+    # WC-A4 (2026-06-04): blend own national-team 1X2 with market consensus from
+    # wc_market_consensus into source='national_team_v1_blended'. Runs AFTER the
+    # national-team step so it sees today's fresh own preds. Tolerates an empty
+    # consensus table — falls back to own-only output.
+    from scripts.write_blended_predictions import run_blended_predictions
 
     today = date.today().isoformat()
     tomorrow = (date.today() + timedelta(days=1)).isoformat()
@@ -161,13 +166,14 @@ def morning_pipeline():
 
     import traceback
     steps = [
-        ("1/7", "Fixtures (today)",        lambda: run_fixtures(target_date=today, refresh_leagues=is_monday)),
-        ("2/7", "Fixtures (tomorrow rows)", lambda: fetch_and_store_fixtures(tomorrow)),
-        ("3/7", "Enrichment",              lambda: run_enrichment(target_date=today)),
-        ("4/7", "Odds",                    lambda: run_odds(target_date=today)),
-        ("5/7", "Predictions (club)",      lambda: run_predictions(target_date=today)),
-        ("6/7", "Predictions (national)",  lambda: run_national_team_predictions(days=30)),
-        ("7/7", "Betting",                 lambda: run_betting()),
+        ("1/8", "Fixtures (today)",        lambda: run_fixtures(target_date=today, refresh_leagues=is_monday)),
+        ("2/8", "Fixtures (tomorrow rows)", lambda: fetch_and_store_fixtures(tomorrow)),
+        ("3/8", "Enrichment",              lambda: run_enrichment(target_date=today)),
+        ("4/8", "Odds",                    lambda: run_odds(target_date=today)),
+        ("5/8", "Predictions (club)",      lambda: run_predictions(target_date=today)),
+        ("6/8", "Predictions (national)",  lambda: run_national_team_predictions(days=30)),
+        ("7/8", "Predictions (blended)",   lambda: run_blended_predictions(days=30)),
+        ("8/8", "Betting",                 lambda: run_betting()),
     ]
 
     failed_steps = []
@@ -187,7 +193,7 @@ def morning_pipeline():
     if failed_steps:
         console.print(f"\n[red bold]Morning pipeline finished with {len(failed_steps)} failure(s): {', '.join(failed_steps)}[/red bold]")
     else:
-        console.print("\n[bold green]Morning pipeline complete — all 5 steps succeeded.[/bold green]")
+        console.print("\n[bold green]Morning pipeline complete — all 8 steps succeeded.[/bold green]")
 
 
 def settlement_pipeline():
@@ -1096,6 +1102,28 @@ def job_wc_achievement_detection():
     _run_job("wc_achievement_detection", detect_for_all_users)
 
 
+def job_wc_lineup_refresh():
+    """WC-A5 (2026-06-04): T-60min lineup-aware prediction refresh.
+
+    Every 5 minutes during the WC live window (2026-06-11 → 2026-07-19), scan
+    for WC fixtures kicking off in the next 90min that already have a
+    confirmed starting XI (`matches.lineups_fetched_at IS NOT NULL`) but don't
+    yet have a `source='national_team_v1_lineup'` prediction row. For each
+    match, re-run the national-team predictor with a small ELO adjustment
+    based on actual_xi vs expected_xi from `team_roster_strength`, and write
+    a refreshed prediction.
+
+    Window-gated AND query-gated (defence in depth): outside the WC window
+    the job no-ops at the top; inside the window, the SQL filter is itself
+    a no-op when no fixture matches. Idempotent — re-running mid-window only
+    writes for fixtures whose `_lineup` row isn't there yet."""
+    today = date.today()
+    if not (_WC_SCORING_WINDOW_START <= today <= _WC_SCORING_WINDOW_END):
+        return
+    from workers.jobs.wc_lineup_refresh import run_wc_lineup_refresh
+    _run_job("wc_lineup_refresh", run_wc_lineup_refresh)
+
+
 def job_health_alerts_morning():
     from workers.jobs.health_alerts import run_morning_checks
     _run_job("health_alerts_morning", run_morning_checks)
@@ -1485,6 +1513,15 @@ def main():
     scheduler.add_job(job_wc_monte_carlo, CronTrigger(hour=6, minute=30),
                       id="wc_monte_carlo",
                       name="WC Monte Carlo 06:30 [WC window]")
+
+    # WC-A5 (2026-06-04): T-60min lineup-aware refresh. Every 5min during the
+    # live window the job scans WC fixtures kicking off in the next 90min,
+    # re-runs the predictor with an actual_xi vs expected_xi ELO adjustment,
+    # and writes a `source='national_team_v1_lineup'` row. Defence-in-depth:
+    # gated inside the job AND by the SQL filter.
+    scheduler.add_job(job_wc_lineup_refresh, IntervalTrigger(minutes=5),
+                      id="wc_lineup_refresh",
+                      name="WC Lineup Refresh (5min) [WC window]")
 
     # EMAIL-DIGEST-SMART (ENG-4): four qualification slots, 10/12/14/16 UTC.
     # First slot whose pending-bet signal-strength score clears

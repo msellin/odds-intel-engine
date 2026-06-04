@@ -1,0 +1,77 @@
+WC-A4 — Bayesian blender (own × market) — smoke test description
+==================================================================
+
+The operator will add these as tests in scripts/smoke_test.py. Per the
+project's smoke convention each test is a source-inspection check or a
+fast Python eval against the worktree.
+
+
+1) WC-A4-BLENDER-MODULE — source inspection
+   File: workers/model/wc_blender.py exists and exports the public surface.
+   Assert:
+     - module imports without error
+     - has attribute BLEND_LAMBDA (float in [0, 1])
+     - has attribute blend (callable)
+     - has attribute blend_with_confidence (callable)
+
+
+2) WC-A4-BLEND-MATH — pure-Python eval, no DB
+   Call: blend({'home':0.5,'draw':0.3,'away':0.2},
+               {'home':0.6,'draw':0.25,'away':0.15}, 0.6)
+   Expect:
+     - returns dict with 'home', 'draw', 'away', 'blended'=True, 'lambda_used'=0.6
+     - home == 0.56, draw == 0.27, away == 0.17  (each ± 1e-9)
+     - home + draw + away == 1.0 ± 1e-6
+
+
+3) WC-A4-BLEND-FALLBACK — market=None returns own unchanged
+   Call: blend({'home':0.5,'draw':0.3,'away':0.2}, None)
+   Expect:
+     - 'blended' is False
+     - 'lambda_used' == 0.0
+     - home / draw / away exactly match the input ({0.5, 0.3, 0.2})
+
+
+4) WC-A4-CONFIDENCE-RAMP — n=1 sticks closer to own than n=10
+   own = {'home':0.5,'draw':0.3,'away':0.2}
+   mkt = {'home':0.6,'draw':0.25,'away':0.15}
+   r1  = blend_with_confidence(own, mkt, n_sources=1)
+   r10 = blend_with_confidence(own, mkt, n_sources=10)
+   Assert:
+     - abs(r1['home']  - own['home']) < abs(r10['home']  - own['home'])
+     - r1['lambda_used']  <  r10['lambda_used']
+     - both still sum to 1.0 ± 1e-6
+
+
+5) WC-A4-WRITER-SOURCE — source inspection of write_blended_predictions.py
+   File: scripts/write_blended_predictions.py exists.
+   Grep:
+     - "source='national_team_v1_blended'" or 'SOURCE_BLENDED = "national_team_v1_blended"'
+     - imports from workers.model.wc_blender
+     - reads from wc_market_consensus
+     - writes via bulk_store_predictions
+     - has a --dry-run flag
+
+
+6) WC-A4-SCHEDULER-WIRED — source inspection of workers/scheduler.py
+   Grep workers/scheduler.py for:
+     - 'from scripts.write_blended_predictions import run_blended_predictions'
+     - the new step label ('Predictions (blended)')
+   Assert the blended step appears AFTER 'Predictions (national)' in the
+   morning_pipeline() steps list.
+
+
+------------------------------------------------------------------
+Follow-up (separate task — DO NOT include in WC-A4 smoke set):
+
+  WC-A4-FE-SWITCH (filed in dev/active/wave2-a4-smoke.txt):
+    odds-intel-web/src/lib/world-cup.ts currently keys on
+    NATIONAL_TEAM_MODEL_SOURCE = "national_team_v1". Once WC-A4 has
+    written rows for a few days and we're confident in blend quality,
+    flip this constant to "national_team_v1_blended" (or add a tier-gated
+    A/B). The blended source coexists with the raw source in `predictions`
+    so the FE can switch with a one-line change — no migration needed.
+
+    Acceptance: /world-cup/groups + match-detail show probabilities that
+    differ from the current Brazil-22%-Morocco-50% pattern on matchups
+    where our model has been historically pulling away from the market.

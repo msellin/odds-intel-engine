@@ -14782,5 +14782,210 @@ def _():
     )
 
 
+@test("CSV-FULL-EXTRACT — extract_odds_rows emits full bookmaker × market × close/open set")
+def _():
+    """CSV-FULL-EXTRACT 2026-06-04 — `extract_odds_rows` was previously only
+    storing Pinnacle + Bet365 1X2 + OU2.5 closing. The rewrite captures 9
+    bookmakers (incl. Betfair Exchange, Max, Avg), 1X2 + OU2.5 + Asian
+    Handicap, closing + opening. This test feeds a synthetic CSV row and
+    asserts the full row-set is produced.
+    """
+    import pandas as _pd
+    from scripts.ingest_football_data_csvs import extract_odds_rows, extract_match_stats
+
+    row = _pd.Series({
+        # closing 1X2
+        "PSCH": 1.65, "PSCD": 4.23, "PSCA": 5.28,
+        "B365CH": 1.65, "B365CD": 4.10, "B365CA": 5.00,
+        "BFECH": 1.66, "BFECD": 4.15, "BFECA": 5.33,
+        "MaxCH": 1.70, "MaxCD": 4.33, "MaxCA": 5.50,
+        "AvgCH": 1.66, "AvgCD": 4.20, "AvgCA": 5.02,
+        # opening 1X2
+        "PSH": 1.60, "PSD": 4.20, "PSA": 5.00,
+        "BFEH": 1.66, "BFED": 4.50, "BFEA": 5.60,
+        # OU 2.5 close + open
+        "PC>2.5": 1.66, "PC<2.5": 2.45,
+        "BFEC>2.5": 1.68, "BFEC<2.5": 2.46,
+        "P>2.5": 1.62, "P<2.5": 2.30,
+        # AH close + open
+        "AHCh": -0.75, "AHh": -1.0,
+        "PCAHH": 1.83, "PCAHA": 2.11,
+        "BFECAHH": 1.90, "BFECAHA": 2.08,
+        "PAHH": 2.05, "PAHA": 1.85,
+        # match stats
+        "HS": 14, "AS": 10, "HST": 5, "AST": 2, "HC": 7, "AC": 8,
+        "HY": 2, "AY": 3, "HR": 0, "AR": 0, "HF": 12, "AF": 10,
+        "Referee": "R Jones",
+    })
+    rows = extract_odds_rows(row, "00000000-0000-0000-0000-000000000001", "2026-01-01T15:00:00+00:00")
+    by_book_market = {}
+    for r in rows:
+        by_book_market.setdefault(r["bookmaker"], set()).add((r["market"], r["selection"], r["is_closing"], r["is_opening"]))
+    # Betfair Exchange must have full coverage — this was the £499-API gap
+    assert "Betfair Exchange" in by_book_market, f"Exchange rows missing: got {set(by_book_market)}"
+    bfe = by_book_market["Betfair Exchange"]
+    assert ("1x2", "home", True, False) in bfe, "Exchange 1X2 closing home missing"
+    assert ("1x2", "home", False, True) in bfe, "Exchange 1X2 opening home missing"
+    assert ("over_under_25", "over", True, False) in bfe, "Exchange OU 2.5 closing over missing"
+    assert ("asian_handicap", "home", True, False) in bfe, "Exchange AH closing home missing"
+    # Pinnacle AH closing must carry the handicap_line
+    pin_ah = [r for r in rows if r["bookmaker"] == "Pinnacle"
+              and r["market"] == "asian_handicap" and r["is_closing"]]
+    assert pin_ah, "Pinnacle AH closing rows missing"
+    assert any(r["handicap_line"] == -0.75 for r in pin_ah), \
+        f"Pinnacle AH closing handicap_line not set; got {[r['handicap_line'] for r in pin_ah]}"
+    # Max + Avg are synthetic CSV aggregates — closing only, no opening
+    for synth in ("Max", "Avg"):
+        sm = by_book_market.get(synth, set())
+        assert ("1x2", "home", True, False) in sm, f"{synth} 1X2 closing missing"
+        assert not any(t[3] for t in sm), f"{synth} should not have opening rows (CSV has no Max/Avg open cols)"
+    # Match stats extraction must populate the right columns
+    stats = extract_match_stats(row, "00000000-0000-0000-0000-000000000001")
+    assert stats is not None, "extract_match_stats returned None on a stats-rich row"
+    for col, expected in [("shots_home", 14), ("shots_away", 10),
+                          ("shots_on_target_home", 5), ("corners_home", 7),
+                          ("yellow_cards_home", 2), ("red_cards_home", 0),
+                          ("fouls_home", 12)]:
+        assert stats.get(col) == expected, f"match_stats[{col}] != {expected}; got {stats.get(col)}"
+
+
+# ── Wave 2: WC Best Site (2026-06-04) ────────────────────────────────────────
+
+
+@test("WC-A4-BLENDER — module exports + blend math + market=None fallback + confidence ramp")
+def _():
+    """WC-A4 (2026-06-04): Bayesian blender combining our ELO/Poisson
+    `national_team_v1` 1X2 with `wc_market_consensus`. λ=0.6 default.
+    blend({...}, None) returns own unchanged. Confidence ramp scales λ
+    by source count — n=1 sticks closer to own than n=10."""
+    from workers.model.wc_blender import BLEND_LAMBDA, blend, blend_with_confidence
+    assert 0 <= BLEND_LAMBDA <= 1
+    own = {"home": 0.5, "draw": 0.3, "away": 0.2}
+    mkt = {"home": 0.6, "draw": 0.25, "away": 0.15}
+    r = blend(own, mkt, 0.6)
+    assert abs(r["home"] - 0.56) < 1e-6 and abs(r["draw"] - 0.27) < 1e-6 and abs(r["away"] - 0.17) < 1e-6
+    assert r.get("blended") is True
+    assert abs((r["home"] + r["draw"] + r["away"]) - 1.0) < 1e-6
+    fb = blend(own, None)
+    assert fb.get("blended") is False
+    assert fb["home"] == own["home"]
+    r1 = blend_with_confidence(own, mkt, n_sources=1)
+    r10 = blend_with_confidence(own, mkt, n_sources=10)
+    assert abs(r1["home"] - own["home"]) < abs(r10["home"] - own["home"])
+    assert r1["lambda_used"] < r10["lambda_used"]
+
+
+@test("WC-A4-WRITER — write_blended_predictions wires source + scheduler pipeline step")
+def _():
+    """Writer tags rows `source='national_team_v1_blended'` and the morning
+    pipeline runs the blended step right after the national-team step."""
+    import pathlib
+    p = pathlib.Path("scripts/write_blended_predictions.py")
+    assert p.exists(), "scripts/write_blended_predictions.py must exist"
+    src = p.read_text()
+    assert "national_team_v1_blended" in src
+    assert "wc_market_consensus" in src
+    assert "from workers.model.wc_blender import" in src
+    assert "--dry-run" in src
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    assert "from scripts.write_blended_predictions import run_blended_predictions" in sched
+    assert "Predictions (blended)" in sched
+
+
+@test("WC-A5-LINEUP-REFRESH — script + scheduler 5min cron with defence-in-depth window gate")
+def _():
+    """Every 5min during the WC live window, refresh predictions for
+    fixtures kicking off in the next 90min with confirmed XI. Writes
+    `source='national_team_v1_lineup'`. Idempotent via NOT EXISTS."""
+    import pathlib
+    p = pathlib.Path("workers/jobs/wc_lineup_refresh.py")
+    assert p.exists(), "workers/jobs/wc_lineup_refresh.py must exist"
+    src = p.read_text()
+    assert "run_wc_lineup_refresh" in src
+    assert "national_team_v1_lineup" in src
+    assert "lineups_fetched_at IS NOT NULL" in src
+    assert "api_football_id" in src
+    assert "NOT EXISTS" in src
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    assert "def job_wc_lineup_refresh(" in sched
+    assert 'id="wc_lineup_refresh"' in sched
+    assert "IntervalTrigger(minutes=5)" in sched
+
+
+@test("WC-C1-RECORD — wc-record library + predictions-record page (placeholder + calibration + methodology)")
+def _():
+    """Public /world-cup/predictions-record shows Brier / log-loss / CLV vs
+    market + calibration plot. Pre-tournament: clean placeholder."""
+    lib = _web_path("src/lib/wc-record.ts")
+    assert lib.exists(), "src/lib/wc-record.ts must exist"
+    lib_src = lib.read_text()
+    for needle in ("loadRecord", "brierRow", "logLossRow", "buildCalibration"):
+        assert needle in lib_src, f"wc-record.ts must export {needle}"
+    page = _web_path("src/app/(app)/world-cup/predictions-record/page.tsx")
+    assert page.exists(), "predictions-record page must exist"
+    page_src = page.read_text()
+    for section in ("PreTournamentPlaceholder", "SummaryCards", "CalibrationPlot", "HitMissLog", "MethodologyNote"):
+        assert section in page_src, f"page must render {section} section"
+    assert "alternates" in page_src and "predictions-record" in page_src
+
+
+@test("WC-D1-WP-CURVE — WP route + wp-series branch on api_football_id=1 and read live_xg_snapshots")
+def _():
+    """WP curve now works for WC fixtures using team_elo_international
+    baseline + live_xg_snapshots live data. Chart component unchanged."""
+    route = _web_path("src/app/api/matches/[id]/wp/route.ts")
+    assert route.exists(), "wp route must exist"
+    src = route.read_text()
+    assert "api_football_id" in src
+    assert "live_xg_snapshots" in src
+    series = _web_path("src/lib/wp-series.ts")
+    assert series.exists(), "wp-series.ts must exist"
+    series_src = series.read_text()
+    assert "live_xg_snapshots" in series_src
+    assert "isWorldCup" in series_src
+
+
+@test("WC-E1-MONTE-CARLO — sim script + migration 179 + scheduler 06:30 UTC cron")
+def _():
+    """Nightly 10k WC tournament simulation. Reads 1X2 priors (prefers
+    `national_team_v1_blended`), simulates group + knockouts, writes
+    per-team probabilities to wc_monte_carlo_results."""
+    import pathlib
+    s = pathlib.Path("scripts/wc_monte_carlo.py")
+    assert s.exists()
+    src = s.read_text()
+    assert "def run_wc_monte_carlo" in src
+    assert "wc_monte_carlo_results" in src
+    assert "predict_1x2_from_elo" in src
+    mig = pathlib.Path("supabase/migrations/179_wc_monte_carlo.sql")
+    assert mig.exists(), "migration 179_wc_monte_carlo.sql must exist"
+    msrc = mig.read_text()
+    assert "CREATE TABLE IF NOT EXISTS wc_monte_carlo_results" in msrc
+    for col in ("p_advance", "p_r16", "p_qf", "p_sf", "p_final", "p_winner"):
+        assert col in msrc, f"migration must declare {col}"
+    assert "ENABLE ROW LEVEL SECURITY" in msrc
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    assert "def job_wc_monte_carlo(" in sched
+    assert 'id="wc_monte_carlo"' in sched
+    assert "hour=6, minute=30" in sched
+
+
+@test("WC-E1-WEB — /world-cup/who-can-win page renders sortable table from wc_monte_carlo_results")
+def _():
+    """Sortable per-team table with prob-bar advance %, top-5 contenders
+    highlight, links to team detail. Empty-state copy when no snapshot."""
+    page = _web_path("src/app/(app)/world-cup/who-can-win/page.tsx")
+    assert page.exists()
+    psrc = page.read_text()
+    assert "wc_monte_carlo_results" in psrc
+    assert "alternates" in psrc and "who-can-win" in psrc
+    assert "Simulation runs nightly" in psrc
+    assert "/world-cup/teams/" in psrc
+    table = _web_path("src/components/wc-who-can-win-table.tsx")
+    assert table.exists()
+    tsrc = table.read_text()
+    assert '"use client"' in tsrc
+
+
 if __name__ == "__main__":
     main()

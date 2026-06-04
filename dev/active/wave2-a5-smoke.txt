@@ -1,0 +1,101 @@
+WC-A5 — T-60min lineup-aware prediction refresh — smoke description
+=====================================================================
+
+Hard constraint: scripts/smoke_test.py was NOT modified per the task spec.
+This file describes the assertions a future smoke test should verify
+when scripts/smoke_test.py is unlocked for WC-A5 wiring.
+
+File: workers/jobs/wc_lineup_refresh.py
+Scheduler: workers/scheduler.py (job_wc_lineup_refresh + add_job)
+
+
+--- ASSERTIONS ---
+
+1. EXISTENCE
+   - workers/jobs/wc_lineup_refresh.py exists.
+   - Exports a public callable run_wc_lineup_refresh().
+     Smoke equivalent:
+       from workers.jobs.wc_lineup_refresh import run_wc_lineup_refresh
+       assert callable(run_wc_lineup_refresh)
+   - --dry-run flag supported via main() / argparse.
+
+2. SQL FILTERS (source-inspect via grep on the module file)
+   - WC league gate:        api_football_id = 1 (constant WC_LEAGUE_AF_ID).
+   - Lineups confirmed:     m.lineups_fetched_at IS NOT NULL.
+   - Window:                m.date > now() AND m.date <= now() + interval '90 minutes'.
+   - Idempotency:           NOT EXISTS subquery on predictions where
+                            source = 'national_team_v1_lineup'
+                            AND model_version = 'national_team_v1_lineup'.
+   All four clauses must be present together in _select_candidates().
+
+3. OUTPUT TAGS
+   - Constants in source:
+       LINEUP_SOURCE         == 'national_team_v1_lineup'
+       LINEUP_MODEL_VERSION  == 'national_team_v1_lineup'
+   - Every row written by _bulk_upsert_lineup_predictions carries
+     source = LINEUP_SOURCE and model_version = LINEUP_MODEL_VERSION.
+
+4. IDEMPOTENT WRITES
+   - Uses bulk_upsert(..., conflict_columns=
+       ['match_id', 'market', 'source', 'model_version'], ...) so re-runs
+     overwrite the same row rather than duplicate it. Conflict key
+     matches migration 127 (uq_prediction_match_market_source_version).
+
+5. REASONING JSON
+   - reasoning column is a JSON string containing per-side:
+       expected_xi_avg_elo, actual_xi_avg_elo, n_starters, starters[],
+       elo_delta_club, elo_adjustment, optional fallback reason
+     plus top-level elo_before/elo_after dicts.
+
+6. SCHEDULER WIRING (workers/scheduler.py)
+   - Defines job_wc_lineup_refresh() that:
+       a) Gates today against (_WC_SCORING_WINDOW_START, _WC_SCORING_WINDOW_END)
+          == (2026-06-11, 2026-07-19) — early-returns outside the window.
+       b) Imports run_wc_lineup_refresh and calls it via _run_job(...).
+   - Registers an APScheduler IntervalTrigger(minutes=5) job with
+       id='wc_lineup_refresh'.
+     Smoke source-inspection should grep for:
+       "IntervalTrigger(minutes=5)" on the same add_job(job_wc_lineup_refresh, ...)
+       call AND the id literal 'wc_lineup_refresh'.
+
+7. DEFENCE-IN-DEPTH
+   - The SQL filter in _select_candidates() restricts to fixtures kicking off
+     in the next 90 min, so a misfire / scheduler restart outside the WC
+     window can never produce duplicate rows or spurious predictions. The
+     window gate in scheduler.py is the cheap fast-path; the SQL filter is
+     the safety net.
+
+8. FALLBACK BEHAVIOUR
+   - When team_roster_strength is empty for either side, _elo_adjustment_for_side
+     returns (0.0, audit_with_fallback='no_roster_strength').
+   - When per-player club ELO is unavailable (v1 always), audit captures
+     fallback='no_actual_xi_elo' and the predictor runs with no ELO delta.
+   - Job exits cleanly with summary['skipped'] count for fixtures missing
+     a full XI or team_elo_international row.
+
+
+--- VERIFICATION COMMANDS (one-shot, hard constraints honour) ---
+
+# Imports cleanly:
+python3 -c "from workers.jobs.wc_lineup_refresh import run_wc_lineup_refresh; print('ok')"
+# → DB pool created (2-20 connections)
+# → ok
+
+# Dry-run (no DB writes — expected to print "No WC fixtures..." pre-2026-06-11):
+python3 -m workers.jobs.wc_lineup_refresh --dry-run
+# Expected return-summary dict shape:
+#   {"candidates": int, "refreshed": int, "skipped": int,
+#    "rows": int, "dry_run": True}
+
+
+--- DRY-RUN OUTPUT STRUCTURE (today, pre-WC-window) ---
+
+═══ WC T-60 lineup-aware refresh @ 2026-06-04 18:07 UTC ═══
+No WC fixtures in next 90min with confirmed lineups awaiting refresh.
+
+Once inside the WC window with confirmed lineups, the per-fixture line is:
+  ✓ <home> vs <away> (<af_id>) | ELO <h_before>→<h_after> vs <a_before>→<a_after>
+followed by sample rows when --dry-run is set:
+      sample 1x2_home   p=0.523
+      sample 1x2_draw   p=0.247
+      sample 1x2_away   p=0.230
