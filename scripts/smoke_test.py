@@ -14379,6 +14379,32 @@ def _():
     assert "IF NOT EXISTS" in mig, "Migration must be idempotent (IF NOT EXISTS)"
 
 
+@test("SHADOW-TRAIL-HEALTH-CHECK — diagnostic script asserts contract for PIN-CROSS-DRIFT + inplay_e trails")
+def _():
+    """SHADOW-TRAIL-HEALTH-CHECK (2026-06-04): on-demand health check that
+    verifies both shadow trails are actually populating from live pipeline
+    runs. Reusable by SHADOW-TRAIL-VOLUME-RECHECK on 2026-06-07 and any
+    activation gate that depends on these trails.
+
+    Pinning the diagnostic's contract so a future cleanup pass can't quietly
+    drop the silent-write-failure detection or the inplay_e wire-up cutoff."""
+    p = _engine_path("scripts/check_shadow_trail_health.py")
+    assert p.exists(), "check_shadow_trail_health.py must exist"
+    src = p.read_text()
+    # The two cutoff constants must be present so the inplay_e detection
+    # window aligns with the actual Platt wire-up commit time.
+    assert "PIN_HELPER_DEPLOY_UTC" in src, "PIN helper deploy cutoff constant required"
+    assert "INPLAY_E_PLATT_WIREUP_UTC" in src, "inplay_e Platt wire-up cutoff constant required"
+    # Silent-failure detection: NULL flag + cal_model_prob missing must both fail.
+    assert "SILENT WRITE FAILURE" in src, "Script must label silent-failure cases explicitly"
+    assert "pin_cross_drift_shadow_flag IS NULL" in src, (
+        "Must check for NULL shadow flags (silent helper bypass)"
+    )
+    assert "cal_model_prob" in src, "Must check inplay_e cal_model_prob trail"
+    # Exit code contract — operator depends on nonzero for failure signalling.
+    assert "exit_code = 1" in src, "Must set nonzero exit code on silent failure"
+
+
 @test("INPLAY-E-RECAL-FIT — fit_platt_inplay_e produces a Platt row that improves ECE")
 def _():
     """INPLAY-E-RECALIBRATE (2026-06-03): the diagnostic ECE re-check on bot_inplay_e
