@@ -1,0 +1,91 @@
+WC-C1 — /world-cup/predictions-record honest tracking page
+Smoke description (verification checklist, not pytest assertions)
+=================================================================
+
+Layer 1 — wc-record.ts library
+------------------------------
+- File: ../odds-intel-web/src/lib/wc-record.ts
+- Exports: loadRecord, brierRow, logLossRow, pickFromTriple,
+  actualFromScore, buildRows, buildCalibration, summarise + types
+  (RecordSummary, RecordRow, CalibrationBucket, ProbTriple, Outcome,
+  Record).
+- loadRecord():
+  * uses createSupabasePublic() (anon read — page is public)
+  * pulls matches WHERE league.api_football_id = 1
+    AND date >= 2026-06-01 AND status = 'finished'
+    (date filter mirrors the world-cup.ts convention — season would
+    miss the 2026 set because group fixtures land with season=2025)
+  * pulls predictions WHERE source IN
+    ('national_team_v1', 'national_team_v1_blended')
+    AND match_id IN (settled match ids)
+    — blended row wins over raw v1 when both exist for a match
+  * pulls wc_market_consensus rows for the same match ids
+  * returns { summary: null, byMatch: [], calibration: 10 empty buckets }
+    when no settled matches (pre-tournament shape)
+
+- Brier:
+  * brierRow({home:1,draw:0,away:0}, '1') === 0  (perfect, home win)
+  * brierRow({home:0.5,draw:0.25,away:0.25}, '1')
+    === 0.5*0.5 + 0.25*0.25 + 0.25*0.25 === 0.375
+  * brierRow({home:1/3,draw:1/3,away:1/3}, '1')
+    === 2/3*2/3 + 1/3*1/3 + 1/3*1/3 ≈ 0.667 (uniform baseline)
+
+- Log-loss:
+  * logLossRow({home:1,draw:0,away:0}, '1') ≈ 0 (clamped to -log(1-1e-9))
+  * logLossRow({home:0.5,draw:0.25,away:0.25}, '1') === -ln(0.5) ≈ 0.693
+  * logLossRow({home:0.01,draw:0.01,away:0.98}, '1') ≈ 4.605
+    — heavily penalises confident wrong calls
+
+- CLV:
+  * For matches with both model + market, summary.clv =
+    mean(model_p_on_actual − market_p_on_actual)
+  * Positive = we leaned the right way harder than market
+  * null when summary.bothN === 0
+
+- Calibration:
+  * Always returns 10 buckets (lower=0.0..0.9, upper=lower+0.1)
+  * Each match contributes 3 (predicted, actual_one_hot) points
+    — home/draw/away
+  * Empty buckets: meanPredicted=0, actualHitRate=0, count=0
+  * 1.0 probability lands in bucket 9 (the [0.9, 1.0] one)
+
+Layer 2 — page render
+---------------------
+- File: ../odds-intel-web/src/app/(app)/world-cup/predictions-record/page.tsx
+- Server component (no "use client")
+- export const dynamic = "force-dynamic"
+- Metadata: title, description, alternates.canonical =
+  https://oddsintel.app/world-cup/predictions-record
+- Sections present in source:
+  1. Hero  — headline updates to "OddsIntel WC2026 model: …" when
+     summary present, else neutral copy
+  2. PreTournamentPlaceholder — renders when summary.nSettled === 0;
+     copy includes "0 matches settled" and the kickoff date
+  3. SummaryCards — 5 cards (Settled, Hit rate, Brier, Log-loss, CLV)
+  4. CalibrationPlot — inline <svg viewBox="0 0 100 80"> with 10 bar
+     pairs (predicted blue, actual amber), diagonal reference, X/Y
+     ticks. Works at 375px mobile width because the SVG is responsive
+     (h-auto w-full + preserveAspectRatio).
+  5. HitMissLog — scrollable <ol> with max-h-[70vh]; each row shows
+     date, fixture, our pick + confidence, market's pick + confidence,
+     ✓ CheckCircle2 / ✗ XCircle icons. Losses are visible (no filter).
+  6. MethodologyNote — always rendered (even pre-tournament) explaining
+     Brier, log-loss, CLV, and calibration.
+- Hard constraint: NOT touched
+  * src/components/wc-schedule.tsx, wc-group-card.tsx, wc-bracket-board.tsx
+  * scripts/smoke_test.py
+- Pre-tournament rendering (today, 2026-06-04):
+  N=0 matches finished → loadRecord() returns summary: null,
+  byMatch: [], calibration: 10 empty buckets → page renders
+  Hero + PreTournamentPlaceholder + MethodologyNote only.
+
+Verification commands
+---------------------
+cd ../odds-intel-web && npx tsc --noEmit         # must be clean
+cd ../odds-intel-web && npm run dev              # then GET /world-cup/predictions-record
+
+Source-inspection check (no runtime needed):
+  grep -E "loadRecord|brierRow|logLossRow|buildCalibration" \
+    ../odds-intel-web/src/lib/wc-record.ts | wc -l   # >= 8
+  grep -E "PreTournamentPlaceholder|SummaryCards|CalibrationPlot|HitMissLog|MethodologyNote" \
+    ../odds-intel-web/src/app/\(app\)/world-cup/predictions-record/page.tsx | wc -l  # >= 5
