@@ -147,6 +147,32 @@ The CSVs only feed `daily_pipeline_v2.compute_prediction()` at runtime for team-
 
 ---
 
+## football-data.co.uk CSV ingest — full extraction (CSV-FULL-EXTRACT, 2026-06-04)
+
+The CSV ingest (`scripts/ingest_football_data_csvs.py`) was previously only writing 4 of the 120 columns per main-league CSV row (Pinnacle + Bet365 1X2 closing + OU 2.5 closing). CSV-FULL-EXTRACT extended it to capture the complete column set across 9 bookmakers (Pinnacle, Bet365, Betfair Exchange, BetWin, Betfred, William Hill, 1xBet, plus synthetic Max and Avg consensus) for 1X2, OU 2.5, and Asian Handicap markets, closing **and** opening lines, with `handicap_line` set on every AH row. Also backfills match secondary stats (HS/HST/HC/HY/HR/HF and away counterparts) into `match_stats` and `matches.referee` where AF's value is NULL.
+
+Row count delta on the recent-seasons run (2223 + 2324 + 2425 + 2526, all 14 main leagues):
+
+| Bookmaker | Markets | Rows | Notes |
+|---|---|---|---|
+| Betfair Exchange | 1X2 + OU 2.5 + AH (close + open) | ~118K | net-new — was 0 |
+| Max consensus | 1X2 + OU 2.5 + AH (close) | ~80K | net-new — was 0 |
+| Avg consensus | 1X2 + OU 2.5 + AH (close) | ~80K | net-new — was 0 |
+| Pinnacle | AH closing with `handicap_line` | ~18K | net-new — pre-CSV-FULL-EXTRACT all 184K Pinnacle AH rows were from AF live feed (post-Apr 2026) with NULL line |
+| Bet365 | AH closing with `handicap_line` | ~23K | net-new |
+| Betfair Exchange | AH closing with `handicap_line` | ~17K | net-new |
+| BetWin / Betfred | 1X2 closing | ~85K | net-new |
+
+Older CSV seasons (2009-2022) are on disk but skipped — the `matches` table only goes back to 2023.
+
+Backtest verdicts (`scripts/backtest_csv_full_extract.py`, results in `dev/active/csv-full-extract-backtest-results.md`):
+
+1. **Pinnacle vs Betfair Exchange anchor** (7,328 paired matches) — identical to 4 decimals (Brier 0.5886/0.5887, LogLoss 0.9862). **Keep Pinnacle anchor** (CAL-PIN-SHRINK).
+2. **AH market sanity** (8,868 paired matches) — flat home ROI −5.4%, away +0.9%. Market efficient at Pinnacle close. Backtest universe now exists for future AH bot development.
+3. **Pinnacle open→close drift** (8,850 paired matches) — strong monotonic signal, **+8.76pp WR spread** top vs bottom quintile. New `pinnacle_drift_home/draw/away` columns added in migration 179; backfill via `scripts/backfill_pinnacle_drift.py`.
+
+AH-bot prototype follow-up (`scripts/backtest_ah_bot_prototype.py`, 5,254 derivable-line matches) showed naive "ensemble 1X2 → AH derivation" loses to vig at every edge threshold (ROI worsens as filter tightens — signature of noise). A real AH bot requires a dedicated goals model — shelved for now.
+
 ## Remaining Cleanup
 
 - [x] ~~Remove `betexplorer_odds.py`~~ Done 2026-04-29

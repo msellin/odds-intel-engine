@@ -69,6 +69,9 @@ Data tier system:
 | Pinnacle line move — away | `pinnacle_line_move_away` | Morning pipeline | ✅ Running (PIN-4) |
 | OU 2.5 bookmaker disagreement | `ou25_bookmaker_disagreement` | MFV builder (nightly + pre-KO) | ✅ Running (OU-MARKET-FEATURES, 2026-05-11) |
 | Market-implied BTTS yes prob | `market_implied_btts_yes` | MFV builder (nightly + pre-KO) | ✅ Running (OU-MARKET-FEATURES, 2026-05-11) |
+| Pinnacle open→close drift home | `pinnacle_drift_home` | DRIFT-FEATURE backfill 2026-06-04 + future MFV builder | ✅ Column added migration 179; backfill via `scripts/backfill_pinnacle_drift.py`. Backtest: +8.76pp WR spread top vs bottom quintile (8,850 matches, CSV-FULL-EXTRACT). Distinct from `pinnacle_line_move_home_at_t6h` (which uses ≤T−6h cutoff) — this column uses open→close which captures CSV-historical period that lacks intermediate snapshots. |
+| Pinnacle open→close drift draw | `pinnacle_drift_draw` | DRIFT-FEATURE backfill | ✅ See pinnacle_drift_home. |
+| Pinnacle open→close drift away | `pinnacle_drift_away` | DRIFT-FEATURE backfill | ✅ See pinnacle_drift_home. |
 
 > `ou25_bookmaker_disagreement` = max(implied_over25) − min(implied_over25) across distinct bookmakers for OU 2.5. Blacklist-filtered (api-football, api-football-live, William Hill). Requires ≥2 books. Stored in `match_feature_vectors`, not `match_signals`. Used as a training feature for v14+.
 >
