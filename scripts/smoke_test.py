@@ -13349,6 +13349,75 @@ def _():
         "wc-group-card.tsx must render an 'AI preview' expander label"
 
 
+@test("WC-SCHEDULE-VITALITY-V2 — schedule row carries group chip, prob bar, AI pick, inline picker")
+def _():
+    """WC-SCHEDULE-VITALITY-V2 (2026-06-04): the Schedule tab row was visually
+    pale and home/away names drifted left/right by row because the layout
+    used `flex` with variable-width trailing chips (probs, venue) eating
+    into the team cells.
+
+    Fix: CSS grid with `1fr auto 1fr` ensures home and away columns are
+    always equal width regardless of trailing content. Engagement surface:
+    a 3-band 1X2 probability bar (tournament-green / muted / tournament-gold)
+    replaces three small grey numbers; an `AI: H/D/A` pill labels the
+    model's pick; the existing-but-unused `WCVsYouPicker` is wired in
+    compact mode so users can pick directly from the Schedule list (the
+    SofaScore-style engagement hook the research surfaced).
+
+    Pin all four pieces so a future refactor can't quietly drop them."""
+    p = _web_path("src/components/wc-schedule.tsx")
+    assert p.exists(), "wc-schedule.tsx must exist"
+    src = p.read_text()
+
+    # Picker import + invocation — the engagement hook.
+    assert "import { WCVsYouPicker }" in src, \
+        "wc-schedule.tsx must import WCVsYouPicker"
+    assert "<WCVsYouPicker" in src and "variant=\"compact\"" in src, \
+        "WCVsYouPicker must render in compact variant on the schedule row"
+
+    # 3-band probability bar — coloured per outcome, not three text numbers.
+    assert "function ProbBar(" in src, \
+        "ProbBar component must exist (the visual centrepiece of the row)"
+    assert "--color-tournament-green" in src and "--color-tournament-gold" in src, \
+        "ProbBar must use the tournament colour tokens for the home + away bands"
+
+    # Group chip on the row — table-stakes WC context everyone else surfaces.
+    assert "function GroupChip(" in src, "GroupChip must exist"
+    assert "groupByFixtureId" in src, \
+        "WCSchedule must accept groupByFixtureId to map fixture → group letter"
+
+    # Grid layout — kills the indentation drift. 1fr-auto-1fr is the trick.
+    assert "grid-cols-[20px_44px_1fr_auto_1fr_auto]" in src, (
+        "Scan row must use a grid template with 1fr-auto-1fr for the team "
+        "cells so home and away are always equal width regardless of name "
+        "length or trailing content."
+    )
+
+    # Inline AI pick label — research showed this is what makes the bar an
+    # opinion rather than a chart.
+    assert "modelPickFromTriple" in src, \
+        "must use modelPickFromTriple from wc-vs-you to label the model's pick"
+
+    # Page-level wiring — without this the props never reach the row.
+    pg = _web_path("src/app/(app)/world-cup/page.tsx")
+    pg_src = pg.read_text()
+    assert "groupByFixtureId" in pg_src, \
+        "world-cup/page.tsx must build groupByFixtureId from groups and pass it to ActiveTabPanel"
+    assert "userPicks={userPicks}" in pg_src and "isAuthed={isAuthed}" in pg_src, \
+        "WCSchedule invocation must pass userPicks + isAuthed so the inline picker can render"
+
+    # Prediction-row merger must accept the underscore market keys the engine
+    # actually writes (`1x2_home`/`1x2_draw`/`1x2_away` via national_team_v1).
+    # The colon variant was a Phase-3 draft; without the underscore fork the
+    # prob bar silently never renders even when 72 group-stage predictions
+    # exist in the DB.
+    lib_src = _web_path("src/lib/world-cup.ts").read_text()
+    assert '_home"' in lib_src and '_draw"' in lib_src and '_away"' in lib_src, (
+        "mergePredictionRow must accept the underscore-suffix market keys "
+        "(`1x2_home`/`1x2_draw`/`1x2_away`) the engine writes via national_team_v1."
+    )
+
+
 # ── WC Group Standings Predictor + AI Ghosts (2026-06-02) ───────────────────
 
 @test("WC-GROUP-PREDICTOR-MIGRATION — migration 170 adds group predictions table + meta extensions")
