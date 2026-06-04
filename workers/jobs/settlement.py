@@ -1167,6 +1167,16 @@ def run_settlement():
     else:
         _settle_pending_bets(pending, finished)
 
+    # 4a. WC-F2 — auto-post Twitter/X recap for every freshly-settled
+    # World Cup fixture. Idempotent via wc_match_tweets PK on match_id —
+    # safe to call on settlement reruns (already-tweeted matches are
+    # silently skipped). Wrapped in its own try block so a Twitter API
+    # blip can never block downstream settlement steps.
+    try:
+        _post_wc_match_recaps()
+    except Exception as e:
+        console.print(f"  [yellow]WC recap tweet error: {e}[/yellow]")
+
     # 4b. Settle user picks (frontend prediction tracker)
     try:
         _settle_user_picks()
@@ -1920,6 +1930,60 @@ def _normalize_bet_selection(selection: str) -> str:
     if s.startswith("under"):
         return "under"
     return s
+
+
+def _post_wc_match_recaps() -> int:
+    """WC-F2 — post a Twitter/X recap for every finished WC fixture that
+    hasn't already been tweeted.
+
+    Looks up every match on the FIFA World Cup league (api_football_id=1)
+    that is `finished` AND has scores AND has NOT yet got a row in
+    wc_match_tweets, then calls post_wc_match_recap(match_id) for each.
+
+    Returns the number of tweets actually posted. Never raises — Twitter
+    creds may be missing in dev/CI; the caller wraps us defensively too.
+    """
+    try:
+        from workers.jobs.wc_match_recap_tweet import post_wc_match_recap
+    except Exception as e:
+        console.print(f"  [yellow]WC recap import failed: {e}[/yellow]")
+        return 0
+
+    try:
+        rows = execute_query(
+            """
+            SELECT m.id::text AS match_id
+            FROM matches m
+            JOIN leagues l ON l.id = m.league_id
+            LEFT JOIN wc_match_tweets t ON t.match_id = m.id
+            WHERE l.api_football_id = 1
+              AND m.status = 'finished'
+              AND m.score_home IS NOT NULL
+              AND m.score_away IS NOT NULL
+              AND t.match_id IS NULL
+            ORDER BY m.date ASC
+            """,
+            [],
+        ) or []
+    except Exception as e:
+        # Table 181 may not be migrated yet (or DB is down). Fail closed.
+        console.print(f"  [yellow]WC recap lookup failed: {e}[/yellow]")
+        return 0
+
+    if not rows:
+        return 0
+
+    console.print(f"\n[cyan]Posting WC recap tweets for {len(rows)} fixture(s)...[/cyan]")
+    posted = 0
+    for r in rows:
+        try:
+            if post_wc_match_recap(r["match_id"]):
+                posted += 1
+        except Exception as e:
+            # post_wc_match_recap is documented to never raise, but belt+braces.
+            console.print(f"  [yellow]recap {r['match_id']} failed: {e}[/yellow]")
+    console.print(f"  {posted} tweet(s) posted")
+    return posted
 
 
 def _settle_pending_bets(pending: list, finished: list):

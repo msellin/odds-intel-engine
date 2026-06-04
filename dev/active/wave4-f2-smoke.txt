@@ -1,0 +1,161 @@
+WC-F2 — Twitter/X auto-post on WC match resolution — smoke test descriptions
+=============================================================================
+
+Per project CLAUDE.md: "Every task must have at least one test in
+scripts/smoke_test.py before the commit." This file describes the smoke
+tests that should be added (the user task constraint says NOT to modify
+smoke_test.py directly, so this is a hand-off for the operator).
+
+------------------------------------------------------------------------
+ENGINE SMOKE — WC-F2-ENGINE
+------------------------------------------------------------------------
+Goal: source-inspection that the Twitter client, the recap job, the
+settlement wiring, and the migration all exist and are structurally
+sound (no DB call or Twitter network required — runs in CI without env).
+
+Suggested test (inside scripts/smoke_test.py):
+
+  @test("WC-F2-ENGINE — Twitter auto-post on WC match resolution")
+  def test_wc_f2_engine():
+      from pathlib import Path
+      root = Path(__file__).resolve().parent.parent
+
+      # 1. Twitter client exists with the right entry-point and is
+      #    creds-tolerant (returns None instead of raising when env unset).
+      tw = root / "workers" / "api_clients" / "twitter.py"
+      assert tw.exists(), "workers/api_clients/twitter.py missing"
+      tsrc = tw.read_text()
+      assert "def post_tweet" in tsrc, "post_tweet entry-point missing"
+      # Raw-OAuth signature path (no new deps): must use HMAC-SHA1 + the
+      # four required env vars.
+      assert "HMAC-SHA1" in tsrc
+      for env in ("TWITTER_API_KEY", "TWITTER_API_SECRET",
+                  "TWITTER_ACCESS_TOKEN", "TWITTER_ACCESS_SECRET"):
+          assert env in tsrc, f"missing env var reference: {env}"
+      # Guards against tweepy / requests-oauthlib drift (we deliberately
+      # do NOT add either dependency — the OAuth spec hasn't changed
+      # since 2010 and one POST doesn't justify a new dep).
+      assert "import tweepy" not in tsrc, \
+          "tweepy must NOT be imported — raw OAuth required"
+      assert "requests_oauthlib" not in tsrc and \
+             "requests-oauthlib" not in tsrc, \
+          "requests-oauthlib must NOT be imported — raw OAuth required"
+      # Runtime check: creds-unset path returns None instead of raising.
+      import sys as _sys
+      _sys.path.insert(0, str(root))
+      from workers.api_clients.twitter import post_tweet
+      assert post_tweet("noop", None) is None, \
+          "post_tweet must return None when creds unset (got non-None)"
+
+      # 2. Recap job exists with the right entry-point and the FE URL.
+      jb = root / "workers" / "jobs" / "wc_match_recap_tweet.py"
+      assert jb.exists(), "workers/jobs/wc_match_recap_tweet.py missing"
+      jsrc = jb.read_text()
+      assert "def post_wc_match_recap" in jsrc, \
+          "post_wc_match_recap entry-point missing"
+      # Canonical match URL goes on the tweet.
+      assert "oddsintel.app/matches" in jsrc or \
+             "oddsintel.app" in jsrc, \
+          "canonical match URL missing from tweet template"
+      # Idempotency lock + audit table.
+      assert "wc_match_tweets" in jsrc, \
+          "wc_match_tweets lock/audit table must be referenced"
+      # WC-only gate.
+      assert "api_football_id = 1" in jsrc or \
+             "api_football_id=1" in jsrc, \
+          "must gate to WC league (api_football_id=1)"
+      # Pulls model 1X2 probs from predictions.
+      assert "1x2_home" in jsrc and "1x2_away" in jsrc, \
+          "must read predictions for 1X2 markets"
+      # Tweet composer respects Twitter's 23-char URL wrap.
+      assert "TWITTER_URL_LENGTH" in jsrc and "23" in jsrc
+
+      # 3. Migration exists with the right table + RLS enabled.
+      mig = root / "supabase" / "migrations" / "181_wc_match_tweets.sql"
+      assert mig.exists(), "migration 181_wc_match_tweets.sql missing"
+      msrc = mig.read_text()
+      assert "CREATE TABLE IF NOT EXISTS wc_match_tweets" in msrc
+      assert "match_id" in msrc and "tweet_id" in msrc
+      assert "PRIMARY KEY" in msrc, \
+          "match_id MUST be PRIMARY KEY (idempotency lock)"
+      assert "ENABLE ROW LEVEL SECURITY" in msrc
+
+      # 4. Settlement wiring — _post_wc_match_recaps helper exists and
+      #    is invoked by run_settlement after _settle_pending_bets.
+      sett = (root / "workers" / "jobs" / "settlement.py").read_text()
+      assert "_post_wc_match_recaps" in sett, \
+          "settlement must call _post_wc_match_recaps()"
+      assert "from workers.jobs.wc_match_recap_tweet import post_wc_match_recap" \
+          in sett, "settlement must import post_wc_match_recap"
+      assert "WC-F2" in sett, \
+          "WC-F2 task marker must be present in settlement hook comment"
+
+      # 5. Compose smoke: synthetic Mexico v South Africa renders cleanly,
+      #    has the tick, the percentage, the URL, and is ≤280 chars.
+      from workers.jobs.wc_match_recap_tweet import _compose_tweet
+      from datetime import date as _date
+      text = _compose_tweet({
+          "match_id": "00000000-0000-0000-0000-000000000000",
+          "kickoff_date": _date(2026, 6, 11),
+          "score_home": 1, "score_away": 0, "result": "home",
+          "home_team": "Mexico", "away_team": "South Africa",
+          "home_prob": 0.50, "draw_prob": 0.27, "away_prob": 0.23,
+      })
+      assert text is not None
+      assert "Mexico" in text and "50%" in text
+      assert "oddsintel.app/matches/" in text
+      assert "✓" in text, "winning pick must be marked ✓"
+      assert len(text) <= 280, \
+          f"tweet exceeds 280 chars ({len(text)} chars)"
+
+      # 6. Compose smoke: when the model has no prediction, _compose_tweet
+      #    returns None (we do NOT want a tweet that says "predicted N/A").
+      noprob = _compose_tweet({
+          "match_id": "00000000-0000-0000-0000-000000000000",
+          "kickoff_date": _date(2026, 6, 11),
+          "score_home": 1, "score_away": 0, "result": "home",
+          "home_team": "Mexico", "away_team": "South Africa",
+          "home_prob": None, "draw_prob": None, "away_prob": None,
+      })
+      assert noprob is None, \
+          "_compose_tweet must return None when model has no 1X2 prediction"
+
+Notes:
+  - Source-inspection + pure-Python compose only — no DB or network.
+  - Mirrors the pattern used by WC-E3-E4-ENGINE / WC-AI-PREVIEW.
+  - No new pip dependencies added: requirements.txt is UNCHANGED.
+    OAuth 1.0a signing is hand-rolled from stdlib (hmac + hashlib +
+    urllib.parse + secrets). Verified locally: header builder produces
+    a well-formed `Authorization: OAuth ...` value with every required
+    field (oauth_consumer_key/nonce/signature/signature_method/
+    timestamp/token/version).
+  - Verified locally:
+      python3 -c "from workers.api_clients.twitter import post_tweet; \
+                  print(post_tweet('test', None))"
+      → prints `None` (no creds in env, no exception).
+      python3 -c "from workers.jobs.wc_match_recap_tweet import \
+                  post_wc_match_recap; print('ok')"
+      → prints `ok`.
+      python3 -c "import workers.jobs.settlement; print('ok')"
+      → prints `ok` (settlement still imports clean after wiring).
+
+------------------------------------------------------------------------
+VERIFICATION CHECKLIST
+------------------------------------------------------------------------
+[x] workers/api_clients/twitter.py exists with post_tweet(text, image_url)
+[x] post_tweet returns None on missing creds (no raise) — verified live
+[x] workers/jobs/wc_match_recap_tweet.py exists with post_wc_match_recap
+[x] settlement.py wires _post_wc_match_recaps after _settle_pending_bets
+[x] WC-only gate (leagues.api_football_id = 1) inside the recap job and
+    inside the settlement-side lookup of newly-finished untweeted matches
+[x] Migration 181_wc_match_tweets.sql creates the audit/lock table with
+    PRIMARY KEY on match_id (idempotent re-runs are safe)
+[x] RLS enabled on wc_match_tweets, no public-read policy (engine-only)
+[x] No new pip deps: requirements.txt unchanged; raw HMAC-SHA1 OAuth 1.0a
+[x] tweepy / requests-oauthlib NOT imported anywhere in twitter.py
+[x] Tweet template ≤ 280 chars accounting for the 23-char t.co URL wrap
+[x] Sample Mexico v South Africa hypothetical (Mexico won 1-0, model 50%):
+      "🇲🇽 Mexico 1-0 🇿🇦 South Africa (Group stage). OddsIntel predicted
+       Mexico at 50%. ✓ https://oddsintel.app/matches/<uuid>"
+    → 148 chars raw, well under 280.
+[x] smoke_test.py NOT modified (per task constraint)
