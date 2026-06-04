@@ -1,0 +1,215 @@
+WC-F4 — Daily WC preview email — smoke test descriptions
+==========================================================
+
+Per project CLAUDE.md: "Every task must have at least one test in
+scripts/smoke_test.py before the commit." This task's constraint says
+NOT to modify scripts/smoke_test.py directly, so the operator (or a
+follow-up agent) should fold these tests into the suite under the
+WC-F-* naming pattern used by sibling Wave-4 tasks.
+
+All tests below are pure source-inspection / pure-Python evals — none
+require DB, network, or Resend credentials. They mirror the structure
+of the existing WC-A4 / WC-E1 / WC-AI-PREVIEW smokes.
+
+
+----------------------------------------------------------------------
+1) WC-F4-MODULE — source inspection
+----------------------------------------------------------------------
+Goal: confirm the job module exists, imports cleanly, and exports the
+public surface the scheduler + ad-hoc CLI rely on.
+
+  @test("WC-F4-MODULE — wc_daily_email module + exports")
+  def test_wc_f4_module():
+      from pathlib import Path
+      root = Path(__file__).resolve().parent.parent
+
+      mod = root / "workers" / "jobs" / "wc_daily_email.py"
+      assert mod.exists(), "workers/jobs/wc_daily_email.py missing"
+      src = mod.read_text()
+
+      # Public callable used by the scheduler.
+      assert "def run_wc_daily_email" in src, "run_wc_daily_email entrypoint missing"
+
+      # Reuses the existing Resend client — no new email service.
+      assert "from workers.jobs.email_digest import" in src
+      assert "send_via_resend" in src
+
+      # Window constants exposed for the gate.
+      assert "WC_EMAIL_WINDOW_START" in src
+      assert "WC_EMAIL_WINDOW_END"   in src
+
+      # The job must compose all three required sections.
+      assert "Yesterday's results"    in src
+      assert "Today's WC matches"     in src
+      assert "Biggest market disagreement" in src
+      assert "/world-cup/predictions-record" in src
+
+      # Live import must succeed (catches missing dependencies / typos).
+      from workers.jobs.wc_daily_email import (
+          run_wc_daily_email,
+          build_email_markdown,
+          markdown_to_html,
+      )
+      assert callable(run_wc_daily_email)
+      assert callable(build_email_markdown)
+      assert callable(markdown_to_html)
+
+
+----------------------------------------------------------------------
+2) WC-F4-MARKDOWN — pure-Python body composition
+----------------------------------------------------------------------
+Goal: verify the markdown body builder renders every section correctly
+given a known fixture set, market consensus, and settled-yesterday list.
+This is the load-bearing logic — guards against silent regressions when
+the prompt/template gets edited.
+
+  @test("WC-F4-MARKDOWN — sections render correctly with full input")
+  def test_wc_f4_markdown_full():
+      from workers.jobs.wc_daily_email import build_email_markdown
+
+      fixtures = [
+          {"match_id":"a","kickoff":"2026-06-15T02:00:00+00:00",
+           "home_team":"Brazil","away_team":"Morocco",
+           "home_prob":0.22,"draw_prob":0.28,"away_prob":0.50,
+           "model_source":"national_team_v1","venue_name":"X","league":"WC"},
+          {"match_id":"b","kickoff":"2026-06-15T16:00:00+00:00",
+           "home_team":"Spain","away_team":"Cape Verde",
+           "home_prob":0.70,"draw_prob":0.20,"away_prob":0.10,
+           "model_source":"national_team_v1_blended","venue_name":"X","league":"WC"},
+      ]
+      market = {
+          "a": {"home":0.60,"draw":0.25,"away":0.15,"n_sources":3},
+          "b": {"home":0.72,"draw":0.20,"away":0.08,"n_sources":3},
+      }
+      settled = [
+          {"home_team":"Argentina","away_team":"Iran","actual_result":"home",
+           "score_home":2,"score_away":0,
+           "home_prob":0.65,"draw_prob":0.22,"away_prob":0.13},
+          {"home_team":"Croatia","away_team":"Canada","actual_result":"away",
+           "score_home":0,"score_away":1,
+           "home_prob":0.55,"draw_prob":0.25,"away_prob":0.20},
+      ]
+      subject, body = build_email_markdown("2026-06-15", fixtures, market, settled)
+
+      assert "OddsIntel WC" in subject and "2 matches" in subject and "Jun 15" in subject
+
+      # Section 1 — results: one hit, one miss.
+      assert "Yesterday's results — 1/2" in body
+      assert "[HIT]"  in body
+      assert "[MISS]" in body
+
+      # Section 2 — today: pick + disagreement footnote on Brazil-Morocco.
+      assert "**02:00 UTC** — Brazil vs Morocco" in body
+      assert "pick **Morocco** @ 50%"            in body
+      assert "38pp gap"                          in body
+
+      # Section 3 — biggest disagreement featured.
+      assert "Biggest market disagreement" in body
+      assert "**Brazil vs Morocco**"       in body
+      assert "**38-point** gap"            in body
+
+      # Footer CTA.
+      assert "/world-cup/predictions-record" in body
+
+
+----------------------------------------------------------------------
+3) WC-F4-EMPTY-CONSENSUS — tolerates missing wc_market_consensus
+----------------------------------------------------------------------
+Goal: explicit test for the failure mode the user called out — if
+Wave-1 / A3-FIX scrapers haven't run yet, the disagreement section
+must be omitted cleanly (no crash, no half-rendered prose).
+
+  @test("WC-F4-EMPTY-CONSENSUS — disagreement section skipped when market_map is empty")
+  def test_wc_f4_empty_consensus():
+      from workers.jobs.wc_daily_email import build_email_markdown
+
+      fixtures = [{
+          "match_id":"a","kickoff":"2026-06-15T19:00:00+00:00",
+          "home_team":"Belgium","away_team":"Egypt",
+          "home_prob":0.43,"draw_prob":0.27,"away_prob":0.30,
+          "model_source":"national_team_v1","venue_name":"X","league":"WC",
+      }]
+      subject, body = build_email_markdown("2026-06-15", fixtures, {}, [])
+
+      assert "Today's WC matches" in body
+      assert "pick **Belgium** @ 43%" in body
+      # Disagreement section + footnote both absent.
+      assert "Biggest market disagreement" not in body
+      assert "pp gap" not in body
+      # Yesterday section omitted when settled list is empty.
+      assert "Yesterday's results" not in body
+
+
+----------------------------------------------------------------------
+4) WC-F4-SCHEDULER — cron + window gate wired
+----------------------------------------------------------------------
+Goal: source-inspection of workers/scheduler.py — confirm the new
+07:30 UTC cron exists, references the new job function, and the job
+function uses the WC window gate.
+
+  @test("WC-F4-SCHEDULER — cron at 07:30 UTC + WC-window gate")
+  def test_wc_f4_scheduler():
+      from pathlib import Path
+      sched = (Path(__file__).resolve().parent.parent / "workers" / "scheduler.py").read_text()
+
+      # Job function exists and is window-gated against the WC preview window.
+      assert "def job_wc_daily_email" in sched
+      assert "_WC_PREVIEW_WINDOW_START" in sched
+      assert "from workers.jobs.wc_daily_email import run_wc_daily_email" in sched
+
+      # Cron registered at 07:30 with the expected id.
+      assert "wc_daily_email" in sched
+      # Window-gated CronTrigger at hour=7 minute=30 must be wired to the
+      # job_wc_daily_email function (separate from wc_match_previews which
+      # also runs at 07:30 in its own thread).
+      assert "scheduler.add_job(job_wc_daily_email" in sched
+      assert "CronTrigger(hour=7, minute=30)" in sched
+
+
+----------------------------------------------------------------------
+5) WC-F4-IDEMPOTENCY-MIGRATION — log table + uniqueness
+----------------------------------------------------------------------
+Goal: confirm the dedupe table migration exists with the right shape
+and the job consults it via the email_digest_log-equivalent pattern.
+
+  @test("WC-F4-IDEMPOTENCY-MIGRATION — wc_email_log table + UNIQUE constraint")
+  def test_wc_f4_idempotency_migration():
+      from pathlib import Path
+      root = Path(__file__).resolve().parent.parent
+
+      mig = root / "supabase" / "migrations" / "182_wc_email_log.sql"
+      assert mig.exists(), "supabase/migrations/182_wc_email_log.sql missing"
+      msrc = mig.read_text()
+
+      assert "CREATE TABLE IF NOT EXISTS wc_email_log" in msrc
+      assert "UNIQUE (user_id, email_date)" in msrc
+      assert "ENABLE ROW LEVEL SECURITY"    in msrc
+      assert 'Users can read own wc email log' in msrc
+
+      # Job consults the table before send + writes via ON CONFLICT.
+      job = (root / "workers" / "jobs" / "wc_daily_email.py").read_text()
+      assert "def already_sent"  in job
+      assert "def log_send"      in job
+      assert "ON CONFLICT (user_id, email_date) DO NOTHING" in job
+
+
+----------------------------------------------------------------------
+VERIFICATION — local sanity (operator did the following before commit)
+----------------------------------------------------------------------
+[x] python3 -c "from workers.jobs.wc_daily_email import run_wc_daily_email; print('ok')"
+[x] python3 -m workers.jobs.wc_daily_email --dry-run --date 2026-06-15 --limit 2
+    → Prints the full markdown body with 4 real WC fixtures (Sweden,
+      Spain, Belgium, Saudi Arabia). Confirms DB joins resolve cleanly
+      against the live `predictions` table with the national_team_v1
+      fallback when blended hasn't written yet.
+[x] Eval test against synthetic fixtures + market + settled — full
+    email body matches all three section asserts in WC-F4-MARKDOWN.
+
+CONSTRAINTS HONOURED
+--------------------
+- DID NOT touch F1 sitemap / F2 Twitter / F5 OG / G polish files.
+- DID NOT modify scripts/smoke_test.py (this file is the hand-off).
+- Reuses send_via_resend + fetch_subscribed_users from email_digest.py
+  — no new email service, no duplicated httpx code.
+- Migration uses 182 to leave room for F2's 181_wc_match_tweets sitting
+  in the main worktree.

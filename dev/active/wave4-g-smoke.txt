@@ -1,0 +1,94 @@
+Wave 4 G2/G3/G4 polish smoke summary
+=====================================
+Branch: WC-G2-G3-G4 — mobile + skeletons + visual polish
+Repo:  odds-intel-web
+
+G3 — loading.tsx skeletons added (8 new files)
+----------------------------------------------
+1. src/app/(app)/world-cup/teams/loading.tsx
+   48-team grid placeholder (matches 2/3/4/6-col responsive grid).
+
+2. src/app/(app)/world-cup/teams/[name]/loading.tsx
+   Hero + group standings table + fixtures + recent form blocks.
+
+3. src/app/(app)/world-cup/who-can-win/loading.tsx
+   Hero + 5-card title-contender strip + 12-row table preview.
+
+4. src/app/(app)/world-cup/predictions-record/loading.tsx
+   Hero + sub-nav + 5 summary cards + calibration chart + hit/miss log.
+
+5. src/app/(app)/world-cup/predictions-record/clv/loading.tsx
+   Hero + sub-nav + 4 summary cards + chart block + per-match rows
+   + per-market breakdown.
+
+6. src/app/(app)/world-cup/predictions-record/leaderboard/loading.tsx
+   Hero + sub-nav + 7-col leaderboard skeleton + methodology block.
+
+7. src/app/(app)/world-cup/insights/loading.tsx
+   Hero + 4-article 1-col/2-col responsive grid.
+
+8. src/app/(app)/world-cup/insights/[slug]/loading.tsx
+   Hero + 5 prose paragraph blocks + footer nav.
+
+All skeletons use the WC palette (border-white/[0.08], bg-card/40,
+animate-pulse bg-white/[0.04]) so the swap from skeleton → real
+content is visually seamless and the page footprint does not reflow.
+
+G2 — mobile fixes (375px)
+-------------------------
+1. CLV per-match table (predictions-record/clv) used overflow-y-auto
+   only with a `truncate` Match cell inside a non-fixed-layout table.
+   On 375px team names wrapped messily and the cell flexed wider than
+   the viewport. Switched wrapper to `overflow-auto`, added `min-w-[420px]`
+   to the table, and replaced `truncate` with `whitespace-nowrap` so the
+   table cleanly horizontal-scrolls instead of busting the page width.
+
+2. Leaderboard 7-col table (predictions-record/leaderboard) added
+   `min-w-[560px]` and `whitespace-nowrap` on numeric column headers
+   so labels stay legible and the table scrolls horizontally on phones
+   instead of compressing "Hit-rate" / "Log-loss" into illegible columns.
+
+3. WC home-page inline leaderboard row (`LeaderboardInlineRow`) — long
+   display names were free to expand the Player <td> and push the
+   right-aligned Total off-screen on 375px. Added `min-w-0` to the cell
+   + inner flex container and `truncate` + `shrink-0` on the AI/you
+   chips so long names truncate cleanly.
+
+4. Bonus: WC activity tiles — added `min-w-0` to the inner flex so the
+   `truncate` on the label actually engages (parent was a flex without
+   min-w-0, so the truncate never activated).
+
+G4 — visual + copy polish
+-------------------------
+- Empty-state border consistency: predictions-record /, /clv,
+  /leaderboard PreTournamentPlaceholder used border-white/[0.10]
+  (orphan value). Standardised to border-white/[0.08] which is the
+  dominant subtle-border token across the WC pages.
+
+- Single clear next-action added to every empty state that lacked one:
+    • teams/ (no fixtures) → "Back to the hub →"
+    • who-can-win/ (no MC results) → "Back to the hub →"
+    • insights/ (no articles) → "See the Monte Carlo board →"
+    • predictions-record/ (no settled) → "See pre-tournament picks instead →"
+    • predictions-record/clv/ (no points) → "See pre-tournament picks instead →"
+    • predictions-record/leaderboard/ (no settled) → "See pre-tournament picks instead →"
+  All CTAs use border-white/[0.12] (emphasised) + tournament-gold hover
+  + min-h-[40px] to meet the 44px sm tap target with sm:text-sm.
+
+- No placeholder copy ("TODO", "lorem", "FIXME") detected in any WC
+  page or component. The two remaining "Coming soon" mentions are
+  intentional (Opta source row + OU/BTTS markets that are not yet
+  modelled for WC) and explained in surrounding methodology copy.
+
+- Spacing audit: every root WC page uses `space-y-{3-4} sm:space-y-6`,
+  matching the WC pattern. No rogue `space-y-1` between hero + content
+  (the `space-y-1` instances are intentional label→value clusters
+  inside hero blocks).
+
+Verification
+------------
+- npx tsc --noEmit clean (no new type errors).
+- All 8 new loading.tsx files compile.
+- No edits to scripts/smoke_test.py.
+- Component contracts unchanged (skeleton files are pure new additions;
+  edits to existing pages are className-only or wrapper additions).

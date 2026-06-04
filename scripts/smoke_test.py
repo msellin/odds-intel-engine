@@ -15122,5 +15122,112 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-ACCURACY-BACKTEST — script exists and exposes the public API")
+def _():
+    """Pure-outcome accuracy backtest script (no odds, no edge, no staking).
+    Powers the GROWTH-ACCURACY-PAGE marketing surface. Pinned because the
+    headline accuracy claim on the public site depends on this number staying
+    reproducible — if the API changes here, the regeneration job for the
+    landing-page hit-rate counter breaks silently."""
+    import pathlib
+    script = pathlib.Path("scripts/accuracy_backtest.py")
+    assert script.exists(), "scripts/accuracy_backtest.py must exist"
+    src = script.read_text()
+    # Pin the four evaluator entrypoints — used to compute the landing claim
+    for fn in ("evaluate_1x2", "evaluate_ou15", "evaluate_ou25",
+               "evaluate_btts", "evaluate_high_conf_only", "evaluate_by_league_tier"):
+        assert f"def {fn}(" in src, f"accuracy_backtest must define {fn}()"
+    # Pin: no odds / edge / staking math creeps in (CLV / EV / kelly are leakage)
+    for forbidden in (" odds_at_pick", "edge_percent", "kelly"):
+        assert forbidden not in src, (
+            f"accuracy_backtest must NOT reference {forbidden!r} — the whole "
+            "point of this backtest is pure outcome accuracy"
+        )
+    # Pin output paths
+    assert "dev/active/accuracy-backtest.md" in src
+    assert "dev/active/accuracy-backtest.csv" in src
+
+
+# ── Wave 4: Distribution + polish ───────────────────────────────────────────
+
+
+@test("WC-F1-SITEMAP — sitemap.ts includes WC routes + JSON-LD on key pages")
+def _():
+    """WC-F1 (2026-06-04): 62 new WC URLs in sitemap. JSON-LD added to team
+    pages (SportsTeam), who-can-win (SportsEvent), predictions-record (WebPage)."""
+    sitemap = _web_path("src/app/sitemap.ts")
+    assert sitemap.exists()
+    s = sitemap.read_text()
+    for route in (
+        "/world-cup/teams",
+        "/world-cup/who-can-win",
+        "/world-cup/predictions-record",
+        "/world-cup/insights",
+    ):
+        assert route in s, f"sitemap must include {route}"
+    team_page = _web_path("src/app/(app)/world-cup/teams/[name]/page.tsx")
+    tsrc = team_page.read_text()
+    assert "application/ld+json" in tsrc and "SportsTeam" in tsrc
+
+
+@test("WC-F2-TWITTER — twitter client + recap job + settlement hook + migration 181")
+def _():
+    """WC-F2 (2026-06-04): auto-tweet on WC match resolution via Twitter v2.
+    Raw OAuth 1.0a, silent on missing keys, settlement-hooked."""
+    import pathlib
+    assert pathlib.Path("workers/api_clients/twitter.py").exists()
+    tsrc = pathlib.Path("workers/api_clients/twitter.py").read_text()
+    assert "def post_tweet(" in tsrc and "TWITTER_API_KEY" in tsrc
+    recap = pathlib.Path("workers/jobs/wc_match_recap_tweet.py")
+    assert recap.exists() and "def post_wc_match_recap(" in recap.read_text()
+    mig = pathlib.Path("supabase/migrations/181_wc_match_tweets.sql")
+    assert mig.exists() and "CREATE TABLE IF NOT EXISTS wc_match_tweets" in mig.read_text()
+    settle = pathlib.Path("workers/jobs/settlement.py").read_text()
+    assert "post_wc_match_recap" in settle or "wc_match_recap" in settle
+
+
+@test("WC-F4-DAILY-EMAIL — wc_daily_email.py + scheduler 07:30 UTC cron + migration 182")
+def _():
+    """WC-F4 (2026-06-04): daily WC preview email via Resend, WC-window-gated."""
+    import pathlib
+    p = pathlib.Path("workers/jobs/wc_daily_email.py")
+    assert p.exists() and "def run_wc_daily_email(" in p.read_text()
+    mig = pathlib.Path("supabase/migrations/182_wc_email_log.sql")
+    assert mig.exists() and "wc_email_log" in mig.read_text()
+    assert "wc_daily_email" in pathlib.Path("workers/scheduler.py").read_text()
+
+
+@test("WC-F5-OG — Open Graph images for match / team / insights pages")
+def _():
+    """WC-F5 (2026-06-04): per-route opengraph-image.tsx using next/og."""
+    for sub in (
+        "src/app/(app)/matches/[id]/opengraph-image.tsx",
+        "src/app/(app)/world-cup/teams/[name]/opengraph-image.tsx",
+        "src/app/(app)/world-cup/insights/[slug]/opengraph-image.tsx",
+    ):
+        p = _web_path(sub)
+        assert p.exists(), f"{sub} must exist"
+        src = p.read_text()
+        assert "ImageResponse" in src and "1200" in src and "630" in src
+
+
+@test("WC-G-POLISH — 8 loading.tsx skeletons for new WC routes")
+def _():
+    """WC-G2-G3-G4 (2026-06-04): skeleton loading states for every new route."""
+    for sub in (
+        "src/app/(app)/world-cup/teams/loading.tsx",
+        "src/app/(app)/world-cup/teams/[name]/loading.tsx",
+        "src/app/(app)/world-cup/who-can-win/loading.tsx",
+        "src/app/(app)/world-cup/predictions-record/loading.tsx",
+        "src/app/(app)/world-cup/predictions-record/clv/loading.tsx",
+        "src/app/(app)/world-cup/predictions-record/leaderboard/loading.tsx",
+        "src/app/(app)/world-cup/insights/loading.tsx",
+        "src/app/(app)/world-cup/insights/[slug]/loading.tsx",
+    ):
+        p = _web_path(sub)
+        assert p.exists(), f"{sub} must exist"
+        assert "animate-pulse" in p.read_text()
+
+
 if __name__ == "__main__":
     main()
