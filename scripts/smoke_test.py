@@ -15185,6 +15185,63 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-VS-PAGES — competitor comparison pages + sitemap")
+def _():
+    """GROWTH-VS-PAGES (Tier B #1, 2026-06-05): /vs/[competitor] SEO pages
+    targeting high-intent '[competitor] alternative' / '[competitor] vs'
+    searches. Static-rendered via generateStaticParams.
+
+    Pinned (so the SEO surface area can't silently shrink):
+      1. /vs/[competitor] dynamic route file exists
+      2. /vs index page exists
+      3. vs-competitors data file exists with the 5 currently-published
+         competitors (winnerodds, inplayguru, deepbetting,
+         soccer-rating, soccerbot-ai)
+      4. Each competitor entry has the editorial-required fields
+         (whereTheyWin must be non-empty — pages that say "we win
+         on everything" lose credibility)
+      5. Sitemap includes the new /vs pages so Google can index them
+      6. Sitemap also now includes /pricing, /value-bets, /changelog
+         (previously missing — operator-flagged 2026-06-05)
+    """
+    import pathlib
+    # Dynamic route + index
+    dynroute = _web_path("src/app/(app)/vs/[competitor]/page.tsx")
+    assert dynroute.exists(), "/vs/[competitor]/page.tsx must exist"
+    index = _web_path("src/app/(app)/vs/page.tsx")
+    assert index.exists(), "/vs/page.tsx (index) must exist"
+
+    # Data file
+    data = _web_path("src/lib/vs-competitors.ts")
+    dsrc = data.read_text()
+    assert "export const VS_COMPETITORS" in dsrc
+    assert "export const VS_SLUGS" in dsrc
+    for slug in ("winnerodds", "inplayguru", "deepbetting", "soccer-rating", "soccerbot-ai"):
+        assert f'slug: "{slug}"' in dsrc, (
+            f"vs-competitors must include {slug} (one of the 5 deeply-"
+            "researched competitors); pages without research are worse "
+            "than no pages"
+        )
+    # Editorial-required field present
+    assert "whereTheyWin:" in dsrc, (
+        "every competitor entry must include whereTheyWin — honest "
+        "concession of competitor strengths is the credibility wedge"
+    )
+
+    # Sitemap includes /vs/* and the previously-missing static pages
+    sm = _web_path("src/app/sitemap.ts")
+    sm_src = sm.read_text()
+    assert "/vs" in sm_src and "VS_SLUGS" in sm_src, (
+        "sitemap must include /vs pages so Google indexes them"
+    )
+    # Static pages flagged 2026-06-05 by operator as missing
+    for missing in ("/pricing", "/value-bets", "/changelog"):
+        assert missing in sm_src, (
+            f"sitemap must include {missing} — was missing before "
+            "GROWTH-VS-PAGES sitemap audit"
+        )
+
+
 @test("GROWTH-STAKE-SPLITTER — Elite-tier multi-book split component")
 def _():
     """GROWTH-STAKE-SPLITTER (Tier A #11, 2026-06-05): Elite-tier helper
