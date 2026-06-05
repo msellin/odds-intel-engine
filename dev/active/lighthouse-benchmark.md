@@ -37,15 +37,40 @@ Lighthouse categories scored 0-100. Google's thresholds: **≥90 good**, **75–
 
 | Page (Mobile) | Performance | Accessibility | Best Practices | SEO |
 |---|---|---|---|---|
-| / | ? | ? | ? | ? |
-| /matches | ? | ? | ? | ? |
-| /value-bets | ? | ? | ? | ? |
-| /pricing | ? | ? | ? | ? |
-| /live | ? | ? | ? | ? |
-| /accuracy | ? | ? | ? | ? |
-| /vs | ? | ? | ? | ? |
-| /world-cup | ? | ? | ? | ? |
-| /predictions/premier-league | ? | ? | ? | ? |
+| / | 97 | 95 | 92 | 100 |
+| /matches | **80** | 96 | 92 | 100 |
+| /value-bets | 89 | 96 | 92 | 100 |
+| /pricing | 87 | 94 | 92 | 100 |
+| /live | 98 | 91 | 92 | 100 |
+| /accuracy | 99 | 96 | 100 | 100 |
+| /vs | 96 | 96 | 92 | 100 |
+| /world-cup | 90 | **100** | 92 | 100 |
+| /predictions/premier-league | 97 | 91 | 92 | 100 |
+| **Average** | **92.6** | **95.0** | **92.9** | **100** |
+
+**Captured 2026-06-05 via pagespeed.web.dev. Mobile strategy.**
+
+### Verdict per Lighthouse threshold
+
+- **Performance avg 92.6** — above Google's "good" cutoff (≥90). Range 80–99.
+  - **3 pages in "needs improvement" band (75-89):** `/matches` (80), `/pricing` (87), `/value-bets` (89)
+  - **6 pages in "good" band (≥90):** /, /live, /accuracy, /vs, /world-cup, /predictions/premier-league
+- **Accessibility avg 95.0** — comfortably good across the board. /world-cup hit a perfect 100. Lowest /live + /predictions/premier-league at 91 (still good).
+- **Best Practices 92 everywhere except /accuracy (100)** — uniformly good. Likely the missing 8 points are 3rd-party cookies from PostHog + Stripe.
+- **SEO 100 across all 9 pages** — perfect. The metadata + canonical + JSON-LD work from Phase 1 of GROWTH-SEO-CONTENT-ENGINE is paying off.
+
+### What this matches vs the code-level prediction
+
+- Predicted Performance range was "likely 75–85 mobile" — **actual is 80–99 with avg 92.6, significantly better.** The codebase optimizations (PostHog defer, Sentry feedback-only, Meta Pixel afterInteractive) are doing more work than my initial scan credited.
+- Predicted A11y "likely 90–100" — confirmed.
+- Predicted Best Practices "likely 90–100" — confirmed.
+- Predicted SEO "likely 90–100" — confirmed and then some (100 everywhere).
+
+### Where the Performance gaps are
+
+The 3 sub-90 pages share a pattern: **SSR-heavy data fetching from Supabase**. /matches is the worst (80) because it compounds two issues — heavy SSR fetch AND raw `<img>` team logos in league-accordion. /value-bets (89) and /pricing (87) have heavy SSR fetch but lighter image weight, so they're closer to threshold.
+
+The 6 ≥90 pages either have lighter SSR (/, /accuracy, /vs are mostly static), or — interestingly — `/predictions/premier-league` and `/world-cup` both fetch substantial data but hit 97 and 90 respectively. That suggests **the data-fetch latency itself isn't always the killer** — it's the combination of data-fetch + raw `<img>` images.
 
 ### Reference competitors (run if comparison context matters)
 
