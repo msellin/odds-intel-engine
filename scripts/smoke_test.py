@@ -15185,6 +15185,68 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-CLV-FIRST-MESSAGING — /value-bets header + CLV pillar + /learn/clv redirect")
+def _():
+    """GROWTH-CLV-FIRST-MESSAGING (Tier A #5, sub-commit A 2026-06-05): make
+    CLV the line-1 of the value-bets product surface + extend the CLV
+    glossary entry into pillar-quality content + fix the /learn/clv short
+    URL via a Next.js redirect.
+
+    Pinned (sub-A):
+      1. /value-bets page has a CLV-first H1 header before the tier
+         explainer block (so Free users see the CLV positioning too,
+         not just Pro/Elite who see the CLVTrustBanner).
+      2. CLV glossary entry is pillar-length — must contain the headline
+         framing ("ROI lies" or "honest scoreboard") and the "Why CLV
+         beats ROI" argument.
+      3. /learn/clv → /learn/closing-line-value redirect is in next.config.
+         The landing's honest-numbers CLV card already uses the canonical
+         URL so the redirect is a backup for inbound marketing links.
+    """
+    import pathlib
+    # 1. /value-bets header
+    vb = _web_path("src/app/(app)/value-bets/page.tsx")
+    vbsrc = vb.read_text()
+    assert "CLV-tracked" in vbsrc, (
+        "/value-bets page must have the CLV-first H1 header"
+    )
+    assert "ROI is variance-confounded" in vbsrc, (
+        "/value-bets header must explain why CLV beats ROI in one line"
+    )
+    assert 'href="/learn/closing-line-value"' in vbsrc, (
+        "/value-bets header must link to the CLV pillar page"
+    )
+
+    # 2. CLV pillar content
+    glossary = _web_path("src/lib/glossary.ts")
+    glos_src = glossary.read_text()
+    # Find the CLV term block — must be substantially extended
+    assert "ROI lies" in glos_src or "honest scoreboard" in glos_src, (
+        "CLV glossary entry must include the headline framing — "
+        "either 'ROI lies' or 'honest scoreboard' (we use both)"
+    )
+    assert "Why ROI alone is misleading" in glos_src, (
+        "CLV glossary entry must include the 'Why ROI alone is misleading' "
+        "pillar section — this is the educational content that makes us "
+        "credible vs competitor sites that lead with ROI"
+    )
+    assert "Pseudo-CLV" in glos_src or "pseudo-CLV" in glos_src, (
+        "CLV entry must explain pseudo-CLV (our actual methodology) so "
+        "skeptics can verify how the headline numbers are computed"
+    )
+
+    # 3. /learn/clv redirect
+    nc = _web_path("next.config.ts")
+    nc_src = nc.read_text()
+    assert "/learn/clv" in nc_src and "/learn/closing-line-value" in nc_src, (
+        "next.config.ts must redirect /learn/clv → /learn/closing-line-value "
+        "so the short URL works (used in inbound marketing links)"
+    )
+    assert "async redirects" in nc_src, (
+        "redirects() function must be defined in next config"
+    )
+
+
 @test("GROWTH-LANDING-REFACTOR — hero contract + section trim + trust strip")
 def _():
     """GROWTH-LANDING-REFACTOR (Tier A #4, sub-commits A+B+C 2026-06-05):
