@@ -15185,6 +15185,37 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-DIRECTORY-STACK — partner badges row in landing footer")
+def _():
+    """GROWTH-DIRECTORY-STACK (2026-06-05): live reciprocal-backlink badges
+    in the landing footer. Several directories (Twelve Tools, AIBoom free
+    tier) auto-check for this row periodically — if a badge disappears
+    they remove our listing. This smoke makes the row hard to delete by
+    accident.
+
+    Pinned:
+      1. Landing has a "Featured on" section before the footer
+      2. Both Twelve Tools and Wired Business backlink anchors exist
+      3. CSP img-src permits both badge domains
+    """
+    landing = _web_path("src/app/page.tsx")
+    src = landing.read_text()
+    assert 'aria-label="Featured on"' in src, (
+        "landing must have the partner-badges section (aria-label='Featured on')"
+    )
+    assert 'href="https://twelve.tools"' in src, "Twelve Tools backlink must be present"
+    assert 'href="https://wired.business"' in src, "Wired Business backlink must be present"
+
+    nc = _web_path("next.config.ts")
+    nc_src = nc.read_text()
+    for domain in ("twelve.tools", "wired.business"):
+        assert domain in nc_src, (
+            f"CSP img-src must include {domain} so the reciprocal-backlink "
+            "badge can render — without this the badge fails silently and "
+            "the directory removes our listing on next crawl"
+        )
+
+
 @test("GROWTH-DIRECTORY-STACK — listing kit exists with all required blocks")
 def _():
     """GROWTH-DIRECTORY-STACK (Tier A #6, 2026-06-05): operator-facing kit

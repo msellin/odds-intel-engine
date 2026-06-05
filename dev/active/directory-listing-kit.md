@@ -210,7 +210,16 @@ Several directories (Twelve Tools, AIBoom free tier, others) require a reciproca
 ## 12. Open questions / followups
 
 - [x] ~~Create 128×128 square logo asset~~ — ✅ done 2026-06-05 (see §9). 128/256/512/1024 PNGs + SVG live in `odds-intel-web/public/`.
+- [x] ~~Add partner-badges row to landing footer~~ — ✅ shipped 2026-06-05 with Twelve Tools + Wired Business. CSP img-src extended to permit badge domains. Smoke pins the section so future edits can't accidentally delete the reciprocal-backlink row (which would get our listings removed on next crawl).
 - [ ] Capture 5 screenshots at OG dimensions (1200×630) — current landing + match detail + value-bets + Telegram alert + competitor matrix
-- [ ] Add `<!-- partner badges -->` row to landing footer — gated on having at least 2-3 confirmed listings to link back to
 - [ ] **ProductHunt launch** — schedule for a Tuesday-Thursday once track-record + verified-ROI story is stronger. File as separate task.
+- [ ] **FrogDR badge** — defer until our Domain Rating climbs to ~30+ from compounded directory backlinks (probably 30-60 days from 2026-06-05). Embedding a "DR 0" badge now is worse than no badge — actively signals zero SEO authority. Account kept active for tracking.
 - [ ] Update this tracker as submissions land. Mark each row ✅ + date + reviewer notes.
+
+## 13. Submissions log
+
+| Date | Directory | Status | Badge embedded? | Notes |
+|---|---|---|---|---|
+| 2026-06-05 | Twelve Tools | ✅ Submitted, awaiting manual review | ✅ Yes | "Featured on" dark badge in landing footer |
+| 2026-06-05 | Wired Business | ✅ Submitted | ✅ Yes | Same network as Twelve Tools |
+
