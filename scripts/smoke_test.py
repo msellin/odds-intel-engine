@@ -16417,6 +16417,36 @@ def _():
         )
 
 
+@test("POSTHOG-CSP — connect-src allows PostHog ingestion endpoints")
+def _():
+    """POSTHOG-CSP-FIX (2026-06-06): PostHog was silently broken in
+    production for weeks — CSP allowed scripts from
+    us-assets.i.posthog.com but `connect-src` did not allow either
+    `us.i.posthog.com` (event ingestion) or `us-assets.i.posthog.com`
+    (source-maps / web-vitals). Every event was being dropped client-side.
+
+    This silent-failure pattern is the exact thing burned us before
+    (InplayBot UUID bug, 11 days of zero bets that looked normal).
+    Pin connect-src so CSP changes can't break PostHog again without
+    the smoke noticing.
+    """
+    config = _web_path("next.config.ts")
+    src = config.read_text()
+    # connect-src line must include both PostHog hosts
+    assert "https://us.i.posthog.com" in src, (
+        "CSP connect-src must allow https://us.i.posthog.com — "
+        "without it, ALL PostHog event ingestion is silently blocked "
+        "client-side. This is the kind of break that looks normal "
+        "in dev (because dev != prod CSP) and produces zero analytics."
+    )
+    assert "https://us-assets.i.posthog.com" in src, (
+        "CSP connect-src must allow https://us-assets.i.posthog.com — "
+        "PostHog client fetches sourcemaps + web-vitals from this host "
+        "and CSP violations surface as console noise even when events "
+        "themselves are flowing."
+    )
+
+
 @test("GROWTH-VS-PAGES-V2 — extended /vs entries + matrix discoverability")
 def _():
     """GROWTH-VS-PAGES-V2 (2026-06-05): operator-flagged audit found that
