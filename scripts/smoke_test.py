@@ -15185,6 +15185,56 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-ONE-SCREEN-PROOF — animated 8-tabs vs 1-screen on landing")
+def _():
+    """GROWTH-ONE-SCREEN-PROOF (2026-06-05, Tier A #2, Path B): animated
+    pure-CSS demo of "8 tabs vs 1 screen" on the landing. Replaces the
+    previous static panel (which asserted the claim but didn't show it).
+
+    Pinned:
+      1. New component file `src/components/one-screen-proof.tsx` exists
+         and exports `OneScreenProof`.
+      2. Landing imports and renders it.
+      3. CSS animations live in globals.css behind the `osp-tab` and
+         `osp-result` classes — guard against a future commit dropping
+         the keyframes by accident (the component would still render but
+         look broken / static).
+      4. `prefers-reduced-motion: reduce` opt-out is wired (accessibility).
+      5. Old static panel is gone (no `Stop opening 8 tabs.` heading on
+         landing) — the new component owns the message.
+    """
+    comp = _web_path("src/components/one-screen-proof.tsx")
+    assert comp.exists(), "OneScreenProof component must exist"
+    csrc = comp.read_text()
+    assert "export function OneScreenProof" in csrc, (
+        "component must export OneScreenProof"
+    )
+    # Animation class names — must match the CSS contract
+    assert "osp-tab" in csrc and "osp-result" in csrc, (
+        "component must use osp-tab and osp-result class names that pair "
+        "with the keyframes in globals.css"
+    )
+
+    landing = _web_path("src/app/page.tsx")
+    lsrc = landing.read_text()
+    assert "OneScreenProof" in lsrc, "landing must import + render OneScreenProof"
+    assert "Stop opening 8 tabs." not in lsrc, (
+        "old static '8 tabs' panel must be removed — the animated component "
+        "owns this message now"
+    )
+
+    css = _web_path("src/app/globals.css")
+    cssrc = css.read_text()
+    assert "@keyframes osp-tab" in cssrc and "@keyframes osp-result" in cssrc, (
+        "globals.css must define osp-tab + osp-result keyframes — "
+        "without them the component renders but the animation is dead"
+    )
+    assert "prefers-reduced-motion: reduce" in cssrc and ".osp-tab" in cssrc, (
+        "animation must honour prefers-reduced-motion: reduce "
+        "(accessibility requirement)"
+    )
+
+
 @test("GROWTH-PRICING-DEDICATED-PAGE — /pricing exists, landing pricing demoted to single CTA")
 def _():
     """GROWTH-PRICING-DEDICATED-PAGE (2026-06-05, Tier A #1): pricing moved
