@@ -192,7 +192,12 @@ def _parse_af_live_fixture(af_fix: dict) -> dict:
         "score_home": goals.get("home", 0) or 0,
         "score_away": goals.get("away", 0) or 0,
         "minute": status.get("elapsed", 0) or 0,
-        "added_time": 0,
+        # LIVE-STOPPAGE-TIME (2026-06-05): API-Football exposes stoppage time
+        # as `status.extra` (e.g. {"elapsed": 90, "extra": 3} for 90+3'). Was
+        # hardcoded to 0, which made every late-game snapshot indistinguishable
+        # — we missed goals scored in 90+1 onwards and the UI showed "LIVE 90'"
+        # forever instead of "LIVE 90+3'".
+        "added_time": status.get("extra", 0) or 0,
         "status_short": status.get("short", ""),
         "league_name": af_fix.get("league", {}).get("name", ""),
         "country": af_fix.get("league", {}).get("country", ""),
@@ -607,6 +612,79 @@ def run_live_tracker(dry_run: bool = False):
             f"[yellow]  {unmatched} live matches not in DB — "
             f"run morning pipeline first or these are leagues we don't track[/yellow]"
         )
+
+    # LIVE-FT-SWEEP (2026-06-05): API-Football removes finished matches from
+    # `/fixtures?live=all` as soon as they go FT, so the in-loop FT/AET/PEN
+    # check above only catches the small window where the match is FT but
+    # still in the live bulk. Anything that flipped after the previous poll
+    # silently drops out and our DB row stays `status='live'` forever — the
+    # UI shows "LIVE 90'" hours after the match ended (see KuPS Akatemia v
+    # KPV-j, 2026-06-05, where the page showed LIVE 90' / 2-1 hours after
+    # the actual 3-1 FT result landed).
+    #
+    # Fix: at the end of each poll cycle, find DB rows still marked 'live'
+    # that are 105+ min past kickoff AND were NOT in the bulk response just
+    # received. Batch-fetch their AF state via `get_fixtures_batch` (one
+    # call per 20). If FT/AET/PEN, finalize + settle. Idempotent — re-runs
+    # do nothing once status flips.
+    if not dry_run and DATABASE_URL:
+        try:
+            seen_af_ids = {
+                af["af_fixture_id"] for af in live_fixtures
+                if af.get("af_fixture_id")
+            }
+            stale = execute_query("""
+                SELECT id, api_football_id, date
+                FROM matches
+                WHERE status = 'live'
+                  AND api_football_id IS NOT NULL
+                  AND date < NOW() - INTERVAL '105 minutes'
+                  AND date > NOW() - INTERVAL '6 hours'
+            """) or []
+            ghost = [r for r in stale if r["api_football_id"] not in seen_af_ids]
+            if ghost:
+                from workers.api_clients.api_football import get_fixtures_batch
+                from workers.api_clients.db import finish_match_sql
+                af_ids = [int(r["api_football_id"]) for r in ghost]
+                console.print(
+                    f"[cyan]LIVE-FT-SWEEP: probing {len(af_ids)} stale live "
+                    f"match(es) for FT status…[/cyan]"
+                )
+                resp = get_fixtures_batch(af_ids)
+                ghost_by_af = {int(r["api_football_id"]): r for r in ghost}
+                ghost_finished: list[str] = []
+                for af_id, fix in resp.items():
+                    short = fix.get("fixture", {}).get("status", {}).get("short", "")
+                    if short not in ("FT", "AET", "PEN", "ABD", "WO"):
+                        continue
+                    goals = fix.get("goals", {}) or {}
+                    sh, sa = goals.get("home"), goals.get("away")
+                    if sh is None or sa is None:
+                        continue
+                    db_row = ghost_by_af.get(af_id)
+                    if not db_row:
+                        continue
+                    try:
+                        finish_match_sql(db_row["id"], int(sh), int(sa))
+                        ghost_finished.append(db_row["id"])
+                    except Exception as e:
+                        console.print(
+                            f"[yellow]  ghost finalize failed for {db_row['id']}: {e}[/yellow]"
+                        )
+                if ghost_finished:
+                    console.print(
+                        f"[green]LIVE-FT-SWEEP: finalized {len(ghost_finished)} "
+                        f"ghost-live match(es)[/green]"
+                    )
+                    try:
+                        from workers.jobs.settlement import settle_finished_matches
+                        settle_finished_matches(ghost_finished)
+                    except Exception as e:
+                        console.print(
+                            f"[yellow]  ghost settlement error: {e}[/yellow]"
+                        )
+        except Exception as e:
+            console.print(f"[yellow]LIVE-FT-SWEEP error (non-fatal): {e}[/yellow]")
 
 
 if __name__ == "__main__":
