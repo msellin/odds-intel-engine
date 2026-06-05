@@ -15651,6 +15651,76 @@ def _():
     )
 
 
+@test("GROWTH-UNIFIED-NAV — single source of truth for marketing nav")
+def _():
+    """GROWTH-UNIFIED-NAV (2026-06-05): replaced 5 duplicated inline <nav>
+    blocks (page.tsx, pricing, privacy, changelog, terms) with a single
+    <MarketingNav> component backed by MARKETING_LINKS / MARKETING_LINKS_MOBILE
+    constants in src/lib/nav-links.ts. Adding a new marketing page no longer
+    requires editing 5 places.
+
+    Pinned (so the consolidation can't silently regress):
+      1. src/lib/nav-links.ts exists + exports MARKETING_LINKS +
+         MARKETING_LINKS_MOBILE as the canonical list
+      2. src/components/marketing-nav.tsx exists + consumes those constants
+      3. The 5 marketing pages (/, /pricing, /privacy, /changelog, /terms)
+         import <MarketingNav /> and DO NOT contain an inline <nav> block
+         with the marketing-style "sticky top-0 z-50 border-b border-white..."
+         signature
+      4. The old landing-mobile-menu.tsx is deleted (drawer now lives
+         inside MarketingNav)
+    """
+    nav_links = _web_path("src/lib/nav-links.ts")
+    assert nav_links.exists(), (
+        "src/lib/nav-links.ts must exist — canonical link list"
+    )
+    nav_links_src = nav_links.read_text()
+    for const in ("MARKETING_LINKS", "MARKETING_LINKS_MOBILE"):
+        assert f"export const {const}" in nav_links_src, (
+            f"nav-links.ts must export {const} so consumers share one list"
+        )
+
+    marketing_nav = _web_path("src/components/marketing-nav.tsx")
+    assert marketing_nav.exists(), (
+        "src/components/marketing-nav.tsx must exist — unified marketing nav"
+    )
+    mn_src = marketing_nav.read_text()
+    assert 'from "@/lib/nav-links"' in mn_src, (
+        "MarketingNav must import from nav-links — single source of truth"
+    )
+    assert "MARKETING_LINKS" in mn_src and "MARKETING_LINKS_MOBILE" in mn_src, (
+        "MarketingNav must consume BOTH the compact desktop list AND the "
+        "extended mobile drawer list"
+    )
+
+    # 5 consumer pages — each must import + use MarketingNav, and must NOT
+    # have an inline `<nav className="sticky top-0 z-50 border-b border-white...">`
+    for page_path in (
+        "src/app/page.tsx",
+        "src/app/pricing/page.tsx",
+        "src/app/privacy/page.tsx",
+        "src/app/changelog/page.tsx",
+        "src/app/terms/page.tsx",
+    ):
+        src = _web_path(page_path).read_text()
+        assert "MarketingNav" in src and "<MarketingNav" in src, (
+            f"{page_path} must render <MarketingNav />"
+        )
+        # The unique fingerprint of the OLD inline marketing nav — must be gone
+        assert 'className="sticky top-0 z-50 border-b border-white/[0.06]' not in src, (
+            f"{page_path} still has the inline marketing <nav> — should be "
+            "replaced with <MarketingNav />. This is the regression the smoke "
+            "exists to catch."
+        )
+
+    # Old component deleted (drawer is now inside MarketingNav)
+    old_menu = _web_path("src/components/landing-mobile-menu.tsx")
+    assert not old_menu.exists(), (
+        "src/components/landing-mobile-menu.tsx must be deleted — drawer is "
+        "now embedded inside MarketingNav"
+    )
+
+
 @test("MOBILE-LANDING-P2-CLEANUP — hero team-name + Telegram-CTA wrap")
 def _():
     """GROWTH-MOBILE-LANDING-V2 P2 follow-up batch (2026-06-05). The
