@@ -15185,6 +15185,60 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-CLV-FIRST-MESSAGING — engine surfaces (Telegram footer + email CLV strip)")
+def _():
+    """GROWTH-CLV-FIRST-MESSAGING (Tier A #5, sub-commit B 2026-06-05): CLV
+    surfacing extended to the engine-owned alert channels.
+
+    Pinned (sub-B):
+      1. `clv_footer_line()` and `get_elite_30d_clv()` exist in
+         workers/notify/telegram.py with non-failing fallbacks.
+      2. Both user-facing Telegram broadcast call sites use
+         clv_footer_line() — daily_pipeline_v2.py (prematch) and
+         inplay_bot.py (live).
+      3. Email digest templates inject {clv_strip_html} under the logo
+         (both the morning digest AND the value-bet alert email).
+      4. The dashboard_cache lookup uses the correct column name —
+         `computed_at`, not `created_at` (the wrong column would silently
+         return None on every call and fall back to the static line).
+    """
+    import pathlib
+
+    # 1. Helpers exist
+    tg = pathlib.Path("workers/notify/telegram.py")
+    tg_src = tg.read_text()
+    assert "def get_elite_30d_clv(" in tg_src, "get_elite_30d_clv() must exist"
+    assert "def clv_footer_line(" in tg_src, "clv_footer_line() must exist"
+    assert "ORDER BY computed_at" in tg_src, (
+        "dashboard_cache lookup must use computed_at, NOT created_at — "
+        "the wrong column silently returns None on every call and the "
+        "feature ships dead"
+    )
+    # Static fallback present so the footer is never empty
+    assert "CLV-tracked" in tg_src, "static fallback footer must exist"
+
+    # 2. Telegram broadcast call sites use clv_footer_line()
+    dp = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    assert "clv_footer_line(" in dp, (
+        "daily_pipeline_v2.py user broadcast must append clv_footer_line()"
+    )
+    ib = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    assert "clv_footer_line(" in ib, (
+        "inplay_bot.py user broadcast must append clv_footer_line()"
+    )
+
+    # 3. Email digests inject CLV strip under the logo (both templates)
+    ed = pathlib.Path("workers/jobs/email_digest.py").read_text()
+    assert ed.count("{clv_strip_html}") >= 2, (
+        "Both email templates (morning digest + value-bet alert) must "
+        "inject the CLV strip placeholder under the logo"
+    )
+    assert "Why CLV beats ROI" in ed, (
+        "Email CLV strip must link out to the CLV pillar with the "
+        "headline 'Why CLV beats ROI' framing"
+    )
+
+
 @test("GROWTH-CLV-FIRST-MESSAGING — /value-bets header + CLV pillar + /learn/clv redirect")
 def _():
     """GROWTH-CLV-FIRST-MESSAGING (Tier A #5, sub-commit A 2026-06-05): make

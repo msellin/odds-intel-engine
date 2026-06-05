@@ -34,7 +34,7 @@ import math
 import os
 from datetime import datetime, timezone
 from rich.console import Console
-from workers.notify.telegram import send_telegram, send_telegram_to_users
+from workers.notify.telegram import send_telegram, send_telegram_to_users, clv_footer_line
 
 import logging
 log = logging.getLogger(__name__)
@@ -515,12 +515,17 @@ def run_inplay_strategies():
                     _league = pm.get("league_name") or ""
                     _country = pm.get("league_country") or ""
                     _league_str = f"{_country} / {_league}" if _country and _league else _league
+                    # GROWTH-CLV-FIRST-MESSAGING (2026-06-05): CLV footer
+                    # on every user-facing alert. clv_footer_line() pulls
+                    # the current 30d CLV from dashboard_cache; if cache
+                    # is stale it falls back to a static link footer.
                     send_telegram_to_users(
                         f"🔔 <b>Live value bet</b>\n"
                         f"<b>{home} vs {away}</b>\n"
                         f"{trigger['market']} {trigger['selection']} @ {trigger['odds']:.2f}\n"
                         f"{trigger['edge']:+.1f}% edge · min {cand['minute']} ({cand['score_home']}-{cand['score_away']})"
-                        + (f" · {_league_str}" if _league_str else ""),
+                        + (f" · {_league_str}" if _league_str else "")
+                        + f"\n\n{clv_footer_line()}",
                         tier_minimum="pro",
                         dedup_key=f"user-bet-{bet_id}",
                     )

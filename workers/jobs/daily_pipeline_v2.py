@@ -41,7 +41,7 @@ from workers.api_clients.supabase_client import (
     batch_write_morning_signals,
     build_match_feature_vectors_live,
 )
-from workers.notify.telegram import send_telegram, send_telegram_to_users
+from workers.notify.telegram import send_telegram, send_telegram_to_users, clv_footer_line, get_elite_30d_clv
 from workers.model.improvements import (
     calibrate_prob, compute_odds_movement, compute_alignment,
     compute_kelly, compute_stake,
@@ -3467,6 +3467,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
 
     # Flush consolidated per-position alerts (one per match+market+selection,
     # listing all agreeing bots so multi-bot agreement shows in a single message).
+    # GROWTH-CLV-FIRST-MESSAGING (2026-06-05): fetch the rolling CLV ONCE per
+    # pipeline invocation so we don't slam dashboard_cache for each alert in
+    # the broadcast loop below. If the value is None (cache stale / empty),
+    # clv_footer_line() falls back to a static link.
+    _clv_for_footer = get_elite_30d_clv()
     from workers.automation.coolbet_session import coolbet_match_url
     for _tk, _tb in _tele_bets.items():
         _n = len(_tb["bots"])
@@ -3501,7 +3506,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             f"<b>{_tb['home']} vs {_tb['away']}</b>\n"
             f"{_tb['mkt']} {_tb['selection']} @ {_tb['odds']:.2f}\n"
             f"{_tb['edge']*100:+.1f}% edge"
-            + (f" · {_tb['league']}" if _tb['league'] else ""),
+            + (f" · {_tb['league']}" if _tb['league'] else "")
+            + f"\n\n{clv_footer_line(_clv_for_footer)}",
             tier_minimum="pro",
             dedup_key=f"user-bet-{_tk[0]}-{_tk[1]}-{_tk[2]}",
         )

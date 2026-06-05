@@ -38,6 +38,56 @@ _TIER_SETS = {
 }
 
 
+def get_elite_30d_clv() -> float | None:
+    """GROWTH-CLV-FIRST-MESSAGING (2026-06-05) — pulls the 30-day rolling CLV
+    of the elite cohort from dashboard_cache for the alert footer.
+
+    Returns float (e.g. 9.8 for "+9.8%") or None if dashboard_cache is
+    empty / stale / unreachable. Best-effort: any error returns None so
+    the caller falls back to a static footer.
+    """
+    try:
+        import json
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            "SELECT elite_value_bets_30d FROM dashboard_cache "
+            "ORDER BY computed_at DESC LIMIT 1"
+        )
+        if not rows:
+            return None
+        blob = rows[0].get("elite_value_bets_30d")
+        if blob is None:
+            return None
+        # Column is jsonb — psycopg2 may return dict already, or str
+        if isinstance(blob, str):
+            blob = json.loads(blob)
+        pct = blob.get("clv_pct")
+        if pct is None:
+            return None
+        return float(pct)
+    except Exception as e:
+        log.debug("get_elite_30d_clv failed (non-fatal): %s", e)
+        return None
+
+
+def clv_footer_line(clv_pct: float | None = None) -> str:
+    """GROWTH-CLV-FIRST-MESSAGING (2026-06-05) — one-line CLV-first footer
+    for user-facing alerts. The CLV moat doesn't help if every alert only
+    shows hit-rate and never reinforces the metric we want users to
+    judge us by.
+
+    If `clv_pct` is None and dashboard_cache has a fresh number, we'll
+    fetch it inline. If both fail, we render a static link-only fallback
+    so the footer is never empty (worst case is a quieter line, never a
+    broken alert)."""
+    if clv_pct is None:
+        clv_pct = get_elite_30d_clv()
+    if clv_pct is None:
+        return "📊 CLV-tracked · oddsintel.app/performance"
+    sign = "+" if clv_pct > 0 else ""
+    return f"📊 {sign}{clv_pct:.1f}% CLV (30d) · oddsintel.app/performance"
+
+
 def send_telegram(
     msg: str,
     *,

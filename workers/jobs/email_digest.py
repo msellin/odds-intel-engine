@@ -463,6 +463,31 @@ def build_email_html(
           <a href="{SITE_URL}/matches" style="color:{_GREEN};text-decoration:none;font-weight:600;">View all today's matches →</a>
         </p>"""
 
+    # GROWTH-CLV-FIRST-MESSAGING (2026-06-05): CLV stat strip under the logo.
+    # Same honesty positioning as the landing hero — pull live 30-day CLV from
+    # dashboard_cache; fall back to a static tag if cache is empty.
+    from workers.notify.telegram import get_elite_30d_clv as _get_clv
+    _clv_pct = _get_clv()
+    if _clv_pct is not None:
+        _clv_str = f"{'+' if _clv_pct > 0 else ''}{_clv_pct:.1f}%"
+        clv_strip_html = (
+            f'<div style="margin-top:12px;font-size:11px;color:#cbd5e1;'
+            f'letter-spacing:0.02em;">'
+            f'<span style="color:{_GREEN};font-weight:700;">{_clv_str}</span>'
+            f' CLV (30-day) — the honest scoreboard. '
+            f'<a href="{SITE_URL}/learn/closing-line-value" '
+            f'style="color:#cbd5e1;text-decoration:underline;">Why CLV beats ROI →</a>'
+            f'</div>'
+        )
+    else:
+        clv_strip_html = (
+            f'<div style="margin-top:12px;font-size:11px;color:#cbd5e1;'
+            f'letter-spacing:0.02em;">'
+            f'CLV-tracked · <a href="{SITE_URL}/learn/closing-line-value" '
+            f'style="color:#cbd5e1;text-decoration:underline;">Why CLV beats ROI →</a>'
+            f'</div>'
+        )
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -479,13 +504,17 @@ def build_email_html(
       <!-- Card -->
       <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
 
-        <!-- Logo header — matches site: dark bg, ODDS white, INTEL green -->
+        <!-- Logo header — matches site: dark bg, ODDS white, INTEL green
+             GROWTH-CLV-FIRST-MESSAGING (2026-06-05): CLV stat strip directly
+             under the logo. Same honesty positioning as the landing hero —
+             CLV is the line-1 of every marketing surface, including email. -->
         <tr>
           <td style="background:{_SITE_BG};border-radius:10px 10px 0 0;padding:24px 32px;text-align:center;">
             <a href="{SITE_URL}" style="text-decoration:none;display:inline-block;">
               <span style="font-size:28px;font-weight:800;color:#ffffff;letter-spacing:0.04em;">ODDS</span><span style="font-size:28px;font-weight:800;color:{_GREEN};letter-spacing:0.04em;">INTEL</span>
             </a>
             <div style="font-size:12px;color:#64748b;margin-top:6px;letter-spacing:0.04em;">{display_date}</div>
+            {clv_strip_html}
           </td>
         </tr>
 
@@ -708,6 +737,31 @@ def build_alert_email_html(
           <p style="color:#166534;font-size:13px;margin:4px 0 0;">Model edge ≥ 3%.</p>
         </div>"""
 
+    # GROWTH-CLV-FIRST-MESSAGING (2026-06-05): CLV strip under the logo,
+    # same pattern as the morning digest. Honesty positioning carries
+    # across every email surface.
+    from workers.notify.telegram import get_elite_30d_clv as _get_clv
+    _clv_pct = _get_clv()
+    if _clv_pct is not None:
+        _clv_str = f"{'+' if _clv_pct > 0 else ''}{_clv_pct:.1f}%"
+        clv_strip_html = (
+            f'<div style="margin-top:12px;font-size:11px;color:#cbd5e1;'
+            f'letter-spacing:0.02em;">'
+            f'<span style="color:{_GREEN};font-weight:700;">{_clv_str}</span>'
+            f' CLV (30-day) — the honest scoreboard. '
+            f'<a href="{SITE_URL}/learn/closing-line-value" '
+            f'style="color:#cbd5e1;text-decoration:underline;">Why CLV beats ROI →</a>'
+            f'</div>'
+        )
+    else:
+        clv_strip_html = (
+            f'<div style="margin-top:12px;font-size:11px;color:#cbd5e1;'
+            f'letter-spacing:0.02em;">'
+            f'CLV-tracked · <a href="{SITE_URL}/learn/closing-line-value" '
+            f'style="color:#cbd5e1;text-decoration:underline;">Why CLV beats ROI →</a>'
+            f'</div>'
+        )
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -726,6 +780,7 @@ def build_alert_email_html(
               <span style="font-size:28px;font-weight:800;color:#ffffff;letter-spacing:0.04em;">ODDS</span><span style="font-size:28px;font-weight:800;color:{_GREEN};letter-spacing:0.04em;">INTEL</span>
             </a>
             <div style="font-size:12px;color:#64748b;margin-top:6px;letter-spacing:0.04em;">{slot_label} Value Bet Alert · {display_date}</div>
+            {clv_strip_html}
           </td>
         </tr>
 
