@@ -47,6 +47,12 @@
 
 OddsIntel is an AI-powered football betting intelligence platform. We track 280+ leagues, compare odds across 13 bookmakers, and identify where the market is wrong using a Poisson + XGBoost ensemble. Every value bet is logged before kickoff and sent to your Telegram so you can place it before the line moves. We publish CLV (closing line value) — the honest scoreboard most prediction sites hide. Free forever for fixtures, scores, and a daily AI pick.
 
+### Short, competitive variant — ~100 words (use on directories where DeepBetting / soccer-rating / similar AI-prediction competitors are also listed: AIBoom, TAAFT, Futurepedia, topai.tools)
+
+Operator note 2026-06-05 from DeepBetting's AIBoom listing: "no human bias" and "full transparency" are now commodity claims that every AI prediction site repeats. Differentiate on facts they cannot match: 280+ leagues vs their 15, CLV tracking vs vague "transparency", Telegram delivery vs no delivery channel.
+
+> OddsIntel is an AI-powered football betting intelligence platform covering **280+ leagues worldwide** — order-of-magnitude more than typical AI prediction sites. We compare odds across 13 bookmakers, identify mispriced matches with a Poisson + XGBoost ensemble, and deliver every value bet to your **Telegram** before kickoff so you can act before line movement. Unlike sites that lead with cherry-picked accuracy claims, we publish **CLV (closing line value)** — the only metric that proves edge over the bookmaker. Every pick is logged immutably; the full per-bet track record is public. Free forever for fixtures + a daily AI pick.
+
 ### Medium — ~180 words (most directories)
 
 OddsIntel is an AI-powered football betting intelligence platform. We track 280+ leagues, compare odds across 13 bookmakers, and identify where the market is wrong using a Poisson + XGBoost ensemble model.
