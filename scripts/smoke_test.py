@@ -15518,6 +15518,92 @@ def _():
     )
 
 
+@test("LIGHTHOUSE-FIX-3 — unstable_cache wraps 7 heavy SSR queries")
+def _():
+    """LIGHTHOUSE-FIX-3 (2026-06-05): PageSpeed runs landed with /matches
+    at 80 Perf, /pricing 87, /value-bets 89 (others ≥90). The 3 sub-90
+    pages share the SSR-heavy Supabase data-fetch pattern. Wrapping the
+    public/admin-client queries in Next's unstable_cache means a single
+    cold-cache hit per revalidate window instead of N per-request DB
+    round trips — exactly the load profile Lighthouse / Googlebot hit.
+
+    Revalidate windows (per data freshness):
+      60s   — matches + counts + odds-verified-at (pipeline refresh cadence)
+      120s  — today's bets + free daily pick (5-15min pipeline runs)
+      300s  — performance extras + league hit rates (stable rollups)
+
+    Skipped on purpose:
+      - getLiveSnapshots — genuinely live, staleness > speed
+      - getTodayPicks / getWhatChangedToday — use createSupabaseServer
+        which reads cookies. Can't wrap unless refactored to admin/public
+        client first.
+
+    Pinned (so the cache wiring can't silently degrade back to per-request
+    DB hits — the perf gain depends on the wrapper staying in place):
+      1. unstable_cache imported from "next/cache"
+      2. Cache-window constants CACHE_60S / CACHE_120S / CACHE_300S defined
+      3. getPublicMatches / getActiveMatches / getFinishedMatches all
+         routed through the cached _fetchMatches wrapper
+      4. getMatchCounts exported as a cached entry point
+      5. getTodayBets exported as a cached entry point
+      6. getFreeDailyPick exported as a cached entry point
+      7. getLeagueHitRates exported as a cached entry point
+      8. getOddsVerifiedAt exported as a cached entry point
+      9. getValueBetBookOdds exported as a cached entry point
+      10. getPublicPerformanceExtras exported as a cached entry point
+    """
+    src = _web_path("src/lib/engine-data.ts").read_text()
+
+    assert "unstable_cache" in src and 'from "next/cache"' in src, (
+        "engine-data must import unstable_cache from next/cache"
+    )
+    for const in ("CACHE_60S", "CACHE_120S", "CACHE_300S"):
+        assert const in src, f"cache-window constant {const} must be defined"
+
+    # Functions wrapped via the (impl-then-export-cached) pattern. Looking
+    # for the unstable_cache(...) export sites — the same identifier shouldn't
+    # appear as both `export async function NAME` (uncached) and the cached
+    # form. The smoke checks the cached form is present.
+    cached_exports = [
+        "fetchMatches_v1",
+        "getMatchCounts_v1",
+        "getTodayBets_v1",
+        "getFreeDailyPick_v1",
+        "getLeagueHitRates_v1",
+        "getOddsVerifiedAt_v1",
+        "getValueBetBookOdds_v1",
+        "getPublicPerformanceExtras_v1",
+    ]
+    for key in cached_exports:
+        assert key in src, (
+            f"cache key '{key}' must be present — wrapping {key.replace('_v1','')} "
+            "with unstable_cache is what cuts SSR DB latency on /matches "
+            "+ /value-bets"
+        )
+
+    # And the cached entry points must be exported as `const NAME =`
+    # (not `export async function NAME`) — that's how the wrapper replaces
+    # the impl while keeping the public API.
+    cached_funcs = [
+        "getMatchCounts",
+        "getTodayBets",
+        "getFreeDailyPick",
+        "getLeagueHitRates",
+        "getOddsVerifiedAt",
+        "getValueBetBookOdds",
+        "getPublicPerformanceExtras",
+    ]
+    for fn in cached_funcs:
+        # Bare uncached `export async function NAME` would defeat the cache
+        assert f"export async function {fn}(" not in src, (
+            f"{fn} must be exported as a cached const, not as a raw async function "
+            "— check the wrapper survived a future edit"
+        )
+        assert f"export const {fn} = unstable_cache(" in src, (
+            f"{fn} must be exported as `unstable_cache(...)` wrapper"
+        )
+
+
 @test("GROWTH-APP-NAV-SYNC — (app) Nav includes /live + /accuracy + /pricing")
 def _():
     """GROWTH-APP-NAV-SYNC (2026-06-05): the in-app Nav (used on every
