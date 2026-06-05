@@ -166,7 +166,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | /matches | ✅ Today + Tomorrow tabs, smart sort, dual layout, signal grade + pulse + teasers (SUX-1/2/3), What Changed Today, "X analyzing" counter, community vote splits |
 | /matches/[id] | ✅ Free+Pro+Elite sections, server-side tier gating, all odds markets, Intelligence Summary (SUX-4/6/7), Signal Accordion (SUX-5), Signal Delta (SUX-9), Live in-play chart, bot consensus, Model vs Market vs Users, AI preview, post-match signal reveal |
 | /value-bets | ✅ Tiered: Free=teaser+stats, Pro=directional picks, Elite=full table + BET-EXPLAIN |
-| /track-record | ✅ Real Supabase data |
+| /performance | ✅ Real Supabase data (`/track-record` URL kept as a redirect for any external backlinks) |
 | /predictions | ✅ 8 featured leagues, SEO prediction pages with FAQ schema |
 | /learn | ✅ 12-term betting glossary with FAQ schema |
 | /methodology | ✅ Public model explanation |

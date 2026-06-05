@@ -228,6 +228,27 @@ on Hobby plan; blast radius isolated.
 - For each of 16 bots: calibrate, check odds movement (psycopg2), alignment (psycopg2), Kelly sizing, place bet
 - `daily_pipeline_v2.py run_morning(skip_fetch=False)` still works for manual full runs
 
+#### Paper-bet chain — operating invariants (GROWTH-TRACK-RECORD-CONTINUITY)
+
+The `simulated_bets` table is the **public track-record chain** — the basis for every CLV/ROI claim on `/performance` (canonical URL; `/track-record` is a redirect) and the "tracked across N matches since YYYY" headline on the landing page. The marketing value compounds with time; every broken day is permanently lost from public history.
+
+**Hard invariants (must hold every UTC day from 2026-04-27 onwards):**
+
+| Invariant | Mechanism | Recovery if violated |
+|---|---|---|
+| `simulated_bets` daily insert count > 0 | Betting pipeline (job ⑤) runs ≥ 8× per UTC day | Rerun `betting_pipeline.py` manually; investigate scheduler/bots before next morning |
+| Daily count typically ≥ 15 (anomaly threshold: < 5) | Alerted via `check_track_record_continuity()` in `health_alerts.py` (09:30 UTC) | Check `silent_bots` in ops_snapshots; check `pipeline_runs` for failed jobs; check AF Pinnacle availability |
+| Rows are never deleted | No DELETE in pipeline code; rows are append-only | Postgres point-in-time-recovery via Supabase |
+| `/performance` page never returns 5xx | `getDashboardCache()` reads from `dashboard_cache` table (refreshed every 30 min) | Refresh cache via `write_dashboard_cache.py` |
+
+**Monitoring:** `workers/jobs/health_alerts.py::check_track_record_continuity()` runs daily at 09:30 UTC and fires two distinct admin alerts:
+- `chain_broken_yesterday`: 0 picks yesterday → email to `ADMIN_ALERT_EMAIL`
+- `chain_weak_yesterday`: 1..4 picks yesterday → email anomaly warning
+
+**One-shot audit:** `python scripts/audit_track_record_chain.py --days N` walks the last N days and exits non-zero if any gap exists. Run before publishing any "tracked across N matches" claim that cites a count.
+
+**Known historical gap (do not regress):** Pre-launch days (before 2026-04-27) are excluded from the chain. The 2026-05-02 single zero-day exists from before continuity monitoring was wired (this task). All days from 2026-05-03 onwards must remain populated.
+
 ### ⑥ Live Tracker / LivePoller (`live_poller.py` + `live_tracker.py`)
 
 **Runs on Railway as a daemon thread** with tiered polling (replaced 5-min GH Actions cron):

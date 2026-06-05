@@ -176,7 +176,7 @@ All new tables have RLS policies: users can only read/write their own data.
 | `/matches` | Public |
 | `/matches/[id]` | Public (pro sections gated in UI) |
 | `/login`, `/signup` | Public |
-| `/track-record` | Public (hero, CLV education, status, progress, early results, feature comparison). Pro: full history + CLV. Elite: + edge %. Bot P&L superadmin only |
+| `/performance` | Public (hero, CLV education, status, progress, early results, feature comparison). Pro: full history + CLV. Elite: + edge %. Bot P&L superadmin only. `/track-record` is a redirect to this canonical URL. |
 | `/how-it-works` | Public |
 | `/my-picks` | Authenticated (login modal if not signed in) |
 | `/profile` | Authenticated |

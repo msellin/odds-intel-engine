@@ -105,6 +105,60 @@ def check_morning_bets() -> None:
         )
 
 
+def check_track_record_continuity(low_threshold: int = 5) -> None:
+    """GROWTH-TRACK-RECORD-CONTINUITY (2026-06-05) — alert if the paper-bet
+    chain went thin or broke yesterday.
+
+    Distinct from `check_morning_bets()` which fires only on TODAY=0 picks
+    with ≥10 scheduled matches. This check looks back at YESTERDAY (a fully
+    settled UTC day) and fires if the daily count fell below `low_threshold`
+    (default 5). Rationale: the chain's marketing value (e.g. "tracked
+    across 21,831+ matches since 2023" on the landing) compounds with time
+    — every gap weakens the story permanently. A day with <5 picks is
+    overwhelmingly likely to be a silent scheduler failure rather than a
+    quiet match calendar (see 60-day audit at scripts/audit_track_record_chain.py).
+
+    Fires two distinct alerts:
+      - `chain_broken_yesterday`: 0 picks yesterday → catastrophic
+      - `chain_weak_yesterday`:   1 ≤ picks < low_threshold → anomaly
+    """
+    from datetime import timedelta
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+
+    rows = execute_query(
+        "SELECT COUNT(*) AS cnt FROM simulated_bets WHERE pick_time::date = %s",
+        (yesterday,)
+    )
+    count = (rows[0]["cnt"] if rows else 0) or 0
+    console.print(f"[dim]health_alerts: yesterday ({yesterday}) had {count} paper bets[/dim]")
+
+    if count == 0:
+        _alert_once(
+            "chain_broken_yesterday",
+            f"PAPER-BET CHAIN BROKE — 0 picks yesterday ({yesterday})",
+            f"<p><b>The bot chain produced 0 paper bets on {yesterday}.</b></p>"
+            f"<p>Every day with 0 picks is permanently lost from the public "
+            f"track-record. Investigate today before the next morning pipeline "
+            f"so we don't break the chain a second time.</p>"
+            f"<p>Likely causes: scheduler crashed, RAILWAY restart wiped state, "
+            f"AF Pinnacle outage, all bots silent (check <code>silent_bots</code> "
+            f"in ops_snapshots).</p>"
+            f"<p>Audit history: <code>python scripts/audit_track_record_chain.py --days 14</code></p>",
+        )
+    elif count < low_threshold:
+        _alert_once(
+            "chain_weak_yesterday",
+            f"Chain anomaly — only {count} picks yesterday ({yesterday})",
+            f"<p>The bot chain produced just {count} paper bets on {yesterday} "
+            f"(below threshold {low_threshold}). Recent daily counts are "
+            f"typically 15-300+.</p>"
+            f"<p>Probable causes: most bots went silent, AF odds incomplete, "
+            f"edge thresholds tightened too hard, or league filters dropping "
+            f"matches. Check <code>silent_bots</code> + per-bot stats.</p>"
+            f"<p>Audit: <code>python scripts/audit_track_record_chain.py --days 14</code></p>",
+        )
+
+
 def check_pinnacle_coverage() -> None:
     """More than 10 scheduled matches today have no Pinnacle odds — odds fetch may have failed."""
     today = date.today().isoformat()
@@ -521,6 +575,10 @@ def run_morning_checks() -> None:
         check_morning_bets()
     except Exception as e:
         console.print(f"[yellow]health_alerts morning bet check error: {e}[/yellow]")
+    try:
+        check_track_record_continuity()
+    except Exception as e:
+        console.print(f"[yellow]health_alerts continuity check error: {e}[/yellow]")
     try:
         check_pinnacle_coverage()
     except Exception as e:

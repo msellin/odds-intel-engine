@@ -10,7 +10,7 @@
 
 ### What's live
 - oddsintel.app deployed on Vercel, domain connected, Google Search Console verified
-- Landing page, auth (login/signup with magic link + Google), /matches (today + tomorrow tabs), /matches/[id], /value-bets, /track-record, /welcome onboarding, /predictions (SEO), /learn (glossary), /methodology, /bankroll (Elite)
+- Landing page, auth (login/signup with magic link + Google), /matches (today + tomorrow tabs), /matches/[id], /value-bets, /performance (canonical; /track-record is a redirect), /welcome onboarding, /predictions (SEO), /learn (glossary), /methodology, /bankroll (Elite)
 - **Stripe production mode** live since 2026-05-04 — checkout + webhook + portal + tier gating + annual billing + founding rates + REDDIT promo code
 - Free tier features: prediction tracker, 1 daily AI value pick, community voting + vote splits, favorites, match notes, interest score (🔥/⚡/—), "X analyzing" counter, What Changed Today widget, Model vs Market vs Users triangulation
 - Pro tier features: full odds (13 bookmakers), odds movement charts, live in-play chart, Intelligence Summary, Signal Accordion, Signal Delta, injuries, lineups, stats, events, player ratings, bot consensus, AI match previews, directional value bets

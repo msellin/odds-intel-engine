@@ -15185,6 +15185,60 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-TRACK-RECORD-CONTINUITY — chain audit + alert wiring")
+def _():
+    """GROWTH-TRACK-RECORD-CONTINUITY (2026-06-05): monitoring + audit for the
+    paper-bet chain that backs every public CLV/ROI claim.
+
+    Pinned:
+      1. `check_track_record_continuity()` exists in health_alerts.py with the
+         right alert keys (chain_broken_yesterday + chain_weak_yesterday).
+      2. The check is wired into `run_morning_checks()` so it actually runs.
+      3. Audit script `scripts/audit_track_record_chain.py` exists and exits
+         non-zero on a chain gap (so CI / a cron could gate releases on it).
+      4. WORKFLOWS.md documents the chain invariants — code can drift, docs
+         must not.
+    """
+    import pathlib
+    ha = pathlib.Path("workers/jobs/health_alerts.py")
+    assert ha.exists(), "health_alerts.py must exist"
+    src = ha.read_text()
+    assert "def check_track_record_continuity(" in src, (
+        "health_alerts.py must define check_track_record_continuity()"
+    )
+    assert "chain_broken_yesterday" in src, (
+        "continuity check must alert on chain_broken_yesterday key (0 picks)"
+    )
+    assert "chain_weak_yesterday" in src, (
+        "continuity check must alert on chain_weak_yesterday key (<5 picks)"
+    )
+    # Wired into run_morning_checks
+    morning_block = src.split("def run_morning_checks(")[1].split("def ")[0]
+    assert "check_track_record_continuity" in morning_block, (
+        "continuity check must be called from run_morning_checks, not just defined"
+    )
+
+    # Audit script exists and has the expected CLI shape
+    audit = pathlib.Path("scripts/audit_track_record_chain.py")
+    assert audit.exists(), "scripts/audit_track_record_chain.py must exist"
+    asrc = audit.read_text()
+    assert "LAUNCH_DATE" in asrc, "audit must respect LAUNCH_DATE (pre-launch days are not gaps)"
+    assert "return 1" in asrc, "audit must exit non-zero on a chain gap"
+
+    # WORKFLOWS.md documents the invariants
+    wf = pathlib.Path("WORKFLOWS.md")
+    wf_src = wf.read_text()
+    assert "Paper-bet chain — operating invariants" in wf_src, (
+        "WORKFLOWS.md must document the paper-bet chain invariants"
+    )
+    assert "check_track_record_continuity" in wf_src, (
+        "WORKFLOWS.md must reference the alert function name"
+    )
+    assert "audit_track_record_chain.py" in wf_src, (
+        "WORKFLOWS.md must reference the one-shot audit script"
+    )
+
+
 @test("GROWTH-CLAIMS-PARITY — landing surfaces accuracy + 10yr-data + no-human-bias")
 def _():
     """CLAIMS-PARITY (2026-06-04): landing trust block now leads with the

@@ -91,7 +91,7 @@ Post-signup onboarding screen. Shown once after account creation.
 
 ### Analytics & History
 
-#### `/track-record` — Track Record
+#### `/performance` — Model Performance (canonical; `/track-record` is a redirect)
 Shows the AI model's historical prediction and betting performance. This is the main transparency/credibility page.
 
 See detailed section-by-section breakdown below.
@@ -119,9 +119,9 @@ Aggregated statistics across 16 paper-trading AI bot strategies.
 
 ---
 
-## Track Record page — section-by-section breakdown
+## Performance page — section-by-section breakdown
 
-The track record page (`/track-record`) is public-readable but has tiered data depth. Sections in render order:
+The model performance page (canonical URL `/performance`; `/track-record` redirects to it) is public-readable but has tiered data depth. Sections in render order:
 
 ### Section 1: Hero stats (everyone)
 Three cards at the top:
