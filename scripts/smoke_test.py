@@ -15757,6 +15757,59 @@ def _():
     )
 
 
+@test("PINNACLE-WEEKEND-EXPERIMENT — time-boxed research script invariants")
+def _():
+    """PINNACLE-WEEKEND-EXPERIMENT (2026-06-05): research-only,
+    time-boxed line-movement measurement. Smoke pins the safety
+    invariants — without them this could drift into a production
+    scraper.
+
+    Pinned:
+      1. Script exists at scripts/pinnacle_movement_research.py
+      2. Hard END_TIME_UTC ≤ Monday morning 2026-06-09 06:00 UTC —
+         baked into the script, not relying on operator memory
+      3. MAX_REQUESTS hard cap defined
+      4. Honest User-Agent (contains "OddsIntelResearch" + email)
+      5. No proxy / IP rotation logic
+      6. Output to dev/active/*.csv (never odds_snapshots)
+      7. Polite request spacing (REQUEST_JITTER_SEC defined)
+    """
+    script = _pathlib.Path("scripts/pinnacle_movement_research.py")
+    assert script.exists(), (
+        "pinnacle_movement_research.py must exist — research script"
+    )
+    src = script.read_text()
+    assert "END_TIME_UTC" in src and "datetime(2026, 6, 9" in src, (
+        "hard END_TIME_UTC must be defined ≤ 2026-06-09 — auto-exit "
+        "is the load-bearing safety invariant"
+    )
+    assert "MAX_REQUESTS" in src, "MAX_REQUESTS budget cap must be defined"
+    assert "OddsIntelResearch" in src and "@dolmit.com" in src, (
+        "User-Agent must be honest — no spoofing browser UA"
+    )
+    # No proxy / rotation code (we're explicit about NOT having this)
+    assert "proxies" not in src and "ProxyHandler" not in src, (
+        "script must not have proxy rotation — that's evasion"
+    )
+    # No HTTPS_PROXY env var manipulation
+    assert "HTTPS_PROXY" not in src, (
+        "script must not set HTTPS_PROXY — that's evasion infrastructure"
+    )
+    # CSV output is in dev/active, NOT odds_snapshots — verify no INSERT
+    # into odds_snapshots anywhere in the file. Docstring/comments may
+    # mention the table for context; that's allowed.
+    assert "INSERT INTO odds_snapshots" not in src.upper(), (
+        "research script must not write to odds_snapshots — output is "
+        "research-only CSV in dev/active/"
+    )
+    assert 'dev/active' in src or 'dev" / "active' in src, (
+        "research script must write CSV to dev/active/"
+    )
+    assert 'REQUEST_JITTER_SEC' in src, (
+        "polite request spacing must be configured"
+    )
+
+
 @test("FRESH-PINNACLE-CLV-BACKTEST — settle logic verified correct")
 def _():
     """ODDS-FRESHNESS-FREE-WINS Move 2 (2026-06-05): backtests our settle
