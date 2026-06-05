@@ -15185,6 +15185,62 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-DIRECTORY-STACK — listing kit exists with all required blocks")
+def _():
+    """GROWTH-DIRECTORY-STACK (Tier A #6, 2026-06-05): operator-facing kit
+    for submitting OddsIntel to AI tool / SaaS directories. Pure operator
+    artifact — no FE / engine code change.
+
+    Pinned (so the kit doesn't get edited into uselessness):
+      1. Kit file exists at dev/active/directory-listing-kit.md
+      2. Three description lengths present (directories want different
+         lengths)
+      3. Submission tracker table present with all 11 directories
+      4. Logo asset gap is flagged (we cannot ship some submissions
+         without it — kit must be honest about this so the operator
+         doesn't burn time)
+      5. ProductHunt is marked as a separate launch task, not a same-day
+         submission — different game, needs orchestrated launch
+    """
+    import pathlib
+    kit = pathlib.Path("dev/active/directory-listing-kit.md")
+    assert kit.exists(), "directory-listing-kit.md must exist"
+    src = kit.read_text()
+    # Three description lengths
+    for label in ("### Short — ", "### Medium — ", "### Long — "):
+        assert label in src, (
+            f"kit must contain the {label!r} description block — different "
+            "directories require different lengths"
+        )
+    # All 11 directories named in the tracker
+    for directory in (
+        "Twelve Tools",
+        "Wired Business",
+        "AIBoom Tools",
+        "Futurepedia",
+        "There's An AI For That",
+        "AI Tool Hunt",
+        "Toolify",
+        "topai.tools",
+        "ProductHunt",
+        "BetaList",
+    ):
+        assert directory in src, (
+            f"submission tracker must list {directory!r} (per the queue "
+            "task scope)"
+        )
+    # Logo asset library documented (was a gap; now have logos at 5 sizes)
+    assert "logo-128.png" in src and "logo-1024.png" in src, (
+        "kit must reference the 128×128 + 1024×1024 logo assets so the "
+        "operator knows what's available for directory submissions"
+    )
+    # ProductHunt deferred
+    assert "Defer to coordinated launch" in src or "ProductHunt launch" in src, (
+        "ProductHunt is a launch event, not a same-day directory submission — "
+        "kit must mark it as deferred to a separate task"
+    )
+
+
 @test("GROWTH-CLV-FIRST-MESSAGING — OG share card CLV strip")
 def _():
     """GROWTH-CLV-FIRST-MESSAGING (Tier A #5, sub-commit C 2026-06-05): CLV
