@@ -15185,6 +15185,42 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-APP-NAV-SYNC — (app) Nav includes /live + /accuracy + /pricing")
+def _():
+    """GROWTH-APP-NAV-SYNC (2026-06-05): the in-app Nav (used on every
+    /(app)/* route) was missing /live, /accuracy, /pricing — pages that
+    exist on the landing nav but weren't reachable from the in-app shell.
+    A user landing on /live couldn't navigate sideways to /accuracy
+    without going back to the landing page.
+
+    Pinned (so a future page added to the landing nav doesn't silently
+    fail to appear in the in-app nav):
+      1. nav.tsx primaryLinks includes /live, /accuracy, /pricing
+      2. Each has a unique-enough lucide icon (Radio / Percent /
+         CreditCard) so the row doesn't render with an empty icon slot
+      3. Mobile drawer is driven by the same primaryLinks array (no
+         duplicate hardcoded list) — verified by the file containing
+         exactly one definition of primaryLinks
+    """
+    nav = _web_path("src/components/nav.tsx")
+    src = nav.read_text()
+    for href in ('href: "/live"', 'href: "/accuracy"', 'href: "/pricing"'):
+        assert href in src, (
+            f"(app) Nav primaryLinks must include {href} — without it "
+            "users on that page can't navigate sideways from the in-app "
+            "shell"
+        )
+    # Icon imports for the new entries
+    for icon in ("Radio", "Percent", "CreditCard"):
+        assert icon in src, f"nav.tsx must import the {icon} lucide icon"
+    # Single source of truth — only ONE primaryLinks array definition
+    assert src.count("const primaryLinks") == 1, (
+        "nav.tsx must have exactly ONE primaryLinks definition; mobile "
+        "drawer reads from it via primaryLinks.map. A duplicate hardcoded "
+        "list defeats the smoke pin"
+    )
+
+
 @test("GROWTH-MOBILE-FIRST-AUDIT — audit doc + P0 fixes shipped")
 def _():
     """GROWTH-MOBILE-FIRST-AUDIT (Tier B #5, 2026-06-05): mobile audit
