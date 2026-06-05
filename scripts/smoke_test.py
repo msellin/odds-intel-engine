@@ -16627,9 +16627,22 @@ def _():
     assert "elite_value_bets_cumulative" in ssrc, (
         "settlement must reference the cumulative column in INSERT"
     )
-    assert "2026-05-03" in ssrc, (
-        "chain_start anchor must match the landing claim "
-        "('Paper-bet chain unbroken since 2026-05-03')"
+    assert "2026-05-01" in ssrc, (
+        "chain_start anchor must match the /performance display "
+        "('since May 1') AND the landing footer claim "
+        "('Paper-bet chain unbroken since 2026-05-01') — CHAIN-START-ALIGN "
+        "2026-06-06 standardised on this single value."
+    )
+    # Cohort filter must match /performance's activeBotNames
+    # (is_active + non-experimental + not retired) so landing hero
+    # number doesn't drift from /performance.
+    assert "maturity_label != 'experimental'" in ssrc, (
+        "cumulative cohort must exclude experimental-maturity bots — "
+        "matches /performance which strips them via activeBotNames"
+    )
+    assert "retired_at IS NULL" in ssrc, (
+        "cumulative cohort must exclude retired bots — matches "
+        "/performance's !b.retiredAt filter"
     )
 
     # 3. Web type definition
@@ -16656,9 +16669,13 @@ def _():
         "('accuracy on O/U 1.5') should be gone"
     )
     # Fallback hard-codes (so an empty cache doesn't leave the hero blank
-    # at deploy time before the next settlement run populates)
+    # at deploy time before the next settlement run populates). Updated
+    # 2026-06-06 to match the cohort-aligned numbers.
     assert "+9.4%" in psrc, "fallback avg_clv_pct must be present"
-    assert "1,214" in psrc, "fallback n_settled must be present"
+    assert "1,176" in psrc, (
+        "fallback n_settled must match the aligned cohort (~1,176 = "
+        "active + non-experimental). 1,214 was the pre-alignment number."
+    )
     # Old copy must be gone
     assert "75% accuracy on O/U 1.5" not in psrc, (
         "old 'accuracy on O/U 1.5' trust line must be removed; the "

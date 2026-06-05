@@ -15,9 +15,13 @@
 --   * Research backing: see dev/active/density-copy-research-2026-06-06.md
 --
 -- Cohort: all bots where is_active = true (Elite-tier all-active definition).
--- Chain start: 2026-05-03 (matches landing claim "Paper-bet chain unbroken
--- since 2026-05-03 →"; first real settled pick was 2026-05-04 but the boundary
--- is inclusive of that).
+-- Chain start: 2026-05-01 — narrative anchor displayed by /performance
+-- ("since May 1 · every bet logged") and the landing footer ("Paper-bet
+-- chain unbroken since 2026-05-01 →"). First real settled pick was
+-- 2026-05-04 so the May 1-3 window is empty of bets but the rounder
+-- date reads cleaner publicly. CHAIN-START-ALIGN 2026-06-06 standardised
+-- on this value across all surfaces; earlier draft used 2026-05-03 and
+-- created a 12-bet + 2-day drift vs /performance.
 --
 -- JSON shape:
 --   {
@@ -28,7 +32,7 @@
 --     "pnl":                 749.31,
 --     "avg_clv_pct":         9.40,
 --     "cumulative_clv_eur":  362.00,
---     "chain_start":         "2026-05-03",
+--     "chain_start":         "2026-05-01",
 --     "first_pick":          "2026-05-04T04:27:01Z",
 --     "last_pick":           "2026-06-05T19:27:10Z",
 --     "days":                33

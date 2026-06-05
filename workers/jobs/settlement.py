@@ -1733,27 +1733,44 @@ def write_dashboard_cache():
         )
 
         # GROWTH-COPY-DENSITY-AUDIT Day 1 (2026-06-06) — cumulative since
-        # chain start. Drives the new landing hero line. See migration 187
-        # and dev/active/density-copy-research-2026-06-06.md.
-        # Chain start matches the landing claim ("Paper-bet chain unbroken
-        # since 2026-05-03 →") — first real settled pick was 2026-05-04.
-        _CUMULATIVE_CHAIN_START = '2026-05-03'
+        # chain start. Drives the landing hero line.
+        #
+        # CHAIN-START-ALIGN (2026-06-06): canonical chain start is 2026-05-01
+        # — matches the /performance page's "since May 1" display. Earlier
+        # value (2026-05-03) caused 12-bet + 2-day drift vs perf page. No
+        # data is lost going back further; chain has no settled picks
+        # before 2026-05-04 anyway, so 2026-05-01 boundary is purely
+        # narrative.
+        #
+        # COHORT-ALIGN (2026-06-06): filter mirrors /performance's
+        # activeBotNames: is_active=true AND maturity != 'experimental'.
+        # Earlier filter ('is_active=true' only) included 6 acca/combo
+        # bots with ~42 settled bets, making landing show more bets than
+        # /performance.
+        #
+        # SETTLED-DEFINITION (2026-06-06): matches /performance's
+        # grandTotalSettled — result IS NOT NULL AND NOT IN ('pending','void').
+        # Includes 'push' (stake-refunded) bets — they are settled, just
+        # P&L-neutral.
+        _CUMULATIVE_CHAIN_START = '2026-05-01'
 
         def _value_bets_cumulative() -> dict | None:
             row = execute_query(f"""
                 SELECT
-                    COUNT(*) FILTER (WHERE sb.result IN ('won','lost'))                AS n_settled,
+                    COUNT(*) FILTER (WHERE sb.result IS NOT NULL AND sb.result NOT IN ('pending','void')) AS n_settled,
                     COUNT(*) FILTER (WHERE sb.result = 'won')                          AS won,
-                    SUM(sb.stake) FILTER (WHERE sb.result IN ('won','lost'))           AS staked,
-                    SUM(sb.pnl)   FILTER (WHERE sb.result IN ('won','lost'))           AS pnl,
-                    AVG(sb.clv)   FILTER (WHERE sb.result IN ('won','lost') AND sb.clv IS NOT NULL) AS avg_clv,
-                    SUM(sb.clv * sb.stake) FILTER (WHERE sb.result IN ('won','lost') AND sb.clv IS NOT NULL) AS cumulative_clv_eur,
+                    SUM(sb.stake) FILTER (WHERE sb.result IS NOT NULL AND sb.result NOT IN ('pending','void')) AS staked,
+                    SUM(sb.pnl)   FILTER (WHERE sb.result IS NOT NULL AND sb.result NOT IN ('pending','void')) AS pnl,
+                    AVG(sb.clv)   FILTER (WHERE sb.result IS NOT NULL AND sb.result NOT IN ('pending','void') AND sb.clv IS NOT NULL) AS avg_clv,
+                    SUM(sb.clv * sb.stake) FILTER (WHERE sb.result IS NOT NULL AND sb.result NOT IN ('pending','void') AND sb.clv IS NOT NULL) AS cumulative_clv_eur,
                     MIN(sb.pick_time) AS first_pick,
                     MAX(sb.pick_time) AS last_pick
                 FROM simulated_bets sb
                 JOIN bots b ON b.id = sb.bot_id
                 WHERE sb.pick_time >= %s
                   AND b.is_active = true
+                  AND b.maturity_label != 'experimental'
+                  AND b.retired_at IS NULL
             """, [_CUMULATIVE_CHAIN_START])[0]
             n = int(row["n_settled"] or 0)
             if n == 0:
@@ -1765,12 +1782,13 @@ def write_dashboard_cache():
             cum_clv = float(row["cumulative_clv_eur"]) if row.get("cumulative_clv_eur") is not None else None
             first_pick = row.get("first_pick")
             last_pick = row.get("last_pick")
-            # Days = first_pick → last_pick span. Use chain_start as the
-            # narrative anchor (what we publish on the landing); days as the
-            # measured span (what actually happened).
-            days = None
-            if first_pick is not None and last_pick is not None:
-                days = max(1, (last_pick - first_pick).days + 1)
+            # Days = calendar days from chain_start to settlement_run_time.
+            # Matches /performance's Math.floor((Date.now() - chainStart)/day)
+            # — both tick up by 1 each day at midnight UTC.
+            from datetime import datetime, timezone, date
+            chain_start_dt = datetime.fromisoformat(_CUMULATIVE_CHAIN_START).replace(tzinfo=timezone.utc)
+            now_utc = datetime.now(timezone.utc)
+            days = (now_utc - chain_start_dt).days
             return {
                 "n_settled":         n,
                 "won":               won,
