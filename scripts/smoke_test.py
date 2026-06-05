@@ -15185,6 +15185,56 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-COMPARISON-MATRIX — competitor matrix on landing")
+def _():
+    """GROWTH-COMPARISON-MATRIX (2026-06-05, Tier A #3): tier-based
+    feature comparison on landing. Each competitor column represents
+    one of 5 competitor "tiers"; killer row at the bottom is "Spans
+    all 5 tiers" — only OddsIntel ticks it.
+
+    Pinned:
+      1. Component file `src/components/competitor-matrix.tsx` exists
+         and exports `CompetitorMatrix`.
+      2. Landing imports and renders it.
+      3. Matrix names the four reference competitors we publicly compare
+         against — SofaScore, OddsChecker, WinnerOdds, InPlayGuru.
+      4. Killer row "Spans all 5 competitor tiers" is present.
+      5. 3-symbol system (have/roadmap/wont) plus partial (~) — full
+         legend present. ⏳ roadmap symbol exists because honest gaps
+         (multi-bookmaker depth, 3rd-party verification) must be visible
+         to keep the matrix credible.
+      6. Honest-gap row exists for "Third-party verified" set to roadmap
+         (we cannot pretend it's ✅ when it isn't).
+    """
+    comp = _web_path("src/components/competitor-matrix.tsx")
+    assert comp.exists(), "competitor-matrix.tsx must exist"
+    csrc = comp.read_text()
+    assert "export function CompetitorMatrix" in csrc, (
+        "must export CompetitorMatrix"
+    )
+    for name in ("SofaScore", "OddsChecker", "WinnerOdds", "InPlayGuru"):
+        assert name in csrc, (
+            f"matrix must name {name} (publicly compared competitor)"
+        )
+    assert "Spans all 5 competitor tiers" in csrc, (
+        "killer row must be present — this is the actual punchline"
+    )
+    # 3-symbol system + partial
+    for sym in ("Check", "Hourglass", "Cross"):
+        assert sym in csrc, f"matrix legend must include {sym} icon import"
+    # Honest gap kept visible
+    assert '"roadmap"' in csrc or "roadmap" in csrc, (
+        "matrix must use the 'roadmap' cell value for honest gaps "
+        "(third-party verification, multi-bookmaker depth)"
+    )
+    # The verification row must be roadmap, not have, for OddsIntel
+    assert "Third-party verified" in csrc, "must list third-party verification row"
+
+    landing = _web_path("src/app/page.tsx")
+    lsrc = landing.read_text()
+    assert "CompetitorMatrix" in lsrc, "landing must import + render CompetitorMatrix"
+
+
 @test("GROWTH-ONE-SCREEN-PROOF — animated 8-tabs vs 1-screen on landing")
 def _():
     """GROWTH-ONE-SCREEN-PROOF (2026-06-05, Tier A #2, Path B): animated
