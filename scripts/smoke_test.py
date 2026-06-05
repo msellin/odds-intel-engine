@@ -15185,6 +15185,49 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-PRICING-DEDICATED-PAGE — /pricing exists, landing pricing demoted to single CTA")
+def _():
+    """GROWTH-PRICING-DEDICATED-PAGE (2026-06-05, Tier A #1): pricing moved
+    from the landing (which had 1.5 folds of pricing-tier asks) to a
+    dedicated /pricing page. Landing keeps a compact "See all plans →"
+    CTA only. /pricing also fixes two existing 404 links (bankroll +
+    what-changed-today both already pointed there).
+
+    Pinned:
+      1. /pricing route file exists with the PricingCards component.
+      2. Landing no longer imports PricingCards (proves the full card
+         grid is gone from the landing).
+      3. Landing nav has /pricing link.
+      4. Landing's compact pricing CTA still mentions Free / Pro / Elite
+         price points so visitors know roughly what to expect before
+         clicking through.
+    """
+    import pathlib
+    pricing_page = _web_path("src/app/pricing/page.tsx")
+    assert pricing_page.exists(), "src/app/pricing/page.tsx must exist"
+    psrc = pricing_page.read_text()
+    assert "PricingCards" in psrc, "/pricing must render <PricingCards />"
+    assert "Pricing — OddsIntel" in psrc, "/pricing must set its own metadata title"
+
+    landing = _web_path("src/app/page.tsx")
+    lsrc = landing.read_text()
+    assert "import { PricingCards }" not in lsrc, (
+        "landing must no longer import PricingCards — pricing cards moved to /pricing"
+    )
+    assert "<PricingCards" not in lsrc, (
+        "landing must not render the full pricing-card grid (only a compact CTA)"
+    )
+    # Landing nav links to /pricing
+    nav_block = lsrc.split("</nav>")[0]
+    assert 'href="/pricing"' in nav_block, "landing nav must link to /pricing"
+    # Compact CTA still informs of price points
+    assert "See all plans" in lsrc, "landing must keep a compact 'See all plans' CTA"
+    assert "€4.99" in lsrc and "€14.99" in lsrc, (
+        "compact pricing CTA must still mention Pro/Elite price anchors so "
+        "visitors don't have to click through just to find out what it costs"
+    )
+
+
 @test("GROWTH-TELEGRAM-FRONT-AND-CENTER — landing surfaces + value-bets banner")
 def _():
     """GROWTH-TELEGRAM-FRONT-AND-CENTER (2026-06-05, Tier S #5): Telegram
