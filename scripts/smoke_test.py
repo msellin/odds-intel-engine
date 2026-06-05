@@ -16487,6 +16487,75 @@ def _():
     )
 
 
+@test("GROWTH-COPY-DENSITY Day 3 — /how-it-works consolidation + jargon pass")
+def _():
+    """GROWTH-COPY-DENSITY-AUDIT Day 3 (2026-06-06):
+      A. Reading-level pass: replaced 'variance-confounded' + 'proves
+         edge early' with concrete plain-English phrasing across landing,
+         value-bets, CLV banner, and /vs entries. Glossary keeps the
+         technical terms since it's the place that defines them.
+      B. Consolidated /how-it-works — collapsed the Prediction Model
+         and Signal Groups sections (which overlapped heavily with
+         /methodology) into one short paragraph + link. Reduced its
+         FAQ from 7 to 3 items. /methodology is now the technical
+         surface; /how-it-works is the product walkthrough.
+
+    Research doc: dev/active/density-copy-research-2026-06-06.md.
+    """
+    import re
+
+    # A. Jargon-pass — variance-confounded must not appear in any
+    # USER-FACING file (glossary.ts is allowed to use it since it
+    # defines the term).
+    user_facing = [
+        "src/app/page.tsx",
+        "src/app/(app)/value-bets/page.tsx",
+        "src/app/(app)/how-it-works/page.tsx",
+        "src/components/clv-trust-banner.tsx",
+        "src/lib/vs-competitors.ts",
+    ]
+    for path in user_facing:
+        src = _web_path(path).read_text()
+        # Strip comments so docs-of-the-cut don't trip the smoke
+        stripped = re.sub(r"//.*?$", "", src, flags=re.MULTILINE)
+        stripped = re.sub(r"\{/\*.*?\*/\}", "", stripped, flags=re.DOTALL)
+        stripped = re.sub(r"/\*.*?\*/", "", stripped, flags=re.DOTALL)
+        assert "variance-confounded" not in stripped, (
+            f"{path} must not use 'variance-confounded' in rendered "
+            f"JSX (~6th-grade reading level pass). Allowed only in "
+            f"glossary.ts which defines the term."
+        )
+        assert "proves edge early" not in stripped, (
+            f"{path} must not use 'proves edge early' — plain-English "
+            f"replacement is 'proves edge in weeks' / 'tells you in weeks'"
+        )
+
+    # B. /how-it-works consolidation pins
+    how = _web_path("src/app/(app)/how-it-works/page.tsx").read_text()
+    # The overlapping content moved out
+    assert "Dixon-Coles correction" not in how, (
+        "Dixon-Coles technical detail belongs on /methodology, not on "
+        "/how-it-works (the product walkthrough surface)"
+    )
+    assert "SIGNAL_GROUPS" not in how, (
+        "SIGNAL_GROUPS const removed — the 6-group breakdown moved to "
+        "/methodology where it has technical context"
+    )
+    # New consolidated paragraph + cross-link to /methodology must exist
+    assert "Model in One Paragraph" in how, (
+        "consolidated model section must have its new heading"
+    )
+    assert "/methodology" in how, (
+        "/how-it-works must link to /methodology for the technical detail"
+    )
+    # FAQ on /how-it-works reduced to 3 items
+    faq_questions = re.findall(r'q:\s*"([^"]+)"', how)
+    assert len(faq_questions) == 3, (
+        f"/how-it-works FAQ must have exactly 3 items (was 7); "
+        f"found {len(faq_questions)}: {faq_questions}"
+    )
+
+
 @test("MIGRATION-185-IDEMPOTENCY — DROP POLICY IF EXISTS guard restored")
 def _():
     """MIGRATION-185-IDEMPOTENCY (2026-06-06): migration 185 created the
