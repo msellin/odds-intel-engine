@@ -15185,6 +15185,53 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-STAKE-SPLITTER — Elite-tier multi-book split component")
+def _():
+    """GROWTH-STAKE-SPLITTER (Tier A #11, 2026-06-05): Elite-tier helper
+    showing how to spread a stake across the top 2-3 bookmakers. Built
+    on existing getValueBetBookOdds() data — no new backend.
+
+    Pinned:
+      1. Component exists at src/components/stake-splitter.tsx
+      2. Wired into value-bets-scan.tsx expanded panel
+      3. Tier-gated correctly — Elite gets the full split, Pro/Free
+         see an upgrade prompt
+      4. Component honestly frames the value as account-survival not
+         odds-maximisation (no "magically increase EV" misleading
+         language)
+    """
+    comp = _web_path("src/components/stake-splitter.tsx")
+    assert comp.exists(), "stake-splitter.tsx must exist"
+    src = comp.read_text()
+    assert "export function StakeSplitter" in src, "must export StakeSplitter"
+    assert "getRankedBooks" in src, (
+        "must have a getRankedBooks helper that orders books by odds desc"
+    )
+    # Honesty pin: the framing is account-survival, not EV maximisation
+    assert "account survival" in src.lower() or "account life" in src.lower(), (
+        "component must frame the value honestly as account-survival, "
+        "NOT as 'this magically increases EV' (single best book always "
+        "wins on EV — splitting is a survival tradeoff)"
+    )
+    # Tier gate
+    assert "isElite" in src, "must take isElite prop and gate the full UI"
+    assert 'href="/pricing"' in src, (
+        "Pro/Free upgrade prompt must link to /pricing (where Elite tier "
+        "is purchasable)"
+    )
+
+    # Wired into value-bets-scan
+    scan = _web_path("src/components/value-bets-scan.tsx")
+    scan_src = scan.read_text()
+    assert "StakeSplitter" in scan_src, (
+        "value-bets-scan.tsx must import + render the StakeSplitter "
+        "component"
+    )
+    assert 'from "@/components/stake-splitter"' in scan_src, (
+        "value-bets-scan.tsx must import from the correct path"
+    )
+
+
 @test("GROWTH-CHAT-AI-SPIKE + GROWTH-INPLAY-POSITIONING-SPIKE — spike docs exist")
 def _():
     """Tier A #9 + #10 (2026-06-05): two scope-only spike docs. Pure
