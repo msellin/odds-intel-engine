@@ -15185,6 +15185,60 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-CHAT-AI-SPIKE + GROWTH-INPLAY-POSITIONING-SPIKE — spike docs exist")
+def _():
+    """Tier A #9 + #10 (2026-06-05): two scope-only spike docs. Pure
+    operator artifacts — no FE / engine code change.
+
+    Pinned (so the docs don't get edited into uselessness):
+      1. Both spike docs exist at the expected paths
+      2. Each doc carries a TL;DR with an explicit recommendation
+         (spikes that don't commit to a direction are useless)
+      3. Each doc names the followup task it implies (chat → defer
+         until verified-ROI; inplay → GROWTH-LIVE-PAGE-BUILD)
+    """
+    import pathlib
+    chat = pathlib.Path("dev/active/chat-ai-spike.md")
+    assert chat.exists(), "dev/active/chat-ai-spike.md must exist"
+    csrc = chat.read_text()
+    assert "## TL;DR" in csrc, "chat-ai-spike must lead with a TL;DR"
+    assert "Recommendation:" in csrc, (
+        "chat-ai-spike must commit to a recommendation — a spike without "
+        "one is just notes"
+    )
+    assert "Gemini" in csrc, (
+        "chat-ai-spike must reference Gemini (the existing LLM infra "
+        "we'd build on)"
+    )
+    # MVP scope must be defined
+    assert "MVP scope" in csrc or "What it IS" in csrc, (
+        "chat-ai-spike must scope the MVP, not just discuss the idea"
+    )
+
+    inplay = pathlib.Path("dev/active/inplay-positioning-spike.md")
+    assert inplay.exists(), "dev/active/inplay-positioning-spike.md must exist"
+    isrc = inplay.read_text()
+    assert "## TL;DR" in isrc, "inplay spike must lead with TL;DR"
+    assert "Recommendation:" in isrc, (
+        "inplay spike must commit to a recommendation"
+    )
+    assert "InPlayGuru" in isrc, (
+        "inplay spike must reference InPlayGuru (the competitor proving "
+        "the niche has demand — 1M visits/month, EE-heavy)"
+    )
+    # Concrete direction decisions
+    for direction_letter in ("Direction A", "Direction B", "Direction C"):
+        assert direction_letter in isrc, (
+            f"inplay spike must explicitly evaluate {direction_letter} "
+            "(lead-with-in-play / build-/live / strategy-builder)"
+        )
+    # Followup task is referenced
+    assert "GROWTH-LIVE-PAGE-BUILD" in isrc, (
+        "inplay spike must reference the GROWTH-LIVE-PAGE-BUILD followup "
+        "so the next agent knows what to build"
+    )
+
+
 @test("GROWTH-FREE-TIER-CONVERSION-MEASURE — audit script + output doc")
 def _():
     """GROWTH-FREE-TIER-CONVERSION-MEASURE (Tier A #8, 2026-06-05): audit
