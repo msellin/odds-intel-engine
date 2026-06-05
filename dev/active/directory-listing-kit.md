@@ -228,4 +228,5 @@ Several directories (Twelve Tools, AIBoom free tier, others) require a reciproca
 |---|---|---|---|---|
 | 2026-06-05 | Twelve Tools | ✅ Submitted, awaiting manual review | ✅ Yes | "Featured on" dark badge in landing footer |
 | 2026-06-05 | Wired Business | ✅ Submitted | ✅ Yes | Same network as Twelve Tools |
+| 2026-06-05 | AIBoom Tools | ✅ Submitted | ✅ Yes (dark, 120×32) | Free tier with backlink; crawler initially failed dofollow check before badge was added; resolved with this commit |
 

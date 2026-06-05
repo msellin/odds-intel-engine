@@ -15205,10 +15205,11 @@ def _():
     )
     assert 'href="https://twelve.tools"' in src, "Twelve Tools backlink must be present"
     assert 'href="https://wired.business"' in src, "Wired Business backlink must be present"
+    assert 'href="https://aiboom.tools"' in src, "AIBoom Tools backlink must be present"
 
     nc = _web_path("next.config.ts")
     nc_src = nc.read_text()
-    for domain in ("twelve.tools", "wired.business"):
+    for domain in ("twelve.tools", "wired.business", "aiboom.tools"):
         assert domain in nc_src, (
             f"CSP img-src must include {domain} so the reciprocal-backlink "
             "badge can render — without this the badge fails silently and "
