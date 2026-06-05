@@ -15185,6 +15185,67 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-LIVE-PAGE-BUILD — /live page + nav + sitemap")
+def _():
+    """GROWTH-LIVE-PAGE-BUILD (Tier B #2, 2026-06-05): /live route exposing
+    the existing in-play infrastructure (~600K live snapshots, 17 in-play
+    strategies, 874 settled bets) that we'd been paying compute for
+    without marketing.
+
+    NOT a landing-positioning change — landing stays CLV-first /
+    pre-match. /live is a SECOND product surface (Direction B from the
+    in-play positioning spike).
+
+    Pinned (so the architecture decisions can't silently regress):
+      1. /live route exists
+      2. Reuses ValueBetsLiveSection (no duplicate live-grid code)
+      3. Tier-gated server-side (Free sees teaser; Pro/Elite sees grid)
+      4. Honest in-play-CLV caveat is present in the page copy —
+         in-play CLV is structurally noisier than pre-match
+      5. Landing nav has the /live link
+      6. Sitemap indexes /live
+      7. Competitor matrix cross-links to /live (the in-play row finally
+         has somewhere to point)
+    """
+    import pathlib
+    live = _web_path("src/app/(app)/live/page.tsx")
+    assert live.exists(), "/live page must exist"
+    src = live.read_text()
+    assert "ValueBetsLiveSection" in src, (
+        "/live must reuse the ValueBetsLiveSection component — no duplicate "
+        "live-grid implementation"
+    )
+    # Tier gate enforced server-side
+    assert "getUserTier" in src and "isPro" in src, (
+        "/live must tier-gate server-side, not client-side"
+    )
+    # Honest caveat — in-play CLV is noisier (compare in lowercased space)
+    src_lower = src.lower()
+    assert "in-play clv" in src_lower or "in-play vs pre-match clv" in src_lower, (
+        "/live must include the honest in-play-CLV-is-noisier caveat — "
+        "without it we'd be claiming CLV parity we don't actually have"
+    )
+
+    # Landing nav has /live
+    landing = _web_path("src/app/page.tsx")
+    nav_block = landing.read_text().split("</nav>")[0]
+    assert 'href="/live"' in nav_block, (
+        "landing nav must link to /live"
+    )
+
+    # Sitemap indexes /live
+    sm = _web_path("src/app/sitemap.ts")
+    assert "/live" in sm.read_text(), "sitemap must include /live"
+
+    # Competitor matrix cross-links to /live
+    matrix = _web_path("src/components/competitor-matrix.tsx")
+    msrc = matrix.read_text()
+    assert 'href="/live"' in msrc, (
+        "competitor matrix must cross-link to /live (the in-play row "
+        "finally has somewhere to point)"
+    )
+
+
 @test("GROWTH-VS-PAGES — competitor comparison pages + sitemap")
 def _():
     """GROWTH-VS-PAGES (Tier B #1, 2026-06-05): /vs/[competitor] SEO pages
