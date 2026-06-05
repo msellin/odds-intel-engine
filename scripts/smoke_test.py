@@ -16417,6 +16417,38 @@ def _():
         )
 
 
+@test("MIGRATION-185-IDEMPOTENCY — DROP POLICY IF EXISTS guard restored")
+def _():
+    """MIGRATION-185-IDEMPOTENCY (2026-06-06): migration 185 created the
+    `published_picks_public_read` policy without an IF NOT EXISTS guard
+    (PostgreSQL doesn't support that syntax on CREATE POLICY). The
+    table + policy landed on the remote DB but the migration record
+    wasn't tracked in supabase_migrations.schema_migrations, so every
+    GH Actions migrate.yml run since attempted to re-apply 185 and
+    failed at the duplicate-policy error — blocking all subsequent
+    migrations (186 + 187 included).
+
+    Fix: DROP POLICY IF EXISTS before CREATE POLICY. Idempotent now.
+    Pinning here so a future cleanup doesn't accidentally revert the
+    guard. Also pins the general lesson: CREATE POLICY in migrations
+    must always be DROP-IF-EXISTS-guarded for safe re-apply.
+    """
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/185_published_picks.sql")
+    src = mig.read_text()
+    assert "DROP POLICY IF EXISTS" in src, (
+        "migration 185 must DROP POLICY IF EXISTS before CREATE POLICY — "
+        "PG doesn't support IF NOT EXISTS on CREATE POLICY, so without "
+        "this guard the migration cannot be safely re-applied. This is "
+        "the failure mode that blocked migrate.yml for ~24h."
+    )
+    # Confirm the policy is then created (not just dropped)
+    assert "CREATE POLICY \"published_picks_public_read\"" in src, (
+        "DROP must be followed by CREATE — leaving only DROP would "
+        "remove public read access to the /accuracy data"
+    )
+
+
 @test("GROWTH-COPY-DENSITY Day 1 — cumulative CLV hero number end-to-end")
 def _():
     """GROWTH-COPY-DENSITY-AUDIT Day 1 (2026-06-06): replace the 3-stat

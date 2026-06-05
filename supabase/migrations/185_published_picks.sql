@@ -84,6 +84,14 @@ CREATE TABLE IF NOT EXISTS published_picks (
 -- Public read access — the /accuracy page renders these rows publicly.
 ALTER TABLE published_picks ENABLE ROW LEVEL SECURITY;
 
+-- Idempotent CREATE POLICY (2026-06-06): PostgreSQL doesn't support
+-- IF NOT EXISTS on CREATE POLICY, so we DROP first. Migration 185 was
+-- previously applied in a state where the table+policy landed on the
+-- remote DB but the migration record wasn't tracked, causing every
+-- CI re-push to fail at "policy already exists". This pattern keeps
+-- the migration safely re-runnable. See dev/active/density-copy-research
+-- doc + GROWTH-COPY-DENSITY Day 1 commit chain (2026-06-06).
+DROP POLICY IF EXISTS "published_picks_public_read" ON published_picks;
 CREATE POLICY "published_picks_public_read"
   ON published_picks
   FOR SELECT
