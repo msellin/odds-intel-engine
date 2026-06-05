@@ -15250,6 +15250,114 @@ def _():
     )
 
 
+@test("GROWTH-SEO-EXPAND-LEAGUES Phase 2 — dynamic league coverage")
+def _():
+    """GROWTH-SEO-EXPAND-LEAGUES (Tier C #1 Phase 2, 2026-06-05): expand
+    /predictions/[league] from the curated 8 leagues to all ~99 leagues with
+    sufficient ensemble prediction coverage. Net effect: ~12x more
+    indexable league hubs + every fixture in those leagues gets a
+    /predictions/[league]/[fixture] page (Phase 1 already handles the
+    per-fixture rendering — Phase 2 just unlocks the league set).
+
+    Pinned (so the dynamic system can't silently degrade back to 8 leagues):
+      1. Postgres function get_prediction_leagues exists in migration 186
+         — the RPC is the source of truth for "which leagues qualify"
+      2. engine-data exports getAllPredictionLeagues + buildLeagueSlug +
+         getPredictionLeagueBySlug
+      3. getAllPredictionLeagues falls back to PREDICTION_LEAGUES if the
+         RPC errors (covers the brief Vercel-vs-migrate race during deploy)
+      4. Sitemap calls getAllPredictionLeagues (not the hardcoded 8) for
+         league hub URLs
+      5. /predictions/[league]/page.tsx generateStaticParams uses the
+         dynamic list — featured + top-N pre-built, rest hydrate via ISR
+      6. /predictions/[league] page body resolves slug via
+         getPredictionLeagueBySlug (so non-featured slugs work)
+      7. /predictions/[league]/[fixture] page resolves league via
+         getPredictionLeagueBySlug (so per-fixture pages work in
+         non-featured leagues)
+      8. /predictions index renders a "More leagues" section beyond the
+         featured 8 (drives internal-link compounding into the new hubs)
+      9. Non-featured slug pattern is country-prefixed (avoids collisions
+         like "segunda-division" → Spain/Venezuela/Uruguay/Chile)
+    """
+    # 1. Migration 186 with get_prediction_leagues function
+    migration = _pathlib.Path("supabase/migrations/186_get_prediction_leagues_fn.sql")
+    assert migration.exists(), (
+        "migration 186_get_prediction_leagues_fn.sql must exist — RPC is "
+        "the source of truth for which leagues get a /predictions/[league] page"
+    )
+    mig_src = migration.read_text()
+    assert "CREATE OR REPLACE FUNCTION get_prediction_leagues" in mig_src, (
+        "migration 186 must define get_prediction_leagues function"
+    )
+    assert "GRANT EXECUTE" in mig_src and "anon" in mig_src, (
+        "get_prediction_leagues must be GRANTed to anon — sitemap reads "
+        "without auth"
+    )
+
+    # 2-3. Engine-data exports + fallback
+    eng = _web_path("src/lib/engine-data.ts")
+    e_src = eng.read_text()
+    for fn in ("getAllPredictionLeagues", "getPredictionLeagueBySlug",
+               "buildLeagueSlug"):
+        assert (
+            f"function {fn}" in e_src
+            or f"export function {fn}" in e_src
+            or f"export async function {fn}" in e_src
+        ), f"engine-data must export {fn}() for the dynamic league system"
+    # Fallback to PREDICTION_LEAGUES if RPC errors — keeps SEO surface up
+    # through deploy/migrate timing gaps
+    assert "get_prediction_leagues" in e_src, (
+        "engine-data must call the get_prediction_leagues RPC"
+    )
+    # Non-featured slug is country-prefixed (collision safety)
+    assert "slugCountry" in e_src and "slugName" in e_src, (
+        "buildLeagueSlug must prefix non-featured slugs with country to "
+        "avoid collisions (Segunda División exists in 4 countries)"
+    )
+
+    # 4. Sitemap uses dynamic list
+    sm_src = _web_path("src/app/sitemap.ts").read_text()
+    assert "getAllPredictionLeagues" in sm_src, (
+        "sitemap must call getAllPredictionLeagues() — using hardcoded "
+        "PREDICTION_LEAGUES caps the SEO surface at 8 leagues"
+    )
+
+    # 5-6. /predictions/[league]/page.tsx — dynamic generateStaticParams + slug lookup
+    lp_src = _web_path("src/app/(app)/predictions/[league]/page.tsx").read_text()
+    assert "getAllPredictionLeagues" in lp_src, (
+        "/predictions/[league] generateStaticParams must use the dynamic "
+        "league list, not PREDICTION_LEAGUES"
+    )
+    assert "getPredictionLeagueBySlug" in lp_src, (
+        "/predictions/[league] must resolve slug via getPredictionLeagueBySlug"
+        " — supports non-featured slugs"
+    )
+    assert "dynamicParams = true" in lp_src, (
+        "/predictions/[league] must set dynamicParams=true so non-prebuilt "
+        "leagues hydrate via ISR on first hit"
+    )
+
+    # 7. /predictions/[league]/[fixture]/page.tsx — uses dynamic resolver
+    fx_src = _web_path("src/app/(app)/predictions/[league]/[fixture]/page.tsx").read_text()
+    assert "getPredictionLeagueBySlug" in fx_src, (
+        "/predictions/[league]/[fixture] must resolve league via "
+        "getPredictionLeagueBySlug — without it, non-featured leagues "
+        "render with the wrong league name in titles + breadcrumbs"
+    )
+
+    # 8. /predictions index has "More leagues" section
+    idx_src = _web_path("src/app/(app)/predictions/page.tsx").read_text()
+    assert "getAllPredictionLeagues" in idx_src, (
+        "/predictions index must render the expanded league list (calls "
+        "getAllPredictionLeagues)"
+    )
+    assert "More leagues" in idx_src, (
+        "/predictions index must include a 'More leagues' section beyond "
+        "the featured 8 — drives internal-link mesh into the new hubs"
+    )
+
+
 @test("GROWTH-APP-NAV-SYNC — (app) Nav includes /live + /accuracy + /pricing")
 def _():
     """GROWTH-APP-NAV-SYNC (2026-06-05): the in-app Nav (used on every
