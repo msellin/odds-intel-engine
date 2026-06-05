@@ -15185,6 +15185,57 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-LANDING-DEPOLLUTE — pricing surface trimmed, methodology surfaced")
+def _():
+    """GROWTH-LANDING-DEPOLLUTE (2026-06-05, follow-up to GROWTH-DRAWDOWN-TRANSPARENCY):
+    landing was asking for money 3 separate times (pricing cards, feature
+    comparison matrix, pricing FAQs) before earning trust. Tightened.
+
+    Pinned:
+      1. Feature comparison matrix removed — pricing-tier ask shouldn't appear
+         3× on one page. Pricing cards alone are sufficient; /how-it-works has
+         the full feature breakdown for users who want depth.
+      2. Pricing-related FAQs removed (free-forever + founding-rates). Pricing
+         FAQs belong near the pricing cards, not in a separate FAQ section.
+      3. New "Honest about how this works" landing block surfaces drawdown +
+         verification + CLV cards that DEEP-LINK to /methodology and /learn/clv
+         — fixes the prior gap where the methodology page had zero inbound
+         links from the landing.
+      4. Footer carries Methodology + Performance links (was just legal links).
+    """
+    landing = _web_path("src/app/page.tsx")
+    src = landing.read_text()
+    # Feature matrix removed
+    assert "comparisonRows" not in src, (
+        "feature comparison matrix must stay removed from landing — pricing "
+        "should be asked once via the pricing cards, not three times"
+    )
+    assert "What you get at each level" not in src, (
+        "the feature-matrix H2 must stay removed (full matrix moved to /how-it-works)"
+    )
+    # Pricing FAQs removed
+    assert "founding member rates" not in src, (
+        "founding-rates FAQ removed — pricing FAQs do not belong in the general FAQ"
+    )
+    assert "free plan really free forever" not in src, (
+        "free-forever FAQ removed for the same reason"
+    )
+    # Honest-numbers landing block added with deep links
+    assert "Honest about how this works" in src, (
+        "landing must surface the 'Honest about how this works' block "
+        "(deep-links to /methodology + /learn/clv)"
+    )
+    assert "Why we publish drawdowns" in src, "drawdown card must be present"
+    assert "Why no" in src and "verified" in src, "verification card must be present"
+    assert "Why CLV beats ROI" in src, "CLV card must be present"
+    # Footer methodology + performance links
+    footer_block = src.split("Responsible Gambling")[0]
+    assert 'href="/methodology"' in footer_block, (
+        "footer must link to /methodology so the deep doc is reachable"
+    )
+    assert 'href="/performance"' in footer_block, "footer must link to /performance"
+
+
 @test("GROWTH-DRAWDOWN-TRANSPARENCY — methodology section + compute script + verification disclosure")
 def _():
     """GROWTH-DRAWDOWN-TRANSPARENCY (2026-06-05): publish honest drawdown
