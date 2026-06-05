@@ -15185,6 +15185,68 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-SIMPLIFY-BOTS-NARRATIVE — public copy uses 'strategies' not 'bots'")
+def _():
+    """GROWTH-SIMPLIFY-BOTS-NARRATIVE (Tier A #7, 2026-06-05): reframe
+    public-facing copy from '16 paper-trading bots' / '39 active bots'
+    to 'multi-strategy ensemble' / '39 strategies in the ensemble'.
+
+    Internal complexity is unchanged — bot_v10_all / bot_conservative
+    etc. still exist in engine code. This is a vocabulary change for
+    USER-FACING SURFACES only:
+      - landing page (already done in GROWTH-CLAIMS-PARITY)
+      - /value-bets (page metadata + tier explainer blocks)
+      - /methodology (steps table + 'no survivor bias' paragraph)
+
+    Explicitly NOT touched:
+      - /performance — the per-bot breakdown is the transparency feature
+      - engine code (bot table, scheduler, bet logging)
+      - /admin/* — internal tooling
+
+    Pinned (so a future copy edit can't silently revert):
+      1. /value-bets metadata uses "multi-strategy ensemble", not "17 paper trading bots"
+      2. /value-bets Pro/Elite tier explainer uses "strategies" not "bots"
+      3. /methodology pipeline-step uses "strategies in our ensemble"
+      4. /methodology no-survivor-bias note uses "strategies" not "bots"
+    """
+    vb = _web_path("src/app/(app)/value-bets/page.tsx")
+    vbsrc = vb.read_text()
+    assert "17 paper trading bots" not in vbsrc, (
+        "/value-bets metadata must not advertise '17 paper trading bots' "
+        "— sounds dilettante; reframe as multi-strategy ensemble"
+    )
+    assert "multi-strategy ensemble" in vbsrc, (
+        "/value-bets metadata must use the 'multi-strategy ensemble' framing"
+    )
+    # Tier explainer blocks
+    assert "4 calibrated AI bots" not in vbsrc, (
+        "/value-bets tier explainer must not say '4 calibrated AI bots' — "
+        "use '4 calibrated strategies' instead"
+    )
+    assert "39 active bots" not in vbsrc, (
+        "/value-bets tier explainer must not say '39 active bots' — "
+        "use '39 strategies in the ensemble' instead"
+    )
+    assert "4 calibrated strategies" in vbsrc and "39 strategies in the ensemble" in vbsrc, (
+        "/value-bets must use the strategy-vocabulary in tier explainers"
+    )
+
+    method = _web_path("src/app/(app)/methodology/page.tsx")
+    msrc = method.read_text()
+    assert "16 paper-trading bots evaluate" not in msrc, (
+        "/methodology pipeline step must use 'strategies' not 'bots'"
+    )
+    assert "16 strategies in our ensemble" in msrc, (
+        "/methodology pipeline step must use 'strategies in our ensemble'"
+    )
+    assert "underperforming bots" not in msrc, (
+        "/methodology no-survivor-bias note must use 'strategies' not 'bots'"
+    )
+    assert "underperforming strategies" in msrc, (
+        "/methodology no-survivor-bias note must use 'underperforming strategies'"
+    )
+
+
 @test("GROWTH-DIRECTORY-STACK — partner badges row in landing footer")
 def _():
     """GROWTH-DIRECTORY-STACK (2026-06-05): live reciprocal-backlink badges
