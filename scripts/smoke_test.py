@@ -15438,6 +15438,52 @@ def _():
     )
 
 
+@test("GROWTH-MOBILE-P1-BATCH — 3 P1 mobile fixes")
+def _():
+    """GROWTH-MOBILE-P1-BATCH (2026-06-05): the 4 P1 items from
+    dev/active/mobile-audit.md. P1-2 (one-screen-proof vertical stack)
+    was already shipped — verified `grid-cols-1 md:grid-cols-2` is
+    already present in the codebase, so this batch ships the remaining
+    three:
+
+      P1-1: Button xs size variant bumps mobile to h-8 (tap target)
+            while keeping desktop tight (h-6) — `sm:` breakpoint flip
+      P1-3: Value-bets league filter dropdown w-full on mobile,
+            w-[200px] on sm+ (was fixed w-[200px] always)
+      P1-4: Login modal close button p-2 mobile + sm:p-1 desktop
+            (mobile hit-box bumps from ~20px to ~32px)
+
+    Pinned (so the mobile-first responsive pattern can't silently
+    regress to desktop-first absolutes):
+      1. Button xs variant uses h-8 sm:h-6 (not bare h-6)
+      2. Button icon-xs variant uses size-8 sm:size-6 (not bare size-6)
+      3. Value-bets filter SelectTrigger uses w-full sm:w-[200px]
+      4. Login modal close button uses p-2 sm:p-1
+    """
+    btn_src = _web_path("src/components/ui/button.tsx").read_text()
+    assert "h-8 sm:h-6" in btn_src, (
+        "button xs variant must be `h-8 sm:h-6` — mobile gets 32px tap "
+        "target, desktop stays tight"
+    )
+    assert "size-8 sm:size-6" in btn_src, (
+        "button icon-xs variant must be `size-8 sm:size-6` for the same "
+        "tap-target reason"
+    )
+
+    vb_src = _web_path("src/components/value-bets-scan.tsx").read_text()
+    assert "w-full text-xs sm:w-[200px]" in vb_src or "w-full sm:w-[200px]" in vb_src, (
+        "value-bets league filter must use `w-full sm:w-[200px]` — fixed "
+        "w-[200px] cramps the mobile filter row at 375px viewport"
+    )
+
+    lm_src = _web_path("src/components/login-modal.tsx").read_text()
+    assert "p-2" in lm_src and "sm:p-1" in lm_src, (
+        "login modal close button must use `p-2 sm:p-1` — bumps the "
+        "mobile hit-box from ~20px to ~32px (still below the 44px "
+        "guideline but materially improves over the original)"
+    )
+
+
 @test("GROWTH-APP-NAV-SYNC — (app) Nav includes /live + /accuracy + /pricing")
 def _():
     """GROWTH-APP-NAV-SYNC (2026-06-05): the in-app Nav (used on every
