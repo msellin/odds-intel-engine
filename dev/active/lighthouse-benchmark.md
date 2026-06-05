@@ -73,11 +73,16 @@ Reviewed without running Lighthouse, using the patterns in the codebase. **These
 - Edge / CDN delivery via Vercel.
 - Tailwind purged to ~25KB CSS (typical for our component count).
 
+**Already optimized (don't propose changes here):**
+- **PostHog** — initialized via `requestIdleCallback` with 2500ms timeout (or 1500ms setTimeout fallback). `autocapture:false`, `disable_session_recording:true`, `disable_surveys:true`, `advanced_disable_feature_flags:true`, `advanced_disable_decide:true`. Zero TBT cost on first paint; only loads in the idle window after the page is interactive. See `src/components/posthog-provider.tsx`.
+- **Sentry** — feedback widget ONLY (`tracesSampleRate:0`, `sampleRate:0`). No error/trace collection. Still loads ~50KB of SDK on page init but does nothing with it until the feedback button is clicked. See `src/instrumentation-client.ts`.
+- **Meta Pixel** — uses Next `<Script strategy="afterInteractive">` (the optimal tracking-pixel strategy in Next.js). See `src/components/meta-pixel.tsx`.
+
 **Likely drag points (where the score will lose points):**
-1. **Third-party JS** — Sentry (`@sentry/nextjs`) + PostHog (`posthog-js`) + Vercel Analytics. Combined ~80-150ms TBT cost. Sentry alone is ~50KB gzipped.
-2. **External badge `<img>` tags** on the landing page (twelve.tools, wired.business, aiboom.tools). 3 SVGs cross-origin; can't be Next/Image-optimized without rehosting them. Mild LCP risk if they're above the fold (they're not — footer area).
-3. **Match-detail + value-bets** pages fetch a lot of joined data server-side. SSR latency could push TTFB > 600ms in cold start, costing 5-10 perf points.
-4. **PostHog autocapture** — by default captures every click, scroll, etc. Inflates JS execution time. Worth checking if autocapture is selectively disabled.
+1. **Sentry SDK boot weight** — ~50KB gzipped is unavoidable while the feedback widget is enabled. Could be deferred further (only attach the feedback integration after first user interaction) to cut another ~30-50ms TBT.
+2. **External badge `<img>` tags** on the landing page (twelve.tools, wired.business, aiboom.tools). 3 SVGs cross-origin; can't be Next/Image-optimized without rehosting them. They sit in the footer area so they're below-the-fold + lazy by default — minor.
+3. **Match-detail + value-bets** pages fetch a lot of joined data server-side. SSR latency could push TTFB > 600ms in cold start, costing 5-10 perf points. ISR helps but bot crawls always land cold cache.
+4. **Team-logo `<img>` proxy** in `league-accordion.tsx` is raw `<img>` not `next/image`. The image is already resized via `/api/logo?w=20` proxy but the framework's lazy/blur/intersection-observer machinery isn't engaged.
 
 ### Accessibility — likely 90–100
 
@@ -120,15 +125,15 @@ Reviewed without running Lighthouse, using the patterns in the codebase. **These
 
 Pick whichever applies to a page that scores <80 Performance.
 
-### Fix 1 — Defer PostHog initialization to first user interaction
+### Fix 1 — Defer Sentry feedback integration to first user interaction
 
-Currently `PostHogProvider` initializes in `app/layout.tsx`, which runs on every page. If autocapture is enabled, that's 80-150ms of TBT on every navigation. Defer-on-interaction (init only after first click/scroll/keypress) cuts this to zero for bounce visitors and only pays the cost for engaged users.
+Currently `src/instrumentation-client.ts` calls `Sentry.init()` synchronously at page load to register the feedback widget. The SDK is ~50KB gzipped and contributes ~30-50ms TBT even though our usage is feedback-only. Wrap the init in a `requestIdleCallback` (mirroring the PostHog pattern in `src/components/posthog-provider.tsx`) — the feedback widget doesn't need to be ready before the user can click the button. Saves ~30-50ms TBT on every page.
 
-Reference: `src/components/posthog-provider.tsx`.
+Reference: `src/instrumentation-client.ts`, mirror `src/components/posthog-provider.tsx`'s defer pattern.
 
 ### Fix 2 — Convert team-logo `<img>` to Next/Image
 
-`src/components/league-accordion.tsx` line 73 renders team crests via `/api/logo?url=...&w=20` proxy. Wrapping in `next/image` with sizes + priority hints would add lazy/intersection-observer loading at the framework level. The proxy already does the resizing, so the only gain is automatic LCP candidate detection. Worth ~3-5 perf points on /matches and /predictions pages.
+`src/components/league-accordion.tsx` line 73 renders team crests via `/api/logo?url=...&w=20` proxy. Wrapping in `next/image` with sizes + priority hints would add lazy/intersection-observer loading at the framework level. The proxy already does the resizing, so the only gain is automatic LCP candidate detection + IntersectionObserver-driven lazy load. Worth ~3-5 perf points on /matches and /predictions pages.
 
 ### Fix 3 — Pre-cache the most common Supabase queries
 
