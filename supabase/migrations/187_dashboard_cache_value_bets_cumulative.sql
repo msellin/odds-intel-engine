@@ -1,0 +1,41 @@
+-- GROWTH-COPY-DENSITY-AUDIT Day 1 (2026-06-06)
+--
+-- New `elite_value_bets_cumulative` JSONB column on dashboard_cache so the
+-- landing hero can carry a single load-bearing cumulative outcome number
+-- ("+9.4% CLV beating the closing line · 1,214 paper bets · 33 days")
+-- instead of the current three-spread stat micro-line ("75% accuracy on
+-- O/U 1.5 · +9.5% CLV (30-day) · 21,831 matches tracked").
+--
+-- Why cumulative (not rolling 30d):
+--   * The verified-+ROI competitor (WinnerOdds) leads with cumulative
+--     profit (€14.76M). Cumulative numbers GROW over time and create
+--     a narrative arc; rolling-30d stays flat by construction.
+--   * As of 2026-06-06 the chain is 33 days old so cumulative ≈ rolling-30d.
+--     But by Aug 2026 the two diverge and we want the growing one.
+--   * Research backing: see dev/active/density-copy-research-2026-06-06.md
+--
+-- Cohort: all bots where is_active = true (Elite-tier all-active definition).
+-- Chain start: 2026-05-03 (matches landing claim "Paper-bet chain unbroken
+-- since 2026-05-03 →"; first real settled pick was 2026-05-04 but the boundary
+-- is inclusive of that).
+--
+-- JSON shape:
+--   {
+--     "n_settled":          1214,
+--     "won":                 ...,
+--     "win_rate_pct":        ...,
+--     "staked":              6634.0,
+--     "pnl":                 749.31,
+--     "avg_clv_pct":         9.40,
+--     "cumulative_clv_eur":  362.00,
+--     "chain_start":         "2026-05-03",
+--     "first_pick":          "2026-05-04T04:27:01Z",
+--     "last_pick":           "2026-06-05T19:27:10Z",
+--     "days":                33
+--   }
+--
+-- Refreshed by the existing settlement job (workers/jobs/settlement.py
+-- _value_bets_cumulative function); same daily 21:00 UTC cadence.
+
+ALTER TABLE dashboard_cache
+    ADD COLUMN IF NOT EXISTS elite_value_bets_cumulative JSONB;

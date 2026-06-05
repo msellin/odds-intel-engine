@@ -16417,6 +16417,89 @@ def _():
         )
 
 
+@test("GROWTH-COPY-DENSITY Day 1 — cumulative CLV hero number end-to-end")
+def _():
+    """GROWTH-COPY-DENSITY-AUDIT Day 1 (2026-06-06): replace the 3-stat
+    trust micro-line on the landing hero with a single load-bearing
+    cumulative outcome ("+9.4% CLV beating the closing line · 1,214
+    paper bets · 33 days"). Research-backed via
+    dev/active/density-copy-research-2026-06-06.md — three independent
+    signals all point to numbers-led > prose-led for our category.
+
+    End-to-end chain pinned here so a regression at any layer fails loud:
+      1. Migration 187 adds elite_value_bets_cumulative column
+      2. settlement.py computes the JSON blob (function + INSERT both)
+      3. engine-data.ts types the new field on DashboardCache
+      4. landing page.tsx reads the field and renders fallback when null
+
+    The fallback values (+9.4% / 1,214 / 33) are baked into the page so
+    a stale or empty cache doesn't blank out the hero. Pinning them too
+    so a future "let's cut the fallback" cleanup doesn't leave the hero
+    empty during cache refresh windows.
+    """
+    import pathlib
+    # 1. Migration
+    mig = pathlib.Path("supabase/migrations/187_dashboard_cache_value_bets_cumulative.sql")
+    assert mig.exists(), "migration 187 must exist"
+    msrc = mig.read_text()
+    assert "elite_value_bets_cumulative" in msrc, (
+        "migration 187 must add the elite_value_bets_cumulative column"
+    )
+    assert "JSONB" in msrc, "column must be JSONB"
+
+    # 2. Settlement job
+    settle = pathlib.Path("workers/jobs/settlement.py")
+    ssrc = settle.read_text()
+    assert "_value_bets_cumulative" in ssrc, (
+        "settlement must define _value_bets_cumulative function"
+    )
+    assert "elite_value_bets_cumulative" in ssrc, (
+        "settlement must reference the cumulative column in INSERT"
+    )
+    assert "2026-05-03" in ssrc, (
+        "chain_start anchor must match the landing claim "
+        "('Paper-bet chain unbroken since 2026-05-03')"
+    )
+
+    # 3. Web type definition
+    edata = _web_path("src/lib/engine-data.ts")
+    esrc = edata.read_text()
+    assert "elite_value_bets_cumulative" in esrc, (
+        "DashboardCache type must expose elite_value_bets_cumulative"
+    )
+    for field in ("cumulative_clv_eur", "avg_clv_pct", "n_settled", "days", "chain_start"):
+        assert field in esrc, (
+            f"cumulative JSON shape must include {field} — frontend "
+            f"hero depends on it"
+        )
+
+    # 4. Landing page hero
+    page = _web_path("src/app/page.tsx")
+    psrc = page.read_text()
+    assert "heroCumulative" in psrc, "landing must consume the cumulative field"
+    assert "elite_value_bets_cumulative" in psrc, (
+        "landing must reference the exact cache field name (case-sensitive)"
+    )
+    assert "CLV beating the closing line" in psrc, (
+        "hero copy must use the new load-bearing line — old copy "
+        "('accuracy on O/U 1.5') should be gone"
+    )
+    # Fallback hard-codes (so an empty cache doesn't leave the hero blank
+    # at deploy time before the next settlement run populates)
+    assert "+9.4%" in psrc, "fallback avg_clv_pct must be present"
+    assert "1,214" in psrc, "fallback n_settled must be present"
+    # Old copy must be gone
+    assert "75% accuracy on O/U 1.5" not in psrc, (
+        "old 'accuracy on O/U 1.5' trust line must be removed; the "
+        "research-backed verdict was to replace, not augment"
+    )
+    assert "21,831 matches tracked" not in psrc, (
+        "old 'matches tracked' stat must be removed from the hero "
+        "(still appears on /accuracy and elsewhere — just not the "
+        "load-bearing hero line anymore)"
+    )
+
+
 @test("POSTHOG-CSP — connect-src allows PostHog ingestion endpoints")
 def _():
     """POSTHOG-CSP-FIX (2026-06-06): PostHog was silently broken in

@@ -1732,6 +1732,61 @@ def write_dashboard_cache():
             "b.is_active = true"
         )
 
+        # GROWTH-COPY-DENSITY-AUDIT Day 1 (2026-06-06) — cumulative since
+        # chain start. Drives the new landing hero line. See migration 187
+        # and dev/active/density-copy-research-2026-06-06.md.
+        # Chain start matches the landing claim ("Paper-bet chain unbroken
+        # since 2026-05-03 →") — first real settled pick was 2026-05-04.
+        _CUMULATIVE_CHAIN_START = '2026-05-03'
+
+        def _value_bets_cumulative() -> dict | None:
+            row = execute_query(f"""
+                SELECT
+                    COUNT(*) FILTER (WHERE sb.result IN ('won','lost'))                AS n_settled,
+                    COUNT(*) FILTER (WHERE sb.result = 'won')                          AS won,
+                    SUM(sb.stake) FILTER (WHERE sb.result IN ('won','lost'))           AS staked,
+                    SUM(sb.pnl)   FILTER (WHERE sb.result IN ('won','lost'))           AS pnl,
+                    AVG(sb.clv)   FILTER (WHERE sb.result IN ('won','lost') AND sb.clv IS NOT NULL) AS avg_clv,
+                    SUM(sb.clv * sb.stake) FILTER (WHERE sb.result IN ('won','lost') AND sb.clv IS NOT NULL) AS cumulative_clv_eur,
+                    MIN(sb.pick_time) AS first_pick,
+                    MAX(sb.pick_time) AS last_pick
+                FROM simulated_bets sb
+                JOIN bots b ON b.id = sb.bot_id
+                WHERE sb.pick_time >= %s
+                  AND b.is_active = true
+            """, [_CUMULATIVE_CHAIN_START])[0]
+            n = int(row["n_settled"] or 0)
+            if n == 0:
+                return None
+            won = int(row["won"] or 0)
+            staked = float(row["staked"] or 0)
+            pnl = float(row["pnl"] or 0)
+            avg_clv = float(row["avg_clv"]) * 100 if row.get("avg_clv") is not None else None
+            cum_clv = float(row["cumulative_clv_eur"]) if row.get("cumulative_clv_eur") is not None else None
+            first_pick = row.get("first_pick")
+            last_pick = row.get("last_pick")
+            # Days = first_pick → last_pick span. Use chain_start as the
+            # narrative anchor (what we publish on the landing); days as the
+            # measured span (what actually happened).
+            days = None
+            if first_pick is not None and last_pick is not None:
+                days = max(1, (last_pick - first_pick).days + 1)
+            return {
+                "n_settled":         n,
+                "won":               won,
+                "win_rate_pct":      round(won / n * 100, 1) if n > 0 else None,
+                "staked":            round(staked, 2),
+                "pnl":               round(pnl, 2),
+                "avg_clv_pct":       round(avg_clv, 2) if avg_clv is not None else None,
+                "cumulative_clv_eur": round(cum_clv, 2) if cum_clv is not None else None,
+                "chain_start":       _CUMULATIVE_CHAIN_START,
+                "first_pick":        first_pick.isoformat() if first_pick else None,
+                "last_pick":         last_pick.isoformat() if last_pick else None,
+                "days":              days,
+            }
+
+        elite_value_bets_cumulative = _value_bets_cumulative()
+
         bot_breakdown = []
         for r in bot_rows:
             s = int(r.get("settled") or 0)
@@ -1823,8 +1878,9 @@ def write_dashboard_cache():
                 recent_top_wins,
                 upcoming_model_summary,
                 pro_value_bets_30d,
-                elite_value_bets_30d
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                elite_value_bets_30d,
+                elite_value_bets_cumulative
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, [
             int(total_bets), int(settled_bets), int(pending_bets), int(won), int(lost),
             hit_rate, total_staked, total_pnl, roi_pct, avg_clv,
@@ -1843,6 +1899,7 @@ def write_dashboard_cache():
             json.dumps(upcoming_model_summary) if upcoming_model_summary else None,
             json.dumps(pro_value_bets_30d) if pro_value_bets_30d else None,
             json.dumps(elite_value_bets_30d) if elite_value_bets_30d else None,
+            json.dumps(elite_value_bets_cumulative) if elite_value_bets_cumulative else None,
         ])
         console.print(
             f"  Dashboard cache written: {int(settled_bets)} settled bets (all-time) · "
