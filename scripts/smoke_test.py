@@ -16417,6 +16417,65 @@ def _():
         )
 
 
+@test("GROWTH-VS-PAGES-V2 — extended /vs entries + matrix discoverability")
+def _():
+    """GROWTH-VS-PAGES-V2 (2026-06-05): operator-flagged audit found that
+    (a) the original 5 /vs entries didn't include 3 deeply-researched
+    competitors (Forebet, Oddspedia, SportBot AI), and (b) the landing
+    CompetitorMatrix had no internal links to /vs/[slug] — visitors who
+    landed on the matrix had no path to the deep comparisons unless
+    they typed the URL or arrived via Google.
+
+    Pinned:
+      1. /vs/[slug] entries added for forebet, oddspedia, sportbot-ai
+      2. CompetitorMatrix exposes a `vsSlug` field on CompetitorCol
+      3. WinnerOdds + InPlayGuru in the matrix carry their vsSlug
+         (the 2 landing competitors that have /vs pages today)
+      4. CompetitorMatrix renders a "Compare →" link when vsSlug is set
+      5. CompetitorMatrix footer carries a /vs index link
+      6. /vs index metadata mentions the new competitors
+    """
+    data = _web_path("src/lib/vs-competitors.ts")
+    dsrc = data.read_text()
+    for slug in ("forebet", "oddspedia", "sportbot-ai"):
+        assert f'slug: "{slug}"' in dsrc, (
+            f"vs-competitors must include {slug} — teardown doc exists in "
+            "dev/active/ and visitor has no SEO-target page without it"
+        )
+
+    matrix = _web_path("src/components/competitor-matrix.tsx")
+    msrc = matrix.read_text()
+    assert "vsSlug" in msrc, (
+        "CompetitorMatrix must expose vsSlug field so landing-matrix "
+        "competitors can deep-link to their /vs page"
+    )
+    assert 'vsSlug: "winnerodds"' in msrc, (
+        "WinnerOdds in matrix must carry vsSlug=winnerodds — visitors who "
+        "see WinnerOdds on the matrix need a path to /vs/winnerodds"
+    )
+    assert 'vsSlug: "inplayguru"' in msrc, (
+        "InPlayGuru in matrix must carry vsSlug=inplayguru"
+    )
+    assert "/vs/${c.vsSlug}" in msrc, (
+        "matrix must render a Link to /vs/[vsSlug] when set — the whole "
+        "point of vsSlug is to wire the discoverability path"
+    )
+    assert 'href="/vs"' in msrc, (
+        "matrix footer must link to the /vs index so visitors discover "
+        "the full comparison hub, not just the 4 named on landing"
+    )
+
+    # /vs index metadata mentions the new competitors so Google indexes
+    # them in the description; absence here is a quiet regression
+    index = _web_path("src/app/(app)/vs/page.tsx")
+    isrc = index.read_text()
+    for name in ("Forebet", "Oddspedia", "SportBot AI"):
+        assert name in isrc, (
+            f"/vs index metadata must mention {name} so the description "
+            "matches the actual page roster"
+        )
+
+
 @test("GROWTH-STAKE-SPLITTER — Elite-tier multi-book split component")
 def _():
     """GROWTH-STAKE-SPLITTER (Tier A #11, 2026-06-05): Elite-tier helper
