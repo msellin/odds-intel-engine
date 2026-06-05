@@ -301,15 +301,117 @@ That number is now **data-backed, not gut-check.** Promote the task from
 
 ## Action items captured
 
-- [ ] **Confirm verdict with operator** — does the "cut + replace with
-  cumulative number" framing land? Or push back?
-- [ ] **Decide on PostHog scroll-depth listener** — add now (~1h code) so
-  we have data for the post-cut measurement window, or skip
-- [ ] **Pull cumulative CLV number** for the new hero — needs a query
-  against `simulated_bets` for sum-of-CLV-edge-pp over the full window
-- [ ] **Optional:** ask operator if they have access to a Pete Ling /
-  Buchdahl-style named-expert quote for the trust strip; if so this
-  becomes a 4th replacement device alongside the cumulative number
+- [x] **Confirm verdict with operator** — landed; operator approved
+  cut+replace approach
+- [ ] **Decide on PostHog scroll-depth listener** — deferred; existing
+  $pageview + $pageleave gives bounce + time-on-page (enough for
+  initial measurement); scroll-depth a 1h add later if needed
+- [x] **Pull cumulative CLV number** for the new hero — shipped via
+  migration 187 + settlement.py + dashboard_cache backfill
+- [ ] **Optional:** Pete Ling / Buchdahl-style expert quote — still
+  gated on `GROWTH-EXPERT-ENDORSEMENT` which is gated on verified ROI
+
+---
+
+## Shipped state (2026-06-06) — final outcome log
+
+The 4-day plan executed in one session. Net result: landing dropped
+from ~706 to ~358 visible words (49% reduction). All cuts research-
+backed; smokes pin every removed/added phrase.
+
+### Day 1 — load-bearing hero number
+- New `dashboard_cache.elite_value_bets_cumulative` JSONB column
+  (migration `187`, settlement.py `_value_bets_cumulative()`)
+- Landing hero trust micro-line replaced:
+  - Before: `75% accuracy on O/U 1.5  ·  +9.5% CLV (30-day)  ·  21,831 matches tracked`
+  - After: `+9.4% CLV beating the closing line  ·  1,176 paper bets  ·  35 days`
+- Commits: engine `41ce0b5` + web `cfb57ce` + smoke `78db2fd`
+- Smoke: `GROWTH-COPY-DENSITY Day 1` (4-layer chain pinned —
+  migration → settlement → web type → page render)
+
+### Day 2 — landing cuts (49% word reduction)
+Six cuts:
+1. Hero subhead: 28 → 13 words
+2. Below-CTA microcopy: 12 → 5 words
+3. "Honest about how this works" preamble: H2 + subtitle removed
+4. Compact pricing CTA section: deleted entirely (pricing was being asked 3× on landing)
+5. Telegram CTA body: 29 → 14 words
+6. FAQ: 5 → 3 items
+
+Result: ~358 visible words on landing, 12 sections (down from 13).
+- Commits: web `1526fc6` + smoke `b4a5fa6`
+
+### Day 3 — reading-level pass + /how-it-works consolidation
+- "variance-confounded" + "proves edge early" jargon replaced
+  across 5 user-facing files (glossary keeps the term)
+- /how-it-works: collapsed Sections 1+2 (Prediction Model +
+  Signal Groups, ~350 words) into one paragraph + link to /methodology
+- /how-it-works FAQ: 7 → 3 items
+- Commits: web `c6a9b20` + smoke `b49c632`
+
+### Chain-start alignment (operator-caught regression)
+Operator spotted landing hero numbers drifted from /performance:
+- Landing: `1,217 bets · 33 days`
+- /performance: `1,164 bets · 35 days`
+
+Three sources of truth inconsistent (chain start, cohort filter,
+days computation). Fixed by standardising on:
+- **Chain start:** `2026-05-01` (matches /performance display)
+- **Cohort filter:** mirrors `activeBotNames` (active +
+  non-experimental + not retired)
+- **Settled definition:** `result NOT IN ('pending','void')`
+  (includes pushes)
+- **Days:** calendar days from chain_start to settlement run
+
+After alignment: landing `1,176 bets · 35 days` vs /performance
+`~1,164 · 35` — 12-bet residual (~1%) is cache-snapshot vs live-JS
+lag, structural.
+
+Commits: engine `d46d809` + web `5afb82d`
+
+### Day 4 — housekeeping
+- Full smoke chain green (10 tests)
+- `GROWTH-CLAIMS-PARITY` updated to accept the Day-2 reworded
+  "Accuracy alone is misleading" (was "Accuracy is not the same as
+  profitability"). Three other phrases the smoke had pinned were
+  deliberately cut in Day 2 (`10+ years of historical match data`,
+  `no human bias`) — assertions removed since the cuts were intentional.
+- `PRIORITY_QUEUE.md` row flipped 🔄 → ✅ Done.
+- 2-week follow-up note filed at `dev/active/density-followup-2026-06-20.md`.
+
+### Side effects shipped during the same session
+- `POSTHOG-CSP-FIX` — caught during PostHog wiring check; CSP
+  `connect-src` was silently blocking all event ingestion
+- `MIGRATION-185-IDEMPOTENCY` — found while waiting for migration
+  187; CREATE POLICY lacked DROP IF EXISTS guard
+- `GROWTH-VS-PAGES-V2` — 3 new /vs entries + matrix wires
+
+---
+
+## What didn't ship (filed for follow-up)
+
+- **`GROWTH-DESKTOP-DASHBOARD-DENSITY`** — research doc verdict was
+  "lean yes, weaker evidence than copy." Deferred until a separate
+  targeted spike + PostHog scroll-depth data
+- **`GROWTH-SHOW-NOT-TELL-PIVOT`** — still gated on verified ROI
+- **`GROWTH-VS-SOFASCORE-ODDSCHECKER`** — last 2 matrix-listed
+  competitors without /vs pages
+- **PostHog scroll-depth tracking** — not currently captured; would
+  unlock data-backed iteration but needs code + 7-14 days of accumulation
+
+---
+
+## How to measure if this worked
+
+PostHog wiring fixed in `POSTHOG-CSP-FIX`. Bounce-rate, time-on-page,
+and funnel data accumulates from 2026-06-06 forward.
+
+**2-week checkpoint:** see `dev/active/density-followup-2026-06-20.md`.
+
+If bounce stays flat-or-better and conversion ticks up, the cut +
+replace verdict was right. If bounce worsens, we lost something in
+the prose that was doing trust-signaling work — revisit the
+"cumulative number alone is enough" assumption.
 
 ---
 

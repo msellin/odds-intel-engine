@@ -17640,36 +17640,60 @@ def _():
     )
 
 
-@test("GROWTH-CLAIMS-PARITY — landing surfaces accuracy + 10yr-data + no-human-bias")
+@test("GROWTH-CLAIMS-PARITY — landing surfaces accuracy stat + accuracy-vs-profitability framing")
 def _():
-    """CLAIMS-PARITY (2026-06-04): landing trust block now leads with the
-    backtested accuracy number (75% on OU 1.5 across 21,831 matches),
-    demoted the '16 AI strategies running live' stat (which was the
-    GROWTH-SIMPLIFY-BOTS-NARRATIVE target), and added the '10+ yrs data /
-    no human bias' parity claim. FAQ on 'How do the AI picks work?' now
-    pre-empts the accuracy-vs-profitability objection. Pinned because the
-    headline number must keep its source documentation:
-      - 75% accuracy → dev/active/accuracy-backtest.md (GROWTH-ACCURACY-BACKTEST)
-      - 21,831 sample size → same doc
-    If those numbers change in the backtest re-run, this test forces the
-    landing copy to be updated in lock-step."""
+    """CLAIMS-PARITY (2026-06-04, updated 2026-06-06):
+
+    Original: pinned five claims on the landing trust block — 75%
+    accuracy, OU 1.5, 21,831 sample, '10+ years of historical match
+    data', 'no human bias'.
+
+    GROWTH-COPY-DENSITY-AUDIT Day 2 (2026-06-06) deliberately cut three
+    of those phrases as part of the 49% landing word reduction
+    (research doc: dev/active/density-copy-research-2026-06-06.md).
+    Specifically removed because they were marketing prose, not
+    load-bearing data:
+      * '10+ years of historical match data' — true claim, but
+        moved to /methodology where it belongs. No longer on landing.
+      * 'no human bias' — research doc Part 3 flagged this as a
+        commodity claim every AI prediction site makes; replacing
+        prose with a single cumulative outcome number does the same
+        trust work better.
+
+    What stays pinned (still on landing in the FAQ + visible):
+      * 75% / Over/Under 1.5 / 21,831 — the load-bearing accuracy
+        proof number, still cited in the FAQ answer
+      * Accuracy-vs-profitability framing — reworded to 'Accuracy
+        alone is misleading' as part of the Day 2 reading-level pass
+      * '16 AI strategies running live' must remain absent
+        (GROWTH-SIMPLIFY-BOTS-NARRATIVE — unchanged)
+    """
     landing = _web_path("src/app/page.tsx")
     src = landing.read_text()
-    assert "75%" in src, "landing must show 75% accuracy stat"
-    assert "Over/Under 1.5" in src, "landing must specify the market (Over/Under 1.5)"
-    assert "21,831" in src or "21831" in src, "landing must cite the sample size from backtest"
-    assert "10+ years of historical match data" in src, "landing must include the 10-yr-data parity claim"
-    assert "no human bias" in src.lower() or "No tipsters, no human bias" in src, \
-        "landing must include the 'no human bias' framing"
+    assert "75%" in src, "landing must show 75% accuracy stat in FAQ"
+    assert "Over/Under 1.5" in src or "O/U 1.5" in src, (
+        "landing must specify the market (Over/Under 1.5)"
+    )
+    assert "21,831" in src or "21831" in src, (
+        "landing must cite the sample size from the accuracy backtest"
+    )
     assert "16 AI strategies running live" not in src, (
         "GROWTH-SIMPLIFY-BOTS-NARRATIVE: '16 AI strategies' must NOT be a "
         "headline stat anymore — it stays in /track-record for transparency, "
         "but should not lead on the landing page"
     )
-    # FAQ updated to pre-empt accuracy-vs-profitability objection
-    assert "Accuracy is not the same as profitability" in src, (
+    # FAQ must still pre-empt accuracy-vs-profitability objection — the
+    # exact phrasing was tightened in Day 2 but the substance stays.
+    accuracy_vs_profit_present = (
+        "Accuracy is not the same as profitability" in src
+        or "Accuracy alone is misleading" in src
+    )
+    assert accuracy_vs_profit_present, (
         "FAQ on AI picks must explain that accuracy != profitability "
-        "(the whole honesty positioning depends on this distinction)"
+        "(the whole honesty positioning depends on this distinction). "
+        "Either 'Accuracy is not the same as profitability' (pre-Day-2) "
+        "or 'Accuracy alone is misleading' (Day-2 tightened phrasing) "
+        "satisfies the assertion."
     )
 
 
