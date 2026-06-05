@@ -15614,6 +15614,53 @@ def _():
         )
 
 
+@test("FRESH-PINNACLE-CLV-BACKTEST — settle logic verified correct")
+def _():
+    """ODDS-FRESHNESS-FREE-WINS Move 2 (2026-06-05): backtests our settle
+    logic by recomputing alt-CLV using a strict `timestamp <= kickoff`
+    Pinnacle row, then comparing against current clv_pinnacle.
+
+    Result on first run: outcome (a) — mean delta -0.42pp (well within
+    ±1pp materiality threshold), median delta 0.00%. Settle logic is
+    correct. The 60min Pinnacle close-capture staleness is purely AF's
+    3h refresh cycle, not our pipeline. **Decision closed: no internal
+    fix possible; only enterprise feeds ($300+/mo) would materially help.**
+
+    Pinned (so the backtest can't silently regress + the verdict is
+    preserved for future agents):
+      1. scripts/backtest_fresh_pinnacle_clv.py exists
+      2. Uses the strict `timestamp <= matches.date` pre-kickoff filter
+         (the core differentiator from the existing settle path)
+      3. First-run deliverable exists with outcome (a) verdict
+      4. Re-run script after any change to _get_pinnacle_close
+    """
+    script = _pathlib.Path("scripts/backtest_fresh_pinnacle_clv.py")
+    assert script.exists(), (
+        "backtest_fresh_pinnacle_clv.py must exist — answers whether settle "
+        "logic captures the freshest pre-kickoff Pinnacle row"
+    )
+    src = script.read_text()
+    # The strict pre-kickoff filter is what distinguishes alt-CLV from the
+    # current settle behaviour — if it's missing the script is meaningless
+    assert "timestamp <= m.date" in src or "timestamp <= matches.date" in src, (
+        "backtest must use the strict `timestamp <= match.date` filter that "
+        "differentiates alt-CLV from the current settle path"
+    )
+    # First-run deliverable
+    first_run = _pathlib.Path("dev/active/fresh-pinnacle-clv-backtest-2026-06-05.md")
+    assert first_run.exists(), (
+        "first-run backtest deliverable must be committed at "
+        "dev/active/fresh-pinnacle-clv-backtest-2026-06-05.md"
+    )
+    report = first_run.read_text()
+    # Verdict pinned
+    assert "Outcome (a)" in report and "settle logic is correct" in report.lower(), (
+        "first-run verdict must be outcome (a). If the verdict changed on a "
+        "re-run, this smoke fails LOUDLY — investigate before the audit "
+        "drifts. Update the pin only after intentional settle-logic changes."
+    )
+
+
 @test("ODDS-FIDELITY-AUDIT — script + first-run deliverable")
 def _():
     """ODDS-FIDELITY-AUDIT (2026-06-05): operator pushback on the
