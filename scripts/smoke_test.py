@@ -15185,6 +15185,71 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-SEO-CONTENT-ENGINE Phase 1 — per-fixture prediction pages")
+def _():
+    """GROWTH-SEO-CONTENT-ENGINE Phase 1 (Tier C #1, 2026-06-05): per-fixture
+    prediction pages — the Forebet pattern. URL shape:
+       /predictions/[league-slug]/[fixture-slug]
+
+    Phase 1 ships the dynamic route + slug helpers + sitemap integration +
+    JSON-LD. Phase 2 (later) expands beyond the 8 currently-covered leagues
+    + adds past-fixture recap content + heavier internal-link mesh.
+
+    Pinned (so Phase 1's foundation can't silently regress):
+      1. /predictions/[league]/[fixture]/page.tsx exists
+      2. slugifyTeamName + fixtureSlug + resolveFixtureSlug helpers exist
+         in engine-data.ts (the slug resolver is critical — without it
+         the dynamic route can't map URL slugs back to match_ids)
+      3. Sitemap includes per-fixture URLs via
+         getPredictionFixturesForSitemap (otherwise pages exist but
+         aren't indexable)
+      4. /predictions/[league] MatchCard links to the new fixture page
+         (drives internal-link compounding from league → fixture)
+      5. Per-fixture page emits BOTH SportsEvent + FAQPage JSON-LD for
+         Google rich snippets
+    """
+    page = _web_path("src/app/(app)/predictions/[league]/[fixture]/page.tsx")
+    assert page.exists(), "per-fixture prediction page must exist"
+    src = page.read_text()
+    # JSON-LD structured data — required for Google rich snippets
+    assert '"@type": "SportsEvent"' in src, (
+        "per-fixture page must emit SportsEvent JSON-LD"
+    )
+    assert '"@type": "FAQPage"' in src, (
+        "per-fixture page must emit FAQPage JSON-LD"
+    )
+    # Anti-thin-content: must consume the AI-generated preview text
+    assert "getMatchPreview" in src, (
+        "per-fixture page must consume match_previews for unique content "
+        "depth (Google demotes thin programmatic pages)"
+    )
+
+    # Slug helpers exist in engine-data
+    eng = _web_path("src/lib/engine-data.ts")
+    e_src = eng.read_text()
+    for fn in ("slugifyTeamName", "fixtureSlug", "resolveFixtureSlug",
+               "getPredictionFixturesForSitemap"):
+        assert f"function {fn}" in e_src or f"export function {fn}" in e_src or f"export async function {fn}" in e_src, (
+            f"engine-data must export {fn}() — used by the per-fixture page + sitemap"
+        )
+
+    # /predictions/[league] links to per-fixture pages now (was /matches/[id])
+    league_page = _web_path("src/app/(app)/predictions/[league]/page.tsx")
+    lp_src = league_page.read_text()
+    assert "fixtureSlug" in lp_src, (
+        "league index MatchCard must build the per-fixture URL via fixtureSlug"
+        " — otherwise the new pages have no inbound links from the league hub"
+    )
+
+    # Sitemap includes the per-fixture URLs
+    sm = _web_path("src/app/sitemap.ts")
+    sm_src = sm.read_text()
+    assert "getPredictionFixturesForSitemap" in sm_src, (
+        "sitemap must call getPredictionFixturesForSitemap() so Google can "
+        "discover the per-fixture pages"
+    )
+
+
 @test("GROWTH-APP-NAV-SYNC — (app) Nav includes /live + /accuracy + /pricing")
 def _():
     """GROWTH-APP-NAV-SYNC (2026-06-05): the in-app Nav (used on every
