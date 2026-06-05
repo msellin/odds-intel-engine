@@ -15358,6 +15358,86 @@ def _():
     )
 
 
+@test("GROWTH-SEO-PAST-FIXTURE-RECAPS Phase 3 — post-match recap content")
+def _():
+    """GROWTH-SEO-PAST-FIXTURE-RECAPS (Tier C #1 Phase 3, 2026-06-05):
+    /predictions/[league]/[fixture] pages transform after the match
+    finishes. The pre-match prediction content is replaced with a recap
+    that surfaces (1) the actual scoreline, (2) hit/miss verdicts on
+    every published pick for that match, (3) the model's pre-kickoff view
+    reframed retrospectively, and (4) updated SEO metadata + JSON-LD so
+    Google rich snippets show "Result" not "Prediction".
+
+    Compounding-value pattern: the page now ranks for both pre-match
+    "[home] vs [away] prediction" AND post-match "[home] vs [away]
+    result" searches. The hit/miss copy doubles as social proof
+    ("model called this 78% home win — right" badges).
+
+    Pinned (so Phase 3's editorial pivot can't silently regress):
+      1. getPublishedPicksForMatch helper exists in engine-data
+         (per-match drill-down — different from the rollup queries used
+         on /accuracy)
+      2. Per-fixture page imports getPublishedPicksForMatch
+      3. Per-fixture page contains "isFinished" branch — the recap
+         only renders for finished matches
+      4. Recap section emits scoreline + hit/miss markers (Check + X
+         icons + "Right" / "Wrong" copy)
+      5. Metadata title for finished matches uses "Result + Recap"
+         not "Prediction"
+      6. JSON-LD includes eventStatus for finished matches
+      7. FAQ first question pivots from "Who will win" to "What was
+         the result of" for finished matches
+    """
+    fx = _web_path("src/app/(app)/predictions/[league]/[fixture]/page.tsx")
+    src = fx.read_text()
+
+    # 1-2. Helper + import
+    eng_src = _web_path("src/lib/engine-data.ts").read_text()
+    assert "export async function getPublishedPicksForMatch" in eng_src, (
+        "engine-data must export getPublishedPicksForMatch — per-match "
+        "published-pick lookup is the data source for the recap"
+    )
+    assert "getPublishedPicksForMatch" in src, (
+        "per-fixture page must import getPublishedPicksForMatch"
+    )
+
+    # 3. isFinished branching
+    assert "isFinished" in src, (
+        "per-fixture page must compute isFinished — recap only renders "
+        "for finished fixtures"
+    )
+
+    # 4. Hit/miss markers in the recap
+    assert '"Right"' in src or "Right<" in src or '> Right' in src, (
+        "recap must render 'Right' badge for hit picks"
+    )
+    assert '"Wrong"' in src or "Wrong<" in src or '> Wrong' in src, (
+        "recap must render 'Wrong' badge for miss picks"
+    )
+    # Score display
+    assert "score_home" in src and "score_away" in src, (
+        "recap must render score_home/score_away in the scoreline"
+    )
+
+    # 5. Title/metadata pivot
+    assert "Result + Recap" in src, (
+        "metadata title for finished matches must say 'Result + Recap' "
+        "(distinguishes pre-match prediction crawl-snippet from post-match)"
+    )
+
+    # 6. JSON-LD eventStatus
+    assert "eventStatus" in src, (
+        "JSON-LD must include eventStatus for finished matches — Google "
+        "uses this to distinguish completed events in rich snippets"
+    )
+
+    # 7. FAQ pivot
+    assert "What was the result of" in src, (
+        "FAQ first question must pivot to 'What was the result of' for "
+        "finished matches"
+    )
+
+
 @test("GROWTH-APP-NAV-SYNC — (app) Nav includes /live + /accuracy + /pricing")
 def _():
     """GROWTH-APP-NAV-SYNC (2026-06-05): the in-app Nav (used on every
