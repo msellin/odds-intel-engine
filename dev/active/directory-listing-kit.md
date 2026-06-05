@@ -195,7 +195,7 @@ Several directories (Twelve Tools, AIBoom free tier, others) require a reciproca
 | 1 | **Twelve Tools** | https://twelve.tools/submit | Free | Name, URL, headline 92ch, description, category, logo 128×128, email | **Yes** | High (DeepBetting traffic source) | ⬜ |
 | 2 | **Wired Business** | https://wired.business/ (Submit button) | Free | Same as Twelve Tools (same network) | Likely yes | High (same network) | ⬜ |
 | 3 | **AIBoom Tools** | https://aiboom.tools/submit | Free w/ backlink OR $9.90 lifetime priority | Name, URL, tagline, description ≤100w, screenshots, logo | Free tier yes; paid tier no | High ($10 well spent — 3-day review) | ⬜ |
-| 4 | **Futurepedia** | https://www.futurepedia.io/submit-tool | Free | Name, URL, logo, categories (AI), pricing tier, description, features list | No | High (largest AI directory by traffic) | ⬜ |
+| 4 | **Futurepedia** | https://www.futurepedia.io/submit-tool | ⚠️ **Paid (was free at kit-draft time)** | Name, URL, logo, categories (AI), pricing tier, description, features list | No | **Skip for now** — premium listing doesn't pay back at startup scale; revisit after Bet-Analytix/SBC verification lands | ⏸ Skipped 2026-06-05 (pricing changed) |
 | 5 | **There's An AI For That (TAAFT)** | https://theresanaiforthat.com/submit/ | Free (paid tier exists) | Name, URL, tagline, description, categories, use cases, logo | No | High (high SEO authority for "AI [thing]" searches) | ⬜ |
 | 6 | **AI Tool Hunt** | https://www.aitoolhunt.com/submit | Free | Similar to TAAFT | No | Medium | ⬜ |
 | 7 | **Toolify** | https://www.toolify.ai/submit | Free | Similar | No | Medium | ⬜ |
@@ -229,4 +229,5 @@ Several directories (Twelve Tools, AIBoom free tier, others) require a reciproca
 | 2026-06-05 | Twelve Tools | ✅ Submitted, awaiting manual review | ✅ Yes | "Featured on" dark badge in landing footer |
 | 2026-06-05 | Wired Business | ✅ Submitted | ✅ Yes | Same network as Twelve Tools |
 | 2026-06-05 | AIBoom Tools | ✅ Submitted | ✅ Yes (dark, 120×32) | Free tier with backlink; crawler initially failed dofollow check before badge was added; resolved with this commit |
+| 2026-06-05 | Futurepedia | ⏸ Skipped | — | Pricing changed from free to paid since kit draft. Skipped — premium listing doesn't pay back at startup scale. Revisit after verified ROI lands |
 
