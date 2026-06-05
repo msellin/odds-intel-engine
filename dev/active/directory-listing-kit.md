@@ -247,4 +247,8 @@ Several directories (Twelve Tools, AIBoom free tier, others) require a reciproca
 - **ProductHunt launch** — file as `GROWTH-PRODUCTHUNT-LAUNCH` (a launch *event*, not a submission). Schedule once verified-ROI narrative lands
 - **FrogDR embed** — defer 30-60 days until DR climbs from compounded backlinks
 - **Re-evaluate paid directories** — only after verified-ROI lands (Bet-Analytix / SBC). Verified claims are worth paying to amplify; unverified claims aren't
+- **Second-wave directories** — additional directories noted by operator 2026-06-05:
+  - https://www.aidirectori.es/ (smaller AI tools directory)
+  - Plus other "many other sites also offer some services" — try when we have more budget and a verified track record. Pattern: check pricing first, free-tier only worth the 5-min cost, paid skip unless verified ROI gives us a real claim to amplify
+- **DR badge / SEO-tool partnerships** — same logic as FrogDR; wait for DR to climb before exchanging real estate for backlinks
 
