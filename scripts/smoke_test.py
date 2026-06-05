@@ -15185,32 +15185,36 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
-@test("GROWTH-LANDING-REFACTOR — hero contract")
+@test("GROWTH-LANDING-REFACTOR — hero contract + section trim")
 def _():
-    """GROWTH-LANDING-REFACTOR (Tier A #4, sub-commit A 2026-06-05): hero
-    rewrite. New H1 is action-verb + adversarial framing ("Beat the
-    bookmakers"). Sub-line carries Telegram + edge framing. Trust
-    micro-line carries the three honest numbers (75% accuracy / +9.8% CLV
-    / 21,831 matches).
+    """GROWTH-LANDING-REFACTOR (Tier A #4, sub-commits A+B 2026-06-05):
+    hero rewrite + redundant-section removal.
 
-    Pinned (hero contract — not exact copy, so copy can iterate):
+    Sub-A — hero contract:
       1. H1 contains "Beat the bookmakers" (action verb + adversarial)
       2. Sub-line mentions Telegram
       3. Trust micro-line carries at least two of the three honest
          numbers (75% / +9.8% / 21,831)
-      4. CTA hierarchy: primary "Start Free" + secondary linking to
-         /value-bets (not /matches anymore — value-bets is the actual
-         money product)
+      4. Secondary CTA points to /value-bets (not /matches)
+
+    Sub-B — landing-trim:
+      5. "Live data preview" section removed (was a full fold of sample
+         data)
+      6. Big "Built on real data, not guesswork" stats block removed —
+         duplicate of hero trust micro-line + SEO bar
+      7. Pricing CTA, FAQ, footer cross-links still intact (we trimmed
+         the right things, not the wrong things)
     """
     landing = _web_path("src/app/page.tsx")
     src = landing.read_text()
-    hero = src.split("Product UI mockup")[0]  # everything before mockup = hero block
+    hero = src.split("Product UI mockup")[0]
+
+    # Sub-A invariants
     assert "Beat the" in hero and "bookmakers" in hero, (
         "hero H1 must be action-verb + adversarial framing "
         "(\"Beat the bookmakers\") — not the old descriptive line"
     )
     assert "Telegram" in hero, "hero sub-line must mention Telegram (delivery channel)"
-    # Honest numbers in trust micro-line
     honest_numbers = sum(
         1 for n in ("75%", "+9.8%", "21,831") if n in hero
     )
@@ -15218,12 +15222,26 @@ def _():
         "hero trust micro-line must carry at least 2 of the 3 honest "
         "numbers (75% accuracy / +9.8% CLV / 21,831 matches)"
     )
-    # CTA hierarchy — secondary points to /value-bets (the money product),
-    # not /matches (the free feed). Was /matches; refactor moves it.
     assert 'href="/value-bets"' in hero, (
         "hero secondary CTA must point to /value-bets (the value-bet "
         "product, not the free fixtures feed)"
     )
+
+    # Sub-B invariants — sections removed
+    assert "Live data preview" not in src, (
+        "Live data preview section must stay removed — sample-data fold "
+        "without enough signal to earn its place"
+    )
+    assert "Built on real data, not guesswork" not in src, (
+        "Big 'Built on real data' stats block must stay removed — "
+        "duplicated hero trust micro-line + SEO bar content"
+    )
+    # Cross-checks: things that must NOT have been accidentally removed
+    assert "PricingCards" not in src, "PricingCards still moved out (sanity)"
+    assert "See all plans" in src, "compact pricing CTA must still exist"
+    assert "CompetitorMatrix" in src, "competitor matrix must still render"
+    assert "OneScreenProof" in src, "one-screen-proof must still render"
+    assert 'href="/methodology"' in src, "methodology footer link must still exist"
 
 
 @test("GROWTH-COMPARISON-MATRIX — competitor matrix on landing")
