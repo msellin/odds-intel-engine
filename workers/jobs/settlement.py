@@ -701,6 +701,16 @@ def settle_finished_matches(match_ids: list[str]):
     except Exception as e:
         console.print(f"  [yellow]Real-bet settlement error: {e}[/yellow]")
 
+    # GROWTH-ACCURACY-PICKS-LOG (2026-06-05): mark outcome on any published_picks
+    # rows for these matches. Pure outcome accuracy (hit/miss) — independent
+    # from bet/odds settlement. Best-effort; any error doesn't break match
+    # settlement.
+    try:
+        from workers.jobs.publish_daily_picks import settle_published_picks_for_matches
+        settle_published_picks_for_matches(match_ids)
+    except Exception as e:
+        console.print(f"  [yellow]published_picks settlement error: {e}[/yellow]")
+
     # Mark settled regardless of whether there were any pending bets/picks.
     # This stops the 15-min sweep from re-querying the same finished matches.
     execute_write(

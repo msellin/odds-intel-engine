@@ -449,6 +449,15 @@ def job_wc_match_previews():
     _run_job("wc_match_previews", run_wc_match_previews)
 
 
+def job_publish_daily_picks():
+    """GROWTH-ACCURACY-PICKS-LOG (2026-06-05): publish the top model pick per
+    market for every match kicking off in the next 24h. Powers the public
+    accuracy track-record at /accuracy (future). Idempotent — the UNIQUE
+    constraint on (match_id, market, model_version) makes re-runs safe."""
+    from workers.jobs.publish_daily_picks import run_publish_daily_picks
+    _run_job("publish_daily_picks", run_publish_daily_picks)
+
+
 def job_wc_market_consensus():
     """WC-A3 (2026-06-04): scrape 1X2 market consensus from 2-3 free public
     sources (eloratings.net, forebet, oddsportal) for every upcoming WC2026
@@ -1535,6 +1544,14 @@ def main():
     scheduler.add_job(job_wc_monte_carlo, CronTrigger(hour=6, minute=30),
                       id="wc_monte_carlo",
                       name="WC Monte Carlo 06:30 [WC window]")
+
+    # GROWTH-ACCURACY-PICKS-LOG (2026-06-05): 06:45 UTC daily — after morning
+    # predictions (04:00) and before the morning betting pipeline (~06:30 but
+    # safe at :45). Publishes one pick per market per next-24h match into
+    # published_picks. Idempotent via UNIQUE(match_id, market, model_version).
+    scheduler.add_job(job_publish_daily_picks, CronTrigger(hour=6, minute=45),
+                      id="publish_daily_picks",
+                      name="Accuracy: Publish Daily Picks (06:45 UTC)")
 
     # WC-E3-E4 (2026-06-04): Gemini-generated analytical insight articles.
     # 08:00 UTC = after Monte Carlo (06:30) so articles cite the latest

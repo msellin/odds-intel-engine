@@ -15185,6 +15185,100 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-ACCURACY-PICKS-LOG — data layer + publisher + settlement hook")
+def _():
+    """GROWTH-ACCURACY-PICKS-LOG (Tier B #3, 2026-06-05): published_picks
+    table + daily publisher cron + settlement hook + backfill script.
+    Data layer that powers the future /accuracy marketing surface.
+
+    Pinned (so the chain doesn't silently break):
+      1. Migration 185 exists creating published_picks
+      2. Daily publisher module exists with the expected entry points
+      3. _is_hit helper exists with all 4 markets covered
+      4. Settlement.py imports + calls settle_published_picks_for_matches
+         in settle_finished_matches
+      5. Scheduler registers the daily cron (publish_daily_picks)
+      6. Backfill script exists with savepoint-per-row pattern (the
+         transaction-isolation fix — without savepoints one bad row
+         aborts the whole transaction and we get zero rows committed)
+      7. FE query helpers exported from engine-data.ts
+    """
+    import pathlib
+
+    # Migration
+    mig = pathlib.Path("supabase/migrations/185_published_picks.sql")
+    assert mig.exists(), "migration 185 must exist"
+    msrc = mig.read_text()
+    assert "CREATE TABLE IF NOT EXISTS published_picks" in msrc
+    assert "UNIQUE (match_id, market, model_version)" in msrc, (
+        "migration must enforce one-pick-per-(match,market,model) — "
+        "without this UNIQUE the daily cron re-runs would duplicate"
+    )
+    assert "is_backfilled" in msrc, (
+        "migration must include is_backfilled flag so the accuracy page "
+        "can label backfilled vs live-published rows differently"
+    )
+
+    # Daily publisher module
+    pub = pathlib.Path("workers/jobs/publish_daily_picks.py")
+    assert pub.exists(), "workers/jobs/publish_daily_picks.py must exist"
+    psrc = pub.read_text()
+    for fn in (
+        "run_publish_daily_picks",
+        "settle_published_picks_for_matches",
+        "_is_hit",
+        "_insert_pick",
+    ):
+        assert f"def {fn}(" in psrc, f"publish_daily_picks must define {fn}()"
+    # All 4 markets covered in _is_hit
+    for market in ("1x2", "over_under_15", "over_under_25", "btts"):
+        assert market in psrc, f"_is_hit must handle {market}"
+
+    # Settlement hook wired
+    settle = pathlib.Path("workers/jobs/settlement.py")
+    s_src = settle.read_text()
+    assert "settle_published_picks_for_matches" in s_src, (
+        "settlement.py must call settle_published_picks_for_matches() "
+        "in settle_finished_matches — otherwise published picks never "
+        "get outcome filled"
+    )
+
+    # Scheduler registration
+    sched = pathlib.Path("workers/scheduler.py")
+    sched_src = sched.read_text()
+    assert "job_publish_daily_picks" in sched_src, (
+        "scheduler must register the publish_daily_picks job"
+    )
+    assert 'id="publish_daily_picks"' in sched_src, (
+        "scheduler job id must match for monitoring/debugging"
+    )
+
+    # Backfill script + savepoint pattern (the bug-fix without which
+    # backfill rolls back silently)
+    bf = pathlib.Path("scripts/backfill_published_picks.py")
+    assert bf.exists(), "scripts/backfill_published_picks.py must exist"
+    bsrc = bf.read_text()
+    assert "SAVEPOINT row_save" in bsrc, (
+        "backfill must use SAVEPOINT per row — without it one bad row "
+        "aborts the whole transaction and the script silently commits "
+        "ZERO rows (we hit this bug on the first attempt 2026-06-05)"
+    )
+    assert "ROLLBACK TO SAVEPOINT" in bsrc, (
+        "backfill must roll back the savepoint on per-row errors"
+    )
+
+    # FE query helpers
+    eng = _web_path("src/lib/engine-data.ts")
+    e_src = eng.read_text()
+    assert "export async function getAccuracyStats" in e_src, (
+        "engine-data must export getAccuracyStats for the accuracy page"
+    )
+    assert "export async function getRecentPublishedPicks" in e_src, (
+        "engine-data must export getRecentPublishedPicks"
+    )
+    assert "PublishedPickRow" in e_src, "PublishedPickRow type must be exported"
+
+
 @test("GROWTH-LIVE-PAGE-BUILD — /live page + nav + sitemap")
 def _():
     """GROWTH-LIVE-PAGE-BUILD (Tier B #2, 2026-06-05): /live route exposing
