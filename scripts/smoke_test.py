@@ -15185,6 +15185,44 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-CLV-FIRST-MESSAGING — OG share card CLV strip")
+def _():
+    """GROWTH-CLV-FIRST-MESSAGING (Tier A #5, sub-commit C 2026-06-05): CLV
+    surfacing extended to the social-share image (/api/og/pick).
+
+    Pinned (sub-C):
+      1. OG route fetches live CLV from dashboard_cache via the public
+         Supabase client (works in edge runtime — no service-role secret).
+      2. Footer renders a CLV strip with the live number when available;
+         falls back to a static link-only strip when cache is empty.
+      3. The old "Track your bets at oddsintel.app" boilerplate footer
+         is gone — CLV stat replaces it.
+    """
+    og = _web_path("src/app/api/og/pick/route.tsx")
+    src = og.read_text()
+    assert "fetchCLV" in src, (
+        "OG route must define fetchCLV() helper that pulls 30d CLV from "
+        "dashboard_cache"
+    )
+    assert "elite_value_bets_30d" in src, (
+        "fetchCLV must read from dashboard_cache.elite_value_bets_30d"
+    )
+    assert "computed_at" in src, (
+        "OG fetchCLV must order by computed_at (the right column name)"
+    )
+    assert "CLV (30d) — the honest scoreboard" in src or "CLV-tracked — the honest scoreboard" in src, (
+        "OG footer must include the 'honest scoreboard' framing string "
+        "so the social-share image carries the same positioning as the "
+        "landing and Telegram alerts"
+    )
+    assert "Track your bets at oddsintel.app" not in src, (
+        "Old generic footer must be gone — CLV stat replaces it"
+    )
+    assert "oddsintel.app/performance" in src, (
+        "Footer must link to /performance (where the CLV claim is verifiable)"
+    )
+
+
 @test("GROWTH-CLV-FIRST-MESSAGING — engine surfaces (Telegram footer + email CLV strip)")
 def _():
     """GROWTH-CLV-FIRST-MESSAGING (Tier A #5, sub-commit B 2026-06-05): CLV
