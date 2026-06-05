@@ -197,10 +197,10 @@ Several directories (Twelve Tools, AIBoom free tier, others) require a reciproca
 | 3 | **AIBoom Tools** | https://aiboom.tools/submit | Free w/ backlink OR $9.90 lifetime priority | Name, URL, tagline, description ≤100w, screenshots, logo | Free tier yes; paid tier no | High ($10 well spent — 3-day review) | ⬜ |
 | 4 | **Futurepedia** | https://www.futurepedia.io/submit-tool | ⚠️ **Paid (was free at kit-draft time)** | Name, URL, logo, categories (AI), pricing tier, description, features list | No | **Skip for now** — premium listing doesn't pay back at startup scale; revisit after Bet-Analytix/SBC verification lands | ⏸ Skipped 2026-06-05 (pricing changed) |
 | 5 | **There's An AI For That (TAAFT)** | https://theresanaiforthat.com/submit/ | ⚠️ Paid tier $49/mo is now the default landing (operator hit 2026-06-05). Free tier may still exist hidden below the fold | Name, URL, tagline, description, categories, use cases, logo | No | **Skip unless free option is visible** — premium price doesn't justify at our stage | ⏸ Skipped 2026-06-05 (priced out) |
-| 6 | **AI Tool Hunt** | https://www.aitoolhunt.com/submit | Free | Similar to TAAFT | No | Medium | ⬜ |
-| 7 | **Toolify** | https://www.toolify.ai/submit | Free | Similar | No | Medium | ⬜ |
-| 8 | **topai.tools** | https://topai.tools/submit | Free | Similar (DeepBetting is listed here) | No | Medium (competitor parity) | ⬜ |
-| 9 | **AI Directories** | https://aidirectories.com/submit | Free | Standard | No | Low | ⬜ |
+| 6 | **AI Tool Hunt** | https://www.aitoolhunt.com/submit | — | — | — | **Dead** — 404 on submit URL 2026-06-05 | ❌ Dead 2026-06-05 |
+| 7 | **Toolify** | https://www.toolify.ai/submit | ⚠️ **$99 one-time** | Standard fields | No | **Skip** — paid, doesn't pay back at our stage | ⏸ Skipped 2026-06-05 (priced out) |
+| 8 | **topai.tools** | https://topai.tools/submit | ⚠️ **$47 one-time (Fast) / $229 (Premium)** | Standard fields | No | **Skip** — cheapest remaining paid option but better to spend on direct acquisition. DeepBetting is listed, confirming competitor parity, but $47 in Reddit ads would yield direct traffic instead of SEO juice | ⏸ Skipped 2026-06-05 (priced out) |
+| 9 | **AI Directories** | https://aidirectories.com/submit | Free | Standard | No | Low — last-resort if we want one more | ⬜ |
 | 10 | **ProductHunt** | https://www.producthunt.com/posts/new | Free (launch event) | Gallery (5+ screenshots), maker info, maker comment, launch day timing | No | **Defer to coordinated launch** | ⬜ |
 | 11 | **BetaList** | https://betalist.com/submit | Free | Description, screenshot, founder bio | No | Low (we're past beta positioning) | ⏸ Skip for now |
 
@@ -231,4 +231,20 @@ Several directories (Twelve Tools, AIBoom free tier, others) require a reciproca
 | 2026-06-05 | AIBoom Tools | ✅ Submitted | ✅ Yes (dark, 120×32) | Free tier with backlink; crawler initially failed dofollow check before badge was added; resolved with this commit |
 | 2026-06-05 | Futurepedia | ⏸ Skipped | — | Pricing changed from free to paid since kit draft. Skipped — premium listing doesn't pay back at startup scale. Revisit after verified ROI lands |
 | 2026-06-05 | TAAFT (There's An AI For That) | ⏸ Skipped | — | $49/mo paid tier is the default surface. Free tier may still exist hidden but the upsell-first UX signals where their incentives are. Same skip-rationale as Futurepedia |
+| 2026-06-05 | AI Tool Hunt | ❌ Dead | — | Submit URL returns 404. Cautionary tale — directory backlinks aren't permanent; today's wins can decay |
+| 2026-06-05 | Toolify | ⏸ Skipped | — | $99 one-time — same skip-rationale as paid tiers above |
+| 2026-06-05 | topai.tools | ⏸ Skipped | — | $47 one-time (Fast) cheapest remaining option but better spent on direct acquisition. DeepBetting is listed here confirming the channel works for our category, but cost > marginal-backlink value at this stage |
+
+---
+
+## 14. End-of-wave summary
+
+**Outcome:** 3 confirmed live backlinks (Twelve Tools + Wired Business + AIBoom), 5 directories skipped (Futurepedia / TAAFT / Toolify / topai.tools all paywalled; AI Tool Hunt dead), 1 free directory (AI Directories) left unattempted as low-priority.
+
+**Net effect:** ~3 reciprocal-backlink badges live in the landing footer, contributing to DR over the next 30-60 days. SEO compounding starts now.
+
+**Followups not part of this task:**
+- **ProductHunt launch** — file as `GROWTH-PRODUCTHUNT-LAUNCH` (a launch *event*, not a submission). Schedule once verified-ROI narrative lands
+- **FrogDR embed** — defer 30-60 days until DR climbs from compounded backlinks
+- **Re-evaluate paid directories** — only after verified-ROI lands (Bet-Analytix / SBC). Verified claims are worth paying to amplify; unverified claims aren't
 
