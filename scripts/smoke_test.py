@@ -15185,6 +15185,47 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-LANDING-REFACTOR — hero contract")
+def _():
+    """GROWTH-LANDING-REFACTOR (Tier A #4, sub-commit A 2026-06-05): hero
+    rewrite. New H1 is action-verb + adversarial framing ("Beat the
+    bookmakers"). Sub-line carries Telegram + edge framing. Trust
+    micro-line carries the three honest numbers (75% accuracy / +9.8% CLV
+    / 21,831 matches).
+
+    Pinned (hero contract — not exact copy, so copy can iterate):
+      1. H1 contains "Beat the bookmakers" (action verb + adversarial)
+      2. Sub-line mentions Telegram
+      3. Trust micro-line carries at least two of the three honest
+         numbers (75% / +9.8% / 21,831)
+      4. CTA hierarchy: primary "Start Free" + secondary linking to
+         /value-bets (not /matches anymore — value-bets is the actual
+         money product)
+    """
+    landing = _web_path("src/app/page.tsx")
+    src = landing.read_text()
+    hero = src.split("Product UI mockup")[0]  # everything before mockup = hero block
+    assert "Beat the" in hero and "bookmakers" in hero, (
+        "hero H1 must be action-verb + adversarial framing "
+        "(\"Beat the bookmakers\") — not the old descriptive line"
+    )
+    assert "Telegram" in hero, "hero sub-line must mention Telegram (delivery channel)"
+    # Honest numbers in trust micro-line
+    honest_numbers = sum(
+        1 for n in ("75%", "+9.8%", "21,831") if n in hero
+    )
+    assert honest_numbers >= 2, (
+        "hero trust micro-line must carry at least 2 of the 3 honest "
+        "numbers (75% accuracy / +9.8% CLV / 21,831 matches)"
+    )
+    # CTA hierarchy — secondary points to /value-bets (the money product),
+    # not /matches (the free feed). Was /matches; refactor moves it.
+    assert 'href="/value-bets"' in hero, (
+        "hero secondary CTA must point to /value-bets (the value-bet "
+        "product, not the free fixtures feed)"
+    )
+
+
 @test("GROWTH-COMPARISON-MATRIX — competitor matrix on landing")
 def _():
     """GROWTH-COMPARISON-MATRIX (2026-06-05, Tier A #3): tier-based
