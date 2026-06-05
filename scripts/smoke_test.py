@@ -15614,6 +15614,115 @@ def _():
         )
 
 
+@test("GROWTH-MOBILE-LANDING-V2 — P0+P1+P2 mobile landing batch")
+def _():
+    """GROWTH-MOBILE-LANDING-V2 (2026-06-05): operator-requested ship of
+    all findings in dev/active/mobile-landing-review-2026-06-05.md.
+    Audit was triggered by 13 mobile screenshots that exposed issues the
+    static `mobile-audit.md` couldn't catch (hero padding interaction
+    with WC banner, CLV number mismatch, persistent Feedback floater).
+
+    Pinned (so the editorial + structural fixes can't silently regress):
+      P0-A: hero uses responsive padding (pt-8 sm:pt-20 not bare pt-20)
+      P0-B: hero CLV value reads from heroCLVPct / heroHasData, not a
+            hardcoded "+9.8%"
+      P0-C: FeedbackButton route-gated — returns null on pathname === "/"
+            so the floater no longer obscures landing content
+      P1-A: competitor matrix mobile stack has inline column initials
+            (SS / OC / WO / IP / OI) so glyphs aren't anonymous
+      P1-B: "Animation loops. Replace with a real screen recording later"
+            placeholder copy is GONE from one-screen-proof.tsx
+      P1-C: featured-on badges normalised to h-10 (no width/height
+            attrs); external "Featured on" caption dropped (badges
+            self-label, was rendering "FEATURED ON" 3x in ~200px)
+      P1-D: FAQ items are <details> elements with first open by default
+            (was always-expanded divs consuming ~3 mobile viewports)
+      P1-E: "Self-reported" + "CLV, not ROI" sized down to text-xl
+            sm:text-2xl (was text-3xl — read as metrics not statuses)
+      P1-F: ROUTINE_TABS uses short names (Stats / Transfers / X /
+            Weather / etc) — no more uneven truncation in the 8-tabs
+            mockup
+      P2-1: trust pill has mobile-short form ("Football · 280+ leagues")
+            via sm:hidden / hidden sm:inline split
+      P2-5: trust strip /performance link has "→" suffix to signal
+            tappability on mobile
+    """
+    page = _web_path("src/app/page.tsx").read_text()
+    fb = _web_path("src/components/feedback-button.tsx").read_text()
+    osp = _web_path("src/components/one-screen-proof.tsx").read_text()
+    cm = _web_path("src/components/competitor-matrix.tsx").read_text()
+
+    # P0-A — hero padding mobile-first
+    assert "pt-8 pb-12 text-center sm:pt-20 sm:pb-16" in page, (
+        "hero <section> must use mobile-first padding so the H1 lands "
+        "above the fold on 393px-wide Android with WC banner mounted"
+    )
+
+    # P0-B — CLV value not hardcoded "+9.8%" in hero trust micro-line
+    assert "{heroHasData ? heroCLVPct" in page, (
+        "hero CLV number must read from heroCLVPct (live cache) so it "
+        "stays in sync with the structured-data block below"
+    )
+
+    # P0-C — Feedback floater route-gated
+    assert "usePathname" in fb and 'pathname === "/"' in fb, (
+        "FeedbackButton must use usePathname + return null on `/` — "
+        "audit found the floater obscured content in 11 of 13 mobile "
+        "landing screenshots"
+    )
+
+    # P1-A — competitor matrix mobile stack has inline column initials
+    assert "GROWTH-MOBILE-LANDING-V2" in cm and "OI" in cm, (
+        "competitor-matrix.tsx must render per-section column-initials "
+        "header on mobile so glyphs aren't anonymous"
+    )
+
+    # P1-B — no more "Animation loops" placeholder
+    assert "Animation loops" not in osp, (
+        "one-screen-proof.tsx must not contain the 'Animation loops. "
+        "Replace with a real screen recording later' placeholder"
+    )
+
+    # P1-C — featured-on badges use h-10 w-auto (uniform height)
+    assert 'className="h-10 w-auto"' in page, (
+        "featured-on badges must use h-10 w-auto so all three render at "
+        "a uniform height"
+    )
+
+    # P1-D — FAQ uses <details>/<summary>
+    assert "<details" in page and "<summary" in page, (
+        "FAQ section must use native <details>/<summary> for collapse-by-"
+        "default behaviour"
+    )
+
+    # P1-E — Self-reported + CLV-not-ROI sized down
+    assert 'text-xl font-black text-sky-300 sm:text-2xl">Self-reported' in page, (
+        "Self-reported label must scale down from text-3xl to text-xl "
+        "sm:text-2xl"
+    )
+    assert 'text-xl font-black text-green-300 sm:text-2xl">CLV, not ROI' in page, (
+        "CLV, not ROI label must scale down for the same reason"
+    )
+
+    # P1-F — ROUTINE_TABS uses short names
+    assert '{ name: "Stats"' in osp and '{ name: "Transfers"' in osp, (
+        "ROUTINE_TABS must use trimmed names so the 8-tabs mockup "
+        "doesn't render with uneven truncation jitter"
+    )
+
+    # P2-1 — trust pill mobile-short form
+    assert "Football · 280+ leagues" in page, (
+        "trust pill must include the short mobile form 'Football · 280+ "
+        "leagues' for the sm:hidden span"
+    )
+
+    # P2-5 — /performance link signals tappability via →
+    assert "Paper-bet chain unbroken since 2026-05-03 →" in page, (
+        "trust-strip /performance link must end with '→' so users see "
+        "it's tappable on mobile"
+    )
+
+
 @test("GROWTH-APP-NAV-SYNC — (app) Nav includes /live + /accuracy + /pricing")
 def _():
     """GROWTH-APP-NAV-SYNC (2026-06-05): the in-app Nav (used on every
