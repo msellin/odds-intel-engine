@@ -15185,6 +15185,63 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-TELEGRAM-FRONT-AND-CENTER — landing surfaces + value-bets banner")
+def _():
+    """GROWTH-TELEGRAM-FRONT-AND-CENTER (2026-06-05, Tier S #5): Telegram
+    delivery is now visible on the landing (hero sub-line + bottom CTA strip)
+    and on /value-bets (Pro/Elite reminder banner). The backend infra
+    (workers/notify/telegram.py, /api/telegram/webhook, profile connect/
+    disconnect UI) was already shipped and gating Pro/Elite — this task
+    just surfaces the existing feature in marketing.
+
+    Framing rule pinned here: Telegram is the DELIVERY CHANNEL for our
+    value-bet product, NOT a product on its own. Copy must keep value
+    bets as the noun and Telegram as a how-it-reaches-you modifier.
+
+    Pinned:
+      1. Landing hero has a Telegram sub-line under the H1.
+      2. Landing has a dedicated Telegram CTA strip after the FAQ.
+      3. /value-bets shows a Pro/Elite Telegram reminder banner.
+      4. Copy positions Telegram as delivery, NOT as the product.
+    """
+    landing = _web_path("src/app/page.tsx")
+    src = landing.read_text()
+    # Hero sub-line — Telegram must appear in hero (between H1 and CTAs)
+    hero_block = src.split("Spot value before the market moves")[1].split("Product UI mockup")[0]
+    assert "Telegram" in hero_block, (
+        "hero must mention Telegram delivery (sub-line under H1)"
+    )
+    # Bottom CTA strip
+    assert "Get tomorrow" in src and "value bets" in src and "Telegram" in src, (
+        "landing must have a dedicated Telegram CTA strip"
+    )
+    # Framing check: value bets are the noun, Telegram is the delivery channel.
+    # We must NOT say "OddsIntel is the Telegram bot" or "the Telegram product."
+    forbidden_framings = [
+        "is the Telegram bot",
+        "Telegram bot for",
+        "We are a Telegram",
+    ]
+    for fb in forbidden_framings:
+        assert fb not in src, (
+            f"landing must not frame OddsIntel AS a Telegram product "
+            f"(forbidden phrase: {fb!r}). Telegram is the delivery channel "
+            "for our value-bet engine, not the product itself."
+        )
+
+    vb = _web_path("src/app/(app)/value-bets/page.tsx")
+    vbsrc = vb.read_text()
+    assert "Get these picks in Telegram" in vbsrc, (
+        "/value-bets must show a Pro/Elite Telegram reminder banner"
+    )
+    # Must be gated to Pro+ (Free users don't have Telegram per profile page)
+    banner_block = vbsrc.split("Get these picks in Telegram")[0][-500:]
+    assert "isPro" in banner_block, (
+        "Telegram banner on /value-bets must be gated to Pro+ users only "
+        "(Free users see 'Upgrade to Pro to unlock' on /profile already)"
+    )
+
+
 @test("GROWTH-LANDING-DEPOLLUTE — pricing surface trimmed, methodology surfaced")
 def _():
     """GROWTH-LANDING-DEPOLLUTE (2026-06-05, follow-up to GROWTH-DRAWDOWN-TRANSPARENCY):
