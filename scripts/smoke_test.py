@@ -15185,6 +15185,45 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-FREE-TIER-CONVERSION-MEASURE — audit script + output doc")
+def _():
+    """GROWTH-FREE-TIER-CONVERSION-MEASURE (Tier A #8, 2026-06-05): audit
+    script that quantifies free → paid conversion against thresholds
+    documented inline (<2% generous / 2-5% healthy / >5% restrictive).
+
+    Pinned (so the script's contract can't silently break):
+      1. scripts/audit_free_conversion.py exists and defines the
+         expected helpers
+      2. Output written to dev/active/free-conversion-audit.md
+      3. Script honours the is_superadmin filter (otherwise operator
+         test accounts skew the numbers)
+      4. The output documents the small-N caveat + the missing
+         tier-history column (data-collection follow-up flagged)
+    """
+    import pathlib
+    script = pathlib.Path("scripts/audit_free_conversion.py")
+    assert script.exists(), "scripts/audit_free_conversion.py must exist"
+    src = script.read_text()
+    for fn in ("fetch_cohorts", "aggregate", "recommend", "write_md"):
+        assert f"def {fn}(" in src, f"audit must define {fn}()"
+    assert "is_superadmin" in src, (
+        "audit must exclude is_superadmin=TRUE rows — operator test "
+        "accounts would skew the conversion rate"
+    )
+    assert "RATE_TOO_GENEROUS" in src and "RATE_HEALTHY_HIGH" in src, (
+        "audit must define the threshold constants documented in "
+        "GROWTH-FREE-TIER-CONVERSION-MEASURE (<2% / 2-5% / >5%)"
+    )
+    assert "MATURE_DAYS" in src, (
+        "audit must filter to mature cohorts for headline conversion rate "
+        "— newer cohorts haven't had time to convert and bias the number low"
+    )
+    assert "tier_changed_at" in src, (
+        "audit doc must flag the missing tier-history column as a "
+        "follow-up — without it we can't compute signup→upgrade lag"
+    )
+
+
 @test("GROWTH-SIMPLIFY-BOTS-NARRATIVE — public copy uses 'strategies' not 'bots'")
 def _():
     """GROWTH-SIMPLIFY-BOTS-NARRATIVE (Tier A #7, 2026-06-05): reframe
