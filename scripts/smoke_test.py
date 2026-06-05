@@ -15185,6 +15185,86 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-MOBILE-FIRST-AUDIT — audit doc + P0 fixes shipped")
+def _():
+    """GROWTH-MOBILE-FIRST-AUDIT (Tier B #5, 2026-06-05): mobile audit
+    findings + Batch 1 (P0) fixes shipped.
+
+    Pinned:
+      1. Audit doc exists at dev/active/mobile-audit.md
+      2. P0-1 fix: LandingMobileMenu component exists and is wired into
+         landing nav so mobile visitors can reach /pricing etc.
+      3. P0-2 fix: Competitor matrix has a `md:hidden` mobile-only stack
+         layout AND a `hidden md:block` desktop table — both render
+         conditionally
+      4. P0-3 fix: Pricing "Most Popular" badge has responsive
+         positioning (no longer always `-top-3` which clipped behind
+         the sticky nav on mobile scroll)
+    """
+    import pathlib
+
+    # Audit doc
+    audit = pathlib.Path("dev/active/mobile-audit.md")
+    assert audit.exists(), "mobile-audit.md must exist as the punch list"
+    asrc = audit.read_text()
+    for tier in ("P0 ", "P1 ", "P2 "):
+        assert tier in asrc, (
+            f"audit must group findings by priority tier ({tier!r}) — "
+            "without prioritisation the doc is just a list"
+        )
+    # Followup task surfaced for the deferred match-detail mobile work
+    assert "GROWTH-MATCH-DETAIL-MOBILE" in asrc, (
+        "audit must surface the deferred match-detail mobile-density "
+        "followup as its own task — too big to fold into this one"
+    )
+
+    # P0-1: LandingMobileMenu component exists + wired
+    menu = _web_path("src/components/landing-mobile-menu.tsx")
+    assert menu.exists(), "landing-mobile-menu.tsx must exist"
+    msrc = menu.read_text()
+    assert "export function LandingMobileMenu" in msrc
+    # Hamburger gated to mobile only
+    assert "sm:hidden" in msrc, (
+        "hamburger menu must hide on desktop (sm:hidden) — desktop "
+        "nav already shows all links inline"
+    )
+
+    landing = _web_path("src/app/page.tsx")
+    lsrc = landing.read_text()
+    assert "LandingMobileMenu" in lsrc, (
+        "landing must render LandingMobileMenu so mobile visitors have "
+        "a path to /pricing, /accuracy, etc."
+    )
+
+    # P0-2: Competitor matrix has separate mobile + desktop views.
+    # Mobile stack: `md:hidden` (visible on mobile, hidden ≥md).
+    # Desktop table: `md:block` paired with `hidden` (hidden on mobile,
+    # shown ≥md). We check tokens individually because Tailwind class
+    # strings interleave many utilities and any literal substring match
+    # would be brittle.
+    cm = _web_path("src/components/competitor-matrix.tsx")
+    cm_src = cm.read_text()
+    assert "md:hidden" in cm_src, (
+        "competitor matrix must have a md:hidden mobile stack — the "
+        "640px table requires 265px horizontal scroll on mobile (P0-2)"
+    )
+    assert "md:block" in cm_src, (
+        "competitor matrix must have a md:block desktop table that "
+        "hides on mobile"
+    )
+
+    # P0-3: Pricing badge has responsive positioning
+    pc = _web_path("src/components/pricing-cards.tsx")
+    pc_src = pc.read_text()
+    # Must have sm:-top-3 OR equivalent breakpoint-scoped positioning,
+    # not just bare -top-3 (which clips behind sticky nav on mobile scroll)
+    assert "sm:-top-3" in pc_src, (
+        "pricing 'Most Popular' badge must use sm:-top-3 (or similar) "
+        "so it sits INSIDE the card on mobile (P0-3) — bare -top-3 "
+        "clips behind the sticky nav when scrolled"
+    )
+
+
 @test("GROWTH-ACCURACY-PAGE — /accuracy public surface with honest framing")
 def _():
     """GROWTH-ACCURACY-PAGE (Tier B #4, 2026-06-05): /accuracy public
