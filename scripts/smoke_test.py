@@ -16417,6 +16417,76 @@ def _():
         )
 
 
+@test("GROWTH-COPY-DENSITY Day 2 — landing cuts (meta-copy, pricing dup, FAQ)")
+def _():
+    """GROWTH-COPY-DENSITY-AUDIT Day 2 (2026-06-06): five cuts to the
+    landing copy following the Day 1 cumulative-CLV hero number:
+      1. Hero subhead 28 → 13 words (cut "so you can place them before
+         the value evaporates" — redundant with "before kickoff")
+      2. Below-CTA microcopy 12 → 5 words ("Free forever. No credit card.")
+      3. Removed the "Honest about how this works" preachy preamble
+         ("Three things most prediction sites hide. We publish them on
+         purpose.") — 3 cards already carry their own labels
+      4. Deleted the standalone compact pricing CTA section. Pricing
+         was being asked 3× on the landing — this middle slot was
+         the redundant one. Hero CTA + Telegram CTA + footer remain.
+      5. Tightened Telegram CTA body 29 → 14 words
+      6. FAQ 5 → 3 items (dropped "Which bookmakers are compared?"
+         and "What is CLV tracking?" — both already answered in the
+         SEO dl block and the honest-numbers cards respectively)
+
+    Pin each removed string so a future "let's restore that copy"
+    edit fails the smoke loudly. The research backing for these cuts
+    is in dev/active/density-copy-research-2026-06-06.md.
+    """
+    page = _web_path("src/app/page.tsx")
+    src = page.read_text()
+
+    # 1-5. Removed phrases must not appear in rendered JSX (they CAN
+    # appear in code comments documenting the cut — exclude those by
+    # stripping // and {/* */} regions before checking).
+    import re
+    # Strip line comments + block comments before checking
+    stripped = re.sub(r"//.*?$", "", src, flags=re.MULTILINE)
+    stripped = re.sub(r"\{/\*.*?\*/\}", "", stripped, flags=re.DOTALL)
+
+    removed_phrases = [
+        "Three things most prediction sites hide",
+        "We publish them on purpose",
+        "No credit card required. Free forever",
+        "Free forever for fixtures, scores",
+        "place them before the value evaporates",
+        "place it before the value evaporates",
+        "What is CLV tracking",
+        "Which bookmakers are compared",
+    ]
+    for phrase in removed_phrases:
+        assert phrase not in stripped, (
+            f"removed phrase '{phrase}' still appears in rendered JSX. "
+            f"Day 2 cut would be silently undone — research-backed copy "
+            f"reductions need to stay reduced until a deliberate revert."
+        )
+
+    # New tightened copy must be present
+    new_copy = [
+        "AI spots where today",        # tightened hero subhead
+        "Free forever. No credit card.",  # tightened below-CTA
+        "Every pick the model finds, pushed to your phone pre-kickoff",  # tightened Telegram body
+    ]
+    for phrase in new_copy:
+        assert phrase in src, (
+            f"expected new tightened copy '{phrase}' missing — Day 2 "
+            f"replacement copy must be present alongside the cuts"
+        )
+
+    # FAQ array must have exactly 3 items now (4 q: keys per item × 3 = 3)
+    faq_questions = re.findall(r'q:\s*"([^"]+)"', src)
+    assert len(faq_questions) == 3, (
+        f"FAQ must be reduced to 3 items, found {len(faq_questions)}: {faq_questions}. "
+        f"5→3 reduction was a research-backed cut."
+    )
+
+
 @test("MIGRATION-185-IDEMPOTENCY — DROP POLICY IF EXISTS guard restored")
 def _():
     """MIGRATION-185-IDEMPOTENCY (2026-06-06): migration 185 created the
