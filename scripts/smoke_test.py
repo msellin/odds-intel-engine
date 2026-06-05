@@ -15614,6 +15614,70 @@ def _():
         )
 
 
+@test("ODDS-FIDELITY-AUDIT — script + first-run deliverable")
+def _():
+    """ODDS-FIDELITY-AUDIT (2026-06-05): operator pushback on the
+    GROWTH-BOOKMAKER-EXPANSION spike — "more books" without verified
+    odds is worse than fewer books (each fake odds row = phantom value
+    bet eroding user trust). This script measures data quality across
+    our existing books, turning the "should we pay $59/mo for a
+    complementary aggregator?" question from a guess into a measurement.
+
+    Five sections in the report:
+      1. Placement freshness — odds staleness when bot picked
+      2. Pinnacle close-capture staleness — CLV accuracy
+      3. Implied-sum sanity — broken-book detection
+      4. Cross-book consistency — divergence detection
+      5. Per-book refresh cadence — measures AF's actual update interval
+
+    Pinned (so the audit infrastructure can't silently regress):
+      1. scripts/audit_odds_fidelity.py exists
+      2. Re-uses the ACCESSIBLE_BOOKMAKERS constant from
+         daily_pipeline_v2.py — same set we use for value-bet edge math
+      3. Re-uses the BLACKLISTED_OU_SOURCES pattern (synthetic sources
+         excluded from fidelity scoring)
+      4. Output goes to dev/active/odds-fidelity-audit-YYYY-MM-DD.md
+      5. First-run deliverable exists (2026-06-05)
+    """
+    script = _pathlib.Path("scripts/audit_odds_fidelity.py")
+    assert script.exists(), (
+        "scripts/audit_odds_fidelity.py must exist — load-bearing for "
+        "every future bookmaker-expansion decision"
+    )
+    src = script.read_text()
+    # Re-uses ACCESSIBLE_BOOKMAKERS set semantics from daily_pipeline_v2
+    assert "ACCESSIBLE_BOOKMAKERS" in src and "Pinnacle" in src, (
+        "audit must mirror ACCESSIBLE_BOOKMAKERS — same books we use for "
+        "edge math"
+    )
+    # Synthetic / blacklisted source handling
+    assert "SYNTHETIC_SOURCES" in src and "api-football" in src, (
+        "audit must exclude synthetic / known-broken sources from fidelity "
+        "scoring"
+    )
+    # First-run deliverable
+    first_run = _pathlib.Path("dev/active/odds-fidelity-audit-2026-06-05.md")
+    assert first_run.exists(), (
+        "first-run audit must be committed at "
+        "dev/active/odds-fidelity-audit-2026-06-05.md"
+    )
+    report = first_run.read_text()
+    # 5 expected sections
+    for s in (
+        "Placement freshness",
+        "Pinnacle close-capture staleness",
+        "Implied-sum sanity",
+        "Cross-book consistency",
+        "Per-book refresh cadence",
+    ):
+        assert s in report, f"audit report must include the '{s}' section"
+    # Recommendation framework baked in
+    assert "Recommendation framework" in report or "recommendation framework" in report, (
+        "audit report must include the recommendation framework that maps "
+        "Section 2 median gap to a Phase 1 decision"
+    )
+
+
 @test("GROWTH-MOBILE-LANDING-V2 — P0+P1+P2 mobile landing batch")
 def _():
     """GROWTH-MOBILE-LANDING-V2 (2026-06-05): operator-requested ship of
