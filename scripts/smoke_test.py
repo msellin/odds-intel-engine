@@ -5872,6 +5872,16 @@ def _():
     fn_end = src.index("\ndef ", fn_start + 1)
     fn_body = src[fn_start:fn_end]
     assert "live_ou_15_over" in fn_body, "_get_live_candidates must select live_ou_15_over"
+    # LIVE-STOPPAGE-TIME (2026-06-05): added_time + derived effective_minute
+    # must be available to strategies so they can opt-in to stoppage-time
+    # precision (e.g. "fire only before 90+2'").
+    assert "lms.added_time" in fn_body, (
+        "_get_live_candidates must select added_time from live_match_snapshots "
+        "so strategies can read stoppage minute"
+    )
+    assert "effective_minute" in fn_body, (
+        "_get_live_candidates must derive effective_minute = minute + added_time"
+    )
 
 
 @test("INPLAY-NEXT-10-MIN-MARKET — parser captures market id=65 / Next 10 Minutes Total")

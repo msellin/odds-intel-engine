@@ -630,6 +630,7 @@ def _get_live_candidates(execute_query) -> list[dict]:
         SELECT DISTINCT ON (lms.match_id)
             lms.match_id,
             lms.minute,
+            lms.added_time,
             lms.score_home,
             lms.score_away,
             lms.xg_home,
@@ -663,6 +664,14 @@ def _get_live_candidates(execute_query) -> list[dict]:
           AND lms.captured_at >= NOW() - INTERVAL '90 seconds'
         ORDER BY lms.match_id, lms.captured_at DESC
     """)
+    # LIVE-STOPPAGE-TIME (2026-06-05): derive `effective_minute` from
+    # regulation `minute` + stoppage `added_time` so any strategy that needs
+    # to distinguish 90:00 from 90+5' can read it. Existing strategies that
+    # cap at `minute >= 90 → remaining_lam = 0` are unaffected — stoppage
+    # was already implicitly treated as match-over.
+    for r in rows:
+        extra = r.get("added_time") or 0
+        r["effective_minute"] = (r.get("minute") or 0) + extra
     return rows
 
 
