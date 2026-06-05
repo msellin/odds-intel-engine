@@ -15185,10 +15185,10 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
-@test("GROWTH-LANDING-REFACTOR — hero contract + section trim")
+@test("GROWTH-LANDING-REFACTOR — hero contract + section trim + trust strip")
 def _():
-    """GROWTH-LANDING-REFACTOR (Tier A #4, sub-commits A+B 2026-06-05):
-    hero rewrite + redundant-section removal.
+    """GROWTH-LANDING-REFACTOR (Tier A #4, sub-commits A+B+C 2026-06-05):
+    hero rewrite + redundant-section removal + trust strip + contrast polish.
 
     Sub-A — hero contract:
       1. H1 contains "Beat the bookmakers" (action verb + adversarial)
@@ -15242,6 +15242,20 @@ def _():
     assert "CompetitorMatrix" in src, "competitor matrix must still render"
     assert "OneScreenProof" in src, "one-screen-proof must still render"
     assert 'href="/methodology"' in src, "methodology footer link must still exist"
+
+    # Sub-C invariants — trust strip added before final Telegram CTA
+    assert "Paper-bet chain unbroken" in src, (
+        "Trust strip must mention the unbroken paper-bet chain — this is "
+        "the lightweight social proof on the way down to the final CTA"
+    )
+    assert "30-day cancel any time" in src, (
+        "Trust strip must mention 30-day cancellation (refund-equivalent)"
+    )
+    # Aria label pins the section's purpose
+    assert 'aria-label="Trust signals"' in src, (
+        "Trust strip must have aria-label='Trust signals' so screen readers "
+        "and future agents know this section's purpose"
+    )
 
 
 @test("GROWTH-COMPARISON-MATRIX — competitor matrix on landing")
