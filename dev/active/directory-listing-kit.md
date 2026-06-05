@@ -196,7 +196,7 @@ Several directories (Twelve Tools, AIBoom free tier, others) require a reciproca
 | 2 | **Wired Business** | https://wired.business/ (Submit button) | Free | Same as Twelve Tools (same network) | Likely yes | High (same network) | ⬜ |
 | 3 | **AIBoom Tools** | https://aiboom.tools/submit | Free w/ backlink OR $9.90 lifetime priority | Name, URL, tagline, description ≤100w, screenshots, logo | Free tier yes; paid tier no | High ($10 well spent — 3-day review) | ⬜ |
 | 4 | **Futurepedia** | https://www.futurepedia.io/submit-tool | ⚠️ **Paid (was free at kit-draft time)** | Name, URL, logo, categories (AI), pricing tier, description, features list | No | **Skip for now** — premium listing doesn't pay back at startup scale; revisit after Bet-Analytix/SBC verification lands | ⏸ Skipped 2026-06-05 (pricing changed) |
-| 5 | **There's An AI For That (TAAFT)** | https://theresanaiforthat.com/submit/ | Free (paid tier exists) | Name, URL, tagline, description, categories, use cases, logo | No | High (high SEO authority for "AI [thing]" searches) | ⬜ |
+| 5 | **There's An AI For That (TAAFT)** | https://theresanaiforthat.com/submit/ | ⚠️ Paid tier $49/mo is now the default landing (operator hit 2026-06-05). Free tier may still exist hidden below the fold | Name, URL, tagline, description, categories, use cases, logo | No | **Skip unless free option is visible** — premium price doesn't justify at our stage | ⏸ Skipped 2026-06-05 (priced out) |
 | 6 | **AI Tool Hunt** | https://www.aitoolhunt.com/submit | Free | Similar to TAAFT | No | Medium | ⬜ |
 | 7 | **Toolify** | https://www.toolify.ai/submit | Free | Similar | No | Medium | ⬜ |
 | 8 | **topai.tools** | https://topai.tools/submit | Free | Similar (DeepBetting is listed here) | No | Medium (competitor parity) | ⬜ |
@@ -230,4 +230,5 @@ Several directories (Twelve Tools, AIBoom free tier, others) require a reciproca
 | 2026-06-05 | Wired Business | ✅ Submitted | ✅ Yes | Same network as Twelve Tools |
 | 2026-06-05 | AIBoom Tools | ✅ Submitted | ✅ Yes (dark, 120×32) | Free tier with backlink; crawler initially failed dofollow check before badge was added; resolved with this commit |
 | 2026-06-05 | Futurepedia | ⏸ Skipped | — | Pricing changed from free to paid since kit draft. Skipped — premium listing doesn't pay back at startup scale. Revisit after verified ROI lands |
+| 2026-06-05 | TAAFT (There's An AI For That) | ⏸ Skipped | — | $49/mo paid tier is the default surface. Free tier may still exist hidden but the upsell-first UX signals where their incentives are. Same skip-rationale as Futurepedia |
 
