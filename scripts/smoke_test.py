@@ -15185,6 +15185,65 @@ def _():
     assert art.exists(), "insights article page must exist"
 
 
+@test("GROWTH-ACCURACY-PAGE — /accuracy public surface with honest framing")
+def _():
+    """GROWTH-ACCURACY-PAGE (Tier B #4, 2026-06-05): /accuracy public
+    marketing surface — the hit-rate story (sister to /value-bets'
+    CLV story).
+
+    Pinned (editorial rules — the honest-framing positioning is the
+    whole differentiator vs competitor 'X% accuracy' sites):
+      1. /accuracy route exists
+      2. Page renders the "0% guarantee of profit" framing — this is
+         what separates us from competitor sites that publish raw
+         accuracy without explaining the gap to profit. Pages that
+         drop this line would just be another accuracy-claim site.
+      3. Backfilled-vs-live disclosure present — credibility-load-
+         bearing because backfilled picks have different proof status
+      4. CLV cross-link present (funnel to /value-bets where CLV is
+         the metric we lead with)
+      5. Landing nav links to /accuracy
+      6. Sitemap indexes /accuracy
+      7. Uses the engine-data helpers (getAccuracyStats /
+         getRecentPublishedPicks) — no duplicate query logic
+    """
+    page = _web_path("src/app/(app)/accuracy/page.tsx")
+    assert page.exists(), "/accuracy page must exist"
+    src = page.read_text()
+
+    # The honest-framing line — this is THE differentiator
+    assert "0% guarantee of profit" in src, (
+        "/accuracy must include the '0% guarantee of profit' honest "
+        "framing — without it we'd be just another competitor 'X% "
+        "accuracy' site doing positioning work instead of measurement"
+    )
+    # Backfilled-vs-live disclosure
+    assert "backfilled" in src.lower() and "live-published" in src.lower(), (
+        "/accuracy must distinguish backfilled vs live-published picks "
+        "explicitly — credibility-load-bearing disclosure"
+    )
+    # CLV funnel CTA
+    assert "/value-bets" in src, "must funnel CTA to /value-bets"
+    assert "/learn/closing-line-value" in src, (
+        "must cross-link to CLV pillar — accuracy ↔ CLV is the editorial"
+        " dual we want users to internalise"
+    )
+    # Uses the helpers — no duplicate query logic
+    assert "getAccuracyStats" in src and "getRecentPublishedPicks" in src, (
+        "/accuracy must use the engine-data helpers (which already pin "
+        "the data-shape contract) rather than re-writing queries"
+    )
+
+    # Landing nav
+    landing = _web_path("src/app/page.tsx")
+    nav_block = landing.read_text().split("</nav>")[0]
+    assert 'href="/accuracy"' in nav_block, "landing nav must link to /accuracy"
+
+    # Sitemap
+    sm = _web_path("src/app/sitemap.ts").read_text()
+    assert "/accuracy" in sm, "sitemap must include /accuracy"
+
+
 @test("GROWTH-ACCURACY-PICKS-LOG — data layer + publisher + settlement hook")
 def _():
     """GROWTH-ACCURACY-PICKS-LOG (Tier B #3, 2026-06-05): published_picks
