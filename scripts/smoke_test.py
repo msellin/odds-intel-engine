@@ -15614,6 +15614,79 @@ def _():
         )
 
 
+@test("LIGHTHOUSE-FIX-2-NEXTIMAGE — team-logo next/image conversion")
+def _():
+    """LIGHTHOUSE-FIX-2 (2026-06-05): /matches scored 84 Perf on PageSpeed
+    (after LIGHTHOUSE-FIX-3 cache wrap moved it from 80 → 84). The
+    remaining gap was the raw <img> team-logo grid — ~40-60 logos per page
+    via /api/logo proxy. Wrapping in next/image engages the framework's
+    IntersectionObserver lazy load + LCP candidate exclusion + CLS
+    prevention without re-optimizing the already-proxy-resized images
+    (`unoptimized` flag).
+
+    Pinned:
+      1. league-accordion.tsx imports next/image
+      2. TeamLogo uses <Image ... unoptimized /> not raw <img>
+      3. `priority` prop still drives loading=eager vs lazy
+      4. onError fallback preserved (broken src → initial-letter fallback)
+    """
+    src = _web_path("src/components/league-accordion.tsx").read_text()
+    assert 'from "next/image"' in src, (
+        "league-accordion.tsx must import Image from next/image"
+    )
+    assert "<Image" in src and "unoptimized" in src, (
+        "TeamLogo must use <Image ... unoptimized> — proxy already resizes "
+        "so Next's optimizer would just re-optimize a tiny image"
+    )
+    # Original raw <img> tag (with explicit "src=" attr indicating an img element)
+    # — should be gone. Allow `<img` inside comments / `<imgcomp` / `<img-` etc.
+    # (we check for the specific `<img\n` JSX pattern)
+    assert "<img\n          src=" not in src, (
+        "raw <img> with src= must be replaced with <Image> — leaves the "
+        "framework lazy/LCP machinery disengaged"
+    )
+    # priority + onError still wired (broken-image fallback survives)
+    assert "priority={priority}" in src and "onError={() => setFailed(true)}" in src, (
+        "next/image must preserve priority prop + onError fallback"
+    )
+
+
+@test("MOBILE-LANDING-P2-CLEANUP — hero team-name + Telegram-CTA wrap")
+def _():
+    """GROWTH-MOBILE-LANDING-V2 P2 follow-up batch (2026-06-05). The
+    audit's remaining P2 items: hero mockup team-name sizing was too
+    small relative to odds numbers below; Telegram CTA paragraph wrapped
+    awkwardly because "Pre-kickoff. Pre-line-movement. Pre-everything."
+    used period separators that lose their parallelism on narrow
+    screens. Footer Performance "redundancy" was a slight misread by the
+    audit agent — not a real bug, intentionally skipped.
+
+    Pinned:
+      1. Hero mockup team names use text-lg sm:text-xl (was text-base
+         sm:text-lg)
+      2. Telegram CTA paragraph uses middle-dot separators between the
+         three "Pre-" phrases so they hold together as a single visual
+         unit at any width
+    """
+    page = _web_path("src/app/page.tsx").read_text()
+    # Hero mockup team names bumped to text-lg / text-xl
+    assert 'text-lg font-bold sm:text-xl">Manchester City' in page, (
+        "hero mockup team names must use text-lg sm:text-xl — they were "
+        "previously too small relative to odds numbers"
+    )
+    # Telegram CTA: middle-dot separators
+    assert "Pre-kickoff · Pre-line-movement · Pre-everything" in page, (
+        "Telegram CTA paragraph must use middle-dot separators (the three "
+        "Pre- phrases hold together as one visual rhythm); period-separated "
+        "version loses the parallelism on narrow screens"
+    )
+    # Period-separated version must be gone
+    assert "Pre-kickoff. Pre-line-movement. Pre-everything." not in page, (
+        "the period-separated form must NOT remain — it was the broken "
+        "version"
+    )
+
+
 @test("FRESH-PINNACLE-CLV-BACKTEST — settle logic verified correct")
 def _():
     """ODDS-FRESHNESS-FREE-WINS Move 2 (2026-06-05): backtests our settle
