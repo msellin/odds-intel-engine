@@ -15484,6 +15484,40 @@ def _():
     )
 
 
+@test("GROWTH-LIGHTHOUSE-BENCHMARK — operator-runnable PageSpeed doc")
+def _():
+    """GROWTH-LIGHTHOUSE-BENCHMARK (2026-06-05): operator-requested. The
+    anonymous PageSpeed Insights API returned 429 during the automated
+    pass, so the deliverable is a code-level analysis + operator-runnable
+    pagespeed.web.dev URL list + blank score matrix.
+
+    Pinned (so the deliverable doesn't go stale or get truncated):
+      1. dev/active/lighthouse-benchmark.md exists
+      2. Doc includes pagespeed.web.dev as the source-of-truth tool
+      3. Doc lists the 9 primary URLs to benchmark
+      4. Doc has a top-3-fixes section (the actionable output)
+      5. Doc has a blank score matrix the operator can paste into
+    """
+    doc = _pathlib.Path("dev/active/lighthouse-benchmark.md")
+    assert doc.exists(), (
+        "lighthouse-benchmark.md must exist — operator-facing deliverable"
+    )
+    src = doc.read_text()
+    assert "pagespeed.web.dev" in src, (
+        "doc must point to pagespeed.web.dev as the canonical capture tool"
+    )
+    # 9 URLs (the 8 ops asked for + 1 sample fixture page)
+    for path in ("/matches", "/value-bets", "/pricing", "/live", "/accuracy",
+                 "/vs", "/world-cup"):
+        assert path in src, f"doc must list {path} in the URLs to benchmark"
+    assert "Top 3 actionable fixes" in src or "top 3" in src.lower(), (
+        "doc must include a top-3 fixes section (the actionable output)"
+    )
+    assert "Performance" in src and "Accessibility" in src and "SEO" in src, (
+        "doc must show the 4-category Lighthouse score matrix"
+    )
+
+
 @test("GROWTH-APP-NAV-SYNC — (app) Nav includes /live + /accuracy + /pricing")
 def _():
     """GROWTH-APP-NAV-SYNC (2026-06-05): the in-app Nav (used on every
