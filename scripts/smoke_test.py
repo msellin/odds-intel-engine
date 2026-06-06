@@ -12499,6 +12499,18 @@ def _():
     # Must show better/worse counts (no cherry-picking)
     assert "markets_better" in hero and "markets_worse" in hero, \
         "callout must surface markets_worse so the OU regression isn't hidden"
+    # PERF-HERO-NEXT-MODEL-DETAIL (2026-06-06) — render per-group deltas, not
+    # only the headline best head. Reading "1X2 -10% / AH -2.6% / BTTS -1.3%
+    # / OU +2.7%" tells the user the whole story at a glance and makes the
+    # OU regression unmissable. Lock in the group order and the chip-array
+    # construction so a future refactor can't drop back to single-head.
+    assert 'const groupOrder = ["1x2", "ah", "btts", "ou"]' in hero, \
+        "callout must declare explicit group order so render is stable"
+    assert "chips.map" in hero, \
+        "callout must render every group as a chip (not just the headline)"
+    # Regressions must be visually distinct (rose) from improvements (sky).
+    assert "text-rose-300" in hero and "text-sky-300" in hero, \
+        "regressed groups must render in a distinct colour (honest signal)"
 
     data = _web_path("src/lib/engine-data.ts").read_text()
     assert "upcoming_model_summary" in data, \
