@@ -3620,6 +3620,55 @@ def test_coolbet_fuzzy_case_insensitive():
     assert ev is not None, "fuzzy_match_event must be case- AND diacritic-insensitive"
 
 
+@test("COOLBET-SEARCH-SPORT-FILTER — _do_search drops non-football events")
+def test_coolbet_search_sport_filter():
+    """COOLBET-SEARCH-SPORT-FILTER (2026-06-06): /search/v2 returns events
+    across every sport. fuzz.partial_ratio scores 100 for any candidate whose
+    team name is a substring of our query — so the football fixture
+    'Shanghai Port II vs Shanghai Second' matched the basketball game
+    'Shanghai - Liaoning' (sport_category_id=65035) at score 100 and the
+    placer fetched its Match Total Points markets, then dropped every market
+    as 'no market' because parse_market only knows football. Drop non-football
+    at _do_search using the existing _FOOTBALL_CATEGORY_ID=62 constant so the
+    fuzzy matcher only ever sees football candidates."""
+    import pathlib
+
+    src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
+
+    # The constant must still exist — the filter references it.
+    assert "_FOOTBALL_CATEGORY_ID = 62" in src, (
+        "_FOOTBALL_CATEGORY_ID constant must remain — the search-sport filter "
+        "uses it to identify football events in /search/v2 responses"
+    )
+
+    # Strip comments before checking so the COOLBET-SEARCH-SPORT-FILTER
+    # comment block doesn't trivially satisfy the assertion.
+    code = "\n".join(line.split("#", 1)[0] for line in src.splitlines())
+
+    # The filter must drop events whose sport_category_id is not football.
+    assert 'ev.get("sport_category_id") == _FOOTBALL_CATEGORY_ID' in code, (
+        "_do_search must filter the raw search response by sport_category_id "
+        "== _FOOTBALL_CATEGORY_ID before parsing — otherwise basketball / "
+        "esports / rugby candidates leak into fuzzy_match_event and score "
+        "100 against any team name that contains a substring of our query"
+    )
+
+    # Sanity that the filter actually narrows what _parse_event sees — the
+    # filtered list must feed the parse loop, not the unfiltered raw_events.
+    import re
+    parse_call = re.search(
+        r"_parse_event\(ev\)\s+for\s+ev\s+in\s+(\w+)", code
+    )
+    assert parse_call is not None, (
+        "_do_search should still call _parse_event in a comprehension — "
+        "smoke can't validate filter placement otherwise"
+    )
+    assert parse_call.group(1) == "football", (
+        f"_parse_event must iterate the football-filtered list (got "
+        f"{parse_call.group(1)!r}) — iterating raw_events bypasses the filter"
+    )
+
+
 @test("COMBO-FALLBACK-FO-CATEGORY — combo leg falls back to fo-category like singles + passes match_date")
 def test_combo_fallback_fo_category():
     """COMBO-FALLBACK-FO-CATEGORY (2026-05-29): the combo placer was killing
@@ -17860,6 +17909,69 @@ def _():
         p = _web_path(sub)
         assert p.exists(), f"{sub} must exist"
         assert "animate-pulse" in p.read_text()
+
+
+@test("INPLAY-O-QUARANTINE — no post-fix inplay_o bets snuck through score-odds inversion")
+def test_inplay_o_quarantine_holds():
+    """INPLAY-O-QUARANTINE (2026-06-06): 62 pre-fix inplay_o bets were voided
+    after back-testing showed 70% of inplay_o's reported wins came from
+    inverted snapshots (winning team had longer 1x2 odds than losing team —
+    physically impossible, indicates the score column lagged a goal). The
+    veto in _score_odds_consistent (commit 6cf9a6a, 2026-05-30 07:32 UTC)
+    blocks new inversions; this test is the regression guard.
+
+    Asserts:
+      • no settled inplay_o bet placed after FIX_DATE has an inverted snapshot
+        within ±2 min of pick_time
+      • at least 62 inplay_o bets are in result='void' (the quarantine holds)
+    """
+    from workers.api_clients.db import execute_query
+    rows = execute_query("""
+      WITH bets AS (
+        SELECT sb.id, sb.pick_time, sb.match_id, sb.result
+        FROM simulated_bets sb
+        JOIN bots b ON b.id = sb.bot_id
+        WHERE b.name = 'inplay_o'
+          AND sb.market = '1x2'
+          AND sb.pick_time >= TIMESTAMP '2026-05-30 07:32:00+00'
+          AND sb.result IN ('won', 'lost')
+      )
+      SELECT b.id,
+             (SELECT row_to_json(s.*) FROM (
+                SELECT score_home, score_away, live_1x2_home, live_1x2_away
+                FROM live_match_snapshots
+                WHERE match_id = b.match_id
+                  AND captured_at BETWEEN b.pick_time - INTERVAL '2 minutes'
+                                      AND b.pick_time + INTERVAL '2 minutes'
+                ORDER BY abs(extract(epoch from (captured_at - b.pick_time)))
+                LIMIT 1
+              ) s) AS snap
+      FROM bets b
+    """)
+    inverted = []
+    for r in rows:
+        snap = r.get("snap")
+        if not snap: continue
+        sh, sa = snap.get("score_home"), snap.get("score_away")
+        oh, oa = snap.get("live_1x2_home"), snap.get("live_1x2_away")
+        if sh is None or sa is None or oh is None or oa is None: continue
+        if sh == sa: continue
+        if (sh > sa) != (float(oh) < float(oa)):
+            inverted.append(r["id"])
+    assert not inverted, (
+        f"{len(inverted)} post-fix inplay_o bets placed on inverted snapshots — "
+        f"the score-odds veto must be re-armed. Bet IDs: {inverted[:5]}"
+    )
+
+    void_count = execute_query("""
+      SELECT count(*) AS n FROM simulated_bets sb
+      JOIN bots b ON b.id = sb.bot_id
+      WHERE b.name = 'inplay_o' AND sb.result = 'void'
+    """)[0]["n"]
+    assert void_count >= 62, (
+        f"inplay_o quarantine cohort shrank: only {void_count} void bets, "
+        f"expected ≥ 62 (the 2026-06-06 quarantine batch)"
+    )
 
 
 if __name__ == "__main__":
