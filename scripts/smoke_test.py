@@ -12179,7 +12179,15 @@ def test_inplay_coolbet_placer():
     # place function must check edge at live price
     place_src = inspect.getsource(place_all_inplay_bets)
     assert "edge_eroded" in place_src, "must handle edge_eroded outcome"
-    assert "_MIN_REMAINING_EDGE" in place_src, "must apply remaining edge floor"
+    # PER-MARKET-EDGE-V2 (2026-06-06): placer migrated from one global
+    # _MIN_REMAINING_EDGE to per-market floors via _min_edge_for(mkt). Same
+    # semantic gate (skip when live_edge < floor) — floor is market-specific.
+    assert "_min_edge_for" in place_src, (
+        "must apply per-market live-edge floor via _min_edge_for(mkt)"
+    )
+    assert "live_edge < live_floor" in place_src, (
+        "must compare live_edge against the per-market floor"
+    )
     assert "search_blocked" in place_src, "must handle search_blocked"
     assert 'notes=f"inplay-auto' in place_src, "must tag real_bets as inplay-auto"
     assert "simulated_bet_id=sim_id" in place_src, "must link real_bet to simulated_bet"

@@ -449,6 +449,19 @@ def job_wc_match_previews():
     _run_job("wc_match_previews", run_wc_match_previews)
 
 
+def job_wc_daily_email():
+    """WC-F4 (2026-06-04): daily WC preview email via Resend. Sends one
+    email per opted-in user per day during the WC window. Cron fires 07:30
+    UTC after morning_pipeline (04:00) + wc_market_consensus (06:00) +
+    wc_monte_carlo (06:30) so every fixture has the freshest predictions.
+    Idempotent via wc_email_log UNIQUE(user_id, email_date)."""
+    today = date.today()
+    if not (_WC_PREVIEW_WINDOW_START <= today <= _WC_PREVIEW_WINDOW_END):
+        return
+    from workers.jobs.wc_daily_email import run_wc_daily_email
+    _run_job("wc_daily_email", run_wc_daily_email)
+
+
 def job_publish_daily_picks():
     """GROWTH-ACCURACY-PICKS-LOG (2026-06-05): publish the top model pick per
     market for every match kicking off in the next 24h. Powers the public
@@ -1605,6 +1618,15 @@ def main():
     scheduler.add_job(job_wc_match_previews, CronTrigger(hour=7, minute=30),
                       id="wc_match_previews",
                       name="WC AI Previews 07:30 [WC window]")
+
+    # WC-F4 (2026-06-04): Daily WC preview email to opted-in users. 07:30 UTC
+    # collides with wc_match_previews — they don't share resources but APS
+    # will run them sequentially on the default executor. If they need to
+    # truly parallelize, bump this to 07:45. Window-gated inside the job.
+    scheduler.add_job(job_wc_daily_email, CronTrigger(hour=7, minute=30),
+                      id="wc_daily_email",
+                      name="WC Daily Email 07:30 [WC window]",
+                      max_instances=1, misfire_grace_time=1800)
 
     # WC-A3 (2026-06-04): Daily market consensus scrape — pulls 1X2
     # implied probs from 2-3 free public sources (eloratings, forebet,
