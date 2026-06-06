@@ -18297,5 +18297,147 @@ def test_inplay_n_model_vs_market_gate():
         assert False, f"gate crashed on missing implied prob: {e}"
 
 
+@test("CLV-BACKFILL — scripts/clv_report.py + ingest script structure")
+def test_clv_backfill_scripts():
+    """CLV-BACKFILL (2026-06-06): one-off Pinnacle closing-line backfill via
+    OddsPapi /historical-odds enables per-bot CLV analysis for the
+    CHERRY-PICK-PLACER 2026-06-08 gate flip. Pins:
+
+    - scripts/clv_report.py exists with the inplay-exclusion guard
+      (inplay bets get bogus CLV vs pre-match close — must be filtered)
+    - scripts/ingest_oddspapi_pinnacle_closes.py exists with dry-run default
+      (any --execute path that writes to odds_snapshots must require explicit flag)
+    - The OddsPapi marketId→1x2 decoder maps the known stable IDs:
+      101=home, 102=draw, 103=away
+    - The OU/AH market-id tables cover the half-lines we actually bet on
+    """
+    import pathlib
+    clv_src = pathlib.Path("scripts/clv_report.py").read_text()
+    ing_src = pathlib.Path("scripts/ingest_oddspapi_pinnacle_closes.py").read_text()
+
+    # Inplay exclusion is the critical guard — without it CLV is meaningless
+    # (live-odds bets vs pre-match close gives spurious +100%+ CLV).
+    assert 'startswith("inplay_")' in clv_src, (
+        "clv_report.py must exclude inplay_* bots from CLV computation — "
+        "pre-match Pinnacle close is the wrong comparator for in-game bets"
+    )
+    assert "excluded" in clv_src and "inplay" in clv_src, (
+        "the exclusion must be logged so the analyst sees the count"
+    )
+
+    # 1x2 outcome decoder must use the stable IDs we observed in OP responses
+    # (either as oid→sel or sel→oid mapping)
+    assert ('"home": "101"' in clv_src or "'home': '101'" in clv_src
+            or '"101": "home"' in clv_src or "'101': 'home'" in clv_src), (
+        "1x2 decoder must map outcomeId 101 ↔ home (stable across OddsPapi fixtures)"
+    )
+    assert ('"draw": "102"' in clv_src or "'draw': '102'" in clv_src
+            or '"102": "draw"' in clv_src or "'102': 'draw'" in clv_src), (
+        "1x2 decoder must map outcomeId 102 ↔ draw"
+    )
+    assert ('"away": "103"' in clv_src or "'away': '103'" in clv_src
+            or '"103": "away"' in clv_src or "'103': 'away'" in clv_src), (
+        "1x2 decoder must map outcomeId 103 ↔ away"
+    )
+
+    # OU/AH coverage — the lines we actually bet on
+    for line_token in ("2.5: 1010", "1.5: 10258", "0.75: 10490"):
+        assert line_token in clv_src, f"OU decoder missing line for {line_token}"
+    for ah_token in ("0.0: 1072", "-0.5: 1068", "0.5: 1076"):
+        assert ah_token in clv_src, f"AH decoder missing line for {ah_token}"
+
+    # Ingest script: dry-run is default; --execute required to write
+    assert "--execute" in ing_src, "ingest must require --execute flag to write"
+    assert "DRY-RUN" in ing_src, "ingest must print DRY-RUN when not executing"
+    assert "is_closing" in ing_src and "Pinnacle" in ing_src, (
+        "ingest writes must set bookmaker='Pinnacle' is_closing=true"
+    )
+
+
+@test("THRESHOLD-CHECK-WEEKLY-CRON — job + email helper + scheduler hook")
+def test_threshold_check_weekly_cron():
+    """THRESHOLD-CHECK-WEEKLY (2026-06-06): the manual threshold_check.py run
+    went 13 days stale before today's audit because it relied on an operator
+    remembering to run it. Pins the automation so it can't silently regress:
+
+    - workers/jobs/weekly_threshold_check_email.py exists with the Resend send
+    - workers/scheduler.py declares job_weekly_threshold_check
+    - The cron is registered for Sunday 06:00 UTC (after retrain/meta chain finishes)
+    """
+    import pathlib
+    sched_src = pathlib.Path("workers/scheduler.py").read_text()
+    email_src = pathlib.Path("workers/jobs/weekly_threshold_check_email.py").read_text()
+
+    assert "def job_weekly_threshold_check" in sched_src, (
+        "scheduler.py must declare job_weekly_threshold_check — the runner that "
+        "executes threshold_check.py and ships the email"
+    )
+    assert 'id="weekly_threshold_check"' in sched_src, (
+        "cron must be registered with id='weekly_threshold_check' so APScheduler can find it"
+    )
+    # Pin the Sunday 06:00 UTC slot — anchored AFTER retrain/meta_retrain/meta_validate
+    assert ('day_of_week="sun"' in sched_src and "hour=6" in sched_src), (
+        "weekly_threshold_check must run Sunday 06:00 UTC (after the 03/04/05 chain)"
+    )
+    assert "scripts/threshold_check.py" in sched_src, (
+        "scheduler must shell out to scripts/threshold_check.py — the canonical gate-count source"
+    )
+
+    assert "send_weekly_threshold_check_email" in email_src, (
+        "email helper must expose send_weekly_threshold_check_email entry point"
+    )
+    assert "api.resend.com/emails" in email_src, (
+        "email helper must POST to Resend"
+    )
+    # The helper wraps stdout in <pre> — the script's output is already
+    # column-aligned text, so don't re-render it as a table.
+    assert "<pre" in email_src, (
+        "email body must wrap threshold_check stdout in <pre> to preserve alignment"
+    )
+
+
+@test("POST-CAL-IMPACT — script structure, cutoff pinned, 6 markets covered")
+def test_post_cal_impact_structure():
+    """POST-CAL-IMPACT (2026-06-06): scripts/check_post_calibration_impact.py
+    monitors what the 6 fresh Platt rows (landed at 2026-06-06 10:35 UTC) are
+    doing to bet selection in production. Pins:
+
+    - The cutoff is the actual fitted_at timestamp (10:35 UTC) so future
+      reruns compare the right windows
+    - All 6 calibrated markets are listed (a future Platt run that adds a 7th
+      market must add a row here too — this smoke catches the drift)
+    - The inplay_e_under_25 row is explicitly marked as 'in-play only' so
+      its empty post-cutoff count isn't read as a regression
+    """
+    import pathlib
+    src = pathlib.Path("scripts/check_post_calibration_impact.py").read_text()
+
+    # Cutoff must match the model_calibration row that landed today
+    assert "datetime(2026, 6, 6, 10, 35" in src, (
+        "cutoff must be 2026-06-06 10:35 UTC — the actual fitted_at on the 6 rows"
+    )
+
+    # All 6 markets we calibrated must be listed
+    for cal_key in (
+        "asian_handicap_away -0.5",
+        "btts_no",
+        "btts_yes",
+        "double_chance_1x",
+        "double_chance_x2",
+        "inplay_e_under_25",
+    ):
+        assert cal_key in src, f"MARKETS list missing {cal_key!r}"
+
+    # inplay_e must be flagged as not having a simulated_bets equivalent
+    assert "in-play only" in src or "INPLAY" in src, (
+        "inplay_e_under_25 must be flagged — there's no simulated_bets row to compare against"
+    )
+
+    # The shift Δ column is what tells us how much calibration is moving things
+    assert "calibrated_prob - model_probability" in src, (
+        "must compute shift = calibrated_prob - model_probability per market"
+    )
+
+
 if __name__ == "__main__":
     main()

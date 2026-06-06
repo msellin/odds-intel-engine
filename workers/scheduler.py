@@ -666,6 +666,43 @@ def job_weekly_meta_validate():
     _run_job("weekly_meta_validate", _meta_validate)
 
 
+def job_weekly_threshold_check():
+    """THRESHOLD-CHECK-WEEKLY (2026-06-06): weekly run of threshold_check.py.
+    Runs Sunday 06:00 UTC, AFTER weekly_retrain (03:00) / meta_retrain (04:00) /
+    meta_validate (05:00) so the snapshot reflects this week's freshly-fit
+    models. Output is the script's raw stdout, wrapped in <pre> and emailed
+    to ADMIN_ALERT_EMAIL via Resend.
+
+    Origin: the 2026-06-06 audit found threshold_check.py output was 13 days
+    stale (last manual run 2026-05-24) AND had 3 silent bugs masking what was
+    true. Hours of debugging would have been avoided if a fresh snapshot
+    landed every week — this cron makes that automatic.
+    """
+    import subprocess
+    from datetime import datetime, timezone
+
+    def _threshold_check():
+        console.print("[bold cyan]Weekly threshold check — refreshing key gate counts[/bold cyan]")
+        result = subprocess.run(
+            [sys.executable, "scripts/threshold_check.py"],
+            cwd=str(Path(__file__).parent.parent),
+            timeout=300,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[red]threshold check exit {result.returncode}: {result.stderr[-2000:]}[/red]")
+            raise RuntimeError(f"weekly threshold check failed: exit {result.returncode}")
+        console.print(result.stdout[-4000:])
+        ran_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        try:
+            from workers.jobs.weekly_threshold_check_email import send_weekly_threshold_check_email
+            send_weekly_threshold_check_email(result.stdout, ran_at)
+        except Exception as e:
+            console.print(f"[yellow]Weekly threshold check email skipped: {e}[/yellow]")
+    _run_job("weekly_threshold_check", _threshold_check)
+
+
 def job_league_clv_efficiency():
     """LEAGUE-CLV-EFFICIENCY (2026-05-25): weekly compute of per-league CLV
     beatability index. Runs Sunday 02:30 UTC, before the weekly_retrain at
@@ -1608,6 +1645,16 @@ def main():
     # and emails the verdict. Replaces the 2026-06-10 manual checkpoint.
     scheduler.add_job(job_weekly_meta_validate, CronTrigger(day_of_week="sun", hour=5, minute=0),
                       id="weekly_meta_validate", name="Weekly META Validate Sunday 05:00",
+                      max_instances=1, misfire_grace_time=1800)
+
+    # THRESHOLD-CHECK-WEEKLY (2026-06-06) — Sunday 06:00 UTC, after the
+    # retrain/meta_retrain/meta_validate chain finishes. Runs threshold_check.py
+    # so the "Key Thresholds to Watch" counts in PRIORITY_QUEUE.md stay live
+    # instead of going 13 days stale (which is what triggered today's audit).
+    scheduler.add_job(job_weekly_threshold_check,
+                      CronTrigger(day_of_week="sun", hour=6, minute=0),
+                      id="weekly_threshold_check",
+                      name="Weekly Threshold Check Sunday 06:00",
                       max_instances=1, misfire_grace_time=1800)
 
     scheduler.add_job(job_weekly_meta_retrain, CronTrigger(day_of_week="sun", hour=4, minute=0),
