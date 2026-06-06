@@ -113,6 +113,11 @@ out.append(("ML-RETRAIN-1 — coverage among stats-supplying leagues (TRUE metri
 #          (gate: 100+ per selection)
 #   * AH:   NOT IMPLEMENTED in fit_platt.py. The 332 count below is data-
 #          readiness only; no Platt fit happens until AH-PLATT-WIRE task ships.
+# THRESHOLD-CHECK-INPLAY-EXCLUDE (2026-06-06): mirror fit_platt's
+# `match_minute_at_pick IS NULL` filter so the gate counts are
+# prematch-only — keeps fit_platt's view and threshold_check's view in
+# perfect sync. Without this, INPLAY-CALIBRATED-PROB-WIRE would have made
+# threshold_check report inflated counts the next time inplay_e fired.
 out.append(("CAL-PLATT O/U v14 (300+ gate) — fit_platt's exact filter",
     safe("""SELECT m, COUNT(*) FROM (
               SELECT CASE WHEN selection ILIKE 'over%%' THEN 'over_25_over'
@@ -123,12 +128,14 @@ out.append(("CAL-PLATT O/U v14 (300+ gate) — fit_platt's exact filter",
                 AND model_version='v14'
                 AND calibrated_prob IS NOT NULL
                 AND odds_at_pick IS NOT NULL
+                AND match_minute_at_pick IS NULL
             ) s GROUP BY m ORDER BY m""",
          lambda r: ", ".join(f"{m}={n}" for m, n in r) or "no rows")))
 
-out.append(("CAL-PLATT 1X2 v14 — per selection (settled)",
+out.append(("CAL-PLATT 1X2 v14 — per selection (settled, prematch only)",
     safe("""SELECT selection, COUNT(*) FROM simulated_bets
             WHERE market='1x2' AND result IN ('won','lost') AND model_version='v14'
+              AND match_minute_at_pick IS NULL
             GROUP BY selection ORDER BY selection""",
          lambda r: ", ".join(f"{s}={n}" for s, n in r) or "no rows")))
 
@@ -139,13 +146,15 @@ out.append(("CAL-PLATT BTTS (100+ gate) — fit_platt's exact filter, v14",
               WHERE market='btts' AND result IN ('won','lost')
                 AND model_version='v14'
                 AND calibrated_prob IS NOT NULL
+                AND match_minute_at_pick IS NULL
             ) s GROUP BY m ORDER BY m""",
          lambda r: ", ".join(f"{m}={n}" for m, n in r) or "no rows")))
 
 out.append(("CAL-PLATT AH — data readiness ONLY (no fit_platt branch yet — see AH-PLATT-WIRE)",
     safe("""SELECT COUNT(*) FROM simulated_bets
             WHERE market='asian_handicap' AND result IN ('won','lost')
-              AND calibrated_prob IS NOT NULL""")))
+              AND calibrated_prob IS NOT NULL
+              AND match_minute_at_pick IS NULL""")))
 
 out.append(("CLV rows for bot_meta_v1 — sim_bets w/ clv since 5/6",
     safe("""SELECT COUNT(*) FROM simulated_bets WHERE clv IS NOT NULL AND created_at >= '2026-05-06'""")))

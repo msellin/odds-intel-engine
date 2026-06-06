@@ -16854,6 +16854,22 @@ def _():
         "— threshold_check labels its OU row as 'fit_platt's exact filter'"
     )
 
+    # FIT-PLATT-INPLAY-EXCLUDE (2026-06-06): both fit_platt + threshold_check
+    # must filter on `match_minute_at_pick IS NULL` to keep in-play bets
+    # (which write the column) out of prematch Platt fits. Without this,
+    # INPLAY-CALIBRATED-PROB-WIRE would have allowed inplay_e's OU bets to
+    # leak into next Sunday's prematch OU Platt fit and corrupt it.
+    assert "match_minute_at_pick IS NULL" in fp, (
+        "fit_platt OU/BTTS queries must filter `match_minute_at_pick IS NULL` "
+        "— in-play bets now also write calibrated_prob (INPLAY-CALIBRATED-PROB-WIRE), "
+        "and mixing them with prematch corrupts the Platt fit"
+    )
+    assert tc.count("match_minute_at_pick IS NULL") >= 3, (
+        "threshold_check.py must mirror fit_platt's prematch-only filter on all "
+        "CAL-PLATT counting queries (OU, 1X2, BTTS, AH). Counts under fit_platt "
+        "and counts under threshold_check must always agree."
+    )
+
     # AH absence pin — when AH-PLATT-WIRE ships, this flips.
     assert "fetch_settled_ah_bets" not in fp, (
         "AH branch added to fit_platt.py but smoke still asserts absence — "
@@ -18550,6 +18566,62 @@ def test_inplay_i_bayes_xg():
                           pm_no_implied, has_red_card=False)
     except (TypeError, ValueError) as e:
         assert False, f"strategy I crashed on missing implied prob: {e}"
+
+
+@test("INPLAY-CALIBRATED-PROB-WIRE — _build_inplay_bet_data propagates cal_model_prob")
+def test_inplay_calibrated_prob_wire():
+    """INPLAY-CALIBRATED-PROB-WIRE (2026-06-06): all 898 historical in-play bets
+    had `calibrated_prob = NULL` because _build_inplay_bet_data never put it on
+    the bet payload, even though strategy E was already computing it. Today's
+    inplay_e_under_25 Platt row (landed 2026-06-06 10:35 UTC) would have been
+    invisible to any column-reading consumer.
+
+    Asserts:
+      • _build_inplay_bet_data reads cal_model_prob from trigger.extra
+      • Writes it as top-level bet_data["calibrated_prob"] when present
+      • Does NOT write the key when cal_model_prob is missing (keeps NULL for
+        strategies that haven't wired apply_platt — honest signal)
+    """
+    from workers.jobs.inplay_bot import _build_inplay_bet_data
+
+    def _trigger(extra_cal=None):
+        extra = {"raw_model_prob": 0.55, "platt_enabled": False}
+        if extra_cal is not None:
+            extra["cal_model_prob"] = extra_cal
+        return {
+            "market": "O/U",
+            "selection": "under 2.5",
+            "odds": 2.10,
+            "model_prob": 0.55,
+            "edge": 4.5,
+            "extra": extra,
+        }
+
+    cand = {"minute": 60, "score_home": 0, "score_away": 0}
+
+    # Case 1: strategy E shape — extras includes cal_model_prob
+    bet = _build_inplay_bet_data(
+        trigger=_trigger(extra_cal=0.49),
+        cand=cand, xg_h=0.7, xg_a=0.6, is_real=True,
+        odds_age=2.3, bot_name="inplay_e",
+    )
+    assert "calibrated_prob" in bet, (
+        "calibrated_prob must appear in the bet payload when extras carries cal_model_prob"
+    )
+    assert abs(bet["calibrated_prob"] - 0.49) < 1e-9, (
+        f"calibrated_prob must round-trip the extras value (got {bet['calibrated_prob']})"
+    )
+
+    # Case 2: strategy I/N/etc shape — no cal_model_prob in extras
+    bet_no_cal = _build_inplay_bet_data(
+        trigger=_trigger(extra_cal=None),
+        cand=cand, xg_h=0.7, xg_a=0.6, is_real=True,
+        odds_age=2.3, bot_name="inplay_i",
+    )
+    assert "calibrated_prob" not in bet_no_cal, (
+        "calibrated_prob must NOT be set when extras lacks cal_model_prob — "
+        "writing model_prob there would falsely suggest Platt ran"
+    )
 
 
 if __name__ == "__main__":

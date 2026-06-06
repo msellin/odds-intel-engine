@@ -250,7 +250,8 @@ def _build_inplay_bet_data(
     run_inplay_strategies(); they should be migrated out incrementally so
     each stage can be unit-tested in isolation.
     """
-    return {
+    extras = trigger.get("extra", {})
+    bet_data = {
         "market": trigger["market"],
         "selection": trigger["selection"],
         "odds": trigger["odds"],
@@ -277,9 +278,24 @@ def _build_inplay_bet_data(
             "posterior_rate": trigger.get("posterior_rate"),
             "prematch_xg_total": trigger.get("prematch_xg_total"),
             "odds_age_ms": int(odds_age * 1000) if odds_age else None,
-            **{k: v for k, v in trigger.get("extra", {}).items()},
+            **{k: v for k, v in extras.items()},
         }),
     }
+    # INPLAY-CALIBRATED-PROB-WIRE (2026-06-06): propagate calibrated probability
+    # from extras to the top-level `calibrated_prob` column. Strategy E is the
+    # only in-play strategy that currently computes cal_model_prob (via
+    # apply_platt with the explicit market='inplay_e_under_25' key). Without
+    # this wire-up all 898 historical in-play bets had calibrated_prob=NULL —
+    # meaning today's inplay_e_under_25 Platt row was invisible to any
+    # downstream column-reading analysis (the shadow trail at
+    # `reasoning->'extra'->>'cal_model_prob'` still worked, but no other
+    # consumer would have noticed Platt had fired). Other in-play strategies
+    # still write NULL until they wire apply_platt — tracked as
+    # INPLAY-CALIBRATION-COMPLETE for the ≥100-bet gate per selection.
+    cal = extras.get("cal_model_prob")
+    if cal is not None:
+        bet_data["calibrated_prob"] = cal
+    return bet_data
 
 
 def run_inplay_strategies():

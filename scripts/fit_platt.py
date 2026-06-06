@@ -148,6 +148,14 @@ def fetch_settled_ou_bets(model_version: str | None = None) -> list[dict]:
     CAL-PLATT-UPGRADE deployed, since apply_platt returned unchanged for O/U).
     Includes odds_at_pick for the log(odds) feature.
     """
+    # FIT-PLATT-INPLAY-EXCLUDE (2026-06-06): in-play OU bets (e.g. inplay_e
+    # under 2.5) write simulated_bets.market='o/u' AND now also populate
+    # calibrated_prob via INPLAY-CALIBRATED-PROB-WIRE. Their distribution is
+    # NOT the same as prematch OU (in-play uses Bayesian posterior on live xG;
+    # prematch uses pre-kickoff features). Mixing them would corrupt the
+    # prematch Platt fit. `match_minute_at_pick IS NULL` is the canonical
+    # prematch-vs-inplay flag (migration 173, 2026-06-03 — every in-play bet
+    # writes this; every prematch bet leaves it NULL).
     sql = """
         SELECT calibrated_prob, odds_at_pick, result,
                CASE
@@ -159,6 +167,7 @@ def fetch_settled_ou_bets(model_version: str | None = None) -> list[dict]:
           AND result IN ('won', 'lost')
           AND calibrated_prob IS NOT NULL
           AND odds_at_pick IS NOT NULL
+          AND match_minute_at_pick IS NULL
     """
     params: list = []
     if model_version:
@@ -191,6 +200,10 @@ def fetch_settled_btts_bets(model_version: str | None = None) -> list[dict]:
     overestimates BTTS probability by ~15pp. The Platt sigmoid corrects this
     systematic bias without a full retrain.
     """
+    # FIT-PLATT-INPLAY-EXCLUDE (2026-06-06): same prematch-only filter as
+    # the OU fit. No in-play BTTS strategy writes calibrated_prob today, but
+    # add the filter pre-emptively so a future inplay_btts_* wire-up can't
+    # silently corrupt this fit.
     sql = """
         SELECT calibrated_prob, result,
                CASE WHEN LOWER(selection) = 'yes' THEN 'btts_yes' ELSE 'btts_no' END AS market
@@ -198,6 +211,7 @@ def fetch_settled_btts_bets(model_version: str | None = None) -> list[dict]:
         WHERE LOWER(market) = 'btts'
           AND result IN ('won', 'lost')
           AND calibrated_prob IS NOT NULL
+          AND match_minute_at_pick IS NULL
     """
     params: list = []
     if model_version:
