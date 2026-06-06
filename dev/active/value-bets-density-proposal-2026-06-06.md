@@ -1,208 +1,199 @@
-# VALUE-BETS-DENSITY-PASS — Design Proposal (2026-06-06)
+# VALUE-BETS-DENSITY-PASS — Expanded Design Proposal (2026-06-06 v2)
 
-**Purpose.** Audit `/value-bets` row layout (operator flagged as visually noisy per 2026-06-06 screenshots) and propose 2-3 compressed alternatives. Also identifies where the deferred PUBLIC-MATURITY-BADGE slots in without compounding noise.
+**Purpose.** Operator flagged 2026-06-06 that `/value-bets` is too dense — initially focused on row layout but the bigger issue is **page-level** stacking. Above the fold on mobile, the user sees 5-7 chunks of secondary content (CLV banner, tier explainer, Telegram CTA, live section, CLV trust banner, today's picks preview) BEFORE reaching the value bets they came for.
 
-**Status.** Doc only — no code changes shipped. Pick one of the alternatives (or ask for a 4th iteration) and I'll implement.
+This v2 covers three tiers of density problems:
 
----
+- **Tier 1 — Page layout** (highest impact): what sections appear above the fold and how to compress them
+- **Tier 2 — /live duplication** (medium impact): `ValueBetsLiveSection` renders on BOTH `/value-bets` and `/live` — same data shown twice depending on entry point
+- **Tier 3 — Row layout** (original scope): the per-row chip soup
 
-## Current row carries 10 distinct items
-
-From the 2026-06-06 screenshots, each mobile row shows:
-
-1. **Edge %** (left, large) — e.g. `+19.0%`
-2. **Match name** — e.g. "Athletic Club MG U20 — Itabirito U20"
-3. **Status chip** — `PRE-MATCH` or `LIVE`
-4. **Selection + market** — e.g. `x2 · DC`, `home -0.5 · AH`, `Home win`
-5. **PRO badge** — on some rows
-6. **Percentage chip** — `45%`, `57%`, `52%` (consensus / probability — varies)
-7. **Best odds + book** — `2.78 Marathonbet`
-8. **Suggested stake** — `4.4u`
-9. **Time to kickoff** — `9m`, `1h 39m`, `LIVE`
-10. **Down arrow + dash** — collapse / expand affordance
-
-Plus the vertical colored strip on the left (red/yellow/green by urgency or strength).
-
-The screenshot covers ~9 rows in one viewport. With 10 items per row, that's **90 micro-decisions per scroll**.
+**Status.** Doc only — no code shipped. v1 of this proposal was row-only; v2 extends to page-level + /live.
 
 ---
 
-## What's actually load-bearing for the user decision?
+## Tier 1 — Page layout audit
 
-The question every user asks scanning a value-bets row is:
+### What renders on `/value-bets` (top-down, Pro/Elite view)
 
-> "Is THIS bet worth my time?"
+| # | Section | Component | Lines on mobile | What it does |
+|---|---|---|---:|---|
+| 1 | Page title + subtitle | `<h1>` + `<p>` | 3-5 | "Today's value bets — CLV-tracked…" + "Why CLV beats ROI →" link |
+| 2 | Tier explainer | inline `<section>` | 3-5 | "You're seeing the calibrated/full feed" + 3-tier description |
+| 3 | Telegram CTA | inline `<Link>` | 2 | "Get these picks in Telegram — sent the moment they're identified" |
+| 4 | CLV trust banner | `<CLVTrustBanner>` | 5-7 | "Closing Line Value · last 30 days · +10.0% CLV · +13.3% ROI · 48.3% win · 1,023 settled · {explanation paragraph}" |
+| 5 | **Live now** section | `<ValueBetsLiveSection>` | 2 + N rows | In-play picks auto-refreshing every 60s |
+| 6 | Today's picks preview | `<TodayPicksPreview>` | 3-4 | The free-tier teaser surface (shown to all tiers) |
+| 7 | **The actual value bets** | `<ValueBetsScan>` | 80 rows | What the user came for |
 
-That decomposes into 3 sub-questions:
+**Mobile reality:** ~600-700px of pre-list content before section #7. That's the entire above-the-fold viewport on a 600px-tall mobile screen. The user has to scroll past 6 sections to reach what the page is titled after.
 
-| Sub-question | Today's signal | Load-bearing? |
+### Why this is happening (charitable read)
+
+Each section solves a real problem:
+- **#1 title + subtitle** — CLV-first messaging is our differentiator (operator-confirmed)
+- **#2 tier explainer** — answers "what am I seeing here?" for new users
+- **#3 Telegram CTA** — drives Telegram-bot signups (engagement metric)
+- **#4 CLV trust banner** — social proof / honest scoreboard
+- **#5 live now** — surfaces in-play picks before they expire
+- **#6 today's picks preview** — free-tier teaser conversion hook
+
+The problem is they're all on the SAME page competing for prime real estate. Each section is justified in isolation. As a sequence they bury the primary content.
+
+### Proposed compression
+
+**Move #4 (CLV trust banner) to `/performance` or `/about`.** It's a stats card — context, not action. Users who care about CLV will navigate there. Anyone scanning value bets just needs the headline number, which can sit in a compact pill in the page header (item #1).
+
+**Collapse #2 (tier explainer) to a one-line pill** for the current user's tier only. Free users see all 3 tiers' descriptions today; we only need to show the relevant one + "→ upgrade" if applicable.
+
+**Move #3 (Telegram CTA) to a corner pill** — full-width banner is overkill for a "you already have Telegram? open settings" link. A small chip in the page header next to the title accomplishes the same job.
+
+**Decide on #5 (live now) — see Tier 2 below.** Either keep on /value-bets and remove from /live, or move to /live only.
+
+**Keep #6 (today's picks preview)** — it's the free-tier conversion hook and only renders for free users. Already gated.
+
+### Compressed page (proposed)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Today's value bets · CLV-tracked   [+10.0% CLV ·30d]  📲 [tg]  │
+│  ⓘ Showing 80 bets · all 39 strategies · Why CLV?              │
+├─────────────────────────────────────────────────────────────────┤
+│ {actual value bets list starts immediately here}                │
+│  +19% │ Athletic Club MG U20 — Itabirito U20  ●  9m   │ ⌄      │
+│       │ DC · x2 ·  2.78 Marathonbet · 4.4u                       │
+│ ... etc                                                         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+Two-line page header + immediate list. CLV stat is a pill, not a card. Telegram is a small icon chip. Tier explainer collapses to "Showing 80 bets · all 39 strategies" with a `ⓘ` info icon that expands the original explainer on tap (for first-time users only — could store dismiss state in localStorage).
+
+**Mobile gain:** ~500-600px of vertical space recovered = at least 4 more rows visible above the fold.
+
+---
+
+## Tier 2 — `/live` duplication
+
+### The current state
+
+Both pages render the SAME `<ValueBetsLiveSection>` component:
+
+- **`/value-bets`** (Pro+, when in-play bets exist): renders the live section ABOVE the pre-match list
+- **`/live`** (Pro+ dedicated page): renders the live section as the primary content + a Free-tier teaser for anonymous/Free users
+
+Same data, two surfaces. Users moving from one to the other see identical content.
+
+### Why both exist
+
+- **`/live`** was filed as `GROWTH-LIVE-PAGE-BUILD` (2026-06-05, Tier B #2) per the file header — a marketing/SEO surface for in-play picks
+- **`/value-bets` live section** was added earlier as an inline live-picks visibility because users on the value-bets page want to see what's live RIGHT NOW
+
+Both have legitimate motivations. The duplication is the side effect.
+
+### Two ways to resolve
+
+**Option DUP-A — Move live ONLY to /live, replace inline section on /value-bets with a link**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  ● 3 live picks right now → /live                               │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+- **Pro:** /value-bets becomes pre-match-only (clear scope). /live owns in-play. Honest separation.
+- **Con:** Users on /value-bets have to click to see live picks. Live picks expire fast — extra friction = missed picks.
+
+**Option DUP-B — Keep live on /value-bets, drop /live page (or repurpose)**
+
+- **Pro:** Live picks stay visible on the page users naturally land on. One less SEO/marketing page to maintain.
+- **Con:** Loses the SEO surface that GROWTH-LIVE-PAGE-BUILD was created for. /live URL becomes a redirect.
+
+**Option DUP-C — Keep both, but visually differentiate**
+
+- Make `/value-bets` live section a COMPACT one-row strip ("● 3 live: Criciuma -€2.10, Aris +€1.50, Botafogo even").
+- Make `/live` the FULL grid view with detail.
+- Page-purpose stays distinct; visual treatment makes the duplication obvious as "preview vs full."
+
+### Recommendation: DUP-C (preserves SEO + reduces noise)
+
+Compact 1-row strip on /value-bets ("● 3 live: ..."). Click to expand into the full /live page. Best of both — no friction on /value-bets, dedicated surface on /live.
+
+---
+
+## Tier 3 — Row layout (original v1 scope, lightly revised)
+
+### Row carries 10 distinct items today (unchanged from v1)
+
+(See screenshots from 2026-06-06.) Edge %, match name, status chip, selection+market, PRO badge, percentage chip, best odds + book, stake, kickoff, chevron.
+
+### Three layout alternatives
+
+#### Option A — "Glance" (most aggressive)
+
+```
++19% │ Athletic Club MG U20 — Itabirito U20    ●    9m │ ⌄
+     │ DC · x2
+```
+4 primary signals + maturity dot. Tap row for odds/stake/details.
+
+#### Option B — "Two-row hybrid" (RECOMMENDED, unchanged from v1)
+
+```
++19% │ Athletic Club MG U20 — Itabirito U20       ●   9m │
+     │ DC · x2  ·  2.78 Marathonbet · 4.4u
+```
+Primary line: edge + match + maturity dot + time. Secondary line: selection + market + odds + book + stake.
+
+#### Option C — "Filter-out" (no row redesign)
+
+Add "Calibrated only (12)" filter chip. Default view filters to ~12 from 80.
+
+---
+
+## 4 universal density wins (apply to whichever Tier 3 option you pick)
+
+1. **Drop the standalone percentage chip** (45%, 57%, 52%) — meaning unclear.
+2. **Drop the `PRE-MATCH` chip when time is "9m"** — implied. Keep `LIVE` (distinct).
+3. **Combine selection + market** using `fmtSelShort()` ("1X2 · home" → "1X2 H").
+4. **Bookmaker name to tooltip** — show price as primary, book on hover.
+
+---
+
+## Open questions before I implement
+
+1. **Page layout (Tier 1):** approve the compressed page header + moving CLV trust banner to `/performance`?
+2. **/live duplication (Tier 2):** DUP-A (link only), DUP-B (drop /live), or DUP-C (compact strip)?
+3. **Row layout (Tier 3):** A, B, or C? (My pick: B)
+4. **Left colored strip on rows:** what does it mean today? drop or label?
+5. **Percentage chip:** what does it mean today? confirm before dropping.
+6. **PRO badge:** info or gate? Affects whether it can move to hover.
+
+---
+
+## Effort estimate (per tier)
+
+| Tier | Effort | What it ships |
 |---|---|---|
-| "How big is the edge?" | edge % (item 1) | **YES** — primary discriminator |
-| "What's the bet?" | match + selection (items 2, 4) | **YES** — required for action |
-| "How urgent?" | kickoff time (item 9) + status chip (item 3) | **YES** — drives "act now" |
-| "What odds / where?" | best odds + book (item 7) | Important — but only when ready to act |
-| "How much to stake?" | suggested stake (item 8) | Important — but stake-sizing is a separate motion |
-| "Tier-gated?" | PRO badge (item 5) | Mostly relevant on hover/click |
-| "Confidence signal?" | percentage chip (item 6) | Adds noise — meaning unclear |
-| "Expand for detail?" | down arrow (item 10) | Affordance — small visual cost |
-
-**Promotion**: items 1, 2, 4, 9 are the primary 4.
-**Secondary** (collapse to expand-on-tap): items 5, 7, 8.
-**Demote** (move to expanded view only): item 6 (confusing) + item 3 (status, secondary).
-
----
-
-## Three proposed alternatives
-
-### Option A — "Glance" (most aggressive compression)
-
-Strip to the 4 primary signals + 1 maturity dot.
-
-```
-┌────────────────────────────────────────────────────────────────────┐
-│ +19% │ Athletic Club MG U20 — Itabirito U20         ●    9m │ ⌄  │
-│      │ DC · x2                                                    │
-├────────────────────────────────────────────────────────────────────┤
-│ +17% │ Næsby — FA 2000                              ●   LIVE │ ⌄ │
-│      │ AH · home -0.5                                             │
-├────────────────────────────────────────────────────────────────────┤
-│ +14% │ MyPa — PPJ                                   ●   1h 39m │ ⌄│
-│      │ 1X2 · home                                                 │
-└────────────────────────────────────────────────────────────────────┘
-```
-
-**What you see at a glance:** edge, match, market, maturity dot, time.
-
-**Tap row to expand:** odds + book, stake, status (PRE-MATCH/LIVE), PRO badge if applicable, model + bot details, full maturity tooltip.
-
-**Maturity dot legend:**
-- 🟢 = Mature / Established calibrated model + proven bot
-- 🟡 = Calibrating (model fit recent or partial)
-- ⚪ = Experimental (no Platt fit OR new bot)
-
-**Pros:** Massively cleaner. 4 signals × 9 rows = 36 micro-decisions instead of 90.
-
-**Cons:** Power users lose the at-a-glance odds + stake. Users have to tap to commit to a bet.
-
----
-
-### Option B — "Two-row hybrid" (moderate compression)
-
-Primary signals on row 1, action info on row 2 (smaller, muted).
-
-```
-┌────────────────────────────────────────────────────────────────────┐
-│ +19% │ Athletic Club MG U20 — Itabirito U20            ●   9m  │  │
-│      │ DC · x2  ·  2.78 Marathonbet · 4.4u                          │
-├────────────────────────────────────────────────────────────────────┤
-│ +17% │ Næsby — FA 2000                                 ●   LIVE │  │
-│      │ AH · home -0.5  ·  1.98 Bet365 · 4.8u  PRO                   │
-├────────────────────────────────────────────────────────────────────┤
-│ +14% │ MyPa — PPJ                                      ●  1h 39m │  │
-│      │ 1X2 · home  ·  3.25 Unibet · 4.2u                            │
-└────────────────────────────────────────────────────────────────────┘
-```
-
-**What you see at a glance:** edge, match, time + maturity dot (primary line). Selection / market / odds / book / stake / tier (secondary line, smaller font, muted).
-
-**Tap row to expand:** full detail (model/bot breakdown, signal explanations, history).
-
-**Demoted entirely:** the standalone percentage chip (item 6 — its semantic was unclear) + the PRE-MATCH/LIVE chip (status implied by time string already: "9m" = pre-match, "LIVE" = live).
-
-**Pros:** Compromise between Option A's clean scan and information density. Power users can still see odds without tapping. Eliminates the ambiguous percentage chip.
-
-**Cons:** Two-line rows = fewer visible per viewport (~6-7 instead of 9).
-
----
-
-### Option C — "Filter-out" (no row redesign, smarter filtering)
-
-Keep current row layout. Add a "Maturity ≥ Calibrated" filter chip and a "Pro tier only" toggle. Default view: only show ≥ Calibrated bets (5-15 visible rows instead of 80).
-
-```
-┌────────────────────────────────────────────────────────────────────┐
-│ All 80 · ● 49 strong · ● 29 moderate · ★ 28 strong leagues          │
-│ NEW: ◯ Calibrated only (12)  ◯ Pro-eligible (45)                    │
-└────────────────────────────────────────────────────────────────────┘
-```
-
-The 80 current rows become ~12 by default ("Calibrated only" gate). Users can opt-in to see the experimental tail.
-
-**Pros:** Minimum code change. Users still see all data on demand. Honest framing — "here's our most-tested 12, the other 68 are research-grade."
-
-**Cons:** Doesn't actually solve row noise — it just shows fewer rows. If users always toggle "show all" they're back to 80-row scroll. Filter chips add their own UI weight.
-
----
-
-## Where PUBLIC-MATURITY-BADGE slots in
-
-| Option | Where the badge lives |
-|---|---|
-| **A** | The single colored dot on row 1 (current row → dot replaces the percentage chip). Hover/tap = breakdown. |
-| **B** | The single colored dot on the primary line (between time and chevron). Selection line stays text-only. |
-| **C** | The filter chips themselves ARE the badge — clicking "Calibrated only" filters by maturity. Individual rows don't need a per-bet badge. |
-
-Option C is most consistent with "don't compound noise" but loses per-bet transparency. Option A and B keep per-bet visibility.
-
----
-
-## Other density wins regardless of which option
-
-These apply to any of the three:
-
-1. **Drop the standalone percentage chip (45%, 57%, etc.)** — meaning unclear, two semantics overlap (consensus vs. model). If it stays, label it ("M:45%" or "C:57%") so the user can disambiguate.
-
-2. **Drop the PRE-MATCH chip when time string is "9m"** — time already implies pre-match. Keep `LIVE` (it's a distinct state).
-
-3. **Combine "1X2 · home" into "1X2 H"** — already done on `/admin/place` via `fmtSelShort()`. Apply consistently here.
-
-4. **Collapse the bookmaker name on hover** — show `2.78` as primary; bookmaker name in tooltip. The book matters when you're about to bet; the price is what drives the scan.
-
-5. **The left colored strip carries information I can't decode from the screenshot** — what does each color mean? If it's redundant with the edge %, remove it. If it carries unique signal (urgency, alignment, consensus strength), label it.
+| **Tier 1 — Page layout** | ~2-3h | New compact page header, move CLV trust banner, collapse tier explainer, Telegram pill |
+| **Tier 2 — /live (DUP-C)** | ~1h | Compact live strip on /value-bets, keep /live full grid |
+| **Tier 3 — Rows (Option B)** | ~2-3h | Two-row layout in `value-bets-scan.tsx`, maturity dot integration, universal density wins |
+| **Smokes + screenshots** | ~1h | Pin invariants, before/after screenshots |
+| **Total** | **~6-8h** | Material density improvement across the page |
 
 ---
 
 ## Recommendation
 
-**Option B + the density wins (1-4) above.**
+**Ship all three tiers in one batch.** They reinforce each other:
+- Tier 1 alone leaves the live section + rows still dense
+- Tier 3 alone leaves the page-header still cluttered
+- Tier 2 alone doesn't fix the underlying scan-density problem
+- Together: page becomes scan-friendly, rows are compact, duplication resolved
 
-**Why B:**
-- Aggressive enough to materially reduce noise (per-row visual weight ~50% lower)
-- Preserves power-user info (odds, stake) without tapping
-- Mobile-friendly (already a two-line layout; just compressing what's there)
-- Maturity-dot integration is clean — single chip on the primary line, hover reveals model + bot facts
-- Reversible — if power users complain, expand row 2 back into 3 lines
-
-**Why not A:** Too aggressive. Users WILL want odds + stake visible to decide whether to act. Tap-to-expand for that is a step backward.
-
-**Why not C:** Hides bets behind a filter the user must remember to use. Doesn't solve the underlying row-noise problem — just papers over it. Better as a complement to Option B, not a replacement.
+Sequence: **Tier 1 first** (biggest single-step win), then Tier 2 (small change, big clarity), then Tier 3 (row work). Total ~6-8h, could ship Monday-Tuesday alongside the PUBLIC-MATURITY-BADGE work.
 
 ---
 
-## Effort estimate (if you pick Option B)
+## What I need from you to proceed
 
-- **~1.5h** row layout refactor (`src/components/value-bets-scan.tsx`)
-- **~0.5h** maturity dot component (reuse `real-money-tier-badge.tsx` math, render as dot instead of pill)
-- **~0.5h** density wins (drop PRE-MATCH chip when implied, "1X2 · home" → "1X2 H", bookmaker in tooltip)
-- **~0.5h** smoke pinning the new row contract
-- **~0.5h** screenshots for review before push
-
-**Total: ~3.5h.** Could ship Monday/Tuesday next week alongside the PUBLIC-MATURITY-BADGE implementation.
-
----
-
-## Open questions before implementation
-
-1. **What does the left colored strip actually mean today?** If it's tier urgency, the maturity dot supersedes it — drop. If it's something else, keep it but label it.
-
-2. **What does the standalone percentage chip mean today?** Confirm before deletion — if it's load-bearing for some users, keep with a label instead of dropping.
-
-3. **Is the "PRO" badge on selected rows a gate (hide bet for non-Pro) or just an info chip?** If gate, the chip is required. If info, it can move to hover.
-
-4. **Should the maturity dot ever be RED (visible warning) or always green/yellow/gray (passive info)?** Public framing argues for passive — never tell users "don't bet" — but a red dot on demonstrably losing bots could be useful operator signal.
-
----
-
-## Next step
-
-You react to this doc. I implement whichever option (or modified variant) you pick. If none of the three feel right, I do another design pass.
+Answer the 6 open questions above. Or pick: "ship Tier 1+2+3 with my recommendations, ask me when in doubt" → I start implementing.
