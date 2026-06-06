@@ -16737,6 +16737,64 @@ def _():
     )
 
 
+@test("BOT-MODAL-COHORT-ROW — per-bot modal cohort breakdown table")
+def _():
+    """BOT-MODAL-COHORT-ROW (2026-06-06): adds a 3-row performance
+    breakdown (All-time / Since MODEL_BATCH_CUTOFF / Δ) to the per-bot
+    drilldown modal. Surfaces what FULL-BOT-AUDIT-2026-06-06 required
+    a multi-hour SQL audit to produce — now in-product, refreshes
+    every dashboard load.
+
+    Implementation:
+      - MODEL_BATCH_CUTOFF = '2026-05-24' constant in bot-aggregates.ts
+        (pinned to the v20260524_market production rollout)
+      - BotStat type extended with `avgClv` (all-time) + `postCutoff`
+        sub-object matching the BotCohortStats shape
+      - buildBotStats() computes the post-cutoff cohort via ISO-string
+        comparison on placedAt (lexically sortable)
+      - BotDetailModal renders a 3-row table, with the Δ row hidden
+        when post-cutoff cohort is empty
+
+    Pin every layer so a future refactor can't silently drop the
+    cohort split.
+    """
+    bot_agg = _web_path("src/lib/bot-aggregates.ts").read_text()
+    assert 'MODEL_BATCH_CUTOFF = "2026-05-24"' in bot_agg, (
+        "MODEL_BATCH_CUTOFF constant must be pinned at 2026-05-24 "
+        "(matches v20260524_market production rollout). If this date "
+        "changes, update the smoke + the queue row."
+    )
+    assert "export interface BotCohortStats" in bot_agg, (
+        "BotCohortStats type must be exported — drives the postCutoff "
+        "shape and could be reused for other cohort splits"
+    )
+    assert "postCutoff: BotCohortStats" in bot_agg, (
+        "BotStat must carry postCutoff sub-object"
+    )
+    assert "avgClv: number | null" in bot_agg, (
+        "BotStat must carry avgClv (all-time CLV — surfaced in the new table)"
+    )
+    # buildBotStats actually computes the post-cutoff split
+    assert "placedAt >= MODEL_BATCH_CUTOFF" in bot_agg, (
+        "buildBotStats must filter post-cutoff cohort by placedAt"
+    )
+
+    modal = _web_path("src/components/bot-dashboard-client.tsx").read_text()
+    assert "MODEL_BATCH_CUTOFF" in modal, (
+        "modal must import MODEL_BATCH_CUTOFF to label the post-cutoff row"
+    )
+    assert "Performance breakdown" in modal, (
+        "modal must render the breakdown table"
+    )
+    assert "bot.postCutoff" in modal, (
+        "modal must read from the new postCutoff sub-object"
+    )
+    # The 3-row structure
+    assert "All&#8209;time" in modal or "All-time" in modal, (
+        "row 1 label must be 'All-time' (non-breaking hyphen acceptable)"
+    )
+
+
 @test("THRESHOLD-CHECK-AUDIT-FIX — lowercase markets + match_signals + P3.2")
 def _():
     """THRESHOLD-CHECK-AUDIT-FIX (2026-06-06): three silent bugs in
