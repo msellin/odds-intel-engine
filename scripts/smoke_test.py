@@ -19066,5 +19066,45 @@ def test_coolbet_ingest_banner():
     )
 
 
+@test("MATCH-RECAPS — recap data functions + pages present in frontend")
+def test_match_recaps():
+    """MATCH-RECAPS (2026-06-06): SEO recap pages for settled A-tier matches.
+    Validates that the data functions and page routes exist in the frontend.
+    """
+    import pathlib
+    engine_data = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/lib/engine-data.ts")
+    recap_index = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/app/(app)/recaps/page.tsx")
+    recap_detail = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/app/(app)/recaps/[id]/page.tsx")
+    sitemap = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/app/sitemap.ts")
+
+    for p in [engine_data, recap_index, recap_detail, sitemap]:
+        if not p.exists():
+            raise SkipTest(f"web repo not available: {p}")
+
+    src = engine_data.read_text()
+    assert "getMatchRecapData" in src, "engine-data must export getMatchRecapData"
+    assert "getRecapIndex" in src, "engine-data must export getRecapIndex"
+    assert "RecapBet" in src, "engine-data must export RecapBet interface"
+    assert "MatchRecapData" in src, "engine-data must export MatchRecapData interface"
+    assert "RecapIndexEntry" in src, "engine-data must export RecapIndexEntry interface"
+
+    # Index page uses the data function
+    idx_src = recap_index.read_text()
+    assert "getRecapIndex" in idx_src, "index page must import getRecapIndex"
+    assert "/recaps/" in idx_src, "index page must link to individual recap pages"
+
+    # Detail page uses the data function and handles notFound
+    detail_src = recap_detail.read_text()
+    assert "getMatchRecapData" in detail_src, "detail page must import getMatchRecapData"
+    assert "notFound" in detail_src, "detail page must call notFound() for missing matches"
+    assert "generateMetadata" in detail_src, "detail page must export generateMetadata for SEO"
+    assert "application/ld+json" in detail_src, "detail page must include schema.org structured data"
+
+    # Sitemap includes recaps
+    sm_src = sitemap.read_text()
+    assert "getRecapIndex" in sm_src, "sitemap must include recap pages"
+    assert "/recaps" in sm_src, "sitemap must reference /recaps URL"
+
+
 if __name__ == "__main__":
     main()
