@@ -16795,6 +16795,63 @@ def _():
     )
 
 
+@test("PINNACLE-ANALYZER-STRUCTURE — analyzer ready to run Mon 2026-06-09")
+def _():
+    """PINNACLE-ANALYZER (2026-06-06): `scripts/analyze_pinnacle_movement.py`
+    reads the experiment CSV from `scripts/pinnacle_movement_research.py`
+    and produces a markdown verdict on whether weekend Pinnacle direct-
+    polling at higher cadence would materially improve our CLV vs the
+    current AF 3h refresh cycle.
+
+    Designed to run unattended Mon 2026-06-09 06:00 UTC right after the
+    collector auto-exits. This smoke verifies the analyzer is
+    structurally intact between now and Monday so a refactor doesn't
+    silently break the Monday-morning analysis.
+
+    Pin:
+      - File exists + imports without error
+      - Decision thresholds frozen at the pre-data values
+        (don't retune after seeing results)
+      - Output path convention is YYYY-MM-DD-stamped + lives in dev/active/
+    """
+    import pathlib, importlib.util
+    script = pathlib.Path("scripts/analyze_pinnacle_movement.py")
+    assert script.exists(), "analyzer must exist (pre-Monday)"
+
+    src = script.read_text()
+    # Frozen pre-data decision criteria — never retune after seeing results
+    assert "MATERIAL_SHIFT_PP = 1.0" in src, (
+        "material-shift threshold must stay at 1.0pp — spec discipline "
+        "is to freeze decision criteria before seeing data"
+    )
+    assert "THRESHOLD_STRONG_CASE_PCT = 20.0" in src, (
+        "strong-case threshold must stay at 20% — pre-data freeze"
+    )
+    assert "THRESHOLD_MARGINAL_PCT = 10.0" in src, (
+        "marginal threshold must stay at 10% — pre-data freeze"
+    )
+
+    # Output path convention
+    assert "pinnacle-movement-analysis-{date}.md" in src, (
+        "analyzer output must follow YYYY-MM-DD naming for traceability"
+    )
+
+    # CSV source path matches the collector's output
+    assert "pinnacle-movement-2026-06-05.csv" in src, (
+        "analyzer must read from the collector's CSV — "
+        "scripts/pinnacle_movement_research.py PID 81711 writes here"
+    )
+
+    # Import sanity — ensures imports don't break at runtime
+    spec = importlib.util.spec_from_file_location("pin_analyzer", script)
+    assert spec is not None and spec.loader is not None, "import spec broken"
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert callable(mod.analyze), "analyze() function must be callable"
+    assert callable(mod.render_markdown), "render_markdown() must be callable"
+    assert callable(mod.main), "main() entrypoint must be callable"
+
+
 @test("THRESHOLD-CHECK-AUDIT-FIX — lowercase markets + match_signals + P3.2")
 def _():
     """THRESHOLD-CHECK-AUDIT-FIX (2026-06-06): three silent bugs in
