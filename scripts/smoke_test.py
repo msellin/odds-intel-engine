@@ -12343,12 +12343,19 @@ def _():
     # Must respect the same scope as the cohort split (active+non-experimental,
     # settled-only) so the headline tile and sparkline tell the same story
     sparkline_idx = settle.index("PERF-HERO-EQUITY-SPARKLINE")
-    sparkline_block = settle[sparkline_idx:sparkline_idx + 2000]
+    sparkline_block = settle[sparkline_idx:sparkline_idx + 2500]
     assert "b.is_active = true" in sparkline_block, "sparkline must filter active bots"
     assert "b.retired_at IS NULL" in sparkline_block, "sparkline must exclude retired"
     assert "maturity_label != 'experimental'" in sparkline_block, \
         "sparkline must exclude experimental"
-    assert "interval '30 days'" in sparkline_block, "sparkline window must be 30 days"
+    # UI-METRIC-SOT (2026-06-06): the 30d hero sparkline is now the tail of a
+    # single 90d query that also drives the PerformanceExtras chart. Either
+    # an explicit 30-day interval (legacy) or a 90-day query with tail-slice
+    # (current) satisfies the SoT contract.
+    assert ("interval '30 days'" in sparkline_block
+            or "interval '90 days'" in sparkline_block), (
+        "sparkline window must come from a 30d or 90d settlement query"
+    )
     # cumulative not raw daily — the visual story is the running total
     assert '"cum": round(cum' in sparkline_block, \
         "sparkline payload must store cumulative P&L, not raw daily values"
@@ -18651,6 +18658,120 @@ def test_inplay_calibrated_prob_wire():
     assert "calibrated_prob" not in bet_no_cal, (
         "calibrated_prob must NOT be set when extras lacks cal_model_prob — "
         "writing model_prob there would falsely suggest Platt ran"
+    )
+
+
+@test("UI-METRIC-SOT — dashboard_cache is single source of truth; no client-side hero overrides; bot modal chart safe against voids; 30d + 90d curves share a query")
+def _():
+    """Cross-page metric flicker fix + chart consistency (UI-METRIC-SOT, 2026-06-06).
+
+    The flicker root cause was `getTrackRecordStats` reading `cache.avg_clv`
+    (all-bots-incl-retired cohort) while PerformanceClient recomputed
+    `computedActivePerf.avgClv` (active-only cohort). Cache already had
+    `active_avg_clv` written by settlement — frontend just wasn't reading it.
+
+    Bankroll chart drops were caused by preferring `bankrollAfter` snapshots
+    that go stale when sibling bets are retroactively voided. Fix: always
+    recompute from pnl of the displayed (non-voided) bets.
+
+    The 90d cumulative-P&L chart was running its own query with a different
+    cohort than the 30d hero sparkline. Fix: settlement.py emits both curves
+    from a single 90d query (the 30d series is the tail of the 90d series);
+    `getPublicPerformanceExtras` reads cache.daily_pnl_curve_90d for the chart.
+    """
+    import pathlib
+
+    # ── (1) Migration 188 adds daily_pnl_curve_90d ──────────────────────
+    mig = pathlib.Path("supabase/migrations/188_dashboard_cache_pnl_curve_90d.sql").read_text()
+    assert "daily_pnl_curve_90d" in mig, "Migration 188 must add daily_pnl_curve_90d"
+    assert "JSONB" in mig, "daily_pnl_curve_90d must be JSONB"
+
+    # ── (2) settlement.py emits both curves from one 90d query ──────────
+    settle = pathlib.Path("workers/jobs/settlement.py").read_text()
+    assert "daily_pnl_curve_90d" in settle, "settlement.py must build daily_pnl_curve_90d"
+    assert "daily_pnl_rows_90d" in settle, (
+        "settlement.py must use a single 90d query — the 30d curve is the tail"
+    )
+    sot_idx = settle.index("daily_pnl_rows_90d")
+    sot_block = settle[sot_idx:sot_idx + 2500]
+    assert "interval '90 days'" in sot_block, "SoT query must cover 90 days"
+    assert "b.is_active = true" in sot_block, "SoT curve must filter active bots"
+    assert "b.retired_at IS NULL" in sot_block, "SoT curve must exclude retired"
+    assert "maturity_label != 'experimental'" in sot_block, (
+        "SoT curve must exclude experimental"
+    )
+    assert "daily_pnl_curve_30d" in sot_block, (
+        "The 30d curve must be derived in the same block as the 90d curve"
+    )
+    # And the cache INSERT must carry the new column
+    insert_idx = settle.index("INSERT INTO dashboard_cache")
+    insert_block = settle[insert_idx:insert_idx + 3000]
+    assert "daily_pnl_curve_90d" in insert_block, (
+        "dashboard_cache INSERT must include the new daily_pnl_curve_90d column"
+    )
+
+    # ── (3) Frontend: getTrackRecordStats reads active_avg_clv ──────────
+    data_ts = _web_path("src/lib/engine-data.ts").read_text()
+    assert "cache.active_avg_clv ?? cache.avg_clv" in data_ts, (
+        "getTrackRecordStats must read cache.active_avg_clv with avg_clv as legacy fallback — "
+        "otherwise the /performance hero displays a different cohort than the client recompute "
+        "and the Suspense swap shows a flicker."
+    )
+    # DashboardCache interface gains daily_pnl_curve_90d
+    assert "daily_pnl_curve_90d" in data_ts, (
+        "DashboardCache interface must declare daily_pnl_curve_90d"
+    )
+    # PublicPerformanceExtras cumulative now reads from cache (with legacy
+    # bucketing path retained for pre-migration-188 rows)
+    extras_idx = data_ts.index("_getPublicPerformanceExtrasUncached")
+    extras_block = data_ts[extras_idx:extras_idx + 3500]
+    assert "cache?.daily_pnl_curve_90d" in extras_block, (
+        "getPublicPerformanceExtras must source the cumulative series from cache.daily_pnl_curve_90d"
+    )
+
+    # ── (4) PerformanceClient no longer overrides hero stats ────────────
+    perf_client = _web_path("src/components/performance-client.tsx").read_text()
+    assert "UI-METRIC-SOT" in perf_client, (
+        "performance-client must document the SoT contract"
+    )
+    assert "computedActivePerf" not in perf_client, (
+        "PerformanceClient must not override hero stats with a client-side recompute — "
+        "cache is the single source of truth"
+    )
+    assert "heroStats" not in perf_client and "heroCache" not in perf_client, (
+        "PerformanceClient must pass trackStats + cache straight through to PerformanceHero"
+    )
+    assert "buildPerformanceStats" not in perf_client, (
+        "buildPerformanceStats is no longer needed in PerformanceClient — cache is canonical"
+    )
+    # Leaderboard recompute is still expected for fresh retirement state
+    assert "buildPublicBotStats" in perf_client, (
+        "Leaderboard recompute for Pro+ retains immediacy — must remain in PerformanceClient"
+    )
+
+    # ── (5) Bot-modal bankroll chart recomputes from pnl (void-safe) ────
+    leaderboard = _web_path("src/components/performance-leaderboard.tsx").read_text()
+    assert "BOT-MODAL-CHART-VOID-BUG" in leaderboard, (
+        "performance-leaderboard buildChartData must document the void-cleanup safety reasoning"
+    )
+    chart_idx = leaderboard.index("function buildChartData")
+    chart_block = leaderboard[chart_idx:chart_idx + 2000]
+    assert "running += b.pnl" in chart_block, (
+        "buildChartData must always recompute running from pnl"
+    )
+    assert "hasBankroll" not in chart_block, (
+        "buildChartData must NOT fall back to bankrollAfter snapshots — they go stale on void cleanup"
+    )
+
+    # Admin /admin/bots chart has the same fix
+    admin_client = _web_path("src/components/bot-dashboard-client.tsx").read_text()
+    admin_chart_idx = admin_client.index("function buildBankrollData")
+    admin_chart_block = admin_client[admin_chart_idx:admin_chart_idx + 1500]
+    assert "running += b.pnl" in admin_chart_block, (
+        "buildBankrollData (admin) must always recompute running from pnl"
+    )
+    assert "hasBankrollData" not in admin_chart_block, (
+        "buildBankrollData (admin) must NOT fall back to bankrollAfter snapshots"
     )
 
 

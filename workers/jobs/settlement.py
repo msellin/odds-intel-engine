@@ -1609,10 +1609,13 @@ def write_dashboard_cache():
         inplay_settled,  inplay_won,  inplay_staked,  inplay_pnl,  inplay_roi,  _ = \
             _cohort_fields("inplay", include_clv=False)
 
-        # PERF-HERO-EQUITY-SPARKLINE (2026-06-01) — daily cumulative P&L for
-        # last 30d on the active+non-experimental cohort. Tiny SVG sparkline on
-        # /performance turns the headline number into a trajectory.
-        daily_pnl_rows = execute_query("""
+        # PERF-HERO-EQUITY-SPARKLINE (2026-06-01) — daily cumulative P&L on the
+        # active+non-experimental cohort. The hero "Last 31d" sparkline reads
+        # `daily_pnl_curve_30d`; the PerformanceExtras "Last 90d" cumulative
+        # chart reads `daily_pnl_curve_90d`. Both are now derived from a SINGLE
+        # 90-day query so endpoints can't drift — the 30d series is just the
+        # 90d series sliced to its tail. UI-METRIC-SOT (2026-06-06).
+        daily_pnl_rows_90d = execute_query("""
             SELECT
                 DATE(sb.pick_time) AS d,
                 ROUND(SUM(sb.pnl)::numeric, 2) AS daily_pnl
@@ -1621,17 +1624,31 @@ def write_dashboard_cache():
             WHERE sb.result IN ('won','lost')
               AND b.is_active = true AND b.retired_at IS NULL
               AND b.maturity_label != 'experimental'
-              AND sb.pick_time >= now() - interval '30 days'
+              AND sb.pick_time >= now() - interval '90 days'
             GROUP BY 1 ORDER BY 1
         """, [])
-        cum = 0.0
-        daily_pnl_curve_30d = []
-        for r in daily_pnl_rows:
-            cum += float(r["daily_pnl"] or 0)
-            daily_pnl_curve_30d.append({
+        # Walk twice: first build the 90d cumulative, then slice the last 30d
+        # and re-zero its baseline so the sparkline reads "last 30 days of P&L"
+        # rather than "30 days starting from whatever cum was 60d ago".
+        cum_90 = 0.0
+        full_curve_90d = []
+        for r in daily_pnl_rows_90d:
+            cum_90 += float(r["daily_pnl"] or 0)
+            full_curve_90d.append({
                 "d": r["d"].isoformat(),
-                "cum": round(cum, 2),
+                "daily": float(r["daily_pnl"] or 0),
+                "cum_full": round(cum_90, 2),
             })
+        daily_pnl_curve_90d = [
+            {"d": p["d"], "cum": p["cum_full"]} for p in full_curve_90d
+        ]
+        thirty_days_ago = (datetime.now(timezone.utc).date() - timedelta(days=30)).isoformat()
+        tail_30 = [p for p in full_curve_90d if p["d"] >= thirty_days_ago]
+        cum_30 = 0.0
+        daily_pnl_curve_30d = []
+        for p in tail_30:
+            cum_30 += p["daily"]
+            daily_pnl_curve_30d.append({"d": p["d"], "cum": round(cum_30, 2)})
 
         # PERF-HERO-RECENT-WINS (2026-06-01) — top 8 unique wins last 14d by
         # CLV beat. Story = "model picked these and was right + beat closing
@@ -1892,13 +1909,13 @@ def write_dashboard_cache():
                 prematch_total_pnl, prematch_roi_pct, prematch_avg_clv,
                 inplay_settled_bets, inplay_won_bets, inplay_total_staked,
                 inplay_total_pnl, inplay_roi_pct,
-                daily_pnl_curve_30d,
+                daily_pnl_curve_30d, daily_pnl_curve_90d,
                 recent_top_wins,
                 upcoming_model_summary,
                 pro_value_bets_30d,
                 elite_value_bets_30d,
                 elite_value_bets_cumulative
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, [
             int(total_bets), int(settled_bets), int(pending_bets), int(won), int(lost),
             hit_rate, total_staked, total_pnl, roi_pct, avg_clv,
@@ -1912,7 +1929,7 @@ def write_dashboard_cache():
             prematch_pnl, prematch_roi, prematch_clv,
             inplay_settled, inplay_won, inplay_staked,
             inplay_pnl, inplay_roi,
-            json.dumps(daily_pnl_curve_30d),
+            json.dumps(daily_pnl_curve_30d), json.dumps(daily_pnl_curve_90d),
             json.dumps(recent_top_wins),
             json.dumps(upcoming_model_summary) if upcoming_model_summary else None,
             json.dumps(pro_value_bets_30d) if pro_value_bets_30d else None,
