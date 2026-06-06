@@ -721,7 +721,21 @@ def _do_search(session: CoolbetSession, query: str) -> list[dict]:
                 data if isinstance(data, list)
                 else data.get("events") or data.get("results") or []
             )
-            return [e for e in (_parse_event(ev) for ev in raw_events) if e]
+            # COOLBET-SEARCH-SPORT-FILTER (2026-06-06): /search/v2 returns
+            # events across every sport (basketball, esports, rugby, boxing…).
+            # `fuzz.partial_ratio` is generous enough that any candidate whose
+            # team name contains a substring of our query scores 100 — e.g.
+            # football "Shanghai Port II vs Shanghai Second" matched the
+            # basketball "Shanghai - Liaoning" (sport_category_id=65035) at
+            # score 100 and the placer happily fetched its Match Total Points
+            # markets, then dropped every market as "no market" because
+            # parse_market doesn't know basketball. Drop non-football here so
+            # the fuzzy matcher only ever sees football candidates.
+            football = [
+                ev for ev in raw_events
+                if ev.get("sport_category_id") == _FOOTBALL_CATEGORY_ID
+            ]
+            return [e for e in (_parse_event(ev) for ev in football) if e]
 
         last_status = resp.status_code
         last_body = (resp.text or "")[:200].replace("\n", " ")
