@@ -1,10 +1,17 @@
 """Ad-hoc: report current values for the 'Key Thresholds to Watch' section of PRIORITY_QUEUE.md.
 
-Schema notes (verified 2026-05-24):
+Schema notes (verified 2026-05-24, refreshed 2026-06-06):
 - Fixtures table is `matches`, key is `match_id` (and `matches.id`), status values: scheduled/live/finished/postponed
-- News uses `news_events` (not news_analysis)
 - match_feature_vectors uses `opening_implied_home/draw/away` (no single `opening_implied` column)
-- lineups uses `match_id` (no `fixture_id` / `captured_at`)
+- lineups has match_id but NO `fetched_at` / `captured_at`; date queries must use `matches.lineups_fetched_at`
+- **2026-06-06 audit fixes**:
+  - `simulated_bets.market` is **lowercase** in the DB (`o/u`, `1x2`, `btts`, `asian_handicap`).
+    Earlier queries used uppercase ('O/U', '1X2', 'AH', 'BTTS') and silently returned 0 rows.
+  - `news_events` table exists but is empty — news signals now live in `match_signals` with
+    `signal_name ILIKE '%news%'`. Same for lineup signals.
+  - `simulated_bets` has a single `model_probability` column (not separate poisson/xgb cols);
+    P3.2 stacked meta gate must be measured via joins to the `predictions` table where
+    `source IN ('poisson', 'xgboost')`.
 """
 import os, sys
 sys.path.insert(0, ".")
@@ -51,11 +58,15 @@ out.append(("ALN-1 — won/lost/void bets since 2026-05-06",
     safe("""SELECT COUNT(*) FROM simulated_bets
             WHERE result IN ('won','lost','void') AND created_at >= '2026-05-06'""")))
 
-out.append(("News signals — distinct matches in news_events since 5/6",
-    safe("""SELECT COUNT(DISTINCT match_id) FROM news_events WHERE detected_at >= '2026-05-06'""")))
-
-out.append(("Lineup signals — distinct matches in lineups (no date col; total)",
-    safe("""SELECT COUNT(DISTINCT match_id) FROM lineups""")))
+# 2026-06-06 audit: news_events table is empty. The signal pipeline writes news +
+# lineup signals to match_signals (signal_name ILIKE '%news%' / '%lineup%') with
+# captured_at timestamps. Use match_signals for both.
+out.append(("News signals — distinct matches in match_signals since 5/6",
+    safe("""SELECT COUNT(DISTINCT match_id) FROM match_signals
+            WHERE signal_name ILIKE '%news%' AND captured_at >= '2026-05-06'""")))
+out.append(("Lineup signals — distinct matches in match_signals since 5/6",
+    safe("""SELECT COUNT(DISTINCT match_id) FROM match_signals
+            WHERE signal_name ILIKE '%lineup%' AND captured_at >= '2026-05-06'""")))
 out.append(("Lineup signals — distinct matches via matches.lineups_fetched_at since 5/6",
     safe("""SELECT COUNT(*) FROM matches WHERE lineups_fetched_at >= '2026-05-06'""")))
 
@@ -87,9 +98,12 @@ out.append(("ML-RETRAIN-1 — coverage among stats-supplying leagues (TRUE metri
             FROM lcov WHERE w_stats > 0""",
          fmt_coverage)))
 
+# 2026-06-06 audit: simulated_bets.market is LOWERCASE in the DB.
+# Lowercase values: 'o/u', '1x2', 'btts', 'asian_handicap', 'double_chance', 'draw_no_bet'.
+# Prior uppercase queries silently returned 0 rows for ~2 weeks.
 out.append(("CAL-PLATT O/U v14 — per selection (calibrated_prob & odds set)",
     safe("""SELECT selection, COUNT(*) FROM simulated_bets
-            WHERE market='O/U' AND result IN ('won','lost')
+            WHERE market='o/u' AND result IN ('won','lost')
               AND model_version='v14'
               AND calibrated_prob IS NOT NULL
               AND odds_at_pick IS NOT NULL
@@ -98,13 +112,13 @@ out.append(("CAL-PLATT O/U v14 — per selection (calibrated_prob & odds set)",
 
 out.append(("CAL-PLATT 1X2 v14 — per selection (settled)",
     safe("""SELECT selection, COUNT(*) FROM simulated_bets
-            WHERE market='1X2' AND result IN ('won','lost') AND model_version='v14'
+            WHERE market='1x2' AND result IN ('won','lost') AND model_version='v14'
             GROUP BY selection ORDER BY selection""",
          lambda r: ", ".join(f"{s}={n}" for s, n in r) or "no rows")))
 
 out.append(("CAL-PLATT AH/BTTS — settled since 5/6",
     safe("""SELECT market, COUNT(*) FROM simulated_bets
-            WHERE market IN ('AH','BTTS') AND result IN ('won','lost','void')
+            WHERE market IN ('asian_handicap','btts') AND result IN ('won','lost','void')
               AND created_at >= '2026-05-06'
             GROUP BY market ORDER BY market""",
          lambda r: ", ".join(f"{m}={n}" for m, n in r) or "no rows")))
@@ -117,10 +131,26 @@ out.append(("Meta-model Phase 2 — settled + CLV + dimension_scores",
             WHERE result IN ('won','lost','void') AND created_at >= '2026-05-06'
               AND clv IS NOT NULL AND dimension_scores IS NOT NULL""")))
 
+# 2026-06-06 audit: P3.2 stacked-meta gate. Original gate as written was
+# unmeasurable — simulated_bets has a single `model_probability` column (the
+# ensemble output), not separate poisson/xgb columns. Per-source predictions
+# live in the `predictions` table. Measure as: settled bets where BOTH
+# source='poisson' AND source='xgboost' rows exist for the bet's match.
+# Caveat: xgboost only predicts 1x2 in current pipeline so most non-1x2
+# bets fail this filter. P3.2's stacked-meta target is naturally 1x2-only.
+out.append(("P3.2 — settled bets w/ poisson+xgb predictions on the match",
+    safe("""SELECT COUNT(*) FROM simulated_bets sb
+            WHERE sb.result IN ('won','lost')
+              AND EXISTS (SELECT 1 FROM predictions p
+                          WHERE p.match_id=sb.match_id AND p.source='poisson')
+              AND EXISTS (SELECT 1 FROM predictions p
+                          WHERE p.match_id=sb.match_id AND p.source='xgboost')""")))
+
 # bonus context — distinct selections in CAL-PLATT-UPGRADE for v14 to spot if it's `over25`/`under25`
+# (selection values are 'over 2.5' / 'under 2.5' / 'over 3.5' / 'under 3.5' etc.)
 out.append(("DBG — distinct O/U v14 selection values (settled, any prob)",
     safe("""SELECT selection, COUNT(*) FROM simulated_bets
-            WHERE market='O/U' AND result IN ('won','lost') AND model_version='v14'
+            WHERE market='o/u' AND result IN ('won','lost') AND model_version='v14'
             GROUP BY selection ORDER BY 2 DESC""",
          lambda r: ", ".join(f"{s}={n}" for s, n in r) or "no rows")))
 

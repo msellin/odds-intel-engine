@@ -16737,6 +16737,63 @@ def _():
     )
 
 
+@test("THRESHOLD-CHECK-AUDIT-FIX — lowercase markets + match_signals + P3.2")
+def _():
+    """THRESHOLD-CHECK-AUDIT-FIX (2026-06-06): three silent bugs in
+    `scripts/threshold_check.py` were quietly returning wrong / zero
+    values for ~2 weeks. Discovered when the 2026-06-06 model-task
+    audit didn't match the PRIORITY_QUEUE.md 2026-05-24 snapshot.
+
+    Bug 1: simulated_bets.market is lowercase in DB ('o/u', '1x2',
+      'btts', 'asian_handicap'). Queries used uppercase ('O/U', '1X2',
+      'AH', 'BTTS') and silently returned 0 rows.
+    Bug 2: news_events table is empty (signal pipeline now writes to
+      match_signals with signal_name ILIKE '%news%' / '%lineup%').
+    Bug 3: P3.2 (stacked ensemble meta-learner) gate was unmeasurable
+      — simulated_bets has only a single `model_probability`, no
+      separate poisson/xgb cols. Per-source predictions live in
+      `predictions` table; gate now joins to those via EXISTS.
+    """
+    import pathlib
+    script = pathlib.Path("scripts/threshold_check.py")
+    src = script.read_text()
+
+    # Bug 1: no uppercase market filters in WHERE clauses
+    assert "market='O/U'" not in src, (
+        "uppercase market='O/U' is the lowercase-vs-uppercase bug — "
+        "DB stores 'o/u'. Silent zero-rows for ~2 weeks before fix."
+    )
+    assert "market='1X2'" not in src, (
+        "uppercase market='1X2' — DB stores '1x2'"
+    )
+    assert "market IN ('AH','BTTS')" not in src, (
+        "uppercase AH/BTTS — DB uses 'asian_handicap' / 'btts'"
+    )
+
+    # Bug 2: news_events direct queries must be gone (table is empty;
+    # signal source moved to match_signals)
+    assert "FROM news_events" not in src, (
+        "news_events table is empty in prod — signal source moved "
+        "to match_signals.signal_name ILIKE '%news%'"
+    )
+    # match_signals must be the new source
+    assert "match_signals" in src and "signal_name ILIKE '%news%'" in src, (
+        "must query match_signals for news signal counts"
+    )
+    assert "signal_name ILIKE '%lineup%'" in src, (
+        "must query match_signals for lineup signal counts"
+    )
+
+    # Bug 3: P3.2 stacked-meta gate must be present and use the
+    # predictions table (not the unmeasurable simulated_bets-only query)
+    assert "P3.2" in src, "P3.2 row must be present in threshold output"
+    assert "p.source='poisson'" in src and "p.source='xgboost'" in src, (
+        "P3.2 must check for both per-source predictions via "
+        "predictions table — original 'both predictions' phrasing "
+        "was unmeasurable from simulated_bets alone"
+    )
+
+
 @test("POSTHOG-CSP — connect-src allows PostHog ingestion endpoints")
 def _():
     """POSTHOG-CSP-FIX (2026-06-06): PostHog was silently broken in
