@@ -174,6 +174,8 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | /my-picks | ✅ Personal bet tracker + "Model vs You" + shareable pick cards |
 | /welcome onboarding | ✅ Built |
 | /admin/bots | ✅ Superadmin bot P&L dashboard |
+| /admin/place | ✅ Coolbet auto-place candidate table. **PER-MARKET-EDGE-V2 2026-06-06**: badge gates per market (1x2 ≥10%, o/u ≥3%, AH ≥5%, BTTS ≥10%, DC retired) instead of a flat 5% floor. Mirrors the placer's per-market thresholds. |
+| /admin/real-bets | ✅ Real-money placement log + ROI/CLV stats. **PER-MARKET-EDGE-V2 2026-06-06**: split into Era v1 (pre `MARKET_THRESHOLDS_V2_EPOCH = 2026-06-06T17:00:00Z`) vs Era v2 (post) so the threshold-change lift is measurable in isolation. Daily breakdown row highlighted at the epoch. |
 | Stripe payments | ✅ Live production mode since 2026-05-04. Checkout + webhook + portal + tier gating + annual billing + founding rates + promo codes |
 | Superadmin tier preview | ✅ Cookie-based tier switcher for QA |
 

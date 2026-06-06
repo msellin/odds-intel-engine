@@ -3620,6 +3620,59 @@ def test_coolbet_fuzzy_case_insensitive():
     assert ev is not None, "fuzzy_match_event must be case- AND diacritic-insensitive"
 
 
+@test("PER-MARKET-EDGE-V2 — placer per-market thresholds wired correctly")
+def test_per_market_edge_thresholds():
+    """PER-MARKET-EDGE-V2 (2026-06-06): the placer's per-market floor maps
+    must match the backtest-driven values (1x2: 10%, o/u: 3%, AH: 5%,
+    BTTS: 10%, DC: retired). The helper must return math.inf for retired
+    markets so any `edge >= floor` comparison fails. Engine + frontend
+    must agree on the same numbers (mirrored manually — drift kills the
+    badge accuracy)."""
+    import math
+    from workers.automation.coolbet_placer import (
+        _MIN_EDGE_BY_MARKET, _MIN_EDGE, _min_edge_for,
+    )
+
+    # Backtest values from dev/active/per-market-thresholds-plan.md.
+    assert _MIN_EDGE_BY_MARKET["1x2"]            == 0.10, "1x2 floor must be 10% (backtest +14% ROI at ≥10%)"
+    assert _MIN_EDGE_BY_MARKET["o/u"]            == 0.03, "o/u floor must be 3% (already profitable at floor)"
+    assert _MIN_EDGE_BY_MARKET["asian_handicap"] == 0.05, "AH floor must be 5% (flat — moderate floor)"
+    assert _MIN_EDGE_BY_MARKET["btts"]           == 0.10, "BTTS floor must be 10% (only profitable ≥10%)"
+    assert _MIN_EDGE_BY_MARKET["double_chance"]  is None, "DC must be retired (losing at every threshold)"
+
+    # Helper returns the right value for each market type.
+    assert _min_edge_for("1x2")            == 0.10
+    assert _min_edge_for("o/u")            == 0.03
+    assert _min_edge_for("asian_handicap") == 0.05
+    assert _min_edge_for("btts")           == 0.10
+    assert _min_edge_for("double_chance")  == math.inf, "retired markets must return inf so no edge passes"
+    # Case-insensitive
+    assert _min_edge_for("1X2")            == 0.10, "_min_edge_for must be case-insensitive"
+    # Unknown / null markets fall back to the global default
+    assert _min_edge_for("unknown_market") == _MIN_EDGE
+    assert _min_edge_for(None)             == _MIN_EDGE
+    assert _min_edge_for("")               == _MIN_EDGE
+
+    # Sanity: a DC bet with 50% edge still rejects.
+    assert not (0.50 >= _min_edge_for("double_chance")), \
+        "DC retirement must reject even absurd-edge bets"
+
+    # Frontend mirror — engine-data.ts holds the same map. Source-inspect
+    # to ensure they're in sync (any drift makes the /admin/place badge lie).
+    from pathlib import Path
+    fe = Path(__file__).resolve().parent.parent.parent / "odds-intel-web" / "src" / "lib" / "engine-data.ts"
+    if fe.exists():
+        src = fe.read_text()
+        assert "COOLBET_AUTO_MIN_EDGE_BY_MARKET" in src, \
+            "frontend must export COOLBET_AUTO_MIN_EDGE_BY_MARKET"
+        assert '"1x2":            0.10' in src or '"1x2": 0.10' in src, \
+            "frontend 1x2 floor must mirror engine (0.10)"
+        assert '"double_chance":  null' in src or '"double_chance": null' in src, \
+            "frontend must mark double_chance as retired (null)"
+        assert "MARKET_THRESHOLDS_V2_EPOCH" in src, \
+            "frontend must export MARKET_THRESHOLDS_V2_EPOCH for /admin/real-bets era split"
+
+
 @test("COOLBET-SEARCH-SPORT-FILTER — _do_search drops non-football events")
 def test_coolbet_search_sport_filter():
     """COOLBET-SEARCH-SPORT-FILTER (2026-06-06): /search/v2 returns events

@@ -61,6 +61,39 @@ _ODDS_TOLERANCE  = float(os.getenv("COOLBET_ODDS_TOLERANCE","0.05"))
 _MIN_REMAINING_EDGE = float(os.getenv("COOLBET_MIN_REMAINING_EDGE", str(_MIN_EDGE)))
 _FUZZY_THRESHOLD = 70
 
+# PER-MARKET-EDGE-V2 (2026-06-06): edge predictiveness varies markedly by
+# market — `scripts/edge_threshold_backtest.py` over 3,086 settled
+# simulated_bets shows 1X2 needs ≥10% edge to be profitable, o/u is fine at
+# 3%, AH is flat, BTTS only profitable ≥10%, DC loses at every threshold.
+# The SQL prefilter still uses `_MIN_EDGE` (global 3% floor); this Python
+# gate then drops anything below the per-market threshold. Keeps the SQL
+# simple while letting us tune one knob per market.
+#
+# Values are decimal fractions (0.10 = 10%). `None` means "retired — never
+# place real money on this market". `_min_edge_for(market)` returns
+# `math.inf` for None so the gate trivially rejects.
+_MIN_EDGE_BY_MARKET: dict[str, float | None] = {
+    "1x2":            0.10,   # was 0.03 — backtest +14% ROI at ≥10%
+    "o/u":            0.03,   # already profitable at floor — unchanged
+    "asian_handicap": 0.05,   # non-monotonic — keep moderate floor
+    "btts":           0.10,   # was 0.03 — only profitable ≥10%
+    "double_chance":  None,   # retired — losing at every threshold
+    "combo":          0.10,   # combos use ensemble edge; gate like 1x2
+    "draw_no_bet":    0.05,
+}
+
+
+def _min_edge_for(market: str | None) -> float:
+    """Per-market edge floor (decimal fraction). Returns `math.inf` for
+    retired markets so any comparison `edge >= floor` is False. Unknown
+    markets fall back to `_MIN_EDGE` (global default). Lowercase-matches."""
+    if not market:
+        return _MIN_EDGE
+    val = _MIN_EDGE_BY_MARKET.get(str(market).lower(), _MIN_EDGE)
+    if val is None:
+        return float("inf")
+    return val
+
 
 # CHERRY-PICK-PLACER (2026-06-01) — gate the placer's bet loaders by the
 # `bots.maturity_label` column so the curated subset of strategies (default:
@@ -397,6 +430,20 @@ def load_qualified_bets(bet_id_filter: str | None = None) -> list[dict]:
     if allowed_maturity is not None:
         log.info("Cherry-pick gate active: maturity ∈ %s — %d singles passed",
                  allowed_maturity, len(results))
+    # PER-MARKET-EDGE-V2 (2026-06-06): SQL gates at the global 3% floor;
+    # apply the per-market floor here. See _MIN_EDGE_BY_MARKET above.
+    before = len(results)
+    results = [r for r in results
+               if float(r.get("edge_percent") or 0) >= _min_edge_for(r.get("market"))]
+    dropped = before - len(results)
+    if dropped:
+        log.info("Per-market edge filter dropped %d/%d singles below floor "
+                 "(1x2≥%.0f%%/o/u≥%.0f%%/AH≥%.0f%%/BTTS≥%.0f%%/DC retired)",
+                 dropped, before,
+                 _MIN_EDGE_BY_MARKET["1x2"] * 100,
+                 _MIN_EDGE_BY_MARKET["o/u"] * 100,
+                 _MIN_EDGE_BY_MARKET["asian_handicap"] * 100,
+                 _MIN_EDGE_BY_MARKET["btts"] * 100)
     for r in results:
         if int(r.get("bot_count", 1)) > 1:
             log.info("  %s vs %s | %s %s — %s bots agree, using highest-edge row",
@@ -484,7 +531,15 @@ def load_qualified_combo_bets(bet_id_filter: str | None = None) -> list[dict]:
     if allowed_maturity is not None:
         log.info("Cherry-pick gate active: maturity ∈ %s — %d combos passed",
                  allowed_maturity, len(rows))
-    return [dict(r) for r in rows]
+    combos = [dict(r) for r in rows]
+    # PER-MARKET-EDGE-V2 (2026-06-06): apply combo market floor.
+    combo_floor = _min_edge_for("combo")
+    before = len(combos)
+    combos = [c for c in combos if float(c.get("edge_percent") or 0) >= combo_floor]
+    if before != len(combos):
+        log.info("Per-market edge filter dropped %d/%d combos below %.0f%%",
+                 before - len(combos), before, combo_floor * 100)
+    return combos
 
 
 # ── Coolbet event fetcher ─────────────────────────────────────────────────────
@@ -1517,17 +1572,19 @@ def place_all_bets(
             cal_prob = float(bet.get("model_probability") or 0)
         live_odds = ev_odds
         live_edge = (cal_prob - 1.0 / ev_odds) if (cal_prob > 0 and ev_odds > 1.0) else None
+        # PER-MARKET-EDGE-V2 (2026-06-06): live-edge floor is per-market too.
         # Fail closed: when live_edge is uncomputable (missing calibrated_prob +
         # model_probability) we can't verify the live price still has edge, so
         # skip rather than record a bet we never would have taken.
-        if live_edge is None or live_edge < _MIN_REMAINING_EDGE:
+        live_floor = _min_edge_for(mkt)
+        if live_edge is None or live_edge < live_floor:
             if live_edge is None:
                 log.info("Skip %s — live_edge uncomputable (no cal_prob/model_prob)", label)
             else:
                 log.info(
                     "Skip %s — edge at placement %.2f%% < %.2f%% min "
                     "(pick %.3f → live %.3f)",
-                    label, live_edge * 100, _MIN_REMAINING_EDGE * 100,
+                    label, live_edge * 100, live_floor * 100,
                     model_odds, ev_odds,
                 )
             results.append({**bet, "outcome": "edge_eroded",
@@ -1987,18 +2044,19 @@ def place_all_inplay_bets(
         # (market_id, outcome_id, odds_id, current_decimal_odds)
         bo_id, outcome_id, odds_uuid, ev_odds = target
 
-        # Edge check at live Coolbet price
+        # Edge check at live Coolbet price (per-market floor — PER-MARKET-EDGE-V2)
         cal_prob = float(bet.get("calibrated_prob") or 0)
         if not cal_prob:
             cal_prob = float(bet.get("model_probability") or 0)
         live_edge = (cal_prob - 1.0 / ev_odds) if (cal_prob > 0 and ev_odds > 1.0) else None
+        live_floor = _min_edge_for(mkt)
         # Fail closed when live_edge is uncomputable — see pre-match path above.
-        if live_edge is None or live_edge < _MIN_REMAINING_EDGE:
+        if live_edge is None or live_edge < live_floor:
             if live_edge is None:
                 log.info("Skip inplay %s — live_edge uncomputable (no cal_prob/model_prob)", label)
             else:
                 log.info("Skip inplay %s — edge at Coolbet %.2f%% < %.2f%% min",
-                         label, live_edge * 100, _MIN_REMAINING_EDGE * 100)
+                         label, live_edge * 100, live_floor * 100)
             results.append({**bet, "outcome": "edge_eroded",
                              "live_odds": ev_odds, "live_edge": live_edge})
             continue

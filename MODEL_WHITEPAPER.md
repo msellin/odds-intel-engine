@@ -663,6 +663,26 @@ Four additional bots (`bot_acca_value`, `bot_acca_proven`, `bot_combo_system`, `
 
 **Admin recording:** manually placed combo bets can be logged via the `/admin/place-bets` table — click "Record" on any combo row to open `RecordComboModal`, enter actual Coolbet odds + stake. Stores to `real_bets` with `combo_legs JSONB` + `system_type TEXT` and settles automatically once all legs finish.
 
+### 8.3.6 Per-market real-money placement thresholds (PER-MARKET-EDGE-V2 2026-06-06)
+
+Bots create `simulated_bets` for every pick that clears the bot's own edge floor (typically 3-10%, varies by bot). The Coolbet auto-placer then decides which of those simulated bets become real-money bets in `real_bets`. As of 2026-06-06 this gate is **per-market**, not a single global threshold.
+
+| Market | Real-money floor | Rationale |
+|---|---|---|
+| 1X2 | 10% | Backtest of 1,207 settled 1X2 simulated_bets shows ROI +2.9% at ≥5% threshold vs **+14.1%** at ≥10% — edge is strongly predictive |
+| O/U | 3% | Profitable at every floor (≥3%: +3.1% ROI); higher gates lose volume without improving expectation |
+| Asian Handicap | 5% | Edge non-monotonic; flat ROI ~5% across thresholds — moderate floor preserves volume |
+| BTTS | 10% | Backtest negative at ≥3-7% (−5% ROI); needs ≥10% to recover (+2.7% on n=63 — thin, monitored) |
+| Double Chance | Retired | Losing at every threshold tested (≥3%: −10.8%, ≥10%: −17.2%). Paper-tracking continues; real-money placement stopped |
+| Combo / DNB | 10% / 5% | Combos gate like 1X2; DNB shares structure with single-outcome 1X2 |
+
+Source: `scripts/edge_threshold_backtest.py` (3,086 settled simulated_bets, 2026-05-01 → 2026-06-06). Implemented as `_MIN_EDGE_BY_MARKET` in `workers/automation/coolbet_placer.py`; frontend badge mirror in `src/lib/engine-data.ts` (`COOLBET_AUTO_MIN_EDGE_BY_MARKET`). The per-market floor is applied in two places:
+
+1. **Pick-time gate**: after the SQL prefilter (global 3% floor), `_min_edge_for(market)` drops candidates below the market's specific floor.
+2. **Live-edge gate**: at placement time, the additive edge `cal_prob − 1 / live_odds` is recomputed against the same per-market floor (replaces the legacy `_MIN_REMAINING_EDGE` single value).
+
+The change is operator-side only. `/value-bets` (subscriber-facing) continues to surface every bot pick at every edge — the per-market thresholds gate only the real-money placement decision. A port to `/value-bets` (probably as an opt-in Pro-tier filter) is deferred pending 4-6 weeks of post-change data. `/admin/real-bets` shows Era v1 (pre 2026-06-06T17:00:00Z) vs Era v2 (post) so the lift is measurable in isolation.
+
 ### 8.4 Backtest Foundation
 
 Bot strategies are validated against a 354,518-match dataset (275 leagues, 2005-2015):
