@@ -73,6 +73,8 @@
 1st 03:30 ㉙ ALN auto    job_aln_auto_tune()             ALN-AUTO 2026-05-25 — monthly alignment-bump retune; emails diff if any class needs |Δ|≥0.005 with n≥100
 Sun 02:30 ㉚ League CLV  job_league_clv_efficiency()     LEAGUE-CLV-EFFICIENCY — weekly per-league CLV beatability index → match_signals
 Sun 04:00 ㉛ Meta retrain job_weekly_meta_retrain()      META-RETRAIN 2026-05-25 — weekly B-ML3 retrain → Supabase Storage, email verdict
+Sun 05:00 ㉜ Meta validate job_weekly_meta_validate()     META-VALIDATE-WEEKLY 2026-06-01 — validate_meta_b_ml3 against settled bets, emails verdict
+Sun 06:00 ㉝ Threshold chk job_weekly_threshold_check()   THRESHOLD-CHECK-WEEKLY 2026-06-06 — runs scripts/threshold_check.py and emails the gate-count snapshot. Prevents the "Key Thresholds to Watch" counts in PRIORITY_QUEUE.md from going stale.
 24/7   ⑥ LivePoller      live_poller.py            45s when live (scores+odds+stats), 120s idle — no time gate
          ⑫ InplayBot      inplay_bot.py             Paper trading: 8 strategies (A-F + A2 + C_home), runs after each LivePoller snapshot store; sends Telegram DMs to connected Pro/Elite users on new bets
 */30   ⑯ Dash Cache Ref  write_dashboard_cache()   Rebuilds dashboard_cache at :15 and :45 — keeps /performance fresh

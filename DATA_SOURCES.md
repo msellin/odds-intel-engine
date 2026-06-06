@@ -137,7 +137,7 @@ Total: ~3,000+ finished international matches. Two-phase: (A) fixtures via `get_
 
 WC 2026 group-stage fixtures (72 matches, league=1 season=2026) were backfilled separately under WC-PHASE-1 via the new `fetch_fixtures --league/--season` mode. They land in DB with `season=2025` per our football-season convention (June = previous year); frontend filters by date + `show_on_frontend`, not season.
 
-**Gap that remains:** no AF bookmaker odds for WC 2026 (`leagues.coverage_odds = false` on the WC row, and AF's `/odds?fixture=` returns 0 books). Either add `soccer_fifa_world_cup` to The Odds API client (`workers/api_clients/odds_api.py`) or accept "predictions only, no value bets" for WC. Decision deferred to WC-PHASE-4b.
+**WC odds gap — RESOLVED 2026-06-06.** AF returns `coverage_odds=false` for the WC league. Resolved by adding `soccer_fifa_world_cup` sweeps via The Odds API free tier (3 credits per call, 24 bookmakers per sweep including **Pinnacle** — confirmed available for WC specifically, not for other soccer competitions). First sweep landed 5,858 rows into `odds_snapshots` for 1x2 + AH + OU 1.5/2.5/3.5/4.5. Ongoing: daily cron during WC (June 11 → July 19), cost ~114 credits of 500/mo free quota. Script: `scripts/odds_api_wc_sweep.py`. See ODDS-API-WC + ODDS-API-WC-DAILY-CRON in PRIORITY_QUEUE.
 
 ### Training-pipeline data sources (clarification)
 

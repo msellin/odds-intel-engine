@@ -350,6 +350,23 @@ Production routes the 6 market families through 3 distinct computational paths i
 | **Asian Handicap** | Same Poisson + DC joint matrix → `_ah_model_prob()` integrates margin distribution over the handicap line, handling whole/half/quarter line push-adjustments | **AH-CAL-BYPASS** (2026-05-24): Stage 1 shrinkage SKIPPED (would double-shrink because λ already came from already-Platt-calibrated 1X2 probs). Stage 2: aggregate `asian_handicap` Platt fitted 2026-05-28 from live settled simulated_bets (n=128). Per-line keys (e.g. `asian_handicap_Home -0.5`) had <50 samples each — one aggregate key used instead. `apply_platt()` has `_MARKET_ROOTS` fallback: if specific key not found, tries startswith-match on the market root before returning raw prob. |
 | **Double Chance** (1X / X2 / 12) | Direct sums of Stage-2-calibrated 1X2 probabilities | Stage 1 skipped (**AH-CAL-BYPASS** — same double-shrink risk). Stage 2: per-selection Platt fitted 2026-05-28 from live settled simulated_bets — `double_chance_1x` (n=58), `double_chance_x2` (n=105). Was urgent: uncalibrated DC had model_prob 0.791 vs actual hit rate 0.595 = 19.6pp gap. `double_chance_12` skipped (insufficient data). |
 
+**PLATT-LIVE-STOPGAP refresh (2026-06-06).** Manual run of `scripts/fit_platt_live.py` + `scripts/fit_platt_inplay_e.py` landed 6 fresh `model_calibration` rows at 10:35 UTC:
+
+| Market key | n | ECE before | ECE after | Notes |
+|---|---:|---:|---:|---|
+| `asian_handicap_away -0.5` | 50 | 20.6% | **2.9%** | First per-line AH Platt; aggregate `asian_handicap` row still exists as fallback |
+| `btts_yes` | 154 | 16.1% | **1.7%** | Best calibration improvement of the batch |
+| `btts_no` | 87 | 11.7% | 8.1% | Still above 5% gate — partial |
+| `double_chance_1x` | 63 | 25.7% | 12.7% | Partial (small sample) |
+| `double_chance_x2` | 170 | 22.7% | **~0%** | Replaces 2026-05-28 fit |
+| `inplay_e_under_25` | 216 | 21.9% | 8.9% in-sample / **4.0% LOO** | LOO clears 5% gate |
+
+Stopgap reasoning: Sunday cron (`fit_platt.py`) under `MODEL_VERSION=v20260524_market` would skip these markets for thin per-version samples; this run blends model versions to fit TODAY rather than waiting 4-8 weeks. Long-term fix tracked as AH-PLATT-WIRE secondary (Sunday-cron consolidation + per-version filter).
+
+**INPLAY-CALIBRATED-PROB-WIRE (2026-06-06).** Discovered that ALL 898 historical in-play bets had `simulated_bets.calibrated_prob = NULL` — the in-play bet builder (`_build_inplay_bet_data` at `workers/jobs/inplay_bot.py`) never propagated `cal_model_prob` from `trigger.extra` to the dedicated column. Strategy E was computing the calibrated probability via `apply_platt()` but only storing it inside the `reasoning` JSON. Fix: 4-line propagation in `_build_inplay_bet_data`. Going forward, inplay_e bets persist `calibrated_prob` to the column for downstream analysis. Other in-play strategies still write NULL until they wire `apply_platt` per INPLAY-CALIBRATION-COMPLETE (rolling, gated on ≥100 settled bets per strategy).
+
+**FIT-PLATT-INPLAY-EXCLUDE (2026-06-06).** With in-play bets now writing `calibrated_prob`, the next prematch Platt fit risked corruption (in-play O/U distribution differs from prematch; both share `market='o/u'`). Added `match_minute_at_pick IS NULL` filter to `scripts/fit_platt.py` OU + BTTS queries and to `scripts/threshold_check.py` CAL-PLATT counting queries. Both files now operate on prematch-only cohort and stay in lockstep (verified by FIT-PLATT-THRESHOLD-CONTRACT smoke).
+
 So when `MODEL_VERSION=v_20260525_depth8` is set, the same 5-file bundle drives all 6 market families. Improving the goal regressors (`home_goals.pkl`, `away_goals.pkl`) automatically improves AH + OU 1.5/3.5/4.5 via the joint matrix.
 
 **Dedicated AH classifier head (candidate, 2026-05-25).** `scripts/train_ah_xgboost.py` trains a standalone XGBoost AH classifier on `main-line` AH cohort (~3,200 settled matches). First bundle `data/models/ah_xgb/v_20260525` produced **CV AUC 0.7308 ± 0.0205**. NOT wired into production yet — would require:
