@@ -703,7 +703,9 @@ def _get_prematch_data(execute_query, match_ids: list[str]) -> dict[str, dict]:
             p_ou.model_probability   AS prematch_o25_prob,
             p_btts.model_probability AS prematch_btts_prob,
             p_home.model_probability AS prematch_home_prob,
-            p_away.model_probability AS prematch_away_prob
+            p_away.model_probability AS prematch_away_prob,
+            p_home.implied_probability AS prematch_implied_home,
+            p_away.implied_probability AS prematch_implied_away
         FROM matches m
         JOIN leagues l  ON l.id  = m.league_id
         JOIN teams   th ON th.id = m.home_team_id
@@ -2680,11 +2682,26 @@ def _check_strategy_n(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
         fav_side = "home"
         live_fav_odds = float(cand.get("live_1x2_home") or 0)
         pm_fav_prob = pm_home_prob
+        pm_implied_fav = float(pm.get("prematch_implied_home") or 0)
     elif pm_away_prob >= 0.62:
         fav_side = "away"
         live_fav_odds = float(cand.get("live_1x2_away") or 0)
         pm_fav_prob = pm_away_prob
+        pm_implied_fav = float(pm.get("prematch_implied_away") or 0)
     else:
+        return None
+
+    # INPLAY-N-MODEL-VS-MARKET-GATE (2026-06-06): model overconfidence guard.
+    # Strategy thesis assumes the model is well-calibrated and the late-game
+    # live drift is a market overreaction. In low-data leagues (Austria
+    # Regionalliga, Uganda Premier, Uruguay Apertura, Australian Victoria NPL,
+    # etc.) the ensemble model returns 65-83% prematch win prob for teams the
+    # market priced at 19-47%. The live drift then confirms the market was
+    # right, not wrong — bot doubles down on the wrong side. Across 24 bets
+    # this drove -50.6% ROI (3W/21L). When model_prob - market_implied > 15pp,
+    # the model is the one likely wrong; skip the candidate. See
+    # dev/active/bot-audit-2026-06-06.md "inplay_n deep-dive" for the data.
+    if pm_implied_fav > 0 and (pm_fav_prob - pm_implied_fav) > 0.15:
         return None
 
     if live_fav_odds < 2.20:
