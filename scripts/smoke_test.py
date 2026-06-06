@@ -18775,5 +18775,80 @@ def _():
     )
 
 
+@test("REAL-MONEY-TIER — gating rules + calibrationKey mapping pinned")
+def test_real_money_tier_contract():
+    """REAL-MONEY-TIER (2026-06-06): operator-only "should I bet real money?"
+    badge on /admin/place reads from `src/lib/real-money-tier.ts` in
+    odds-intel-web. Logic is gating (weakest-link), so a silent rule change
+    can flip half the bets from green to gray. Pins:
+
+    - market→calibration-key mapping for each market (must match what
+      model_calibration table actually stores)
+    - tier-kind names (3 overall × 6 model × 4 bot) — a rename desyncs
+      the React badge component
+    - gating thresholds (ECE 5/15%, sample 100/500, days 7/14, CLV 3%)
+    """
+    import pathlib
+    tier_path = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/lib/real-money-tier.ts")
+    if not tier_path.exists():
+        return  # frontend repo not checked out in CI — skip gracefully
+    src = tier_path.read_text()
+
+    # Tier kind name pins
+    for kind in ("mature", "established", "new", "partial", "under-study", "experimental"):
+        assert f'"{kind}"' in src, f"ModelTierKind '{kind}' missing"
+    for kind in ("proven", "building", "thin", "losing"):
+        assert f'"{kind}"' in src, f"BotTierKind '{kind}' missing"
+    for kind in ("bet", "cautious", "paper"):
+        assert f'"{kind}"' in src, f"OverallTier '{kind}' missing"
+
+    # Calibration-key mappings — must match model_calibration table keys
+    assert "1x2_${s}" in src, "1X2 key must be `1x2_${selection}`"
+    assert "btts_${s}" in src, "BTTS key must be `btts_${selection}`"
+    assert "double_chance_${s.replace" in src, "DC key must strip whitespace"
+    assert "asian_handicap_${s}" in src, "AH key must include selection (line) directly"
+    assert "over_under_${line}_${side}" in src, "OU key must follow over_under_LINE_SIDE"
+
+    # Gating threshold pins
+    assert "0.05" in src and "0.15" in src, "ECE gates (5% and 15%) must be present"
+    assert ">= 500" in src and ">= 100" in src and ">= 30" in src, (
+        "Sample-size gates (500/100/30) must be present"
+    )
+    assert ">= 14" in src and ">= 7" in src, "Day-age gates (14/7) must be present"
+    assert "0.03" in src, "Proven-bot CLV gate (3%) must be present"
+
+    # Gating direction — must collapse on weakest link, not average
+    assert 'experimental' in src and 'return "paper"' in src, (
+        "combineToOverall must explicitly check experimental model and return paper"
+    )
+
+
+@test("COOLBET-INGEST-BANNER — banner threshold + freshness query pinned")
+def test_coolbet_ingest_banner():
+    """COOLBET-INGEST-ANON-FOLLOWUP (2026-06-06): banner on /admin/place warns
+    when no Coolbet snapshots in the last 60min (2× the 30min ingest cadence).
+    Without this, a future Imperva-cookie / JWT expiry looks like a wall of
+    "no event" chips — exactly the failure mode that hid the 2026-05-28
+    outage for 6 days.
+    """
+    import pathlib
+    banner_path = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/components/coolbet-ingest-banner.tsx")
+    helper_path = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/lib/engine-data.ts")
+    if not banner_path.exists() or not helper_path.exists():
+        return
+    banner_src = banner_path.read_text()
+    helper_src = helper_path.read_text()
+
+    assert "minutesSinceLastSnapshot" in banner_src, "banner must accept minutes-since prop"
+    assert "< 60" in banner_src, "60-min threshold must be present"
+    assert "getCoolbetSnapshotFreshnessMinutes" in helper_src, (
+        "engine-data must export the freshness helper"
+    )
+    # Query must filter bookmaker='Coolbet' — Unibet proxy is a different stream
+    assert '.eq("bookmaker", "Coolbet")' in helper_src, (
+        "freshness query must specifically filter bookmaker='Coolbet'"
+    )
+
+
 if __name__ == "__main__":
     main()
