@@ -49,7 +49,28 @@
 >
 > **⬜ INPLAY-I-POST-FIX-WATCH — target after 20-30 new bets (~3-4 weeks)** — Verify INPLAY-I-INVESTIGATE fixes (Bayesian update + market gate) actually improve hit-rate. Query: `SELECT COUNT(*), SUM(CASE WHEN result='won' THEN 1 ELSE 0 END), SUM(pnl) FROM simulated_bets sb JOIN bots b ON b.id=sb.bot_id WHERE b.name='inplay_i' AND sb.created_at >= '2026-06-06 18:00 UTC' AND sb.result IN ('won','lost')`. Hit-rate target: ≥25% (break-even at avg 4.0 odds). If after 30 settled bets it's still <20%, retire — strategy thesis was wrong, not just the math. If 25-30%, keep watching. If ≥30%, consider promoting to higher confidence cohort.
 >
-> **⬜ INPLAY-P-INVESTIGATE — target this week or next session** — `inplay_p` has 193 settled bets at −14.5% ROI — same investigation playbook as inplay_i / inplay_n. 11× the sample size means findings will be much more actionable than inplay_i was. Folds naturally with INPLAY-CALIBRATION-COMPLETE's first item (inplay_p is already past the 100-bet Platt gate, so we can investigate AND calibrate in one session). Effort: ~1-2h investigation + fix.
+> **✅ INPLAY-P-INVESTIGATE Done 2026-06-06** — Investigated `inplay_p` (Post-Equalizer Comeback, retired 2026-05-28) and its successor `inplay_p_v2` (active, 47 bets at +29.3%). Investigation verified the retirement decision was correct AND surfaced one defect in v2 that's NOT being fixed today (gated on more data).
+>
+> **(1) v1 retirement was correct.** Per-bucket data confirms both losing cohorts the retirement decision was based on:
+> | Bucket | n | W | PnL | ROI |
+> |---|---:|---:|---:|---:|
+> | 2.00-2.49 | 11 | 7 | +€25.18 | **+45.8%** |
+> | 2.50-2.99 | 28 | 6 | −€58.24 | **−41.6%** |
+> | 3.00-3.99 | 48 | 15 | +€9.25 | +3.9% |
+> | 4.00-4.99 | 39 | 12 | +€71.23 | **+36.5%** |
+> | 5.00-6.99 | 34 | 2 | −€115.00 | **−67.6%** |
+> | 7.00+ | 33 | 2 | −€72.50 | **−43.9%** |
+> | **TOTAL** | **193** | **44** | **−€140.08** | **−14.5%** |
+>
+> v2 explicitly excludes 2.50-2.99 + caps at 5.0 — matches the data exactly.
+>
+> **(2) v2 working but on thin sample.** 47 settled bets / +€68.79 / **+29.3% ROI**. Profit concentrated in 4.00-4.99 bucket (+81.2% / 20 bets); 3.00-3.99 bucket flipped slightly negative vs v1 (−5.0% / 21 bets vs +3.9% / 48 bets) — could be noise.
+>
+> **(3) Same Bayesian-update defect as inplay_i/j present in v2.** `_check_strategy_p_v2` uses `lambda_eq * remaining_frac` directly — no Gamma posterior update conditioning on the 1-1 score state. **NOT FIXED TODAY** — sim showed the fix WOULD shift edge by 1-3pp (smaller than inplay_i's 4-5pp because observed goals at 1-1 are close to expected), but with only 47 bets we can't verify the change doesn't kill the working +81% bucket. Risk of breaking what works > value of theoretical correctness at this sample size. **Filed as gated follow-up — see INPLAY-P-V2-100-BET-CHECK below.**
+>
+> **(4) No model-vs-market gate needed for v2.** v2's `odds < 5.0` cap already excludes heavy-underdog equalisers — the cohort the gate would catch. Skipping the gate avoids redundant conditions.
+>
+> **⬜ INPLAY-P-V2-100-BET-CHECK — gate: 100 settled bets on `inplay_p_v2` (≈ETA 2026-06-25 at current cadence)** — Currently 47 bets. When v2 hits 100 settled bets, re-run per-bucket analysis to confirm: (a) 4.00-4.99 bucket holds positive ROI (currently +81% on 20 — likely regresses toward mean); (b) 3.00-3.99 bucket recovers or stays negative; (c) overall ROI ≥ break-even. **If passing:** apply Bayesian Gamma update (s=2, copy inplay_i/j pattern at `workers/jobs/inplay_bot.py:_check_strategy_p_v2` lines 3150-3152). Compare 30-day post-fix ROI to current. **If passing AND 100+ bets after fix:** fit Platt via `scripts/fit_platt_inplay_p_v2.py` (clone of `fit_platt_inplay_e.py` with market_key='inplay_p_v2_1x2_home'/'_away'). **If failing the gate check:** retire v2, file v3 with tighter conditions. Effort ~2h when gate is reached. Watch query (run weekly): `SELECT COUNT(*) FILTER (WHERE result IN ('won','lost')) FROM simulated_bets sb JOIN bots b ON b.id=sb.bot_id WHERE b.name='inplay_p_v2'`.
 >
 > **🟡 AGGRESSIVE-REVIVE-CHECK** — `bot_aggressive` was retired with −€82.94 all-time but swung +€53.12 post-cutoff (+15.3% ROI on 59 bets). Borderline-significant sample. Run another 30 days; if post-period ROI holds positive on ≥ 100 more bets, un-retire and re-promote.
 >
