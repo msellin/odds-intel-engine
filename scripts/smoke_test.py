@@ -3657,20 +3657,29 @@ def test_per_market_edge_thresholds():
     assert not (0.50 >= _min_edge_for("double_chance")), \
         "DC retirement must reject even absurd-edge bets"
 
-    # Frontend mirror — engine-data.ts holds the same map. Source-inspect
-    # to ensure they're in sync (any drift makes the /admin/place badge lie).
+    # Frontend mirror — the per-market map now lives in `coolbet-edge.ts`
+    # (pure, client-safe — see COOLBET-EDGE-CLIENT-SAFE smoke) and is
+    # re-exported by `engine-data.ts` for server callers. Source-inspect the
+    # canonical file to ensure values are in sync with the engine.
     from pathlib import Path
-    fe = Path(__file__).resolve().parent.parent.parent / "odds-intel-web" / "src" / "lib" / "engine-data.ts"
-    if fe.exists():
-        src = fe.read_text()
+    fe_root = Path(__file__).resolve().parent.parent.parent / "odds-intel-web" / "src" / "lib"
+    edge = fe_root / "coolbet-edge.ts"
+    if edge.exists():
+        src = edge.read_text()
         assert "COOLBET_AUTO_MIN_EDGE_BY_MARKET" in src, \
-            "frontend must export COOLBET_AUTO_MIN_EDGE_BY_MARKET"
+            "coolbet-edge must export COOLBET_AUTO_MIN_EDGE_BY_MARKET"
         assert '"1x2":            0.10' in src or '"1x2": 0.10' in src, \
-            "frontend 1x2 floor must mirror engine (0.10)"
+            "coolbet-edge 1x2 floor must mirror engine (0.10)"
         assert '"double_chance":  null' in src or '"double_chance": null' in src, \
-            "frontend must mark double_chance as retired (null)"
+            "coolbet-edge must mark double_chance as retired (null)"
         assert "MARKET_THRESHOLDS_V2_EPOCH" in src, \
-            "frontend must export MARKET_THRESHOLDS_V2_EPOCH for /admin/real-bets era split"
+            "coolbet-edge must export MARKET_THRESHOLDS_V2_EPOCH for /admin/real-bets era split"
+        # engine-data must still re-export so server callers don't break.
+        ed = fe_root / "engine-data.ts"
+        if ed.exists():
+            edsrc = ed.read_text()
+            assert 'from "./coolbet-edge"' in edsrc, \
+                "engine-data.ts must re-export from ./coolbet-edge"
 
 
 @test("COOLBET-SEARCH-SPORT-FILTER — _do_search drops non-football events")
@@ -15223,6 +15232,95 @@ def _():
     page = _web_path("src/app/(app)/matches/[id]/page.tsx")
     assert "WCModelCard" in page.read_text() or "wc-model-card" in page.read_text(), \
         "match-detail page must render the WC model card"
+
+
+@test("WC-MODEL-CARD-REASONING-GUARD — debug payload in predictions.reasoning never reaches the UI verbatim")
+def _():
+    """WC-MODEL-CARD-REASONING-GUARD (2026-06-06): the engine writes a
+    machine-readable debug blob to predictions.reasoning (e.g.
+    'wc_a4_blend {"blended":true,...}') for DB-side audit. The model card's
+    DisagreementCallout used that string verbatim as user-facing copy. Pin
+    the FE-side guard that detects '<prefix> {' or '{' starts and falls back
+    to the generic explainer."""
+    comp = _web_path("src/components/wc-model-card.tsx")
+    csrc = comp.read_text()
+    # Both the heuristic and the fallback copy must exist.
+    assert "looksLikeDebugPayload" in csrc, \
+        "model card must guard against machine-readable reasoning payloads"
+    # The guard must recognise both bare-JSON and prefix+JSON shapes —
+    # 'wc_a4_blend {...}' starts with a word, '{...}' starts with a brace.
+    assert "startsWith(\"{\")" in csrc, "guard must catch bare JSON ('{...}')"
+    assert "\\w" in csrc, "guard must catch prefix+JSON ('wc_a4_blend {...}')"
+
+
+@test("WC-SCHEDULE-ROW-CLICK-TARGET — fixtures row is a single match-detail link, no team-profile sublinks")
+def _():
+    """WC-SCHEDULE-ROW-CLICK-TARGET (2026-06-06): the schedule scan row used
+    to be three sibling links (group+time → match, home cell → team page,
+    away cell → team page). The two team-page cells took up ~70% of the row,
+    so users couldn't reliably click the row to open the match. Now the
+    whole row is one match-detail link; team profiles stay accessible from
+    the Groups tab + bracket. Pin both the consolidation and the absence of
+    /world-cup/teams/ sublinks in this file."""
+    comp = _web_path("src/components/wc-schedule.tsx")
+    src = comp.read_text()
+    # The scan row must NOT contain team-profile links inside the schedule
+    # — those were the cells stealing clicks from "open the match".
+    assert "/world-cup/teams/" not in src, \
+        "wc-schedule must not link to team profiles from the scan row " \
+        "(use Groups tab / bracket entry points instead)"
+    # Sanity: the row still links to match detail.
+    assert "/matches/${f.id}" in src, "row must link to match detail"
+
+
+@test("COOLBET-EDGE-CLIENT-SAFE — autoMinEdgeFor lives in a pure module so client components don't drag engine-data")
+def _():
+    """COOLBET-EDGE-CLIENT-SAFE (2026-06-06): Next 16 / Turbopack rejected
+    the Vercel build because `place-bet-table.tsx` (a client component)
+    imported `autoMinEdgeFor` from `engine-data.ts`, which transitively
+    imports `next/headers` via `supabase-server.ts`. Fix: extract the
+    per-market constants + `autoMinEdgeFor` into `src/lib/coolbet-edge.ts`
+    (pure, no server deps). Pin (a) the new file exists, (b) the client
+    component imports from coolbet-edge not engine-data for runtime values,
+    (c) engine-data re-exports from coolbet-edge so server callers are
+    unchanged."""
+    edge = _web_path("src/lib/coolbet-edge.ts")
+    assert edge.exists(), "src/lib/coolbet-edge.ts must exist"
+    esrc = edge.read_text()
+    assert "autoMinEdgeFor" in esrc, "module must export autoMinEdgeFor"
+    assert "COOLBET_AUTO_MIN_EDGE_BY_MARKET" in esrc, \
+        "module must export the per-market floor map"
+    # Pure module — must not import anything server-only. Check `import`
+    # statements rather than any mention (the docstring explains the why).
+    import re
+    imports = re.findall(r'^import\s.*?from\s+["\']([^"\']+)["\']', esrc, flags=re.MULTILINE)
+    for spec in imports:
+        assert "next/headers" not in spec, f"coolbet-edge must not import next/headers ({spec!r})"
+        assert "supabase-server" not in spec, f"coolbet-edge must not import server supabase ({spec!r})"
+
+    client = _web_path("src/components/place-bet-table.tsx")
+    csrc = client.read_text()
+    assert 'from "@/lib/coolbet-edge"' in csrc, \
+        "place-bet-table must import autoMinEdgeFor from coolbet-edge (not engine-data)"
+    # The type import from engine-data is allowed (types are erased at build).
+    # But there must be no runtime symbol import from engine-data.
+    import re
+    runtime_imports = re.findall(
+        r'^import\s+\{([^}]*)\}\s+from\s+"@/lib/engine-data"',
+        csrc,
+        flags=re.MULTILINE,
+    )
+    for inner in runtime_imports:
+        # Allow `type Foo, type Bar` shape; reject any bare value imports.
+        parts = [p.strip() for p in inner.split(",") if p.strip()]
+        for p in parts:
+            assert p.startswith("type "), \
+                f"place-bet-table must not runtime-import {p!r} from engine-data"
+
+    engine = _web_path("src/lib/engine-data.ts")
+    ssrc = engine.read_text()
+    assert 'from "./coolbet-edge"' in ssrc, \
+        "engine-data must re-export from coolbet-edge"
 
 
 @test("WC-MODEL-CARD-COPY-DIRECTION — disagreement callout reflects gap sign (more vs less confident)")
