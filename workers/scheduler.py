@@ -703,6 +703,48 @@ def job_weekly_threshold_check():
     _run_job("weekly_threshold_check", _threshold_check)
 
 
+def job_wc_odds_sweep():
+    """ODDS-API-WC-DAILY-CRON (2026-06-06): daily sweep of WC fixtures via The
+    Odds API to fill the AF coverage gap (AF returns coverage_odds=false for
+    WC; their /odds endpoint returns 0 books). Runs 06:00 UTC daily.
+
+    Cost: 3 credits/day (h2h + totals + spreads × eu region), 38 days of WC =
+    114 credits / 500 free quota. Pinnacle IS available on WC specifically
+    (not on other Odds API soccer competitions) — confirmed via probe.
+
+    Auto-gated to the WC window 2026-06-11 → 2026-07-19. Outside the window
+    the job no-ops (so we don't burn credits between runs of this cron and
+    `ODDS-API-WC-DEACTIVATE`).
+    """
+    from datetime import date
+    import subprocess
+
+    WC_START = date(2026, 6, 11)
+    WC_END = date(2026, 7, 19)
+
+    def _wc_sweep():
+        today = date.today()
+        if today < WC_START or today > WC_END:
+            console.print(f"[yellow]WC odds sweep skipped — outside window ({WC_START}..{WC_END}); today={today}[/yellow]")
+            return
+        if not (os.getenv("OA_KEY") or os.getenv("ODDS_API_KEY")):
+            console.print("[yellow]WC odds sweep skipped — no OA_KEY / ODDS_API_KEY env var[/yellow]")
+            return
+        console.print("[bold cyan]WC odds sweep — daily Odds API fill[/bold cyan]")
+        result = subprocess.run(
+            [sys.executable, "scripts/odds_api_wc_sweep.py"],
+            cwd=str(Path(__file__).parent.parent),
+            timeout=180,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[red]WC odds sweep exit {result.returncode}: {result.stderr[-2000:]}[/red]")
+            raise RuntimeError(f"wc odds sweep failed: exit {result.returncode}")
+        console.print(result.stdout[-2000:])
+    _run_job("wc_odds_sweep", _wc_sweep)
+
+
 def job_league_clv_efficiency():
     """LEAGUE-CLV-EFFICIENCY (2026-05-25): weekly compute of per-league CLV
     beatability index. Runs Sunday 02:30 UTC, before the weekly_retrain at
@@ -1655,6 +1697,17 @@ def main():
                       CronTrigger(day_of_week="sun", hour=6, minute=0),
                       id="weekly_threshold_check",
                       name="Weekly Threshold Check Sunday 06:00",
+                      max_instances=1, misfire_grace_time=1800)
+
+    # ODDS-API-WC-DAILY-CRON (2026-06-06) — daily 06:30 UTC, gated to the WC
+    # window 2026-06-11 → 2026-07-19 (gate enforced inside the job, not the
+    # trigger, so we can leave the cron registered year-round and not worry
+    # about reactivating it). 06:30 staggers off the Sunday 06:00 threshold
+    # check so they don't both run simultaneously when day_of_week=sun.
+    scheduler.add_job(job_wc_odds_sweep,
+                      CronTrigger(hour=6, minute=30),
+                      id="wc_odds_sweep",
+                      name="WC Odds Sweep Daily 06:30",
                       max_instances=1, misfire_grace_time=1800)
 
     scheduler.add_job(job_weekly_meta_retrain, CronTrigger(day_of_week="sun", hour=4, minute=0),

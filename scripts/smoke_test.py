@@ -18823,6 +18823,50 @@ def test_real_money_tier_contract():
     )
 
 
+@test("ODDS-API-WC-DAILY-CRON — job + window gate + cron registration")
+def test_odds_api_wc_daily_cron():
+    """ODDS-API-WC-DAILY-CRON (2026-06-06): daily sweep of WC fixtures via
+    The Odds API. Pins:
+
+    - job_wc_odds_sweep declared in workers/scheduler.py
+    - WC window dates baked in (2026-06-11 to 2026-07-19) so the job no-ops
+      outside the tournament — leaving the cron registered year-round is
+      safer than depending on operator-discipline to disable it post-final
+    - Daily 06:30 UTC cron (staggered off the Sunday 06:00 threshold check
+      so they don't collide on Sundays)
+    - Checks for OA_KEY or ODDS_API_KEY env var; skips silently if missing
+      (no crash, no false telemetry)
+    """
+    import pathlib
+    sched_src = pathlib.Path("workers/scheduler.py").read_text()
+
+    assert "def job_wc_odds_sweep" in sched_src, (
+        "scheduler.py must declare job_wc_odds_sweep"
+    )
+    assert "scripts/odds_api_wc_sweep.py" in sched_src, (
+        "job must shell out to scripts/odds_api_wc_sweep.py (existing script)"
+    )
+
+    # Window gate — dates baked in
+    assert "date(2026, 6, 11)" in sched_src and "date(2026, 7, 19)" in sched_src, (
+        "WC window 2026-06-11 → 2026-07-19 must be baked into the job; "
+        "outside-window runs must no-op"
+    )
+
+    # Env var presence check — graceful skip if missing
+    assert 'OA_KEY' in sched_src and 'ODDS_API_KEY' in sched_src, (
+        "job must check for OA_KEY or ODDS_API_KEY env var and skip when absent"
+    )
+
+    # Cron registration — daily 06:30 UTC
+    assert 'id="wc_odds_sweep"' in sched_src, (
+        "cron must register with id='wc_odds_sweep'"
+    )
+    assert "hour=6, minute=30" in sched_src, (
+        "cron must fire at 06:30 UTC (staggered off Sunday 06:00 threshold check)"
+    )
+
+
 @test("COOLBET-INGEST-BANNER — banner threshold + freshness query pinned")
 def test_coolbet_ingest_banner():
     """COOLBET-INGEST-ANON-FOLLOWUP (2026-06-06): banner on /admin/place warns
