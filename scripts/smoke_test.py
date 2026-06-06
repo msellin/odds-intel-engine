@@ -16795,6 +16795,69 @@ def _():
     )
 
 
+@test("FIT-PLATT-THRESHOLD-CONTRACT — fit_platt constants match threshold_check")
+def _():
+    """FIT-PLATT-THRESHOLD-CONTRACT (2026-06-06): pins the relationship
+    between `scripts/fit_platt.py` and `scripts/threshold_check.py` so
+    they can't silently drift apart again.
+
+    Background: prior to 2026-06-06, threshold_check.py was reporting
+    "AH = 332" but fit_platt.py had no AH branch — the gate looked
+    crossed but no Platt would actually fit. Similarly, threshold_check
+    claimed OU under 2.5 = 307 (loose count) while fit_platt's strict
+    filter only sees 174 — so the 06-08 retrain was expected to fit
+    OU and won't.
+
+    Constants pinned:
+      * MIN_SAMPLES_DEFAULT = 100  (1X2, BTTS — 1-feature Platt)
+      * MIN_SAMPLES_OU = 300       (OU 2-feature logistic)
+
+    Code structure pinned:
+      * fit_platt has fetch_settled_ou_bets (OU strict filter)
+      * fit_platt has fetch_settled_btts_bets (BTTS strict filter)
+      * fit_platt does NOT have fetch_settled_ah_bets yet — when it
+        does (AH-PLATT-WIRE ships), this assertion flips intentionally.
+
+    threshold_check.py output labels must reference the same gates so
+    a future reader understands which strict filter is being checked.
+    """
+    import pathlib
+    fp = pathlib.Path("scripts/fit_platt.py").read_text()
+    tc = pathlib.Path("scripts/threshold_check.py").read_text()
+
+    # Constant pins
+    assert "MIN_SAMPLES_DEFAULT = 100" in fp, (
+        "fit_platt.py MIN_SAMPLES_DEFAULT must stay at 100 — "
+        "threshold_check.py's '100+ gate' labelling for BTTS depends on it"
+    )
+    assert "MIN_SAMPLES_OU = 300" in fp, (
+        "fit_platt.py MIN_SAMPLES_OU must stay at 300 — "
+        "threshold_check.py's '300+ gate' labelling for O/U depends on it"
+    )
+
+    # Strict-filter pins on fit_platt — these MUST match what
+    # threshold_check.py reports
+    assert "calibrated_prob IS NOT NULL" in fp and "odds_at_pick IS NOT NULL" in fp, (
+        "fit_platt OU query must filter on calibrated_prob + odds_at_pick "
+        "— threshold_check labels its OU row as 'fit_platt's exact filter'"
+    )
+
+    # AH absence pin — when AH-PLATT-WIRE ships, this flips.
+    assert "fetch_settled_ah_bets" not in fp, (
+        "AH branch added to fit_platt.py but smoke still asserts absence — "
+        "either remove this assertion (AH-PLATT-WIRE shipped) or revert "
+        "the fit_platt edit. Don't let the threshold_check 'no fit_platt "
+        "branch yet' label drift out of sync with the code."
+    )
+
+    # threshold_check must reference AH-PLATT-WIRE in the AH row label
+    # so the data-ready-but-code-blocked state is visible at glance
+    assert "AH-PLATT-WIRE" in tc, (
+        "threshold_check.py AH row must reference the AH-PLATT-WIRE "
+        "task so a future reader knows why the count is data-only"
+    )
+
+
 @test("PINNACLE-ANALYZER-STRUCTURE — analyzer ready to run Mon 2026-06-09")
 def _():
     """PINNACLE-ANALYZER (2026-06-06): `scripts/analyze_pinnacle_movement.py`

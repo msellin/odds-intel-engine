@@ -101,14 +101,30 @@ out.append(("ML-RETRAIN-1 — coverage among stats-supplying leagues (TRUE metri
 # 2026-06-06 audit: simulated_bets.market is LOWERCASE in the DB.
 # Lowercase values: 'o/u', '1x2', 'btts', 'asian_handicap', 'double_chance', 'draw_no_bet'.
 # Prior uppercase queries silently returned 0 rows for ~2 weeks.
-out.append(("CAL-PLATT O/U v14 — per selection (calibrated_prob & odds set)",
-    safe("""SELECT selection, COUNT(*) FROM simulated_bets
-            WHERE market='o/u' AND result IN ('won','lost')
-              AND model_version='v14'
-              AND calibrated_prob IS NOT NULL
-              AND odds_at_pick IS NOT NULL
-            GROUP BY selection ORDER BY selection""",
-         lambda r: ", ".join(f"{s}={n}" for s, n in r) or "no rows")))
+#
+# 2026-06-06 SUNDAY-RETRAIN-RECON: the queries below use the EXACT same
+# filters as `scripts/fit_platt.py` so the count IS the gate count. The
+# script needs:
+#   * O/U: result IN ('won','lost') AND calibrated_prob IS NOT NULL
+#          AND odds_at_pick IS NOT NULL  (gate: 300+ per selection)
+#   * BTTS: result IN ('won','lost') AND calibrated_prob IS NOT NULL
+#          (gate: 100+ per selection — MIN_SAMPLES_DEFAULT, NOT 300)
+#   * 1X2:  from `predictions` table, source='ensemble', match.status='finished'
+#          (gate: 100+ per selection)
+#   * AH:   NOT IMPLEMENTED in fit_platt.py. The 332 count below is data-
+#          readiness only; no Platt fit happens until AH-PLATT-WIRE task ships.
+out.append(("CAL-PLATT O/U v14 (300+ gate) — fit_platt's exact filter",
+    safe("""SELECT m, COUNT(*) FROM (
+              SELECT CASE WHEN selection ILIKE 'over%%' THEN 'over_25_over'
+                          WHEN selection ILIKE 'under%%' THEN 'over_25_under'
+                     END AS m
+              FROM simulated_bets
+              WHERE market='o/u' AND result IN ('won','lost')
+                AND model_version='v14'
+                AND calibrated_prob IS NOT NULL
+                AND odds_at_pick IS NOT NULL
+            ) s GROUP BY m ORDER BY m""",
+         lambda r: ", ".join(f"{m}={n}" for m, n in r) or "no rows")))
 
 out.append(("CAL-PLATT 1X2 v14 — per selection (settled)",
     safe("""SELECT selection, COUNT(*) FROM simulated_bets
@@ -116,12 +132,20 @@ out.append(("CAL-PLATT 1X2 v14 — per selection (settled)",
             GROUP BY selection ORDER BY selection""",
          lambda r: ", ".join(f"{s}={n}" for s, n in r) or "no rows")))
 
-out.append(("CAL-PLATT AH/BTTS — settled since 5/6",
-    safe("""SELECT market, COUNT(*) FROM simulated_bets
-            WHERE market IN ('asian_handicap','btts') AND result IN ('won','lost','void')
-              AND created_at >= '2026-05-06'
-            GROUP BY market ORDER BY market""",
+out.append(("CAL-PLATT BTTS (100+ gate) — fit_platt's exact filter, v14",
+    safe("""SELECT m, COUNT(*) FROM (
+              SELECT CASE WHEN LOWER(selection)='yes' THEN 'btts_yes' ELSE 'btts_no' END AS m
+              FROM simulated_bets
+              WHERE market='btts' AND result IN ('won','lost')
+                AND model_version='v14'
+                AND calibrated_prob IS NOT NULL
+            ) s GROUP BY m ORDER BY m""",
          lambda r: ", ".join(f"{m}={n}" for m, n in r) or "no rows")))
+
+out.append(("CAL-PLATT AH — data readiness ONLY (no fit_platt branch yet — see AH-PLATT-WIRE)",
+    safe("""SELECT COUNT(*) FROM simulated_bets
+            WHERE market='asian_handicap' AND result IN ('won','lost')
+              AND calibrated_prob IS NOT NULL""")))
 
 out.append(("CLV rows for bot_meta_v1 — sim_bets w/ clv since 5/6",
     safe("""SELECT COUNT(*) FROM simulated_bets WHERE clv IS NOT NULL AND created_at >= '2026-05-06'""")))
