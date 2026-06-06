@@ -18370,6 +18370,36 @@ def test_clv_backfill_scripts():
     )
 
 
+@test("ODDS-API-WC — WC 2026 sweep script structure")
+def test_odds_api_wc_sweep():
+    """ODDS-API-WC (2026-06-06): The Odds API free tier (500 cred/mo) fills
+    the AF gap for WC 2026 odds (AF: coverage_odds=false for WC). Pinnacle
+    is uniquely available on WC sport key (not on other soccer leagues).
+    Pins the script's invariants:
+    - targets soccer_fifa_world_cup sport key
+    - bookmaker key→name map includes the sharps + retail books we use
+    - OU ingest filters to half-lines (matches existing schema convention)
+    - AH handicap_line is stored home-perspective
+    - --dry-run is supported
+    """
+    import pathlib
+    src = pathlib.Path("scripts/odds_api_wc_sweep.py").read_text()
+    assert 'SPORT = "soccer_fifa_world_cup"' in src, "must target WC sport key"
+    assert '"pinnacle":' in src and '"Pinnacle"' in src, "must map Pinnacle"
+    assert '"betfair_ex_eu":' in src and '"Betfair Exchange"' in src, "must map Betfair Exchange"
+    assert '"coolbet":' in src and '"Coolbet"' in src, "must map Coolbet"
+    # OU half-line filter
+    assert "line not in (0.5, 1.5, 2.5, 3.5, 4.5)" in src, (
+        "OU ingest must filter to half-lines only (matches existing odds_snapshots convention)"
+    )
+    # AH home-perspective
+    assert "hline = -float(point)" in src, (
+        "AH ingest must flip away-side point to home-perspective handicap_line"
+    )
+    assert "--dry-run" in src, "must support --dry-run"
+    assert "_normalize_bookmaker" in src, "must have bookmaker normalization"
+
+
 @test("THRESHOLD-CHECK-WEEKLY-CRON — job + email helper + scheduler hook")
 def test_threshold_check_weekly_cron():
     """THRESHOLD-CHECK-WEEKLY (2026-06-06): the manual threshold_check.py run
