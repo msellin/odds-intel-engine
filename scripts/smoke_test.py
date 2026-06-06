@@ -18995,6 +18995,81 @@ def test_real_money_tier_contract():
     )
 
 
+@test("VALUE-BETS-DENSITY-PASS — page-header + live-strip + row chip rename")
+def test_value_bets_density_pass():
+    """VALUE-BETS-DENSITY-PASS (2026-06-06): three-tier density reduction on
+    /value-bets. Pins the contract so future refactors can't silently undo
+    the compression (~500-600px of mobile vertical recovered above-fold).
+    """
+    import pathlib
+
+    page_path = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/app/(app)/value-bets/page.tsx")
+    header_path = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/components/value-bets-header.tsx")
+    strip_path = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/components/value-bets-live-strip.tsx")
+    scan_path = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/components/value-bets-scan.tsx")
+
+    if not page_path.exists():
+        return  # frontend not checked out
+
+    page_src = page_path.read_text()
+
+    # Tier 1 — Page header
+    assert header_path.exists(), "value-bets-header.tsx must exist"
+    assert "ValueBetsHeader" in page_src, "page must use ValueBetsHeader"
+    assert "What you'd see as Pro or Elite" not in page_src, (
+        "Free-tier explainer <section> must be removed — replaced by ValueBetsHeader caption"
+    )
+    assert "You're seeing the calibrated-strategy feed" not in page_src, (
+        "Pro tier explainer <section> must be removed"
+    )
+    assert "You're seeing the full feed" not in page_src, (
+        "Elite tier explainer <section> must be removed"
+    )
+    assert "Get these picks in Telegram" not in page_src, (
+        "Full-width Telegram CTA banner must be removed — header has an icon-chip variant"
+    )
+    assert "<CLVTrustBanner" not in page_src, (
+        "CLVTrustBanner removed from /value-bets — CLV pill in header links to /performance"
+    )
+    assert "{!isPro && (" in page_src and "TodayPicksPreview" in page_src, (
+        "TodayPicksPreview must be gated to free users — it duplicates ValueBetsScan content"
+    )
+
+    header_src = header_path.read_text()
+    assert "getDashboardCache" in header_src, "header must fetch CLV from dashboard_cache"
+    assert "clv_pct" in header_src, "header must read clv_pct field (not avg_clv)"
+    assert "/performance" in header_src, "CLV pill must link to /performance for full breakdown"
+    assert "/profile#telegram" in header_src, "Telegram chip must link to /profile#telegram"
+
+    # Tier 2 — Live strip
+    assert strip_path.exists(), "value-bets-live-strip.tsx must exist"
+    assert "ValueBetsLiveSection" not in page_src, (
+        "/value-bets must not render the full ValueBetsLiveSection — that lives on /live"
+    )
+    assert "ValueBetsLiveStrip" in page_src, "compact ValueBetsLiveStrip must be used instead"
+    strip_src = strip_path.read_text()
+    assert 'href="/live"' in strip_src, "strip must link to /live"
+    assert "animate-pulse" in strip_src, "strip must keep the live pulse indicator"
+
+    # Tier 3 — Row chip rename. JSX child text is whitespace-padded so we
+    # check for the word inside the rendered chip block, not literal ">X<".
+    scan_src = scan_path.read_text()
+    cal_chip_start = scan_src.find("bet.isCalibrated")
+    assert cal_chip_start != -1, "isCalibrated check must remain"
+    cal_chip_block = scan_src[cal_chip_start:cal_chip_start + 600]
+    assert "Calibrated" in cal_chip_block, (
+        "Elite-view calibrated chip must render as 'Calibrated' (was 'Pro')"
+    )
+    # The block must NOT still contain a literal "Pro" rendered as chip text.
+    # Search the actual JSX between the opening <span> and closing </span>.
+    span_open = cal_chip_block.find(">", cal_chip_block.find("<span"))
+    span_close = cal_chip_block.find("</span>", span_open)
+    chip_text = cal_chip_block[span_open + 1 : span_close].strip()
+    assert chip_text == "Calibrated", (
+        f"chip text must be exactly 'Calibrated' (was 'Pro'); found '{chip_text}'"
+    )
+
+
 @test("ODDS-API-WC-DAILY-CRON — job + window gate + cron registration")
 def test_odds_api_wc_daily_cron():
     """ODDS-API-WC-DAILY-CRON (2026-06-06): daily sweep of WC fixtures via
