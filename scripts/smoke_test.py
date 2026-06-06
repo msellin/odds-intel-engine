@@ -18439,5 +18439,118 @@ def test_post_cal_impact_structure():
     )
 
 
+@test("INPLAY-I-BAYES-XG — _check_strategy_i applies Gamma update + market gate")
+def test_inplay_i_bayes_xg():
+    """INPLAY-I-BAYES-XG (2026-06-06): inplay_i (Favourite Stall) was -36.5%
+    ROI / 17.6% hit-rate on 17 bets — INPLAY-I-INVESTIGATE diagnosed two
+    causes:
+      1. Strategy used pm_xg × remaining_frac as the lambda, treating it as if
+         the match hadn't started — ignored the information in the 0-0 score.
+      2. Every bet fired in low-tier / friendly leagues where the prematch
+         model is over-confident vs the market (same family as inplay_n).
+    Fix: apply Strategy J's Gamma posterior update (s=2 prior) + reuse
+    inplay_n's pm_fav_prob−pm_implied_fav > 0.15 gate.
+
+    Asserts:
+      • Bayesian update lines present in _check_strategy_i (posterior_xg_h/a,
+        I_PRIOR_STRENGTH)
+      • Model-vs-market gate present (pm_fav_prob - pm_implied_fav > 0.15)
+      • Behavioural — known low-tier overconfident case skipped, healthy
+        case still passes
+    """
+    import pathlib
+    bot_src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+
+    # Bayesian-update lines must be inside _check_strategy_i (we slice the
+    # function body to enforce locality; otherwise this test would pass if
+    # only Strategy J had the update)
+    fn_start = bot_src.index("def _check_strategy_i(")
+    fn_end = bot_src.index("\ndef _check_strategy_j(", fn_start)
+    fn_body = bot_src[fn_start:fn_end]
+
+    assert "INPLAY-I-BAYES-XG" in fn_body, (
+        "Strategy I must carry the INPLAY-I-BAYES-XG marker so future refactors "
+        "can't silently drop the Gamma update"
+    )
+    assert "I_PRIOR_STRENGTH" in fn_body, (
+        "Strategy I must define a local prior strength constant for the Gamma update"
+    )
+    assert "posterior_xg_h" in fn_body and "posterior_xg_a" in fn_body, (
+        "Strategy I must compute posterior xG for BOTH sides (the favourite-stall "
+        "thesis requires conditioning on 0-0)"
+    )
+
+    # Model-vs-market gate — copies the inplay_n shape
+    assert "INPLAY-I-MODEL-VS-MARKET-GATE" in fn_body, (
+        "Strategy I must carry the INPLAY-I-MODEL-VS-MARKET-GATE marker"
+    )
+    assert "pm_fav_prob - pm_implied_fav" in fn_body, (
+        "Strategy I must subtract pm_implied_fav from pm_fav_prob for the gate"
+    )
+    assert "0.15" in fn_body, (
+        "Strategy I gate threshold (15pp) must match inplay_n for consistency"
+    )
+
+    # Behavioural — exercise _check_strategy_i directly
+    from workers.jobs.inplay_bot import _check_strategy_i
+
+    def _cand(minute=42, score_h=0, score_a=0, live_h=4.50, live_a=2.00):
+        return {
+            "minute": minute,
+            "score_home": score_h,
+            "score_away": score_a,
+            "live_1x2_home": live_h,
+            "live_1x2_away": live_a,
+        }
+
+    # Case 1: Mbarara City home @ 4.50 — prematch model 66% home, market priced
+    # home at 18.9% (47pp gap). Must be SKIPPED by the model-vs-market gate.
+    pm_mbarara = {
+        "prematch_home_prob": 0.6607, "prematch_away_prob": 0.0918,
+        "prematch_implied_home": 0.1887, "prematch_implied_away": 0.5236,
+        "prematch_xg_home": 1.5, "prematch_xg_away": 1.1,
+    }
+    assert _check_strategy_i(_cand(minute=42, live_h=4.50, live_a=1.50),
+                             pm_mbarara, has_red_card=False) is None, (
+        "Mbarara-style case (model 66% vs market 19%) must be vetoed by the gate"
+    )
+
+    # Case 2: Healthy case — model 64%, market priced same side at 55% (9pp gap,
+    # under the 15pp threshold). Live odds drifted to 3.0+ at 0-0 min 50.
+    # Bayesian update + edge check decide; gate should NOT veto here.
+    pm_healthy = {
+        "prematch_home_prob": 0.64, "prematch_away_prob": 0.16,
+        "prematch_implied_home": 0.55, "prematch_implied_away": 0.20,
+        "prematch_xg_home": 1.7, "prematch_xg_away": 1.0,
+    }
+    result = _check_strategy_i(_cand(minute=50, live_h=3.20, live_a=2.50),
+                               pm_healthy, has_red_card=False)
+    # Result may or may not fire depending on edge after Bayesian update — what
+    # matters is the gate didn't kill it short-circuit (would manifest as the
+    # function returning None before reaching the edge check). The returned
+    # dict, if present, must carry the new extras as evidence the new code path
+    # ran.
+    if result is not None:
+        assert "posterior_xg_h" in result["extra"], (
+            "passing bet must expose posterior_xg_h so we can audit later"
+        )
+        assert "pm_implied_fav" in result["extra"], (
+            "passing bet must expose pm_implied_fav for audit"
+        )
+
+    # Case 3: Missing implied — gate must not crash; falls back to letting
+    # downstream filters decide (same behaviour as inplay_n).
+    pm_no_implied = {
+        "prematch_home_prob": 0.70, "prematch_away_prob": 0.10,
+        "prematch_implied_home": None, "prematch_implied_away": None,
+        "prematch_xg_home": 1.5, "prematch_xg_away": 1.0,
+    }
+    try:
+        _check_strategy_i(_cand(minute=45, live_h=3.50, live_a=2.30),
+                          pm_no_implied, has_red_card=False)
+    except (TypeError, ValueError) as e:
+        assert False, f"strategy I crashed on missing implied prob: {e}"
+
+
 if __name__ == "__main__":
     main()

@@ -2347,22 +2347,48 @@ def _check_strategy_i(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
         fav_side = "home"
         live_fav_odds = float(cand.get("live_1x2_home") or 0)
         pm_fav_prob = pm_home_prob
+        pm_implied_fav = float(pm.get("prematch_implied_home") or 0)
     elif pm_away_prob >= 0.62:
         fav_side = "away"
         live_fav_odds = float(cand.get("live_1x2_away") or 0)
         pm_fav_prob = pm_away_prob
+        pm_implied_fav = float(pm.get("prematch_implied_away") or 0)
     else:
+        return None
+
+    # INPLAY-I-MODEL-VS-MARKET-GATE (2026-06-06): same defence as inplay_n.
+    # 17-bet diagnosis (INPLAY-I-INVESTIGATE) showed every bet fired in a
+    # low-tier / friendly league (Victoria Premier 2, Erovnuli Liga 2,
+    # Friendlies, Paulista Série B, etc.) where the ensemble model is
+    # systematically over-confident vs the bookmaker line. 17.6% hit-rate at
+    # avg 3.97 odds (implied 25.2%) means the model was ~25pp too high. Skip
+    # when the prematch model claims ≥62% but the prematch market priced the
+    # same side <47% — gap > 15pp = low-data over-confidence signature.
+    if pm_implied_fav > 0 and (pm_fav_prob - pm_implied_fav) > 0.15:
         return None
 
     if live_fav_odds < 3.0:
         return None  # Market hasn't drifted enough — no edge without meaningful drift
 
+    # INPLAY-I-BAYES-XG (2026-06-06): the prior version used
+    # `pm_xg × remaining_frac × h2_uplift` — i.e. treated the lambdas as if the
+    # match hadn't started yet, ignoring the information in the 0-0 score at
+    # minute 42-65. A 1.8-xG team that's scored 0 by minute 42 has demonstrated
+    # under-performance; the posterior λ must shrink. Apply the same conjugate
+    # Gamma update Strategy J uses (s=2 "matches worth" prior) so the bivariate
+    # Poisson on remaining minutes uses an honest posterior. The strategy's
+    # whole thesis ("market overweights blank score, model sees true quality")
+    # actually points the OTHER way without this update — the model was
+    # pricing the favourite as if it hadn't yet failed to score.
     pm_xg_h = float(pm.get("prematch_xg_home") or 1.1)
     pm_xg_a = float(pm.get("prematch_xg_away") or 1.1)
+    I_PRIOR_STRENGTH = 2.0
+    posterior_xg_h = (pm_xg_h * I_PRIOR_STRENGTH + sh) / (I_PRIOR_STRENGTH + minute / 90.0)
+    posterior_xg_a = (pm_xg_a * I_PRIOR_STRENGTH + sa) / (I_PRIOR_STRENGTH + minute / 90.0)
     remaining_frac = (90.0 - minute) / 90.0
     h2_uplift = 1.05 if minute >= 45 else 1.0
-    lam_h = pm_xg_h * remaining_frac * h2_uplift
-    lam_a = pm_xg_a * remaining_frac * h2_uplift
+    lam_h = posterior_xg_h * remaining_frac * h2_uplift
+    lam_a = posterior_xg_a * remaining_frac * h2_uplift
 
     ph_win, _, pa_win = _bivariate_poisson_win_prob(lam_h, lam_a)
     model_fav_win = ph_win if fav_side == "home" else pa_win
@@ -2382,6 +2408,9 @@ def _check_strategy_i(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
         "extra": {
             "fav_side": fav_side,
             "pm_fav_prob": round(pm_fav_prob, 3),
+            "pm_implied_fav": round(pm_implied_fav, 3),
+            "posterior_xg_h": round(posterior_xg_h, 3),
+            "posterior_xg_a": round(posterior_xg_a, 3),
             "lam_h_remaining": round(lam_h, 3),
             "lam_a_remaining": round(lam_a, 3),
         },
