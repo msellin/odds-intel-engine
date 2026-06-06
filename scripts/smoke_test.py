@@ -15225,6 +15225,27 @@ def _():
         "match-detail page must render the WC model card"
 
 
+@test("WC-MODEL-CARD-COPY-DIRECTION — disagreement callout reflects gap sign (more vs less confident)")
+def _():
+    """WC-MODEL-CARD-COPY-DIRECTION (2026-06-06): when own + market pick the
+    same side but disagree on confidence by ≥10pp, the callout must reflect
+    the DIRECTION of the gap. Pre-fix, the copy always said "more confident"
+    even when own=50% / market=70%+ (i.e. the model was clearly less
+    confident than the public). Pin both branches and the gap-sign check so a
+    future copy refactor cannot regress."""
+    comp = _web_path("src/components/wc-model-card.tsx")
+    csrc = comp.read_text()
+    # Both directional strings must exist in the file.
+    assert "but is more confident" in csrc, \
+        "callout must keep the 'more confident' branch for own > market"
+    assert "but is less confident" in csrc, \
+        "callout must add a 'less confident' branch for own < market"
+    # The branching MUST be gated on the signed gap. Either inline gapPp check
+    # or the derived `ownIsMoreConfident` boolean is acceptable.
+    assert ("ownIsMoreConfident" in csrc) or ("info.gapPp >= 0" in csrc), \
+        "less/more branch must be gated on the signed gapPp (own vs market)"
+
+
 @test("WC-B2-B3-SCORE-PLAYER — Poisson top-5 scorelines + key-player chip on match detail")
 def _():
     """WC-B2-B3 (2026-06-04): score-predictions table (top-5 most likely
