@@ -16718,6 +16718,64 @@ def _():
     )
 
 
+@test("GROWTH-VS-SOFASCORE-ODDSCHECKER — last 2 landing-matrix /vs entries")
+def _():
+    """GROWTH-VS-SOFASCORE-ODDSCHECKER (2026-06-06): builds the last
+    two /vs pages so every column on the landing CompetitorMatrix
+    has a deep-comparison page. After this, the matrix is fully
+    wired — every competitor name links to /vs/[slug].
+
+    SofaScore (stats aggregator) + OddsChecker (odds comparison)
+    are different category than the existing /vs roster — they're
+    free reference tools, not paid subscription competitors. The
+    pitch is the same shape as /vs/forebet: free reference vs paid
+    intelligence (decision layer vs comparison/stats layer).
+    """
+    data = _web_path("src/lib/vs-competitors.ts")
+    dsrc = data.read_text()
+    for slug in ("sofascore", "oddschecker"):
+        assert f'slug: "{slug}"' in dsrc, (
+            f"vs-competitors must include {slug} — completes the "
+            f"landing-matrix /vs roster"
+        )
+
+    # Both must carry the editorial-required whereTheyWin
+    # (already pinned by GROWTH-VS-PAGES, but worth being explicit
+    # for these new entries — easy to forget the honest concessions)
+    for site_name in ("SofaScore", "OddsChecker"):
+        idx = dsrc.find(f'name: "{site_name}"')
+        assert idx > 0, f"{site_name} entry must exist"
+        # Find the next entry boundary or end of array
+        next_idx = dsrc.find('slug: "', idx + 1)
+        if next_idx < 0:
+            next_idx = dsrc.find("];", idx)
+        entry = dsrc[idx:next_idx]
+        assert "whereTheyWin:" in entry, (
+            f"{site_name} entry must include whereTheyWin — honest "
+            f"concession is the credibility wedge"
+        )
+
+    # Matrix wires both to /vs/[slug]
+    matrix = _web_path("src/components/competitor-matrix.tsx")
+    msrc = matrix.read_text()
+    assert 'vsSlug: "sofascore"' in msrc, (
+        "SofaScore on the matrix must carry vsSlug=sofascore — "
+        "the whole point of this task is to wire the discoverability"
+    )
+    assert 'vsSlug: "oddschecker"' in msrc, (
+        "OddsChecker on the matrix must carry vsSlug=oddschecker"
+    )
+
+    # /vs index metadata mentions the new entries so Google's
+    # description matches the actual page roster
+    index = _web_path("src/app/(app)/vs/page.tsx")
+    isrc = index.read_text()
+    for name in ("SofaScore", "OddsChecker"):
+        assert name in isrc, (
+            f"/vs index metadata must mention {name}"
+        )
+
+
 @test("GROWTH-VS-PAGES-V2 — extended /vs entries + matrix discoverability")
 def _():
     """GROWTH-VS-PAGES-V2 (2026-06-05): operator-flagged audit found that
