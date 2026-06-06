@@ -1290,18 +1290,29 @@ def _compute_pseudo_clv_batched(fetch_dates: list[str]) -> tuple[int, int]:
     Compute pseudo-CLV for all finished matches in the given dates.
     Bulk-loads all odds_snapshots, computes in-memory, batch-updates matches.
     Returns (computed_count, skipped_count).
+
+    Opening = earliest pre-kickoff snapshot (timestamp < match.date).
+    Filtering to pre-kickoff prevents in-play snapshots (near-1.0 odds
+    captured during the match) from being used as "opening", which would
+    produce wildly inflated CLV values (e.g. +2800%).
+
+    Values outside ±50% are clamped to None — these indicate a data
+    quality issue (wrong opening captured) and are meaningless to display.
     """
-    # Get all finished match IDs for these dates
-    all_match_ids = []
+    # Fetch match IDs + kickoff times for these dates
+    all_matches: list[dict] = []
     for d in sorted(fetch_dates):
         rows = execute_query(
-            "SELECT id FROM matches WHERE status = 'finished' AND date >= %s AND date <= %s",
+            "SELECT id, date FROM matches WHERE status = 'finished' AND date >= %s AND date <= %s",
             [f"{d}T00:00:00", f"{d}T23:59:59"]
         )
-        all_match_ids.extend(r["id"] for r in rows)
+        all_matches.extend(rows)
 
-    if not all_match_ids:
+    if not all_matches:
         return 0, 0
+
+    all_match_ids = [r["id"] for r in all_matches]
+    kickoff_by_id = {str(r["id"]): r["date"] for r in all_matches}
 
     # Bulk-load all 1x2 odds snapshots for these matches
     odds_rows = execute_query(
@@ -1323,6 +1334,8 @@ def _compute_pseudo_clv_batched(fetch_dates: list[str]) -> tuple[int, int]:
             skipped += 1
             continue
 
+        kickoff = kickoff_by_id.get(str(match_id))
+
         # Group by selection
         by_sel: dict[str, list] = {}
         for s in snaps:
@@ -1331,19 +1344,34 @@ def _compute_pseudo_clv_batched(fetch_dates: list[str]) -> tuple[int, int]:
         pseudo_clvs = {}
         for sel in ("home", "draw", "away"):
             sel_snaps = by_sel.get(sel, [])
-            if len(sel_snaps) < 2:
+
+            # Opening = earliest pre-kickoff snapshot only
+            if kickoff:
+                pre_kick = [s for s in sel_snaps if s["timestamp"] < kickoff]
+            else:
+                pre_kick = sel_snaps  # fallback if kickoff unknown
+            opening_snaps = pre_kick if pre_kick else sel_snaps
+
+            if not opening_snaps:
                 pseudo_clvs[sel] = None
                 continue
 
-            opening_odds = float(sel_snaps[0]["odds"])
+            # Closing = last is_closing snapshot, else last overall
             closing_snaps = [s for s in sel_snaps if s.get("is_closing")]
-            closing_odds = float(closing_snaps[-1]["odds"]) if closing_snaps else float(sel_snaps[-1]["odds"])
+            if not closing_snaps:
+                pseudo_clvs[sel] = None
+                continue
+
+            opening_odds = float(opening_snaps[0]["odds"])
+            closing_odds = float(closing_snaps[-1]["odds"])
 
             if opening_odds <= 1.0 or closing_odds <= 1.0:
                 pseudo_clvs[sel] = None
                 continue
 
-            pseudo_clvs[sel] = round((1.0 / opening_odds) / (1.0 / closing_odds) - 1, 5)
+            clv = round((1.0 / opening_odds) / (1.0 / closing_odds) - 1, 5)
+            # Discard implausible values — almost certainly a data artifact
+            pseudo_clvs[sel] = clv if abs(clv) <= 0.5 else None
 
         if all(v is None for v in pseudo_clvs.values()):
             skipped += 1

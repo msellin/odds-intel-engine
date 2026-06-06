@@ -1116,11 +1116,20 @@ def compute_and_store_pseudo_clv(client, match_id: str) -> dict | None:
     pseudo_clv = (1/opening_odds) / (1/closing_odds) - 1
     Positive = opening odds had more implied edge than closing (bet was +value at open).
 
-    Opening odds = earliest snapshot (any bookmaker).
-    Closing odds = latest snapshot before is_closing=True, or latest overall.
+    Opening = earliest pre-kickoff snapshot. Filtering to pre-kickoff prevents
+    in-play snapshots (near-1.0 odds during the match) from being used as
+    "opening", which would produce wildly inflated CLV values.
+
+    Values outside ±50% are discarded — these indicate a data quality issue.
 
     Returns dict with home/draw/away values, or None if not enough data.
     """
+    # Fetch kickoff time
+    match_row = execute_query(
+        "SELECT date FROM matches WHERE id = %s", (match_id,)
+    )
+    kickoff = match_row[0]["date"] if match_row else None
+
     # Fetch all 1x2 snapshots for this match
     rows = execute_query(
         """SELECT selection, odds, timestamp, is_closing
@@ -1142,22 +1151,33 @@ def compute_and_store_pseudo_clv(client, match_id: str) -> dict | None:
     pseudo_clvs = {}
     for sel in ("home", "draw", "away"):
         snaps = by_selection.get(sel, [])
-        if len(snaps) < 2:
+
+        # Opening = earliest pre-kickoff snapshot only
+        if kickoff:
+            pre_kick = [s for s in snaps if s["timestamp"] < kickoff]
+        else:
+            pre_kick = snaps
+        opening_snaps = pre_kick if pre_kick else snaps
+
+        if not opening_snaps:
             pseudo_clvs[sel] = None
             continue
 
-        opening_odds = float(snaps[0]["odds"])   # earliest snapshot
-        # Closing: prefer is_closing=True, else latest
+        # Closing: require is_closing=True (no fallback — avoids post-match odds)
         closing_snaps = [s for s in snaps if s.get("is_closing")]
-        closing_odds = float(closing_snaps[-1]["odds"]) if closing_snaps else float(snaps[-1]["odds"])
+        if not closing_snaps:
+            pseudo_clvs[sel] = None
+            continue
+
+        opening_odds = float(opening_snaps[0]["odds"])
+        closing_odds = float(closing_snaps[-1]["odds"])
 
         if opening_odds <= 1.0 or closing_odds <= 1.0:
             pseudo_clvs[sel] = None
             continue
 
-        opening_implied = 1.0 / opening_odds
-        closing_implied = 1.0 / closing_odds
-        pseudo_clvs[sel] = round(opening_implied / closing_implied - 1, 5)
+        clv = round((1.0 / opening_odds) / (1.0 / closing_odds) - 1, 5)
+        pseudo_clvs[sel] = clv if abs(clv) <= 0.5 else None
 
     if all(v is None for v in pseudo_clvs.values()):
         return None

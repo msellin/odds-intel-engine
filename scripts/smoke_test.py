@@ -19149,7 +19149,7 @@ def test_match_recaps():
     import pathlib
     engine_data = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/lib/engine-data.ts")
     recap_index = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/app/(app)/recaps/page.tsx")
-    recap_detail = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/app/(app)/recaps/[id]/page.tsx")
+    recap_detail = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/app/(app)/recaps/[slug]/page.tsx")
     sitemap = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/app/sitemap.ts")
 
     for p in [engine_data, recap_index, recap_detail, sitemap]:
@@ -19159,26 +19159,29 @@ def test_match_recaps():
     src = engine_data.read_text()
     assert "getMatchRecapData" in src, "engine-data must export getMatchRecapData"
     assert "getRecapIndex" in src, "engine-data must export getRecapIndex"
+    assert "resolveRecapSlug" in src, "engine-data must export resolveRecapSlug"
     assert "RecapBet" in src, "engine-data must export RecapBet interface"
     assert "MatchRecapData" in src, "engine-data must export MatchRecapData interface"
     assert "RecapIndexEntry" in src, "engine-data must export RecapIndexEntry interface"
+    assert "slug: fixtureSlug" in src, "RecapIndexEntry must include slug field computed from fixtureSlug"
 
-    # Index page uses the data function
+    # Index page uses slug-based links
     idx_src = recap_index.read_text()
     assert "getRecapIndex" in idx_src, "index page must import getRecapIndex"
-    assert "/recaps/" in idx_src, "index page must link to individual recap pages"
+    assert "r.slug" in idx_src, "index page must link via slug, not matchId"
 
-    # Detail page uses the data function and handles notFound
+    # Detail page resolves slug and handles notFound
     detail_src = recap_detail.read_text()
+    assert "resolveRecapSlug" in detail_src, "detail page must resolve slug to matchId"
     assert "getMatchRecapData" in detail_src, "detail page must import getMatchRecapData"
     assert "notFound" in detail_src, "detail page must call notFound() for missing matches"
     assert "generateMetadata" in detail_src, "detail page must export generateMetadata for SEO"
     assert "application/ld+json" in detail_src, "detail page must include schema.org structured data"
 
-    # Sitemap includes recaps
+    # Sitemap uses slugs
     sm_src = sitemap.read_text()
     assert "getRecapIndex" in sm_src, "sitemap must include recap pages"
-    assert "/recaps" in sm_src, "sitemap must reference /recaps URL"
+    assert "r.slug" in sm_src, "sitemap must use slug URLs, not matchId"
 
 
 if __name__ == "__main__":
