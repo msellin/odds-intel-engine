@@ -272,6 +272,24 @@ BOTS_CONFIG = {
 
     # ─── New bots (2026-04-30): BTTS, O/U 1.5/3.5, draw, O/U 2.5 global ────
 
+    "bot_btts_v2": {
+        # BTTS-RE-EVAL-JUNE8 (2026-06-07): narrow odds window based on post-May-24 shadow
+        # bucket analysis (28 bets, 1.80-2.09 +27.9% ROI, 2.10-2.49 +74.4% ROI; 2.50+
+        # showed 0/5 wins so excluded). btts_yes Platt fitted with n=154 on v20260607
+        # (gate was 100) — coefficient a=2.500 is unstable vs prior a=0.209, so this
+        # bot starts experimental/paper-only to validate the signal over 30 settled bets.
+        "description": "BTTS narrow odds window 1.80-2.49. BTTS-RE-EVAL-JUNE8 2026-06-07: post-May-24 shadow 1.80-2.49 bucket +27-74% ROI on n=28. Paper-only (experimental) until 30 settled bets confirm signal.",
+        "tier_label": "pro",
+        "markets": ["btts"],
+        "edge_thresholds": {
+            1: {"btts": 0.10},
+            2: {"btts": 0.10},
+            3: {"btts": 0.10},
+            4: {"btts": 0.10},
+        },
+        "odds_range": (1.80, 2.49),
+        "min_prob": 0.35,
+    },
     "bot_btts_all": {
         # PER-BOT-SLICE-TIGHTEN reverted 2026-05-18: backtest said 2.00-2.50 loses (-6.5%),
         # but live v14 data (41 bets) shows that bucket at +20.5% ROI. Poisson backfill
@@ -962,6 +980,7 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_opt_away_british": "all",
     "bot_opt_away_europe":  "all",
     "bot_opt_home_lower":   "all",
+    "bot_btts_v2":          "all",
     "bot_btts_all":         "all",
     "bot_btts_conservative":"all",
     "bot_proven_leagues":   "all",

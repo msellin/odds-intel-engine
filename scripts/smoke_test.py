@@ -12641,6 +12641,39 @@ def _():
         "both callout branches must surface markets_worse"
 
 
+@test("BTTS-RE-EVAL-JUNE8 — bot_btts_v2 config wired with narrow 1.80-2.49 odds window + experimental label")
+def _():
+    """BTTS-RE-EVAL-JUNE8 (2026-06-07): btts_yes Platt fitted (n=154, gate was 100) on
+    v20260607. Post-May-24 shadow bucket analysis: 1.80-2.09 +27.9% ROI (n=19),
+    2.10-2.49 +74.4% (n=9), 2.50+ 0/5 wins. New bot_btts_v2 targets 1.80-2.49
+    with 10% edge threshold; maturity_label=experimental so it never crosses the
+    CHERRY-PICK-PLACER real-money gate. Watch 30 settled bets before promoting."""
+    import pathlib
+
+    pipeline = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+
+    assert "bot_btts_v2" in pipeline, \
+        "bot_btts_v2 must be defined in BOTS_CONFIG"
+    # Odds window must be narrow — 1.80 to 2.49
+    v2_idx = pipeline.index('"bot_btts_v2"')
+    v2_block = pipeline[v2_idx:v2_idx + 1000]
+    assert "1.80" in v2_block and "2.49" in v2_block, \
+        "bot_btts_v2 odds_range must be (1.80, 2.49)"
+    # Edge threshold — should be ≥10%
+    assert "0.10" in v2_block, \
+        "bot_btts_v2 edge threshold must be 0.10 (10%)"
+    # Must be in cohort timing dict
+    assert '"bot_btts_v2"' in pipeline and '"bot_btts_v2":' in pipeline, \
+        "bot_btts_v2 must appear in cohort timing dict"
+
+    mig = pathlib.Path("supabase/migrations/189_bot_btts_v2.sql").read_text()
+    assert "bot_btts_v2" in mig, "Migration 189 must create bot_btts_v2"
+    assert "experimental" in mig, \
+        "bot_btts_v2 must start as experimental so it never crosses real-money gate"
+    assert "ON CONFLICT" in mig, \
+        "Migration must be idempotent (ON CONFLICT DO UPDATE)"
+
+
 @test("STALE-FLAG-AUDIT-MIGRATION-162 — retires 2 bleeders, clears retired_reason on 2 recovered bots")
 def _():
     """Audit triggered by 3 stale-flag fixes today (migrations 155, 156, 160).
