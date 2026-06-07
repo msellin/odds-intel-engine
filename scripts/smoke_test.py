@@ -19561,5 +19561,22 @@ def _():
         "Script must split pre-fix vs post-fix cohorts"
 
 
+@test("ANALYZE-COOLBET-ODDS — analysis script structure and key functions")
+def _():
+    """analyze_coolbet_odds.py: verifies the 6 analysis sections exist, the
+    SET LOCAL statement_timeout override is in place, and DATE_FILTER is set."""
+    import pathlib
+    script = pathlib.Path("scripts/analyze_coolbet_odds.py")
+    assert script.exists(), "scripts/analyze_coolbet_odds.py must exist"
+    src = script.read_text()
+    for fn in ["analyze_margins", "analyze_vs_pinnacle", "analyze_vs_bet365",
+               "analyze_stability", "analyze_lag", "analyze_best_window"]:
+        assert fn in src, f"{fn} function must exist in analyze_coolbet_odds.py"
+    assert "SET LOCAL statement_timeout" in src, \
+        "Must override statement_timeout per-query to bypass Supabase role-level limit"
+    assert 'DATE_FILTER = "2026-05-20"' in src, "DATE_FILTER must restrict to Coolbet data window"
+    assert "psycopg2" in src, "Must use direct psycopg2 connection (pool drops SET LOCAL)"
+
+
 if __name__ == "__main__":
     main()
