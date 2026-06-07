@@ -19397,5 +19397,31 @@ def test_b_ml3_feature_patch():
             assert feat in fc, f"{feat} must be in bundle feature_cols"
 
 
+@test("GROWTH-DESKTOP-DASHBOARD-DENSITY — H2H+Standings grid and Intel tab 2-col layout wired")
+def _():
+    """Source-inspection: confirms desktop density classes are present in the
+    two edited frontend files so they can't silently regress to single-column."""
+    import pathlib
+    fe_root = pathlib.Path("../odds-intel-web/src")
+    if not fe_root.exists():
+        return  # frontend not checked out alongside engine — skip
+
+    free_src = (fe_root / "components/match-detail-free.tsx").read_text()
+    # H2H + Standings wrapper must have the responsive grid class
+    assert "lg:grid-cols-2" in free_src, \
+        "match-detail-free.tsx must have lg:grid-cols-2 for desktop H2H+Standings layout"
+    # Confirm the wrapper div exists (not just any lg:grid-cols-2 elsewhere)
+    assert "grid gap-3 lg:grid-cols-2" in free_src, \
+        "match-detail-free.tsx must have 'grid gap-3 lg:grid-cols-2' wrapper div"
+
+    page_src = (fe_root / "app/(app)/matches/[id]/page.tsx").read_text()
+    # Intel tab MIP + BotConsensus grid wrapper
+    assert "grid gap-3 lg:grid-cols-2" in page_src, \
+        "matches/[id]/page.tsx must have 'grid gap-3 lg:grid-cols-2' wrapper for Intel tab density"
+    # Confirm both components still present (not accidentally removed)
+    assert "MarketImpliedProbabilities" in page_src, "MarketImpliedProbabilities must still be in Intel tab"
+    assert "BotConsensus" in page_src, "BotConsensus must still be in Intel tab"
+
+
 if __name__ == "__main__":
     main()
