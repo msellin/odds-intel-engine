@@ -12594,6 +12594,53 @@ def _():
         "DashboardCache interface must include upcoming_model_summary"
 
 
+@test("PERF-HERO-RECENTLY-PROMOTED — settlement shows green callout for 7d after promotion; hero handles mode=recently_promoted")
+def _():
+    """PERF-HERO-ADVERTISE-MODEL (2026-06-07): after v20260607 was promoted to
+    production, the upcoming candidate no longer exists, so _build_upcoming_model_summary
+    must fall through to the 'recently_promoted' path (7-day window). The hero's
+    NextModelCallout must render the green 'Model updated' strip, not the sky-blue
+    'Next upgrade'. previous_production is stored in model_versions.notes so the
+    function can compare promoted vs prior bundle."""
+    import pathlib
+
+    settle = pathlib.Path("workers/jobs/settlement.py").read_text()
+    func_idx = settle.index("def _build_upcoming_model_summary")
+    func_block = settle[func_idx:func_idx + 6000]
+
+    # recently_promoted path must exist
+    assert "recently_promoted" in func_block, \
+        "settlement.py must implement the recently_promoted fallback path"
+    # Must check promoted_at age (7-day window)
+    assert "promoted_at" in func_block, \
+        "recently_promoted path must read promoted_at from model_versions"
+    assert ".days < 7" in func_block, \
+        "recently_promoted window must be 7 days"
+    # Must read previous_production from notes
+    assert "previous_production=" in func_block, \
+        "must parse previous_production= from notes to find the baseline"
+    # Mode key must be emitted
+    assert '"mode"' in func_block or "'mode'" in func_block, \
+        "summary dict must include a mode key"
+
+    hero = _web_path("src/components/performance-hero.tsx").read_text()
+    # Hero must detect and branch on the recently_promoted mode
+    assert "isPromoted" in hero, \
+        "NextModelCallout must detect mode=recently_promoted via isPromoted"
+    assert "recently_promoted" in hero, \
+        "NextModelCallout must check for 'recently_promoted' string"
+    # Green callout must exist (distinct from sky-blue upcoming)
+    assert "emerald-500" in hero or "emerald-400" in hero, \
+        "recently_promoted render must use emerald colours (green = model updated)"
+    assert "Model updated" in hero, \
+        "recently_promoted callout must say 'Model updated'"
+    # Both branches must show markets_better / markets_worse counts
+    assert hero.count("markets_better") >= 2, \
+        "both callout branches must surface markets_better (no cherry-picking)"
+    assert hero.count("markets_worse") >= 2, \
+        "both callout branches must surface markets_worse"
+
+
 @test("STALE-FLAG-AUDIT-MIGRATION-162 — retires 2 bleeders, clears retired_reason on 2 recovered bots")
 def _():
     """Audit triggered by 3 stale-flag fixes today (migrations 155, 156, 160).

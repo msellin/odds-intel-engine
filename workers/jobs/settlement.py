@@ -1394,16 +1394,25 @@ def _build_upcoming_model_summary() -> dict | None:
     against current production using model_versions.cv_metrics offline eval.
 
     Returns a dict for the /performance "Next upgrade" callout, or None when:
-      • no candidate model exists (e.g. just after promotion)
-      • candidate or production cv_metrics are unparseable
+      • no candidate model exists and production wasn't recently promoted
+      • cv_metrics are unparseable
       • candidate has zero markets improving vs production
 
-    Production version is the one whose name matches MODEL_VERSION env. The
-    candidate is the most recent model_versions row trained strictly after
-    production AND containing offline-eval metrics (cv_metrics.metrics shape).
+    Also returns a "recently_promoted" variant (mode key set) for the 7 days
+    after a promotion, so the page can show "Model updated" with the gains.
+    Production version is the one whose name matches MODEL_VERSION env.
     """
     import os, json
+    from datetime import datetime, timezone
     production_version = os.environ.get("MODEL_VERSION", "v14")
+
+    # Group markets by head — used in both upcoming and recently_promoted paths.
+    groups = {
+        "1x2":  ["1x2_home", "1x2_draw", "1x2_away"],
+        "ah":   ["ah_home_+0.5", "ah_home_+1.5", "ah_home_-0.5", "ah_home_-1.5"],
+        "btts": ["btts_yes", "btts_no"],
+        "ou":   ["over25", "under25"],
+    }
 
     rows = execute_query("""
         SELECT version, trained_at, cv_metrics, notes
@@ -1426,8 +1435,52 @@ def _build_upcoming_model_summary() -> dict | None:
         m = cv.get("metrics") if isinstance(cv, dict) else None
         return m if isinstance(m, dict) and m else None
 
+    def _build_delta_summary(new_metrics, base_metrics, new_version, base_version,
+                             promoted_date_str, mode):
+        """Shared delta-computation for both upcoming and recently_promoted paths."""
+        group_deltas: dict[str, float] = {}
+        better = worse = ties = 0
+        for label, markets in groups.items():
+            new_lls  = [new_metrics[m]["log_loss"]  for m in markets
+                        if m in new_metrics and m in base_metrics and base_metrics[m].get("log_loss")]
+            base_lls = [base_metrics[m]["log_loss"] for m in markets
+                        if m in new_metrics and m in base_metrics and base_metrics[m].get("log_loss")]
+            if not new_lls:
+                continue
+            delta_pct = (sum(new_lls) / len(new_lls) - sum(base_lls) / len(base_lls)) \
+                        / (sum(base_lls) / len(base_lls)) * 100
+            group_deltas[label] = round(delta_pct, 1)
+        for mkt in new_metrics:
+            if mkt not in base_metrics:
+                continue
+            c = new_metrics[mkt].get("log_loss")
+            p = base_metrics[mkt].get("log_loss")
+            if c is None or p is None:
+                continue
+            dp = (c - p) / p * 100
+            if dp < -1:
+                better += 1
+            elif dp > 1:
+                worse += 1
+            else:
+                ties += 1
+        if better == 0:
+            return None
+        n = new_metrics.get(next(iter(new_metrics), ""), {}).get("n") if new_metrics else None
+        return {
+            "mode":           mode,
+            "candidate":      new_version,
+            "production":     base_version,
+            "trained_at":     promoted_date_str,
+            "markets_better": better,
+            "markets_worse":  worse,
+            "markets_tied":   ties,
+            "group_deltas":   group_deltas,
+            "holdout_n":      n,
+        }
+
     prod_row = execute_query(
-        "SELECT cv_metrics, trained_at FROM model_versions WHERE version = %s LIMIT 1",
+        "SELECT cv_metrics, trained_at, promoted_at, notes FROM model_versions WHERE version = %s LIMIT 1",
         (production_version,),
     )
     prod_metrics = _metrics(prod_row[0]["cv_metrics"]) if prod_row else None
@@ -1445,56 +1498,45 @@ def _build_upcoming_model_summary() -> dict | None:
         if m:
             candidate = (r["version"], r["trained_at"], m)
             break
-    if not candidate:
-        return None
 
-    cand_version, cand_trained_at, cand_metrics = candidate
+    if candidate:
+        cand_version, cand_trained_at, cand_metrics = candidate
+        return _build_delta_summary(
+            cand_metrics, prod_metrics,
+            cand_version, production_version,
+            cand_trained_at.date().isoformat() if cand_trained_at else None,
+            "upcoming",
+        )
 
-    # Group markets by head. Average log_loss delta per group, count wins/losses.
-    groups = {
-        "1x2": ["1x2_home", "1x2_draw", "1x2_away"],
-        "ah":  ["ah_home_+0.5", "ah_home_+1.5", "ah_home_-0.5", "ah_home_-1.5"],
-        "btts": ["btts_yes", "btts_no"],
-        "ou":  ["over25", "under25"],
-    }
-
-    group_deltas: dict[str, float] = {}
-    better = worse = ties = 0
-    for label, markets in groups.items():
-        cand_lls = [cand_metrics[m]["log_loss"] for m in markets
-                    if m in cand_metrics and m in prod_metrics and prod_metrics[m].get("log_loss")]
-        prod_lls = [prod_metrics[m]["log_loss"] for m in markets
-                    if m in cand_metrics and m in prod_metrics and prod_metrics[m].get("log_loss")]
-        if not cand_lls:
-            continue
-        cand_avg = sum(cand_lls) / len(cand_lls)
-        prod_avg = sum(prod_lls) / len(prod_lls)
-        delta_pct = (cand_avg - prod_avg) / prod_avg * 100
-        group_deltas[label] = round(delta_pct, 1)
-
-    for mkt in cand_metrics:
-        if mkt not in prod_metrics: continue
-        c = cand_metrics[mkt].get("log_loss")
-        p = prod_metrics[mkt].get("log_loss")
-        if c is None or p is None: continue
-        delta_pct = (c - p) / p * 100
-        if delta_pct < -1: better += 1
-        elif delta_pct > 1: worse += 1
-        else: ties += 1
-
-    if better == 0:
-        return None
-
-    return {
-        "candidate":   cand_version,
-        "production":  production_version,
-        "trained_at":  cand_trained_at.date().isoformat() if cand_trained_at else None,
-        "markets_better": better,
-        "markets_worse":  worse,
-        "markets_tied":   ties,
-        "group_deltas": group_deltas,
-        "holdout_n": cand_metrics.get(next(iter(cand_metrics))).get("n") if cand_metrics else None,
-    }
+    # No upcoming candidate — show "recently promoted" for 7 days after promotion.
+    promoted_at = prod_row[0].get("promoted_at") if prod_row else None
+    if promoted_at:
+        if promoted_at.tzinfo is None:
+            promoted_at = promoted_at.replace(tzinfo=timezone.utc)
+        if (datetime.now(timezone.utc) - promoted_at).days < 7:
+            notes = prod_row[0].get("notes") or ""
+            # previous_production is recorded in notes by promote_model.py
+            prev_version = None
+            for part in notes.split("|"):
+                part = part.strip()
+                if part.startswith("previous_production="):
+                    prev_version = part.split("=", 1)[1].strip()
+                    break
+            if prev_version:
+                prev_row = execute_query(
+                    "SELECT cv_metrics FROM model_versions WHERE version = %s LIMIT 1",
+                    (prev_version,),
+                )
+                prev_metrics = _metrics(prev_row[0]["cv_metrics"]) if prev_row else None
+                if prev_metrics:
+                    promoted_date = promoted_at.date().isoformat()
+                    return _build_delta_summary(
+                        prod_metrics, prev_metrics,
+                        production_version, prev_version,
+                        promoted_date,
+                        "recently_promoted",
+                    )
+    return None
 
 
 def write_dashboard_cache():

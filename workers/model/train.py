@@ -561,7 +561,10 @@ def _load_pinnacle_features() -> pd.DataFrame:
     then implied prob = 1/odds. Overround is left in deliberately — its size
     itself is informative (Pinnacle widens its margin on uncertain matches).
     """
-    from workers.api_clients.supabase_client import execute_query
+    # Same timeout guard as _load_ou_market_features — odds_snapshots has
+    # grown large enough to blow the 60s default on this DISTINCT ON scan.
+    from workers.api_clients.db import get_conn
+    import psycopg2.extras
 
     sql = """
     WITH latest AS (
@@ -582,7 +585,12 @@ def _load_pinnacle_features() -> pd.DataFrame:
     FROM latest
     GROUP BY match_id
     """
-    rows = execute_query(sql, ())
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SET LOCAL statement_timeout = '600s'")
+            cur.execute(sql)
+            rows = [dict(r) for r in cur.fetchall()]
+        conn.commit()
     return pd.DataFrame(rows)
 
 
