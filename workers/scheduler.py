@@ -1845,6 +1845,12 @@ def main():
     scheduler.add_job(job_settle_ready, CronTrigger(minute="*/15"),
                       id="settle_ready", name="Settle-Ready Sweep (15min)")
 
+    # Extra settle_ready at 09:00 UTC — catches early Asian/Australian matches
+    # (05:00-08:00 UTC kickoffs) that finish before the 21:00 batch run.
+    # The live poller probe handles these in real-time, but this is a backup.
+    scheduler.add_job(job_settle_ready, CronTrigger(hour=9, minute=0),
+                      id="settle_ready_09", name="Settle-Ready 09:00 (early matches)")
+
     # Budget sync: hourly
     scheduler.add_job(job_budget_sync, CronTrigger(minute=0),
                       id="budget_sync", name="Budget Sync")

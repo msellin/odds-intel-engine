@@ -68,6 +68,8 @@ class LivePoller:
         self._prev_scores: dict[str, tuple[int, int]] = {}
         # Set of DB match_ids that have pending bets → HIGH priority
         self._active_bet_match_ids: set[str] = set()
+        # match_id → {kickoff, af_id, status} for direct FT probing
+        self._active_bet_match_data: dict[str, dict] = {}
         self._bet_refresh_count = 0  # Counts slow cycles, triggers bet refresh
 
     def run_forever(self):
@@ -109,9 +111,21 @@ class LivePoller:
         try:
             from workers.api_clients.db import execute_query
             rows = execute_query(
-                "SELECT DISTINCT match_id FROM simulated_bets WHERE result = 'pending'"
+                """SELECT DISTINCT ON (sb.match_id)
+                      sb.match_id, m.date AS kickoff, m.api_football_id, m.status
+                   FROM simulated_bets sb
+                   JOIN matches m ON m.id = sb.match_id
+                   WHERE sb.result = 'pending'"""
             )
             self._active_bet_match_ids = {str(r["match_id"]) for r in rows}
+            self._active_bet_match_data = {
+                str(r["match_id"]): {
+                    "kickoff": r["kickoff"],
+                    "af_id": r["api_football_id"],
+                    "status": r["status"],
+                }
+                for r in rows
+            }
             if self._active_bet_match_ids:
                 console.print(
                     f"[cyan]LivePoller: {len(self._active_bet_match_ids)} HIGH-priority matches "
@@ -147,6 +161,86 @@ class LivePoller:
             if minute >= 25 and (score_h + score_a) <= 1:
                 return True
         return False
+
+    def _probe_finishing_matches(self, seen_af_ids: set) -> list[str]:
+        """Directly probe HIGH-priority matches that have left the AF live feed.
+
+        Called every cycle. For matches with pending bets that are >90 min past
+        kickoff but absent from the current /fixtures?live=all response, calls
+        get_fixture_by_id() to check if they've finished. Closes the race window
+        where AF archives a match before we catch FT in the bulk feed.
+
+        Returns list of match_ids confirmed finished (to be settled by caller).
+        """
+        from datetime import datetime, timezone, timedelta
+        from workers.api_clients.api_football import get_fixture_by_id
+        from workers.api_clients.db import finish_match_sql
+
+        now = datetime.now(timezone.utc)
+        cutoff_90 = now - timedelta(minutes=90)
+        candidates = []
+
+        for match_id, data in list(self._active_bet_match_data.items()):
+            af_id = data.get("af_id")
+            kickoff = data.get("kickoff")
+            status = data.get("status")
+
+            if not af_id or not kickoff:
+                continue
+            if status in ("finished", "postponed", "cancelled"):
+                continue
+            if kickoff.tzinfo is None:
+                kickoff = kickoff.replace(tzinfo=timezone.utc)
+            if kickoff > cutoff_90:
+                continue  # Still within normal play window
+            if int(af_id) in seen_af_ids:
+                continue  # In the live feed this cycle — bulk loop handles it
+
+            candidates.append((match_id, int(af_id)))
+
+        if not candidates:
+            return []
+
+        console.print(
+            f"[cyan]LivePoller probe: {len(candidates)} HIGH-priority match(es) "
+            f">90min old, not in live feed — checking AF directly[/cyan]"
+        )
+
+        finished_match_ids = []
+        for match_id, af_id in candidates:
+            try:
+                fixture = get_fixture_by_id(af_id)
+                if not fixture:
+                    continue
+                status_short = fixture.get("fixture", {}).get("status", {}).get("short", "")
+                if status_short in ("FT", "AET", "PEN"):
+                    goals = fixture.get("goals", {})
+                    home_goals = goals.get("home")
+                    away_goals = goals.get("away")
+                    if home_goals is None or away_goals is None:
+                        continue
+                    finish_match_sql(match_id, int(home_goals), int(away_goals))
+                    finished_match_ids.append(match_id)
+                    self._active_bet_match_ids.discard(match_id)
+                    self._active_bet_match_data.pop(match_id, None)
+                    self._prev_scores.pop(match_id, None)
+                    console.print(
+                        f"[green]LivePoller probe: {match_id} → "
+                        f"{status_short} {home_goals}-{away_goals}, settling now[/green]"
+                    )
+                elif status_short in ("PST", "CANC", "SUSP", "AWD", "INT"):
+                    console.print(
+                        f"[yellow]LivePoller probe: {match_id} → {status_short} "
+                        f"(dead match — settle_ready sweep will void)[/yellow]"
+                    )
+                else:
+                    console.print(
+                        f"[dim]LivePoller probe: {match_id} → {status_short} (still in play)[/dim]"
+                    )
+            except Exception as e:
+                console.print(f"[yellow]LivePoller probe error for {match_id}: {e}[/yellow]")
+
+        return finished_match_ids
 
     def _detect_key_event(self, match_id: str, af_fix: dict) -> bool:
         """
@@ -230,6 +324,30 @@ class LivePoller:
             return False
 
         fixtures, odds_by_fixture = fetch_live_bulk()
+
+        # Build set of AF fixture IDs currently visible in the live feed
+        seen_af_ids = {f.get("af_fixture_id") for f in (fixtures or [])
+                       if f.get("af_fixture_id")}
+
+        # Probe HIGH-priority matches (pending bets, >90 min old) that have
+        # dropped out of the live feed. Settles each one immediately on FT —
+        # no waiting for the 15-min sweep or 130-min stale check.
+        probe_finished = self._probe_finishing_matches(seen_af_ids)
+        if probe_finished:
+            try:
+                from workers.jobs.settlement import settle_finished_matches
+                settle_finished_matches(probe_finished)
+            except Exception as e:
+                console.print(f"[red]Settlement error after probe: {e}[/red]")
+                try:
+                    from workers.jobs.health_alerts import _send_alert
+                    _send_alert(
+                        "Settlement error after live probe",
+                        f"<p>settle_finished_matches failed for match IDs: "
+                        f"{probe_finished}</p><p>Error: {e}</p>",
+                    )
+                except Exception:
+                    pass
 
         if not fixtures:
             return False  # No live matches — caller uses idle sleep interval
@@ -382,7 +500,16 @@ class LivePoller:
                 from workers.jobs.settlement import settle_finished_matches
                 settle_finished_matches(finished_match_ids)
             except Exception as e:
-                console.print(f"[yellow]Per-match settlement error: {e}[/yellow]")
+                console.print(f"[red]Per-match settlement error: {e}[/red]")
+                try:
+                    from workers.jobs.health_alerts import _send_alert
+                    _send_alert(
+                        "Settlement error (live feed FT)",
+                        f"<p>settle_finished_matches failed for: {finished_match_ids}</p>"
+                        f"<p>Error: {e}</p>",
+                    )
+                except Exception:
+                    pass
 
         # ── In-play paper trading bot ─────────────────────────────────────
         # Runs after snapshots are stored — reads from DB, no extra API calls.

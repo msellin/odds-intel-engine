@@ -888,8 +888,12 @@ def fix_stale_live_matches():
     1H/2H/HT. If the poller misses a match entirely (e.g. Railway restart,
     stale deploy, race condition at startup), the DB status stays 'scheduled'
     forever. This function catches both cases:
-      1. Finding matches with status IN ('live','scheduled') kicked off >130
-         minutes ago (90 min + 40 min buffer for extra time / delays).
+      1. Finding matches with status IN ('live','scheduled') kicked off >95
+         minutes ago (90 min + 5 min buffer). Safe to probe early because we
+         always check the real AF status before settling — never time-settle.
+         The live poller's _probe_finishing_matches() handles HIGH-priority
+         matches (pending bets) on the 45s cycle; this sweep is the fallback
+         for matches without pending bets or if the poller crashed.
       2. Fetching each fixture individually from AF API to get its real status.
       3. Updating the DB to 'finished' with the final score.
 
@@ -898,7 +902,7 @@ def fix_stale_live_matches():
     from workers.api_clients.api_football import get_fixture_by_id
     from workers.api_clients.supabase_client import update_match_result
 
-    stale_cutoff = datetime.now(timezone.utc) - timedelta(minutes=130)
+    stale_cutoff = datetime.now(timezone.utc) - timedelta(minutes=95)
 
     rows = execute_query(
         """SELECT m.id, m.api_football_id, m.status

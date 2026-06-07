@@ -19272,5 +19272,40 @@ def test_match_recaps():
     assert "r.slug" in sm_src, "sitemap must use slug URLs, not matchId"
 
 
+@test("LIVE-POLLER-PROBE — _probe_finishing_matches wired + stale cutoff 95min + settle_ready_09 cron")
+def test_live_poller_probe():
+    """LIVE-POLLER-PROBE (2026-06-07): HIGH-priority match probe in live poller closes
+    the race window where AF archives a match before we catch FT in the bulk feed.
+    """
+    import pathlib
+    poller_src = pathlib.Path("workers/live_poller.py").read_text()
+    settlement_src = pathlib.Path("workers/jobs/settlement.py").read_text()
+    scheduler_src = pathlib.Path("workers/scheduler.py").read_text()
+
+    # Probe method exists and is called from _run_cycle
+    assert "_probe_finishing_matches" in poller_src, "probe method must exist"
+    assert "seen_af_ids" in poller_src, "_run_cycle must build seen_af_ids set"
+    assert "probe_finished = self._probe_finishing_matches" in poller_src, "probe must be called every cycle"
+
+    # _active_bet_match_data stores kickoff + af_id for direct probing
+    assert "_active_bet_match_data" in poller_src, "must track kickoff+af_id for HIGH-priority matches"
+    assert "m.date AS kickoff" in poller_src, "_refresh_active_bets must fetch kickoff time"
+    assert "m.api_football_id" in poller_src, "_refresh_active_bets must fetch AF fixture ID"
+
+    # Probe only fires for matches >90 min past kickoff
+    assert "timedelta(minutes=90)" in poller_src, "probe must gate on 90-min kickoff threshold"
+
+    # Settlement alert on error
+    assert "health_alerts" in poller_src, "settlement errors must trigger admin alert"
+
+    # Stale cutoff reduced from 130 → 95
+    assert "timedelta(minutes=95)" in settlement_src, "stale cutoff must be 95 min (was 130)"
+    assert "timedelta(minutes=130)" not in settlement_src, "old 130-min cutoff must be gone"
+
+    # 09:00 UTC settle_ready added
+    assert "settle_ready_09" in scheduler_src, "09:00 UTC settle_ready job must be registered"
+    assert "hour=9, minute=0" in scheduler_src, "09:00 UTC cron must be present"
+
+
 if __name__ == "__main__":
     main()
