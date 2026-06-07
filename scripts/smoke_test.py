@@ -19490,5 +19490,39 @@ def _():
         "League hit rate must be present in ExpandedPanel"
 
 
+@test("SUPPORT-RUNBOOK — docs/SUPPORT_RUNBOOK.md exists and covers required scenarios")
+def _():
+    """Operator runbook covering Stripe edge cases + refund procedure.
+    First paying user live since 2026-06-03 — doc must exist before the first
+    edge case fires."""
+    import pathlib
+    runbook = pathlib.Path("docs/SUPPORT_RUNBOOK.md")
+    assert runbook.exists(), "docs/SUPPORT_RUNBOOK.md must exist"
+    src = runbook.read_text()
+    for scenario in [
+        "Stripe charged but no tier",
+        "Tier granted but no charge",
+        "Subscription cancelled",
+        "Refund procedure",
+        "processed_events",
+        "stripe_customer_id",
+    ]:
+        assert scenario in src, f"Runbook missing section: {scenario}"
+
+
+@test("INPLAY-I-RECALIBRATE — diagnostic script exists with correct constants")
+def _():
+    """inplay_i calibration check: diagnostic script written, Platt deferred
+    until post-fix N≥50. Script must export FIX_DATE and PLATT_MIN_SAMPLES."""
+    import pathlib
+    script = pathlib.Path("scripts/inplay_i_calibration_check.py")
+    assert script.exists(), "scripts/inplay_i_calibration_check.py must exist"
+    src = script.read_text()
+    assert 'FIX_DATE = "2026-06-06"' in src, "FIX_DATE must be set to INPLAY-I-INVESTIGATE ship date"
+    assert "PLATT_MIN_SAMPLES = 50" in src, "PLATT_MIN_SAMPLES must match fit_platt_live.py gate"
+    assert "pre-fix" in src.lower() or "pre_fix" in src.lower(), \
+        "Script must split pre-fix vs post-fix cohorts"
+
+
 if __name__ == "__main__":
     main()
