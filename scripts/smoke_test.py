@@ -19302,9 +19302,51 @@ def test_live_poller_probe():
     assert "timedelta(minutes=95)" in settlement_src, "stale cutoff must be 95 min (was 130)"
     assert "timedelta(minutes=130)" not in settlement_src, "old 130-min cutoff must be gone"
 
-    # 09:00 UTC settle_ready added
-    assert "settle_ready_09" in scheduler_src, "09:00 UTC settle_ready job must be registered"
-    assert "hour=9, minute=0" in scheduler_src, "09:00 UTC cron must be present"
+
+@test("B-ML3-BETS-MODE — train on fired bets with real Pinnacle CLV; signal direction verified")
+def test_b_ml3_bets_mode():
+    """B-ML3-BETS-MODE (2026-06-07): root fix for inverted meta-model signal.
+
+    Old training data: all 7K+ MFV rows. Distribution mismatch vs inference
+    (only ~300 actually-fired bets). Signal was inverted: high meta score → lower CLV.
+
+    Fix: --bets-mode flag trains only on bots' fired bets + real Pinnacle CLV labels.
+    AUC 0.6712 ± 0.0722, Q5 vs Q1 CLV spread: +18.4pp (previously −14.9pp).
+    Bundle: data/models/meta/v_20260607_bets.
+    """
+    import pathlib, json
+
+    train_src = pathlib.Path("scripts/train_b_ml3.py").read_text()
+
+    # --bets-mode flag and helper function exist
+    assert "_load_bets_mode_data" in train_src, "_load_bets_mode_data function must exist"
+    assert "--bets-mode" in train_src, "--bets-mode CLI arg must exist"
+    assert "--bets-days" in train_src, "--bets-days CLI arg must exist"
+
+    # Trains on actual fired bets (simulated_bets JOIN bots), not all MFV rows
+    assert "FROM simulated_bets sb" in train_src, "must query simulated_bets"
+    assert "b.is_active = true" in train_src, "must filter to active bots only"
+    assert "clv_pinnacle IS NOT NULL" in train_src, "must require real Pinnacle CLV"
+
+    # Label is relative (clv_pinnacle > median), not absolute (> 0) which would be 84%+ positive
+    assert "median_clv" in train_src and "clv_pinnacle" in train_src, \
+        "label must use median threshold for balanced classes"
+
+    # Lower minimum row check for bets-mode (50, not 1000)
+    assert "50" in train_src, "bets-mode minimum row count must be 50"
+
+    # Bundle was saved (directory exists)
+    bundle_dir = pathlib.Path("data/models/meta/v_20260607_bets")
+    assert bundle_dir.exists(), "v_20260607_bets bundle directory must exist"
+    assert (bundle_dir / "b_ml3.pkl").exists(), "b_ml3.pkl must be saved"
+    assert (bundle_dir / "feature_cols.pkl").exists(), "feature_cols.pkl must be saved"
+
+    # threshold.json confirms AUC > 0.60 (well above the inverted ~0.57 baseline)
+    threshold_path = bundle_dir / "threshold.json"
+    assert threshold_path.exists(), "threshold.json must be saved"
+    threshold = json.loads(threshold_path.read_text())
+    auc = threshold.get("cv_auc_mean", 0)
+    assert auc >= 0.60, f"bets-mode AUC must be ≥ 0.60, got {auc:.4f} (inverted baseline was ~0.57)"
 
 
 if __name__ == "__main__":

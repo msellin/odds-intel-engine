@@ -396,6 +396,122 @@ def _pick_threshold(model, scaler, X, y) -> dict:
     return best
 
 
+def _load_bets_mode_data(days: int = 60) -> pd.DataFrame:
+    """B-ML3-BETS-MODE (2026-06-07): train on actual bot-fired bets, not all MFV rows.
+
+    Root cause of the inverted signal: training on all 7K MFV rows teaches the
+    model "what a match with positive pseudo_clv looks like" — but at inference
+    time it scores bets that already passed edge filters, a completely different
+    distribution. Training on the fired bets themselves fixes the mismatch.
+
+    Label: clv_pinnacle > median(clv_pinnacle) — real Pinnacle closing-line CLV,
+    relative threshold. Gives a proper ~50/50 split even though all active bots
+    have positive CLV (absolute threshold 'clv > 0' is 84%+ positive = useless).
+
+    Only active bots included. Only bets with clv_pinnacle populated (needs
+    a Pinnacle closing snapshot after settlement). Joins to MFV for features.
+    """
+    console.print("[bold]Loading B-ML3 bets-mode training data (active bots + real CLV)...[/bold]")
+    rows = execute_query(f"""
+        SELECT
+          sb.id as bet_id,
+          sb.selection,
+          sb.clv_pinnacle::float as clv_pinnacle,
+          sb.created_at,
+          mfv.match_id,
+          mfv.match_date,
+          mfv.ensemble_prob_home, mfv.ensemble_prob_draw, mfv.ensemble_prob_away,
+          mfv.opening_implied_home, mfv.opening_implied_draw, mfv.opening_implied_away,
+          mfv.bookmaker_disagreement, mfv.elo_diff,
+          mfv.form_ppg_home, mfv.form_ppg_away,
+          mfv.lineup_confirmed, mfv.rest_days_home, mfv.rest_days_away,
+          mfv.fixture_importance, mfv.league_position_home, mfv.built_at,
+          mfv.odds_drift_home_at_t6h, mfv.steam_move_at_t6h,
+          mfv.pinnacle_line_move_home_at_t6h, mfv.pinnacle_line_move_draw_at_t6h,
+          mfv.pinnacle_line_move_away_at_t6h,
+          mfv.sharp_consensus_home_at_t6h, mfv.sharp_consensus_draw_at_t6h,
+          mfv.sharp_consensus_away_at_t6h,
+          mfv.odds_volatility_home_at_t6h, mfv.odds_volatility_draw_at_t6h,
+          mfv.odds_volatility_away_at_t6h,
+          mfv.form_momentum_home, mfv.form_momentum_away,
+          mfv.pinnacle_ah_line_at_t6h, mfv.pinnacle_ah_line_move,
+          mfv.league_draw_rate_ytd, mfv.season_progress, mfv.line_velocity,
+          mfv.xg_overperf_home, mfv.xg_overperf_away,
+          mfv.league_clv_efficiency,
+          mfv.injury_severity_score_home, mfv.injury_severity_score_away,
+          mfv.team_avg_player_rating_home, mfv.team_avg_player_rating_away,
+          l.tier AS league_tier,
+          m.date AS match_kickoff
+        FROM simulated_bets sb
+        JOIN bots b ON b.id = sb.bot_id
+        JOIN match_feature_vectors mfv ON mfv.match_id = sb.match_id
+        JOIN matches m ON m.id = sb.match_id
+        LEFT JOIN leagues l ON l.id = m.league_id
+        WHERE b.is_active = true
+          AND sb.result IN ('won', 'lost')
+          AND sb.clv_pinnacle IS NOT NULL
+          AND sb.match_id IS NOT NULL
+          AND sb.created_at >= NOW() - INTERVAL '{days} days'
+        ORDER BY sb.created_at ASC
+    """, [])
+
+    if not rows:
+        console.print("[red]No bets-mode rows found.[/red]")
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows)
+    console.print(f"  Loaded {len(df):,} fired bets with real Pinnacle CLV")
+
+    # Label: is this bet in the top half of CLV for this cohort?
+    median_clv = float(df["clv_pinnacle"].median())
+    console.print(f"  CLV median: {median_clv*100:+.1f}%  "
+                  f"  range: {df['clv_pinnacle'].min()*100:.1f}% – {df['clv_pinnacle'].max()*100:.1f}%")
+
+    # Map selection to home/draw/away for feature lookup
+    SEL_MAP = {"1x2_home": "home", "1x2_draw": "draw", "1x2_away": "away",
+               "home": "home", "draw": "draw", "away": "away"}
+
+    long_rows = []
+    for _, r in df.iterrows():
+        raw_sel = str(r["selection"]).lower()
+        sel = SEL_MAP.get(raw_sel)
+        # BTTS / AH / DC selections don't map to 1x2 — still include, use home as proxy
+        if sel is None:
+            sel = "home"
+        ens = r.get(f"ensemble_prob_{sel}")
+        imp = r.get(f"opening_implied_{sel}")
+        if ens is None or imp is None:
+            continue
+        ens = float(ens) if ens is not None else None
+        imp = float(imp) if imp is not None else None
+        if ens is None or imp is None:
+            continue
+        ttk = None
+        if r["built_at"] is not None and r["match_kickoff"] is not None:
+            ttk = (r["match_kickoff"] - r["built_at"]).total_seconds() / 3600.0
+        long_rows.append({
+            "match_id": r["match_id"],
+            "match_date": r["match_date"],
+            "selection": sel,
+            "ensemble_prob": ens,
+            "opening_implied": imp,
+            "edge_proxy": ens - imp,
+            "pinnacle_line_move": r.get(f"pinnacle_line_move_{sel}_at_t6h"),
+            "sharp_consensus": r.get(f"sharp_consensus_{sel}_at_t6h"),
+            "odds_volatility": r.get(f"odds_volatility_{sel}_at_t6h"),
+            **{c: r[c] for c in MATCH_LEVEL_FEATURES if c in r.index},
+            "time_to_kickoff_h": ttk,
+            "league_tier": int(r["league_tier"]) if r["league_tier"] is not None else 4,
+            # Target: is this bet above the median CLV for this cohort?
+            "y_clv_beat": 1 if float(r["clv_pinnacle"]) > median_clv else 0,
+        })
+
+    long_df = pd.DataFrame(long_rows)
+    console.print(f"  Bets-mode rows: {len(long_df):,}  "
+                  f"label balance: {long_df['y_clv_beat'].mean():.3f} positive")
+    return long_df
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--version", default=f"v_{_date.today().strftime('%Y%m%d')}",
@@ -403,11 +519,23 @@ def main():
     ap.add_argument("--model", choices=("logistic", "xgboost"), default="logistic",
                     help="Meta-model architecture. S6-P2 (2026-05-25) added xgboost.")
     ap.add_argument("--dry-run", action="store_true", help="Train but don't save the bundle")
+    ap.add_argument("--bets-mode", action="store_true",
+                    help="Train on actual bot-fired bets with real Pinnacle CLV label "
+                         "(B-ML3-BETS-MODE 2026-06-07). Fixes distribution mismatch: "
+                         "old mode trained on all MFV rows, not the bets that actually fired.")
+    ap.add_argument("--bets-days", type=int, default=60,
+                    help="Look-back window in days for --bets-mode (default 60)")
     args = ap.parse_args()
 
-    long_df = _load_training_data()
-    if len(long_df) < 1000:
-        console.print(f"[red]Only {len(long_df)} training rows — need ≥1,000. Aborting.[/red]")
+    if args.bets_mode:
+        long_df = _load_bets_mode_data(days=args.bets_days)
+        min_rows = 50
+    else:
+        long_df = _load_training_data()
+        min_rows = 1000
+
+    if len(long_df) < min_rows:
+        console.print(f"[red]Only {len(long_df)} training rows — need ≥{min_rows}. Aborting.[/red]")
         sys.exit(1)
 
     X, y, feature_cols = _build_feature_matrix(long_df)
