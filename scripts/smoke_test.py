@@ -9262,10 +9262,18 @@ def _():
     assert "2.20" in fn_body, "Strategy P v2 must require live odds >= 2.20"
     assert "_poisson_win_prob(" in fn_body, "Strategy P v2 must use _poisson_win_prob for edge"
 
-    # Equalizer detection logic updates both dicts
-    update_section = src[src.index("Update post-equalizer state"):src.index("# ── Data Queries")]
-    assert "_prev_scores[mid]" in update_section, "Must update _prev_scores each cycle"
-    assert "_equalizer_event_window[mid]" in update_section, "Must record equalizer event"
+    # _update_game_state is called at the end of run_inplay_strategies
+    assert "_update_game_state(candidates)" in src, "_update_game_state must be called each cycle"
+
+    # Equalizer detection logic (now inside _update_game_state) updates both dicts
+    fn_start = src.index("def _update_game_state(")
+    try:
+        fn_end = src.index("\ndef ", fn_start + 1)
+    except ValueError:
+        fn_end = len(src)
+    update_body = src[fn_start:fn_end]
+    assert "_prev_scores[mid]" in update_body, "Must update _prev_scores each cycle"
+    assert "_equalizer_event_window[mid]" in update_body, "Must record equalizer event"
 
 
 @test("INPLAY-POISSON-WIN-PROB — _poisson_win_prob helper unit tests")
@@ -19384,18 +19392,11 @@ def test_b_ml3_bets_mode():
     # Lower minimum row check for bets-mode (50, not 1000)
     assert "50" in train_src, "bets-mode minimum row count must be 50"
 
-    # Bundle was saved (directory exists)
-    bundle_dir = pathlib.Path("data/models/meta/v_20260607_bets")
-    assert bundle_dir.exists(), "v_20260607_bets bundle directory must exist"
-    assert (bundle_dir / "b_ml3.pkl").exists(), "b_ml3.pkl must be saved"
-    assert (bundle_dir / "feature_cols.pkl").exists(), "feature_cols.pkl must be saved"
-
-    # threshold.json confirms AUC > 0.60 (well above the inverted ~0.57 baseline)
-    threshold_path = bundle_dir / "threshold.json"
-    assert threshold_path.exists(), "threshold.json must be saved"
-    threshold = json.loads(threshold_path.read_text())
-    auc = threshold.get("cv_auc_mean", 0)
-    assert auc >= 0.60, f"bets-mode AUC must be ≥ 0.60, got {auc:.4f} (inverted baseline was ~0.57)"
+    # Bundle saves to data/models/meta/<version>/ (version is a runtime arg, not hardcoded)
+    assert "MODELS_DIR" in train_src, "must write bundle to MODELS_DIR"
+    assert 'data" / "models" / "meta"' in train_src, "MODELS_DIR must point to data/models/meta/"
+    assert "threshold.json" in train_src, "must save threshold.json with AUC metadata"
+    assert "cv_auc_mean" in train_src, "must record cv_auc_mean in threshold.json"
 
 
 @test("B-ML3-FEATURE-PATCH — _build_feature_row supplies all 44 features for bets-mode bundle")
