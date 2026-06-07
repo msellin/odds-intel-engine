@@ -601,6 +601,26 @@ def job_weekly_retrain():
         except Exception as e:
             console.print(f"[yellow]Auto-comparison skipped: {e}[/yellow]")
 
+        # AH-PLATT-WIRE (2026-06-07): refit AH + other thin-sample Platt rows
+        # using the blended-version fit script. Runs AFTER the retrain so it
+        # operates on the freshest calibrated_prob data. Non-blocking — a fit
+        # failure must not abort the retrain job or prevent the email.
+        # Only the per-line AH rows that have crossed the 50-sample gate will
+        # actually refit; the rest are skipped silently by the script.
+        try:
+            platt = subprocess.run(
+                [sys.executable, "scripts/fit_platt_live.py"],
+                cwd=str(Path(__file__).parent.parent),
+                timeout=120,
+                capture_output=True,
+                text=True,
+            )
+            console.print(platt.stdout[-1000:])
+            if platt.returncode != 0:
+                console.print(f"[yellow]fit_platt_live.py exit {platt.returncode}: {platt.stderr[-500:]}[/yellow]")
+        except Exception as e:
+            console.print(f"[yellow]AH Platt refit skipped: {e}[/yellow]")
+
     _run_job("weekly_retrain", _retrain)
 
 

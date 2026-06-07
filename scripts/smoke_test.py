@@ -19432,5 +19432,63 @@ def _():
     assert "BotConsensus" in page_src, "BotConsensus must still be in Intel tab"
 
 
+@test("AH-PLATT-WIRE — fit_platt_live.py wired into job_weekly_retrain")
+def _():
+    """job_weekly_retrain must call fit_platt_live.py as a non-blocking
+    subprocess step after the main retrain + eval, so AH calibration refits
+    automatically every Sunday without manual intervention."""
+    import pathlib
+    scheduler_src = pathlib.Path("workers/scheduler.py").read_text()
+
+    # The fit script is called inside job_weekly_retrain
+    idx = scheduler_src.find("def job_weekly_retrain()")
+    assert idx >= 0, "job_weekly_retrain must exist in scheduler.py"
+    # Find the next function boundary (the next def at top level)
+    next_def = scheduler_src.find("\ndef ", idx + 1)
+    retrain_body = scheduler_src[idx:next_def]
+
+    assert "fit_platt_live.py" in retrain_body, \
+        "job_weekly_retrain must call fit_platt_live.py (AH-PLATT-WIRE)"
+    # Non-blocking: the call must be in a try/except
+    assert "except Exception" in retrain_body and retrain_body.index("fit_platt_live") > retrain_body.index("try:"), \
+        "fit_platt_live.py call must be wrapped in try/except (non-blocking)"
+
+
+@test("VALUE-BETS-DENSITY-PASS — collapsed row has no Pre-match chip; expanded panel has Calibrated + league hit rate")
+def _():
+    """Row declutter: Pre-match chip removed from collapsed row (not informative —
+    it's the default). Calibrated badge and league hit rate moved to expanded panel
+    so the pick line stays clean. In-play chip retained (it IS informative)."""
+    import pathlib
+    scan = pathlib.Path("../odds-intel-web/src/components/value-bets-scan.tsx")
+    if not scan.exists():
+        return  # frontend not checked out alongside engine — skip
+
+    src = scan.read_text()
+
+    # ExpandedPanel (line ~256) comes before ValueBetRow (line ~445) in the file.
+    # Slice accordingly.
+    vbr_start = src.find("function ValueBetRow(")
+    expanded_panel_start = src.find("function ExpandedPanel(")
+    assert vbr_start >= 0 and expanded_panel_start >= 0
+    # collapsed row = ValueBetRow function body (from its def to end of file)
+    collapsed_section = src[vbr_start:]
+    # expanded panel = ExpandedPanel function body (before ValueBetRow)
+    panel_section = src[expanded_panel_start:vbr_start]
+
+    assert "Pre-match" not in collapsed_section, \
+        "Pre-match chip must be removed from collapsed row (VALUE-BETS-DENSITY-PASS)"
+
+    # In-play chip still present in collapsed row
+    assert "In-play" in collapsed_section, \
+        "In-play chip must remain in collapsed row (only shown for inplay bets)"
+
+    # Calibrated + league hit rate in expanded panel only
+    assert "Calibrated" in panel_section, \
+        "Calibrated badge must be present in ExpandedPanel"
+    assert "hit rate" in panel_section, \
+        "League hit rate must be present in ExpandedPanel"
+
+
 if __name__ == "__main__":
     main()
