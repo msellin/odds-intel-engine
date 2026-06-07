@@ -246,9 +246,9 @@ def _build_inplay_bet_data(
       Stage 4 — staleness re-check + score_recheck              (I/O)
       Stage 5 — store_bet(...) + log                            (I/O)
 
-    Today only Stage 3 is extracted. Stages 1-2 and 4-5 still live inside
-    run_inplay_strategies(); they should be migrated out incrementally so
-    each stage can be unit-tested in isolation.
+    Stages 4-5 now also extracted: `_run_safety_checks` (4) and
+    `_store_and_notify` (5). Stages 1-2 (collect+strategy orchestration)
+    still live inside `run_inplay_strategies()`.
     """
     extras = trigger.get("extra", {})
     bet_data = {
@@ -296,6 +296,114 @@ def _build_inplay_bet_data(
     if cal is not None:
         bet_data["calibrated_prob"] = cal
     return bet_data
+
+
+def _run_safety_checks(execute_query, mid: str, cand: dict) -> tuple[bool, float | None]:
+    """Stage 4: odds staleness + score recheck + consistency. Returns (ok, odds_age)."""
+    odds_age = _odds_age_seconds(cand)
+    if odds_age is None or odds_age > 60:
+        _funnel["odds_stale"] += 1
+        return False, None
+    if not _score_recheck(execute_query, mid, cand["score_home"], cand["score_away"]):
+        _funnel["score_changed"] += 1
+        return False, None
+    if not _score_odds_consistent(cand):
+        _funnel["score_odds_inconsistent"] = _funnel.get("score_odds_inconsistent", 0) + 1
+        return False, None
+    if _odds_drift_recent(execute_query, mid):
+        _funnel["odds_drift_event"] = _funnel.get("odds_drift_event", 0) + 1
+        return False, None
+    return True, odds_age
+
+
+def _store_and_notify(
+    store_bet, bot_id: str, mid: str, bet_data: dict,
+    trigger: dict, cand: dict, pm: dict,
+    bot_name: str, is_real: bool, xg_h: float, xg_a: float,
+) -> bool:
+    """Stage 5: persist bet to DB and fire Telegram alerts. Returns True if stored."""
+    try:
+        bet_id = store_bet(bot_id, mid, bet_data)
+        if bet_id:
+            src_tag = "" if is_real else " [proxy]"
+            console.print(
+                f"[bold green]INPLAY BET: {bot_name}{src_tag} | "
+                f"{trigger['market']}/{trigger['selection']} @ {trigger['odds']:.2f} | "
+                f"edge={trigger['edge']:.1f}% | "
+                f"min {cand['minute']} score {cand['score_home']}-{cand['score_away']} | "
+                f"xG {xg_h:.2f}-{xg_a:.2f}"
+                f"[/bold green]"
+            )
+            home = pm.get("home_name") or "?"
+            away = pm.get("away_name") or "?"
+            cb_url = _coolbet_match_url(home, away)
+            from workers.notify.telegram import place_button_markup as _place_btn
+            from workers.notify.telegram import record_bet_alert as _rec_alert
+            _markup = _place_btn(str(bet_id)) if bet_id else None
+            _inplay_text = (
+                f"📡 <b>INPLAY</b> paper bet\n"
+                f"  <b>{home} vs {away}</b>\n"
+                f"  {trigger['market']} {trigger['selection']} @ {trigger['odds']:.2f}\n"
+                f"  edge {trigger['edge']:+.1f}%  ·  min {cand['minute']}  ·  score {cand['score_home']}-{cand['score_away']}\n"
+                f"  bot {bot_name}{src_tag}"
+                + (f"\n  <a href=\"{cb_url}\">Open on Coolbet →</a>" if cb_url else "")
+            )
+            _msg_id = send_telegram(_inplay_text, reply_markup=_markup)
+            if _msg_id and bet_id:
+                import os as _os
+                _prefix = (_os.getenv("TELEGRAM_PREFIX", "[OI]") + " ") if _os.getenv("TELEGRAM_PREFIX", "[OI]") else ""
+                _rec_alert(str(bet_id), _msg_id, _prefix + _inplay_text)
+            _league = pm.get("league_name") or ""
+            _country = pm.get("league_country") or ""
+            _league_str = f"{_country} / {_league}" if _country and _league else _league
+            send_telegram_to_users(
+                f"🔔 <b>Live value bet</b>\n"
+                f"<b>{home} vs {away}</b>\n"
+                f"{trigger['market']} {trigger['selection']} @ {trigger['odds']:.2f}\n"
+                f"{trigger['edge']:+.1f}% edge · min {cand['minute']} ({cand['score_home']}-{cand['score_away']})"
+                + (f" · {_league_str}" if _league_str else "")
+                + f"\n\n{clv_footer_line()}",
+                tier_minimum="pro",
+                dedup_key=f"user-bet-{bet_id}",
+            )
+            return True
+    except Exception as e:
+        _funnel["store_bet_error"] += 1
+        console.print(f"[red]InplayBot store_bet error ({bot_name}): {e}[/red]")
+    return False
+
+
+def _update_game_state(candidates: list[dict]) -> None:
+    """Update goal-contagion and post-equalizer window state after each cycle."""
+    for cand in candidates:
+        mid = str(cand["match_id"])
+        total = (cand.get("score_home") or 0) + (cand.get("score_away") or 0)
+        prev = _prev_total_goals.get(mid, 0)
+        if total > prev and prev == 0 and total == 1:
+            _goal_event_window[mid] = _cycle_count
+        _prev_total_goals[mid] = total
+
+    expired = [mid for mid, cyc in _goal_event_window.items()
+               if _cycle_count - cyc > 8]
+    for mid in expired:
+        _goal_event_window.pop(mid, None)
+
+    for cand in candidates:
+        mid = str(cand["match_id"])
+        curr_h = cand.get("score_home") or 0
+        curr_a = cand.get("score_away") or 0
+        prev_h, prev_a = _prev_scores.get(mid, (-1, -1))
+        if curr_h == 1 and curr_a == 1 and (prev_h, prev_a) != (1, 1):
+            if prev_h == 1 and prev_a == 0:
+                _equalizer_event_window[mid] = (_cycle_count, "away")
+            elif prev_h == 0 and prev_a == 1:
+                _equalizer_event_window[mid] = (_cycle_count, "home")
+        _prev_scores[mid] = (curr_h, curr_a)
+
+    expired_eq = [mid for mid, (cyc, _) in _equalizer_event_window.items()
+                  if _cycle_count - cyc > 8]
+    for mid in expired_eq:
+        _equalizer_event_window.pop(mid, None)
 
 
 def run_inplay_strategies():
@@ -465,89 +573,17 @@ def run_inplay_strategies():
                 continue
             _sstat["fired"] += 1
 
-            # Safety: staleness check — odds must be < 60s old
-            odds_age = _odds_age_seconds(cand)
-            if odds_age is None or odds_age > 60:
-                _funnel["odds_stale"] += 1
-                continue
-
-            # Safety: score re-check — verify score unchanged since snapshot
-            if not _score_recheck(execute_query, mid, cand["score_home"], cand["score_away"]):
-                _funnel["score_changed"] += 1
-                continue
-
-            # INPLAY-SCORE-ODDS-CONSISTENCY: catch the ghost-goal window
-            # where bookie odds have reacted to a goal but our score column
-            # hasn't refreshed yet (43s gap observed in production).
-            if not _score_odds_consistent(cand):
-                _funnel["score_odds_inconsistent"] = _funnel.get("score_odds_inconsistent", 0) + 1
-                continue
-            if _odds_drift_recent(execute_query, mid):
-                _funnel["odds_drift_event"] = _funnel.get("odds_drift_event", 0) + 1
+            ok, odds_age = _run_safety_checks(execute_query, mid, cand)
+            if not ok:
                 continue
 
             xg_h, xg_a, is_real = _compute_live_xg(cand)
-            # INPLAY-LAYER-ARCH: extract bet-payload construction into a pure
-            # function so the same dict shape can be reused by the
-            # explorer/backtester without duplicating JSON-encoding rules.
             bet_data = _build_inplay_bet_data(
                 trigger=trigger, cand=cand, xg_h=xg_h, xg_a=xg_a,
                 is_real=is_real, odds_age=odds_age, bot_name=bot_name,
             )
-
-            try:
-                bet_id = store_bet(bot_id, mid, bet_data)
-                if bet_id:
-                    bets_placed += 1
-                    src_tag = "" if is_real else " [proxy]"
-                    console.print(
-                        f"[bold green]INPLAY BET: {bot_name}{src_tag} | "
-                        f"{trigger['market']}/{trigger['selection']} @ {trigger['odds']:.2f} | "
-                        f"edge={trigger['edge']:.1f}% | "
-                        f"min {cand['minute']} score {cand['score_home']}-{cand['score_away']} | "
-                        f"xG {xg_h:.2f}-{xg_a:.2f}"
-                        f"[/bold green]"
-                    )
-                    home = pm.get("home_name") or "?"
-                    away = pm.get("away_name") or "?"
-                    cb_url = _coolbet_match_url(home, away)
-                    # MANUAL-PLACE: button to record this inplay bet on demand.
-                    from workers.notify.telegram import place_button_markup as _place_btn
-                    from workers.notify.telegram import record_bet_alert as _rec_alert
-                    _markup = _place_btn(str(bet_id)) if bet_id else None
-                    _inplay_text = (
-                        f"📡 <b>INPLAY</b> paper bet\n"
-                        f"  <b>{home} vs {away}</b>\n"
-                        f"  {trigger['market']} {trigger['selection']} @ {trigger['odds']:.2f}\n"
-                        f"  edge {trigger['edge']:+.1f}%  ·  min {cand['minute']}  ·  score {cand['score_home']}-{cand['score_away']}\n"
-                        f"  bot {bot_name}{src_tag}"
-                        + (f"\n  <a href=\"{cb_url}\">Open on Coolbet →</a>" if cb_url else "")
-                    )
-                    _msg_id = send_telegram(_inplay_text, reply_markup=_markup)
-                    if _msg_id and bet_id:
-                        import os as _os
-                        _prefix = (_os.getenv("TELEGRAM_PREFIX", "[OI]") + " ") if _os.getenv("TELEGRAM_PREFIX", "[OI]") else ""
-                        _rec_alert(str(bet_id), _msg_id, _prefix + _inplay_text)
-                    _league = pm.get("league_name") or ""
-                    _country = pm.get("league_country") or ""
-                    _league_str = f"{_country} / {_league}" if _country and _league else _league
-                    # GROWTH-CLV-FIRST-MESSAGING (2026-06-05): CLV footer
-                    # on every user-facing alert. clv_footer_line() pulls
-                    # the current 30d CLV from dashboard_cache; if cache
-                    # is stale it falls back to a static link footer.
-                    send_telegram_to_users(
-                        f"🔔 <b>Live value bet</b>\n"
-                        f"<b>{home} vs {away}</b>\n"
-                        f"{trigger['market']} {trigger['selection']} @ {trigger['odds']:.2f}\n"
-                        f"{trigger['edge']:+.1f}% edge · min {cand['minute']} ({cand['score_home']}-{cand['score_away']})"
-                        + (f" · {_league_str}" if _league_str else "")
-                        + f"\n\n{clv_footer_line()}",
-                        tier_minimum="pro",
-                        dedup_key=f"user-bet-{bet_id}",
-                    )
-            except Exception as e:
-                _funnel["store_bet_error"] += 1
-                console.print(f"[red]InplayBot store_bet error ({bot_name}): {e}[/red]")
+            if _store_and_notify(store_bet, bot_id, mid, bet_data, trigger, cand, pm, bot_name, is_real, xg_h, xg_a):
+                bets_placed += 1
 
     _total_bets_session += bets_placed
     _total_candidates_session += len(candidates)
@@ -597,41 +633,8 @@ def run_inplay_strategies():
         except Exception as e:
             log.warning("Inplay Coolbet record failed: %s", e)
 
-    # Update goal contagion state — do this AFTER strategy checks so goal_just_scored
-    # is still True for strategy L on the cycle the goal is first detected.
-    for cand in candidates:
-        mid = str(cand["match_id"])
-        total = (cand.get("score_home") or 0) + (cand.get("score_away") or 0)
-        prev = _prev_total_goals.get(mid, 0)
-        if total > prev and prev == 0 and total == 1:
-            _goal_event_window[mid] = _cycle_count
-        _prev_total_goals[mid] = total
-
-    # Expire stale goal windows (> 8 cycles old ≈ 4 minutes)
-    expired = [mid for mid, cyc in _goal_event_window.items()
-               if _cycle_count - cyc > 8]
-    for mid in expired:
-        _goal_event_window.pop(mid, None)
-
-    # Update post-equalizer state — detect 1-0→1-1 or 0-1→1-1 transitions for strategy P.
-    # Done AFTER strategy checks so the window is available starting next cycle.
-    for cand in candidates:
-        mid = str(cand["match_id"])
-        curr_h = cand.get("score_home") or 0
-        curr_a = cand.get("score_away") or 0
-        prev_h, prev_a = _prev_scores.get(mid, (-1, -1))
-        if curr_h == 1 and curr_a == 1 and (prev_h, prev_a) != (1, 1):
-            if prev_h == 1 and prev_a == 0:
-                _equalizer_event_window[mid] = (_cycle_count, "away")
-            elif prev_h == 0 and prev_a == 1:
-                _equalizer_event_window[mid] = (_cycle_count, "home")
-        _prev_scores[mid] = (curr_h, curr_a)
-
-    # Expire stale equalizer windows (> 8 cycles old ≈ 4 minutes)
-    expired_eq = [mid for mid, (cyc, _) in _equalizer_event_window.items()
-                  if _cycle_count - cyc > 8]
-    for mid in expired_eq:
-        _equalizer_event_window.pop(mid, None)
+    # Done AFTER strategy checks so goal/equalizer windows are available next cycle.
+    _update_game_state(candidates)
 
 
 # ── Data Queries ─────────────────────────────────────────────────────────────

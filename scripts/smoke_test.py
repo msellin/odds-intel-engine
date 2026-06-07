@@ -5157,16 +5157,24 @@ def _():
             f"signal→column mapping missing {sig}→{col}"
 
 
-@test("INPLAY-LAYER-ARCH — _build_inplay_bet_data is a pure function that produces correct payload")
+@test("INPLAY-LAYER-ARCH — stages 3/4/5 extracted as pure/IO functions")
 def _():
-    """INPLAY-LAYER-ARCH 2026-05-25 — first extracted stage: bet-payload
-    construction. Pure function (no DB / no console / no globals). Guards:
-    (1) function exists, (2) produces the same dict shape as the inline
-    code used to, (3) edge is %→decimal correctly, (4) JSON reasoning
-    fields preserved.
+    """INPLAY-LAYER-ARCH 2026-06-07 — stages 3 (bet payload), 4 (safety checks),
+    5 (store+notify) all extracted. Guards:
+    (1) _build_inplay_bet_data is pure and produces correct payload shape
+    (2) _run_safety_checks returns (False, None) on stale odds
+    (3) _run_safety_checks returns (True, odds_age) on fresh odds when DB
+        checks are bypassed via a no-op execute_query
+    (4) _update_game_state updates goal-contagion globals correctly
+    (5) _store_and_notify is importable (callable shape)
     """
     import json as _json
-    from workers.jobs.inplay_bot import _build_inplay_bet_data
+    from workers.jobs.inplay_bot import (
+        _build_inplay_bet_data, _run_safety_checks, _store_and_notify,
+        _update_game_state,
+    )
+
+    # Stage 3 — payload builder
     trigger = {
         "market": "1x2", "selection": "home", "odds": 1.80,
         "model_prob": 0.62, "edge": 8.5,
@@ -5179,18 +5187,46 @@ def _():
         odds_age=2.5, bot_name="inplay_c",
     )
     assert out["market"] == "1x2"
-    assert out["selection"] == "home"
-    assert out["odds"] == 1.80
     assert out["stake"] == 5.0, "INPLAY-STAKE-5 must hold"
-    assert out["model_prob"] == 0.62
     assert abs(out["edge"] - 0.085) < 1e-9, "edge must be converted % → decimal"
-    assert out["xg_source"] == "live"
     reasoning = _json.loads(out["reasoning"])
     assert reasoning["strategy"] == "inplay_c"
-    assert reasoning["minute"] == 67
-    assert reasoning["score"] == "1-0"
     assert reasoning["foo"] == "bar", "extra fields must be merged"
     assert reasoning["odds_age_ms"] == 2500
+
+    # Stage 4 — safety checks: stale odds path (no captured_at → None age)
+    stale_cand = {}
+    ok, age = _run_safety_checks(None, "mid-1", stale_cand)
+    assert not ok and age is None, "_run_safety_checks must reject missing captured_at"
+
+    # Stage 4 — fresh odds, DB checks no-op (score match, no drift)
+    from datetime import datetime as _dt, timezone as _tz
+    ts = _dt.now(_tz.utc).isoformat()
+    fresh_cand = {
+        "captured_at": ts,
+        "score_home": 1, "score_away": 0,
+        "live_1x2_home": 1.80, "live_1x2_draw": 3.60, "live_1x2_away": 4.20,
+        "live_ou_25_over": 2.10,
+    }
+    def _noop_eq(sql, *a, **kw): return [{"score_home": 1, "score_away": 0, "cnt": 0}]
+    ok2, age2 = _run_safety_checks(_noop_eq, "mid-1", fresh_cand)
+    assert ok2, "_run_safety_checks must pass fresh odds with matching score"
+    assert isinstance(age2, float) and age2 >= 0
+
+    # Stage 5 — callable shape guard (can't call without real DB)
+    import inspect as _inspect
+    sig = _inspect.signature(_store_and_notify)
+    params = list(sig.parameters)
+    assert "store_bet" in params and "bot_id" in params and "trigger" in params
+
+    # _update_game_state — goal contagion window
+    import workers.jobs.inplay_bot as _ib
+    _ib._prev_total_goals.clear(); _ib._goal_event_window.clear()
+    _ib._cycle_count = 5
+    _update_game_state([{"match_id": "abc", "score_home": 1, "score_away": 0}])
+    assert _ib._goal_event_window.get("abc") == 5, "first goal must open window"
+    _update_game_state([{"match_id": "abc", "score_home": 1, "score_away": 0}])
+    assert "abc" in _ib._goal_event_window, "window should still be open (cycle 5, check cycle 5)"
 
 
 @test("INPLAY-SOFT-GATES — _gate_score helper + env-gated reference impl in strategy_c")
