@@ -19349,5 +19349,49 @@ def test_b_ml3_bets_mode():
     assert auc >= 0.60, f"bets-mode AUC must be ≥ 0.60, got {auc:.4f} (inverted baseline was ~0.57)"
 
 
+@test("B-ML3-FEATURE-PATCH — _build_feature_row supplies all 44 features for bets-mode bundle")
+def test_b_ml3_feature_patch():
+    """B-ML3-BETS-MODE (2026-06-07): _build_feature_row in meta_b_ml3.py was only building
+    ~22 features. The new v_20260607_bets bundle expects 44. Missing features silently
+    zeroed by the KeyError fallback — model ran but accuracy was degraded.
+
+    This patch adds the 12 new match-level features + 2 new missing-indicators.
+    """
+    import pathlib, joblib
+
+    meta_src = pathlib.Path("workers/model/meta_b_ml3.py").read_text()
+
+    # New match-level features added to the loop
+    new_features = [
+        "pinnacle_ah_line_at_t6h", "pinnacle_ah_line_move",
+        "league_draw_rate_ytd", "season_progress", "line_velocity",
+        "xg_overperf_home", "xg_overperf_away", "league_clv_efficiency",
+        "injury_severity_score_home", "injury_severity_score_away",
+        "team_avg_player_rating_home", "team_avg_player_rating_away",
+    ]
+    for feat in new_features:
+        assert feat in meta_src, f"{feat} must be added to _build_feature_row"
+
+    # New missing-indicators in thin list
+    assert "pinnacle_ah_line_at_t6h" in meta_src.split("thin = ")[1].split("]")[0], \
+        "pinnacle_ah_line_at_t6h must be in thin (missing-indicator) list"
+    assert "pinnacle_ah_line_move" in meta_src.split("thin = ")[1].split("]")[0], \
+        "pinnacle_ah_line_move must be in thin (missing-indicator) list"
+
+    # _build_feature_row backward compat: old features still present
+    for feat in ("bookmaker_disagreement", "elo_diff", "form_ppg_home", "lineup_confirmed",
+                 "selection_draw", "selection_away"):
+        assert feat in meta_src, f"old feature {feat} must still be in _build_feature_row"
+
+    # Bundle feature_cols confirm all 44 features are accounted for
+    bundle_dir = pathlib.Path("data/models/meta/v_20260607_bets")
+    if bundle_dir.exists():
+        fc = joblib.load(bundle_dir / "feature_cols.pkl")
+        assert len(fc) == 44, f"bundle must have 44 features, got {len(fc)}"
+        # Verify all new features are in the bundle
+        for feat in new_features:
+            assert feat in fc, f"{feat} must be in bundle feature_cols"
+
+
 if __name__ == "__main__":
     main()

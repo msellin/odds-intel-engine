@@ -104,7 +104,7 @@ def _build_feature_row(mfv: dict, selection: str, ensemble_prob: float, opening_
     row["sharp_consensus"] = mfv.get(f"sharp_consensus_{selection}_at_t6h")
     row["odds_volatility"] = mfv.get(f"odds_volatility_{selection}_at_t6h")
 
-    # Match-level — replicate from MFV
+    # Match-level — replicate from MFV (v2.1 original features)
     for col in ("bookmaker_disagreement", "elo_diff", "form_ppg_home", "form_ppg_away",
                 "lineup_confirmed", "rest_days_home", "rest_days_away",
                 "fixture_importance", "league_position_home",
@@ -112,17 +112,30 @@ def _build_feature_row(mfv: dict, selection: str, ensemble_prob: float, opening_
                 "form_momentum_home", "form_momentum_away"):
         row[col] = mfv.get(col)
 
+    # B-ML3-BETS-MODE (2026-06-07): additional features for v_20260607_bets bundle.
+    # Old bundles (v21/v22/v23_xgb) don't reference these — they're pruned out by
+    # the feature_cols reindex. Adding them here costs nothing for old bundles.
+    for col in ("pinnacle_ah_line_at_t6h", "pinnacle_ah_line_move",
+                "league_draw_rate_ytd", "season_progress", "line_velocity",
+                "xg_overperf_home", "xg_overperf_away", "league_clv_efficiency",
+                "injury_severity_score_home", "injury_severity_score_away",
+                "team_avg_player_rating_home", "team_avg_player_rating_away"):
+        row[col] = mfv.get(col)
+
     row["time_to_kickoff_h"] = time_to_kickoff_h
     row["league_tier"] = league_tier
 
-    # Selection one-hot (drop_first="home" → only draw + away columns)
+    # Selection one-hot (drop_first="home" → only draw + away columns).
+    # Only used by v21/v22/v23_xgb bundles; v_20260607_bets doesn't include these.
     row["selection_draw"] = 1 if selection == "draw" else 0
     row["selection_away"] = 1 if selection == "away" else 0
 
-    # Missing-indicators (per training script's THIN_FEATURES_FOR_INDICATORS)
+    # Missing-indicators (per training script's THIN_FEATURES_FOR_INDICATORS).
+    # Extended for bets-mode bundle with pinnacle_ah_line_* indicators.
     thin = ["bookmaker_disagreement", "fixture_importance", "league_position_home",
             "rest_days_home", "rest_days_away", "pinnacle_line_move",
-            "sharp_consensus", "odds_volatility", "odds_drift_home_at_t6h"]
+            "sharp_consensus", "odds_volatility", "odds_drift_home_at_t6h",
+            "pinnacle_ah_line_at_t6h", "pinnacle_ah_line_move"]
     for c in thin:
         row[f"{c}_missing"] = 1 if row.get(c) is None else 0
 

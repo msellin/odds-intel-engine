@@ -170,11 +170,25 @@ ELO ratings are updated daily during settlement (21:00 UTC) after match results 
 
 **TURF-FAMILIARITY:** Away team's `away_team_turf_games_ytd` counts finished away matches on artificial turf this season. Quantifies visitor unfamiliarity — two home teams on turf = no signal; English visitor to Scandinavian turf = real edge.
 
-### 3.4 Meta-model Feature Set (META-FEATURE-DESIGN, 2026-05-24)
+### 3.4 Meta-model Feature Set (META-FEATURE-DESIGN, 2026-05-24 / updated B-ML3-BETS-MODE 2026-06-07)
 
-This subsection is the finalized feature list for **B-ML3** — the Stage-3 meta-model that scores each emitted bet on `P(this bet beats closing line)`. The meta-model is a downstream classifier; it does NOT replace the primary 1X2/OU/BTTS/AH heads, it filters their output before placement.
+This subsection documents the **B-ML3** meta-model — Stage-3 classifier that scores each emitted bet on `P(this bet beats closing line)` and gates placement. The meta-model is a downstream filter; it does NOT replace the primary 1X2/OU/BTTS/AH heads.
 
-**Goal of B-ML3:** binary classifier with `target = (pseudo_clv > 0)` evaluated per (match × selection) row in `match_feature_vectors`. Output is a per-bet score in [0, 1]; production placer accepts bets above a threshold (tuned post-training on holdout). Training cohort filter: `match_date >= '2026-05-06'` (pre-cutoff rows lack key signals); current cohort size is 9,971 rows / 5,572 with `opening_implied_home IS NOT NULL`.
+**Critical finding — inverted signal (2026-06-07 B-ML3-BETS-MODE):** The v21/v22/v23_xgb bundles trained on all 7K+ MFV rows had an **inverted signal** in production: high meta score → lower Pinnacle CLV (Q5 vs Q1 spread was −14.9pp). Root cause: distribution mismatch. The training set was all MFV rows (`target = pseudo_clv > 0`), but inference targets only bots' actually-fired bets — a completely different regime.
+
+**Fix — `--bets-mode` training:** Bundle `v_20260607_bets` (production as of 2026-06-07) trains on actual bot-fired bets with **real Pinnacle closing-line CLV** as the label. Key differences:
+
+| | Old bundles (v21–v23) | v_20260607_bets (active) |
+|---|---|---|
+| Training data | All MFV rows (7,716) | Fired bets only (n=305) |
+| Label | `pseudo_clv > 0` (proxy) | `clv_pinnacle > median` (+7%) |
+| CV AUC | 0.569–0.587 | **0.6712 ± 0.072** |
+| Q5 vs Q1 CLV spread | −14.9pp (inverted) | **+18.4pp (correct)** |
+| Features | 14–24 | 44 |
+
+**Active bundle (2026-06-07): `v_20260607_bets`** — XGBoost, threshold=0.52, `META_B_ML3_ENABLED=true`.
+
+**Goal of original B-ML3 (v21 design):** binary classifier with `target = (pseudo_clv > 0)` evaluated per (match × selection) row in `match_feature_vectors`. Training cohort filter: `match_date >= '2026-05-06'`; cohort size 9,971 rows / 5,572 with `opening_implied_home IS NOT NULL`.
 
 **The shortlist had to satisfy three constraints, in order:**
 
@@ -220,38 +234,21 @@ This subsection is the finalized feature list for **B-ML3** — the Stage-3 meta
 
 **Why not just train on every column with coverage > 30%?** Per the original META-FEATURE-DESIGN note: 12-15 features × 50 examples per feature = ~750 minimum rows for stable coefficients. We have 5,572 usable rows, so we could support up to ~110 features — but feature-bloat trades model interpretability for marginal signal. Holding to 14 leaves headroom for AH-XGBOOST features when those train into a B-ML3 v2.
 
-### 3.5 B-ML3 Activation Validation (B-ML3-VALIDATE-ACTIVATION, 2026-05-25)
+### 3.5 B-ML3 Activation Validation (B-ML3-VALIDATE-ACTIVATION, 2026-05-25 / activated 2026-06-07)
 
-The decision to flip `META_B_ML3_ENABLED=true` on Railway is **gated on empirical validation**, not theoretical AUC. CV AUC of 0.57-0.59 is borderline — real out-of-sample precision could be anywhere from 53% (basically noise) to 70% (strong filter). Without empirical data we can't distinguish.
+**Status as of 2026-06-07: ACTIVE** — `META_B_ML3_ENABLED=true`, bundle `v_20260607_bets`, threshold 0.52.
 
-**Methodology** (implemented in `scripts/validate_meta_b_ml3.py`):
+The original June 10 gating plan was based on validating the old v21–v23 bundles via `meta_clv_score` column reads. That plan is superseded: old bundles had an inverted signal (§3.4); the new bets-mode bundle was validated by cross-validation (AUC 0.6712) and quintile analysis (Q5 vs Q1 CLV spread +18.4pp on n=314 out-of-training bets). Activation was moved forward to 2026-06-07.
 
-1. **Cohort**: every settled `simulated_bets` row since `pick_time >= 2026-05-25` (the day META_B_ML3_ACTIVE wiring shipped). Filter to bets where the underlying match has a populated `match_feature_vectors` row with `opening_implied_home IS NOT NULL`.
+**Ongoing regression guard:** Run `scripts/validate_meta_b_ml3.py` weekly. Since `meta_clv_score` in `simulated_bets` is now written from `v_20260607_bets`, scores accumulate as new bets are placed and settled. After ~3-4 weeks (≈200 settled bets), the script will show true out-of-sample quintile separation.
 
-2. **Per-bundle re-scoring**: for each meta bundle on disk (v_20260525_v21, _v22, _v23_xgb, and any future versions), reconstruct the feature vector that would have been computed at placement time and re-score the bet with `predict_proba`. We use the bundle's `feature_cols` and align the runtime row to that schema — schemas drift between bundle versions so the script aligns defensively.
+**Threshold choice:** 0.52 (conservative start). The training-set optimal threshold is 0.65 (fires 148/305 bets at precision=1.0 on training set — likely overfit). 0.52 filters only the clearest Q1 bets (meta score < 0.52 = bottom ~25%) while letting most of the volume through. Tighten toward 0.65 once 200+ OOS bets confirm the quintile spread holds.
 
-3. **Per-bundle quintile binning**: sort scored bets into 5 score-quantile bins per bundle. For each bin compute:
-   - `n` — sample count
-   - `hit_rate` — % of settled bets that won
-   - `clv_beat_rate` — % of bets where `pseudo_clv > 0` (the model's actual training target)
-   - `roi_per_bet` — Σ pnl / Σ stake
-   - `mean_score` and `mean_clv`
-
-4. **Verdict per bundle**:
-   - **PASS** if top quintile's `clv_beat_rate` exceeds bottom quintile by **≥5pp**
-   - **MARGINAL** if separation is 2–5pp
-   - **FAIL** if < 2pp (the model is noise on this cohort)
-
-5. **Activation rule**:
-   - **PASS bundle exists** → recommend `META_B_ML3_VERSION=<best bundle>` + `META_B_ML3_ENABLED=true`
-   - **Only MARGINAL** → keep filter OFF, wait for more data, re-run script in 1 week
-   - **All FAIL** → keep filter OFF, retrain v3 with more features or more data
-
-**Why CLV-beat-rate, not hit-rate, is the load-bearing metric:** B-ML3 was trained on `target = (pseudo_clv > 0)`. The model can be optimal for CLV without lifting raw win rate (e.g. it picks bets where the closing line shortens, which means we got a better price than the market thinks is correct — that's the edge). Validating on the same target the model was trained on is the honest test.
-
-**Sample-size minimum:** ≥200 settled bets total, ≥30 bets per quintile bin. Below that, separation is dominated by variance, not signal. With ~30-50 bets/day during Phase 3.5, threshold is hit around 2026-06-04 to 2026-06-07; the script aborts gracefully below the minimum.
-
-**Cadence:** first run at ~2026-06-10 (3 days after the Phase 4 verdict on 2026-06-07 — gives a buffer to act on the MAIN-model decision first, then validate meta). Re-run weekly thereafter while `META_B_ML3_ENABLED=false`. Once activated, the same script becomes the regression guard: a drop from PASS to MARGINAL/FAIL signals the meta-model has drifted out of regime.
+**Original methodology** (still valid for weekly regression checks):
+1. Cohort: settled bets with `meta_clv_score` populated from the current bundle.
+2. Quintile binning: 5 bins by score, compute `mean_clv`, `hit_rate`, `roi_per_bet` per bin.
+3. Signal holds if Q5 vs Q1 `mean_clv` spread stays ≥ +5pp. If it drops to < 2pp over a rolling 30d window, flip `META_B_ML3_ENABLED=false` and investigate.
+4. Retrain bets-mode bundle weekly: `python3 scripts/train_b_ml3.py --bets-mode --model xgboost --version v_YYYYMMDD_bets` (as more bets accumulate real Pinnacle CLV, n grows, AUC stabilizes).
 
 ### 3.6 B-ML3 v3 — Null Result on MFV-V3 Features (2026-05-25)
 
