@@ -43,11 +43,19 @@ from typing import Optional
 # Per-market thresholds picked empirically from 60d settled-bets analysis.
 # The veto fires when abs(max(pinnacle_line_move_home/draw/away_at_t6h)) >= threshold
 # AND the news_impact_score does NOT explain the move.
+#
+# os_market values from the pipeline (daily_pipeline_v2.py candidate_specs):
+#   O/U bets use "over_under_25", "over_under_15", "over_under_35" — NOT "o/u".
+#   All three share the same threshold since the underlying 1X2 drift signal is
+#   market-agnostic (it's a proxy for "match got unexplained news").
 _PER_MARKET_THRESHOLDS: dict[str, float] = {
-    "btts":           0.03,
-    "double_chance":  0.01,
-    "o/u":            0.03,
-    "asian_handicap": 0.01,
+    "btts":            0.03,
+    "double_chance":   0.01,
+    "o/u":             0.03,   # kept for any legacy callers
+    "over_under_25":   0.03,
+    "over_under_15":   0.03,
+    "over_under_35":   0.03,
+    "asian_handicap":  0.01,
     # 1x2 — no veto (drift feature lives here; direction cancels magnitude leak)
     # draw_no_bet, combo — out of scope (insufficient sample)
 }

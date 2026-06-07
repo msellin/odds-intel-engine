@@ -14766,6 +14766,11 @@ def _():
     assert th["btts"] == 0.03 and th["o/u"] == 0.03, (
         "btts + o/u thresholds must be 0.03 — that's the empirical break in 60d data"
     )
+    # O/U pipeline os_market values (daily_pipeline_v2 candidate_specs tuples):
+    # "over_under_25" / "over_under_15" / "over_under_35" — all must be mapped.
+    assert th.get("over_under_25") == 0.03, "over_under_25 must map to 0.03 (bug fix 2026-06-07)"
+    assert th.get("over_under_15") == 0.03, "over_under_15 must map to 0.03"
+    assert th.get("over_under_35") == 0.03, "over_under_35 must map to 0.03"
     assert th["double_chance"] == 0.01 and th["asian_handicap"] == 0.01, (
         "DC + AH thresholds must be 0.01 — DC fails from 1% upward, AH leak is in 1-3% bucket"
     )
@@ -14778,6 +14783,10 @@ def _():
 
     d = check_pin_cross_drift_veto("double_chance", 0.02, 0.0, 0.0, None)
     assert d["should_veto"] is True, "DC @ 2% drift with no news should veto (threshold 1%)"
+
+    # BUG-FIX 2026-06-07: pipeline sends "over_under_25" not "o/u" — must fire
+    d = check_pin_cross_drift_veto("over_under_25", 0.04, 0.0, 0.0, None)
+    assert d["should_veto"] is True, "over_under_25 @ 4% drift must veto (was silently skipped before fix)"
 
     # ── Below threshold: no veto ──
     d = check_pin_cross_drift_veto("btts", 0.02, 0.0, 0.0, None)
