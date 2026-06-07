@@ -917,16 +917,16 @@ BOTS_CONFIG = {
         # accumulator. Picks all markets the other bots cover, with a low
         # 3% edge floor; min_alignment_class enforces the gate.
         # Tier B (50% stake) and recorded as paper-only until 100+ settled.
-        "description": "BOT-HIGH-ALIGNMENT 2026-05-25: paper bot, alignment_class=HIGH only, 3% edge floor across all markets. Tier B stake (50%). Re-evaluate after 100 settled bets.",
+        "description": "BOT-HIGH-ALIGNMENT 2026-05-25: paper bot, alignment_class=HIGH only, 3% edge floor. BTTS-REMOVED 2026-06-07: 18 settled BTTS bets -34.1% ROI — signal absent; bot_btts_v2 owns that market. Tier B stake (50%). Re-evaluate after 100 settled bets.",
         "tier_label": "pro",
-        "markets": ["1x2", "ou", "btts", "ah", "dnb", "dc"],
+        "markets": ["1x2", "ou", "ah", "dnb", "dc"],
         "tier_filter": None,
         "min_alignment_class": "HIGH",
         "edge_thresholds": {
-            1: {"1x2_fav": 0.03, "1x2_long": 0.03, "ou": 0.03, "btts": 0.03, "ah": 0.03, "dnb": 0.03, "dc": 0.03},
-            2: {"1x2_fav": 0.03, "1x2_long": 0.03, "ou": 0.03, "btts": 0.03, "ah": 0.03, "dnb": 0.03, "dc": 0.03},
-            3: {"1x2_fav": 0.03, "1x2_long": 0.03, "ou": 0.03, "btts": 0.03, "ah": 0.03, "dnb": 0.03, "dc": 0.03},
-            4: {"1x2_fav": 0.03, "1x2_long": 0.03, "ou": 0.03, "btts": 0.03, "ah": 0.03, "dnb": 0.03, "dc": 0.03},
+            1: {"1x2_fav": 0.03, "1x2_long": 0.03, "ou": 0.03, "ah": 0.03, "dnb": 0.03, "dc": 0.03},
+            2: {"1x2_fav": 0.03, "1x2_long": 0.03, "ou": 0.03, "ah": 0.03, "dnb": 0.03, "dc": 0.03},
+            3: {"1x2_fav": 0.03, "1x2_long": 0.03, "ou": 0.03, "ah": 0.03, "dnb": 0.03, "dc": 0.03},
+            4: {"1x2_fav": 0.03, "1x2_long": 0.03, "ou": 0.03, "ah": 0.03, "dnb": 0.03, "dc": 0.03},
         },
         "odds_range": (1.30, 4.50),
         "min_prob": 0.25,

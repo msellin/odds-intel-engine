@@ -5359,13 +5359,15 @@ def _():
         "env var must default to 'false' (Phase 3.5 lock)"
 
 
-@test("BOT-HIGH-ALIGNMENT — only fires on alignment_class=HIGH, all markets, 3pp edge floor")
+@test("BOT-HIGH-ALIGNMENT — only fires on alignment_class=HIGH, no BTTS, 3pp edge floor")
 def _():
     """BOT-HIGH-ALIGNMENT 2026-05-25 — paper bot. Hypothesis: HIGH alignment
     (most signal dimensions agree) is strong enough that a 3% edge floor is
-    safe across all markets. Guards: (1) min_alignment_class set; (2) 3% floor
-    on every tier+market; (3) covers 1x2/ou/btts/ah/dnb/dc; (4) registered in
-    BOT_TIMING_COHORTS; (5) the pipeline applies the filter (not just config).
+    safe across all markets. BTTS-REMOVED 2026-06-07: 18 settled BTTS bets at
+    -34.1% ROI — signal absent; bot_btts_v2 owns that market.
+    Guards: (1) min_alignment_class set; (2) 3% floor on every tier+market;
+    (3) BTTS absent from markets; (4) registered in BOT_TIMING_COHORTS;
+    (5) the pipeline applies the filter (not just config).
     """
     import inspect
     from workers.jobs import daily_pipeline_v2
@@ -5375,8 +5377,10 @@ def _():
     assert cfg.get("min_alignment_class") == "HIGH", "min_alignment_class must be HIGH"
     for tier, ths in cfg["edge_thresholds"].items():
         for key, val in ths.items():
+            assert "btts" not in key, f"btts must not appear in edge_thresholds (tier {tier})"
             assert abs(val - 0.03) < 1e-6, f"tier {tier} {key} edge must be 3% (got {val})"
-    expected_markets = {"1x2", "ou", "btts", "ah", "dnb", "dc"}
+    assert "btts" not in cfg["markets"], "btts must NOT be in bot_high_alignment markets (BTTS-REMOVED 2026-06-07)"
+    expected_markets = {"1x2", "ou", "ah", "dnb", "dc"}
     assert set(cfg["markets"]) == expected_markets, f"markets mismatch: {cfg['markets']}"
     assert "bot_high_alignment" in BOT_TIMING_COHORTS, "must be registered in BOT_TIMING_COHORTS"
     # Guard the filter logic exists in the pipeline (not just config dropped on the floor)
