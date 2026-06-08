@@ -761,6 +761,25 @@ def job_tennis_scanner():
     _run_job("tennis_scanner", lambda: None)  # no-op for logging
 
 
+def job_coolbet_tennis_scanner():
+    """COOLBET-TENNIS-SCAN (2026-06-08): scan Coolbet tennis odds every 30 min,
+    log to tennis_value_bets (bookmaker='coolbet'). Public API, no JWT needed.
+    Runs 07:00-22:00 UTC at :08 and :38.
+    """
+    import subprocess
+    console.print("[bold cyan]Coolbet tennis scanner[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/tennis/place_coolbet_tennis.py", "--record"],
+        capture_output=True, text=True, timeout=300,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]Coolbet tennis scanner error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ["===", "Matches", "Observations", "Value", "Written"]):
+                console.print(f"[dim]{line}[/dim]")
+
+
 def job_wc_odds_sweep():
     """ODDS-API-WC-DAILY-CRON (2026-06-06): daily sweep of WC fixtures via The
     Odds API to fill the AF coverage gap (AF returns coverage_odds=false for
@@ -1785,6 +1804,12 @@ def main():
     scheduler.add_job(job_tennis_scanner, CronTrigger(hour=14, minute=0),
                       id="tennis_scanner_afternoon", name="Tennis Scanner Afternoon 14:00",
                       max_instances=1, misfire_grace_time=1800)
+
+    # COOLBET-TENNIS-SCAN (2026-06-08) — every 30min 07:00-22:00 UTC at :08 and :38.
+    # Keeps Coolbet tennis odds fresh in tennis_value_bets. No quota cost.
+    scheduler.add_job(job_coolbet_tennis_scanner, CronTrigger(hour="7-22", minute="8,38"),
+                      id="coolbet_tennis_scanner", name="Coolbet Tennis Scanner [30min]",
+                      max_instances=1, misfire_grace_time=900)
 
     scheduler.add_job(job_weekly_meta_retrain, CronTrigger(day_of_week="sun", hour=4, minute=0),
                       id="weekly_meta_retrain", name="Weekly META Retrain Sunday 04:00",
