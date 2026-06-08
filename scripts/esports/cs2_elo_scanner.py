@@ -219,6 +219,12 @@ async def _fetch_bo3gg_upcoming() -> list[dict]:
 
         tournament = (r.get("tournament") or {}).get("name") or ""
         stars = r.get("stars") or 0
+
+        # bo3.gg bookmaker reference odds
+        bu = r.get("bet_updates") or {}
+        bookie_odds1 = (bu.get("team_1") or {}).get("coeff") or None
+        bookie_odds2 = (bu.get("team_2") or {}).get("coeff") or None
+
         matches.append({
             "id": r["id"],
             "date": start,
@@ -228,6 +234,8 @@ async def _fetch_bo3gg_upcoming() -> list[dict]:
             "state": "inProgress" if r.get("status") == "current" else "unstarted",
             "tournament": tournament,
             "stars": stars,
+            "bookie_odds1": bookie_odds1,
+            "bookie_odds2": bookie_odds2,
         })
 
     return matches
@@ -325,8 +333,9 @@ def _write_to_db(matches: list[dict], ratings: dict[str, float], edge: float) ->
                  elo1, elo2, win_prob1, win_prob2,
                  fair_odds1, fair_odds2, threshold_odds1, threshold_odds2,
                  has_elo_history, fair_odds_map1, fair_odds_map2,
-                 threshold_map1, threshold_map2, scanned_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                 threshold_map1, threshold_map2,
+                 bookie_odds1, bookie_odds2, scanned_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (team1, team2, kickoff_time) DO UPDATE SET
                 state           = EXCLUDED.state,
                 elo1            = EXCLUDED.elo1,
@@ -342,6 +351,8 @@ def _write_to_db(matches: list[dict], ratings: dict[str, float], edge: float) ->
                 fair_odds_map2  = EXCLUDED.fair_odds_map2,
                 threshold_map1  = EXCLUDED.threshold_map1,
                 threshold_map2  = EXCLUDED.threshold_map2,
+                bookie_odds1    = EXCLUDED.bookie_odds1,
+                bookie_odds2    = EXCLUDED.bookie_odds2,
                 scanned_at      = EXCLUDED.scanned_at
         """, (
             m.get("id"),
@@ -353,6 +364,7 @@ def _write_to_db(matches: list[dict], ratings: dict[str, float], edge: float) ->
             round(threshold_odds(prob1, edge), 3), round(threshold_odds(prob2, edge), 3),
             seen1 and seen2,
             fm1, fm2, tm1, tm2,
+            m.get("bookie_odds1"), m.get("bookie_odds2"),
             now,
         ))
         written += 1

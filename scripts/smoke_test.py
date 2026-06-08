@@ -19689,6 +19689,9 @@ def _():
     p1, p2 = mod.atleast1_map_probs(0.5, 3)
     assert abs(p1 - p2) < 0.001, "symmetric teams must have symmetric ≥1map probs"
     assert p1 > 0.7
+    # bookie_odds columns must be in the INSERT statement
+    assert "bookie_odds1" in src and "bookie_odds2" in src, "_write_to_db must include bookie_odds columns"
+    assert "m.get(\"bookie_odds1\")" in src, "_write_to_db must pass bookie_odds1 param"
 
 
 if __name__ == "__main__":
