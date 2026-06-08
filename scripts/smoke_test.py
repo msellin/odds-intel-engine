@@ -19578,5 +19578,27 @@ def _():
     assert "psycopg2" in src, "Must use direct psycopg2 connection (pool drops SET LOCAL)"
 
 
+@test("TENNIS-VALUE-SCANNER — script structure and DB table")
+def _():
+    """tennis value_scanner.py: checks key functions exist, MIN_EDGE/KELLY_FRAC constants,
+    and that the tennis_value_bets table is in the migration."""
+    import pathlib
+    script = pathlib.Path("scripts/tennis/value_scanner.py")
+    assert script.exists(), "scripts/tennis/value_scanner.py must exist"
+    src = script.read_text()
+    for fn in ["fetch_tennis_tournaments", "fetch_odds_bulk", "extract_match_winner_odds",
+               "devig_two_way", "kelly_stake", "insert_value_bet"]:
+        assert fn in src, f"{fn} must be defined in value_scanner.py"
+    assert "MIN_EDGE" in src, "MIN_EDGE constant must be defined"
+    assert "KELLY_FRAC" in src, "KELLY_FRAC constant must be defined"
+    assert "SHARP_BOOK" in src, "SHARP_BOOK constant must be defined"
+    migration = pathlib.Path("supabase/migrations/190_tennis_value_bets.sql")
+    assert migration.exists(), "190_tennis_value_bets.sql migration must exist"
+    msrc = migration.read_text()
+    assert "tennis_value_bets" in msrc, "migration must create tennis_value_bets table"
+    assert "pin_fair_odds" in msrc, "migration must have pin_fair_odds column"
+    assert "edge_pct" in msrc, "migration must have edge_pct column"
+
+
 if __name__ == "__main__":
     main()
