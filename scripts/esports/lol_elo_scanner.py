@@ -10,6 +10,7 @@ Flow:
 
 Usage:
     python3 scripts/esports/lol_elo_scanner.py           # print upcoming matches
+    python3 scripts/esports/lol_elo_scanner.py --record   # also write to lol_upcoming_matches DB
     python3 scripts/esports/lol_elo_scanner.py --refresh  # force re-fetch historical data
     python3 scripts/esports/lol_elo_scanner.py --ratings  # print all current team ratings
 
@@ -242,6 +243,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--refresh",  action="store_true", help="Force re-fetch historical data")
     ap.add_argument("--ratings",  action="store_true", help="Print all current ELO ratings")
+    ap.add_argument("--record",   action="store_true", help="Write upcoming matches to DB")
     edge_pct = int(EDGE_THRESHOLD * 100)
     ap.add_argument("--edge", type=float, default=EDGE_THRESHOLD,
                     help=f"Edge threshold to flag bets (default {edge_pct}%%)")
@@ -337,7 +339,11 @@ def main() -> None:
         print(f"  ({tbd_count} bracket matches with TBD teams hidden — check back closer to event)")
         print()
 
-    # ── 4. Summary ────────────────────────────────────────────────────
+    # ── 4. Write to DB ────────────────────────────────────────────────
+    if args.record:
+        _write_to_db(known_upcoming, ratings, args.edge)
+
+    # ── 5. Summary ────────────────────────────────────────────────────
     print(f"{'='*65}")
     print(f"  Matches shown:    {len(known_upcoming)} (+ {tbd_count} TBD)")
     print(f"  Teams with data:  {len(ratings)}")
@@ -348,6 +354,63 @@ def main() -> None:
     print("  player is subbed or benched, treat the ELO as stale until")
     print("  the team plays its first match with the new roster.")
     print()
+
+
+# ── DB writer ────────────────────────────────────────────────────────────────
+def _write_to_db(matches: list[dict], ratings: dict[str, float], edge: float) -> None:
+    """Upsert upcoming matches + ELO data into lol_upcoming_matches."""
+    sys.path.insert(0, str(Path(__file__).parents[2]))
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parents[2] / ".env")
+    from workers.api_clients.db import execute_write
+
+    now = datetime.now(timezone.utc).isoformat()
+    written = 0
+    for m in matches:
+        t1, t2 = m["team1"], m["team2"]
+        if t1 == "TBD" and t2 == "TBD":
+            continue
+        r1 = ratings.get(t1, INITIAL_ELO)
+        r2 = ratings.get(t2, INITIAL_ELO)
+        prob1 = elo_expected(r1, r2)
+        prob2 = 1.0 - prob1
+        seen1 = t1 in ratings and t1 != "TBD"
+        seen2 = t2 in ratings and t2 != "TBD"
+        execute_write("""
+            INSERT INTO lol_upcoming_matches
+                (league, kickoff_time, state, best_of, team1, team2,
+                 elo1, elo2, win_prob1, win_prob2,
+                 fair_odds1, fair_odds2, threshold_odds1, threshold_odds2,
+                 has_elo_history, scanned_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (team1, team2, kickoff_time) DO UPDATE SET
+                state           = EXCLUDED.state,
+                elo1            = EXCLUDED.elo1,
+                elo2            = EXCLUDED.elo2,
+                win_prob1       = EXCLUDED.win_prob1,
+                win_prob2       = EXCLUDED.win_prob2,
+                fair_odds1      = EXCLUDED.fair_odds1,
+                fair_odds2      = EXCLUDED.fair_odds2,
+                threshold_odds1 = EXCLUDED.threshold_odds1,
+                threshold_odds2 = EXCLUDED.threshold_odds2,
+                has_elo_history = EXCLUDED.has_elo_history,
+                scanned_at      = EXCLUDED.scanned_at
+        """, (
+            m["league"],
+            m["date"].isoformat(),
+            m["state"],
+            m.get("best_of") or 3,
+            t1, t2,
+            round(r1, 1), round(r2, 1),
+            round(prob1, 4), round(prob2, 4),
+            round(fair_odds(prob1), 3), round(fair_odds(prob2), 3),
+            round(threshold_odds(prob1, edge), 3), round(threshold_odds(prob2, edge), 3),
+            seen1 and seen2,
+            now,
+        ))
+        written += 1
+
+    print(f"  ✓ Written {written} matches to lol_upcoming_matches")
 
 
 # ── Oracle's Elixir loader (optional enrichment) ──────────────────────────────
