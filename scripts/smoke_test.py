@@ -19663,5 +19663,33 @@ def _():
     assert p1 > 0.7, "50% series win prob must give >70% chance to win ≥1 map in BO3"
 
 
+@test("CS2-ELO-SCANNER — script structure, ELO functions, and data loading")
+def _():
+    """cs2_elo_scanner.py: verifies ELO math, data loader, and map market functions exist."""
+    import pathlib
+    script = pathlib.Path("scripts/esports/cs2_elo_scanner.py")
+    assert script.exists(), "scripts/esports/cs2_elo_scanner.py must exist"
+    src = script.read_text()
+    for fn in ["elo_expected", "build_elo", "load_historical", "fetch_upcoming",
+               "fair_odds", "threshold_odds", "p_map_from_series", "atleast1_map_probs",
+               "tournament_tier"]:
+        assert fn in src, f"{fn} must be defined in cs2_elo_scanner.py"
+    assert "INITIAL_ELO" in src
+    assert "EDGE_THRESHOLD" in src
+    assert "bo3.gg" in src or "bo3gg" in src, "must reference bo3.gg data source"
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("cs2_elo", script)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert abs(mod.elo_expected(1500, 1500) - 0.5) < 0.001
+    assert mod.fair_odds(0.5) == 2.0
+    assert mod.threshold_odds(0.5, 0.03) < 2.0
+    assert mod.tournament_tier("IEM Cologne Major 2026") == 2.0
+    assert mod.tournament_tier("ESL Challenger League Season 47") < 1.0
+    p1, p2 = mod.atleast1_map_probs(0.5, 3)
+    assert abs(p1 - p2) < 0.001, "symmetric teams must have symmetric ≥1map probs"
+    assert p1 > 0.7
+
+
 if __name__ == "__main__":
     main()
