@@ -162,11 +162,41 @@ Add to `workers/scheduler.py`:
 ## 9. Execution order
 
 1. ✅ Scanner V2 with live ELO, PQ, roster (done 2026-06-08)
-2. 🔄 Migration 199: `cs2_predictions` + 200: `cs2_results` (in progress)
-3. 🔄 Scanner writes to `cs2_predictions` on every scan (in progress)
-4. ⬜ Settlement job + cron (next)
-5. ⬜ Scanner cron in scheduler.py
-6. ⬜ Liquipedia roster fetcher + daily roster refresh cron
-7. ⬜ Wait for data (~25 days for 1k predictions)
-8. ⬜ Calibration + multi-model retrain
-9. ⬜ Promote relevant sections from this doc into `MODEL_WHITEPAPER.md` Section 11 (CS2)
+2. ✅ Migrations 199 (`cs2_predictions`) + 200 (`cs2_results`)
+3. ✅ Scanner writes to `cs2_predictions` on every scan
+4. ✅ Settlement job + cron
+5. ✅ Scanner cron in scheduler.py
+6. ✅ Liquipedia roster fetcher (4/54 teams resolved; needs slug-variant improvement)
+7. ✅ Coverage gate — thin-data matches (<10 matches/180d) get NULL odds
+8. ✅ CSV winner bug fix — `team1_win` column was 98% wrong; switched to score-based derivation
+9. 🔄 V2 backfill running (clean ~9.2k predictions+results)
+10. ⬜ Calibration script run on clean backfill (script ready)
+11. ⬜ Phase 2 signals (form momentum, roster stability, map pool)
+12. ⬜ Promote into `MODEL_WHITEPAPER.md` Section 11 (CS2)
+
+## 10. Lessons learned 2026-06-08
+
+**Data convention bug (severe).** The Kaggle CSV `team1_win` column on
+`is_total=True` rows is 97.9% zeros even though slot-1 wins ~55% of the time.
+This silently corrupted ELO updates for ~half of 9,200 historical matches.
+Fixed by deriving winner from `score1_match` vs `score2_match`.
+
+The smoking-gun test: after the fix, top ELO went from "UNiTY (1695)" — a
+marginal team that just happened to often appear in slot-2 — to "Team Vitality
+(2157)" — the actual world #1 in CS2. The ELO range also widened from ~450
+points to ~700+ points, indicating proper team differentiation.
+
+Takeaway: every dataset gets a verification pass. Check the simplest invariant
+(here: distribution of `team1_win` should be near 50/50 if assignment is
+arbitrary). If it's not, dig before trusting downstream computations.
+
+**Liquipedia is rate-limited harder than docs suggest.** The "2s per request"
+guidance falls over after ~30 requests in bulk — we got 429s mid-burst. The
+opensearch endpoint is lighter and can resolve "FaZe" → "FaZe Clan" before
+hitting the heavy parse endpoint, halving total requests per team.
+
+**Always need a coverage gate.** ELO with no data converges to 1500 for both
+teams and produces a 50/50 prediction that looks confident. When the user spotted
+Banger Gang vs DONSTU showing a green VALUE badge against Coolbet's 3.09 odds,
+that was the wake-up: predictions without data are dangerous. Now NULL'd when
+either team has <10 matches in the last 180 days.
