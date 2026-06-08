@@ -31,5 +31,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS lol_upcoming_matches_uniq
 
 -- Public read so the anon key frontend can read it
 ALTER TABLE lol_upcoming_matches ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "public read" ON lol_upcoming_matches
-    FOR SELECT USING (true);
+DO $$ BEGIN
+  CREATE POLICY "public read" ON lol_upcoming_matches FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;

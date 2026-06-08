@@ -31,5 +31,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS cs2_upcoming_matches_uniq
     ON cs2_upcoming_matches (team1, team2, kickoff_time);
 
 ALTER TABLE cs2_upcoming_matches ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "public read" ON cs2_upcoming_matches
-    FOR SELECT USING (true);
+DO $$ BEGIN
+  CREATE POLICY "public read" ON cs2_upcoming_matches FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;

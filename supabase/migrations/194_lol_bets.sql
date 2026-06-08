@@ -16,5 +16,6 @@ CREATE TABLE IF NOT EXISTS lol_bets (
 );
 
 ALTER TABLE lol_bets ENABLE ROW LEVEL SECURITY;
--- Only service role (superadmin API route) can read/write
-CREATE POLICY "service only" ON lol_bets USING (false);
+DO $$ BEGIN
+  CREATE POLICY "service only" ON lol_bets USING (false);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;

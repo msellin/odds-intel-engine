@@ -14,4 +14,6 @@ CREATE TABLE IF NOT EXISTS cs2_bets (
 );
 
 ALTER TABLE cs2_bets ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "service only" ON cs2_bets USING (false);
+DO $$ BEGIN
+  CREATE POLICY "service only" ON cs2_bets USING (false);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;

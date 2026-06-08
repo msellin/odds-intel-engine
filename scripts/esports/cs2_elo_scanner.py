@@ -294,7 +294,7 @@ def print_ratings(ratings: dict[str, float], top_n: int = 40) -> None:
 def _write_to_db(matches: list[dict], ratings: dict[str, float], edge: float) -> None:
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-        from pipeline.supabase_client import execute_write
+        from workers.api_clients.db import execute_write
     except ImportError:
         print("[!] Could not import execute_write — DB write skipped", file=sys.stderr)
         return
