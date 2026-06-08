@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scripts.esports.cs2_calibrate import _load_pairs, _log_loss, _accuracy, _ece, _fit_platt
-from workers.api_clients.db import execute_query
+from workers.api_clients.db import execute_query, execute_write
 
 
 PLATT_FILE = Path("data/esports/cs2/platt_coefficients.json")
@@ -64,11 +64,14 @@ def _apply_platt(pairs: list[tuple[float, int]], a: float, b: float) -> list[tup
 
 
 def _load_existing() -> dict:
-    if not PLATT_FILE.exists():
-        return {}
+    """Return all saved coefficients from the DB, keyed by model_version."""
     try:
-        return json.loads(PLATT_FILE.read_text())
-    except (json.JSONDecodeError, OSError):
+        rows = execute_query(
+            "SELECT model_version, a, b, n, log_loss, accuracy, ece, updated_at FROM cs2_model_coefficients",
+            (),
+        )
+        return {r["model_version"]: dict(r) for r in rows}
+    except Exception:
         return {}
 
 
@@ -112,17 +115,16 @@ def calibrate(model: str, promote: bool = False) -> None:
         improvement = (existing_loss - new_loss) if existing_loss else (raw_loss - new_loss)
         print(f"\n  ✓ PROMOTE  (log_loss improved by {improvement:.4f})")
         if promote:
-            existing[model] = {
-                "a": a_new, "b": b_new,
-                "n": len(pairs),
-                "log_loss": new_loss,
-                "accuracy": _accuracy(cal_new),
-                "ece": new_ece,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }
-            PLATT_FILE.parent.mkdir(parents=True, exist_ok=True)
-            PLATT_FILE.write_text(json.dumps(existing, indent=2))
-            print(f"  → wrote {PLATT_FILE}")
+            execute_write("""
+                INSERT INTO cs2_model_coefficients
+                    (model_version, a, b, n, log_loss, accuracy, ece, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (model_version) DO UPDATE SET
+                    a = EXCLUDED.a, b = EXCLUDED.b, n = EXCLUDED.n,
+                    log_loss = EXCLUDED.log_loss, accuracy = EXCLUDED.accuracy, ece = EXCLUDED.ece,
+                    updated_at = NOW()
+            """, (model, a_new, b_new, len(pairs), new_loss, _accuracy(cal_new), new_ece))
+            print(f"  → wrote cs2_model_coefficients ({model})")
         else:
             print(f"  (dry-run; add --promote to persist)")
     else:

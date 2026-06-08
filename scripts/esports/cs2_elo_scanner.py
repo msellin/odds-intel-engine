@@ -34,8 +34,26 @@ _PLATT_B: float | None = None
 
 
 def _load_platt_coefficients() -> None:
-    """Idempotent: refresh _PLATT_A, _PLATT_B from disk."""
+    """Refresh _PLATT_A, _PLATT_B from cs2_model_coefficients (DB).
+
+    Falls back to data/esports/cs2/platt_coefficients.json for local dev
+    when the DB isn't reachable.
+    """
     global _PLATT_A, _PLATT_B
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            "SELECT a, b FROM cs2_model_coefficients WHERE model_version = %s",
+            (MODEL_VERSION,),
+        )
+        if rows:
+            _PLATT_A = float(rows[0]["a"])
+            _PLATT_B = float(rows[0]["b"])
+            return
+    except Exception:
+        pass  # fall through to JSON fallback
+
     f = Path("data/esports/cs2/platt_coefficients.json")
     if not f.exists():
         return
