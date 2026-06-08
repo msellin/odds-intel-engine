@@ -736,6 +736,31 @@ def job_weekly_threshold_check():
     _run_job("weekly_threshold_check", _threshold_check)
 
 
+def job_tennis_scanner():
+    """TENNIS-SCANNER-DAILY (2026-06-08): twice-daily OddsPapi tennis value scan.
+    Runs 06:00 + 14:00 UTC. Populates tennis_fixtures_today (all thresholds) and
+    tennis_value_bets (positive-edge observations across 7 soft books).
+    Requires OP_KEY env var.
+    """
+    import subprocess
+    if not os.getenv("OP_KEY"):
+        console.print("[yellow]Tennis scanner skipped — OP_KEY not set[/yellow]")
+        return
+    console.print("[bold cyan]Tennis value scanner — OddsPapi scan[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/tennis/value_scanner.py"],
+        capture_output=True, text=True, timeout=300,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]Tennis scanner error:[/red]\n{result.stderr[:500]}")
+    else:
+        # Print the summary lines only
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ["SUMMARY", "scanned", "logged", "remaining", "VALUE"]):
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("tennis_scanner", lambda: None)  # no-op for logging
+
+
 def job_wc_odds_sweep():
     """ODDS-API-WC-DAILY-CRON (2026-06-06): daily sweep of WC fixtures via The
     Odds API to fill the AF coverage gap (AF returns coverage_odds=false for
@@ -1750,6 +1775,15 @@ def main():
                       CronTrigger(hour=6, minute=30),
                       id="wc_odds_sweep",
                       name="WC Odds Sweep Daily 06:30",
+                      max_instances=1, misfire_grace_time=1800)
+
+    # TENNIS-SCANNER-DAILY (2026-06-08) — 06:00 + 14:00 UTC, uses OddsPapi quota.
+    # Populates tennis_fixtures_today + tennis_value_bets for admin page.
+    scheduler.add_job(job_tennis_scanner, CronTrigger(hour=6, minute=0),
+                      id="tennis_scanner_morning", name="Tennis Scanner Morning 06:00",
+                      max_instances=1, misfire_grace_time=1800)
+    scheduler.add_job(job_tennis_scanner, CronTrigger(hour=14, minute=0),
+                      id="tennis_scanner_afternoon", name="Tennis Scanner Afternoon 14:00",
                       max_instances=1, misfire_grace_time=1800)
 
     scheduler.add_job(job_weekly_meta_retrain, CronTrigger(day_of_week="sun", hour=4, minute=0),
