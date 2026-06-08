@@ -19689,9 +19689,16 @@ def _():
     p1, p2 = mod.atleast1_map_probs(0.5, 3)
     assert abs(p1 - p2) < 0.001, "symmetric teams must have symmetric ≥1map probs"
     assert p1 > 0.7
-    # bookie_odds columns must be in the INSERT statement
+    # bookie_odds, roster, player rating columns must be in INSERT
     assert "bookie_odds1" in src and "bookie_odds2" in src, "_write_to_db must include bookie_odds columns"
-    assert "m.get(\"bookie_odds1\")" in src, "_write_to_db must pass bookie_odds1 param"
+    assert "roster_change1" in src and "player_rating1" in src, "_write_to_db must include roster/player columns"
+    assert "load_player_data" in src, "load_player_data must exist"
+    assert "get_team_player_quality" in src, "get_team_player_quality must exist"
+    assert "_fetch_recent_results_raw" in src, "_fetch_recent_results_raw must exist"
+    assert "_parse_roster_changes" in src, "_parse_roster_changes must exist"
+    # player quality logic
+    pq = mod.get_team_player_quality("nonexistent_team_xyz", {}, {})
+    assert pq is None, "unknown team must return None player quality"
 
 
 if __name__ == "__main__":

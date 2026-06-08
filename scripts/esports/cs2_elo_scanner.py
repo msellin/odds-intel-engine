@@ -13,7 +13,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
-import json
 import os
 import sys
 from datetime import datetime, timezone, timedelta
@@ -25,6 +24,9 @@ from collections import defaultdict
 INITIAL_ELO: float = 1500.0
 K_BASE: float = 32.0
 EDGE_THRESHOLD: float = 0.03   # 3% edge required
+
+# Primary CSV covers through ~April 2026 — fetch bo3.gg results from here onwards
+CSV_CUTOFF = datetime(2026, 4, 30, tzinfo=timezone.utc)
 
 # Tournament tier multipliers (applied to K-factor)
 TIER_WEIGHTS: list[tuple[list[str], float]] = [
@@ -43,6 +45,7 @@ BO_WEIGHTS: dict[int, float] = {5: 1.0, 3: 0.85, 1: 0.6}
 
 DATA_DIR = Path("data/esports/cs2")
 PRIMARY_CSV = DATA_DIR / "cs2_all_tiers_games.csv"
+PLAYER_RATING_CSV = DATA_DIR / "cs2_newestcombinedmatches.csv"
 
 # ── ELO math ─────────────────────────────────────────────────────────────────
 def elo_expected(ra: float, rb: float) -> float:
@@ -140,13 +143,88 @@ def load_historical() -> list[dict]:
                 "date": dt,
                 "team1": r["team1"].strip(),
                 "team2": r["team2"].strip(),
-                "result": result,   # 1 if team1 won
+                "result": result,
                 "best_of": bo,
                 "tournament": r.get("tournament", ""),
             })
 
     rows.sort(key=lambda x: x["date"])
     return rows
+
+
+def load_player_data() -> tuple[dict[str, float], dict[str, list[str]]]:
+    """Load per-player avg HLTV rating and last known lineup per team from CSV.
+
+    Returns:
+        player_ratings: {player_name_lower: avg_rating}
+        team_lineups:   {team_name_lower: [p1..p5]} (most recent match in CSV)
+    """
+    if not PLAYER_RATING_CSV.exists():
+        return {}, {}
+
+    player_sums: dict[str, list] = defaultdict(list)
+    team_lineups: dict[str, tuple] = {}  # name_lower -> (date, [players])
+
+    with open(PLAYER_RATING_CSV, encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            try:
+                dt = datetime.fromisoformat(r["date"].replace("Z", "+00:00"))
+            except (ValueError, KeyError):
+                continue
+
+            for side, tkey in [("team1", "team1_name"), ("team2", "team2_name")]:
+                team = r.get(tkey, "").strip()
+                if not team:
+                    continue
+                team_l = _normalize(team)
+                players = []
+                for i in range(1, 6):
+                    name = r.get(f"{side}_player_{i}_name", "").strip()
+                    rating_s = r.get(f"{side}_player_{i}_RATING", "")
+                    if name:
+                        players.append(name)
+                        if rating_s:
+                            try:
+                                player_sums[_normalize(name)].append(float(rating_s))
+                            except ValueError:
+                                pass
+
+                if len(players) >= 4:
+                    existing = team_lineups.get(team_l)
+                    if existing is None or dt > existing[0]:
+                        team_lineups[team_l] = (dt, players)
+
+    player_ratings = {
+        name: round(sum(vals) / len(vals), 3)
+        for name, vals in player_sums.items()
+        if len(vals) >= 3
+    }
+    team_last_lineups = {
+        team: players
+        for team, (_, players) in team_lineups.items()
+    }
+    return player_ratings, team_last_lineups
+
+
+def get_team_player_quality(
+    team_name: str,
+    team_last_lineups: dict[str, list[str]],
+    player_ratings: dict[str, float],
+) -> float | None:
+    """Average HLTV rating of team's last known lineup. None if not found."""
+    key = _normalize(team_name)
+    lineup = team_last_lineups.get(key)
+    if not lineup:
+        for tkey, players in team_last_lineups.items():
+            if key in tkey or tkey in key:
+                lineup = players
+                break
+    if not lineup:
+        return None
+
+    ratings = [player_ratings.get(_normalize(p)) for p in lineup]
+    valid = [rv for rv in ratings if rv is not None]
+    return round(sum(valid) / len(valid), 3) if len(valid) >= 3 else None
 
 
 # ── ELO builder ───────────────────────────────────────────────────────────────
@@ -170,17 +248,70 @@ def build_elo(matches: list[dict]) -> dict[str, float]:
     return ratings
 
 
-# ── bo3.gg upcoming matches ───────────────────────────────────────────────────
-async def _fetch_bo3gg_upcoming() -> list[dict]:
-    """Fetch upcoming + live CS2 matches from bo3.gg (next ~7 days)."""
-    try:
-        from cs2api import CS2APIClient
-    except ImportError:
-        print("[!] cs2api not installed: pip3 install cs2api", file=sys.stderr)
-        return []
+# ── bo3.gg API helpers ────────────────────────────────────────────────────────
+def _determine_series_winner(r: dict) -> int | None:
+    """Return 1 if team1 won, 0 if team2 won, None if undetermined."""
+    t1_id = (r.get("team1") or {}).get("id")
+    t2_id = (r.get("team2") or {}).get("id")
 
-    endpoint = "/matches"
-    params = {
+    # Try direct score on team objects
+    try:
+        t1s = int((r.get("team1") or {}).get("score", ""))
+        t2s = int((r.get("team2") or {}).get("score", ""))
+        if t1s > t2s:
+            return 1
+        elif t2s > t1s:
+            return 0
+    except (ValueError, TypeError):
+        pass
+
+    # Try match-level winner_team_id
+    winner_id = r.get("winner_team_id")
+    if winner_id and t1_id and t2_id:
+        if winner_id == t1_id:
+            return 1
+        if winner_id == t2_id:
+            return 0
+
+    # Count from games array
+    games = r.get("games") or []
+    if games and t1_id and t2_id:
+        t1_wins = sum(1 for g in games if g.get("winner_team_id") == t1_id)
+        t2_wins = sum(1 for g in games if g.get("winner_team_id") == t2_id)
+        if t1_wins > t2_wins:
+            return 1
+        elif t2_wins > t1_wins:
+            return 0
+
+    return None
+
+
+async def _bo3gg_request(api, endpoint: str, params: dict) -> dict:
+    try:
+        return await api._make_request(endpoint, params)
+    except Exception as e:
+        print(f"  [!] bo3.gg {endpoint}: {e}", file=sys.stderr)
+        return {}
+
+
+# ── bo3.gg: recent finished results (for live ELO) ───────────────────────────
+async def _fetch_recent_results_raw(api) -> list[dict]:
+    data = await _bo3gg_request(api, "/matches", {
+        "scope": "widget-matches",
+        "page[offset]": 0,
+        "page[limit]": 100,
+        "sort": "-start_date",
+        "filter[matches.status][in]": "finished,defwin",
+        "filter[matches.discipline_id][eq]": 1,
+        "filter[matches.start_date][gt]": CSV_CUTOFF.strftime("%Y-%m-%d"),
+        "with": "teams,tournament,games",
+    })
+    return data.get("results", [])
+
+
+# ── bo3.gg: upcoming matches ──────────────────────────────────────────────────
+async def _fetch_upcoming_raw(api) -> list[dict]:
+    data = await _bo3gg_request(api, "/matches", {
         "scope": "widget-matches",
         "page[offset]": 0,
         "page[limit]": 100,
@@ -188,18 +319,73 @@ async def _fetch_bo3gg_upcoming() -> list[dict]:
         "filter[matches.status][in]": "upcoming,current",
         "filter[matches.discipline_id][eq]": 1,
         "with": "teams,tournament,ai_predictions,games,streams",
-    }
+    })
+    return data.get("results", [])
+
+
+# ── bo3.gg: roster changes per team ──────────────────────────────────────────
+async def _fetch_transfers_raw(api, team_id: int) -> list[dict]:
+    data = await _bo3gg_request(api, "/player_transfers", {
+        "join": "teams_deep",
+        "page[offset]": "0",
+        "page[limit]": "15",
+        "sort": "-action_date",
+        "filter[team_to.id,team_from.id][or]": f"{team_id},{team_id}",
+        "with": "teams,player",
+    })
+    return data.get("results", [])
+
+
+async def _fetch_all(team_ids: dict[str, int]) -> tuple[list, list, dict]:
+    """Single aiohttp session — fetch upcoming, recent results, and all transfers."""
+    try:
+        from cs2api import CS2APIClient
+    except ImportError:
+        print("[!] cs2api not installed: pip3 install cs2api", file=sys.stderr)
+        return [], [], {}
 
     api = CS2APIClient()
     try:
-        data = await api._make_request(endpoint, params)
+        upcoming_raw, results_raw = await asyncio.gather(
+            _fetch_upcoming_raw(api),
+            _fetch_recent_results_raw(api),
+        )
+
+        # Collect team IDs from upcoming (augments the pre-seeded team_ids)
+        cutoff = datetime.now(timezone.utc) + timedelta(days=7)
+        for r in upcoming_raw:
+            for key in ("team1", "team2"):
+                t = r.get(key) or {}
+                name = t.get("name")
+                tid = t.get("id")
+                if name and tid and name not in team_ids:
+                    team_ids[name] = tid
+
+        # Fetch all transfers in parallel
+        if team_ids:
+            names = list(team_ids.keys())
+            transfer_lists = await asyncio.gather(
+                *[_fetch_transfers_raw(api, team_ids[n]) for n in names],
+                return_exceptions=True,
+            )
+            transfers_raw = {
+                name: (lst if not isinstance(lst, Exception) else [])
+                for name, lst in zip(names, transfer_lists)
+            }
+        else:
+            transfers_raw = {}
+
     finally:
         await api.close()
 
-    results = data.get("results", [])
+    return upcoming_raw, results_raw, transfers_raw
+
+
+def _parse_upcoming(raw: list[dict]) -> list[dict]:
+    """Parse raw bo3.gg match objects into scanner dicts."""
     cutoff = datetime.now(timezone.utc) + timedelta(days=7)
     matches = []
-    for r in results:
+    for r in raw:
         try:
             start = datetime.fromisoformat(r["start_date"].replace("Z", "+00:00"))
         except (KeyError, ValueError):
@@ -210,17 +396,12 @@ async def _fetch_bo3gg_upcoming() -> list[dict]:
         t1 = (r.get("team1") or {}).get("name") or ""
         t2 = (r.get("team2") or {}).get("name") or ""
         if not t1 or not t2:
-            # fall back to bet_updates names
             bu = r.get("bet_updates") or {}
             t1 = (bu.get("team_1") or {}).get("name") or t1
             t2 = (bu.get("team_2") or {}).get("name") or t2
         if not t1 or not t2:
             continue
 
-        tournament = (r.get("tournament") or {}).get("name") or ""
-        stars = r.get("stars") or 0
-
-        # bo3.gg bookmaker reference odds
         bu = r.get("bet_updates") or {}
         bookie_odds1 = (bu.get("team_1") or {}).get("coeff") or None
         bookie_odds2 = (bu.get("team_2") or {}).get("coeff") or None
@@ -229,20 +410,81 @@ async def _fetch_bo3gg_upcoming() -> list[dict]:
             "id": r["id"],
             "date": start,
             "team1": t1,
+            "team1_id": (r.get("team1") or {}).get("id"),
             "team2": t2,
+            "team2_id": (r.get("team2") or {}).get("id"),
             "best_of": r.get("bo_type") or 3,
             "state": "inProgress" if r.get("status") == "current" else "unstarted",
-            "tournament": tournament,
-            "stars": stars,
+            "tournament": (r.get("tournament") or {}).get("name") or "",
+            "stars": r.get("stars") or 0,
             "bookie_odds1": bookie_odds1,
             "bookie_odds2": bookie_odds2,
         })
-
     return matches
 
 
-def fetch_upcoming() -> list[dict]:
-    return asyncio.run(_fetch_bo3gg_upcoming())
+def _parse_recent_results(raw: list[dict]) -> list[dict]:
+    """Parse finished bo3.gg matches into ELO-update dicts."""
+    matches = []
+    for r in raw:
+        try:
+            start = datetime.fromisoformat(r["start_date"].replace("Z", "+00:00"))
+        except (KeyError, ValueError):
+            continue
+        if start <= CSV_CUTOFF:
+            continue
+
+        t1 = (r.get("team1") or {}).get("name") or ""
+        t2 = (r.get("team2") or {}).get("name") or ""
+        if not t1 or not t2 or t1 == "TBD" or t2 == "TBD":
+            continue
+
+        result = _determine_series_winner(r)
+        if result is None:
+            continue
+
+        matches.append({
+            "date": start,
+            "team1": t1,
+            "team2": t2,
+            "result": result,
+            "best_of": r.get("bo_type") or 3,
+            "tournament": (r.get("tournament") or {}).get("name") or "",
+        })
+
+    matches.sort(key=lambda x: x["date"])
+    return matches
+
+
+def _parse_roster_changes(transfers_raw: dict[str, list], days: int = 45) -> dict[str, list[str]]:
+    """Parse raw transfers into {team_name: ["player joined/left", ...]}."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    changes: dict[str, list[str]] = {}
+
+    for team_name, transfers in transfers_raw.items():
+        recent = []
+        for t in transfers:
+            try:
+                action_date = datetime.fromisoformat(
+                    (t.get("action_date") or "").replace("Z", "+00:00")
+                )
+            except (ValueError, KeyError):
+                continue
+            if action_date < cutoff:
+                continue
+            player = (t.get("player") or {}).get("nickname") or t.get("player_name") or "?"
+            action_type = t.get("action_type")
+            action = "joined" if action_type == 1 else "left" if action_type == 3 else "moved"
+            recent.append(f"{player} {action}")
+        if recent:
+            changes[team_name] = recent
+
+    return changes
+
+
+def fetch_all_data(team_ids: dict[str, int] | None = None) -> tuple[list, list, dict]:
+    """Synchronous wrapper for _fetch_all."""
+    return asyncio.run(_fetch_all(team_ids or {}))
 
 
 # ── Name matching ─────────────────────────────────────────────────────────────
@@ -251,7 +493,6 @@ def _build_alias_map(ratings: dict[str, float]) -> dict[str, str]:
     alias: dict[str, str] = {}
     for name in ratings:
         alias[_normalize(name)] = name
-        # common abbreviations: "Natus Vincere" → "navi", "G2 Esports" → "g2"
         parts = name.lower().split()
         if len(parts) >= 2:
             abbrev = "".join(p[0] for p in parts if p not in ("the", "team", "esports", "gaming"))
@@ -266,7 +507,6 @@ def lookup_team(name: str, ratings: dict[str, float], alias_map: dict[str, str])
     canonical = alias_map.get(key)
     if canonical and canonical in ratings:
         return ratings[canonical], True
-    # partial match
     for alias, canon in alias_map.items():
         if key in alias or alias in key:
             if canon in ratings:
@@ -278,6 +518,7 @@ def lookup_team(name: str, ratings: dict[str, float], alias_map: dict[str, str])
 def format_match_row(
     team: str, elo: float, win_pct: float, fair: float, thr: float,
     map1_odds: float | None = None, map1_thr: float | None = None,
+    player_quality: float | None = None,
     label_width: int = 28,
 ) -> str:
     status = f"min≥{thr:.2f}" if thr > 0 else "      "
@@ -287,6 +528,8 @@ def format_match_row(
     )
     if map1_odds is not None and map1_thr is not None:
         row += f"  (≥1map fair={map1_odds:.2f} min≥{map1_thr:.2f})"
+    if player_quality is not None:
+        row += f"  [PQ {player_quality:.3f}]"
     return row
 
 
@@ -299,7 +542,14 @@ def print_ratings(ratings: dict[str, float], top_n: int = 40) -> None:
 
 
 # ── DB write ──────────────────────────────────────────────────────────────────
-def _write_to_db(matches: list[dict], ratings: dict[str, float], edge: float) -> None:
+def _write_to_db(
+    matches: list[dict],
+    ratings: dict[str, float],
+    edge: float,
+    roster_changes: dict[str, list[str]],
+    player_ratings: dict[str, float],
+    team_last_lineups: dict[str, list[str]],
+) -> None:
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
         from workers.api_clients.db import execute_write
@@ -327,6 +577,14 @@ def _write_to_db(matches: list[dict], ratings: dict[str, float], edge: float) ->
             tm1 = round(threshold_odds(pm1, edge), 3)
             tm2 = round(threshold_odds(pm2, edge), 3)
 
+        rc1 = t1 in roster_changes
+        rc2 = t2 in roster_changes
+        rn1 = ", ".join(roster_changes[t1]) if rc1 else None
+        rn2 = ", ".join(roster_changes[t2]) if rc2 else None
+
+        pq1 = get_team_player_quality(t1, team_last_lineups, player_ratings)
+        pq2 = get_team_player_quality(t2, team_last_lineups, player_ratings)
+
         execute_write("""
             INSERT INTO cs2_upcoming_matches
                 (bo3gg_id, league, kickoff_time, state, best_of, team1, team2,
@@ -334,8 +592,11 @@ def _write_to_db(matches: list[dict], ratings: dict[str, float], edge: float) ->
                  fair_odds1, fair_odds2, threshold_odds1, threshold_odds2,
                  has_elo_history, fair_odds_map1, fair_odds_map2,
                  threshold_map1, threshold_map2,
-                 bookie_odds1, bookie_odds2, scanned_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                 bookie_odds1, bookie_odds2,
+                 roster_change1, roster_change2, roster_note1, roster_note2,
+                 player_rating1, player_rating2,
+                 scanned_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (team1, team2, kickoff_time) DO UPDATE SET
                 state           = EXCLUDED.state,
                 elo1            = EXCLUDED.elo1,
@@ -353,6 +614,12 @@ def _write_to_db(matches: list[dict], ratings: dict[str, float], edge: float) ->
                 threshold_map2  = EXCLUDED.threshold_map2,
                 bookie_odds1    = EXCLUDED.bookie_odds1,
                 bookie_odds2    = EXCLUDED.bookie_odds2,
+                roster_change1  = EXCLUDED.roster_change1,
+                roster_change2  = EXCLUDED.roster_change2,
+                roster_note1    = EXCLUDED.roster_note1,
+                roster_note2    = EXCLUDED.roster_note2,
+                player_rating1  = EXCLUDED.player_rating1,
+                player_rating2  = EXCLUDED.player_rating2,
                 scanned_at      = EXCLUDED.scanned_at
         """, (
             m.get("id"),
@@ -365,6 +632,8 @@ def _write_to_db(matches: list[dict], ratings: dict[str, float], edge: float) ->
             seen1 and seen2,
             fm1, fm2, tm1, tm2,
             m.get("bookie_odds1"), m.get("bookie_odds2"),
+            rc1, rc2, rn1, rn2,
+            pq1, pq2,
             now,
         ))
         written += 1
@@ -392,20 +661,36 @@ def main() -> None:
     if matches_hist:
         print(f"    Range: {matches_hist[0]['date'].date()} → {matches_hist[-1]['date'].date()}")
 
-    print("\n[2] Building ELO ratings...")
+    print("\n[2] Building base ELO ratings from CSV...")
     ratings = build_elo(matches_hist)
     print(f"    {len(ratings)} teams rated")
-    if ratings:
-        best = max(ratings, key=ratings.get)
-        print(f"    Highest ELO: {best} ({ratings[best]:.0f})")
+
+    print("\n[3] Loading player ratings from CSV...")
+    player_ratings, team_last_lineups = load_player_data()
+    print(f"    {len(player_ratings)} players with HLTV ratings")
+    print(f"    {len(team_last_lineups)} team lineups known")
 
     if args.ratings:
         print_ratings(ratings, args.top)
         return
 
-    print("\n[3] Fetching upcoming matches from bo3.gg...")
-    upcoming = fetch_upcoming()
-    print(f"    {len(upcoming)} matches in next 7 days")
+    print("\n[4] Fetching from bo3.gg (upcoming + recent results + roster changes)...")
+    upcoming_raw, results_raw, transfers_raw = fetch_all_data()
+
+    recent_results = _parse_recent_results(results_raw)
+    upcoming = _parse_upcoming(upcoming_raw)
+    roster_changes = _parse_roster_changes(transfers_raw)
+
+    print(f"    {len(upcoming)} upcoming matches (next 7 days)")
+    print(f"    {len(recent_results)} new results since {CSV_CUTOFF.date()} (live ELO update)")
+    print(f"    {sum(len(v) for v in roster_changes.values())} roster changes found across {len(roster_changes)} teams")
+
+    if recent_results:
+        print("\n[5] Updating ELO with recent results...")
+        ratings = build_elo(matches_hist + recent_results)
+        if ratings:
+            best = max(ratings, key=ratings.get)
+            print(f"    Updated ELO — highest: {best} ({ratings[best]:.0f})")
 
     if not upcoming:
         print("\n  No upcoming matches found.")
@@ -446,22 +731,31 @@ def main() -> None:
                 map1_f1, map1_thr1 = fair_odds(pm1), threshold_odds(pm1, args.edge)
                 map1_f2, map1_thr2 = fair_odds(pm2), threshold_odds(pm2, args.edge)
 
+            pq1 = get_team_player_quality(t1, team_last_lineups, player_ratings)
+            pq2 = get_team_player_quality(t2, team_last_lineups, player_ratings)
+
             new_flag = " [NEW]" if not found1 or not found2 else ""
             dt_str = m["date"].strftime("%m-%d %H:%M")
             bo_str = f"BO{best_of}"
             state_flag = " ⚡LIVE" if m["state"] == "inProgress" else ""
             stars_str = f"  {'★' * m.get('stars', 0)}" if m.get("stars") else ""
-            print(f"  {dt_str} {bo_str}{state_flag}{stars_str}{new_flag}")
-            print(format_match_row(t1, r1, prob1 * 100, f1, thr1, map1_f1, map1_thr1))
-            print(format_match_row(t2, r2, prob2 * 100, f2, thr2, map1_f2, map1_thr2))
+            rc_flags = ""
+            if t1 in roster_changes:
+                rc_flags += f" [⚠ {t1}: {', '.join(roster_changes[t1])}]"
+            if t2 in roster_changes:
+                rc_flags += f" [⚠ {t2}: {', '.join(roster_changes[t2])}]"
+
+            print(f"  {dt_str} {bo_str}{state_flag}{stars_str}{new_flag}{rc_flags}")
+            print(format_match_row(t1, r1, prob1 * 100, f1, thr1, map1_f1, map1_thr1, pq1))
+            print(format_match_row(t2, r2, prob2 * 100, f2, thr2, map1_f2, map1_thr2, pq2))
             print()
 
     if tbd_count:
         print(f"  ({tbd_count} matches with TBD teams hidden)\n")
 
     if args.record:
-        print("[4] Writing to database...")
-        _write_to_db(upcoming, ratings, args.edge)
+        print("[6] Writing to database...")
+        _write_to_db(upcoming, ratings, args.edge, roster_changes, player_ratings, team_last_lineups)
 
 
 if __name__ == "__main__":
