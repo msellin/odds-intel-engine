@@ -6,10 +6,9 @@ Flow:
   1. Fetch all Coolbet tennis matches via fo-category (public, no JWT)
   2. Batch-fetch current odds via sb-odds endpoint (no JWT)
   3. Cross-reference by kickoff time against tennis_fixtures_today (Pinnacle thresholds)
-  4. Record ALL observations to tennis_value_bets (bookmaker='coolbet')
+  4. Record observations where Pinnacle fixture has resolved player names
      — edge > 0%: logged for training data
      — edge >= 3%: highlighted as action signal
-  5. Backfill player names from Coolbet into tennis_fixtures_today (if still numeric IDs)
 
 Usage:
     python3 scripts/tennis/place_coolbet_tennis.py              # dry run, print only
@@ -173,32 +172,12 @@ def _looks_like_id(s: str) -> bool:
     return s.strip().lstrip("-").isdigit()
 
 
-def backfill_names(fixture: dict, cb_home: str, cb_away: str, dry_run: bool) -> None:
-    """Write real player names to tennis_fixtures_today if still numeric IDs."""
-    p_home = str(fixture.get("player_home") or "")
-    p_away = str(fixture.get("player_away") or "")
-    if _looks_like_id(p_home) and cb_home and not _looks_like_id(cb_home):
-        if not dry_run:
-            execute_write(
-                "UPDATE tennis_fixtures_today SET player_home=%s WHERE fixture_id=%s",
-                (cb_home, fixture["fixture_id"]),
-            )
-            execute_write(
-                "UPDATE tennis_value_bets SET player_home=%s WHERE fixture_id=%s AND player_home ~ '^[0-9]+$'",
-                (cb_home, fixture["fixture_id"]),
-            )
-        fixture["player_home"] = cb_home
-    if _looks_like_id(p_away) and cb_away and not _looks_like_id(cb_away):
-        if not dry_run:
-            execute_write(
-                "UPDATE tennis_fixtures_today SET player_away=%s WHERE fixture_id=%s",
-                (cb_away, fixture["fixture_id"]),
-            )
-            execute_write(
-                "UPDATE tennis_value_bets SET player_away=%s WHERE fixture_id=%s AND player_away ~ '^[0-9]+$'",
-                (cb_away, fixture["fixture_id"]),
-            )
-        fixture["player_away"] = cb_away
+def _has_real_names(fixture: dict) -> bool:
+    """True if both players have real names (not numeric OddsPapi IDs)."""
+    return (
+        not _looks_like_id(str(fixture.get("player_home") or "0"))
+        and not _looks_like_id(str(fixture.get("player_away") or "0"))
+    )
 
 
 def record_observation(
@@ -211,9 +190,6 @@ def record_observation(
     cb_home = match.get("home") or "?"
     cb_away = match.get("away") or "?"
     cb_start = match.get("start", "")
-
-    if fixture:
-        backfill_names(fixture, cb_home, cb_away, dry_run)
 
     logged = 0
     value  = 0
@@ -246,7 +222,7 @@ def record_observation(
         player_label = cb_home if selection == "home" else cb_away
         print(f"  {marker}  {player_label[:24]:24s}  cb={cb_odds:.2f}  {pin_info}")
 
-        if not dry_run and fixture:
+        if not dry_run and fixture and _has_real_names(fixture):
             fix_id = fixture["fixture_id"]
             execute_write("""
                 INSERT INTO tennis_value_bets
@@ -268,8 +244,8 @@ def record_observation(
             """, (
                 fix_id,
                 fixture["tournament_name"],
-                fixture.get("player_home") or cb_home,
-                fixture.get("player_away") or cb_away,
+                fixture["player_home"],
+                fixture["player_away"],
                 cb_start,
                 selection,
                 threshold,
@@ -380,7 +356,7 @@ def main() -> None:
     print(f"  Observations:      {total_logged}")
     print(f"  Value bets ≥3%:   {total_value}")
     if not dry_run and total_logged:
-        print(f"  ✓ Written to tennis_value_bets + names backfilled")
+        print(f"  ✓ Written to tennis_value_bets")
     print()
 
 
