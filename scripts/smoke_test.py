@@ -19713,6 +19713,36 @@ def _():
     assert mod.is_lan_event("IEM Cologne Major 2026") is True
     assert mod.is_lan_event("ESEA Open Stage Online") is False
     assert "_days_since_last_transfer" in src
+    # PandaScore roster integration
+    assert "load_pandascore_rosters" in src
+    assert "pandascore_rosters.json" in src
+    rs = mod.load_pandascore_rosters()
+    assert isinstance(rs, dict)
+
+
+@test("CS2-PANDASCORE-ROSTERS — fetcher script + scheduler cron")
+def _():
+    """cs2_pandascore_rosters.py + cron registered."""
+    import pathlib, ast
+    p = pathlib.Path("scripts/esports/cs2_pandascore_rosters.py")
+    assert p.exists()
+    src = p.read_text()
+    assert "PANDASCORE_API_KEY" in src
+    assert "filter[acronym]" in src
+    assert "/csgo/teams" in src
+    assert "_ALIASES" in src
+
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    tree = ast.parse(sched)
+    fns = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    assert "job_cs2_pandascore_rosters" in fns
+    ids = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "add_job":
+            for kw in n.keywords:
+                if kw.arg == "id" and isinstance(getattr(kw.value, "value", None), str):
+                    ids.add(kw.value.value)
+    assert "cs2_pandascore_rosters" in ids
 
 
 @test("CS2-COOLBET-SCANNER — script structure")

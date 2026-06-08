@@ -780,6 +780,29 @@ def job_cs2_scanner():
     _run_job("cs2_scanner", lambda: None)
 
 
+def job_cs2_pandascore_rosters():
+    """CS2-PANDASCORE-ROSTERS (2026-06-08): refresh current 5-man lineups from
+    PandaScore free tier. Cache: data/esports/cs2/pandascore_rosters.json.
+    Replaces stale Oct-2025 CSV lineup for PQ computation. Daily.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 PandaScore rosters refresh[/bold cyan]")
+    if not os.getenv("PANDASCORE_API_KEY"):
+        console.print("[yellow]Skipped — PANDASCORE_API_KEY not set[/yellow]")
+        return
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_pandascore_rosters.py", "--refresh"],
+        capture_output=True, text=True, timeout=600,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]PandaScore rosters error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ["hits:", "miss:", "→ data"]):
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_pandascore_rosters", lambda: None)
+
+
 def job_cs2_coolbet_scanner():
     """CS2-COOLBET-SCAN (2026-06-08): scrape Coolbet CS2 odds, write to
     cs2_upcoming_matches.coolbet_odds1/2. Anon-read, no JWT.
@@ -1899,6 +1922,12 @@ def main():
     scheduler.add_job(job_cs2_settlement, CronTrigger(hour="12-23,0-2", minute=22),
                       id="cs2_settlement", name="CS2 Settlement [hourly 12-02 UTC]",
                       max_instances=1, misfire_grace_time=900)
+
+    # CS2-PANDASCORE-ROSTERS (2026-06-08) — daily 04:30 UTC.
+    # Refreshes current 5-man lineups for PQ; replaces stale CSV last-known.
+    scheduler.add_job(job_cs2_pandascore_rosters, CronTrigger(hour=4, minute=30),
+                      id="cs2_pandascore_rosters", name="CS2 PandaScore Rosters [daily 04:30 UTC]",
+                      max_instances=1, misfire_grace_time=3600)
 
     # CS2-COOLBET-SCAN (2026-06-08) — every 30min 07-22 UTC at :17,:47.
     # Keeps Coolbet odds fresh for value-detection by the bot.

@@ -257,6 +257,30 @@ def load_player_data() -> tuple[dict[str, float], dict[str, list[str]]]:
     return player_ratings, team_last_lineups
 
 
+def load_pandascore_rosters() -> dict[str, list[str]]:
+    """Read PandaScore roster cache, return {team_name_lower: [nicknames]}.
+
+    PandaScore reflects CURRENT lineups (live API), so when present it should
+    override the Oct-2025 CSV last-known lineup. Empty dict if cache absent.
+    """
+    cache_file = DATA_DIR / "pandascore_rosters.json"
+    if not cache_file.exists():
+        return {}
+    try:
+        import json
+        data = json.loads(cache_file.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {}
+    out: dict[str, list[str]] = {}
+    for query_name, info in data.items():
+        if not isinstance(info, dict):
+            continue
+        players = [p.get("nickname") for p in (info.get("players") or []) if p.get("nickname")]
+        if len(players) >= 4:
+            out[_normalize(query_name)] = players
+    return out
+
+
 def get_team_player_quality(
     team_name: str,
     team_last_lineups: dict[str, list[str]],
@@ -835,6 +859,11 @@ def main() -> None:
 
     print("\n[3] Loading player ratings from CSV...")
     player_ratings, team_last_lineups = load_player_data()
+    # PandaScore current rosters override CSV last-known lineups when available
+    pandascore_rosters = load_pandascore_rosters()
+    if pandascore_rosters:
+        team_last_lineups.update(pandascore_rosters)
+        print(f"    PandaScore rosters: {len(pandascore_rosters)} teams (current lineups)")
     print(f"    {len(player_ratings)} players with HLTV ratings")
     print(f"    {len(team_last_lineups)} team lineups known")
 
