@@ -780,6 +780,44 @@ def job_cs2_scanner():
     _run_job("cs2_scanner", lambda: None)
 
 
+def job_cs2_coolbet_scanner():
+    """CS2-COOLBET-SCAN (2026-06-08): scrape Coolbet CS2 odds, write to
+    cs2_upcoming_matches.coolbet_odds1/2. Anon-read, no JWT.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 Coolbet scanner --record[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_coolbet_scanner.py", "--record"],
+        capture_output=True, text=True, timeout=300,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]CS2 Coolbet error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ["matched", "written", "would write", "✓"]):
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_coolbet_scanner", lambda: None)
+
+
+def job_cs2_bot():
+    """CS2-BOT (2026-06-08): run bot_cs2_value_v1, write cs2_simulated_bets
+    for value picks. Settles open bets against cs2_results.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 bot_cs2_value_v1 --record[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_bot.py", "--record"],
+        capture_output=True, text=True, timeout=300,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]CS2 bot error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ["picks", "written", "settled", "fired"]):
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_bot", lambda: None)
+
+
 def job_cs2_settlement():
     """CS2-SETTLEMENT (2026-06-08): pull finished bo3.gg matches into cs2_results
     and settle any open cs2_bets. Hourly during the global CS2 match window.
@@ -1861,6 +1899,18 @@ def main():
     scheduler.add_job(job_cs2_settlement, CronTrigger(hour="12-23,0-2", minute=22),
                       id="cs2_settlement", name="CS2 Settlement [hourly 12-02 UTC]",
                       max_instances=1, misfire_grace_time=900)
+
+    # CS2-COOLBET-SCAN (2026-06-08) — every 30min 07-22 UTC at :17,:47.
+    # Keeps Coolbet odds fresh for value-detection by the bot.
+    scheduler.add_job(job_cs2_coolbet_scanner, CronTrigger(hour="7-22", minute="17,47"),
+                      id="cs2_coolbet_scanner", name="CS2 Coolbet Scanner [30min]",
+                      max_instances=1, misfire_grace_time=900)
+
+    # CS2-BOT (2026-06-08) — runs ~10 minutes after each ELO scanner pass so
+    # bookie/coolbet odds + new model output are both fresh.
+    scheduler.add_job(job_cs2_bot, CronTrigger(hour="6,10,14,18,22", minute=25),
+                      id="cs2_bot", name="CS2 Value Bot [4h, 06-22 UTC]",
+                      max_instances=1, misfire_grace_time=1800)
 
     scheduler.add_job(job_weekly_meta_retrain, CronTrigger(day_of_week="sun", hour=4, minute=0),
                       id="weekly_meta_retrain", name="Weekly META Retrain Sunday 04:00",

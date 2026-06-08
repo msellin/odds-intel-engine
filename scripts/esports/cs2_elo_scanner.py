@@ -49,6 +49,21 @@ TIER_WEIGHTS: list[tuple[list[str], float]] = [
 # BO weighting
 BO_WEIGHTS: dict[int, float] = {5: 1.0, 3: 0.85, 1: 0.6}
 
+# LAN-event keywords. Most CS Tier-1+ events are LAN; lower tiers online.
+# Conservative — only flag obvious LAN tournaments to avoid false positives.
+_LAN_KEYWORDS = (
+    "major", "iem ", "intel extreme masters", "blast premier final",
+    "blast premier spring final", "blast premier fall final",
+    "esl pro league season", "epl season", "bts pro series", "iem rio",
+    "iem cologne", "iem katowice", "katowice", "cologne", "esports world cup",
+    "blast bounty", "perfect world shanghai", "stockholm", "rio major", "austin major",
+)
+
+
+def is_lan_event(tournament: str) -> bool:
+    name = (tournament or "").lower()
+    return any(k in name for k in _LAN_KEYWORDS)
+
 DATA_DIR = Path("data/esports/cs2")
 PRIMARY_CSV = DATA_DIR / "cs2_all_tiers_games.csv"
 PLAYER_RATING_CSV = DATA_DIR / "cs2_newestcombinedmatches.csv"
@@ -542,6 +557,34 @@ def _parse_roster_changes(transfers_raw: dict[str, list], days: int = 45) -> dic
     return changes
 
 
+def _days_since_last_transfer(transfers_raw: dict[str, list]) -> dict[str, int]:
+    """For each team, return days since the most recent roster transfer.
+
+    Higher = more lineup stability (chemistry proxy). Capped at 365 days for
+    teams with no observed transfers in the lookback window.
+    """
+    now = datetime.now(timezone.utc)
+    out: dict[str, int] = {}
+    for team_name, transfers in transfers_raw.items():
+        most_recent: datetime | None = None
+        for t in transfers:
+            try:
+                action_date = datetime.fromisoformat(
+                    (t.get("action_date") or "").replace("Z", "+00:00")
+                )
+                if action_date.tzinfo is None:
+                    action_date = action_date.replace(tzinfo=timezone.utc)
+            except (ValueError, KeyError):
+                continue
+            if action_date > now:
+                continue  # ignore future-dated rumors
+            if most_recent is None or action_date > most_recent:
+                most_recent = action_date
+        if most_recent is not None:
+            out[team_name] = (now - most_recent).days
+    return out
+
+
 def fetch_all_data(team_ids: dict[str, int] | None = None) -> tuple[list, list, dict]:
     """Synchronous wrapper for _fetch_all."""
     return asyncio.run(_fetch_all(team_ids or {}))
@@ -610,6 +653,7 @@ def _write_to_db(
     player_ratings: dict[str, float],
     team_last_lineups: dict[str, list[str]],
     match_counts: dict[str, int] | None = None,
+    days_since_roster: dict[str, int] | None = None,
 ) -> None:
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -622,6 +666,7 @@ def _write_to_db(
     now = datetime.now(timezone.utc).isoformat()
     written = 0
     match_counts = match_counts or {}
+    days_since_roster = days_since_roster or {}
 
     for m in matches:
         t1, t2 = m["team1"], m["team2"]
@@ -671,6 +716,10 @@ def _write_to_db(
             tm1 = round(threshold_odds(pm1, edge), 3)
             tm2 = round(threshold_odds(pm2, edge), 3)
 
+        lan_flag = is_lan_event(m["tournament"])
+        dsrc1 = days_since_roster.get(t1)
+        dsrc2 = days_since_roster.get(t2)
+
         execute_write("""
             INSERT INTO cs2_upcoming_matches
                 (bo3gg_id, league, kickoff_time, state, best_of, team1, team2,
@@ -681,8 +730,9 @@ def _write_to_db(
                  bookie_odds1, bookie_odds2,
                  roster_change1, roster_change2, roster_note1, roster_note2,
                  player_rating1, player_rating2,
+                 is_lan, days_since_roster_change1, days_since_roster_change2,
                  scanned_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (team1, team2, kickoff_time) DO UPDATE SET
                 state           = EXCLUDED.state,
                 elo1            = EXCLUDED.elo1,
@@ -706,6 +756,9 @@ def _write_to_db(
                 roster_note2    = EXCLUDED.roster_note2,
                 player_rating1  = EXCLUDED.player_rating1,
                 player_rating2  = EXCLUDED.player_rating2,
+                is_lan                       = EXCLUDED.is_lan,
+                days_since_roster_change1    = EXCLUDED.days_since_roster_change1,
+                days_since_roster_change2    = EXCLUDED.days_since_roster_change2,
                 scanned_at      = EXCLUDED.scanned_at
         """, (
             m.get("id"),
@@ -720,6 +773,7 @@ def _write_to_db(
             m.get("bookie_odds1"), m.get("bookie_odds2"),
             rc1, rc2, rn1, rn2,
             pq1, pq2,
+            lan_flag, dsrc1, dsrc2,
             now,
         ))
         written += 1
@@ -734,8 +788,10 @@ def _write_to_db(
                      team1, team2, elo1, elo2, pq1, pq2,
                      win_prob1, win_prob2, fair_odds1, fair_odds2,
                      bookie_odds1, bookie_odds2,
-                     roster_change1, roster_change2, model_version)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                     roster_change1, roster_change2,
+                     is_lan, days_since_roster_change1, days_since_roster_change2,
+                     model_version)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT (bo3gg_id, scan_time) DO NOTHING
             """, (
                 m["id"], now, m["date"].isoformat(), m["tournament"], best_of,
@@ -746,6 +802,7 @@ def _write_to_db(
                 round(fair_odds(prob1), 3), round(fair_odds(prob2), 3),
                 m.get("bookie_odds1"), m.get("bookie_odds2"),
                 rc1, rc2,
+                lan_flag, dsrc1, dsrc2,
                 MODEL_VERSION,
             ))
 
@@ -791,6 +848,7 @@ def main() -> None:
     recent_results = _parse_recent_results(results_raw)
     upcoming = _parse_upcoming(upcoming_raw)
     roster_changes = _parse_roster_changes(transfers_raw)
+    days_since_roster = _days_since_last_transfer(transfers_raw)
 
     print(f"    {len(upcoming)} upcoming matches (next 7 days)")
     print(f"    {len(recent_results)} new results since {CSV_CUTOFF.date()} (live ELO update)")
@@ -876,7 +934,7 @@ def main() -> None:
 
     if args.record:
         print("[6] Writing to database...")
-        _write_to_db(upcoming, ratings, args.edge, roster_changes, player_ratings, team_last_lineups, match_counts)
+        _write_to_db(upcoming, ratings, args.edge, roster_changes, player_ratings, team_last_lineups, match_counts, days_since_roster)
 
 
 if __name__ == "__main__":

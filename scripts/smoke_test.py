@@ -19709,6 +19709,43 @@ def _():
     # build_match_counts returns 0 for unknown teams
     counts = mod.build_match_counts([])
     assert counts == {}
+    # LAN detection + days_since_roster helpers
+    assert mod.is_lan_event("IEM Cologne Major 2026") is True
+    assert mod.is_lan_event("ESEA Open Stage Online") is False
+    assert "_days_since_last_transfer" in src
+
+
+@test("CS2-COOLBET-SCANNER — script structure")
+def _():
+    """cs2_coolbet_scanner.py: script exists with anon-read Coolbet integration."""
+    import pathlib
+    p = pathlib.Path("scripts/esports/cs2_coolbet_scanner.py")
+    assert p.exists()
+    src = p.read_text()
+    assert "ESPORTS_SPORT_CATEGORY_ID = 65035" in src
+    assert "Counter-Strike-2" in src
+    assert "CoolbetSession(require_auth=False)" in src
+    assert "coolbet_odds1 = %s" in src or "coolbet_odds1=%s" in src
+
+
+@test("CS2-BOT — bot_cs2_value_v1 script + simulated_bets schema")
+def _():
+    """cs2_bot.py + migration 201 must wire single CS2 bot with the simulated_bets table."""
+    import pathlib
+    bot = pathlib.Path("scripts/esports/cs2_bot.py")
+    assert bot.exists()
+    src = bot.read_text()
+    assert 'BOT_NAME = "bot_cs2_value_v1"' in src
+    assert "MIN_EXTRA_EDGE" in src
+    assert "INSERT INTO cs2_simulated_bets" in src
+    assert "match_winner" in src and "atleast1map" in src
+
+    mig = pathlib.Path("supabase/migrations/201_cs2_extra_bookies_features.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS cs2_simulated_bets" in mig
+    assert "UNIQUE (bot_name, bo3gg_id, market, bookie)" in mig
+    assert "ADD COLUMN IF NOT EXISTS coolbet_odds1" in mig
+    assert "ADD COLUMN IF NOT EXISTS is_lan" in mig
+    assert "ADD COLUMN IF NOT EXISTS days_since_roster_change1" in mig
 
 
 @test("CS2-DATA-ACCUMULATION — predictions + results migrations, settlement script, crons")
