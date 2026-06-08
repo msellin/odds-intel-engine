@@ -15,19 +15,19 @@
 11. **CS2-PIPELINE-HEALTH** — admin/cs2 shows cron last-run green/orange/grey dots
 12. **CS2-KELLY-SIZING** — half-Kelly stake replaces uniform 1u (cap 2u)
 
-## Calibration results
+## Calibration results (FINAL — full backfill complete)
 
-Backfill comparison after the team1_win bug fix:
+Backfill comparison after the team1_win bug fix on full 9,199 sample:
 
 | Model | n | Accuracy | Log loss | ECE | Platt a/b |
 |---|---|---|---|---|---|
-| `elo_v1_backfill_v2` (ELO only) | 9,199 | **58.9%** | **0.6664** | **3.03%** | 0.846 / 0.109 |
-| `elo+pq_v1_backfill` (ELO+PQ) | 7,163 (still running) | 58.4% | 0.6700 | 3.24% | 0.829 / 0.097 |
-| `elo+pq_v1` (LIVE, seeded from PQ backfill) | 37 | n/a (no settled) | — | — | 0.829 / 0.097 |
+| `elo_v1_backfill_v2` (ELO only) | 9,199 | 58.9% | 0.6664 | **3.03%** | 0.846 / 0.109 |
+| `elo+pq_v1_backfill` (ELO+PQ) | 9,199 | **59.0%** | **0.6661** | 3.11% | 0.836 / 0.097 |
+| `elo+pq_v1` (LIVE, updated from final backfill) | 37 (accumulating) | — | — | — | **0.836 / 0.097** |
 
-**Headline:** PQ doesn't help on walk-forward (small loss vs ELO-only). Both are well-calibrated (ECE under 5%). The expected +4.1pp gain from the original backtest didn't transfer — likely because walk-forward uses stale lineups (the strict-less-than pointer means we use whatever lineup was last seen, even if many weeks old).
+**Headline:** elo+pq is *marginally* better than ELO-only on accuracy and log loss when measured on the full 9,199 backfill (the partial 7k showed worse — small samples are noisy). Both are well-calibrated. PQ added value but on only 1,395 / 9,199 matches (15% — the rest were before the May 2024 lineup CSV starts).
 
-**Decision:** keep `elo+pq_v1` as the live model_version (it gracefully falls back to ELO when PQ unknown), but the meaningful calibration result is the 3% ECE on 9.2k history. Weekly recalibration is now scheduled.
+**Decision:** keep `elo+pq_v1` live with the final 9,199-sample Platt coefficients (a=0.836, b=0.097). The weekly calibration cron will refit on accumulated live data once 200+ settled live predictions exist (~10-14 days).
 
 ## What's self-running
 
