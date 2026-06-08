@@ -24,6 +24,7 @@ from collections import defaultdict
 INITIAL_ELO: float = 1500.0
 K_BASE: float = 32.0
 EDGE_THRESHOLD: float = 0.03   # 3% edge required
+MODEL_VERSION: str = "elo+pq_v1"  # bumped when ELO/PQ coefficients or features change
 
 # Primary CSV covers through ~April 2026 — fetch bo3.gg results from here onwards
 CSV_CUTOFF = datetime(2026, 4, 30, tzinfo=timezone.utc)
@@ -674,7 +675,31 @@ def _write_to_db(
         ))
         written += 1
 
-    print(f"  {written} matches written to cs2_upcoming_matches")
+        # Append-only prediction history (calibration + retraining input).
+        # Skip rows w/o bo3gg_id — no way to join to results later.
+        if m.get("id") is not None:
+            execute_write("""
+                INSERT INTO cs2_predictions
+                    (bo3gg_id, scan_time, kickoff_time, league, best_of,
+                     team1, team2, elo1, elo2, pq1, pq2,
+                     win_prob1, win_prob2, fair_odds1, fair_odds2,
+                     bookie_odds1, bookie_odds2,
+                     roster_change1, roster_change2, model_version)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (bo3gg_id, scan_time) DO NOTHING
+            """, (
+                m["id"], now, m["date"].isoformat(), m["tournament"], best_of,
+                t1, t2,
+                round(r1, 1), round(r2, 1),
+                pq1, pq2,
+                round(prob1, 4), round(prob2, 4),
+                round(fair_odds(prob1), 3), round(fair_odds(prob2), 3),
+                m.get("bookie_odds1"), m.get("bookie_odds2"),
+                rc1, rc2,
+                MODEL_VERSION,
+            ))
+
+    print(f"  {written} matches written to cs2_upcoming_matches + cs2_predictions")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

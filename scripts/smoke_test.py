@@ -19699,6 +19699,50 @@ def _():
     # player quality logic
     pq = mod.get_team_player_quality("nonexistent_team_xyz", {}, {})
     assert pq is None, "unknown team must return None player quality"
+    # prediction history append must be wired in scanner
+    assert "INSERT INTO cs2_predictions" in src, "scanner must append to cs2_predictions"
+    assert "MODEL_VERSION" in src and 'elo+pq_v1' in src
+
+
+@test("CS2-DATA-ACCUMULATION — predictions + results migrations, settlement script, crons")
+def _():
+    """Predictions/results migrations exist, settlement script is importable, scheduler has CS2 crons."""
+    import pathlib, ast
+    # Migrations
+    pred_mig = pathlib.Path("supabase/migrations/199_cs2_predictions_history.sql")
+    res_mig = pathlib.Path("supabase/migrations/200_cs2_results.sql")
+    assert pred_mig.exists() and res_mig.exists(), "199 + 200 migrations must exist"
+    pred_src = pred_mig.read_text()
+    res_src = res_mig.read_text()
+    assert "CREATE TABLE IF NOT EXISTS cs2_predictions" in pred_src
+    assert "UNIQUE (bo3gg_id, scan_time)" in pred_src
+    assert "model_version" in pred_src
+    assert "CREATE TABLE IF NOT EXISTS cs2_results" in res_src
+    assert "bo3gg_id        INTEGER     PRIMARY KEY" in res_src
+
+    # Settlement script
+    settle = pathlib.Path("scripts/esports/cs2_settlement.py")
+    assert settle.exists(), "cs2_settlement.py must exist"
+    settle_src = settle.read_text()
+    for fn in ["_fetch_finished_window", "_result_row", "_write_results", "_settle_bets", "_bet_won"]:
+        assert f"def {fn}" in settle_src, f"{fn} must be defined"
+    assert "INSERT INTO cs2_results" in settle_src
+    assert "ON CONFLICT (bo3gg_id)" in settle_src
+
+    # Cron registration (parse without importing apscheduler)
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    tree = ast.parse(sched)
+    fns = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    assert "job_cs2_scanner" in fns, "job_cs2_scanner function must exist"
+    assert "job_cs2_settlement" in fns, "job_cs2_settlement function must exist"
+    job_ids = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "add_job":
+            for kw in n.keywords:
+                if kw.arg == "id" and isinstance(getattr(kw.value, "value", None), str):
+                    job_ids.add(kw.value.value)
+    assert "cs2_scanner" in job_ids, "cs2_scanner cron must be registered"
+    assert "cs2_settlement" in job_ids, "cs2_settlement cron must be registered"
 
 
 if __name__ == "__main__":

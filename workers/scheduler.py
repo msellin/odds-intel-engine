@@ -761,6 +761,44 @@ def job_tennis_scanner():
     _run_job("tennis_scanner", lambda: None)  # no-op for logging
 
 
+def job_cs2_scanner():
+    """CS2-SCANNER-DAILY (2026-06-08): run CS2 ELO scanner with DB write.
+    Populates cs2_upcoming_matches + appends to cs2_predictions for retraining.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 ELO scanner --record[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_elo_scanner.py", "--record"],
+        capture_output=True, text=True, timeout=600,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]CS2 scanner error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ["upcoming matches", "new results", "roster changes", "written to"]):
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_scanner", lambda: None)
+
+
+def job_cs2_settlement():
+    """CS2-SETTLEMENT (2026-06-08): pull finished bo3.gg matches into cs2_results
+    and settle any open cs2_bets. Hourly during the global CS2 match window.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 settlement[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_settlement.py"],
+        capture_output=True, text=True, timeout=300,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]CS2 settlement error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ["finished matches", "result rows", "written", "settled"]):
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_settlement", lambda: None)
+
+
 def job_coolbet_tennis_scanner():
     """COOLBET-TENNIS-SCAN (2026-06-08): scan Coolbet tennis odds every 30 min,
     log to tennis_value_bets (bookmaker='coolbet'). Public API, no JWT needed.
@@ -1809,6 +1847,19 @@ def main():
     # Keeps Coolbet tennis odds fresh in tennis_value_bets. No quota cost.
     scheduler.add_job(job_coolbet_tennis_scanner, CronTrigger(hour="7-22", minute="8,38"),
                       id="coolbet_tennis_scanner", name="Coolbet Tennis Scanner [30min]",
+                      max_instances=1, misfire_grace_time=900)
+
+    # CS2-SCANNER (2026-06-08) — every 4h 06:00-22:00 UTC. Scanner runs ELO model
+    # against bo3.gg upcoming + finished feeds. Each run appends to cs2_predictions
+    # (immutable history for calibration + retraining).
+    scheduler.add_job(job_cs2_scanner, CronTrigger(hour="6,10,14,18,22", minute=12),
+                      id="cs2_scanner", name="CS2 ELO Scanner [4h, 06-22 UTC]",
+                      max_instances=1, misfire_grace_time=1800)
+
+    # CS2-SETTLEMENT (2026-06-08) — hourly 12-02 UTC. Pulls finished bo3.gg
+    # matches into cs2_results and settles open cs2_bets.
+    scheduler.add_job(job_cs2_settlement, CronTrigger(hour="12-23,0-2", minute=22),
+                      id="cs2_settlement", name="CS2 Settlement [hourly 12-02 UTC]",
                       max_instances=1, misfire_grace_time=900)
 
     scheduler.add_job(job_weekly_meta_retrain, CronTrigger(day_of_week="sun", hour=4, minute=0),
