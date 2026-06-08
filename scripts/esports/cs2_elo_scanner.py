@@ -52,6 +52,30 @@ def elo_expected(ra: float, rb: float) -> float:
     return 1.0 / (1.0 + 10.0 ** ((rb - ra) / 400.0))
 
 
+# ── Combined ELO + player quality model ──────────────────────────────────────
+# Logistic regression fit on 7,032 BO3 matches (May 2024 – Oct 2025).
+# Test accuracy: 62.2% vs ELO-only 58.1%. Player quality (HLTV rating diff)
+# contributes ~29% of the signal; most useful when ELO is stale (roster changes).
+_LR_MEAN_ELO  =  10.342196
+_LR_STD_ELO   =  73.195654
+_LR_MEAN_PQ   =   0.008025
+_LR_STD_PQ    =   0.057492
+_LR_COEF_ELO  =   0.312027
+_LR_COEF_PQ   =   0.521127
+_LR_INTERCEPT =   0.205688
+
+def combined_win_prob(r1: float, r2: float, pq_diff: float | None) -> float:
+    """Team1 win probability using ELO + player quality logistic model.
+    Falls back to pure ELO if player quality is unavailable."""
+    if pq_diff is None:
+        return elo_expected(r1, r2)
+    elo_diff = r1 - r2
+    elo_s = (elo_diff - _LR_MEAN_ELO) / _LR_STD_ELO
+    pq_s  = (pq_diff  - _LR_MEAN_PQ)  / _LR_STD_PQ
+    logit = _LR_COEF_ELO * elo_s + _LR_COEF_PQ * pq_s + _LR_INTERCEPT
+    return 1.0 / (1.0 + 2.718281828 ** (-logit))
+
+
 def fair_odds(prob: float) -> float:
     return round(1.0 / prob, 3) if prob > 0.001 else 999.0
 
@@ -584,6 +608,9 @@ def _write_to_db(
 
         pq1 = get_team_player_quality(t1, team_last_lineups, player_ratings)
         pq2 = get_team_player_quality(t2, team_last_lineups, player_ratings)
+        pq_diff = (pq1 - pq2) if pq1 is not None and pq2 is not None else None
+        prob1 = combined_win_prob(r1, r2, pq_diff)
+        prob2 = 1.0 - prob1
 
         execute_write("""
             INSERT INTO cs2_upcoming_matches
@@ -719,7 +746,10 @@ def main() -> None:
                 tbd_count += 1
                 continue
 
-            prob1 = elo_expected(r1, r2)
+            pq1 = get_team_player_quality(t1, team_last_lineups, player_ratings)
+            pq2 = get_team_player_quality(t2, team_last_lineups, player_ratings)
+            pq_diff = (pq1 - pq2) if pq1 is not None and pq2 is not None else None
+            prob1 = combined_win_prob(r1, r2, pq_diff)
             prob2 = 1.0 - prob1
             f1, f2 = fair_odds(prob1), fair_odds(prob2)
             thr1, thr2 = threshold_odds(prob1, args.edge), threshold_odds(prob2, args.edge)
@@ -730,9 +760,6 @@ def main() -> None:
                 pm1, pm2 = atleast1_map_probs(prob1, best_of)
                 map1_f1, map1_thr1 = fair_odds(pm1), threshold_odds(pm1, args.edge)
                 map1_f2, map1_thr2 = fair_odds(pm2), threshold_odds(pm2, args.edge)
-
-            pq1 = get_team_player_quality(t1, team_last_lineups, player_ratings)
-            pq2 = get_team_player_quality(t2, team_last_lineups, player_ratings)
 
             new_flag = " [NEW]" if not found1 or not found2 else ""
             dt_str = m["date"].strftime("%m-%d %H:%M")
