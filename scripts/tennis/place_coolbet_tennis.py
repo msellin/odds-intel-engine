@@ -45,6 +45,7 @@ _ODDS_URL     = "https://www.coolbet.com/s/sb-odds/odds/current/fo"
 
 TENNIS_SPORT_CATEGORY_ID = 72
 _DISPLAY_MIN_EDGE        = 0.03
+_MAX_CREDIBLE_EDGE       = 0.40   # above this → fixture mismatch or bad data, skip
 KICKOFF_MATCH_WINDOW_MIN = 20
 ODDS_BATCH_SIZE          = 50   # market IDs per sb-odds call
 
@@ -160,6 +161,17 @@ def load_pin_fixtures() -> list[dict]:
     """, (start_floor.isoformat(), cutoff.isoformat()))
 
 
+def clear_todays_coolbet_bets(dry_run: bool) -> int:
+    """Delete today's Coolbet rows before re-scanning so stale mis-matched entries don't persist."""
+    if dry_run:
+        return 0
+    result = execute_write(
+        "DELETE FROM tennis_value_bets WHERE bookmaker = 'coolbet' AND scan_date = CURRENT_DATE",
+        {},
+    )
+    return result or 0
+
+
 def _last_name(name: str) -> str:
     """Extract last name for fuzzy matching. Handles 'Last, F.' and 'First Last' formats."""
     name = name.strip()
@@ -255,6 +267,10 @@ def record_observation(
             fair_prob = 1.0 / threshold
             edge_pct = round((cb_odds * fair_prob - 1.0) * 100, 2)
 
+        # Sanity cap: >40% edge vs Pinnacle is a fixture mismatch / bad data — skip entirely
+        if edge_pct is not None and edge_pct > _MAX_CREDIBLE_EDGE * 100:
+            continue
+
         is_value = edge_pct is not None and edge_pct > 0
 
         if edge_pct is not None and edge_pct >= _DISPLAY_MIN_EDGE * 100:
@@ -319,6 +335,12 @@ def main() -> None:
     print("=" * 65)
 
     session = CoolbetSession(require_auth=False)
+
+    # ── 0. Clear stale Coolbet rows from today ────────────────────────
+    # Must run before inserting so mis-matched entries from a prior run don't persist.
+    deleted = clear_todays_coolbet_bets(dry_run)
+    if not dry_run:
+        print(f"\n[0] Cleared {deleted} stale Coolbet rows from today")
 
     # ── 1. Load Pinnacle thresholds ───────────────────────────────────
     print("\n[1] Loading Pinnacle thresholds...")

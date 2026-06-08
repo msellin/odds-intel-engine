@@ -28,6 +28,7 @@ BASE           = "https://api.oddspapi.io/v4"
 TENNIS_SPORT   = 12
 RECORD_MIN_EDGE = 0.0         # log all positive-edge observations for training data
 DISPLAY_MIN_EDGE = 0.03       # only print/highlight ≥3% in console
+MAX_CREDIBLE_EDGE = 0.40      # edges above this are fixture mismatches / bad data — skip
 KELLY_FRAC     = 0.25         # quarter Kelly for simulated stakes
 MAX_STAKE      = 5.0          # cap per bet
 DEFAULT_STAKE  = 1.0
@@ -379,6 +380,8 @@ def main(dry_run: bool = False) -> None:
                 edge = book_odds * fair_prob - 1.0
                 if edge < RECORD_MIN_EDGE:
                     continue
+                if edge > MAX_CREDIBLE_EDGE:
+                    continue  # almost certainly a fixture mismatch or stale soft-book data
 
                 stake = kelly_stake(edge, fair_prob, book_odds) if edge >= DISPLAY_MIN_EDGE else 0.0
 
