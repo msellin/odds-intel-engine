@@ -792,7 +792,7 @@ def _write_to_db(
                      is_lan, days_since_roster_change1, days_since_roster_change2,
                      model_version)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                ON CONFLICT (bo3gg_id, scan_time) DO NOTHING
+                ON CONFLICT (bo3gg_id, scan_time, model_version) DO NOTHING
             """, (
                 m["id"], now, m["date"].isoformat(), m["tournament"], best_of,
                 t1, t2,

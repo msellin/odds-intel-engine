@@ -196,7 +196,7 @@ def backfill(model: str, limit: int | None = None, batch_size: int = 500) -> Non
                  roster_change1, roster_change2, model_version)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, NULL, NULL, FALSE, FALSE, %s)
-            ON CONFLICT (bo3gg_id, scan_time) DO NOTHING
+            ON CONFLICT (bo3gg_id, scan_time, model_version) DO NOTHING
         """, (
             bo3gg_id,
             m["date"].isoformat(),
