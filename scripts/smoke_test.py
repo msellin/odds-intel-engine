@@ -19639,7 +19639,8 @@ def _():
     assert script.exists(), "scripts/esports/lol_elo_scanner.py must exist"
     src = script.read_text()
     for fn in ["elo_expected", "build_elo", "fetch_historical",
-               "load_cached_matches", "fetch_upcoming", "fair_odds", "threshold_odds"]:
+               "load_cached_matches", "fetch_upcoming", "fair_odds", "threshold_odds",
+               "p_map_from_series", "atleast1_map_probs"]:
         assert fn in src, f"{fn} must be defined in lol_elo_scanner.py"
     assert "RIOT_API_KEY" in src, "RIOT_API_KEY must be defined"
     assert "INITIAL_ELO" in src, "INITIAL_ELO must be defined"
@@ -19656,6 +19657,10 @@ def _():
     thr = mod.threshold_odds(0.5, 0.03)
     assert thr < 2.0, "threshold_odds must be less than fair_odds"
     assert thr > 1.9, "threshold_odds(0.5, 3%) must be close to 1.94"
+    # ≥1 map market math: 50% series win prob → ~75% to win ≥1 map in BO3
+    p1, p2 = mod.atleast1_map_probs(0.5, 3)
+    assert abs(p1 - p2) < 0.001, "symmetric teams must have symmetric ≥1map probs"
+    assert p1 > 0.7, "50% series win prob must give >70% chance to win ≥1 map in BO3"
 
 
 if __name__ == "__main__":

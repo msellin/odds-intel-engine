@@ -72,6 +72,44 @@ def threshold_odds(prob: float, edge: float = EDGE_THRESHOLD) -> float:
     return round(fair_odds(prob) * (1 - edge), 2)
 
 
+def p_map_from_series(p_series: float, best_of: int) -> float:
+    """Estimate per-map win probability from series win probability via bisection."""
+    from math import comb
+    if best_of <= 1:
+        return p_series
+    maps_to_win = (best_of + 1) // 2
+
+    def series_prob(p_map: float) -> float:
+        total = 0.0
+        for losses in range(0, best_of - maps_to_win + 1):
+            total += comb(maps_to_win - 1 + losses, losses) * (p_map ** maps_to_win) * ((1 - p_map) ** losses)
+        return total
+
+    lo, hi = 0.0001, 0.9999
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        if series_prob(mid) < p_series:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
+def atleast1_map_probs(p_series: float, best_of: int) -> tuple[float, float]:
+    """
+    Return (P(team1 wins ≥1 map), P(team2 wins ≥1 map)).
+    For BO1 returns same as match winner (trivially equal).
+    """
+    if best_of <= 1:
+        return p_series, 1.0 - p_series
+    maps_to_win = (best_of + 1) // 2
+    p_map = p_map_from_series(p_series, best_of)
+    # P(team1 swept) = opponent wins first maps_to_win maps straight
+    p1_swept = (1 - p_map) ** maps_to_win
+    p2_swept = p_map ** maps_to_win
+    return (1 - p1_swept), (1 - p2_swept)
+
+
 # ── Data fetching ────────────────────────────────────────────────────────────
 def _schedule_page(league_id: str, page_token: str | None = None) -> dict:
     params: dict = {"hl": "en-US", "leagueId": league_id}
@@ -220,14 +258,18 @@ def fetch_upcoming() -> list[dict]:
 # ── Output helpers ────────────────────────────────────────────────────────────
 def format_match_row(
     team: str, elo: float, win_pct: float, team_odds: float, threshold: float,
+    map1_odds: float | None = None, map1_thr: float | None = None,
     label_width: int = 26
 ) -> str:
     label = f"[{win_pct:.0f}%]"
     status = f"min≥{threshold:.2f}" if team_odds >= threshold else "       "
-    return (
+    row = (
         f"    {team:<{label_width}}  ELO={elo:.0f}  {label:>5}  "
         f"fair={team_odds:.2f}  {status}"
     )
+    if map1_odds is not None and map1_thr is not None:
+        row += f"  (≥1map fair={map1_odds:.2f} min≥{map1_thr:.2f})"
+    return row
 
 
 def print_ratings(ratings: dict[str, float], top_n: int = 40) -> None:
@@ -322,17 +364,27 @@ def main() -> None:
         thr1 = threshold_odds(prob1, args.edge)
         thr2 = threshold_odds(prob2, args.edge)
 
+        # ≥1 map market for BO3/BO5
+        best_of = m.get("best_of") or 1
+        map1_f1 = map1_thr1 = map1_f2 = map1_thr2 = None
+        if best_of >= 3:
+            pm1, pm2 = atleast1_map_probs(prob1, best_of)
+            map1_f1  = fair_odds(pm1)
+            map1_thr1 = threshold_odds(pm1, args.edge)
+            map1_f2  = fair_odds(pm2)
+            map1_thr2 = threshold_odds(pm2, args.edge)
+
         # Flag if we haven't seen either team before
         seen1 = t1 in ratings and t1 != "TBD"
         seen2 = t2 in ratings and t2 != "TBD"
         new_flag = " [NEW — no ELO history]" if not seen1 or not seen2 else ""
 
         dt_str = m["date"].strftime("%m-%d %H:%M")
-        bo_str = f"BO{m['best_of']}" if m.get("best_of") else "   "
+        bo_str = f"BO{best_of}" if best_of else "   "
         state_flag = " ⚡LIVE" if m["state"] == "inProgress" else ""
         print(f"  {dt_str} {bo_str}{state_flag}{new_flag}")
-        print(format_match_row(t1, r1, prob1 * 100, f1, thr1))
-        print(format_match_row(t2, r2, prob2 * 100, f2, thr2))
+        print(format_match_row(t1, r1, prob1 * 100, f1, thr1, map1_f1, map1_thr1))
+        print(format_match_row(t2, r2, prob2 * 100, f2, thr2, map1_f2, map1_thr2))
         print()
 
     if tbd_count:
@@ -376,13 +428,23 @@ def _write_to_db(matches: list[dict], ratings: dict[str, float], edge: float) ->
         prob2 = 1.0 - prob1
         seen1 = t1 in ratings and t1 != "TBD"
         seen2 = t2 in ratings and t2 != "TBD"
+        best_of = m.get("best_of") or 3
+        pm1 = pm2 = fm1 = fm2 = tm1 = tm2 = None
+        if best_of >= 3:
+            pm1, pm2 = atleast1_map_probs(prob1, best_of)
+            fm1 = round(fair_odds(pm1), 3)
+            fm2 = round(fair_odds(pm2), 3)
+            tm1 = round(threshold_odds(pm1, edge), 3)
+            tm2 = round(threshold_odds(pm2, edge), 3)
+
         execute_write("""
             INSERT INTO lol_upcoming_matches
                 (league, kickoff_time, state, best_of, team1, team2,
                  elo1, elo2, win_prob1, win_prob2,
                  fair_odds1, fair_odds2, threshold_odds1, threshold_odds2,
-                 has_elo_history, scanned_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 has_elo_history, fair_odds_map1, fair_odds_map2,
+                 threshold_map1, threshold_map2, scanned_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (team1, team2, kickoff_time) DO UPDATE SET
                 state           = EXCLUDED.state,
                 elo1            = EXCLUDED.elo1,
@@ -394,18 +456,20 @@ def _write_to_db(matches: list[dict], ratings: dict[str, float], edge: float) ->
                 threshold_odds1 = EXCLUDED.threshold_odds1,
                 threshold_odds2 = EXCLUDED.threshold_odds2,
                 has_elo_history = EXCLUDED.has_elo_history,
+                fair_odds_map1  = EXCLUDED.fair_odds_map1,
+                fair_odds_map2  = EXCLUDED.fair_odds_map2,
+                threshold_map1  = EXCLUDED.threshold_map1,
+                threshold_map2  = EXCLUDED.threshold_map2,
                 scanned_at      = EXCLUDED.scanned_at
         """, (
-            m["league"],
-            m["date"].isoformat(),
-            m["state"],
-            m.get("best_of") or 3,
+            m["league"], m["date"].isoformat(), m["state"], best_of,
             t1, t2,
             round(r1, 1), round(r2, 1),
             round(prob1, 4), round(prob2, 4),
             round(fair_odds(prob1), 3), round(fair_odds(prob2), 3),
             round(threshold_odds(prob1, edge), 3), round(threshold_odds(prob2, edge), 3),
             seen1 and seen2,
+            fm1, fm2, tm1, tm2,
             now,
         ))
         written += 1

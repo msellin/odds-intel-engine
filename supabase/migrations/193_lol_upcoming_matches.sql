@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS lol_upcoming_matches (
     threshold_odds1  FLOAT,      -- fair × (1 - edge)
     threshold_odds2  FLOAT,
     has_elo_history  BOOLEAN     NOT NULL DEFAULT TRUE,
+    fair_odds_map1   FLOAT,      -- "wins at least one map" fair odds (BO3/5 only)
+    fair_odds_map2   FLOAT,
+    threshold_map1   FLOAT,
+    threshold_map2   FLOAT,
     scanned_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
