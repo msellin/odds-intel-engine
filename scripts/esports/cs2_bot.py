@@ -39,7 +39,7 @@ STAKE = 1.0             # uniform stake — sizing comes later from Kelly
 def _load_open_matches() -> list[dict]:
     """Pre-kickoff matches with model coverage."""
     now = datetime.now(timezone.utc)
-    horizon = (now + timedelta(hours=24)).isoformat()
+    horizon = (now + timedelta(hours=72)).isoformat()  # CS2 fixtures locked 2-3d ahead
     return execute_query("""
         SELECT id, bo3gg_id, team1, team2, kickoff_time, best_of,
                fair_odds1, fair_odds2, threshold_odds1, threshold_odds2,

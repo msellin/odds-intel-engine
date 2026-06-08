@@ -756,6 +756,137 @@ Alignment will be activated (move from log-only to staking modifier) after:
 
 ---
 
+## 10b. CS2 Esports Model (2026-06-08)
+
+A parallel pre-match model for Counter-Strike 2 series, built to extend the
+edge thesis to esports markets. Same accumulation/calibration discipline as
+the soccer model, but a different feature stack reflecting how CS2 outcomes
+are determined.
+
+### 10b.1 Data sources
+
+| Source | Data | Frequency | Cost |
+|---|---|---|---|
+| `cs2_all_tiers_games.csv` (Kaggle) | 9,200 historical series Jan 2023 → Apr 2026 | Static (quarterly refresh) | Free |
+| `cs2_newestcombinedmatches.csv` (Kaggle) | 7,032 BO3 matches with per-player HLTV ratings + lineups | Static | Free |
+| **bo3.gg** `/matches` | Upcoming + finished series, BO format, single-bookmaker reference odds | Live | Free |
+| **bo3.gg** `/player_transfers` | Roster changes, 45-day window | Live | Free |
+| **Coolbet** (anon-read) | Match-winner odds across CS2 leagues | Every 30 min | Free |
+| **Liquipedia API** | Current rosters (5-man active), transfer history | Daily refresh | Free |
+| GRID Open Access | Fixture cross-check (CS2 = titleId 28) | Live | Free |
+
+Paid sources deferred until the model proves positive CLV over 60+ days at
+≥30 bets/week: **PandaScore Pro** (multi-bookmaker odds across 10+ books for
+true CLV measurement), **GRID Stats Feed** (round-by-round, only if we go
+in-play).
+
+### 10b.2 Feature stack
+
+Production model is **ELO + Player Quality combined logistic**. Walk-forward
+verified on 9,199 historical series (winners derived from
+`score1_match` vs `score2_match` after discovering the CSV's `team1_win`
+column is unreliable — see §10b.6).
+
+| Feature | Source | Notes |
+|---|---|---|
+| `elo_diff` | live ELO maintained from CSV + bo3.gg results | K=32, tournament tier × BO weights |
+| `pq_diff` | avg HLTV rating of last known 5-man lineup | Stale at Oct 2025 until Liquipedia refresh wires through |
+| `is_lan` | tournament-name keyword match | Major/IEM/BLAST/Katowice/Cologne/... |
+| `days_since_roster_change` | bo3.gg `/player_transfers` | Chemistry proxy |
+| `roster_change_45d` | flag | Volatility marker for warnings |
+| `match_count_180d` (gate) | ELO build pass | Below 10 → NULL the published odds (see §10b.5) |
+
+The combined logistic coefficients were fit on `cs2_newestcombinedmatches.csv`
+(2024-05 → 2025-10): `_LR_COEF_ELO=0.312`, `_LR_COEF_PQ=0.521`,
+`_LR_INTERCEPT=0.206`. Backtest: 62.2% test accuracy vs 58.1% ELO-only.
+
+### 10b.3 Calibration
+
+After fixing the winner-derivation bug (§10b.6), walk-forward backfill over
+9,199 series gives:
+
+| Metric | ELO-only | Soccer XGB baseline |
+|---|---|---|
+| Accuracy | 58.9% | 56-58% |
+| Log loss | 0.6664 | 0.66 |
+| **ECE (10-bin)** | **3.03%** | 2-5% |
+
+ELO is well-calibrated; slight under-confidence in the 0.40-0.60 range
+(actual −3pp vs predicted) and slight over-confidence above 0.85 (actual
+−3pp). Platt scaling: `a=0.846, b=0.109` (saved at
+`data/esports/cs2/platt_coefficients.json`). ELO+PQ backfill in progress;
+calibration once 9.2k complete.
+
+### 10b.4 Storage architecture
+
+All four tables append-only or upsert-by-natural-key:
+
+| Table | Role |
+|---|---|
+| `cs2_upcoming_matches` | Latest snapshot per (team1, team2, kickoff); UPSERT on each scan |
+| `cs2_predictions` | Immutable history, one row per (bo3gg_id, scan_time); model_version tagged |
+| `cs2_results` | Match outcomes (winner, score, finished_at); PRIMARY KEY bo3gg_id |
+| `cs2_bets` | User-logged real bets (LogBetButton on admin/cs2) |
+| `cs2_simulated_bets` | Bot picks, UNIQUE (bot, match, market, bookie) |
+
+### 10b.5 Coverage gate (lesson from the Banger Gang incident)
+
+ELO with no data converges to 1500/1500 → 50/50 prediction that looks
+confident. When user spotted Banger Gang vs DONSTU showing a green VALUE
+badge against Coolbet's 3.09 (actual market ≈ 32% win prob), the bug was
+clear: predictions without data are dangerous. Now scanner NULLs
+`fair_odds`/`threshold_odds` whenever either team has <10 matches in last
+180 days. Frontend shows "Not enough recent matches — model has no edge
+here" + the bookie odds for reference. Typical gate rate: 25/28 (~89%) of a
+mixed-tier daily slate.
+
+### 10b.6 The winner-derivation bug (CSV data convention)
+
+Discovered 2026-06-08. The historical CSV's `team1_win` column is **97.9%
+zeros** even though slot-1 wins ~55% of the time per scores. Verified on
+real matches (e.g. FaZe Clan vs BIG at IEM Cologne 2025 scored 2-0 in FaZe's
+favor but `team1_win=0`). The scanner's `load_historical()` and backfill's
+`_load_rows()` both used the unreliable column, silently corrupting ELO
+updates for ~half of 9.2k historical series.
+
+Smoking-gun proof after the fix: top ELO went from "UNiTY (1695)" — a
+marginal team — to "Team Vitality (2157)" — the actual world #1 in CS2. ELO
+range widened from ~450 to ~700+ points, indicating proper team
+differentiation.
+
+Takeaway: every dataset gets a verification pass. Check the simplest
+invariant (here: distribution of `team1_win` should be near 50/50). When
+it's wildly off, derive from scores instead.
+
+### 10b.7 Bot strategy (bot_cs2_value_v1)
+
+Single bot, pre-match only. Mirrors soccer's bot pattern but simplified.
+
+- **Scan**: cs2_upcoming_matches with `has_elo_history=TRUE` in next 72h
+- **Fire**: any bookmaker (bo3gg, coolbet, pinnacle) offers ≥ threshold AND extra edge ≥ 5% above threshold (threshold already bakes in 3%, so total fire bar ≈ +8% over fair)
+- **Markets**: `match_winner` (1x2) + `atleast1map` (BO3/BO5 only)
+- **Settlement**: auto-joins to `cs2_results` after each run
+- **Constraint**: UNIQUE (bot_name, bo3gg_id, market, bookie) — never re-fires the same opportunity
+
+### 10b.8 Schedule
+
+| Job | Schedule | What |
+|---|---|---|
+| `cs2_scanner` | Every 4h 06,10,14,18,22 UTC at :12 | ELO+PQ scan → upcoming_matches + predictions |
+| `cs2_coolbet_scanner` | Every 30 min 07-22 UTC at :17,:47 | Coolbet odds → cs2_upcoming_matches |
+| `cs2_bot` | Every 4h 06,10,14,18,22 UTC at :25 | Bot picks → cs2_simulated_bets + settle |
+| `cs2_settlement` | Hourly 12-02 UTC at :22 | bo3.gg results → cs2_results, settle cs2_bets |
+
+### 10b.9 Open work
+
+- **ELO+PQ backfill** for production-model calibration (running)
+- **Pinnacle CS2 odds** (geo-blocked from current network; defer or use PandaScore Pro as proxy)
+- **Liquipedia roster fetcher** — current resolution 4/54 teams; slug-variant + opensearch fix pushed, needs another sweep
+- **Multi-model phase 2 signals**: form momentum, map pool overlap (per-veto), opponent-strength-weighted recent form
+- **XGBoost on accumulated data** once ≥1,000 settled live predictions
+
+---
+
 ## 11. Known Limitations
 
 1. **Top-tier market efficiency:** Tiers 1-2 show negative ROI historically. The model adds little beyond what bookmakers already price in for EPL, La Liga, etc.
