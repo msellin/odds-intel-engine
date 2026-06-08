@@ -3,17 +3,20 @@
 Coolbet tennis odds recorder — silent --record mode.
 
 Flow:
-  1. Fetch all Coolbet tennis matches + match-winner odds (public API, no JWT)
-  2. Cross-reference by kickoff time against tennis_fixtures_today (Pinnacle thresholds)
-  3. Record ALL Coolbet tennis observations to tennis_value_bets (bookmaker='coolbet')
-  4. Mark as value bet if Coolbet odds > Pinnacle fair price (edge > 0%)
+  1. Fetch all Coolbet tennis matches via fo-category (public, no JWT)
+  2. Batch-fetch current odds via sb-odds endpoint (no JWT)
+  3. Cross-reference by kickoff time against tennis_fixtures_today (Pinnacle thresholds)
+  4. Record ALL observations to tennis_value_bets (bookmaker='coolbet')
+     — edge > 0%: logged for training data
+     — edge >= 3%: highlighted as action signal
+  5. Backfill player names from Coolbet into tennis_fixtures_today (if still numeric IDs)
 
 Usage:
     python3 scripts/tennis/place_coolbet_tennis.py              # dry run, print only
     python3 scripts/tennis/place_coolbet_tennis.py --record     # write to DB
 
-Requires only COOLBET_IMPERVA_COOKIES (or individual COOLBET_COOKIE_* vars) in .env.
-No JWT needed — tennis odds are a public read endpoint.
+Requires: COOLBET_COOKIE_REESE84 (+ optional other Imperva cookies) in .env.
+No JWT needed — these are public read endpoints.
 """
 from __future__ import annotations
 
@@ -30,10 +33,6 @@ load_dotenv(Path(__file__).parents[2] / ".env")
 
 from workers.api_clients.db import execute_query, execute_write
 from workers.automation.coolbet_session import CoolbetSession
-from workers.automation.coolbet_placer import (
-    fetch_events_for_league,
-    fetch_main_markets,
-)
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -43,14 +42,15 @@ logging.basicConfig(
 
 _CATEGORY_URL = "https://www.coolbet.com/s/sbgate/sports/fo-category/"
 _LEAGUES_URL  = "https://www.coolbet.com/s/sports/category/order/explicit/category-page-leagues"
+_ODDS_URL     = "https://www.coolbet.com/s/sb-odds/odds/current/fo"
 
-TENNIS_SPORT_CATEGORY_ID = 72          # confirmed from Coolbet network tab
-_DISPLAY_MIN_EDGE        = 0.03        # print highlight threshold
-KICKOFF_MATCH_WINDOW_MIN = 20          # minutes of tolerance for kickoff matching
+TENNIS_SPORT_CATEGORY_ID = 72
+_DISPLAY_MIN_EDGE        = 0.03
+KICKOFF_MATCH_WINDOW_MIN = 20
+ODDS_BATCH_SIZE          = 50   # market IDs per sb-odds call
 
 
 def fetch_tennis_leagues(session: CoolbetSession) -> list[dict]:
-    """Return all Coolbet tennis leagues under sportCategoryId=72."""
     resp = session.post(_LEAGUES_URL, json={
         "sportCategoryId": TENNIS_SPORT_CATEGORY_ID,
         "country": "EE",
@@ -59,65 +59,83 @@ def fetch_tennis_leagues(session: CoolbetSession) -> list[dict]:
     if resp.ok:
         payload = resp.json()
         if isinstance(payload, list) and payload:
-            leagues = [
+            return [
                 {"id": int(e["id"]), "name": e.get("name") or "",
                  "fullSlug": e.get("fullSlug") or ""}
                 for e in payload if e.get("id")
             ]
-            return leagues
-    # Fallback: fetch the tennis root category directly — returns one big group
-    resp2 = session.get(_CATEGORY_URL, params={
-        "categoryId": TENNIS_SPORT_CATEGORY_ID,
-        "country": "EE", "isMobile": 0, "language": "et",
-        "layout": "EUROPEAN", "limit": 50,
-    }, headers={"referer": "https://www.coolbet.com/et/sport/tennis"})
-    if resp2.ok:
-        data = resp2.json()
-        leagues = []
-        cats = data if isinstance(data, list) else [data]
-        for cat in cats:
-            lid = cat.get("id")
-            if lid:
-                leagues.append({
-                    "id":       int(lid),
-                    "name":     cat.get("name") or "",
-                    "fullSlug": cat.get("fullSlug") or cat.get("slug") or "",
-                })
-        return leagues
     return []
 
 
-def extract_match_winner(bet_offers: list[dict]) -> tuple[float | None, float | None, str, str]:
+def fetch_league_matches(session: CoolbetSession, league_id: int, slug: str) -> list[dict]:
     """
-    Find 2-outcome match-winner market. Returns (home_odds, away_odds, h_name, a_name).
-    Tennis match winner: look for criterion containing 'winner' or 'match'.
-    Falls back to first 2-outcome market.
+    Fetch all matches in a league via fo-category.
+    Returns list of {id, home, away, start, status, markets: [{id, outcomes: [...]}]}.
     """
-    for offer in bet_offers:
-        label = offer.get("criterion_label", "").lower()
-        outcomes = offer.get("outcomes", [])
-        active = [o for o in outcomes if o.get("odds_decimal", 0) > 1.01]
-        if len(active) != 2:
+    extra = {"referer": f"https://www.coolbet.com/et/sport/{slug}"} if slug else {}
+    resp = session.get(_CATEGORY_URL, params={
+        "categoryId": league_id,
+        "country": "EE", "isMobile": 0, "language": "et",
+        "layout": "EUROPEAN", "limit": 6,
+    }, headers=extra or None)
+    if not resp.ok:
+        return []
+    data = resp.json()
+    cats = data if isinstance(data, list) else [data]
+    matches = []
+    for cat in cats:
+        for m in cat.get("matches") or []:
+            if not m.get("id"):
+                continue
+            matches.append({
+                "id":     int(m["id"]),
+                "home":   (m.get("home_team_name") or "").strip(),
+                "away":   (m.get("away_team_name") or "").strip(),
+                "start":  m.get("match_start") or m.get("start"),
+                "status": m.get("status"),
+                "markets": m.get("markets") or [],
+            })
+    return matches
+
+
+def find_match_winner_market(markets: list[dict]) -> dict | None:
+    """Return the Match Result (2-outcome) market only — never fall back to handicap/totals."""
+    for m in markets:
+        name = (m.get("name") or "").lower()
+        if "match result" in name and len(m.get("outcomes") or []) == 2:
+            return m
+    return None
+
+
+def fetch_odds_batch(session: CoolbetSession, market_ids: list[int]) -> dict[int, dict[int, float]]:
+    """
+    Batch-fetch current odds for multiple markets.
+    Returns {market_id: {outcome_id: decimal_odds}}.
+    """
+    result: dict[int, dict[int, float]] = {}
+    for i in range(0, len(market_ids), ODDS_BATCH_SIZE):
+        batch = market_ids[i:i + ODDS_BATCH_SIZE]
+        resp = session.post(_ODDS_URL, json={"where": {"market_id": {"in": batch}}})
+        if not resp.ok:
             continue
-        if "winner" in label or "match" in label or label in ("1x2", ""):
-            return (
-                active[0]["odds_decimal"], active[1]["odds_decimal"],
-                active[0].get("label", ""), active[1].get("label", ""),
-            )
-    # Fallback: any 2-outcome market
-    for offer in bet_offers:
-        outcomes = offer.get("outcomes", [])
-        active = [o for o in outcomes if o.get("odds_decimal", 0) > 1.01]
-        if len(active) == 2:
-            return (
-                active[0]["odds_decimal"], active[1]["odds_decimal"],
-                active[0].get("label", ""), active[1].get("label", ""),
-            )
-    return None, None, "", ""
+        data = resp.json()
+        # Response: {str(outcome_id): {outcome_id, value, market_id, status, ...}}
+        for oid_str, row in data.items():
+            if not isinstance(row, dict):
+                continue
+            market_id = row.get("market_id")
+            outcome_id = row.get("outcome_id")
+            raw = row.get("value") or row.get("odds") or 0
+            price = float(raw) if raw else 0.0
+            if market_id and outcome_id and price > 1.0:
+                if market_id not in result:
+                    result[market_id] = {}
+                result[market_id][outcome_id] = price
+        time.sleep(0.3)
+    return result
 
 
 def load_pin_fixtures() -> list[dict]:
-    """Read today's fixtures with Pinnacle thresholds from tennis_fixtures_today."""
     now = datetime.now(timezone.utc)
     cutoff = now + timedelta(hours=36)
     return execute_query("""
@@ -131,7 +149,6 @@ def load_pin_fixtures() -> list[dict]:
 
 
 def match_to_fixture(coolbet_start: str, fixtures: list[dict]) -> dict | None:
-    """Find best Pinnacle fixture for a Coolbet match by kickoff time (within ±20min)."""
     try:
         cb_dt = datetime.fromisoformat(coolbet_start.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
@@ -141,8 +158,9 @@ def match_to_fixture(coolbet_start: str, fixtures: list[dict]) -> dict | None:
     best_delta = window
     for fix in fixtures:
         try:
-            fix_dt = datetime.fromisoformat(fix["kickoff_time"])
-        except (ValueError, KeyError):
+            kt = fix["kickoff_time"]
+            fix_dt = kt if isinstance(kt, datetime) else datetime.fromisoformat(str(kt))
+        except (ValueError, KeyError, TypeError):
             continue
         delta = abs(cb_dt - fix_dt)
         if delta < best_delta:
@@ -152,14 +170,11 @@ def match_to_fixture(coolbet_start: str, fixtures: list[dict]) -> dict | None:
 
 
 def _looks_like_id(s: str) -> bool:
-    """True if the string is just a numeric OddsPapi participant ID, not a real name."""
     return s.strip().lstrip("-").isdigit()
 
 
-def backfill_player_names(fixture: dict, cb_home: str, cb_away: str, dry_run: bool) -> None:
-    """If tennis_fixtures_today still has numeric IDs, overwrite with Coolbet player names."""
-    if not fixture:
-        return
+def backfill_names(fixture: dict, cb_home: str, cb_away: str, dry_run: bool) -> None:
+    """Write real player names to tennis_fixtures_today if still numeric IDs."""
     p_home = str(fixture.get("player_home") or "")
     p_away = str(fixture.get("player_away") or "")
     if _looks_like_id(p_home) and cb_home and not _looks_like_id(cb_home):
@@ -168,48 +183,52 @@ def backfill_player_names(fixture: dict, cb_home: str, cb_away: str, dry_run: bo
                 "UPDATE tennis_fixtures_today SET player_home=%s WHERE fixture_id=%s",
                 (cb_home, fixture["fixture_id"]),
             )
-        print(f"    → name resolved: {p_home} → {cb_home}")
-        fixture["player_home"] = cb_home  # update in-memory for display
+            execute_write(
+                "UPDATE tennis_value_bets SET player_home=%s WHERE fixture_id=%s AND player_home ~ '^[0-9]+$'",
+                (cb_home, fixture["fixture_id"]),
+            )
+        fixture["player_home"] = cb_home
     if _looks_like_id(p_away) and cb_away and not _looks_like_id(cb_away):
         if not dry_run:
             execute_write(
                 "UPDATE tennis_fixtures_today SET player_away=%s WHERE fixture_id=%s",
                 (cb_away, fixture["fixture_id"]),
             )
-        print(f"    → name resolved: {p_away} → {cb_away}")
+            execute_write(
+                "UPDATE tennis_value_bets SET player_away=%s WHERE fixture_id=%s AND player_away ~ '^[0-9]+$'",
+                (cb_away, fixture["fixture_id"]),
+            )
         fixture["player_away"] = cb_away
 
 
 def record_observation(
     fixture: dict | None,
-    coolbet_match: dict,
+    match: dict,
     h_odds: float, a_odds: float,
-    h_name: str, a_name: str,
     dry_run: bool,
 ) -> tuple[int, int]:
-    """Write Coolbet observation to tennis_value_bets. Returns (logged, value_bets)."""
-    cb_id   = str(coolbet_match.get("id", ""))
-    cb_home = coolbet_match.get("home") or h_name or "?"
-    cb_away = coolbet_match.get("away") or a_name or "?"
-    cb_start = coolbet_match.get("start", "")
+    cb_id   = str(match.get("id", ""))
+    cb_home = match.get("home") or "?"
+    cb_away = match.get("away") or "?"
+    cb_start = match.get("start", "")
 
-    # Backfill player names into tennis_fixtures_today when they're still numeric IDs
-    backfill_player_names(fixture, cb_home, cb_away, dry_run)
+    if fixture:
+        backfill_names(fixture, cb_home, cb_away, dry_run)
 
     logged = 0
     value  = 0
 
-    for selection, cb_odds, threshold_key, raw_pin in [
-        ("home", h_odds, "threshold_home", "pin_raw_home"),
-        ("away", a_odds, "threshold_away",  "pin_raw_away"),
+    for selection, cb_odds, thr_key in [
+        ("home", h_odds, "threshold_home"),
+        ("away", a_odds, "threshold_away"),
     ]:
         if not cb_odds or cb_odds <= 1.0:
             continue
 
-        # Compute edge vs Pinnacle fair price
+        threshold: float | None = fixture.get(thr_key) if fixture else None
         edge_pct: float | None = None
-        threshold: float | None = fixture.get(threshold_key) if fixture else None
-        if threshold and threshold > 1.0:
+        if threshold and float(threshold) > 1.0:
+            threshold = float(threshold)
             fair_prob = 1.0 / threshold
             edge_pct = round((cb_odds * fair_prob - 1.0) * 100, 2)
 
@@ -223,22 +242,12 @@ def record_observation(
         else:
             marker = "      "
 
-        pin_info = f"threshold={threshold:.3f}  edge={edge_pct:+.1f}%" if edge_pct is not None else "no Pinnacle match"
+        pin_info = f"thr={threshold:.3f}  edge={edge_pct:+.1f}%" if edge_pct is not None else "no Pinnacle match"
         player_label = cb_home if selection == "home" else cb_away
-        print(f"  {marker}  {player_label[:22]:22s}  cb={cb_odds:.2f}  {pin_info}")
+        print(f"  {marker}  {player_label[:24]:24s}  cb={cb_odds:.2f}  {pin_info}")
 
-        if not dry_run:
-            # Also backfill names in existing tennis_value_bets rows for this fixture
-            if fixture and _looks_like_id(str(fixture.get("player_home") or "")):
-                pass  # already updated in-memory; the INSERT below uses resolved names
-            fix_id = fixture["fixture_id"] if fixture else f"cb_{cb_id}"
-            if fixture:
-                execute_write(
-                    """UPDATE tennis_value_bets
-                       SET player_home=%s, player_away=%s
-                       WHERE fixture_id=%s AND player_home ~ '^[0-9]+$'""",
-                    (fixture["player_home"], fixture["player_away"], fixture["fixture_id"]),
-                )
+        if not dry_run and fixture:
+            fix_id = fixture["fixture_id"]
             execute_write("""
                 INSERT INTO tennis_value_bets
                     (fixture_id, tournament_name, player_home, player_away, surface,
@@ -258,14 +267,14 @@ def record_observation(
                     logged_at  = now()
             """, (
                 fix_id,
-                fixture["tournament_name"] if fixture else cb_home[:60],
-                fixture["player_home"] if fixture else cb_home,
-                fixture["player_away"] if fixture else cb_away,
+                fixture["tournament_name"],
+                fixture.get("player_home") or cb_home,
+                fixture.get("player_away") or cb_away,
                 cb_start,
                 selection,
                 threshold,
-                fixture.get("pin_raw_home") if fixture else None,
-                fixture.get("pin_raw_away") if fixture else None,
+                fixture.get("pin_raw_home"),
+                fixture.get("pin_raw_away"),
                 cb_odds,
                 edge_pct,
                 f"coolbet_match_id={cb_id}",
@@ -286,77 +295,92 @@ def main() -> None:
     print(f"{'DRY RUN — no DB writes' if dry_run else 'LIVE — logging to tennis_value_bets'}")
     print("=" * 65)
 
-    # No JWT needed for public read endpoints
     session = CoolbetSession(require_auth=False)
 
     # ── 1. Load Pinnacle thresholds ───────────────────────────────────
-    print("\n[1] Loading Pinnacle thresholds from tennis_fixtures_today...")
+    print("\n[1] Loading Pinnacle thresholds...")
     pin_fixtures = load_pin_fixtures()
-    print(f"  Fixtures with Pinnacle thresholds: {len(pin_fixtures)}")
+    print(f"  Fixtures: {len(pin_fixtures)}")
 
-    # ── 2. Fetch Coolbet tennis leagues ───────────────────────────────
+    # ── 2. Fetch leagues ──────────────────────────────────────────────
     print("\n[2] Fetching Coolbet tennis leagues (sportCategoryId=72)...")
     leagues = fetch_tennis_leagues(session)
-    print(f"  Leagues found: {len(leagues)}")
+    print(f"  Leagues: {len(leagues)}")
     if not leagues:
-        print("  No leagues returned. Check Imperva cookies (COOLBET_COOKIE_REESE84 etc. in .env).")
+        print("  No leagues found. Check Imperva cookies in .env.")
         return
 
-    # ── 3. Fetch events per league ────────────────────────────────────
-    print(f"\n[3] Fetching matches from {len(leagues)} leagues...")
+    # ── 3. Fetch matches per league ───────────────────────────────────
+    print("\n[3] Fetching matches...")
     all_matches: list[dict] = []
-    now = datetime.now(timezone.utc)
-    cutoff = now + timedelta(hours=36)
-
     for league in leagues:
-        events = fetch_events_for_league(
-            session, league["id"], league.get("fullSlug")
-        )
-        upcoming = [e for e in events if e.get("start") and e.get("status") in ("OPEN", None, "")]
-        all_matches.extend(upcoming)
-        if upcoming:
-            print(f"    {league['name'][:45]:45s}: {len(upcoming)}")
-        time.sleep(0.3)
+        matches = fetch_league_matches(session, league["id"], league.get("fullSlug", ""))
+        singles = [
+            m for m in matches
+            if m.get("status") == "OPEN"
+            and find_match_winner_market(m.get("markets") or []) is not None
+        ]
+        all_matches.extend(singles)
+        if singles:
+            print(f"    {league['name'][:40]:40s}: {len(singles)}")
+        time.sleep(0.2)
 
-    print(f"  Total upcoming tennis matches: {len(all_matches)}")
+    print(f"  Total singles matches: {len(all_matches)}")
     if not all_matches:
-        print("  No matches found.")
+        print("  No matches. Done.")
         return
 
-    # ── 4. Fetch main markets ─────────────────────────────────────────
-    print(f"\n[4] Fetching match-winner markets...")
-    match_ids = [m["id"] for m in all_matches]
-    markets_by_id = fetch_main_markets(session, match_ids)
-    print(f"  Markets fetched for {len(markets_by_id)} matches")
+    # ── 4. Batch-fetch odds ───────────────────────────────────────────
+    print("\n[4] Fetching current odds...")
+    market_info: dict[int, tuple[dict, dict]] = {}  # market_id → (match, market)
+    market_ids: list[int] = []
+    for match in all_matches:
+        mkt = find_match_winner_market(match.get("markets") or [])
+        if mkt:
+            mid = int(mkt["id"])
+            market_ids.append(mid)
+            market_info[mid] = (match, mkt)
 
-    # ── 5. Record all observations ─────────────────────────────────────
-    print(f"\n[5] Checking odds vs Pinnacle thresholds...")
+    odds_map = fetch_odds_batch(session, market_ids)
+    print(f"  Odds fetched for {len(odds_map)} markets")
+
+    # ── 5. Record observations ─────────────────────────────────────────
+    print("\n[5] Checking odds vs Pinnacle thresholds...")
     total_logged = 0
     total_value  = 0
 
-    for match in all_matches:
-        mid      = match["id"]
-        offers   = markets_by_id.get(mid, [])
-        if not offers:
+    for market_id, (match, mkt) in market_info.items():
+        odds = odds_map.get(market_id)
+        if not odds:
             continue
-        h_odds, a_odds, h_name, a_name = extract_match_winner(offers)
+
+        outcomes = mkt.get("outcomes") or []
+        if len(outcomes) < 2:
+            continue
+
+        # Match first/second outcome to home/away by order
+        o1, o2 = outcomes[0], outcomes[1]
+        h_odds = odds.get(o1["id"])
+        a_odds = odds.get(o2["id"])
         if not h_odds or not a_odds:
             continue
 
+        # Player names from outcome labels (more reliable than home/away_team_name for tennis)
+        match["home"] = match.get("home") or (o1.get("name") or "").strip()
+        match["away"] = match.get("away") or (o2.get("name") or "").strip()
+
         fixture = match_to_fixture(match.get("start", ""), pin_fixtures)
-        logged, value = record_observation(
-            fixture, match, h_odds, a_odds, h_name, a_name, dry_run
-        )
+        logged, value = record_observation(fixture, match, h_odds, a_odds, dry_run)
         total_logged += logged
         total_value  += value
 
     # ── Summary ───────────────────────────────────────────────────────
     print(f"\n{'='*65}")
-    print(f"  Coolbet matches processed: {len(all_matches)}")
-    print(f"  Observations logged:       {total_logged}")
-    print(f"  Value bets (edge ≥ 3%):   {total_value}")
+    print(f"  Matches processed: {len(market_info)}")
+    print(f"  Observations:      {total_logged}")
+    print(f"  Value bets ≥3%:   {total_value}")
     if not dry_run and total_logged:
-        print(f"  ✓ Written to tennis_value_bets (bookmaker=coolbet)")
+        print(f"  ✓ Written to tennis_value_bets + names backfilled")
     print()
 
 
