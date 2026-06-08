@@ -8,6 +8,7 @@ data/models/
 data/model_results/
 data/daily/
 data/logs/
+data/esports/
 *.pkl
 *.joblib
 

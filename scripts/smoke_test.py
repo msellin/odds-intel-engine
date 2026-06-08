@@ -19600,5 +19600,32 @@ def _():
     assert "edge_pct" in msrc, "migration must have edge_pct column"
 
 
+@test("LOL-ELO-SCANNER — script structure, ELO functions, and cache path")
+def _():
+    """lol_elo_scanner.py: verifies ELO math helpers, data fetcher, and model builder exist."""
+    import pathlib
+    script = pathlib.Path("scripts/esports/lol_elo_scanner.py")
+    assert script.exists(), "scripts/esports/lol_elo_scanner.py must exist"
+    src = script.read_text()
+    for fn in ["elo_expected", "build_elo", "fetch_historical",
+               "load_cached_matches", "fetch_upcoming", "fair_odds", "threshold_odds"]:
+        assert fn in src, f"{fn} must be defined in lol_elo_scanner.py"
+    assert "RIOT_API_KEY" in src, "RIOT_API_KEY must be defined"
+    assert "INITIAL_ELO" in src, "INITIAL_ELO must be defined"
+    assert "CACHE_PATH" in src, "CACHE_PATH must be defined"
+    # ELO math sanity: expected(1500, 1500) == 0.5
+    import importlib.util, types
+    spec = importlib.util.spec_from_file_location("lol_elo", script)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert abs(mod.elo_expected(1500, 1500) - 0.5) < 0.001, \
+        "elo_expected(1500, 1500) must equal 0.5"
+    assert mod.fair_odds(0.5) == 2.0, "fair_odds(0.5) must equal 2.0"
+    # threshold < fair odds
+    thr = mod.threshold_odds(0.5, 0.03)
+    assert thr < 2.0, "threshold_odds must be less than fair_odds"
+    assert thr > 1.9, "threshold_odds(0.5, 3%) must be close to 1.94"
+
+
 if __name__ == "__main__":
     main()
