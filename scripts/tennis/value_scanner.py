@@ -92,6 +92,24 @@ def fetch_tennis_tournaments() -> list[dict]:
     return active
 
 
+def fetch_participant_names() -> dict[str, str]:
+    """Return {str(participantId): name} for all tennis participants."""
+    data = call("/participants", sportId=TENNIS_SPORT)
+    if not data:
+        return {}
+    rows = data if isinstance(data, list) else data.get("data", data.get("participants", []))
+    lookup: dict[str, str] = {}
+    for p in rows:
+        if not isinstance(p, dict):
+            continue
+        pid = p.get("participantId") or p.get("id")
+        name = p.get("participantName") or p.get("name") or ""
+        if pid and name:
+            lookup[str(pid)] = name
+    print(f"  Tennis participant names loaded: {len(lookup)}")
+    return lookup
+
+
 def fetch_odds_bulk(tournament_ids: list[int | str], bookmaker: str) -> list[dict]:
     """Fetch fixtures+odds for a list of tournament IDs from one bookmaker."""
     all_fixtures: list[dict] = []
@@ -243,7 +261,7 @@ def main(dry_run: bool = False) -> None:
     print(f"{'DRY RUN — no DB writes' if dry_run else 'LIVE — logging to tennis_value_bets'}")
     print("=" * 65)
 
-    # ── 1. Discover active tennis tournaments ──────────────────────────
+    # ── 1. Discover active tennis tournaments + player names ──────────
     print("\n[1] Fetching tennis tournaments...")
     tournaments = fetch_tennis_tournaments()
     if not tournaments:
@@ -259,6 +277,9 @@ def main(dry_run: bool = False) -> None:
 
     tournament_ids = list(tourney_names.keys())
     print(f"  Active tournament IDs: {len(tournament_ids)}")
+
+    print("\n[1b] Fetching participant names...")
+    participant_names = fetch_participant_names()
 
     # ── 2. Fetch Pinnacle odds ─────────────────────────────────────────
     print(f"\n[2] Fetching Pinnacle odds for {len(tournament_ids)} tournaments...")
@@ -296,6 +317,8 @@ def main(dry_run: bool = False) -> None:
             "tournament_id": fix.get("tournamentId"),
             "start": start,
             "p1_id": p1_id, "p2_id": p2_id,
+            "p1_name": participant_names.get(p1_id, p1_id),
+            "p2_name": participant_names.get(p2_id, p2_id),
             "h_raw": h_raw, "a_raw": a_raw,
             "fair_h": fair_h, "fair_a": fair_a,
             "fair_h_odds": 1.0 / fair_h,
@@ -309,15 +332,12 @@ def main(dry_run: bool = False) -> None:
 
     # ── 2b. Upsert ALL fixtures + thresholds (for admin page) ─────────
     for fid, pin in pin_index.items():
-        fix = pin["fixture"]
-        p1 = pin["p1_id"]
-        p2 = pin["p2_id"]
         tid = int(pin["tournament_id"] or 0)
         tourney_name = tourney_names.get(tid, "Unknown")
         margin = 1.0 / pin["h_raw"] + 1.0 / pin["a_raw"] - 1.0
         upsert_fixture_today(
             fixture_id=fid, tournament_name=tourney_name,
-            player_home=p1, player_away=p2,
+            player_home=pin["p1_name"], player_away=pin["p2_name"],
             kickoff_time=pin["start"].isoformat(),
             pin_raw_home=pin["h_raw"], pin_raw_away=pin["a_raw"],
             threshold_home=pin["fair_h_odds"], threshold_away=pin["fair_a_odds"],
@@ -346,9 +366,8 @@ def main(dry_run: bool = False) -> None:
             h_book = soft_odds[p1_id]
             a_book = soft_odds[p2_id]
 
-            fix = pin["fixture"]
-            p1 = fix.get("participant1Id")
-            p2 = fix.get("participant2Id")
+            p1_name = pin["p1_name"]
+            p2_name = pin["p2_name"]
             tid = int(pin["tournament_id"] or 0)
             tourney_name = tourney_names.get(tid, "Unknown")
             kickoff = pin["start"].isoformat()
@@ -366,8 +385,8 @@ def main(dry_run: bool = False) -> None:
                 row = {
                     "fixture_id":      fid,
                     "tournament_name": tourney_name,
-                    "player_home":     str(p1),
-                    "player_away":     str(p2),
+                    "player_home":     p1_name,
+                    "player_away":     p2_name,
                     "surface":         None,
                     "kickoff_time":    kickoff,
                     "market":          "match_winner",
@@ -384,7 +403,7 @@ def main(dry_run: bool = False) -> None:
                 }
 
                 if edge >= DISPLAY_MIN_EDGE:
-                    player_label = f"p{p1}" if selection == "home" else f"p{p2}"
+                    player_label = p1_name if selection == "home" else p2_name
                     print(f"  ✅ VALUE  {tourney_name[:30]:30s}  "
                           f"{player_label}  "
                           f"book={book_odds:.2f}  fair={fair_odds:.2f}  edge={edge*100:+.1f}%  "
