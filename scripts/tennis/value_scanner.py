@@ -145,6 +145,42 @@ def kelly_stake(edge: float, fair_prob: float, book_odds: float) -> float:
     return round(min(k * KELLY_FRAC, MAX_STAKE), 3)
 
 
+def upsert_fixture_today(fixture_id: str, tournament_name: str,
+                         player_home: str, player_away: str,
+                         kickoff_time: str, pin_raw_home: float, pin_raw_away: float,
+                         threshold_home: float, threshold_away: float,
+                         pin_margin_pct: float, dry_run: bool) -> None:
+    if dry_run:
+        return
+    execute_query("""
+        INSERT INTO tennis_fixtures_today
+            (fixture_id, tournament_name, player_home, player_away,
+             kickoff_time, pin_raw_home, pin_raw_away,
+             threshold_home, threshold_away, pin_margin_pct, scanned_at)
+        VALUES
+            (%(fixture_id)s, %(tournament_name)s, %(player_home)s, %(player_away)s,
+             %(kickoff_time)s, %(pin_raw_home)s, %(pin_raw_away)s,
+             %(threshold_home)s, %(threshold_away)s, %(pin_margin_pct)s, now())
+        ON CONFLICT (fixture_id) DO UPDATE SET
+            tournament_name = EXCLUDED.tournament_name,
+            player_home     = EXCLUDED.player_home,
+            player_away     = EXCLUDED.player_away,
+            kickoff_time    = EXCLUDED.kickoff_time,
+            pin_raw_home    = EXCLUDED.pin_raw_home,
+            pin_raw_away    = EXCLUDED.pin_raw_away,
+            threshold_home  = EXCLUDED.threshold_home,
+            threshold_away  = EXCLUDED.threshold_away,
+            pin_margin_pct  = EXCLUDED.pin_margin_pct,
+            scanned_at      = now()
+    """, {
+        "fixture_id": fixture_id, "tournament_name": tournament_name,
+        "player_home": player_home, "player_away": player_away,
+        "kickoff_time": kickoff_time, "pin_raw_home": pin_raw_home,
+        "pin_raw_away": pin_raw_away, "threshold_home": round(threshold_home, 4),
+        "threshold_away": round(threshold_away, 4), "pin_margin_pct": round(pin_margin_pct * 100, 2),
+    })
+
+
 def insert_value_bet(row: dict, dry_run: bool) -> None:
     if dry_run:
         return
@@ -227,6 +263,23 @@ def main(dry_run: bool = False) -> None:
     if not pin_index:
         print("  Nothing to compare. Done.")
         return
+
+    # ── 2b. Upsert ALL fixtures + thresholds (for admin page) ─────────
+    for fid, pin in pin_index.items():
+        fix = pin["fixture"]
+        p1 = str(fix.get("participant1Id", ""))
+        p2 = str(fix.get("participant2Id", ""))
+        tid = int(pin["tournament_id"] or 0)
+        tourney_name = tourney_names.get(tid, "Unknown")
+        margin = 1.0 / pin["h_raw"] + 1.0 / pin["a_raw"] - 1.0
+        upsert_fixture_today(
+            fixture_id=fid, tournament_name=tourney_name,
+            player_home=p1, player_away=p2,
+            kickoff_time=pin["start"].isoformat(),
+            pin_raw_home=pin["h_raw"], pin_raw_away=pin["a_raw"],
+            threshold_home=pin["fair_h_odds"], threshold_away=pin["fair_a_odds"],
+            pin_margin_pct=margin, dry_run=dry_run,
+        )
 
     # ── 3. Scan soft books ─────────────────────────────────────────────
     total_bets = 0
