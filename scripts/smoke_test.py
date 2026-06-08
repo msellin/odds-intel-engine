@@ -19615,6 +19615,22 @@ def _():
     assert 'player_away":     p2_name' in src, "value_bet row must use resolved name"
 
 
+@test("TENNIS-MATCH-FIXTURE-QUALITY — coolbet scanner name matching + dedup + live exclusion")
+def _():
+    """Guards against cross-gender/cross-tournament false edges and live-match display."""
+    import pathlib
+    src = pathlib.Path("scripts/tennis/place_coolbet_tennis.py").read_text()
+    # Name-based matching
+    assert "_last_name" in src, "_last_name() helper must exist"
+    assert "cb_home" in src and "cb_away" in src, "match_to_fixture must accept player names"
+    assert "overlap < 2" in src, "must require both player names to match"
+    # Live match exclusion in load_pin_fixtures
+    assert "timedelta(minutes=5)" in src, "load_pin_fixtures must exclude matches started >5min ago"
+    assert "start_floor" in src, "load_pin_fixtures must use a start_floor cutoff"
+    # Deduplication
+    assert "pin_margin_pct" in src, "dedup must order by pin_margin_pct"
+
+
 @test("LOL-ELO-SCANNER — script structure, ELO functions, and cache path")
 def _():
     """lol_elo_scanner.py: verifies ELO math helpers, data fetcher, and model builder exist."""

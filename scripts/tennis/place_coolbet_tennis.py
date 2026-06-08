@@ -136,35 +136,82 @@ def fetch_odds_batch(session: CoolbetSession, market_ids: list[int]) -> dict[int
 
 def load_pin_fixtures() -> list[dict]:
     now = datetime.now(timezone.utc)
+    # Exclude matches that started more than 5 minutes ago (already live)
+    start_floor = now - timedelta(minutes=5)
     cutoff = now + timedelta(hours=36)
+    # Deduplicate: for the same player pair + kickoff_time, keep the sharpest line
+    # (lowest Pinnacle margin). DISTINCT ON orders by margin ASC, picks the first.
     return execute_query("""
-        SELECT fixture_id, tournament_name, player_home, player_away,
-               kickoff_time, threshold_home, threshold_away,
-               pin_raw_home, pin_raw_away
+        SELECT DISTINCT ON (
+            LEAST(player_home, player_away),
+            GREATEST(player_home, player_away),
+            date_trunc('minute', kickoff_time)
+        )
+            fixture_id, tournament_name, player_home, player_away,
+            kickoff_time, threshold_home, threshold_away,
+            pin_raw_home, pin_raw_away, pin_margin_pct
         FROM tennis_fixtures_today
         WHERE kickoff_time >= %s AND kickoff_time <= %s
-        ORDER BY kickoff_time
-    """, (now.isoformat(), cutoff.isoformat()))
+        ORDER BY
+            LEAST(player_home, player_away),
+            GREATEST(player_home, player_away),
+            date_trunc('minute', kickoff_time),
+            pin_margin_pct ASC NULLS LAST
+    """, (start_floor.isoformat(), cutoff.isoformat()))
 
 
-def match_to_fixture(coolbet_start: str, fixtures: list[dict]) -> dict | None:
+def _last_name(name: str) -> str:
+    """Extract last name for fuzzy matching. Handles 'Last, F.' and 'First Last' formats."""
+    name = name.strip()
+    if "," in name:
+        return name.split(",")[0].strip().lower()
+    parts = name.split()
+    return parts[-1].lower() if parts else name.lower()
+
+
+def match_to_fixture(coolbet_start: str, cb_home: str, cb_away: str,
+                     fixtures: list[dict]) -> dict | None:
+    """Match a Coolbet match to a Pinnacle fixture by kickoff time + player name overlap.
+    Requires both player last names to appear in the fixture (order-independent) to avoid
+    cross-gender and cross-tournament mismatches."""
     try:
         cb_dt = datetime.fromisoformat(coolbet_start.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
         return None
+
+    cb_ln_h = _last_name(cb_home)
+    cb_ln_a = _last_name(cb_away)
+    cb_lns = {cb_ln_h, cb_ln_a} - {""}
+
     window = timedelta(minutes=KICKOFF_MATCH_WINDOW_MIN)
     best: dict | None = None
-    best_delta = window
+    best_score = -1
+
     for fix in fixtures:
         try:
             kt = fix["kickoff_time"]
             fix_dt = kt if isinstance(kt, datetime) else datetime.fromisoformat(str(kt))
         except (ValueError, KeyError, TypeError):
             continue
-        delta = abs(cb_dt - fix_dt)
-        if delta < best_delta:
-            best_delta = delta
+        if abs(cb_dt - fix_dt) > window:
+            continue
+
+        # Name overlap: count how many Coolbet last names appear in either fixture name
+        fix_ln_h = _last_name(str(fix.get("player_home") or ""))
+        fix_ln_a = _last_name(str(fix.get("player_away") or ""))
+        fix_lns = {fix_ln_h, fix_ln_a} - {""}
+
+        overlap = len(cb_lns & fix_lns)
+        # Require both players to match; a single-name match is too ambiguous
+        if overlap < 2 and cb_lns:
+            continue
+
+        time_score = 1.0 - abs(cb_dt - fix_dt).total_seconds() / window.total_seconds()
+        score = overlap + time_score
+        if score > best_score:
+            best_score = score
             best = fix
+
     return best
 
 
@@ -345,7 +392,12 @@ def main() -> None:
         match["home"] = match.get("home") or (o1.get("name") or "").strip()
         match["away"] = match.get("away") or (o2.get("name") or "").strip()
 
-        fixture = match_to_fixture(match.get("start", ""), pin_fixtures)
+        fixture = match_to_fixture(
+            match.get("start", ""),
+            match.get("home", ""),
+            match.get("away", ""),
+            pin_fixtures,
+        )
         logged, value = record_observation(fixture, match, h_odds, a_odds, dry_run)
         total_logged += logged
         total_value  += value
