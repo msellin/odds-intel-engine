@@ -26,7 +26,7 @@ from scripts.esports.cs2_elo_scanner import (
 )
 from workers.api_clients.db import execute_write, execute_query
 
-BACKFILL_MODEL_VERSION = "elo_v1_backfill"
+BACKFILL_MODEL_VERSION = "elo_v1_backfill_v2"  # v1 used buggy team1_win column; v2 derives winner from scores
 
 
 def _bo_weight(bo: int) -> float:
@@ -34,7 +34,11 @@ def _bo_weight(bo: int) -> float:
 
 
 def _load_rows() -> list[dict]:
-    """Load match_id + match info, sorted chronologically."""
+    """Load match_id + match info, sorted chronologically.
+
+    Winner derived from score1_match vs score2_match — `team1_win` in this CSV
+    is unreliable on is_total=True rows (97.9% zeros despite slot-1 winning 55%).
+    """
     rows: list[dict] = []
     with open(PRIMARY_CSV, encoding="utf-8") as f:
         for r in csv.DictReader(f):
@@ -48,17 +52,14 @@ def _load_rows() -> list[dict]:
                 dt = datetime.fromisoformat(r["datetime"].replace(" ", "T"))
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
-                tw = r.get("team1_win", "")
-                if tw in ("1", "1.0", "True", "true"):
-                    result = 1
-                elif tw in ("0", "0.0", "False", "false"):
-                    result = 0
-                else:
-                    continue
                 s1 = int(float(r.get("score1_match") or 0))
                 s2 = int(float(r.get("score2_match") or 0))
             except (ValueError, KeyError, TypeError):
                 continue
+
+            if s1 == s2:
+                continue  # data anomaly — no draws in CS
+            result = 1 if s1 > s2 else 0
 
             rows.append({
                 "match_id": mid,

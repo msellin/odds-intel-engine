@@ -140,7 +140,12 @@ def _normalize(name: str) -> str:
 
 
 def load_historical() -> list[dict]:
-    """Load series-level matches from primary CSV, sorted by date."""
+    """Load series-level matches from primary CSV, sorted by date.
+
+    Winner is derived from score1_match vs score2_match because the
+    `team1_win` column in this CSV is unreliable on is_total=True rows
+    (97.9% are zeros even though slot-1 wins ~55% of the time per scores).
+    """
     if not PRIMARY_CSV.exists():
         print(f"[!] Primary CSV not found: {PRIMARY_CSV}", file=sys.stderr)
         return []
@@ -162,13 +167,14 @@ def load_historical() -> list[dict]:
                     dt = dt.replace(tzinfo=timezone.utc)
             except (ValueError, KeyError):
                 continue
-            team1_win = r.get("team1_win", "")
-            if team1_win in ("1", "1.0", "True", "true"):
-                result = 1
-            elif team1_win in ("0", "0.0", "False", "false"):
-                result = 0
-            else:
+            try:
+                s1 = float(r.get("score1_match") or 0)
+                s2 = float(r.get("score2_match") or 0)
+            except (ValueError, TypeError):
                 continue
+            if s1 == s2:
+                continue  # draws ≈ impossible in CS series — skip data anomalies
+            result = 1 if s1 > s2 else 0
             rows.append({
                 "date": dt,
                 "team1": r["team1"].strip(),

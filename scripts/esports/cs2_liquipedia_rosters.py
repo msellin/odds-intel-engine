@@ -55,24 +55,71 @@ def _slugify_team(name: str) -> str:
     return name.strip().replace(" ", "_")
 
 
-def _fetch_wikitext(team: str) -> str | None:
-    slug = _slugify_team(team)
+def _slug_variants(name: str) -> list[str]:
+    """Try multiple page-name variants for a single org name."""
+    base = _slugify_team(name)
+    title = base.title() if base.isupper() else base
+    variants = [base]
+    if title != base:
+        variants.append(title)
+    for suffix in ("_Esports", "_Clan", "_Gaming"):
+        variants.append(base + suffix)
+    return variants
+
+
+def _resolve_via_opensearch(team: str) -> str | None:
+    """Use MediaWiki opensearch (lighter endpoint) to find the team's actual page name."""
     try:
         r = requests.get(
             API,
-            params={"action": "parse", "format": "json", "page": slug, "prop": "wikitext"},
+            params={"action": "opensearch", "format": "json", "search": team, "limit": 3, "namespace": 0},
             headers={"User-Agent": USER_AGENT},
             timeout=15,
         )
         if r.status_code != 200:
             return None
-        d = r.json()
-        if d.get("error"):
-            return None
-        return ((d.get("parse") or {}).get("wikitext") or {}).get("*")
-    except Exception as e:
-        print(f"  [!] {team}: fetch error {e}", file=sys.stderr)
+        data = r.json()
+        # opensearch returns [query, [titles], [descriptions], [urls]]
+        titles = data[1] if isinstance(data, list) and len(data) > 1 else []
+        return titles[0].replace(" ", "_") if titles else None
+    except Exception:
         return None
+
+
+def _parse_request(slug: str, retries: int = 3) -> str | None:
+    """One parse request with 429 backoff."""
+    for attempt in range(retries):
+        try:
+            r = requests.get(
+                API,
+                params={"action": "parse", "format": "json", "page": slug, "prop": "wikitext"},
+                headers={"User-Agent": USER_AGENT},
+                timeout=15,
+            )
+            if r.status_code == 429:
+                wait = 60 * (attempt + 1)
+                print(f"    [!] 429 on '{slug}' — sleeping {wait}s", file=sys.stderr)
+                time.sleep(wait)
+                continue
+            if r.status_code != 200:
+                return None
+            d = r.json()
+            if d.get("error"):
+                return None
+            return ((d.get("parse") or {}).get("wikitext") or {}).get("*")
+        except Exception as e:
+            if attempt == retries - 1:
+                print(f"    [!] fetch error: {e}", file=sys.stderr)
+            time.sleep(5)
+    return None
+
+
+def _fetch_wikitext(team: str) -> str | None:
+    """Resolve team name via opensearch (1 cheap call), then parse (1 heavy call)."""
+    resolved = _resolve_via_opensearch(team)
+    slug = resolved or _slugify_team(team)
+    time.sleep(RATE_LIMIT_SECONDS)
+    return _parse_request(slug)
 
 
 def _find_active_section(wt: str) -> str:
