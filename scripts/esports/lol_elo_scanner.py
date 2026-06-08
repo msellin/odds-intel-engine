@@ -223,7 +223,7 @@ def format_match_row(
     label_width: int = 26
 ) -> str:
     label = f"[{win_pct:.0f}%]"
-    status = f"BET@≤{threshold:.2f}" if team_odds >= threshold else "       "
+    status = f"min≥{threshold:.2f}" if team_odds >= threshold else "       "
     return (
         f"    {team:<{label_width}}  ELO={elo:.0f}  {label:>5}  "
         f"fair={team_odds:.2f}  {status}"
@@ -296,7 +296,7 @@ def main() -> None:
     print(f"\n{'='*65}")
     print(f"UPCOMING MATCHES — ELO FAIR ODDS + THRESHOLDS (≥{args.edge:.0%} edge)")
     print(f"{'='*65}")
-    print(f"  {'Threshold = fair odds × (1 - edge). Bet if bookmaker ≥ threshold.'}")
+    print(f"  {'min≥ = minimum odds you need at bookmaker to have edge. Higher is better.'}")
     print()
 
     # Filter out TBD-vs-TBD (bracket slots not yet filled)
