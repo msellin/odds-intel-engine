@@ -26,6 +26,11 @@ K_BASE: float = 32.0
 EDGE_THRESHOLD: float = 0.03   # 3% edge required
 MODEL_VERSION: str = "elo+pq_v1"  # bumped when ELO/PQ coefficients or features change
 
+# Minimum recent matches per team for the model to publish odds.
+# Below this the ELO has not converged and a 50/50 prediction is fake confidence.
+MIN_MATCHES_FOR_PREDICTION: int = 10
+MATCH_COUNT_WINDOW_DAYS: int = 180
+
 # Primary CSV covers through ~April 2026 — fetch bo3.gg results from here onwards
 CSV_CUTOFF = datetime(2026, 4, 30, tzinfo=timezone.utc)
 
@@ -271,6 +276,21 @@ def build_elo(matches: list[dict]) -> dict[str, float]:
         ratings[t2] = r2 + k * ((1 - result) - (1 - e1))
 
     return ratings
+
+
+def build_match_counts(matches: list[dict], window_days: int = MATCH_COUNT_WINDOW_DAYS) -> dict[str, int]:
+    """Count matches per team within the last `window_days` from the most recent match."""
+    if not matches:
+        return {}
+    most_recent = max(m["date"] for m in matches)
+    cutoff = most_recent - timedelta(days=window_days)
+    counts: dict[str, int] = {}
+    for m in matches:
+        if m["date"] < cutoff:
+            continue
+        counts[m["team1"]] = counts.get(m["team1"], 0) + 1
+        counts[m["team2"]] = counts.get(m["team2"], 0) + 1
+    return counts
 
 
 # ── bo3.gg API helpers ────────────────────────────────────────────────────────
@@ -583,6 +603,7 @@ def _write_to_db(
     roster_changes: dict[str, list[str]],
     player_ratings: dict[str, float],
     team_last_lineups: dict[str, list[str]],
+    match_counts: dict[str, int] | None = None,
 ) -> None:
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -594,6 +615,7 @@ def _write_to_db(
     alias_map = _build_alias_map(ratings)
     now = datetime.now(timezone.utc).isoformat()
     written = 0
+    match_counts = match_counts or {}
 
     for m in matches:
         t1, t2 = m["team1"], m["team2"]
@@ -602,14 +624,6 @@ def _write_to_db(
         prob1 = elo_expected(r1, r2)
         prob2 = 1.0 - prob1
         best_of = m.get("best_of") or 3
-
-        pm1 = pm2 = fm1 = fm2 = tm1 = tm2 = None
-        if best_of >= 3:
-            pm1, pm2 = atleast1_map_probs(prob1, best_of)
-            fm1 = round(fair_odds(pm1), 3)
-            fm2 = round(fair_odds(pm2), 3)
-            tm1 = round(threshold_odds(pm1, edge), 3)
-            tm2 = round(threshold_odds(pm2, edge), 3)
 
         rc1 = t1 in roster_changes
         rc2 = t2 in roster_changes
@@ -621,6 +635,35 @@ def _write_to_db(
         pq_diff = (pq1 - pq2) if pq1 is not None and pq2 is not None else None
         prob1 = combined_win_prob(r1, r2, pq_diff)
         prob2 = 1.0 - prob1
+
+        # Coverage gate: if either team has too few recent matches, our ELO has
+        # not converged and a 50/50-ish prediction is fake confidence. NULL the
+        # odds so the frontend shows "—" and the VALUE badge can't fire.
+        count1 = match_counts.get(t1, 0)
+        count2 = match_counts.get(t2, 0)
+        sufficient_data = (
+            seen1 and seen2
+            and count1 >= MIN_MATCHES_FOR_PREDICTION
+            and count2 >= MIN_MATCHES_FOR_PREDICTION
+        )
+        if not sufficient_data:
+            fair1 = fair2 = thr1 = thr2 = None
+            prob1_for_db = prob2_for_db = None
+        else:
+            fair1 = round(fair_odds(prob1), 3)
+            fair2 = round(fair_odds(prob2), 3)
+            thr1 = round(threshold_odds(prob1, edge), 3)
+            thr2 = round(threshold_odds(prob2, edge), 3)
+            prob1_for_db = round(prob1, 4)
+            prob2_for_db = round(prob2, 4)
+
+        pm1 = pm2 = fm1 = fm2 = tm1 = tm2 = None
+        if best_of >= 3 and sufficient_data:
+            pm1, pm2 = atleast1_map_probs(prob1, best_of)
+            fm1 = round(fair_odds(pm1), 3)
+            fm2 = round(fair_odds(pm2), 3)
+            tm1 = round(threshold_odds(pm1, edge), 3)
+            tm2 = round(threshold_odds(pm2, edge), 3)
 
         execute_write("""
             INSERT INTO cs2_upcoming_matches
@@ -663,10 +706,10 @@ def _write_to_db(
             m["tournament"], m["date"].isoformat(), m["state"], best_of,
             t1, t2,
             round(r1, 1), round(r2, 1),
-            round(prob1, 4), round(prob2, 4),
-            round(fair_odds(prob1), 3), round(fair_odds(prob2), 3),
-            round(threshold_odds(prob1, edge), 3), round(threshold_odds(prob2, edge), 3),
-            seen1 and seen2,
+            prob1_for_db, prob2_for_db,
+            fair1, fair2,
+            thr1, thr2,
+            sufficient_data,
             fm1, fm2, tm1, tm2,
             m.get("bookie_odds1"), m.get("bookie_odds2"),
             rc1, rc2, rn1, rn2,
@@ -676,8 +719,9 @@ def _write_to_db(
         written += 1
 
         # Append-only prediction history (calibration + retraining input).
-        # Skip rows w/o bo3gg_id — no way to join to results later.
-        if m.get("id") is not None:
+        # Skip rows w/o bo3gg_id (no join key) and skip low-coverage matches
+        # (predictions are unreliable so they would contaminate calibration).
+        if m.get("id") is not None and sufficient_data:
             execute_write("""
                 INSERT INTO cs2_predictions
                     (bo3gg_id, scan_time, kickoff_time, league, best_of,
@@ -746,12 +790,22 @@ def main() -> None:
     print(f"    {len(recent_results)} new results since {CSV_CUTOFF.date()} (live ELO update)")
     print(f"    {sum(len(v) for v in roster_changes.values())} roster changes found across {len(roster_changes)} teams")
 
+    all_hist = matches_hist + recent_results
     if recent_results:
         print("\n[5] Updating ELO with recent results...")
-        ratings = build_elo(matches_hist + recent_results)
+        ratings = build_elo(all_hist)
         if ratings:
             best = max(ratings, key=ratings.get)
             print(f"    Updated ELO — highest: {best} ({ratings[best]:.0f})")
+
+    # Match counts power the coverage guardrail in _write_to_db: teams with
+    # < MIN_MATCHES_FOR_PREDICTION in the last MATCH_COUNT_WINDOW_DAYS get
+    # NULL odds (we don't make up confidence we don't have).
+    match_counts = build_match_counts(all_hist)
+    thin = sum(1 for m in upcoming
+               if match_counts.get(m["team1"], 0) < MIN_MATCHES_FOR_PREDICTION
+               or match_counts.get(m["team2"], 0) < MIN_MATCHES_FOR_PREDICTION)
+    print(f"    {thin}/{len(upcoming)} matches gated as thin-data (< {MIN_MATCHES_FOR_PREDICTION} matches/{MATCH_COUNT_WINDOW_DAYS}d)")
 
     if not upcoming:
         print("\n  No upcoming matches found.")
@@ -816,7 +870,7 @@ def main() -> None:
 
     if args.record:
         print("[6] Writing to database...")
-        _write_to_db(upcoming, ratings, args.edge, roster_changes, player_ratings, team_last_lineups)
+        _write_to_db(upcoming, ratings, args.edge, roster_changes, player_ratings, team_last_lineups, match_counts)
 
 
 if __name__ == "__main__":

@@ -19702,6 +19702,13 @@ def _():
     # prediction history append must be wired in scanner
     assert "INSERT INTO cs2_predictions" in src, "scanner must append to cs2_predictions"
     assert "MODEL_VERSION" in src and 'elo+pq_v1' in src
+    # Coverage gate: thin-data matches must get NULL odds
+    assert "MIN_MATCHES_FOR_PREDICTION" in src
+    assert "build_match_counts" in src
+    assert "sufficient_data" in src, "must gate odds when team coverage is thin"
+    # build_match_counts returns 0 for unknown teams
+    counts = mod.build_match_counts([])
+    assert counts == {}
 
 
 @test("CS2-DATA-ACCUMULATION — predictions + results migrations, settlement script, crons")
