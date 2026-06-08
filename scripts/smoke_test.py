@@ -19720,6 +19720,56 @@ def _():
     assert isinstance(rs, dict)
 
 
+@test("CS2-WEEKLY-CALIBRATE + PLATT-AT-SCAN")
+def _():
+    """cs2_weekly_calibrate.py + scanner Platt application + cron registration."""
+    import pathlib, ast
+    p = pathlib.Path("scripts/esports/cs2_weekly_calibrate.py")
+    assert p.exists()
+    src = p.read_text()
+    for fn in ["_load_recent_pairs", "_apply_platt", "calibrate", "_load_existing"]:
+        assert f"def {fn}" in src
+    assert "PROMOTE_LOGLOSS_MARGIN" in src
+    assert "WINDOW_DAYS" in src
+
+    scanner_src = pathlib.Path("scripts/esports/cs2_elo_scanner.py").read_text()
+    assert "calibrated_prob" in scanner_src
+    assert "_PLATT_A" in scanner_src and "_PLATT_B" in scanner_src
+    assert "_load_platt_coefficients" in scanner_src
+    assert "calibrated_prob(raw_prob1)" in scanner_src
+
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    tree = ast.parse(sched)
+    fns = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    assert "job_cs2_weekly_calibrate" in fns
+    ids = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "add_job":
+            for kw in n.keywords:
+                if kw.arg == "id" and isinstance(getattr(kw.value, "value", None), str):
+                    ids.add(kw.value.value)
+    assert "cs2_weekly_calibrate" in ids
+
+
+@test("CS2-BOT-ANOMALY-GUARD — wide model-vs-market gaps are suppressed")
+def _():
+    """bot_cs2_value_v1: rejects bets where |our_prob − implied_prob| > MAX_PROB_DIVERGENCE."""
+    import pathlib, importlib.util
+    p = pathlib.Path("scripts/esports/cs2_bot.py")
+    src = p.read_text()
+    assert "MAX_PROB_DIVERGENCE" in src
+    assert "def _is_anomaly" in src
+    spec = importlib.util.spec_from_file_location("cs2_bot", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    # 50% prob vs 4.0 odds (25% implied) — gap = 0.25 = at the limit
+    assert mod._is_anomaly(0.50, 4.10) is True
+    # 60% prob vs 1.85 odds (54% implied) — gap = 0.06 → ok
+    assert mod._is_anomaly(0.60, 1.85) is False
+    # Missing prob → fail closed (not anomaly)
+    assert mod._is_anomaly(None, 2.0) is False
+
+
 @test("CS2-FEATURES — form/H2H/rust/SoS module + migration 203")
 def _():
     """cs2_features.py computes per-team features without lookahead; migration 203 stores them."""

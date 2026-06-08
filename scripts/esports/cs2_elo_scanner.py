@@ -26,6 +26,44 @@ K_BASE: float = 32.0
 EDGE_THRESHOLD: float = 0.03   # 3% edge required
 MODEL_VERSION: str = "elo+pq_v1"  # bumped when ELO/PQ coefficients or features change
 
+# Platt scaling coefficients (set at module import from data/esports/cs2/platt_coefficients.json).
+# When present, scanner applies sigmoid(a * logit(raw_prob) + b) before fair_odds.
+# Refreshed weekly by cs2_weekly_calibrate.py.
+_PLATT_A: float | None = None
+_PLATT_B: float | None = None
+
+
+def _load_platt_coefficients() -> None:
+    """Idempotent: refresh _PLATT_A, _PLATT_B from disk."""
+    global _PLATT_A, _PLATT_B
+    f = Path("data/esports/cs2/platt_coefficients.json")
+    if not f.exists():
+        return
+    try:
+        import json
+        data = json.loads(f.read_text())
+        entry = data.get(MODEL_VERSION)
+        if entry and "a" in entry and "b" in entry:
+            _PLATT_A = float(entry["a"])
+            _PLATT_B = float(entry["b"])
+    except (json.JSONDecodeError, OSError, ValueError, TypeError):
+        pass
+
+
+def calibrated_prob(raw_prob: float) -> float:
+    """Apply Platt scaling if coefficients loaded; otherwise return raw_prob."""
+    if _PLATT_A is None or _PLATT_B is None:
+        return raw_prob
+    import math
+    eps = 1e-6
+    p = min(max(raw_prob, eps), 1 - eps)
+    logit = math.log(p / (1 - p))
+    z = _PLATT_A * logit + _PLATT_B
+    return 1.0 / (1.0 + math.exp(-z))
+
+
+_load_platt_coefficients()
+
 # Minimum recent matches per team for the model to publish odds.
 # Below this the ELO has not converged and a 50/50 prediction is fake confidence.
 MIN_MATCHES_FOR_PREDICTION: int = 10
@@ -710,7 +748,9 @@ def _write_to_db(
         pq1 = get_team_player_quality(t1, team_last_lineups, player_ratings)
         pq2 = get_team_player_quality(t2, team_last_lineups, player_ratings)
         pq_diff = (pq1 - pq2) if pq1 is not None and pq2 is not None else None
-        prob1 = combined_win_prob(r1, r2, pq_diff)
+        raw_prob1 = combined_win_prob(r1, r2, pq_diff)
+        # Apply Platt calibration (no-op if coefficients not loaded)
+        prob1 = calibrated_prob(raw_prob1)
         prob2 = 1.0 - prob1
 
         # Coverage gate: if either team has too few recent matches, our ELO has
@@ -870,6 +910,10 @@ def main() -> None:
     args = parser.parse_args()
 
     edge_pct = int(args.edge * 100)
+    if _PLATT_A is not None and _PLATT_B is not None:
+        print(f"  Platt calibration: a={_PLATT_A:.4f} b={_PLATT_B:.4f} (active)")
+    else:
+        print("  Platt calibration: not loaded — raw probabilities")
     print(f"\n{'='*65}")
     print(f"  CS2 ELO SCANNER  {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC")
     print(f"{'='*65}\n")

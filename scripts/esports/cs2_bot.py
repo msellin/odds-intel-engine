@@ -35,6 +35,12 @@ BOT_NAME = "bot_cs2_value_v1"
 MIN_EXTRA_EDGE = 0.05   # 5% above the threshold (which already has 3% baked in)
 STAKE = 1.0             # uniform stake — sizing comes later from Kelly
 
+# Anomaly guard: if our model probability and the implied probability from the
+# bookmaker offering the "value" diverge by more than this in absolute terms,
+# the gap is more likely a data bug than a real edge — suppress the bet.
+# Calibrated on real-money soft-book mistakes: 25pp ≈ 4σ in the calibrated model.
+MAX_PROB_DIVERGENCE = 0.25
+
 
 def _load_open_matches() -> list[dict]:
     """Pre-kickoff matches with model coverage."""
@@ -42,6 +48,7 @@ def _load_open_matches() -> list[dict]:
     horizon = (now + timedelta(hours=72)).isoformat()  # CS2 fixtures locked 2-3d ahead
     return execute_query("""
         SELECT id, bo3gg_id, team1, team2, kickoff_time, best_of,
+               win_prob1, win_prob2,
                fair_odds1, fair_odds2, threshold_odds1, threshold_odds2,
                fair_odds_map1, fair_odds_map2, threshold_map1, threshold_map2,
                bookie_odds1, bookie_odds2,
@@ -53,6 +60,15 @@ def _load_open_matches() -> list[dict]:
           AND kickoff_time <= %s
           AND threshold_odds1 IS NOT NULL
     """, (now.isoformat(), horizon))
+
+
+def _is_anomaly(side_prob: float | None, bookie_odds: float) -> bool:
+    """True if our model's win prob diverges from the bookie's implied prob by
+    more than MAX_PROB_DIVERGENCE — likely model bug or stale odds."""
+    if side_prob is None or bookie_odds <= 1.0:
+        return False
+    implied = 1.0 / bookie_odds   # raw implied, ignores vig (still good enough)
+    return abs(side_prob - implied) > MAX_PROB_DIVERGENCE
 
 
 def _scan_one(row: dict) -> list[dict]:
@@ -67,9 +83,9 @@ def _scan_one(row: dict) -> list[dict]:
 
     for bookie, b_odds1, b_odds2 in bookmakers:
         # match_winner
-        for side, team_name, odds, fair, thr in [
-            ("team1", row["team1"], b_odds1, row["fair_odds1"], row["threshold_odds1"]),
-            ("team2", row["team2"], b_odds2, row["fair_odds2"], row["threshold_odds2"]),
+        for side, team_name, odds, fair, thr, prob in [
+            ("team1", row["team1"], b_odds1, row["fair_odds1"], row["threshold_odds1"], row.get("win_prob1")),
+            ("team2", row["team2"], b_odds2, row["fair_odds2"], row["threshold_odds2"], row.get("win_prob2")),
         ]:
             if odds is None or thr is None or fair is None:
                 continue
@@ -77,6 +93,9 @@ def _scan_one(row: dict) -> list[dict]:
                 continue
             extra = (odds - thr) / thr
             if extra < MIN_EXTRA_EDGE:
+                continue
+            # Anomaly guard — kills the bet if our prob and implied prob differ wildly
+            if _is_anomaly(float(prob) if prob is not None else None, float(odds)):
                 continue
             picks.append({
                 "side": side, "team": team_name, "market": "match_winner",

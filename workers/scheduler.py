@@ -780,6 +780,26 @@ def job_cs2_scanner():
     _run_job("cs2_scanner", lambda: None)
 
 
+def job_cs2_weekly_calibrate():
+    """CS2-WEEKLY-CALIBRATION (2026-06-08): refit Platt scaling on the last 90
+    days of cs2_predictions ⨝ cs2_results; promote if log-loss improves. The
+    scanner picks up the new coefficients on its next run.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 weekly Platt recalibration --promote[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_weekly_calibrate.py", "--promote"],
+        capture_output=True, text=True, timeout=300,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]CS2 calibrate error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ["pairs", "raw", "current", "new fit", "PROMOTE", "keep current", "insufficient"]):
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_weekly_calibrate", lambda: None)
+
+
 def job_cs2_pandascore_rosters():
     """CS2-PANDASCORE-ROSTERS (2026-06-08): refresh current 5-man lineups from
     PandaScore free tier. Cache: data/esports/cs2/pandascore_rosters.json.
@@ -1922,6 +1942,17 @@ def main():
     scheduler.add_job(job_cs2_settlement, CronTrigger(hour="12-23,0-2", minute=22),
                       id="cs2_settlement", name="CS2 Settlement [hourly 12-02 UTC]",
                       max_instances=1, misfire_grace_time=900)
+
+    # CS2-WEEKLY-CALIBRATION (2026-06-08) — Sunday 03:30 UTC, before Pandascore
+    # roster refresh. Re-fits Platt scaling on last 90d of accumulated data;
+    # auto-promotes the new coefficients to data/esports/cs2/platt_coefficients.json
+    # when log_loss improves by ≥0.001. Scanner reads coefficients at module
+    # import so the next scanner run uses the new calibration.
+    scheduler.add_job(job_cs2_weekly_calibrate,
+                      CronTrigger(day_of_week="sun", hour=3, minute=30),
+                      id="cs2_weekly_calibrate",
+                      name="CS2 Weekly Platt Recalibration Sun 03:30",
+                      max_instances=1, misfire_grace_time=3600)
 
     # CS2-PANDASCORE-ROSTERS (2026-06-08) — daily 04:30 UTC.
     # Refreshes current 5-man lineups for PQ; replaces stale CSV last-known.
