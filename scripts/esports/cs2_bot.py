@@ -33,7 +33,9 @@ from workers.api_clients.db import execute_query, execute_write
 
 BOT_NAME = "bot_cs2_value_v1"
 MIN_EXTRA_EDGE = 0.05   # 5% above the threshold (which already has 3% baked in)
-STAKE = 1.0             # uniform stake — sizing comes later from Kelly
+BASE_STAKE = 1.0        # 1 unit reference (Kelly fraction is multiplied by this)
+KELLY_FRACTION = 0.5    # half-Kelly — standard variance-reduced stake
+KELLY_CAP = 2.0         # never wager more than 2u on a single bet
 
 # Anomaly guard: if our model probability and the implied probability from the
 # bookmaker offering the "value" diverge by more than this in absolute terms,
@@ -71,6 +73,23 @@ def _is_anomaly(side_prob: float | None, bookie_odds: float) -> bool:
     return abs(side_prob - implied) > MAX_PROB_DIVERGENCE
 
 
+def kelly_stake(side_prob: float | None, bookie_odds: float) -> float:
+    """Half-Kelly stake. Returns BASE_STAKE * half-Kelly fraction, capped at KELLY_CAP.
+
+    Kelly formula: f* = (b*p - q) / b, where b = decimal_odds - 1, p = win prob, q = 1 - p.
+    Falls back to 1.0 if probability unknown (preserves prior behavior).
+    """
+    if side_prob is None or bookie_odds <= 1.0:
+        return BASE_STAKE
+    b = bookie_odds - 1.0
+    p = float(side_prob)
+    q = 1.0 - p
+    full = (b * p - q) / b
+    if full <= 0:
+        return 0.0                      # caller should skip
+    return min(KELLY_CAP, round(BASE_STAKE * KELLY_FRACTION * full, 4))
+
+
 def _scan_one(row: dict) -> list[dict]:
     """Return list of (match, side, market, bookie, odds, fair, thr) value picks."""
     picks: list[dict] = []
@@ -97,10 +116,13 @@ def _scan_one(row: dict) -> list[dict]:
             # Anomaly guard — kills the bet if our prob and implied prob differ wildly
             if _is_anomaly(float(prob) if prob is not None else None, float(odds)):
                 continue
+            stake = kelly_stake(float(prob) if prob is not None else None, float(odds))
+            if stake <= 0:
+                continue
             picks.append({
                 "side": side, "team": team_name, "market": "match_winner",
                 "bookie": bookie, "odds": float(odds), "fair": float(fair),
-                "thr": float(thr), "edge": extra,
+                "thr": float(thr), "edge": extra, "stake": stake,
             })
 
         # atleast1map (BO3/5 only)
@@ -119,7 +141,7 @@ def _scan_one(row: dict) -> list[dict]:
                 picks.append({
                     "side": side, "team": team_name, "market": "atleast1map",
                     "bookie": bookie, "odds": float(odds), "fair": float(fair),
-                    "thr": float(thr), "edge": extra,
+                    "thr": float(thr), "edge": extra, "stake": BASE_STAKE,
                 })
 
     return picks
@@ -137,7 +159,8 @@ def _write_bet(row: dict, pick: dict) -> bool:
         BOT_NAME, row["bo3gg_id"], row["kickoff_time"],
         row["team1"], row["team2"],
         pick["market"], pick["team"], pick["bookie"],
-        pick["odds"], pick["fair"], pick["thr"], pick["edge"], STAKE,
+        pick["odds"], pick["fair"], pick["thr"], pick["edge"],
+        pick.get("stake", BASE_STAKE),
     ))
     return bool(res)
 
@@ -207,7 +230,7 @@ def main() -> None:
             tag = "  fired" if args.record else "  dry"
             print(f"    {tag}  {row['team1']:25} vs {row['team2']:25}  "
                   f"{p['market']:12} → {p['team']:20} @ {p['bookie']:8} {p['odds']:>5.2f}  "
-                  f"(thr {p['thr']:.2f}, edge +{p['edge']*100:.1f}%)")
+                  f"(thr {p['thr']:.2f}, edge +{p['edge']*100:.1f}%, stake {p.get('stake', BASE_STAKE):.2f}u)")
             if args.record:
                 if _write_bet(row, p):
                     total_written += 1

@@ -19751,6 +19751,26 @@ def _():
     assert "cs2_weekly_calibrate" in ids
 
 
+@test("CS2-KELLY-SIZING — half-Kelly with cap, falls back to 1u when prob unknown")
+def _():
+    import pathlib, importlib.util
+    p = pathlib.Path("scripts/esports/cs2_bot.py")
+    spec = importlib.util.spec_from_file_location("cs2_bot", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    # Positive-edge bet: p=0.55, odds=2.10. b=1.1, q=0.45
+    # Full Kelly = (1.1*0.55 - 0.45)/1.1 = 0.14, half = 0.07
+    s = mod.kelly_stake(0.55, 2.10)
+    assert 0.05 < s < 0.10, f"half-Kelly should be ~0.07, got {s}"
+    # Negative-edge bet → 0 stake
+    assert mod.kelly_stake(0.40, 2.00) == 0.0
+    # Unknown prob → fallback 1u
+    assert mod.kelly_stake(None, 2.00) == mod.BASE_STAKE
+    # Bigger edge → bigger stake, but capped
+    big = mod.kelly_stake(0.95, 10.0)
+    assert big <= mod.KELLY_CAP
+
+
 @test("CS2-BOT-ANOMALY-GUARD — wide model-vs-market gaps are suppressed")
 def _():
     """bot_cs2_value_v1: rejects bets where |our_prob − implied_prob| > MAX_PROB_DIVERGENCE."""
