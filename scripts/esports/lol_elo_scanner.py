@@ -405,7 +405,8 @@ def load_oracle_elixir(years: list[int] | None = None) -> list[dict]:
             winner = b["teamname"] if b["result"] == 1 else r["teamname"]
             league_raw = str(b.get("league", "") or "").strip()
             tier_w = TIER_MAP.get(league_raw.lower(), 1.0)
-            game_num = int(b.get("game", 1) or 1)
+            raw_game = b.get("game")
+            game_num = 1 if (raw_game is None or (isinstance(raw_game, float) and raw_game != raw_game)) else int(float(raw_game))
             # BO inferred from max game number seen per series is done post-hoc;
             # use game column as BO proxy (game 1 = probably BO1/3/5)
             matches.append({
