@@ -22,14 +22,15 @@ from pathlib import Path
 import requests
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
-from workers.api_clients.db import execute_query
+from workers.api_clients.db import execute_query, execute_write
 
-BASE          = "https://api.oddspapi.io/v4"
-TENNIS_SPORT  = 12
-MIN_EDGE      = 0.03          # 3% minimum edge vs Pinnacle fair price
-KELLY_FRAC    = 0.25          # quarter Kelly for simulated stakes
-MAX_STAKE     = 5.0           # cap per bet
-DEFAULT_STAKE = 1.0
+BASE           = "https://api.oddspapi.io/v4"
+TENNIS_SPORT   = 12
+RECORD_MIN_EDGE = 0.0         # log all positive-edge observations for training data
+DISPLAY_MIN_EDGE = 0.03       # only print/highlight ≥3% in console
+KELLY_FRAC     = 0.25         # quarter Kelly for simulated stakes
+MAX_STAKE      = 5.0          # cap per bet
+DEFAULT_STAKE  = 1.0
 
 # Sharp anchor
 SHARP_BOOK = "pinnacle"
@@ -46,7 +47,7 @@ SOFT_BOOKS = [
 ]
 
 # Batch size for tournament IDs per request (keep URL manageable)
-TOURNEY_BATCH = 20
+TOURNEY_BATCH = 5   # OddsPapi max per /odds-by-tournaments call
 
 _requests_remaining: int | None = None
 
@@ -59,18 +60,26 @@ def call(path: str, **params) -> dict | list | None:
         sys.exit(1)
     params["apiKey"] = key
     url = f"{BASE}{path}"
-    try:
-        r = requests.get(url, params=params, timeout=30)
-    except requests.RequestException as e:
-        print(f"  HTTP error {path}: {e}")
-        return None
-    rem = r.headers.get("x-requests-remaining") or r.headers.get("X-Requests-Remaining")
-    if rem is not None:
-        _requests_remaining = int(rem)
-    if r.status_code != 200:
-        print(f"  API error {r.status_code} on {path}: {r.text[:200]}")
-        return None
-    return r.json()
+    for attempt in range(4):
+        try:
+            r = requests.get(url, params=params, timeout=30)
+        except requests.RequestException as e:
+            print(f"  HTTP error {path}: {e}")
+            return None
+        if r.status_code == 429:
+            wait = 2 ** attempt
+            print(f"  Rate limited — waiting {wait}s (attempt {attempt+1}/4)")
+            time.sleep(wait)
+            continue
+        rem = r.headers.get("x-requests-remaining") or r.headers.get("X-Requests-Remaining")
+        if rem is not None:
+            _requests_remaining = int(rem)
+        if r.status_code != 200:
+            print(f"  API error {r.status_code} on {path}: {r.text[:200]}")
+            return None
+        return r.json()
+    print(f"  Giving up on {path} after repeated 429s")
+    return None
 
 
 def fetch_tennis_tournaments() -> list[dict]:
@@ -94,39 +103,62 @@ def fetch_odds_bulk(tournament_ids: list[int | str], bookmaker: str) -> list[dic
             continue
         rows = data if isinstance(data, list) else data.get("data", data.get("fixtures", []))
         all_fixtures.extend(rows)
-        time.sleep(0.5)
+        time.sleep(1.5)
     return all_fixtures
 
 
-def extract_match_winner_odds(fixture: dict, bookmaker: str) -> tuple[float | None, float | None]:
+def extract_odds_by_player(fixture: dict, bookmaker: str) -> dict[str, float]:
     """
-    Return (home_odds, away_odds) for the match-winner market, or (None, None).
-    Tennis has no draw: we find the market with exactly 2 active outcomes.
-    OddsPapi market IDs vary — we auto-detect by outcome count.
+    Return {participant1Id: price, participant2Id: price} for the match-winner market.
+    Identifies match winner by bookmakerOutcomeId == 'home'/'away' — consistent across
+    all bookmakers in OddsPapi. Takes lowest numeric market ID when multiple qualify.
     """
     bm_data = fixture.get("bookmakerOdds", {}).get(bookmaker)
     if not bm_data or not bm_data.get("bookmakerIsActive"):
-        return None, None
+        return {}
     if bm_data.get("suspended"):
-        return None, None
+        return {}
+
+    p1_id = str(fixture.get("participant1Id", ""))
+    p2_id = str(fixture.get("participant2Id", ""))
+    if not p1_id or not p2_id:
+        return {}
+
     markets: dict = bm_data.get("markets", {})
+    best: tuple[float, float] | None = None
+    best_mid = float("inf")
+
     for market_id, market in markets.items():
         if not market.get("marketActive"):
             continue
         outcomes: dict = market.get("outcomes", {})
-        # Collect active prices (skip suspended / missing price)
-        prices = []
+        if len(outcomes) != 2:
+            continue
+
+        home_price: float | None = None
+        away_price: float | None = None
         for oid, outcome_data in outcomes.items():
-            players = outcome_data.get("players", {})
-            for pid, player in players.items():
-                if player.get("active") and player.get("price") and player["price"] > 1.0:
-                    prices.append((oid, player["price"]))
-                    break  # take first active player line
-        if len(prices) == 2:
-            # Tennis match-winner: 2-outcome market. Lower outcome ID = home (participant1).
-            prices.sort(key=lambda x: x[0])
-            return prices[0][1], prices[1][1]
-    return None, None
+            player = outcome_data.get("players", {}).get("0", {})
+            if not player.get("active"):
+                continue
+            price = player.get("price")
+            if not price or price <= 1.0:
+                continue
+            bid = player.get("bookmakerOutcomeId", "")
+            if bid == "home":
+                home_price = price
+            elif bid == "away":
+                away_price = price
+
+        if home_price and away_price:
+            mid_num = int(market_id) if str(market_id).lstrip("-").isdigit() else float("inf")
+            if mid_num < best_mid:
+                best_mid = mid_num
+                best = (home_price, away_price)
+
+    if best:
+        return {p1_id: best[0], p2_id: best[1]}
+    return {}
 
 
 def devig_two_way(home_raw: float, away_raw: float) -> tuple[float, float]:
@@ -152,7 +184,7 @@ def upsert_fixture_today(fixture_id: str, tournament_name: str,
                          pin_margin_pct: float, dry_run: bool) -> None:
     if dry_run:
         return
-    execute_query("""
+    execute_write("""
         INSERT INTO tennis_fixtures_today
             (fixture_id, tournament_name, player_home, player_away,
              kickoff_time, pin_raw_home, pin_raw_away,
@@ -184,18 +216,24 @@ def upsert_fixture_today(fixture_id: str, tournament_name: str,
 def insert_value_bet(row: dict, dry_run: bool) -> None:
     if dry_run:
         return
-    execute_query("""
+    execute_write("""
         INSERT INTO tennis_value_bets
             (fixture_id, tournament_name, player_home, player_away, surface,
              kickoff_time, market, selection,
              pin_fair_odds, pin_raw_home, pin_raw_away,
-             bookmaker, book_odds, edge_pct, kelly_fraction, stake, notes)
+             bookmaker, book_odds, edge_pct, kelly_fraction, stake, scan_date, notes)
         VALUES
             (%(fixture_id)s, %(tournament_name)s, %(player_home)s, %(player_away)s, %(surface)s,
              %(kickoff_time)s, %(market)s, %(selection)s,
              %(pin_fair_odds)s, %(pin_raw_home)s, %(pin_raw_away)s,
-             %(bookmaker)s, %(book_odds)s, %(edge_pct)s, %(kelly_fraction)s, %(stake)s, %(notes)s)
-        ON CONFLICT DO NOTHING
+             %(bookmaker)s, %(book_odds)s, %(edge_pct)s, %(kelly_fraction)s, %(stake)s,
+             CURRENT_DATE, %(notes)s)
+        ON CONFLICT (fixture_id, bookmaker, selection, scan_date) DO UPDATE SET
+            book_odds      = EXCLUDED.book_odds,
+            edge_pct       = EXCLUDED.edge_pct,
+            kelly_fraction = EXCLUDED.kelly_fraction,
+            stake          = EXCLUDED.stake,
+            logged_at      = now()
     """, row)
 
 
@@ -244,15 +282,20 @@ def main(dry_run: bool = False) -> None:
         if start < now or start > cutoff:
             continue
 
-        h_raw, a_raw = extract_match_winner_odds(fix, SHARP_BOOK)
-        if not h_raw or not a_raw:
+        pin_odds = extract_odds_by_player(fix, SHARP_BOOK)
+        p1_id = str(fix.get("participant1Id", ""))
+        p2_id = str(fix.get("participant2Id", ""))
+        if p1_id not in pin_odds or p2_id not in pin_odds:
             continue
+        h_raw = pin_odds[p1_id]
+        a_raw = pin_odds[p2_id]
 
         fair_h, fair_a = devig_two_way(h_raw, a_raw)
         pin_index[fid] = {
             "fixture": fix,
             "tournament_id": fix.get("tournamentId"),
             "start": start,
+            "p1_id": p1_id, "p2_id": p2_id,
             "h_raw": h_raw, "a_raw": a_raw,
             "fair_h": fair_h, "fair_a": fair_a,
             "fair_h_odds": 1.0 / fair_h,
@@ -267,8 +310,8 @@ def main(dry_run: bool = False) -> None:
     # ── 2b. Upsert ALL fixtures + thresholds (for admin page) ─────────
     for fid, pin in pin_index.items():
         fix = pin["fixture"]
-        p1 = str(fix.get("participant1Id", ""))
-        p2 = str(fix.get("participant2Id", ""))
+        p1 = pin["p1_id"]
+        p2 = pin["p2_id"]
         tid = int(pin["tournament_id"] or 0)
         tourney_name = tourney_names.get(tid, "Unknown")
         margin = 1.0 / pin["h_raw"] + 1.0 / pin["a_raw"] - 1.0
@@ -295,9 +338,13 @@ def main(dry_run: bool = False) -> None:
             soft_fix = soft_index.get(fid)
             if not soft_fix:
                 continue
-            h_book, a_book = extract_match_winner_odds(soft_fix, book)
-            if not h_book or not a_book:
+            soft_odds = extract_odds_by_player(soft_fix, book)
+            p1_id = pin["p1_id"]
+            p2_id = pin["p2_id"]
+            if p1_id not in soft_odds or p2_id not in soft_odds:
                 continue
+            h_book = soft_odds[p1_id]
+            a_book = soft_odds[p2_id]
 
             fix = pin["fixture"]
             p1 = fix.get("participant1Id")
@@ -311,12 +358,10 @@ def main(dry_run: bool = False) -> None:
                 ("away", a_book, pin["fair_a"], pin["fair_a_odds"], pin["a_raw"]),
             ]:
                 edge = book_odds * fair_prob - 1.0
-                if edge < MIN_EDGE:
+                if edge < RECORD_MIN_EDGE:
                     continue
 
-                stake = kelly_stake(edge, fair_prob, book_odds)
-                if stake <= 0:
-                    continue
+                stake = kelly_stake(edge, fair_prob, book_odds) if edge >= DISPLAY_MIN_EDGE else 0.0
 
                 row = {
                     "fixture_id":      fid,
@@ -333,17 +378,17 @@ def main(dry_run: bool = False) -> None:
                     "bookmaker":       book,
                     "book_odds":       book_odds,
                     "edge_pct":        round(edge * 100, 2),
-                    "kelly_fraction":  round(stake / MAX_STAKE, 4),
+                    "kelly_fraction":  round(stake / MAX_STAKE, 4) if stake > 0 else 0.0,
                     "stake":           stake,
                     "notes":           f"pin_margin={round((1/pin['h_raw']+1/pin['a_raw']-1)*100,2)}%",
                 }
 
-                player_home_label = f"p{p1}"
-                player_away_label = f"p{p2}"
-                print(f"  ✅ VALUE  {tourney_name[:30]:30s}  "
-                      f"{player_home_label if selection=='home' else player_away_label}  "
-                      f"book={book_odds:.2f}  fair={fair_odds:.2f}  edge={edge*100:+.1f}%  "
-                      f"stake={stake:.2f}u")
+                if edge >= DISPLAY_MIN_EDGE:
+                    player_label = f"p{p1}" if selection == "home" else f"p{p2}"
+                    print(f"  ✅ VALUE  {tourney_name[:30]:30s}  "
+                          f"{player_label}  "
+                          f"book={book_odds:.2f}  fair={fair_odds:.2f}  edge={edge*100:+.1f}%  "
+                          f"stake={stake:.2f}u")
 
                 insert_value_bet(row, dry_run)
                 book_bets += 1
@@ -357,13 +402,13 @@ def main(dry_run: bool = False) -> None:
     print(f"\n{'='*65}")
     print(f"SUMMARY")
     print(f"  Pinnacle fixtures scanned: {len(pin_index)}")
-    print(f"  Total value bets found:    {total_bets}")
+    print(f"  Observations logged (edge>0): {total_bets}")
     for bk, n in bets_by_book.items():
         print(f"    {bk}: {n}")
     if _requests_remaining is not None:
         print(f"  OddsPapi requests remaining this month: {_requests_remaining}")
     if not dry_run and total_bets:
-        print(f"  ✓ Logged to tennis_value_bets table")
+        print(f"  ✓ Logged to tennis_value_bets table (edge>0%; ≥3% highlighted)")
     print()
 
     # Note: player IDs from OddsPapi are numeric — next step is building
