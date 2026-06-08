@@ -153,6 +153,8 @@ def load_pin_fixtures() -> list[dict]:
             pin_raw_home, pin_raw_away, pin_margin_pct
         FROM tennis_fixtures_today
         WHERE kickoff_time >= %s AND kickoff_time <= %s
+          AND player_home !~ '^\d+$'
+          AND player_away !~ '^\d+$'
         ORDER BY
             LEAST(player_home, player_away),
             GREATEST(player_home, player_away),
