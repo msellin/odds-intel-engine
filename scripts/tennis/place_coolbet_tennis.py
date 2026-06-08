@@ -151,6 +151,35 @@ def match_to_fixture(coolbet_start: str, fixtures: list[dict]) -> dict | None:
     return best
 
 
+def _looks_like_id(s: str) -> bool:
+    """True if the string is just a numeric OddsPapi participant ID, not a real name."""
+    return s.strip().lstrip("-").isdigit()
+
+
+def backfill_player_names(fixture: dict, cb_home: str, cb_away: str, dry_run: bool) -> None:
+    """If tennis_fixtures_today still has numeric IDs, overwrite with Coolbet player names."""
+    if not fixture:
+        return
+    p_home = str(fixture.get("player_home") or "")
+    p_away = str(fixture.get("player_away") or "")
+    if _looks_like_id(p_home) and cb_home and not _looks_like_id(cb_home):
+        if not dry_run:
+            execute_write(
+                "UPDATE tennis_fixtures_today SET player_home=%s WHERE fixture_id=%s",
+                (cb_home, fixture["fixture_id"]),
+            )
+        print(f"    → name resolved: {p_home} → {cb_home}")
+        fixture["player_home"] = cb_home  # update in-memory for display
+    if _looks_like_id(p_away) and cb_away and not _looks_like_id(cb_away):
+        if not dry_run:
+            execute_write(
+                "UPDATE tennis_fixtures_today SET player_away=%s WHERE fixture_id=%s",
+                (cb_away, fixture["fixture_id"]),
+            )
+        print(f"    → name resolved: {p_away} → {cb_away}")
+        fixture["player_away"] = cb_away
+
+
 def record_observation(
     fixture: dict | None,
     coolbet_match: dict,
@@ -163,6 +192,9 @@ def record_observation(
     cb_home = coolbet_match.get("home") or h_name or "?"
     cb_away = coolbet_match.get("away") or a_name or "?"
     cb_start = coolbet_match.get("start", "")
+
+    # Backfill player names into tennis_fixtures_today when they're still numeric IDs
+    backfill_player_names(fixture, cb_home, cb_away, dry_run)
 
     logged = 0
     value  = 0
@@ -196,7 +228,17 @@ def record_observation(
         print(f"  {marker}  {player_label[:22]:22s}  cb={cb_odds:.2f}  {pin_info}")
 
         if not dry_run:
+            # Also backfill names in existing tennis_value_bets rows for this fixture
+            if fixture and _looks_like_id(str(fixture.get("player_home") or "")):
+                pass  # already updated in-memory; the INSERT below uses resolved names
             fix_id = fixture["fixture_id"] if fixture else f"cb_{cb_id}"
+            if fixture:
+                execute_write(
+                    """UPDATE tennis_value_bets
+                       SET player_home=%s, player_away=%s
+                       WHERE fixture_id=%s AND player_home ~ '^[0-9]+$'""",
+                    (fixture["player_home"], fixture["player_away"], fixture["fixture_id"]),
+                )
             execute_write("""
                 INSERT INTO tennis_value_bets
                     (fixture_id, tournament_name, player_home, player_away, surface,
