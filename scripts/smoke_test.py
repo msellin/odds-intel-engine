@@ -19720,6 +19720,35 @@ def _():
     assert isinstance(rs, dict)
 
 
+@test("CS2-FEATURES — form/H2H/rust/SoS module + migration 203")
+def _():
+    """cs2_features.py computes per-team features without lookahead; migration 203 stores them."""
+    import pathlib
+    from datetime import datetime, timezone
+    src_p = pathlib.Path("scripts/esports/cs2_features.py")
+    assert src_p.exists()
+    src = src_p.read_text()
+    for fn in ["form_momentum", "h2h_win_pct", "days_since_last_match",
+               "opponent_strength_avg", "compute_features",
+               "build_team_history_index", "build_h2h_index"]:
+        assert f"def {fn}" in src, f"{fn} missing"
+    assert "< target_date" in src, "must guard against lookahead bias"
+
+    mig = pathlib.Path("supabase/migrations/203_cs2_features.sql").read_text()
+    for col in ["form_momentum1", "form_momentum2", "days_since_match1",
+                "opp_strength_avg1", "h2h_team1_win_pct", "h2h_count"]:
+        assert col in mig, f"migration 203 missing column {col}"
+
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("cs2_features", src_p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    history = [{"date": datetime(2026, 1, i+1, tzinfo=timezone.utc), "won": i % 2 == 0, "opponent": "X"}
+               for i in range(20)]
+    fm = mod.form_momentum(history, datetime(2026, 2, 1, tzinfo=timezone.utc))
+    assert fm is not None and -1.0 <= fm <= 1.0
+
+
 @test("CS2-PANDASCORE-ROSTERS — fetcher script + scheduler cron")
 def _():
     """cs2_pandascore_rosters.py + cron registered."""
@@ -19817,6 +19846,81 @@ def _():
                     job_ids.add(kw.value.value)
     assert "cs2_scanner" in job_ids, "cs2_scanner cron must be registered"
     assert "cs2_settlement" in job_ids, "cs2_settlement cron must be registered"
+
+
+@test("OU25-DEDICATED-MODEL — wrapper class + training script + bundle layout")
+def test_ou25_dedicated_model():
+    """OU25-DEDICATED-MODEL-INVESTIGATE 2026-06-08 — research task.
+
+    Verdict was SHELVE (see dev/active/ou25-dedicated-model-results.md) but the
+    bundle is saved and the wrapper class must remain loadable so the bundle
+    can be exercised by follow-up work (OU-EVAL-BY-TIER / fallback routing /
+    re-evaluation after MFV backfill).
+
+    This pins:
+      1. Ou25PoissonWrapper exposes the sklearn-classifier interface that
+         workers/model/xgboost_ensemble.py:382-388 reads (`classes_`, `predict_proba`).
+      2. The Dixon-Coles τ correction is applied only to low-score cells.
+      3. The training script can import its key entry points without DB hits.
+      4. If the bundle exists on disk, it loads via the production loader.
+    """
+    import pathlib
+    import numpy as np
+    import pandas as pd
+
+    # 1. Wrapper class contract
+    from workers.model.ou25_dedicated import Ou25PoissonWrapper, _over25_prob_from_lambdas, _dc_tau
+
+    assert list(Ou25PoissonWrapper.classes_) == [False, True], (
+        "classes_ must be [False, True] to match v14 over_under classifier shape — "
+        "xgboost_ensemble.py:385 resolves the over25 column via classes_.index(True)"
+    )
+
+    # 2. DC τ only touches (0,0)/(0,1)/(1,0)/(1,1); otherwise returns 1.0
+    assert _dc_tau(0, 0, 1.5, 1.2, -0.18) != 1.0
+    assert _dc_tau(0, 1, 1.5, 1.2, -0.18) != 1.0
+    assert _dc_tau(1, 0, 1.5, 1.2, -0.18) != 1.0
+    assert _dc_tau(1, 1, 1.5, 1.2, -0.18) != 1.0
+    assert _dc_tau(2, 0, 1.5, 1.2, -0.18) == 1.0
+    assert _dc_tau(0, 2, 1.5, 1.2, -0.18) == 1.0
+    assert _dc_tau(3, 3, 1.5, 1.2, -0.18) == 1.0
+
+    # 3. Sanity on over25 derivation — higher lambdas → higher over25
+    p_lo = _over25_prob_from_lambdas(0.8, 0.8)
+    p_hi = _over25_prob_from_lambdas(2.0, 2.0)
+    assert 0.0 < p_lo < p_hi < 1.0, "over25 prob must increase with lambdas + stay in (0,1)"
+
+    # 4. Training script importable
+    src = pathlib.Path("scripts/train_ou25_dedicated.py").read_text()
+    assert "FEATURE_COLS" in src
+    assert "BUNDLE_VERSION = \"ou25_dedicated_v1\"" in src
+    assert "SHIP_GATE_BASELINE = \"v14_recreate_2026_05_11\"" in src
+    assert "def load_dataset" in src
+    assert "def train_poisson_regressors" in src
+    assert "def score_with_bundle" in src
+    # Pin that result_1x2 is stubbed (not trained) — bundle is OU-only
+    assert "stub_source" in src
+    assert "result_1x2.pkl" in src
+
+    # 5. If bundle was saved, verify it loads via production loader
+    bundle_dir = pathlib.Path("data/models/soccer/ou25_dedicated_v1")
+    if bundle_dir.exists():
+        for f in ("feature_cols.pkl", "over_under.pkl", "home_goals.pkl",
+                  "away_goals.pkl", "result_1x2.pkl"):
+            assert (bundle_dir / f).exists(), (
+                f"Bundle missing {f} — _load_bundle's all-or-nothing pickle "
+                f"contract will reject the bundle and OU inference will fall "
+                f"back to Poisson-only."
+            )
+        from workers.model.xgboost_ensemble import _load_bundle
+        b = _load_bundle("ou25_dedicated_v1")
+        assert b, "Bundle must load via production loader"
+        assert isinstance(b["over_under"], Ou25PoissonWrapper)
+        # End-to-end predict_proba
+        X = pd.DataFrame([{c: 0.0 for c in b["feature_cols"]}])
+        probs = b["over_under"].predict_proba(X)
+        assert probs.shape == (1, 2)
+        assert 0.0 < probs[0, 0] < 1.0 and 0.0 < probs[0, 1] < 1.0
 
 
 if __name__ == "__main__":

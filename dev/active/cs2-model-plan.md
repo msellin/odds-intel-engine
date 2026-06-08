@@ -41,9 +41,14 @@ bookmakers don't run a proper BO-aware model — they extrapolate from match odd
 
 | Source | What we get | Cost | Implementation |
 |--------|------------|------|----------------|
-| **Liquipedia API** | Current rosters per team (5-man active lineup with join dates), full transfer history per year, team metadata | Free, no auth | MediaWiki `action=parse` returns wikitext; needs parser. Rate-limit polite: 1 req/2s. |
-| **HLTV.org** (no API) | Authoritative player ratings (HLTV 2.1 rating), team world rankings, demo stats | Free if scraped politely | Risky long-term — they actively block scrapers. Consider monthly snapshot only. |
+| **HLTV.org `/results`** | Match results + per-map scores (more authoritative than bo3.gg for verification) | Free if scraped politely | Fragile, monthly snapshot pattern. URL: https://www.hltv.org/results |
+| **HLTV.org `/players/archive/active`** | All active players + current HLTV ratings | Free if scraped politely | **High value** — would refresh PQ for new players not in Oct-2025 CSV. URL: https://www.hltv.org/players/archive/active |
+| **egamersworld.com/counterstrike/teams** | Alternative team rosters + rankings | Free | Cross-check with PandaScore. URL: https://egamersworld.com/counterstrike/teams |
+| **Liquipedia map-veto data** | Per-series picks/bans, post-veto map win rates | Free, no auth | Wikitext parsing per match page. Higher effort, +1-2% backtest gain expected. |
 | **Kaggle CS2 datasets** | Quarterly refreshed match data with player stats | Free | Manual download. Need a `scripts/esports/refresh_cs2_csv.py` reminder/cron. |
+
+**Already integrated (2026-06-08):**
+- `cs2_pandascore_rosters.py` — replaces Liquipedia for current 5-man lineups. 55/61 teams resolved in initial sweep. Daily cron 04:30 UTC.
 
 ### 3.3 Paid — gaps free sources don't fill
 

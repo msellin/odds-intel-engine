@@ -678,6 +678,7 @@ def _write_to_db(
     team_last_lineups: dict[str, list[str]],
     match_counts: dict[str, int] | None = None,
     days_since_roster: dict[str, int] | None = None,
+    extra_features: dict[int, dict] | None = None,
 ) -> None:
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -691,6 +692,7 @@ def _write_to_db(
     written = 0
     match_counts = match_counts or {}
     days_since_roster = days_since_roster or {}
+    extra_features = extra_features or {}
 
     for m in matches:
         t1, t2 = m["team1"], m["team2"]
@@ -743,6 +745,7 @@ def _write_to_db(
         lan_flag = is_lan_event(m["tournament"])
         dsrc1 = days_since_roster.get(t1)
         dsrc2 = days_since_roster.get(t2)
+        feats = extra_features.get(m.get("id"), {})
 
         execute_write("""
             INSERT INTO cs2_upcoming_matches
@@ -755,8 +758,12 @@ def _write_to_db(
                  roster_change1, roster_change2, roster_note1, roster_note2,
                  player_rating1, player_rating2,
                  is_lan, days_since_roster_change1, days_since_roster_change2,
+                 form_momentum1, form_momentum2,
+                 days_since_match1, days_since_match2,
+                 opp_strength_avg1, opp_strength_avg2,
+                 h2h_team1_win_pct, h2h_count,
                  scanned_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (team1, team2, kickoff_time) DO UPDATE SET
                 state           = EXCLUDED.state,
                 elo1            = EXCLUDED.elo1,
@@ -783,6 +790,14 @@ def _write_to_db(
                 is_lan                       = EXCLUDED.is_lan,
                 days_since_roster_change1    = EXCLUDED.days_since_roster_change1,
                 days_since_roster_change2    = EXCLUDED.days_since_roster_change2,
+                form_momentum1               = EXCLUDED.form_momentum1,
+                form_momentum2               = EXCLUDED.form_momentum2,
+                days_since_match1            = EXCLUDED.days_since_match1,
+                days_since_match2            = EXCLUDED.days_since_match2,
+                opp_strength_avg1            = EXCLUDED.opp_strength_avg1,
+                opp_strength_avg2            = EXCLUDED.opp_strength_avg2,
+                h2h_team1_win_pct            = EXCLUDED.h2h_team1_win_pct,
+                h2h_count                    = EXCLUDED.h2h_count,
                 scanned_at      = EXCLUDED.scanned_at
         """, (
             m.get("id"),
@@ -798,6 +813,10 @@ def _write_to_db(
             rc1, rc2, rn1, rn2,
             pq1, pq2,
             lan_flag, dsrc1, dsrc2,
+            feats.get("form_momentum1"), feats.get("form_momentum2"),
+            feats.get("days_since_match1"), feats.get("days_since_match2"),
+            feats.get("opp_strength_avg1"), feats.get("opp_strength_avg2"),
+            feats.get("h2h_team1_win_pct"), feats.get("h2h_count"),
             now,
         ))
         written += 1
@@ -814,8 +833,12 @@ def _write_to_db(
                      bookie_odds1, bookie_odds2,
                      roster_change1, roster_change2,
                      is_lan, days_since_roster_change1, days_since_roster_change2,
+                     form_momentum1, form_momentum2,
+                     days_since_match1, days_since_match2,
+                     opp_strength_avg1, opp_strength_avg2,
+                     h2h_team1_win_pct, h2h_count,
                      model_version)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT (bo3gg_id, scan_time, model_version) DO NOTHING
             """, (
                 m["id"], now, m["date"].isoformat(), m["tournament"], best_of,
@@ -827,6 +850,10 @@ def _write_to_db(
                 m.get("bookie_odds1"), m.get("bookie_odds2"),
                 rc1, rc2,
                 lan_flag, dsrc1, dsrc2,
+                feats.get("form_momentum1"), feats.get("form_momentum2"),
+                feats.get("days_since_match1"), feats.get("days_since_match2"),
+                feats.get("opp_strength_avg1"), feats.get("opp_strength_avg2"),
+                feats.get("h2h_team1_win_pct"), feats.get("h2h_count"),
                 MODEL_VERSION,
             ))
 
@@ -900,6 +927,19 @@ def main() -> None:
                or match_counts.get(m["team2"], 0) < MIN_MATCHES_FOR_PREDICTION)
     print(f"    {thin}/{len(upcoming)} matches gated as thin-data (< {MIN_MATCHES_FOR_PREDICTION} matches/{MATCH_COUNT_WINDOW_DAYS}d)")
 
+    # Build feature indices once for batch lookup per upcoming match
+    from scripts.esports.cs2_features import (
+        build_team_history_index, build_h2h_index, compute_features,
+    )
+    history_by_team = build_team_history_index(all_hist)
+    h2h_index = build_h2h_index(all_hist)
+    extra_features = {}
+    for m in upcoming:
+        extra_features[m.get("id")] = compute_features(
+            history_by_team, h2h_index, ratings,
+            m["team1"], m["team2"], m["date"],
+        )
+
     if not upcoming:
         print("\n  No upcoming matches found.")
         return
@@ -963,7 +1003,7 @@ def main() -> None:
 
     if args.record:
         print("[6] Writing to database...")
-        _write_to_db(upcoming, ratings, args.edge, roster_changes, player_ratings, team_last_lineups, match_counts, days_since_roster)
+        _write_to_db(upcoming, ratings, args.edge, roster_changes, player_ratings, team_last_lineups, match_counts, days_since_roster, extra_features)
 
 
 if __name__ == "__main__":
