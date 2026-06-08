@@ -254,7 +254,18 @@ def main() -> None:
     # ── 1. Load data + build ratings ──────────────────────────────────
     print("\n[1] Loading historical match data...")
     matches = load_cached_matches(force_refresh=args.refresh)
-    print(f"    {len(matches):,} historical matches loaded")
+    print(f"    {len(matches):,} matches from Riot API")
+
+    # Supplement with Oracle's Elixir CSV data if files are present
+    oe_matches = load_oracle_elixir()
+    if oe_matches:
+        print(f"    {len(oe_matches):,} matches from Oracle's Elixir (merging...)")
+        # Deduplicate: Riot API is authoritative for overlapping dates
+        # Keep OE matches that predate oldest Riot match (older history)
+        riot_oldest = min((m["date"] for m in matches), default="9999")
+        oe_older = [m for m in oe_matches if m["date"] < riot_oldest]
+        matches = oe_older + matches
+        print(f"    {len(matches):,} total matches after merge (OE adds pre-{riot_oldest} data)")
     if not matches:
         print("    No data. Try: python3 scripts/esports/lol_elo_scanner.py --refresh")
         return
@@ -337,6 +348,80 @@ def main() -> None:
     print("  player is subbed or benched, treat the ELO as stale until")
     print("  the team plays its first match with the new roster.")
     print()
+
+
+# ── Oracle's Elixir loader (optional enrichment) ──────────────────────────────
+def load_oracle_elixir(years: list[int] | None = None) -> list[dict]:
+    """
+    Load historical LoL match data from Oracle's Elixir CSV files.
+
+    Files expected at: data/esports/lol_YYYY.csv
+    Download from: https://oracleselixir.com/tools/downloads (Google Drive mirror)
+    Get years 2023-2026 for useful training signal.
+
+    Returns same format as fetch_historical() so it can be merged.
+    """
+    base = Path("data/esports")
+    if years is None:
+        years = list(range(2020, 2027))
+
+    # League name → tier weight (same mapping as LEAGUES)
+    TIER_MAP = {
+        "worlds": 2.0, "msi": 1.8, "first stand": 1.8,
+        "lec": 1.4, "lck": 1.4, "lpl": 1.4, "lcs": 1.3,
+        "emea masters": 1.1, "lck challengers": 1.0,
+        "cblol": 1.0, "lcp": 1.0, "ljl": 1.0, "tcl": 1.0,
+    }
+
+    matches: list[dict] = []
+    for year in years:
+        path = base / f"lol_{year}.csv"
+        if not path.exists():
+            continue
+        try:
+            import pandas as pd
+            df = pd.read_csv(path, low_memory=False)
+        except Exception as e:
+            print(f"  Warning: could not load {path}: {e}", file=sys.stderr)
+            continue
+
+        # Keep only team-summary rows
+        team_rows = df[df["position"] == "team"].copy()
+        if team_rows.empty:
+            continue
+
+        # Build series-level results: group by (gameid without game suffix)
+        # gameid format: YYYY/league/series_NNNN_gameN or similar
+        # Use 'game' column to aggregate within a series
+        for gid, grp in team_rows.groupby("gameid"):
+            if len(grp) != 2:
+                continue
+            blue = grp[grp["side"] == "Blue"]
+            red  = grp[grp["side"] == "Red"]
+            if blue.empty or red.empty:
+                continue
+            b = blue.iloc[0]
+            r = red.iloc[0]
+            winner = b["teamname"] if b["result"] == 1 else r["teamname"]
+            league_raw = str(b.get("league", "") or "").strip()
+            tier_w = TIER_MAP.get(league_raw.lower(), 1.0)
+            game_num = int(b.get("game", 1) or 1)
+            # BO inferred from max game number seen per series is done post-hoc;
+            # use game column as BO proxy (game 1 = probably BO1/3/5)
+            matches.append({
+                "date":        str(b.get("date", ""))[:10],
+                "league":      league_raw,
+                "league_id":   f"oe_{league_raw.lower().replace(' ', '_')}",
+                "tier_weight": tier_w,
+                "team1":       str(b["teamname"]).strip(),
+                "team2":       str(r["teamname"]).strip(),
+                "winner":      winner,
+                "best_of":     3,  # Oracle's Elixir doesn't encode BO directly
+                "gw1":         int(b.get("result", 0)),
+                "gw2":         int(r.get("result", 0)),
+                "source":      "oracle_elixir",
+            })
+    return matches
 
 
 if __name__ == "__main__":
