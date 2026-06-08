@@ -310,6 +310,9 @@ def _determine_series_winner(r: dict) -> int | None:
     return None
 
 
+_TRANSFER_SEM: asyncio.Semaphore | None = None  # set in _fetch_all to avoid event-loop issues
+
+
 async def _bo3gg_request(api, endpoint: str, params: dict) -> dict:
     try:
         return await api._make_request(endpoint, params)
@@ -349,19 +352,23 @@ async def _fetch_upcoming_raw(api) -> list[dict]:
 
 # ── bo3.gg: roster changes per team ──────────────────────────────────────────
 async def _fetch_transfers_raw(api, team_id: int) -> list[dict]:
-    data = await _bo3gg_request(api, "/player_transfers", {
-        "join": "teams_deep",
-        "page[offset]": "0",
-        "page[limit]": "15",
-        "sort": "-action_date",
-        "filter[team_to.id,team_from.id][or]": f"{team_id},{team_id}",
-        "with": "teams,player",
-    })
-    return data.get("results", [])
+    async with _TRANSFER_SEM:
+        data = await _bo3gg_request(api, "/player_transfers", {
+            "join": "teams_deep",
+            "page[offset]": "0",
+            "page[limit]": "15",
+            "sort": "-action_date",
+            "filter[team_to.id,team_from.id][or]": f"{team_id},{team_id}",
+            "with": "teams,player",
+        })
+        return data.get("results", [])
 
 
 async def _fetch_all(team_ids: dict[str, int]) -> tuple[list, list, dict]:
     """Single aiohttp session — fetch upcoming, recent results, and all transfers."""
+    global _TRANSFER_SEM
+    _TRANSFER_SEM = asyncio.Semaphore(4)  # cap parallel transfer requests
+
     try:
         from cs2api import CS2APIClient
     except ImportError:
@@ -492,6 +499,8 @@ def _parse_roster_changes(transfers_raw: dict[str, list], days: int = 45) -> dic
                 action_date = datetime.fromisoformat(
                     (t.get("action_date") or "").replace("Z", "+00:00")
                 )
+                if action_date.tzinfo is None:
+                    action_date = action_date.replace(tzinfo=timezone.utc)
             except (ValueError, KeyError):
                 continue
             if action_date < cutoff:

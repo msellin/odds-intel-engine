@@ -12,7 +12,7 @@ Usage:
 Docs: https://portal.grid.gg/documentation/
 Open Access base URL: https://api-op.grid.gg/
 """
-import json, os, sys, argparse
+import json, os, sys, argparse, time
 from datetime import datetime, timezone, timedelta
 
 try:
@@ -44,7 +44,13 @@ def find_cs2_title_id():
     print("=== Finding CS2 titleId ===")
     # Known: Valorant=6, LoL=3, R6:Siege=25. CS2 not documented — try range.
     found = {}
-    for tid in list(range(1, 31)) + [40, 50, 100]:
+    ids_to_try = list(range(1, 31)) + [40, 50, 100]
+    for i, tid in enumerate(ids_to_try):
+        if i > 0 and i % 18 == 0:
+            print("  (rate limit pause 65s...)")
+            time.sleep(65)
+        else:
+            time.sleep(3.2)  # 20 req/min = 3s each; 3.2s gives headroom
         try:
             data = gql(CENTRAL, f"""{{
                 allSeries(
