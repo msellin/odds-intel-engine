@@ -36,6 +36,8 @@ MIN_EXTRA_EDGE = 0.05   # 5% above the threshold (which already has 3% baked in)
 BASE_STAKE = 1.0        # 1 unit reference (Kelly fraction is multiplied by this)
 KELLY_FRACTION = 0.5    # half-Kelly — standard variance-reduced stake
 KELLY_CAP = 2.0         # never wager more than 2u on a single bet
+HLTV_EDGE_FLOOR = 0.03  # extra 3% required for HLTV-fallback picks (less proven)
+HLTV_BASE_EDGE = 0.05   # 5% threshold edge for the hltv_v1 model
 
 # Anomaly guard: if our model probability and the implied probability from the
 # bookmaker offering the "value" diverge by more than this in absolute terms,
@@ -45,23 +47,62 @@ MAX_PROB_DIVERGENCE = 0.25
 
 
 def _load_open_matches() -> list[dict]:
-    """Pre-kickoff matches with model coverage."""
+    """Pre-kickoff matches with model coverage.
+
+    Returns rows from BOTH:
+      1. ELO+PQ-covered matches (has_elo_history=TRUE) — primary model
+      2. HLTV-fallback matches — ELO gated, but BOTH teams in HLTV top-248
+         and a cs2_predictions row with model_version='hltv_v1' exists.
+
+    The 'source' column tells the bot which thresholds to apply.
+    """
     now = datetime.now(timezone.utc)
     horizon = (now + timedelta(hours=72)).isoformat()  # CS2 fixtures locked 2-3d ahead
-    return execute_query("""
+
+    elo_rows = execute_query("""
         SELECT id, bo3gg_id, team1, team2, kickoff_time, best_of,
                win_prob1, win_prob2,
                fair_odds1, fair_odds2, threshold_odds1, threshold_odds2,
                fair_odds_map1, fair_odds_map2, threshold_map1, threshold_map2,
                bookie_odds1, bookie_odds2,
                coolbet_odds1, coolbet_odds2,
-               pinnacle_odds1, pinnacle_odds2
+               pinnacle_odds1, pinnacle_odds2,
+               'elo+pq_v1' AS source
         FROM cs2_upcoming_matches
         WHERE has_elo_history = TRUE
           AND kickoff_time >= %s
           AND kickoff_time <= %s
           AND threshold_odds1 IS NOT NULL
     """, (now.isoformat(), horizon))
+
+    # HLTV fallback: ELO is gated (threshold_odds1 NULL), but the parallel
+    # hltv_v1 model has a prediction for this match. Use the latest hltv_v1
+    # row per (bo3gg_id) joined back to current upcoming_matches.
+    hltv_rows = execute_query("""
+        SELECT u.id, u.bo3gg_id, u.team1, u.team2, u.kickoff_time, u.best_of,
+               h.win_prob1, h.win_prob2,
+               h.fair_odds1, h.fair_odds2,
+               NULL AS threshold_odds1, NULL AS threshold_odds2,
+               NULL AS fair_odds_map1, NULL AS fair_odds_map2,
+               NULL AS threshold_map1, NULL AS threshold_map2,
+               u.bookie_odds1, u.bookie_odds2,
+               u.coolbet_odds1, u.coolbet_odds2,
+               u.pinnacle_odds1, u.pinnacle_odds2,
+               'hltv_v1' AS source
+        FROM cs2_upcoming_matches u
+        JOIN LATERAL (
+            SELECT win_prob1, win_prob2, fair_odds1, fair_odds2
+            FROM cs2_predictions p
+            WHERE p.bo3gg_id = u.bo3gg_id AND p.model_version = 'hltv_v1'
+            ORDER BY p.scan_time DESC LIMIT 1
+        ) h ON TRUE
+        WHERE u.threshold_odds1 IS NULL           -- ELO gated
+          AND u.kickoff_time >= %s
+          AND u.kickoff_time <= %s
+          AND u.bo3gg_id IS NOT NULL
+    """, (now.isoformat(), horizon))
+
+    return list(elo_rows) + list(hltv_rows)
 
 
 def _is_anomaly(side_prob: float | None, bookie_odds: float) -> bool:
@@ -94,6 +135,18 @@ def _scan_one(row: dict) -> list[dict]:
     """Return list of (match, side, market, bookie, odds, fair, thr) value picks."""
     picks: list[dict] = []
     best_of = row["best_of"] or 3
+    source = row.get("source") or "elo+pq_v1"
+
+    # For HLTV-fallback rows, threshold_odds is NULL — derive from fair_odds.
+    thr1 = row["threshold_odds1"]
+    thr2 = row["threshold_odds2"]
+    if source == "hltv_v1":
+        f1, f2 = row["fair_odds1"], row["fair_odds2"]
+        if f1 and f2:
+            thr1 = round(float(f1) * (1 - HLTV_BASE_EDGE), 3)
+            thr2 = round(float(f2) * (1 - HLTV_BASE_EDGE), 3)
+    min_extra = HLTV_EDGE_FLOOR if source == "hltv_v1" else MIN_EXTRA_EDGE
+
     bookmakers = (
         ("bo3gg", row["bookie_odds1"], row["bookie_odds2"]),
         ("coolbet", row["coolbet_odds1"], row["coolbet_odds2"]),
@@ -103,15 +156,15 @@ def _scan_one(row: dict) -> list[dict]:
     for bookie, b_odds1, b_odds2 in bookmakers:
         # match_winner
         for side, team_name, odds, fair, thr, prob in [
-            ("team1", row["team1"], b_odds1, row["fair_odds1"], row["threshold_odds1"], row.get("win_prob1")),
-            ("team2", row["team2"], b_odds2, row["fair_odds2"], row["threshold_odds2"], row.get("win_prob2")),
+            ("team1", row["team1"], b_odds1, row["fair_odds1"], thr1, row.get("win_prob1")),
+            ("team2", row["team2"], b_odds2, row["fair_odds2"], thr2, row.get("win_prob2")),
         ]:
             if odds is None or thr is None or fair is None:
                 continue
             if odds < thr:
                 continue
             extra = (odds - thr) / thr
-            if extra < MIN_EXTRA_EDGE:
+            if extra < min_extra:
                 continue
             # Anomaly guard — kills the bet if our prob and implied prob differ wildly
             if _is_anomaly(float(prob) if prob is not None else None, float(odds)):
@@ -123,6 +176,7 @@ def _scan_one(row: dict) -> list[dict]:
                 "side": side, "team": team_name, "market": "match_winner",
                 "bookie": bookie, "odds": float(odds), "fair": float(fair),
                 "thr": float(thr), "edge": extra, "stake": stake,
+                "source": source,
             })
 
         # atleast1map (BO3/5 only)
@@ -148,6 +202,8 @@ def _scan_one(row: dict) -> list[dict]:
 
 
 def _write_bet(row: dict, pick: dict) -> bool:
+    # Different bot_name per source so HLTV-fallback picks track separately.
+    bot_name = "bot_cs2_hltv_v1" if pick.get("source") == "hltv_v1" else BOT_NAME
     res = execute_write("""
         INSERT INTO cs2_simulated_bets
             (bot_name, bo3gg_id, placed_at, kickoff_time,
@@ -156,7 +212,7 @@ def _write_bet(row: dict, pick: dict) -> bool:
         VALUES (%s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (bot_name, bo3gg_id, market, bookie) DO NOTHING
     """, (
-        BOT_NAME, row["bo3gg_id"], row["kickoff_time"],
+        bot_name, row["bo3gg_id"], row["kickoff_time"],
         row["team1"], row["team2"],
         pick["market"], pick["team"], pick["bookie"],
         pick["odds"], pick["fair"], pick["thr"], pick["edge"],
@@ -228,8 +284,9 @@ def main() -> None:
         for p in picks:
             total_picks += 1
             tag = "  fired" if args.record else "  dry"
-            print(f"    {tag}  {row['team1']:25} vs {row['team2']:25}  "
-                  f"{p['market']:12} → {p['team']:20} @ {p['bookie']:8} {p['odds']:>5.2f}  "
+            src = p.get("source", "elo+pq_v1")
+            print(f"    {tag}  [{src:10}]  {row['team1']:22} vs {row['team2']:22}  "
+                  f"{p['market']:12} → {p['team']:18} @ {p['bookie']:8} {p['odds']:>5.2f}  "
                   f"(thr {p['thr']:.2f}, edge +{p['edge']*100:.1f}%, stake {p.get('stake', BASE_STAKE):.2f}u)")
             if args.record:
                 if _write_bet(row, p):
