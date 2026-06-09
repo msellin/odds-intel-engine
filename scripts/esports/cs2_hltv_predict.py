@@ -34,11 +34,45 @@ MODEL_VERSION = "hltv_v1"
 # Scaling constant. Calibrated such that #1 (991) vs #50 (~25) gives ~75% win prob.
 HLTV_K = 0.55
 
+# Platt scaling — loaded at module import from cs2_model_coefficients.
+# Identity transform (no calibration) when DB row absent.
+_PLATT_A: float | None = None
+_PLATT_B: float | None = None
+
+
+def _load_platt_coefficients() -> None:
+    global _PLATT_A, _PLATT_B
+    try:
+        rows = execute_query(
+            "SELECT a, b FROM cs2_model_coefficients WHERE model_version = %s",
+            (MODEL_VERSION,),
+        )
+        if rows:
+            _PLATT_A = float(rows[0]["a"])
+            _PLATT_B = float(rows[0]["b"])
+    except Exception:
+        pass
+
+
+def _calibrated(raw_prob: float) -> float:
+    """Apply Platt scaling if coefficients loaded; identity otherwise."""
+    if _PLATT_A is None or _PLATT_B is None:
+        return raw_prob
+    eps = 1e-6
+    p = min(max(raw_prob, eps), 1 - eps)
+    logit = math.log(p / (1 - p))
+    z = _PLATT_A * logit + _PLATT_B
+    return 1.0 / (1.0 + math.exp(-z))
+
 
 def _hltv_prob(points1: int, points2: int) -> float:
-    """Sigmoid on log-ratio of HLTV points. Returns prob team1 wins."""
+    """Sigmoid on log-ratio of HLTV points, then Platt-calibrated. Returns prob team1 wins."""
     log_diff = math.log(points1 + 1) - math.log(points2 + 1)
-    return 1.0 / (1.0 + math.exp(-HLTV_K * log_diff))
+    raw = 1.0 / (1.0 + math.exp(-HLTV_K * log_diff))
+    return _calibrated(raw)
+
+
+_load_platt_coefficients()
 
 
 def _load_upcoming() -> list[dict]:
