@@ -19803,6 +19803,24 @@ def _():
     )
     assert pick is None
 
+    # CRAZY edge: aAa vs RUSTEC type. Books agree aAa is 17-20%, model says 39%.
+    # Threshold derived from 39% = 2.56, books offer 5.80. edge = +127% (over MAX_EXTRA_EDGE).
+    pick = mod._consider_side(
+        source="hltv_v1", side="team1", team_name="aAa",
+        prices=[("bo3gg", 5.80), ("coolbet", 5.00)],
+        fair=2.56, thr=2.43, prob=0.39, min_extra=0.03,
+    )
+    assert pick is None, "edge over 50% must be killed (or model-vs-consensus divergence)"
+
+    # Wide model-vs-consensus divergence even with small edge — kill
+    pick = mod._consider_side(
+        source="hltv_v1", side="team1", team_name="X",
+        prices=[("bo3gg", 2.50), ("coolbet", 2.55)],
+        fair=2.0, thr=1.90, prob=0.70,   # we say 70%, market says ~40%
+        min_extra=0.05,
+    )
+    assert pick is None, "model vs consensus 30pp apart must be killed"
+
 
 @test("CS2-CLV-SNAPSHOT — pending-bet closing-odds snapshot script + cron")
 def _():

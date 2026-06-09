@@ -40,8 +40,10 @@ HLTV_EDGE_FLOOR = 0.03  # extra 3% required for HLTV-fallback picks (less proven
 HLTV_BASE_EDGE = 0.05   # 5% threshold edge for the hltv_v1 model
 
 # Market consensus / outlier protection.
-MIN_BOOKS_FOR_PICK = 2      # need at least 2 books to fire — single-book picks lack a sanity cross-ref
-MAX_CONSENSUS_DRIFT = 0.30  # best price cannot exceed median market consensus by >30%
+MIN_BOOKS_FOR_PICK = 2          # need at least 2 books to fire — single-book picks lack a sanity cross-ref
+MAX_CONSENSUS_DRIFT = 0.30      # best price cannot exceed median market consensus by >30%
+MAX_EXTRA_EDGE = 0.50           # cap on edge over threshold; anything bigger is model error or stale data
+MAX_MODEL_VS_CONSENSUS_PP = 0.15  # our_prob vs median consensus implied prob must be within 15pp
 
 # Anomaly guard: if our model probability and the implied probability from the
 # bookmaker offering the "value" diverge by more than this in absolute terms,
@@ -195,6 +197,17 @@ def _consider_side(*, source: str, side: str, team_name: str, prices: list[tuple
         return None     # below threshold
     extra = (best_odds - thr) / thr
     if extra < min_extra:
+        return None
+    # Reject crazy edges — almost always a sign of model bug or stale data.
+    # See aAa vs RUSTEC: HLTV sigmoid gives aAa 39% on 3 pts vs 8 pts, but both
+    # bookies agree aAa is ~19% (consensus). Edge above 50% over threshold is
+    # never a real-money opportunity worth firing on.
+    if extra > MAX_EXTRA_EDGE:
+        return None
+    # Tighter divergence vs market CONSENSUS (not just one bookie's implied).
+    # When our probability and the market median disagree by > 15pp, the model
+    # is the suspect — market has more bookmakers' worth of consensus.
+    if prob is not None and abs(float(prob) - consensus_prob) > MAX_MODEL_VS_CONSENSUS_PP:
         return None
     if _is_anomaly(float(prob) if prob is not None else None, best_odds):
         return None
