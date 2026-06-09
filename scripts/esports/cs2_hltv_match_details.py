@@ -220,6 +220,7 @@ def parse_match(html: str) -> dict | None:
         # team1_side:team1_score - team2_side:team2_score.
         half_scores = _HALF_SCORE_RE.findall(block)
         team1_ct = team1_t = team2_ct = team2_t = None
+        team1_first_half_side = None  # 'ct' or 't' — which side team1 started on
         if len(half_scores) >= 2:
             # In CS2: team1 plays CT then T (or vice-versa); halftime split helps
             # us extract their CT-side and T-side round counts.
@@ -228,6 +229,7 @@ def parse_match(html: str) -> dict | None:
             try:
                 s1_first_side, s1_first_score, s2_first_side, s2_first_score = half_scores[0]
                 s1_second_side, s1_second_score, s2_second_side, s2_second_score = half_scores[1]
+                team1_first_half_side = s1_first_side  # 'ct' or 't' — store for model feature
                 # Sum each team's CT and T halves
                 if s1_first_side == "ct":
                     team1_ct = int(s1_first_score); team1_t = int(s1_second_score)
@@ -241,6 +243,7 @@ def parse_match(html: str) -> dict | None:
                 pass
         maps.append({
             "name": name,
+            "team1_first_half_side": team1_first_half_side,
             "team1_score": s1, "team2_score": s2,
             "winner": winner,
             "team1_ct": team1_ct, "team1_t": team1_t,
@@ -339,11 +342,13 @@ def write_match(mid: int, slug: str, parsed: dict) -> None:
         execute_write("""
             INSERT INTO cs2_hltv_match_maps (hltv_match_id, map_order, map_name,
                 team1_score, team2_score, winner_name,
-                team1_ct_rounds, team1_t_rounds, team2_ct_rounds, team2_t_rounds)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                team1_ct_rounds, team1_t_rounds, team2_ct_rounds, team2_t_rounds,
+                team1_first_half_side)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT DO NOTHING
         """, (mid, i, m["name"], m["team1_score"], m["team2_score"], m["winner"],
-              m.get("team1_ct"), m.get("team1_t"), m.get("team2_ct"), m.get("team2_t")))
+              m.get("team1_ct"), m.get("team1_t"), m.get("team2_ct"), m.get("team2_t"),
+              m.get("team1_first_half_side")))
 
     for v in parsed["veto"]:
         execute_write("""
