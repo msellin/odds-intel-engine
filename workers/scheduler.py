@@ -851,7 +851,7 @@ def job_cs2_hltv_match_details_queue():
     import subprocess
     console.print("[bold cyan]CS2 HLTV match queue refresh[/bold cyan]")
     result = subprocess.run(
-        [sys.executable, "scripts/esports/cs2_hltv_match_details.py", "--queue", "--pages", "2"],
+        [sys.executable, "scripts/esports/cs2_hltv_match_details.py", "--queue", "--pages", "3"],
         capture_output=True, text=True, timeout=120,
     )
     if result.returncode != 0:
@@ -870,7 +870,7 @@ def job_cs2_hltv_match_details_process():
     import subprocess
     console.print("[bold cyan]CS2 HLTV match details processor[/bold cyan]")
     result = subprocess.run(
-        [sys.executable, "scripts/esports/cs2_hltv_match_details.py", "--process", "60"],
+        [sys.executable, "scripts/esports/cs2_hltv_match_details.py", "--process", "50"],
         capture_output=True, text=True, timeout=1800,
     )
     if result.returncode != 0:
@@ -903,6 +903,28 @@ def job_cs2_hltv_player_ratings():
             if any(k in line for k in ["hits:", "→ data", "fetching"]):
                 console.print(f"[dim]{line}[/dim]")
     _run_job("cs2_hltv_player_ratings", lambda: None)
+
+
+def job_cs2_sneak_peek_backtest():
+    """CS2-SNEAK-PEEK (2026-06-09): daily evaluation of model quality on the
+    growing match-results dataset. Writes one row per feature_set to
+    cs2_model_backtest_history so we can watch AUC/accuracy curves climb as
+    more match-details accumulate. Renders on /admin/cs2 BacktestPanel.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 sneak-peek backtest[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_sneak_peek_v2.py", "--since", "2025-01-01"],
+        capture_output=True, text=True, timeout=600,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]CS2 backtest error:[/red]\n{result.stderr[:500]}")
+    else:
+        # Show the metric table from stdout
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ["AUC", "saved_model", "team-map", "rank_diff", "ALL", "delta"]):
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_sneak_peek_backtest", lambda: None)
 
 
 def job_cs2_hltv_rankings():
@@ -2110,17 +2132,21 @@ def main():
 
     # CS2-HLTV-MATCH-DETAILS (2026-06-09): pulls /results to queue new
     # finished matches twice daily, then processor walks the queue at 8s/req.
+    # Queue 3 pages/run, 3x/day — catches HLTV's natural match-completion drip
+    # without blasting their /results endpoint.
     scheduler.add_job(job_cs2_hltv_match_details_queue,
-                      CronTrigger(hour="3,15", minute=10),
+                      CronTrigger(hour="3,11,19", minute=10),
                       id="cs2_hltv_match_details_queue",
-                      name="CS2 HLTV /results → queue [twice daily]",
+                      name="CS2 HLTV /results → queue [3x daily]",
                       max_instances=1, misfire_grace_time=900)
-    # Processor runs every 2 hours during off-peak; 60 matches × 8s = 8 min.
+    # Processor every 30 min — 50 matches × 8s = 7 min/run = 2,400 matches/day.
+    # Backfilling 10k queued matches takes ~4-5 days at this pace; new matches
+    # land near-realtime after that.
     scheduler.add_job(job_cs2_hltv_match_details_process,
-                      CronTrigger(hour="3,5,7,9,11,13,15,17,19,21,23", minute=30),
+                      CronTrigger(minute="*/30"),
                       id="cs2_hltv_match_details_process",
-                      name="CS2 HLTV match-detail processor [60 per run]",
-                      max_instances=1, misfire_grace_time=1800)
+                      name="CS2 HLTV match-detail processor [50 per 30min]",
+                      max_instances=1, misfire_grace_time=600)
 
     # CS2-HLTV-PLAYER-RATINGS (2026-06-09) — weekly Tuesday 06:00 UTC.
     # HLTV ratings are 3-month rolling so daily is overkill; weekly keeps the
@@ -2130,6 +2156,14 @@ def main():
                       id="cs2_hltv_player_ratings",
                       name="CS2 HLTV Player Ratings [weekly Tue 06:00]",
                       max_instances=1, misfire_grace_time=7200)
+
+    # CS2-SNEAK-PEEK (2026-06-09) — daily 04:30 UTC. Re-runs the multi-feature
+    # backtest on accumulated match results; persists metrics to
+    # cs2_model_backtest_history. Admin UI shows AUC trend over time.
+    scheduler.add_job(job_cs2_sneak_peek_backtest, CronTrigger(hour=4, minute=30),
+                      id="cs2_sneak_peek_backtest",
+                      name="CS2 Sneak-peek backtest [daily 04:30 UTC]",
+                      max_instances=1, misfire_grace_time=3600)
 
     # CS2-HLTV-RANKINGS (2026-06-09) — daily 05:00 UTC. Top-248 teams from
     # HLTV. Builds a time series we can use as an orthogonal strength signal
