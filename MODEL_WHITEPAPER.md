@@ -880,10 +880,88 @@ Single bot, pre-match only. Mirrors soccer's bot pattern but simplified.
 ### 10b.9 Open work
 
 - **ELO+PQ backfill** for production-model calibration (running)
-- **Pinnacle CS2 odds** (geo-blocked from current network; defer or use PandaScore Pro as proxy)
+- **Pinnacle CS2 odds** — scanner deployed 2026-06-09 via guest API, awaits Railway-side validation (geo-blocked from EU IPs)
 - **Liquipedia roster fetcher** — current resolution 4/54 teams; slug-variant + opensearch fix pushed, needs another sweep
-- **Multi-model phase 2 signals**: form momentum, map pool overlap (per-veto), opponent-strength-weighted recent form
-- **XGBoost on accumulated data** once ≥1,000 settled live predictions
+- **XGBoost on accumulated data** once ≥5,000 settled live predictions with rich features (see §10b.11)
+
+### 10b.10 Stacking experiments (2026-06-09)
+
+Five sneak-peek backtests evaluated whether point-in-time-correct features
+add lift on top of the production `hltv_v1` calibrated probability. Design:
+walk-forward 70/30 (oldest 2,174 train / newest 932 test), stacking model
+takes `logit(saved_prob)` + extra features and fits logistic regression. All
+extras null-filled to 0 to preserve the full 3,106-match sample.
+
+| Stack | AUC | Acc | Δ AUC vs hltv_v1 |
+|---|---|---|---|
+| baseline (hltv_v1 direct) | 0.673 | 63.8% | — |
+| + rest_diff | 0.679 | 64.7% | +0.006 |
+| + h2h_diff | 0.676 | 64.7% | +0.003 |
+| + tm_diff (team-map win-pct) | 0.673 | 64.7% | 0 |
+| + form_diff (30d rolling) | 0.674 | 64.7% | +0.001 |
+| + bo_format | 0.677 | 64.7% | +0.004 |
+| **v4 ALL (5 features)** | 0.684 | 64.2% | +0.011 |
+| **v5 v4-ALL + bo** | **0.688** | 64.7% | **+0.015** |
+| v5 kitchen sink (8 features) | 0.687 | 64.2% | +0.014 |
+
+**Coefficients of v5 best (v4-ALL + bo):** `h2h_diff` +0.51 (largest effect),
+`tm_diff` +0.51, `rest_diff` -0.36, `form_diff` +0.10, `bo_centered` -0.09,
+`rank_diff` -0.07 (rank already captured by hltv_v1).
+
+**Features that DON'T help:**
+- `rank_diff` — hltv_v1 already prices rank in, no marginal information.
+- `tournament_tier` (regex-classified S/A/B/C) — classification too noisy on
+  the 3,106-match sample (~3 of 4 matches fall in default tier=0).
+- `opp_strength_adjusted_form` — minor (+0.001), the rank-weighting collapses
+  to ~uniform on the matches where both teams are ranked.
+
+**XGBoost regression test:** identical features at depth 4, 200 trees,
+lr=0.05. LOSES on every feature set (Δ AUC -0.028 to -0.039 vs logistic at
+the same feature set). With ~3,100 matches the tree model overfits.
+Logistic is the right tool until ≥5-10k matches accumulated.
+
+### 10b.11 Match-detail data expansion (2026-06-09)
+
+Built infrastructure for richer training data (used by v2/v3+ once data
+accumulates):
+
+| Table / View | Purpose | Status |
+|---|---|---|
+| `cs2_hltv_matches` (mig 213) | One row per scraped HLTV match — event, teams, date, score, winner, BO format | 148 rows seeded, ~10k queue waiting |
+| `cs2_hltv_match_maps` (mig 213) | Per-map results: name, scores, **per-side CT/T halftime splits**, winner | 307 rows |
+| `cs2_hltv_player_match_stats` (mig 214) | Per-(player, map) K-D, ADR, KAST, Rating 2.0 | 3,063 rows |
+| `cs2_hltv_match_veto` | 7-step veto sequence per match | 937 rows |
+| `cs2_hltv_team_rosters` (mig 217) | Per-day snapshot of team roster + `days_in_team` per player | seeded via new daily cron 02:00 UTC |
+| `cs2_pit_team_map` (view, mig 218) | Point-in-time team-per-map win rate from **our own scraped match log** — replaces snapshot-leakage data | rolls out as match-details fill |
+| `cs2_scraper_state` (mig 215) | Per-scraper progress/status/last-run for admin UI | live |
+| `cs2_model_backtest_history` (mig 216) | One row per sneak-peek run per feature set | live, 5 runs seeded |
+
+**Pinnacle scanner (`cs2_pinnacle_scanner.py`):** moneyline odds via Pinnacle's
+public guest API (`guest.api.arcadia.pinnacle.com`). Polite 4-6s jitter,
+MAX_REQUESTS_PER_RUN=80, league IDs cached, fuzzy team-name match against
+bo3.gg-indexed `cs2_upcoming_matches`. Geo-blocked from EU; Railway US-IP
+expected to work. Writes `pinnacle_odds1/pinnacle_odds2` for future-match
+modelling (historical coverage = 0; not actionable until ~2 weeks of
+accumulation).
+
+### 10b.12 Self-healing scrapers
+
+All 9 CS2 scrapers wrapped with `scraper_state.scraper_run()` context
+manager (`scripts/esports/scraper_state.py`). Each emits to
+`cs2_scraper_state`:
+- `status` (idle/running/error)
+- `items_done` / `items_pending` / `items_failed`
+- `last_run_at` / `last_success_at`
+- `last_run_duration_s` / `last_error` / `notes`
+
+Resumability:
+- Match-details processor auto-resets rows stuck in `fetch_failed` after 6h
+  (transient HLTV rate-limit retried automatically).
+- Player-stats scraper skips already-fetched IDs (`WHERE pid NOT IN`).
+- Idempotent `ON CONFLICT DO NOTHING` everywhere.
+
+Admin UI `/admin/cs2` `ScrapersPanel` shows per-scraper progress + errors;
+`BacktestPanel` shows AUC/accuracy trend across runs with Δ vs previous.
 
 ---
 
