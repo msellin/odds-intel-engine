@@ -820,6 +820,30 @@ def job_cs2_clv_snapshot():
     _run_job("cs2_clv_snapshot", lambda: None)
 
 
+def job_cs2_hltv_stats_scraper():
+    """CS2-HLTV-STATS (2026-06-09): authenticated /stats/* scraper. Pulls
+    per-team-per-map win rates for top-50 teams. Requires HLTV_AUTH_COOKIES
+    env var. If cookies expire, logs clearly and exits — user re-pastes
+    fresh cookies from the browser.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 HLTV /stats scraper (authenticated)[/bold cyan]")
+    if not os.getenv("HLTV_AUTH_COOKIES"):
+        console.print("[yellow]Skipped — HLTV_AUTH_COOKIES not set[/yellow]")
+        return
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_hltv_stats_scraper.py", "--top-n", "50", "--record"],
+        capture_output=True, text=True, timeout=1800,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]HLTV stats scraper error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if "win%" in line or "→" in line or "cookies expired" in line:
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_hltv_stats_scraper", lambda: None)
+
+
 def job_cs2_hltv_match_details_queue():
     """CS2-HLTV-MATCH-DETAILS-QUEUE (2026-06-09): pull HLTV /results, queue
     new match IDs into cs2_hltv_match_queue. Cheap: 1 page request per run.
@@ -2070,7 +2094,14 @@ def main():
                       id="cs2_hltv_predict", name="CS2 HLTV-only Predict [4h, 06-22 UTC]",
                       max_instances=1, misfire_grace_time=1800)
 
-    # CS2-CLV-SNAPSHOT (2026-06-09): every 15 min, snapshot the closing-line
+    # NOTE: HLTV /stats/* scraper (job_cs2_hltv_stats_scraper) is intentionally
+    # NOT cron-scheduled. It's a one-time backfill tool — run manually with
+    # fresh cookies when you want to refresh historical aggregates. The
+    # match-detail scraper (cs2_hltv_match_details) accumulates the raw data
+    # needed to compute the same metrics ourselves, so the authenticated
+    # endpoint becomes redundant after ~30 days of match-detail history.
+
+# CS2-CLV-SNAPSHOT (2026-06-09): every 15 min, snapshot the closing-line
     # odds for any pending bet whose match kicks off within 45 min. The same
     # bookie's current odds are read from cs2_upcoming_matches.
     scheduler.add_job(job_cs2_clv_snapshot, CronTrigger(minute="*/15"),
