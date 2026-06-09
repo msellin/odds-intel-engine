@@ -10757,6 +10757,68 @@ def _():
     assert no_match is None, f"Real Madrid/Barcelona must not match Lazio/Roma, got {no_match}"
 
 
+@test("COOLBET-TEAM-ALIAS — rebranded clubs match across DB↔Coolbet name pairs")
+def _():
+    """COOLBET-TEAM-ALIAS (2026-06-09): Evergreen FC (our DB, sourced from
+    API-Football) is the same club as Northern Virginia FC / NoVa FC on
+    Coolbet. Without the alias map: partial_ratio("evergreen fc",
+    "northern virginia fc") ≈ 27 — well under threshold 70 — even when the
+    away team (Charlottesville Blues) nails 100. _TEAM_ALIASES + alias
+    expansion in fuzzy_match_event must clear the threshold both directions.
+    """
+    import sys, pathlib
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+    from workers.automation.coolbet_placer import (
+        fuzzy_match_event, _TEAM_ALIASES, _team_aliases,
+    )
+
+    # Alias map registered for the actual rebrand reported by user.
+    assert "evergreen fc" in _TEAM_ALIASES, (
+        "Evergreen FC ↔ Northern Virginia FC alias must be registered"
+    )
+    assert any("northern virginia" in a.lower()
+               for a in _TEAM_ALIASES["evergreen fc"]), (
+        "evergreen fc alias must include Northern Virginia FC"
+    )
+
+    # Helper round-trips both directions on ASCII-folded lookup.
+    fwd = [a.lower() for a in _team_aliases("Evergreen FC")]
+    assert any("northern virginia" in a for a in fwd), (
+        f"_team_aliases('Evergreen FC') must yield Northern Virginia, got {fwd}"
+    )
+    rev = [a.lower() for a in _team_aliases("Northern Virginia FC")]
+    assert any("evergreen" in a for a in rev), (
+        f"_team_aliases('Northern Virginia FC') must yield Evergreen, got {rev}"
+    )
+
+    # End-to-end: the actual Coolbet event from
+    # https://www.coolbet.com/et/sport/match/5603786 must match our DB row.
+    events = [
+        {"id": 5603786, "home": "Northern Virginia FC", "away": "Charlottesville Blues"},
+        # Decoys that share a token with neither side.
+        {"id": 2, "home": "Lazio", "away": "Roma"},
+    ]
+    matched = fuzzy_match_event("Evergreen FC", "Charlottesville Blues", events)
+    assert matched is not None and matched["id"] == 5603786, (
+        f"Evergreen FC vs Charlottesville Blues must match the Northern "
+        f"Virginia FC fixture, got {matched}"
+    )
+
+    # Reverse direction (our DB row named under the new name → Coolbet still
+    # using the old name) must also clear, so a future DB rename doesn't
+    # silently re-break placement.
+    legacy_events = [
+        {"id": 99, "home": "Evergreen FC", "away": "Charlottesville Blues"},
+    ]
+    matched_rev = fuzzy_match_event(
+        "Northern Virginia FC", "Charlottesville Blues", legacy_events,
+    )
+    assert matched_rev is not None and matched_rev["id"] == 99, (
+        f"Northern Virginia FC vs Charlottesville Blues must match the "
+        f"Evergreen FC fixture, got {matched_rev}"
+    )
+
+
 @test("REAL-BETS-CLV-NORMALIZE — real_bets settle normalizes market/selection + OU-line aware")
 def _():
     """REAL-BETS-CLV-NORMALIZE (2026-05-24): real_bets stores raw labels

@@ -838,14 +838,22 @@ def search_coolbet_event(
         clean = "".join(c for c in (name or "") if c.isalpha())
         return clean[:n] if len(clean) >= n else None
 
+    # COOLBET-TEAM-ALIAS (2026-06-09): expand prefix search across all known
+    # aliases so a rebranded club (e.g. Evergreen FC ↔ Northern Virginia FC)
+    # gets a search query that actually returns the Coolbet event.
+    home_variants = _team_aliases(home)
+    away_variants = _team_aliases(away)
+
     queries: list[str] = []
     seen: set[str] = set()
-    for q in (
-        _prefix(home, 3), _prefix(home, 4), _prefix(home, 5),
-        _prefix(away, 3), _prefix(away, 4), _prefix(away, 5),
-        home.strip() if home else None,
-        away.strip() if away else None,
-    ):
+    candidates: list[str | None] = []
+    for variant in home_variants:
+        candidates.extend([_prefix(variant, 3), _prefix(variant, 4), _prefix(variant, 5)])
+    for variant in away_variants:
+        candidates.extend([_prefix(variant, 3), _prefix(variant, 4), _prefix(variant, 5)])
+    candidates.append(home.strip() if home else None)
+    candidates.append(away.strip() if away else None)
+    for q in candidates:
         if q and q.lower() not in seen:
             seen.add(q.lower())
             queries.append(q)
@@ -1007,6 +1015,40 @@ def _ascii(s: str) -> str:
     return s.translate(_UNICODE_MAP).lower()
 
 
+# COOLBET-TEAM-ALIAS (2026-06-09): a few clubs play under one name in our DB
+# (sourced from API-Football) and a different name on Coolbet. Without aliases
+# the placer never matches them — prefix search misses the Coolbet name and
+# fuzzy_match_event scores the wrong half of the fixture at ~20-30, well under
+# the 70 threshold, even when the other team's name nails 100.
+#
+# Keys + values are stored as raw human strings; lookup is done on the ASCII-
+# folded lowercased form so " FC", diacritics, and casing don't matter. Add
+# both directions when registering an alias so search/fuzzy work regardless of
+# which side our DB lands on.
+_TEAM_ALIASES: dict[str, list[str]] = {
+    # USL League Two side: Evergreen FC rebranded to Northern Virginia FC
+    # (a.k.a. NoVa FC); both names still circulate. Coolbet uses the new name.
+    "evergreen fc":         ["Northern Virginia FC", "NoVa FC"],
+    "evergreen":            ["Northern Virginia FC", "NoVa FC"],
+    "northern virginia fc": ["Evergreen FC"],
+    "nova fc":              ["Evergreen FC"],
+}
+
+
+def _team_aliases(name: str) -> list[str]:
+    """Return [original name, ...alternates] for fuzzy/search expansion.
+
+    Coolbet sometimes lists a club under a different name (rebrand, parent
+    company, regional vs full name). When we find an entry in _TEAM_ALIASES
+    we feed every alternate through prefix-search and through the fuzzy
+    scorer, taking the max — a single canonical alias entry is enough.
+    """
+    if not name:
+        return []
+    key = _ascii(name).strip()
+    return [name, *_TEAM_ALIASES.get(key, ())]
+
+
 # COOLBET-FUZZY-DATE-GUARD (2026-05-26): match team names AND kickoff date.
 # Same-team double-headers (Reserve vs first team, women vs men, multiple
 # legs on different days) were resolving to the wrong event because the
@@ -1052,8 +1094,15 @@ def fuzzy_match_event(
     """
     if not events:
         return None
-    query_home = _ascii(home)
-    query_away = _ascii(away)
+    # COOLBET-TEAM-ALIAS (2026-06-09): score each side against every known
+    # alias and take the max — so Evergreen FC ↔ Northern Virginia FC clears
+    # threshold even though the two strings share no tokens.
+    home_variants = [_ascii(n) for n in _team_aliases(home) if n]
+    away_variants = [_ascii(n) for n in _team_aliases(away) if n]
+    if not home_variants:
+        home_variants = [_ascii(home)]
+    if not away_variants:
+        away_variants = [_ascii(away)]
     if match_date is not None and match_date.tzinfo is None:
         match_date = match_date.replace(tzinfo=timezone.utc)
     tol_seconds = _FUZZY_DATE_TOLERANCE_HOURS * 3600
@@ -1070,14 +1119,17 @@ def fuzzy_match_event(
                     continue
         ev_home = _ascii(ev.get("home") or "")
         ev_away = _ascii(ev.get("away") or "")
-        # Each side can match either Coolbet's home or away (handles flipped fixtures).
+        # Each side can match either Coolbet's home or away (handles flipped
+        # fixtures) AND can match against any registered alias.
         home_score = max(
-            fuzz.partial_ratio(query_home, ev_home),
-            fuzz.partial_ratio(query_home, ev_away),
+            fuzz.partial_ratio(v, ev_side)
+            for v in home_variants
+            for ev_side in (ev_home, ev_away)
         )
         away_score = max(
-            fuzz.partial_ratio(query_away, ev_home),
-            fuzz.partial_ratio(query_away, ev_away),
+            fuzz.partial_ratio(v, ev_side)
+            for v in away_variants
+            for ev_side in (ev_home, ev_away)
         )
         score = min(home_score, away_score)
         if score > best_score:
