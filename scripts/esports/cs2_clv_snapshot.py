@@ -52,6 +52,17 @@ def main() -> None:
     print(f"=== CS2 CLV snapshot  {now.strftime('%Y-%m-%d %H:%M')} UTC ===")
     print(f"  pending bets in next {CLOSING_WINDOW_MIN}m: {len(rows)}")
 
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from scraper_state import scraper_run  # type: ignore
+    except ImportError:
+        scraper_run = None  # type: ignore
+
+    ctx = scraper_run("clv_snapshot", "Closing-odds snapshot for pending bets (every 15min)") if (scraper_run and not args.dry) else None
+    st = ctx.__enter__() if ctx else None
+    if st:
+        st.set_total(len(rows))
+        st.set_pending(len(rows))
     written = 0
     for r in rows:
         cols = BOOKIE_COL.get(r["bookie"])
@@ -77,8 +88,10 @@ def main() -> None:
                 WHERE id = %s
             """, (closing, clv, r["id"]))
             written += 1
+            if st: st.tick_done()
 
     print(f"\n  updated {written} bets\n")
+    if ctx: ctx.__exit__(None, None, None)
 
 
 if __name__ == "__main__":

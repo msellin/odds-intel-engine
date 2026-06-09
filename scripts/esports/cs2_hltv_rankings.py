@@ -121,8 +121,21 @@ def main() -> None:
         print(line)
 
     if args.record:
-        n = write_to_db(teams)
-        print(f"\n  wrote {n} rows to cs2_hltv_rankings")
+        try:
+            import sys
+            from pathlib import Path
+            sys.path.insert(0, str(Path(__file__).parent))
+            from scraper_state import scraper_run  # type: ignore
+            with scraper_run("hltv_rankings", "HLTV top-30/248 weekly rank") as st:
+                st.set_total(len(teams))
+                n = write_to_db(teams)
+                for _ in range(n):
+                    st.tick_done()
+                st.note(f"latest snapshot {len(teams)} teams")
+                print(f"\n  wrote {n} rows to cs2_hltv_rankings")
+        except ImportError:
+            n = write_to_db(teams)
+            print(f"\n  wrote {n} rows to cs2_hltv_rankings")
 
 
 if __name__ == "__main__":

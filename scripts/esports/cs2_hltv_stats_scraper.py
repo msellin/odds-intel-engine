@@ -296,23 +296,39 @@ def main() -> None:
         print("  pass --team + --slug OR --top-n OR --maps OR --players-top-n", file=sys.stderr)
         sys.exit(1)
 
+    # Import state helper (only needed when args.record so it can write back)
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from scraper_state import scraper_run  # type: ignore
+    except ImportError:
+        scraper_run = None  # type: ignore
+
     # --maps backfill: per-map meta from /stats/maps/map/{id}/{slug}
     if args.maps:
         print("\n=== Maps backfill ===")
         maps = discover_map_ids(s)
         print(f"  discovered {len(maps)} map IDs")
-        for i, (mid, slug) in enumerate(maps):
-            if i > 0:
-                time.sleep(RATE_DELAY)
-            stats = fetch_map_meta(s, mid, slug)
-            print(f"  map id={mid:>3} {slug:15}  fields={len(stats)}")
-            if args.record and stats:
-                execute_write("""
-                    INSERT INTO cs2_hltv_map_meta (hltv_map_id, map_name, stats, fetched_at)
-                    VALUES (%s, %s, %s::jsonb, NOW())
-                    ON CONFLICT (hltv_map_id) DO UPDATE SET
-                        map_name=EXCLUDED.map_name, stats=EXCLUDED.stats, fetched_at=NOW()
-                """, (mid, slug, json.dumps(stats)))
+        ctx = scraper_run("map_meta", "HLTV /stats/maps overview per map") if (scraper_run and args.record) else None
+        st = ctx.__enter__() if ctx else None
+        try:
+            if st: st.set_total(len(maps))
+            for i, (mid, slug) in enumerate(maps):
+                if i > 0:
+                    time.sleep(RATE_DELAY)
+                stats = fetch_map_meta(s, mid, slug)
+                print(f"  map id={mid:>3} {slug:15}  fields={len(stats)}")
+                if args.record and stats:
+                    execute_write("""
+                        INSERT INTO cs2_hltv_map_meta (hltv_map_id, map_name, stats, fetched_at)
+                        VALUES (%s, %s, %s::jsonb, NOW())
+                        ON CONFLICT (hltv_map_id) DO UPDATE SET
+                            map_name=EXCLUDED.map_name, stats=EXCLUDED.stats, fetched_at=NOW()
+                    """, (mid, slug, json.dumps(stats)))
+                    if st: st.tick_done()
+                elif st:
+                    st.tick_failed("no stats")
+        finally:
+            if ctx: ctx.__exit__(None, None, None)
 
     # --players-top-n: scrape first N players from the player_ids cache.
     # cs2_hltv_rankings.players is unpopulated (parser fallback didn't store it)
@@ -323,51 +339,79 @@ def main() -> None:
             id_cache = json.loads(Path("data/esports/cs2/hltv_player_ids.json").read_text())
         except (json.JSONDecodeError, OSError):
             id_cache = {}
-        # First N alphabetically by nickname — gives a decent sample
-        targets_pl: list[tuple[int, str]] = sorted(
+        # Skip already-fetched players (resumable). Only those not in cs2_hltv_player_stats.
+        existing = {r["hltv_player_id"] for r in execute_query(
+            "SELECT hltv_player_id FROM cs2_hltv_player_stats")} if args.record else set()
+        # First N alphabetically by nickname among missing — gives a decent sample
+        all_targets: list[tuple[int, str]] = sorted(
             ((pid, nick) for nick, pid in id_cache.items()),
             key=lambda x: x[1]
-        )[:args.players_top_n]
-        print(f"  {len(targets_pl)} players from cache (alphabetical first {args.players_top_n})")
+        )
+        targets_pl = [(pid, slug) for pid, slug in all_targets
+                      if pid not in existing][:args.players_top_n]
+        print(f"  {len(targets_pl)} players to fetch ({len(existing)} already done, "
+              f"alphabetical first {args.players_top_n} of remaining)")
 
-        for i, (pid, slug) in enumerate(targets_pl):
-            if i > 0:
-                time.sleep(RATE_DELAY)
-            stats = fetch_player_stats(s, pid, slug)
-            print(f"  [{i+1:>3}/{len(targets_pl)}] id={pid:>5} slug={slug:20}  fields={len(stats)}")
-            if args.record and stats:
-                execute_write("""
-                    INSERT INTO cs2_hltv_player_stats (hltv_player_id, nickname, stats, fetched_at)
-                    VALUES (%s, %s, %s::jsonb, NOW())
-                    ON CONFLICT (hltv_player_id) DO UPDATE SET
-                        nickname=EXCLUDED.nickname, stats=EXCLUDED.stats, fetched_at=NOW()
-                """, (pid, slug, json.dumps(stats)))
+        ctx = scraper_run("player_stats", "Per-player career stats from /stats/players/{id}") if (scraper_run and args.record) else None
+        st = ctx.__enter__() if ctx else None
+        try:
+            if st:
+                st.set_total(len(existing) + len(targets_pl))
+                st.set_pending(len(targets_pl))
+                # Already-done count carries over from prior runs
+                pass  # items_done will tick from 0; UI can read items_total - pending if needed
+            for i, (pid, slug) in enumerate(targets_pl):
+                if i > 0:
+                    time.sleep(RATE_DELAY)
+                stats = fetch_player_stats(s, pid, slug)
+                print(f"  [{i+1:>3}/{len(targets_pl)}] id={pid:>5} slug={slug:20}  fields={len(stats)}")
+                if args.record and stats:
+                    execute_write("""
+                        INSERT INTO cs2_hltv_player_stats (hltv_player_id, nickname, stats, fetched_at)
+                        VALUES (%s, %s, %s::jsonb, NOW())
+                        ON CONFLICT (hltv_player_id) DO UPDATE SET
+                            nickname=EXCLUDED.nickname, stats=EXCLUDED.stats, fetched_at=NOW()
+                    """, (pid, slug, json.dumps(stats)))
+                    if st: st.tick_done()
+                elif st:
+                    st.tick_failed(f"no stats for {slug}")
+        finally:
+            if ctx: ctx.__exit__(None, None, None)
 
     snapshot = datetime.now(timezone.utc).date().isoformat()
     today = datetime.now(timezone.utc).date()
     one_year_ago = today.replace(year=today.year - 1)
 
-    for i, (team_id, name, slug) in enumerate(targets):
-        if not slug:
-            continue
-        if i > 0:
-            time.sleep(RATE_DELAY)
-        print(f"\n  → {name} (id={team_id})")
-        wr = fetch_team_maps_summary(s, team_id, slug,
-                                     str(one_year_ago), str(today))
-        if not wr:
-            print(f"    no map data (cookies expired?)")
-            continue
-        for mp, pct in wr.items():
-            print(f"    {mp:10}  win% = {pct:5.1f}")
-            if args.record:
-                execute_write("""
-                    INSERT INTO cs2_hltv_team_map_stats
-                        (hltv_team_id, team_name, map_name, win_pct, snapshot_date)
-                    VALUES (%s,%s,%s,%s,%s)
-                    ON CONFLICT (hltv_team_id, map_name, snapshot_date) DO UPDATE SET
-                        win_pct=EXCLUDED.win_pct, fetched_at=NOW()
-                """, (team_id, name, mp, pct, snapshot))
+    ctx = scraper_run("team_map_stats", "Per-team-per-map career win%") if (scraper_run and args.record and targets) else None
+    st = ctx.__enter__() if ctx else None
+    try:
+        if st: st.set_total(len(targets))
+        for i, (team_id, name, slug) in enumerate(targets):
+            if not slug:
+                if st: st.tick_failed(f"no slug for team {team_id}")
+                continue
+            if i > 0:
+                time.sleep(RATE_DELAY)
+            print(f"\n  → {name} (id={team_id})")
+            wr = fetch_team_maps_summary(s, team_id, slug,
+                                         str(one_year_ago), str(today))
+            if not wr:
+                print(f"    no map data (cookies expired?)")
+                if st: st.tick_failed(f"no_map_data {team_id}")
+                continue
+            for mp, pct in wr.items():
+                print(f"    {mp:10}  win% = {pct:5.1f}")
+                if args.record:
+                    execute_write("""
+                        INSERT INTO cs2_hltv_team_map_stats
+                            (hltv_team_id, team_name, map_name, win_pct, snapshot_date)
+                        VALUES (%s,%s,%s,%s,%s)
+                        ON CONFLICT (hltv_team_id, map_name, snapshot_date) DO UPDATE SET
+                            win_pct=EXCLUDED.win_pct, fetched_at=NOW()
+                    """, (team_id, name, mp, pct, snapshot))
+            if st: st.tick_done()
+    finally:
+        if ctx: ctx.__exit__(None, None, None)
 
 
 if __name__ == "__main__":

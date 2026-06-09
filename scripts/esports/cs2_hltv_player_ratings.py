@@ -171,7 +171,18 @@ def main() -> None:
         targets = targets[:args.limit]
     print(f"  fetching ratings for {len(targets)} players (~{len(targets) * RATE_DELAY / 60:.0f} min)")
 
+    try:
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).parent))
+        from scraper_state import scraper_run  # type: ignore
+    except ImportError:
+        scraper_run = None  # type: ignore
+
     cache = _load_json(PLAYER_RATINGS_CACHE)
+    ctx = scraper_run("player_ratings", "HLTV Rating 2.1 per player (3-month rolling)") if (scraper_run and args.record) else None
+    st = ctx.__enter__() if ctx else None
+    if st: st.set_total(len(targets))
     hits, miss = 0, 0
     for i, (pid, slug) in enumerate(targets, 1):
         if i > 1:
@@ -195,14 +206,17 @@ def main() -> None:
                         rating     = EXCLUDED.rating,
                         fetched_at = NOW()
                 """, (pid, slug, rating))
+                if st: st.tick_done()
         else:
             miss += 1
             print(f"  [{i:>3}/{len(targets)}]   {slug:25}  rating not parsed")
+            if st: st.tick_failed(f"no_rating {slug}")
         if i % 25 == 0:
             _save_json(PLAYER_RATINGS_CACHE, cache)  # checkpoint
 
     _save_json(PLAYER_RATINGS_CACHE, cache)
     print(f"\n  hits: {hits}  miss: {miss}  → {PLAYER_RATINGS_CACHE}\n")
+    if ctx: ctx.__exit__(None, None, None)
 
 
 if __name__ == "__main__":
