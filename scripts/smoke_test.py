@@ -19819,6 +19819,25 @@ def _():
     assert fm is not None and -1.0 <= fm <= 1.0
 
 
+@test("CS2-GGSCORE-RANKINGS — manual snapshot loader + scanner integration")
+def _():
+    import pathlib
+    p = pathlib.Path("scripts/esports/cs2_load_ggscore.py")
+    assert p.exists()
+    src = p.read_text()
+    assert "def parse" in src
+    assert "INSERT INTO cs2_ggscore_rankings" in src
+
+    mig = pathlib.Path("supabase/migrations/206_cs2_ggscore_rankings.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS cs2_ggscore_rankings" in mig
+    for col in ["ggscore_rank1", "ggscore_rank2", "ggscore_rating1", "ggscore_rating2"]:
+        assert col in mig
+
+    scanner_src = pathlib.Path("scripts/esports/cs2_elo_scanner.py").read_text()
+    assert "load_ggscore_rankings" in scanner_src
+    assert "lookup_ggscore" in scanner_src
+
+
 @test("CS2-HLTV-RANKINGS — scraper + table + scanner integration")
 def _():
     """cs2_hltv_rankings.py parses HLTV ranking + migration 205 + scanner reads + writes."""

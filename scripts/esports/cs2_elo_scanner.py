@@ -313,6 +313,30 @@ def load_player_data() -> tuple[dict[str, float], dict[str, list[str]]]:
     return player_ratings, team_last_lineups
 
 
+def load_ggscore_rankings() -> dict[str, tuple[int, int]]:
+    """Latest GGScore snapshot per team. Manual paste — site is 403'd."""
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+        from workers.api_clients.db import execute_query
+        rows = execute_query("""
+            SELECT DISTINCT ON (team_name) team_name, ggscore_rank, ggscore_rating
+            FROM cs2_ggscore_rankings
+            ORDER BY team_name, snapshot_date DESC
+        """, ())
+        return {_normalize(r["team_name"]): (r["ggscore_rank"], r["ggscore_rating"])
+                for r in rows if r.get("team_name")}
+    except Exception:
+        return {}
+
+
+def lookup_ggscore(team_name: str, gg: dict[str, tuple[int, int]]) -> tuple[int | None, int | None]:
+    key = _normalize(team_name)
+    if key in gg: return gg[key]
+    alias = _HLTV_ALIASES.get(key)  # reuse same alias map
+    if alias and alias in gg: return gg[alias]
+    return None, None
+
+
 def load_hltv_rankings() -> dict[str, tuple[int, int]]:
     """Return {team_name_normalized: (hltv_rank, hltv_points)} from latest snapshot.
 
@@ -781,6 +805,7 @@ def _write_to_db(
     days_since_roster: dict[str, int] | None = None,
     extra_features: dict[int, dict] | None = None,
     hltv_rankings: dict[str, tuple[int, int]] | None = None,
+    ggscore_rankings: dict[str, tuple[int, int]] | None = None,
 ) -> None:
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -796,6 +821,7 @@ def _write_to_db(
     days_since_roster = days_since_roster or {}
     extra_features = extra_features or {}
     hltv_rankings = hltv_rankings or {}
+    ggscore_rankings = ggscore_rankings or {}
 
     for m in matches:
         t1, t2 = m["team1"], m["team2"]
@@ -853,6 +879,8 @@ def _write_to_db(
         feats = extra_features.get(m.get("id"), {})
         hr1, hp1 = lookup_hltv(t1, hltv_rankings)
         hr2, hp2 = lookup_hltv(t2, hltv_rankings)
+        gr1, gp1 = lookup_ggscore(t1, ggscore_rankings)
+        gr2, gp2 = lookup_ggscore(t2, ggscore_rankings)
 
         execute_write("""
             INSERT INTO cs2_upcoming_matches
@@ -870,8 +898,9 @@ def _write_to_db(
                  opp_strength_avg1, opp_strength_avg2,
                  h2h_team1_win_pct, h2h_count,
                  hltv_rank1, hltv_rank2, hltv_points1, hltv_points2,
+                 ggscore_rank1, ggscore_rank2, ggscore_rating1, ggscore_rating2,
                  scanned_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (team1, team2, kickoff_time) DO UPDATE SET
                 state           = EXCLUDED.state,
                 elo1            = EXCLUDED.elo1,
@@ -910,6 +939,10 @@ def _write_to_db(
                 hltv_rank2                   = EXCLUDED.hltv_rank2,
                 hltv_points1                 = EXCLUDED.hltv_points1,
                 hltv_points2                 = EXCLUDED.hltv_points2,
+                ggscore_rank1                = EXCLUDED.ggscore_rank1,
+                ggscore_rank2                = EXCLUDED.ggscore_rank2,
+                ggscore_rating1              = EXCLUDED.ggscore_rating1,
+                ggscore_rating2              = EXCLUDED.ggscore_rating2,
                 scanned_at      = EXCLUDED.scanned_at
         """, (
             m.get("id"),
@@ -930,6 +963,7 @@ def _write_to_db(
             feats.get("opp_strength_avg1"), feats.get("opp_strength_avg2"),
             feats.get("h2h_team1_win_pct"), feats.get("h2h_count"),
             hr1, hr2, hp1, hp2,
+            gr1, gr2, gp1, gp2,
             now,
         ))
         written += 1
@@ -951,8 +985,9 @@ def _write_to_db(
                      opp_strength_avg1, opp_strength_avg2,
                      h2h_team1_win_pct, h2h_count,
                      hltv_rank1, hltv_rank2, hltv_points1, hltv_points2,
+                     ggscore_rank1, ggscore_rank2, ggscore_rating1, ggscore_rating2,
                      model_version)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT (bo3gg_id, scan_time, model_version) DO NOTHING
             """, (
                 m["id"], now, m["date"].isoformat(), m["tournament"], best_of,
@@ -969,6 +1004,7 @@ def _write_to_db(
                 feats.get("opp_strength_avg1"), feats.get("opp_strength_avg2"),
                 feats.get("h2h_team1_win_pct"), feats.get("h2h_count"),
                 hr1, hr2, hp1, hp2,
+                gr1, gr2, gp1, gp2,
                 MODEL_VERSION,
             ))
 
@@ -1015,6 +1051,11 @@ def main() -> None:
     hltv_rankings = load_hltv_rankings()
     if hltv_rankings:
         print(f"    HLTV rankings: {len(hltv_rankings)} teams (snapshot)")
+
+    # GGScore — third oracle. Manual paste.
+    ggscore_rankings = load_ggscore_rankings()
+    if ggscore_rankings:
+        print(f"    GGScore rankings: {len(ggscore_rankings)} teams (snapshot)")
     print(f"    {len(player_ratings)} players with HLTV ratings")
     print(f"    {len(team_last_lineups)} team lineups known")
 
@@ -1127,7 +1168,7 @@ def main() -> None:
 
     if args.record:
         print("[6] Writing to database...")
-        _write_to_db(upcoming, ratings, args.edge, roster_changes, player_ratings, team_last_lineups, match_counts, days_since_roster, extra_features, hltv_rankings)
+        _write_to_db(upcoming, ratings, args.edge, roster_changes, player_ratings, team_last_lineups, match_counts, days_since_roster, extra_features, hltv_rankings, ggscore_rankings)
 
 
 if __name__ == "__main__":
