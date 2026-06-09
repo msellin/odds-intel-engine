@@ -131,22 +131,38 @@ def fetch_results_listing(offset: int = 0) -> list[tuple[int, str]]:
 
 def queue_new_matches(limit_pages: int = 1) -> int:
     """Walk /results pages, INSERT new (match_id, slug) into the queue."""
+    try:
+        from scraper_state import scraper_run  # type: ignore
+    except ImportError:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from scraper_state import scraper_run
+
     total = 0
-    for page in range(limit_pages):
-        if page > 0:
-            time.sleep(RATE_DELAY)
-        offset = page * 100
-        rows = fetch_results_listing(offset)
-        if not rows:
-            break
-        for mid, slug in rows:
-            execute_write("""
-                INSERT INTO cs2_hltv_match_queue (hltv_match_id, slug)
-                VALUES (%s, %s)
-                ON CONFLICT (hltv_match_id) DO NOTHING
-            """, (mid, slug))
-            total += 1
-        print(f"  page {page} (offset={offset}): {len(rows)} candidates")
+    with scraper_run("match_details_queue", "Walks HLTV /results pages and queues match IDs") as st:
+        st.set_total(limit_pages * 100)  # nominal capacity
+        st.note(f"walking {limit_pages} pages")
+        for page in range(limit_pages):
+            if page > 0:
+                time.sleep(RATE_DELAY)
+            offset = page * 100
+            rows = fetch_results_listing(offset)
+            if not rows:
+                break
+            for mid, slug in rows:
+                execute_write("""
+                    INSERT INTO cs2_hltv_match_queue (hltv_match_id, slug)
+                    VALUES (%s, %s)
+                    ON CONFLICT (hltv_match_id) DO NOTHING
+                """, (mid, slug))
+                total += 1
+                st.tick_done(persist_every=50)
+            print(f"  page {page} (offset={offset}): {len(rows)} candidates")
+        # Final state: reflect actual queue size as items_total.
+        q = execute_query("SELECT COUNT(*) AS c FROM cs2_hltv_match_queue")[0]["c"]
+        p = execute_query("SELECT COUNT(*) AS c FROM cs2_hltv_match_queue WHERE fetched_at IS NULL AND error IS NULL")[0]["c"]
+        st.set_total(q)
+        st.set_pending(p)
+        st.note(f"queue now {q} total / {p} pending")
     return total
 
 
@@ -347,38 +363,68 @@ def write_match(mid: int, slug: str, parsed: dict) -> None:
 
 
 def process_queue(limit: int) -> tuple[int, int]:
+    # Self-healing: re-claim rows stuck "in flight" >2h (e.g. killed mid-run).
+    # Also retry transient fetch_failed errors after 6h.
+    execute_write("""
+        UPDATE cs2_hltv_match_queue
+        SET error = NULL
+        WHERE error = 'fetch_failed'
+          AND discovered_at < NOW() - INTERVAL '6 hours'
+    """)
+
     rows = execute_query("""
         SELECT hltv_match_id, slug FROM cs2_hltv_match_queue
         WHERE fetched_at IS NULL AND error IS NULL
         ORDER BY discovered_at
         LIMIT %s
     """, (limit,))
+
+    # Count overall pending for the state row (UI progress bar).
+    pending = execute_query(
+        "SELECT COUNT(*) AS c FROM cs2_hltv_match_queue WHERE fetched_at IS NULL AND error IS NULL"
+    )[0]["c"]
+    total = execute_query("SELECT COUNT(*) AS c FROM cs2_hltv_match_queue")[0]["c"]
+
+    try:
+        from scraper_state import scraper_run  # type: ignore
+    except ImportError:  # pragma: no cover
+        sys.path.insert(0, str(Path(__file__).parent))
+        from scraper_state import scraper_run
+
     hits = miss = 0
-    for i, r in enumerate(rows):
-        mid, slug = r["hltv_match_id"], r["slug"]
-        if i > 0:
-            time.sleep(RATE_DELAY)
-        url = MATCH_URL_FMT.format(mid=mid, slug=slug)
-        html = _fetch(url)
-        if not html:
-            execute_write("UPDATE cs2_hltv_match_queue SET error = %s WHERE hltv_match_id = %s",
-                          ("fetch_failed", mid))
-            miss += 1
-            continue
-        parsed = parse_match(html)
-        if not parsed:
-            execute_write("UPDATE cs2_hltv_match_queue SET error = %s WHERE hltv_match_id = %s",
-                          ("parse_failed", mid))
-            miss += 1
-            print(f"  [!] {mid} parse failed")
-            continue
-        write_match(mid, slug, parsed)
-        execute_write("UPDATE cs2_hltv_match_queue SET fetched_at = NOW() WHERE hltv_match_id = %s",
-                      (mid,))
-        hits += 1
-        veto_n = len(parsed["veto"])
-        print(f"  [{i+1:>3}/{len(rows)}] ✓ {parsed['team1']:18} vs {parsed['team2']:18}  "
-              f"{parsed['score1']}-{parsed['score2']}  veto={veto_n}  maps={len(parsed['maps'])}  players={len(parsed['players'])}")
+    with scraper_run("match_details_process", "HLTV match-page fetch+parse (queue-driven)") as st:
+        st.set_total(total)
+        st.set_pending(pending)
+        st.note(f"this batch: {len(rows)} rows")
+
+        for i, r in enumerate(rows):
+            mid, slug = r["hltv_match_id"], r["slug"]
+            if i > 0:
+                time.sleep(RATE_DELAY)
+            url = MATCH_URL_FMT.format(mid=mid, slug=slug)
+            html = _fetch(url)
+            if not html:
+                execute_write("UPDATE cs2_hltv_match_queue SET error = %s WHERE hltv_match_id = %s",
+                              ("fetch_failed", mid))
+                st.tick_failed(f"fetch_failed {mid}")
+                miss += 1
+                continue
+            parsed = parse_match(html)
+            if not parsed:
+                execute_write("UPDATE cs2_hltv_match_queue SET error = %s WHERE hltv_match_id = %s",
+                              ("parse_failed", mid))
+                st.tick_failed(f"parse_failed {mid}")
+                miss += 1
+                print(f"  [!] {mid} parse failed")
+                continue
+            write_match(mid, slug, parsed)
+            execute_write("UPDATE cs2_hltv_match_queue SET fetched_at = NOW() WHERE hltv_match_id = %s",
+                          (mid,))
+            st.tick_done()
+            hits += 1
+            veto_n = len(parsed["veto"])
+            print(f"  [{i+1:>3}/{len(rows)}] ✓ {parsed['team1']:18} vs {parsed['team2']:18}  "
+                  f"{parsed['score1']}-{parsed['score2']}  veto={veto_n}  maps={len(parsed['maps'])}  players={len(parsed['players'])}")
     return hits, miss
 
 
