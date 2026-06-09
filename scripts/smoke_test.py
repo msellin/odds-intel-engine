@@ -18542,6 +18542,52 @@ def _():
         assert "ImageResponse" in src and "1200" in src and "630" in src
 
 
+@test("WC-AD-LANDING-OG — opengraph-image.tsx on the three WC ad-landing routes")
+def _():
+    """WC-AD-LANDING-OG (2026-06-09): paid Meta/IG ads pointed at /world-cup,
+    /world-cup/bracket and /world-cup/groups-predictor must serve WC-themed
+    OG cards instead of falling back to the generic root opengraph-image.
+
+    Each per-route opengraph-image.tsx:
+      - exists, declares 1200x630 size + image/png contentType
+      - returns a next/og ImageResponse
+      - mentions either 'World Cup' or 'WC' so the unfurl reads as tournament
+
+    The two game pages also need explicit openGraph + twitter metadata
+    blocks so Meta unfurl pulls the ad-tuned title/description rather than
+    the page <title>."""
+    expected = [
+        ("src/app/(app)/world-cup/opengraph-image.tsx", "World Cup"),
+        ("src/app/(app)/world-cup/bracket/opengraph-image.tsx", "Beat 5 AIs"),
+        (
+            "src/app/(app)/world-cup/groups-predictor/opengraph-image.tsx",
+            "Predict 12 groups",
+        ),
+    ]
+    for sub, hook in expected:
+        p = _web_path(sub)
+        assert p.exists(), f"{sub} must exist for WC ad landing pages"
+        src = p.read_text()
+        assert "ImageResponse" in src, f"{sub} must use next/og ImageResponse"
+        assert "1200" in src and "630" in src, f"{sub} must declare 1200x630"
+        assert "image/png" in src, f"{sub} must declare image/png contentType"
+        assert hook in src, f"{sub} must surface its ad hook ({hook!r})"
+
+    bracket_page = _web_path("src/app/(app)/world-cup/bracket/page.tsx").read_text()
+    assert "openGraph:" in bracket_page and "Beat 5 AIs" in bracket_page, \
+        "bracket page metadata must include openGraph block with the ad hook"
+    assert "twitter:" in bracket_page, \
+        "bracket page must include twitter card metadata for summary_large_image"
+
+    groups_page = _web_path(
+        "src/app/(app)/world-cup/groups-predictor/page.tsx"
+    ).read_text()
+    assert "openGraph:" in groups_page and "192 points" in groups_page, \
+        "groups-predictor metadata must include openGraph block with the ad hook"
+    assert "twitter:" in groups_page, \
+        "groups-predictor must include twitter card metadata"
+
+
 @test("WC-G-POLISH — 8 loading.tsx skeletons for new WC routes")
 def _():
     """WC-G2-G3-G4 (2026-06-04): skeleton loading states for every new route."""

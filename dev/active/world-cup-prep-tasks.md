@@ -54,26 +54,29 @@
 ### Follow-up filed (post-WC)
 - **GOALS-MODEL-V2** — current Poisson on team-level recent-goal-rates doesn't beat baseline. Try ELO-derived expected goals + Dixon-Coles rho + competition-tier league averages instead.
 
-## Phase 4 — WC frontend (2-3 days, odds-intel-web repo)
+## Phase 4 — WC frontend (DONE 2026-06-06; full audit confirmed scope FAR exceeds original spec)
 
-- [ ] `/world-cup` route — group standings + 104 fixtures
-- [ ] Group-stage advancement probability calculator (live, recompute after each result)
-- [ ] Tier gating: free sees group stage predictions, Pro/Elite get knockout
-- [ ] (optional) Bracket vs user bracket (free-tier signup hook)
-- [ ] (optional) Outright odds + CLV tracker (depends on Phase 4b)
-- [ ] SEO: per-team and per-match URLs with structured data
-- [ ] Update `TIER_ACCESS_MATRIX.md` with WC-specific tier rules
-- [ ] Smoke test: WC-LANDING-PAGE (route responds, key sections render)
+- [x] `/world-cup` route — group standings + 104 fixtures (`src/app/(app)/world-cup/page.tsx`, 7 tabs)
+- [x] Group-stage advancement probability calculator (5,000-iter Monte Carlo, `computeAdvancement()`)
+- [x] Tier gating: free sees group stage, Pro/Elite get knockout (KnockoutsPanel Pro lock footer)
+- [x] Bracket vs user bracket — shipped as stage-gated WC-BRACKET + WC-AI-GHOSTS + WC-ACHIEVEMENTS
+- [x] Group standings predictor (`/world-cup/groups-predictor`, 12 groups × 4 positions)
+- [x] WC-PHASE-4b — Odds via The Odds API (`ODDS-API-WC` 2026-06-06), daily cron 06:30 UTC, gated to 06-11→07-19. 22 books incl. Pinnacle/Bet365/Unibet, ~5,800-6,200 rows per sweep.
+- [x] SEO: structured data on `/world-cup`, /world-cup/teams/[name], /world-cup/predictions-record, /world-cup/who-can-win (SEO-EVENT-SCHEMA-COMPLETE 2026-06-06)
+- [x] WC ad-landing OG cards (WC-AD-LANDING-OG 2026-06-09) — opengraph-image.tsx on /world-cup, /world-cup/bracket, /world-cup/groups-predictor; explicit openGraph + twitter metadata blocks
+- [x] Tier matrix already documents productized version (`TIER_ACCESS_MATRIX.md:117 World Cup 2026 Games`)
+- [x] Smoke: WC-AI-PREVIEW-FE, WC-BRACKET-*, WC-GROUP-PREDICTOR-*, WC-AI-GHOSTS-*, WC-AD-LANDING-OG
 
-## Phase 4b — Odds source (decision required first)
+## Phase 4b — Odds source (DONE 2026-06-06)
 
-- [ ] DECIDE: add `soccer_fifa_world_cup` sport_key to Odds API client / scrape Coolbet / no odds
-- [ ] If Odds API: add to `workers/api_clients/odds_api.py:20-38` SPORT_KEYS dict
-- [ ] If Odds API: extend `coolbet_odds_snapshot` or equivalent to fetch + store
-- [ ] If no odds: explicitly accept "predictions only, no value bets" for WC matches
+- [x] DECIDED — The Odds API free tier (500 credits/mo), `soccer_fifa_world_cup` (ODDS-API-WC 2026-06-06)
+- [x] `scripts/odds_api_wc_sweep.py` — bookmaker key→our-convention map, OU half-line filter, AH home-perspective
+- [x] Daily Railway cron `job_wc_odds_sweep` 06:30 UTC, gated to 2026-06-11 → 2026-07-19 window
+- [x] First sweep 5,858 rows; ongoing daily sweeps add ~6,200 rows. Pinnacle confirmed available on WC specifically.
 
 ## Phase 5 — Marketing + retention (in parallel)
 
+- [x] **Paid Meta/IG ads — landing OG cards ready 2026-06-09** (WC-AD-LANDING-OG): /world-cup, /world-cup/bracket, /world-cup/groups-predictor all serve WC-themed 1200×630 cards. Recommended ad split: bracket ("Beat 5 AIs") + groups-predictor ("Predict 12 groups · 192 pts") + retargeting on /world-cup/teams/[name].
 - [ ] Reddit post(s) using existing `docs/REDDIT_LAUNCH.md` playbook adapted for WC
 - [ ] Daily prediction tweets — manual or `scripts/wc_daily_tweet.py`
 - [ ] Email signup hook on `/world-cup` page
