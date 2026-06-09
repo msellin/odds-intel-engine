@@ -19819,6 +19819,47 @@ def _():
     assert fm is not None and -1.0 <= fm <= 1.0
 
 
+@test("CS2-HLTV-PREDICT — parallel HLTV-only model variant")
+def _():
+    import pathlib, importlib.util, ast
+    p = pathlib.Path("scripts/esports/cs2_hltv_predict.py")
+    assert p.exists()
+    spec = importlib.util.spec_from_file_location("cs2_hltv_predict", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    # Sigmoid behavior: bigger HLTV gap → more confident prediction
+    p_top = mod._hltv_prob(991, 25)
+    p_close = mod._hltv_prob(150, 100)
+    p_even = mod._hltv_prob(200, 200)
+    assert p_top > 0.65, f"991 vs 25 should be very confident (got {p_top})"
+    assert 0.5 < p_close < 0.65, f"150 vs 100 should be mild edge (got {p_close})"
+    assert abs(p_even - 0.5) < 0.001, f"equal points should be 50/50 (got {p_even})"
+    assert mod.MODEL_VERSION == "hltv_v1"
+
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    tree = ast.parse(sched)
+    fns = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    assert "job_cs2_hltv_predict" in fns
+    ids = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "add_job":
+            for kw in n.keywords:
+                if kw.arg == "id" and isinstance(getattr(kw.value, "value", None), str):
+                    ids.add(kw.value.value)
+    assert "cs2_hltv_predict" in ids
+
+
+@test("CS2-EGAMERSWORLD-RANKINGS — manual loader + scanner integration")
+def _():
+    import pathlib
+    assert pathlib.Path("scripts/esports/cs2_load_egamersworld.py").exists()
+    mig = pathlib.Path("supabase/migrations/207_cs2_egamersworld_rankings.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS cs2_egamersworld_rankings" in mig
+    scanner_src = pathlib.Path("scripts/esports/cs2_elo_scanner.py").read_text()
+    assert "load_egamersworld_rankings" in scanner_src
+    assert "lookup_egw" in scanner_src
+
+
 @test("CS2-GGSCORE-RANKINGS — manual snapshot loader + scanner integration")
 def _():
     import pathlib
