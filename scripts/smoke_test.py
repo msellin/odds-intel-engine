@@ -20468,5 +20468,37 @@ def _():
     assert "cs2_hltv_rosters" in src
 
 
+@test("CS2-BOT-BANKROLL — bot rows + stake_eur + roster-change gate")
+def _():
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/220_cs2_bot_bankroll.sql").read_text()
+    # Bots seeded with €1000 starting bankroll
+    assert "INSERT INTO bots" in mig
+    assert "'bot_cs2_value_v1'" in mig and "'bot_cs2_hltv_v1'" in mig
+    assert "1000.00, 1000.00" in mig
+    # stake_eur + bankroll_at_pick columns
+    for col in ["stake_eur", "bankroll_at_pick", "pnl_eur"]:
+        assert col in mig, f"cs2_simulated_bets missing {col}"
+
+    bot = pathlib.Path("scripts/esports/cs2_bot.py").read_text()
+    # Roster-change gate at top of _scan_one
+    assert 'row.get("roster_change1") or row.get("roster_change2"):' in bot, (
+        "Bot must skip matches with EITHER team having roster_change=True. "
+        "The Virtus.pro vs Oxuji bet (FL4MUS joined VP) on 2026-06-09 fired "
+        "because this gate didn't exist."
+    )
+    # roster_change columns pulled in queries
+    assert "roster_change1, roster_change2" in bot
+    # Bankroll helpers
+    for fn in ["_get_bot_bankroll", "_stake_eur"]:
+        assert f"def {fn}" in bot, f"{fn} helper missing"
+    # 2% bankroll cap on single bet
+    assert "MAX_STAKE_PCT_OF_BANKROLL = 0.02" in bot
+    # INSERT now includes stake_eur + bankroll_at_pick
+    assert "stake_eur, bankroll_at_pick" in bot
+    # Settle updates bots.current_bankroll
+    assert "UPDATE bots SET current_bankroll" in bot
+
+
 if __name__ == "__main__":
     main()

@@ -73,6 +73,7 @@ def _load_open_matches() -> list[dict]:
                bookie_odds1, bookie_odds2,
                coolbet_odds1, coolbet_odds2,
                pinnacle_odds1, pinnacle_odds2,
+               roster_change1, roster_change2,
                'elo+pq_v1' AS source
         FROM cs2_upcoming_matches
         WHERE has_elo_history = TRUE
@@ -94,6 +95,7 @@ def _load_open_matches() -> list[dict]:
                u.bookie_odds1, u.bookie_odds2,
                u.coolbet_odds1, u.coolbet_odds2,
                u.pinnacle_odds1, u.pinnacle_odds2,
+               u.roster_change1, u.roster_change2,
                'hltv_v1' AS source
         FROM cs2_upcoming_matches u
         JOIN LATERAL (
@@ -235,6 +237,15 @@ def _scan_one(row: dict) -> list[dict]:
     best_of = row["best_of"] or 3
     source = row.get("source") or "elo+pq_v1"
 
+    # ROSTER-CHANGE GATE (added 2026-06-09 after Virtus.pro vs Oxuji incident).
+    # When EITHER team has a recent roster change, prior team-level stats
+    # (ELO, PQ, HLTV rank) become unreliable: a brand-new player invalidates
+    # the team's whole history. Sit out — match is unpriceable for us until
+    # ~30d of new-roster data has accumulated. The UI badge alone wasn't
+    # enough; the bot must actually skip.
+    if row.get("roster_change1") or row.get("roster_change2"):
+        return []
+
     # For HLTV-fallback rows, threshold_odds is NULL — derive from fair_odds.
     thr1 = row["threshold_odds1"]
     thr2 = row["threshold_odds2"]
@@ -275,32 +286,61 @@ def _scan_one(row: dict) -> list[dict]:
     return picks
 
 
+def _get_bot_bankroll(bot_name: str) -> float:
+    """Read current_bankroll from the bots table (mirrors soccer convention)."""
+    rows = execute_query("SELECT current_bankroll FROM bots WHERE name = %s", (bot_name,))
+    if not rows:
+        return 1000.0  # fallback if bot row missing
+    return float(rows[0]["current_bankroll"])
+
+
+# Cap a single bet at 2% of bankroll regardless of what Kelly says — match the
+# soccer Kelly-cap convention.
+MAX_STAKE_PCT_OF_BANKROLL = 0.02
+
+
+def _stake_eur(stake_units: float, bankroll: float) -> float:
+    """Translate the unit-stake (e.g. 0.05u) to euros using 1u = 1% bankroll
+    convention, then cap at MAX_STAKE_PCT_OF_BANKROLL of bankroll. Returns
+    rounded to cents."""
+    # 1u = 1% of bankroll → stake_units * bankroll / 100
+    raw_eur = stake_units * bankroll / 100.0
+    capped = min(raw_eur, bankroll * MAX_STAKE_PCT_OF_BANKROLL)
+    return round(max(capped, 0.0), 2)
+
+
 def _write_bet(row: dict, pick: dict) -> bool:
     # Different bot_name per source so HLTV-fallback picks track separately.
     bot_name = "bot_cs2_hltv_v1" if pick.get("source") == "hltv_v1" else BOT_NAME
+    bankroll = _get_bot_bankroll(bot_name)
+    stake_units = pick.get("stake", BASE_STAKE)
+    stake_eur = _stake_eur(stake_units, bankroll)
     res = execute_write("""
         INSERT INTO cs2_simulated_bets
             (bot_name, bo3gg_id, placed_at, kickoff_time,
              team1, team2, market, pick, bookie,
              odds_at_pick, fair_odds, threshold_odds, edge, stake,
+             stake_eur, bankroll_at_pick,
              consensus_implied_prob, n_books_at_pick)
-        VALUES (%s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (bot_name, bo3gg_id, market, pick) DO NOTHING
     """, (
         bot_name, row["bo3gg_id"], row["kickoff_time"],
         row["team1"], row["team2"],
         pick["market"], pick["team"], pick["bookie"],
         pick["odds"], pick["fair"], pick["thr"], pick["edge"],
-        pick.get("stake", BASE_STAKE),
+        stake_units, stake_eur, bankroll,
         pick.get("consensus_prob"), pick.get("n_books"),
     ))
     return bool(res)
 
 
 def _settle() -> int:
-    """Settle open cs2_simulated_bets against cs2_results."""
+    """Settle open cs2_simulated_bets against cs2_results. Updates the bot's
+    bankroll on each settlement so the next pick sizes off the new bankroll."""
     open_bets = execute_query("""
-        SELECT b.id, b.team1, b.team2, b.market, b.pick, b.odds_at_pick, b.stake,
+        SELECT b.id, b.bot_name, b.team1, b.team2, b.market, b.pick,
+               b.odds_at_pick, b.stake, b.stake_eur,
                r.winner, r.score1, r.score2
         FROM cs2_simulated_bets b
         JOIN cs2_results r ON b.bo3gg_id = r.bo3gg_id
@@ -308,18 +348,39 @@ def _settle() -> int:
     """, ())
 
     settled = 0
+    bankroll_cache: dict[str, float] = {}
     for row in open_bets:
         won = _bet_won(row)
         if won is None:
             continue
-        odds = float(row["odds_at_pick"]); stake = float(row["stake"])
+        odds = float(row["odds_at_pick"])
+        stake = float(row["stake"])
+        stake_eur = float(row["stake_eur"]) if row["stake_eur"] is not None else None
         result = "won" if won else "lost"
-        pnl = round(stake * (odds - 1), 4) if won else round(-stake, 4)
+        pnl_units = round(stake * (odds - 1), 4) if won else round(-stake, 4)
+        pnl_eur = None
+        if stake_eur is not None:
+            pnl_eur = round(stake_eur * (odds - 1), 2) if won else round(-stake_eur, 2)
         execute_write(
-            "UPDATE cs2_simulated_bets SET result = %s, pnl = %s, settled_at = NOW() WHERE id = %s",
-            (result, pnl, row["id"]),
+            """UPDATE cs2_simulated_bets
+                  SET result = %s, pnl = %s, pnl_eur = %s, settled_at = NOW()
+                WHERE id = %s""",
+            (result, pnl_units, pnl_eur, row["id"]),
         )
+        # Update bot bankroll
+        bn = row["bot_name"]
+        if pnl_eur is not None:
+            if bn not in bankroll_cache:
+                bankroll_cache[bn] = _get_bot_bankroll(bn)
+            bankroll_cache[bn] += pnl_eur
         settled += 1
+
+    # Flush bankroll updates
+    for bn, new_bankroll in bankroll_cache.items():
+        execute_write(
+            "UPDATE bots SET current_bankroll = %s, updated_at = NOW() WHERE name = %s",
+            (round(new_bankroll, 2), bn),
+        )
     return settled
 
 
