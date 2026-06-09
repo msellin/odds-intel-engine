@@ -117,8 +117,14 @@ def build_rows(matches, tm, pistol, tier_map):
         # NEW v7: tournament tier (one-hot for a/b)
         kdate = m["kickoff_time"].date() if m["kickoff_time"] else None
         tier = tier_map.get((m["team1"], m["team2"], kdate)) or tier_map.get((m["team2"], m["team1"], kdate))
+        # Encode all tiers — s/a are majors+premier (tight games, lower upset),
+        # c/d are tier-3/4 (higher variance, higher upset). Don't leave c/d
+        # unencoded — they're the majority of matches in our sample.
+        tier_s = 1.0 if tier == "s" else 0.0
         tier_a = 1.0 if tier == "a" else 0.0
         tier_b = 1.0 if tier == "b" else 0.0
+        tier_c = 1.0 if tier == "c" else 0.0
+        tier_d = 1.0 if tier == "d" else 0.0
 
         out.append({
             "kickoff": m["kickoff_time"], "y": y,
@@ -132,8 +138,11 @@ def build_rows(matches, tm, pistol, tier_map):
             "pistol_diff": pistol_diff,
             "pistol_ct_diff": pistol_ct_diff,
             "pistol_t_diff": pistol_t_diff,
+            "tier_s": tier_s,
             "tier_a": tier_a,
             "tier_b": tier_b,
+            "tier_c": tier_c,
+            "tier_d": tier_d,
         })
     return out
 
@@ -205,12 +214,13 @@ def main():
 
     # Coverage diagnostics
     pistol_covered = sum(1 for r in rows if r["pistol_diff"] != 0.0)
-    tier_a_covered = sum(1 for r in rows if r["tier_a"] != 0.0)
-    tier_b_covered = sum(1 for r in rows if r["tier_b"] != 0.0)
+    any_tier = sum(1 for r in rows if any(r[k] for k in ("tier_s","tier_a","tier_b","tier_c","tier_d")))
     print(f"  coverage:")
     print(f"    pistol_diff: {pistol_covered}/{len(rows)} ({pistol_covered/len(rows):.1%})")
-    print(f"    tier=a:      {tier_a_covered}/{len(rows)} ({tier_a_covered/len(rows):.1%})")
-    print(f"    tier=b:      {tier_b_covered}/{len(rows)} ({tier_b_covered/len(rows):.1%})")
+    print(f"    any tier:    {any_tier}/{len(rows)} ({any_tier/len(rows):.1%})")
+    for tk in ("tier_s","tier_a","tier_b","tier_c","tier_d"):
+        n = sum(1 for r in rows if r[tk])
+        print(f"    {tk:10}: {n}/{len(rows)} ({n/len(rows):.1%})")
     print()
 
     cut = int(len(rows) * 0.7)
@@ -228,10 +238,10 @@ def main():
         (v5_keys, "v7 v5-best (regression)"),
         (["pistol_diff"], "v7 + pistol alone"),
         (["pistol_diff", "pistol_ct_diff", "pistol_t_diff"], "v7 + pistol (3-way)"),
-        (["tier_a", "tier_b"], "v7 + tier"),
+        (["tier_s", "tier_a", "tier_b", "tier_c", "tier_d"], "v7 + tier"),
         (v5_keys + ["pistol_diff"], "v7 v5-best + pistol"),
-        (v5_keys + ["pistol_diff", "tier_a", "tier_b"], "v7 v5-best + pistol + tier"),
-        (v5_keys + ["pistol_diff", "pistol_ct_diff", "pistol_t_diff", "tier_a", "tier_b"], "v7 ALL"),
+        (v5_keys + ["pistol_diff", "tier_s", "tier_a", "tier_b", "tier_c", "tier_d"], "v7 v5-best + pistol + tier"),
+        (v5_keys + ["pistol_diff", "pistol_ct_diff", "pistol_t_diff", "tier_s", "tier_a", "tier_b", "tier_c", "tier_d"], "v7 ALL"),
     ]:
         r = evaluate_stack(rows, keys, label)
         if r.get("skipped"):

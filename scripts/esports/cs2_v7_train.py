@@ -45,7 +45,8 @@ from sklearn.metrics import roc_auc_score, log_loss  # noqa: E402
 FEATURE_KEYS = [
     "logit_saved",   # logit of hltv_v1 saved win_prob1
     "form_diff", "h2h_diff", "tm_diff", "rest_diff", "rank_diff",
-    "bo_centered", "pistol_diff", "tier_a", "tier_b",
+    "bo_centered", "pistol_diff",
+    "tier_s", "tier_a", "tier_b", "tier_c", "tier_d",
 ]
 
 
