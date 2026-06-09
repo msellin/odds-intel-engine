@@ -1133,11 +1133,17 @@ def job_cs2_bot():
 def job_cs2_settlement():
     """CS2-SETTLEMENT (2026-06-08): pull finished bo3.gg matches into cs2_results
     and settle any open cs2_bets. Hourly during the global CS2 match window.
+
+    2026-06-09: --days bumped to 3 (was default 1). At default 1d with bo3.gg's
+    page[limit]=100 cap, busy days where >100 matches finish push older matches
+    off the window so they never settle. Found 8 bets stuck pending from earlier
+    today this way. Also runs cs2_bot --settle to update cs2_simulated_bets +
+    bot bankroll (separate from cs2_bets settlement done by cs2_settlement.py).
     """
     import subprocess
     console.print("[bold cyan]CS2 settlement[/bold cyan]")
     result = subprocess.run(
-        [sys.executable, "scripts/esports/cs2_settlement.py"],
+        [sys.executable, "scripts/esports/cs2_settlement.py", "--days", "3"],
         capture_output=True, text=True, timeout=300,
     )
     if result.returncode != 0:
@@ -1146,6 +1152,17 @@ def job_cs2_settlement():
         for line in result.stdout.splitlines():
             if any(k in line for k in ["finished matches", "result rows", "written", "settled"]):
                 console.print(f"[dim]{line}[/dim]")
+
+    # Also settle bot picks + update bankroll
+    bot_result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_bot.py", "--settle"],
+        capture_output=True, text=True, timeout=120,
+    )
+    if bot_result.returncode == 0:
+        for line in bot_result.stdout.splitlines():
+            if "settled" in line.lower():
+                console.print(f"[dim]bot {line}[/dim]")
+
     _run_job("cs2_settlement", lambda: None)
 
 
