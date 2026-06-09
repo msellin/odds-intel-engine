@@ -96,13 +96,18 @@ def _load_open_matches() -> list[dict]:
                u.coolbet_odds1, u.coolbet_odds2,
                u.pinnacle_odds1, u.pinnacle_odds2,
                u.roster_change1, u.roster_change2,
-               'hltv_v1' AS source
+               COALESCE(h.source, 'hltv_v1') AS source
         FROM cs2_upcoming_matches u
         JOIN LATERAL (
-            SELECT win_prob1, win_prob2, fair_odds1, fair_odds2
+            -- Prefer v7 when present (stacking model, AUC 0.694), else
+            -- fall back to hltv_v1 (rank-only, AUC 0.673).
+            SELECT win_prob1, win_prob2, fair_odds1, fair_odds2, model_version AS source
             FROM cs2_predictions p
-            WHERE p.bo3gg_id = u.bo3gg_id AND p.model_version = 'hltv_v1'
-            ORDER BY p.scan_time DESC LIMIT 1
+            WHERE p.bo3gg_id = u.bo3gg_id
+              AND p.model_version IN ('v7', 'hltv_v1')
+            ORDER BY CASE p.model_version WHEN 'v7' THEN 0 ELSE 1 END,
+                     p.scan_time DESC
+            LIMIT 1
         ) h ON TRUE
         WHERE u.threshold_odds1 IS NULL           -- ELO gated
           AND u.kickoff_time >= %s
@@ -249,12 +254,16 @@ def _scan_one(row: dict) -> list[dict]:
     # For HLTV-fallback rows, threshold_odds is NULL — derive from fair_odds.
     thr1 = row["threshold_odds1"]
     thr2 = row["threshold_odds2"]
-    if source == "hltv_v1":
+    # v7 + hltv_v1 are HLTV-fallback variants — derive threshold from fair odds.
+    # v7 is the production stacking model (AUC 0.694); hltv_v1 is the legacy
+    # rank-only baseline (AUC 0.673). Both use the same edge floor since v7
+    # only narrowly beats hltv_v1 on aggregate AUC.
+    if source in ("v7", "hltv_v1"):
         f1, f2 = row["fair_odds1"], row["fair_odds2"]
         if f1 and f2:
             thr1 = round(float(f1) * (1 - HLTV_BASE_EDGE), 3)
             thr2 = round(float(f2) * (1 - HLTV_BASE_EDGE), 3)
-    min_extra = HLTV_EDGE_FLOOR if source == "hltv_v1" else MIN_EXTRA_EDGE
+    min_extra = HLTV_EDGE_FLOOR if source in ("v7", "hltv_v1") else MIN_EXTRA_EDGE
 
     # match_winner
     for side, team_name, fair, thr, prob, sidekey in [
@@ -311,7 +320,13 @@ def _stake_eur(stake_units: float, bankroll: float) -> float:
 
 def _write_bet(row: dict, pick: dict) -> bool:
     # Different bot_name per source so HLTV-fallback picks track separately.
-    bot_name = "bot_cs2_hltv_v1" if pick.get("source") == "hltv_v1" else BOT_NAME
+    src = pick.get("source")
+    if src == "v7":
+        bot_name = "bot_cs2_v7"
+    elif src == "hltv_v1":
+        bot_name = "bot_cs2_hltv_v1"
+    else:
+        bot_name = BOT_NAME
     bankroll = _get_bot_bankroll(bot_name)
     stake_units = pick.get("stake", BASE_STAKE)
     stake_eur = _stake_eur(stake_units, bankroll)

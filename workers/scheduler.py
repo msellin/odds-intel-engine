@@ -780,6 +780,28 @@ def job_cs2_scanner():
     _run_job("cs2_scanner", lambda: None)
 
 
+def job_cs2_v7_predict():
+    """CS2-V7-PREDICT (2026-06-09): production scorer for the v7 stacking
+    model (AUC 0.694, +2.1pp over hltv_v1). Reads hltv_v1 predictions,
+    computes PIT features (form, h2h, rest, tm, rank, bo, pistol, tier),
+    applies trained logistic coefs, writes cs2_predictions row tagged 'v7'.
+    Runs ~5 min after hltv_v1 so it has fresh base.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 v7 production scorer[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_v7_predict.py", "--record"],
+        capture_output=True, text=True, timeout=600,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]CS2 v7 predict error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ["wrote", "loaded v7", "upcoming matches"]):
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_v7_predict", lambda: None)
+
+
 def job_cs2_hltv_predict():
     """CS2-HLTV-PREDICT (2026-06-09): write parallel hltv_v1 predictions for the
     same matches the elo+pq_v1 scanner ran, but using HLTV points only.
@@ -2233,6 +2255,12 @@ def main():
     # as cs2_scanner but offset 5 min so cs2_upcoming_matches has fresh HLTV.
     scheduler.add_job(job_cs2_hltv_predict, CronTrigger(hour="6,10,14,18,22", minute=17),
                       id="cs2_hltv_predict", name="CS2 HLTV-only Predict [4h, 06-22 UTC]",
+                      max_instances=1, misfire_grace_time=1800)
+
+    # CS2-V7-PREDICT (2026-06-09) — production v7 stacking model. Runs 5 min
+    # after hltv_v1 so it has fresh base predictions to stack onto.
+    scheduler.add_job(job_cs2_v7_predict, CronTrigger(hour="6,10,14,18,22", minute=22),
+                      id="cs2_v7_predict", name="CS2 v7 Production Scorer [4h, 06-22 UTC]",
                       max_instances=1, misfire_grace_time=1800)
 
     # NOTE: HLTV /stats/* scraper (job_cs2_hltv_stats_scraper) is intentionally
