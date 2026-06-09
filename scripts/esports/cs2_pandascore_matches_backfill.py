@@ -124,25 +124,37 @@ def upsert_match(m: dict) -> bool:
     winner_id = m.get("winner_id")
     winner = _winner_label(t1_id, t2_id, winner_id)
 
-    tournament_name = (m.get("tournament") or {}).get("name")
+    tournament = m.get("tournament") or {}
+    tournament_name = tournament.get("name")
+    tournament_id = tournament.get("id")
+    # tier + prizepool may be on the tournament inline OR require a second
+    # request to /tournaments/{id}. Try inline first.
+    tournament_tier = tournament.get("tier")
+    prizepool = tournament.get("prizepool")
+
     serie_name = (m.get("serie") or {}).get("full_name") or (m.get("serie") or {}).get("name")
 
     execute_write("""
         INSERT INTO cs2_pandascore_matches
             (pandascore_id, team1_id, team1_name, team2_id, team2_name,
              score1, score2, winner, winner_id, best_of,
-             begin_at, end_at, status, tournament_name, serie_name, league_id)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             begin_at, end_at, status, tournament_name, tournament_id,
+             tournament_tier, prizepool, serie_name, league_id)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (pandascore_id) DO UPDATE SET
             score1 = EXCLUDED.score1, score2 = EXCLUDED.score2,
             winner = EXCLUDED.winner, winner_id = EXCLUDED.winner_id,
             status = EXCLUDED.status, end_at = EXCLUDED.end_at,
+            tournament_tier = COALESCE(EXCLUDED.tournament_tier, cs2_pandascore_matches.tournament_tier),
+            prizepool       = COALESCE(EXCLUDED.prizepool, cs2_pandascore_matches.prizepool),
+            tournament_id   = COALESCE(EXCLUDED.tournament_id, cs2_pandascore_matches.tournament_id),
             fetched_at = NOW()
     """, (
         m["id"], t1_id, t1_name, t2_id, t2_name,
         s1, s2, winner, winner_id, m.get("number_of_games"),
         m.get("begin_at"), m.get("end_at"), m.get("status"),
-        tournament_name, serie_name, m.get("league_id"),
+        tournament_name, tournament_id, tournament_tier, prizepool,
+        serie_name, m.get("league_id"),
     ))
     return True
 
