@@ -66,30 +66,62 @@ _RATING_FALLBACK_RE = re.compile(
 )
 
 
-def discover_player_ids() -> dict[str, int]:
-    """27 page hits — symbol + A..Z. Returns {nickname_lower: player_id}.
+def discover_player_ids(max_pages_per_letter: int = 30) -> dict[str, int]:
+    """Iterate every filter letter AND paginate within each letter.
 
-    HLTV paginates /players/archive/active by first character of nickname.
-    The landing page only shows ~50 names; we iterate every filter to capture
-    the full active roster (~1,300 players).
+    HLTV paginates /players/archive/active by first character (filter)
+    AND ~50 results per page (?page=N). We walk each letter's pages until
+    a page returns no new IDs.
+
+    Uses FlareSolverr when available (CF-protected on EU IPs).
     """
+    # Local imports — keep top-level lightweight
+    try:
+        import sys as _sys
+        from pathlib import Path as _Path
+        _sys.path.insert(0, str(_Path(__file__).parent))
+        from flaresolverr_client import fetch as fs_fetch, is_available
+        use_fs = is_available()
+    except ImportError:
+        use_fs, fs_fetch = False, None
+
     filters = ["symbol"] + [chr(ord("A") + i) for i in range(26)]
     out: dict[str, int] = {}
-    for i, f in enumerate(filters):
-        if i > 0:
-            time.sleep(2.0)  # polite, lighter than the player-page rate
-        url = f"https://www.hltv.org/players/archive/active?filter={f}"
+
+    def _get_html(url: str) -> str | None:
+        if use_fs:
+            return fs_fetch(url, session="hltv_archive")
         try:
             r = requests.get(url, headers=HEADERS, timeout=15)
             if r.status_code != 200:
-                print(f"  [!] {f}: {r.status_code}", file=sys.stderr)
-                continue
+                return None
+            return r.text
+        except Exception:
+            return None
+
+    for fi, f in enumerate(filters):
+        if fi > 0 and not use_fs:
+            time.sleep(2.0)  # FlareSolverr enforces its own throttle
+        letter_added = 0
+        for page in range(1, max_pages_per_letter + 1):
+            url = f"https://www.hltv.org/players/archive/active?filter={f}&page={page}"
+            html = _get_html(url)
+            if not html:
+                print(f"  [!] filter={f} page={page}: no html", file=sys.stderr)
+                break
             before = len(out)
-            for pid, slug in _PLAYER_LINK_RE.findall(r.text):
+            for pid, slug in _PLAYER_LINK_RE.findall(html):
                 out.setdefault(slug.lower(), int(pid))
-            print(f"  filter={f:>6}  +{len(out) - before:>4} new  (total {len(out)})")
-        except Exception as e:
-            print(f"  [!] {f}: {e}", file=sys.stderr)
+            added = len(out) - before
+            letter_added += added
+            if added == 0:
+                # Either the page is empty or every player was already seen
+                # from a previous page → end of this letter
+                break
+            if page == 1:
+                print(f"  filter={f:>6} page={page:>2}  +{added:>4} new  (total {len(out)})")
+            else:
+                print(f"            page={page:>2}  +{added:>4} new  (letter total {letter_added}, grand {len(out)})")
     return out
 
 
