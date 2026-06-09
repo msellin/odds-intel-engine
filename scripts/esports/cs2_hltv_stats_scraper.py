@@ -291,6 +291,195 @@ def fetch_map_meta(session: requests.Session, map_id: int, slug: str) -> dict:
     return _flatten_stats_rows(html) if html else {}
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# /stats/teams + /stats/teams/pistols bulk pages.
+#
+# These give us team-level K/D, Rating 3.0, pistol win pct directly — no need
+# for the roster × player_stats aggregation pipeline. Coverage jumps from
+# ~26 teams (per-team pistol page path) and ~188 teams (roster-aggregation
+# path) to ~108+ teams in a 90-day window and ~200+ in a 1-year window.
+#
+# Critical: NEVER include rankingFilter in the URL — it silently caps the
+# table at top-20 teams and defeats the whole point of using this endpoint.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_stats_url(path: str, start_date: str, end_date: str, side: str | None = None) -> str:
+    url = f"https://www.hltv.org{path}?startDate={start_date}&endDate={end_date}"
+    if side:
+        if side not in ("TERRORIST", "COUNTER_TERRORIST"):
+            raise ValueError(f"side must be TERRORIST or COUNTER_TERRORIST, got {side!r}")
+        url += f"&side={side}"
+    # Defensive guard — a future hand-edit cannot silently re-introduce the cap.
+    assert "rankingFilter" not in url, "rankingFilter caps results to top-20; refuse"
+    return url
+
+
+def _parse_team_link(chunk: str) -> tuple[int, str, str] | None:
+    """Find /team/{id}/{slug} link + team name inside a single <tr> chunk.
+    Returns (team_id, slug, name) or None if the row isn't a team-stats row."""
+    # The team cell on stats pages links to /team/{id}/{slug} (not /stats/teams/{id}).
+    m = re.search(r'<a href="/team/(\d+)/([^"]+)"[^>]*>([^<]+)</a>', chunk)
+    if not m:
+        return None
+    return int(m.group(1)), m.group(2), m.group(3).strip()
+
+
+def _td_values(chunk: str) -> list[str]:
+    """Pull all <td> text values from a row, in order. Strips whitespace."""
+    return [v.strip() for v in re.findall(r"<td[^>]*>\s*([^<]*?)\s*</td>", chunk)]
+
+
+def parse_teams_overview(html: str) -> list[dict]:
+    """Parse /stats/teams table — columns: Team, Maps, K-D Diff, K/D, Rating 3.0."""
+    rows: list[dict] = []
+    for chunk in re.split(r"<tr(?=[\s>])", html)[1:]:
+        link = _parse_team_link(chunk)
+        if not link:
+            continue
+        team_id, slug, name = link
+        tds = _td_values(chunk)
+        # tds[0] is the team cell text (may include country span); skip until we
+        # find a row with at least 4 numeric trailing cells.
+        numeric_tds = [t for t in tds if re.fullmatch(r"[+\-\d.,]+", t)]
+        if len(numeric_tds) < 4:
+            continue
+        try:
+            rows.append({
+                "hltv_team_id": team_id, "slug": slug, "team_name": name,
+                "maps":     int(numeric_tds[0].replace(",", "")),
+                "kd_diff":  int(numeric_tds[1].replace("+", "").replace(",", "")),
+                "kd":       float(numeric_tds[2]),
+                "rating_3": float(numeric_tds[3]),
+            })
+        except (ValueError, IndexError):
+            continue
+    return rows
+
+
+def parse_teams_pistols(html: str) -> list[dict]:
+    """Parse /stats/teams/pistols table — columns: Team, Maps, Won-Lost,
+    Pistol win %, Round 2 conv %, Round 2 break %."""
+    rows: list[dict] = []
+    _wl = re.compile(r"(\d+)\s*-\s*(\d+)")
+    _pct_re = re.compile(r"(\d+\.?\d*)\s*%")
+    for chunk in re.split(r"<tr(?=[\s>])", html)[1:]:
+        link = _parse_team_link(chunk)
+        if not link:
+            continue
+        team_id, slug, name = link
+        tds = _td_values(chunk)
+        if len(tds) < 5:
+            continue
+        # Find indexes by content shape, robust to extra leading cells.
+        maps_i = wl_i = None
+        for i, t in enumerate(tds):
+            if maps_i is None and re.fullmatch(r"\d+", t):
+                maps_i = i
+                continue
+            if maps_i is not None and _wl.fullmatch(t):
+                wl_i = i
+                break
+        if maps_i is None or wl_i is None or wl_i + 1 >= len(tds):
+            continue
+        wl = _wl.fullmatch(tds[wl_i])
+        try:
+            maps = int(tds[maps_i])
+            won, lost = int(wl.group(1)), int(wl.group(2))
+            after = tds[wl_i + 1:]
+            pct_pistol = float(_pct_re.search(after[0]).group(1)) if after and _pct_re.search(after[0]) else None
+            pct_r2_conv = float(_pct_re.search(after[1]).group(1)) if len(after) > 1 and _pct_re.search(after[1]) else None
+            pct_r2_break = float(_pct_re.search(after[2]).group(1)) if len(after) > 2 and _pct_re.search(after[2]) else None
+        except (ValueError, AttributeError):
+            continue
+        rows.append({
+            "hltv_team_id": team_id, "slug": slug, "team_name": name,
+            "maps": maps, "won": won, "lost": lost,
+            "pistol_pct": pct_pistol,
+            "r2_conv_pct": pct_r2_conv,
+            "r2_break_pct": pct_r2_break,
+        })
+    return rows
+
+
+def fetch_teams_overview(session: requests.Session, start_date: str, end_date: str) -> list[dict]:
+    url = _build_stats_url("/stats/teams", start_date, end_date)
+    html = _fetch_url(session, url)
+    return parse_teams_overview(html) if html else []
+
+
+def fetch_teams_pistols(session: requests.Session, start_date: str, end_date: str,
+                        side: str | None = None) -> list[dict]:
+    url = _build_stats_url("/stats/teams/pistols", start_date, end_date, side=side)
+    html = _fetch_url(session, url)
+    return parse_teams_pistols(html) if html else []
+
+
+def upsert_team_stats_overview(rows: list[dict], period_start: str, period_end: str) -> int:
+    n = 0
+    for r in rows:
+        execute_write("""
+            INSERT INTO cs2_hltv_team_stats
+                (hltv_team_id, team_name, slug, period_start, period_end,
+                 maps, kd_diff, kd, rating_3, fetched_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (hltv_team_id, period_start, period_end) DO UPDATE SET
+                team_name = EXCLUDED.team_name,
+                slug      = EXCLUDED.slug,
+                maps      = EXCLUDED.maps,
+                kd_diff   = EXCLUDED.kd_diff,
+                kd        = EXCLUDED.kd,
+                rating_3  = EXCLUDED.rating_3,
+                fetched_at= NOW()
+        """, (r["hltv_team_id"], r["team_name"], r["slug"], period_start, period_end,
+              r["maps"], r["kd_diff"], r["kd"], r["rating_3"]))
+        n += 1
+    return n
+
+
+def upsert_team_stats_pistols(rows: list[dict], period_start: str, period_end: str,
+                              side: str | None = None) -> int:
+    """side=None → overall pistol_pct + R2 conv/break.
+    side='COUNTER_TERRORIST' → writes ct_pistol_pct.
+    side='TERRORIST' → writes t_pistol_pct.
+    Row gets created via upsert if /stats/teams hasn't seeded it yet."""
+    n = 0
+    for r in rows:
+        if side is None:
+            execute_write("""
+                INSERT INTO cs2_hltv_team_stats
+                    (hltv_team_id, team_name, slug, period_start, period_end,
+                     pistol_played, pistol_won, pistol_lost, pistol_pct,
+                     r2_conv_pct, r2_break_pct, fetched_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (hltv_team_id, period_start, period_end) DO UPDATE SET
+                    team_name     = EXCLUDED.team_name,
+                    slug          = EXCLUDED.slug,
+                    pistol_played = EXCLUDED.pistol_played,
+                    pistol_won    = EXCLUDED.pistol_won,
+                    pistol_lost   = EXCLUDED.pistol_lost,
+                    pistol_pct    = EXCLUDED.pistol_pct,
+                    r2_conv_pct   = EXCLUDED.r2_conv_pct,
+                    r2_break_pct  = EXCLUDED.r2_break_pct,
+                    fetched_at    = NOW()
+            """, (r["hltv_team_id"], r["team_name"], r["slug"], period_start, period_end,
+                  r["won"] + r["lost"], r["won"], r["lost"], r["pistol_pct"],
+                  r["r2_conv_pct"], r["r2_break_pct"]))
+        else:
+            col = "ct_pistol_pct" if side == "COUNTER_TERRORIST" else "t_pistol_pct"
+            execute_write(f"""
+                INSERT INTO cs2_hltv_team_stats
+                    (hltv_team_id, team_name, slug, period_start, period_end, {col}, fetched_at)
+                VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (hltv_team_id, period_start, period_end) DO UPDATE SET
+                    team_name = EXCLUDED.team_name,
+                    {col}     = EXCLUDED.{col},
+                    fetched_at= NOW()
+            """, (r["hltv_team_id"], r["team_name"], r["slug"], period_start, period_end,
+                  r["pistol_pct"]))
+        n += 1
+    return n
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--team", type=int, help="HLTV team_id for one-off")
@@ -298,6 +487,12 @@ def main() -> None:
     p.add_argument("--top-n", type=int, help="Run team-map backfill against top-N teams")
     p.add_argument("--players-top-n", type=int, help="Run per-player stats against top-N teams' rosters")
     p.add_argument("--maps", action="store_true", help="Scrape /stats/maps + each map page")
+    p.add_argument("--teams-overview", action="store_true",
+                   help="Scrape /stats/teams bulk page (K/D, Rating 3.0) for period")
+    p.add_argument("--teams-pistols", action="store_true",
+                   help="Scrape /stats/teams/pistols bulk page (3 fetches: overall + T + CT)")
+    p.add_argument("--period-days", type=int, default=365,
+                   help="Lookback window for --teams-overview/--teams-pistols (default 365)")
     p.add_argument("--record", action="store_true", help="Write to DB")
     args = p.parse_args()
 
@@ -309,10 +504,10 @@ def main() -> None:
     elif args.top_n:
         targets = _top_n_teams_with_hltv_id(s, args.top_n)
         print(f"  top-{args.top_n}: {len(targets)} resolved with team_id")
-    elif args.maps or args.players_top_n:
+    elif args.maps or args.players_top_n or args.teams_overview or args.teams_pistols:
         targets = []   # only running the new modes
     else:
-        print("  pass --team + --slug OR --top-n OR --maps OR --players-top-n", file=sys.stderr)
+        print("  pass --team + --slug OR --top-n OR --maps OR --players-top-n OR --teams-overview OR --teams-pistols", file=sys.stderr)
         sys.exit(1)
 
     # Import state helper (only needed when args.record so it can write back)
@@ -400,6 +595,34 @@ def main() -> None:
     snapshot = datetime.now(timezone.utc).date().isoformat()
     today = datetime.now(timezone.utc).date()
     one_year_ago = today.replace(year=today.year - 1)
+
+    # --teams-overview: bulk /stats/teams page (one fetch, ~100-200 teams)
+    if args.teams_overview:
+        print("\n=== Teams overview bulk scrape ===")
+        period_end = today
+        period_start = today.replace(year=today.year - 1) if args.period_days >= 365 else \
+                       (today - __import__("datetime").timedelta(days=args.period_days))
+        print(f"  window: {period_start} → {period_end}")
+        rows = fetch_teams_overview(s, str(period_start), str(period_end))
+        print(f"  parsed {len(rows)} team rows")
+        if args.record and rows:
+            n = upsert_team_stats_overview(rows, str(period_start), str(period_end))
+            print(f"  → upserted {n} rows into cs2_hltv_team_stats")
+
+    # --teams-pistols: bulk /stats/teams/pistols page × 3 (overall + T + CT)
+    if args.teams_pistols:
+        print("\n=== Teams pistols bulk scrape ===")
+        period_end = today
+        period_start = today.replace(year=today.year - 1) if args.period_days >= 365 else \
+                       (today - __import__("datetime").timedelta(days=args.period_days))
+        print(f"  window: {period_start} → {period_end}")
+        for side_label, side in [("overall", None), ("T-side", "TERRORIST"), ("CT-side", "COUNTER_TERRORIST")]:
+            time.sleep(RATE_DELAY)
+            rows = fetch_teams_pistols(s, str(period_start), str(period_end), side=side)
+            print(f"  [{side_label:>7}] parsed {len(rows)} team rows")
+            if args.record and rows:
+                n = upsert_team_stats_pistols(rows, str(period_start), str(period_end), side=side)
+                print(f"            upserted {n} → cs2_hltv_team_stats")
 
     ctx = scraper_run("team_map_stats", "Per-team-per-map career win%") if (scraper_run and args.record and targets) else None
     st = ctx.__enter__() if ctx else None

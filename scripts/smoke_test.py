@@ -20608,5 +20608,49 @@ def _():
     assert "UPDATE bots SET current_bankroll" in bot
 
 
+@test("CS2-TEAMS-BULK — /stats/teams + /stats/teams/pistols bulk scraper")
+def _():
+    import pathlib
+    src = pathlib.Path("scripts/esports/cs2_hltv_stats_scraper.py").read_text()
+
+    # New fetcher/parser functions
+    for fn in ["fetch_teams_overview", "fetch_teams_pistols",
+               "parse_teams_overview", "parse_teams_pistols",
+               "upsert_team_stats_overview", "upsert_team_stats_pistols",
+               "_build_stats_url"]:
+        assert f"def {fn}" in src, f"missing {fn} in stats scraper"
+
+    # CLI flags + period control
+    for flag in ["--teams-overview", "--teams-pistols", "--period-days"]:
+        assert flag in src, f"missing CLI flag {flag}"
+
+    # Defensive guard — rankingFilter MUST not appear in any constructed URL.
+    # Without it, a future hand-edit could silently cap /stats/teams responses
+    # to top-20 and gut coverage by 80%.
+    assert 'assert "rankingFilter" not in url' in src, (
+        "Missing the rankingFilter guard inside _build_stats_url."
+    )
+
+    # Both pistol side filters wired
+    assert '"TERRORIST"' in src and '"COUNTER_TERRORIST"' in src
+
+    # Migration 227 creates the table with the right columns
+    mig = pathlib.Path("supabase/migrations/227_cs2_hltv_team_stats.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS cs2_hltv_team_stats" in mig
+    for col in ["hltv_team_id", "team_name", "period_start", "period_end",
+                "kd_diff", "kd", "rating_3", "pistol_pct",
+                "ct_pistol_pct", "t_pistol_pct",
+                "r2_conv_pct", "r2_break_pct"]:
+        assert col in mig, f"migration 227 missing column {col}"
+    # Unique constraint required for the ON CONFLICT upsert
+    assert "UNIQUE (hltv_team_id, period_start, period_end)" in mig
+
+    # v8 sneak peek uses the new direct-team-stats fallback
+    sp8 = pathlib.Path("scripts/esports/cs2_sneak_peek_v8.py").read_text()
+    for fn in ["load_team_stats_direct", "_kd_with_fallback", "_pistol_with_fallback"]:
+        assert f"def {fn}" in sp8, f"v8 sneak peek missing {fn}"
+    assert "FROM cs2_hltv_team_stats" in sp8
+
+
 if __name__ == "__main__":
     main()

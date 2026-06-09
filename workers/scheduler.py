@@ -955,6 +955,29 @@ def job_cs2_hltv_pistols():
     _run_job("cs2_hltv_pistols", lambda: None)
 
 
+def job_cs2_hltv_teams_bulk():
+    """CS2-TEAMS-BULK: scrape HLTV's /stats/teams + /stats/teams/pistols bulk
+    pages once a week. Returns ~100-200 teams' rolling K/D, Rating 3.0, pistol
+    win %, and R2 conversion/break — supersedes the 26-team per-team-pistol
+    scraper for COVERAGE; that scraper stays for higher-precision data on the
+    teams it does cover. Weekly Sunday 02:15 UTC. ~4 page fetches total
+    (overall + teams-pistols × 3 sides). Cheap; <2min via FlareSolverr.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 HLTV teams bulk stats (/stats/teams + /stats/teams/pistols)[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_hltv_stats_scraper.py",
+         "--teams-overview", "--teams-pistols", "--period-days", "365", "--record"],
+        capture_output=True, text=True, timeout=600,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]CS2 teams-bulk error:[/red]\n{result.stderr[:500]}")
+    for line in result.stdout.splitlines():
+        if any(k in line for k in ["parsed", "upserted", "window:"]):
+            console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_hltv_teams_bulk", lambda: None)
+
+
 def job_cs2_pandascore_matches():
     """CS2-PANDASCORE-MATCHES (2026-06-09): paginates PandaScore match history
     and UPSERTs into cs2_pandascore_matches. PandaScore covers tier-3/4
@@ -2347,6 +2370,17 @@ def main():
     scheduler.add_job(job_cs2_hltv_pistols, CronTrigger(hour=3, minute=30),
                       id="cs2_hltv_pistols",
                       name="CS2 HLTV pistol stats [daily 03:30 UTC]",
+                      max_instances=1, misfire_grace_time=3600)
+
+    # CS2-TEAMS-BULK (2026-06-09) — weekly Sunday 02:15 UTC. Scrapes the bulk
+    # /stats/teams + /stats/teams/pistols pages (overall + T + CT) so we get
+    # direct team-level K/D, Rating 3.0, pistol_pct + R2 conversion/break for
+    # ~100-200 teams. Powers the v8+ models' team-stats fallback when
+    # roster×player aggregation lacks ≥3 resolved players.
+    scheduler.add_job(job_cs2_hltv_teams_bulk,
+                      CronTrigger(day_of_week="sun", hour=2, minute=15),
+                      id="cs2_hltv_teams_bulk",
+                      name="CS2 HLTV Teams Bulk Stats [Sun 02:15 UTC]",
                       max_instances=1, misfire_grace_time=3600)
 
     # CS2-HLTV-RANKINGS (2026-06-09) — daily 05:00 UTC. Top-248 teams from
