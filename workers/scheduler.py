@@ -2265,6 +2265,14 @@ def main():
                       name="CS2 PandaScore matches [every 6h]",
                       max_instances=1, misfire_grace_time=1800)
 
+    # CS2-PISTOL (2026-06-09) — daily 03:30 UTC. Top-50 team pistol-round
+    # stats with CT/T split. Auth required (HLTV cookies). Refreshes
+    # rolling-365d snapshot per team.
+    scheduler.add_job(job_cs2_hltv_pistols, CronTrigger(hour=3, minute=30),
+                      id="cs2_hltv_pistols",
+                      name="CS2 HLTV pistol stats [daily 03:30 UTC]",
+                      max_instances=1, misfire_grace_time=3600)
+
     # CS2-HLTV-RANKINGS (2026-06-09) — daily 05:00 UTC. Top-248 teams from
     # HLTV. Builds a time series we can use as an orthogonal strength signal
     # to our ELO, especially for thin-data teams ELO can't price.
