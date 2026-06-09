@@ -51,7 +51,9 @@ HEADERS = {
 RATE_DELAY = 3.5  # seconds between requests
 
 # /player/{id}/{slug}  e.g. /player/7998/zywoo
-_PLAYER_LINK_RE = re.compile(r'href="/player/(\d+)/([^"\']+)"')
+# Reject anything with #/?/space inside the slug — those are tab anchors like
+# "/player/123/zywoo#tab-faceitBox" we don't want as separate IDs.
+_PLAYER_LINK_RE = re.compile(r'href="/player/(\d+)/([^"\'/#?\s]+)"')
 # <b>Rating 3.0</b><span class="statsVal"><p>1.03</p>
 _RATING_RE = re.compile(
     r'<b>Rating\s+3\.0</b>\s*<span class="statsVal">\s*<p>(\d\.\d{1,3})</p>',
@@ -65,13 +67,29 @@ _RATING_FALLBACK_RE = re.compile(
 
 
 def discover_player_ids() -> dict[str, int]:
-    """One page hit. Returns {nickname_lower: player_id}."""
-    r = requests.get("https://www.hltv.org/players/archive/active", headers=HEADERS, timeout=15)
-    r.raise_for_status()
+    """27 page hits — symbol + A..Z. Returns {nickname_lower: player_id}.
+
+    HLTV paginates /players/archive/active by first character of nickname.
+    The landing page only shows ~50 names; we iterate every filter to capture
+    the full active roster (~1,300 players).
+    """
+    filters = ["symbol"] + [chr(ord("A") + i) for i in range(26)]
     out: dict[str, int] = {}
-    # Each player has /players-archive-nickname after their link
-    for pid, slug in _PLAYER_LINK_RE.findall(r.text):
-        out.setdefault(slug.lower(), int(pid))
+    for i, f in enumerate(filters):
+        if i > 0:
+            time.sleep(2.0)  # polite, lighter than the player-page rate
+        url = f"https://www.hltv.org/players/archive/active?filter={f}"
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=15)
+            if r.status_code != 200:
+                print(f"  [!] {f}: {r.status_code}", file=sys.stderr)
+                continue
+            before = len(out)
+            for pid, slug in _PLAYER_LINK_RE.findall(r.text):
+                out.setdefault(slug.lower(), int(pid))
+            print(f"  filter={f:>6}  +{len(out) - before:>4} new  (total {len(out)})")
+        except Exception as e:
+            print(f"  [!] {f}: {e}", file=sys.stderr)
     return out
 
 

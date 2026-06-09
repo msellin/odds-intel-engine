@@ -800,6 +800,29 @@ def job_cs2_hltv_predict():
     _run_job("cs2_hltv_predict", lambda: None)
 
 
+def job_cs2_hltv_player_ratings():
+    """CS2-HLTV-PLAYER-RATINGS (2026-06-09): refresh live HLTV Rating 3.0 for
+    top-100 teams' rosters. Run weekly (Tuesday 06:00 UTC) since HLTV updates
+    ratings on a 3-month rolling window — daily is overkill, weekly is fine.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 HLTV per-player ratings refresh[/bold cyan]")
+    # First make sure the discovery cache is reasonably fresh (24h)
+    subprocess.run([sys.executable, "scripts/esports/cs2_hltv_player_ratings.py", "--discover"],
+                   capture_output=True, text=True, timeout=300)
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_hltv_player_ratings.py", "--top", "100", "--record"],
+        capture_output=True, text=True, timeout=3600,   # 9-15 min normally
+    )
+    if result.returncode != 0:
+        console.print(f"[red]HLTV player ratings error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ["hits:", "→ data", "fetching"]):
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_hltv_player_ratings", lambda: None)
+
+
 def job_cs2_hltv_rankings():
     """CS2-HLTV-RANKINGS (2026-06-09): daily fetch of /ranking/teams (top-248).
     HLTV updates weekly on Mondays; daily refresh catches it. Writes to
@@ -1988,6 +2011,15 @@ def main():
     scheduler.add_job(job_cs2_hltv_predict, CronTrigger(hour="6,10,14,18,22", minute=17),
                       id="cs2_hltv_predict", name="CS2 HLTV-only Predict [4h, 06-22 UTC]",
                       max_instances=1, misfire_grace_time=1800)
+
+    # CS2-HLTV-PLAYER-RATINGS (2026-06-09) — weekly Tuesday 06:00 UTC.
+    # HLTV ratings are 3-month rolling so daily is overkill; weekly keeps the
+    # PQ fresh without burning HLTV's patience. Takes ~10-15 min.
+    scheduler.add_job(job_cs2_hltv_player_ratings,
+                      CronTrigger(day_of_week="tue", hour=6, minute=0),
+                      id="cs2_hltv_player_ratings",
+                      name="CS2 HLTV Player Ratings [weekly Tue 06:00]",
+                      max_instances=1, misfire_grace_time=7200)
 
     # CS2-HLTV-RANKINGS (2026-06-09) — daily 05:00 UTC. Top-248 teams from
     # HLTV. Builds a time series we can use as an orthogonal strength signal

@@ -430,6 +430,22 @@ def load_pandascore_rosters() -> dict[str, list[str]]:
     return out
 
 
+def load_hltv_player_ratings() -> dict[str, float]:
+    """Live per-player HLTV Rating 3.0 from cs2_hltv_player_ratings.
+
+    Returned dict is keyed by normalized nickname, same shape as the CSV
+    `player_ratings`. Scanner merges these on top of the CSV so live ratings
+    override the Oct-2025 avg whenever both exist.
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+        from workers.api_clients.db import execute_query
+        rows = execute_query("SELECT nickname, rating FROM cs2_hltv_player_ratings", ())
+        return {_normalize(r["nickname"]): float(r["rating"]) for r in rows if r.get("nickname")}
+    except Exception:
+        return {}
+
+
 def get_team_player_quality(
     team_name: str,
     team_last_lineups: dict[str, list[str]],
@@ -1082,6 +1098,15 @@ def main() -> None:
     if pandascore_rosters:
         team_last_lineups.update(pandascore_rosters)
         print(f"    PandaScore rosters: {len(pandascore_rosters)} teams (current lineups)")
+
+    # Live HLTV Rating 3.0 overrides the CSV per-player avg when available
+    hltv_player_ratings = load_hltv_player_ratings()
+    if hltv_player_ratings:
+        before = len(player_ratings)
+        player_ratings.update(hltv_player_ratings)
+        added = len(player_ratings) - before
+        overrides = len(hltv_player_ratings) - added
+        print(f"    HLTV player ratings: {len(hltv_player_ratings)} live ({overrides} overrides, {added} new)")
 
     # HLTV team rankings (top-248). Accumulating feature.
     hltv_rankings = load_hltv_rankings()

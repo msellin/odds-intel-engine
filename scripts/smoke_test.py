@@ -19819,9 +19819,9 @@ def _():
     assert fm is not None and -1.0 <= fm <= 1.0
 
 
-@test("CS2-HLTV-PLAYER-RATINGS — scraper + table for live PQ")
+@test("CS2-HLTV-PLAYER-RATINGS — scraper + table for live PQ + scanner wiring")
 def _():
-    import pathlib
+    import pathlib, ast
     p = pathlib.Path("scripts/esports/cs2_hltv_player_ratings.py")
     assert p.exists()
     src = p.read_text()
@@ -19829,11 +19829,31 @@ def _():
         assert f"def {fn}" in src, f"{fn} must exist"
     assert "Rating\\s+3\\.0" in src  # regex for current HLTV rating system
     assert "RATE_DELAY = 3.5" in src
+    # Discovery iterates every letter
+    assert "filters = [\"symbol\"]" in src or 'filter={f}' in src
 
     mig = pathlib.Path("supabase/migrations/208_cs2_hltv_player_ratings.sql").read_text()
     assert "CREATE TABLE IF NOT EXISTS cs2_hltv_player_ratings" in mig
     assert "hltv_player_id   INTEGER     PRIMARY KEY" in mig
     assert "rating           FLOAT       NOT NULL" in mig
+
+    # Scanner wired
+    scanner_src = pathlib.Path("scripts/esports/cs2_elo_scanner.py").read_text()
+    assert "load_hltv_player_ratings" in scanner_src
+    assert "live overrides" in scanner_src or "live ratings" in scanner_src.lower()
+
+    # Cron registered
+    sched_src = pathlib.Path("workers/scheduler.py").read_text()
+    tree = ast.parse(sched_src)
+    fns = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    assert "job_cs2_hltv_player_ratings" in fns
+    ids = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "add_job":
+            for kw in n.keywords:
+                if kw.arg == "id" and isinstance(getattr(kw.value, "value", None), str):
+                    ids.add(kw.value.value)
+    assert "cs2_hltv_player_ratings" in ids
 
 
 @test("CS2-HLTV-PREDICT — parallel HLTV-only model variant")
