@@ -39,6 +39,10 @@ KELLY_CAP = 2.0         # never wager more than 2u on a single bet
 HLTV_EDGE_FLOOR = 0.03  # extra 3% required for HLTV-fallback picks (less proven)
 HLTV_BASE_EDGE = 0.05   # 5% threshold edge for the hltv_v1 model
 
+# Market consensus / outlier protection.
+MIN_BOOKS_FOR_PICK = 2      # need at least 2 books to fire — single-book picks lack a sanity cross-ref
+MAX_CONSENSUS_DRIFT = 0.30  # best price cannot exceed median market consensus by >30%
+
 # Anomaly guard: if our model probability and the implied probability from the
 # bookmaker offering the "value" diverge by more than this in absolute terms,
 # the gap is more likely a data bug than a real edge — suppress the bet.
@@ -114,6 +118,24 @@ def _is_anomaly(side_prob: float | None, bookie_odds: float) -> bool:
     return abs(side_prob - implied) > MAX_PROB_DIVERGENCE
 
 
+def market_consensus(prices: list[tuple[str, float]]) -> tuple[float, float] | None:
+    """Return (consensus_implied_prob, consensus_odds) from non-empty (bookie, odds) list.
+
+    Median of raw 1/odds across the books. Robust to one outlier when ≥3 books,
+    and acts as a sanity average for 2 books. None if list is empty.
+    """
+    if not prices:
+        return None
+    implied = sorted(1.0 / odds for _, odds in prices if odds > 1.0)
+    if not implied:
+        return None
+    n = len(implied)
+    cons = (implied[n // 2 - 1] + implied[n // 2]) / 2 if n % 2 == 0 else implied[n // 2]
+    if cons <= 0:
+        return None
+    return cons, 1.0 / cons
+
+
 def kelly_stake(side_prob: float | None, bookie_odds: float) -> float:
     """Half-Kelly stake. Returns BASE_STAKE * half-Kelly fraction, capped at KELLY_CAP.
 
@@ -131,8 +153,71 @@ def kelly_stake(side_prob: float | None, bookie_odds: float) -> float:
     return min(KELLY_CAP, round(BASE_STAKE * KELLY_FRACTION * full, 4))
 
 
+def _eligible_books(row: dict, sidekey: str) -> list[tuple[str, float]]:
+    """Bookies actually quoting odds for one side. (bookie_name, decimal_odds)."""
+    candidates = [
+        ("bo3gg",    row[f"bookie_odds{sidekey}"]),
+        ("coolbet",  row[f"coolbet_odds{sidekey}"]),
+        ("pinnacle", row[f"pinnacle_odds{sidekey}"]),
+    ]
+    return [(b, float(o)) for b, o in candidates if o is not None and float(o) > 1.0]
+
+
+def _consider_side(*, source: str, side: str, team_name: str, prices: list[tuple[str, float]],
+                   fair: float | None, thr: float | None, prob: float | None,
+                   min_extra: float, market: str = "match_winner") -> dict | None:
+    """Apply all gates for one (match, market, side) tuple and return a single
+    best-bookie pick, or None.
+
+    Gates (in order, fail-fast):
+      1. Need ≥ MIN_BOOKS_FOR_PICK quoting (sanity cross-ref).
+      2. Compute market consensus median.
+      3. Best price cannot be > MAX_CONSENSUS_DRIFT above consensus (stale outlier).
+      4. Best price must be ≥ model threshold.
+      5. Edge above threshold must be ≥ min_extra (model conviction).
+      6. Existing anomaly guard: |our_prob − implied| ≤ MAX_PROB_DIVERGENCE.
+      7. Kelly stake > 0.
+    """
+    if not prices or thr is None or fair is None:
+        return None
+    if len(prices) < MIN_BOOKS_FOR_PICK:
+        return None
+    cons = market_consensus(prices)
+    if cons is None:
+        return None
+    consensus_prob, consensus_odds = cons
+
+    best_bookie, best_odds = max(prices, key=lambda x: x[1])
+
+    if best_odds > consensus_odds * (1 + MAX_CONSENSUS_DRIFT):
+        return None     # stale-odds outlier
+    if best_odds < thr:
+        return None     # below threshold
+    extra = (best_odds - thr) / thr
+    if extra < min_extra:
+        return None
+    if _is_anomaly(float(prob) if prob is not None else None, best_odds):
+        return None
+    stake = kelly_stake(float(prob) if prob is not None else None, best_odds)
+    if stake <= 0:
+        return None
+
+    return {
+        "side": side, "team": team_name, "market": market,
+        "bookie": best_bookie, "odds": best_odds, "fair": float(fair),
+        "thr": float(thr), "edge": extra, "stake": stake, "source": source,
+        "consensus_prob": consensus_prob, "n_books": len(prices),
+    }
+
+
 def _scan_one(row: dict) -> list[dict]:
-    """Return list of (match, side, market, bookie, odds, fair, thr) value picks."""
+    """One pick at most per (match, market, side) — at the best-priced bookie.
+
+    Soccer pattern: pick best price across all books, fire ONE row. Multi-bookie
+    info is preserved on cs2_upcoming_matches snapshots, so we don't need it
+    duplicated in cs2_simulated_bets. Consensus + outlier guard prevents
+    firing on a single book's stale or wrong price.
+    """
     picks: list[dict] = []
     best_of = row["best_of"] or 3
     source = row.get("source") or "elo+pq_v1"
@@ -147,56 +232,32 @@ def _scan_one(row: dict) -> list[dict]:
             thr2 = round(float(f2) * (1 - HLTV_BASE_EDGE), 3)
     min_extra = HLTV_EDGE_FLOOR if source == "hltv_v1" else MIN_EXTRA_EDGE
 
-    bookmakers = (
-        ("bo3gg", row["bookie_odds1"], row["bookie_odds2"]),
-        ("coolbet", row["coolbet_odds1"], row["coolbet_odds2"]),
-        ("pinnacle", row["pinnacle_odds1"], row["pinnacle_odds2"]),
-    )
+    # match_winner
+    for side, team_name, fair, thr, prob, sidekey in [
+        ("team1", row["team1"], row["fair_odds1"], thr1, row.get("win_prob1"), "1"),
+        ("team2", row["team2"], row["fair_odds2"], thr2, row.get("win_prob2"), "2"),
+    ]:
+        prices = _eligible_books(row, sidekey)
+        pick = _consider_side(source=source, side=side, team_name=team_name,
+                              prices=prices, fair=fair, thr=thr, prob=prob,
+                              min_extra=min_extra, market="match_winner")
+        if pick:
+            picks.append(pick)
 
-    for bookie, b_odds1, b_odds2 in bookmakers:
-        # match_winner
-        for side, team_name, odds, fair, thr, prob in [
-            ("team1", row["team1"], b_odds1, row["fair_odds1"], thr1, row.get("win_prob1")),
-            ("team2", row["team2"], b_odds2, row["fair_odds2"], thr2, row.get("win_prob2")),
+    # atleast1map (BO3/5 only) — same shape.
+    if best_of >= 3:
+        for side, team_name, fair, thr, sidekey in [
+            ("team1", row["team1"], row["fair_odds_map1"], row["threshold_map1"], "1"),
+            ("team2", row["team2"], row["fair_odds_map2"], row["threshold_map2"], "2"),
         ]:
-            if odds is None or thr is None or fair is None:
-                continue
-            if odds < thr:
-                continue
-            extra = (odds - thr) / thr
-            if extra < min_extra:
-                continue
-            # Anomaly guard — kills the bet if our prob and implied prob differ wildly
-            if _is_anomaly(float(prob) if prob is not None else None, float(odds)):
-                continue
-            stake = kelly_stake(float(prob) if prob is not None else None, float(odds))
-            if stake <= 0:
-                continue
-            picks.append({
-                "side": side, "team": team_name, "market": "match_winner",
-                "bookie": bookie, "odds": float(odds), "fair": float(fair),
-                "thr": float(thr), "edge": extra, "stake": stake,
-                "source": source,
-            })
-
-        # atleast1map (BO3/5 only)
-        if best_of >= 3:
-            for side, team_name, odds, fair, thr in [
-                ("team1", row["team1"], b_odds1, row["fair_odds_map1"], row["threshold_map1"]),
-                ("team2", row["team2"], b_odds2, row["fair_odds_map2"], row["threshold_map2"]),
-            ]:
-                if odds is None or thr is None or fair is None:
-                    continue
-                if odds < thr:
-                    continue
-                extra = (odds - thr) / thr
-                if extra < MIN_EXTRA_EDGE:
-                    continue
-                picks.append({
-                    "side": side, "team": team_name, "market": "atleast1map",
-                    "bookie": bookie, "odds": float(odds), "fair": float(fair),
-                    "thr": float(thr), "edge": extra, "stake": BASE_STAKE,
-                })
+            prices = _eligible_books(row, sidekey)
+            # No model prob for ≥1map → anomaly guard is a no-op
+            pick = _consider_side(source=source, side=side, team_name=team_name,
+                                  prices=prices, fair=fair, thr=thr, prob=None,
+                                  min_extra=MIN_EXTRA_EDGE, market="atleast1map")
+            if pick:
+                pick["stake"] = BASE_STAKE   # no Kelly without probability
+                picks.append(pick)
 
     return picks
 
@@ -208,15 +269,17 @@ def _write_bet(row: dict, pick: dict) -> bool:
         INSERT INTO cs2_simulated_bets
             (bot_name, bo3gg_id, placed_at, kickoff_time,
              team1, team2, market, pick, bookie,
-             odds_at_pick, fair_odds, threshold_odds, edge, stake)
-        VALUES (%s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (bot_name, bo3gg_id, market, bookie) DO NOTHING
+             odds_at_pick, fair_odds, threshold_odds, edge, stake,
+             consensus_implied_prob, n_books_at_pick)
+        VALUES (%s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (bot_name, bo3gg_id, market, pick) DO NOTHING
     """, (
         bot_name, row["bo3gg_id"], row["kickoff_time"],
         row["team1"], row["team2"],
         pick["market"], pick["team"], pick["bookie"],
         pick["odds"], pick["fair"], pick["thr"], pick["edge"],
         pick.get("stake", BASE_STAKE),
+        pick.get("consensus_prob"), pick.get("n_books"),
     ))
     return bool(res)
 
@@ -285,9 +348,10 @@ def main() -> None:
             total_picks += 1
             tag = "  fired" if args.record else "  dry"
             src = p.get("source", "elo+pq_v1")
+            cons_str = f" cons={1.0/p['consensus_prob']:.2f} (n={p.get('n_books')})" if p.get("consensus_prob") else ""
             print(f"    {tag}  [{src:10}]  {row['team1']:22} vs {row['team2']:22}  "
                   f"{p['market']:12} → {p['team']:18} @ {p['bookie']:8} {p['odds']:>5.2f}  "
-                  f"(thr {p['thr']:.2f}, edge +{p['edge']*100:.1f}%, stake {p.get('stake', BASE_STAKE):.2f}u)")
+                  f"(thr {p['thr']:.2f}, edge +{p['edge']*100:.1f}%, stake {p.get('stake', BASE_STAKE):.2f}u{cons_str})")
             if args.record:
                 if _write_bet(row, p):
                     total_written += 1

@@ -800,6 +800,26 @@ def job_cs2_hltv_predict():
     _run_job("cs2_hltv_predict", lambda: None)
 
 
+def job_cs2_clv_snapshot():
+    """CS2-CLV-SNAPSHOT (2026-06-09): every 15 min, snapshot closing odds for
+    bets whose matches kick off in the next 45 min. Populates
+    closing_odds_at_kickoff + clv on cs2_simulated_bets.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 CLV snapshot[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_clv_snapshot.py"],
+        capture_output=True, text=True, timeout=120,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]CS2 CLV snapshot error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ["updated", "pending", "set"]):
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_clv_snapshot", lambda: None)
+
+
 def job_cs2_hltv_match_details_queue():
     """CS2-HLTV-MATCH-DETAILS-QUEUE (2026-06-09): pull HLTV /results, queue
     new match IDs into cs2_hltv_match_queue. Cheap: 1 page request per run.
@@ -2049,6 +2069,13 @@ def main():
     scheduler.add_job(job_cs2_hltv_predict, CronTrigger(hour="6,10,14,18,22", minute=17),
                       id="cs2_hltv_predict", name="CS2 HLTV-only Predict [4h, 06-22 UTC]",
                       max_instances=1, misfire_grace_time=1800)
+
+    # CS2-CLV-SNAPSHOT (2026-06-09): every 15 min, snapshot the closing-line
+    # odds for any pending bet whose match kicks off within 45 min. The same
+    # bookie's current odds are read from cs2_upcoming_matches.
+    scheduler.add_job(job_cs2_clv_snapshot, CronTrigger(minute="*/15"),
+                      id="cs2_clv_snapshot", name="CS2 CLV Snapshot [every 15 min]",
+                      max_instances=1, misfire_grace_time=600)
 
     # CS2-HLTV-MATCH-DETAILS (2026-06-09): pulls /results to queue new
     # finished matches twice daily, then processor walks the queue at 8s/req.

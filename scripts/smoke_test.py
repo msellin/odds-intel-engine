@@ -19751,6 +19751,82 @@ def _():
     assert "cs2_weekly_calibrate" in ids
 
 
+@test("CS2-BOT-CONSENSUS — soccer-pattern + outlier guard + per-pick UNIQUE")
+def _():
+    """Migration 210 + bot now fires one pick per (match,market,side) at best book,
+    with market-consensus outlier guard."""
+    import pathlib, importlib.util
+    mig = pathlib.Path("supabase/migrations/210_cs2_bot_clv.sql").read_text()
+    assert "cs2_simulated_bets_per_pick_key" in mig
+    assert "UNIQUE (bot_name, bo3gg_id, market, pick)" in mig
+    for col in ["closing_odds_at_kickoff", "closing_odds_snapshot_at", "clv",
+                "consensus_implied_prob", "n_books_at_pick"]:
+        assert col in mig, f"migration 210 missing column {col}"
+
+    p = pathlib.Path("scripts/esports/cs2_bot.py")
+    src = p.read_text()
+    assert "MIN_BOOKS_FOR_PICK = 2" in src
+    assert "MAX_CONSENSUS_DRIFT = 0.30" in src
+    assert "def market_consensus" in src
+    assert "def _consider_side" in src
+    assert "def _eligible_books" in src
+    # ON CONFLICT now matches the new UNIQUE
+    assert "ON CONFLICT (bot_name, bo3gg_id, market, pick) DO NOTHING" in src
+
+    spec = importlib.util.spec_from_file_location("cs2_bot", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    # Consensus math
+    res = mod.market_consensus([("a", 3.06), ("b", 3.40)])
+    assert res is not None
+    cons_prob, cons_odds = res
+    assert 3.10 < cons_odds < 3.30
+    # Outlier rejected
+    pick = mod._consider_side(
+        source="elo+pq_v1", side="team1", team_name="X",
+        prices=[("bo3gg", 1.40), ("coolbet", 5.00)],   # coolbet wildly above consensus
+        fair=2.0, thr=1.90, prob=0.55, min_extra=0.05,
+    )
+    assert pick is None, "30%+ consensus outlier must be rejected"
+    # Acceptable case
+    pick = mod._consider_side(
+        source="elo+pq_v1", side="team1", team_name="X",
+        prices=[("bo3gg", 2.30), ("coolbet", 2.40)],
+        fair=2.0, thr=1.90, prob=0.55, min_extra=0.05,
+    )
+    assert pick is not None and pick["bookie"] == "coolbet"
+    # Single book rejected (need ≥ MIN_BOOKS_FOR_PICK)
+    pick = mod._consider_side(
+        source="elo+pq_v1", side="team1", team_name="X",
+        prices=[("bo3gg", 2.30)],
+        fair=2.0, thr=1.90, prob=0.55, min_extra=0.05,
+    )
+    assert pick is None
+
+
+@test("CS2-CLV-SNAPSHOT — pending-bet closing-odds snapshot script + cron")
+def _():
+    import pathlib, ast
+    p = pathlib.Path("scripts/esports/cs2_clv_snapshot.py")
+    assert p.exists()
+    src = p.read_text()
+    assert "CLOSING_WINDOW_MIN" in src
+    assert "closing_odds_at_kickoff" in src
+    assert "clv" in src
+
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    tree = ast.parse(sched)
+    fns = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    assert "job_cs2_clv_snapshot" in fns
+    ids = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "add_job":
+            for kw in n.keywords:
+                if kw.arg == "id" and isinstance(getattr(kw.value, "value", None), str):
+                    ids.add(kw.value.value)
+    assert "cs2_clv_snapshot" in ids
+
+
 @test("CS2-KELLY-SIZING — half-Kelly with cap, falls back to 1u when prob unknown")
 def _():
     import pathlib, importlib.util
