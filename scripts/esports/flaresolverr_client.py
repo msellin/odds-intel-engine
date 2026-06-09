@@ -42,11 +42,16 @@ _last_request_at = 0.0
 
 
 def is_available() -> bool:
-    """Quick GET / to check FlareSolverr is reachable."""
+    """Quick GET / to check FlareSolverr is reachable.
+
+    15s timeout — Railway internal DNS can be slow on cold container start.
+    Previously 5s caused silent fallback to plain requests, hitting CF 403s.
+    """
     try:
-        with urllib.request.urlopen(f"{FLARESOLVERR_URL}/", timeout=5) as r:
+        with urllib.request.urlopen(f"{FLARESOLVERR_URL}/", timeout=15) as r:
             return r.status == 200
-    except Exception:
+    except Exception as e:
+        print(f"  [flaresolverr] is_available probe failed: {e}")
         return False
 
 

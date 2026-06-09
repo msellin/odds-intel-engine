@@ -19,6 +19,7 @@ Usage:
     python3 scripts/esports/cs2_hltv_match_details.py --match-id 2395247 --slug club-333-vs-chicken-coop-... # one-off
 """
 import argparse
+import os
 import re
 import sys
 import time
@@ -101,12 +102,15 @@ _RATING_CELL_RE = re.compile(r'<td class="rating[^"]*"[^>]*>\s*(\d\.\d{1,3})')
 
 
 def _fetch(url: str) -> str | None:
-    """Fetch via FlareSolverr if available (bypasses CF), else fall back to
-    plain requests (will hit CF blocks ~50% of time but works for non-/stats/*
-    URLs when CF isn't actively challenging us).
+    """Fetch via FlareSolverr if FLARESOLVERR_URL is set. Else fall back to
+    plain requests (will hit CF blocks ~50% of time for non-/stats/* URLs).
 
-    The FlareSolverr client enforces a global 6s rate limit, so even at
-    50-match batches we stay polite (~5 min wall clock minimum)."""
+    Behavior change 2026-06-09: when FLARESOLVERR_URL IS set but FlareSolverr
+    is unreachable (e.g. cold start, container restarting), we now retry the
+    is_available probe twice with backoff before falling back. Previously a
+    single 5s timeout would silently fall back to plain requests and every
+    match would 403. Loud failure beats silent.
+    """
     sys.path.insert(0, str(Path(__file__).parent))
     try:
         from flaresolverr_client import fetch as fs_fetch, is_available
@@ -114,10 +118,19 @@ def _fetch(url: str) -> str | None:
         fs_fetch = None
         is_available = lambda: False
 
-    if fs_fetch and is_available():
-        return fs_fetch(url, session="hltv_matches")
+    fs_url = os.getenv("FLARESOLVERR_URL", "").strip()
+    if fs_url and fs_fetch:
+        # Treat FLARESOLVERR_URL as authoritative: try FlareSolverr first,
+        # don't pre-check availability (waste of a roundtrip per call).
+        result = fs_fetch(url, session="hltv_matches")
+        if result is not None:
+            return result
+        # Don't fall back to plain requests when FlareSolverr is configured;
+        # the queue row will be marked fetch_failed and auto-retry on next run.
+        print(f"  [!] FlareSolverr returned None for {url[-60:]} — won't fall back to plain requests", file=sys.stderr)
+        return None
 
-    # Fallback to direct request
+    # Fallback path: only used when FLARESOLVERR_URL is not configured.
     try:
         r = requests.get(url, headers=HEADERS, timeout=20)
         if r.status_code != 200:
