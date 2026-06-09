@@ -20652,5 +20652,49 @@ def _():
     assert "FROM cs2_hltv_team_stats" in sp8
 
 
+@test("WC-PICKS-ONCONFLICT-FIX — migration 228 restores upsert-able UNIQUE constraints")
+def _():
+    """Migration 170 swapped the human-side UNIQUE constraints on three WC
+    tables for partial indexes (`WHERE user_id IS NOT NULL`) so AI-ghost rows
+    could share the table. That broke every `.upsert(..., { onConflict: ... })`
+    on the frontend — PostgREST can't infer a partial index without an explicit
+    WHERE predicate, and the JS client doesn't pass one. Migration 228 restores
+    real UNIQUE constraints matching exactly the columns each ON CONFLICT spec
+    uses. AI-row uniqueness is still enforced by the `WHERE ai_label IS NOT
+    NULL` partial indexes left in place from migration 170.
+    """
+    mig = _engine_path("supabase/migrations/228_wc_picks_onconflict_constraints.sql")
+    assert mig.exists(), "migration 228_wc_picks_onconflict_constraints.sql must exist"
+    src = mig.read_text()
+
+    # Partial human-side indexes must be dropped (they were the bug source).
+    for idx in ["uq_wc_grp_user", "uq_wc_bracket_pick_user", "uq_wc_bracket_meta_user"]:
+        assert f"DROP INDEX IF EXISTS {idx}" in src, \
+            f"migration 228 must drop partial index {idx}"
+
+    # Real UNIQUE constraints must be added on the exact columns the FE
+    # upserts target. Each FE call site uses the column list verbatim.
+    assert ("ADD CONSTRAINT uq_wc_group_predictions_user\n    UNIQUE (user_id, group_letter, position)" in src), \
+        "wc_group_predictions needs UNIQUE (user_id, group_letter, position)"
+    assert ("ADD CONSTRAINT uq_wc_bracket_picks_user\n    UNIQUE (user_id, round, position)" in src), \
+        "wc_bracket_picks needs UNIQUE (user_id, round, position)"
+    assert ("ADD CONSTRAINT uq_wc_bracket_meta_user\n    UNIQUE (user_id)" in src), \
+        "wc_bracket_meta needs UNIQUE (user_id)"
+
+    # Frontend onConflict targets must still match the constraint shapes
+    # above. If somebody renames the FE upsert columns, this catches it.
+    actions = _pathlib.Path(
+        "/Users/margussellin/www/odds-intel-web/src/app/(app)/world-cup/actions.ts"
+    )
+    if actions.exists():
+        act = actions.read_text()
+        assert 'onConflict: "user_id,group_letter,position"' in act, \
+            "saveGroupStandings onConflict drifted from migration 228 constraint"
+        assert 'onConflict: "user_id,round,position"' in act, \
+            "saveBracketPick onConflict drifted from migration 228 constraint"
+        assert 'onConflict: "user_id"' in act, \
+            "wc_bracket_meta upserts onConflict drifted from migration 228 constraint"
+
+
 if __name__ == "__main__":
     main()
