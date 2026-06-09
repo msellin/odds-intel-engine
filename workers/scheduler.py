@@ -919,6 +919,9 @@ def job_cs2_hltv_pistols():
     console.print("[bold cyan]CS2 HLTV pistol stats[/bold cyan]")
     result = subprocess.run(
         [sys.executable, "scripts/esports/cs2_hltv_pistol_scraper.py", "--top-n", "50", "--record"],
+        # Note: HLTV ranking filter is one of 20/30/50. Top-50 is the cap;
+        # tier-3/4 teams won't appear on the pistol page at all (HLTV's
+        # design). For v7 coverage, top-50 is the achievable ceiling.
         capture_output=True, text=True, timeout=600,
     )
     if result.returncode != 0:
