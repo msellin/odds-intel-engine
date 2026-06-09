@@ -905,6 +905,26 @@ def job_cs2_hltv_player_ratings():
     _run_job("cs2_hltv_player_ratings", lambda: None)
 
 
+def job_cs2_hltv_rosters():
+    """CS2-ROSTERS (2026-06-09): scrape current rosters + days_in_team per
+    player from /team/{id}/{slug} (no auth needed). Lets us detect roster
+    freshness — fresh roster (<30 days avg) invalidates prior team stats.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 HLTV team rosters[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_hltv_rosters.py", "--top-n", "100", "--record"],
+        capture_output=True, text=True, timeout=1800,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]CS2 rosters error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if "✓" in line or "hits:" in line:
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_hltv_rosters", lambda: None)
+
+
 def job_cs2_sneak_peek_backtest():
     """CS2-SNEAK-PEEK (2026-06-09): daily evaluation of model quality on the
     growing match-results dataset. Writes one row per feature_set to
@@ -2163,6 +2183,13 @@ def main():
     scheduler.add_job(job_cs2_sneak_peek_backtest, CronTrigger(hour=4, minute=30),
                       id="cs2_sneak_peek_backtest",
                       name="CS2 Sneak-peek backtest [daily 04:30 UTC]",
+                      max_instances=1, misfire_grace_time=3600)
+
+    # CS2-ROSTERS (2026-06-09) — daily 02:00 UTC. Top-100 teams' current rosters
+    # + days_in_team. Public team page, no auth needed.
+    scheduler.add_job(job_cs2_hltv_rosters, CronTrigger(hour=2, minute=0),
+                      id="cs2_hltv_rosters",
+                      name="CS2 HLTV team rosters [daily 02:00 UTC]",
                       max_instances=1, misfire_grace_time=3600)
 
     # CS2-HLTV-RANKINGS (2026-06-09) — daily 05:00 UTC. Top-248 teams from

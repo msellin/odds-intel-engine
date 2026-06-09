@@ -137,26 +137,32 @@ _MAP_WINRATE_RE = re.compile(r"(Mirage|Inferno|Nuke|Dust2|Ancient|Anubis|Train|O
 
 
 def fetch_team_maps_summary(session: requests.Session, team_id: int, slug: str,
-                            start_date: str, end_date: str) -> dict[str, float]:
-    """One request per team — extract per-map win rates from the team-maps page.
+                            start_date: str, end_date: str) -> tuple[dict[str, float], dict]:
+    """One request per team — extract per-map win rates + team aggregate stats.
 
     URL: /stats/teams/maps/{id}/{slug}?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
-    The summary table embeds each map as "MapName - XX.X%".
+
+    Returns:
+      (map_winrates, team_aggregate)
+      map_winrates = {map_name: win_pct}
+      team_aggregate = {win_pct, round_win_pct_after_first_kill,
+                        round_win_pct_after_first_death, ...}
     """
     url = (f"https://www.hltv.org/stats/teams/maps/{team_id}/{slug}"
            f"?startDate={start_date}&endDate={end_date}")
     r = session.get(url, timeout=20)
     if r.status_code == 403:
         print(f"  [!] 403 on {url} — cookies likely expired", file=sys.stderr)
-        return {}
+        return {}, {}
     if not r.ok:
         print(f"  [!] {r.status_code} on team {team_id}", file=sys.stderr)
-        return {}
+        return {}, {}
     out: dict[str, float] = {}
     for mp, pct in _MAP_WINRATE_RE.findall(r.text):
         if mp not in out:
             out[mp] = float(pct)
-    return out
+    aggregate = parse_team_map_page(r.text)
+    return out, aggregate
 
 
 # /team/{id}/{slug} links in the /ranking/teams page give us team_id + slug.
@@ -393,22 +399,34 @@ def main() -> None:
             if i > 0:
                 time.sleep(RATE_DELAY)
             print(f"\n  → {name} (id={team_id})")
-            wr = fetch_team_maps_summary(s, team_id, slug,
-                                         str(one_year_ago), str(today))
+            wr, agg = fetch_team_maps_summary(s, team_id, slug,
+                                              str(one_year_ago), str(today))
             if not wr:
                 print(f"    no map data (cookies expired?)")
                 if st: st.tick_failed(f"no_map_data {team_id}")
                 continue
+            clutch = agg.get("round_win_pct_after_first_kill")
+            comeback = agg.get("round_win_pct_after_first_death")
+            if clutch is not None or comeback is not None:
+                print(f"    [aggregate] clutch={clutch}  comeback={comeback}")
             for mp, pct in wr.items():
                 print(f"    {mp:10}  win% = {pct:5.1f}")
                 if args.record:
+                    # Denormalize team-aggregate clutch/comeback into each row,
+                    # so cs2_hltv_team_map_stats has them populated for backtests.
                     execute_write("""
                         INSERT INTO cs2_hltv_team_map_stats
-                            (hltv_team_id, team_name, map_name, win_pct, snapshot_date)
-                        VALUES (%s,%s,%s,%s,%s)
+                            (hltv_team_id, team_name, map_name, win_pct,
+                             round_win_pct_after_first_kill,
+                             round_win_pct_after_first_death,
+                             snapshot_date)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s)
                         ON CONFLICT (hltv_team_id, map_name, snapshot_date) DO UPDATE SET
-                            win_pct=EXCLUDED.win_pct, fetched_at=NOW()
-                    """, (team_id, name, mp, pct, snapshot))
+                            win_pct=EXCLUDED.win_pct,
+                            round_win_pct_after_first_kill=EXCLUDED.round_win_pct_after_first_kill,
+                            round_win_pct_after_first_death=EXCLUDED.round_win_pct_after_first_death,
+                            fetched_at=NOW()
+                    """, (team_id, name, mp, pct, clutch, comeback, snapshot))
             if st: st.tick_done()
     finally:
         if ctx: ctx.__exit__(None, None, None)
