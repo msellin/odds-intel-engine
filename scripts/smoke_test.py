@@ -19819,6 +19819,23 @@ def _():
     assert fm is not None and -1.0 <= fm <= 1.0
 
 
+@test("CS2-HLTV-PLAYER-RATINGS — scraper + table for live PQ")
+def _():
+    import pathlib
+    p = pathlib.Path("scripts/esports/cs2_hltv_player_ratings.py")
+    assert p.exists()
+    src = p.read_text()
+    for fn in ["discover_player_ids", "fetch_player_rating", "_players_to_fetch"]:
+        assert f"def {fn}" in src, f"{fn} must exist"
+    assert "Rating\\s+3\\.0" in src  # regex for current HLTV rating system
+    assert "RATE_DELAY = 3.5" in src
+
+    mig = pathlib.Path("supabase/migrations/208_cs2_hltv_player_ratings.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS cs2_hltv_player_ratings" in mig
+    assert "hltv_player_id   INTEGER     PRIMARY KEY" in mig
+    assert "rating           FLOAT       NOT NULL" in mig
+
+
 @test("CS2-HLTV-PREDICT — parallel HLTV-only model variant")
 def _():
     import pathlib, importlib.util, ast
