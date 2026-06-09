@@ -905,6 +905,31 @@ def job_cs2_hltv_player_ratings():
     _run_job("cs2_hltv_player_ratings", lambda: None)
 
 
+def job_cs2_pandascore_matches():
+    """CS2-PANDASCORE-MATCHES (2026-06-09): paginates PandaScore match history
+    and UPSERTs into cs2_pandascore_matches. PandaScore covers tier-3/4
+    matches that bo3.gg misses — closes the "0 matches for X" gap that
+    exposed Oxuji (5 matches on PandaScore, 0 in our DB).
+
+    Incremental: stops on first all-seen page. Free tier limit = 1000 req/hr;
+    we use 1s per-page delay so a typical fire = ~50 pages × 1s = ~1 min.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 PandaScore matches backfill[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_pandascore_matches_backfill.py",
+         "--pages", "100", "--upcoming"],
+        capture_output=True, text=True, timeout=1800,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]CS2 PandaScore backfill error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if "inserted" in line.lower() or "total" in line.lower():
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_pandascore_matches", lambda: None)
+
+
 def job_cs2_pinnacle_scanner():
     """CS2-PINNACLE (2026-06-09): scrape Pinnacle CS2 moneyline odds from the
     public guest API. Pinnacle's closing line is the gold-standard truth label
@@ -2222,6 +2247,16 @@ def main():
                       id="cs2_pinnacle_scanner",
                       name="CS2 Pinnacle odds [every 30 min, 10-23 UTC]",
                       max_instances=1, misfire_grace_time=600)
+
+    # CS2-PANDASCORE-MATCHES (2026-06-09) — 6h cadence for match-history
+    # backfill. Incremental (stops on first all-seen page), so each fire
+    # only writes newly-finished matches. Once initial backfill is done,
+    # this just keeps tier-3/4 results current.
+    scheduler.add_job(job_cs2_pandascore_matches,
+                      CronTrigger(hour="*/6", minute=15),
+                      id="cs2_pandascore_matches",
+                      name="CS2 PandaScore matches [every 6h]",
+                      max_instances=1, misfire_grace_time=1800)
 
     # CS2-HLTV-RANKINGS (2026-06-09) — daily 05:00 UTC. Top-248 teams from
     # HLTV. Builds a time series we can use as an orthogonal strength signal
