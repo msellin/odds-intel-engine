@@ -1102,7 +1102,10 @@ def job_cs2_pandascore_rosters():
         console.print("[yellow]Skipped — PANDASCORE_API_KEY not set[/yellow]")
         return
     result = subprocess.run(
-        [sys.executable, "scripts/esports/cs2_pandascore_rosters.py", "--refresh"],
+        # Discovery mode (no --refresh): skip cached teams. With --limit 200
+        # each run picks up the next 200 new teams. After full coverage, runs
+        # become quick (no work left).
+        [sys.executable, "scripts/esports/cs2_pandascore_rosters.py", "--limit", "200"],
         capture_output=True, text=True, timeout=600,
     )
     if result.returncode != 0:
@@ -2365,9 +2368,14 @@ def main():
                       max_instances=1, misfire_grace_time=3600)
 
     # CS2-PANDASCORE-ROSTERS (2026-06-08) — daily 04:30 UTC.
-    # Refreshes current 5-man lineups for PQ; replaces stale CSV last-known.
-    scheduler.add_job(job_cs2_pandascore_rosters, CronTrigger(hour=4, minute=30),
-                      id="cs2_pandascore_rosters", name="CS2 PandaScore Rosters [daily 04:30 UTC]",
+    # Roster cache built incrementally. Every 4h fetches 200 new teams (out
+    # of ~750 candidates from cs2_results UNION cs2_pandascore_matches).
+    # PandaScore quota 1000 req/hr; each team takes 1-3 reqs; 200 teams ≈
+    # 400-600 reqs = well under cap. Initial fill takes ~16h; steady state
+    # only refreshes new teams as they appear in results.
+    scheduler.add_job(job_cs2_pandascore_rosters, CronTrigger(hour="*/4", minute=30),
+                      id="cs2_pandascore_rosters",
+                      name="CS2 PandaScore Rosters [every 4h, 200/run]",
                       max_instances=1, misfire_grace_time=3600)
 
     # CS2-COOLBET-SCAN (2026-06-08) — every 30min 07-22 UTC at :17,:47.

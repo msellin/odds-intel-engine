@@ -198,7 +198,11 @@ def _search_team(key: str, name: str) -> dict | None:
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--teams", help="Comma-separated list (default: all DB teams)")
-    p.add_argument("--refresh", action="store_true")
+    p.add_argument("--refresh", action="store_true",
+                   help="Re-fetch teams already in cache (default: skip cached)")
+    p.add_argument("--limit", type=int, default=0,
+                   help="Stop after fetching N teams (0 = no limit). Useful for "
+                        "incremental cron runs that respect PandaScore quota.")
     args = p.parse_args()
 
     key = os.getenv("PANDASCORE_API_KEY", "").strip()
@@ -218,12 +222,17 @@ def main() -> None:
     print(f"  {len(teams)} teams  | cache hits: {sum(1 for t in teams if t in cache)}\n")
 
     hits = miss = skipped = 0
+    fetched_this_run = 0
     for i, name in enumerate(teams, 1):
         if not args.refresh and name in cache:
             skipped += 1
             continue
+        if args.limit and fetched_this_run >= args.limit:
+            print(f"  [limit] hit {args.limit}, stopping (re-run to continue)")
+            break
         if i > 1:
             time.sleep(RATE_DELAY)
+        fetched_this_run += 1
         roster = _search_team(key, name)
         if roster and roster["players"]:
             cache[name] = roster
