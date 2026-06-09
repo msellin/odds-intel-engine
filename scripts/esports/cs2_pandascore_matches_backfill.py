@@ -86,7 +86,12 @@ def _existing_ids() -> set[int]:
 
 
 def fetch_page(endpoint: str, page: int) -> list[dict] | None:
-    url = f"{BASE}/{endpoint}?per_page={PER_PAGE}&page={page}&sort=-begin_at"
+    # CRITICAL: filter[status]=finished — without this the API returns mostly
+    # 'canceled' matches (scheduled-but-never-played qualifiers) with NULL
+    # begin_at/end_at, which are useless for modelling. Found 2,439/2,464
+    # canceled matches on first naive backfill before adding this filter.
+    status_filter = "&filter[status]=finished" if "past" in endpoint else ""
+    url = f"{BASE}/{endpoint}?per_page={PER_PAGE}&page={page}&sort=-end_at{status_filter}"
     try:
         r = requests.get(url, headers=HEADERS, timeout=30)
     except Exception as e:
