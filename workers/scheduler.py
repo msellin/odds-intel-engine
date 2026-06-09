@@ -2372,15 +2372,17 @@ def main():
                       name="CS2 HLTV pistol stats [daily 03:30 UTC]",
                       max_instances=1, misfire_grace_time=3600)
 
-    # CS2-TEAMS-BULK (2026-06-09) — weekly Sunday 02:15 UTC. Scrapes the bulk
+    # CS2-TEAMS-BULK (2026-06-09) — daily 02:15 UTC. Scrapes the bulk
     # /stats/teams + /stats/teams/pistols pages (overall + T + CT) so we get
     # direct team-level K/D, Rating 3.0, pistol_pct + R2 conversion/break for
     # ~100-200 teams. Powers the v8+ models' team-stats fallback when
-    # roster×player aggregation lacks ≥3 resolved players.
+    # roster×player aggregation lacks ≥3 resolved players. HLTV's rolling
+    # window advances daily, so weekly would mean 7-day-stale data. ~4 page
+    # fetches via FlareSolverr, ~2 min/run.
     scheduler.add_job(job_cs2_hltv_teams_bulk,
-                      CronTrigger(day_of_week="sun", hour=2, minute=15),
+                      CronTrigger(hour=2, minute=15),
                       id="cs2_hltv_teams_bulk",
-                      name="CS2 HLTV Teams Bulk Stats [Sun 02:15 UTC]",
+                      name="CS2 HLTV Teams Bulk Stats [daily 02:15 UTC]",
                       max_instances=1, misfire_grace_time=3600)
 
     # CS2-HLTV-RANKINGS (2026-06-09) — daily 05:00 UTC. Top-248 teams from
