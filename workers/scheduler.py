@@ -2368,15 +2368,15 @@ def main():
                       max_instances=1, misfire_grace_time=3600)
 
     # CS2-PANDASCORE-ROSTERS (2026-06-08) — daily 04:30 UTC.
-    # Roster cache built incrementally. Every 4h fetches 200 new teams (out
-    # of ~750 candidates from cs2_results UNION cs2_pandascore_matches).
-    # PandaScore quota 1000 req/hr; each team takes 1-3 reqs; 200 teams ≈
-    # 400-600 reqs = well under cap. Initial fill takes ~16h; steady state
-    # only refreshes new teams as they appear in results.
-    scheduler.add_job(job_cs2_pandascore_rosters, CronTrigger(hour="*/4", minute=30),
+    # Roster cache built incrementally — fire every hour with --limit 200.
+    # PandaScore quota 1000 req/hr; ~2 reqs per team; 200 teams ≈ 400 reqs
+    # per fire. 8 fires overnight = 1,600 team-fetches = covers all ~750
+    # currently-missing teams in ~4 hours. Steady state: cron auto-skips
+    # cached teams, no-op when nothing new.
+    scheduler.add_job(job_cs2_pandascore_rosters, CronTrigger(minute=30),
                       id="cs2_pandascore_rosters",
-                      name="CS2 PandaScore Rosters [every 4h, 200/run]",
-                      max_instances=1, misfire_grace_time=3600)
+                      name="CS2 PandaScore Rosters [hourly, 200/run]",
+                      max_instances=1, misfire_grace_time=1800)
 
     # CS2-COOLBET-SCAN (2026-06-08) — every 30min 07-22 UTC at :17,:47.
     # Keeps Coolbet odds fresh for value-detection by the bot.
