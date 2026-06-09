@@ -51,16 +51,28 @@ HEADERS = {
 
 # /matches/{id}/{slug}  e.g. /matches/2395247/club-333-vs-chicken-coop-...
 _RESULT_LINK_RE = re.compile(r'href="/matches/(\d+)/([^"\'/#?\s]+)"')
+# Team names appear many times on a match page — restrict to the header pair.
+# Pattern: standard-box teamsBox contains both teams' main names.
+_TEAMSBOX_RE    = re.compile(
+    r'<div class="standard-box teamsBox">(.*?)</div>\s*</div>\s*</div>',
+    re.DOTALL,
+)
 _TEAM_NAME_RE   = re.compile(r'class="teamName team">([^<]+)</a>')
-_EVENT_RE       = re.compile(r'class="event[^"]*"[^>]*>.*?<span>([^<]+)</span>', re.DOTALL)
-# "Best of 3 (Online)" or "Best of 5 (LAN)..."
+_EVENT_RE       = re.compile(r'href="/events/(\d+)/[^"]+"[^>]*>([^<]+)</a>')
 _BO_LINE_RE     = re.compile(r'Best of\s+(\d+)\s*\(([^)]+)\)')
 _DATE_UNIX_RE   = re.compile(r'data-unix="(\d+)"')
 
-# Map section: mapholder block per map
-_MAPHOLDER_RE = re.compile(r'<div class="mapholder">(.*?)</div>\s*</div>\s*</div>', re.DOTALL)
-_MAPNAME_RE   = re.compile(r'<div class="mapname">([^<]+)</div>')
+# Per-map section: each map starts with <div class="mapname">X</div> and runs until
+# the next mapname or the end of the maps section.
+_MAP_BLOCK_RE = re.compile(
+    r'<div class="mapname">([^<]+)</div>(.*?)(?=<div class="mapname">|<div class="lineups|<div class="standard-box stats-container"|\Z)',
+    re.DOTALL,
+)
 _MAP_SCORE_RE = re.compile(r'<div class="results-team-score[^"]*">\s*(\d+)\s*</div>')
+# Halftime per-side scores: <span class="ct">N</span><span>:</span><span class="t">M</span>
+_HALF_SCORE_RE = re.compile(
+    r'<span class="(ct|t)">\s*(\d+)\s*</span>\s*<span[^>]*>:</span>\s*<span class="(ct|t)">\s*(\d+)\s*</span>'
+)
 
 # Veto lines: "1. Team X removed Map" / picked / left over.
 # We scan the whole HTML for these — there's nothing else that follows the
@@ -69,14 +81,23 @@ _VETO_LINE_RE = re.compile(
     r'<div>\s*(\d+)\.\s+([^<]+?)\s+(removed|picked|was left over)\s*([^<]*)</div>'
 )
 
-# Player stats table — "totalstats" is the wrapped stats block
-_TOTALSTATS_RE = re.compile(r'<table[^>]*class="totalstats"[^>]*>(.*?)</table>', re.DOTALL)
-_PLAYER_ROW_RE = re.compile(
-    r'<td class="players"[^>]*>.*?'
-    r'<a href="/player/(\d+)/[^"]+"[^>]*>([^<]+)</a>.*?'
-    r'<td class="kd[^"]*"[^>]*>(\d+-\d+)</td>',
+# Player stats table — class is "table totalstats" (multi-class).
+_TOTALSTATS_RE = re.compile(
+    r'<table[^>]*class="[^"]*\btotalstats\b[^"]*"[^>]*>(.*?)</table>',
     re.DOTALL,
 )
+# Per-row pieces. Nickname is inside <span class="player-nick">N</span> OR
+# directly inside an <a href="/player/...">N</a> on table rows that have no
+# wrapping span (rare).
+_PLAYER_LINK_RE = re.compile(r'href="/player/(\d+)/[^"]+"')
+_PLAYER_NICK_RE = re.compile(r'class="player-nick">([^<]+)</span>')
+_PLAYER_NICK_FALLBACK_RE = re.compile(
+    r'class="smartphone-only statsPlayerName[^"]*">([^<]+)</div>'
+)
+_KD_CELL_RE     = re.compile(r'<td class="kd[^"]*\btraditional-data\b[^"]*"[^>]*>\s*(\d+)-(\d+)')
+_ADR_CELL_RE    = re.compile(r'<td class="adr[^"]*\btraditional-data\b[^"]*"[^>]*>\s*([\d.]+)')
+_KAST_CELL_RE   = re.compile(r'<td class="kast[^"]*\btraditional-data\b[^"]*"[^>]*>\s*([\d.]+)%?')
+_RATING_CELL_RE = re.compile(r'<td class="rating[^"]*"[^>]*>\s*(\d\.\d{1,3})')
 
 
 def _fetch(url: str) -> str | None:
@@ -131,14 +152,24 @@ def queue_new_matches(limit_pages: int = 1) -> int:
 
 def parse_match(html: str) -> dict | None:
     """Extract everything from a single match page. Returns None on parse failure."""
-    teams = _TEAM_NAME_RE.findall(html)
+    # Team names appear all over the page; restrict to the teamsBox header.
+    box_m = _TEAMSBOX_RE.search(html)
+    teams_src = box_m.group(1) if box_m else html
+    teams = _TEAM_NAME_RE.findall(teams_src)
+    if len(teams) < 2:
+        # Fallback: dedupe order-preserving from full html.
+        all_teams = _TEAM_NAME_RE.findall(html)
+        teams = list(dict.fromkeys(all_teams))
     if len(teams) < 2:
         return None
     team1, team2 = teams[0].strip(), teams[1].strip()
+    if team1 == team2:
+        return None  # parser couldn't distinguish two teams
 
-    # Event
+    # Event — first /events/{id}/slug link in the page is the tournament header
     event_m = _EVENT_RE.search(html)
-    event = event_m.group(1).strip() if event_m else None
+    event_id = int(event_m.group(1)) if event_m else None
+    event = event_m.group(2).strip() if event_m else None
 
     # Best-of + LAN/Online (from veto-box's preamble or stage tag)
     bo, lan = None, None
@@ -156,20 +187,49 @@ def parse_match(html: str) -> dict | None:
             ts //= 1000
         date_iso = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
 
-    # Maps + scores per map
+    # Maps + scores per map. Walk the HTML by mapname blocks.
     maps = []
-    for holder in _MAPHOLDER_RE.findall(html):
-        name_m = _MAPNAME_RE.search(holder)
-        scores = _MAP_SCORE_RE.findall(holder)
-        if not name_m:
+    for m_ in _MAP_BLOCK_RE.finditer(html):
+        name = m_.group(1).strip()
+        block = m_.group(2)
+        scores = _MAP_SCORE_RE.findall(block)
+        if len(scores) < 2:
             continue
-        s1 = int(scores[0]) if scores else None
-        s2 = int(scores[1]) if len(scores) > 1 else None
-        if not s1 and not s2:
-            # Maps that weren't played still appear as "Not played" or 0-0
+        s1 = int(scores[0])
+        s2 = int(scores[1])
+        if s1 == 0 and s2 == 0:
             continue
-        winner = team1 if (s1 or 0) > (s2 or 0) else team2 if (s2 or 0) > (s1 or 0) else None
-        maps.append({"name": name_m.group(1).strip(), "team1_score": s1, "team2_score": s2, "winner": winner})
+        winner = team1 if s1 > s2 else team2 if s2 > s1 else None
+        # Per-side halftime scores — two pairs (1st half, 2nd half), each pair is
+        # team1_side:team1_score - team2_side:team2_score.
+        half_scores = _HALF_SCORE_RE.findall(block)
+        team1_ct = team1_t = team2_ct = team2_t = None
+        if len(half_scores) >= 2:
+            # In CS2: team1 plays CT then T (or vice-versa); halftime split helps
+            # us extract their CT-side and T-side round counts.
+            # Each match: (team1_side1, team1_score1, team2_side1, team2_score1),
+            #             (team1_side2, team1_score2, team2_side2, team2_score2)
+            try:
+                s1_first_side, s1_first_score, s2_first_side, s2_first_score = half_scores[0]
+                s1_second_side, s1_second_score, s2_second_side, s2_second_score = half_scores[1]
+                # Sum each team's CT and T halves
+                if s1_first_side == "ct":
+                    team1_ct = int(s1_first_score); team1_t = int(s1_second_score)
+                else:
+                    team1_t = int(s1_first_score); team1_ct = int(s1_second_score)
+                if s2_first_side == "ct":
+                    team2_ct = int(s2_first_score); team2_t = int(s2_second_score)
+                else:
+                    team2_t = int(s2_first_score); team2_ct = int(s2_second_score)
+            except (ValueError, IndexError):
+                pass
+        maps.append({
+            "name": name,
+            "team1_score": s1, "team2_score": s2,
+            "winner": winner,
+            "team1_ct": team1_ct, "team1_t": team1_t,
+            "team2_ct": team2_ct, "team2_t": team2_t,
+        })
 
     # Series score = sum of map wins
     score1 = sum(1 for m in maps if m["winner"] == team1)
@@ -189,26 +249,42 @@ def parse_match(html: str) -> dict | None:
             team_name = who.strip()
         veto.append({"step": int(step), "team": team_name, "action": action, "map": map_name})
 
-    # Per-player stats: parse only Rating (other cols too noisy across versions)
+    # Per-player stats — one totalstats table per team per map.
+    # Tables alternate: [map1_team1, map1_team2, map2_team1, map2_team2, ...]
+    # so floor(table_index / 2) gives the map_idx.
     players = []
-    for ts_block in _TOTALSTATS_RE.findall(html):
-        # rating-like floats per row
+    for tbl_idx, ts_block in enumerate(_TOTALSTATS_RE.findall(html)):
+        map_idx = tbl_idx // 2
+        if map_idx >= len(maps):
+            continue
         for row in re.findall(r"<tr[^>]*>(.*?)</tr>", ts_block, re.DOTALL):
-            pm = re.search(
-                r'<a href="/player/(\d+)/[^"]+"[^>]*>([^<]+)</a>'
-                r'.*?<td[^>]*class="rating[^"]*"[^>]*>(\d\.\d{1,3})</td>',
-                row, re.DOTALL,
-            )
-            if pm:
-                players.append({
-                    "id": int(pm.group(1)),
-                    "nickname": pm.group(2).strip(),
-                    "rating": float(pm.group(3)),
-                })
+            link_m = _PLAYER_LINK_RE.search(row)
+            if not link_m:
+                continue
+            pid = int(link_m.group(1))
+            nick_m = _PLAYER_NICK_RE.search(row) or _PLAYER_NICK_FALLBACK_RE.search(row)
+            nick = nick_m.group(1).strip() if nick_m else None
+            kd_m = _KD_CELL_RE.search(row)
+            adr_m = _ADR_CELL_RE.search(row)
+            kast_m = _KAST_CELL_RE.search(row)
+            rating_m = _RATING_CELL_RE.search(row)
+            if not (kd_m and rating_m):
+                continue  # header row or empty row
+            players.append({
+                "id": pid,
+                "nickname": nick,
+                "map_idx": map_idx,
+                "kills": int(kd_m.group(1)),
+                "deaths": int(kd_m.group(2)),
+                "adr": float(adr_m.group(1)) if adr_m else None,
+                "kast": float(kast_m.group(1)) if kast_m else None,
+                "rating": float(rating_m.group(1)),
+            })
 
     return {
         "team1": team1, "team2": team2,
-        "event": event, "best_of": bo, "is_lan": lan, "date": date_iso,
+        "event": event, "event_id": event_id,
+        "best_of": bo, "is_lan": lan, "date": date_iso,
         "score1": score1, "score2": score2, "winner": winner_name,
         "maps": maps, "veto": veto, "players": players,
     }
@@ -242,10 +318,12 @@ def write_match(mid: int, slug: str, parsed: dict) -> None:
     for i, m in enumerate(parsed["maps"], 1):
         execute_write("""
             INSERT INTO cs2_hltv_match_maps (hltv_match_id, map_order, map_name,
-                team1_score, team2_score, winner_name)
-            VALUES (%s, %s, %s, %s, %s, %s)
+                team1_score, team2_score, winner_name,
+                team1_ct_rounds, team1_t_rounds, team2_ct_rounds, team2_t_rounds)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT DO NOTHING
-        """, (mid, i, m["name"], m["team1_score"], m["team2_score"], m["winner"]))
+        """, (mid, i, m["name"], m["team1_score"], m["team2_score"], m["winner"],
+              m.get("team1_ct"), m.get("team1_t"), m.get("team2_ct"), m.get("team2_t")))
 
     for v in parsed["veto"]:
         execute_write("""
@@ -254,12 +332,18 @@ def write_match(mid: int, slug: str, parsed: dict) -> None:
             ON CONFLICT DO NOTHING
         """, (mid, v["step"], v["team"], v["action"], v["map"]))
 
+    # One row per (player, map). map_order is 1-indexed to match cs2_hltv_match_maps.
     for p in parsed["players"]:
+        map_order = p["map_idx"] + 1
+        map_name = parsed["maps"][p["map_idx"]]["name"] if p["map_idx"] < len(parsed["maps"]) else None
         execute_write("""
-            INSERT INTO cs2_hltv_player_match_stats (hltv_match_id, hltv_player_id, nickname, rating)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO cs2_hltv_player_match_stats
+                (hltv_match_id, hltv_player_id, nickname,
+                 map_order, map_name, kills, deaths, adr, kast, rating)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT DO NOTHING
-        """, (mid, p["id"], p["nickname"], p["rating"]))
+        """, (mid, p["id"], p["nickname"],
+              map_order, map_name, p["kills"], p["deaths"], p["adr"], p["kast"], p["rating"]))
 
 
 def process_queue(limit: int) -> tuple[int, int]:
