@@ -185,8 +185,6 @@ def score_match(m: dict, tm: dict, pistol: dict, tier_map: dict,
 
     kdate = m["kickoff_time"].date() if m["kickoff_time"] else None
     tier = tier_map.get((m["team1"], m["team2"], kdate)) or tier_map.get((m["team2"], m["team1"], kdate))
-    tier_a = 1.0 if tier == "a" else 0.0
-    tier_b = 1.0 if tier == "b" else 0.0
 
     feat_vals = {
         "logit_saved": _logit(saved),
@@ -197,8 +195,11 @@ def score_match(m: dict, tm: dict, pistol: dict, tier_map: dict,
         "rank_diff": rank_diff,
         "bo_centered": bo_centered,
         "pistol_diff": pistol_diff,
-        "tier_a": tier_a,
-        "tier_b": tier_b,
+        "tier_s": 1.0 if tier == "s" else 0.0,
+        "tier_a": 1.0 if tier == "a" else 0.0,
+        "tier_b": 1.0 if tier == "b" else 0.0,
+        "tier_c": 1.0 if tier == "c" else 0.0,
+        "tier_d": 1.0 if tier == "d" else 0.0,
     }
     logit = intercept + sum(coefs[k] * feat_vals[k] for k in coefs.keys())
     p_team1 = _sigmoid(logit)
