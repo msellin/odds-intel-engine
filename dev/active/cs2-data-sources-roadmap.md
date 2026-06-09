@@ -145,6 +145,9 @@ to ≥10k with rich features.
 - Can we get FACEIT ELO via API to enrich tier-3/4 player ratings?
 - After PandaScore backfill completes, UNION with cs2_results → v7 base
 - Pinnacle Railway test — did the US IP work? Read scraper_state notes.
+- **HLTV `/stats/teams/ftu`** — user suggested 2026-06-09. Likely Flash/Trade/Utility
+  team stats (first-3-utility usage, trade-kill rates). Verify with full cookies.
+  Same scraper pattern as pistols — high probability of +0.005-0.010 AUC.
 
 ---
 
