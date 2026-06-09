@@ -209,12 +209,77 @@ def _top_n_teams_with_hltv_id(session: requests.Session, n: int) -> list[tuple[i
     return out
 
 
+def _flatten_stats_rows(html: str) -> dict:
+    """All <div class='stats-row'><span>label</span><span>value</span></div> pairs
+    flattened to {label_slug: value}. Used for player stats + map meta where
+    HLTV's schema varies but the row markup is consistent."""
+    out: dict = {}
+    for label, value in _STATS_ROW_RE.findall(html):
+        key = re.sub(r"[^a-z0-9]+", "_", label.strip().lower()).strip("_")
+        if not key or not value.strip():
+            continue
+        out[key] = value.strip()
+    # Also capture .maps-info-percentage + .maps-info-desc pairs (used on map pages)
+    map_info = re.findall(
+        r'<div class="maps-info-percentage">([\d\.]+%)</div>\s*<div class="maps-info-desc">([^<]+)</div>',
+        html
+    )
+    for pct, desc in map_info:
+        k = re.sub(r"[^a-z0-9]+", "_", desc.strip().lower()).strip("_")
+        if k:
+            out[k] = pct
+    return out
+
+
+# Look up an active CS2 map's HLTV ID + page slug from the maps overview.
+_MAP_LINK_RE = re.compile(r'href="/stats/maps/map/(\d+)/([^"\']+)"')
+
+
+def discover_map_ids(session: requests.Session) -> list[tuple[int, str]]:
+    r = session.get("https://www.hltv.org/stats/maps", timeout=15)
+    if not r.ok:
+        return []
+    seen = set()
+    out = []
+    for mid, slug in _MAP_LINK_RE.findall(r.text):
+        mid = int(mid)
+        if mid in seen:
+            continue
+        seen.add(mid)
+        out.append((mid, slug))
+    return out
+
+
+def fetch_player_stats(session: requests.Session, player_id: int, slug: str) -> dict:
+    url = f"https://www.hltv.org/stats/players/{player_id}/{slug}"
+    r = session.get(url, timeout=20)
+    if r.status_code == 403:
+        print(f"  [!] 403 on {url}", file=sys.stderr)
+        return {}
+    if not r.ok:
+        return {}
+    return _flatten_stats_rows(r.text)
+
+
+def fetch_map_meta(session: requests.Session, map_id: int, slug: str) -> dict:
+    url = f"https://www.hltv.org/stats/maps/map/{map_id}/{slug}"
+    r = session.get(url, timeout=20)
+    if r.status_code == 403:
+        print(f"  [!] 403 on {url}", file=sys.stderr)
+        return {}
+    if not r.ok:
+        return {}
+    return _flatten_stats_rows(r.text)
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--team", type=int, help="HLTV team_id for one-off")
     p.add_argument("--slug", default="", help="Team slug for one-off")
-    p.add_argument("--top-n", type=int, help="Run against top-N teams from cs2_hltv_rankings")
-    p.add_argument("--record", action="store_true", help="Write to cs2_hltv_team_map_stats")
+    p.add_argument("--top-n", type=int, help="Run team-map backfill against top-N teams")
+    p.add_argument("--players-top-n", type=int, help="Run per-player stats against top-N teams' rosters")
+    p.add_argument("--maps", action="store_true", help="Scrape /stats/maps + each map page")
+    p.add_argument("--record", action="store_true", help="Write to DB")
     args = p.parse_args()
 
     print(f"\n=== HLTV /stats/teams/maps scraper  {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC ===")
@@ -225,9 +290,68 @@ def main() -> None:
     elif args.top_n:
         targets = _top_n_teams_with_hltv_id(s, args.top_n)
         print(f"  top-{args.top_n}: {len(targets)} resolved with team_id")
+    elif args.maps or args.players_top_n:
+        targets = []   # only running the new modes
     else:
-        print("  pass --team + --slug OR --top-n", file=sys.stderr)
+        print("  pass --team + --slug OR --top-n OR --maps OR --players-top-n", file=sys.stderr)
         sys.exit(1)
+
+    # --maps backfill: per-map meta from /stats/maps/map/{id}/{slug}
+    if args.maps:
+        print("\n=== Maps backfill ===")
+        maps = discover_map_ids(s)
+        print(f"  discovered {len(maps)} map IDs")
+        for i, (mid, slug) in enumerate(maps):
+            if i > 0:
+                time.sleep(RATE_DELAY)
+            stats = fetch_map_meta(s, mid, slug)
+            print(f"  map id={mid:>3} {slug:15}  fields={len(stats)}")
+            if args.record and stats:
+                execute_write("""
+                    INSERT INTO cs2_hltv_map_meta (hltv_map_id, map_name, stats, fetched_at)
+                    VALUES (%s, %s, %s::jsonb, NOW())
+                    ON CONFLICT (hltv_map_id) DO UPDATE SET
+                        map_name=EXCLUDED.map_name, stats=EXCLUDED.stats, fetched_at=NOW()
+                """, (mid, slug, json.dumps(stats)))
+
+    # --players-top-n: per-player /stats/players/{id}/{slug}
+    if args.players_top_n:
+        print("\n=== Player-stats backfill ===")
+        team_id_map = discover_team_ids(s)
+        # Players we care about: rosters of HLTV top-N teams
+        rankings = execute_query("""
+            SELECT DISTINCT ON (team_name) team_name, players
+            FROM cs2_hltv_rankings
+            WHERE hltv_rank <= %s
+            ORDER BY team_name, snapshot_date DESC
+        """, (args.players_top_n,))
+        # Need player_id resolution — read from cached hltv_player_ids.json
+        try:
+            id_cache = json.loads(Path("data/esports/cs2/hltv_player_ids.json").read_text())
+        except (json.JSONDecodeError, OSError):
+            id_cache = {}
+        seen_players: set[int] = set()
+        for r in rankings:
+            for nick in (r.get("players") or []):
+                pid = id_cache.get(nick.lower())
+                if pid and pid not in seen_players:
+                    seen_players.add(pid)
+        print(f"  {len(seen_players)} unique players from top-{args.players_top_n} rosters")
+
+        for i, pid in enumerate(sorted(seen_players)):
+            if i > 0:
+                time.sleep(RATE_DELAY)
+            # need slug — derive from cache (nickname-lower works as slug for most)
+            slug = next((nick for nick, p in id_cache.items() if p == pid), str(pid))
+            stats = fetch_player_stats(s, pid, slug)
+            print(f"  [{i+1:>3}/{len(seen_players)}] id={pid:>5} slug={slug:20}  fields={len(stats)}")
+            if args.record and stats:
+                execute_write("""
+                    INSERT INTO cs2_hltv_player_stats (hltv_player_id, nickname, stats, fetched_at)
+                    VALUES (%s, %s, %s::jsonb, NOW())
+                    ON CONFLICT (hltv_player_id) DO UPDATE SET
+                        nickname=EXCLUDED.nickname, stats=EXCLUDED.stats, fetched_at=NOW()
+                """, (pid, slug, json.dumps(stats)))
 
     snapshot = datetime.now(timezone.utc).date().isoformat()
     today = datetime.now(timezone.utc).date()
