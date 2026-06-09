@@ -780,6 +780,26 @@ def job_cs2_scanner():
     _run_job("cs2_scanner", lambda: None)
 
 
+def job_cs2_hltv_rankings():
+    """CS2-HLTV-RANKINGS (2026-06-09): daily fetch of /ranking/teams (top-248).
+    HLTV updates weekly on Mondays; daily refresh catches it. Writes to
+    cs2_hltv_rankings table for historical accumulation + scanner lookup.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 HLTV rankings refresh[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_hltv_rankings.py", "--record"],
+        capture_output=True, text=True, timeout=300,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]CS2 HLTV rankings error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ["teams parsed", "wrote"]):
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_hltv_rankings", lambda: None)
+
+
 def job_cs2_weekly_calibrate():
     """CS2-WEEKLY-CALIBRATION (2026-06-08): refit Platt scaling on the last 90
     days of cs2_predictions ⨝ cs2_results; promote if log-loss improves. The
@@ -1942,6 +1962,13 @@ def main():
     scheduler.add_job(job_cs2_settlement, CronTrigger(hour="12-23,0-2", minute=22),
                       id="cs2_settlement", name="CS2 Settlement [hourly 12-02 UTC]",
                       max_instances=1, misfire_grace_time=900)
+
+    # CS2-HLTV-RANKINGS (2026-06-09) — daily 05:00 UTC. Top-248 teams from
+    # HLTV. Builds a time series we can use as an orthogonal strength signal
+    # to our ELO, especially for thin-data teams ELO can't price.
+    scheduler.add_job(job_cs2_hltv_rankings, CronTrigger(hour=5, minute=0),
+                      id="cs2_hltv_rankings", name="CS2 HLTV Rankings [daily 05:00 UTC]",
+                      max_instances=1, misfire_grace_time=3600)
 
     # CS2-WEEKLY-CALIBRATION (2026-06-08) — Sunday 03:30 UTC, before Pandascore
     # roster refresh. Re-fits Platt scaling on last 90d of accumulated data;

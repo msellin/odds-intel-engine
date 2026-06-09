@@ -19819,6 +19819,41 @@ def _():
     assert fm is not None and -1.0 <= fm <= 1.0
 
 
+@test("CS2-HLTV-RANKINGS — scraper + table + scanner integration")
+def _():
+    """cs2_hltv_rankings.py parses HLTV ranking + migration 205 + scanner reads + writes."""
+    import pathlib, ast
+    p = pathlib.Path("scripts/esports/cs2_hltv_rankings.py")
+    assert p.exists()
+    src = p.read_text()
+    for fn in ["fetch_rankings", "write_to_db"]:
+        assert f"def {fn}" in src
+    assert "ranked-team standard-box" in src
+
+    mig = pathlib.Path("supabase/migrations/205_cs2_hltv_rankings.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS cs2_hltv_rankings" in mig
+    assert "UNIQUE (team_name, snapshot_date)" in mig
+    for col in ["hltv_rank1", "hltv_rank2", "hltv_points1", "hltv_points2"]:
+        assert col in mig, f"migration must add {col}"
+
+    scanner_src = pathlib.Path("scripts/esports/cs2_elo_scanner.py").read_text()
+    assert "load_hltv_rankings" in scanner_src
+    assert "lookup_hltv" in scanner_src
+    assert "_HLTV_ALIASES" in scanner_src
+
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    tree = ast.parse(sched)
+    fns = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    assert "job_cs2_hltv_rankings" in fns
+    ids = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "add_job":
+            for kw in n.keywords:
+                if kw.arg == "id" and isinstance(getattr(kw.value, "value", None), str):
+                    ids.add(kw.value.value)
+    assert "cs2_hltv_rankings" in ids
+
+
 @test("CS2-PANDASCORE-ROSTERS — fetcher script + scheduler cron")
 def _():
     """cs2_pandascore_rosters.py + cron registered."""

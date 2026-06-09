@@ -313,6 +313,51 @@ def load_player_data() -> tuple[dict[str, float], dict[str, list[str]]]:
     return player_ratings, team_last_lineups
 
 
+def load_hltv_rankings() -> dict[str, tuple[int, int]]:
+    """Return {team_name_normalized: (hltv_rank, hltv_points)} from latest snapshot.
+
+    HLTV is updated weekly on Mondays; we keep daily snapshots so the same-day
+    snapshot is always within 24h freshness.
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+        from workers.api_clients.db import execute_query
+        rows = execute_query("""
+            SELECT DISTINCT ON (team_name) team_name, hltv_rank, hltv_points
+            FROM cs2_hltv_rankings
+            ORDER BY team_name, snapshot_date DESC
+        """, ())
+        return {_normalize(r["team_name"]): (r["hltv_rank"], r["hltv_points"])
+                for r in rows if r.get("team_name")}
+    except Exception:
+        return {}
+
+
+# Manual team-name aliases mapping our bo3.gg names to HLTV names.
+# Only listed when the simple lowercase-strip-spaces match fails.
+_HLTV_ALIASES: dict[str, str] = {
+    "vitality":       "vitality",
+    "teamvitality":   "vitality",
+    "navi":           "natusvincere",
+    "natusvincere":   "natusvincere",
+    "vp":             "virtuspro",
+    "themongolz":     "themongolz",
+    "mongolz":        "themongolz",
+    "spirit":         "spirit",
+    "teamspirit":     "spirit",
+    "liquid":         "teamliquid",
+    "teamliquid":     "teamliquid",
+}
+
+
+def lookup_hltv(team_name: str, hltv: dict[str, tuple[int, int]]) -> tuple[int | None, int | None]:
+    key = _normalize(team_name)
+    if key in hltv: return hltv[key]
+    alias = _HLTV_ALIASES.get(key)
+    if alias and alias in hltv: return hltv[alias]
+    return None, None
+
+
 def load_pandascore_rosters() -> dict[str, list[str]]:
     """Read PandaScore roster cache, return {team_name_lower: [nicknames]}.
 
@@ -735,6 +780,7 @@ def _write_to_db(
     match_counts: dict[str, int] | None = None,
     days_since_roster: dict[str, int] | None = None,
     extra_features: dict[int, dict] | None = None,
+    hltv_rankings: dict[str, tuple[int, int]] | None = None,
 ) -> None:
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -749,6 +795,7 @@ def _write_to_db(
     match_counts = match_counts or {}
     days_since_roster = days_since_roster or {}
     extra_features = extra_features or {}
+    hltv_rankings = hltv_rankings or {}
 
     for m in matches:
         t1, t2 = m["team1"], m["team2"]
@@ -804,6 +851,8 @@ def _write_to_db(
         dsrc1 = days_since_roster.get(t1)
         dsrc2 = days_since_roster.get(t2)
         feats = extra_features.get(m.get("id"), {})
+        hr1, hp1 = lookup_hltv(t1, hltv_rankings)
+        hr2, hp2 = lookup_hltv(t2, hltv_rankings)
 
         execute_write("""
             INSERT INTO cs2_upcoming_matches
@@ -820,8 +869,9 @@ def _write_to_db(
                  days_since_match1, days_since_match2,
                  opp_strength_avg1, opp_strength_avg2,
                  h2h_team1_win_pct, h2h_count,
+                 hltv_rank1, hltv_rank2, hltv_points1, hltv_points2,
                  scanned_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (team1, team2, kickoff_time) DO UPDATE SET
                 state           = EXCLUDED.state,
                 elo1            = EXCLUDED.elo1,
@@ -856,6 +906,10 @@ def _write_to_db(
                 opp_strength_avg2            = EXCLUDED.opp_strength_avg2,
                 h2h_team1_win_pct            = EXCLUDED.h2h_team1_win_pct,
                 h2h_count                    = EXCLUDED.h2h_count,
+                hltv_rank1                   = EXCLUDED.hltv_rank1,
+                hltv_rank2                   = EXCLUDED.hltv_rank2,
+                hltv_points1                 = EXCLUDED.hltv_points1,
+                hltv_points2                 = EXCLUDED.hltv_points2,
                 scanned_at      = EXCLUDED.scanned_at
         """, (
             m.get("id"),
@@ -875,6 +929,7 @@ def _write_to_db(
             feats.get("days_since_match1"), feats.get("days_since_match2"),
             feats.get("opp_strength_avg1"), feats.get("opp_strength_avg2"),
             feats.get("h2h_team1_win_pct"), feats.get("h2h_count"),
+            hr1, hr2, hp1, hp2,
             now,
         ))
         written += 1
@@ -895,8 +950,9 @@ def _write_to_db(
                      days_since_match1, days_since_match2,
                      opp_strength_avg1, opp_strength_avg2,
                      h2h_team1_win_pct, h2h_count,
+                     hltv_rank1, hltv_rank2, hltv_points1, hltv_points2,
                      model_version)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT (bo3gg_id, scan_time, model_version) DO NOTHING
             """, (
                 m["id"], now, m["date"].isoformat(), m["tournament"], best_of,
@@ -912,6 +968,7 @@ def _write_to_db(
                 feats.get("days_since_match1"), feats.get("days_since_match2"),
                 feats.get("opp_strength_avg1"), feats.get("opp_strength_avg2"),
                 feats.get("h2h_team1_win_pct"), feats.get("h2h_count"),
+                hr1, hr2, hp1, hp2,
                 MODEL_VERSION,
             ))
 
@@ -953,6 +1010,11 @@ def main() -> None:
     if pandascore_rosters:
         team_last_lineups.update(pandascore_rosters)
         print(f"    PandaScore rosters: {len(pandascore_rosters)} teams (current lineups)")
+
+    # HLTV team rankings (top-248). Accumulating feature.
+    hltv_rankings = load_hltv_rankings()
+    if hltv_rankings:
+        print(f"    HLTV rankings: {len(hltv_rankings)} teams (snapshot)")
     print(f"    {len(player_ratings)} players with HLTV ratings")
     print(f"    {len(team_last_lineups)} team lineups known")
 
@@ -1065,7 +1127,7 @@ def main() -> None:
 
     if args.record:
         print("[6] Writing to database...")
-        _write_to_db(upcoming, ratings, args.edge, roster_changes, player_ratings, team_last_lineups, match_counts, days_since_roster, extra_features)
+        _write_to_db(upcoming, ratings, args.edge, roster_changes, player_ratings, team_last_lineups, match_counts, days_since_roster, extra_features, hltv_rankings)
 
 
 if __name__ == "__main__":
