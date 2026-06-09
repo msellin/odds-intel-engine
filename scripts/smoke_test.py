@@ -20303,5 +20303,170 @@ def test_ou25_dedicated_model():
         assert 0.0 < probs[0, 0] < 1.0 and 0.0 < probs[0, 1] < 1.0
 
 
+@test("CS2-SCRAPER-STATE — central status table + helper module")
+def _():
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/215_cs2_scraper_state.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS cs2_scraper_state" in mig
+    for col in ["status", "last_run_at", "items_done", "items_pending",
+                "items_failed", "last_error", "last_run_duration_s"]:
+        assert col in mig, f"cs2_scraper_state missing column {col}"
+    # Seed rows for all scrapers
+    for name in ["match_details_queue", "match_details_process", "team_map_stats",
+                 "player_stats", "player_ratings", "map_meta", "hltv_rankings",
+                 "clv_snapshot"]:
+        assert f"'{name}'" in mig, f"seed row missing for {name}"
+
+    helper = pathlib.Path("scripts/esports/scraper_state.py").read_text()
+    assert "def scraper_run" in helper, "scraper_run() context manager missing"
+    assert "class _ScraperRun" in helper
+    for fn in ["set_total", "set_pending", "tick_done", "tick_failed", "note"]:
+        assert f"def {fn}" in helper, f"_ScraperRun.{fn} missing"
+    # State row goes 'running' -> 'idle' on success, 'error' on exception
+    assert "status = 'running'" in helper
+    assert "status = 'idle'" in helper
+    assert "status = 'error'" in helper
+
+
+@test("CS2-BACKTEST-HISTORY — persists every sneak-peek run")
+def _():
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/216_cs2_model_backtest_history.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS cs2_model_backtest_history" in mig
+    for col in ["run_id", "feature_set", "n_matches", "auc", "logloss",
+                "brier", "accuracy", "feature_keys", "coefs"]:
+        assert col in mig, f"cs2_model_backtest_history missing column {col}"
+
+    # v2/v3/v4/v5 all persist to history
+    for fn in ["cs2_sneak_peek_v2.py", "cs2_sneak_peek_v3.py",
+               "cs2_sneak_peek_v4.py", "cs2_sneak_peek_v5.py",
+               "cs2_sneak_peek_xgb.py"]:
+        src = pathlib.Path(f"scripts/esports/{fn}").read_text()
+        assert "cs2_model_backtest_history" in src, (
+            f"{fn} must write to cs2_model_backtest_history for admin UI trend chart"
+        )
+        assert "RUN_ID" in src, f"{fn} must group rows by RUN_ID per invocation"
+
+
+@test("CS2-MATCH-DETAILS-V2 — per-side CT/T splits + per-(player, map) stats + team_name")
+def _():
+    import pathlib
+    # Migration 213: per-side CT/T columns
+    mig213 = pathlib.Path("supabase/migrations/213_cs2_hltv_match_maps_sides.sql").read_text()
+    for col in ["team1_ct_rounds", "team1_t_rounds", "team2_ct_rounds", "team2_t_rounds"]:
+        assert col in mig213, f"mig 213 missing column {col}"
+
+    # Migration 214: per-(match, player, map) — drop old UNIQUE, allow multi-map rows
+    mig214 = pathlib.Path("supabase/migrations/214_cs2_hltv_player_match_stats_per_map.sql").read_text()
+    assert "map_order" in mig214 and "map_name" in mig214
+
+    # Migration 219: team_name on player_match_stats for avg_team_rating_pit
+    mig219 = pathlib.Path("supabase/migrations/219_cs2_hltv_player_match_stats_team_name.sql").read_text()
+    assert "team_name" in mig219
+
+    # Parser changes
+    src = pathlib.Path("scripts/esports/cs2_hltv_match_details.py").read_text()
+    assert "_HALF_SCORE_RE" in src, "halftime per-side score regex missing"
+    assert "team1_ct" in src and "team1_t" in src, "side-split capture missing"
+    # Per-player parser captures K-D + ADR + KAST + Rating
+    for cell in ["_KD_CELL_RE", "_ADR_CELL_RE", "_KAST_CELL_RE", "_RATING_CELL_RE"]:
+        assert cell in src, f"player parser cell regex {cell} missing"
+    # team_name derived from totalstats table parity
+    assert "team_side = tbl_idx % 2" in src
+    assert '"team_name": team_name' in src or '"team_name":team_name' in src
+    # INSERT writes team_name + per-map fields
+    assert "nickname, team_name" in src, (
+        "write_match must INSERT team_name into cs2_hltv_player_match_stats"
+    )
+    assert "kills, deaths, adr, kast, rating" in src
+
+
+@test("CS2-HLTV-ROSTERS — daily roster snapshot with days_in_team")
+def _():
+    import pathlib, ast
+    mig = pathlib.Path("supabase/migrations/217_cs2_hltv_team_rosters.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS cs2_hltv_team_rosters" in mig
+    for col in ["hltv_team_id", "hltv_player_id", "days_in_team",
+                "maps_played", "rating_2_0", "snapshot_date"]:
+        assert col in mig, f"cs2_hltv_team_rosters missing column {col}"
+    # Per-day uniqueness so we accumulate history
+    assert "UNIQUE (hltv_team_id, hltv_player_id, snapshot_date)" in mig
+
+    src = pathlib.Path("scripts/esports/cs2_hltv_rosters.py").read_text()
+    for fn in ["parse_team_roster", "fetch_team_roster", "load_targets", "main"]:
+        assert f"def {fn}" in src
+    # Reads non-auth team page
+    assert "/team/" in src and "/stats/teams/" not in src.split("def fetch_team_roster")[1].split("def ")[0], (
+        "Roster scraper should use public /team/{id}/{slug} not auth-required /stats/teams/"
+    )
+    assert "RATE_DELAY = 5" in src or "RATE_DELAY = 5.0" in src
+
+    # Wrapped in scraper_run for admin UI
+    assert "scraper_run" in src and '"team_rosters"' in src
+
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    tree = ast.parse(sched)
+    fns = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    assert "job_cs2_hltv_rosters" in fns
+
+
+@test("CS2-PINNACLE-SCANNER — guest API moneyline scrape with politeness")
+def _():
+    import pathlib, ast
+    src = pathlib.Path("scripts/esports/cs2_pinnacle_scanner.py").read_text()
+    # Polite defaults
+    assert "REQUEST_JITTER_SEC = (4.0, 6.0)" in src, "polite 4-6s jitter required"
+    assert "MAX_REQUESTS_PER_RUN = 80" in src, "hard request cap required"
+    assert "MAX_CONSECUTIVE_ERRORS = 5" in src
+    # Real browser UA + Referer (not "PolitestBot/1.0")
+    assert "Mozilla/5.0" in src and "pinnacle.com" in src
+    # Esports sport ID 12
+    assert "PINNACLE_ESPORTS_SPORT_ID = 12" in src
+    # Diagnostic notes surfaced to scraper_state UI
+    assert "league_diag" in src
+    # 60s back-off on 429/503
+    assert "time.sleep(60)" in src
+    # Wrapped in scraper_run
+    assert "scraper_run" in src and '"pinnacle_scanner"' in src
+    # Discovers leagues then fetches matchups + markets
+    for fn in ["discover_cs2_leagues", "load_cs2_leagues", "parse_moneyline",
+               "normalize_team", "scan"]:
+        assert f"def {fn}" in src
+
+    # Railway cron
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    tree = ast.parse(sched)
+    fns = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    assert "job_cs2_pinnacle_scanner" in fns
+
+
+@test("CS2-PIT-VIEW — point-in-time team-per-map win rate from our match log")
+def _():
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/218_cs2_pit_team_map_view.sql").read_text()
+    assert "CREATE OR REPLACE VIEW cs2_pit_team_map" in mig
+    # The whole point: PIT correctness via UNBOUNDED PRECEDING ... 1 PRECEDING
+    assert "UNBOUNDED PRECEDING AND 1 PRECEDING" in mig, (
+        "Window MUST exclude the current row, otherwise we leak the outcome we're predicting"
+    )
+    assert "PARTITION BY team_name, map_name" in mig
+    assert "pit_win_rate" in mig
+    # Both team1 and team2 perspectives are flattened
+    assert "UNION ALL" in mig
+
+
+@test("CS2-SCHEDULER-2026-06-09 — match-details cadence bumped + new daily backtest job")
+def _():
+    import pathlib
+    src = pathlib.Path("workers/scheduler.py").read_text()
+    # match_details processor at every 30 min (was every 2h)
+    assert 'CronTrigger(minute="*/30")' in src
+    # Daily sneak-peek backtest at 04:30 UTC
+    assert "job_cs2_sneak_peek_backtest" in src
+    assert "cs2_sneak_peek_backtest" in src
+    # New daily 02:00 UTC rosters job
+    assert "cs2_hltv_rosters" in src
+
+
 if __name__ == "__main__":
     main()
