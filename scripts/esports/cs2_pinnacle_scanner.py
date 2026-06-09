@@ -126,29 +126,52 @@ class PinnacleClient:
 
 
 # ── League discovery + caching ──────────────────────────────────────
-def discover_cs2_leagues(c: PinnacleClient) -> list[dict]:
-    """Hit /sports/12/leagues, filter for CS2/Counter-Strike, cache to disk."""
+def discover_cs2_leagues(c: PinnacleClient) -> tuple[list[dict], str]:
+    """Hit /sports/12/leagues, filter for CS2/Counter-Strike, cache to disk.
+
+    Returns (filtered_list, diagnostic_str) so the scraper state row can record
+    what we found — important since the script runs remotely on Railway and we
+    can't see stdout directly.
+    """
     leagues = c.get(f"/0.1/sports/{PINNACLE_ESPORTS_SPORT_ID}/leagues")
+    if leagues is None:
+        return [], "sports/12/leagues returned None (HTTP error)"
+    if not isinstance(leagues, list):
+        return [], f"unexpected response type: {type(leagues).__name__}"
     if not leagues:
-        return []
+        return [], "sports/12/leagues returned empty list"
+
     cs2_leagues = []
+    sample_names = []
     for L in leagues:
-        name = (L.get("name") or "").lower()
-        # Pinnacle uses "Counter-Strike" for CS2 leagues
-        if "counter-strike" in name or "counter strike" in name or " cs2" in name:
-            cs2_leagues.append({"id": L["id"], "name": L["name"],
+        name = (L.get("name") or "")
+        nl = name.lower()
+        if len(sample_names) < 5:
+            sample_names.append(name)
+        # Pinnacle uses "Counter-Strike" for CS2 leagues. Also match broader
+        # patterns in case the naming is different than expected.
+        if ("counter-strike" in nl or "counter strike" in nl or " cs2" in nl
+            or "cs:go" in nl or "cs go" in nl):
+            cs2_leagues.append({"id": L["id"], "name": name,
                                 "matchupCount": L.get("matchupCount", 0)})
     LEAGUE_CACHE.parent.mkdir(parents=True, exist_ok=True)
-    LEAGUE_CACHE.write_text(json.dumps(cs2_leagues, indent=2))
-    return cs2_leagues
+    LEAGUE_CACHE.write_text(json.dumps({
+        "filtered": cs2_leagues,
+        "all_count": len(leagues),
+        "sample_names": sample_names,
+    }, indent=2))
+    diag = f"sport_12: {len(leagues)} leagues total, {len(cs2_leagues)} CS-filtered. Sample: {sample_names[:3]}"
+    return cs2_leagues, diag
 
 
-def load_cs2_leagues(c: PinnacleClient, refresh: bool = False) -> list[dict]:
+def load_cs2_leagues(c: PinnacleClient, refresh: bool = False) -> tuple[list[dict], str]:
     if not refresh and LEAGUE_CACHE.exists():
         try:
             cached = json.loads(LEAGUE_CACHE.read_text())
-            if cached:
-                return cached
+            if isinstance(cached, dict) and cached.get("filtered"):
+                return cached["filtered"], "loaded from cache"
+            if isinstance(cached, list) and cached:
+                return cached, "loaded from legacy cache"
         except json.JSONDecodeError:
             pass
     return discover_cs2_leagues(c)
@@ -202,8 +225,8 @@ def parse_moneyline(markets: list[dict], matchup_id: int) -> tuple[float, float]
 # ── Main scan ───────────────────────────────────────────────────────
 def scan(dry: bool = False, limit: int | None = None, refresh_leagues: bool = False) -> dict:
     c = PinnacleClient()
-    leagues = load_cs2_leagues(c, refresh=refresh_leagues)
-    print(f"  cs2 leagues: {len(leagues)}")
+    leagues, league_diag = load_cs2_leagues(c, refresh=refresh_leagues)
+    print(f"  cs2 leagues: {len(leagues)}  ({league_diag})")
     for L in leagues:
         print(f"    - {L['name']:40} (id={L['id']}, matchups={L.get('matchupCount',0)})")
 
@@ -269,6 +292,7 @@ def scan(dry: bool = False, limit: int | None = None, refresh_leagues: bool = Fa
 
     return {
         "leagues": len(leagues),
+        "league_diag": league_diag,
         "our_matches": len(db_matches),
         "matched": matched, "updated": updated, "unmatched": unmatched,
         "requests": c.req_count,
@@ -298,8 +322,14 @@ def main():
             st.set_total(result["our_matches"])
             for _ in range(result["updated"]):
                 st.tick_done()
-            st.note(f"matched={result['matched']} updated={result['updated']} "
-                    f"unmatched={result['unmatched']} reqs={result['requests']}")
+            # Surface league discovery diagnostic in notes — critical for debugging
+            # remote-only failures (Railway-side IP can't be probed locally).
+            st.note(
+                f"leagues={result['leagues']} "
+                f"diag=\"{result.get('league_diag','')}\" "
+                f"matched={result['matched']} updated={result['updated']} "
+                f"unmatched={result['unmatched']} reqs={result['requests']}"
+            )
     finally:
         if ctx: ctx.__exit__(None, None, None)
 
