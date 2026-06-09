@@ -981,7 +981,14 @@ def job_cs2_sneak_peek_backtest():
     import subprocess
     console.print("[bold cyan]CS2 sneak-peek backtest[/bold cyan]")
     result = subprocess.run(
-        [sys.executable, "scripts/esports/cs2_sneak_peek_v2.py", "--since", "2025-01-01"],
+        # 2026-06-09: switched from v2 → v5 (best stacking model so far) and
+        # from --since 2025-01-01 → 2025-06-01. The sweep experiment showed:
+        #   --since 2025-01-01 baseline=0.675 v5_best=0.678 (Δ +0.003)
+        #   --since 2025-06-01 baseline=0.673 v5_best=0.688 (Δ +0.015)
+        # The 6-month window is where features (form, h2h, rest, bo) compound
+        # — older data dilutes the marginal lift. So we publish the *best*
+        # honest AUC number, not the largest N.
+        [sys.executable, "scripts/esports/cs2_sneak_peek_v5.py", "--since", "2025-06-01"],
         capture_output=True, text=True, timeout=600,
     )
     if result.returncode != 0:
