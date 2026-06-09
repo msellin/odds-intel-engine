@@ -101,6 +101,23 @@ _RATING_CELL_RE = re.compile(r'<td class="rating[^"]*"[^>]*>\s*(\d\.\d{1,3})')
 
 
 def _fetch(url: str) -> str | None:
+    """Fetch via FlareSolverr if available (bypasses CF), else fall back to
+    plain requests (will hit CF blocks ~50% of time but works for non-/stats/*
+    URLs when CF isn't actively challenging us).
+
+    The FlareSolverr client enforces a global 6s rate limit, so even at
+    50-match batches we stay polite (~5 min wall clock minimum)."""
+    sys.path.insert(0, str(Path(__file__).parent))
+    try:
+        from flaresolverr_client import fetch as fs_fetch, is_available
+    except ImportError:
+        fs_fetch = None
+        is_available = lambda: False
+
+    if fs_fetch and is_available():
+        return fs_fetch(url, session="hltv_matches")
+
+    # Fallback to direct request
     try:
         r = requests.get(url, headers=HEADERS, timeout=20)
         if r.status_code != 200:

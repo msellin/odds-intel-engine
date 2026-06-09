@@ -87,6 +87,15 @@ def parse_team_roster(html: str) -> list[dict]:
 
 def fetch_team_roster(team_id: int, slug: str) -> list[dict]:
     url = f"https://www.hltv.org/team/{team_id}/{slug}"
+    # Try FlareSolverr first (defeats CF), fall back to plain requests
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from flaresolverr_client import fetch as fs_fetch, is_available
+        if is_available():
+            html = fs_fetch(url, session="hltv_rosters")
+            return parse_team_roster(html) if html else []
+    except ImportError:
+        pass
     try:
         r = requests.get(url, headers=HEADERS, timeout=20)
     except Exception as e:

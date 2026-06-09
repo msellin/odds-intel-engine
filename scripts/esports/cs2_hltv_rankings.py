@@ -58,10 +58,22 @@ _PLAYER_RE = re.compile(r'<div class="rankingNicknames"><span>([^<]+)</span></di
 
 
 def fetch_rankings() -> list[dict]:
-    """Fetch and parse the current HLTV team ranking."""
-    r = requests.get(URL, headers=HEADERS, timeout=15)
-    r.raise_for_status()
-    text = r.text
+    """Fetch and parse the current HLTV team ranking. Uses FlareSolverr when
+    available (defeats CF challenges)."""
+    text = None
+    try:
+        import sys as _sys
+        from pathlib import Path as _Path
+        _sys.path.insert(0, str(_Path(__file__).parent))
+        from flaresolverr_client import fetch as fs_fetch, is_available
+        if is_available():
+            text = fs_fetch(URL, session="hltv_rankings")
+    except ImportError:
+        pass
+    if not text:
+        r = requests.get(URL, headers=HEADERS, timeout=15)
+        r.raise_for_status()
+        text = r.text
 
     teams: list[dict] = []
     # Walk the page; for each ranked-team block extract rank/name/points/players

@@ -95,15 +95,27 @@ def discover_player_ids() -> dict[str, int]:
 
 def fetch_player_rating(pid: int, slug: str) -> float | None:
     url = f"https://www.hltv.org/player/{pid}/{slug}"
+    text = None
     try:
-        r = requests.get(url, headers=HEADERS, timeout=15)
-        if r.status_code != 200:
+        import sys as _sys
+        from pathlib import Path as _Path
+        _sys.path.insert(0, str(_Path(__file__).parent))
+        from flaresolverr_client import fetch as fs_fetch, is_available
+        if is_available():
+            text = fs_fetch(url, session="hltv_ratings")
+    except ImportError:
+        pass
+    if not text:
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=15)
+            if r.status_code != 200:
+                return None
+            text = r.text
+        except Exception as e:
+            print(f"    [!] {slug}: {e}", file=sys.stderr)
             return None
-        m = _RATING_RE.search(r.text) or _RATING_FALLBACK_RE.search(r.text)
-        return float(m.group(1)) if m else None
-    except Exception as e:
-        print(f"    [!] {slug}: {e}", file=sys.stderr)
-        return None
+    m = _RATING_RE.search(text) or _RATING_FALLBACK_RE.search(text)
+    return float(m.group(1)) if m else None
 
 
 def _load_json(path: Path) -> dict:

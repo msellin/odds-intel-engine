@@ -136,6 +136,28 @@ CS2_MAP_POOL = ["Mirage", "Inferno", "Nuke", "Dust2", "Ancient", "Anubis", "Trai
 _MAP_WINRATE_RE = re.compile(r"(Mirage|Inferno|Nuke|Dust2|Ancient|Anubis|Train|Overpass|Vertigo)\s*-\s*(\d+\.?\d*)%")
 
 
+# FlareSolverr helper — try once for /stats/* URLs since they're CF-protected.
+# Falls back to the cookie-based session.get() on FlareSolverr unavailability.
+def _fetch_url(session: requests.Session, url: str) -> str | None:
+    try:
+        import sys as _sys
+        from pathlib import Path as _Path
+        _sys.path.insert(0, str(_Path(__file__).parent))
+        from flaresolverr_client import fetch as fs_fetch, is_available
+        if is_available():
+            return fs_fetch(url, session="hltv_stats")
+    except ImportError:
+        pass
+    try:
+        r = session.get(url, timeout=20)
+        if r.status_code == 200:
+            return r.text
+        print(f"  [!] {r.status_code} on {url[-60:]}", file=sys.stderr)
+    except Exception as e:
+        print(f"  [!] {url[-60:]} {e}", file=sys.stderr)
+    return None
+
+
 def fetch_team_maps_summary(session: requests.Session, team_id: int, slug: str,
                             start_date: str, end_date: str) -> tuple[dict[str, float], dict]:
     """One request per team — extract per-map win rates + team aggregate stats.
@@ -150,18 +172,14 @@ def fetch_team_maps_summary(session: requests.Session, team_id: int, slug: str,
     """
     url = (f"https://www.hltv.org/stats/teams/maps/{team_id}/{slug}"
            f"?startDate={start_date}&endDate={end_date}")
-    r = session.get(url, timeout=20)
-    if r.status_code == 403:
-        print(f"  [!] 403 on {url} — cookies likely expired", file=sys.stderr)
-        return {}, {}
-    if not r.ok:
-        print(f"  [!] {r.status_code} on team {team_id}", file=sys.stderr)
+    html = _fetch_url(session, url)
+    if not html:
         return {}, {}
     out: dict[str, float] = {}
-    for mp, pct in _MAP_WINRATE_RE.findall(r.text):
+    for mp, pct in _MAP_WINRATE_RE.findall(html):
         if mp not in out:
             out[mp] = float(pct)
-    aggregate = parse_team_map_page(r.text)
+    aggregate = parse_team_map_page(html)
     return out, aggregate
 
 
@@ -175,7 +193,10 @@ def discover_team_ids(session: requests.Session) -> dict[str, tuple[int, str]]:
     The page has 248 ranked teams. Use a flat scan + assume the name and the
     first /team/{id}/{slug} link inside each rank's section pair up.
     """
-    r = session.get("https://www.hltv.org/ranking/teams", timeout=15)
+    html = _fetch_url(session, "https://www.hltv.org/ranking/teams")
+    # Wrap result so the rest of the function can keep using `.text`
+    class _R: pass
+    r = _R(); r.text = html or ""; r.ok = bool(html); r.status_code = 200 if html else 0
     if not r.ok:
         return {}
     # Pull names + IDs in order. Each ranked-team starts with a <span class="name">
@@ -242,7 +263,9 @@ _MAP_LINK_RE = re.compile(r'href="/stats/maps/map/(\d+)/([^"\']+)"')
 
 
 def discover_map_ids(session: requests.Session) -> list[tuple[int, str]]:
-    r = session.get("https://www.hltv.org/stats/maps", timeout=15)
+    html = _fetch_url(session, "https://www.hltv.org/stats/maps")
+    class _R: pass
+    r = _R(); r.text = html or ""; r.ok = bool(html); r.status_code = 200 if html else 0
     if not r.ok:
         return []
     seen = set()
@@ -258,24 +281,14 @@ def discover_map_ids(session: requests.Session) -> list[tuple[int, str]]:
 
 def fetch_player_stats(session: requests.Session, player_id: int, slug: str) -> dict:
     url = f"https://www.hltv.org/stats/players/{player_id}/{slug}"
-    r = session.get(url, timeout=20)
-    if r.status_code == 403:
-        print(f"  [!] 403 on {url}", file=sys.stderr)
-        return {}
-    if not r.ok:
-        return {}
-    return _flatten_stats_rows(r.text)
+    html = _fetch_url(session, url)
+    return _flatten_stats_rows(html) if html else {}
 
 
 def fetch_map_meta(session: requests.Session, map_id: int, slug: str) -> dict:
     url = f"https://www.hltv.org/stats/maps/map/{map_id}/{slug}"
-    r = session.get(url, timeout=20)
-    if r.status_code == 403:
-        print(f"  [!] 403 on {url}", file=sys.stderr)
-        return {}
-    if not r.ok:
-        return {}
-    return _flatten_stats_rows(r.text)
+    html = _fetch_url(session, url)
+    return _flatten_stats_rows(html) if html else {}
 
 
 def main() -> None:

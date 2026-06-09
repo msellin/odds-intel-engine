@@ -30,6 +30,16 @@ from typing import Optional
 FLARESOLVERR_URL = os.getenv("FLARESOLVERR_URL", "http://localhost:8191")
 DEFAULT_TIMEOUT_MS = 90000
 
+# Global rate-limit guard. FlareSolverr itself uses a real browser, so HLTV
+# sees us as a normal visitor — but we should still pace requests to avoid
+# triggering rate-limiting on HLTV's side (or FlareSolverr's own internal
+# queue). 6s default gives us ~10 req/min per session, plenty for cron
+# scrapers, well below any reasonable rate limit.
+#
+# Override via FLARESOLVERR_MIN_INTERVAL_S env if needed.
+_MIN_INTERVAL_S = float(os.getenv("FLARESOLVERR_MIN_INTERVAL_S", "6.0"))
+_last_request_at = 0.0
+
 
 def is_available() -> bool:
     """Quick GET / to check FlareSolverr is reachable."""
@@ -40,20 +50,41 @@ def is_available() -> bool:
         return False
 
 
+def _enforce_rate_limit() -> None:
+    """Ensure at least _MIN_INTERVAL_S has elapsed since the previous request.
+
+    Defensive politeness: even though FlareSolverr presents as a real browser,
+    bursting hundreds of requests would still flag the IP. This caps us at
+    ~10 req/min on the slowest path (6s default interval) — invisible to
+    HLTV but more than fast enough for any cron-style backfill.
+    """
+    global _last_request_at
+    now = time.monotonic()
+    wait = _MIN_INTERVAL_S - (now - _last_request_at)
+    if wait > 0:
+        time.sleep(wait)
+    _last_request_at = time.monotonic()
+
+
 def fetch(
     url: str,
     *,
     session: str = "hltv_default",
     max_timeout_ms: int = DEFAULT_TIMEOUT_MS,
     retries: int = 2,
-    polite_sleep: float = 1.0,
+    polite_sleep: float = 0.0,  # use global _MIN_INTERVAL_S instead
 ) -> Optional[str]:
     """Fetch URL through FlareSolverr. Returns HTML string or None on failure.
 
     Sessions are persistent FlareSolverr browser contexts — first request
     on a new session takes ~5-15s (CF challenge); subsequent calls on the
     same session reuse the warm browser (~1-2s).
+
+    Rate-limited globally by _MIN_INTERVAL_S (default 6s). All callers go
+    through the same throttle so concurrent batches stay polite.
     """
+    _enforce_rate_limit()
+
     body = {
         "cmd": "request.get",
         "url": url,
@@ -81,7 +112,8 @@ def fetch(
             last_err = str(e)
             print(f"  [flaresolverr] attempt {attempt + 1} error: {e}")
         if attempt < retries:
-            time.sleep(3)
+            # Backoff increases per attempt
+            time.sleep(5 + 5 * attempt)
 
     print(f"  [flaresolverr] gave up after {retries + 1} attempts: {last_err}")
     return None
