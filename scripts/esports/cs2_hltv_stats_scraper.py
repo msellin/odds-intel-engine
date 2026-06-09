@@ -314,37 +314,27 @@ def main() -> None:
                         map_name=EXCLUDED.map_name, stats=EXCLUDED.stats, fetched_at=NOW()
                 """, (mid, slug, json.dumps(stats)))
 
-    # --players-top-n: per-player /stats/players/{id}/{slug}
+    # --players-top-n: scrape first N players from the player_ids cache.
+    # cs2_hltv_rankings.players is unpopulated (parser fallback didn't store it)
+    # so we take the discovered player ID cache as the universe.
     if args.players_top_n:
         print("\n=== Player-stats backfill ===")
-        team_id_map = discover_team_ids(s)
-        # Players we care about: rosters of HLTV top-N teams
-        rankings = execute_query("""
-            SELECT DISTINCT ON (team_name) team_name, players
-            FROM cs2_hltv_rankings
-            WHERE hltv_rank <= %s
-            ORDER BY team_name, snapshot_date DESC
-        """, (args.players_top_n,))
-        # Need player_id resolution — read from cached hltv_player_ids.json
         try:
             id_cache = json.loads(Path("data/esports/cs2/hltv_player_ids.json").read_text())
         except (json.JSONDecodeError, OSError):
             id_cache = {}
-        seen_players: set[int] = set()
-        for r in rankings:
-            for nick in (r.get("players") or []):
-                pid = id_cache.get(nick.lower())
-                if pid and pid not in seen_players:
-                    seen_players.add(pid)
-        print(f"  {len(seen_players)} unique players from top-{args.players_top_n} rosters")
+        # First N alphabetically by nickname — gives a decent sample
+        targets_pl: list[tuple[int, str]] = sorted(
+            ((pid, nick) for nick, pid in id_cache.items()),
+            key=lambda x: x[1]
+        )[:args.players_top_n]
+        print(f"  {len(targets_pl)} players from cache (alphabetical first {args.players_top_n})")
 
-        for i, pid in enumerate(sorted(seen_players)):
+        for i, (pid, slug) in enumerate(targets_pl):
             if i > 0:
                 time.sleep(RATE_DELAY)
-            # need slug — derive from cache (nickname-lower works as slug for most)
-            slug = next((nick for nick, p in id_cache.items() if p == pid), str(pid))
             stats = fetch_player_stats(s, pid, slug)
-            print(f"  [{i+1:>3}/{len(seen_players)}] id={pid:>5} slug={slug:20}  fields={len(stats)}")
+            print(f"  [{i+1:>3}/{len(targets_pl)}] id={pid:>5} slug={slug:20}  fields={len(stats)}")
             if args.record and stats:
                 execute_write("""
                     INSERT INTO cs2_hltv_player_stats (hltv_player_id, nickname, stats, fetched_at)
