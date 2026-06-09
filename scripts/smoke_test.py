@@ -19819,6 +19819,58 @@ def _():
     assert fm is not None and -1.0 <= fm <= 1.0
 
 
+@test("CS2-HLTV-MATCH-DETAILS — scraper + migration + cron")
+def _():
+    import pathlib, ast
+    p = pathlib.Path("scripts/esports/cs2_hltv_match_details.py")
+    assert p.exists()
+    src = p.read_text()
+    for fn in ["fetch_results_listing", "queue_new_matches", "parse_match", "write_match", "process_queue"]:
+        assert f"def {fn}" in src, f"{fn} missing"
+    assert "RATE_DELAY = 8.0" in src      # slow scrape
+
+    mig = pathlib.Path("supabase/migrations/209_cs2_hltv_match_details.sql").read_text()
+    for tbl in ["cs2_hltv_matches", "cs2_hltv_match_maps", "cs2_hltv_match_veto",
+                "cs2_hltv_player_match_stats", "cs2_hltv_match_queue"]:
+        assert f"CREATE TABLE IF NOT EXISTS {tbl}" in mig, f"missing table {tbl}"
+
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    tree = ast.parse(sched)
+    fns = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    assert "job_cs2_hltv_match_details_queue" in fns
+    assert "job_cs2_hltv_match_details_process" in fns
+    ids = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "add_job":
+            for kw in n.keywords:
+                if kw.arg == "id" and isinstance(getattr(kw.value, "value", None), str):
+                    ids.add(kw.value.value)
+    assert "cs2_hltv_match_details_queue" in ids
+    assert "cs2_hltv_match_details_process" in ids
+
+    # Parser unit: feed a tiny snippet with veto + maps + player
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("hltv_md", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    snippet = '''
+    <a class="teamName team">Club 333</a>
+    <a class="teamName team">Chicken Coop</a>
+    <div>Best of 3 (Online)</div>
+    <div class="veto-box"><div class="padding">
+      <div>1. Chicken Coop removed Mirage</div>
+      <div>2. Club 333 picked Inferno</div>
+      <div>3. Nuke was left over</div>
+    </div></div>
+    '''
+    parsed = mod.parse_match(snippet)
+    assert parsed["team1"] == "Club 333"
+    assert parsed["best_of"] == 3
+    assert len(parsed["veto"]) == 3
+    assert parsed["veto"][0]["action"] == "removed"
+    assert parsed["veto"][2]["action"] == "left_over"
+
+
 @test("CS2-HLTV-PLAYER-RATINGS — scraper + table for live PQ + scanner wiring")
 def _():
     import pathlib, ast

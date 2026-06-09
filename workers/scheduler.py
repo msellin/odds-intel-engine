@@ -800,6 +800,44 @@ def job_cs2_hltv_predict():
     _run_job("cs2_hltv_predict", lambda: None)
 
 
+def job_cs2_hltv_match_details_queue():
+    """CS2-HLTV-MATCH-DETAILS-QUEUE (2026-06-09): pull HLTV /results, queue
+    new match IDs into cs2_hltv_match_queue. Cheap: 1 page request per run.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 HLTV match queue refresh[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_hltv_match_details.py", "--queue", "--pages", "2"],
+        capture_output=True, text=True, timeout=120,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]HLTV queue error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if "queued" in line or "page" in line:
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_hltv_match_details_queue", lambda: None)
+
+
+def job_cs2_hltv_match_details_process():
+    """CS2-HLTV-MATCH-DETAILS-PROCESS (2026-06-09): fetch + parse N queued
+    match pages each run. Polite 8s rate limit, so 60 matches takes ~8 min.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 HLTV match details processor[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_hltv_match_details.py", "--process", "60"],
+        capture_output=True, text=True, timeout=1800,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]HLTV details error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ["fetched:", "queued", "✓", "✗", "parse failed"]):
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_hltv_match_details_process", lambda: None)
+
+
 def job_cs2_hltv_player_ratings():
     """CS2-HLTV-PLAYER-RATINGS (2026-06-09): refresh live HLTV Rating 3.0 for
     top-100 teams' rosters. Run weekly (Tuesday 06:00 UTC) since HLTV updates
@@ -2010,6 +2048,20 @@ def main():
     # as cs2_scanner but offset 5 min so cs2_upcoming_matches has fresh HLTV.
     scheduler.add_job(job_cs2_hltv_predict, CronTrigger(hour="6,10,14,18,22", minute=17),
                       id="cs2_hltv_predict", name="CS2 HLTV-only Predict [4h, 06-22 UTC]",
+                      max_instances=1, misfire_grace_time=1800)
+
+    # CS2-HLTV-MATCH-DETAILS (2026-06-09): pulls /results to queue new
+    # finished matches twice daily, then processor walks the queue at 8s/req.
+    scheduler.add_job(job_cs2_hltv_match_details_queue,
+                      CronTrigger(hour="3,15", minute=10),
+                      id="cs2_hltv_match_details_queue",
+                      name="CS2 HLTV /results → queue [twice daily]",
+                      max_instances=1, misfire_grace_time=900)
+    # Processor runs every 2 hours during off-peak; 60 matches × 8s = 8 min.
+    scheduler.add_job(job_cs2_hltv_match_details_process,
+                      CronTrigger(hour="3,5,7,9,11,13,15,17,19,21,23", minute=30),
+                      id="cs2_hltv_match_details_process",
+                      name="CS2 HLTV match-detail processor [60 per run]",
                       max_instances=1, misfire_grace_time=1800)
 
     # CS2-HLTV-PLAYER-RATINGS (2026-06-09) — weekly Tuesday 06:00 UTC.
