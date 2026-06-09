@@ -905,6 +905,28 @@ def job_cs2_hltv_player_ratings():
     _run_job("cs2_hltv_player_ratings", lambda: None)
 
 
+def job_cs2_pinnacle_scanner():
+    """CS2-PINNACLE (2026-06-09): scrape Pinnacle CS2 moneyline odds from the
+    public guest API. Pinnacle's closing line is the gold-standard truth label
+    in sports betting — adding pinnacle_implied_prob as a model feature is
+    documented to add 2-5pp AUC. Geo-blocked from EU IPs but Railway's US IP
+    works. Polite 4-6s jitter, hard cap 80 reqs/run.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 Pinnacle scanner[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_pinnacle_scanner.py"],
+        capture_output=True, text=True, timeout=900,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]CS2 Pinnacle scanner error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if "✓" in line or "leagues:" in line or "result:" in line or "matched=" in line:
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_pinnacle_scanner", lambda: None)
+
+
 def job_cs2_hltv_rosters():
     """CS2-ROSTERS (2026-06-09): scrape current rosters + days_in_team per
     player from /team/{id}/{slug} (no auth needed). Lets us detect roster
@@ -2191,6 +2213,15 @@ def main():
                       id="cs2_hltv_rosters",
                       name="CS2 HLTV team rosters [daily 02:00 UTC]",
                       max_instances=1, misfire_grace_time=3600)
+
+    # CS2-PINNACLE (2026-06-09) — every 30 min during peak hours (10-23 UTC).
+    # Closing-line scrape provides the gold-standard truth label. Polite:
+    # ~30-60 requests per fire with 4-6s jitter = ~3-6 min runtime.
+    scheduler.add_job(job_cs2_pinnacle_scanner,
+                      CronTrigger(hour="10-23", minute="*/30"),
+                      id="cs2_pinnacle_scanner",
+                      name="CS2 Pinnacle odds [every 30 min, 10-23 UTC]",
+                      max_instances=1, misfire_grace_time=600)
 
     # CS2-HLTV-RANKINGS (2026-06-09) — daily 05:00 UTC. Top-248 teams from
     # HLTV. Builds a time series we can use as an orthogonal strength signal
