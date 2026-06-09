@@ -145,3 +145,127 @@ to ≥10k with rich features.
 - Can we get FACEIT ELO via API to enrich tier-3/4 player ratings?
 - After PandaScore backfill completes, UNION with cs2_results → v7 base
 - Pinnacle Railway test — did the US IP work? Read scraper_state notes.
+
+---
+
+# Deep Research — CS2 Game Dynamics & Signals We're Missing (2026-06-09)
+
+Research-agent findings from the "what else could we predict on" pass.
+Ranked TOP 5 signals to integrate next, by (predictive lift × accessibility / effort):
+
+## #1 — Pistol Round Win Rate (rolling, per-team, per-map)
+
+**Mechanism:** Winning both pistols → ~70-80% match-win in pro Bo1 play.
+Pistol → $3,250 anti-eco → bonus round → 3-0 start → ~$15k economy lead.
+Round 1 outcome alone changes match-win prob by 12-18pp.
+
+**Source:** `https://www.hltv.org/stats/teams/pistols?startDate=&endDate=&teamName=...`
+**Effort:** 1 day. Nightly scraper → `cs2_team_pistol_stats`.
+**Estimated lift:** **+0.010 to +0.015 AUC** (partly orthogonal to rating).
+
+## #2 — Starting-Side Signal + Map-Specific Side Bias
+
+**Mechanism:** Map side bias is real (Nuke 57% CT, Anubis 57% T, Overpass +12.8pp
+CT edge). Which side a team **starts on** (knife round result) shifts win prob
+4-8% on lopsided maps. We capture CT/T halftime rounds but not "which side
+the team chose at knife."
+
+**Source:** PandaScore `/csgo/games/{id}` returns side-start; HLTV match
+scoreboard JSON also exposes it.
+**Effort:** 1 day. Add `starting_side` column to `cs2_hltv_match_maps`;
+parser extension. Interaction term with map_side_bias in model.
+**Estimated lift:** **+0.008 to +0.012 AUC** (concentrated on Nuke/Anubis/Overpass).
+
+## #3 — Veto-Derived Predicted Decider + "Forced Off Permaban"
+
+**Mechanism:** Veto is documented as ~50% of pre-match edge. Permabans are
+extremely stable (top teams ban same map 70%+ of the time). The decider map
+(left over after bans) is highly predictable from teams' veto histories.
+"Forced off permaban" — when a team's preferred map gets banned out and they
+must play their 4th-favorite — historically -8 to -12pp win prob hit.
+
+**Source:** Already in our `cs2_hltv_match_veto` table (937+ rows).
+**Effort:** 1 day. Pure SQL/Python on existing data. Add:
+- `rolling_permaban_freq` per team (last 20 vetoes)
+- `predicted_decider_winrate_diff` (team-specific decider map win rate)
+- `forced_off_permaban_flag`
+**Estimated lift:** **+0.006 to +0.010 AUC**.
+
+## #4 — Demo-Derived Stats (Leetify-style: trade-kill %, utility, multi-kills)
+
+**Mechanism:** Demo-parsed stats are mostly **orthogonal** to scoreboard. Top
+predictors:
+- Trade-kill % (high-trade teams have lower variance)
+- Utility damage per round (correlates with map control)
+- Multi-kill rate (3K+, 4K, ACE)
+- Time alive (lurker proxy)
+- Opening duel split by side
+
+**Source:** HLTV demo downloads (free .dem.gz from match pages) + `demoinfocs-golang`
+parser. ~30s per demo on commodity hardware. Or Leetify Pro API (paid).
+**Effort:** 3-5 days. Build Go/Python demo parser worker. Store per-team
+per-match aggregates.
+**Estimated lift:** **+0.010 to +0.018 AUC** — highest single feature class,
+because it's mostly new info.
+
+## #5 — Roster-Change × Role Interaction
+
+**Mechanism:** IGL absence is documented as -10 to -20pp win prob (catastrophic
+for team coordination). Star fragger absence is -5 to -10pp. AWPer absence
+varies by map (more impact on long-sightline maps like Mirage, Dust2).
+"Roster change in last 30 days" alone is too coarse — needs to know **which role** changed.
+
+**Source:** HLTV team page roster history + Liquipedia role tags. ~50 active
+rosters × manual role mapping = 2-hour spreadsheet.
+**Effort:** 2 days. Extend `cs2_hltv_team_rosters` with `role` column; add
+interaction term in stacking model.
+**Estimated lift:** **+0.007 to +0.012 AUC** (conditional — high on the ~5%
+of matches with recent roster changes; lower overall).
+
+## Other interesting findings (not in top 5)
+
+| Signal | Why interesting | Why not top 5 |
+|--------|-----------------|---------------|
+| Anti-eco efficiency (% of rounds won when opponent on eco) | Differentiates teams 65-85% | Needs demo or paid PandaScore |
+| Force-buy conversion rate | Some teams are notorious force-buyers | Demo parsing needed |
+| LAN vs Online performance gap | Real for some teams (-10-15% online for NA orgs) | Captured indirectly by recent form |
+| Time-zone fatigue | EU teams playing NA-time finals drop measurably | Hard to derive — needs venue + schedule |
+| Player form decay (10-map rolling vs 3-month) | Catches slumps + hot streaks | Lower priority; partly captured by our `days_since_match` |
+| CS2 vs CSGO era flag | Post-major-patch effects | Already implicit in `--since 2025-06-01` window |
+| Smoke meta (volumetric) impact | Teams strong on utility gained edge | Captured by recent form post-2024 |
+| Pistol → bonus round chain | Documented 70%+ conversion | Captured by #1 pistol stat |
+
+## Map side bias reference (2024-2025 pro data)
+
+| Map | CT% | T% | Edge |
+|-----|-----|-----|------|
+| Nuke | 57% | 43% | +14 CT |
+| Overpass | 56.4% | 43.6% | +12.8 CT |
+| Mirage | 54% | 46% | +8 CT |
+| Train (re-added 2025) | ~54% | ~46% | +8 CT (trending) |
+| Inferno (post-rework) | 51% | 49% | +2 CT |
+| Ancient | 50.8% | 49.2% | +1.6 CT (most balanced) |
+| Dust2 | ~50% | ~50% | balanced |
+| Vertigo | 47.8% | 52.2% | +4.4 T |
+| Anubis | 43% | 57% | +14 T (most T-sided) |
+
+## Combined lift estimate
+
+If all top-5 land cleanly: baseline 0.673 → ~0.715-0.730 AUC.
+Net realistic after stacking redundancy: **+0.025-0.035 over current best 0.688**.
+Target landing zone: **AUC 0.71-0.73** with all 5 features integrated.
+
+## Sources cited
+
+- Abios — CS2 map win rates
+- Bitskins — CS2 map sides 2025
+- Dust2.us — FACEIT side bias data
+- HLTV — `/stats/teams/pistols`, `/stats/players?csVersion=CS2`, Rating 3.0
+- ProSettings, Boosteria — CS2 economy guides
+- Rush B Media — Anatomy of map vetoes
+- Leetify — Stats glossary + Leetify Rating
+- SCOPE.GG blog — First duel predictive analysis
+- PandaScore — CS2 docs
+- CSspot — LAN vs Online performance gap research
+- Pinnacle — CS2 tournament tactics analysis
+
