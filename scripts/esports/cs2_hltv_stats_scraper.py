@@ -164,19 +164,31 @@ _TEAM_LINK_RE = re.compile(r'href="/team/(\d+)/([^"\']+)"')
 
 
 def discover_team_ids(session: requests.Session) -> dict[str, tuple[int, str]]:
-    """Return {team_name_lower: (team_id, slug)} from /ranking/teams."""
+    """Return {team_name_lower: (team_id, slug)} from /ranking/teams.
+
+    The page has 248 ranked teams. Use a flat scan + assume the name and the
+    first /team/{id}/{slug} link inside each rank's section pair up.
+    """
     r = session.get("https://www.hltv.org/ranking/teams", timeout=15)
     if not r.ok:
         return {}
-    # Same-position pattern as our ranking parser, with team-link nearby
+    # Pull names + IDs in order. Each ranked-team starts with a <span class="name">
+    # then a /team/{id}/{slug} link appears soon after.
+    # Iterate matches of both with positions, then zip.
+    name_iter = list(re.finditer(r'<span class="name">([^<]+)</span>', r.text))
+    link_iter = list(re.finditer(r'href="/team/(\d+)/([^"\']+)"', r.text))
     out: dict[str, tuple[int, str]] = {}
-    # Walk each ranked-team block
-    for blk in re.findall(r'<div class="ranked-team standard-box">(.*?)</div>\s*</div>\s*</div>\s*</div>\s*</div>',
-                          r.text, re.DOTALL):
-        name_m = re.search(r'<span class="name">([^<]+)</span>', blk)
-        link_m = _TEAM_LINK_RE.search(blk)
-        if name_m and link_m:
-            out[name_m.group(1).strip().lower()] = (int(link_m.group(1)), link_m.group(2))
+    li = 0
+    for nm_m in name_iter:
+        # advance link iterator to first link AFTER this name's position
+        while li < len(link_iter) and link_iter[li].start() < nm_m.end():
+            li += 1
+        if li >= len(link_iter):
+            break
+        name = nm_m.group(1).strip()
+        tid = int(link_iter[li].group(1))
+        slug = link_iter[li].group(2)
+        out.setdefault(name.lower(), (tid, slug))
     return out
 
 
