@@ -267,10 +267,13 @@ def parse_match(html: str) -> dict | None:
 
     # Per-player stats — one totalstats table per team per map.
     # Tables alternate: [map1_team1, map1_team2, map2_team1, map2_team2, ...]
-    # so floor(table_index / 2) gives the map_idx.
+    # so floor(table_index / 2) gives the map_idx and table_index % 2 gives the
+    # team side (0 = team1 of the match, 1 = team2).
     players = []
     for tbl_idx, ts_block in enumerate(_TOTALSTATS_RE.findall(html)):
         map_idx = tbl_idx // 2
+        team_side = tbl_idx % 2  # 0 = team1, 1 = team2
+        team_name = team1 if team_side == 0 else team2
         if map_idx >= len(maps):
             continue
         for row in re.findall(r"<tr[^>]*>(.*?)</tr>", ts_block, re.DOTALL):
@@ -289,6 +292,7 @@ def parse_match(html: str) -> dict | None:
             players.append({
                 "id": pid,
                 "nickname": nick,
+                "team_name": team_name,
                 "map_idx": map_idx,
                 "kills": int(kd_m.group(1)),
                 "deaths": int(kd_m.group(2)),
@@ -354,11 +358,11 @@ def write_match(mid: int, slug: str, parsed: dict) -> None:
         map_name = parsed["maps"][p["map_idx"]]["name"] if p["map_idx"] < len(parsed["maps"]) else None
         execute_write("""
             INSERT INTO cs2_hltv_player_match_stats
-                (hltv_match_id, hltv_player_id, nickname,
+                (hltv_match_id, hltv_player_id, nickname, team_name,
                  map_order, map_name, kills, deaths, adr, kast, rating)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT DO NOTHING
-        """, (mid, p["id"], p["nickname"],
+        """, (mid, p["id"], p["nickname"], p.get("team_name"),
               map_order, map_name, p["kills"], p["deaths"], p["adr"], p["kast"], p["rating"]))
 
 
