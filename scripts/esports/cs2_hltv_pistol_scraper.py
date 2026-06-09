@@ -79,21 +79,69 @@ def make_session() -> requests.Session:
     return s
 
 
-# Pistol table rows: team link + maps + rounds + pistols played + pistols won + pistol win%
-_TEAM_ROW_RE = re.compile(
-    r'<tr[^>]*>\s*'
-    r'<td[^>]*><a href="/stats/teams/(\d+)/([^"]+)"[^>]*>([^<]+)</a></td>\s*'
-    r'<td[^>]*>(\d+)</td>\s*'
-    r'<td[^>]*>(\d+)</td>\s*'
-    r'<td[^>]*>(\d+)</td>\s*'
-    r'<td[^>]*>(\d+)</td>\s*'
-    r'<td[^>]*>([\d.]+)%?</td>',
+# Pistol table actual structure (verified via FlareSolverr 2026-06-09):
+# col 0: team link <a href="/stats/teams/{id}/{slug}">name</a>
+# col 1: maps played
+# col 2: "W - L" (eg "195 - 175")
+# col 3: pistol win %
+# col 4: ??? (rounds won after pistol win — high values, 75-90%)
+# col 5: ??? (rounds won after pistol loss — low values, 15-35%)
+_TEAMS_TABLE_RE = re.compile(
+    r'<table[^>]*class="[^"]*stats-table[^"]*"[^>]*>(.*?)</table>',
     re.DOTALL,
 )
+_TBODY_RE = re.compile(r'<tbody[^>]*>(.*?)</tbody>', re.DOTALL)
+_TR_RE   = re.compile(r'<tr[^>]*>(.*?)</tr>', re.DOTALL)
+_TD_RE   = re.compile(r'<td[^>]*>(.*?)</td>', re.DOTALL)
+_TEAM_LINK_RE = re.compile(r'<a href="/stats/teams/(\d+)/([^"]+)"[^>]*>([^<]+)</a>')
 
 
-def fetch_pistol_page(session: requests.Session, start_date: str, end_date: str,
+def _parse_pistol_rows(html: str) -> dict[int, dict]:
+    out: dict[int, dict] = {}
+    table_m = _TEAMS_TABLE_RE.search(html)
+    if not table_m:
+        return out
+    tbody_m = _TBODY_RE.search(table_m.group(1))
+    if not tbody_m:
+        return out
+    for row in _TR_RE.finditer(tbody_m.group(1)):
+        cells = _TD_RE.findall(row.group(1))
+        if len(cells) < 4:
+            continue
+        link_m = _TEAM_LINK_RE.search(cells[0])
+        if not link_m:
+            continue
+        tid = int(link_m.group(1))
+        slug = link_m.group(2)
+        name = link_m.group(3).strip()
+        def _num(s):
+            t = re.sub(r'<[^>]+>', '', s).strip().rstrip('%')
+            try: return float(t)
+            except ValueError: return None
+        maps_played = _num(cells[1])
+        # "W - L" cell — split on "-"
+        wl_text = re.sub(r'<[^>]+>', '', cells[2]).strip()
+        wl_m = re.match(r'(\d+)\s*-\s*(\d+)', wl_text)
+        pistols_won = int(wl_m.group(1)) if wl_m else None
+        pistols_lost = int(wl_m.group(2)) if wl_m else None
+        pistols_played = (pistols_won + pistols_lost) if (pistols_won is not None and pistols_lost is not None) else None
+        pistol_win_pct = _num(cells[3])
+        out[tid] = {
+            "team_name": name,
+            "slug": slug,
+            "maps_played": int(maps_played) if maps_played is not None else None,
+            "pistols_played": pistols_played,
+            "pistols_won": pistols_won,
+            "pistol_win_pct": pistol_win_pct,
+            "rounds_played": None,  # not in this table; left for schema compat
+        }
+    return out
+
+
+def fetch_pistol_page(start_date: str, end_date: str,
                      side: str | None = None, ranking_filter: str = "Top50") -> dict:
+    """Use FlareSolverr to fetch + parse the pistol stats page."""
+    from flaresolverr_client import fetch as fs_fetch
     params = [
         f"startDate={start_date}",
         f"endDate={end_date}",
@@ -102,32 +150,10 @@ def fetch_pistol_page(session: requests.Session, start_date: str, end_date: str,
     if side:
         params.append(f"side={side}")
     url = f"{BASE}/stats/teams/pistols?" + "&".join(params)
-
-    try:
-        r = session.get(url, timeout=20)
-    except Exception as e:
-        print(f"  [!] {url[-80:]}: {e}", file=sys.stderr)
+    html = fs_fetch(url, session="hltv_pistol")
+    if not html:
         return {}
-    if r.status_code == 403:
-        print(f"  [!] 403 on {url} — cookies expired/missing", file=sys.stderr)
-        return {}
-    if not r.ok:
-        print(f"  [!] {r.status_code} on {url}", file=sys.stderr)
-        return {}
-
-    out: dict = {}
-    for m in _TEAM_ROW_RE.finditer(r.text):
-        tid = int(m.group(1))
-        out[tid] = {
-            "team_name":     m.group(3).strip(),
-            "slug":          m.group(2),
-            "maps_played":   int(m.group(4)),
-            "rounds_played": int(m.group(5)),
-            "pistols_played": int(m.group(6)),
-            "pistols_won":    int(m.group(7)),
-            "pistol_win_pct": float(m.group(8)),
-        }
-    return out
+    return _parse_pistol_rows(html)
 
 
 def merge_three_views(total, ct, t):
@@ -163,7 +189,15 @@ def main():
     args = ap.parse_args()
 
     print(f"\n=== HLTV pistol stats  {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC ===")
-    s = make_session()
+    # FlareSolverr handles CF challenges (Cloudflare blocks requests/curl_cffi
+    # even with valid cookies; FlareSolverr runs real Chrome that auto-solves).
+    sys.path.insert(0, str(Path(__file__).parent))
+    from flaresolverr_client import is_available as fs_available
+    if not fs_available():
+        print(f"  [!] FlareSolverr not reachable at FLARESOLVERR_URL — exit", file=sys.stderr)
+        print(f"  [!] Start with: docker run -d --name=flaresolverr -p 8191:8191 ghcr.io/flaresolverr/flaresolverr:latest", file=sys.stderr)
+        return
+    print(f"  [✓] FlareSolverr reachable")
 
     end = date.today()
     start = end - timedelta(days=args.days)
@@ -174,21 +208,21 @@ def main():
     st = ctx.__enter__() if ctx else None
 
     try:
-        print(f"  fetching overall...")
-        total = fetch_pistol_page(s, str(start), str(end), side=None, ranking_filter=ranking_filter)
+        print(f"  fetching overall (via FlareSolverr)...")
+        total = fetch_pistol_page(str(start), str(end), side=None, ranking_filter=ranking_filter)
         print(f"    {len(total)} teams")
         if not total:
-            print(f"  [!] no data — cookies may have expired", file=sys.stderr)
+            print(f"  [!] no data — page structure may have changed", file=sys.stderr)
             return
         time.sleep(RATE_DELAY)
 
         print(f"  fetching CT-side...")
-        ct = fetch_pistol_page(s, str(start), str(end), side="COUNTER_TERRORIST", ranking_filter=ranking_filter)
+        ct = fetch_pistol_page(str(start), str(end), side="COUNTER_TERRORIST", ranking_filter=ranking_filter)
         print(f"    {len(ct)} teams")
         time.sleep(RATE_DELAY)
 
         print(f"  fetching T-side...")
-        t = fetch_pistol_page(s, str(start), str(end), side="TERRORIST", ranking_filter=ranking_filter)
+        t = fetch_pistol_page(str(start), str(end), side="TERRORIST", ranking_filter=ranking_filter)
         print(f"    {len(t)} teams")
 
         merged = merge_three_views(total, ct, t)
