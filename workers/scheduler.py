@@ -905,6 +905,31 @@ def job_cs2_hltv_player_ratings():
     _run_job("cs2_hltv_player_ratings", lambda: None)
 
 
+def job_cs2_hltv_pistols():
+    """CS2-PISTOL (2026-06-09): scrape team pistol stats (overall + CT/T splits)
+    via FlareSolverr. Top-1 research finding (+0.010-0.015 AUC). Mechanism:
+    70-80% pistol→match correlation. Requires FlareSolverr Docker container
+    reachable at FLARESOLVERR_URL. Daily 03:30 UTC.
+    """
+    import subprocess
+    if not os.getenv("FLARESOLVERR_URL"):
+        # If not set, the scraper itself defaults to http://localhost:8191 and
+        # will skip gracefully when unreachable. Don't block — just log.
+        console.print("[yellow]CS2 pistol scraper: FLARESOLVERR_URL not set — using default localhost:8191[/yellow]")
+    console.print("[bold cyan]CS2 HLTV pistol stats[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_hltv_pistol_scraper.py", "--top-n", "50", "--record"],
+        capture_output=True, text=True, timeout=600,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]CS2 pistol scraper error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if "pistol" in line.lower() or "merged" in line.lower() or "teams" in line.lower():
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_hltv_pistols", lambda: None)
+
+
 def job_cs2_pandascore_matches():
     """CS2-PANDASCORE-MATCHES (2026-06-09): paginates PandaScore match history
     and UPSERTs into cs2_pandascore_matches. PandaScore covers tier-3/4
