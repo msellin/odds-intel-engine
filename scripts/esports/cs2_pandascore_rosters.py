@@ -57,13 +57,26 @@ def _save_cache(cache: dict) -> None:
 
 
 def _teams_from_db() -> list[str]:
+    """Pull team names from ALL match sources, not just upcoming. This expands
+    roster coverage from ~55 (top tournaments) to 500+ (incl. tier-3/4 teams
+    that play in CCT, qualifiers, ESEA leagues, etc.). Required for v6+ models
+    that need K/D per roster — Oxuji-style tier-3 teams were the original gap.
+    """
     from workers.api_clients.db import execute_query
+    sql = """
+        SELECT t FROM (
+          SELECT DISTINCT team1 AS t FROM cs2_upcoming_matches WHERE team1 IS NOT NULL
+          UNION SELECT DISTINCT team2 FROM cs2_upcoming_matches WHERE team2 IS NOT NULL
+          UNION SELECT DISTINCT team1 FROM cs2_results          WHERE team1 IS NOT NULL
+          UNION SELECT DISTINCT team2 FROM cs2_results          WHERE team2 IS NOT NULL
+          UNION SELECT DISTINCT team1_name FROM cs2_pandascore_matches WHERE team1_name IS NOT NULL
+          UNION SELECT DISTINCT team2_name FROM cs2_pandascore_matches WHERE team2_name IS NOT NULL
+          UNION SELECT DISTINCT team_name  FROM cs2_hltv_rankings WHERE team_name IS NOT NULL
+        ) u
+        WHERE LENGTH(t) > 0
+    """
     try:
-        rows = execute_query(
-            "SELECT DISTINCT team1 AS t FROM cs2_upcoming_matches "
-            "UNION SELECT DISTINCT team2 FROM cs2_upcoming_matches",
-            (),
-        )
+        rows = execute_query(sql, ())
         return sorted({r["t"] for r in rows if r.get("t")})
     except Exception as e:
         print(f"[!] DB query failed: {e}", file=sys.stderr)
