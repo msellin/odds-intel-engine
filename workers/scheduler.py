@@ -915,10 +915,13 @@ def job_cs2_hltv_match_details_queue():
 def job_cs2_hltv_match_details_process():
     """CS2-HLTV-MATCH-DETAILS-PROCESS (2026-06-09, bumped 2026-06-10):
     fetch + parse N queued match pages each run.
-    2026-06-10: --process 50 → 200 (RATE_DELAY also dropped 2.0 → 0.5).
-    200 × ~5s/match ≈ 17 min/run, fits inside 30-min timeout. 48 runs/day
-    × 200 = ~9,600/day theoretical, vs ~2,400 before.
+
+    Set DISABLE_MATCH_DETAILS_CRON=1 in Railway env to pause this cron
+    (e.g. when running a local long-loop processor that owns the queue).
     """
+    if os.getenv("DISABLE_MATCH_DETAILS_CRON", "").strip() == "1":
+        console.print("[yellow]CS2 match-details cron disabled via DISABLE_MATCH_DETAILS_CRON=1[/yellow]")
+        return
     import subprocess
     console.print("[bold cyan]CS2 HLTV match details processor[/bold cyan]")
     result = subprocess.run(
