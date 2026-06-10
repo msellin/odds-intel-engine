@@ -20749,6 +20749,91 @@ def _():
     assert "PROMOTE" in src, "v14 must print a PROMOTE recommendation"
 
 
+@test("CS2-HLTV-NATIVE-BACKTEST — HLTV-anchored walk-forward harness for v10/v13/v14")
+def _():
+    """The HLTV-native backtest evaluates v8-equivalent base features and the
+    three feature blocks (veto / starting-side / LAN-region) against
+    cs2_hltv_matches.winner_name directly — no bo3gg cs2_results join. This
+    unblocks honest evaluation in the post-Apr-2026 window where the
+    bo3gg-anchored sneak peeks returned 0.6-2.1% coverage.
+
+    Pins file existence, the helper function names, all four base feature
+    keys, both extra-feature lists, and that runs persist to
+    cs2_model_backtest_history under each native-* model name."""
+    src_path = _engine_path("scripts/esports/cs2_hltv_native_backtest.py")
+    assert src_path.exists(), "cs2_hltv_native_backtest.py must exist"
+    src = src_path.read_text()
+
+    # CLI cutoff and ground-truth source
+    assert "--cutoff" in src, "must expose --cutoff CLI flag"
+    assert "cs2_hltv_matches" in src, "must read ground truth from cs2_hltv_matches"
+    assert "winner_name" in src, "ground truth must come from winner_name"
+    # Anchored on the date column, not bo3gg cs2_results
+    assert "match_date" in src, "must split on match_date"
+    # The script must not actually QUERY cs2_results — docstring mentions of
+    # it are fine, but a SQL FROM/JOIN would re-introduce the bo3gg gap that
+    # this harness exists to bypass.
+    assert "FROM cs2_results" not in src and "JOIN cs2_results" not in src, (
+        "native backtest must NOT query cs2_results — that's the bo3gg "
+        "harness this script is designed to bypass"
+    )
+
+    # Loader helpers — single read of each table into memory
+    for fn in ["load_all_matches", "load_all_player_stats",
+               "load_all_veto", "load_all_map_sides",
+               "build_team_streams"]:
+        assert f"def {fn}" in src, f"must define {fn}()"
+
+    # Walk-forward PIT-correct base feature helpers
+    for fn in ["base_features_for", "h2h_winrate", "_bisect_strict_lt"]:
+        assert f"def {fn}" in src, f"must define {fn}() for PIT-correct features"
+
+    # Per-block feature helpers — copied from the v10/v13/v14 sneak peeks
+    assert "def v10_veto_features" in src, "must define v10_veto_features()"
+    assert "def ct_start_winrate" in src, "must define ct_start_winrate() (v13 block)"
+    assert "def bias_aligned_diff" in src, "must define bias_aligned_diff() (v13 block)"
+    assert "def team_home_region" in src, "must define team_home_region() (v14 block)"
+    assert "def detect_event_region" in src, "must define detect_event_region() (v14 block)"
+
+    # Base feature keys (the v8-equivalent baseline)
+    for feat in ["form_diff", "h2h_diff", "kd_diff", "rest_diff"]:
+        assert feat in src, f"base feature {feat} must be computed"
+
+    # v10 block features
+    for feat in ["permaban_match_diff", "decider_winrate_diff",
+                 "forced_off_permaban_flag"]:
+        assert feat in src, f"v10-veto-native must compute {feat}"
+
+    # v13 block features
+    for feat in ["ct_start_winrate_diff", "bias_aligned_diff"]:
+        assert feat in src, f"v13-side-native must compute {feat}"
+
+    # v14 block features
+    for feat in ["is_lan_event", "region_advantage_diff"]:
+        assert feat in src, f"v14-region-native must compute {feat}"
+
+    # Each feature block must be referenced as its own labelled run
+    assert "v10-veto-native" in src, "v10 block label must appear"
+    assert "v13-side-native" in src, "v13 block label must appear"
+    assert "v14-region-native" in src, "v14 block label must appear"
+
+    # Persistence — one row per model_name, tagged with shared RUN_ID
+    assert "cs2_model_backtest_history" in src, (
+        "must persist runs to cs2_model_backtest_history"
+    )
+    for model_name in ["hltv-native-baseline", "hltv-native-v10",
+                       "hltv-native-v13", "hltv-native-v14"]:
+        assert model_name in src, (
+            f"must tag persisted rows with model_name '{model_name}'"
+        )
+    assert "RUN_ID" in src, "must group rows by a shared RUN_ID per invocation"
+
+    # Operator-facing PROMOTE block per feature block
+    assert "PROMOTE" in src, "must print PROMOTE recommendations"
+    # Confirm the +0.002 AUC promote threshold lives in source
+    assert "0.002" in src, "PROMOTE rule must use the +0.002 AUC threshold"
+
+
 @test("CS2-MATCH-DETAILS-V2 — per-side CT/T splits + per-(player, map) stats + team_name")
 def _():
     import pathlib
