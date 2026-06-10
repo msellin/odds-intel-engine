@@ -1,10 +1,58 @@
 # Anonymous → Authenticated User Flow
 
-**Status:** Draft plan — pending decisions from user before implementation starts.
+**Status:** ✅ Phases 1–4 shipped 2026-06-10 (same day plan was drafted). Working in production. WAF rate-limit rule deferred to user (out-of-band Cloudflare config).
 
 **Created:** 2026-06-10
+**Shipped:** 2026-06-10
 **Owner:** Margus + Claude
-**Estimated effort:** 3–4 days across 4 phases
+**Actual effort:** ~6 hours (much faster than the 3–4 day estimate)
+
+---
+
+## What actually shipped (2026-06-10)
+
+**Engine (odds-intel-engine):**
+- Migration 234: `profiles.email` nullable + `handle_new_user` trigger updated to pass NULL through
+- Migration 235: RLS hardening — 9 tables flagged by Security Advisor + JWT `is_anonymous` block on `match_votes` + `match_notes` writes
+- Migration 236: `cs2_pit_team_map` view → `SECURITY INVOKER`
+- Migration 237: Anon-tracking columns on `ops_snapshots` + fix `total_users` to exclude anon
+- `workers/jobs/prune_anon_users.py` — weekly cron Sun 02:00 UTC, deletes anon idle 90+ days, hard cap 10k rows
+- `scripts/test_anon_auth_e2e.py` — backend E2E test script (broken by captcha enforcement but useful pre-deploy)
+
+**Frontend (odds-intel-web):**
+- `useAuth().isAnonymous` flag (truth source: `user.is_anonymous`)
+- `src/lib/anon-auth.ts` — `ensureAnonUser(supabase, source)` lazy creator
+- `src/lib/turnstile.ts` — Cloudflare Turnstile invisible widget loader
+- `src/components/upgrade-modal.tsx` — Google / Discord / email+password upgrade UI
+- `src/components/upgrade-modal-mount.tsx` — mounts at root layout
+- `src/components/anon-upgrade-banner.tsx` — sticky banner, 7d dismissal cooldown
+- Updated `match-favorite-button.tsx`: button visible to anon, triggers ensureAnonUser, opens upgrade modal on 3rd favorite
+- Updated `match-pick-button.tsx`: pick UI visible to anon, triggers ensureAnonUser
+- Updated `pricing-cards.tsx`: handles 403 from Stripe checkout → opens upgrade modal
+- Stripe checkout API returns 403 `anonymous_upgrade_required` for anon users
+- PostHog: anon users get `register({distinct_id})` not `identify()` (avoid per-user billing)
+
+**Supabase config (user-driven manual toggles):**
+- Authentication → Providers → User Signups: "Allow anonymous sign-ins" ON
+- Authentication → Providers → User Signups: "Allow manual linking" ON (required for `linkIdentity` OAuth upgrade)
+- Authentication → Providers → User Signups: "Confirm email" ON
+- Authentication → Attack Protection: Captcha protection ON, provider Cloudflare Turnstile, secret pasted
+
+**Cloudflare config (user-driven manual):**
+- Turnstile widget created — invisible mode, hostnames `oddsintel.app` + `www.oddsintel.app` + `localhost`
+- Site key in Vercel envs (production / preview / dev) as `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
+- WAF rate-limit rule on `/auth/v1/signup` — **not yet set** (optional defense in depth)
+
+## Resolved decisions
+
+| # | Decision | Resolution |
+|---|---|---|
+| 1 | `profiles.email` nullable? | **YES** (mig 234) |
+| 2 | Where to surface upgrade CTA? | Persistent dismissible banner + contextual modal on 3rd favorite + Stripe-checkout-blocked handoff |
+| 3 | Stripe checkout for anon? | **NO** — 403 with `anonymous_upgrade_required`, opens upgrade modal |
+| 4 | Anon prune horizon? | **90 days** (cron live, Sun 02:00 UTC) |
+| 5 | Anon counted in public user totals? | **NO** — `total_users` in `ops_snapshots` excludes `email IS NULL` |
+| 6 | Modal vs redirect for upgrade? | **Modal** in-place |
 
 ---
 
