@@ -20,13 +20,17 @@ direction-of-edge information cancels out the magnitude effect within 1X2.
 The leak is cross-market: 1X2 drift is a *proxy* for "this match got news",
 and our non-1X2 lines are stale.
 
-Refresh-only
-------------
-The MFV column `pinnacle_line_move_*_at_t6h` is frozen at T-6h, so it's
-NULL for matches placed by the 06:00 UTC morning pipeline (kickoffs 12-14h
-later, no T-6h snapshot yet). Morning bets account for 14% of the leak.
-Refresh-run bets (Phase 9, throughout the day) account for the other 86%.
-Morning protection is a deferred follow-up; this module ships refresh-only.
+Drift source: live odds_snapshots
+---------------------------------
+PIN-CROSS-DRIFT-T6H-LIVE fix (2026-06-10): the original implementation read
+`match_feature_vectors.pinnacle_line_move_*_at_t6h`, but those MFV columns
+are populated by the 22:30 UTC retrospective backfill (mfv_b_ml3_refresh
+→ backfill_mfv_b_ml3_v2_features.py) — they're NULL at live placement time.
+That defeated the veto silently for the entire shadow trail. Live drift is
+now computed at placement from `odds_snapshots` directly (see
+`get_live_pinnacle_drift`), which AF populates every 30 min throughout the
+trading day. Morning bets at T-12h+ may still have only 1 snapshot (no diff
+computable) — that's the natural fail-open case for the helper.
 
 Sample-size warnings
 --------------------
@@ -123,3 +127,46 @@ def check_pin_cross_drift_veto(
 def get_thresholds() -> dict[str, float]:
     """Read-only access to per-market thresholds for diagnostics / tests."""
     return dict(_PER_MARKET_THRESHOLDS)
+
+
+def get_live_pinnacle_drift(match_id: str) -> dict[str, Optional[float]]:
+    """Compute live Pinnacle 1X2 implied-prob drift for a match from
+    `odds_snapshots`. Returns a dict with keys home/draw/away mapped to
+    `(current_implied - opening_implied)` per selection — same definition
+    as the `pinnacle_line_move_{sel}` signal that supabase_client.py writes
+    to match_signals (lines 4196-4231).
+
+    A selection is None when fewer than 2 non-live Pinnacle snapshots exist
+    for it (typically morning bets at T-12h+ before AF has captured a second
+    refresh). The helper's caller falls open on all-None.
+
+    Replaces the MFV `_at_t6h` columns the pipeline used to read — those are
+    only populated by the 22:30 UTC retrospective backfill so they were NULL
+    at live placement, silently defeating the veto for its entire shadow run.
+    """
+    # Local import: keeps the module DB-free at import time (matches the
+    # pattern in daily_pipeline_v2's _eq_pin_cross local alias).
+    from workers.api_clients.db import execute_query
+
+    rows = execute_query(
+        """SELECT selection, odds, timestamp
+           FROM odds_snapshots
+           WHERE match_id = %s::uuid
+             AND market = '1x2'
+             AND bookmaker = 'Pinnacle'
+             AND odds > 1.0 AND is_live = false
+           ORDER BY selection, timestamp DESC""",
+        [match_id],
+    )
+    by_sel: dict[str, list] = {}
+    for r in rows:
+        by_sel.setdefault(r["selection"], []).append(r)
+
+    out: dict[str, Optional[float]] = {"home": None, "draw": None, "away": None}
+    for sel in ("home", "draw", "away"):
+        s_rows = by_sel.get(sel, [])
+        if len(s_rows) >= 2:
+            current = 1.0 / float(s_rows[0]["odds"])
+            opening = 1.0 / float(s_rows[-1]["odds"])
+            out[sel] = round(current - opening, 5)
+    return out

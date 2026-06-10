@@ -2882,9 +2882,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         # P2: Compute odds movement for this match (once per match, cached per market)
         odds_movement_cache = {}
 
-        # PIN-CROSS-DRIFT (2026-06-03): cache MFV drift+news columns once per match
-        # so the cross-market veto can fire without repeated DB hits per bot.
-        # Refresh-only — morning bets at T-12h+ have NULL drift (fail-open in helper).
+        # PIN-CROSS-DRIFT (2026-06-03): cache drift+news per match so the
+        # cross-market veto can fire without repeated DB hits per bot.
+        # PIN-CROSS-DRIFT-T6H-LIVE (2026-06-10): drift now sourced live from
+        # odds_snapshots (was: MFV `_at_t6h` cols, retrospective-only). Morning
+        # bets at T-12h with only 1 snapshot still fail-open in the helper.
         _pin_cross_drift_mfv: dict | None = None  # lazy-loaded on first non-1X2 bet
 
         # T1: AF prediction for this match (already looked up for Tier D above)
@@ -3169,16 +3171,28 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 _pin_cross_drift_decision = None
                 if os_market != "1x2":
                     if _pin_cross_drift_mfv is None:
+                        # PIN-CROSS-DRIFT-T6H-LIVE fix (2026-06-10): drift now
+                        # comes from odds_snapshots (live, 30-min cadence via AF)
+                        # instead of MFV `_at_t6h` columns (those are populated by
+                        # the 22:30 UTC retrospective backfill — NULL at live
+                        # placement, which silently defeated the veto). news is
+                        # still read from MFV since it IS live (news checker cron
+                        # runs 09:00/12:30/16:30/19:30 UTC).
                         from workers.api_clients.db import execute_query as _eq_pin_cross
+                        from workers.model.pin_cross_drift_veto import get_live_pinnacle_drift
+                        _drift_live = get_live_pinnacle_drift(str(match_id))
                         _mfv_rows = _eq_pin_cross(
-                            """SELECT pinnacle_line_move_home_at_t6h,
-                                      pinnacle_line_move_draw_at_t6h,
-                                      pinnacle_line_move_away_at_t6h,
-                                      news_impact_score
+                            """SELECT news_impact_score
                                FROM match_feature_vectors WHERE match_id = %s""",
                             [match_id],
                         )
-                        _pin_cross_drift_mfv = _mfv_rows[0] if _mfv_rows else {}
+                        _mfv_news_row = _mfv_rows[0] if _mfv_rows else {}
+                        _pin_cross_drift_mfv = {
+                            "pinnacle_line_move_home_at_t6h": _drift_live.get("home"),
+                            "pinnacle_line_move_draw_at_t6h": _drift_live.get("draw"),
+                            "pinnacle_line_move_away_at_t6h": _drift_live.get("away"),
+                            "news_impact_score": _mfv_news_row.get("news_impact_score"),
+                        }
                     from workers.model.pin_cross_drift_veto import check_pin_cross_drift_veto
                     _pin_cross_drift_decision = check_pin_cross_drift_veto(
                         market=os_market,

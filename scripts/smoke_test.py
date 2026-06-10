@@ -14980,6 +14980,66 @@ def _():
     assert "IF NOT EXISTS" in mig, "Migration must be idempotent (IF NOT EXISTS)"
 
 
+@test("PIN-CROSS-DRIFT-T6H-LIVE — drift sourced live from odds_snapshots, not MFV `_at_t6h` columns")
+def _():
+    """PIN-CROSS-DRIFT-T6H-LIVE (2026-06-10): the original veto silently failed
+    because it read `match_feature_vectors.pinnacle_line_move_*_at_t6h`, but
+    those columns are populated only by the 22:30 UTC retrospective backfill
+    (`mfv_b_ml3_refresh` → `backfill_mfv_b_ml3_v2_features.py`). At live
+    placement they were NULL → helper returned `no_drift_data` (fail-open)
+    → zero veto fires across the entire shadow trail.
+
+    This pin locks the fix so a refactor cannot revert to the broken pattern:
+      - `get_live_pinnacle_drift` exists on the helper module
+      - The pipeline calls it instead of reading `_at_t6h` MFV columns
+      - The pipeline still reads `news_impact_score` from MFV (that's live —
+        populated by news checker cron, not the 22:30 backfill)
+    """
+    # Helper module exports the new live-drift function.
+    helper = _engine_path("workers/model/pin_cross_drift_veto.py").read_text()
+    assert "def get_live_pinnacle_drift(" in helper, (
+        "pin_cross_drift_veto.py must export get_live_pinnacle_drift(match_id)"
+    )
+    # Helper must query odds_snapshots, not match_feature_vectors.
+    assert "FROM odds_snapshots" in helper, (
+        "get_live_pinnacle_drift must source from odds_snapshots (live), "
+        "not match_feature_vectors (retrospective-only)"
+    )
+    # Pipeline must use the new helper.
+    pipeline = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text()
+    _veto_start = pipeline.index("_pin_cross_drift_decision = None")
+    _veto_end = pipeline.index("# P4: Kelly fraction", _veto_start)
+    _veto_block = pipeline[_veto_start:_veto_end]
+    assert "from workers.model.pin_cross_drift_veto import get_live_pinnacle_drift" in _veto_block, (
+        "PIN-CROSS-DRIFT veto block must import get_live_pinnacle_drift"
+    )
+    assert "get_live_pinnacle_drift(" in _veto_block, (
+        "PIN-CROSS-DRIFT veto block must call get_live_pinnacle_drift(match_id)"
+    )
+    # Pipeline MUST NOT SELECT the retrospective `_at_t6h` MFV columns from
+    # match_feature_vectors — those are NULL at placement, the trap we just
+    # fixed. The check_pin_cross_drift_veto call still uses the `_at_t6h`
+    # parameter NAMES (helper signature is stable), but the VALUES must come
+    # from get_live_pinnacle_drift, not from a MFV SELECT. So: the literal
+    # column names `pinnacle_line_move_*_at_t6h` must NOT appear inside any
+    # SQL string in the veto block.
+    for _bad in (
+        '"""SELECT pinnacle_line_move_home_at_t6h',
+        "pinnacle_line_move_home_at_t6h,\n",
+        "pinnacle_line_move_draw_at_t6h,\n",
+        "pinnacle_line_move_away_at_t6h,\n",
+    ):
+        assert _bad not in _veto_block, (
+            f"PIN-CROSS-DRIFT veto block must NOT SELECT `{_bad.strip(',').strip()}` "
+            f"from match_feature_vectors. Use get_live_pinnacle_drift() instead."
+        )
+    # news_impact_score still comes from MFV (it IS live).
+    assert "news_impact_score" in _veto_block, (
+        "PIN-CROSS-DRIFT veto block must still read news_impact_score (it's live, "
+        "populated by news checker cron)"
+    )
+
+
 @test("SHADOW-TRAIL-HEALTH-CHECK — diagnostic script asserts contract for PIN-CROSS-DRIFT + inplay_e trails")
 def _():
     """SHADOW-TRAIL-HEALTH-CHECK (2026-06-04): on-demand health check that
