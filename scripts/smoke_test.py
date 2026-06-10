@@ -20060,7 +20060,9 @@ def _():
     src = p.read_text()
     for fn in ["fetch_results_listing", "queue_new_matches", "parse_match", "write_match", "process_queue"]:
         assert f"def {fn}" in src, f"{fn} missing"
-    assert "RATE_DELAY = 8.0" in src      # slow scrape
+    # 2026-06-10: rate dropped 8.0 → 2.0. FlareSolverr's browser nav already
+    # paces at ~3-5s/page; the extra 8s sleep was redundant.
+    assert "RATE_DELAY = 2.0" in src
 
     mig = pathlib.Path("supabase/migrations/209_cs2_hltv_match_details.sql").read_text()
     for tbl in ["cs2_hltv_matches", "cs2_hltv_match_maps", "cs2_hltv_match_veto",
@@ -20113,7 +20115,8 @@ def _():
     for fn in ["discover_player_ids", "fetch_player_rating", "_players_to_fetch"]:
         assert f"def {fn}" in src, f"{fn} must exist"
     assert "Rating\\s+3\\.0" in src  # regex for current HLTV rating system
-    assert "RATE_DELAY = 3.5" in src
+    # 2026-06-10: rate dropped 3.5 → 1.5. FlareSolverr browser nav paces us.
+    assert "RATE_DELAY = 1.5" in src
     # Discovery iterates every letter
     assert "filters = [\"symbol\"]" in src or 'filter={f}' in src
 
