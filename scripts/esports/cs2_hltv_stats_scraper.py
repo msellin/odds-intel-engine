@@ -484,6 +484,81 @@ def upsert_team_stats_pistols(rows: list[dict], period_start: str, period_end: s
     return n
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# /stats/players bulk page — top-N players over a rolling window.
+# Used to flag "star player present" in a roster (top-30 by HLTV Rating).
+# ─────────────────────────────────────────────────────────────────────────────
+
+def parse_top_players(html: str) -> list[dict]:
+    """Parse /stats/players table — columns:
+    Player | Team | Maps | Rounds | K-D Diff | K/D | Rating
+    """
+    rows: list[dict] = []
+    for chunk in re.split(r"<tr(?=[\s>])", html)[1:]:
+        m_player = re.search(
+            r'<a href="/stats/players/(\d+)/([^"?]+)(?:\?[^"]*)?"[^>]*>([^<]+)</a>',
+            chunk
+        )
+        if not m_player:
+            continue
+        player_id = int(m_player.group(1))
+        nickname = m_player.group(3).strip()
+
+        # team name from data-sort attribute on the teamCol td
+        m_team = re.search(r'<td class="teamCol"[^>]*data-sort="([^"]+)"', chunk)
+        team_name = m_team.group(1).strip() if m_team else None
+
+        tds = re.findall(r"<td[^>]*>\s*([+\-\d.,]+)\s*</td>", chunk)
+        # Expected order after the team cell: maps, rounds, kd_diff, kd, rating
+        if len(tds) < 5:
+            continue
+        try:
+            rows.append({
+                "hltv_player_id": player_id,
+                "nickname": nickname,
+                "team_name": team_name,
+                "maps_played":   int(tds[0].replace(",", "")),
+                "kd_diff_total": int(tds[2].replace("+", "").replace(",", "")),
+                "kd_ratio":      float(tds[3]),
+                "rating":        float(tds[4]),
+            })
+        except (ValueError, IndexError):
+            continue
+    return rows
+
+
+def fetch_top_players(session: requests.Session, start_date: str, end_date: str,
+                     min_maps: int = 50) -> list[dict]:
+    """One page = top 50. minMapCount filter weeds out one-off appearances."""
+    url = (f"https://www.hltv.org/stats/players?startDate={start_date}"
+           f"&endDate={end_date}&minMapCount={min_maps}")
+    assert "rankingFilter" not in url
+    html = _fetch_url(session, url)
+    return parse_top_players(html) if html else []
+
+
+def upsert_top_players(rows: list[dict], period_start: str, period_end: str) -> int:
+    n = 0
+    for rank, r in enumerate(rows, start=1):
+        execute_write("""
+            INSERT INTO cs2_hltv_top_players
+                (hltv_player_id, nickname, team_name, rank,
+                 maps_played, kd_ratio, rating, period_start, period_end, fetched_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (hltv_player_id, period_start, period_end) DO UPDATE SET
+                nickname     = EXCLUDED.nickname,
+                team_name    = EXCLUDED.team_name,
+                rank         = EXCLUDED.rank,
+                maps_played  = EXCLUDED.maps_played,
+                kd_ratio     = EXCLUDED.kd_ratio,
+                rating       = EXCLUDED.rating,
+                fetched_at   = NOW()
+        """, (r["hltv_player_id"], r["nickname"], r["team_name"], rank,
+              r["maps_played"], r["kd_ratio"], r["rating"], period_start, period_end))
+        n += 1
+    return n
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--team", type=int, help="HLTV team_id for one-off")
@@ -495,6 +570,8 @@ def main() -> None:
                    help="Scrape /stats/teams bulk page (K/D, Rating 3.0) for period")
     p.add_argument("--teams-pistols", action="store_true",
                    help="Scrape /stats/teams/pistols bulk page (3 fetches: overall + T + CT)")
+    p.add_argument("--top-players", action="store_true",
+                   help="Scrape /stats/players top-50 over the period (star_player feed)")
     p.add_argument("--period-days", type=int, default=365,
                    help="Lookback window for --teams-overview/--teams-pistols (default 365)")
     p.add_argument("--record", action="store_true", help="Write to DB")
@@ -508,7 +585,7 @@ def main() -> None:
     elif args.top_n:
         targets = _top_n_teams_with_hltv_id(s, args.top_n)
         print(f"  top-{args.top_n}: {len(targets)} resolved with team_id")
-    elif args.maps or args.players_top_n or args.teams_overview or args.teams_pistols:
+    elif args.maps or args.players_top_n or args.teams_overview or args.teams_pistols or args.top_players:
         targets = []   # only running the new modes
     else:
         print("  pass --team + --slug OR --top-n OR --maps OR --players-top-n OR --teams-overview OR --teams-pistols", file=sys.stderr)
@@ -612,6 +689,19 @@ def main() -> None:
         if args.record and rows:
             n = upsert_team_stats_overview(rows, str(period_start), str(period_end))
             print(f"  → upserted {n} rows into cs2_hltv_team_stats")
+
+    # --top-players: bulk /stats/players top-50 page
+    if args.top_players:
+        print("\n=== Top players bulk scrape ===")
+        period_end = today
+        period_start = today.replace(year=today.year - 1) if args.period_days >= 365 else \
+                       (today - __import__("datetime").timedelta(days=args.period_days))
+        print(f"  window: {period_start} → {period_end}")
+        rows = fetch_top_players(s, str(period_start), str(period_end))
+        print(f"  parsed {len(rows)} player rows")
+        if args.record and rows:
+            n = upsert_top_players(rows, str(period_start), str(period_end))
+            print(f"  → upserted {n} rows into cs2_hltv_top_players")
 
     # --teams-pistols: bulk /stats/teams/pistols page × 3 (overall + T + CT)
     if args.teams_pistols:

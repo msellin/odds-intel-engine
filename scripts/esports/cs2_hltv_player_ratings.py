@@ -48,7 +48,9 @@ HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.5",
 }
-RATE_DELAY = 3.5  # seconds between requests
+RATE_DELAY = 1.5  # FlareSolverr already paces at ~3-5s/page; 1.5s on top
+                  # = ~5-7s per fetch = ~9-12 players/min. Earlier 3.5s was
+                  # redundant since browser navigation throttles naturally.
 
 # /player/{id}/{slug}  e.g. /player/7998/zywoo
 # Reject anything with #/?/space inside the slug — those are tab anchors like

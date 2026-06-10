@@ -998,6 +998,26 @@ def job_cs2_hltv_teams_bulk():
     _run_job("cs2_hltv_teams_bulk", lambda: None)
 
 
+def job_cs2_hltv_top_players():
+    """CS2-TOP-PLAYERS (2026-06-10): one /stats/players page fetch → all
+    players with ≥50 maps in the rolling 365d window (~1,300 rows). Feeds
+    star_player_present / IGL × role features. Daily 02:20 UTC, ~30s/run.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 HLTV top players (/stats/players)[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_hltv_stats_scraper.py",
+         "--top-players", "--period-days", "365", "--record"],
+        capture_output=True, text=True, timeout=300,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]CS2 top-players error:[/red]\n{result.stderr[:500]}")
+    for line in result.stdout.splitlines():
+        if any(k in line for k in ["parsed", "upserted"]):
+            console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_hltv_top_players", lambda: None)
+
+
 def job_cs2_pandascore_matches():
     """CS2-PANDASCORE-MATCHES (2026-06-09): paginates PandaScore match history
     and UPSERTs into cs2_pandascore_matches. PandaScore covers tier-3/4
@@ -2393,9 +2413,13 @@ def main():
     # CS2-PISTOL (2026-06-09) — daily 03:30 UTC. Top-50 team pistol-round
     # stats with CT/T split. Auth required (HLTV cookies). Refreshes
     # rolling-365d snapshot per team.
-    scheduler.add_job(job_cs2_hltv_pistols, CronTrigger(hour=3, minute=30),
+    # Legacy 26-team pistol stats — superseded by job_cs2_hltv_teams_bulk
+    # (160 teams via /stats/teams/pistols). Still feeds v7 production via
+    # cs2_team_pistol_stats so we keep it alive at weekly cadence instead of
+    # daily. v8 reads from cs2_hltv_team_stats with this as a 26-team overlay.
+    scheduler.add_job(job_cs2_hltv_pistols, CronTrigger(day_of_week="sun", hour=3, minute=30),
                       id="cs2_hltv_pistols",
-                      name="CS2 HLTV pistol stats [daily 03:30 UTC]",
+                      name="CS2 HLTV pistol stats legacy [weekly Sun 03:30 UTC]",
                       max_instances=1, misfire_grace_time=3600)
 
     # CS2-TEAMS-BULK (2026-06-09) — daily 02:15 UTC. Scrapes the bulk
@@ -2409,6 +2433,15 @@ def main():
                       CronTrigger(hour=2, minute=15),
                       id="cs2_hltv_teams_bulk",
                       name="CS2 HLTV Teams Bulk Stats [daily 02:15 UTC]",
+                      max_instances=1, misfire_grace_time=3600)
+
+    # CS2-TOP-PLAYERS (2026-06-10) — daily 02:20 UTC. One page fetch of
+    # /stats/players (returns ALL players with ≥50 maps in window — ~1300
+    # rows). Feeds star_player_present + IGL × role features for v10.
+    scheduler.add_job(job_cs2_hltv_top_players,
+                      CronTrigger(hour=2, minute=20),
+                      id="cs2_hltv_top_players",
+                      name="CS2 HLTV Top Players [daily 02:20 UTC]",
                       max_instances=1, misfire_grace_time=3600)
 
     # CS2-HLTV-RANKINGS (2026-06-09) — daily 05:00 UTC. Top-248 teams from
