@@ -802,6 +802,26 @@ def job_cs2_v7_predict():
     _run_job("cs2_v7_predict", lambda: None)
 
 
+def job_cs2_v8_predict():
+    """CS2-V8-PREDICT (2026-06-10): production scorer for v8 = v7 + kd_diff.
+    AUC 0.703 (+0.7pp over v7 on full sample, +2pp on K/D-covered subset).
+    Fires after v7 so v7 base predictions exist; v8 writes its own row.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 v8 production scorer[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_v8_predict.py", "--record"],
+        capture_output=True, text=True, timeout=600,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]CS2 v8 predict error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ["wrote", "loaded v8", "upcoming matches"]):
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_v8_predict", lambda: None)
+
+
 def job_cs2_hltv_predict():
     """CS2-HLTV-PREDICT (2026-06-09): write parallel hltv_v1 predictions for the
     same matches the elo+pq_v1 scanner ran, but using HLTV points only.
@@ -2283,10 +2303,16 @@ def main():
                       id="cs2_hltv_predict", name="CS2 HLTV-only Predict [4h, 06-22 UTC]",
                       max_instances=1, misfire_grace_time=1800)
 
-    # CS2-V7-PREDICT (2026-06-09) — production v7 stacking model. Runs 5 min
-    # after hltv_v1 so it has fresh base predictions to stack onto.
+    # CS2-V7-PREDICT (2026-06-09) — v7 stacking model. Kept alive as fallback
+    # while v8 stabilises. Runs 5 min after hltv_v1.
     scheduler.add_job(job_cs2_v7_predict, CronTrigger(hour="6,10,14,18,22", minute=22),
-                      id="cs2_v7_predict", name="CS2 v7 Production Scorer [4h, 06-22 UTC]",
+                      id="cs2_v7_predict", name="CS2 v7 Scorer [4h, 06-22 UTC]",
+                      max_instances=1, misfire_grace_time=1800)
+
+    # CS2-V8-PREDICT (2026-06-10) — production v8 stacking + kd_diff. Fires
+    # 3 min after v7 so v7 base exists in DB; cs2_bot.py prefers v8 → v7 → hltv_v1.
+    scheduler.add_job(job_cs2_v8_predict, CronTrigger(hour="6,10,14,18,22", minute=25),
+                      id="cs2_v8_predict", name="CS2 v8 Production Scorer [4h, 06-22 UTC]",
                       max_instances=1, misfire_grace_time=1800)
 
     # NOTE: HLTV /stats/* scraper (job_cs2_hltv_stats_scraper) is intentionally
@@ -2422,7 +2448,7 @@ def main():
 
     # CS2-BOT (2026-06-08) — runs ~10 minutes after each ELO scanner pass so
     # bookie/coolbet odds + new model output are both fresh.
-    scheduler.add_job(job_cs2_bot, CronTrigger(hour="6,10,14,18,22", minute=25),
+    scheduler.add_job(job_cs2_bot, CronTrigger(hour="6,10,14,18,22", minute=28),
                       id="cs2_bot", name="CS2 Value Bot [4h, 06-22 UTC]",
                       max_instances=1, misfire_grace_time=1800)
 

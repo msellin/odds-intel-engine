@@ -99,13 +99,17 @@ def _load_open_matches() -> list[dict]:
                COALESCE(h.source, 'hltv_v1') AS source
         FROM cs2_upcoming_matches u
         JOIN LATERAL (
-            -- Prefer v7 when present (stacking model, AUC 0.694), else
-            -- fall back to hltv_v1 (rank-only, AUC 0.673).
+            -- Prefer v8 (stacking + kd_diff, AUC 0.703), then v7
+            -- (no kd, AUC 0.697), else hltv_v1 (rank-only, AUC 0.673).
             SELECT win_prob1, win_prob2, fair_odds1, fair_odds2, model_version AS source
             FROM cs2_predictions p
             WHERE p.bo3gg_id = u.bo3gg_id
-              AND p.model_version IN ('v7', 'hltv_v1')
-            ORDER BY CASE p.model_version WHEN 'v7' THEN 0 ELSE 1 END,
+              AND p.model_version IN ('v8', 'v7', 'hltv_v1')
+            ORDER BY CASE p.model_version
+                       WHEN 'v8' THEN 0
+                       WHEN 'v7' THEN 1
+                       ELSE 2
+                     END,
                      p.scan_time DESC
             LIMIT 1
         ) h ON TRUE
@@ -321,7 +325,9 @@ def _stake_eur(stake_units: float, bankroll: float) -> float:
 def _write_bet(row: dict, pick: dict) -> bool:
     # Different bot_name per source so HLTV-fallback picks track separately.
     src = pick.get("source")
-    if src == "v7":
+    if src == "v8":
+        bot_name = "bot_cs2_v8"
+    elif src == "v7":
         bot_name = "bot_cs2_v7"
     elif src == "hltv_v1":
         bot_name = "bot_cs2_hltv_v1"

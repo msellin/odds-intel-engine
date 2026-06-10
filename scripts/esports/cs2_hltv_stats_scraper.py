@@ -315,10 +315,14 @@ def _build_stats_url(path: str, start_date: str, end_date: str, side: str | None
 
 
 def _parse_team_link(chunk: str) -> tuple[int, str, str] | None:
-    """Find /team/{id}/{slug} link + team name inside a single <tr> chunk.
-    Returns (team_id, slug, name) or None if the row isn't a team-stats row."""
-    # The team cell on stats pages links to /team/{id}/{slug} (not /stats/teams/{id}).
-    m = re.search(r'<a href="/team/(\d+)/([^"]+)"[^>]*>([^<]+)</a>', chunk)
+    """Find the team link inside a single <tr> chunk and return (id, slug, name).
+    On /stats/teams* pages, links are `/stats/teams/{id}/{slug}?startDate=...`
+    (slug followed by query string), NOT the canonical `/team/{id}/{slug}` form.
+    """
+    m = re.search(
+        r'<a href="/stats/teams/(\d+)/([^"?]+)(?:\?[^"]*)?"[^>]*>([^<]+)</a>',
+        chunk
+    )
     if not m:
         return None
     return int(m.group(1)), m.group(2), m.group(3).strip()
