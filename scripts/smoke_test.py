@@ -3222,6 +3222,62 @@ def test_coolbet_search_blocked():
     )
 
 
+@test("COOLBET-PLACER-FLARESOLVERR-WIRE — login script syncs Imperva cookies to .env so the placer can use them")
+def test_coolbet_placer_flaresolverr_wire():
+    """COOLBET-PLACER-FLARESOLVERR-WIRE (2026-06-10): the FlareSolverr-based
+    login (scripts/coolbet/flaresolverr_login_enroll.py) captures fresh
+    Imperva cookies but originally persisted only COOLBET_MANUAL_JWT to
+    .env. The placer (workers/automation/coolbet_session.py) reads six
+    separate COOLBET_COOKIE_* env vars and goes direct (not via FlareSolverr).
+    Result: heartbeat worked (FlareSolverr-routed) but placer hit Imperva
+    HTTP 500 because its env-var cookies were stale. This pin locks the
+    fix that bridges the two — _persist_imperva_cookies() now syncs the
+    six vars from FlareSolverr-harvested cookies on every successful login.
+
+    Without this contract, manual cookie pasting from browser DevTools is
+    required after every Imperva rotation, defeating the auto-login goal.
+    """
+    import pathlib
+    enroll_src = pathlib.Path("scripts/coolbet/flaresolverr_login_enroll.py").read_text()
+    session_src = pathlib.Path("workers/automation/coolbet_session.py").read_text()
+
+    # Helper function exists.
+    assert "def _persist_imperva_cookies(" in enroll_src, (
+        "flaresolverr_login_enroll.py must export _persist_imperva_cookies()"
+    )
+    # Helper is invoked from _persist_jwt so BOTH cmd_start (no-SMS) and
+    # cmd_verify (SMS flow) call sites benefit without duplication.
+    persist_jwt_block = enroll_src[
+        enroll_src.index("def _persist_jwt("):
+        enroll_src.index("def _persist_imperva_cookies(")
+    ]
+    assert "_persist_imperva_cookies(env_path, cookies)" in persist_jwt_block, (
+        "_persist_jwt() must call _persist_imperva_cookies(env_path, cookies) — "
+        "without this both cmd_start and cmd_verify code paths leave the placer "
+        "with stale cookies."
+    )
+    # All six env vars the placer reads must be written by the helper.
+    helper_block = enroll_src[enroll_src.index("def _persist_imperva_cookies("):]
+    for env_var in (
+        "COOLBET_COOKIE_REESE84",
+        "COOLBET_COOKIE_VISID_INCAP",
+        "COOLBET_COOKIE_NLBI",
+        "COOLBET_COOKIE_NLBI2",
+        "COOLBET_COOKIE_INCAP_SES",
+        "COOLBET_COOKIE_UUID",
+    ):
+        assert f'"{env_var}"' in helper_block, (
+            f"_persist_imperva_cookies must write {env_var} — placer reads it via "
+            f"workers/automation/coolbet_session.py."
+        )
+        # And the placer must actually read each of these names — if either
+        # side drifts, the sync silently misses a cookie.
+        assert env_var in session_src, (
+            f"coolbet_session.py must read {env_var} — if the placer's env-var "
+            f"name changes, update _persist_imperva_cookies to match."
+        )
+
+
 @test("SEARCH-RETRY-TRANSIENT — _do_search retries once on 5xx/429, error text drops JWT advice")
 def test_search_retry_transient():
     """SEARCH-RETRY-TRANSIENT (2026-05-29): one transient 5xx/429 from
@@ -20120,11 +20176,19 @@ def _():
     src = p.read_text()
     for fn in ["fetch_results_listing", "queue_new_matches", "parse_match", "write_match", "process_queue"]:
         assert f"def {fn}" in src, f"{fn} missing"
-    # 2026-06-10 (later): rate dropped 2.0 → 0.5. FlareSolverr's ~3-5s/page
-    # rendering is the natural rate-limiter; 2s sleep was still overkill.
-    # Combined with --process 200 (was 50), match-details throughput is now
-    # ~9,600/day theoretical vs ~2,400 before.
-    assert "RATE_DELAY = 0.5" in src
+    # 2026-06-10: plain-requests-after-FS-warmup refactor. _fetch now warms
+    # via FlareSolverr once (~5-7s), captures cf_clearance + __cf_bm cookies,
+    # then fetches subsequent matches via plain requests (~1s each). Re-warm
+    # every WARMUP_REUSE_LIMIT (60) calls or WARMUP_MAX_AGE_S (900s). RATE_DELAY
+    # dropped to 0.2 since plain requests don't need throttling. Expected
+    # throughput: ~25-30/min vs ~7-10/min on FS-only path.
+    assert "RATE_DELAY = 0.2" in src
+    assert "WARMUP_REUSE_LIMIT" in src
+    assert "WARMUP_MAX_AGE_S" in src
+    assert "_warmup_via_flaresolverr" in src
+    assert "_warm_session" in src
+    # Re-warm on block must be present — otherwise stale cookies stall the queue.
+    assert "(403, 429, 503)" in src, "re-warm trigger on CF block missing"
 
     mig = pathlib.Path("supabase/migrations/209_cs2_hltv_match_details.sql").read_text()
     for tbl in ["cs2_hltv_matches", "cs2_hltv_match_maps", "cs2_hltv_match_veto",
