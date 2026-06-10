@@ -36,9 +36,10 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from workers.api_clients.db import execute_write, execute_query
 
-RATE_DELAY = 2.0   # FlareSolverr's browser navigation already paces us
-                   # (~3-5s per page); explicit 8s sleep on top was redundant.
-                   # 2s + FlareSolverr response ≈ 5-6s/match ≈ 10-12 matches/min.
+RATE_DELAY = 0.5   # FlareSolverr's browser navigation already paces us
+                   # (~3-5s per page). 0.5s + FS response ≈ 4-5s/match ≈
+                   # 13-15 matches/min. Previous 2s was overkill — FS itself
+                   # is the natural rate-limiter against HLTV's CF.
 RESULTS_URL = "https://www.hltv.org/results"
 MATCH_URL_FMT = "https://www.hltv.org/matches/{mid}/{slug}"
 
@@ -161,8 +162,10 @@ def fetch_results_listing(offset: int = 0) -> list[tuple[int, str]]:
     return out
 
 
-def queue_new_matches(limit_pages: int = 1) -> int:
-    """Walk /results pages, INSERT new (match_id, slug) into the queue."""
+def queue_new_matches(limit_pages: int = 1, from_page: int = 0) -> int:
+    """Walk /results pages, INSERT new (match_id, slug) into the queue.
+    Walks pages [from_page, from_page+limit_pages). Use from_page to resume
+    from a specific offset or split work across parallel walkers."""
     try:
         from scraper_state import scraper_run  # type: ignore
     except ImportError:
@@ -170,12 +173,17 @@ def queue_new_matches(limit_pages: int = 1) -> int:
         from scraper_state import scraper_run
 
     total = 0
+    # Queue walking just hits public /results pages — no auth needed, FlareSolverr's
+    # ~3-5s navigation already paces us. Use a tiny sleep instead of full RATE_DELAY
+    # (which is set for the heavier match-detail page parses).
+    QUEUE_SLEEP_S = 0.3
     with scraper_run("match_details_queue", "Walks HLTV /results pages and queues match IDs") as st:
         st.set_total(limit_pages * 100)  # nominal capacity
         st.note(f"walking {limit_pages} pages")
-        for page in range(limit_pages):
-            if page > 0:
-                time.sleep(RATE_DELAY)
+        for i in range(limit_pages):
+            page = from_page + i
+            if i > 0:
+                time.sleep(QUEUE_SLEEP_S)
             offset = page * 100
             rows = fetch_results_listing(offset)
             if not rows:
@@ -473,6 +481,8 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--queue", action="store_true", help="Pull /results, queue new match IDs")
     p.add_argument("--pages", type=int, default=1, help="How many /results pages to walk (for --queue)")
+    p.add_argument("--from-page", type=int, default=0,
+                   help="Start page offset (for resuming or parallel walkers)")
     p.add_argument("--process", type=int, default=0, help="Process N queued matches")
     p.add_argument("--match-id", type=int, help="One-off: fetch + parse this match ID")
     p.add_argument("--slug", default="", help="Slug for --match-id")
@@ -481,8 +491,8 @@ def main() -> None:
     print(f"\n=== HLTV match details  {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC ===")
 
     if args.queue:
-        n = queue_new_matches(limit_pages=args.pages)
-        print(f"  queued {n} candidates from {args.pages} page(s)")
+        n = queue_new_matches(limit_pages=args.pages, from_page=args.from_page)
+        print(f"  queued {n} candidates from {args.pages} page(s) starting at page {args.from_page}")
 
     if args.process:
         hits, miss = process_queue(args.process)

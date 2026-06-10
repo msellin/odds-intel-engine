@@ -20120,9 +20120,11 @@ def _():
     src = p.read_text()
     for fn in ["fetch_results_listing", "queue_new_matches", "parse_match", "write_match", "process_queue"]:
         assert f"def {fn}" in src, f"{fn} missing"
-    # 2026-06-10: rate dropped 8.0 → 2.0. FlareSolverr's browser nav already
-    # paces at ~3-5s/page; the extra 8s sleep was redundant.
-    assert "RATE_DELAY = 2.0" in src
+    # 2026-06-10 (later): rate dropped 2.0 → 0.5. FlareSolverr's ~3-5s/page
+    # rendering is the natural rate-limiter; 2s sleep was still overkill.
+    # Combined with --process 200 (was 50), match-details throughput is now
+    # ~9,600/day theoretical vs ~2,400 before.
+    assert "RATE_DELAY = 0.5" in src
 
     mig = pathlib.Path("supabase/migrations/209_cs2_hltv_match_details.sql").read_text()
     for tbl in ["cs2_hltv_matches", "cs2_hltv_match_maps", "cs2_hltv_match_veto",

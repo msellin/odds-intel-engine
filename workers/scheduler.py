@@ -906,13 +906,16 @@ def job_cs2_hltv_match_details_queue():
 
 
 def job_cs2_hltv_match_details_process():
-    """CS2-HLTV-MATCH-DETAILS-PROCESS (2026-06-09): fetch + parse N queued
-    match pages each run. Polite 8s rate limit, so 60 matches takes ~8 min.
+    """CS2-HLTV-MATCH-DETAILS-PROCESS (2026-06-09, bumped 2026-06-10):
+    fetch + parse N queued match pages each run.
+    2026-06-10: --process 50 → 200 (RATE_DELAY also dropped 2.0 → 0.5).
+    200 × ~5s/match ≈ 17 min/run, fits inside 30-min timeout. 48 runs/day
+    × 200 = ~9,600/day theoretical, vs ~2,400 before.
     """
     import subprocess
     console.print("[bold cyan]CS2 HLTV match details processor[/bold cyan]")
     result = subprocess.run(
-        [sys.executable, "scripts/esports/cs2_hltv_match_details.py", "--process", "50"],
+        [sys.executable, "scripts/esports/cs2_hltv_match_details.py", "--process", "200"],
         capture_output=True, text=True, timeout=1800,
     )
     if result.returncode != 0:
