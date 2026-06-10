@@ -11,6 +11,13 @@ ALTER TABLE cs2_results
 CREATE INDEX IF NOT EXISTS idx_cs2_results_is_lan
     ON cs2_results (is_lan) WHERE is_lan IS NOT NULL;
 
+-- FIX 2026-06-10: pandascore_matches table was created in 221 without
+-- is_lan; the backfill below was reading a non-existent column and
+-- crashing the entire migration. Add the column here so it can hold
+-- the flag once a scraper starts populating it.
+ALTER TABLE cs2_pandascore_matches
+    ADD COLUMN IF NOT EXISTS is_lan BOOLEAN;
+
 -- Backfill: match on (team1_name, team2_name, kickoff_date)
 UPDATE cs2_results r
 SET    is_lan = p.is_lan
