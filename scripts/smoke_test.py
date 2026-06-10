@@ -20591,6 +20591,164 @@ def _():
         assert "RUN_ID" in src, f"{fn} must group rows by RUN_ID per invocation"
 
 
+@test("CS2-SNEAK-V11-SCHEDULE — schedule-density sneak peek file + features + persistence")
+def _():
+    """v11 adds back-to-back-fatigue features (matches in last 24h / 72h)
+    on top of v8. Pin file existence, the feature function name, feature
+    keys appearing in source, and that results persist to
+    cs2_model_backtest_history under the v11-schedule-density model name."""
+    src_path = _engine_path("scripts/esports/cs2_sneak_peek_v11_schedule.py")
+    assert src_path.exists(), "cs2_sneak_peek_v11_schedule.py must exist"
+    src = src_path.read_text()
+
+    # PIT-correct feature function
+    assert "def compute_schedule_density" in src, (
+        "v11 must expose compute_schedule_density(team_name, kickoff_ts, ...) "
+        "for the back-to-back fatigue count"
+    )
+    # Schedule loader
+    assert "def load_team_schedule" in src, "v11 must load per-team schedule once"
+    # Required feature names appear in source (used by both build_rows + evaluate)
+    for feat in [
+        "team1_matches_last_24h", "team2_matches_last_24h", "density_diff",
+        "team1_matches_last_72h", "team2_matches_last_72h", "density72_diff",
+    ]:
+        assert feat in src, f"v11 must compute feature {feat}"
+    # Walk-forward stack on top of v8 (logit_saved + v8_keys)
+    assert "logit_saved" in src and "v8_keys" in src, (
+        "v11 must stack on top of v8 features (logit_saved + v8 keys)"
+    )
+    # Persists to backtest history under the v11-schedule-density model name
+    assert "cs2_model_backtest_history" in src, (
+        "v11 must persist runs to cs2_model_backtest_history"
+    )
+    assert "v11-schedule-density" in src, (
+        "v11 must tag persisted rows with model_name 'v11-schedule-density'"
+    )
+    assert "RUN_ID" in src, "v11 must group rows by RUN_ID per invocation"
+    # PROMOTE decision is printed for the operator
+    assert "PROMOTE" in src, "v11 must print a PROMOTE recommendation"
+
+
+@test("CS2-SNEAK-V13-STARTING-SIDE — starting-side win-rate sneak peek file + features + persistence")
+def _():
+    """v13 adds CT-start win-rate features (per-team historical + map-bias
+    interaction) on top of v8. Pin file existence, the feature function
+    names, feature keys appearing in source, and that results persist to
+    cs2_model_backtest_history under the v13-starting-side model name."""
+    src_path = _engine_path("scripts/esports/cs2_sneak_peek_v13_starting_side.py")
+    assert src_path.exists(), "cs2_sneak_peek_v13_starting_side.py must exist"
+    src = src_path.read_text()
+
+    # PIT-correct feature functions
+    assert "def compute_ct_start_winrate" in src, (
+        "v13 must expose compute_ct_start_winrate(team_name, kickoff_ts, ...) "
+        "for the CT-start win-rate prior"
+    )
+    assert "def compute_bias_aligned_diff" in src, (
+        "v13 must expose compute_bias_aligned_diff(...) for the map-bias "
+        "interaction feature"
+    )
+    # History loader (single-pass batched DB read)
+    assert "def load_starting_side_history" in src, (
+        "v13 must load per-team starting-side history once"
+    )
+    # Required feature names appear in source (used by both build_rows + evaluate)
+    for feat in [
+        "team1_ct_start_winrate_per_map",
+        "team2_ct_start_winrate_per_map",
+        "ct_start_wr_diff",
+        "bias_aligned_diff",
+    ]:
+        assert feat in src, f"v13 must compute feature {feat}"
+    # Source must reference the cs2_hltv_match_maps + team1_first_half_side
+    # column (the underlying signal) and the side-biased maps so future
+    # readers can audit the bias mapping.
+    assert "team1_first_half_side" in src, (
+        "v13 must read team1_first_half_side from cs2_hltv_match_maps"
+    )
+    assert "cs2_hltv_match_maps" in src
+    for biased_map in ["Nuke", "Anubis", "Overpass"]:
+        assert biased_map in src, (
+            f"v13 bias mapping must reference {biased_map} (heavily side-biased map)"
+        )
+    # Walk-forward stack on top of v8 (logit_saved + v8_keys)
+    assert "logit_saved" in src and "v8_keys" in src, (
+        "v13 must stack on top of v8 features (logit_saved + v8 keys)"
+    )
+    # Persists to backtest history under the v13-starting-side model name
+    assert "cs2_model_backtest_history" in src, (
+        "v13 must persist runs to cs2_model_backtest_history"
+    )
+    assert "v13-starting-side" in src, (
+        "v13 must tag persisted rows with model_name 'v13-starting-side'"
+    )
+    assert "RUN_ID" in src, "v13 must group rows by RUN_ID per invocation"
+    # PROMOTE decision is printed for the operator
+    assert "PROMOTE" in src, "v13 must print a PROMOTE recommendation"
+
+
+@test("CS2-SNEAK-V14-LAN-REGION — LAN-vs-online and home-region sneak peek")
+def _():
+    """v14 adds is_lan_event, LAN-historical-winrate diff, and home-region
+    advantage features on top of v8. Pin file existence, the feature
+    function names, feature keys appearing in source, and that results
+    persist to cs2_model_backtest_history under the v14-lan-region model
+    name."""
+    src_path = _engine_path("scripts/esports/cs2_sneak_peek_v14_lan_region.py")
+    assert src_path.exists(), "cs2_sneak_peek_v14_lan_region.py must exist"
+    src = src_path.read_text()
+
+    # PIT-correct feature functions
+    assert "def compute_lan_winrate" in src, (
+        "v14 must expose compute_lan_winrate(team_key, kickoff_ts, ...) "
+        "for the LAN match-win% prior"
+    )
+    assert "def compute_team_home_region" in src, (
+        "v14 must expose compute_team_home_region(...) for the heuristic "
+        "team→home-region mapping (not hard-coded)"
+    )
+    # Region detector + history loader
+    assert "def detect_event_region" in src, (
+        "v14 must expose detect_event_region(event_name, stage) for the "
+        "EU/NA/SA/APAC/CIS/ONLINE/UNKNOWN classification"
+    )
+    assert "def load_hltv_event_history" in src, (
+        "v14 must load HLTV event history once (events + index + by-id map)"
+    )
+    # Required feature names appear in source (used by both build_rows + evaluate)
+    for feat in [
+        "is_lan_event",
+        "team1_lan_winrate_diff",
+        "team1_region", "team2_region",
+        "region_match_team1", "region_match_team2",
+        "region_advantage_diff",
+    ]:
+        assert feat in src, f"v14 must compute feature {feat}"
+    # Source must reference the cs2_hltv_matches columns it depends on so
+    # future readers can audit the data lineage.
+    assert "cs2_hltv_matches" in src
+    assert "event_name" in src
+    assert "stage" in src, "v14 must read the stage column for LAN/Online flag"
+    # Each documented region label must appear (regex + sanity print uses them)
+    for region in ["EU", "NA", "SA", "APAC", "CIS", "ONLINE", "UNKNOWN"]:
+        assert region in src, f"v14 region map must reference {region}"
+    # Walk-forward stack on top of v8 (logit_saved + v8_keys)
+    assert "logit_saved" in src and "v8_keys" in src, (
+        "v14 must stack on top of v8 features (logit_saved + v8 keys)"
+    )
+    # Persists to backtest history under the v14-lan-region model name
+    assert "cs2_model_backtest_history" in src, (
+        "v14 must persist runs to cs2_model_backtest_history"
+    )
+    assert "v14-lan-region" in src, (
+        "v14 must tag persisted rows with model_name 'v14-lan-region'"
+    )
+    assert "RUN_ID" in src, "v14 must group rows by RUN_ID per invocation"
+    # PROMOTE decision is printed for the operator
+    assert "PROMOTE" in src, "v14 must print a PROMOTE recommendation"
+
+
 @test("CS2-MATCH-DETAILS-V2 — per-side CT/T splits + per-(player, map) stats + team_name")
 def _():
     import pathlib
