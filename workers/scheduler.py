@@ -522,6 +522,13 @@ def job_weekly_digest():
     _run_job("weekly_digest", run_weekly_digest)
 
 
+def job_prune_anon_users():
+    """ANON-AUTH PHASE 4 — weekly prune of stale anonymous Supabase users
+    (see workers/jobs/prune_anon_users.py for details + safety cap)."""
+    from workers.jobs.prune_anon_users import run as run_prune
+    _run_job("prune_anon_users", run_prune)
+
+
 def job_weekly_retrain():
     """ML-PIPELINE-UNIFY Stage 5a — weekly retrain + auto-comparison.
 
@@ -2277,6 +2284,12 @@ def main():
     # ENG-10: Weekly performance email — Monday 08:00 UTC
     scheduler.add_job(job_weekly_digest, CronTrigger(day_of_week="mon", hour=8, minute=0),
                       id="weekly_digest", name="Weekly Digest Monday 08:00")
+
+    # ANON-AUTH PHASE 4 — prune anonymous users idle >90 days, Sunday 02:00 UTC.
+    # Cascade removes their profile + favorites + picks. Hard cap of 10k rows
+    # per run as a safety guard.
+    scheduler.add_job(job_prune_anon_users, CronTrigger(day_of_week="sun", hour=2, minute=0),
+                      id="prune_anon_users", name="Prune Anonymous Users Sunday 02:00")
 
     # ML-PIPELINE-UNIFY Stage 5a — weekly retrain Sunday 03:00 UTC, runs train.py +
     # compare_models.py. Promotion stays manual (operator flips MODEL_VERSION).

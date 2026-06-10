@@ -5198,6 +5198,11 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
     pro_users = 0
     elite_users = 0
     new_signups_today = 0
+    # ANON-AUTH PHASE 4 (mig 237): anon-user tracking
+    anon_users_total = 0
+    anon_users_today = 0
+    anon_users_engaged_7d = 0
+    anon_upgrades_7d = 0
     sidelined_players_fetched = 0
     transfers_teams_fetched = 0
 
@@ -5610,15 +5615,16 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
     except Exception:
         pass  # Table may not exist yet — leave as None
 
-    # ⑨ Users
+    # ⑨ Users — real users (excludes anonymous Supabase sessions; mig 237 added
+    # anon-tracking columns separately so the dashboard can show both).
     try:
         r = execute_query(
             """
             SELECT
-              COUNT(*)                                              AS total,
-              COUNT(*) FILTER (WHERE tier = 'pro')                 AS pro,
-              COUNT(*) FILTER (WHERE tier = 'elite')               AS elite,
-              COUNT(*) FILTER (WHERE created_at::date = %s)        AS new_today
+              COUNT(*) FILTER (WHERE email IS NOT NULL)                                        AS total,
+              COUNT(*) FILTER (WHERE email IS NOT NULL AND tier = 'pro')                       AS pro,
+              COUNT(*) FILTER (WHERE email IS NOT NULL AND tier = 'elite')                     AS elite,
+              COUNT(*) FILTER (WHERE email IS NOT NULL AND created_at::date = %s)              AS new_today
             FROM profiles
             """, [today])
         if r:
@@ -5629,6 +5635,57 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
     except Exception as e:
         failed_sections.append("users")
         console.print(f"[yellow]ops_snapshot: users failed: {e}[/yellow]")
+
+    # ⑨b Anonymous users — split out so the dashboard doesn't conflate
+    # them with real signups.
+    try:
+        r = execute_query(
+            """
+            SELECT
+              COUNT(*) FILTER (WHERE is_anonymous = TRUE)                              AS total,
+              COUNT(*) FILTER (WHERE is_anonymous = TRUE AND created_at::date = %s)   AS today
+            FROM auth.users
+            """, [today])
+        if r:
+            anon_users_total = r[0]["total"] or 0
+            anon_users_today = r[0]["today"] or 0
+
+        # Engaged = anon user who saved a favorite or pick in the last 7 days.
+        r = execute_query(
+            """
+            SELECT COUNT(DISTINCT u.id) AS n
+            FROM auth.users u
+            WHERE u.is_anonymous = TRUE
+              AND (
+                EXISTS (SELECT 1 FROM user_match_favorites f
+                         WHERE f.user_id = u.id
+                           AND f.created_at > NOW() - INTERVAL '7 days')
+                OR EXISTS (SELECT 1 FROM user_picks p
+                            WHERE p.user_id = u.id
+                              AND p.created_at > NOW() - INTERVAL '7 days')
+              )
+            """, [])
+        if r:
+            anon_users_engaged_7d = r[0]["n"] or 0
+
+        # Upgrades proxy: profiles whose email is now NOT NULL but who were
+        # created > 1h ago (i.e. they got created as anon, then upgraded).
+        # Not perfect — a real-signup user landing email within their own
+        # initial trigger will read 0s old. The 1h cutoff catches the
+        # anon→real path specifically.
+        r = execute_query(
+            """
+            SELECT COUNT(*) AS n
+            FROM profiles p
+            WHERE p.email IS NOT NULL
+              AND p.updated_at > NOW() - INTERVAL '7 days'
+              AND p.updated_at - p.created_at > INTERVAL '1 hour'
+            """, [])
+        if r:
+            anon_upgrades_7d = r[0]["n"] or 0
+    except Exception as e:
+        failed_sections.append("anon_users")
+        console.print(f"[yellow]ops_snapshot: anon_users failed: {e}[/yellow]")
 
     # ⑩ Sidelined + transfers coverage (new — migration 067)
     try:
@@ -5670,6 +5727,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               backfill_total_done, backfill_total_finished, backfill_last_run,
               af_calls_today, af_budget_remaining,
               total_users, pro_users, elite_users, new_signups_today,
+              anon_users_total, anon_users_today, anon_users_engaged_7d, anon_upgrades_7d,
               sidelined_players_fetched, transfers_teams_fetched,
               shadow_runs_today, shadow_bets_today
             ) VALUES (
@@ -5684,6 +5742,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               %s, %s, %s, %s, %s,
               %s, %s, %s,
               %s, %s,
+              %s, %s, %s, %s,
               %s, %s, %s, %s,
               %s, %s,
               %s, %s
@@ -5709,6 +5768,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
                 backfill_total_done, backfill_total_finished, backfill_last_run,
                 af_calls_today, af_budget_remaining,
                 total_users, pro_users, elite_users, new_signups_today,
+                anon_users_total, anon_users_today, anon_users_engaged_7d, anon_upgrades_7d,
                 sidelined_players_fetched, transfers_teams_fetched,
                 shadow_runs_today, shadow_bets_today,
             ]
