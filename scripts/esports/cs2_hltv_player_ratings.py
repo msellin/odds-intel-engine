@@ -165,20 +165,47 @@ def _save_json(path: Path, data: dict) -> None:
 
 
 def _players_to_fetch(top: int) -> list[tuple[int, str]]:
-    """Read cs2_hltv_rankings for top-N teams, return their roster players."""
+    """Collect players to fetch. Two sources, in order:
+      1) HLTV /ranking/teams.players (currently NULL — column never populated)
+      2) PandaScore rosters cache (~950 teams) — primary source today.
+    Intersect against hltv_player_ids cache to filter to scrapable IDs.
+    --top caps at the first N players alphabetically (0 = no cap).
+    """
     from workers.api_clients.db import execute_query
+
+    # Source 1: HLTV rankings.players (legacy — null for now).
     rows = execute_query("""
         SELECT DISTINCT ON (team_name) team_name, players
         FROM cs2_hltv_rankings
         WHERE hltv_rank <= %s
         ORDER BY team_name, snapshot_date DESC
-    """, (top,))
+    """, (top if top > 0 else 9999,))
     all_players: set[str] = set()
     for r in rows:
         for p in (r.get("players") or []):
             all_players.add(p.lower())
 
-    # Resolve player names to IDs
+    # Source 2: PandaScore rosters cache.
+    ps_path = Path(__file__).resolve().parents[2] / "data/esports/cs2/pandascore_rosters.json"
+    ps_count = 0
+    if ps_path.exists():
+        try:
+            ps = json.loads(ps_path.read_text())
+            for team_name, payload in ps.items():
+                players = payload.get("players") if isinstance(payload, dict) else payload
+                if not players:
+                    continue
+                for p in players:
+                    nick = (p.get("nickname") if isinstance(p, dict) else None) or ""
+                    if nick:
+                        all_players.add(nick.lower())
+                        ps_count += 1
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"  [!] rosters cache read error: {e}", file=sys.stderr)
+    print(f"  rosters: hltv_rankings={sum(1 for r in rows if r.get('players'))} teams, "
+          f"pandascore={ps_count} nicknames")
+
+    # Resolve nicknames → HLTV IDs via the discover cache.
     ids = _load_json(PLAYER_ID_CACHE)
     if not ids:
         print("  [!] no player ID cache — run with --discover first", file=sys.stderr)
@@ -187,7 +214,9 @@ def _players_to_fetch(top: int) -> list[tuple[int, str]]:
     for name in sorted(all_players):
         if name in ids:
             out.append((ids[name], name))
-    print(f"  {len(out)} resolved / {len(all_players)} unique players in top-{top} rosters")
+    if top > 0 and len(out) > top:
+        out = out[:top]
+    print(f"  {len(out)} resolved / {len(all_players)} unique players (cap: {top or 'no'})")
     return out
 
 
