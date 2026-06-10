@@ -39,7 +39,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 CACHE_FILE = Path("data/esports/cs2/pandascore_rosters.json")
 API_BASE   = "https://api.pandascore.co"
-RATE_DELAY = 0.25   # 1000/hr => 3.6s, but spread by 0.25s is safe
+RATE_DELAY = 4.0    # PandaScore quota is 1000 req/hr → ~3.6s per req minimum.
+                    # 4s gives a small safety margin to avoid 429s. Earlier 0.25s
+                    # value was 14x over quota and forced constant 60s 429 backoffs.
 
 
 def _load_cache() -> dict:
@@ -107,8 +109,12 @@ def _fetch_one(key: str, params: dict) -> list:
     headers = {"Authorization": f"Bearer {key}", "Accept": "application/json"}
     r = requests.get(f"{API_BASE}/csgo/teams", headers=headers, params=params, timeout=15)
     if r.status_code == 429:
-        print("  [!] rate-limited; sleeping 60s", file=sys.stderr)
-        time.sleep(60)
+        # Respect server's Retry-After header if present; else 30s
+        # (the hourly counter resets at the top of each hour so prolonged 60s
+        # waits were wasteful).
+        retry_after = int(r.headers.get("Retry-After", "30"))
+        print(f"  [!] rate-limited; sleeping {retry_after}s", file=sys.stderr)
+        time.sleep(retry_after)
         return _fetch_one(key, params)
     return r.json() if r.ok else []
 

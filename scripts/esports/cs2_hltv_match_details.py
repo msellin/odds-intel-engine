@@ -36,7 +36,9 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from workers.api_clients.db import execute_write, execute_query
 
-RATE_DELAY = 8.0   # be polite — keeps us at ~7 req/min
+RATE_DELAY = 2.0   # FlareSolverr's browser navigation already paces us
+                   # (~3-5s per page); explicit 8s sleep on top was redundant.
+                   # 2s + FlareSolverr response ≈ 5-6s/match ≈ 10-12 matches/min.
 RESULTS_URL = "https://www.hltv.org/results"
 MATCH_URL_FMT = "https://www.hltv.org/matches/{mid}/{slug}"
 
