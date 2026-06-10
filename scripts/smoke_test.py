@@ -20699,5 +20699,44 @@ def _():
             "wc_bracket_meta upserts onConflict drifted from migration 228 constraint"
 
 
+@test("CS2-COOLBET-PLACER — script + migration 233 + scheduler cron + safety gate")
+def _():
+    import pathlib, ast
+    src = pathlib.Path("scripts/esports/cs2_coolbet_placer.py").read_text()
+
+    for fn in ["load_unplaced_picks", "coolbet_odds_for_pick", "insert_real_bet", "main"]:
+        assert f"def {fn}" in src, f"missing {fn}"
+
+    # Slippage gate must be present (default -5%)
+    assert "MAX_NEGATIVE_SLIPPAGE_PCT" in src
+
+    # Real-money safety gate must check EXECUTE_AUTHORIZED env. Without this
+    # someone could accidentally fire real bets — memory note
+    # `feedback_coolbet_execute_safety` is binding.
+    assert "EXECUTE_AUTHORIZED" in src, "missing EXECUTE_AUTHORIZED env gate"
+    assert "--execute" in src and "--record" in src
+
+    # CS2 markets only carry match_winner today (no AH/OU on Coolbet for CS2).
+    assert '"match_winner"' in src
+
+    # Migration 233 creates cs2_real_bets
+    mig = pathlib.Path("supabase/migrations/233_cs2_real_bets.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS cs2_real_bets" in mig
+    for col in ["cs2_simulated_bet_id", "bot_name", "bo3gg_id", "paper",
+                "captured_odds", "slippage_pct", "edge_pct_taken",
+                "ticket_id", "stake_eur", "result", "pnl_eur", "clv_pinnacle"]:
+        assert col in mig, f"migration 233 missing column {col}"
+    # FK to cs2_simulated_bets + unique constraint so we never double-place
+    assert "REFERENCES cs2_simulated_bets(id)" in mig
+    assert "UNIQUE (cs2_simulated_bet_id)" in mig
+
+    # Scheduler wires job_cs2_coolbet_placer
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    tree = ast.parse(sched)
+    fns = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    assert "job_cs2_coolbet_placer" in fns
+    assert 'id="cs2_coolbet_placer"' in sched
+
+
 if __name__ == "__main__":
     main()

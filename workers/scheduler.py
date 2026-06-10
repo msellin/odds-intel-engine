@@ -1218,6 +1218,29 @@ def job_cs2_bot():
     _run_job("cs2_bot", lambda: None)
 
 
+def job_cs2_coolbet_placer():
+    """CS2-COOLBET-PLACER (2026-06-10): paper-mode placement of v8 bot picks
+    onto Coolbet. Reads cs2_simulated_bets, looks up coolbet_odds from
+    cs2_upcoming_matches (scanner already populates them), writes to
+    cs2_real_bets with paper=true. No real money — --execute is gated
+    behind explicit operator authorization (memory: feedback_coolbet_execute_safety).
+    Fires 2 min after cs2_bot so picks have just landed.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 Coolbet placer (paper)[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_coolbet_placer.py", "--record"],
+        capture_output=True, text=True, timeout=300,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]CS2 coolbet placer error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ["placed:", "skip:", "[✓]", "[-]"]):
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_coolbet_placer", lambda: None)
+
+
 def job_cs2_settlement():
     """CS2-SETTLEMENT (2026-06-08): pull finished bo3.gg matches into cs2_results
     and settle any open cs2_bets. Hourly during the global CS2 match window.
@@ -2484,6 +2507,13 @@ def main():
 
     # CS2-BOT (2026-06-08) — runs ~10 minutes after each ELO scanner pass so
     # bookie/coolbet odds + new model output are both fresh.
+    # CS2-COOLBET-PLACER (2026-06-10) — paper placement, fires 2 min after bot.
+    # Real-money flip requires explicit operator auth (memory note).
+    scheduler.add_job(job_cs2_coolbet_placer, CronTrigger(hour="10-23", minute="8,38"),
+                      id="cs2_coolbet_placer",
+                      name="CS2 Coolbet Placer [paper, every 30min 10-23 UTC]",
+                      max_instances=1, misfire_grace_time=1800)
+
     # CS2-BOT — every 30min, 3 min after v8_predict so it has fresh fair odds.
     # Matches soccer betting_refresh cadence. Soccer-style "scan whenever odds
     # move" pattern lets us catch line drift inside the 30-min window.
