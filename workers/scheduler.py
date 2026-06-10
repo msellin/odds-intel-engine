@@ -2324,15 +2324,18 @@ def main():
                       max_instances=1, misfire_grace_time=1800)
 
     # CS2-V7-PREDICT (2026-06-09) — v7 stacking model. Kept alive as fallback
-    # while v8 stabilises. Runs 5 min after hltv_v1.
-    scheduler.add_job(job_cs2_v7_predict, CronTrigger(hour="6,10,14,18,22", minute=22),
-                      id="cs2_v7_predict", name="CS2 v7 Scorer [4h, 06-22 UTC]",
+    # while v8 stabilises. 4x/day is enough — only fires when v8 fails.
+    scheduler.add_job(job_cs2_v7_predict, CronTrigger(hour="6,10,14,18,22", minute=2),
+                      id="cs2_v7_predict", name="CS2 v7 Scorer [4h fallback]",
                       max_instances=1, misfire_grace_time=1800)
 
-    # CS2-V8-PREDICT (2026-06-10) — production v8 stacking + kd_diff. Fires
-    # 3 min after v7 so v7 base exists in DB; cs2_bot.py prefers v8 → v7 → hltv_v1.
-    scheduler.add_job(job_cs2_v8_predict, CronTrigger(hour="6,10,14,18,22", minute=25),
-                      id="cs2_v8_predict", name="CS2 v8 Production Scorer [4h, 06-22 UTC]",
+    # CS2-V8-PREDICT (2026-06-10) — production v8 stacking + kd_diff. Now
+    # fires every 30 min during match hours (10-23 UTC) so the bot has fresh
+    # predictions whenever the pinnacle scanner refreshes odds. Matches the
+    # soccer betting_refresh cadence (every 30 min).
+    scheduler.add_job(job_cs2_v8_predict,
+                      CronTrigger(hour="10-23", minute="3,33"),
+                      id="cs2_v8_predict", name="CS2 v8 Scorer [every 30min, 10-23 UTC]",
                       max_instances=1, misfire_grace_time=1800)
 
     # NOTE: HLTV /stats/* scraper (job_cs2_hltv_stats_scraper) is intentionally
@@ -2481,7 +2484,10 @@ def main():
 
     # CS2-BOT (2026-06-08) — runs ~10 minutes after each ELO scanner pass so
     # bookie/coolbet odds + new model output are both fresh.
-    scheduler.add_job(job_cs2_bot, CronTrigger(hour="6,10,14,18,22", minute=28),
+    # CS2-BOT — every 30min, 3 min after v8_predict so it has fresh fair odds.
+    # Matches soccer betting_refresh cadence. Soccer-style "scan whenever odds
+    # move" pattern lets us catch line drift inside the 30-min window.
+    scheduler.add_job(job_cs2_bot, CronTrigger(hour="10-23", minute="6,36"),
                       id="cs2_bot", name="CS2 Value Bot [4h, 06-22 UTC]",
                       max_instances=1, misfire_grace_time=1800)
 
