@@ -20190,6 +20190,11 @@ def _():
     assert "(403, 429, 503)" in src, "re-warm trigger on CF block missing"
     assert "psycopg2.extras.execute_values" in src, "batched insert pattern missing"
     assert "with get_conn() as conn" in src, "write_match must use single transaction"
+    # write_match must retry on OperationalError — get_conn() doesn't auto-retry,
+    # and a dropped SSL connection from the pool will otherwise kill the whole
+    # 9000-match batch (saw this 2026-06-10 with the new batched writer).
+    assert "_DB_CONN_ERRORS" in src, "write_match must retry on connection errors"
+    assert "_write_match_once" in src, "write_match split into retry wrapper + body"
 
     mig = pathlib.Path("supabase/migrations/209_cs2_hltv_match_details.sql").read_text()
     for tbl in ["cs2_hltv_matches", "cs2_hltv_match_maps", "cs2_hltv_match_veto",

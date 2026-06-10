@@ -35,7 +35,10 @@ except ImportError:
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from workers.api_clients.db import execute_write, execute_query, get_conn
+import psycopg2
 import psycopg2.extras
+
+_DB_CONN_ERRORS = (psycopg2.OperationalError, psycopg2.InterfaceError)
 
 RATE_DELAY = 0.2   # Plain-requests path after FS warmup is ~1s/match; tiny
                    # jitter keeps us civil. FS-only path is naturally paced
@@ -428,11 +431,21 @@ def parse_match(html: str) -> dict | None:
 def write_match(mid: int, slug: str, parsed: dict) -> None:
     """Single transaction, batched child inserts. ~30 individual roundtrips → 5.
 
-    Previous implementation made ~30-50 round trips per match (5+ players × 2-3
-    maps + veto rows + delete-then-insert sequence) at ~150ms each = 5-8s per
-    match. Now: one connection, one transaction, execute_values for child rows.
-    Expected ~0.3-0.5s per match.
+    Retries once on connection-level errors (SSL drop, idle-timeout from the
+    Supabase pooler). Without this, a single dead conn from the pool kills the
+    whole 9000-match run — and `get_conn()` doesn't retry on its own the way
+    `execute_write` does.
     """
+    for attempt in range(2):
+        try:
+            _write_match_once(mid, slug, parsed)
+            return
+        except _DB_CONN_ERRORS:
+            if attempt == 1:
+                raise
+
+
+def _write_match_once(mid: int, slug: str, parsed: dict) -> None:
     url = MATCH_URL_FMT.format(mid=mid, slug=slug)
 
     map_rows = [
