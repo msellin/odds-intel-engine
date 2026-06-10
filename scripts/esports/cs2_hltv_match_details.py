@@ -34,12 +34,19 @@ except ImportError:
     import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from workers.api_clients.db import execute_write, execute_query
+from workers.api_clients.db import execute_write, execute_query, get_conn
+import psycopg2.extras
 
-RATE_DELAY = 0.5   # FlareSolverr's browser navigation already paces us
-                   # (~3-5s per page). 0.5s + FS response ≈ 4-5s/match ≈
-                   # 13-15 matches/min. Previous 2s was overkill — FS itself
-                   # is the natural rate-limiter against HLTV's CF.
+RATE_DELAY = 0.2   # Plain-requests path after FS warmup is ~1s/match; tiny
+                   # jitter keeps us civil. FS-only path is naturally paced
+                   # by FlareSolverr's 6s global throttle.
+
+# Cookie/UA cache for plain-requests-after-FS-warmup. One FlareSolverr call
+# (~5-7s) yields cf_clearance + __cf_bm cookies that plain requests can reuse
+# for ~30 min, fetching each match in ~1s. Re-warm every WARMUP_REUSE_LIMIT
+# calls or on 403/503. Expected throughput: ~25-30 matches/min vs ~10 via FS.
+WARMUP_REUSE_LIMIT = 60
+WARMUP_MAX_AGE_S = 900  # 15 min — well inside CF cookie TTL
 RESULTS_URL = "https://www.hltv.org/results"
 MATCH_URL_FMT = "https://www.hltv.org/matches/{mid}/{slug}"
 
@@ -104,45 +111,110 @@ _KAST_CELL_RE   = re.compile(r'<td class="kast[^"]*\btraditional-data\b[^"]*"[^>
 _RATING_CELL_RE = re.compile(r'<td class="rating[^"]*"[^>]*>\s*(\d\.\d{1,3})')
 
 
-def _fetch(url: str) -> str | None:
-    """Fetch via FlareSolverr if FLARESOLVERR_URL is set. Else fall back to
-    plain requests (will hit CF blocks ~50% of time for non-/stats/* URLs).
+# Module-level cookie jar populated by a FlareSolverr warmup. Reused across
+# many plain-requests fetches until WARMUP_REUSE_LIMIT or WARMUP_MAX_AGE_S.
+_warm_session: requests.Session | None = None
+_warm_at: float = 0.0
+_warm_calls: int = 0
 
-    Behavior change 2026-06-09: when FLARESOLVERR_URL IS set but FlareSolverr
-    is unreachable (e.g. cold start, container restarting), we now retry the
-    is_available probe twice with backoff before falling back. Previously a
-    single 5s timeout would silently fall back to plain requests and every
-    match would 403. Loud failure beats silent.
-    """
+
+def _warmup_via_flaresolverr(url: str) -> tuple[requests.Session, str] | None:
+    """One FlareSolverr call to capture cf_clearance + __cf_bm cookies and
+    the browser User-Agent. Returns (session, html) or None on failure."""
     sys.path.insert(0, str(Path(__file__).parent))
     try:
-        from flaresolverr_client import fetch as fs_fetch, is_available
+        from flaresolverr_client import fetch_full
     except ImportError:
-        fs_fetch = None
-        is_available = lambda: False
+        return None
+
+    result = fetch_full(url, session="hltv_matches")
+    if not result or not result.get("html"):
+        return None
+
+    sess = requests.Session()
+    for c in result.get("cookies") or []:
+        name = c.get("name")
+        value = c.get("value")
+        if not name:
+            continue
+        sess.cookies.set(name, value, domain=c.get("domain") or ".hltv.org",
+                         path=c.get("path") or "/")
+    ua = result.get("user_agent") or HEADERS["User-Agent"]
+    sess.headers.update({**HEADERS, "User-Agent": ua})
+    return sess, result["html"]
+
+
+def _fetch(url: str) -> str | None:
+    """Warm via FlareSolverr once, then plain-requests with captured cookies.
+
+    Pattern:
+      - Cold start OR cookies stale: FlareSolverr call (~5-7s), capture cookies+UA
+      - Warm path: plain requests with cookies (~1s)
+      - On 403/503: invalidate cookies, re-warm once
+
+    Fallback: when FLARESOLVERR_URL is not set, plain requests only (will
+    hit CF blocks). Production must always set FLARESOLVERR_URL.
+    """
+    global _warm_session, _warm_at, _warm_calls
 
     fs_url = os.getenv("FLARESOLVERR_URL", "").strip()
-    if fs_url and fs_fetch:
-        # Treat FLARESOLVERR_URL as authoritative: try FlareSolverr first,
-        # don't pre-check availability (waste of a roundtrip per call).
-        result = fs_fetch(url, session="hltv_matches")
-        if result is not None:
-            return result
-        # Don't fall back to plain requests when FlareSolverr is configured;
-        # the queue row will be marked fetch_failed and auto-retry on next run.
-        print(f"  [!] FlareSolverr returned None for {url[-60:]} — won't fall back to plain requests", file=sys.stderr)
-        return None
 
-    # Fallback path: only used when FLARESOLVERR_URL is not configured.
-    try:
-        r = requests.get(url, headers=HEADERS, timeout=20)
-        if r.status_code != 200:
-            print(f"  [!] {url[-60:]} status={r.status_code}", file=sys.stderr)
+    # --- Fallback: FS not configured ---
+    if not fs_url:
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=20)
+            if r.status_code != 200:
+                print(f"  [!] {url[-60:]} status={r.status_code}", file=sys.stderr)
+                return None
+            return r.text
+        except Exception as e:
+            print(f"  [!] {url[-60:]} {e}", file=sys.stderr)
             return None
-        return r.text
+
+    # --- Decide if we need to (re)warm ---
+    age = time.time() - _warm_at
+    stale = (
+        _warm_session is None
+        or _warm_calls >= WARMUP_REUSE_LIMIT
+        or age >= WARMUP_MAX_AGE_S
+    )
+
+    if stale:
+        warm = _warmup_via_flaresolverr(url)
+        if warm is None:
+            print(f"  [!] FlareSolverr warmup failed for {url[-60:]}", file=sys.stderr)
+            return None
+        _warm_session, html = warm
+        _warm_at = time.time()
+        _warm_calls = 1  # this fetch counts
+        return html
+
+    # --- Warm path: plain requests with cached cookies ---
+    try:
+        r = _warm_session.get(url, timeout=20)
     except Exception as e:
-        print(f"  [!] {url[-60:]} {e}", file=sys.stderr)
-        return None
+        print(f"  [!] plain {url[-60:]} {e} — re-warming", file=sys.stderr)
+        _warm_session = None
+        return _fetch(url)
+
+    if r.status_code == 200:
+        _warm_calls += 1
+        return r.text
+
+    # Blocked or rate-limited → invalidate and re-warm once.
+    if r.status_code in (403, 429, 503):
+        print(f"  [!] plain {url[-60:]} status={r.status_code} — re-warming", file=sys.stderr)
+        _warm_session = None
+        warm = _warmup_via_flaresolverr(url)
+        if warm is None:
+            return None
+        _warm_session, html = warm
+        _warm_at = time.time()
+        _warm_calls = 1
+        return html
+
+    print(f"  [!] plain {url[-60:]} status={r.status_code}", file=sys.stderr)
+    return None
 
 
 def fetch_results_listing(offset: int = 0) -> list[tuple[int, str]]:
@@ -354,61 +426,88 @@ def parse_match(html: str) -> dict | None:
 
 
 def write_match(mid: int, slug: str, parsed: dict) -> None:
+    """Single transaction, batched child inserts. ~30 individual roundtrips → 5.
+
+    Previous implementation made ~30-50 round trips per match (5+ players × 2-3
+    maps + veto rows + delete-then-insert sequence) at ~150ms each = 5-8s per
+    match. Now: one connection, one transaction, execute_values for child rows.
+    Expected ~0.3-0.5s per match.
+    """
     url = MATCH_URL_FMT.format(mid=mid, slug=slug)
-    execute_write("""
-        INSERT INTO cs2_hltv_matches (hltv_match_id, event_name, stage, match_date,
-            team1_name, team2_name, score1, score2, winner_name, best_of, raw_url, fetched_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
-        ON CONFLICT (hltv_match_id) DO UPDATE SET
-            event_name = EXCLUDED.event_name, stage = EXCLUDED.stage,
-            match_date = EXCLUDED.match_date,
-            team1_name = EXCLUDED.team1_name, team2_name = EXCLUDED.team2_name,
-            score1 = EXCLUDED.score1, score2 = EXCLUDED.score2,
-            winner_name = EXCLUDED.winner_name, best_of = EXCLUDED.best_of,
-            raw_url = EXCLUDED.raw_url, fetched_at = NOW()
-    """, (
-        mid, parsed["event"], "LAN" if parsed.get("is_lan") else "Online",
-        parsed["date"], parsed["team1"], parsed["team2"],
-        parsed["score1"], parsed["score2"], parsed["winner"],
-        parsed["best_of"], url,
-    ))
 
-    # Wipe + insert child rows (idempotent)
-    execute_write("DELETE FROM cs2_hltv_match_maps          WHERE hltv_match_id = %s", (mid,))
-    execute_write("DELETE FROM cs2_hltv_match_veto          WHERE hltv_match_id = %s", (mid,))
-    execute_write("DELETE FROM cs2_hltv_player_match_stats  WHERE hltv_match_id = %s", (mid,))
-
-    for i, m in enumerate(parsed["maps"], 1):
-        execute_write("""
-            INSERT INTO cs2_hltv_match_maps (hltv_match_id, map_order, map_name,
-                team1_score, team2_score, winner_name,
-                team1_ct_rounds, team1_t_rounds, team2_ct_rounds, team2_t_rounds,
-                team1_first_half_side)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT DO NOTHING
-        """, (mid, i, m["name"], m["team1_score"], m["team2_score"], m["winner"],
-              m.get("team1_ct"), m.get("team1_t"), m.get("team2_ct"), m.get("team2_t"),
-              m.get("team1_first_half_side")))
-
-    for v in parsed["veto"]:
-        execute_write("""
-            INSERT INTO cs2_hltv_match_veto (hltv_match_id, step, team_name, action, map_name)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT DO NOTHING
-        """, (mid, v["step"], v["team"], v["action"], v["map"]))
-
-    # One row per (player, map). map_order is 1-indexed to match cs2_hltv_match_maps.
+    map_rows = [
+        (mid, i, m["name"], m["team1_score"], m["team2_score"], m["winner"],
+         m.get("team1_ct"), m.get("team1_t"), m.get("team2_ct"), m.get("team2_t"),
+         m.get("team1_first_half_side"))
+        for i, m in enumerate(parsed["maps"], 1)
+    ]
+    veto_rows = [
+        (mid, v["step"], v["team"], v["action"], v["map"])
+        for v in parsed["veto"]
+    ]
+    player_rows = []
     for p in parsed["players"]:
         map_order = p["map_idx"] + 1
         map_name = parsed["maps"][p["map_idx"]]["name"] if p["map_idx"] < len(parsed["maps"]) else None
-        execute_write("""
-            INSERT INTO cs2_hltv_player_match_stats
-                (hltv_match_id, hltv_player_id, nickname, team_name,
-                 map_order, map_name, kills, deaths, adr, kast, rating)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT DO NOTHING
-        """, (mid, p["id"], p["nickname"], p.get("team_name"),
-              map_order, map_name, p["kills"], p["deaths"], p["adr"], p["kast"], p["rating"]))
+        player_rows.append((
+            mid, p["id"], p["nickname"], p.get("team_name"),
+            map_order, map_name, p["kills"], p["deaths"], p["adr"], p["kast"], p["rating"],
+        ))
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO cs2_hltv_matches (hltv_match_id, event_name, stage, match_date,
+                    team1_name, team2_name, score1, score2, winner_name, best_of, raw_url, fetched_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (hltv_match_id) DO UPDATE SET
+                    event_name = EXCLUDED.event_name, stage = EXCLUDED.stage,
+                    match_date = EXCLUDED.match_date,
+                    team1_name = EXCLUDED.team1_name, team2_name = EXCLUDED.team2_name,
+                    score1 = EXCLUDED.score1, score2 = EXCLUDED.score2,
+                    winner_name = EXCLUDED.winner_name, best_of = EXCLUDED.best_of,
+                    raw_url = EXCLUDED.raw_url, fetched_at = NOW()
+            """, (
+                mid, parsed["event"], "LAN" if parsed.get("is_lan") else "Online",
+                parsed["date"], parsed["team1"], parsed["team2"],
+                parsed["score1"], parsed["score2"], parsed["winner"],
+                parsed["best_of"], url,
+            ))
+
+            cur.execute(
+                "DELETE FROM cs2_hltv_match_maps WHERE hltv_match_id = %s;"
+                "DELETE FROM cs2_hltv_match_veto WHERE hltv_match_id = %s;"
+                "DELETE FROM cs2_hltv_player_match_stats WHERE hltv_match_id = %s;",
+                (mid, mid, mid),
+            )
+
+            if map_rows:
+                psycopg2.extras.execute_values(cur, """
+                    INSERT INTO cs2_hltv_match_maps (hltv_match_id, map_order, map_name,
+                        team1_score, team2_score, winner_name,
+                        team1_ct_rounds, team1_t_rounds, team2_ct_rounds, team2_t_rounds,
+                        team1_first_half_side)
+                    VALUES %s
+                    ON CONFLICT DO NOTHING
+                """, map_rows)
+
+            if veto_rows:
+                psycopg2.extras.execute_values(cur, """
+                    INSERT INTO cs2_hltv_match_veto (hltv_match_id, step, team_name, action, map_name)
+                    VALUES %s
+                    ON CONFLICT DO NOTHING
+                """, veto_rows)
+
+            if player_rows:
+                psycopg2.extras.execute_values(cur, """
+                    INSERT INTO cs2_hltv_player_match_stats
+                        (hltv_match_id, hltv_player_id, nickname, team_name,
+                         map_order, map_name, kills, deaths, adr, kast, rating)
+                    VALUES %s
+                    ON CONFLICT DO NOTHING
+                """, player_rows)
+
+        conn.commit()
 
 
 def process_queue(limit: int) -> tuple[int, int]:

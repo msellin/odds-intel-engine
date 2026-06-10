@@ -20176,19 +20176,20 @@ def _():
     src = p.read_text()
     for fn in ["fetch_results_listing", "queue_new_matches", "parse_match", "write_match", "process_queue"]:
         assert f"def {fn}" in src, f"{fn} missing"
-    # 2026-06-10: plain-requests-after-FS-warmup refactor. _fetch now warms
-    # via FlareSolverr once (~5-7s), captures cf_clearance + __cf_bm cookies,
-    # then fetches subsequent matches via plain requests (~1s each). Re-warm
-    # every WARMUP_REUSE_LIMIT (60) calls or WARMUP_MAX_AGE_S (900s). RATE_DELAY
-    # dropped to 0.2 since plain requests don't need throttling. Expected
-    # throughput: ~25-30/min vs ~7-10/min on FS-only path.
+    # 2026-06-10: 2-stage throughput refactor (was ~7-10/min, now ~40-60/min).
+    # Stage 1 (fetch): plain-requests-after-FS-warmup. _fetch warms via
+    # FlareSolverr once, captures cf_clearance+__cf_bm cookies + UA, then
+    # fetches subsequent matches via plain requests (~0.2-1s vs ~5-7s).
+    # Stage 2 (write): write_match batches all child inserts into one
+    # transaction with execute_values (was ~30 round-trips, now 4).
     assert "RATE_DELAY = 0.2" in src
     assert "WARMUP_REUSE_LIMIT" in src
     assert "WARMUP_MAX_AGE_S" in src
     assert "_warmup_via_flaresolverr" in src
     assert "_warm_session" in src
-    # Re-warm on block must be present — otherwise stale cookies stall the queue.
     assert "(403, 429, 503)" in src, "re-warm trigger on CF block missing"
+    assert "psycopg2.extras.execute_values" in src, "batched insert pattern missing"
+    assert "with get_conn() as conn" in src, "write_match must use single transaction"
 
     mig = pathlib.Path("supabase/migrations/209_cs2_hltv_match_details.sql").read_text()
     for tbl in ["cs2_hltv_matches", "cs2_hltv_match_maps", "cs2_hltv_match_veto",

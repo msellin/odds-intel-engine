@@ -124,6 +124,58 @@ def fetch(
     return None
 
 
+def fetch_full(
+    url: str,
+    *,
+    session: str = "hltv_default",
+    max_timeout_ms: int = DEFAULT_TIMEOUT_MS,
+    retries: int = 2,
+) -> Optional[dict]:
+    """Like fetch(), but returns the full solution envelope so callers can
+    capture cookies + user-agent for plain-requests handoff.
+
+    Returns: {"html": str, "cookies": list[dict], "user_agent": str, "status": int}
+    or None on failure.
+    """
+    _enforce_rate_limit()
+
+    body = {
+        "cmd": "request.get",
+        "url": url,
+        "maxTimeout": max_timeout_ms,
+        "session": session,
+    }
+
+    last_err = None
+    for attempt in range(retries + 1):
+        try:
+            req = urllib.request.Request(
+                f"{FLARESOLVERR_URL}/v1",
+                data=json.dumps(body).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=max_timeout_ms // 1000 + 30) as resp:
+                data = json.loads(resp.read())
+            if data.get("status") == "ok":
+                sol = data.get("solution") or {}
+                return {
+                    "html": sol.get("response"),
+                    "cookies": sol.get("cookies") or [],
+                    "user_agent": sol.get("userAgent") or "",
+                    "status": sol.get("status") or 0,
+                }
+            last_err = data.get("message", "unknown")
+            print(f"  [flaresolverr] fetch_full attempt {attempt + 1} non-ok: {last_err}")
+        except Exception as e:
+            last_err = str(e)
+            print(f"  [flaresolverr] fetch_full attempt {attempt + 1} error: {e}")
+        if attempt < retries:
+            time.sleep(5 + 5 * attempt)
+
+    print(f"  [flaresolverr] fetch_full gave up after {retries + 1}: {last_err}")
+    return None
+
+
 def destroy_session(session: str = "hltv_default") -> None:
     """Tear down a FlareSolverr session (releases the browser). Idempotent."""
     try:
