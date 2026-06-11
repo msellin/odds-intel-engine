@@ -108,6 +108,42 @@ def mark_cookies_refreshed(count: int) -> None:
     )
 
 
+def get_or_create_device_id() -> str:
+    """Return the bot's stable Coolbet deviceId. Auto-generates on first
+    call and persists to coolbet_session_state.device_id so subsequent
+    calls (and process restarts) read the same UUID.
+
+    Coolbet's /s/bets/bets POST requires a non-empty deviceId. Browsers
+    generate one client-side on first visit + store in localStorage —
+    FS-routed scrapes don't have access to that localStorage, so we
+    manage our own. Coolbet's server validates only that it's a valid
+    UUID-shaped string and doesn't care about its origin.
+
+    On DB error this falls through to a per-process random UUID so
+    bet placement never blocks on observability — that's the same
+    'best-effort' contract as the other state helpers."""
+    import uuid as _uuid
+    try:
+        from workers.api_clients.db import execute_query, execute_write
+        rows = execute_query(
+            "SELECT device_id FROM coolbet_session_state WHERE id = 1"
+        )
+        if rows and rows[0].get("device_id"):
+            return rows[0]["device_id"]
+        # First-time generation. UUID4 matches the format a real browser
+        # would write to localStorage on first visit.
+        new_id = str(_uuid.uuid4())
+        execute_write(
+            "UPDATE coolbet_session_state SET device_id = %s WHERE id = 1",
+            (new_id,),
+        )
+        log.info("Generated + persisted new Coolbet deviceId: %s", new_id)
+        return new_id
+    except Exception as e:
+        log.warning("device_id read/persist failed (using ephemeral UUID): %s", e)
+        return str(_uuid.uuid4())
+
+
 def read_state() -> dict | None:
     """SELECT the singleton row. Returns None on DB error (best-effort)."""
     try:
