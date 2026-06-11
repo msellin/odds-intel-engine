@@ -1243,6 +1243,51 @@ def job_cs2_pandascore_rosters():
     _run_job("cs2_pandascore_rosters", lambda: None)
 
 
+def job_coolbet_health_ping():
+    """COOLBET-FS-SESSION-STABLE Step 1.5 (2026-06-11): every 5 min, probe
+    the full Coolbet auth chain (FS reachable → session alive → JWT valid →
+    /s/casino/fo/maintenance returns 200). Updates coolbet_session_state
+    so /admin pages, Telegram /status, and the health-alert cron all see
+    fresh truth.
+
+    Cheap: 1 HTTPS GET per fire. Failure here surfaces hours BEFORE a
+    pipeline run would notice (the previous pattern was 'wait until
+    cs2_coolbet_scanner returns 0 matches and wonder why')."""
+    import subprocess
+    result = subprocess.run(
+        [sys.executable, "scripts/coolbet/health_ping.py", "--json"],
+        capture_output=True, text=True, timeout=60,
+    )
+    # exit code 0 = healthy, 1 = unhealthy, 2 = config error
+    if result.returncode == 0:
+        return  # silent on success; state row is updated
+    # Only console-log unhealthy — health-alert cron handles the TG ping.
+    console.print(f"[yellow]Coolbet health-ping: exit {result.returncode}[/yellow]")
+    console.print(result.stdout[-500:] or result.stderr[-500:])
+    _run_job("coolbet_health_ping", lambda: None)
+
+
+def job_flaresolverr_sweep():
+    """COOLBET-FS-SESSION-STABLE sweeper (2026-06-11): hourly destroys
+    stale FlareSolverr sessions that aren't in the active whitelist.
+
+    Root cause this fixes: every scraper that calls sessions.create without
+    a matching sessions.destroy leaks a Chrome instance. Railway hit the
+    slot limit on 2026-06-11 and sessions.create started hanging — the
+    symptom that triggered the architectural rewrite. Hourly sweeping
+    bounds future damage to ~1h of leaked sessions even if a scraper
+    crashes mid-run."""
+    import subprocess
+    result = subprocess.run(
+        [sys.executable, "scripts/coolbet/sweep_stale_sessions.py"],
+        capture_output=True, text=True, timeout=180,
+    )
+    for line in result.stdout.splitlines():
+        if any(k in line for k in ("destroyed", "stale", "no stale")):
+            console.print(f"[dim]{line}[/dim]")
+    _run_job("flaresolverr_sweep", lambda: None)
+
+
 def job_cs2_coolbet_scanner():
     """CS2-COOLBET-SCAN (2026-06-08): scrape Coolbet CS2 odds, write to
     cs2_upcoming_matches.coolbet_odds1/2. Anon-read, no JWT.
@@ -2594,6 +2639,24 @@ def main():
 
     # CS2-COOLBET-SCAN (2026-06-08) — every 30min 07-22 UTC at :17,:47.
     # Keeps Coolbet odds fresh for value-detection by the bot.
+    # COOLBET-FS-SESSION-STABLE Step 1.5 — heartbeat every 5 min.
+    # Updates coolbet_session_state.last_heartbeat_at + session_healthy.
+    # Side benefit: keeps Coolbet's server-side session marked active.
+    scheduler.add_job(job_coolbet_health_ping,
+                      CronTrigger(minute="*/5"),
+                      id="coolbet_health_ping",
+                      name="Coolbet Session Health Ping [5min]",
+                      max_instances=1, misfire_grace_time=60)
+
+    # COOLBET-FS-SESSION-STABLE sweeper — hourly, destroys stale FS sessions
+    # not in the active whitelist (coolbet_prod, hltv_*, coolbet_dev). Bounds
+    # the damage from any future session-leak bug to ≤1 hour.
+    scheduler.add_job(job_flaresolverr_sweep,
+                      CronTrigger(minute=37),  # off-the-hour to avoid pileups
+                      id="flaresolverr_sweep",
+                      name="FlareSolverr Stale Session Sweep [hourly]",
+                      max_instances=1, misfire_grace_time=600)
+
     scheduler.add_job(job_cs2_coolbet_scanner, CronTrigger(hour="7-22", minute="17,47"),
                       id="cs2_coolbet_scanner", name="CS2 Coolbet Scanner [30min]",
                       max_instances=1, misfire_grace_time=900)

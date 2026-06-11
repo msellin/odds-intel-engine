@@ -72,6 +72,13 @@ def _decode_jwt_payload(token: str) -> dict:
     return json.loads(base64.b64decode(payload_b64))
 
 
+# State writer — local import inside the methods that need it so module
+# load doesn't trigger workers.api_clients.db connection.
+def _state():
+    from workers.automation import coolbet_state as _s
+    return _s
+
+
 # ── FlareSolverr proxy ───────────────────────────────────────────────────────
 # Mirrors the proven scripts/coolbet/session_heartbeat.py pattern. Every call
 # from this module to Coolbet goes through FS's named browser session
@@ -330,6 +337,9 @@ class CoolbetSession:
         self._cookies_fresh = True
         log.info("Refreshed %d Imperva cookies from FS (reese84=%s, visid=%s)",
                  copied, has_reese, has_visid)
+        # Observability — record this in the session_state row so /status
+        # can show "cookies refreshed N minutes ago".
+        _state().mark_cookies_refreshed(copied)
         return copied
 
     # ── auth ─────────────────────────────────────────────────────────────────
@@ -368,6 +378,14 @@ class CoolbetSession:
             "Using manual JWT — user=%s ttl=%.0fs (exp=%s)",
             self._user_id, ttl,
             datetime.fromtimestamp(self._jwt_exp, tz=timezone.utc).isoformat(),
+        )
+        # Observability: record this login event in the state row.
+        _state().mark_login_success(
+            method="manual_jwt",
+            user_id=self._user_id,
+            jwt_exp_at=datetime.fromtimestamp(self._jwt_exp, tz=timezone.utc),
+            fs_url=os.getenv("FLARESOLVERR_URL"),
+            fs_session_name=self._fs_session_name,
         )
 
     def renew_jwt_via_api(self) -> float:
@@ -537,6 +555,14 @@ class CoolbetSession:
             "JWT obtained — user=%s expires=%s",
             self._user_id,
             datetime.fromtimestamp(self._jwt_exp, tz=timezone.utc).isoformat(),
+        )
+        # Observability: record this api_login event.
+        _state().mark_login_success(
+            method="api_login",
+            user_id=self._user_id,
+            jwt_exp_at=datetime.fromtimestamp(self._jwt_exp, tz=timezone.utc),
+            fs_url=os.getenv("FLARESOLVERR_URL"),
+            fs_session_name=self._fs_session_name,
         )
 
     def _ensure_auth(self) -> None:

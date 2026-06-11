@@ -3313,6 +3313,69 @@ def _():
     )
 
 
+@test("COOLBET-FS-SESSION-OBSERVABLE — session state writes + heartbeat + sweeper")
+def _():
+    """COOLBET-FS-SESSION-STABLE Step 1.3 + 1.5 (2026-06-11): the auth chain
+    isn't operationally useful unless we can see its state. This pin:
+      - asserts the singleton state table exists (migration 242)
+      - asserts CoolbetSession writes to it on login + cookie refresh
+      - asserts the heartbeat + sweeper scripts exist and are scheduled
+    """
+    import pathlib, ast
+    # Migration 242 creates the state table with the singleton + trigger.
+    mig = pathlib.Path("supabase/migrations/242_coolbet_session_state.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS coolbet_session_state" in mig, (
+        "Migration 242 must CREATE TABLE IF NOT EXISTS coolbet_session_state."
+    )
+    assert "CONSTRAINT singleton_row CHECK (id = 1)" in mig, (
+        "State table must be a singleton (CHECK id=1) — multiple rows would "
+        "be ambiguous for /status to display."
+    )
+
+    # State writer helpers exist with the right shape.
+    state_src = pathlib.Path("workers/automation/coolbet_state.py").read_text()
+    for fn in ("mark_login_success", "mark_error", "mark_heartbeat",
+                "mark_cookies_refreshed", "read_state"):
+        assert f"def {fn}(" in state_src, (
+            f"coolbet_state.py must expose {fn}() — used by session class + "
+            f"future Telegram /status command."
+        )
+
+    # CoolbetSession wires those into its login + cookie-refresh paths.
+    sess_src = pathlib.Path("workers/automation/coolbet_session.py").read_text()
+    assert "_state().mark_login_success(" in sess_src, (
+        "CoolbetSession must call mark_login_success on every successful "
+        "JWT adoption (both manual_jwt and api_login paths)."
+    )
+    assert "_state().mark_cookies_refreshed(" in sess_src, (
+        "_refresh_cookies_from_fs must call mark_cookies_refreshed so "
+        "/admin pages can see when cookies last rotated."
+    )
+
+    # Heartbeat + sweeper scripts exist.
+    assert pathlib.Path("scripts/coolbet/health_ping.py").exists(), (
+        "scripts/coolbet/health_ping.py required (the heartbeat cron)."
+    )
+    assert pathlib.Path("scripts/coolbet/sweep_stale_sessions.py").exists(), (
+        "scripts/coolbet/sweep_stale_sessions.py required (the sweeper cron)."
+    )
+
+    # Scheduler registers both crons.
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    tree = ast.parse(sched)
+    fns = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    assert "job_coolbet_health_ping" in fns, "scheduler must define job_coolbet_health_ping"
+    assert "job_flaresolverr_sweep" in fns, "scheduler must define job_flaresolverr_sweep"
+    ids = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "add_job":
+            for kw in n.keywords:
+                if kw.arg == "id" and isinstance(getattr(kw.value, "value", None), str):
+                    ids.add(kw.value.value)
+    assert "coolbet_health_ping" in ids, "coolbet_health_ping cron must be registered"
+    assert "flaresolverr_sweep" in ids, "flaresolverr_sweep cron must be registered"
+
+
 @test("COOLBET-PLACER-FLARESOLVERR-WIRE — login script syncs Imperva cookies to .env so the placer can use them")
 def test_coolbet_placer_flaresolverr_wire():
     """COOLBET-PLACER-FLARESOLVERR-WIRE (2026-06-10): the FlareSolverr-based
