@@ -20276,6 +20276,70 @@ def _():
     assert "cs2_hltv_player_ratings" in ids
 
 
+@test("CS2-HLTV-UPCOMING-MATCHES — HLTV /matches scraper populates cs2_upcoming_matches")
+def _():
+    """CS2-HLTV-UPCOMING-MATCHES (2026-06-11): bo3.gg was giving us 2-3 fixtures
+    per day across the global CS2 schedule. HLTV's /matches page is the canonical
+    source (30-50+ daily). This pin guards the bridge so it can't silently
+    regress to the bo3.gg-only state.
+
+    Properties asserted:
+      - Scraper exists and runs against hltv.org/matches
+      - Uses negative bo3gg_id sentinel (= -hltv_match_id) so predictors with
+        `WHERE bo3gg_id IS NOT NULL` still see HLTV-sourced rows
+      - ON CONFLICT (team1, team2, kickoff_time) DO NOTHING — bo3.gg-enriched
+        rows aren't clobbered
+      - Calls execute_write_returning (not execute_query) so inserts actually
+        commit — the original draft used execute_query and silently rolled back
+      - Populates hltv_rank/points from cs2_hltv_rankings at write time so
+        cs2_hltv_predict picks up HLTV-only rows without a separate scanner pass
+      - Scheduler registers the job on a 2h cadence
+    """
+    import pathlib, ast
+    src = pathlib.Path("scripts/esports/cs2_hltv_upcoming_matches.py").read_text()
+    assert "hltv.org/matches" in src, "Scraper must fetch from hltv.org/matches"
+    # Negative-sentinel encoding — predictors filter on bo3gg_id IS NOT NULL,
+    # not on sign, so HLTV rows must carry a non-null negative bo3gg_id.
+    assert '"bo3gg_id": -hltv_match_id' in src or "bo3gg_id = -hltv_match_id" in src, (
+        "HLTV-sourced rows must use -hltv_match_id as bo3gg_id sentinel "
+        "(collision-free, predictor-visible)"
+    )
+    # Conflict resolution: never overwrite bo3.gg-enriched rows.
+    assert "ON CONFLICT (team1, team2, kickoff_time) DO NOTHING" in src, (
+        "Upsert must DO NOTHING on conflict — bo3.gg rows carry richer odds+ELO "
+        "data this scraper can't reproduce; overwriting them is a regression."
+    )
+    # Commit path: execute_write_returning (not execute_query) — the latter
+    # never commits writes. Bug caught on 2026-06-11 first live run.
+    assert "execute_write_returning(" in src, (
+        "INSERT must use execute_write_returning (writes + commits). "
+        "execute_query is read-only and silently rolls back writes."
+    )
+    assert "execute_query(\n            \"\"\"\n            INSERT" not in src, (
+        "Do not use execute_query for INSERTs — it never commits."
+    )
+    # Predictor-readiness: scraper joins cs2_hltv_rankings to populate
+    # hltv_rank/points so cs2_hltv_predict's WHERE hltv_points1 IS NOT NULL
+    # gate accepts the row without needing a separate enrichment pass.
+    assert "FROM cs2_hltv_rankings" in src, (
+        "Scraper must join cs2_hltv_rankings at write time to populate "
+        "hltv_rank/points — without this, predictors filter out HLTV rows."
+    )
+
+    # Scheduler registration.
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    tree = ast.parse(sched)
+    fns = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    assert "job_cs2_hltv_upcoming" in fns, "scheduler must define job_cs2_hltv_upcoming"
+    ids = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "add_job":
+            for kw in n.keywords:
+                if kw.arg == "id" and isinstance(getattr(kw.value, "value", None), str):
+                    ids.add(kw.value.value)
+    assert "cs2_hltv_upcoming" in ids, "scheduler must register cs2_hltv_upcoming cron"
+
+
 @test("CS2-HLTV-PREDICT — parallel HLTV-only model variant")
 def _():
     import pathlib, importlib.util, ast

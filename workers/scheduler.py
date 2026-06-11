@@ -787,6 +787,32 @@ def job_cs2_scanner():
     _run_job("cs2_scanner", lambda: None)
 
 
+def job_cs2_hltv_upcoming():
+    """CS2-HLTV-UPCOMING (2026-06-11): scrape hltv.org/matches and populate
+    cs2_upcoming_matches with the broader HLTV-sourced fixture set.
+
+    bo3.gg gives us 2-3 matches/day; HLTV gives 30-50+. Rows are upserted
+    on (team1, team2, kickoff_time) — ON CONFLICT DO NOTHING — so this
+    coexists with the existing bo3.gg scanner without overwriting its
+    richer ELO/odds enrichment. HLTV-sourced rows use a negative
+    bo3gg_id sentinel (= -hltv_match_id) so the downstream predictors'
+    `WHERE bo3gg_id IS NOT NULL` filter still accepts them.
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 HLTV upcoming-matches scrape --record[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_hltv_upcoming_matches.py", "--record"],
+        capture_output=True, text=True, timeout=120,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]CS2 HLTV upcoming scrape error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ["parsed", "inserted", "predictor-ready", "earliest", "latest"]):
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_hltv_upcoming", lambda: None)
+
+
 def job_cs2_v7_predict():
     """CS2-V7-PREDICT (2026-06-09): production scorer for the v7 stacking
     model (AUC 0.694, +2.1pp over hltv_v1). Reads hltv_v1 predictions,
@@ -2352,6 +2378,17 @@ def main():
     scheduler.add_job(job_cs2_scanner, CronTrigger(hour="6,10,14,18,22", minute=12),
                       id="cs2_scanner", name="CS2 ELO Scanner [4h, 06-22 UTC]",
                       max_instances=1, misfire_grace_time=1800)
+
+    # CS2-HLTV-UPCOMING (2026-06-11) — broader fixture coverage than bo3.gg.
+    # Every 2h at :05 so it runs BEFORE the predict crons (:02 v7, :17 hltv_v1)
+    # in the cycles where both fire. Predictors pick up the new HLTV-sourced
+    # rows automatically on their next run because the scraper populates
+    # hltv_rank+points by joining cs2_hltv_rankings at write time.
+    scheduler.add_job(job_cs2_hltv_upcoming,
+                      CronTrigger(hour="0,2,4,6,8,10,12,14,16,18,20,22", minute=5),
+                      id="cs2_hltv_upcoming",
+                      name="CS2 HLTV Upcoming Matches [2h]",
+                      max_instances=1, misfire_grace_time=900)
 
     # CS2-SETTLEMENT (2026-06-08) — hourly 12-02 UTC. Pulls finished bo3.gg
     # matches into cs2_results and settles open cs2_bets.
