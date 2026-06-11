@@ -201,11 +201,18 @@ def main() -> int:
     p.add_argument("--keep-session", action="store_true",
                    help="Don't destroy the probe session at the end (useful for chained tests)")
     p.add_argument("--cleanup", action="store_true",
-                   help="Destroy ALL existing sessions before probing. Use when FS "
-                        "is hanging on sessions.create — usually means stale sessions "
-                        "are pinning Chrome instances and the container is at its slot limit.")
+                   help="Destroy STALE existing sessions before probing. Respects the "
+                        "production whitelist (coolbet_prod, coolbet_dev, hltv_*) by "
+                        "default — protects sessions that hold trust markers from "
+                        "accidental destruction. Pass --cleanup-all to override.")
     p.add_argument("--cleanup-only", action="store_true",
-                   help="Destroy all sessions and exit immediately (no probing).")
+                   help="Destroy stale sessions and exit immediately (no probing). "
+                        "Same whitelist rule as --cleanup.")
+    p.add_argument("--cleanup-all", action="store_true",
+                   help="DANGEROUS — destroys EVERY session including coolbet_prod, "
+                        "which holds the Coolbet 2FA trust marker. After running this "
+                        "you'll need to re-enroll via flaresolverr_login_enroll.py "
+                        "(SMS verification required). Use only when you're certain.")
     args = p.parse_args()
 
     ts = datetime.now(timezone.utc).isoformat()
@@ -227,21 +234,42 @@ def main() -> int:
         results["verdict"] = "fs_unreachable"
         return _finish(results, args.json, exit_code=2)
 
-    # Optional cleanup pass — destroys all existing sessions before probing.
-    # Use when sessions.create is hanging (stale sessions pinning Chrome slots).
-    if args.cleanup or args.cleanup_only:
+    # Optional cleanup pass — destroys stale sessions before probing.
+    # Default behaviour PRESERVES the production whitelist (coolbet_prod,
+    # coolbet_dev, hltv_*) because they hold trust markers / login state
+    # that we don't want to recreate from scratch (re-enrollment requires
+    # SMS 2FA — operator-in-the-loop). Use --cleanup-all to override.
+    if args.cleanup or args.cleanup_only or args.cleanup_all:
         existing = results["steps"]["reachability"].get("sessions_visible") or []
-        if existing:
+        # Production-whitelist — mirrors scripts/coolbet/sweep_stale_sessions.py
+        # so both tools enforce the same rule. Kept in sync manually for now;
+        # if the list grows, factor into a shared constant.
+        WHITELIST_EXACT = {"coolbet_prod", "coolbet_dev"}
+        WHITELIST_PREFIXES = ("hltv_",)
+        def _is_whitelisted(name: str) -> bool:
+            return name in WHITELIST_EXACT or any(name.startswith(p) for p in WHITELIST_PREFIXES)
+
+        if args.cleanup_all:
+            to_destroy = list(existing)
+            preserved: list = []
+        else:
+            to_destroy = [s for s in existing if not _is_whitelisted(s)]
+            preserved = [s for s in existing if _is_whitelisted(s)]
+
+        if to_destroy:
             if not args.json:
-                _print(f"Cleanup: destroying {len(existing)} sessions", "warn",
-                       f"{existing[:5]}{'...' if len(existing) > 5 else ''}")
-            for s in existing:
+                _print(f"Cleanup: destroying {len(to_destroy)} stale sessions", "warn",
+                       f"{to_destroy[:5]}{'...' if len(to_destroy) > 5 else ''}")
+            for s in to_destroy:
                 _fs_call(args.fs_url, {"cmd": "sessions.destroy", "session": s},
                           timeout_s=20)
-            results["cleanup_destroyed"] = existing
-        else:
-            if not args.json:
-                _print("Cleanup: no existing sessions", "ok", "(nothing to do)")
+            results["cleanup_destroyed"] = to_destroy
+        elif not args.json:
+            _print("Cleanup: no stale sessions to destroy", "ok", "(nothing to do)")
+        if preserved and not args.json:
+            _print(f"Cleanup: preserved {len(preserved)} whitelisted", "ok",
+                   f"{preserved}")
+            results["cleanup_preserved"] = preserved
         if args.cleanup_only:
             results["verdict"] = "cleanup_done"
             return _finish(results, args.json, exit_code=0)

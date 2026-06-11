@@ -274,9 +274,15 @@ class CoolbetSession:
         return
 
     def _refresh_cookies_from_fs(self) -> int:
-        """Navigate via FlareSolverr to a real Coolbet page to capture fresh
-        Imperva cookies (reese84, visid_incap_*, nlbi_*, incap_ses_*), then
-        copy them into self._http for plain-requests POSTs to use.
+        """Navigate via FlareSolverr through Coolbet warmup pages to capture
+        fresh Imperva cookies (reese84, visid_incap_*, nlbi_*, incap_ses_*),
+        then copy them into self._http for plain-requests POSTs to use.
+
+        WARMUP-LOOP-FIX (2026-06-11): single-page nav doesn't always trigger
+        Imperva's reese84 issuance (the "deep challenge" token). Mirrors the
+        proven pattern from flaresolverr_login_enroll.py — visits multiple
+        pages in sequence until BOTH reese84 AND visid_incap_* are present.
+        Early-exits as soon as both land to avoid extra navigations.
 
         Also synchronises the User-Agent so plain-requests calls look like
         the same browser that earned the cookies (Imperva fingerprints UA +
@@ -284,22 +290,44 @@ class CoolbetSession:
 
         Returns the number of cookies harvested. Raises on FS unreachable
         OR if Coolbet's response didn't include the critical Imperva markers
-        — callers should treat that as a hard auth failure.
+        after all warmup attempts — callers should treat that as a hard
+        auth failure.
         """
-        body = {
-            "cmd": "request.get",
-            "url": "https://www.coolbet.com/en/sports/football",
-            "session": self._fs_session_name,
-            "maxTimeout": _FS_TIMEOUT_MS,
-        }
-        raw = _fs_call(body)
-        sol = raw.get("solution") or {}
-        cookies = sol.get("cookies") or []
+        warmup_urls = [
+            "https://www.coolbet.com/",                       # homepage (often gets reese84)
+            "https://www.coolbet.com/en/sports/football",      # deep page (gets visid_incap_*)
+            "https://www.coolbet.com/en/sports/esports",       # tertiary fallback
+        ]
+        cookies: list = []
+        ua: str | None = None
+        sol: dict = {}
+        for url in warmup_urls:
+            body = {
+                "cmd": "request.get",
+                "url": url,
+                "session": self._fs_session_name,
+                "maxTimeout": _FS_TIMEOUT_MS,
+            }
+            raw = _fs_call(body)
+            sol = raw.get("solution") or {}
+            new_cookies = sol.get("cookies") or []
+            if new_cookies:
+                # Merge by name — later navigations refresh earlier values.
+                by_name = {c.get("name"): c for c in cookies if c.get("name")}
+                for c in new_cookies:
+                    if c.get("name"):
+                        by_name[c["name"]] = c
+                cookies = list(by_name.values())
+            ua = sol.get("userAgent") or ua
+            # Early-out as soon as both critical Imperva markers are present.
+            names = {c.get("name") for c in cookies if c.get("name")}
+            if "reese84" in names and any(n.startswith("visid_incap") for n in names):
+                break
         if not cookies:
             raise RuntimeError(
-                f"FS cookie harvest empty — FS status={raw.get('status')!r}, "
-                f"message={raw.get('message')!r}. Try `python3 "
-                f"scripts/diagnose/flaresolverr.py` to diagnose."
+                f"FS cookie harvest empty after warmup loop — FS status="
+                f"{raw.get('status')!r}, message={raw.get('message')!r}. "
+                f"Try `python3 scripts/diagnose/flaresolverr.py` to diagnose."
             )
 
         # Wipe stale cookies first so a fresh harvest doesn't accidentally
@@ -320,7 +348,8 @@ class CoolbetSession:
 
         # UA sync — without this the post-harvest plain-requests calls look
         # like a different browser to Imperva and may get re-challenged.
-        ua = sol.get("userAgent")
+        # `ua` was populated inside the warmup loop from the last navigation
+        # that returned one.
         if ua:
             self._http.headers["User-Agent"] = ua
 
@@ -726,24 +755,42 @@ class CoolbetSession:
         return self._jwt_exp - time.time()
 
     def keep_alive(self) -> bool:
-        """Heartbeat — pings Coolbet's casino-maintenance status endpoint to
-        update the server-side session's last-activity timestamp. This is
-        the *exact* endpoint Coolbet's frontend hits every 5 min while a
-        user is browsing, so it produces a fingerprint that perfectly
-        matches normal traffic (Imperva-friendly).
+        """Heartbeat — pings Coolbet's casino-maintenance status endpoint.
 
-        KEEPALIVE-MAINTENANCE-PING (2026-05-20): replaced the heavier
-        /fo-category heartbeat with this 2-KB maintenance probe. Endpoint
-        is authenticated, so it doubles as proof-of-life to Coolbet's
-        session policy at no functional cost. fo-category retained as
-        a Plan-B fallback when maintenance 4xx's for any reason.
-        Returns True if either succeeds.
+        KEEPALIVE-FS-HEADER-STRIP-FIX (2026-06-11): goes via PLAIN requests,
+        not session.get(). Reason: FlareSolverr v2 silently strips the
+        `headers` parameter from request bodies (confirmed in FS Railway
+        logs — `WARNING Request parameter 'headers' was removed in
+        FlareSolverr v2.`). So FS-routed auth-required GETs lose their
+        cbauth Bearer + login_session_id headers and Coolbet returns 401.
+        The bug surfaced as "heartbeat: FAIL" in /status even though bet
+        placement (which uses plain requests) was succeeding.
+
+        Plain requests with FS-harvested cookies passes Imperva (cookies
+        are real, just-issued) and carries our auth headers properly.
+        Same transport pattern as `.post()` uses for bet placement.
+
+        /s/casino/fo/maintenance is the exact endpoint Coolbet's frontend
+        hits every 5 min while browsing, so traffic looks normal.
+        Returns True if either probe succeeds.
         """
+        # Make sure auth + cookies are ready before any plain-requests call.
+        try:
+            self._ensure_auth()
+            if not self._cookies_fresh:
+                self._refresh_cookies_from_fs()
+        except Exception as e:
+            log.warning("keep_alive: auth/cookies refresh failed: %s", e)
+            return False
+
+        self._throttle()
+
         # 1) /s/casino/fo/maintenance — what the browser pings every 5 min.
         try:
-            resp = self.get(
+            resp = self._http.get(
                 "https://www.coolbet.com/s/casino/fo/maintenance",
                 params={"licence": "EE"},
+                timeout=15,
             )
             if resp.status_code == 200:
                 return True
@@ -751,13 +798,15 @@ class CoolbetSession:
         except Exception as e:
             log.debug("keep_alive: maintenance raised %s, trying fo-category fallback", e)
 
-        # 2) Fallback: fo-category (heavier but production-tested)
+        # 2) Fallback: fo-category (heavier but production-tested).
         try:
-            resp = self.get(
+            self._throttle()
+            resp = self._http.get(
                 "https://www.coolbet.com/s/sbgate/sports/fo-category/",
                 params={"categoryId": 18975, "country": "EE", "isMobile": 0,
                         "language": "et", "layout": "EUROPEAN", "limit": 6},
                 headers={"referer": "https://www.coolbet.com/et/sport/jalgpall/inglismaa/meistriliiga"},
+                timeout=15,
             )
             return resp.status_code == 200
         except Exception as e:
