@@ -26,6 +26,7 @@ Usage:
   python -m workers.jobs.betting_pipeline report
 """
 
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -58,21 +59,36 @@ def _current_cohort() -> str:
 
 def _run_coolbet_record() -> None:
     """After the pipeline stores bets to simulated_bets, auto-run the Coolbet
-    placer in --record mode. Edits each per-bet alert in place with the
-    outcome (✓ recorded / ✗ no_event / etc.) so the admin scrolling the chat
-    sees status per bet at a glance, instead of having to cross-reference a
-    summary list (ADMIN-TG-CLARITY 2026-05-29).
+    placer. Defaults to --record (paper). Set COOLBET_AUTO_EXECUTE=true in env
+    to flip on real-money placement (first proven 2026-06-11 18:50 UTC with
+    Mexico vs South Africa — ticket 26061118-8cbc-45c0-a728-9a99fe9c0d35,
+    €2.64 stake, the chain works end-to-end). The placer's existing
+    _MIN_REMAINING_EDGE gate (live-edge ≥ 3% at placement price) is the
+    real safety here — combined with per-market edge floors set in code
+    (_MIN_EDGE_BY_MARKET).
 
-    The summary message itself collapses to a single counter line — silent
-    when everything placed cleanly, loud only on search_blocked."""
+    Edits each per-bet alert in place with the outcome (✓ recorded /
+    ✗ no_event / etc.) so the admin scrolling the chat sees status per
+    bet at a glance (ADMIN-TG-CLARITY 2026-05-29). Summary collapses to
+    a single counter line — silent when everything placed cleanly, loud
+    only on search_blocked."""
     from workers.automation.coolbet_placer import place_all_bets
     from workers.notify.telegram import send_telegram, edit_bet_alert_outcome
 
+    # Env-driven execute mode. Default false (record-only) until operator
+    # explicitly enables real-money placement on the Railway instance.
+    # When true, the Coolbet API receives the actual POST /s/bets/bets.
+    execute_mode = os.getenv("COOLBET_AUTO_EXECUTE", "false").lower() in ("true", "1", "yes")
+    mode_label = "EXECUTE" if execute_mode else "record"
+    console.print(f"[bold cyan]Coolbet auto-placer ({mode_label} mode)[/bold cyan]")
+
     try:
-        results = place_all_bets(record=True)
+        # record=True always (so paper rows land in real_bets either way).
+        # execute=True is the real-money switch.
+        results = place_all_bets(record=True, execute=execute_mode)
     except Exception as e:
-        send_telegram(f"⚠️ Coolbet --record auto-run failed: {e}")
-        console.print(f"[red]Coolbet --record failed: {e}[/red]")
+        send_telegram(f"⚠️ Coolbet --{mode_label.lower()} auto-run failed: {e}")
+        console.print(f"[red]Coolbet auto-placer ({mode_label}) failed: {e}[/red]")
         return
 
     if not results:
@@ -95,7 +111,10 @@ def _run_coolbet_record() -> None:
         if outcome == "placed":
             stake = float(r.get("stake") or 0)
             odds = float(r.get("live_odds") or r.get("model_odds") or 0)
-            status = f"✓ Auto-recorded €{stake:.2f} @ {odds:.2f}"
+            # Distinguish paper-trade from real-money in the Telegram status
+            # line so the operator can see at a glance which mode it was.
+            verb = "Placed" if execute_mode else "Auto-recorded"
+            status = f"✓ {verb} €{stake:.2f} @ {odds:.2f}"
         elif outcome == "no_event":
             status = "✗ no_event (Coolbet didn't list this match)"
         elif outcome == "no_market":

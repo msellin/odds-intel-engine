@@ -12461,7 +12461,15 @@ def test_coolbet_auto_record():
     assert record_call_pos > run_morning_pos, "_run_coolbet_record must be called after run_morning"
 
     fn_src = inspect.getsource(betting_pipeline._run_coolbet_record)
-    assert "place_all_bets(record=True)" in fn_src, "must call place_all_bets(record=True)"
+    # Post 2026-06-11 COOLBET-AUTO-EXECUTE: signature became
+    # place_all_bets(record=True, execute=execute_mode). Accept either form
+    # but require record=True so we never lose paper-trade rows.
+    assert "place_all_bets(record=True" in fn_src, "must call place_all_bets(record=True, ...)"
+    assert 'COOLBET_AUTO_EXECUTE' in fn_src, (
+        "_run_coolbet_record must consult COOLBET_AUTO_EXECUTE env var to "
+        "decide paper-vs-real-money mode. Without this gate every pipeline "
+        "run that lands on a Coolbet-listed match would auto-place real money."
+    )
     assert "send_telegram" in fn_src, "must send admin Telegram"
     assert "placed" in fn_src, "must count placed bets"
     assert "search_blocked" in fn_src, "must handle search_blocked outcome"
