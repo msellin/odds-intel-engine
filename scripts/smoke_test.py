@@ -21782,5 +21782,327 @@ def _():
     assert "PROMOTE" in src
 
 
+@test("CS2-HLTV-TEAM-FTU-SCRAPER — migration 240 + bulk FTU scraper")
+def _():
+    """Pins migration 240 schema, the FTU scraper file path, the bulk-page
+    fetch design (per-team /stats/teams/ftu/{id} returns 404 — bulk page
+    with &side= is the working alternative), the side-stratified PK, and
+    the upsert/parse function names.
+
+    HLTV's /stats/teams/ftu page is the only working "FTU" endpoint —
+    /stats/teams/utility and /stats/teams/grenades both 404. The page
+    publishes ten plain columns under the Firepower/Teamwork/Utility
+    visual grouping (no per-grenade throw counts) — the ADR + FA columns
+    are the closest utility-usage signals HLTV exposes."""
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/240_cs2_hltv_team_ftu.sql")
+    assert mig.exists(), "migration 240 missing"
+    msrc = mig.read_text()
+    assert "CREATE TABLE IF NOT EXISTS cs2_hltv_team_ftu" in msrc
+    for col in ("hltv_team_id", "team_name", "side",
+                "period_start", "period_end",
+                "maps_played", "rw_pct", "opk_pct", "multik_pct",
+                "five_v_four", "four_v_five", "traded_pct",
+                "adr", "fa", "scraped_at"):
+        assert col in msrc, f"migration 240 missing column {col}"
+    assert "PRIMARY KEY (hltv_team_id, side, period_start, period_end)" in msrc
+    assert "cs2_hltv_team_ftu_team_idx" in msrc
+
+    scraper = pathlib.Path("scripts/esports/cs2_hltv_team_ftu_scraper.py")
+    assert scraper.exists(), "cs2_hltv_team_ftu_scraper.py missing"
+    src = scraper.read_text()
+
+    # Required functions
+    for fn in ("parse_ftu_rows", "fetch_ftu",
+               "bulk_upsert", "make_session", "_fetch_url", "main"):
+        assert f"def {fn}" in src, f"scraper must define {fn}()"
+
+    # Bulk-upsert path — execute_values + ON CONFLICT (one batch per side/period)
+    assert "psycopg2.extras" in src
+    assert "execute_values" in src
+    assert "ON CONFLICT (hltv_team_id, side, period_start, period_end)" in src
+
+    # Side filter — overall + CT + T are fetched separately
+    assert "COUNTER_TERRORIST" in src and "TERRORIST" in src, (
+        "scraper must fetch CT and T sides separately (overall is the third slice)"
+    )
+    # rankingFilter is forbidden (silently caps to top-20)
+    assert "rankingFilter" in src and "forbidden" in src.lower(), (
+        "scraper must defensively reject rankingFilter in the URL builder"
+    )
+
+    # CLI flags pinned by the task
+    assert "--limit" in src, "scraper must expose --limit N"
+    assert "--team-id" in src, "scraper must expose --team-id X"
+    assert "--periods" in src, "scraper must expose --periods all|latest|<csv>"
+
+    # FlareSolverr preferred, cookie session fallback — same auth pattern as
+    # cs2_hltv_team_pistols_scraper.py.
+    assert "flaresolverr_client" in src, (
+        "scraper must use flaresolverr_client (CF-protected /stats/* page)"
+    )
+    assert "HLTV_AUTH_COOKIES" in src, (
+        "scraper must support HLTV_AUTH_COOKIES env var as fallback"
+    )
+
+    # Source teams from cs2_hltv_rankings when --limit set
+    assert "cs2_hltv_rankings" in src, (
+        "scraper must source ranked-team filter from cs2_hltv_rankings"
+    )
+
+
+@test("CS2-SNEAK-V19-FTU — HLTV FTU utility/teamwork features on top of v8")
+def _():
+    """v19 adds HLTV /stats/teams/ftu utility-damage and flash-assist
+    features (the closest team-level utility-usage signal HLTV exposes,
+    given they don't publish per-grenade throw counts). Pins file
+    existence, the four canonical feature keys, that the source table is
+    the new cs2_hltv_team_ftu (migration 240), PIT discipline, the bridge
+    use, and the v8 stacking + persist contract."""
+    src_path = _engine_path("scripts/esports/cs2_sneak_peek_v19_ftu.py")
+    assert src_path.exists(), "cs2_sneak_peek_v19_ftu.py must exist"
+    src = src_path.read_text()
+
+    # The four canonical feature keys
+    for feat in ("util_dmg_diff",
+                 "flash_efficiency_diff",
+                 "nade_economy_diff",
+                 "traded_diff"):
+        assert feat in src, f"v19 must compute feature {feat}"
+
+    # Stacking on v8
+    assert "logit_saved" in src and "V8_KEYS" in src, (
+        "v19 must stack on top of v8 features (logit_saved + V8_KEYS)"
+    )
+
+    # Source table — the NEW table from migration 240
+    assert "cs2_hltv_team_ftu" in src, (
+        "v19 must read FTU stats from cs2_hltv_team_ftu (migration 240 table)"
+    )
+    # Loader for the per-team FTU stream
+    assert "load_team_ftu_streams" in src, (
+        "v19 must define load_team_ftu_streams() — the per-team FTU stream loader"
+    )
+
+    # PIT discipline — period_end < kickoff_date filter
+    assert "period_end" in src and "kickoff" in src, (
+        "v19 must enforce period_end < kickoff_date for PIT correctness"
+    )
+    assert "_pit_select" in src, (
+        "v19 must define _pit_select() — the bisect-style PIT filter on period_end"
+    )
+
+    # Bridge usage — same pattern as v15/v16/v17/v18
+    assert "cs2_match_id_bridge" in src, (
+        "v19 must resolve hltv_match_id via cs2_match_id_bridge"
+    )
+    assert "SELECT bo3gg_id, hltv_match_id FROM cs2_match_id_bridge" in src
+
+    # HLTV team-name resolver — bo3gg "Team Spirit" vs HLTV "Spirit" etc.
+    assert "resolve_hltv_name" in src, (
+        "v19 must use resolve_hltv_name() so the per-team-name lookup hits the "
+        "HLTV form stored in cs2_hltv_team_ftu"
+    )
+    assert "load_hltv_team_pair_index" in src
+
+    # Persistence + PROMOTE
+    assert "cs2_model_backtest_history" in src
+    assert "v19-ftu" in src, (
+        "v19 must tag persisted rows with the v19-ftu feature_set prefix"
+    )
+    assert "RUN_ID" in src
+    assert "PROMOTE" in src
+
+
+@test("CS2-LEETIFY-SCRAPER — Leetify API ingestion + migration 241 + bridge")
+def _():
+    """First independent signal source after the HLTV-detail v10-v19 feature
+    space turned out empty. Pins migration 241 schema (cs2_player_id_bridge
+    + cs2_leetify_player_match_stats), the scraper file, the KNOWN_SEEDS
+    constant (must hardcode steam64 ids for top pros — no name-search
+    endpoint exists on Leetify), the HLTV match-id parser, the bulk
+    upsert path, and the CLI flags."""
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/241_cs2_leetify_data.sql")
+    assert mig.exists(), "migration 241 missing"
+    msrc = mig.read_text()
+
+    # Bridge table — keyed by steam64 (the stable Leetify-side id)
+    assert "CREATE TABLE IF NOT EXISTS cs2_player_id_bridge" in msrc
+    for col in ("hltv_player_id", "steam64_id", "nickname",
+                "confidence", "joined_by"):
+        assert col in msrc, f"migration 241 missing bridge column {col}"
+    assert "PRIMARY KEY (steam64_id)" in msrc
+
+    # Per-player-per-match stats table — keyed by (leetify_match_id, steam64_id)
+    assert "CREATE TABLE IF NOT EXISTS cs2_leetify_player_match_stats" in msrc
+    for col in ("leetify_match_id", "hltv_match_id", "data_source",
+                "data_source_match_id", "map_name", "finished_at",
+                "steam64_id", "nickname", "team_number",
+                "leetify_rating", "ct_leetify_rating", "t_leetify_rating",
+                "preaim", "reaction_time", "accuracy", "accuracy_head",
+                "counter_strafing_good_shots_ratio",
+                "trade_kill_attempts_percentage",
+                "trade_kills_success_percentage",
+                "trade_kill_opportunities_per_round",
+                "traded_deaths_success_percentage",
+                "multi1k", "multi2k", "multi3k", "multi4k", "multi5k",
+                "flashbang_thrown", "flashbang_hit_foe",
+                "flashbang_leading_to_kill",
+                "he_thrown", "molotov_thrown", "smoke_thrown",
+                "utility_on_death_avg",
+                "total_kills", "total_deaths", "total_assists", "total_damage",
+                "rounds_count", "rounds_won", "rounds_survived",
+                "kd_ratio", "dpr", "mvps", "raw_stats", "scraped_at"):
+        assert col in msrc, f"migration 241 missing pms column {col}"
+    assert "PRIMARY KEY (leetify_match_id, steam64_id)" in msrc
+    # Indexes
+    assert "cs2_leetify_pms_hltv_idx" in msrc
+    assert "cs2_leetify_pms_steam_idx" in msrc
+    assert "cs2_leetify_pms_finished_idx" in msrc
+
+    # Scraper file
+    scraper = pathlib.Path("scripts/esports/cs2_leetify_scraper.py")
+    assert scraper.exists(), "scripts/esports/cs2_leetify_scraper.py missing"
+    src = scraper.read_text()
+
+    # Auth header — Leetify uses `_leetify_key`, not Authorization Bearer
+    assert "_leetify_key" in src, (
+        "scraper must send the `_leetify_key` header (Leetify's auth scheme)"
+    )
+    assert "LEETIFY_API_KEY" in src, (
+        "scraper must read LEETIFY_API_KEY env var (with inline default fallback)"
+    )
+
+    # Endpoint set
+    assert "api-public.cs-prod.leetify.com" in src
+    assert "/v3/profile" in src
+    assert "/v3/profile/matches" in src
+    assert "/v2/matches" in src
+
+    # Hardcoded seed steam64 ids — no name-search endpoint exists, so we
+    # MUST ship a starting list.
+    assert "KNOWN_SEEDS" in src, (
+        "scraper must define KNOWN_SEEDS — hardcoded steam64 ids for top pros "
+        "(no name-search endpoint exists on Leetify)"
+    )
+    # Sanity-check a few well-known ids
+    assert "76561198034202275" in src, "KNOWN_SEEDS must include s1mple's steam64"
+    assert "76561198146578464" in src, "KNOWN_SEEDS must include ZywOo's steam64"
+
+    # HLTV id parser — matches leading digits of "2394212-bc-game-vs-pain-..."
+    assert "parse_hltv_match_id" in src, (
+        "scraper must define parse_hltv_match_id() — extracts HLTV id from "
+        "data_source_match_id"
+    )
+    # The regex pattern is the load-bearing literal
+    assert r"^(\d+)-" in src, (
+        "parse_hltv_match_id must use the leading-digits regex `^(\\d+)-`"
+    )
+
+    # Bridge upsert + use of cs2_hltv_player_match_stats for nickname resolution
+    assert "cs2_player_id_bridge" in src
+    assert "cs2_hltv_player_match_stats" in src, (
+        "scraper must resolve hltv_player_id by joining the leetify nickname "
+        "against cs2_hltv_player_match_stats.nickname"
+    )
+    assert "joined_by" in src and "leetify_profile" in src, (
+        "bridge upserts must tag joined_by='leetify_profile'"
+    )
+
+    # Bulk upsert via execute_values
+    assert "psycopg2.extras" in src
+    assert "execute_values" in src
+    assert "ON CONFLICT (leetify_match_id, steam64_id)" in src, (
+        "bulk-upsert must conflict-resolve on the PK (leetify_match_id, steam64_id)"
+    )
+
+    # Politeness — 1 req/s + 429 backoff
+    assert "RATE_LIMIT_SECONDS" in src
+    assert "429" in src, "scraper must handle 429 with backoff"
+
+    # CLI flags
+    for flag in ("--bootstrap-seeds", "--match-id", "--full-match"):
+        assert flag in src, f"scraper must expose CLI flag {flag}"
+
+
+@test("CS2-SNEAK-V20-LEETIFY — Leetify team-aggregate features on top of v8")
+def _():
+    """v20 builds the first independent-of-HLTV signal layer. Five
+    Leetify-derived team-average features (leetify_rating, trade_success,
+    multi_kill, preaim, opening) computed PIT-correctly from
+    cs2_leetify_player_match_stats — only player-match rows with
+    finished_at < kickoff are used. Pins the file, feature keys, the v8
+    stacking contract, the team_number→team_name resolution via
+    cs2_hltv_player_match_stats, the per-player history loader, and
+    persistence under v20-leetify_*."""
+    src_path = _engine_path("scripts/esports/cs2_sneak_peek_v20_leetify.py")
+    assert src_path.exists(), "cs2_sneak_peek_v20_leetify.py must exist"
+    src = src_path.read_text()
+
+    # The five canonical feature keys
+    for feat in ("leetify_rating_diff",
+                 "trade_success_diff",
+                 "multi_kill_diff",
+                 "preaim_diff",
+                 "opening_diff"):
+        assert feat in src, f"v20 must compute feature {feat}"
+
+    # Stacking on v8
+    assert "logit_saved" in src and "V8_KEYS" in src, (
+        "v20 must stack on top of v8 features (logit_saved + V8_KEYS)"
+    )
+    assert "V20_LEETIFY_KEYS" in src
+
+    # Source table — Leetify per-player-per-match stats
+    assert "cs2_leetify_player_match_stats" in src, (
+        "v20 must read per-player-per-match Leetify stats from "
+        "cs2_leetify_player_match_stats (migration 241 table)"
+    )
+
+    # team_number → team_name resolution uses cs2_hltv_player_match_stats
+    # (only Leetify-only signal we have for which pro played for which team)
+    assert "cs2_hltv_player_match_stats" in src, (
+        "v20 must resolve team_number → HLTV team_name via "
+        "cs2_hltv_player_match_stats (nickname join)"
+    )
+
+    # PIT discipline — per-player history filtered by finished_at < kickoff
+    assert "finished_at" in src, (
+        "v20 must use finished_at column for PIT filtering"
+    )
+    assert "_pit_player_history" in src, (
+        "v20 must define _pit_player_history() — the bisect-style PIT filter "
+        "on finished_at"
+    )
+
+    # Loaders
+    assert "load_team_roster_by_match" in src, (
+        "v20 must define load_team_roster_by_match() — the (hltv_match_id, "
+        "team_name) → steam64s bridge"
+    )
+    assert "load_leetify_history_by_steam64" in src, (
+        "v20 must define load_leetify_history_by_steam64() — the per-steam64 "
+        "Leetify-match stream sorted by finished_at"
+    )
+    assert "team_leetify_aggregates" in src, (
+        "v20 must define team_leetify_aggregates() — averages each metric "
+        "across all prior player-match rows for the team's tracked players"
+    )
+
+    # Impact-weighted multi-kill encoding — the spec
+    assert "multi2k" in src and "multi3k" in src and "multi4k" in src and "multi5k" in src, (
+        "v20 must compose multi_kill_diff from multi2k..multi5k counts"
+    )
+
+    # Persistence + PROMOTE
+    assert "cs2_model_backtest_history" in src
+    assert "v20-leetify" in src, (
+        "v20 must tag persisted rows with the v20-leetify feature_set prefix"
+    )
+    assert "RUN_ID" in src
+    assert "PROMOTE" in src
+
+
 if __name__ == "__main__":
     main()
