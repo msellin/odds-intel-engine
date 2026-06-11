@@ -285,6 +285,25 @@ def _persist_jwt(jwt: str, login_payload: dict, cookies: dict, ua: str) -> None:
         print(f"  ✓ wrote COOLBET_MANUAL_JWT to {env_path}")
         _persist_imperva_cookies(env_path, cookies)
 
+    # COOLBET-JWT-DB-BACKED (2026-06-12): also persist to coolbet_session_state
+    # so Railway picks up this JWT on its next run without any env-var push.
+    # This is the whole point of the DB-backed architecture — local enrolls,
+    # Railway inherits, renew-token keeps it alive forever from either side.
+    try:
+        # Path manipulation so we can import workers.* when this script runs
+        # from anywhere (it's a stand-alone CLI, no relative imports).
+        repo_root = Path(__file__).resolve().parents[2]
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+        from workers.automation.coolbet_state import persist_jwt as _db_persist_jwt
+        lsid = (login_payload.get("loginSessionId")
+                or login_payload.get("login_session_id"))
+        _db_persist_jwt(jwt, login_session_id=lsid, set_by="local_enroll")
+        print("  ✓ persisted JWT to coolbet_session_state.jwt_current "
+              "(Railway will inherit on next CoolbetSession init)")
+    except Exception as e:
+        print(f"  [warn] DB persist failed (non-fatal): {e}")
+
     # Audit non-Imperva cookies in case Coolbet sets a device-trust marker.
     non_imperva = {
         k: v for k, v in cookies.items()

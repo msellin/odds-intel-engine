@@ -180,6 +180,67 @@ def get_or_create_device_id() -> str:
         return str(_uuid.uuid4())
 
 
+def persist_jwt(jwt: str, *, login_session_id: str | None = None,
+                 set_by: str | None = None) -> None:
+    """Write the live Coolbet JWT to coolbet_session_state.jwt_current so
+    any process starting up can bootstrap from DB instead of needing the
+    env var to be in sync.
+
+    Called after every successful adopt / api_login / renew_jwt_via_api.
+    The JWT in env stays as a fallback for first-deploy bootstrap; DB is
+    the freshest canonical source after that.
+
+    Why this matters: Imperva 403's /s/auth/login from Railway IPs but
+    accepts it from residential IPs. Without DB-backed JWT, Railway loses
+    its session on every restart and can't re-login from there. With it,
+    local enrollment writes a fresh JWT to DB → Railway reads from DB on
+    next start → keeps it alive via /s/auth/renew-token (which IS
+    accepted from Railway IP).
+
+    set_by is a free-text process tag for debugging — e.g. "local_enroll",
+    "local_renew", "railway_renew" — surfaces in /status."""
+    _safe_write(
+        """UPDATE coolbet_session_state
+           SET jwt_current = %s,
+               jwt_login_session_id = %s,
+               jwt_current_set_at = NOW(),
+               jwt_set_by = %s
+           WHERE id = 1""",
+        (jwt, login_session_id, set_by or _default_set_by()),
+    )
+
+
+def _default_set_by() -> str:
+    """Best-effort process tag — 'railway_*' on Railway, 'local_*' otherwise.
+    Used when a caller doesn't pass an explicit set_by tag."""
+    if os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"):
+        return "railway"
+    return "local"
+
+
+def read_persisted_jwt() -> tuple[str | None, str | None]:
+    """Return (jwt, login_session_id) from coolbet_session_state.
+
+    Returns (None, None) if no JWT has been persisted yet OR on any DB
+    error — caller should fall back to env COOLBET_MANUAL_JWT, then to
+    API login.
+
+    Called from CoolbetSession.__init__ to bootstrap from the freshest
+    available JWT across the local + Railway pair, so neither side has
+    to wait for an env-var push."""
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            "SELECT jwt_current, jwt_login_session_id FROM coolbet_session_state WHERE id = 1"
+        )
+        if not rows:
+            return (None, None)
+        return (rows[0].get("jwt_current"), rows[0].get("jwt_login_session_id"))
+    except Exception as e:
+        log.warning("read_persisted_jwt failed: %s", e)
+        return (None, None)
+
+
 def read_state() -> dict | None:
     """SELECT the singleton row. Returns None on DB error (best-effort)."""
     try:

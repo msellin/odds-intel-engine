@@ -72,6 +72,40 @@ def _decode_jwt_payload(token: str) -> dict:
     return json.loads(base64.b64decode(payload_b64))
 
 
+def _jwt_exp_or_zero(token: str | None) -> float:
+    """Decode `exp` claim safely. Returns 0.0 for anything unparseable so
+    _pick_freshest_jwt treats missing/malformed tokens as fully expired
+    without raising."""
+    if not token:
+        return 0.0
+    try:
+        return float(_decode_jwt_payload(token).get("exp", 0))
+    except Exception:
+        return 0.0
+
+
+def _pick_freshest_jwt(*candidates: str | None) -> str:
+    """Pick the JWT with the latest `exp` claim out of the given candidates.
+    Returns "" when all are empty/expired.
+
+    Used by CoolbetSession.__init__ to pick between env-pasted JWT and the
+    DB-persisted JWT on bootstrap. Whichever has the later expiry wins —
+    typically DB after the first renewal, env on cold boot before DB is
+    populated. An expired token is still returned if it's the latest one
+    available, so _adopt_manual_jwt's expiry guard runs (and self-heal
+    falls through to API login)."""
+    best: str = ""
+    best_exp: float = -1.0
+    for c in candidates:
+        if not c:
+            continue
+        exp = _jwt_exp_or_zero(c)
+        if exp > best_exp:
+            best = c
+            best_exp = exp
+    return best
+
+
 # State writer — local import inside the methods that need it so module
 # load doesn't trigger workers.api_clients.db connection.
 def _state():
@@ -213,9 +247,21 @@ class CoolbetSession:
         # clear error so the operator pastes a fresh `cbauth` from browser
         # DevTools. This is the exact seam a future headless-Chrome refresher
         # would write into — same code path, just automated capture.
-        self._manual_jwt = os.getenv("COOLBET_MANUAL_JWT", "").strip()
-        if self._manual_jwt.startswith("Bearer "):
-            self._manual_jwt = self._manual_jwt[7:]
+        env_jwt = os.getenv("COOLBET_MANUAL_JWT", "").strip()
+        if env_jwt.startswith("Bearer "):
+            env_jwt = env_jwt[7:]
+
+        # COOLBET-JWT-DB-BACKED (2026-06-12): bootstrap from DB so Railway
+        # can pick up a JWT minted by local enrollment without an env-var
+        # push. Whichever has the later `exp` wins — typically DB after
+        # the first renewal, env on cold boot before DB is populated.
+        db_jwt: str | None = None
+        try:
+            from workers.automation.coolbet_state import read_persisted_jwt
+            db_jwt, _ = read_persisted_jwt()
+        except Exception:
+            db_jwt = None
+        self._manual_jwt = _pick_freshest_jwt(env_jwt, db_jwt)
 
         if require_auth and not self._manual_jwt and (not self._email or not self._password):
             raise RuntimeError(
@@ -416,6 +462,14 @@ class CoolbetSession:
             fs_url=os.getenv("FLARESOLVERR_URL"),
             fs_session_name=self._fs_session_name,
         )
+        # Persist to DB so a process on the other side (Railway when this
+        # ran locally, or vice versa) can bootstrap from the same token
+        # without an env-var sync.
+        try:
+            _state().persist_jwt(token, login_session_id=self._login_session_id,
+                                  set_by="adopt_manual_jwt")
+        except Exception as e:
+            log.warning("persist_jwt after adopt failed (non-fatal): %s", e)
 
     def renew_jwt_via_api(self) -> float:
         """Call POST /s/auth/renew-token to get a fresh JWT — no browser, no
@@ -476,20 +530,21 @@ class CoolbetSession:
         if new_jwt.startswith("Bearer "):
             new_jwt = new_jwt[7:]
 
-        # Adopt the new JWT — populates self._jwt + recomputes _jwt_exp
+        # Adopt the new JWT — populates self._jwt + recomputes _jwt_exp.
+        # Note: _adopt_manual_jwt itself persists to DB, so that branch is
+        # already covered. We additionally write to in-process env + .env
+        # below for legacy callers that still read COOLBET_MANUAL_JWT.
         self._manual_jwt = new_jwt
         self._adopt_manual_jwt()
 
-        # Persist to .env so daemon restart, preflight, and place_one_real_bet
-        # all see the freshest token. Best-effort — if it fails we still have
-        # the in-memory swap.
-        # Update os.environ immediately so any CoolbetSession() created in the
-        # same process after this renewal sees the fresh token (not just the
-        # in-memory session that called renew). set_key writes the file but
-        # doesn't touch os.environ — that gap is what caused the odds sweep to
-        # keep failing after renewal.
+        # In-process env update so any CoolbetSession() created later in
+        # the same Python process picks up the renewed token without a
+        # full re-init. Cheap, idempotent.
         os.environ["COOLBET_MANUAL_JWT"] = new_jwt
 
+        # Legacy: also write to .env locally so a manual restart picks it
+        # up. On Railway this is a no-op (no .env file) — DB is the source
+        # of truth there.
         try:
             from dotenv import set_key as _set_key
             env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -498,7 +553,7 @@ class CoolbetSession:
             if os.path.exists(env_file):
                 _set_key(env_file, "COOLBET_MANUAL_JWT", new_jwt)
         except Exception as e:
-            log.warning("Failed to persist renewed JWT to .env: %s", e)
+            log.debug("Optional .env write skipped: %s", e)
 
         return self.jwt_seconds_remaining
 
@@ -546,9 +601,20 @@ class CoolbetSession:
             "password": self._password,
         })
         if resp.status_code == 403:
+            # Imperva 403's /s/auth/login from cloud IPs (Railway) even when
+            # the same code + cookies succeed from a residential IP. The
+            # self-heal answer is to run the one-time enrollment locally
+            # — that persists a fresh JWT to coolbet_session_state.jwt_current
+            # in DB which this process will pick up on next CoolbetSession()
+            # construction (or on the next placement run that constructs one).
             raise RuntimeError(
-                "Coolbet login blocked (403) — Imperva cookies likely expired. "
-                "Re-login in your browser and update COOLBET_IMPERVA_COOKIES in .env."
+                "Coolbet login blocked (403) — Imperva blocks /s/auth/login from "
+                "this IP (typical for cloud datacenter origins like Railway). "
+                "Run `python3 scripts/coolbet/flaresolverr_login_enroll.py start` "
+                "from a residential IP one time; the fresh JWT lands in "
+                "coolbet_session_state.jwt_current and this process will inherit "
+                "it on next CoolbetSession() construction. After that, "
+                "/s/auth/renew-token keeps it alive forever (accepted from any IP)."
             )
         if resp.status_code in (401, 423) or (
             resp.status_code == 400 and "banned" in resp.text.lower()
@@ -603,6 +669,14 @@ class CoolbetSession:
             fs_url=os.getenv("FLARESOLVERR_URL"),
             fs_session_name=self._fs_session_name,
         )
+        # Persist so the OTHER side (Railway after a local bootstrap, or
+        # local after a Railway renewal — wherever the password login
+        # actually worked) can pick up this token from DB.
+        try:
+            _state().persist_jwt(token, login_session_id=self._login_session_id,
+                                  set_by="api_login")
+        except Exception as e:
+            log.warning("persist_jwt after api_login failed (non-fatal): %s", e)
 
     def _ensure_auth(self) -> None:
         if not self._require_auth:

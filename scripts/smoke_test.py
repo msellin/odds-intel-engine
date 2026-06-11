@@ -3376,6 +3376,88 @@ def _():
     assert "flaresolverr_sweep" in ids, "flaresolverr_sweep cron must be registered"
 
 
+@test("COOLBET-JWT-DB-BACKED — JWT bootstraps from coolbet_session_state, persists on every login/renew")
+def test_coolbet_jwt_db_backed():
+    """COOLBET-JWT-DB-BACKED (2026-06-12): Imperva 403's /s/auth/login from
+    cloud IPs (Railway) but accepts it from residential IPs (local). Before
+    this change, Railway lost its session on every restart and the operator
+    had to paste a fresh JWT to COOLBET_MANUAL_JWT env every time something
+    broke — env-var drift between local and Railway was a recurring failure
+    mode.
+
+    The fix: persist the JWT to coolbet_session_state.jwt_current after
+    every successful login/renew. CoolbetSession bootstraps from that
+    column on init, falling back to env var only when DB is empty. Local
+    enrollment (residential IP) writes to DB → Railway reads from DB on
+    next process start → keeps it alive via /s/auth/renew-token (which
+    Imperva accepts from any IP).
+
+    Pin the contract so a future refactor can't quietly remove the
+    persistence hooks and leave us back at env-var drift."""
+    import pathlib
+    # Migration 245 adds the column + tightens RLS.
+    mig = pathlib.Path("supabase/migrations/245_coolbet_jwt_persistent.sql").read_text()
+    assert "ADD COLUMN IF NOT EXISTS jwt_current TEXT" in mig, (
+        "Migration 245 must add jwt_current TEXT to coolbet_session_state."
+    )
+    assert "DROP POLICY IF EXISTS coolbet_session_state_anon_read" in mig, (
+        "Migration 245 must drop the open-anon SELECT policy — jwt_current "
+        "is sensitive auth material and must not be readable via anon key."
+    )
+
+    # State helpers exist.
+    state_src = pathlib.Path("workers/automation/coolbet_state.py").read_text()
+    assert "def persist_jwt(" in state_src, (
+        "coolbet_state must expose persist_jwt() — called after every successful "
+        "adopt/api_login/renew to update the canonical store."
+    )
+    assert "def read_persisted_jwt(" in state_src, (
+        "coolbet_state must expose read_persisted_jwt() — used by CoolbetSession "
+        "to bootstrap from DB."
+    )
+
+    # CoolbetSession bootstraps from DB AND persists on success.
+    sess_src = pathlib.Path("workers/automation/coolbet_session.py").read_text()
+    assert "read_persisted_jwt" in sess_src, (
+        "CoolbetSession.__init__ must read_persisted_jwt() so Railway can "
+        "inherit the JWT after local enrollment without an env-var push."
+    )
+    assert "_pick_freshest_jwt(" in sess_src, (
+        "CoolbetSession must compare env-JWT vs DB-JWT and pick the one with "
+        "the later exp claim — bootstrap order matters."
+    )
+    # Persist hooks fire on both successful paths.
+    adopt_block = sess_src[
+        sess_src.index("def _adopt_manual_jwt("):
+        sess_src.index("def renew_jwt_via_api(")
+    ]
+    assert 'persist_jwt(token' in adopt_block, (
+        "_adopt_manual_jwt must persist the JWT to DB so a session bootstrapped "
+        "from env-var ALSO updates DB — keeps both sources convergent."
+    )
+    login_block = sess_src[
+        sess_src.index("def _login("):
+        sess_src.index("def _ensure_auth(")
+    ]
+    assert 'persist_jwt(token' in login_block, (
+        "_login (API login path) must persist the JWT to DB so a successful "
+        "local API login propagates to Railway via DB."
+    )
+
+    # Enrollment writes to DB (this is THE bootstrap path for Railway).
+    enroll_src = pathlib.Path("scripts/coolbet/flaresolverr_login_enroll.py").read_text()
+    assert "from workers.automation.coolbet_state import persist_jwt" in enroll_src, (
+        "flaresolverr_login_enroll.py must import persist_jwt from coolbet_state — "
+        "this is the ONLY entrypoint that gets a fresh JWT past Imperva from a "
+        "Railway-blocked context. Without DB write, Railway never inherits."
+    )
+    # Tagged so /status can show where the latest JWT came from.
+    assert 'set_by="local_enroll"' in enroll_src, (
+        'Enrollment must tag set_by="local_enroll" — distinguishes the SMS-trust '
+        "bootstrap from in-process renewals in observability."
+    )
+
+
 @test("COOLBET-PLACER-FLARESOLVERR-WIRE — login script syncs Imperva cookies to .env so the placer can use them")
 def test_coolbet_placer_flaresolverr_wire():
     """COOLBET-PLACER-FLARESOLVERR-WIRE (2026-06-10): the FlareSolverr-based
@@ -4245,7 +4327,19 @@ def _():
         "CoolbetSession.jwt_seconds_remaining missing"
     )
     src = inspect.getsource(CoolbetSession.keep_alive)
-    assert "self.get" in src, "keep_alive must call self.get (so _ensure_auth fires)"
+    # KEEPALIVE-FS-HEADER-STRIP-FIX (2026-06-11): heartbeat routes via
+    # plain requests (self._http.get) because FlareSolverr v2 silently
+    # strips the `headers` parameter — FS-routed auth-required GETs lose
+    # cbauth and 401. Plain-requests + FS-harvested cookies works.
+    assert "self._http.get" in src, (
+        "keep_alive must use self._http.get (plain requests) so cbauth + "
+        "login_session_id + user_id headers actually reach Coolbet — FS-routed "
+        "GETs lose them via v2's header-strip behaviour."
+    )
+    assert "self._ensure_auth()" in src, (
+        "keep_alive must call _ensure_auth before the heartbeat probe so the "
+        "JWT (and cookies) are fresh on every ping."
+    )
 
 
 @test("COOLBET-MARKET-TYPE-IDS — AH/BTTS/DC market_type_ids wired from observed API response")
