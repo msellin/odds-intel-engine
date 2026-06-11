@@ -3222,6 +3222,81 @@ def test_coolbet_search_blocked():
     )
 
 
+@test("COOLBET-FS-SESSION-STABLE — CoolbetSession routes ALL HTTP through FlareSolverr")
+def _():
+    """COOLBET-FS-SESSION-STABLE (2026-06-11): the previous CoolbetSession
+    used a plain requests.Session, which got 403/500'd by Imperva because
+    its TLS fingerprint + cookie order didn't match a real browser. Symptom:
+    cs2_coolbet_scanner returned 7 leagues / 0 matches; placer hit HTTP 500
+    on search/v2. Heartbeat (which already routed through FlareSolverr)
+    worked fine — proving FS was the right transport.
+
+    Fix: every HTTP call from CoolbetSession now routes through the FS
+    proxy at /v1 with cmd=request.get / request.post against a named
+    browser session (default coolbet_prod). Imperva cookies live in FS
+    browser memory, not .env. JWT still passed via cbauth header but the
+    request itself ships from a real Chrome.
+
+    This pin locks the architecture so a future refactor can't silently
+    regress to the requests.Session path.
+    """
+    import pathlib
+    src = pathlib.Path("workers/automation/coolbet_session.py").read_text()
+
+    # FS helpers exist
+    assert "def _fs_call(" in src, (
+        "Module-level _fs_call(body) helper required — the FlareSolverr proxy "
+        "entry-point. Don't inline the urlopen call in each method."
+    )
+    assert "def _fs_session_ensure(" in src, (
+        "Module-level _fs_session_ensure(name) required — idempotent FS "
+        "sessions.create wrapper."
+    )
+    assert "class _FSResponse:" in src, (
+        "_FSResponse adapter required — wraps FS response in a "
+        "requests.Response-shaped interface so consumers (placer, scanner, "
+        "explorer, inplay) don't need to change."
+    )
+    # Adapter exposes the request.Response surface
+    for attr in ("status_code", "text", "ok", "json", "raise_for_status", "cookies"):
+        assert attr in src.split("class _FSResponse")[1].split("\nclass ")[0], (
+            f"_FSResponse must expose {attr} to stay drop-in-compatible with "
+            f"requests.Response (existing callers depend on it)."
+        )
+
+    # CoolbetSession.get / .post route through _fs_get / _fs_post — and
+    # critically do NOT call self._http.get/post directly anymore.
+    get_block = src.split("    def get(self, url: str, **kwargs)")[1].split("    def ")[0]
+    post_block = src.split("    def post(self, url: str, **kwargs)")[1].split("    def ")[0]
+    assert "self._fs_get(" in get_block, "CoolbetSession.get must call self._fs_get"
+    assert "self._fs_post(" in post_block, "CoolbetSession.post must call self._fs_post"
+    assert "self._http.get(" not in get_block, (
+        "CoolbetSession.get must NOT route through self._http.get — that's "
+        "the plain-requests path Imperva blocks."
+    )
+    assert "self._http.post(" not in post_block, (
+        "CoolbetSession.post must NOT route through self._http.post."
+    )
+
+    # _login + renew_jwt_via_api also use FS (they bypass self.post()'s
+    # _ensure_auth so we need explicit _fs_post wiring).
+    login_block = src.split("    def _login(")[1].split("\n    def ")[0]
+    assert "self._fs_post(" in login_block, (
+        "_login must use self._fs_post — login XHR has to share the same "
+        "browser TLS fingerprint as the rest of the session."
+    )
+    renew_block = src.split("    def renew_jwt_via_api(")[1].split("\n    def ")[0]
+    assert "self._fs_post(" in renew_block, (
+        "renew_jwt_via_api must use self._fs_post — same Imperva concern."
+    )
+
+    # Session name is configurable but defaults to coolbet_prod
+    assert 'COOLBET_FLARE_SESSION", "coolbet_prod"' in src or \
+           "_FS_SESSION_NAME = os.getenv(\"COOLBET_FLARE_SESSION\", \"coolbet_prod\")" in src, (
+        "Default FS session name must be coolbet_prod (production-scoped)."
+    )
+
+
 @test("COOLBET-PLACER-FLARESOLVERR-WIRE — login script syncs Imperva cookies to .env so the placer can use them")
 def test_coolbet_placer_flaresolverr_wire():
     """COOLBET-PLACER-FLARESOLVERR-WIRE (2026-06-10): the FlareSolverr-based
@@ -9778,8 +9853,15 @@ def _():
     assert "_RENEW_URL" in src, "renewal endpoint URL constant missing"
     assert "/s/auth/renew-token" in src, "renewal URL must be /s/auth/renew-token"
     assert "def renew_jwt_via_api" in src, "renew_jwt_via_api method missing"
-    assert "self._http.post(_RENEW_URL" in src, \
-        "renew_jwt_via_api must POST to _RENEW_URL"
+    # Post-COOLBET-FS-SESSION-STABLE (2026-06-11): renewal POSTs via FS-routed
+    # _fs_post, not the original requests.Session-backed self._http.post path.
+    # Pin BOTH literals so a future architecture flip surfaces here too —
+    # whichever path is active must reference _RENEW_URL through the right
+    # transport call.
+    assert "self._fs_post(_RENEW_URL" in src or "self._http.post(_RENEW_URL" in src, (
+        "renew_jwt_via_api must POST to _RENEW_URL via either self._fs_post "
+        "(FS-routed, current) or self._http.post (legacy)."
+    )
     assert "self._adopt_manual_jwt()" in src, \
         "renew_jwt_via_api must adopt the new JWT after extraction"
     assert "set_key" in src, "renew_jwt_via_api must persist new JWT to .env"

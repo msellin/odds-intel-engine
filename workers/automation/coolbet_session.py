@@ -22,6 +22,8 @@ import logging
 import os
 import random
 import time
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 
 import requests
@@ -31,6 +33,16 @@ from rapidfuzz import fuzz
 load_dotenv()
 
 log = logging.getLogger(__name__)
+
+# COOLBET-FS-SESSION-STABLE (2026-06-11): route every HTTP call through
+# FlareSolverr instead of plain requests.Session. Imperva accepts FS's real
+# Chrome TLS fingerprint + cookie jar; the plain-requests path was getting
+# 403/500'd at the search/v2 endpoint (the symptom that left the placer
+# with no bets to bet on). FS keeps the Imperva cookies + login session in
+# the named browser session — we no longer need to sync them to .env.
+_FS_URL_DEFAULT = "http://localhost:8191"
+_FS_SESSION_NAME = os.getenv("COOLBET_FLARE_SESSION", "coolbet_prod")
+_FS_TIMEOUT_MS = int(os.getenv("COOLBET_FS_TIMEOUT_MS", "60000"))
 
 _LOGIN_URL = "https://www.coolbet.com/s/auth/login"
 _RENEW_URL = "https://www.coolbet.com/s/auth/renew-token"
@@ -58,6 +70,104 @@ def _decode_jwt_payload(token: str) -> dict:
     # Add padding
     payload_b64 += "=" * (4 - len(payload_b64) % 4)
     return json.loads(base64.b64decode(payload_b64))
+
+
+# ── FlareSolverr proxy ───────────────────────────────────────────────────────
+# Mirrors the proven scripts/coolbet/session_heartbeat.py pattern. Every call
+# from this module to Coolbet goes through FS's named browser session
+# (default: coolbet_prod) so Imperva sees real-Chrome TLS + headers.
+
+
+def _fs_call(body: dict, *, timeout_s: int = 90) -> dict:
+    """Low-level FlareSolverr proxy call. Raises if FLARESOLVERR_URL unset
+    or the FS instance is unreachable.
+
+    Returns the parsed JSON envelope: { status: 'ok'|'error', solution: {...},
+    message, version, startTimestamp, endTimestamp }."""
+    fs_url = (os.getenv("FLARESOLVERR_URL") or _FS_URL_DEFAULT).rstrip("/")
+    if not fs_url:
+        raise RuntimeError("FLARESOLVERR_URL is unset — required for Coolbet session.")
+    req = urllib.request.Request(
+        f"{fs_url}/v1",
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+        return json.loads(resp.read())
+
+
+def _fs_session_ensure(name: str) -> None:
+    """Idempotent — silently no-ops if session already exists. We don't
+    distinguish creation from existence on purpose; FS doesn't expose a
+    clean 'exists?' check, only sessions.list which is heavier."""
+    try:
+        _fs_call({"cmd": "sessions.create", "session": name}, timeout_s=30)
+    except Exception:
+        pass  # Already exists, or FS slow to respond — either way subsequent
+              # request.* calls will surface the real error.
+
+
+class _FSResponse:
+    """Adapter wrapping a FlareSolverr response dict in a requests.Response-
+    shaped interface. Lets the existing CoolbetSession callers (placer,
+    scanner, explorer, inplay) keep using `.status_code`, `.text`, `.json()`,
+    `.ok`, `.cookies`, `.raise_for_status()` without code changes.
+
+    Why an adapter and not subclassing requests.Response: the latter wants
+    a real urllib3 connection object behind it. We're feeding from a dict.
+    Cleaner to expose only the shape we actually use."""
+
+    def __init__(self, fs_envelope: dict):
+        sol = fs_envelope.get("solution") or {}
+        self._envelope = fs_envelope
+        self._solution = sol
+        self.status_code: int = int(sol.get("status") or 0)
+        self.text: str = sol.get("response") or ""
+        self.url: str = sol.get("url") or ""
+        # cookies: FS returns a list of {name, value, ...}; expose as dict
+        self.cookies: dict[str, str] = {
+            c.get("name"): c.get("value")
+            for c in (sol.get("cookies") or [])
+            if c.get("name")
+        }
+        self.headers: dict = sol.get("headers") or {}
+        # FS sometimes wraps the JSON body in HTML (<pre>...</pre>) when
+        # navigating to an API endpoint that returns text/plain. Strip the
+        # wrapper before .json() parses.
+        self._stripped_text: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return 200 <= self.status_code < 400
+
+    def _clean_text(self) -> str:
+        if self._stripped_text is not None:
+            return self._stripped_text
+        t = self.text or ""
+        # FlareSolverr wraps non-HTML responses inside a <pre> block when the
+        # server returned text/json. Strip the surrounding HTML if present.
+        if "<pre>" in t and "</pre>" in t:
+            start = t.index("<pre>") + len("<pre>")
+            end = t.index("</pre>", start)
+            t = t[start:end]
+        # Defensive — some FS versions also wrap in <html><body>
+        for prefix in ("<!DOCTYPE html>", "<html>", "<body>"):
+            if t.lstrip().startswith(prefix):
+                # If we can't find <pre>, fall back to text as-is; let json()
+                # surface the parse error so callers see a real diagnostic.
+                break
+        self._stripped_text = t.strip()
+        return self._stripped_text
+
+    def json(self):
+        return json.loads(self._clean_text())
+
+    def raise_for_status(self):
+        if not self.ok:
+            raise RuntimeError(
+                f"HTTP {self.status_code} on {self.url} via FlareSolverr — "
+                f"body[:200]={self._clean_text()[:200]!r}"
+            )
 
 
 class CoolbetSession:
@@ -123,27 +233,33 @@ class CoolbetSession:
         self._last_call_t  = 0.0
         self._throttle_lock = __import__("threading").Lock()
 
+        # FlareSolverr session — named browser context. Persistent across
+        # CoolbetSession() instantiations within the same FS container lifetime.
+        # All HTTP calls route through this so Imperva sees real-Chrome TLS +
+        # an organic cookie jar (the cookies live in FS browser memory, not
+        # this process's .env or in-memory dict).
+        self._fs_session_name = _FS_SESSION_NAME
+        _fs_session_ensure(self._fs_session_name)
+
+        # Kept for legacy callers / debug visibility — the underlying transport
+        # is the FlareSolverr-routed _fs_get/_fs_post below. We still construct
+        # a plain requests.Session but only use it for header construction;
+        # actual HTTP no longer flows through it.
         self._http = requests.Session()
         self._http.headers.update(_HEADERS_BASE)
-        self._apply_imperva_cookies()
 
     # ── setup ────────────────────────────────────────────────────────────────
 
     def _apply_imperva_cookies(self) -> None:
-        # Individual vars take priority; fall back to combined string
-        individual = {k: v for k, v in self._imperva_cookies_individual.items() if v}
-        if individual:
-            for name, value in individual.items():
-                self._http.cookies.set(name, value, domain="www.coolbet.com")
-            return
-        if not self._imperva_cookies_raw:
-            log.warning("No Imperva cookies set — Imperva may block requests")
-            return
-        for part in self._imperva_cookies_raw.split(";"):
-            part = part.strip()
-            if "=" in part:
-                k, v = part.split("=", 1)
-                self._http.cookies.set(k.strip(), v.strip(), domain="www.coolbet.com")
+        """No-op since 2026-06-11. FlareSolverr's browser session holds Imperva
+        cookies natively (reese84 / visid_incap_* land in FS's cookie jar when
+        the browser first navigates to Coolbet). Manually setting them from
+        .env on a plain requests.Session was the workaround for the pre-FS
+        architecture; the .env values are now ignored.
+
+        Kept as a method (not removed) so callers that explicitly call
+        _apply_imperva_cookies() — typically test setup — don't break."""
+        return
 
     # ── auth ─────────────────────────────────────────────────────────────────
 
@@ -201,13 +317,13 @@ class CoolbetSession:
         # _login() / _adopt_manual_jwt() which would re-raise "JWT expired".
         # The renewal endpoint accepts JWTs that are past the safety margin
         # as long as they're not server-side-rejected (Coolbet's grace window).
-        self._http.headers.update({
-            "cbauth": f"Bearer {self._jwt}",
+        self._throttle()
+        renew_headers = self._build_auth_headers({
+            "cbauth": f"Bearer {self._jwt}",  # explicit override in case _jwt is mid-swap
             "login_session_id": self._login_session_id or "",
             "user_id": self._user_id or "",
         })
-        self._throttle()
-        resp = self._http.post(_RENEW_URL, json={})
+        resp = self._fs_post(_RENEW_URL, headers=renew_headers, json_body={})
         if resp.status_code in (401, 403):
             raise RuntimeError(
                 f"renew-token refused ({resp.status_code}): current JWT is "
@@ -288,8 +404,14 @@ class CoolbetSession:
             self._adopt_manual_jwt()
             return
 
-        log.info("Refreshing Coolbet JWT via /s/auth/login...")
-        resp = self._http.post(_LOGIN_URL, json={
+        log.info("Refreshing Coolbet JWT via /s/auth/login (FS-routed)...")
+        # Login does NOT need cbauth (that's what we're getting). But it does
+        # need the standard browser headers Imperva expects on a login XHR.
+        login_headers = self._build_auth_headers()
+        # Drop the cbauth keys if they got merged (no JWT yet to send)
+        for k in ("cbauth", "login_session_id", "user_id"):
+            login_headers.pop(k, None)
+        resp = self._fs_post(_LOGIN_URL, headers=login_headers, json_body={
             "email": self._email,
             "password": self._password,
         })
@@ -377,17 +499,91 @@ class CoolbetSession:
                 time.sleep(target_gap - elapsed)
             self._last_call_t = time.time()
 
+    # ── FlareSolverr-routed transport ────────────────────────────────────────
+
+    def _build_auth_headers(self, extra: dict | None = None) -> dict:
+        """Auth + browser-sim headers for any FS-routed request. Includes the
+        cbauth Bearer + login_session_id + user_id when in auth mode, plus the
+        sec-* + accept fluff that distinguishes Chrome XHRs from naked fetches."""
+        h = {
+            "accept": "*/*",
+            "accept-language": "en-GB,en-US;q=0.9",
+            "content-type": "application/json; charset=utf-8",
+            "x-device": "DESKTOP",
+            "origin": "https://www.coolbet.com",
+            "referer": "https://www.coolbet.com/en/sports/football",
+        }
+        if self._require_auth and self._jwt:
+            h["cbauth"] = f"Bearer {self._jwt}"
+            h["login_session_id"] = self._login_session_id or ""
+            h["user_id"] = self._user_id or ""
+        if extra:
+            h.update(extra)
+        return h
+
+    def _fs_get(self, url: str, *, headers: dict | None = None,
+                params: dict | None = None) -> _FSResponse:
+        """GET via FlareSolverr's named browser session. URL-encodes params
+        into the URL string (FS request.get doesn't accept a separate params
+        field). Returns _FSResponse with a requests-shaped interface."""
+        if params:
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}{urllib.parse.urlencode(params)}"
+        body = {
+            "cmd": "request.get",
+            "url": url,
+            "session": self._fs_session_name,
+            "maxTimeout": _FS_TIMEOUT_MS,
+        }
+        if headers:
+            body["headers"] = headers
+        return _FSResponse(_fs_call(body))
+
+    def _fs_post(self, url: str, *, headers: dict | None = None,
+                 json_body: dict | None = None,
+                 raw_body: str | None = None) -> _FSResponse:
+        """POST via FlareSolverr. json_body wins over raw_body when both set.
+        FS expects postData as a URL-encoded string or a JSON-stringified blob
+        depending on Content-Type — we pass JSON-stringified and rely on the
+        headers (set by _build_auth_headers) to declare content-type."""
+        body = {
+            "cmd": "request.post",
+            "url": url,
+            "session": self._fs_session_name,
+            "maxTimeout": _FS_TIMEOUT_MS,
+        }
+        if json_body is not None:
+            body["postData"] = json.dumps(json_body)
+        elif raw_body is not None:
+            body["postData"] = raw_body
+        if headers:
+            body["headers"] = headers
+        return _FSResponse(_fs_call(body))
+
     # ── public request helpers ────────────────────────────────────────────────
 
-    def get(self, url: str, **kwargs) -> requests.Response:
+    def get(self, url: str, **kwargs) -> _FSResponse:
+        """GET via FlareSolverr-routed Chrome. Drop-in compatible with the
+        previous requests.Session-backed behaviour — returns a _FSResponse
+        with .status_code/.text/.json()/.ok like requests.Response."""
         self._ensure_auth()
         self._throttle()
-        return self._http.get(url, **kwargs)
+        headers = self._build_auth_headers(kwargs.pop("headers", None))
+        params = kwargs.pop("params", None)
+        return self._fs_get(url, headers=headers, params=params)
 
-    def post(self, url: str, **kwargs) -> requests.Response:
+    def post(self, url: str, **kwargs) -> _FSResponse:
+        """POST via FlareSolverr-routed Chrome. Honors kwargs json= / data=
+        like requests.Session.post()."""
         self._ensure_auth()
         self._throttle()
-        return self._http.post(url, **kwargs)
+        headers = self._build_auth_headers(kwargs.pop("headers", None))
+        json_body = kwargs.pop("json", None)
+        raw_body = kwargs.pop("data", None)
+        # data= can be a dict (form-encoded) or a string — for the bets we
+        # post JSON only, so the simple json= path is what matters.
+        return self._fs_post(url, headers=headers,
+                              json_body=json_body, raw_body=raw_body)
 
     @property
     def user_id(self) -> str | None:
