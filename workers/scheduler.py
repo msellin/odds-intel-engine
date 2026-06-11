@@ -787,6 +787,30 @@ def job_cs2_scanner():
     _run_job("cs2_scanner", lambda: None)
 
 
+def job_cs2_hltv_match_odds():
+    """CS2-HLTV-MATCH-ODDS (2026-06-11): scrape HLTV match-detail pages and
+    write median bookie odds across all listed books to bookie_odds1/2.
+
+    Closes the loop: cs2_bot.py reads bookie_odds vs threshold_odds to fire
+    value picks. Without these market prices the bot can't compute edge even
+    when the model has coverage. Median (across ~30-40 books) is robust to
+    single-book outliers (crypto books quoting wildly off the market).
+    """
+    import subprocess
+    console.print("[bold cyan]CS2 HLTV match-page odds --record[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/esports/cs2_hltv_match_odds.py", "--record"],
+        capture_output=True, text=True, timeout=900,  # 15 min — 50 matches × ~1.5s pace + buffer
+    )
+    if result.returncode != 0:
+        console.print(f"[red]CS2 HLTV match-odds error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ["target rows", "wrote", "skipped", "parsed", "match slugs"]):
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("cs2_hltv_match_odds", lambda: None)
+
+
 def job_cs2_hltv_upcoming():
     """CS2-HLTV-UPCOMING (2026-06-11): scrape hltv.org/matches and populate
     cs2_upcoming_matches with the broader HLTV-sourced fixture set.
@@ -2383,11 +2407,24 @@ def main():
     # Every 2h at :05 so it runs BEFORE the predict crons (:02 v7, :17 hltv_v1)
     # in the cycles where both fire. Predictors pick up the new HLTV-sourced
     # rows automatically on their next run because the scraper populates
-    # hltv_rank+points by joining cs2_hltv_rankings at write time.
+    # hltv_rank+points by joining cs2_hltv_rankings at write time + ELO from
+    # cs2_results history (so v7/v8's win_prob1 IS NOT NULL gate accepts them).
     scheduler.add_job(job_cs2_hltv_upcoming,
                       CronTrigger(hour="0,2,4,6,8,10,12,14,16,18,20,22", minute=5),
                       id="cs2_hltv_upcoming",
                       name="CS2 HLTV Upcoming Matches [2h]",
+                      max_instances=1, misfire_grace_time=900)
+
+    # CS2-HLTV-MATCH-ODDS (2026-06-11) — populate bookie_odds1/2 from the
+    # median across HLTV-listed bookmakers on each match-detail page. The bot
+    # (cs2_bot.py) reads bookie_odds1/2 to compute edge vs threshold_odds.
+    # Without this scrape there are no market prices to compare against ->
+    # no value picks even when the model has coverage. Runs 7 minutes after
+    # cs2_hltv_upcoming so fixtures land first, then odds.
+    scheduler.add_job(job_cs2_hltv_match_odds,
+                      CronTrigger(hour="0,2,4,6,8,10,12,14,16,18,20,22", minute=12),
+                      id="cs2_hltv_match_odds",
+                      name="CS2 HLTV Match-page Odds [2h]",
                       max_instances=1, misfire_grace_time=900)
 
     # CS2-SETTLEMENT (2026-06-08) — hourly 12-02 UTC. Pulls finished bo3.gg

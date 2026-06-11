@@ -20369,6 +20369,58 @@ def _():
     assert "cs2_hltv_upcoming" in ids, "scheduler must register cs2_hltv_upcoming cron"
 
 
+@test("CS2-HLTV-MATCH-ODDS — bookie_odds populated from HLTV median across books")
+def _():
+    """CS2-HLTV-MATCH-ODDS (2026-06-11): the bot (cs2_bot.py) reads
+    bookie_odds1/2 vs threshold_odds1/2 to compute edge. Without market
+    prices it can't fire any picks — exactly the symptom hit on 2026-06-11
+    when Coolbet's matches endpoint went empty AND HLTV-sourced fixtures
+    had NULL bookie_odds. This pin guards the median-across-books fix.
+    """
+    import pathlib, ast
+    src = pathlib.Path("scripts/esports/cs2_hltv_match_odds.py").read_text()
+    # Median (not mean): single-book outliers don't move the market reference.
+    assert "from statistics import median" in src, (
+        "Scraper must use statistics.median — mean is moved by a single "
+        "crypto-book outlier; median is robust to up to half the books "
+        "being garbage."
+    )
+    # Persists to existing bookie_odds1/2 columns the bot already reads.
+    assert "bookie_odds1 = %s, bookie_odds2 = %s" in src, (
+        "Scraper must UPDATE cs2_upcoming_matches.bookie_odds1/2 — those are "
+        "the columns cs2_bot.py reads for edge calc. Writing to a new column "
+        "would silently bypass the bot."
+    )
+    # Vig sanity check — a sub-1.0 implied sum means parse error, not edge.
+    assert "1/m1 + 1/m2 < 0.98" in src, (
+        "median_odds must reject results where implied probability sum < 0.98 "
+        "— that's a parse error, not a real arbitrage opportunity."
+    )
+    # Slug map: /matches/{id} without slug returns 404. Must build the id->slug
+    # map from the /matches list page once per run.
+    assert "def build_slug_map(" in src, (
+        "Scraper must build id->slug map (HLTV 404's on /matches/{id} alone)."
+    )
+    # Negative-bo3gg_id sentinel — only HLTV-sourced rows have a recoverable
+    # hltv_match_id (= abs(bo3gg_id)).
+    assert "bo3gg_id < 0" in src, (
+        "Scraper must filter targets to bo3gg_id < 0 — those are the rows "
+        "with a recoverable hltv_match_id."
+    )
+    # Scheduler registration.
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    tree = ast.parse(sched)
+    fns = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    assert "job_cs2_hltv_match_odds" in fns
+    ids = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "add_job":
+            for kw in n.keywords:
+                if kw.arg == "id" and isinstance(getattr(kw.value, "value", None), str):
+                    ids.add(kw.value.value)
+    assert "cs2_hltv_match_odds" in ids
+
+
 @test("CS2-HLTV-PREDICT — parallel HLTV-only model variant")
 def _():
     import pathlib, importlib.util, ast

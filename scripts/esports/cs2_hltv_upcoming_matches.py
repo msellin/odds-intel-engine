@@ -426,16 +426,30 @@ def enrich_elo(verbose: bool = True) -> tuple[int, int, int]:
         # baseline the scanner uses when player quality is missing.
         win_prob1 = combined_win_prob(r1, r2, None)
         win_prob2 = 1.0 - win_prob1
+        # fair = no-vig price; threshold = fair × 1.03 (3% baseline edge baked
+        # in per scanner convention — bot fires only when bookie ≥ threshold +
+        # extra 5%). cs2_bot.py's ELO-covered path requires threshold_odds1
+        # IS NOT NULL — without these the row falls through to the HLTV
+        # fallback path even when ELO is populated.
+        fair1 = 1.0 / win_prob1 if win_prob1 > 0 else 999.99
+        fair2 = 1.0 / win_prob2 if win_prob2 > 0 else 999.99
+        thr1 = fair1 * 1.03
+        thr2 = fair2 * 1.03
 
         execute_write(
             """UPDATE cs2_upcoming_matches
                SET elo1 = %s, elo2 = %s,
                    win_prob1 = %s, win_prob2 = %s,
+                   fair_odds1 = %s, fair_odds2 = %s,
+                   threshold_odds1 = %s, threshold_odds2 = %s,
                    has_elo_history = TRUE,
                    scanned_at = NOW()
                WHERE id = %s""",
             (round(r1, 2), round(r2, 2),
-             round(win_prob1, 5), round(win_prob2, 5), t["id"]),
+             round(win_prob1, 5), round(win_prob2, 5),
+             round(fair1, 3), round(fair2, 3),
+             round(thr1, 3), round(thr2, 3),
+             t["id"]),
         )
         updated += 1
 
