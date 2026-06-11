@@ -72,16 +72,40 @@ def fetch_league_matches(session: CoolbetSession, league_id: int, slug: str) -> 
     if not resp.ok:
         return []
     data = resp.json()
-    cats = data if isinstance(data, list) else [data]
+    # Coolbet response shapes encountered (2026-06-11):
+    #   - {"categories": [{"id":..., "matches":[...]}]}   (current, observed)
+    #   - [{"id":..., "matches":[...]}]                    (legacy, kept compatible)
+    #   - {"id":..., "matches":[...]}                      (singleton — wrap)
+    if isinstance(data, dict) and "categories" in data:
+        cats = data["categories"] or []
+    elif isinstance(data, list):
+        cats = data
+    else:
+        cats = [data]
     matches = []
     for cat in cats:
+        if not isinstance(cat, dict):
+            continue
         for m in cat.get("matches") or []:
             if not m.get("id"):
                 continue
+            # Coolbet match shape: name = "Team A - Team B" + outcomes have
+            # result_key "[Home]"/"[Away]"; no home_team_name/away_team_name
+            # field on the match itself anymore. Split the name as fallback
+            # so legacy callers that rely on .home/.away still work.
+            home = (m.get("home_team_name") or "").strip()
+            away = (m.get("away_team_name") or "").strip()
+            if not (home and away):
+                # Split "Team A - Team B" on the first " - " separator.
+                name = (m.get("name") or "").strip()
+                if " - " in name:
+                    a, b = name.split(" - ", 1)
+                    home = home or a.strip()
+                    away = away or b.strip()
             matches.append({
                 "id":      int(m["id"]),
-                "home":    (m.get("home_team_name") or "").strip(),
-                "away":    (m.get("away_team_name") or "").strip(),
+                "home":    home,
+                "away":    away,
                 "start":   m.get("match_start") or m.get("start"),
                 "status":  m.get("status"),
                 "markets": m.get("markets") or [],

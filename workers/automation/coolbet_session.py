@@ -233,33 +233,104 @@ class CoolbetSession:
         self._last_call_t  = 0.0
         self._throttle_lock = __import__("threading").Lock()
 
-        # FlareSolverr session — named browser context. Persistent across
-        # CoolbetSession() instantiations within the same FS container lifetime.
-        # All HTTP calls route through this so Imperva sees real-Chrome TLS +
-        # an organic cookie jar (the cookies live in FS browser memory, not
-        # this process's .env or in-memory dict).
+        # HYBRID TRANSPORT (2026-06-11):
+        # - GET ........ via FlareSolverr (real Chrome TLS, full Imperva pass)
+        # - POST (JSON). via plain requests.Session() WITH cookies harvested
+        #                from a FS GET. The reason: FlareSolverr force-encodes
+        #                all POST bodies as application/x-www-form-urlencoded
+        #                and TRUNCATES JSON bodies at the first separator.
+        #                Imperva accepts our plain-requests POST because the
+        #                cookies are real (FS-issued, fresh).
+        # See COOLBET-FS-SESSION-STABLE diagnostic logs 2026-06-11 for the
+        # httpbin echo that proved FS truncates JSON to 4 bytes.
         self._fs_session_name = _FS_SESSION_NAME
         _fs_session_ensure(self._fs_session_name)
 
-        # Kept for legacy callers / debug visibility — the underlying transport
-        # is the FlareSolverr-routed _fs_get/_fs_post below. We still construct
-        # a plain requests.Session but only use it for header construction;
-        # actual HTTP no longer flows through it.
+        # The real transport for POST (and any legacy plain-requests path).
+        # Cookies will be populated by _refresh_cookies_from_fs() on first use.
         self._http = requests.Session()
         self._http.headers.update(_HEADERS_BASE)
+        # Tracks whether we've done at least one FS-cookie harvest. Set to
+        # False on init AND on any 401/403 to force re-harvest on next call.
+        self._cookies_fresh: bool = False
 
     # ── setup ────────────────────────────────────────────────────────────────
 
     def _apply_imperva_cookies(self) -> None:
-        """No-op since 2026-06-11. FlareSolverr's browser session holds Imperva
-        cookies natively (reese84 / visid_incap_* land in FS's cookie jar when
-        the browser first navigates to Coolbet). Manually setting them from
-        .env on a plain requests.Session was the workaround for the pre-FS
-        architecture; the .env values are now ignored.
+        """No-op since 2026-06-11 (HYBRID-FS architecture). FlareSolverr's
+        browser holds the canonical Imperva cookies. We harvest them into
+        self._http on demand via _refresh_cookies_from_fs() instead of reading
+        from .env (which is stale by the time the next process restarts).
 
         Kept as a method (not removed) so callers that explicitly call
         _apply_imperva_cookies() — typically test setup — don't break."""
         return
+
+    def _refresh_cookies_from_fs(self) -> int:
+        """Navigate via FlareSolverr to a real Coolbet page to capture fresh
+        Imperva cookies (reese84, visid_incap_*, nlbi_*, incap_ses_*), then
+        copy them into self._http for plain-requests POSTs to use.
+
+        Also synchronises the User-Agent so plain-requests calls look like
+        the same browser that earned the cookies (Imperva fingerprints UA +
+        cookies together — mismatch can trigger a re-challenge).
+
+        Returns the number of cookies harvested. Raises on FS unreachable
+        OR if Coolbet's response didn't include the critical Imperva markers
+        — callers should treat that as a hard auth failure.
+        """
+        body = {
+            "cmd": "request.get",
+            "url": "https://www.coolbet.com/en/sports/football",
+            "session": self._fs_session_name,
+            "maxTimeout": _FS_TIMEOUT_MS,
+        }
+        raw = _fs_call(body)
+        sol = raw.get("solution") or {}
+        cookies = sol.get("cookies") or []
+        if not cookies:
+            raise RuntimeError(
+                f"FS cookie harvest empty — FS status={raw.get('status')!r}, "
+                f"message={raw.get('message')!r}. Try `python3 "
+                f"scripts/diagnose/flaresolverr.py` to diagnose."
+            )
+
+        # Wipe stale cookies first so a fresh harvest doesn't accidentally
+        # preserve expired ones (Imperva rotates fast).
+        self._http.cookies.clear()
+        copied = 0
+        for c in cookies:
+            name = c.get("name")
+            value = c.get("value")
+            if name and value:
+                # Domain quirk: some Imperva cookies are issued for the bare
+                # domain ('.coolbet.com'), some for the host ('www.coolbet.com').
+                # FS returns the exact domain; preserve it. Default to www if
+                # missing (Coolbet's docs anchor on www).
+                domain = c.get("domain") or "www.coolbet.com"
+                self._http.cookies.set(name, value, domain=domain)
+                copied += 1
+
+        # UA sync — without this the post-harvest plain-requests calls look
+        # like a different browser to Imperva and may get re-challenged.
+        ua = sol.get("userAgent")
+        if ua:
+            self._http.headers["User-Agent"] = ua
+
+        # Sanity check: did we get the critical Imperva markers?
+        names = {c.get("name") for c in cookies if c.get("name")}
+        has_reese = "reese84" in names
+        has_visid = any(n.startswith("visid_incap") for n in names)
+        if not (has_reese and has_visid):
+            log.warning(
+                "FS cookie harvest may be incomplete — reese84=%s visid_incap_*=%s. "
+                "Imperva-protected POSTs may 403.", has_reese, has_visid,
+            )
+
+        self._cookies_fresh = True
+        log.info("Refreshed %d Imperva cookies from FS (reese84=%s, visid=%s)",
+                 copied, has_reese, has_visid)
+        return copied
 
     # ── auth ─────────────────────────────────────────────────────────────────
 
@@ -317,13 +388,15 @@ class CoolbetSession:
         # _login() / _adopt_manual_jwt() which would re-raise "JWT expired".
         # The renewal endpoint accepts JWTs that are past the safety margin
         # as long as they're not server-side-rejected (Coolbet's grace window).
-        self._throttle()
-        renew_headers = self._build_auth_headers({
-            "cbauth": f"Bearer {self._jwt}",  # explicit override in case _jwt is mid-swap
+        if not self._cookies_fresh:
+            self._refresh_cookies_from_fs()
+        self._http.headers.update({
+            "cbauth": f"Bearer {self._jwt}",
             "login_session_id": self._login_session_id or "",
             "user_id": self._user_id or "",
         })
-        resp = self._fs_post(_RENEW_URL, headers=renew_headers, json_body={})
+        self._throttle()
+        resp = self._http.post(_RENEW_URL, json={})
         if resp.status_code in (401, 403):
             raise RuntimeError(
                 f"renew-token refused ({resp.status_code}): current JWT is "
@@ -404,14 +477,14 @@ class CoolbetSession:
             self._adopt_manual_jwt()
             return
 
-        log.info("Refreshing Coolbet JWT via /s/auth/login (FS-routed)...")
-        # Login does NOT need cbauth (that's what we're getting). But it does
-        # need the standard browser headers Imperva expects on a login XHR.
-        login_headers = self._build_auth_headers()
-        # Drop the cbauth keys if they got merged (no JWT yet to send)
+        log.info("Refreshing Coolbet JWT via /s/auth/login (plain-requests + FS cookies)...")
+        if not self._cookies_fresh:
+            self._refresh_cookies_from_fs()
+        # Login does NOT carry cbauth (we're earning it). Strip any auth
+        # headers that may have been merged from a prior call.
         for k in ("cbauth", "login_session_id", "user_id"):
-            login_headers.pop(k, None)
-        resp = self._fs_post(_LOGIN_URL, headers=login_headers, json_body={
+            self._http.headers.pop(k, None)
+        resp = self._http.post(_LOGIN_URL, json={
             "email": self._email,
             "password": self._password,
         })
@@ -572,18 +645,37 @@ class CoolbetSession:
         params = kwargs.pop("params", None)
         return self._fs_get(url, headers=headers, params=params)
 
-    def post(self, url: str, **kwargs) -> _FSResponse:
-        """POST via FlareSolverr-routed Chrome. Honors kwargs json= / data=
-        like requests.Session.post()."""
+    def post(self, url: str, **kwargs) -> requests.Response:
+        """POST via plain requests.Session() WITH cookies harvested from FS.
+
+        Why not FlareSolverr: FS force-encodes POST bodies as application/x-www-
+        form-urlencoded and truncates JSON to ~4 bytes (verified via httpbin
+        echo 2026-06-11). Coolbet's APIs require proper JSON bodies. The
+        cookies we get from a FS GET pass Imperva's challenge, and Imperva
+        validates the SAME cookies + UA on subsequent POSTs — so plain
+        requests with those cookies sails through.
+
+        Auto-retries once on 401/403 after a fresh cookie harvest (Imperva
+        cookies expire fast — typically minutes to hours)."""
         self._ensure_auth()
+        if not self._cookies_fresh:
+            self._refresh_cookies_from_fs()
         self._throttle()
-        headers = self._build_auth_headers(kwargs.pop("headers", None))
-        json_body = kwargs.pop("json", None)
-        raw_body = kwargs.pop("data", None)
-        # data= can be a dict (form-encoded) or a string — for the bets we
-        # post JSON only, so the simple json= path is what matters.
-        return self._fs_post(url, headers=headers,
-                              json_body=json_body, raw_body=raw_body)
+
+        # _ensure_auth already merged cbauth/login_session_id/user_id into
+        # self._http.headers. kwargs.pop("headers") layers additional ones.
+        resp = self._http.post(url, **kwargs)
+        if resp.status_code in (401, 403):
+            # Refresh cookies + retry ONCE. If still 401/403, surface the
+            # error to caller — likely JWT expired (caller should renew) or
+            # Coolbet upstream issue.
+            log.info("Coolbet POST got %d — refreshing FS cookies and retrying once",
+                      resp.status_code)
+            self._cookies_fresh = False
+            self._refresh_cookies_from_fs()
+            self._throttle()
+            resp = self._http.post(url, **kwargs)
+        return resp
 
     @property
     def user_id(self) -> str | None:

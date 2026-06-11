@@ -3222,78 +3222,94 @@ def test_coolbet_search_blocked():
     )
 
 
-@test("COOLBET-FS-SESSION-STABLE — CoolbetSession routes ALL HTTP through FlareSolverr")
+@test("COOLBET-FS-SESSION-STABLE — hybrid FS transport (GET via FS, POST via requests + FS cookies)")
 def _():
     """COOLBET-FS-SESSION-STABLE (2026-06-11): the previous CoolbetSession
     used a plain requests.Session, which got 403/500'd by Imperva because
-    its TLS fingerprint + cookie order didn't match a real browser. Symptom:
-    cs2_coolbet_scanner returned 7 leagues / 0 matches; placer hit HTTP 500
-    on search/v2. Heartbeat (which already routed through FlareSolverr)
-    worked fine — proving FS was the right transport.
+    its TLS fingerprint didn't match a real browser. Routing GETs via FS
+    fixes that. BUT — FlareSolverr force-encodes POST bodies as
+    application/x-www-form-urlencoded and truncates JSON to ~4 bytes
+    (verified 2026-06-11 via httpbin echo). So we can't naively route
+    POSTs via FS either.
 
-    Fix: every HTTP call from CoolbetSession now routes through the FS
-    proxy at /v1 with cmd=request.get / request.post against a named
-    browser session (default coolbet_prod). Imperva cookies live in FS
-    browser memory, not .env. JWT still passed via cbauth header but the
-    request itself ships from a real Chrome.
+    Hybrid architecture (the one that actually works):
+      - GET  → FlareSolverr (real Chrome TLS, full Imperva pass)
+      - POST → plain requests.Session WITH cookies harvested from a
+        FS GET. Imperva accepts the cookies (they were issued to FS's
+        Chrome), and plain requests properly sends JSON bodies.
 
-    This pin locks the architecture so a future refactor can't silently
-    regress to the requests.Session path.
+    This pin locks the architectural invariant so a future refactor
+    doesn't silently regress to either pure-FS (breaks JSON POST) or
+    pure-requests (Imperva blocks the TLS fingerprint).
     """
     import pathlib
     src = pathlib.Path("workers/automation/coolbet_session.py").read_text()
 
-    # FS helpers exist
-    assert "def _fs_call(" in src, (
-        "Module-level _fs_call(body) helper required — the FlareSolverr proxy "
-        "entry-point. Don't inline the urlopen call in each method."
-    )
-    assert "def _fs_session_ensure(" in src, (
-        "Module-level _fs_session_ensure(name) required — idempotent FS "
-        "sessions.create wrapper."
-    )
-    assert "class _FSResponse:" in src, (
-        "_FSResponse adapter required — wraps FS response in a "
-        "requests.Response-shaped interface so consumers (placer, scanner, "
-        "explorer, inplay) don't need to change."
-    )
-    # Adapter exposes the request.Response surface
+    # FS helpers (still needed for GETs + cookie harvest)
+    assert "def _fs_call(" in src, "Module-level _fs_call(body) helper required"
+    assert "def _fs_session_ensure(" in src, "Module-level _fs_session_ensure required"
+    assert "class _FSResponse:" in src, "_FSResponse adapter required for GET path"
     for attr in ("status_code", "text", "ok", "json", "raise_for_status", "cookies"):
         assert attr in src.split("class _FSResponse")[1].split("\nclass ")[0], (
             f"_FSResponse must expose {attr} to stay drop-in-compatible with "
-            f"requests.Response (existing callers depend on it)."
+            f"requests.Response."
         )
 
-    # CoolbetSession.get / .post route through _fs_get / _fs_post — and
-    # critically do NOT call self._http.get/post directly anymore.
-    get_block = src.split("    def get(self, url: str, **kwargs)")[1].split("    def ")[0]
-    post_block = src.split("    def post(self, url: str, **kwargs)")[1].split("    def ")[0]
-    assert "self._fs_get(" in get_block, "CoolbetSession.get must call self._fs_get"
-    assert "self._fs_post(" in post_block, "CoolbetSession.post must call self._fs_post"
-    assert "self._http.get(" not in get_block, (
-        "CoolbetSession.get must NOT route through self._http.get — that's "
-        "the plain-requests path Imperva blocks."
+    # Cookie harvest: the critical bridge between FS-issued cookies and
+    # plain-requests POST. Without this method, POSTs hit Imperva with
+    # whatever stale cookies happened to be in self._http.
+    assert "def _refresh_cookies_from_fs(" in src, (
+        "_refresh_cookies_from_fs() method required — harvests Imperva "
+        "cookies + UA from FS browser into self._http for POST."
     )
-    assert "self._http.post(" not in post_block, (
-        "CoolbetSession.post must NOT route through self._http.post."
+    refresh_block = src.split("def _refresh_cookies_from_fs(")[1].split("\n    def ")[0]
+    assert "self._http.cookies.clear()" in refresh_block, (
+        "Cookie harvest must wipe stale cookies before copying fresh ones — "
+        "Imperva rotates; preserving expired cookies risks re-challenge."
+    )
+    assert "reese84" in refresh_block, (
+        "Cookie harvest must specifically validate (or log) reese84 presence "
+        "— it's Imperva's primary challenge token."
     )
 
-    # _login + renew_jwt_via_api also use FS (they bypass self.post()'s
-    # _ensure_auth so we need explicit _fs_post wiring).
+    # GET: routes via FS (real Chrome).
+    get_block = src.split("    def get(self, url: str, **kwargs)")[1].split("    def ")[0]
+    assert "self._fs_get(" in get_block, "CoolbetSession.get must route via FS"
+    assert "self._http.get(" not in get_block, (
+        "CoolbetSession.get must NOT use self._http.get — that's the plain-"
+        "requests path Imperva blocks for GETs."
+    )
+
+    # POST: routes via plain requests, requires fresh FS-harvested cookies.
+    post_block = src.split("    def post(self, url: str, **kwargs)")[1].split("    def ")[0]
+    assert "self._http.post(" in post_block, (
+        "CoolbetSession.post must use self._http.post (plain requests) — "
+        "FlareSolverr can't send JSON bodies properly."
+    )
+    assert "_refresh_cookies_from_fs(" in post_block, (
+        "CoolbetSession.post must call _refresh_cookies_from_fs() (directly "
+        "or via the _cookies_fresh guard) so FS-issued cookies are present "
+        "before the plain-requests POST."
+    )
+    # Auto-retry on 401/403 — Imperva cookies expire fast; refresh+retry once.
+    assert "401" in post_block and "403" in post_block, (
+        "CoolbetSession.post must check for 401/403 status and retry once "
+        "after refreshing cookies."
+    )
+
+    # _login + renew_jwt_via_api also POST JSON → must use plain requests.
     login_block = src.split("    def _login(")[1].split("\n    def ")[0]
-    assert "self._fs_post(" in login_block, (
-        "_login must use self._fs_post — login XHR has to share the same "
-        "browser TLS fingerprint as the rest of the session."
+    assert "self._http.post(_LOGIN_URL" in login_block, (
+        "_login must use plain self._http.post (FS can't send JSON login body)."
     )
     renew_block = src.split("    def renew_jwt_via_api(")[1].split("\n    def ")[0]
-    assert "self._fs_post(" in renew_block, (
-        "renew_jwt_via_api must use self._fs_post — same Imperva concern."
+    assert "self._http.post(_RENEW_URL" in renew_block, (
+        "renew_jwt_via_api must use plain self._http.post."
     )
 
-    # Session name is configurable but defaults to coolbet_prod
-    assert 'COOLBET_FLARE_SESSION", "coolbet_prod"' in src or \
-           "_FS_SESSION_NAME = os.getenv(\"COOLBET_FLARE_SESSION\", \"coolbet_prod\")" in src, (
-        "Default FS session name must be coolbet_prod (production-scoped)."
+    # Default FS session name is coolbet_prod (production-scoped).
+    assert 'COOLBET_FLARE_SESSION", "coolbet_prod"' in src, (
+        "Default FS session name must be coolbet_prod."
     )
 
 
