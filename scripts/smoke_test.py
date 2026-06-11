@@ -3728,6 +3728,81 @@ def test_admin_tg_clarity():
         "summary must collapse to a ` · ` joined counter line"
 
 
+@test("COOLBET-TG-OPERATOR-COMMANDS — /status, /today, /pause, /resume, /help wired in webhook")
+def _():
+    """COOLBET-FS-SESSION-STABLE Step 1.6 (2026-06-11): Telegram operator
+    commands for on-demand bot health + control without ssh / Railway.
+
+    Gated by TELEGRAM_CHAT_ID env (same as the existing place-button admin
+    gate) so random chats can't pause the live bot. Non-operator chats fall
+    through to /start /stop handlers as before — no behaviour regression.
+
+    This pin locks the contract so a future webhook refactor can't silently
+    drop operator commands or weaken the admin gate."""
+    import pathlib
+    src = pathlib.Path("../odds-intel-web/src/app/api/telegram/webhook/route.ts").read_text()
+
+    # Gating helper must exist + use TELEGRAM_CHAT_ID (single-operator env).
+    assert "function isOperator(" in src, (
+        "isOperator() helper required — operator commands must be gated."
+    )
+    assert "ADMIN_CHAT_ID" in src, (
+        "Operator gate must rely on ADMIN_CHAT_ID (TELEGRAM_CHAT_ID env)."
+    )
+
+    # Each command has a dedicated handler.
+    for handler in (
+        "handleStatusCommand",
+        "handleTodayCommand",
+        "handlePauseCommand",
+        "handleResumeCommand",
+        "handleHelpCommand",
+    ):
+        assert f"function {handler}(" in src, (
+            f"{handler}() handler required — operator command incomplete."
+        )
+
+    # Dispatch routes the right slash-commands to the right handlers.
+    dispatch_block = src.split("// Operator commands")[1].split("if (text.startsWith(\"/start\"))")[0]
+    for trigger, fn in (
+        ('text === "/status"',  "handleStatusCommand("),
+        ('text === "/today"',   "handleTodayCommand("),
+        ('"/pause"',             "handlePauseCommand("),
+        ('text === "/resume"',  "handleResumeCommand("),
+        ('text === "/help"',    "handleHelpCommand("),
+    ):
+        assert trigger in dispatch_block and fn in dispatch_block, (
+            f"Webhook must dispatch {trigger} → {fn}"
+        )
+
+    # The dispatch must be inside isOperator() gate, otherwise random users
+    # could trigger /pause and halt the bot. Verify ordering: isOperator
+    # check appears before the /status check.
+    op_gate_pos = src.index("if (isOperator(chatId))")
+    status_pos = src.index('text === "/status"')
+    assert op_gate_pos < status_pos, (
+        "isOperator() gate must wrap the operator-command dispatch."
+    )
+
+    # /pause writes to placement_paused (the kill switch column from mig 244)
+    # so the placer respects it on next tick.
+    pause_block = src.split("function handlePauseCommand(")[1].split("function ")[0]
+    assert "placement_paused: true" in pause_block, (
+        "handlePauseCommand must set placement_paused=true in coolbet_session_state."
+    )
+
+    # Migration 244 actually creates the column the FE depends on.
+    mig244 = pathlib.Path("supabase/migrations/244_coolbet_placement_paused.sql").read_text()
+    assert "placement_paused BOOLEAN" in mig244, "Migration 244 must add placement_paused column"
+
+    # The placer (betting_pipeline._run_coolbet_record) actually respects
+    # the flag — otherwise /pause does nothing.
+    pipe = pathlib.Path("workers/jobs/betting_pipeline.py").read_text()
+    assert "is_placement_paused()" in pipe, (
+        "_run_coolbet_record must call is_placement_paused() at start of run"
+    )
+
+
 @test("MANUAL-PLACE — admin button + webhook + drain loop end-to-end wiring")
 def test_manual_place_wiring():
     """MANUAL-PLACE (2026-05-29): admin taps Telegram inline-keyboard button

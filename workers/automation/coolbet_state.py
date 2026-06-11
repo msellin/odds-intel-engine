@@ -108,6 +108,42 @@ def mark_cookies_refreshed(count: int) -> None:
     )
 
 
+def is_placement_paused() -> tuple[bool, str | None]:
+    """Returns (paused, reason). Placer calls this at the start of every
+    run; short-circuits the whole placement loop when paused=True.
+
+    Falls open (returns (False, None)) on DB error so an observability
+    hiccup doesn't accidentally halt placements — the system is more
+    useful running than paralysed by a transient lookup failure. The
+    intentional-pause path is the one we care about; transient DB errors
+    are caught elsewhere and surface in last_error."""
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            "SELECT placement_paused, placement_paused_reason FROM coolbet_session_state WHERE id = 1"
+        )
+        if not rows:
+            return (False, None)
+        return (bool(rows[0].get("placement_paused")),
+                rows[0].get("placement_paused_reason"))
+    except Exception as e:
+        log.warning("placement_paused read failed (defaulting to NOT paused): %s", e)
+        return (False, None)
+
+
+def set_placement_paused(paused: bool, *, reason: str | None = None) -> None:
+    """Operator kill switch. Telegram /pause sets paused=True with a reason;
+    /resume clears both. Plain UPDATE — no validation — operator owns this."""
+    _safe_write(
+        """UPDATE coolbet_session_state
+           SET placement_paused = %s,
+               placement_paused_at = CASE WHEN %s THEN NOW() ELSE NULL END,
+               placement_paused_reason = %s
+           WHERE id = 1""",
+        (paused, paused, reason if paused else None),
+    )
+
+
 def get_or_create_device_id() -> str:
     """Return the bot's stable Coolbet deviceId. Auto-generates on first
     call and persists to coolbet_session_state.device_id so subsequent

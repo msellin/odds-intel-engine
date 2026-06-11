@@ -80,6 +80,20 @@ def _run_coolbet_record() -> None:
     # When true, the Coolbet API receives the actual POST /s/bets/bets.
     execute_mode = os.getenv("COOLBET_AUTO_EXECUTE", "false").lower() in ("true", "1", "yes")
     mode_label = "EXECUTE" if execute_mode else "record"
+
+    # Operator kill switch — DB flag faster than env-flip (no restart needed).
+    # Telegram /pause sets it; /resume clears. Skips the whole placement loop
+    # when paused — paper writes stop too so we don't pollute real_bets with
+    # rows the operator explicitly didn't want.
+    try:
+        from workers.automation.coolbet_state import is_placement_paused
+        paused, reason = is_placement_paused()
+    except Exception:
+        paused, reason = (False, None)
+    if paused:
+        console.print(f"[yellow]Coolbet auto-placer SKIPPED — operator paused (reason: {reason or 'no reason given'})[/yellow]")
+        return
+
     console.print(f"[bold cyan]Coolbet auto-placer ({mode_label} mode)[/bold cyan]")
 
     try:
