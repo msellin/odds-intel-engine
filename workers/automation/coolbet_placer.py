@@ -1336,7 +1336,23 @@ def _place_bet_api(
         unknown fields with GenericBadRequestError("Invalid request") and no
         further detail. Send EXACTLY the keys the browser sends.
     """
-    device_id = session._http.cookies.get("uuid", "")
+    # deviceId resolution order:
+    #   1. uuid cookie on the requests session (legacy — Coolbet may have
+    #      moved this to localStorage in 2026)
+    #   2. COOLBET_DEVICE_ID env var (operator-pinned from browser DevTools —
+    #      manually placed bet's body shows the deviceId Coolbet expects)
+    # Coolbet 400's bet placement with "deviceId is not allowed to be empty"
+    # if both are missing — surface that as a clear error rather than
+    # mysterious-Joi-cascade.
+    import os as _os
+    device_id = session._http.cookies.get("uuid", "") or _os.getenv("COOLBET_DEVICE_ID", "")
+    if not device_id:
+        raise RuntimeError(
+            "Coolbet deviceId unresolved — uuid cookie absent from FS-harvested "
+            "session AND COOLBET_DEVICE_ID env var unset. Capture your browser's "
+            "deviceId from a manual bet placement (Network tab → /s/bets/bets "
+            "request body → deviceId field) and set COOLBET_DEVICE_ID in .env."
+        )
 
     payload = {
         "ticketType": "single",
