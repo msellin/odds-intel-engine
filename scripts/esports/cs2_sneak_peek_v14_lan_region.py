@@ -364,16 +364,16 @@ def build_rows(matches, tm, pistol, tier_map, kd_map, direct,
         kd_diff = (t1_kd - t2_kd) if (t1_kd is not None and t2_kd is not None) else 0.0
 
         # NEW v14: pull the HLTV row corresponding to this match (for stage +
-        # event_name). Mirror v13's join: try (k1,k2,date) then (k2,k1,date).
+        # event_name). hltv_match_id was resolved upstream via
+        # cs2_match_id_bridge — the old (k1,k2,date) exact-string join only
+        # covered ~2% of rows.
         k1, k2 = _norm_team(m["team1"]), _norm_team(m["team2"])
         kickoff_ts = m["kickoff_time"]
-        hit = hltv_match_idx.get((k1, k2, kdate)) if kdate else None
-        # Find the matching event row by hltv_match_id (small extra lookup)
+        hltv_id = m.get("hltv_match_id")
         is_lan_event = 0
         event_region = "UNKNOWN"
         hltv_covered = 0
-        if hit:
-            hltv_id, _orient = hit
+        if hltv_id is not None:
             ev = events_idx.get(hltv_id)
             if ev is not None:
                 is_lan_event = 1 if ev["is_lan"] else 0
@@ -489,7 +489,7 @@ def main():
     # the regressor sees the LAN/region signal where it exists and learns
     # zero-coefficient noise elsewhere. Run with --since 2026-04-01 if you
     # specifically want the dense subset (n≈68 in current data — too small).
-    ap.add_argument("--since", default="2025-09-01")
+    ap.add_argument("--since", default="2025-06-01")
     args = ap.parse_args()
     since_d = date.fromisoformat(args.since)
 
@@ -516,6 +516,19 @@ def main():
 
     print("loading matches + PIT features…")
     matches = load_matches_with_features(args.since)
+    # Bridge: bo3gg_id -> hltv_match_id via cs2_match_id_bridge (replaces the
+    # old (team1, team2, date) exact-string join that capped coverage at <3%).
+    print("  enriching matches with hltv_match_id via cs2_match_id_bridge…")
+    bridge = {r["bo3gg_id"]: r["hltv_match_id"] for r in execute_query(
+        "SELECT bo3gg_id, hltv_match_id FROM cs2_match_id_bridge"
+    )}
+    matched = 0
+    for m in matches:
+        bid = m.get("bo3gg_id")
+        m["hltv_match_id"] = bridge.get(str(bid)) if bid is not None else None
+        if m["hltv_match_id"] is not None:
+            matched += 1
+    print(f"  bridge coverage: {matched}/{len(matches)} ({matched/max(len(matches),1):.1%})")
     rows = build_rows(matches, tm, pistol, tier_map, kd_map, direct,
                       events_idx, streams, hltv_match_idx)
     print(f"  {len(rows)} matches with saved_prob\n")

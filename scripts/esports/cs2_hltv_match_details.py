@@ -248,10 +248,11 @@ def queue_new_matches(limit_pages: int = 1, from_page: int = 0) -> int:
         from scraper_state import scraper_run
 
     total = 0
-    # Queue walking just hits public /results pages — no auth needed, FlareSolverr's
-    # ~3-5s navigation already paces us. Use a tiny sleep instead of full RATE_DELAY
-    # (which is set for the heavier match-detail page parses).
-    QUEUE_SLEEP_S = 0.3
+    # Queue walking hits public /results. After FS warmup, plain requests are
+    # ~0.2s/page. The previous bottleneck was 110 individual INSERTs per page
+    # at ~150ms each = ~16s of pure DB roundtrip. Now: one execute_values per
+    # page (~50ms), bringing per-page total to ~0.5s = 100+ pages/min.
+    QUEUE_SLEEP_S = 0.1
     with scraper_run("match_details_queue", "Walks HLTV /results pages and queues match IDs") as st:
         st.set_total(limit_pages * 100)  # nominal capacity
         st.note(f"walking {limit_pages} pages")
@@ -263,15 +264,19 @@ def queue_new_matches(limit_pages: int = 1, from_page: int = 0) -> int:
             rows = fetch_results_listing(offset)
             if not rows:
                 break
-            for mid, slug in rows:
-                execute_write("""
-                    INSERT INTO cs2_hltv_match_queue (hltv_match_id, slug)
-                    VALUES (%s, %s)
-                    ON CONFLICT (hltv_match_id) DO NOTHING
-                """, (mid, slug))
-                total += 1
-                st.tick_done(persist_every=50)
-            print(f"  page {page} (offset={offset}): {len(rows)} candidates")
+            # Batched insert — one execute_values for the whole page.
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    psycopg2.extras.execute_values(cur, """
+                        INSERT INTO cs2_hltv_match_queue (hltv_match_id, slug)
+                        VALUES %s
+                        ON CONFLICT (hltv_match_id) DO NOTHING
+                    """, rows)
+                    inserted = cur.rowcount
+                conn.commit()
+            total += inserted
+            st.tick_done(persist_every=50)
+            print(f"  page {page} (offset={offset}): {len(rows)} candidates  new={inserted}")
         # Final state: reflect actual queue size as items_total.
         q = execute_query("SELECT COUNT(*) AS c FROM cs2_hltv_match_queue")[0]["c"]
         p = execute_query("SELECT COUNT(*) AS c FROM cs2_hltv_match_queue WHERE fetched_at IS NULL AND error IS NULL")[0]["c"]

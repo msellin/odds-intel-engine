@@ -66,10 +66,9 @@ def load_veto_records() -> list[dict]:
 
 def load_map_winrates() -> dict:
     """{(team_name, map_name): {wins, losses}}. Aggregated all-time from
-    cs2_hltv_match_maps. Used to look up each team's win% on the predicted
-    decider. Note: this is current/aggregate — for a fully PIT-correct
-    version we'd compute per-match historical state, but for sneak-peek
-    aggregate is acceptable and matches how v8 uses team-level stats."""
+    cs2_hltv_match_maps. LEGACY — kept only as the non-PIT comparator. Use
+    `build_pit_team_map_streams` + `pit_team_map_winrate` for the strict
+    prior-only aggregate that the v10-PIT rerun uses."""
     rows = execute_query("""
         SELECT mm.team1_score AS s1, mm.team2_score AS s2, mm.winner_name,
                mm.map_name, m.team1_name AS t1, m.team2_name AS t2
@@ -90,6 +89,57 @@ def load_map_winrates() -> dict:
     return out
 
 
+def build_pit_team_map_streams() -> dict:
+    """{(team_name, map_name): sorted list of (match_date, won_bool)} —
+    strictly-prior aggregate source for the v10-PIT rerun. Built once at
+    startup; each lookup is O(log n) via bisect on match_date.
+
+    Without this, the original v10 sneak peek's decider_winrate_diff sees the
+    eval match's OWN decider outcome (all-time aggregate from
+    cs2_hltv_match_maps), inflating its AUC delta. This stream is the same
+    fix already used in `cs2_hltv_native_backtest.py:build_pit_team_map_streams`."""
+    rows = execute_query("""
+        SELECT m.match_date, m.team1_name AS t1, m.team2_name AS t2,
+               mm.map_name, mm.winner_name
+        FROM cs2_hltv_match_maps mm
+        JOIN cs2_hltv_matches m ON m.hltv_match_id = mm.hltv_match_id
+        WHERE mm.map_name IS NOT NULL AND mm.winner_name IS NOT NULL
+          AND m.match_date IS NOT NULL
+    """, None)
+    streams: dict = defaultdict(list)
+    for r in rows:
+        md = r["match_date"]
+        for team_name in (r["t1"], r["t2"]):
+            if not team_name:
+                continue
+            streams[(team_name, r["map_name"])].append(
+                (md, r["winner_name"] == team_name)
+            )
+    for k in streams:
+        streams[k].sort(key=lambda x: x[0])
+    return dict(streams)
+
+
+def pit_team_map_winrate(team: str, map_name: str, kickoff,
+                          streams: dict) -> dict | None:
+    """Strictly-prior {wins, losses} for (team, map) before kickoff.
+    Returns None when no priors. O(log n) bisect on match_date."""
+    s = streams.get((team, map_name))
+    if not s:
+        return None
+    lo, hi = 0, len(s)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if s[mid][0] < kickoff:
+            lo = mid + 1
+        else:
+            hi = mid
+    if lo == 0:
+        return None
+    wins = sum(1 for _, w in s[:lo] if w)
+    return {"wins": wins, "losses": lo - wins}
+
+
 def per_team_permaban_freq(vetos: list[dict]) -> dict:
     """{team_name: {map_name: count}} — how often each team has perma-banned
     each map (action='removed' on step 1 or 2 of vote = perma-ban heuristic)."""
@@ -101,9 +151,15 @@ def per_team_permaban_freq(vetos: list[dict]) -> dict:
 
 
 def derive_match_veto_features(match_veto: list[dict], team1: str, team2: str,
-                                permaban_freq: dict, map_winrates: dict) -> dict:
+                                permaban_freq: dict, map_winrates: dict,
+                                *, kickoff=None,
+                                pit_map_streams: dict | None = None) -> dict:
     """Compute the 3 v10 features for one match's veto sequence.
-    match_veto is the sorted list of veto steps for ONE match."""
+    match_veto is the sorted list of veto steps for ONE match.
+
+    When `pit_map_streams` and `kickoff` are supplied, decider_winrate_diff is
+    PIT-correct (strictly < kickoff). Otherwise falls back to the legacy
+    all-time `map_winrates` dict for the legacy comparator row."""
     if not match_veto:
         return {"permaban_match_diff": 0.0, "decider_winrate_diff": 0.0,
                 "forced_off_permaban_flag": 0.0, "covered": 0}
@@ -121,8 +177,12 @@ def derive_match_veto_features(match_veto: list[dict], team1: str, team2: str,
     # decider_winrate_diff
     decider_diff = 0.0
     if decider:
-        t1_stats = map_winrates.get((team1, decider))
-        t2_stats = map_winrates.get((team2, decider))
+        if pit_map_streams is not None and kickoff is not None:
+            t1_stats = pit_team_map_winrate(team1, decider, kickoff, pit_map_streams)
+            t2_stats = pit_team_map_winrate(team2, decider, kickoff, pit_map_streams)
+        else:
+            t1_stats = map_winrates.get((team1, decider))
+            t2_stats = map_winrates.get((team2, decider))
         if t1_stats and t2_stats:
             t1_n = t1_stats["wins"] + t1_stats["losses"]
             t2_n = t2_stats["wins"] + t2_stats["losses"]
@@ -166,7 +226,8 @@ def derive_match_veto_features(match_veto: list[dict], team1: str, team2: str,
 
 
 def build_rows(matches, tm, pistol, tier_map, kd_map, direct,
-               vetos_by_match, permaban_freq, map_winrates):
+               vetos_by_match, permaban_freq, map_winrates,
+               *, pit_map_streams=None):
     out = []
     for m in matches:
         if m["win_prob1"] is None:
@@ -206,12 +267,14 @@ def build_rows(matches, tm, pistol, tier_map, kd_map, direct,
         t2_kd = kd_map.get(m["team2"]) or (d2["kd"] if d2 and d2.get("maps", 0) >= 30 else None)
         kd_diff = (t1_kd - t2_kd) if (t1_kd is not None and t2_kd is not None) else 0.0
 
-        # v10 NEW: veto features. Look up this match's veto steps by hltv_match_id.
-        # We need to find the hltv_match_id for this kickoff record. cs2_hltv_matches
-        # uses (team1_name, team2_name, match_date) — match approximately.
+        # v10 NEW: veto features. Look up this match's veto steps by
+        # hltv_match_id (resolved via cs2_match_id_bridge). PIT-correct map
+        # winrates flow through `pit_map_streams` when supplied.
         veto_feats = derive_match_veto_features(
             vetos_by_match.get(m.get("hltv_match_id"), []),
-            m["team1"], m["team2"], permaban_freq, map_winrates
+            m["team1"], m["team2"], permaban_freq, map_winrates,
+            kickoff=m.get("kickoff_time"),
+            pit_map_streams=pit_map_streams,
         )
 
         out.append({
@@ -283,10 +346,12 @@ def main():
     kd_map = load_team_kd_map()
     direct = load_team_stats_direct()
     veto_rows = load_veto_records()
-    map_winrates = load_map_winrates()
+    map_winrates = load_map_winrates()           # legacy all-time aggregate
+    pit_map_streams = build_pit_team_map_streams()  # PIT-correct streams
     permaban_freq = per_team_permaban_freq(veto_rows)
     print(f"  {len(veto_rows)} veto rows, "
           f"map_winrates for {len(map_winrates)} (team,map) pairs, "
+          f"pit_streams for {len(pit_map_streams)} (team,map) pairs, "
           f"permaban_freq for {len(permaban_freq)} teams")
 
     # Index vetos by hltv_match_id for fast lookup, sorted by step
@@ -297,26 +362,24 @@ def main():
         vetos_by_match[mid].sort(key=lambda x: x["step"])
 
     matches = load_matches_with_features(args.since)
-    # Backfill hltv_match_id from cs2_hltv_matches via fuzzy match on names+date
-    print(f"  enriching matches with hltv_match_id…")
-    name_to_hltv = {}
-    rows = execute_query("""
-        SELECT hltv_match_id, team1_name, team2_name, match_date
-        FROM cs2_hltv_matches
-    """, None)
-    for r in rows:
-        if r["team1_name"] and r["team2_name"] and r["match_date"]:
-            key = (r["team1_name"], r["team2_name"], r["match_date"].date())
-            name_to_hltv[key] = r["hltv_match_id"]
-            # Reverse pairing too
-            name_to_hltv[(r["team2_name"], r["team1_name"], r["match_date"].date())] = r["hltv_match_id"]
+    # Bridge: bo3gg_id -> hltv_match_id via cs2_match_id_bridge (replaces the
+    # old (team1, team2, date) exact-string join that capped coverage at <2%).
+    print(f"  enriching matches with hltv_match_id via cs2_match_id_bridge…")
+    bridge = {r["bo3gg_id"]: r["hltv_match_id"] for r in execute_query(
+        "SELECT bo3gg_id, hltv_match_id FROM cs2_match_id_bridge"
+    )}
+    matched = 0
     for m in matches:
-        if m.get("kickoff_time"):
-            key = (m["team1"], m["team2"], m["kickoff_time"].date())
-            m["hltv_match_id"] = name_to_hltv.get(key)
+        # cs2_results.bo3gg_id is INTEGER; bridge.bo3gg_id is TEXT — stringify.
+        bid = m.get("bo3gg_id")
+        m["hltv_match_id"] = bridge.get(str(bid)) if bid is not None else None
+        if m["hltv_match_id"] is not None:
+            matched += 1
+    print(f"  bridge coverage: {matched}/{len(matches)} ({matched/max(len(matches),1):.1%})")
 
     rows = build_rows(matches, tm, pistol, tier_map, kd_map, direct,
-                      vetos_by_match, permaban_freq, map_winrates)
+                      vetos_by_match, permaban_freq, map_winrates,
+                      pit_map_streams=pit_map_streams)
     print(f"  {len(rows)} matches\n")
 
     cov_decider = sum(1 for r in rows if r["covered"])
@@ -340,7 +403,7 @@ def main():
         print(f"{'set':45} {'AUC':>6} {'LogL':>7} {'Brier':>7} {'Acc':>6}")
         print("-" * 78)
         print(f"{'baseline (hltv_v1 direct)':45} {m_base['auc'] or 0:>6.3f} {m_base['logloss']:>7.4f} {m_base['brier']:>7.4f} {m_base['acc']:>6.3f}")
-        persist(f"v10v_{label}_baseline", len(sample), m_base, since_d, keys=["win_prob1"], n_train=cut)
+        persist(f"v10-veto-pit_{label}_baseline", len(sample), m_base, since_d, keys=["win_prob1"], n_train=cut)
 
         for keys, lbl in [
             (v8_keys, "v8 reference"),
@@ -360,7 +423,7 @@ def main():
             delta = (mm["auc"] - m_base["auc"]) if (mm["auc"] and m_base["auc"]) else 0
             marker = "*" if abs(delta) >= 0.005 else " "
             print(f"{lbl:45} {mm['auc'] or 0:>6.3f}{marker}{mm['logloss']:>6.4f} {mm['brier']:>7.4f} {mm['acc']:>6.3f}")
-            persist(f"v10v_{label}_{lbl}", r["n"], mm, since_d,
+            persist(f"v10-veto-pit_{label}_{lbl}", r["n"], mm, since_d,
                     keys=["logit_saved"] + keys, coefs=r["coefs"], n_train=r.get("n_train"))
 
     run_battery(rows, "full")

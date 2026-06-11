@@ -20686,6 +20686,16 @@ def _():
     assert "RUN_ID" in src, "v13 must group rows by RUN_ID per invocation"
     # PROMOTE decision is printed for the operator
     assert "PROMOTE" in src, "v13 must print a PROMOTE recommendation"
+    # Bridge join — replaces the brittle (team, team, date) exact-string match
+    # that previously capped HLTV-side coverage at <3%.
+    assert "cs2_match_id_bridge" in src, (
+        "v13 must resolve hltv_match_id via cs2_match_id_bridge "
+        "(no exact-string team-name join)"
+    )
+    assert "SELECT bo3gg_id, hltv_match_id FROM cs2_match_id_bridge" in src, (
+        "v13 must read the bridge with the canonical (bo3gg_id, hltv_match_id) "
+        "projection so the lookup stays O(1) per match"
+    )
 
 
 @test("CS2-SNEAK-V14-LAN-REGION — LAN-vs-online and home-region sneak peek")
@@ -20747,6 +20757,280 @@ def _():
     assert "RUN_ID" in src, "v14 must group rows by RUN_ID per invocation"
     # PROMOTE decision is printed for the operator
     assert "PROMOTE" in src, "v14 must print a PROMOTE recommendation"
+    # Bridge join — replaces the brittle (team, team, date) exact-string match
+    # that previously capped HLTV-side coverage at <3%.
+    assert "cs2_match_id_bridge" in src, (
+        "v14 must resolve hltv_match_id via cs2_match_id_bridge "
+        "(no exact-string team-name join)"
+    )
+    assert "SELECT bo3gg_id, hltv_match_id FROM cs2_match_id_bridge" in src, (
+        "v14 must read the bridge with the canonical (bo3gg_id, hltv_match_id) "
+        "projection so the lookup stays O(1) per match"
+    )
+
+
+@test("CS2-SNEAK-V10-VETO — veto sneak peek file + features + bridge + PIT-correct decider")
+def _():
+    """v10 adds three veto-derived features on top of v8. Pin file existence,
+    the strict PIT-correct decider win-rate path (build_pit_team_map_streams
+    + pit_team_map_winrate — replaces the all-time aggregate that leaked the
+    eval row's own decider outcome into the feature value), the canonical
+    feature keys, and that the bridge resolves hltv_match_id (no brittle
+    exact-string join)."""
+    src_path = _engine_path("scripts/esports/cs2_sneak_peek_v10_veto.py")
+    assert src_path.exists(), "cs2_sneak_peek_v10_veto.py must exist"
+    src = src_path.read_text()
+
+    # PIT-correct map win-rate path (the original v10 used all-time aggregate)
+    assert "def build_pit_team_map_streams" in src, (
+        "v10 must build per-(team,map) date-sorted streams so the decider "
+        "win-rate uses strictly-prior matches only"
+    )
+    assert "def pit_team_map_winrate" in src, (
+        "v10 must expose pit_team_map_winrate(team, map_name, kickoff, streams) "
+        "for the PIT-correct lookup at scoring time"
+    )
+    assert "pit_map_streams" in src, (
+        "v10 build_rows must thread pit_map_streams into derive_match_veto_features"
+    )
+    # Feature builder
+    assert "def derive_match_veto_features" in src
+    for feat in ["permaban_match_diff", "decider_winrate_diff",
+                 "forced_off_permaban_flag"]:
+        assert feat in src, f"v10 must compute feature {feat}"
+    # v8 stacking
+    assert "logit_saved" in src and "v8_keys" in src, (
+        "v10 must stack on top of v8 features (logit_saved + v8 keys)"
+    )
+    # Persistence
+    assert "cs2_model_backtest_history" in src
+    assert "v10-veto-pit" in src, (
+        "v10 must tag persisted rows with the v10-veto-pit feature_set prefix"
+    )
+    assert "RUN_ID" in src
+    # Bridge join — replaces the brittle (team, team, date) exact-string match
+    # that previously capped HLTV-side coverage at <2%.
+    assert "cs2_match_id_bridge" in src, (
+        "v10 must resolve hltv_match_id via cs2_match_id_bridge "
+        "(no exact-string team-name join)"
+    )
+    assert "SELECT bo3gg_id, hltv_match_id FROM cs2_match_id_bridge" in src, (
+        "v10 must read the bridge with the canonical (bo3gg_id, hltv_match_id) "
+        "projection so the lookup stays O(1) per match"
+    )
+
+
+@test("CS2-SNEAK-V15-STACK — stack v10-PIT + v13 + v14 features on top of v8")
+def _():
+    """v15 stacks ALL features from v10-PIT (veto), v13 (starting-side) and
+    v14 (LAN/region) on top of the v8 logistic. Pin file existence, that it
+    reuses the v10/v13/v14 feature builders (not a clone), bridge usage, and
+    that it persists under feature_set='v15-stack-all_*'."""
+    src_path = _engine_path("scripts/esports/cs2_sneak_peek_v15_stack.py")
+    assert src_path.exists(), "cs2_sneak_peek_v15_stack.py must exist"
+    src = src_path.read_text()
+
+    # Imports from v10/v13/v14 — the single source of truth for each block
+    assert "from cs2_sneak_peek_v10_veto import" in src
+    for sym in ["build_pit_team_map_streams", "derive_match_veto_features",
+                "per_team_permaban_freq", "load_veto_records"]:
+        assert sym in src, f"v15 must reuse {sym} from v10"
+    assert "from cs2_sneak_peek_v13_starting_side import" in src
+    for sym in ["compute_ct_start_winrate", "compute_bias_aligned_diff",
+                "load_starting_side_history", "load_hltv_match_index"]:
+        assert sym in src, f"v15 must reuse {sym} from v13"
+    assert "from cs2_sneak_peek_v14_lan_region import" in src
+    for sym in ["compute_lan_winrate", "compute_team_home_region",
+                "load_hltv_event_history", "build_team_streams"]:
+        assert sym in src, f"v15 must reuse {sym} from v14"
+
+    # Feature keys for the combined stack
+    for feat in ["form_diff", "h2h_diff", "kd_diff",
+                 "decider_winrate_diff", "permaban_match_diff",
+                 "forced_off_permaban_flag",
+                 "ct_start_wr_diff", "bias_aligned_diff",
+                 "is_lan_event", "team1_lan_winrate_diff",
+                 "region_advantage_diff"]:
+        assert feat in src, f"v15 stack must compute feature {feat}"
+    # v8 base + stack
+    assert "logit_saved" in src and "V8_KEYS" in src, (
+        "v15 must stack on top of v8 features (logit_saved + V8_KEYS)"
+    )
+    # Persistence and run-id grouping
+    assert "cs2_model_backtest_history" in src
+    assert "v15-stack-all" in src, (
+        "v15 must tag persisted rows with the v15-stack-all feature_set prefix"
+    )
+    assert "RUN_ID" in src
+    # PROMOTE decision printed
+    assert "PROMOTE" in src
+    # Stacked-vs-sum diagnostic (additive/orthogonal vs interaction)
+    assert "sum of individual block deltas" in src, (
+        "v15 must report the stacked-vs-sum-of-individuals diagnostic so the "
+        "operator can see whether the blocks are additive or interact"
+    )
+    # Bridge join — same lock the other sneak peeks now use
+    assert "cs2_match_id_bridge" in src, (
+        "v15 must resolve hltv_match_id via cs2_match_id_bridge"
+    )
+    assert "SELECT bo3gg_id, hltv_match_id FROM cs2_match_id_bridge" in src
+
+
+@test("CS2-SNEAK-V16-MAPPOOL — map-pool familiarity/age/new-map features on top of v8")
+def _():
+    """v16 adds three map-pool features on top of the v8 logistic. Pin file
+    existence, the canonical feature keys, that team_map_history scans only
+    rows with match_date strictly before kickoff (PIT), the active-pool
+    constant used by pool_age_diff, bridge usage (so the eval match's
+    map_order=1 is reachable), and persistence under
+    feature_set='v16-map-pool_*'."""
+    src_path = _engine_path("scripts/esports/cs2_sneak_peek_v16_mappool.py")
+    assert src_path.exists(), "cs2_sneak_peek_v16_mappool.py must exist"
+    src = src_path.read_text()
+
+    # Three feature builders + their canonical keys
+    for fn in ["team_pool_familiarity", "team_pool_age_median",
+               "team_has_played_map", "load_team_map_history",
+               "load_first_map_by_match"]:
+        assert f"def {fn}" in src, f"v16 must define {fn}()"
+    for feat in ["team_pool_familiarity_diff", "pool_age_diff",
+                 "new_map_played_diff"]:
+        assert feat in src, f"v16 must compute feature {feat}"
+
+    # Active-duty pool constant — pool_age_diff depends on knowing which
+    # maps are currently active; hard-coded list lives in the script so
+    # this test catches accidental removal/rename.
+    assert "ACTIVE_POOL" in src, "v16 must define ACTIVE_POOL for pool_age_diff"
+    for mp in ("Ancient", "Mirage", "Nuke", "Inferno", "Dust2",
+               "Anubis", "Overpass"):
+        assert mp in src, f"ACTIVE_POOL must list {mp}"
+
+    # PIT discipline — the binary-search helper that gates the scan on
+    # match_date < kickoff. Same shape as v10's pit_team_map_winrate.
+    assert "_prior_index" in src, (
+        "v16 must use a bisect-style helper to restrict each team's map "
+        "history to entries strictly before kickoff"
+    )
+    assert "match_date < kickoff" in src or "match_date IS NOT NULL" in src, (
+        "v16 must filter team_map_history by match_date"
+    )
+
+    # v8 stacking
+    assert "logit_saved" in src and "V8_KEYS" in src, (
+        "v16 must stack on top of v8 features (logit_saved + V8_KEYS)"
+    )
+
+    # Bridge — eval match's hltv_match_id is needed to look up the
+    # map_order=1 row for new_map_played_diff and to resolve the HLTV
+    # team-name for the lookups against team_map_history.
+    assert "cs2_match_id_bridge" in src, (
+        "v16 must resolve hltv_match_id via cs2_match_id_bridge"
+    )
+    assert "SELECT bo3gg_id, hltv_match_id FROM cs2_match_id_bridge" in src
+
+    # HLTV team-pair index + name resolver — bo3gg names ('FaZe Clan',
+    # 'paiN Gaming') don't match HLTV names ('FaZe', 'paiN') used in
+    # cs2_hltv_match_maps; without this resolver the map-history lookup
+    # silently misses and coverage collapses to ~6%.
+    assert "load_hltv_team_pair_index" in src, (
+        "v16 must load the HLTV team-pair index so it can resolve bo3gg "
+        "team names to HLTV names before looking up team_map_history"
+    )
+    assert "def resolve_hltv_name" in src, (
+        "v16 must expose resolve_hltv_name() — without it map_history lookup "
+        "silently misses on bo3gg/HLTV name diffs and coverage collapses"
+    )
+
+    # Persistence + PROMOTE
+    assert "cs2_model_backtest_history" in src
+    assert "v16-map-pool" in src, (
+        "v16 must tag persisted rows with the v16-map-pool feature_set prefix"
+    )
+    assert "RUN_ID" in src
+    assert "PROMOTE" in src
+
+
+@test("CS2-SNEAK-V17-RECENT-VETO — recent-window veto pattern features on top of v8")
+def _():
+    """v17 tests whether the LAST ~30 veto sessions / 90 days of a team carries
+    signal that the all-time aggregate (v10 / failed-v17a) washes out. Pin
+    file existence, the three canonical feature keys, the explicit
+    last-30 / last-90-days recency constants, the bridge usage, that
+    HLTV-side team-name resolution is in place (otherwise coverage collapses
+    to <2%), and persistence under feature_set='v17-recent-veto_*'."""
+    src_path = _engine_path("scripts/esports/cs2_sneak_peek_v17_recent_veto.py")
+    assert src_path.exists(), "cs2_sneak_peek_v17_recent_veto.py must exist"
+    src = src_path.read_text()
+
+    # Three feature builders + their canonical keys
+    for fn in ["recent_permaban_concentration", "recent_decider_winrate",
+               "recent_top_n_permabans", "jaccard",
+               "load_recent_veto_streams", "load_recent_decider_streams"]:
+        assert f"def {fn}" in src, f"v17 must define {fn}()"
+    for feat in ["recent_permaban_concentration_diff",
+                 "recent_decider_winrate_recent30_diff",
+                 "recent_perm_overlap_diff"]:
+        assert feat in src, f"v17 must compute feature {feat}"
+
+    # Recency constants — the "last 30 / 90 days" hypothesis that
+    # distinguishes v17 from v10 (all-time) and from failed-v17a
+    # (all-time permaban concentration). Hard-coded so this test catches
+    # accidental drift back to all-time aggregates.
+    assert "RECENT_SESSIONS_MAX" in src, (
+        "v17 must define RECENT_SESSIONS_MAX (cap of 30 veto sessions per team)"
+    )
+    assert "RECENT_DAYS" in src, (
+        "v17 must define RECENT_DAYS (90-day rolling window)"
+    )
+    assert "30" in src and "90" in src, (
+        "v17 must hard-code the 30-session / 90-day recency bounds"
+    )
+
+    # PIT discipline — bisect-style helper that gates each team's stream
+    # on match_date < kickoff. Same shape as v10's pit_team_map_winrate
+    # and v16's _prior_index.
+    assert "_prior_index" in src, (
+        "v17 must use a bisect-style helper to restrict each team's veto "
+        "stream to entries strictly before kickoff"
+    )
+    assert "_recent_window" in src, (
+        "v17 must expose _recent_window() — the per-team windowing helper "
+        "that enforces both the 30-session cap and 90-day cutoff"
+    )
+
+    # v8 stacking
+    assert "logit_saved" in src and "V8_KEYS" in src, (
+        "v17 must stack on top of v8 features (logit_saved + V8_KEYS)"
+    )
+
+    # Bridge usage — same pattern as v10/v15/v16. Without the bridge the
+    # eval match's hltv_match_id can't be resolved and the HLTV name
+    # resolver has nothing to look up.
+    assert "cs2_match_id_bridge" in src, (
+        "v17 must resolve hltv_match_id via cs2_match_id_bridge"
+    )
+    assert "SELECT bo3gg_id, hltv_match_id FROM cs2_match_id_bridge" in src
+
+    # HLTV team-name resolver — bo3gg names ('FaZe Clan', 'paiN Gaming')
+    # don't match HLTV names ('FaZe', 'paiN') used in cs2_hltv_match_veto;
+    # without resolve_hltv_name the veto-stream lookup silently misses and
+    # coverage collapses to <2%.
+    assert "resolve_hltv_name" in src, (
+        "v17 must use resolve_hltv_name() to map bo3gg team names to HLTV "
+        "team names before looking up veto / decider streams"
+    )
+    assert "load_hltv_team_pair_index" in src, (
+        "v17 must load the HLTV team-pair index so resolve_hltv_name has "
+        "something to resolve against"
+    )
+
+    # Persistence + PROMOTE
+    assert "cs2_model_backtest_history" in src
+    assert "v17-recent-veto" in src, (
+        "v17 must tag persisted rows with the v17-recent-veto feature_set prefix"
+    )
+    assert "RUN_ID" in src
+    assert "PROMOTE" in src
 
 
 @test("CS2-HLTV-NATIVE-BACKTEST — HLTV-anchored walk-forward harness for v10/v13/v14")
@@ -20832,6 +21116,95 @@ def _():
     assert "PROMOTE" in src, "must print PROMOTE recommendations"
     # Confirm the +0.002 AUC promote threshold lives in source
     assert "0.002" in src, "PROMOTE rule must use the +0.002 AUC threshold"
+
+
+@test("CS2-HLTV-NATIVE-V10-PIT — decider_winrate_diff is point-in-time correct")
+def _():
+    """The original v10-veto-native row used an all-time aggregate
+    `per_team_map_winrate` that included the eval-row match's OWN decider-map
+    outcomes — classic lookahead. This test pins the corrected helper
+    `pit_team_map_winrate` (and its (team,map) → sorted [(date, won)] stream
+    builder `build_pit_team_map_streams`) plus the dedicated
+    `hltv-native-v10-pit` row that the harness writes alongside the legacy
+    `hltv-native-v10` row for comparison.
+
+    Why this matters: with the leak removed, the v10-veto block's reported
+    +0.0743 AUC lift collapsed to roughly zero (or negative). The PIT
+    variant is the honest number to gate promotion on."""
+    src_path = _engine_path("scripts/esports/cs2_hltv_native_backtest.py")
+    src = src_path.read_text()
+
+    # Helper function names (used directly by callers and other smoke tests)
+    assert "def build_pit_team_map_streams" in src, (
+        "must define build_pit_team_map_streams() — (team,map) → sorted "
+        "[(date, won_bool)] used for strict-prior decider winrate"
+    )
+    assert "def pit_team_map_winrate" in src, (
+        "must define pit_team_map_winrate(team, map_name, kickoff, streams) "
+        "that returns {wins,losses} from strictly-prior maps only"
+    )
+
+    # The PIT helper must consult kickoff — guard against an accidental
+    # all-time aggregator masquerading under a PIT-looking name.
+    assert "kickoff" in src.split("def pit_team_map_winrate")[1].split("def ")[0], (
+        "pit_team_map_winrate must take a kickoff arg and filter by it"
+    )
+
+    # The PIT decider feature must flow into a dedicated column on the row.
+    assert "decider_winrate_diff_pit" in src, (
+        "row dict must carry decider_winrate_diff_pit alongside the legacy "
+        "decider_winrate_diff so v10-pit can swap it into V10_PIT_EXTRA"
+    )
+    assert "V10_PIT_EXTRA" in src, "must define V10_PIT_EXTRA feature key list"
+    assert "v10_pit_covered" in src, (
+        "must report a separate v10_pit_covered flag (PIT priors may shrink "
+        "coverage vs the leaky all-time variant)"
+    )
+
+    # Persistence — the corrected run gets its own model_name so the legacy
+    # hltv-native-v10 row stays available for direct comparison.
+    assert "hltv-native-v10-pit" in src, (
+        "must tag the PIT-correct run with model_name 'hltv-native-v10-pit'"
+    )
+    assert "hltv-native-v10" in src, (
+        "must retain the legacy 'hltv-native-v10' row for delta comparison"
+    )
+
+
+@test("CS2-HLTV-NATIVE-V10-PERMABAN — decider-free veto block isolated")
+def _():
+    """The PIT-correct decider_winrate_diff feature collapsed v10's reported
+    AUC lift to roughly zero. This test pins the dedicated permaban-only
+    feature block that drops decider_winrate_diff entirely and evaluates
+    whether the other two v10 features (permaban_match_diff +
+    forced_off_permaban_flag) carry signal on their own."""
+    src_path = _engine_path("scripts/esports/cs2_hltv_native_backtest.py")
+    src = src_path.read_text()
+
+    # Dedicated feature key list — must NOT include the decider feature
+    assert "V10_PERMABAN_EXTRA" in src, (
+        "must define V10_PERMABAN_EXTRA feature key list"
+    )
+    # Crude but effective: the V10_PERMABAN_EXTRA literal block must list
+    # exactly the two non-decider features and not mention 'decider'.
+    permaban_block = src.split("V10_PERMABAN_EXTRA")[1].split("\n\n")[0]
+    assert "permaban_match_diff" in permaban_block, (
+        "V10_PERMABAN_EXTRA must contain permaban_match_diff"
+    )
+    assert "forced_off_permaban_flag" in permaban_block, (
+        "V10_PERMABAN_EXTRA must contain forced_off_permaban_flag"
+    )
+    assert "decider" not in permaban_block, (
+        "V10_PERMABAN_EXTRA must NOT include any decider feature — the "
+        "whole point is to isolate the permaban + forced-off signal"
+    )
+
+    # Persistence — the new run gets its own model_name so its row in
+    # cs2_model_backtest_history is directly comparable to v10 and v10-pit.
+    assert "hltv-native-v10-permaban" in src, (
+        "must tag the permaban-only run with model_name "
+        "'hltv-native-v10-permaban'"
+    )
 
 
 @test("CS2-MATCH-DETAILS-V2 — per-side CT/T splits + per-(player, map) stats + team_name")
@@ -21111,6 +21484,61 @@ def _():
     fns = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
     assert "job_cs2_coolbet_placer" in fns
     assert 'id="cs2_coolbet_placer"' in sched
+
+
+@test("CS2-MATCH-ID-BRIDGE — migration 238 + populator script + helpers")
+def _():
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/238_cs2_match_id_bridge.sql")
+    assert mig.exists(), "migration 238 missing"
+    mig_src = mig.read_text()
+    assert "CREATE TABLE IF NOT EXISTS cs2_match_id_bridge" in mig_src
+    for col in ("bo3gg_id", "hltv_match_id", "confidence", "joined_by",
+                "team_score_avg", "time_drift_sec", "created_at"):
+        assert col in mig_src, f"migration 238 missing column {col}"
+    assert "PRIMARY KEY (bo3gg_id, hltv_match_id)" in mig_src
+    assert "cs2_match_id_bridge_hltv_idx" in mig_src
+    assert "cs2_match_id_bridge_bo3gg_idx" in mig_src
+    # bo3gg_id stored as TEXT so this bridge can absorb future non-numeric IDs
+    # without a destructive schema change.
+    assert "bo3gg_id        TEXT" in mig_src
+
+    pop = pathlib.Path("scripts/esports/cs2_match_id_bridge_populate.py")
+    assert pop.exists(), "populator script missing"
+    src = pop.read_text()
+    for fn in ("normalise_team", "load_bo3gg", "load_hltv",
+               "detect_placeholder_timestamps", "build_time_index",
+               "build_name_index", "candidates_for", "score_match", "main"):
+        assert f"def {fn}" in src, f"helper {fn} missing"
+
+    # joined_by values must match the migration's documented vocab.
+    for token in ("'exact'", "'norm_team'", "'fuzzy'", "'manual'"):
+        assert token in src, f"joined_by token {token} missing"
+
+    # Bulk write via execute_values with ON CONFLICT — re-runnable.
+    assert "psycopg2.extras.execute_values" in src
+    assert "ON CONFLICT (bo3gg_id, hltv_match_id)" in src
+
+    # Aliases that bit us pre-bridge (FaZe Clan↔FaZe, Spirit↔Team Spirit) —
+    # if these regress, sneak-peek coverage tanks back to <1%.
+    assert '"faze clan"' in src
+    assert '"team spirit"' in src
+    assert '"1win team"' in src
+
+    # rapidfuzz preferred with a difflib fallback so the script runs anywhere.
+    assert "from rapidfuzz import" in src
+    assert "from difflib import SequenceMatcher" in src
+
+    # Quick functional check on the alias normaliser — no DB hit.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("cs2_bridge_pop", pop)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    n = mod.normalise_team
+    assert n("FaZe Clan") == n("FaZe")
+    assert n("Team Spirit") == n("Spirit")
+    assert n("1win Team") == n("1win")
+    assert n("Natus Vincere") == n("NAVI")
 
 
 if __name__ == "__main__":

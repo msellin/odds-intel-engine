@@ -185,32 +185,25 @@ def load_starting_side_history() -> tuple[dict, dict]:
 
 
 def load_hltv_match_index() -> dict:
-    """Return {(team1_name, team2_name, match_date): hltv_match_id}
-    so the backtest row (keyed by team names + kickoff_time on bo3gg side) can
-    line up with its HLTV match-detail rows. Built once at startup."""
+    """Return {hltv_match_id: (team1_name, team2_name)} so the bridge-resolved
+    hltv_match_id can be flagged forward/reverse when joining for the
+    bias_aligned_diff feature.
+
+    NOTE: Replaced the old (team1, team2, date) exact-string join — that path
+    capped coverage at ~2% because bo3gg adds " Team"/" Esports" suffixes that
+    HLTV stores bare. The bridge (`cs2_match_id_bridge`) now resolves
+    bo3gg_id → hltv_match_id directly at ~85% coverage; this helper just
+    returns the HLTV team name pair for orientation."""
     rows = execute_query(
         """
-        SELECT hltv_match_id, team1_name, team2_name, match_date
+        SELECT hltv_match_id, team1_name, team2_name
         FROM cs2_hltv_matches
-        WHERE match_date IS NOT NULL
-          AND team1_name IS NOT NULL
+        WHERE team1_name IS NOT NULL
           AND team2_name IS NOT NULL
         """,
         None,
     )
-    # Index by (a, b, date_iso_day) — match_date should be very close to
-    # cs2_results.kickoff_time; using day granularity tolerates minor drift.
-    idx: dict = {}
-    for r in rows:
-        d = r["match_date"].date() if r["match_date"] else None
-        if d is None:
-            continue
-        # Both orientations (HLTV and bo3gg may not agree on which side is team1)
-        n1, n2 = _norm_team(r["team1_name"]), _norm_team(r["team2_name"])
-        if n1 and n2:
-            idx[(n1, n2, d)] = (r["hltv_match_id"], "fwd")
-            idx[(n2, n1, d)] = (r["hltv_match_id"], "rev")
-    return idx
+    return {r["hltv_match_id"]: (r["team1_name"], r["team2_name"]) for r in rows}
 
 
 def compute_ct_start_winrate(team_name: str, kickoff_ts,
@@ -367,10 +360,22 @@ def build_rows(matches, tm, pistol, tier_map, kd_map, direct,
         # NEW v13: bias_aligned_diff via the matched HLTV match (PIT-OK because
         # the side outcome is from THIS match — for backtest use only; live use
         # would require knife-round result which is post-betting).
-        hit = hltv_match_idx.get(
-            (_norm_team(m["team1"]), _norm_team(m["team2"]), kdate)
-        )
-        hltv_id, orient = (hit if hit else (None, None))
+        # hltv_match_id was resolved via cs2_match_id_bridge upstream.
+        hltv_id = m.get("hltv_match_id")
+        orient = None
+        if hltv_id is not None:
+            pair = hltv_match_idx.get(hltv_id)
+            if pair:
+                hltv_t1, hltv_t2 = pair
+                if _norm_team(hltv_t1) == _norm_team(m["team1"]):
+                    orient = "fwd"
+                elif _norm_team(hltv_t1) == _norm_team(m["team2"]):
+                    orient = "rev"
+                else:
+                    # Names don't normalise to a match — bridge mapped them
+                    # anyway. Default to fwd; sign error caps at the small
+                    # bias-only feature so it's tolerable.
+                    orient = "fwd"
         bias_aligned_diff, n_biased = compute_bias_aligned_diff(
             hltv_id, orient, match_maps_by_id
         )
@@ -457,6 +462,19 @@ def main():
 
     print("loading matches + PIT features…")
     matches = load_matches_with_features(args.since)
+    # Bridge: bo3gg_id -> hltv_match_id via cs2_match_id_bridge (replaces the
+    # old (team1, team2, date) exact-string join that capped coverage at <3%).
+    print("  enriching matches with hltv_match_id via cs2_match_id_bridge…")
+    bridge = {r["bo3gg_id"]: r["hltv_match_id"] for r in execute_query(
+        "SELECT bo3gg_id, hltv_match_id FROM cs2_match_id_bridge"
+    )}
+    matched = 0
+    for m in matches:
+        bid = m.get("bo3gg_id")
+        m["hltv_match_id"] = bridge.get(str(bid)) if bid is not None else None
+        if m["hltv_match_id"] is not None:
+            matched += 1
+    print(f"  bridge coverage: {matched}/{len(matches)} ({matched/max(len(matches),1):.1%})")
     rows = build_rows(matches, tm, pistol, tier_map, kd_map, direct,
                       team_history, match_maps_by_id, hltv_match_idx)
     print(f"  {len(rows)} matches with saved_prob\n")

@@ -87,6 +87,7 @@ def load_matches_with_features(since: str) -> list[dict]:
     return execute_query(
         """
         SELECT
+            res.bo3gg_id,
             res.kickoff_time, res.team1, res.team2, res.winner,
             res.best_of,
             p.win_prob1, p.hltv_rank1, p.hltv_rank2,

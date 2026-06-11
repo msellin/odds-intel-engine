@@ -375,7 +375,10 @@ def per_team_permaban_freq(all_veto_by_match: dict[int, list[dict]]) -> dict:
 def per_team_map_winrate(map_sides_by_match: dict[int, list[dict]],
                           matches_by_id: dict[int, dict]) -> dict:
     """{(team_name, map_name): {wins, losses}} all-time. Same approximation
-    as v10 (aggregate, not PIT)."""
+    as v10 (aggregate, not PIT). LEAK: includes the eval-row match's own map
+    outcomes — kept for the legacy hltv-native-v10 reference row only.
+    Use build_pit_team_map_streams + pit_team_map_winrate for the corrected
+    hltv-native-v10-pit run."""
     out: dict = defaultdict(lambda: {"wins": 0, "losses": 0})
     for hid, sides in map_sides_by_match.items():
         m = matches_by_id.get(hid)
@@ -396,12 +399,82 @@ def per_team_map_winrate(map_sides_by_match: dict[int, list[dict]],
     return out
 
 
+# ── PIT-correct map winrate -------------------------------------------------
+# The legacy per_team_map_winrate aggregates over ALL cs2_hltv_match_maps rows,
+# which means the eval-row match's OWN decider-map outcome feeds the feature
+# value used to predict that same match. Classic target leakage.
+#
+# Replacement: per (team, map), build a chronologically-sorted list of
+# (match_date, won_bool). At evaluation time, bisect_left by the eval match's
+# kickoff to get only strictly-prior priors, then aggregate.
+def build_pit_team_map_streams(
+    map_sides_by_match: dict[int, list[dict]],
+    matches_by_id: dict[int, dict],
+) -> dict[tuple[str, str], list[tuple]]:
+    """{(team_name, map_name): [(match_date, won_bool), ...]} sorted by date."""
+    streams: dict[tuple[str, str], list[tuple]] = defaultdict(list)
+    for hid, sides in map_sides_by_match.items():
+        m = matches_by_id.get(hid)
+        if not m:
+            continue
+        md = m.get("match_date")
+        if md is None:
+            continue
+        t1, t2 = m["team1_name"], m["team2_name"]
+        for mp in sides:
+            mname = mp.get("map_name")
+            wname = mp.get("winner_name")
+            if not mname or not wname:
+                continue
+            for tname in (t1, t2):
+                if not tname:
+                    continue
+                streams[(tname, mname)].append((md, wname == tname))
+    for k in streams:
+        streams[k].sort(key=lambda x: x[0])
+    return dict(streams)
+
+
+def pit_team_map_winrate(team: str, map_name: str, kickoff,
+                          streams: dict[tuple[str, str], list[tuple]]) -> dict | None:
+    """Strictly-prior {wins, losses} for (team, map) before kickoff.
+    Returns None when there are no priors. O(log n) per call via bisect."""
+    s = streams.get((team, map_name))
+    if not s:
+        return None
+    # bisect_left on the first column (date) — entries with date == kickoff
+    # are EXCLUDED, matching the strict < cutoff used everywhere else.
+    lo, hi = 0, len(s)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if s[mid][0] < kickoff:
+            lo = mid + 1
+        else:
+            hi = mid
+    if lo == 0:
+        return None
+    wins = 0
+    for _, w in s[:lo]:
+        if w:
+            wins += 1
+    losses = lo - wins
+    return {"wins": wins, "losses": losses}
+
+
 def v10_veto_features(hid: int, team1: str, team2: str,
                        veto_by_match: dict, permaban_freq: dict,
-                       map_winrates: dict) -> dict:
+                       map_winrates: dict,
+                       *,
+                       kickoff=None,
+                       pit_map_streams: dict | None = None) -> dict:
     """Derive permaban_match_diff, decider_winrate_diff, forced_off_permaban_flag
     for one match. Logic copied from cs2_sneak_peek_v10_veto.py:
-    derive_match_veto_features."""
+    derive_match_veto_features.
+
+    When `pit_map_streams` is supplied AND `kickoff` is given, decider_winrate_diff
+    is computed PIT-correctly (only matches with match_date < kickoff feed the
+    aggregate). Otherwise falls back to the all-time `map_winrates` dict
+    (legacy behaviour, retained so the hltv-native-v10 row stays comparable)."""
     match_veto = veto_by_match.get(hid, [])
     if not match_veto:
         return {"permaban_match_diff": 0.0, "decider_winrate_diff": 0.0,
@@ -412,8 +485,12 @@ def v10_veto_features(hid: int, team1: str, team2: str,
 
     decider_diff = 0.0
     if decider:
-        t1_stats = map_winrates.get((team1, decider))
-        t2_stats = map_winrates.get((team2, decider))
+        if pit_map_streams is not None and kickoff is not None:
+            t1_stats = pit_team_map_winrate(team1, decider, kickoff, pit_map_streams)
+            t2_stats = pit_team_map_winrate(team2, decider, kickoff, pit_map_streams)
+        else:
+            t1_stats = map_winrates.get((team1, decider))
+            t2_stats = map_winrates.get((team2, decider))
         if t1_stats and t2_stats:
             t1_n = t1_stats["wins"] + t1_stats["losses"]
             t2_n = t2_stats["wins"] + t2_stats["losses"]
@@ -532,7 +609,8 @@ def team_home_region(team: str, kickoff, streams: dict,
 # ── 7. Build the eval row for one match.
 def build_row(m: dict, streams: dict,
                veto_by_match: dict, permaban_freq: dict,
-               map_winrates: dict, map_sides_by_match: dict) -> dict | None:
+               map_winrates: dict, map_sides_by_match: dict,
+               pit_map_streams: dict | None = None) -> dict | None:
     t1, t2, kickoff = m["team1_name"], m["team2_name"], m["match_date"]
     y = 1 if m["winner_name"] == t1 else 0
 
@@ -547,10 +625,19 @@ def build_row(m: dict, streams: dict,
 
     base_covered = 1 if (b1["form_n"] >= 3 and b2["form_n"] >= 3) else 0
 
-    # v10
+    # v10 (legacy, all-time decider winrate — kept for reference comparison)
     hid = m["hltv_match_id"]
     v10 = v10_veto_features(hid, t1, t2, veto_by_match,
                               permaban_freq, map_winrates)
+
+    # v10-pit (decider_winrate_diff computed strictly from priors)
+    if pit_map_streams is not None:
+        v10_pit = v10_veto_features(
+            hid, t1, t2, veto_by_match, permaban_freq, map_winrates,
+            kickoff=kickoff, pit_map_streams=pit_map_streams,
+        )
+    else:
+        v10_pit = v10
 
     # v13
     wr1, _n1 = ct_start_winrate(t1, kickoff, streams)
@@ -587,11 +674,16 @@ def build_row(m: dict, streams: dict,
         "kd_diff": kd_diff,
         "rest_diff": rest_diff,
         "base_covered": base_covered,
-        # v10
+        # v10 (legacy, all-time decider winrate — has lookahead leak)
         "permaban_match_diff": v10["permaban_match_diff"],
         "decider_winrate_diff": v10["decider_winrate_diff"],
         "forced_off_permaban_flag": v10["forced_off_permaban_flag"],
         "v10_covered": v10["v10_covered"],
+        # v10-pit (decider_winrate_diff_pit uses only matches strictly before
+        # kickoff). permaban + forced_off are identical to v10's (they don't
+        # use the leaky all-time map winrate dict).
+        "decider_winrate_diff_pit": v10_pit["decider_winrate_diff"],
+        "v10_pit_covered": v10_pit["v10_covered"],
         # v13
         "ct_start_winrate_diff": ct_start_winrate_diff,
         "bias_aligned_diff": bias_diff,
@@ -653,6 +745,15 @@ def persist(name: str, n: int, m: dict, since_d: date,
 BASE_KEYS = ["form_diff", "h2h_diff", "kd_diff", "rest_diff"]
 V10_EXTRA = ["permaban_match_diff", "decider_winrate_diff",
               "forced_off_permaban_flag"]
+# v10-pit swaps in the PIT-correct decider winrate; the other two veto features
+# already aggregate over priors only, so they're unchanged.
+V10_PIT_EXTRA = ["permaban_match_diff", "decider_winrate_diff_pit",
+                  "forced_off_permaban_flag"]
+# v10-permaban drops the decider winrate entirely and tests whether the
+# OTHER two veto features (permaban_match_diff + forced_off_permaban_flag)
+# carry signal on their own — the decider feature collapsed under PIT-correct
+# evaluation, so this isolates the remaining veto signal.
+V10_PERMABAN_EXTRA = ["permaban_match_diff", "forced_off_permaban_flag"]
 V13_EXTRA = ["ct_start_winrate_diff", "bias_aligned_diff"]
 V14_EXTRA = ["is_lan_event", "region_advantage_diff"]
 
@@ -694,12 +795,18 @@ def main():
     print("aggregating veto-derived lookups (permaban freq, map winrates)…")
     permaban_freq = per_team_permaban_freq(veto_by_match)
     map_winrates = per_team_map_winrate(map_sides_by_match, matches_by_id)
+    # PIT-correct (team, map) → sorted [(date, won_bool)] for the v10-pit row.
+    pit_map_streams = build_pit_team_map_streams(map_sides_by_match,
+                                                   matches_by_id)
+    print(f"  pit_map_streams: {len(pit_map_streams)} (team,map) pairs "
+          f"(legacy aggregate had {len(map_winrates)})")
 
     print(f"computing PIT-correct row features (cutoff {cutoff_d})…")
     rows: list[dict] = []
     for m in matches:
         row = build_row(m, streams, veto_by_match, permaban_freq,
-                         map_winrates, map_sides_by_match)
+                         map_winrates, map_sides_by_match,
+                         pit_map_streams=pit_map_streams)
         if row is not None:
             rows.append(row)
 
@@ -718,12 +825,14 @@ def main():
         return c, (c / n_eval if n_eval else 0.0)
     base_c, base_p = cov("base_covered")
     v10_c, v10_p   = cov("v10_covered")
+    v10_pit_c, v10_pit_p = cov("v10_pit_covered")
     v13_c, v13_p   = cov("v13_covered")
     v14_c, v14_p   = cov("v14_covered")
-    print(f"  base_covered:  {base_c}/{n_eval} ({base_p:.1%})")
-    print(f"  v10_covered:   {v10_c}/{n_eval} ({v10_p:.1%})")
-    print(f"  v13_covered:   {v13_c}/{n_eval} ({v13_p:.1%})")
-    print(f"  v14_covered:   {v14_c}/{n_eval} ({v14_p:.1%})\n")
+    print(f"  base_covered:    {base_c}/{n_eval} ({base_p:.1%})")
+    print(f"  v10_covered:     {v10_c}/{n_eval} ({v10_p:.1%})  (legacy / all-time decider)")
+    print(f"  v10_pit_covered: {v10_pit_c}/{n_eval} ({v10_pit_p:.1%})  (PIT-correct decider)")
+    print(f"  v13_covered:     {v13_c}/{n_eval} ({v13_p:.1%})")
+    print(f"  v14_covered:     {v14_c}/{n_eval} ({v14_p:.1%})\n")
 
     # Baseline
     print("=" * 78)
@@ -742,10 +851,19 @@ def main():
     base_auc = bm["auc"]
 
     # Per-block: fit base + block on the train set, score on eval.
+    # hltv-native-v10 keeps the legacy (lookahead-leaking) decider winrate so
+    # the previously-persisted row remains directly comparable. hltv-native-v10-pit
+    # is the corrected version — use this for promotion decisions.
     blocks = [
-        ("hltv-native-v10", "v10-veto-native",  V10_EXTRA, "v10_covered"),
-        ("hltv-native-v13", "v13-side-native",  V13_EXTRA, "v13_covered"),
-        ("hltv-native-v14", "v14-region-native",V14_EXTRA, "v14_covered"),
+        ("hltv-native-v10",          "v10-veto-native",       V10_EXTRA,          "v10_covered"),
+        ("hltv-native-v10-pit",      "v10-veto-native-pit",   V10_PIT_EXTRA,      "v10_pit_covered"),
+        # v10-permaban: drop the (now-PIT-collapsed) decider feature and test
+        # the remaining two veto features in isolation. Coverage flag reuses
+        # v10_covered since both component features come from the same
+        # all-priors veto aggregate.
+        ("hltv-native-v10-permaban", "v10-veto-permaban-only", V10_PERMABAN_EXTRA, "v10_covered"),
+        ("hltv-native-v13",          "v13-side-native",       V13_EXTRA,          "v13_covered"),
+        ("hltv-native-v14",          "v14-region-native",     V14_EXTRA,          "v14_covered"),
     ]
     summary: list[tuple] = []
     print()
