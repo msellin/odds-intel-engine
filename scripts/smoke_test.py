@@ -21444,6 +21444,111 @@ def _():
     assert "job_cs2_pinnacle_scanner" in fns
 
 
+@test("CS2-PINNACLE-SCANNER-FUZZY — alias map + 3-stage team matcher")
+def _():
+    """Pin that the scanner uses rapidfuzz (with difflib fallback), an alias
+    map, and a 3-stage matcher (exact → norm_team → fuzzy) — the same shape
+    we proved at 84.5% coverage on cs2_match_id_bridge_populate.py. The
+    previous scanner used a single exact-dict lookup on normalize_team()
+    output and matched 0/30 fixtures against Pinnacle on Railway."""
+    import pathlib, ast
+    src = pathlib.Path("scripts/esports/cs2_pinnacle_scanner.py").read_text()
+
+    # Fuzzy backend present (rapidfuzz preferred, difflib fallback).
+    assert "from rapidfuzz import fuzz" in src, "rapidfuzz import required"
+    assert "from difflib import SequenceMatcher" in src, "difflib fallback required"
+    assert "_FUZZ_BACKEND" in src
+    assert "token_set_ratio" in src
+
+    # Alias map present with the high-value entries we already know are wrong.
+    assert "_ALIAS_MAP" in src
+    for alias in ("faze clan", "team spirit", "natus vincere",
+                  "1win team", "g2 esports", "ninjas in pyjamas",
+                  "virtus.pro", "the mongolz"):
+        assert alias in src.lower(), f"alias map missing {alias!r}"
+
+    # 3-stage matcher function lives here.
+    assert "def match_pinnacle_to_db" in src
+    # Three stages with the right join labels for telemetry.
+    for label in ('"exact"', '"norm_team"', '"fuzzy"'):
+        assert label in src, f"matcher should label stage {label}"
+    # Min fuzz threshold ≥70 (same as bridge populator).
+    assert "FUZZ_MIN_BOTH = 70.0" in src or "FUZZ_MIN_BOTH=70.0" in src.replace(" ", "")
+
+    # Bidirectional team-pairing inside fuzzy scoring (swap-aware).
+    assert "_fuzzy_pair_score" in src
+    # Kickoff time filter inside matcher (±4h window).
+    assert "4 * 3600" in src or "14400" in src, "matcher must apply a ±4h time window"
+
+    # --dry-run / unmatched dump for hand-building aliases on the long tail.
+    assert '"--dry-run"' in src or "--dry-run" in src
+    assert "unmatched_samples" in src or "Unmatched Pinnacle" in src
+
+    # parse_moneyline still filters to series-level (period=0) — not map
+    # handicaps or totals. This is the BO-format-safety pin.
+    assert 'get("period") != 0' in src or "period\") != 0" in src
+
+    # Series-vs-child matchup filter so we don't try to write odds for a
+    # map-handicap child matchup.
+    assert "_is_series_matchup" in src or "parentId" in src
+
+    # All key functions exist as defs.
+    tree = ast.parse(src)
+    fns = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    for fn in ("normalize_team", "match_pinnacle_to_db",
+               "_fuzzy_pair_score", "_exact_pair", "_norm_pair",
+               "parse_moneyline", "scan"):
+        assert fn in fns, f"missing function {fn}"
+
+    # Behavioural check — import the module and exercise normalize_team
+    # on real bo3.gg↔Pinnacle pairs from today's live data. No live API hit.
+    import sys, importlib
+    sys.path.insert(0, "scripts/esports")
+    if "cs2_pinnacle_scanner" in sys.modules:
+        del sys.modules["cs2_pinnacle_scanner"]
+    mod = importlib.import_module("cs2_pinnacle_scanner")
+    for a, b in [
+        ("1win Team", "1win"),
+        ("FaZe Clan", "FaZe"),
+        ("Spirit", "Team Spirit"),
+        ("Natus Vincere", "NaVi"),
+        ("G2 Esports", "G2"),
+        ("The MongolZ", "MongolZ"),
+        ("Ninjas in Pyjamas", "NIP"),
+    ]:
+        na, nb = mod.normalize_team(a), mod.normalize_team(b)
+        assert na == nb and na, (
+            f"normalize_team should collide {a!r}↔{b!r} via alias map "
+            f"(got {na!r} vs {nb!r})"
+        )
+
+    # 3-stage matcher itself — exact, norm, fuzzy, unmatched, time-rejection.
+    from datetime import datetime, timezone, timedelta
+    ko = datetime(2026, 6, 10, 15, 0, tzinfo=timezone.utc)
+    db = [
+        {"id": 1, "team1": "1win Team", "team2": "FaZe Clan", "kickoff_time": ko},
+        {"id": 2, "team1": "Natus Vincere", "team2": "Team Spirit", "kickoff_time": ko},
+        {"id": 3, "team1": "G2 Esports", "team2": "Astralis", "kickoff_time": ko},
+        {"id": 4, "team1": "FaZe Clan", "team2": "Vitality",
+         "kickoff_time": ko - timedelta(days=5)},
+    ]
+    r = mod.match_pinnacle_to_db("1win", "FaZe", ko, db)
+    assert r and r[0]["id"] == 1 and r[2] == "norm_team", f"norm_team stage broken: {r}"
+    r = mod.match_pinnacle_to_db("Astrlis", "G2", ko, db)  # typo, swap
+    assert r and r[0]["id"] == 3 and r[1] is True and r[2] == "fuzzy", (
+        f"fuzzy stage with swap broken: {r}"
+    )
+    r = mod.match_pinnacle_to_db("FaZe Clan", "1win Team", ko, db)
+    assert r and r[0]["id"] == 1 and r[1] is True and r[2] == "exact", (
+        f"exact stage swap-aware broken: {r}"
+    )
+    assert mod.match_pinnacle_to_db("Random Unknown", "NotInDB", ko, db) is None
+    # ±4h time window — same names but kickoff 5 days off must NOT match row 4.
+    assert mod.match_pinnacle_to_db("FaZe", "Vitality", ko, db) is None, (
+        "±4h kickoff filter not applied"
+    )
+
+
 @test("CS2-PIT-VIEW — point-in-time team-per-map win rate from our match log")
 def _():
     import pathlib
