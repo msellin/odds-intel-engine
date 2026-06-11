@@ -20318,12 +20318,41 @@ def _():
     assert "execute_query(\n            \"\"\"\n            INSERT" not in src, (
         "Do not use execute_query for INSERTs — it never commits."
     )
-    # Predictor-readiness: scraper joins cs2_hltv_rankings to populate
+    # Predictor-readiness (hltv_v1): scraper joins cs2_hltv_rankings to populate
     # hltv_rank/points so cs2_hltv_predict's WHERE hltv_points1 IS NOT NULL
     # gate accepts the row without needing a separate enrichment pass.
     assert "FROM cs2_hltv_rankings" in src, (
         "Scraper must join cs2_hltv_rankings at write time to populate "
         "hltv_rank/points — without this, predictors filter out HLTV rows."
+    )
+
+    # ELO enrichment for v7/v8 (production scorers): they early-return on
+    # NULL win_prob1. Without this enrichment, HLTV-sourced rows show as
+    # "no model coverage" on /admin/cs2 and the bot has no v8 picks on them.
+    assert "def enrich_elo(" in src, (
+        "Scraper must expose enrich_elo() — back-fills elo1/elo2/win_prob1 "
+        "on HLTV-sourced rows so v7/v8 production scorers can fire on them."
+    )
+    assert "build_elo" in src and "combined_win_prob" in src, (
+        "enrich_elo must reuse cs2_elo_scanner's build_elo + combined_win_prob "
+        "so HLTV-sourced and bo3.gg-sourced rows use the same ELO math."
+    )
+    # Name-variant resolver: HLTV uses short names ("Vitality", "FURIA", "NAVI"),
+    # cs2_results carries bo3.gg's longer forms ("Team Vitality", "FURIA Esports",
+    # "Natus Vincere"). Without the resolver ~90% of Tier-1 matches fail
+    # enrichment because the exact-name lookup misses.
+    assert "def _resolve_elo(" in src, (
+        "Scraper must expose _resolve_elo() — tries 'Team X' / 'X Esports' / "
+        "'X Gaming' / explicit-alias variants so HLTV short names match "
+        "cs2_results long forms."
+    )
+    # Resolver must pick the variant with the most matches, not just the first
+    # ELO-map hit. Otherwise short-name stubs (e.g., 'B8' with 3 rows) lock the
+    # lookup before the deep-history variant ('B8 Esports' with 247) is tried.
+    assert "if c > best[1]:" in src, (
+        "Resolver must select variant by max match_count, not first hit. "
+        "Short-name stubs in cs2_results would otherwise block deep-history "
+        "variants from being considered."
     )
 
     # Scheduler registration.
@@ -21603,6 +21632,154 @@ def _():
     assert n("Team Spirit") == n("Spirit")
     assert n("1win Team") == n("1win")
     assert n("Natus Vincere") == n("NAVI")
+
+
+@test("CS2-HLTV-TEAM-PISTOLS-SCRAPER — migration 239 + bulk per-map pistol scraper")
+def _():
+    """Pins migration 239 schema, the scraper file path, the bulk-per-map
+    fetch design (per-team URL returns 404 — bulk page with &maps= and &side=
+    is the working alternative), and the upsert/parse function names."""
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/239_cs2_hltv_team_pistols.sql")
+    assert mig.exists(), "migration 239 missing"
+    msrc = mig.read_text()
+    assert "CREATE TABLE IF NOT EXISTS cs2_hltv_team_pistols" in msrc
+    for col in ("hltv_team_id", "team_name", "map_name",
+                "period_start", "period_end",
+                "ct_pistol_won", "ct_pistol_total",
+                "t_pistol_won", "t_pistol_total",
+                "ct_pistol_pct", "t_pistol_pct",
+                "maps_played", "scraped_at"):
+        assert col in msrc, f"migration 239 missing column {col}"
+    assert "PRIMARY KEY (hltv_team_id, map_name, period_start, period_end)" in msrc
+    assert "cs2_hltv_team_pistols_team_idx" in msrc
+
+    scraper = pathlib.Path("scripts/esports/cs2_hltv_team_pistols_scraper.py")
+    assert scraper.exists(), "cs2_hltv_team_pistols_scraper.py missing"
+    src = scraper.read_text()
+
+    # Bulk-per-map approach — fetch one map at a time via &maps= and &side=
+    # rather than per-team URL (which returns 404).
+    assert "MAP_INTERNAL_TO_DISPLAY" in src, (
+        "scraper must define MAP_INTERNAL_TO_DISPLAY (de_mirage→Mirage, etc.)"
+    )
+    for mp in ("de_mirage", "de_inferno", "de_nuke", "de_dust2",
+               "de_ancient", "de_anubis", "de_overpass", "de_vertigo", "de_train"):
+        assert mp in src, f"scraper must enumerate map {mp}"
+
+    # Required functions
+    for fn in ("parse_pistol_rows", "fetch_pistols_for_map",
+               "merge_sides", "bulk_upsert",
+               "make_session", "_fetch_url", "main"):
+        assert f"def {fn}" in src, f"scraper must define {fn}()"
+
+    # Bulk-upsert path — execute_values + ON CONFLICT (one batch per map)
+    assert "psycopg2.extras" in src
+    assert "execute_values" in src
+    assert "ON CONFLICT (hltv_team_id, map_name, period_start, period_end)" in src
+
+    # Side filter — both halves are fetched separately
+    assert "COUNTER_TERRORIST" in src and "TERRORIST" in src, (
+        "scraper must fetch CT and T sides separately"
+    )
+    # rankingFilter is forbidden (silently caps to top-20)
+    assert "rankingFilter" in src and "forbidden" in src.lower(), (
+        "scraper must defensively reject rankingFilter in the URL builder"
+    )
+
+    # CLI flags pinned by the task
+    assert "--limit" in src, "scraper must expose --limit N"
+    assert "--team-id" in src, "scraper must expose --team-id X"
+
+    # FlareSolverr preferred, cookie session fallback — same auth pattern as
+    # cs2_hltv_stats_scraper.py.
+    assert "flaresolverr_client" in src, (
+        "scraper must use flaresolverr_client (CF-protected /stats/* page)"
+    )
+    assert "HLTV_AUTH_COOKIES" in src, (
+        "scraper must support HLTV_AUTH_COOKIES env var as fallback"
+    )
+
+    # Source teams from cs2_hltv_rankings when --limit set
+    assert "cs2_hltv_rankings" in src, (
+        "scraper must source ranked-team filter from cs2_hltv_rankings"
+    )
+
+
+@test("CS2-SNEAK-V18-PISTOLS — per-team-per-map pistol features on top of v8")
+def _():
+    """v18 adds per-team-per-map pistol round splits (CT pistol % and T pistol
+    % on the specific upcoming map, plus a per-map averaged pistol skill
+    differential) to test whether per-map granularity adds AUC over v8's
+    aggregate pistol_diff. Pins file existence, the three canonical feature
+    keys, the bridge use, that the per-map source table is the new
+    cs2_hltv_team_pistols (not the v7 cs2_team_pistol_stats), and that the
+    bias toward the upcoming match's MAIN map is derived via map_order=1
+    from cs2_hltv_match_maps."""
+    src_path = _engine_path("scripts/esports/cs2_sneak_peek_v18_pistols.py")
+    assert src_path.exists(), "cs2_sneak_peek_v18_pistols.py must exist"
+    src = src_path.read_text()
+
+    # The three canonical feature keys
+    for feat in ("team1_ct_pistol_diff_thismap",
+                 "team1_t_pistol_diff_thismap",
+                 "pistol_per_map_avg_diff"):
+        assert feat in src, f"v18 must compute feature {feat}"
+
+    # Stacking on v8
+    assert "logit_saved" in src and "V8_KEYS" in src, (
+        "v18 must stack on top of v8 features (logit_saved + V8_KEYS)"
+    )
+
+    # Per-map source — the NEW table from migration 239 (not the v7 aggregate
+    # cs2_team_pistol_stats, which v8 already consumes via pistol_diff)
+    assert "cs2_hltv_team_pistols" in src, (
+        "v18 must read per-map pistol stats from cs2_hltv_team_pistols "
+        "(the table added by migration 239)"
+    )
+    # Loader for the per-map stream
+    assert "load_team_pistol_per_map" in src, (
+        "v18 must define load_team_pistol_per_map() — the per-team-per-map "
+        "pistol stream loader"
+    )
+
+    # Main-map source — map_order=1 row from cs2_hltv_match_maps via the bridge
+    assert "load_first_map_by_match" in src, (
+        "v18 must load first_map_by_match (map_order=1 → upcoming match's main map)"
+    )
+    assert "map_order = 1" in src or "map_order=1" in src, (
+        "v18 must filter cs2_hltv_match_maps by map_order=1"
+    )
+    assert "first_map_by_match" in src, "v18 must use first_map_by_match dict"
+
+    # PIT discipline — period_end < kickoff_date filter
+    assert "period_end" in src and "kickoff" in src, (
+        "v18 must enforce period_end < kickoff_date for PIT correctness"
+    )
+    assert "_pit_select" in src, (
+        "v18 must define _pit_select() — the bisect-style PIT filter on period_end"
+    )
+
+    # Bridge usage — same pattern as v15/v16/v17
+    assert "cs2_match_id_bridge" in src, (
+        "v18 must resolve hltv_match_id via cs2_match_id_bridge"
+    )
+    assert "SELECT bo3gg_id, hltv_match_id FROM cs2_match_id_bridge" in src
+
+    # HLTV team-name resolver — bo3gg "Team Spirit" vs HLTV "Spirit" etc.
+    assert "resolve_hltv_name" in src, (
+        "v18 must use resolve_hltv_name() so the per-team-name lookup hits the "
+        "HLTV form stored in cs2_hltv_team_pistols"
+    )
+    assert "load_hltv_team_pair_index" in src
+
+    # Persistence + PROMOTE
+    assert "cs2_model_backtest_history" in src
+    assert "v18-pistols" in src, (
+        "v18 must tag persisted rows with the v18-pistols feature_set prefix"
+    )
+    assert "RUN_ID" in src
+    assert "PROMOTE" in src
 
 
 if __name__ == "__main__":

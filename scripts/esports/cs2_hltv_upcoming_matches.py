@@ -62,7 +62,22 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from workers.api_clients.db import execute_query, execute_write_returning  # noqa: E402
+from workers.api_clients.db import execute_query, execute_write, execute_write_returning  # noqa: E402
+
+# CS2-HLTV-ELO-ENRICH (2026-06-11): the HLTV-sourced fixtures we INSERT have
+# NULL elo1/elo2/win_prob1 because we don't run the bo3.gg-keyed ELO walk.
+# Without those columns the production v8 scorer (cs2_v8_predict.py) and v7
+# fallback both early-return — the admin/cs2 page shows "no model coverage"
+# even though HLTV-sourced rows landed cleanly. Bridge: after every scrape,
+# walk cs2_results to build a team-name → ELO map and back-fill the rows
+# the scrape just wrote. Reuses the scanner's exact math (build_elo +
+# combined_win_prob) so HLTV-sourced and bo3.gg-sourced rows are scored on
+# the same scale.
+sys.path.insert(0, str(Path(__file__).parent))  # for sibling import below
+from cs2_elo_scanner import (  # noqa: E402
+    build_elo, build_match_counts, combined_win_prob,
+    INITIAL_ELO, MIN_MATCHES_FOR_PREDICTION,
+)
 
 
 URL = "https://www.hltv.org/matches"
@@ -284,6 +299,149 @@ def write_matches(matches: list[dict]) -> tuple[int, int, int]:
     return (inserted, skipped, rank_hits)
 
 
+def _load_cs2_results() -> list[dict]:
+    """Shape cs2_results rows into the form build_elo() expects.
+
+    Source columns: team1, team2, kickoff_time, best_of, winner.
+    Target shape: team1, team2, tournament, best_of, result (1.0/0.0), date.
+
+    cs2_results doesn't store the tournament name (only bo3gg_id), so we feed
+    tournament='' which makes tournament_tier() return the 1.0 default. Team
+    ELOs will be slightly less differentiated than the scanner's (which has
+    bo3.gg tournament names available) but in the same ballpark — close enough
+    for the win_prob gate.
+    """
+    rows = execute_query(
+        """SELECT team1, team2, best_of, winner,
+                  COALESCE(finished_at, kickoff_time) AS date
+           FROM cs2_results
+           WHERE team1 IS NOT NULL AND team2 IS NOT NULL AND winner IS NOT NULL
+           ORDER BY COALESCE(finished_at, kickoff_time) ASC"""
+    )
+    shaped: list[dict] = []
+    for r in rows:
+        # cs2_results.winner stores the literal strings 'team1' / 'team2'
+        # (matching the order in the same row), NOT the actual team name.
+        w = r["winner"]
+        if w == "team1":
+            result = 1.0
+        elif w == "team2":
+            result = 0.0
+        else:
+            continue  # unexpected winner value, skip
+        shaped.append({
+            "team1": r["team1"], "team2": r["team2"],
+            "tournament": "", "best_of": int(r["best_of"] or 3),
+            "result": result, "date": r["date"],
+        })
+    return shaped
+
+
+# HLTV /matches uses short team names ("Vitality", "FURIA", "9z", "NAVI") while
+# cs2_results carries bo3.gg's longer forms ("Team Vitality", "FURIA Esports",
+# "9z Team", "Natus Vincere"). Without resolving these, ~90% of Tier-1 matches
+# get filtered out of ELO enrichment because the lookup misses on naming alone.
+# Generated from a 2026-06-11 audit of cs2_results vs HLTV /matches.
+_HLTV_TO_RESULTS_ALIASES: dict[str, list[str]] = {
+    "NAVI": ["Natus Vincere"],
+    "Natus Vincere": ["NAVI"],
+    "The MongolZ": ["MongolZ", "Mongolz"],
+    "MongolZ": ["The MongolZ"],
+}
+
+
+def _resolve_elo(team_name: str, elo_map: dict[str, float],
+                  counts: dict[str, int]) -> tuple[float | None, int, str | None]:
+    """Return (elo, match_count, matched_name) for a team, trying common
+    cs2_results name variants when the exact HLTV name doesn't hit.
+
+    Picks the variant with the HIGHEST match count, not just the first hit.
+    Without this, exact-match teams that happen to have a low-history stub
+    in cs2_results (e.g., "B8" has 3 rows while "B8 Esports" has 247) get
+    locked to the stub and fail the MIN_MATCHES gate — even though the
+    high-history variant exists. Picking by max count covers both the
+    "exact name with thin data" trap and the "long name with thick data"
+    happy path.
+    """
+    candidates = [
+        team_name,
+        f"Team {team_name}",
+        f"{team_name} Team",
+        f"{team_name} Esports",
+        f"{team_name} Gaming",
+    ]
+    candidates.extend(_HLTV_TO_RESULTS_ALIASES.get(team_name, []))
+    best: tuple[float | None, int, str | None] = (None, 0, None)
+    for cand in candidates:
+        elo = elo_map.get(cand)
+        if elo is None:
+            continue
+        c = counts.get(cand, 0)
+        if c > best[1]:
+            best = (elo, c, cand)
+    return best
+
+
+def enrich_elo(verbose: bool = True) -> tuple[int, int, int]:
+    """Back-fill elo1/elo2/win_prob1/win_prob2/has_elo_history on rows where
+    those columns are NULL. Returns (rows_examined, rows_updated, rows_skipped_no_history).
+
+    Skips teams below MIN_MATCHES_FOR_PREDICTION (10 in last 180d) per the
+    scanner's policy — under that threshold the ELO hasn't converged and a
+    win_prob would be fake confidence.
+    """
+    history = _load_cs2_results()
+    if verbose:
+        print(f"  walked {len(history)} historical matches from cs2_results")
+    if not history:
+        return (0, 0, 0)
+
+    elo_map = build_elo(history)
+    counts = build_match_counts(history)
+    if verbose:
+        print(f"  built ELO for {len(elo_map)} teams, "
+              f"{sum(1 for c in counts.values() if c >= MIN_MATCHES_FOR_PREDICTION)} "
+              f"meet MIN_MATCHES gate")
+
+    targets = execute_query(
+        """SELECT id, team1, team2
+           FROM cs2_upcoming_matches
+           WHERE kickoff_time >= NOW()
+             AND (elo1 IS NULL OR elo2 IS NULL OR win_prob1 IS NULL)"""
+    )
+    if verbose:
+        print(f"  {len(targets)} upcoming rows need ELO enrichment")
+
+    updated = 0
+    skipped_no_history = 0
+    for t in targets:
+        r1, c1, _ = _resolve_elo(t["team1"], elo_map, counts)
+        r2, c2, _ = _resolve_elo(t["team2"], elo_map, counts)
+        if r1 is None or r2 is None or c1 < MIN_MATCHES_FOR_PREDICTION or c2 < MIN_MATCHES_FOR_PREDICTION:
+            skipped_no_history += 1
+            continue
+
+        # pq_diff=None → pure ELO probability. We could add HLTV-rating-based PQ
+        # later by joining cs2_hltv_player_ratings, but pure ELO is the same
+        # baseline the scanner uses when player quality is missing.
+        win_prob1 = combined_win_prob(r1, r2, None)
+        win_prob2 = 1.0 - win_prob1
+
+        execute_write(
+            """UPDATE cs2_upcoming_matches
+               SET elo1 = %s, elo2 = %s,
+                   win_prob1 = %s, win_prob2 = %s,
+                   has_elo_history = TRUE,
+                   scanned_at = NOW()
+               WHERE id = %s""",
+            (round(r1, 2), round(r2, 2),
+             round(win_prob1, 5), round(win_prob2, 5), t["id"]),
+        )
+        updated += 1
+
+    return (len(targets), updated, skipped_no_history)
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     p.add_argument("--record", action="store_true",
@@ -315,7 +473,15 @@ def main() -> int:
 
     ins, skip, rank_hits = write_matches(matches)
     print(f"\n  ✓ inserted {ins}, skipped {skip} (already in cs2_upcoming_matches)")
-    print(f"  ✓ {rank_hits}/{ins} new rows have HLTV rank+points for BOTH teams (predictor-ready)")
+    print(f"  ✓ {rank_hits}/{ins} new rows have HLTV rank+points for BOTH teams (hltv_v1-ready)")
+
+    # CS2-HLTV-ELO-ENRICH — back-fill ELO so v7/v8 (which both early-return on
+    # NULL win_prob1) can score the HLTV-sourced rows. Without this step the
+    # bot has no v8 picks on HLTV-only fixtures.
+    print("\n  enriching ELO from cs2_results history…")
+    examined, updated, skipped_no_history = enrich_elo()
+    print(f"  ✓ ELO-enriched {updated}/{examined} rows "
+          f"({skipped_no_history} skipped — teams below MIN_MATCHES_FOR_PREDICTION)")
     return 0
 
 
