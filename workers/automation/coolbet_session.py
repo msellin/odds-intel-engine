@@ -490,10 +490,20 @@ class CoolbetSession:
         return self.jwt_seconds_remaining
 
     def _login(self) -> None:
-        # Manual-JWT path takes priority when configured.
+        # Manual-JWT path is preferred when the env-pasted token is still
+        # valid. If it's expired AND we have API credentials, fall through
+        # to API login instead of raising — that's the self-heal behaviour
+        # the operator wants (2026-06-11). The old "raise on expired manual
+        # JWT" was a safety hatch from the era when API login was unreliable.
         if self._manual_jwt:
-            self._adopt_manual_jwt()
-            return
+            try:
+                self._adopt_manual_jwt()
+                return
+            except RuntimeError as e:
+                if "expired" in str(e).lower() and self._email and self._password:
+                    log.info("Manual JWT expired — falling through to API login")
+                else:
+                    raise
 
         log.info("Refreshing Coolbet JWT via /s/auth/login (plain-requests + FS cookies)...")
         if not self._cookies_fresh:
