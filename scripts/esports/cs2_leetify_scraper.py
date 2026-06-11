@@ -560,18 +560,144 @@ def fetch_match_by_hltv(full_data_source_id: str) -> int:
     return n_rows
 
 
+def crawl_from_bridge(max_api_calls: int, fill_budget: int = 500) -> dict:
+    """Wide crawl from the player bridge:
+      1. Enrich bridge with steam64s organically discovered in player_match_stats
+         (no API call — we already have the nickname from the densify pass).
+      2. For each bridge row that hasn't had its /v3/profile/matches walked,
+         fetch /v3/profile + /v3/profile/matches. Walk newly-discovered
+         teammates one hop deep.
+      3. Densify HLTV-bridged matches that still have <10 players.
+      4. Stop when api_calls_used >= max_api_calls.
+
+    Resumable — re-running picks up where it left off via the "has matches
+    written for this steam64?" check.
+    """
+    api_calls = 0
+    new_bridge_rows = 0
+    seeds_walked = 0
+    matches_written = 0
+
+    # ── Phase 1: enrich bridge with unbridged steam64s from pms ──
+    rows = execute_query("""
+        SELECT DISTINCT pms.steam64_id, pms.nickname
+        FROM cs2_leetify_player_match_stats pms
+        LEFT JOIN cs2_player_id_bridge b USING (steam64_id)
+        WHERE b.steam64_id IS NULL
+    """)
+    print(f"\n--- phase 1: enrich bridge with {len(rows)} unbridged steam64s ---")
+    for r in rows:
+        sid = r["steam64_id"]
+        nick = r["nickname"]
+        hltv_id = resolve_hltv_player_id(nick) if nick else None
+        upsert_bridge(sid, nickname=nick, hltv_player_id=hltv_id,
+                      joined_by="organic_match_data")
+        new_bridge_rows += 1
+
+    # ── Phase 2: walk every bridged steam64 we haven't seeded yet ──
+    # "Seeded" = we have ≥10 of THIS steam64's own match rows
+    # (i.e. they were a seed of /v3/profile/matches at some point).
+    print(f"\n--- phase 2: walk un-seeded bridge rows ---")
+    unseeded = execute_query("""
+        SELECT b.steam64_id, b.nickname
+        FROM cs2_player_id_bridge b
+        LEFT JOIN (
+            SELECT steam64_id, COUNT(*) AS n
+            FROM cs2_leetify_player_match_stats GROUP BY steam64_id
+        ) c USING (steam64_id)
+        WHERE COALESCE(c.n, 0) < 50
+        ORDER BY COALESCE(c.n, 0)
+    """)
+    print(f"  {len(unseeded)} steam64s need a /profile/matches walk")
+
+    teammate_steam64s: set[str] = set()
+    for r in unseeded:
+        if api_calls >= max_api_calls:
+            print(f"  budget reached ({api_calls}/{max_api_calls}) — stopping phase 2")
+            break
+        sid = r["steam64_id"]
+        nick = r["nickname"] or "?"
+
+        # profile
+        prof = fetch_json(f"{LEETIFY_BASE}/v3/profile?steam64_id={sid}")
+        api_calls += 1
+        if not prof:
+            continue
+        prof_name = prof.get("name") or nick
+        for tm in (prof.get("recent_teammates") or [])[:5]:
+            tsid = tm.get("steam64_id")
+            if tsid:
+                teammate_steam64s.add(tsid)
+        upsert_bridge(sid, nickname=prof_name,
+                      hltv_player_id=resolve_hltv_player_id(prof_name),
+                      joined_by="crawl")
+
+        # matches
+        if api_calls >= max_api_calls:
+            break
+        matches = fetch_json(f"{LEETIFY_BASE}/v3/profile/matches?steam64_id={sid}")
+        api_calls += 1
+        if isinstance(matches, list):
+            local_rows = 0
+            for m in matches:
+                n, _ = write_match_payload(m)
+                local_rows += n
+            matches_written += len(matches)
+            seeds_walked += 1
+            print(f"  [{seeds_walked}] {prof_name} ({sid[-6:]}): {len(matches)} matches, {local_rows} player-rows  "
+                  f"(api={api_calls}/{max_api_calls})")
+
+    # ── Phase 3: bridge newly-seen teammates (no /matches walk) ──
+    print(f"\n--- phase 3: bridge {len(teammate_steam64s)} new teammates ---")
+    fresh_tm = [t for t in teammate_steam64s if not bridge_has(t)]
+    for tsid in fresh_tm:
+        if api_calls >= max_api_calls:
+            break
+        prof = fetch_json(f"{LEETIFY_BASE}/v3/profile?steam64_id={tsid}")
+        api_calls += 1
+        if not prof:
+            continue
+        nick = prof.get("name")
+        upsert_bridge(tsid, nickname=nick,
+                      hltv_player_id=resolve_hltv_player_id(nick) if nick else None,
+                      joined_by="crawl_teammate")
+        new_bridge_rows += 1
+
+    # ── Phase 4: densify HLTV-bridged matches with <10 players ──
+    remaining = max(0, max_api_calls - api_calls)
+    densify_n = min(fill_budget, remaining)
+    print(f"\n--- phase 4: densify up to {densify_n} matches with <10 players ---")
+    densified = 0
+    if densify_n > 0:
+        densified = fill_matches(densify_n)
+        api_calls += densify_n  # rough upper bound
+
+    return {
+        "api_calls_used": api_calls,
+        "new_bridge_rows": new_bridge_rows,
+        "seeds_walked": seeds_walked,
+        "matches_written": matches_written,
+        "matches_densified": densified,
+    }
+
+
 # ── CLI ────────────────────────────────────────────────────────────────────
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--bootstrap-seeds", type=int,
                    help="Walk N seeds from KNOWN_SEEDS")
+    g.add_argument("--crawl", action="store_true",
+                   help="Wide crawl from bridge: enrich, walk un-seeded rows, "
+                        "follow teammates, densify HLTV matches. Resumable.")
     g.add_argument("--match-id", type=str,
                    help="One-off fetch via /v2/matches/{leetify_uuid}")
     g.add_argument("--full-match", type=str,
                    help="One-off fetch via /v2/matches/hltv/{full_filename}")
     g.add_argument("--fill-matches", type=int,
                    help="Refetch N existing matches with <10 players via /v2/matches")
+    ap.add_argument("--max-api-calls", type=int, default=10000,
+                    help="Hard cap on API calls for --crawl (default 10000 ≈ ~3h)")
     args = ap.parse_args()
 
     started_at = time.monotonic()
@@ -611,6 +737,34 @@ def main():
         print(f"  new bridge rows this run:      {stats['new_bridge_rows']}")
         print(f"  total cs2_player_id_bridge:    {total_bridge}")
         print(f"  total cs2_leetify_pms rows:    {total_pms}")
+        return
+
+    if args.crawl:
+        stats = crawl_from_bridge(args.max_api_calls)
+
+        total_pms = execute_query(
+            "SELECT COUNT(*) AS n FROM cs2_leetify_player_match_stats"
+        )[0]["n"]
+        total_bridge = execute_query(
+            "SELECT COUNT(*) AS n FROM cs2_player_id_bridge"
+        )[0]["n"]
+        hltv_bridged = execute_query(
+            "SELECT COUNT(DISTINCT hltv_match_id) AS n "
+            "FROM cs2_leetify_player_match_stats WHERE hltv_match_id IS NOT NULL"
+        )[0]["n"]
+        elapsed = time.monotonic() - started_at
+        print()
+        print("=" * 60)
+        print(f"CRAWL COMPLETE ({elapsed:.1f}s)")
+        print("=" * 60)
+        print(f"  api_calls_used:                {stats['api_calls_used']}")
+        print(f"  new bridge rows this run:      {stats['new_bridge_rows']}")
+        print(f"  seeds walked (profile/matches):{stats['seeds_walked']}")
+        print(f"  Leetify matches walked:        {stats['matches_written']}")
+        print(f"  matches densified:             {stats['matches_densified']}")
+        print(f"  total cs2_player_id_bridge:    {total_bridge}")
+        print(f"  total cs2_leetify_pms rows:    {total_pms}")
+        print(f"  HLTV-bridged matches (unique): {hltv_bridged}")
         return
 
     if args.match_id:
