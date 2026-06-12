@@ -3687,6 +3687,34 @@ def test_coolbet_cdp_jwt_extract():
     )
 
 
+@test("COOLBET-MATURITY-GATE-IN-PLIST — Mac daemon plist sets COOLBET_RECORD_ALLOWED_MATURITY=calibrated")
+def test_coolbet_maturity_gate_in_plist():
+    """COOLBET-MATURITY-GATE-IN-PLIST (2026-06-12): Railway has
+    COOLBET_RECORD_ALLOWED_MATURITY=calibrated set, but Railway env
+    does not reach the Mac-side daemon — only the daemon's own
+    process env (launchd plist + local .env) does. The gap let beta
+    bots auto-place real money on 2026-06-12 (bot_high_alignment
+    placed two real bets that the operator did not authorise).
+
+    Pin the gate in the plist so a future re-install can't lose it.
+    `.env` is intentionally NOT the source of truth here — plist is
+    process-bound, explicit, and survives developer-local .env
+    edits."""
+    import pathlib
+    plist = pathlib.Path("local/launchd/com.oddsintel.coolbet-mac-daemon.plist").read_text()
+    assert "COOLBET_RECORD_ALLOWED_MATURITY" in plist, (
+        "Plist must set COOLBET_RECORD_ALLOWED_MATURITY — without it, "
+        "every active bot (beta/experimental) can place real money."
+    )
+    # Find the value tag immediately after the key.
+    idx = plist.index("COOLBET_RECORD_ALLOWED_MATURITY")
+    snippet = plist[idx:idx + 300]
+    assert "<string>calibrated</string>" in snippet, (
+        "Plist gate must be 'calibrated' as the default. If you widen "
+        "it (e.g. 'calibrated,beta'), update this assertion deliberately."
+    )
+
+
 @test("COOLBET-AUTO-PLACE-TG-NOTIFY — daemon Telegrams the operator after every successful placement")
 def test_coolbet_auto_place_tg_notify():
     """AUTO-PLACE-TG-NOTIFY (2026-06-12): the operator must be notified

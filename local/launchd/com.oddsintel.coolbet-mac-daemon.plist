@@ -64,6 +64,19 @@
              Override at runtime: launchctl setenv COOLBET_MAC_POLL_S 600 -->
         <key>COOLBET_MAC_POLL_S</key>
         <string>1800</string>
+        <!-- BOT-MATURITY-GATE (2026-06-12): only auto-place from bots
+             tagged maturity_label='calibrated'. Without this gate every
+             active bot (beta, experimental, etc.) could spend real
+             money. Audit 2026-06-12 showed bot_high_alignment (beta)
+             losing -€56 over 50 real bets while bot_v10_all (calibrated)
+             earned +€37 — the maturity gate captures this signal.
+             Railway has the same env set; this is the Mac-side mirror
+             (Railway env doesn't reach this process, only its local env
+             does — that was the gap that let beta bots auto-place).
+             Override: launchctl setenv COOLBET_RECORD_ALLOWED_MATURITY
+             "calibrated,beta" — or '*' to disable the gate entirely. -->
+        <key>COOLBET_RECORD_ALLOWED_MATURITY</key>
+        <string>calibrated</string>
     </dict>
 
     <key>StandardOutPath</key>
