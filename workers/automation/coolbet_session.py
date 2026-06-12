@@ -220,8 +220,25 @@ class CoolbetSession:
     set is enough without a COOLBET_MANUAL_JWT.
     """
 
-    def __init__(self, *, require_auth: bool = True):
+    def __init__(self, *, require_auth: bool = True,
+                 allow_api_login: bool | None = None):
         self._require_auth = require_auth
+
+        # COOLBET-NO-AUTO-LOGIN (2026-06-12): /s/auth/login triggers SMS 2FA
+        # every call from any IP that hasn't been device-trusted in the
+        # current browser session — this is how an expired-JWT scenario
+        # spammed 100+ SMS overnight (heartbeat cron retrying every ~5min
+        # × 9hrs). Default: refuse API login. The ONLY path that should
+        # mint a fresh JWT is scripts/coolbet/flaresolverr_login_enroll.py
+        # (which talks to Coolbet directly, not via CoolbetSession). All
+        # other contexts — heartbeat, placement, scanner — read DB JWT and
+        # fail fast if it's expired, so the operator gets a clean
+        # "re-enroll" signal instead of a midnight SMS storm.
+        if allow_api_login is None:
+            allow_api_login = os.getenv("COOLBET_ALLOW_API_LOGIN", "").lower() in (
+                "true", "1", "yes",
+            )
+        self._allow_api_login = allow_api_login
         self._email = os.getenv("COOLBET_USER", os.getenv("COOLBET_EMAIL", ""))
         self._password = os.getenv("COOLBET_PASS", os.getenv("COOLBET_PASSWORD", ""))
         # Individual cookie vars (preferred — easier to update when one expires)
@@ -574,20 +591,45 @@ class CoolbetSession:
         return self.jwt_seconds_remaining
 
     def _login(self) -> None:
-        # Manual-JWT path is preferred when the env-pasted token is still
-        # valid. If it's expired AND we have API credentials, fall through
-        # to API login instead of raising — that's the self-heal behaviour
-        # the operator wants (2026-06-11). The old "raise on expired manual
-        # JWT" was a safety hatch from the era when API login was unreliable.
+        # Manual-JWT path is preferred when the env-pasted/DB-stored token
+        # is still valid. If expired, we ONLY fall through to API login
+        # when explicitly allowed (allow_api_login=True or
+        # COOLBET_ALLOW_API_LOGIN env set). Default is to refuse, because
+        # /s/auth/login triggers SMS 2FA on every untrusted call — see
+        # COOLBET-NO-AUTO-LOGIN above.
         if self._manual_jwt:
             try:
                 self._adopt_manual_jwt()
                 return
             except RuntimeError as e:
-                if "expired" in str(e).lower() and self._email and self._password:
-                    log.info("Manual JWT expired — falling through to API login")
-                else:
+                if "expired" not in str(e).lower():
                     raise
+                if not self._allow_api_login:
+                    _state().mark_error(
+                        "JWT expired and api_login disabled — run enrollment locally to mint a fresh JWT"
+                    )
+                    raise RuntimeError(
+                        "Coolbet JWT in DB/env is expired AND api_login is "
+                        "disabled to prevent SMS-2FA spam. Run locally: "
+                        "`python3 scripts/coolbet/flaresolverr_login_enroll.py start` "
+                        "(then `verify <CODE>` after the SMS arrives). The fresh JWT "
+                        "will land in coolbet_session_state.jwt_current and every "
+                        "process inherits it on the next CoolbetSession() construction."
+                    )
+                if not (self._email and self._password):
+                    raise
+                log.warning("Manual JWT expired AND allow_api_login=True — calling /s/auth/login (may trigger SMS)")
+
+        if not self._allow_api_login:
+            _state().mark_error(
+                "No JWT and api_login disabled — run enrollment locally"
+            )
+            raise RuntimeError(
+                "No Coolbet JWT available (DB jwt_current is NULL, env "
+                "COOLBET_MANUAL_JWT empty) AND api_login is disabled to "
+                "prevent SMS-2FA spam. Run locally: "
+                "`python3 scripts/coolbet/flaresolverr_login_enroll.py start`."
+            )
 
         log.info("Refreshing Coolbet JWT via /s/auth/login (plain-requests + FS cookies)...")
         if not self._cookies_fresh:

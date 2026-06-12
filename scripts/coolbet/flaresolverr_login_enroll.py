@@ -172,6 +172,10 @@ def login_xhr(cookies: dict, ua: str, body: dict) -> requests.Response:
 
 def cmd_start() -> int:
     print("=== Coolbet 2FA enrollment — STEP 1 (trigger SMS) ===")
+    # COOLBET-NO-AUTO-LOGIN (2026-06-12): this script is the ONLY context
+    # allowed to call /s/auth/login. It's a deliberate, operator-initiated
+    # action — opposite of an unattended cron retrying it every 5 min.
+    os.environ["COOLBET_ALLOW_API_LOGIN"] = "true"
     if not (FLARESOLVERR_URL and COOLBET_USER and COOLBET_PASS):
         print("✗ missing env: need FLARESOLVERR_URL, COOLBET_USER, COOLBET_PASS")
         return 2

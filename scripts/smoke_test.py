@@ -3458,6 +3458,56 @@ def test_coolbet_jwt_db_backed():
     )
 
 
+@test("COOLBET-NO-AUTO-LOGIN — heartbeat/placement/scanner refuse /s/auth/login by default")
+def test_coolbet_no_auto_login():
+    """COOLBET-NO-AUTO-LOGIN (2026-06-12): on 2026-06-11 evening the
+    heartbeat cron triggered 100+ SMS 2FA messages overnight. Root cause:
+    JWT expired, every 5-min heartbeat called _ensure_auth → _login →
+    /s/auth/login. Coolbet sent SMS each time because Railway IP wasn't
+    device-trusted. Account lockout risk.
+
+    The fix: CoolbetSession() refuses API login by default. Only the
+    enrollment script (deliberately operator-initiated) sets
+    allow_api_login=True. All other contexts — heartbeat, placement,
+    scanner — read DB JWT and fail fast if expired, surfacing "re-enroll"
+    in /status instead of bombing the operator with SMS.
+
+    Pin the default + the bypass so a future refactor can't remove the
+    guard."""
+    import pathlib, inspect, ast
+    from workers.automation.coolbet_session import CoolbetSession
+
+    sig = inspect.signature(CoolbetSession.__init__)
+    assert "allow_api_login" in sig.parameters, (
+        "CoolbetSession.__init__ must take allow_api_login parameter — the "
+        "guard that prevents SMS spam from unattended JWT-expiry retries."
+    )
+    default = sig.parameters["allow_api_login"].default
+    assert default is None, (
+        f"allow_api_login default must be None (so env-var override kicks in); got {default!r}"
+    )
+
+    src = pathlib.Path("workers/automation/coolbet_session.py").read_text()
+    # _login refuses to fall through unless explicitly opted in.
+    login_block = src[src.index("def _login("):src.index("def _ensure_auth(")]
+    assert "self._allow_api_login" in login_block, (
+        "_login must gate on self._allow_api_login — both the expired-JWT "
+        "fall-through AND the no-JWT path."
+    )
+    assert "SMS-2FA spam" in login_block, (
+        "_login must surface the WHY in its RuntimeError so future debug "
+        "doesn't reintroduce the loop (the comment is part of the contract)."
+    )
+
+    # Enrollment script opts in (it's the only context that should).
+    enroll_src = pathlib.Path("scripts/coolbet/flaresolverr_login_enroll.py").read_text()
+    assert 'COOLBET_ALLOW_API_LOGIN' in enroll_src and 'true' in enroll_src.split('COOLBET_ALLOW_API_LOGIN')[1][:100], (
+        "Enrollment script must set COOLBET_ALLOW_API_LOGIN=true so it can "
+        "actually call /s/auth/login. Without this opt-in the script itself "
+        "would be blocked by its own guard."
+    )
+
+
 @test("COOLBET-PLACER-FLARESOLVERR-WIRE — login script syncs Imperva cookies to .env so the placer can use them")
 def test_coolbet_placer_flaresolverr_wire():
     """COOLBET-PLACER-FLARESOLVERR-WIRE (2026-06-10): the FlareSolverr-based
