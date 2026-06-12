@@ -72,6 +72,7 @@ def _load_open_matches() -> list[dict]:
                fair_odds_map1, fair_odds_map2, threshold_map1, threshold_map2,
                bookie_odds1, bookie_odds2,
                coolbet_odds1, coolbet_odds2,
+               coolbet_odds_map1, coolbet_odds_map2,
                pinnacle_odds1, pinnacle_odds2,
                roster_change1, roster_change2,
                'elo+pq_v1' AS source
@@ -94,6 +95,7 @@ def _load_open_matches() -> list[dict]:
                NULL AS threshold_map1, NULL AS threshold_map2,
                u.bookie_odds1, u.bookie_odds2,
                u.coolbet_odds1, u.coolbet_odds2,
+               u.coolbet_odds_map1, u.coolbet_odds_map2,
                u.pinnacle_odds1, u.pinnacle_odds2,
                u.roster_change1, u.roster_change2,
                COALESCE(h.source, 'hltv_v1') AS source
@@ -166,13 +168,26 @@ def kelly_stake(side_prob: float | None, bookie_odds: float) -> float:
     return min(KELLY_CAP, round(BASE_STAKE * KELLY_FRACTION * full, 4))
 
 
-def _eligible_books(row: dict, sidekey: str) -> list[tuple[str, float]]:
-    """Bookies actually quoting odds for one side. (bookie_name, decimal_odds)."""
-    candidates = [
-        ("bo3gg",    row[f"bookie_odds{sidekey}"]),
-        ("coolbet",  row[f"coolbet_odds{sidekey}"]),
-        ("pinnacle", row[f"pinnacle_odds{sidekey}"]),
-    ]
+def _eligible_books(row: dict, sidekey: str, market: str = "match_winner") -> list[tuple[str, float]]:
+    """Bookies actually quoting odds for one side. (bookie_name, decimal_odds).
+
+    market='match_winner' (default) → returns the head-to-head odds from
+    bo3gg/coolbet/pinnacle.
+
+    market='atleast1map' → returns ≥1-map odds. Today only Coolbet
+    populates this (cs2_coolbet_scanner mig 250); other bookies' ≥1-map
+    columns don't exist yet. Empty list = no bookie priced this market
+    → bot can't compute edge → skips the side."""
+    if market == "atleast1map":
+        candidates = [
+            ("coolbet", row.get(f"coolbet_odds_map{sidekey}")),
+        ]
+    else:
+        candidates = [
+            ("bo3gg",    row[f"bookie_odds{sidekey}"]),
+            ("coolbet",  row[f"coolbet_odds{sidekey}"]),
+            ("pinnacle", row[f"pinnacle_odds{sidekey}"]),
+        ]
     return [(b, float(o)) for b, o in candidates if o is not None and float(o) > 1.0]
 
 
@@ -281,13 +296,16 @@ def _scan_one(row: dict) -> list[dict]:
         if pick:
             picks.append(pick)
 
-    # atleast1map (BO3/5 only) — same shape.
+    # atleast1map (BO3/5 only) — same shape. Use the per-market odds
+    # column (coolbet_odds_map*) instead of match-winner odds — otherwise
+    # the bot evaluates a Match Result price as if it were a Map Handicap
+    # price, which is a category error.
     if best_of >= 3:
         for side, team_name, fair, thr, sidekey in [
             ("team1", row["team1"], row["fair_odds_map1"], row["threshold_map1"], "1"),
             ("team2", row["team2"], row["fair_odds_map2"], row["threshold_map2"], "2"),
         ]:
-            prices = _eligible_books(row, sidekey)
+            prices = _eligible_books(row, sidekey, market="atleast1map")
             # No model prob for ≥1map → anomaly guard is a no-op
             pick = _consider_side(source=source, side=side, team_name=team_name,
                                   prices=prices, fair=fair, thr=thr, prob=None,

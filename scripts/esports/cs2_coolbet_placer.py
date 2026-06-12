@@ -50,6 +50,7 @@ def load_unplaced_picks() -> list[dict]:
             sb.stake_eur,
             sb.kickoff_time,
             um.coolbet_odds1, um.coolbet_odds2,
+            um.coolbet_odds_map1, um.coolbet_odds_map2,
             um.pinnacle_odds1, um.pinnacle_odds2
         FROM cs2_simulated_bets sb
         LEFT JOIN cs2_upcoming_matches um ON um.bo3gg_id = sb.bo3gg_id
@@ -66,21 +67,32 @@ def load_unplaced_picks() -> list[dict]:
 
 def coolbet_odds_for_pick(row: dict) -> tuple[float | None, str]:
     """Map (market, pick) → Coolbet odds. Returns (odds, selection) or (None, reason).
-    CS2 only has the match-winner market today (no AH / OU). cs2_simulated_bets
-    labels it 'match_winner'."""
-    if row["market"] != "match_winner":
-        return None, f"unsupported_market:{row['market']}"
+
+    Supports two markets today:
+      - 'match_winner': head-to-head winner. Uses coolbet_odds1/2.
+      - 'atleast1map':  wins ≥1 map (BO3+). Uses coolbet_odds_map1/2
+                        populated by cs2_coolbet_scanner via the
+                        Match Handicap +1.5 outcome (mig 250).
+    """
+    market = row["market"]
     pick = (row["pick"] or "").strip()
-    # pick is the team NAME, not 'team1'/'team2'. Match by team name.
     if pick == row["team1"]:
-        odds, sel = row["coolbet_odds1"], "team1"
+        sidekey = "1"
     elif pick == row["team2"]:
-        odds, sel = row["coolbet_odds2"], "team2"
+        sidekey = "2"
     else:
         return None, f"pick_mismatch:{pick}_vs_{row['team1']}_or_{row['team2']}"
+
+    if market == "match_winner":
+        odds = row.get(f"coolbet_odds{sidekey}")
+    elif market == "atleast1map":
+        odds = row.get(f"coolbet_odds_map{sidekey}")
+    else:
+        return None, f"unsupported_market:{market}"
+
     if odds is None:
         return None, "no_coolbet_odds"
-    return float(odds), sel
+    return float(odds), f"team{sidekey}"
 
 
 def insert_real_bet(row: dict, coolbet_odds: float, selection: str,
