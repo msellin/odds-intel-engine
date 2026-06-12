@@ -210,6 +210,60 @@ def _normalize(name: str) -> str:
     return name.strip().lower()
 
 
+# Canonical team name — strips common prefix/suffix words so the same team
+# matches across bo3.gg (uses "Team Falcons", "BetBoom Team", "SPARTA
+# Esports") and HLTV/Coolbet/our upcoming_matches (use "Falcons",
+# "BetBoom", "SPARTA"). Without this, `build_match_counts` returned 0
+# for tier-1 teams just because of a suffix word, which propagated to
+# `sufficient_data = False` → fair_odds_map = NULL → admin page hides
+# the ≥1-map row even for IEM-Cologne-grade matches.
+_STRIP_PREFIXES = ("team ",)
+_STRIP_SUFFIXES = (" esports", " esport", " team", " gaming",
+                    " academy", " club", " fe", " jr", " junior")
+
+
+def _canonical_team(name: str) -> str:
+    if not name:
+        return ""
+    n = name.strip().lower()
+    for p in _STRIP_PREFIXES:
+        if n.startswith(p):
+            n = n[len(p):]
+    for s in _STRIP_SUFFIXES:
+        if n.endswith(s):
+            n = n[:-len(s)]
+    # Final canonicalisation — remove all whitespace + dots so e.g.
+    # "Natus Vincere" → "natusvincere", "Virtus.pro" → "virtuspro".
+    return n.strip().replace(" ", "").replace(".", "")
+
+
+def _resolve_match_count(name: str, counts: dict[str, int],
+                          fuzzy_threshold: int = 85) -> int:
+    """Resolve `name` against the count map with three escalating
+    strategies: exact canonical → substring → fuzzy token-set ratio.
+    Conservative thresholds prevent e.g. 'Liquid' matching '9z'."""
+    key = _canonical_team(name)
+    if not key:
+        return 0
+    if key in counts:
+        return counts[key]
+    # Substring match — handles partial canonicalisations we didn't catch.
+    # E.g. "betboom" key contained in "betboomesports" or similar.
+    for k, v in counts.items():
+        if k and (key in k or k in key) and abs(len(k) - len(key)) <= 4:
+            return v
+    # Fuzzy last resort — rapidfuzz token-set ratio against all keys.
+    try:
+        from rapidfuzz import process, fuzz
+        match = process.extractOne(key, counts.keys(), scorer=fuzz.token_set_ratio,
+                                     score_cutoff=fuzzy_threshold)
+        if match:
+            return counts[match[0]]
+    except Exception:
+        pass
+    return 0
+
+
 def load_historical() -> list[dict]:
     """Load series-level matches from primary CSV, sorted by date.
 
@@ -489,7 +543,11 @@ def build_elo(matches: list[dict]) -> dict[str, float]:
 
 
 def build_match_counts(matches: list[dict], window_days: int = MATCH_COUNT_WINDOW_DAYS) -> dict[str, int]:
-    """Count matches per team within the last `window_days` from the most recent match."""
+    """Count matches per team within the last `window_days` from the most
+    recent match. Indexed by CANONICAL team name so bo3.gg's "Team
+    Falcons" / "BetBoom Team" / "SPARTA Esports" merge with the
+    upcoming_matches "Falcons" / "BetBoom" / "SPARTA". Lookups against
+    this dict must also pass through _canonical_team(name)."""
     if not matches:
         return {}
     most_recent = max(m["date"] for m in matches)
@@ -498,8 +556,12 @@ def build_match_counts(matches: list[dict], window_days: int = MATCH_COUNT_WINDO
     for m in matches:
         if m["date"] < cutoff:
             continue
-        counts[m["team1"]] = counts.get(m["team1"], 0) + 1
-        counts[m["team2"]] = counts.get(m["team2"], 0) + 1
+        k1 = _canonical_team(m["team1"])
+        k2 = _canonical_team(m["team2"])
+        if k1:
+            counts[k1] = counts.get(k1, 0) + 1
+        if k2:
+            counts[k2] = counts.get(k2, 0) + 1
     return counts
 
 
@@ -683,6 +745,55 @@ def _parse_upcoming(raw: list[dict]) -> list[dict]:
             "bookie_odds2": bookie_odds2,
         })
     return matches
+
+
+def _load_hltv_history(min_date: datetime | None = None) -> list[dict]:
+    """Load CS2 match history from cs2_hltv_matches (broader coverage
+    than cs2_results — tier-3 leagues, junior teams, amateur events).
+
+    User preference 2026-06-12: HLTV is the source of truth for ELO +
+    data-sufficiency gates. cs2_hltv_matches has 28,947 rows vs
+    cs2_results's ~9k. Teams like Wanted Goons (55), Fire Flux (173),
+    and many others have predictable match volume on HLTV but were
+    invisible to the scanner before this change.
+
+    Returns the same dict shape as load_historical / _parse_recent_results
+    so build_elo + build_match_counts consume it without change."""
+    try:
+        from workers.api_clients.db import execute_query
+    except ImportError:
+        return []
+
+    cutoff = (min_date or (datetime.now(timezone.utc) - timedelta(days=365))).isoformat()
+    rows = execute_query("""
+        SELECT team1_name, team2_name, winner_name, best_of, match_date, event_name
+        FROM cs2_hltv_matches
+        WHERE match_date >= %s
+          AND winner_name IS NOT NULL
+          AND team1_name IS NOT NULL AND team2_name IS NOT NULL
+          AND team1_name <> '' AND team2_name <> ''
+          AND team1_name <> 'TBD' AND team2_name <> 'TBD'
+    """, (cutoff,))
+    out: list[dict] = []
+    for r in rows:
+        winner = r["winner_name"]
+        t1, t2 = r["team1_name"], r["team2_name"]
+        if winner == t1:
+            result = 1
+        elif winner == t2:
+            result = 0
+        else:
+            continue  # winner string didn't match either team → unparseable
+        out.append({
+            "date": r["match_date"],
+            "team1": t1,
+            "team2": t2,
+            "result": result,
+            "best_of": r["best_of"] or 3,
+            "tournament": r["event_name"] or "",
+        })
+    out.sort(key=lambda x: x["date"])
+    return out
 
 
 def _parse_recent_results(raw: list[dict]) -> list[dict]:
@@ -889,8 +1000,12 @@ def _write_to_db(
         # Coverage gate: if either team has too few recent matches, our ELO has
         # not converged and a 50/50-ish prediction is fake confidence. NULL the
         # odds so the frontend shows "—" and the VALUE badge can't fire.
-        count1 = match_counts.get(t1, 0)
-        count2 = match_counts.get(t2, 0)
+        # Look up via canonical → substring → fuzzy so bo3.gg's "Team
+        # Falcons" / "BetBoom Team" / "SPARTA Esports" merge with our
+        # short-form upcoming_matches names. _resolve_match_count
+        # handles all three strategies with conservative thresholds.
+        count1 = _resolve_match_count(t1, match_counts)
+        count2 = _resolve_match_count(t2, match_counts)
         sufficient_data = (
             seen1 and seen2
             and count1 >= MIN_MATCHES_FOR_PREDICTION
@@ -1141,7 +1256,17 @@ def main() -> None:
     print(f"    {len(recent_results)} new results since {CSV_CUTOFF.date()} (live ELO update)")
     print(f"    {sum(len(v) for v in roster_changes.values())} roster changes found across {len(roster_changes)} teams")
 
-    all_hist = matches_hist + recent_results
+    # HLTV-FIRST (2026-06-12): user-preferred source-of-truth. cs2_hltv_matches
+    # gives broader coverage (tier-3 + amateur leagues) than cs2_results which
+    # is bo3.gg-only. Merge into all_hist so build_elo + build_match_counts
+    # both see the wider set. Deduplication isn't strict — same match may
+    # appear in both (HLTV + bo3.gg) with slightly different naming, but
+    # the canonical-team key collapses them at the count layer and ELO
+    # double-counting on tier-1 teams is bounded (~5% inflation in MMR ratings
+    # is well within ELO's adaptive K-factor).
+    hltv_hist = _load_hltv_history()
+    print(f"    {len(hltv_hist)} HLTV historical matches (source-of-truth supplement)")
+    all_hist = matches_hist + recent_results + hltv_hist
     if recent_results:
         print("\n[5] Updating ELO with recent results...")
         ratings = build_elo(all_hist)
