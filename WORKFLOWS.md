@@ -23,8 +23,9 @@
        ④ Predictions     run_predictions()         AF predictions (coverage-aware)
        ⑤ Betting         run_betting()             Poisson/XGBoost model + signals + bet placement; sends Telegram DMs to connected Pro/Elite users on each new value bet
        (morning pipeline — chained sequentially, completes by ~06:30)
-07-22  ③ Odds            run_odds()                Every 30min (:00 and :30) — AF bulk odds, 13 bookmakers
+24/7   ③ Odds            run_odds()                Every 30min (:00 and :30) — AF bulk odds, 13 bookmakers
                                                     + mark_closing runs at 13:30, 17:30, 20:00 (pre-KO windows)
+                                                    (WC-OVERNIGHT-COVERAGE 2026-06-12 — was 07-22, expanded to cover overnight WC kickoffs)
 07:15  ⑩ Match Previews  run_match_previews()      Top 10 matches → Gemini 200-word previews (ENG-3)
 07:30  ⑲ WC AI Previews  run_wc_match_previews()   Every WC fixture in next 7d → Gemini 80-120 word previews. Gated to WC window (2026-06-04 → 2026-07-19); no-op outside. Idempotent (<24h-old previews skip Gemini call). Reuses `match_previews` table — distinct match_ids so no clash with club preview job. (WC-AI-PREVIEW)
 10/12/14/16  ⑪ Email Digest Slots  run_email_digest()  Smart-slot digest — first slot whose pending-bet signal score ≥ EMAIL_DIGEST_MIN_SIGNAL sends; later slots see per-user lock and skip (ENG-4 / EMAIL-DIGEST-SMART)
@@ -34,7 +35,7 @@
 09:00  ⑦ News Checker    run_news_checker()        Injury/lineup/news signals (Gemini)
 09:15  ① Fixtures        run_fixtures()            Status refresh — catches morning postponements
 :03/:33 ⑱ Coolbet Odds    job_coolbet_odds_snapshot() Every 30 min, between AF odds (:00/:30) and betting refresh (:05/:35). Walks Coolbet fo-category + per-match sidebets, stores Coolbet OU/1X2/BTTS/AH/DC odds in odds_snapshots so the same cycle's edge math sees fresh prices on our actual placement venue. Lays the data foundation for the planned COOLBET-OR-PIN-REQUIRED quality gate (replaces Pinnacle-only OU veto). Error-isolated.
-:05/:35 ⑨ Betting Refresh betting_refresh()         Every 30 min, 5 min after odds refresh (07:05–22:35 UTC). DB-only, 0 AF calls. Dedup prevents duplicates. Cohort auto-detected from UTC hour.
+:05/:35 ⑨ Betting Refresh betting_refresh()         Every 30 min, 5 min after odds refresh, 24/7 (WC-OVERNIGHT-COVERAGE 2026-06-12 — was 07:05–22:35 UTC). DB-only, 0 AF calls. Dedup prevents duplicates. Cohort auto-detected from UTC hour.
 :05/:35 ⑰ Shadow Run     job_shadow_run_interval() Every 30 min, concurrent with betting refresh. ALL bots evaluated → shadow_bets. Cohort = 'HHMM' UTC string. 32 snapshots/day.
 08:00  ② Enrichment      run_enrichment()          Injuries only — single morning fetch (AF-INJURIES-LATE 2026-06-01)
 10:45  ① Fixtures        run_fixtures()            Status refresh — catches morning postponements
@@ -86,7 +87,7 @@ Daily 06:30 ㉞ WC odds   job_wc_odds_sweep()             ODDS-API-WC-DAILY-CRON
 
 ### ⑰ Shadow Runs (`daily_pipeline_v2.run_morning(shadow_mode=True)`)
 
-BET-TIMING-MONITOR — 32 runs/day at :05/:35 past each hour 07–22 UTC. Each invokes
+BET-TIMING-MONITOR — 32 runs/day at :05/:35 past each hour 07–22 UTC (shadow runs remain windowed, only the live betting + odds refresh expanded to 24/7). Each invokes
 `run_morning(skip_fetch=True, shadow_mode=True, shadow_cohort=<HHMM>)` which:
 
 - Runs ALL bots regardless of their `BOT_TIMING_COHORTS` assignment

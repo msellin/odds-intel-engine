@@ -2202,9 +2202,14 @@ def main():
     scheduler.add_job(job_morning, CronTrigger(hour=4, minute=0),
                       id="morning_pipeline", name="Morning Pipeline")
 
-    # Odds refresh: every 30min during 07-22 UTC
-    # 20:00 replaced by pre-KO mark_closing run (marks closing odds for evening KOs)
-    for hour in range(7, 23):
+    # Odds refresh: every 30min, 24/7 (WC-OVERNIGHT-COVERAGE 2026-06-12).
+    # Previously windowed 07-22 UTC, which left a 9-hour dead zone covering
+    # overnight WC kickoffs (e.g. Korea-Czech 02:00 UTC on 2026-06-12 — odds
+    # last refreshed at 22:30 the prior day, betting refresh never ran on
+    # near-KO odds). Now runs hourly through the night so the betting refresh
+    # (also expanded to 24/7 below) has fresh odds for any near-KO match.
+    # 20:00 still replaced by pre-KO mark_closing run (marks closing odds).
+    for hour in range(0, 24):
         for minute in [0, 30]:
             if hour == 20 and minute == 0:
                 continue  # 20:00 is handled by pre-KO mark_closing below
@@ -2250,12 +2255,15 @@ def main():
     scheduler.add_job(job_standings_nightly, CronTrigger(hour=23, minute=30),
                       id="standings_nightly", name="Standings Nightly 23:30")
 
-    # Betting refresh: every 30 min, 5 min after each odds refresh (07:05–22:35 UTC).
-    # run_betting() is DB-only (skip_fetch=True), zero AF calls. Hard dedup on
-    # (bot_id, match_id, market, selection) means no duplicate bets ever written.
-    # New bets only appear when fresh odds create a new edge or a new match is priced.
-    # Cohort (morning/midday/pre_ko) is auto-detected from UTC hour by _current_cohort().
-    scheduler.add_job(job_betting_refresh_wrapper, CronTrigger(hour="7-22", minute="5,35"),
+    # Betting refresh: every 30 min, 5 min after each odds refresh, 24/7
+    # (WC-OVERNIGHT-COVERAGE 2026-06-12 — was windowed 07:05–22:35 UTC, which
+    # missed overnight WC kickoffs entirely). run_betting() is DB-only
+    # (skip_fetch=True), zero AF calls. Hard dedup on (bot_id, match_id,
+    # market, selection) means no duplicate bets ever written. New bets only
+    # appear when fresh odds create a new edge or a new match is priced.
+    # Cohort (morning/midday/pre_ko) is auto-detected from UTC hour by
+    # _current_cohort(); overnight runs land in whichever cohort the hour maps to.
+    scheduler.add_job(job_betting_refresh_wrapper, CronTrigger(hour="*", minute="5,35"),
                       id="betting_refresh_interval", name="Betting Refresh [30min]")
 
     # BET-TIMING-MONITOR: shadow runs every 30 min, 5 min after each odds refresh.

@@ -22649,5 +22649,39 @@ def _():
     assert "PROMOTE" in src
 
 
+@test("WC-OVERNIGHT-COVERAGE — odds_refresh + betting_refresh run 24/7")
+def _():
+    """WC-OVERNIGHT-COVERAGE (2026-06-12): the original schedule windowed
+    both job_odds_refresh and job_betting_refresh_wrapper to 07-22 UTC,
+    leaving a 9-hour dead zone covering overnight WC kickoffs (e.g.
+    Korea-Czech 02:00 UTC on 2026-06-12 — predictions + odds were in
+    the DB but no betting refresh ran on near-KO odds, so zero bots fired).
+
+    Fix: both crons now run 24/7. The 20:00 odds_refresh slot is still
+    skipped because pre-KO mark_closing handles it.
+    """
+    import pathlib
+    src = pathlib.Path("workers/scheduler.py").read_text()
+
+    # Odds refresh loop now covers all 24 hours
+    assert "for hour in range(0, 24):" in src, (
+        "job_odds_refresh loop must iterate range(0, 24) — overnight slots "
+        "are required for the 24/7 betting refresh to evaluate fresh odds"
+    )
+
+    # Betting refresh is 24/7
+    assert 'CronTrigger(hour="*", minute="5,35")' in src and \
+           'id="betting_refresh_interval"' in src, (
+        "betting_refresh_interval must run hour=* (24/7) — was hour='7-22' "
+        "which missed overnight WC kickoffs entirely"
+    )
+
+    # 20:00 carve-out for pre-KO mark_closing preserved
+    assert "if hour == 20 and minute == 0:" in src and \
+           "continue  # 20:00 is handled by pre-KO mark_closing below" in src, (
+        "20:00 odds_refresh skip (pre-KO mark_closing) must be preserved"
+    )
+
+
 if __name__ == "__main__":
     main()
