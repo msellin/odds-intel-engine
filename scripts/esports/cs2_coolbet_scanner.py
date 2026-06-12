@@ -127,6 +127,36 @@ def find_match_winner_market(markets: list[dict]) -> dict | None:
     return None
 
 
+def find_atleast1map_markets(markets: list[dict]) -> list[dict]:
+    """Return the "Match Handicap" markets that price the "wins ≥1 map"
+    market for BO3 matches.
+
+    Coolbet's structure (verified 2026-06-12 on LCK 2026 / Hanwha vs T1):
+      market_type_id=12735  name='Match Handicap'  line='0 - 1.5'
+        outcome[0] (HOME): -1.5 maps (must win 2-0)
+        outcome[1] (AWAY): +1.5 maps (= wins ≥1 map)
+
+    For BO3 the +1.5 line is equivalent to "this team wins at least 1
+    map" because losing by 1.5+ in BO3 means 0-2.
+
+    Coolbet often offers only ONE direction (favorite at -1.5). For the
+    other side's ≥1 map odds we'd need line '1.5 - 0' — included when
+    available. Returns a list (possibly with one or two entries)."""
+    out: list[dict] = []
+    for m in markets:
+        name = (m.get("name") or "").lower()
+        line = str(m.get("line") or "")
+        if "match handicap" not in name:
+            continue
+        if len(m.get("outcomes") or []) != 2:
+            continue
+        # Line must reference 1.5 maps (the BO3 ≥1 map equivalent)
+        if "1.5" not in line:
+            continue
+        out.append(m)
+    return out
+
+
 def fetch_odds_batch(session: CoolbetSession, market_ids: list[int]) -> dict[int, dict[int, float]]:
     result: dict[int, dict[int, float]] = {}
     for i in range(0, len(market_ids), ODDS_BATCH_SIZE):
@@ -228,19 +258,61 @@ def main() -> None:
         time.sleep(0.3)
     print(f"  {len(all_matches)} matches across Coolbet CS2 leagues")
 
-    # Collect market_winner market IDs
+    # Collect market_winner + atleast-1-map market IDs (both go in one
+    # odds-fetch batch so we save round-trips). Each match contributes
+    # one match-winner market and 0-2 map-handicap markets.
     market_to_match = {}
+    atleast1map_market_to_match: dict[int, tuple] = {}
     for m in all_matches:
         mw = find_match_winner_market(m["markets"])
-        if not mw or not mw.get("id"):
-            continue
-        market_to_match[int(mw["id"])] = (m, mw)
-    print(f"  {len(market_to_match)} match-winner markets to price")
+        if mw and mw.get("id"):
+            market_to_match[int(mw["id"])] = (m, mw)
+        for ah in find_atleast1map_markets(m["markets"]):
+            if ah.get("id"):
+                atleast1map_market_to_match[int(ah["id"])] = (m, ah)
+    print(f"  {len(market_to_match)} match-winner + {len(atleast1map_market_to_match)} ≥1-map markets to price")
     if not market_to_match:
         return
 
-    odds_by_market = fetch_odds_batch(session, list(market_to_match.keys()))
+    all_market_ids = list(market_to_match.keys()) + list(atleast1map_market_to_match.keys())
+    odds_by_market = fetch_odds_batch(session, all_market_ids)
     matched, unmatched, written = 0, 0, 0
+
+    # Index atleast1map odds by the match (m) for easy lookup once we've
+    # resolved the match to a DB row in the main loop.
+    atleast1map_by_match_id: dict[int, list[dict]] = {}
+    for ah_mid, (m, ah_mkt) in atleast1map_market_to_match.items():
+        prices = odds_by_market.get(ah_mid, {})
+        outcomes = ah_mkt.get("outcomes") or []
+        if len(outcomes) != 2 or len(prices) < 2:
+            continue
+        o_home = outcomes[0].get("id"); o_away = outcomes[1].get("id")
+        odds_home = prices.get(o_home); odds_away = prices.get(o_away)
+        if not (odds_home and odds_away):
+            continue
+        # Parse the line to know which side is +1.5 (= wins ≥1 map).
+        # Coolbet's "Match Handicap" line is a string like '0 - 1.5':
+        # split on dash, the larger number is the +1.5 side.
+        line = str(ah_mkt.get("line") or "")
+        parts = [p.strip() for p in line.split("-")]
+        # Convert to floats; failures fall back to assuming home=-1.5/away=+1.5
+        try:
+            home_handicap = float(parts[0]) if len(parts) >= 1 else 0.0
+            away_handicap = float(parts[1]) if len(parts) >= 2 else 1.5
+        except (ValueError, IndexError):
+            home_handicap, away_handicap = 0.0, 1.5
+        # The +1.5 side's outcome odds = that team's "wins ≥1 map" odds.
+        if away_handicap > home_handicap:
+            home_atleast1 = None
+            away_atleast1 = odds_away
+        else:
+            home_atleast1 = odds_home
+            away_atleast1 = None
+        atleast1map_by_match_id.setdefault(int(m["id"] or 0), []).append({
+            "home_atleast1": home_atleast1,
+            "away_atleast1": away_atleast1,
+            "home": m["home"], "away": m["away"], "start": m["start"],
+        })
 
     for mid, (m, mw) in market_to_match.items():
         prices = odds_by_market.get(mid, {})
@@ -263,15 +335,35 @@ def main() -> None:
         odds1 = odds_away if swap else odds_home
         odds2 = odds_home if swap else odds_away
 
+        # Combine all atleast-1-map markets we found for THIS coolbet
+        # match (there may be 0, 1, or 2 — one for each handicap direction).
+        ah_entries = atleast1map_by_match_id.get(int(m.get("id") or 0), [])
+        atleast1_home = atleast1_away = None
+        for ah in ah_entries:
+            if ah["home_atleast1"] and not atleast1_home:
+                atleast1_home = ah["home_atleast1"]
+            if ah["away_atleast1"] and not atleast1_away:
+                atleast1_away = ah["away_atleast1"]
+        # Map to row's team1/team2 ordering (applying the same swap)
+        atleast1_team1 = atleast1_away if swap else atleast1_home
+        atleast1_team2 = atleast1_home if swap else atleast1_away
+
         tag = "✓ would write" if args.record else "  dry"
-        print(f"    {tag}  {row['team1']:25} vs {row['team2']:25}  {odds1:.2f}/{odds2:.2f}")
+        ah_part = ""
+        if atleast1_team1 or atleast1_team2:
+            ah_part = f"  ≥1map:{atleast1_team1 or '—'}/{atleast1_team2 or '—'}"
+        print(f"    {tag}  {row['team1']:25} vs {row['team2']:25}  {odds1:.2f}/{odds2:.2f}{ah_part}")
 
         if args.record:
             execute_write("""
                 UPDATE cs2_upcoming_matches
-                   SET coolbet_odds1 = %s, coolbet_odds2 = %s
+                   SET coolbet_odds1 = %s, coolbet_odds2 = %s,
+                       coolbet_odds_map1 = %s, coolbet_odds_map2 = %s
                  WHERE id = %s
-            """, (round(odds1, 3), round(odds2, 3), row["id"]))
+            """, (round(odds1, 3), round(odds2, 3),
+                  round(atleast1_team1, 3) if atleast1_team1 else None,
+                  round(atleast1_team2, 3) if atleast1_team2 else None,
+                  row["id"]))
             written += 1
 
     print(f"\n  matched: {matched}  unmatched: {unmatched}  written: {written}\n")
