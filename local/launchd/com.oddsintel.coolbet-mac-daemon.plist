@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  COOLBET-MAC-DAEMON (2026-06-12): launchd job for the placement daemon.
+
+  Install once:
+    cp local/launchd/com.oddsintel.coolbet-mac-daemon.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.oddsintel.coolbet-mac-daemon.plist
+
+  Manage:
+    launchctl list | grep oddsintel              # check it's loaded
+    launchctl kickstart -k gui/$(id -u)/com.oddsintel.coolbet-mac-daemon  # force restart
+    launchctl unload ~/Library/LaunchAgents/com.oddsintel.coolbet-mac-daemon.plist  # stop
+
+  Tail logs:
+    tail -f /Users/margussellin/www/odds-intel-engine/dev/active/coolbet-mac-daemon.log
+
+  IMPORTANT: paths are absolute and hard-coded for THIS Mac. If the repo
+  ever moves, edit WorkingDirectory + ProgramArguments + StandardOutPath.
+  This is a per-user LaunchAgent (not a global LaunchDaemon) so it only
+  runs when the operator is logged in — exactly what we want.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.oddsintel.coolbet-mac-daemon</string>
+
+    <!-- Run the daemon as `python -m workers.automation.coolbet_mac_daemon`
+         so module-resolution + .env loading mirror local manual runs. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/python3</string>
+        <string>-m</string>
+        <string>workers.automation.coolbet_mac_daemon</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/margussellin/www/odds-intel-engine</string>
+
+    <!-- Auto-start at login + auto-restart on crash. ThrottleInterval
+         prevents an unrecoverable bug from busy-looping (e.g. a config
+         error causing instant exit) — wait 30s between restart attempts. -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <!-- Inherit FLARESOLVERR_URL via .env (loaded by dotenv inside the
+         module). If you want to override, prepend EnvironmentVariables
+         here. The default expects the local FS at localhost:8191. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <!-- Override the .env value so we never accidentally hit the
+             Railway-hosted FS from the daemon (defeats the residential-IP
+             premise). Edit if you intentionally want to route via Railway. -->
+        <key>FLARESOLVERR_URL</key>
+        <string>http://localhost:8191</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/margussellin/www/odds-intel-engine/dev/active/coolbet-mac-daemon.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/margussellin/www/odds-intel-engine/dev/active/coolbet-mac-daemon.log</string>
+</dict>
+</plist>

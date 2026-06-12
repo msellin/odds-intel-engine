@@ -1,0 +1,52 @@
+# COOLBET-MAC-DAEMON (2026-06-12): local FlareSolverr for the Mac-side
+# Coolbet placer. Replaces the Railway-hosted FS for the placement path —
+# Railway FS keeps running for HLTV scraping etc. but Coolbet now flows
+# through this local instance from a residential IP.
+#
+# Why local: Railway's FS had Chrome tabs crash under memory pressure
+# (cf. coolbet_prod tab crash 2026-06-12 morning), and tab crashes mean
+# losing the device-trust marker → another SMS round. A local container
+# with a persistent profile volume keeps the Chrome user-data dir on disk
+# so a tab crash + container restart keeps every cookie + trust marker.
+#
+# Run:
+#   cd local/flaresolverr && docker compose up -d
+# Verify:
+#   curl http://localhost:8191/
+# Stop:
+#   docker compose down       (keeps the profile volume — trust survives)
+#   docker compose down -v    (NUKES the profile volume — only use to reset)
+
+services:
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: oi_local_flaresolverr
+    ports:
+      - "8191:8191"
+    environment:
+      # 60s default timeout matches our coolbet_session.py
+      BROWSER_TIMEOUT: "60000"
+      # Keep verbose logging — easier to spot tab crashes early
+      LOG_LEVEL: "info"
+      LOG_HTML: "false"
+      CAPTCHA_SOLVER: "none"
+      TZ: "Europe/Tallinn"
+    volumes:
+      # Persist Chrome's user-data directory across container restarts.
+      # Without this, every `docker compose down` would lose the device
+      # trust cookie + Imperva markers and force another SMS round.
+      - flaresolverr_profile:/app/profiles
+    restart: unless-stopped
+    # Memory cap so a Chrome leak doesn't take down the Mac. 1GB is
+    # plenty for one session juggling 2-3 Coolbet pages.
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8191/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  flaresolverr_profile:
+    name: oi_local_flaresolverr_profile

@@ -3458,6 +3458,69 @@ def test_coolbet_jwt_db_backed():
     )
 
 
+@test("COOLBET-MAC-DAEMON — local Mac placement daemon + launchd + local FS")
+def test_coolbet_mac_daemon():
+    """COOLBET-MAC-DAEMON (2026-06-12): option B of the signaler/daemon
+    architecture. Mac at home runs the placement leg from a residential IP
+    so Imperva's cloud-IP block doesn't apply. Pin the deployable artifacts
+    so a future refactor can't quietly remove one half of the setup."""
+    import pathlib
+    # Daemon module exists with the right entrypoints.
+    daemon_src = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
+    for fn in ("_tick", "run_forever", "main"):
+        assert f"def {fn}(" in daemon_src, f"daemon must expose {fn}()"
+    # Daemon calls the existing placer (NOT a fork) — same edge gates,
+    # same idempotency guarantees as the Railway-side implementation
+    # we just shelved. Drift here is the failure mode this test prevents.
+    assert "from workers.automation.coolbet_placer import" in daemon_src, (
+        "daemon must call the existing coolbet_placer — no fork of placement logic."
+    )
+    assert "place_all_bets(record=True, execute=not dry_run)" in daemon_src, (
+        "daemon must call place_all_bets(record=True, execute=...) — record "
+        "always so real_bets gets a row, execute toggled by --dry-run flag only."
+    )
+    # SIGTERM handler — must not crash the daemon on launchd shutdown.
+    assert "signal.SIGTERM" in daemon_src and "signal.SIGINT" in daemon_src, (
+        "daemon must trap SIGTERM/SIGINT for graceful launchd shutdown."
+    )
+
+    # docker-compose for local FS exists with a persistent volume —
+    # without the volume, tab-crash + container-restart loses device trust.
+    fs_compose = pathlib.Path("local/flaresolverr/docker-compose.yml").read_text()
+    assert "flaresolverr_profile:/app/profiles" in fs_compose, (
+        "docker-compose must mount a persistent profile volume — without "
+        "it, every restart loses Chrome's device-trust cookie."
+    )
+    assert "restart: unless-stopped" in fs_compose, (
+        "FS container must auto-restart so a crash doesn't leave the "
+        "daemon talking to a dead endpoint."
+    )
+
+    # launchd plist exists and references the daemon module.
+    plist = pathlib.Path("local/launchd/com.oddsintel.coolbet-mac-daemon.plist").read_text()
+    assert "workers.automation.coolbet_mac_daemon" in plist, (
+        "launchd plist must invoke the daemon via -m workers.automation.coolbet_mac_daemon"
+    )
+    assert "<key>KeepAlive</key>" in plist and "<true/>" in plist, (
+        "launchd must KeepAlive — daemon auto-restart is the supervisor."
+    )
+    # Local FS URL override so daemon doesn't accidentally hit Railway FS
+    # (defeats the residential-IP premise).
+    assert "http://localhost:8191" in plist, (
+        "plist must pin FLARESOLVERR_URL=http://localhost:8191 — Railway FS "
+        "doesn't help us from the Mac; the whole point is using local."
+    )
+
+    # Setup README exists so the operator has a single source for the
+    # one-time install sequence.
+    readme = pathlib.Path("local/README.md")
+    assert readme.exists(), "local/README.md is the operator's setup guide"
+    rt = readme.read_text()
+    for step in ("docker compose up", "flaresolverr_login_enroll.py",
+                  "launchctl load", "--once --dry-run"):
+        assert step in rt, f"README must document step: {step!r}"
+
+
 @test("COOLBET-SIGNALER-A — Telegram bet-signaler replaces auto-placer (resilient to Imperva/FS)")
 def test_coolbet_signaler():
     """COOLBET-SIGNALER-A (2026-06-12): the auto-place chain (Imperva 403 from
