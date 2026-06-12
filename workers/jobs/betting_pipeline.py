@@ -57,103 +57,60 @@ def _current_cohort() -> str:
         return "pre_ko"
 
 
-def _run_coolbet_record() -> None:
-    """After the pipeline stores bets to simulated_bets, auto-run the Coolbet
-    placer. Defaults to --record (paper). Set COOLBET_AUTO_EXECUTE=true in env
-    to flip on real-money placement (first proven 2026-06-11 18:50 UTC with
-    Mexico vs South Africa — ticket 26061118-8cbc-45c0-a728-9a99fe9c0d35,
-    €2.64 stake, the chain works end-to-end). The placer's existing
-    _MIN_REMAINING_EDGE gate (live-edge ≥ 3% at placement price) is the
-    real safety here — combined with per-market edge floors set in code
-    (_MIN_EDGE_BY_MARKET).
+def _run_coolbet_signal() -> None:
+    """COOLBET-SIGNALER-A (2026-06-12): replaces the previous auto-placer
+    call. The auto-place chain (Imperva 403 from Railway IPs → FlareSolverr
+    Chrome tab → 30-min JWT → SMS-2FA on re-login) burned the operator with
+    100+ SMS overnight 2026-06-11 when the Chrome tab crashed. The signaler
+    bypasses ALL of that — pure DB read + Telegram send, no Coolbet API.
 
-    Edits each per-bet alert in place with the outcome (✓ recorded /
-    ✗ no_event / etc.) so the admin scrolling the chat sees status per
-    bet at a glance (ADMIN-TG-CLARITY 2026-05-29). Summary collapses to
-    a single counter line — silent when everything placed cleanly, loud
-    only on search_blocked."""
-    from workers.automation.coolbet_placer import place_all_bets
-    from workers.notify.telegram import send_telegram, edit_bet_alert_outcome
+    Operator gets a Telegram message per qualified pick with everything
+    needed to place manually from their phone (~15 sec per bet). A future
+    Mac-at-home daemon (option B) will consume the same qualified-bets
+    queue and place from a residential IP; the signal remains as a safety
+    net — even when auto-placement works, the operator still sees what
+    fired.
 
-    # Env-driven execute mode. Default false (record-only) until operator
-    # explicitly enables real-money placement on the Railway instance.
-    # When true, the Coolbet API receives the actual POST /s/bets/bets.
-    execute_mode = os.getenv("COOLBET_AUTO_EXECUTE", "false").lower() in ("true", "1", "yes")
-    mode_label = "EXECUTE" if execute_mode else "record"
+    What this is NOT: it does not write to real_bets. Placement (manual
+    or auto-via-Mac-daemon) is what creates the real_bets row. The signal
+    is purely an outbound notification with dedup via simulated_bets.signaled_at."""
+    from workers.automation.coolbet_signaler import signal_all_bets
+    from workers.notify.telegram import send_telegram
 
-    # Operator kill switch — DB flag faster than env-flip (no restart needed).
-    # Telegram /pause sets it; /resume clears. Skips the whole placement loop
-    # when paused — paper writes stop too so we don't pollute real_bets with
-    # rows the operator explicitly didn't want.
+    # Operator kill switch — same DB flag the old auto-placer respected.
+    # /pause sets it; /resume clears. When paused we skip signaling too,
+    # so the operator can fully silence Coolbet output during e.g. a
+    # personal break without env changes.
     try:
         from workers.automation.coolbet_state import is_placement_paused
         paused, reason = is_placement_paused()
     except Exception:
         paused, reason = (False, None)
     if paused:
-        console.print(f"[yellow]Coolbet auto-placer SKIPPED — operator paused (reason: {reason or 'no reason given'})[/yellow]")
+        console.print(f"[yellow]Coolbet signaler SKIPPED — operator paused (reason: {reason or 'no reason given'})[/yellow]")
         return
 
-    console.print(f"[bold cyan]Coolbet auto-placer ({mode_label} mode)[/bold cyan]")
+    console.print("[bold cyan]Coolbet signaler (Telegram-only, no API calls)[/bold cyan]")
 
     try:
-        # record=True always (so paper rows land in real_bets either way).
-        # execute=True is the real-money switch.
-        results = place_all_bets(record=True, execute=execute_mode)
+        results = signal_all_bets()
     except Exception as e:
-        send_telegram(f"⚠️ Coolbet --{mode_label.lower()} auto-run failed: {e}")
-        console.print(f"[red]Coolbet auto-placer ({mode_label}) failed: {e}[/red]")
+        send_telegram(f"⚠️ Coolbet signaler failed: {e}", dedup_key="signaler-error")
+        console.print(f"[red]Coolbet signaler failed: {e}[/red]")
         return
 
     if not results:
-        return  # nothing qualified — pipeline already sent "0 new value bets"
+        return  # nothing qualified — pipeline already sent its summary
 
-    placed    = [r for r in results if r["outcome"] == "placed"]
-    no_event  = [r for r in results if r["outcome"] == "no_event"]
-    no_market = [r for r in results if r["outcome"] == "no_market"]
-    blocked   = [r for r in results if r["outcome"] == "search_blocked"]
-    other     = [r for r in results if r["outcome"] not in ("placed", "no_event", "no_market", "search_blocked")]
-
-    # ADMIN-TG-CLARITY: edit each per-bet alert with its outcome. Done per
-    # result, not per (match,market,selection), so combos + singles both flow
-    # through naturally.
-    for r in results:
-        sim_id = str(r.get("simulated_bet_id") or "")
-        if not sim_id:
-            continue
-        outcome = r.get("outcome") or "error"
-        if outcome == "placed":
-            stake = float(r.get("stake") or 0)
-            odds = float(r.get("live_odds") or r.get("model_odds") or 0)
-            # Distinguish paper-trade from real-money in the Telegram status
-            # line so the operator can see at a glance which mode it was.
-            verb = "Placed" if execute_mode else "Auto-recorded"
-            status = f"✓ {verb} €{stake:.2f} @ {odds:.2f}"
-        elif outcome == "no_event":
-            status = "✗ no_event (Coolbet didn't list this match)"
-        elif outcome == "no_market":
-            reason = r.get("reason") or ""
-            status = f"✗ no_market{f' — {reason}' if reason else ''}"[:200]
-        elif outcome == "search_blocked":
-            status = "⚠️ search_blocked (Imperva — cookies?)"
-        elif outcome == "edge_eroded":
-            live_odds = float(r.get("live_odds") or 0)
-            status = f"✗ edge_eroded (live odds {live_odds:.2f})"
-        elif outcome == "guard_skip":
-            status = f"✗ guard_skip — {r.get('reason') or ''}"[:200]
-        elif outcome == "dry_run":
-            continue  # nothing to update in dry mode
-        else:
-            status = f"✗ {outcome}"
-        edit_bet_alert_outcome(sim_id, status)
-
-    # Compact admin summary — one line of counters. Silent unless something's blocked.
-    parts = [f"🤖 Coolbet: {len(placed)} placed"]
-    if no_event:  parts.append(f"{len(no_event)} no_event")
-    if no_market: parts.append(f"{len(no_market)} no_market")
-    if other:     parts.append(f"{len(other)} skipped")
-    if blocked:   parts.append(f"⚠️ {len(blocked)} search_blocked")
-    send_telegram(" · ".join(parts), silent=not blocked)
+    sent = [r for r in results if r["outcome"] == "signaled"]
+    skipped = [r for r in results if r["outcome"] == "skipped"]
+    # Silent summary unless something didn't get through. Per-bet signals
+    # already landed in the chat — no need to repeat the count loudly.
+    if skipped:
+        send_telegram(
+            f"🤖 Coolbet signals: {len(sent)} sent · {len(skipped)} skipped (dedup or no TG creds)",
+            silent=True,
+        )
 
 
 def run_betting(cohort: str | None = None):
@@ -184,7 +141,7 @@ def run_betting(cohort: str | None = None):
         log_pipeline_complete(run_id, metadata={"phase": 2, "skip_fetch": True, "cohort": active_cohort})
         console.print("\n[bold green]Betting pipeline complete.[/bold green]")
 
-        _run_coolbet_record()
+        _run_coolbet_signal()
 
     except Exception as e:
         import traceback

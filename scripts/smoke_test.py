@@ -3458,6 +3458,52 @@ def test_coolbet_jwt_db_backed():
     )
 
 
+@test("COOLBET-SIGNALER-A — Telegram bet-signaler replaces auto-placer (resilient to Imperva/FS)")
+def test_coolbet_signaler():
+    """COOLBET-SIGNALER-A (2026-06-12): the auto-place chain (Imperva 403 from
+    Railway IPs → FlareSolverr Chrome tab → 30-min JWT TTL → SMS-2FA on
+    re-login) was structurally fragile and spammed SMS overnight. Signal-only
+    mode is the safety net: pure DB read + Telegram send, zero Coolbet API.
+
+    Pin the contract so a future refactor can't quietly reintroduce the
+    auto-placer in the pipeline path."""
+    import pathlib
+    mig246 = pathlib.Path("supabase/migrations/246_simulated_bets_signaled_at.sql").read_text()
+    assert "ADD COLUMN IF NOT EXISTS signaled_at TIMESTAMPTZ" in mig246, (
+        "Mig 246 must add signaled_at TIMESTAMPTZ to simulated_bets — the "
+        "only thing preventing the signaler from spamming the same bet."
+    )
+    mig247 = pathlib.Path("supabase/migrations/247_matches_coolbet_match_id.sql").read_text()
+    assert "ADD COLUMN IF NOT EXISTS coolbet_match_id BIGINT" in mig247, (
+        "Mig 247 must add coolbet_match_id BIGINT to matches — cached "
+        "deep-link target so signals carry a direct match-page URL."
+    )
+    sig_src = pathlib.Path("workers/automation/coolbet_signaler.py").read_text()
+    for fn in ("load_signal_candidates", "_format_signal", "_mark_signaled",
+                "_resolve_coolbet_match_id", "signal_all_bets"):
+        assert f"def {fn}(" in sig_src, f"coolbet_signaler must expose {fn}()"
+    assert "from workers.automation.coolbet_placer import _min_edge_for, _MIN_EDGE" in sig_src, (
+        "signaler must reuse _min_edge_for + _MIN_EDGE from the placer so "
+        "per-market floors stay in lock-step."
+    )
+    mark_block = sig_src[sig_src.index("def _mark_signaled("):sig_src.index("def signal_all_bets(")]
+    assert "WHERE match_id" in mark_block and "AND market" in mark_block and "AND selection" in mark_block, (
+        "_mark_signaled must mark ALL rows for (match,market,selection), not "
+        "just the canonical row — else sibling bot picks re-fire next run."
+    )
+    pipe_src = pathlib.Path("workers/jobs/betting_pipeline.py").read_text()
+    assert "def _run_coolbet_signal(" in pipe_src, (
+        "betting_pipeline must define _run_coolbet_signal."
+    )
+    assert "_run_coolbet_signal()" in pipe_src, (
+        "run_betting() must call _run_coolbet_signal()"
+    )
+    assert "place_all_bets(record=True" not in pipe_src, (
+        "betting_pipeline must NOT call place_all_bets — SMS-spam risk. "
+        "Use the signaler instead."
+    )
+
+
 @test("COOLBET-NO-AUTO-LOGIN — heartbeat/placement/scanner refuse /s/auth/login by default")
 def test_coolbet_no_auto_login():
     """COOLBET-NO-AUTO-LOGIN (2026-06-12): on 2026-06-11 evening the
