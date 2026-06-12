@@ -264,6 +264,347 @@ def cdp_auto_login(*, max_wait_s: int = 300) -> int:
         return 6
 
 
+# ── JWT-from-CDP (the auth seam) ─────────────────────────────────────────────
+# CDP-JWT-EXTRACT (2026-06-12): the operator's CDP-Chrome holds a Coolbet
+# session that Coolbet's frontend auto-renews every ~20 min via /s/auth/
+# renew-token. The renewed JWT lands in localStorage['cbauth']. By reading
+# that slot we get a continuously-fresh Bearer with zero operator touch and
+# zero SMS — replacing the brittle "paste JWT from DevTools" workflow.
+
+# localStorage keys to probe, in order. Coolbet's SPA stored auth under
+# `cbauth` as of 2026-06-12; the others are defensive fallbacks in case
+# they rename. We also scan ALL keys for JWT-shaped values as last resort.
+_JWT_LOCALSTORAGE_KEYS = ("cbauth", "auth-token", "access_token", "accessToken", "jwt")
+
+
+def _looks_like_jwt(s: str) -> bool:
+    """Cheap shape check — 3 base64url segments separated by dots."""
+    if not s or not isinstance(s, str):
+        return False
+    if s.startswith("Bearer "):
+        s = s[7:]
+    parts = s.split(".")
+    return len(parts) == 3 and all(len(p) > 4 for p in parts)
+
+
+def _jwt_still_valid(token: str, *, min_ttl_s: int = 60) -> bool:
+    """Decode the payload (no signature check — we trust the source) and
+    confirm `exp` is at least min_ttl_s in the future. Returns False on
+    any parse error so a malformed token isn't accidentally adopted."""
+    try:
+        import base64 as _b64, json as _json, time as _t
+        payload_b64 = token.split(".")[1]
+        payload_b64 += "=" * (4 - len(payload_b64) % 4)
+        payload = _json.loads(_b64.urlsafe_b64decode(payload_b64))
+        exp = float(payload.get("exp", 0))
+        return exp > _t.time() + min_ttl_s
+    except Exception:
+        return False
+
+
+def extract_jwt_from_cdp(*, allow_open_new_tab: bool = False,
+                           timeout_ms: int = 15000) -> str | None:
+    """Connect to CDP-Chrome and pull the live Coolbet JWT out of
+    localStorage. Returns the bare JWT string (no "Bearer " prefix) or
+    None if no valid token was found.
+
+    Why this exists: Coolbet's frontend auto-renews the JWT every ~20 min
+    while a coolbet.com tab is open. As long as the operator's CDP-Chrome
+    has even one Coolbet tab loaded, localStorage['cbauth'] is always
+    fresh. Reading it here replaces:
+      - paste-from-DevTools (COOLBET_MANUAL_JWT) → manual + stale fast
+      - /s/auth/login + SMS                       → triggers SMS storms
+
+    allow_open_new_tab=False (default): only reuses an existing coolbet.com
+    tab. Returns None if none open. Safe for unattended use — never
+    flashes the CDP-Chrome window to foreground.
+
+    allow_open_new_tab=True: if no Coolbet tab exists, opens one to
+    www.coolbet.com and reads its localStorage. Triggers a brief
+    background page load; the operator may notice a new tab. Use for the
+    explicit --refresh-jwt CLI.
+
+    Implementation note: when the operator's Chrome has many active
+    targets (iframes navigating, ads loading), `connect_over_cdp` can
+    fail mid-handshake with `Frame was detached`. We retry the whole
+    connect+read sequence a few times with short backoff — by the time
+    of the retry, the racing frame is usually settled."""
+    import time as _t
+
+    last_err: Exception | None = None
+    for attempt in range(3):
+        snapshot = _try_read_localStorage_via_cdp(
+            allow_open_new_tab=allow_open_new_tab,
+            timeout_ms=timeout_ms,
+        )
+        if isinstance(snapshot, Exception):
+            last_err = snapshot
+            log.info("CDP localStorage read attempt %d failed: %s",
+                      attempt + 1, snapshot)
+            _t.sleep(1.5 + attempt)  # 1.5s, 2.5s, 3.5s
+            continue
+        if snapshot is None:
+            return None  # explicit "nothing here" signal — don't retry
+
+        probed = snapshot.get("probed") or {}
+        # Pass 1: probe known keys.
+        for k in _JWT_LOCALSTORAGE_KEYS:
+            v = probed.get(k)
+            if not v:
+                continue
+            token = v[7:] if isinstance(v, str) and v.startswith("Bearer ") else v
+            if _looks_like_jwt(token) and _jwt_still_valid(token):
+                log.info("JWT extracted from CDP localStorage['%s'] (ttl>=60s).", k)
+                return token
+
+        # Pass 2: any JWT-shaped value in the whole storage.
+        for v in (snapshot.get("all_values") or []):
+            if not v:
+                continue
+            token = v[7:] if isinstance(v, str) and v.startswith("Bearer ") else v
+            if _looks_like_jwt(token) and _jwt_still_valid(token):
+                log.info("JWT extracted from CDP localStorage (scan, key unknown).")
+                return token
+
+        log.info("No valid JWT found in CDP-Chrome localStorage — keys present: %s",
+                  snapshot.get("all_keys") or [])
+        return None
+
+    log.warning("extract_jwt_from_cdp failed after retries: %s", last_err)
+    return None
+
+
+def _try_read_localStorage_via_cdp(*, allow_open_new_tab: bool,
+                                      timeout_ms: int) -> dict | None | Exception:
+    """One attempt at: discover Coolbet tab via /json/list, open a raw
+    CDP WebSocket to its debugger URL, send Runtime.evaluate to read
+    localStorage. Returns:
+      - dict snapshot on success
+      - None if there's nothing to read (no Coolbet tab and
+        allow_open_new_tab=False), so the caller knows not to retry
+      - Exception object on transient failure (caller may retry)
+
+    Why raw CDP over websockets instead of Playwright: the operator's
+    Chrome has 60+ active targets (gmail iframes, maps, ads). Playwright
+    tries to enumerate them all on connect and crashes with
+    'Frame was detached' when one races a navigation. CDP Runtime.evaluate
+    is a single targeted call to one tab's debugger session — none of
+    that enumeration happens. Verified more robust against the operator's
+    busy daily-driver Chrome 2026-06-12."""
+    import asyncio
+    try:
+        return asyncio.run(
+            _async_read_localStorage(allow_open_new_tab=allow_open_new_tab,
+                                       timeout_s=timeout_ms / 1000.0)
+        )
+    except Exception as e:
+        return e
+
+
+async def _async_read_localStorage(*, allow_open_new_tab: bool,
+                                       timeout_s: float) -> dict | None:
+    """Async implementation of the CDP read. Sync caller wraps with
+    asyncio.run() — there's no live loop in any process that calls this
+    (daemon tick, --refresh-jwt CLI), so a per-call event loop is fine."""
+    import asyncio
+    import websockets
+
+    # 1) Discover the Coolbet tab. /json/list returns all targets; we
+    #    filter to type=page on coolbet.com.
+    try:
+        targets = await asyncio.wait_for(
+            _http_get_json(f"{CDP_URL}/json/list"),
+            timeout=timeout_s,
+        )
+    except Exception as e:
+        log.warning("CDP /json/list failed: %s", e)
+        raise
+
+    coolbet_target = None
+    for t in targets or []:
+        if t.get("type") != "page":
+            continue
+        url = t.get("url") or ""
+        if "coolbet.com" in url:
+            coolbet_target = t
+            break
+
+    if coolbet_target is None:
+        if not allow_open_new_tab:
+            log.info("No coolbet.com tab open in CDP-Chrome — "
+                     "skipping JWT extract (allow_open_new_tab=False).")
+            return None
+        # Open via the /json/new convenience endpoint instead of opening
+        # a Playwright page. /json/new respects --remote-debugging-port
+        # and gives us back a fresh page target with its own ws URL.
+        log.info("No coolbet.com tab — opening one via CDP /json/new.")
+        try:
+            new_target = await asyncio.wait_for(
+                _http_get_json(f"{CDP_URL}/json/new?https://www.coolbet.com/"),
+                timeout=timeout_s,
+            )
+            coolbet_target = new_target
+            # Give the SPA a moment to populate localStorage on first init.
+            await asyncio.sleep(3.0)
+        except Exception as e:
+            log.warning("CDP /json/new failed: %s", e)
+            raise
+
+    ws_url = coolbet_target.get("webSocketDebuggerUrl")
+    if not ws_url:
+        log.warning("Coolbet target has no webSocketDebuggerUrl: %s", coolbet_target)
+        return None
+
+    # 2) Connect WS, send Runtime.evaluate. CDP's protocol is simple
+    #    JSON-RPC; we send one request and wait for the matching id.
+    js = (
+        "(() => {"
+        "  const keys = " + repr(list(_JWT_LOCALSTORAGE_KEYS)) + ";"
+        "  const probed = {};"
+        "  for (const k of keys) { try { probed[k] = localStorage.getItem(k); } catch (e) { probed[k] = null; } }"
+        "  const all_keys = [];"
+        "  const all_values = [];"
+        "  try {"
+        "    for (let i = 0; i < localStorage.length; i++) {"
+        "      const k = localStorage.key(i);"
+        "      all_keys.push(k);"
+        "      all_values.push(localStorage.getItem(k));"
+        "    }"
+        "  } catch (e) {}"
+        "  return JSON.stringify({ probed, all_keys, all_values });"
+        "})()"
+    )
+
+    try:
+        async with websockets.connect(ws_url,
+                                         open_timeout=timeout_s,
+                                         max_size=10_000_000) as ws:
+            req_id = 1
+            await ws.send(_json_dumps({
+                "id": req_id,
+                "method": "Runtime.evaluate",
+                "params": {
+                    "expression": js,
+                    "returnByValue": True,
+                    "awaitPromise": False,
+                },
+            }))
+            # Some responses (e.g. Network events) arrive ahead of ours
+            # — loop until we see our request id.
+            deadline = asyncio.get_event_loop().time() + timeout_s
+            while True:
+                remaining = deadline - asyncio.get_event_loop().time()
+                if remaining <= 0:
+                    raise TimeoutError("CDP Runtime.evaluate response timed out")
+                msg = await asyncio.wait_for(ws.recv(), timeout=remaining)
+                resp = _json_loads(msg)
+                if resp.get("id") != req_id:
+                    continue
+                if "error" in resp:
+                    raise RuntimeError(f"CDP error: {resp['error']}")
+                result = (resp.get("result") or {}).get("result") or {}
+                if result.get("type") != "string":
+                    raise RuntimeError(f"Unexpected CDP result shape: {result}")
+                return _json_loads(result.get("value") or "{}")
+    except Exception as e:
+        log.warning("CDP Runtime.evaluate failed: %s", e)
+        raise
+
+
+async def _http_get_json(url: str) -> object:
+    """Tiny async HTTP GET that decodes JSON. Avoids pulling aiohttp
+    just for two calls — uses the urllib request via a thread executor."""
+    import asyncio, urllib.request, json as _json
+    def _fetch():
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            return _json.loads(resp.read())
+    return await asyncio.to_thread(_fetch)
+
+
+def _json_dumps(o) -> str:
+    import json as _json
+    return _json.dumps(o)
+
+
+def _json_loads(s) -> dict:
+    import json as _json
+    if isinstance(s, (bytes, bytearray)):
+        s = s.decode("utf-8")
+    return _json.loads(s)
+
+
+def refresh_jwt_via_cdp(*, allow_open_new_tab: bool = True,
+                          clear_placement_paused: bool = False) -> dict:
+    """Operator entrypoint — extract JWT from CDP, persist to
+    coolbet_session_state, optionally clear the placement_paused kill
+    switch. Returns a result dict for the CLI to print.
+
+    Why optional clear: the daemon refuses to place when paused, even
+    after a JWT refresh. Operator must explicitly opt in to resuming —
+    forces a conscious "yes, the underlying issue is fixed" decision."""
+    result = {"ok": False, "jwt_obtained": False, "ttl_s": None,
+              "user_id": None, "placement_paused_before": None,
+              "placement_paused_after": None, "message": ""}
+    jwt = extract_jwt_from_cdp(allow_open_new_tab=allow_open_new_tab)
+    if not jwt:
+        result["message"] = (
+            "No JWT found. Check that CDP-Chrome is running and you're "
+            "logged into Coolbet (have at least one coolbet.com tab open)."
+        )
+        return result
+
+    result["jwt_obtained"] = True
+    try:
+        import base64 as _b64, json as _json, time as _t
+        payload_b64 = jwt.split(".")[1]
+        payload_b64 += "=" * (4 - len(payload_b64) % 4)
+        payload = _json.loads(_b64.urlsafe_b64decode(payload_b64))
+        result["user_id"] = payload.get("sub") or ""
+        result["ttl_s"] = int(float(payload.get("exp", 0)) - _t.time())
+        login_session_id = payload.get("login_session_id") or ""
+    except Exception as e:
+        result["message"] = f"JWT extracted but payload parse failed: {e}"
+        return result
+
+    try:
+        from datetime import datetime as _dt, timezone as _tz
+        from workers.automation.coolbet_state import (
+            persist_jwt, set_placement_paused, is_placement_paused,
+            mark_login_success,
+        )
+        was_paused, paused_reason = is_placement_paused()
+        result["placement_paused_before"] = was_paused
+        persist_jwt(jwt, login_session_id=login_session_id,
+                     set_by="cdp_refresh")
+        # Mirror the post-_adopt_manual_jwt pattern: also stamp the
+        # observability fields (jwt_exp_at, last_login_at, session_healthy).
+        # Without this, /status reads stale data even after a successful
+        # refresh — exactly what surfaced 2026-06-12 when --refresh-jwt
+        # landed a JWT but the row still showed the old expiry.
+        mark_login_success(
+            method="cdp_refresh",
+            user_id=result["user_id"],
+            jwt_exp_at=_dt.fromtimestamp(
+                float(payload.get("exp", 0)), tz=_tz.utc),
+        )
+        if clear_placement_paused and was_paused:
+            set_placement_paused(False)
+            result["placement_paused_after"] = False
+        else:
+            result["placement_paused_after"] = was_paused
+    except Exception as e:
+        result["message"] = f"DB persist failed: {e}"
+        return result
+
+    result["ok"] = True
+    result["message"] = (
+        f"JWT refreshed from CDP (user={result['user_id']}, "
+        f"ttl={result['ttl_s']}s). placement_paused: "
+        f"{result['placement_paused_before']} → {result['placement_paused_after']}."
+    )
+    return result
+
+
 def fetch_pending_bets_via_cdp(*, timeout_ms: int = 30000) -> list[dict]:
     """Connect to the operator's real Chrome via CDP and fetch pending
     bets. Chrome must be running with --remote-debugging-port=9222.
@@ -587,12 +928,28 @@ def main() -> int:
     p.add_argument("--cdp-fetch", action="store_true", help="Fetch via CDP attach to user's real Chrome (requires --remote-debugging-port=9222)")
     p.add_argument("--cdp-login", action="store_true", help="Open the CDP-Chrome on Coolbet login + wait for you to finish logging in")
     p.add_argument("--cdp-auto-login", action="store_true", help="Auto-fill + click login in CDP-Chrome (uses COOLBET_USER/PASS); waits for SMS if asked")
+    p.add_argument("--refresh-jwt", action="store_true",
+                   help="Extract fresh JWT from CDP-Chrome localStorage, persist to coolbet_session_state, optionally clear placement_paused.")
+    p.add_argument("--resume-placement", action="store_true",
+                   help="Combine with --refresh-jwt to ALSO clear the placement_paused kill switch after the JWT lands.")
     p.add_argument("--headful", action="store_true", help="Visible browser (debug)")
     args = p.parse_args()
 
     logging.basicConfig(level=logging.INFO,
                          format="%(asctime)s %(levelname)s %(name)s — %(message)s")
 
+    if args.refresh_jwt:
+        res = refresh_jwt_via_cdp(
+            allow_open_new_tab=True,
+            clear_placement_paused=args.resume_placement,
+        )
+        print(f"  ok                = {res['ok']}")
+        print(f"  jwt_obtained      = {res['jwt_obtained']}")
+        print(f"  ttl_s             = {res['ttl_s']}")
+        print(f"  user_id           = {res['user_id']}")
+        print(f"  placement_paused  = {res['placement_paused_before']} → {res['placement_paused_after']}")
+        print(f"  message           = {res['message']}")
+        return 0 if res["ok"] else 1
     if args.login:
         return interactive_login()
     if args.cdp_auto_login:

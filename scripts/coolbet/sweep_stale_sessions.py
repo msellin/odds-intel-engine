@@ -17,7 +17,6 @@ Usage:
 
 Whitelist sessions (canonical names used by the production scrapers):
     coolbet_prod   — CoolbetSession default (workers/automation/coolbet_session.py)
-    coolbet_dev    — session_heartbeat.py legacy name
     hltv_*         — any session whose name starts with hltv_ (scrapers use
                      per-feature names: hltv_rosters, hltv_stats, etc.)
 """
@@ -35,7 +34,6 @@ FS_URL_DEFAULT = os.getenv("FLARESOLVERR_URL", "http://localhost:8191")
 
 WHITELIST_EXACT = {
     "coolbet_prod",
-    "coolbet_dev",
 }
 WHITELIST_PREFIXES = (
     "hltv_",

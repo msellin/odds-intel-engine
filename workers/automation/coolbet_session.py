@@ -114,9 +114,8 @@ def _state():
 
 
 # ── FlareSolverr proxy ───────────────────────────────────────────────────────
-# Mirrors the proven scripts/coolbet/session_heartbeat.py pattern. Every call
-# from this module to Coolbet goes through FS's named browser session
-# (default: coolbet_prod) so Imperva sees real-Chrome TLS + headers.
+# Every call from this module to Coolbet goes through FS's named browser
+# session (default: coolbet_prod) so Imperva sees real-Chrome TLS + headers.
 
 
 def _fs_call(body: dict, *, timeout_s: int = 90) -> dict:
@@ -590,13 +589,44 @@ class CoolbetSession:
         self._adopt_manual_jwt()
         return self.jwt_seconds_remaining
 
+    def _try_cdp_jwt(self) -> bool:
+        """Pull a fresh JWT from CDP-Chrome's localStorage and adopt it.
+        Returns True on success.
+
+        Why this is the preferred refresh path (CDP-JWT-EXTRACT, 2026-06-12):
+        CDP-Chrome's logged-in tab auto-renews via /s/auth/renew-token every
+        ~20 min, so localStorage['cbauth'] is always fresh. Reading it
+        replaces both stale env-paste AND SMS-triggering /s/auth/login.
+
+        Tried before the SMS-blocked fallback in _login(). Silently no-ops
+        on Railway / any env without a CDP-Chrome reachable at
+        COOLBET_CHROME_CDP_URL — the operator-side daemon is the only
+        process where this path is meaningful."""
+        try:
+            from workers.automation.coolbet_browser_sync import extract_jwt_from_cdp
+        except Exception as e:
+            log.debug("CDP JWT helper unavailable (likely Railway env): %s", e)
+            return False
+        try:
+            cdp_jwt = extract_jwt_from_cdp(allow_open_new_tab=False)
+        except Exception as e:
+            log.debug("CDP JWT extract raised: %s", e)
+            return False
+        if not cdp_jwt:
+            return False
+        try:
+            self._manual_jwt = cdp_jwt
+            self._adopt_manual_jwt()  # decodes, validates, persists to DB
+            return True
+        except Exception as e:
+            log.warning("CDP JWT adopt failed: %s", e)
+            return False
+
     def _login(self) -> None:
-        # Manual-JWT path is preferred when the env-pasted/DB-stored token
-        # is still valid. If expired, we ONLY fall through to API login
-        # when explicitly allowed (allow_api_login=True or
-        # COOLBET_ALLOW_API_LOGIN env set). Default is to refuse, because
-        # /s/auth/login triggers SMS 2FA on every untrusted call — see
-        # COOLBET-NO-AUTO-LOGIN above.
+        # Preferred path: DB/env JWT is still valid → adopt and return.
+        # If expired, try CDP-Chrome localStorage (auto-fresh, no SMS).
+        # Only if that fails AND allow_api_login=True do we POST
+        # /s/auth/login — which triggers SMS 2FA every time.
         if self._manual_jwt:
             try:
                 self._adopt_manual_jwt()
@@ -604,31 +634,46 @@ class CoolbetSession:
             except RuntimeError as e:
                 if "expired" not in str(e).lower():
                     raise
+                # CDP-Chrome path — silent self-heal when operator's
+                # Chrome window is up.
+                if self._try_cdp_jwt():
+                    log.info("Adopted fresh JWT from CDP-Chrome (self-heal).")
+                    return
                 if not self._allow_api_login:
                     _state().mark_error(
-                        "JWT expired and api_login disabled — run enrollment locally to mint a fresh JWT"
+                        "JWT expired, CDP refresh unavailable, api_login disabled — run --refresh-jwt or enrollment"
                     )
                     raise RuntimeError(
-                        "Coolbet JWT in DB/env is expired AND api_login is "
-                        "disabled to prevent SMS-2FA spam. Run locally: "
+                        "Coolbet JWT expired AND CDP-Chrome JWT refresh "
+                        "unavailable (Chrome not running / no coolbet.com "
+                        "tab open / Chrome logged out) AND api_login is "
+                        "disabled to prevent SMS-2FA spam. Either: open "
+                        "CDP-Chrome with a coolbet.com tab + run "
+                        "`python3 -m workers.automation.coolbet_browser_sync --refresh-jwt` "
+                        "OR (last resort) run "
                         "`python3 scripts/coolbet/flaresolverr_login_enroll.py start` "
-                        "(then `verify <CODE>` after the SMS arrives). The fresh JWT "
-                        "will land in coolbet_session_state.jwt_current and every "
-                        "process inherits it on the next CoolbetSession() construction."
+                        "to enrol via SMS."
                     )
                 if not (self._email and self._password):
                     raise
-                log.warning("Manual JWT expired AND allow_api_login=True — calling /s/auth/login (may trigger SMS)")
+                log.warning("Manual JWT expired, CDP refresh unavailable, allow_api_login=True — calling /s/auth/login (may trigger SMS)")
+
+        # No JWT in DB/env at all. Same precedence: CDP first, SMS path
+        # only with explicit opt-in.
+        if self._try_cdp_jwt():
+            log.info("Bootstrapped JWT from CDP-Chrome (no prior token).")
+            return
 
         if not self._allow_api_login:
             _state().mark_error(
-                "No JWT and api_login disabled — run enrollment locally"
+                "No JWT, CDP refresh unavailable, api_login disabled — run --refresh-jwt or enrollment"
             )
             raise RuntimeError(
                 "No Coolbet JWT available (DB jwt_current is NULL, env "
-                "COOLBET_MANUAL_JWT empty) AND api_login is disabled to "
-                "prevent SMS-2FA spam. Run locally: "
-                "`python3 scripts/coolbet/flaresolverr_login_enroll.py start`."
+                "COOLBET_MANUAL_JWT empty), CDP-Chrome JWT refresh "
+                "unavailable, AND api_login is disabled to prevent SMS-2FA "
+                "spam. Open CDP-Chrome with a coolbet.com tab + run "
+                "`python3 -m workers.automation.coolbet_browser_sync --refresh-jwt`."
             )
 
         log.info("Refreshing Coolbet JWT via /s/auth/login (plain-requests + FS cookies)...")

@@ -1474,6 +1474,26 @@ def place_all_bets(
     if execute:
         record = True
 
+    # PLACEMENT-PAUSED-KILL-SWITCH (2026-06-12): the placement_paused flag
+    # in coolbet_session_state is the operator kill switch. It must gate
+    # any real-money placement — was previously only checked in the
+    # signaler path (workers/jobs/betting_pipeline._run_coolbet_record),
+    # so the Mac daemon kept placing even with paused=true. Surfaced on
+    # 2026-06-12 when the SMS-spam pause failed to actually stop bets.
+    # Only check on execute=True: --record paper logging should still run
+    # so we keep an audit trail of what *would* have been placed.
+    if execute:
+        from workers.automation.coolbet_state import is_placement_paused
+        paused, reason = is_placement_paused()
+        if paused:
+            log.warning(
+                "place_all_bets SKIPPED — placement_paused=true (reason: %s). "
+                "Clear with `UPDATE coolbet_session_state SET placement_paused=false WHERE id=1` "
+                "or `--refresh-jwt --resume-placement` after fixing the root cause.",
+                reason or "no reason given",
+            )
+            return []
+
     global _MIN_EDGE
     if min_edge is not None:
         _MIN_EDGE = min_edge

@@ -3617,6 +3617,116 @@ def test_coolbet_no_auto_login():
     )
 
 
+@test("COOLBET-CDP-JWT-EXTRACT — _login tries CDP-Chrome localStorage before raising SMS-error")
+def test_coolbet_cdp_jwt_extract():
+    """COOLBET-CDP-JWT-EXTRACT (2026-06-12): CoolbetSession._login() must try
+    extracting a fresh JWT from CDP-Chrome's localStorage before raising the
+    "JWT expired AND api_login disabled" error.
+
+    Why: Coolbet's frontend auto-renews the JWT every ~20 min while a
+    coolbet.com tab is open. As long as the operator's CDP-Chrome
+    (--remote-debugging-port=9222) has even one Coolbet tab loaded,
+    localStorage['cbauth'] always has a fresh Bearer. Reading it replaces
+    BOTH the stale env-paste workflow AND the SMS-triggering /s/auth/login.
+
+    The 2026-06-11 SMS-spam emergency was the breaking point — the daemon
+    looped on expired JWT → /s/auth/login → SMS, 100+ times overnight. The
+    CDP-JWT path eliminates that loop entirely while keeping the SMS guard
+    intact (CDP is tried, not bypassed; SMS path still requires explicit
+    allow_api_login=true).
+
+    Pin: extract_jwt_from_cdp + refresh_jwt_via_cdp exist in browser_sync,
+    _login calls _try_cdp_jwt before raising the SMS error, and the
+    --refresh-jwt CLI is wired."""
+    import pathlib
+    bs = pathlib.Path("workers/automation/coolbet_browser_sync.py").read_text()
+    assert "def extract_jwt_from_cdp(" in bs, (
+        "browser_sync must export extract_jwt_from_cdp() — the function that "
+        "reads localStorage['cbauth'] from the CDP-Chrome session."
+    )
+    assert "def refresh_jwt_via_cdp(" in bs, (
+        "browser_sync must export refresh_jwt_via_cdp() — operator entrypoint "
+        "that persists the extracted JWT to coolbet_session_state and "
+        "optionally clears placement_paused."
+    )
+    assert "localStorage.getItem" in bs and "localStorage.length" in bs, (
+        "extract_jwt_from_cdp must read both probe keys and scan all localStorage "
+        "keys (defensive against Coolbet renaming the slot)."
+    )
+    assert "cbauth" in bs, (
+        "Known localStorage key 'cbauth' must be in the probe list (verified "
+        "2026-06-12 as the slot Coolbet's frontend writes the renewed JWT to)."
+    )
+
+    sess = pathlib.Path("workers/automation/coolbet_session.py").read_text()
+    assert "def _try_cdp_jwt(" in sess, (
+        "coolbet_session must define _try_cdp_jwt() — the bridge that adopts "
+        "a CDP-extracted JWT into the session."
+    )
+    login_block = sess[sess.index("def _login("):sess.index("def _ensure_auth(")]
+    assert "_try_cdp_jwt" in login_block, (
+        "_login() must call _try_cdp_jwt() — without this, expired-JWT scenarios "
+        "skip the silent CDP self-heal and go straight to the SMS-blocked raise."
+    )
+    # CDP try happens on BOTH expired-JWT and no-JWT branches.
+    assert login_block.count("self._try_cdp_jwt()") >= 2, (
+        "_login() must try CDP both when manual_jwt is expired AND when there's "
+        "no manual_jwt at all (cold boot). Found < 2 _try_cdp_jwt() calls."
+    )
+    # The SMS-spam guard message is preserved (the existing NO-AUTO-LOGIN
+    # contract). We just gate it behind the CDP attempt.
+    assert "SMS-2FA spam" in login_block, (
+        "_login must still surface 'SMS-2FA spam' in its RuntimeError — the "
+        "SMS guard contract from COOLBET-NO-AUTO-LOGIN remains in force."
+    )
+
+    # CLI is wired.
+    assert "--refresh-jwt" in bs, (
+        "browser_sync main() must accept --refresh-jwt so the operator can "
+        "trigger a manual JWT pull from CDP after CDP-Chrome restart / login."
+    )
+
+
+@test("COOLBET-PLACEMENT-PAUSED-KILL-SWITCH — place_all_bets(execute=True) checks placement_paused before POSTing")
+def test_coolbet_placement_paused_kill_switch():
+    """COOLBET-PLACEMENT-PAUSED-KILL-SWITCH (2026-06-12): the placement_paused
+    flag in coolbet_session_state is the operator kill switch. It MUST gate
+    any real-money placement.
+
+    Originally it was checked only in workers/jobs/betting_pipeline.
+    _run_coolbet_record (the signaler path). The Mac daemon called
+    place_all_bets(execute=True) directly without checking, so the flag
+    failed silently — only the JWT-expired exception happened to stop
+    placement during the 2026-06-12 SMS-spam emergency. If JWT had been
+    fresh, bets would have continued despite paused=true.
+
+    This pin locks the check inside place_all_bets so every execute-mode
+    caller is gated (Mac daemon today, future placers tomorrow).
+    --record (paper logging) is intentionally NOT gated so we keep the
+    audit trail of what would have been placed."""
+    import pathlib
+    src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
+    func = src[src.index("def place_all_bets("):src.index("def place_bet_by_id(")]
+    assert "is_placement_paused" in func, (
+        "place_all_bets must import is_placement_paused — the kill switch "
+        "check that prevents real-money placement when the operator paused."
+    )
+    # Must be checked under `if execute:` so --record paper logging is
+    # not blocked (we want the audit trail).
+    paused_idx = func.index("is_placement_paused")
+    preceding = func[:paused_idx]
+    # Walk backwards to find the most recent `if execute` guard.
+    last_if_execute = preceding.rfind("if execute:")
+    assert last_if_execute >= 0, (
+        "is_placement_paused check must be inside an `if execute:` block — "
+        "paper logging (--record) should still produce audit rows."
+    )
+    assert "return []" in func[paused_idx:paused_idx+500], (
+        "paused check must early-return [] (skip placement) — without the "
+        "return, the kill switch is decorative."
+    )
+
+
 @test("COOLBET-PLACER-FLARESOLVERR-WIRE — login script syncs Imperva cookies to .env so the placer can use them")
 def test_coolbet_placer_flaresolverr_wire():
     """COOLBET-PLACER-FLARESOLVERR-WIRE (2026-06-10): the FlareSolverr-based
