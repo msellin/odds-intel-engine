@@ -1185,6 +1185,11 @@ def main() -> None:
     parser.add_argument("--ratings", action="store_true", help="Print team ELO rankings")
     parser.add_argument("--top", type=int, default=40, help="Top N teams for --ratings")
     parser.add_argument("--edge", type=float, default=EDGE_THRESHOLD, help="Edge threshold (default 0.03)")
+    parser.add_argument("--hltv-elo", action="store_true",
+                         help="Build ELO from cs2_hltv_matches instead of CSV+bo3.gg. "
+                              "Wider coverage (28k matches vs 9k), consistent team naming, "
+                              "no source-collision artefacts. Opt-in for now while we "
+                              "compare predictions side-by-side with the legacy ELO path.")
     args = parser.parse_args()
 
     edge_pct = int(args.edge * 100)
@@ -1202,8 +1207,25 @@ def main() -> None:
     if matches_hist:
         print(f"    Range: {matches_hist[0]['date'].date()} → {matches_hist[-1]['date'].date()}")
 
-    print("\n[2] Building base ELO ratings from CSV...")
-    ratings = build_elo(matches_hist)
+    if args.hltv_elo:
+        # HLTV-FIRST ELO (Phase 1, 2026-06-12): rebuild ratings from the
+        # cs2_hltv_matches table — 28k+ matches with consistent team
+        # naming. Avoids the source-collision artefacts seen with the
+        # CSV+bo3.gg path ("Team Falcons" vs "Falcons" splitting ELO).
+        print("\n[2] Building base ELO ratings from cs2_hltv_matches (--hltv-elo)...")
+        hltv_hist = _load_hltv_history(min_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
+        print(f"    {len(hltv_hist):,} HLTV matches loaded")
+        ratings = build_elo(hltv_hist)
+        # When using HLTV ELO, also override `matches_hist` so all
+        # downstream consumers (player ratings, h2h index, etc.) see the
+        # same source-of-truth. matches_hist drives the recent-results
+        # delta logic at step 5 — keep it pointing at the same dataset
+        # ELO was built from so the delta-update math stays internally
+        # consistent.
+        matches_hist = hltv_hist
+    else:
+        print("\n[2] Building base ELO ratings from CSV...")
+        ratings = build_elo(matches_hist)
     print(f"    {len(ratings)} teams rated")
 
     print("\n[3] Loading player ratings from CSV...")
@@ -1265,13 +1287,23 @@ def main() -> None:
     # that were category errors). ELO must stay calibrated on the
     # CSV+bo3.gg keyspace it was trained on. HLTV unlocks the
     # data-sufficiency check for tier-3 teams without touching ELO.
-    all_hist = matches_hist + recent_results
-    if recent_results:
-        print("\n[5] Updating ELO with recent results...")
-        ratings = build_elo(all_hist)
-        if ratings:
-            best = max(ratings, key=ratings.get)
-            print(f"    Updated ELO — highest: {best} ({ratings[best]:.0f})")
+    if args.hltv_elo:
+        # HLTV mode: do NOT merge bo3.gg recent_results into ELO — they
+        # use different team names ("Team Falcons" vs "Falcons") and
+        # would re-corrupt the ELO we just built cleanly from HLTV.
+        # HLTV match data already contains the recent results we care
+        # about. Trade-off: we miss bo3.gg matches that HLTV hasn't
+        # ingested yet (typically <24h lag).
+        all_hist = matches_hist
+        print("\n[5] Skipping bo3.gg recent_results merge (--hltv-elo mode)")
+    else:
+        all_hist = matches_hist + recent_results
+        if recent_results:
+            print("\n[5] Updating ELO with recent results...")
+            ratings = build_elo(all_hist)
+            if ratings:
+                best = max(ratings, key=ratings.get)
+                print(f"    Updated ELO — highest: {best} ({ratings[best]:.0f})")
 
     # Match counts power the coverage guardrail in _write_to_db: teams with
     # < MIN_MATCHES_FOR_PREDICTION in the last MATCH_COUNT_WINDOW_DAYS get
