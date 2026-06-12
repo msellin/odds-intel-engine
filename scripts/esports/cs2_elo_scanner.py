@@ -1256,17 +1256,16 @@ def main() -> None:
     print(f"    {len(recent_results)} new results since {CSV_CUTOFF.date()} (live ELO update)")
     print(f"    {sum(len(v) for v in roster_changes.values())} roster changes found across {len(roster_changes)} teams")
 
-    # HLTV-FIRST (2026-06-12): user-preferred source-of-truth. cs2_hltv_matches
-    # gives broader coverage (tier-3 + amateur leagues) than cs2_results which
-    # is bo3.gg-only. Merge into all_hist so build_elo + build_match_counts
-    # both see the wider set. Deduplication isn't strict — same match may
-    # appear in both (HLTV + bo3.gg) with slightly different naming, but
-    # the canonical-team key collapses them at the count layer and ELO
-    # double-counting on tier-1 teams is bounded (~5% inflation in MMR ratings
-    # is well within ELO's adaptive K-factor).
-    hltv_hist = _load_hltv_history()
-    print(f"    {len(hltv_hist)} HLTV historical matches (source-of-truth supplement)")
-    all_hist = matches_hist + recent_results + hltv_hist
+    # HLTV-COUNT-ONLY (2026-06-12 v2): HLTV history is used ONLY for the
+    # match-count sufficiency gate, NOT for ELO calculation. Earlier
+    # version merged hltv_hist into all_hist, which corrupted ELO because
+    # team-name keys differ between sources ("Team Falcons" in CSV vs
+    # "Falcons" in HLTV → ELO got double-counted under inconsistent keys
+    # → Falcons dropped from 1841 → 1486 + the model produced +138% edges
+    # that were category errors). ELO must stay calibrated on the
+    # CSV+bo3.gg keyspace it was trained on. HLTV unlocks the
+    # data-sufficiency check for tier-3 teams without touching ELO.
+    all_hist = matches_hist + recent_results
     if recent_results:
         print("\n[5] Updating ELO with recent results...")
         ratings = build_elo(all_hist)
@@ -1278,6 +1277,18 @@ def main() -> None:
     # < MIN_MATCHES_FOR_PREDICTION in the last MATCH_COUNT_WINDOW_DAYS get
     # NULL odds (we don't make up confidence we don't have).
     match_counts = build_match_counts(all_hist)
+    # Layer HLTV counts on top so tier-3 teams with little bo3.gg history
+    # but plenty of HLTV history still pass the sufficient_data gate.
+    # The keys are canonical (lowercase + stripped) so "Team Falcons"
+    # from CSV merges with "Falcons" from HLTV at the count level.
+    try:
+        hltv_hist = _load_hltv_history()
+        hltv_counts = build_match_counts(hltv_hist)
+        for k, v in hltv_counts.items():
+            match_counts[k] = max(match_counts.get(k, 0), v)
+        print(f"    {len(hltv_hist)} HLTV matches merged into match-count gate only")
+    except Exception as e:
+        print(f"    [warn] HLTV count merge failed (proceeding without): {e}")
     thin = sum(1 for m in upcoming
                if match_counts.get(m["team1"], 0) < MIN_MATCHES_FOR_PREDICTION
                or match_counts.get(m["team2"], 0) < MIN_MATCHES_FOR_PREDICTION)
