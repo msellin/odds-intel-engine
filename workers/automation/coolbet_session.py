@@ -589,14 +589,20 @@ class CoolbetSession:
         try:
             from workers.automation.coolbet_browser_sync import extract_jwt_from_cdp
         except Exception as e:
-            log.debug("CDP JWT helper unavailable (likely Railway env): %s", e)
+            # INFO-level — silent on Railway (no CDP-Chrome there) but
+            # surfaces import failures locally so we can diagnose.
+            log.info("CDP JWT helper unavailable (likely Railway env): %s", e)
             return False
         try:
             cdp_jwt = extract_jwt_from_cdp(allow_open_new_tab=False)
         except Exception as e:
-            log.debug("CDP JWT extract raised: %s", e)
+            # WARNING-level — an exception here means the CDP path is
+            # mis-wired in a way the operator should see, not silenced.
+            log.warning("CDP JWT extract raised: %s", e)
             return False
         if not cdp_jwt:
+            log.info("CDP JWT extract returned None (no Coolbet tab, "
+                      "no valid JWT in localStorage, or CDP unreachable).")
             return False
         try:
             self._manual_jwt = cdp_jwt
