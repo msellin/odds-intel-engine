@@ -413,13 +413,24 @@ def load_qualified_bets(bet_id_filter: str | None = None) -> list[dict]:
             AND m.date             > NOW()
             AND sb.edge_percent    >= %s
             {maturity_clause}                            -- CHERRY-PICK-PLACER (2026-06-01): default unset = no filter
+            -- COOLBET-MAC-DAEMON-DEDUP (2026-06-12): the dedup is the
+            -- ONLY thing preventing duplicate real-money bets. NEVER
+            -- date-filter rb.placed_at — a bet placed yesterday on a
+            -- match starting today is still a duplicate.
             AND NOT EXISTS (
                 SELECT 1 FROM real_bets rb
                 WHERE rb.match_id  = sb.match_id
                   AND rb.market    = sb.market
                   AND rb.selection = sb.selection
-                  AND DATE(rb.placed_at) = CURRENT_DATE
             )
+            -- Respect Telegram-side placement markers. If the operator
+            -- tapped "✅ Placed" on a bet-signal, the Mac daemon must
+            -- NOT re-attempt — duplicate Coolbet bet. Same for "⏭ Skip"
+            -- (operator vetoed it). The button callback fans out across
+            -- all sibling bot picks for (match,market,selection) so
+            -- checking on sb directly is sufficient.
+            AND sb.user_placed_at  IS NULL
+            AND sb.user_skipped_at IS NULL
           ORDER BY sb.match_id, sb.market, sb.selection, sb.edge_percent DESC
         ) q
         ORDER BY q.match_date ASC, q.edge_percent DESC

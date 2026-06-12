@@ -69,6 +69,92 @@ def _handle_sigterm(signum, frame):
     _stop = True
 
 
+def _sync_placed_bets_from_coolbet() -> int:
+    """Fetch the operator's actual Coolbet pending bets via CDP and mark
+    matching simulated_bets as user_placed_at — so the placement loop
+    doesn't re-attempt anything already on Coolbet. This is the
+    structural dedup against actual Coolbet state, separate from the
+    Telegram-button dedup. Returns count of newly-marked rows.
+
+    Conservative on errors: if CDP is unavailable, the daemon proceeds
+    with placement using the existing real_bets + user_placed_at dedup
+    paths. Only the auto-sync layer goes silent."""
+    try:
+        from workers.automation.coolbet_browser_sync import (
+            fetch_pending_bets_via_cdp, normalize_for_dedup,
+            match_coolbet_to_simulated,
+        )
+        from workers.api_clients.db import execute_query, execute_write
+    except Exception as e:
+        log.warning("CDP sync deps missing: %s", e)
+        return 0
+
+    coolbet_tickets = fetch_pending_bets_via_cdp()
+    if not coolbet_tickets:
+        return 0
+
+    # Load the simulated_bets that aren't yet placed/skipped/in-real_bets
+    # — these are the candidates that COULD be marked as placed by sync.
+    candidates = execute_query(
+        """SELECT sb.id AS simulated_bet_id,
+                  sb.match_id, sb.market, sb.selection,
+                  ht.name AS home_team, at2.name AS away_team,
+                  m.date AS match_date
+           FROM simulated_bets sb
+           JOIN matches m   ON m.id  = sb.match_id
+           JOIN teams   ht  ON ht.id = m.home_team_id
+           JOIN teams   at2 ON at2.id = m.away_team_id
+           WHERE sb.combo_legs IS NULL
+             AND sb.user_placed_at IS NULL
+             AND sb.user_skipped_at IS NULL
+             AND m.date > NOW() - INTERVAL '12 hours'
+             AND m.date < NOW() + INTERVAL '48 hours'
+             AND NOT EXISTS (
+                 SELECT 1 FROM real_bets rb
+                 WHERE rb.match_id=sb.match_id
+                   AND rb.market=sb.market AND rb.selection=sb.selection
+             )"""
+    )
+    candidates = [dict(r) for r in candidates]
+    if not candidates:
+        return 0
+
+    marked = 0
+    for ticket in coolbet_tickets:
+        norm = normalize_for_dedup(ticket)
+        if not norm:
+            continue
+        if norm.get("is_combo"):
+            # Combo dedup is harder — every leg would have to fuzzy-match.
+            # Skip for now; rely on real_bets + user_placed_at button-tap.
+            continue
+        matched = match_coolbet_to_simulated(norm, candidates)
+        if not matched:
+            log.debug("no DB match for Coolbet ticket %s (%s)",
+                       norm.get("ticket_id"), norm.get("match_name"))
+            continue
+        # Fan out to ALL sibling bot rows for the same combo so future
+        # ticks don't re-fire from any of them. Mirrors the signaler's
+        # _mark_signaled fan-out pattern.
+        try:
+            execute_write(
+                """UPDATE simulated_bets
+                   SET user_placed_at = NOW()
+                   WHERE match_id = %s AND market = %s AND selection = %s
+                     AND user_placed_at IS NULL""",
+                (matched["match_id"], matched["market"], matched["selection"]),
+            )
+            log.info("synced from Coolbet: %s | %s/%s | ticket=%s",
+                      matched["home_team"] + " vs " + matched["away_team"],
+                      matched["market"], matched["selection"],
+                      norm.get("ticket_id"))
+            marked += 1
+        except Exception as e:
+            log.warning("user_placed_at write failed for %s: %s",
+                         matched.get("simulated_bet_id"), e)
+    return marked
+
+
 def _tick(*, dry_run: bool = False) -> dict:
     """One placement pass. Returns counters so the loop can decide whether
     to log loudly or silently this round. Catches all exceptions — a
@@ -84,6 +170,21 @@ def _tick(*, dry_run: bool = False) -> dict:
         "elapsed_s": 0.0,
     }
     try:
+        # COOLBET-CDP-SYNC (2026-06-12): before evaluating qualified bets,
+        # sync the operator's actual Coolbet pending state via CDP. Any
+        # simulated_bet that matches a real Coolbet ticket gets
+        # user_placed_at stamped — load_qualified_bets's filter then
+        # excludes them naturally. This is the structural dedup against
+        # the live account; it makes button-tap discipline OPTIONAL.
+        try:
+            synced = _sync_placed_bets_from_coolbet()
+            counters["synced_from_coolbet"] = synced
+            if synced:
+                log.info("CDP-sync marked %d sim_bets as already-placed", synced)
+        except Exception as e:
+            log.warning("CDP sync failed (proceeding without): %s", e)
+            counters["synced_from_coolbet"] = 0
+
         # Late import — keeps the daemon process slim until first tick,
         # and avoids paying CoolbetSession's env-var validation cost
         # before we know there's work to do.
@@ -94,10 +195,15 @@ def _tick(*, dry_run: bool = False) -> dict:
         counters["qualified"] = len(candidates)
         if not candidates:
             return counters
-        # record=True writes a real_bets row.
+        # record=True writes a real_bets row (the audit trail).
         # execute=True actually POSTs to Coolbet — that's the whole point.
-        # dry_run override is for the smoke test.
-        results = place_all_bets(record=True, execute=not dry_run)
+        # dry_run override is for smoke: NO side effects — skip the
+        # real_bets write too, otherwise the paper row's NOT EXISTS guard
+        # would block the real placement attempt on the next live tick.
+        if dry_run:
+            results = place_all_bets(record=False, execute=False)
+        else:
+            results = place_all_bets(record=True, execute=True)
         for r in results:
             outcome = r.get("outcome")
             if outcome == "placed":
