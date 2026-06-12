@@ -3687,6 +3687,58 @@ def test_coolbet_cdp_jwt_extract():
     )
 
 
+@test("COOLBET-MAC-DAEMON-HEARTBEAT — daemon writes mac_daemon_last_tick_at after every tick; /status reads it")
+def test_coolbet_mac_daemon_heartbeat():
+    """COOLBET-MAC-DAEMON-HEARTBEAT (mig 251, 2026-06-12): the Telegram
+    /status command must answer "is the Mac daemon alive?" — previously
+    we could only show session_healthy + JWT freshness, both of which
+    say nothing about whether the daemon PROCESS is running. A laptop
+    asleep / Docker stopped / launchd unloaded scenario would silently
+    produce no real_bets and the operator wouldn't know until checking
+    manually.
+
+    Contract: daemon writes mac_daemon_last_tick_at + result JSON in
+    every _tick() (success OR failure — even a 'dead' tick bumps the
+    timestamp so stale heartbeat unambiguously means the process is
+    down). /status surfaces tick age + counters. >35min stale = RED."""
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/251_coolbet_mac_daemon_heartbeat.sql").read_text()
+    assert "mac_daemon_last_tick_at" in mig and "TIMESTAMPTZ" in mig, (
+        "Mig 251 must add mac_daemon_last_tick_at TIMESTAMPTZ"
+    )
+    assert "mac_daemon_last_tick_result" in mig and "JSONB" in mig, (
+        "Mig 251 must add mac_daemon_last_tick_result JSONB"
+    )
+    state_src = pathlib.Path("workers/automation/coolbet_state.py").read_text()
+    assert "def mark_mac_daemon_tick(" in state_src, (
+        "coolbet_state must export mark_mac_daemon_tick(result) — the "
+        "single write site for the heartbeat columns."
+    )
+    daemon_src = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
+    assert "mark_mac_daemon_tick" in daemon_src, (
+        "coolbet_mac_daemon must call mark_mac_daemon_tick at the end of "
+        "every _tick() so the Telegram /status surfaces process liveness."
+    )
+    # Webhook side: dispatcher must route /status to handleStatusCommand,
+    # and the handler must read mac_daemon_last_tick_at + render the
+    # 35-min staleness threshold.
+    web_root = pathlib.Path(__file__).resolve().parents[2] / "odds-intel-web"
+    webhook = web_root / "src" / "app" / "api" / "telegram" / "webhook" / "route.ts"
+    if webhook.exists():
+        wh = webhook.read_text()
+        assert "/status" in wh and "handleStatusCommand" in wh, (
+            "webhook must dispatch /status to handleStatusCommand"
+        )
+        assert "mac_daemon_last_tick_at" in wh, (
+            "handleStatusCommand must read mac_daemon_last_tick_at — the "
+            "DB column the daemon writes is also what the bot reads."
+        )
+        assert "35" in wh, (
+            "handleStatusCommand must apply the ~35min staleness threshold "
+            "(matches the 30-min poll interval + small grace window)."
+        )
+
+
 @test("COOLBET-CDP-FETCH-RAW — fetch_pending_bets_via_cdp uses raw CDP websockets, not patchright")
 def test_coolbet_cdp_fetch_raw():
     """COOLBET-CDP-FETCH-RAW (2026-06-12): the bet-history sync was using

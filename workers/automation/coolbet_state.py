@@ -96,6 +96,27 @@ def mark_heartbeat(ok: bool, *, note: str | None = None) -> None:
         )
 
 
+def mark_mac_daemon_tick(result: dict) -> None:
+    """Write the Mac daemon's per-tick heartbeat so the Telegram /status
+    command can answer 'is the daemon actually running?'. Called at the
+    end of every _tick() in coolbet_mac_daemon, success OR failure —
+    a "dead" tick (errors=1) still bumps the timestamp so a stale
+    `mac_daemon_last_tick_at` always means the process itself is
+    dead/asleep/unloaded, not just failing.
+
+    Stored as compact JSON: {qualified, placed, skipped, errors,
+    synced_from_coolbet, elapsed_s} — same dict the daemon already
+    builds for its log line, so no extra computation."""
+    import json as _json
+    _safe_write(
+        """UPDATE coolbet_session_state
+           SET mac_daemon_last_tick_at = NOW(),
+               mac_daemon_last_tick_result = %s::jsonb
+           WHERE id = 1""",
+        (_json.dumps(result, default=str),),
+    )
+
+
 def mark_cookies_refreshed(count: int) -> None:
     """FS cookie harvest succeeded — tracks last_refresh + count so /status
     can show 'cookies refreshed 3 min ago (5 cookies)'."""
