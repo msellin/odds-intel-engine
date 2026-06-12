@@ -9621,7 +9621,9 @@ def test_per_market_version():
     assert "_load_bundle(version" in src, "per-version bundle loader missing"
     # The three heads that are actually routed at inference.
     assert '_resolve_version("1x2")' in src, "1X2 head must be resolved per-market"
-    assert '_resolve_version("ou")' in src, "OU head must be resolved per-market"
+    # OU now takes optional tier= for the tier-aware override path
+    # (OU-CLV-OPTION-B-RE-EVAL 2026-06-12), so match prefix only.
+    assert '_resolve_version("ou"' in src, "OU head must be resolved per-market"
     assert '_resolve_version("goals")' in src, "goals head must be resolved per-market"
     # BTTS deliberately NOT in the inference path — flag drift if someone adds it.
     assert '_resolve_version("btts")' not in src, \
@@ -9640,6 +9642,61 @@ def test_per_market_version():
         assert _resolve_version("goals") == MODEL_VERSION, "goals unaffected by 1X2 override"
     finally:
         os.environ.pop("MODEL_VERSION_1X2", None)
+
+
+@test("OU-CLV-OPTION-B-RE-EVAL — tier-aware MODEL_VERSION_OU_T1/T2/T3 routing")
+def _():
+    """OU-CLV-OPTION-B-RE-EVAL (2026-06-12). Per-tier OU eval showed
+    v20260607 dominates v14_recreate_2026_05_11 on T1 (~+45pp ROI@+5% on
+    n=128) but T2/T3+ holdout (n=2 / n=4) is too thin to falsify the
+    universe override. `_resolve_version("ou", tier)` now checks
+    MODEL_VERSION_OU_T1 / _T2 / _T3 before falling back to MODEL_VERSION_OU
+    so we can flip only the tier(s) where we have evidence.
+
+    Resolution order: tier override → market override → global.
+    Tier integer >= 3 is bucketed to T3.
+    """
+    import pathlib, os
+    from workers.model.xgboost_ensemble import _resolve_version, MODEL_VERSION
+    src = (pathlib.Path(__file__).resolve().parent.parent /
+           "workers" / "model" / "xgboost_ensemble.py").read_text()
+
+    assert "OU-CLV-OPTION-B-RE-EVAL" in src, "task tag missing"
+    assert '_resolve_version("ou", tier=tier)' in src, (
+        "get_xgboost_prediction must pass tier into the OU resolver"
+    )
+
+    # Behavioural — clean slate
+    for k in ("MODEL_VERSION_OU", "MODEL_VERSION_OU_T1",
+              "MODEL_VERSION_OU_T2", "MODEL_VERSION_OU_T3"):
+        os.environ.pop(k, None)
+
+    try:
+        # Tier override takes precedence
+        os.environ["MODEL_VERSION_OU_T1"] = "v20260607"
+        assert _resolve_version("ou", tier=1) == "v20260607", "T1 tier env wins"
+        assert _resolve_version("ou", tier=2) == MODEL_VERSION, "T2 falls through to global"
+        assert _resolve_version("ou", tier=3) == MODEL_VERSION, "T3 falls through to global"
+
+        # Tier override + market override coexist (tier wins on the tier; market wins elsewhere)
+        os.environ["MODEL_VERSION_OU"] = "v14_recreate_2026_05_11"
+        assert _resolve_version("ou", tier=1) == "v20260607", "T1 still wins via tier env"
+        assert _resolve_version("ou", tier=2) == "v14_recreate_2026_05_11", "T2 falls to market env"
+        assert _resolve_version("ou", tier=3) == "v14_recreate_2026_05_11", "T3 falls to market env"
+        assert _resolve_version("ou", tier=4) == "v14_recreate_2026_05_11", "T4 buckets to T3 (no T4 env), then to market env"
+
+        # tier=None preserves the legacy callsite path
+        assert _resolve_version("ou") == "v14_recreate_2026_05_11", "tier-less call uses market env"
+
+        # T3 env catches anything tier>=3
+        os.environ["MODEL_VERSION_OU_T3"] = "v20260524_market"
+        assert _resolve_version("ou", tier=3) == "v20260524_market", "T3 env applies to tier=3"
+        assert _resolve_version("ou", tier=4) == "v20260524_market", "tier>=3 buckets to T3 env"
+        assert _resolve_version("ou", tier=99) == "v20260524_market", "very high tier still T3"
+    finally:
+        for k in ("MODEL_VERSION_OU", "MODEL_VERSION_OU_T1",
+                  "MODEL_VERSION_OU_T2", "MODEL_VERSION_OU_T3"):
+            os.environ.pop(k, None)
 
 
 @test("SHADOW-PREDICTIONS — predictions allows multi-version + pipeline writes shadow rows")

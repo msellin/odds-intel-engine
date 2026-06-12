@@ -64,11 +64,29 @@ MODEL_VERSION = os.environ.get("MODEL_VERSION", DEFAULT_MODEL_VERSION)
 # Poisson joint matrix (built from the GOALS regressors), not from the
 # orphaned btts.pkl. Setting MODEL_VERSION_BTTS would do nothing — to change
 # BTTS inference, set MODEL_VERSION_GOALS.
-def _resolve_version(market_kind: str) -> str:
+def _resolve_version(market_kind: str, tier: int | None = None) -> str:
     """Returns the model version to use for a given market head.
     market_kind: '1x2' | 'ou' | 'goals' (only these three are read in
-    inference; see comment above). Falls back to global MODEL_VERSION if no
-    override is set."""
+    inference; see comment above).
+
+    OU-CLV-OPTION-B-RE-EVAL (2026-06-12): for the 'ou' head, an optional
+    tier-aware override is checked first — MODEL_VERSION_OU_T1 /
+    MODEL_VERSION_OU_T2 / MODEL_VERSION_OU_T3 (T3 catches tier>=3). Per-tier
+    eval (scripts/diag_ou_eval_by_tier.py) showed v20260607 dominates
+    v14_recreate_2026_05_11 on T1 by ~+45pp ROI@+5% while T2/T3+ holdout
+    samples are too thin to falsify the universe override. Routing lets us
+    flip T1 OU back to the production global without disturbing T2/T3+.
+
+    Resolution order (first match wins):
+      1. MODEL_VERSION_OU_T{tier}  (only when market_kind=='ou' and tier set)
+      2. MODEL_VERSION_{MARKET}    (the existing per-market override)
+      3. MODEL_VERSION             (global fallback)
+    """
+    if market_kind == "ou" and tier is not None:
+        tier_bucket = max(1, min(3, int(tier)))  # T1, T2, T3+
+        tier_env = os.environ.get(f"MODEL_VERSION_OU_T{tier_bucket}")
+        if tier_env:
+            return tier_env
     env_name = f"MODEL_VERSION_{market_kind.upper()}"
     return os.environ.get(env_name, MODEL_VERSION)
 
@@ -315,7 +333,7 @@ def get_xgboost_prediction(home_team: str, away_team: str,
     # Defaults to MODEL_VERSION for every head; overrides via env let us
     # promote 1X2 to a new version without simultaneously promoting O/U.
     v_1x2 = _resolve_version("1x2")
-    v_ou = _resolve_version("ou")
+    v_ou = _resolve_version("ou", tier=tier)
     v_goals = _resolve_version("goals")  # for the expected-goals regressors
 
     bundle_1x2 = _load_bundle(v_1x2)
