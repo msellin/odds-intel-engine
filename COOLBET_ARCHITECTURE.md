@@ -263,18 +263,22 @@ placer path read this and short-circuit.
 | `local/launchd/com.oddsintel.coolbet-mac-daemon.plist` | launchd job definition |
 | `local/launch_chrome_for_sync.sh` | CDP-Chrome launcher |
 
-### Deprecated (slated for removal — see PRIORITY_QUEUE)
-| File | Replaced by |
-|---|---|
-| `scripts/coolbet_daemon.py` | Mac daemon (smoke_test still pins it) |
-| `scripts/coolbet_refresh_jwt.py` | `extract_jwt_from_cdp` |
-| `scripts/coolbet_refresh_debug.py` | n/a |
-| `scripts/coolbet_browser_setup.py` | `--refresh-jwt` CLI |
-| `scripts/_daemon_handlers.py` | n/a (old daemon's Telegram handlers) |
-| `scripts/place_one_real_bet.py` | n/a (manual test) |
-| `scripts/coolbet/session_heartbeat.py` | `scripts/coolbet/health_ping.py` |
-| `scripts/coolbet/flaresolverr_login_test.py` | one-shot diagnostic |
-| `scripts/coolbet/inspect_2fa_endpoint.py` | one-shot diagnostic |
+### Deleted in COOLBET-DEAD-FILE-CLEANUP (2026-06-12)
+The following files were removed once the CDP-JWT path superseded them.
+Listed here so future-you doesn't grep for them and assume they were
+load-bearing:
+
+- `scripts/coolbet_daemon.py` — old foreground daemon, replaced by Mac daemon (launchd)
+- `scripts/coolbet_refresh_jwt.py` + `coolbet_refresh_debug.py` — old headless-Chrome JWT refresher, replaced by `extract_jwt_from_cdp`
+- `scripts/coolbet_browser_setup.py` — one-time profile setup for the old refresher
+- `scripts/coolbet_preflight.py` — preflight checks only used by the old daemon
+- `scripts/_daemon_handlers.py` — Telegram command handlers for the old daemon
+- `scripts/place_one_real_bet.py` — one-off manual test
+- `scripts/coolbet/session_heartbeat.py` — superseded by `scripts/coolbet/health_ping.py`
+- `scripts/coolbet/flaresolverr_login_test.py` + `inspect_2fa_endpoint.py` — diagnostics
+
+`CoolbetSession.reload_manual_jwt()` was also removed — its only caller
+(the headless refresher) is gone.
 
 ---
 

@@ -3687,6 +3687,55 @@ def test_coolbet_cdp_jwt_extract():
     )
 
 
+@test("COOLBET-CDP-FETCH-RAW — fetch_pending_bets_via_cdp uses raw CDP websockets, not patchright")
+def test_coolbet_cdp_fetch_raw():
+    """COOLBET-CDP-FETCH-RAW (2026-06-12): the bet-history sync was using
+    Playwright/patchright connect_over_cdp() which crashed with 'Frame was
+    detached' on the operator's daily-driver Chrome (60+ active iframe
+    targets — gmail, maps, ads — racing the page enumeration). Same root
+    cause as the JWT extract migration.
+
+    Migrated to raw CDP over websockets: find Coolbet tab via /json/list,
+    open WS to its debugger URL, Page.reload + Network domain interception
+    to capture the /s/sbgate/bets/history XHR Coolbet's React app fires.
+
+    NON-DISRUPTIVE pin: function must only act when the operator's tab is
+    ALREADY on the history page — never auto-navigate them away from
+    wherever they're browsing. Dedup is a nice-to-have; user_placed_at +
+    Telegram ✅ button is the canonical safety net."""
+    import pathlib
+    src = pathlib.Path("workers/automation/coolbet_browser_sync.py").read_text()
+    fn_block = src[src.index("def fetch_pending_bets_via_cdp("):
+                    src.index("def fetch_pending_bets(")]
+    assert "_sync_playwright_factory()" not in fn_block, (
+        "fetch_pending_bets_via_cdp must NOT call _sync_playwright_factory — "
+        "Playwright connect_over_cdp races with frame detachment on busy "
+        "Chrome. Use raw CDP via websockets."
+    )
+    assert "p.chromium.connect_over_cdp" not in fn_block, (
+        "fetch_pending_bets_via_cdp must NOT use p.chromium.connect_over_cdp — "
+        "same Frame-detached failure mode as the original JWT extract."
+    )
+    assert "_async_fetch_pending_bets" in fn_block, (
+        "fetch_pending_bets_via_cdp must delegate to _async_fetch_pending_bets "
+        "(the raw-CDP-via-websockets implementation)."
+    )
+    async_start = src.index("async def _async_fetch_pending_bets(")
+    rest = src[async_start + 1:]
+    next_async = rest.find("\nasync def ")
+    async_block = src[async_start:async_start + 1 + next_async] if next_async >= 0 else src[async_start:]
+    for needle in ("Network.enable", "Page.reload", "Network.responseReceived",
+                    "Network.getResponseBody", "/s/sbgate/bets/history"):
+        assert needle in async_block, (
+            f"_async_fetch_pending_bets must use {needle!r} — required for "
+            "Page-reload + Network-interception flow."
+        )
+    assert "HISTORY_PAGE not in current_url" in async_block, (
+        "_async_fetch_pending_bets must early-return when the Coolbet tab is "
+        "NOT already on the history page — never auto-navigate operator's tab."
+    )
+
+
 @test("COOLBET-PLACEMENT-PAUSED-KILL-SWITCH — place_all_bets(execute=True) checks placement_paused before POSTing")
 def test_coolbet_placement_paused_kill_switch():
     """COOLBET-PLACEMENT-PAUSED-KILL-SWITCH (2026-06-12): the placement_paused
@@ -4468,14 +4517,6 @@ def _():
     ok, reason = g.can_place({"bot_name": "x", "edge_percent": 5}, 1.0)
     assert not ok and "max-bets-per-hour" in reason, f"rate limit must fire: {reason}"
 
-    # Daemon wiring
-    import pathlib
-    daemon = pathlib.Path("scripts/coolbet_daemon.py").read_text()
-    for flag in ("--use-kelly-stake", "--max-stake-per-bet", "--max-bets-per-hour",
-                 "--max-total-stake", "--max-edge-pct", "--require-confirm",
-                 "--bot-filter", "PlacementGuard"):
-        assert flag in daemon, f"daemon must wire {flag!r}"
-
     # Placer accepts guard kwarg
     import inspect
     from workers.automation.coolbet_placer import place_all_bets
@@ -4539,48 +4580,6 @@ def _():
     finally:
         if saved[0]: os.environ["TELEGRAM_BOT_TOKEN"] = saved[0]
         if saved[1]: os.environ["TELEGRAM_CHAT_ID"] = saved[1]
-
-    # Preflight surfaces TG status
-    import pathlib
-    pf = pathlib.Path("scripts/coolbet_preflight.py").read_text()
-    assert "TELEGRAM_BOT_TOKEN" in pf, "preflight should show TG cred status"
-
-
-@test("COOLBET-PREFLIGHT — checks cookies+creds+login+heartbeat+bots, daemon gates on it")
-def _():
-    """COOLBET-PREFLIGHT (2026-05-20) — scripts/coolbet_preflight.py runs all
-    critical checks (Imperva cookies present, credentials present, login +
-    heartbeat succeeds, JWT TTL > 0, ≥5 active bots) and exits 1 if any
-    critical check fails. coolbet_daemon.py runs preflight as a subprocess
-    before entering its loop; failure aborts startup."""
-    import pathlib
-    src = pathlib.Path("scripts/coolbet_preflight.py").read_text()
-    for fn in ("check_cookies", "check_credentials", "check_session_works",
-               "check_bot_universe", "check_balance"):
-        assert f"def {fn}" in src, f"missing preflight check: {fn}"
-    assert 'sys.exit(' in src, "preflight must exit with a meaningful code"
-    assert 'return 1' in src, "preflight must return 1 on critical failure"
-
-    daemon = pathlib.Path("scripts/coolbet_daemon.py").read_text()
-    assert "--skip-preflight" in daemon, "daemon must expose --skip-preflight escape hatch"
-    assert "coolbet_preflight.py" in daemon, "daemon must invoke coolbet_preflight.py at startup"
-
-
-@test("COOLBET-DAEMON-CLI — daemon exposes three loops + dry default")
-def _():
-    """COOLBET-DAEMON-CLI (2026-05-20) — scripts/coolbet_daemon.py is the
-    foreground sibling of the Railway scheduler. Guards: --place-mode defaults
-    to 'dry' so accidental run doesn't place real bets, --no-place flag exists,
-    and the three tasks (keepalive / odds / place) are all wired."""
-    import pathlib
-    src = pathlib.Path("scripts/coolbet_daemon.py").read_text()
-    assert "_task_keepalive" in src, "missing keepalive task"
-    assert "_task_odds_snapshot" in src, "missing odds task"
-    assert "_task_place" in src, "missing place task"
-    assert 'choices=("dry", "record", "execute")' in src, "place modes must be dry/record/execute"
-    assert 'default="dry"' in src, "place-mode must default to dry (safety)"
-    assert "--no-place" in src, "--no-place flag must exist"
-
 
 @test("COOLBET-KEEPALIVE — session exposes TTL + heartbeat (scheduler job retired)")
 def _():
@@ -4682,12 +4681,6 @@ def _():
     throttle_src = _i.getsource(CoolbetSession._throttle)
     assert "_throttle_lock" in throttle_src, "CoolbetSession._throttle must hold _throttle_lock"
 
-    import pathlib
-    daemon = pathlib.Path("scripts/coolbet_daemon.py").read_text()
-    assert "sleep_s=3.0" in daemon, "daemon must use sleep_s=3.0 for run_bulk"
-    assert "default=15" in daemon, "placement cadence must default to 15 min"
-    assert "sweep in progress" not in daemon, "placement must no longer be blocked by sweep"
-
 
 @test("COOLBET-JWT-ENV-PROPAGATION — renew_jwt_via_api updates os.environ so fresh sessions see new token")
 def _():
@@ -4704,12 +4697,6 @@ def _():
         "renew_jwt_via_api must update os.environ so new CoolbetSession() "
         "instances in the same process see the renewed token"
     )
-
-    # The sweep runner still stamps ok=False on failure via state.json, even
-    # though the Telegram alert was retired.
-    daemon_src = open("scripts/coolbet_daemon.py").read()
-    assert "last_sweep_finished" in daemon_src, "sweep runner must stamp last_sweep_finished"
-    assert '"ok": False' in daemon_src, "sweep runner must stamp ok=False on failure"
 
 
 @test("BOT-COHORTS-ALL — every bot fires at every cohort window")
@@ -10323,14 +10310,14 @@ def _():
 
 @test("COOLBET-INPLAY-SNAPSHOTS — LISTEN/NOTIFY inplay capture with capture/paper/execute modes")
 def _():
-    """COOLBET-INPLAY-SNAPSHOTS (2026-05-20) — measures slippage between an
-    inplay bot's decision and what Coolbet's live markets show at that
-    moment. Postgres trigger on simulated_bets fires NOTIFY inplay_bet_fired
-    on every inplay decision (xg_source IS NOT NULL); coolbet_daemon's
-    dedicated LISTEN thread does ONE Coolbet GET per signal and writes a
-    snapshot row. Three modes shipped: capture (A, default — snapshot only),
-    paper (B — A + real_bets row, no POST), execute (C — A + POST + real_bets).
-    Zero polling on either side."""
+    """COOLBET-INPLAY-SNAPSHOTS (2026-05-20, daemon-listener removed 2026-06-12):
+    measures slippage between an inplay bot's decision and what Coolbet's
+    live markets show at that moment. Postgres trigger on simulated_bets
+    fires NOTIFY inplay_bet_fired on every inplay decision (xg_source IS
+    NOT NULL). The LISTEN/notify consumer originally lived in
+    scripts/coolbet_daemon.py (retired with COOLBET-CDP-JWT-EXTRACT); the
+    capture module + migration + three modes (capture/paper/execute) still
+    pin the data-side contract for a future consumer to slot in."""
     import pathlib
     # Migration shipped
     mig = pathlib.Path("supabase/migrations/115_coolbet_inplay_snapshots.sql")
@@ -10364,25 +10351,8 @@ def _():
     assert '"LIVE" if live else "OPEN"' in exp_src, \
         "fetch_match_markets must switch matchStatus on the live flag"
 
-    # Daemon listener + CLI flag
-    daemon_src = pathlib.Path("scripts/coolbet_daemon.py").read_text()
-    assert "def _inplay_listener_loop" in daemon_src, "listener thread function missing"
-    assert "LISTEN inplay_bet_fired" in daemon_src, "daemon must LISTEN inplay_bet_fired"
-    assert "--inplay-mode" in daemon_src, "--inplay-mode CLI flag missing"
-    assert '"inplay_mode"' in daemon_src or "'inplay_mode'" in daemon_src, \
-        "_CTRL['inplay_mode'] flag missing"
-
-    # Telegram command
-    handlers_src = pathlib.Path("scripts/_daemon_handlers.py").read_text()
-    assert '"/inplay_mode"' in handlers_src, "/inplay_mode Telegram command missing"
-    assert "REAL MONEY" in handlers_src, \
-        "/inplay_mode execute warning must mention REAL MONEY"
-
-    # Telegram ping on successful captures
-    assert "_send_inplay_ping" in daemon_src, "telegram ping helper missing"
-    assert "capture_outcome\") == \"captured\"" in daemon_src, \
-        "ping must only fire on capture_outcome=captured"
-    # Display context fields populated for the notification
+    # Display context fields populated for the notification — the inplay
+    # capture path still uses these for the Telegram message body.
     assert "_resolve_decision_context" in cap_src, \
         "capture must fetch team + bot context for the Telegram ping"
     assert "_home_team" in cap_src and "_bot_name" in cap_src, \
@@ -10406,10 +10376,6 @@ def _():
         "keep_alive must include licence=EE param (matches browser request)"
     # fo-category retained as fallback
     assert "fo-category" in src, "fo-category must remain as Plan-B fallback"
-
-    daemon_src = pathlib.Path("scripts/coolbet_daemon.py").read_text()
-    assert '"--keepalive-min", type=int, default=5' in daemon_src, \
-        "daemon default keepalive cadence should be 5 min (matches browser)"
 
 
 @test("COOLBET-JWT-API-RENEW — pure-Python JWT renewal via /s/auth/renew-token")
@@ -10439,50 +10405,6 @@ def _():
     assert "self._adopt_manual_jwt()" in src, \
         "renew_jwt_via_api must adopt the new JWT after extraction"
     assert "set_key" in src, "renew_jwt_via_api must persist new JWT to .env"
-
-    daemon = pathlib.Path("scripts/coolbet_daemon.py").read_text()
-    assert "renew_jwt_via_api" in daemon, \
-        "daemon must call renew_jwt_via_api in the periodic refresh task"
-    assert "_task_jwt_browser_refresh" in daemon, \
-        "renewal task entrypoint missing (back-compat name with /relogin)"
-
-
-@test("COOLBET-AUTO-COOKIE-REFRESH — headless JWT refresher wired into daemon + session (legacy)")
-def _():
-    """COOLBET-AUTO-COOKIE-REFRESH (2026-05-20) — superseded by
-    COOLBET-JWT-API-RENEW. The headless-Chrome path turned out non-viable
-    (Coolbet session doesn't survive Chrome process restarts). Kept the
-    setup + refresh scripts as a fallback discovery tool but the daemon
-    no longer depends on them. Test relaxed: scripts exist, but no longer
-    required to be wired into the daemon's renewal path.
-    hot-swaps the new token in-process — no daemon restart needed."""
-    import pathlib
-
-    setup = pathlib.Path("scripts/coolbet_browser_setup.py")
-    assert setup.exists(), "scripts/coolbet_browser_setup.py missing — one-time browser bootstrap"
-    setup_src = setup.read_text()
-    assert "undetected_chromedriver" in setup_src, "setup must import undetected_chromedriver"
-    assert "user-data-dir" in setup_src, "setup must use persistent --user-data-dir profile"
-    assert "COOLBET_MANUAL_JWT" in setup_src, "setup must write COOLBET_MANUAL_JWT to .env"
-    assert "jwt-location.json" in setup_src, "setup must persist JWT location for refresher"
-
-    refresher = pathlib.Path("scripts/coolbet_refresh_jwt.py")
-    assert refresher.exists(), "scripts/coolbet_refresh_jwt.py missing — kept as fallback discovery tool"
-
-    session_src = pathlib.Path("workers/automation/coolbet_session.py").read_text()
-    assert "def reload_manual_jwt" in session_src, \
-        "CoolbetSession.reload_manual_jwt() missing — still used as a safety net"
-
-    daemon_src = pathlib.Path("scripts/coolbet_daemon.py").read_text()
-    assert "_task_jwt_browser_refresh" in daemon_src, \
-        "renewal task entrypoint missing (back-compat name with /relogin)"
-    assert "next_jwt_refresh" in daemon_src, \
-        "daemon must schedule periodic JWT refresh"
-    # NOTE: assertions about subprocess-invoking the refresher script are
-    # intentionally dropped — superseded by COOLBET-JWT-API-RENEW.
-    # /relogin Telegram command now uses the browser refresh path, not _login()
-    assert "_task_jwt_browser_refresh(session))" in daemon_src, \
-        "/relogin must route through browser refresher"
 
 
 @test("SHADOW-DEDUP — cohort-scoped unique constraint in migration + ON CONFLICT clause")
@@ -10735,91 +10657,18 @@ def _():
         "fuzzy_match_event must use token_set_ratio"
 
 
-@test("COOLBET-NO-SWEEP — --no-sweep flag disables odds loop; placer already stores snapshot per bet")
+@test("COOLBET-PLACER-STORES-SNAPSHOT — placer stores CLV snapshot per bet (no daemon sweep needed)")
 def _():
-    """COOLBET-NO-SWEEP (2026-05-21) — when Coolbet is used as a placement-only
-    bookmaker the 29-league sweep is unnecessary and risks Imperva blocks.
-    --no-sweep must disable the entire sweep loop while keepalive + placement
-    continue unchanged. Live odds are still captured at placement time via
-    store_coolbet_odds_snapshot() already called in the placer."""
+    """COOLBET-PLACER-STORES-SNAPSHOT (was COOLBET-NO-SWEEP, narrowed
+    2026-06-12 after coolbet_daemon retirement): the placer captures the
+    snapshot at placement time via store_coolbet_odds_snapshot(). Without
+    this, removing the background sweep loop would have lost CLV data —
+    which is exactly what we did when retiring the daemon."""
     import pathlib
-    daemon_src = pathlib.Path("scripts/coolbet_daemon.py").read_text()
     placer_src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
-
-    assert "--no-sweep" in daemon_src, "--no-sweep arg missing from daemon"
-    assert "args.no_sweep" in daemon_src, "daemon must check args.no_sweep"
-    assert 'float("inf")' in daemon_src, (
-        "next_odds must be float(\"inf\") when --no-sweep so the sweep block never fires"
-    )
-    assert "not args.no_sweep and now >= next_odds" in daemon_src, (
-        "sweep block must be gated on `not args.no_sweep`"
-    )
     assert "store_coolbet_odds_snapshot" in placer_src, (
-        "placer must call store_coolbet_odds_snapshot so CLV data is captured "
-        "even when the background sweep is disabled"
-    )
-
-
-@test("COOLBET-IMPERVA-BACKOFF — daemon enters quiet backoff after threshold keepalive failures")
-def _():
-    """COOLBET-IMPERVA-BACKOFF (2026-05-21) — after IMPERVA_FAIL_THRESHOLD
-    consecutive keepalive failures the daemon must stop all activity
-    (sweep, placement, JWT renewal) and enter a timed backoff window.
-    Backoff doubles on each continued block (capped at IMPERVA_BACKOFF_MAX_S).
-    Telegram alerts on enter, probe, and exit. Without this, the daemon hammers
-    blocked endpoints every 5 min and keeps the Imperva session frozen longer."""
-    import pathlib
-    src = pathlib.Path("scripts/coolbet_daemon.py").read_text()
-
-    # Backoff globals must exist with the right values
-    assert "IMPERVA_FAIL_THRESHOLD" in src, "IMPERVA_FAIL_THRESHOLD constant missing"
-    assert "IMPERVA_BACKOFF_MIN_S" in src, "IMPERVA_BACKOFF_MIN_S constant missing"
-    assert "IMPERVA_BACKOFF_MAX_S" in src, "IMPERVA_BACKOFF_MAX_S constant missing"
-    assert "_imperva_fail_streak" in src, "_imperva_fail_streak state var missing"
-    assert "_imperva_backoff_until" in src, "_imperva_backoff_until state var missing"
-    assert "_imperva_backoff_duration" in src, "_imperva_backoff_duration state var missing"
-
-    # Main loop must check backoff BEFORE normal keepalive/sweep/placement
-    backoff_check_pos = src.find("if _imperva_backoff_until > 0:")
-    keepalive_check_pos = src.find("if now >= next_keepalive:")
-    assert backoff_check_pos != -1, "backoff guard missing from main loop"
-    assert keepalive_check_pos != -1, "keepalive schedule check missing"
-    assert backoff_check_pos < keepalive_check_pos, (
-        "backoff guard must come before keepalive/sweep/placement in the loop"
-    )
-
-    # After N failures the daemon must enter backoff (not just log and continue)
-    assert "_imperva_fail_streak >= IMPERVA_FAIL_THRESHOLD" in src, (
-        "must enter backoff when streak reaches threshold"
-    )
-    assert "_imperva_backoff_until = now + _imperva_backoff_duration" in src, (
-        "must set _imperva_backoff_until to arm the backoff window"
-    )
-
-    # Backoff must double on continued block, capped at max
-    assert "_imperva_backoff_duration * 2" in src, "backoff must double on each continued block"
-    assert "IMPERVA_BACKOFF_MAX_S" in src, "backoff must be capped at IMPERVA_BACKOFF_MAX_S"
-
-    # Clear state when block resolves
-    assert "_imperva_backoff_until = 0.0" in src, (
-        "must clear _imperva_backoff_until when keepalive probe succeeds"
-    )
-    assert "_imperva_backoff_duration = IMPERVA_BACKOFF_MIN_S" in src, (
-        "must reset duration to IMPERVA_BACKOFF_MIN_S on recovery so next block starts fresh"
-    )
-    assert "_imperva_fail_streak = 0" in src, "must reset fail streak on recovery"
-
-    # Telegram alerts on backoff transitions were retired in TELE-BET-NOTIFY-V2
-    # (commit a818c18) — daemon Telegram noise was deliberately removed. The
-    # backoff state machine still functions; only the alert side was retired.
-    # The TELE-BET-NOTIFY test below enforces those strings are absent.
-
-    # While in backoff the main loop must not advance sweep/placement next times
-    # (i.e. it must `continue` the loop, not fall through to sweep/placement code)
-    backoff_block = src[backoff_check_pos: keepalive_check_pos]
-    assert "continue" in backoff_block, (
-        "backoff block must `continue` the loop so sweep/placement are never reached "
-        "while Imperva-blocked"
+        "placer must call store_coolbet_odds_snapshot so CLV data is "
+        "captured at the moment of placement (per-bet, not via sweep)."
     )
 
 
@@ -12067,14 +11916,13 @@ def test_odds_timing_validate_script():
     )
 
 
-@test("TELE-BET-NOTIFY — send_telegram in inplay_bot + daily_pipeline; team names in prematch query; daemon Telegram removed")
+@test("TELE-BET-NOTIFY — send_telegram in inplay_bot + daily_pipeline; team names in prematch query")
 def test_telegram_bet_notify():
     import pathlib
     root = pathlib.Path(__file__).resolve().parents[1]
     bot_src = (root / "workers" / "jobs" / "inplay_bot.py").read_text()
     pipeline_src = (root / "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
     placer_src = (root / "workers" / "automation" / "coolbet_placer.py").read_text()
-    daemon_src = (root / "scripts" / "coolbet_daemon.py").read_text()
 
     assert "from workers.notify.telegram import send_telegram" in bot_src, \
         "inplay_bot.py must import send_telegram"
@@ -12090,11 +11938,6 @@ def test_telegram_bet_notify():
 
     assert "from workers.notify.telegram import send_telegram" not in placer_src, \
         "coolbet_placer.py must NOT import send_telegram (placer is run manually)"
-
-    assert "coolbet-imperva" not in daemon_src, \
-        "daemon must not send Imperva Telegram alerts (daemon not in active use)"
-    assert "coolbet-keepalive-fail" not in daemon_src, \
-        "daemon must not send keepalive-fail Telegram alerts"
 
 
 @test("MATURITY-LABEL-MIGRATION — migration 134 adds maturity_label column and correct bot assignments")

@@ -606,82 +606,234 @@ def refresh_jwt_via_cdp(*, allow_open_new_tab: bool = True,
 
 
 def fetch_pending_bets_via_cdp(*, timeout_ms: int = 30000) -> list[dict]:
-    """Connect to the operator's real Chrome via CDP and fetch pending
-    bets. Chrome must be running with --remote-debugging-port=9222.
+    """Fetch pending bets from the operator's logged-in Coolbet session.
 
-    Uses a NEW page in the existing browser so we don't disturb the
-    operator's open tabs. The new page inherits all cookies + localStorage
-    from the user-data-dir — Imperva sees a fully-warmed residential
-    browser, no challenge."""
-    sync_playwright = _sync_playwright_factory()
+    CDP-FETCH-RAW (2026-06-12): rewritten to use raw CDP over websockets
+    rather than Playwright/patchright. The Playwright path crashed with
+    'Frame was detached' on the operator's daily-driver Chrome (60+
+    active targets — gmail iframes, maps, ads — racing the page
+    enumeration). Same root cause as extract_jwt_from_cdp's migration.
 
-    captured: list[dict] = []
+    No tab navigation: instead of redirecting the operator's Coolbet
+    tab to /panuste-ajalugu/sport and intercepting the XHR, we run a
+    single Runtime.evaluate that calls `fetch('/s/sbgate/bets/history',
+    {headers: {cbauth, ...}})` from the page context. The page's
+    cookies + Imperva session are reused; no navigation, no focus
+    event, no window flash.
+
+    Returns [] on any failure — caller (Mac daemon) treats empty as
+    'no CDP sync this tick, fall back to user_placed_at + Telegram-
+    button dedup'."""
     try:
-        with sync_playwright() as p:
-            try:
-                browser = p.chromium.connect_over_cdp(CDP_URL, timeout=10000)
-            except Exception as e:
-                log.error("CDP connect failed at %s — is Chrome running with "
-                          "--remote-debugging-port=9222? %s", CDP_URL, e)
-                return []
-
-            # Reuse the existing browser context (the operator's profile).
-            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-            # SILENT-SYNC (2026-06-12): reuse an EXISTING Coolbet tab if
-            # one is open — opening a new tab brings the CDP-Chrome window
-            # to the foreground on macOS, which interrupts the operator's
-            # workflow. Only open a fresh tab as a last resort.
-            page = None
-            for pg in ctx.pages:
-                try:
-                    if "coolbet.com" in pg.url:
-                        page = pg
-                        break
-                except Exception:
-                    continue
-            if page is None:
-                page = ctx.new_page()
-
-            def _on_response(resp):
-                try:
-                    url = resp.url
-                    if "/s/sbgate/bets/history" not in url:
-                        return
-                    body = resp.json()
-                    # Coolbet's response shape (verified 2026-06-12):
-                    #   { tickets: [...], hasNextPage: bool, totals: {...} }
-                    if isinstance(body, dict):
-                        items = (body.get("tickets") or body.get("data")
-                                  or body.get("results") or body.get("items") or [])
-                    else:
-                        items = body
-                    if isinstance(items, list):
-                        captured.extend(items)
-                        log.info("captured %d bets from %s", len(items), url)
-                except Exception as e:
-                    log.debug("response intercept failed: %s", e)
-
-            page.on("response", _on_response)
-            try:
-                # If we're already on the history page, just reload —
-                # reload triggers the XHR without changing the tab URL or
-                # bringing the window to front. If on another Coolbet
-                # page, goto the history URL (still in the SAME tab so
-                # no new-tab focus event).
-                if HISTORY_PAGE in page.url:
-                    page.reload(wait_until="domcontentloaded", timeout=timeout_ms)
-                else:
-                    page.goto(HISTORY_PAGE, wait_until="domcontentloaded",
-                               timeout=timeout_ms)
-                # XHR fires after DOM ready — wait briefly for capture.
-                page.wait_for_timeout(5000)
-            except Exception as e:
-                log.warning("history page load failed: %s", e)
-            # DO NOT close the page — it might be the operator's tab.
-            # DO NOT close the browser — it's the operator's Chrome.
+        import asyncio
+        body = asyncio.run(_async_fetch_pending_bets(timeout_s=timeout_ms / 1000.0))
     except Exception as e:
-        log.error("CDP fetch failed: %s", e)
-    return captured
+        log.warning("CDP fetch_pending_bets failed: %s", e)
+        return []
+    if body is None:
+        return []
+    if isinstance(body, dict):
+        items = (body.get("tickets") or body.get("data")
+                  or body.get("results") or body.get("items") or [])
+    else:
+        items = body if isinstance(body, list) else []
+    if isinstance(items, list):
+        log.info("CDP-fetched %d pending bet(s) from Coolbet history", len(items))
+        return items
+    return []
+
+
+async def _async_fetch_pending_bets(*, timeout_s: float) -> dict | list | None:
+    """Find Coolbet tab → reload it via CDP → intercept the /s/sbgate/bets/history
+    XHR Coolbet's React app fires on load → return parsed JSON.
+
+    Why Page.reload + Network interception rather than a direct fetch():
+    Imperva specifically challenges /s/sbgate/bets/history at the API
+    layer — a bare fetch() from page context returns HTTP 500 with
+    `<script src="/de-Macd-thats-...">` (the Imperva JS challenge).
+    The trick that DOES work is to navigate the page, which executes
+    the challenge JS natively, then capture the XHR that Coolbet's own
+    React app fires — that XHR is now trusted. Confirmed empirically
+    2026-06-12 by trying both paths.
+
+    Page reload is mildly disruptive (the operator's tab refreshes)
+    but matches the existing Playwright behavior — the SILENT-SYNC
+    optimisation (reuse-existing-tab-if-on-history) is preserved."""
+    import asyncio
+    import websockets
+
+    try:
+        targets = await asyncio.wait_for(
+            _http_get_json(f"{CDP_URL}/json/list"),
+            timeout=timeout_s,
+        )
+    except Exception as e:
+        log.warning("CDP /json/list failed: %s", e)
+        return None
+
+    coolbet_target = None
+    for t in targets or []:
+        if t.get("type") != "page":
+            continue
+        if "coolbet.com" in (t.get("url") or ""):
+            coolbet_target = t
+            break
+    if coolbet_target is None:
+        log.info("No coolbet.com tab open in CDP-Chrome — skipping bet-history sync.")
+        return None
+
+    ws_url = coolbet_target.get("webSocketDebuggerUrl")
+    if not ws_url:
+        log.warning("Coolbet target has no webSocketDebuggerUrl: %s", coolbet_target)
+        return None
+
+    current_url = coolbet_target.get("url") or ""
+    # NON-DISRUPTIVE-SYNC (2026-06-12): only sync when the operator's
+    # tab is ALREADY on the history page. Navigating their tab away
+    # from wherever they're browsing is rude; the dedup is a nice-to-
+    # have, not safety-critical (user_placed_at + Telegram ✅ button is
+    # the canonical kill switch). Operator who wants the sync just
+    # leaves a /panuste-ajalugu/sport tab open.
+    if HISTORY_PAGE not in current_url and "/panuste-ajalugu" not in current_url:
+        log.info("CDP fetch_pending_bets: Coolbet tab on %s, not history — "
+                  "skipping sync (open /panuste-ajalugu/sport to enable).",
+                  current_url[:80])
+        return None
+
+    try:
+        async with websockets.connect(ws_url,
+                                         open_timeout=timeout_s,
+                                         max_size=10_000_000) as ws:
+            next_id = [0]
+
+            async def send_cmd(method: str, params: dict | None = None) -> int:
+                next_id[0] += 1
+                rid = next_id[0]
+                await ws.send(_json_dumps({
+                    "id": rid, "method": method, "params": params or {},
+                }))
+                return rid
+
+            # Enable the domains we need. We don't care about the ack
+            # responses (their ids are tracked but skipped in the loop).
+            await send_cmd("Network.enable")
+            await send_cmd("Page.enable")
+
+            # Reload the existing history tab to retrigger the XHR.
+            # We pre-validated the tab is already on history (above),
+            # so Page.reload is safe — no navigation away.
+            await send_cmd("Page.reload", {"ignoreCache": False})
+
+            # Collect requestIds for /s/sbgate/bets/history responses
+            # that look like the real API call (status 200, JSON-ish).
+            # The Imperva challenge first returns 500 with HTML; the
+            # real call follows after the challenge JS solves it.
+            history_request_ids: list[str] = []
+            history_seen_at: dict[str, float] = {}
+            deadline = asyncio.get_event_loop().time() + timeout_s
+            # Also stop early once we've seen the response AND given
+            # Coolbet a beat to deliver the body — typical lag <500ms.
+            settle_after_first_hit_s = 2.5
+            first_hit_at: float | None = None
+
+            while True:
+                now = asyncio.get_event_loop().time()
+                remaining = deadline - now
+                if remaining <= 0:
+                    break
+                if first_hit_at is not None and (now - first_hit_at) > settle_after_first_hit_s:
+                    break
+                try:
+                    msg = await asyncio.wait_for(ws.recv(), timeout=min(remaining, 1.0))
+                except asyncio.TimeoutError:
+                    continue
+                except Exception as e:
+                    log.warning("WS recv failed: %s", e)
+                    break
+
+                evt = _json_loads(msg)
+                method = evt.get("method")
+                if method != "Network.responseReceived":
+                    continue
+                params = evt.get("params") or {}
+                resp = params.get("response") or {}
+                url = resp.get("url") or ""
+                if "/s/sbgate/bets/history" not in url:
+                    continue
+                # Skip the Imperva 500 challenge responses.
+                if resp.get("status") != 200:
+                    continue
+                req_id = params.get("requestId")
+                if not req_id or req_id in history_seen_at:
+                    continue
+                history_seen_at[req_id] = now
+                history_request_ids.append(req_id)
+                if first_hit_at is None:
+                    first_hit_at = now
+
+            # No history XHR seen → bail. Caller falls back to
+            # user_placed_at-only dedup.
+            if not history_request_ids:
+                log.info("CDP fetch_pending_bets: no /bets/history 200 response seen "
+                          "within %.0fs", timeout_s)
+                return None
+
+            # Fetch each response body via Network.getResponseBody.
+            all_items: list[dict] = []
+            merged: dict = {}
+            for rid in history_request_ids:
+                body_cmd_id = await send_cmd(
+                    "Network.getResponseBody", {"requestId": rid},
+                )
+                # Drain WS until we see the matching response.
+                while True:
+                    try:
+                        msg = await asyncio.wait_for(ws.recv(), timeout=5.0)
+                    except asyncio.TimeoutError:
+                        log.warning("Network.getResponseBody timed out for %s", rid)
+                        break
+                    evt = _json_loads(msg)
+                    if evt.get("id") != body_cmd_id:
+                        continue
+                    if "error" in evt:
+                        log.warning("getResponseBody error for %s: %s", rid, evt["error"])
+                        break
+                    result = evt.get("result") or {}
+                    body_text = result.get("body") or ""
+                    if result.get("base64Encoded"):
+                        import base64 as _b64
+                        try:
+                            body_text = _b64.b64decode(body_text).decode("utf-8")
+                        except Exception as e:
+                            log.warning("base64 decode failed: %s", e)
+                            break
+                    try:
+                        parsed = _json_loads(body_text)
+                    except Exception as e:
+                        log.warning("response not JSON: %s body=%s", e, body_text[:200])
+                        break
+                    if isinstance(parsed, dict):
+                        tickets = (parsed.get("tickets") or parsed.get("data")
+                                    or parsed.get("results") or parsed.get("items"))
+                        if isinstance(tickets, list):
+                            all_items.extend(tickets)
+                        merged = parsed  # keep the last full envelope for caller
+                    elif isinstance(parsed, list):
+                        all_items.extend(parsed)
+                    break
+
+            # If we collected tickets across responses, hand the
+            # caller the merged envelope; else return whatever we
+            # have. Caller already handles both shapes.
+            if all_items:
+                if merged and isinstance(merged, dict):
+                    merged["tickets"] = all_items
+                    return merged
+                return all_items
+            return merged or None
+    except Exception as e:
+        log.warning("CDP fetch_pending_bets: WS failed: %s", e)
+        return None
 
 
 def fetch_pending_bets(*, headless: bool = True,
