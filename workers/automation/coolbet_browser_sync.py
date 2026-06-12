@@ -286,7 +286,20 @@ def fetch_pending_bets_via_cdp(*, timeout_ms: int = 30000) -> list[dict]:
 
             # Reuse the existing browser context (the operator's profile).
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-            page = ctx.new_page()
+            # SILENT-SYNC (2026-06-12): reuse an EXISTING Coolbet tab if
+            # one is open — opening a new tab brings the CDP-Chrome window
+            # to the foreground on macOS, which interrupts the operator's
+            # workflow. Only open a fresh tab as a last resort.
+            page = None
+            for pg in ctx.pages:
+                try:
+                    if "coolbet.com" in pg.url:
+                        page = pg
+                        break
+                except Exception:
+                    continue
+            if page is None:
+                page = ctx.new_page()
 
             def _on_response(resp):
                 try:
@@ -309,14 +322,22 @@ def fetch_pending_bets_via_cdp(*, timeout_ms: int = 30000) -> list[dict]:
 
             page.on("response", _on_response)
             try:
-                page.goto(HISTORY_PAGE, wait_until="domcontentloaded",
-                           timeout=timeout_ms)
+                # If we're already on the history page, just reload —
+                # reload triggers the XHR without changing the tab URL or
+                # bringing the window to front. If on another Coolbet
+                # page, goto the history URL (still in the SAME tab so
+                # no new-tab focus event).
+                if HISTORY_PAGE in page.url:
+                    page.reload(wait_until="domcontentloaded", timeout=timeout_ms)
+                else:
+                    page.goto(HISTORY_PAGE, wait_until="domcontentloaded",
+                               timeout=timeout_ms)
                 # XHR fires after DOM ready — wait briefly for capture.
                 page.wait_for_timeout(5000)
             except Exception as e:
                 log.warning("history page load failed: %s", e)
-            page.close()
-            # DON'T close the browser — it's the operator's Chrome.
+            # DO NOT close the page — it might be the operator's tab.
+            # DO NOT close the browser — it's the operator's Chrome.
     except Exception as e:
         log.error("CDP fetch failed: %s", e)
     return captured

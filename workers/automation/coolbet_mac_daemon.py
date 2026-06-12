@@ -50,7 +50,12 @@ log = logging.getLogger(__name__)
 # pipeline's 1.5-hour cohort tick so we don't sit on edges that just
 # qualified. Loose enough that we don't hammer Coolbet's anon search
 # endpoint.
-POLL_INTERVAL_S = int(os.getenv("COOLBET_MAC_POLL_S", "300"))
+# Default 30 min — matches the betting pipeline's cohort cadence (06:00,
+# 09:30, 11:00, 13:30, 15:00, 17:30, 19:00, 20:30 UTC + the 1h windows
+# in between). Shorter than that wastes resources and pops up Chrome
+# windows the operator doesn't want. Longer risks missing new edges by
+# more than one cohort tick.
+POLL_INTERVAL_S = int(os.getenv("COOLBET_MAC_POLL_S", "1800"))
 
 # Sanity: if the daemon spent more than this without a successful
 # placement attempt, log a loud warning so the operator notices if
@@ -170,29 +175,38 @@ def _tick(*, dry_run: bool = False) -> dict:
         "elapsed_s": 0.0,
     }
     try:
-        # COOLBET-CDP-SYNC (2026-06-12): before evaluating qualified bets,
-        # sync the operator's actual Coolbet pending state via CDP. Any
-        # simulated_bet that matches a real Coolbet ticket gets
-        # user_placed_at stamped — load_qualified_bets's filter then
-        # excludes them naturally. This is the structural dedup against
-        # the live account; it makes button-tap discipline OPTIONAL.
-        try:
-            synced = _sync_placed_bets_from_coolbet()
-            counters["synced_from_coolbet"] = synced
-            if synced:
-                log.info("CDP-sync marked %d sim_bets as already-placed", synced)
-        except Exception as e:
-            log.warning("CDP sync failed (proceeding without): %s", e)
-            counters["synced_from_coolbet"] = 0
-
-        # Late import — keeps the daemon process slim until first tick,
-        # and avoids paying CoolbetSession's env-var validation cost
-        # before we know there's work to do.
+        # SILENT-WHEN-EMPTY (2026-06-12): cheap DB check first — if no
+        # qualifying picks exist, exit the tick before touching Coolbet
+        # or CDP-Chrome. The popping-up cost (and resource use) of a
+        # CDP-Chrome navigation is unjustified when there's nothing
+        # to dedup or place.
         from workers.automation.coolbet_placer import (
             load_qualified_bets, place_all_bets,
         )
         candidates = load_qualified_bets()
         counters["qualified"] = len(candidates)
+        if not candidates:
+            return counters
+
+        # COOLBET-CDP-SYNC (2026-06-12): only run the CDP sync when we
+        # actually have qualifying candidates that might be placed —
+        # otherwise the CDP page-load + XHR-capture is wasted work and
+        # an unwanted Chrome-window flash. Sync narrows the candidate
+        # set by marking ones the operator already placed manually.
+        try:
+            synced = _sync_placed_bets_from_coolbet()
+            counters["synced_from_coolbet"] = synced
+            if synced:
+                log.info("CDP-sync marked %d sim_bets as already-placed", synced)
+                # Re-load candidates after sync since some may now be
+                # excluded (user_placed_at IS NULL filter in placer).
+                candidates = load_qualified_bets()
+                counters["qualified_after_sync"] = len(candidates)
+                if not candidates:
+                    return counters
+        except Exception as e:
+            log.warning("CDP sync failed (proceeding without): %s", e)
+            counters["synced_from_coolbet"] = 0
         if not candidates:
             return counters
         # record=True writes a real_bets row (the audit trail).

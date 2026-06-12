@@ -59,6 +59,11 @@
              premise). Edit if you intentionally want to route via Railway. -->
         <key>FLARESOLVERR_URL</key>
         <string>http://localhost:8191</string>
+        <!-- 30-min poll matches the betting pipeline cohort cadence.
+             Shorter = wasted work + Chrome-window flash.
+             Override at runtime: launchctl setenv COOLBET_MAC_POLL_S 600 -->
+        <key>COOLBET_MAC_POLL_S</key>
+        <string>1800</string>
     </dict>
 
     <key>StandardOutPath</key>
