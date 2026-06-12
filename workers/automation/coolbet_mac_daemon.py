@@ -65,6 +65,47 @@ HEALTH_WARN_AFTER_S = int(os.getenv("COOLBET_MAC_HEALTH_WARN_S", "1800"))
 _stop = False
 
 
+def _notify_placement(result: dict, *, dry_run: bool) -> None:
+    """Send a Telegram message after the daemon successfully places a
+    bet. Lives in the daemon (not the placer) so the placer can stay
+    Telegram-free for manual-CLI callers — see TELE-BET-NOTIFY pin.
+
+    Format mirrors the existing signaler messages so the operator can
+    visually correlate "I got a signal" → "the bot placed it"."""
+    from workers.notify.telegram import send_telegram
+
+    home = result.get("home_team") or "?"
+    away = result.get("away_team") or "?"
+    market = result.get("market") or "?"
+    selection = result.get("selection") or "?"
+    live_odds = result.get("live_odds")
+    stake = result.get("stake")
+    edge_pct = result.get("edge_percent")
+    bot_name = result.get("bot_name") or "?"
+    ticket_id = result.get("ticket_id") or ""
+    real_bet_id = result.get("real_bet_id") or ""
+
+    odds_str = f"{float(live_odds):.3f}" if live_odds is not None else "?"
+    stake_str = f"€{float(stake):.2f}" if stake is not None else "?"
+    edge_str = f"+{float(edge_pct):.2f}%" if edge_pct is not None else "?"
+    ticket_short = (str(ticket_id)[:16] + "…") if ticket_id else "(none)"
+
+    body = (
+        f"🤖 <b>Auto-placed bet</b>{' (DRY)' if dry_run else ''}\n"
+        f"\n"
+        f"{home} vs {away}\n"
+        f"{market} / {selection}\n"
+        f"@ {odds_str} · stake {stake_str} · edge {edge_str}\n"
+        f"bot: {bot_name}\n"
+        f"ticket: <code>{ticket_short}</code>"
+    )
+    # Dedup key per real_bet so a retry / log replay can't re-send.
+    # Dedup key per real_bet so a retry / log replay can't re-send. The
+    # send_telegram helper already hardcodes parse_mode="HTML".
+    dedup = f"auto-placed-{real_bet_id}" if real_bet_id else None
+    send_telegram(body, dedup_key=dedup)
+
+
 def _handle_sigterm(signum, frame):
     """Graceful shutdown — finish current tick before exiting. launchd's
     KeepAlive will restart us after exit, so this just keeps Coolbet
@@ -222,6 +263,17 @@ def _tick(*, dry_run: bool = False) -> dict:
             outcome = r.get("outcome")
             if outcome == "placed":
                 counters["placed"] += 1
+                # AUTO-PLACE-TG-NOTIFY (2026-06-12): the operator asked
+                # for a Telegram message every time the daemon places a
+                # bet without their button-tap — so they're never
+                # surprised by a real_bets row that "just appeared".
+                # Best-effort; failure here MUST NOT mark the tick as
+                # errored (the bet succeeded; the notification is
+                # observability).
+                try:
+                    _notify_placement(r, dry_run=dry_run)
+                except Exception as e:
+                    log.debug("placement Telegram notify failed: %s", e)
             elif outcome in ("dry_run", "no_event", "no_market",
                              "edge_eroded", "guard_skip"):
                 counters["skipped"] += 1

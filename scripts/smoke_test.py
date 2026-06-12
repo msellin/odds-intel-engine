@@ -3687,6 +3687,49 @@ def test_coolbet_cdp_jwt_extract():
     )
 
 
+@test("COOLBET-AUTO-PLACE-TG-NOTIFY — daemon Telegrams the operator after every successful placement")
+def test_coolbet_auto_place_tg_notify():
+    """AUTO-PLACE-TG-NOTIFY (2026-06-12): the operator must be notified
+    on Telegram every time the daemon places a real bet without their
+    button-tap. Without this, a real_bets row "just appears" with no
+    surfacing — confusing AND a real-money safety gap (operator might
+    not realise a placement happened until they check the dashboard).
+
+    Notify lives in the DAEMON not the placer — coolbet_placer.py is
+    intentionally Telegram-free for manual-CLI callers (TELE-BET-NOTIFY
+    smoke pin). The daemon iterates place_all_bets() results and fires
+    one notification per outcome=='placed' result.
+
+    Dedup key uses real_bet_id so a retry / log replay can't re-spam
+    the operator with stale messages."""
+    import pathlib
+    src = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
+    assert "def _notify_placement(" in src, (
+        "coolbet_mac_daemon must define _notify_placement(result, *, dry_run)"
+    )
+    assert "from workers.notify.telegram import send_telegram" in src, (
+        "daemon must import send_telegram (the placer must NOT — see "
+        "TELE-BET-NOTIFY pin which still applies)."
+    )
+    # Notify is wired inside the outcome loop, AND the placer is still
+    # Telegram-free (the existing TELE-BET-NOTIFY contract).
+    assert '_notify_placement(r' in src, (
+        "daemon's outcome loop must call _notify_placement(r, ...) for "
+        "each outcome=='placed' result."
+    )
+    placer_src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
+    assert "from workers.notify.telegram import send_telegram" not in placer_src, (
+        "coolbet_placer.py must STILL not import send_telegram — notify "
+        "lives in the Mac daemon. Manual CLI callers shouldn't push "
+        "messages to the operator's Telegram."
+    )
+    # Dedup key uses real_bet_id so re-firing the same tick doesn't spam.
+    assert "auto-placed-" in src and "real_bet_id" in src, (
+        "notify must dedup by real_bet_id (key prefix 'auto-placed-') "
+        "so retries / log replays can't re-spam."
+    )
+
+
 @test("COOLBET-MAC-DAEMON-HEARTBEAT — daemon writes mac_daemon_last_tick_at after every tick; /status reads it")
 def test_coolbet_mac_daemon_heartbeat():
     """COOLBET-MAC-DAEMON-HEARTBEAT (mig 251, 2026-06-12): the Telegram
