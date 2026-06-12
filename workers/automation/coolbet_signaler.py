@@ -254,15 +254,36 @@ def signal_all_bets(*, lookahead_hours: int = 36,
                 "preview": msg,
             })
             continue
-        # dedup_key per simulated_bet_id so a rapid duplicate run within
-        # 10 min won't double-fire even if the DB UPDATE is delayed.
+        # Inline buttons so the operator can mark placed / skipped with one
+        # tap from the chat. Callback handler in
+        # odds-intel-web/src/app/api/telegram/webhook/route.ts updates the
+        # corresponding column on simulated_bets and edits the message to
+        # append a status footer.
+        sim_id = str(b["simulated_bet_id"])
+        reply_markup = {
+            "inline_keyboard": [[
+                {"text": "✅ Placed", "callback_data": f"sigplaced:{sim_id}"},
+                {"text": "⏭ Skip",    "callback_data": f"sigskip:{sim_id}"},
+            ]],
+        }
         tg_id = send_telegram(
             msg,
-            dedup_key=f"signal-{b['simulated_bet_id']}",
+            dedup_key=f"signal-{sim_id}",
             dedup_window_s=900,
+            reply_markup=reply_markup,
         )
         if tg_id is not None:
             _mark_signaled(b["match_id"], b["market"], b["selection"])
+            # Cache the message_id so the callback handler can edit the
+            # original message to add a placement-status footer.
+            try:
+                execute_write(
+                    """UPDATE simulated_bets SET signal_message_id = %s
+                       WHERE match_id = %s AND market = %s AND selection = %s""",
+                    (tg_id, b["match_id"], b["market"], b["selection"]),
+                )
+            except Exception as e:
+                log.debug("cache signal_message_id failed (non-fatal): %s", e)
             results.append({
                 "simulated_bet_id": b["simulated_bet_id"],
                 "outcome": "signaled",
