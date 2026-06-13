@@ -747,15 +747,24 @@ def _parse_upcoming(raw: list[dict]) -> list[dict]:
     return matches
 
 
-def _load_hltv_history(min_date: datetime | None = None) -> list[dict]:
+def _load_hltv_history(min_date: datetime | None = None,
+                        min_match_id: int | None = None) -> list[dict]:
     """Load CS2 match history from cs2_hltv_matches (broader coverage
     than cs2_results — tier-3 leagues, junior teams, amateur events).
 
-    User preference 2026-06-12: HLTV is the source of truth for ELO +
-    data-sufficiency gates. cs2_hltv_matches has 28,947 rows vs
-    cs2_results's ~9k. Teams like Wanted Goons (55), Fire Flux (173),
-    and many others have predictable match volume on HLTV but were
-    invisible to the scanner before this change.
+    HLTV is the user-preferred source of truth (2026-06-12). The table has
+    28,947 rows vs cs2_results's ~9k. Teams like Wanted Goons (55),
+    Fire Flux (173), and many others have predictable match volume on
+    HLTV but were invisible before.
+
+    DATE-FROM-ID (2026-06-13): the `match_date` column in cs2_hltv_matches
+    is partially corrupted — 26k of 28k rows were bulk-backfilled with
+    fetched_at, not the real match time. Workaround: ORDER BY hltv_match_id
+    which IS monotonic across time (verified: 2024 ≈ 2.36M, 2025 Q1 ≈ 2.38M,
+    2026 Q1 ≈ 2.39M, ~10k IDs/year). ELO only needs chronological order,
+    not exact timestamps, so this is sufficient. We also synthesise a
+    pseudo-date from the ID for any downstream consumers that ask for
+    `date` (linear interpolation from anchor points).
 
     Returns the same dict shape as load_historical / _parse_recent_results
     so build_elo + build_match_counts consume it without change."""
@@ -764,16 +773,38 @@ def _load_hltv_history(min_date: datetime | None = None) -> list[dict]:
     except ImportError:
         return []
 
-    cutoff = (min_date or (datetime.now(timezone.utc) - timedelta(days=365))).isoformat()
+    # Anchor points for ID → date interpolation (calibrated from
+    # match_dates we trust — pre-bulk-backfill ones). Linear over the
+    # roughly-uniform HLTV match-creation rate (~28 matches/day).
+    ANCHOR_ID_2024_Q1 = 2363737  # ~ 2024-01-01
+    ANCHOR_ID_2026_Q2 = 2390000  # ~ 2026-04-01
+    ANCHOR_DATE_2024_Q1 = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    ANCHOR_DATE_2026_Q2 = datetime(2026, 4, 1, tzinfo=timezone.utc)
+    IDS_PER_DAY = (ANCHOR_ID_2026_Q2 - ANCHOR_ID_2024_Q1) / max(
+        1, (ANCHOR_DATE_2026_Q2 - ANCHOR_DATE_2024_Q1).days,
+    )
+
+    def _id_to_date(mid: int) -> datetime:
+        days_since_anchor = (mid - ANCHOR_ID_2024_Q1) / IDS_PER_DAY
+        return ANCHOR_DATE_2024_Q1 + timedelta(days=days_since_anchor)
+
+    # ID-based filtering instead of broken match_date filtering. Either
+    # caller passes min_match_id directly, or we derive one from min_date.
+    if min_match_id is None:
+        target_date = min_date or (datetime.now(timezone.utc) - timedelta(days=365))
+        days_back = (ANCHOR_DATE_2026_Q2 - target_date).days
+        min_match_id = int(ANCHOR_ID_2026_Q2 - days_back * IDS_PER_DAY)
+
     rows = execute_query("""
-        SELECT team1_name, team2_name, winner_name, best_of, match_date, event_name
+        SELECT hltv_match_id, team1_name, team2_name, winner_name, best_of, event_name
         FROM cs2_hltv_matches
-        WHERE match_date >= %s
+        WHERE hltv_match_id >= %s
           AND winner_name IS NOT NULL
           AND team1_name IS NOT NULL AND team2_name IS NOT NULL
           AND team1_name <> '' AND team2_name <> ''
           AND team1_name <> 'TBD' AND team2_name <> 'TBD'
-    """, (cutoff,))
+        ORDER BY hltv_match_id ASC
+    """, (min_match_id,))
     out: list[dict] = []
     for r in rows:
         winner = r["winner_name"]
@@ -785,14 +816,15 @@ def _load_hltv_history(min_date: datetime | None = None) -> list[dict]:
         else:
             continue  # winner string didn't match either team → unparseable
         out.append({
-            "date": r["match_date"],
+            "date": _id_to_date(r["hltv_match_id"]),
             "team1": t1,
             "team2": t2,
             "result": result,
             "best_of": r["best_of"] or 3,
             "tournament": r["event_name"] or "",
+            "hltv_match_id": r["hltv_match_id"],
         })
-    out.sort(key=lambda x: x["date"])
+    # Already sorted by hltv_match_id ASC from SQL — chronological proxy.
     return out
 
 
@@ -905,7 +937,19 @@ def _build_alias_map(ratings: dict[str, float]) -> dict[str, str]:
 
 
 def lookup_team(name: str, ratings: dict[str, float], alias_map: dict[str, str]) -> tuple[float, bool]:
-    """Return (elo, found_in_history). Falls back to INITIAL_ELO if unknown."""
+    """Return (elo, found_in_history). Falls back to INITIAL_ELO if unknown.
+
+    EXACT-MATCH-FIRST (2026-06-13): HLTV's match history contains
+    distinct teams that differ only in case ("Falcons" tier-1 vs
+    "FALCONS" amateur, "TYLOO" vs "Tyloo"). The previous flow
+    normalised input to lowercase first, so lookup of "Falcons" hit
+    alias_map["falcons"] which had been overwritten by whichever case
+    variant iterated last in _build_alias_map — typically the WRONG
+    team. Try the literal team-name as a ratings key BEFORE falling
+    through to normalised lookup so the upcoming-match name has
+    primacy."""
+    if name in ratings:
+        return ratings[name], True
     key = _normalize(name)
     canonical = alias_map.get(key)
     if canonical and canonical in ratings:
