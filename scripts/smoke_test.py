@@ -5421,10 +5421,15 @@ def _():
 
 @test("INPLAY-TIMING — /api/value-bets/live route exists + server-anchored stale gate")
 def _():
-    """INPLAY-TIMING 2026-06-02 — inplay picks are time-critical; the
-    /value-bets page renders a separate auto-refreshing "Live now" section
-    powered by GET /api/value-bets/live. Stale badge must use server-side
-    `now`, not Date.now() on the client (clock spoofing).
+    """INPLAY-TIMING 2026-06-02 — inplay picks are time-critical; the full
+    auto-refreshing live grid is rendered on /live (was originally on
+    /value-bets — moved 2026-06-06 by VALUE-BETS-DENSITY-PASS Tier 2 so
+    /value-bets and /live didn't duplicate the same grid). /value-bets now
+    shows a compact <ValueBetsLiveStrip /> preview that links to /live.
+
+    The full <ValueBetsLiveSection /> is powered by GET /api/value-bets/live.
+    Stale badge must use server-side `now`, not Date.now() on the client
+    (clock spoofing).
 
     Asserts: route exists, returns server `now`, gates by tier server-side,
     and the client section reads serverNow + has the >120s amber warning.
@@ -5466,11 +5471,20 @@ def _():
         "Stale badge copy must warn that the edge may have moved"
     )
 
-    # Page wires both
-    page = _web_path("src/app/(app)/value-bets/page.tsx")
-    page_src = page.read_text()
-    assert "ValueBetsLiveSection" in page_src, "page must render ValueBetsLiveSection"
-    assert "serverNow" in page_src, "page must pass server-anchored serverNow to the section"
+    # /live page wires the full live grid + server-anchored serverNow.
+    # (/value-bets renders the compact <ValueBetsLiveStrip /> preview that
+    # links over to /live — confirmed by VALUE-BETS-DENSITY-PASS Tier 2.)
+    live_page = _web_path("src/app/(app)/live/page.tsx")
+    live_src = live_page.read_text()
+    assert "ValueBetsLiveSection" in live_src, "/live page must render ValueBetsLiveSection"
+    assert "serverNow" in live_src, "/live page must pass server-anchored serverNow to the section"
+
+    vb_page = _web_path("src/app/(app)/value-bets/page.tsx")
+    vb_src = vb_page.read_text()
+    assert "ValueBetsLiveStrip" in vb_src, (
+        "/value-bets must render the compact ValueBetsLiveStrip preview "
+        "(full grid lives on /live since VALUE-BETS-DENSITY-PASS Tier 2)"
+    )
 
 
 @test("PRO-TIER-V2 — dashboard_cache has rolling-30d cohort columns (migration 168)")
