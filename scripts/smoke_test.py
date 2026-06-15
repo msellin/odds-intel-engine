@@ -19620,6 +19620,91 @@ def test_threshold_check_weekly_cron():
     )
 
 
+@test("BOT-MATURITY-REVIEW-WEEKLY — script, email helper, scheduler hook, thresholds pinned")
+def test_bot_maturity_review_weekly():
+    """BOT-MATURITY-REVIEW-WEEKLY (2026-06-15): the 2026-06-13 audit found
+    bot_high_alignment (maturity=beta, -€56 over 50 real bets) had been
+    auto-placing real money because the Mac daemon lacked a maturity gate.
+    The decision "which bots are trustworthy enough to spend real money?"
+    was manual and ad-hoc. This pins the automation so it can't silently
+    regress:
+
+    - scripts/weekly_bot_review.py exists and pins the verdict thresholds
+      as named constants so a future "tweak" can't accidentally invert them
+    - workers/jobs/weekly_bot_review_email.py exists with the Resend send
+    - workers/scheduler.py declares job_weekly_bot_review
+    - The cron is registered for Sunday 06:30 UTC (after the 06:00 threshold
+      check, parallel with the daily wc_odds_sweep which is independent)
+    - Email body wraps the script stdout in <pre> to preserve column alignment
+    """
+    import pathlib
+    script_src = pathlib.Path("scripts/weekly_bot_review.py").read_text()
+    sched_src  = pathlib.Path("workers/scheduler.py").read_text()
+    email_src  = pathlib.Path("workers/jobs/weekly_bot_review_email.py").read_text()
+
+    # Verdict thresholds — pinned by name so smoke catches accidental edits.
+    # The numeric values themselves are starting points; pin the constant
+    # names so a "10 → 5" tweak is visible, not the literal magnitudes.
+    for const in (
+        "MIN_BETS_FOR_VERDICT",
+        "PROMOTE_REAL_ROI_PCT",
+        "PROMOTE_SIM_CLV_PCT",
+        "DEMOTE_REAL_ROI_PCT",
+        "VERDICT_WINDOW_DAYS",
+    ):
+        assert const in script_src, (
+            f"weekly_bot_review.py must expose {const} as a named constant so "
+            f"smoke can detect threshold drift"
+        )
+
+    # Pin the verdict labels — the email digest and the operator's playbook
+    # rely on these three strings being stable.
+    for verdict in ("PROMOTE", "DEMOTE", "HOLD"):
+        assert verdict in script_src, f"verdict label '{verdict}' must appear in script output"
+
+    # Pin the maturity gate semantics: PROMOTE requires maturity != calibrated,
+    # DEMOTE requires maturity = calibrated. If a future refactor inverts this,
+    # the bot_high_alignment class of bug returns.
+    assert 'maturity != "calibrated"' in script_src or "maturity != 'calibrated'" in script_src, (
+        "PROMOTE branch must require maturity != calibrated"
+    )
+    assert 'maturity == "calibrated"' in script_src or "maturity == 'calibrated'" in script_src, (
+        "DEMOTE branch must require maturity == calibrated"
+    )
+
+    # Scheduler hook
+    assert "def job_weekly_bot_review" in sched_src, (
+        "scheduler.py must declare job_weekly_bot_review — the runner that "
+        "executes weekly_bot_review.py and ships the email"
+    )
+    assert 'id="weekly_bot_review"' in sched_src, (
+        "cron must be registered with id='weekly_bot_review' so APScheduler can find it"
+    )
+    # Pin the Sunday 06:30 UTC slot — anchored AFTER the 06:00 threshold check
+    # so the two emails land back-to-back in the operator's inbox.
+    assert ('"weekly_bot_review"' in sched_src
+            and 'day_of_week="sun"' in sched_src
+            and "hour=6, minute=30" in sched_src), (
+        "weekly_bot_review must run Sunday 06:30 UTC (after the 06:00 threshold check)"
+    )
+    assert "scripts/weekly_bot_review.py" in sched_src, (
+        "scheduler must shell out to scripts/weekly_bot_review.py"
+    )
+
+    # Email helper
+    assert "send_weekly_bot_review_email" in email_src, (
+        "email helper must expose send_weekly_bot_review_email entry point"
+    )
+    assert "api.resend.com/emails" in email_src, (
+        "email helper must POST to Resend"
+    )
+    # Script output is column-aligned monospace; wrap in <pre> so the email
+    # preserves the layout instead of collapsing whitespace.
+    assert "<pre" in email_src, (
+        "email body must wrap weekly_bot_review stdout in <pre> to preserve alignment"
+    )
+
+
 @test("POST-CAL-IMPACT — script structure, cutoff pinned, 6 markets covered")
 def test_post_cal_impact_structure():
     """POST-CAL-IMPACT (2026-06-06): scripts/check_post_calibration_impact.py

@@ -743,6 +743,45 @@ def job_weekly_threshold_check():
     _run_job("weekly_threshold_check", _threshold_check)
 
 
+def job_weekly_bot_review():
+    """BOT-MATURITY-REVIEW-WEEKLY (2026-06-15): Sunday rollup of per-bot
+    performance with PROMOTE / DEMOTE / HOLD verdicts.
+
+    Runs Sunday 06:30 UTC, AFTER weekly_threshold_check (06:00) so the
+    operator gets the gate counts and the bot review in two adjacent emails.
+
+    Origin: 2026-06-13 audit found `bot_high_alignment` (maturity=beta,
+    -€56 over 50 real bets) had been auto-placing real money for days
+    because the Mac daemon lacked the maturity gate Railway had. The
+    decision "which bots are trustworthy enough to spend real money on?"
+    was manual and ad-hoc — promotions happened reactively when someone
+    happened to notice. This cron makes it systematic.
+    """
+    import subprocess
+    from datetime import datetime, timezone
+
+    def _bot_review():
+        console.print("[bold cyan]Weekly bot maturity review — per-bot 30/60/90d perf + verdict[/bold cyan]")
+        result = subprocess.run(
+            [sys.executable, "scripts/weekly_bot_review.py"],
+            cwd=str(Path(__file__).parent.parent),
+            timeout=300,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[red]bot review exit {result.returncode}: {result.stderr[-2000:]}[/red]")
+            raise RuntimeError(f"weekly bot review failed: exit {result.returncode}")
+        console.print(result.stdout[-4000:])
+        ran_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        try:
+            from workers.jobs.weekly_bot_review_email import send_weekly_bot_review_email
+            send_weekly_bot_review_email(result.stdout, ran_at)
+        except Exception as e:
+            console.print(f"[yellow]Weekly bot review email skipped: {e}[/yellow]")
+    _run_job("weekly_bot_review", _bot_review)
+
+
 def job_tennis_scanner():
     """TENNIS-SCANNER-DAILY (2026-06-08): twice-daily OddsPapi tennis value scan.
     Runs 06:00 + 14:00 UTC. Populates tennis_fixtures_today (all thresholds) and
@@ -2432,6 +2471,19 @@ def main():
                       CronTrigger(hour=6, minute=30),
                       id="wc_odds_sweep",
                       name="WC Odds Sweep Daily 06:30",
+                      max_instances=1, misfire_grace_time=1800)
+
+    # BOT-MATURITY-REVIEW-WEEKLY (2026-06-15) — Sunday 06:30 UTC, after the
+    # 06:00 threshold check. Two jobs run in parallel on Sundays at 06:30
+    # (this one + wc_odds_sweep), which is fine — different APScheduler ids,
+    # independent workloads (DB read here vs Odds API there). Origin: the
+    # 2026-06-13 audit found bot_high_alignment had been auto-placing real
+    # money for days because the maturity gate wasn't enforced everywhere
+    # — manual promotion/demotion was the only feedback loop.
+    scheduler.add_job(job_weekly_bot_review,
+                      CronTrigger(day_of_week="sun", hour=6, minute=30),
+                      id="weekly_bot_review",
+                      name="Weekly Bot Maturity Review Sunday 06:30",
                       max_instances=1, misfire_grace_time=1800)
 
     # TENNIS-SCANNER-DAILY (2026-06-08) — 06:00 + 14:00 UTC, uses OddsPapi quota.
