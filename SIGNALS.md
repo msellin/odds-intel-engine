@@ -4,7 +4,12 @@
 > Part 1: Architecture (what we collect, store, and feed into the model).
 > Part 2: UX Strategy (how we expose signals to users by tier to drive engagement and conversion).
 > Tasks tracked in PRIORITY_QUEUE.md (IDs: SIG-*, SUX-*).
-> Last updated: 2026-04-29
+> Last updated: 2026-06-15.
+>
+> **Note**: This doc is the *user-surface* inventory. The canonical, exhaustive
+> feature list (what actually feeds the model) lives in `MODEL_WHITEPAPER.md`
+> — see its "Features" section. If you're modelling the model, read that first.
+> This doc is for "what does Free vs Pro vs Elite see".
 
 ---
 

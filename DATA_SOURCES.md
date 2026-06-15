@@ -1,6 +1,6 @@
 # OddsIntel — Data Sources
 
-> Last updated: 2026-04-28 — Migration complete. All T1–T13 endpoints integrated.
+> Last updated: 2026-06-15 — Added OddsPapi /historical-odds Pinnacle backfill (CLV-BACKFILL 2026-06-06), The Odds API WC sweeps (ODDS-API-WC 2026-06-06), CSV-FULL-EXTRACT (2026-06-04). All flow into the Sunday retrain via odds_snapshots.
 
 ---
 
@@ -8,9 +8,12 @@
 
 | Source | Role | Status |
 |--------|------|--------|
-| **API-Football Ultra** ($29/mo) | PRIMARY — all structured data | ✅ Active |
-| ~~Kambi API (free)~~ | Supplementary odds — removed 2026-05-06 (all 41 leagues already covered by AF; "ub"/"paf" bookmakers provided <5% best-odds and "ub" is just Unibet which AF covers separately) | Removed |
+| **API-Football Ultra** ($39/mo, 150K tier) | PRIMARY — all structured data | ✅ Active |
+| **The Odds API** (free) | WC 2026 odds gap (AF has `coverage_odds=false` for WC) | ✅ Active 2026-06-06 — gated to 2026-06-11 → 2026-07-19 window. 3 credits/sweep, ~114/500 credit cost. |
+| **OddsPapi** (free) | Historical Pinnacle closing-odds backfill for CLV + tennis value scanner | ✅ Active. `scripts/ingest_oddspapi_pinnacle_closes.py` populates `odds_snapshots` with `bookmaker='Pinnacle' is_closing=true`. Verified 2026-06-15 (CLV-BACKFILL-FOLLOWUP-A): 12,218 rows / 219 matches flow through train.py's calibration filter automatically. |
+| **football-data.co.uk** (free) | Historical odds + secondary stats CSVs (CSV-FULL-EXTRACT 2026-06-04 captures 9 bookmakers × 1X2 + OU 2.5 + AH, open + close) | ✅ Active. ~80-120K net-new rows per season-set ingest. |
 | ESPN (free) | Settlement result backup | ✅ Active (backup) |
+| ~~Kambi API (free)~~ | Supplementary odds — removed 2026-05-06 (all 41 leagues already covered by AF; "ub"/"paf" bookmakers provided <5% best-odds and "ub" is just Unibet which AF covers separately) | Removed |
 | ~~BetExplorer~~ | Gap league odds — removed 2026-04-29 (fragile HTML scraping, low value) | Removed |
 
 **What API-Football covers:** fixtures, 13-bookmaker odds, live scores, lineups, injuries, standings, H2H, match events, player stats, team stats, transfers, xG (post-match via /fixtures/statistics). 1,236 leagues.
@@ -177,8 +180,8 @@ AH-bot prototype follow-up (`scripts/backtest_ah_bot_prototype.py`, 5,254 deriva
 
 - [x] ~~Remove `betexplorer_odds.py`~~ Done 2026-04-29
 - [x] ~~Remove Sofascore scrapers~~ Done 2026-04-29
+- [x] ~~Activate The Odds API for Pinnacle odds~~ Done 2026-06-06 (ODDS-API-WC) — Pinnacle is uniquely available on the WC sport key (not on other soccer comps). Cron auto-disables after the WC final 2026-07-19 (ODDS-API-WC-DEACTIVATE in PRIORITY_QUEUE).
 - [ ] Evaluate API-Football Pro ($19/mo, 7.5K req/day) after 4–6 weeks once we know which leagues are profitable
-- [ ] Activate The Odds API for Pinnacle odds (code exists, dormant)
 
 ---
 

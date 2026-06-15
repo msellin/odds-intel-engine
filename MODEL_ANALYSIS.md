@@ -466,7 +466,7 @@ Key insight from our own data: "High-xG game, 0-0 at minute 10-15 → O/U odds d
 **Min data needed:** ~500 completed matches × 10 snapshots = 5,000 snapshot rows.
 **Expected impact:** +2-5% ROI on in-play bets. Opens entirely new revenue stream.
 **Timeline:** July-August 2026 (2-3 months of live data collection).
-**Status (2026-04-28):** Live tracker needs rewiring to use API-Football live endpoint (task pending). Once wired, data accumulation starts immediately.
+**Status (2026-06-15):** Live tracker has been running 24/7 since ~2026-05. 13 in-play **rule-based** strategies (a/b/c/d/e/g/h/i/j/l/m/n/o/p_v2 + btts_press_v1 + btts_dryspell_v1) firing into `simulated_bets` since 2026-04-27. The ML model (this section) is the next iteration after the rule-based strategies have accumulated enough per-strategy calibration data. **In-play calibration infrastructure shipped 2026-06-15 (INPLAY-CALIBRATION-COMPLETE)** — central `apply_platt` call in `_build_inplay_bet_data` + parameterized `scripts/fit_platt_inplay.py --strategy NAME`. Every in-play bet writes `calibrated_prob` (= raw until a Platt row lands per `{bot}_{market}_{selection}` key). When each strategy crosses 100 settled bets per selection, a single command fits the row and calibration activates automatically. Dry-run on inplay_p_v2 (n=80) already surfaced 24% ECE pre-fit on the home selection — real miscalibration to be corrected when the sample crosses 100.
 
 ```sql
 -- Check readiness:

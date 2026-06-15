@@ -45,15 +45,23 @@ Access levels for anonymous visitors, free signed-in users, and paid subscribers
 
 ### Personalization & Tools (Free Account Features)
 
+> **ANON-AUTH (2026-06-10):** "Anonymous" users get a lazily-created Supabase
+> anonymous user on their first save action (favorite, tracker pick) — so the
+> Y/— for favorites + tracker picks below now reads "Y (anon user auto-created)"
+> in practice. The user.id persists across the upgrade-to-real-account flow via
+> `linkIdentity` so favorites + picks carry over. Anon users still can't vote or
+> add match notes (RLS gate on `is_anonymous=false`). Match-favorite button
+> triggers the upgrade modal after the 3rd favorite is added.
+
 | Feature | Anonymous | Free | Pro | Elite |
 |---------|:---------:|:------------:|:-------------:|:-------------:|
-| Favorite teams (star toggle) | — | Y | Y | Y |
-| Favorite leagues (star toggle) | — | Y | Y | Y |
+| Favorite teams (star toggle) | Y (anon auto-created) | Y | Y | Y |
+| Favorite leagues (star toggle) | Y (anon auto-created) | Y | Y | Y |
 | "My Matches" filtered view | — | Y | Y | Y |
-| Prediction tracker (log picks) | — | Y | Y | Y |
+| Prediction tracker (log picks) | Y (anon auto-created) | Y | Y | Y |
 | Pick stats (hit rate, W/L, streak) | — | Y | Y | Y |
-| Match notes (private journal) | — | Y | Y | Y |
-| Community prediction voting | — | Y | Y | Y |
+| Match notes (private journal) | — (anon blocked by RLS) | Y | Y | Y |
+| Community prediction voting | — (anon blocked by RLS — anti-vote-inflation) | Y | Y | Y |
 | Daily free AI value pick (1/day) | — | Y | Y | Y |
 | Saved matches / watchlist | — | Y | Y | Y |
 | Profile & preferences persistence | — | Y | Y | Y |

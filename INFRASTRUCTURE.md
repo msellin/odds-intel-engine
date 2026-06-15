@@ -1,6 +1,6 @@
 # OddsIntel — Infrastructure & Costs
 
-> Last updated: 2026-05-27 — Corrected API-Football plan to 150K tier ($39/mo). Total cost ~€65/mo.
+> Last updated: 2026-06-15 — Added Odds API + Cloudflare Turnstile (both free tier). No paid infra change since 2026-05-27. Total cost still ~€65/mo.
 
 ---
 
@@ -26,7 +26,10 @@
 
 | Service | Role | Plan | Notes |
 |---------|------|------|-------|
-| **Resend** | Email digest + value bet alerts + pipeline health alerts | Free (3K emails/mo) | Active since 2026-05-01. `RESEND_API_KEY` + `ADMIN_ALERT_EMAIL` on Railway. |
+| **Resend** | Email digest + value bet alerts + pipeline health alerts + weekly retrain verdict + weekly threshold check (2026-06-06) + weekly bot maturity review (2026-06-15) | Free (3K emails/mo) | Active since 2026-05-01. `RESEND_API_KEY` + `ADMIN_ALERT_EMAIL` on Railway. Sunday 06:00 + 06:30 emails added 2026-06-15. |
+| **The Odds API** | WC 2026 odds (AF coverage_odds=false for the WC league) | Free (500 credits/mo) | Active since 2026-06-06 — gated to 2026-06-11 → 2026-07-19 WC window. 3 credits/sweep × ~38 sweeps = ~114 credits / 500 quota. `OA_KEY` env on Railway. |
+| **Cloudflare Turnstile** | Invisible captcha on anonymous Supabase signup (ANON-AUTH-PHASE-4) | Free | Active since 2026-06-10. `NEXT_PUBLIC_TURNSTILE_SITE_KEY` in Vercel envs. Supabase Auth → Attack Protection captcha toggled on. |
+| **CDP-Chrome (operator's Mac)** | Coolbet JWT auto-renew via `--remote-debugging-port=9222` | Free (runs on operator's existing Mac) | Active since 2026-06-12. Separate Chrome profile `Chrome-CDP-OddsIntel`. JWT auto-renews every ~20min via Coolbet's `/s/auth/renew-token`. `workers/automation/coolbet_mac_daemon.py` reads via raw websockets. launchd-managed. |
 
 ### Not yet active
 
