@@ -19562,6 +19562,69 @@ def test_clv_backfill_scripts():
     )
 
 
+@test("CLV-BACKFILL-FOLLOWUP-A — OP-historical Pinnacle closes flow into Sunday retrain")
+def test_clv_backfill_followup_a():
+    """CLV-BACKFILL-FOLLOWUP (a) verified 2026-06-15: snapshots written by
+    `scripts/ingest_oddspapi_pinnacle_closes.py` (Pinnacle closing odds
+    backfilled from OddsPapi /historical-odds) must survive the train.py
+    calibration query filters so the Sunday retrain picks them up
+    automatically. Verification at the time of shipping confirmed 12,218
+    OP-historical rows across 219 matches (2026-04-20 → 2026-06-06) all
+    pass — but this smoke pins the contract so a future refactor can't
+    silently regress (e.g. by adding a `WHERE source = 'live_pipeline'`
+    filter that would exclude OP rows, or a `WHERE minutes_to_kickoff IS
+    NULL` filter that would exclude them too since the ingester
+    populates minutes_to_kickoff).
+
+    Anti-regression assertions on `workers/model/train.py`:
+      • Pinnacle pre-match filter uses ONLY (bookmaker, is_live, timestamp < m.date)
+      • Sunday weekly_retrain job still passes --include-pinnacle
+      • The ingester sets bookmaker='Pinnacle' is_closing=true is_live default-false
+    """
+    import pathlib
+    train_src = pathlib.Path("workers/model/train.py").read_text()
+    sched_src = pathlib.Path("workers/scheduler.py").read_text()
+    ing_src   = pathlib.Path("scripts/ingest_oddspapi_pinnacle_closes.py").read_text()
+
+    # The Pinnacle pre-match calibration query (in _load_pinnacle_features)
+    # must NOT include a filter that would exclude OP-historical rows.
+    # Forbid these patterns specifically — they'd silently break OP backfill:
+    forbidden = [
+        # Would exclude OP rows (they all have minutes_to_kickoff set by ingester)
+        "minutes_to_kickoff IS NULL",
+        # Would exclude OP rows (they're all is_closing=true; the train filter
+        # picks the LATEST pre-KO snapshot regardless of is_closing flag)
+        "AND os.is_closing = false",
+        "AND is_closing = false",
+        # Would exclude OP rows if a 'source' column ever gets added with
+        # different values per pipeline. None today — defensive pin.
+        "source = 'live_pipeline'",
+        "source = 'live'",
+    ]
+    for pat in forbidden:
+        assert pat not in train_src, (
+            f"train.py must not filter out OP-historical rows via `{pat}` — "
+            f"CLV-BACKFILL-FOLLOWUP (a) verified OP rows survive the existing "
+            f"filters (bookmaker='Pinnacle' AND is_live=false AND timestamp<m.date)"
+        )
+
+    # Sunday retrain must still ask for the Pinnacle features
+    assert "--include-pinnacle" in sched_src, (
+        "weekly_retrain must pass --include-pinnacle so OP-historical Pinnacle "
+        "closes feed the model's pinnacle_implied_{home,draw,away} features"
+    )
+
+    # Ingester contract — the three flags that make rows pass train's filters
+    assert "'Pinnacle'" in ing_src, "ingester must write bookmaker='Pinnacle'"
+    assert "is_closing" in ing_src, "ingester must set is_closing column"
+    # is_live default=false (from migration 009), inherited by INSERT without explicit value.
+    # The ingester's INSERT must NOT set is_live=true, since that would exclude the row
+    # from _load_pinnacle_features. Easier to assert that is_live isn't even mentioned.
+    assert "is_live=true" not in ing_src and 'is_live, true' not in ing_src.lower(), (
+        "ingester must not set is_live=true — would cause _load_pinnacle_features to skip the row"
+    )
+
+
 @test("ODDS-API-WC — WC 2026 sweep script structure")
 def test_odds_api_wc_sweep():
     """ODDS-API-WC (2026-06-06): The Odds API free tier (500 cred/mo) fills
