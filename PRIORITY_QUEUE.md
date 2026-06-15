@@ -228,7 +228,25 @@
 >
 > **✅ COOLBET-SEARCH-SPORT-FILTER Done 2026-06-06** — User flagged Shanghai Port II vs Shanghai Second (China League Two, 2026-06-06 11:00 EET, bot_high_alignment double_chance/x2) showing `⚠ no market` in /admin/place even though Coolbet's site clearly listed the fixture (`Shanghai Port B - Shanghai Segenda`, event 5609979) with the Topeltvõimalus market. Root cause: Coolbet's `/s/sbgate/sports/search/v2` returns events across every sport (each carries `sport_id` / `sport_category_id`), and `_do_search` was passing the raw payload straight to `_parse_event`. The basketball game `Shanghai - Liaoning` (id 5620895, `sport_category_id=65035`) leaked into the fuzzy-match candidate pool, and `fuzz.partial_ratio` scored both teams 100 (`"shanghai"` is a full substring of `"shanghai port ii"` AND of `"shanghai second"` — basketball "Shanghai vs Liaoning" → min(100, 100) = 100). The football match scored only ~86 so basketball won. The placer then fetched the basketball event's `Match Point Handicap` / `Match Total Points` markets, dropped every market as unknown in `parse_market`, and wrote only the 1X2 presence-marker snapshot — leaving `coolbetOdds=null` for DC/x2 and the frontend correctly degrading to `no_market`. DB confirms: 15 Coolbet snapshots for this match, all `1x2` (no DC, no AH, no OU, no BTTS), while the actual football event offers 26 markets including DC. Fix: filter `raw_events` in `_do_search` to only `sport_category_id == _FOOTBALL_CATEGORY_ID` (62) before parsing, so non-football candidates never reach fuzzy_match_event. Verified with probe: now matches `Shanghai Port B vs Shanghai Segenda` at score 86, resolves DC/x2 → odds 2.17. Smoke: COOLBET-SEARCH-SPORT-FILTER.
 >
-> **⬜ COOLBET-SEARCH-SPORT-FILTER-FOLLOWUP** — Investigate why early-cohort pick lists skew toward AH / DC bets across many fixtures. User observed many early KO games have only AH or DC paper bets in the queue. Could be (a) cohort timing — fresh-odds refresh hits 1X2/OU later, (b) bot universe — fewer 1X2/OU bots fire at the early cohort, or (c) data-side gaps (missing Pinnacle on these books at the time of run). Worth a single-day audit of `simulated_bets` market mix vs hour-of-day. Logged as a follow-up — separate from the no-market fix above.
+> **✅ COOLBET-SEARCH-SPORT-FILTER-FOLLOWUP Done 2026-06-15 — operator was right, root cause is bot universe** — Built two diagnostic scripts (`scripts/coolbet_market_mix_audit.py` + `scripts/coolbet_early_ko_drilldown.py`, re-runnable any time). 14d window, pre-match settled bets only.
+>
+> **Hypothesis (a) cohort timing — WRONG.** Picks created at 04 UTC (the morning cohort, 168 picks/day) are 44% 1x2 / 35% AH / 8% DC. 1x2 IS the dominant market at the morning cohort — the cohort itself isn't biased.
+>
+> **Hypothesis (c) data-side gaps — WRONG.** Pinnacle coverage is full: 1517/1522/1349 matches for 1x2/AH/OU25 over the window. Not a data availability problem.
+>
+> **Hypothesis (b) bot universe — CORRECT, by a wide margin.** When bucketed by **kickoff time** (not pick-creation time), the operator's observation is confirmed:
+> | KO bin | n matches | % with ONLY AH/DC bets |
+> |---|---|---|
+> | early-KO (00-11 UTC) | 64 | **56%** |
+> | midday-KO (12-15 UTC) | 70 | 51% |
+> | late-aft-KO (16-18 UTC) | 120 | 33% |
+> | evening-KO (19-23 UTC) | 80 | 26% |
+>
+> The dominant 1x2/OU bot **bot_v10_all** (calibrated, the only 1x2/OU producer at scale) fires **15 early-KO picks vs 61 late-aft** — 4× fewer at early KO. **bot_conservative** and **bot_proven_leagues_v2** produce ZERO early-KO picks. Meanwhile **bot_ah_home_fav** is biased to early-KO (26 early vs 7 evening — lower-tier leagues with early kickoffs are where home-favourite AH bets cluster). Result: an early-KO match typically gets ONE bet from ONE bot (avg distinct markets per match: 1.02 early, 1.13 late) — and that one bot is overwhelmingly bot_ah_home_fav or the AH side of bot_high_alignment.
+>
+> **Not a bug, but a model-coverage observation.** v10's training universe under-represents the leagues that play early-KO matches. The fix isn't a placer/queue change — it's a model coverage change (or accepting that early-KO matches just have less diverse signal). Smoke `COOLBET-MARKET-MIX-AUDIT` pins script existence + query shape so a future refactor can't drop a key axis. Follow-up filed below — `V10-EARLY-KO-COVERAGE-INVESTIGATE`.
+>
+> **⬜ V10-EARLY-KO-COVERAGE-INVESTIGATE** — Surfaced 2026-06-15 by COOLBET-SEARCH-SPORT-FILTER-FOLLOWUP audit. `bot_v10_all` (calibrated, dominant 1x2/OU producer) fires 4× less at early-KO matches (00-11 UTC kickoff) than at late-afternoon. `bot_conservative` and `bot_proven_leagues_v2` produce zero early-KO picks at all. Together this drives the 56% "only AH/DC" rate for early-KO matches. Investigate: (a) does v10's edge threshold + bot_v10_all's league filter combination systematically exclude early-KO leagues? (b) is the v10 training set biased to top-tier leagues that play afternoon/evening? (c) check `match_feature_vectors` coverage for early-KO matches — are signals systematically thinner? Effort ~2h. Not urgent — operator now knows the cause, and AH-only is acceptable; this just opens diversity if there's a no-cost fix.
 >
 > ## 2026-06-04 — COOLBET-INGEST-ANON
 >

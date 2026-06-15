@@ -19562,6 +19562,58 @@ def test_clv_backfill_scripts():
     )
 
 
+@test("COOLBET-MARKET-MIX-AUDIT — audit scripts exist + query simulated_bets by KO hour")
+def test_coolbet_market_mix_audit():
+    """COOLBET-SEARCH-SPORT-FILTER-FOLLOWUP (2026-06-15): the operator's
+    "early-KO matches only have AH/DC" observation was verified — 56% of
+    early-KO (00-11 UTC) matches have only AH/DC bets vs 26% for evening-KO.
+    Root cause is bot universe (bot_v10_all fires 4× less at early-KO,
+    bot_conservative + bot_proven_leagues_v2 produce zero early-KO picks).
+
+    These two diagnostic scripts let the operator re-run the audit any time
+    to track whether new bots or v10 retraining shift the early-KO mix:
+      - scripts/coolbet_market_mix_audit.py  (pick-hour view + bot universe)
+      - scripts/coolbet_early_ko_drilldown.py (KO-hour view + per-match diversity)
+
+    Pin existence + that they query the right tables so a future "let me
+    refactor these into one script" change doesn't drop a key axis.
+    """
+    import pathlib
+    a = pathlib.Path("scripts/coolbet_market_mix_audit.py").read_text()
+    b = pathlib.Path("scripts/coolbet_early_ko_drilldown.py").read_text()
+
+    # Pick-hour audit must group by EXTRACT(hour FROM created_at) AND market
+    assert "EXTRACT(hour FROM created_at)" in a, (
+        "market_mix_audit must group picks by created_at hour to test the "
+        "cohort-timing hypothesis"
+    )
+    assert "match_minute_at_pick IS NULL" in a, (
+        "market_mix_audit must filter to prematch picks only — in-play picks "
+        "have a different cohort timing distribution"
+    )
+    # Cross-reference with Pinnacle availability so the (c) data-gap hypothesis
+    # can be ruled in or out from the same audit output.
+    assert "bookmaker = 'Pinnacle'" in a, (
+        "market_mix_audit must check Pinnacle availability to test hypothesis (c)"
+    )
+
+    # KO-hour drilldown must group by EXTRACT(hour FROM m.date) AND test
+    # per-match diversity (the "only AH/DC" claim).
+    assert "EXTRACT(hour FROM m.date)" in b, (
+        "drilldown must bucket by KO hour (NOT pick-creation hour) to match "
+        "the operator's observation pattern"
+    )
+    assert "asian_handicap" in b and "double_chance" in b, (
+        "drilldown must explicitly check for ONLY-AH/DC matches"
+    )
+    # Per-match diversity check — were there other markets, or is this match
+    # genuinely AH/DC-only?
+    assert "COUNT(DISTINCT market)" in b, (
+        "drilldown must compute distinct-markets-per-match to surface the "
+        "diversity-low pattern"
+    )
+
+
 @test("CLV-BACKFILL-FOLLOWUP-A — OP-historical Pinnacle closes flow into Sunday retrain")
 def test_clv_backfill_followup_a():
     """CLV-BACKFILL-FOLLOWUP (a) verified 2026-06-15: snapshots written by
