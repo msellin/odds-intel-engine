@@ -229,6 +229,26 @@ _equalizer_event_window: dict[str, tuple[int, str]] = {}
 
 # ── Entrypoint (called from LivePoller) ──────────────────────────────────────
 
+def inplay_market_key(bot_name: str, market: str, selection: str) -> str:
+    """INPLAY-CALIBRATION-COMPLETE (2026-06-15): canonical market_key for Platt
+    lookup, used by both `_build_inplay_bet_data` (read path) and
+    `scripts/fit_platt_inplay.py` (write path) so the key naming can't drift.
+
+    Shape: `{bot_name}_{market_canonical}_{selection_canonical}`. Lowercase,
+    spaces → '_', '/' dropped, '.' dropped. Examples:
+      ("inplay_p_v2", "1x2",  "home")     → "inplay_p_v2_1x2_home"
+      ("inplay_o",    "BTTS", "yes")      → "inplay_o_btts_yes"
+      ("inplay_c",    "O/U",  "over 2.5") → "inplay_c_ou_over_25"
+
+    Strategy E keeps its pre-existing explicit key `inplay_e_under_25` for
+    backward compat — strategies override the default by setting
+    `trigger["market_key"]` directly. Only inplay_e does this today.
+    """
+    m = (market or "").lower().replace("/", "").replace(" ", "_")
+    s = (selection or "").lower().replace(" ", "_").replace(".", "")
+    return f"{bot_name}_{m}_{s}"
+
+
 def _build_inplay_bet_data(
     *, trigger: dict, cand: dict, xg_h: float, xg_a: float, is_real: bool,
     odds_age: float | None, bot_name: str,
@@ -281,20 +301,27 @@ def _build_inplay_bet_data(
             **{k: v for k, v in extras.items()},
         }),
     }
-    # INPLAY-CALIBRATED-PROB-WIRE (2026-06-06): propagate calibrated probability
-    # from extras to the top-level `calibrated_prob` column. Strategy E is the
-    # only in-play strategy that currently computes cal_model_prob (via
-    # apply_platt with the explicit market='inplay_e_under_25' key). Without
-    # this wire-up all 898 historical in-play bets had calibrated_prob=NULL —
-    # meaning today's inplay_e_under_25 Platt row was invisible to any
-    # downstream column-reading analysis (the shadow trail at
-    # `reasoning->'extra'->>'cal_model_prob'` still worked, but no other
-    # consumer would have noticed Platt had fired). Other in-play strategies
-    # still write NULL until they wire apply_platt — tracked as
-    # INPLAY-CALIBRATION-COMPLETE for the ≥100-bet gate per selection.
+    # INPLAY-CALIBRATED-PROB-WIRE (2026-06-06) + INPLAY-CALIBRATION-COMPLETE
+    # (2026-06-15): populate calibrated_prob centrally. Two paths:
+    #
+    # (a) Strategy already computed cal_model_prob (Strategy E, with its
+    #     explicit "inplay_e_under_25" market_key) — use what it stored in
+    #     extras. Leaves the existing INPLAY-E-RECALIBRATE behavior intact.
+    #
+    # (b) Strategy didn't compute one — call apply_platt centrally using the
+    #     canonical `{bot}_{market}_{selection}` key (or a strategy-provided
+    #     `trigger["market_key"]` override). apply_platt returns the raw
+    #     prob unchanged when no Platt row exists, so this is a no-op until
+    #     `scripts/fit_platt_inplay.py --strategy NAME` lands a calibration
+    #     row for that key. Safe to wire defensively across all strategies.
     cal = extras.get("cal_model_prob")
-    if cal is not None:
-        bet_data["calibrated_prob"] = cal
+    if cal is None:
+        from workers.model.improvements import apply_platt
+        market_key = trigger.get("market_key") or inplay_market_key(
+            bot_name, trigger["market"], trigger["selection"]
+        )
+        cal = apply_platt(trigger["model_prob"], market_key, trigger["odds"])
+    bet_data["calibrated_prob"] = round(float(cal), 4)
     return bet_data
 
 

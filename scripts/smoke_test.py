@@ -19919,15 +19919,104 @@ def test_inplay_calibrated_prob_wire():
         f"calibrated_prob must round-trip the extras value (got {bet['calibrated_prob']})"
     )
 
-    # Case 2: strategy I/N/etc shape — no cal_model_prob in extras
+    # Case 2: strategy I/N/etc shape — no cal_model_prob in extras.
+    # INPLAY-CALIBRATION-COMPLETE (2026-06-15) changed the contract here:
+    # `_build_inplay_bet_data` now calls apply_platt centrally so every
+    # in-play strategy writes calibrated_prob. apply_platt returns the raw
+    # prob unchanged when no Platt row exists for the market_key, so
+    # without a fit it equals trigger["model_prob"] — that's honest behavior
+    # (calibrated_prob == raw means "no calibration applied yet").
     bet_no_cal = _build_inplay_bet_data(
         trigger=_trigger(extra_cal=None),
         cand=cand, xg_h=0.7, xg_a=0.6, is_real=True,
         odds_age=2.3, bot_name="inplay_i",
     )
-    assert "calibrated_prob" not in bet_no_cal, (
-        "calibrated_prob must NOT be set when extras lacks cal_model_prob — "
-        "writing model_prob there would falsely suggest Platt ran"
+    assert "calibrated_prob" in bet_no_cal, (
+        "post-INPLAY-CALIBRATION-COMPLETE, calibrated_prob must always be set "
+        "(equals raw model_prob until a Platt row lands for the strategy)"
+    )
+    assert abs(bet_no_cal["calibrated_prob"] - bet_no_cal["model_prob"]) < 1e-9, (
+        "without a fitted Platt row, apply_platt returns raw prob unchanged — "
+        f"got calibrated_prob={bet_no_cal['calibrated_prob']} model_prob={bet_no_cal['model_prob']}"
+    )
+
+
+@test("INPLAY-CALIBRATION-COMPLETE — central market_key + apply_platt wired in builder + parameterized fitter")
+def test_inplay_calibration_complete():
+    """INPLAY-CALIBRATION-COMPLETE (2026-06-15) — productizes the per-strategy
+    Platt fitter that the original spec proposed as 12 near-duplicate scripts.
+    One parameterized fitter + central apply_platt call in the bet builder so
+    every in-play strategy gets calibration "for free" once a row lands.
+
+    Pins:
+      • inplay_market_key() canonical normalization (bot+market+selection)
+      • _build_inplay_bet_data calls apply_platt when no cal_model_prob present
+      • Strategy E backward compat: trigger["market_key"] override still works
+        (Strategy E's pre-existing "inplay_e_under_25" key stays canonical)
+      • fit_platt_inplay.py exists, requires --strategy, uses inplay_market_key
+        for write path so it can't drift from the read path
+    """
+    from workers.jobs.inplay_bot import inplay_market_key, _build_inplay_bet_data
+
+    # Canonical key shape: {bot}_{market_canonical}_{selection_canonical}
+    assert inplay_market_key("inplay_p_v2", "1x2", "home") == "inplay_p_v2_1x2_home"
+    assert inplay_market_key("inplay_p_v2", "1X2", "home") == "inplay_p_v2_1x2_home", (
+        "must lowercase market — DB stores lowercase but strategies return upper"
+    )
+    assert inplay_market_key("inplay_o", "BTTS", "yes") == "inplay_o_btts_yes"
+    assert inplay_market_key("inplay_c", "O/U", "over 2.5") == "inplay_c_ou_over_25", (
+        "must drop '/' from market and '.' from selection, replace spaces with _"
+    )
+
+    # Read path: builder calls apply_platt centrally
+    import pathlib
+    bot_src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    assert "from workers.model.improvements import apply_platt" in bot_src, (
+        "builder must import apply_platt"
+    )
+    # apply_platt called with (raw_prob, market_key, odds) — pin the call site
+    # so a refactor can't silently break the wiring.
+    assert "apply_platt(trigger[\"model_prob\"], market_key, trigger[\"odds\"])" in bot_src, (
+        "_build_inplay_bet_data must call apply_platt(model_prob, market_key, odds)"
+    )
+
+    # Strategy E backward compat — explicit market_key from trigger overrides
+    # the default normalizer (E uses "inplay_e_under_25", not the default
+    # "inplay_e_ou_under_25" the normalizer would produce).
+    assert 'trigger.get("market_key")' in bot_src, (
+        "builder must respect trigger['market_key'] override before falling back to default"
+    )
+
+    # Smoke that the dispatch works end-to-end without a DB
+    cand = {"minute": 60, "score_home": 0, "score_away": 1}
+    trigger = {
+        "market": "1x2", "selection": "home", "odds": 3.5,
+        "model_prob": 0.32, "edge": 4.0,
+        "extra": {"raw_model_prob": 0.32},
+    }
+    bet = _build_inplay_bet_data(
+        trigger=trigger, cand=cand, xg_h=0.4, xg_a=0.8, is_real=True,
+        odds_age=1.5, bot_name="inplay_p_v2",
+    )
+    # apply_platt returns raw unchanged when no Platt row exists → cal == raw
+    assert "calibrated_prob" in bet, "every in-play bet must carry calibrated_prob"
+    assert abs(bet["calibrated_prob"] - 0.32) < 1e-6, (
+        "no Platt row → calibrated_prob equals raw model_prob"
+    )
+
+    # Write path: parameterized fitter
+    fit_src = pathlib.Path("scripts/fit_platt_inplay.py").read_text()
+    assert "--strategy" in fit_src, "fitter must require --strategy"
+    assert "from workers.jobs.inplay_bot import inplay_market_key" in fit_src, (
+        "fitter must import inplay_market_key from the bot module — write path "
+        "and read path MUST share the key generator (anti-drift)"
+    )
+    assert "DEFAULT_MIN_SAMPLES = 100" in fit_src, (
+        "fitter must default to the spec'd ≥100 settled bet gate per selection"
+    )
+    assert "--per-selection" not in fit_src or "buckets" in fit_src, (
+        "fitter must bucket bets by (market, selection) per the original spec — "
+        "one Platt row per bucket, e.g. inplay_p_v2_1x2_home AND inplay_p_v2_1x2_away"
     )
 
 
