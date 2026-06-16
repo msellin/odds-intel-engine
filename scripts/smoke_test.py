@@ -3771,6 +3771,73 @@ def test_coolbet_daemon_alerts():
     )
 
 
+@test("COOLBET-PREKICKOFF-HEARTBEAT — catch-net writes prekickoff_last_run_at on every fire incl. healthy/no-candidates")
+def test_coolbet_prekickoff_heartbeat():
+    """COOLBET-PREKICKOFF-HEARTBEAT (C2, 2026-06-16): the catch-net is
+    silent on healthy days — no Telegram fires when the daemon is up and
+    nothing's at risk. Without a DB heartbeat, "Railway running cron,
+    catch-net silent because healthy" looks identical to "Railway crashed"
+    from outside.
+
+    Migration 252 adds prekickoff_last_run_at + prekickoff_last_run_result.
+    The job writes them on EVERY invocation (try/finally) — including the
+    two early `return counters` paths (healthy daemon, zero candidates) —
+    so a stale timestamp unambiguously means the cron isn't firing.
+
+    Pin: migration exists with both columns; mark_prekickoff_run helper
+    exists; job calls it from a finally block so all return paths reach
+    it; dry-run skips the heartbeat (smoke + manual probes don't pollute
+    the row)."""
+    import pathlib
+
+    mig = pathlib.Path("supabase/migrations/252_coolbet_prekickoff_heartbeat.sql").read_text()
+    assert "prekickoff_last_run_at" in mig and "TIMESTAMPTZ" in mig, (
+        "Migration 252 must add prekickoff_last_run_at TIMESTAMPTZ."
+    )
+    assert "prekickoff_last_run_result" in mig and "JSONB" in mig, (
+        "Migration 252 must add prekickoff_last_run_result JSONB."
+    )
+
+    state = pathlib.Path("workers/automation/coolbet_state.py").read_text()
+    assert "def mark_prekickoff_run(" in state, (
+        "coolbet_state must define mark_prekickoff_run() — the helper "
+        "the catch-net job calls to write its heartbeat."
+    )
+    helper_block = state[state.index("def mark_prekickoff_run("):
+                          state.index("def mark_cookies_refreshed(")]
+    assert "prekickoff_last_run_at" in helper_block and "prekickoff_last_run_result" in helper_block, (
+        "mark_prekickoff_run must UPDATE both columns added by mig 252."
+    )
+
+    job = pathlib.Path("workers/jobs/coolbet_prekickoff_alert.py").read_text()
+    run_block = job[job.index("def run_prekickoff_alert("):]
+    assert "mark_prekickoff_run" in run_block, (
+        "run_prekickoff_alert must call mark_prekickoff_run — without "
+        "this, the cron's liveness can't be verified from DB."
+    )
+    # MUST be inside a finally: so early returns (healthy, no candidates)
+    # still write. The whole POINT of this task is to distinguish "silent
+    # because healthy" from "silent because crashed".
+    assert "finally:" in run_block, (
+        "run_prekickoff_alert must use a try/finally: pattern so all "
+        "return paths reach the DB heartbeat write."
+    )
+    fin_idx = run_block.index("finally:")
+    hb_idx = run_block.index("mark_prekickoff_run")
+    assert fin_idx < hb_idx, (
+        "mark_prekickoff_run must be inside the finally block, not "
+        "before it — otherwise the two `return counters` early-exits "
+        "skip the write."
+    )
+    # dry_run must NOT write — smoke and manual probes would otherwise
+    # pollute the heartbeat column with bogus "ran 0s ago" timestamps
+    # that mask a real cron outage.
+    assert "if not dry_run" in run_block, (
+        "Heartbeat write must be gated on `if not dry_run` — manual "
+        "--dry-run probes and smoke runs must not bump the column."
+    )
+
+
 @test("COOLBET-PROACTIVE-JWT-REFRESH — daemon refreshes JWT from CDP before TTL hits zero")
 def test_coolbet_proactive_jwt_refresh():
     """COOLBET-PROACTIVE-JWT-REFRESH (B1, 2026-06-16): adds the proactive

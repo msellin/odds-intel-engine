@@ -117,6 +117,28 @@ def mark_mac_daemon_tick(result: dict) -> None:
     )
 
 
+def mark_prekickoff_run(result: dict) -> None:
+    """Write the pre-kickoff catch-net's per-fire heartbeat so /admin pages
+    and ad-hoc probes can verify Railway's */5 cron actually ran without
+    tailing Railway logs. Called from
+    `workers.jobs.coolbet_prekickoff_alert.run_prekickoff_alert` at the end
+    of every invocation, success OR no-op — a "healthy daemon, no
+    candidates" run still bumps the timestamp so a stale
+    `prekickoff_last_run_at` means the cron itself isn't firing.
+
+    Stored as compact JSON: {healthy, candidates, sent, skipped_dedup} —
+    same dict the job already returns to its caller, so no extra
+    computation."""
+    import json as _json
+    _safe_write(
+        """UPDATE coolbet_session_state
+           SET prekickoff_last_run_at = NOW(),
+               prekickoff_last_run_result = %s::jsonb
+           WHERE id = 1""",
+        (_json.dumps(result, default=str),),
+    )
+
+
 def mark_cookies_refreshed(count: int) -> None:
     """FS cookie harvest succeeded — tracks last_refresh + count so /status
     can show 'cookies refreshed 3 min ago (5 cookies)'."""

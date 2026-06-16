@@ -208,44 +208,61 @@ def _format_urgent_signal(b: dict, *, daemon_reason: str) -> str:
 
 def run_prekickoff_alert(*, dry_run: bool = False) -> dict:
     """Main entry point. Returns counters so the scheduler wrapper can log
-    a one-liner per run."""
+    a one-liner per run.
+
+    Writes prekickoff_last_run_at + prekickoff_last_run_result to
+    coolbet_session_state on EVERY invocation (healthy daemon, no
+    candidates, sends, errors) so the cron's liveness is DB-observable
+    without tailing Railway logs. See COOLBET-PREKICKOFF-HEARTBEAT
+    (mig 252)."""
     from workers.notify.telegram import send_telegram
 
     counters = {"healthy": False, "candidates": 0, "sent": 0, "skipped_dedup": 0}
+    try:
+        healthy, reason = _mac_daemon_is_healthy()
+        counters["healthy"] = healthy
+        if healthy:
+            # Daemon is alive and last tick was clean — let it handle placement.
+            return counters
 
-    healthy, reason = _mac_daemon_is_healthy()
-    counters["healthy"] = healthy
-    if healthy:
-        # Daemon is alive and last tick was clean — let it handle placement.
+        candidates = load_prekickoff_candidates()
+        counters["candidates"] = len(candidates)
+        if not candidates:
+            return counters
+
+        log.info("prekickoff catch-net firing — daemon: %s — %d candidate%s",
+                 reason, len(candidates), "" if len(candidates) == 1 else "s")
+
+        for b in candidates:
+            msg = _format_urgent_signal(b, daemon_reason=reason)
+            if dry_run:
+                counters["sent"] += 1
+                continue
+            # 1h dedup so each pick gets at most one urgent push per hour.
+            # If still unplaced and KO approaches further, the next firing
+            # in another hour will re-send. Avoids 5-min spam.
+            tg_id = send_telegram(
+                msg,
+                dedup_key=f"prekickoff-{b['simulated_bet_id']}",
+                dedup_window_s=3600,
+            )
+            if tg_id is not None:
+                counters["sent"] += 1
+            else:
+                counters["skipped_dedup"] += 1
         return counters
-
-    candidates = load_prekickoff_candidates()
-    counters["candidates"] = len(candidates)
-    if not candidates:
-        return counters
-
-    log.info("prekickoff catch-net firing — daemon: %s — %d candidate%s",
-             reason, len(candidates), "" if len(candidates) == 1 else "s")
-
-    for b in candidates:
-        msg = _format_urgent_signal(b, daemon_reason=reason)
-        if dry_run:
-            counters["sent"] += 1
-            continue
-        # 1h dedup so each pick gets at most one urgent push per hour.
-        # If still unplaced and KO approaches further, the next firing
-        # in another hour will re-send. Avoids 5-min spam.
-        tg_id = send_telegram(
-            msg,
-            dedup_key=f"prekickoff-{b['simulated_bet_id']}",
-            dedup_window_s=3600,
-        )
-        if tg_id is not None:
-            counters["sent"] += 1
-        else:
-            counters["skipped_dedup"] += 1
-
-    return counters
+    finally:
+        # DB heartbeat — runs on every path including the early
+        # `return counters` exits above. Without this, "Railway healthy
+        # but catch-net silent" and "Railway crashed" look identical
+        # from outside. Best-effort: observability must not break the
+        # alerting path itself.
+        if not dry_run:
+            try:
+                from workers.automation.coolbet_state import mark_prekickoff_run
+                mark_prekickoff_run(counters)
+            except Exception as e:
+                log.debug("prekickoff heartbeat write failed (non-fatal): %s", e)
 
 
 def main() -> int:
