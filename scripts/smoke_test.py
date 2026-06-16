@@ -3771,6 +3771,110 @@ def test_coolbet_daemon_alerts():
     )
 
 
+@test("COOLBET-CDP-CLASSIFY-TIGHT — diagnose only returns jwt_expired when token lives in a KNOWN auth key")
+def test_coolbet_cdp_classify_tight():
+    """COOLBET-CDP-CLASSIFY-TIGHT (B2, 2026-06-16): tightens
+    diagnose_cdp_jwt_state so `jwt_expired` only fires when a JWT-shaped
+    value lives in a known auth key (cbauth + legacy fallbacks). Before
+    this, ANY JWT-shape value anywhere in localStorage (analytics tokens,
+    third-party scripts) tripped jwt_expired — which routed B4 self-heal
+    toward a Page.reload that can't actually recover anything.
+
+    With the fix, the previously-observed `jwt_expired` against today's
+    state correctly resolves to `logged_out` (cbauth missing, all the
+    other JWT-shape values aren't auth slots)."""
+    import pathlib
+    bs = pathlib.Path("workers/automation/coolbet_browser_sync.py").read_text()
+    diag_block = bs[bs.index("def diagnose_cdp_jwt_state("):
+                    bs.index("def auto_launch_cdp_chrome(")]
+    # Two passes: first known auth keys, then defensive full-scan.
+    assert "Pass 1" in diag_block and "Pass 2" in diag_block, (
+        "diagnose must use the two-pass classification — Pass 1 over "
+        "known auth keys (cbauth + fallbacks) for jwt_expired/valid, "
+        "Pass 2 over all values for `valid` only (logged_out otherwise)."
+    )
+    # The defensive Pass 2 must NOT produce jwt_expired — only valid.
+    # Falling through to logged_out is the correct behaviour when the
+    # only JWT-shape values are non-auth.
+    pass2_idx = diag_block.index("Pass 2")
+    pass2_block = diag_block[pass2_idx:diag_block.index("# Logged-out:")]
+    assert '"jwt_expired"' not in pass2_block, (
+        "Pass 2 must not produce jwt_expired — that state is reserved for "
+        "JWT-shape values found in known auth keys (Pass 1)."
+    )
+
+
+@test("COOLBET-AUTO-SELF-HEAL — daemon attempts CDP recovery before alerting on consecutive errors")
+def test_coolbet_auto_self_heal():
+    """COOLBET-AUTO-SELF-HEAL (B4, 2026-06-16): three new helpers in
+    coolbet_browser_sync.py — auto_launch_cdp_chrome (subprocess the
+    launch script), cdp_reload_coolbet_tab (Page.reload via CDP to
+    trigger Coolbet's renew-token), and auto_self_heal (orchestrator).
+
+    Daemon's consecutive-error path calls _try_auto_self_heal() BEFORE
+    sending the Telegram alert; if heal recovers, the alert is
+    suppressed for this burst. If heal fails, the alert carries the
+    action trail so the operator sees what was tried.
+
+    Pin: helpers exist; auto_self_heal returns the documented dict
+    shape; daemon's run_forever has the recovered-skip-alert branch;
+    --full-heal CLI is wired."""
+    import pathlib
+    bs = pathlib.Path("workers/automation/coolbet_browser_sync.py").read_text()
+    for fn in ("def auto_launch_cdp_chrome(",
+                "def cdp_reload_coolbet_tab(",
+                "def auto_self_heal("):
+        assert fn in bs, (
+            f"browser_sync must define '{fn}' — the self-healing chain "
+            "depends on all three."
+        )
+    heal_block = bs[bs.index("def auto_self_heal("):
+                    bs.index("def _jwt_exp_seconds(")]
+    # auto_self_heal must return the documented dict keys.
+    for key in ('"recovered"', '"state_before"', '"state_after"',
+                 '"actions"', '"message"'):
+        assert key in heal_block, (
+            f"auto_self_heal must return key {key} — operator UI / "
+            "Telegram payload depend on this shape."
+        )
+    # The orchestrator must handle each state — chrome_down (launch),
+    # no_coolbet_tab (open), jwt_expired (reload), logged_out (give up).
+    for needle in ('chrome_down', 'no_coolbet_tab', 'jwt_expired',
+                    'logged_out', 'auto_launch_cdp_chrome',
+                    'cdp_reload_coolbet_tab'):
+        assert needle in heal_block, (
+            f"auto_self_heal must handle/call '{needle}'."
+        )
+
+    # CLI wiring.
+    assert "--full-heal" in bs, (
+        "main() must accept --full-heal — operator's one-command recovery."
+    )
+
+    # Daemon attempts heal before alerting.
+    daemon = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
+    assert "def _try_auto_self_heal(" in daemon, (
+        "Daemon must define _try_auto_self_heal wrapper so the import "
+        "happens lazily and an exception in the helper can't break "
+        "the alert path."
+    )
+    loop = daemon[daemon.index("def run_forever("):]
+    # _try_auto_self_heal must be called BEFORE _notify_consecutive_failures
+    # in the run_forever loop. Otherwise the heal-or-alert order inverts.
+    heal_idx = loop.index("_try_auto_self_heal")
+    notify_idx = loop.index("_notify_consecutive_failures")
+    assert heal_idx < notify_idx, (
+        "_try_auto_self_heal must run BEFORE _notify_consecutive_failures "
+        "in the loop — otherwise we always alert before attempting recovery."
+    )
+    # Recovered → skip alert. Pin the explicit branch.
+    assert 'heal.get("recovered")' in loop, (
+        "Loop must check heal.get('recovered') and skip the Telegram alert "
+        "when self-heal succeeded. Without this, recovered failures still "
+        "spam Telegram."
+    )
+
+
 @test("COOLBET-DAILY-SUMMARY — one Telegram at 08:00 UTC summarises daemon + JWT + catch-net + 24h + queue")
 def test_coolbet_daily_summary():
     """COOLBET-DAILY-SUMMARY (C1, 2026-06-16): proactive 'everything's fine'

@@ -420,42 +420,62 @@ def diagnose_cdp_jwt_state(*, timeout_ms: int = 8000) -> dict:
     all_keys = snapshot.get("all_keys") or []
     all_values = snapshot.get("all_values") or []
 
-    # Look for any JWT-shaped value (probed keys + full scan).
-    candidates = []
-    for k in _JWT_LOCALSTORAGE_KEYS:
-        v = probed.get(k)
-        if v:
-            candidates.append((k, v))
-    for v in all_values:
-        if v and v not in (cv for _, cv in candidates):
-            candidates.append(("<scan>", v))
+    # B2 (2026-06-16): two-pass classification so `jwt_expired` only
+    # fires when a JWT-shape value lives in a KNOWN AUTH KEY (cbauth +
+    # legacy fallbacks). Any other JWT-shape value (Coolbet's analytics
+    # cookies, third-party scripts) is noise — treating its expiry as
+    # "session lapsed" would route B4 self-heal toward a Page.reload
+    # that can't actually recover anything. Logged-out + an unrelated
+    # JWT-shape value is still logged-out.
 
-    found_jwt_shape = False
-    for _src, raw in candidates:
+    def _decode_ttl(raw: str) -> int | None:
         token = raw[7:] if isinstance(raw, str) and raw.startswith("Bearer ") else raw
         if not _looks_like_jwt(token):
-            continue
-        found_jwt_shape = True
-        # If TTL still positive, we're valid.
+            return None
         if _jwt_still_valid(token):
-            import base64 as _b64, json as _json, time as _t
             try:
+                import base64 as _b64, json as _json, time as _t
                 payload_b64 = token.split(".")[1]
                 payload_b64 += "=" * (4 - len(payload_b64) % 4)
                 payload = _json.loads(_b64.urlsafe_b64decode(payload_b64))
                 exp = float(payload.get("exp", 0))
-                ttl = int(exp - _t.time())
+                return int(exp - _t.time())
             except Exception:
-                ttl = None
-            return {"state": "valid",
-                    "detail": f"Fresh JWT present (ttl ~{ttl}s).",
-                    "ttl_s": ttl}
+                return None
+        return 0  # JWT-shaped but expired
 
-    if found_jwt_shape:
+    # Pass 1: KNOWN AUTH KEYS only. This is the only place that can
+    # legitimately produce `valid` or `jwt_expired` — those states are
+    # claims about Coolbet's auth state specifically.
+    for k in _JWT_LOCALSTORAGE_KEYS:
+        v = probed.get(k)
+        if not v:
+            continue
+        ttl = _decode_ttl(v)
+        if ttl is None:
+            continue  # value exists in auth key but isn't JWT-shaped — ignore
+        if ttl > 0:
+            return {"state": "valid",
+                    "detail": f"Fresh JWT in localStorage['{k}'] (ttl ~{ttl}s).",
+                    "ttl_s": ttl}
+        # ttl == 0 means JWT-shape present in auth key but expired.
         return {"state": "jwt_expired",
-                "detail": "JWT present in localStorage but exp <= now. "
-                          "Refresh the coolbet.com tab or log in again.",
+                "detail": (f"JWT in localStorage['{k}'] is expired. "
+                            "Refresh the coolbet.com tab or log in again."),
                 "ttl_s": 0}
+
+    # Pass 2: defensive full-scan for a renamed auth slot. Only treat
+    # `valid` as actionable here — finding an EXPIRED JWT-shape in a
+    # non-auth key tells us nothing about the session, so we fall through
+    # to logged_out rather than misclassifying as jwt_expired.
+    for v in all_values:
+        if not v:
+            continue
+        ttl = _decode_ttl(v)
+        if ttl and ttl > 0:
+            return {"state": "valid",
+                    "detail": f"Fresh JWT in localStorage (scan, key unknown — ttl ~{ttl}s).",
+                    "ttl_s": ttl}
 
     # Logged-out: tab is open, localStorage exists, but no cbauth and no JWT-shaped
     # value anywhere. This is the failure mode that hit 2026-06-15/16: 33 keys
@@ -553,6 +573,255 @@ def proactive_jwt_refresh(*, min_ttl_s: int = 300) -> dict:
              ttl_before, ttl_after)
     return {"refreshed": True, "ttl_before_s": ttl_before,
             "ttl_after_s": ttl_after, "reason": "refreshed"}
+
+
+def auto_launch_cdp_chrome(*, timeout_s: int = 45) -> dict:
+    """Subprocess `local/launch_chrome_for_sync.sh` to bring CDP-Chrome up.
+    The script handles the one-time profile copy, kills any prior CDP
+    Chrome instance, and polls the CDP port until ready. Returns:
+
+        {"ok": bool, "elapsed_s": float, "stdout": str, "message": str}
+
+    Idempotent — re-launching when Chrome is already up is safe (script
+    pkills the old instance first). Cost: ~3-5s on warm cache, ~30s on
+    first-ever profile copy. The daemon SHOULD NOT call this on the hot
+    path — only from the self-heal escalation path."""
+    import subprocess as _sp
+    import time as _t
+    from pathlib import Path as _Path
+
+    script = _Path(__file__).resolve().parents[2] / "local" / "launch_chrome_for_sync.sh"
+    if not script.exists():
+        return {"ok": False, "elapsed_s": 0.0, "stdout": "",
+                "message": f"launch script not found at {script}"}
+
+    started = _t.time()
+    try:
+        proc = _sp.run(
+            ["bash", str(script)],
+            capture_output=True, text=True, timeout=timeout_s,
+        )
+    except _sp.TimeoutExpired:
+        return {"ok": False, "elapsed_s": _t.time() - started,
+                "stdout": "",
+                "message": f"launch script timed out after {timeout_s}s"}
+    except Exception as e:
+        return {"ok": False, "elapsed_s": _t.time() - started,
+                "stdout": "",
+                "message": f"launch script raised: {e}"}
+
+    return {
+        "ok": proc.returncode == 0,
+        "elapsed_s": _t.time() - started,
+        "stdout": (proc.stdout or "")[-400:],
+        "message": ("CDP-Chrome launched" if proc.returncode == 0
+                    else f"launch script exit {proc.returncode}: "
+                         f"{(proc.stderr or '')[-200:]}"),
+    }
+
+
+def cdp_reload_coolbet_tab(*, timeout_s: int = 10,
+                             post_reload_wait_s: float = 3.0) -> dict:
+    """Find an existing coolbet.com tab in CDP-Chrome and send Page.reload.
+    Coolbet's frontend then fires `/s/auth/renew-token` using the session
+    cookie — that endpoint does NOT require SMS — and writes a fresh JWT
+    to `localStorage['cbauth']`.
+
+    Returns {"ok": bool, "message": str}. Only acts when the diagnose
+    state is `jwt_expired` (precondition checked by caller). For
+    `logged_out`, the renew-token call would itself 401 and there'd be no
+    recovery — login is the only path and it goes through SMS, which is
+    the operator's choice.
+
+    Why this exists: the cheap "JWT lapsed because Coolbet's auto-renew
+    didn't fire while tab was backgrounded" case is far more common than
+    "session genuinely expired server-side". A Page.reload is the gentlest
+    recovery action available — no SMS, no login UI, no operator touch."""
+    import asyncio as _aio
+    import time as _t
+
+    async def _do_reload() -> dict:
+        import websockets
+        # 1. Find the Coolbet tab via /json/list.
+        try:
+            targets = await _aio.wait_for(
+                _http_get_json(f"{CDP_URL}/json/list"),
+                timeout=timeout_s,
+            )
+        except Exception as e:
+            return {"ok": False, "message": f"CDP /json/list failed: {e}"}
+
+        coolbet_target = None
+        for t in (targets or []):
+            if t.get("type") != "page":
+                continue
+            if "coolbet.com" in (t.get("url") or ""):
+                coolbet_target = t
+                break
+        if coolbet_target is None:
+            return {"ok": False,
+                    "message": "No coolbet.com tab to reload (auto_self_heal "
+                               "should open one via allow_open_new_tab=True instead)"}
+
+        ws_url = coolbet_target.get("webSocketDebuggerUrl")
+        if not ws_url:
+            return {"ok": False, "message": "tab has no webSocketDebuggerUrl"}
+
+        # 2. Open WS, send Page.reload.
+        try:
+            async with websockets.connect(ws_url, max_size=2_000_000) as ws:
+                await ws.send(_json_dumps({"id": 1, "method": "Page.reload",
+                                            "params": {"ignoreCache": False}}))
+                # Wait briefly for the response (CDP echoes the id on completion).
+                try:
+                    await _aio.wait_for(ws.recv(), timeout=timeout_s)
+                except Exception:
+                    pass  # response is best-effort; reload itself proceeds
+        except Exception as e:
+            return {"ok": False, "message": f"CDP Page.reload failed: {e}"}
+
+        # 3. Let the SPA fire renew-token + write the new JWT to localStorage.
+        await _aio.sleep(post_reload_wait_s)
+        return {"ok": True, "message": f"reloaded coolbet.com tab + waited {post_reload_wait_s}s"}
+
+    try:
+        return _aio.run(_do_reload())
+    except Exception as e:
+        return {"ok": False, "message": f"reload orchestration failed: {e}"}
+
+
+def auto_self_heal(*, dry_run: bool = False) -> dict:
+    """Orchestrate the full CDP-JWT recovery chain. Goal: get from any
+    state to `state=valid` with as little operator action as possible.
+
+    Steps (each gated on the previous probe's outcome):
+      1. Probe via `diagnose_cdp_jwt_state`. If already `valid`, exit.
+      2. If `chrome_down`, run `auto_launch_cdp_chrome` (~5-30s), re-probe.
+      3. If `no_coolbet_tab`, open one via
+         `extract_jwt_from_cdp(allow_open_new_tab=True)`. That call ALSO
+         persists if a fresh JWT is present. Re-probe.
+      4. If `jwt_expired`, reload the Coolbet tab via
+         `cdp_reload_coolbet_tab`. The SPA's renew-token cycle picks it
+         up (no SMS). Re-probe.
+      5. If `logged_out` after all that, alert — only SMS-enroll can
+         recover, and that's the operator's deliberate choice.
+      6. Final probe. If `valid`, persist + clear placement_paused (if it
+         was set by daemon self-pause).
+
+    Returns:
+        {"recovered": bool,
+         "state_before": str,
+         "state_after":  str,
+         "actions":      list[str],   # human-readable trail
+         "message":      str}
+
+    Idempotent. dry_run=True prints the action plan without executing.
+    Designed to be called from:
+      • daemon's consecutive-error escalation BEFORE alerting
+      • operator's `--full-heal` CLI
+      • a future Telegram inline-button callback
+    """
+    import time as _t
+    from workers.automation.coolbet_state import (
+        set_placement_paused, is_placement_paused,
+    )
+
+    actions: list[str] = []
+
+    def _probe() -> dict:
+        try:
+            return diagnose_cdp_jwt_state()
+        except Exception as e:
+            return {"state": "unknown", "detail": str(e), "ttl_s": None}
+
+    state_before = _probe()
+    state = state_before.get("state")
+    if state == "valid":
+        return {"recovered": True,
+                "state_before": state, "state_after": state,
+                "actions": ["no-op (already valid)"],
+                "message": f"JWT TTL ~{state_before.get('ttl_s')}s, nothing to heal."}
+
+    # Step 2: launch Chrome if it's not reachable.
+    if state == "chrome_down":
+        if dry_run:
+            actions.append("would: launch CDP-Chrome via launch_chrome_for_sync.sh")
+        else:
+            launch = auto_launch_cdp_chrome()
+            actions.append(f"launch_chrome: ok={launch['ok']} ({launch['message']})")
+            if not launch["ok"]:
+                return {"recovered": False,
+                        "state_before": state_before.get("state"),
+                        "state_after": "chrome_down",
+                        "actions": actions, "message": launch["message"]}
+            _t.sleep(2.0)  # let CDP settle
+            state_before = _probe()
+            state = state_before.get("state")
+            actions.append(f"after_launch_probe: state={state}")
+
+    # Step 3: open a Coolbet tab if missing — extract_jwt_from_cdp also
+    # adopts a JWT in the same call if one's present.
+    if state == "no_coolbet_tab":
+        if dry_run:
+            actions.append("would: open coolbet.com tab via CDP /json/new")
+        else:
+            try:
+                jwt = extract_jwt_from_cdp(allow_open_new_tab=True)
+                actions.append(f"open_coolbet_tab: jwt_obtained={bool(jwt)}")
+            except Exception as e:
+                actions.append(f"open_coolbet_tab failed: {e}")
+            _t.sleep(1.0)
+            state_before = _probe()
+            state = state_before.get("state")
+            actions.append(f"after_open_probe: state={state}")
+
+    # Step 4: reload the Coolbet tab to trigger renew-token.
+    if state == "jwt_expired":
+        if dry_run:
+            actions.append("would: Page.reload coolbet.com tab")
+        else:
+            r = cdp_reload_coolbet_tab()
+            actions.append(f"page_reload: ok={r['ok']} ({r['message']})")
+            if r["ok"]:
+                _t.sleep(1.0)
+                state_before = _probe()
+                state = state_before.get("state")
+                actions.append(f"after_reload_probe: state={state}")
+
+    # Step 5: if logged_out, the only recovery is the operator logging
+    # into the CDP-Chrome window (or SMS-enroll, which is louder).
+    if state == "logged_out":
+        return {"recovered": False,
+                "state_before": state_before.get("state"),
+                "state_after": "logged_out",
+                "actions": actions,
+                "message": ("Coolbet session expired in CDP-Chrome — operator "
+                            "must log in (open the CDP-Chrome window, sign in "
+                            "to coolbet.com). After that, the next daemon tick "
+                            "will self-heal via proactive_jwt_refresh.")}
+
+    # Step 6: final probe + persist + clear placement_paused if recovered.
+    final = _probe()
+    state_after = final.get("state")
+    recovered = (state_after == "valid")
+    if recovered and not dry_run:
+        # The extract_jwt_from_cdp / refresh_jwt_via_cdp chain in steps 3-4
+        # already persisted; here we just make sure placement isn't blocked
+        # by a stale kill-switch we (or the daemon's self-pause) might have set.
+        try:
+            paused, reason = is_placement_paused()
+            if paused and reason and "daemon" in (reason or "").lower():
+                set_placement_paused(False)
+                actions.append(f"cleared placement_paused (was: {reason})")
+        except Exception as e:
+            actions.append(f"placement_paused clear failed (non-fatal): {e}")
+
+    return {"recovered": recovered,
+            "state_before": state_before.get("state"),
+            "state_after": state_after,
+            "actions": actions,
+            "message": (f"recovered to {state_after}" if recovered
+                        else f"stalled at {state_after}")}
 
 
 def _jwt_exp_seconds(token: str) -> float | None:
@@ -1281,6 +1550,13 @@ def main() -> int:
                    help="Extract fresh JWT from CDP-Chrome localStorage, persist to coolbet_session_state, optionally clear placement_paused.")
     p.add_argument("--resume-placement", action="store_true",
                    help="Combine with --refresh-jwt to ALSO clear the placement_paused kill switch after the JWT lands.")
+    p.add_argument("--full-heal", action="store_true",
+                   help="One-command operator recovery (B4): probe CDP state, "
+                        "auto-launch Chrome if down, open Coolbet tab if missing, "
+                        "Page.reload if JWT expired, persist JWT, clear placement_paused. "
+                        "Only `logged_out` requires manual login (auto-heal can't bypass SMS).")
+    p.add_argument("--full-heal-dry-run", action="store_true",
+                   help="Combine with --full-heal to print the action plan without executing.")
     p.add_argument("--headful", action="store_true", help="Visible browser (debug)")
     args = p.parse_args()
 
@@ -1299,6 +1575,15 @@ def main() -> int:
         print(f"  placement_paused  = {res['placement_paused_before']} → {res['placement_paused_after']}")
         print(f"  message           = {res['message']}")
         return 0 if res["ok"] else 1
+    if args.full_heal:
+        res = auto_self_heal(dry_run=args.full_heal_dry_run)
+        print(f"  recovered     = {res['recovered']}")
+        print(f"  state         = {res['state_before']} → {res['state_after']}")
+        print(f"  actions:")
+        for a in res['actions']:
+            print(f"    • {a}")
+        print(f"  message       = {res['message']}")
+        return 0 if res["recovered"] else 1
     if args.login:
         return interactive_login()
     if args.cdp_auto_login:

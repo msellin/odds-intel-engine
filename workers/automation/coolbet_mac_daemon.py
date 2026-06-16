@@ -115,11 +115,29 @@ def _notify_placement(result: dict, *, dry_run: bool) -> None:
     send_telegram(body, dedup_key=dedup)
 
 
-def _notify_consecutive_failures(*, consecutive: int, first_error_at: float) -> None:
+def _try_auto_self_heal() -> dict:
+    """B4 (2026-06-16): attempt full CDP-JWT recovery before alerting.
+    Wrapped here so the daemon's import surface stays small and any
+    helper failure can't break the alert path. Returns the auto_self_heal
+    result dict (with `recovered` boolean) — caller decides what to do
+    based on whether recovery succeeded."""
+    try:
+        from workers.automation.coolbet_browser_sync import auto_self_heal
+        return auto_self_heal()
+    except Exception as e:
+        log.warning("auto_self_heal raised (proceeding to alert): %s", e)
+        return {"recovered": False, "state_before": "unknown",
+                "state_after": "unknown", "actions": [f"exception: {e}"],
+                "message": f"auto_self_heal raised: {e}"}
+
+
+def _notify_consecutive_failures(*, consecutive: int, first_error_at: float,
+                                  heal_result: dict | None = None) -> None:
     """Push a Telegram when the daemon errors on N consecutive ticks. Called
-    from run_forever() once the counter crosses ALERT_AFTER_CONSECUTIVE_ERRORS.
-    Classifies the underlying CDP-JWT state so the operator gets an actionable
-    recovery hint, not just "daemon is dead".
+    from run_forever() once the counter crosses ALERT_AFTER_CONSECUTIVE_ERRORS,
+    AFTER auto_self_heal has been attempted (so the alert can tell the operator
+    what was tried). Classifies the underlying CDP-JWT state so the operator
+    gets an actionable recovery hint, not just "daemon is dead".
 
     Dedup key is hour-of-day (`daemon-fail-burst-YYYYMMDDHH`) so a sustained
     outage produces at most one push per hour — enough to keep the operator
@@ -158,13 +176,29 @@ def _notify_consecutive_failures(*, consecutive: int, first_error_at: float) -> 
     recovery_safe = _html.escape(recovery, quote=False)
 
     mins_failing = int((time.time() - first_error_at) / 60.0) if first_error_at else 0
+
+    # B4: surface what auto-heal tried so the operator can see "we already
+    # attempted recovery — here's what's still needed". Without this, the
+    # operator might unnecessarily re-run --full-heal that just ran.
+    heal_lines = ""
+    if heal_result:
+        actions = heal_result.get("actions") or []
+        if actions:
+            actions_str = "\n".join(f"  • {_html.escape(str(a), quote=False)}"
+                                     for a in actions[:5])
+            heal_lines = (f"\n\n<b>Auto-heal attempted</b> "
+                          f"({_html.escape(str(heal_result.get('state_before')), quote=False)}"
+                          f" → {_html.escape(str(heal_result.get('state_after')), quote=False)}):\n"
+                          f"{actions_str}")
+
     body = (
         f"🚨 <b>Coolbet daemon failing</b>\n"
         f"\n"
         f"{consecutive} consecutive ticks errored ({mins_failing}m).\n"
         f"State: <b>{state_safe}</b>\n"
-        f"{detail_safe}\n"
-        f"\n"
+        f"{detail_safe}"
+        f"{heal_lines}"
+        f"\n\n"
         f"➡ {recovery_safe}"
     )
 
@@ -430,14 +464,31 @@ def run_forever() -> None:
             consecutive_errors += 1
             if (consecutive_errors >= ALERT_AFTER_CONSECUTIVE_ERRORS
                     and not alert_fired_this_burst):
-                try:
-                    _notify_consecutive_failures(
-                        consecutive=consecutive_errors,
-                        first_error_at=first_error_at,
-                    )
-                    alert_fired_this_burst = True
-                except Exception as e:
-                    log.warning("consecutive-failure Telegram alert failed: %s", e)
+                # B4 (2026-06-16): try to self-heal BEFORE alerting. If the
+                # heal recovers state to `valid`, skip the Telegram entirely
+                # — the next tick will resume placement and the streak
+                # resets naturally. This is what makes the daemon truly
+                # self-healing for the common "JWT lapsed while CDP was up"
+                # case. If heal fails, the alert carries the trail.
+                heal = _try_auto_self_heal()
+                if heal.get("recovered"):
+                    log.info("auto_self_heal recovered before alert — "
+                             "actions: %s", heal.get("actions"))
+                    # Don't clear consecutive_errors here — the NEXT tick
+                    # will do that when it runs cleanly. Resetting now
+                    # would re-arm us for a fresh streak of 2 before
+                    # alerting, which is what we want.
+                    alert_fired_this_burst = True  # don't re-attempt this burst
+                else:
+                    try:
+                        _notify_consecutive_failures(
+                            consecutive=consecutive_errors,
+                            first_error_at=first_error_at,
+                            heal_result=heal,
+                        )
+                        alert_fired_this_burst = True
+                    except Exception as e:
+                        log.warning("consecutive-failure Telegram alert failed: %s", e)
         else:
             # First clean tick resets the streak. A subsequent failure
             # burst will alert again (correct — that's a new incident).
