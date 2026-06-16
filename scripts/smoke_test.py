@@ -3771,6 +3771,68 @@ def test_coolbet_daemon_alerts():
     )
 
 
+@test("COOLBET-DAILY-SUMMARY — one Telegram at 08:00 UTC summarises daemon + JWT + catch-net + 24h + queue")
+def test_coolbet_daily_summary():
+    """COOLBET-DAILY-SUMMARY (C1, 2026-06-16): proactive 'everything's fine'
+    confirmation. COOLBET-DAEMON-ALERTS pushes on failure; this pushes
+    once a day on schedule. A missed daily summary unambiguously means
+    the scheduler itself is down — a failure mode no other alert covers.
+
+    Pin: job exists with the documented helpers; scheduler registers it
+    on the 08:00 UTC cron; dedup key is date-scoped (otherwise a retry
+    would double-send); message structure carries the 5 health lines."""
+    import pathlib
+
+    job = pathlib.Path("workers/jobs/coolbet_daily_summary.py").read_text()
+    for fn in ("def _gather_state(", "def _format_summary(",
+                "def run_daily_summary("):
+        assert fn in job, (
+            f"coolbet_daily_summary must define '{fn}' — testability + "
+            "CLI dry-run depend on this split."
+        )
+
+    # Message must surface the five state pillars. Without these the
+    # summary becomes pure noise and the operator stops reading it.
+    fmt_block = job[job.index("def _format_summary("):
+                    job.index("def run_daily_summary(")]
+    must_surface = [
+        ("Daemon", "tick age + last result (placed/errors)"),
+        ("JWT",    "TTL — proactive-refresh visibility"),
+        ("Railway HB", "Railway scheduler liveness"),
+        ("Catch-net",  "C2 heartbeat — confirms */5 cron firing"),
+        ("24h",  "real-bet activity"),
+        ("Today", "calibrated queue"),
+    ]
+    for needle, why in must_surface:
+        assert needle in fmt_block, (
+            f"Daily summary must include line '{needle}' — {why}."
+        )
+
+    # Dedup must be date-scoped so a same-day retry doesn't double-send,
+    # but releases overnight so tomorrow's send goes through.
+    run_block = job[job.index("def run_daily_summary("):]
+    assert "daily-summary-" in run_block, (
+        "dedup_key must use 'daily-summary-YYYYMMDD' prefix."
+    )
+    assert "%Y%m%d" in run_block, (
+        "dedup_key must include date (YYYYMMDD) — without this, a single "
+        "send would dedup all future runs."
+    )
+
+    # Scheduler wiring at 08:00 UTC. Earlier risks colliding with the
+    # Sunday cron chain (03-06:30 UTC); later misses the operator's
+    # morning check-in window.
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    assert "def job_coolbet_daily_summary(" in sched, (
+        "scheduler.py must define job_coolbet_daily_summary wrapper."
+    )
+    assert ("coolbet_daily_summary" in sched
+            and "CronTrigger(hour=8, minute=0)" in sched), (
+        "Job must register on CronTrigger(hour=8, minute=0) — 08:00 UTC "
+        "is the documented send time."
+    )
+
+
 @test("COOLBET-PREKICKOFF-HEARTBEAT — catch-net writes prekickoff_last_run_at on every fire incl. healthy/no-candidates")
 def test_coolbet_prekickoff_heartbeat():
     """COOLBET-PREKICKOFF-HEARTBEAT (C2, 2026-06-16): the catch-net is

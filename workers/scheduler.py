@@ -1306,6 +1306,19 @@ def job_coolbet_health_ping():
     _run_job("coolbet_health_ping", lambda: None)
 
 
+def job_coolbet_daily_summary():
+    """COOLBET-DAILY-SUMMARY (2026-06-16, C1): one Telegram at 08:00 UTC
+    summarising daemon health, JWT, catch-net liveness, 24h activity, and
+    today's calibrated queue. Lets the operator confirm "everything is
+    fine" without prompting the system. A missed daily summary = scheduler
+    itself is down (a failure mode no other alert covers)."""
+    from workers.jobs.coolbet_daily_summary import run_daily_summary
+    r = run_daily_summary()
+    if not r.get("sent"):
+        console.print(f"[yellow]Coolbet daily summary: sent={r.get('sent')}[/yellow]")
+    _run_job("coolbet_daily_summary", lambda: None)
+
+
 def job_coolbet_prekickoff_alert():
     """COOLBET-DAEMON-ALERTS (2026-06-16): pre-kickoff catch-net. Runs every
     5 min on Railway, independent of the Mac. When the Mac daemon's
@@ -2727,6 +2740,15 @@ def main():
                       id="coolbet_health_ping",
                       name="Coolbet Session Health Ping [5min]",
                       max_instances=1, misfire_grace_time=60)
+
+    # COOLBET-DAILY-SUMMARY (2026-06-16) — once at 08:00 UTC. Proactive
+    # "everything's fine" Telegram so the operator can confirm health
+    # without prompting. Missed summary = scheduler itself is down.
+    scheduler.add_job(job_coolbet_daily_summary,
+                      CronTrigger(hour=8, minute=0),
+                      id="coolbet_daily_summary",
+                      name="Coolbet Daily Summary [08:00 UTC]",
+                      max_instances=1, misfire_grace_time=3600)
 
     # COOLBET-DAEMON-ALERTS (2026-06-16) — pre-kickoff catch-net, every 5 min.
     # Independent of the Mac so it survives a dead daemon. Quiet on healthy.
