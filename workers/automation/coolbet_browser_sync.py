@@ -374,6 +374,99 @@ def extract_jwt_from_cdp(*, allow_open_new_tab: bool = False,
     return None
 
 
+def diagnose_cdp_jwt_state(*, timeout_ms: int = 8000) -> dict:
+    """Classify the CDP-Chrome JWT state so daemon alerts can tell the
+    operator exactly what to fix. Returns a dict:
+
+        {"state": <one of chrome_down/no_coolbet_tab/logged_out/
+                          jwt_expired/valid/unknown>,
+         "detail": <short human-readable string>,
+         "ttl_s":  <int|None — remaining seconds when state=valid>}
+
+    Distinct from `extract_jwt_from_cdp()` (which returns the JWT string
+    or None) because alerts need the *why*, not the JWT itself. Read-only,
+    never opens a new tab — diagnosis must not flash the Chrome window.
+
+    States in priority order (first match wins):
+      chrome_down     — CDP unreachable (Chrome not running with --remote-debugging-port,
+                        OR FlareSolverr-side mid-restart, OR no network to localhost).
+                        Recovery: `./local/launch_chrome_for_sync.sh`.
+      no_coolbet_tab  — Chrome reachable but no coolbet.com page target.
+                        Recovery: open a Coolbet tab in CDP-Chrome.
+      logged_out      — Coolbet tab found but `cbauth` key absent from localStorage
+                        AND no JWT-shaped value anywhere. This is what today's outage
+                        looks like — browser running, tab open, but user signed out.
+                        Recovery: log into coolbet.com in CDP-Chrome.
+      jwt_expired     — `cbauth` present but exp <= now. Coolbet's renew-token loop
+                        usually keeps this fresh; expiry means the renew loop also
+                        stopped (e.g. tab backgrounded for hours OR session forced out).
+                        Recovery: refresh the coolbet.com tab or re-login.
+      valid           — JWT present with TTL >= 60s. ttl_s gives the remaining window.
+    """
+    snapshot = _try_read_localStorage_via_cdp(
+        allow_open_new_tab=False,
+        timeout_ms=timeout_ms,
+    )
+    if isinstance(snapshot, Exception):
+        return {"state": "chrome_down",
+                "detail": f"CDP unreachable at {CDP_URL}: {snapshot}",
+                "ttl_s": None}
+    if snapshot is None:
+        return {"state": "no_coolbet_tab",
+                "detail": f"No coolbet.com tab open in CDP-Chrome ({CDP_URL}).",
+                "ttl_s": None}
+
+    probed = snapshot.get("probed") or {}
+    all_keys = snapshot.get("all_keys") or []
+    all_values = snapshot.get("all_values") or []
+
+    # Look for any JWT-shaped value (probed keys + full scan).
+    candidates = []
+    for k in _JWT_LOCALSTORAGE_KEYS:
+        v = probed.get(k)
+        if v:
+            candidates.append((k, v))
+    for v in all_values:
+        if v and v not in (cv for _, cv in candidates):
+            candidates.append(("<scan>", v))
+
+    found_jwt_shape = False
+    for _src, raw in candidates:
+        token = raw[7:] if isinstance(raw, str) and raw.startswith("Bearer ") else raw
+        if not _looks_like_jwt(token):
+            continue
+        found_jwt_shape = True
+        # If TTL still positive, we're valid.
+        if _jwt_still_valid(token):
+            import base64 as _b64, json as _json, time as _t
+            try:
+                payload_b64 = token.split(".")[1]
+                payload_b64 += "=" * (4 - len(payload_b64) % 4)
+                payload = _json.loads(_b64.urlsafe_b64decode(payload_b64))
+                exp = float(payload.get("exp", 0))
+                ttl = int(exp - _t.time())
+            except Exception:
+                ttl = None
+            return {"state": "valid",
+                    "detail": f"Fresh JWT present (ttl ~{ttl}s).",
+                    "ttl_s": ttl}
+
+    if found_jwt_shape:
+        return {"state": "jwt_expired",
+                "detail": "JWT present in localStorage but exp <= now. "
+                          "Refresh the coolbet.com tab or log in again.",
+                "ttl_s": 0}
+
+    # Logged-out: tab is open, localStorage exists, but no cbauth and no JWT-shaped
+    # value anywhere. This is the failure mode that hit 2026-06-15/16: 33 keys
+    # present, none of them auth.
+    return {"state": "logged_out",
+            "detail": ("Coolbet tab open but no JWT in localStorage "
+                       f"({len(all_keys)} keys present, cbauth missing). "
+                       "Log into coolbet.com in CDP-Chrome."),
+            "ttl_s": None}
+
+
 def _try_read_localStorage_via_cdp(*, allow_open_new_tab: bool,
                                       timeout_ms: int) -> dict | None | Exception:
     """One attempt at: discover Coolbet tab via /json/list, open a raw

@@ -229,10 +229,27 @@ storm — `COOLBET_ALLOW_API_LOGIN` default = `false` guards this hard.
 |---|---|---|
 | Daemon logs "JWT expired AND api_login is disabled" every tick | CDP-Chrome closed OR localStorage cleared | Open CDP-Chrome → `python3 -m workers.automation.coolbet_browser_sync --refresh-jwt` |
 | `extract_jwt_from_cdp` returns None | No coolbet.com tab open in CDP-Chrome | Open a coolbet.com tab → re-run |
+| `diagnose_cdp_jwt_state()` returns `logged_out` | Chrome reachable + Coolbet tab open but `cbauth` absent from localStorage (operator signed out) | Log into coolbet.com in CDP-Chrome → next daemon tick self-heals |
 | CDP connect fails at `:9222` | Chrome not running with debug port | `./local/launch_chrome_for_sync.sh` |
 | FS calls fail with "FLARESOLVERR_URL unset" | Docker stopped OR env stripped | `docker start flaresolverr` and verify launchd plist sets FLARESOLVERR_URL |
 | `placement_paused=true` in DB | Emergency stop (SMS-spam guard, operator pause, etc.) | Verify root cause is fixed → `UPDATE coolbet_session_state SET placement_paused=false, placement_paused_reason=NULL WHERE id=1;` |
 | Imperva 403 on FS GET | Cookies stale (rotate fast) | Wait one cycle — `_refresh_cookies_from_fs()` re-harvests on next call |
+
+**Silent-failure alarms (COOLBET-DAEMON-ALERTS, 2026-06-16):** Two alerts now
+fire automatically when the daemon stops placing — operator no longer has to
+tail logs to notice.
+
+- **Daemon self-alert**: after `COOLBET_MAC_ALERT_AFTER_ERRORS` consecutive
+  error ticks (default 2), the daemon classifies the failure via
+  `diagnose_cdp_jwt_state()` and pushes a Telegram with a state-specific
+  recovery hint. Dedup key is hour-bucketed so a sustained outage produces
+  ~1 alert/hour. Counter resets on the first clean tick.
+- **Pre-KO catch-net** (Railway, every 5 min): when the Mac daemon's last
+  heartbeat is stale or errored AND a `calibrated`-bot pick is within
+  [-5min, +90min] of KO, unplaced and not user-skipped, an urgent
+  "PLACE MANUALLY — daemon down" Telegram fires with the deep link. Dedup
+  per-bet 1h so each pick gets at most one urgent push per hour. Independent
+  of the Mac so it survives daemon death.
 
 **Emergency stop (the kill switch):**
 ```sql

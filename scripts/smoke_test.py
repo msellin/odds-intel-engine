@@ -3687,6 +3687,173 @@ def test_coolbet_cdp_jwt_extract():
     )
 
 
+@test("COOLBET-DAEMON-ALERTS — daemon pushes Telegram on N consecutive failed ticks with CDP diagnosis")
+def test_coolbet_daemon_alerts():
+    """COOLBET-DAEMON-ALERTS (2026-06-16): On 2026-06-15/16 the Mac daemon
+    errored on 40+ consecutive ticks (~24h) with zero alerts — JWT expired
+    AND CDP-Chrome was logged out. One calibrated-bot pick was missed.
+
+    The fix: on the N-th consecutive error tick the daemon classifies the
+    underlying CDP state via diagnose_cdp_jwt_state() and pushes a Telegram
+    with an actionable recovery hint. Dedup per hour-of-day so a sustained
+    outage alerts at most once/hour, not every 30 min.
+
+    Pin: diagnose helper exists with the 5 documented states; daemon
+    imports + invokes it; consecutive-error tracking + reset-on-ok
+    semantics are in run_forever; Telegram send uses the documented
+    dedup-key prefix."""
+    import pathlib
+
+    bs = pathlib.Path("workers/automation/coolbet_browser_sync.py").read_text()
+    assert "def diagnose_cdp_jwt_state(" in bs, (
+        "browser_sync must export diagnose_cdp_jwt_state() — the classifier "
+        "that lets the daemon tell the operator WHY placement is failing."
+    )
+    for state in ("chrome_down", "no_coolbet_tab", "logged_out",
+                  "jwt_expired", "valid"):
+        assert state in bs, (
+            f"diagnose_cdp_jwt_state must produce state='{state}' — the "
+            "Telegram recovery hint table relies on this set."
+        )
+    # The diagnose helper must read CDP read-only (no new tab) — diagnosis
+    # must not flash the operator's Chrome window.
+    diag_block = bs[bs.index("def diagnose_cdp_jwt_state("):
+                    bs.index("def _try_read_localStorage_via_cdp(")]
+    assert "allow_open_new_tab=False" in diag_block, (
+        "diagnose_cdp_jwt_state must call CDP with allow_open_new_tab=False; "
+        "opening a new tab during diagnosis would flash Chrome unexpectedly."
+    )
+
+    daemon = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
+    assert "def _notify_consecutive_failures(" in daemon, (
+        "Mac daemon must define _notify_consecutive_failures() — the path "
+        "that pushes the Telegram alert when error streaks hit threshold."
+    )
+    assert "diagnose_cdp_jwt_state" in daemon, (
+        "Mac daemon must import + call diagnose_cdp_jwt_state() to classify "
+        "the failure before alerting — without classification, the operator "
+        "still has to tail the log to know what's broken."
+    )
+    assert "ALERT_AFTER_CONSECUTIVE_ERRORS" in daemon, (
+        "Mac daemon must expose ALERT_AFTER_CONSECUTIVE_ERRORS (env-tunable) "
+        "so the threshold can be raised on noisy networks without a redeploy."
+    )
+    # Dedup key MUST exist and MUST be hour-scoped — without an hour bucket,
+    # the in-process _LAST_SENT dict would suppress every alert after the
+    # first for the lifetime of the process (could be days).
+    assert "daemon-fail-burst-" in daemon, (
+        "Telegram alert must use dedup_key prefix 'daemon-fail-burst-' so "
+        "send_telegram's _LAST_SENT can dedup across ticks."
+    )
+    # The dedup key in the daemon must include an hour component (%H) so a
+    # sustained outage still produces ~one alert per hour.
+    notify_block = daemon[daemon.index("def _notify_consecutive_failures("):
+                          daemon.index("def _handle_sigterm(")]
+    assert "%Y%m%d%H" in notify_block or '"%H"' in notify_block, (
+        "Telegram dedup key must include hour-of-day — without an hour bucket "
+        "a multi-day outage would alert only once per process restart."
+    )
+
+    # The run_forever loop must (a) track consecutive errors, (b) reset on
+    # clean ticks, and (c) call _notify_consecutive_failures on threshold.
+    loop_block = daemon[daemon.index("def run_forever("):]
+    assert "consecutive_errors" in loop_block, (
+        "run_forever must maintain a consecutive_errors counter."
+    )
+    assert "_notify_consecutive_failures(" in loop_block, (
+        "run_forever must call _notify_consecutive_failures on the streak threshold."
+    )
+    # Reset-on-ok: a recovered daemon must NOT keep alerting next streak.
+    assert "consecutive_errors = 0" in loop_block, (
+        "run_forever must reset consecutive_errors on a clean tick — "
+        "otherwise a recovered daemon stays armed and a single later blip "
+        "would re-alert at threshold=1 instead of threshold=2."
+    )
+
+
+@test("COOLBET-PREKICKOFF-CATCHNET — Railway job alerts on calibrated picks near KO when Mac daemon is down")
+def test_coolbet_prekickoff_catchnet():
+    """COOLBET-DAEMON-ALERTS catch-net (2026-06-16): Railway-side job runs
+    every 5 min, independent of the Mac. When (a) Mac daemon is stale or
+    last tick errored AND (b) a calibrated-bot pick is approaching KO
+    unplaced — push urgent Telegram so operator can place from phone.
+
+    Pin: module exists with the required helpers; SQL has the gating
+    filters (signaled_at IS NOT NULL, no real_bet, no user_placed/skipped,
+    maturity allowlist, pre-KO window); scheduler registers the 5-min
+    cron; Telegram dedup-key prefix is stable."""
+    import pathlib
+
+    job = pathlib.Path("workers/jobs/coolbet_prekickoff_alert.py").read_text()
+    for fn in ("def run_prekickoff_alert(",
+                "def _mac_daemon_is_healthy(",
+                "def load_prekickoff_candidates(",
+                "def _format_urgent_signal("):
+        assert fn in job, (
+            f"coolbet_prekickoff_alert must define '{fn}' — the catch-net "
+            "depends on this surface for testability and re-use from CLI."
+        )
+
+    # SQL gating filters — each one is load-bearing for correctness.
+    sql_must_contain = [
+        ("sb.result = 'pending'",
+         "must filter to unsettled bets only"),
+        ("sb.combo_legs IS NULL",
+         "singles only — combos out of scope for catch-net (no combo placer path)"),
+        ("sb.signaled_at IS NOT NULL",
+         "only alert on bets the operator was already informed about — "
+         "this is a follow-up, not a first-time notification"),
+        ("sb.user_placed_at IS NULL",
+         "respect the ✅ Placed button — never re-alert on bets the operator "
+         "already placed"),
+        ("sb.user_skipped_at IS NULL",
+         "respect the ⏭ Skip button — operator vetoed; don't nag"),
+        ("b.maturity_label = ANY(",
+         "maturity allowlist gate — catch-net is real-money tier only"),
+        ("NOT EXISTS",
+         "real_bets dedup — never alert when the daemon already placed"),
+    ]
+    for needle, why in sql_must_contain:
+        assert needle in job, f"prekickoff SQL missing '{needle}' — {why}"
+
+    # The Mac-daemon-healthy check must short-circuit before sending.
+    assert ("mac_daemon_last_tick_at" in job
+            and "mac_daemon_last_tick_result" in job), (
+        "Catch-net must read coolbet_session_state.mac_daemon_last_tick_at "
+        "+ _result to detect daemon health. Without this, it would alert "
+        "every 5 min even when the daemon is happily placing."
+    )
+    healthy_block = job[job.index("def _mac_daemon_is_healthy("):
+                        job.index("def load_prekickoff_candidates(")]
+    assert "MAC_DAEMON_STALE_AFTER_MINUTES" in healthy_block, (
+        "_mac_daemon_is_healthy must use the configurable stale threshold."
+    )
+    assert "errors" in healthy_block, (
+        "_mac_daemon_is_healthy must inspect last_tick_result.errors — "
+        "a daemon that ticked recently but errored is NOT healthy."
+    )
+
+    # Dedup key must be per-simulated_bet so each pick gets at most one
+    # urgent push per 1h window — not 12 pushes per hour (5-min cadence).
+    assert "prekickoff-" in job, (
+        "Telegram dedup_key must use 'prekickoff-{simulated_bet_id}' prefix."
+    )
+    assert "3600" in job, (
+        "Telegram dedup_window_s should be ~3600 (1h) so each pick re-alerts "
+        "at most hourly; smaller windows produce spam, larger miss late picks."
+    )
+
+    # Scheduler wiring.
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    assert "def job_coolbet_prekickoff_alert(" in sched, (
+        "scheduler.py must define job_coolbet_prekickoff_alert wrapper."
+    )
+    assert "coolbet_prekickoff_alert" in sched and 'minute="*/5"' in sched, (
+        "scheduler.py must register the job on a */5 minute cron — 5 min "
+        "is the right cadence between dedup window and freshness."
+    )
+
+
 @test("COOLBET-MATURITY-GATE-IN-PLIST — Mac daemon plist sets COOLBET_RECORD_ALLOWED_MATURITY=calibrated")
 def test_coolbet_maturity_gate_in_plist():
     """COOLBET-MATURITY-GATE-IN-PLIST (2026-06-12): Railway has

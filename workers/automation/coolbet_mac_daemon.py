@@ -62,6 +62,15 @@ POLL_INTERVAL_S = int(os.getenv("COOLBET_MAC_POLL_S", "1800"))
 # something's wedged silently (Docker stopped, network out, etc).
 HEALTH_WARN_AFTER_S = int(os.getenv("COOLBET_MAC_HEALTH_WARN_S", "1800"))
 
+# COOLBET-DAEMON-ALERTS (2026-06-16): push a Telegram alert when the
+# daemon errors on N consecutive ticks. Two is the right floor — a
+# single transient blip (network hiccup, Imperva 503) shouldn't page
+# the operator, but two in a row almost always means a structural
+# break (JWT expired + CDP logged out, Docker down, etc) that needs
+# human intervention. Dedup by hour-of-day so a sustained outage
+# alerts at most once per hour during waking hours, not every 30 min.
+ALERT_AFTER_CONSECUTIVE_ERRORS = int(os.getenv("COOLBET_MAC_ALERT_AFTER_ERRORS", "2"))
+
 _stop = False
 
 
@@ -104,6 +113,66 @@ def _notify_placement(result: dict, *, dry_run: bool) -> None:
     # send_telegram helper already hardcodes parse_mode="HTML".
     dedup = f"auto-placed-{real_bet_id}" if real_bet_id else None
     send_telegram(body, dedup_key=dedup)
+
+
+def _notify_consecutive_failures(*, consecutive: int, first_error_at: float) -> None:
+    """Push a Telegram when the daemon errors on N consecutive ticks. Called
+    from run_forever() once the counter crosses ALERT_AFTER_CONSECUTIVE_ERRORS.
+    Classifies the underlying CDP-JWT state so the operator gets an actionable
+    recovery hint, not just "daemon is dead".
+
+    Dedup key is hour-of-day (`daemon-fail-burst-YYYYMMDDHH`) so a sustained
+    outage produces at most one push per hour — enough to keep the operator
+    informed without becoming notification spam. The send_telegram helper's
+    in-process _LAST_SENT dict survives across ticks (same process)."""
+    from workers.notify.telegram import send_telegram
+    from workers.automation.coolbet_browser_sync import diagnose_cdp_jwt_state
+
+    try:
+        diag = diagnose_cdp_jwt_state()
+    except Exception as e:  # diagnosis must never break the alert
+        diag = {"state": "unknown", "detail": f"diagnosis failed: {e}", "ttl_s": None}
+
+    state = diag.get("state") or "unknown"
+    detail = diag.get("detail") or ""
+
+    # Compact recovery hint per state. Keep one line — the operator reads
+    # this on a phone lock screen.
+    recovery = {
+        "chrome_down":    "Run ./local/launch_chrome_for_sync.sh on the Mac.",
+        "no_coolbet_tab": "Open a coolbet.com tab in CDP-Chrome.",
+        "logged_out":     "Log into coolbet.com in CDP-Chrome.",
+        "jwt_expired":    "Refresh the coolbet.com tab (or log in again).",
+        "valid":          "JWT looks valid — check FlareSolverr / network / Coolbet status.",
+        "unknown":        "Tail dev/active/coolbet-mac-daemon.log for the underlying error.",
+    }.get(state, "Tail dev/active/coolbet-mac-daemon.log.")
+
+    # send_telegram hardcodes parse_mode=HTML, so any "<" / ">" / "&" inside
+    # the dynamic strings (especially detail, which can legitimately contain
+    # "<=", "<60s", etc.) must be HTML-escaped or the API returns 400
+    # "can't parse entities". The recovery + static labels are safe by
+    # construction but escaping them too costs nothing.
+    import html as _html
+    state_safe = _html.escape(state, quote=False)
+    detail_safe = _html.escape(detail, quote=False)
+    recovery_safe = _html.escape(recovery, quote=False)
+
+    mins_failing = int((time.time() - first_error_at) / 60.0) if first_error_at else 0
+    body = (
+        f"🚨 <b>Coolbet daemon failing</b>\n"
+        f"\n"
+        f"{consecutive} consecutive ticks errored ({mins_failing}m).\n"
+        f"State: <b>{state_safe}</b>\n"
+        f"{detail_safe}\n"
+        f"\n"
+        f"➡ {recovery_safe}"
+    )
+
+    # Dedup on hour-of-day so each hour of sustained outage produces at
+    # most one alert. dedup_window_s=4000 covers a full hour with margin.
+    hour_key = datetime.now(timezone.utc).strftime("%Y%m%d%H")
+    send_telegram(body, dedup_key=f"daemon-fail-burst-{hour_key}",
+                  dedup_window_s=4000)
 
 
 def _handle_sigterm(signum, frame):
@@ -311,6 +380,13 @@ def run_forever() -> None:
 
     last_active_at = time.time()
     tick_count = 0
+    # COOLBET-DAEMON-ALERTS (2026-06-16): silent-failure guard. A streak
+    # of failed ticks pushes a Telegram on the Nth one with classification +
+    # recovery hint. Cleared on the first OK tick so a recovered daemon
+    # doesn't keep alerting.
+    consecutive_errors = 0
+    first_error_at: float = 0.0
+    alert_fired_this_burst = False
     while not _stop:
         tick_count += 1
         c = _tick()
@@ -322,6 +398,29 @@ def run_forever() -> None:
             )
         if c["placed"] or c["errors"]:
             last_active_at = time.time()
+
+        if c["errors"]:
+            if consecutive_errors == 0:
+                first_error_at = time.time()
+            consecutive_errors += 1
+            if (consecutive_errors >= ALERT_AFTER_CONSECUTIVE_ERRORS
+                    and not alert_fired_this_burst):
+                try:
+                    _notify_consecutive_failures(
+                        consecutive=consecutive_errors,
+                        first_error_at=first_error_at,
+                    )
+                    alert_fired_this_burst = True
+                except Exception as e:
+                    log.warning("consecutive-failure Telegram alert failed: %s", e)
+        else:
+            # First clean tick resets the streak. A subsequent failure
+            # burst will alert again (correct — that's a new incident).
+            if consecutive_errors > 0:
+                log.info("daemon recovered after %d consecutive errors", consecutive_errors)
+            consecutive_errors = 0
+            first_error_at = 0.0
+            alert_fired_this_burst = False
 
         if time.time() - last_active_at > HEALTH_WARN_AFTER_S:
             log.warning(

@@ -1306,6 +1306,26 @@ def job_coolbet_health_ping():
     _run_job("coolbet_health_ping", lambda: None)
 
 
+def job_coolbet_prekickoff_alert():
+    """COOLBET-DAEMON-ALERTS (2026-06-16): pre-kickoff catch-net. Runs every
+    5 min on Railway, independent of the Mac. When the Mac daemon's
+    heartbeat is stale or its last tick errored AND a calibrated-bot pick
+    is approaching KO unplaced — push an urgent Telegram so the operator
+    can place from their phone.
+
+    Quiet on success: returns silently when daemon is healthy. Logs a
+    summary line when it fires."""
+    from workers.jobs.coolbet_prekickoff_alert import run_prekickoff_alert
+    counters = run_prekickoff_alert()
+    if not counters.get("healthy") and counters.get("candidates"):
+        console.print(
+            f"[yellow]Coolbet prekickoff catch-net: healthy={counters['healthy']} "
+            f"candidates={counters['candidates']} sent={counters['sent']} "
+            f"skipped_dedup={counters['skipped_dedup']}[/yellow]"
+        )
+    _run_job("coolbet_prekickoff_alert", lambda: None)
+
+
 def job_flaresolverr_sweep():
     """COOLBET-FS-SESSION-STABLE sweeper (2026-06-11): hourly destroys
     stale FlareSolverr sessions that aren't in the active whitelist.
@@ -2706,6 +2726,14 @@ def main():
                       CronTrigger(minute="*/5"),
                       id="coolbet_health_ping",
                       name="Coolbet Session Health Ping [5min]",
+                      max_instances=1, misfire_grace_time=60)
+
+    # COOLBET-DAEMON-ALERTS (2026-06-16) — pre-kickoff catch-net, every 5 min.
+    # Independent of the Mac so it survives a dead daemon. Quiet on healthy.
+    scheduler.add_job(job_coolbet_prekickoff_alert,
+                      CronTrigger(minute="*/5"),
+                      id="coolbet_prekickoff_alert",
+                      name="Coolbet Pre-KO Catch-Net [5min]",
                       max_instances=1, misfire_grace_time=60)
 
     # COOLBET-FS-SESSION-STABLE sweeper — hourly, destroys stale FS sessions
