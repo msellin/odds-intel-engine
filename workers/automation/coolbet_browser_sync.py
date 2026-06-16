@@ -467,6 +467,110 @@ def diagnose_cdp_jwt_state(*, timeout_ms: int = 8000) -> dict:
             "ttl_s": None}
 
 
+def proactive_jwt_refresh(*, min_ttl_s: int = 300) -> dict:
+    """Pull a fresh JWT from CDP-Chrome and persist it to DB when the
+    currently-persisted token's TTL is below `min_ttl_s`. No-op when the
+    DB JWT is comfortably fresh.
+
+    Designed for the Mac daemon to call at the start of every tick BEFORE
+    the placer touches Coolbet — so by the time `place_all_bets` opens a
+    session, the DB JWT is fresh and `CoolbetSession.__init__` adopts it
+    cleanly. Eliminates the race where a tick starts with a JWT that
+    expires mid-request.
+
+    This complements (does not replace) the reactive path in
+    `CoolbetSession._login` → `_try_cdp_jwt`. That path runs at the moment
+    of expiry; this one runs preemptively so expiry never lands inside a
+    placement attempt.
+
+    Returns a status dict:
+        {"refreshed": bool,
+         "ttl_before_s": int | None,
+         "ttl_after_s":  int | None,
+         "reason": one of fresh / refreshed / cdp_unavailable /
+                          cdp_returned_expired / persist_failed / no_db_jwt}
+
+    Cost: 1 short DB SELECT every call; CDP probe + UPDATE only when stale."""
+    import time as _t
+    from workers.automation.coolbet_state import (
+        read_persisted_jwt, persist_jwt, mark_login_success,
+    )
+
+    db_jwt, db_session_id = read_persisted_jwt()
+    ttl_before: int | None = None
+    if db_jwt:
+        # Cheap local decode — no network call.
+        exp = _jwt_exp_seconds(db_jwt)
+        if exp is not None:
+            ttl_before = int(exp - _t.time())
+            if ttl_before > min_ttl_s:
+                return {"refreshed": False, "ttl_before_s": ttl_before,
+                        "ttl_after_s": ttl_before, "reason": "fresh"}
+
+    # Stale, missing exp, or DB has no JWT — try the CDP source of truth.
+    try:
+        fresh = extract_jwt_from_cdp(allow_open_new_tab=False)
+    except Exception as e:
+        log.warning("proactive_jwt_refresh: CDP probe raised: %s", e)
+        return {"refreshed": False, "ttl_before_s": ttl_before,
+                "ttl_after_s": ttl_before, "reason": "cdp_unavailable"}
+    if not fresh:
+        # No Coolbet tab, Chrome down, or logged out. The catch-net + the
+        # daemon's consecutive-error alert will handle escalation. Don't
+        # mark_error here — that's the reactive path's job.
+        return {"refreshed": False, "ttl_before_s": ttl_before,
+                "ttl_after_s": ttl_before, "reason": "cdp_unavailable"}
+
+    exp_after = _jwt_exp_seconds(fresh)
+    if exp_after is None or exp_after <= _t.time():
+        return {"refreshed": False, "ttl_before_s": ttl_before,
+                "ttl_after_s": None, "reason": "cdp_returned_expired"}
+    ttl_after = int(exp_after - _t.time())
+
+    # Persist to DB. Mirror `CoolbetSession._adopt_manual_jwt`'s pattern:
+    # persist_jwt (canonical token store) + mark_login_success (sets
+    # jwt_exp_at + clears last_error). Without mark_login_success, the
+    # `/status` row would still show a stale jwt_exp_at after refresh.
+    try:
+        import base64 as _b64, json as _json
+        from datetime import datetime as _dt, timezone as _tz
+        payload_b64 = fresh.split(".")[1]
+        payload_b64 += "=" * (4 - len(payload_b64) % 4)
+        payload = _json.loads(_b64.urlsafe_b64decode(payload_b64))
+        user_id = payload.get("user_id") or payload.get("sub")
+        login_session_id = payload.get("login_session_id") or db_session_id
+        exp_dt = _dt.fromtimestamp(float(payload["exp"]), tz=_tz.utc)
+        persist_jwt(fresh, login_session_id=login_session_id,
+                    set_by="proactive_refresh")
+        mark_login_success(method="proactive_cdp", user_id=user_id,
+                           jwt_exp_at=exp_dt)
+    except Exception as e:
+        log.warning("proactive_jwt_refresh: persist failed: %s", e)
+        return {"refreshed": False, "ttl_before_s": ttl_before,
+                "ttl_after_s": ttl_after, "reason": "persist_failed"}
+
+    log.info("proactive_jwt_refresh: TTL %ss → %ds (refreshed via CDP)",
+             ttl_before, ttl_after)
+    return {"refreshed": True, "ttl_before_s": ttl_before,
+            "ttl_after_s": ttl_after, "reason": "refreshed"}
+
+
+def _jwt_exp_seconds(token: str) -> float | None:
+    """Decode JWT payload (no signature check) and return `exp` as epoch
+    seconds. Returns None on any parse error so callers can treat parse
+    failure the same as "missing exp"."""
+    try:
+        import base64 as _b64, json as _json
+        if token.startswith("Bearer "):
+            token = token[7:]
+        payload_b64 = token.split(".")[1]
+        payload_b64 += "=" * (4 - len(payload_b64) % 4)
+        payload = _json.loads(_b64.urlsafe_b64decode(payload_b64))
+        return float(payload.get("exp", 0)) or None
+    except Exception:
+        return None
+
+
 def _try_read_localStorage_via_cdp(*, allow_open_new_tab: bool,
                                       timeout_ms: int) -> dict | None | Exception:
     """One attempt at: discover Coolbet tab via /json/list, open a raw

@@ -3771,6 +3771,78 @@ def test_coolbet_daemon_alerts():
     )
 
 
+@test("COOLBET-PROACTIVE-JWT-REFRESH — daemon refreshes JWT from CDP before TTL hits zero")
+def test_coolbet_proactive_jwt_refresh():
+    """COOLBET-PROACTIVE-JWT-REFRESH (B1, 2026-06-16): adds the proactive
+    layer on top of the reactive CDP-JWT path. Before this, the daemon
+    only refreshed the JWT AT the moment of expiry — which meant ticks
+    could start with a JWT that expires mid-request, mid-search, or
+    mid-place.
+
+    The proactive helper runs at the start of every tick: cheap local
+    decode of the DB JWT's exp claim; only probes CDP when TTL falls
+    below threshold (default 300s). Idempotent, silent on fresh JWT.
+
+    Pin: helper exists in browser_sync; daemon calls it after
+    load_qualified_bets returns non-empty (silent-when-empty preserved);
+    failure does NOT mark the tick as errored (reactive path is safety
+    net); persist path writes both persist_jwt + mark_login_success so
+    /status surfaces correct jwt_exp_at."""
+    import pathlib
+
+    bs = pathlib.Path("workers/automation/coolbet_browser_sync.py").read_text()
+    assert "def proactive_jwt_refresh(" in bs, (
+        "browser_sync must export proactive_jwt_refresh() — the helper "
+        "the daemon calls before placement to ensure JWT doesn't expire "
+        "mid-tick."
+    )
+    refresh_block = bs[bs.index("def proactive_jwt_refresh("):
+                       bs.index("def _jwt_exp_seconds(")]
+    # Reasons must include the documented outcome set so callers can
+    # branch sensibly. "fresh" is load-bearing — without it the early-exit
+    # path can't be distinguished from "refreshed".
+    for reason in ("fresh", "refreshed", "cdp_unavailable",
+                    "cdp_returned_expired", "persist_failed"):
+        assert f'"{reason}"' in refresh_block, (
+            f'proactive_jwt_refresh must produce reason="{reason}" — '
+            f"diagnostic surface relies on this enumeration."
+        )
+    # Both persist paths must run on a successful refresh. mark_login_success
+    # without persist_jwt leaves jwt_exp_at fresh but the JWT itself stale.
+    # persist_jwt without mark_login_success leaves /status showing the old
+    # expiry. The session can read either but operators read both.
+    assert "persist_jwt(" in refresh_block and "mark_login_success(" in refresh_block, (
+        "proactive_jwt_refresh must call BOTH persist_jwt and "
+        "mark_login_success on success — without both, the row drifts."
+    )
+
+    # Daemon wiring.
+    daemon = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
+    assert "proactive_jwt_refresh" in daemon, (
+        "Mac daemon must import + call proactive_jwt_refresh() — the "
+        "Railway scheduler never runs the daemon, so the call lives there."
+    )
+    tick_block = daemon[daemon.index("def _tick("):
+                        daemon.index("def run_forever(")]
+    # Call must be AFTER load_qualified_bets returns non-empty — we don't
+    # waste a CDP probe on ticks with nothing to place.
+    qualified_idx = tick_block.index("counters[\"qualified\"]")
+    refresh_idx = tick_block.index("proactive_jwt_refresh")
+    assert qualified_idx < refresh_idx, (
+        "proactive_jwt_refresh must run AFTER load_qualified_bets — "
+        "calling it on every tick (including empty ones) would flash "
+        "CDP-Chrome unnecessarily and defeat SILENT-WHEN-EMPTY."
+    )
+    # Refresh failure must NOT mark the tick errored. The reactive path
+    # inside CoolbetSession is the safety net 200ms later.
+    refresh_call_block = tick_block[refresh_idx - 200:refresh_idx + 800]
+    assert "non-fatal" in refresh_call_block.lower() or "log.debug" in refresh_call_block, (
+        "proactive_jwt_refresh failure must be logged at debug and not "
+        "increment counters['errors'] — the reactive _try_cdp_jwt in "
+        "_login is the safety net."
+    )
+
+
 @test("COOLBET-DAEMON-HEARTBEAT-ON-EMPTY — _tick writes mac_daemon heartbeat on ALL paths incl. empty-candidates")
 def test_coolbet_daemon_heartbeat_on_empty():
     """COOLBET-DAEMON-HEARTBEAT-ON-EMPTY (2026-06-16): the daemon's _tick()

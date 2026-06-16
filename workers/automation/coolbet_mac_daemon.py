@@ -298,6 +298,23 @@ def _tick(*, dry_run: bool = False) -> dict:
         if not candidates:
             return counters
 
+        # PROACTIVE-JWT-REFRESH (2026-06-16, B1): pull a fresh JWT from
+        # CDP-Chrome when the DB JWT's TTL is below threshold, BEFORE the
+        # placer opens a session. Eliminates the race where a tick starts
+        # with a JWT that expires mid-request. No-ops when TTL is fresh
+        # (cheap local decode) or CDP is unavailable (the reactive
+        # _try_cdp_jwt path remains as the safety net). Wrapped so a
+        # refresh failure never halts placement — at worst the reactive
+        # path catches it 200ms later inside place_all_bets.
+        try:
+            from workers.automation.coolbet_browser_sync import proactive_jwt_refresh
+            jwt_status = proactive_jwt_refresh()
+            counters["jwt_refresh"] = jwt_status.get("reason")
+            counters["jwt_ttl_after_s"] = jwt_status.get("ttl_after_s")
+        except Exception as e:
+            log.debug("proactive_jwt_refresh failed (non-fatal): %s", e)
+            counters["jwt_refresh"] = "error"
+
         # COOLBET-CDP-SYNC (2026-06-12): only run the CDP sync when we
         # actually have qualifying candidates that might be placed —
         # otherwise the CDP page-load + XHR-capture is wasted work and
