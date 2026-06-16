@@ -255,34 +255,30 @@ class CoolbetSession:
         }
         self._imperva_cookies_raw = os.getenv("COOLBET_IMPERVA_COOKIES", "")
 
-        # Manual-JWT mode (MANUAL-JWT, 2026-05-20): when COOLBET_MANUAL_JWT is
-        # set, skip /s/auth/login entirely and use the pasted token. Use this
-        # whenever Coolbet's email/password endpoint is rate-limited or blocked
-        # (eg user logged in via Smart-ID and password login is now disabled).
-        # Token lifetime is the JWT's `exp` (~30 min). On expiry we raise a
-        # clear error so the operator pastes a fresh `cbauth` from browser
-        # DevTools. This is the exact seam a future headless-Chrome refresher
-        # would write into — same code path, just automated capture.
-        env_jwt = os.getenv("COOLBET_MANUAL_JWT", "").strip()
-        if env_jwt.startswith("Bearer "):
-            env_jwt = env_jwt[7:]
-
-        # COOLBET-JWT-DB-BACKED (2026-06-12): bootstrap from DB so Railway
-        # can pick up a JWT minted by local enrollment without an env-var
-        # push. Whichever has the later `exp` wins — typically DB after
-        # the first renewal, env on cold boot before DB is populated.
+        # D2 (2026-06-16): COOLBET_MANUAL_JWT env-bootstrap path retired.
+        # The DB-backed jwt_current (COOLBET-JWT-DB-BACKED 2026-06-12) is
+        # the single source of truth. The env var was the root cause of
+        # the 2026-06-15/16 incident: env JWT expired 15:54 UTC the day
+        # before, _pick_freshest_jwt(env, db) returned the stale env value
+        # rather than failing loudly, and the daemon looped on expired-
+        # JWT errors for 24h+. Removing the env read forces the system
+        # to always read the freshest DB value AND surfaces the
+        # "DB has no JWT" state honestly instead of masking with stale env.
         db_jwt: str | None = None
         try:
             from workers.automation.coolbet_state import read_persisted_jwt
             db_jwt, _ = read_persisted_jwt()
         except Exception:
             db_jwt = None
-        self._manual_jwt = _pick_freshest_jwt(env_jwt, db_jwt)
+        self._manual_jwt = db_jwt
 
         if require_auth and not self._manual_jwt and (not self._email or not self._password):
             raise RuntimeError(
-                "Auth misconfigured: set COOLBET_MANUAL_JWT (pasted from browser) "
-                "OR set COOLBET_USER + COOLBET_PASS for API login."
+                "Auth misconfigured: no JWT in coolbet_session_state. "
+                "Run `python3 -m workers.automation.coolbet_browser_sync --full-heal` "
+                "(daemon-side, with CDP-Chrome logged into Coolbet) OR "
+                "`python3 scripts/coolbet/flaresolverr_login_enroll.py start` "
+                "for SMS-based cold-start enrollment."
             )
 
         self._jwt: str | None = None
@@ -462,8 +458,9 @@ class CoolbetSession:
         ttl = self._jwt_exp - time.time()
         if ttl <= 0:
             raise RuntimeError(
-                f"COOLBET_MANUAL_JWT is expired (exp={datetime.fromtimestamp(self._jwt_exp, tz=timezone.utc).isoformat()}). "
-                "Paste a fresh `cbauth` Bearer from browser DevTools and restart."
+                f"Persisted JWT is expired (exp={datetime.fromtimestamp(self._jwt_exp, tz=timezone.utc).isoformat()}). "
+                "Run `--full-heal` to attempt auto-recovery, or "
+                "`flaresolverr_login_enroll.py start` for SMS cold-start."
             )
         log.info(
             "Using manual JWT — user=%s ttl=%.0fs (exp=%s)",
@@ -547,29 +544,12 @@ class CoolbetSession:
             new_jwt = new_jwt[7:]
 
         # Adopt the new JWT — populates self._jwt + recomputes _jwt_exp.
-        # Note: _adopt_manual_jwt itself persists to DB, so that branch is
-        # already covered. We additionally write to in-process env + .env
-        # below for legacy callers that still read COOLBET_MANUAL_JWT.
+        # _adopt_manual_jwt persists to DB (the canonical store). The
+        # env+.env writebacks that used to live here were retired in D2
+        # (2026-06-16) along with the env READ on bootstrap — DB is the
+        # only source of truth now, no second path to drift from.
         self._manual_jwt = new_jwt
         self._adopt_manual_jwt()
-
-        # In-process env update so any CoolbetSession() created later in
-        # the same Python process picks up the renewed token without a
-        # full re-init. Cheap, idempotent.
-        os.environ["COOLBET_MANUAL_JWT"] = new_jwt
-
-        # Legacy: also write to .env locally so a manual restart picks it
-        # up. On Railway this is a no-op (no .env file) — DB is the source
-        # of truth there.
-        try:
-            from dotenv import set_key as _set_key
-            env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                     "..", "..", ".env")
-            env_file = os.path.normpath(env_file)
-            if os.path.exists(env_file):
-                _set_key(env_file, "COOLBET_MANUAL_JWT", new_jwt)
-        except Exception as e:
-            log.debug("Optional .env write skipped: %s", e)
 
         return self.jwt_seconds_remaining
 

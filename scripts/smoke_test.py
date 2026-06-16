@@ -5349,20 +5349,34 @@ def _():
     assert "_throttle_lock" in throttle_src, "CoolbetSession._throttle must hold _throttle_lock"
 
 
-@test("COOLBET-JWT-ENV-PROPAGATION — renew_jwt_via_api updates os.environ so fresh sessions see new token")
+@test("COOLBET-JWT-DB-ONLY — renew_jwt_via_api persists to DB only (env path retired in D2)")
 def _():
-    """COOLBET-JWT-ENV-PROPAGATION (2026-05-21, narrowed 2026-05-29) —
-    renew_jwt_via_api must update os.environ after renewal so any
-    CoolbetSession() created later in the same process (e.g. the odds sweep)
-    picks up the fresh JWT instead of the expired one from .env. The
-    daemon-Telegram-on-failure assertion was dropped in TELE-BET-NOTIFY-V2
-    (commit a818c18) — daemon Telegram noise was deliberately retired."""
+    """COOLBET-JWT-DB-ONLY (2026-06-16, D2): renew_jwt_via_api previously
+    wrote the renewed token to os.environ + .env so legacy callers reading
+    COOLBET_MANUAL_JWT picked it up. That dual-write was retired in D2
+    along with the env READ on bootstrap — DB is the single source of
+    truth now. The 2026-06-15/16 incident was caused by exactly the
+    drift this prevented: a stale env JWT masking the DB state.
+
+    Pin: renew_jwt_via_api MUST adopt the JWT (which persists to DB via
+    _adopt_manual_jwt) and MUST NOT write back to os.environ or .env."""
     import inspect
     from workers.automation.coolbet_session import CoolbetSession
     src = inspect.getsource(CoolbetSession.renew_jwt_via_api)
-    assert 'os.environ["COOLBET_MANUAL_JWT"]' in src, (
-        "renew_jwt_via_api must update os.environ so new CoolbetSession() "
-        "instances in the same process see the renewed token"
+    # Must adopt — that's the DB persistence path.
+    assert "_adopt_manual_jwt(" in src, (
+        "renew_jwt_via_api must call _adopt_manual_jwt() which persists "
+        "the new JWT to coolbet_session_state.jwt_current."
+    )
+    # Must NOT write env. Drift-prevention contract.
+    assert 'os.environ["COOLBET_MANUAL_JWT"]' not in src, (
+        "renew_jwt_via_api must NOT write COOLBET_MANUAL_JWT to os.environ "
+        "— that env path was retired in D2 (2026-06-16) after stale env "
+        "values caused the 2026-06-15/16 outage."
+    )
+    assert "_set_key" not in src, (
+        "renew_jwt_via_api must NOT write to .env — same drift-prevention "
+        "contract as the os.environ rule."
     )
 
 
@@ -11084,8 +11098,15 @@ def _():
         "(FS-routed, current) or self._http.post (legacy)."
     )
     assert "self._adopt_manual_jwt()" in src, \
-        "renew_jwt_via_api must adopt the new JWT after extraction"
-    assert "set_key" in src, "renew_jwt_via_api must persist new JWT to .env"
+        "renew_jwt_via_api must adopt the new JWT after extraction — adoption is the canonical DB-persistence path"
+    # D2 (2026-06-16): .env writeback was retired along with the env READ
+    # on bootstrap. DB is the single source of truth. Pinning the absence
+    # here so a future refactor doesn't accidentally re-introduce the
+    # dual-write that caused the 2026-06-15/16 stale-env outage.
+    assert "set_key" not in src, (
+        "renew_jwt_via_api must NOT persist to .env — that path was "
+        "retired in D2 (2026-06-16). DB-only. See COOLBET-JWT-DB-ONLY."
+    )
 
 
 @test("SHADOW-DEDUP — cohort-scoped unique constraint in migration + ON CONFLICT clause")
