@@ -71,6 +71,16 @@ HEALTH_WARN_AFTER_S = int(os.getenv("COOLBET_MAC_HEALTH_WARN_S", "1800"))
 # alerts at most once per hour during waking hours, not every 30 min.
 ALERT_AFTER_CONSECUTIVE_ERRORS = int(os.getenv("COOLBET_MAC_ALERT_AFTER_ERRORS", "2"))
 
+# COOLBET-DAEMON-SELFPAUSE (B3, 2026-06-16): after this many minutes of
+# unbroken error ticks, the daemon sets placement_paused=true in DB so
+# the placer + signaler stop trying. Reasons: (1) protects Coolbet's
+# auth chain from continued hammering when nothing can succeed; (2)
+# makes the broken state DB-visible (admin page + daily summary turn
+# red); (3) prevents a recovered-but-stale tick from placing on the
+# wrong side of a long outage. Default 3h matches the "real human
+# probably noticed by now" window for operator-grade self-use.
+SELFPAUSE_AFTER_MINUTES = int(os.getenv("COOLBET_MAC_SELFPAUSE_AFTER_MIN", "180"))
+
 _stop = False
 
 
@@ -446,6 +456,9 @@ def run_forever() -> None:
     consecutive_errors = 0
     first_error_at: float = 0.0
     alert_fired_this_burst = False
+    # COOLBET-DAEMON-SELFPAUSE (B3, 2026-06-16): once-per-burst gate so
+    # SELFPAUSE_AFTER_MINUTES is applied at most once per error streak.
+    self_paused_this_burst = False
     while not _stop:
         tick_count += 1
         c = _tick()
@@ -462,6 +475,31 @@ def run_forever() -> None:
             if consecutive_errors == 0:
                 first_error_at = time.time()
             consecutive_errors += 1
+
+            # B3 (2026-06-16): self-pause after a long sustained outage.
+            # Stops the daemon hammering Coolbet's auth chain while the
+            # operator hasn't yet intervened. Placement_paused also
+            # turns the daily summary glyph red and surfaces in /status —
+            # so the state is unambiguous from any observability surface.
+            elapsed_min = (time.time() - first_error_at) / 60.0
+            if (elapsed_min >= SELFPAUSE_AFTER_MINUTES
+                    and not self_paused_this_burst):
+                try:
+                    from workers.automation.coolbet_state import (
+                        is_placement_paused, set_placement_paused,
+                    )
+                    already_paused, _reason = is_placement_paused()
+                    if not already_paused:
+                        set_placement_paused(
+                            True,
+                            reason=(f"daemon self-pause: {consecutive_errors} "
+                                    f"consecutive errors over {int(elapsed_min)}m"),
+                        )
+                        log.warning("self-paused placement after %dm of errors", int(elapsed_min))
+                    self_paused_this_burst = True
+                except Exception as e:
+                    log.warning("self-pause write failed (continuing): %s", e)
+
             if (consecutive_errors >= ALERT_AFTER_CONSECUTIVE_ERRORS
                     and not alert_fired_this_burst):
                 # B4 (2026-06-16): try to self-heal BEFORE alerting. If the
@@ -494,9 +532,26 @@ def run_forever() -> None:
             # burst will alert again (correct — that's a new incident).
             if consecutive_errors > 0:
                 log.info("daemon recovered after %d consecutive errors", consecutive_errors)
+                # B3: if we self-paused during this burst, clear the
+                # pause now that we've ticked cleanly. The pause was set
+                # by the daemon ("daemon self-pause: ..."); only clear
+                # daemon-set pauses — operator-set ones stay until the
+                # operator clears them explicitly.
+                if self_paused_this_burst:
+                    try:
+                        from workers.automation.coolbet_state import (
+                            is_placement_paused, set_placement_paused,
+                        )
+                        paused, reason = is_placement_paused()
+                        if paused and reason and "daemon self-pause" in reason:
+                            set_placement_paused(False)
+                            log.info("auto-cleared daemon self-pause after clean tick")
+                    except Exception as e:
+                        log.warning("auto-clear self-pause failed: %s", e)
             consecutive_errors = 0
             first_error_at = 0.0
             alert_fired_this_burst = False
+            self_paused_this_burst = False
 
         if time.time() - last_active_at > HEALTH_WARN_AFTER_S:
             log.warning(

@@ -3804,6 +3804,47 @@ def test_coolbet_cdp_classify_tight():
     )
 
 
+@test("COOLBET-DAEMON-SELFPAUSE — daemon auto-sets placement_paused after sustained errors, auto-clears on recovery")
+def test_coolbet_daemon_selfpause():
+    """COOLBET-DAEMON-SELFPAUSE (B3, 2026-06-16): after
+    SELFPAUSE_AFTER_MINUTES (default 180) of unbroken error ticks, the
+    daemon sets placement_paused=true with a "daemon self-pause: ..."
+    reason. On the first clean tick that follows, the daemon clears
+    the pause — but ONLY if reason matches daemon-self-pause (an
+    operator-set pause stays until the operator clears it).
+
+    Pin: env var + once-per-burst gate + reason convention + auto-clear
+    invariant. The reason-prefix match is load-bearing — without it, a
+    recovered daemon would clobber an operator's deliberate kill switch."""
+    import pathlib
+    daemon = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
+    assert "SELFPAUSE_AFTER_MINUTES" in daemon, (
+        "Daemon must expose SELFPAUSE_AFTER_MINUTES (env-tunable)."
+    )
+    loop = daemon[daemon.index("def run_forever("):]
+    assert "self_paused_this_burst" in loop, (
+        "Loop must track self_paused_this_burst — without the per-burst "
+        "gate the daemon would re-pause every tick after threshold."
+    )
+    # Reason convention is load-bearing — auto-clear matches on it.
+    assert "daemon self-pause" in loop, (
+        "Reason text must include 'daemon self-pause' — the auto-clear "
+        "branch matches on this substring to avoid clobbering operator "
+        "pauses."
+    )
+    # Auto-clear path must check the reason before clearing. Locate the
+    # recovered branch — the `consecutive_errors = 0` AFTER the `daemon
+    # recovered after` log line is the right slice end (the FIRST
+    # `consecutive_errors = 0` in `loop` is the init assignment above).
+    rec_start = loop.index("daemon recovered after")
+    rec_end = loop.index("consecutive_errors = 0", rec_start)
+    recovered_block = loop[rec_start:rec_end]
+    assert "daemon self-pause" in recovered_block, (
+        "Auto-clear must only clear daemon-set pauses — operator-set "
+        "pauses with different reason text must remain in force."
+    )
+
+
 @test("COOLBET-AUTO-SELF-HEAL — daemon attempts CDP recovery before alerting on consecutive errors")
 def test_coolbet_auto_self_heal():
     """COOLBET-AUTO-SELF-HEAL (B4, 2026-06-16): three new helpers in
