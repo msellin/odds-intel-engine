@@ -351,16 +351,24 @@ def _tick(*, dry_run: bool = False) -> dict:
     except Exception as e:
         log.exception("mac daemon tick failed: %s", e)
         counters["errors"] += 1
-    counters["elapsed_s"] = (datetime.now(timezone.utc) - started_at).total_seconds()
-    # HEARTBEAT (2026-06-12): write the tick result to DB so the
-    # Telegram /status command on Vercel can answer "is the daemon
-    # actually running?". Best-effort — observability shouldn't break
-    # placement.
-    try:
-        from workers.automation.coolbet_state import mark_mac_daemon_tick
-        mark_mac_daemon_tick(counters)
-    except Exception as e:
-        log.debug("mac_daemon heartbeat write failed (non-fatal): %s", e)
+    finally:
+        # HEARTBEAT (2026-06-12): write the tick result to DB so the
+        # Telegram /status command on Vercel can answer "is the daemon
+        # actually running?". Best-effort — observability shouldn't break
+        # placement.
+        #
+        # HEARTBEAT-ON-EMPTY (2026-06-16): wrapped in finally so the three
+        # `if not candidates: return counters` early-exits inside the try
+        # also reach the heartbeat write. Without this, a healthy daemon
+        # finding zero qualified picks for >60min would look "stale" to
+        # the COOLBET-DAEMON-ALERTS pre-kickoff catch-net and trigger a
+        # false-positive "PLACE MANUALLY — daemon down" Telegram.
+        counters["elapsed_s"] = (datetime.now(timezone.utc) - started_at).total_seconds()
+        try:
+            from workers.automation.coolbet_state import mark_mac_daemon_tick
+            mark_mac_daemon_tick(counters)
+        except Exception as e:
+            log.debug("mac_daemon heartbeat write failed (non-fatal): %s", e)
     return counters
 
 

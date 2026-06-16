@@ -3771,6 +3771,37 @@ def test_coolbet_daemon_alerts():
     )
 
 
+@test("COOLBET-DAEMON-HEARTBEAT-ON-EMPTY — _tick writes mac_daemon heartbeat on ALL paths incl. empty-candidates")
+def test_coolbet_daemon_heartbeat_on_empty():
+    """COOLBET-DAEMON-HEARTBEAT-ON-EMPTY (2026-06-16): the daemon's _tick()
+    has three early `if not candidates: return counters` exits. Before the
+    fix those skipped mark_mac_daemon_tick() — so a healthy daemon finding
+    zero qualified picks for >60min would look stale to the
+    COOLBET-DAEMON-ALERTS pre-kickoff catch-net and trigger a false-positive
+    "PLACE MANUALLY — daemon down" Telegram.
+
+    Pin: the heartbeat write is inside a finally: block (or otherwise
+    structured so all return paths reach it)."""
+    import pathlib
+    daemon = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
+    tick_block = daemon[daemon.index("def _tick("):
+                        daemon.index("def run_forever(")]
+    assert "finally:" in tick_block, (
+        "_tick() must use a finally: block so the mark_mac_daemon_tick() "
+        "heartbeat write reaches all return paths, including the three "
+        "`if not candidates: return counters` early exits."
+    )
+    # The mark_mac_daemon_tick call must be inside the finally block, not
+    # before the except. Cheap structural check: finally appears before
+    # mark_mac_daemon_tick.
+    fin_idx = tick_block.index("finally:")
+    hb_idx = tick_block.index("mark_mac_daemon_tick")
+    assert fin_idx < hb_idx, (
+        "mark_mac_daemon_tick() must appear inside the finally block "
+        "(after `finally:`), not in a position the early returns can skip."
+    )
+
+
 @test("COOLBET-PREKICKOFF-CATCHNET — Railway job alerts on calibrated picks near KO when Mac daemon is down")
 def test_coolbet_prekickoff_catchnet():
     """COOLBET-DAEMON-ALERTS catch-net (2026-06-16): Railway-side job runs
