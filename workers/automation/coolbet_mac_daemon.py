@@ -125,6 +125,139 @@ def _notify_placement(result: dict, *, dry_run: bool) -> None:
     send_telegram(body, dedup_key=dedup)
 
 
+def _drain_operator_commands() -> int:
+    """INLINE-HEAL-BUTTONS (2026-06-17): poll coolbet_daemon_commands for
+    operator-initiated actions (Telegram button taps land there via the
+    odds-intel-web webhook). Currently handles 'heal' — runs auto_self_heal,
+    writes result to the row, sends a confirmation Telegram. Pause/resume
+    bypass this queue entirely (they're direct DB writes from the webhook).
+
+    Called from the daemon's sleep slice every ~30s so button taps feel
+    fast. Returns count of commands processed."""
+    try:
+        from workers.automation.coolbet_state import (
+            claim_pending_daemon_command, finish_daemon_command,
+        )
+    except Exception as e:
+        log.debug("operator-command deps missing: %s", e)
+        return 0
+
+    processed = 0
+    while True:
+        cmd = claim_pending_daemon_command()
+        if not cmd:
+            break
+        cmd_type = cmd.get("command_type")
+        cmd_id = cmd.get("id")
+        log.info("operator command %s (id=%s) — executing", cmd_type, cmd_id)
+
+        if cmd_type == "heal":
+            try:
+                from workers.automation.coolbet_browser_sync import auto_self_heal
+                result = auto_self_heal(triggered_by="operator_tg")
+                status = "recovered" if result.get("recovered") else "stalled"
+                finish_daemon_command(
+                    command_id=cmd_id, status=status,
+                    message=result.get("message") or "",
+                    actions=result.get("actions") or [],
+                )
+                _notify_operator_heal_result(result, cmd_id=str(cmd_id))
+            except Exception as e:
+                log.exception("operator heal command failed: %s", e)
+                finish_daemon_command(
+                    command_id=cmd_id, status="error",
+                    message=f"daemon exception: {e}", actions=[],
+                )
+        else:
+            log.warning("unknown operator command type %r — marking error", cmd_type)
+            finish_daemon_command(
+                command_id=cmd_id, status="error",
+                message=f"unknown command_type {cmd_type!r}", actions=[],
+            )
+        processed += 1
+    return processed
+
+
+def _notify_operator_heal_result(result: dict, *, cmd_id: str) -> None:
+    """Confirmation Telegram after an operator-initiated heal completes.
+    Distinct from the auto-heal info ping — this one is in response to
+    a button tap, so the operator IS already engaged and a louder
+    confirmation is appropriate."""
+    import html as _html
+    from workers.notify.telegram import send_telegram
+
+    recovered = bool(result.get("recovered"))
+    glyph = "✅" if recovered else "⚠️"
+    state_before = result.get("state_before") or "unknown"
+    state_after = result.get("state_after") or "unknown"
+    actions = result.get("actions") or []
+    actions_str = "\n".join(f"  • {_html.escape(str(a), quote=False)}"
+                              for a in actions[:6]) or "  (no actions)"
+    message = _html.escape(str(result.get("message") or ""), quote=False)
+
+    body = (
+        f"{glyph} <b>Operator heal: {('recovered' if recovered else 'stalled')}</b>\n"
+        f"\n"
+        f"{_html.escape(state_before, quote=False)} → "
+        f"<b>{_html.escape(state_after, quote=False)}</b>\n"
+        f"\n"
+        f"Actions:\n{actions_str}\n"
+        f"\n"
+        f"{message}"
+    )
+    # Per-command-id dedup so an accidental double-tap doesn't double-send.
+    send_telegram(body, dedup_key=f"operator-heal-{cmd_id}",
+                  dedup_window_s=1800)
+
+
+def _heal_action_buttons() -> dict:
+    """Inline-keyboard markup for daemon alerts + daily summaries.
+    Callbacks land at odds-intel-web /api/telegram/webhook which writes
+    to coolbet_daemon_commands (heal) OR coolbet_session_state (pause/
+    resume). No payload needed — operator identity comes from the
+    Telegram callback's `from` field server-side.
+
+    Kept narrow (3 buttons in 1 row) so the alert stays readable on a
+    phone lock screen and a misclick is unlikely."""
+    return {
+        "inline_keyboard": [[
+            {"text": "🔄 Heal",   "callback_data": "coolbet-heal:"},
+            {"text": "⏸ Pause",  "callback_data": "coolbet-pause:"},
+            {"text": "▶ Resume", "callback_data": "coolbet-resume:"},
+        ]],
+    }
+
+
+def _notify_auto_heal_success(heal: dict) -> None:
+    """Quiet ℹ️ Telegram when auto_self_heal recovers WITHOUT operator
+    action. Distinct from the loud "daemon failing" alert (suppressed
+    on recovery) — this is a "by the way, here's what self-healed"
+    info ping so the operator builds trust in the auto-heal layer.
+
+    Dedup by hour so a rare burst of heals doesn't produce spam.
+    Action trail truncated to 5 items + HTML-escaped for safety."""
+    import html as _html
+    from workers.notify.telegram import send_telegram
+
+    state_before = heal.get("state_before") or "unknown"
+    state_after = heal.get("state_after") or "unknown"
+    actions = heal.get("actions") or []
+    actions_str = "\n".join(f"  • {_html.escape(str(a), quote=False)}"
+                              for a in actions[:5]) or "  (no actions)"
+
+    body = (
+        f"ℹ️ <b>Daemon auto-healed</b>\n"
+        f"\n"
+        f"{_html.escape(state_before, quote=False)} → "
+        f"<b>{_html.escape(state_after, quote=False)}</b>\n"
+        f"\n"
+        f"Actions:\n{actions_str}"
+    )
+    hour_key = datetime.now(timezone.utc).strftime("%Y%m%d%H")
+    send_telegram(body, dedup_key=f"auto-heal-info-{hour_key}",
+                  dedup_window_s=4000)
+
+
 def _try_auto_self_heal() -> dict:
     """B4 (2026-06-16): attempt full CDP-JWT recovery before alerting.
     Wrapped here so the daemon's import surface stays small and any
@@ -214,9 +347,16 @@ def _notify_consecutive_failures(*, consecutive: int, first_error_at: float,
 
     # Dedup on hour-of-day so each hour of sustained outage produces at
     # most one alert. dedup_window_s=4000 covers a full hour with margin.
+    #
+    # INLINE-HEAL-BUTTONS (2026-06-17): include action buttons so the
+    # operator can one-tap heal/pause/resume from the phone. Callbacks
+    # are handled by the odds-intel-web webhook (see
+    # src/app/api/telegram/webhook/route.ts coolbet-heal/pause/resume
+    # prefixes).
+    reply_markup = _heal_action_buttons()
     hour_key = datetime.now(timezone.utc).strftime("%Y%m%d%H")
     send_telegram(body, dedup_key=f"daemon-fail-burst-{hour_key}",
-                  dedup_window_s=4000)
+                  dedup_window_s=4000, reply_markup=reply_markup)
 
 
 def _handle_sigterm(signum, frame):
@@ -512,6 +652,15 @@ def run_forever() -> None:
                 if heal.get("recovered"):
                     log.info("auto_self_heal recovered before alert — "
                              "actions: %s", heal.get("actions"))
+                    # AUTO-HEAL-INFO (2026-06-17): send a quiet ℹ️ Telegram
+                    # so the operator sees that self-heal fired. Without
+                    # this, the operator never knows what was auto-fixed
+                    # — silent recoveries undermine trust. Dedup per hour
+                    # so a burst of heals (rare) doesn't produce spam.
+                    try:
+                        _notify_auto_heal_success(heal)
+                    except Exception as e:
+                        log.debug("auto-heal info Telegram failed: %s", e)
                     # Don't clear consecutive_errors here — the NEXT tick
                     # will do that when it runs cleanly. Resetting now
                     # would re-arm us for a fresh streak of 2 before
@@ -561,11 +710,24 @@ def run_forever() -> None:
             )
             last_active_at = time.time()  # avoid spamming the warning every tick
 
-        # Sleep in short slices so SIGTERM is responsive
+        # Sleep in short slices so SIGTERM is responsive. INLINE-HEAL-
+        # BUTTONS (2026-06-17): also poll for operator commands every
+        # ~30s during the sleep so button taps feel responsive (vs
+        # waiting up to 30 min for the next placement tick).
         slept = 0.0
+        OPERATOR_POLL_EVERY_S = 30
+        next_op_poll = OPERATOR_POLL_EVERY_S
         while slept < POLL_INTERVAL_S and not _stop:
             time.sleep(1.0)
             slept += 1.0
+            if slept >= next_op_poll:
+                try:
+                    n = _drain_operator_commands()
+                    if n:
+                        log.info("processed %d operator command(s)", n)
+                except Exception as e:
+                    log.debug("operator command poll failed: %s", e)
+                next_op_poll = slept + OPERATOR_POLL_EVERY_S
 
     log.info("Coolbet Mac daemon exiting cleanly.")
 

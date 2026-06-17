@@ -220,11 +220,24 @@ def run_daily_summary(*, dry_run: bool = False) -> dict:
 
     # Dedup by date so a re-fire on the same day doesn't double-send.
     # Window 23h ensures the dedup releases before the next morning's run.
+    #
+    # INLINE-HEAL-BUTTONS (2026-06-17): attach action buttons so the
+    # operator can heal/pause/resume from the morning summary too —
+    # not just from failure alerts. Same callback prefixes as the
+    # daemon-fail-burst alert.
+    reply_markup = {
+        "inline_keyboard": [[
+            {"text": "🔄 Heal",   "callback_data": "coolbet-heal:"},
+            {"text": "⏸ Pause",  "callback_data": "coolbet-pause:"},
+            {"text": "▶ Resume", "callback_data": "coolbet-resume:"},
+        ]],
+    }
     date_key = datetime.now(timezone.utc).strftime("%Y%m%d")
     tg_id = send_telegram(
         msg,
         dedup_key=f"daily-summary-{date_key}",
         dedup_window_s=82800,  # 23h
+        reply_markup=reply_markup,
     )
     return {"sent": tg_id is not None, "telegram_message_id": tg_id}
 

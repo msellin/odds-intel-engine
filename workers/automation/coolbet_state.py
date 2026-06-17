@@ -117,6 +117,95 @@ def mark_mac_daemon_tick(result: dict) -> None:
     )
 
 
+def claim_pending_daemon_command() -> dict | None:
+    """Pull the OLDEST pending row from coolbet_daemon_commands (executed_at
+    IS NULL) and mark it as in-flight by stamping executed_at = NOW()
+    atomically. Returns the row dict or None if nothing pending.
+
+    Atomic via UPDATE ... RETURNING — even if two daemon processes raced,
+    only one would win the row. Caller MUST then run the actual command
+    and call `finish_daemon_command()` with the result. If the caller
+    crashes after claiming but before finishing, the row stays
+    `executed_at IS NOT NULL AND result_status IS NULL` — the dashboard
+    can surface that as 'in-flight, may be stale' for the operator."""
+    try:
+        # MUST use execute_write_returning (not execute_query) — UPDATE
+        # ... RETURNING is a WRITE that needs an explicit commit, and
+        # execute_query never commits. Without this the executed_at
+        # stamp silently rolls back when the connection returns to the
+        # pool, leaving rows that look "pending" forever even though
+        # the daemon has already processed them.
+        from workers.api_clients.db import execute_write_returning
+        rows = execute_write_returning(
+            """UPDATE coolbet_daemon_commands
+                  SET executed_at = NOW()
+                WHERE id = (
+                    SELECT id FROM coolbet_daemon_commands
+                     WHERE executed_at IS NULL
+                     ORDER BY requested_at ASC
+                     LIMIT 1
+                     FOR UPDATE SKIP LOCKED
+                )
+            RETURNING id, command_type, requested_at, requested_by"""
+        )
+        return dict(rows[0]) if rows else None
+    except Exception as e:
+        log.warning("claim_pending_daemon_command failed: %s", e)
+        return None
+
+
+def finish_daemon_command(*, command_id, status: str, message: str,
+                            actions: list | None = None) -> None:
+    """Complete the lifecycle by writing result_status + result_message +
+    result_actions. status ∈ {'recovered', 'stalled', 'error'}. Idempotent
+    enough that re-calling won't crash, but the first call wins (UPDATE
+    is conditioned on result_status IS NULL)."""
+    import json as _json
+    try:
+        from workers.api_clients.db import execute_write
+        execute_write(
+            """UPDATE coolbet_daemon_commands
+                  SET result_status  = %s,
+                      result_message = %s,
+                      result_actions = %s::jsonb
+                WHERE id = %s
+                  AND result_status IS NULL""",
+            (status, message, _json.dumps(actions or [], default=str), command_id),
+        )
+    except Exception as e:
+        log.warning("finish_daemon_command failed: %s", e)
+
+
+def log_heal_attempt(*, triggered_by: str, result: dict,
+                       duration_s: float) -> None:
+    """Append a row to coolbet_heal_log for every auto_self_heal invocation.
+    Best-effort — observability must not break the heal path itself.
+
+    triggered_by: 'auto' (from daemon consecutive-error path), 'operator_tg'
+    (Telegram inline button), 'operator_cli' (--full-heal command), 'pipeline'
+    (Railway-side helper, future)."""
+    import json as _json
+    try:
+        from workers.api_clients.db import execute_write
+        execute_write(
+            """INSERT INTO coolbet_heal_log
+                   (triggered_by, state_before, state_after, recovered,
+                    actions, message, duration_s)
+               VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s)""",
+            (
+                triggered_by,
+                result.get("state_before"),
+                result.get("state_after"),
+                bool(result.get("recovered")),
+                _json.dumps(result.get("actions") or [], default=str),
+                result.get("message"),
+                round(float(duration_s), 2),
+            ),
+        )
+    except Exception as e:
+        log.debug("log_heal_attempt failed (non-fatal): %s", e)
+
+
 def mark_prekickoff_run(result: dict) -> None:
     """Write the pre-kickoff catch-net's per-fire heartbeat so /admin pages
     and ad-hoc probes can verify Railway's */5 cron actually ran without

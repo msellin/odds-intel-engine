@@ -3804,6 +3804,135 @@ def test_coolbet_cdp_classify_tight():
     )
 
 
+@test("COOLBET-HEAL-AUDIT-LOG — every auto_self_heal invocation writes a row to coolbet_heal_log")
+def test_coolbet_heal_audit_log():
+    """COOLBET-HEAL-AUDIT-LOG (2026-06-17): migration 253 + log_heal_attempt
+    helper + auto_self_heal's _finish() wrapper. Every heal attempt
+    (auto, operator_cli, operator_tg, pipeline) lands in coolbet_heal_log
+    with state-before/after, recovered flag, actions, message, duration.
+
+    Pin: migration creates the table with all expected columns; helper
+    exists in coolbet_state; auto_self_heal uses _finish() at every
+    return path; triggered_by parameter is plumbed through the CLI."""
+    import pathlib
+
+    mig = pathlib.Path("supabase/migrations/253_coolbet_heal_log.sql").read_text()
+    for col in ("triggered_at", "triggered_by", "state_before", "state_after",
+                 "recovered", "actions", "message", "duration_s"):
+        assert col in mig, f"Migration 253 must add column '{col}'."
+
+    state = pathlib.Path("workers/automation/coolbet_state.py").read_text()
+    assert "def log_heal_attempt(" in state, (
+        "coolbet_state must define log_heal_attempt() — the writer."
+    )
+
+    bs = pathlib.Path("workers/automation/coolbet_browser_sync.py").read_text()
+    heal_block = bs[bs.index("def auto_self_heal("):
+                    bs.index("def _jwt_exp_seconds(")]
+    assert "triggered_by:" in heal_block, (
+        "auto_self_heal must accept triggered_by parameter."
+    )
+    assert "def _finish(" in heal_block, (
+        "auto_self_heal must define inner _finish() helper for centralised "
+        "audit-log writes on every return path."
+    )
+    # All return points must go through _finish, not bare return {...}.
+    # Cheap heuristic: count "return {" (bare dict) vs "return _finish".
+    bare_returns = heal_block.count("return {")
+    finish_returns = heal_block.count("return _finish(")
+    # _probe inner helper has 1 bare return — allow that.
+    assert bare_returns <= 1, (
+        f"auto_self_heal has {bare_returns} bare `return {{` outside _probe "
+        f"— all heal-result returns must go through _finish() so the audit "
+        f"log fires."
+    )
+    assert finish_returns >= 4, (
+        f"Expected ≥4 _finish() returns (one per state branch), found "
+        f"{finish_returns}."
+    )
+
+
+@test("COOLBET-INLINE-HEAL-BUTTONS — Telegram alerts carry 🔄/⏸/▶ buttons; daemon drains operator commands")
+def test_coolbet_inline_heal_buttons():
+    """COOLBET-INLINE-HEAL-BUTTONS (2026-06-17): closes the operator-touch
+    gap exposed during yesterday's recovery. Daemon-fail-burst alerts and
+    the daily summary now carry inline buttons; webhook routes the taps
+    to coolbet_daemon_commands (heal) or direct DB updates (pause/resume);
+    daemon polls the commands table every ~30s in its sleep loop.
+
+    Pin: migration 254 + helpers + button markup + daemon poll + webhook
+    handler."""
+    import pathlib
+
+    mig = pathlib.Path("supabase/migrations/254_coolbet_daemon_commands.sql").read_text()
+    for col in ("command_type", "requested_by", "executed_at", "result_status"):
+        assert col in mig, f"Migration 254 must add column '{col}'."
+
+    state = pathlib.Path("workers/automation/coolbet_state.py").read_text()
+    assert "def claim_pending_daemon_command(" in state, (
+        "coolbet_state must define claim_pending_daemon_command() with "
+        "atomic UPDATE...RETURNING semantics."
+    )
+    claim_block = state[state.index("def claim_pending_daemon_command("):
+                         state.index("def finish_daemon_command(")]
+    # Atomic claim is load-bearing — without FOR UPDATE SKIP LOCKED, two
+    # daemon processes racing would both run the same command.
+    assert "FOR UPDATE SKIP LOCKED" in claim_block, (
+        "claim must use FOR UPDATE SKIP LOCKED so racing daemons don't "
+        "double-execute the same row."
+    )
+    assert "def finish_daemon_command(" in state, (
+        "coolbet_state must define finish_daemon_command() for lifecycle close."
+    )
+
+    daemon = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
+    assert "def _heal_action_buttons(" in daemon, (
+        "Daemon must define _heal_action_buttons() returning the inline "
+        "keyboard markup used by daemon-fail-burst alerts."
+    )
+    for cb in ("coolbet-heal:", "coolbet-pause:", "coolbet-resume:"):
+        assert cb in daemon, (
+            f"Daemon must include callback_data '{cb}' in the heal buttons."
+        )
+    assert "def _drain_operator_commands(" in daemon, (
+        "Daemon must define _drain_operator_commands() — the poller that "
+        "runs heal commands the operator queued via Telegram."
+    )
+    # Poll loop runs at ~30s cadence inside the sleep slice.
+    assert "OPERATOR_POLL_EVERY_S" in daemon, (
+        "Daemon must expose OPERATOR_POLL_EVERY_S so button taps feel "
+        "responsive without waiting for the 30-min placement tick."
+    )
+
+    # Daily summary attaches the same buttons.
+    summary = pathlib.Path("workers/jobs/coolbet_daily_summary.py").read_text()
+    for cb in ("coolbet-heal:", "coolbet-pause:", "coolbet-resume:"):
+        assert cb in summary, (
+            f"Daily summary must include callback_data '{cb}' so morning "
+            "summary can heal/pause/resume from a single tap."
+        )
+
+    # Webhook handler in odds-intel-web — pin all three branches.
+    webhook = pathlib.Path("../odds-intel-web/src/app/api/telegram/webhook/route.ts").read_text()
+    assert 'data === "coolbet-heal:"' in webhook, (
+        "Webhook must handle coolbet-heal: callback (insert into "
+        "coolbet_daemon_commands)."
+    )
+    assert 'data === "coolbet-pause:"' in webhook, (
+        "Webhook must handle coolbet-pause: (direct UPDATE placement_paused=true)."
+    )
+    assert 'data === "coolbet-resume:"' in webhook, (
+        "Webhook must handle coolbet-resume: (direct UPDATE placement_paused=false)."
+    )
+    assert "coolbet_daemon_commands" in webhook, (
+        "Webhook must insert into coolbet_daemon_commands for heal."
+    )
+    assert "placement_paused: true" in webhook and "placement_paused: false" in webhook, (
+        "Webhook must directly update placement_paused for pause/resume — "
+        "those don't need to round-trip through the daemon."
+    )
+
+
 @test("COOLBET-SELFHEAL-DOCKER-FS — auto_self_heal starts Docker + force-persists JWT, _fs_call prefers localhost on Mac")
 def test_coolbet_selfheal_docker_fs():
     """COOLBET-SELFHEAL-DOCKER-FS (2026-06-17 followup): three protections

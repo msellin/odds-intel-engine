@@ -760,7 +760,8 @@ def cdp_reload_coolbet_tab(*, timeout_s: int = 10,
         return {"ok": False, "message": f"reload orchestration failed: {e}"}
 
 
-def auto_self_heal(*, dry_run: bool = False) -> dict:
+def auto_self_heal(*, dry_run: bool = False,
+                     triggered_by: str = "auto") -> dict:
     """Orchestrate the full CDP-JWT recovery chain. Goal: get from any
     state to `state=valid` with as little operator action as possible.
 
@@ -796,6 +797,9 @@ def auto_self_heal(*, dry_run: bool = False) -> dict:
         set_placement_paused, is_placement_paused,
     )
 
+    import time as _heal_t
+    _heal_started = _heal_t.time()
+
     actions: list[str] = []
 
     def _probe() -> dict:
@@ -803,6 +807,22 @@ def auto_self_heal(*, dry_run: bool = False) -> dict:
             return diagnose_cdp_jwt_state()
         except Exception as e:
             return {"state": "unknown", "detail": str(e), "ttl_s": None}
+
+    def _finish(result: dict) -> dict:
+        """Write the heal attempt to coolbet_heal_log + return. Centralised
+        so every exit path (including the early state=valid return) gets
+        audited. Best-effort — never crash the heal on a log failure."""
+        if not dry_run:
+            try:
+                from workers.automation.coolbet_state import log_heal_attempt
+                log_heal_attempt(
+                    triggered_by=triggered_by,
+                    result=result,
+                    duration_s=_heal_t.time() - _heal_started,
+                )
+            except Exception as e:
+                log.debug("heal-log write failed (non-fatal): %s", e)
+        return result
 
     # DOCKER-AUTO-START (2026-06-17 followup): the daemon's hot path goes
     # through FlareSolverr (Docker). If Docker is down, every placement
@@ -839,9 +859,9 @@ def auto_self_heal(*, dry_run: bool = False) -> dict:
         msg = f"JWT TTL ~{state_before.get('ttl_s')}s, nothing to heal."
         if not actions:
             actions = ["no-op (already valid)"]
-        return {"recovered": True,
+        return _finish({"recovered": True,
                 "state_before": state, "state_after": state,
-                "actions": actions, "message": msg}
+                "actions": actions, "message": msg})
 
     # Step 2: launch Chrome if it's not reachable.
     if state == "chrome_down":
@@ -851,10 +871,10 @@ def auto_self_heal(*, dry_run: bool = False) -> dict:
             launch = auto_launch_cdp_chrome()
             actions.append(f"launch_chrome: ok={launch['ok']} ({launch['message']})")
             if not launch["ok"]:
-                return {"recovered": False,
+                return _finish({"recovered": False,
                         "state_before": state_before.get("state"),
                         "state_after": "chrome_down",
-                        "actions": actions, "message": launch["message"]}
+                        "actions": actions, "message": launch["message"]})
             _t.sleep(2.0)  # let CDP settle
             state_before = _probe()
             state = state_before.get("state")
@@ -892,14 +912,14 @@ def auto_self_heal(*, dry_run: bool = False) -> dict:
     # Step 5: if logged_out, the only recovery is the operator logging
     # into the CDP-Chrome window (or SMS-enroll, which is louder).
     if state == "logged_out":
-        return {"recovered": False,
+        return _finish({"recovered": False,
                 "state_before": state_before.get("state"),
                 "state_after": "logged_out",
                 "actions": actions,
                 "message": ("Coolbet session expired in CDP-Chrome — operator "
                             "must log in (open the CDP-Chrome window, sign in "
                             "to coolbet.com). After that, the next daemon tick "
-                            "will self-heal via proactive_jwt_refresh.")}
+                            "will self-heal via proactive_jwt_refresh.")})
 
     # Step 6: final probe + persist + clear placement_paused if recovered.
     final = _probe()
@@ -917,12 +937,12 @@ def auto_self_heal(*, dry_run: bool = False) -> dict:
         except Exception as e:
             actions.append(f"placement_paused clear failed (non-fatal): {e}")
 
-    return {"recovered": recovered,
+    return _finish({"recovered": recovered,
             "state_before": state_before.get("state"),
             "state_after": state_after,
             "actions": actions,
             "message": (f"recovered to {state_after}" if recovered
-                        else f"stalled at {state_after}")}
+                        else f"stalled at {state_after}")})
 
 
 def _jwt_exp_seconds(token: str) -> float | None:
@@ -1677,7 +1697,8 @@ def main() -> int:
         print(f"  message           = {res['message']}")
         return 0 if res["ok"] else 1
     if args.full_heal:
-        res = auto_self_heal(dry_run=args.full_heal_dry_run)
+        res = auto_self_heal(dry_run=args.full_heal_dry_run,
+                             triggered_by="operator_cli")
         print(f"  recovered     = {res['recovered']}")
         print(f"  state         = {res['state_before']} → {res['state_after']}")
         print(f"  actions:")
