@@ -575,6 +575,76 @@ def proactive_jwt_refresh(*, min_ttl_s: int = 300) -> dict:
             "ttl_after_s": ttl_after, "reason": "refreshed"}
 
 
+def auto_start_docker(*, timeout_s: int = 60) -> dict:
+    """Detect when Docker daemon is unreachable and `open -a Docker` to start
+    Docker Desktop. Polls until `docker ps` exits 0 OR timeout. Then waits
+    for the FlareSolverr container to be healthy (containers with
+    restart=always come up automatically once Docker is ready).
+
+    Returns {"ok": bool, "elapsed_s": float, "message": str}. Idempotent —
+    re-running when Docker is already up is a fast no-op.
+
+    Why this exists: today's incident chain showed Docker can be down
+    independently of any Coolbet/CDP state. Without auto-start, the
+    operator has to manually `open -a Docker` and wait — defeats the
+    self-healing premise. macOS Docker Desktop is a GUI app; `open -a`
+    is the right way to launch it (vs `docker daemon` which doesn't work
+    on macOS)."""
+    import subprocess as _sp
+    import time as _t
+
+    started = _t.time()
+
+    def _docker_up() -> bool:
+        try:
+            r = _sp.run(["docker", "ps"], capture_output=True,
+                        text=True, timeout=5)
+            return r.returncode == 0
+        except Exception:
+            return False
+
+    if _docker_up():
+        return {"ok": True, "elapsed_s": 0.0,
+                "message": "Docker already running"}
+
+    try:
+        _sp.run(["open", "-a", "Docker"], capture_output=True,
+                text=True, timeout=10)
+    except Exception as e:
+        return {"ok": False, "elapsed_s": _t.time() - started,
+                "message": f"`open -a Docker` failed: {e}"}
+
+    # Poll until docker daemon responds — typically 20-40s cold-start.
+    while _t.time() - started < timeout_s:
+        if _docker_up():
+            elapsed = _t.time() - started
+            # Wait briefly for FlareSolverr container (restart:always) to
+            # come up alongside Docker. We don't BLOCK on FS health here —
+            # the daemon's next FS call will surface the issue if it's
+            # not ready, and proactive heal will run again.
+            return {"ok": True, "elapsed_s": elapsed,
+                    "message": f"Docker ready after {elapsed:.1f}s"}
+        _t.sleep(3)
+
+    return {"ok": False, "elapsed_s": _t.time() - started,
+            "message": f"Docker didn't respond within {timeout_s}s"}
+
+
+def _flaresolverr_reachable() -> bool:
+    """Cheap reachability check on the LOCAL FlareSolverr endpoint.
+    Always checks localhost:8191 — not the configured URL — because the
+    gate is "should we run `open -a Docker` to recover the local FS
+    container?" A configured remote URL being unreachable can't be
+    fixed by starting local Docker, so checking it would give a false
+    negative for the auto-start gate."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen("http://localhost:8191/", timeout=3) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
 def auto_launch_cdp_chrome(*, timeout_s: int = 45) -> dict:
     """Subprocess `local/launch_chrome_for_sync.sh` to bring CDP-Chrome up.
     The script handles the one-time profile copy, kills any prior CDP
@@ -734,13 +804,44 @@ def auto_self_heal(*, dry_run: bool = False) -> dict:
         except Exception as e:
             return {"state": "unknown", "detail": str(e), "ttl_s": None}
 
+    # DOCKER-AUTO-START (2026-06-17 followup): the daemon's hot path goes
+    # through FlareSolverr (Docker). If Docker is down, every placement
+    # tick errors regardless of JWT state. Detect + start before touching
+    # CDP/JWT. Skipped on dry_run + skipped when FS is already reachable.
+    if not dry_run and not _flaresolverr_reachable():
+        if dry_run:
+            actions.append("would: open -a Docker to bring FlareSolverr up")
+        else:
+            docker = auto_start_docker()
+            actions.append(f"docker_start: ok={docker['ok']} ({docker['message']})")
+
+    # FORCE-PERSIST (2026-06-17 followup): sync DB from CDP at the very
+    # start. Handles the "CDP has fresh JWT but DB is stale" case that
+    # happens after a manual login — without this, auto_self_heal would
+    # see state=valid and return without ever writing to DB, leaving
+    # the daemon's first tick to discover the staleness.
+    # proactive_jwt_refresh is idempotent and cheap: it no-ops when DB
+    # is already fresh, persists when CDP has a fresher token.
+    if not dry_run:
+        try:
+            r = proactive_jwt_refresh()
+            if r.get("refreshed"):
+                actions.append(
+                    f"proactive_refresh: persisted CDP→DB "
+                    f"(TTL {r.get('ttl_before_s')}s → {r.get('ttl_after_s')}s)"
+                )
+        except Exception as e:
+            actions.append(f"proactive_refresh failed (non-fatal): {e}")
+
     state_before = _probe()
     state = state_before.get("state")
     if state == "valid":
+        msg = f"JWT TTL ~{state_before.get('ttl_s')}s, nothing to heal."
+        if not actions:
+            actions = ["no-op (already valid)"]
         return {"recovered": True,
                 "state_before": state, "state_after": state,
-                "actions": ["no-op (already valid)"],
-                "message": f"JWT TTL ~{state_before.get('ttl_s')}s, nothing to heal."}
+                "actions": actions, "message": msg}
 
     # Step 2: launch Chrome if it's not reachable.
     if state == "chrome_down":

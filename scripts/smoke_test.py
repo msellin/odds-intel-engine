@@ -3804,6 +3804,86 @@ def test_coolbet_cdp_classify_tight():
     )
 
 
+@test("COOLBET-SELFHEAL-DOCKER-FS — auto_self_heal starts Docker + force-persists JWT, _fs_call prefers localhost on Mac")
+def test_coolbet_selfheal_docker_fs():
+    """COOLBET-SELFHEAL-DOCKER-FS (2026-06-17 followup): three protections
+    added after the live recovery session exposed the gaps.
+
+    (a) FORCE-PERSIST: auto_self_heal calls proactive_jwt_refresh BEFORE
+        the state probe — without this, an already-valid CDP state would
+        return early with state=valid, never syncing the fresh JWT to DB
+        (today's experience: had to run proactive_jwt_refresh manually
+        after --full-heal said 'no-op').
+
+    (b) DOCKER-AUTO-START: when localhost FS is unreachable, auto_self_heal
+        runs `open -a Docker` to bring Docker Desktop up and waits for
+        the daemon to respond. Bridges the "Docker down" failure class
+        the existing helpers didn't cover.
+
+    (c) DEFENSIVE-FS-URL: _fs_call prefers localhost:8191 when the Mac
+        daemon is running (signalled by COOLBET_MAC_POLL_S env var)
+        AND local FS is reachable — defends against operator-side .env
+        drift that points at a remote Railway FS (today's actual bug).
+
+    Pin: the three new helpers + their wiring."""
+    import pathlib
+    bs = pathlib.Path("workers/automation/coolbet_browser_sync.py").read_text()
+    sess = pathlib.Path("workers/automation/coolbet_session.py").read_text()
+
+    # (a) FORCE-PERSIST: proactive_jwt_refresh runs before the state probe.
+    heal_block = bs[bs.index("def auto_self_heal("):
+                    bs.index("def _jwt_exp_seconds(")]
+    probe_idx = heal_block.index("state_before = _probe()")
+    refresh_idx = heal_block.index("proactive_jwt_refresh()")
+    assert refresh_idx < probe_idx, (
+        "proactive_jwt_refresh must run BEFORE the state probe — "
+        "otherwise an already-valid CDP state returns early without "
+        "ever syncing DB. (Today's 'no-op' false-positive.)"
+    )
+
+    # (b) DOCKER-AUTO-START: helper exists + is called when local FS unreachable.
+    assert "def auto_start_docker(" in bs, (
+        "browser_sync must define auto_start_docker() — covers the "
+        '"Docker daemon down" failure class.'
+    )
+    assert "def _flaresolverr_reachable(" in bs, (
+        "browser_sync must define _flaresolverr_reachable() — the gate "
+        "that decides whether to attempt Docker auto-start."
+    )
+    # Reachability check must hit localhost specifically (not the configured
+    # URL) — checking Railway and finding it down would falsely trigger
+    # local Docker recovery that can't help.
+    reach_block = bs[bs.index("def _flaresolverr_reachable("):
+                     bs.index("def auto_launch_cdp_chrome(")]
+    assert "localhost:8191" in reach_block, (
+        "_flaresolverr_reachable must check LOCAL FS specifically — the "
+        "gate is 'should we recover the local Docker container?' and a "
+        "broken remote can't be fixed by `open -a Docker`."
+    )
+    # auto_self_heal wires it in front of CDP work.
+    assert "auto_start_docker(" in heal_block, (
+        "auto_self_heal must call auto_start_docker() when local FS is "
+        "unreachable — without this, JWT/CDP recovery still leaves the "
+        "placement chain broken at the FS step."
+    )
+
+    # (c) DEFENSIVE-FS-URL: _fs_call prefers localhost when daemon env is set.
+    assert "COOLBET_MAC_POLL_S" in sess and "_FS_URL_DEFAULT" in sess, (
+        "coolbet_session._fs_call must check COOLBET_MAC_POLL_S (Mac-daemon "
+        "signature) + prefer _FS_URL_DEFAULT (localhost) when set."
+    )
+    # The defensive branch must fall closed: keep configured URL on any
+    # reachability-check exception (don't strand the daemon on a stale
+    # configured URL if localhost is also down — let the normal call fail
+    # loudly).
+    fs_call_block = sess[sess.index("def _fs_call("):
+                          sess.index("def _fs_session_ensure(")]
+    assert "DEFENSIVE-FS-URL" in fs_call_block, (
+        "Defensive URL switch must be tagged DEFENSIVE-FS-URL so a future "
+        "grep finds it before someone 'cleans up' the seemingly-redundant logic."
+    )
+
+
 @test("COOLBET-DAEMON-SELFPAUSE — daemon auto-sets placement_paused after sustained errors, auto-clears on recovery")
 def test_coolbet_daemon_selfpause():
     """COOLBET-DAEMON-SELFPAUSE (B3, 2026-06-16): after
