@@ -77,6 +77,20 @@
              "calibrated,beta" — or '*' to disable the gate entirely. -->
         <key>COOLBET_RECORD_ALLOWED_MATURITY</key>
         <string>calibrated</string>
+        <!-- COOLBET-AUTO-LOGIN-ON-HEAL (2026-06-18): when auto_self_heal
+             detects the CDP-Chrome session has logged out (Coolbet
+             expires the session every few hours overnight), let
+             auto-heal run cdp_auto_login() to re-establish it. SAFETY:
+             this is the BROWSER form-submit path (not the API endpoint
+             that caused the 2026-06-11 SMS storm) and is rate-limited
+             to once per hour. If Coolbet does require SMS, the form
+             submit waits 5min for browser-side entry and then times
+             out — at worst ONE SMS per hour, not the 100/night
+             that drove the original incident. Verified 2026-06-17/18:
+             two consecutive auto-login runs completed with ZERO SMS
+             — Coolbet recognises the CDP profile as device-trusted. -->
+        <key>COOLBET_AUTO_LOGIN_ON_HEAL</key>
+        <string>true</string>
     </dict>
 
     <key>StandardOutPath</key>

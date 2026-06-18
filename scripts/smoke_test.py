@@ -3804,6 +3804,90 @@ def test_coolbet_cdp_classify_tight():
     )
 
 
+@test("COOLBET-AUTO-LOGIN-ON-HEAL — auto_self_heal recovers logged_out via cdp_auto_login when env-enabled")
+def test_coolbet_auto_login_on_heal():
+    """COOLBET-AUTO-LOGIN-ON-HEAL (2026-06-18): closes the last manual-touch
+    failure class — Coolbet expiring the CDP session overnight, daemon
+    detecting logged_out, alert firing but no auto-recovery. With this,
+    auto_self_heal runs cdp_auto_login() (browser form submit, NOT the
+    API endpoint that caused the 2026-06-11 SMS storm) to re-establish
+    the session.
+
+    Safety contract:
+      • Gated by COOLBET_AUTO_LOGIN_ON_HEAL env var (default off — operator
+        must explicitly enable in launchd plist).
+      • Rate-limited to once per hour via coolbet_session_state.
+        last_auto_login_attempt_at — bounds SMS exposure if Coolbet ever
+        rotates device trust.
+      • Records outcome (success / sms_timeout / error / rate_limited) so
+        admin pages can show "auto-login working" longitudinally.
+      • SMS timeout (rc=6) returns stalled with a clear action trail
+        directing operator to check the browser.
+
+    Pin: migration 255 + helpers + env gate + rate limit + cdp_auto_login
+    call site + plist enablement."""
+    import pathlib
+
+    mig = pathlib.Path("supabase/migrations/255_coolbet_auto_login_rate_limit.sql").read_text()
+    assert "last_auto_login_attempt_at" in mig and "TIMESTAMPTZ" in mig, (
+        "Migration 255 must add last_auto_login_attempt_at TIMESTAMPTZ."
+    )
+    assert "last_auto_login_outcome" in mig, (
+        "Migration 255 must add last_auto_login_outcome TEXT."
+    )
+
+    state = pathlib.Path("workers/automation/coolbet_state.py").read_text()
+    assert "def auto_login_recently_attempted(" in state, (
+        "coolbet_state must define auto_login_recently_attempted() — "
+        "the rate-limit gate (default 60min)."
+    )
+    assert "def record_auto_login_attempt(" in state, (
+        "coolbet_state must define record_auto_login_attempt() — writes "
+        "outcome to last_auto_login_outcome."
+    )
+
+    bs = pathlib.Path("workers/automation/coolbet_browser_sync.py").read_text()
+    heal_block = bs[bs.index("def auto_self_heal("):
+                    bs.index("def _jwt_exp_seconds(")]
+    # Env gate is load-bearing — without it, every Coolbet session expiry
+    # would auto-fire a browser login. We want explicit opt-in.
+    assert 'COOLBET_AUTO_LOGIN_ON_HEAL' in heal_block, (
+        "auto_self_heal must check COOLBET_AUTO_LOGIN_ON_HEAL env var — "
+        "default-off so unattended deployments don't auto-login."
+    )
+    # Rate-limit gate must be checked before invoking the form submit.
+    assert "auto_login_recently_attempted(" in heal_block, (
+        "auto_self_heal must call auto_login_recently_attempted() before "
+        "cdp_auto_login — protects against SMS spam if Coolbet rotates "
+        "device trust."
+    )
+    assert "cdp_auto_login(" in heal_block, (
+        "auto_self_heal must invoke cdp_auto_login() in the logged_out "
+        "branch when the env gate is open."
+    )
+    # SMS timeout MUST be handled distinctly (rc=6 → stalled with hint).
+    # If we treated SMS-timeout like other errors, the operator wouldn't
+    # know to check the browser.
+    assert "rc == 6" in heal_block, (
+        "auto_self_heal must handle cdp_auto_login rc=6 (SMS timeout) "
+        "with a distinct stalled+hint return, not generic error."
+    )
+    # All outcomes recorded so longitudinal observability works.
+    for outcome in ('"success"', '"sms_timeout"', '"error"', '"rate_limited"'):
+        assert outcome in heal_block, (
+            f"auto_self_heal must record outcome={outcome} via "
+            "record_auto_login_attempt — admin pages depend on this set."
+        )
+
+    # Plist enablement — the operator's deliberate opt-in lives here, not
+    # in code defaults. Pinned so a future plist refresh can't lose it.
+    plist = pathlib.Path("local/launchd/com.oddsintel.coolbet-mac-daemon.plist").read_text()
+    assert "COOLBET_AUTO_LOGIN_ON_HEAL" in plist and "<string>true</string>" in plist, (
+        "Mac daemon plist must set COOLBET_AUTO_LOGIN_ON_HEAL=true — the "
+        "operator's explicit opt-in to browser-form auto-login on logged_out."
+    )
+
+
 @test("COOLBET-HEAL-AUDIT-LOG — every auto_self_heal invocation writes a row to coolbet_heal_log")
 def test_coolbet_heal_audit_log():
     """COOLBET-HEAL-AUDIT-LOG (2026-06-17): migration 253 + log_heal_attempt

@@ -909,8 +909,62 @@ def auto_self_heal(*, dry_run: bool = False,
                 state = state_before.get("state")
                 actions.append(f"after_reload_probe: state={state}")
 
-    # Step 5: if logged_out, the only recovery is the operator logging
-    # into the CDP-Chrome window (or SMS-enroll, which is louder).
+    # Step 5a: if logged_out AND COOLBET_AUTO_LOGIN_ON_HEAL is set, try
+    # cdp_auto_login as the last-resort recovery (verified 2026-06-17/18:
+    # browser form submit, no SMS while CDP profile retains device trust).
+    # Rate-limited to once per hour to bound SMS exposure if Coolbet ever
+    # rotates device trust and starts demanding SMS. Opt-in by env so
+    # operators have to deliberately enable it after reading the safety
+    # contract — default-off keeps original "alert, don't auto-login"
+    # behaviour for any unattended deployment.
+    if state == "logged_out" and os.getenv("COOLBET_AUTO_LOGIN_ON_HEAL", "").lower() in ("true", "1", "yes"):
+        from workers.automation.coolbet_state import (
+            auto_login_recently_attempted, record_auto_login_attempt,
+        )
+        if auto_login_recently_attempted(min_gap_min=60):
+            actions.append("auto_login: skipped — rate-limited (last attempt <60min ago)")
+            record_auto_login_attempt(outcome="rate_limited")
+        elif dry_run:
+            actions.append("would: cdp_auto_login() to recover logged_out")
+        else:
+            actions.append("logged_out → cdp_auto_login()…")
+            record_auto_login_attempt(outcome="attempted")  # stamp before so a hang still records
+            try:
+                rc = cdp_auto_login(max_wait_s=300)
+                if rc == 0:
+                    actions.append("auto_login: success")
+                    record_auto_login_attempt(outcome="success")
+                    # Pull the freshly-minted JWT into DB.
+                    try:
+                        jwt = extract_jwt_from_cdp(allow_open_new_tab=False)
+                        actions.append(f"post-login JWT extract: {'ok' if jwt else 'none'}")
+                    except Exception as e:
+                        actions.append(f"post-login JWT extract raised: {e}")
+                    # Re-probe and fall through to the final probe + persist.
+                    state_before = _probe()
+                    state = state_before.get("state")
+                elif rc == 6:
+                    actions.append("auto_login: timed out (SMS likely required — check browser)")
+                    record_auto_login_attempt(outcome="sms_timeout")
+                    return _finish({"recovered": False,
+                            "state_before": "logged_out",
+                            "state_after": "logged_out",
+                            "actions": actions,
+                            "message": ("cdp_auto_login form-submitted but page "
+                                        "didn't leave /login within 5min — Coolbet "
+                                        "likely sent SMS. Check the CDP-Chrome "
+                                        "browser, enter the code, then the next "
+                                        "daemon tick self-heals.")})
+                else:
+                    actions.append(f"auto_login: error (rc={rc})")
+                    record_auto_login_attempt(outcome="error")
+            except Exception as e:
+                actions.append(f"auto_login raised: {e}")
+                record_auto_login_attempt(outcome="error")
+
+    # Step 5b: if still logged_out (auto-login disabled, rate-limited, or
+    # failed), bail out with the actionable hint. Only SMS-enroll can
+    # recover, and that's the operator's deliberate choice.
     if state == "logged_out":
         return _finish({"recovered": False,
                 "state_before": state_before.get("state"),

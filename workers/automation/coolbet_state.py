@@ -117,6 +117,42 @@ def mark_mac_daemon_tick(result: dict) -> None:
     )
 
 
+def auto_login_recently_attempted(*, min_gap_min: int = 60) -> bool:
+    """Returns True if auto_self_heal has tried cdp_auto_login within the
+    last `min_gap_min` minutes — rate-limit gate for the logged_out
+    auto-recovery branch. Bounds SMS exposure in the unlikely case Coolbet
+    rotates device trust and starts requiring SMS again.
+
+    Falls open (returns False) on any DB error so observability hiccups
+    don't accidentally prevent recovery."""
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            """SELECT EXTRACT(EPOCH FROM (NOW() - last_auto_login_attempt_at))
+                  AS age_s
+                 FROM coolbet_session_state WHERE id = 1"""
+        )
+        if not rows or rows[0].get("age_s") is None:
+            return False
+        return float(rows[0]["age_s"]) < (min_gap_min * 60)
+    except Exception as e:
+        log.warning("auto_login_recently_attempted check failed: %s", e)
+        return False
+
+
+def record_auto_login_attempt(*, outcome: str) -> None:
+    """Stamp the timestamp + outcome of an auto_self_heal-initiated
+    cdp_auto_login. outcome ∈ {'success', 'sms_timeout', 'error',
+    'rate_limited'}. Best-effort."""
+    _safe_write(
+        """UPDATE coolbet_session_state
+              SET last_auto_login_attempt_at = NOW(),
+                  last_auto_login_outcome = %s
+            WHERE id = 1""",
+        (outcome,),
+    )
+
+
 def claim_pending_daemon_command() -> dict | None:
     """Pull the OLDEST pending row from coolbet_daemon_commands (executed_at
     IS NULL) and mark it as in-flight by stamping executed_at = NOW()
