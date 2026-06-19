@@ -934,12 +934,29 @@ def auto_self_heal(*, dry_run: bool = False,
                 if rc == 0:
                     actions.append("auto_login: success")
                     record_auto_login_attempt(outcome="success")
-                    # Pull the freshly-minted JWT into DB.
+                    # Pull the freshly-minted JWT from CDP → DB. The early
+                    # FORCE-PERSIST at the top of this function already ran
+                    # (and no-op'd because CDP was logged_out then), so we
+                    # MUST call proactive_jwt_refresh AGAIN here to actually
+                    # write the post-login JWT to coolbet_session_state.
+                    # Without this, the daemon's next tick re-discovers
+                    # logged_out via stale DB JWT and re-fires auto_login,
+                    # tripping the rate limit.
                     try:
-                        jwt = extract_jwt_from_cdp(allow_open_new_tab=False)
-                        actions.append(f"post-login JWT extract: {'ok' if jwt else 'none'}")
+                        rf = proactive_jwt_refresh()
+                        if rf.get("refreshed"):
+                            actions.append(
+                                f"post-login proactive_refresh: persisted "
+                                f"CDP→DB (TTL {rf.get('ttl_before_s')}s → "
+                                f"{rf.get('ttl_after_s')}s)"
+                            )
+                        else:
+                            actions.append(
+                                f"post-login proactive_refresh: "
+                                f"{rf.get('reason')}"
+                            )
                     except Exception as e:
-                        actions.append(f"post-login JWT extract raised: {e}")
+                        actions.append(f"post-login proactive_refresh raised: {e}")
                     # Re-probe and fall through to the final probe + persist.
                     state_before = _probe()
                     state = state_before.get("state")
