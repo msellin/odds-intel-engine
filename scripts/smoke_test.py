@@ -3804,6 +3804,77 @@ def test_coolbet_cdp_classify_tight():
     )
 
 
+@test("COOLBET-SELFHEAL-PROFILE-PICKER — chrome_at_profile_picker state short-circuits auto_self_heal")
+def test_coolbet_selfheal_profile_picker():
+    """COOLBET-SELFHEAL-PROFILE-PICKER (2026-06-21): closes a recovery gap
+    discovered live this date — Chrome restarted into chrome://profile-picker/
+    on 2026-06-19, and the existing auto_self_heal stalled at no_coolbet_tab
+    for 9 consecutive attempts over 44h. /json/new silently fails when no
+    profile is loaded (CDP can't drive chrome:// UI), so `open_coolbet_tab`
+    returns ok=False every time and the daemon spins. No bets placed for 3 days.
+
+    Fix: diagnose_cdp_jwt_state probes /json/list when no Coolbet tab is
+    found, classifying the picker case as `chrome_at_profile_picker`.
+    auto_self_heal returns immediately with an actionable operator message
+    (don't waste the next 4.5h retrying the same `open_coolbet_tab` loop).
+    Daemon's _notify_consecutive_failures hint dict gets a matching entry
+    so the Telegram alert tells the operator exactly what to click.
+
+    Pin: helper, new state in diagnose, early-return in auto_self_heal,
+    daemon recovery hint."""
+    import pathlib
+
+    bs = pathlib.Path("workers/automation/coolbet_browser_sync.py").read_text()
+
+    assert "def _chrome_at_profile_picker(" in bs, (
+        "browser_sync must export _chrome_at_profile_picker helper — it does "
+        "the /json/list probe to detect 'all tabs are chrome://profile-picker/'."
+    )
+
+    # Diagnose must branch to the new state in the no-coolbet-tab path —
+    # without this, the daemon never learns it's stuck at the picker.
+    diag_block = bs[bs.index("def diagnose_cdp_jwt_state("):
+                    bs.index("def auto_launch_cdp_chrome(")]
+    assert '"chrome_at_profile_picker"' in diag_block, (
+        "diagnose_cdp_jwt_state must classify the profile-picker case as "
+        "chrome_at_profile_picker so the daemon can short-circuit instead of "
+        "looping on no_coolbet_tab."
+    )
+    assert "_chrome_at_profile_picker(" in diag_block, (
+        "diagnose_cdp_jwt_state must call _chrome_at_profile_picker() in the "
+        "no-coolbet-tab branch — otherwise the new state never fires."
+    )
+
+    # auto_self_heal must bail out (recovered=False) on the new state — there
+    # is no autonomous recovery path; only the operator can click the profile.
+    heal_block = bs[bs.index("def auto_self_heal("):
+                    bs.index("def _jwt_exp_seconds(")]
+    assert 'state == "chrome_at_profile_picker"' in heal_block, (
+        "auto_self_heal must check for chrome_at_profile_picker and return "
+        "early — calling open_coolbet_tab() in this state silently fails "
+        "(verified live 2026-06-19/21, 9 consecutive stall attempts)."
+    )
+    # The branch must short-circuit BEFORE step 3 (no_coolbet_tab open attempt),
+    # so the bailout text must appear earlier in the function than the
+    # `if state == "no_coolbet_tab":` step.
+    picker_idx = heal_block.index('state == "chrome_at_profile_picker"')
+    no_tab_idx = heal_block.index('if state == "no_coolbet_tab":')
+    assert picker_idx < no_tab_idx, (
+        "chrome_at_profile_picker branch must run BEFORE the no_coolbet_tab "
+        "step — otherwise the daemon would still try open_coolbet_tab first "
+        "and re-enter the stall loop."
+    )
+
+    # Daemon Telegram alert must include a recovery hint for the new state.
+    daemon = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
+    assert '"chrome_at_profile_picker"' in daemon, (
+        "coolbet_mac_daemon._notify_consecutive_failures must include a "
+        "recovery hint for chrome_at_profile_picker — without it the alert "
+        "falls back to the generic 'tail the log' message and the operator "
+        "has no idea what to click."
+    )
+
+
 @test("COOLBET-AUTO-LOGIN-ON-HEAL — auto_self_heal recovers logged_out via cdp_auto_login when env-enabled")
 def test_coolbet_auto_login_on_heal():
     """COOLBET-AUTO-LOGIN-ON-HEAL (2026-06-18): closes the last manual-touch

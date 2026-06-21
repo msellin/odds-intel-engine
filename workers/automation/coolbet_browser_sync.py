@@ -374,12 +374,42 @@ def extract_jwt_from_cdp(*, allow_open_new_tab: bool = False,
     return None
 
 
+def _chrome_at_profile_picker(*, timeout_s: float = 3.0) -> bool:
+    """Return True if Chrome's only page-type targets are chrome://profile-picker/.
+    When this is the case, CDP `Target.createTarget` (used by /json/new to
+    open a coolbet.com tab) silently fails because no profile is loaded —
+    so `open_coolbet_tab` returns ok=False and the daemon spins forever on
+    state=no_coolbet_tab. The operator must click a profile in the running
+    Chrome window; daemon can't drive chrome:// UI via CDP."""
+    import asyncio
+
+    async def _check() -> bool:
+        try:
+            targets = await asyncio.wait_for(
+                _http_get_json(f"{CDP_URL}/json/list"), timeout=timeout_s
+            )
+        except Exception:
+            return False
+        pages = [t for t in (targets or []) if t.get("type") == "page"]
+        if not pages:
+            return False
+        return all(
+            (t.get("url") or "").startswith("chrome://profile-picker/")
+            for t in pages
+        )
+
+    try:
+        return asyncio.run(_check())
+    except Exception:
+        return False
+
+
 def diagnose_cdp_jwt_state(*, timeout_ms: int = 8000) -> dict:
     """Classify the CDP-Chrome JWT state so daemon alerts can tell the
     operator exactly what to fix. Returns a dict:
 
-        {"state": <one of chrome_down/no_coolbet_tab/logged_out/
-                          jwt_expired/valid/unknown>,
+        {"state": <one of chrome_down/chrome_at_profile_picker/no_coolbet_tab/
+                          logged_out/jwt_expired/valid/unknown>,
          "detail": <short human-readable string>,
          "ttl_s":  <int|None — remaining seconds when state=valid>}
 
@@ -391,6 +421,11 @@ def diagnose_cdp_jwt_state(*, timeout_ms: int = 8000) -> dict:
       chrome_down     — CDP unreachable (Chrome not running with --remote-debugging-port,
                         OR FlareSolverr-side mid-restart, OR no network to localhost).
                         Recovery: `./local/launch_chrome_for_sync.sh`.
+      chrome_at_profile_picker — CDP reachable, only tab is chrome://profile-picker/.
+                        Chrome restarted into multi-profile picker; `/json/new` can't
+                        open a real tab until a profile is loaded. Daemon can't click
+                        chrome:// UI via CDP — operator must select the profile in the
+                        running Chrome window.
       no_coolbet_tab  — Chrome reachable but no coolbet.com page target.
                         Recovery: open a Coolbet tab in CDP-Chrome.
       logged_out      — Coolbet tab found but `cbauth` key absent from localStorage
@@ -412,6 +447,12 @@ def diagnose_cdp_jwt_state(*, timeout_ms: int = 8000) -> dict:
                 "detail": f"CDP unreachable at {CDP_URL}: {snapshot}",
                 "ttl_s": None}
     if snapshot is None:
+        if _chrome_at_profile_picker():
+            return {"state": "chrome_at_profile_picker",
+                    "detail": (f"CDP-Chrome is at chrome://profile-picker/ "
+                               f"({CDP_URL}) — no profile loaded, /json/new "
+                               "cannot open a real tab."),
+                    "ttl_s": None}
         return {"state": "no_coolbet_tab",
                 "detail": f"No coolbet.com tab open in CDP-Chrome ({CDP_URL}).",
                 "ttl_s": None}
@@ -879,6 +920,22 @@ def auto_self_heal(*, dry_run: bool = False,
             state_before = _probe()
             state = state_before.get("state")
             actions.append(f"after_launch_probe: state={state}")
+
+    # Step 2b: profile-picker bailout. CDP can't click chrome:// UI, so
+    # `open_coolbet_tab` silently fails (verified 2026-06-19/21: 9 consecutive
+    # auto-heal attempts stalled at no_coolbet_tab while Chrome sat at
+    # chrome://profile-picker/). Return with an actionable operator message
+    # — the daemon's _notify_consecutive_failures will surface it on Telegram.
+    if state == "chrome_at_profile_picker":
+        return _finish({"recovered": False,
+                "state_before": state_before.get("state"),
+                "state_after": "chrome_at_profile_picker",
+                "actions": actions,
+                "message": ("CDP-Chrome is at chrome://profile-picker/ — "
+                            "daemon can't click chrome:// UI via CDP. Bring "
+                            "the running Chrome window to the front, click "
+                            "your profile, then open https://www.coolbet.com. "
+                            "Next daemon tick will pick up the fresh JWT.")})
 
     # Step 3: open a Coolbet tab if missing — extract_jwt_from_cdp also
     # adopts a JWT in the same call if one's present.

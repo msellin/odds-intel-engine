@@ -300,12 +300,13 @@ def _notify_consecutive_failures(*, consecutive: int, first_error_at: float,
     # Compact recovery hint per state. Keep one line — the operator reads
     # this on a phone lock screen.
     recovery = {
-        "chrome_down":    "Run ./local/launch_chrome_for_sync.sh on the Mac.",
-        "no_coolbet_tab": "Open a coolbet.com tab in CDP-Chrome.",
-        "logged_out":     "Log into coolbet.com in CDP-Chrome.",
-        "jwt_expired":    "Refresh the coolbet.com tab (or log in again).",
-        "valid":          "JWT looks valid — check FlareSolverr / network / Coolbet status.",
-        "unknown":        "Tail dev/active/coolbet-mac-daemon.log for the underlying error.",
+        "chrome_down":              "Run ./local/launch_chrome_for_sync.sh on the Mac.",
+        "chrome_at_profile_picker": "Click your profile in the running CDP-Chrome window, then open coolbet.com.",
+        "no_coolbet_tab":           "Open a coolbet.com tab in CDP-Chrome.",
+        "logged_out":               "Log into coolbet.com in CDP-Chrome.",
+        "jwt_expired":              "Refresh the coolbet.com tab (or log in again).",
+        "valid":                    "JWT looks valid — check FlareSolverr / network / Coolbet status.",
+        "unknown":                  "Tail dev/active/coolbet-mac-daemon.log for the underlying error.",
     }.get(state, "Tail dev/active/coolbet-mac-daemon.log.")
 
     # send_telegram hardcodes parse_mode=HTML, so any "<" / ">" / "&" inside
