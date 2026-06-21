@@ -192,7 +192,11 @@ def main():
 
     verdict_counts = defaultdict(int)
     actionable = []   # PROMOTE / DEMOTE go to the top
-    held       = []
+    held       = []   # HOLD bots with non-zero activity in the 90d window
+    dormant    = []   # active in DB but zero sim AND zero real bets in 90d —
+                      # e.g. CS2 bots writing to cs2_real_bets instead of
+                      # simulated_bets, or bots with filters too tight to fire.
+                      # Collapsed into a one-liner so they don't drown the digest.
 
     for bot_id, name, maturity in bots:
         sim_rows  = _fetch_sim_bets(cur, bot_id)
@@ -211,10 +215,17 @@ def main():
         block = (name, maturity, verdict, sim30, sim60, sim90, real30, real60, real90)
         if verdict in ("PROMOTE", "DEMOTE"):
             actionable.append(block)
+        elif sim90[0] == 0 and real90[0] == 0:
+            # Truly silent — no sim picks, no real bets across the full 90d
+            # window. Anything firing at all (even rarely) stays in `held` so
+            # we don't accidentally hide a low-volume signal.
+            dormant.append((name, maturity))
         else:
             held.append(block)
 
-    print(f"=== HEADLINE ===  {verdict_counts['PROMOTE']} PROMOTE · {verdict_counts['DEMOTE']} DEMOTE · {verdict_counts['HOLD']} HOLD · {len(bots)} active bots")
+    n_dormant = len(dormant)
+    print(f"=== HEADLINE ===  {verdict_counts['PROMOTE']} PROMOTE · {verdict_counts['DEMOTE']} DEMOTE · "
+          f"{verdict_counts['HOLD']} HOLD ({n_dormant} dormant) · {len(bots)} active bots")
     print()
 
     if actionable:
@@ -230,6 +241,23 @@ def main():
     print()
     for b in held:
         _print_bot_block(*b)
+
+    # Dormant footer — one-liner per maturity tier so the digest stays compact
+    # but the operator can still see which bots aren't firing at all. Common
+    # causes: CS2 bots using cs2_real_bets (not in this report), filters too
+    # tight, recently activated and not yet pickup.
+    if dormant:
+        print("============================ DORMANT (zero activity in 90d) ===========================")
+        print("(no sim picks AND no real bets in the last 90 days — likely CS2 bots writing to")
+        print(" cs2_real_bets, or live bots whose filters caught nothing this window)")
+        print()
+        by_maturity = defaultdict(list)
+        for name, maturity in dormant:
+            by_maturity[maturity or "unlabelled"].append(name)
+        for maturity in sorted(by_maturity):
+            names = sorted(by_maturity[maturity])
+            print(f"  {maturity:14s} ({len(names):2d}): {', '.join(names)}")
+        print()
 
     cur.close()
     conn.close()

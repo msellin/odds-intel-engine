@@ -3804,6 +3804,89 @@ def test_coolbet_cdp_classify_tight():
     )
 
 
+@test("BOT-MATURITY-LABEL-INVARIANT — is_active=false implies maturity_label='retired' via trigger + one-time reconcile")
+def test_bot_maturity_label_invariant():
+    """BOT-MATURITY-LABEL-INVARIANT (2026-06-21, memory queue task #1):
+    Reconciles 28 stale bot rows where is_active=false but maturity_label
+    was still 'beta' / 'calibrated' / 'active' / 'testing' / 'experimental'
+    (legacy state from before this invariant was codified). Adds a trigger
+    so the invariant is maintained on every future is_active flip.
+
+    Why this matters: every audit, weekly_bot_review, and admin surface
+    that displays maturity_label has to special-case 'inactive but labelled
+    something else'. At least one prior bug (2026-06-13 bot_high_alignment
+    incident) traced back to maturity_label being checked without an
+    accompanying is_active check. The invariant removes the entire bug
+    class.
+
+    Pin: migration 257 exists + does both the UPDATE and the trigger;
+    the trigger is BEFORE-INSERT-OR-UPDATE so it intercepts writes from
+    every code path (not just specific Python helpers); is_active=true
+    is deliberately NOT mirrored (reactivation requires an explicit
+    operator label choice — see MODEL-BTTS-REACTIVATE 2026-06-21)."""
+    import pathlib
+
+    mig = pathlib.Path("supabase/migrations/257_bots_maturity_label_invariant.sql").read_text()
+
+    # One-time reconcile must be present — without it the existing 28 stale
+    # rows stay stale even after the trigger is installed.
+    assert "UPDATE bots" in mig and "maturity_label = 'retired'" in mig, (
+        "Migration must perform the one-time UPDATE to set maturity_label "
+        "= 'retired' for existing is_active=false rows. Without this, the "
+        "fix only applies to future retirements."
+    )
+
+    # Trigger function must exist.
+    assert "CREATE OR REPLACE FUNCTION bots_set_retired_label()" in mig, (
+        "Migration must define bots_set_retired_label() — the trigger "
+        "body that maintains the invariant."
+    )
+
+    # Trigger must fire BEFORE INSERT OR UPDATE on is_active. AFTER triggers
+    # can't modify NEW.maturity_label; AFTER-INSERT can't intercept the
+    # write either. Both pieces are load-bearing.
+    assert "BEFORE INSERT OR UPDATE OF is_active" in mig, (
+        "Trigger must be BEFORE INSERT OR UPDATE OF is_active — AFTER "
+        "triggers can't modify the row being written, and a trigger that "
+        "doesn't watch INSERT misses the case where a bot is created "
+        "directly with is_active=false."
+    )
+
+    # Trigger function must set maturity_label = 'retired' on the false branch.
+    func_block = mig[mig.index("CREATE OR REPLACE FUNCTION bots_set_retired_label"):
+                     mig.index("$$ LANGUAGE plpgsql;")]
+    assert "NEW.maturity_label := 'retired'" in func_block, (
+        "Trigger body must assign NEW.maturity_label = 'retired' when "
+        "is_active is false. Anything else breaks the invariant."
+    )
+    assert "NEW.is_active = FALSE" in func_block, (
+        "Trigger body must gate on NEW.is_active = FALSE — without the "
+        "gate, every bot row would get 'retired' label including active "
+        "bots being updated for other reasons."
+    )
+
+    # Reactivation invariant: the trigger must NOT auto-reset maturity_label
+    # on is_active flipping back to true (that's an explicit operator choice,
+    # see MODEL-BTTS-REACTIVATE picking 'beta' deliberately).
+    assert "NEW.is_active = TRUE" not in func_block, (
+        "Trigger must NOT mirror the invariant in the is_active=true "
+        "direction — reactivation requires an explicit maturity choice "
+        "by the operator (e.g. 'beta' for a 4-week observation window)."
+    )
+
+    # weekly_bot_review.py must surface the dormant bucket so the operator
+    # can spot zero-activity bots that would otherwise be hidden by the
+    # filter-or-include choice.
+    review = pathlib.Path("scripts/weekly_bot_review.py").read_text()
+    assert "dormant" in review.lower(), (
+        "weekly_bot_review.py must include a DORMANT footer for bots with "
+        "zero sim and zero real activity in 90d — collapsing them keeps "
+        "the digest readable, surfacing them keeps the operator aware "
+        "(e.g. calibrated bot_dnb_specialist firing zero is a signal, "
+        "not noise)."
+    )
+
+
 @test("COOLBET-DAEMON-HEALTHCHECK — Railway-side health alert for silent / sustained-erroring daemon")
 def test_coolbet_daemon_healthcheck():
     """COOLBET-DAEMON-HEALTHCHECK (2026-06-21): closes the alerting gap
