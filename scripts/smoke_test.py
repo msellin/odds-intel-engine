@@ -3804,6 +3804,86 @@ def test_coolbet_cdp_classify_tight():
     )
 
 
+@test("RETRAIN-HEALTHCHECK — alerts on stale weekly_retrain or 2+ consecutive failures")
+def test_retrain_healthcheck():
+    """RETRAIN-HEALTHCHECK (2026-06-21): closes a silent-failure class.
+    On 2026-06-07 and 2026-06-14 the Sunday weekly_retrain job exited 1
+    with no Telegram and no email. Discovered only when manually checking
+    pipeline_runs while diagnosing why bets still tagged v20260607 two
+    weeks later. Cost: a week of v20260621's BETTER-on-8-markets gains.
+
+    Fix mirrors COOLBET-DAEMON-HEALTHCHECK: Railway-side job runs Mon/Tue
+    09:00 UTC, queries pipeline_runs for the latest weekly_retrain runs,
+    classifies as stale (>9d since last success) / failing (2+ consecutive
+    non-completed) / healthy, and Telegrams accordingly. DB-backed dedup
+    via the new pipeline_health_state table (migration 258) so the alert
+    survives Railway redeploys.
+
+    Pin: migration 258 + job module + both stale + failing branches + the
+    dedup table interaction + scheduler hook with Mon/Tue cron."""
+    import pathlib
+
+    mig = pathlib.Path("supabase/migrations/258_pipeline_health_state.sql").read_text()
+    assert "pipeline_name      TEXT        PRIMARY KEY" in mig or "pipeline_name TEXT PRIMARY KEY" in mig.replace(" "*8, " "), (
+        "Migration 258 must define pipeline_health_state with pipeline_name "
+        "as PRIMARY KEY — UPSERT semantics depend on this."
+    )
+    assert "last_alert_at" in mig and "TIMESTAMPTZ" in mig, (
+        "Migration must include last_alert_at TIMESTAMPTZ — the dedup column."
+    )
+
+    job_path = pathlib.Path("workers/jobs/retrain_healthcheck.py")
+    assert job_path.exists(), "retrain_healthcheck job module must exist."
+    job = job_path.read_text()
+
+    assert "def run_retrain_healthcheck(" in job, (
+        "job module must export run_retrain_healthcheck() — the entry point "
+        "the scheduler wraps."
+    )
+
+    # Both alert conditions must be implemented in the classifier.
+    eval_block = job[job.index("def _evaluate_health("):
+                      job.index("def _format_alert(")]
+    assert '"stale"' in eval_block, (
+        "_evaluate_health must produce 'stale' when last completed run is "
+        "older than the threshold (default 9 days)."
+    )
+    assert '"failing"' in eval_block, (
+        "_evaluate_health must produce 'failing' when N consecutive "
+        "non-completed runs follow the last success."
+    )
+
+    # DB-backed dedup must read AND write — without write the dedup is no-op.
+    assert "_read_dedup_row(" in job and "_set_dedup_row(" in job, (
+        "job must both read and write pipeline_health_state. In-process "
+        "dedup is what failed for the existing Mac daemon alert — "
+        "DB-backed is the entire point."
+    )
+
+    # Recovery path must clear the dedup so the NEXT outage gets fresh alerts.
+    run_block = job[job.index("def run_retrain_healthcheck("):]
+    assert "_set_dedup_row(ts=None" in run_block or "_set_dedup_row(ts = None" in run_block, (
+        "recovery path must CLEAR last_alert_at by writing NULL — without "
+        "the clear, the next outage's first alert is dedup-skipped."
+    )
+
+    # Scheduler hook + Mon/Tue cron.
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    assert "def job_retrain_healthcheck(" in sched, (
+        "scheduler must define job_retrain_healthcheck wrapper."
+    )
+    assert 'id="retrain_healthcheck"' in sched, (
+        "scheduler must register the job with id='retrain_healthcheck'."
+    )
+    hook_idx = sched.index('id="retrain_healthcheck"')
+    hook_block = sched[max(0, hook_idx - 500):hook_idx + 200]
+    assert 'day_of_week="mon,tue"' in hook_block, (
+        "schedule must run Mon AND Tue — Sunday-03:00 failures need a "
+        "first-business-day alert; Mon-only would miss a Mon-failure "
+        "until next Sunday."
+    )
+
+
 @test("BOT-MATURITY-LABEL-INVARIANT — is_active=false implies maturity_label='retired' via trigger + one-time reconcile")
 def test_bot_maturity_label_invariant():
     """BOT-MATURITY-LABEL-INVARIANT (2026-06-21, memory queue task #1):

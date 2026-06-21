@@ -1339,6 +1339,28 @@ def job_coolbet_prekickoff_alert():
     _run_job("coolbet_prekickoff_alert", lambda: None)
 
 
+def job_retrain_healthcheck():
+    """RETRAIN-HEALTHCHECK (2026-06-21): Mon/Tue 09:00 UTC sentinel for the
+    weekly Sunday retrain. Alerts when (a) latest successful retrain is
+    >9 days old, or (b) 2+ consecutive non-completed runs since last
+    success. DB-backed dedup via pipeline_health_state.
+
+    Mon 09:00 catches a Sunday-03:00 failure ~30h after the fact (first
+    business-day alert). Tue 09:00 covers a Mon recurrence + a Sunday
+    failure that the Mon alert may have missed if the operator silenced
+    Telegram. Quiet on healthy. Logs a one-liner when alert or recovery
+    fires."""
+    from workers.jobs.retrain_healthcheck import run_retrain_healthcheck
+    counters = run_retrain_healthcheck()
+    if counters.get("alert_sent") or counters.get("recovery_sent"):
+        console.print(
+            f"[yellow]Retrain healthcheck: status={counters['status']} "
+            f"reason={counters['reason']} alert_sent={counters['alert_sent']} "
+            f"recovery_sent={counters['recovery_sent']}[/yellow]"
+        )
+    _run_job("retrain_healthcheck", lambda: None)
+
+
 def job_coolbet_daemon_healthcheck():
     """COOLBET-DAEMON-HEALTHCHECK (2026-06-21): Railway-side safety net for
     the Mac daemon's in-process alert path. Reads coolbet_session_state +
@@ -2776,6 +2798,15 @@ def main():
                       id="coolbet_prekickoff_alert",
                       name="Coolbet Pre-KO Catch-Net [5min]",
                       max_instances=1, misfire_grace_time=60)
+
+    # RETRAIN-HEALTHCHECK (2026-06-21) — Mon + Tue 09:00 UTC, alerts when
+    # the Sunday weekly_retrain has been silently failing. 2 consecutive
+    # failures (06-07 + 06-14) went un-alerted before today's success.
+    scheduler.add_job(job_retrain_healthcheck,
+                      CronTrigger(day_of_week="mon,tue", hour=9, minute=0),
+                      id="retrain_healthcheck",
+                      name="Retrain Healthcheck [Mon/Tue 09:00 UTC]",
+                      max_instances=1, misfire_grace_time=3600)
 
     # COOLBET-DAEMON-HEALTHCHECK (2026-06-21) — every 30 min, Railway-side
     # safety net. Independent of the Mac daemon's in-process alert (which
