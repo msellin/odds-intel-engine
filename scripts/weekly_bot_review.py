@@ -49,11 +49,16 @@ def _connect():
 
 
 def _fetch_active_bots(cur):
+    # CS2-FILTER (2026-06-21): exclude `bot_cs2_*` rows. CS2 bots write
+    # bets to `cs2_real_bets` (separate table from soccer's `simulated_bets`
+    # / `real_bets`), so they show 0/0/0 in this report and just pollute
+    # the dormant footer. This is a soccer-only review by design.
     cur.execute("""
         SELECT id, name, maturity_label
         FROM bots
         WHERE is_active = true
           AND retired_at IS NULL
+          AND name NOT LIKE 'bot_cs2_%'
         ORDER BY maturity_label, name
     """)
     return cur.fetchall()
@@ -159,6 +164,65 @@ def _fmt_div(v):
     return f"{v:+6.1f}pp" if v is not None else "       —"
 
 
+def _print_calibration_section(cur, ran_at):
+    """Per-bin calibration audit on last 60d of settled simulated_bets.
+    Surfaces miscalibration regressions within 7 days instead of 26 (the
+    time it took to find GLOBAL-PLATT-OVERCONFIDENCE).
+
+    Bins calibrated_prob into 10pp buckets, compares predicted vs actual
+    win rate, computes 1.96σ confidence interval for the gap (binomial
+    standard error). Flags bins where |gap| > 1.96 × stderr AND gap > 5pp
+    (5pp threshold filters noise; 1.96σ filters small-sample variance)."""
+    print("================================= CALIBRATION (60d, all markets) ==================================")
+    cur.execute("""
+        SELECT calibrated_prob::float, (result::text='won')::int AS won, stake::float, pnl::float
+        FROM simulated_bets
+        WHERE calibrated_prob IS NOT NULL
+          AND result::text IN ('won','lost')
+          AND created_at >= NOW() - INTERVAL '60 days'
+    """)
+    rows = cur.fetchall()
+    if not rows:
+        print("  (no settled bets in last 60d)")
+        print()
+        return
+
+    import math
+    # 10pp buckets from 20% to 90% — outside this range samples are too
+    # thin for the 1.96σ check to be meaningful.
+    buckets = [(0.20, 0.30), (0.30, 0.40), (0.40, 0.50), (0.50, 0.60),
+               (0.60, 0.70), (0.70, 0.80), (0.80, 0.90)]
+    print(f"  {'bin':10} {'n':>5} {'pred%':>7} {'actual%':>8} {'gap pp':>9} "
+          f"{'stderr':>7} {'flag':>5} {'roi%':>8}")
+    any_flagged = False
+    for lo, hi in buckets:
+        in_b = [(p, y, s, pn) for p, y, s, pn in rows if lo <= p < hi]
+        n = len(in_b)
+        if n < 5:
+            continue
+        pred = sum(p for p, _, _, _ in in_b) / n
+        actual = sum(y for _, y, _, _ in in_b) / n
+        gap = pred - actual
+        # Binomial standard error on actual.
+        stderr = math.sqrt(actual * (1 - actual) / n) if n > 1 else 0.0
+        significant = abs(gap) > max(0.05, 1.96 * stderr)
+        flag = "⚠️" if significant else ""
+        if significant:
+            any_flagged = True
+        stake_sum = sum(s for _, _, s, _ in in_b)
+        pnl_sum = sum(pn for _, _, _, pn in in_b)
+        roi = (pnl_sum / stake_sum * 100) if stake_sum > 0 else 0.0
+        print(f"  {int(lo*100):2}-{int(hi*100):2}%      {n:>5} "
+              f"{pred*100:>6.1f}% {actual*100:>7.1f}% {gap*100:>+7.1f}pp "
+              f"{stderr*100:>5.1f}pp {flag:>5} {roi:>+7.1f}%")
+    if any_flagged:
+        print()
+        print("  ⚠️ = predicted vs actual gap is statistically significant (|gap| > max(5pp, 1.96σ)) —")
+        print("      this band is materially miscalibrated and likely leaking ROI. See PRIORITY_QUEUE.md →")
+        print("      GLOBAL-PLATT-OVERCONFIDENCE or ISOTONIC-ACTIVATE-V20260621 for the latest mitigation.")
+    print()
+
+
 def _print_bot_block(name, maturity, verdict, sim30, sim60, sim90, real30, real60, real90):
     print(f"═══ {name}  ·  maturity={maturity}  ·  verdict={verdict}")
     print(f"  window  |  sim n  sim hit   sim ROI  sim CLV |  real n  real hit  real ROI |  divergence")
@@ -227,6 +291,13 @@ def main():
     print(f"=== HEADLINE ===  {verdict_counts['PROMOTE']} PROMOTE · {verdict_counts['DEMOTE']} DEMOTE · "
           f"{verdict_counts['HOLD']} HOLD ({n_dormant} dormant) · {len(bots)} active bots")
     print()
+
+    # CALIBRATION-ECE-BY-BIN (2026-06-21): early-warning surface for the
+    # next GLOBAL-PLATT-OVERCONFIDENCE-style regression. Tonight's audit
+    # found the 50-70% calibrated_prob band leaking $5,800/yr but it took
+    # 26 days from the v20260607 promotion to surface — would have been
+    # 7 days max if this section had existed.
+    _print_calibration_section(cur, ran_at)
 
     if actionable:
         print("============================ ACTIONABLE (PROMOTE / DEMOTE) ============================")

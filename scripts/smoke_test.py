@@ -3804,6 +3804,83 @@ def test_coolbet_cdp_classify_tight():
     )
 
 
+@test("WEEKLY-BOT-REVIEW-CS2-FILTER + CALIBRATION-ECE-BY-BIN — CS2 bots excluded; ECE bin section present")
+def test_weekly_bot_review_cs2_filter_and_ece():
+    """WEEKLY-BOT-REVIEW-CS2-FILTER (2026-06-21): excludes bot_cs2_* from
+    the soccer-only weekly bot review. CS2 bets land in cs2_real_bets
+    table (not simulated_bets / real_bets), so CS2 bots showed 0/0/0
+    in this report and just polluted the dormant footer.
+
+    CALIBRATION-ECE-BY-BIN (2026-06-21): adds a per-10pp-bin predicted
+    vs actual win-rate table to the weekly digest. Surfaces miscalibration
+    regressions within 7 days. Origin: tonight's GLOBAL-PLATT-OVERCONFIDENCE
+    audit took 26 days from v20260607 promotion to discover the $5,800/yr
+    leak. With this section in place, similar regressions surface on the
+    next Sunday digest after a Platt re-fit.
+
+    Pin: SQL filter excludes 'bot_cs2_%' in _fetch_active_bots;
+    _print_calibration_section exists; bins on calibrated_prob in 10pp
+    steps; flags significant gaps (|gap| > max(5pp, 1.96σ))."""
+    import pathlib
+
+    review = pathlib.Path("scripts/weekly_bot_review.py").read_text()
+
+    # CS2 filter must be in the query, not a Python-side post-filter
+    # (post-filter would still hit the DB and would be inconsistent with
+    # the "where is_active" pattern).
+    fetch_block = review[review.index("def _fetch_active_bots("):
+                          review.index("def _fetch_sim_bets(")]
+    assert "bot_cs2_%" in fetch_block, (
+        "_fetch_active_bots must exclude bot_cs2_* (CS2 bets land in "
+        "cs2_real_bets, not soccer simulated_bets / real_bets — they show "
+        "0/0/0 here and pollute the dormant footer)."
+    )
+
+    # Calibration section function must exist.
+    assert "def _print_calibration_section(" in review, (
+        "weekly_bot_review.py must define _print_calibration_section() — "
+        "the per-10pp-bin ECE audit that surfaces calibration regressions."
+    )
+
+    cal_block = review[review.index("def _print_calibration_section("):
+                        review.index("def _print_bot_block(")]
+
+    # Must read calibrated_prob from simulated_bets (not model_probability)
+    # because the production-relevant calibration is the post-shrinkage
+    # one the placer actually uses.
+    assert "calibrated_prob" in cal_block, (
+        "_print_calibration_section must read calibrated_prob (post-shrinkage, "
+        "the actual production calibration) — model_probability is pre-stage-1 "
+        "and wouldn't surface the regressions we care about."
+    )
+
+    # Significance test must be present so single-bet variance doesn't
+    # spam the operator with false alarms.
+    assert "1.96" in cal_block, (
+        "_print_calibration_section must apply a 1.96σ significance test — "
+        "without it, a 60-70% bin with n=10 and a 7pp gap would flag, "
+        "even though the binomial standard error there is ~15pp."
+    )
+    assert "5pp" in cal_block or "0.05" in cal_block, (
+        "_print_calibration_section must also require |gap| > 5pp absolute — "
+        "1.96σ alone fires on small but statistically real gaps that aren't "
+        "materially significant for ROI."
+    )
+
+    # Section must be called from main() between HEADLINE and ACTIONABLE
+    # blocks so the operator sees the calibration warning BEFORE drilling
+    # into bot-by-bot blocks.
+    main_block = review[review.index("def main():"):]
+    headline_idx = main_block.index("=== HEADLINE ===")
+    cal_call_idx = main_block.index("_print_calibration_section(")
+    actionable_idx = main_block.index("ACTIONABLE")
+    assert headline_idx < cal_call_idx < actionable_idx, (
+        "_print_calibration_section must be called AFTER the HEADLINE line "
+        "and BEFORE the ACTIONABLE section so the operator reads it in "
+        "context, not buried below 30 bot blocks."
+    )
+
+
 @test("ISOTONIC-ACTIVATE-V20260621 — isotonic .pkl present for 1x2_home/away/over_25, absent for draw/btts_yes")
 def test_isotonic_activate_v20260621():
     """ISOTONIC-ACTIVATE-V20260621 (2026-06-21): closes GLOBAL-PLATT-OVERCONFIDENCE
