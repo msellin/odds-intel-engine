@@ -3804,6 +3804,82 @@ def test_coolbet_cdp_classify_tight():
     )
 
 
+@test("ISOTONIC-ACTIVATE-V20260621 — isotonic .pkl present for 1x2_home/away/over_25, absent for draw/btts_yes")
+def test_isotonic_activate_v20260621():
+    """ISOTONIC-ACTIVATE-V20260621 (2026-06-21): closes GLOBAL-PLATT-OVERCONFIDENCE
+    by activating the dormant isotonic infrastructure for the v20260621
+    bundle. Fitted via fit_isotonic_offline.py + uploaded to Storage so
+    Railway hydrates on cache miss.
+
+    Selective activation — fitted 5 markets, kept the 3 that help
+    fired-bets ECE, discarded the 2 that hurt:
+
+      KEPT (helps on fired-bets subset):
+        isotonic_1x2_home.pkl   n=856  ECE 0.087 → 0.054 (−0.033)
+        isotonic_1x2_away.pkl   n=100  ECE 0.106 → 0.085 (−0.020)
+        isotonic_over_25.pkl    n=217  (held-out MFV ECE 0.124 → 0.051)
+
+      DISCARDED (hurts on fired-bets subset):
+        isotonic_1x2_draw.pkl   n=95   ECE 0.148 → 0.196 (+0.048; thin sample)
+        isotonic_btts_yes.pkl   n=8    btts_yes already has good Platt
+                                       (today's fit: ECE 14.9% → 1.4% on n=165)
+
+    apply_isotonic() in improvements.py:377 falls back to apply_platt
+    on missing market — so a deleted .pkl is a graceful no-op for that
+    selection, preserving the current production behaviour there.
+
+    Activation: operator flips STAGE2_CALIBRATOR=isotonic on Railway
+    after reading the validation table. Smoke pins file presence in
+    the bundle dir + .pkl loadability + apply_isotonic graceful-fallback
+    contract."""
+    import pathlib
+    import joblib
+
+    bundle = pathlib.Path("data/models/soccer/v20260621")
+    assert bundle.exists(), (
+        "v20260621 bundle dir must exist locally for the .pkl files to live in. "
+        "If missing, run weekly_retrain or hydrate from Storage."
+    )
+
+    # Selectively activated — these MUST be present.
+    for keep in ("isotonic_1x2_home.pkl", "isotonic_1x2_away.pkl", "isotonic_over_25.pkl"):
+        p = bundle / keep
+        assert p.exists(), (
+            f"{keep} must be present — fitted 2026-06-21 because it helped "
+            f"fired-bets ECE. Re-run scripts/fit_isotonic_offline.py "
+            f"--version v20260621 if missing."
+        )
+        # Pickle must load — guard against corrupted files.
+        try:
+            iso = joblib.load(p)
+        except Exception as e:
+            raise AssertionError(f"{keep} won't unpickle: {e}")
+        # IsotonicRegression must support .predict()
+        assert hasattr(iso, "predict"), (
+            f"{keep} doesn't expose .predict() — apply_isotonic will fail at runtime."
+        )
+
+    # Selectively discarded — these MUST be absent so apply_isotonic falls
+    # back to apply_platt for those selections (current production behaviour).
+    for skip in ("isotonic_1x2_draw.pkl", "isotonic_btts_yes.pkl"):
+        p = bundle / skip
+        assert not p.exists(), (
+            f"{skip} must be ABSENT — fitting it 2026-06-21 made fired-bets "
+            f"ECE worse (draw +0.048, btts_yes had no benefit over existing Platt). "
+            f"If you intentionally re-fit, validate fired-bets ECE first."
+        )
+
+    # apply_isotonic's graceful-fallback contract — missing .pkl → fall back
+    # to apply_platt, which is no-op for 1x2_draw (no Platt row in DB) and
+    # operates on its own learned coefficients for btts_yes. Either way, no
+    # crash, no silent garbage.
+    imp = pathlib.Path("workers/model/improvements.py").read_text()
+    assert "apply_platt(prob, market)" in imp, (
+        "apply_isotonic must fall back to apply_platt on missing market — "
+        "otherwise discarding an isotonic .pkl crashes the placer."
+    )
+
+
 @test("B-ML3-BETS-MODE-1X2-FILTER — non-1X2 bets are skipped, not home-1X2-proxied")
 def test_b_ml3_bets_mode_1x2_filter():
     """B-ML3-BETS-MODE-1X2-FILTER (2026-06-21): closes the silent training-
