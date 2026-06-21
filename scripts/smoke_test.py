@@ -24703,16 +24703,23 @@ def _():
         "the missing marker would defeat the watchdog."
     )
 
-    # 2) No cs2_* job may still use the broken `_run_job(name, lambda: None)`
-    # post-subprocess pattern. That pattern is what got us the 9-day outage.
+    # 2) No cs2_* SUBPROCESS job may use the broken `_run_job(name,
+    # lambda: None)` post-subprocess pattern. In-process healthcheck jobs
+    # (cs2_pipeline_healthcheck) are exempt because they wrap a function
+    # that self-isolates errors and never raises by design — same pattern
+    # as job_retrain_healthcheck and job_coolbet_daemon_healthcheck.
+    inprocess_healthcheck_jobs = ("cs2_pipeline_healthcheck",)
     legacy_pattern = re.compile(
-        r'_run_job\(\s*"cs2_[^"]+"\s*,\s*lambda:\s*None\s*\)'
+        r'_run_job\(\s*"(cs2_[^"]+)"\s*,\s*lambda:\s*None\s*\)'
     )
-    legacy_hits = legacy_pattern.findall(sched)
+    legacy_hits = [
+        name for name in legacy_pattern.findall(sched)
+        if name not in inprocess_healthcheck_jobs
+    ]
     assert not legacy_hits, (
-        f"cs2_* jobs must NOT use _run_job(name, lambda: None) — that "
-        f"pattern always logs 'completed' regardless of subprocess result. "
-        f"Found {len(legacy_hits)} stale call(s): {legacy_hits[:3]}"
+        f"cs2_* subprocess jobs must NOT use _run_job(name, lambda: None) — "
+        f"that pattern always logs 'completed' regardless of subprocess "
+        f"result. Found {len(legacy_hits)} stale call(s): {legacy_hits[:3]}"
     )
 
     # 3) cs2_scanner specifically must require the row-count marker — that's

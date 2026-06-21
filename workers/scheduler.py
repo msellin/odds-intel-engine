@@ -136,6 +136,60 @@ def _run_job(name: str, fn, *args, _log_run: bool = True, **kwargs):
     console.print(f"\n[{status_color}]Job {full_name} {status} in {elapsed:.1f}s[/{status_color}]")
 
 
+def _run_subprocess_job(
+    name: str,
+    cmd: list[str],
+    *,
+    timeout: int,
+    summary_keywords: list[str],
+    require_output_marker: str | None = None,
+    skip_if: "callable | None" = None,
+) -> None:
+    """CS2-PIPELINE-TRUTHFUL-LOGGING (2026-06-21) — subprocess job wrapper.
+
+    The legacy pattern wrapped subprocess calls in a body that called
+    `_run_job(name, lambda: None)` after the subprocess. A non-zero subprocess
+    exit only printed `[red]error[/red]` to stdout — the no-op lambda always
+    succeeded, so `pipeline_runs.status` was always 'completed'. Result: the
+    cs2_scanner stopped writing on 2026-06-14 and every fire for 9 days still
+    logged 'completed' while the DB stayed empty.
+
+    This helper runs the subprocess INSIDE `_run_job` so non-zero exit and
+    missing-output markers raise — `pipeline_runs.error_message` carries the
+    stderr tail and a real Telegram-able failure signal exists.
+
+    skip_if: optional callable returning (skip: bool, reason: str). When True,
+      logs a yellow notice and returns without running (e.g., env var missing).
+    require_output_marker: substring that MUST appear in stdout. If missing,
+      raise — catches subprocess exit-0 with empty work output.
+    """
+    def _impl():
+        import subprocess as _sp
+        if skip_if is not None:
+            skip, reason = skip_if()
+            if skip:
+                console.print(f"[yellow]Skipped — {reason}[/yellow]")
+                return
+        result = _sp.run(cmd, capture_output=True, text=True, timeout=timeout)
+        if result.returncode != 0:
+            stderr = (result.stderr or "").strip()[-1500:]
+            raise RuntimeError(
+                f"{Path(cmd[1]).name if len(cmd) > 1 else cmd[0]} exited "
+                f"{result.returncode}: {stderr or '(empty stderr)'}"
+            )
+        if require_output_marker and require_output_marker not in result.stdout:
+            tail = (result.stdout or "")[-800:]
+            raise RuntimeError(
+                f"missing expected output marker {require_output_marker!r} — "
+                f"subprocess returned 0 but produced no work output. stdout tail: {tail}"
+            )
+        for line in result.stdout.splitlines():
+            if any(k in line for k in summary_keywords):
+                console.print(f"[dim]{line}[/dim]")
+
+    _run_job(name, _impl)
+
+
 # ── Pipeline chains ────────────────────────────────────────────────────────
 
 def morning_pipeline():
@@ -810,20 +864,19 @@ def job_tennis_scanner():
 def job_cs2_scanner():
     """CS2-SCANNER-DAILY (2026-06-08): run CS2 ELO scanner with DB write.
     Populates cs2_upcoming_matches + appends to cs2_predictions for retraining.
+
+    require_output_marker catches the exit-0-with-empty-output failure mode
+    (the 2026-06-14 → 2026-06-21 outage: subprocess returned 0 but wrote 0
+    matches; pipeline_runs marked 'completed' while DB stayed empty).
     """
-    import subprocess
     console.print("[bold cyan]CS2 ELO scanner --record[/bold cyan]")
-    result = subprocess.run(
+    _run_subprocess_job(
+        "cs2_scanner",
         [sys.executable, "scripts/esports/cs2_elo_scanner.py", "--record"],
-        capture_output=True, text=True, timeout=600,
+        timeout=600,
+        summary_keywords=["upcoming matches", "new results", "roster changes", "written to"],
+        require_output_marker="matches written to",
     )
-    if result.returncode != 0:
-        console.print(f"[red]CS2 scanner error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if any(k in line for k in ["upcoming matches", "new results", "roster changes", "written to"]):
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_scanner", lambda: None)
 
 
 def job_cs2_hltv_match_odds():
@@ -835,19 +888,13 @@ def job_cs2_hltv_match_odds():
     when the model has coverage. Median (across ~30-40 books) is robust to
     single-book outliers (crypto books quoting wildly off the market).
     """
-    import subprocess
     console.print("[bold cyan]CS2 HLTV match-page odds --record[/bold cyan]")
-    result = subprocess.run(
+    _run_subprocess_job(
+        "cs2_hltv_match_odds",
         [sys.executable, "scripts/esports/cs2_hltv_match_odds.py", "--record"],
-        capture_output=True, text=True, timeout=900,  # 15 min — 50 matches × ~1.5s pace + buffer
+        timeout=900,  # 15 min — 50 matches × ~1.5s pace + buffer
+        summary_keywords=["target rows", "wrote", "skipped", "parsed", "match slugs"],
     )
-    if result.returncode != 0:
-        console.print(f"[red]CS2 HLTV match-odds error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if any(k in line for k in ["target rows", "wrote", "skipped", "parsed", "match slugs"]):
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_hltv_match_odds", lambda: None)
 
 
 def job_cs2_hltv_upcoming():
@@ -861,19 +908,13 @@ def job_cs2_hltv_upcoming():
     bo3gg_id sentinel (= -hltv_match_id) so the downstream predictors'
     `WHERE bo3gg_id IS NOT NULL` filter still accepts them.
     """
-    import subprocess
     console.print("[bold cyan]CS2 HLTV upcoming-matches scrape --record[/bold cyan]")
-    result = subprocess.run(
+    _run_subprocess_job(
+        "cs2_hltv_upcoming",
         [sys.executable, "scripts/esports/cs2_hltv_upcoming_matches.py", "--record"],
-        capture_output=True, text=True, timeout=120,
+        timeout=120,
+        summary_keywords=["parsed", "inserted", "predictor-ready", "earliest", "latest"],
     )
-    if result.returncode != 0:
-        console.print(f"[red]CS2 HLTV upcoming scrape error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if any(k in line for k in ["parsed", "inserted", "predictor-ready", "earliest", "latest"]):
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_hltv_upcoming", lambda: None)
 
 
 def job_cs2_v7_predict():
@@ -883,19 +924,13 @@ def job_cs2_v7_predict():
     applies trained logistic coefs, writes cs2_predictions row tagged 'v7'.
     Runs ~5 min after hltv_v1 so it has fresh base.
     """
-    import subprocess
     console.print("[bold cyan]CS2 v7 production scorer[/bold cyan]")
-    result = subprocess.run(
+    _run_subprocess_job(
+        "cs2_v7_predict",
         [sys.executable, "scripts/esports/cs2_v7_predict.py", "--record"],
-        capture_output=True, text=True, timeout=600,
+        timeout=600,
+        summary_keywords=["wrote", "loaded v7", "upcoming matches"],
     )
-    if result.returncode != 0:
-        console.print(f"[red]CS2 v7 predict error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if any(k in line for k in ["wrote", "loaded v7", "upcoming matches"]):
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_v7_predict", lambda: None)
 
 
 def job_cs2_v8_predict():
@@ -903,19 +938,13 @@ def job_cs2_v8_predict():
     AUC 0.703 (+0.7pp over v7 on full sample, +2pp on K/D-covered subset).
     Fires after v7 so v7 base predictions exist; v8 writes its own row.
     """
-    import subprocess
     console.print("[bold cyan]CS2 v8 production scorer[/bold cyan]")
-    result = subprocess.run(
+    _run_subprocess_job(
+        "cs2_v8_predict",
         [sys.executable, "scripts/esports/cs2_v8_predict.py", "--record"],
-        capture_output=True, text=True, timeout=600,
+        timeout=600,
+        summary_keywords=["wrote", "loaded v8", "upcoming matches"],
     )
-    if result.returncode != 0:
-        console.print(f"[red]CS2 v8 predict error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if any(k in line for k in ["wrote", "loaded v8", "upcoming matches"]):
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_v8_predict", lambda: None)
 
 
 def job_cs2_hltv_predict():
@@ -923,19 +952,13 @@ def job_cs2_hltv_predict():
     same matches the elo+pq_v1 scanner ran, but using HLTV points only.
     Runs ~5 minutes after the scanner so cs2_upcoming_matches has fresh HLTV.
     """
-    import subprocess
     console.print("[bold cyan]CS2 HLTV-only parallel prediction --record[/bold cyan]")
-    result = subprocess.run(
+    _run_subprocess_job(
+        "cs2_hltv_predict",
         [sys.executable, "scripts/esports/cs2_hltv_predict.py", "--record"],
-        capture_output=True, text=True, timeout=120,
+        timeout=120,
+        summary_keywords=["upcoming matches", "wrote", "fired"],
     )
-    if result.returncode != 0:
-        console.print(f"[red]CS2 hltv_v1 error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if any(k in line for k in ["upcoming matches", "wrote", "fired"]):
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_hltv_predict", lambda: None)
 
 
 def job_cs2_clv_snapshot():
@@ -943,19 +966,13 @@ def job_cs2_clv_snapshot():
     bets whose matches kick off in the next 45 min. Populates
     closing_odds_at_kickoff + clv on cs2_simulated_bets.
     """
-    import subprocess
     console.print("[bold cyan]CS2 CLV snapshot[/bold cyan]")
-    result = subprocess.run(
+    _run_subprocess_job(
+        "cs2_clv_snapshot",
         [sys.executable, "scripts/esports/cs2_clv_snapshot.py"],
-        capture_output=True, text=True, timeout=120,
+        timeout=120,
+        summary_keywords=["updated", "pending", "set"],
     )
-    if result.returncode != 0:
-        console.print(f"[red]CS2 CLV snapshot error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if any(k in line for k in ["updated", "pending", "set"]):
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_clv_snapshot", lambda: None)
 
 
 def job_cs2_hltv_stats_scraper():
@@ -964,41 +981,27 @@ def job_cs2_hltv_stats_scraper():
     env var. If cookies expire, logs clearly and exits — user re-pastes
     fresh cookies from the browser.
     """
-    import subprocess
     console.print("[bold cyan]CS2 HLTV /stats scraper (authenticated)[/bold cyan]")
-    if not os.getenv("HLTV_AUTH_COOKIES"):
-        console.print("[yellow]Skipped — HLTV_AUTH_COOKIES not set[/yellow]")
-        return
-    result = subprocess.run(
+    _run_subprocess_job(
+        "cs2_hltv_stats_scraper",
         [sys.executable, "scripts/esports/cs2_hltv_stats_scraper.py", "--top-n", "50", "--record"],
-        capture_output=True, text=True, timeout=1800,
+        timeout=1800,
+        summary_keywords=["win%", "→", "cookies expired"],
+        skip_if=lambda: (not os.getenv("HLTV_AUTH_COOKIES"), "HLTV_AUTH_COOKIES not set"),
     )
-    if result.returncode != 0:
-        console.print(f"[red]HLTV stats scraper error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if "win%" in line or "→" in line or "cookies expired" in line:
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_hltv_stats_scraper", lambda: None)
 
 
 def job_cs2_hltv_match_details_queue():
     """CS2-HLTV-MATCH-DETAILS-QUEUE (2026-06-09): pull HLTV /results, queue
     new match IDs into cs2_hltv_match_queue. Cheap: 1 page request per run.
     """
-    import subprocess
     console.print("[bold cyan]CS2 HLTV match queue refresh[/bold cyan]")
-    result = subprocess.run(
+    _run_subprocess_job(
+        "cs2_hltv_match_details_queue",
         [sys.executable, "scripts/esports/cs2_hltv_match_details.py", "--queue", "--pages", "3"],
-        capture_output=True, text=True, timeout=120,
+        timeout=120,
+        summary_keywords=["queued", "page"],
     )
-    if result.returncode != 0:
-        console.print(f"[red]HLTV queue error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if "queued" in line or "page" in line:
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_hltv_match_details_queue", lambda: None)
 
 
 def job_cs2_hltv_match_details_process():
@@ -1008,22 +1011,17 @@ def job_cs2_hltv_match_details_process():
     Set DISABLE_MATCH_DETAILS_CRON=1 in Railway env to pause this cron
     (e.g. when running a local long-loop processor that owns the queue).
     """
-    if os.getenv("DISABLE_MATCH_DETAILS_CRON", "").strip() == "1":
-        console.print("[yellow]CS2 match-details cron disabled via DISABLE_MATCH_DETAILS_CRON=1[/yellow]")
-        return
-    import subprocess
     console.print("[bold cyan]CS2 HLTV match details processor[/bold cyan]")
-    result = subprocess.run(
+    _run_subprocess_job(
+        "cs2_hltv_match_details_process",
         [sys.executable, "scripts/esports/cs2_hltv_match_details.py", "--process", "200"],
-        capture_output=True, text=True, timeout=1800,
+        timeout=1800,
+        summary_keywords=["fetched:", "queued", "✓", "✗", "parse failed"],
+        skip_if=lambda: (
+            os.getenv("DISABLE_MATCH_DETAILS_CRON", "").strip() == "1",
+            "DISABLE_MATCH_DETAILS_CRON=1",
+        ),
     )
-    if result.returncode != 0:
-        console.print(f"[red]HLTV details error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if any(k in line for k in ["fetched:", "queued", "✓", "✗", "parse failed"]):
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_hltv_match_details_process", lambda: None)
 
 
 def job_cs2_hltv_player_ratings():
@@ -1033,20 +1031,18 @@ def job_cs2_hltv_player_ratings():
     """
     import subprocess
     console.print("[bold cyan]CS2 HLTV per-player ratings refresh[/bold cyan]")
-    # First make sure the discovery cache is reasonably fresh (24h)
-    subprocess.run([sys.executable, "scripts/esports/cs2_hltv_player_ratings.py", "--discover"],
-                   capture_output=True, text=True, timeout=300)
-    result = subprocess.run(
-        [sys.executable, "scripts/esports/cs2_hltv_player_ratings.py", "--top", "100", "--record"],
-        capture_output=True, text=True, timeout=3600,   # 9-15 min normally
+    # First make sure the discovery cache is reasonably fresh (24h) — fire-and-
+    # forget; failure here is non-fatal (the --record run will skip uncached).
+    subprocess.run(
+        [sys.executable, "scripts/esports/cs2_hltv_player_ratings.py", "--discover"],
+        capture_output=True, text=True, timeout=300,
     )
-    if result.returncode != 0:
-        console.print(f"[red]HLTV player ratings error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if any(k in line for k in ["hits:", "→ data", "fetching"]):
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_hltv_player_ratings", lambda: None)
+    _run_subprocess_job(
+        "cs2_hltv_player_ratings",
+        [sys.executable, "scripts/esports/cs2_hltv_player_ratings.py", "--top", "100", "--record"],
+        timeout=3600,  # 9-15 min normally
+        summary_keywords=["hits:", "→ data", "fetching"],
+    )
 
 
 def job_cs2_hltv_pistols():
@@ -1055,26 +1051,19 @@ def job_cs2_hltv_pistols():
     70-80% pistol→match correlation. Requires FlareSolverr Docker container
     reachable at FLARESOLVERR_URL. Daily 03:30 UTC.
     """
-    import subprocess
     if not os.getenv("FLARESOLVERR_URL"):
         # If not set, the scraper itself defaults to http://localhost:8191 and
         # will skip gracefully when unreachable. Don't block — just log.
         console.print("[yellow]CS2 pistol scraper: FLARESOLVERR_URL not set — using default localhost:8191[/yellow]")
     console.print("[bold cyan]CS2 HLTV pistol stats[/bold cyan]")
-    result = subprocess.run(
+    # Note: HLTV ranking filter is one of 20/30/50. Top-50 is the cap;
+    # tier-3/4 teams won't appear on the pistol page at all (HLTV's design).
+    _run_subprocess_job(
+        "cs2_hltv_pistols",
         [sys.executable, "scripts/esports/cs2_hltv_pistol_scraper.py", "--top-n", "50", "--record"],
-        # Note: HLTV ranking filter is one of 20/30/50. Top-50 is the cap;
-        # tier-3/4 teams won't appear on the pistol page at all (HLTV's
-        # design). For v7 coverage, top-50 is the achievable ceiling.
-        capture_output=True, text=True, timeout=600,
+        timeout=600,
+        summary_keywords=["pistol", "merged", "teams", "Pistol", "Merged", "Teams"],
     )
-    if result.returncode != 0:
-        console.print(f"[red]CS2 pistol scraper error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if "pistol" in line.lower() or "merged" in line.lower() or "teams" in line.lower():
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_hltv_pistols", lambda: None)
 
 
 def job_cs2_hltv_teams_bulk():
@@ -1085,19 +1074,14 @@ def job_cs2_hltv_teams_bulk():
     teams it does cover. Weekly Sunday 02:15 UTC. ~4 page fetches total
     (overall + teams-pistols × 3 sides). Cheap; <2min via FlareSolverr.
     """
-    import subprocess
     console.print("[bold cyan]CS2 HLTV teams bulk stats (/stats/teams + /stats/teams/pistols)[/bold cyan]")
-    result = subprocess.run(
+    _run_subprocess_job(
+        "cs2_hltv_teams_bulk",
         [sys.executable, "scripts/esports/cs2_hltv_stats_scraper.py",
          "--teams-overview", "--teams-pistols", "--period-days", "365", "--record"],
-        capture_output=True, text=True, timeout=600,
+        timeout=600,
+        summary_keywords=["parsed", "upserted", "window:"],
     )
-    if result.returncode != 0:
-        console.print(f"[red]CS2 teams-bulk error:[/red]\n{result.stderr[:500]}")
-    for line in result.stdout.splitlines():
-        if any(k in line for k in ["parsed", "upserted", "window:"]):
-            console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_hltv_teams_bulk", lambda: None)
 
 
 def job_cs2_hltv_top_players():
@@ -1105,19 +1089,14 @@ def job_cs2_hltv_top_players():
     players with ≥50 maps in the rolling 365d window (~1,300 rows). Feeds
     star_player_present / IGL × role features. Daily 02:20 UTC, ~30s/run.
     """
-    import subprocess
     console.print("[bold cyan]CS2 HLTV top players (/stats/players)[/bold cyan]")
-    result = subprocess.run(
+    _run_subprocess_job(
+        "cs2_hltv_top_players",
         [sys.executable, "scripts/esports/cs2_hltv_stats_scraper.py",
          "--top-players", "--period-days", "365", "--record"],
-        capture_output=True, text=True, timeout=300,
+        timeout=300,
+        summary_keywords=["parsed", "upserted"],
     )
-    if result.returncode != 0:
-        console.print(f"[red]CS2 top-players error:[/red]\n{result.stderr[:500]}")
-    for line in result.stdout.splitlines():
-        if any(k in line for k in ["parsed", "upserted"]):
-            console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_hltv_top_players", lambda: None)
 
 
 def job_cs2_pandascore_matches():
@@ -1129,20 +1108,14 @@ def job_cs2_pandascore_matches():
     Incremental: stops on first all-seen page. Free tier limit = 1000 req/hr;
     we use 1s per-page delay so a typical fire = ~50 pages × 1s = ~1 min.
     """
-    import subprocess
     console.print("[bold cyan]CS2 PandaScore matches backfill[/bold cyan]")
-    result = subprocess.run(
+    _run_subprocess_job(
+        "cs2_pandascore_matches",
         [sys.executable, "scripts/esports/cs2_pandascore_matches_backfill.py",
          "--pages", "100", "--upcoming"],
-        capture_output=True, text=True, timeout=1800,
+        timeout=1800,
+        summary_keywords=["inserted", "Inserted", "total", "Total"],
     )
-    if result.returncode != 0:
-        console.print(f"[red]CS2 PandaScore backfill error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if "inserted" in line.lower() or "total" in line.lower():
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_pandascore_matches", lambda: None)
 
 
 def job_cs2_pinnacle_scanner():
@@ -1152,19 +1125,13 @@ def job_cs2_pinnacle_scanner():
     documented to add 2-5pp AUC. Geo-blocked from EU IPs but Railway's US IP
     works. Polite 4-6s jitter, hard cap 80 reqs/run.
     """
-    import subprocess
     console.print("[bold cyan]CS2 Pinnacle scanner[/bold cyan]")
-    result = subprocess.run(
+    _run_subprocess_job(
+        "cs2_pinnacle_scanner",
         [sys.executable, "scripts/esports/cs2_pinnacle_scanner.py"],
-        capture_output=True, text=True, timeout=900,
+        timeout=900,
+        summary_keywords=["✓", "leagues:", "result:", "matched="],
     )
-    if result.returncode != 0:
-        console.print(f"[red]CS2 Pinnacle scanner error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if "✓" in line or "leagues:" in line or "result:" in line or "matched=" in line:
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_pinnacle_scanner", lambda: None)
 
 
 def job_cs2_hltv_rosters():
@@ -1172,19 +1139,13 @@ def job_cs2_hltv_rosters():
     player from /team/{id}/{slug} (no auth needed). Lets us detect roster
     freshness — fresh roster (<30 days avg) invalidates prior team stats.
     """
-    import subprocess
     console.print("[bold cyan]CS2 HLTV team rosters[/bold cyan]")
-    result = subprocess.run(
+    _run_subprocess_job(
+        "cs2_hltv_rosters",
         [sys.executable, "scripts/esports/cs2_hltv_rosters.py", "--top-n", "100", "--record"],
-        capture_output=True, text=True, timeout=1800,
+        timeout=1800,
+        summary_keywords=["✓", "hits:"],
     )
-    if result.returncode != 0:
-        console.print(f"[red]CS2 rosters error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if "✓" in line or "hits:" in line:
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_hltv_rosters", lambda: None)
 
 
 def job_cs2_sneak_peek_backtest():
@@ -1193,27 +1154,20 @@ def job_cs2_sneak_peek_backtest():
     cs2_model_backtest_history so we can watch AUC/accuracy curves climb as
     more match-details accumulate. Renders on /admin/cs2 BacktestPanel.
     """
-    import subprocess
     console.print("[bold cyan]CS2 sneak-peek backtest[/bold cyan]")
-    result = subprocess.run(
-        # 2026-06-09: switched from v2 → v5 (best stacking model so far) and
-        # from --since 2025-01-01 → 2025-06-01. The sweep experiment showed:
-        #   --since 2025-01-01 baseline=0.675 v5_best=0.678 (Δ +0.003)
-        #   --since 2025-06-01 baseline=0.673 v5_best=0.688 (Δ +0.015)
-        # The 6-month window is where features (form, h2h, rest, bo) compound
-        # — older data dilutes the marginal lift. So we publish the *best*
-        # honest AUC number, not the largest N.
+    # 2026-06-09: switched from v2 → v5 (best stacking model so far) and
+    # from --since 2025-01-01 → 2025-06-01. The sweep experiment showed:
+    #   --since 2025-01-01 baseline=0.675 v5_best=0.678 (Δ +0.003)
+    #   --since 2025-06-01 baseline=0.673 v5_best=0.688 (Δ +0.015)
+    # The 6-month window is where features (form, h2h, rest, bo) compound
+    # — older data dilutes the marginal lift. So we publish the *best*
+    # honest AUC number, not the largest N.
+    _run_subprocess_job(
+        "cs2_sneak_peek_backtest",
         [sys.executable, "scripts/esports/cs2_sneak_peek_v5.py", "--since", "2025-06-01"],
-        capture_output=True, text=True, timeout=600,
+        timeout=600,
+        summary_keywords=["AUC", "saved_model", "team-map", "rank_diff", "ALL", "delta"],
     )
-    if result.returncode != 0:
-        console.print(f"[red]CS2 backtest error:[/red]\n{result.stderr[:500]}")
-    else:
-        # Show the metric table from stdout
-        for line in result.stdout.splitlines():
-            if any(k in line for k in ["AUC", "saved_model", "team-map", "rank_diff", "ALL", "delta"]):
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_sneak_peek_backtest", lambda: None)
 
 
 def job_cs2_hltv_rankings():
@@ -1221,19 +1175,13 @@ def job_cs2_hltv_rankings():
     HLTV updates weekly on Mondays; daily refresh catches it. Writes to
     cs2_hltv_rankings table for historical accumulation + scanner lookup.
     """
-    import subprocess
     console.print("[bold cyan]CS2 HLTV rankings refresh[/bold cyan]")
-    result = subprocess.run(
+    _run_subprocess_job(
+        "cs2_hltv_rankings",
         [sys.executable, "scripts/esports/cs2_hltv_rankings.py", "--record"],
-        capture_output=True, text=True, timeout=300,
+        timeout=300,
+        summary_keywords=["teams parsed", "wrote"],
     )
-    if result.returncode != 0:
-        console.print(f"[red]CS2 HLTV rankings error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if any(k in line for k in ["teams parsed", "wrote"]):
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_hltv_rankings", lambda: None)
 
 
 def job_cs2_weekly_calibrate():
@@ -1241,19 +1189,13 @@ def job_cs2_weekly_calibrate():
     days of cs2_predictions ⨝ cs2_results; promote if log-loss improves. The
     scanner picks up the new coefficients on its next run.
     """
-    import subprocess
     console.print("[bold cyan]CS2 weekly Platt recalibration --promote[/bold cyan]")
-    result = subprocess.run(
+    _run_subprocess_job(
+        "cs2_weekly_calibrate",
         [sys.executable, "scripts/esports/cs2_weekly_calibrate.py", "--promote"],
-        capture_output=True, text=True, timeout=300,
+        timeout=300,
+        summary_keywords=["pairs", "raw", "current", "new fit", "PROMOTE", "keep current", "insufficient"],
     )
-    if result.returncode != 0:
-        console.print(f"[red]CS2 calibrate error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if any(k in line for k in ["pairs", "raw", "current", "new fit", "PROMOTE", "keep current", "insufficient"]):
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_weekly_calibrate", lambda: None)
 
 
 def job_cs2_pandascore_rosters():
@@ -1261,25 +1203,17 @@ def job_cs2_pandascore_rosters():
     PandaScore free tier. Cache: data/esports/cs2/pandascore_rosters.json.
     Replaces stale Oct-2025 CSV lineup for PQ computation. Daily.
     """
-    import subprocess
     console.print("[bold cyan]CS2 PandaScore rosters refresh[/bold cyan]")
-    if not os.getenv("PANDASCORE_API_KEY"):
-        console.print("[yellow]Skipped — PANDASCORE_API_KEY not set[/yellow]")
-        return
-    result = subprocess.run(
-        # Discovery mode (no --refresh): skip cached teams. With --limit 200
-        # each run picks up the next 200 new teams. After full coverage, runs
-        # become quick (no work left).
+    # Discovery mode (no --refresh): skip cached teams. With --limit 200
+    # each run picks up the next 200 new teams. After full coverage, runs
+    # become quick (no work left).
+    _run_subprocess_job(
+        "cs2_pandascore_rosters",
         [sys.executable, "scripts/esports/cs2_pandascore_rosters.py", "--limit", "200"],
-        capture_output=True, text=True, timeout=600,
+        timeout=600,
+        summary_keywords=["hits:", "miss:", "→ data"],
+        skip_if=lambda: (not os.getenv("PANDASCORE_API_KEY"), "PANDASCORE_API_KEY not set"),
     )
-    if result.returncode != 0:
-        console.print(f"[red]PandaScore rosters error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if any(k in line for k in ["hits:", "miss:", "→ data"]):
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_pandascore_rosters", lambda: None)
 
 
 def job_coolbet_health_ping():
@@ -1380,6 +1314,28 @@ def job_coolbet_daemon_healthcheck():
     _run_job("coolbet_daemon_healthcheck", lambda: None)
 
 
+def job_cs2_pipeline_healthcheck():
+    """CS2-PIPELINE-HEALTHCHECK (2026-06-21): DB-side watchdog for the CS2
+    paper-bet pipeline. Independent of the scheduler wrapper so it catches
+    the case where the wrapper itself silently lies about success (the
+    2026-06-14 → 2026-06-21 outage: every cs2_* job logged 'completed' while
+    cs2_upcoming_matches received zero writes for 9 days).
+
+    Alerts on (a) cs2_upcoming_matches.scanned_at > 6h old (scanner dead) or
+    (b) cs2_simulated_bets.placed_at > 24h old while future matches exist
+    (bot dead). DB-backed dedup via pipeline_health_state ('cs2_pipeline'
+    key) survives Railway redeploys; one alert per 12h per incident."""
+    from workers.jobs.cs2_pipeline_healthcheck import run_pipeline_healthcheck
+    counters = run_pipeline_healthcheck()
+    if counters.get("alert_sent") or counters.get("recovery_sent"):
+        console.print(
+            f"[yellow]CS2 pipeline healthcheck: status={counters['status']} "
+            f"reason={counters['reason']} alert_sent={counters['alert_sent']} "
+            f"recovery_sent={counters['recovery_sent']}[/yellow]"
+        )
+    _run_job("cs2_pipeline_healthcheck", lambda: None)
+
+
 def job_flaresolverr_sweep():
     """COOLBET-FS-SESSION-STABLE sweeper (2026-06-11): hourly destroys
     stale FlareSolverr sessions that aren't in the active whitelist.
@@ -1405,38 +1361,26 @@ def job_cs2_coolbet_scanner():
     """CS2-COOLBET-SCAN (2026-06-08): scrape Coolbet CS2 odds, write to
     cs2_upcoming_matches.coolbet_odds1/2. Anon-read, no JWT.
     """
-    import subprocess
     console.print("[bold cyan]CS2 Coolbet scanner --record[/bold cyan]")
-    result = subprocess.run(
+    _run_subprocess_job(
+        "cs2_coolbet_scanner",
         [sys.executable, "scripts/esports/cs2_coolbet_scanner.py", "--record"],
-        capture_output=True, text=True, timeout=300,
+        timeout=300,
+        summary_keywords=["matched", "written", "would write", "✓"],
     )
-    if result.returncode != 0:
-        console.print(f"[red]CS2 Coolbet error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if any(k in line for k in ["matched", "written", "would write", "✓"]):
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_coolbet_scanner", lambda: None)
 
 
 def job_cs2_bot():
     """CS2-BOT (2026-06-08): run bot_cs2_value_v1, write cs2_simulated_bets
     for value picks. Settles open bets against cs2_results.
     """
-    import subprocess
     console.print("[bold cyan]CS2 bot_cs2_value_v1 --record[/bold cyan]")
-    result = subprocess.run(
+    _run_subprocess_job(
+        "cs2_bot",
         [sys.executable, "scripts/esports/cs2_bot.py", "--record"],
-        capture_output=True, text=True, timeout=300,
+        timeout=300,
+        summary_keywords=["picks", "written", "settled", "fired"],
     )
-    if result.returncode != 0:
-        console.print(f"[red]CS2 bot error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if any(k in line for k in ["picks", "written", "settled", "fired"]):
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_bot", lambda: None)
 
 
 def job_cs2_coolbet_placer():
@@ -1447,19 +1391,13 @@ def job_cs2_coolbet_placer():
     behind explicit operator authorization (memory: feedback_coolbet_execute_safety).
     Fires 2 min after cs2_bot so picks have just landed.
     """
-    import subprocess
     console.print("[bold cyan]CS2 Coolbet placer (paper)[/bold cyan]")
-    result = subprocess.run(
+    _run_subprocess_job(
+        "cs2_coolbet_placer",
         [sys.executable, "scripts/esports/cs2_coolbet_placer.py", "--record"],
-        capture_output=True, text=True, timeout=300,
+        timeout=300,
+        summary_keywords=["placed:", "skip:", "[✓]", "[-]"],
     )
-    if result.returncode != 0:
-        console.print(f"[red]CS2 coolbet placer error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if any(k in line for k in ["placed:", "skip:", "[✓]", "[-]"]):
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("cs2_coolbet_placer", lambda: None)
 
 
 def job_cs2_settlement():
@@ -1471,31 +1409,46 @@ def job_cs2_settlement():
     off the window so they never settle. Found 8 bets stuck pending from earlier
     today this way. Also runs cs2_bot --settle to update cs2_simulated_bets +
     bot bankroll (separate from cs2_bets settlement done by cs2_settlement.py).
+
+    The bot --settle pass is the secondary effect; if cs2_settlement.py itself
+    fails we want the whole job marked failed. If only the bot --settle pass
+    fails (unusual — bot --settle is a single UPDATE query path), we log a
+    warning and let the primary status stand.
     """
     import subprocess
-    console.print("[bold cyan]CS2 settlement[/bold cyan]")
-    result = subprocess.run(
-        [sys.executable, "scripts/esports/cs2_settlement.py", "--days", "3"],
-        capture_output=True, text=True, timeout=300,
-    )
-    if result.returncode != 0:
-        console.print(f"[red]CS2 settlement error:[/red]\n{result.stderr[:500]}")
-    else:
+    def _impl():
+        console.print("[bold cyan]CS2 settlement[/bold cyan]")
+        result = subprocess.run(
+            [sys.executable, "scripts/esports/cs2_settlement.py", "--days", "3"],
+            capture_output=True, text=True, timeout=300,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"cs2_settlement.py exited {result.returncode}: "
+                f"{(result.stderr or '').strip()[-1500:]}"
+            )
         for line in result.stdout.splitlines():
             if any(k in line for k in ["finished matches", "result rows", "written", "settled"]):
                 console.print(f"[dim]{line}[/dim]")
 
-    # Also settle bot picks + update bankroll
-    bot_result = subprocess.run(
-        [sys.executable, "scripts/esports/cs2_bot.py", "--settle"],
-        capture_output=True, text=True, timeout=120,
-    )
-    if bot_result.returncode == 0:
+        # Secondary: settle bot picks + update bankroll. Non-fatal — failure
+        # surfaces as a warning so a transient bot-settle hiccup doesn't mask
+        # a successful match-results settlement.
+        bot_result = subprocess.run(
+            [sys.executable, "scripts/esports/cs2_bot.py", "--settle"],
+            capture_output=True, text=True, timeout=120,
+        )
+        if bot_result.returncode != 0:
+            console.print(
+                f"[yellow]cs2_bot --settle exited {bot_result.returncode} "
+                f"(non-fatal): {(bot_result.stderr or '').strip()[-400:]}[/yellow]"
+            )
+            return
         for line in bot_result.stdout.splitlines():
             if "settled" in line.lower():
                 console.print(f"[dim]bot {line}[/dim]")
 
-    _run_job("cs2_settlement", lambda: None)
+    _run_job("cs2_settlement", _impl)
 
 
 def job_coolbet_tennis_scanner():
@@ -2815,6 +2768,19 @@ def main():
                       CronTrigger(minute="3,33"),  # offset off the half-hour to avoid pileups
                       id="coolbet_daemon_healthcheck",
                       name="Coolbet Daemon Healthcheck [30min]",
+                      max_instances=1, misfire_grace_time=600)
+
+    # CS2-PIPELINE-HEALTHCHECK (2026-06-21) — every 30 min, DB-side watchdog.
+    # Catches the silent-failure mode the truthful-logging fix can't reach:
+    # subprocess exits 0 while writing nothing. Independent of pipeline_runs;
+    # reads cs2_upcoming_matches.scanned_at + cs2_simulated_bets.placed_at
+    # directly so a fully-dishonest scheduler still gets caught.
+    # :11/:41 offset so it lands ~5 min AFTER the cs2_scanner / cs2_bot fires,
+    # giving the latest run time to write before the watchdog checks.
+    scheduler.add_job(job_cs2_pipeline_healthcheck,
+                      CronTrigger(minute="11,41"),
+                      id="cs2_pipeline_healthcheck",
+                      name="CS2 Pipeline Healthcheck [30min]",
                       max_instances=1, misfire_grace_time=600)
 
     # COOLBET-FS-SESSION-STABLE sweeper — hourly, destroys stale FS sessions
