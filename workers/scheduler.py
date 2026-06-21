@@ -1339,6 +1339,25 @@ def job_coolbet_prekickoff_alert():
     _run_job("coolbet_prekickoff_alert", lambda: None)
 
 
+def job_coolbet_daemon_healthcheck():
+    """COOLBET-DAEMON-HEALTHCHECK (2026-06-21): Railway-side safety net for
+    the Mac daemon's in-process alert path. Reads coolbet_session_state +
+    coolbet_heal_log every 30 min and Telegrams when the daemon is silent
+    (>90m since last tick) or sustainedly erroring (>2h without a
+    successful auto-heal). DB-backed dedup survives Railway redeploys.
+
+    Quiet on healthy. Logs a summary line when it fires (alert/recovery)."""
+    from workers.jobs.coolbet_daemon_healthcheck import run_daemon_healthcheck
+    counters = run_daemon_healthcheck()
+    if counters.get("alert_sent") or counters.get("recovery_sent"):
+        console.print(
+            f"[yellow]Coolbet daemon healthcheck: status={counters['status']} "
+            f"reason={counters['reason']} alert_sent={counters['alert_sent']} "
+            f"recovery_sent={counters['recovery_sent']}[/yellow]"
+        )
+    _run_job("coolbet_daemon_healthcheck", lambda: None)
+
+
 def job_flaresolverr_sweep():
     """COOLBET-FS-SESSION-STABLE sweeper (2026-06-11): hourly destroys
     stale FlareSolverr sessions that aren't in the active whitelist.
@@ -2757,6 +2776,15 @@ def main():
                       id="coolbet_prekickoff_alert",
                       name="Coolbet Pre-KO Catch-Net [5min]",
                       max_instances=1, misfire_grace_time=60)
+
+    # COOLBET-DAEMON-HEALTHCHECK (2026-06-21) — every 30 min, Railway-side
+    # safety net. Independent of the Mac daemon's in-process alert (which
+    # left a 3-day outage silent on 2026-06-18 → 21).
+    scheduler.add_job(job_coolbet_daemon_healthcheck,
+                      CronTrigger(minute="3,33"),  # offset off the half-hour to avoid pileups
+                      id="coolbet_daemon_healthcheck",
+                      name="Coolbet Daemon Healthcheck [30min]",
+                      max_instances=1, misfire_grace_time=600)
 
     # COOLBET-FS-SESSION-STABLE sweeper — hourly, destroys stale FS sessions
     # not in the active whitelist (coolbet_prod, hltv_*, coolbet_dev). Bounds

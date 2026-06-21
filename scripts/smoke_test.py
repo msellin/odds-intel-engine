@@ -3804,6 +3804,103 @@ def test_coolbet_cdp_classify_tight():
     )
 
 
+@test("COOLBET-DAEMON-HEALTHCHECK — Railway-side health alert for silent / sustained-erroring daemon")
+def test_coolbet_daemon_healthcheck():
+    """COOLBET-DAEMON-HEALTHCHECK (2026-06-21): closes the alerting gap
+    that left a 3-day outage silent on 2026-06-18 → 21. Three reasons the
+    in-process Mac daemon alert path can fail:
+
+      1. alert_fired_this_burst flag — only one alert per process
+         lifetime per failure burst; no clean ticks = no further alerts.
+      2. In-process Telegram dedup — dies with the process.
+      3. Mac daemon IS the alerter — Mac sleep / daemon crash kills the
+         alerter and the placer at the same time.
+
+    Fix: new Railway job (every 30 min) reads coolbet_session_state +
+    coolbet_heal_log and Telegrams when the daemon is silent OR
+    sustainedly erroring. DB-backed dedup via last_health_alert_at
+    (migration 256) survives Railway redeploys.
+
+    Pin: migration 256 column, job module, alert/recovery code paths,
+    scheduler hook with 30-min cron."""
+    import pathlib
+
+    mig = pathlib.Path("supabase/migrations/256_coolbet_daemon_healthcheck.sql").read_text()
+    assert "last_health_alert_at" in mig and "TIMESTAMPTZ" in mig, (
+        "Migration 256 must add last_health_alert_at TIMESTAMPTZ — the "
+        "DB-backed dedup that survives Railway redeploys."
+    )
+
+    job_path = pathlib.Path("workers/jobs/coolbet_daemon_healthcheck.py")
+    assert job_path.exists(), (
+        "workers/jobs/coolbet_daemon_healthcheck.py must exist — this is "
+        "the Railway-side alerter."
+    )
+    job = job_path.read_text()
+    assert "def run_daemon_healthcheck(" in job, (
+        "job module must export run_daemon_healthcheck() — the scheduler "
+        "calls this every 30 min."
+    )
+
+    # Both alert conditions must be present — without one of them the
+    # job can't catch the corresponding failure class.
+    eval_block = job[job.index("def _evaluate_health("):
+                      job.index("def _format_alert(")]
+    assert '"silent"' in eval_block, (
+        "_evaluate_health must produce 'silent' status when "
+        "mac_daemon_last_tick_at is missing or stale."
+    )
+    assert '"erroring"' in eval_block, (
+        "_evaluate_health must produce 'erroring' status when last tick "
+        "has errors > 0 AND no recent successful auto-heal."
+    )
+
+    # Sustained-error check requires consulting coolbet_heal_log — without
+    # this, every transient errored tick fires an alert and the operator
+    # gets spammed during normal self-heal cycles.
+    assert "_last_successful_heal_at(" in job, (
+        "job must check coolbet_heal_log for recent successful heals to "
+        "distinguish sustained outages from transient blips."
+    )
+
+    # Dedup must be DB-backed (not in-process) — otherwise we reintroduce
+    # the Mac daemon's failure mode this job is supposed to fix.
+    assert "_set_last_health_alert_at(" in job, (
+        "job must write last_health_alert_at on alert send — DB-backed "
+        "dedup is the entire point (in-process dedup is what failed)."
+    )
+
+    # Recovery message path — after an alert was sent and the daemon comes
+    # back online, the operator needs to know the incident closed.
+    run_block = job[job.index("def run_daemon_healthcheck("):]
+    assert "recovery_sent" in run_block, (
+        "run_daemon_healthcheck must surface a recovery_sent counter — "
+        "without the recovery Telegram, the operator is left wondering "
+        "if the daemon is still down."
+    )
+    assert "_set_last_health_alert_at(None)" in run_block, (
+        "recovery path must CLEAR last_health_alert_at — otherwise the "
+        "next outage's first alert gets dedup-skipped."
+    )
+
+    # Scheduler hook — without this the job never actually runs.
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    assert "def job_coolbet_daemon_healthcheck(" in sched, (
+        "scheduler must define job_coolbet_daemon_healthcheck wrapper."
+    )
+    assert "coolbet_daemon_healthcheck" in sched and 'id="coolbet_daemon_healthcheck"' in sched, (
+        "scheduler must register the job with a stable id."
+    )
+    # Cadence: must run sub-hourly so a 90-min-silent threshold actually
+    # triggers in the same hour the daemon dies.
+    hook_idx = sched.index('id="coolbet_daemon_healthcheck"')
+    hook_block = sched[max(0, hook_idx - 500):hook_idx + 200]
+    assert ("CronTrigger(minute=" in hook_block), (
+        "scheduler hook must use a sub-hourly CronTrigger so a daemon "
+        "death is detected within one cycle."
+    )
+
+
 @test("COOLBET-SELFHEAL-PROFILE-PICKER — chrome_at_profile_picker state short-circuits auto_self_heal")
 def test_coolbet_selfheal_profile_picker():
     """COOLBET-SELFHEAL-PROFILE-PICKER (2026-06-21): closes a recovery gap
