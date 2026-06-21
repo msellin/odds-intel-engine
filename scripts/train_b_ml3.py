@@ -472,12 +472,23 @@ def _load_bets_mode_data(days: int = 60) -> pd.DataFrame:
                "home": "home", "draw": "draw", "away": "away"}
 
     long_rows = []
+    skipped_non_1x2 = 0
     for _, r in df.iterrows():
         raw_sel = str(r["selection"]).lower()
         sel = SEL_MAP.get(raw_sel)
-        # BTTS / AH / DC selections don't map to 1x2 — still include, use home as proxy
+        # B-ML3-BETS-MODE-1X2-FILTER (2026-06-21): the previous behaviour
+        # silently coerced OU/BTTS/AH/DC selections to the home-1X2 slot
+        # via a None-fallback assignment. The MFV feature columns the model uses
+        # (pinnacle_line_move_home_at_t6h, sharp_consensus_home_at_t6h,
+        # opening_implied_home, etc.) describe the 1X2 market — joining
+        # them to an OU/BTTS/AH/DC CLV label trains the model on garbage:
+        # features describe one market, label describes a different one.
+        # Audit 2026-06-21 found 22.6% of the 60d --bets-mode training
+        # set (121/535 rows) was this kind of pollution. Skip non-1X2
+        # rows entirely; per-market meta-modelling needs its own bundles.
         if sel is None:
-            sel = "home"
+            skipped_non_1x2 += 1
+            continue
         ens = r.get(f"ensemble_prob_{sel}")
         imp = r.get(f"opening_implied_{sel}")
         if ens is None or imp is None:
@@ -509,6 +520,9 @@ def _load_bets_mode_data(days: int = 60) -> pd.DataFrame:
     long_df = pd.DataFrame(long_rows)
     console.print(f"  Bets-mode rows: {len(long_df):,}  "
                   f"label balance: {long_df['y_clv_beat'].mean():.3f} positive")
+    if skipped_non_1x2:
+        console.print(f"  Skipped {skipped_non_1x2:,} non-1X2 bets "
+                      f"(meta-model is 1X2-only by feature schema)")
     return long_df
 
 

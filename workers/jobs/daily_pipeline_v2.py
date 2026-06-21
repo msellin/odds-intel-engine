@@ -3297,6 +3297,17 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 # gating only happens if META_B_ML3_ENABLED=true env is set.
                 # Maps selection labels to home/draw/away — meta-model expects
                 # those exact selection values (one-hot encoded at training).
+                #
+                # B-ML3-COVERAGE-EXTEND-CLOSED (2026-06-21): the meta-model is
+                # architecturally 1X2-only. Its feature row pulls selection-
+                # specific MFV columns (pinnacle_line_move_{sel}_at_t6h,
+                # sharp_consensus_{sel}_at_t6h, opening_implied_{sel}) that
+                # ONLY exist for {home, draw, away}. OU/BTTS/AH/DC selections
+                # fall through with meta_clv_score=NULL — they're not gated
+                # (should_fire returns True on None) but they're not scored
+                # either. Extending coverage requires per-market meta-models
+                # with their own MFV feature schemas; see B-ML3-PER-MARKET
+                # (filed 2026-06-21) for the scope if pursued later.
                 meta_score: float | None = None
                 try:
                     from workers.model import meta_b_ml3 as _meta
@@ -3308,7 +3319,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                     elif "away" in _meta_sel:
                         _meta_sel = "away"
                     else:
-                        _meta_sel = None  # OU/BTTS/AH selections not in v2.1 training
+                        _meta_sel = None  # OU/BTTS/AH/DC — meta-model is 1X2-only by feature schema
                     if _meta_sel is not None:
                         meta_score = _meta.score_bet(
                             match_id=str(match_id),

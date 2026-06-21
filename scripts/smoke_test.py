@@ -3804,6 +3804,58 @@ def test_coolbet_cdp_classify_tight():
     )
 
 
+@test("B-ML3-BETS-MODE-1X2-FILTER — non-1X2 bets are skipped, not home-1X2-proxied")
+def test_b_ml3_bets_mode_1x2_filter():
+    """B-ML3-BETS-MODE-1X2-FILTER (2026-06-21): closes the silent training-
+    data pollution discovered during B-ML3-COVERAGE-EXTEND investigation.
+
+    Audit 2026-06-21 found 22.6% of the 60d --bets-mode training set
+    (121/535 rows) was polluted: OU/BTTS/AH/DC bets where the loader
+    silently fell back to sel='home' and pulled 1X2-home features
+    (pinnacle_line_move_home_at_t6h etc.) joined to OU/BTTS/AH/DC CLV
+    labels. Features describe one market, label describes a different
+    one — pure noise the model attenuates 1X2 signal trying to fit.
+
+    Fix: skip non-1X2 rows in _load_bets_mode_data and surface the count.
+
+    The meta-model is architecturally 1X2-only by feature schema — the
+    selection-specific MFV columns (pinnacle_line_move_{sel}_at_t6h,
+    sharp_consensus_{sel}_at_t6h, opening_implied_{sel}) ONLY exist for
+    {home, draw, away}. Per-market meta-modelling requires its own
+    bundles with market-specific features."""
+    import pathlib
+
+    tb = pathlib.Path("scripts/train_b_ml3.py").read_text()
+
+    # The bug we're fixing: `sel = "home"` fallback for non-1X2 selections.
+    # If the old behaviour comes back, this fires.
+    bets_block = tb[tb.index("def _load_bets_mode_data("):]
+    assert 'sel = "home"' not in bets_block, (
+        "_load_bets_mode_data must NOT fall back to sel='home' for non-1X2 "
+        "rows — that pollutes training with 1X2 features joined to non-1X2 "
+        "CLV labels. Audit found 22.6% of training rows were this pollution."
+    )
+    # Replacement behaviour: count + skip.
+    assert "skipped_non_1x2" in bets_block, (
+        "_load_bets_mode_data must track skipped_non_1x2 — without the "
+        "counter the pollution rate is invisible in retrain logs."
+    )
+    # The skip must come AFTER sel lookup, not change the lookup logic itself.
+    assert "continue" in bets_block, (
+        "_load_bets_mode_data must `continue` on non-1X2 selections, not "
+        "transform them. Otherwise the home-proxy bug returns silently."
+    )
+
+    # Call-site comment must reflect the architectural reality, not the
+    # old "v2.1 training" framing that misled the B-ML3-COVERAGE-EXTEND task.
+    pl = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    assert "1X2-only" in pl or "1x2-only" in pl.lower(), (
+        "daily_pipeline_v2.py must document that the meta-model is "
+        "architecturally 1X2-only — without the documentation, future "
+        "tasks will re-file the same B-ML3-COVERAGE-EXTEND premise."
+    )
+
+
 @test("RETRAIN-HEALTHCHECK — alerts on stale weekly_retrain or 2+ consecutive failures")
 def test_retrain_healthcheck():
     """RETRAIN-HEALTHCHECK (2026-06-21): closes a silent-failure class.
