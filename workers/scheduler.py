@@ -1281,6 +1281,24 @@ def job_coolbet_prekickoff_alert():
     _run_job("coolbet_prekickoff_alert", lambda: None)
 
 
+def job_pipeline_runs_failure_digest():
+    """PIPELINE-RUNS-FAILURE-DIGEST (2026-06-22): daily 08:00 UTC email
+    digest of jobs that failed in the last 24h, grouped by job_name.
+
+    Quiet on healthy — if zero failures, no email. The CS2-PIPELINE-
+    TRUTHFUL-LOGGING fix (2026-06-21) made `pipeline_runs` record real
+    failures; this surfaces them to the operator within 24h instead of
+    waiting for a manual sweep."""
+    from workers.jobs.pipeline_runs_failure_digest import run_failure_digest
+    counters = run_failure_digest()
+    if counters.get("sent"):
+        console.print(
+            f"[yellow]Pipeline failure digest: job_count={counters['job_count']} "
+            f"failure_count={counters['failure_count']} sent=True[/yellow]"
+        )
+    _run_job("pipeline_runs_failure_digest", lambda: None)
+
+
 def job_retrain_healthcheck():
     """RETRAIN-HEALTHCHECK (2026-06-21): Mon/Tue 09:00 UTC sentinel for the
     weekly Sunday retrain. Alerts when (a) latest successful retrain is
@@ -2759,6 +2777,17 @@ def main():
                       id="coolbet_prekickoff_alert",
                       name="Coolbet Pre-KO Catch-Net [5min]",
                       max_instances=1, misfire_grace_time=60)
+
+    # PIPELINE-RUNS-FAILURE-DIGEST (2026-06-22) — daily 08:00 UTC email
+    # digest of jobs that failed in the last 24h. The CS2-PIPELINE-
+    # TRUTHFUL-LOGGING fix made pipeline_runs record real failures; this
+    # surfaces them within 24h instead of via manual sweep. Quiet on
+    # healthy (no email when zero failures).
+    scheduler.add_job(job_pipeline_runs_failure_digest,
+                      CronTrigger(hour=8, minute=0),
+                      id="pipeline_runs_failure_digest",
+                      name="Pipeline Failure Digest [daily 08:00 UTC]",
+                      max_instances=1, misfire_grace_time=3600)
 
     # RETRAIN-HEALTHCHECK (2026-06-21) — Mon + Tue 09:00 UTC, alerts when
     # the Sunday weekly_retrain has been silently failing. 2 consecutive

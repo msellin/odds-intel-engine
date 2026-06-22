@@ -4254,6 +4254,23 @@ def test_coolbet_daemon_healthcheck():
         "dedup is the entire point (in-process dedup is what failed)."
     )
 
+    # COOLBET-HEALTHCHECK-JWT-AWARE (2026-06-22): the original
+    # _evaluate_health only branched on `silent` or `erroring`. That
+    # missed the case where the daemon ticks SILENT-WHEN-EMPTY
+    # (errors=0, no work) while the JWT silently expires — a real
+    # 2026-06-22 morning state. Add a jwt_stale branch gated on
+    # pending calibrated picks within KO window.
+    assert '"jwt_stale"' in eval_block, (
+        "_evaluate_health must produce 'jwt_stale' when JWT is expired "
+        "AND calibrated picks have kickoff within the watch window. "
+        "Without it, a clean-tick + expired-JWT state stays invisible "
+        "until the first placement attempt fails."
+    )
+    assert "_pending_calibrated_picks_in_ko_window(" in job, (
+        "job must check pending calibrated picks to gate the jwt_stale "
+        "alert. Without the gate, every idle Sunday→Monday morning "
+        "would alert even though nothing's broken."
+    )
     # Recovery message path — after an alert was sent and the daemon comes
     # back online, the operator needs to know the incident closed.
     run_block = job[job.index("def run_daemon_healthcheck("):]
@@ -4261,6 +4278,13 @@ def test_coolbet_daemon_healthcheck():
         "run_daemon_healthcheck must surface a recovery_sent counter — "
         "without the recovery Telegram, the operator is left wondering "
         "if the daemon is still down."
+    )
+    # alert routing must include jwt_stale otherwise the evaluation
+    # produces the new status but no Telegram is ever sent for it.
+    assert '"jwt_stale"' in run_block, (
+        "run_daemon_healthcheck must route status='jwt_stale' to the "
+        "alert path. Adding the classifier without wiring it to the "
+        "sender is silent-fail by omission."
     )
     assert "_set_last_health_alert_at(None)" in run_block, (
         "recovery path must CLEAR last_health_alert_at — otherwise the "
@@ -15669,6 +15693,116 @@ def _():
         "WC bracket scoring cron must fire every 30 min at :05/:35 UTC"
     assert 'id="wc_bracket_scoring"' in src, \
         "WC bracket scoring cron must be registered with id='wc_bracket_scoring'"
+
+
+@test("PIPELINE-RUNS-FAILURE-DIGEST — daily 08:00 UTC email summary of pipeline_runs failures")
+def _():
+    """PIPELINE-RUNS-FAILURE-DIGEST (2026-06-22): closes the visibility
+    gap that the CS2-PIPELINE-TRUTHFUL-LOGGING fix surfaced. Now that
+    pipeline_runs records real failure rows, this job emails a daily
+    summary so we don't need a manual SQL sweep to find them. Quiet on
+    healthy — if no failures in 24h, no email.
+
+    Pin: job module exists, exports run_failure_digest, groups by
+    job_name (not by run), email goes via Resend, scheduler hook at
+    08:00 UTC, scheduler wrapper imports the module."""
+    job = _engine_path("workers/jobs/pipeline_runs_failure_digest.py").read_text()
+    assert "def run_failure_digest(" in job, (
+        "job module must export run_failure_digest() — the entry point "
+        "the scheduler wraps."
+    )
+    # GROUP BY job_name is the difference between "1 line per failure" and
+    # "1 line per broken job". A digest without grouping is noise.
+    assert "GROUP BY job_name" in job, (
+        "_collect_failures must GROUP BY job_name — otherwise a job that "
+        "fails 48 times in 24h becomes 48 rows and the digest is unreadable."
+    )
+    # Must filter on status='failed' AT THE GROUP LEVEL, not just count
+    # status. Without HAVING, even all-pass jobs would appear with
+    # failed=0 in the email.
+    assert "HAVING COUNT(*) FILTER (WHERE status = 'failed') > 0" in job, (
+        "_collect_failures must HAVING-filter to jobs with ≥1 failure — "
+        "without it, every job in the last 24h appears in the digest."
+    )
+    # Must be quiet on healthy.
+    run_block = job[job.index("def run_failure_digest("):]
+    assert "not failures" in run_block or "if failures" in run_block, (
+        "run_failure_digest must short-circuit when failures list is "
+        "empty — no email on healthy days is the entire point."
+    )
+
+    # Scheduler wires the daily 08:00 UTC cron.
+    sched = _engine_path("workers/scheduler.py").read_text()
+    assert "def job_pipeline_runs_failure_digest(" in sched, (
+        "scheduler must define job_pipeline_runs_failure_digest wrapper."
+    )
+    hook_idx = sched.index('id="pipeline_runs_failure_digest"')
+    hook_block = sched[max(0, hook_idx - 300):hook_idx + 100]
+    assert "CronTrigger(hour=8, minute=0)" in hook_block, (
+        "scheduler hook must fire at 08:00 UTC — earlier than European "
+        "morning kickoffs, late enough to capture the full prior day."
+    )
+
+
+@test("COOLBET-HEALTHCHECK-JWT-AWARE — jwt_stale branch alerts when JWT expired + pending picks in KO window")
+def _():
+    """COOLBET-HEALTHCHECK-JWT-AWARE (2026-06-22): closes a gap surfaced
+    this morning. Yesterday's daemon healthcheck (COOLBET-DAEMON-
+    HEALTHCHECK) only branches on `silent` (tick stale) or `erroring`
+    (errors > 0). Today's morning state had clean ticks (errors=0, no
+    work) but JWT expired 12h+ ago — the daemon is silent-when-empty
+    so JWT expiry never surfaces until the first placement attempt.
+
+    Fix: third branch `jwt_stale` that fires when (a) JWT expired beyond
+    a grace window AND (b) there are pending calibrated picks within KO
+    window. The pending-picks gate prevents idle-overnight false alarms.
+
+    Pin: branch exists in _evaluate_health, helper queries the picks
+    pipeline correctly, run_daemon_healthcheck routes jwt_stale to the
+    alert sender."""
+    job = _engine_path("workers/jobs/coolbet_daemon_healthcheck.py").read_text()
+
+    # The new branch.
+    assert '"jwt_stale"' in job, (
+        "_evaluate_health must produce 'jwt_stale' when JWT is expired "
+        "AND pending calibrated picks have kickoff within the window."
+    )
+
+    # The picks helper that gates the alert. Without the helper, an
+    # idle Sunday→Monday morning would alert every dedup cycle.
+    assert "def _pending_calibrated_picks_in_ko_window(" in job, (
+        "job must define _pending_calibrated_picks_in_ko_window — the "
+        "guard against false-positive idle-overnight alerts."
+    )
+    helper_block = job[job.index("def _pending_calibrated_picks_in_ko_window("):]
+    helper_block = helper_block[:helper_block.index("\ndef ")]
+    # Helper must select calibrated bots only — non-calibrated bot
+    # picks are sim-only and don't flow through the real placer.
+    assert "maturity_label = 'calibrated'" in helper_block, (
+        "pending-picks query must filter maturity_label='calibrated' — "
+        "non-calibrated bot picks never reach the real placer, so JWT "
+        "staleness can't actually break them."
+    )
+
+    # Routing — without this, the new status produces no Telegram.
+    run_block = job[job.index("def run_daemon_healthcheck("):]
+    assert "jwt_stale" in run_block, (
+        "run_daemon_healthcheck must route 'jwt_stale' through the "
+        "alert path. Producing the status without sending the alert "
+        "is silent-fail by omission."
+    )
+
+    # Hint dict in the alert formatter must address the jwt_stale case
+    # specifically. Without a dedicated hint, the operator gets a
+    # generic message that doesn't surface the pre-emptive recovery
+    # opportunity.
+    fmt_block = job[job.index("def _format_alert("):
+                     job.index("def _format_recovery(")]
+    assert 'status == "jwt_stale"' in fmt_block or "jwt_stale" in fmt_block, (
+        "_format_alert must include a jwt_stale-specific hint — the "
+        "recovery action is pre-emptive (heal before picks arrive), "
+        "not reactive (heal after a placement fails)."
+    )
 
 
 @test("WC-BRACKET-SCORING-PARTIAL-INDEX — ON CONFLICT (ai_label) carries the partial-index predicate")

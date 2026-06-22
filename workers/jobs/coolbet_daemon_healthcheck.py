@@ -52,6 +52,14 @@ SUSTAINED_ERROR_THRESHOLD_MIN = int(os.getenv("COOLBET_HEALTH_ERROR_SUSTAINED_MI
 # operator only needs to hear about the same outage so often.
 ALERT_DEDUP_HOURS = int(os.getenv("COOLBET_HEALTH_DEDUP_HOURS", "4"))
 
+# JWT-staleness threshold. JWT-stale-with-pending-picks alerts only when
+# the JWT is BOTH expired (or about to expire) AND there's a calibrated
+# pick whose kickoff is within JWT_STALE_KO_WINDOW_HOURS — without the
+# pending-picks gate, an overnight idle daemon (no work) would alert
+# every dedup cycle even though nothing's actually wrong.
+JWT_STALE_GRACE_MIN = int(os.getenv("COOLBET_HEALTH_JWT_GRACE_MIN", "30"))
+JWT_STALE_KO_WINDOW_HOURS = int(os.getenv("COOLBET_HEALTH_JWT_KO_WINDOW_HOURS", "6"))
+
 
 def _read_state_row() -> dict | None:
     """Load the singleton coolbet_session_state row (id=1) with the columns
@@ -115,6 +123,34 @@ def _set_last_health_alert_at(ts: datetime | None) -> None:
     )
 
 
+def _pending_calibrated_picks_in_ko_window(hours: int) -> int:
+    """Count calibrated-bot picks that are signaled, NOT placed, NOT skipped,
+    AND have a kickoff within [now-5min, now+hours]. Used by the JWT-stale
+    branch to gate the alert — without pending picks, a stale JWT doesn't
+    matter (the daemon will refresh on the next placement attempt anyway).
+    """
+    from workers.api_clients.db import execute_query
+    rows = execute_query(
+        """
+        SELECT COUNT(*) AS n
+          FROM simulated_bets sb
+          JOIN bots b ON b.id = sb.bot_id
+          JOIN matches m ON m.id = sb.match_id
+         WHERE b.maturity_label = 'calibrated' AND b.is_active = TRUE
+           AND sb.signaled_at IS NOT NULL
+           AND sb.user_placed_at IS NULL
+           AND sb.user_skipped_at IS NULL
+           AND m.date BETWEEN NOW() - INTERVAL '5 min'
+                          AND NOW() + (%s || ' hours')::interval
+           AND NOT EXISTS (
+               SELECT 1 FROM real_bets rb WHERE rb.simulated_bet_id = sb.id
+           )
+        """,
+        (hours,),
+    )
+    return int(rows[0]["n"]) if rows else 0
+
+
 def _normalise_tick_result(raw) -> dict:
     """mac_daemon_last_tick_result is JSONB; psycopg2 may return str or dict
     depending on the cursor. Normalise to dict."""
@@ -132,8 +168,8 @@ def _normalise_tick_result(raw) -> dict:
 
 def _evaluate_health(state: dict | None, now: datetime) -> tuple[str, str]:
     """Decide current daemon health. Returns (status, reason) where status
-    is one of 'silent' / 'erroring' / 'healthy'. `reason` is a short string
-    the alert body uses verbatim."""
+    is one of 'silent' / 'erroring' / 'jwt_stale' / 'healthy'. `reason`
+    is a short string the alert body uses verbatim."""
     if state is None:
         return ("silent", "coolbet_session_state row missing")
 
@@ -162,6 +198,41 @@ def _evaluate_health(state: dict | None, now: datetime) -> tuple[str, str]:
         return ("healthy",
                 f"errored tick but auto-heal recovered "
                 f"{int(recovered_age_min)}m ago")
+
+    # JWT-stale branch (COOLBET-HEALTHCHECK-JWT-AWARE 2026-06-22): the
+    # daemon's _tick() is SILENT-WHEN-EMPTY — when there are no qualified
+    # bets, it returns counters with errors=0 without touching CDP/JWT.
+    # An overnight gap can therefore leave the JWT expired (Coolbet
+    # invalidates after ~10h idle) while every healthcheck sees clean
+    # ticks. When picks finally arrive later, the first placement attempt
+    # fails on the expired JWT and we lose the bet to slippage / KO drift.
+    # Surface this BEFORE the picks arrive so the operator can heal pre-
+    # emptively. Gate on pending-calibrated-picks-within-KO-window so an
+    # idle Sunday→Monday morning doesn't alert when there's truly no work
+    # to do.
+    jwt_exp = state.get("jwt_exp_at")
+    jwt_age_min = None
+    if jwt_exp is not None:
+        # Negative = expired N minutes ago; positive = N minutes until expiry.
+        jwt_ttl_min = (jwt_exp - now).total_seconds() / 60.0
+        jwt_age_min = -jwt_ttl_min  # positive when expired
+    if jwt_exp is None or jwt_age_min is not None and jwt_age_min > JWT_STALE_GRACE_MIN:
+        try:
+            pending = _pending_calibrated_picks_in_ko_window(JWT_STALE_KO_WINDOW_HOURS)
+        except Exception:
+            # Don't break the healthcheck on a DB hiccup — fall through
+            # to healthy if we can't verify pending picks. The silent
+            # branch already covers the catastrophic case.
+            pending = 0
+        if pending > 0:
+            if jwt_age_min is not None:
+                preamble = f"JWT expired {int(jwt_age_min)}m ago"
+            else:
+                preamble = "JWT never set"
+            return ("jwt_stale",
+                    f"{preamble} and {pending} pending calibrated "
+                    f"pick(s) kickoff within {JWT_STALE_KO_WINDOW_HOURS}h — "
+                    f"first placement will fail")
 
     return ("healthy", "last tick clean")
 
@@ -216,6 +287,14 @@ def _format_alert(status: str, reason: str, state: dict,
     if status == "silent":
         hint = ("Check the Mac — daemon may be dead or Mac asleep. "
                 "`launchctl list | grep coolbet` to see launchd status.")
+    elif status == "jwt_stale":
+        # JWT expired pre-emptively (before any tick had a chance to error).
+        # The recovery action is identical to the logged_out / jwt_expired
+        # hint — just heal proactively before picks arrive.
+        hint = ("JWT expired during the daemon's idle window. Run "
+                "`python3 -m workers.automation.coolbet_browser_sync "
+                "--full-heal` on the Mac OR open Coolbet in CDP-Chrome "
+                "to refresh — picks have KO within the next 6h.")
     else:
         hint = hint_by_state.get(state_after,
                                   "Run python3 -m workers.automation.coolbet_browser_sync --full-heal on the Mac.")
@@ -257,7 +336,7 @@ def run_daemon_healthcheck(*, dry_run: bool = False) -> dict:
 
         last_alert = (state or {}).get("last_health_alert_at")
 
-        if status in ("silent", "erroring"):
+        if status in ("silent", "erroring", "jwt_stale"):
             if last_alert is not None and (now - last_alert) < timedelta(hours=ALERT_DEDUP_HOURS):
                 counters["dedup_skipped"] = True
                 return counters
