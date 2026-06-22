@@ -127,6 +127,14 @@ def load_targets(top_n: int) -> list[tuple[int, str, str]]:
 
 
 def main():
+    # CS2-ROSTERS-TIMEOUT-FIX (2026-06-22): line-buffer stdout so per-team
+    # progress survives a subprocess timeout/kill. Without this the captured
+    # buffer is empty when pipeline_runs records the failure.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+
     p = argparse.ArgumentParser()
     p.add_argument("--top-n", type=int, default=100, help="Number of teams to scrape")
     p.add_argument("--team", type=int, help="One-off: just this team_id")

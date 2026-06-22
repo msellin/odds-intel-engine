@@ -105,17 +105,34 @@ _ALIASES: dict[str, list[str]] = {
 }
 
 
-def _fetch_one(key: str, params: dict) -> list:
+_MAX_429_RETRIES = 2          # CS2-ROSTERS-TIMEOUT-FIX (2026-06-22)
+_MAX_429_SLEEP_TOTAL_S = 90   # hard cap across all retries for one request
+
+
+def _fetch_one(key: str, params: dict, _attempt: int = 0, _slept_total: int = 0) -> list:
+    """CS2-ROSTERS-TIMEOUT-FIX (2026-06-22): the previous version recursed on
+    every 429 without a cap — sustained rate-limits could keep one call
+    stuck for hours and consume the entire subprocess timeout on one team.
+    Now bounded by retry count AND total sleep budget; on budget exhaustion
+    we return [] so the caller treats this team as a miss and continues."""
     headers = {"Authorization": f"Bearer {key}", "Accept": "application/json"}
     r = requests.get(f"{API_BASE}/csgo/teams", headers=headers, params=params, timeout=15)
     if r.status_code == 429:
-        # Respect server's Retry-After header if present; else 30s
-        # (the hourly counter resets at the top of each hour so prolonged 60s
-        # waits were wasteful).
+        if _attempt >= _MAX_429_RETRIES or _slept_total >= _MAX_429_SLEEP_TOTAL_S:
+            print(f"  [!] 429 budget exhausted (attempts={_attempt}, "
+                  f"slept={_slept_total}s) — skipping this query",
+                  file=sys.stderr, flush=True)
+            return []
+        # Respect server's Retry-After header if present; else 30s.
+        # Clamp to the remaining budget so we can't sleep past the cap.
         retry_after = int(r.headers.get("Retry-After", "30"))
-        print(f"  [!] rate-limited; sleeping {retry_after}s", file=sys.stderr)
-        time.sleep(retry_after)
-        return _fetch_one(key, params)
+        remaining = max(1, _MAX_429_SLEEP_TOTAL_S - _slept_total)
+        sleep_s = min(retry_after, remaining)
+        print(f"  [!] rate-limited; sleeping {sleep_s}s "
+              f"(attempt {_attempt + 1}/{_MAX_429_RETRIES})",
+              file=sys.stderr, flush=True)
+        time.sleep(sleep_s)
+        return _fetch_one(key, params, _attempt + 1, _slept_total + sleep_s)
     return r.json() if r.ok else []
 
 
@@ -202,6 +219,16 @@ def _search_team(key: str, name: str) -> dict | None:
 
 
 def main() -> None:
+    # CS2-ROSTERS-TIMEOUT-FIX (2026-06-22): line-buffer stdout so the
+    # subprocess-captured progress survives a subprocess timeout/kill.
+    # Without this, a 600s timeout truncates everything to the cached
+    # block-buffer write — pipeline_runs.error_message shows nothing
+    # useful when the next kill happens.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+
     p = argparse.ArgumentParser()
     p.add_argument("--teams", help="Comma-separated list (default: all DB teams)")
     p.add_argument("--refresh", action="store_true",

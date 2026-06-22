@@ -1146,11 +1146,18 @@ def job_cs2_hltv_rosters():
     """CS2-ROSTERS (2026-06-09): scrape current rosters + days_in_team per
     player from /team/{id}/{slug} (no auth needed). Lets us detect roster
     freshness — fresh roster (<30 days avg) invalidates prior team stats.
+
+    CS2-ROSTERS-TIMEOUT-FIX (2026-06-22, surfaced by CS2-PIPELINE-TRUTHFUL-
+    LOGGING): top-100 × (5s rate-delay + ~10s FlareSolverr fetch per team)
+    = 1500-1800s, hits the 1800s subprocess timeout exactly. Reduced to
+    top-50 to fit in ~750s with comfortable margin. Tier-1/2 coverage
+    (the teams that actually fire bot picks) is unchanged — top-50 by
+    cs2_hltv_team_map_stats activity is the bot's working set.
     """
     console.print("[bold cyan]CS2 HLTV team rosters[/bold cyan]")
     _run_subprocess_job(
         "cs2_hltv_rosters",
-        [sys.executable, "scripts/esports/cs2_hltv_rosters.py", "--top-n", "100", "--record"],
+        [sys.executable, "scripts/esports/cs2_hltv_rosters.py", "--top-n", "50", "--record"],
         timeout=1800,
         summary_keywords=["✓", "hits:"],
     )
@@ -1209,15 +1216,19 @@ def job_cs2_weekly_calibrate():
 def job_cs2_pandascore_rosters():
     """CS2-PANDASCORE-ROSTERS (2026-06-08): refresh current 5-man lineups from
     PandaScore free tier. Cache: data/esports/cs2/pandascore_rosters.json.
-    Replaces stale Oct-2025 CSV lineup for PQ computation. Daily.
+    Replaces stale Oct-2025 CSV lineup for PQ computation. Hourly.
+
+    CS2-ROSTERS-TIMEOUT-FIX (2026-06-22, surfaced by CS2-PIPELINE-TRUTHFUL-
+    LOGGING): --limit 200 × (4s rate-delay + 1-4 API calls + occasional
+    30s 429 backoffs) consistently exceeded the 600s timeout. Reduced to
+    --limit 50, which covers ~50 fresh teams per run. Since this is hourly,
+    8 fires = 400 teams/day, well clear of the 750-team backlog. Steady
+    state (all teams cached) is no-op.
     """
     console.print("[bold cyan]CS2 PandaScore rosters refresh[/bold cyan]")
-    # Discovery mode (no --refresh): skip cached teams. With --limit 200
-    # each run picks up the next 200 new teams. After full coverage, runs
-    # become quick (no work left).
     _run_subprocess_job(
         "cs2_pandascore_rosters",
-        [sys.executable, "scripts/esports/cs2_pandascore_rosters.py", "--limit", "200"],
+        [sys.executable, "scripts/esports/cs2_pandascore_rosters.py", "--limit", "50"],
         timeout=600,
         summary_keywords=["hits:", "miss:", "→ data"],
         skip_if=lambda: (not os.getenv("PANDASCORE_API_KEY"), "PANDASCORE_API_KEY not set"),
@@ -1821,6 +1832,39 @@ def job_aln_auto_tune():
     with n ≥ 100. Never auto-applies — human approves the bump."""
     from workers.jobs.aln_auto_tune import run_aln_auto_tune
     _run_job("aln_auto_tune", run_aln_auto_tune)
+
+
+def job_mfv_v3_signals_propagate():
+    """MFV-V3-SIGNALS-NIGHTLY-PROPAGATE (2026-06-22): copy match_signals
+    rows for the v3 signal set (season_progress, line_velocity, xg_overperf,
+    league_clv_efficiency, injury_severity, team_avg_player_rating,
+    league_draw_rate_ytd) into the corresponding MFV columns.
+
+    Without this, the nightly signal writers populate `match_signals` but
+    MFV columns stay NULL — the bug surfaced 2026-06-22 when MFV.season_progress
+    was 0% covered for 90 days because this script was never on cron.
+
+    Idempotent (COALESCE keeps existing non-NULL). Rolling window covers
+    last 60d so cron misfires self-heal."""
+    import subprocess
+    from datetime import date as _date, timedelta as _td
+    def _run():
+        since = (_date.today() - _td(days=60)).isoformat()
+        result = subprocess.run(
+            [sys.executable, "scripts/backfill_mfv_v3_signals.py",
+             "--since", since, "--write"],
+            cwd=str(Path(__file__).parent.parent),
+            timeout=900,
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[yellow]mfv_v3_signals_propagate exit "
+                          f"{result.returncode}: {result.stderr[-1000:]}[/yellow]")
+            raise RuntimeError(
+                f"mfv_v3_signals_propagate failed: exit {result.returncode}"
+            )
+        console.print(result.stdout[-1500:])
+    _run_job("mfv_v3_signals_propagate", _run)
 
 
 def job_nightly_mfv_b_ml3_refresh():
@@ -2929,6 +2973,21 @@ def main():
                       CronTrigger(hour=23, minute=15),
                       id="league_season_phase",
                       name="League Season Phase 23:15")
+
+    # MFV-V3-SIGNALS-NIGHTLY-PROPAGATE (2026-06-22): propagate
+    # match_signals → match_feature_vectors columns for the v3 signals
+    # (season_progress, line_velocity, xg_overperf_*, league_clv_efficiency,
+    # injury_severity_*, team_avg_player_rating_*, league_draw_rate_ytd).
+    # Without this, the signal writers (league_season_phase 23:15,
+    # line_velocity 23:10, etc.) populate match_signals nightly but MFV
+    # columns stay NULL — the audit on 2026-06-22 found MFV.season_progress
+    # at 0% coverage for 90 days because backfill_mfv_v3_signals.py was
+    # never scheduled. Runs at 23:30 — after all v3 signal writers complete.
+    scheduler.add_job(job_mfv_v3_signals_propagate,
+                      CronTrigger(hour=23, minute=30),
+                      id="mfv_v3_signals_propagate",
+                      name="MFV v3 Signals → MFV Propagate 23:30",
+                      max_instances=1, misfire_grace_time=1800)
 
     # ALN-AUTO (2026-05-25): 1st of each month at 03:30 UTC. Runs the
     # alignment-bump tuner over a 60d window; emails a diff via Resend

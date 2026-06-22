@@ -25029,5 +25029,75 @@ def _():
     )
 
 
+@test("CS2-ROSTERS-TIMEOUT-FIX — rosters jobs fit subprocess timeout + bounded 429 retry")
+def _():
+    """CS2-ROSTERS-TIMEOUT-FIX (2026-06-22, surfaced by CS2-PIPELINE-TRUTHFUL-
+    LOGGING — was silent for 9 days before): both cs2_hltv_rosters and
+    cs2_pandascore_rosters consistently exceeded their subprocess timeouts.
+
+    Root causes:
+      • cs2_hltv_rosters: --top-n 100 × (5s rate-delay + ~10s FlareSolverr
+        fetch) = ~1500-1800s, hit the 1800s timeout exactly.
+      • cs2_pandascore_rosters: --limit 200 × (4s rate-delay + 1-4 API
+        calls + occasional 30s 429 backoffs) consistently exceeded 600s.
+      • Latent: pandascore _fetch_one recursed on every 429 without a cap.
+        A sustained rate-limit could pin one call for arbitrarily long.
+
+    Fixes: reduce per-run workload to fit existing timeouts; cap the
+    429 retry loop in pandascore (max 2 retries OR 90s total sleep).
+    Both scripts also enable line-buffered stdout so per-team progress
+    survives a subprocess timeout/kill (without this, the captured
+    buffer is empty when pipeline_runs records the failure)."""
+    import pathlib
+
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+
+    # cs2_hltv_rosters: --top-n must be ≤50 (was 100) to fit 1800s timeout.
+    hltv_block = sched[sched.index("def job_cs2_hltv_rosters("):
+                       sched.index("def job_cs2_sneak_peek_backtest(")]
+    assert '"--top-n", "50"' in hltv_block, (
+        "cs2_hltv_rosters must pass --top-n 50 — top-100 was the original "
+        "workload that consistently hit the 1800s subprocess timeout. "
+        "Top-50 covers the bot's working tier-1/2 cohort in <750s."
+    )
+
+    # cs2_pandascore_rosters: --limit must be ≤50 (was 200) for 600s timeout.
+    ps_block = sched[sched.index("def job_cs2_pandascore_rosters("):
+                     sched.index("def job_coolbet_health_ping(")]
+    assert '"--limit", "50"' in ps_block, (
+        "cs2_pandascore_rosters must pass --limit 50 — limit=200 was the "
+        "workload that consistently exceeded the 600s subprocess timeout."
+    )
+
+    # 429-retry cap is the latent bug that this fix prevents from recurring.
+    ps_src = pathlib.Path("scripts/esports/cs2_pandascore_rosters.py").read_text()
+    assert "_MAX_429_RETRIES" in ps_src and "_MAX_429_SLEEP_TOTAL_S" in ps_src, (
+        "_fetch_one must cap 429 retries — sustained rate-limits could "
+        "previously pin one call for arbitrary duration via unbounded "
+        "recursion. The bounded version returns [] on exhaustion so the "
+        "outer loop continues with the next team."
+    )
+    # The cap must be enforced — both attempt counter AND total-sleep budget.
+    fetch_block = ps_src[ps_src.index("def _fetch_one("):
+                         ps_src.index("def _search_team(")]
+    assert "_attempt >= _MAX_429_RETRIES" in fetch_block, (
+        "_fetch_one must check attempt count against _MAX_429_RETRIES"
+    )
+    assert "_slept_total >= _MAX_429_SLEEP_TOTAL_S" in fetch_block, (
+        "_fetch_one must also enforce a total-sleep budget — otherwise a "
+        "single 30s Retry-After × N retries could still eat unbounded time."
+    )
+
+    # Both scripts must line-buffer stdout so progress survives kill.
+    for script_name in ("cs2_pandascore_rosters.py", "cs2_hltv_rosters.py"):
+        src = pathlib.Path(f"scripts/esports/{script_name}").read_text()
+        assert "sys.stdout.reconfigure(line_buffering=True)" in src, (
+            f"{script_name} must line-buffer stdout in main() — without "
+            f"this, subprocess-captured progress is lost on timeout/kill, "
+            f"defeating the truthful-logging machinery's ability to show "
+            f"WHERE the script was stuck when it died."
+        )
+
+
 if __name__ == "__main__":
     main()
