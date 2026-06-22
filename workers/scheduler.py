@@ -178,10 +178,18 @@ def _run_subprocess_job(
                 f"{result.returncode}: {stderr or '(empty stderr)'}"
             )
         if require_output_marker and require_output_marker not in result.stdout:
-            tail = (result.stdout or "")[-800:]
+            # CS2-PIPELINE-TRUTHFUL-LOGGING-FOLLOWUP (2026-06-22): include
+            # stderr too — the bo3.gg client catches request errors with
+            # `print(..., file=sys.stderr)` and returns {} so the subprocess
+            # exits 0. Without stderr we only see "0 matches" on stdout, not
+            # WHY (the network error / timeout / 403 / etc.).
+            stdout_tail = (result.stdout or "")[-600:]
+            stderr_tail = (result.stderr or "").strip()[-600:]
+            stderr_part = f"\nstderr tail: {stderr_tail}" if stderr_tail else ""
             raise RuntimeError(
                 f"missing expected output marker {require_output_marker!r} — "
-                f"subprocess returned 0 but produced no work output. stdout tail: {tail}"
+                f"subprocess returned 0 but produced no work output. "
+                f"stdout tail: {stdout_tail}{stderr_part}"
             )
         for line in result.stdout.splitlines():
             if any(k in line for k in summary_keywords):
