@@ -15695,6 +15695,35 @@ def _():
         "WC bracket scoring cron must be registered with id='wc_bracket_scoring'"
 
 
+@test("MFV-V3-SIGNALS-NIGHTLY-PROPAGATE — match_signals → MFV columns wired into nightly cron")
+def _():
+    """MFV-V3-SIGNALS-NIGHTLY-PROPAGATE (2026-06-22): closes a 90-day silent
+    gap where signal writers (league_season_phase, line_velocity, etc.)
+    populated `match_signals` nightly but nothing copied the values into
+    the corresponding MFV columns. `backfill_mfv_v3_signals.py` existed
+    but was never scheduled — the bug class "script-on-disk-but-not-on-cron".
+    MFV.season_progress was at 0% coverage for 90 days."""
+    sched = _engine_path("workers/scheduler.py").read_text()
+    assert "def job_mfv_v3_signals_propagate(" in sched, (
+        "scheduler must define job_mfv_v3_signals_propagate."
+    )
+    assert "backfill_mfv_v3_signals.py" in sched, (
+        "scheduler must subprocess backfill_mfv_v3_signals.py."
+    )
+    assert 'id="mfv_v3_signals_propagate"' in sched, (
+        "scheduler must register the propagator with stable id."
+    )
+    hook_idx = sched.index('id="mfv_v3_signals_propagate"')
+    hook_block = sched[max(0, hook_idx - 500):hook_idx + 200]
+    assert "CronTrigger(hour=23, minute=30)" in hook_block, (
+        "Propagator must fire at 23:30 UTC — after the v3 signal writers."
+    )
+    assert '"--write"' in sched[sched.index("def job_mfv_v3_signals_propagate("):
+                                  sched.index("def job_nightly_mfv_b_ml3_refresh(")], (
+        "Wrapper must pass --write — without it the script no-op dry-runs."
+    )
+
+
 @test("PIPELINE-RUNS-FAILURE-DIGEST — daily 08:00 UTC email summary of pipeline_runs failures")
 def _():
     """PIPELINE-RUNS-FAILURE-DIGEST (2026-06-22): closes the visibility
