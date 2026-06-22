@@ -867,17 +867,23 @@ def recompute_all_brackets() -> dict:
             ([r[0] for r in user_rows],),
         )
 
-    # AI rows — different conflict target (ai_label). Bulk-upsert one at a
-    # time to honour the partial-unique index (postgres won't pick the right
-    # conflict target across a multi-row VALUES list without an explicit
-    # index reference; per-row is simpler than rewriting the SQL).
+    # AI rows — different conflict target (ai_label). The unique index
+    # `uq_wc_bracket_meta_ai` is PARTIAL: `(ai_label) WHERE ai_label IS NOT NULL`.
+    # Postgres can't match ON CONFLICT to a partial index unless the
+    # predicate is also stated — without `WHERE ai_label IS NOT NULL` here,
+    # every call fails with "there is no unique or exclusion constraint
+    # matching the ON CONFLICT specification" (the bug class that left
+    # wc_bracket_scoring failing every 30 min for 12h+ on 2026-06-21/22).
+    # ai_rows is constructed with ai_label NOT NULL by definition (AI
+    # brackets are discriminated from user brackets by this column), so
+    # the predicate is trivially true for every row we insert.
     for r in ai_rows:
         execute_write(
             """INSERT INTO wc_bracket_meta
                  (ai_label, current_score, group_standings_score,
                   total_score, current_rank, current_percentile)
                VALUES (%s, %s, %s, %s, %s, %s)
-               ON CONFLICT (ai_label) DO UPDATE SET
+               ON CONFLICT (ai_label) WHERE ai_label IS NOT NULL DO UPDATE SET
                  current_score = EXCLUDED.current_score,
                  group_standings_score = EXCLUDED.group_standings_score,
                  total_score = EXCLUDED.total_score,

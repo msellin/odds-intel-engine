@@ -775,12 +775,16 @@ def _generate_for_round(
                     )
                     conn.commit()
 
-        # Make sure a meta row exists for the leaderboard.
+        # Make sure a meta row exists for the leaderboard. Mirror the
+        # partial-unique-index predicate (see line ~615 in the same file
+        # for the other call site that fixed this — this one was missed
+        # in the same refactor and surfaced via wc_bracket_scoring's
+        # 2026-06-21/22 outage).
         execute_write(
             """INSERT INTO wc_bracket_meta (ai_label, current_score, current_rank,
                                             group_standings_score, total_score)
                VALUES (%s, 0, NULL, 0, 0)
-               ON CONFLICT (ai_label) DO NOTHING""",
+               ON CONFLICT (ai_label) WHERE ai_label IS NOT NULL DO NOTHING""",
             (strat,),
         )
 

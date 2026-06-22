@@ -15671,6 +15671,56 @@ def _():
         "WC bracket scoring cron must be registered with id='wc_bracket_scoring'"
 
 
+@test("WC-BRACKET-SCORING-PARTIAL-INDEX — ON CONFLICT (ai_label) carries the partial-index predicate")
+def _():
+    """WC-BRACKET-SCORING-PARTIAL-INDEX (2026-06-22): closes a SQL bug that
+    failed wc_bracket_scoring every 30 min for 12h+ on 2026-06-21/22 with
+    "there is no unique or exclusion constraint matching the ON CONFLICT
+    specification". WC group stage was mid-tournament — customer-facing.
+
+    Root cause: `wc_bracket_meta` has a PARTIAL unique index
+    `uq_wc_bracket_meta_ai ON (ai_label) WHERE (ai_label IS NOT NULL)`.
+    Postgres can't match an ON CONFLICT to a partial index unless the
+    predicate is also stated in the ON CONFLICT clause. Two call sites
+    were missing the predicate:
+      - workers/jobs/wc_bracket_scoring.py (broke the live job)
+      - scripts/generate_ai_brackets.py:783 (same bug, same file
+        already fixed at line ~615 — the second call site was missed
+        in that refactor)
+
+    Both fixed by adding `WHERE ai_label IS NOT NULL` to the ON CONFLICT
+    specification. Verified live (insert + upsert + cleanup) + full
+    `recompute_all_brackets()` run scored 1 user + 45 AI brackets clean."""
+    scoring = _engine_path("workers/jobs/wc_bracket_scoring.py").read_text()
+    assert "ON CONFLICT (ai_label) WHERE ai_label IS NOT NULL DO UPDATE" in scoring, (
+        "wc_bracket_scoring.py must include `WHERE ai_label IS NOT NULL` "
+        "in its ON CONFLICT clause — Postgres needs the partial-index "
+        "predicate stated explicitly to match `uq_wc_bracket_meta_ai`."
+    )
+
+    gen = _engine_path("scripts/generate_ai_brackets.py").read_text()
+    # Both call sites in generate_ai_brackets.py must carry the predicate;
+    # the one without was the second half of the same bug.
+    assert gen.count("ON CONFLICT (ai_label) WHERE ai_label IS NOT NULL") >= 2, (
+        "generate_ai_brackets.py must have the predicate on BOTH ON CONFLICT "
+        "(ai_label) call sites. The line ~615 fix originally caught one but "
+        "the line ~783 fix shipped 2026-06-22 caught the other."
+    )
+    # Negative assertion: no bare `ON CONFLICT (ai_label) DO` anywhere
+    # — that's the exact pattern that fails against a partial index.
+    import re
+    bare_pattern = re.compile(r'ON CONFLICT\s*\(ai_label\)\s*DO')
+    assert not bare_pattern.search(gen), (
+        "Found a bare `ON CONFLICT (ai_label) DO ...` in generate_ai_brackets.py "
+        "without the partial-index predicate. This is the bug class fixed "
+        "on 2026-06-22 — see WC-BRACKET-SCORING-PARTIAL-INDEX."
+    )
+    assert not bare_pattern.search(scoring), (
+        "Found a bare `ON CONFLICT (ai_label) DO ...` in wc_bracket_scoring.py "
+        "— the same bug pattern. Add `WHERE ai_label IS NOT NULL`."
+    )
+
+
 # ── WC bracket social sharing (BRACKET-SHARE) — 2026-06-02 ─────────────────
 @test("BRACKET-SHARE-ROUTE — share/[token]/page.tsx exists, server-rendered, loads by token")
 def _():
