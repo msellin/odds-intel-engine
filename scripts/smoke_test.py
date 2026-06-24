@@ -4309,6 +4309,40 @@ def test_coolbet_daemon_healthcheck():
     )
 
 
+@test("CDP-NEW-METHOD-PUT — /json/new uses PUT (Chrome 124+ rejects GET with 405)")
+def _():
+    """CDP-NEW-METHOD-PUT (2026-06-24): closes the auto-heal regression
+    surfaced by 3 overnight cdp_auto_login failures (2026-06-21 → 24).
+    Chrome 124+ rejects `GET /json/new?<url>` with HTTP 405 Method Not
+    Allowed — a CSRF mitigation because the GET form let any web page
+    open arbitrary tabs in CDP-Chrome. PUT works on both new and old
+    Chrome. Without this fix, every overnight logged_out → auto-heal
+    fails to open a fresh Coolbet tab, leaving the daemon stuck.
+
+    Pin: _http_put_json helper exists; the /json/new call site uses
+    _http_put_json not _http_get_json."""
+    bs = _engine_path("workers/automation/coolbet_browser_sync.py").read_text()
+
+    assert "async def _http_put_json(" in bs, (
+        "_http_put_json helper must exist — it's the PUT variant of "
+        "_http_get_json that Chrome 124+ requires on /json/new."
+    )
+    put_block = bs[bs.index("async def _http_put_json("):]
+    put_block = put_block[:put_block.index("\n\n")]
+    assert 'method="PUT"' in put_block, (
+        "_http_put_json must pass method='PUT' to urllib.request.Request — "
+        "default GET is what Chrome 124+ rejects."
+    )
+
+    # /json/new call site must use the PUT helper.
+    json_new_idx = bs.index("/json/new?https://www.coolbet.com/")
+    surrounding = bs[max(0, json_new_idx - 300):json_new_idx + 100]
+    assert "_http_put_json" in surrounding, (
+        "The /json/new call site must use _http_put_json, not "
+        "_http_get_json. Chrome 124+ rejects GET on this endpoint."
+    )
+
+
 @test("COOLBET-SELFHEAL-PROFILE-PICKER — chrome_at_profile_picker state short-circuits auto_self_heal")
 def test_coolbet_selfheal_profile_picker():
     """COOLBET-SELFHEAL-PROFILE-PICKER (2026-06-21): closes a recovery gap

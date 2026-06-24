@@ -1152,10 +1152,17 @@ async def _async_read_localStorage(*, allow_open_new_tab: bool,
         # Open via the /json/new convenience endpoint instead of opening
         # a Playwright page. /json/new respects --remote-debugging-port
         # and gives us back a fresh page target with its own ws URL.
-        log.info("No coolbet.com tab — opening one via CDP /json/new.")
+        #
+        # CDP-NEW-METHOD-PUT (2026-06-24): Chrome 124+ requires PUT instead
+        # of GET on `/json/new` (CSRF mitigation — the GET form let any
+        # webpage open arbitrary tabs in CDP-Chrome). Three overnight
+        # cdp_auto_login failures on 2026-06-21 → 23 surfaced this:
+        # `HTTP Error 405: Method Not Allowed`. PUT works on both new and
+        # old Chrome, so use it unconditionally.
+        log.info("No coolbet.com tab — opening one via CDP /json/new (PUT).")
         try:
             new_target = await asyncio.wait_for(
-                _http_get_json(f"{CDP_URL}/json/new?https://www.coolbet.com/"),
+                _http_put_json(f"{CDP_URL}/json/new?https://www.coolbet.com/"),
                 timeout=timeout_s,
             )
             coolbet_target = new_target
@@ -1232,6 +1239,20 @@ async def _http_get_json(url: str) -> object:
     import asyncio, urllib.request, json as _json
     def _fetch():
         with urllib.request.urlopen(url, timeout=5) as resp:
+            return _json.loads(resp.read())
+    return await asyncio.to_thread(_fetch)
+
+
+async def _http_put_json(url: str) -> object:
+    """PUT request for Chrome DevTools Protocol endpoints. Chrome 124+
+    requires PUT instead of GET for `/json/new` (the GET form was a CSRF
+    risk — any web page could open arbitrary tabs in CDP-Chrome by hitting
+    localhost:9222 from a fetch()). Older Chrome (≤123) still accepts PUT
+    on the same endpoints, so this is always the safer choice now."""
+    import asyncio, urllib.request, json as _json
+    def _fetch():
+        req = urllib.request.Request(url, method="PUT")
+        with urllib.request.urlopen(req, timeout=5) as resp:
             return _json.loads(resp.read())
     return await asyncio.to_thread(_fetch)
 
