@@ -50,16 +50,15 @@ jobs:
         run: |
           python3 scripts/export_track_record_snapshot.py
 
-      - name: OpenTimestamps anchor (Bitcoin blockchain proof-of-existence)
-        # Adds a .ots file alongside today's ledger JSON. The .ots is a
-        # cryptographic timestamp that, after ~1-6 hours, will be confirmed
-        # into a Bitcoin block — independently verifiable by anyone running
-        # `ots verify ledger/YYYY-MM-DD.json`. This is a SECOND verification
-        # anchor on top of the GitHub-signed commit: GitHub vouches for the
-        # commit signature, OpenTimestamps vouches for "this file existed
-        # at this Bitcoin block height." Two independent root-of-trust.
-        # Failure is non-fatal — we'd rather ship the ledger without the
-        # OTS anchor than block the daily snapshot on calendar-server outage.
+      - name: OpenTimestamps stamp (Bitcoin blockchain proof-of-existence)
+        # Stamps today's ledger JSON. The .ots file gets a partial Merkle
+        # proof from the OTS calendar servers immediately; the Bitcoin
+        # block-header proof attaches automatically once a Bitcoin block
+        # includes the calendar's commit (~1-6 hours). Anyone can later run
+        # `ots verify ledger/YYYY-MM-DD.json` to independently confirm
+        # "this exact JSON existed at this Bitcoin block height."
+        # Failure is non-fatal — we'd rather ship without OTS than block
+        # the ledger commit on calendar-server outage.
         continue-on-error: true
         run: |
           TODAY=$(date -u +%Y-%m-%d)
@@ -69,12 +68,25 @@ jobs:
             exit 0
           fi
           ots stamp "$LEDGER_FILE"
-          # Result is LEDGER_FILE.ots — anyone can `ots verify` it later.
           if [ -f "${LEDGER_FILE}.ots" ]; then
             echo "OTS stamp created: ${LEDGER_FILE}.ots"
           else
             echo "WARN: OTS stamp did not produce expected file"
           fi
+
+      - name: OpenTimestamps upgrade (pull in Bitcoin confirmations on prior .ots)
+        # `ots stamp` only creates a calendar-pending proof. Once a Bitcoin
+        # block includes the calendar's tip (typically within ~6 hours of
+        # stamping), `ots upgrade` pulls the full Bitcoin block-header
+        # proof down and embeds it permanently in the .ots file. This step
+        # walks every .ots in ledger/ and upgrades any still-pending ones —
+        # so yesterday's stamp gets its Bitcoin proof today.
+        continue-on-error: true
+        run: |
+          for ots_file in ledger/*.ots; do
+            [ -f "$ots_file" ] || continue
+            ots upgrade "$ots_file" || true
+          done
 
       - name: Commit + push if changed
         env:
