@@ -25331,5 +25331,103 @@ def _():
             assert k in d, f"ledger/{name} missing key {k!r}"
 
 
+@test("COMPETITOR-AUDIT-FOREBET-TIPSTRR-BETAMINIC — three more competitor scrapers + audits exist")
+def _():
+    """Three more competitor ROI audits land alongside the SignalOdds /
+    DeepBetting pair. They feed three new rows in the
+    oddsintel.app/#vs-other-public-models comparison block.
+
+    Pinned:
+      1. scrape_forebet.py exists, exports the right markets, hits the
+         documented date URL pattern (predictions-1x2/<date> and
+         under-over-25-goals/<date>)
+      2. scrape_tipstrr.py uses cloudscraper (Cloudflare-gated host) and
+         decodes the HTML-encoded JSON payload (&q; → ")
+      3. scrape_betaminic.py documents the auth-required fail mode and
+         writes an auth_required stub (no fabricated numbers)
+      4. audit_vs_forebet.py + audit_vs_tipstrr.py + audit_vs_betaminic.py
+         all exist and use STAKE = 10.0 / MIN_SAMPLE = 50 for parity
+      5. comparison_forebet.json, comparison_tipstrr.json,
+         comparison_betaminic.json all exist with the published shape
+      6. export_competitor_csvs.py emits forebet.csv + tipstrr.csv +
+         betaminic.csv alongside the existing two
+    """
+    import json, pathlib
+    scripts = pathlib.Path("scripts")
+    for fn in ("scrape_forebet.py", "scrape_tipstrr.py", "scrape_betaminic.py",
+               "audit_vs_forebet.py", "audit_vs_tipstrr.py",
+               "audit_vs_betaminic.py"):
+        assert (scripts / fn).exists(), f"scripts/{fn} must exist"
+
+    fb_src = (scripts / "scrape_forebet.py").read_text()
+    assert "predictions-1x2" in fb_src and "under-over-25-goals" in fb_src, (
+        "scrape_forebet.py must hit BOTH date-keyed URL slugs "
+        "(predictions-1x2/<date> and under-over-25-goals/<date>) — "
+        "the comparison covers 1X2 + OU 2.5"
+    )
+    assert "PAGE_CAP_PER_DAY" in fb_src, (
+        "Forebet caps at ~44 picks/day — if they remove that cap, the "
+        "scraper logs a warning. Pinned so an agent doesn't strip it"
+    )
+
+    ts_src = (scripts / "scrape_tipstrr.py").read_text()
+    assert "cloudscraper" in ts_src, (
+        "Tipstrr is Cloudflare-gated — naive requests get 403. The scraper "
+        "MUST use cloudscraper to mint the JS challenge cookie"
+    )
+    assert '&q;' in ts_src and '"' in ts_src, (
+        "Tipstrr payload is HTML-encoded JSON (&q; = quote). The decode step "
+        "is what makes the parser work — pinned so it can't be silently "
+        "removed"
+    )
+
+    bm_src = (scripts / "scrape_betaminic.py").read_text()
+    assert "auth_required" in bm_src and "BETAMINIC_COOKIE" in bm_src, (
+        "scrape_betaminic.py must (a) emit an auth_required stub when no "
+        "logged-in cookie is present and (b) document the BETAMINIC_COOKIE "
+        "env var as the activation lever — anything else is a paywall bypass"
+    )
+
+    for fn in ("audit_vs_forebet.py", "audit_vs_tipstrr.py",
+               "audit_vs_betaminic.py"):
+        src = (scripts / fn).read_text()
+        assert "MIN_SAMPLE = 50" in src, (
+            f"{fn} must keep the 50-bet sample-size gate (drops 'ok' "
+            "status to 'insufficient-data-pending' below this)"
+        )
+        assert "STAKE = 10.0" in src, (
+            f"{fn} must use 10 EUR flat stake — matches the SignalOdds + "
+            "DeepBetting accounting units"
+        )
+
+    for name in ("comparison_forebet.json", "comparison_tipstrr.json",
+                 "comparison_betaminic.json"):
+        p = pathlib.Path("ledger") / name
+        assert p.exists(), f"ledger/{name} must have been written by the audit"
+        d = json.loads(p.read_text())
+        for k in ("source", "snapshot_at_utc", "window", "status",
+                 "scope_notes", "reproducible_via",
+                 "their_stats", "our_stats_same_window"):
+            assert k in d, f"ledger/{name} missing key {k!r}"
+
+    # Betaminic must publish as auth_required until an operator runs the
+    # signed-in scrape — protects against an agent quietly flipping it to "ok"
+    # with fabricated numbers.
+    bm = json.loads((pathlib.Path("ledger") / "comparison_betaminic.json").read_text())
+    assert bm["status"] == "auth_required", (
+        "comparison_betaminic.json must stay at status='auth_required' "
+        "until the operator runs a logged-in scrape — flipping this to "
+        "'ok' silently is the failure mode we want to detect here"
+    )
+
+    # CSV export should emit all five competitors
+    csv_src = (scripts / "export_competitor_csvs.py").read_text()
+    for name in ("export_forebet", "export_tipstrr", "export_betaminic"):
+        assert name in csv_src, (
+            f"export_competitor_csvs.py must define {name}() so the CSVs "
+            "for the new competitors get written alongside the old ones"
+        )
+
+
 if __name__ == "__main__":
     main()

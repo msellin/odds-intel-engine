@@ -1,0 +1,9 @@
+{
+  "status": "auth_required",
+  "reason": "auth-gate confirmed (Login + Register + Access Betamin strings present, body length 271783)",
+  "snapshot_at_utc": "2026-06-24T20:38:34+00:00",
+  "public_landing_url": "https://www.betaminic.com/betamin-builder/public-strategies/",
+  "api_base": "https://www.betaminic.com/betamin-builder/api/",
+  "notes": "Betaminic gates its per-strategy ROI data behind a free-signup email-confirmed account. Auto-signup is out of scope per the scraper policy (no fabricated numbers, no paywall bypass). Operator must sign up manually and re-run this scraper with BETAMINIC_COOKIE in env.",
+  "strategies": []
+}

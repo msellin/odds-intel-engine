@@ -1,0 +1,95 @@
+{
+  "source": "Forebet",
+  "source_url": "https://www.forebet.com/en/football-predictions/predictions-1x2/<date>  (and /under-over-25-goals/<date>)",
+  "snapshot_at_utc": "2026-06-24T20:38:53+00:00",
+  "window": {
+    "start": "2026-05-04",
+    "end": "2026-06-25"
+  },
+  "status": "ok",
+  "min_sample_each_side": 50,
+  "scope_notes": "1X2 highest-prob pick + OU 2.5 pick only, soccer, settled rows (Forebet's own predict_y/predict_no flag), 10 EUR flat stake. Coverage limited to ~last 38 days because Forebet date URLs older than that silently fall back to today.",
+  "reproducible_via": "scripts/scrape_forebet.py + scripts/audit_vs_forebet.py",
+  "their_stats": {
+    "n": 1434,
+    "stake_total": 14340.0,
+    "pnl_total": 2198.5,
+    "roi_pct": 15.33,
+    "hit_rate_pct": 54.04,
+    "avg_odds": 2.304
+  },
+  "their_breakdown": {
+    "by_market": {
+      "1x2": {
+        "n": 823,
+        "stake_total": 8230.0,
+        "pnl_total": 18.8,
+        "roi_pct": 0.23,
+        "hit_rate_pct": 49.82,
+        "avg_odds": 2.401
+      },
+      "over_under_25": {
+        "n": 611,
+        "stake_total": 6110.0,
+        "pnl_total": 2179.7,
+        "roi_pct": 35.67,
+        "hit_rate_pct": 59.74,
+        "avg_odds": 2.172
+      }
+    },
+    "by_pick": {
+      "1x2::1": {
+        "n": 363,
+        "stake_total": 3630.0,
+        "pnl_total": 135.6,
+        "roi_pct": 3.74,
+        "hit_rate_pct": 60.06,
+        "avg_odds": 1.901
+      },
+      "1x2::2": {
+        "n": 280,
+        "stake_total": 2800.0,
+        "pnl_total": 118.1,
+        "roi_pct": 4.22,
+        "hit_rate_pct": 51.43,
+        "avg_odds": 2.45
+      },
+      "1x2::X": {
+        "n": 180,
+        "stake_total": 1800.0,
+        "pnl_total": -234.9,
+        "roi_pct": -13.05,
+        "hit_rate_pct": 26.67,
+        "avg_odds": 3.336
+      },
+      "over_under_25::Over": {
+        "n": 264,
+        "stake_total": 2640.0,
+        "pnl_total": 1192.3,
+        "roi_pct": 45.16,
+        "hit_rate_pct": 61.36,
+        "avg_odds": 2.245
+      },
+      "over_under_25::Under": {
+        "n": 347,
+        "stake_total": 3470.0,
+        "pnl_total": 987.4,
+        "roi_pct": 28.46,
+        "hit_rate_pct": 58.5,
+        "avg_odds": 2.117
+      }
+    }
+  },
+  "their_drop_reasons": {
+    "no_pick_odds": 878,
+    "not_settled": 42
+  },
+  "our_stats_same_window": {
+    "n": 989,
+    "stake_total": 5458.92,
+    "pnl_total": 650.19,
+    "roi_pct": 11.91,
+    "hit_rate_pct": 46.21,
+    "avg_odds": 2.803
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "source": "Tipstrr",
+  "source_url": "https://tipstrr.com/tipster/<slug>/stats",
+  "snapshot_at_utc": "2026-06-24T20:40:00+00:00",
+  "window": {
+    "start": "2026-05-04",
+    "end": "2026-06-25"
+  },
+  "status": "ok",
+  "min_sample_each_side": 50,
+  "scope_notes": "Tipstrr public stats are at (tipster × month) grain — per-bet selection / market detail is paywalled. Their headline ROI here covers ALL football bet types (1X2, OU, AH, BTTS, …); ours covers 1X2 + OU 2.5 only. Window-fit: only month-buckets whose entire span falls inside [start, end) are counted (partial months dropped). Stake normalised to 10 EUR/bet for parity.",
+  "reproducible_via": "scripts/scrape_tipstrr.py + scripts/audit_vs_tipstrr.py",
+  "their_stats": {
+    "n": 209,
+    "stake_total": 2090.0,
+    "pnl_total": -109.14,
+    "roi_pct": -5.22,
+    "hit_rate_pct": 31.58,
+    "avg_odds": 3.064,
+    "tipsters_pooled": [
+      "star-tips",
+      "mls-value",
+      "main-draws-model-top-euros"
+    ]
+  },
+  "their_breakdown": {
+    "by_tipster": [
+      {
+        "slug": "star-tips",
+        "name": "star tips",
+        "n": 142,
+        "months_in_window": 2,
+        "stake_total": 1420.0,
+        "pnl_total": -108.0,
+        "roi_pct": -7.61,
+        "hit_rate_pct": 30.99,
+        "avg_odds": 2.944
+      },
+      {
+        "slug": "master-football-tipster",
+        "n": 0,
+        "months_in_window": 0
+      },
+      {
+        "slug": "mls-value",
+        "name": "MLS Value",
+        "n": 28,
+        "months_in_window": 2,
+        "stake_total": 280.0,
+        "pnl_total": -43.14,
+        "roi_pct": -15.41,
+        "hit_rate_pct": 39.29,
+        "avg_odds": 2.042
+      },
+      {
+        "slug": "main-draws-model-top-euros",
+        "name": "Main Draws Model - Top Euros",
+        "n": 39,
+        "months_in_window": 1,
+        "stake_total": 390.0,
+        "pnl_total": 42.0,
+        "roi_pct": 10.77,
+        "hit_rate_pct": 28.21,
+        "avg_odds": 4.237
+      }
+    ]
+  },
+  "our_stats_same_window": {
+    "n": 989,
+    "stake_total": 5458.92,
+    "pnl_total": 650.19,
+    "roi_pct": 11.91,
+    "hit_rate_pct": 46.21,
+    "avg_odds": 2.803
+  }
+}

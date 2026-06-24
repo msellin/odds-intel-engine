@@ -1,0 +1,25 @@
+{
+  "source": "Betaminic",
+  "source_url": "https://www.betaminic.com/betamin-builder/public-strategies/",
+  "snapshot_at_utc": "2026-06-24T20:38:38+00:00",
+  "window": {
+    "start": "2026-05-04",
+    "end": "2026-06-25"
+  },
+  "status": "auth_required",
+  "min_sample_each_side": 50,
+  "scope_notes": "Betaminic gates its strategy ROI behind a free-signup auth wall. Auto-signup is out of policy (no paywall bypass / no fabricated numbers). Comparison-block row should render as \"Betaminic — pending audit (signup required)\" until the operator runs scripts/scrape_betaminic.py with a logged-in BETAMINIC_COOKIE.",
+  "reproducible_via": "scripts/scrape_betaminic.py + scripts/audit_vs_betaminic.py",
+  "their_stats": {
+    "n": 0,
+    "note": "auth-gate confirmed (Login + Register + Access Betamin strings present, body length 271783)"
+  },
+  "our_stats_same_window": {
+    "n": 989,
+    "stake_total": 5458.92,
+    "pnl_total": 650.19,
+    "roi_pct": 11.91,
+    "hit_rate_pct": 46.21,
+    "avg_odds": 2.803
+  }
+}
