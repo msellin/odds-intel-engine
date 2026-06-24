@@ -25162,5 +25162,40 @@ def _():
         )
 
 
+@test("CLOSING-SNAP — 5-min cron + fetch_odds is_closing fix for CLV coverage")
+def _():
+    """closing_snap.py snaps imminent matches every 5 min; fetch_odds.py now
+    computes is_closing from minutes_to_kickoff (was hardcoded False, so the
+    closing-line markers never fired). Together they ensure clv_pinnacle has a
+    real closing-line snapshot to resolve against."""
+    import pathlib
+
+    snap_src = pathlib.Path("workers/jobs/closing_snap.py").read_text()
+    assert "def run_closing_snap" in snap_src
+    assert "WINDOW_PRE_MIN" in snap_src and "WINDOW_POST_MIN" in snap_src, (
+        "closing_snap must define a kickoff-imminent window"
+    )
+    assert "True," in snap_src and "is_closing" in snap_src, (
+        "closing_snap stores snaps with is_closing=TRUE"
+    )
+
+    fetch_src = pathlib.Path("workers/jobs/fetch_odds.py").read_text()
+    assert "abs(minutes_to_kickoff) <= 15" in fetch_src, (
+        "fetch_odds must compute is_closing from minutes_to_kickoff — was "
+        "hardcoded False, so the pre-kickoff crons never produced closing "
+        "markers and clv_pinnacle measurement leaned on the latest-snapshot "
+        "fallback instead of the real closing line."
+    )
+
+    sched_src = pathlib.Path("workers/scheduler.py").read_text()
+    assert "job_closing_snap" in sched_src
+    assert 'minute="*/5"' in sched_src or "minute='*/5'" in sched_src, (
+        "scheduler must run closing_snap every 5 min during peak hours so "
+        "every imminent match gets a Pinnacle close snapshot — without this "
+        "only the (rare) match kicking off at one of the 13:30/17:30/20:00 "
+        "cron times would be captured."
+    )
+
+
 if __name__ == "__main__":
     main()

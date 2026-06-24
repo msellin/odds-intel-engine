@@ -338,6 +338,14 @@ def job_odds_pre_kickoff():
     _run_job("odds_pre_kickoff", run_odds, mark_closing=True)
 
 
+def job_closing_snap():
+    """CLOSING-LINE-COVERAGE: every 5 min, snap odds for matches in T-15→T+5.
+    Stored with is_closing=TRUE so get_closing_odds() and clv_pinnacle resolve
+    against the actual closing line rather than the latest stale pre-match snap."""
+    from workers.jobs.closing_snap import run_closing_snap
+    _run_job("closing_snap", run_closing_snap)
+
+
 def job_odds_tomorrow():
     """OPENING-LINE-MOVE-CAPTURE (2026-05-25): fetch odds for TOMORROW's
     matches at 22:00 UTC. The match-day morning fetch at 04:00 UTC then
@@ -2373,6 +2381,12 @@ def main():
                       id="odds_prekick_1730", name="Odds Pre-KO 17:30")
     scheduler.add_job(job_odds_pre_kickoff, CronTrigger(hour=20, minute=0),
                       id="odds_prekick_2000", name="Odds Pre-KO 20:00")
+
+    # CLOSING-LINE-COVERAGE: per-fixture closing snap every 5 min, peak hours.
+    # Catches matches with kickoff in T-15→T+5 — without this only ~25% of
+    # bets had a Pinnacle pre-KO snap, hurting CLV measurement.
+    scheduler.add_job(job_closing_snap, CronTrigger(hour="12-23", minute="*/5"),
+                      id="closing_snap_5min", name="Closing snap (5min)")
 
     # AF-INJURIES-LATE (2026-06-01): single 08:00 UTC injury fetch replaces
     # the previous 10:30 + 13:00 + 16:00 schedule. ~30 AF calls/day saved.

@@ -26,6 +26,9 @@
 24/7   ③ Odds            run_odds()                Every 30min (:00 and :30) — AF bulk odds, 13 bookmakers
                                                     + mark_closing runs at 13:30, 17:30, 20:00 (pre-KO windows)
                                                     (WC-OVERNIGHT-COVERAGE 2026-06-12 — was 07-22, expanded to cover overnight WC kickoffs)
+*/5 12-23 ㊵ Closing snap  run_closing_snap()        CLOSING-LINE-COVERAGE 2026-06-24 — per-fixture AF /odds for matches in T-15→T+5, stored with is_closing=TRUE.
+                                                    Solves the gap where only ~25% of bets had a Pinnacle pre-KO snap; clv_pinnacle measurement now resolves against the real closing line.
+                                                    Also fixed: fetch_odds.py was hardcoding is_closing=False; now computes from minutes_to_kickoff.
 07:15  ⑩ Match Previews  run_match_previews()      Top 10 matches → Gemini 200-word previews (ENG-3)
 07:30  ⑲ WC AI Previews  run_wc_match_previews()   Every WC fixture in next 7d → Gemini 80-120 word previews. Gated to WC window (2026-06-04 → 2026-07-19); no-op outside. Idempotent (<24h-old previews skip Gemini call). Reuses `match_previews` table — distinct match_ids so no clash with club preview job. (WC-AI-PREVIEW)
 10/12/14/16  ⑪ Email Digest Slots  run_email_digest()  Smart-slot digest — first slot whose pending-bet signal score ≥ EMAIL_DIGEST_MIN_SIGNAL sends; later slots see per-user lock and skip (ENG-4 / EMAIL-DIGEST-SMART)

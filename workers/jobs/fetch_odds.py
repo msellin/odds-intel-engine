@@ -132,11 +132,11 @@ def fetch_af_odds(target_date: str) -> int:
 
         kickoff = match_kickoffs.get(match_id, "")
         minutes_to_kickoff = _compute_minutes_to_kickoff(kickoff)
+        is_closing = minutes_to_kickoff is not None and abs(minutes_to_kickoff) <= 15
 
         for row in parsed:
             combo = (match_id, row["bookmaker"], row["market"], row["selection"])
             is_opening = combo not in existing_combos
-            # Add to seen so later rows in same batch don't double-mark
             existing_combos.add(combo)
             all_tuples.append((
                 match_id,
@@ -145,7 +145,7 @@ def fetch_af_odds(target_date: str) -> int:
                 row["selection"],
                 row["odds"],
                 now,
-                False,
+                is_closing,
                 minutes_to_kickoff,
                 row.get("handicap_line"),
                 is_opening,
