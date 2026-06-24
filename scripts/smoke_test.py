@@ -25262,5 +25262,74 @@ def _():
     assert "T24H-COVERAGE" in src
 
 
+@test("COMPETITOR-AUDIT-SIGNALODDS-DEEPBETTING — scrapers + audit scripts exist + parse")
+def _():
+    """Two new competitor ROI audits land alongside the existing
+    production_audit_vs_winnerodds.py. They feed /vs/signalodds and
+    /vs/deepbetting (and the future /api/v1/track-record meta).
+
+    Pinned (so the comparison surface can't silently rot):
+      1. scrape_signalodds.py exists and exposes parse_card() + parse_page()
+      2. scrape_deepbetting.py exists and points at the deepbetting.io
+         /backend/api/predictions-api.php?type=stats endpoint
+      3. scrape_bet_analytix.py exists and documents the premiumRequired
+         fail-mode (so an agent doesn't reinvent it next time)
+      4. audit_vs_signalodds.py + audit_vs_deepbetting.py exist and pull
+         their MIN_SAMPLE gate from a constant (so the published number
+         can't silently flip to "insufficient-data-pending" without a code
+         review)
+      5. ledger/comparison_*.json files were produced (the audit ran end
+         to end at least once)
+    """
+    import json, pathlib
+    scripts = pathlib.Path("scripts")
+    for fn in ("scrape_signalodds.py", "scrape_deepbetting.py",
+               "scrape_bet_analytix.py", "audit_vs_signalodds.py",
+               "audit_vs_deepbetting.py"):
+        assert (scripts / fn).exists(), f"scripts/{fn} must exist"
+
+    so_src = (scripts / "scrape_signalodds.py").read_text()
+    assert "def parse_card" in so_src and "def parse_page" in so_src, (
+        "scrape_signalodds.py must expose parse_card + parse_page (the seam "
+        "the parser-tolerance tests will eventually hit)"
+    )
+    assert "PAGE_SIZE = 12" in so_src, (
+        "SignalOdds renders 12 cards/page — if they change this, the "
+        "scraper bails silently without this constant"
+    )
+
+    db_src = (scripts / "scrape_deepbetting.py").read_text()
+    assert "/backend/api/predictions-api.php?type=stats" in db_src, (
+        "scrape_deepbetting.py must hit the documented public stats endpoint"
+    )
+
+    ba_src = (scripts / "scrape_bet_analytix.py").read_text()
+    assert "premiumRequired" in ba_src and "scrape_deepbetting.py" in ba_src, (
+        "scrape_bet_analytix.py must document the premiumRequired fail-mode "
+        "and point to the working DeepBetting alternative"
+    )
+
+    for fn in ("audit_vs_signalodds.py", "audit_vs_deepbetting.py"):
+        src = (scripts / fn).read_text()
+        assert "MIN_SAMPLE = 50" in src, (
+            f"{fn} must keep the 50-bet sample-size gate (drops 'ok' "
+            "status to 'insufficient-data-pending' below this)"
+        )
+        assert "STAKE = 10.0" in src, (
+            f"{fn} must use 10 EUR flat stake — matches the WinnerOdds + "
+            "our internal accounting unit"
+        )
+
+    # The audit JSONs exist and parse with the published shape
+    for name in ("comparison_signalodds.json", "comparison_deepbetting.json"):
+        p = pathlib.Path("ledger") / name
+        assert p.exists(), f"ledger/{name} must have been written by the audit"
+        d = json.loads(p.read_text())
+        for k in ("source", "snapshot_at_utc", "window", "status",
+                 "scope_notes", "reproducible_via",
+                 "their_stats", "our_stats_same_window"):
+            assert k in d, f"ledger/{name} missing key {k!r}"
+
+
 if __name__ == "__main__":
     main()

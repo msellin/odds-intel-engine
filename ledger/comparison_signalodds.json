@@ -1,0 +1,63 @@
+{
+  "source": "SignalOdds",
+  "source_url": "https://signalodds.com/predictions/past?sport=soccer",
+  "snapshot_at_utc": "2026-06-24T18:40:07+00:00",
+  "window": {
+    "start": "2026-05-04",
+    "end": "2026-06-25"
+  },
+  "status": "ok",
+  "min_sample_each_side": 50,
+  "scope_notes": "1X2 + OU 2.5 only, soccer, settled bets (Correct/Incorrect), open/non-paywalled picks only (premium/PRO cards excluded — their odds and exact pick are hidden), 10 EUR flat stake.",
+  "reproducible_via": "scripts/scrape_signalodds.py + scripts/audit_vs_signalodds.py",
+  "their_stats": {
+    "n": 1157,
+    "stake_total": 11570.0,
+    "pnl_total": -50.5,
+    "roi_pct": -0.44,
+    "hit_rate_pct": 50.56,
+    "avg_odds": 2.047
+  },
+  "their_breakdown": {
+    "by_model": {
+      "The Pitch Master": {
+        "n": 1112,
+        "stake_total": 11120.0,
+        "pnl_total": -145.5,
+        "roi_pct": -1.31,
+        "hit_rate_pct": 50.0,
+        "avg_odds": 2.053
+      },
+      "The World Cup Maestro": {
+        "n": 45,
+        "stake_total": 450.0,
+        "pnl_total": 95.0,
+        "roi_pct": 21.11,
+        "hit_rate_pct": 64.44,
+        "avg_odds": 1.903
+      }
+    },
+    "by_market": {
+      "1x2": {
+        "n": 1157,
+        "stake_total": 11570.0,
+        "pnl_total": -50.5,
+        "roi_pct": -0.44,
+        "hit_rate_pct": 50.56,
+        "avg_odds": 2.047
+      }
+    }
+  },
+  "their_drop_reasons": {
+    "premium_paywalled": 1219,
+    "out_of_window": 5240
+  },
+  "our_stats_same_window": {
+    "n": 989,
+    "stake_total": 5458.92,
+    "pnl_total": 650.19,
+    "roi_pct": 11.91,
+    "hit_rate_pct": 46.21,
+    "avg_odds": 2.803
+  }
+}
