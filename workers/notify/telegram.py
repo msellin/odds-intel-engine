@@ -156,6 +156,68 @@ def send_telegram(
         return None
 
 
+def send_telegram_public(
+    msg: str,
+    *,
+    silent: bool = False,
+    reply_markup: Optional[dict] = None,
+) -> Optional[int]:
+    """Post `msg` to the PUBLIC Telegram channel (separate from the operator
+    chat used by send_telegram).
+
+    Env required:
+        TELEGRAM_BOT_TOKEN         same bot token as send_telegram
+        TELEGRAM_PUBLIC_CHANNEL    public channel target — accepts either
+                                   '@oddsintelpicks' (username) or a numeric
+                                   chat_id starting with -100…
+
+    The bot MUST be an admin of the channel with 'Post Messages' permission,
+    or Telegram returns 403 "bot is not a member of the channel chat".
+
+    Differences from send_telegram:
+      - Different chat target (the channel, not the operator)
+      - NO prefix — public messages should look clean, not '[OI] ...'
+      - No dedup window — every pick should post once and only once at
+        signal time; callers should not retry, and the pipeline gates
+        per-bet writes via simulated_bet.signal_message_id
+      - Returns the channel-side message_id on success, None on failure
+        (and never raises)
+    """
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    channel = os.getenv("TELEGRAM_PUBLIC_CHANNEL")
+    if not token or not channel:
+        return None  # not configured — silently skip
+
+    payload: dict = {
+        "chat_id": channel,
+        "text": msg[:4000],
+        "disable_notification": silent,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
+
+    try:
+        resp = requests.post(
+            _API_URL.format(token=token),
+            json=payload,
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            try:
+                return int(resp.json().get("result", {}).get("message_id") or 0) or None
+            except Exception:
+                return None
+        log.warning(
+            "Telegram public sendMessage %d: %s", resp.status_code, resp.text[:200],
+        )
+        return None
+    except Exception as e:
+        log.warning("Telegram public send failed: %s", e)
+        return None
+
+
 def record_bet_alert(
     simulated_bet_id: str,
     message_id: int,
