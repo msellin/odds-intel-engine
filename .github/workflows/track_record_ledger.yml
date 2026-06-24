@@ -1,0 +1,87 @@
+name: OddsIntel — Daily Track-Record Ledger
+
+# CLOSING-LINE-LEDGER (2026-06-24): publishes a daily, GitHub-signed snapshot
+# of every settled calibrated pre-match bet to ledger/YYYY-MM-DD.json + a
+# rolling ledger/latest.json + ledger/index.json with sha256 of each daily
+# file. Together with /api/v1/track-record this is the verification stack:
+# anyone can clone the repo, replay every pick against ESPN/Flashscore, and
+# verify the timestamp from the git commit date (signed by github-actions[bot]).
+#
+# Runs nightly at 22:45 UTC — after settlement (21:00) and after the
+# settlement-driven CLV backfill is committed to simulated_bets.
+
+on:
+  schedule:
+    - cron: '45 22 * * *'  # 22:45 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: track-record-ledger
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install minimal deps
+        run: |
+          pip install --quiet psycopg2-binary python-dotenv rich
+
+      - name: Export snapshot
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          python3 scripts/export_track_record_snapshot.py
+
+      - name: Commit + push if changed
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Add only the ledger directory — never anything else.
+          git add ledger/
+
+          if git diff --cached --quiet; then
+            echo "No ledger changes — exiting cleanly."
+            exit 0
+          fi
+
+          # Summary line pulled from the just-written index.json (latest entry).
+          SUMMARY=$(python3 -c "
+          import json, datetime
+          idx = json.load(open('ledger/index.json'))
+          today = datetime.date.today().isoformat()
+          row = idx.get(today, {})
+          n = row.get('n_bets', '?')
+          roi = row.get('roi_pct', '?')
+          sha = (row.get('sha256') or '')[:12]
+          print(f'{today} · n={n} · ROI {roi}% · sha={sha}')
+          ")
+
+          git commit -m "ledger: $SUMMARY
+
+          Auto-published snapshot of the calibrated pre-match public ledger.
+          Verifiable: anyone can replay each bet against ESPN/Flashscore
+          using match_id + kickoff_utc; the sha256 in ledger/index.json
+          locks the snapshot bytes for the day."
+
+          git push origin HEAD:main
