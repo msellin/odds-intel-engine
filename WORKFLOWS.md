@@ -62,6 +62,7 @@
 21:30  ⑬ Health Alert    run_settlement_check()    Alerts if >5 pending bets on finished matches after settlement
        ⑮ Settle Recon  settle_reconcile.run()    MONEY-SETTLE-RECON: alerts if >2 finished matches have stuck pending bets
 22:00  ⑲ Tomorrow odds   job_odds_tomorrow()        OPENING-LINE-MOVE-CAPTURE 2026-05-25 — fetch odds for tomorrow's matches; gives the next morning's 04:00 fetch a yesterday→today delta to compute `overnight_line_move`. Replaces the broken 02:00/04:00 OVERNIGHT slots that fetched today's matches (no prior snapshot existed).
+04/10/16 ⑲ Tomorrow odds (T24H-COVERAGE) job_odds_tomorrow()  T24H-COVERAGE 2026-06-24 — three additional fetches of tomorrow's odds, spaced 6h apart. Combined with the existing 22:00 fetch, every kickoff hour gets a snap within ±3h of T-24h. Backstops the day-ahead backtest finding that picks with T-24h max-odds snap return +19.76% ROI vs production baseline +9.80% (`dev/active/day_ahead_backtest_results.json`); target coverage 15% → 60-70%. Cost: ~40 AF calls/day extra on 7500/day budget.
 22:30  ⑳ MFV B-ML3 v2   job_nightly_mfv_b_ml3_refresh()  Refreshes B-ML3 v2 *_at_t6h feature columns for matches that finished today
 22:45  ㉑ MFV form mom. job_nightly_mfv_form_momentum_refresh()  Catches form_momentum for any matches that the live MFV builder missed
 22:50  ㉒ Team rating    job_team_avg_player_rating()    AF-PLAYER-RATINGS 2026-05-25 — rolling 10-match team avg AF player rating → match_signals
@@ -86,6 +87,9 @@ Daily 06:30 ㉞ WC odds   job_wc_odds_sweep()             ODDS-API-WC-DAILY-CRON
 */30   ⑯ Dash Cache Ref  write_dashboard_cache()   Rebuilds dashboard_cache at :15 and :45 — keeps /performance fresh
 */5    ⑭ Healthcheck     job_healthcheck_ping()    Pings healthchecks.io every 5min — external dead-man's switch
 09:35  ⑬ Health Alert    run_morning_checks()      Alerts if 0 bets placed or >10 matches missing Pinnacle odds
+22:45  ㊳ Ledger snapshot  .github/workflows/track_record_ledger.yml  CLOSING-LINE-LEDGER 2026-06-24 — GitHub Actions cron. Runs `scripts/export_track_record_snapshot.py` to write `ledger/YYYY-MM-DD.json` + `ledger/latest.json` + `ledger/index.json` (with sha256), then stamps via OpenTimestamps (`ots stamp`) → `.ots` file. Walks all .ots files and runs `ots upgrade` to pull in any newly-confirmed Bitcoin block-header proofs (prior days). Commits as `github-actions[bot]`. Three independent verification anchors: live API at /api/v1/track-record + GitHub-signed commit + Bitcoin blockchain via OTS.
+
+Telegram public channel posting — every calibrated-maturity pre-match pick (1x2/OU/BTTS, no AH) auto-posts to `@oddsintelpicks` via `workers.notify.telegram.send_telegram_public()` from inside `coolbet_signaler.py` (PUBLIC-CHANNEL-POST hook, 2026-06-24). Beta/active/experimental picks stay in the operator chat only. Triggered same moment as the operator-side signal; no separate cron.
 10-22  ⑬ Health Alert    run_snapshot_check()      Hourly: alerts if last LivePoller snapshot >25min stale
 ```
 

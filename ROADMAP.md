@@ -120,6 +120,56 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 ---
 
+## Current System State (2026-06-24)
+
+> **Note 2026-06-24**: Major product collapse. The frontend surface narrowed from
+> ~17 public pages (Free/Pro/Elite tiered) to 5: landing, /picks, /performance,
+> /privacy, /terms. ~40,000 LoC deleted from frontend. Backend pipeline runs
+> unchanged — all bots, all crons, all leagues still being processed. The
+> simplification is purely about what gets *surfaced* to users. See the
+> "Public surface 2026-06-24" subsection below for current truth. The
+> 2026-06-15 section that follows is preserved for historical context.
+
+### Public surface (2026-06-24, post-collapse)
+| Surface | Status |
+|---------|--------|
+| `/` landing | ✅ Minimal hero pulling live ROI from `/api/v1/track-record` |
+| `/picks` | ✅ Live pending pre-match picks for the next 36 hours, free, no signup |
+| `/performance` | ✅ Settled track record + per-bot leaderboard (no tabs to deleted pages) |
+| `/privacy`, `/terms` | ✅ Minimal nav, retained for legal |
+| `/api/v1/track-record` | ✅ Public JSON feed of settled bets (median CLV, beat-rate, ROI) |
+| `/api/v1/upcoming` | ✅ Public JSON feed of pending picks (next 36h) |
+| `/admin/*` | ✅ Operator-only, untouched by collapse |
+| WC pages, /value-bets, /matches/*, /live, /accuracy, /bankroll, /learn, /how-it-works, /methodology, /my-picks, /predictions, /profile, /recaps, /vs, /welcome, /pricing, /changelog | ❌ Deleted |
+| Stripe checkout/upgrade/portal | ❌ Deleted (webhook retained for 2 legacy subscribers) |
+| Tier matrix (Free/Pro/Elite) | ❌ Deprecated — no paid product right now |
+
+### Verification stack (added 2026-06-24)
+| Layer | Mechanism |
+|-------|-----------|
+| Live JSON feed | `/api/v1/track-record` and `/api/v1/upcoming` |
+| Daily public ledger | `ledger/YYYY-MM-DD.json` committed by `github-actions[bot]` nightly at 22:45 UTC via `.github/workflows/track_record_ledger.yml`; SHA-256 in `ledger/index.json` |
+| Bitcoin blockchain anchor | OpenTimestamps stamp on every daily snapshot; the workflow's `ots upgrade` step pulls in Bitcoin block-header proofs the day after stamping |
+| Open source | engine + web both public on GitHub; anyone can replay picks against ESPN/Flashscore via match_id + kickoff_utc |
+
+### Telegram public channel (added 2026-06-24)
+- `@oddsintelpicks` — public, free, anyone can join
+- Bot (renamed from "Coolbet Bot" to "OddsIntel" via @BotFather) is admin with Post Messages
+- Pipeline: every calibrated-maturity pre-match pick (1x2/OU/BTTS) auto-posts via `coolbet_signaler.py` → `workers.notify.telegram.send_telegram_public()`
+- Beta/active/experimental picks stay in operator chat only — public channel is curated, not the firehose
+
+### Pipeline additions 2026-06-24
+| Cron | Schedule | Purpose |
+|------|----------|---------|
+| `job_closing_snap` | */5 12-23 UTC | Per-fixture odds snap for matches in T-15→T+5, stored with `is_closing=TRUE` — fixes the historical 25% Pinnacle close coverage |
+| `job_odds_tomorrow` (3 new) | 04:00, 10:00, 16:00 UTC | T24H-COVERAGE — expand T-24h odds snap coverage from 15% to ~60-70% to support the high-ROI early-fire cohort surfaced by `dev/active/day_ahead_backtest_results.json` |
+| GitHub Actions ledger | 22:45 UTC daily | `track_record_ledger.yml` — exports + OTS-stamps + commits the daily snapshot |
+
+### Bot roster changes 2026-06-24
+- **bot_ah_home_fav** — retired (calibrated AH was -13.63% ROI on n=132 since 2026-05-24; one good week then 5 losing weeks). Shadow_bets continues — reactivation gated on ≥30 shadow bets at ≥3% ROI sustained over a week.
+
+---
+
 ## Current System State (2026-06-15)
 
 ### Backend

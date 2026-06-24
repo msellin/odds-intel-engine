@@ -1,6 +1,19 @@
 # OddsIntel — Tier Access Matrix
 
-Access levels for anonymous visitors, free signed-in users, and paid subscribers.
+> **⚠️ DEPRECATED 2026-06-24** — The tiered product surface that this document
+> described has been collapsed. The current public surface (landing /
+> /picks / /performance) is **free for everyone with no tier gating**.
+> Stripe checkout / upgrade / portal endpoints were deleted. Only the
+> Stripe webhook is retained for the 2 legacy paid subscribers; their tier
+> column is honored in DB but the Pro/Elite features they bought no
+> longer have a frontend (refund or comp at operator discretion).
+>
+> The rest of this document is preserved verbatim as a historical record
+> of what the tier system **was** between 2026-04-04 and 2026-06-24. If
+> a paid product returns, design it from scratch — don't restore this.
+>
+> See `ROADMAP.md` → "Current System State (2026-06-24)" for the
+> current truth.
 
 ## Tier Overview
 
