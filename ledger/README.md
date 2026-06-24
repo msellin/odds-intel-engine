@@ -1,21 +1,31 @@
 # OddsIntel — Public Track-Record Ledger
 
-This folder holds **daily, byte-identical, GitHub-signed snapshots** of every
-settled calibrated pre-match bet placed by the OddsIntel football model.
+This folder holds **daily, byte-identical, GitHub-signed, blockchain-anchored
+snapshots** of every settled production pre-match bet placed by the OddsIntel
+football model.
 
-## Verification mechanic
+## Verification mechanic — three independent anchors
 
-1. The live API at `https://oddsintel.app/api/v1/track-record` serves the
-   same data straight from the production database (calibrated bots only,
-   pre-match markets only, no Asian Handicap, settled bets only).
-2. Once per day (22:45 UTC) a GitHub Action runs
-   `scripts/export_track_record_snapshot.py`, writes a deterministic JSON
-   file to `ledger/YYYY-MM-DD.json`, updates `latest.json` and `index.json`,
-   then commits the result as `github-actions[bot]`. The commit signature
-   is verified by GitHub — anyone can check the commit history and confirm
-   the snapshot existed at that date.
-3. `index.json` stores the SHA-256 of each daily file so any future edit
-   would be visible in git history AND would break the recorded hash.
+1. **Live source of truth.** `https://oddsintel.app/api/v1/track-record`
+   serves the same data straight from the production database (production
+   strategies: calibrated + beta + active maturity, no retired; pre-match
+   markets only; settled only).
+2. **GitHub-signed daily commit.** Once per day (22:45 UTC) a GitHub
+   Action runs `scripts/export_track_record_snapshot.py`, writes a
+   deterministic JSON file to `ledger/YYYY-MM-DD.json`, updates
+   `latest.json` and `index.json`, then commits as `github-actions[bot]`.
+   GitHub verifies the commit signature — the commit history itself is
+   the audit trail.
+3. **OpenTimestamps Bitcoin anchor.** Each daily snapshot is hashed and
+   submitted to the OpenTimestamps calendar servers; within ~1-6 hours
+   the resulting `.ots` file is updated to include a Bitcoin block-header
+   proof. After that, anyone can `ots verify ledger/YYYY-MM-DD.json` and
+   independently confirm "this exact JSON existed at this Bitcoin block
+   height" — without trusting GitHub, without trusting us, without
+   trusting any centralized party.
+4. **SHA-256 in index.json.** Lists the hash of every daily file. Any
+   future edit would be visible in git history AND would break the
+   recorded hash. The OTS proof is locked to that exact hash.
 
 ## What's in each daily file
 

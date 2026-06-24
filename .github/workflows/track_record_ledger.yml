@@ -40,7 +40,7 @@ jobs:
 
       - name: Install minimal deps
         run: |
-          pip install --quiet psycopg2-binary python-dotenv rich
+          pip install --quiet psycopg2-binary python-dotenv rich opentimestamps-client
 
       - name: Export snapshot
         env:
@@ -49,6 +49,32 @@ jobs:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
           python3 scripts/export_track_record_snapshot.py
+
+      - name: OpenTimestamps anchor (Bitcoin blockchain proof-of-existence)
+        # Adds a .ots file alongside today's ledger JSON. The .ots is a
+        # cryptographic timestamp that, after ~1-6 hours, will be confirmed
+        # into a Bitcoin block — independently verifiable by anyone running
+        # `ots verify ledger/YYYY-MM-DD.json`. This is a SECOND verification
+        # anchor on top of the GitHub-signed commit: GitHub vouches for the
+        # commit signature, OpenTimestamps vouches for "this file existed
+        # at this Bitcoin block height." Two independent root-of-trust.
+        # Failure is non-fatal — we'd rather ship the ledger without the
+        # OTS anchor than block the daily snapshot on calendar-server outage.
+        continue-on-error: true
+        run: |
+          TODAY=$(date -u +%Y-%m-%d)
+          LEDGER_FILE="ledger/${TODAY}.json"
+          if [ ! -f "$LEDGER_FILE" ]; then
+            echo "No ledger file for ${TODAY} — skipping OTS"
+            exit 0
+          fi
+          ots stamp "$LEDGER_FILE"
+          # Result is LEDGER_FILE.ots — anyone can `ots verify` it later.
+          if [ -f "${LEDGER_FILE}.ots" ]; then
+            echo "OTS stamp created: ${LEDGER_FILE}.ots"
+          else
+            echo "WARN: OTS stamp did not produce expected file"
+          fi
 
       - name: Commit + push if changed
         env:
