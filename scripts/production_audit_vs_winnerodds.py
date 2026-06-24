@@ -206,8 +206,12 @@ def pull_our_picks(start: str, end: str) -> list[dict]:
 
 
 def pull_max_odds(match_ids: list[str], kickoffs: dict) -> dict:
-    """Chunked bulk load — for each (match, market, selection), find
-    MAX odds at T-30min before kickoff."""
+    """Chunked bulk load — for each (match, market, selection), find:
+      - max:       MAX odds at T-60 → T-5 (used for v2/v3/v4 reprice)
+      - pinnacle:  MAX Pinnacle in same window
+      - pin_close: LATEST Pinnacle snapshot before kickoff (closing line)
+      - any_close: LATEST any-book snapshot before kickoff (close fallback)
+    """
     out: dict = {}
     if not match_ids:
         return out
@@ -230,20 +234,50 @@ def pull_max_odds(match_ids: list[str], kickoffs: dict) -> dict:
             if not ko:
                 continue
             ts = r["timestamp"]
-            # Only count snapshots in T-60 → T-5 (realistic placement window)
-            if not (ko - timedelta(minutes=60) <= ts <= ko + timedelta(minutes=5)):
-                continue
-            # Normalize market: 'o/u' and 'over_under_25' both treated as ou25
             mkt = "over_under_25" if r["market"] in ("o/u", "over_under_25") else r["market"]
             key = (r["mid"], mkt, r["selection"])
             o = float(r["odds"])
-            slot = out.setdefault(key, {"max": 0.0, "max_bk": "", "pinnacle": 0.0})
-            if o > slot["max"]:
-                slot["max"] = o
-                slot["max_bk"] = r["bookmaker"] or ""
-            if r["bookmaker"] == "Pinnacle" and o > slot["pinnacle"]:
-                slot["pinnacle"] = o
+            slot = out.setdefault(key, {
+                "max": 0.0, "max_bk": "", "pinnacle": 0.0,
+                "pin_close": 0.0, "pin_close_ts": None,
+                "any_close": 0.0, "any_close_ts": None, "any_close_bk": "",
+            })
+            # Pre-kickoff reprice window (T-60 → T-5): MAX and Pinnacle MAX
+            if ko - timedelta(minutes=60) <= ts <= ko + timedelta(minutes=5):
+                if o > slot["max"]:
+                    slot["max"] = o
+                    slot["max_bk"] = r["bookmaker"] or ""
+                if r["bookmaker"] == "Pinnacle" and o > slot["pinnacle"]:
+                    slot["pinnacle"] = o
+            # Closing line: LATEST snapshot at-or-before kickoff (allow T+5 grace)
+            if ts <= ko + timedelta(minutes=5):
+                if r["bookmaker"] == "Pinnacle" and (
+                    slot["pin_close_ts"] is None or ts > slot["pin_close_ts"]
+                ):
+                    slot["pin_close"] = o
+                    slot["pin_close_ts"] = ts
+                if (slot["any_close_ts"] is None or ts > slot["any_close_ts"]):
+                    slot["any_close"] = o
+                    slot["any_close_ts"] = ts
+                    slot["any_close_bk"] = r["bookmaker"] or ""
     return out
+
+
+def _clv_pct(placed: float, close: float) -> float | None:
+    """CLV% = (placed / close - 1) * 100. Positive = we beat the close."""
+    if not placed or not close or placed <= 1.0 or close <= 1.0:
+        return None
+    return (placed / close - 1.0) * 100
+
+
+def _agg_clv(values: list[float]) -> dict:
+    if not values:
+        return {"n": 0, "avg": 0.0, "beat_pct": 0.0}
+    return {
+        "n": len(values),
+        "avg": sum(values) / len(values),
+        "beat_pct": 100 * sum(1 for v in values if v > 0) / len(values),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -268,11 +302,27 @@ def roi_summary(label: str, rows: list[dict]) -> dict:
 
 
 def run_audit(picks_in, odds_idx, label: str):
-    """Run all 5 variants for a given picks list. Returns dict of summaries."""
+    """Run all variants for a given picks list. Each variant row carries
+    'clv_pin' and 'clv_any' so we can aggregate CLV by variant. CLV is the
+    placed odds vs LATEST pre-kickoff snapshot at Pinnacle (preferred) or
+    any-book (fallback)."""
     cal = [p for p in picks_in if p["maturity"] == "calibrated"]
 
-    v1 = [{"stake": p["stake"] or STAKE_UNIT, "pnl": p["pnl"] or 0,
-            "won": p["result"] == "won"} for p in cal]
+    def _clv_for(p, placed):
+        mkt = "over_under_25" if p["market"] in ("o/u", "over_under_25") else p["market"]
+        slot = odds_idx.get((p["match_id"], mkt, p["selection"])) or {}
+        return (
+            _clv_pct(placed, slot.get("pin_close") or 0.0),
+            _clv_pct(placed, slot.get("any_close") or 0.0),
+        )
+
+    v1 = []
+    for p in cal:
+        placed = p["captured_odds"] or 0.0
+        clv_pin, clv_any = _clv_for(p, placed)
+        v1.append({"stake": p["stake"] or STAKE_UNIT, "pnl": p["pnl"] or 0,
+                    "won": p["result"] == "won",
+                    "clv_pin": clv_pin, "clv_any": clv_any})
 
     v2 = []
     for p in cal:
@@ -282,9 +332,10 @@ def run_audit(picks_in, odds_idx, label: str):
             continue
         mx = slot["max"]
         won = p["result"] == "won"
+        clv_pin, clv_any = _clv_for(p, mx)
         v2.append({"stake": STAKE_UNIT,
                     "pnl": (mx - 1) * STAKE_UNIT if won else -STAKE_UNIT,
-                    "won": won})
+                    "won": won, "clv_pin": clv_pin, "clv_any": clv_any})
 
     v3, v4 = [], []
     for p in picks_in:
@@ -299,18 +350,29 @@ def run_audit(picks_in, odds_idx, label: str):
         edge = raw_p * mx - 1
         won = p["result"] == "won"
         pnl = (mx - 1) * STAKE_UNIT if won else -STAKE_UNIT
+        clv_pin, clv_any = _clv_for(p, mx)
+        row = {"stake": STAKE_UNIT, "pnl": pnl, "won": won,
+                "clv_pin": clv_pin, "clv_any": clv_any}
         if edge >= 0.05:
-            v3.append({"stake": STAKE_UNIT, "pnl": pnl, "won": won})
+            v3.append(row)
         if edge >= 0.07:
-            v4.append({"stake": STAKE_UNIT, "pnl": pnl, "won": won})
+            v4.append(row)
 
     return {"label": label, "v1": v1, "v2": v2, "v3": v3, "v4": v4}
 
 
+def variant_clv(rows: list[dict]) -> dict:
+    """Aggregate CLV for a variant. Prefers Pinnacle close, falls back to any."""
+    pin = [r["clv_pin"] for r in rows if r.get("clv_pin") is not None]
+    any_ = [r["clv_any"] for r in rows if r.get("clv_any") is not None]
+    return {"pin": _agg_clv(pin), "any": _agg_clv(any_)}
+
+
 def print_audit(audit: dict, wo: dict | None):
     print(f"\n[{audit['label']}]")
-    print(f"  {'variant':30s} {'n':>6s} {'stake':>10s} {'pnl':>10s} {'ROI':>8s} {'hit':>6s}")
-    print(f"  {'-'*72}")
+    print(f"  {'variant':30s} {'n':>6s} {'stake':>10s} {'pnl':>10s} {'ROI':>8s} "
+          f"{'hit':>6s} {'CLV(pin)':>10s} {'CLV(any)':>10s} {'beat%':>7s}")
+    print(f"  {'-'*100}")
     summaries = {}
     for k, rows in (
         ("v1 PROD_AS_IS (calibrated)",   audit["v1"]),
@@ -319,15 +381,25 @@ def print_audit(audit: dict, wo: dict | None):
         ("v4 RAW_PROB+MAX 7%edge (all)",  audit["v4"]),
     ):
         s = roi_summary(k, rows)
+        clv = variant_clv(rows)
+        s["clv"] = clv
         summaries[k] = s
         if s["n"] == 0:
             print(f"  {k:30s} (no data)")
             continue
+        pin = clv["pin"]; anyc = clv["any"]
+        pin_str = f"{pin['avg']:+.2f}%(n{pin['n']})" if pin["n"] else "  —      "
+        any_str = f"{anyc['avg']:+.2f}%(n{anyc['n']})" if anyc["n"] else "  —      "
+        beat_str = f"{anyc['beat_pct']:.0f}%" if anyc["n"] else "—"
         print(f"  {s['label']:30s} {s['n']:>6d} {s['stake']:>10.0f} "
-              f"{s['pnl']:>+10.0f} {s['roi']:>+7.2f}% {s['hit_rate']:>5.1f}%")
+              f"{s['pnl']:>+10.0f} {s['roi']:>+7.2f}% {s['hit_rate']:>5.1f}% "
+              f"{pin_str:>10s} {any_str:>10s} {beat_str:>7s}")
     if wo is not None:
+        wo_clv = f"{wo.get('avg_clv', 0):+.2f}%(n{wo.get('clv_n', 0)})"
+        wo_beat = f"{wo.get('clv_beat_pct', 0):.0f}%" if wo.get("clv_n") else "—"
         print(f"  {'v5 WO_SAME_WINDOW':30s} {wo['n']:>6d} {wo['stake']:>10.0f} "
-              f"{wo['pnl']:>+10.0f} {wo['roi']:>+7.2f}% {wo['hit_rate']:>5.1f}%")
+              f"{wo['pnl']:>+10.0f} {wo['roi']:>+7.2f}% {wo['hit_rate']:>5.1f}% "
+              f"{'(WO closing)':>10s} {wo_clv:>10s} {wo_beat:>7s}")
     return summaries
 
 
@@ -423,8 +495,16 @@ def main():
                    "v4 RAW_PROB+MAX 7%edge (all)"):
             s = summaries.get(k)
             if not s or s["n"] == 0: continue
-            print(f"    {k:32s} ROI {s['roi']:>+6.2f}% on n={s['n']:>4}")
-        print(f"    WO same set                      ROI {wo['roi']:>+6.2f}% on n={wo['n']:>4}, avg CLV {wo['avg_clv']:+.2f}%")
+            clv = s.get("clv", {})
+            pin = clv.get("pin", {"n": 0, "avg": 0, "beat_pct": 0})
+            anyc = clv.get("any", {"n": 0, "avg": 0, "beat_pct": 0})
+            ref = pin if pin["n"] >= max(1, s["n"] // 4) else anyc
+            ref_lbl = "pin" if ref is pin and pin["n"] else "any"
+            clv_str = (f"CLV({ref_lbl}) {ref['avg']:+.2f}% beat {ref['beat_pct']:.0f}%/n{ref['n']}"
+                       if ref["n"] else "CLV n/a")
+            print(f"    {k:32s} ROI {s['roi']:>+6.2f}% on n={s['n']:>4}   {clv_str}")
+        print(f"    WO same set                      ROI {wo['roi']:>+6.2f}% on n={wo['n']:>4}, "
+              f"CLV {wo['avg_clv']:+.2f}% beat {wo.get('clv_beat_pct',0):.0f}%/n{wo.get('clv_n',0)}")
 
 
 if __name__ == "__main__":
