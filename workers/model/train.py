@@ -702,7 +702,8 @@ def _load_ou_market_features() -> pd.DataFrame:
 
 def load_training_data(include_pinnacle: bool = False,
                        include_ou_market: bool = False,
-                       include_drift: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
+                       include_drift: bool = False,
+                       cutoff_date: str | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load match_feature_vectors rows with completed outcomes from the DB.
 
     Returns (features_df, targets_df) sorted by match_date ascending.
@@ -722,8 +723,9 @@ def load_training_data(include_pinnacle: bool = False,
     """
     from workers.api_clients.supabase_client import execute_query
 
-    rows = execute_query(
-        """
+    cutoff_clause = "AND mfv.match_date < %s::date" if cutoff_date else ""
+    params = (cutoff_date,) if cutoff_date else ()
+    sql = f"""
         SELECT
             mfv.*,
             m.score_home,
@@ -732,10 +734,31 @@ def load_training_data(include_pinnacle: bool = False,
         JOIN matches m ON m.id = mfv.match_id
         WHERE mfv.match_outcome IS NOT NULL
           AND mfv.match_date IS NOT NULL
+          {cutoff_clause}
         ORDER BY mfv.match_date ASC
-        """,
-        (),
-    )
+    """
+
+    # WALKFWD-TRAIN-SESSION-POOLER (2026-06-24): the regular pool (port 6543,
+    # transaction mode) kills long-running SELECTs that scan most of MFV.
+    # Rewrite the DATABASE_URL to use the session-mode pooler port (5432),
+    # which allows persistent connections. Same host, different port; works
+    # locally and on Railway.
+    import os, re
+    import psycopg2
+    import psycopg2.extras
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        raise RuntimeError("DATABASE_URL not set — required for training data load")
+    session_dsn = re.sub(r":6543/", ":5432/", dsn)
+    rows: list[dict] = []
+    with psycopg2.connect(session_dsn, connect_timeout=15,
+                            options="-c statement_timeout=600000") as conn:
+        conn.set_session(readonly=True)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, params)
+            rows = [dict(r) for r in cur.fetchall()]
+    if cutoff_date:
+        console.print(f"[dim]Training with --cutoff {cutoff_date} — rows before that date only.[/dim]")
 
     if not rows:
         raise ValueError("No completed matches in match_feature_vectors yet")
@@ -808,7 +831,8 @@ def train_all(version: str = "untagged",
               output_root: Path | None = None,
               include_pinnacle: bool = False,
               include_ou_market: bool = False,
-              include_drift: bool = False):
+              include_drift: bool = False,
+              cutoff_date: str | None = None):
     """Train all three models. If called with no args, loads data from DB automatically.
 
     Writes to output_root/<version>/ — defaults to data/models/soccer/<version>/.
@@ -830,6 +854,7 @@ def train_all(version: str = "untagged",
             include_pinnacle=include_pinnacle,
             include_ou_market=include_ou_market,
             include_drift=include_drift,
+            cutoff_date=cutoff_date,
         )
 
     output_dir = (output_root or DEFAULT_OUTPUT_ROOT) / version
@@ -939,10 +964,15 @@ if __name__ == "__main__":
     parser.add_argument("--version", default="untagged",
                         help="Version tag — used as the subdir under data/models/soccer/. "
                              "Set MODEL_VERSION=<version> in env to activate.")
+    parser.add_argument("--cutoff", default=None,
+                        help="Train on matches with match_date < this YYYY-MM-DD. "
+                             "Used for walk-forward backtesting — produces a model "
+                             "that has not seen matches at/after the cutoff.")
     args = parser.parse_args()
     train_all(
         version=args.version,
         include_pinnacle=args.include_pinnacle,
         include_ou_market=args.include_ou_market,
         include_drift=args.include_drift,
+        cutoff_date=args.cutoff,
     )
