@@ -33,7 +33,7 @@ from datetime import datetime, timezone
 
 from workers.api_clients.db import execute_query, execute_write
 from workers.automation.coolbet_placer import _min_edge_for, _MIN_EDGE
-from workers.notify.telegram import send_telegram
+from workers.notify.telegram import send_telegram, send_telegram_public
 
 log = logging.getLogger(__name__)
 
@@ -74,12 +74,15 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
                  sb.calibrated_prob,
                  sb.kelly_fraction,
                  sb.bot_id,
+                 sb.recommended_bookmaker,
                  b.name            AS bot_name,
+                 b.maturity_label  AS maturity,
                  m.date            AS match_date,
                  m.coolbet_match_id AS coolbet_match_id,
                  ht.name           AS home_team,
                  at2.name          AS away_team,
                  l.name            AS league,
+                 l.country         AS country,
                  COUNT(*) OVER (PARTITION BY sb.match_id, sb.market, sb.selection) AS bot_count
           FROM simulated_bets sb
           JOIN bots          b   ON b.id   = sb.bot_id
@@ -160,6 +163,64 @@ def _format_signal(b: dict) -> str:
         f"id: {b['simulated_bet_id']}",
     ]
     return "\n".join(lines)
+
+
+# Markets eligible for the public Telegram channel. Asian Handicap is
+# excluded because calibrated AH was a known money loser (bot_ah_home_fav
+# retired 2026-06-24). We can re-add AH once a calibrated AH bot returns.
+_PUBLIC_MARKETS = {"1x2", "o/u", "over_under_25", "btts"}
+
+
+def _format_market_public(market: str, selection: str) -> str:
+    """Human-readable pick label for the public channel. The operator
+    channel uses raw MARKET → SELECTION (e.g. '1X2 → HOME'); public
+    readers don't want that."""
+    m = (market or "").lower()
+    s = (selection or "").lower()
+    if m == "1x2":
+        if s == "home": return "Home win"
+        if s == "away": return "Away win"
+        if s == "draw": return "Draw"
+    if m in ("o/u", "over_under_25"):
+        if "over" in s: return "Over 2.5 goals"
+        if "under" in s: return "Under 2.5 goals"
+    if m == "btts":
+        return "Both teams to score: Yes" if "yes" in s else "Both teams to score: No"
+    return f"{market} · {selection}"
+
+
+def _format_public_signal(b: dict) -> str:
+    """Render the Telegram message for the PUBLIC @oddsintelpicks channel.
+    Differs from _format_signal:
+      - No operator-internal data (no Kelly %, no stake, no bot_name, no
+        simulated_bet_id, no Coolbet deep link)
+      - Clean human-readable market labels via _format_market_public
+      - Always links to /picks (live feed) + /performance (track record)
+      - No '[OI]' prefix (send_telegram_public skips the prefix)
+    """
+    edge_pct = float(b["edge_percent"] or 0) * 100
+    odds = float(b["odds_at_pick"] or 0)
+    ko = b["match_date"]
+    if isinstance(ko, datetime):
+        ko_str = ko.astimezone(timezone.utc).strftime("%a %d %b · %H:%M UTC")
+    else:
+        ko_str = str(ko)
+
+    pick = _format_market_public(b.get("market", ""), b.get("selection", ""))
+    league = b.get("league") or ""
+    country = b.get("country") or ""
+    league_str = f"{country} {league}".strip() if country else league
+    bookmaker = b.get("recommended_bookmaker") or ""
+    bk_str = f" at <b>{bookmaker}</b>" if bookmaker else ""
+
+    return (
+        f"⚽ <b>{b['home_team']} vs {b['away_team']}</b>\n"
+        f"{league_str} · {ko_str}\n\n"
+        f"✅ Pick: <b>{pick}</b> @ <b>{odds:.2f}</b>{bk_str}\n"
+        f"📈 Edge: <b>+{edge_pct:.1f}%</b>\n\n"
+        f"<a href='https://oddsintel.app/picks'>Live picks</a> · "
+        f"<a href='https://oddsintel.app/performance'>Track record</a>"
+    )
 
 
 def _resolve_coolbet_match_id(match_id, home: str, away: str) -> int | None:
@@ -284,10 +345,39 @@ def signal_all_bets(*, lookahead_hours: int = 36,
                 )
             except Exception as e:
                 log.debug("cache signal_message_id failed (non-fatal): %s", e)
+
+            # PUBLIC-CHANNEL-POST: if this is a calibrated-tier pre-match
+            # pick on a public market, also post to @oddsintelpicks. The
+            # public channel is the audience-facing surface — beta/active/
+            # experimental picks stay in the operator channel only. Failure
+            # is non-fatal (operator-side signal already succeeded).
+            public_msg_id = None
+            if (
+                b.get("maturity") == "calibrated"
+                and b.get("market") in _PUBLIC_MARKETS
+            ):
+                try:
+                    public_msg = _format_public_signal(b)
+                    public_msg_id = send_telegram_public(public_msg)
+                    if public_msg_id is None:
+                        log.warning(
+                            "PUBLIC-CHANNEL-POST: send_telegram_public "
+                            "returned None for sim_id=%s — check that "
+                            "TELEGRAM_PUBLIC_CHANNEL is set and the bot "
+                            "is an admin of the channel.",
+                            sim_id,
+                        )
+                except Exception as e:
+                    log.warning(
+                        "PUBLIC-CHANNEL-POST failed for sim_id=%s "
+                        "(non-fatal): %s", sim_id, e,
+                    )
+
             results.append({
                 "simulated_bet_id": b["simulated_bet_id"],
                 "outcome": "signaled",
                 "telegram_message_id": tg_id,
+                "public_channel_message_id": public_msg_id,
             })
         else:
             # send_telegram returns None on dedup-skip OR on missing creds.

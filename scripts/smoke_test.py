@@ -25197,5 +25197,44 @@ def _():
     )
 
 
+@test("TELEGRAM-PUBLIC — coolbet_signaler hooks send_telegram_public for calibrated picks")
+def _():
+    """The public channel posting (PUBLIC-CHANNEL-POST) must be gated to
+    calibrated-tier picks on pre-match-public markets (1x2/OU/BTTS, no AH).
+    Beta/active/experimental picks stay in the operator chat only."""
+    import pathlib
+    src = pathlib.Path("workers/automation/coolbet_signaler.py").read_text()
+    assert "send_telegram_public" in src
+    assert "_format_public_signal" in src
+    assert "_PUBLIC_MARKETS" in src and "1x2" in src and "btts" in src
+    assert 'b.get("maturity") == "calibrated"' in src, (
+        "public post must be gated on maturity_label == 'calibrated'"
+    )
+    assert "PUBLIC-CHANNEL-POST" in src
+
+    tg_src = pathlib.Path("workers/notify/telegram.py").read_text()
+    assert "def send_telegram_public" in tg_src
+    assert "TELEGRAM_PUBLIC_CHANNEL" in tg_src, (
+        "send_telegram_public must read TELEGRAM_PUBLIC_CHANNEL env"
+    )
+
+
+@test("T24H-COVERAGE — 4x daily odds_tomorrow crons spaced for T-24h ±3h")
+def _():
+    """The day-ahead backtest (2026-06-24) found +19.76% ROI on the T-24h
+    horizon but only 15% coverage. Single 22:00 UTC fetch isn't enough;
+    add 04/10/16 UTC fetches so every kickoff hour gets a snap within
+    ±3h of T-24h. Combined cost ~50 AF calls/day on a 7500/day budget."""
+    import pathlib
+    src = pathlib.Path("workers/scheduler.py").read_text()
+    # Verify all four cron entries exist
+    for hour in (4, 10, 16, 22):
+        assert f'CronTrigger(hour={hour}, minute=0)' in src and 'job_odds_tomorrow' in src, (
+            f"missing odds_tomorrow cron at hour={hour}"
+        )
+    # And the comment references the backtest finding
+    assert "T24H-COVERAGE" in src
+
+
 if __name__ == "__main__":
     main()

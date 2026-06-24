@@ -2373,6 +2373,26 @@ def main():
                       id="odds_tomorrow_2200",
                       name="Odds (tomorrow) 22:00 — OPENING-LINE-MOVE-CAPTURE")
 
+    # T24H-COVERAGE (2026-06-24): the day-ahead backtest landed today
+    # (dev/active/day_ahead_backtest_results.json) found that picks with a
+    # T-24h max-odds snap return +19.76% ROI vs the production baseline of
+    # +9.80% — BUT only 15% of picks currently have a T-24h snap because
+    # the single 22:00 UTC fetch only covers ~22:00-next-day kickoffs at
+    # T-24h. Add four more fetches of tomorrow's odds (04, 10, 16, 22)
+    # spaced every 6h so every kickoff hour gets a fetch within ±3h of
+    # T-24h. Target: coverage 15% → 60-70% on the high-ROI early-fire
+    # cohort. Cost: ~50 AF calls/day (4 × ~10 paginated) on a 7500/day
+    # budget — cheap.
+    scheduler.add_job(job_odds_tomorrow, CronTrigger(hour=4, minute=0),
+                      id="odds_tomorrow_0400",
+                      name="Odds (tomorrow) 04:00 — T24H-COVERAGE")
+    scheduler.add_job(job_odds_tomorrow, CronTrigger(hour=10, minute=0),
+                      id="odds_tomorrow_1000",
+                      name="Odds (tomorrow) 10:00 — T24H-COVERAGE")
+    scheduler.add_job(job_odds_tomorrow, CronTrigger(hour=16, minute=0),
+                      id="odds_tomorrow_1600",
+                      name="Odds (tomorrow) 16:00 — T24H-COVERAGE")
+
     # Odds pre-kickoff (mark_closing): 13:30, 17:30, 20:00 UTC
     # 20:00 covers 19:00-21:00 KO window (replaces regular 20:00 refresh — marks CLV closing line)
     scheduler.add_job(job_odds_pre_kickoff, CronTrigger(hour=13, minute=30),
