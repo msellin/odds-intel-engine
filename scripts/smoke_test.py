@@ -25219,6 +25219,32 @@ def _():
     )
 
 
+@test("INPLAY-P-V2-BAYES-XG — Bayesian Gamma posterior update on 1-1 score state")
+def _():
+    """Per INPLAY-P-V2-100-BET-CHECK 2026-06-24: gate passed (n=112, ROI +5.28%,
+    hit 29.5%). Per-bucket: 3.00-3.99 still -14.7% on n=59 — bucket weakness
+    consistent with under-correcting the leading team's residual scoring
+    rate. Apply the same s=2 Gamma update Strategy J / inplay_i uses so the
+    remaining-minutes Poisson on a 1-1 score is grounded in posteriors,
+    not pre-match priors. Next gate: ≥100 bets after this fix → fit Platt
+    via scripts/fit_platt_inplay_p_v2.py."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
+    p_v2_block = src[src.index("def _check_strategy_p_v2(") : src.index("def _check_strategy_p_v2(") + 4000]
+    assert "INPLAY-P-V2-BAYES-XG" in p_v2_block, (
+        "_check_strategy_p_v2 must carry the INPLAY-P-V2-BAYES-XG tag"
+    )
+    assert "P_PRIOR_STRENGTH = 2.0" in p_v2_block, (
+        "Bayesian prior strength s=2 must be defined (matches inplay_i / J)"
+    )
+    assert "posterior_xg_eq" in p_v2_block and "posterior_xg_opp" in p_v2_block, (
+        "Posterior lambdas for both equalizer and opponent must be computed"
+    )
+    assert "P_PRIOR_STRENGTH + goals_eq" in p_v2_block or "P_PRIOR_STRENGTH + goals_eq)" in p_v2_block, (
+        "Posterior update must use actual goals scored (information from 1-1 state)"
+    )
+
+
 @test("T24H-COVERAGE — 4x daily odds_tomorrow crons spaced for T-24h ±3h")
 def _():
     """The day-ahead backtest (2026-06-24) found +19.76% ROI on the T-24h

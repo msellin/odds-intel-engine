@@ -3157,13 +3157,15 @@ def _check_strategy_p_v2(cand: dict, pm: dict, has_red_card: bool) -> dict | Non
     if eq_team == "home":
         live_odds_val = cand.get("live_1x2_home")
         selection = "home"
-        lambda_eq = float(pm.get("prematch_xg_home") or 1.1)
-        lambda_opp = float(pm.get("prematch_xg_away") or 1.1)
+        pm_xg_eq  = float(pm.get("prematch_xg_home") or 1.1)
+        pm_xg_opp = float(pm.get("prematch_xg_away") or 1.1)
+        goals_eq, goals_opp = sh, sa
     else:
         live_odds_val = cand.get("live_1x2_away")
         selection = "away"
-        lambda_eq = float(pm.get("prematch_xg_away") or 1.1)
-        lambda_opp = float(pm.get("prematch_xg_home") or 1.1)
+        pm_xg_eq  = float(pm.get("prematch_xg_away") or 1.1)
+        pm_xg_opp = float(pm.get("prematch_xg_home") or 1.1)
+        goals_eq, goals_opp = sa, sh
 
     if not live_odds_val:
         return None
@@ -3177,9 +3179,26 @@ def _check_strategy_p_v2(cand: dict, pm: dict, has_red_card: bool) -> dict | Non
     if odds >= 5.0:
         return None
 
+    # INPLAY-P-V2-BAYES-XG (2026-06-24): the prior code passed pre-match xG
+    # directly into _poisson_win_prob, ignoring the information that BOTH
+    # teams have already scored once by minute 30-75. Apply the same
+    # conjugate Gamma update Strategy J (s=2 "matches worth" prior) uses
+    # so the remaining-minutes Poisson is grounded in posterior lambdas
+    # rather than pre-match priors. Activation justified by
+    # INPLAY-P-V2-100-BET-CHECK 2026-06-24: n=112 settled at +5.28% ROI
+    # / hit 29.5%, with the 3.00-3.99 bucket still -14.7% on n=59 —
+    # bucket weakness is consistent with under-correcting the leading
+    # side's residual scoring rate. Posterior shrinkage of pm_xg_opp
+    # via the goal-scored-already update is exactly the correction.
+    P_PRIOR_STRENGTH = 2.0
+    minute_frac = minute / 90.0
+    posterior_xg_eq  = (pm_xg_eq  * P_PRIOR_STRENGTH + goals_eq)  / (P_PRIOR_STRENGTH + minute_frac)
+    posterior_xg_opp = (pm_xg_opp * P_PRIOR_STRENGTH + goals_opp) / (P_PRIOR_STRENGTH + minute_frac)
     remaining_minutes = max(1, 90 - minute)
     scale = remaining_minutes / 90.0
-    model_win_prob = _poisson_win_prob(lambda_eq * scale, lambda_opp * scale, lead_a=0)
+    lambda_eq  = posterior_xg_eq  * scale
+    lambda_opp = posterior_xg_opp * scale
+    model_win_prob = _poisson_win_prob(lambda_eq, lambda_opp, lead_a=0)
     market_prob = _implied_prob(odds)
     edge_pct = (model_win_prob - market_prob) * 100
 
@@ -3196,7 +3215,9 @@ def _check_strategy_p_v2(cand: dict, pm: dict, has_red_card: bool) -> dict | Non
             "score_state": "1-1",
             "eq_team": eq_team,
             "cycles_since_eq": _cycle_count - eq_cycle,
-            "remaining_lam_eq": round(lambda_eq * scale, 3),
-            "remaining_lam_opp": round(lambda_opp * scale, 3),
+            "posterior_xg_eq": round(posterior_xg_eq, 3),
+            "posterior_xg_opp": round(posterior_xg_opp, 3),
+            "remaining_lam_eq": round(lambda_eq, 3),
+            "remaining_lam_opp": round(lambda_opp, 3),
         },
     }
