@@ -1,0 +1,1662 @@
+sport,division_label,date_norm,forecast_type,forecast_status,odds,game_status,confidence
+football,Premier League,20260126,BTTS,Won,1.91,Match Finished,2
+football,Serie A,20260126,Draw No Bet,Won,1.88,Match Finished,2
+football,La Liga,20260126,Over-Under,Lost,3.0,Match Finished,3
+football,Primeira Liga,20260126,Moneyline,Won,1.38,Match Finished,2
+football,Bundesliga,20260127,Moneyline,Lost,1.8,Match Finished,3
+football,Bundesliga,20260127,Over-Under,Lost,1.62,Match Finished,1
+football,UEFA Champions League,20260128,BTTS,Won,1.67,Match Finished,2
+football,UEFA Champions League,20260128,Over-Under,Lost,1.67,Match Finished,1
+football,UEFA Champions League,20260128,Draw No Bet,Push,1.55,Match Finished,1
+football,UEFA Champions League,20260128,Moneyline,Lost,1.5,Match Finished,2
+football,UEFA Champions League,20260128,Over-Under,Lost,1.62,Match Finished,3
+football,UEFA Champions League,20260128,Over-Under,Lost,1.91,Match Finished,1
+football,UEFA Champions League,20260128,Moneyline,Lost,1.28,Match Finished,2
+football,UEFA Champions League,20260128,BTTS,Lost,1.67,Match Finished,2
+football,UEFA Champions League,20260128,BTTS,Won,1.4,Match Finished,2
+football,UEFA Champions League,20260128,Moneyline,Won,1.65,Match Finished,3
+football,UEFA Champions League,20260128,BTTS,Won,1.66,Match Finished,2
+football,UEFA Champions League,20260128,Draw No Bet,Lost,2.1,Match Finished,2
+football,UEFA Champions League,20260128,Moneyline,,1.53,Match Finished,3
+football,UEFA Champions League,20260128,Over-Under,Won,1.44,Match Finished,1
+football,UEFA Champions League,20260128,Moneyline,Won,1.11,Match Finished,2
+football,UEFA Champions League,20260128,Over-Under,Won,1.22,Match Finished,2
+football,UEFA Champions League,20260128,Moneyline,Lost,1.8,Match Finished,1
+football,UEFA Champions League,20260128,Draw No Bet,Lost,1.8,Match Finished,1
+football,Brasileirão Série A,20260128,Moneyline,Lost,2.4,Match Finished,1
+football,Brasileirão Série A,20260128,Draw No Bet,Lost,1.7,Match Finished,2
+football,Brasileirão Série A,20260128,Moneyline,Lost,2.2,Match Finished,3
+football,Brasileirão Série A,20260128,Over-Under,Won,1.62,Match Finished,2
+football,Brasileirão Série A,20260128,BTTS,Won,2.1,Match Finished,2
+football,Brasileirão Série A,20260128,BTTS,Lost,2.0,Match Finished,2
+football,Brasileirão Série A,20260128,Over-Under,Won,1.25,Match Finished,2
+football,UEFA Europa League,20260129,Moneyline,Won,1.27,Match Finished,1
+football,UEFA Europa League,20260129,Moneyline,Won,1.33,Match Finished,1
+football,UEFA Europa League,20260129,Over-Under,Lost,1.67,Match Finished,1
+football,UEFA Europa League,20260129,Moneyline,Lost,1.8,Match Finished,2
+football,UEFA Europa League,20260129,Draw No Bet,Won,1.42,Match Finished,1
+football,UEFA Europa League,20260129,Draw No Bet,Push,1.27,Match Finished,3
+football,UEFA Europa League,20260129,BTTS,Won,1.67,Match Finished,3
+football,UEFA Europa League,20260129,Moneyline,Won,1.55,Match Finished,1
+football,UEFA Europa League,20260129,BTTS,Lost,1.62,Match Finished,3
+football,UEFA Europa League,20260129,Over-Under,Won,1.8,Match Finished,3
+football,UEFA Europa League,20260129,Moneyline,Won,1.5,Match Finished,2
+football,UEFA Europa League,20260129,Over-Under,Lost,1.66,Match Finished,2
+football,UEFA Europa League,20260129,Over-Under,Won,1.57,Match Finished,1
+football,UEFA Europa League,20260129,Moneyline,Won,1.33,Match Finished,1
+football,UEFA Europa League,20260129,Over-Under,Won,1.28,Match Finished,2
+football,UEFA Europa League,20260129,Draw No Bet,Won,1.36,Match Finished,3
+football,UEFA Europa League,20260129,Draw No Bet,Won,1.33,Match Finished,3
+football,UEFA Europa League,20260129,BTTS,Lost,1.95,Match Finished,2
+football,Brasileirão Série A,20260129,Draw No Bet,Won,1.72,Match Finished,1
+football,Brasileirão Série A,20260129,Over-Under,Won,1.33,Match Finished,3
+football,Ligue 1,20260130,Moneyline,Won,1.42,Match Finished,3
+football,Serie A,20260130,Over-Under,Lost,1.14,Match Finished,1
+football,La Liga,20260130,Draw No Bet,Lost,1.35,Match Finished,1
+football,Primeira Liga,20260130,BTTS,Lost,2.0,Match Finished,2
+football,Eredivisie,20260130,Moneyline,Lost,1.91,Match Finished,1
+football,Bundesliga,20260130,Over-Under,Lost,1.62,Match Finished,2
+football,Premier League,20260131,Over-Under,Won,1.91,Match Finished,2
+football,Premier League,20260131,BTTS,Won,1.62,Match Finished,1
+football,Premier League,20260131,Moneyline,Won,1.53,Match Finished,3
+football,Premier League,20260131,BTTS,Won,1.53,Match Finished,3
+football,Premier League,20260131,Over-Under,Lost,1.91,Match Finished,3
+football,Ligue 1,20260131,Moneyline,Won,1.85,Match Finished,1
+football,Ligue 1,20260131,Draw No Bet,Lost,2.6,Match Finished,3
+football,Ligue 1,20260131,Moneyline,Lost,1.9,Match Finished,2
+football,Serie A,20260131,Moneyline,Won,2.1,Match Finished,1
+football,Serie A,20260131,Over-Under,Won,2.1,Match Finished,3
+football,Serie A,20260131,Draw No Bet,Won,1.82,Match Finished,2
+football,La Liga,20260131,Over-Under,Won,1.33,Match Finished,3
+football,La Liga,20260131,Draw No Bet,Push,1.26,Match Finished,2
+football,La Liga,20260131,BTTS,Won,1.7,Match Finished,1
+football,La Liga,20260131,Draw No Bet,Lost,1.83,Match Finished,1
+football,Primeira Liga,20260131,BTTS,Won,1.95,Match Finished,2
+football,Primeira Liga,20260131,Over-Under,Lost,1.8,Match Finished,2
+football,Primeira Liga,20260131,Draw No Bet,Won,2.35,Match Finished,2
+football,Eredivisie,20260131,Over-Under,Won,1.48,Match Finished,3
+football,Eredivisie,20260131,BTTS,Lost,1.62,Match Finished,1
+football,Eredivisie,20260131,Draw No Bet,Won,1.7,Match Finished,3
+football,Bundesliga,20260131,Moneyline,Won,2.05,Match Finished,2
+football,Bundesliga,20260131,Draw No Bet,Won,1.58,Match Finished,3
+football,Bundesliga,20260131,Over-Under,Won,1.33,Match Finished,1
+football,Bundesliga,20260131,Moneyline,Won,1.91,Match Finished,3
+football,Bundesliga,20260131,Over-Under,Won,1.53,Match Finished,1
+football,Bundesliga,20260131,BTTS,Won,1.57,Match Finished,3
+football,Premier League,20260201,Moneyline,Lost,2.15,Match Finished,2
+football,Premier League,20260201,Moneyline,Won,1.55,Match Finished,2
+football,Premier League,20260201,Over-Under,Won,1.8,Match Finished,2
+football,Premier League,20260201,Draw No Bet,Push,1.3,Match Finished,3
+football,Ligue 1,20260201,BTTS,Won,1.95,Match Finished,1
+football,Ligue 1,20260201,Moneyline,Won,2.05,Match Finished,2
+football,Ligue 1,20260201,BTTS,Won,1.62,Match Finished,3
+football,Ligue 1,20260201,BTTS,Won,1.62,Match Finished,3
+football,Ligue 1,20260201,Draw No Bet,Push,1.27,Match Finished,1
+football,Serie A,20260201,BTTS,Lost,1.8,Match Finished,1
+football,Serie A,20260201,Over-Under,Lost,1.62,Match Finished,1
+football,Serie A,20260201,Over-Under,Lost,1.8,Match Finished,2
+football,Serie A,20260201,Over-Under,Won,1.5,Match Finished,1
+football,La Liga,20260201,Draw No Bet,Push,2.42,Match Finished,2
+football,La Liga,20260201,Moneyline,Won,1.85,Match Finished,1
+football,La Liga,20260201,BTTS,Won,1.53,Match Finished,3
+football,La Liga,20260201,Moneyline,Won,1.2,Match Finished,2
+football,Primeira Liga,20260201,BTTS,Won,1.91,Match Finished,1
+football,Primeira Liga,20260201,Over-Under,Won,1.33,Match Finished,1
+football,Primeira Liga,20260201,Draw No Bet,Push,1.1,Match Finished,2
+football,Eredivisie,20260201,Moneyline,Lost,1.8,Match Finished,1
+football,Eredivisie,20260201,Draw No Bet,Push,1.65,Match Finished,3
+football,Eredivisie,20260201,Draw No Bet,Push,1.4,Match Finished,1
+football,Eredivisie,20260201,Over-Under,Won,1.75,Match Finished,1
+football,Eredivisie,20260201,BTTS,Lost,1.5,Match Finished,1
+football,Bundesliga,20260201,Over-Under,Won,1.44,Match Finished,2
+football,Bundesliga,20260201,Moneyline,Won,1.67,Match Finished,1
+football,Premier League,20260202,Moneyline,Won,1.75,Match Finished,3
+football,Serie A,20260202,Draw No Bet,Lost,1.38,Match Finished,3
+football,La Liga,20260202,BTTS,Won,1.95,Match Finished,2
+football,Primeira Liga,20260202,Over-Under,Won,1.8,Match Finished,3
+football,Primeira Liga,20260202,BTTS,Lost,1.57,Match Finished,1
+football,Serie A,20260203,Draw No Bet,Won,1.7,Match Finished,3
+football,Brasileirão Série A,20260204,Over-Under,Won,2.08,Match Finished,2
+football,Brasileirão Série A,20260204,Moneyline,Won,1.36,Match Finished,3
+football,Brasileirão Série A,20260204,BTTS,Lost,1.95,Match Finished,2
+football,Brasileirão Série A,20260204,Over-Under,Won,1.67,Match Finished,1
+football,Brasileirão Série A,20260204,Draw No Bet,Won,1.55,Match Finished,2
+football,Brasileirão Série A,20260204,Moneyline,Lost,1.44,Match Finished,2
+football,Brasileirão Série A,20260205,Over-Under,Won,1.33,Match Finished,2
+football,Brasileirão Série A,20260205,Moneyline,Lost,1.42,Match Finished,3
+football,Brasileirão Série A,20260205,Over-Under,Lost,2.0,Match Finished,1
+football,Premier League,20260206,BTTS,Won,1.8,Match Finished,2
+football,Ligue 1,20260206,Moneyline,Lost,1.56,Match Finished,3
+football,Serie A,20260206,Over-Under,Won,1.57,Match Finished,1
+football,La Liga,20260206,Draw No Bet,Lost,1.36,Match Finished,1
+football,Eredivisie,20260206,Over-Under,Lost,1.85,Match Finished,2
+football,Bundesliga,20260206,BTTS,Won,1.75,Match Finished,3
+football,Premier League,20260207,Over-Under,Won,1.8,Match Finished,1
+football,Premier League,20260207,BTTS,Won,1.53,Match Finished,2
+football,Premier League,20260207,BTTS,Lost,1.7,Match Finished,2
+football,Premier League,20260207,Draw No Bet,Lost,1.5,Match Finished,2
+football,Premier League,20260207,Moneyline,Won,1.62,Match Finished,2
+football,Premier League,20260207,Draw No Bet,Lost,1.52,Match Finished,3
+football,Premier League,20260207,Moneyline,Won,1.67,Match Finished,3
+football,Ligue 1,20260207,Over-Under,Won,1.73,Match Finished,2
+football,Ligue 1,20260207,Moneyline,Won,1.7,Match Finished,2
+football,Ligue 1,20260207,BTTS,Lost,1.8,Match Finished,2
+football,Serie A,20260207,Over-Under,Lost,1.33,Match Finished,1
+football,Serie A,20260207,BTTS,Won,2.25,Match Finished,2
+football,La Liga,20260207,Moneyline,Won,1.14,Match Finished,3
+football,La Liga,20260207,Moneyline,Won,1.83,Match Finished,2
+football,La Liga,20260207,Over-Under,Won,1.8,Match Finished,3
+football,La Liga,20260207,Draw No Bet,Won,2.42,Match Finished,1
+football,Primeira Liga,20260207,BTTS,Won,1.8,Match Finished,3
+football,Primeira Liga,20260207,Moneyline,Lost,1.7,Match Finished,3
+football,Primeira Liga,20260207,Over-Under,Won,1.48,Match Finished,3
+football,Primeira Liga,20260207,Draw No Bet,Lost,2.6,Match Finished,3
+football,Eredivisie,20260207,Moneyline,Won,1.42,Match Finished,3
+football,Eredivisie,20260207,BTTS,Won,1.62,Match Finished,1
+football,Eredivisie,20260207,Draw No Bet,Won,1.3,Match Finished,2
+football,Eredivisie,20260207,Over-Under,Won,1.18,Match Finished,1
+football,Bundesliga,20260207,Over-Under,Lost,1.62,Match Finished,1
+football,Bundesliga,20260207,Moneyline,Won,2.0,Match Finished,2
+football,Bundesliga,20260207,Draw No Bet,Lost,2.1,Match Finished,3
+football,Bundesliga,20260207,Over-Under,Lost,1.91,Match Finished,1
+football,Bundesliga,20260207,Moneyline,Lost,1.8,Match Finished,3
+football,Bundesliga,20260207,BTTS,Won,1.57,Match Finished,1
+football,Premier League,20260208,BTTS,Lost,1.67,Match Finished,1
+football,Premier League,20260208,Over-Under,Lost,2.3,Match Finished,2
+football,Ligue 1,20260208,Draw No Bet,Lost,1.5,Match Finished,2
+football,Ligue 1,20260208,Over-Under,Won,1.73,Match Finished,3
+football,Ligue 1,20260208,Moneyline,Lost,1.91,Match Finished,1
+football,Ligue 1,20260208,Draw No Bet,Push,1.55,Match Finished,1
+football,Ligue 1,20260208,Moneyline,Won,1.45,Match Finished,2
+football,Serie A,20260208,BTTS,Lost,1.95,Match Finished,2
+football,Serie A,20260208,Draw No Bet,Push,1.14,Match Finished,3
+football,Serie A,20260208,Draw No Bet,Lost,1.75,Match Finished,3
+football,Serie A,20260208,Moneyline,Won,1.44,Match Finished,3
+football,La Liga,20260208,Over-Under,Won,1.25,Match Finished,1
+football,La Liga,20260208,Draw No Bet,Won,1.24,Match Finished,3
+football,La Liga,20260208,Moneyline,Lost,1.45,Match Finished,3
+football,La Liga,20260208,BTTS,Won,1.8,Match Finished,1
+football,La Liga,20260208,Over-Under,Lost,1.62,Match Finished,2
+football,Primeira Liga,20260208,Moneyline,Won,1.18,Match Finished,3
+football,Primeira Liga,20260208,Moneyline,Won,1.22,Match Finished,3
+football,Primeira Liga,20260208,BTTS,Lost,1.8,Match Finished,2
+football,Eredivisie,20260208,BTTS,Won,1.5,Match Finished,2
+football,Eredivisie,20260208,Moneyline,,1.75,Match Finished,2
+football,Eredivisie,20260208,Draw No Bet,Won,1.32,Match Finished,3
+football,Eredivisie,20260208,BTTS,Lost,1.57,Match Finished,2
+football,Bundesliga,20260208,Over-Under,Won,1.62,Match Finished,3
+football,Bundesliga,20260208,Over-Under,Won,1.5,Match Finished,2
+football,Serie A,20260209,BTTS,Lost,1.75,Match Finished,2
+football,Serie A,20260209,Moneyline,Won,1.48,Match Finished,3
+football,La Liga,20260209,Over-Under,Lost,1.4,Match Finished,1
+football,Primeira Liga,20260209,Moneyline,Won,1.35,Match Finished,2
+football,Primeira Liga,20260209,BTTS,Won,1.91,Match Finished,2
+football,Premier League,20260210,Moneyline,Lost,1.55,Match Finished,2
+football,Premier League,20260210,BTTS,Won,1.67,Match Finished,3
+football,Premier League,20260210,Over-Under,Won,1.73,Match Finished,1
+football,Premier League,20260210,Draw No Bet,Push,1.32,Match Finished,2
+football,Brasileirão Série A,20260210,Moneyline,Won,1.67,Match Finished,2
+football,Premier League,20260211,Draw No Bet,Won,1.44,Match Finished,1
+football,Premier League,20260211,Moneyline,Lost,1.53,Match Finished,3
+football,Premier League,20260211,Over-Under,Won,1.5,Match Finished,2
+football,Premier League,20260211,Draw No Bet,Push,1.25,Match Finished,2
+football,Premier League,20260211,BTTS,Lost,1.75,Match Finished,3
+football,Eredivisie,20260211,Moneyline,Lost,1.73,Match Finished,3
+football,Eredivisie,20260211,BTTS,Won,1.53,Match Finished,2
+football,Brasileirão Série A,20260211,Moneyline,Lost,1.48,Match Finished,2
+football,Brasileirão Série A,20260211,Draw No Bet,Push,1.68,Match Finished,1
+football,Brasileirão Série A,20260211,Over-Under,Won,1.36,Match Finished,3
+football,Brasileirão Série A,20260211,Moneyline,Won,2.15,Match Finished,2
+football,Brasileirão Série A,20260211,BTTS,Lost,1.67,Match Finished,3
+football,Premier League,20260212,Moneyline,Lost,1.67,Match Finished,3
+football,Brasileirão Série A,20260212,Over-Under,Lost,1.7,Match Finished,1
+football,Brasileirão Série A,20260212,Draw No Bet,Lost,2.68,Match Finished,2
+football,Brasileirão Série A,20260212,Draw No Bet,Won,1.44,Match Finished,2
+football,Brasileirão Série A,20260212,BTTS,Won,1.75,Match Finished,1
+football,Ligue 1,20260213,Over-Under,Won,1.57,Match Finished,1
+football,Ligue 1,20260213,Moneyline,Lost,1.4,Match Finished,3
+football,Serie A,20260213,BTTS,Lost,1.75,Match Finished,2
+football,La Liga,20260213,BTTS,Lost,1.8,Match Finished,1
+football,Primeira Liga,20260213,Moneyline,Won,1.5,Match Finished,3
+football,Primeira Liga,20260213,Draw No Bet,Push,2.1,Match Finished,2
+football,Eredivisie,20260213,Over-Under,Won,1.3,Match Finished,2
+football,Bundesliga,20260213,Draw No Bet,Won,1.23,Match Finished,2
+football,Ligue 1,20260214,Draw No Bet,Push,1.27,Match Finished,3
+football,Ligue 1,20260214,Moneyline,Lost,1.8,Match Finished,2
+football,Ligue 1,20260214,Moneyline,Won,1.91,Match Finished,3
+football,Serie A,20260214,Moneyline,Lost,1.7,Match Finished,2
+football,Serie A,20260214,BTTS,Won,1.8,Match Finished,3
+football,Serie A,20260214,Over-Under,Won,1.28,Match Finished,2
+football,La Liga,20260214,Over-Under,Lost,1.25,Match Finished,2
+football,La Liga,20260214,Over-Under,Lost,1.5,Match Finished,1
+football,La Liga,20260214,Over-Under,Won,1.5,Match Finished,1
+football,La Liga,20260214,BTTS,Won,2.0,Match Finished,2
+football,Primeira Liga,20260214,Draw No Bet,Lost,1.85,Match Finished,3
+football,Primeira Liga,20260214,Draw No Bet,Lost,1.55,Match Finished,2
+football,Primeira Liga,20260214,Draw No Bet,Won,1.22,Match Finished,2
+football,Eredivisie,20260214,BTTS,Won,1.75,Match Finished,3
+football,Eredivisie,20260214,Draw No Bet,Won,1.57,Match Finished,2
+football,Eredivisie,20260214,Over-Under,Lost,1.85,Match Finished,1
+football,Eredivisie,20260214,Over-Under,Lost,1.3,Match Finished,2
+football,Bundesliga,20260214,BTTS,Won,1.8,Match Finished,2
+football,Bundesliga,20260214,BTTS,Lost,1.67,Match Finished,3
+football,Bundesliga,20260214,Over-Under,Lost,1.25,Match Finished,2
+football,Bundesliga,20260214,Moneyline,Won,1.7,Match Finished,3
+football,Bundesliga,20260214,Moneyline,Won,1.45,Match Finished,2
+football,Bundesliga,20260214,Moneyline,Won,1.28,Match Finished,3
+football,Ligue 1,20260215,Over-Under,Lost,1.67,Match Finished,1
+football,Ligue 1,20260215,Draw No Bet,Won,1.35,Match Finished,2
+football,Ligue 1,20260215,Moneyline,Won,1.7,Match Finished,3
+football,Ligue 1,20260215,BTTS,Lost,1.95,Match Finished,2
+football,Serie A,20260215,Draw No Bet,Push,1.72,Match Finished,1
+football,Serie A,20260215,Over-Under,Lost,1.4,Match Finished,3
+football,Serie A,20260215,Moneyline,Won,2.4,Match Finished,1
+football,Serie A,20260215,Over-Under,Won,1.33,Match Finished,3
+football,Serie A,20260215,BTTS,Won,1.91,Match Finished,3
+football,La Liga,20260215,Over-Under,Won,1.25,Match Finished,2
+football,La Liga,20260215,Draw No Bet,Won,1.78,Match Finished,2
+football,La Liga,20260215,Moneyline,Lost,1.8,Match Finished,2
+football,La Liga,20260215,Moneyline,Won,2.2,Match Finished,1
+football,Primeira Liga,20260215,Moneyline,Lost,1.73,Match Finished,3
+football,Primeira Liga,20260215,Moneyline,Won,1.42,Match Finished,3
+football,Primeira Liga,20260215,Over-Under,Lost,1.67,Match Finished,2
+football,Eredivisie,20260215,BTTS,Lost,1.7,Match Finished,3
+football,Eredivisie,20260215,Draw No Bet,Won,1.21,Match Finished,3
+football,Eredivisie,20260215,BTTS,Won,1.44,Match Finished,2
+football,Eredivisie,20260215,Moneyline,Lost,1.57,Match Finished,2
+football,Bundesliga,20260215,Moneyline,Won,1.85,Match Finished,2
+football,Bundesliga,20260215,Over-Under,Won,1.4,Match Finished,3
+football,Serie A,20260216,Moneyline,Lost,2.3,Match Finished,2
+football,La Liga,20260216,Over-Under,Won,1.33,Match Finished,2
+football,Primeira Liga,20260216,Draw No Bet,Won,1.66,Match Finished,3
+football,UEFA Champions League,20260217,Over-Under,Won,1.8,Match Finished,2
+football,UEFA Champions League,20260217,Draw No Bet,Won,1.4,Match Finished,3
+football,UEFA Champions League,20260217,Moneyline,Won,2.05,Match Finished,2
+football,UEFA Champions League,20260217,BTTS,Won,1.62,Match Finished,1
+football,UEFA Champions League,20260218,BTTS,Won,1.8,Match Finished,3
+football,UEFA Champions League,20260218,Draw No Bet,Lost,1.3,Match Finished,3
+football,UEFA Champions League,20260218,Draw No Bet,Push,2.75,Match Finished,2
+football,UEFA Champions League,20260218,Over-Under,Won,1.33,Match Finished,1
+football,Premier League,20260218,Moneyline,Lost,1.27,Match Finished,2
+football,Serie A,20260218,BTTS,Won,1.8,Match Finished,3
+football,La Liga,20260218,Moneyline,Won,1.83,Match Finished,2
+football,UEFA Europa League,20260219,Moneyline,Won,1.85,Match Finished,1
+football,UEFA Europa League,20260219,BTTS,Won,1.75,Match Finished,2
+football,UEFA Europa League,20260219,Draw No Bet,Lost,1.58,Match Finished,3
+football,UEFA Europa League,20260219,Draw No Bet,Lost,1.72,Match Finished,3
+football,UEFA Europa League,20260219,Over-Under,Won,1.67,Match Finished,3
+football,UEFA Europa League,20260219,BTTS,Lost,1.75,Match Finished,1
+football,UEFA Europa League,20260219,Draw No Bet,Won,1.83,Match Finished,2
+football,UEFA Europa League,20260219,Over-Under,Lost,1.67,Match Finished,2
+football,UEFA Europa Conference League,20260219,Draw No Bet,Won,1.32,Match Finished,2
+football,UEFA Europa Conference League,20260219,BTTS,Lost,1.67,Match Finished,2
+football,UEFA Europa Conference League,20260219,Moneyline,Won,1.57,Match Finished,3
+football,UEFA Europa Conference League,20260219,Over-Under,Lost,1.65,Match Finished,2
+football,UEFA Europa Conference League,20260219,Over-Under,Won,1.7,Match Finished,2
+football,UEFA Europa Conference League,20260219,Over-Under,Won,1.7,Match Finished,1
+football,UEFA Europa Conference League,20260219,Over-Under,Won,1.33,Match Finished,2
+football,UEFA Europa Conference League,20260219,Moneyline,Lost,1.33,Match Finished,3
+football,Brasileirão Série A,20260219,Draw No Bet,Lost,1.78,Match Finished,2
+football,Ligue 1,20260220,Over-Under,Lost,1.73,Match Finished,3
+football,Serie A,20260220,Moneyline,Won,1.73,Match Finished,2
+football,La Liga,20260220,Draw No Bet,Won,1.27,Match Finished,3
+football,Primeira Liga,20260220,Draw No Bet,Lost,1.61,Match Finished,3
+football,Eredivisie,20260220,BTTS,Won,1.67,Match Finished,2
+football,Bundesliga,20260220,Over-Under,Won,1.25,Match Finished,1
+football,Premier League,20260221,Moneyline,Lost,1.85,Match Finished,2
+football,Premier League,20260221,Draw No Bet,Lost,1.5,Match Finished,2
+football,Premier League,20260221,Moneyline,Lost,1.22,Match Finished,3
+football,Premier League,20260221,BTTS,Won,1.53,Match Finished,2
+football,Premier League,20260221,Draw No Bet,Push,1.98,Match Finished,3
+football,Ligue 1,20260221,Over-Under,Won,1.5,Match Finished,1
+football,Ligue 1,20260221,Over-Under,Lost,1.66,Match Finished,2
+football,Ligue 1,20260221,Draw No Bet,Push,1.4,Match Finished,3
+football,Serie A,20260221,Draw No Bet,Push,2.25,Match Finished,2
+football,Serie A,20260221,BTTS,Lost,1.8,Match Finished,2
+football,Serie A,20260221,Moneyline,Won,1.48,Match Finished,3
+football,La Liga,20260221,Over-Under,Won,1.9,Match Finished,2
+football,La Liga,20260221,Moneyline,Lost,1.9,Match Finished,2
+football,La Liga,20260221,BTTS,Won,1.7,Match Finished,2
+football,La Liga,20260221,Moneyline,Lost,1.5,Match Finished,3
+football,Primeira Liga,20260221,Draw No Bet,Push,2.0,Match Finished,2
+football,Primeira Liga,20260221,Draw No Bet,Won,1.7,Match Finished,1
+football,Primeira Liga,20260221,Over-Under,Won,1.36,Match Finished,2
+football,Primeira Liga,20260221,Moneyline,Won,1.46,Match Finished,2
+football,Primeira Liga,20260221,Moneyline,Won,1.27,Match Finished,3
+football,Eredivisie,20260221,Over-Under,Lost,1.44,Match Finished,1
+football,Eredivisie,20260221,Moneyline,Won,1.62,Match Finished,2
+football,Eredivisie,20260221,BTTS,Won,1.5,Match Finished,3
+football,Bundesliga,20260221,Over-Under,Won,1.16,Match Finished,2
+football,Bundesliga,20260221,BTTS,Won,1.5,Match Finished,3
+football,Bundesliga,20260221,BTTS,Won,1.44,Match Finished,3
+football,Bundesliga,20260221,Draw No Bet,Lost,1.7,Match Finished,3
+football,Bundesliga,20260221,Draw No Bet,Won,2.42,Match Finished,2
+football,Premier League,20260222,Moneyline,Won,1.73,Match Finished,2
+football,Premier League,20260222,Draw No Bet,Won,1.36,Match Finished,2
+football,Premier League,20260222,Draw No Bet,Lost,1.83,Match Finished,3
+football,Premier League,20260222,Over-Under,Won,1.8,Match Finished,3
+football,Ligue 1,20260222,Draw No Bet,Won,1.33,Match Finished,1
+football,Ligue 1,20260222,Draw No Bet,Won,1.66,Match Finished,2
+football,Ligue 1,20260222,Over-Under,Won,1.66,Match Finished,2
+football,Ligue 1,20260222,BTTS,Lost,2.05,Match Finished,2
+football,Ligue 1,20260222,BTTS,Won,1.61,Match Finished,2
+football,Serie A,20260222,BTTS,Won,1.8,Match Finished,2
+football,Serie A,20260222,Over-Under,Won,1.4,Match Finished,2
+football,Serie A,20260222,Moneyline,Lost,1.33,Match Finished,3
+football,Serie A,20260222,Moneyline,Won,1.33,Match Finished,3
+football,La Liga,20260222,Over-Under,Won,1.2,Match Finished,3
+football,La Liga,20260222,Draw No Bet,Won,1.33,Match Finished,2
+football,La Liga,20260222,Draw No Bet,Lost,1.58,Match Finished,3
+football,La Liga,20260222,Moneyline,Won,1.7,Match Finished,3
+football,Primeira Liga,20260222,BTTS,Won,1.7,Match Finished,2
+football,Primeira Liga,20260222,Moneyline,Won,1.11,Match Finished,3
+football,Eredivisie,20260222,Draw No Bet,Lost,3.25,Match Finished,2
+football,Eredivisie,20260222,Moneyline,Won,1.22,Match Finished,3
+football,Eredivisie,20260222,Moneyline,Won,1.85,Match Finished,1
+football,Eredivisie,20260222,Over-Under,Won,1.53,Match Finished,3
+football,Eredivisie,20260222,BTTS,Won,1.75,Match Finished,3
+football,Bundesliga,20260222,Draw No Bet,Won,1.4,Match Finished,3
+football,Bundesliga,20260222,Over-Under,Won,1.53,Match Finished,3
+football,Bundesliga,20260222,Over-Under,Won,1.25,Match Finished,2
+football,Premier League,20260223,BTTS,Lost,1.61,Match Finished,3
+football,Serie A,20260223,Draw No Bet,Won,1.36,Match Finished,3
+football,Serie A,20260223,BTTS,Lost,1.8,Match Finished,2
+football,La Liga,20260223,Over-Under,Lost,1.2,Match Finished,1
+football,Primeira Liga,20260223,Moneyline,Won,1.62,Match Finished,2
+football,UEFA Champions League,20260224,BTTS,Won,1.61,Match Finished,2
+football,UEFA Champions League,20260224,Draw No Bet,Push,1.38,Match Finished,3
+football,UEFA Champions League,20260224,Over-Under,Won,1.3,Match Finished,2
+football,UEFA Champions League,20260224,Over-Under,Won,1.25,Match Finished,2
+football,UEFA Champions League,20260225,Moneyline,Won,1.65,Match Finished,3
+football,Brasileirão Série A,20260225,Draw No Bet,Push,1.27,Match Finished,3
+football,Brasileirão Série A,20260225,Draw No Bet,Won,1.68,Match Finished,3
+football,Brasileirão Série A,20260225,Over-Under,Won,1.28,Match Finished,2
+football,Brasileirão Série A,20260225,BTTS,Won,1.66,Match Finished,2
+football,Brasileirão Série A,20260225,Over-Under,Won,1.95,Match Finished,1
+football,Brasileirão Série A,20260225,Moneyline,Won,1.85,Match Finished,2
+football,UEFA Champions League,20260225,BTTS,Won,1.53,Match Finished,3
+football,UEFA Champions League,20260225,Over-Under,Won,1.4,Match Finished,1
+football,UEFA Champions League,20260225,Moneyline,Lost,1.27,Match Finished,2
+football,UEFA Europa League,20260226,Over-Under,Won,1.36,Match Finished,2
+football,UEFA Europa League,20260226,BTTS,Lost,1.8,Match Finished,3
+football,UEFA Europa League,20260226,Moneyline,Lost,1.95,Match Finished,2
+football,UEFA Europa League,20260226,Over-Under,Lost,1.44,Match Finished,3
+football,UEFA Europa League,20260226,Moneyline,Won,1.5,Match Finished,3
+football,UEFA Europa League,20260226,Draw No Bet,Won,1.26,Match Finished,1
+football,UEFA Europa League,20260226,BTTS,Won,1.67,Match Finished,2
+football,UEFA Europa League,20260226,Moneyline,Lost,1.55,Match Finished,3
+football,UEFA Europa Conference League,20260226,Over-Under,Won,1.57,Match Finished,3
+football,UEFA Europa Conference League,20260226,Over-Under,Won,1.53,Match Finished,2
+football,UEFA Europa Conference League,20260226,Moneyline,Won,1.12,Match Finished,3
+football,UEFA Europa Conference League,20260226,Moneyline,Lost,1.53,Match Finished,2
+football,UEFA Europa Conference League,20260226,Draw No Bet,Lost,1.53,Match Finished,2
+football,UEFA Europa Conference League,20260226,Moneyline,Won,1.22,Match Finished,3
+football,UEFA Europa Conference League,20260226,Over-Under,Lost,1.25,Match Finished,1
+football,UEFA Europa Conference League,20260226,Moneyline,Won,1.29,Match Finished,3
+football,Premier League,20260227,Draw No Bet,Lost,1.33,Match Finished,2
+football,Ligue 1,20260227,BTTS,Won,1.53,Match Finished,3
+football,Serie A,20260227,Over-Under,Won,1.5,Match Finished,2
+football,La Liga,20260227,BTTS,Won,1.8,Match Finished,2
+football,Primeira Liga,20260227,Over-Under,Won,1.7,Match Finished,2
+football,Primeira Liga,20260227,Moneyline,Won,1.15,Match Finished,3
+football,Eredivisie,20260227,Draw No Bet,Won,1.8,Match Finished,1
+football,Bundesliga,20260227,Draw No Bet,Won,1.6,Match Finished,3
+football,Premier League,20260228,Moneyline,Lost,1.75,Match Finished,3
+football,Premier League,20260228,Draw No Bet,Won,1.33,Match Finished,2
+football,Premier League,20260228,Over-Under,Lost,1.67,Match Finished,1
+football,Premier League,20260228,BTTS,Won,1.61,Match Finished,2
+football,Premier League,20260228,Draw No Bet,Won,3.25,Match Finished,2
+football,Ligue 1,20260228,Moneyline,Won,1.28,Match Finished,3
+football,Ligue 1,20260228,BTTS,Won,1.91,Match Finished,2
+football,Ligue 1,20260228,Draw No Bet,Won,1.4,Match Finished,3
+football,Serie A,20260228,Moneyline,Won,1.38,Match Finished,3
+football,Serie A,20260228,Moneyline,Won,1.33,Match Finished,3
+football,Serie A,20260228,Over-Under,Won,1.44,Match Finished,1
+football,La Liga,20260228,Over-Under,Won,1.66,Match Finished,2
+football,La Liga,20260228,Over-Under,Lost,1.4,Match Finished,2
+football,La Liga,20260228,Draw No Bet,Push,2.0,Match Finished,1
+football,La Liga,20260228,Over-Under,Won,1.3,Match Finished,2
+football,Primeira Liga,20260228,Over-Under,Lost,1.33,Match Finished,1
+football,Primeira Liga,20260228,Moneyline,Won,1.57,Match Finished,2
+football,Primeira Liga,20260228,Draw No Bet,Push,1.32,Match Finished,3
+football,Eredivisie,20260228,BTTS,Won,1.5,Match Finished,2
+football,Eredivisie,20260228,Over-Under,Won,1.33,Match Finished,3
+football,Eredivisie,20260228,Moneyline,Lost,1.45,Match Finished,3
+football,Bundesliga,20260228,Over-Under,Lost,1.67,Match Finished,2
+football,Bundesliga,20260228,Draw No Bet,Lost,2.1,Match Finished,2
+football,Bundesliga,20260228,BTTS,Won,1.4,Match Finished,3
+football,Bundesliga,20260228,Moneyline,Lost,1.45,Match Finished,3
+football,Bundesliga,20260228,BTTS,Lost,1.61,Match Finished,1
+football,Premier League,20260301,BTTS,Won,1.75,Match Finished,3
+football,Premier League,20260301,Over-Under,Lost,2.0,Match Finished,2
+football,Premier League,20260301,Draw No Bet,Won,1.45,Match Finished,3
+football,Premier League,20260301,Moneyline,Won,1.5,Match Finished,2
+football,Ligue 1,20260301,Over-Under,Won,1.4,Match Finished,2
+football,Ligue 1,20260301,Draw No Bet,Push,1.42,Match Finished,2
+football,Ligue 1,20260301,Over-Under,Won,1.8,Match Finished,3
+football,Ligue 1,20260301,Draw No Bet,Won,1.52,Match Finished,3
+football,Ligue 1,20260301,BTTS,Lost,1.7,Match Finished,2
+football,Serie A,20260301,Moneyline,Won,1.45,Match Finished,2
+football,Serie A,20260301,Over-Under,Won,1.4,Match Finished,3
+football,Serie A,20260301,Draw No Bet,Lost,1.5,Match Finished,2
+football,Serie A,20260301,Over-Under,Won,1.53,Match Finished,2
+football,La Liga,20260301,Moneyline,Lost,1.75,Match Finished,3
+football,La Liga,20260301,Over-Under,Won,1.3,Match Finished,3
+football,La Liga,20260301,Over-Under,Lost,1.8,Match Finished,2
+football,La Liga,20260301,Over-Under,Won,1.61,Match Finished,1
+football,Primeira Liga,20260301,Over-Under,Won,1.44,Match Finished,2
+football,Primeira Liga,20260301,Moneyline,Lost,1.85,Match Finished,2
+football,Primeira Liga,20260301,Draw No Bet,Push,2.15,Match Finished,2
+football,Eredivisie,20260301,Over-Under,Lost,1.2,Match Finished,2
+football,Eredivisie,20260301,Over-Under,Won,1.22,Match Finished,2
+football,Eredivisie,20260301,Draw No Bet,Won,1.65,Match Finished,1
+football,Eredivisie,20260301,Draw No Bet,Lost,2.08,Match Finished,2
+football,Eredivisie,20260301,BTTS,Lost,1.53,Match Finished,3
+football,Bundesliga,20260301,BTTS,Lost,1.62,Match Finished,3
+football,Bundesliga,20260301,Over-Under,Won,1.61,Match Finished,2
+football,Bundesliga,20260301,Moneyline,Won,1.42,Match Finished,2
+football,Serie A,20260302,Moneyline,Won,1.95,Match Finished,3
+football,Serie A,20260302,BTTS,Lost,1.9,Match Finished,2
+football,La Liga,20260302,Moneyline,Lost,1.3,Match Finished,3
+football,Primeira Liga,20260302,Over-Under,Won,1.28,Match Finished,3
+football,Premier League,20260303,Over-Under,Lost,1.62,Match Finished,3
+football,Premier League,20260303,Moneyline,Won,1.57,Match Finished,2
+football,Premier League,20260303,Draw No Bet,Lost,1.36,Match Finished,2
+football,Premier League,20260303,Moneyline,Lost,1.5,Match Finished,3
+football,Premier League,20260304,BTTS,Won,1.57,Match Finished,1
+football,Premier League,20260304,Moneyline,Won,1.65,Match Finished,3
+football,Premier League,20260304,Draw No Bet,Lost,1.5,Match Finished,2
+football,Premier League,20260304,Moneyline,Lost,1.42,Match Finished,3
+football,Premier League,20260304,BTTS,Won,1.44,Match Finished,3
+football,La Liga,20260304,Over-Under,Won,1.25,Match Finished,1
+football,Bundesliga,20260304,BTTS,Lost,1.61,Match Finished,2
+football,Premier League,20260305,BTTS,Won,1.62,Match Finished,3
+football,Ligue 1,20260306,BTTS,Won,1.53,Match Finished,2
+football,Serie A,20260306,Moneyline,Won,1.57,Match Finished,3
+football,La Liga,20260306,Draw No Bet,Won,1.61,Match Finished,3
+football,Primeira Liga,20260306,Over-Under,Lost,2.0,Match Finished,2
+football,Eredivisie,20260306,Moneyline,Lost,2.2,Match Finished,1
+football,Bundesliga,20260306,Over-Under,Lost,1.53,Match Finished,1
+football,Ligue 1,20260307,Over-Under,Won,1.33,Match Finished,1
+football,Ligue 1,20260307,Over-Under,Won,1.62,Match Finished,2
+football,Ligue 1,20260307,Draw No Bet,Won,1.57,Match Finished,2
+football,Serie A,20260307,BTTS,Won,1.8,Match Finished,2
+football,Serie A,20260307,Draw No Bet,Won,1.23,Match Finished,2
+football,Serie A,20260307,Moneyline,Won,1.22,Match Finished,3
+football,La Liga,20260307,BTTS,Lost,1.53,Match Finished,2
+football,La Liga,20260307,Over-Under,Won,1.25,Match Finished,2
+football,La Liga,20260307,Draw No Bet,Push,1.83,Match Finished,3
+football,La Liga,20260307,Moneyline,Lost,1.8,Match Finished,3
+football,Primeira Liga,20260307,Moneyline,Lost,1.7,Match Finished,3
+football,Primeira Liga,20260307,BTTS,Won,1.7,Match Finished,2
+football,Primeira Liga,20260307,Draw No Bet,Push,1.3,Match Finished,1
+football,Primeira Liga,20260307,Draw No Bet,Push,1.66,Match Finished,1
+football,Eredivisie,20260307,Draw No Bet,Won,1.8,Match Finished,2
+football,Eredivisie,20260307,Draw No Bet,Lost,1.66,Match Finished,2
+football,Eredivisie,20260307,Over-Under,Won,1.33,Match Finished,3
+football,Bundesliga,20260307,BTTS,Won,1.57,Match Finished,3
+football,Bundesliga,20260307,BTTS,Won,1.7,Match Finished,3
+football,Bundesliga,20260307,Moneyline,Won,1.53,Match Finished,2
+football,Bundesliga,20260307,Draw No Bet,Push,1.44,Match Finished,2
+football,Bundesliga,20260307,Over-Under,Won,1.44,Match Finished,3
+football,Bundesliga,20260307,Over-Under,Won,1.72,Match Finished,2
+football,Ligue 1,20260308,Over-Under,Won,1.33,Match Finished,3
+football,Ligue 1,20260308,Over-Under,Won,1.53,Match Finished,3
+football,Ligue 1,20260308,Moneyline,Lost,1.5,Match Finished,2
+football,Ligue 1,20260308,Moneyline,Lost,1.7,Match Finished,3
+football,Ligue 1,20260308,BTTS,Lost,1.53,Match Finished,1
+football,Serie A,20260308,Moneyline,Lost,1.62,Match Finished,3
+football,Serie A,20260308,Draw No Bet,Push,3.5,Match Finished,2
+football,Serie A,20260308,Over-Under,Won,1.44,Match Finished,2
+football,Serie A,20260308,Over-Under,Lost,1.53,Match Finished,2
+football,Serie A,20260308,Draw No Bet,Lost,1.55,Match Finished,2
+football,La Liga,20260308,Draw No Bet,Lost,1.83,Match Finished,2
+football,La Liga,20260308,Over-Under,Won,1.22,Match Finished,1
+football,La Liga,20260308,Moneyline,Won,2.1,Match Finished,2
+football,La Liga,20260308,Moneyline,Won,1.5,Match Finished,3
+football,Primeira Liga,20260308,Over-Under,Lost,1.65,Match Finished,2
+football,Primeira Liga,20260308,Draw No Bet,Push,1.32,Match Finished,3
+football,Primeira Liga,20260308,Draw No Bet,Lost,2.1,Match Finished,2
+football,Eredivisie,20260308,BTTS,Won,1.57,Match Finished,2
+football,Eredivisie,20260308,Draw No Bet,Push,1.36,Match Finished,3
+football,Eredivisie,20260308,BTTS,Lost,1.62,Match Finished,3
+football,Eredivisie,20260308,Draw No Bet,Lost,1.66,Match Finished,1
+football,Eredivisie,20260308,Over-Under,Lost,1.5,Match Finished,1
+football,Bundesliga,20260308,Draw No Bet,Push,1.88,Match Finished,3
+football,Bundesliga,20260308,Over-Under,Lost,1.75,Match Finished,2
+football,Serie A,20260309,BTTS,Won,1.95,Match Finished,2
+football,La Liga,20260309,Moneyline,Lost,1.85,Match Finished,3
+football,Primeira Liga,20260309,Over-Under,Won,1.72,Match Finished,1
+football,UEFA Champions League,20260310,BTTS,Won,1.4,Match Finished,3
+football,UEFA Champions League,20260310,Over-Under,Lost,1.5,Match Finished,2
+football,UEFA Champions League,20260310,Moneyline,Won,1.73,Match Finished,3
+football,UEFA Champions League,20260310,BTTS,Won,1.5,Match Finished,1
+football,UEFA Champions League,20260311,Draw No Bet,Lost,1.48,Match Finished,1
+football,UEFA Champions League,20260311,BTTS,Won,1.57,Match Finished,3
+football,UEFA Champions League,20260311,Moneyline,Lost,1.5,Match Finished,2
+football,UEFA Champions League,20260311,BTTS,Lost,1.53,Match Finished,2
+football,Brasileirão Série A,20260311,BTTS,Lost,1.7,Match Finished,2
+football,Brasileirão Série A,20260311,Moneyline,Lost,1.73,Match Finished,3
+football,Brasileirão Série A,20260311,Over-Under,Won,1.25,Match Finished,1
+football,Brasileirão Série A,20260311,Draw No Bet,Won,1.17,Match Finished,2
+football,UEFA Europa League,20260312,Over-Under,Won,1.8,Match Finished,3
+football,UEFA Europa League,20260312,Over-Under,Won,1.44,Match Finished,2
+football,UEFA Europa League,20260312,Draw No Bet,Lost,1.45,Match Finished,3
+football,UEFA Europa League,20260312,Draw No Bet,Lost,1.44,Match Finished,1
+football,UEFA Europa League,20260312,Over-Under,Lost,2.0,Match Finished,2
+football,UEFA Europa League,20260312,BTTS,Lost,1.8,Match Finished,3
+football,UEFA Europa League,20260312,Over-Under,Won,1.33,Match Finished,2
+football,UEFA Europa League,20260312,Draw No Bet,Won,1.83,Match Finished,2
+football,UEFA Europa Conference League,20260312,Moneyline,Lost,1.2,Match Finished,3
+football,UEFA Europa Conference League,20260312,Over-Under,Won,1.33,Match Finished,1
+football,UEFA Europa Conference League,20260312,Draw No Bet,Won,1.55,Match Finished,3
+football,UEFA Europa Conference League,20260312,Draw No Bet,Won,1.44,Match Finished,2
+football,UEFA Europa Conference League,20260312,Over-Under,Lost,1.95,Match Finished,3
+football,UEFA Europa Conference League,20260312,Moneyline,Won,2.6,Match Finished,2
+football,UEFA Europa Conference League,20260312,Moneyline,Won,1.95,Match Finished,1
+football,UEFA Europa Conference League,20260312,Over-Under,Won,1.95,Match Finished,3
+football,Brasileirão Série A,20260312,BTTS,Won,1.8,Match Finished,2
+football,Brasileirão Série A,20260312,Moneyline,Won,2.0,Match Finished,3
+football,Brasileirão Série A,20260312,Moneyline,Won,1.4,Match Finished,3
+football,Brasileirão Série A,20260312,Over-Under,Won,1.28,Match Finished,2
+football,Ligue 1,20260313,Moneyline,Won,1.45,Match Finished,3
+football,Serie A,20260313,Draw No Bet,Lost,2.75,Match Finished,2
+football,La Liga,20260313,Over-Under,Won,1.3,Match Finished,2
+football,Eredivisie,20260313,BTTS,Won,1.53,Match Finished,2
+football,Bundesliga,20260313,Draw No Bet,Won,1.36,Match Finished,2
+football,Premier League,20260314,Moneyline,Won,1.4,Match Finished,2
+football,Premier League,20260314,Draw No Bet,Push,1.38,Match Finished,1
+football,Premier League,20260314,BTTS,Lost,1.5,Match Finished,3
+football,Premier League,20260314,Over-Under,Won,1.73,Match Finished,2
+football,Premier League,20260314,Over-Under,Lost,1.57,Match Finished,2
+football,Ligue 1,20260314,Draw No Bet,Lost,2.15,Match Finished,2
+football,Ligue 1,20260314,BTTS,Won,1.75,Match Finished,3
+football,Ligue 1,20260314,Over-Under,Lost,1.61,Match Finished,1
+football,Serie A,20260314,BTTS,Won,1.75,Match Finished,2
+football,Serie A,20260314,Moneyline,Won,1.38,Match Finished,3
+football,Serie A,20260314,Moneyline,Won,1.55,Match Finished,2
+football,La Liga,20260314,Moneyline,Won,1.57,Match Finished,2
+football,La Liga,20260314,BTTS,Lost,1.8,Match Finished,3
+football,La Liga,20260314,Over-Under,Won,1.44,Match Finished,1
+football,La Liga,20260314,Draw No Bet,Lost,1.78,Match Finished,3
+football,Primeira Liga,20260314,Over-Under,Won,1.6,Match Finished,3
+football,Primeira Liga,20260314,Moneyline,Lost,1.68,Match Finished,2
+football,Primeira Liga,20260314,Over-Under,Won,1.25,Match Finished,1
+football,Eredivisie,20260314,Moneyline,Won,1.73,Match Finished,2
+football,Eredivisie,20260314,Over-Under,Won,1.7,Match Finished,2
+football,Eredivisie,20260314,Draw No Bet,Won,1.3,Match Finished,1
+football,Eredivisie,20260314,BTTS,Won,1.4,Match Finished,3
+football,Bundesliga,20260314,BTTS,Won,1.44,Match Finished,3
+football,Bundesliga,20260314,Moneyline,Won,1.48,Match Finished,3
+football,Bundesliga,20260314,Moneyline,Won,1.57,Match Finished,2
+football,Bundesliga,20260314,Draw No Bet,Push,1.66,Match Finished,2
+football,Bundesliga,20260314,Over-Under,Lost,1.4,Match Finished,3
+football,Brasileirão Série A,20260314,Draw No Bet,Won,1.42,Match Finished,2
+football,Brasileirão Série A,20260314,Over-Under,Won,1.7,Match Finished,2
+football,Eliteserien,20260314,Moneyline,Lost,1.7,Match Finished,3
+football,Eliteserien,20260314,Over-Under,Lost,1.66,Match Finished,1
+football,Brasileirão Série A,20260315,Over-Under,Lost,1.8,Match Finished,2
+football,Brasileirão Série A,20260315,Draw No Bet,Won,2.85,Match Finished,1
+football,Brasileirão Série A,20260315,Over-Under,Lost,1.8,Match Finished,2
+football,Eliteserien,20260315,Over-Under,Won,1.5,Match Finished,3
+football,Eliteserien,20260315,Moneyline,Won,1.91,Match Finished,2
+football,Eliteserien,20260315,BTTS,Lost,1.67,Match Finished,1
+football,Eliteserien,20260315,Moneyline,Won,1.73,Match Finished,2
+football,Premier League,20260315,Draw No Bet,Push,1.66,Match Finished,2
+football,Premier League,20260315,Moneyline,Lost,1.29,Match Finished,3
+football,Premier League,20260315,BTTS,Won,1.67,Match Finished,3
+football,Premier League,20260315,Draw No Bet,Push,2.25,Match Finished,2
+football,Ligue 1,20260315,Draw No Bet,Push,1.44,Match Finished,2
+football,Ligue 1,20260315,Draw No Bet,Won,1.4,Match Finished,3
+football,Ligue 1,20260315,BTTS,Won,1.66,Match Finished,3
+football,Ligue 1,20260315,Moneyline,Lost,1.8,Match Finished,3
+football,Serie A,20260315,BTTS,Won,1.95,Match Finished,2
+football,Serie A,20260315,Over-Under,Won,1.73,Match Finished,1
+football,Serie A,20260315,Draw No Bet,Lost,2.1,Match Finished,3
+football,Serie A,20260315,BTTS,Lost,1.75,Match Finished,3
+football,Serie A,20260315,Moneyline,Won,2.38,Match Finished,2
+football,La Liga,20260315,Moneyline,Won,1.25,Match Finished,3
+football,La Liga,20260315,Draw No Bet,Push,1.55,Match Finished,3
+football,La Liga,20260315,BTTS,Won,1.95,Match Finished,2
+football,La Liga,20260315,Over-Under,Lost,1.33,Match Finished,1
+football,Primeira Liga,20260315,Draw No Bet,Won,1.33,Match Finished,3
+football,Primeira Liga,20260315,BTTS,Won,1.44,Match Finished,1
+football,Primeira Liga,20260315,BTTS,Lost,1.57,Match Finished,3
+football,Primeira Liga,20260315,Draw No Bet,Lost,2.1,Match Finished,2
+football,Eredivisie,20260315,Over-Under,Won,1.53,Match Finished,2
+football,Eredivisie,20260315,Moneyline,Won,1.3,Match Finished,3
+football,Eredivisie,20260315,Draw No Bet,Won,1.58,Match Finished,2
+football,Eredivisie,20260315,BTTS,Lost,1.75,Match Finished,3
+football,Bundesliga,20260315,Draw No Bet,Lost,1.52,Match Finished,1
+football,Bundesliga,20260315,BTTS,Lost,1.33,Match Finished,3
+football,Bundesliga,20260315,Moneyline,Lost,2.15,Match Finished,2
+football,Brasileirão Série A,20260315,Over-Under,Lost,1.6,Match Finished,3
+football,Brasileirão Série A,20260315,Draw No Bet,Won,1.28,Match Finished,3
+football,Brasileirão Série A,20260315,BTTS,Won,1.8,Match Finished,2
+football,Premier League,20260316,Moneyline,Lost,1.57,Match Finished,2
+football,Serie A,20260316,Draw No Bet,Won,1.42,Match Finished,2
+football,La Liga,20260316,Over-Under,Won,1.28,Match Finished,2
+football,Brasileirão Série A,20260316,BTTS,Won,1.8,Match Finished,3
+football,UEFA Champions League,20260317,Moneyline,Lost,1.45,Match Finished,2
+football,UEFA Champions League,20260317,Over-Under,Lost,2.1,Match Finished,2
+football,UEFA Champions League,20260317,Moneyline,Won,1.28,Match Finished,3
+football,UEFA Champions League,20260317,BTTS,Lost,1.5,Match Finished,3
+football,UEFA Champions League,20260318,Moneyline,Won,1.57,Match Finished,2
+football,UEFA Champions League,20260318,Over-Under,Won,1.36,Match Finished,3
+football,UEFA Champions League,20260318,BTTS,Won,1.53,Match Finished,2
+football,UEFA Champions League,20260318,Over-Under,Won,1.33,Match Finished,3
+football,UEFA Europa League,20260318,Moneyline,Won,1.5,Match Finished,2
+football,Brasileirão Série A,20260318,Draw No Bet,Won,1.68,Match Finished,2
+football,Brasileirão Série A,20260318,Draw No Bet,Lost,2.2,Match Finished,3
+football,Brasileirão Série A,20260318,Over-Under,Lost,1.95,Match Finished,1
+football,Brasileirão Série A,20260318,Over-Under,Won,1.75,Match Finished,2
+football,Brasileirão Série A,20260318,Moneyline,Won,1.55,Match Finished,3
+football,UEFA Europa League,20260319,Over-Under,Won,1.33,Match Finished,2
+football,UEFA Europa League,20260319,Draw No Bet,Push,1.25,Match Finished,2
+football,UEFA Europa League,20260319,Over-Under,Lost,1.8,Match Finished,3
+football,UEFA Europa League,20260319,Moneyline,Won,1.4,Match Finished,3
+football,UEFA Europa League,20260319,BTTS,Lost,1.8,Match Finished,3
+football,UEFA Europa League,20260319,Draw No Bet,Lost,2.25,Match Finished,3
+football,UEFA Europa League,20260319,Moneyline,Won,1.62,Match Finished,2
+football,UEFA Europa Conference League,20260319,Over-Under,Won,1.9,Match Finished,2
+football,UEFA Europa Conference League,20260319,BTTS,Won,1.62,Match Finished,3
+football,UEFA Europa Conference League,20260319,Over-Under,Won,1.8,Match Finished,2
+football,UEFA Europa Conference League,20260319,Draw No Bet,Lost,1.23,Match Finished,3
+football,UEFA Europa Conference League,20260319,Moneyline,Lost,1.38,Match Finished,2
+football,UEFA Europa Conference League,20260319,Moneyline,Lost,2.1,Match Finished,2
+football,UEFA Europa Conference League,20260319,BTTS,Won,1.73,Match Finished,1
+football,UEFA Europa Conference League,20260319,Moneyline,Won,1.33,Match Finished,3
+football,Brasileirão Série A,20260319,Moneyline,Won,1.18,Match Finished,3
+football,Brasileirão Série A,20260319,Draw No Bet,Won,1.35,Match Finished,3
+football,Premier League,20260320,Over-Under,Won,1.57,Match Finished,2
+football,Ligue 1,20260320,Moneyline,Won,1.27,Match Finished,3
+football,Serie A,20260320,Moneyline,Won,1.75,Match Finished,2
+football,Serie A,20260320,Draw No Bet,Lost,1.5,Match Finished,1
+football,La Liga,20260320,BTTS,Won,1.67,Match Finished,3
+football,Primeira Liga,20260320,Over-Under,Lost,1.62,Match Finished,2
+football,Eredivisie,20260320,Draw No Bet,Push,1.95,Match Finished,2
+football,Bundesliga,20260320,BTTS,Lost,1.36,Match Finished,3
+football,Premier League,20260321,Draw No Bet,Lost,1.62,Match Finished,2
+football,Premier League,20260321,BTTS,Lost,1.67,Match Finished,3
+football,Premier League,20260321,Moneyline,Won,1.57,Match Finished,3
+football,Premier League,20260321,Over-Under,Lost,1.91,Match Finished,1
+football,Ligue 1,20260321,Draw No Bet,Lost,2.25,Match Finished,2
+football,Ligue 1,20260321,Moneyline,Won,1.36,Match Finished,3
+football,Ligue 1,20260321,Moneyline,Won,1.95,Match Finished,2
+football,Serie A,20260321,Over-Under,Lost,1.57,Match Finished,1
+football,Serie A,20260321,Moneyline,Won,1.38,Match Finished,2
+football,Serie A,20260321,Over-Under,Won,1.67,Match Finished,3
+football,La Liga,20260321,Draw No Bet,Lost,2.5,Match Finished,2
+football,La Liga,20260321,Over-Under,Lost,1.4,Match Finished,3
+football,La Liga,20260321,Draw No Bet,Won,1.53,Match Finished,1
+football,La Liga,20260321,BTTS,Lost,1.7,Match Finished,2
+football,La Liga,20260321,Over-Under,Won,1.57,Match Finished,3
+football,Primeira Liga,20260321,Over-Under,Won,1.57,Match Finished,3
+football,Primeira Liga,20260321,Moneyline,Won,1.6,Match Finished,3
+football,Primeira Liga,20260321,Over-Under,Won,1.25,Match Finished,1
+football,Primeira Liga,20260321,Draw No Bet,Lost,2.2,Match Finished,2
+football,Primeira Liga,20260321,Moneyline,Lost,1.85,Match Finished,1
+football,Eredivisie,20260321,Over-Under,Won,1.53,Match Finished,2
+football,Eredivisie,20260321,Moneyline,Won,1.55,Match Finished,3
+football,Eredivisie,20260321,Draw No Bet,Won,1.62,Match Finished,2
+football,Bundesliga,20260321,Over-Under,Won,1.3,Match Finished,2
+football,Bundesliga,20260321,Moneyline,Won,1.4,Match Finished,3
+football,Bundesliga,20260321,BTTS,Won,1.62,Match Finished,3
+football,Bundesliga,20260321,Moneyline,Lost,1.57,Match Finished,3
+football,Bundesliga,20260321,BTTS,Lost,1.57,Match Finished,2
+football,Brasileirão Série A,20260321,Over-Under,Lost,1.75,Match Finished,2
+football,Brasileirão Série A,20260321,Draw No Bet,Won,1.27,Match Finished,3
+football,Eliteserien,20260321,Over-Under,Lost,1.8,Match Finished,3
+football,Eliteserien,20260321,Moneyline,Won,1.85,Match Finished,2
+football,Brasileirão Série A,20260321,Draw No Bet,Won,1.85,Match Finished,2
+football,Premier League,20260322,BTTS,Lost,1.67,Match Finished,2
+football,Premier League,20260322,Moneyline,Lost,1.7,Match Finished,3
+football,Premier League,20260322,BTTS,Lost,1.75,Match Finished,3
+football,Ligue 1,20260322,Draw No Bet,Won,1.66,Match Finished,2
+football,Ligue 1,20260322,BTTS,Won,1.7,Match Finished,2
+football,Ligue 1,20260322,Draw No Bet,Won,1.45,Match Finished,2
+football,Ligue 1,20260322,Over-Under,Lost,1.73,Match Finished,1
+football,Ligue 1,20260322,Moneyline,Lost,1.33,Match Finished,3
+football,Serie A,20260322,Over-Under,Lost,1.91,Match Finished,3
+football,Serie A,20260322,Over-Under,Won,1.62,Match Finished,1
+football,Serie A,20260322,Moneyline,Won,1.22,Match Finished,2
+football,Serie A,20260322,Draw No Bet,Push,1.26,Match Finished,3
+football,Serie A,20260322,Moneyline,Won,1.48,Match Finished,3
+football,La Liga,20260322,BTTS,Won,1.7,Match Finished,1
+football,La Liga,20260322,Over-Under,Lost,1.33,Match Finished,3
+football,La Liga,20260322,Moneyline,Lost,1.91,Match Finished,2
+football,La Liga,20260322,BTTS,Won,1.57,Match Finished,2
+football,Primeira Liga,20260322,Moneyline,Won,1.27,Match Finished,3
+football,Primeira Liga,20260322,BTTS,Won,1.95,Match Finished,1
+football,Primeira Liga,20260322,Moneyline,Lost,1.75,Match Finished,2
+football,Eredivisie,20260322,BTTS,Won,1.44,Match Finished,3
+football,Eredivisie,20260322,Over-Under,Won,1.62,Match Finished,2
+football,Eredivisie,20260322,Moneyline,Lost,1.7,Match Finished,3
+football,Eredivisie,20260322,Moneyline,Lost,1.45,Match Finished,3
+football,Eredivisie,20260322,Moneyline,Won,1.67,Match Finished,2
+football,Bundesliga,20260322,BTTS,Won,1.53,Match Finished,3
+football,Bundesliga,20260322,BTTS,Won,1.61,Match Finished,2
+football,Bundesliga,20260322,Draw No Bet,Lost,1.9,Match Finished,1
+football,Brasileirão Série A,20260322,Over-Under,Won,1.25,Match Finished,1
+football,Brasileirão Série A,20260322,Moneyline,Lost,2.25,Match Finished,3
+football,Brasileirão Série A,20260322,Draw No Bet,Won,1.17,Match Finished,3
+football,Brasileirão Série A,20260322,Moneyline,Lost,2.1,Match Finished,3
+football,Brasileirão Série A,20260322,Over-Under,Won,1.95,Match Finished,2
+football,Brasileirão Série A,20260322,Over-Under,Won,1.62,Match Finished,2
+football,Eliteserien,20260322,Over-Under,Won,1.9,Match Finished,2
+football,Eliteserien,20260322,Over-Under,Lost,1.25,Match Finished,1
+football,Eliteserien,20260322,Draw No Bet,Lost,1.58,Match Finished,2
+football,UEFA Nations League,20260326,Moneyline,Won,1.48,Match Finished,3
+football,UEFA Nations League,20260326,Over-Under,Won,1.53,Match Finished,1
+football,World Cup - Qualification Europe,20260326,BTTS,Lost,1.95,Match Finished,2
+football,World Cup - Qualification Europe,20260326,Moneyline,Lost,1.91,Match Finished,3
+football,World Cup - Qualification Europe,20260326,Over-Under,Won,1.7,Match Finished,3
+football,World Cup - Qualification Europe,20260326,Moneyline,Won,1.3,Match Finished,3
+football,World Cup - Qualification Europe,20260326,Over-Under,Lost,1.57,Match Finished,2
+football,World Cup - Qualification Europe,20260326,Over-Under,Lost,1.5,Match Finished,1
+football,World Cup - Qualification Europe,20260326,Draw No Bet,Lost,2.25,Match Finished,2
+football,World Cup - Qualification Europe,20260326,BTTS,Won,2.0,Match Finished,2
+football,Brasileirão Série A,20260329,Moneyline,Won,1.95,Match Finished,3
+football,UEFA Nations League,20260331,Over-Under,Won,1.8,Match Finished,2
+football,UEFA Nations League,20260331,Moneyline,Won,1.67,Match Finished,3
+football,World Cup - Qualification Europe,20260331,Moneyline,Lost,1.5,Match Finished,2
+football,World Cup - Qualification Europe,20260331,Draw No Bet,Push,1.38,Match Finished,3
+football,World Cup - Qualification Europe,20260331,Over-Under,Lost,1.9,Match Finished,1
+football,World Cup - Qualification Europe,20260331,BTTS,Won,1.95,Match Finished,3
+football,Brasileirão Série A,20260401,BTTS,,1.95,Match Finished,3
+football,Brasileirão Série A,20260401,Moneyline,Won,2.2,Match Finished,2
+football,Brasileirão Série A,20260401,Over-Under,Won,1.65,Match Finished,1
+football,Brasileirão Série A,20260401,Draw No Bet,Won,1.21,Match Finished,2
+football,Brasileirão Série A,20260401,BTTS,,1.91,Match Finished,1
+football,Brasileirão Série A,20260402,Over-Under,Lost,1.67,Match Finished,1
+football,Brasileirão Série A,20260402,Draw No Bet,Lost,1.4,Match Finished,3
+football,Brasileirão Série A,20260402,BTTS,Won,1.95,Match Finished,2
+football,Brasileirão Série A,20260402,BTTS,Lost,1.91,Match Finished,2
+football,Ligue 1,20260403,Over-Under,Won,1.53,Match Finished,3
+football,La Liga,20260403,Moneyline,Won,1.75,Match Finished,1
+football,Primeira Liga,20260403,Moneyline,Won,1.33,Match Finished,2
+football,Primeira Liga,20260403,BTTS,Won,2.38,Match Finished,1
+football,Primeira Liga,20260403,Draw No Bet,Won,1.28,Match Finished,2
+football,Ligue 1,20260404,BTTS,Won,1.7,Match Finished,2
+football,Ligue 1,20260404,BTTS,Lost,1.61,Match Finished,3
+football,Ligue 1,20260404,Over-Under,Lost,1.44,Match Finished,2
+football,Serie A,20260404,Moneyline,Lost,1.75,Match Finished,2
+football,Serie A,20260404,Draw No Bet,Won,1.4,Match Finished,3
+football,Serie A,20260404,Moneyline,Won,1.91,Match Finished,1
+football,La Liga,20260404,BTTS,Won,1.4,Match Finished,2
+football,La Liga,20260404,Draw No Bet,Push,1.3,Match Finished,3
+football,La Liga,20260404,Moneyline,Lost,1.53,Match Finished,1
+football,La Liga,20260404,Over-Under,Won,1.5,Match Finished,3
+football,Primeira Liga,20260404,Moneyline,Lost,1.38,Match Finished,3
+football,Primeira Liga,20260404,Moneyline,Won,1.55,Match Finished,2
+football,Primeira Liga,20260404,BTTS,Won,2.05,Match Finished,1
+football,Primeira Liga,20260404,Draw No Bet,Lost,1.85,Match Finished,2
+football,Eredivisie,20260404,BTTS,Won,1.5,Match Finished,3
+football,Eredivisie,20260404,Draw No Bet,Won,1.45,Match Finished,2
+football,Eredivisie,20260404,BTTS,Won,1.53,Match Finished,2
+football,Eredivisie,20260404,Draw No Bet,Won,1.8,Match Finished,1
+football,Bundesliga,20260404,Over-Under,Won,1.44,Match Finished,3
+football,Bundesliga,20260404,Moneyline,Lost,1.57,Match Finished,3
+football,Bundesliga,20260404,Over-Under,Won,2.0,Match Finished,1
+football,Bundesliga,20260404,Draw No Bet,Push,1.62,Match Finished,2
+football,Bundesliga,20260404,BTTS,Won,1.57,Match Finished,3
+football,Bundesliga,20260404,Draw No Bet,Lost,1.66,Match Finished,2
+football,Bundesliga,20260404,Moneyline,Won,1.91,Match Finished,2
+football,Brasileirão Série A,20260404,Over-Under,Won,1.62,Match Finished,2
+football,Brasileirão Série A,20260404,Draw No Bet,Won,1.5,Match Finished,3
+football,Allsvenskan,20260404,Moneyline,Won,1.94,Match Finished,1
+football,Allsvenskan,20260404,Over-Under,Won,1.91,Match Finished,2
+football,Ligue 1,20260405,Moneyline,Lost,1.75,Match Finished,2
+football,Ligue 1,20260405,Over-Under,Won,1.62,Match Finished,1
+football,Ligue 1,20260405,Draw No Bet,Push,1.6,Match Finished,3
+football,Ligue 1,20260405,Draw No Bet,Push,1.66,Match Finished,2
+football,Ligue 1,20260405,Over-Under,Won,1.57,Match Finished,3
+football,Serie A,20260405,Moneyline,Won,2.2,Match Finished,3
+football,Serie A,20260405,Moneyline,Won,1.67,Match Finished,2
+football,Serie A,20260405,BTTS,Lost,1.91,Match Finished,2
+football,La Liga,20260405,Draw No Bet,Push,2.1,Match Finished,2
+football,La Liga,20260405,Draw No Bet,Won,2.0,Match Finished,2
+football,La Liga,20260405,Over-Under,Won,1.16,Match Finished,2
+football,La Liga,20260405,BTTS,Won,1.91,Match Finished,3
+football,Eredivisie,20260405,Over-Under,Lost,1.44,Match Finished,1
+football,Eredivisie,20260405,Moneyline,Won,1.44,Match Finished,3
+football,Eredivisie,20260405,BTTS,Lost,1.62,Match Finished,2
+football,Bundesliga,20260405,Draw No Bet,Push,1.48,Match Finished,2
+football,Bundesliga,20260405,Draw No Bet,Push,1.45,Match Finished,3
+football,Brasileirão Série A,20260405,Moneyline,Won,1.9,Match Finished,2
+football,Brasileirão Série A,20260405,BTTS,Won,1.7,Match Finished,2
+football,Brasileirão Série A,20260405,Over-Under,Won,1.67,Match Finished,1
+football,Brasileirão Série A,20260405,Over-Under,Won,1.67,Match Finished,2
+football,Brasileirão Série A,20260405,Moneyline,Won,1.38,Match Finished,3
+football,Brasileirão Série A,20260405,Over-Under,Lost,1.7,Match Finished,3
+football,Brasileirão Série A,20260405,Draw No Bet,Won,2.35,Match Finished,2
+football,Allsvenskan,20260405,Moneyline,Won,1.55,Match Finished,2
+football,Allsvenskan,20260405,BTTS,Lost,1.8,Match Finished,1
+football,Allsvenskan,20260405,Draw No Bet,Push,1.24,Match Finished,2
+football,Serie A,20260406,Over-Under,Won,1.91,Match Finished,3
+football,Serie A,20260406,Moneyline,Won,1.75,Match Finished,3
+football,Serie A,20260406,BTTS,Lost,1.95,Match Finished,2
+football,Serie A,20260406,Draw No Bet,Push,1.26,Match Finished,2
+football,La Liga,20260406,Draw No Bet,Lost,1.62,Match Finished,2
+football,Primeira Liga,20260406,Over-Under,Won,1.75,Match Finished,2
+football,Primeira Liga,20260406,Moneyline,Lost,1.22,Match Finished,3
+football,Allsvenskan,20260406,Moneyline,Won,2.45,Match Finished,2
+football,Allsvenskan,20260406,BTTS,Lost,1.67,Match Finished,1
+football,Allsvenskan,20260406,Over-Under,Won,1.5,Match Finished,2
+football,Eliteserien,20260406,Over-Under,Lost,1.4,Match Finished,1
+football,Eliteserien,20260406,Moneyline,Won,1.27,Match Finished,3
+football,Eliteserien,20260406,BTTS,Lost,1.4,Match Finished,2
+football,Eliteserien,20260406,Draw No Bet,Push,1.32,Match Finished,2
+football,Eliteserien,20260406,Moneyline,Won,1.53,Match Finished,1
+football,UEFA Champions League,20260407,BTTS,Lost,1.8,Match Finished,3
+football,UEFA Champions League,20260407,Draw No Bet,Lost,2.0,Match Finished,2
+football,Eliteserien,20260407,Over-Under,Won,1.75,Match Finished,2
+football,Eliteserien,20260407,Draw No Bet,Won,2.35,Match Finished,1
+football,UEFA Champions League,20260408,BTTS,Lost,1.44,Match Finished,3
+football,UEFA Champions League,20260408,Moneyline,Won,1.7,Match Finished,2
+football,UEFA Europa League,20260408,Draw No Bet,Push,1.8,Match Finished,2
+football,UEFA Europa League,20260409,Over-Under,Lost,1.8,Match Finished,2
+football,UEFA Europa League,20260409,Moneyline,Lost,2.1,Match Finished,3
+football,UEFA Europa League,20260409,BTTS,Lost,1.8,Match Finished,2
+football,UEFA Europa Conference League,20260409,BTTS,Won,1.83,Match Finished,1
+football,UEFA Europa Conference League,20260409,Moneyline,Won,2.1,Match Finished,2
+football,UEFA Europa Conference League,20260409,Over-Under,Lost,1.67,Match Finished,1
+football,UEFA Europa Conference League,20260409,Draw No Bet,Won,1.88,Match Finished,2
+football,Premier League,20260410,Draw No Bet,Won,1.35,Match Finished,2
+football,Ligue 1,20260410,Over-Under,Won,1.44,Match Finished,2
+football,Ligue 1,20260410,Moneyline,Lost,1.95,Match Finished,3
+football,Serie A,20260410,Moneyline,Won,1.33,Match Finished,3
+football,La Liga,20260410,BTTS,Won,1.7,Match Finished,2
+football,Primeira Liga,20260410,Moneyline,Lost,1.45,Match Finished,3
+football,Eredivisie,20260410,BTTS,Lost,1.91,Match Finished,1
+football,Bundesliga,20260410,BTTS,Won,1.5,Match Finished,3
+football,Premier League,20260411,Moneyline,Lost,1.45,Match Finished,3
+football,Premier League,20260411,Draw No Bet,Push,2.5,Match Finished,1
+football,Premier League,20260411,Moneyline,Won,1.7,Match Finished,3
+football,Premier League,20260411,BTTS,Lost,1.57,Match Finished,3
+football,Ligue 1,20260411,Over-Under,Won,1.67,Match Finished,3
+football,Ligue 1,20260411,BTTS,Lost,1.8,Match Finished,1
+football,Serie A,20260411,Over-Under,Lost,1.8,Match Finished,1
+football,Serie A,20260411,Draw No Bet,Won,1.52,Match Finished,1
+football,Serie A,20260411,Over-Under,Lost,2.0,Match Finished,2
+football,Serie A,20260411,Moneyline,Won,1.91,Match Finished,3
+football,La Liga,20260411,Moneyline,Won,1.3,Match Finished,3
+football,La Liga,20260411,Over-Under,Won,1.8,Match Finished,2
+football,La Liga,20260411,Moneyline,Lost,1.73,Match Finished,2
+football,La Liga,20260411,BTTS,Won,1.8,Match Finished,2
+football,Primeira Liga,20260411,Draw No Bet,Push,1.27,Match Finished,3
+football,Primeira Liga,20260411,Over-Under,Lost,1.48,Match Finished,2
+football,Primeira Liga,20260411,Draw No Bet,Lost,1.3,Match Finished,3
+football,Eredivisie,20260411,Draw No Bet,Push,1.4,Match Finished,2
+football,Eredivisie,20260411,Moneyline,Won,1.55,Match Finished,3
+football,Eredivisie,20260411,BTTS,Lost,1.36,Match Finished,1
+football,Eredivisie,20260411,Moneyline,Won,1.62,Match Finished,2
+football,Bundesliga,20260411,Over-Under,Lost,1.53,Match Finished,3
+football,Bundesliga,20260411,Draw No Bet,Lost,1.68,Match Finished,1
+football,Bundesliga,20260411,Moneyline,Won,1.48,Match Finished,2
+football,Bundesliga,20260411,BTTS,Won,1.95,Match Finished,1
+football,Bundesliga,20260411,BTTS,Won,1.44,Match Finished,2
+football,Brasileirão Série A,20260411,Moneyline,Lost,1.95,Match Finished,1
+football,Brasileirão Série A,20260411,Draw No Bet,Lost,1.68,Match Finished,2
+football,Brasileirão Série A,20260411,BTTS,Won,1.75,Match Finished,1
+football,Brasileirão Série A,20260411,Over-Under,Won,1.67,Match Finished,2
+football,Brasileirão Série A,20260411,Moneyline,Lost,2.4,Match Finished,2
+football,Allsvenskan,20260411,BTTS,Lost,1.53,Match Finished,2
+football,Allsvenskan,20260411,Over-Under,Won,2.5,Match Finished,1
+football,Allsvenskan,20260411,Draw No Bet,Push,1.78,Match Finished,3
+football,Eliteserien,20260411,Moneyline,Won,1.5,Match Finished,2
+football,Eliteserien,20260411,Draw No Bet,Won,1.11,Match Finished,2
+football,Eliteserien,20260411,Over-Under,Won,1.36,Match Finished,2
+football,Premier League,20260412,Over-Under,Won,1.57,Match Finished,1
+football,Premier League,20260412,BTTS,Won,1.57,Match Finished,2
+football,Premier League,20260412,Draw No Bet,Push,1.9,Match Finished,3
+football,Premier League,20260412,Draw No Bet,Won,1.88,Match Finished,3
+football,Ligue 1,20260412,Over-Under,Lost,1.91,Match Finished,1
+football,Ligue 1,20260412,Moneyline,Lost,1.91,Match Finished,1
+football,Ligue 1,20260412,Moneyline,Won,2.25,Match Finished,3
+football,Serie A,20260412,Draw No Bet,Won,1.3,Match Finished,3
+football,Serie A,20260412,BTTS,Won,1.7,Match Finished,2
+football,Serie A,20260412,BTTS,Won,1.8,Match Finished,2
+football,Serie A,20260412,Moneyline,Lost,1.6,Match Finished,3
+football,La Liga,20260412,Draw No Bet,Won,2.25,Match Finished,2
+football,La Liga,20260412,Over-Under,Won,2.0,Match Finished,3
+football,La Liga,20260412,Moneyline,Won,2.3,Match Finished,2
+football,La Liga,20260412,Draw No Bet,Push,1.58,Match Finished,2
+football,Primeira Liga,20260412,Over-Under,Lost,1.67,Match Finished,2
+football,Primeira Liga,20260412,Moneyline,Won,1.14,Match Finished,3
+football,Primeira Liga,20260412,Moneyline,Won,1.4,Match Finished,3
+football,Primeira Liga,20260412,BTTS,Won,1.91,Match Finished,2
+football,Eredivisie,20260412,Over-Under,Won,1.36,Match Finished,2
+football,Eredivisie,20260412,BTTS,Won,1.36,Match Finished,3
+football,Eredivisie,20260412,Over-Under,Lost,1.7,Match Finished,2
+football,Eredivisie,20260412,Draw No Bet,Push,1.62,Match Finished,3
+football,Bundesliga,20260412,BTTS,Won,1.62,Match Finished,3
+football,Bundesliga,20260412,Moneyline,Lost,2.3,Match Finished,2
+football,Bundesliga,20260412,Moneyline,Won,1.33,Match Finished,3
+football,Brasileirão Série A,20260412,Over-Under,Won,1.95,Match Finished,2
+football,Brasileirão Série A,20260412,BTTS,Won,1.95,Match Finished,2
+football,Brasileirão Série A,20260412,Moneyline,Lost,2.5,Match Finished,3
+football,Brasileirão Série A,20260412,BTTS,Won,1.95,Match Finished,2
+football,Brasileirão Série A,20260412,Draw No Bet,Lost,2.38,Match Finished,1
+football,Allsvenskan,20260412,Moneyline,Won,1.62,Match Finished,3
+football,Allsvenskan,20260412,Over-Under,Lost,1.7,Match Finished,2
+football,Allsvenskan,20260412,Moneyline,Won,1.9,Match Finished,3
+football,Eliteserien,20260412,Draw No Bet,Lost,2.2,Match Finished,1
+football,Eliteserien,20260412,Draw No Bet,Push,1.9,Match Finished,2
+football,Eliteserien,20260412,Over-Under,Won,1.62,Match Finished,2
+football,Eliteserien,20260412,Moneyline,Lost,1.53,Match Finished,3
+football,Premier League,20260413,Moneyline,Lost,1.55,Match Finished,3
+football,Serie A,20260413,BTTS,Lost,1.91,Match Finished,2
+football,La Liga,20260413,Over-Under,Won,1.5,Match Finished,3
+football,Primeira Liga,20260413,Draw No Bet,Push,1.4,Match Finished,2
+football,Allsvenskan,20260413,Moneyline,Lost,1.91,Match Finished,1
+football,Allsvenskan,20260413,Over-Under,Lost,1.7,Match Finished,3
+football,UEFA Champions League,20260414,BTTS,Won,1.36,Match Finished,3
+football,UEFA Champions League,20260414,Over-Under,Lost,1.44,Match Finished,3
+football,UEFA Champions League,20260415,Moneyline,Lost,1.55,Match Finished,2
+football,UEFA Champions League,20260415,BTTS,Won,1.36,Match Finished,3
+football,Eliteserien,20260415,Over-Under,Lost,1.3,Match Finished,1
+football,Eliteserien,20260415,Moneyline,Lost,1.8,Match Finished,2
+football,UEFA Europa League,20260416,BTTS,Won,1.75,Match Finished,1
+football,UEFA Europa League,20260416,Moneyline,Won,1.55,Match Finished,3
+football,UEFA Europa League,20260416,Over-Under,Lost,1.91,Match Finished,2
+football,UEFA Europa League,20260416,Draw No Bet,Lost,2.2,Match Finished,2
+football,UEFA Europa Conference League,20260416,Draw No Bet,Won,1.4,Match Finished,1
+football,UEFA Europa Conference League,20260416,Over-Under,Won,1.73,Match Finished,3
+football,UEFA Europa Conference League,20260416,BTTS,Lost,1.91,Match Finished,2
+football,UEFA Europa Conference League,20260416,Draw No Bet,Won,1.32,Match Finished,2
+football,Ligue 1,20260417,Moneyline,Won,1.5,Match Finished,3
+football,Serie A,20260417,Over-Under,Won,1.57,Match Finished,3
+football,Serie A,20260417,Draw No Bet,Lost,1.27,Match Finished,3
+football,Primeira Liga,20260417,Draw No Bet,Push,1.3,Match Finished,2
+football,Bundesliga,20260417,Moneyline,Lost,2.45,Match Finished,2
+football,Allsvenskan,20260417,BTTS,Lost,1.91,Match Finished,2
+football,Allsvenskan,20260417,Over-Under,Won,1.33,Match Finished,2
+football,Premier League,20260418,Moneyline,Lost,2.1,Match Finished,1
+football,Premier League,20260418,BTTS,Lost,1.5,Match Finished,3
+football,Premier League,20260418,Moneyline,Won,1.57,Match Finished,3
+football,Premier League,20260418,Over-Under,Won,1.5,Match Finished,1
+football,Premier League,20260418,Draw No Bet,Push,1.7,Match Finished,3
+football,Ligue 1,20260418,Over-Under,Won,1.57,Match Finished,2
+football,Ligue 1,20260418,Moneyline,Lost,1.5,Match Finished,3
+football,Ligue 1,20260418,Moneyline,Lost,1.67,Match Finished,2
+football,Serie A,20260418,BTTS,Won,1.57,Match Finished,2
+football,Serie A,20260418,Moneyline,Lost,2.45,Match Finished,1
+football,Serie A,20260418,Draw No Bet,Lost,1.48,Match Finished,2
+football,Primeira Liga,20260418,Over-Under,Won,1.5,Match Finished,2
+football,Primeira Liga,20260418,Moneyline,Lost,2.15,Match Finished,3
+football,Primeira Liga,20260418,Draw No Bet,Lost,2.3,Match Finished,2
+football,Bundesliga,20260418,Moneyline,Lost,1.38,Match Finished,3
+football,Bundesliga,20260418,Draw No Bet,Won,1.5,Match Finished,2
+football,Bundesliga,20260418,Over-Under,Won,1.5,Match Finished,2
+football,Bundesliga,20260418,Moneyline,Lost,2.15,Match Finished,2
+football,Bundesliga,20260418,BTTS,Won,1.62,Match Finished,2
+football,Brasileirão Série A,20260418,BTTS,Won,1.8,Match Finished,1
+football,Brasileirão Série A,20260418,Moneyline,Won,1.67,Match Finished,2
+football,Brasileirão Série A,20260418,Draw No Bet,Lost,2.25,Match Finished,2
+football,Brasileirão Série A,20260418,BTTS,Lost,2.05,Match Finished,1
+football,Allsvenskan,20260418,BTTS,Won,1.8,Match Finished,2
+football,Allsvenskan,20260418,Moneyline,Won,1.25,Match Finished,3
+football,Allsvenskan,20260418,Over-Under,Won,1.73,Match Finished,2
+football,Allsvenskan,20260418,Draw No Bet,Won,1.25,Match Finished,2
+football,Eliteserien,20260418,Over-Under,Won,1.25,Match Finished,3
+football,Eliteserien,20260418,Draw No Bet,Push,2.5,Match Finished,1
+football,Eliteserien,20260418,Moneyline,Won,1.8,Match Finished,3
+football,Premier League,20260419,Moneyline,Won,1.75,Match Finished,2
+football,Premier League,20260419,Draw No Bet,Lost,2.25,Match Finished,2
+football,Premier League,20260419,Over-Under,Lost,1.8,Match Finished,1
+football,Premier League,20260419,Moneyline,Won,1.48,Match Finished,1
+football,Ligue 1,20260419,Moneyline,Won,2.15,Match Finished,1
+football,Ligue 1,20260419,Over-Under,Won,1.73,Match Finished,2
+football,Ligue 1,20260419,Moneyline,Lost,2.35,Match Finished,1
+football,Ligue 1,20260419,BTTS,Won,1.8,Match Finished,2
+football,Ligue 1,20260419,BTTS,Lost,1.57,Match Finished,2
+football,Serie A,20260419,Draw No Bet,Push,1.85,Match Finished,1
+football,Serie A,20260419,Draw No Bet,Won,1.16,Match Finished,3
+football,Serie A,20260419,Moneyline,Won,2.4,Match Finished,3
+football,Serie A,20260419,Moneyline,Won,1.53,Match Finished,3
+football,Primeira Liga,20260419,Moneyline,Won,2.0,Match Finished,2
+football,Primeira Liga,20260419,Draw No Bet,Push,1.4,Match Finished,2
+football,Primeira Liga,20260419,Over-Under,Lost,1.67,Match Finished,1
+football,Primeira Liga,20260419,BTTS,Won,1.62,Match Finished,2
+football,Bundesliga,20260419,Over-Under,Won,1.62,Match Finished,3
+football,Bundesliga,20260419,BTTS,Won,1.7,Match Finished,2
+football,Bundesliga,20260419,BTTS,Won,1.62,Match Finished,3
+football,Brasileirão Série A,20260419,BTTS,Won,1.95,Match Finished,1
+football,Brasileirão Série A,20260419,Over-Under,Won,1.62,Match Finished,2
+football,Brasileirão Série A,20260419,Moneyline,Won,1.5,Match Finished,2
+football,Brasileirão Série A,20260419,Moneyline,Lost,1.73,Match Finished,2
+football,Brasileirão Série A,20260419,Moneyline,Won,1.6,Match Finished,3
+football,Brasileirão Série A,20260419,Over-Under,Lost,1.62,Match Finished,3
+football,Allsvenskan,20260419,Draw No Bet,Won,1.21,Match Finished,2
+football,Allsvenskan,20260419,BTTS,Won,1.57,Match Finished,3
+football,Eliteserien,20260419,BTTS,Lost,1.67,Match Finished,3
+football,Eliteserien,20260419,Over-Under,Lost,1.7,Match Finished,2
+football,Eliteserien,20260419,Moneyline,Won,2.1,Match Finished,2
+football,Eliteserien,20260419,Over-Under,Lost,1.65,Match Finished,1
+football,Premier League,20260420,Draw No Bet,Push,1.72,Match Finished,1
+football,Serie A,20260420,Draw No Bet,Push,1.53,Match Finished,3
+football,Primeira Liga,20260420,Over-Under,Won,1.33,Match Finished,2
+football,Premier League,20260421,BTTS,Lost,1.53,Match Finished,2
+football,La Liga,20260421,Draw No Bet,Won,1.32,Match Finished,2
+football,La Liga,20260421,Draw No Bet,Lost,1.66,Match Finished,1
+football,La Liga,20260421,Over-Under,Won,1.67,Match Finished,3
+football,La Liga,20260421,BTTS,Won,1.91,Match Finished,3
+football,Premier League,20260422,Moneyline,Lost,2.05,Match Finished,2
+football,Premier League,20260422,Over-Under,Lost,1.91,Match Finished,3
+football,Ligue 1,20260422,BTTS,Won,1.91,Match Finished,2
+football,La Liga,20260422,Moneyline,Won,1.22,Match Finished,3
+football,La Liga,20260422,Draw No Bet,Lost,2.05,Match Finished,1
+football,La Liga,20260422,Over-Under,Won,1.2,Match Finished,3
+football,Eredivisie,20260422,BTTS,Won,1.5,Match Finished,1
+football,Allsvenskan,20260422,Over-Under,Won,1.85,Match Finished,2
+football,Allsvenskan,20260422,Moneyline,Lost,1.17,Match Finished,3
+football,Allsvenskan,20260422,Draw No Bet,Won,1.72,Match Finished,1
+football,Allsvenskan,20260422,Over-Under,Won,1.7,Match Finished,2
+football,La Liga,20260423,Over-Under,Won,1.73,Match Finished,2
+football,La Liga,20260423,Draw No Bet,Won,1.48,Match Finished,2
+football,La Liga,20260423,Draw No Bet,Push,1.5,Match Finished,1
+football,Primeira Liga,20260423,Moneyline,Won,1.6,Match Finished,2
+football,Eredivisie,20260423,BTTS,Lost,1.44,Match Finished,3
+football,Eredivisie,20260423,Over-Under,Won,1.2,Match Finished,3
+football,Allsvenskan,20260423,Draw No Bet,Lost,1.66,Match Finished,2
+football,Allsvenskan,20260423,Draw No Bet,Push,1.65,Match Finished,2
+football,Allsvenskan,20260423,BTTS,Won,1.8,Match Finished,1
+football,Allsvenskan,20260423,Over-Under,Won,1.73,Match Finished,3
+football,Premier League,20260424,Over-Under,Lost,1.67,Match Finished,2
+football,Ligue 1,20260424,BTTS,Won,1.66,Match Finished,2
+football,Serie A,20260424,BTTS,Won,1.57,Match Finished,2
+football,La Liga,20260424,BTTS,Won,1.53,Match Finished,3
+football,Primeira Liga,20260424,Draw No Bet,Lost,2.25,Match Finished,1
+football,Bundesliga,20260424,Moneyline,Won,1.42,Match Finished,3
+football,Premier League,20260425,BTTS,Lost,1.75,Match Finished,3
+football,Premier League,20260425,BTTS,Lost,1.62,Match Finished,2
+football,Premier League,20260425,Moneyline,Won,1.44,Match Finished,2
+football,Premier League,20260425,Draw No Bet,Won,1.65,Match Finished,2
+football,Premier League,20260425,Over-Under,Lost,1.67,Match Finished,3
+football,Ligue 1,20260425,BTTS,Won,1.8,Match Finished,3
+football,Ligue 1,20260425,Moneyline,Won,1.65,Match Finished,2
+football,Ligue 1,20260425,Over-Under,Won,1.62,Match Finished,3
+football,Serie A,20260425,Over-Under,Won,1.28,Match Finished,1
+football,Serie A,20260425,Draw No Bet,Won,1.5,Match Finished,2
+football,Serie A,20260425,Draw No Bet,Push,1.8,Match Finished,1
+football,La Liga,20260425,BTTS,Won,1.8,Match Finished,3
+football,La Liga,20260425,Over-Under,Lost,1.36,Match Finished,1
+football,La Liga,20260425,Over-Under,Won,1.91,Match Finished,2
+football,La Liga,20260425,Draw No Bet,Lost,2.37,Match Finished,1
+football,Primeira Liga,20260425,Over-Under,Won,1.44,Match Finished,1
+football,Primeira Liga,20260425,Draw No Bet,Won,1.8,Match Finished,2
+football,Primeira Liga,20260425,Moneyline,Won,1.85,Match Finished,1
+football,Eredivisie,20260425,Draw No Bet,Won,1.3,Match Finished,2
+football,Eredivisie,20260425,BTTS,Won,1.57,Match Finished,3
+football,Eredivisie,20260425,Moneyline,Won,2.05,Match Finished,2
+football,Eredivisie,20260425,BTTS,Won,1.44,Match Finished,3
+football,Bundesliga,20260425,BTTS,Won,1.44,Match Finished,2
+football,Bundesliga,20260425,Draw No Bet,Won,1.44,Match Finished,1
+football,Bundesliga,20260425,Moneyline,Won,1.73,Match Finished,2
+football,Bundesliga,20260425,Over-Under,Lost,1.91,Match Finished,3
+football,Bundesliga,20260425,Over-Under,Won,1.4,Match Finished,1
+football,Bundesliga,20260425,Draw No Bet,Push,1.62,Match Finished,2
+football,Brasileirão Série A,20260425,Draw No Bet,Push,1.35,Match Finished,3
+football,Brasileirão Série A,20260425,BTTS,Won,1.8,Match Finished,2
+football,Brasileirão Série A,20260425,BTTS,Lost,1.75,Match Finished,3
+football,Eliteserien,20260425,Draw No Bet,Won,1.32,Match Finished,2
+football,Eliteserien,20260425,Over-Under,Lost,1.67,Match Finished,2
+football,Primeira Liga,20260426,Over-Under,Lost,2.0,Match Finished,3
+football,Primeira Liga,20260426,Draw No Bet,Lost,1.55,Match Finished,2
+football,Eredivisie,20260426,Moneyline,Lost,2.2,Match Finished,2
+football,Eredivisie,20260426,Over-Under,Lost,1.62,Match Finished,2
+football,Bundesliga,20260426,BTTS,Lost,1.8,Match Finished,3
+football,Bundesliga,20260426,Moneyline,Lost,1.57,Match Finished,3
+football,Brasileirão Série A,20260426,Moneyline,Won,1.65,Match Finished,3
+football,Brasileirão Série A,20260426,BTTS,Lost,1.91,Match Finished,2
+football,Brasileirão Série A,20260426,Draw No Bet,Won,1.7,Match Finished,1
+football,Brasileirão Série A,20260426,Draw No Bet,Won,1.5,Match Finished,1
+football,Brasileirão Série A,20260426,Moneyline,Won,1.3,Match Finished,3
+football,Brasileirão Série A,20260426,Over-Under,Won,1.65,Match Finished,2
+football,Allsvenskan,20260426,BTTS,Won,1.67,Match Finished,3
+football,Allsvenskan,20260426,Over-Under,Lost,1.75,Match Finished,1
+football,Allsvenskan,20260426,Over-Under,Lost,1.95,Match Finished,2
+football,Eliteserien,20260426,Draw No Bet,Push,2.5,Match Finished,1
+football,Eliteserien,20260426,Over-Under,Won,1.7,Match Finished,3
+football,Eliteserien,20260426,Over-Under,Won,2.2,Match Finished,1
+football,Eliteserien,20260426,Moneyline,Won,1.55,Match Finished,3
+football,Eliteserien,20260426,BTTS,Lost,1.36,Match Finished,2
+football,Brasileirão Série A,20260426,Moneyline,Won,1.91,Match Finished,3
+football,Ligue 1,20260426,Draw No Bet,Push,1.23,Match Finished,3
+football,Ligue 1,20260426,Moneyline,Lost,1.91,Match Finished,2
+football,Ligue 1,20260426,Moneyline,Lost,1.5,Match Finished,1
+football,Ligue 1,20260426,BTTS,Lost,1.75,Match Finished,1
+football,Ligue 1,20260426,Moneyline,Won,1.42,Match Finished,3
+football,Serie A,20260426,BTTS,Lost,1.7,Match Finished,3
+football,Serie A,20260426,Moneyline,Won,1.8,Match Finished,2
+football,Serie A,20260426,Over-Under,Won,1.8,Match Finished,3
+football,Serie A,20260426,Over-Under,Won,1.57,Match Finished,1
+football,La Liga,20260426,Over-Under,Lost,1.73,Match Finished,1
+football,La Liga,20260426,Draw No Bet,Push,2.02,Match Finished,2
+football,La Liga,20260426,Draw No Bet,Lost,1.65,Match Finished,2
+football,La Liga,20260426,BTTS,Won,1.67,Match Finished,3
+football,Primeira Liga,20260426,BTTS,Lost,1.75,Match Finished,2
+football,Primeira Liga,20260426,Moneyline,Won,2.15,Match Finished,2
+football,Premier League,20260427,BTTS,Won,1.53,Match Finished,2
+football,Serie A,20260427,Moneyline,Lost,1.75,Match Finished,2
+football,Serie A,20260427,Over-Under,Lost,1.67,Match Finished,3
+football,La Liga,20260427,BTTS,Lost,1.8,Match Finished,2
+football,Primeira Liga,20260427,Draw No Bet,Won,1.22,Match Finished,1
+football,Allsvenskan,20260427,Over-Under,Won,1.85,Match Finished,1
+football,Allsvenskan,20260427,BTTS,Won,1.57,Match Finished,2
+football,Allsvenskan,20260427,Draw No Bet,Lost,2.0,Match Finished,2
+football,Allsvenskan,20260427,Moneyline,Won,1.45,Match Finished,3
+football,Allsvenskan,20260427,Over-Under,Lost,1.85,Match Finished,1
+football,UEFA Champions League,20260428,Draw No Bet,Won,1.8,Match Finished,2
+football,UEFA Champions League,20260429,Over-Under,Won,1.67,Match Finished,2
+football,Primeira Liga,20260429,Over-Under,Won,1.33,Match Finished,3
+football,Eliteserien,20260429,Draw No Bet,Lost,1.42,Match Finished,2
+football,UEFA Europa League,20260430,Draw No Bet,Won,1.53,Match Finished,2
+football,UEFA Europa League,20260430,BTTS,Lost,1.8,Match Finished,2
+football,UEFA Europa Conference League,20260430,Moneyline,Won,2.15,Match Finished,2
+football,UEFA Europa Conference League,20260430,Over-Under,Won,1.4,Match Finished,2
+football,Eliteserien,20260430,Over-Under,Won,1.22,Match Finished,3
+football,Premier League,20260501,Moneyline,Won,1.33,Match Finished,3
+football,Serie A,20260501,Over-Under,Lost,1.53,Match Finished,3
+football,La Liga,20260501,BTTS,Lost,1.66,Match Finished,2
+football,Eliteserien,20260501,Over-Under,Won,1.48,Match Finished,2
+football,Premier League,20260502,Over-Under,Lost,1.91,Match Finished,3
+football,Premier League,20260502,BTTS,Lost,1.57,Match Finished,1
+football,Premier League,20260502,Draw No Bet,Lost,1.92,Match Finished,2
+football,Premier League,20260502,Moneyline,Lost,2.05,Match Finished,2
+football,Ligue 1,20260502,Moneyline,Won,1.36,Match Finished,2
+football,Ligue 1,20260502,Moneyline,Lost,1.73,Match Finished,2
+football,Ligue 1,20260502,BTTS,Won,1.57,Match Finished,2
+football,Ligue 1,20260502,Over-Under,Won,1.4,Match Finished,2
+football,Serie A,20260502,Moneyline,Lost,1.55,Match Finished,3
+football,Serie A,20260502,BTTS,Lost,1.91,Match Finished,2
+football,Serie A,20260502,Draw No Bet,Won,1.6,Match Finished,1
+football,La Liga,20260502,Over-Under,Lost,1.8,Match Finished,3
+football,La Liga,20260502,Moneyline,Won,1.67,Match Finished,1
+football,La Liga,20260502,BTTS,Lost,1.8,Match Finished,3
+football,La Liga,20260502,Moneyline,Won,1.7,Match Finished,2
+football,Primeira Liga,20260502,BTTS,Won,1.95,Match Finished,1
+football,Primeira Liga,20260502,Over-Under,Won,1.73,Match Finished,2
+football,Primeira Liga,20260502,Moneyline,Won,1.17,Match Finished,3
+football,Primeira Liga,20260502,Draw No Bet,Won,1.92,Match Finished,1
+football,Primeira Liga,20260502,Moneyline,Lost,1.5,Match Finished,2
+football,Eredivisie,20260502,BTTS,Won,1.33,Match Finished,3
+football,Eredivisie,20260502,Moneyline,Lost,1.7,Match Finished,1
+football,Eredivisie,20260502,Over-Under,Lost,1.4,Match Finished,2
+football,Eredivisie,20260502,Draw No Bet,Won,1.32,Match Finished,2
+football,Bundesliga,20260502,Over-Under,Won,1.36,Match Finished,3
+football,Bundesliga,20260502,Moneyline,Lost,1.25,Match Finished,3
+football,Bundesliga,20260502,Over-Under,Won,1.53,Match Finished,2
+football,Bundesliga,20260502,BTTS,Won,1.33,Match Finished,3
+football,Bundesliga,20260502,Draw No Bet,Push,1.8,Match Finished,2
+football,Bundesliga,20260502,Over-Under,Won,1.57,Match Finished,2
+football,Brasileirão Série A,20260502,BTTS,Won,1.91,Match Finished,1
+football,Brasileirão Série A,20260502,Moneyline,Lost,1.53,Match Finished,3
+football,Brasileirão Série A,20260502,Moneyline,Lost,1.53,Match Finished,3
+football,Brasileirão Série A,20260502,Draw No Bet,Won,1.5,Match Finished,2
+football,Allsvenskan,20260502,Over-Under,Lost,1.85,Match Finished,1
+football,Allsvenskan,20260502,Moneyline,Won,1.48,Match Finished,2
+football,Eliteserien,20260502,BTTS,Won,1.67,Match Finished,2
+football,Premier League,20260503,Moneyline,Lost,2.1,Match Finished,3
+football,Premier League,20260503,BTTS,Lost,1.7,Match Finished,2
+football,Premier League,20260503,BTTS,Won,1.44,Match Finished,2
+football,Ligue 1,20260503,Over-Under,Lost,1.73,Match Finished,1
+football,Ligue 1,20260503,Moneyline,Lost,1.4,Match Finished,3
+football,Ligue 1,20260503,Over-Under,Won,1.62,Match Finished,2
+football,Ligue 1,20260503,Draw No Bet,Won,1.45,Match Finished,3
+football,Ligue 1,20260503,Draw No Bet,Lost,2.1,Match Finished,1
+football,Serie A,20260503,Moneyline,Lost,1.8,Match Finished,1
+football,Serie A,20260503,Moneyline,Won,1.2,Match Finished,3
+football,Serie A,20260503,BTTS,Lost,1.53,Match Finished,3
+football,Serie A,20260503,Over-Under,Lost,1.73,Match Finished,1
+football,La Liga,20260503,Draw No Bet,Won,1.2,Match Finished,3
+football,La Liga,20260503,BTTS,Won,1.67,Match Finished,1
+football,La Liga,20260503,BTTS,Lost,1.57,Match Finished,2
+football,La Liga,20260503,Over-Under,Won,1.44,Match Finished,2
+football,Primeira Liga,20260503,Moneyline,Lost,1.7,Match Finished,3
+football,Primeira Liga,20260503,BTTS,Won,1.91,Match Finished,3
+football,Primeira Liga,20260503,Draw No Bet,Push,1.45,Match Finished,2
+football,Eredivisie,20260503,Over-Under,Won,1.44,Match Finished,2
+football,Eredivisie,20260503,Over-Under,Lost,1.48,Match Finished,1
+football,Eredivisie,20260503,BTTS,Won,1.62,Match Finished,2
+football,Eredivisie,20260503,Draw No Bet,Push,1.55,Match Finished,1
+football,Eredivisie,20260503,Moneyline,Won,1.48,Match Finished,3
+football,Bundesliga,20260503,Over-Under,Lost,1.67,Match Finished,2
+football,Bundesliga,20260503,Draw No Bet,Won,1.8,Match Finished,2
+football,Brasileirão Série A,20260503,Moneyline,Won,2.1,Match Finished,1
+football,Brasileirão Série A,20260503,Over-Under,Won,1.8,Match Finished,2
+football,Brasileirão Série A,20260503,Draw No Bet,Lost,2.38,Match Finished,2
+football,Brasileirão Série A,20260503,Over-Under,Lost,1.6,Match Finished,3
+football,Brasileirão Série A,20260503,Moneyline,Lost,2.0,Match Finished,1
+football,Allsvenskan,20260503,Draw No Bet,Push,1.9,Match Finished,1
+football,Allsvenskan,20260503,Moneyline,Won,1.53,Match Finished,3
+football,Allsvenskan,20260503,Moneyline,Won,1.3,Match Finished,3
+football,Allsvenskan,20260503,BTTS,Lost,2.0,Match Finished,2
+football,Eliteserien,20260503,Over-Under,Won,1.48,Match Finished,1
+football,Eliteserien,20260503,BTTS,Won,1.53,Match Finished,2
+football,Eliteserien,20260503,Draw No Bet,Won,1.32,Match Finished,3
+football,Eliteserien,20260503,Draw No Bet,Push,1.3,Match Finished,3
+football,Premier League,20260504,Over-Under,Won,1.73,Match Finished,2
+football,Premier League,20260504,Moneyline,Lost,1.48,Match Finished,3
+football,Serie A,20260504,Draw No Bet,Won,1.78,Match Finished,3
+football,Serie A,20260504,BTTS,Lost,1.95,Match Finished,2
+football,La Liga,20260504,Draw No Bet,Lost,2.08,Match Finished,1
+football,Primeira Liga,20260504,Moneyline,Won,1.27,Match Finished,2
+football,Allsvenskan,20260504,Over-Under,Won,2.0,Match Finished,2
+football,Allsvenskan,20260504,Over-Under,Lost,1.8,Match Finished,1
+football,Eliteserien,20260504,BTTS,Lost,1.53,Match Finished,2
+football,UEFA Champions League,20260505,Moneyline,Won,1.6,Match Finished,2
+football,Eredivisie,20260505,BTTS,Lost,1.5,Match Finished,2
+football,UEFA Champions League,20260506,Moneyline,Lost,1.62,Match Finished,2
+football,UEFA Europa League,20260507,BTTS,Lost,1.8,Match Finished,3
+football,UEFA Europa League,20260507,Moneyline,Won,1.65,Match Finished,2
+football,UEFA Europa Conference League,20260507,Over-Under,Won,1.73,Match Finished,3
+football,UEFA Europa Conference League,20260507,Draw No Bet,Won,2.85,Match Finished,1
+football,Ligue 1,20260508,Moneyline,Won,1.44,Match Finished,3
+football,Serie A,20260508,Draw No Bet,Lost,2.02,Match Finished,2
+football,La Liga,20260508,BTTS,Won,1.7,Match Finished,1
+football,Bundesliga,20260508,Moneyline,Won,1.5,Match Finished,3
+football,Allsvenskan,20260508,Over-Under,Lost,1.9,Match Finished,2
+football,Premier League,20260509,Over-Under,Won,1.5,Match Finished,2
+football,Premier League,20260509,Draw No Bet,Won,1.88,Match Finished,2
+football,Premier League,20260509,Moneyline,Lost,1.91,Match Finished,3
+football,Premier League,20260509,Over-Under,Won,1.38,Match Finished,2
+football,Premier League,20260509,Moneyline,Lost,1.95,Match Finished,1
+football,Serie A,20260509,Over-Under,Won,1.25,Match Finished,2
+football,Serie A,20260509,BTTS,Lost,1.66,Match Finished,2
+football,Serie A,20260509,Moneyline,Won,1.4,Match Finished,3
+football,La Liga,20260509,Moneyline,Lost,2.15,Match Finished,1
+football,La Liga,20260509,Draw No Bet,Push,1.58,Match Finished,2
+football,La Liga,20260509,Draw No Bet,Push,1.92,Match Finished,2
+football,La Liga,20260509,Moneyline,Won,2.05,Match Finished,3
+football,Bundesliga,20260509,Draw No Bet,Won,1.5,Match Finished,3
+football,Bundesliga,20260509,Over-Under,Lost,1.36,Match Finished,2
+football,Bundesliga,20260509,Moneyline,Won,1.3,Match Finished,3
+football,Bundesliga,20260509,BTTS,Won,1.33,Match Finished,3
+football,Bundesliga,20260509,BTTS,Lost,1.33,Match Finished,2
+football,Brasileirão Série A,20260509,Over-Under,Lost,1.65,Match Finished,2
+football,Brasileirão Série A,20260509,BTTS,Won,2.1,Match Finished,1
+football,Allsvenskan,20260509,Draw No Bet,Won,1.45,Match Finished,3
+football,Allsvenskan,20260509,Moneyline,Won,1.62,Match Finished,3
+football,Allsvenskan,20260509,Over-Under,Lost,1.9,Match Finished,1
+football,Eliteserien,20260509,BTTS,Won,1.5,Match Finished,1
+football,Brasileirão Série A,20260510,Moneyline,Lost,2.1,Match Finished,2
+football,Premier League,20260510,Moneyline,Lost,1.62,Match Finished,3
+football,Premier League,20260510,Over-Under,Lost,1.91,Match Finished,2
+football,Premier League,20260510,BTTS,Won,1.57,Match Finished,2
+football,Premier League,20260510,Moneyline,Won,1.55,Match Finished,3
+football,Ligue 1,20260510,BTTS,Won,1.7,Match Finished,2
+football,Ligue 1,20260510,Over-Under,Won,1.35,Match Finished,2
+football,Ligue 1,20260510,BTTS,Lost,1.57,Match Finished,2
+football,Ligue 1,20260510,Over-Under,Won,1.67,Match Finished,1
+football,Ligue 1,20260510,Over-Under,Lost,1.62,Match Finished,2
+football,Ligue 1,20260510,Moneyline,Won,1.18,Match Finished,3
+football,Ligue 1,20260510,BTTS,Won,1.57,Match Finished,2
+football,Ligue 1,20260510,Draw No Bet,Lost,1.35,Match Finished,2
+football,Serie A,20260510,Draw No Bet,Won,1.27,Match Finished,2
+football,Serie A,20260510,BTTS,Lost,1.91,Match Finished,1
+football,Serie A,20260510,Over-Under,Lost,2.0,Match Finished,3
+football,Serie A,20260510,Moneyline,Won,1.5,Match Finished,2
+football,Serie A,20260510,Moneyline,Won,1.38,Match Finished,3
+football,La Liga,20260510,Moneyline,Lost,1.67,Match Finished,2
+football,La Liga,20260510,Moneyline,Won,1.62,Match Finished,3
+football,La Liga,20260510,BTTS,Won,1.5,Match Finished,2
+football,La Liga,20260510,Over-Under,Won,1.5,Match Finished,3
+football,Primeira Liga,20260510,Moneyline,Lost,1.19,Match Finished,3
+football,Primeira Liga,20260510,BTTS,Won,1.57,Match Finished,1
+football,Eredivisie,20260510,Over-Under,Won,1.4,Match Finished,3
+football,Eredivisie,20260510,Moneyline,Lost,1.73,Match Finished,2
+football,Eredivisie,20260510,Over-Under,Lost,1.4,Match Finished,2
+football,Eredivisie,20260510,Over-Under,Won,1.73,Match Finished,2
+football,Eredivisie,20260510,Draw No Bet,Lost,1.68,Match Finished,1
+football,Eredivisie,20260510,BTTS,Won,1.5,Match Finished,1
+football,Eredivisie,20260510,Moneyline,Won,1.33,Match Finished,2
+football,Eredivisie,20260510,Moneyline,Won,1.36,Match Finished,3
+football,Bundesliga,20260510,Over-Under,Won,1.44,Match Finished,1
+football,Bundesliga,20260510,BTTS,Won,1.53,Match Finished,2
+football,Bundesliga,20260510,Draw No Bet,Lost,1.3,Match Finished,2
+football,Brasileirão Série A,20260510,BTTS,Won,1.8,Match Finished,3
+football,Brasileirão Série A,20260510,Over-Under,Lost,1.53,Match Finished,2
+football,Brasileirão Série A,20260510,BTTS,Lost,1.95,Match Finished,2
+football,Brasileirão Série A,20260510,Draw No Bet,Push,1.16,Match Finished,3
+football,Brasileirão Série A,20260510,Over-Under,Won,1.7,Match Finished,1
+football,Brasileirão Série A,20260510,Moneyline,Won,1.8,Match Finished,1
+football,Allsvenskan,20260510,Draw No Bet,Lost,1.95,Match Finished,2
+football,Allsvenskan,20260510,Over-Under,Won,1.67,Match Finished,3
+football,Allsvenskan,20260510,BTTS,Won,1.8,Match Finished,2
+football,Eliteserien,20260510,Moneyline,Won,2.75,Match Finished,2
+football,Eliteserien,20260510,Draw No Bet,Won,1.32,Match Finished,2
+football,Eliteserien,20260510,Moneyline,Won,1.57,Match Finished,1
+football,Eliteserien,20260510,Over-Under,Lost,1.85,Match Finished,2
+football,Premier League,20260511,BTTS,Won,1.7,Match Finished,3
+football,Serie A,20260511,BTTS,Lost,1.8,Match Finished,1
+football,La Liga,20260511,Draw No Bet,Push,1.78,Match Finished,3
+football,Primeira Liga,20260511,Moneyline,Lost,1.42,Match Finished,2
+football,Primeira Liga,20260511,Moneyline,Lost,1.95,Match Finished,2
+football,Primeira Liga,20260511,BTTS,Won,1.8,Match Finished,1
+football,Primeira Liga,20260511,Over-Under,Won,1.4,Match Finished,1
+football,Primeira Liga,20260511,Draw No Bet,Won,1.6,Match Finished,2
+football,Primeira Liga,20260511,Over-Under,Won,1.8,Match Finished,2
+football,Primeira Liga,20260511,Moneyline,Lost,1.73,Match Finished,2
+football,Allsvenskan,20260511,Over-Under,Lost,1.36,Match Finished,3
+football,La Liga,20260512,Over-Under,Won,1.67,Match Finished,2
+football,La Liga,20260512,Moneyline,Lost,1.75,Match Finished,2
+football,La Liga,20260512,BTTS,Won,1.66,Match Finished,3
+football,Premier League,20260513,Moneyline,Won,1.2,Match Finished,3
+football,Ligue 1,20260513,BTTS,Won,1.62,Match Finished,2
+football,Ligue 1,20260513,BTTS,Lost,1.5,Match Finished,2
+football,La Liga,20260513,Over-Under,Lost,1.5,Match Finished,3
+football,La Liga,20260513,Over-Under,Won,1.25,Match Finished,1
+football,La Liga,20260513,Draw No Bet,Won,1.52,Match Finished,2
+football,La Liga,20260513,Moneyline,Lost,2.05,Match Finished,2
+football,La Liga,20260514,BTTS,Won,1.67,Match Finished,3
+football,La Liga,20260514,Moneyline,Won,1.27,Match Finished,3
+football,La Liga,20260514,Over-Under,Won,1.73,Match Finished,2
+football,Premier League,20260515,BTTS,Won,1.53,Match Finished,3
+football,Bundesliga,20260516,Over-Under,Won,1.73,Match Finished,1
+football,Bundesliga,20260516,Draw No Bet,Won,2.02,Match Finished,3
+football,Bundesliga,20260516,Draw No Bet,Won,1.44,Match Finished,2
+football,Brasileirão Série A,20260516,Moneyline,Won,2.1,Match Finished,1
+football,Brasileirão Série A,20260516,Moneyline,Won,1.9,Match Finished,3
+football,Brasileirão Série A,20260516,BTTS,Won,1.91,Match Finished,2
+football,Allsvenskan,20260516,Moneyline,Lost,1.65,Match Finished,2
+football,Allsvenskan,20260516,Draw No Bet,Push,1.4,Match Finished,3
+football,Eliteserien,20260516,Over-Under,Won,1.48,Match Finished,1
+football,Eliteserien,20260516,Draw No Bet,Lost,2.68,Match Finished,2
+football,Eliteserien,20260516,BTTS,Won,1.53,Match Finished,1
+football,Eliteserien,20260516,Over-Under,Won,1.66,Match Finished,1
+football,Eliteserien,20260516,Draw No Bet,Lost,1.3,Match Finished,3
+football,Eliteserien,20260516,BTTS,Won,1.91,Match Finished,2
+football,Eliteserien,20260516,Moneyline,Won,1.45,Match Finished,2
+football,Primeira Liga,20260516,Over-Under,Lost,1.95,Match Finished,2
+football,Primeira Liga,20260516,Moneyline,Lost,1.65,Match Finished,3
+football,Primeira Liga,20260516,Draw No Bet,Push,1.24,Match Finished,2
+football,Primeira Liga,20260516,Moneyline,Won,1.33,Match Finished,3
+football,Primeira Liga,20260516,BTTS,Lost,1.7,Match Finished,1
+football,Primeira Liga,20260516,Moneyline,Won,1.33,Match Finished,3
+football,Primeira Liga,20260516,Draw No Bet,Push,1.38,Match Finished,2
+football,Primeira Liga,20260516,BTTS,Won,2.2,Match Finished,1
+football,Primeira Liga,20260516,BTTS,Lost,1.95,Match Finished,2
+football,Bundesliga,20260516,Moneyline,Lost,1.25,Match Finished,3
+football,Bundesliga,20260516,Over-Under,Won,1.33,Match Finished,2
+football,Bundesliga,20260516,BTTS,Lost,1.4,Match Finished,2
+football,Bundesliga,20260516,Draw No Bet,Push,1.45,Match Finished,2
+football,Bundesliga,20260516,Over-Under,Won,1.44,Match Finished,3
+football,Bundesliga,20260516,BTTS,Lost,1.44,Match Finished,3
+football,Brasileirão Série A,20260517,Moneyline,Lost,1.7,Match Finished,3
+football,Premier League,20260517,Moneyline,Lost,1.62,Match Finished,2
+football,Premier League,20260517,Moneyline,Lost,1.83,Match Finished,1
+football,Premier League,20260517,BTTS,Lost,1.57,Match Finished,2
+football,Premier League,20260517,BTTS,Won,1.62,Match Finished,2
+football,Premier League,20260517,Over-Under,Won,1.53,Match Finished,2
+football,Premier League,20260517,Over-Under,Won,2.0,Match Finished,1
+football,Ligue 1,20260517,Moneyline,Lost,1.83,Match Finished,2
+football,Ligue 1,20260517,Moneyline,Lost,1.4,Match Finished,3
+football,Ligue 1,20260517,Over-Under,Won,1.36,Match Finished,3
+football,Ligue 1,20260517,Draw No Bet,Lost,1.3,Match Finished,3
+football,Ligue 1,20260517,BTTS,Won,1.5,Match Finished,2
+football,Ligue 1,20260517,Moneyline,Lost,1.33,Match Finished,3
+football,Ligue 1,20260517,Over-Under,Won,1.44,Match Finished,3
+football,Ligue 1,20260517,BTTS,Won,1.44,Match Finished,2
+football,Serie A,20260517,BTTS,Lost,1.67,Match Finished,2
+football,Serie A,20260517,Draw No Bet,Won,1.58,Match Finished,1
+football,Serie A,20260517,Moneyline,Won,1.33,Match Finished,2
+football,Serie A,20260517,Draw No Bet,Won,1.3,Match Finished,2
+football,Serie A,20260517,Moneyline,Lost,1.22,Match Finished,3
+football,Serie A,20260517,Draw No Bet,Lost,1.12,Match Finished,3
+football,Serie A,20260517,Moneyline,Won,1.36,Match Finished,3
+football,Serie A,20260517,BTTS,Won,1.8,Match Finished,2
+football,Serie A,20260517,Over-Under,Won,2.1,Match Finished,2
+football,Serie A,20260517,Moneyline,Lost,2.38,Match Finished,1
+football,La Liga,20260517,BTTS,Won,1.8,Match Finished,2
+football,La Liga,20260517,Over-Under,Lost,1.73,Match Finished,2
+football,La Liga,20260517,Moneyline,Won,1.33,Match Finished,2
+football,La Liga,20260517,Over-Under,Won,1.44,Match Finished,2
+football,La Liga,20260517,Moneyline,Won,2.1,Match Finished,1
+football,La Liga,20260517,BTTS,Won,2.0,Match Finished,2
+football,La Liga,20260517,Over-Under,Lost,1.73,Match Finished,1
+football,La Liga,20260517,Over-Under,Lost,2.0,Match Finished,1
+football,La Liga,20260517,Moneyline,Won,1.85,Match Finished,2
+football,La Liga,20260517,Draw No Bet,Won,1.58,Match Finished,3
+football,Eredivisie,20260517,Moneyline,Lost,1.38,Match Finished,3
+football,Eredivisie,20260517,BTTS,Won,1.44,Match Finished,3
+football,Eredivisie,20260517,Moneyline,Lost,2.1,Match Finished,2
+football,Eredivisie,20260517,Moneyline,Won,1.56,Match Finished,2
+football,Eredivisie,20260517,Over-Under,Won,1.33,Match Finished,2
+football,Eredivisie,20260517,Draw No Bet,Won,1.65,Match Finished,2
+football,Eredivisie,20260517,Draw No Bet,Lost,1.48,Match Finished,3
+football,Eredivisie,20260517,BTTS,Lost,1.53,Match Finished,2
+football,Eredivisie,20260517,Over-Under,Lost,1.91,Match Finished,1
+football,Brasileirão Série A,20260517,Draw No Bet,Push,1.55,Match Finished,2
+football,Brasileirão Série A,20260517,Over-Under,Lost,1.85,Match Finished,2
+football,Brasileirão Série A,20260517,BTTS,Won,1.91,Match Finished,1
+football,Brasileirão Série A,20260517,Moneyline,Won,1.7,Match Finished,2
+football,Brasileirão Série A,20260517,Draw No Bet,Lost,1.68,Match Finished,1
+football,Brasileirão Série A,20260517,Moneyline,Lost,1.75,Match Finished,3
+football,Allsvenskan,20260517,Over-Under,Lost,1.85,Match Finished,2
+football,Allsvenskan,20260517,Moneyline,Won,1.6,Match Finished,2
+football,Allsvenskan,20260517,BTTS,Lost,1.57,Match Finished,3
+football,Allsvenskan,20260517,Draw No Bet,Push,1.58,Match Finished,1
+football,Premier League,20260518,Over-Under,Lost,1.33,Match Finished,3
+football,Allsvenskan,20260518,BTTS,Won,1.53,Match Finished,3
+football,Premier League,20260519,BTTS,Won,1.5,Match Finished,2
+football,Premier League,20260519,Draw No Bet,Won,1.4,Match Finished,2
+football,UEFA Europa League,20260520,Over-Under,Won,2.1,Match Finished,3
+football,Allsvenskan,20260520,BTTS,Lost,1.7,Match Finished,2
+football,Eliteserien,20260520,Over-Under,Won,1.8,Match Finished,1
+football,Eliteserien,20260520,Moneyline,Won,1.22,Match Finished,3
+football,Eliteserien,20260520,Moneyline,Lost,1.85,Match Finished,1
+football,Eredivisie,20260521,BTTS,Lost,1.57,Match Finished,3
+football,Eredivisie,20260521,Moneyline,Won,1.91,Match Finished,1
+football,Allsvenskan,20260521,Over-Under,Won,1.33,Match Finished,2
+football,Serie A,20260522,BTTS,Won,1.53,Match Finished,2
+football,Allsvenskan,20260522,Moneyline,Lost,1.4,Match Finished,3
+football,Serie A,20260523,Draw No Bet,Push,1.62,Match Finished,1
+football,Serie A,20260523,Moneyline,Won,1.6,Match Finished,2
+football,La Liga,20260523,Draw No Bet,Won,2.02,Match Finished,1
+football,La Liga,20260523,BTTS,Won,1.57,Match Finished,2
+football,La Liga,20260523,Over-Under,Lost,2.0,Match Finished,2
+football,La Liga,20260523,BTTS,Won,1.62,Match Finished,2
+football,La Liga,20260523,Over-Under,Won,1.36,Match Finished,3
+football,La Liga,20260523,Moneyline,Lost,1.75,Match Finished,2
+football,La Liga,20260523,Moneyline,Won,1.44,Match Finished,2
+football,La Liga,20260523,Over-Under,Won,1.14,Match Finished,2
+football,La Liga,20260523,BTTS,Won,1.44,Match Finished,1
+football,Brasileirão Série A,20260523,Moneyline,Won,2.2,Match Finished,2
+football,Brasileirão Série A,20260523,Draw No Bet,Won,1.88,Match Finished,1
+football,Brasileirão Série A,20260523,BTTS,Won,1.75,Match Finished,3
+football,Brasileirão Série A,20260523,Over-Under,Won,1.67,Match Finished,1
+football,Allsvenskan,20260523,BTTS,Won,2.05,Match Finished,1
+football,Allsvenskan,20260523,Over-Under,Lost,1.67,Match Finished,2
+football,Premier League,20260524,BTTS,Lost,1.44,Match Finished,2
+football,Premier League,20260524,Over-Under,Won,1.22,Match Finished,2
+football,Premier League,20260524,BTTS,Won,1.66,Match Finished,2
+football,Premier League,20260524,BTTS,Lost,1.53,Match Finished,2
+football,Premier League,20260524,Moneyline,Lost,1.85,Match Finished,1
+football,Premier League,20260524,Over-Under,Won,1.3,Match Finished,3
+football,Premier League,20260524,Over-Under,Lost,1.57,Match Finished,2
+football,Premier League,20260524,Moneyline,Lost,2.0,Match Finished,2
+football,Premier League,20260524,Moneyline,Won,1.85,Match Finished,2
+football,Premier League,20260524,Draw No Bet,Won,1.35,Match Finished,3
+football,Serie A,20260524,Over-Under,Won,1.72,Match Finished,2
+football,Serie A,20260524,BTTS,Won,1.67,Match Finished,1
+football,Serie A,20260524,Moneyline,Lost,1.3,Match Finished,2
+football,Serie A,20260524,Moneyline,Won,1.5,Match Finished,3
+football,Serie A,20260524,BTTS,Lost,1.67,Match Finished,1
+football,Serie A,20260524,Moneyline,Won,1.28,Match Finished,3
+football,La Liga,20260524,Draw No Bet,Lost,1.98,Match Finished,1
+football,Eredivisie,20260524,Over-Under,Lost,1.6,Match Finished,2
+football,Brasileirão Série A,20260524,Over-Under,Won,1.53,Match Finished,2
+football,Brasileirão Série A,20260524,Moneyline,Won,1.33,Match Finished,3
+football,Brasileirão Série A,20260524,BTTS,Won,1.8,Match Finished,1
+football,Brasileirão Série A,20260524,Moneyline,Lost,2.0,Match Finished,2
+football,Allsvenskan,20260524,Moneyline,Lost,1.42,Match Finished,2
+football,Allsvenskan,20260524,BTTS,Won,1.75,Match Finished,3
+football,Allsvenskan,20260524,Over-Under,Won,1.67,Match Finished,2
+football,Eliteserien,20260524,Moneyline,Won,1.3,Match Finished,2
+football,Eliteserien,20260524,Draw No Bet,Won,1.23,Match Finished,3
+football,Brasileirão Série A,20260525,BTTS,Won,1.75,Match Finished,2
+football,Allsvenskan,20260525,Over-Under,Lost,1.8,Match Finished,2
+football,Allsvenskan,20260525,Draw No Bet,Push,1.85,Match Finished,3
+football,Eliteserien,20260525,Over-Under,Lost,1.7,Match Finished,2
+football,Eliteserien,20260525,Draw No Bet,Lost,2.15,Match Finished,1
+football,Eliteserien,20260525,Moneyline,Lost,1.9,Match Finished,2
+football,Eliteserien,20260525,BTTS,Won,1.44,Match Finished,1
+football,Eliteserien,20260525,Over-Under,Lost,1.57,Match Finished,2
+football,Ligue 1,20260526,Draw No Bet,Push,1.6,Match Finished,2
+football,UEFA Europa Conference League,20260527,BTTS,Lost,1.9,Match Finished,2
+football,Ligue 1,20260529,Over-Under,Lost,1.62,Match Finished,3
+football,Allsvenskan,20260529,Moneyline,Lost,1.91,Match Finished,1
+football,Eliteserien,20260529,Over-Under,Won,1.65,Match Finished,2
+football,Eliteserien,20260529,BTTS,Won,1.5,Match Finished,3
+football,Eliteserien,20260529,BTTS,Won,1.67,Match Finished,2
+football,Eliteserien,20260529,Draw No Bet,Push,1.7,Match Finished,1
+football,Eliteserien,20260529,Moneyline,Lost,1.57,Match Finished,2
+football,UEFA Champions League,20260530,Draw No Bet,Push,1.62,Match Finished,2
+football,Brasileirão Série A,20260530,Moneyline,Won,1.8,Match Finished,3
+football,Brasileirão Série A,20260530,Over-Under,Won,1.7,Match Finished,2
+football,Brasileirão Série A,20260530,Moneyline,Won,1.42,Match Finished,1
+football,Brasileirão Série A,20260530,Over-Under,Lost,1.57,Match Finished,3
+football,Brasileirão Série A,20260530,Draw No Bet,Won,1.3,Match Finished,2
+football,Allsvenskan,20260530,Draw No Bet,Won,1.58,Match Finished,2
+football,Allsvenskan,20260530,BTTS,Lost,1.75,Match Finished,1
+football,Allsvenskan,20260530,BTTS,Won,1.91,Match Finished,2
+football,Eliteserien,20260530,Moneyline,Won,1.6,Match Finished,2
+football,Brasileirão Série A,20260531,Over-Under,Lost,1.28,Match Finished,1
+football,Brasileirão Série A,20260531,Moneyline,Lost,2.0,Match Finished,2
+football,Brasileirão Série A,20260531,Moneyline,Won,1.27,Match Finished,3
+football,Brasileirão Série A,20260531,Draw No Bet,Lost,1.85,Match Finished,1
+football,Brasileirão Série A,20260531,BTTS,Lost,1.91,Match Finished,2
+football,Allsvenskan,20260531,Over-Under,Won,2.0,Match Finished,1
+football,Allsvenskan,20260531,Draw No Bet,Won,2.08,Match Finished,3
+football,Allsvenskan,20260531,BTTS,Won,1.7,Match Finished,2
+football,Friendlies,20260601,Draw No Bet,Won,1.19,Match Finished,3
+football,Friendlies,20260601,BTTS,Won,1.73,Match Finished,3
+football,Friendlies,20260601,Moneyline,Won,1.12,Match Finished,2
+football,Friendlies,20260601,Over-Under,Won,1.61,Match Finished,1
+football,Friendlies,20260601,Moneyline,Won,1.2,Match Finished,3
+football,Friendlies,20260601,BTTS,Won,1.62,Match Finished,2
+football,Friendlies,20260602,BTTS,Lost,1.67,Match Finished,2
+football,Friendlies,20260602,Over-Under,Won,1.75,Match Finished,2
+football,Friendlies,20260602,Draw No Bet,Push,1.5,Match Finished,1
+football,Friendlies,20260602,Over-Under,Won,1.5,Match Finished,3
+football,Friendlies,20260603,BTTS,Lost,1.91,Match Finished,2
+football,Friendlies,20260603,Draw No Bet,Push,2.5,Match Finished,2
+football,Friendlies,20260603,Moneyline,Won,1.5,Match Finished,2
+football,Friendlies,20260603,Moneyline,Lost,1.55,Match Finished,2
+football,Friendlies,20260603,Over-Under,Won,1.28,Match Finished,1
+football,Friendlies,20260604,Over-Under,Won,1.53,Match Finished,3
+football,Friendlies,20260604,Moneyline,Lost,1.36,Match Finished,3
+football,Friendlies,20260604,BTTS,Won,1.73,Match Finished,1
+football,Friendlies,20260604,Over-Under,Won,1.44,Match Finished,3
+football,Friendlies,20260604,Draw No Bet,Won,1.52,Match Finished,2
+football,Friendlies,20260604,Moneyline,Won,1.14,Match Finished,2
+football,Friendlies,20260604,BTTS,Lost,1.33,Match Finished,2
+football,Friendlies,20260605,Draw No Bet,Won,1.2,Match Finished,3
+football,Friendlies,20260605,Over-Under,Won,1.73,Match Finished,3
+football,Friendlies,20260605,BTTS,Lost,1.57,Match Finished,3
+football,Friendlies,20260605,Moneyline,Lost,2.0,Match Finished,2
+football,Friendlies,20260605,Moneyline,Lost,1.62,Match Finished,2
+football,Friendlies,20260605,Over-Under,Lost,1.65,Match Finished,1
+football,Friendlies,20260605,BTTS,Won,1.96,Match Finished,1
+football,Friendlies,20260605,Draw No Bet,Won,1.58,Match Finished,2
+football,Friendlies,20260605,BTTS,Won,1.64,Match Finished,1
+football,Friendlies,20260605,BTTS,Won,1.44,Match Finished,3
+football,Friendlies,20260605,Moneyline,Lost,1.7,Match Finished,2
+football,Friendlies,20260605,Moneyline,Won,1.53,Match Finished,3
+football,Friendlies,20260605,Moneyline,Lost,1.67,Match Finished,1
+football,Friendlies,20260605,Draw No Bet,Push,1.22,Match Finished,3
+football,Friendlies,20260605,Draw No Bet,Won,1.22,Match Finished,3
+football,Friendlies,20260605,Draw No Bet,Push,1.5,Match Finished,2
+football,Friendlies,20260605,Moneyline,Lost,2.25,Match Finished,1
+football,Friendlies,20260606,Moneyline,Won,1.6,Match Finished,2
+football,Friendlies,20260606,Draw No Bet,Won,1.12,Match Finished,3
+football,Friendlies,20260606,Over-Under,Lost,1.53,Match Finished,2
+football,Friendlies,20260606,Moneyline,Won,1.18,Match Finished,3
+football,Friendlies,20260606,Over-Under,Won,1.65,Match Finished,1
+football,Friendlies,20260606,Draw No Bet,Push,2.38,Match Finished,1
+football,Friendlies,20260606,Moneyline,Won,1.42,Match Finished,3
+football,Friendlies,20260606,BTTS,Won,1.91,Match Finished,2
+football,Friendlies,20260606,Over-Under,Won,1.73,Match Finished,3
+football,Friendlies,20260606,BTTS,Won,1.62,Match Finished,2
+football,Friendlies,20260606,Moneyline,Won,1.56,Match Finished,3
+football,Friendlies,20260606,BTTS,Won,1.9,Match Finished,1
+football,Friendlies,20260606,Draw No Bet,Push,1.25,Match Finished,2
+football,Friendlies,20260606,Draw No Bet,Won,1.53,Match Finished,2
+football,Friendlies,20260607,Moneyline,Won,1.33,Match Finished,2
+football,Friendlies,20260607,BTTS,Lost,2.25,Match Finished,2
+football,Friendlies,20260607,Over-Under,Lost,1.95,Match Finished,1
+football,Friendlies,20260607,BTTS,Won,1.67,Match Finished,2
+football,Friendlies,20260607,Moneyline,Won,1.17,Match Finished,3
+football,Friendlies,20260607,Over-Under,Lost,1.7,Match Finished,2
+football,Friendlies,20260607,Moneyline,Won,1.25,Match Finished,3
+football,Friendlies,20260607,Moneyline,Won,1.17,Match Finished,3
+football,Friendlies,20260607,Draw No Bet,Lost,1.55,Match Finished,1
+football,Friendlies,20260607,Draw No Bet,Won,1.28,Match Finished,1
+football,Friendlies,20260608,Over-Under,Won,1.4,Match Finished,2
+football,Friendlies,20260608,Moneyline,Won,1.27,Match Finished,3
+football,Friendlies,20260608,BTTS,Won,1.67,Match Finished,1
+football,Friendlies,20260608,BTTS,Lost,1.5,Match Finished,2
+football,Friendlies,20260609,Moneyline,Won,1.25,Match Finished,3
+football,Friendlies,20260609,BTTS,Won,1.91,Match Finished,1
+football,Friendlies,20260609,Over-Under,Lost,1.6,Match Finished,2
+football,Friendlies,20260609,Moneyline,Lost,1.53,Match Finished,3
+football,Friendlies,20260609,Over-Under,Won,1.57,Match Finished,2
+football,Friendlies,20260609,Over-Under,Won,1.8,Match Finished,2
+football,Friendlies,20260609,Draw No Bet,Push,2.75,Match Finished,2
+football,Friendlies,20260609,BTTS,Lost,1.72,Match Finished,2
+football,Friendlies,20260609,Moneyline,Won,1.35,Match Finished,3
+football,Friendlies,20260609,Moneyline,Lost,1.65,Match Finished,3
+football,Friendlies,20260609,Draw No Bet,Lost,2.2,Match Finished,1
+football,Friendlies,20260609,Moneyline,Won,1.18,Match Finished,3
+football,Friendlies,20260610,BTTS,Won,1.44,Match Finished,2
+football,Friendlies,20260610,Over-Under,Won,1.53,Match Finished,3
+football,World Cup,20260611,Moneyline,Won,1.4,Match Finished,3
+football,World Cup,20260611,Over-Under,Lost,1.66,Match Finished,2
+football,World Cup,20260612,Over-Under,Won,1.67,Match Finished,2
+football,World Cup,20260612,Draw No Bet,Won,1.44,Match Finished,2
+football,World Cup,20260613,Moneyline,Lost,1.2,Match Finished,3
+football,World Cup,20260613,BTTS,Won,1.9,Match Finished,1
+football,World Cup,20260613,Over-Under,Won,1.3,Match Finished,2
+football,World Cup,20260613,Moneyline,Lost,1.65,Match Finished,2
+football,World Cup,20260614,Draw No Bet,Lost,1.61,Match Finished,2
+football,World Cup,20260614,BTTS,Won,1.75,Match Finished,1
+football,World Cup,20260614,Over-Under,Won,1.5,Match Finished,3
+football,World Cup,20260614,Moneyline,Won,1.91,Match Finished,2
+football,World Cup,20260615,BTTS,Won,1.95,Match Finished,2
+football,World Cup,20260615,BTTS,Lost,1.62,Match Finished,1
+football,World Cup,20260615,Over-Under,Lost,1.36,Match Finished,3
+football,World Cup,20260615,Draw No Bet,Push,1.35,Match Finished,2
+football,World Cup,20260616,Over-Under,Won,1.9,Match Finished,2
+football,World Cup,20260616,BTTS,Lost,1.53,Match Finished,1
+football,World Cup,20260616,Moneyline,Won,1.4,Match Finished,3
+football,World Cup,20260616,Moneyline,Won,1.35,Match Finished,3
+football,World Cup,20260617,Draw No Bet,Won,1.27,Match Finished,3
+football,World Cup,20260617,BTTS,Lost,2.0,Match Finished,2
+football,World Cup,20260617,Moneyline,Lost,1.3,Match Finished,3
+football,World Cup,20260617,Over-Under,Won,1.91,Match Finished,1
+football,World Cup,20260618,Over-Under,Lost,1.44,Match Finished,1
+football,World Cup,20260618,Moneyline,Lost,1.83,Match Finished,3
+football,World Cup,20260618,Draw No Bet,Won,1.2,Match Finished,3
+football,World Cup,20260618,BTTS,Lost,2.0,Match Finished,2
+football,World Cup,20260619,Over-Under,Won,1.3,Match Finished,3
+football,World Cup,20260619,Draw No Bet,Won,1.26,Match Finished,2
+football,World Cup,20260619,Moneyline,Won,1.57,Match Finished,2
+football,World Cup,20260619,BTTS,Lost,1.95,Match Finished,1
+football,World Cup,20260620,BTTS,Won,1.7,Match Finished,2
+football,World Cup,20260620,Over-Under,Won,1.73,Match Finished,2
+football,World Cup,20260620,BTTS,Won,1.33,Match Finished,2
+football,World Cup,20260620,Over-Under,Won,1.36,Match Finished,3
+football,World Cup,20260621,BTTS,Lost,2.1,Match Finished,1
+football,World Cup,20260621,Draw No Bet,Won,1.21,Match Finished,2
+football,World Cup,20260621,BTTS,Won,1.4,Match Finished,2
+football,World Cup,20260621,Over-Under,Lost,1.67,Match Finished,3
+football,World Cup,20260622,Moneyline,Won,1.5,Match Finished,3
+football,World Cup,20260622,BTTS,Won,1.95,Match Finished,1
+football,World Cup,20260622,Draw No Bet,Won,1.62,Match Finished,2
+football,World Cup,20260622,Over-Under,Lost,1.9,Match Finished,2
+football,World Cup,20260623,Over-Under,Lost,1.62,Match Finished,2
+football,World Cup,20260623,Moneyline,Won,1.5,Match Finished,3
+football,World Cup,20260623,BTTS,Won,1.53,Match Finished,2
+football,World Cup,20260623,Moneyline,Won,1.53,Match Finished,1
