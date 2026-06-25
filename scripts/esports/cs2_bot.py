@@ -36,9 +36,14 @@ from workers.api_clients.db import execute_query, execute_write
 
 BOT_NAME = "bot_cs2_value_v1"   # legacy alias — registry key below is canonical
 MIN_EXTRA_EDGE = 0.05   # 5% above the threshold (which already has 3% baked in)
-BASE_STAKE = 1.0        # 1 unit reference (Kelly fraction is multiplied by this)
-KELLY_FRACTION = 0.5    # half-Kelly — standard variance-reduced stake
-KELLY_CAP = 2.0         # never wager more than 2u on a single bet
+# Stake convention — flat €10 per bet (2026-06-25 CS2-FLAT-STAKE).
+# Matches soccer's daily_pipeline_v2.STAKE constant. Earlier the bot used
+# Kelly sizing converted via "1u = 1% bankroll" → tiny sub-€1 stakes for
+# match_winner but BASE_STAKE-flat €10 for atleast1map (no model prob).
+# Two staking paths in one bot made ROI uninterpretable. Soccer uses one
+# convention across 16 bots; CS2 now does too.
+BASE_STAKE = 1.0        # unit-stake field on cs2_simulated_bets.stake (always 1.0)
+STAKE_EUR = 10.0        # flat €10 per bet (cs2_simulated_bets.stake_eur)
 HLTV_EDGE_FLOOR = 0.03  # extra 3% required for HLTV-fallback picks (less proven)
 HLTV_BASE_EDGE = 0.05   # 5% threshold edge for the hltv_v1 model
 
@@ -103,8 +108,9 @@ DEFAULT_ALPHA = 0.75   # fallback for unknown sources
 #   min_books_for_pick / max_consensus_drift / max_model_vs_consensus_pp — consensus gates
 #   max_prob_divergence — anomaly kill switch (model vs bookie implied)
 #   min_odds / max_odds — odds-range filter (dog vs fav variants)
-#   kelly_fraction / kelly_cap — stake sizing
 #   enabled — quick on/off without deleting the row
+# (Stake sizing is no longer configurable per bot — flat €10 across the
+#  registry, matching soccer's daily_pipeline_v2.STAKE.)
 BASE_GATES = {
     "min_extra_edge": MIN_EXTRA_EDGE,
     "hltv_edge_floor": HLTV_EDGE_FLOOR,
@@ -116,8 +122,6 @@ BASE_GATES = {
     "max_prob_divergence": MAX_PROB_DIVERGENCE,
     "min_odds": 1.01,
     "max_odds": 100.0,
-    "kelly_fraction": KELLY_FRACTION,
-    "kelly_cap": KELLY_CAP,
     "markets": ("match_winner", "atleast1map"),
     "shrink_to_market": True,   # mirror soccer's CAL-PIN-SHRINK (per-source α)
     "enabled": True,
@@ -297,24 +301,6 @@ def market_consensus(prices: list[tuple[str, float]]) -> tuple[float, float] | N
     return cons, 1.0 / cons
 
 
-def kelly_stake(side_prob: float | None, bookie_odds: float,
-                fraction: float = KELLY_FRACTION, cap: float = KELLY_CAP) -> float:
-    """Half-Kelly stake. Returns BASE_STAKE * `fraction`-Kelly, capped at `cap`.
-
-    Kelly formula: f* = (b*p - q) / b, where b = decimal_odds - 1, p = win prob, q = 1 - p.
-    Falls back to 1.0 if probability unknown (preserves prior behavior).
-    """
-    if side_prob is None or bookie_odds <= 1.0:
-        return BASE_STAKE
-    b = bookie_odds - 1.0
-    p = float(side_prob)
-    q = 1.0 - p
-    full = (b * p - q) / b
-    if full <= 0:
-        return 0.0                      # caller should skip
-    return min(cap, round(BASE_STAKE * fraction * full, 4))
-
-
 def _eligible_books(row: dict, sidekey: str, market: str = "match_winner") -> list[tuple[str, float]]:
     """Bookies actually quoting odds for one side. (bookie_name, decimal_odds).
 
@@ -347,9 +333,7 @@ def _consider_side(*, source: str, side: str, team_name: str, prices: list[tuple
                    max_model_vs_consensus_pp: float = MAX_MODEL_VS_CONSENSUS_PP,
                    max_prob_divergence: float = MAX_PROB_DIVERGENCE,
                    min_odds: float = 1.01,
-                   max_odds: float = 100.0,
-                   kelly_fraction: float = KELLY_FRACTION,
-                   kelly_cap: float = KELLY_CAP) -> dict | None:
+                   max_odds: float = 100.0) -> dict | None:
     """Apply all gates for one (match, market, side) tuple and return a single
     best-bookie pick, or None.
 
@@ -362,7 +346,8 @@ def _consider_side(*, source: str, side: str, team_name: str, prices: list[tuple
       6. Edge above threshold must be in [min_extra, max_extra].
       7. |our_prob − consensus_implied| ≤ max_model_vs_consensus_pp.
       8. Anomaly guard: |our_prob − bookie_implied| ≤ max_prob_divergence.
-      9. Kelly stake > 0.
+
+    Stake is always BASE_STAKE (1.0u → €10 flat) — see _write_bet.
     """
     if not prices or thr is None or fair is None:
         return None
@@ -397,15 +382,11 @@ def _consider_side(*, source: str, side: str, team_name: str, prices: list[tuple
         return None
     if _is_anomaly(float(prob) if prob is not None else None, best_odds, max_prob_divergence):
         return None
-    stake = kelly_stake(float(prob) if prob is not None else None, best_odds,
-                       fraction=kelly_fraction, cap=kelly_cap)
-    if stake <= 0:
-        return None
 
     return {
         "side": side, "team": team_name, "market": market,
         "bookie": best_bookie, "odds": best_odds, "fair": float(fair),
-        "thr": float(thr), "edge": extra, "stake": stake, "source": source,
+        "thr": float(thr), "edge": extra, "stake": BASE_STAKE, "source": source,
         "consensus_prob": consensus_prob, "n_books": len(prices),
     }
 
@@ -450,8 +431,6 @@ def _scan_one(row: dict, cfg: dict) -> list[dict]:
         max_prob_divergence=cfg["max_prob_divergence"],
         min_odds=cfg["min_odds"],
         max_odds=cfg["max_odds"],
-        kelly_fraction=cfg["kelly_fraction"],
-        kelly_cap=cfg["kelly_cap"],
     )
 
     # match_winner — apply per-side market-consensus shrinkage to model prob
@@ -513,40 +492,24 @@ def _scan_one(row: dict, cfg: dict) -> list[dict]:
                                   min_extra=cfg["min_extra_edge"], market="atleast1map",
                                   **gate_kwargs)
             if pick:
-                pick["stake"] = BASE_STAKE   # no Kelly without probability
                 picks.append(pick)
 
     return picks
 
 
 def _get_bot_bankroll(bot_name: str) -> float:
-    """Read current_bankroll from the bots table (mirrors soccer convention)."""
+    """Read current_bankroll from the bots table (mirrors soccer convention).
+    Used only to stamp bankroll_at_pick on the bet row — does NOT affect stake
+    sizing (flat €10 since CS2-FLAT-STAKE 2026-06-25)."""
     rows = execute_query("SELECT current_bankroll FROM bots WHERE name = %s", (bot_name,))
     if not rows:
         return 1000.0  # fallback if bot row missing
     return float(rows[0]["current_bankroll"])
 
 
-# Cap a single bet at 2% of bankroll regardless of what Kelly says — match the
-# soccer Kelly-cap convention.
-MAX_STAKE_PCT_OF_BANKROLL = 0.02
-
-
-def _stake_eur(stake_units: float, bankroll: float) -> float:
-    """Translate the unit-stake (e.g. 0.05u) to euros using 1u = 1% bankroll
-    convention, then cap at MAX_STAKE_PCT_OF_BANKROLL of bankroll. Returns
-    rounded to cents."""
-    # 1u = 1% of bankroll → stake_units * bankroll / 100
-    raw_eur = stake_units * bankroll / 100.0
-    capped = min(raw_eur, bankroll * MAX_STAKE_PCT_OF_BANKROLL)
-    return round(max(capped, 0.0), 2)
-
-
 def _write_bet(row: dict, pick: dict, cfg: dict) -> bool:
     bot_name = cfg["name"]
     bankroll = _get_bot_bankroll(bot_name)
-    stake_units = pick.get("stake", BASE_STAKE)
-    stake_eur = _stake_eur(stake_units, bankroll)
     res = execute_write("""
         INSERT INTO cs2_simulated_bets
             (bot_name, bo3gg_id, placed_at, kickoff_time,
@@ -561,7 +524,7 @@ def _write_bet(row: dict, pick: dict, cfg: dict) -> bool:
         row["team1"], row["team2"],
         pick["market"], pick["team"], pick["bookie"],
         pick["odds"], pick["fair"], pick["thr"], pick["edge"],
-        stake_units, stake_eur, bankroll,
+        BASE_STAKE, STAKE_EUR, bankroll,
         pick.get("consensus_prob"), pick.get("n_books"),
     ))
     return bool(res)

@@ -23247,24 +23247,56 @@ def _():
     assert "cs2_clv_snapshot" in ids
 
 
-@test("CS2-KELLY-SIZING — half-Kelly with cap, falls back to 1u when prob unknown")
+@test("CS2-FLAT-STAKE — flat €10 per bet + migration 262 backfill")
 def _():
+    """Switched from Kelly (which had a unit-mismatch bug producing €0.20-1.50
+    match_winner stakes vs €10 atleast1map stakes on the same fixture) to
+    flat €10 per bet, matching soccer's daily_pipeline_v2.STAKE convention.
+
+    Pin: STAKE_EUR present and = 10.0, BASE_STAKE = 1.0 (unit column stays);
+    kelly_stake / _stake_eur / MAX_STAKE_PCT_OF_BANKROLL gone; BASE_GATES no
+    longer carries kelly_fraction / kelly_cap; _write_bet uses literal
+    STAKE_EUR (not a function of bankroll); migration 262 backfills the
+    cs2_simulated_bets table + bots.current_bankroll.
+    """
     import pathlib, importlib.util
     p = pathlib.Path("scripts/esports/cs2_bot.py")
-    spec = importlib.util.spec_from_file_location("cs2_bot", p)
+    src = p.read_text()
+    spec = importlib.util.spec_from_file_location("cs2_bot_flat", p)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    # Positive-edge bet: p=0.55, odds=2.10. b=1.1, q=0.45
-    # Full Kelly = (1.1*0.55 - 0.45)/1.1 = 0.14, half = 0.07
-    s = mod.kelly_stake(0.55, 2.10)
-    assert 0.05 < s < 0.10, f"half-Kelly should be ~0.07, got {s}"
-    # Negative-edge bet → 0 stake
-    assert mod.kelly_stake(0.40, 2.00) == 0.0
-    # Unknown prob → fallback 1u
-    assert mod.kelly_stake(None, 2.00) == mod.BASE_STAKE
-    # Bigger edge → bigger stake, but capped
-    big = mod.kelly_stake(0.95, 10.0)
-    assert big <= mod.KELLY_CAP
+
+    assert mod.STAKE_EUR == 10.0, "flat stake must be €10.0 (matches soccer)"
+    assert mod.BASE_STAKE == 1.0, "BASE_STAKE (unit column) stays at 1.0"
+
+    for gone in ("kelly_stake", "_stake_eur", "MAX_STAKE_PCT_OF_BANKROLL",
+                 "KELLY_FRACTION", "KELLY_CAP"):
+        assert not hasattr(mod, gone), f"{gone} should be removed (CS2-FLAT-STAKE)"
+    assert "kelly_stake" not in src, "kelly_stake function still defined in source"
+    assert "_stake_eur" not in src, "_stake_eur function still defined in source"
+
+    assert "kelly_fraction" not in mod.BASE_GATES
+    assert "kelly_cap" not in mod.BASE_GATES
+
+    assert "STAKE_EUR" in src
+    assert "BASE_STAKE, STAKE_EUR" in src, (
+        "_write_bet must insert literal BASE_STAKE + STAKE_EUR constants"
+    )
+
+    mig = pathlib.Path("supabase/migrations/262_cs2_flat_stake_backfill.sql")
+    assert mig.exists(), "migration 262 missing"
+    mig_src = mig.read_text()
+    assert "UPDATE cs2_simulated_bets" in mig_src
+    assert "stake = 1.0" in mig_src and "stake_eur = 10.00" in mig_src
+    assert "result = 'won'" in mig_src
+    assert "result = 'lost'" in mig_src
+    assert "result = 'voided'" in mig_src
+    assert "10.00 * (odds_at_pick - 1)" in mig_src, (
+        "won-pnl must be recomputed as 10.00 × (odds-1)"
+    )
+    assert "current_bankroll" in mig_src
+    assert "bot_cs2_" in mig_src
+    assert "starting_bankroll" in mig_src
 
 
 @test("CS2-BOT-ANOMALY-GUARD — wide model-vs-market gaps are suppressed")
@@ -24776,11 +24808,12 @@ def _():
     )
     # roster_change columns pulled in queries
     assert "roster_change1, roster_change2" in bot
-    # Bankroll helpers
-    for fn in ["_get_bot_bankroll", "_stake_eur"]:
-        assert f"def {fn}" in bot, f"{fn} helper missing"
-    # 2% bankroll cap on single bet
-    assert "MAX_STAKE_PCT_OF_BANKROLL = 0.02" in bot
+    # Bankroll helper still used (stamps bankroll_at_pick column for reporting,
+    # no longer drives stake sizing post-CS2-FLAT-STAKE).
+    assert "def _get_bot_bankroll" in bot
+    # Flat staking — CS2-FLAT-STAKE replaced the Kelly bankroll-fraction logic.
+    # See CS2-FLAT-STAKE smoke for the full pin.
+    assert "STAKE_EUR = 10.0" in bot
     # INSERT now includes stake_eur + bankroll_at_pick
     assert "stake_eur, bankroll_at_pick" in bot
     # Settle updates bots.current_bankroll
