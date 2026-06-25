@@ -2651,16 +2651,21 @@ def main():
                       name="CS2 HLTV Upcoming Matches [2h]",
                       max_instances=1, misfire_grace_time=900)
 
-    # CS2-HLTV-MATCH-ODDS (2026-06-11) — populate bookie_odds1/2 from the
-    # median across HLTV-listed bookmakers on each match-detail page. The bot
-    # (cs2_bot.py) reads bookie_odds1/2 to compute edge vs threshold_odds.
-    # Without this scrape there are no market prices to compare against ->
-    # no value picks even when the model has coverage. Runs 7 minutes after
-    # cs2_hltv_upcoming so fixtures land first, then odds.
+    # CS2-HLTV-MATCH-ODDS (2026-06-11, hourly 2026-06-25) — populate
+    # bookie_odds1/2 from the median across HLTV-listed bookmakers on each
+    # match-detail page. The bot (cs2_bot.py) reads bookie_odds1/2 to
+    # compute edge vs threshold_odds — without this scrape there are no
+    # market prices to compare against. Cadence: HOURLY at :12, all 24
+    # hours. Earlier "10-23 UTC active window" was wrong — CS2 last-30d
+    # kickoff distribution has 08:00 UTC at 14.8% (Asian tournaments,
+    # second-highest hour), plus 00-01 UTC NA late games at ~6%. Skipping
+    # 02-05 UTC saves nothing meaningful (~1% of matches) and adds a
+    # window-bug attack surface. ~75s per run × 24 runs ≈ 30 min/day of
+    # HLTV scraping — within rate-limit comfort.
     scheduler.add_job(job_cs2_hltv_match_odds,
-                      CronTrigger(hour="0,2,4,6,8,10,12,14,16,18,20,22", minute=12),
+                      CronTrigger(minute=12),
                       id="cs2_hltv_match_odds",
-                      name="CS2 HLTV Match-page Odds [2h]",
+                      name="CS2 HLTV Match-page Odds [hourly, 24h]",
                       max_instances=1, misfire_grace_time=900)
 
     # CS2-SETTLEMENT (2026-06-08) — hourly 12-02 UTC. Pulls finished bo3.gg
@@ -2920,11 +2925,16 @@ def main():
                       name="CS2 Coolbet Placer [paper, every 30min 10-23 UTC]",
                       max_instances=1, misfire_grace_time=1800)
 
-    # CS2-BOT — every 30min, 3 min after v8_predict so it has fresh fair odds.
-    # Matches soccer betting_refresh cadence. Soccer-style "scan whenever odds
-    # move" pattern lets us catch line drift inside the 30-min window.
-    scheduler.add_job(job_cs2_bot, CronTrigger(hour="10-23", minute="6,36"),
-                      id="cs2_bot", name="CS2 Value Bot [4h, 06-22 UTC]",
+    # CS2-BOT — every 30 min, all 24 hours, at :06 and :36. The :36 fire
+    # lands 24 min after the hourly cs2_hltv_match_odds :12 scrape, so it
+    # always sees fresh HLTV bookie odds. The :06 fire catches Coolbet odds
+    # drift. 24/7 cadence because CS2 last-30d kickoff data shows 08:00 UTC
+    # at 14.8% (Asian tournaments) + 00-01 UTC at ~6% (NA late games) —
+    # an EU-day window would miss ~22% of matches. Soccer-style "scan
+    # whenever odds move" pattern lets us catch line drift inside the
+    # 30-min window. Runs all 7 bots in BOTS_CONFIG (CS2-BOT-MULTI-CONFIG).
+    scheduler.add_job(job_cs2_bot, CronTrigger(minute="6,36"),
+                      id="cs2_bot", name="CS2 Bots [every 30min, 24h]",
                       max_instances=1, misfire_grace_time=1800)
 
     scheduler.add_job(job_weekly_meta_retrain, CronTrigger(day_of_week="sun", hour=4, minute=0),

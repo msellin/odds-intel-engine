@@ -22653,6 +22653,78 @@ def _():
     assert pick is None, "model vs consensus 30pp apart must be killed"
 
 
+@test("CS2-HLTV-ODDS-24H — hourly 24/7 scrape + 24/7 bot cadence (no EU-day window)")
+def _():
+    """Tightening the HLTV odds → bot loop (2026-06-25). Two related
+    fixes anchored by a single empirical finding from the live DB:
+
+      Last 30d cs2_upcoming_matches kickoff distribution shows 08:00 UTC
+      at 14.8% (Asian tournaments) and 00-01 UTC at ~6% (NA late games).
+      A 10-23 UTC window would miss ~22% of matches. Dead zone 02-05 UTC
+      is ~1% — not worth a window-bug attack surface to skip.
+
+    So both cs2_hltv_match_odds (was every 2h all day) and cs2_bot (was
+    every 30 min 10-23 UTC) move to 24/7. Bot's :36 fire still lands 24
+    min after :12 scrape — odds freshness ≤24 min instead of up to
+    ~2h24min on the previous every-2h schedule.
+
+    Also fixes the stale 'CS2 Value Bot [4h, 06-22 UTC]' name on
+    cs2_bot (it actually ran every 30 min, and now runs 7 bots via
+    BOTS_CONFIG not 1).
+    """
+    import pathlib, re
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+
+    # cs2_hltv_match_odds: hourly 24/7 at :12.
+    m_odds = re.search(
+        r'scheduler\.add_job\(job_cs2_hltv_match_odds,\s*'
+        r'CronTrigger\([^)]*\),\s*'
+        r'id="cs2_hltv_match_odds",\s*'
+        r'name="([^"]+)"',
+        sched, re.DOTALL,
+    )
+    assert m_odds, "cs2_hltv_match_odds add_job block not found"
+    odds_block = m_odds.group(0)
+    assert 'CronTrigger(minute=12)' in odds_block, (
+        "cs2_hltv_match_odds must use CronTrigger(minute=12) — hourly 24/7"
+    )
+    # Old every-2h cadence must be gone for THIS job (cs2_hltv_upcoming has a
+    # legitimately identical 2h cron and stays as-is — scope to odds_block).
+    assert 'hour="0,2,4,6,8,10,12,14,16,18,20,22"' not in odds_block, (
+        "old every-2h cs2_hltv_match_odds cron is still present"
+    )
+    assert "24h" in m_odds.group(1).lower() or "hourly" in m_odds.group(1).lower(), (
+        f"cs2_hltv_match_odds name should signal 24/7 cadence, got: {m_odds.group(1)!r}"
+    )
+
+    # cs2_bot: every 30 min, 24/7.
+    m_bot = re.search(
+        r'scheduler\.add_job\(job_cs2_bot,\s*'
+        r'CronTrigger\([^)]*\),\s*'
+        r'id="cs2_bot",\s*'
+        r'name="([^"]+)"',
+        sched, re.DOTALL,
+    )
+    assert m_bot, "cs2_bot add_job block not found"
+    bot_block = m_bot.group(0)
+    assert 'CronTrigger(minute="6,36")' in bot_block, (
+        "cs2_bot must use CronTrigger(minute=\"6,36\") with no hour restriction — 24/7"
+    )
+    # Old EU-day window must be gone on this job specifically.
+    assert 'hour="10-23"' not in bot_block, (
+        "cs2_bot still constrains to hour=10-23 — should be 24/7"
+    )
+    # Stale '[4h, 06-22 UTC]' label fixed on cs2_bot specifically (other CS2
+    # jobs like cs2_scanner legitimately use [4h, 06-22 UTC]).
+    assert '[4h' not in m_bot.group(1), (
+        f"cs2_bot name still says '[4h ...]' — should be every 30min: got {m_bot.group(1)!r}"
+    )
+    assert ("24h" in m_bot.group(1).lower() or
+            "every 30min" in m_bot.group(1).lower()), (
+        f"cs2_bot name should signal every-30min cadence, got: {m_bot.group(1)!r}"
+    )
+
+
 @test("CS2-BOT-MULTI-CONFIG — BOTS_CONFIG registry + per-bot gates + source/market/odds filters")
 def _():
     """Diversification refactor (2026-06-25): cs2_bot.py exposes a BOTS_CONFIG
