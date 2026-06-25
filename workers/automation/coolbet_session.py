@@ -343,6 +343,33 @@ class CoolbetSession:
         # False on init AND on any 401/403 to force re-harvest on next call.
         self._cookies_fresh: bool = False
 
+        # ANON-READ-NO-FS (2026-06-25): when COOLBET_NO_FS=true, bootstrap
+        # cookies from env vars + skip FS refresh entirely. Used for public-
+        # read scanners (e.g. scripts/tennis/place_coolbet_tennis.py) that
+        # only need Imperva clearance, never JWT auth. Also lets the scanner
+        # run on environments without a FlareSolverr instance (local dev,
+        # Railway scheduler) — production Coolbet daemon on the Mac keeps
+        # using FS as today. require_auth=True implicitly disables this
+        # since JWT-bearing calls need fresh FS cookies to look authentic.
+        self._no_fs = (
+            not require_auth
+            and os.getenv("COOLBET_NO_FS", "").lower() in ("1", "true", "yes")
+        )
+        if self._no_fs:
+            for name, value in self._imperva_cookies_individual.items():
+                if value:
+                    self._http.cookies.set(name, value, domain="www.coolbet.com")
+            # Match the User-Agent Imperva fingerprinted when the env cookie
+            # was minted. Standard Chrome desktop UA works for the cookies
+            # the operator ships in .env from a real browser session.
+            self._http.headers["User-Agent"] = os.getenv(
+                "COOLBET_NO_FS_UA",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36",
+            )
+            self._cookies_fresh = True
+
     # ── setup ────────────────────────────────────────────────────────────────
 
     def _apply_imperva_cookies(self) -> None:
@@ -374,7 +401,14 @@ class CoolbetSession:
         OR if Coolbet's response didn't include the critical Imperva markers
         after all warmup attempts — callers should treat that as a hard
         auth failure.
+
+        ANON-READ-NO-FS (2026-06-25): no-op when COOLBET_NO_FS=true.
+        Env-supplied cookies were loaded at __init__ time; we trust they're
+        valid and don't try to refresh. A 401/403 retry path will still
+        attempt a refresh, but it'll hit this no-op and surface the error.
         """
+        if self._no_fs:
+            return len(self._http.cookies)
         warmup_urls = [
             "https://www.coolbet.com/",                       # homepage (often gets reese84)
             "https://www.coolbet.com/en/sports/football",      # deep page (gets visid_incap_*)
@@ -858,11 +892,26 @@ class CoolbetSession:
     def get(self, url: str, **kwargs) -> _FSResponse:
         """GET via FlareSolverr-routed Chrome. Drop-in compatible with the
         previous requests.Session-backed behaviour — returns a _FSResponse
-        with .status_code/.text/.json()/.ok like requests.Response."""
+        with .status_code/.text/.json()/.ok like requests.Response.
+
+        ANON-READ-NO-FS (2026-06-25): when COOLBET_NO_FS=true, route through
+        plain requests with the env cookies loaded at init. Public-read
+        scanners (tennis fixture/odds lookups) work this way; only the
+        placement / JWT-authenticated paths require FS-fingerprinted Chrome.
+        """
         self._ensure_auth()
         self._throttle()
         headers = self._build_auth_headers(kwargs.pop("headers", None))
         params = kwargs.pop("params", None)
+        if self._no_fs:
+            resp = self._http.get(url, params=params, headers=headers, **kwargs)
+            return _FSResponse({
+                "solution": {
+                    "status": resp.status_code,
+                    "response": resp.text,
+                    "headers": dict(resp.headers),
+                }
+            })
         return self._fs_get(url, headers=headers, params=params)
 
     def post(self, url: str, **kwargs) -> requests.Response:

@@ -82,7 +82,14 @@ def fetch_league_matches(session: CoolbetSession, league_id: int, slug: str) -> 
     if not resp.ok:
         return []
     data = resp.json()
-    cats = data if isinstance(data, list) else [data]
+    # Response shape evolved 2026-06-25: was `[{matches:[...]}]` or
+    # `{matches:[...]}`, now `{categories:[{matches:[...]}]}`. Drill in.
+    if isinstance(data, list):
+        cats = data
+    elif isinstance(data, dict):
+        cats = data.get("categories") or [data]
+    else:
+        cats = []
     matches = []
     for cat in cats:
         for m in cat.get("matches") or []:
