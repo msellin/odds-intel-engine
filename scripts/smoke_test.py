@@ -22546,7 +22546,7 @@ def _():
     """
     import pathlib
 
-    mig = pathlib.Path("supabase/migrations/263_tennis_volume_accumulation.sql").read_text()
+    mig = pathlib.Path("supabase/migrations/264_tennis_volume_accumulation.sql").read_text()
     assert "ALTER COLUMN pin_fair_odds DROP NOT NULL" in mig, (
         "migration must make pin_fair_odds NULLable for Coolbet-only rows"
     )
