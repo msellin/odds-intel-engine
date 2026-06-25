@@ -22678,6 +22678,37 @@ def _():
     assert pick is None, "model vs consensus 30pp apart must be killed"
 
 
+@test("CS2-BOT-ACTIVITY-REPORT — CLI monitoring script structure + imports")
+def _():
+    """Pin the activity-report CLI (2026-06-25) so it survives refactors of
+    cs2_bot.py (BOTS_CONFIG move, column renames, etc.). Validation tool
+    for the 3-5 day window after MULTI-CONFIG / HLTV-ODDS-24H / SHRINKAGE /
+    MIN-BOOKS-RELAX shipped — we don't run the live SQL here (DB-dependent),
+    we just verify it loads + the helper formatters are sane.
+    """
+    import pathlib, importlib.util
+    p = pathlib.Path("scripts/esports/cs2_bot_activity_report.py")
+    assert p.exists()
+    src = p.read_text()
+    for needle in ("def _per_bot_activity", "def _supply_funnel",
+                   "def _recent_picks", "def _print_silent_check",
+                   "BOTS_CONFIG", "n_books_at_pick", "stake_eur", "pnl_eur",
+                   "eligible_min1", "eligible_min2"):
+        assert needle in src, f"activity report missing {needle}"
+    assert "--days" in src and "--long-days" in src and "--recent" in src
+
+    spec = importlib.util.spec_from_file_location("cs2_activity", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod._fmt_pct(0.0312) == "+3.1%"
+    assert mod._fmt_pct(None) == "    —"
+    assert mod._fmt_roi(15.0, 100.0) == "+15.0%"
+    assert mod._fmt_roi(None, 100.0) == "    —"
+    assert mod._fmt_roi(15.0, 0.0) == "    —"
+    assert "─" in mod._hr()
+    assert "title" in mod._hr("title")
+
+
 @test("CS2-BOT-MIN-BOOKS-RELAX — default min_books=1; canonical 4 bots opt up to 2")
 def _():
     """Supply unlock (2026-06-25). Live audit showed only ~9% of CS2 matches
