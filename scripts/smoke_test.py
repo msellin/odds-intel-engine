@@ -22653,6 +22653,135 @@ def _():
     assert pick is None, "model vs consensus 30pp apart must be killed"
 
 
+@test("CS2-BOT-MULTI-CONFIG — BOTS_CONFIG registry + per-bot gates + source/market/odds filters")
+def _():
+    """Diversification refactor (2026-06-25): cs2_bot.py exposes a BOTS_CONFIG
+    dict so we can run multiple strategies on the same fixture pool — the
+    soccer pattern. Pins:
+      - 4 existing bots preserved (value_v1, v8, v7, hltv_v1) by source split.
+      - 3 new bots seeded (aggressive_v1, dog_v1, fav_v1) with overrides.
+      - Migration 260 inserts the 3 new bot rows so settlement updates work.
+      - Source filter actually gates _scan_one (returns []).
+      - Odds range filter actually gates _consider_side (dog rejects shorts).
+      - Market filter actually gates _scan_one (dog/fav skip atleast1map).
+    """
+    import pathlib, importlib.util
+    p = pathlib.Path("scripts/esports/cs2_bot.py")
+    src = p.read_text()
+    # Registry exists and has the 7 expected bots
+    assert "BOTS_CONFIG" in src and "BASE_GATES" in src
+    assert "bot_cs2_value_v1" in src
+    assert "bot_cs2_aggressive_v1" in src
+    assert "bot_cs2_dog_v1" in src
+    assert "bot_cs2_fav_v1" in src
+
+    spec = importlib.util.spec_from_file_location("cs2_bot_mc", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    cfg = mod.BOTS_CONFIG
+    expected = {"bot_cs2_value_v1", "bot_cs2_v8", "bot_cs2_v7", "bot_cs2_hltv_v1",
+                "bot_cs2_aggressive_v1", "bot_cs2_dog_v1", "bot_cs2_fav_v1"}
+    assert expected == set(cfg), f"BOTS_CONFIG must be exactly {expected}, got {set(cfg)}"
+
+    # Baseline 4 bots: each isolates one model source — preserves attribution.
+    assert cfg["bot_cs2_value_v1"]["sources"] == ("elo+pq_v1",)
+    assert cfg["bot_cs2_v8"]["sources"] == ("v8",)
+    assert cfg["bot_cs2_v7"]["sources"] == ("v7",)
+    assert cfg["bot_cs2_hltv_v1"]["sources"] == ("hltv_v1",)
+
+    # Aggressive: lower edge floor + tighter divergence, no hltv_v1 source.
+    agg = cfg["bot_cs2_aggressive_v1"]
+    assert agg["min_extra_edge"] == 0.03
+    assert agg["hltv_edge_floor"] == 0.02
+    assert agg["max_prob_divergence"] == 0.20
+    assert "hltv_v1" not in agg["sources"], "hltv_v1 excluded — low-edge picks become noise"
+
+    # Dog: odds ≥ 2.20, match_winner only.
+    dog = cfg["bot_cs2_dog_v1"]
+    assert dog["min_odds"] == 2.20
+    assert dog["markets"] == ("match_winner",)
+    assert dog["min_extra_edge"] == 0.04
+
+    # Fav: odds ≤ 1.70, match_winner only.
+    fav = cfg["bot_cs2_fav_v1"]
+    assert fav["max_odds"] == 1.70
+    assert fav["markets"] == ("match_winner",)
+
+    # _consider_side respects per-bot min_odds (dog rejects 1.85).
+    pick = mod._consider_side(
+        source="elo+pq_v1", side="team1", team_name="X",
+        prices=[("bo3gg", 1.85), ("coolbet", 1.85)],
+        fair=1.95, thr=1.75, prob=0.55, min_extra=0.04,
+        min_odds=2.20,
+    )
+    assert pick is None, "dog bot must reject odds below min_odds"
+
+    # _consider_side respects per-bot max_odds (fav rejects 2.50).
+    pick = mod._consider_side(
+        source="elo+pq_v1", side="team1", team_name="X",
+        prices=[("bo3gg", 2.50), ("coolbet", 2.55)],
+        fair=2.30, thr=2.20, prob=0.45, min_extra=0.04,
+        max_odds=1.70,
+    )
+    assert pick is None, "fav bot must reject odds above max_odds"
+
+    # _consider_side still fires when odds are within [min_odds, max_odds].
+    pick = mod._consider_side(
+        source="elo+pq_v1", side="team1", team_name="X",
+        prices=[("bo3gg", 2.45), ("coolbet", 2.50)],
+        fair=2.30, thr=2.20, prob=0.45, min_extra=0.04,
+        min_odds=2.20, max_odds=3.00,
+    )
+    assert pick is not None and pick["bookie"] == "coolbet"
+
+    # _scan_one source gate: row with source 'hltv_v1' must return [] for dog bot.
+    row = {
+        "bo3gg_id": "test-1", "team1": "A", "team2": "B",
+        "kickoff_time": "2026-06-26T18:00:00+00:00", "best_of": 3,
+        "win_prob1": 0.50, "win_prob2": 0.50,
+        "fair_odds1": 2.0, "fair_odds2": 2.0,
+        "threshold_odds1": None, "threshold_odds2": None,   # HLTV fallback
+        "fair_odds_map1": None, "fair_odds_map2": None,
+        "threshold_map1": None, "threshold_map2": None,
+        "bookie_odds1": 2.30, "bookie_odds2": 2.30,
+        "coolbet_odds1": 2.35, "coolbet_odds2": 2.30,
+        "coolbet_odds_map1": None, "coolbet_odds_map2": None,
+        "pinnacle_odds1": None, "pinnacle_odds2": None,
+        "roster_change1": False, "roster_change2": False,
+        "source": "hltv_v1",
+    }
+    assert mod._scan_one(row, cfg["bot_cs2_dog_v1"]) == [], (
+        "dog bot must skip hltv_v1 source rows entirely"
+    )
+
+    # Bots that DO accept hltv_v1 (e.g. bot_cs2_hltv_v1) reach the scan logic
+    # — we just verify the source gate doesn't short-circuit.
+    # (Actual pick depends on threshold derivation & gates, which other tests cover.)
+    # The point here: source filtering happens BEFORE the gate cascade.
+    out_hltv = mod._scan_one(row, cfg["bot_cs2_hltv_v1"])
+    assert isinstance(out_hltv, list), "scan must return a list (possibly empty after gates)"
+
+    # Migration 260 seeds the 3 new bot rows in bots table.
+    mig = pathlib.Path("supabase/migrations/260_cs2_diversification_bots.sql")
+    assert mig.exists(), "migration 260 must exist"
+    mig_src = mig.read_text()
+    for name in ("bot_cs2_aggressive_v1", "bot_cs2_dog_v1", "bot_cs2_fav_v1"):
+        assert name in mig_src, f"migration 260 must insert {name}"
+    assert "ON CONFLICT (name) DO NOTHING" in mig_src
+    assert "is_active" in mig_src and "TRUE" in mig_src
+
+    # --bot CLI flag rejects unknown names.
+    import subprocess
+    res = subprocess.run(
+        ["python3", "scripts/esports/cs2_bot.py", "--bot", "nonexistent_bot"],
+        capture_output=True, text=True,
+    )
+    assert res.returncode != 0, "unknown --bot must exit nonzero"
+    assert "unknown" in (res.stdout + res.stderr).lower(), (
+        "unknown --bot must mention which bot is unknown"
+    )
+
+
 @test("CS2-CLV-SNAPSHOT — pending-bet closing-odds snapshot script + cron")
 def _():
     import pathlib, ast

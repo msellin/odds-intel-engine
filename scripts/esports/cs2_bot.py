@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
-Single CS2 value bot — bot_cs2_value_v1.
+CS2 paper-trading bot registry.
 
-Scans cs2_upcoming_matches for value opportunities and writes one
-cs2_simulated_bets row per (match, market, bookie). One bet per bookie per
-side per match (UNIQUE constraint prevents re-fires on the same opportunity).
+Scans cs2_upcoming_matches for value opportunities and writes
+cs2_simulated_bets rows. Each bot config in BOTS_CONFIG defines its own
+gates (edge floor, odds range, anomaly threshold, model sources, markets)
+and runs against the same fixture pool — soccer's 16-bot pattern, applied
+to CS2.
 
-Value rule:
-  - We have model coverage (has_elo_history = TRUE).
+Value rule (per bot):
+  - Row's model source is in cfg['sources'].
+  - Bookie price is within cfg['min_odds']..cfg['max_odds'].
   - Bookie offers >= our threshold odds for the side.
-  - Implied edge = (bookie_odds - threshold_odds) / threshold_odds >= 0.05 (5%)
-    (the threshold itself already bakes in a 3% target edge, so we want at
-    least an extra 5% above it before firing).
+  - Implied extra edge above threshold >= cfg's edge floor.
+  - Plus consensus, anomaly, and divergence gates (per cfg).
 
 Markets supported: match_winner (1x2), atleast1map (BO3/BO5 only).
 
@@ -19,9 +21,10 @@ Settlement happens in cs2_settlement.py — that job populates cs2_results,
 which we join to here to mark won/lost/pnl.
 
 Usage:
-    python3 scripts/esports/cs2_bot.py              # dry run, print only
-    python3 scripts/esports/cs2_bot.py --record     # write simulated_bets
-    python3 scripts/esports/cs2_bot.py --settle     # only run settlement step
+    python3 scripts/esports/cs2_bot.py                    # dry run, all bots
+    python3 scripts/esports/cs2_bot.py --record           # write simulated_bets, all bots
+    python3 scripts/esports/cs2_bot.py --bot bot_cs2_dog_v1  # one bot only
+    python3 scripts/esports/cs2_bot.py --settle           # only run settlement step
 """
 import argparse
 import sys
@@ -31,7 +34,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from workers.api_clients.db import execute_query, execute_write
 
-BOT_NAME = "bot_cs2_value_v1"
+BOT_NAME = "bot_cs2_value_v1"   # legacy alias — registry key below is canonical
 MIN_EXTRA_EDGE = 0.05   # 5% above the threshold (which already has 3% baked in)
 BASE_STAKE = 1.0        # 1 unit reference (Kelly fraction is multiplied by this)
 KELLY_FRACTION = 0.5    # half-Kelly — standard variance-reduced stake
@@ -50,6 +53,95 @@ MAX_MODEL_VS_CONSENSUS_PP = 0.15  # our_prob vs median consensus implied prob mu
 # the gap is more likely a data bug than a real edge — suppress the bet.
 # Calibrated on real-money soft-book mistakes: 25pp ≈ 4σ in the calibrated model.
 MAX_PROB_DIVERGENCE = 0.25
+
+
+# ─────────────────────────── BOT REGISTRY ───────────────────────────
+#
+# Each bot is a config dict layered on BASE_GATES. Bots share the same scan
+# pool (cs2_upcoming_matches × model coverage) and the same picker function;
+# only the gates differ. This mirrors soccer's BOTS_CONFIG in
+# workers/jobs/daily_pipeline_v2.py.
+#
+# Keys:
+#   sources      — model sources eligible (e.g. ("elo+pq_v1",) or ("v8","v7"))
+#   markets      — markets to scan (subset of ("match_winner","atleast1map"))
+#   min_extra_edge — required edge above threshold for ELO+PQ rows
+#   hltv_edge_floor / hltv_base_edge — same, but for HLTV-fallback rows
+#   max_extra_edge — kill bets where edge is implausibly large (data bug)
+#   min_books_for_pick / max_consensus_drift / max_model_vs_consensus_pp — consensus gates
+#   max_prob_divergence — anomaly kill switch (model vs bookie implied)
+#   min_odds / max_odds — odds-range filter (dog vs fav variants)
+#   kelly_fraction / kelly_cap — stake sizing
+#   enabled — quick on/off without deleting the row
+BASE_GATES = {
+    "min_extra_edge": MIN_EXTRA_EDGE,
+    "hltv_edge_floor": HLTV_EDGE_FLOOR,
+    "hltv_base_edge": HLTV_BASE_EDGE,
+    "max_extra_edge": MAX_EXTRA_EDGE,
+    "min_books_for_pick": MIN_BOOKS_FOR_PICK,
+    "max_consensus_drift": MAX_CONSENSUS_DRIFT,
+    "max_model_vs_consensus_pp": MAX_MODEL_VS_CONSENSUS_PP,
+    "max_prob_divergence": MAX_PROB_DIVERGENCE,
+    "min_odds": 1.01,
+    "max_odds": 100.0,
+    "kelly_fraction": KELLY_FRACTION,
+    "kelly_cap": KELLY_CAP,
+    "markets": ("match_winner", "atleast1map"),
+    "enabled": True,
+}
+
+
+def _cfg(name: str, sources: tuple, **overrides) -> dict:
+    """Build a bot config: BASE_GATES + sources + per-bot overrides."""
+    return {**BASE_GATES, "name": name, "sources": sources, **overrides}
+
+
+BOTS_CONFIG: dict[str, dict] = {
+    # ── Baseline: value strategy split by model source for attribution ──
+    # These four mirror the 4 bots that have been firing since 2026-06-08.
+    # Same gates, different model. bot_name keeps the model suffix so the
+    # bots table / weekly review track each model's live ROI independently.
+    "bot_cs2_value_v1": _cfg("bot_cs2_value_v1", ("elo+pq_v1",)),
+    "bot_cs2_v8":       _cfg("bot_cs2_v8",       ("v8",)),
+    "bot_cs2_v7":       _cfg("bot_cs2_v7",       ("v7",)),
+    "bot_cs2_hltv_v1":  _cfg("bot_cs2_hltv_v1",  ("hltv_v1",)),
+
+    # ── Diversification (added 2026-06-25, mirrors soccer's bot variants) ──
+    # Goal: lift CS2 paper-bet volume from ~2/day toward soccer's tempo by
+    # running multiple strategies on the same fixture pool.
+
+    # Aggressive: lower edge floor + tighter anomaly guard. Catches edges
+    # that the conservative bot lets through. Excludes hltv_v1 (the
+    # weakest model — at low edges, hltv_v1 noise overwhelms signal).
+    "bot_cs2_aggressive_v1": _cfg(
+        "bot_cs2_aggressive_v1",
+        ("elo+pq_v1", "v8", "v7"),
+        min_extra_edge=0.03,
+        hltv_edge_floor=0.02,
+        max_prob_divergence=0.20,
+    ),
+
+    # Dog: only fires on underdog at decent odds. High variance, lower
+    # win-rate, longer payouts — soccer's bot_ah_away_dog analog.
+    # match_winner only — map-handicap underdog odds in CS2 are too noisy.
+    "bot_cs2_dog_v1": _cfg(
+        "bot_cs2_dog_v1",
+        ("elo+pq_v1", "v8"),
+        markets=("match_winner",),
+        min_odds=2.20,
+        min_extra_edge=0.04,
+    ),
+
+    # Favourite: only fires on shortest prices. Low variance, lower payout
+    # per bet but higher hit rate. Soccer's bot_ah_home_fav analog.
+    "bot_cs2_fav_v1": _cfg(
+        "bot_cs2_fav_v1",
+        ("elo+pq_v1", "v8"),
+        markets=("match_winner",),
+        max_odds=1.70,
+        min_extra_edge=0.04,
+    ),
+}
 
 
 def _load_open_matches() -> list[dict]:
@@ -124,13 +216,13 @@ def _load_open_matches() -> list[dict]:
     return list(elo_rows) + list(hltv_rows)
 
 
-def _is_anomaly(side_prob: float | None, bookie_odds: float) -> bool:
+def _is_anomaly(side_prob: float | None, bookie_odds: float, threshold: float = MAX_PROB_DIVERGENCE) -> bool:
     """True if our model's win prob diverges from the bookie's implied prob by
-    more than MAX_PROB_DIVERGENCE — likely model bug or stale odds."""
+    more than `threshold` in absolute terms — likely model bug or stale odds."""
     if side_prob is None or bookie_odds <= 1.0:
         return False
     implied = 1.0 / bookie_odds   # raw implied, ignores vig (still good enough)
-    return abs(side_prob - implied) > MAX_PROB_DIVERGENCE
+    return abs(side_prob - implied) > threshold
 
 
 def market_consensus(prices: list[tuple[str, float]]) -> tuple[float, float] | None:
@@ -151,8 +243,9 @@ def market_consensus(prices: list[tuple[str, float]]) -> tuple[float, float] | N
     return cons, 1.0 / cons
 
 
-def kelly_stake(side_prob: float | None, bookie_odds: float) -> float:
-    """Half-Kelly stake. Returns BASE_STAKE * half-Kelly fraction, capped at KELLY_CAP.
+def kelly_stake(side_prob: float | None, bookie_odds: float,
+                fraction: float = KELLY_FRACTION, cap: float = KELLY_CAP) -> float:
+    """Half-Kelly stake. Returns BASE_STAKE * `fraction`-Kelly, capped at `cap`.
 
     Kelly formula: f* = (b*p - q) / b, where b = decimal_odds - 1, p = win prob, q = 1 - p.
     Falls back to 1.0 if probability unknown (preserves prior behavior).
@@ -165,7 +258,7 @@ def kelly_stake(side_prob: float | None, bookie_odds: float) -> float:
     full = (b * p - q) / b
     if full <= 0:
         return 0.0                      # caller should skip
-    return min(KELLY_CAP, round(BASE_STAKE * KELLY_FRACTION * full, 4))
+    return min(cap, round(BASE_STAKE * fraction * full, 4))
 
 
 def _eligible_books(row: dict, sidekey: str, market: str = "match_winner") -> list[tuple[str, float]]:
@@ -193,22 +286,33 @@ def _eligible_books(row: dict, sidekey: str, market: str = "match_winner") -> li
 
 def _consider_side(*, source: str, side: str, team_name: str, prices: list[tuple[str, float]],
                    fair: float | None, thr: float | None, prob: float | None,
-                   min_extra: float, market: str = "match_winner") -> dict | None:
+                   min_extra: float, market: str = "match_winner",
+                   min_books: int = MIN_BOOKS_FOR_PICK,
+                   max_drift: float = MAX_CONSENSUS_DRIFT,
+                   max_extra: float = MAX_EXTRA_EDGE,
+                   max_model_vs_consensus_pp: float = MAX_MODEL_VS_CONSENSUS_PP,
+                   max_prob_divergence: float = MAX_PROB_DIVERGENCE,
+                   min_odds: float = 1.01,
+                   max_odds: float = 100.0,
+                   kelly_fraction: float = KELLY_FRACTION,
+                   kelly_cap: float = KELLY_CAP) -> dict | None:
     """Apply all gates for one (match, market, side) tuple and return a single
     best-bookie pick, or None.
 
     Gates (in order, fail-fast):
-      1. Need ≥ MIN_BOOKS_FOR_PICK quoting (sanity cross-ref).
+      1. Need ≥ min_books quoting (sanity cross-ref).
       2. Compute market consensus median.
-      3. Best price cannot be > MAX_CONSENSUS_DRIFT above consensus (stale outlier).
-      4. Best price must be ≥ model threshold.
-      5. Edge above threshold must be ≥ min_extra (model conviction).
-      6. Existing anomaly guard: |our_prob − implied| ≤ MAX_PROB_DIVERGENCE.
-      7. Kelly stake > 0.
+      3. Best price cannot be > max_drift above consensus (stale outlier).
+      4. Best price must be within [min_odds, max_odds] — dog/fav filter.
+      5. Best price must be ≥ model threshold.
+      6. Edge above threshold must be in [min_extra, max_extra].
+      7. |our_prob − consensus_implied| ≤ max_model_vs_consensus_pp.
+      8. Anomaly guard: |our_prob − bookie_implied| ≤ max_prob_divergence.
+      9. Kelly stake > 0.
     """
     if not prices or thr is None or fair is None:
         return None
-    if len(prices) < MIN_BOOKS_FOR_PICK:
+    if len(prices) < min_books:
         return None
     cons = market_consensus(prices)
     if cons is None:
@@ -217,8 +321,10 @@ def _consider_side(*, source: str, side: str, team_name: str, prices: list[tuple
 
     best_bookie, best_odds = max(prices, key=lambda x: x[1])
 
-    if best_odds > consensus_odds * (1 + MAX_CONSENSUS_DRIFT):
+    if best_odds > consensus_odds * (1 + max_drift):
         return None     # stale-odds outlier
+    if best_odds < min_odds or best_odds > max_odds:
+        return None     # odds-range filter (dog/fav variants)
     if best_odds < thr:
         return None     # below threshold
     extra = (best_odds - thr) / thr
@@ -228,16 +334,17 @@ def _consider_side(*, source: str, side: str, team_name: str, prices: list[tuple
     # See aAa vs RUSTEC: HLTV sigmoid gives aAa 39% on 3 pts vs 8 pts, but both
     # bookies agree aAa is ~19% (consensus). Edge above 50% over threshold is
     # never a real-money opportunity worth firing on.
-    if extra > MAX_EXTRA_EDGE:
+    if extra > max_extra:
         return None
     # Tighter divergence vs market CONSENSUS (not just one bookie's implied).
     # When our probability and the market median disagree by > 15pp, the model
     # is the suspect — market has more bookmakers' worth of consensus.
-    if prob is not None and abs(float(prob) - consensus_prob) > MAX_MODEL_VS_CONSENSUS_PP:
+    if prob is not None and abs(float(prob) - consensus_prob) > max_model_vs_consensus_pp:
         return None
-    if _is_anomaly(float(prob) if prob is not None else None, best_odds):
+    if _is_anomaly(float(prob) if prob is not None else None, best_odds, max_prob_divergence):
         return None
-    stake = kelly_stake(float(prob) if prob is not None else None, best_odds)
+    stake = kelly_stake(float(prob) if prob is not None else None, best_odds,
+                       fraction=kelly_fraction, cap=kelly_cap)
     if stake <= 0:
         return None
 
@@ -249,17 +356,17 @@ def _consider_side(*, source: str, side: str, team_name: str, prices: list[tuple
     }
 
 
-def _scan_one(row: dict) -> list[dict]:
+def _scan_one(row: dict, cfg: dict) -> list[dict]:
     """One pick at most per (match, market, side) — at the best-priced bookie.
 
-    Soccer pattern: pick best price across all books, fire ONE row. Multi-bookie
-    info is preserved on cs2_upcoming_matches snapshots, so we don't need it
-    duplicated in cs2_simulated_bets. Consensus + outlier guard prevents
-    firing on a single book's stale or wrong price.
+    Returns [] when row's source is not eligible for this bot config.
     """
+    source = row.get("source") or "elo+pq_v1"
+    if source not in cfg["sources"]:
+        return []
+
     picks: list[dict] = []
     best_of = row["best_of"] or 3
-    source = row.get("source") or "elo+pq_v1"
 
     # ROSTER-CHANGE GATE (added 2026-06-09 after Virtus.pro vs Oxuji incident).
     # When EITHER team has a recent roster change, prior team-level stats
@@ -274,33 +381,44 @@ def _scan_one(row: dict) -> list[dict]:
     thr1 = row["threshold_odds1"]
     thr2 = row["threshold_odds2"]
     # v7 + hltv_v1 are HLTV-fallback variants — derive threshold from fair odds.
-    # v7 is the production stacking model (AUC 0.694); hltv_v1 is the legacy
-    # rank-only baseline (AUC 0.673). Both use the same edge floor since v7
-    # only narrowly beats hltv_v1 on aggregate AUC.
     if source in ("v7", "hltv_v1"):
         f1, f2 = row["fair_odds1"], row["fair_odds2"]
         if f1 and f2:
-            thr1 = round(float(f1) * (1 - HLTV_BASE_EDGE), 3)
-            thr2 = round(float(f2) * (1 - HLTV_BASE_EDGE), 3)
-    min_extra = HLTV_EDGE_FLOOR if source in ("v7", "hltv_v1") else MIN_EXTRA_EDGE
+            thr1 = round(float(f1) * (1 - cfg["hltv_base_edge"]), 3)
+            thr2 = round(float(f2) * (1 - cfg["hltv_base_edge"]), 3)
+    min_extra = cfg["hltv_edge_floor"] if source in ("v7", "hltv_v1") else cfg["min_extra_edge"]
+
+    gate_kwargs = dict(
+        min_books=cfg["min_books_for_pick"],
+        max_drift=cfg["max_consensus_drift"],
+        max_extra=cfg["max_extra_edge"],
+        max_model_vs_consensus_pp=cfg["max_model_vs_consensus_pp"],
+        max_prob_divergence=cfg["max_prob_divergence"],
+        min_odds=cfg["min_odds"],
+        max_odds=cfg["max_odds"],
+        kelly_fraction=cfg["kelly_fraction"],
+        kelly_cap=cfg["kelly_cap"],
+    )
 
     # match_winner
-    for side, team_name, fair, thr, prob, sidekey in [
-        ("team1", row["team1"], row["fair_odds1"], thr1, row.get("win_prob1"), "1"),
-        ("team2", row["team2"], row["fair_odds2"], thr2, row.get("win_prob2"), "2"),
-    ]:
-        prices = _eligible_books(row, sidekey)
-        pick = _consider_side(source=source, side=side, team_name=team_name,
-                              prices=prices, fair=fair, thr=thr, prob=prob,
-                              min_extra=min_extra, market="match_winner")
-        if pick:
-            picks.append(pick)
+    if "match_winner" in cfg["markets"]:
+        for side, team_name, fair, thr, prob, sidekey in [
+            ("team1", row["team1"], row["fair_odds1"], thr1, row.get("win_prob1"), "1"),
+            ("team2", row["team2"], row["fair_odds2"], thr2, row.get("win_prob2"), "2"),
+        ]:
+            prices = _eligible_books(row, sidekey)
+            pick = _consider_side(source=source, side=side, team_name=team_name,
+                                  prices=prices, fair=fair, thr=thr, prob=prob,
+                                  min_extra=min_extra, market="match_winner",
+                                  **gate_kwargs)
+            if pick:
+                picks.append(pick)
 
     # atleast1map (BO3/5 only) — same shape. Use the per-market odds
     # column (coolbet_odds_map*) instead of match-winner odds — otherwise
     # the bot evaluates a Match Result price as if it were a Map Handicap
     # price, which is a category error.
-    if best_of >= 3:
+    if "atleast1map" in cfg["markets"] and best_of >= 3:
         for side, team_name, fair, thr, sidekey in [
             ("team1", row["team1"], row["fair_odds_map1"], row["threshold_map1"], "1"),
             ("team2", row["team2"], row["fair_odds_map2"], row["threshold_map2"], "2"),
@@ -309,7 +427,8 @@ def _scan_one(row: dict) -> list[dict]:
             # No model prob for ≥1map → anomaly guard is a no-op
             pick = _consider_side(source=source, side=side, team_name=team_name,
                                   prices=prices, fair=fair, thr=thr, prob=None,
-                                  min_extra=MIN_EXTRA_EDGE, market="atleast1map")
+                                  min_extra=cfg["min_extra_edge"], market="atleast1map",
+                                  **gate_kwargs)
             if pick:
                 pick["stake"] = BASE_STAKE   # no Kelly without probability
                 picks.append(pick)
@@ -340,17 +459,8 @@ def _stake_eur(stake_units: float, bankroll: float) -> float:
     return round(max(capped, 0.0), 2)
 
 
-def _write_bet(row: dict, pick: dict) -> bool:
-    # Different bot_name per source so HLTV-fallback picks track separately.
-    src = pick.get("source")
-    if src == "v8":
-        bot_name = "bot_cs2_v8"
-    elif src == "v7":
-        bot_name = "bot_cs2_v7"
-    elif src == "hltv_v1":
-        bot_name = "bot_cs2_hltv_v1"
-    else:
-        bot_name = BOT_NAME
+def _write_bet(row: dict, pick: dict, cfg: dict) -> bool:
+    bot_name = cfg["name"]
     bankroll = _get_bot_bankroll(bot_name)
     stake_units = pick.get("stake", BASE_STAKE)
     stake_eur = _stake_eur(stake_units, bankroll)
@@ -436,40 +546,58 @@ def _bet_won(row: dict) -> bool | None:
     return None
 
 
+def _active_configs(only_name: str | None = None) -> list[dict]:
+    cfgs = [c for c in BOTS_CONFIG.values() if c.get("enabled", True)]
+    if only_name:
+        cfgs = [c for c in cfgs if c["name"] == only_name]
+        if not cfgs:
+            raise SystemExit(f"unknown or disabled bot: {only_name!r} "
+                             f"(known: {sorted(BOTS_CONFIG)})")
+    return cfgs
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--record", action="store_true", help="Write simulated_bets to DB")
     p.add_argument("--settle", action="store_true", help="Only run settlement, no scan")
+    p.add_argument("--bot", default=None, help="Run a single bot by name (default: all enabled)")
     args = p.parse_args()
 
-    print(f"\n=== CS2 BOT  {BOT_NAME}  {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC ===")
-
     if args.settle:
+        print(f"\n=== CS2 BOT  settle  {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC ===")
         n = _settle()
         print(f"  settled: {n} bets\n")
         return
 
+    configs = _active_configs(args.bot)
     matches = _load_open_matches()
-    print(f"  {len(matches)} open model-covered matches")
+    ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')
+    print(f"\n=== CS2 BOTS  {len(configs)} configs  {len(matches)} matches  {ts} UTC ===")
 
     total_picks, total_written = 0, 0
-    for row in matches:
-        picks = _scan_one(row)
-        if not picks:
-            continue
-        for p in picks:
-            total_picks += 1
-            tag = "  fired" if args.record else "  dry"
-            src = p.get("source", "elo+pq_v1")
-            cons_str = f" cons={1.0/p['consensus_prob']:.2f} (n={p.get('n_books')})" if p.get("consensus_prob") else ""
-            print(f"    {tag}  [{src:10}]  {row['team1']:22} vs {row['team2']:22}  "
-                  f"{p['market']:12} → {p['team']:18} @ {p['bookie']:8} {p['odds']:>5.2f}  "
-                  f"(thr {p['thr']:.2f}, edge +{p['edge']*100:.1f}%, stake {p.get('stake', BASE_STAKE):.2f}u{cons_str})")
-            if args.record:
-                if _write_bet(row, p):
-                    total_written += 1
+    for cfg in configs:
+        cfg_picks, cfg_written = 0, 0
+        for row in matches:
+            picks = _scan_one(row, cfg)
+            if not picks:
+                continue
+            for p in picks:
+                cfg_picks += 1
+                tag = "  fired" if args.record else "  dry"
+                src = p.get("source", "elo+pq_v1")
+                cons_str = f" cons={1.0/p['consensus_prob']:.2f} (n={p.get('n_books')})" if p.get("consensus_prob") else ""
+                print(f"    {tag}  [{cfg['name']:24} {src:10}]  {row['team1']:22} vs {row['team2']:22}  "
+                      f"{p['market']:12} → {p['team']:18} @ {p['bookie']:8} {p['odds']:>5.2f}  "
+                      f"(thr {p['thr']:.2f}, edge +{p['edge']*100:.1f}%, stake {p.get('stake', BASE_STAKE):.2f}u{cons_str})")
+                if args.record:
+                    if _write_bet(row, p, cfg):
+                        cfg_written += 1
+        total_picks += cfg_picks
+        total_written += cfg_written
+        if cfg_picks:
+            print(f"    -- {cfg['name']}: {cfg_picks} picks, {cfg_written} written")
 
-    print(f"\n  picks: {total_picks}  written: {total_written}")
+    print(f"\n  total picks: {total_picks}  written: {total_written}")
 
     if args.record:
         n = _settle()
