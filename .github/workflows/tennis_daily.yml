@@ -1,0 +1,83 @@
+name: OddsIntel — Tennis Daily Cycle
+
+# TENNIS-DAILY-BACKUP (2026-06-25): Railway-independent cron that fires the
+# full tennis pipeline twice daily — same as Railway's scheduler, but as a
+# safety net. Motivation: Railway scheduler had 0 tennis_scanner runs in
+# 7 days due to a silent-failure pattern, undetected because the
+# pipeline_runs row wasn't being written. GitHub Actions runs in the cloud
+# with visible logs + email-on-failure, so even if Railway breaks again
+# the paper-bet pond keeps accumulating.
+#
+# Cost: 2 free GH Actions cron fires per day on the public free tier.
+# Idempotent — same scanner running on both Railway + GH Actions just
+# writes the same rows via ON CONFLICT DO UPDATE.
+
+on:
+  schedule:
+    # Match Railway's tennis_scanner crons (06:00 + 14:00 UTC) but +5 min
+    # offset so the two schedulers don't collide on the same row inserts.
+    # If Railway recovers, both run; ON CONFLICT keeps writes deterministic.
+    - cron: '5 6 * * *'    # 06:05 UTC daily
+    - cron: '5 14 * * *'   # 14:05 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tennis-daily
+  cancel-in-progress: false
+
+jobs:
+  tennis-cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install deps
+        run: pip install --quiet psycopg2-binary python-dotenv rich requests
+
+      - name: Run tennis daily cycle
+        env:
+          # The Odds API — scanner, settlement, closing-odds
+          OA_KEY:                  ${{ secrets.OA_KEY }}
+          ODDS_API_KEY:            ${{ secrets.ODDS_API_KEY }}
+          # Coolbet public-read path — env cookie + no-FS mode
+          # (FlareSolverr only runs on the Mac daemon; GH Actions
+          # uses the static cookie directly).
+          COOLBET_COOKIE_REESE84:  ${{ secrets.COOLBET_COOKIE_REESE84 }}
+          COOLBET_NO_FS:           "true"
+          # DB credentials — same as Railway's scheduler service.
+          SUPABASE_DB_URL:         ${{ secrets.SUPABASE_DB_URL }}
+          DATABASE_URL:            ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL:            ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          # If the Coolbet cookie isn't set, skip that step so the rest of
+          # the cycle still ships — partial-day coverage beats nothing.
+          if [ -z "$COOLBET_COOKIE_REESE84" ]; then
+            python3 scripts/tennis/run_all.py --skip-coolbet
+          else
+            python3 scripts/tennis/run_all.py
+          fi
+
+      - name: Health check
+        if: always()
+        env:
+          OA_KEY:                  ${{ secrets.OA_KEY }}
+          ODDS_API_KEY:            ${{ secrets.ODDS_API_KEY }}
+          SUPABASE_DB_URL:         ${{ secrets.SUPABASE_DB_URL }}
+          DATABASE_URL:            ${{ secrets.DATABASE_URL }}
+        run: |
+          # Run regardless of cycle outcome so failure modes are visible.
+          python3 scripts/tennis/health_check.py || true
