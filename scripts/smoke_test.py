@@ -22335,26 +22335,57 @@ def _():
     assert "psycopg2" in src, "Must use direct psycopg2 connection (pool drops SET LOCAL)"
 
 
-@test("TENNIS-VALUE-SCANNER — script structure and DB table")
+@test("TENNIS-ODDS-API-SCANNER — Odds API tennis scanner structure + invariants")
 def _():
-    """tennis value_scanner.py: checks key functions exist, MIN_EDGE/KELLY_FRAC constants,
-    and that the tennis_value_bets table is in the migration."""
+    """TENNIS-PAPER-BETS Phase 1.3 (2026-06-25): scripts/tennis/odds_api_scanner.py
+    is the live tennis value scanner (replaces the OddsPapi-based value_scanner.py
+    after the 250 req/mo free tier was busted). Pins the contract:
+    - reads OA_KEY or ODDS_API_KEY (matching scheduler env-var convention)
+    - hits The Odds API /sports + /sports/{key}/odds endpoints
+    - de-vigs Pinnacle for fair odds and uses it as the sharp anchor
+    - tunables match the retired scanner so the data history is comparable
+    - SOFT_BOOKS excludes betfair_ex_eu (synthetic edges from exchange commission)
+      and coolbet (covered by the dedicated 30-min direct scanner)
+    - tags rows with src=odds_api in notes so a future swap-back / audit can find them
+    """
     import pathlib
-    script = pathlib.Path("scripts/tennis/value_scanner.py")
-    assert script.exists(), "scripts/tennis/value_scanner.py must exist"
+    script = pathlib.Path("scripts/tennis/odds_api_scanner.py")
+    assert script.exists(), "scripts/tennis/odds_api_scanner.py must exist"
     src = script.read_text()
-    for fn in ["fetch_tennis_tournaments", "fetch_odds_bulk", "extract_odds_by_player",
-               "devig_two_way", "kelly_stake", "insert_value_bet"]:
-        assert fn in src, f"{fn} must be defined in value_scanner.py"
-    assert "MIN_EDGE" in src, "MIN_EDGE constant must be defined"
-    assert "KELLY_FRAC" in src, "KELLY_FRAC constant must be defined"
-    assert "SHARP_BOOK" in src, "SHARP_BOOK constant must be defined"
+    # entry points
+    for fn in ["list_active_tennis_sports", "extract_book_prices", "devig_two_way",
+               "kelly_stake", "scan_sport", "upsert_fixture_today", "insert_value_bet"]:
+        assert f"def {fn}" in src, f"{fn} must be defined"
+    # provider + auth
+    assert "api.the-odds-api.com/v4" in src, "must hit The Odds API v4"
+    assert 'OA_KEY' in src and 'ODDS_API_KEY' in src, (
+        "must accept either OA_KEY or ODDS_API_KEY (matches scheduler convention)"
+    )
+    # sharp + soft book registry
+    assert 'SHARP_BOOK = "pinnacle"' in src, "Pinnacle must be the sharp anchor"
+    assert '"bet365"' in src and '"unibet_eu"' in src and '"williamhill"' in src, (
+        "SOFT_BOOKS must include the core soft books we scan against"
+    )
+    assert '"betfair_ex_eu"' not in src.split("SOFT_BOOKS")[1].split("]")[0], (
+        "betfair_ex_eu must NOT be in SOFT_BOOKS — exchange odds produce synthetic "
+        "edges that get eaten by Betfair commission; would pollute training data"
+    )
+    assert '"coolbet"' not in src.split("SOFT_BOOKS")[1].split("]")[0], (
+        "coolbet must NOT be in SOFT_BOOKS — covered by the dedicated 30-min direct "
+        "scanner; including here would waste Odds API credits on duplicate data"
+    )
+    # tunables that pin scanner behavior (must stay aligned with paper-bet history)
+    for k in ("RECORD_MIN_EDGE", "DISPLAY_MIN_EDGE", "MAX_CREDIBLE_EDGE",
+              "KELLY_FRAC", "MAX_STAKE"):
+        assert k in src, f"{k} constant must be defined"
+    # writes to tennis_value_bets with provider tag
+    assert "INSERT INTO tennis_value_bets" in src, "must INSERT into tennis_value_bets"
+    assert "src=odds_api" in src, "rows must be tagged 'src=odds_api' in notes for traceability"
+    # migration sanity (table contract)
     migration = pathlib.Path("supabase/migrations/190_tennis_value_bets.sql")
     assert migration.exists(), "190_tennis_value_bets.sql migration must exist"
     msrc = migration.read_text()
-    assert "tennis_value_bets" in msrc, "migration must create tennis_value_bets table"
-    assert "pin_fair_odds" in msrc, "migration must have pin_fair_odds column"
-    assert "edge_pct" in msrc, "migration must have edge_pct column"
+    assert "tennis_value_bets" in msrc and "pin_fair_odds" in msrc and "edge_pct" in msrc
 
 
 @test("TENNIS-PLAYER-NAMES — fetch_participant_names resolves IDs to names in value_scanner")
@@ -22522,7 +22553,10 @@ def _():
 
     p = pathlib.Path("scripts/esports/cs2_bot.py")
     src = p.read_text()
-    assert "MIN_BOOKS_FOR_PICK = 2" in src
+    # MIN_BOOKS_FOR_PICK default relaxed 2→1 in 2026-06-25 CS2-MIN-BOOKS-RELAX
+    # to unblock supply (only ~9% of CS2 matches had ≥2 books). The 4
+    # canonical bots opt back up to 2 via cfg override — see CS2-BOT-MIN-BOOKS-RELAX.
+    assert "MIN_BOOKS_FOR_PICK = 1" in src
     assert "MAX_CONSENSUS_DRIFT = 0.30" in src
     assert "def market_consensus" in src
     assert "def _consider_side" in src
@@ -22552,13 +22586,26 @@ def _():
         fair=2.0, thr=1.90, prob=0.55, min_extra=0.05,
     )
     assert pick is not None and pick["bookie"] == "coolbet"
-    # Single book rejected (need ≥ MIN_BOOKS_FOR_PICK)
+    # Single book is now accepted by default (MIN_BOOKS_FOR_PICK=1) but
+    # rejected when the caller demands a 2-book consensus (as the 4
+    # canonical baseline bots do via cfg override — see CS2-BOT-MIN-BOOKS-RELAX).
     pick = mod._consider_side(
         source="elo+pq_v1", side="team1", team_name="X",
         prices=[("bo3gg", 2.30)],
         fair=2.0, thr=1.90, prob=0.55, min_extra=0.05,
+        min_books=2,
     )
-    assert pick is None
+    assert pick is None, "with min_books=2, single-book quote must be rejected"
+    # Same single-book input WITH the relaxed default (min_books=1) fires:
+    pick = mod._consider_side(
+        source="elo+pq_v1", side="team1", team_name="X",
+        prices=[("bo3gg", 2.30)],
+        fair=2.0, thr=1.90, prob=0.55, min_extra=0.05,
+        min_books=1,
+    )
+    assert pick is not None and pick["bookie"] == "bo3gg", (
+        "with min_books=1, single-book quote must fire on edge"
+    )
 
     # CRAZY edge: aAa vs RUSTEC type. Books agree aAa is 17-20%, model says 39%.
     # Threshold derived from 39% = 2.56, books offer 5.80. edge = +127% (over MAX_EXTRA_EDGE).
@@ -22577,6 +22624,46 @@ def _():
         min_extra=0.05,
     )
     assert pick is None, "model vs consensus 30pp apart must be killed"
+
+
+@test("CS2-BOT-MIN-BOOKS-RELAX — default min_books=1; canonical 4 bots opt up to 2")
+def _():
+    """Supply unlock (2026-06-25). Live audit showed only ~9% of CS2 matches
+    in 30d had ≥2 books quoting match_winner, starving every bot of picks
+    (22 paper bets in 90d). The 15pp consensus gate + 25pp anomaly guard
+    are sufficient quality controls at 1 book — the consensus check on a
+    1-book pool becomes a tighter "model vs bookie implied" gate that's
+    stricter than the 25pp anomaly guard anyway.
+
+    Pin:
+      - Module constant MIN_BOOKS_FOR_PICK = 1 (the new default).
+      - BASE_GATES["min_books_for_pick"] = 1.
+      - The 4 canonical baseline bots opt UP to 2 via cfg override so the
+        long-standing value strategy keeps its conservative behaviour.
+      - The 3 new diversification bots use the relaxed default.
+    """
+    import pathlib, importlib.util
+    p = pathlib.Path("scripts/esports/cs2_bot.py")
+    spec = importlib.util.spec_from_file_location("cs2_bot_minbooks", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    assert mod.MIN_BOOKS_FOR_PICK == 1, "module default must be 1 post-relax"
+    assert mod.BASE_GATES["min_books_for_pick"] == 1, "BASE_GATES default must be 1"
+
+    # Canonical baseline bots opt UP to 2 (conservative reference, no regression).
+    for name in ("bot_cs2_value_v1", "bot_cs2_v8", "bot_cs2_v7", "bot_cs2_hltv_v1"):
+        cfg = mod.BOTS_CONFIG[name]
+        assert cfg["min_books_for_pick"] == 2, (
+            f"{name} must keep min_books_for_pick=2 (canonical baseline)"
+        )
+
+    # New diversification bots inherit the relaxed default (volume unlock).
+    for name in ("bot_cs2_aggressive_v1", "bot_cs2_dog_v1", "bot_cs2_fav_v1"):
+        cfg = mod.BOTS_CONFIG[name]
+        assert cfg["min_books_for_pick"] == 1, (
+            f"{name} must inherit relaxed default min_books_for_pick=1"
+        )
 
 
 @test("CS2-BOT-SHRINKAGE — market-consensus shrinkage with per-source α, NULL fallthrough, opt-out flag")

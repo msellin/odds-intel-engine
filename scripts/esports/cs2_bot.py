@@ -43,7 +43,16 @@ HLTV_EDGE_FLOOR = 0.03  # extra 3% required for HLTV-fallback picks (less proven
 HLTV_BASE_EDGE = 0.05   # 5% threshold edge for the hltv_v1 model
 
 # Market consensus / outlier protection.
-MIN_BOOKS_FOR_PICK = 2          # need at least 2 books to fire — single-book picks lack a sanity cross-ref
+#
+# MIN_BOOKS_FOR_PICK default relaxed 2026-06-25 (CS2-MIN-BOOKS-RELAX): only
+# ~9% of CS2 matches in the last 30d had ≥2 books quoting match_winner, so
+# the previous default starved every bot of picks (22 paper bets in 90d).
+# The 15pp model-vs-consensus gate (becomes 15pp model-vs-bookie-implied
+# when there's 1 book — both refer to the same value) and the 25pp anomaly
+# guard remain as quality controls. Canonical baseline bots
+# (value_v1/v8/v7/hltv_v1) keep min_books=2 via explicit cfg override —
+# only the new diversification bots use the relaxed default.
+MIN_BOOKS_FOR_PICK = 1          # default: any quoted book passes
 MAX_CONSENSUS_DRIFT = 0.30      # best price cannot exceed median market consensus by >30%
 MAX_EXTRA_EDGE = 0.50           # cap on edge over threshold; anything bigger is model error or stale data
 MAX_MODEL_VS_CONSENSUS_PP = 0.15  # our_prob vs median consensus implied prob must be within 15pp
@@ -125,10 +134,14 @@ BOTS_CONFIG: dict[str, dict] = {
     # These four mirror the 4 bots that have been firing since 2026-06-08.
     # Same gates, different model. bot_name keeps the model suffix so the
     # bots table / weekly review track each model's live ROI independently.
-    "bot_cs2_value_v1": _cfg("bot_cs2_value_v1", ("elo+pq_v1",)),
-    "bot_cs2_v8":       _cfg("bot_cs2_v8",       ("v8",)),
-    "bot_cs2_v7":       _cfg("bot_cs2_v7",       ("v7",)),
-    "bot_cs2_hltv_v1":  _cfg("bot_cs2_hltv_v1",  ("hltv_v1",)),
+    # All four keep min_books_for_pick=2 as an explicit opt-up (the module
+    # default relaxed to 1 in 2026-06-25 CS2-MIN-BOOKS-RELAX); the canonical
+    # value strategy stays conservative — only the diversification bots
+    # below use the relaxed default.
+    "bot_cs2_value_v1": _cfg("bot_cs2_value_v1", ("elo+pq_v1",), min_books_for_pick=2),
+    "bot_cs2_v8":       _cfg("bot_cs2_v8",       ("v8",),        min_books_for_pick=2),
+    "bot_cs2_v7":       _cfg("bot_cs2_v7",       ("v7",),        min_books_for_pick=2),
+    "bot_cs2_hltv_v1":  _cfg("bot_cs2_hltv_v1",  ("hltv_v1",),   min_books_for_pick=2),
 
     # ── Diversification (added 2026-06-25, mirrors soccer's bot variants) ──
     # Goal: lift CS2 paper-bet volume from ~2/day toward soccer's tempo by
