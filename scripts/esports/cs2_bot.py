@@ -122,7 +122,7 @@ BASE_GATES = {
     "max_prob_divergence": MAX_PROB_DIVERGENCE,
     "min_odds": 1.01,
     "max_odds": 100.0,
-    "markets": ("match_winner", "atleast1map"),
+    "markets": ("match_winner", "atleast1map", "clean_sweep"),
     "shrink_to_market": True,   # mirror soccer's CAL-PIN-SHRINK (per-source α)
     "enabled": True,
 }
@@ -206,6 +206,7 @@ def _load_open_matches() -> list[dict]:
                bookie_odds1, bookie_odds2,
                coolbet_odds1, coolbet_odds2,
                coolbet_odds_map1, coolbet_odds_map2,
+               coolbet_odds_cs1, coolbet_odds_cs2,
                pinnacle_odds1, pinnacle_odds2,
                roster_change1, roster_change2,
                'elo+pq_v1' AS source
@@ -229,6 +230,7 @@ def _load_open_matches() -> list[dict]:
                u.bookie_odds1, u.bookie_odds2,
                u.coolbet_odds1, u.coolbet_odds2,
                u.coolbet_odds_map1, u.coolbet_odds_map2,
+               u.coolbet_odds_cs1, u.coolbet_odds_cs2,
                u.pinnacle_odds1, u.pinnacle_odds2,
                u.roster_change1, u.roster_change2,
                COALESCE(h.source, 'hltv_v1') AS source
@@ -304,16 +306,24 @@ def market_consensus(prices: list[tuple[str, float]]) -> tuple[float, float] | N
 def _eligible_books(row: dict, sidekey: str, market: str = "match_winner") -> list[tuple[str, float]]:
     """Bookies actually quoting odds for one side. (bookie_name, decimal_odds).
 
-    market='match_winner' (default) → returns the head-to-head odds from
+    market='match_winner' (default) → head-to-head odds from
     bo3gg/coolbet/pinnacle.
 
-    market='atleast1map' → returns ≥1-map odds. Today only Coolbet
-    populates this (cs2_coolbet_scanner mig 250); other bookies' ≥1-map
-    columns don't exist yet. Empty list = no bookie priced this market
-    → bot can't compute edge → skips the side."""
+    market='atleast1map' → +1.5 map handicap (team wins ≥1 map). Coolbet only
+    (cs2_coolbet_scanner mig 250); other bookies' ≥1-map columns don't exist.
+
+    market='clean_sweep' → -1.5 map handicap (team wins 2-0 BO3 / 3-0 BO5).
+    Same Coolbet Match Handicap market as atleast1map, mirror outcome
+    (mig 263, CS2-CLEAN-SWEEP 2026-06-25).
+
+    Empty list = no bookie priced this market → bot skips the side."""
     if market == "atleast1map":
         candidates = [
             ("coolbet", row.get(f"coolbet_odds_map{sidekey}")),
+        ]
+    elif market == "clean_sweep":
+        candidates = [
+            ("coolbet", row.get(f"coolbet_odds_cs{sidekey}")),
         ]
     else:
         candidates = [
@@ -494,6 +504,34 @@ def _scan_one(row: dict, cfg: dict) -> list[dict]:
             if pick:
                 picks.append(pick)
 
+    # clean_sweep (BO3/5 only) — the -1.5 mirror of atleast1map. Team wins
+    # 2-0 in BO3 or 3-0 in BO5. Model probability is derived on the fly:
+    #   P(2-0 BO3) ≈ win_prob_i²   (maps treated as i.i.d. — first-cut proxy)
+    #   P(3-0 BO5) ≈ win_prob_i³
+    # Fair odds = 1 / model_prob; threshold uses the bot's standard target
+    # edge (cfg["min_extra_edge"], matches the atleast1map convention).
+    # CS2-CLEAN-SWEEP 2026-06-25, mig 263.
+    if "clean_sweep" in cfg["markets"] and best_of >= 3:
+        maps_to_clean = best_of // 2 + 1   # 2 for BO3, 3 for BO5
+        for side, team_name, prob_mw, sidekey in [
+            ("team1", row["team1"], row.get("win_prob1"), "1"),
+            ("team2", row["team2"], row.get("win_prob2"), "2"),
+        ]:
+            if prob_mw is None:
+                continue   # no model prob → can't derive clean_sweep odds
+            cs_prob = float(prob_mw) ** maps_to_clean
+            if cs_prob <= 0 or cs_prob >= 1:
+                continue
+            cs_fair = round(1.0 / cs_prob, 3)
+            cs_thr = round(cs_fair * (1 - cfg["min_extra_edge"]), 3)
+            prices = _eligible_books(row, sidekey, market="clean_sweep")
+            pick = _consider_side(source=source, side=side, team_name=team_name,
+                                  prices=prices, fair=cs_fair, thr=cs_thr, prob=cs_prob,
+                                  min_extra=cfg["min_extra_edge"], market="clean_sweep",
+                                  **gate_kwargs)
+            if pick:
+                picks.append(pick)
+
     return picks
 
 
@@ -589,6 +627,16 @@ def _bet_won(row: dict) -> bool | None:
             return None
         team_score = s1 if row["pick"] == row["team1"] else s2
         return team_score >= 1
+    if row["market"] == "clean_sweep":
+        # Picked team must win AND opponent must score 0 maps.
+        # BO3: 2-0; BO5: 3-0. Equivalent test: opponent score == 0 and team wins.
+        s1, s2 = row.get("score1"), row.get("score2")
+        if s1 is None or s2 is None:
+            return None
+        if row["pick"] == row["team1"]:
+            return row["winner"] == "team1" and s2 == 0
+        else:
+            return row["winner"] == "team2" and s1 == 0
     return None
 
 

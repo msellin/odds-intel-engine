@@ -301,16 +301,26 @@ def main() -> None:
             away_handicap = float(parts[1]) if len(parts) >= 2 else 1.5
         except (ValueError, IndexError):
             home_handicap, away_handicap = 0.0, 1.5
-        # The +1.5 side's outcome odds = that team's "wins ≥1 map" odds.
+        # The same Match Handicap market prices TWO things at once:
+        #   +1.5 side's odds → that team's "wins ≥1 map" (atleast1map).
+        #   -1.5 side's odds → that team's "wins 2-0 in BO3 / 3-0 in BO5"
+        #                      (clean_sweep). CS2-CLEAN-SWEEP 2026-06-25.
+        # Coolbet usually only offers ONE direction per match (favourite at
+        # -1.5, underdog at +1.5), so each market entry contributes one or
+        # the other side here; both directions are merged below.
         if away_handicap > home_handicap:
-            home_atleast1 = None
-            away_atleast1 = odds_away
+            # away is +1.5 → away = atleast1map ; home is -1.5 → home = clean_sweep
+            home_atleast1, away_atleast1 = None, odds_away
+            home_clean_sweep, away_clean_sweep = odds_home, None
         else:
-            home_atleast1 = odds_home
-            away_atleast1 = None
+            # home is +1.5 → home = atleast1map ; away is -1.5 → away = clean_sweep
+            home_atleast1, away_atleast1 = odds_home, None
+            home_clean_sweep, away_clean_sweep = None, odds_away
         atleast1map_by_match_id.setdefault(int(m["id"] or 0), []).append({
             "home_atleast1": home_atleast1,
             "away_atleast1": away_atleast1,
+            "home_clean_sweep": home_clean_sweep,
+            "away_clean_sweep": away_clean_sweep,
             "home": m["home"], "away": m["away"], "start": m["start"],
         })
 
@@ -337,32 +347,47 @@ def main() -> None:
 
         # Combine all atleast-1-map markets we found for THIS coolbet
         # match (there may be 0, 1, or 2 — one for each handicap direction).
+        # Each entry contributes EITHER atleast1map OR clean_sweep for each
+        # side (mirror outcomes of the same handicap market).
         ah_entries = atleast1map_by_match_id.get(int(m.get("id") or 0), [])
         atleast1_home = atleast1_away = None
+        clean_sweep_home = clean_sweep_away = None
         for ah in ah_entries:
             if ah["home_atleast1"] and not atleast1_home:
                 atleast1_home = ah["home_atleast1"]
             if ah["away_atleast1"] and not atleast1_away:
                 atleast1_away = ah["away_atleast1"]
-        # Map to row's team1/team2 ordering (applying the same swap)
+            if ah["home_clean_sweep"] and not clean_sweep_home:
+                clean_sweep_home = ah["home_clean_sweep"]
+            if ah["away_clean_sweep"] and not clean_sweep_away:
+                clean_sweep_away = ah["away_clean_sweep"]
+        # Map to row's team1/team2 ordering (applying the same swap).
         atleast1_team1 = atleast1_away if swap else atleast1_home
         atleast1_team2 = atleast1_home if swap else atleast1_away
+        clean_sweep_team1 = clean_sweep_away if swap else clean_sweep_home
+        clean_sweep_team2 = clean_sweep_home if swap else clean_sweep_away
 
         tag = "✓ would write" if args.record else "  dry"
         ah_part = ""
         if atleast1_team1 or atleast1_team2:
             ah_part = f"  ≥1map:{atleast1_team1 or '—'}/{atleast1_team2 or '—'}"
-        print(f"    {tag}  {row['team1']:25} vs {row['team2']:25}  {odds1:.2f}/{odds2:.2f}{ah_part}")
+        cs_part = ""
+        if clean_sweep_team1 or clean_sweep_team2:
+            cs_part = f"  2-0:{clean_sweep_team1 or '—'}/{clean_sweep_team2 or '—'}"
+        print(f"    {tag}  {row['team1']:25} vs {row['team2']:25}  {odds1:.2f}/{odds2:.2f}{ah_part}{cs_part}")
 
         if args.record:
             execute_write("""
                 UPDATE cs2_upcoming_matches
                    SET coolbet_odds1 = %s, coolbet_odds2 = %s,
-                       coolbet_odds_map1 = %s, coolbet_odds_map2 = %s
+                       coolbet_odds_map1 = %s, coolbet_odds_map2 = %s,
+                       coolbet_odds_cs1 = %s, coolbet_odds_cs2 = %s
                  WHERE id = %s
             """, (round(odds1, 3), round(odds2, 3),
                   round(atleast1_team1, 3) if atleast1_team1 else None,
                   round(atleast1_team2, 3) if atleast1_team2 else None,
+                  round(clean_sweep_team1, 3) if clean_sweep_team1 else None,
+                  round(clean_sweep_team2, 3) if clean_sweep_team2 else None,
                   row["id"]))
             written += 1
 

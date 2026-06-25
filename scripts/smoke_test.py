@@ -22841,8 +22841,11 @@ def _():
     )
     assert m, "cs2_settle_supplementary add_job block not found"
     cron_args = m.group(1)
-    assert "hour=4" in cron_args and "minute=0" in cron_args, (
-        f"cs2_settle_supplementary must be daily at 04:00 UTC, got: {cron_args}"
+    # Bumped 2026-06-25 from daily 04:00 → every 4h (00,04,08,12,16,20 UTC).
+    # PandaScore + HLTV update lag means daily was too slow; 4h cuts typical
+    # stale-resolution from 24h → 4h.
+    assert '"0,4,8,12,16,20"' in cron_args and "minute=0" in cron_args, (
+        f"cs2_settle_supplementary must run every 4h at :00 (00,04,08,12,16,20 UTC), got: {cron_args}"
     )
 
     body_match = re.search(
@@ -23307,6 +23310,85 @@ def _():
                 if kw.arg == "id" and isinstance(getattr(kw.value, "value", None), str):
                     ids.add(kw.value.value)
     assert "cs2_clv_snapshot" in ids
+
+
+@test("CS2-CLEAN-SWEEP — -1.5 handicap market wired end-to-end")
+def _():
+    """The same Coolbet Match Handicap market that prices atleast1map (+1.5)
+    also prices clean_sweep (-1.5 — team wins 2-0 in BO3, 3-0 in BO5). The
+    scanner was already fetching both outcomes but discarding the -1.5 side.
+    CS2-CLEAN-SWEEP (mig 263, 2026-06-25) captures it and wires the bot to
+    trade the market.
+
+    Pin: schema columns added, scanner extracts the -1.5 outcome and writes,
+    _eligible_books knows the new market, _scan_one computes model prob as
+    win_prob² (BO3) / win_prob³ (BO5) and fires picks, _bet_won settles
+    clean_sweep correctly (team wins AND opponent scores 0).
+    """
+    import pathlib, importlib.util
+    # Migration 263
+    mig = pathlib.Path("supabase/migrations/263_cs2_clean_sweep_odds.sql")
+    assert mig.exists(), "migration 263 missing"
+    mig_src = mig.read_text()
+    for col in ("coolbet_odds_cs1", "coolbet_odds_cs2"):
+        assert col in mig_src, f"migration 263 missing {col}"
+    assert "ADD COLUMN IF NOT EXISTS coolbet_odds_cs1" in mig_src
+    assert "ADD COLUMN IF NOT EXISTS coolbet_odds_cs2" in mig_src
+
+    # Scanner extracts -1.5 (clean_sweep) outcome
+    scanner = pathlib.Path("scripts/esports/cs2_coolbet_scanner.py").read_text()
+    assert "home_clean_sweep" in scanner and "away_clean_sweep" in scanner, (
+        "scanner must capture both clean_sweep outcomes from Match Handicap market"
+    )
+    assert "coolbet_odds_cs1" in scanner and "coolbet_odds_cs2" in scanner, (
+        "scanner UPDATE must populate the new clean_sweep columns"
+    )
+
+    # Bot wiring
+    p = pathlib.Path("scripts/esports/cs2_bot.py")
+    spec = importlib.util.spec_from_file_location("cs2_bot_cs", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    src = p.read_text()
+
+    # BASE_GATES markets default includes clean_sweep
+    assert "clean_sweep" in mod.BASE_GATES["markets"], (
+        "BASE_GATES default markets must include 'clean_sweep'"
+    )
+
+    # _eligible_books returns coolbet odds for clean_sweep
+    row_with_cs = {
+        "coolbet_odds_cs1": 3.50, "coolbet_odds_cs2": None,
+        "bookie_odds1": 1.5, "bookie_odds2": 2.5,
+        "coolbet_odds1": None, "coolbet_odds2": None,
+        "pinnacle_odds1": None, "pinnacle_odds2": None,
+        "coolbet_odds_map1": None, "coolbet_odds_map2": None,
+    }
+    assert mod._eligible_books(row_with_cs, "1", market="clean_sweep") == [("coolbet", 3.5)]
+    assert mod._eligible_books(row_with_cs, "2", market="clean_sweep") == []
+
+    # _scan_one derives model prob and fair odds for clean_sweep
+    assert "maps_to_clean" in src, "_scan_one must compute maps_to_clean for BO3/BO5"
+    assert "best_of // 2 + 1" in src, "maps_to_clean formula expected"
+    assert 'market="clean_sweep"' in src, "_scan_one must pass market='clean_sweep' to _consider_side"
+    # Model prob exponentiation: win_prob ** maps_to_clean
+    assert "prob_mw) ** maps_to_clean" in src or "** maps_to_clean" in src, (
+        "_scan_one must compute clean_sweep prob = win_prob ** maps_to_clean"
+    )
+
+    # _bet_won settles clean_sweep: team wins AND opponent scores 0
+    won_row = {"market": "clean_sweep", "pick": "X", "team1": "X", "team2": "Y",
+               "winner": "team1", "score1": 2, "score2": 0}
+    assert mod._bet_won(won_row) is True, "team1 pick on 2-0 must win clean_sweep"
+    won_row["score2"] = 1
+    assert mod._bet_won(won_row) is False, "team1 pick on 2-1 must lose clean_sweep"
+    won_row["score1"], won_row["score2"], won_row["winner"] = 0, 2, "team2"
+    assert mod._bet_won(won_row) is False, "team1 pick on 0-2 loss must lose clean_sweep"
+    won_row["pick"], won_row["score1"], won_row["score2"] = "Y", 0, 2
+    assert mod._bet_won(won_row) is True, "team2 pick on 0-2 sweep must win clean_sweep"
+    # NULL scores → None (deferred settlement, not won/lost)
+    won_row["score1"], won_row["score2"] = None, None
+    assert mod._bet_won(won_row) is None
 
 
 @test("CS2-FLAT-STAKE — flat €10 per bet + migration 262 backfill")

@@ -2744,14 +2744,18 @@ def main():
                       id="cs2_settlement", name="CS2 Settlement [hourly 12-02 UTC]",
                       max_instances=1, misfire_grace_time=900)
 
-    # CS2-SETTLE-SUPPLEMENTARY (2026-06-25) — daily backstop at 04:00 UTC for
-    # matches bo3.gg never returned. Cross-checks cs2_hltv_matches + cs2_pandascore_matches
-    # (which we already scrape) and writes resolved outcomes to cs2_results,
-    # then runs cs2_bot --settle to close the bets. Catches the ~50% of stale
-    # bets the supplementary tool can resolve at medium confidence.
-    scheduler.add_job(job_cs2_settle_supplementary, CronTrigger(hour=4, minute=0),
+    # CS2-SETTLE-SUPPLEMENTARY (2026-06-25, bumped to every 4h) — backstop
+    # for matches bo3.gg never returned. Cross-checks cs2_hltv_matches +
+    # cs2_pandascore_matches (which we already scrape) and writes resolved
+    # outcomes to cs2_results, then runs cs2_bot --settle to close the bets.
+    # Every 4h at :00 (00,04,08,12,16,20 UTC) — was daily at 04:00, but
+    # PandaScore + HLTV update lag means matches often need multiple passes
+    # to resolve, so a 24h cycle left stale bets sitting too long. 4h
+    # cadence drops typical stale-resolution latency 24h → 4h.
+    scheduler.add_job(job_cs2_settle_supplementary,
+                      CronTrigger(hour="0,4,8,12,16,20", minute=0),
                       id="cs2_settle_supplementary",
-                      name="CS2 Supplementary Settlement [daily 04:00 UTC]",
+                      name="CS2 Supplementary Settlement [every 4h]",
                       max_instances=1, misfire_grace_time=1800)
 
     # CS2-HLTV-PREDICT (2026-06-09) — parallel hltv_v1 prediction. Same schedule
