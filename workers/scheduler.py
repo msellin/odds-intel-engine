@@ -907,6 +907,37 @@ def job_tennis_settlement():
     _run_job("tennis_settlement", lambda: None)
 
 
+def job_tennis_closing_odds():
+    """TENNIS-PAPER-BETS Phase 1.5 (2026-06-25): capture Pinnacle closing odds
+    for imminent tennis fixtures, compute CLV per value-bet row.
+
+    Runs every 30 min during tennis hours (06:00–22:30 UTC). Each fire
+    queries tennis_value_bets for unsettled rows with closing_odds=NULL and
+    kickoff in the next 45 min, groups by sport, fetches Pinnacle /odds per
+    needed sport, overwrites closing_odds + clv on each call so the final
+    stored value is the closest-to-kickoff Pinnacle snap.
+
+    Pre-check skips API calls entirely when no row is imminent — most fires
+    are free. With 30-min cadence × ~17h tennis day × typical 1-2 active
+    sports per fire when imminent, real-world cost ~30-50 credits/day.
+    """
+    import subprocess
+    if not (os.getenv("OA_KEY") or os.getenv("ODDS_API_KEY")):
+        console.print("[yellow]Tennis closing-odds skipped — no OA_KEY / ODDS_API_KEY env var[/yellow]")
+        return
+    result = subprocess.run(
+        [sys.executable, "scripts/tennis/capture_closing_odds.py"],
+        capture_output=True, text=True, timeout=120,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]Tennis closing-odds error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ["imminent", "Nothing", "captured", "SUMMARY", "remaining", "rows updated"]):
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("tennis_closing_odds", lambda: None)
+
+
 def job_cs2_scanner():
     """CS2-SCANNER-DAILY (2026-06-08): run CS2 ELO scanner with DB write.
     Populates cs2_upcoming_matches + appends to cs2_predictions for retraining.
@@ -1455,6 +1486,44 @@ def job_cs2_bot():
         [sys.executable, "scripts/esports/cs2_bot.py", "--record"],
         timeout=300,
         summary_keywords=["picks", "written", "settled", "fired"],
+    )
+
+
+def job_cs2_settle_supplementary():
+    """CS2-SETTLE-SUPPLEMENTARY (2026-06-25): backstop for stale-open bets.
+
+    Primary settlement (job_cs2_settlement) pulls from bo3.gg with a 3-day
+    window. When bo3.gg's `/matches` API doesn't return a finished match
+    (rate limit, missing data, lower-tier event), the bet falls off the
+    radar forever. This job runs `cs2_settle_from_supplementary.py` which
+    cross-checks cs2_hltv_matches and cs2_pandascore_matches — data we
+    already scrape — and writes the resolved outcome to cs2_results.
+    Then runs `cs2_bot --settle` to close the now-resolvable bets.
+
+    Uses --min-confidence medium: HLTV id-window team-pair matches count.
+    HIGH confidence (PandaScore ±6h exact) would be safer but resolves
+    very little of our 30d backlog. Acceptable trade-off for paper trading;
+    operator can spot-check via the dry-run output captured in pipeline_runs.
+
+    Daily at 04:00 UTC — after most overnight matches finish, before
+    the daily real-perf email at 23:30. Idempotent: ON CONFLICT
+    (bo3gg_id) DO UPDATE; once a bet is settled, --settle skips it.
+    """
+    console.print("[bold cyan]CS2 supplementary settlement (HLTV + PandaScore stragglers)[/bold cyan]")
+    _run_subprocess_job(
+        "cs2_settle_supplementary",
+        [sys.executable, "scripts/esports/cs2_settle_from_supplementary.py",
+         "--apply", "--min-confidence", "medium"],
+        timeout=300,
+        summary_keywords=["applied:", "skipped", "unresolved", "open bets"],
+    )
+    # Close any newly-resolvable open bets immediately rather than waiting
+    # for the next hourly job_cs2_settlement.
+    _run_subprocess_job(
+        "cs2_bot_settle_after_supplementary",
+        [sys.executable, "scripts/esports/cs2_bot.py", "--settle"],
+        timeout=180,
+        summary_keywords=["settled:"],
     )
 
 
@@ -2615,6 +2684,18 @@ def main():
                       id="tennis_settlement_afternoon", name="Tennis Settlement 14:15",
                       max_instances=1, misfire_grace_time=1800)
 
+    # TENNIS-CLOSING-ODDS (TENNIS-PAPER-BETS Phase 1.5 2026-06-25) — every
+    # 30 min, 06:00-22:30 UTC. Captures Pinnacle h2h price for value-bet
+    # rows with kickoff in the next 45 min, computes CLV. Overwrites the
+    # closing_odds column on each call so the final stored value is the
+    # closest-to-kickoff Pinnacle snap. Pre-check skips API calls when
+    # nothing is imminent — most fires are free.
+    scheduler.add_job(job_tennis_closing_odds,
+                      CronTrigger(hour="6-22", minute="0,30"),
+                      id="tennis_closing_odds",
+                      name="Tennis Closing Odds [30min, 06-22 UTC]",
+                      max_instances=1, misfire_grace_time=600)
+
     # COOLBET-TENNIS-SCAN (2026-06-08) — every 30min 07:00-22:00 UTC at :08 and :38.
     # Keeps Coolbet tennis odds fresh in tennis_value_bets. No quota cost.
     scheduler.add_job(job_coolbet_tennis_scanner, CronTrigger(hour="7-22", minute="8,38"),
@@ -2662,6 +2743,16 @@ def main():
     scheduler.add_job(job_cs2_settlement, CronTrigger(hour="12-23,0-2", minute=22),
                       id="cs2_settlement", name="CS2 Settlement [hourly 12-02 UTC]",
                       max_instances=1, misfire_grace_time=900)
+
+    # CS2-SETTLE-SUPPLEMENTARY (2026-06-25) — daily backstop at 04:00 UTC for
+    # matches bo3.gg never returned. Cross-checks cs2_hltv_matches + cs2_pandascore_matches
+    # (which we already scrape) and writes resolved outcomes to cs2_results,
+    # then runs cs2_bot --settle to close the bets. Catches the ~50% of stale
+    # bets the supplementary tool can resolve at medium confidence.
+    scheduler.add_job(job_cs2_settle_supplementary, CronTrigger(hour=4, minute=0),
+                      id="cs2_settle_supplementary",
+                      name="CS2 Supplementary Settlement [daily 04:00 UTC]",
+                      max_instances=1, misfire_grace_time=1800)
 
     # CS2-HLTV-PREDICT (2026-06-09) — parallel hltv_v1 prediction. Same schedule
     # as cs2_scanner but offset 5 min so cs2_upcoming_matches has fresh HLTV.

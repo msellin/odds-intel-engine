@@ -22455,6 +22455,81 @@ def _():
     )
 
 
+@test("TENNIS-CLOSING-ODDS — Pinnacle closing snap + CLV computation + scheduler hook")
+def _():
+    """TENNIS-PAPER-BETS Phase 1.5 (2026-06-25): every 30 min during tennis
+    hours, capture Pinnacle h2h price for value-bet rows with kickoff in the
+    next 45 min, write to closing_odds + compute clv = book_odds/close - 1.
+    Pins:
+    - scripts/tennis/capture_closing_odds.py exists with the entry points
+    - find_imminent_fixtures reads from tennis_value_bets (NOT tennis_fixtures_today)
+      — this is the cost-saving choice; reading from fixtures table would burn
+      credits on sports with no rows needing CLV
+    - filter is `result IS NULL` only (NOT `closing_odds IS NULL`) — every
+      cron run within the window re-captures and overwrites so the final
+      stored value is the closest-to-kickoff Pinnacle snap. Credit cost is
+      per-sport per-fire, not per-row, so re-capturing is free.
+    - update overwrites closing_odds on every call — later captures (closer
+      to kickoff) replace earlier ones; the final stored value is the
+      closest-to-kickoff Pinnacle snap
+    - scheduler.py declares job_tennis_closing_odds + registers 30-min cron
+    """
+    import pathlib
+    script = pathlib.Path("scripts/tennis/capture_closing_odds.py")
+    assert script.exists(), "scripts/tennis/capture_closing_odds.py must exist"
+    src = script.read_text()
+
+    for fn in ["list_active_tennis_sport_map", "find_imminent_fixtures",
+               "extract_pinnacle_h2h", "update_closing_for_fixture"]:
+        assert f"def {fn}" in src, f"{fn} must be defined"
+
+    assert "api.the-odds-api.com/v4" in src, "must hit The Odds API"
+    assert 'OA_KEY' in src and 'ODDS_API_KEY' in src, (
+        "must accept either OA_KEY or ODDS_API_KEY (matches scheduler convention)"
+    )
+    assert 'bookmakers="pinnacle"' in src, (
+        "must request only Pinnacle from /odds (sharp anchor, no soft books needed)"
+    )
+
+    # The cost-saving choice — read from tennis_value_bets, not tennis_fixtures_today
+    assert "FROM tennis_value_bets" in src, (
+        "find_imminent_fixtures must read from tennis_value_bets so we only "
+        "burn credits on sports with rows actually needing CLV"
+    )
+    # NOTE: explicitly NOT filtering on closing_odds IS NULL — see
+    # find_imminent_fixtures docstring for why (re-capture for closer-to-close
+    # snap, free since credit cost is per-sport).
+    assert "result IS NULL" in src, (
+        "imminent query must filter to unsettled rows"
+    )
+
+    # Pre-check: if nothing imminent, skip the /sports call too
+    assert "Nothing imminent" in src, (
+        "must short-circuit visibly when no rows are imminent (saves /sports credit too)"
+    )
+
+    # CLV formula sanity
+    assert "(book_odds / %s::numeric) - 1" in src, (
+        "CLV formula must be (book_odds / closing_odds) - 1"
+    )
+
+    # Scheduler wiring
+    sched_src = pathlib.Path("workers/scheduler.py").read_text()
+    assert "def job_tennis_closing_odds" in sched_src, (
+        "scheduler must declare job_tennis_closing_odds"
+    )
+    assert "scripts/tennis/capture_closing_odds.py" in sched_src, (
+        "scheduler must shell out to scripts/tennis/capture_closing_odds.py"
+    )
+    assert 'id="tennis_closing_odds"' in sched_src, (
+        "scheduler must register the closing-odds cron"
+    )
+    # 30-min cadence in tennis hours
+    assert 'minute="0,30"' in sched_src and 'hour="6-22"' in sched_src, (
+        "cron must fire every 30 min during 06-22 UTC tennis window"
+    )
+
+
 @test("TENNIS-MATCH-FIXTURE-QUALITY — coolbet scanner name matching + dedup + live exclusion")
 def _():
     """Guards against cross-gender/cross-tournament false edges and live-match display."""
@@ -22676,6 +22751,61 @@ def _():
         min_extra=0.05,
     )
     assert pick is None, "model vs consensus 30pp apart must be killed"
+
+
+@test("CS2-SETTLE-SUPPLEMENTARY — daily cron + chain to cs2_bot --settle")
+def _():
+    """Wire the existing one-shot tool into a daily backstop cron (2026-06-25).
+    Primary cs2_settlement only checks bo3.gg with a 3d window; matches bo3.gg
+    never returns leave bets permanently stale. The supplementary tool checks
+    cs2_hltv_matches + cs2_pandascore_matches (already scraped) and writes
+    resolved outcomes to cs2_results, then cs2_bot --settle closes the bets.
+    Pin: the helper function exists, calls the script with --apply + medium
+    confidence, chains cs2_bot --settle after, and is scheduled daily at 04:00.
+    """
+    import pathlib, ast, re
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    tree = ast.parse(sched)
+    fns = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    assert "job_cs2_settle_supplementary" in fns, (
+        "scheduler must define job_cs2_settle_supplementary"
+    )
+
+    m = re.search(
+        r'scheduler\.add_job\(job_cs2_settle_supplementary,\s*'
+        r'CronTrigger\(([^)]+)\),\s*'
+        r'id="cs2_settle_supplementary"',
+        sched, re.DOTALL,
+    )
+    assert m, "cs2_settle_supplementary add_job block not found"
+    cron_args = m.group(1)
+    assert "hour=4" in cron_args and "minute=0" in cron_args, (
+        f"cs2_settle_supplementary must be daily at 04:00 UTC, got: {cron_args}"
+    )
+
+    body_match = re.search(
+        r'def job_cs2_settle_supplementary\(\).*?(?=\ndef |\Z)',
+        sched, re.DOTALL,
+    )
+    assert body_match, "function body not found"
+    body = body_match.group(0)
+    assert "cs2_settle_from_supplementary.py" in body
+    assert "--apply" in body and "--min-confidence" in body and "medium" in body, (
+        "cron must run with --apply --min-confidence medium"
+    )
+    assert 'cs2_bot.py", "--settle"' in body, (
+        "must chain cs2_bot --settle after supplementary insertion"
+    )
+
+    p = pathlib.Path("scripts/esports/cs2_settle_from_supplementary.py")
+    assert p.exists()
+    src = p.read_text()
+    assert '"--apply"' in src
+    assert '"--min-confidence"' in src
+    assert '"medium"' in src and '"high"' in src
+    assert "cs2_simulated_bets" in src, (
+        "supplementary tool must target cs2_simulated_bets (the source of stale bets)"
+    )
 
 
 @test("CS2-BOT-ACTIVITY-REPORT — CLI monitoring script structure + imports")
