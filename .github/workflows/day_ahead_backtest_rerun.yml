@@ -1,0 +1,118 @@
+name: OddsIntel — Day-Ahead Backtest Re-run (2026-07-22)
+
+# DAY-AHEAD-BACKTEST-RERUN (scheduled 2026-06-25, fires 2026-07-22)
+#
+# Context: scripts/backtest_day_ahead_picks.py landed 2026-06-24.
+# At edge_threshold=5% on n=624 calibrated pre-match bets, the T-24h
+# horizon showed +19.76% ROI vs production baseline +9.80% — BUT only
+# 15% coverage because the previous odds-fetch cadence missed most
+# matches at T-24h. T24H-COVERAGE added 3 more odds_tomorrow crons
+# (04/10/16 UTC) on 2026-06-24 to expand coverage; target 60-70%.
+#
+# This workflow re-runs the same backtest on 2026-07-22 (~4 weeks
+# later) so we can see whether the +19.76% T-24h ROI holds at the
+# expanded coverage. If it does, a "tomorrow's high-confidence picks"
+# premium tier becomes a credible product. If it doesn't, current
+# cadence is already optimal — file the idea closed.
+#
+# Mechanism: daily cron, date-gated. Only fires once (on 2026-07-22)
+# unless re-triggered manually via workflow_dispatch.
+
+on:
+  schedule:
+    # 03:00 UTC daily — early enough for Monday-morning review.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: day-ahead-backtest-rerun
+  cancel-in-progress: false
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Date gate — exit unless 2026-07-22 (cron) or manual
+        # Manual workflow_dispatch fires regardless of date; cron is
+        # date-gated to one specific day. After 2026-07-22 the workflow
+        # remains dormant; we can keep it on disk as documentation or
+        # delete it once the verdict's logged.
+        run: |
+          TODAY=$(date -u +%Y-%m-%d)
+          TRIGGER_DATE="2026-07-22"
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ] && [ "$TODAY" != "$TRIGGER_DATE" ]; then
+            echo "Today is $TODAY, trigger date is $TRIGGER_DATE — exiting cleanly."
+            exit 0
+          fi
+          echo "Proceeding (today=$TODAY, trigger=$TRIGGER_DATE, event=${{ github.event_name }})"
+
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install deps
+        run: pip install --quiet psycopg2-binary python-dotenv rich
+
+      - name: Run day-ahead backtest
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        run: |
+          python3 scripts/backtest_day_ahead_picks.py 2>&1 | tee /tmp/backtest_2026_07_22.log
+
+      - name: Snapshot result file with date suffix
+        run: |
+          if [ -f dev/active/day_ahead_backtest_results.json ]; then
+            cp dev/active/day_ahead_backtest_results.json \
+               dev/active/day_ahead_backtest_results_2026_07_22.json
+          fi
+
+      - name: Commit + push result snapshot
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dev/active/day_ahead_backtest_results*.json
+          if git diff --cached --quiet; then
+            echo "No result changes — exiting cleanly."
+            exit 0
+          fi
+          git commit -m "DAY-AHEAD-BACKTEST-RERUN-2026-07-22 — auto-re-run results
+
+          See dev/active/day_ahead_backtest_results.json (latest) and
+          dev/active/day_ahead_backtest_results_2026_07_22.json
+          (dated snapshot). Compare T-24h ROI + coverage vs the
+          2026-06-24 baseline to evaluate the T24H-COVERAGE
+          expansion."
+          git push origin HEAD:main
+
+      - name: Telegram notify operator
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        if: env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != ''
+        run: |
+          SUMMARY=$(python3 -c "
+          import json
+          try:
+              d = json.load(open('dev/active/day_ahead_backtest_results.json'))
+              r5 = d['results_by_edge_threshold']['edge_5pct']
+              t24h = r5['T-24h']
+              prod = d.get('horizons', {}).get('production_baseline') or r5.get('production_baseline', {})
+              print(f\"T-24h ROI {t24h['roi_pct']}% n={t24h['n_fires']} cov={t24h['coverage_pct']}% · baseline {prod.get('roi_pct','?')}% n={prod.get('n','?')}\")
+          except Exception as e:
+              print(f'parse error: {e}')
+          ")
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_CHAT_ID}" \
+            -d "text=📊 Day-ahead backtest re-run landed (2026-07-22). ${SUMMARY}. See dev/active/day_ahead_backtest_results.json + PRIORITY_QUEUE entry DAY-AHEAD-BACKTEST-RERUN."
