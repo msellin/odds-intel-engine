@@ -1421,6 +1421,35 @@ def job_pipeline_runs_failure_digest():
         raise
 
 
+def job_flaresolverr_hltv_session_refresh():
+    """FS-AUTO-RECOVER-HLTV (2026-06-25): scheduled destruction of all
+    hltv_* FlareSolverr sessions every 6 hours.
+
+    Surfaced today: Railway FS Chrome instances periodically hang on
+    specific CF challenges, leaving sessions stuck (working from FS's
+    /v1 perspective, but every request through that session times out).
+    The session-recovery CLI (scripts/diagnose/flaresolverr_recover.py)
+    unstuck them on demand this morning; this job preempts the next
+    occurrence by tearing down all hltv_* sessions on a fixed cadence.
+
+    Cost per fire: ~6 fresh CF challenges (one per hltv_* session
+    recreated by the next scraper cron) — each takes ~10s the first
+    time but warms back to ~1s. Negligible vs the 32h outage class
+    this replaces. Skips coolbet_prod (load-bearing for the placer
+    chain) — only the hltv_ prefix.
+
+    Every 6h at :33 (offset from the bulk of cron firing).
+    """
+    console.print("[bold cyan]FlareSolverr hltv_* session refresh[/bold cyan]")
+    _run_subprocess_job(
+        "flaresolverr_hltv_session_refresh",
+        [sys.executable, "scripts/diagnose/flaresolverr_recover.py",
+         "--prefix", "hltv_", "--apply"],
+        timeout=120,
+        summary_keywords=["destroyed", "failed", "sessions currently"],
+    )
+
+
 def job_pipeline_failure_alerter():
     """PIPELINE-FAILURE-ALERTER (2026-06-25): hourly Telegram alert when
     any cron racks up 3+ consecutive non-transient failures. Closes the
@@ -3040,6 +3069,17 @@ def main():
                       id="pipeline_runs_failure_digest",
                       name="Pipeline Failure Digest [daily 08:00 UTC]",
                       max_instances=1, misfire_grace_time=3600)
+
+    # FS-AUTO-RECOVER-HLTV (2026-06-25) — every 6h at :33. Tears down all
+    # hltv_* FlareSolverr sessions to preempt the recurring stuck-session
+    # class (Railway Chrome hangs on specific CF challenges; the manual
+    # surgical recovery this morning unblocked the same pattern). Scoped
+    # to hltv_ prefix only — coolbet_prod stays.
+    scheduler.add_job(job_flaresolverr_hltv_session_refresh,
+                      CronTrigger(hour="*/6", minute=33),
+                      id="flaresolverr_hltv_session_refresh",
+                      name="FlareSolverr hltv_* Session Refresh [every 6h]",
+                      max_instances=1, misfire_grace_time=600)
 
     # PIPELINE-FAILURE-ALERTER (2026-06-25) — hourly fast-cycle alerter.
     # Closes the 32h-lag gap surfaced by the 06-23 FS outage: the daily

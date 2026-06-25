@@ -15830,6 +15830,50 @@ def _():
     )
 
 
+@test("FS-AUTO-RECOVER-HLTV — every-6h scheduled tear-down of hltv_* FS sessions")
+def _():
+    """Preempts the recurring 'FS Chrome stuck on a CF challenge' pattern
+    (surfaced 2026-06-25, root cause class shared with COOLBET-SELFHEAL-
+    DOCKER-FS 06-17). Every 6h, destroys all hltv_* FlareSolverr sessions
+    so the next scraper cron creates fresh ones. Scoped to the hltv_
+    prefix only — coolbet_prod stays (its destruction would force an
+    Imperva re-challenge on the placer chain).
+
+    Pin scheduler wrapper exists, runs the recovery CLI with --prefix
+    hltv_ --apply, schedules every 6h.
+    """
+    import pathlib, re
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    assert "def job_flaresolverr_hltv_session_refresh(" in sched, (
+        "scheduler must define the FS hltv refresh wrapper"
+    )
+    body = sched[sched.index("def job_flaresolverr_hltv_session_refresh("):]
+    body = body[:body.index("\ndef ")]
+    assert "scripts/diagnose/flaresolverr_recover.py" in body
+    assert '"--prefix", "hltv_"' in body
+    assert '"--apply"' in body
+    # Must NOT pass --all (that would nuke coolbet_prod, forcing an
+    # Imperva re-challenge on the placer chain). Must NOT pass an
+    # explicit --session coolbet_prod either.
+    assert '"--all"' not in body, "must not pass --all (would destroy coolbet_prod)"
+    assert '"coolbet_prod"' not in body, (
+        "must not target coolbet_prod — it's the load-bearing placer session"
+    )
+
+    # Schedule registered every 6h.
+    m = re.search(
+        r'scheduler\.add_job\(job_flaresolverr_hltv_session_refresh,\s*'
+        r'CronTrigger\(([^)]+)\),\s*'
+        r'id="flaresolverr_hltv_session_refresh"',
+        sched, re.DOTALL,
+    )
+    assert m, "scheduler.add_job for FS refresh not found"
+    cron_args = m.group(1)
+    assert 'hour="*/6"' in cron_args, (
+        f"must run every 6h, got: {cron_args}"
+    )
+
+
 @test("PIPELINE-FAILURE-ALERTER — hourly Telegram fire on 3+ consecutive failures")
 def _():
     """Fast-cycle alerter that closes the 32h-lag gap surfaced by the
