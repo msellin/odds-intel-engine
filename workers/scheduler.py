@@ -853,26 +853,28 @@ def job_weekly_bot_review():
 
 
 def job_tennis_scanner():
-    """TENNIS-SCANNER-DAILY (2026-06-08): twice-daily OddsPapi tennis value scan.
-    Runs 06:00 + 14:00 UTC. Populates tennis_fixtures_today (all thresholds) and
-    tennis_value_bets (positive-edge observations across 7 soft books).
-    Requires OP_KEY env var.
+    """TENNIS-SCANNER-DAILY: twice-daily tennis value scan.
+    Runs 06:00 + 14:00 UTC. Populates tennis_fixtures_today (all thresholds)
+    and tennis_value_bets (positive-edge observations across soft books).
+
+    TENNIS-PAPER-BETS Phase 1.3 (2026-06-25): switched provider from OddsPapi
+    (250 req/mo free, busted) to The Odds API (500 cred/mo free, ~6/day usage).
+    Pinnacle coverage confirmed 100% on active tour tournaments.
     """
     import subprocess
-    if not os.getenv("OP_KEY"):
-        console.print("[yellow]Tennis scanner skipped — OP_KEY not set[/yellow]")
+    if not (os.getenv("OA_KEY") or os.getenv("ODDS_API_KEY")):
+        console.print("[yellow]Tennis scanner skipped — no OA_KEY / ODDS_API_KEY env var[/yellow]")
         return
-    console.print("[bold cyan]Tennis value scanner — OddsPapi scan[/bold cyan]")
+    console.print("[bold cyan]Tennis value scanner — Odds API scan[/bold cyan]")
     result = subprocess.run(
-        [sys.executable, "scripts/tennis/value_scanner.py"],
+        [sys.executable, "scripts/tennis/odds_api_scanner.py"],
         capture_output=True, text=True, timeout=300,
     )
     if result.returncode != 0:
         console.print(f"[red]Tennis scanner error:[/red]\n{result.stderr[:500]}")
     else:
-        # Print the summary lines only
         for line in result.stdout.splitlines():
-            if any(k in line for k in ["SUMMARY", "scanned", "logged", "remaining", "VALUE"]):
+            if any(k in line for k in ["SUMMARY", "events:", "logged", "remaining", "VALUE"]):
                 console.print(f"[dim]{line}[/dim]")
     _run_job("tennis_scanner", lambda: None)  # no-op for logging
 

@@ -22388,21 +22388,6 @@ def _():
     assert "tennis_value_bets" in msrc and "pin_fair_odds" in msrc and "edge_pct" in msrc
 
 
-@test("TENNIS-PLAYER-NAMES — fetch_participant_names resolves IDs to names in value_scanner")
-def _():
-    """Ensures value_scanner stores real player names (not numeric IDs) via /participants lookup."""
-    import pathlib
-    src = pathlib.Path("scripts/tennis/value_scanner.py").read_text()
-    assert "fetch_participant_names" in src, "fetch_participant_names() must be defined"
-    assert "/participants" in src, "/participants endpoint must be called"
-    assert "p1_name" in src, "pin_index must store p1_name"
-    assert "p2_name" in src, "pin_index must store p2_name"
-    assert 'player_home=pin["p1_name"]' in src, "upsert must use p1_name not p1_id"
-    assert 'player_away=pin["p2_name"]' in src, "upsert must use p2_name not p2_id"
-    assert 'player_home":     p1_name' in src, "value_bet row must use resolved name"
-    assert 'player_away":     p2_name' in src, "value_bet row must use resolved name"
-
-
 @test("TENNIS-MATCH-FIXTURE-QUALITY — coolbet scanner name matching + dedup + live exclusion")
 def _():
     """Guards against cross-gender/cross-tournament false edges and live-match display."""
