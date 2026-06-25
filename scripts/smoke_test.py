@@ -22962,6 +22962,39 @@ def _():
     assert pick is None, "model vs consensus 30pp apart must be killed"
 
 
+@test("FS-RECOVER-CLI — flaresolverr_recover.py surgical session destroyer")
+def _():
+    """Tool to unstick FlareSolverr when SOME sessions hang while others
+    work (the 06-23 incident pattern: cs2_hltv_upcoming + cs2_coolbet_scanner
+    + cs2_hltv_match_odds all failing every cron tick while
+    coolbet_odds_snapshot kept working). Default is dry-run; targeting
+    is by --session, --prefix, or --all. Pin so a future rename or
+    accidental delete is caught.
+    """
+    import pathlib, importlib.util
+    p = pathlib.Path("scripts/diagnose/flaresolverr_recover.py")
+    assert p.exists(), "scripts/diagnose/flaresolverr_recover.py must exist"
+    src = p.read_text()
+    for needle in ("def list_sessions", "def destroy_session", "def pick_targets",
+                   "sessions.list", "sessions.destroy",
+                   "--apply", "--prefix", "--session", "--all", "--list",
+                   "FLARESOLVERR_URL"):
+        assert needle in src, f"flaresolverr_recover missing {needle}"
+
+    spec = importlib.util.spec_from_file_location("fs_recover", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    sessions = ["coolbet_prod", "hltv_matches", "hltv_upcoming", "hltv_stats"]
+
+    assert mod.pick_targets(sessions, names=["hltv_stats"], prefixes=[], all_=False) == ["hltv_stats"]
+    assert sorted(mod.pick_targets(sessions, names=[], prefixes=["hltv_"], all_=False)) == \
+           ["hltv_matches", "hltv_stats", "hltv_upcoming"]
+    out = mod.pick_targets(sessions, names=["coolbet_prod"], prefixes=["hltv_"], all_=False)
+    assert set(out) == {"coolbet_prod", "hltv_matches", "hltv_upcoming", "hltv_stats"}
+    assert mod.pick_targets(sessions, names=[], prefixes=[], all_=True) == sessions
+    assert mod.pick_targets(sessions, names=["nope"], prefixes=["zz_"], all_=False) == []
+
+
 @test("CS2API-IN-REQUIREMENTS — bo3.gg API client must be in requirements.txt")
 def _():
     """cs2api is the PyPI bo3.gg API client imported by cs2_elo_scanner +
