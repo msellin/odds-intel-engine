@@ -20,13 +20,13 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done · ❌ blocked
 
 ## Phase 2 — Bot segmentation
 
-- [⬜] **2.1** Migration 261 — `tennis_value_bets`: add `bot_id text`, `strategy_profile text`; widen unique index to include `bot_id`
-- [⬜] **2.2** `scripts/tennis/bots_config.py` — 3 paper bots: `bot_tennis_pin_broad`, `bot_tennis_pin_selective`, `bot_tennis_coolbet_only`
-- [⬜] **2.3** Backfill existing rows: `UPDATE tennis_value_bets SET bot_id = 'legacy_unsegmented' WHERE bot_id IS NULL`
-- [⬜] **2.4** Refactor `value_scanner.py` to route observations through bots config (1 row per bot × fixture × bookmaker × selection)
-- [⬜] **2.5** Refactor `place_coolbet_tennis.py` to route via `bot_tennis_coolbet_only`
-- [⬜] **2.6** Sanity guards: reject rows with `book_odds > 10.0` OR `pin_fair_odds > 8.0`
-- [⬜] **2.7** Smoke `TENNIS-BOTS-CONFIG`
+- [✅] **2.1** Migration 261 — `tennis_value_bets`: added `bot_id text`, `strategy_profile text`; widened unique index to include `bot_id`; backfilled existing rows with `legacy_unsegmented`
+- [✅] **2.2** `scripts/tennis/bots_config.py` — 3 paper bots: `bot_tennis_pin_broad` (≥3% any book), `bot_tennis_pin_selective` (≥5% any book), `bot_tennis_coolbet_only` (≥3% Coolbet only)
+- [✅] **2.3** Backfill: handled inside migration 261 (UPDATE WHERE bot_id IS NULL)
+- [✅] **2.4** Refactored `odds_api_scanner.py` to route observations through `matching_bots()`; each qualifying (book, edge) produces one row PER matching bot
+- [✅] **2.5** Refactored `place_coolbet_tennis.py` to route every observation through `matching_bots()` (so Coolbet rows land in coolbet_only AND pin_broad/selective lanes as edge dictates)
+- [⬜] **2.6** Sanity guards: reject rows with `book_odds > 10.0` OR `pin_fair_odds > 8.0` (deferred — current scanner already drops `edge > 40%` as fixture mismatch; this would add a secondary belt-and-braces filter)
+- [✅] **2.7** Smoke `TENNIS-BOTS-CONFIG` — pins bot registry, matcher boundary cases, scanner integration, migration shape
 
 ## Phase 3 — Visibility & guardrails
 

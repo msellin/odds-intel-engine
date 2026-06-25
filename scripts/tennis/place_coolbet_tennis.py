@@ -32,6 +32,7 @@ load_dotenv(Path(__file__).parents[2] / ".env")
 
 from workers.api_clients.db import execute_query, execute_write
 from workers.automation.coolbet_session import CoolbetSession
+from scripts.tennis.bots_config import matching_bots
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -289,37 +290,44 @@ def record_observation(
 
         if not dry_run and fixture and _has_real_names(fixture):
             fix_id = fixture["fixture_id"]
-            execute_write("""
-                INSERT INTO tennis_value_bets
-                    (fixture_id, tournament_name, player_home, player_away, surface,
-                     kickoff_time, market, selection,
-                     pin_fair_odds, pin_raw_home, pin_raw_away,
-                     bookmaker, book_odds, edge_pct, kelly_fraction, stake,
-                     scan_date, notes)
-                VALUES
-                    (%s, %s, %s, %s, NULL,
-                     %s, 'match_winner', %s,
-                     %s, %s, %s,
-                     'coolbet', %s, %s, 0, 0,
-                     CURRENT_DATE, %s)
-                ON CONFLICT (fixture_id, bookmaker, selection, scan_date) DO UPDATE SET
-                    book_odds  = EXCLUDED.book_odds,
-                    edge_pct   = EXCLUDED.edge_pct,
-                    logged_at  = now()
-            """, (
-                fix_id,
-                fixture["tournament_name"],
-                fixture["player_home"],
-                fixture["player_away"],
-                cb_start,
-                selection,
-                threshold,
-                fixture.get("pin_raw_home"),
-                fixture.get("pin_raw_away"),
-                cb_odds,
-                edge_pct,
-                f"coolbet_match_id={cb_id}",
-            ))
+            # Route through bot config — Coolbet observations qualify for
+            # bot_tennis_coolbet_only at 3%+ edge AND for the generic
+            # pin_broad/pin_selective lanes (Coolbet IS a soft book).
+            edge_decimal = (edge_pct or 0) / 100.0
+            matched = list(matching_bots(bookmaker="coolbet", edge=edge_decimal))
+            for bot_id, _ in matched:
+                execute_write("""
+                    INSERT INTO tennis_value_bets
+                        (fixture_id, tournament_name, player_home, player_away, surface,
+                         kickoff_time, market, selection,
+                         pin_fair_odds, pin_raw_home, pin_raw_away,
+                         bookmaker, book_odds, edge_pct, kelly_fraction, stake,
+                         scan_date, bot_id, notes)
+                    VALUES
+                        (%s, %s, %s, %s, NULL,
+                         %s, 'match_winner', %s,
+                         %s, %s, %s,
+                         'coolbet', %s, %s, 0, 0,
+                         CURRENT_DATE, %s, %s)
+                    ON CONFLICT (fixture_id, bookmaker, selection, scan_date, bot_id) DO UPDATE SET
+                        book_odds  = EXCLUDED.book_odds,
+                        edge_pct   = EXCLUDED.edge_pct,
+                        logged_at  = now()
+                """, (
+                    fix_id,
+                    fixture["tournament_name"],
+                    fixture["player_home"],
+                    fixture["player_away"],
+                    cb_start,
+                    selection,
+                    threshold,
+                    fixture.get("pin_raw_home"),
+                    fixture.get("pin_raw_away"),
+                    cb_odds,
+                    edge_pct,
+                    bot_id,
+                    f"coolbet_match_id={cb_id}",
+                ))
         logged += 1
 
     return logged, value

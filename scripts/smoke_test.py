@@ -22455,6 +22455,68 @@ def _():
     )
 
 
+@test("TENNIS-BOTS-CONFIG — bot registry + matching_bots logic + scanner routing + migration")
+def _():
+    """TENNIS-PAPER-BETS Phase 2 (2026-06-25): observations from the scanners
+    now route through scripts/tennis/bots_config.py to produce one row per
+    (bot, fixture, bookmaker, selection, scan_date) tuple. Pins:
+
+    - Three starter bots: bot_tennis_pin_broad (≥3% any book),
+      bot_tennis_pin_selective (≥5% any book), bot_tennis_coolbet_only
+      (≥3% Coolbet only). Reorder/rename = explicit decision, not accidental.
+    - matching_bots() math is correct (boundary cases: at-threshold edges
+      qualify, below-threshold don't; bookmaker whitelist enforced)
+    - odds_api_scanner.py + place_coolbet_tennis.py both import + use the
+      bot config (no copy-pasted parallel logic)
+    - Migration 261 widens unique index to include bot_id (otherwise
+      multiple bot rows for the same fixture-book-selection would collide)
+    - tennis_value_bets.bot_id column added with legacy_unsegmented backfill
+    """
+    import pathlib, sys
+    sys.path.insert(0, ".")
+
+    from scripts.tennis.bots_config import TENNIS_BOTS, matching_bots
+    assert set(TENNIS_BOTS) == {
+        "bot_tennis_pin_broad",
+        "bot_tennis_pin_selective",
+        "bot_tennis_coolbet_only",
+    }, f"unexpected bot set: {list(TENNIS_BOTS)}"
+
+    assert TENNIS_BOTS["bot_tennis_pin_broad"]["edge_threshold"] == 0.03
+    assert TENNIS_BOTS["bot_tennis_pin_selective"]["edge_threshold"] == 0.05
+    assert TENNIS_BOTS["bot_tennis_coolbet_only"]["edge_threshold"] == 0.03
+    assert TENNIS_BOTS["bot_tennis_coolbet_only"]["bookmakers"] == ["coolbet"]
+    assert TENNIS_BOTS["bot_tennis_pin_broad"]["bookmakers"] is None
+    assert TENNIS_BOTS["bot_tennis_pin_selective"]["bookmakers"] is None
+
+    coolbet_4pct = [b for b, _ in matching_bots(bookmaker="coolbet", edge=0.04)]
+    assert set(coolbet_4pct) == {"bot_tennis_pin_broad", "bot_tennis_coolbet_only"}
+    bet365_6pct = [b for b, _ in matching_bots(bookmaker="bet365", edge=0.06)]
+    assert set(bet365_6pct) == {"bot_tennis_pin_broad", "bot_tennis_pin_selective"}
+    assert not list(matching_bots(bookmaker="bet365", edge=0.02))
+    coolbet_8pct = [b for b, _ in matching_bots(bookmaker="coolbet", edge=0.08)]
+    assert set(coolbet_8pct) == set(TENNIS_BOTS)
+    assert "bot_tennis_pin_broad" in [b for b, _ in matching_bots(bookmaker="bet365", edge=0.03)]
+    assert "bot_tennis_pin_selective" in [b for b, _ in matching_bots(bookmaker="bet365", edge=0.05)]
+
+    odds_api_src = pathlib.Path("scripts/tennis/odds_api_scanner.py").read_text()
+    assert "from scripts.tennis.bots_config import matching_bots" in odds_api_src
+    assert "matching_bots(bookmaker=" in odds_api_src
+    assert "bot_id" in odds_api_src and "%(bot_id)s" in odds_api_src
+    assert "(fixture_id, bookmaker, selection, scan_date, bot_id)" in odds_api_src
+
+    coolbet_src = pathlib.Path("scripts/tennis/place_coolbet_tennis.py").read_text()
+    assert "from scripts.tennis.bots_config import matching_bots" in coolbet_src
+    assert 'matching_bots(bookmaker="coolbet"' in coolbet_src
+    assert "(fixture_id, bookmaker, selection, scan_date, bot_id)" in coolbet_src
+
+    mig = pathlib.Path("supabase/migrations/261_tennis_bot_segmentation.sql").read_text()
+    assert "ADD COLUMN IF NOT EXISTS bot_id text" in mig
+    assert "legacy_unsegmented" in mig
+    assert "DROP INDEX IF EXISTS tennis_value_bets_unique" in mig
+    assert "(fixture_id, bookmaker, selection, scan_date, bot_id)" in mig
+
+
 @test("TENNIS-CLOSING-ODDS — Pinnacle closing snap + CLV computation + scheduler hook")
 def _():
     """TENNIS-PAPER-BETS Phase 1.5 (2026-06-25): every 30 min during tennis

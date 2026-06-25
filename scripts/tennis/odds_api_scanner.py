@@ -40,6 +40,7 @@ from dotenv import load_dotenv  # noqa: E402
 load_dotenv(Path(__file__).parents[2] / ".env")
 
 from workers.api_clients.db import execute_write  # noqa: E402
+from scripts.tennis.bots_config import matching_bots  # noqa: E402
 
 BASE = "https://api.the-odds-api.com/v4"
 
@@ -205,6 +206,7 @@ def upsert_fixture_today(*, fixture_id: str, tournament_name: str,
 
 
 def insert_value_bet(row: dict, dry_run: bool) -> None:
+    """Insert one bot-segmented row. Row dict must include bot_id."""
     if dry_run:
         return
     execute_write("""
@@ -212,14 +214,15 @@ def insert_value_bet(row: dict, dry_run: bool) -> None:
             (fixture_id, tournament_name, player_home, player_away, surface,
              kickoff_time, market, selection,
              pin_fair_odds, pin_raw_home, pin_raw_away,
-             bookmaker, book_odds, edge_pct, kelly_fraction, stake, scan_date, notes)
+             bookmaker, book_odds, edge_pct, kelly_fraction, stake, scan_date,
+             bot_id, notes)
         VALUES
             (%(fixture_id)s, %(tournament_name)s, %(player_home)s, %(player_away)s, %(surface)s,
              %(kickoff_time)s, %(market)s, %(selection)s,
              %(pin_fair_odds)s, %(pin_raw_home)s, %(pin_raw_away)s,
              %(bookmaker)s, %(book_odds)s, %(edge_pct)s, %(kelly_fraction)s, %(stake)s,
-             CURRENT_DATE, %(notes)s)
-        ON CONFLICT (fixture_id, bookmaker, selection, scan_date) DO UPDATE SET
+             CURRENT_DATE, %(bot_id)s, %(notes)s)
+        ON CONFLICT (fixture_id, bookmaker, selection, scan_date, bot_id) DO UPDATE SET
             book_odds      = EXCLUDED.book_odds,
             edge_pct       = EXCLUDED.edge_pct,
             kelly_fraction = EXCLUDED.kelly_fraction,
@@ -309,38 +312,56 @@ def scan_sport(sport: dict, dry_run: bool) -> tuple[int, int, int]:
                 if edge < RECORD_MIN_EDGE or edge > MAX_CREDIBLE_EDGE:
                     continue
 
-                stake = (kelly_stake(edge, fair_prob, book_odds)
-                         if edge >= DISPLAY_MIN_EDGE else 0.0)
+                # Route observation through bot config — one observation may
+                # land in multiple bot lanes (e.g. an edge of 0.06 qualifies
+                # for both pin_broad ≥3% AND pin_selective ≥5%).
+                matched = list(matching_bots(bookmaker=book, edge=edge))
+                if not matched:
+                    continue
 
-                row = {
-                    "fixture_id":      fixture_id,
-                    "tournament_name": sport_title,
-                    "player_home":     player_home,
-                    "player_away":     player_away,
-                    "surface":         None,
-                    "kickoff_time":    kickoff_iso,
-                    "market":          "match_winner",
-                    "selection":       selection,
-                    "pin_fair_odds":   round(fair_odds, 4),
-                    "pin_raw_home":    h_raw,
-                    "pin_raw_away":    a_raw,
-                    "bookmaker":       book,
-                    "book_odds":       book_odds,
-                    "edge_pct":        round(edge * 100, 2),
-                    "kelly_fraction":  round(stake / MAX_STAKE, 4) if stake > 0 else 0.0,
-                    "stake":           stake,
-                    "notes":           f"pin_margin={round(pin_margin * 100, 2)}%  src=odds_api",
-                }
+                player = player_home if selection == "home" else player_away
+                printed_value = False
 
-                if edge >= DISPLAY_MIN_EDGE:
-                    player = player_home if selection == "home" else player_away
-                    print(f"  ✅ VALUE  {sport_title[:28]:28s}  {player[:24]:24s}  "
-                          f"{book:14s}  book={book_odds:.2f}  fair={fair_odds:.2f}  "
-                          f"edge={edge*100:+.1f}%  stake={stake:.2f}u")
+                for bot_id, bot_cfg in matched:
+                    bot_stake = (
+                        kelly_stake(edge, fair_prob, book_odds)
+                        if edge >= DISPLAY_MIN_EDGE
+                        else 0.0
+                    )
+                    # Honour bot's stake unit if it overrides Kelly cap
+                    bot_stake = min(bot_stake or 0.0, float(bot_cfg.get("stake", 1.0)))
 
-                insert_value_bet(row, dry_run)
-                bets_logged += 1
-                bets_by_book[book] = bets_by_book.get(book, 0) + 1
+                    row = {
+                        "fixture_id":      fixture_id,
+                        "tournament_name": sport_title,
+                        "player_home":     player_home,
+                        "player_away":     player_away,
+                        "surface":         None,
+                        "kickoff_time":    kickoff_iso,
+                        "market":          "match_winner",
+                        "selection":       selection,
+                        "pin_fair_odds":   round(fair_odds, 4),
+                        "pin_raw_home":    h_raw,
+                        "pin_raw_away":    a_raw,
+                        "bookmaker":       book,
+                        "book_odds":       book_odds,
+                        "edge_pct":        round(edge * 100, 2),
+                        "kelly_fraction":  round(bot_stake / MAX_STAKE, 4) if bot_stake > 0 else 0.0,
+                        "stake":           bot_stake,
+                        "bot_id":          bot_id,
+                        "notes":           f"pin_margin={round(pin_margin * 100, 2)}%  src=odds_api",
+                    }
+
+                    if edge >= DISPLAY_MIN_EDGE and not printed_value:
+                        bot_labels = ",".join(b for b, _ in matched)
+                        print(f"  ✅ VALUE  {sport_title[:24]:24s}  {player[:20]:20s}  "
+                              f"{book:14s}  book={book_odds:.2f}  fair={fair_odds:.2f}  "
+                              f"edge={edge*100:+.1f}%  → {bot_labels}")
+                        printed_value = True
+
+                    insert_value_bet(row, dry_run)
+                    bets_logged += 1
+                    bets_by_book[f"{book}/{bot_id}"] = bets_by_book.get(f"{book}/{bot_id}", 0) + 1
 
     print(f"  events: {events_seen} total → {events_with_pin} with Pinnacle  →  {bets_logged} value rows")
     for bk, n in bets_by_book.items():
