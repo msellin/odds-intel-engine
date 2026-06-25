@@ -2542,14 +2542,16 @@ def main():
                       id="wc_match_previews",
                       name="WC AI Previews 07:30 [WC window]")
 
-    # WC-F4 (2026-06-04): Daily WC preview email to opted-in users. 07:30 UTC
-    # collides with wc_match_previews — they don't share resources but APS
-    # will run them sequentially on the default executor. If they need to
-    # truly parallelize, bump this to 07:45. Window-gated inside the job.
-    scheduler.add_job(job_wc_daily_email, CronTrigger(hour=7, minute=30),
-                      id="wc_daily_email",
-                      name="WC Daily Email 07:30 [WC window]",
-                      max_instances=1, misfire_grace_time=1800)
+    # DIGEST-DISABLED 2026-06-25 — product collapsed to free + Telegram.
+    # Daily/weekly per-user emails were eating the Resend quota every day
+    # while the actual user product is now @oddsintelpicks on Telegram.
+    # Welcome email (/auth/callback) and operator alerts stay on; mass
+    # broadcasts to signed-in users are paused.
+    #
+    # scheduler.add_job(job_wc_daily_email, CronTrigger(hour=7, minute=30),
+    #                   id="wc_daily_email",
+    #                   name="WC Daily Email 07:30 [WC window]",
+    #                   max_instances=1, misfire_grace_time=1800)
 
     # WC-A3 (2026-06-04): Daily market consensus scrape — pulls 1X2
     # implied probs from 2-3 free public sources (eloratings, forebet,
@@ -2594,29 +2596,24 @@ def main():
                       id="wc_lineup_refresh",
                       name="WC Lineup Refresh (5min) [WC window]")
 
-    # EMAIL-DIGEST-SMART (ENG-4): four qualification slots, 10/12/14/16 UTC.
-    # First slot whose pending-bet signal-strength score clears
-    # EMAIL_DIGEST_MIN_SIGNAL (default 5.0) sends the digest. Later slots
-    # see the per-user `email_digest_log` lock and skip — exactly one digest
-    # per user per day. Replaces the old 07:30 send that routinely went out
-    # with "0 value bets today" because evening markets weren't priced yet.
-    for hour in (10, 12, 14, 16):
-        scheduler.add_job(job_email_digest, CronTrigger(hour=hour, minute=0),
-                          id=f"email_digest_{hour:02d}",
-                          name=f"Email Digest Slot {hour:02d}:00")
-
-    # N5: Value bet alerts — 16:00 (afternoon) + 20:45 (evening) UTC — Pro/Elite only
-    # Afternoon: catches 11:00 + 15:00 betting refresh bets (since 10:00 UTC)
-    # Evening:   catches 19:00 + 20:30 betting refresh bets (since 17:00 UTC)
-    # No-op if no new bets exist. Deduped per slot via value_bet_alert_log.
-    scheduler.add_job(job_value_bet_alert_afternoon, CronTrigger(hour=16, minute=0),
-                      id="value_bet_alert_afternoon", name="Value Bet Alert Afternoon 16:00")
-    scheduler.add_job(job_value_bet_alert_evening, CronTrigger(hour=20, minute=45),
-                      id="value_bet_alert_evening", name="Value Bet Alert Evening 20:45")
-
-    # ENG-10: Weekly performance email — Monday 08:00 UTC
-    scheduler.add_job(job_weekly_digest, CronTrigger(day_of_week="mon", hour=8, minute=0),
-                      id="weekly_digest", name="Weekly Digest Monday 08:00")
+    # DIGEST-DISABLED 2026-06-25 — paused per-user mass mailers (Resend
+    # quota was hitting daily limits and the user product is now the
+    # @oddsintelpicks Telegram channel, not email). Welcome email stays
+    # on at /auth/callback; operator alerts stay on; mass broadcasts
+    # to signed-in users are paused below.
+    #
+    # for hour in (10, 12, 14, 16):
+    #     scheduler.add_job(job_email_digest, CronTrigger(hour=hour, minute=0),
+    #                       id=f"email_digest_{hour:02d}",
+    #                       name=f"Email Digest Slot {hour:02d}:00")
+    #
+    # scheduler.add_job(job_value_bet_alert_afternoon, CronTrigger(hour=16, minute=0),
+    #                   id="value_bet_alert_afternoon", name="Value Bet Alert Afternoon 16:00")
+    # scheduler.add_job(job_value_bet_alert_evening, CronTrigger(hour=20, minute=45),
+    #                   id="value_bet_alert_evening", name="Value Bet Alert Evening 20:45")
+    #
+    # scheduler.add_job(job_weekly_digest, CronTrigger(day_of_week="mon", hour=8, minute=0),
+    #                   id="weekly_digest", name="Weekly Digest Monday 08:00")
 
     # ANON-AUTH PHASE 4 — prune anonymous users idle >90 days, Sunday 02:00 UTC.
     # Cascade removes their profile + favorites + picks. Hard cap of 10k rows
@@ -3127,12 +3124,14 @@ def main():
                       id="aln_auto_tune",
                       name="ALN-AUTO Monthly 1st 03:30")
 
-    # ENG-8: Watchlist alerts — 08:30, 14:30, 20:35 UTC
-    # 20:35 staggered 5 min after 20:30 betting refresh (N9 fix — avoids simultaneous heavy jobs)
-    for hour, minute in [(8, 30), (14, 30), (20, 35)]:
-        scheduler.add_job(job_watchlist_alerts, CronTrigger(hour=hour, minute=minute),
-                          id=f"watchlist_alerts_{hour:02d}",
-                          name=f"Watchlist Alerts {hour:02d}:{minute:02d}")
+    # DIGEST-DISABLED 2026-06-25 — watchlist alerts also paused
+    # (kickoff reminders + odds movement alerts to user emails).
+    # Telegram public channel covers the live notification need now.
+    #
+    # for hour, minute in [(8, 30), (14, 30), (20, 35)]:
+    #     scheduler.add_job(job_watchlist_alerts, CronTrigger(hour=hour, minute=minute),
+    #                       id=f"watchlist_alerts_{hour:02d}",
+    #                       name=f"Watchlist Alerts {hour:02d}:{minute:02d}")
 
     # Settlement: 21:00 + 23:30 + 01:00 UTC
     # 01:00 added (N4 fix) — catches 21:30+ KO matches finishing with extra time after 23:30
