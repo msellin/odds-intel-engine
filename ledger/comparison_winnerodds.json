@@ -1,0 +1,28 @@
+{
+  "min_sample_each_side": 50,
+  "our_stats_same_window": {
+    "hit_rate_pct": 46.22,
+    "n": 991,
+    "pnl_total": 659.64,
+    "roi_pct": 12.06,
+    "stake_total": 5469.31
+  },
+  "reproducible_via": "scripts/audit_vs_winnerodds.py",
+  "scope_notes": "WinnerOdds picks pulled from their public GraphQL endpoint (period=12, FOOTBALL); their published unit-stake bets settled WIN/LOSE/VOID. OddsIntel cohort: production strategies (calibrated+beta+active maturity), 1X2 + OU 2.5 markets only, settled (won/lost). Both sides settled at \u20ac10 flat stake for apples-to-apples ROI.",
+  "snapshot_at_utc": "2026-06-25T07:03:36.372349+00:00",
+  "source": "WinnerOdds",
+  "source_url": "https://winnerodds.com",
+  "status": "ok",
+  "their_stats": {
+    "avg_clv_pct": -0.2791,
+    "hit_rate_pct": 55.36,
+    "n": 1007,
+    "pnl_total": 2393.4,
+    "roi_pct": 6.78,
+    "stake_total": 35310.79
+  },
+  "window": {
+    "end": "2026-06-25",
+    "start": "2026-05-04"
+  }
+}
