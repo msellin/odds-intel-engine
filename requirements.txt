@@ -10,6 +10,9 @@ beautifulsoup4>=4.12.0
 lxml>=5.0.0
 httpx>=0.27.0
 cloudscraper>=1.2.71   # bypass Cloudflare JS challenge for Tipstrr scraper
+cs2api>=0.1.3          # bo3.gg API client — used by cs2_elo_scanner + cs2_settlement.
+                       # Missing from Railway env caused silent scanner failures
+                       # ("0 upcoming matches" since 2026-06-24) until added 2026-06-25.
 
 # Machine learning
 scikit-learn>=1.5.0

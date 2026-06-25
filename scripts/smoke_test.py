@@ -22962,6 +22962,25 @@ def _():
     assert pick is None, "model vs consensus 30pp apart must be killed"
 
 
+@test("CS2API-IN-REQUIREMENTS — bo3.gg API client must be in requirements.txt")
+def _():
+    """cs2api is the PyPI bo3.gg API client imported by cs2_elo_scanner +
+    cs2_settlement. Both scripts catch the ImportError silently and return
+    [] / 0, which causes cs2_scanner to write '0 upcoming matches' and the
+    pipeline marker check correctly raises 'failed.' Was missing from
+    Railway env until 2026-06-25 — caused silent fixture starvation.
+
+    Pin so a future requirements.txt cleanup doesn't drop it again.
+    """
+    import pathlib
+    req = pathlib.Path("requirements.txt").read_text()
+    assert "cs2api" in req, (
+        "requirements.txt must include cs2api — used by cs2_elo_scanner + "
+        "cs2_settlement for bo3.gg API access. Missing from Railway env "
+        "caused 'No upcoming matches found' silent failures."
+    )
+
+
 @test("CS2-SETTLE-HLTV-LIVE — Strategy 3 live HLTV /results scrape")
 def _():
     """When Strategies 1 (HLTV id-window) and 2 (PandaScore ±6h) both miss,
