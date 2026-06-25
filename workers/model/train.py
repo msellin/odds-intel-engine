@@ -126,6 +126,23 @@ def _prepare_xy(features_df: pd.DataFrame, target: pd.Series, league_col: pd.Ser
 # loads from. Versioned subdir lets us train v10 without overwriting v9a.
 DEFAULT_OUTPUT_ROOT = Path(__file__).parent.parent.parent / "data" / "models" / "soccer"
 
+# OU-LONGTERM-EXCLUDE-TIERC (2026-06-25): the OU 2.5 head regressed when
+# TIER-C-EXPAND (2026-05-19) added 14 new league countries to the training
+# corpus — their scoring patterns differ from the T1-T2 European base the
+# OU model was originally calibrated on. The temporary fix was an env-var
+# override (`MODEL_VERSION_OU_T1`) that routed T1 OU to a pre-TIER-C model.
+# The proper fix is to exclude these countries from OU training only —
+# 1X2 / AH / BTTS continue to train on the full universe.
+#
+# These are the 14 countries TIER-C-EXPAND added (per ROADMAP.md). Excluding
+# them drops ~21,146 MFV rows from OU training (out of ~58k total) but the
+# remaining 37k rows match the league mix the OU calibration was built for.
+OU_EXCLUDED_LEAGUE_COUNTRIES = frozenset({
+    "Argentina", "Austria", "Brazil", "China", "Denmark", "Finland",
+    "Ireland", "Japan", "Mexico", "Norway", "Poland", "Russia",
+    "Sweden", "USA",
+})
+
 # Features used by the model — must match match_feature_vectors column names exactly
 FEATURE_COLS = [
     # ELO
@@ -312,9 +329,38 @@ def train_result_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, outp
     return final_model
 
 
-def train_over25_model(features_df: pd.DataFrame, targets_df: pd.DataFrame, output_dir: Path | None = None):
-    """Train Over/Under 2.5 goals prediction model"""
+def train_over25_model(features_df: pd.DataFrame, targets_df: pd.DataFrame,
+                        output_dir: Path | None = None,
+                        exclude_tier_c_countries: bool = True):
+    """Train Over/Under 2.5 goals prediction model.
+
+    OU-LONGTERM-EXCLUDE-TIERC (2026-06-25): by default filters out
+    TIER-C-EXPAND league countries (see OU_EXCLUDED_LEAGUE_COUNTRIES
+    at module top). The previous workaround was an env-var override
+    that routed OU per tier; this is the proper fix at the data layer.
+    Set `exclude_tier_c_countries=False` for backward-compat training
+    runs.
+    """
     console.print("\n[bold cyan]Training Over/Under 2.5 Model[/bold cyan]")
+
+    # OU-LONGTERM filter — drop TIER-C-EXPAND countries before training.
+    if exclude_tier_c_countries and "league_country" in targets_df.columns:
+        mask = ~targets_df["league_country"].isin(OU_EXCLUDED_LEAGUE_COUNTRIES)
+        excluded_n = int((~mask).sum())
+        if excluded_n > 0:
+            features_df = features_df.loc[mask].reset_index(drop=True)
+            targets_df = targets_df.loc[mask].reset_index(drop=True)
+            console.print(
+                f"[dim]OU-LONGTERM filter: excluded {excluded_n:,} rows from "
+                f"{len(OU_EXCLUDED_LEAGUE_COUNTRIES)} TIER-C-EXPAND countries "
+                f"({', '.join(sorted(OU_EXCLUDED_LEAGUE_COUNTRIES)[:5])}…)[/dim]"
+            )
+    elif exclude_tier_c_countries:
+        console.print(
+            "[yellow]OU-LONGTERM filter requested but league_country not in "
+            "targets_df — caller must pass a frame loaded via load_training_data() "
+            "to apply the per-market filter.[/yellow]"
+        )
 
     league_col = targets_df["league_tier"] if "league_tier" in targets_df else features_df.get("league_tier")
     X, y, _ = _prepare_xy(features_df, targets_df["over_25"], league_col)
@@ -725,13 +771,18 @@ def load_training_data(include_pinnacle: bool = False,
 
     cutoff_clause = "AND mfv.match_date < %s::date" if cutoff_date else ""
     params = (cutoff_date,) if cutoff_date else ()
+    # OU-LONGTERM (2026-06-25): join leagues so train_over25_model can
+    # filter out OU_EXCLUDED_LEAGUE_COUNTRIES without re-querying. Other
+    # heads (1X2/BTTS/goals regressors) ignore the league_country column.
     sql = f"""
         SELECT
             mfv.*,
             m.score_home,
-            m.score_away
+            m.score_away,
+            l.country AS league_country
         FROM match_feature_vectors mfv
         JOIN matches m ON m.id = mfv.match_id
+        LEFT JOIN leagues l ON l.id = m.league_id
         WHERE mfv.match_outcome IS NOT NULL
           AND mfv.match_date IS NOT NULL
           {cutoff_clause}
@@ -817,6 +868,11 @@ def load_training_data(include_pinnacle: bool = False,
         target_cols.append("league_tier")
     if "match_date" in df.columns:
         target_cols.append("match_date")
+    # OU-LONGTERM (2026-06-25): carry league_country in targets so
+    # train_over25_model can filter rows from TIER-C-EXPAND countries.
+    # Not a feature — never enters the X matrix.
+    if "league_country" in df.columns:
+        target_cols.append("league_country")
     targets_df = df[target_cols].copy()
     targets_df["score_home"] = pd.to_numeric(targets_df["score_home"], errors="coerce")
     targets_df["score_away"] = pd.to_numeric(targets_df["score_away"], errors="coerce")
@@ -832,7 +888,8 @@ def train_all(version: str = "untagged",
               include_pinnacle: bool = False,
               include_ou_market: bool = False,
               include_drift: bool = False,
-              cutoff_date: str | None = None):
+              cutoff_date: str | None = None,
+              ou_exclude_tier_c: bool = True):
     """Train all three models. If called with no args, loads data from DB automatically.
 
     Writes to output_root/<version>/ — defaults to data/models/soccer/<version>/.
@@ -864,7 +921,10 @@ def train_all(version: str = "untagged",
     console.print(f"Output: {output_dir}")
 
     result_model = train_result_model(features_df, targets_df, output_dir)
-    over25_model = train_over25_model(features_df, targets_df, output_dir)
+    over25_model = train_over25_model(
+        features_df, targets_df, output_dir,
+        exclude_tier_c_countries=ou_exclude_tier_c,
+    )
     btts_model = train_btts_model(features_df, targets_df, output_dir)
 
     # Stage 1c — goals regressors train inline so the version bundle is
@@ -968,6 +1028,15 @@ if __name__ == "__main__":
                         help="Train on matches with match_date < this YYYY-MM-DD. "
                              "Used for walk-forward backtesting — produces a model "
                              "that has not seen matches at/after the cutoff.")
+    parser.add_argument("--ou-include-tier-c", action="store_true",
+                        help="OU-LONGTERM (2026-06-25): TIER-C-EXPAND countries "
+                             "(Argentina, Austria, Brazil, China, Denmark, "
+                             "Finland, Ireland, Japan, Mexico, Norway, Poland, "
+                             "Russia, Sweden, USA) are excluded from OU 2.5 "
+                             "training by DEFAULT because their scoring patterns "
+                             "drag the OU head. Pass this flag to override and "
+                             "train OU on the full universe. 1X2/BTTS always "
+                             "train on the full universe regardless of this flag.")
     args = parser.parse_args()
     train_all(
         version=args.version,
@@ -975,4 +1044,5 @@ if __name__ == "__main__":
         include_ou_market=args.include_ou_market,
         include_drift=args.include_drift,
         cutoff_date=args.cutoff,
+        ou_exclude_tier_c=not args.ou_include_tier_c,
     )

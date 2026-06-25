@@ -26406,5 +26406,51 @@ def _():
         )
 
 
+@test("OU-LONGTERM-EXCLUDE-TIERC — OU 2.5 training filters TIER-C-EXPAND countries")
+def _():
+    """OU-LONGTERM-EXCLUDE-TIERC (2026-06-25): the OU 2.5 head used to
+    regress after TIER-C-EXPAND added 14 countries to the corpus. The
+    workaround was a per-tier env-var routing. This is the proper fix
+    at the data layer — train_over25_model filters out the 14
+    countries by default.
+
+    Pins:
+      - The constant OU_EXCLUDED_LEAGUE_COUNTRIES contains all 14 names
+      - train_over25_model has an `exclude_tier_c_countries` kwarg
+        defaulting to True
+      - load_training_data JOINs leagues and carries league_country
+      - The CLI exposes --ou-include-tier-c to opt out
+    """
+    import pathlib
+    src = pathlib.Path("workers/model/train.py").read_text()
+
+    assert "OU_EXCLUDED_LEAGUE_COUNTRIES" in src, (
+        "Module-level set of TIER-C-EXPAND country names must exist"
+    )
+    for country in ("Argentina", "Austria", "Brazil", "China", "Denmark",
+                     "Finland", "Ireland", "Japan", "Mexico", "Norway",
+                     "Poland", "Russia", "Sweden", "USA"):
+        assert f'"{country}"' in src, (
+            f"OU_EXCLUDED_LEAGUE_COUNTRIES must include {country!r} — "
+            "all 14 TIER-C-EXPAND countries should be excluded from OU "
+            "training by default"
+        )
+
+    assert "exclude_tier_c_countries: bool = True" in src, (
+        "train_over25_model must default to filtering — the whole point "
+        "of OU-LONGTERM was to make the proper fix the default behaviour"
+    )
+
+    assert "l.country AS league_country" in src, (
+        "load_training_data must JOIN leagues so league_country is "
+        "available in targets_df for the OU filter"
+    )
+
+    assert "--ou-include-tier-c" in src, (
+        "CLI flag to opt OUT of the filter must exist for backward-compat "
+        "training runs (we don't make it impossible, just the default)"
+    )
+
+
 if __name__ == "__main__":
     main()
