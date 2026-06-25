@@ -879,6 +879,34 @@ def job_tennis_scanner():
     _run_job("tennis_scanner", lambda: None)  # no-op for logging
 
 
+def job_tennis_settlement():
+    """TENNIS-PAPER-BETS Phase 1.4 (2026-06-25): twice-daily tennis settlement.
+
+    Runs 02:00 + 14:00 UTC. For each active tennis sport, calls The Odds API
+    /scores?daysFrom=2, matches completed events to tennis_value_bets rows by
+    fixture_id, writes result + pnl. Cheap pre-check skips the /scores fetches
+    if no row is past kickoff+2h.
+
+    Cost: ~3 active sports × 1 credit per run × 2 runs/day = ~6 credits/day.
+    """
+    import subprocess
+    if not (os.getenv("OA_KEY") or os.getenv("ODDS_API_KEY")):
+        console.print("[yellow]Tennis settlement skipped — no OA_KEY / ODDS_API_KEY env var[/yellow]")
+        return
+    console.print("[bold cyan]Tennis settlement — /scores per active sport[/bold cyan]")
+    result = subprocess.run(
+        [sys.executable, "scripts/tennis/settle_value_bets.py"],
+        capture_output=True, text=True, timeout=180,
+    )
+    if result.returncode != 0:
+        console.print(f"[red]Tennis settlement error:[/red]\n{result.stderr[:500]}")
+    else:
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ["SUMMARY", "settled=", "Unsettled", "remaining", "Nothing"]):
+                console.print(f"[dim]{line}[/dim]")
+    _run_job("tennis_settlement", lambda: None)
+
+
 def job_cs2_scanner():
     """CS2-SCANNER-DAILY (2026-06-08): run CS2 ELO scanner with DB write.
     Populates cs2_upcoming_matches + appends to cs2_predictions for retraining.
@@ -2564,13 +2592,27 @@ def main():
                       name="Weekly Bot Maturity Review Sunday 06:30",
                       max_instances=1, misfire_grace_time=1800)
 
-    # TENNIS-SCANNER-DAILY (2026-06-08) — 06:00 + 14:00 UTC, uses OddsPapi quota.
-    # Populates tennis_fixtures_today + tennis_value_bets for admin page.
+    # TENNIS-SCANNER-DAILY — 06:00 + 14:00 UTC. Provider: The Odds API
+    # (was OddsPapi, swapped 2026-06-25 in TENNIS-PAPER-BETS Phase 1.3 after
+    # the OddsPapi free tier was busted). Populates tennis_fixtures_today +
+    # tennis_value_bets for admin page.
     scheduler.add_job(job_tennis_scanner, CronTrigger(hour=6, minute=0),
                       id="tennis_scanner_morning", name="Tennis Scanner Morning 06:00",
                       max_instances=1, misfire_grace_time=1800)
     scheduler.add_job(job_tennis_scanner, CronTrigger(hour=14, minute=0),
                       id="tennis_scanner_afternoon", name="Tennis Scanner Afternoon 14:00",
+                      max_instances=1, misfire_grace_time=1800)
+
+    # TENNIS-SETTLEMENT (TENNIS-PAPER-BETS Phase 1.4 2026-06-25) — 02:00 +
+    # 14:00 UTC. The 02:00 slot catches matches finishing in the evening
+    # (most ATP/WTA mains run 12-22 UTC); 14:00 slot catches late-night /
+    # morning-Asia matches finishing the same day. Cheap pre-check skips
+    # /scores fetches if nothing's pending.
+    scheduler.add_job(job_tennis_settlement, CronTrigger(hour=2, minute=0),
+                      id="tennis_settlement_night", name="Tennis Settlement 02:00",
+                      max_instances=1, misfire_grace_time=1800)
+    scheduler.add_job(job_tennis_settlement, CronTrigger(hour=14, minute=15),
+                      id="tennis_settlement_afternoon", name="Tennis Settlement 14:15",
                       max_instances=1, misfire_grace_time=1800)
 
     # COOLBET-TENNIS-SCAN (2026-06-08) — every 30min 07:00-22:00 UTC at :08 and :38.

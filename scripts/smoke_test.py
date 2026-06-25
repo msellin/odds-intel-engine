@@ -22388,6 +22388,73 @@ def _():
     assert "tennis_value_bets" in msrc and "pin_fair_odds" in msrc and "edge_pct" in msrc
 
 
+@test("TENNIS-SETTLEMENT — Odds API settlement job + scheduler hooks")
+def _():
+    """TENNIS-PAPER-BETS Phase 1.4 (2026-06-25): settlement closes the loop on
+    tennis_value_bets rows by calling The Odds API /scores per active sport.
+    Pins:
+    - scripts/tennis/settle_value_bets.py exists with the entry points
+    - derive_winner handles the score comparison
+    - cheap pre-check skips /scores fetches when nothing past kickoff+2h
+      (prevents burning credits on idle runs)
+    - rows match by fixture_id (= Odds API event id) NOT player-name fuzzy match
+    - void/win/loss are the only result values written
+    - scheduler.py declares job_tennis_settlement and registers BOTH cron slots
+    """
+    import pathlib
+    script = pathlib.Path("scripts/tennis/settle_value_bets.py")
+    assert script.exists(), "scripts/tennis/settle_value_bets.py must exist"
+    src = script.read_text()
+
+    for fn in ["list_active_tennis_sports", "derive_winner", "settle_event",
+               "settle_sport"]:
+        assert f"def {fn}" in src, f"{fn} must be defined"
+
+    assert "api.the-odds-api.com/v4" in src, "must hit The Odds API"
+    assert "/scores" in src, "must call /scores endpoint"
+    assert 'OA_KEY' in src and 'ODDS_API_KEY' in src, (
+        "must accept either OA_KEY or ODDS_API_KEY (matches scheduler convention)"
+    )
+
+    # Cheap pre-check — don't burn credits if nothing's pending
+    assert "kickoff_time < now() - interval '2 hours'" in src, (
+        "must skip /scores fetches when no row is past kickoff+2h "
+        "(prevents wasting credits on idle runs)"
+    )
+    assert "Nothing to settle" in src, "pre-check must short-circuit visibly"
+
+    # fixture_id is THE join — never re-resolve via player names (fuzzy matching
+    # was the source of the TENNIS-MATCH-FIXTURE-QUALITY bug class)
+    assert "WHERE fixture_id = %s" in src, (
+        "must match unsettled rows by fixture_id (= Odds API event id), "
+        "NOT by player name (fuzzy matching is the TENNIS-MATCH-FIXTURE-QUALITY bug class)"
+    )
+
+    # The only three result values the settlement writes
+    for v in ("'win'", "'loss'", "'void'"):
+        assert v in src, f"settlement must write {v} result"
+
+    # PnL formula sanity — stake * (book_odds - 1) on win, -stake on loss
+    assert "(float(row[\"book_odds\"]) - 1.0)" in src, (
+        "win pnl must be stake * (book_odds - 1.0)"
+    )
+
+    # Scheduler wiring
+    sched_src = pathlib.Path("workers/scheduler.py").read_text()
+    assert "def job_tennis_settlement" in sched_src, (
+        "scheduler must declare job_tennis_settlement"
+    )
+    assert "scripts/tennis/settle_value_bets.py" in sched_src, (
+        "job must shell out to scripts/tennis/settle_value_bets.py"
+    )
+    assert 'id="tennis_settlement_night"' in sched_src, (
+        "scheduler must register the night settlement cron"
+    )
+    assert 'id="tennis_settlement_afternoon"' in sched_src, (
+        "scheduler must register the afternoon settlement cron"
+    )
+
+
 @test("TENNIS-MATCH-FIXTURE-QUALITY — coolbet scanner name matching + dedup + live exclusion")
 def _():
     """Guards against cross-gender/cross-tournament false edges and live-match display."""
