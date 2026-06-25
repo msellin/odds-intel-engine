@@ -22517,6 +22517,71 @@ def _():
     assert "(fixture_id, bookmaker, selection, scan_date, bot_id)" in mig
 
 
+@test("TENNIS-HEALTH-ALERTS — scanner-silent + settlement-stale tripwires + runner wiring")
+def _():
+    """TENNIS-PAPER-BETS Phase 3 (2026-06-25): two tripwires for silent
+    failures. Pins:
+
+    - check_tennis_scanner_silent: alerts if last successful tennis_scanner
+      pipeline_runs row > 12h ago. This is the exact failure mode that bit
+      OddsPapi (tennis_value_bets was empty for ~a week, no alert) — would
+      have caught it within 12h.
+    - check_tennis_settlement_stale: alerts if > 5 tennis_value_bets rows
+      past kickoff+6h still have result=NULL. Threshold low enough that one
+      stuck tournament triggers, high enough that occasional walkovers don't.
+    - Both wired into the existing morning + settlement runners (no new
+      scheduler entries; piggybacks on 09:35 + 21:30 UTC slots that already
+      run the soccer health checks).
+    """
+    import pathlib, re
+    src = pathlib.Path("workers/jobs/health_alerts.py").read_text()
+
+    assert "def check_tennis_scanner_silent" in src, (
+        "check_tennis_scanner_silent must be defined"
+    )
+    assert "def check_tennis_settlement_stale" in src, (
+        "check_tennis_settlement_stale must be defined"
+    )
+
+    # Scanner-silent contract
+    assert "job_name = 'tennis_scanner'" in src and "status   = 'completed'" in src, (
+        "scanner-silent check must query pipeline_runs for job='tennis_scanner' "
+        "AND status='completed' (max started_at = last success)"
+    )
+    assert "if age_hours > 12" in src, (
+        "scanner-silent threshold must be 12 hours (between consecutive 06+14 UTC scanner runs)"
+    )
+    assert '"tennis_scanner_silent"' in src, (
+        "scanner-silent must use 'tennis_scanner_silent' as the dedup key"
+    )
+
+    # Settlement-stale contract
+    assert "FROM tennis_value_bets" in src and "result IS NULL" in src, (
+        "settlement-stale must query tennis_value_bets WHERE result IS NULL"
+    )
+    assert "kickoff_time < %s" in src, (
+        "settlement-stale must filter on kickoff_time past cutoff"
+    )
+    # Threshold + cutoff
+    assert "STALE_THRESHOLD = 5" in src, (
+        "settlement-stale threshold must be 5 (small enough one stuck tournament fires)"
+    )
+    assert "timedelta(hours=6)" in src, (
+        "settlement-stale cutoff must be kickoff + 6h"
+    )
+
+    # Runner wiring — both checks called inside the existing runners
+    # (don't add a third scheduler entry)
+    assert re.search(
+        r"def run_morning_checks.*?check_tennis_scanner_silent\(\)",
+        src, re.DOTALL,
+    ), "run_morning_checks must call check_tennis_scanner_silent()"
+    assert re.search(
+        r"def run_settlement_check.*?check_tennis_settlement_stale\(\)",
+        src, re.DOTALL,
+    ), "run_settlement_check must call check_tennis_settlement_stale()"
+
+
 @test("TENNIS-CLOSING-ODDS — Pinnacle closing snap + CLV computation + scheduler hook")
 def _():
     """TENNIS-PAPER-BETS Phase 1.5 (2026-06-25): every 30 min during tennis

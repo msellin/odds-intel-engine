@@ -30,8 +30,9 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done · ❌ blocked
 
 ## Phase 3 — Visibility & guardrails
 
-- [⬜] **3.1** `/admin/tennis` — add per-bot ROI table (bot_id, settled, hit_rate, ROI, CLV)
-- [⬜] **3.2** Health alerts: tennis daily volume tripwire (< N picks in 24h → alert)
-- [⬜] **3.3** Health alerts: tennis settlement freshness (unsettled past kickoff+6h → alert)
-- [⬜] **3.4** Doc updates: WORKFLOWS.md (new crons), DATA_SOURCES.md (settlement source), SIGNALS.md (if signals change)
-- [⬜] **3.5** Mark `TENNIS-PAPER-BETS` ✅ Done in PRIORITY_QUEUE.md
+- [✅] **3.1** `/admin/tennis` — per-bot ROI/CLV table shipped in Phase 2 (ADMIN-TENNIS-PER-BOT)
+- [✅] **3.2** `check_tennis_scanner_silent` — alerts via existing morning runner (09:35 UTC) when last `tennis_scanner` pipeline_runs success > 12h ago. Catches the OddsPapi silent-failure class
+- [✅] **3.3** `check_tennis_settlement_stale` — alerts via existing settlement runner (21:30 UTC) when > 5 rows are past kickoff+6h with NULL result
+- [✅] **3.4** Smoke `TENNIS-HEALTH-ALERTS` pinning thresholds + runner wiring
+- [⬜] **3.5** Doc updates: WORKFLOWS.md (new tennis crons), DATA_SOURCES.md (provider swap), MEMORY for tennis pipeline state
+- [⬜] **3.6** Mark `TENNIS-PAPER-BETS` ✅ Done in PRIORITY_QUEUE.md once 7-day soak completes and we have first settled-bet data
