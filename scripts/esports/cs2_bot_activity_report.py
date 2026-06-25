@@ -208,7 +208,9 @@ def main() -> int:
 
     _print_bot_table(short, args.days)
     _print_bot_table(long, args.long_days)
-    _print_silent_check(short)
+    _print_silent_check(long)   # silent-check uses the LONGER window so
+                                # low-volume bots aren't falsely flagged on
+                                # a quiet 1d slice (label says "0 fires in 7d").
     _print_funnel(funnel, args.days)
     _print_recent(recent, args.recent)
 
