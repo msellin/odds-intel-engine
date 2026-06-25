@@ -22962,6 +22962,70 @@ def _():
     assert pick is None, "model vs consensus 30pp apart must be killed"
 
 
+@test("CS2-SETTLE-HLTV-LIVE — Strategy 3 live HLTV /results scrape")
+def _():
+    """When Strategies 1 (HLTV id-window) and 2 (PandaScore ±6h) both miss,
+    Strategy 3 (added 2026-06-25) fetches hltv.org/results?team={id} and
+    parses the actual recent results. Handles the Falcons vs BetBoom 06-12
+    case where HLTV has 5 older fixtures between same teams but not the
+    recent one in the ±10k id window.
+
+    Skipped silently when neither team has an hltv_team_id in
+    cs2_hltv_team_stats — typical for tier-4/academy teams.
+
+    Pin: helpers exist, regex compiles, score/winner_side mapping handles
+    the standard /results row shape correctly.
+    """
+    import pathlib, importlib.util, re
+    p = pathlib.Path("scripts/esports/cs2_settle_from_supplementary.py")
+    src = p.read_text()
+    for needle in ("_resolve_hltv_team_id", "_fetch_hltv_team_results_html",
+                   "_find_hltv_match_live", "_HLTV_RESULT_ROW_RE",
+                   "hltv_live", '"source": "hltv_live"',
+                   "flaresolverr_client"):
+        assert needle in src, f"supplementary missing {needle}"
+
+    spec = importlib.util.spec_from_file_location("cs2_settle_live", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    # Strategy 3 is wired into find_settlement AFTER Strategy 2 (PandaScore).
+    s1_pos = src.find("_find_hltv_match(bet")
+    s2_pos = src.find("_find_pandascore_match(bet")
+    s3_pos = src.find("_find_hltv_match_live(bet")
+    assert 0 < s1_pos < s2_pos < s3_pos, (
+        "Strategy ordering must be: HLTV id-window → PandaScore → HLTV live"
+    )
+
+    # Regex sanity — matches the standard HLTV /results row shape.
+    assert isinstance(mod._HLTV_RESULT_ROW_RE, re.Pattern)
+    sample = (
+        '<div class="result-con allres" '
+        'data-zonedgrouping-entry-unix="1718200800000">'
+        '  <div class="result">'
+        '    <a href="/matches/2398765/falcons-vs-betboom-iem">'
+        '      <div class="team team-won">Falcons</div>'
+        '      <td class="result-score">'
+        '        <span class="score-won">2</span><span>-</span>'
+        '        <span class="score-lost">1</span>'
+        '      </td>'
+        '      <div class="team team-lost">BetBoom</div>'
+        '    </a>'
+        '  </div>'
+        '</div>'
+    )
+    m = mod._HLTV_RESULT_ROW_RE.search(sample)
+    assert m is not None, "_HLTV_RESULT_ROW_RE must match the standard /results row shape"
+    assert m.group(2) == "Falcons" and m.group(5) == "BetBoom"
+    assert m.group(3) == "2" and m.group(4) == "1"
+
+    # raw_status carries the new source token via _insert_result.
+    assert 'resolved_via_{proposal[\'source\']}_supplementary' in src, (
+        "_insert_result must propagate the source name into raw_status — "
+        "'hltv_live' picks should appear as resolved_via_hltv_live_supplementary"
+    )
+
+
 @test("CS2-SETTLE-SUPPLEMENTARY — daily cron + chain to cs2_bot --settle")
 def _():
     """Wire the existing one-shot tool into a daily backstop cron (2026-06-25).

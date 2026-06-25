@@ -34,6 +34,7 @@ CS2-PIPELINE-TRUTHFUL-LOGGING followup, 2026-06-22.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -80,6 +81,152 @@ def _find_hltv_match(team1: str, team2: str, kickoff_time: datetime) -> dict | N
         LIMIT 1
     """, (team1, team2, team2, team1, lo, hi))
     return rows[0] if rows else None
+
+
+def _resolve_hltv_team_id(team_name: str) -> tuple[int, str] | None:
+    """Look up an hltv_team_id for a team name. Prefers exact (case-insensitive)
+    match; falls back to LIKE prefix on cs2_hltv_team_stats. Returns
+    (hltv_team_id, canonical_team_name) or None when no team found.
+
+    Used by Strategy 3 (live HLTV /results lookup) — see _find_hltv_match_live.
+    """
+    rows = execute_query("""
+        SELECT DISTINCT hltv_team_id, team_name
+          FROM cs2_hltv_team_stats
+         WHERE LOWER(team_name) = LOWER(%s)
+         LIMIT 1
+    """, (team_name,))
+    if rows:
+        return rows[0]["hltv_team_id"], rows[0]["team_name"]
+    rows = execute_query("""
+        SELECT DISTINCT hltv_team_id, team_name, LENGTH(team_name) AS name_len
+          FROM cs2_hltv_team_stats
+         WHERE LOWER(team_name) LIKE LOWER(%s) || '%%'
+         ORDER BY name_len
+         LIMIT 1
+    """, (team_name,))
+    if rows:
+        return rows[0]["hltv_team_id"], rows[0]["team_name"]
+    return None
+
+
+# HLTV /results row regex — defensively allows whitespace and class permutations.
+# Each finished match row has data-zonedgrouping-entry-unix on the result-con
+# wrapper, two .team divs (won + lost), and two .result-score spans (winner +
+# loser). We DON'T rely on which side is "team1" vs "team2" in HLTV's HTML;
+# we map back via team-name match against the bet's pair.
+_HLTV_RESULT_ROW_RE = re.compile(
+    r'<div\s+class="result-con[^"]*"[^>]*data-zonedgrouping-entry-unix="(\d+)"'
+    r'.*?'
+    r'<div\s+class="team\s*(?:team-won)?[^"]*">\s*([^<]+?)\s*</div>'
+    r'.*?'
+    r'<span\s+class="score-won[^"]*"[^>]*>\s*(\d+)\s*</span>'
+    r'.*?'
+    r'<span\s+class="score-lost[^"]*"[^>]*>\s*(\d+)\s*</span>'
+    r'.*?'
+    r'<div\s+class="team\s*(?:team-lost)?[^"]*">\s*([^<]+?)\s*</div>',
+    re.DOTALL,
+)
+
+
+def _fetch_hltv_team_results_html(team_id: int) -> str | None:
+    """Fetch hltv.org/results?team={id}. Tries plain requests first, falls back
+    to FlareSolverr (HLTV is Cloudflare-gated). Returns HTML or None."""
+    url = f"https://www.hltv.org/results?team={team_id}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) "
+                       "Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9",
+    }
+    try:
+        import requests   # local import — only needed for Strategy 3
+        r = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+        if r.status_code == 200:
+            return r.text
+    except Exception:
+        pass
+    # FlareSolverr fallback (production has it; dev may not)
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from flaresolverr_client import fetch as fs_fetch, is_available
+        if is_available():
+            text = fs_fetch(url, session="hltv_settle_live")
+            if text:
+                return text
+    except Exception:
+        pass
+    return None
+
+
+def _find_hltv_match_live(team1: str, team2: str, kickoff_time: datetime) -> dict | None:
+    """Strategy 3 (live HLTV /results scrape). For matches that aren't in our
+    cs2_hltv_matches snapshot (HLTV scrape lag, or hltv_match_id outside the
+    id-window heuristic — common for lower-tier events that share team
+    pairings with older fixtures).
+
+    Resolves the team's hltv_team_id from cs2_hltv_team_stats (preferring an
+    exact name match, falling back to prefix). Fetches /results?team={id},
+    parses the result rows, and returns the first one matching the opponent
+    + kickoff_time ±3 days. Returns a settlement proposal in the same shape
+    as Strategies 1/2, or None.
+
+    Skipped silently when neither team has an hltv_team_id mapping (typical
+    for academy/tier-4 teams).
+    """
+    target_unix = int(kickoff_time.timestamp())
+    window_s = 3 * 24 * 3600   # ±3 days
+    for primary, opponent in [(team1, team2), (team2, team1)]:
+        lookup = _resolve_hltv_team_id(primary)
+        if not lookup:
+            continue
+        team_id, canonical = lookup
+        html = _fetch_hltv_team_results_html(team_id)
+        if not html:
+            continue
+        opp_lower = opponent.lower().strip()
+        for m in _HLTV_RESULT_ROW_RE.finditer(html):
+            unix_ms, name_won, score_won, score_lost, name_lost = m.groups()
+            unix_s = int(unix_ms) // 1000   # HLTV uses ms-since-epoch
+            if abs(unix_s - target_unix) > window_s:
+                continue
+            won_lower = name_won.lower().strip()
+            lost_lower = name_lost.lower().strip()
+            # Verify the OPPONENT appears in one of the two slots.
+            opp_in_won = (opp_lower == won_lower or opp_lower in won_lower or won_lower in opp_lower)
+            opp_in_lost = (opp_lower == lost_lower or opp_lower in lost_lower or lost_lower in opp_lower)
+            if not (opp_in_won or opp_in_lost):
+                continue
+            # Map HLTV's won/lost back to the bet's team1/team2 ordering.
+            # HLTV row has WINNER (name_won, score_won) and LOSER (name_lost,
+            # score_lost). Figure out which one is the primary (resolved) team
+            # and which is the opponent — then re-orient to the bet's view.
+            if opp_in_lost:
+                primary_won = True   # primary is in the winner slot
+                primary_score, opp_score = int(score_won), int(score_lost)
+            else:                    # opp_in_won
+                primary_won = False  # primary lost
+                primary_score, opp_score = int(score_lost), int(score_won)
+            if primary.lower() == team1.lower():
+                s1, s2 = primary_score, opp_score
+                winner_side = "team1" if primary_won else "team2"
+            else:                    # primary is the bet's team2
+                s1, s2 = opp_score, primary_score
+                winner_side = "team2" if primary_won else "team1"
+            winner_name = team1 if winner_side == "team1" else team2
+            hours_off = abs(unix_s - target_unix) // 3600
+            return {
+                "source": "hltv_live",
+                "ext_id": None,
+                "winner_team_name": winner_name,
+                "winner_side": winner_side,
+                "score1": s1, "score2": s2,
+                "confidence": "medium",
+                "reason": (f"HLTV /results?team={team_id} ({canonical}) — "
+                           f"row {name_won} {score_won}-{score_lost} {name_lost}, "
+                           f"{hours_off}h from kickoff"),
+            }
+    return None
 
 
 def _find_pandascore_match(team1: str, team2: str, kickoff_time: datetime) -> dict | None:
@@ -158,6 +305,17 @@ def find_settlement(bet: dict) -> dict:
                 "winner_team_name": ps_winner_name, "winner_side": winner_side,
                 "score1": s1, "score2": s2, "confidence": "high",
                 "reason": f"PandaScore id {p['pandascore_id']} (begin_at exact match)"}
+
+    # Strategy 3: live HLTV /results scrape (NEW 2026-06-25). Catches matches
+    # that aren't yet in cs2_hltv_matches (HLTV scrape lag) or fall outside
+    # the id-window heuristic of Strategy 1 — e.g., the Falcons vs BetBoom
+    # 06-12 case where HLTV had 5 older fixtures between the same teams
+    # (ids 2,367k-2,379k) but not the recent one in the ±10k window. Direct
+    # team-results fetch finds the recent row when it exists. Skipped when
+    # neither team has an hltv_team_id mapping in cs2_hltv_team_stats.
+    live = _find_hltv_match_live(bet["team1"], bet["team2"], bet["kickoff_time"])
+    if live:
+        return live
 
     return {"source": None, "ext_id": None, "winner_team_name": None,
             "winner_side": None, "score1": None, "score2": None,
