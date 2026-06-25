@@ -22599,6 +22599,69 @@ def _():
     )
 
 
+@test("TENNIS-SCHEDULER-FIX — work-inside-_run_job pattern + raise-on-skip")
+def _():
+    """SCHEDULER-FIX 2026-06-25: tennis_scanner had ZERO pipeline_runs rows in
+    7 days despite OA_KEY being set on Railway. Root cause was the pattern:
+
+        def job_tennis_scanner():
+            if not os.getenv(...):
+                return                # <- skips _run_job entirely
+            result = subprocess.run(...)
+            if result.returncode != 0:
+                console.print(...)    # <- doesn't raise
+            _run_job("tennis_scanner", lambda: None)  # only on happy path
+
+    Any early return or subprocess exception → no pipeline_runs row →
+    invisible failure (the exact feedback_silent_failures memory). Fix:
+    put the body INSIDE _run_job's callable, raise on env-missing + on
+    non-zero subprocess exit. Now every fire writes a row (completed OR
+    failed with error_message). This pin protects against a future
+    refactor accidentally restoring the silent pattern.
+    """
+    import pathlib, re
+    src = pathlib.Path("workers/scheduler.py").read_text()
+
+    for job in ("job_tennis_scanner", "job_tennis_settlement", "job_tennis_closing_odds"):
+        # Each job must define an inner callable + pass it to _run_job. The
+        # body (subprocess call) must be INSIDE that inner function, not in
+        # the outer job wrapper after _run_job.
+        m = re.search(rf"def {job}\(\):.*?(?=\ndef )", src, re.DOTALL)
+        assert m, f"{job} must be defined"
+        body = m.group(0)
+
+        # The work must run INSIDE a callable passed to _run_job, not
+        # after it. Verify by checking that subprocess.run appears BEFORE
+        # the _run_job call in the function body (it should be inside a
+        # nested def that's the second arg to _run_job).
+        assert "subprocess.run" in body, f"{job} must run the scanner subprocess"
+        run_job_match = re.search(r"_run_job\(", body)
+        subproc_match = re.search(r"subprocess\.run\(", body)
+        assert run_job_match and subproc_match, f"{job}: both _run_job and subprocess.run must be present"
+        # subprocess.run appears BEFORE _run_job in body → work is inside
+        # the nested callable; _run_job is the outermost statement.
+        assert subproc_match.start() < run_job_match.start(), (
+            f"{job}: subprocess.run must be lexically before _run_job (i.e., "
+            f"inside the inner callable). If _run_job appears first, the "
+            f"work is happening after _run_job which means failures get logged "
+            f"but successes don't — wrong direction."
+        )
+
+        # raise on env-missing — otherwise a misconfigured Railway env
+        # logs status='completed' (the silent-failure trap).
+        assert 'raise RuntimeError(' in body and 'OA_KEY' in body and 'OD_KEY' not in body, (
+            f"{job}: env-var check must RAISE RuntimeError when OA_KEY/"
+            f"ODDS_API_KEY missing — without the raise, a misconfigured env "
+            f"can't be distinguished from a healthy idle run"
+        )
+
+        # raise on non-zero subprocess exit — same reason.
+        assert re.search(r"if result\.returncode != 0:.*?raise RuntimeError", body, re.DOTALL), (
+            f"{job}: must raise on non-zero subprocess exit so pipeline_runs "
+            f"row is status='failed' (not 'completed') with error_message set"
+        )
+
+
 @test("TENNIS-HEALTH-ALERTS — scanner-silent + settlement-stale tripwires + runner wiring")
 def _():
     """TENNIS-PAPER-BETS Phase 3 (2026-06-25): two tripwires for silent
