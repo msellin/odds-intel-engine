@@ -23146,9 +23146,13 @@ def _():
     Pin:
       - Module constant MIN_BOOKS_FOR_PICK = 1 (the new default).
       - BASE_GATES["min_books_for_pick"] = 1.
-      - The 4 canonical baseline bots opt UP to 2 via cfg override so the
-        long-standing value strategy keeps its conservative behaviour.
-      - The 3 new diversification bots use the relaxed default.
+      - ALL 7 bots use the relaxed default (CS2-MIN-BOOKS-RELAX-ALL
+        2026-06-25 afternoon). The earlier morning opt-up of the 4
+        canonical bots to min_books=2 starved v8/v7 of fires entirely
+        (zero in 180d) because HLTV-fallback rows rarely have ≥2 books.
+        Reverted because the 15pp consensus gate becomes 15pp model-
+        vs-bookie-implied at 1 book — stricter than the 25pp anomaly
+        guard — so quality control is preserved.
     """
     import pathlib, importlib.util
     p = pathlib.Path("scripts/esports/cs2_bot.py")
@@ -23159,18 +23163,12 @@ def _():
     assert mod.MIN_BOOKS_FOR_PICK == 1, "module default must be 1 post-relax"
     assert mod.BASE_GATES["min_books_for_pick"] == 1, "BASE_GATES default must be 1"
 
-    # Canonical baseline bots opt UP to 2 (conservative reference, no regression).
-    for name in ("bot_cs2_value_v1", "bot_cs2_v8", "bot_cs2_v7", "bot_cs2_hltv_v1"):
-        cfg = mod.BOTS_CONFIG[name]
-        assert cfg["min_books_for_pick"] == 2, (
-            f"{name} must keep min_books_for_pick=2 (canonical baseline)"
-        )
-
-    # New diversification bots inherit the relaxed default (volume unlock).
-    for name in ("bot_cs2_aggressive_v1", "bot_cs2_dog_v1", "bot_cs2_fav_v1"):
+    # ALL 7 bots inherit the relaxed default — no per-bot opt-up.
+    for name in mod.BOTS_CONFIG:
         cfg = mod.BOTS_CONFIG[name]
         assert cfg["min_books_for_pick"] == 1, (
-            f"{name} must inherit relaxed default min_books_for_pick=1"
+            f"{name} must use min_books_for_pick=1 — opt-ups were "
+            f"reverted in CS2-MIN-BOOKS-RELAX-ALL"
         )
 
 
@@ -23254,13 +23252,14 @@ def _():
     picks_off = mod._scan_one(row, cfg_off)
     assert isinstance(picks_off, list)
 
-    # When ONLY 1 book is present, consensus is undefined → no shrinkage
-    # AND no pick (min_books_for_pick = 2). Verifies the fall-through path
-    # doesn't blow up.
+    # When ONLY 1 book is present AND the caller demands ≥2 books for sanity
+    # (override since CS2-MIN-BOOKS-RELAX-ALL set default to 1), the scan
+    # returns no picks. Verifies the fall-through path doesn't blow up.
     row_thin = dict(row)
     row_thin["coolbet_odds1"] = None
     row_thin["coolbet_odds2"] = None
-    assert mod._scan_one(row_thin, cfg_on) == []
+    cfg_strict = dict(cfg_on, min_books_for_pick=2)
+    assert mod._scan_one(row_thin, cfg_strict) == []
 
     # CLI flag --no-shrink exists.
     src = p.read_text()

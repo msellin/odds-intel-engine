@@ -138,14 +138,16 @@ BOTS_CONFIG: dict[str, dict] = {
     # These four mirror the 4 bots that have been firing since 2026-06-08.
     # Same gates, different model. bot_name keeps the model suffix so the
     # bots table / weekly review track each model's live ROI independently.
-    # All four keep min_books_for_pick=2 as an explicit opt-up (the module
-    # default relaxed to 1 in 2026-06-25 CS2-MIN-BOOKS-RELAX); the canonical
-    # value strategy stays conservative — only the diversification bots
-    # below use the relaxed default.
-    "bot_cs2_value_v1": _cfg("bot_cs2_value_v1", ("elo+pq_v1",), min_books_for_pick=2),
-    "bot_cs2_v8":       _cfg("bot_cs2_v8",       ("v8",),        min_books_for_pick=2),
-    "bot_cs2_v7":       _cfg("bot_cs2_v7",       ("v7",),        min_books_for_pick=2),
-    "bot_cs2_hltv_v1":  _cfg("bot_cs2_hltv_v1",  ("hltv_v1",),   min_books_for_pick=2),
+    # All seven bots use the relaxed min_books_for_pick=1 default — the
+    # earlier opt-up to 2 (CS2-MIN-BOOKS-RELAX 2026-06-25 morning) starved
+    # v8/v7 of fires (zero in 180d) because HLTV-fallback rows rarely have
+    # ≥2 books. The 15pp consensus gate becomes 15pp model-vs-implied at
+    # 1 book — stricter than the 25pp anomaly guard — so quality control
+    # is preserved. CS2-MIN-BOOKS-RELAX-ALL 2026-06-25 afternoon.
+    "bot_cs2_value_v1": _cfg("bot_cs2_value_v1", ("elo+pq_v1",)),
+    "bot_cs2_v8":       _cfg("bot_cs2_v8",       ("v8",)),
+    "bot_cs2_v7":       _cfg("bot_cs2_v7",       ("v7",)),
+    "bot_cs2_hltv_v1":  _cfg("bot_cs2_hltv_v1",  ("hltv_v1",)),
 
     # ── Diversification (added 2026-06-25, mirrors soccer's bot variants) ──
     # Goal: lift CS2 paper-bet volume from ~2/day toward soccer's tempo by
