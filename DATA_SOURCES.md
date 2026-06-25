@@ -1,6 +1,6 @@
 # OddsIntel — Data Sources
 
-> Last updated: 2026-06-15 — Added OddsPapi /historical-odds Pinnacle backfill (CLV-BACKFILL 2026-06-06), The Odds API WC sweeps (ODDS-API-WC 2026-06-06), CSV-FULL-EXTRACT (2026-06-04). All flow into the Sunday retrain via odds_snapshots.
+> Last updated: 2026-06-25 — WC odds sweep retired (was filling AF's WC gap; WC is over and ongoing value is minimal). The Odds API key + client retained — pivoted to tennis odds + settlement (TENNIS-PAPER-BETS).
 
 ---
 
@@ -9,8 +9,8 @@
 | Source | Role | Status |
 |--------|------|--------|
 | **API-Football Ultra** ($39/mo, 150K tier) | PRIMARY — all structured data | ✅ Active |
-| **The Odds API** (free) | WC 2026 odds gap (AF has `coverage_odds=false` for WC) | ✅ Active 2026-06-06 — gated to 2026-06-11 → 2026-07-19 window. 3 credits/sweep, ~114/500 credit cost. |
-| **OddsPapi** (free) | Historical Pinnacle closing-odds backfill for CLV + tennis value scanner | ✅ Active. `scripts/ingest_oddspapi_pinnacle_closes.py` populates `odds_snapshots` with `bookmaker='Pinnacle' is_closing=true`. Verified 2026-06-15 (CLV-BACKFILL-FOLLOWUP-A): 12,218 rows / 219 matches flow through train.py's calibration filter automatically. |
+| **The Odds API** (free 500/mo) | Tennis odds + settlement via `/sports/tennis_*` and `/scores` endpoints. Pinnacle confirmed across all 3 active tour tournaments (100% coverage on probe 2026-06-25). | ✅ Active. WC sweep retired 2026-06-25. |
+| **OddsPapi** (free 250/mo) | Historical Pinnacle closing-odds backfill for soccer CLV (one-shot via `scripts/ingest_oddspapi_pinnacle_closes.py`). | ⚠️ Quota exhausted 2026-06-25 — tennis scanner that was burning the budget is being replaced by The Odds API. Last backfill 2026-06-15 (12,218 rows / 219 matches into `odds_snapshots`). |
 | **football-data.co.uk** (free) | Historical odds + secondary stats CSVs (CSV-FULL-EXTRACT 2026-06-04 captures 9 bookmakers × 1X2 + OU 2.5 + AH, open + close) | ✅ Active. ~80-120K net-new rows per season-set ingest. |
 | ESPN (free) | Settlement result backup | ✅ Active (backup) |
 | ~~Kambi API (free)~~ | Supplementary odds — removed 2026-05-06 (all 41 leagues already covered by AF; "ub"/"paf" bookmakers provided <5% best-odds and "ub" is just Unibet which AF covers separately) | Removed |
@@ -140,7 +140,7 @@ Total: ~3,000+ finished international matches. Two-phase: (A) fixtures via `get_
 
 WC 2026 group-stage fixtures (72 matches, league=1 season=2026) were backfilled separately under WC-PHASE-1 via the new `fetch_fixtures --league/--season` mode. They land in DB with `season=2025` per our football-season convention (June = previous year); frontend filters by date + `show_on_frontend`, not season.
 
-**WC odds gap — RESOLVED 2026-06-06.** AF returns `coverage_odds=false` for the WC league. Resolved by adding `soccer_fifa_world_cup` sweeps via The Odds API free tier (3 credits per call, 24 bookmakers per sweep including **Pinnacle** — confirmed available for WC specifically, not for other soccer competitions). First sweep landed 5,858 rows into `odds_snapshots` for 1x2 + AH + OU 1.5/2.5/3.5/4.5. Ongoing: daily cron during WC (June 11 → July 19), cost ~114 credits of 500/mo free quota. Script: `scripts/odds_api_wc_sweep.py`. See ODDS-API-WC + ODDS-API-WC-DAILY-CRON in PRIORITY_QUEUE.
+**WC odds gap — RETIRED 2026-06-25.** Previously filled via daily The Odds API sweep of `soccer_fifa_world_cup` (5,858 row first sweep + daily 06:30 UTC cron 2026-06-11 → 2026-07-19). Removed because WC's commercial relevance to us is minimal and the credit budget is better spent on tennis (TENNIS-PAPER-BETS). The Odds API key + `workers/api_clients/odds_api.py` client retained.
 
 ### Training-pipeline data sources (clarification)
 
@@ -180,7 +180,7 @@ AH-bot prototype follow-up (`scripts/backtest_ah_bot_prototype.py`, 5,254 deriva
 
 - [x] ~~Remove `betexplorer_odds.py`~~ Done 2026-04-29
 - [x] ~~Remove Sofascore scrapers~~ Done 2026-04-29
-- [x] ~~Activate The Odds API for Pinnacle odds~~ Done 2026-06-06 (ODDS-API-WC) — Pinnacle is uniquely available on the WC sport key (not on other soccer comps). Cron auto-disables after the WC final 2026-07-19 (ODDS-API-WC-DEACTIVATE in PRIORITY_QUEUE).
+- [x] ~~Activate The Odds API for Pinnacle odds~~ Done 2026-06-06 (ODDS-API-WC) → retired 2026-06-25 (WC commercial value minimal). Key + client repurposed for tennis (TENNIS-PAPER-BETS).
 - [ ] Evaluate API-Football Pro ($19/mo, 7.5K req/day) after 4–6 weeks once we know which leagues are profitable
 
 ---

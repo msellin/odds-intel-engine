@@ -21351,36 +21351,6 @@ def test_clv_backfill_followup_a():
     )
 
 
-@test("ODDS-API-WC — WC 2026 sweep script structure")
-def test_odds_api_wc_sweep():
-    """ODDS-API-WC (2026-06-06): The Odds API free tier (500 cred/mo) fills
-    the AF gap for WC 2026 odds (AF: coverage_odds=false for WC). Pinnacle
-    is uniquely available on WC sport key (not on other soccer leagues).
-    Pins the script's invariants:
-    - targets soccer_fifa_world_cup sport key
-    - bookmaker key→name map includes the sharps + retail books we use
-    - OU ingest filters to half-lines (matches existing schema convention)
-    - AH handicap_line is stored home-perspective
-    - --dry-run is supported
-    """
-    import pathlib
-    src = pathlib.Path("scripts/odds_api_wc_sweep.py").read_text()
-    assert 'SPORT = "soccer_fifa_world_cup"' in src, "must target WC sport key"
-    assert '"pinnacle":' in src and '"Pinnacle"' in src, "must map Pinnacle"
-    assert '"betfair_ex_eu":' in src and '"Betfair Exchange"' in src, "must map Betfair Exchange"
-    assert '"coolbet":' in src and '"Coolbet"' in src, "must map Coolbet"
-    # OU half-line filter
-    assert "line not in (0.5, 1.5, 2.5, 3.5, 4.5)" in src, (
-        "OU ingest must filter to half-lines only (matches existing odds_snapshots convention)"
-    )
-    # AH home-perspective
-    assert "hline = -float(point)" in src, (
-        "AH ingest must flip away-side point to home-perspective handicap_line"
-    )
-    assert "--dry-run" in src, "must support --dry-run"
-    assert "_normalize_bookmaker" in src, "must have bookmaker normalization"
-
-
 @test("THRESHOLD-CHECK-WEEKLY-CRON — job + email helper + scheduler hook")
 def test_threshold_check_weekly_cron():
     """THRESHOLD-CHECK-WEEKLY (2026-06-06): the manual threshold_check.py run
@@ -21437,7 +21407,7 @@ def test_bot_maturity_review_weekly():
     - workers/jobs/weekly_bot_review_email.py exists with the Resend send
     - workers/scheduler.py declares job_weekly_bot_review
     - The cron is registered for Sunday 06:30 UTC (after the 06:00 threshold
-      check, parallel with the daily wc_odds_sweep which is independent)
+      check)
     - Email body wraps the script stdout in <pre> to preserve column alignment
     """
     import pathlib
@@ -22043,50 +22013,6 @@ def test_value_bets_density_pass():
     chip_text = cal_chip_block[span_open + 1 : span_close].strip()
     assert chip_text == "Calibrated", (
         f"chip text must be exactly 'Calibrated' (was 'Pro'); found '{chip_text}'"
-    )
-
-
-@test("ODDS-API-WC-DAILY-CRON — job + window gate + cron registration")
-def test_odds_api_wc_daily_cron():
-    """ODDS-API-WC-DAILY-CRON (2026-06-06): daily sweep of WC fixtures via
-    The Odds API. Pins:
-
-    - job_wc_odds_sweep declared in workers/scheduler.py
-    - WC window dates baked in (2026-06-11 to 2026-07-19) so the job no-ops
-      outside the tournament — leaving the cron registered year-round is
-      safer than depending on operator-discipline to disable it post-final
-    - Daily 06:30 UTC cron (staggered off the Sunday 06:00 threshold check
-      so they don't collide on Sundays)
-    - Checks for OA_KEY or ODDS_API_KEY env var; skips silently if missing
-      (no crash, no false telemetry)
-    """
-    import pathlib
-    sched_src = pathlib.Path("workers/scheduler.py").read_text()
-
-    assert "def job_wc_odds_sweep" in sched_src, (
-        "scheduler.py must declare job_wc_odds_sweep"
-    )
-    assert "scripts/odds_api_wc_sweep.py" in sched_src, (
-        "job must shell out to scripts/odds_api_wc_sweep.py (existing script)"
-    )
-
-    # Window gate — dates baked in
-    assert "date(2026, 6, 11)" in sched_src and "date(2026, 7, 19)" in sched_src, (
-        "WC window 2026-06-11 → 2026-07-19 must be baked into the job; "
-        "outside-window runs must no-op"
-    )
-
-    # Env var presence check — graceful skip if missing
-    assert 'OA_KEY' in sched_src and 'ODDS_API_KEY' in sched_src, (
-        "job must check for OA_KEY or ODDS_API_KEY env var and skip when absent"
-    )
-
-    # Cron registration — daily 06:30 UTC
-    assert 'id="wc_odds_sweep"' in sched_src, (
-        "cron must register with id='wc_odds_sweep'"
-    )
-    assert "hour=6, minute=30" in sched_src, (
-        "cron must fire at 06:30 UTC (staggered off Sunday 06:00 threshold check)"
     )
 
 
