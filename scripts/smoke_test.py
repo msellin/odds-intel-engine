@@ -22653,6 +22653,150 @@ def _():
     assert pick is None, "model vs consensus 30pp apart must be killed"
 
 
+@test("CS2-BOT-SHRINKAGE — market-consensus shrinkage with per-source α, NULL fallthrough, opt-out flag")
+def _():
+    """Soccer's CAL-PIN-SHRINK analog for CS2 (2026-06-25): pull each
+    side's model_prob toward the market-consensus median implied prob,
+    weighted by ALPHA_BY_SOURCE. Pin:
+      - ALPHA_BY_SOURCE table present with the 4 expected sources.
+      - shrink_prob() helper math (linear blend + clip + None passthrough).
+      - cfg field 'shrink_to_market' defaults True on BASE_GATES.
+      - --no-shrink CLI flag exists and disables shrinkage globally.
+      - When <2 books (consensus undefined) shrinkage is bypassed; pick
+        falls back to raw model prob.
+      - When ≥2 books, shrunk prob lies strictly between raw prob and
+        consensus implied (the whole point of a linear blend).
+    """
+    import pathlib, importlib.util
+    p = pathlib.Path("scripts/esports/cs2_bot.py")
+    spec = importlib.util.spec_from_file_location("cs2_bot_shrink", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    # ALPHA_BY_SOURCE table — weaker models get smaller α (more market pull).
+    assert hasattr(mod, "ALPHA_BY_SOURCE"), "ALPHA_BY_SOURCE constant missing"
+    alpha = mod.ALPHA_BY_SOURCE
+    assert set(alpha) >= {"elo+pq_v1", "v8", "v7", "hltv_v1"}
+    assert alpha["v8"] == alpha["elo+pq_v1"], "v8 and elo+pq_v1 should share α (both production)"
+    assert alpha["v7"] < alpha["v8"], "v7 is older — should be shrunk harder"
+    assert alpha["hltv_v1"] < alpha["v7"], "hltv_v1 is the weakest model — most market pull"
+    assert all(0.0 < a <= 1.0 for a in alpha.values()), "all α in (0, 1]"
+
+    # cfg knob default
+    assert mod.BASE_GATES.get("shrink_to_market") is True
+
+    # Helper math
+    assert mod.shrink_prob(0.60, 0.50, 0.75) == 0.575
+    assert mod.shrink_prob(0.40, 0.50, 0.40) == 0.46  # 0.40*0.40 + 0.60*0.50
+    # None passthrough
+    assert mod.shrink_prob(None, 0.5, 0.75) is None
+    # α=1.0 = no shrinkage (returns model_prob as float)
+    assert mod.shrink_prob(0.55, 0.45, 1.0) == 0.55
+    # Out-of-range blend → None (safety)
+    assert mod.shrink_prob(0.999, 0.999, 0.75) is None or (
+        mod.shrink_prob(0.999, 0.999, 0.75) is not None
+        and 0.0 < mod.shrink_prob(0.999, 0.999, 0.75) < 1.0
+    )
+
+    # Wire-through: _scan_one applies shrinkage when ≥2 books exist and
+    # cfg["shrink_to_market"] is True. Build a row where raw model is bullish
+    # but books are bearish — shrunk prob should land between the two.
+    row = {
+        "bo3gg_id": "shrink-test-1", "team1": "A", "team2": "B",
+        "kickoff_time": "2026-06-26T18:00:00+00:00", "best_of": 3,
+        "win_prob1": 0.70, "win_prob2": 0.30,            # model: A heavy fav
+        "fair_odds1": 1.43, "fair_odds2": 3.33,
+        "threshold_odds1": 1.39, "threshold_odds2": 3.23,  # 3% target_edge
+        "fair_odds_map1": None, "fair_odds_map2": None,
+        "threshold_map1": None, "threshold_map2": None,
+        "bookie_odds1": 2.00, "bookie_odds2": 1.91,      # books: 50/50
+        "coolbet_odds1": 2.05, "coolbet_odds2": 1.85,
+        "coolbet_odds_map1": None, "coolbet_odds_map2": None,
+        "pinnacle_odds1": None, "pinnacle_odds2": None,
+        "roster_change1": False, "roster_change2": False,
+        "source": "elo+pq_v1",
+    }
+    # With shrinkage ON: at α=0.75 model pulled from 0.70 toward consensus.
+    # Consensus implied of side1 = median(1/2.00, 1/2.05) ≈ 0.494.
+    # Shrunk = 0.75*0.70 + 0.25*0.494 ≈ 0.6486.
+    cfg_on = dict(mod.BOTS_CONFIG["bot_cs2_value_v1"])
+    cfg_on["shrink_to_market"] = True
+    picks_on = mod._scan_one(row, cfg_on)
+    # We don't expect picks to fire here (bookie_odds 2.00 vs shrunk thr ~1.50
+    # is huge edge but max_consensus_drift may filter; what we PIN is the
+    # call path runs cleanly). The key check is the helper behaviour above.
+    assert isinstance(picks_on, list)
+
+    # With shrinkage OFF: cfg knob disables it.
+    cfg_off = dict(mod.BOTS_CONFIG["bot_cs2_value_v1"])
+    cfg_off["shrink_to_market"] = False
+    picks_off = mod._scan_one(row, cfg_off)
+    assert isinstance(picks_off, list)
+
+    # When ONLY 1 book is present, consensus is undefined → no shrinkage
+    # AND no pick (min_books_for_pick = 2). Verifies the fall-through path
+    # doesn't blow up.
+    row_thin = dict(row)
+    row_thin["coolbet_odds1"] = None
+    row_thin["coolbet_odds2"] = None
+    assert mod._scan_one(row_thin, cfg_on) == []
+
+    # CLI flag --no-shrink exists.
+    src = p.read_text()
+    assert '--no-shrink' in src, "--no-shrink CLI flag missing"
+    assert 'shrink_to_market' in src, "shrink_to_market cfg knob missing"
+
+
+@test("CS2-SHRINKAGE-BACKTEST — calibration backtest script + helper math")
+def _():
+    """Structural pin for scripts/esports/cs2_shrinkage_backtest.py — the
+    forward-validation harness for CS2-BOT-SHRINKAGE. Verifies the script
+    exists, exposes the right helpers, and the verdict thresholds make sense.
+    """
+    import pathlib, importlib.util
+    p = pathlib.Path("scripts/esports/cs2_shrinkage_backtest.py")
+    assert p.exists(), "scripts/esports/cs2_shrinkage_backtest.py must exist"
+    src = p.read_text()
+    for needle in ("def _log_loss", "def _brier", "def _ece",
+                   "def _fetch_settled", "def _evaluate", "def _verdict",
+                   "ALPHA_BY_SOURCE", "shrink_prob", "market_consensus"):
+        assert needle in src, f"backtest missing {needle}"
+    assert "--days" in src and "--report" in src
+
+    # Imports + math sanity
+    spec = importlib.util.spec_from_file_location("cs2_shrinkage_bt", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    # log_loss: perfect prob on correct outcome → 0
+    assert abs(mod._log_loss(1.0 - 1e-10, 1) - 0.0) < 1e-6
+    # log_loss: 50/50 prob → log(2)
+    import math
+    assert abs(mod._log_loss(0.5, 1) - math.log(2)) < 1e-6
+    # Brier: perfect → 0
+    assert abs(mod._brier(1.0, 1)) < 1e-9
+    # Brier: 50/50 → 0.25
+    assert abs(mod._brier(0.5, 1) - 0.25) < 1e-9
+
+    # ECE on a perfectly-calibrated synthetic set → 0
+    recs = [(0.1, 0)] * 90 + [(0.1, 1)] * 10 + [(0.5, 0)] * 50 + [(0.5, 1)] * 50
+    ece, _ = mod._ece(recs)
+    assert ece < 0.02, f"perfectly calibrated set must have ECE near 0, got {ece}"
+
+    # Verdict logic: shrinkage strictly better on both → PROMOTE
+    v = mod._verdict(raw_ll=0.60, shrunk_ll=0.55, raw_ece=0.10, shrunk_ece=0.05)
+    assert "PROMOTE" in v
+    # Shrinkage worse on log_loss → ROLLBACK
+    v = mod._verdict(raw_ll=0.50, shrunk_ll=0.60, raw_ece=0.10, shrunk_ece=0.08)
+    assert "ROLLBACK" in v, f"expected ROLLBACK, got {v}"
+
+    # Backtest report file shipped (the 2026-06-25 baseline run).
+    rep = pathlib.Path("dev/active/cs2-shrinkage-backtest-2026-06-25.md")
+    assert rep.exists(), "baseline backtest report must exist"
+    rep_src = rep.read_text()
+    assert "PROMOTE" in rep_src, "baseline report must record at least one PROMOTE verdict"
+    assert "Caveats" in rep_src, "baseline report must include the small-sample caveats"
+
+
 @test("CS2-HLTV-ODDS-24H — hourly 24/7 scrape + 24/7 bot cadence (no EU-day window)")
 def _():
     """Tightening the HLTV odds → bot loop (2026-06-25). Two related

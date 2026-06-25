@@ -54,6 +54,29 @@ MAX_MODEL_VS_CONSENSUS_PP = 0.15  # our_prob vs median consensus implied prob mu
 # Calibrated on real-money soft-book mistakes: 25pp ≈ 4σ in the calibrated model.
 MAX_PROB_DIVERGENCE = 0.25
 
+# ─────────────── MARKET-CONSENSUS SHRINKAGE (2026-06-25) ───────────────
+# Mirror soccer's CAL-PIN-SHRINK pattern (improvements.py:142-144) for CS2.
+# Soccer shrinks model_prob toward Pinnacle's de-vigged implied. CS2 doesn't
+# have stable Pinnacle coverage (geo-blocked from EU dev; ~0% in last 30d
+# upcoming pool), so we shrink toward the per-side median of all available
+# books — bo3.gg/HLTV-median, Coolbet, Pinnacle when present. This is the
+# same `market_consensus()` already used for the consensus-drift veto, so
+# the shrinkage anchor is whatever consensus the bot can already see.
+#
+# shrunk_prob = α · model_prob + (1 − α) · consensus_implied
+#
+# Per-source α (analog of soccer's per-tier α): weaker models get pulled
+# harder toward the market. v8 is the best model (AUC 0.703) so we keep
+# most of its signal; hltv_v1 is the legacy rank-only baseline (AUC 0.673)
+# so we trust the market more.
+ALPHA_BY_SOURCE: dict[str, float] = {
+    "elo+pq_v1": 0.75,
+    "v8":        0.75,
+    "v7":        0.65,
+    "hltv_v1":   0.40,
+}
+DEFAULT_ALPHA = 0.75   # fallback for unknown sources
+
 
 # ─────────────────────────── BOT REGISTRY ───────────────────────────
 #
@@ -87,6 +110,7 @@ BASE_GATES = {
     "kelly_fraction": KELLY_FRACTION,
     "kelly_cap": KELLY_CAP,
     "markets": ("match_winner", "atleast1map"),
+    "shrink_to_market": True,   # mirror soccer's CAL-PIN-SHRINK (per-source α)
     "enabled": True,
 }
 
@@ -223,6 +247,23 @@ def _is_anomaly(side_prob: float | None, bookie_odds: float, threshold: float = 
         return False
     implied = 1.0 / bookie_odds   # raw implied, ignores vig (still good enough)
     return abs(side_prob - implied) > threshold
+
+
+def shrink_prob(model_prob: float | None, consensus_prob: float, alpha: float) -> float | None:
+    """Linear blend of model probability toward market consensus.
+
+    Returns α·model_prob + (1−α)·consensus_prob clipped to (0, 1).
+    None if model_prob is None or the blend lands outside (0, 1).
+    Soccer analog: improvements.py:CAL-PIN-SHRINK.
+    """
+    if model_prob is None:
+        return None
+    if not (0.0 < alpha <= 1.0):
+        return float(model_prob)
+    blended = alpha * float(model_prob) + (1.0 - alpha) * float(consensus_prob)
+    if not (0.0 < blended < 1.0):
+        return None
+    return blended
 
 
 def market_consensus(prices: list[tuple[str, float]]) -> tuple[float, float] | None:
@@ -400,18 +441,47 @@ def _scan_one(row: dict, cfg: dict) -> list[dict]:
         kelly_cap=cfg["kelly_cap"],
     )
 
-    # match_winner
+    # match_winner — apply per-side market-consensus shrinkage to model prob
+    # (mirrors soccer's CAL-PIN-SHRINK). When ≥2 books are present, blend
+    # the model's win prob toward the consensus implied with per-source α
+    # from ALPHA_BY_SOURCE. Re-derive fair + threshold from the shrunk prob
+    # so the edge calc downstream is consistent. Falls through (no
+    # shrinkage) when prob is None, books are thin, or cfg opts out.
     if "match_winner" in cfg["markets"]:
-        for side, team_name, fair, thr, prob, sidekey in [
+        shrink_enabled = cfg.get("shrink_to_market", True)
+        alpha = ALPHA_BY_SOURCE.get(source, DEFAULT_ALPHA)
+        for side, team_name, fair_orig, thr_orig, prob_orig, sidekey in [
             ("team1", row["team1"], row["fair_odds1"], thr1, row.get("win_prob1"), "1"),
             ("team2", row["team2"], row["fair_odds2"], thr2, row.get("win_prob2"), "2"),
         ]:
             prices = _eligible_books(row, sidekey)
+            fair, thr, prob = fair_orig, thr_orig, prob_orig
+
+            if (shrink_enabled and prob_orig is not None
+                    and fair_orig is not None and thr_orig is not None
+                    and len(prices) >= cfg["min_books_for_pick"]):
+                cons = market_consensus(prices)
+                if cons is not None:
+                    consensus_prob, _ = cons
+                    shrunk = shrink_prob(prob_orig, consensus_prob, alpha)
+                    if shrunk is not None:
+                        prob = shrunk
+                        fair = round(1.0 / shrunk, 3)
+                        # Preserve the original target_edge implicitly by
+                        # keeping the thr/fair ratio: target_edge =
+                        # 1 - thr_orig/fair_orig is unchanged post-shrinkage.
+                        fair_orig_f = float(fair_orig)
+                        if fair_orig_f > 0:
+                            thr = round(fair * (float(thr_orig) / fair_orig_f), 3)
+
             pick = _consider_side(source=source, side=side, team_name=team_name,
                                   prices=prices, fair=fair, thr=thr, prob=prob,
                                   min_extra=min_extra, market="match_winner",
                                   **gate_kwargs)
             if pick:
+                if prob != prob_orig and prob_orig is not None:
+                    pick["prob_orig"] = float(prob_orig)
+                    pick["shrink_alpha"] = alpha
                 picks.append(pick)
 
     # atleast1map (BO3/5 only) — same shape. Use the per-market odds
@@ -561,7 +631,13 @@ def main() -> None:
     p.add_argument("--record", action="store_true", help="Write simulated_bets to DB")
     p.add_argument("--settle", action="store_true", help="Only run settlement, no scan")
     p.add_argument("--bot", default=None, help="Run a single bot by name (default: all enabled)")
+    p.add_argument("--no-shrink", action="store_true",
+                   help="Disable market-consensus shrinkage (for A/B comparison)")
     args = p.parse_args()
+
+    if args.no_shrink:
+        for cfg in BOTS_CONFIG.values():
+            cfg["shrink_to_market"] = False
 
     if args.settle:
         print(f"\n=== CS2 BOT  settle  {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC ===")
@@ -586,9 +662,11 @@ def main() -> None:
                 tag = "  fired" if args.record else "  dry"
                 src = p.get("source", "elo+pq_v1")
                 cons_str = f" cons={1.0/p['consensus_prob']:.2f} (n={p.get('n_books')})" if p.get("consensus_prob") else ""
+                shrink_str = (f" shrink α={p['shrink_alpha']:.2f} (orig prob {p['prob_orig']:.3f})"
+                              if "shrink_alpha" in p else "")
                 print(f"    {tag}  [{cfg['name']:24} {src:10}]  {row['team1']:22} vs {row['team2']:22}  "
                       f"{p['market']:12} → {p['team']:18} @ {p['bookie']:8} {p['odds']:>5.2f}  "
-                      f"(thr {p['thr']:.2f}, edge +{p['edge']*100:.1f}%, stake {p.get('stake', BASE_STAKE):.2f}u{cons_str})")
+                      f"(thr {p['thr']:.2f}, edge +{p['edge']*100:.1f}%, stake {p.get('stake', BASE_STAKE):.2f}u{cons_str}{shrink_str})")
                 if args.record:
                     if _write_bet(row, p, cfg):
                         cfg_written += 1
