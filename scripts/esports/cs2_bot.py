@@ -122,7 +122,12 @@ BASE_GATES = {
     "max_prob_divergence": MAX_PROB_DIVERGENCE,
     "min_odds": 1.01,
     "max_odds": 100.0,
-    "markets": ("match_winner", "atleast1map", "clean_sweep"),
+    # Default markets — the canonical bots stay on match_winner only after
+    # CS2-MARKET-SPECIALISTS (2026-06-25); atleast1map / clean_sweep /
+    # total_maps_o25 are owned by dedicated specialist bots below so each
+    # market gets a clear edge-floor thesis instead of duplicating across
+    # all bots.
+    "markets": ("match_winner",),
     "shrink_to_market": True,   # mirror soccer's CAL-PIN-SHRINK (per-source α)
     "enabled": True,
 }
@@ -184,6 +189,46 @@ BOTS_CONFIG: dict[str, dict] = {
         max_odds=1.70,
         min_extra_edge=0.04,
     ),
+
+    # ── Market specialists (CS2-MARKET-SPECIALISTS 2026-06-25 evening) ──
+    # Each specialist owns one market with a thesis-appropriate edge floor.
+    # Removed those markets from the canonical bots above so attribution
+    # is clean: when "atleast1map" fires today, it's always a1m_specialist,
+    # never aliased to value_v1's "atleast1map=2 picks in 90d" footnote.
+
+    # A1M specialist: +1.5 map handicap (team wins ≥1 map in BO3). Lower
+    # edge floor (3%) than canonical's 5% — handicap markets are softer
+    # than 1X2 so we can extract value at thinner margins.
+    "bot_cs2_a1m_specialist_v1": _cfg(
+        "bot_cs2_a1m_specialist_v1",
+        ("elo+pq_v1", "v8"),
+        markets=("atleast1map",),
+        min_extra_edge=0.03,
+    ),
+
+    # Clean-sweep specialist: -1.5 map handicap (2-0 BO3, 3-0 BO5). High
+    # variance — model needs strong conviction on the favorite. Higher
+    # floor (4%) than canonical. Orthogonal to MW because the same MW
+    # prob can imply very different clean-sweep edges (mapped via p² /
+    # p³ in _scan_one).
+    "bot_cs2_clean_sweep_v1": _cfg(
+        "bot_cs2_clean_sweep_v1",
+        ("elo+pq_v1", "v8"),
+        markets=("clean_sweep",),
+        min_extra_edge=0.04,
+    ),
+
+    # Total Maps O/U 2.5 specialist (BO3 only): NEW market. P(over 2.5) =
+    # 2 * p * (1 - p) where p = win_prob1 → peaks at p=0.5 (close matches
+    # → decider likely), troughs at p=0/1 (lopsided → sweep). Genuinely
+    # orthogonal to match_winner — high MW prob can coexist with high or
+    # low decider prob depending on opponent strength.
+    "bot_cs2_total_maps_v1": _cfg(
+        "bot_cs2_total_maps_v1",
+        ("elo+pq_v1", "v8"),
+        markets=("total_maps_o25",),
+        min_extra_edge=0.05,
+    ),
 }
 
 
@@ -209,6 +254,7 @@ def _load_open_matches() -> list[dict]:
                coolbet_odds1, coolbet_odds2,
                coolbet_odds_map1, coolbet_odds_map2,
                coolbet_odds_cs1, coolbet_odds_cs2,
+               coolbet_odds_total_o25, coolbet_odds_total_u25,
                pinnacle_odds1, pinnacle_odds2,
                roster_change1, roster_change2,
                'elo+pq_v1' AS source
@@ -233,6 +279,7 @@ def _load_open_matches() -> list[dict]:
                u.coolbet_odds1, u.coolbet_odds2,
                u.coolbet_odds_map1, u.coolbet_odds_map2,
                u.coolbet_odds_cs1, u.coolbet_odds_cs2,
+               u.coolbet_odds_total_o25, u.coolbet_odds_total_u25,
                u.pinnacle_odds1, u.pinnacle_odds2,
                u.roster_change1, u.roster_change2,
                COALESCE(h.source, 'hltv_v1') AS source
@@ -534,6 +581,41 @@ def _scan_one(row: dict, cfg: dict) -> list[dict]:
             if pick:
                 picks.append(pick)
 
+    # total_maps_o25 (BO3 ONLY) — Coolbet's Total Maps Over/Under 2.5
+    # market. The two outcomes are "over" (decider played, 2-1 or 1-2)
+    # and "under" (clean sweep, 2-0 or 0-2). NOT team-oriented — both
+    # outcomes are properties of the series, not of a particular team.
+    # Model prob: P(over 2.5 | BO3) = 2 * p1 * (1 - p1) where p1 = win_prob1.
+    # CS2-TOTAL-MAPS 2026-06-25, mig 265.
+    if "total_maps_o25" in cfg["markets"] and best_of == 3:
+        prob_mw = row.get("win_prob1")
+        if prob_mw is not None:
+            p1 = float(prob_mw)
+            prob_over = 2.0 * p1 * (1.0 - p1)
+            if 0.0 < prob_over < 1.0:
+                prob_under = 1.0 - prob_over
+                # Two outcomes, each its own column on cs2_upcoming_matches.
+                # pick value is the outcome label so settlement can resolve
+                # against (score1 + score2) without a team mapping.
+                for outcome_label, prob, odds_col in [
+                    ("over",  prob_over,  "coolbet_odds_total_o25"),
+                    ("under", prob_under, "coolbet_odds_total_u25"),
+                ]:
+                    odds = row.get(odds_col)
+                    if odds is None or float(odds) <= 1.0:
+                        continue
+                    tm_fair = round(1.0 / prob, 3)
+                    tm_thr = round(tm_fair * (1 - cfg["min_extra_edge"]), 3)
+                    prices = [("coolbet", float(odds))]
+                    pick = _consider_side(
+                        source=source, side=outcome_label, team_name=outcome_label,
+                        prices=prices, fair=tm_fair, thr=tm_thr, prob=prob,
+                        min_extra=cfg["min_extra_edge"], market="total_maps_o25",
+                        **gate_kwargs,
+                    )
+                    if pick:
+                        picks.append(pick)
+
     return picks
 
 
@@ -639,6 +721,19 @@ def _bet_won(row: dict) -> bool | None:
             return row["winner"] == "team1" and s2 == 0
         else:
             return row["winner"] == "team2" and s1 == 0
+    if row["market"] == "total_maps_o25":
+        # BO3 only — total maps played = score1 + score2 ∈ {2, 3}.
+        # "over"  wins on 2-1 or 1-2 (decider played, total = 3).
+        # "under" wins on 2-0 or 0-2 (clean sweep, total = 2).
+        s1, s2 = row.get("score1"), row.get("score2")
+        if s1 is None or s2 is None:
+            return None
+        total_maps = int(s1) + int(s2)
+        if row["pick"] == "over":
+            return total_maps > 2     # i.e., >= 3
+        if row["pick"] == "under":
+            return total_maps < 3     # i.e., <= 2
+        return None
     return None
 
 

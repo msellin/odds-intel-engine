@@ -23640,8 +23640,12 @@ def _():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     cfg = mod.BOTS_CONFIG
+    # 7 canonical/variant bots + 3 market specialists added in
+    # CS2-MARKET-SPECIALISTS (2026-06-25 evening).
     expected = {"bot_cs2_value_v1", "bot_cs2_v8", "bot_cs2_v7", "bot_cs2_hltv_v1",
-                "bot_cs2_aggressive_v1", "bot_cs2_dog_v1", "bot_cs2_fav_v1"}
+                "bot_cs2_aggressive_v1", "bot_cs2_dog_v1", "bot_cs2_fav_v1",
+                "bot_cs2_a1m_specialist_v1", "bot_cs2_clean_sweep_v1",
+                "bot_cs2_total_maps_v1"}
     assert expected == set(cfg), f"BOTS_CONFIG must be exactly {expected}, got {set(cfg)}"
 
     # Baseline 4 bots: each isolates one model source — preserves attribution.
@@ -23766,6 +23770,87 @@ def _():
     assert "cs2_clv_snapshot" in ids
 
 
+@test("CS2-MARKET-SPECIALISTS — total_maps_o25 + a1m/cs/total-maps specialist bots")
+def _():
+    """CS2-MARKET-SPECIALISTS (2026-06-25 evening): user noticed today's 12
+    fires were ALL match_winner — the canonical bots had atleast1map and
+    clean_sweep in their markets tuple but practically never fired on them.
+    Carved out the map markets into dedicated specialist bots so each market
+    has a clear edge-floor thesis, and added a new Total Maps O/U 2.5
+    market (Coolbet BO3-only, orthogonal-ish to MW).
+
+    Pin: migration 265 adds coolbet_odds_total_o25/u25 columns and the 3
+    new bot rows. Scanner has find_total_maps_o25_market + writes the
+    new columns. Bot has total_maps_o25 in _eligible_books/_scan_one/
+    _bet_won. BOTS_CONFIG has 10 bots — 7 match_winner-only (4 canonical
+    + 3 variants) + 3 market specialists.
+    """
+    import pathlib, importlib.util
+    # Migration 265
+    mig = pathlib.Path("supabase/migrations/265_cs2_total_maps_market.sql")
+    assert mig.exists(), "migration 265 missing"
+    mig_src = mig.read_text()
+    for col in ("coolbet_odds_total_o25", "coolbet_odds_total_u25"):
+        assert f"ADD COLUMN IF NOT EXISTS {col}" in mig_src, f"mig 265 missing {col}"
+    for bot in ("bot_cs2_a1m_specialist_v1", "bot_cs2_clean_sweep_v1",
+                "bot_cs2_total_maps_v1"):
+        assert bot in mig_src, f"mig 265 must seed {bot}"
+
+    # Scanner extracts Total Maps market
+    scanner = pathlib.Path("scripts/esports/cs2_coolbet_scanner.py").read_text()
+    assert "def find_total_maps_o25_market" in scanner
+    assert "total_maps_by_match_id" in scanner
+    assert "coolbet_odds_total_o25" in scanner and "coolbet_odds_total_u25" in scanner
+
+    # Bot wiring
+    p = pathlib.Path("scripts/esports/cs2_bot.py")
+    src = p.read_text()
+    spec = importlib.util.spec_from_file_location("cs2_bot_mkt", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    # 10 bots, the canonical 7 are match_winner-only, the 3 specialists own
+    # their market exclusively.
+    cfg = mod.BOTS_CONFIG
+    canonical = {"bot_cs2_value_v1", "bot_cs2_v8", "bot_cs2_v7", "bot_cs2_hltv_v1",
+                 "bot_cs2_aggressive_v1", "bot_cs2_dog_v1", "bot_cs2_fav_v1"}
+    for name in canonical:
+        assert cfg[name]["markets"] == ("match_winner",), (
+            f"{name} must be match_winner-only post-CS2-MARKET-SPECIALISTS, "
+            f"got {cfg[name]['markets']}"
+        )
+    assert cfg["bot_cs2_a1m_specialist_v1"]["markets"] == ("atleast1map",)
+    assert cfg["bot_cs2_clean_sweep_v1"]["markets"] == ("clean_sweep",)
+    assert cfg["bot_cs2_total_maps_v1"]["markets"] == ("total_maps_o25",)
+    # Edge floors differentiate the specialists
+    assert cfg["bot_cs2_a1m_specialist_v1"]["min_extra_edge"] == 0.03
+    assert cfg["bot_cs2_clean_sweep_v1"]["min_extra_edge"] == 0.04
+    assert cfg["bot_cs2_total_maps_v1"]["min_extra_edge"] == 0.05
+
+    # _scan_one has the total_maps_o25 branch with the correct formula
+    assert "total_maps_o25" in src
+    assert "best_of == 3" in src, "total_maps must be BO3-only"
+    assert "2.0 * p1 * (1.0 - p1)" in src, "P(over 2.5 | BO3) = 2p(1-p) i.i.d. formula"
+    assert 'market="total_maps_o25"' in src
+
+    # _bet_won handles total_maps_o25 with score arithmetic, not team name
+    # arithmetic — verified across all 8 BO3 score×pick combinations.
+    for pick, s1, s2, expected in [
+        ("over",  2, 1, True),  ("over",  1, 2, True),
+        ("over",  2, 0, False), ("over",  0, 2, False),
+        ("under", 2, 0, True),  ("under", 0, 2, True),
+        ("under", 2, 1, False), ("under", 1, 2, False),
+    ]:
+        row = {"market": "total_maps_o25", "pick": pick, "score1": s1, "score2": s2,
+               "team1": "A", "team2": "B", "winner": "team1" if s1 > s2 else "team2"}
+        got = mod._bet_won(row)
+        assert got is expected, f"total_maps {pick} {s1}-{s2}: expected {expected} got {got}"
+    # NULL scores → deferred (None, not False)
+    assert mod._bet_won({"market": "total_maps_o25", "pick": "over",
+                          "score1": None, "score2": None,
+                          "team1": "A", "team2": "B", "winner": None}) is None
+
+
 @test("CS2-CLEAN-SWEEP — -1.5 handicap market wired end-to-end")
 def _():
     """The same Coolbet Match Handicap market that prices atleast1map (+1.5)
@@ -23805,9 +23890,11 @@ def _():
     spec.loader.exec_module(mod)
     src = p.read_text()
 
-    # BASE_GATES markets default includes clean_sweep
-    assert "clean_sweep" in mod.BASE_GATES["markets"], (
-        "BASE_GATES default markets must include 'clean_sweep'"
+    # clean_sweep is owned by bot_cs2_clean_sweep_v1 since CS2-MARKET-
+    # SPECIALISTS (2026-06-25 evening) — canonical default narrowed to
+    # match_winner-only. Pin the specialist's market tuple instead.
+    assert mod.BOTS_CONFIG["bot_cs2_clean_sweep_v1"]["markets"] == ("clean_sweep",), (
+        "bot_cs2_clean_sweep_v1 must own the clean_sweep market exclusively"
     )
 
     # _eligible_books returns coolbet odds for clean_sweep
