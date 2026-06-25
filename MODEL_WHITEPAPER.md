@@ -864,30 +864,106 @@ Takeaway: every dataset gets a verification pass. Check the simplest
 invariant (here: distribution of `team1_win` should be near 50/50). When
 it's wildly off, derive from scores instead.
 
-### 10b.7 Bot strategy (bot_cs2_value_v1)
+### 10b.7 Bot strategy (BOTS_CONFIG, 2026-06-25 refactor)
 
-Single bot, pre-match only. Mirrors soccer's bot pattern but simplified.
+`scripts/esports/cs2_bot.py` exposes a `BOTS_CONFIG: dict[str, dict]`
+registry layered on `BASE_GATES`, mirroring soccer's `BOTS_CONFIG`
+pattern in `workers/jobs/daily_pipeline_v2.py`. Each entry declares its
+own model sources, market filter, edge floors, odds range, and gate
+thresholds — the picker (`_consider_side` + `_scan_one`) accepts these
+as kwargs and applies them per-bot. The original single-bot
+`bot_cs2_value_v1` is one entry of seven.
 
-- **Scan**: cs2_upcoming_matches with `has_elo_history=TRUE` in next 72h
-- **Fire**: any bookmaker (bo3gg, coolbet, pinnacle) offers ≥ threshold AND extra edge ≥ 5% above threshold (threshold already bakes in 3%, so total fire bar ≈ +8% over fair)
-- **Markets**: `match_winner` (1x2) + `atleast1map` (BO3/BO5 only)
-- **Settlement**: auto-joins to `cs2_results` after each run
-- **Constraint**: UNIQUE (bot_name, bo3gg_id, market, bookie) — never re-fires the same opportunity
+| Bot | Sources | Markets | Min edge | Odds range | Notes |
+|---|---|---|---|---|---|
+| `bot_cs2_value_v1` | `elo+pq_v1` | MW, A1M, CS | 5% (3% on HLTV) | open | Canonical baseline |
+| `bot_cs2_v8` | `v8` | MW, A1M, CS | 5% (3% on HLTV) | open | Stacking + kd_diff |
+| `bot_cs2_v7` | `v7` | MW, A1M, CS | 5% (3% on HLTV) | open | Stacking, no kd_diff |
+| `bot_cs2_hltv_v1` | `hltv_v1` | MW, A1M, CS | 5% (3% on HLTV) | open | Rank-only baseline |
+| `bot_cs2_aggressive_v1` | elo+pq_v1, v8, v7 | MW, A1M, CS | 3% (2% on HLTV) | open | Tighter divergence (20pp), drops hltv_v1 |
+| `bot_cs2_dog_v1` | elo+pq_v1, v8 | MW only | 4% | ≥ 2.20 | Underdog at decent odds |
+| `bot_cs2_fav_v1` | elo+pq_v1, v8 | MW only | 4% | ≤ 1.70 | Favourite only |
 
-### 10b.8 Schedule
+**Gate pipeline** (fail-fast, per side):
+
+1. Source filter (`row['source']` must be in `cfg['sources']`)
+2. Roster-change gate (skip if either team has `roster_change=TRUE`)
+3. ≥ `min_books_for_pick` quoting (default = 1 since `CS2-MIN-BOOKS-RELAX-ALL` 2026-06-25 afternoon — see "Why 1" below)
+4. Compute market consensus median, reject best-price > 30% above consensus (stale-odds outlier)
+5. Odds range filter (`min_odds`/`max_odds` for dog/fav variants)
+6. Best price ≥ model threshold, edge in `[min_extra, max_extra]`
+7. `|model_prob − consensus_implied| ≤ 15pp` (model-vs-consensus check)
+8. `|model_prob − bookie_implied| ≤ 25pp` anomaly guard
+9. **Market-consensus shrinkage** (per `ALPHA_BY_SOURCE`) — see §10b.13
+
+**Why MIN_BOOKS=1**: live audit found only ~9% of CS2 matches had ≥2
+books quoting match_winner. With MIN_BOOKS=2, v8 and v7 fired **zero
+times in 180 days**. Quality control is preserved at 1 book: the 15pp
+consensus gate becomes a model-vs-bookie-implied check (stricter than
+the 25pp anomaly guard), and shrinkage still anchors to the single
+book's implied — which on HLTV-sourced rows IS HLTV's 30-40 book
+median anyway.
+
+**Markets supported (mig 263)**: `match_winner` (1X2), `atleast1map`
+(+1.5 map handicap, BO3+), `clean_sweep` (-1.5 map handicap, "team wins
+2-0 in BO3 / 3-0 in BO5"). Clean-sweep model prob derived on-the-fly
+as `win_prob_i ** (best_of // 2 + 1)` — i.e., `p²` for BO3, `p³` for
+BO5 (i.i.d. proxy; refine if calibration shows it's off).
+
+**Staking**: flat €10 per bet (`STAKE_EUR = 10.0`), matching soccer's
+`daily_pipeline_v2.STAKE`. The original Kelly path had a unit-mismatch
+bug (Kelly returned fraction-of-bankroll, `_stake_eur` treated it as
+"units where 1u = 1% bankroll" → divided by 100 → typical stake €0.20-1.50
+vs intended €5-20). Migration 262 backfilled all historical
+`cs2_simulated_bets` to `stake=1.0 / stake_eur=10.00` with `pnl_eur`
+recomputed from `odds_at_pick`, and recomputed `bots.current_bankroll`
+for all `bot_cs2_*` rows. CS2 and soccer now share one staking
+convention across the codebase.
+
+**Settlement** (3 strategies):
+
+1. `cs2_settlement.py` (hourly 12-02 UTC) — bo3.gg `/matches` API for finished series, 3-day window, writes `cs2_results` + settles `cs2_bets` (legacy table)
+2. `cs2_bot.py --settle` (after every `--record`, plus chained from supplementary cron) — joins `cs2_simulated_bets` to `cs2_results`, marks won/lost/voided, updates `bots.current_bankroll`
+3. `cs2_settle_from_supplementary.py` (every 4h since `CS2-SETTLE-CADENCE-4H`) — backstop for matches bo3.gg never returned. Strategies (in order):
+   - **HLTV id-window** heuristic (anchor ±10k from kickoff date)
+   - **PandaScore ±6h** exact `begin_at` with `winner IS NOT NULL`
+   - **HLTV live `/results?team={id}` scrape** (added 2026-06-25 — fetches HLTV's actual results page, parses `data-zonedgrouping-entry-unix` rows, finds opponent within ±3 days; uses FlareSolverr if Cloudflare-gated)
+4. `cs2_manual_settle.py` — operator unblock for tier-4/academy matches absent from all auto-sources. Inserts to `cs2_results` + runs `cs2_bot --settle`.
+
+**Constraint**: UNIQUE `(bot_name, bo3gg_id, market, pick)` — never re-fires the same opportunity even if a bot scans the same match repeatedly.
+
+### 10b.8 Schedule (2026-06-25 reflow)
+
+CS2 fixtures are **globally distributed**, not EU-day. Last-30d kickoff
+distribution: 08:00 UTC at 14.8% (Asian tournaments), 17:00 UTC at 15.9%
+(EU peak), 00-01 UTC at ~6% (NA late games), dead zone 02-05 UTC is ~1%
+total. Most CS2 jobs run **24/7 at every hour or every half-hour** — an
+EU-day window would miss ~22% of recent matches.
 
 | Job | Schedule | What |
 |---|---|---|
 | `cs2_scanner` | Every 4h 06,10,14,18,22 UTC at :12 | ELO+PQ scan → upcoming_matches + predictions |
-| `cs2_coolbet_scanner` | Every 30 min 07-22 UTC at :17,:47 | Coolbet odds → cs2_upcoming_matches |
-| `cs2_bot` | Every 4h 06,10,14,18,22 UTC at :25 | Bot picks → cs2_simulated_bets + settle |
-| `cs2_settlement` | Hourly 12-02 UTC at :22 | bo3.gg results → cs2_results, settle cs2_bets |
+| `cs2_hltv_upcoming` | Every 2h at :05 | HLTV fixture discovery (broader than bo3.gg) |
+| `cs2_hltv_match_odds` | **Hourly 24/7 at :12** | HLTV match-page bookie odds median → `bookie_odds1/2` |
+| `cs2_coolbet_scanner` | Every 30 min 07-22 UTC at :17,:47 | Coolbet odds → `cs2_upcoming_matches` |
+| `cs2_v7_predict` | Every 4h at :17 | v7 stacking model |
+| `cs2_v8_predict` | Every 4h at :17 | v8 stacking model (+ kd_diff) |
+| `cs2_hltv_predict` | Every 4h at :17 | hltv_v1 baseline |
+| `cs2_bot` | **Every 30 min 24/7 at :06,:36** | All 7 bots → `cs2_simulated_bets` + settle |
+| `cs2_coolbet_placer` | Every 30 min 10-23 UTC at :08,:38 | Mac daemon signal (currently paused for paper validation) |
+| `cs2_settlement` | Hourly 12-02 UTC at :22 | bo3.gg results → `cs2_results`, settle `cs2_bets` |
+| `cs2_settle_supplementary` | **Every 4h at :00** | HLTV + PandaScore fallback for stragglers + chained `cs2_bot --settle` |
+| `cs2_pandascore_rosters` | Hourly at :30 | Roster cache (50 teams/run) |
+| `cs2_hltv_rosters` | Daily 02:00 | Roster snapshots |
+| `cs2_weekly_calibrate` | Sun 03:30 UTC | Platt refit on 90d settled |
+| `flaresolverr_hltv_session_refresh` | **Every 6h at :33** | Preemptive tear-down of stuck FS hltv_* sessions (see §10b.13) |
 
 ### 10b.9 Open work
 
-- **ELO+PQ backfill** for production-model calibration (running)
-- **Pinnacle CS2 odds** — scanner deployed 2026-06-09 via guest API, awaits Railway-side validation (geo-blocked from EU IPs)
-- **Liquipedia roster fetcher** — current resolution 4/54 teams; slug-variant + opensearch fix pushed, needs another sweep
+- **2 stuck bets** (ODDIK/ALKA + RED Canids Academy/BESTIA Academy) — below all open-web sources I've integrated; operator can resolve via `cs2_manual_settle.py` after looking up FACEIT/ESEA
+- **Phase 3 of `/admin/cs2` refactor** — collapse match list bookie grid, add shrinkage badge per pick, add model-source label
+- **Pinnacle CS2 odds** — scanner exists but geo-blocked from EU dev; Railway prod IP test still pending
+- **Real-money unpause** — gate on ≥30 settled paper bets at +ROI per bot (currently `bot_cs2_value_v1` is 1 settled in 7d window, +€19.52)
 - **XGBoost on accumulated data** once ≥5,000 settled live predictions with rich features (see §10b.11)
 
 ### 10b.10 Stacking experiments (2026-06-09)
@@ -968,6 +1044,70 @@ Resumability:
 
 Admin UI `/admin/cs2` `ScrapersPanel` shows per-scraper progress + errors;
 `BacktestPanel` shows AUC/accuracy trend across runs with Δ vs previous.
+
+### 10b.13 Calibration shrinkage + observability (2026-06-25)
+
+**Market-consensus shrinkage** mirrors soccer's `CAL-PIN-SHRINK`
+(`workers/model/improvements.py:142-144`) but adapted: CS2 lacks
+reliable Pinnacle coverage (geo-blocked from EU dev; ~0% of the 30d
+upcoming pool), so the bot shrinks each side's `model_prob` toward the
+**per-side market-consensus median** that the bot already computes for
+its outlier-drift veto. Formula:
+
+```
+shrunk_prob = α · model_prob + (1 − α) · consensus_implied
+```
+
+Per-source α (mirroring soccer's per-tier α) — weaker models get
+pulled harder toward the market:
+
+| Source | α | Rationale |
+|---|---|---|
+| `elo+pq_v1` | 0.75 | Production canonical |
+| `v8` | 0.75 | Best AUC (0.703), keep most signal |
+| `v7` | 0.65 | Slightly older stacking |
+| `hltv_v1` | 0.40 | Rank-only baseline (AUC 0.673); trust market more |
+
+90d calibration backtest (n=34 hltv_v1 picks with ≥2 books):
+- log-loss 0.5936 → 0.5565 (−6.3%)
+- ECE 32.16% → 23.72% (−8.4pp)
+
+→ **PROMOTE**. Shrinkage doing some calibration work that the
+weekly-Platt-on-90d-window doesn't have enough data for. Other sources
+have n=0 because their fixtures rarely have ≥2 books today; expected
+to accrue once HLTV-sourced rows get richer odds coverage.
+
+**Implementation**: localized to `_scan_one` in `cs2_bot.py`. When
+≥`min_books_for_pick` books are present, prob is shrunk, fair re-derived
+as `1/shrunk_prob`, and threshold preserved via
+`shrunk_thr = shrunk_fair × (thr_orig / fair_orig)` so the original
+target_edge survives. Falls through cleanly when prob is None, books
+are thin, or `cfg["shrink_to_market"]` is False. The `--no-shrink` CLI
+flag globally disables for A/B comparison.
+
+**Observability stack** (also 2026-06-25, after a 32h FlareSolverr
+outage went silent for 32h):
+
+| Layer | Cadence | Catches | Where |
+|---|---|---|---|
+| `_run_subprocess_job` + `pipeline_runs` | Per-cron | Subprocess fail OR missing output marker | `workers/scheduler.py` |
+| `cs2_pipeline_healthcheck` | Every 30 min | Stale scanner (>6h) or stale bot (>24h with future matches) | `workers/jobs/cs2_pipeline_healthcheck.py` |
+| `pipeline_runs_failure_digest` | Daily 08:00 | Failure-rate digest email (Resend), transient kills filtered out | `workers/jobs/pipeline_runs_failure_digest.py` |
+| **`pipeline_failure_alerter`** (NEW) | Hourly at :23 | Any job with ≥3 consecutive non-transient failures → immediate Telegram, 4h dedup, recovery auto-clears | `workers/jobs/pipeline_failure_alerter.py` |
+| **`flaresolverr_hltv_session_refresh`** (NEW) | Every 6h at :33 | Preemptive tear-down of stuck `hltv_*` FS sessions | `scripts/diagnose/flaresolverr_recover.py --prefix hltv_ --apply` |
+
+The alerter closed the 32h gap to ~75 minutes for the next FS-stuck
+class. The 6h refresh trades ~6 fresh CF challenges per fire (negligible)
+for preempting the sticking entirely. Both fixes are scoped — only
+`hltv_*` sessions touched, `coolbet_prod` (load-bearing for the placer
+chain) stays.
+
+**Activity report**: `scripts/esports/cs2_bot_activity_report.py` is the
+operator-facing CLI mirroring this entire pipeline's state — per-bot
+7d/30d fires + market split + n_books distribution, supply funnel
+(pool → +threshold → +≥1 book → +≥2 books with unlock multiplier),
+silent-bot check, recent picks log with n_books column. `/admin/cs2`
+renders the same data from its 2026-06-25 refactor.
 
 ---
 
