@@ -116,6 +116,7 @@ def find_imminent_fixtures(window_min: int) -> list[dict]:
          WHERE result IS NULL
            AND kickoff_time > now()
            AND kickoff_time <= %s
+           AND fair_source = 'odds_api_pinnacle'
          ORDER BY kickoff_time ASC
         """,
         (cutoff,),

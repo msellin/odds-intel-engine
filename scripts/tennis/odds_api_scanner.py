@@ -206,7 +206,13 @@ def upsert_fixture_today(*, fixture_id: str, tournament_name: str,
 
 
 def insert_value_bet(row: dict, dry_run: bool) -> None:
-    """Insert one bot-segmented row. Row dict must include bot_id."""
+    """Insert one bot-segmented row. Row dict must include bot_id.
+
+    All rows from this scanner are Pinnacle-anchored (Odds API returns Pinnacle
+    in the bundle), so fair_source is hardcoded to 'odds_api_pinnacle'.
+    Coolbet-only rows without a Pinnacle anchor land via
+    scripts/tennis/place_coolbet_tennis.py with fair_source='coolbet_only'.
+    """
     if dry_run:
         return
     execute_write("""
@@ -215,13 +221,13 @@ def insert_value_bet(row: dict, dry_run: bool) -> None:
              kickoff_time, market, selection,
              pin_fair_odds, pin_raw_home, pin_raw_away,
              bookmaker, book_odds, edge_pct, kelly_fraction, stake, scan_date,
-             bot_id, notes)
+             bot_id, fair_source, notes)
         VALUES
             (%(fixture_id)s, %(tournament_name)s, %(player_home)s, %(player_away)s, %(surface)s,
              %(kickoff_time)s, %(market)s, %(selection)s,
              %(pin_fair_odds)s, %(pin_raw_home)s, %(pin_raw_away)s,
              %(bookmaker)s, %(book_odds)s, %(edge_pct)s, %(kelly_fraction)s, %(stake)s,
-             CURRENT_DATE, %(bot_id)s, %(notes)s)
+             CURRENT_DATE, %(bot_id)s, 'odds_api_pinnacle', %(notes)s)
         ON CONFLICT (fixture_id, bookmaker, selection, scan_date, bot_id) DO UPDATE SET
             book_odds      = EXCLUDED.book_odds,
             edge_pct       = EXCLUDED.edge_pct,

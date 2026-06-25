@@ -36,3 +36,15 @@ Status legend: ⬜ not started · 🔄 in progress · ✅ done · ❌ blocked
 - [✅] **3.4** Smoke `TENNIS-HEALTH-ALERTS` pinning thresholds + runner wiring
 - [⬜] **3.5** Doc updates: WORKFLOWS.md (new tennis crons), DATA_SOURCES.md (provider swap), MEMORY for tennis pipeline state
 - [⬜] **3.6** Mark `TENNIS-PAPER-BETS` ✅ Done in PRIORITY_QUEUE.md once 7-day soak completes and we have first settled-bet data
+
+## Phase 4 — Volume accumulation (training-data pivot, 2026-06-25)
+
+> User direction: stop requiring Pinnacle anchor. Use Coolbet odds NOW to log a row for every Coolbet tennis match (incl. Challenger/ITF/Futures). Backfill Pinnacle close + result later from tennis-data.co.uk weekly CSVs. Goal: more matches → more training data → better models.
+
+- [✅] **4.1** Migration 263 — `tennis_value_bets.pin_fair_odds` + `edge_pct` made NULLable; new `fair_source text NOT NULL DEFAULT 'unknown'` column. Existing rows backfilled to `fair_source='odds_api_pinnacle'`
+- [✅] **4.2** Coolbet scanner refactor — writes a row for every Coolbet tennis match. Pinnacle-matched path tags `fair_source='odds_api_pinnacle'` (existing edge/bot routing unchanged). New Coolbet-only path writes with `fair_source='coolbet_only'`, `bot_id='observation_unevaluated'`, NULL Pinnacle fields, fixture_id prefixed `coolbet:<id>` to avoid collision with Odds API event_ids
+- [✅] **4.3** Odds API scanner now explicitly sets `fair_source='odds_api_pinnacle'` on INSERT (so new rows don't default to 'unknown')
+- [✅] **4.4** Closing-odds scanner filters imminent query to `fair_source='odds_api_pinnacle'` (Coolbet-only fixture_ids aren't resolvable via Odds API /odds, would waste credits)
+- [✅] **4.5** Smoke `TENNIS-VOLUME-ACCUMULATION` pins migration + scanner paths + closing-odds filter
+- [⬜] **4.6** `scripts/tennis/backfill_tennisdata_csv.py` — weekly job that downloads tennis-data.co.uk CSVs (ATP + WTA + Challenger?), joins to `fair_source='coolbet_only' AND result IS NULL` rows by (player_lastnames, date) and populates `result`, `pnl` (using book_odds), `closing_odds` (PSW/PSL), `clv`. Lag: ~1 week. Separate commit.
+- [⬜] **4.7** Admin page enhancement — split per-bot table by fair_source so user can see "Pinnacle-anchored picks" vs "Coolbet-only observations" volume separately

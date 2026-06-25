@@ -247,14 +247,29 @@ def record_observation(
     match: dict,
     h_odds: float, a_odds: float,
     dry_run: bool,
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
+    """
+    Write rows for both selections (home + away). Returns
+    (logged_total, value_signals, coolbet_only_observations).
+
+    Two paths:
+    1. fixture is not None  → Pinnacle-anchored. Compute edge, route through
+       bots_config.matching_bots(), one row per qualifying bot. fair_source
+       = 'odds_api_pinnacle'.
+    2. fixture is None  → Coolbet-only (Phase 4 volume accumulation 2026-06-25).
+       No Pinnacle reference — store the Coolbet odds + outcome surface for
+       future CSV backfill. One row per selection, bot_id='observation_unevaluated',
+       fair_source='coolbet_only', edge_pct NULL.
+    """
     cb_id   = str(match.get("id", ""))
     cb_home = match.get("home") or "?"
     cb_away = match.get("away") or "?"
     cb_start = match.get("start", "")
+    cb_league = match.get("league") or "Unknown"
 
     logged = 0
     value  = 0
+    cb_only = 0
 
     for selection, cb_odds, thr_key in [
         ("home", h_odds, "threshold_home"),
@@ -281,18 +296,26 @@ def record_observation(
             value += 1
         elif is_value:
             marker = "   edge"
+        elif fixture is None:
+            marker = "   obs "  # Coolbet-only observation (no Pinnacle anchor)
         else:
             marker = "      "
 
-        pin_info = f"thr={threshold:.3f}  edge={edge_pct:+.1f}%" if edge_pct is not None else "no Pinnacle match"
+        pin_info = (
+            f"thr={threshold:.3f}  edge={edge_pct:+.1f}%"
+            if edge_pct is not None
+            else "no Pinnacle match — observation only"
+        )
         player_label = cb_home if selection == "home" else cb_away
         print(f"  {marker}  {player_label[:24]:24s}  cb={cb_odds:.2f}  {pin_info}")
 
-        if not dry_run and fixture and _has_real_names(fixture):
+        if dry_run:
+            logged += 1
+            continue
+
+        # ── Path 1: Pinnacle-anchored ───────────────────────────────────
+        if fixture and _has_real_names(fixture):
             fix_id = fixture["fixture_id"]
-            # Route through bot config — Coolbet observations qualify for
-            # bot_tennis_coolbet_only at 3%+ edge AND for the generic
-            # pin_broad/pin_selective lanes (Coolbet IS a soft book).
             edge_decimal = (edge_pct or 0) / 100.0
             matched = list(matching_bots(bookmaker="coolbet", edge=edge_decimal))
             for bot_id, _ in matched:
@@ -302,13 +325,13 @@ def record_observation(
                          kickoff_time, market, selection,
                          pin_fair_odds, pin_raw_home, pin_raw_away,
                          bookmaker, book_odds, edge_pct, kelly_fraction, stake,
-                         scan_date, bot_id, notes)
+                         scan_date, bot_id, fair_source, notes)
                     VALUES
                         (%s, %s, %s, %s, NULL,
                          %s, 'match_winner', %s,
                          %s, %s, %s,
                          'coolbet', %s, %s, 0, 0,
-                         CURRENT_DATE, %s, %s)
+                         CURRENT_DATE, %s, 'odds_api_pinnacle', %s)
                     ON CONFLICT (fixture_id, bookmaker, selection, scan_date, bot_id) DO UPDATE SET
                         book_odds  = EXCLUDED.book_odds,
                         edge_pct   = EXCLUDED.edge_pct,
@@ -328,9 +351,43 @@ def record_observation(
                     bot_id,
                     f"coolbet_match_id={cb_id}",
                 ))
-        logged += 1
+            logged += 1
+            continue
 
-    return logged, value
+        # ── Path 2: Coolbet-only observation (Phase 4 volume accumulation) ──
+        # No Pinnacle reference — record the Coolbet odds + match identity
+        # so the future CSV-backfill job (tennis-data.co.uk weekly dumps)
+        # can populate closing_odds + result + clv after the match finishes.
+        execute_write("""
+            INSERT INTO tennis_value_bets
+                (fixture_id, tournament_name, player_home, player_away, surface,
+                 kickoff_time, market, selection,
+                 pin_fair_odds, pin_raw_home, pin_raw_away,
+                 bookmaker, book_odds, edge_pct, kelly_fraction, stake,
+                 scan_date, bot_id, fair_source, notes)
+            VALUES
+                (%s, %s, %s, %s, NULL,
+                 %s, 'match_winner', %s,
+                 NULL, NULL, NULL,
+                 'coolbet', %s, NULL, NULL, 0,
+                 CURRENT_DATE, 'observation_unevaluated', 'coolbet_only', %s)
+            ON CONFLICT (fixture_id, bookmaker, selection, scan_date, bot_id) DO UPDATE SET
+                book_odds  = EXCLUDED.book_odds,
+                logged_at  = now()
+        """, (
+            f"coolbet:{cb_id}",
+            cb_league,
+            cb_home,
+            cb_away,
+            cb_start,
+            selection,
+            cb_odds,
+            f"coolbet_match_id={cb_id}, league={cb_league}, no_pin_anchor",
+        ))
+        logged += 1
+        cb_only += 1
+
+    return logged, value, cb_only
 
 
 def main() -> None:
@@ -375,6 +432,12 @@ def main() -> None:
             if m.get("status") == "OPEN"
             and find_match_winner_market(m.get("markets") or []) is not None
         ]
+        # Tag each match with its league name so Coolbet-only observations
+        # (no Pinnacle reference) can still carry a tournament_name when
+        # they land in tennis_value_bets. Pinnacle-matched rows ignore this
+        # and use the matched fixture's tournament_name instead.
+        for m in singles:
+            m["league"] = league.get("name") or ""
         all_matches.extend(singles)
         if singles:
             print(f"    {league['name'][:40]:40s}: {len(singles)}")
@@ -403,6 +466,7 @@ def main() -> None:
     print("\n[5] Checking odds vs Pinnacle thresholds...")
     total_logged = 0
     total_value  = 0
+    total_cb_only = 0
 
     for market_id, (match, mkt) in market_info.items():
         odds = odds_map.get(market_id)
@@ -430,15 +494,17 @@ def main() -> None:
             match.get("away", ""),
             pin_fixtures,
         )
-        logged, value = record_observation(fixture, match, h_odds, a_odds, dry_run)
+        logged, value, cb_only = record_observation(fixture, match, h_odds, a_odds, dry_run)
         total_logged += logged
         total_value  += value
+        total_cb_only += cb_only
 
     # ── Summary ───────────────────────────────────────────────────────
     print(f"\n{'='*65}")
-    print(f"  Matches processed: {len(market_info)}")
-    print(f"  Observations:      {total_logged}")
-    print(f"  Value bets ≥3%:   {total_value}")
+    print(f"  Matches processed:        {len(market_info)}")
+    print(f"  Observations logged:      {total_logged}")
+    print(f"  Pinnacle-anchored value≥3%: {total_value}")
+    print(f"  Coolbet-only observations:  {total_cb_only}  (no Pinnacle anchor — backfilled later via CSV)")
     if not dry_run and total_logged:
         print(f"  ✓ Written to tennis_value_bets")
     print()

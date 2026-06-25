@@ -22517,6 +22517,88 @@ def _():
     assert "(fixture_id, bookmaker, selection, scan_date, bot_id)" in mig
 
 
+@test("TENNIS-VOLUME-ACCUMULATION — Coolbet-only observations + fair_source + migration 263")
+def _():
+    """TENNIS-PAPER-BETS Phase 4 (2026-06-25): the Coolbet scanner writes a row
+    for every Coolbet tennis match — including Challenger/ITF/Futures that
+    have no Pinnacle reference in tennis_fixtures_today. The Pinnacle close +
+    match result get backfilled later from tennis-data.co.uk weekly CSVs.
+
+    The mental model shift: tennis_value_bets is no longer just actionable
+    paper-bets — it's also a training-data pond of every match Coolbet exposes.
+    The `fair_source` column (added in migration 263) separates the two:
+      - 'odds_api_pinnacle' — actionable picks with edge/CLV calculations
+      - 'coolbet_only'      — observations awaiting CSV backfill
+
+    Pins:
+    - Migration 263: pin_fair_odds + edge_pct become NULLable; fair_source
+      column added, NOT NULL with default 'unknown'; existing rows backfilled
+      to 'odds_api_pinnacle'
+    - Coolbet scanner has a Coolbet-only write path: when match_to_fixture
+      returns None, writes a row anyway with fair_source='coolbet_only',
+      bot_id='observation_unevaluated', pin_fair_odds/edge_pct NULL,
+      fixture_id prefixed 'coolbet:' to distinguish from Odds API event_ids
+    - Odds API scanner explicitly sets fair_source='odds_api_pinnacle' on
+      INSERT (without this, new rows would default to 'unknown')
+    - Closing-odds capture restricts to fair_source='odds_api_pinnacle' so
+      it doesn't waste credits trying to /odds fetch Coolbet-only fixtures
+      whose IDs The Odds API can't resolve
+    """
+    import pathlib
+
+    mig = pathlib.Path("supabase/migrations/263_tennis_volume_accumulation.sql").read_text()
+    assert "ALTER COLUMN pin_fair_odds DROP NOT NULL" in mig, (
+        "migration must make pin_fair_odds NULLable for Coolbet-only rows"
+    )
+    assert "ALTER COLUMN edge_pct DROP NOT NULL" in mig, (
+        "migration must make edge_pct NULLable (no edge w/o Pinnacle reference)"
+    )
+    assert "ADD COLUMN IF NOT EXISTS fair_source text" in mig, (
+        "migration must add fair_source column"
+    )
+    assert "ALTER COLUMN fair_source SET NOT NULL" in mig, (
+        "fair_source must end up NOT NULL after backfill"
+    )
+    assert "'odds_api_pinnacle'" in mig, (
+        "migration must backfill existing rows with fair_source='odds_api_pinnacle'"
+    )
+
+    coolbet_src = pathlib.Path("scripts/tennis/place_coolbet_tennis.py").read_text()
+    # Coolbet scanner must have both paths
+    assert "'odds_api_pinnacle'" in coolbet_src, (
+        "Pinnacle-anchored path must explicitly tag fair_source='odds_api_pinnacle'"
+    )
+    assert "'coolbet_only'" in coolbet_src, (
+        "Coolbet-only path must tag fair_source='coolbet_only'"
+    )
+    assert "'observation_unevaluated'" in coolbet_src, (
+        "Coolbet-only rows must use bot_id='observation_unevaluated' (single bucket, "
+        "not a per-edge bot match — edge is unknown until CSV backfill)"
+    )
+    # Coolbet-only fixture_id prefix
+    assert '"coolbet:' in coolbet_src, (
+        "Coolbet-only rows must use 'coolbet:<id>' fixture_id prefix to avoid "
+        "collisions with Odds API event_ids during settlement"
+    )
+    # Tag-and-record path: notes must carry the league name for downstream backfill matching
+    assert "no_pin_anchor" in coolbet_src, (
+        "Coolbet-only notes must include 'no_pin_anchor' marker for backfill scripts"
+    )
+
+    odds_api_src = pathlib.Path("scripts/tennis/odds_api_scanner.py").read_text()
+    assert "'odds_api_pinnacle'" in odds_api_src, (
+        "Odds API scanner INSERT must explicitly set fair_source='odds_api_pinnacle' "
+        "(otherwise new rows would default to 'unknown')"
+    )
+
+    closing_src = pathlib.Path("scripts/tennis/capture_closing_odds.py").read_text()
+    assert "fair_source = 'odds_api_pinnacle'" in closing_src, (
+        "closing-odds imminent query must restrict to fair_source='odds_api_pinnacle' "
+        "so it doesn't waste credits on Coolbet-only fixtures whose IDs The Odds API "
+        "can't resolve"
+    )
+
+
 @test("TENNIS-HEALTH-ALERTS — scanner-silent + settlement-stale tripwires + runner wiring")
 def _():
     """TENNIS-PAPER-BETS Phase 3 (2026-06-25): two tripwires for silent
