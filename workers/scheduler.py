@@ -1378,15 +1378,93 @@ def job_pipeline_runs_failure_digest():
     Quiet on healthy — if zero failures, no email. The CS2-PIPELINE-
     TRUTHFUL-LOGGING fix (2026-06-21) made `pipeline_runs` record real
     failures; this surfaces them to the operator within 24h instead of
-    waiting for a manual sweep."""
+    waiting for a manual sweep.
+
+    Metadata (added 2026-06-25 after a 32h FS outage went unnoticed):
+    write the digest's counters (sent / job_count / failure_count /
+    skipped_reason) into pipeline_runs.metadata so future audits can
+    verify whether the email actually went out without grepping logs.
+    """
     from workers.jobs.pipeline_runs_failure_digest import run_failure_digest
-    counters = run_failure_digest()
-    if counters.get("sent"):
-        console.print(
-            f"[yellow]Pipeline failure digest: job_count={counters['job_count']} "
-            f"failure_count={counters['failure_count']} sent=True[/yellow]"
-        )
-    _run_job("pipeline_runs_failure_digest", lambda: None)
+    from workers.utils.pipeline_utils import (
+        log_pipeline_start, log_pipeline_complete, log_pipeline_failed,
+    )
+    from datetime import date as _date
+    run_id = None
+    try:
+        run_id = log_pipeline_start("pipeline_runs_failure_digest",
+                                    _date.today().isoformat())
+    except Exception:
+        run_id = None
+    try:
+        counters = run_failure_digest()
+        if counters.get("sent"):
+            console.print(
+                f"[yellow]Pipeline failure digest: job_count={counters['job_count']} "
+                f"failure_count={counters['failure_count']} sent=True[/yellow]"
+            )
+        elif counters.get("skipped_reason"):
+            console.print(
+                f"[dim]Pipeline failure digest skipped: {counters['skipped_reason']}[/dim]"
+            )
+        if run_id:
+            try:
+                log_pipeline_complete(run_id, metadata=counters)
+            except Exception:
+                pass
+    except Exception as e:
+        if run_id:
+            try:
+                log_pipeline_failed(run_id, str(e))
+            except Exception:
+                pass
+        raise
+
+
+def job_pipeline_failure_alerter():
+    """PIPELINE-FAILURE-ALERTER (2026-06-25): hourly Telegram alert when
+    any cron racks up 3+ consecutive non-transient failures. Closes the
+    32h-lag gap surfaced by the 06-23 FlareSolverr outage — the daily
+    digest stays for forensics; this is fire-detection.
+
+    DB-backed dedup via pipeline_health_state (4h re-fire window).
+    Recovery clears the marker on first successful run after an alert,
+    so a re-stuck condition re-fires immediately.
+
+    Metadata: counters (stuck/alerted/skipped_dedup/recovered) stamped
+    into pipeline_runs.metadata for retroactive audits.
+    """
+    from workers.jobs.pipeline_failure_alerter import run_alerter
+    from workers.utils.pipeline_utils import (
+        log_pipeline_start, log_pipeline_complete, log_pipeline_failed,
+    )
+    from datetime import date as _date
+    run_id = None
+    try:
+        run_id = log_pipeline_start("pipeline_failure_alerter",
+                                    _date.today().isoformat())
+    except Exception:
+        run_id = None
+    try:
+        counters = run_alerter()
+        if counters["alerted_now"] or counters["recovered"]:
+            console.print(
+                f"[yellow]Failure alerter: stuck={counters['stuck_count']} "
+                f"alerted={counters['alerted_now']} skipped={counters['skipped_dedup']} "
+                f"recovered={counters['recovered']}[/yellow]"
+            )
+        if run_id:
+            try:
+                log_pipeline_complete(run_id, metadata=counters)
+            except Exception:
+                pass
+    except Exception as e:
+        if run_id:
+            try:
+                log_pipeline_failed(run_id, str(e))
+            except Exception:
+                pass
+        raise
 
 
 def job_retrain_healthcheck():
@@ -2962,6 +3040,20 @@ def main():
                       id="pipeline_runs_failure_digest",
                       name="Pipeline Failure Digest [daily 08:00 UTC]",
                       max_instances=1, misfire_grace_time=3600)
+
+    # PIPELINE-FAILURE-ALERTER (2026-06-25) — hourly fast-cycle alerter.
+    # Closes the 32h-lag gap surfaced by the 06-23 FS outage: the daily
+    # digest correctly identified the broken scrapers at 06-24 08:00 UTC,
+    # but a daily-cadence email is too slow. This fires Telegram within
+    # ~1h of any cron racking up 3+ consecutive non-transient failures.
+    # DB-backed dedup via pipeline_health_state (4h window), recovery
+    # auto-clears on next successful run. Fires at :23 to offset from
+    # the bulk of cron firing at :00/:05/:12/:15/:17/:30.
+    scheduler.add_job(job_pipeline_failure_alerter,
+                      CronTrigger(minute=23),
+                      id="pipeline_failure_alerter",
+                      name="Pipeline Failure Alerter [hourly]",
+                      max_instances=1, misfire_grace_time=900)
 
     # RETRAIN-HEALTHCHECK (2026-06-21) — Mon + Tue 09:00 UTC, alerts when
     # the Sunday weekly_retrain has been silently failing. 2 consecutive

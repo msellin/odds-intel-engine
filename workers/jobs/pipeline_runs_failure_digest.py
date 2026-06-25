@@ -44,36 +44,67 @@ FROM_EMAIL = os.getenv("ALERT_FROM_EMAIL") or os.getenv("DIGEST_FROM_EMAIL", "al
 ERROR_SAMPLE_LEN = 200
 
 
+# Transient kill messages — these are Railway redeploy noise, not real
+# bugs. Filtered out of the failure count so the digest surfaces only
+# actionable signal. (The rows are still in pipeline_runs for audits.)
+# Added 2026-06-25 after a 32h FS outage stayed hidden behind 13 daily
+# "killed — scheduler restarted" rows that yellow-shaded the table.
+_TRANSIENT_PATTERNS = (
+    "killed — scheduler restarted",
+    "killed — orphaned",
+)
+
+
+def _is_transient(err: str | None) -> bool:
+    if not err:
+        return False
+    e = err.strip()
+    return any(p in e for p in _TRANSIENT_PATTERNS)
+
+
 def _collect_failures() -> list[dict]:
-    """One row per job_name with at least one failure in the last 24h.
-    Returns: [{job_name, failed, total, fail_ratio, sample_error,
-               last_failure_at, last_success_at}]"""
+    """One row per job_name with at least one *real* failure in the last 24h.
+
+    Excludes 'killed — scheduler restarted' / 'killed — orphaned' kills
+    from the failed count (Railway redeploy noise). Jobs whose ONLY 24h
+    failures are transient kills don't appear in the digest at all.
+
+    Returns: [{job_name, failed, total, transient_failed, sample_error,
+               last_failure_at, last_success_at}]
+    """
     from workers.api_clients.db import execute_query
+    # `not_transient` boolean carries the classification — TRUE when the
+    # row's error_message doesn't match any transient pattern. We aggregate
+    # 'real failed' as COUNT FILTER (status=failed AND not_transient).
     rows = execute_query(
         """
         WITH last24 AS (
-            SELECT job_name, status, started_at, error_message
+            SELECT job_name, status, started_at, error_message,
+                   (status = 'failed' AND error_message IS NOT NULL
+                    AND error_message LIKE 'killed — %%') AS is_transient
               FROM pipeline_runs
              WHERE started_at >= NOW() - INTERVAL '24 hours'
         )
         SELECT
           job_name,
-          COUNT(*) FILTER (WHERE status = 'failed')    AS failed,
-          COUNT(*)                                      AS total,
-          MAX(started_at) FILTER (WHERE status = 'failed') AS last_failure_at,
+          COUNT(*) FILTER (WHERE status = 'failed' AND NOT is_transient) AS failed,
+          COUNT(*) FILTER (WHERE status = 'failed' AND is_transient)     AS transient_failed,
+          COUNT(*)                                                       AS total,
+          MAX(started_at) FILTER (WHERE status = 'failed' AND NOT is_transient) AS last_failure_at,
           MAX(started_at) FILTER (WHERE status = 'completed') AS last_success_at,
           (
               SELECT LEFT(error_message, %s)
                 FROM last24 e
                WHERE e.job_name = last24.job_name
                  AND e.status = 'failed'
+                 AND NOT e.is_transient
                  AND e.error_message IS NOT NULL
                ORDER BY e.started_at DESC LIMIT 1
           ) AS sample_error
           FROM last24
          GROUP BY job_name
-        HAVING COUNT(*) FILTER (WHERE status = 'failed') > 0
-         ORDER BY COUNT(*) FILTER (WHERE status = 'failed') DESC,
+        HAVING COUNT(*) FILTER (WHERE status = 'failed' AND NOT is_transient) > 0
+         ORDER BY COUNT(*) FILTER (WHERE status = 'failed' AND NOT is_transient) DESC,
                   job_name ASC
         """,
         (ERROR_SAMPLE_LEN,),

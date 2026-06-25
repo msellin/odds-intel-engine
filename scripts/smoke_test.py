@@ -15782,10 +15782,21 @@ def _():
     )
     # Must filter on status='failed' AT THE GROUP LEVEL, not just count
     # status. Without HAVING, even all-pass jobs would appear with
-    # failed=0 in the email.
-    assert "HAVING COUNT(*) FILTER (WHERE status = 'failed') > 0" in job, (
-        "_collect_failures must HAVING-filter to jobs with ≥1 failure — "
-        "without it, every job in the last 24h appears in the digest."
+    # failed=0 in the email. After 2026-06-25 the filter also excludes
+    # transient 'killed — scheduler restarted' / 'killed — orphaned'
+    # kills (Railway redeploy noise, not real bugs).
+    assert "HAVING COUNT(*) FILTER (WHERE status = 'failed' AND NOT is_transient) > 0" in job, (
+        "_collect_failures must HAVING-filter to jobs with ≥1 REAL failure "
+        "(non-transient) — without the is_transient filter, Railway "
+        "redeploy noise dominates the digest and hides real bugs."
+    )
+    # The transient classification patterns must be present.
+    assert "_TRANSIENT_PATTERNS" in job, (
+        "must define _TRANSIENT_PATTERNS — the 'killed — ...' strings "
+        "that mark Railway redeploy noise."
+    )
+    assert "killed — scheduler restarted" in job and "killed — orphaned" in job, (
+        "transient patterns must cover the two known Railway kill signatures."
     )
     # Must be quiet on healthy.
     run_block = job[job.index("def run_failure_digest("):]
@@ -15804,6 +15815,80 @@ def _():
     assert "CronTrigger(hour=8, minute=0)" in hook_block, (
         "scheduler hook must fire at 08:00 UTC — earlier than European "
         "morning kickoffs, late enough to capture the full prior day."
+    )
+
+    # 2026-06-25: wrapper must stamp counters into pipeline_runs.metadata
+    # so future audits can see whether the digest actually sent. The old
+    # wrapper used `_run_job(name, lambda: None)` which always wrote
+    # metadata=None — leaving operators blind to digest send/skip outcome.
+    wrapper_block = sched[sched.index("def job_pipeline_runs_failure_digest("):]
+    wrapper_block = wrapper_block[:wrapper_block.index("\ndef ")]
+    assert "log_pipeline_complete(run_id, metadata=counters)" in wrapper_block, (
+        "wrapper must persist run_failure_digest()'s counters into "
+        "pipeline_runs.metadata — the lambda:None pattern was the 32h "
+        "outage's silent-failure surface."
+    )
+
+
+@test("PIPELINE-FAILURE-ALERTER — hourly Telegram fire on 3+ consecutive failures")
+def _():
+    """Fast-cycle alerter that closes the 32h-lag gap surfaced by the
+    2026-06-23 FlareSolverr outage. Daily digest correctly identified
+    the 3 broken scrapers but operator didn't notice for 32h. Alerter
+    fires within 1-2h of any cron racking up CONSECUTIVE_FAILURE_THRESHOLD
+    non-transient failures.
+
+    Pin: module exists, threshold + dedup window constants in expected
+    ranges, scheduler wires the hourly cron, wrapper writes counters
+    to pipeline_runs.metadata, _stuck_jobs SQL excludes transient kills,
+    dedup uses pipeline_health_state.
+    """
+    import pathlib, importlib.util
+    p = pathlib.Path("workers/jobs/pipeline_failure_alerter.py")
+    assert p.exists(), "workers/jobs/pipeline_failure_alerter.py must exist"
+    src = p.read_text()
+
+    for needle in ("def _stuck_jobs", "def _alert_state", "def _record_alert",
+                   "def _clear_alert", "def _previously_alerted",
+                   "def run_alerter", "CONSECUTIVE_FAILURE_THRESHOLD",
+                   "ALERT_DEDUP_WINDOW_S", "pipeline_health_state",
+                   "PIPELINE_NAME_PREFIX",
+                   "killed — %%"):
+        assert needle in src, f"alerter missing {needle}"
+
+    spec = importlib.util.spec_from_file_location("pfa", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    # Threshold tuning: 3 is the sweet spot — high enough that one transient
+    # blip plus one real fail won't fire (would be too noisy), low enough
+    # that a 30-min cron alerts within ~90 min.
+    assert 2 <= mod.CONSECUTIVE_FAILURE_THRESHOLD <= 5, (
+        f"threshold must be 2-5, got {mod.CONSECUTIVE_FAILURE_THRESHOLD}"
+    )
+    # Dedup window must be long enough to avoid spam (operator already knows)
+    # but short enough to re-fire if the issue persists.
+    assert 1800 <= mod.ALERT_DEDUP_WINDOW_S <= 24 * 3600, (
+        f"dedup window must be 30min-24h, got {mod.ALERT_DEDUP_WINDOW_S}"
+    )
+
+    # Scheduler wires the hourly cron.
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    assert "def job_pipeline_failure_alerter(" in sched, (
+        "scheduler must define the wrapper function"
+    )
+    hook_idx = sched.index('id="pipeline_failure_alerter"')
+    hook_block = sched[max(0, hook_idx - 300):hook_idx + 100]
+    assert "CronTrigger(minute=" in hook_block, (
+        "alerter must fire on a sub-hourly CronTrigger so an outage "
+        "alerts within ~1h, not via the daily 08:00 digest path."
+    )
+
+    # Wrapper writes counters to metadata.
+    wrapper_block = sched[sched.index("def job_pipeline_failure_alerter("):]
+    wrapper_block = wrapper_block[:wrapper_block.index("\ndef ")]
+    assert "log_pipeline_complete(run_id, metadata=counters)" in wrapper_block, (
+        "alerter wrapper must stamp counters into pipeline_runs.metadata"
     )
 
 
