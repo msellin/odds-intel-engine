@@ -4,5 +4,11 @@
     "n_bets": 624,
     "roi_pct": 9.5715,
     "sha256": "53bd267fef2dfeab7fb7defb1dbe5b8121732e193b4e7b78f1ab445075774eb9"
+  },
+  "2026-06-25": {
+    "generated_at_utc": "2026-06-25T23:08:52.447652+00:00",
+    "n_bets": 626,
+    "roi_pct": 10.036,
+    "sha256": "8d5914087afffa499179a02f3eba023287eb10bdf8a3df6f8eac5d25574419b5"
   }
 }
