@@ -1,0 +1,97 @@
+name: OddsIntel — Weekly Competitor Audits
+
+# COMPETITOR-AUDIT-WEEKLY (2026-06-25): Sunday 02:00 UTC, re-run every
+# audit_vs_*.py to refresh ledger/comparison_*.json. The web landing
+# fetches these JSONs via raw.githubusercontent with 6h revalidate, so
+# this cron is what keeps the landing competitor numbers current.
+#
+# Does NOT re-scrape competitor data — that's a heavier monthly job
+# (separate workflow). This cron just re-runs the audit math on:
+#   - WinnerOdds  → fresh GraphQL pull each run (~5min)
+#   - SignalOdds / DeepBetting / Forebet / Tipstrr → existing dev/active
+#     JSON snapshots (re-runs the math but not the scrape)
+#   - Betaminic   → auth-walled, stays at status:"auth_required"
+#
+# Our cohort numbers DO update each run because OddsIntel keeps placing
+# new bets — every Sunday the matched-window n/ROI bump up.
+
+on:
+  schedule:
+    - cron: '0 2 * * 0'   # 02:00 UTC every Sunday
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: competitor-audits-weekly
+  cancel-in-progress: false
+
+jobs:
+  audits:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install deps
+        run: pip install --quiet psycopg2-binary python-dotenv rich requests
+
+      - name: Audit vs WinnerOdds
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        continue-on-error: true
+        run: python3 scripts/audit_vs_winnerodds.py
+
+      - name: Audit vs SignalOdds
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        continue-on-error: true
+        run: python3 scripts/audit_vs_signalodds.py
+
+      - name: Audit vs DeepBetting
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        continue-on-error: true
+        run: python3 scripts/audit_vs_deepbetting.py
+
+      - name: Audit vs Forebet
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        continue-on-error: true
+        run: python3 scripts/audit_vs_forebet.py
+
+      - name: Audit vs Tipstrr
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        continue-on-error: true
+        run: python3 scripts/audit_vs_tipstrr.py
+
+      - name: Commit + push if changed
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ledger/comparison_*.json
+          if git diff --cached --quiet; then
+            echo "No comparison-JSON changes — exiting cleanly."
+            exit 0
+          fi
+          DATE=$(date -u +%Y-%m-%d)
+          git commit -m "competitor-audits: weekly refresh ${DATE}
+
+          Auto-refreshed ledger/comparison_*.json via the
+          scripts/audit_vs_*.py pipeline. The web landing reads these
+          JSONs at runtime with 6h revalidate."
+          git push origin HEAD:main
