@@ -1,10 +1,10 @@
 {
   "source": "DeepBetting",
   "source_url": "https://deepbetting.io/dashboard/  (via /backend/api/predictions-api.php?type=stats)",
-  "snapshot_at_utc": "2026-06-24T18:40:17+00:00",
+  "snapshot_at_utc": "2026-06-28T03:03:04+00:00",
   "window": {
     "start": "2026-05-04",
-    "end": "2026-06-25"
+    "end": "2026-06-29"
   },
   "status": "ok",
   "min_sample_each_side": 50,
@@ -137,11 +137,11 @@
     "status_Push": 23
   },
   "our_stats_same_window": {
-    "n": 989,
-    "stake_total": 5458.92,
-    "pnl_total": 650.19,
-    "roi_pct": 11.91,
-    "hit_rate_pct": 46.21,
-    "avg_odds": 2.803
+    "n": 998,
+    "stake_total": 5503.16,
+    "pnl_total": 671.54,
+    "roi_pct": 12.2,
+    "hit_rate_pct": 46.19,
+    "avg_odds": 2.812
   }
 }
