@@ -61,9 +61,13 @@ if pgrep -lf "Chrome-CDP-OddsIntel" >/dev/null; then
 fi
 
 echo "✓ Launching CDP-Chrome on port $PORT (separate from your normal Chrome)"
+# --profile-directory="Default" hard-pins to the seeded profile so Chrome
+# never boots into chrome://profile-picker/ (which CDP cannot DOM-drive,
+# stalling auto_self_heal at the chrome_at_profile_picker bailout).
 "$CHROME" \
     --remote-debugging-port=$PORT \
     --user-data-dir="$CDP_PROFILE" \
+    --profile-directory="Default" \
     --no-first-run \
     --no-default-browser-check \
     >/dev/null 2>&1 &

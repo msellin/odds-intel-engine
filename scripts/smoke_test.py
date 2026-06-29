@@ -4706,6 +4706,27 @@ def test_coolbet_selfheal_docker_fs():
         "grep finds it before someone 'cleans up' the seemingly-redundant logic."
     )
 
+    # (d) COOLBET_FS_LOCAL_URL (2026-06-26): Coolbet-specific override for
+    # ad-hoc Mac CLI runs (smoke tests, manual placer dry-runs) that pick
+    # up a Railway FLARESOLVERR_URL from .env. The Mac daemon's launchd plist
+    # already pins localhost, but CLI runs inherit the .env value. Without
+    # this override, a `python3 -m workers.automation.coolbet_placer`
+    # invocation from the shell would 500 forever while the daemon hummed
+    # along happily — exactly today's misdiagnosis.
+    assert "COOLBET_FS_LOCAL_URL" in fs_call_block, (
+        "_fs_call must check COOLBET_FS_LOCAL_URL — Coolbet-specific override "
+        "that lets ad-hoc Mac CLI runs prefer local FS without touching the "
+        "shared FLARESOLVERR_URL (which Railway-hosted callers still need)."
+    )
+    # The override must short-circuit BEFORE the COOLBET_MAC_POLL_S branch
+    # so it works for CLI (no daemon env) too.
+    override_idx = fs_call_block.index("COOLBET_FS_LOCAL_URL")
+    daemon_idx = fs_call_block.index("COOLBET_MAC_POLL_S")
+    assert override_idx < daemon_idx, (
+        "COOLBET_FS_LOCAL_URL check must run before COOLBET_MAC_POLL_S — "
+        "otherwise CLI runs (no daemon env) skip the override."
+    )
+
 
 @test("COOLBET-DAEMON-SELFPAUSE — daemon auto-sets placement_paused after sustained errors, auto-clears on recovery")
 def test_coolbet_daemon_selfpause():

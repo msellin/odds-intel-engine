@@ -125,21 +125,31 @@ def _fs_call(body: dict, *, timeout_s: int = 90) -> dict:
     Returns the parsed JSON envelope: { status: 'ok'|'error', solution: {...},
     message, version, startTimestamp, endTimestamp }.
 
-    DEFENSIVE-FS-URL (2026-06-17): if FLARESOLVERR_URL points to a remote
-    host (not localhost / 127.0.0.1) AND we're on the Mac daemon (signalled
-    by COOLBET_MAC_POLL_S being set, since only the daemon's plist sets
-    that), AND the local FS is reachable on the default port, prefer
-    localhost. Defends against operator-side .env drift where a Railway
-    FS URL leaks into the Mac environment (today's session-discovered bug).
-    The Mac daemon's premise IS residential-IP placement — going via
-    Railway defeats it."""
+    COOLBET_FS_LOCAL_URL (2026-06-26): Coolbet-specific override. When set
+    AND reachable, used in preference to FLARESOLVERR_URL — covers ad-hoc
+    Mac CLI runs (smoke tests, manual placer dry-runs) that otherwise pick
+    up a Railway URL from .env and 500. Mac-only opt-in by being set;
+    Railway-hosted callers don't see it.
+
+    DEFENSIVE-FS-URL (2026-06-17): legacy fallback for the Mac daemon path
+    — if FLARESOLVERR_URL points to a remote host AND COOLBET_MAC_POLL_S
+    is set (daemon-only signal from launchd plist), prefer localhost too.
+    Retained for safety; COOLBET_FS_LOCAL_URL supersedes it when set."""
     raw_fs_url = os.getenv("FLARESOLVERR_URL") or _FS_URL_DEFAULT
-    if (raw_fs_url
+    local_override = os.getenv("COOLBET_FS_LOCAL_URL")
+    if local_override:
+        try:
+            import urllib.request as _u
+            with _u.urlopen(local_override.rstrip("/") + "/", timeout=2) as r:
+                if r.status == 200:
+                    raw_fs_url = local_override
+        except Exception:
+            pass  # fall through to FLARESOLVERR_URL if local unreachable
+    elif (raw_fs_url
             and "localhost" not in raw_fs_url
             and "127.0.0.1" not in raw_fs_url
             and os.getenv("COOLBET_MAC_POLL_S")):
-        # On the Mac daemon, prefer local FS if reachable. Cheap reachability
-        # check — fail-closed (keep configured URL) on any error.
+        # Mac-daemon path. Cheap reachability check — fail-closed.
         try:
             import urllib.request as _u
             with _u.urlopen(_FS_URL_DEFAULT + "/", timeout=2) as r:
