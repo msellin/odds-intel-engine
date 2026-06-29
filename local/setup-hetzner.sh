@@ -20,7 +20,7 @@
 
 set -euo pipefail
 
-REPO_URL="git@github.com:margussellin/odds-intel-engine.git"
+REPO_URL="https://github.com/msellin/odds-intel-engine.git"
 REPO_DIR="/opt/odds-intel-engine"
 SERVICE_NAME="oddsintel-scheduler"
 
@@ -54,7 +54,7 @@ fi
 
 # ── 3. Python dependencies ───────────────────────────────────────────────────
 echo "[3/5] Installing Python dependencies..."
-pip3 install -q -r "$REPO_DIR/requirements.txt"
+pip3 install -q --break-system-packages -r "$REPO_DIR/requirements.txt"
 
 # ── 4. FlareSolverr ──────────────────────────────────────────────────────────
 echo "[4/5] Starting FlareSolverr..."

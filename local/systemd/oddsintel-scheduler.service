@@ -13,7 +13,7 @@
 #   systemctl restart oddsintel-scheduler         # force restart (e.g. after code pull)
 #   systemctl stop oddsintel-scheduler            # graceful stop
 #
-# After a code pull (git pull && pip install -r requirements.txt):
+# After a code pull (git pull && pip3 install --break-system-packages -r requirements.txt):
 #   systemctl restart oddsintel-scheduler
 #
 # IMPORTANT: WorkingDirectory and EnvironmentFile paths are hard-coded for
