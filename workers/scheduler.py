@@ -1,8 +1,8 @@
 """
-OddsIntel — Railway Scheduler
+OddsIntel — Pipeline Scheduler
 
 Long-running process that replaces GitHub Actions cron scheduling.
-Uses APScheduler for timed jobs + a health endpoint for Railway.
+Uses APScheduler for timed jobs + a health endpoint on :8080.
 
 Run: python -m workers.scheduler
 """
@@ -25,7 +25,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
 from rich.console import Console
 
-# APScheduler logs every job-fire at INFO — with 50+ jobs this hits Railway's 500/sec limit.
+# APScheduler logs every job-fire at INFO — suppress to keep logs readable at 50+ jobs.
 logging.getLogger("apscheduler").setLevel(logging.WARNING)
 
 # Ensure project root is on path
@@ -2415,23 +2415,23 @@ def main():
     signal.signal(signal.SIGINT, _handle_signal)
 
     console.print("[bold green]═══════════════════════════════════════════════[/bold green]")
-    console.print("[bold green]   OddsIntel Railway Scheduler starting...    [/bold green]")
+    console.print("[bold green]   OddsIntel Pipeline Scheduler starting...   [/bold green]")
     console.print("[bold green]═══════════════════════════════════════════════[/bold green]")
 
     if SHADOW_MODE:
         console.print("[yellow]SHADOW MODE: job names prefixed with 'railway_'[/yellow]")
 
-    # Start health endpoint FIRST — must respond before Railway's health check window
+    # Start health endpoint FIRST — responds on :8080/health for external monitors.
     _start_health_server()
 
-    # Clean up orphaned "running" records from previous process (Railway kill/restart)
-    # 10-min threshold catches jobs that were <30 min old under the old logic
+    # Clean up orphaned "running" records from previous process (restart/kill).
+    # 10-min threshold catches jobs that were <30 min old under the old logic.
     _cleanup_stale_runs(threshold_minutes=10, label="scheduler restarted")
 
-    # SETTLEMENT-CATCHUP: if last night's daily settlement got killed by a deploy
-    # (frequent during active dev — every git push restarts Railway), the 21:00 /
-    # 23:30 / 01:00 redundant runs may all have been wiped. Detect that and
-    # fire one settlement run shortly after startup.
+    # SETTLEMENT-CATCHUP: if last night's daily settlement got killed mid-run
+    # (process restart, host reboot), the 21:00 / 23:30 / 01:00 redundant runs
+    # may all have been wiped. Detect that and fire one settlement run shortly
+    # after startup.
     _maybe_catchup_missed_settlement()
 
     # Sync budget in background (API call can take 2-5s, don't block startup)

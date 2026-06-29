@@ -38,10 +38,10 @@ log = logging.getLogger(__name__)
 # operational cadences they relate to:
 #   • Mac daemon ticks every 30 min → flag at 60 min
 #   • Catch-net runs every 5 min → flag at 15 min
-#   • Railway heartbeat every 5 min → flag at 15 min
+#   • Scheduler heartbeat every 5 min → flag at 15 min
 DAEMON_STALE_MIN = int(os.getenv("COOLBET_DAILY_DAEMON_STALE_MIN", "60"))
 CATCHNET_STALE_MIN = int(os.getenv("COOLBET_DAILY_CATCHNET_STALE_MIN", "15"))
-RAILWAY_HB_STALE_MIN = int(os.getenv("COOLBET_DAILY_RAILWAY_STALE_MIN", "15"))
+SCHEDULER_HB_STALE_MIN = int(os.getenv("COOLBET_DAILY_SCHEDULER_STALE_MIN", "15"))
 JWT_TTL_WARN_MIN = int(os.getenv("COOLBET_DAILY_JWT_TTL_WARN_MIN", "5"))
 
 
@@ -173,8 +173,8 @@ def _format_summary(s: dict) -> str:
         warnings.append(f"🛑 daemon last tick {_fmt_age(daemon_age)} ago (stale)")
     elif daemon_errs > 0:
         warnings.append(f"⚠ daemon last tick errored")
-    if hb_age is None or hb_age > RAILWAY_HB_STALE_MIN * 60:
-        warnings.append(f"🛑 Railway heartbeat {_fmt_age(hb_age)} ago (stale)")
+    if hb_age is None or hb_age > SCHEDULER_HB_STALE_MIN * 60:
+        warnings.append(f"🛑 Scheduler heartbeat {_fmt_age(hb_age)} ago (stale)")
     if prekickoff_age is not None and prekickoff_age > CATCHNET_STALE_MIN * 60:
         warnings.append(f"🛑 catch-net {_fmt_age(prekickoff_age)} ago (cron silent)")
     # Only flag JWT-low when token is still valid but TTL is shrinking
@@ -191,7 +191,7 @@ def _format_summary(s: dict) -> str:
         f"",
         f"🤖 Daemon: tick {_fmt_age(daemon_age)} ago · last: placed={daemon_placed} errors={daemon_errs}",
         f"🔑 JWT: TTL {_fmt_age(jwt_ttl) if (jwt_ttl is not None and jwt_ttl > 0) else 'expired'}",
-        f"🛰 Railway HB: {_fmt_age(hb_age)} ago · ok={bool(s.get('last_heartbeat_ok'))}",
+        f"🛰 Scheduler HB: {_fmt_age(hb_age)} ago · ok={bool(s.get('last_heartbeat_ok'))}",
         f"🚨 Catch-net: {_fmt_age(prekickoff_age)} ago · sent={prek_sent}",
         f"",
         f"📊 24h: {placed_24h} placed · W{won_24h}/L{lost_24h} · pnl €{pnl_24h:+.2f}",

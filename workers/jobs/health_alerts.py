@@ -376,18 +376,18 @@ def check_odds_bloat() -> None:
 
 
 def check_memory_usage() -> None:
-    """MEMORY-MONITORING (2026-05-25): Railway pod OOM is silent — process gets
-    killed without emitting a Python exception, the pipeline just stops. This
-    check reads the current process RSS via psutil and alerts at >85% of the
-    Railway pod limit (default 1 GiB). The check runs every 30 min via
-    scheduler so an OOM trajectory can be caught before the kill.
+    """MEMORY-MONITORING (2026-05-25): OOM is silent — process gets killed without
+    emitting a Python exception, the pipeline just stops. This check reads the current
+    process RSS via psutil and alerts at >85% of the configured limit. The check runs
+    every 30 min via scheduler so an OOM trajectory can be caught before the kill.
+    Set SCHEDULER_PROCESS_MB_LIMIT to the host's available RAM (default 4096 MB).
     """
     try:
         import psutil
         proc = psutil.Process(os.getpid())
         rss_mb = proc.memory_info().rss / 1024 / 1024
     except Exception:
-        # psutil may not be installed locally; fall back to /proc/self/status (Linux only)
+        # psutil may not be installed; fall back to /proc/self/status (Linux only)
         try:
             with open("/proc/self/status") as f:
                 for line in f:
@@ -398,11 +398,9 @@ def check_memory_usage() -> None:
                 else:
                     return  # No VmRSS field — skip
         except FileNotFoundError:
-            return  # Not on Linux — skip silently (Mac dev env)
+            return  # Not on Linux — skip silently
 
-    # Railway "Hobby" pod gives 8 GiB by default; we're conservative at 1 GiB
-    # for the engine service since LivePoller + scheduler share the container.
-    limit_mb = int(os.getenv("RAILWAY_POD_MEM_LIMIT_MB", "1024"))
+    limit_mb = int(os.getenv("SCHEDULER_PROCESS_MB_LIMIT", "4096"))
     pct = rss_mb / limit_mb * 100
     console.print(f"[dim]health_alerts: process RSS = {rss_mb:.0f} MB / {limit_mb} MB ({pct:.0f}%)[/dim]")
 
@@ -411,10 +409,11 @@ def check_memory_usage() -> None:
             "memory_high",
             f"Memory pressure — {rss_mb:.0f} MB / {limit_mb} MB ({pct:.0f}%)",
             f"<p>The engine process is using <b>{rss_mb:.0f} MB</b> of memory ({pct:.0f}% of "
-            f"the {limit_mb} MB cap). Railway will kill the pod near 100%.</p>"
+            f"the {limit_mb} MB cap).</p>"
             f"<p>Likely cause: a backfill or batch job is loading large in-memory dicts. "
             f"Check the most recent pipeline_runs entries for any memory-heavy job.</p>"
-            f"<p>Quick mitigation: restart the engine service on Railway.</p>",
+            f"<p>Quick mitigation: restart the scheduler (systemctl restart oddsintel-scheduler "
+            f"or launchctl kickstart on Mac).</p>",
         )
 
 

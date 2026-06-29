@@ -26785,5 +26785,51 @@ def _():
     )
 
 
+@test("RAILWAY-ELIMINATION-CODE-CLEAN — Railway-specific env var names and alert text removed from scheduler code")
+def test_railway_elimination_code_clean():
+    import pathlib
+    root = pathlib.Path(__file__).parent.parent
+
+    health_src = (root / "workers/jobs/health_alerts.py").read_text()
+    summary_src = (root / "workers/jobs/coolbet_daily_summary.py").read_text()
+    scheduler_src = (root / "workers/scheduler.py").read_text()
+
+    assert "RAILWAY_POD_MEM_LIMIT_MB" not in health_src, (
+        "health_alerts.py must not reference RAILWAY_POD_MEM_LIMIT_MB — "
+        "renamed to SCHEDULER_PROCESS_MB_LIMIT (host-agnostic)"
+    )
+    assert "SCHEDULER_PROCESS_MB_LIMIT" in health_src, (
+        "health_alerts.py must use SCHEDULER_PROCESS_MB_LIMIT as the memory cap env var"
+    )
+    assert "restart the engine service on Railway" not in health_src, (
+        "memory alert body must not tell operator to restart on Railway"
+    )
+
+    assert "COOLBET_DAILY_RAILWAY_STALE_MIN" not in summary_src, (
+        "coolbet_daily_summary.py must not reference COOLBET_DAILY_RAILWAY_STALE_MIN — "
+        "renamed to COOLBET_DAILY_SCHEDULER_STALE_MIN (with old name as fallback)"
+    )
+    assert "COOLBET_DAILY_SCHEDULER_STALE_MIN" in summary_src, (
+        "coolbet_daily_summary.py must use COOLBET_DAILY_SCHEDULER_STALE_MIN"
+    )
+    assert "Railway heartbeat" not in summary_src, (
+        "coolbet_daily_summary.py must use 'Scheduler heartbeat' not 'Railway heartbeat'"
+    )
+    assert "Scheduler heartbeat" in summary_src, (
+        "coolbet_daily_summary.py must label the HB check as 'Scheduler heartbeat'"
+    )
+    assert "Railway HB" not in summary_src, (
+        "coolbet_daily_summary.py Telegram status line must say 'Scheduler HB' not 'Railway HB'"
+    )
+
+    assert "Railway Scheduler" not in scheduler_src, (
+        "scheduler.py banner/docstring must not say 'Railway Scheduler' — "
+        "renamed to 'Pipeline Scheduler'"
+    )
+    assert "Pipeline Scheduler" in scheduler_src, (
+        "scheduler.py must use 'Pipeline Scheduler' in banner/docstring"
+    )
+
+
 if __name__ == "__main__":
     main()
