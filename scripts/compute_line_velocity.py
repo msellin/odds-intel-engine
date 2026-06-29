@@ -51,19 +51,24 @@ def _compute_velocities(since: str = "2026-04-01") -> dict[str, float]:
     """Returns {match_id: line_velocity} for matches with ≥3 Pinnacle home
     snapshots in the T-12h..T-2h window before KO.
     """
-    rows = execute_query("""
-        SELECT m.id AS match_id, m.date AS kickoff,
-               os.timestamp, os.odds, os.minutes_to_kickoff
-        FROM matches m
-        JOIN odds_snapshots os ON os.match_id = m.id
-        WHERE m.date >= %s
-          AND os.market = '1x2' AND os.selection = 'home'
-          AND os.bookmaker = 'Pinnacle'
-          AND os.is_live = false
-          AND os.minutes_to_kickoff BETWEEN 120 AND 720  -- 2h to 12h pre-KO
-          AND os.odds > 1.0
-        ORDER BY m.id, os.timestamp ASC
-    """, (since,))
+    # SET LOCAL overrides Supabase's 1-min default (resets per transaction via PgBouncer)
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=__import__('psycopg2.extras', fromlist=['RealDictCursor']).RealDictCursor) as cur:
+            cur.execute("SET LOCAL statement_timeout = '5min'")
+            cur.execute("""
+                SELECT m.id AS match_id, m.date AS kickoff,
+                       os.timestamp, os.odds, os.minutes_to_kickoff
+                FROM matches m
+                JOIN odds_snapshots os ON os.match_id = m.id
+                WHERE m.date >= %s
+                  AND os.market = '1x2' AND os.selection = 'home'
+                  AND os.bookmaker = 'Pinnacle'
+                  AND os.is_live = false
+                  AND os.minutes_to_kickoff BETWEEN 120 AND 720  -- 2h to 12h pre-KO
+                  AND os.odds > 1.0
+                ORDER BY m.id, os.timestamp ASC
+            """, (since,))
+            rows = [dict(r) for r in cur.fetchall()]
 
     by_match: dict[str, list[tuple]] = defaultdict(list)
     for r in rows:
@@ -174,7 +179,9 @@ def backtest():
 
 
 def write_today_signals():
-    velocities = _compute_velocities("2026-05-18")  # last ~7d of finished matches
+    from datetime import date, timedelta
+    since = (date.today() - timedelta(days=14)).isoformat()
+    velocities = _compute_velocities(since)
     if not velocities:
         return
     console.print(f"\nWriting {len(velocities):,} line_velocity rows...")
@@ -197,10 +204,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--write", action="store_true")
     args = ap.parse_args()
-    backtest()
     if args.write:
+        # Scheduled mode: skip backtest (informational only), just write signals
         write_today_signals()
     else:
+        backtest()
         console.print("\n[yellow]Pass --write to also persist signals[/yellow]")
 
 
