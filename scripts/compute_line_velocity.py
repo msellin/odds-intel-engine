@@ -66,12 +66,12 @@ def _compute_velocities(since: str = "2026-04-01") -> dict[str, float]:
 
     # Step 2: fetch Pinnacle snapshots per batch using match_id index
     rows: list[dict] = []
-    BATCH = 200
+    BATCH = 50
     for i in range(0, len(match_ids), BATCH):
         batch = match_ids[i:i + BATCH]
         with get_conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("SET LOCAL statement_timeout = '30s'")
+                cur.execute("SET LOCAL statement_timeout = '5min'")
                 cur.execute("""
                     SELECT os.match_id, os.timestamp, os.odds, os.minutes_to_kickoff
                     FROM odds_snapshots os
