@@ -50,25 +50,40 @@ def _linear_slope(xs: list[float], ys: list[float]) -> float:
 def _compute_velocities(since: str = "2026-04-01") -> dict[str, float]:
     """Returns {match_id: line_velocity} for matches with ≥3 Pinnacle home
     snapshots in the T-12h..T-2h window before KO.
+    Queries via match_id batches to use the match_id index instead of full scan.
     """
-    # SET LOCAL overrides Supabase's 1-min default (resets per transaction via PgBouncer)
-    with get_conn() as conn:
-        with conn.cursor(cursor_factory=__import__('psycopg2.extras', fromlist=['RealDictCursor']).RealDictCursor) as cur:
-            cur.execute("SET LOCAL statement_timeout = '5min'")
-            cur.execute("""
-                SELECT m.id AS match_id, m.date AS kickoff,
-                       os.timestamp, os.odds, os.minutes_to_kickoff
-                FROM matches m
-                JOIN odds_snapshots os ON os.match_id = m.id
-                WHERE m.date >= %s
-                  AND os.market = '1x2' AND os.selection = 'home'
-                  AND os.bookmaker = 'Pinnacle'
-                  AND os.is_live = false
-                  AND os.minutes_to_kickoff BETWEEN 120 AND 720  -- 2h to 12h pre-KO
-                  AND os.odds > 1.0
-                ORDER BY m.id, os.timestamp ASC
-            """, (since,))
-            rows = [dict(r) for r in cur.fetchall()]
+    import psycopg2.extras
+
+    # Step 1: get match IDs from matches table (fast — no odds_snapshots scan)
+    match_rows = execute_query("""
+        SELECT id FROM matches
+        WHERE date >= %s AND date < NOW()
+        ORDER BY id
+    """, (since,))
+    match_ids = [str(r["id"]) for r in match_rows]
+    if not match_ids:
+        return {}
+
+    # Step 2: fetch Pinnacle snapshots per batch using match_id index
+    rows: list[dict] = []
+    BATCH = 200
+    for i in range(0, len(match_ids), BATCH):
+        batch = match_ids[i:i + BATCH]
+        with get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SET LOCAL statement_timeout = '30s'")
+                cur.execute("""
+                    SELECT os.match_id, os.timestamp, os.odds, os.minutes_to_kickoff
+                    FROM odds_snapshots os
+                    WHERE os.match_id = ANY(%s::uuid[])
+                      AND os.market = '1x2' AND os.selection = 'home'
+                      AND os.bookmaker = 'Pinnacle'
+                      AND os.is_live = false
+                      AND os.minutes_to_kickoff BETWEEN 120 AND 720
+                      AND os.odds > 1.0
+                    ORDER BY os.match_id, os.timestamp ASC
+                """, (batch,))
+                rows.extend(dict(r) for r in cur.fetchall())
 
     by_match: dict[str, list[tuple]] = defaultdict(list)
     for r in rows:
