@@ -739,28 +739,35 @@ def _():
     )
 
 
-@test("OPS-COVERAGE-TIMEOUT — odds_coverage query uses FILTER aggregates, not NOT EXISTS subquery")
+@test("OPS-COVERAGE-TIMEOUT — odds_coverage uses EXISTS-per-match, not full-table COUNT(DISTINCT)")
 def _():
-    """The original odds_coverage query used a correlated NOT EXISTS subquery
-    against the full odds_snapshots table. At ~1.9M today-odds rows it timed
-    out at Postgres statement_timeout (120s), the exception was silently caught,
-    and the snapshot wrote 0 in all 8 odds columns — making the dashboard show
-    no odds while the odds-fetch jobs were succeeding. Guard the rewritten form."""
+    """Guard against slow odds_coverage queries in write_ops_snapshot().
+    History of regressions:
+      v1 (original): NOT EXISTS correlated subquery → timed out at ~1.9M rows
+      v2 (May-10):   FILTER(WHERE o.bookmaker=...) aggregates → timed out again at 14M rows
+      v3 (Jun-29):   EXISTS per match in matches table (~500 × 1 index lookup) — the current form
+    This test pins v3 and rejects both earlier slow forms."""
     import pathlib
     src = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
     fn_start = src.index("def write_ops_snapshot(")
     next_def = src.find("\ndef ", fn_start + 1)
     fn_body = src[fn_start:next_def] if next_def != -1 else src[fn_start:]
 
-    # The slow form must not return.
+    # Neither of the two historical slow forms must appear.
     assert "NOT EXISTS (\n                SELECT 1 FROM odds_snapshots o2" not in fn_body, (
-        "OPS-COVERAGE-TIMEOUT: NOT EXISTS subquery is back — odds_coverage will time out on large days"
+        "OPS-COVERAGE-TIMEOUT: NOT EXISTS correlated subquery is back — will time out"
     )
-    # The fast form must use FILTER aggregates.
-    assert "FILTER (WHERE o.bookmaker = 'Pinnacle')" in fn_body, (
-        "OPS-COVERAGE-TIMEOUT: with_pinnacle FILTER aggregate missing"
+    assert "FILTER (WHERE o.bookmaker = 'Pinnacle')" not in fn_body, (
+        "OPS-COVERAGE-TIMEOUT: v2 FILTER-aggregate form is back — will time out at 14M+ rows"
     )
-    # without_pinnacle is now derived in Python, not SQL.
+    # The v3 fast form: EXISTS per match from the matches table.
+    assert "FROM matches m WHERE date::date" in fn_body, (
+        "OPS-COVERAGE-TIMEOUT: v3 EXISTS-per-match query missing (must iterate matches, not odds_snapshots)"
+    )
+    assert "WHERE EXISTS (" in fn_body and "bookmaker = 'Pinnacle'" in fn_body, (
+        "OPS-COVERAGE-TIMEOUT: with_pinnacle EXISTS subquery missing"
+    )
+    # without_pinnacle derived in Python.
     assert "matches_with_odds - matches_with_pinnacle" in fn_body, (
         "OPS-COVERAGE-TIMEOUT: without_pinnacle must be derived in Python (with_odds - with_pinnacle)"
     )

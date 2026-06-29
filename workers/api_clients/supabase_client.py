@@ -5233,35 +5233,57 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
         failed_sections.append("fixtures_count")
         console.print(f"[yellow]ops_snapshot: fixtures_count failed: {e}[/yellow]")
 
-    # OPS-COVERAGE-TIMEOUT (2026-05-10): the previous query used a NOT EXISTS
-    # correlated subquery to compute without_pinnacle. At ~1.9M today-odds
-    # rows that took >120s and tripped Postgres statement_timeout, leaving
-    # all 8 counters at 0 — every other ops_snapshot row showed 0 odds.
-    # Use FILTER aggregates and derive without_pinnacle = with_odds - with_pinnacle.
+    # OPS-COVERAGE-TIMEOUT-V2 (2026-06-29): COUNT(DISTINCT match_id) over all
+    # today's odds rows hit 121s even after the JOIN→FILTER rewrite (May-10)
+    # as odds_snapshots grew to 14M+ rows. Root cause: deduplication across
+    # thousands of rows is inherently O(n). Fix: split into two fast queries.
+    # Step A — EXISTS per match (~500 matches × 1 index lookup each ≈ <1s).
+    # Step B — COUNT(*)/COUNT(DISTINCT bookmaker) over the match_id set
+    #          (~5k rows/day, no dedup needed, index scan only).
     try:
-        r = execute_query(
+        r_cov = execute_query(
             """
             SELECT
-              COUNT(DISTINCT o.match_id)                                            AS with_odds,
-              COUNT(DISTINCT o.match_id) FILTER (WHERE o.bookmaker = 'Pinnacle')    AS with_pinnacle,
-              COUNT(*)                                                              AS snapshots_today,
-              COUNT(DISTINCT o.bookmaker)                                           AS distinct_bm,
-              COUNT(DISTINCT o.match_id) FILTER (WHERE o.market = '1x2')            AS mkt_match_winner,
-              COUNT(DISTINCT o.match_id) FILTER (WHERE o.market = 'over_under_25')  AS mkt_goals_ou,
-              COUNT(DISTINCT o.match_id) FILTER (WHERE o.market = 'btts')           AS mkt_btts
-            FROM odds_snapshots o
-            JOIN matches m ON m.id = o.match_id
-            WHERE m.date::date = %s
+              COUNT(*) FILTER (WHERE EXISTS (
+                  SELECT 1 FROM odds_snapshots WHERE match_id = m.id LIMIT 1
+              ))                                                              AS with_odds,
+              COUNT(*) FILTER (WHERE EXISTS (
+                  SELECT 1 FROM odds_snapshots WHERE match_id = m.id
+                  AND bookmaker = 'Pinnacle' LIMIT 1
+              ))                                                              AS with_pinnacle,
+              COUNT(*) FILTER (WHERE EXISTS (
+                  SELECT 1 FROM odds_snapshots WHERE match_id = m.id
+                  AND market = '1x2' LIMIT 1
+              ))                                                              AS mkt_match_winner,
+              COUNT(*) FILTER (WHERE EXISTS (
+                  SELECT 1 FROM odds_snapshots WHERE match_id = m.id
+                  AND market = 'over_under_25' LIMIT 1
+              ))                                                              AS mkt_goals_ou,
+              COUNT(*) FILTER (WHERE EXISTS (
+                  SELECT 1 FROM odds_snapshots WHERE match_id = m.id
+                  AND market = 'btts' LIMIT 1
+              ))                                                              AS mkt_btts
+            FROM matches m WHERE date::date = %s
             """, [today])
-        if r:
-            matches_with_odds        = r[0]["with_odds"]
-            matches_with_pinnacle    = r[0]["with_pinnacle"]
+        today_ids = [str(r["id"]) for r in execute_query(
+            "SELECT id FROM matches WHERE date::date = %s", [today])]
+        r_snap: list = []
+        if today_ids:
+            r_snap = execute_query(
+                """
+                SELECT COUNT(*) AS snapshots_today, COUNT(DISTINCT bookmaker) AS distinct_bm
+                FROM odds_snapshots WHERE match_id = ANY(%s::uuid[])
+                """, [today_ids])
+        if r_cov:
+            matches_with_odds        = r_cov[0]["with_odds"]
+            matches_with_pinnacle    = r_cov[0]["with_pinnacle"]
             matches_without_pinnacle = matches_with_odds - matches_with_pinnacle
-            odds_snapshots_today     = r[0]["snapshots_today"]
-            distinct_bookmakers      = r[0]["distinct_bm"]
-            odds_market_match_winner = r[0]["mkt_match_winner"]
-            odds_market_goals_ou     = r[0]["mkt_goals_ou"]
-            odds_market_btts         = r[0]["mkt_btts"]
+            odds_market_match_winner = r_cov[0]["mkt_match_winner"]
+            odds_market_goals_ou     = r_cov[0]["mkt_goals_ou"]
+            odds_market_btts         = r_cov[0]["mkt_btts"]
+        if r_snap:
+            odds_snapshots_today = r_snap[0]["snapshots_today"]
+            distinct_bookmakers  = r_snap[0]["distinct_bm"]
     except Exception as e:
         failed_sections.append("odds_coverage")
         console.print(f"[yellow]ops_snapshot: odds_coverage failed: {e}[/yellow]")
