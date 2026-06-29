@@ -147,11 +147,101 @@ def prune(dry_run: bool = True, mode: str = "hourly") -> int:
     return total_deleted
 
 
+def prune_old_simple(max_matches: int = 5000, dry_run: bool = False) -> int:
+    """
+    Fast backlog cleaner for finished matches older than 30 days.
+    No window functions — just deletes everything that isn't is_closing or is_opening.
+    Safe to re-run (already-compacted matches delete 0 rows).
+    Uses SET LOCAL statement_timeout per transaction to override Supabase's 1-min default.
+    Called nightly at 03:00 UTC to drain the historical backlog incrementally.
+    """
+    import psycopg2
+
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        print("DATABASE_URL not set")
+        return 0
+
+    print(f"{'[DRY RUN] ' if dry_run else ''}prune_old_simple: max_matches={max_matches}")
+
+    conn = psycopg2.connect(db_url)
+    conn.autocommit = False
+    cur = conn.cursor()
+
+    cur.execute("SET LOCAL statement_timeout = '10min'")
+    cur.execute("""
+        SELECT id FROM matches
+        WHERE status = 'finished'
+          AND date < NOW() - INTERVAL '30 days'
+        ORDER BY id
+        LIMIT %s
+    """, (max_matches,))
+    match_ids = [str(r[0]) for r in cur.fetchall()]
+    conn.commit()
+
+    print(f"  Matches fetched: {len(match_ids):,}")
+    if not match_ids:
+        print("  Nothing to do.")
+        conn.close()
+        return 0
+
+    BATCH = 100
+    total_deleted = 0
+
+    for i in range(0, len(match_ids), BATCH):
+        batch = match_ids[i:i + BATCH]
+        attempt = 0
+        while attempt < 5:
+            try:
+                cur.execute("SET LOCAL statement_timeout = '10min'")
+                if not dry_run:
+                    cur.execute("""
+                        DELETE FROM odds_snapshots
+                        WHERE match_id = ANY(%s::uuid[])
+                          AND NOT COALESCE(is_closing, false)
+                          AND NOT COALESCE(is_opening, false)
+                    """, (batch,))
+                    deleted = cur.rowcount
+                    conn.commit()
+                else:
+                    cur.execute("""
+                        SELECT COUNT(*) FROM odds_snapshots
+                        WHERE match_id = ANY(%s::uuid[])
+                          AND NOT COALESCE(is_closing, false)
+                          AND NOT COALESCE(is_opening, false)
+                    """, (batch,))
+                    deleted = cur.fetchone()[0]
+                    conn.rollback()
+                total_deleted += deleted
+                break
+            except psycopg2.errors.QueryCanceled:
+                conn.rollback()
+                attempt += 1
+                if len(batch) > 10:
+                    batch = batch[:max(len(batch) // 2, 10)]
+                else:
+                    print(f"  batch {i} skipped after {attempt} timeouts")
+                    break
+            except Exception as e:
+                conn.rollback()
+                print(f"  batch {i} error: {type(e).__name__}: {e}")
+                break
+
+    print(f"  {'Would delete' if dry_run else 'Deleted'}: {total_deleted:,} rows from {len(match_ids):,} matches")
+    conn.close()
+    return total_deleted
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true",
                         help="Actually delete rows (default is dry run)")
-    parser.add_argument("--mode", choices=["hourly", "compact"], default="hourly",
-                        help="hourly=keep 1/hour (research phase); compact=keep first+last only (post-validation)")
+    parser.add_argument("--mode", choices=["hourly", "compact", "simple_old"], default="hourly",
+                        help="hourly=keep 1/hour; compact=keep first+last; simple_old=backlog drain (>30d, no window fn)")
+    parser.add_argument("--max-matches", type=int, default=5000,
+                        help="Max matches to process (simple_old mode only)")
     args = parser.parse_args()
-    prune(dry_run=not args.apply, mode=args.mode)
+    if args.mode == "simple_old":
+        prune_old_simple(max_matches=args.max_matches, dry_run=not args.apply)
+    else:
+        prune(dry_run=not args.apply, mode=args.mode)

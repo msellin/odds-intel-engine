@@ -2738,6 +2738,16 @@ def main():
     scheduler.add_job(job_prune_anon_users, CronTrigger(day_of_week="sun", hour=2, minute=0),
                       id="prune_anon_users", name="Prune Anonymous Users Sunday 02:00")
 
+    # ODDS-BACKLOG-PRUNE — drain historical odds_snapshots for finished matches >30d.
+    # Simple DELETE (no window functions): keeps only is_closing + is_opening.
+    # Runs nightly at 03:00 UTC when IO budget is fresh. 5k matches per run
+    # clears the ~45k-match backlog in ~9 nights automatically.
+    scheduler.add_job(
+        lambda: __import__('scripts.prune_odds_snapshots', fromlist=['prune_old_simple']).prune_old_simple(max_matches=5000),
+        CronTrigger(hour=3, minute=0),
+        id="odds_backlog_prune", name="Odds Backlog Prune 03:00"
+    )
+
     # ML-PIPELINE-UNIFY Stage 5a — weekly retrain Sunday 03:00 UTC, runs train.py +
     # compare_models.py. Promotion stays manual (operator flips MODEL_VERSION).
     scheduler.add_job(job_weekly_retrain, CronTrigger(day_of_week="sun", hour=3, minute=0),
