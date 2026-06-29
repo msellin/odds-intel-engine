@@ -3,17 +3,19 @@
 > Single source of truth for all scheduled jobs, their order, and manual run instructions.
 > Last updated: 2026-05-12 — AF caches shipped: H2H 7-day cross-match cache (saves ~360 calls/day), team_stats same-day DB cache (saves ~150 calls/day), standings moved to 23:30 UTC nightly (saves ~40 calls/day). Intraday enrichment refresh now injuries-only; full enrichment at 13:00 is injuries+H2H+team_stats. Total saving: ~550 AF calls/day.
 
-### ✅ Railway Migration Complete (2026-04-30)
+### ✅ Hetzner Scheduler (systemd) — active since 2026-06-29
 
-> All pipeline jobs now run on **Railway** as a single long-running Python process (`workers/scheduler.py`).
-> GitHub Actions crons are **disabled** — kept only for manual `workflow_dispatch` triggers and DB migrations. Cleanup (full removal) deferred until Railway has 2-4 weeks of stable operation (see GH-CLEANUP task).
+> All pipeline jobs run on **Hetzner VPS** as a single long-running Python process (`workers/scheduler.py`), managed by systemd unit `oddsintel-scheduler.service`. Railway was eliminated (RAILWAY-ELIMINATION 2026-06-29).
+> GitHub Actions crons are **disabled** — kept only for manual `workflow_dispatch` triggers and DB migrations.
 > Live tracker replaced by **LivePoller** (`workers/live_poller.py`) with tiered polling: **45s** (odds/scores), **135s** (stats/events), **7.5min** (lineups). Tuned 2026-05-08 — ~25% reduction in AF API calls with no meaningful data quality loss.
 > **Smart priority polling (RAIL-11):** matches with pending bets get stats every 30s instead of 60s. Goals detected via score delta → immediate extra odds snapshot stored.
 > Direct PostgreSQL (psycopg2 via `workers/api_clients/db.py`) used for all pipeline ops. `get_client()` (PostgREST/Supabase SDK) is now **only** used inside `workers/api_clients/supabase_client.py` internals — zero other pipeline or script code calls it directly. Full PostgREST removal completed 2026-05-03 (including `fit_platt.py`, `backfill_historical.py`, and `live_tracker.py` crash fix).
+>
+> **After a code push** (scheduler-affecting changes): `ssh root@<VPS_IP> 'cd /opt/odds-intel-engine && git pull && venv/bin/pip install -q -r requirements.txt && systemctl restart oddsintel-scheduler'`
 
 ---
 
-## Daily Schedule (UTC) — executed by Railway `workers/scheduler.py`
+## Daily Schedule (UTC) — executed by Hetzner systemd `workers/scheduler.py`
 
 ```
 02:00  ⓪ Hist Backfill   run_backfill()            Historical fixtures/stats/events (self-stops once complete)

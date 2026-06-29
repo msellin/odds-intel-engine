@@ -1,6 +1,6 @@
 # OddsIntel — Infrastructure & Costs
 
-> Last updated: 2026-06-15 — Added Odds API + Cloudflare Turnstile (both free tier). No paid infra change since 2026-05-27. Total cost still ~€65/mo.
+> Last updated: 2026-06-29 — RAILWAY-ELIMINATION complete. Scheduler moved to Hetzner VPS (€5.49/mo). Railway cancelled. Total cost unchanged at ~€65/mo.
 
 ---
 
@@ -9,7 +9,7 @@
 | Service | Role | Plan | Status |
 |---------|------|------|--------|
 | **Supabase** | PostgreSQL DB, Auth, RLS, REST API + **Storage** (`models` bucket — ML bundle registry, ML-BUNDLE-STORAGE 2026-05-10) | **Pro ($25/mo)** | Active — upgraded 2026-04-29 |
-| **Railway** | Pipeline scheduler + LivePoller + InplayBot (long-running process) | **Hobby ($5/mo)** | Active — upgraded from Trial 2026-05-05. Auto-deploy from GitHub main (2026-05-06). All scheduled jobs + 30s/60s/5min live polling + in-play paper trading. **2026-05-13:** +3 shadow runs/day for BET-TIMING-MONITOR (~+2 min/day pod time, no AF calls — reads from DB). |
+| **Hetzner VPS** | Pipeline scheduler + LivePoller + InplayBot (long-running process) + FlareSolverr (HLTV/CS2 scraping) | **€5.49/mo** | Active since 2026-06-29 (RAILWAY-ELIMINATION). 2 vCPU / 4 GB RAM / 40 GB disk. systemd unit `oddsintel-scheduler.service` — `Restart=always`, venv Python, TZ=UTC. FlareSolverr in Docker (no persistent profile — HLTV sessions are ephemeral). After code push: `git pull && venv/bin/pip install -r requirements.txt && systemctl restart oddsintel-scheduler`. |
 | **GitHub Actions** | Manual workflow_dispatch + DB migrations only | Free (public repos) | Active — crons disabled, ~100 min/month |
 | **GitHub** | Source control (2 repos, both public) | Free | Active |
 | **Vercel** | Frontend hosting (Next.js 16) | Hobby (free) | Active (oddsintel.app) |
@@ -49,9 +49,9 @@ All steps complete:
 
 ---
 
-## GitHub Actions Usage (post-Railway migration)
+## GitHub Actions Usage
 
-All scheduled jobs moved to Railway. GitHub Actions used only for manual triggers + DB migrations.
+All scheduled jobs run on Hetzner VPS (systemd). GitHub Actions used only for manual triggers + DB migrations.
 
 | Usage | Runs/month | ~Min/month |
 |-------|-----------|-----------|
@@ -90,7 +90,7 @@ All scheduled jobs moved to Railway. GitHub Actions used only for manual trigger
 |---------|------|-------------|
 | API-Football | 150K tier | ~€36 ($39) |
 | Supabase | Pro | ~€23 ($25) |
-| Railway | Hobby | ~€5 ($5) |
+| Hetzner VPS | CX22 | ~€5.49/mo |
 | Gemini API | Pay-as-you-go | ~€0.20 ($0.20) |
 | Domain | oddsintel.app | ~€1 amortized |
 | **Total** | | **~€65/mo** |
@@ -168,7 +168,7 @@ See `DATA_SOURCES.md` for full data architecture, migration plan, and alternativ
 | 50+10 | 50 Pro, 10 Elite | €400 | ~€75 | **+€325** |
 | 200+50 | 200 Pro, 50 Elite | €1,748 | ~€200 | **+€1,548** |
 
-> Break-even is ~13 Pro + 1 Elite subscribers. Costs based on current stack: API-Football 150K ($39) + Supabase Pro ($25) + Railway ($5) + domain (€1).
+> Break-even is ~13 Pro + 1 Elite subscribers. Costs based on current stack: API-Football 150K ($39) + Supabase Pro ($25) + Hetzner VPS (€5.49) + domain (€1).
 
 > Stripe takes 1.5% + €0.25/txn for EU cards, 2.9% + €0.25 for non-EU. Revenue based on Pro €4.99/mo, Elite €14.99/mo.
 
