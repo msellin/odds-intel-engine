@@ -1440,14 +1440,27 @@ def job_flaresolverr_hltv_session_refresh():
 
     Every 6h at :33 (offset from the bulk of cron firing).
     """
+    import subprocess as _sp
     console.print("[bold cyan]FlareSolverr hltv_* session refresh[/bold cyan]")
-    _run_subprocess_job(
-        "flaresolverr_hltv_session_refresh",
-        [sys.executable, "scripts/diagnose/flaresolverr_recover.py",
-         "--prefix", "hltv_", "--apply"],
-        timeout=120,
-        summary_keywords=["destroyed", "failed", "sessions currently"],
-    )
+
+    def _impl():
+        result = _sp.run(
+            [sys.executable, "scripts/diagnose/flaresolverr_recover.py",
+             "--prefix", "hltv_", "--apply"],
+            capture_output=True, text=True, timeout=120,
+        )
+        for line in result.stdout.splitlines():
+            if any(k in line for k in ("destroyed", "failed", "sessions currently")):
+                console.print(f"[dim]{line}[/dim]")
+        if result.returncode == 2:
+            # FS temporarily unreachable — not a real failure. If FS is down,
+            # there are no stuck sessions; new ones get created fresh on restart.
+            console.print("[yellow]  FS unreachable after retries — skip (no sessions to recover)[/yellow]")
+            return
+        if result.returncode != 0:
+            raise RuntimeError(f"flaresolverr_recover.py exited {result.returncode}")
+
+    _run_job("flaresolverr_hltv_session_refresh", _impl)
 
 
 def job_pipeline_failure_alerter():

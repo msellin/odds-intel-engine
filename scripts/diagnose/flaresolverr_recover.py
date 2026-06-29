@@ -47,6 +47,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import urllib.request
 from datetime import datetime, timezone
 
@@ -64,9 +65,17 @@ def _fs_call(fs_url: str, body: dict, *, timeout_s: int = 30) -> dict:
         return json.loads(r.read())
 
 
-def list_sessions(fs_url: str) -> list[str]:
-    data = _fs_call(fs_url, {"cmd": "sessions.list"}, timeout_s=20)
-    return data.get("sessions") or []
+def list_sessions(fs_url: str, *, retries: int = 3, retry_delay_s: float = 5.0) -> list[str]:
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        try:
+            data = _fs_call(fs_url, {"cmd": "sessions.list"}, timeout_s=20)
+            return data.get("sessions") or []
+        except Exception as e:
+            last_exc = e
+            if attempt < retries - 1:
+                time.sleep(retry_delay_s)
+    raise last_exc  # type: ignore[misc]
 
 
 def destroy_session(fs_url: str, name: str) -> tuple[bool, str]:
