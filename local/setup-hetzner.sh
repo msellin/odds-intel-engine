@@ -15,7 +15,7 @@
 # (or run this script first, then write .env, then: systemctl start oddsintel-scheduler)
 #
 # After a code update:
-#   cd /opt/odds-intel-engine && git pull && pip3 install -r requirements.txt -q
+#   cd /opt/odds-intel-engine && git pull && venv/bin/pip install -q -r requirements.txt
 #   systemctl restart oddsintel-scheduler
 
 set -euo pipefail
@@ -54,7 +54,11 @@ fi
 
 # ── 3. Python dependencies ───────────────────────────────────────────────────
 echo "[3/5] Installing Python dependencies..."
-pip3 install -q --break-system-packages -r "$REPO_DIR/requirements.txt"
+VENV_DIR="$REPO_DIR/venv"
+if [ ! -d "$VENV_DIR" ]; then
+    python3 -m venv "$VENV_DIR"
+fi
+"$VENV_DIR/bin/pip" install -q -r "$REPO_DIR/requirements.txt"
 
 # ── 4. FlareSolverr ──────────────────────────────────────────────────────────
 echo "[4/5] Starting FlareSolverr..."
