@@ -1,0 +1,43 @@
+# RAILWAY-ELIMINATION (2026-06-29): FlareSolverr for the Hetzner VPS.
+#
+# This replaces the Railway-hosted FlareSolver service used for HLTV/CS2
+# scraping. The scheduler's FLARESOLVERR_URL systemd Environment= override
+# points to http://localhost:8191 — this container satisfies that.
+#
+# Key difference from local/flaresolverr/docker-compose.yml (Mac):
+#   NO persistent profile volume — HLTV sessions are torn down every 6h by
+#   the FS auto-recover cron (FS-AUTO-RECOVER-HLTV). Persistence here would
+#   just accumulate stale Chrome state with no benefit.
+#
+# Run:
+#   cd local/systemd && docker compose up -d
+# Verify:
+#   curl http://localhost:8191/
+# Stop:
+#   docker compose down
+#
+# After a Docker image update:
+#   docker compose pull && docker compose up -d
+
+services:
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: oi_hetzner_flaresolverr
+    ports:
+      - "127.0.0.1:8191:8191"
+    environment:
+      BROWSER_TIMEOUT: "60000"
+      LOG_LEVEL: "info"
+      LOG_HTML: "false"
+      CAPTCHA_SOLVER: "none"
+      TZ: "UTC"
+    restart: unless-stopped
+    # Memory cap: 1.5 GB gives headroom for multiple concurrent HLTV sessions
+    # while leaving the scheduler's ~800 MB peak well within the 4 GB VPS.
+    mem_limit: 1536m
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8191/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

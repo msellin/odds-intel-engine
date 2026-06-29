@@ -26831,5 +26831,48 @@ def test_railway_elimination_code_clean():
     )
 
 
+@test("RAILWAY-ELIMINATION-SERVICE — Hetzner systemd unit + docker-compose + setup script exist and are well-formed")
+def test_railway_elimination_service():
+    import pathlib
+    root = pathlib.Path(__file__).parent.parent
+
+    unit = root / "local/systemd/oddsintel-scheduler.service"
+    compose = root / "local/systemd/docker-compose.yml"
+    setup = root / "local/setup-hetzner.sh"
+
+    assert unit.exists(), "local/systemd/oddsintel-scheduler.service must exist"
+    assert compose.exists(), "local/systemd/docker-compose.yml must exist"
+    assert setup.exists(), "local/setup-hetzner.sh must exist"
+
+    unit_src = unit.read_text()
+    compose_src = compose.read_text()
+    setup_src = setup.read_text()
+
+    # Unit: essential fields
+    assert "workers.scheduler" in unit_src, "systemd unit must invoke workers.scheduler"
+    assert "python3" in unit_src, "systemd unit must invoke python3"
+    assert "TZ=UTC" in unit_src, "systemd unit must set TZ=UTC (APScheduler timezone)"
+    assert "FLARESOLVERR_URL=http://localhost:8191" in unit_src, (
+        "systemd unit must pin FLARESOLVERR_URL to localhost (not Railway-hosted)"
+    )
+    assert "SCHEDULER_PROCESS_MB_LIMIT" in unit_src, (
+        "systemd unit must set SCHEDULER_PROCESS_MB_LIMIT for health_alerts.py"
+    )
+    assert "EnvironmentFile" in unit_src, "systemd unit must load .env via EnvironmentFile"
+    assert "Restart=always" in unit_src, "systemd unit must restart automatically"
+
+    # Compose: FlareSolverr on port 8191, no persistent profile volume
+    assert "8191" in compose_src, "docker-compose must expose FlareSolverr on port 8191"
+    assert "flaresolverr_profile" not in compose_src, (
+        "Hetzner FlareSolverr must not have persistent profile volume — "
+        "HLTV sessions are ephemeral (torn down every 6h by FS-AUTO-RECOVER-HLTV)"
+    )
+
+    # Setup script: covers all five install steps
+    assert "docker" in setup_src.lower(), "setup script must install Docker"
+    assert "pip3 install" in setup_src, "setup script must install Python deps"
+    assert "systemctl enable" in setup_src, "setup script must enable the systemd unit"
+
+
 if __name__ == "__main__":
     main()

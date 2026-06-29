@@ -1,0 +1,64 @@
+# RAILWAY-ELIMINATION (2026-06-29): systemd unit for the OddsIntel pipeline
+# scheduler on Hetzner VPS (2 vCPU / 4 GB RAM / €5.49/mo).
+#
+# Install:
+#   cp local/systemd/oddsintel-scheduler.service /etc/systemd/system/
+#   systemctl daemon-reload
+#   systemctl enable oddsintel-scheduler
+#   systemctl start oddsintel-scheduler
+#
+# Manage:
+#   systemctl status oddsintel-scheduler          # health + last exit code
+#   journalctl -u oddsintel-scheduler -f          # live logs
+#   systemctl restart oddsintel-scheduler         # force restart (e.g. after code pull)
+#   systemctl stop oddsintel-scheduler            # graceful stop
+#
+# After a code pull (git pull && pip install -r requirements.txt):
+#   systemctl restart oddsintel-scheduler
+#
+# IMPORTANT: WorkingDirectory and EnvironmentFile paths are hard-coded for
+# /opt/odds-intel-engine. If the repo is cloned elsewhere, edit both.
+
+[Unit]
+Description=OddsIntel Pipeline Scheduler
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/odds-intel-engine
+
+# .env carries all secrets (DATABASE_URL, API keys, Telegram, etc.).
+# EnvironmentFile is evaluated BEFORE Environment= lines so the explicit
+# overrides below win even if .env has a conflicting value.
+EnvironmentFile=/opt/odds-intel-engine/.env
+
+# Pinned overrides — these override whatever .env says.
+Environment=TZ=UTC
+Environment=PYTHONUNBUFFERED=1
+# Always use the Hetzner-local FlareSolver, never the Railway-hosted one.
+Environment=FLARESOLVERR_URL=http://localhost:8191
+# Alert threshold calibrated for 4 GB RAM: warn at 3.4 GB (85%).
+Environment=SCHEDULER_PROCESS_MB_LIMIT=4096
+
+ExecStart=/usr/bin/python3 -m workers.scheduler
+
+# Restart policy: always restart, wait 30s between attempts (matches
+# ThrottleInterval on Mac launchd). If scheduler exits cleanly (deploy
+# restart), systemd brings it back automatically.
+Restart=always
+RestartSec=30
+
+# Give the scheduler up to 60s to handle in-flight jobs on SIGTERM before
+# systemd escalates to SIGKILL.
+TimeoutStopSec=60
+
+# Log goes to journald (use journalctl -u oddsintel-scheduler).
+# For a plain file mirror: StandardOutput=append:/opt/odds-intel-engine/dev/active/scheduler.log
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=oddsintel-scheduler
+
+[Install]
+WantedBy=multi-user.target
