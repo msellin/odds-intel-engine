@@ -26954,5 +26954,81 @@ def test_inplay_i_retirement():
     assert "retired_at" in migration_src, "migration 266 must set retired_at"
 
 
+@test("CS2-UPCOMING-VETO-SCRAPE — veto scraping wired into cs2_hltv_upcoming_matches")
+def test_cs2_upcoming_veto_scrape():
+    import pathlib
+    root = pathlib.Path(__file__).parent.parent
+    src = (root / "scripts/esports/cs2_hltv_upcoming_matches.py").read_text()
+
+    # Core functions present
+    assert "scrape_upcoming_veto" in src, "must define scrape_upcoming_veto()"
+    assert "_parse_veto_from_html" in src, "must define _parse_veto_from_html()"
+    assert "_UPCOMING_VETO_RE" in src, "must define _UPCOMING_VETO_RE regex"
+
+    # Veto regex uses same pattern as match_details
+    assert "removed|picked|was left over" in src, (
+        "veto regex must match removed/picked/was left over actions"
+    )
+
+    # Veto parser handles left_over correctly (map name is in 'who' field)
+    assert '"left_over"' in src or "'left_over'" in src, (
+        "_parse_veto_from_html must normalize 'was left over' → 'left_over'"
+    )
+
+    # main() calls scrape_upcoming_veto
+    main_idx = src.index("def main()")
+    after_main = src[main_idx:]
+    assert "scrape_upcoming_veto" in after_main, (
+        "main() must call scrape_upcoming_veto()"
+    )
+
+    # Scheduler timeout updated to accommodate veto scraping
+    sched_src = (root / "workers/scheduler.py").read_text()
+    # cs2_hltv_upcoming job should have timeout >= 120 (veto scraping adds time)
+    import re as _re
+    upcoming_block = sched_src[sched_src.index("cs2_hltv_upcoming_matches.py"):]
+    upcoming_block = upcoming_block[:500]
+    timeout_m = _re.search(r'timeout=(\d+)', upcoming_block)
+    assert timeout_m and int(timeout_m.group(1)) >= 120, (
+        "cs2_hltv_upcoming job timeout must be >= 120s to allow veto scraping"
+    )
+
+
+@test("CS2-MAP-STATS-EXPAND — computed map stats script and migration exist; v9 uses both sources")
+def test_cs2_map_stats_expand():
+    import pathlib
+    root = pathlib.Path(__file__).parent.parent
+
+    # Compute script exists
+    assert (root / "scripts/esports/cs2_compute_map_stats.py").exists(), \
+        "cs2_compute_map_stats.py must exist"
+    compute_src = (root / "scripts/esports/cs2_compute_map_stats.py").read_text()
+    assert "cs2_computed_team_map_stats" in compute_src, \
+        "compute script must write to cs2_computed_team_map_stats"
+    assert "cs2_hltv_match_maps" in compute_src, \
+        "compute script must read from cs2_hltv_match_maps"
+
+    # Migration 267 exists
+    assert (root / "supabase/migrations/267_cs2_computed_team_map_stats.sql").exists(), \
+        "migration 267 must exist"
+    migration_src = (root / "supabase/migrations/267_cs2_computed_team_map_stats.sql").read_text()
+    assert "cs2_computed_team_map_stats" in migration_src, \
+        "migration 267 must create cs2_computed_team_map_stats"
+
+    # v9 veto module loads from both sources
+    veto_src = (root / "scripts/esports/cs2_sneak_peek_v9_veto.py").read_text()
+    assert "cs2_computed_team_map_stats" in veto_src, \
+        "load_map_winrate_map must include cs2_computed_team_map_stats"
+    assert "cs2_hltv_team_map_stats" in veto_src, \
+        "load_map_winrate_map must keep cs2_hltv_team_map_stats (scraped) as primary"
+
+    # Scheduler has weekly compute job wired
+    sched_src = (root / "workers/scheduler.py").read_text()
+    assert "job_cs2_compute_map_stats" in sched_src, \
+        "scheduler must define job_cs2_compute_map_stats"
+    assert "cs2_compute_map_stats.py" in sched_src and "day_of_week" in sched_src, \
+        "compute job must be weekly-cron-scheduled"
+
+
 if __name__ == "__main__":
     main()

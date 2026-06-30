@@ -60,15 +60,38 @@ RUN_ID = str(uuid.uuid4())
 # ---------------------------------------------------------------------------
 
 def load_map_winrate_map() -> dict[str, dict[str, float]]:
-    """{team_name_lower: {map_name: win_pct}} — latest snapshot per team+map."""
+    """{team_name_lower: {map_name: win_pct}} — scraped first, computed fallback.
+
+    CS2-MAP-STATS-EXPAND (2026-06-30): cs2_hltv_team_map_stats has 248
+    authenticated-scraped teams; cs2_computed_team_map_stats adds ~2000 more
+    from match history. Scraped stats take priority where both exist.
+    """
     rows = execute_query("""
-        SELECT DISTINCT ON (team_name, map_name)
-            lower(team_name) AS team_key,
-            map_name,
-            win_pct
-        FROM cs2_hltv_team_map_stats
-        WHERE win_pct IS NOT NULL
-        ORDER BY team_name, map_name, snapshot_date DESC, fetched_at DESC
+        WITH scraped AS (
+            SELECT DISTINCT ON (lower(team_name), map_name)
+                lower(team_name) AS team_key,
+                map_name,
+                win_pct
+            FROM cs2_hltv_team_map_stats
+            WHERE win_pct IS NOT NULL
+            ORDER BY lower(team_name), map_name, snapshot_date DESC, fetched_at DESC
+        ),
+        computed AS (
+            SELECT DISTINCT ON (lower(team_name), map_name)
+                lower(team_name) AS team_key,
+                map_name,
+                win_pct
+            FROM cs2_computed_team_map_stats
+            WHERE win_pct IS NOT NULL
+            ORDER BY lower(team_name), map_name, computed_date DESC
+        )
+        SELECT s.team_key, s.map_name, s.win_pct FROM scraped s
+        UNION ALL
+        SELECT c.team_key, c.map_name, c.win_pct FROM computed c
+        WHERE NOT EXISTS (
+            SELECT 1 FROM scraped s
+            WHERE s.team_key = c.team_key AND s.map_name = c.map_name
+        )
     """)
     out: dict[str, dict[str, float]] = defaultdict(dict)
     for r in rows:

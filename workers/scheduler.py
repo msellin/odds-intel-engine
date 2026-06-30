@@ -999,8 +999,8 @@ def job_cs2_hltv_upcoming():
     _run_subprocess_job(
         "cs2_hltv_upcoming",
         [sys.executable, "scripts/esports/cs2_hltv_upcoming_matches.py", "--record"],
-        timeout=120,
-        summary_keywords=["parsed", "inserted", "predictor-ready", "earliest", "latest"],
+        timeout=300,
+        summary_keywords=["parsed", "inserted", "predictor-ready", "earliest", "latest", "veto"],
     )
 
 
@@ -1090,6 +1090,20 @@ def job_cs2_hltv_stats_scraper():
         timeout=1800,
         summary_keywords=["win%", "→", "cookies expired"],
         skip_if=lambda: (not os.getenv("HLTV_AUTH_COOKIES"), "HLTV_AUTH_COOKIES not set"),
+    )
+
+
+def job_cs2_compute_map_stats():
+    """CS2-MAP-STATS-EXPAND (2026-06-30): compute per-team per-map win% from
+    cs2_hltv_match_maps history. No HLTV auth required. Covers ~2000 teams
+    vs 248 in the scraped table. Activates v9 veto features on far more matches.
+    """
+    console.print("[bold cyan]CS2 compute map stats (from match history)[/bold cyan]")
+    _run_subprocess_job(
+        "cs2_compute_map_stats",
+        [sys.executable, "scripts/esports/cs2_compute_map_stats.py", "--record"],
+        timeout=120,
+        summary_keywords=["rows", "teams", "wrote"],
     )
 
 
@@ -2936,12 +2950,21 @@ def main():
                       id="cs2_v9_predict", name="CS2 v9 Scorer [every 30min, 10-23 UTC]",
                       max_instances=1, misfire_grace_time=1800)
 
+    # CS2-MAP-STATS-EXPAND (2026-06-30): weekly recompute of per-team per-map
+    # win% from match history (no auth required). Runs Sunday 03:00 UTC so
+    # fresh data is ready before the weekday match schedule peaks.
+    scheduler.add_job(job_cs2_compute_map_stats,
+                      CronTrigger(day_of_week="sun", hour=3, minute=0),
+                      id="cs2_compute_map_stats",
+                      name="CS2 Compute Map Stats [weekly]",
+                      max_instances=1, misfire_grace_time=3600)
+
     # NOTE: HLTV /stats/* scraper (job_cs2_hltv_stats_scraper) is intentionally
     # NOT cron-scheduled. It's a one-time backfill tool — run manually with
     # fresh cookies when you want to refresh historical aggregates. The
     # match-detail scraper (cs2_hltv_match_details) accumulates the raw data
-    # needed to compute the same metrics ourselves, so the authenticated
-    # endpoint becomes redundant after ~30 days of match-detail history.
+    # needed to compute the same metrics ourselves, making the authenticated
+    # endpoint largely redundant (cs2_compute_map_stats covers ~2000 teams now).
 
 # CS2-CLV-SNAPSHOT (2026-06-09): every 15 min, snapshot the closing-line
     # odds for any pending bet whose match kicks off within 45 min. The same

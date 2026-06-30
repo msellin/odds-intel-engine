@@ -45,6 +45,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -456,6 +457,113 @@ def enrich_elo(verbose: bool = True) -> tuple[int, int, int]:
     return (len(targets), updated, skipped_no_history)
 
 
+# CS2-UPCOMING-VETO-SCRAPE (2026-06-30): same pattern as _VETO_LINE_RE in
+# cs2_hltv_match_details — works on upcoming match pages (veto is announced
+# before play for most BO3/BO5 matches on HLTV).
+_UPCOMING_VETO_RE = re.compile(
+    r'<div>\s*(\d+)\.\s+([^<]+?)\s+(removed|picked|was left over)\s*([^<]*)</div>'
+)
+
+
+def _slugify_team(name: str) -> str:
+    return re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+
+
+def _parse_veto_from_html(html: str) -> list[dict]:
+    """Extract veto steps from any HLTV match page HTML."""
+    veto = []
+    for step, who, action_phrase, map_part in _UPCOMING_VETO_RE.findall(html):
+        action = "left_over" if "left over" in action_phrase else action_phrase.lower()
+        if action == "left_over":
+            map_name = who.strip()
+            team_name = ""
+        else:
+            map_name = map_part.strip()
+            team_name = who.strip()
+        veto.append({"step": int(step), "team": team_name, "action": action, "map": map_name})
+    return veto
+
+
+def scrape_upcoming_veto(record: bool = False) -> tuple[int, int, int]:
+    """Fetch HLTV match pages for upcoming HLTV-sourced matches and store
+    their veto sequences in cs2_hltv_match_veto, activating v9 veto features.
+
+    Only processes HLTV-sourced rows (bo3gg_id < 0) that don't yet have veto
+    data. Returns (veto_found, veto_empty, fetch_failed).
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from cs2_hltv_match_details import _fetch as _fetch_hltv  # type: ignore
+        from cs2_hltv_match_details import MATCH_URL_FMT as _MATCH_URL  # type: ignore
+    except ImportError:
+        print("  [!] cs2_hltv_match_details not importable — skipping veto scrape")
+        return (0, 0, 0)
+
+    # HLTV-sourced upcoming matches (bo3gg_id < 0 → hltv_match_id = -bo3gg_id).
+    upcoming = execute_query(
+        """SELECT bo3gg_id, team1, team2, kickoff_time
+           FROM cs2_upcoming_matches
+           WHERE kickoff_time >= NOW() AND bo3gg_id < 0
+           ORDER BY kickoff_time ASC"""
+    )
+    if not upcoming:
+        print("  no HLTV-sourced upcoming matches to scrape veto for")
+        return (0, 0, 0)
+
+    hltv_ids = [-r["bo3gg_id"] for r in upcoming]
+    covered_rows = execute_query(
+        "SELECT DISTINCT hltv_match_id FROM cs2_hltv_match_veto WHERE hltv_match_id = ANY(%s)",
+        (hltv_ids,)
+    )
+    covered = {r["hltv_match_id"] for r in covered_rows}
+
+    to_scrape = [r for r in upcoming if -r["bo3gg_id"] not in covered]
+    print(f"  upcoming HLTV matches: {len(upcoming)}  already have veto: {len(covered)}  "
+          f"to scrape: {len(to_scrape)}")
+
+    veto_found = veto_empty = fetch_failed = 0
+    for i, row in enumerate(to_scrape):
+        hltv_match_id = -row["bo3gg_id"]
+        team1, team2 = row["team1"], row["team2"]
+        if i > 0:
+            time.sleep(0.3)
+
+        slug = f"{_slugify_team(team1)}-vs-{_slugify_team(team2)}"
+        url = _MATCH_URL.format(mid=hltv_match_id, slug=slug)
+        html = _fetch_hltv(url)
+        if not html:
+            fetch_failed += 1
+            print(f"  [{i+1}/{len(to_scrape)}] ✗ fetch failed: {hltv_match_id} "
+                  f"{team1} vs {team2}")
+            continue
+
+        veto = _parse_veto_from_html(html)
+        if not veto:
+            veto_empty += 1
+            print(f"  [{i+1}/{len(to_scrape)}]   no veto yet: {team1} vs {team2}  "
+                  f"ko={row['kickoff_time'].strftime('%m-%d %H:%M')}")
+            continue
+
+        veto_found += 1
+        print(f"  [{i+1}/{len(to_scrape)}] ✓ {team1} vs {team2}  "
+              f"({len(veto)} steps){'  [dry-run]' if not record else ''}")
+
+        if record:
+            execute_write(
+                "DELETE FROM cs2_hltv_match_veto WHERE hltv_match_id = %s",
+                (hltv_match_id,)
+            )
+            for v in veto:
+                execute_write(
+                    "INSERT INTO cs2_hltv_match_veto "
+                    "(hltv_match_id, step, team_name, action, map_name) "
+                    "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
+                    (hltv_match_id, v["step"], v["team"], v["action"], v["map"])
+                )
+
+    return (veto_found, veto_empty, fetch_failed)
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     p.add_argument("--record", action="store_true",
@@ -496,6 +604,13 @@ def main() -> int:
     examined, updated, skipped_no_history = enrich_elo()
     print(f"  ✓ ELO-enriched {updated}/{examined} rows "
           f"({skipped_no_history} skipped — teams below MIN_MATCHES_FOR_PREDICTION)")
+
+    # CS2-UPCOMING-VETO-SCRAPE (2026-06-30) — fetch individual HLTV match
+    # pages for upcoming matches and store veto sequences so cs2_v9_predict
+    # can activate decider/ban-rate features at prediction time.
+    print("\n  scraping veto data for upcoming matches…")
+    vf, ve, vx = scrape_upcoming_veto(record=True)
+    print(f"  ✓ veto: found={vf}  no_veto_yet={ve}  fetch_failed={vx}")
     return 0
 
 
