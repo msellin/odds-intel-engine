@@ -1034,6 +1034,21 @@ def job_cs2_v8_predict():
     )
 
 
+def job_cs2_v9_predict():
+    """CS2-VETO-FEATURES (2026-06-30): v9 = v8 + veto map features.
+    decider_winrate_diff, permaban_diff_on_decider, map_pool_winrate_diff.
+    All default 0.0 when no match-specific veto available (safe fallback = v8).
+    AUC +0.001 full / +0.025 on map-stats-covered subset.
+    """
+    console.print("[bold cyan]CS2 v9 production scorer[/bold cyan]")
+    _run_subprocess_job(
+        "cs2_v9_predict",
+        [sys.executable, "scripts/esports/cs2_v9_predict.py", "--record"],
+        timeout=600,
+        summary_keywords=["scored", "loaded v9", "upcoming matches"],
+    )
+
+
 def job_cs2_hltv_predict():
     """CS2-HLTV-PREDICT (2026-06-09): write parallel hltv_v1 predictions for the
     same matches the elo+pq_v1 scanner ran, but using HLTV points only.
@@ -2914,6 +2929,11 @@ def main():
     scheduler.add_job(job_cs2_v8_predict,
                       CronTrigger(hour="10-23", minute="3,33"),
                       id="cs2_v8_predict", name="CS2 v8 Scorer [every 30min, 10-23 UTC]",
+                      max_instances=1, misfire_grace_time=1800)
+
+    scheduler.add_job(job_cs2_v9_predict,
+                      CronTrigger(hour="10-23", minute="5,35"),
+                      id="cs2_v9_predict", name="CS2 v9 Scorer [every 30min, 10-23 UTC]",
                       max_instances=1, misfire_grace_time=1800)
 
     # NOTE: HLTV /stats/* scraper (job_cs2_hltv_stats_scraper) is intentionally

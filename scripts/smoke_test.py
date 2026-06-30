@@ -26881,6 +26881,36 @@ def test_railway_elimination_service():
     assert "systemctl enable" in setup_src, "setup script must enable the systemd unit"
 
 
+@test("CS2-VETO-FEATURES — v9 model coefficients saved and scheduler job wired")
+def test_cs2_veto_features():
+    import pathlib
+    root = pathlib.Path(__file__).parent.parent
+
+    # v9 train + predict scripts exist
+    assert (root / "scripts/esports/cs2_v9_train.py").exists(), "cs2_v9_train.py must exist"
+    assert (root / "scripts/esports/cs2_v9_predict.py").exists(), "cs2_v9_predict.py must exist"
+    assert (root / "scripts/esports/cs2_sneak_peek_v9_veto.py").exists(), \
+        "cs2_sneak_peek_v9_veto.py must exist"
+
+    # Sneak peek and train share the same feature loader
+    veto_src = (root / "scripts/esports/cs2_sneak_peek_v9_veto.py").read_text()
+    assert "load_map_winrate_map" in veto_src, "must export load_map_winrate_map"
+    assert "load_veto_history" in veto_src, "must export load_veto_history"
+    assert "_veto_features" in veto_src, "must export _veto_features"
+    assert "decider_winrate_diff" in veto_src, "must compute decider_winrate_diff"
+    assert "permaban_diff_on_decider" in veto_src, "must compute permaban_diff_on_decider"
+
+    # v9 predict uses 0.0 fallback when no veto
+    v9_pred_src = (root / "scripts/esports/cs2_v9_predict.py").read_text()
+    assert "veto_active" in v9_pred_src, "v9 predict must flag when veto features are active"
+
+    # Scheduler has job_cs2_v9_predict wired
+    sched_src = (root / "workers/scheduler.py").read_text()
+    assert "job_cs2_v9_predict" in sched_src, "scheduler must define job_cs2_v9_predict"
+    assert "cs2_v9_predict" in sched_src and "CronTrigger" in sched_src, \
+        "cs2_v9_predict must be cron-scheduled"
+
+
 @test("TIER-C-T3PLUS-GATE — daily_pipeline_v2 applies +3pp threshold boost for tier 3 and 4")
 def test_tier_c_t3plus_gate():
     import pathlib
