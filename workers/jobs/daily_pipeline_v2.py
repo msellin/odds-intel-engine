@@ -2938,6 +2938,13 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 continue
 
             thresholds = config["edge_thresholds"].get(tier, {})
+            # TIER-C-T3PLUS-GATE (2026-06-30): T3 = -15.3% ROI (264 bets),
+            # T4 = -20.5% (262 bets) all-time vs T1 +1.5% / T2 +8.7%.
+            # CLV is +3-6% at these tiers — model has marginal edge but not
+            # enough to survive friction + smaller market liquidity. Add +3pp
+            # to every threshold for tier 3 and 4 to cut the -EV long tail.
+            if tier >= 3 and thresholds:
+                thresholds = {k: v + 0.03 for k, v in thresholds.items()}
             odds_min, odds_max = config["odds_range"]
             min_prob = config["min_prob"]
 

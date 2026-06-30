@@ -26881,5 +26881,48 @@ def test_railway_elimination_service():
     assert "systemctl enable" in setup_src, "setup script must enable the systemd unit"
 
 
+@test("TIER-C-T3PLUS-GATE — daily_pipeline_v2 applies +3pp threshold boost for tier 3 and 4")
+def test_tier_c_t3plus_gate():
+    import pathlib
+    src = (pathlib.Path(__file__).parent.parent / "workers/jobs/daily_pipeline_v2.py").read_text()
+
+    assert "if tier >= 3 and thresholds:" in src, (
+        "TIER-C-T3PLUS-GATE: daily_pipeline_v2.py must guard the boost with 'if tier >= 3 and thresholds:'"
+    )
+    assert "{k: v + 0.03 for k, v in thresholds.items()}" in src, (
+        "TIER-C-T3PLUS-GATE: threshold boost must be exactly +0.03 (3pp) dict comprehension"
+    )
+    # Boost must appear immediately after the thresholds lookup, before odds_range unpack
+    gate_idx = src.index("if tier >= 3 and thresholds:")
+    odds_idx = src.index("odds_min, odds_max = config[\"odds_range\"]", gate_idx)
+    thresholds_lookup_idx = src.rindex("thresholds = config[\"edge_thresholds\"].get(tier, {})", 0, gate_idx)
+    assert thresholds_lookup_idx < gate_idx < odds_idx, (
+        "TIER-C-T3PLUS-GATE: boost block must appear between thresholds lookup and odds_range unpack"
+    )
+
+
+@test("INPLAY-I-30-BET-WATCH — inplay_i retired in code and migration 266 exists")
+def test_inplay_i_retirement():
+    import pathlib
+    root = pathlib.Path(__file__).parent.parent
+
+    inplay_src = (root / "workers/jobs/inplay_bot.py").read_text()
+    assert "[RETIRED 2026-06-30]" in inplay_src, (
+        "inplay_bot.py must mark inplay_i as [RETIRED 2026-06-30] in its description"
+    )
+    assert "INPLAY-I-30-BET-WATCH" in inplay_src, (
+        "inplay_bot.py must reference the INPLAY-I-30-BET-WATCH gate in the retirement comment"
+    )
+
+    migration = root / "supabase/migrations/266_retire_inplay_i.sql"
+    assert migration.exists(), "migration 266_retire_inplay_i.sql must exist"
+    migration_src = migration.read_text()
+    assert "is_active" in migration_src and "false" in migration_src, (
+        "migration 266 must set is_active = false"
+    )
+    assert "inplay_i" in migration_src, "migration 266 must target bot_name = 'inplay_i'"
+    assert "retired_at" in migration_src, "migration 266 must set retired_at"
+
+
 if __name__ == "__main__":
     main()

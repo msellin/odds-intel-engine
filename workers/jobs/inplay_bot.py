@@ -127,8 +127,11 @@ INPLAY_BOTS = {
         "description": "HT Restart Surge Over 2.5 — 0-0 at HT with first-half attacking, min 46-55",
         "strategy": "inplay_h",
     },
+    # inplay_i retired 2026-06-30 — INPLAY-I-30-BET-WATCH gate: -22.7% ROI on
+    # 28 settled bets (n≥25). Favourite-stall at odds 4-6 hit 21.4% vs ~20%
+    # implied. Migration 266.
     "inplay_i": {
-        "description": "Favourite Stall — strong fav 0-0 min 42-65, live fav odds drifted ≥ 3.0",
+        "description": "[RETIRED 2026-06-30] Favourite Stall — strong fav 0-0 min 42-65, live fav odds drifted ≥ 3.0. Gate: -22.7% ROI / n=28.",
         "strategy": "inplay_i",
     },
     "inplay_j": {
