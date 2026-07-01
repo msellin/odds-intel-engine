@@ -1,32 +1,32 @@
 {
-  "ran_at_utc": "2026-06-30T04:31:33.268945+00:00",
+  "ran_at_utc": "2026-07-01T04:38:02.744511+00:00",
   "window": {
     "start": "2026-05-04",
-    "end": "2026-07-01"
+    "end": "2026-07-02"
   },
   "cohort": "calibrated pre-match (1x2/OU/BTTS, settled won/lost)",
-  "n_picks": 630,
-  "n_matches": 605,
-  "n_odds_slots_loaded": 4231,
+  "n_picks": 633,
+  "n_matches": 608,
+  "n_odds_slots_loaded": 4252,
   "horizon_availability": {
     "T-24h": {
       "slots_with_snap": 1234,
-      "pct_of_slots": 29.2
+      "pct_of_slots": 29.0
     },
     "T-12h": {
-      "slots_with_snap": 2847,
+      "slots_with_snap": 2861,
       "pct_of_slots": 67.3
     },
     "T-6h": {
-      "slots_with_snap": 2669,
+      "slots_with_snap": 2683,
       "pct_of_slots": 63.1
     },
     "T-2h": {
-      "slots_with_snap": 2428,
+      "slots_with_snap": 2442,
       "pct_of_slots": 57.4
     },
     "T-30m": {
-      "slots_with_snap": 2207,
+      "slots_with_snap": 2221,
       "pct_of_slots": 52.2
     }
   },
@@ -35,9 +35,9 @@
       "T-24h": {
         "horizon": "T-24h",
         "n_fires": 99,
-        "n_no_snap": 531,
+        "n_no_snap": 534,
         "n_below_edge": 0,
-        "coverage_pct": 15.7,
+        "coverage_pct": 15.6,
         "stake": 990.0,
         "pnl": 188.7,
         "roi_pct": 19.06,
@@ -48,9 +48,9 @@
       "T-12h": {
         "horizon": "T-12h",
         "n_fires": 178,
-        "n_no_snap": 449,
+        "n_no_snap": 452,
         "n_below_edge": 3,
-        "coverage_pct": 28.3,
+        "coverage_pct": 28.1,
         "stake": 1780.0,
         "pnl": 92.9,
         "roi_pct": 5.22,
@@ -61,9 +61,9 @@
       "T-6h": {
         "horizon": "T-6h",
         "n_fires": 180,
-        "n_no_snap": 446,
+        "n_no_snap": 449,
         "n_below_edge": 4,
-        "coverage_pct": 28.6,
+        "coverage_pct": 28.4,
         "stake": 1800.0,
         "pnl": 83.59,
         "roi_pct": 4.64,
@@ -74,9 +74,9 @@
       "T-2h": {
         "horizon": "T-2h",
         "n_fires": 167,
-        "n_no_snap": 458,
+        "n_no_snap": 461,
         "n_below_edge": 5,
-        "coverage_pct": 26.5,
+        "coverage_pct": 26.4,
         "stake": 1670.0,
         "pnl": 18.7,
         "roi_pct": 1.12,
@@ -87,9 +87,9 @@
       "T-30m": {
         "horizon": "T-30m",
         "n_fires": 151,
-        "n_no_snap": 474,
+        "n_no_snap": 477,
         "n_below_edge": 5,
-        "coverage_pct": 24.0,
+        "coverage_pct": 23.9,
         "stake": 1510.0,
         "pnl": 109.0,
         "roi_pct": 7.22,
@@ -99,11 +99,11 @@
       },
       "production_baseline": {
         "horizon": "production_baseline",
-        "n_fires": 630,
+        "n_fires": 633,
         "coverage_pct": 100.0,
-        "stake": 6300.0,
-        "pnl": 621.79,
-        "roi_pct": 9.87,
+        "stake": 6330.0,
+        "pnl": 591.79,
+        "roi_pct": 9.35,
         "mean_clv_pin_pct": 10.94,
         "mean_clv_any_pct": 10.4
       }
@@ -112,9 +112,9 @@
       "T-24h": {
         "horizon": "T-24h",
         "n_fires": 97,
-        "n_no_snap": 531,
+        "n_no_snap": 534,
         "n_below_edge": 2,
-        "coverage_pct": 15.4,
+        "coverage_pct": 15.3,
         "stake": 970.0,
         "pnl": 193.2,
         "roi_pct": 19.92,
@@ -125,9 +125,9 @@
       "T-12h": {
         "horizon": "T-12h",
         "n_fires": 176,
-        "n_no_snap": 449,
+        "n_no_snap": 452,
         "n_below_edge": 5,
-        "coverage_pct": 27.9,
+        "coverage_pct": 27.8,
         "stake": 1760.0,
         "pnl": 84.5,
         "roi_pct": 4.8,
@@ -138,9 +138,9 @@
       "T-6h": {
         "horizon": "T-6h",
         "n_fires": 180,
-        "n_no_snap": 446,
+        "n_no_snap": 449,
         "n_below_edge": 4,
-        "coverage_pct": 28.6,
+        "coverage_pct": 28.4,
         "stake": 1800.0,
         "pnl": 83.59,
         "roi_pct": 4.64,
@@ -151,9 +151,9 @@
       "T-2h": {
         "horizon": "T-2h",
         "n_fires": 166,
-        "n_no_snap": 458,
+        "n_no_snap": 461,
         "n_below_edge": 6,
-        "coverage_pct": 26.3,
+        "coverage_pct": 26.2,
         "stake": 1660.0,
         "pnl": 28.7,
         "roi_pct": 1.73,
@@ -164,9 +164,9 @@
       "T-30m": {
         "horizon": "T-30m",
         "n_fires": 149,
-        "n_no_snap": 474,
+        "n_no_snap": 477,
         "n_below_edge": 7,
-        "coverage_pct": 23.7,
+        "coverage_pct": 23.5,
         "stake": 1490.0,
         "pnl": 106.5,
         "roi_pct": 7.15,
@@ -176,11 +176,11 @@
       },
       "production_baseline": {
         "horizon": "production_baseline",
-        "n_fires": 630,
+        "n_fires": 633,
         "coverage_pct": 100.0,
-        "stake": 6300.0,
-        "pnl": 621.79,
-        "roi_pct": 9.87,
+        "stake": 6330.0,
+        "pnl": 591.79,
+        "roi_pct": 9.35,
         "mean_clv_pin_pct": 10.94,
         "mean_clv_any_pct": 10.4
       }
@@ -189,7 +189,7 @@
       "T-24h": {
         "horizon": "T-24h",
         "n_fires": 96,
-        "n_no_snap": 531,
+        "n_no_snap": 534,
         "n_below_edge": 3,
         "coverage_pct": 15.2,
         "stake": 960.0,
@@ -202,9 +202,9 @@
       "T-12h": {
         "horizon": "T-12h",
         "n_fires": 175,
-        "n_no_snap": 449,
+        "n_no_snap": 452,
         "n_below_edge": 6,
-        "coverage_pct": 27.8,
+        "coverage_pct": 27.6,
         "stake": 1750.0,
         "pnl": 81.3,
         "roi_pct": 4.65,
@@ -215,9 +215,9 @@
       "T-6h": {
         "horizon": "T-6h",
         "n_fires": 177,
-        "n_no_snap": 446,
+        "n_no_snap": 449,
         "n_below_edge": 7,
-        "coverage_pct": 28.1,
+        "coverage_pct": 28.0,
         "stake": 1770.0,
         "pnl": 100.39,
         "roi_pct": 5.67,
@@ -228,9 +228,9 @@
       "T-2h": {
         "horizon": "T-2h",
         "n_fires": 164,
-        "n_no_snap": 458,
+        "n_no_snap": 461,
         "n_below_edge": 8,
-        "coverage_pct": 26.0,
+        "coverage_pct": 25.9,
         "stake": 1640.0,
         "pnl": 17.2,
         "roi_pct": 1.05,
@@ -241,9 +241,9 @@
       "T-30m": {
         "horizon": "T-30m",
         "n_fires": 147,
-        "n_no_snap": 474,
+        "n_no_snap": 477,
         "n_below_edge": 9,
-        "coverage_pct": 23.3,
+        "coverage_pct": 23.2,
         "stake": 1470.0,
         "pnl": 95.0,
         "roi_pct": 6.46,
@@ -253,16 +253,16 @@
       },
       "production_baseline": {
         "horizon": "production_baseline",
-        "n_fires": 630,
+        "n_fires": 633,
         "coverage_pct": 100.0,
-        "stake": 6300.0,
-        "pnl": 621.79,
-        "roi_pct": 9.87,
+        "stake": 6330.0,
+        "pnl": 591.79,
+        "roi_pct": 9.35,
         "mean_clv_pin_pct": 10.94,
         "mean_clv_any_pct": 10.4
       }
     }
   },
   "default_edge_threshold": 0.05,
-  "summary": "Cohort: calibrated pre-match (1x2/OU/BTTS, settled, n=630). At edge_threshold=5%: T-24h verdict: REJECT (coverage too low) \u2014 coverage 15%, ROI +19.92% vs baseline +9.87% (delta +10.05pp); T-12h verdict: REJECT (coverage too low) \u2014 coverage 28%, ROI +4.80% vs baseline +9.87% (delta -5.07pp); T-6h verdict: REJECT (coverage too low) \u2014 coverage 29%, ROI +4.64% vs baseline +9.87% (delta -5.23pp)."
+  "summary": "Cohort: calibrated pre-match (1x2/OU/BTTS, settled, n=633). At edge_threshold=5%: T-24h verdict: REJECT (coverage too low) \u2014 coverage 15%, ROI +19.92% vs baseline +9.35% (delta +10.57pp); T-12h verdict: REJECT (coverage too low) \u2014 coverage 28%, ROI +4.80% vs baseline +9.35% (delta -4.55pp); T-6h verdict: REJECT (coverage too low) \u2014 coverage 28%, ROI +4.64% vs baseline +9.35% (delta -4.71pp)."
 }
