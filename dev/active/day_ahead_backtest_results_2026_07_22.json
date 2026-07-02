@@ -1,268 +1,268 @@
 {
-  "ran_at_utc": "2026-07-01T04:38:02.744511+00:00",
+  "ran_at_utc": "2026-07-02T04:29:45.628852+00:00",
   "window": {
     "start": "2026-05-04",
-    "end": "2026-07-02"
+    "end": "2026-07-03"
   },
   "cohort": "calibrated pre-match (1x2/OU/BTTS, settled won/lost)",
-  "n_picks": 633,
-  "n_matches": 608,
-  "n_odds_slots_loaded": 4252,
+  "n_picks": 636,
+  "n_matches": 611,
+  "n_odds_slots_loaded": 4273,
   "horizon_availability": {
     "T-24h": {
-      "slots_with_snap": 1234,
+      "slots_with_snap": 1241,
       "pct_of_slots": 29.0
     },
     "T-12h": {
-      "slots_with_snap": 2861,
-      "pct_of_slots": 67.3
+      "slots_with_snap": 2882,
+      "pct_of_slots": 67.4
     },
     "T-6h": {
-      "slots_with_snap": 2683,
-      "pct_of_slots": 63.1
+      "slots_with_snap": 2704,
+      "pct_of_slots": 63.3
     },
     "T-2h": {
-      "slots_with_snap": 2442,
-      "pct_of_slots": 57.4
+      "slots_with_snap": 2463,
+      "pct_of_slots": 57.6
     },
     "T-30m": {
-      "slots_with_snap": 2221,
-      "pct_of_slots": 52.2
+      "slots_with_snap": 2242,
+      "pct_of_slots": 52.5
     }
   },
   "results_by_edge_threshold": {
     "edge_3pct": {
       "T-24h": {
         "horizon": "T-24h",
-        "n_fires": 99,
-        "n_no_snap": 534,
+        "n_fires": 100,
+        "n_no_snap": 536,
         "n_below_edge": 0,
-        "coverage_pct": 15.6,
-        "stake": 990.0,
-        "pnl": 188.7,
-        "roi_pct": 19.06,
-        "mean_clv_pin_pct": 8.53,
-        "mean_clv_any_pct": 9.74,
-        "mean_max_odds": 2.641
+        "coverage_pct": 15.7,
+        "stake": 1000.0,
+        "pnl": 178.7,
+        "roi_pct": 17.87,
+        "mean_clv_pin_pct": 8.95,
+        "mean_clv_any_pct": 10.06,
+        "mean_max_odds": 2.644
       },
       "T-12h": {
         "horizon": "T-12h",
-        "n_fires": 178,
+        "n_fires": 181,
         "n_no_snap": 452,
         "n_below_edge": 3,
-        "coverage_pct": 28.1,
-        "stake": 1780.0,
-        "pnl": 92.9,
-        "roi_pct": 5.22,
-        "mean_clv_pin_pct": 9.76,
-        "mean_clv_any_pct": 9.55,
-        "mean_max_odds": 2.682
+        "coverage_pct": 28.5,
+        "stake": 1810.0,
+        "pnl": 62.9,
+        "roi_pct": 3.48,
+        "mean_clv_pin_pct": 10.21,
+        "mean_clv_any_pct": 9.9,
+        "mean_max_odds": 2.674
       },
       "T-6h": {
         "horizon": "T-6h",
-        "n_fires": 180,
+        "n_fires": 183,
         "n_no_snap": 449,
         "n_below_edge": 4,
-        "coverage_pct": 28.4,
-        "stake": 1800.0,
-        "pnl": 83.59,
-        "roi_pct": 4.64,
-        "mean_clv_pin_pct": 8.93,
-        "mean_clv_any_pct": 8.96,
-        "mean_max_odds": 2.664
+        "coverage_pct": 28.8,
+        "stake": 1830.0,
+        "pnl": 53.59,
+        "roi_pct": 2.93,
+        "mean_clv_pin_pct": 9.3,
+        "mean_clv_any_pct": 9.24,
+        "mean_max_odds": 2.656
       },
       "T-2h": {
         "horizon": "T-2h",
-        "n_fires": 167,
+        "n_fires": 170,
         "n_no_snap": 461,
         "n_below_edge": 5,
-        "coverage_pct": 26.4,
-        "stake": 1670.0,
-        "pnl": 18.7,
-        "roi_pct": 1.12,
-        "mean_clv_pin_pct": 7.05,
-        "mean_clv_any_pct": 7.0,
-        "mean_max_odds": 2.608
+        "coverage_pct": 26.7,
+        "stake": 1700.0,
+        "pnl": -11.3,
+        "roi_pct": -0.66,
+        "mean_clv_pin_pct": 7.2,
+        "mean_clv_any_pct": 7.08,
+        "mean_max_odds": 2.595
       },
       "T-30m": {
         "horizon": "T-30m",
-        "n_fires": 151,
+        "n_fires": 154,
         "n_no_snap": 477,
         "n_below_edge": 5,
-        "coverage_pct": 23.9,
-        "stake": 1510.0,
-        "pnl": 109.0,
-        "roi_pct": 7.22,
-        "mean_clv_pin_pct": 7.0,
-        "mean_clv_any_pct": 6.94,
-        "mean_max_odds": 2.593
+        "coverage_pct": 24.2,
+        "stake": 1540.0,
+        "pnl": 79.0,
+        "roi_pct": 5.13,
+        "mean_clv_pin_pct": 7.1,
+        "mean_clv_any_pct": 6.97,
+        "mean_max_odds": 2.578
       },
       "production_baseline": {
         "horizon": "production_baseline",
-        "n_fires": 633,
+        "n_fires": 636,
         "coverage_pct": 100.0,
-        "stake": 6330.0,
-        "pnl": 591.79,
-        "roi_pct": 9.35,
-        "mean_clv_pin_pct": 10.94,
-        "mean_clv_any_pct": 10.4
+        "stake": 6360.0,
+        "pnl": 561.79,
+        "roi_pct": 8.83,
+        "mean_clv_pin_pct": 11.26,
+        "mean_clv_any_pct": 10.65
       }
     },
     "edge_5pct": {
       "T-24h": {
         "horizon": "T-24h",
-        "n_fires": 97,
-        "n_no_snap": 534,
+        "n_fires": 98,
+        "n_no_snap": 536,
         "n_below_edge": 2,
-        "coverage_pct": 15.3,
-        "stake": 970.0,
-        "pnl": 193.2,
-        "roi_pct": 19.92,
-        "mean_clv_pin_pct": 8.87,
-        "mean_clv_any_pct": 10.05,
-        "mean_max_odds": 2.655
+        "coverage_pct": 15.4,
+        "stake": 980.0,
+        "pnl": 183.2,
+        "roi_pct": 18.69,
+        "mean_clv_pin_pct": 9.29,
+        "mean_clv_any_pct": 10.37,
+        "mean_max_odds": 2.657
       },
       "T-12h": {
         "horizon": "T-12h",
-        "n_fires": 176,
+        "n_fires": 179,
         "n_no_snap": 452,
         "n_below_edge": 5,
-        "coverage_pct": 27.8,
-        "stake": 1760.0,
-        "pnl": 84.5,
-        "roi_pct": 4.8,
-        "mean_clv_pin_pct": 9.85,
-        "mean_clv_any_pct": 9.63,
+        "coverage_pct": 28.1,
+        "stake": 1790.0,
+        "pnl": 54.5,
+        "roi_pct": 3.04,
+        "mean_clv_pin_pct": 10.3,
+        "mean_clv_any_pct": 9.98,
+        "mean_max_odds": 2.688
+      },
+      "T-6h": {
+        "horizon": "T-6h",
+        "n_fires": 183,
+        "n_no_snap": 449,
+        "n_below_edge": 4,
+        "coverage_pct": 28.8,
+        "stake": 1830.0,
+        "pnl": 53.59,
+        "roi_pct": 2.93,
+        "mean_clv_pin_pct": 9.3,
+        "mean_clv_any_pct": 9.24,
+        "mean_max_odds": 2.656
+      },
+      "T-2h": {
+        "horizon": "T-2h",
+        "n_fires": 169,
+        "n_no_snap": 461,
+        "n_below_edge": 6,
+        "coverage_pct": 26.6,
+        "stake": 1690.0,
+        "pnl": -1.3,
+        "roi_pct": -0.08,
+        "mean_clv_pin_pct": 7.19,
+        "mean_clv_any_pct": 7.09,
+        "mean_max_odds": 2.598
+      },
+      "T-30m": {
+        "horizon": "T-30m",
+        "n_fires": 151,
+        "n_no_snap": 477,
+        "n_below_edge": 8,
+        "coverage_pct": 23.7,
+        "stake": 1510.0,
+        "pnl": 86.5,
+        "roi_pct": 5.73,
+        "mean_clv_pin_pct": 6.97,
+        "mean_clv_any_pct": 6.93,
+        "mean_max_odds": 2.585
+      },
+      "production_baseline": {
+        "horizon": "production_baseline",
+        "n_fires": 636,
+        "coverage_pct": 100.0,
+        "stake": 6360.0,
+        "pnl": 561.79,
+        "roi_pct": 8.83,
+        "mean_clv_pin_pct": 11.26,
+        "mean_clv_any_pct": 10.65
+      }
+    },
+    "edge_7pct": {
+      "T-24h": {
+        "horizon": "T-24h",
+        "n_fires": 97,
+        "n_no_snap": 536,
+        "n_below_edge": 3,
+        "coverage_pct": 15.3,
+        "stake": 970.0,
+        "pnl": 171.0,
+        "roi_pct": 17.63,
+        "mean_clv_pin_pct": 9.14,
+        "mean_clv_any_pct": 10.24,
+        "mean_max_odds": 2.662
+      },
+      "T-12h": {
+        "horizon": "T-12h",
+        "n_fires": 178,
+        "n_no_snap": 452,
+        "n_below_edge": 6,
+        "coverage_pct": 28.0,
+        "stake": 1780.0,
+        "pnl": 51.3,
+        "roi_pct": 2.88,
+        "mean_clv_pin_pct": 10.35,
+        "mean_clv_any_pct": 10.02,
         "mean_max_odds": 2.696
       },
       "T-6h": {
         "horizon": "T-6h",
         "n_fires": 180,
         "n_no_snap": 449,
-        "n_below_edge": 4,
-        "coverage_pct": 28.4,
+        "n_below_edge": 7,
+        "coverage_pct": 28.3,
         "stake": 1800.0,
-        "pnl": 83.59,
-        "roi_pct": 4.64,
-        "mean_clv_pin_pct": 8.93,
-        "mean_clv_any_pct": 8.96,
-        "mean_max_odds": 2.664
+        "pnl": 70.39,
+        "roi_pct": 3.91,
+        "mean_clv_pin_pct": 9.35,
+        "mean_clv_any_pct": 9.29,
+        "mean_max_odds": 2.666
       },
       "T-2h": {
         "horizon": "T-2h",
-        "n_fires": 166,
+        "n_fires": 167,
         "n_no_snap": 461,
-        "n_below_edge": 6,
-        "coverage_pct": 26.2,
-        "stake": 1660.0,
-        "pnl": 28.7,
-        "roi_pct": 1.73,
-        "mean_clv_pin_pct": 7.04,
-        "mean_clv_any_pct": 7.01,
-        "mean_max_odds": 2.611
+        "n_below_edge": 8,
+        "coverage_pct": 26.3,
+        "stake": 1670.0,
+        "pnl": -12.8,
+        "roi_pct": -0.77,
+        "mean_clv_pin_pct": 7.16,
+        "mean_clv_any_pct": 7.07,
+        "mean_max_odds": 2.61
       },
       "T-30m": {
         "horizon": "T-30m",
         "n_fires": 149,
         "n_no_snap": 477,
-        "n_below_edge": 7,
-        "coverage_pct": 23.5,
+        "n_below_edge": 10,
+        "coverage_pct": 23.4,
         "stake": 1490.0,
-        "pnl": 106.5,
-        "roi_pct": 7.15,
-        "mean_clv_pin_pct": 6.92,
-        "mean_clv_any_pct": 6.92,
+        "pnl": 75.0,
+        "roi_pct": 5.03,
+        "mean_clv_pin_pct": 6.93,
+        "mean_clv_any_pct": 6.91,
         "mean_max_odds": 2.598
       },
       "production_baseline": {
         "horizon": "production_baseline",
-        "n_fires": 633,
+        "n_fires": 636,
         "coverage_pct": 100.0,
-        "stake": 6330.0,
-        "pnl": 591.79,
-        "roi_pct": 9.35,
-        "mean_clv_pin_pct": 10.94,
-        "mean_clv_any_pct": 10.4
-      }
-    },
-    "edge_7pct": {
-      "T-24h": {
-        "horizon": "T-24h",
-        "n_fires": 96,
-        "n_no_snap": 534,
-        "n_below_edge": 3,
-        "coverage_pct": 15.2,
-        "stake": 960.0,
-        "pnl": 181.0,
-        "roi_pct": 18.85,
-        "mean_clv_pin_pct": 8.72,
-        "mean_clv_any_pct": 9.91,
-        "mean_max_odds": 2.659
-      },
-      "T-12h": {
-        "horizon": "T-12h",
-        "n_fires": 175,
-        "n_no_snap": 452,
-        "n_below_edge": 6,
-        "coverage_pct": 27.6,
-        "stake": 1750.0,
-        "pnl": 81.3,
-        "roi_pct": 4.65,
-        "mean_clv_pin_pct": 9.89,
-        "mean_clv_any_pct": 9.67,
-        "mean_max_odds": 2.704
-      },
-      "T-6h": {
-        "horizon": "T-6h",
-        "n_fires": 177,
-        "n_no_snap": 449,
-        "n_below_edge": 7,
-        "coverage_pct": 28.0,
-        "stake": 1770.0,
-        "pnl": 100.39,
-        "roi_pct": 5.67,
-        "mean_clv_pin_pct": 8.98,
-        "mean_clv_any_pct": 9.01,
-        "mean_max_odds": 2.675
-      },
-      "T-2h": {
-        "horizon": "T-2h",
-        "n_fires": 164,
-        "n_no_snap": 461,
-        "n_below_edge": 8,
-        "coverage_pct": 25.9,
-        "stake": 1640.0,
-        "pnl": 17.2,
-        "roi_pct": 1.05,
-        "mean_clv_pin_pct": 7.01,
-        "mean_clv_any_pct": 6.99,
-        "mean_max_odds": 2.623
-      },
-      "T-30m": {
-        "horizon": "T-30m",
-        "n_fires": 147,
-        "n_no_snap": 477,
-        "n_below_edge": 9,
-        "coverage_pct": 23.2,
-        "stake": 1470.0,
-        "pnl": 95.0,
-        "roi_pct": 6.46,
-        "mean_clv_pin_pct": 6.88,
-        "mean_clv_any_pct": 6.89,
-        "mean_max_odds": 2.612
-      },
-      "production_baseline": {
-        "horizon": "production_baseline",
-        "n_fires": 633,
-        "coverage_pct": 100.0,
-        "stake": 6330.0,
-        "pnl": 591.79,
-        "roi_pct": 9.35,
-        "mean_clv_pin_pct": 10.94,
-        "mean_clv_any_pct": 10.4
+        "stake": 6360.0,
+        "pnl": 561.79,
+        "roi_pct": 8.83,
+        "mean_clv_pin_pct": 11.26,
+        "mean_clv_any_pct": 10.65
       }
     }
   },
   "default_edge_threshold": 0.05,
-  "summary": "Cohort: calibrated pre-match (1x2/OU/BTTS, settled, n=633). At edge_threshold=5%: T-24h verdict: REJECT (coverage too low) \u2014 coverage 15%, ROI +19.92% vs baseline +9.35% (delta +10.57pp); T-12h verdict: REJECT (coverage too low) \u2014 coverage 28%, ROI +4.80% vs baseline +9.35% (delta -4.55pp); T-6h verdict: REJECT (coverage too low) \u2014 coverage 28%, ROI +4.64% vs baseline +9.35% (delta -4.71pp)."
+  "summary": "Cohort: calibrated pre-match (1x2/OU/BTTS, settled, n=636). At edge_threshold=5%: T-24h verdict: REJECT (coverage too low) \u2014 coverage 15%, ROI +18.69% vs baseline +8.83% (delta +9.86pp); T-12h verdict: REJECT (coverage too low) \u2014 coverage 28%, ROI +3.04% vs baseline +8.83% (delta -5.79pp); T-6h verdict: REJECT (coverage too low) \u2014 coverage 29%, ROI +2.93% vs baseline +8.83% (delta -5.90pp)."
 }
