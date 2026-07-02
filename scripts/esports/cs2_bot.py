@@ -229,6 +229,20 @@ BOTS_CONFIG: dict[str, dict] = {
         markets=("total_maps_o25",),
         min_extra_edge=0.05,
     ),
+
+    # Map 1 Winner specialist (BO3+ only): CS2-MAP1-WINNER 2026-07-02.
+    # Fair odds from enrich_map1_winner() — 65% map win-rate + 35% ELO.
+    # Edge source: veto-revealed map selection is public but most books
+    # price Map 1 off overall team strength, not map-specific win rates.
+    # 3% floor (same as a1m) — handicap-class market, softer than 1X2.
+    # Requires veto_map1 to be set; rows without it have fair_odds_m1w* NULL
+    # so _scan_one skips them automatically.
+    "bot_cs2_map1_winner_v1": _cfg(
+        "bot_cs2_map1_winner_v1",
+        ("elo+pq_v1", "v8"),
+        markets=("map1_winner",),
+        min_extra_edge=0.03,
+    ),
 }
 
 
@@ -255,6 +269,8 @@ def _load_open_matches() -> list[dict]:
                coolbet_odds_map1, coolbet_odds_map2,
                coolbet_odds_cs1, coolbet_odds_cs2,
                coolbet_odds_total_o25, coolbet_odds_total_u25,
+               coolbet_odds_m1w1, coolbet_odds_m1w2,
+               fair_odds_m1w1, fair_odds_m1w2, veto_map1,
                pinnacle_odds1, pinnacle_odds2,
                roster_change1, roster_change2,
                'elo+pq_v1' AS source
@@ -280,6 +296,8 @@ def _load_open_matches() -> list[dict]:
                u.coolbet_odds_map1, u.coolbet_odds_map2,
                u.coolbet_odds_cs1, u.coolbet_odds_cs2,
                u.coolbet_odds_total_o25, u.coolbet_odds_total_u25,
+               u.coolbet_odds_m1w1, u.coolbet_odds_m1w2,
+               u.fair_odds_m1w1, u.fair_odds_m1w2, u.veto_map1,
                u.pinnacle_odds1, u.pinnacle_odds2,
                u.roster_change1, u.roster_change2,
                COALESCE(h.source, 'hltv_v1') AS source
@@ -373,6 +391,10 @@ def _eligible_books(row: dict, sidekey: str, market: str = "match_winner") -> li
     elif market == "clean_sweep":
         candidates = [
             ("coolbet", row.get(f"coolbet_odds_cs{sidekey}")),
+        ]
+    elif market == "map1_winner":
+        candidates = [
+            ("coolbet", row.get(f"coolbet_odds_m1w{sidekey}")),
         ]
     else:
         candidates = [
@@ -616,6 +638,29 @@ def _scan_one(row: dict, cfg: dict) -> list[dict]:
                     if pick:
                         picks.append(pick)
 
+    # map1_winner (BO3+ only) — which team wins the first map.
+    # Fair odds come from enrich_map1_winner() (veto + map win-rate blend).
+    # Coolbet-only market; no Pinnacle or bo3.gg column exists for this.
+    # CS2-MAP1-WINNER 2026-07-02, mig 268.
+    if "map1_winner" in cfg["markets"] and best_of >= 3:
+        for side, team_name, fair, sidekey in [
+            ("team1", row["team1"], row.get("fair_odds_m1w1"), "1"),
+            ("team2", row["team2"], row.get("fair_odds_m1w2"), "2"),
+        ]:
+            if fair is None:
+                continue
+            prob = 1.0 / float(fair)
+            thr = round(float(fair) * (1 - cfg["min_extra_edge"]), 3)
+            prices = _eligible_books(row, sidekey, market="map1_winner")
+            pick = _consider_side(
+                source=source, side=side, team_name=team_name,
+                prices=prices, fair=fair, thr=thr, prob=prob,
+                min_extra=cfg["min_extra_edge"], market="map1_winner",
+                **gate_kwargs,
+            )
+            if pick:
+                picks.append(pick)
+
     return picks
 
 
@@ -658,9 +703,13 @@ def _settle() -> int:
     open_bets = execute_query("""
         SELECT b.id, b.bot_name, b.team1, b.team2, b.market, b.pick,
                b.odds_at_pick, b.stake, b.stake_eur,
-               r.winner, r.score1, r.score2
+               r.winner, r.score1, r.score2,
+               mm.winner_name AS map1_winner_name
         FROM cs2_simulated_bets b
         JOIN cs2_results r ON b.bo3gg_id = r.bo3gg_id
+        LEFT JOIN cs2_hltv_matches hm ON hm.bo3gg_id = b.bo3gg_id
+        LEFT JOIN cs2_hltv_match_maps mm
+               ON mm.hltv_match_id = hm.hltv_match_id AND mm.map_order = 1
         WHERE b.result IS NULL
     """, ())
 
@@ -734,6 +783,13 @@ def _bet_won(row: dict) -> bool | None:
         if row["pick"] == "under":
             return total_maps < 3     # i.e., <= 2
         return None
+    if row["market"] == "map1_winner":
+        # Settlement via cs2_hltv_match_maps (map_order=1). If HLTV match
+        # details haven't been scraped yet, map1_winner_name is NULL — defer.
+        map1_winner_name = row.get("map1_winner_name")
+        if not map1_winner_name:
+            return None
+        return row["pick"] == map1_winner_name
     return None
 
 

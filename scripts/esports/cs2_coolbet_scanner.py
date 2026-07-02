@@ -182,6 +182,24 @@ def find_total_maps_o25_market(markets: list[dict]) -> dict | None:
     return None
 
 
+def find_map1_winner_market(markets: list[dict]) -> dict | None:
+    """Return the Map 1 Winner market if Coolbet offers it for this fixture.
+
+    CS2-MAP1-WINNER (2026-07-02). Coolbet names this market variably across
+    leagues — known patterns: "Map 1 - Result", "Map 1 Winner", "1st Map
+    Winner", "First Map". Match on 'map 1' or 'first map' in the name with
+    exactly 2 outcomes (home/away). No line filter needed — this market has
+    no handicap line.
+    """
+    for m in markets:
+        name = (m.get("name") or "").lower()
+        if len(m.get("outcomes") or []) != 2:
+            continue
+        if "map 1" in name or "first map" in name or "1st map" in name:
+            return m
+    return None
+
+
 def fetch_odds_batch(session: CoolbetSession, market_ids: list[int]) -> dict[int, dict[int, float]]:
     result: dict[int, dict[int, float]] = {}
     for i in range(0, len(market_ids), ODDS_BATCH_SIZE):
@@ -283,13 +301,13 @@ def main() -> None:
         time.sleep(0.3)
     print(f"  {len(all_matches)} matches across Coolbet CS2 leagues")
 
-    # Collect market_winner + atleast-1-map + total-maps-O/U market IDs
-    # (all go in one odds-fetch batch so we save round-trips). Each match
-    # contributes one match-winner market, 0-2 map-handicap markets, and
-    # at most one total-maps O/U 2.5 market (BO3 only).
+    # Collect all market IDs in one batch (saves round-trips). Each match
+    # contributes one match-winner, 0-2 map-handicap, 0-1 total-maps O/U,
+    # and 0-1 Map 1 Winner markets.
     market_to_match = {}
     atleast1map_market_to_match: dict[int, tuple] = {}
     total_maps_market_to_match: dict[int, tuple] = {}
+    map1_winner_market_to_match: dict[int, tuple] = {}
     for m in all_matches:
         mw = find_match_winner_market(m["markets"])
         if mw and mw.get("id"):
@@ -300,13 +318,18 @@ def main() -> None:
         tm = find_total_maps_o25_market(m["markets"])
         if tm and tm.get("id"):
             total_maps_market_to_match[int(tm["id"])] = (m, tm)
-    print(f"  {len(market_to_match)} match-winner + {len(atleast1map_market_to_match)} ≥1-map + {len(total_maps_market_to_match)} total-maps-O/U markets to price")
+        m1 = find_map1_winner_market(m["markets"])
+        if m1 and m1.get("id"):
+            map1_winner_market_to_match[int(m1["id"])] = (m, m1)
+    print(f"  {len(market_to_match)} match-winner + {len(atleast1map_market_to_match)} ≥1-map + "
+          f"{len(total_maps_market_to_match)} total-maps-O/U + {len(map1_winner_market_to_match)} map1-winner markets")
     if not market_to_match:
         return
 
     all_market_ids = (list(market_to_match.keys())
                       + list(atleast1map_market_to_match.keys())
-                      + list(total_maps_market_to_match.keys()))
+                      + list(total_maps_market_to_match.keys())
+                      + list(map1_winner_market_to_match.keys()))
     odds_by_market = fetch_odds_batch(session, all_market_ids)
     matched, unmatched, written = 0, 0, 0
 
@@ -383,6 +406,24 @@ def main() -> None:
             "over": over_odds, "under": under_odds,
         }
 
+    # CS2-MAP1-WINNER (2026-07-02): index Map 1 Winner odds by match.
+    # 2-outcome market: outcome[0] = home team wins map 1, outcome[1] = away.
+    # Coolbet's home/away assignment is positional — same convention as
+    # find_match_winner_market. We'll apply the team-order swap downstream.
+    map1_winner_by_match_id: dict[int, dict] = {}
+    for m1_mid, (m, m1_mkt) in map1_winner_market_to_match.items():
+        prices = odds_by_market.get(m1_mid, {})
+        outcomes = m1_mkt.get("outcomes") or []
+        if len(outcomes) != 2 or len(prices) < 2:
+            continue
+        o_home = outcomes[0].get("id"); o_away = outcomes[1].get("id")
+        odds_home = prices.get(o_home); odds_away = prices.get(o_away)
+        if not (odds_home and odds_away):
+            continue
+        map1_winner_by_match_id[int(m["id"] or 0)] = {
+            "home": odds_home, "away": odds_away,
+        }
+
     for mid, (m, mw) in market_to_match.items():
         prices = odds_by_market.get(mid, {})
         outcomes = mw.get("outcomes") or []
@@ -432,6 +473,11 @@ def main() -> None:
         tm_over = tm["over"] if tm else None
         tm_under = tm["under"] if tm else None
 
+        # Map 1 Winner — 2-outcome market; swap applied same as match_winner.
+        m1 = map1_winner_by_match_id.get(int(m.get("id") or 0))
+        m1w1 = (m1["away"] if swap else m1["home"]) if m1 else None
+        m1w2 = (m1["home"] if swap else m1["away"]) if m1 else None
+
         tag = "✓ would write" if args.record else "  dry"
         ah_part = ""
         if atleast1_team1 or atleast1_team2:
@@ -442,7 +488,10 @@ def main() -> None:
         tm_part = ""
         if tm_over or tm_under:
             tm_part = f"  TM2.5:O{tm_over or '—'}/U{tm_under or '—'}"
-        print(f"    {tag}  {row['team1']:25} vs {row['team2']:25}  {odds1:.2f}/{odds2:.2f}{ah_part}{cs_part}{tm_part}")
+        m1_part = ""
+        if m1w1 or m1w2:
+            m1_part = f"  M1W:{m1w1 or '—'}/{m1w2 or '—'}"
+        print(f"    {tag}  {row['team1']:25} vs {row['team2']:25}  {odds1:.2f}/{odds2:.2f}{ah_part}{cs_part}{tm_part}{m1_part}")
 
         if args.record:
             execute_write("""
@@ -450,7 +499,8 @@ def main() -> None:
                    SET coolbet_odds1 = %s, coolbet_odds2 = %s,
                        coolbet_odds_map1 = %s, coolbet_odds_map2 = %s,
                        coolbet_odds_cs1 = %s, coolbet_odds_cs2 = %s,
-                       coolbet_odds_total_o25 = %s, coolbet_odds_total_u25 = %s
+                       coolbet_odds_total_o25 = %s, coolbet_odds_total_u25 = %s,
+                       coolbet_odds_m1w1 = %s, coolbet_odds_m1w2 = %s
                  WHERE id = %s
             """, (round(odds1, 3), round(odds2, 3),
                   round(atleast1_team1, 3) if atleast1_team1 else None,
@@ -459,6 +509,8 @@ def main() -> None:
                   round(clean_sweep_team2, 3) if clean_sweep_team2 else None,
                   round(tm_over, 3) if tm_over else None,
                   round(tm_under, 3) if tm_under else None,
+                  round(m1w1, 3) if m1w1 else None,
+                  round(m1w2, 3) if m1w2 else None,
                   row["id"]))
             written += 1
 

@@ -27030,5 +27030,58 @@ def test_cs2_map_stats_expand():
         "compute job must be weekly-cron-scheduled"
 
 
+@test("CS2-MAP1-WINNER — migration, scanner, enrichment, bot, and settlement all wired")
+def test_cs2_map1_winner():
+    import pathlib
+    root = pathlib.Path(__file__).parent.parent
+
+    # Migration 268 exists with correct columns
+    mig = root / "supabase/migrations/268_cs2_map1_winner_columns.sql"
+    assert mig.exists(), "migration 268 must exist"
+    mig_src = mig.read_text()
+    for col in ("veto_map1", "fair_odds_m1w1", "fair_odds_m1w2",
+                "coolbet_odds_m1w1", "coolbet_odds_m1w2"):
+        assert col in mig_src, f"migration 268 must add column {col}"
+    assert "bot_cs2_map1_winner_v1" in mig_src, \
+        "migration 268 must insert bot_cs2_map1_winner_v1"
+
+    # Scanner has find_map1_winner_market
+    scan_src = (root / "scripts/esports/cs2_coolbet_scanner.py").read_text()
+    assert "find_map1_winner_market" in scan_src, \
+        "cs2_coolbet_scanner must define find_map1_winner_market"
+    assert "map 1" in scan_src or "first map" in scan_src, \
+        "find_map1_winner_market must match Coolbet market name patterns"
+    assert "coolbet_odds_m1w1" in scan_src, \
+        "scanner must write coolbet_odds_m1w1"
+
+    # Enrichment function exists in upcoming matches script
+    up_src = (root / "scripts/esports/cs2_hltv_upcoming_matches.py").read_text()
+    assert "enrich_map1_winner" in up_src, \
+        "cs2_hltv_upcoming_matches must define enrich_map1_winner"
+    assert "fair_odds_m1w1" in up_src, \
+        "enrich_map1_winner must write fair_odds_m1w1"
+    assert "_MAP1_ALPHA" in up_src, \
+        "enrich_map1_winner must define blend alpha constant"
+    # main() must call enrich_map1_winner
+    assert up_src.count("enrich_map1_winner(") >= 1, \
+        "main() must call enrich_map1_winner"
+
+    # Bot has map1_winner market support
+    bot_src = (root / "scripts/esports/cs2_bot.py").read_text()
+    assert "map1_winner" in bot_src, \
+        "cs2_bot must handle map1_winner market"
+    assert "bot_cs2_map1_winner_v1" in bot_src, \
+        "BOTS_CONFIG must include bot_cs2_map1_winner_v1"
+    assert "fair_odds_m1w1" in bot_src, \
+        "cs2_bot _load_open_matches must select fair_odds_m1w1"
+    assert "map1_winner_name" in bot_src, \
+        "_bet_won must settle map1_winner via cs2_hltv_match_maps"
+
+    # Scheduler summary_keywords includes map1
+    sched_src = (root / "workers/scheduler.py").read_text()
+    assert "map1" in sched_src, \
+        "scheduler job_cs2_hltv_upcoming summary_keywords must include map1"
+
+
 if __name__ == "__main__":
     main()

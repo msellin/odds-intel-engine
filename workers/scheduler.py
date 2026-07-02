@@ -994,13 +994,18 @@ def job_cs2_hltv_upcoming():
     richer ELO/odds enrichment. HLTV-sourced rows use a negative
     bo3gg_id sentinel (= -hltv_match_id) so the downstream predictors'
     `WHERE bo3gg_id IS NOT NULL` filter still accepts them.
+
+    Also runs: enrich_elo (ELO back-fill), scrape_upcoming_veto (veto data
+    for v9), and enrich_map1_winner (Map 1 fair odds from veto + map win%).
+    CS2-MAP1-WINNER 2026-07-02, mig 268.
     """
     console.print("[bold cyan]CS2 HLTV upcoming-matches scrape --record[/bold cyan]")
     _run_subprocess_job(
         "cs2_hltv_upcoming",
         [sys.executable, "scripts/esports/cs2_hltv_upcoming_matches.py", "--record"],
         timeout=300,
-        summary_keywords=["parsed", "inserted", "predictor-ready", "earliest", "latest", "veto"],
+        summary_keywords=["parsed", "inserted", "predictor-ready", "earliest", "latest",
+                          "veto", "map1"],
     )
 
 

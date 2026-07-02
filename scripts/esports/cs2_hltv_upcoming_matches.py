@@ -564,6 +564,143 @@ def scrape_upcoming_veto(record: bool = False) -> tuple[int, int, int]:
     return (veto_found, veto_empty, fetch_failed)
 
 
+# CS2-MAP1-WINNER (2026-07-02): fair-odds enrichment for Map 1 Winner market.
+# Loads map win rates (scraped + computed), finds Map 1 from veto, blends
+# with ELO probability, writes fair_odds_m1w1/m1w2 + veto_map1.
+
+_MAP1_ALPHA = 0.65        # weight on map-specific stats vs ELO prior
+_MAP1_PROB_MIN = 0.10     # floor to prevent crazy odds on thin data
+_MAP1_PROB_MAX = 0.90
+
+
+def _load_map_winrate() -> dict[str, dict[str, float]]:
+    """Load per-team per-map win% from scraped (priority) + computed (fallback).
+    Returns {team_key_lower: {map_name: win_pct_0_to_100}}.
+    """
+    rows = execute_query("""
+        WITH scraped AS (
+            SELECT DISTINCT ON (lower(team_name), map_name)
+                lower(team_name) AS team_key, map_name, win_pct
+            FROM cs2_hltv_team_map_stats WHERE win_pct IS NOT NULL
+            ORDER BY lower(team_name), map_name, snapshot_date DESC, fetched_at DESC
+        ),
+        computed AS (
+            SELECT DISTINCT ON (lower(team_name), map_name)
+                lower(team_name) AS team_key, map_name, win_pct
+            FROM cs2_computed_team_map_stats WHERE win_pct IS NOT NULL
+            ORDER BY lower(team_name), map_name, computed_date DESC
+        )
+        SELECT s.team_key, s.map_name, s.win_pct FROM scraped s
+        UNION ALL
+        SELECT c.team_key, c.map_name, c.win_pct FROM computed c
+        WHERE NOT EXISTS (
+            SELECT 1 FROM scraped s WHERE s.team_key = c.team_key AND s.map_name = c.map_name
+        )
+    """)
+    out: dict[str, dict[str, float]] = {}
+    for r in rows:
+        out.setdefault(r["team_key"], {})[r["map_name"]] = float(r["win_pct"])
+    return out
+
+
+def enrich_map1_winner(record: bool = False) -> tuple[int, int, int]:
+    """Compute Map 1 Winner fair odds from veto + map win rates.
+
+    For each upcoming match with ELO coverage and veto data:
+      1. Find Map 1 (first 'picked' action, or 'left_over' for BO1 formats).
+      2. Look up each team's win% on that map.
+      3. Blend: 65% map stats, 35% ELO probability.
+      4. Write veto_map1, fair_odds_m1w1, fair_odds_m1w2.
+
+    BO1 matches are skipped — the concept of "map 1 winner" as a betting
+    market only makes sense for BO3+ where multiple maps are possible.
+
+    Returns (examined, updated, skipped_no_data).
+    """
+    winrate = _load_map_winrate()
+
+    # Batch: all upcoming matches with win_prob1 set + their veto rows.
+    # HLTV-sourced: hltv_match_id = -bo3gg_id.
+    # bo3.gg-sourced: join cs2_hltv_matches to resolve hltv_match_id.
+    rows = execute_query("""
+        WITH match_ids AS (
+            SELECT u.id AS row_id, u.bo3gg_id, u.team1, u.team2,
+                   u.win_prob1, u.best_of,
+                   CASE WHEN u.bo3gg_id < 0 THEN -u.bo3gg_id
+                        ELSE hm.hltv_match_id END AS hltv_match_id
+            FROM cs2_upcoming_matches u
+            LEFT JOIN cs2_hltv_matches hm ON hm.bo3gg_id = u.bo3gg_id AND u.bo3gg_id > 0
+            WHERE u.kickoff_time >= NOW()
+              AND u.win_prob1 IS NOT NULL
+              AND (u.best_of IS NULL OR u.best_of >= 3)
+        )
+        SELECT m.row_id, m.bo3gg_id, m.team1, m.team2, m.win_prob1, m.best_of,
+               v.step, v.action, v.map_name
+        FROM match_ids m
+        JOIN cs2_hltv_match_veto v ON v.hltv_match_id = m.hltv_match_id
+        ORDER BY m.row_id, v.step
+    """)
+
+    # Group veto rows by row_id
+    from collections import defaultdict
+    by_row: dict[int, dict] = {}
+    veto_by_row: dict[int, list] = defaultdict(list)
+    for r in rows:
+        rid = r["row_id"]
+        if rid not in by_row:
+            by_row[rid] = {
+                "row_id": rid, "bo3gg_id": r["bo3gg_id"],
+                "team1": r["team1"], "team2": r["team2"],
+                "win_prob1": float(r["win_prob1"]),
+                "best_of": r["best_of"] or 3,
+            }
+        veto_by_row[rid].append({"step": r["step"], "action": r["action"], "map_name": r["map_name"]})
+
+    examined = updated = skipped = 0
+    for rid, match in by_row.items():
+        examined += 1
+        veto = sorted(veto_by_row[rid], key=lambda x: x["step"])
+
+        # Find Map 1: first 'picked' map. Skip BO1 (all bans → no picks).
+        map1 = next((v["map_name"] for v in veto if v["action"] == "picked"), None)
+        if not map1:
+            skipped += 1
+            continue
+
+        t1_key = match["team1"].lower()
+        t2_key = match["team2"].lower()
+        wr1 = winrate.get(t1_key, {}).get(map1)
+        wr2 = winrate.get(t2_key, {}).get(map1)
+
+        if wr1 is None or wr2 is None:
+            skipped += 1
+            continue
+
+        # Normalize relative map rates → head-to-head map probability
+        map_sum = wr1 + wr2
+        map_prob1 = wr1 / map_sum if map_sum > 0 else 0.5
+
+        # Blend with ELO prior
+        elo_prob1 = match["win_prob1"]
+        blended1 = _MAP1_ALPHA * map_prob1 + (1 - _MAP1_ALPHA) * elo_prob1
+        blended1 = max(_MAP1_PROB_MIN, min(_MAP1_PROB_MAX, blended1))
+        blended2 = 1.0 - blended1
+
+        f1 = round(1.0 / blended1, 3)
+        f2 = round(1.0 / blended2, 3)
+
+        if record:
+            execute_write(
+                """UPDATE cs2_upcoming_matches
+                   SET veto_map1 = %s, fair_odds_m1w1 = %s, fair_odds_m1w2 = %s
+                   WHERE id = %s""",
+                (map1, f1, f2, rid)
+            )
+        updated += 1
+
+    return (examined, updated, skipped)
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     p.add_argument("--record", action="store_true",
@@ -611,6 +748,13 @@ def main() -> int:
     print("\n  scraping veto data for upcoming matches…")
     vf, ve, vx = scrape_upcoming_veto(record=True)
     print(f"  ✓ veto: found={vf}  no_veto_yet={ve}  fetch_failed={vx}")
+
+    # CS2-MAP1-WINNER (2026-07-02) — compute Map 1 Winner fair odds from
+    # veto sequence + map win rates. Runs after veto scrape so newly written
+    # veto rows are included in the same pass.
+    print("\n  enriching Map 1 Winner fair odds…")
+    m1_examined, m1_updated, m1_skipped = enrich_map1_winner(record=True)
+    print(f"  ✓ map1: examined={m1_examined}  priced={m1_updated}  skipped={m1_skipped}")
     return 0
 
 
