@@ -39,7 +39,8 @@ from cs2_sneak_peek_v7 import load_pistol_map, load_tier_map  # type: ignore
 from cs2_sneak_peek_v8 import load_team_stats_direct, _kd_with_fallback, _pistol_with_fallback  # type: ignore
 from cs2_sneak_peek_v9_veto import (  # type: ignore
     load_map_winrate_map, load_veto_history, load_match_veto_summary,
-    load_bo3gg_to_hltv_bridge, _veto_features,
+    load_bo3gg_to_hltv_bridge, load_map_pistol_map, load_match_starting_side,
+    _veto_features,
 )
 
 from sklearn.linear_model import LogisticRegression  # noqa: E402
@@ -52,6 +53,7 @@ FEATURE_KEYS = [
     "tier_s", "tier_a", "tier_b", "tier_c", "tier_d",
     "kd_diff",
     "decider_winrate_diff", "permaban_diff_on_decider", "map_pool_winrate_diff",
+    "pistol_ct_diff", "pistol_t_diff", "map1_side_advantage",
 ]
 
 
@@ -77,10 +79,12 @@ def main():
     direct      = load_team_stats_direct()
     matches     = load_matches_with_features(args.since)
 
-    bridge       = load_bo3gg_to_hltv_bridge()
-    veto_summary = load_match_veto_summary()
-    ban_history  = load_veto_history()
-    map_winrates = load_map_winrate_map()
+    bridge         = load_bo3gg_to_hltv_bridge()
+    veto_summary   = load_match_veto_summary()
+    ban_history    = load_veto_history()
+    map_winrates   = load_map_winrate_map()
+    map_pistols    = load_map_pistol_map()
+    starting_sides = load_match_starting_side()
 
     rows = []
     for m in matches:
@@ -117,7 +121,8 @@ def main():
 
         hltv_id = bridge.get(int(m["bo3gg_id"])) if m.get("bo3gg_id") else None
         vf = _veto_features(m["team1"], m["team2"], m["kickoff_time"],
-                            hltv_id, veto_summary, ban_history, map_winrates)
+                            hltv_id, veto_summary, ban_history, map_winrates,
+                            map_pistols=map_pistols, starting_sides=starting_sides)
 
         rows.append({
             "y": 1 if m["winner"] == "team1" else 0,
@@ -135,10 +140,13 @@ def main():
             **vf,
         })
 
-    veto_n = sum(1 for r in rows if r["decider_winrate_diff"] != 0.0
-                 or r["permaban_diff_on_decider"] != 0.0
-                 or r["map_pool_winrate_diff"] != 0.0)
-    print(f"  rows: {len(rows)}  veto-covered: {veto_n}/{len(rows)}")
+    veto_n    = sum(1 for r in rows if r["decider_winrate_diff"] != 0.0
+                    or r["permaban_diff_on_decider"] != 0.0
+                    or r["map_pool_winrate_diff"] != 0.0)
+    pistol_n  = sum(1 for r in rows if r["pistol_ct_diff"] != 0.0 or r["pistol_t_diff"] != 0.0)
+    side_n    = sum(1 for r in rows if r["map1_side_advantage"] != 0.0)
+    print(f"  rows: {len(rows)}  veto-covered: {veto_n}/{len(rows)}"
+          f"  pistol-covered: {pistol_n}/{len(rows)}  side-covered: {side_n}/{len(rows)}")
 
     X = np.array([[r[k] for k in FEATURE_KEYS] for r in rows], dtype=float)
     y = np.array([r["y"] for r in rows], dtype=int)

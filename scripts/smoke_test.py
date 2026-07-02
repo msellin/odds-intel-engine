@@ -27083,5 +27083,59 @@ def test_cs2_map1_winner():
         "scheduler job_cs2_hltv_upcoming summary_keywords must include map1"
 
 
+@test("CS2-PISTOL-STATS — map-specific pistol loaders and v9 feature keys wired")
+def test_cs2_pistol_stats():
+    import pathlib
+    root = pathlib.Path(__file__).parent.parent
+
+    veto_src = (root / "scripts/esports/cs2_sneak_peek_v9_veto.py").read_text()
+    assert "load_map_pistol_map" in veto_src, \
+        "cs2_sneak_peek_v9_veto must define load_map_pistol_map"
+    assert "cs2_hltv_team_pistols" in veto_src, \
+        "load_map_pistol_map must query cs2_hltv_team_pistols"
+    assert "pistol_ct_diff" in veto_src, \
+        "_veto_features must compute pistol_ct_diff"
+    assert "pistol_t_diff" in veto_src, \
+        "_veto_features must compute pistol_t_diff"
+
+    train_src = (root / "scripts/esports/cs2_v9_train.py").read_text()
+    assert "pistol_ct_diff" in train_src, \
+        "cs2_v9_train FEATURE_KEYS must include pistol_ct_diff"
+    assert "pistol_t_diff" in train_src, \
+        "cs2_v9_train FEATURE_KEYS must include pistol_t_diff"
+    assert "load_map_pistol_map" in train_src, \
+        "cs2_v9_train must import and use load_map_pistol_map"
+
+    predict_src = (root / "scripts/esports/cs2_v9_predict.py").read_text()
+    assert "load_map_pistol_map" in predict_src, \
+        "cs2_v9_predict must import load_map_pistol_map"
+
+
+@test("CS2-STARTING-SIDE — map1 starting side loader and feature wired into v9")
+def test_cs2_starting_side():
+    import pathlib
+    root = pathlib.Path(__file__).parent.parent
+
+    veto_src = (root / "scripts/esports/cs2_sneak_peek_v9_veto.py").read_text()
+    assert "load_match_starting_side" in veto_src, \
+        "cs2_sneak_peek_v9_veto must define load_match_starting_side"
+    assert "cs2_hltv_match_maps" in veto_src, \
+        "load_match_starting_side must query cs2_hltv_match_maps"
+    assert "map1_side_advantage" in veto_src, \
+        "_veto_features must compute map1_side_advantage"
+    assert "team1_first_half_side" in veto_src, \
+        "load_match_starting_side must select team1_first_half_side"
+
+    train_src = (root / "scripts/esports/cs2_v9_train.py").read_text()
+    assert "map1_side_advantage" in train_src, \
+        "cs2_v9_train FEATURE_KEYS must include map1_side_advantage"
+    assert "load_match_starting_side" in train_src, \
+        "cs2_v9_train must import and use load_match_starting_side"
+
+    predict_src = (root / "scripts/esports/cs2_v9_predict.py").read_text()
+    assert "load_match_starting_side" in predict_src, \
+        "cs2_v9_predict must import load_match_starting_side"
+
+
 if __name__ == "__main__":
     main()

@@ -1135,7 +1135,7 @@ def job_cs2_hltv_match_details_process():
     console.print("[bold cyan]CS2 HLTV match details processor[/bold cyan]")
     _run_subprocess_job(
         "cs2_hltv_match_details_process",
-        [sys.executable, "scripts/esports/cs2_hltv_match_details.py", "--process", "200"],
+        [sys.executable, "scripts/esports/cs2_hltv_match_details.py", "--process", "120"],
         timeout=1800,
         summary_keywords=["fetched:", "queued", "✓", "✗", "parse failed"],
         skip_if=lambda: (

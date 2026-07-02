@@ -39,7 +39,8 @@ from cs2_sneak_peek_v8 import (  # type: ignore
 )
 from cs2_sneak_peek_v9_veto import (  # type: ignore
     load_map_winrate_map, load_veto_history, load_match_veto_summary,
-    load_bo3gg_to_hltv_bridge, _veto_features,
+    load_bo3gg_to_hltv_bridge, load_map_pistol_map, load_match_starting_side,
+    _veto_features,
 )
 
 MODEL_VERSION = "v9"
@@ -61,7 +62,9 @@ def score_match(m: dict, tm: dict, pistol: dict, tier_map: dict,
                 kd_map: dict, direct: dict,
                 bridge: dict, veto_summary: dict,
                 ban_history: dict, map_winrates: dict,
-                intercept: float, coefs: dict) -> dict | None:
+                intercept: float, coefs: dict,
+                map_pistols: dict | None = None,
+                starting_sides: dict | None = None) -> dict | None:
     if m.get("win_prob1") is None:
         return None
     saved = float(m["win_prob1"])
@@ -99,7 +102,8 @@ def score_match(m: dict, tm: dict, pistol: dict, tier_map: dict,
 
     hltv_id = bridge.get(int(m["bo3gg_id"])) if m.get("bo3gg_id") else None
     vf = _veto_features(m["team1"], m["team2"], m["kickoff_time"],
-                        hltv_id, veto_summary, ban_history, map_winrates)
+                        hltv_id, veto_summary, ban_history, map_winrates,
+                        map_pistols=map_pistols, starting_sides=starting_sides)
 
     feat_vals = {
         "logit_saved": _logit(saved),
@@ -138,15 +142,17 @@ def main():
     intercept, coefs, feature_keys = load_coefs()
     print(f"  loaded v9 coefs (intercept={intercept:+.4f}, {len(coefs)} features)")
 
-    tm          = load_team_map()
-    pistol      = load_pistol_map()
-    tier_map    = load_tier_map()
-    kd_map      = load_team_kd_map()
-    direct      = load_team_stats_direct()
-    bridge      = load_bo3gg_to_hltv_bridge()
-    veto_summary = load_match_veto_summary()
-    ban_history  = load_veto_history()
-    map_winrates = load_map_winrate_map()
+    tm             = load_team_map()
+    pistol         = load_pistol_map()
+    tier_map       = load_tier_map()
+    kd_map         = load_team_kd_map()
+    direct         = load_team_stats_direct()
+    bridge         = load_bo3gg_to_hltv_bridge()
+    veto_summary   = load_match_veto_summary()
+    ban_history    = load_veto_history()
+    map_winrates   = load_map_winrate_map()
+    map_pistols    = load_map_pistol_map()
+    starting_sides = load_match_starting_side()
 
     matches = load_upcoming()
     print(f"  upcoming matches with hltv_v1: {len(matches)}")
@@ -156,7 +162,8 @@ def main():
     for m in matches:
         out = score_match(m, tm, pistol, tier_map, kd_map, direct,
                           bridge, veto_summary, ban_history, map_winrates,
-                          intercept, coefs)
+                          intercept, coefs,
+                          map_pistols=map_pistols, starting_sides=starting_sides)
         if not out:
             continue
         if out["veto_active"]:

@@ -1,15 +1,15 @@
 """
 CS2 sneak-peek v9-veto — v8 + veto-derived map features.
 
-Three new features from cs2_hltv_match_veto × cs2_hltv_team_map_stats:
+Six new features from cs2_hltv_match_veto × cs2_hltv_team_map_stats × cs2_hltv_team_pistols:
 
   decider_winrate_diff    — team1_win_pct − team2_win_pct on the BO3 left_over map
-                            (from team_map_stats; 0.0 when coverage missing)
   permaban_diff_on_decider — team2 rolling ban-rate on decider minus team1 ban-rate
-                            in their last 20 vetoes before the match
-                            (positive = team2 hates the decider map more → good for team1)
-  map_pool_winrate_diff   — mean(team1 win% − team2 win%) across all maps in the veto
-                            (bans + picks + left_over; same map_stats source)
+  map_pool_winrate_diff   — mean(team1 win% − team2 win%) across all veto maps
+  pistol_ct_diff          — avg(team1.ct_pistol − team2.ct_pistol)/100 across veto maps
+  pistol_t_diff           — avg(team1.t_pistol  − team2.t_pistol)/100  across veto maps
+  map1_side_advantage     — on map 1, (team1.start_side_pct − team2.other_side_pct)/100
+                            (0.0 for upcoming matches where starting side unknown)
 
 Coverage: ~2,683 of 3,186 training rows (since 2025-06-01) have veto data via
 cs2_match_id_bridge. map_stats coverage additional gate (~248 teams).
@@ -143,6 +143,31 @@ def load_bo3gg_to_hltv_bridge() -> dict[int, int]:
     return {r["bo3gg_id"]: r["hltv_match_id"] for r in rows}
 
 
+def load_map_pistol_map() -> dict[str, dict[str, dict[str, float]]]:
+    """{team_name_lower: {map_name: {ct: pct, t: pct}}} from cs2_hltv_team_pistols."""
+    rows = execute_query("""
+        SELECT lower(team_name) AS team_key, map_name,
+               ct_pistol_pct::float AS ct_pct,
+               t_pistol_pct::float  AS t_pct
+        FROM cs2_hltv_team_pistols
+        WHERE ct_pistol_pct IS NOT NULL AND t_pistol_pct IS NOT NULL
+    """)
+    out: dict[str, dict[str, dict[str, float]]] = defaultdict(dict)
+    for r in rows:
+        out[r["team_key"]][r["map_name"]] = {"ct": r["ct_pct"], "t": r["t_pct"]}
+    return dict(out)
+
+
+def load_match_starting_side() -> dict[int, tuple[str, str]]:
+    """{hltv_match_id: (map_name, team1_first_half_side)} for map_order = 1."""
+    rows = execute_query("""
+        SELECT hltv_match_id, map_name, team1_first_half_side
+        FROM cs2_hltv_match_maps
+        WHERE map_order = 1 AND team1_first_half_side IS NOT NULL
+    """)
+    return {r["hltv_match_id"]: (r["map_name"], r["team1_first_half_side"]) for r in rows}
+
+
 # ---------------------------------------------------------------------------
 # Rolling ban-rate helper
 # ---------------------------------------------------------------------------
@@ -169,16 +194,23 @@ def _rolling_ban_rate(team_key: str,
 # Feature builder
 # ---------------------------------------------------------------------------
 
-VETO_FALLBACK = {"decider_winrate_diff": 0.0,
-                 "permaban_diff_on_decider": 0.0,
-                 "map_pool_winrate_diff": 0.0}
+VETO_FALLBACK = {
+    "decider_winrate_diff": 0.0,
+    "permaban_diff_on_decider": 0.0,
+    "map_pool_winrate_diff": 0.0,
+    "pistol_ct_diff": 0.0,
+    "pistol_t_diff": 0.0,
+    "map1_side_advantage": 0.0,
+}
 
 
 def _veto_features(team1: str, team2: str, match_date,
                    hltv_match_id: int | None,
                    veto_summary: dict,
                    ban_history: dict,
-                   map_winrates: dict) -> dict[str, float]:
+                   map_winrates: dict,
+                   map_pistols: dict | None = None,
+                   starting_sides: dict | None = None) -> dict[str, float]:
     if hltv_match_id is None or hltv_match_id not in veto_summary:
         return VETO_FALLBACK.copy()
 
@@ -200,24 +232,55 @@ def _veto_features(team1: str, team2: str, match_date,
     # decider (left_over) specific features
     decider = vs["decider_map"]
     if decider is None:
-        return {
-            "decider_winrate_diff": 0.0,
-            "permaban_diff_on_decider": 0.0,
-            "map_pool_winrate_diff": map_pool_diff,
-        }
+        decider_diff = 0.0
+        permaban_diff = 0.0
+    else:
+        w1 = t1_stats.get(decider)
+        w2 = t2_stats.get(decider)
+        decider_diff = (w1 - w2) / 100.0 if (w1 is not None and w2 is not None) else 0.0
+        t1_ban = _rolling_ban_rate(t1k, decider, match_date, ban_history)
+        t2_ban = _rolling_ban_rate(t2k, decider, match_date, ban_history)
+        permaban_diff = t2_ban - t1_ban  # positive = team2 hates decider more = good for team1
 
-    w1 = t1_stats.get(decider)
-    w2 = t2_stats.get(decider)
-    decider_diff = (w1 - w2) / 100.0 if (w1 is not None and w2 is not None) else 0.0
+    # map-specific CT and T pistol advantage, averaged across veto maps
+    pistol_ct_diff = 0.0
+    pistol_t_diff = 0.0
+    if map_pistols:
+        t1p_map = map_pistols.get(t1k, {})
+        t2p_map = map_pistols.get(t2k, {})
+        ct_diffs: list[float] = []
+        t_diffs: list[float] = []
+        for mp in set(vs["all_maps"]):
+            t1pm = t1p_map.get(mp)
+            t2pm = t2p_map.get(mp)
+            if t1pm and t2pm:
+                ct_diffs.append((t1pm["ct"] - t2pm["ct"]) / 100.0)
+                t_diffs.append((t1pm["t"] - t2pm["t"]) / 100.0)
+        pistol_ct_diff = float(np.mean(ct_diffs)) if ct_diffs else 0.0
+        pistol_t_diff = float(np.mean(t_diffs)) if t_diffs else 0.0
 
-    t1_ban = _rolling_ban_rate(t1k, decider, match_date, ban_history)
-    t2_ban = _rolling_ban_rate(t2k, decider, match_date, ban_history)
-    permaban_diff = t2_ban - t1_ban  # positive = team2 hates decider more = good for team1
+    # map 1 starting-side pistol advantage
+    # team1's pistol win rate on their starting side minus team2's on theirs
+    map1_side_advantage = 0.0
+    if map_pistols and starting_sides:
+        side_info = starting_sides.get(hltv_match_id)
+        if side_info:
+            map1_name, side = side_info
+            t1pm = map_pistols.get(t1k, {}).get(map1_name)
+            t2pm = map_pistols.get(t2k, {}).get(map1_name)
+            if t1pm and t2pm:
+                if side == "ct":
+                    map1_side_advantage = (t1pm["ct"] - t2pm["t"]) / 100.0
+                else:
+                    map1_side_advantage = (t1pm["t"] - t2pm["ct"]) / 100.0
 
     return {
         "decider_winrate_diff": decider_diff,
         "permaban_diff_on_decider": permaban_diff,
         "map_pool_winrate_diff": map_pool_diff,
+        "pistol_ct_diff": pistol_ct_diff,
+        "pistol_t_diff": pistol_t_diff,
+        "map1_side_advantage": map1_side_advantage,
     }
 
 
@@ -232,11 +295,15 @@ V8_FEATURES = [
     "kd_diff",
 ]
 
-VETO_FEATURES = ["decider_winrate_diff", "permaban_diff_on_decider", "map_pool_winrate_diff"]
+VETO_FEATURES = [
+    "decider_winrate_diff", "permaban_diff_on_decider", "map_pool_winrate_diff",
+    "pistol_ct_diff", "pistol_t_diff", "map1_side_advantage",
+]
 
 
 def build_rows(matches, tm, pistol, tier_map, kd_map, direct,
-               bridge, veto_summary, ban_history, map_winrates):
+               bridge, veto_summary, ban_history, map_winrates,
+               map_pistols=None, starting_sides=None):
     out = []
     for m in matches:
         if m["win_prob1"] is None:
@@ -276,6 +343,7 @@ def build_rows(matches, tm, pistol, tier_map, kd_map, direct,
         vf = _veto_features(
             m["team1"], m["team2"], m["kickoff_time"],
             hltv_id, veto_summary, ban_history, map_winrates,
+            map_pistols=map_pistols, starting_sides=starting_sides,
         )
 
         out.append({
@@ -358,18 +426,23 @@ def main():
     matches     = load_matches_with_features(args.since)
 
     print("  loading veto data...")
-    bridge       = load_bo3gg_to_hltv_bridge()
-    veto_summary = load_match_veto_summary()
-    ban_history  = load_veto_history()
-    map_winrates = load_map_winrate_map()
+    bridge         = load_bo3gg_to_hltv_bridge()
+    veto_summary   = load_match_veto_summary()
+    ban_history    = load_veto_history()
+    map_winrates   = load_map_winrate_map()
+    map_pistols    = load_map_pistol_map()
+    starting_sides = load_match_starting_side()
 
     print(f"  bridge entries: {len(bridge)}  "
           f"veto matches: {len(veto_summary)}  "
-          f"teams with map stats: {len(map_winrates)}")
+          f"teams with map stats: {len(map_winrates)}  "
+          f"teams with per-map pistols: {len(map_pistols)}  "
+          f"matches with map1 side: {len(starting_sides)}")
 
     print(f"  building rows...")
     rows = build_rows(matches, tm, pistol, tier_map, kd_map, direct,
-                      bridge, veto_summary, ban_history, map_winrates)
+                      bridge, veto_summary, ban_history, map_winrates,
+                      map_pistols=map_pistols, starting_sides=starting_sides)
 
     veto_n     = sum(1 for r in rows if r["veto_covered"])
     mapstats_n = sum(1 for r in rows if r["mapstats_covered"])

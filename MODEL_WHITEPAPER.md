@@ -1045,6 +1045,40 @@ Resumability:
 Admin UI `/admin/cs2` `ScrapersPanel` shows per-scraper progress + errors;
 `BacktestPanel` shows AUC/accuracy trend across runs with Δ vs previous.
 
+### 10b.13b CS2 v9 extended — map-specific pistol + starting side features (2026-07-02)
+
+**Three new features added to v9's 17-feature stacking model (now 20 features):**
+
+`pistol_ct_diff` and `pistol_t_diff` — computed from `cs2_hltv_team_pistols` (85 teams × 9 maps).
+For each map in the veto (bans + picks + left_over), the per-team CT and T pistol win percentages are
+looked up and averaged across maps: `mean(team1.ct_pct − team2.ct_pct) / 100`. Coverage: 330/3208 rows
+(10%); 0.0 fallback when either team lacks per-map pistol data.
+
+`map1_side_advantage` — from `load_match_starting_side()` which queries `cs2_hltv_match_maps
+WHERE map_order = 1` (98% populated, 28,708 rows). Feature logic: if team1 starts CT on map 1,
+advantage = `(team1.ct_pct − team2.t_pct) / 100`; if team1 starts T, advantage = `(team1.t_pct −
+team2.ct_pct) / 100`. For upcoming matches, starting side isn't yet known → defaults to 0.0.
+Coverage: 219/3208 training rows (7%).
+
+**Fitted coefficients (2026-07-02 retrain, full dataset since 2025-06-01):**
+
+| Feature | Coef |
+|---|---|
+| `map1_side_advantage` | +0.718 — strongest new signal |
+| `pistol_ct_diff` | −0.329 — negative suggests overall CT parity is a baseline, not differentiator |
+| `pistol_t_diff` | +0.087 |
+
+The `map1_side_advantage` coefficient (+0.72) is nearly as large as `logit_saved` (+0.73), indicating
+that starting-side pistol advantage on map 1 is a genuine predictor of match outcome — the pistol
+advantage compounds into a half-economy lead, especially on CT-favored maps (Nuke, Anubis, Overpass).
+
+In-sample AUC after retraining: **0.6688** (20-feature v9).
+
+**Coverage caveat**: both new features are sparse (7-10%) because `cs2_hltv_team_pistols` covers only
+85 teams scraped from HLTV's authenticated pistol stats page, and starting-side data only exists for
+historical matches. As the pipeline accumulates more HLTV match-details and pistol scrapes, coverage
+will grow naturally.
+
 ### 10b.13 Calibration shrinkage + observability (2026-06-25)
 
 **Market-consensus shrinkage** mirrors soccer's `CAL-PIN-SHRINK`
