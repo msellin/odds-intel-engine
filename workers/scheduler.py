@@ -2832,46 +2832,28 @@ def main():
                       name="Weekly Bot Maturity Review Sunday 06:30",
                       max_instances=1, misfire_grace_time=1800)
 
-    # TENNIS-SCANNER-DAILY — 06:00 + 14:00 UTC. Provider: The Odds API
-    # (was OddsPapi, swapped 2026-06-25 in TENNIS-PAPER-BETS Phase 1.3 after
-    # the OddsPapi free tier was busted). Populates tennis_fixtures_today +
-    # tennis_value_bets for admin page.
-    scheduler.add_job(job_tennis_scanner, CronTrigger(hour=6, minute=0),
-                      id="tennis_scanner_morning", name="Tennis Scanner Morning 06:00",
-                      max_instances=1, misfire_grace_time=1800)
-    scheduler.add_job(job_tennis_scanner, CronTrigger(hour=14, minute=0),
-                      id="tennis_scanner_afternoon", name="Tennis Scanner Afternoon 14:00",
-                      max_instances=1, misfire_grace_time=1800)
-
-    # TENNIS-SETTLEMENT (TENNIS-PAPER-BETS Phase 1.4 2026-06-25) — 02:00 +
-    # 14:00 UTC. The 02:00 slot catches matches finishing in the evening
-    # (most ATP/WTA mains run 12-22 UTC); 14:00 slot catches late-night /
-    # morning-Asia matches finishing the same day. Cheap pre-check skips
-    # /scores fetches if nothing's pending.
-    scheduler.add_job(job_tennis_settlement, CronTrigger(hour=2, minute=0),
-                      id="tennis_settlement_night", name="Tennis Settlement 02:00",
-                      max_instances=1, misfire_grace_time=1800)
-    scheduler.add_job(job_tennis_settlement, CronTrigger(hour=14, minute=15),
-                      id="tennis_settlement_afternoon", name="Tennis Settlement 14:15",
-                      max_instances=1, misfire_grace_time=1800)
-
-    # TENNIS-CLOSING-ODDS (TENNIS-PAPER-BETS Phase 1.5 2026-06-25) — every
-    # 30 min, 06:00-22:30 UTC. Captures Pinnacle h2h price for value-bet
-    # rows with kickoff in the next 45 min, computes CLV. Overwrites the
-    # closing_odds column on each call so the final stored value is the
-    # closest-to-kickoff Pinnacle snap. Pre-check skips API calls when
-    # nothing is imminent — most fires are free.
-    scheduler.add_job(job_tennis_closing_odds,
-                      CronTrigger(hour="6-22", minute="0,30"),
-                      id="tennis_closing_odds",
-                      name="Tennis Closing Odds [30min, 06-22 UTC]",
-                      max_instances=1, misfire_grace_time=600)
-
-    # COOLBET-TENNIS-SCAN (2026-06-08) — every 30min 07:00-22:00 UTC at :08 and :38.
-    # Keeps Coolbet tennis odds fresh in tennis_value_bets. No quota cost.
-    scheduler.add_job(job_coolbet_tennis_scanner, CronTrigger(hour="7-22", minute="8,38"),
-                      id="coolbet_tennis_scanner", name="Coolbet Tennis Scanner [30min]",
-                      max_instances=1, misfire_grace_time=900)
+    # TENNIS PAUSED 2026-07-02 — focusing on CS2 and soccer. Re-enable by
+    # uncommenting the scheduler.add_job calls below.
+    # scheduler.add_job(job_tennis_scanner, CronTrigger(hour=6, minute=0),
+    #                   id="tennis_scanner_morning", name="Tennis Scanner Morning 06:00",
+    #                   max_instances=1, misfire_grace_time=1800)
+    # scheduler.add_job(job_tennis_scanner, CronTrigger(hour=14, minute=0),
+    #                   id="tennis_scanner_afternoon", name="Tennis Scanner Afternoon 14:00",
+    #                   max_instances=1, misfire_grace_time=1800)
+    # scheduler.add_job(job_tennis_settlement, CronTrigger(hour=2, minute=0),
+    #                   id="tennis_settlement_night", name="Tennis Settlement 02:00",
+    #                   max_instances=1, misfire_grace_time=1800)
+    # scheduler.add_job(job_tennis_settlement, CronTrigger(hour=14, minute=15),
+    #                   id="tennis_settlement_afternoon", name="Tennis Settlement 14:15",
+    #                   max_instances=1, misfire_grace_time=1800)
+    # scheduler.add_job(job_tennis_closing_odds,
+    #                   CronTrigger(hour="6-22", minute="0,30"),
+    #                   id="tennis_closing_odds",
+    #                   name="Tennis Closing Odds [30min, 06-22 UTC]",
+    #                   max_instances=1, misfire_grace_time=600)
+    # scheduler.add_job(job_coolbet_tennis_scanner, CronTrigger(hour="7-22", minute="8,38"),
+    #                   id="coolbet_tennis_scanner", name="Coolbet Tennis Scanner [30min]",
+    #                   max_instances=1, misfire_grace_time=900)
 
     # CS2-SCANNER (2026-06-08) — every 4h 06:00-22:00 UTC. Scanner runs ELO model
     # against bo3.gg upcoming + finished feeds. Each run appends to cs2_predictions
