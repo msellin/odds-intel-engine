@@ -27137,5 +27137,82 @@ def test_cs2_starting_side():
         "cs2_v9_predict must import load_match_starting_side"
 
 
+@test("COOLBET-SCRAPERS-MOVED-TO-MAC — odds_snapshot + cs2 scanner run via launchd on Mac, not VPS scheduler")
+def test_coolbet_scrapers_moved_to_mac():
+    """MOVED-TO-MAC (2026-07-03): Coolbet Imperva 403's the VPS FS
+    Chrome + Hetzner IP. The two Coolbet-HTTP scrapers now run on the
+    operator's Mac (residential IP + real browser fingerprint via CDP
+    handles auth for the daemon; scanner + odds_snapshot go through
+    the same local FS Docker that the daemon already uses).
+
+    Guardrails this test enforces:
+    1. VPS scheduler must NOT register either add_job — if someone
+       uncomments them the VPS starts silently 403'ing again.
+    2. Both launchd plists must exist and use StartCalendarInterval
+       at the same offsets the VPS crons used (:03/:33 and :17/:47).
+       If the offsets drift, betting_refresh at :05/:35 may read
+       stale Coolbet odds.
+    3. Both plists must pin FLARESOLVERR_URL=http://localhost:8191
+       to defeat any stale Railway URL still sitting in `.env`.
+    """
+    import pathlib
+    root = pathlib.Path(__file__).parent.parent
+
+    sched = (root / "workers/scheduler.py").read_text()
+    # The two add_job calls must be commented out (leading `#` inside
+    # the function body). We assert the exact commented form so an
+    # accidental re-enable via a search-and-replace still trips this.
+    assert '# scheduler.add_job(_coolbet_odds_snapshot_wrapper,' in sched, (
+        "coolbet_odds_snapshot add_job must stay commented out on the "
+        "VPS scheduler — it now runs on the Mac via launchd. If you "
+        "need it on the VPS again, first fix the Imperva 403 root "
+        "cause; don't just re-enable it."
+    )
+    assert '# scheduler.add_job(job_cs2_coolbet_scanner,' in sched, (
+        "cs2_coolbet_scanner add_job must stay commented out on the "
+        "VPS scheduler — moved to the Mac launchd. See "
+        "local/launchd/com.oddsintel.cs2-coolbet-scanner.plist."
+    )
+    # And the un-commented forms must NOT exist (defensive against
+    # partial reverts that leave one enabled).
+    assert "\n    scheduler.add_job(_coolbet_odds_snapshot_wrapper," not in sched, (
+        "coolbet_odds_snapshot is registered without a leading `#` — "
+        "either fully re-enable with a docs update, or keep it commented."
+    )
+    assert "\n    scheduler.add_job(job_cs2_coolbet_scanner," not in sched, (
+        "cs2_coolbet_scanner is registered without a leading `#` — "
+        "either fully re-enable with a docs update, or keep it commented."
+    )
+
+    for name, minutes, prog_marker in [
+        ("com.oddsintel.coolbet-odds-snapshot.plist",
+         (3, 33), "workers.automation.coolbet_explorer"),
+        ("com.oddsintel.cs2-coolbet-scanner.plist",
+         (17, 47), "scripts/esports/cs2_coolbet_scanner.py"),
+    ]:
+        plist = (root / "local/launchd" / name).read_text()
+        assert "<key>StartCalendarInterval</key>" in plist, (
+            f"{name} must use StartCalendarInterval to keep the "
+            "VPS-era :03/:33 and :17/:47 alignment (betting_refresh "
+            "reads odds at :05/:35)."
+        )
+        for m in minutes:
+            assert f"<integer>{m}</integer>" in plist, (
+                f"{name} must fire at :{m:02d} — drifting the schedule "
+                "risks stale odds when betting_refresh runs."
+            )
+        assert prog_marker in plist, (
+            f"{name} ProgramArguments must invoke {prog_marker!r}."
+        )
+        assert "<string>http://localhost:8191</string>" in plist, (
+            f"{name} must pin FLARESOLVERR_URL=http://localhost:8191 "
+            "so the dead Railway URL in .env can't hijack the run."
+        )
+        assert "<key>RunAtLoad</key>\n    <false/>" in plist, (
+            f"{name} must have RunAtLoad=false so `launchctl load` "
+            "doesn't fire an unscheduled extra run right before :03/:17."
+        )
+
+
 if __name__ == "__main__":
     main()

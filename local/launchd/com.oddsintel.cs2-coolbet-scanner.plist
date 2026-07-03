@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  CS2-COOLBET-SCANNER (Mac-side, 2026-07-03): 30-min CS2 Coolbet odds
+  scanner. Moved off the Hetzner VPS for the same reason as
+  coolbet-odds-snapshot — VPS FS Chrome fingerprint + datacenter IP
+  hit Coolbet Imperva 403's, silent since ~2026-06-26 (loud from
+  ~2026-07-02 when the coolbet_prod session's Chrome tab crashed).
+
+  Runs cs2_coolbet_scanner.py --record — matches Coolbet CS2 leagues
+  against cs2_upcoming_matches and writes coolbet_odds1/2 (plus 1+map,
+  total-maps O/U, and map1-winner markets) so cs2_coolbet_placer
+  (which stays on the VPS as it's --record-only, no HTTP) can qualify
+  paper bets.
+
+  Install once:
+    cp local/launchd/com.oddsintel.cs2-coolbet-scanner.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.oddsintel.cs2-coolbet-scanner.plist
+
+  Manage:
+    launchctl list | grep cs2-coolbet-scanner
+    launchctl kickstart -k gui/$(id -u)/com.oddsintel.cs2-coolbet-scanner
+    launchctl unload ~/Library/LaunchAgents/com.oddsintel.cs2-coolbet-scanner.plist
+
+  Tail logs:
+    tail -f /Users/margussellin/www/odds-intel-engine/dev/active/cs2-coolbet-scanner.log
+
+  Cadence: :17 and :47 every hour — same offset the VPS cron used.
+  Lands 9 min before cs2_coolbet_placer (:08/:38) via the natural
+  hour rollover, giving the placer fresh coolbet_odds to read.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.oddsintel.cs2-coolbet-scanner</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/python3</string>
+        <string>scripts/esports/cs2_coolbet_scanner.py</string>
+        <string>--record</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/margussellin/www/odds-intel-engine</string>
+
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Minute</key><integer>17</integer></dict>
+        <dict><key>Minute</key><integer>47</integer></dict>
+    </array>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>FLARESOLVERR_URL</key>
+        <string>http://localhost:8191</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/margussellin/www/odds-intel-engine/dev/active/cs2-coolbet-scanner.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/margussellin/www/odds-intel-engine/dev/active/cs2-coolbet-scanner.log</string>
+</dict>
+</plist>

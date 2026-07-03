@@ -2666,8 +2666,16 @@ def main():
     # odds_snapshots — feeds the planned COOLBET-OR-PIN-REQUIRED data-quality
     # gate so OU/AH bots can lean on Coolbet (our actual placement venue)
     # instead of being Pinnacle-only.
-    scheduler.add_job(_coolbet_odds_snapshot_wrapper, CronTrigger(hour="7-22", minute="3,33"),
-                      id="coolbet_odds_interval", name="Coolbet Odds Snapshot [30min]")
+    # MOVED-TO-MAC 2026-07-03 — Coolbet's Imperva 403's the VPS FS Chrome
+    # fingerprint + Hetzner IP; this job silently wrote zero rows for
+    # 7 days before the coolbet_prod Chrome tab crashed and made it
+    # loud. Now runs via launchd on the operator's Mac —
+    # local/launchd/com.oddsintel.coolbet-odds-snapshot.plist.
+    # Keeping the wrapper function above so manual `python -m
+    # workers.automation.coolbet_explorer` still works from the VPS
+    # for debugging (it'll just 403 there — that's the point).
+    # scheduler.add_job(_coolbet_odds_snapshot_wrapper, CronTrigger(hour="7-22", minute="3,33"),
+    #                   id="coolbet_odds_interval", name="Coolbet Odds Snapshot [30min]")
 
 
 
@@ -3188,9 +3196,12 @@ def main():
                       name="FlareSolverr Stale Session Sweep [hourly]",
                       max_instances=1, misfire_grace_time=600)
 
-    scheduler.add_job(job_cs2_coolbet_scanner, CronTrigger(hour="7-22", minute="17,47"),
-                      id="cs2_coolbet_scanner", name="CS2 Coolbet Scanner [30min]",
-                      max_instances=1, misfire_grace_time=900)
+    # MOVED-TO-MAC 2026-07-03 — same reason as coolbet_odds_snapshot above.
+    # Now runs via launchd on the Mac —
+    # local/launchd/com.oddsintel.cs2-coolbet-scanner.plist.
+    # scheduler.add_job(job_cs2_coolbet_scanner, CronTrigger(hour="7-22", minute="17,47"),
+    #                   id="cs2_coolbet_scanner", name="CS2 Coolbet Scanner [30min]",
+    #                   max_instances=1, misfire_grace_time=900)
 
     # CS2-BOT (2026-06-08) — runs ~10 minutes after each ELO scanner pass so
     # bookie/coolbet odds + new model output are both fresh.

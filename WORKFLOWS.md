@@ -39,7 +39,7 @@
 08:30  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts (ENG-8)
 09:00  ⑦ News Checker    run_news_checker()        Injury/lineup/news signals (Gemini)
 09:15  ① Fixtures        run_fixtures()            Status refresh — catches morning postponements
-:03/:33 ⑱ Coolbet Odds    job_coolbet_odds_snapshot() Every 30 min, between AF odds (:00/:30) and betting refresh (:05/:35). Walks Coolbet fo-category + per-match sidebets, stores Coolbet OU/1X2/BTTS/AH/DC odds in odds_snapshots so the same cycle's edge math sees fresh prices on our actual placement venue. Lays the data foundation for the planned COOLBET-OR-PIN-REQUIRED quality gate (replaces Pinnacle-only OU veto). Error-isolated.
+:03/:33 ⑱ Coolbet Odds    (MAC LAUNCHD)              Every 30 min, between AF odds (:00/:30) and betting refresh (:05/:35). Walks Coolbet fo-category + per-match sidebets, stores Coolbet OU/1X2/BTTS/AH/DC odds in odds_snapshots. **Runs on the operator's Mac** via launchd (`com.oddsintel.coolbet-odds-snapshot`), NOT the VPS — Coolbet's Imperva 403's the VPS Linux Chrome + Hetzner IP (silent outage 2026-06-26 → 2026-07-03). See Mac-side jobs section below.
 :05/:35 ⑨ Betting Refresh betting_refresh()         Every 30 min, 5 min after odds refresh, 24/7 (WC-OVERNIGHT-COVERAGE 2026-06-12 — was 07:05–22:35 UTC). DB-only, 0 AF calls. Dedup prevents duplicates. Cohort auto-detected from UTC hour.
 :05/:35 ⑰ Shadow Run     job_shadow_run_interval() Every 30 min, concurrent with betting refresh. ALL bots evaluated → shadow_bets. Cohort = 'HHMM' UTC string. 32 snapshots/day.
 08:00  ② Enrichment      run_enrichment()          Injuries only — single morning fetch (AF-INJURIES-LATE 2026-06-01)
@@ -95,6 +95,27 @@ Sun 03:00 ㊶ CS2 map stats job_cs2_compute_map_stats()    CS2-MAP-STATS-EXPAND 
 Telegram public channel posting — every calibrated-maturity pre-match pick (1x2/OU/BTTS, no AH) auto-posts to `@oddsintelpicks` via `workers.notify.telegram.send_telegram_public()` from inside `coolbet_signaler.py` (PUBLIC-CHANNEL-POST hook, 2026-06-24). Beta/active/experimental picks stay in the operator chat only. Triggered same moment as the operator-side signal; no separate cron.
 10-22  ⑬ Health Alert    run_snapshot_check()      Hourly: alerts if last LivePoller snapshot >25min stale
 ```
+
+### 🍎 Mac-side jobs (launchd, operator's Mac only)
+
+Coolbet's Imperva blocks the VPS Linux Chrome fingerprint + Hetzner IP. Anything that hits Coolbet HTTP directly has to run from the Mac's residential IP with the local FS Docker (`oi_local_flaresolverr`). Three launchd LaunchAgents:
+
+| Label | Runs | Purpose |
+|-------|------|---------|
+| `com.oddsintel.coolbet-mac-daemon` | continuous (poll every 30 min) | Placement daemon. Reads qualified bets from `cs2_simulated_bets` / bet queue, refreshes JWT via CDP-Chrome, places on Coolbet. Only writer for `cs2_real_bets` (`paper=true` unless `--execute` gate is passed). |
+| `com.oddsintel.coolbet-odds-snapshot` | :03 and :33 every hour | `python -m workers.automation.coolbet_explorer --days 2` — bulk-scans Coolbet match markets and writes 1X2/OU/BTTS/AH into `odds_snapshots(bookmaker='Coolbet')`. Feeds the betting refresh at :05/:35. **Moved off VPS 2026-07-03** after 7-day silent Imperva 403 outage. |
+| `com.oddsintel.cs2-coolbet-scanner` | :17 and :47 every hour | `scripts/esports/cs2_coolbet_scanner.py --record` — writes `cs2_upcoming_matches.coolbet_odds1/2` + 1+map + total-maps O/U + map1-winner markets. Feeds `cs2_coolbet_placer` (which stays on VPS, `--record`-only, DB-reads-only). **Moved off VPS 2026-07-03** — same reason. |
+
+Install / manage each:
+```bash
+cp local/launchd/<name>.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/<name>.plist
+launchctl list | grep oddsintel                     # verify loaded
+launchctl kickstart -k gui/$(id -u)/<label>          # force restart
+tail -f dev/active/<name>.log                        # observe
+```
+
+Guardrail: `test_coolbet_scrapers_moved_to_mac` in `scripts/smoke_test.py` blocks accidentally re-enabling either scraper on the VPS scheduler.
 
 ### ⑰ Shadow Runs (`daily_pipeline_v2.run_morning(shadow_mode=True)`)
 

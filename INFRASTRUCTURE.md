@@ -30,6 +30,7 @@
 | **The Odds API** | WC 2026 odds (AF coverage_odds=false for the WC league) | Free (500 credits/mo) | Active since 2026-06-06 — gated to 2026-06-11 → 2026-07-19 WC window. 3 credits/sweep × ~38 sweeps = ~114 credits / 500 quota. `OA_KEY` env on Railway. |
 | **Cloudflare Turnstile** | Invisible captcha on anonymous Supabase signup (ANON-AUTH-PHASE-4) | Free | Active since 2026-06-10. `NEXT_PUBLIC_TURNSTILE_SITE_KEY` in Vercel envs. Supabase Auth → Attack Protection captcha toggled on. |
 | **CDP-Chrome (operator's Mac)** | Coolbet JWT auto-renew via `--remote-debugging-port=9222` | Free (runs on operator's existing Mac) | Active since 2026-06-12. Separate Chrome profile `Chrome-CDP-OddsIntel`. JWT auto-renews every ~20min via Coolbet's `/s/auth/renew-token`. `workers/automation/coolbet_mac_daemon.py` reads via raw websockets. launchd-managed. |
+| **Mac launchd (Coolbet HTTP jobs)** | All jobs that hit Coolbet HTTP — cannot run on VPS (Imperva 403's the Linux Chrome fingerprint + Hetzner IP) | Free (operator's Mac) | Three LaunchAgents in `local/launchd/`: `com.oddsintel.coolbet-mac-daemon` (continuous placement), `com.oddsintel.coolbet-odds-snapshot` (:03/:33 bulk odds → `odds_snapshots`), `com.oddsintel.cs2-coolbet-scanner` (:17/:47 CS2 markets → `cs2_upcoming_matches`). Both scanners moved off VPS 2026-07-03 after silent 7-day 403 outage. `oi_local_flaresolverr` Docker on `localhost:8191` handles the CF/Imperva challenge with real-Mac fingerprint. Guardrail: `test_coolbet_scrapers_moved_to_mac` smoke test. |
 
 ### Not yet active
 

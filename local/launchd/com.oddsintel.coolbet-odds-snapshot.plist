@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  COOLBET-ODDS-SNAPSHOT (Mac-side, 2026-07-03): 30-min bulk Coolbet odds
+  ingest. Moved off the Hetzner VPS after the VPS FS Chrome fingerprint
+  + datacenter IP started getting 403'd by Coolbet's Imperva (silent
+  outage 2026-06-26 → 2026-07-03, zero rows to odds_snapshots).
+
+  Runs the same run_bulk() the VPS used to run — bulk-scans Coolbet
+  match markets for upcoming fixtures (next 2 days) and writes 1X2 /
+  OU / BTTS / AH lines into odds_snapshots(bookmaker='Coolbet').
+
+  Install once:
+    cp local/launchd/com.oddsintel.coolbet-odds-snapshot.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.oddsintel.coolbet-odds-snapshot.plist
+
+  Manage:
+    launchctl list | grep coolbet-odds-snapshot
+    launchctl kickstart -k gui/$(id -u)/com.oddsintel.coolbet-odds-snapshot
+    launchctl unload ~/Library/LaunchAgents/com.oddsintel.coolbet-odds-snapshot.plist
+
+  Tail logs:
+    tail -f /Users/margussellin/www/odds-intel-engine/dev/active/coolbet-odds-snapshot.log
+
+  Cadence: :03 and :33 every hour (same slots the VPS cron used, so
+  betting_refresh at :05/:35 still reads odds ≤2 min old). launchd
+  fires the job at the top of each matching minute; concurrent runs
+  are prevented by AbandonProcessGroup=false and one active instance.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.oddsintel.coolbet-odds-snapshot</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/python3</string>
+        <string>-m</string>
+        <string>workers.automation.coolbet_explorer</string>
+        <string>--days</string>
+        <string>2</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/margussellin/www/odds-intel-engine</string>
+
+    <!-- Cron equivalent of `minute='3,33'` — fires every hour at :03 and
+         :33. The VPS had this scoped to hour=7-22 UTC (soccer window);
+         Mac plist runs 24/7 because CS2 markets are global and the
+         extra 8 fires/day are negligible. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Minute</key><integer>3</integer></dict>
+        <dict><key>Minute</key><integer>33</integer></dict>
+    </array>
+
+    <!-- Don't run at load — wait for the next scheduled slot. Prevents
+         a double-fire if launchctl load happens right before :03/:33. -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <!-- Force local FS to guarantee we don't accidentally point at
+             the dead Railway URL that may still be in .env. -->
+        <key>FLARESOLVERR_URL</key>
+        <string>http://localhost:8191</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/margussellin/www/odds-intel-engine/dev/active/coolbet-odds-snapshot.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/margussellin/www/odds-intel-engine/dev/active/coolbet-odds-snapshot.log</string>
+</dict>
+</plist>
