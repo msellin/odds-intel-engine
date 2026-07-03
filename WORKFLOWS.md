@@ -31,8 +31,8 @@
 */5 12-23 ㊵ Closing snap  run_closing_snap()        CLOSING-LINE-COVERAGE 2026-06-24 — per-fixture AF /odds for matches in T-15→T+5, stored with is_closing=TRUE.
                                                     Solves the gap where only ~25% of bets had a Pinnacle pre-KO snap; clv_pinnacle measurement now resolves against the real closing line.
                                                     Also fixed: fetch_odds.py was hardcoding is_closing=False; now computes from minutes_to_kickoff.
-07:15  ⑩ Match Previews  run_match_previews()      Top 10 matches → Gemini 200-word previews (ENG-3)
-07:30  ⑲ WC AI Previews  run_wc_match_previews()   Every WC fixture in next 7d → Gemini 80-120 word previews. Gated to WC window (2026-06-04 → 2026-07-19); no-op outside. Idempotent (<24h-old previews skip Gemini call). Reuses `match_previews` table — distinct match_ids so no clash with club preview job. (WC-AI-PREVIEW)
+07:15  ⑩ Match Previews  (PMF-PAUSED 2026-07-03)   Top 10 matches → Gemini 200-word previews (ENG-3). **Paused** at ~0 users — pure UI content with no readers. Job function preserved for manual re-run; re-enable when user count > 0.
+07:30  ⑲ WC AI Previews  (PMF-PAUSED 2026-07-03)   Every WC fixture in next 7d → Gemini 80-120 word previews. **Paused** — same rationale. WC window ends 2026-07-19 anyway.
 10/12/14/16  ⑪ Email Digest Slots  run_email_digest()  Smart-slot digest — first slot whose pending-bet signal score ≥ EMAIL_DIGEST_MIN_SIGNAL sends; later slots see per-user lock and skip (ENG-4 / EMAIL-DIGEST-SMART)
 03:00  ⑭ Weekly Retrain  job_weekly_retrain()      Sunday only — runs `train.py --version v{YYYYMMDD}` then auto-`compare_models.py {new} {production}`. Promotion stays manual (operator flips MODEL_VERSION env). ML-PIPELINE-UNIFY Stage 5a/5b.
 08:00  ⑫ Weekly Digest   run_weekly_digest()       Monday only — model week review + upcoming matches (ENG-10)

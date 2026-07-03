@@ -2699,20 +2699,20 @@ def main():
                           id=f"news_{hour:02d}{minute:02d}",
                           name=f"News {hour:02d}:{minute:02d}")
 
-    # ENG-3: AI match previews — 07:15 UTC (after morning pipeline + 07:00 odds refresh settle)
-    scheduler.add_job(job_match_previews, CronTrigger(hour=7, minute=15),
-                      id="match_previews", name="Match Previews 07:15")
-
-    # WC-AI-PREVIEW (2026-06-02): Daily Gemini-generated previews for every
-    # World Cup fixture in the next 7 days. 07:30 UTC = after fetch_predictions
-    # (04:00) and the national-team predictor (04:00 morning_pipeline step) have
-    # settled, before the email digest slots (10:00 onwards). Gated inside
-    # job_wc_match_previews to the WC window (2026-06-04 → 2026-07-19) so it
-    # no-ops the rest of the year. Idempotent — < 24h-old previews skip the
-    # Gemini call inside the job.
-    scheduler.add_job(job_wc_match_previews, CronTrigger(hour=7, minute=30),
-                      id="wc_match_previews",
-                      name="WC AI Previews 07:30 [WC window]")
+    # PMF-CONTENT-PAUSED 2026-07-03 — Gemini-driven UI content jobs (match
+    # previews, WC previews, WC insights below) paused while user count is
+    # ~0. These 3 jobs write text that only renders on match/WC pages for
+    # logged-in users; at 0 users the ~$1-1.50/mo Gemini spend has zero
+    # reader-side value. news_checker (which feeds the actual betting
+    # model via match_signals) and the settlement daily narrative stay on.
+    # Re-enable when user count > 0 and any of these surfaces is actually
+    # visited. Job function definitions kept above so a manual re-run
+    # (`python -m workers.jobs.match_previews`) still works.
+    # scheduler.add_job(job_match_previews, CronTrigger(hour=7, minute=15),
+    #                   id="match_previews", name="Match Previews 07:15")
+    # scheduler.add_job(job_wc_match_previews, CronTrigger(hour=7, minute=30),
+    #                   id="wc_match_previews",
+    #                   name="WC AI Previews 07:30 [WC window]")
 
     # DIGEST-DISABLED 2026-06-25 — product collapsed to free + Telegram.
     # Daily/weekly per-user emails were eating the Resend quota every day
@@ -2751,13 +2751,13 @@ def main():
                       id="publish_daily_picks",
                       name="Accuracy: Publish Daily Picks (06:45 UTC)")
 
-    # WC-E3-E4 (2026-06-04): Gemini-generated analytical insight articles.
-    # 08:00 UTC = after Monte Carlo (06:30) so articles cite the latest
-    # numbers. Idempotent inside the script (24h refresh_after) so re-runs
-    # are cheap. WC-window-gated inside job_wc_insights.
-    scheduler.add_job(job_wc_insights, CronTrigger(hour=8, minute=0),
-                      id="wc_insights",
-                      name="WC Insights Articles 08:00 [WC window]")
+    # PMF-CONTENT-PAUSED 2026-07-03 — same rationale as match_previews /
+    # wc_match_previews above: Gemini-generated WC "insight articles" are
+    # pure UI content and no one is reading them at ~0 users. WC window
+    # ends 2026-07-19 anyway. Re-enable when user count > 0.
+    # scheduler.add_job(job_wc_insights, CronTrigger(hour=8, minute=0),
+    #                   id="wc_insights",
+    #                   name="WC Insights Articles 08:00 [WC window]")
 
     # WC-A5 (2026-06-04): T-60min lineup-aware refresh. Every 5min during the
     # live window the job scans WC fixtures kicking off in the next 90min,

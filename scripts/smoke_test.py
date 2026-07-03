@@ -27214,5 +27214,43 @@ def test_coolbet_scrapers_moved_to_mac():
         )
 
 
+@test("PMF-CONTENT-PAUSED — Gemini UI-content jobs disabled while user count is ~0")
+def test_pmf_content_paused():
+    """PMF-CONTENT-PAUSED (2026-07-03): match_previews, wc_match_previews,
+    wc_insights write Gemini-generated text that only renders on
+    match/WC pages for logged-in users. At ~0 users the ~$1-1.50/mo
+    Gemini spend has zero reader value. Paused via commented add_job.
+
+    news_checker (feeds the betting model via match_signals) and the
+    settlement daily-summary narrative (operator email) are NOT paused.
+
+    Guardrail so a future `search-and-replace re-enable` or automated
+    "restore all crons" flow can't quietly turn spend back on without
+    re-visiting the user-count precondition.
+    """
+    import pathlib
+    sched = (pathlib.Path(__file__).parent.parent / "workers/scheduler.py").read_text()
+
+    for job in ("job_match_previews", "job_wc_match_previews", "job_wc_insights"):
+        assert f"# scheduler.add_job({job}," in sched, (
+            f"{job} add_job must stay commented out — PMF-CONTENT-PAUSED. "
+            "If user count is now > 0 and the surface is actually read, "
+            "re-enable deliberately (and update this assertion + docs)."
+        )
+        # And the un-commented form must NOT exist (guards against partial
+        # revert leaving one enabled).
+        assert f"\n    scheduler.add_job({job}," not in sched, (
+            f"{job} is registered without a leading `#` — either fully "
+            "re-enable with a docs update, or keep it commented."
+        )
+
+    # news_checker MUST stay registered — it feeds the model, not just UI.
+    assert "scheduler.add_job(job_news_checker" in sched and "# scheduler.add_job(job_news_checker" not in sched, (
+        "job_news_checker must remain active — it writes injury/lineup/"
+        "news signals into match_signals which the betting model consumes. "
+        "Do not pause it as part of 'content jobs' cleanup."
+    )
+
+
 if __name__ == "__main__":
     main()
