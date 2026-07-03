@@ -1606,6 +1606,26 @@ def job_cs2_pipeline_healthcheck():
     _run_job("cs2_pipeline_healthcheck", lambda: None)
 
 
+def job_coolbet_odds_freshness():
+    """COOLBET-ODDS-FRESHNESS-WATCHDOG (2026-07-03): DB-side freshness
+    watchdog for Coolbet odds. The writer now runs on Mac launchd
+    (post COOLBET-SCRAPERS-MOVED-TO-MAC), so its exit codes don't reach
+    the scheduler-side alerter. This job reads odds_snapshots directly
+    and Telegrams if MAX(timestamp) for bookmaker='Coolbet' goes stale,
+    closing the class of failure that hid the 2026-06-26 → 2026-07-03
+    seven-day silent outage. See workers/jobs/coolbet_odds_freshness.py.
+    """
+    from workers.jobs.coolbet_odds_freshness import run_coolbet_odds_freshness_check
+    counters = run_coolbet_odds_freshness_check()
+    if counters.get("alert_sent") or counters.get("recovery_sent"):
+        console.print(
+            f"[yellow]Coolbet odds freshness: status={counters['status']} "
+            f"reason={counters['reason']} alert_sent={counters['alert_sent']} "
+            f"recovery_sent={counters['recovery_sent']}[/yellow]"
+        )
+    _run_job("coolbet_odds_freshness", lambda: None)
+
+
 def job_flaresolverr_sweep():
     """COOLBET-FS-SESSION-STABLE sweeper (2026-06-11): hourly destroys
     stale FlareSolverr sessions that aren't in the active whitelist.
@@ -3185,6 +3205,17 @@ def main():
                       CronTrigger(minute="11,41"),
                       id="cs2_pipeline_healthcheck",
                       name="CS2 Pipeline Healthcheck [30min]",
+                      max_instances=1, misfire_grace_time=600)
+
+    # COOLBET-ODDS-FRESHNESS-WATCHDOG (2026-07-03) — 30-min freshness
+    # check on odds_snapshots(bookmaker='Coolbet'). :13/:43 lands ~10 min
+    # after the Mac launchd writer fires at :03/:33, so we check AFTER
+    # the write has a chance to land. Closes the class of failure that
+    # hid the 06-26 → 07-03 seven-day silent outage.
+    scheduler.add_job(job_coolbet_odds_freshness,
+                      CronTrigger(minute="13,43"),
+                      id="coolbet_odds_freshness",
+                      name="Coolbet Odds Freshness Watchdog [30min]",
                       max_instances=1, misfire_grace_time=600)
 
     # COOLBET-FS-SESSION-STABLE sweeper — hourly, destroys stale FS sessions

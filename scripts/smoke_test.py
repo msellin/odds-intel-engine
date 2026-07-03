@@ -27252,5 +27252,60 @@ def test_pmf_content_paused():
     )
 
 
+@test("COOLBET-ODDS-FRESHNESS-WATCHDOG — DB-side freshness alerter guards the Mac launchd writer")
+def test_coolbet_odds_freshness_watchdog():
+    """COOLBET-ODDS-FRESHNESS-WATCHDOG (2026-07-03): after moving
+    coolbet_odds_snapshot to Mac launchd, the scheduler-side alerter no
+    longer sees exit codes for the writer. If the Mac is asleep, Imperva
+    flags the IP, or the plist gets unloaded, pipeline_runs stays
+    innocent while odds_snapshots(bookmaker='Coolbet') starves. This
+    watchdog closes that gap by reading DB freshness directly.
+
+    The pattern (DB-side data-freshness check, independent of pipeline_runs)
+    is the same as CS2-PIPELINE-HEALTHCHECK — pin the essentials so a
+    future edit can't quietly weaken the safety net.
+    """
+    import pathlib
+    root = pathlib.Path(__file__).parent.parent
+
+    mod_src = (root / "workers/jobs/coolbet_odds_freshness.py").read_text()
+
+    # Alert must key on odds_snapshots.timestamp filtered by bookmaker='Coolbet'.
+    # (Not pipeline_runs — that's the failure mode we're guarding against.)
+    assert "odds_snapshots" in mod_src and "bookmaker = 'Coolbet'" in mod_src, (
+        "watchdog must read odds_snapshots(bookmaker='Coolbet') directly — "
+        "the pipeline_runs path is the exact silent-failure surface it exists to guard."
+    )
+    # Dedup via pipeline_health_state, same as CS2 healthcheck.
+    assert 'PIPELINE_NAME = "coolbet_odds"' in mod_src, (
+        "watchdog must dedup under pipeline_name='coolbet_odds' in "
+        "pipeline_health_state (migration 258); a different key would let "
+        "another job's dedup collide with this one."
+    )
+    # Threshold configurable, sane default.
+    assert 'STALE_HOURS = float(os.getenv("COOLBET_ODDS_STALE_HOURS", "2"))' in mod_src, (
+        "STALE_HOURS default must be 2h — writer cadence is 30min so 2h "
+        "= 4 consecutive misses. Tighter = false positives on Mac sleep; "
+        "looser = re-opens the silent-outage window."
+    )
+
+    # Scheduler wiring: registered on a distinct minute offset from the writer's
+    # :03/:33 so the check lands AFTER the write has landed.
+    sched = (root / "workers/scheduler.py").read_text()
+    assert "job_coolbet_odds_freshness" in sched, (
+        "scheduler.py must import + wrap run_coolbet_odds_freshness_check "
+        "in a job_ function."
+    )
+    assert 'CronTrigger(minute="13,43")' in sched, (
+        "watchdog must fire at :13/:43 — 10min after the Mac launchd "
+        "writer's :03/:33 so the write has time to land before we check. "
+        "Firing on the same minute as the writer would race and false-positive."
+    )
+    assert "id=\"coolbet_odds_freshness\"" in sched, (
+        "job_id must be 'coolbet_odds_freshness' — the pipeline_runs "
+        "logging + failure alerter key on this."
+    )
+
+
 if __name__ == "__main__":
     main()
