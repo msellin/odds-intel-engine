@@ -59,6 +59,17 @@
         <string>1</string>
         <key>FLARESOLVERR_URL</key>
         <string>http://localhost:8191</string>
+        <!-- FS-SESSION-ISOLATION (2026-07-05): default coolbet_prod is
+             shared with the mac-daemon placer AND the odds-snapshot
+             reader; when the odds-snapshot run overlaps this scanner's
+             :17/:47 fire (odds-snapshot takes 20-30 min for 769
+             matches), the concurrent Chrome-tab access crashed the
+             session and both jobs hung on HTTP 500. Give the CS2
+             scanner its own session — CoolbetSession reads
+             COOLBET_FLARE_SESSION at import time and passes it into
+             every FS call. -->
+        <key>COOLBET_FLARE_SESSION</key>
+        <string>cs2_scanner</string>
     </dict>
 
     <key>StandardOutPath</key>

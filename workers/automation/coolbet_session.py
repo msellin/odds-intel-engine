@@ -941,6 +941,14 @@ class CoolbetSession:
             self._refresh_cookies_from_fs()
         self._throttle()
 
+        # COOLBET-POST-TIMEOUT (2026-07-05): Imperva sometimes tarpits
+        # the connection instead of returning a status code — the plain
+        # requests.Session inherits no default timeout, so `_http.post`
+        # can block forever. On 2026-07-04/05 this hung the cs2 scanner
+        # for 4+ min per fire, blocking the launchd slot. Default to 30s
+        # unless the caller explicitly sets its own timeout.
+        kwargs.setdefault("timeout", 30)
+
         # _ensure_auth already merged cbauth/login_session_id/user_id into
         # self._http.headers. kwargs.pop("headers") layers additional ones.
         resp = self._http.post(url, **kwargs)

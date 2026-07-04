@@ -67,6 +67,15 @@
              the dead Railway URL that may still be in .env. -->
         <key>FLARESOLVERR_URL</key>
         <string>http://localhost:8191</string>
+        <!-- FS-SESSION-ISOLATION (2026-07-05): isolate from
+             coolbet_prod (mac-daemon placer) and cs2_scanner
+             (com.oddsintel.cs2-coolbet-scanner). Shared FS session
+             + concurrent Chrome-tab access → crashed tabs + 500's.
+             This bulk odds-scanner is anon-read so it doesn't need
+             the daemon's authed session; its own harvested cookies
+             carry Imperva just fine. -->
+        <key>COOLBET_FLARE_SESSION</key>
+        <string>coolbet_odds_reader</string>
     </dict>
 
     <key>StandardOutPath</key>
