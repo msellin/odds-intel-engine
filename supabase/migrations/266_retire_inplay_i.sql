@@ -8,4 +8,4 @@ SET
     is_active    = false,
     retired_at   = NOW(),
     retired_reason = 'INPLAY-I-30-BET-WATCH 2026-06-30: -22.7% ROI on 28 settled bets (gate: ROI<-2% AND n>=25). Favourite-stall at odds 4.0-6.0 — hit rate 21.4% vs ~20% implied. No evidence of model edge over market at these late-game odds. No re-enable path without a structural odds-drift signal improvement.'
-WHERE bot_name = 'inplay_i';
+WHERE name = 'inplay_i';
