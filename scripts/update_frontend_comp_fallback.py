@@ -33,36 +33,47 @@ from pathlib import Path
 LEDGER_KEYS = ["winnerodds", "signalodds", "deepbetting", "tipstrr", "forebet"]
 
 
-def load_audit(engine_root: Path, key: str) -> dict[str, float | int]:
-    """Read one comparison_<key>.json and return the four numbers that
-    feed COMP_FALLBACK. Raises on missing keys — a malformed audit JSON
-    is a bug we want to surface loudly, not silently paper over."""
+def load_audit(engine_root: Path, key: str) -> dict[str, object]:
+    """Read one comparison_<key>.json and return the fields that feed
+    COMP_FALLBACK. Raises on missing keys — a malformed audit JSON is a
+    bug we want to surface loudly, not silently paper over."""
     p = engine_root / "ledger" / f"comparison_{key}.json"
     data = json.loads(p.read_text(encoding="utf-8"))
     their = data["their_stats"]
     ours = data["our_stats_same_window"]
+    window = data["window"]
+    # snapshot_at_utc is a full ISO datetime; strip to the date so the
+    # landing shows "2026-07-05" not "2026-07-05T03:01:47.527996+00:00".
+    snapshot_at = str(data["snapshot_at_utc"])[:10]
     return {
         "theirN": int(their["n"]),
         "theirRoi": float(their["roi_pct"]),
         "ourN": int(ours["n"]),
         "ourRoi": float(ours["roi_pct"]),
+        "windowStart": str(window["start"]),
+        "windowEnd": str(window["end"]),
+        "snapshotAt": snapshot_at,
     }
 
 
-def format_block(values: dict[str, dict[str, float | int]]) -> str:
-    """Render the COMP_FALLBACK dict as a TypeScript object literal,
-    padded so numeric columns line up like the hand-written original."""
-    # Column widths tuned to the existing hand-authored padding.
+def format_block(values: dict[str, dict[str, object]]) -> str:
+    """Render the COMP_FALLBACK dict as a TypeScript object literal.
+    Multi-line per key so the row fits the extended shape (numeric
+    stats + three date strings) without exceeding a reasonable line
+    length. Padding chosen to visually align the numeric columns."""
     lines = []
     for key in LEDGER_KEYS:
         v = values[key]
-        # theirN and ourN as integers, ROIs to 2dp (matches audit output).
         lines.append(
             f"  {key + ':':<13}"
             f"{{ theirN: {v['theirN']:>4}, "
             f"theirRoi: {v['theirRoi']:>5.2f}, "
             f"ourN: {v['ourN']:>4}, "
-            f"ourRoi: {v['ourRoi']:>5.2f} }},"
+            f"ourRoi: {v['ourRoi']:>5.2f},\n"
+            f"                 "
+            f"windowStart: \"{v['windowStart']}\", "
+            f"windowEnd: \"{v['windowEnd']}\", "
+            f"snapshotAt: \"{v['snapshotAt']}\" }},"
         )
     return "\n".join(lines)
 
@@ -74,11 +85,14 @@ def rewrite_page(page_path: Path, new_block: str, today: str) -> bool:
 
     # Match the whole const declaration incl. body — anchors on the exact
     # comment marker + the closing "};" so we don't overrun into
-    # subsequent code.
+    # subsequent code. The typed-dict signature spans multiple lines
+    # after the windowStart/windowEnd/snapshotAt extension, so we match
+    # loosely between the marker and the "= {" opener.
     pattern = re.compile(
         r"(// LAST-REFRESH: )\d{4}-\d{2}-\d{2}( audit snapshot\.\n"
-        r"const COMP_FALLBACK: Record<string, "
-        r"\{ theirN: number; theirRoi: number; ourN: number; ourRoi: number \}> = \{\n)"
+        r"const COMP_FALLBACK: Record<\s*\n?"
+        r".*?"
+        r"> = \{\n)"
         r"(.*?)"
         r"(\n\};)",
         re.DOTALL,
