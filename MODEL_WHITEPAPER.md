@@ -190,7 +190,20 @@ This subsection documents the **B-ML3** meta-model — Stage-3 classifier that s
 | Q5 vs Q1 CLV spread | −14.9pp (inverted) | **+18.4pp (correct)** |
 | Features | 14–24 | 44 |
 
-**Active bundle (2026-06-07): `v_20260607_bets`** — XGBoost, threshold=0.52, `META_B_ML3_ENABLED=true`.
+**Active bundle (2026-07-06): `v_20260706_bets_xgb`** — XGBoost, threshold=0.45, `META_B_ML3_ENABLED=true`. Retrained on 60d of fired bets (n=389, +28% more data than v_20260607_bets). Previous bundle `v_20260607_bets` (threshold=0.52) remained live from 2026-06-07 to 2026-07-06 (~30 days).
+
+**Why the flip (2026-07-06):** Same-holdout eval via `compare_meta_bundles.py` was ambiguous — CV AUC favored the older bundle 0.671 vs 0.641, but Brier favored the new one 0.244 vs 0.250 and precision/recall was essentially tied. The tie-breaker was a retrospective bucketed analysis on 30d of real settled 1X2 bets (n=177, `clv_pinnacle` populated):
+
+| Bucket | n | Above-median-CLV rate |
+|---|---|---|
+| Both models fire | 49 | **98.0%** (48/49) |
+| Only old bundle fires | 10 | **0.0%** (0/10) |
+| Only new bundle fires | 57 | 86.0% (49/57) |
+| Both reject | 61 | 9.8% (6/61) |
+
+The old bundle's 10 unique fires were 0/10 above-median CLV — concentrated wrong-way predictions the new bundle correctly rejects. Caveat: the last 30d IS in the new bundle's 60d training window (leakage), so its advantage is inflated. But the sign and magnitude of the disagreement-set gap (0% vs 86%) is much larger than training contamination alone would explain. Full retrospective validation requires 2+ weeks of strictly out-of-sample data (bets from 2026-07-06 onward).
+
+**Threshold change (0.52 → 0.45):** New bundle's training-chosen threshold. Combined with the more permissive gate, expected paper-bet volume roughly doubles (breadth 33% → 60% of qualifying candidates). Revert path if paper CLV degrades: `sed -i 's|META_B_ML3_VERSION=.*|META_B_ML3_VERSION=v_20260607_bets|; s|META_B_ML3_THRESHOLD=.*|META_B_ML3_THRESHOLD=0.52|' /opt/odds-intel-engine/.env && systemctl restart oddsintel-scheduler`.
 
 **Goal of original B-ML3 (v21 design):** binary classifier with `target = (pseudo_clv > 0)` evaluated per (match × selection) row in `match_feature_vectors`. Training cohort filter: `match_date >= '2026-05-06'`; cohort size 9,971 rows / 5,572 with `opening_implied_home IS NOT NULL`.
 
