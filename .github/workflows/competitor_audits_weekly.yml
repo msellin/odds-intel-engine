@@ -95,3 +95,73 @@ jobs:
           scripts/audit_vs_*.py pipeline. The web landing reads these
           JSONs at runtime with 6h revalidate."
           git push origin HEAD:main
+
+      # COMP-FALLBACK-AUTOREFRESH (2026-07-06): the odds-intel-web landing
+      # embeds a COMP_FALLBACK dict used when the runtime GitHub-raw fetch
+      # fails. Without this step it would freeze at the values shipped in
+      # the initial commit — silently diverging from reality for months.
+      # Requires FRONTEND_REPO_TOKEN (fine-grained PAT with contents:write
+      # on msellin/odds-intel-web). If the secret is empty every step here
+      # no-ops cleanly — audit run stays green either way.
+      #
+      # GitHub Actions doesn't let step-level `if:` read secrets.* directly,
+      # so we project the secret into a job env var (empty if unset) and
+      # gate on that. `continue-on-error: true` on each step is belt-and-
+      # -braces protection against transient push/checkout failures.
+      - name: Check FRONTEND_REPO_TOKEN presence
+        id: pat_check
+        env:
+          FRONTEND_REPO_TOKEN: ${{ secrets.FRONTEND_REPO_TOKEN }}
+        run: |
+          if [ -n "$FRONTEND_REPO_TOKEN" ]; then
+            echo "has_pat=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_pat=false" >> "$GITHUB_OUTPUT"
+            echo "FRONTEND_REPO_TOKEN not set — will skip fallback refresh."
+          fi
+
+      - name: Checkout odds-intel-web
+        if: steps.pat_check.outputs.has_pat == 'true'
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          repository: msellin/odds-intel-web
+          token: ${{ secrets.FRONTEND_REPO_TOKEN }}
+          path: odds-intel-web
+          fetch-depth: 1
+
+      - name: Refresh COMP_FALLBACK in odds-intel-web
+        if: steps.pat_check.outputs.has_pat == 'true'
+        continue-on-error: true
+        run: |
+          if [ ! -d odds-intel-web ]; then
+            echo "odds-intel-web not checked out — skipping fallback refresh."
+            exit 0
+          fi
+          python3 scripts/update_frontend_comp_fallback.py \
+            --web-repo "$GITHUB_WORKSPACE/odds-intel-web"
+
+      - name: Commit + push COMP_FALLBACK refresh
+        if: steps.pat_check.outputs.has_pat == 'true'
+        continue-on-error: true
+        working-directory: odds-intel-web
+        run: |
+          if [ ! -f src/app/page.tsx ]; then
+            echo "page.tsx missing in web checkout — skipping."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app/page.tsx
+          if git diff --cached --quiet; then
+            echo "COMP_FALLBACK already current — nothing to commit."
+            exit 0
+          fi
+          DATE=$(date -u +%Y-%m-%d)
+          git commit -m "landing: refresh COMP_FALLBACK ${DATE}
+
+          Auto-refreshed from odds-intel-engine ledger/comparison_*.json
+          via competitor_audits_weekly.yml. Keeps the hardcoded landing
+          fallback within one week of reality so a runtime GitHub-raw
+          outage degrades to recent numbers, not months-old ones."
+          git push origin HEAD:main

@@ -27355,5 +27355,126 @@ def test_paper_only_daemon():
     )
 
 
+@test("COMPETITOR-AUDIT-FRESH — ledger/comparison_*.json snapshots within 14 days")
+def test_competitor_audits_fresh():
+    """COMPETITOR-AUDIT-FRESH (2026-07-06): the odds-intel-web landing
+    fetches ledger/comparison_*.json at runtime with 6h revalidate; if a
+    scraper silently breaks, the last-good JSON quietly ages out and the
+    landing shows stale numbers with zero visible signal. This test
+    fails fast when snapshot_at_utc drifts beyond 14 days — one skipped
+    Sunday cron is fine, two in a row is a bug.
+
+    Also enforces status=='ok' for the five publicly-scrapeable audits
+    (Betaminic is auth-gated and stays 'auth_required' by design).
+    """
+    import json, pathlib
+    from datetime import datetime, timezone, timedelta
+
+    ledger = pathlib.Path("ledger")
+    max_age = timedelta(days=14)
+    now = datetime.now(timezone.utc)
+
+    # Betaminic is intentionally auth-gated — check freshness but not
+    # status. The rest must be status=='ok' or the landing quietly
+    # falls back to the hardcoded COMP_FALLBACK.
+    require_ok = {
+        "comparison_winnerodds.json",
+        "comparison_signalodds.json",
+        "comparison_deepbetting.json",
+        "comparison_forebet.json",
+        "comparison_tipstrr.json",
+    }
+    fresh_only = {"comparison_betaminic.json"}
+
+    for name in require_ok | fresh_only:
+        p = ledger / name
+        assert p.exists(), f"ledger/{name} missing — audit never ran?"
+        d = json.loads(p.read_text())
+
+        snap = d.get("snapshot_at_utc")
+        assert snap, f"ledger/{name} missing snapshot_at_utc"
+        # Parse ISO-8601 with tz suffix. The audit scripts write
+        # datetime.now(timezone.utc).isoformat() so this is safe.
+        ts = datetime.fromisoformat(snap.replace("Z", "+00:00"))
+        age = now - ts
+        assert age <= max_age, (
+            f"ledger/{name} snapshot is {age.days}d old (max 14d). "
+            f"The Sunday cron competitor_audits_weekly.yml is likely "
+            f"failing silently — the landing has been showing stale "
+            f"numbers via COMP_FALLBACK for at least a week."
+        )
+
+        if name in require_ok:
+            status = d.get("status")
+            assert status == "ok", (
+                f"ledger/{name} status={status!r} (want 'ok'). "
+                f"When status != 'ok' the audit script writes a "
+                f"payload without full their_stats, and the landing "
+                f"falls back to the hardcoded COMP_FALLBACK for that "
+                f"row. Investigate the scraper before this reaches the "
+                f"page."
+            )
+
+
+@test("COMP-FALLBACK-AUTOREFRESH — updater script + workflow wired end-to-end")
+def test_comp_fallback_autorefresh():
+    """COMP-FALLBACK-AUTOREFRESH (2026-07-06): the odds-intel-web landing
+    embeds a hardcoded COMP_FALLBACK dict as a last-resort when the
+    runtime GitHub-raw fetch fails. Left alone it froze at initial-commit
+    values from months ago. The weekly audit workflow now runs
+    scripts/update_frontend_comp_fallback.py against a PAT-checkout of
+    odds-intel-web to keep the fallback within one week of reality.
+
+    Pinned:
+      1. Updater script exists and imports cleanly (has main() + the
+         rewrite regex anchor).
+      2. Weekly workflow references the script + the FRONTEND_REPO_TOKEN
+         secret via the pat_check gate — a rename of either would silently
+         disable the refresh.
+      3. If the operator has the sibling odds-intel-web checkout, the
+         LAST-REFRESH marker in page.tsx exists (so the regex anchor in
+         the updater script can find the block).
+    """
+    import pathlib
+    engine_root = pathlib.Path(__file__).resolve().parent.parent
+
+    script = engine_root / "scripts" / "update_frontend_comp_fallback.py"
+    assert script.exists(), (
+        "scripts/update_frontend_comp_fallback.py must exist — it's the "
+        "cross-repo bridge the weekly audit calls into to keep the "
+        "landing fallback fresh."
+    )
+    src = script.read_text()
+    assert "LAST-REFRESH:" in src, (
+        "updater must anchor on the LAST-REFRESH comment marker in page.tsx"
+    )
+    assert "def main()" in src
+
+    wf = (engine_root / ".github" / "workflows"
+          / "competitor_audits_weekly.yml").read_text()
+    assert "update_frontend_comp_fallback.py" in wf, (
+        "competitor_audits_weekly.yml must invoke the updater script — "
+        "otherwise the fallback stays stale forever."
+    )
+    assert "FRONTEND_REPO_TOKEN" in wf, (
+        "competitor_audits_weekly.yml must reference the FRONTEND_REPO_TOKEN "
+        "secret to check out msellin/odds-intel-web with push rights."
+    )
+    assert "steps.pat_check.outputs.has_pat" in wf, (
+        "workflow must gate the cross-repo steps on the pat_check output — "
+        "step-level if:secrets.* doesn't work in GitHub Actions."
+    )
+
+    # Sibling web checkout: only assert when present (CI doesn't have it).
+    web_page = _web_path("src/app/page.tsx")
+    if not web_page.exists():
+        raise SkipTest("odds-intel-web checkout not present (CI or partial dev env)")
+    web_src = web_page.read_text()
+    assert "LAST-REFRESH:" in web_src, (
+        "odds-intel-web/src/app/page.tsx must keep the LAST-REFRESH marker "
+        "so the updater script's regex can find and rewrite the block."
+    )
+
+
 if __name__ == "__main__":
     main()
