@@ -75,8 +75,17 @@
              does — that was the gap that let beta bots auto-place).
              Override: launchctl setenv COOLBET_RECORD_ALLOWED_MATURITY
              "calibrated,beta" — or '*' to disable the gate entirely. -->
+        <!-- COOLBET-MATURITY-GATE-WIDENED (2026-07-06): daemon is now
+             paper-only (execute=False), so the maturity filter's original
+             role as a real-money safety gate no longer applies. Widened
+             to `*` = ALL active bots. Rationale: paper bets cost nothing
+             and every candidate gives us "what would Coolbet have quoted"
+             signal for the admin place-bets suggestion queue and for the
+             per-bot ROI leaderboard. Narrowing again is a decision to
+             make ONLY when this daemon flips to execute=True on a
+             specific proven-out bot slice. -->
         <key>COOLBET_RECORD_ALLOWED_MATURITY</key>
-        <string>calibrated</string>
+        <string>*</string>
         <!-- COOLBET-AUTO-LOGIN-ON-HEAL (2026-06-18): when auto_self_heal
              detects the CDP-Chrome session has logged out (Coolbet
              expires the session every few hours overnight), let

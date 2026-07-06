@@ -521,15 +521,33 @@ def _tick(*, dry_run: bool = False) -> dict:
             counters["synced_from_coolbet"] = 0
         if not candidates:
             return counters
-        # record=True writes a real_bets row (the audit trail).
-        # execute=True actually POSTs to Coolbet — that's the whole point.
-        # dry_run override is for smoke: NO side effects — skip the
-        # real_bets write too, otherwise the paper row's NOT EXISTS guard
-        # would block the real placement attempt on the next live tick.
+        # PAPER-ONLY-DAEMON (2026-07-06): daemon is paper-only WHILE models
+        # are still being validated. record=True writes a real_bets row that
+        # feeds the /admin place-bets suggestion queue where the operator
+        # manually decides what to place. execute=False means we do NOT POST
+        # to /s/bets/bets — no real money leaves the daemon.
+        #
+        # The plan is to flip this to execute=True once the models prove out
+        # (e.g. sustained ROI ≥ some target on the paper record). That flip
+        # will need: (a) fresh JWT harvest path working, (b) explicit
+        # operator authorization, (c) a corresponding smoke test update.
+        # Until then, real-money placement stays gated OFF by hardcode.
+        #
+        # Audit at the moment of this change: 761 real_bets rows written
+        # 2026-05-11 → 2026-06-26, €4.3K would-have-been-staked, −€338
+        # would-have-been-loss. Zero of those actually placed on Coolbet —
+        # the auth chain was broken so the API POST rejected and only the
+        # paper record survived. So this change is a no-op in behavior; it
+        # just makes the intent explicit and prevents a future auth fix
+        # from silently turning real-money placement back on.
+        #
+        # dry_run override is for smoke tests only: skip the real_bets write
+        # too, otherwise the paper row's NOT EXISTS guard would block a
+        # follow-up placement attempt.
         if dry_run:
             results = place_all_bets(record=False, execute=False)
         else:
-            results = place_all_bets(record=True, execute=True)
+            results = place_all_bets(record=True, execute=False)
         for r in results:
             outcome = r.get("outcome")
             if outcome == "placed":

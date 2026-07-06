@@ -5182,11 +5182,20 @@ def test_coolbet_maturity_gate_in_plist():
         "every active bot (beta/experimental) can place real money."
     )
     # Find the value tag immediately after the key.
-    idx = plist.index("COOLBET_RECORD_ALLOWED_MATURITY")
-    snippet = plist[idx:idx + 300]
-    assert "<string>calibrated</string>" in snippet, (
-        "Plist gate must be 'calibrated' as the default. If you widen "
-        "it (e.g. 'calibrated,beta'), update this assertion deliberately."
+    # Find the actual <key> occurrence, not the first mention in a comment.
+    idx = plist.index("<key>COOLBET_RECORD_ALLOWED_MATURITY</key>")
+    snippet = plist[idx:idx + 400]
+    # COOLBET-MATURITY-GATE-WIDENED (2026-07-06): daemon is paper-only, so
+    # the maturity gate no longer serves as a real-money safety. Widened
+    # to `*` (all active bots) to maximize paper coverage + admin queue
+    # richness. If this ever narrows again, the daemon must also be
+    # flipped to execute=True on a specific proven bot slice — and the
+    # `PAPER-ONLY-DAEMON` smoke test needs the mirrored update.
+    assert "<string>*</string>" in snippet, (
+        "Plist gate must be '*' — daemon is paper-only so we want every "
+        "candidate captured for the admin suggestion queue + per-bot ROI. "
+        "If narrowing, coordinate with the PAPER-ONLY-DAEMON smoke and "
+        "the memory `feedback_real_money_future`."
     )
 
 
@@ -27304,6 +27313,45 @@ def test_coolbet_odds_freshness_watchdog():
     assert "id=\"coolbet_odds_freshness\"" in sched, (
         "job_id must be 'coolbet_odds_freshness' — the pipeline_runs "
         "logging + failure alerter key on this."
+    )
+
+
+@test("PAPER-ONLY-DAEMON — coolbet_mac_daemon runs place_all_bets(execute=False), no real money")
+def test_paper_only_daemon():
+    """PAPER-ONLY-DAEMON (2026-07-06): the Mac daemon is intentionally
+    paper-only until the models prove out. execute=True would POST to
+    /s/bets/bets (Coolbet's real placement endpoint) and risk real money
+    on every qualifying candidate. The operator's directive was: keep
+    paper-only for now, flip to real-money on a proven bot slice later.
+
+    Audit at time of this test: 761 real_bets rows over 2026-05-11 →
+    2026-06-26 at −€338 paper PnL. Real money is a future goal, not the
+    current mode. Do NOT weaken this gate without an explicit user
+    authorization to enable real placement (see memory
+    `feedback_real_money_future`).
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).parent.parent
+           / "workers/automation/coolbet_mac_daemon.py").read_text()
+
+    # Must call place_all_bets with execute=False in the live tick path.
+    assert "place_all_bets(record=True, execute=False)" in src, (
+        "coolbet_mac_daemon must call place_all_bets(record=True, "
+        "execute=False) — daemon is paper-only until models prove out. "
+        "See memory feedback_real_money_future for the flip criteria."
+    )
+    # And no `place_all_bets(...execute=True...)` call must exist — guards
+    # against a partial edit that leaves a stray armed call. We look for
+    # the call pattern specifically (not the naked string "execute=True"
+    # which appears in narrative comments about the future flip plan).
+    import re
+    armed_calls = re.findall(r"place_all_bets\([^)]*execute\s*=\s*True", src)
+    assert not armed_calls, (
+        f"coolbet_mac_daemon has {len(armed_calls)} armed place_all_bets("
+        "execute=True) call(s) — paper-only invariant. If you're wiring "
+        "the real-money slice, put it behind an explicit runtime gate "
+        "(bot allowlist / ROI floor / operator flag) and update this "
+        "smoke deliberately."
     )
 
 
