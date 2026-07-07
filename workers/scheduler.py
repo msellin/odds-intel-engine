@@ -2681,23 +2681,10 @@ def main():
     # Cohort label = 'HHMM' UTC — each run is a snapshot of the full bot universe
     # at that moment. Settlement runs nightly to compute per-hour ROI.
     # Replaces the old 3-slot (06:30/11:30/15:30) design — now 32 snapshots/day.
-    # Coolbet odds snapshot: every 30 min at :03/:33, between odds refresh (:00/:30)
-    # and betting refresh (:05/:35). Builds a Coolbet odds time-series in
-    # odds_snapshots — feeds the planned COOLBET-OR-PIN-REQUIRED data-quality
-    # gate so OU/AH bots can lean on Coolbet (our actual placement venue)
-    # instead of being Pinnacle-only.
-    # MOVED-TO-MAC 2026-07-03 — Coolbet's Imperva 403's the VPS FS Chrome
-    # fingerprint + Hetzner IP; this job silently wrote zero rows for
-    # 7 days before the coolbet_prod Chrome tab crashed and made it
-    # loud. Now runs via launchd on the operator's Mac —
-    # local/launchd/com.oddsintel.coolbet-odds-snapshot.plist.
-    # Keeping the wrapper function above so manual `python -m
-    # workers.automation.coolbet_explorer` still works from the VPS
-    # for debugging (it'll just 403 there — that's the point).
-    # scheduler.add_job(_coolbet_odds_snapshot_wrapper, CronTrigger(hour="7-22", minute="3,33"),
-    #                   id="coolbet_odds_interval", name="Coolbet Odds Snapshot [30min]")
-
-
+    # Coolbet odds snapshot runs on the operator's Mac via launchd
+    # (local/launchd/com.oddsintel.coolbet-odds-snapshot.plist) — Imperva
+    # 403s the VPS. `_coolbet_odds_snapshot_wrapper` above is kept for
+    # manual runs (`python -m workers.automation.coolbet_explorer`).
 
     # SCHEDULER-HANG-MITIGATION (2026-06-01) — staggered :10/:40 instead of
     # :05/:35 so it doesn't share a firing minute with betting_refresh_interval.
@@ -2718,32 +2705,6 @@ def main():
         scheduler.add_job(job_news_checker, CronTrigger(hour=hour, minute=minute),
                           id=f"news_{hour:02d}{minute:02d}",
                           name=f"News {hour:02d}:{minute:02d}")
-
-    # PMF-CONTENT-PAUSED 2026-07-03 — Gemini-driven UI content jobs (match
-    # previews, WC previews, WC insights below) paused while user count is
-    # ~0. These 3 jobs write text that only renders on match/WC pages for
-    # logged-in users; at 0 users the ~$1-1.50/mo Gemini spend has zero
-    # reader-side value. news_checker (which feeds the actual betting
-    # model via match_signals) and the settlement daily narrative stay on.
-    # Re-enable when user count > 0 and any of these surfaces is actually
-    # visited. Job function definitions kept above so a manual re-run
-    # (`python -m workers.jobs.match_previews`) still works.
-    # scheduler.add_job(job_match_previews, CronTrigger(hour=7, minute=15),
-    #                   id="match_previews", name="Match Previews 07:15")
-    # scheduler.add_job(job_wc_match_previews, CronTrigger(hour=7, minute=30),
-    #                   id="wc_match_previews",
-    #                   name="WC AI Previews 07:30 [WC window]")
-
-    # DIGEST-DISABLED 2026-06-25 — product collapsed to free + Telegram.
-    # Daily/weekly per-user emails were eating the Resend quota every day
-    # while the actual user product is now @oddsintelpicks on Telegram.
-    # Welcome email (/auth/callback) and operator alerts stay on; mass
-    # broadcasts to signed-in users are paused.
-    #
-    # scheduler.add_job(job_wc_daily_email, CronTrigger(hour=7, minute=30),
-    #                   id="wc_daily_email",
-    #                   name="WC Daily Email 07:30 [WC window]",
-    #                   max_instances=1, misfire_grace_time=1800)
 
     # WC-A3 (2026-06-04): Daily market consensus scrape — pulls 1X2
     # implied probs from 2-3 free public sources (eloratings, forebet,
@@ -2771,14 +2732,6 @@ def main():
                       id="publish_daily_picks",
                       name="Accuracy: Publish Daily Picks (06:45 UTC)")
 
-    # PMF-CONTENT-PAUSED 2026-07-03 — same rationale as match_previews /
-    # wc_match_previews above: Gemini-generated WC "insight articles" are
-    # pure UI content and no one is reading them at ~0 users. WC window
-    # ends 2026-07-19 anyway. Re-enable when user count > 0.
-    # scheduler.add_job(job_wc_insights, CronTrigger(hour=8, minute=0),
-    #                   id="wc_insights",
-    #                   name="WC Insights Articles 08:00 [WC window]")
-
     # WC-A5 (2026-06-04): T-60min lineup-aware refresh. Every 5min during the
     # live window the job scans WC fixtures kicking off in the next 90min,
     # re-runs the predictor with an actual_xi vs expected_xi ELO adjustment,
@@ -2787,25 +2740,6 @@ def main():
     scheduler.add_job(job_wc_lineup_refresh, IntervalTrigger(minutes=5),
                       id="wc_lineup_refresh",
                       name="WC Lineup Refresh (5min) [WC window]")
-
-    # DIGEST-DISABLED 2026-06-25 — paused per-user mass mailers (Resend
-    # quota was hitting daily limits and the user product is now the
-    # @oddsintelpicks Telegram channel, not email). Welcome email stays
-    # on at /auth/callback; operator alerts stay on; mass broadcasts
-    # to signed-in users are paused below.
-    #
-    # for hour in (10, 12, 14, 16):
-    #     scheduler.add_job(job_email_digest, CronTrigger(hour=hour, minute=0),
-    #                       id=f"email_digest_{hour:02d}",
-    #                       name=f"Email Digest Slot {hour:02d}:00")
-    #
-    # scheduler.add_job(job_value_bet_alert_afternoon, CronTrigger(hour=16, minute=0),
-    #                   id="value_bet_alert_afternoon", name="Value Bet Alert Afternoon 16:00")
-    # scheduler.add_job(job_value_bet_alert_evening, CronTrigger(hour=20, minute=45),
-    #                   id="value_bet_alert_evening", name="Value Bet Alert Evening 20:45")
-    #
-    # scheduler.add_job(job_weekly_digest, CronTrigger(day_of_week="mon", hour=8, minute=0),
-    #                   id="weekly_digest", name="Weekly Digest Monday 08:00")
 
     # ANON-AUTH PHASE 4 — prune anonymous users idle >90 days, Sunday 02:00 UTC.
     # Cascade removes their profile + favorites + picks. Hard cap of 10k rows
@@ -2860,28 +2794,10 @@ def main():
                       name="Weekly Bot Maturity Review Sunday 06:30",
                       max_instances=1, misfire_grace_time=1800)
 
-    # TENNIS PAUSED 2026-07-02 — focusing on CS2 and soccer. Re-enable by
-    # uncommenting the scheduler.add_job calls below.
-    # scheduler.add_job(job_tennis_scanner, CronTrigger(hour=6, minute=0),
-    #                   id="tennis_scanner_morning", name="Tennis Scanner Morning 06:00",
-    #                   max_instances=1, misfire_grace_time=1800)
-    # scheduler.add_job(job_tennis_scanner, CronTrigger(hour=14, minute=0),
-    #                   id="tennis_scanner_afternoon", name="Tennis Scanner Afternoon 14:00",
-    #                   max_instances=1, misfire_grace_time=1800)
-    # scheduler.add_job(job_tennis_settlement, CronTrigger(hour=2, minute=0),
-    #                   id="tennis_settlement_night", name="Tennis Settlement 02:00",
-    #                   max_instances=1, misfire_grace_time=1800)
-    # scheduler.add_job(job_tennis_settlement, CronTrigger(hour=14, minute=15),
-    #                   id="tennis_settlement_afternoon", name="Tennis Settlement 14:15",
-    #                   max_instances=1, misfire_grace_time=1800)
-    # scheduler.add_job(job_tennis_closing_odds,
-    #                   CronTrigger(hour="6-22", minute="0,30"),
-    #                   id="tennis_closing_odds",
-    #                   name="Tennis Closing Odds [30min, 06-22 UTC]",
-    #                   max_instances=1, misfire_grace_time=600)
-    # scheduler.add_job(job_coolbet_tennis_scanner, CronTrigger(hour="7-22", minute="8,38"),
-    #                   id="coolbet_tennis_scanner", name="Coolbet Tennis Scanner [30min]",
-    #                   max_instances=1, misfire_grace_time=900)
+    # Tennis pipeline paused 2026-07-02 (focusing on CS2 + soccer). Wrapper
+    # functions (job_tennis_scanner / _settlement / _closing_odds and
+    # job_coolbet_tennis_scanner) kept for manual invocation. Git history
+    # has the previous scheduler registrations.
 
     # CS2-SCANNER (2026-06-08) — every 4h 06:00-22:00 UTC. Scanner runs ELO model
     # against bo3.gg upcoming + finished feeds. Each run appends to cs2_predictions
@@ -3227,12 +3143,9 @@ def main():
                       name="FlareSolverr Stale Session Sweep [hourly]",
                       max_instances=1, misfire_grace_time=600)
 
-    # MOVED-TO-MAC 2026-07-03 — same reason as coolbet_odds_snapshot above.
-    # Now runs via launchd on the Mac —
-    # local/launchd/com.oddsintel.cs2-coolbet-scanner.plist.
-    # scheduler.add_job(job_cs2_coolbet_scanner, CronTrigger(hour="7-22", minute="17,47"),
-    #                   id="cs2_coolbet_scanner", name="CS2 Coolbet Scanner [30min]",
-    #                   max_instances=1, misfire_grace_time=900)
+    # CS2 Coolbet scanner runs on the operator's Mac via launchd
+    # (local/launchd/com.oddsintel.cs2-coolbet-scanner.plist) — Imperva
+    # blocks the VPS. `job_cs2_coolbet_scanner` above kept for manual runs.
 
     # CS2-BOT (2026-06-08) — runs ~10 minutes after each ELO scanner pass so
     # bookie/coolbet odds + new model output are both fresh.
@@ -3360,15 +3273,6 @@ def main():
                       CronTrigger(day="1", hour=3, minute=30),
                       id="aln_auto_tune",
                       name="ALN-AUTO Monthly 1st 03:30")
-
-    # DIGEST-DISABLED 2026-06-25 — watchlist alerts also paused
-    # (kickoff reminders + odds movement alerts to user emails).
-    # Telegram public channel covers the live notification need now.
-    #
-    # for hour, minute in [(8, 30), (14, 30), (20, 35)]:
-    #     scheduler.add_job(job_watchlist_alerts, CronTrigger(hour=hour, minute=minute),
-    #                       id=f"watchlist_alerts_{hour:02d}",
-    #                       name=f"Watchlist Alerts {hour:02d}:{minute:02d}")
 
     # Settlement: 21:00 + 23:30 + 01:00 UTC
     # 01:00 added (N4 fix) — catches 21:30+ KO matches finishing with extra time after 23:30

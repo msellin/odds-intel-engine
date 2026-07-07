@@ -1,24 +1,15 @@
 name: OddsIntel — Tennis Daily Cycle
 
-# TENNIS-DAILY-BACKUP (2026-06-25): Railway-independent cron that fires the
-# full tennis pipeline twice daily — same as Railway's scheduler, but as a
-# safety net. Motivation: Railway scheduler had 0 tennis_scanner runs in
-# 7 days due to a silent-failure pattern, undetected because the
-# pipeline_runs row wasn't being written. GitHub Actions runs in the cloud
-# with visible logs + email-on-failure, so even if Railway breaks again
-# the paper-bet pond keeps accumulating.
-#
-# Cost: 2 free GH Actions cron fires per day on the public free tier.
-# Idempotent — same scanner running on both Railway + GH Actions just
-# writes the same rows via ON CONFLICT DO UPDATE.
+# TENNIS PAUSED 2026-07-02 — focus on CS2 + soccer. Cron disabled;
+# workflow_dispatch stays available for manual runs when tennis restarts.
+# When re-enabling, uncomment the schedule block below AND uncomment the
+# tennis scheduler.add_job() registrations in workers/scheduler.py (git
+# history has the previous registrations).
 
 on:
-  schedule:
-    # Match Railway's tennis_scanner crons (06:00 + 14:00 UTC) but +5 min
-    # offset so the two schedulers don't collide on the same row inserts.
-    # If Railway recovers, both run; ON CONFLICT keeps writes deterministic.
-    - cron: '5 6 * * *'    # 06:05 UTC daily
-    - cron: '5 14 * * *'   # 14:05 UTC daily
+  # schedule:
+  #   - cron: '5 6 * * *'    # 06:05 UTC daily
+  #   - cron: '5 14 * * *'   # 14:05 UTC daily
   workflow_dispatch:
 
 permissions:

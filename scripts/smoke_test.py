@@ -27168,29 +27168,29 @@ def test_coolbet_scrapers_moved_to_mac():
     root = pathlib.Path(__file__).parent.parent
 
     sched = (root / "workers/scheduler.py").read_text()
-    # The two add_job calls must be commented out (leading `#` inside
-    # the function body). We assert the exact commented form so an
-    # accidental re-enable via a search-and-replace still trips this.
-    assert '# scheduler.add_job(_coolbet_odds_snapshot_wrapper,' in sched, (
-        "coolbet_odds_snapshot add_job must stay commented out on the "
-        "VPS scheduler — it now runs on the Mac via launchd. If you "
-        "need it on the VPS again, first fix the Imperva 403 root "
-        "cause; don't just re-enable it."
-    )
-    assert '# scheduler.add_job(job_cs2_coolbet_scanner,' in sched, (
-        "cs2_coolbet_scanner add_job must stay commented out on the "
-        "VPS scheduler — moved to the Mac launchd. See "
-        "local/launchd/com.oddsintel.cs2-coolbet-scanner.plist."
-    )
-    # And the un-commented forms must NOT exist (defensive against
-    # partial reverts that leave one enabled).
+    # Neither add_job registration may exist on the VPS scheduler — if
+    # someone re-adds them the VPS starts silently 403'ing again.
     assert "\n    scheduler.add_job(_coolbet_odds_snapshot_wrapper," not in sched, (
-        "coolbet_odds_snapshot is registered without a leading `#` — "
-        "either fully re-enable with a docs update, or keep it commented."
+        "coolbet_odds_snapshot is registered on the VPS scheduler — it "
+        "runs on the Mac via launchd instead (Imperva 403s the VPS). "
+        "If you need it on the VPS again, first fix the Imperva 403 "
+        "root cause; don't just re-add it."
     )
     assert "\n    scheduler.add_job(job_cs2_coolbet_scanner," not in sched, (
-        "cs2_coolbet_scanner is registered without a leading `#` — "
-        "either fully re-enable with a docs update, or keep it commented."
+        "cs2_coolbet_scanner is registered on the VPS scheduler — moved "
+        "to the Mac launchd. See "
+        "local/launchd/com.oddsintel.cs2-coolbet-scanner.plist."
+    )
+    # Breadcrumb comments must point at the launchd plists so future
+    # readers know why these jobs aren't in the scheduler.
+    assert "com.oddsintel.coolbet-odds-snapshot.plist" in sched, (
+        "workers/scheduler.py must mention the launchd plist for "
+        "coolbet_odds_snapshot so it's discoverable — don't delete "
+        "the breadcrumb."
+    )
+    assert "com.oddsintel.cs2-coolbet-scanner.plist" in sched, (
+        "workers/scheduler.py must mention the launchd plist for "
+        "cs2_coolbet_scanner — don't delete the breadcrumb."
     )
 
     for name, minutes, prog_marker in [
@@ -27241,16 +27241,18 @@ def test_pmf_content_paused():
     sched = (pathlib.Path(__file__).parent.parent / "workers/scheduler.py").read_text()
 
     for job in ("job_match_previews", "job_wc_match_previews", "job_wc_insights"):
-        assert f"# scheduler.add_job({job}," in sched, (
-            f"{job} add_job must stay commented out — PMF-CONTENT-PAUSED. "
-            "If user count is now > 0 and the surface is actually read, "
-            "re-enable deliberately (and update this assertion + docs)."
-        )
-        # And the un-commented form must NOT exist (guards against partial
-        # revert leaving one enabled).
+        # Registration must NOT exist — PMF-CONTENT-PAUSED. If user count
+        # is now > 0 and the surface is actually read, re-enable
+        # deliberately (and update this assertion + docs).
         assert f"\n    scheduler.add_job({job}," not in sched, (
-            f"{job} is registered without a leading `#` — either fully "
-            "re-enable with a docs update, or keep it commented."
+            f"{job} is registered on the VPS scheduler — PMF-CONTENT-PAUSED "
+            "means Gemini UI-content jobs stay off while user count is ~0. "
+            "Re-enable deliberately with a docs update; don't just re-add."
+        )
+        # Wrapper function must still exist so manual invocation works.
+        assert f"def {job}(" in sched, (
+            f"{job} wrapper function must remain in workers/scheduler.py "
+            "for manual runs (`python -m workers.jobs.<name>`)."
         )
 
     # news_checker MUST stay registered — it feeds the model, not just UI.
@@ -27474,6 +27476,57 @@ def test_comp_fallback_autorefresh():
         "odds-intel-web/src/app/page.tsx must keep the LAST-REFRESH marker "
         "so the updater script's regex can find and rewrite the block."
     )
+
+
+@test("KUMA-PUSH-HELPER — workers/utils/kuma imports cleanly and no-ops when unconfigured")
+def test_kuma_push_helper():
+    """KUMA-PUSH-HELPER (2026-07-07): workers/utils/kuma.py is the
+    single choke-point for Uptime Kuma push monitors. Every scheduler
+    job that we want on the status page will end up calling push()
+    or wearing @monitor().
+
+    Guardrails this test enforces:
+      1. The module imports without raising even when KUMA_URL_BASE
+         and KUMA_TOKENS are unset (dev + CI safety).
+      2. push() is a silent no-op when unconfigured — must never crash
+         or block the calling job on network I/O.
+      3. @monitor() re-raises exceptions so APScheduler's own error
+         handling (pipeline_runs row, Telegram alerts) still runs.
+      4. Malformed KUMA_TOKENS (bad JSON) degrades gracefully to no-op
+         instead of taking down scheduler startup.
+    """
+    import importlib
+    import os
+
+    # 1 + 2. Fresh import with no config → silent no-op.
+    for key in ("KUMA_URL_BASE", "KUMA_TOKENS"):
+        os.environ.pop(key, None)
+    import workers.utils.kuma as kuma_mod
+    importlib.reload(kuma_mod)
+    kuma_mod.push("morning_pipeline", ping_ms=42)  # must not raise
+
+    # 3. Decorator re-raises on failure and returns value on success.
+    @kuma_mod.monitor("some_job")
+    def ok():
+        return 7
+    assert ok() == 7, "@monitor must pass through the return value"
+
+    @kuma_mod.monitor("some_job")
+    def boom():
+        raise ValueError("expected")
+    try:
+        boom()
+        assert False, "@monitor must re-raise exceptions"
+    except ValueError:
+        pass
+
+    # 4. Malformed JSON in KUMA_TOKENS → warns + still no-ops.
+    os.environ["KUMA_URL_BASE"] = "https://example.invalid/api/push"
+    os.environ["KUMA_TOKENS"] = "{invalid json"
+    importlib.reload(kuma_mod)
+    kuma_mod.push("morning_pipeline")  # must not raise
+    for key in ("KUMA_URL_BASE", "KUMA_TOKENS"):
+        os.environ.pop(key, None)
 
 
 if __name__ == "__main__":
