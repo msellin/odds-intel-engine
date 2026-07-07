@@ -1,0 +1,21 @@
+{
+  "must_contain_homepage": "OddsIntel",
+  "critical_paths": [
+    "/",
+    "/picks",
+    "/performance",
+    "/methodology",
+    "/login",
+    "/signup"
+  ],
+  "api_paths": [
+    "/api/v1/upcoming",
+    "/api/v1/track-record"
+  ],
+  "static_paths": [
+    "/manifest.json",
+    "/sitemap.xml",
+    "/opengraph-image"
+  ],
+  "max_response_ms": 20000
+}
