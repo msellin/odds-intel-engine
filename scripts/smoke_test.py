@@ -27478,6 +27478,90 @@ def test_comp_fallback_autorefresh():
     )
 
 
+@test("KUMA-TIER1-WIRED — 7 Tier-1 jobs push to Uptime Kuma via _run_job or direct call")
+def test_kuma_tier1_wired():
+    """KUMA-TIER1-WIRED (2026-07-07): the 7 Tier-1 jobs must all reach
+    Uptime Kuma through one of two paths:
+      1. `_run_job(name, ...)` — fires _kuma_push(name, status=up/down) at
+         end. Covers morning_pipeline, betting_refresh, settlement,
+         cs2_bot, cs2_v8_predict (via _run_subprocess_job → _run_job).
+      2. Direct `_kuma_push(...)` calls in job_coolbet_health_ping and
+         job_healthcheck_ping (both don't flow through _run_job on all
+         code paths, so they need the explicit call).
+
+    Guardrails:
+      - _run_job must import + invoke _kuma_push.
+      - job_coolbet_health_ping's failure path must RAISE from the
+        lambda so _run_job records status=failed → Kuma "down". The
+        old `_run_job(lambda: None)` pattern silently logged
+        'completed' on failure — the trap this test exists to prevent.
+      - job_healthcheck_ping must call _kuma_push('healthcheck_ping',
+        ...) in both success and failure branches.
+      - Each Tier-1 pipeline-runs name must literally appear in
+        scheduler.py so operators know which KUMA_TOKENS key maps
+        where.
+    """
+    import pathlib
+    sched = (pathlib.Path(__file__).parent.parent / "workers/scheduler.py").read_text()
+
+    # 1. Central import of the Kuma push helper.
+    assert "from workers.utils.kuma import push as _kuma_push" in sched, (
+        "workers/scheduler.py must import workers.utils.kuma.push — "
+        "this is the single choke-point for Uptime Kuma pings."
+    )
+
+    # 2. _run_job must fire the push using its `name` argument.
+    assert "_kuma_push(" in sched and 'status="up" if status == "completed"' in sched, (
+        "_run_job must call _kuma_push(name, status='up' if completed "
+        "else 'down', ...) — Kuma won't get status transitions otherwise."
+    )
+
+    # 3. Silent-failure guardrail on job_coolbet_health_ping. Old code
+    # used `_run_job('coolbet_health_ping', lambda: None)` on failure,
+    # which pinged Kuma 'up' on failure. New code must raise from a
+    # named lambda so _run_job → status=failed → Kuma 'down'.
+    assert "raise RuntimeError(f\"coolbet health_ping exited" in sched, (
+        "job_coolbet_health_ping failure path must RAISE — the previous "
+        "`lambda: None` pattern is a silent-failure trap that would "
+        "ping Kuma 'up' on failure. Do not revert."
+    )
+    # And the old trap must be gone.
+    assert 'console.print(result.stdout[-500:] or result.stderr[-500:])\n    _run_job("coolbet_health_ping", lambda: None)' not in sched, (
+        "job_coolbet_health_ping still contains the `_run_job(..., "
+        "lambda: None)` silent-failure trap on the unhealthy branch. "
+        "Replace with a raising lambda so pipeline_runs + Kuma both "
+        "reflect reality."
+    )
+
+    # 4. job_healthcheck_ping must push in both branches.
+    assert '_kuma_push("healthcheck_ping", status="up"' in sched, (
+        "job_healthcheck_ping success branch must push status=up so "
+        "Kuma's scheduler-alive monitor stays green."
+    )
+    assert '_kuma_push("healthcheck_ping", status="down"' in sched, (
+        "job_healthcheck_ping failure branch must push status=down so "
+        "an urllib exception surfaces on the Kuma dashboard."
+    )
+
+    # 5. Each Tier-1 pipeline_runs name literal must exist in scheduler.py
+    # (these are the exact KUMA_TOKENS keys the operator needs to create).
+    for job_id in (
+        "morning_pipeline",
+        "betting_refresh",
+        "settlement",
+        "cs2_bot",
+        "cs2_v8_predict",
+        "coolbet_health_ping",
+        "healthcheck_ping",
+    ):
+        assert f'"{job_id}"' in sched, (
+            f"pipeline_runs name '{job_id}' must appear as a string "
+            "literal in scheduler.py — it's the KUMA_TOKENS key the "
+            "operator uses. If you rename the job, mirror the change "
+            "in docs/KUMA_MONITORS.md AND the Kuma UI."
+        )
+
+
 @test("KUMA-PUSH-HELPER — workers/utils/kuma imports cleanly and no-ops when unconfigured")
 def test_kuma_push_helper():
     """KUMA-PUSH-HELPER (2026-07-07): workers/utils/kuma.py is the

@@ -25,6 +25,8 @@ from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
 from rich.console import Console
 
+from workers.utils.kuma import push as _kuma_push
+
 # APScheduler logs every job-fire at INFO — suppress to keep logs readable at 50+ jobs.
 logging.getLogger("apscheduler").setLevel(logging.WARNING)
 
@@ -134,6 +136,17 @@ def _run_job(name: str, fn, *args, _log_run: bool = True, **kwargs):
 
     status_color = "green" if status == "completed" else "red"
     console.print(f"\n[{status_color}]Job {full_name} {status} in {elapsed:.1f}s[/{status_color}]")
+
+    # Uptime Kuma push — silent no-op unless KUMA_URL_BASE + KUMA_TOKENS[name]
+    # are set. Uses the pipeline-runs `name` (not full_name) as the key so a
+    # PIPELINE_JOB_PREFIX doesn't need mirroring in Kuma config. Failures in
+    # the push itself never crash the job (kuma.push swallows exceptions).
+    _kuma_push(
+        name,
+        status="up" if status == "completed" else "down",
+        msg="OK" if status == "completed" else (error_msg or "failed")[:120],
+        ping_ms=int(elapsed * 1000),
+    )
 
 
 def _run_subprocess_job(
@@ -1365,11 +1378,17 @@ def job_coolbet_health_ping():
     )
     # exit code 0 = healthy, 1 = unhealthy, 2 = config error
     if result.returncode == 0:
-        return  # silent on success; state row is updated
-    # Only console-log unhealthy — health-alert cron handles the TG ping.
+        _run_job("coolbet_health_ping", lambda: None)
+        return
     console.print(f"[yellow]Coolbet health-ping: exit {result.returncode}[/yellow]")
     console.print(result.stdout[-500:] or result.stderr[-500:])
-    _run_job("coolbet_health_ping", lambda: None)
+    # Raise from the lambda so _run_job records status=failed in
+    # pipeline_runs AND pushes status=down to Kuma. The old pattern
+    # (lambda: None) logged 'completed' on failure — a silent-failure trap.
+    exit_code = result.returncode
+    def _fail():
+        raise RuntimeError(f"coolbet health_ping exited {exit_code}")
+    _run_job("coolbet_health_ping", _fail)
 
 
 def job_coolbet_daily_summary():
@@ -2351,18 +2370,28 @@ def job_cleanup_orphaned_runs():
 
 
 def job_healthcheck_ping():
-    """OBS-HEARTBEAT: Ping healthchecks.io every 5 min to confirm scheduler is alive.
-    Set HEALTHCHECKS_IO_PING_URL in Railway env vars after creating a check at healthchecks.io.
-    No-op if the env var is not set.
+    """OBS-HEARTBEAT: Ping healthchecks.io + Uptime Kuma every 5 min to
+    confirm scheduler is alive. Both external heartbeats no-op if their
+    respective env vars aren't set (HEALTHCHECKS_IO_PING_URL for the
+    healthchecks.io one, KUMA_URL_BASE + KUMA_TOKENS['healthcheck_ping']
+    for Kuma). No pipeline_runs row on purpose — 288 rows/day for a
+    liveness check would swamp the ops dashboard.
     """
     ping_url = os.getenv("HEALTHCHECKS_IO_PING_URL", "")
     if not ping_url:
+        # Still push Kuma even if healthchecks.io isn't configured —
+        # Kuma is the new preferred heartbeat.
+        _kuma_push("healthcheck_ping", status="up")
         return
+    t0 = time.time()
     try:
         import urllib.request
         urllib.request.urlopen(ping_url, timeout=10)
+        _kuma_push("healthcheck_ping", status="up",
+                   ping_ms=int((time.time() - t0) * 1000))
     except Exception as e:
         console.print(f"[yellow]Healthcheck ping failed: {e}[/yellow]")
+        _kuma_push("healthcheck_ping", status="down", msg=str(e)[:120])
 
 
 # ── Health endpoint ────────────────────────────────────────────────────────
