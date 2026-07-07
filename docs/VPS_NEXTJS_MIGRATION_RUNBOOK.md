@@ -249,13 +249,14 @@ Just a warning, not a failure. Skip unless you want the extra Sentry navigation 
 
 Prevent port collisions across apps:
 
-| Port  | App              | Domain         | pm2 name         |
-|-------|------------------|----------------|------------------|
-| 3000  | odds-intel-web   | oddsintel.app  | odds-intel-web   |
-| 3001  | *available*      |                |                  |
-| 3002  | *available*      |                |                  |
-| 8080  | (engine health?) | -              | -                |
-| 8191  | flaresolverr     | -              | (docker)         |
+| Port  | App              | Domain                    | pm2 name         |
+|-------|------------------|---------------------------|------------------|
+| 3000  | odds-intel-web   | oddsintel.app             | odds-intel-web   |
+| 3001  | box-ranking      | boxrank.ee                | box-ranking      |
+| 3002  | *available*      |                           |                  |
+| 3005  | uptime-kuma      | status.oddsintel.app      | uptime-kuma      |
+| 8080  | (engine health?) | -                         | -                |
+| 8191  | flaresolverr     | -                         | (docker)         |
 
 Update this table when adding an app.
 
