@@ -73,6 +73,51 @@ BOTS_CONFIG = {
         "odds_range": (1.30, 4.50),
         "min_prob": 0.30,
     },
+    # BOT-SUMMER-SPECIALIST (2026-07-08): fills the mid-week volume gap
+    # during Northern-Hemisphere summer (June-August) when European top-5,
+    # UK, and Greek/Turkish leagues are off-season. bot_v10_all covers the
+    # weekend fringe (Belarus/Kazakhstan/Estonia lower tiers) but its v10
+    # model has ~zero prediction coverage on the North-American + Nordic
+    # summer leagues (verified 2026-07-08: MLS Next Pro / USL / Finland /
+    # Iceland / Estonia all show 0 v10 predictions in the last 14d). This
+    # bot uses the main model version (v20260607 / v20260621 / v20260705)
+    # via daily_pipeline_v2's default, gated to a whitelist of leagues
+    # with 100% odds+prediction coverage (verified in the 2026-07-08
+    # prereq check) that PLAY MID-WEEK: USA USL + MLS Next Pro (Wed
+    # matches routine), Finland Veikkausliiga/Ykkönen (Wed rounds),
+    # Iceland Úrvalsdeild/1. Deild, Estonia Meistriliiga/Esiliiga A,
+    # China League Two, Sweden Damallsvenskan (women's, 13 midweek/mo).
+    # Edge thresholds slightly looser than v10 (1-2pp) since lower-tier
+    # variance is higher; odds range slightly wider. Ships as beta —
+    # paper-only for 4 weeks before promotion consideration.
+    "bot_summer_specialist": {
+        "description": "Summer-active league specialist — USA (USL Championship / USL League One / MLS Next Pro), Nordic (Finland / Iceland), Baltic (Estonia), China L2, Sweden Damallsvenskan. Targets midweek fixtures the main-model bots miss because their v10 predictor has no coverage on these leagues. Slightly looser edges vs v10 to compensate for higher lower-tier variance.",
+        "tier_label": "elite",
+        "markets": ["1x2", "ou"],
+        "tier_filter": None,
+        "league_name_filter": [
+            ("USA",      "MLS Next Pro"),
+            ("USA",      "USL Championship"),
+            ("USA",      "USL League One"),
+            ("Finland",  "Veikkausliiga"),
+            ("Finland",  "Ykkönen"),
+            ("Iceland",  "Úrvalsdeild"),
+            ("Iceland",  "1. Deild"),
+            ("Estonia",  "Meistriliiga"),
+            ("Estonia",  "Esiliiga A"),
+            ("China",    "League Two"),
+            ("Sweden",   "Damallsvenskan"),
+            ("Sweden",   "Allsvenskan"),
+        ],
+        "edge_thresholds": {
+            1: {"1x2_fav": 0.06, "1x2_long": 0.10, "ou": 0.06},
+            2: {"1x2_fav": 0.04, "1x2_long": 0.07, "ou": 0.05},
+            3: {"1x2_fav": 0.03, "1x2_long": 0.06, "ou": 0.04},
+            4: {"1x2_fav": 0.03, "1x2_long": 0.05, "ou": 0.04},
+        },
+        "odds_range": (1.30, 5.00),
+        "min_prob": 0.28,
+    },
     # [RETIRED 2026-06-01 — RETIRE-LOWER-1X2, migration 156]
     # Original 2026-05-17 retirement (alpha_t2_1x2=0.00 after May 17 retrain
     # starved it; +83% on 11 bets was variance) was re-activated 2026-05-22 by
@@ -960,6 +1005,7 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     # any edge that only appears once lineups land. Dedup prevents double
     # placement; if morning fires first, that's the price we get.
     "bot_v10_all":          "all",
+    "bot_summer_specialist": "all",   # BOT-SUMMER-SPECIALIST 2026-07-08 — fills midweek summer volume gap
     "bot_lower_1x2":        "all",
     "bot_aggressive":       "all",
     "bot_aggressive_v2":    "all",

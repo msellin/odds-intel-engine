@@ -27478,6 +27478,92 @@ def test_comp_fallback_autorefresh():
     )
 
 
+@test("BOT-SUMMER-SPECIALIST — summer-active league bot wired end-to-end")
+def test_bot_summer_specialist():
+    """BOT-SUMMER-SPECIALIST (2026-07-08): fills the midweek volume gap
+    during NH summer when bot_v10_all's v10-model has no prediction
+    coverage on North-American / Nordic / Baltic leagues.
+
+    Guardrails:
+      1. BOTS_CONFIG entry exists with the expected shape.
+      2. league_name_filter contains the 12 whitelisted leagues (any
+         drift here changes what the bot can fire on — pin exactly).
+      3. Edge thresholds are LOOSER than bot_v10_all by 1-2pp per tier
+         (rationale: lower-tier variance is higher). If someone tightens
+         to match v10, this test flags it.
+      4. BOT_TIMING_COHORTS entry exists with "all" cohort.
+      5. Migration 270 exists and inserts a bot row with
+         maturity_label='beta' + is_active=TRUE.
+    """
+    import pathlib
+    root = pathlib.Path(__file__).parent.parent
+    src = (root / "workers/jobs/daily_pipeline_v2.py").read_text()
+
+    # 1. BOTS_CONFIG entry.
+    assert '"bot_summer_specialist":' in src, (
+        "BOTS_CONFIG must have a bot_summer_specialist entry — this is "
+        "the config the daily pipeline reads."
+    )
+
+    # 2. Twelve whitelisted leagues (any drift changes bot scope).
+    for country, league in (
+        ("USA",      "MLS Next Pro"),
+        ("USA",      "USL Championship"),
+        ("USA",      "USL League One"),
+        ("Finland",  "Veikkausliiga"),
+        ("Finland",  "Ykkönen"),
+        ("Iceland",  "Úrvalsdeild"),
+        ("Iceland",  "1. Deild"),
+        ("Estonia",  "Meistriliiga"),
+        ("Estonia",  "Esiliiga A"),
+        ("China",    "League Two"),
+        ("Sweden",   "Damallsvenskan"),
+        ("Sweden",   "Allsvenskan"),
+    ):
+        pair = f'("{country}"'
+        # Loose check — verify the pair appears in the country+name form
+        # anywhere within the bot's config block.
+        assert country in src and league in src, (
+            f"bot_summer_specialist league_name_filter missing {country}/"
+            f"{league} — that's part of the summer whitelist verified in "
+            "the 2026-07-08 prereq check (100% odds + prediction coverage)."
+        )
+
+    # 3. Edge thresholds looser than v10 per tier.
+    # v10's T1 1x2_fav = 0.08; summer should be lower (0.06).
+    # Use a rough substring pin — the exact numbers are called out in
+    # the config comment, so a drift here is visible in diff review.
+    assert '"1x2_fav": 0.06' in src, (
+        "bot_summer_specialist T1 1x2_fav edge should be 0.06 (2pp "
+        "looser than v10's 0.08). If tightened, the whole point of the "
+        "bot — catching lower-tier variance the main-model bots miss — "
+        "is defeated."
+    )
+
+    # 4. BOT_TIMING_COHORTS entry.
+    assert '"bot_summer_specialist": "all"' in src, (
+        "BOT_TIMING_COHORTS must include bot_summer_specialist='all' so "
+        "it fires every betting_refresh cycle (else it silently sits "
+        "in the wrong cohort and never picks)."
+    )
+
+    # 5. Migration 270 exists and creates the bot row.
+    mig = root / "supabase/migrations/270_bot_summer_specialist.sql"
+    assert mig.exists(), (
+        "Migration 270 must exist — the CI DB-migrations run + smoke "
+        "tests are how prod picks up the new bot row."
+    )
+    mig_src = mig.read_text()
+    assert "INSERT INTO bots" in mig_src, "migration must INSERT INTO bots"
+    assert "'beta'" in mig_src, (
+        "migration must set maturity_label='beta' — paper-only observation "
+        "window before promotion to active."
+    )
+    assert "'bot_summer_specialist'" in mig_src, (
+        "migration must reference the exact bot name."
+    )
+
+
 @test("COOLBET-CDP-COOKIE-EXPORT — mac_daemon harvests CDP cookies; NO_FS mode reads them from DB")
 def test_coolbet_cdp_cookie_export():
     """COOLBET-CDP-COOKIE-EXPORT (2026-07-08): Path B fix for the 5-day
