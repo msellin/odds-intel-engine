@@ -113,6 +113,41 @@ def _state():
     return _s
 
 
+def _load_fresh_imperva_cookies_from_db(*, max_age_hours: float = 2.0) -> dict[str, str] | None:
+    """COOLBET-CDP-COOKIE-EXPORT (2026-07-08): read Imperva cookies that
+    the Mac daemon harvests from CDP-Chrome every ~30 min. Returns the
+    cookie dict if the snapshot is fresher than `max_age_hours`, else
+    None so the caller falls back to env cookies.
+
+    Silent-fail: any DB error returns None. Called at CoolbetSession
+    __init__ time — DB flakiness must not block session construction.
+    """
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            """SELECT imperva_cookies_json,
+                      EXTRACT(EPOCH FROM (NOW() - imperva_cookies_refreshed_at))
+                        AS age_s
+                 FROM coolbet_session_state WHERE id = 1"""
+        )
+    except Exception as e:
+        log.debug("Imperva cookie DB read failed (falling back to env): %s", e)
+        return None
+    if not rows:
+        return None
+    row = rows[0]
+    payload = row.get("imperva_cookies_json") or None
+    age_s = row.get("age_s")
+    if payload is None or age_s is None:
+        return None
+    if float(age_s) > max_age_hours * 3600:
+        log.info("Imperva cookies in DB are %.1fh stale (> %.1fh) — using env fallback",
+                 float(age_s) / 3600, max_age_hours)
+        return None
+    # Strip metadata keys before returning — only the actual cookie names.
+    return {k: v for k, v in payload.items() if not k.startswith("_") and v}
+
+
 # ── FlareSolverr proxy ───────────────────────────────────────────────────────
 # Every call from this module to Coolbet goes through FS's named browser
 # session (default: coolbet_prod) so Imperva sees real-Chrome TLS + headers.
@@ -361,12 +396,21 @@ class CoolbetSession:
         # Railway scheduler) — production Coolbet daemon on the Mac keeps
         # using FS as today. require_auth=True implicitly disables this
         # since JWT-bearing calls need fresh FS cookies to look authentic.
+        #
+        # COOLBET-CDP-COOKIE-EXPORT (2026-07-08): NO_FS mode now prefers
+        # DB cookies (harvested from CDP-Chrome every 30 min by the Mac
+        # daemon) over the static env-var cookies. Env cookies stale as
+        # Imperva rotates; DB cookies stay fresh as long as the daemon
+        # tick lands. Fallback order: DB (if refreshed within 2h) → env.
         self._no_fs = (
             not require_auth
             and os.getenv("COOLBET_NO_FS", "").lower() in ("1", "true", "yes")
         )
         if self._no_fs:
-            for name, value in self._imperva_cookies_individual.items():
+            db_cookies = _load_fresh_imperva_cookies_from_db(max_age_hours=2.0)
+            source_cookies = db_cookies if db_cookies else self._imperva_cookies_individual
+            _cookie_source_label = "db" if db_cookies else "env"
+            for name, value in source_cookies.items():
                 if value:
                     self._http.cookies.set(name, value, domain="www.coolbet.com")
             # Match the User-Agent Imperva fingerprinted when the env cookie
@@ -379,6 +423,9 @@ class CoolbetSession:
                 "Chrome/120.0.0.0 Safari/537.36",
             )
             self._cookies_fresh = True
+            log.info("CoolbetSession NO_FS mode — %d cookies from %s",
+                     sum(1 for v in source_cookies.values() if v),
+                     _cookie_source_label)
 
     # ── setup ────────────────────────────────────────────────────────────────
 

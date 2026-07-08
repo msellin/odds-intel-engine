@@ -470,6 +470,27 @@ def _tick(*, dry_run: bool = False) -> dict:
         "elapsed_s": 0.0,
     }
     try:
+        # COOLBET-CDP-COOKIE-EXPORT (2026-07-08): harvest fresh Imperva
+        # cookies from CDP-Chrome BEFORE the SILENT-WHEN-EMPTY early
+        # return. Every :03/:33 the odds-snapshot + cs2-coolbet-scanner
+        # LaunchAgents need these — they run on a 30-min cadence
+        # regardless of whether the daemon has qualifying picks to place.
+        # Read-only, ~50ms per fire; no window flash since we only read
+        # cookies from an existing coolbet.com tab (harvest returns None
+        # if no tab is open, and we skip the persist path). Never raises.
+        try:
+            from workers.automation.coolbet_browser_sync import (
+                extract_imperva_cookies_from_cdp,
+            )
+            from workers.automation.coolbet_state import persist_imperva_cookies
+            harvested = extract_imperva_cookies_from_cdp()
+            if harvested:
+                persist_imperva_cookies(harvested, source="cdp_chrome")
+                counters["imperva_cookies_harvested"] = len(harvested)
+        except Exception as e:
+            log.debug("imperva cookie harvest failed (non-fatal): %s", e)
+            counters["imperva_cookies_harvested"] = 0
+
         # SILENT-WHEN-EMPTY (2026-06-12): cheap DB check first — if no
         # qualifying picks exist, exit the tick before touching Coolbet
         # or CDP-Chrome. The popping-up cost (and resource use) of a

@@ -374,6 +374,160 @@ def extract_jwt_from_cdp(*, allow_open_new_tab: bool = False,
     return None
 
 
+# COOLBET-CDP-COOKIE-EXPORT (2026-07-08): the 6 cookie names Imperva actually
+# fingerprints on Coolbet. reese84 + visid_incap_* are the two must-haves; the
+# rest correlate with reese84 and Imperva may notice if they're missing. Names
+# stay in sync with `_imperva_cookies_individual` in coolbet_session.py.
+_IMPERVA_COOKIE_NAMES = (
+    "reese84",
+    "visid_incap_723517",
+    "nlbi_723517",
+    "nlbi_723517_2147483392",
+    "incap_ses_1099_723517",
+    "uuid",
+)
+
+
+def extract_imperva_cookies_from_cdp(*, timeout_ms: int = 15000) -> dict[str, str] | None:
+    """Read Imperva cookies from CDP-Chrome via CDP `Network.getAllCookies`.
+    Returns {cookie_name: value} for the 6 Imperva-critical names present
+    on www.coolbet.com, or None if CDP is unavailable / no Coolbet tab.
+
+    Why this exists: FS-Docker Chrome fails Imperva challenges (different
+    fingerprint from the operator's real desktop Chrome). CDP-Chrome IS
+    the operator's real Chrome — Imperva trusts it. Harvesting the cookies
+    here lets other Coolbet-HTTP jobs (odds-snapshot, cs2-coolbet-scanner)
+    run in COOLBET_NO_FS=true mode with plain-requests + fresh cookies,
+    bypassing FS entirely.
+
+    Uses Network.getAllCookies (not `document.cookie`) so HttpOnly cookies
+    are included — reese84 is often HttpOnly.
+
+    Returns None (not raise) on any CDP failure; caller decides what to do
+    (keep using stale DB cookies, fall back to env, alert, etc.).
+    """
+    import time as _t
+
+    last_err: Exception | None = None
+    for attempt in range(3):
+        try:
+            result = _try_get_all_cookies_via_cdp(timeout_ms=timeout_ms)
+        except Exception as e:
+            last_err = e
+            log.info("CDP getAllCookies attempt %d failed: %s",
+                     attempt + 1, e)
+            _t.sleep(1.5 + attempt)
+            continue
+        if result is None:
+            return None  # explicit "no coolbet tab" — don't retry
+        if isinstance(result, Exception):
+            last_err = result
+            _t.sleep(1.5 + attempt)
+            continue
+
+        harvested = {
+            c["name"]: c["value"]
+            for c in result
+            if c.get("name") in _IMPERVA_COOKIE_NAMES
+            and c.get("value")
+            and "coolbet.com" in (c.get("domain") or "")
+        }
+        # reese84 + at least one visid_incap_* is the minimum Imperva accepts.
+        # If both are missing, the cookies aren't useful — return None so the
+        # caller falls back cleanly rather than persisting a bad snapshot.
+        if not harvested.get("reese84"):
+            log.info("CDP cookies harvested but reese84 missing "
+                     "(keys=%s) — treating as empty.",
+                     sorted(harvested.keys()))
+            return None
+        log.info("Harvested %d Imperva cookies from CDP-Chrome (keys=%s).",
+                 len(harvested), sorted(harvested.keys()))
+        return harvested
+
+    log.warning("extract_imperva_cookies_from_cdp failed after retries: %s", last_err)
+    return None
+
+
+def _try_get_all_cookies_via_cdp(*, timeout_ms: int) -> list | None:
+    """One attempt at CDP Network.getAllCookies. Returns list of cookie
+    dicts on success, None if no Coolbet tab. Exceptions propagate; the
+    public wrapper catches + retries."""
+    import asyncio
+    return asyncio.run(
+        _async_get_all_cookies(timeout_s=timeout_ms / 1000.0)
+    )
+
+
+async def _async_get_all_cookies(*, timeout_s: float) -> list | None:
+    """Async CDP handshake: find Coolbet tab, open WS, send
+    Network.getAllCookies, return cookie list. Mirrors
+    _async_read_localStorage's connection pattern for consistency."""
+    import asyncio
+    import websockets
+
+    try:
+        targets = await asyncio.wait_for(
+            _http_get_json(f"{CDP_URL}/json/list"),
+            timeout=timeout_s,
+        )
+    except Exception as e:
+        log.warning("CDP /json/list failed: %s", e)
+        raise
+
+    coolbet_target = None
+    for t in targets or []:
+        if t.get("type") != "page":
+            continue
+        if "coolbet.com" in (t.get("url") or ""):
+            coolbet_target = t
+            break
+
+    if coolbet_target is None:
+        # No coolbet tab — we DON'T open one here (harvest is a passive
+        # read; opening a fresh tab would trigger a page load without an
+        # authenticated context, which defeats the whole point).
+        log.info("No coolbet.com tab in CDP-Chrome — skipping cookie harvest.")
+        return None
+
+    ws_url = coolbet_target.get("webSocketDebuggerUrl")
+    if not ws_url:
+        log.warning("Coolbet target has no webSocketDebuggerUrl: %s", coolbet_target)
+        return None
+
+    async with websockets.connect(ws_url,
+                                     open_timeout=timeout_s,
+                                     max_size=10_000_000) as ws:
+        # Network domain doesn't strictly need enabling for getAllCookies
+        # on modern Chrome, but doing so is harmless + defensive.
+        await ws.send(_json_dumps({
+            "id": 1,
+            "method": "Network.enable",
+            "params": {},
+        }))
+        await ws.send(_json_dumps({
+            "id": 2,
+            "method": "Network.getAllCookies",
+            "params": {},
+        }))
+        deadline = asyncio.get_event_loop().time() + timeout_s
+        seen_ids: set[int] = set()
+        while True:
+            remaining = deadline - asyncio.get_event_loop().time()
+            if remaining <= 0:
+                raise TimeoutError("CDP Network.getAllCookies response timed out")
+            msg = await asyncio.wait_for(ws.recv(), timeout=remaining)
+            resp = _json_loads(msg)
+            rid = resp.get("id")
+            if rid not in (1, 2):
+                continue  # ignore Network events / other traffic
+            seen_ids.add(rid)
+            if rid == 2:
+                if "error" in resp:
+                    raise RuntimeError(f"CDP error: {resp['error']}")
+                cookies = ((resp.get("result") or {}).get("cookies")) or []
+                return cookies
+
+
 def _chrome_at_profile_picker(*, timeout_s: float = 3.0) -> bool:
     """Return True if Chrome's only page-type targets are chrome://profile-picker/.
     When this is the case, CDP `Target.createTarget` (used by /json/new to

@@ -96,6 +96,37 @@ def mark_heartbeat(ok: bool, *, note: str | None = None) -> None:
         )
 
 
+def persist_imperva_cookies(cookies: dict[str, str], *, source: str = "cdp_chrome") -> None:
+    """COOLBET-CDP-COOKIE-EXPORT (2026-07-08): stash the fresh Imperva
+    cookies harvested from CDP-Chrome so the other Coolbet-HTTP jobs
+    (coolbet-odds-snapshot, cs2-coolbet-scanner) can read them in
+    COOLBET_NO_FS=true mode instead of hitting FS-Docker Chrome (which
+    fails Imperva challenges — different fingerprint).
+
+    Adds `_harvested_at` + `_source` metadata into the JSON payload so
+    consumers can decide whether to trust the snapshot. Also stamps
+    `imperva_cookies_refreshed_at` at the column level for quick freshness
+    filters without JSON parsing.
+
+    No-op silent-fail: cookie harvest is one of many things the daemon
+    tick does; DB flakiness must not bring down placement.
+    """
+    if not cookies:
+        return
+    import json as _json
+    from datetime import datetime, timezone
+    payload = dict(cookies)
+    payload["_harvested_at"] = datetime.now(timezone.utc).isoformat()
+    payload["_source"] = source
+    _safe_write(
+        """UPDATE coolbet_session_state
+              SET imperva_cookies_json = %s::jsonb,
+                  imperva_cookies_refreshed_at = NOW()
+            WHERE id = 1""",
+        (_json.dumps(payload),),
+    )
+
+
 def mark_mac_daemon_tick(result: dict) -> None:
     """Write the Mac daemon's per-tick heartbeat so the Telegram /status
     command can answer 'is the daemon actually running?'. Called at the

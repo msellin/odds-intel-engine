@@ -27478,6 +27478,135 @@ def test_comp_fallback_autorefresh():
     )
 
 
+@test("COOLBET-CDP-COOKIE-EXPORT — mac_daemon harvests CDP cookies; NO_FS mode reads them from DB")
+def test_coolbet_cdp_cookie_export():
+    """COOLBET-CDP-COOKIE-EXPORT (2026-07-08): Path B fix for the 5-day
+    Coolbet odds-snapshot outage. FS-Docker Chrome fails Imperva
+    challenges (different fingerprint from operator's real desktop Chrome
+    which the daemon uses via CDP). Now the daemon harvests fresh Imperva
+    cookies from CDP each tick and persists them to
+    coolbet_session_state.imperva_cookies_json; NO_FS-mode callers read
+    those instead of the static (staling) .env cookies.
+
+    Guardrails this test pins:
+      1. workers/automation/coolbet_browser_sync.extract_imperva_cookies_from_cdp
+         exists and knows the 6 Imperva cookie names.
+      2. mac_daemon _tick calls the harvester BEFORE the
+         SILENT-WHEN-EMPTY early return so cookies refresh even when the
+         daemon has no bets to place.
+      3. persist_imperva_cookies helper writes to both the JSONB column
+         and the refreshed_at timestamp column.
+      4. CoolbetSession NO_FS branch reads DB cookies (via
+         _load_fresh_imperva_cookies_from_db) BEFORE falling back to env
+         cookies.
+      5. Migration 269 exists.
+      6. Both LaunchAgent plists set COOLBET_NO_FS=true.
+    """
+    import pathlib
+    root = pathlib.Path(__file__).parent.parent
+
+    # 1. Harvester + cookie names.
+    sync_src = (root / "workers/automation/coolbet_browser_sync.py").read_text()
+    assert "def extract_imperva_cookies_from_cdp(" in sync_src, (
+        "workers.automation.coolbet_browser_sync must export "
+        "extract_imperva_cookies_from_cdp — the single choke-point for "
+        "reading Imperva cookies from CDP-Chrome via Network.getAllCookies."
+    )
+    for name in ("reese84", "visid_incap_723517", "nlbi_723517",
+                 "incap_ses_1099_723517", "uuid"):
+        assert name in sync_src, (
+            f"Imperva cookie name {name!r} must be tracked in "
+            "_IMPERVA_COOKIE_NAMES — Imperva fingerprints on this set."
+        )
+
+    # 2. Daemon calls harvester BEFORE the SILENT-WHEN-EMPTY early return.
+    # Anchor on the exact header line (with 2026-06-12 date) — plain
+    # "SILENT-WHEN-EMPTY" also appears in explanatory comments elsewhere.
+    daemon_src = (root / "workers/automation/coolbet_mac_daemon.py").read_text()
+    harvest_call_idx = daemon_src.find(
+        "harvested = extract_imperva_cookies_from_cdp()"
+    )
+    silent_header_idx = daemon_src.find("SILENT-WHEN-EMPTY (2026-06-12)")
+    assert harvest_call_idx > 0, (
+        "daemon must invoke extract_imperva_cookies_from_cdp() to harvest "
+        "cookies (not just import it)."
+    )
+    assert silent_header_idx > 0, (
+        "SILENT-WHEN-EMPTY (2026-06-12) header must still exist — that's "
+        "where load_qualified_bets short-circuits."
+    )
+    assert harvest_call_idx < silent_header_idx, (
+        "Cookie harvest must run BEFORE the SILENT-WHEN-EMPTY early "
+        "return — otherwise ticks with no bets skip the cookie refresh "
+        "and NO_FS consumers eventually see stale DB cookies. Order "
+        "matters."
+    )
+
+    # 3. persist_imperva_cookies helper writes both columns.
+    state_src = (root / "workers/automation/coolbet_state.py").read_text()
+    assert "def persist_imperva_cookies(" in state_src, (
+        "workers.automation.coolbet_state must export "
+        "persist_imperva_cookies — the DB writer for CDP-harvested "
+        "cookies."
+    )
+    assert "imperva_cookies_json" in state_src, "persist writer must set imperva_cookies_json"
+    assert "imperva_cookies_refreshed_at" in state_src, (
+        "persist writer must also stamp imperva_cookies_refreshed_at — "
+        "consumers use the column-level timestamp for fast freshness "
+        "filters (no JSON parsing needed)."
+    )
+
+    # 4. CoolbetSession prefers DB → env, in that order.
+    sess_src = (root / "workers/automation/coolbet_session.py").read_text()
+    assert "def _load_fresh_imperva_cookies_from_db(" in sess_src, (
+        "coolbet_session must expose _load_fresh_imperva_cookies_from_db "
+        "— the DB → env fallback path."
+    )
+    no_fs_idx = sess_src.find("self._no_fs = (")
+    db_read_idx = sess_src.find("_load_fresh_imperva_cookies_from_db(", no_fs_idx)
+    env_cookies_idx = sess_src.find("self._imperva_cookies_individual", no_fs_idx)
+    assert no_fs_idx > 0 and db_read_idx > 0 and env_cookies_idx > 0, (
+        "NO_FS branch must read BOTH the DB (preferred) and the env "
+        "cookies (fallback)."
+    )
+    assert db_read_idx < env_cookies_idx, (
+        "DB cookie read must come BEFORE the env cookie fallback — "
+        "otherwise NO_FS mode keeps using stale .env cookies even when "
+        "fresh DB cookies exist."
+    )
+
+    # 5. Migration exists.
+    mig = root / "supabase/migrations/269_coolbet_imperva_cookies_json.sql"
+    assert mig.exists(), (
+        "Migration 269 must exist and add the imperva_cookies_json + "
+        "imperva_cookies_refreshed_at columns to coolbet_session_state."
+    )
+    mig_src = mig.read_text()
+    for col in ("imperva_cookies_json", "imperva_cookies_refreshed_at"):
+        assert col in mig_src, f"Migration 269 must add {col} column."
+
+    # 6. Both LaunchAgent plists set COOLBET_NO_FS=true. Sibling repo not
+    # checked out in CI, so only assert if the plist paths exist locally.
+    import os
+    home = pathlib.Path(os.path.expanduser("~"))
+    for name in ("com.oddsintel.coolbet-odds-snapshot.plist",
+                 "com.oddsintel.cs2-coolbet-scanner.plist"):
+        plist = home / "Library/LaunchAgents" / name
+        if not plist.exists():
+            continue  # CI / non-operator env
+        pl_src = plist.read_text()
+        assert "<key>COOLBET_NO_FS</key>" in pl_src, (
+            f"{name}: LaunchAgent must set COOLBET_NO_FS=true so it "
+            "routes through the new CDP-cookie path. Without this, FS "
+            "gets used, Imperva challenges the fingerprint, and the "
+            "job fails silently for days."
+        )
+        idx = pl_src.find("<key>COOLBET_NO_FS</key>")
+        assert "<string>true</string>" in pl_src[idx:idx+200], (
+            f"{name}: COOLBET_NO_FS must be exactly the string 'true'."
+        )
+
+
 @test("CS2-HLTV-VETO-STUB-PARENT — veto insert upserts stub cs2_hltv_matches row to satisfy FK")
 def test_cs2_hltv_veto_stub_parent():
     """CS2-HLTV-VETO-STUB-PARENT (2026-07-08): scrape_upcoming_veto was
