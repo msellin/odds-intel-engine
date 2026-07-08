@@ -27478,6 +27478,73 @@ def test_comp_fallback_autorefresh():
     )
 
 
+@test("CS2-HLTV-VETO-STUB-PARENT — veto insert upserts stub cs2_hltv_matches row to satisfy FK")
+def test_cs2_hltv_veto_stub_parent():
+    """CS2-HLTV-VETO-STUB-PARENT (2026-07-08): scrape_upcoming_veto was
+    failing on every fire with ForeignKeyViolation on
+    cs2_hltv_match_veto_hltv_match_id_fkey — 100% of upcoming HLTV-sourced
+    matches had no parent row in cs2_hltv_matches (which is only populated
+    post-match by cs2_hltv_match_details_process). The fix upserts a stub
+    parent row (with team names + kickoff, ON CONFLICT DO NOTHING so a
+    real post-match row isn't clobbered) right before inserting veto.
+
+    Guardrails:
+      1. The stub-parent INSERT exists between the upcoming SELECT and the
+         veto INSERT — order matters (parent before child).
+      2. It's an upsert (ON CONFLICT DO NOTHING) — must never overwrite
+         a real cs2_hltv_matches row that has scores + winner.
+      3. Only the two NOT NULL columns (hltv_match_id, fetched_at) plus
+         the fields we have from the upcoming row (team names, kickoff,
+         bo3gg_id) are populated. Score/winner/best_of stay NULL for the
+         details processor to fill.
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).parent.parent
+           / "scripts/esports/cs2_hltv_upcoming_matches.py").read_text()
+
+    # 1. The stub-parent INSERT must precede the veto INSERT.
+    stub_idx = src.find("INSERT INTO cs2_hltv_matches ")
+    veto_idx = src.find("INSERT INTO cs2_hltv_match_veto ")
+    assert stub_idx > 0, (
+        "scrape_upcoming_veto must upsert a stub cs2_hltv_matches row "
+        "before inserting veto — otherwise the FK fires for every "
+        "upcoming HLTV match whose details haven't been processed yet."
+    )
+    assert veto_idx > 0, (
+        "scrape_upcoming_veto must still insert veto rows — did you "
+        "delete the wrong block?"
+    )
+    assert stub_idx < veto_idx, (
+        "stub cs2_hltv_matches upsert must appear before veto insert — "
+        "parent before child, otherwise FK still fires."
+    )
+
+    # 2. Must be idempotent (ON CONFLICT DO NOTHING) so post-match rows
+    # with real scores are never clobbered.
+    stub_block = src[stub_idx:veto_idx]
+    assert "ON CONFLICT (hltv_match_id) DO NOTHING" in stub_block, (
+        "stub-parent INSERT must be ON CONFLICT (hltv_match_id) DO "
+        "NOTHING — otherwise a fresh scrape would clobber the "
+        "post-match row that carries scores + winner."
+    )
+
+    # 3. Populate what we have (team names, kickoff, bo3gg_id) but leave
+    # score/winner/best_of NULL for the details processor.
+    for expected in ("hltv_match_id", "bo3gg_id", "team1_name",
+                     "team2_name", "match_date", "fetched_at"):
+        assert expected in stub_block, (
+            f"stub INSERT should populate {expected} — the details "
+            "processor fills scores/winner later, but names + kickoff "
+            "should be captured now so the veto row has real context."
+        )
+    for forbidden in ("score1", "score2", "winner_name"):
+        assert forbidden not in stub_block, (
+            f"stub INSERT should NOT set {forbidden} — those are for "
+            "post-match writes only. Leaving them NULL prevents the "
+            "details processor from accidentally reading stale values."
+        )
+
+
 @test("KUMA-TIER1-WIRED — 7 Tier-1 jobs push to Uptime Kuma via _run_job or direct call")
 def test_kuma_tier1_wired():
     """KUMA-TIER1-WIRED (2026-07-07): the 7 Tier-1 jobs must all reach

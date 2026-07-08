@@ -549,6 +549,17 @@ def scrape_upcoming_veto(record: bool = False) -> tuple[int, int, int]:
               f"({len(veto)} steps){'  [dry-run]' if not record else ''}")
 
         if record:
+            # Upsert a stub parent row so the FK on cs2_hltv_match_veto is
+            # satisfied. cs2_hltv_match_details_process fills score1/score2/
+            # winner post-match; here we just claim the id + team names +
+            # kickoff so pre-KO veto scraping can land. ON CONFLICT DO NOTHING
+            # so a real parent row (with scores) isn't clobbered.
+            execute_write(
+                "INSERT INTO cs2_hltv_matches "
+                "(hltv_match_id, bo3gg_id, team1_name, team2_name, match_date, fetched_at) "
+                "VALUES (%s, %s, %s, %s, %s, NOW()) ON CONFLICT (hltv_match_id) DO NOTHING",
+                (hltv_match_id, row["bo3gg_id"], team1, team2, row["kickoff_time"])
+            )
             execute_write(
                 "DELETE FROM cs2_hltv_match_veto WHERE hltv_match_id = %s",
                 (hltv_match_id,)
