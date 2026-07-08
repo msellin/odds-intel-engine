@@ -214,7 +214,13 @@ def main() -> int:
     slug_map = build_slug_map()
     print(f"  {len(slug_map)} match slugs available")
     if not slug_map:
-        print("  [fatal] could not fetch /matches list — abort.")
+        # Write to stderr so _run_subprocess_job records a real reason
+        # in pipeline_runs.error_message instead of "(empty stderr)".
+        # HLTV /matches unreachable is almost always the FS-Chrome/
+        # Cloudflare stuck-tab class — fs_session_refresh cron clears it.
+        msg = "HLTV /matches list unreachable (likely stuck FS-Chrome tab); flaresolverr_hltv_session_refresh cron clears it every 6h"
+        print(f"  [fatal] {msg}")
+        print(f"cs2_hltv_match_odds: {msg}", file=sys.stderr)
         return 1
 
     written = 0
