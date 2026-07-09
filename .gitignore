@@ -37,3 +37,6 @@ dev/active/inplay-backfill-*.txt
 dev/active/pinnacle-backfill-jsons/
 .claude/settings.local.json
 .coolbet_session/
+
+# Migration secrets (temporary during Supabase→VPS migration)
+dev/active/supabase-migration-secrets.md

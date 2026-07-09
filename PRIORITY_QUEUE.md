@@ -865,6 +865,12 @@
 >
 > **Priorities:** P0 = blocking or high data-loss risk · P1 = do before paid launch · P2 = do when accumulating data / useful now · P3 = defer until triggered
 
+### Infrastructure — Supabase → VPS DB migration (filed 2026-07-09) — cost + performance
+
+| ID | Pri | Effort | Why now / When to do |
+|----|-----|--------|----------------------|
+| **SUPABASE-TO-VPS** | 🔄 In Progress 2026-07-09 | ~4 days | Move `public` schema (18 GB, 126 tables) from Supabase Pro to self-hosted Postgres 17 on Hetzner VPS (`204.168.199.8`). Keep Supabase Auth + Storage on free tier. CrossRank pattern: nginx `api.oddsintel.app` → PostgREST on 127.0.0.1:3012; PostgREST mints its own anon/service_role JWTs (not Supabase-issued). Frontend two-client refactor: `authClient` (Supabase Auth) + `dataClient` (VPS PostgREST). Per-user data enforcement moves to app layer (~15 tables affected — see `dev/active/supabase-migration-tasks.md` SM-4.7). Plan/context/tasks in `dev/active/supabase-migration-*.md`. Baseline snapshot: 18 GB total, `odds_snapshots` 10 GB / 20.6M rows dominant. Est. savings ~$25/mo + predictable perf. |
+
 ### Soccer Volume — Every-Day-Picks Push (filed 2026-07-08) — grow pick volume through summer
 
 > Diagnosis 2026-07-08: 11 currently-active soccer bots, but 7 target leagues currently on summer break (top-5 Europe, UK, Greek+Turkish). Real-day production is ~1 pick from `bot_v10_all` + a handful from global-scope bots. European seasons restart mid-August → volume 2-3× naturally at that point. Meanwhile, we need pick density through July / early August. Shadow-bets audit today confirmed retired bots stay retired (all showed clean negative ROI on the full production pipeline with Pinnacle veto + calibration).
