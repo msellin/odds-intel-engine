@@ -869,7 +869,7 @@
 
 | ID | Pri | Effort | Why now / When to do |
 |----|-----|--------|----------------------|
-| **SUPABASE-TO-VPS** | 🔄 In Progress 2026-07-09 | ~4 days | Move `public` schema (18 GB, 126 tables) from Supabase Pro to self-hosted Postgres 17 on Hetzner VPS (`204.168.199.8`). Keep Supabase Auth + Storage on free tier. CrossRank pattern: nginx `api.oddsintel.app` → PostgREST on 127.0.0.1:3012; PostgREST mints its own anon/service_role JWTs (not Supabase-issued). Frontend two-client refactor: `authClient` (Supabase Auth) + `dataClient` (VPS PostgREST). Per-user data enforcement moves to app layer (~15 tables affected — see `dev/active/supabase-migration-tasks.md` SM-4.7). Plan/context/tasks in `dev/active/supabase-migration-*.md`. Baseline snapshot: 18 GB total, `odds_snapshots` 10 GB / 20.6M rows dominant. Est. savings ~$25/mo + predictable perf. |
+| **SUPABASE-TO-VPS** | ✅ Done 2026-07-09 | 1 day (planned 4) | 18 GB `public` schema moved from Supabase Pro → Postgres 17 on Hetzner VPS. Frontend + engine + Mac daemon all pointing at VPS. PostgREST at `https://api.oddsintel.app` (v12.2.3, port 3012). Daily backups to Hetzner Storage Box (03:30 UTC). See `dev/active/supabase-migration-tasks.md` for full audit. Two remaining: (a) user to add Uptime Kuma probes for `api.oddsintel.app/matches` + Postgres TCP (SM-7.1/7.2), (b) 2-week decommission window before Supabase downgrade (SM-9.1). Compressed from the planned 4-day rollout because prior session had already cut over the VPS engine to VPS Postgres at 08:58 UTC — cutover reduced to frontend + Mac daemon flip, no maintenance window required. |
 
 ### Soccer Volume — Every-Day-Picks Push (filed 2026-07-08) — grow pick volume through summer
 

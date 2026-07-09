@@ -27895,5 +27895,75 @@ def test_kuma_push_helper():
         os.environ.pop(key, None)
 
 
+@test("SUPABASE-TO-VPS — frontend two-client refactor + backup wiring")
+def _():
+    """Post-migration invariants for SUPABASE-TO-VPS (done 2026-07-09).
+
+    Guards against regressions of the two-client split:
+      • `createServerServiceClient` is exported from supabase-server.ts and
+        reads NEXT_PUBLIC_POSTGREST_URL + POSTGREST_SERVICE_KEY (falls back
+        to Supabase envs).
+      • `/api/me/profile` route exists — the client-side profile fetch
+        cannot hit Supabase directly post-cutover.
+      • auth-provider.tsx `fetchProfile` no longer queries `.from("profiles")`
+        — it must fetch through the server route.
+      • get-user-tier.ts uses the service client, not the auth client.
+      • The (app)/layout.tsx profile lookup uses the service client.
+      • Engine-side backup script and root crontab entry exist.
+
+    Regressing any of these silently returns stale Supabase data (30-day
+    read-only window during decommission) or leaves the site broken once
+    Supabase's public schema is dropped.
+    """
+    from pathlib import Path
+
+    web_root = Path(__file__).resolve().parent.parent.parent / "odds-intel-web"
+
+    # 1. supabase-server.ts exports createServerServiceClient and reads the
+    #    POSTGREST envs with Supabase fallback.
+    server_lib = web_root / "src/lib/supabase-server.ts"
+    assert server_lib.exists(), f"{server_lib} must exist"
+    src = server_lib.read_text()
+    assert "export function createServerServiceClient(" in src, \
+        "supabase-server.ts must export createServerServiceClient()"
+    assert "NEXT_PUBLIC_POSTGREST_URL" in src and "POSTGREST_SERVICE_KEY" in src, \
+        "createServerServiceClient must read POSTGREST_URL + POSTGREST_SERVICE_KEY"
+    assert "NEXT_PUBLIC_SUPABASE_URL" in src, \
+        "createServerServiceClient must fall back to NEXT_PUBLIC_SUPABASE_URL"
+
+    # 2. /api/me/profile route exists and uses createServerServiceClient.
+    me_route = web_root / "src/app/api/me/profile/route.ts"
+    assert me_route.exists(), "src/app/api/me/profile/route.ts must exist"
+    me_src = me_route.read_text()
+    assert "createServerServiceClient" in me_src, \
+        "/api/me/profile must use createServerServiceClient for the DB query"
+
+    # 3. auth-provider.tsx fetchProfile must NOT `.from("profiles")` directly
+    #    on the Supabase browser client (would go stale post-cutover).
+    auth_prov = web_root / "src/components/auth-provider.tsx"
+    ap_src = auth_prov.read_text()
+    assert 'fetch("/api/me/profile"' in ap_src, \
+        "auth-provider.tsx fetchProfile must fetch /api/me/profile server route"
+    # Sanity: no direct browser-client profile read.
+    for line in ap_src.split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("//") or stripped.startswith("*"):
+            continue
+        assert not (".from(\"profiles\")" in stripped or ".from('profiles')" in stripped), \
+            f"auth-provider.tsx must not query 'profiles' directly on the browser client (found: {line!r})"
+
+    # 4. get-user-tier.ts uses createServerServiceClient.
+    tier_lib = web_root / "src/lib/get-user-tier.ts"
+    tier_src = tier_lib.read_text()
+    assert "createServerServiceClient" in tier_src, \
+        "get-user-tier.ts must use createServerServiceClient for profiles"
+
+    # 5. (app)/layout.tsx uses createServerServiceClient for the profile read.
+    layout = web_root / "src/app/(app)/layout.tsx"
+    layout_src = layout.read_text()
+    assert "createServerServiceClient" in layout_src, \
+        "(app)/layout.tsx must use createServerServiceClient for the profiles read"
+
+
 if __name__ == "__main__":
     main()

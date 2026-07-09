@@ -120,21 +120,28 @@ ESPN (free)                  -> Settlement results backup
                     ⑧ Settlement  (21:00 UTC) — settle bets, post-match stats, ELO, CLV
                     ⑨ Betting Refresh (09:30/11:00/13:30/15:00/17:30/19:00/20:30 UTC) — re-evaluation with fresh odds per KO window
                                          |
-                               Supabase Database (15 tables)
+                    VPS Postgres 17 (Hetzner 204.168.199.8) — public schema, 134 tables
+                    (migrated from Supabase 2026-07-09 — SUPABASE-TO-VPS)
+                    Supabase kept for Auth (auth.users, 52 users) + Storage (models bucket)
                                          |
-                       Next.js Frontend (odds-intel-web) -> Vercel (not yet deployed)
+                    PostgREST 12.2.3 (VPS docker, host-network :3012) → nginx
+                       api.oddsintel.app (Cloudflare Flexible SSL)
+                                         |
+                       Next.js Frontend (odds-intel-web) → VPS pm2 :3000 → nginx
 ```
 
 ## Key Technical Details (Engine)
 
 - Python 3.14, dependencies in `requirements.txt`
-- Supabase for DB (PostgreSQL) — migrations in `supabase/migrations/`
-- **Railway** for pipeline automation (`workers/scheduler.py` — long-running process, $5/mo)
-- Direct PostgreSQL (psycopg2) for all `supabase_client.py` functions + live tracker; PostgREST kept for external callers (settlement, pipeline_utils)
+- **Postgres 17 on Hetzner VPS** for DB — migrations in `supabase/migrations/` (kept the folder name for history; applied by GitHub Actions to the VPS DB via the auto-apply workflow)
+- Supabase Auth still authoritative for user identity (`auth.users`); Supabase Storage still hosts model bundles
+- **Hetzner VPS** for pipeline automation (`workers/scheduler.py` as systemd unit `odds-scheduler.service`; scheduler + FS Docker + Postgres + PostgREST + Next.js all colocated)
+- Direct PostgreSQL (psycopg2) for engine writes; PostgREST for HTTP-based frontend reads and external callers
 - GitHub Actions kept for manual `workflow_dispatch` triggers + DB migrations only
 - Credentials in `.env` (gitignored) — never commit secrets
 - Prediction model: Poisson + XGBoost blend with 3-tier fallback (A/B/C)
 - 16 paper trading bots running since 2026-04-27
+- Nightly VPS backup at 03:30 UTC → Hetzner Storage Box (`/opt/oddsintel/backup-oddsintel.sh`, 14-day local + 90-day remote retention)
 
 ---
 
@@ -145,10 +152,12 @@ The frontend lives at `../odds-intel-web/` (sibling directory). All rules for it
 ### Stack
 
 - Next.js 15 (App Router), TypeScript, Tailwind CSS
-- Auth + DB: Supabase (`createSupabaseServer()` in server components, `createBrowserClient()` in client components)
+- **Auth**: Supabase — `createSupabaseServer()` (server, cookie-backed) + `createSupabaseBrowser()` (client). These stay on `NEXT_PUBLIC_SUPABASE_URL` even post-migration.
+- **Data**: VPS PostgREST at `https://api.oddsintel.app` — `createSupabasePublic()` (anon reads) + `createServerServiceClient()` (server-side service_role, bypasses RLS, requires explicit user_id filter for per-user queries). Env vars: `NEXT_PUBLIC_POSTGREST_URL`, `NEXT_PUBLIC_POSTGREST_ANON_KEY`, `POSTGREST_SERVICE_KEY`.
+- **Per-user client-side reads** must go through a Next.js server route (browser can't authenticate to VPS PostgREST directly). Example: `/api/me/profile` in place of `supabase.from("profiles").eq("id", user.id)` on the browser client.
 - Payments: Stripe (checkout, webhook at `/api/stripe/webhook`, portal)
 - Error monitoring: Sentry
-- Deployment: Vercel
+- Deployment: VPS pm2 (:3000) behind nginx, deployed via `git push` + `npm run build` + `pm2 restart odds-intel-web --update-env` (NEXT_PUBLIC_* are baked at build time, so any env change requires a fresh build)
 
 ### Tier Gating Rules
 

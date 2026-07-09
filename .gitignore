@@ -2,6 +2,9 @@ venv/
 __pycache__/
 *.pyc
 .env
+# .env backups (e.g. .env.pre-cutover-*, .env.bak-*) — contain live DB
+# credentials, must never be committed.
+.env.*
 data/raw/
 data/processed/
 data/models/

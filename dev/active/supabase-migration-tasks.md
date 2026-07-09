@@ -45,79 +45,78 @@ Mark items `[x]` as they complete. Keep updated in every session.
 - [x] SM-3.5 ~~docker compose up -d~~ — container running, 134 relations loaded in schema cache
 - [x] SM-3.6 ~~nginx config~~ — `/etc/nginx/sites-available/oddsintel-api` for `api.oddsintel.app` → 3012 with /rest/v1/ rewrite + Next.js-style proxy buffers
 - [x] SM-3.7 ~~Enable nginx~~ — symlinked, `nginx -t` passed, reloaded
-- [ ] **SM-3.8 Cloudflare DNS** — needs Margus: add A record `api.oddsintel.app` → 204.168.199.8, Proxied, SSL Flexible
+- [x] SM-3.8 ~~Cloudflare DNS~~ — DONE 2026-07-09. `api.oddsintel.app` resolves via Cloudflare (172.67.176.22, 104.21.56.25). `GET https://api.oddsintel.app/` returns 200 with PostgREST 12.2.3 OpenAPI JSON. **Phase 3 fully complete.**
 - [x] SM-3.9 ~~Smoke external via anon~~ — verified via Host-header override; needs DNS for real hostname test
 - [x] SM-3.10 ~~Smoke service_role~~ — bypasses RLS, reads `profiles` correctly
 
 **PostgREST schema cache**: 134 Relations, 72 Relationships, 43 Functions, 4 Media Type Handlers
 
-## Phase 4 — Frontend two-client refactor
+## Phase 4 — Frontend two-client refactor — DONE 2026-07-09
 
-*In odds-intel-web repo. Deploy against **Supabase** first (POSTGREST_URL = SUPABASE_URL). No cutover yet.*
+*Discovery: `supabase-public.ts` + engine-data.ts `createSupabaseAdmin` already
+had the two-client fallback pattern (Phase 4 groundwork was pre-landed). The
+real gap was that 13 admin routes/pages + `layout.tsx` + `get-user-tier.ts`
++ client-side `auth-provider.tsx.fetchProfile` were still reading `profiles`
+via the Supabase auth client — those would go stale post-cutover.*
 
-- [ ] SM-4.1 Add env vars — initial values from Supabase so refactor doesn't cutover:
-      ```
-      NEXT_PUBLIC_POSTGREST_URL=$NEXT_PUBLIC_SUPABASE_URL
-      NEXT_PUBLIC_POSTGREST_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
-      POSTGREST_SERVICE_KEY=$SUPABASE_SERVICE_ROLE_KEY
-      ```
-- [ ] SM-4.2 Refactor `src/lib/supabase-browser.ts` → export `createBrowserAuthClient()` + `createBrowserDataClient()`
-- [ ] SM-4.3 Refactor `src/lib/supabase-server.ts` → export `createServerAuthClient()` + `createServerDataClient()` + `createServerServiceClient()`
-- [ ] SM-4.4 Refactor `src/lib/supabase-public.ts` → export `createPublicDataClient()`
-- [ ] SM-4.5 **Big edit**: `src/lib/engine-data.ts` (101 call sites) — swap module-level client to `createServerDataClient()` / `createPublicDataClient()` per function. Single file, ~30 min.
-- [ ] SM-4.6 Update ~15 route handlers + 3 admin pages to use `createServerDataClient()` for reads, `createServerServiceClient()` for writes/admin
-- [ ] SM-4.7 **Per-user data audit**: every server-side query touching `profiles`, `user_match_favorites`, `wc_bracket_predictions`, `wc_group_predictions`, `wc_user_picks`, `wc_email_log`, `weekly_digest_log`, `email_digests`, `real_bets`, `watchlist_alerts`, `inplay_bot_stats`, `accessible_bookmakers` must include explicit `.eq('user_id', session.user.id)` — service_role bypasses RLS, so the app is now the enforcement layer
-- [ ] SM-4.8 Preserve `auth-provider.tsx`, `login/page.tsx`, `auth/callback/route.ts`, `proxy.ts`, `forgot-password`, `reset-password` unchanged
-- [ ] SM-4.9 `npm run build` clean, `npm run typecheck` clean
-- [ ] SM-4.10 Deploy to VPS (pm2 restart odds-intel-web) with POSTGREST_URL still = Supabase URL
-- [ ] SM-4.11 Manual regression: sign in, sign out, magic link, OAuth (Google + Discord), password reset, tier gating (free/pro/elite), `/value-bets`, `/matches/[id]`, `/track-record`, admin CS2/LoL/Tennis pages, Stripe checkout end-to-end
+- [x] SM-4.1 ~~env vars~~ — added `NEXT_PUBLIC_POSTGREST_URL/ANON_KEY` + `POSTGREST_SERVICE_KEY` to VPS `.env.production.local` initially pointing at Supabase.
+- [x] SM-4.2/4.3/4.4 ~~factory refactor~~ — added `createServerServiceClient()` in `supabase-server.ts`; kept `createSupabaseServer/Browser/Public` names to minimize diff.
+- [x] SM-4.5 ~~engine-data.ts~~ — no per-call refactor needed; already flows through `createSupabasePublic` + `createSupabaseAdmin` factories.
+- [x] SM-4.6 ~~routes + pages~~ — 13 files edited to keep auth on `createSupabaseServer` but redirect `profiles` reads to `createServerServiceClient`. Independent verification agent PASS on all 13.
+- [x] SM-4.7 ~~per-user data audit~~ — swept 12 tables from the list; only `profiles`, `real_bets`, `accessible_bookmakers` are actually queried in frontend. All admin-scoped or already gated. `auth-provider.tsx` client-side profile fetch moved to new `/api/me/profile` server route.
+- [x] SM-4.8 ~~preserve auth files~~ — untouched.
+- [x] SM-4.9 ~~build+typecheck clean~~ — `npx tsc --noEmit` exit 0; `next build` exit 0.
+- [x] SM-4.10 ~~deploy to VPS~~ — commit 3b61615, pm2 restart online.
+- [ ] SM-4.11 Manual regression — user to test sign-in / OAuth / password reset / Stripe checkout end-to-end.
 
-## Phase 5 — Engine + operator daemon re-point (staging config, no cutover yet)
+## Phase 5 — Engine + operator daemon repoint — DONE 2026-07-09
 
-- [ ] SM-5.1 Update VPS `/opt/odds-intel-engine/.env` `DATABASE_URL` → `postgres://oddsintel_owner:pw@localhost:5432/oddsintel` — **do NOT restart scheduler yet**
-- [ ] SM-5.2 On operator Mac: `brew install autossh` if not present
-- [ ] SM-5.3 Create launchd plist for autossh tunnel: `-L 5433:localhost:5432 root@204.168.199.8` with ServerAliveInterval 30, load with `launchctl load`
-- [ ] SM-5.4 Verify tunnel: `psql postgres://oddsintel_owner:pw@localhost:5433/oddsintel -c 'SELECT 1'` from Mac
-- [ ] SM-5.5 Update Mac `.env` `DATABASE_URL` → `postgres://oddsintel_owner:pw@localhost:5433/oddsintel` — **do NOT restart daemons yet**
-- [ ] SM-5.6 With Mac `.env` pointing at VPS, run `python3 scripts/smoke_test.py --filter DB` locally
-- [ ] SM-5.7 LISTEN/NOTIFY roundtrip test via SSH tunnel: from Mac tunnel-psql `LISTEN inplay_bet_fired`, from VPS psql `NOTIFY inplay_bet_fired, 'test'` — should print notification on Mac within 1s
+*Discovery: prior session had already cut over the VPS engine at 08:58 UTC
+(scheduler restarted, `.env.pre-cutover-20260709-0858` backup on VPS).
+5h of engine-side writes had been landing on VPS while frontend still read
+Supabase. Phase 5 completed the split state.*
 
-## Phase 6 — Cutover night (03:00 UTC, ~30–45 min window)
+- [x] SM-5.1 ~~VPS engine DATABASE_URL~~ — already pointing at `oddsintel_owner@localhost:5432/oddsintel`. Added `DATABASE_URL_VPS` staged var + backed up.
+- [x] SM-5.2 ~~autossh install~~ — `brew install autossh` on Mac (was missing).
+- [x] SM-5.3 ~~launchd tunnel~~ — `~/Library/LaunchAgents/com.oddsintel.vps-postgres-tunnel.plist`, `-L 5433:localhost:5432 root@204.168.199.8`, KeepAlive + ThrottleInterval 30. Loaded, PID 24208, port 5433 listening.
+- [x] SM-5.4 ~~verify tunnel~~ — `psql postgres://oddsintel_owner:<pw>@localhost:5433/oddsintel -c "SELECT COUNT(*) FROM matches"` → 144,726.
+- [x] SM-5.5 ~~Mac .env DATABASE_URL~~ → `postgres://oddsintel_owner:<pw>@localhost:5433/oddsintel`. Backed up as `.env.pre-cutover-2026-07-09...`.
+- [x] SM-5.6 ~~smoke test~~ — `python3 scripts/smoke_test.py --filter DB` → 15/16 pass. The one failure (WC-LEADERBOARD-AI) is pre-existing (`wc-bracket.ts` deleted in commit f6d3648 PRODUCT-COLLAPSE); unrelated to migration.
+- [x] SM-5.7 ~~LISTEN/NOTIFY roundtrip~~ — Mac psql `LISTEN inplay_bet_fired` via tunnel, VPS psql `NOTIFY inplay_bet_fired, 'phase5-test'`. Payload received on Mac from server PID 936256.
 
-- [ ] SM-6.1 Announce cutover start
-- [ ] SM-6.2 Stop VPS scheduler: `systemctl stop odds-scheduler.service`
-- [ ] SM-6.3 Stop operator Mac daemons: `launchctl unload …` for Coolbet daemon + HLTV crawlers
-- [ ] SM-6.4 Verify no writes hitting Supabase for 2 min (`SELECT max(created_at) FROM odds_snapshots`, `pipeline_runs`)
-- [ ] SM-6.5 `DROP DATABASE oddsintel` then `CREATE DATABASE oddsintel OWNER oddsintel_owner` (clean slate)
-- [ ] SM-6.6 Re-install extensions in fresh `oddsintel` DB
-- [ ] SM-6.7 Final dump from Supabase (same command as SM-2.1)
-- [ ] SM-6.8 scp to VPS
-- [ ] SM-6.9 pg_restore
-- [ ] SM-6.10 Row-count parity check (must match Supabase to the row)
-- [ ] SM-6.11 Update VPS `/opt/odds-intel-web/.env.production.local`: `NEXT_PUBLIC_POSTGREST_URL=https://api.<oddsintel-domain>`, `NEXT_PUBLIC_POSTGREST_ANON_KEY=<Phase 3 JWT>`, `POSTGREST_SERVICE_KEY=<Phase 3 service JWT>`
-- [ ] SM-6.12 `pm2 restart odds-intel-web`
-- [ ] SM-6.13 Start scheduler: `systemctl start odds-scheduler.service`
-- [ ] SM-6.14 Start operator Mac daemons: `launchctl load …`
-- [ ] SM-6.15 Smoke: site loads, `/value-bets` loads, sign-in works, one new `odds_snapshots` row appears in VPS DB within 15 min, `pipeline_runs` row inserted
-- [ ] SM-6.16 Verify LISTEN consumer received a real `inplay_bet_fired` notification (or wait for one)
+## Phase 6 — Cutover — DONE 2026-07-09 (no maintenance window needed)
+
+*Adapted from planned 03:00 UTC drop-and-redump: engine was already writing
+to VPS since 08:58 UTC (5h of authoritative data). Cutover reduced to
+flipping the frontend and the Mac daemon — no drop, no dump, no window.*
+
+- [x] SM-6.1/6.2 ~~announce/stop scheduler~~ — skipped, scheduler already on VPS.
+- [x] SM-6.3 ~~stop Mac daemons~~ — done via `launchctl kickstart -k` (restart in-place).
+- [x] SM-6.4/6.5/6.6/6.7/6.8/6.9/6.10 ~~final dump + drop/recreate + restore + row-count parity~~ — SKIPPED. VPS oddsintel already had the Phase 2 dump + 5h of live engine writes. Dropping would discard authoritative data.
+- [x] SM-6.11 ~~frontend env cutover~~ — `NEXT_PUBLIC_POSTGREST_URL=https://api.oddsintel.app`, VPS anon JWT, VPS service_role JWT.
+- [x] SM-6.12 ~~pm2 restart odds-intel-web~~ — rebuilt (NEXT_PUBLIC_* are baked at build time), pm2 online, stderr clean.
+- [x] SM-6.13 ~~start scheduler~~ — never stopped.
+- [x] SM-6.14 ~~start Mac daemons~~ — restarted, log shows "DB pool created (2-20 connections)" via tunnel.
+- [x] SM-6.15 ~~smoke~~ — `/`, `/performance`, `/track-record`, `/picks` all 200; VPS `odds_snapshots.max(timestamp)=2026-07-09 10:45:58` (fresh).
+- [x] SM-6.16 ~~verify LISTEN~~ — proven in SM-5.7.
 
 ## Phase 7 — Observation (1 week)
 
-- [ ] SM-7.1 Add Uptime Kuma probe for `https://oi-api.<domain>/matches?limit=1`
-- [ ] SM-7.2 Add Uptime Kuma TCP probe for `oi-db.<domain>:5432`
+- [ ] SM-7.1 **USER TO DO** — Add Uptime Kuma monitor via UI at http://204.168.199.8:3005: HTTP keyword monitor on `https://api.oddsintel.app/matches?limit=1`, expect string like `"id":"` in body. (API-add path requires session token; UI is faster.)
+- [ ] SM-7.2 **USER TO DO** — Add Uptime Kuma TCP monitor to `204.168.199.8:5432` (Postgres). Or safer: a Push monitor triggered by a systemd timer running `psql SELECT 1`.
 - [ ] SM-7.3 Daily check: `pg_stat_statements` top-10 slow queries; add indexes if needed
 - [ ] SM-7.4 Daily check: VPS load avg + swap
 - [ ] SM-7.5 Daily check: pm2 restart counts on all 3 apps
 - [ ] SM-7.6 Daily check: scheduler completed a full cycle with no errors
 
-## Phase 8 — Backups + observability
+## Phase 8 — Backups + observability — CORE DONE 2026-07-09
 
-- [ ] SM-8.1 Provision Hetzner Storage Box if not already (shared with CrossRank)
-- [ ] SM-8.2 Copy CrossRank's `backup-cron.sh` → `/opt/oddsintel/backup.sh`, edit for `oddsintel` DB
-- [ ] SM-8.3 Add to root crontab: `0 3 * * * /opt/oddsintel/backup.sh >> /var/log/oddsintel-backup.log 2>&1`
-- [ ] SM-8.4 Verify first backup lands on Storage Box
-- [ ] SM-8.5 Test restore from Storage Box to a scratch DB (do this once to prove backups work)
-- [ ] SM-8.6 Configure Netdata Postgres plugin for VPS Postgres
+- [x] SM-8.1 ~~Storage Box~~ — already provisioned + used by CrossRank; reused. Credentials copied to `/opt/oddsintel/.storage-box.env`.
+- [x] SM-8.2 ~~backup script~~ — `/opt/oddsintel/backup-oddsintel.sh` (adapted from CrossRank's; Storage Box shell is restricted so remote retention runs client-side on VPS).
+- [x] SM-8.3 ~~crontab~~ — `30 3 * * * /opt/oddsintel/backup-oddsintel.sh >> /var/log/oddsintel-backup.log 2>&1` (offset from CrossRank at 03:00 to avoid disk contention).
+- [x] SM-8.4 ~~verify first backup~~ — 2026-07-09 dump: 1526 MB local, 1.6 GB on Storage Box (`oddsintel/oddsintel-2026-07-09.dump`).
+- [x] SM-8.5 ~~restore test~~ — pulled dump back from Storage Box, restored to scratch DB `oddsintel_restore_test`, tables present, dropped scratch. Round-trip proven.
+- [ ] SM-8.6 Configure Netdata Postgres plugin for VPS Postgres — deferred; Uptime Kuma probes are the primary alerting channel.
 
 ## Phase 9 — Decommission (after 2 weeks stable)
 
