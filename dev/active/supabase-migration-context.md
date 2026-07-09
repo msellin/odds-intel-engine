@@ -4,7 +4,9 @@ Living doc. Update after each session. New sessions can pick up by reading `plan
 
 ## Current state
 
-Not started. Plan drafted 2026-07-08. Waiting on go-ahead + resolving open questions in `plan.md`.
+**✅ Migration complete 2026-07-09.** See `supabase-migration-status.md` for
+the post-cutover runbook, monitoring, rollback plan, and decommission
+timeline. Original plan + tasks preserved below and in `tasks.md`.
 
 ## Key facts (from 2026-07-08 audit)
 
