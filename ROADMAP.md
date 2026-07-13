@@ -120,7 +120,9 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 ---
 
-## Current System State (2026-06-24)
+## Current System State (2026-06-24, infra updates 2026-07-13)
+
+> **Infra update 2026-07-13** — Supabase `public` schema dropped (SUPABASE-CLEANUP-DROP). Data plane fully on Hetzner VPS Postgres 17 since 2026-07-09 (SUPABASE-TO-VPS); Supabase now holds only Auth (52 users) + Storage `models` bucket (222 MB). Supabase DB is 18 MB, cleared for Free-tier downgrade — pending user dashboard action. See `INFRASTRUCTURE.md` for full state + cost delta.
 
 > **Note 2026-06-24**: Major product collapse. The frontend surface narrowed from
 > ~17 public pages (Free/Pro/Elite tiered) to 5: landing, /picks, /performance,
