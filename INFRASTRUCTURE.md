@@ -1,6 +1,6 @@
 # OddsIntel — Infrastructure & Costs
 
-> Last updated: 2026-07-13 — SUPABASE-CLEANUP-DROP. `public` schema (18 GB) dropped from Supabase; DB is now 18 MB (auth + storage + supabase_migrations + realtime + vault only). Cleared for Pro → Free downgrade (pending user click in dashboard). Expected saving: **~$25/mo** ($27 including gp3 overage).
+> Last updated: 2026-07-13 — SUPABASE-CLEANUP-DROP. `public` schema (18 GB) dropped from OddsIntel Supabase; DB is now 18 MB (auth + storage + supabase_migrations + realtime + vault only). CrossRank+BoxRank shared Supabase project also had its `public` + `box` schemas dropped the same day via Supabase SQL Editor. Cleared for Pro → Free downgrade on both projects. Expected combined saving: **~$50/mo** (~$25 per project, plus ~$2/mo gp3 overage on OddsIntel).
 > 2026-07-09 SUPABASE-TO-VPS — 18 GB `public` moved to Hetzner VPS Postgres 17. Supabase kept for Auth (52 users) + Storage (`models` bucket, 222 MB / 233 objects).
 > 2026-07-07 VERCEL-TO-VPS — odds-intel-web migrated off Vercel to VPS pm2 + nginx.
 > 2026-06-29 RAILWAY-ELIMINATION — scheduler moved to Hetzner VPS (€5.49/mo). Railway cancelled.
