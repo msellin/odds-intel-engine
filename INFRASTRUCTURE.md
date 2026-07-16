@@ -1,6 +1,6 @@
 # OddsIntel — Infrastructure & Costs
 
-> Last updated: 2026-07-13 — SUPABASE-CLEANUP-DROP. `public` schema (18 GB) dropped from OddsIntel Supabase; DB is now 18 MB (auth + storage + supabase_migrations + realtime + vault only). CrossRank+BoxRank shared Supabase project also had its `public` + `box` schemas dropped the same day via Supabase SQL Editor. Cleared for Pro → Free downgrade on both projects. Expected combined saving: **~$50/mo** (~$25 per project, plus ~$2/mo gp3 overage on OddsIntel).
+> Last updated: 2026-07-13 — SUPABASE-CLEANUP-DROP **complete**. Both Supabase projects (OddsIntel `jjdmmfpulofyykzwiuqr` + CrossRank/BoxRank shared `wvcnhlzzawvwoitkllid`) migrated to **Free tier**. OddsIntel `public` schema dropped via psql; CrossRank `public` + `box` dropped via SQL Editor. Combined saving: **~$50/mo (~€600/yr)**. Only Auth + Storage remain on Supabase for both projects.
 > 2026-07-09 SUPABASE-TO-VPS — 18 GB `public` moved to Hetzner VPS Postgres 17. Supabase kept for Auth (52 users) + Storage (`models` bucket, 222 MB / 233 objects).
 > 2026-07-07 VERCEL-TO-VPS — odds-intel-web migrated off Vercel to VPS pm2 + nginx.
 > 2026-06-29 RAILWAY-ELIMINATION — scheduler moved to Hetzner VPS (€5.49/mo). Railway cancelled.
@@ -11,7 +11,7 @@
 
 | Service | Role | Plan | Status |
 |---------|------|------|--------|
-| **Supabase** | **Auth only** (52 users in `auth.users`) + **Storage** (`models` bucket, 222 MB / 233 objects). Data plane migrated to Hetzner VPS Postgres 17 on 2026-07-09 (SUPABASE-TO-VPS). `public` schema dropped 2026-07-13 (SUPABASE-CLEANUP-DROP). | **Pro ($25/mo)** — cleared for Free downgrade | Pending downgrade — DB is 18 MB, models bucket 222 MB, both fit Free tier (500 MB / 1 GB caps). |
+| **Supabase** | **Auth only** (52 users in `auth.users`) + **Storage** (`models` bucket, 222 MB / 233 objects). Data plane migrated to Hetzner VPS Postgres 17 on 2026-07-09 (SUPABASE-TO-VPS). `public` schema dropped 2026-07-13 (SUPABASE-CLEANUP-DROP). | **Free ($0)** since 2026-07-13 | Downgraded from Pro. DB 18 MB / 500 MB cap; models bucket 222 MB / 1 GB cap. |
 | **Hetzner VPS** | Pipeline scheduler + LivePoller + InplayBot (long-running process) + FlareSolverr (HLTV/CS2 scraping) + **odds-intel-web Next.js frontend (pm2 + nginx)** since 2026-07-07 | **€5.49/mo** | Active since 2026-06-29 (RAILWAY-ELIMINATION). 2 vCPU / 4 GB RAM / 40 GB disk. systemd unit `oddsintel-scheduler.service` — `Restart=always`, venv Python, TZ=UTC. FlareSolverr in Docker (no persistent profile — HLTV sessions are ephemeral). Frontend at `/opt/odds-intel-web`, pm2 process `odds-intel-web` on port 3000, nginx reverse proxy on 80. GitHub Actions auto-deploy on push to main. See `docs/VPS_NEXTJS_MIGRATION_RUNBOOK.md` for the playbook to move more sites. After code push: `git pull && venv/bin/pip install -r requirements.txt && systemctl restart oddsintel-scheduler`. |
 | **GitHub Actions** | Manual workflow_dispatch + DB migrations only | Free (public repos) | Active — crons disabled, ~100 min/month |
 | **GitHub** | Source control (2 repos, both public) | Free | Active |
@@ -68,7 +68,7 @@ All scheduled jobs run on Hetzner VPS (systemd). GitHub Actions used only for ma
 
 ---
 
-## Supabase Usage (2026-07-13 — cleared for Free tier)
+## Supabase Usage (2026-07-13 — Free tier active)
 
 | Resource | Free Limit | Current Usage (2026-07-13) | Headroom |
 |----------|-----------|---------------------------|----------|
@@ -77,28 +77,24 @@ All scheduled jobs run on Hetzner VPS (systemd). GitHub Actions used only for ma
 | Auth MAU | 50,000 | 52 users | ✅ plenty |
 | Bandwidth | 5 GB/mo | Low (auth cookie refresh only) | ✅ plenty |
 | Project pausing | Auto-pauses after 1 week inactivity | Auth traffic keeps it warm | ✅ fine |
-| Projects per org | 2 | 1 (OddsIntel) | ✅ fine |
+| Projects per org | 2 | 2 (OddsIntel + CrossRank/BoxRank shared) | ✅ at cap — no room to add more |
 
-**Pending user action** — Supabase Dashboard:
-1. Settings → Compute and Disk → Nano
-2. Organization → Billing → Change Plan → **Free**
-
-**Prior overage now moot** — Pro gp3 disk was 24 GB (auto-grown for 18 GB import), plan includes 8 GB, so **16 GB × $0.125 = ~$2/mo overage** was accruing since import. Path A (downgrade to Free) skips the "right-size disk" Postgres upgrade — Free tier is shared storage, gp3 doesn't apply.
+**gp3 overage retired.** Pro tier billed on disk size (24 GB gp3 auto-grown for the original 18 GB import, ~$2/mo overage above the 8 GB Pro allowance). Path A (Free tier) moves both projects to shared storage — gp3 concept goes away, dashboard may show the old 24 GB number cosmetically but it's no longer billed.
 
 ---
 
-## Current Monthly Cost: ~€40/mo (post-Free-downgrade)
+## Current Monthly Cost: ~€40/mo (Free tier active since 2026-07-13)
 
 | Service | Plan | Monthly Cost |
 |---------|------|-------------|
 | API-Football | 150K tier | ~€36 ($39) |
-| Supabase | **Free** (pending downgrade 2026-07-13) | €0 |
+| Supabase | **Free** ✅ since 2026-07-13 | €0 |
 | Hetzner VPS | CX22 | ~€5.49/mo |
 | Gemini API | Pay-as-you-go | ~€0.20 ($0.20) |
 | Domain | oddsintel.app | ~€1 amortized |
 | **Total** | | **~€40/mo** ↓ from ~€65/mo |
 
-> Saving ~€25/mo (~€300/yr) by dropping Supabase Pro. Data plane on Hetzner VPS (own DB), Supabase Auth + Storage fit under Free tier caps.
+> Saved ~€25/mo (~€300/yr) on OddsIntel alone by dropping Supabase Pro. CrossRank/BoxRank shared project also downgraded same day for another ~€25/mo saved. Data plane on Hetzner VPS (own DB), Supabase Auth + Storage fit under Free tier caps.
 
 > Gemini cost: ~75 calls/day × ~500 tokens/call = ~1.1M tokens/month. Flash at $0.15/1M input + $0.60/1M output ≈ $0.20-0.30/mo. Essentially free but billing must be enabled — free tier RPD cap is only 20/day.
 
