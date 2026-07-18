@@ -130,12 +130,77 @@ def _print_league_table(rows: list, title: str, ascending: bool, top_n: int):
     console.print(tbl)
 
 
+def _fetch_by_bot(days: int, market: str | None, veto_tier_max: int, veto_edge_cap: float):
+    """Return per-bot ROI segregated by vetoed-vs-clean, so operator can
+    see what the CALIBRATION-VETO defaults saved (retrospectively)."""
+    market_clause = "AND b.market ILIKE %s" if market else ""
+    market_arg = (f"%{market}%",) if market else ()
+    rows = execute_query(f"""
+        SELECT
+          b.bot_id,
+          CASE WHEN COALESCE(l.tier, 999) > %s THEN 'vetoed_tier'
+               WHEN b.edge_percent > %s THEN 'vetoed_edge'
+               ELSE 'clean'
+          END AS bucket,
+          count(*) picks,
+          sum((b.result='won')::int) w,
+          sum((b.result='lost')::int) l,
+          round(sum(b.pnl)::numeric, 0) pnl,
+          round(sum(b.pnl)::numeric*100/nullif(sum(b.stake),0), 1) roi_pct
+        FROM simulated_bets b
+        JOIN matches m ON m.id = b.match_id
+        LEFT JOIN leagues l ON l.id = m.league_id
+        WHERE b.pick_time > now() - interval '{days} days'
+          AND b.result IN ('won','lost')
+          {market_clause}
+        GROUP BY b.bot_id, bucket
+    """, (veto_tier_max, veto_edge_cap, *market_arg))
+    # Pivot bot_id → {clean: {...}, vetoed_tier: {...}, vetoed_edge: {...}}
+    per_bot: dict = {}
+    for r in rows:
+        per_bot.setdefault(r["bot_id"], {})[r["bucket"]] = r
+    return per_bot
+
+
+def _print_bot_table(per_bot: dict, top_n: int):
+    tbl = Table(title="Per-bot: clean vs vetoed contribution", show_lines=False)
+    tbl.add_column("bot", overflow="fold")
+    tbl.add_column("clean n/pnl/ROI", justify="right")
+    tbl.add_column("vetoed-tier n/pnl", justify="right")
+    tbl.add_column("vetoed-edge n/pnl", justify="right")
+    tbl.add_column("Δ PnL avoided", justify="right", style="bold")
+    # Sort by absolute vetoed PnL descending (biggest bleeders first)
+    def _vetoed_pnl_sum(v: dict) -> float:
+        s = 0.0
+        for k in ("vetoed_tier", "vetoed_edge"):
+            if k in v and v[k]["pnl"] is not None:
+                s += float(v[k]["pnl"])
+        return s
+    ordered = sorted(per_bot.items(), key=lambda kv: _vetoed_pnl_sum(kv[1]))[:top_n]
+    for bot, buckets in ordered:
+        clean = buckets.get("clean")
+        vt = buckets.get("vetoed_tier")
+        ve = buckets.get("vetoed_edge")
+        c_txt = f"{clean['picks']} / {clean['pnl']} / {clean['roi_pct']}%" if clean else "—"
+        vt_txt = f"{vt['picks']} / {vt['pnl']}" if vt else "—"
+        ve_txt = f"{ve['picks']} / {ve['pnl']}" if ve else "—"
+        avoided = -_vetoed_pnl_sum(buckets)  # positive number = saved money
+        tbl.add_row(bot[:36], c_txt, vt_txt, ve_txt, f"{avoided:+.0f}")
+    console.print(tbl)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=42, help="lookback window (default 42)")
     ap.add_argument("--market", help="filter to matching market (ILIKE '%%<market>%%')")
     ap.add_argument("--top-n", type=int, default=15, help="top-N leagues per table (default 15)")
     ap.add_argument("--min-picks", type=int, default=3, help="skip leagues with fewer picks")
+    ap.add_argument("--by-bot", action="store_true",
+                    help="add per-bot table showing clean vs vetoed contribution")
+    ap.add_argument("--veto-tier-max", type=int, default=3,
+                    help="tier threshold for CALIBRATION-VETO tier check (default 3)")
+    ap.add_argument("--veto-edge-cap", type=float, default=0.25,
+                    help="edge threshold for CALIBRATION-VETO edge check (default 0.25)")
     args = ap.parse_args()
 
     by_tier, per_league, _ = _fetch(args.days, args.market)
@@ -149,6 +214,11 @@ def main():
     _print_league_table(filtered, f"Worst {args.top_n} leagues by PnL", ascending=True, top_n=args.top_n)
     console.print()
     _print_league_table(filtered, f"Best {args.top_n} leagues by PnL", ascending=False, top_n=args.top_n)
+
+    if args.by_bot:
+        console.print()
+        per_bot = _fetch_by_bot(args.days, args.market, args.veto_tier_max, args.veto_edge_cap)
+        _print_bot_table(per_bot, args.top_n)
 
 
 if __name__ == "__main__":
