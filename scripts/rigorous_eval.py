@@ -291,6 +291,86 @@ def _print_summary_table(title: str, summary: dict, mkts_order: list):
     console.print(tbl)
 
 
+def _paired_delta_by_tier(cand_raw: dict, prod_raw: dict, bootstrap_n: int) -> dict:
+    """Per-tier paired delta. Returns {tier: {market: {n_shared, delta_ll,
+    delta_ll_pct, p_value}}}.
+
+    Filters each market's per-row tuples to only rows in tier T, then
+    runs the same paired bootstrap machinery on that slice. Useful for
+    "is the improvement concentrated in top tiers or uniform?"
+    """
+    out: dict[int, dict] = {}
+    all_tiers = sorted({
+        t for mkt_tuples in cand_raw.values() for _, _, _, t in mkt_tuples
+        if t is not None
+    })
+    for tier in all_tiers:
+        tier_out: dict = {}
+        for mkt in cand_raw:
+            if mkt not in prod_raw:
+                continue
+            c_pairs = [(pred, tr, rid) for pred, tr, rid, t in cand_raw[mkt] if t == tier]
+            p_pairs = [(pred, tr, rid) for pred, tr, rid, t in prod_raw[mkt] if t == tier]
+            if not c_pairs or not p_pairs:
+                continue
+            c_map = {rid: (pred, tr) for pred, tr, rid in c_pairs}
+            p_map = {rid: (pred, tr) for pred, tr, rid in p_pairs}
+            shared = [rid for rid in c_map if rid in p_map]
+            if len(shared) < 30:
+                continue
+            c_ll = np.array([
+                -_safe_log(c_map[rid][0]) if c_map[rid][1] else -_safe_log(1 - c_map[rid][0])
+                for rid in shared
+            ])
+            p_ll = np.array([
+                -_safe_log(p_map[rid][0]) if p_map[rid][1] else -_safe_log(1 - p_map[rid][0])
+                for rid in shared
+            ])
+            deltas = c_ll - p_ll
+            p_val = _paired_p_value(deltas, bootstrap_n)
+            d_pct = 100 * deltas.mean() / p_ll.mean() if p_ll.mean() else float("nan")
+            tier_out[mkt] = {
+                "n_shared": len(shared),
+                "delta_ll": float(deltas.mean()),
+                "delta_ll_pct": float(d_pct),
+                "p_value": p_val,
+            }
+        if tier_out:
+            out[tier] = tier_out
+    return out
+
+
+def _print_per_tier_table(title: str, per_tier_deltas: dict, mkts_order: list):
+    tbl = Table(title=title, show_lines=False)
+    tbl.add_column("tier", justify="right")
+    tbl.add_column("market")
+    tbl.add_column("n", justify="right")
+    tbl.add_column("Δ log-loss", justify="right")
+    tbl.add_column("Δ %", justify="right")
+    tbl.add_column("p", justify="right")
+    tbl.add_column("verdict", justify="left")
+    for tier in sorted(per_tier_deltas.keys()):
+        for mkt in mkts_order:
+            d = per_tier_deltas[tier].get(mkt)
+            if not d:
+                continue
+            verdict = "→ tie"
+            if d["delta_ll"] < 0 and d["p_value"] > 0.95:
+                verdict = "[green]✓ BETTER[/green]"
+            elif d["delta_ll"] > 0 and d["p_value"] < 0.05:
+                verdict = "[red]✗ WORSE[/red]"
+            elif d["delta_ll"] < 0:
+                verdict = "→ better"
+            elif d["delta_ll"] > 0:
+                verdict = "→ worse"
+            tbl.add_row(
+                str(tier), mkt, str(d["n_shared"]),
+                f"{d['delta_ll']:+.4f}", f"{d['delta_ll_pct']:+.1f}%",
+                f"{d['p_value']:.3f}", verdict,
+            )
+    console.print(tbl)
+
+
 def _print_delta_table(title: str, deltas: dict, mkts_order: list):
     tbl = Table(title=title, show_lines=False)
     tbl.add_column("market")
@@ -419,6 +499,13 @@ def main():
     _print_delta_table(
         f"{args.production} vs Pinnacle-close",
         _paired_delta(prod, pinn, args.bootstrap_n), mkts_order,
+    )
+
+    # Per-tier breakdown — same paired methodology, sliced by league.tier.
+    console.print()
+    _print_per_tier_table(
+        f"{args.candidate} vs {args.production} — by tier (n≥30 required per cell)",
+        _paired_delta_by_tier(cand_raw, prod_raw, args.bootstrap_n), mkts_order,
     )
 
     # Emit machine-readable summary for downstream tooling

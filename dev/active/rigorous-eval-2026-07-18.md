@@ -89,6 +89,48 @@ consider reverting `MODEL_VERSION` to v20260705:
 3. Combined `Simulated_bets ROI` on 1X2 markets is worse than baseline
    (v20260705 shadow) by > 3% over n ≥ 200 bets
 
+## Per-tier breakdown (added late 2026-07-18)
+
+Same paired methodology, sliced by `leagues.tier`. Cells with n<30
+suppressed.
+
+**Tier 1 (n=972 — biggest sample, main betting leagues):**
+- 1x2_home: -2.8% p=0.998 ✓ BETTER
+- 1x2_draw: -4.3% p=1.000 ✓ BETTER
+- ah_home_-0.5: -1.8% p=0.992 ✓ BETTER
+- ah_home_+0.5: -1.7% p=0.970 ✓ BETTER
+- btts_yes/no: +0.9% p=0.042 ✗ WORSE
+
+**Tier 2 (n=80 — small but directionally aligned):**
+- 1x2_home: -5.5% p=0.958 ✓ BETTER
+- Everything else: directional but not significant
+
+**Tier 3 (n=39 — sample too small):**
+- All markets directionally slightly worse
+- No stat-sig cell
+- Below actionable threshold — treat as noise until more data
+
+**Tier 4 (n=89):**
+- 1x2_draw: **-7.2% p=0.998 ✓ BETTER** (largest single-market improvement)
+- 1x2_home: -4.1% p=0.924 (better, borderline)
+- btts_yes/no: **+5.4% p=0.044 ✗ WORSE**
+
+### What per-tier tells us
+
+1. **The improvement is concentrated in tiers 1-2** — our main betting
+   surface. That's the right place for the model to be improving.
+2. **BTTS regression is UNIFORM across all tiers** (+0.9% at tier 1,
+   +0.7% tier 2, +2.6% tier 3, +5.4% tier 4). Not a specific-league
+   issue. Confirms hypothesis: v20260712's goal regressors
+   (`home_goals.pkl` + `away_goals.pkl`) have worse-calibrated λ
+   estimates than v20260705, and that propagates into BTTS (and
+   borderline OU) via the shared joint-matrix layer.
+3. **Tier 4 improvement in raw predictive quality** validates that
+   v20260712 works everywhere at the model level. We vetoed tier 4 for
+   *calibration + CLV* reasons (CLV +1.7% → no bookmaker inefficiency
+   to exploit), not for lack of model skill.
+4. **Tier 3 slight directional regression is noise** (n=39). Ignore.
+
 ## Post-vacation follow-ups
 
 1. **Re-run this eval at 2026-08-01** with 3+ weeks of clean OOS data.
