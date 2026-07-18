@@ -1868,6 +1868,64 @@ def _sanitize_for_json(value):
     return value
 
 
+def _bet_veto_reason(match_id: str, edge_percent: float) -> str | None:
+    """CALIBRATION-VETO 2026-07-18. Env-gated pre-write vetoes; return the
+    reason string if the bet should be blocked, else None.
+
+    Both vetoes default OFF. Enable in prod by adding to /opt/odds-intel-
+    engine/.env + restarting the scheduler:
+
+        VETO_TIER_MAX=3       # skip bets whose league.tier > this
+        VETO_EDGE_CAP=0.25    # skip bets whose edge_percent > this
+
+    Data supporting the defaults (last 42d of settled bets, per
+    `scripts/roi_by_tier_report.py`):
+      - Tier 4: -34.7% ROI, +1.7% CLV over n=146 (no real edge — model
+        hallucinates on lower tiers). Filtering saves ~$265 over the window.
+      - Edges > 0.25 concentrated on the same low-tier leagues (Torneo
+        Federal A avg_edge 0.65, Liga Pro 0.83) where model is miscalibrated.
+
+    Cheap-out: queries are only made when at least one env is set. When
+    both empty (default), function is a fast None-return.
+    """
+    tier_max_s = os.environ.get("VETO_TIER_MAX", "").strip()
+    edge_cap_s = os.environ.get("VETO_EDGE_CAP", "").strip()
+    if not tier_max_s and not edge_cap_s:
+        return None
+
+    # Edge veto — needs no DB lookup, check first
+    if edge_cap_s:
+        try:
+            edge_cap = float(edge_cap_s)
+            if edge_percent is not None and float(edge_percent) > edge_cap:
+                return f"edge_cap({edge_percent:.2f}>{edge_cap:.2f})"
+        except (TypeError, ValueError):
+            pass
+
+    # Tier veto — needs match → league → tier join
+    if tier_max_s:
+        try:
+            tier_max = int(tier_max_s)
+        except ValueError:
+            return None
+        try:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT l.tier FROM matches m LEFT JOIN leagues l "
+                        "ON l.id = m.league_id WHERE m.id = %s LIMIT 1",
+                        (match_id,),
+                    )
+                    r = cur.fetchone()
+                    tier = r[0] if r else None
+            if tier is not None and int(tier) > tier_max:
+                return f"tier_veto(tier={tier}>{tier_max})"
+        except Exception:
+            # Fail open — never break bet placement on a veto lookup error
+            return None
+    return None
+
+
 def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
     """
     Store a paper bet.
@@ -1877,7 +1935,18 @@ def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
     - calibrated_prob, kelly_fraction, odds_at_open, odds_drift
     - dimension_scores, alignment_count, alignment_total, alignment_class
     - model_disagreement, news_impact_score, lineup_confirmed
+
+    CALIBRATION-VETO 2026-07-18: two env-gated pre-write vetoes gate the
+    write — see `_bet_veto_reason` above. Both default OFF.
     """
+    # Pre-write vetoes (env-gated). Return None like the duplicate case
+    # so bots see the same "not placed" signal.
+    veto = _bet_veto_reason(match_id, bet_data.get("edge"))
+    if veto:
+        console.print(f"[dim]bet vetoed ({veto}) bot={bot_id[:8]} match={match_id[:8]} "
+                      f"market={bet_data.get('market')} sel={bet_data.get('selection')}[/dim]")
+        return None
+
     row = {
         "bot_id": bot_id,
         "match_id": match_id,

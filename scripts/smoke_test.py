@@ -27965,5 +27965,81 @@ def _():
         "(app)/layout.tsx must use createServerServiceClient for the profiles read"
 
 
+@test("CALIBRATION-VETO — tier + edge-cap vetoes gate store_bet writes, env-gated OFF by default")
+def test_calibration_veto():
+    """CALIBRATION-VETO (2026-07-18): two env-gated pre-write vetoes on
+    `store_bet` in workers/api_clients/supabase_client.py:
+
+      - VETO_TIER_MAX  → skip bets on league.tier > this value
+      - VETO_EDGE_CAP  → skip bets on edge_percent > this value
+
+    Guardrails this smoke pins:
+      1. `_bet_veto_reason` exists and is called from `store_bet`.
+      2. Both env vars are read via os.environ, both default OFF (the
+         "if not X and not Y: return None" fast path).
+      3. Edge-cap check comes BEFORE the tier lookup (edge is cheap, tier
+         needs a DB query — order matters for perf).
+      4. On veto, store_bet returns None (mirrors the duplicate-bet skip
+         pattern so caller bots don't crash on the veto).
+      5. The tier lookup wraps in try/except so a lookup failure does NOT
+         block bet placement (fail open — safer than fail closed for a
+         mitigation).
+
+    Data justifying the defaults (per scripts/roi_by_tier_report.py 42d
+    audit 2026-07-18): tier 4 = -34.7% ROI, +1.7% CLV over n=146 (no real
+    edge). Edges > 0.25 concentrated in the same low-tier leagues.
+    """
+    import pathlib
+    p = pathlib.Path(__file__).parent.parent / "workers/api_clients/supabase_client.py"
+    src = p.read_text()
+
+    # 1. Helper exists.
+    assert "def _bet_veto_reason(" in src, (
+        "workers/api_clients/supabase_client.py must define `_bet_veto_reason` "
+        "so the veto logic has a single tested choke-point."
+    )
+
+    # 2. store_bet calls it.
+    assert "veto = _bet_veto_reason(match_id, bet_data.get(\"edge\"))" in src, (
+        "store_bet must call `_bet_veto_reason(match_id, bet_data.get('edge'))` "
+        "before building the row — the veto has to fire before the INSERT."
+    )
+    assert "if veto:" in src, (
+        "store_bet must short-circuit on `if veto:` and return None."
+    )
+
+    # 3. Both env vars read.
+    assert 'os.environ.get("VETO_TIER_MAX"' in src, (
+        "_bet_veto_reason must read VETO_TIER_MAX from os.environ."
+    )
+    assert 'os.environ.get("VETO_EDGE_CAP"' in src, (
+        "_bet_veto_reason must read VETO_EDGE_CAP from os.environ."
+    )
+
+    # 4. Default OFF fast-path.
+    assert "if not tier_max_s and not edge_cap_s:" in src, (
+        "_bet_veto_reason must fast-return None when both env vars are unset — "
+        "the default state is OFF (no vetoes, no DB queries)."
+    )
+
+    # 5. Edge-cap ordering — the `edge_cap_s` block must appear BEFORE
+    #    the `tier_max_s` block since edge check is O(1) but tier needs a
+    #    DB roundtrip.
+    edge_pos = src.find('if edge_cap_s:')
+    tier_pos = src.find('if tier_max_s:')
+    assert 0 < edge_pos < tier_pos, (
+        "edge-cap check must come BEFORE tier lookup — tier needs a DB "
+        "query, edge is a float compare. Wrong order costs a roundtrip on "
+        "every bet when only edge veto is set."
+    )
+
+    # 6. Tier lookup wrapped in try/except (fail-open).
+    tier_block = src[tier_pos:src.find("return None\n\n\ndef store_bet(", tier_pos)]
+    assert "except Exception:" in tier_block and "return None" in tier_block, (
+        "The tier-lookup DB query must be wrapped in try/except that returns "
+        "None (fail-open) — a broken query must never block bet placement."
+    )
+
+
 if __name__ == "__main__":
     main()
