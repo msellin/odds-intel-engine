@@ -2551,9 +2551,15 @@ def main():
     # the scheduler thread by 2-3s at fire time. 5 min is wider than any normal
     # jitter and shorter than the smallest job interval (5min healthcheck), so
     # late runs still execute promptly. coalesce=True keeps stale bursts to one run.
+    # SCHEDULER-AF-429-DEADLOCK mitigation 2026-07-18: max_workers 4→12.
+    # Two multi-hour hangs (Jul 12, Jul 15) both happened when 5 concurrent
+    # AF-touching jobs (budget_sync, fetch_odds, odds_refresh, settle_ready,
+    # wc_bracket_slot_sync) blocked on AF 429s and drained the 4-worker
+    # pool. 12 gives headroom so a stuck cluster can't lock the scheduler.
+    # Real fix is finite timeouts + rate limiter in api_football.py — P0.
     scheduler = BackgroundScheduler(
         timezone="UTC",
-        executors={"default": APSThreadPoolExecutor(max_workers=4)},
+        executors={"default": APSThreadPoolExecutor(max_workers=12)},
         job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 300},
     )
 
@@ -2798,9 +2804,13 @@ def main():
     # META-VALIDATE-WEEKLY (2026-06-01) — runs Sunday 05:00 UTC after
     # weekly_meta_retrain finishes, scores all bundles on real settled bets
     # and emails the verdict. Replaces the 2026-06-10 manual checkpoint.
-    scheduler.add_job(job_weekly_meta_validate, CronTrigger(day_of_week="sun", hour=5, minute=0),
-                      id="weekly_meta_validate", name="Weekly META Validate Sunday 05:00",
-                      max_instances=1, misfire_grace_time=1800)
+    # DISABLED 2026-07-18 (SCHEDULER-META-VALIDATE-SEGFAULT): job has been
+    # failing with `exit -11` (SIGSEGV) for at least 2 weeks — suspected
+    # XGBoost lib / bundle mismatch. Quarantined during 2026-07-18 → -08-01
+    # vacation window so it doesn't spam alerts. Re-enable + fix on return.
+    # scheduler.add_job(job_weekly_meta_validate, CronTrigger(day_of_week="sun", hour=5, minute=0),
+    #                   id="weekly_meta_validate", name="Weekly META Validate Sunday 05:00",
+    #                   max_instances=1, misfire_grace_time=1800)
 
     # THRESHOLD-CHECK-WEEKLY (2026-06-06) — Sunday 06:00 UTC, after the
     # retrain/meta_retrain/meta_validate chain finishes. Runs threshold_check.py
