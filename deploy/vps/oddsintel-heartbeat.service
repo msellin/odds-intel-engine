@@ -1,0 +1,8 @@
+[Unit]
+Description=OddsIntel Pipeline Heartbeat Alert
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/oddsintel/pipeline-heartbeat-alert.sh
+User=root
