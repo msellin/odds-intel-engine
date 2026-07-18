@@ -2722,7 +2722,17 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                                 "xgb_over25_prob": float(_o25_s),
                                 "_shadow_version": _shadow_ver,
                             }
-                    except Exception:
+                    except Exception as _shadow_exc:
+                        # SHADOW-DIAG 2026-07-18: log first 5 exceptions per
+                        # scheduler process so silent shadow-write failures
+                        # (bugs, schema drift, missing helpers) surface in the
+                        # journal instead of vanishing into the void.
+                        if not hasattr(_shadow_bundle, "_diag_logged_n"):
+                            _shadow_bundle._diag_logged_n = 0
+                        if _shadow_bundle._diag_logged_n < 5:
+                            _shadow_bundle._diag_logged_n += 1
+                            console.print(f"[dim]shadow inference exc ({_shadow_ver}): "
+                                          f"{type(_shadow_exc).__name__}: {str(_shadow_exc)[:200]}[/dim]")
                         xgb_pred_shadow = None
 
         # Store predictions
