@@ -1,30 +1,34 @@
-name: OddsIntel — Weekly Competitor Audits
+name: OddsIntel — Daily Competitor Audits
 
-# COMPETITOR-AUDIT-WEEKLY (2026-06-25): Sunday 02:00 UTC, re-run every
-# audit_vs_*.py to refresh ledger/comparison_*.json. The web landing
-# fetches these JSONs via raw.githubusercontent with 6h revalidate, so
-# this cron is what keeps the landing competitor numbers current.
+# COMPETITOR-AUDIT-DAILY (2026-07-19): 02:00 UTC daily. Was weekly Sunday
+# 02:00 UTC until 2026-07-19; bumped to daily so the landing page's
+# matched-window ROI card doesn't sit 6 days stale mid-week.
+# Re-runs every audit_vs_*.py to refresh ledger/comparison_*.json. The
+# web landing fetches these JSONs via raw.githubusercontent with 6h
+# revalidate, so daily cron × 6h edge cache → landing staleness floor
+# drops from ~6 days to ~6 hours.
 #
 # Does NOT re-scrape competitor data — that's a heavier monthly job
 # (separate workflow). This cron just re-runs the audit math on:
 #   - WinnerOdds  → fresh GraphQL pull each run (~5min)
 #   - SignalOdds / DeepBetting / Forebet / Tipstrr → existing dev/active
-#     JSON snapshots (re-runs the math but not the scrape)
+#     JSON snapshots (re-runs the math but not the scrape). Their ROI
+#     changes day-to-day only because OUR matched cohort grows daily.
 #   - Betaminic   → auth-walled, stays at status:"auth_required"
 #
 # Our cohort numbers DO update each run because OddsIntel keeps placing
-# new bets — every Sunday the matched-window n/ROI bump up.
+# new bets — every day the matched-window n/ROI bump up.
 
 on:
   schedule:
-    - cron: '0 2 * * 0'   # 02:00 UTC every Sunday
+    - cron: '0 2 * * *'   # 02:00 UTC daily (was '0 2 * * 0' Sunday, 2026-07-19 → daily)
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: competitor-audits-weekly
+  group: competitor-audits-daily
   cancel-in-progress: false
 
 jobs:
