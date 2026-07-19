@@ -27965,6 +27965,34 @@ def _():
         "(app)/layout.tsx must use createServerServiceClient for the profiles read"
 
 
+@test("BTTS-CALIBRATION-GAP-LOOSEN — bot_btts_all edge threshold is 7%, not 12%")
+def test_btts_all_edge_loosen_2026_07_19():
+    """BTTS-CALIBRATION-GAP-LOOSEN (2026-07-19): bot_btts_all's edge threshold
+    was tightened to 12% via a 25K-row sweep against RAW model edges (PER-
+    BOT-EDGE-THRESHOLD-APPLY 2026-05-25). Real prod applies BTTS Platt
+    calibration (fitted 2026-05-27) that compresses probabilities so
+    calibrated edges typically land at 4-8%. Result: bot fired 0 real bets
+    in 21d despite backtest showing 548 candidates at raw-edge≥12%.
+
+    Loosened to 7% as a provisional value while a proper re-sweep on
+    calibrated edges is filed for post-vacation. This smoke pins the new
+    value across all tiers so a merge conflict / accidental revert doesn't
+    silently zombify the bot again.
+    """
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG
+    cfg = BOTS_CONFIG.get("bot_btts_all")
+    assert cfg is not None, "bot_btts_all must exist in BOTS_CONFIG"
+    thresholds = cfg["edge_thresholds"]
+    for tier in (1, 2, 3, 4):
+        btts_thr = thresholds[tier]["btts"]
+        assert btts_thr == 0.07, (
+            f"bot_btts_all tier {tier} btts edge threshold must be 0.07 "
+            f"(BTTS-CALIBRATION-GAP-LOOSEN 2026-07-19). Got {btts_thr}. "
+            "If you're tightening again post-vacation, re-sweep against "
+            "CALIBRATED edges (not raw) and update this test with the new value."
+        )
+
+
 @test("CALIBRATION-VETO — tier + edge-cap vetoes gate store_bet writes, env-gated OFF by default")
 def test_calibration_veto():
     """CALIBRATION-VETO (2026-07-18): two env-gated pre-write vetoes on

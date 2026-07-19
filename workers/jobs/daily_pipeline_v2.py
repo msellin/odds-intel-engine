@@ -344,14 +344,24 @@ BOTS_CONFIG = {
         # SLICE-LIVE-VALIDATE (2026-05-25): odds 1.50-2.00 bucket live ROI -13.9% on
         # n=69 (€-68) — cap odds_range floor at 2.00. The 2.00-2.50 bucket stays
         # (live +1.4% on n=67) and 2.50-2.80 stays.
-        "description": "BTTS all leagues. PER-BOT-EDGE-THRESHOLD-APPLY + SLICE-LIVE-VALIDATE 2026-05-25: 12% edge all tiers; odds 2.00-2.80 (1.50-2.00 retired, live ROI -13.9%).",
+        # BTTS-CALIBRATION-GAP-LOOSEN (2026-07-19): loosened edge threshold 12% → 7%
+        # across all tiers. Root cause from 2026-07-19 zombie-bots-phase1 audit:
+        # the 12% was set via a sweep against RAW model edges, but BTTS Platt
+        # calibration (fitted 2026-05-27, offline holdout n=139) compresses
+        # probabilities so calibrated edges typically land at 4-8%. Bot was
+        # firing 0 real bets in 21d despite backtest showing 548 candidates
+        # at raw-edge≥12%. 7% is provisional — should re-sweep on calibrated
+        # edges post-vacation to find the true optimum. Bot is beta (not
+        # real-money placed), so paper-only signal accumulation over the
+        # vacation window is the worst-case outcome.
+        "description": "BTTS all leagues. BTTS-CALIBRATION-GAP-LOOSEN 2026-07-19: edge 7% (was 12%; original 12% set on raw-model sweep, real prod applies Platt calibration → most calibrated edges land 4-8%). Odds 2.00-2.80 (1.50-2.00 retired, live ROI -13.9%).",
         "tier_label": "pro",
         "markets": ["btts"],
         "edge_thresholds": {
-            1: {"btts": 0.12},
-            2: {"btts": 0.12},
-            3: {"btts": 0.12},
-            4: {"btts": 0.12},
+            1: {"btts": 0.07},
+            2: {"btts": 0.07},
+            3: {"btts": 0.07},
+            4: {"btts": 0.07},
         },
         "odds_range": (2.00, 2.80),
         "min_prob": 0.30,
