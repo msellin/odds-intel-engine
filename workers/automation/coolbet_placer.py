@@ -412,6 +412,8 @@ def load_qualified_bets(bet_id_filter: str | None = None) -> list[dict]:
             AND DATE(m.date)       = CURRENT_DATE
             AND m.date             > NOW()
             AND sb.edge_percent    >= %s
+            AND b.is_active IS TRUE                      -- RETIRED-BOT-LEAK-FIX (2026-07-31): don't place picks from bots we've retired
+            AND b.retired_at IS NULL
             {maturity_clause}                            -- CHERRY-PICK-PLACER (2026-06-01): default unset = no filter
             -- COOLBET-MAC-DAEMON-DEDUP (2026-06-12): the dedup is the
             -- ONLY thing preventing duplicate real-money bets. NEVER
@@ -521,6 +523,8 @@ def load_qualified_combo_bets(bet_id_filter: str | None = None) -> list[dict]:
         WHERE sb.result = 'pending'
           AND sb.combo_legs IS NOT NULL
           AND sb.edge_percent >= %s
+          AND b.is_active IS TRUE                      -- RETIRED-BOT-LEAK-FIX (2026-07-31): 5 retired acca/combo bots leaked 16 real_bets 2026-06-09 → 2026-07-30
+          AND b.retired_at IS NULL
           {maturity_clause}                            -- CHERRY-PICK-PLACER (2026-06-01): default unset = no filter
           AND NOT EXISTS (
               SELECT 1 FROM real_bets rb

@@ -28069,6 +28069,43 @@ def test_calibration_veto():
     )
 
 
+@test("RETIRED-BOT-LEAK-FIX-2026-07-31 — placer scanners filter is_active + retired_at")
+def test_retired_bot_leak_fix_2026_07_31():
+    """RETIRED-BOT-LEAK-FIX-2026-07-31: 5 acca/combo bots retired
+    2026-06-06 (is_active=False, retired_at set, maturity_label='retired')
+    kept writing real_bets between 2026-06-09 and 2026-07-30 (16 bets,
+    0 wins, ~$85 bled).
+
+    Root cause: `load_qualified_combo_bets()` (and its singles twin
+    `load_qualified_bets()`) in `workers/automation/coolbet_placer.py`
+    join bots but never gate on `b.is_active` / `b.retired_at`.
+
+    Fix: both queries now include `AND b.is_active IS TRUE AND
+    b.retired_at IS NULL` immediately after the edge filter, before
+    the optional maturity clause. This smoke pins both filters so a
+    future refactor can't silently drop them.
+    """
+    from pathlib import Path
+    src = (Path(__file__).resolve().parent.parent / "workers" /
+           "automation" / "coolbet_placer.py").read_text()
+
+    # There must be at least two occurrences of BOTH filter lines —
+    # one for singles (load_qualified_bets) and one for combos
+    # (load_qualified_combo_bets).
+    is_active_count = src.count("b.is_active IS TRUE")
+    retired_count = src.count("b.retired_at IS NULL")
+    assert is_active_count >= 2, (
+        f"Expected >=2 'b.is_active IS TRUE' filter clauses in "
+        f"coolbet_placer.py (one in singles scanner, one in combo). "
+        f"Got {is_active_count}. RETIRED-BOT-LEAK-FIX-2026-07-31."
+    )
+    assert retired_count >= 2, (
+        f"Expected >=2 'b.retired_at IS NULL' filter clauses in "
+        f"coolbet_placer.py. Got {retired_count}. "
+        f"RETIRED-BOT-LEAK-FIX-2026-07-31."
+    )
+
+
 @test("CS2-DISABLE-2026-07-31 — all 27 CS2 scheduler jobs routed through _add_cs2_job gate")
 def test_cs2_disable_2026_07_31():
     """CS2-DISABLE-2026-07-31: 5 firing CS2 paper bots showed −27 to
