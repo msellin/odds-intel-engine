@@ -2128,6 +2128,7 @@ def _print_funnel(funnel: dict, only_bot: str | None) -> None:
         ("drop_odds_too_low", "odds<min"),
         ("drop_odds_too_high","odds>max"),
         ("drop_min_prob",     "<minP"),
+        ("drop_pin_mid_band", "PIN-mid"),
         ("drop_pin_veto",     "PIN-veto"),
         ("drop_sharp_gate",   "sharp"),
         ("drop_odds_mv",      "odds-mv"),
@@ -3000,7 +3001,16 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             # enough to survive friction + smaller market liquidity. Add +3pp
             # to every threshold for tier 3 and 4 to cut the -EV long tail.
             if tier >= 3 and thresholds:
-                thresholds = {k: v + 0.03 for k, v in thresholds.items()}
+                # TIER-C-T3PLUS-GATE-EXPAND-2026-07-31: 90d audit found T3
+                # 1X2 at -24.30% ROI (n=170) and T4 at -22.86% (n=176) even
+                # after the original +3pp gate. Mean edge on those bets was
+                # +3.6pp (T3) / +0.3pp (T4) — friction + market efficiency
+                # at these tiers eats small edges. Bump 1X2-specific gate
+                # to +5pp; keep others at +3pp.
+                thresholds = {
+                    k: v + (0.05 if k.startswith("1x2") else 0.03)
+                    for k, v in thresholds.items()
+                }
             odds_min, odds_max = config["odds_range"]
             min_prob = config["min_prob"]
 
@@ -3202,7 +3212,26 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 _pin_implied = _pmap.get(str(match_id)) if _pmap is not None else None
                 _veto_anchor = _pin_implied if _pin_implied is not None else ip
                 _veto_gap = 0.22 if mkt in ("asian_handicap", "double_chance") else PINNACLE_VETO_GAP
-                if (cal_prob - _veto_anchor) > _veto_gap:
+                _anchor_gap = cal_prob - _veto_anchor
+                # PIN-ANCHOR-GAP-MID-BAND-2026-07-31: the 0.06-0.10 gap band
+                # is where 1X2/OU losses concentrate — 60d ROI -13.85% (1X2)
+                # / -14.81% (OU) on 47% of stake. The >0.10 band (up to the
+                # 0.12 veto) actually wins +7.63% / +6.79%. Losses cluster
+                # in the "somewhat overconfident" middle zone, not the
+                # "wildly overconfident" tail the veto was built for.
+                # Fix: require +2pp higher edge in the mid-band for 1X2/OU
+                # (only markets with real Pinnacle anchor). Env-flip for
+                # rollback: ANCHOR_GAP_MID_BAND_ENABLED=false.
+                if (
+                    os.getenv("ANCHOR_GAP_MID_BAND_ENABLED", "true").lower() != "false"
+                    and mkt in ("1X2", "O/U")
+                    and _pin_implied is not None
+                    and 0.06 <= _anchor_gap < 0.10
+                    and edge < me + 0.02
+                ):
+                    _funnel[bot_name]["drop_pin_mid_band"] += 1
+                    continue
+                if _anchor_gap > _veto_gap:
                     _funnel[bot_name]["drop_pin_veto"] += 1
                     continue  # Model too far above market anchor — skip
 

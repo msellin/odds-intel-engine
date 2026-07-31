@@ -28108,6 +28108,60 @@ def test_dnb_legacy_config_drop_2026_07_31():
     )
 
 
+@test("PIN-ANCHOR-GAP-MID-BAND-2026-07-31 — 0.06-0.10 anchor-gap band gated by +2pp edge floor")
+def test_pin_anchor_gap_mid_band_2026_07_31():
+    """PIN-ANCHOR-GAP-MID-BAND-2026-07-31: 60d shadow eval showed the
+    0.06-0.10 anchor-gap band losing -13.85% ROI (1X2) / -14.81% (OU)
+    on ~47% of stake, while the >0.10 band wins +7.63% / +6.79%. The
+    losses cluster in the "somewhat overconfident" middle zone, not
+    the "wildly overconfident" tail the 0.12 PIN veto was built for.
+    Added a mid-band gate before the existing PIN veto: bets in that
+    band require +2pp higher edge to pass. Applied to 1X2/OU only
+    (markets with real Pinnacle anchor). Env-gated for rollback via
+    ANCHOR_GAP_MID_BAND_ENABLED=false.
+    """
+    from pathlib import Path
+    src = (Path(__file__).resolve().parent.parent / "workers" /
+           "jobs" / "daily_pipeline_v2.py").read_text()
+    assert "ANCHOR_GAP_MID_BAND_ENABLED" in src, (
+        "daily_pipeline_v2.py must env-gate the mid-band filter via "
+        "ANCHOR_GAP_MID_BAND_ENABLED for rollback safety."
+    )
+    assert "drop_pin_mid_band" in src, (
+        "Mid-band gate must increment _funnel[bot_name]['drop_pin_mid_band'] "
+        "so drops are diagnosable in _print_funnel."
+    )
+    # Band bounds match report's finding (0.06-0.10, +2pp edge floor)
+    assert "0.06 <= _anchor_gap < 0.10" in src, (
+        "Mid-band bounds must be [0.06, 0.10) per the 60d ROI-by-band audit."
+    )
+    assert "edge < me + 0.02" in src, (
+        "Mid-band gate must require +2pp higher edge (edge < me + 0.02 → drop)."
+    )
+
+
+@test("TIER-C-T3PLUS-GATE-EXPAND-2026-07-31 — 1X2 T3/T4 edge floor +5pp (others +3pp)")
+def test_tier_c_t3plus_gate_expand_2026_07_31():
+    """TIER-C-T3PLUS-GATE-EXPAND-2026-07-31: 90d audit showed T3 1X2
+    at -24.30% ROI (n=170) and T4 at -22.86% (n=176) even after the
+    original +3pp TIER-C-T3PLUS-GATE (2026-06-30). Mean edge on those
+    bets was +3.6pp (T3) / +0.3pp (T4). Bumped 1X2-specific gate to
+    +5pp; other markets (OU/BTTS/AH/DNB/DC) stay at +3pp.
+
+    If you re-tune, run per-market ROI @ +3pp / +4pp / +5pp / +6pp on
+    T3+T4 and pick the ROI-max point. Don't unify markets back —
+    other markets don't show the same T3/T4 degradation.
+    """
+    from pathlib import Path
+    src = (Path(__file__).resolve().parent.parent / "workers" /
+           "jobs" / "daily_pipeline_v2.py").read_text()
+    assert 'k: v + (0.05 if k.startswith("1x2") else 0.03)' in src, (
+        "TIER-C-T3PLUS-GATE must apply +0.05 for 1X2 keys and +0.03 for "
+        "others. If you're re-tuning, update this test with the new "
+        "per-market values and the backtest evidence."
+    )
+
+
 @test("BACKTEST-TWEAK-OPT-HOME-LOWER-2026-07-31 — odds 3.00-3.49 + tier 2-3 only")
 def test_backtest_tweak_opt_home_lower_2026_07_31():
     """BACKTEST-TWEAK-OPT-HOME-LOWER-2026-07-31: 60d shadow eval showed
