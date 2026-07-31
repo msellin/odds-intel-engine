@@ -285,17 +285,20 @@ BOTS_CONFIG = {
         # Home underdogs in lower European divisions.
         # BOTS-RETIRE-1X2 (2026-05-17): retired — starved by alpha_t2_1x2=0.00 after
         # May 17 retrain. Live ROI +73% on 15 bets was variance, not signal.
-        "description": "Optimizer: Home underdogs, T2+ Europe. FD backtest +24.2% ROI, BTB +12.5%. Originally retired 2026-05-17 (alpha_t2_1x2 starved it post-retrain); re-enabled 2026-05-22 via migration 122.",
+        # BACKTEST-TWEAK-2026-07-31 (odds cap 3.49 + drop T4): 60d shadow eval
+        # showed the 3.50-3.99 odds bucket at 0/46 (-100% ROI) and T4 at 0/45.
+        # Restricting to odds<3.50 AND tier<=3 lifts 60d ROI from -5.2% (n=264)
+        # to +46.9% (n=161, PnL +€755.2 vs -€136.8). Sample big enough to trust.
+        "description": "Optimizer: Home underdogs, T2-3 Europe, odds 3.00-3.49. BACKTEST-TWEAK-2026-07-31: was T2-4 odds 3.00-5.00 (60d ROI -5.2%); dropped 3.50+ (0/46) and T4 (0/45) — 60d ROI +46.9% n=161.",
         "tier_label": "elite",
         "markets": ["1x2"],
         "selection_filter": ["Home"],
-        "tier_filter": [2, 3, 4],
+        "tier_filter": [2, 3],
         "edge_thresholds": {
             2: {"1x2_fav": 0.08, "1x2_long": 0.08},
             3: {"1x2_fav": 0.08, "1x2_long": 0.08},
-            4: {"1x2_fav": 0.08, "1x2_long": 0.08},
         },
-        "odds_range": (3.00, 5.00),
+        "odds_range": (3.00, 3.49),
         "min_prob": 0.30,
     },
     "bot_opt_ou_british": {
@@ -2139,6 +2142,13 @@ def _print_funnel(funnel: dict, only_bot: str | None) -> None:
 
     # Columns are ordered as they appear in the filter chain.
     columns = [
+        # DNB-FUNNEL-INSTRUMENTATION-2026-07-31: pre-candidate drops. Bots
+        # blocked at tier/league/DNB-odds level previously showed sum=0 and
+        # got skipped by the "nothing to show" filter below — invisible.
+        ("drop_tier_filter",       "tier×"),
+        ("drop_league_filter",     "leg×"),
+        ("drop_league_name_filter","legName×"),
+        ("drop_dnb_no_1x2_odds",   "DNB-no-odds"),
         ("candidates",        "Cand"),
         ("drop_nan_raw",      "NaN-raw"),
         ("drop_nan_cal",      "NaN-cal"),
@@ -2992,15 +3002,23 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
 
             # Check tier filter
             if config.get("tier_filter") and tier not in config["tier_filter"]:
+                # DNB-FUNNEL-INSTRUMENTATION-2026-07-31: pre-candidate drops
+                # were previously silent — bot_dnb_specialist had 297 whitelist
+                # matches but 0 rows in funnel table because all drops here
+                # bypass the per-candidate counters below. Counting these makes
+                # the drop reason visible in _print_funnel.
+                _funnel[bot_name]["drop_tier_filter"] += 1
                 continue
 
             # Check league filter
             if config.get("league_filter") and country not in config.get("league_filter", []):
+                _funnel[bot_name]["drop_league_filter"] += 1
                 continue
 
             # Check league_name_filter — list of (country, league_name) tuples.
             # Takes precedence over tier_filter for fine-grained league selection.
             if config.get("league_name_filter") and (country, league_name) not in config["league_name_filter"]:
+                _funnel[bot_name]["drop_league_name_filter"] += 1
                 continue
 
             thresholds = config["edge_thresholds"].get(tier, {})
@@ -3121,7 +3139,13 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             if "dnb" in config.get("markets", []):
                 h_odds = match.get("odds_home", 0)
                 a_odds = match.get("odds_away", 0)
-                if h_odds and a_odds and h_odds > 0 and a_odds > 0:
+                if not (h_odds and a_odds and h_odds > 0 and a_odds > 0):
+                    # DNB-FUNNEL-INSTRUMENTATION-2026-07-31: DNB needs both
+                    # 1X2 odds to derive. Missing here = spotty odds coverage
+                    # (Brazil Serie B, Argentina Primera Nacional). Count so
+                    # bot_dnb_specialist's 0-bet situation is diagnosable.
+                    _funnel[bot_name]["drop_dnb_no_1x2_odds"] += 1
+                elif h_odds and a_odds and h_odds > 0 and a_odds > 0:
                     _hp = pred.get("home_prob", 0) or 0
                     _ap = pred.get("away_prob", 0) or 0
                     _denom = _hp + _ap

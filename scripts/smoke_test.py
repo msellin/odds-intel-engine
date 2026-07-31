@@ -28069,6 +28069,97 @@ def test_calibration_veto():
     )
 
 
+@test("BACKTEST-TWEAK-OPT-HOME-LOWER-2026-07-31 — odds 3.00-3.49 + tier 2-3 only")
+def test_backtest_tweak_opt_home_lower_2026_07_31():
+    """BACKTEST-TWEAK-OPT-HOME-LOWER-2026-07-31: 60d shadow eval showed
+    the 3.50-3.99 odds bucket lost 0/46 and tier=4 lost 0/45 — hard
+    calibration cliff. Restricting to odds<3.50 AND tier<=3 turns 60d
+    shadow ROI from -5.2% n=264 → +46.9% n=161 (PnL +€755 vs -€137).
+
+    If you're tuning this bot again, re-run the backtest per-odds-bucket
+    + per-tier and update this test with the new numbers. Never widen
+    odds/tier back to pre-fix values without evidence.
+    """
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG
+    cfg = BOTS_CONFIG.get("bot_opt_home_lower")
+    assert cfg is not None, "bot_opt_home_lower must exist"
+    assert cfg["odds_range"] == (3.00, 3.49), (
+        f"bot_opt_home_lower odds_range must be (3.00, 3.49) — the "
+        f"3.50-3.99 bucket was 0/46 in the 60d backtest. Got "
+        f"{cfg['odds_range']}. BACKTEST-TWEAK-OPT-HOME-LOWER-2026-07-31."
+    )
+    assert cfg["tier_filter"] == [2, 3], (
+        f"bot_opt_home_lower tier_filter must be [2, 3] — tier=4 was "
+        f"0/45 in the 60d backtest. Got {cfg['tier_filter']}."
+    )
+
+
+@test("BACKTEST-TWEAK-INPLAY-ODDS-CAP-2026-07-31 — family-wide odds cap at 3.50")
+def test_backtest_tweak_inplay_odds_cap_2026_07_31():
+    """BACKTEST-TWEAK-INPLAY-ODDS-CAP-2026-07-31: cross-inplay-family 60d
+    eval showed every strategy losing at odds >= 3.50 (family-wide -14.3%
+    ROI, n=171). Cap enforced at _store_and_notify (Stage 5) via
+    INPLAY_FAMILY_MAX_ODDS module constant (default 3.50). Env-tunable
+    via INPLAY_FAMILY_MAX_ODDS for A/B experiments.
+    """
+    from pathlib import Path
+    src = (Path(__file__).resolve().parent.parent / "workers" /
+           "jobs" / "inplay_bot.py").read_text()
+    assert "INPLAY_FAMILY_MAX_ODDS" in src, (
+        "workers/jobs/inplay_bot.py must define INPLAY_FAMILY_MAX_ODDS "
+        "module constant."
+    )
+    assert 'os.getenv("INPLAY_FAMILY_MAX_ODDS", "3.50")' in src, (
+        "INPLAY_FAMILY_MAX_ODDS must default to 3.50 (env-tunable). "
+        "If you're raising the cap, re-run the odds-bucket backtest "
+        "first and update this test."
+    )
+    # Gate must be applied in _store_and_notify body before store_bet is called.
+    sn_start = src.find("def _store_and_notify(")
+    sn_end = src.find("\ndef ", sn_start + 1)
+    sn_body = src[sn_start:sn_end]
+    assert "INPLAY_FAMILY_MAX_ODDS" in sn_body, (
+        "INPLAY_FAMILY_MAX_ODDS must be applied inside _store_and_notify "
+        "so the cap is enforced at the family level, not per-strategy."
+    )
+    assert "odds_above_family_cap" in sn_body, (
+        "Family cap should increment _funnel[..]['odds_above_family_cap'] "
+        "so the drop is diagnosable."
+    )
+
+
+@test("DNB-FUNNEL-INSTRUMENTATION-2026-07-31 — pre-candidate funnel counters")
+def test_dnb_funnel_instrumentation_2026_07_31():
+    """DNB-FUNNEL-INSTRUMENTATION-2026-07-31: bot_dnb_specialist has 297
+    matches passing its whitelist over 60d but zero bets ever. Root
+    diagnosis was blocked because tier/league/league_name/DNB-odds
+    drops all happened BEFORE any funnel counter incremented, so the
+    bot was invisible in _print_funnel (sum=0 → skipped by the
+    'nothing to show' filter).
+
+    Counters added at the four uninstrumented drop points:
+    drop_tier_filter, drop_league_filter, drop_league_name_filter,
+    drop_dnb_no_1x2_odds. Print columns added to _print_funnel.
+
+    Next run with --verbose-funnel-bot bot_dnb_specialist will show
+    where the 297 matches actually go.
+    """
+    from pathlib import Path
+    src = (Path(__file__).resolve().parent.parent / "workers" /
+           "jobs" / "daily_pipeline_v2.py").read_text()
+    for key in ("drop_tier_filter", "drop_league_filter",
+                "drop_league_name_filter", "drop_dnb_no_1x2_odds"):
+        assert f'_funnel[bot_name]["{key}"]' in src, (
+            f"daily_pipeline_v2.py must increment _funnel[bot_name]"
+            f"[\"{key}\"] at the corresponding drop point. "
+            f"DNB-FUNNEL-INSTRUMENTATION-2026-07-31."
+        )
+        assert f'"{key}"' in src, (
+            f"_print_funnel columns must list {key} so the drop is "
+            f"visible in the funnel table."
+        )
+
+
 @test("PAUSE-INPLAY-P-V2-2026-07-31 — inplay_p_v2 config commented out")
 def test_pause_inplay_p_v2_2026_07_31():
     """PAUSE-INPLAY-P-V2-2026-07-31: 30d ROI -11.0% on n=83, home leg

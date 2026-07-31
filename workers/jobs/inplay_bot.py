@@ -196,6 +196,14 @@ INPLAY_BOTS = {
 # Only applies to real-xG mode; proxy mode bypasses this gate entirely.
 MIN_LEAGUE_XG_MATCHES = 3
 
+# BACKTEST-TWEAK-INPLAY-ODDS-CAP-2026-07-31: cross-inplay-family 60d shadow
+# eval showed odds>=3.50 losing across every strategy (family-wide -14.3%
+# ROI on n=171, PnL -€122). odds<3.50 buckets stay solid. Applied at
+# _store_and_notify (Stage 5) so every strategy inherits the cap without a
+# per-bot config change. Raise via env for A/B experiments if we ship a
+# strategy that specifically hunts longshots (none currently).
+INPLAY_FAMILY_MAX_ODDS = float(os.getenv("INPLAY_FAMILY_MAX_ODDS", "3.50"))
+
 # ── Global State ─────────────────────────────────────────────────────────────
 
 _bot_ids: dict[str, str] = {}  # bot_name -> bot_uuid, populated on first run
@@ -357,6 +365,17 @@ def _store_and_notify(
     bot_name: str, is_real: bool, xg_h: float, xg_a: float,
 ) -> bool:
     """Stage 5: persist bet to DB and fire Telegram alerts. Returns True if stored."""
+    # BACKTEST-TWEAK-INPLAY-ODDS-CAP-2026-07-31: family-wide odds cap. Every
+    # inplay strategy currently in prod loses money at odds >= 3.50 (60d
+    # ROI -14.3% n=171). Gate here after all strategy-level checks so the
+    # cap is enforced uniformly at the final placement step.
+    try:
+        _trig_odds = float(trigger.get("odds") or 0.0)
+    except (TypeError, ValueError):
+        _trig_odds = 0.0
+    if _trig_odds >= INPLAY_FAMILY_MAX_ODDS:
+        _funnel["odds_above_family_cap"] = _funnel.get("odds_above_family_cap", 0) + 1
+        return False
     try:
         bet_id = store_bet(bot_id, mid, bet_data)
         if bet_id:
