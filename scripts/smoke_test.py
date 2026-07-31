@@ -28069,6 +28069,45 @@ def test_calibration_veto():
     )
 
 
+@test("DNB-LEGACY-CONFIG-DROP-2026-07-31 — legacy DNB configs removed from BOTS_CONFIG")
+def test_dnb_legacy_config_drop_2026_07_31():
+    """DNB-LEGACY-CONFIG-DROP-2026-07-31: bot_dnb_home_value + bot_dnb_away_value
+    were retired 2026-05-29 (migration 148, MULTI-STRATEGY-BOTS) when
+    bot_dnb_specialist absorbed both as strategy profiles. Config entries
+    lingered as dead code — pipeline skipped them via is_active=false in
+    production, but they duplicated bot_dnb_specialist's filter work in
+    shadow mode. Funnel diagnostic on 2026-07-31 confirmed identical
+    drop_league_name_filter counts across all three configs (16 each for
+    _home/_away, 32 for _specialist which has both profiles).
+
+    DB rows stay (historical simulated_bets.bot_id UUID linkage) — this
+    test only pins that the BOTS_CONFIG + BOT_TIMING_COHORTS entries
+    are gone.
+
+    If you're re-introducing per-strategy bot configs, either use the
+    MULTI-STRATEGY-BOTS pattern (strategies=[] list on bot_dnb_specialist)
+    or update this test with the new bot names.
+    """
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG, BOT_TIMING_COHORTS
+    for legacy in ("bot_dnb_home_value", "bot_dnb_away_value"):
+        assert legacy not in BOTS_CONFIG, (
+            f"BOTS_CONFIG must not contain legacy DNB bot '{legacy}' — "
+            f"absorbed into bot_dnb_specialist strategy profile in 2026-05-29 "
+            f"MULTI-STRATEGY-BOTS. Config dropped 2026-07-31."
+        )
+        assert legacy not in BOT_TIMING_COHORTS, (
+            f"BOT_TIMING_COHORTS must not contain legacy DNB bot '{legacy}'."
+        )
+    # bot_dnb_specialist should still be present with both profiles
+    assert "bot_dnb_specialist" in BOTS_CONFIG, "bot_dnb_specialist must still exist"
+    strategies = BOTS_CONFIG["bot_dnb_specialist"].get("strategies", [])
+    aliases = {s.get("alias") for s in strategies}
+    assert aliases == {"DNB Home", "DNB Away"}, (
+        f"bot_dnb_specialist must retain both DNB Home + DNB Away strategy "
+        f"profiles. Got aliases: {aliases}"
+    )
+
+
 @test("BACKTEST-TWEAK-OPT-HOME-LOWER-2026-07-31 — odds 3.00-3.49 + tier 2-3 only")
 def test_backtest_tweak_opt_home_lower_2026_07_31():
     """BACKTEST-TWEAK-OPT-HOME-LOWER-2026-07-31: 60d shadow eval showed

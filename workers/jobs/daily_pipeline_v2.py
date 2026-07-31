@@ -885,44 +885,16 @@ BOTS_CONFIG = {
         # is breakeven-negative on its own, dropping it is the right trade.
         "handicap_line_min": 0.5,
     },
-    "bot_dnb_home_value": {
-        # RETIRED 2026-05-29 via migration 148. Merged into bot_dnb_specialist.
-        # Config kept for historical bet_id linkage — pipeline skips via is_active=false.
-        "description": "[RETIRED 2026-05-29] DNB home — merged into bot_dnb_specialist (DNB Home profile).",
-        "tier_label": "pro",
-        "markets": ["dnb"],
-        "selection_filter": ["Home"],
-        "tier_filter": None,
-        "league_name_filter": [
-            ("Austria",  "Bundesliga"),
-            ("Mexico",   "Liga MX"),
-            ("Russia",   "Premier League"),
-            ("Israel",   "Liga Leumit"),
-            ("Uruguay",  "Segunda División"),
-        ],
-        "edge_thresholds": {1: {"dnb": 0.05}, 2: {"dnb": 0.05}},
-        "odds_range": (1.30, 1.90),
-        "min_prob": 0.60,
-    },
-    "bot_dnb_away_value": {
-        # RETIRED 2026-05-29 via migration 148. Merged into bot_dnb_specialist.
-        # Config kept for historical bet_id linkage — pipeline skips via is_active=false.
-        "description": "[RETIRED 2026-05-29] DNB away — merged into bot_dnb_specialist (DNB Away profile).",
-        "tier_label": "pro",
-        "markets": ["dnb"],
-        "selection_filter": ["Away"],
-        "tier_filter": None,
-        "league_name_filter": [
-            ("England",   "League Two"),
-            ("Sweden",    "Allsvenskan"),
-            ("Brazil",    "Serie B"),
-            ("England",   "Championship"),
-            ("Argentina", "Primera Nacional"),
-        ],
-        "edge_thresholds": {1: {"dnb": 0.05}, 2: {"dnb": 0.05}, 3: {"dnb": 0.06}, 4: {"dnb": 0.06}},
-        "odds_range": (1.60, 2.60),
-        "min_prob": 0.50,
-    },
+    # DNB-LEGACY-CONFIG-DROP-2026-07-31: bot_dnb_home_value + bot_dnb_away_value
+    # config blocks removed. They were retired 2026-05-29 (migration 148) when
+    # bot_dnb_specialist absorbed both as multi-strategy profiles. DB rows stay
+    # (bots.id -> historical simulated_bets.bot_id UUID linkage), but the config
+    # entries were dead code — pipeline skipped them via is_active=false in
+    # production and duplicated bot_dnb_specialist's filter work in shadow.
+    # Funnel diagnostic on 2026-07-31 confirmed 16+16+32 identical
+    # drop_league_name_filter counts across the three DNB configs.
+    # No code references the config by name — grep clean. Grep-audit tool
+    # smoke_test.py::DNB-LEGACY-CONFIG-DROP-2026-07-31 pins the absence.
     "bot_dnb_specialist": {
         # MULTI-STRATEGY-BOTS 2026-05-29: merges bot_dnb_home_value + bot_dnb_away_value
         # into one bot with two named profiles. Each profile has its own league whitelist,
@@ -1047,8 +1019,8 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_dc_strong_fav":    "all",
     "bot_ah_home_fav":      "all",
     "bot_ah_away_dog":      "all",
-    "bot_dnb_home_value":   "all",   # RETIRED 2026-05-29 — kept for shadow tracking
-    "bot_dnb_away_value":   "all",   # RETIRED 2026-05-29 — kept for shadow tracking
+    # DNB-LEGACY-CONFIG-DROP-2026-07-31: bot_dnb_{home,away}_value removed;
+    # bot_dnb_specialist covers both profiles.
     "bot_dnb_specialist":   "all",
     "bot_1x2_specialist":   "all",
     "bot_dc_specialist":    "all",
