@@ -9,7 +9,7 @@
   },
   "reproducible_via": "scripts/audit_vs_winnerodds.py",
   "scope_notes": "WinnerOdds picks pulled from their public GraphQL endpoint (period=12, FOOTBALL); their published unit-stake bets settled WIN/LOSE/VOID. OddsIntel cohort: production strategies (calibrated+beta+active maturity), 1X2 + OU 2.5 markets only, settled (won/lost). Both sides settled at \u20ac10 flat stake for apples-to-apples ROI.",
-  "snapshot_at_utc": "2026-07-31T19:44:57.253490+00:00",
+  "snapshot_at_utc": "2026-07-31T19:48:47.205350+00:00",
   "source": "WinnerOdds",
   "source_url": "https://winnerodds.com",
   "status": "ok",
