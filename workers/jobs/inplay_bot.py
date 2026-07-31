@@ -115,10 +115,21 @@ INPLAY_BOTS = {
         "description": "Late Goals Compression Over 2.5 — min 55-75",
         "strategy": "inplay_d",
     },
-    "inplay_e": {
-        "description": "Dead Game Unders — tempo collapse, min 25-50",
-        "strategy": "inplay_e",
-    },
+    # inplay_e PAUSED 2026-07-31: fixture-mix regression post-2026-06-07,
+    # NOT a model-version issue (this strategy computes its own Bayesian
+    # posterior from live xG + pace ratio — never reads
+    # predictions.model_probability). Post-Jun-07 breakdown: WC 2026
+    # -54% ROI (n=10), Brazil Serie A/B -66.7% (n=6), even club-only
+    # -20.7% (n=18); pre-Jun-07 club was +6.4% (n=209). European
+    # regular season ended late May → South American summer + WC
+    # priced the "dead game under" pattern out of edge. DB row has
+    # is_active=false + retired_at. Un-pause after 2026-08-15 season
+    # restart + apply INPLAY-E-FIXTURE-FILTER (competition exclusion
+    # + prematch OU under-2.5 odds floor).
+    # "inplay_e": {
+    #     "description": "Dead Game Unders — tempo collapse, min 25-50",
+    #     "strategy": "inplay_e",
+    # },
     "inplay_g": {
         "description": "Corner Cluster Over 2.5 — ≥3 corners in last 10min, min 30-70",
         "strategy": "inplay_g",

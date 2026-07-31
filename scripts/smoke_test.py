@@ -28199,6 +28199,30 @@ def test_dnb_funnel_instrumentation_2026_07_31():
         )
 
 
+@test("PAUSE-INPLAY-E-2026-07-31 — inplay_e config commented out")
+def test_pause_inplay_e_2026_07_31():
+    """PAUSE-INPLAY-E-2026-07-31: closed the P1 model-regression
+    misdiagnosis. inplay_e doesn't consume predictions.model_probability
+    — the "regression" was fixture-mix (WC 2026 + SA summer took over
+    when European season ended). Paused via DB (is_active=false) + config
+    comment-out. Un-pause after 2026-08-15 season restart + apply
+    INPLAY-E-FIXTURE-FILTER.
+
+    If you're reviving inplay_e, ensure INPLAY-E-FIXTURE-FILTER is
+    applied first (competition exclusion + odds floor) and update this
+    test.
+    """
+    from pathlib import Path
+    src = (Path(__file__).resolve().parent.parent / "workers" /
+           "jobs" / "inplay_bot.py").read_text()
+    assert '\n    "inplay_e": {' not in src, (
+        "workers/jobs/inplay_bot.py still has an active \"inplay_e\" "
+        "config entry — PAUSE-INPLAY-E-2026-07-31 requires the config "
+        "block be commented out. If reviving, apply INPLAY-E-FIXTURE-FILTER "
+        "first (competition exclusion + prematch OU odds floor)."
+    )
+
+
 @test("PAUSE-INPLAY-P-V2-2026-07-31 — inplay_p_v2 config commented out")
 def test_pause_inplay_p_v2_2026_07_31():
     """PAUSE-INPLAY-P-V2-2026-07-31: 30d ROI -11.0% on n=83, home leg
