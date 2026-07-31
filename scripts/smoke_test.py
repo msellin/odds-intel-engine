@@ -28069,6 +28069,53 @@ def test_calibration_veto():
     )
 
 
+@test("CS2-DISABLE-2026-07-31 — all 27 CS2 scheduler jobs routed through _add_cs2_job gate")
+def test_cs2_disable_2026_07_31():
+    """CS2-DISABLE-2026-07-31: 5 firing CS2 paper bots showed −27 to
+    −33% ROI over 205 settled bets (2026-06-09 → -07-31) with flat
+    CLV (±0.7pp). The model is systematically overconfident, not just
+    variance-cursed. All 27 CS2 scheduler.add_job calls now route
+    through a _add_cs2_job(...) helper that no-ops when the
+    _CS2_ENABLED module constant is falsy. Default is OFF — set
+    CS2_ENABLED=true in scheduler env to re-register.
+
+    If you're re-enabling CS2 post-fix, DON'T just delete this test.
+    Add a new smoke that proves the calibration issue is addressed
+    (e.g. new shrinkage backtest shows ECE ≤ 15% and CLV > +1%).
+    """
+    from pathlib import Path
+    src = (Path(__file__).resolve().parent.parent / "workers" / "scheduler.py").read_text()
+
+    assert "_CS2_ENABLED = os.getenv(\"CS2_ENABLED\"" in src, (
+        "workers/scheduler.py must define _CS2_ENABLED via CS2_ENABLED env "
+        "(CS2-DISABLE-2026-07-31)."
+    )
+    assert "def _add_cs2_job(" in src, (
+        "workers/scheduler.py must define _add_cs2_job helper "
+        "(CS2-DISABLE-2026-07-31)."
+    )
+    # All CS2 job add_job calls must route through the helper, not direct.
+    residual = [
+        line for line in src.splitlines()
+        if "scheduler.add_job(job_cs2_" in line
+    ]
+    assert not residual, (
+        f"Found {len(residual)} residual scheduler.add_job(job_cs2_*) "
+        f"call(s) — all must route through _add_cs2_job(...) so the "
+        f"_CS2_ENABLED gate applies uniformly. Residual: {residual[:3]}"
+    )
+    # Exact count for regression safety — should be 27 gated CS2 jobs.
+    gated = [
+        line for line in src.splitlines()
+        if "_add_cs2_job(job_cs2_" in line
+    ]
+    assert len(gated) >= 27, (
+        f"Expected >=27 CS2 jobs routed through _add_cs2_job (audit found "
+        f"27 as of 2026-07-31). Got {len(gated)}. If you added new CS2 jobs, "
+        f"bump this floor + confirm they're gated."
+    )
+
+
 @test("MODEL-VERSION-RE-EVAL-2026-07-31 — OU override flip to v20260719 + eval docs on disk")
 def test_model_version_re_eval_2026_07_31():
     """MODEL-VERSION-RE-EVAL-2026-07-31: three rigorous OOS evals reconfirmed

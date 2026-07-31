@@ -46,6 +46,10 @@ _MAX_RECENT_ERRORS = 20
 
 SHADOW_MODE = os.getenv("SHADOW_MODE", "false").lower() == "true"
 HEALTH_PORT = int(os.getenv("PORT", "8080"))
+# CS2 pipeline disabled 2026-07-31 after audit found all 5 firing paper
+# bots at −27 to −33% ROI over n=205 settled bets since 2026-06-09. Set
+# CS2_ENABLED=true in scheduler env to re-register the 27 CS2 jobs.
+_CS2_ENABLED = os.getenv("CS2_ENABLED", "false").lower() == "true"
 
 
 # ── Job wrapper ────────────────────────────────────────────────────────────
@@ -2588,6 +2592,14 @@ def main():
             _recent_errors.pop(0)
     scheduler.add_listener(_on_max_instances_blocked, EVENT_JOB_MAX_INSTANCES)
 
+    def _add_cs2_job(*args, **kwargs):
+        """Register CS2 job only when _CS2_ENABLED. Disabled 2026-07-31 —
+        see module-level _CS2_ENABLED for rationale. Any 27 CS2 add_job
+        sites route through this so re-enabling is one env-var flip."""
+        if _CS2_ENABLED:
+            return scheduler.add_job(*args, **kwargs)
+        return None
+
     # ── Register all jobs ──────────────────────────────────────────────
 
     # MANUAL-PLACE drain: 10s tick to consume admin "Record at Coolbet" taps.
@@ -2841,7 +2853,7 @@ def main():
     # CS2-SCANNER (2026-06-08) — every 4h 06:00-22:00 UTC. Scanner runs ELO model
     # against bo3.gg upcoming + finished feeds. Each run appends to cs2_predictions
     # (immutable history for calibration + retraining).
-    scheduler.add_job(job_cs2_scanner, CronTrigger(hour="6,10,14,18,22", minute=12),
+    _add_cs2_job(job_cs2_scanner, CronTrigger(hour="6,10,14,18,22", minute=12),
                       id="cs2_scanner", name="CS2 ELO Scanner [4h, 06-22 UTC]",
                       max_instances=1, misfire_grace_time=1800)
 
@@ -2851,7 +2863,7 @@ def main():
     # rows automatically on their next run because the scraper populates
     # hltv_rank+points by joining cs2_hltv_rankings at write time + ELO from
     # cs2_results history (so v7/v8's win_prob1 IS NOT NULL gate accepts them).
-    scheduler.add_job(job_cs2_hltv_upcoming,
+    _add_cs2_job(job_cs2_hltv_upcoming,
                       CronTrigger(hour="0,2,4,6,8,10,12,14,16,18,20,22", minute=5),
                       id="cs2_hltv_upcoming",
                       name="CS2 HLTV Upcoming Matches [2h]",
@@ -2868,7 +2880,7 @@ def main():
     # 02-05 UTC saves nothing meaningful (~1% of matches) and adds a
     # window-bug attack surface. ~75s per run × 24 runs ≈ 30 min/day of
     # HLTV scraping — within rate-limit comfort.
-    scheduler.add_job(job_cs2_hltv_match_odds,
+    _add_cs2_job(job_cs2_hltv_match_odds,
                       CronTrigger(minute=12),
                       id="cs2_hltv_match_odds",
                       name="CS2 HLTV Match-page Odds [hourly, 24h]",
@@ -2876,7 +2888,7 @@ def main():
 
     # CS2-SETTLEMENT (2026-06-08) — hourly 12-02 UTC. Pulls finished bo3.gg
     # matches into cs2_results and settles open cs2_bets.
-    scheduler.add_job(job_cs2_settlement, CronTrigger(hour="12-23,0-2", minute=22),
+    _add_cs2_job(job_cs2_settlement, CronTrigger(hour="12-23,0-2", minute=22),
                       id="cs2_settlement", name="CS2 Settlement [hourly 12-02 UTC]",
                       max_instances=1, misfire_grace_time=900)
 
@@ -2888,7 +2900,7 @@ def main():
     # PandaScore + HLTV update lag means matches often need multiple passes
     # to resolve, so a 24h cycle left stale bets sitting too long. 4h
     # cadence drops typical stale-resolution latency 24h → 4h.
-    scheduler.add_job(job_cs2_settle_supplementary,
+    _add_cs2_job(job_cs2_settle_supplementary,
                       CronTrigger(hour="0,4,8,12,16,20", minute=0),
                       id="cs2_settle_supplementary",
                       name="CS2 Supplementary Settlement [every 4h]",
@@ -2896,13 +2908,13 @@ def main():
 
     # CS2-HLTV-PREDICT (2026-06-09) — parallel hltv_v1 prediction. Same schedule
     # as cs2_scanner but offset 5 min so cs2_upcoming_matches has fresh HLTV.
-    scheduler.add_job(job_cs2_hltv_predict, CronTrigger(hour="6,10,14,18,22", minute=17),
+    _add_cs2_job(job_cs2_hltv_predict, CronTrigger(hour="6,10,14,18,22", minute=17),
                       id="cs2_hltv_predict", name="CS2 HLTV-only Predict [4h, 06-22 UTC]",
                       max_instances=1, misfire_grace_time=1800)
 
     # CS2-V7-PREDICT (2026-06-09) — v7 stacking model. Kept alive as fallback
     # while v8 stabilises. 4x/day is enough — only fires when v8 fails.
-    scheduler.add_job(job_cs2_v7_predict, CronTrigger(hour="6,10,14,18,22", minute=2),
+    _add_cs2_job(job_cs2_v7_predict, CronTrigger(hour="6,10,14,18,22", minute=2),
                       id="cs2_v7_predict", name="CS2 v7 Scorer [4h fallback]",
                       max_instances=1, misfire_grace_time=1800)
 
@@ -2910,12 +2922,12 @@ def main():
     # fires every 30 min during match hours (10-23 UTC) so the bot has fresh
     # predictions whenever the pinnacle scanner refreshes odds. Matches the
     # soccer betting_refresh cadence (every 30 min).
-    scheduler.add_job(job_cs2_v8_predict,
+    _add_cs2_job(job_cs2_v8_predict,
                       CronTrigger(hour="10-23", minute="3,33"),
                       id="cs2_v8_predict", name="CS2 v8 Scorer [every 30min, 10-23 UTC]",
                       max_instances=1, misfire_grace_time=1800)
 
-    scheduler.add_job(job_cs2_v9_predict,
+    _add_cs2_job(job_cs2_v9_predict,
                       CronTrigger(hour="10-23", minute="5,35"),
                       id="cs2_v9_predict", name="CS2 v9 Scorer [every 30min, 10-23 UTC]",
                       max_instances=1, misfire_grace_time=1800)
@@ -2923,7 +2935,7 @@ def main():
     # CS2-MAP-STATS-EXPAND (2026-06-30): weekly recompute of per-team per-map
     # win% from match history (no auth required). Runs Sunday 03:00 UTC so
     # fresh data is ready before the weekday match schedule peaks.
-    scheduler.add_job(job_cs2_compute_map_stats,
+    _add_cs2_job(job_cs2_compute_map_stats,
                       CronTrigger(day_of_week="sun", hour=3, minute=0),
                       id="cs2_compute_map_stats",
                       name="CS2 Compute Map Stats [weekly]",
@@ -2939,7 +2951,7 @@ def main():
 # CS2-CLV-SNAPSHOT (2026-06-09): every 15 min, snapshot the closing-line
     # odds for any pending bet whose match kicks off within 45 min. The same
     # bookie's current odds are read from cs2_upcoming_matches.
-    scheduler.add_job(job_cs2_clv_snapshot, CronTrigger(minute="*/15"),
+    _add_cs2_job(job_cs2_clv_snapshot, CronTrigger(minute="*/15"),
                       id="cs2_clv_snapshot", name="CS2 CLV Snapshot [every 15 min]",
                       max_instances=1, misfire_grace_time=600)
 
@@ -2947,7 +2959,7 @@ def main():
     # finished matches twice daily, then processor walks the queue at 8s/req.
     # Queue 3 pages/run, 3x/day — catches HLTV's natural match-completion drip
     # without blasting their /results endpoint.
-    scheduler.add_job(job_cs2_hltv_match_details_queue,
+    _add_cs2_job(job_cs2_hltv_match_details_queue,
                       CronTrigger(hour="3,11,19", minute=10),
                       id="cs2_hltv_match_details_queue",
                       name="CS2 HLTV /results → queue [3x daily]",
@@ -2955,7 +2967,7 @@ def main():
     # Processor every 30 min — 50 matches × 8s = 7 min/run = 2,400 matches/day.
     # Backfilling 10k queued matches takes ~4-5 days at this pace; new matches
     # land near-realtime after that.
-    scheduler.add_job(job_cs2_hltv_match_details_process,
+    _add_cs2_job(job_cs2_hltv_match_details_process,
                       CronTrigger(minute="*/30"),
                       id="cs2_hltv_match_details_process",
                       name="CS2 HLTV match-detail processor [50 per 30min]",
@@ -2964,7 +2976,7 @@ def main():
     # CS2-HLTV-PLAYER-RATINGS (2026-06-09) — weekly Tuesday 06:00 UTC.
     # HLTV ratings are 3-month rolling so daily is overkill; weekly keeps the
     # PQ fresh without burning HLTV's patience. Takes ~10-15 min.
-    scheduler.add_job(job_cs2_hltv_player_ratings,
+    _add_cs2_job(job_cs2_hltv_player_ratings,
                       CronTrigger(day_of_week="tue", hour=6, minute=0),
                       id="cs2_hltv_player_ratings",
                       name="CS2 HLTV Player Ratings [weekly Tue 06:00]",
@@ -2973,14 +2985,14 @@ def main():
     # CS2-SNEAK-PEEK (2026-06-09) — daily 04:30 UTC. Re-runs the multi-feature
     # backtest on accumulated match results; persists metrics to
     # cs2_model_backtest_history. Admin UI shows AUC trend over time.
-    scheduler.add_job(job_cs2_sneak_peek_backtest, CronTrigger(hour=4, minute=30),
+    _add_cs2_job(job_cs2_sneak_peek_backtest, CronTrigger(hour=4, minute=30),
                       id="cs2_sneak_peek_backtest",
                       name="CS2 Sneak-peek backtest [daily 04:30 UTC]",
                       max_instances=1, misfire_grace_time=3600)
 
     # CS2-ROSTERS (2026-06-09) — daily 02:00 UTC. Top-100 teams' current rosters
     # + days_in_team. Public team page, no auth needed.
-    scheduler.add_job(job_cs2_hltv_rosters, CronTrigger(hour=2, minute=0),
+    _add_cs2_job(job_cs2_hltv_rosters, CronTrigger(hour=2, minute=0),
                       id="cs2_hltv_rosters",
                       name="CS2 HLTV team rosters [daily 02:00 UTC]",
                       max_instances=1, misfire_grace_time=3600)
@@ -2988,7 +3000,7 @@ def main():
     # CS2-PINNACLE (2026-06-09) — every 30 min during peak hours (10-23 UTC).
     # Closing-line scrape provides the gold-standard truth label. Polite:
     # ~30-60 requests per fire with 4-6s jitter = ~3-6 min runtime.
-    scheduler.add_job(job_cs2_pinnacle_scanner,
+    _add_cs2_job(job_cs2_pinnacle_scanner,
                       CronTrigger(hour="10-23", minute="*/30"),
                       id="cs2_pinnacle_scanner",
                       name="CS2 Pinnacle odds [every 30 min, 10-23 UTC]",
@@ -2998,7 +3010,7 @@ def main():
     # backfill. Incremental (stops on first all-seen page), so each fire
     # only writes newly-finished matches. Once initial backfill is done,
     # this just keeps tier-3/4 results current.
-    scheduler.add_job(job_cs2_pandascore_matches,
+    _add_cs2_job(job_cs2_pandascore_matches,
                       CronTrigger(hour="*/6", minute=15),
                       id="cs2_pandascore_matches",
                       name="CS2 PandaScore matches [every 6h]",
@@ -3011,7 +3023,7 @@ def main():
     # (160 teams via /stats/teams/pistols). Still feeds v7 production via
     # cs2_team_pistol_stats so we keep it alive at weekly cadence instead of
     # daily. v8 reads from cs2_hltv_team_stats with this as a 26-team overlay.
-    scheduler.add_job(job_cs2_hltv_pistols, CronTrigger(day_of_week="sun", hour=3, minute=30),
+    _add_cs2_job(job_cs2_hltv_pistols, CronTrigger(day_of_week="sun", hour=3, minute=30),
                       id="cs2_hltv_pistols",
                       name="CS2 HLTV pistol stats legacy [weekly Sun 03:30 UTC]",
                       max_instances=1, misfire_grace_time=3600)
@@ -3023,7 +3035,7 @@ def main():
     # roster×player aggregation lacks ≥3 resolved players. HLTV's rolling
     # window advances daily, so weekly would mean 7-day-stale data. ~4 page
     # fetches via FlareSolverr, ~2 min/run.
-    scheduler.add_job(job_cs2_hltv_teams_bulk,
+    _add_cs2_job(job_cs2_hltv_teams_bulk,
                       CronTrigger(hour=2, minute=15),
                       id="cs2_hltv_teams_bulk",
                       name="CS2 HLTV Teams Bulk Stats [daily 02:15 UTC]",
@@ -3032,7 +3044,7 @@ def main():
     # CS2-TOP-PLAYERS (2026-06-10) — daily 02:20 UTC. One page fetch of
     # /stats/players (returns ALL players with ≥50 maps in window — ~1300
     # rows). Feeds star_player_present + IGL × role features for v10.
-    scheduler.add_job(job_cs2_hltv_top_players,
+    _add_cs2_job(job_cs2_hltv_top_players,
                       CronTrigger(hour=2, minute=20),
                       id="cs2_hltv_top_players",
                       name="CS2 HLTV Top Players [daily 02:20 UTC]",
@@ -3041,7 +3053,7 @@ def main():
     # CS2-HLTV-RANKINGS (2026-06-09) — daily 05:00 UTC. Top-248 teams from
     # HLTV. Builds a time series we can use as an orthogonal strength signal
     # to our ELO, especially for thin-data teams ELO can't price.
-    scheduler.add_job(job_cs2_hltv_rankings, CronTrigger(hour=5, minute=0),
+    _add_cs2_job(job_cs2_hltv_rankings, CronTrigger(hour=5, minute=0),
                       id="cs2_hltv_rankings", name="CS2 HLTV Rankings [daily 05:00 UTC]",
                       max_instances=1, misfire_grace_time=3600)
 
@@ -3050,7 +3062,7 @@ def main():
     # auto-promotes the new coefficients to data/esports/cs2/platt_coefficients.json
     # when log_loss improves by ≥0.001. Scanner reads coefficients at module
     # import so the next scanner run uses the new calibration.
-    scheduler.add_job(job_cs2_weekly_calibrate,
+    _add_cs2_job(job_cs2_weekly_calibrate,
                       CronTrigger(day_of_week="sun", hour=3, minute=30),
                       id="cs2_weekly_calibrate",
                       name="CS2 Weekly Platt Recalibration Sun 03:30",
@@ -3062,7 +3074,7 @@ def main():
     # per fire. 8 fires overnight = 1,600 team-fetches = covers all ~750
     # currently-missing teams in ~4 hours. Steady state: cron auto-skips
     # cached teams, no-op when nothing new.
-    scheduler.add_job(job_cs2_pandascore_rosters, CronTrigger(minute=30),
+    _add_cs2_job(job_cs2_pandascore_rosters, CronTrigger(minute=30),
                       id="cs2_pandascore_rosters",
                       name="CS2 PandaScore Rosters [hourly, 200/run]",
                       max_instances=1, misfire_grace_time=1800)
@@ -3156,7 +3168,7 @@ def main():
     # directly so a fully-dishonest scheduler still gets caught.
     # :11/:41 offset so it lands ~5 min AFTER the cs2_scanner / cs2_bot fires,
     # giving the latest run time to write before the watchdog checks.
-    scheduler.add_job(job_cs2_pipeline_healthcheck,
+    _add_cs2_job(job_cs2_pipeline_healthcheck,
                       CronTrigger(minute="11,41"),
                       id="cs2_pipeline_healthcheck",
                       name="CS2 Pipeline Healthcheck [30min]",
@@ -3190,7 +3202,7 @@ def main():
     # bookie/coolbet odds + new model output are both fresh.
     # CS2-COOLBET-PLACER (2026-06-10) — paper placement, fires 2 min after bot.
     # Real-money flip requires explicit operator auth (memory note).
-    scheduler.add_job(job_cs2_coolbet_placer, CronTrigger(hour="10-23", minute="8,38"),
+    _add_cs2_job(job_cs2_coolbet_placer, CronTrigger(hour="10-23", minute="8,38"),
                       id="cs2_coolbet_placer",
                       name="CS2 Coolbet Placer [paper, every 30min 10-23 UTC]",
                       max_instances=1, misfire_grace_time=1800)
@@ -3203,7 +3215,7 @@ def main():
     # an EU-day window would miss ~22% of matches. Soccer-style "scan
     # whenever odds move" pattern lets us catch line drift inside the
     # 30-min window. Runs all 7 bots in BOTS_CONFIG (CS2-BOT-MULTI-CONFIG).
-    scheduler.add_job(job_cs2_bot, CronTrigger(minute="6,36"),
+    _add_cs2_job(job_cs2_bot, CronTrigger(minute="6,36"),
                       id="cs2_bot", name="CS2 Bots [every 30min, 24h]",
                       max_instances=1, misfire_grace_time=1800)
 
