@@ -50,6 +50,26 @@ jobs:
       - name: Install deps
         run: pip install --quiet psycopg2-binary python-dotenv rich requests
 
+      # COMPETITOR-AUDIT-DB-TUNNEL (2026-07-31): SUPABASE-TO-VPS-2026-07-13
+      # dropped the `public` schema on Supabase (128 tables), so the audit
+      # scripts' `simulated_bets` reads started returning UndefinedTable.
+      # `continue-on-error: true` on each audit step hid the failure — every
+      # daily run committed nothing since 2026-07-12. Fix: open an SSH tunnel
+      # to VPS Postgres before the audits so `DATABASE_URL=...@localhost:5433/oddsintel`
+      # resolves to the live DB. VPS_DEPLOY_KEY has the private half.
+      - name: Open SSH tunnel to VPS Postgres
+        env:
+          VPS_DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$VPS_DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H 204.168.199.8 >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -f -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
+              -L 5433:localhost:5432 root@204.168.199.8
+          # Prove the tunnel came up
+          nc -z localhost 5433 && echo "tunnel up on localhost:5433"
+
       - name: Audit vs WinnerOdds
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
