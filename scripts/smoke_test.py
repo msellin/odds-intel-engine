@@ -28069,5 +28069,51 @@ def test_calibration_veto():
     )
 
 
+@test("MODEL-VERSION-RE-EVAL-2026-07-31 — OU override flip to v20260719 + eval docs on disk")
+def test_model_version_re_eval_2026_07_31():
+    """MODEL-VERSION-RE-EVAL-2026-07-31: three rigorous OOS evals reconfirmed
+    the 07-18 v20260712 flip and identified v20260719 as a strict upgrade
+    over v20260621 for the OU-override slot. Env swap on VPS
+    (MODEL_VERSION_OU + MODEL_VERSION_OU_T1: v20260621 → v20260719). This
+    smoke pins:
+
+      1. MODEL_WHITEPAPER §3.1b lists v20260719 as the current OU override
+         and no longer names v20260621 as active OU version.
+      2. PRIORITY_QUEUE.md logs the eval + override-flip done entry.
+      3. All three eval companion docs exist in dev/active/ so future
+         readers can reproduce the numbers.
+
+    If someone reverts the OU override, they should also update this test
+    with the new version + reason.
+    """
+    from pathlib import Path
+    repo = Path(__file__).resolve().parent.parent
+
+    wp = (repo / "MODEL_WHITEPAPER.md").read_text()
+    assert "MODEL_VERSION_OU=v20260719" in wp, (
+        "MODEL_WHITEPAPER.md must document v20260719 as the active OU "
+        "override (MODEL-VERSION-RE-EVAL-2026-07-31)."
+    )
+    assert "Active production version (2026-07-31)" in wp, (
+        "MODEL_WHITEPAPER.md §3.1b Active production version header must "
+        "reflect the 2026-07-31 update."
+    )
+
+    pq = (repo / "PRIORITY_QUEUE.md").read_text()
+    assert "OU-OVERRIDE-FLIP-2026-07-31" in pq, (
+        "PRIORITY_QUEUE.md must log OU-OVERRIDE-FLIP-2026-07-31 as done."
+    )
+
+    for name in (
+        "rigorous-eval-2026-07-31.md",
+        "rigorous-eval-v20260719-vs-v20260712.md",
+        "rigorous-eval-v20260719-vs-v20260621-ou.md",
+    ):
+        assert (repo / "dev" / "active" / name).exists(), (
+            f"missing eval companion doc dev/active/{name} "
+            "(MODEL-VERSION-RE-EVAL-2026-07-31)."
+        )
+
+
 if __name__ == "__main__":
     main()
