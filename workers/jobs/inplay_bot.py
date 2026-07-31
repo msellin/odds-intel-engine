@@ -156,10 +156,15 @@ INPLAY_BOTS = {
     },
     # inplay_p retired 2026-05-28: -15.4% ROI (192 bets). 2.50-2.99 odds bucket
     # was -49.1% ROI (27 bets) and 5.0+ was -56% (67 bets). Replaced by inplay_p_v2.
-    "inplay_p_v2": {
-        "description": "Post-Equalizer v2 — equalizing team at 1-1 within 4min, live win odds 2.20-2.49 or 3.00-5.00, Poisson edge ≥ 3%",
-        "strategy": "inplay_p_v2",
-    },
+    # inplay_p_v2 PAUSED 2026-07-31: 30d ROI -11.0% on n=83 (24.1% hit at
+    # avg odds ~3.95). Home leg is the bleed: 5W-23L on n=28. Trajectory
+    # got worse each window (90d +? → 60d -4.5% → 30d -11%). DB row has
+    # is_active=false + retired_at set — placer skips it. Config kept
+    # commented so no more simulated_bets are written either.
+    # "inplay_p_v2": {
+    #     "description": "Post-Equalizer v2 — equalizing team at 1-1 within 4min, live win odds 2.20-2.49 or 3.00-5.00, Poisson edge ≥ 3%",
+    #     "strategy": "inplay_p_v2",
+    # },
     "inplay_q": {
         "description": "Red Card Overreaction — red 15-55, total goals ≤ 1, 11-man possession ≥ 55%, live OU2.5 over ≥ 2.30, bet Over 2.5",
         "strategy": "inplay_q",

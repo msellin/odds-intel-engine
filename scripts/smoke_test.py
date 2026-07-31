@@ -28069,6 +28069,31 @@ def test_calibration_veto():
     )
 
 
+@test("PAUSE-INPLAY-P-V2-2026-07-31 — inplay_p_v2 config commented out")
+def test_pause_inplay_p_v2_2026_07_31():
+    """PAUSE-INPLAY-P-V2-2026-07-31: 30d ROI -11.0% on n=83, home leg
+    5W-23L on n=28, trajectory worse each window. Bot paused via DB
+    (is_active=false + retired_at) AND config comment-out so no more
+    simulated_bets get written from the inplay strategy loop.
+
+    This smoke pins the config comment — a merge conflict or accidental
+    un-comment would silently zombie-restart the bot. If you're
+    reviving inplay_p_v2 (or shipping inplay_p_v3), fix the home-leg
+    regression first + update this test.
+    """
+    from pathlib import Path
+    src = (Path(__file__).resolve().parent.parent / "workers" /
+           "jobs" / "inplay_bot.py").read_text()
+    # The active dict entry ("inplay_p_v2": {...}) must be commented out.
+    assert '\n    "inplay_p_v2": {' not in src, (
+        "workers/jobs/inplay_bot.py still has an active \"inplay_p_v2\" "
+        "config entry — PAUSE-INPLAY-P-V2-2026-07-31 requires the config "
+        "block be commented out (leading # on each line). If you're "
+        "reviving the bot, address the home-leg regression first and "
+        "update this smoke."
+    )
+
+
 @test("RETIRED-BOT-LEAK-FIX-2026-07-31 — placer scanners filter is_active + retired_at")
 def test_retired_bot_leak_fix_2026_07_31():
     """RETIRED-BOT-LEAK-FIX-2026-07-31: 5 acca/combo bots retired
