@@ -28432,5 +28432,73 @@ def test_model_version_re_eval_2026_07_31():
         )
 
 
+@test("COMPETITOR-SCRAPES-WEEKLY-2026-08-01 — weekly workflow + winnerodds default + forebet merge")
+def test_competitor_scrapes_weekly_2026_08_01():
+    """COMPETITOR-SCRAPES-WEEKLY-2026-08-01: the daily audit cron was silently
+    re-running math on frozen 2026-06-24/25 competitor snapshots — competitor
+    `their_stats` blocks in ledger/comparison_*.json hadn't moved in 5+ weeks
+    while our cohort grew daily. Three fixes ship together:
+
+      1. New .github/workflows/competitor_scrapes_weekly.yml runs the 4
+         scrape scripts every Sunday 01:00 UTC (before the 02:00 UTC audit),
+         so audit input snapshots go stale by at most 7 days.
+      2. scripts/audit_vs_winnerodds.py default WINDOW_END is no longer
+         hardcoded at 2026-06-25 (which frozen the landing "→ Jun 25" tag)
+         — it defaults to tomorrow so the window grows with each run.
+      3. scripts/scrape_forebet.py now merges fresh picks into the existing
+         snapshot dedup'd on (match_date, market, match_name). Forebet's
+         public date-strip has shrunk to ~7 days; without merge each weekly
+         run would wipe historical coverage.
+
+    Rolling back any of the three means the landing quietly returns to
+    "our numbers grow, theirs don't" — pin all three.
+    """
+    from pathlib import Path
+    repo = Path(__file__).resolve().parent.parent
+
+    wf = repo / ".github" / "workflows" / "competitor_scrapes_weekly.yml"
+    assert wf.exists(), (
+        "missing .github/workflows/competitor_scrapes_weekly.yml — the "
+        "weekly scrape cron is the whole point of this fix "
+        "(COMPETITOR-SCRAPES-WEEKLY-2026-08-01)."
+    )
+    wf_txt = wf.read_text()
+    assert "cron: '0 1 * * 0'" in wf_txt, (
+        "weekly workflow must fire Sunday 01:00 UTC (before the 02:00 UTC "
+        "audit cron so same-day audit sees fresh scrapes)."
+    )
+    for script in (
+        "scripts/scrape_deepbetting.py",
+        "scripts/scrape_signalodds.py",
+        "scripts/scrape_forebet.py",
+        "scripts/scrape_tipstrr.py",
+    ):
+        assert script in wf_txt, (
+            f"weekly workflow must invoke {script} — losing any of the four "
+            "leaves that competitor frozen."
+        )
+
+    wo = (repo / "scripts" / "audit_vs_winnerodds.py").read_text()
+    assert 'WINDOW_END_DEFAULT = "2026-06-25"' not in wo, (
+        "audit_vs_winnerodds.py must NOT hardcode WINDOW_END_DEFAULT to "
+        "2026-06-25 — that's what froze the landing 'WinnerOdds → Jun 25' "
+        "tag for 5+ weeks."
+    )
+    assert "date.today() + timedelta(days=1)" in wo, (
+        "audit_vs_winnerodds.py WINDOW_END_DEFAULT must derive from "
+        "date.today() so the window grows daily."
+    )
+
+    fb = (repo / "scripts" / "scrape_forebet.py").read_text()
+    assert "Merging with existing" in fb, (
+        "scrape_forebet.py must merge fresh picks into any existing "
+        "snapshot — Forebet's public history strip is ~7 days so a plain "
+        "overwrite wipes accumulated coverage each week."
+    )
+    assert "match_name" in fb and "match_date" in fb, (
+        "forebet merge dedup key must include match_date and match_name."
+    )
+
+
 if __name__ == "__main__":
     main()

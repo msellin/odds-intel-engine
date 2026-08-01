@@ -287,10 +287,30 @@ def main() -> int:
         days_walked += 1
         day += timedelta(days=1)
 
+    # COMPETITOR-SCRAPES-WEEKLY-2026-08-01: Forebet's public history strip
+    # currently exposes only ~7 days back (was ~30-40 in the doc-comment above),
+    # so a fresh scrape alone loses historical breadth every week. Merge into
+    # any existing snapshot, deduped on (match_date, market, match_name), to
+    # accumulate coverage across weekly workflow runs.
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(all_rows, indent=2, ensure_ascii=False))
-    print(f"\nDone. days walked: {days_walked}, rows: {len(all_rows)}")
+    merged: dict[tuple, dict] = {}
+    if out.exists() and out.stat().st_size > 0:
+        try:
+            existing = json.loads(out.read_text())
+            if isinstance(existing, list):
+                for row in existing:
+                    key = (row.get("match_date"), row.get("market"), row.get("match_name"))
+                    merged[key] = row
+                print(f"Merging with existing {len(merged)} rows from {out.name}")
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"  warn: couldn't merge existing snapshot ({e}); overwriting")
+    for row in all_rows:
+        key = (row.get("match_date"), row.get("market"), row.get("match_name"))
+        merged[key] = row
+    out.write_text(json.dumps(list(merged.values()), indent=2, ensure_ascii=False))
+    print(f"\nDone. days walked: {days_walked}, fresh rows: {len(all_rows)}, "
+          f"total after merge: {len(merged)}")
     print(f"Wrote: {out}")
     return 0
 

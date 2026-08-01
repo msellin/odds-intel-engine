@@ -1,28 +1,28 @@
 {
   "min_sample_each_side": 50,
   "our_stats_same_window": {
-    "hit_rate_pct": 46.15,
-    "n": 624,
-    "pnl_total": 592.07,
-    "roi_pct": 16.29,
-    "stake_total": 3634.31
+    "hit_rate_pct": 46.28,
+    "n": 780,
+    "pnl_total": 582.81,
+    "roi_pct": 12.76,
+    "stake_total": 4567.26
   },
   "reproducible_via": "scripts/audit_vs_winnerodds.py",
   "scope_notes": "WinnerOdds picks pulled from their public GraphQL endpoint (period=12, FOOTBALL); their published unit-stake bets settled WIN/LOSE/VOID. OddsIntel cohort: production strategies (calibrated+beta+active maturity), 1X2 + OU 2.5 markets only, settled (won/lost). Both sides settled at \u20ac10 flat stake for apples-to-apples ROI.",
-  "snapshot_at_utc": "2026-08-01T05:33:11.094503+00:00",
+  "snapshot_at_utc": "2026-08-01T12:13:11.103574+00:00",
   "source": "WinnerOdds",
   "source_url": "https://winnerodds.com",
   "status": "ok",
   "their_stats": {
-    "avg_clv_pct": -0.1293,
-    "hit_rate_pct": 55.98,
-    "n": 1156,
-    "pnl_total": 2793.43,
-    "roi_pct": 6.73,
-    "stake_total": 41493.77
+    "avg_clv_pct": -0.1656,
+    "hit_rate_pct": 56.23,
+    "n": 1366,
+    "pnl_total": 3024.19,
+    "roi_pct": 6.15,
+    "stake_total": 49164.8
   },
   "window": {
-    "end": "2026-06-25",
+    "end": "2026-08-02",
     "start": "2026-05-04"
   }
 }

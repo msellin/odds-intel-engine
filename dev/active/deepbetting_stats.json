@@ -11781,7 +11781,7 @@
         "forecast_status": "Won",
         "odds": "1.95",
         "game_status": "Match Finished",
-        "confidence": "1"
+        "confidence": "2"
       },
       {
         "sport": "football",
@@ -11821,7 +11821,7 @@
         "forecast_status": "Lost",
         "odds": "1.5",
         "game_status": "Match Finished",
-        "confidence": "2"
+        "confidence": "1"
       },
       {
         "sport": "football",
@@ -11931,27 +11931,27 @@
         "forecast_status": "Won",
         "odds": "1.91",
         "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260502",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.53",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260502",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.53",
+        "game_status": "Match Finished",
         "confidence": "1"
-      },
-      {
-        "sport": "football",
-        "division_label": "Brasileirão Série A",
-        "date_norm": "20260502",
-        "forecast_type": "Moneyline",
-        "forecast_status": "Lost",
-        "odds": "1.53",
-        "game_status": "Match Finished",
-        "confidence": "3"
-      },
-      {
-        "sport": "football",
-        "division_label": "Brasileirão Série A",
-        "date_norm": "20260502",
-        "forecast_type": "Moneyline",
-        "forecast_status": "Lost",
-        "odds": "1.53",
-        "game_status": "Match Finished",
-        "confidence": "3"
       },
       {
         "sport": "football",
@@ -12241,7 +12241,7 @@
         "forecast_status": "Lost",
         "odds": "1.67",
         "game_status": "Match Finished",
-        "confidence": "2"
+        "confidence": "1"
       },
       {
         "sport": "football",
@@ -12781,7 +12781,7 @@
         "forecast_status": "Won",
         "odds": "2.1",
         "game_status": "Match Finished",
-        "confidence": "1"
+        "confidence": "2"
       },
       {
         "sport": "football",
@@ -12851,7 +12851,7 @@
         "forecast_status": "Lost",
         "odds": "1.91",
         "game_status": "Match Finished",
-        "confidence": "2"
+        "confidence": "1"
       },
       {
         "sport": "football",
@@ -12901,7 +12901,7 @@
         "forecast_status": "Lost",
         "odds": "1.57",
         "game_status": "Match Finished",
-        "confidence": "2"
+        "confidence": "1"
       },
       {
         "sport": "football",
@@ -13061,7 +13061,7 @@
         "forecast_status": "Won",
         "odds": "1.57",
         "game_status": "Match Finished",
-        "confidence": "1"
+        "confidence": "2"
       },
       {
         "sport": "football",
@@ -13201,7 +13201,7 @@
         "forecast_status": "Lost",
         "odds": "1.95",
         "game_status": "Match Finished",
-        "confidence": "2"
+        "confidence": "1"
       },
       {
         "sport": "football",
@@ -13231,7 +13231,7 @@
         "forecast_status": "Won",
         "odds": "1.8",
         "game_status": "Match Finished",
-        "confidence": "1"
+        "confidence": "2"
       },
       {
         "sport": "football",
@@ -13301,7 +13301,7 @@
         "forecast_status": "Lost",
         "odds": "1.85",
         "game_status": "Match Finished",
-        "confidence": "2"
+        "confidence": "1"
       },
       {
         "sport": "football",
@@ -13351,7 +13351,7 @@
         "forecast_status": "Lost",
         "odds": "1.95",
         "game_status": "Match Finished",
-        "confidence": "2"
+        "confidence": "1"
       },
       {
         "sport": "football",
@@ -13361,7 +13361,7 @@
         "forecast_status": "Won",
         "odds": "1.8",
         "game_status": "Match Finished",
-        "confidence": "1"
+        "confidence": "2"
       },
       {
         "sport": "football",
@@ -13611,7 +13611,7 @@
         "forecast_status": "Won",
         "odds": "1.91",
         "game_status": "Match Finished",
-        "confidence": "2"
+        "confidence": "1"
       },
       {
         "sport": "football",
@@ -13781,7 +13781,7 @@
         "forecast_status": "Won",
         "odds": "2.2",
         "game_status": "Match Finished",
-        "confidence": "1"
+        "confidence": "2"
       },
       {
         "sport": "football",
@@ -16612,6 +16612,1426 @@
         "odds": "1.53",
         "game_status": "Match Finished",
         "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260624",
+        "forecast_type": "BTTS",
+        "forecast_status": "Lost",
+        "odds": "1.61",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260624",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.33",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260624",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260624",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.4",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260624",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "2.1",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260624",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Won",
+        "odds": "1.4",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260625",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.14",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260625",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.61",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260625",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.4",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260625",
+        "forecast_type": "BTTS",
+        "forecast_status": "Won",
+        "odds": "1.67",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260625",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Push",
+        "odds": "2.1",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260625",
+        "forecast_type": "BTTS",
+        "forecast_status": "Won",
+        "odds": "1.66",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260626",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Push",
+        "odds": "1.85",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260626",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.57",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260626",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.9",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260626",
+        "forecast_type": "BTTS",
+        "forecast_status": "Won",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260626",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.48",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260626",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.22",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260627",
+        "forecast_type": "BTTS",
+        "forecast_status": "Lost",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260627",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260627",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.44",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260627",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260627",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Push",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260627",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.18",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260628",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260629",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260629",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.44",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260629",
+        "forecast_type": "BTTS",
+        "forecast_status": "Won",
+        "odds": "1.91",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260630",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Won",
+        "odds": "1.5",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260630",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.44",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260630",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "2.2",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260701",
+        "forecast_type": "BTTS",
+        "forecast_status": "Lost",
+        "odds": "2.0",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260701",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260701",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Push",
+        "odds": "1.5",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260702",
+        "forecast_type": "BTTS",
+        "forecast_status": "Won",
+        "odds": "1.75",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260702",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.4",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260702",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Won",
+        "odds": "1.4",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260703",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.4",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260703",
+        "forecast_type": "BTTS",
+        "forecast_status": "Lost",
+        "odds": "1.4",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260703",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.4",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260703",
+        "forecast_type": "BTTS",
+        "forecast_status": "Won",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260704",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.84",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260704",
+        "forecast_type": "BTTS",
+        "forecast_status": "Won",
+        "odds": "1.44",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260704",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.85",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260704",
+        "forecast_type": "BTTS",
+        "forecast_status": "Won",
+        "odds": "1.67",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260705",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.73",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260705",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Won",
+        "odds": "1.4",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260705",
+        "forecast_type": "BTTS",
+        "forecast_status": "Won",
+        "odds": "1.57",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260705",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.5",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260705",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Won",
+        "odds": "1.61",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260706",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.91",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260706",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Push",
+        "odds": "1.6",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260706",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.53",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260706",
+        "forecast_type": "BTTS",
+        "forecast_status": "Won",
+        "odds": "1.53",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260707",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.36",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260707",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260709",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.55",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260710",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.65",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260711",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.73",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260711",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.9",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260711",
+        "forecast_type": "BTTS",
+        "forecast_status": "Won",
+        "odds": "1.57",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260711",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.53",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260711",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Lost",
+        "odds": "2.2",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260711",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.70",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260712",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Won",
+        "odds": "1.32",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260712",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.9",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260712",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.44",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260712",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.85",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260712",
+        "forecast_type": "BTTS",
+        "forecast_status": "Lost",
+        "odds": "1.75",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260712",
+        "forecast_type": "BTTS",
+        "forecast_status": "Won",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260712",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.53",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260712",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260712",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Push",
+        "odds": "1.4",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260712",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.5",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260713",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.44",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260714",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Lost",
+        "odds": "1.65",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260715",
+        "forecast_type": "BTTS",
+        "forecast_status": "Won",
+        "odds": "1.95",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260716",
+        "forecast_type": "BTTS",
+        "forecast_status": "Won",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260716",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Won",
+        "odds": "1.65",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260716",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260717",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.39",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260717",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Push",
+        "odds": "1.36",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260717",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.6",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260717",
+        "forecast_type": "BTTS",
+        "forecast_status": "Won",
+        "odds": "1.57",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260717",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.65",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260717",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.25",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260718",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.85",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260718",
+        "forecast_type": "BTTS",
+        "forecast_status": "Lost",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260718",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Lost",
+        "odds": "2.5",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260718",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.6",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260718",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260718",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.53",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260718",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Won",
+        "odds": "1.57",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260718",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.27",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "World Cup",
+        "date_norm": "20260719",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Push",
+        "odds": "1.56",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260719",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Won",
+        "odds": "1.4",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260719",
+        "forecast_type": "BTTS",
+        "forecast_status": "Lost",
+        "odds": "1.57",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260719",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.24",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260720",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.5",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260720",
+        "forecast_type": "BTTS",
+        "forecast_status": "Lost",
+        "odds": "1.66",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260721",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Push",
+        "odds": "1.5",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260722",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.9",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260722",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.25",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260722",
+        "forecast_type": "BTTS",
+        "forecast_status": "Won",
+        "odds": "1.44",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260722",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.48",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260722",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Lost",
+        "odds": "1.55",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260722",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.61",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260723",
+        "forecast_type": "BTTS",
+        "forecast_status": "Lost",
+        "odds": "1.75",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260723",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.5",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260724",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.44",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260725",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "2.0",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260725",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.4",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260725",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Push",
+        "odds": "2.5",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260725",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Won",
+        "odds": "1.4",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260725",
+        "forecast_type": "BTTS",
+        "forecast_status": "Won",
+        "odds": "1.67",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260725",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Lost",
+        "odds": "1.57",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260726",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Push",
+        "odds": "1.53",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260726",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.56",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260726",
+        "forecast_type": "BTTS",
+        "forecast_status": "Lost",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260726",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.45",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260726",
+        "forecast_type": "BTTS",
+        "forecast_status": "Won",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260726",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.85",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260726",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Won",
+        "odds": "1.57",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260726",
+        "forecast_type": "BTTS",
+        "forecast_status": "Won",
+        "odds": "1.67",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260726",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.33",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260726",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260726",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.45",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260726",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.5",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260726",
+        "forecast_type": "BTTS",
+        "forecast_status": "Won",
+        "odds": "1.44",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260726",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.44",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260726",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.4",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260726",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Won",
+        "odds": "1.32",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Allsvenskan",
+        "date_norm": "20260727",
+        "forecast_type": "BTTS",
+        "forecast_status": "Lost",
+        "odds": "1.5",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260727",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.67",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260729",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.85",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260729",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Won",
+        "odds": "1.25",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260729",
+        "forecast_type": "BTTS",
+        "forecast_status": "Lost",
+        "odds": "1.75",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260729",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.28",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260730",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Push",
+        "odds": "1.33",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Brasileirão Série A",
+        "date_norm": "20260730",
+        "forecast_type": "Draw No Bet",
+        "forecast_status": "Won",
+        "odds": "1.55",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260731",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.25",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "football",
+        "division_label": "Eliteserien",
+        "date_norm": "20260731",
+        "forecast_type": "BTTS",
+        "forecast_status": "Lost",
+        "odds": "1.5",
+        "game_status": "Match Finished",
+        "confidence": "2"
       }
     ],
     "nba": [
@@ -40079,6 +41499,16 @@
         "sport": "baseball",
         "division_label": "MLB",
         "date_norm": "20260622",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "2.1",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260622",
         "forecast_type": "Moneyline",
         "forecast_status": "Won",
         "odds": "1.58",
@@ -40294,11 +41724,4641 @@
         "odds": "1.6",
         "game_status": "Match Finished",
         "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260624",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.78",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260624",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260624",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "2.0",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260624",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.56",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260624",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.51",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260624",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.51",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260624",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260624",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.5",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260624",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.80",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260624",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260624",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.42",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260624",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260624",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.72",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260624",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.98",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260624",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260625",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260625",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260625",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.6",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260625",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.66",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260625",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.44",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260625",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.78",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260625",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "2.25",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260625",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260625",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.54",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260626",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.86",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260626",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260626",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260626",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.66",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260626",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.83",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260626",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.92",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260626",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.42",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260626",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.52",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260626",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.52",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260626",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.74",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260626",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.94",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260626",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.4",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260626",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "2.3",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260626",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "2.15",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260626",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260627",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "2.0",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260627",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260627",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "2.05",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260627",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260627",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "2.05",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260627",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "2.15",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260627",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260627",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260627",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.82",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260627",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260627",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260627",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "2.1",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260627",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.74",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260627",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.66",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260627",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.56",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260628",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.9",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260628",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.44",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260628",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.48",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260628",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260628",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260628",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260628",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.68",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260628",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.42",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260628",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260628",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260628",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260628",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.88",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260628",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.46",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260628",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.92",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260628",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.47",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260629",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.68",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260629",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.98",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260629",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.6",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260629",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.46",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260629",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.6",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260629",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.43",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260629",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.66",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260629",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.58",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260629",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.72",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260629",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "2.0",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260629",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.78",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260629",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "2.15",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260629",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "2.1",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260630",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.46",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260630",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.96",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260630",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.52",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260630",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.66",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260630",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.68",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260630",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260630",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260630",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.58",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260630",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.58",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260630",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260630",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.52",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260630",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.56",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260630",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.84",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260630",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260630",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.58",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260701",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.72",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260701",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.88",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260701",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "2.2",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260701",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260701",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.54",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260701",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.43",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260701",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260701",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.78",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260701",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.72",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260701",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260701",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "2.05",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260701",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.46",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260701",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "2.0",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260701",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.74",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260702",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.48",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260702",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260702",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260702",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.68",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260702",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.88",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260702",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.36",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260702",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.74",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260702",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "2.1",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260702",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260703",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.42",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260703",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.66",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260703",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260703",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.48",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260703",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260703",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.72",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260703",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.58",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260703",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "2.2",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260703",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.5",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260703",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260703",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260703",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.58",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260703",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.54",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260704",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.58",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260704",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.72",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260704",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.56",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260704",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.58",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260704",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260704",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.56",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260704",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.46",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260704",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.41",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260704",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260704",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.96",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260704",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.84",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260704",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.86",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260704",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.6",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260704",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.94",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260704",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260705",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260705",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260705",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.88",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260705",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.68",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260705",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.45",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260705",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.58",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260705",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.74",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260705",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": null,
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260705",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.52",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260705",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.58",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260705",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.74",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260705",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.52",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260705",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.78",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260705",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.58",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260705",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.52",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260706",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "2.05",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260706",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.84",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260706",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.78",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260706",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260706",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.43",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260706",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.74",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260706",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.5",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260706",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260707",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "2.35",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260707",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260707",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.54",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260707",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260707",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.84",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260707",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260707",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.39",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260707",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260707",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260707",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260707",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.9",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260707",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.54",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260707",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.54",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260707",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.86",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260707",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260708",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260708",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.46",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260708",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.78",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260708",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.66",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260708",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.82",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260708",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.9",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260708",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "2.05",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260708",
+        "forecast_type": "Run Line",
+        "forecast_status": "Won",
+        "odds": "1.33",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260708",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.74",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260708",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260708",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.4",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260708",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "2.0",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260708",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "2.20",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260708",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260708",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.96",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260709",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.6",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260709",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.58",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260709",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.56",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260709",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "2.25",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260709",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.58",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260709",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.9",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260709",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.6",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260709",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "2.0",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260709",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "2.1",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260709",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "2.1",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260709",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.52",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260709",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "2.25",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260709",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.78",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260710",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260710",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.96",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260710",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260710",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.52",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260710",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.56",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260710",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.72",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260710",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260710",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.44",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260710",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260710",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.74",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260710",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.68",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260710",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.74",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260710",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "2.15",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260710",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.54",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260711",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.6",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260711",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.94",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260711",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260711",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "2.1",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260711",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260711",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.92",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260711",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.52",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260711",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.52",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260711",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.5",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260711",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.86",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260711",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260711",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260711",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.68",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260711",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.82",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260711",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.58",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260712",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.78",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260712",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.74",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260712",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.54",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260712",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.72",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260712",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.86",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260712",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.39",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260712",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.42",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260712",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.88",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260712",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260712",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260712",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260712",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260712",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.72",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260712",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "2.05",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260712",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.82",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260714",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260716",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260717",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.82",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260717",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "2.05",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260717",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.56",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260717",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.58",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260717",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.86",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260717",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260717",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.86",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260717",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.48",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260717",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.39",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260717",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.42",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260717",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.44",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260717",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "2.15",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260717",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.84",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260718",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.52",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260718",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260718",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.66",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260718",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.56",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260718",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260718",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "2.0",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260718",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.48",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260718",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.44",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260718",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "2.05",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260718",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "2.48",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260718",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.66",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260718",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.92",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260718",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260718",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.54",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260718",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260719",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.9",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260719",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.5",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260719",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "2.0",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260719",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "2.0",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260719",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "2.3",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260719",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.6",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260719",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.78",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260719",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260719",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260719",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.46",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260719",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.56",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260719",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.37",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260719",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.92",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260719",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.88",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260719",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.78",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260720",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.54",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260720",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.96",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260720",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.58",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260720",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.68",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260720",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "2.4",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260720",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.4",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260720",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.44",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260720",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.4",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260720",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.5",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260720",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260720",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.78",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260720",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.45",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260720",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260720",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "2.0",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260720",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.46",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260721",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.78",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260721",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.56",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260721",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.4",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260721",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.45",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260721",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.66",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260721",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260721",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260721",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.43",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260721",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260721",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.54",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260721",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.6",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260721",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260721",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.54",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260721",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "2.05",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260721",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": null,
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260722",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.85",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260722",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.35",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260722",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260722",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.82",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260722",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.58",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260722",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.66",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260722",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.69",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260722",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260722",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.72",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260722",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.77",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260722",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260722",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.67",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260722",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.51",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260722",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "2.3",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260722",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.82",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260723",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.78",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260723",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.44",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260723",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.66",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260723",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.45",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260724",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260724",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.5",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260724",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.74",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260724",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.66",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260724",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.84",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260724",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.98",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260724",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.92",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260724",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.68",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260724",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.6",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260724",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260724",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.38",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260724",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260724",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "2.05",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260724",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260724",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.92",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260725",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.84",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260725",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.58",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260725",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.68",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260725",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.4",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260725",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.72",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260725",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.68",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260725",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "2.1",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260725",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.56",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260725",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260725",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.66",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260725",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.5",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260725",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.41",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260725",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260725",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.86",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260725",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.9",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260726",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.52",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260726",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.5",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260726",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260726",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.68",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260726",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.46",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260726",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.41",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260726",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.72",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260726",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.72",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260726",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.56",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260726",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.27",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260726",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260726",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.84",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260726",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.86",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260726",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.68",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260726",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.88",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260727",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.74",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260727",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.54",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260727",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260727",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.66",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260727",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.74",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260727",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.7",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260727",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260727",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.78",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260727",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.76",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260727",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.52",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260727",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.82",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260728",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.56",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260728",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.84",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260728",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.82",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260728",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.54",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260728",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.88",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260728",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.9",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260728",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260728",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.98",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260728",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.72",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260728",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.68",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260728",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260728",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.54",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260728",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.68",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260728",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.58",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260728",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.62",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260729",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260729",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.86",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260729",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.66",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260729",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.9",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260729",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.74",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260729",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "2.1",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260729",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.68",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260729",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.68",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260729",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.5",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260729",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "2.2",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260729",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.68",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260729",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260729",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "2.0",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260729",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.56",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260729",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.82",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260730",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "2.3",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260730",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.45",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260730",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.92",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260730",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.78",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260730",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.88",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260730",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260730",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.56",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260730",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.38",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260730",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "2.05",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260730",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.58",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260731",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": null,
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260731",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.6",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260731",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.64",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260731",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.47",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260731",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Won",
+        "odds": "1.80",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260731",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.8",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260731",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.54",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260731",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.72",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260731",
+        "forecast_type": "Over-Under",
+        "forecast_status": "Lost",
+        "odds": "1.6",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260731",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.68",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260731",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "2.1",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260731",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Lost",
+        "odds": "1.6",
+        "game_status": "Match Finished",
+        "confidence": "2"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260731",
+        "forecast_type": "Spread",
+        "forecast_status": "Won",
+        "odds": "1.38",
+        "game_status": "Match Finished",
+        "confidence": "1"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260731",
+        "forecast_type": "Spread",
+        "forecast_status": "Lost",
+        "odds": "1.42",
+        "game_status": "Match Finished",
+        "confidence": "3"
+      },
+      {
+        "sport": "baseball",
+        "division_label": "MLB",
+        "date_norm": "20260731",
+        "forecast_type": "Moneyline",
+        "forecast_status": "Won",
+        "odds": "1.56",
+        "game_status": "Match Finished",
+        "confidence": "2"
       }
     ]
   },
   "count": {
-    "football": 1661,
-    "nba": 2368
+    "football": 1803,
+    "nba": 2832
   }
 }

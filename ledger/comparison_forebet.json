@@ -1,7 +1,7 @@
 {
   "source": "Forebet",
   "source_url": "https://www.forebet.com/en/football-predictions/predictions-1x2/<date>  (and /under-over-25-goals/<date>)",
-  "snapshot_at_utc": "2026-08-01T05:33:20+00:00",
+  "snapshot_at_utc": "2026-08-01T12:15:13+00:00",
   "window": {
     "start": "2026-05-04",
     "end": "2026-08-02"
@@ -11,85 +11,85 @@
   "scope_notes": "1X2 highest-prob pick + OU 2.5 pick only, soccer, settled rows (Forebet's own predict_y/predict_no flag), 10 EUR flat stake. Coverage limited to ~last 38 days because Forebet date URLs older than that silently fall back to today.",
   "reproducible_via": "scripts/scrape_forebet.py + scripts/audit_vs_forebet.py",
   "their_stats": {
-    "n": 1434,
-    "stake_total": 14340.0,
-    "pnl_total": 2198.5,
-    "roi_pct": 15.33,
-    "hit_rate_pct": 54.04,
-    "avg_odds": 2.304
+    "n": 1832,
+    "stake_total": 18320.0,
+    "pnl_total": 2365.4,
+    "roi_pct": 12.91,
+    "hit_rate_pct": 52.84,
+    "avg_odds": 2.308
   },
   "their_breakdown": {
     "by_market": {
       "1x2": {
-        "n": 823,
-        "stake_total": 8230.0,
-        "pnl_total": 18.8,
-        "roi_pct": 0.23,
-        "hit_rate_pct": 49.82,
-        "avg_odds": 2.401
+        "n": 1026,
+        "stake_total": 10260.0,
+        "pnl_total": -69.0,
+        "roi_pct": -0.67,
+        "hit_rate_pct": 48.73,
+        "avg_odds": 2.427
       },
       "over_under_25": {
-        "n": 611,
-        "stake_total": 6110.0,
-        "pnl_total": 2179.7,
-        "roi_pct": 35.67,
-        "hit_rate_pct": 59.74,
-        "avg_odds": 2.172
+        "n": 806,
+        "stake_total": 8060.0,
+        "pnl_total": 2434.4,
+        "roi_pct": 30.2,
+        "hit_rate_pct": 58.06,
+        "avg_odds": 2.156
       }
     },
     "by_pick": {
       "1x2::1": {
-        "n": 363,
-        "stake_total": 3630.0,
-        "pnl_total": 135.6,
-        "roi_pct": 3.74,
-        "hit_rate_pct": 60.06,
-        "avg_odds": 1.901
+        "n": 443,
+        "stake_total": 4430.0,
+        "pnl_total": 220.8,
+        "roi_pct": 4.98,
+        "hit_rate_pct": 60.5,
+        "avg_odds": 1.891
       },
       "1x2::2": {
-        "n": 280,
-        "stake_total": 2800.0,
-        "pnl_total": 118.1,
-        "roi_pct": 4.22,
-        "hit_rate_pct": 51.43,
-        "avg_odds": 2.45
+        "n": 349,
+        "stake_total": 3490.0,
+        "pnl_total": 20.1,
+        "roi_pct": 0.58,
+        "hit_rate_pct": 48.71,
+        "avg_odds": 2.482
       },
       "1x2::X": {
-        "n": 180,
-        "stake_total": 1800.0,
-        "pnl_total": -234.9,
-        "roi_pct": -13.05,
-        "hit_rate_pct": 26.67,
-        "avg_odds": 3.336
+        "n": 234,
+        "stake_total": 2340.0,
+        "pnl_total": -309.9,
+        "roi_pct": -13.24,
+        "hit_rate_pct": 26.5,
+        "avg_odds": 3.359
       },
       "over_under_25::Over": {
-        "n": 264,
-        "stake_total": 2640.0,
-        "pnl_total": 1192.3,
-        "roi_pct": 45.16,
-        "hit_rate_pct": 61.36,
-        "avg_odds": 2.245
+        "n": 348,
+        "stake_total": 3480.0,
+        "pnl_total": 1341.3,
+        "roi_pct": 38.54,
+        "hit_rate_pct": 59.2,
+        "avg_odds": 2.217
       },
       "over_under_25::Under": {
-        "n": 347,
-        "stake_total": 3470.0,
-        "pnl_total": 987.4,
-        "roi_pct": 28.46,
-        "hit_rate_pct": 58.5,
-        "avg_odds": 2.117
+        "n": 458,
+        "stake_total": 4580.0,
+        "pnl_total": 1093.1,
+        "roi_pct": 23.87,
+        "hit_rate_pct": 57.21,
+        "avg_odds": 2.109
       }
     }
   },
   "their_drop_reasons": {
-    "no_pick_odds": 878,
-    "not_settled": 42
+    "no_pick_odds": 962,
+    "not_settled": 56
   },
   "our_stats_same_window": {
-    "n": 777,
-    "stake_total": 4549.53,
-    "pnl_total": 579.7,
-    "roi_pct": 12.74,
-    "hit_rate_pct": 46.33,
-    "avg_odds": 2.879
+    "n": 780,
+    "stake_total": 4567.26,
+    "pnl_total": 582.81,
+    "roi_pct": 12.76,
+    "hit_rate_pct": 46.28,
+    "avg_odds": 2.882
   }
 }

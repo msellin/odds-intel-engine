@@ -23,7 +23,7 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -37,7 +37,10 @@ from workers.api_clients.db import execute_query  # noqa: E402
 
 
 WINDOW_START_DEFAULT = "2026-05-04"
-WINDOW_END_DEFAULT = "2026-06-25"
+# COMPETITOR-SCRAPES-WEEKLY-2026-08-01: end defaults to tomorrow so the landing
+# comparison card grows daily instead of staying frozen at the 2026-06-25 value
+# hardcoded during initial scaffolding.
+WINDOW_END_DEFAULT = (date.today() + timedelta(days=1)).isoformat()
 STAKE = 10.0
 MIN_SAMPLE = 50
 

@@ -1,0 +1,95 @@
+name: OddsIntel — Weekly Competitor Scrapes
+
+# COMPETITOR-SCRAPES-WEEKLY (2026-08-01): re-scrapes the 4 competitor sources
+# whose stats blocks are otherwise frozen at whatever snapshot was last committed.
+#
+# Prior state: `competitor_audits_weekly.yml` (now daily) re-ran ONLY the audit
+# math against cached dev/active/*.json snapshots dated 2026-06-24/25. Our own
+# numbers grew day-to-day, competitor `their_stats` did not — the landing
+# hero card was quietly comparing a growing cohort of ours against a five-
+# week-frozen cohort of theirs.
+#
+# This workflow bumps the 4 slow-moving sources on a weekly cadence
+# (Sunday 01:00 UTC — chosen to land BEFORE the 02:00 UTC audit cron, so the
+# same-day audit already runs on the freshly-scraped picks).
+#
+# WinnerOdds is intentionally NOT here — its audit already fetches picks
+# live via GraphQL each run.
+
+on:
+  schedule:
+    - cron: '0 1 * * 0'   # 01:00 UTC every Sunday
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: competitor-scrapes-weekly
+  cancel-in-progress: false
+
+jobs:
+  scrapes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install deps
+        run: pip install --quiet requests beautifulsoup4 cloudscraper
+
+      - name: Scrape DeepBetting
+        continue-on-error: true
+        run: python3 scripts/scrape_deepbetting.py
+
+      - name: Scrape SignalOdds
+        continue-on-error: true
+        run: python3 scripts/scrape_signalodds.py --restart
+
+      - name: Scrape Forebet
+        # Forebet's public date-strip has shrunk from the doc-comment's ~38 days
+        # back to ~7 (verified 2026-08-01). Anything older silently returns
+        # today's picks and is filtered out. Ask for a 14-day slice — small
+        # cushion above the current cutoff without wasting requests on dates
+        # that will 100% get discarded.
+        continue-on-error: true
+        run: |
+          START=$(date -u -d '14 days ago' +%Y-%m-%d)
+          END=$(date -u -d 'yesterday' +%Y-%m-%d)
+          python3 scripts/scrape_forebet.py --start "$START" --end "$END"
+
+      - name: Scrape Tipstrr
+        continue-on-error: true
+        run: python3 scripts/scrape_tipstrr.py
+
+      - name: Commit + push if changed
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dev/active/deepbetting_stats.json \
+                  dev/active/signalodds_soccer.json \
+                  dev/active/signalodds_soccer.cursor \
+                  dev/active/forebet_raw.json \
+                  dev/active/tipstrr_raw.json 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "No scrape changes — exiting cleanly."
+            exit 0
+          fi
+          DATE=$(date -u +%Y-%m-%d)
+          git commit -m "competitor-scrapes: weekly refresh ${DATE}
+
+          Auto-refreshed dev/active/{deepbetting,signalodds,forebet,tipstrr}
+          snapshots via scripts/scrape_*.py. The 02:00 UTC daily audit
+          consumes these and rewrites ledger/comparison_*.json."
+          git push origin HEAD:main

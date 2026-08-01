@@ -1,7 +1,7 @@
 {
   "source": "Tipstrr",
   "source_url": "https://tipstrr.com/tipster/<slug>/stats",
-  "snapshot_at_utc": "2026-08-01T05:33:23+00:00",
+  "snapshot_at_utc": "2026-08-01T12:12:27+00:00",
   "window": {
     "start": "2026-05-04",
     "end": "2026-08-02"
@@ -11,12 +11,12 @@
   "scope_notes": "Tipstrr public stats are at (tipster × month) grain — per-bet selection / market detail is paywalled. Their headline ROI here covers ALL football bet types (1X2, OU, AH, BTTS, …); ours covers 1X2 + OU 2.5 only. Window-fit: only month-buckets whose entire span falls inside [start, end) are counted (partial months dropped). Stake normalised to 10 EUR/bet for parity.",
   "reproducible_via": "scripts/scrape_tipstrr.py + scripts/audit_vs_tipstrr.py",
   "their_stats": {
-    "n": 209,
-    "stake_total": 2090.0,
-    "pnl_total": -109.14,
-    "roi_pct": -5.22,
-    "hit_rate_pct": 31.58,
-    "avg_odds": 3.064,
+    "n": 335,
+    "stake_total": 3350.0,
+    "pnl_total": -174.6,
+    "roi_pct": -5.21,
+    "hit_rate_pct": 31.34,
+    "avg_odds": 3.017,
     "tipsters_pooled": [
       "star-tips",
       "mls-value",
@@ -28,29 +28,24 @@
       {
         "slug": "star-tips",
         "name": "star tips",
-        "n": 142,
-        "months_in_window": 2,
-        "stake_total": 1420.0,
-        "pnl_total": -108.0,
-        "roi_pct": -7.61,
-        "hit_rate_pct": 30.99,
-        "avg_odds": 2.944
-      },
-      {
-        "slug": "master-football-tipster",
-        "n": 0,
-        "months_in_window": 0
+        "n": 245,
+        "months_in_window": 3,
+        "stake_total": 2450.0,
+        "pnl_total": -107.5,
+        "roi_pct": -4.39,
+        "hit_rate_pct": 31.84,
+        "avg_odds": 3.017
       },
       {
         "slug": "mls-value",
         "name": "MLS Value",
-        "n": 28,
-        "months_in_window": 2,
-        "stake_total": 280.0,
-        "pnl_total": -43.14,
-        "roi_pct": -15.41,
-        "hit_rate_pct": 39.29,
-        "avg_odds": 2.042
+        "n": 51,
+        "months_in_window": 3,
+        "stake_total": 510.0,
+        "pnl_total": -109.1,
+        "roi_pct": -21.39,
+        "hit_rate_pct": 31.37,
+        "avg_odds": 2.082
       },
       {
         "slug": "main-draws-model-top-euros",
@@ -66,11 +61,11 @@
     ]
   },
   "our_stats_same_window": {
-    "n": 777,
-    "stake_total": 4549.53,
-    "pnl_total": 579.7,
-    "roi_pct": 12.74,
-    "hit_rate_pct": 46.33,
-    "avg_odds": 2.879
+    "n": 780,
+    "stake_total": 4567.26,
+    "pnl_total": 582.81,
+    "roi_pct": 12.76,
+    "hit_rate_pct": 46.28,
+    "avg_odds": 2.882
   }
 }
