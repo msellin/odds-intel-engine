@@ -1,0 +1,322 @@
+kickoff_date,home_team,away_team,league_forebet,league_ours,selection,final_score,actually_won,forebet_says_won,forebet_odds,our_odds_median,our_odds_max,our_odds_last_any_book,our_odds_pinnacle_close,snapshot_count,book_count,delta_fb_vs_pinnacle,delta_fb_vs_our_max
+2026-05-25,San Luis Quillota,CD Magallanes,Cl2,Primera B,under,2-1,False,False,1.77,1.95,2.95,1.95,2.01,200,12,-0.24,-1.18
+2026-05-25,UNAM Pumas,Cruz Azul,Mx1,Liga MX,over,1-2,True,True,1.77,2.0,2.85,1.95,2.08,26,13,-0.31,-1.08
+2026-05-26,SD Aucas,Manta FC,Ec1,Liga Pro,under,3-1,False,False,2.02,1.75,1.8,1.7,1.79,205,13,0.23,0.22
+2026-05-26,Deportes Copiapó,Unión Española,Cl2,Primera B,over,3-1,True,True,1.8,1.91,2.0,1.91,1.93,205,13,-0.13,-0.2
+2026-05-26,Chernihiv,Metalist Kharkov,Ua2,Persha Liga,under,1-2,False,False,2.2,1.625,1.625,1.625,,2,1,,0.575
+2026-05-26,Pamba Jiji,Tanzania Prisons,Tz1,Ligi kuu Bara,under,2-3,False,False,2.27,1.5,1.56,1.5,1.48,16,8,0.79,0.71
+2026-05-26,Singida Black Stars,Mbeya City,Tz1,Ligi kuu Bara,over,4-1,True,True,1.93,1.74,1.75,1.73,1.74,9,9,0.19,0.18
+2026-05-26,Ararat Yerevan,BKMA Yerevan,Am1,Premier League,under,1-1,True,True,1.8,1.94,2.08,1.95,2.0,18,9,-0.2,-0.28
+2026-05-26,Alashkert,Shirak FC,Am1,Premier League,under,2-0,True,True,1.8,2.08,3.075,2.19,2.18,24,12,-0.38,-1.275
+2026-05-27,Flamengo,Cusco FC,CLA,CONMEBOL Libertadores,under,3-0,False,False,1.35,2.97,3.5,3.4,3.47,24,12,-2.12,-2.15
+2026-05-27,Nacional (URU),Coquimbo Unido,CLA,CONMEBOL Libertadores,under,1-0,True,True,2.0,1.8,2.025,1.83,1.84,28,13,0.16,-0.025
+2026-05-27,Universitario,Deportes Tolima,CLA,CONMEBOL Libertadores,under,0-0,True,True,2.45,1.53,1.58,1.53,1.58,188,12,0.87,0.87
+2026-05-27,San Lorenzo,Deportivo Recoleta,CS,CONMEBOL Sudamericana,under,0-1,True,True,2.1,1.75,2.15,1.78,1.78,190,13,0.32,-0.05
+2026-05-27,Santos,Deportivo Cuenca,CS,CONMEBOL Sudamericana,under,3-0,False,False,1.83,1.95,2.425,1.95,2.03,206,13,-0.2,-0.595
+2026-05-27,Gumi Sportstoto W,Gyeongju W,KrW,WK-League,over,2-4,True,True,1.55,2.08,2.15,2.1,,18,9,,-0.6
+2026-05-27,Seoul W,Incheon Red Angels W,KrW,WK-League,over,2-1,True,True,1.77,1.89,2.0,1.93,,16,8,,-0.23
+2026-05-27,Davao Aguilas,Taguig,Ph1,PFL,under,1-1,True,True,1.55,2.21,2.88,2.08,2.08,12,6,-0.53,-1.33
+2026-05-29,Houston FC,Laredo Heat,Us4,USL League Two,over,1-1,False,False,2.25,1.45,1.57,1.53,1.39,119,7,0.86,0.68
+2026-05-29,Nacional AM,Paysandu,BrN,Copa Norte,over,2-4,True,True,1.53,2.1,2.55,2.05,2.11,16,8,-0.58,-1.02
+2026-05-29,Cruzeiro,Barcelona SC,CLA,CONMEBOL Libertadores,under,4-0,False,False,1.83,1.91,2.375,1.91,1.9,24,12,-0.07,-0.545
+2026-05-29,América de Cali,Macará,CS,CONMEBOL Sudamericana,under,0-0,True,True,2.25,1.62,1.68,1.57,1.6,21,11,0.65,0.57
+2026-05-29,CA Tigre,Alianza Atlético,CS,CONMEBOL Sudamericana,under,2-0,True,True,1.83,1.95,2.15,1.95,1.93,24,11,-0.1,-0.32
+2026-05-29,Tacoma Stars,Oly Town,Us4,USL League Two,over,4-1,True,True,2.0,1.875,1.875,1.875,,1,1,,0.125
+2026-05-29,Shaanxi Union,Nanjing Fengfan,Cn2,League One,over,0-1,False,False,1.62,2.08,2.425,2.08,2.22,20,10,-0.6,-0.805
+2026-05-29,Heidelberg United,Thunder SC,AuV,Victoria NPL,over,4-2,True,True,2.2,1.62,1.75,1.62,1.59,121,8,0.61,0.45
+2026-05-29,West Torrens,Adelaide Comets,AuS,South Australia NPL,over,4-1,True,True,2.62,1.44,2.15,1.44,1.48,14,7,1.14,0.47
+2026-05-29,Olympic Kingsway,Dianella White Eagles,AuW,Western Australia NPL,over,3-1,True,True,2.62,1.38,1.44,1.3,1.4,16,8,1.22,1.18
+2026-05-29,Shenyang City,Shanghai SIPG,Cn1,Super League,under,3-2,False,False,1.65,2.2,3.0,2.1,2.2,22,11,-0.55,-1.35
+2026-05-30,Racing de Cordoba,Ferro Carril Oeste,Ar2,Primera Nacional,over,0-0,False,False,1.4,2.8,3.02,2.8,3.02,153,9,-1.62,-1.62
+2026-05-30,Juventude,América Mineiro,Br2,Serie B,under,3-0,False,False,2.55,1.48,2.15,1.44,1.5,172,11,1.05,0.4
+2026-05-30,Hume City FC,South Melbourne,AuV,Victoria NPL,over,1-1,False,False,2.6,1.45,3.3,1.43,1.49,18,9,1.11,-0.7
+2026-05-30,Avondale FC,Bentleigh Greens,AuV,Victoria NPL,over,4-0,True,True,2.35,1.56,1.62,1.6,1.58,17,9,0.77,0.73
+2026-05-30,Melbourne City II,Dandenong City,AuV,Victoria NPL,over,0-1,False,False,2.0,1.52,2.2,1.55,1.51,18,9,0.49,-0.2
+2026-05-30,Gold Coast United,Peninsula Power,AuQ,Queensland NPL,over,0-4,True,True,2.85,1.38,1.525,1.4,1.43,18,9,1.42,1.325
+2026-05-30,Gangneung City,Changwon City,Kr3,K3 League,under,0-1,True,True,2.05,1.65,1.775,1.65,1.67,20,10,0.38,0.275
+2026-05-31,Tucumán Central,Defensores Pto. Vilelas,Ar3,Torneo Federal A,under,2-0,True,True,2.34,1.55,1.55,1.55,,1,1,,0.79
+2026-05-31,Sportivo Belgrano,Gimnasia Chivilcoy,Ar3,Torneo Federal A,under,1-0,True,True,2.33,1.38,1.46,1.38,1.38,81,5,0.95,0.87
+2026-06-01,Palestino,Audax Italiano,Cl1,Primera División,over,0-0,False,False,1.8,1.92,2.05,1.85,1.95,188,12,-0.15,-0.25
+2026-06-01,Inhulets Petrove,Livyi Bereh Kyiv,Ua2,Persha Liga,under,1-3,False,False,1.86,1.8,1.84,1.78,1.84,119,7,0.02,0.02
+2026-06-01,UCSA,Niva Ternopil,Ua2,Persha Liga,over,3-0,True,True,1.51,2.3,2.4,2.25,2.31,119,7,-0.8,-0.89
+2026-06-01,Probiy Horodenka,Prykarpattya,Ua2,Persha Liga,under,0-3,False,False,1.94,1.72,1.78,1.72,1.71,126,8,0.23,0.16
+2026-06-01,Vanraure Hachinohe,Fukushima United,Jp3,J2 League,under,0-1,True,True,2.0,1.73,1.85,1.72,1.73,132,11,0.27,0.15
+2026-06-02,Tecnico,Barcelona SC,Ec1,Liga Pro,over,1-0,False,False,1.56,2.2,2.25,2.1,2.24,189,12,-0.68,-0.69
+2026-06-02,Metalurh Zaporizhzhia,Bukovyna,Ua2,Persha Liga,over,0-4,True,True,2.25,1.37,1.53,1.37,1.34,112,8,0.91,0.72
+2026-06-02,Podbeskidzie,Śląsk Wrocław II,Pl3,II Liga - East,over,2-1,True,True,2.25,1.54,1.975,1.5,1.54,172,11,0.71,0.275
+2026-06-02,Fard Alborz,Mes Kerman,Ir2,Azadegan League,under,0-2,True,True,4.0,1.17,1.22,1.15,,102,6,,2.78
+2026-06-02,Mes Shahr-e Babak,Sanat Naft AC,Ir2,Azadegan League,under,2-0,True,True,3.75,1.24,1.575,1.2,,104,7,,2.175
+2026-06-02,Nassaji Mazandaran,Damash Gilan,Ir2,Azadegan League,over,2-0,False,False,1.95,2.0,2.3,1.71,1.71,126,9,0.24,-0.35
+2026-06-02,Ario Eslamshahr,Shahrdari Noshahr,Ir2,Azadegan League,under,1-1,True,True,3.4,1.23,2.2,1.22,,103,7,,1.2
+2026-06-02,Gharraf,Naft Maysan,Iq1,Iraqi League,over,0-2,False,False,1.54,1.93,4.65,1.94,1.94,151,10,-0.4,-3.11
+2026-06-02,Quwa Al Jawiya,Zakho FC,Iq1,Iraqi League,over,3-2,True,True,1.85,1.92,2.17,1.97,1.97,150,10,-0.12,-0.32
+2026-06-03,Fortaleza,Vitória,BrC,Copa do Nordeste,under,1-2,False,False,2.15,1.72,1.99,1.72,1.77,173,11,0.38,0.16
+2026-06-03,Barracas Central,CA Huracán,ArC,Copa Argentina,under,1-0,True,True,3.2,1.33,1.41,1.32,1.33,170,10,1.87,1.79
+2026-06-03,Belconnen United,Tuggeranong United,AuA,Capital Territory NPL,over,1-3,True,True,3.0,1.32,1.525,1.4,1.4,137,9,1.6,1.475
+2026-06-03,Milford FC,Magesi FC,Za1,Premier Soccer League,under,1-0,True,True,3.0,1.38,1.57,1.37,1.36,152,9,1.64,1.43
+2026-06-03,Khemis Zemamra,Yacoub El Mansour,Ma1,Botola Pro,under,2-1,False,False,2.35,1.5,3.0,1.49,1.5,172,11,0.85,-0.65
+2026-06-04,Birmingham Legion,Louisville City,Us2,USL Championship,over,1-1,False,False,2.05,1.7,1.8,1.67,1.73,172,11,0.32,0.25
+2026-06-04,Montgomery United,Birmingham Legion II,Us4,USL League Two,over,2-2,True,True,2.18,1.575,1.575,1.575,,1,1,,0.605
+2026-06-05,San Antonio,Independiente Juniors,Ec2,Liga Pro Serie B,under,0-0,True,True,2.06,1.58,1.65,1.63,1.58,130,9,0.48,0.41
+2026-06-05,Sydney U21,NWS Spirit,AuN,Npl Nsw U20,under,1-2,False,True,1.57,2.25,2.25,2.25,,1,1,,-0.68
+2026-06-05,Green Gully SC,Avondale FC,AuV,Victoria NPL,over,0-2,False,False,2.5,1.45,2.15,1.42,1.45,152,11,1.05,0.35
+2026-06-05,Gold Coast Knights,Olympic FC QLD,AuQ,Queensland NPL,over,5-2,True,True,2.6,1.42,1.55,1.43,1.44,149,11,1.16,1.05
+2026-06-05,Eastern Suburbs,Moreton City Excelsior,AuQ,Queensland NPL,over,0-0,False,False,3.3,1.25,2.2,1.25,,134,10,,1.1
+2026-06-05,Dandenong City,Heidelberg United,AuV,Victoria NPL,over,4-1,True,True,2.15,1.66,1.975,1.69,1.66,167,12,0.49,0.175
+2026-06-05,Adelaide City,Sturt Lions,AuS,South Australia NPL,over,4-1,True,True,2.5,1.45,1.51,1.44,1.5,117,9,1.0,0.99
+2026-06-05,Kamatamare Sanuki,Nagano Parceiro,Jp3,J2 League,under,0-0,True,True,2.02,1.57,1.8,1.78,1.45,181,13,0.57,0.22
+2026-06-05,Oakleigh Cannons,St Albans Saints,AuV,Victoria NPL,over,2-2,True,True,2.55,1.46,1.575,1.39,1.47,150,11,1.08,0.975
+2026-06-05,Bentleigh Greens,Hume City FC,AuV,Victoria NPL,over,1-5,True,True,2.05,1.71,1.8,1.62,1.78,164,12,0.27,0.25
+2026-06-05,Seongnam FC,Gimhae City,Kr2,K League 2,under,1-1,True,True,2.15,1.7,2.075,1.66,1.77,151,11,0.38,0.075
+2026-06-05,Daegu FC,Paju Citizen,Kr2,K League 2,under,1-0,True,True,2.05,2.07,2.2,2.02,2.12,150,11,-0.07,-0.15
+2026-06-05,Busan I'Park,Asan Mugunghwa,Kr2,K League 2,under,2-2,False,False,2.05,1.8,1.875,1.8,1.84,165,12,0.21,0.175
+2026-06-05,Perth SC,Stirling Lions,AuW,Western Australia NPL,over,3-3,True,True,3.5,1.3,1.3,1.25,,3,1,,2.2
+2026-06-05,Bayswater City,Dianella White Eagles,AuW,Western Australia NPL,over,4-3,True,True,3.5,1.36,1.4,1.36,1.37,9,9,2.13,2.1
+2026-06-05,Kudrivka,FC Ahrobiznes,Ua1,Premier League,under,0-0,True,True,1.65,2.1,2.2,2.19,2.19,123,10,-0.54,-0.55
+2026-06-05,FC Haka,JäPS,Fi2,Ykkösliiga,over,1-2,True,True,2.08,1.62,1.6932,1.65,1.61,148,11,0.47,0.387
+2026-06-05,JS Hercules,VPS 2,Fi3,Kakkonen - Lohko C,over,1-5,True,True,3.75,1.18,1.775,1.14,,97,8,,1.975
+2026-06-06,San Luis Quillota,San Marcos Arica,Cl2,Primera B,over,1-0,False,False,1.7,2.05,2.35,2.07,2.09,180,13,-0.39,-0.65
+2026-06-06,Santo Domingo,22 de Julio,Ec2,Liga Pro Serie B,under,1-0,True,True,1.9,1.81,1.95,1.62,1.78,112,7,0.12,-0.05
+2026-06-06,Gimnasia y Tiro,Ferrocarril Midland,Ar2,Primera Nacional,under,1-0,True,True,2.95,1.36,1.4,1.35,1.38,22,10,1.57,1.55
+2026-06-06,Vancouver FC,Atlético Ottawa,Ca1,Canadian Premier League,over,2-1,True,True,2.1,1.71,1.76,1.71,1.75,164,12,0.35,0.34
+2026-06-06,Magic United,Brisbane Roar U21,AuQ,Queensland NPL,over,2-1,True,True,3.45,1.28,1.525,1.27,,132,10,,1.925
+2026-06-06,JEF United Chiba,Avispa Fukuoka,Jp1,J1 League,under,1-2,False,False,2.45,1.53,1.58,1.54,1.55,152,11,0.9,0.87
+2026-06-06,FC Tokyo,Cerezo Osaka,Jp1,J1 League,over,1-3,True,True,2.1,1.75,1.85,1.85,1.78,178,12,0.32,0.25
+2026-06-06,Kashima Antlers,Vissel Kobe,Jp1,J1 League,under,2-0,True,True,2.1,1.69,1.76,1.67,1.76,167,12,0.34,0.34
+2026-06-06,Yokohama FC,Renofa Yamaguchi,Jp3,J2 League,over,2-1,True,True,1.92,1.82,1.92,1.85,1.83,180,13,0.09,0.0
+2026-06-07,Escobar FC,El Linqueño,Ar3,Torneo Federal A,under,1-0,True,True,2.0,1.675,1.675,1.675,,2,1,,0.325
+2026-06-07,San Martín Formosa,Tucumán Central,Ar3,Torneo Federal A,under,3-2,False,False,1.97,1.65,1.775,1.64,1.64,129,9,0.33,0.195
+2026-06-07,CA Rentistas,Colón,Uy2,Segunda División,under,0-2,True,True,2.6,1.45,1.575,1.45,1.46,174,12,1.14,1.025
+2026-06-08,Miramar Misiones,Oriental (URU),Uy2,Segunda División,under,2-2,False,False,2.6,1.48,2.725,1.47,1.48,157,11,1.12,-0.125
+2026-06-08,FUS Rabat,Difaâ El Jadidi,Ma1,Botola Pro,under,0-0,True,True,2.2,1.59,1.62,1.55,1.59,149,11,0.61,0.58
+2026-06-08,FC Kiffen,PuiU Helsinki,Fi3,Kakkonen - Lohko A,over,2-0,False,False,2.62,1.36,1.44,1.41,1.41,106,8,1.21,1.18
+2026-06-08,DFK Dainava,FK Garliava,Lt2,1 Lyga,under,1-0,True,True,1.6,2.1,2.2,2.05,2.12,153,10,-0.52,-0.6
+2026-06-08,Stockholm Internazionale,Vasalunds IF,Se3,Ettan - Norra,over,4-1,True,True,2.38,1.53,1.66,1.47,1.54,158,11,0.84,0.72
+2026-06-08,Täfteå,Umeå FC Akademi,Se4,Division 2 - Norrland,over,3-0,True,True,2.2,1.25,1.3,1.25,,112,7,,0.9
+2026-06-08,Järfälla,Stocksund,Se3,Ettan - Norra,over,1-6,True,True,3.25,1.3,1.525,1.35,,141,10,,1.725
+2026-06-08,RSB Berkane,Ittihad Tanger,Ma1,Botola Pro,under,1-0,True,True,2.2,1.62,1.66,1.55,1.6,158,11,0.6,0.54
+2026-06-08,Wydad Casablanca,Olympique Safi,Ma1,Botola Pro,under,1-0,True,True,1.93,1.82,1.95,1.85,1.86,158,11,0.07,-0.02
+2026-06-08,Monsoon,Santa Cruz RS,BrC,Copa Gaúcha,over,1-1,False,False,1.65,2.1,2.3,2.02,2.12,129,9,-0.47,-0.65
+2026-06-08,Defensa y Justicia Res.,Ferro Carril Reserves,ArR,Reserve League,under,2-1,False,False,1.8,1.96,2.16,1.95,2.12,149,9,-0.32,-0.36
+2026-06-08,Unión Santa Fe Res.,Atlético Tucumán Res.,ArR,Reserve League,under,2-0,True,True,1.9,1.85,1.92,1.82,1.92,149,9,-0.02,-0.02
+2026-06-08,Racing Club Res.,Banfield Res.,ArR,Reserve League,under,1-2,False,False,1.97,1.74,2.95,1.72,1.79,151,10,0.18,-0.98
+2026-06-09,Niroye Zamini,Ario Eslamshahr,Ir2,Azadegan League,under,0-0,True,True,3.75,1.22,1.25,1.22,,58,4,,2.5
+2026-06-09,Mes Kerman,Naft Gachsaran,Ir2,Azadegan League,under,0-0,True,True,3.4,1.29,1.36,1.28,,70,5,,2.04
+2026-06-09,FC Ahrobiznes,Kudrivka,Ua1,Premier League,over,2-2,True,True,1.5,2.4,2.52,2.25,2.5,121,9,-1.0,-1.02
+2026-06-09,Nassaji Mazandaran,Shenavarsazi Qeshm,Ir2,Azadegan League,under,2-0,True,True,2.0,1.63,1.65,1.62,1.64,93,8,0.36,0.35
+2026-06-09,Sanat Naft AC,Pars Jonoubi Jam,Ir2,Azadegan League,under,0-2,True,True,2.3,1.5,2.0,1.375,,3,1,,0.3
+2026-06-09,FC Honka Espoo,HJK Helsinki,FiC,Suomen Cup,over,1-7,True,True,4.0,1.16,1.22,1.14,1.16,106,8,2.84,2.78
+2026-06-09,Yacoub El Mansour,CODM Meknès,Ma1,Botola Pro,under,1-1,True,True,2.3,1.5,1.625,1.52,1.57,140,11,0.73,0.675
+2026-06-09,SJK Akatemia,JIPPO Joensuu,Fi2,Ykkösliiga,over,0-0,False,False,4.0,1.91,2.02,1.9,2.02,10,10,1.98,1.98
+2026-06-09,Stade Malien,Binga,Ml1,Première Division,over,2-1,True,True,1.5,2.7,2.84,2.32,2.84,104,8,-1.34,-1.34
+2026-06-09,United Nordic,Östersunds FK,Se2,Superettan,under,1-1,True,True,1.62,2.06,2.2319,2.05,2.12,154,12,-0.5,-0.612
+2026-06-09,Östers IF,IFK Varnamo,Se2,Superettan,over,3-0,True,True,2.3,1.6,1.6312,1.57,1.61,139,11,0.69,0.669
+2026-06-09,IK Brage,Ljungskile SK,Se2,Superettan,over,2-2,True,True,2.1,1.69,2.075,1.67,1.72,143,12,0.38,0.025
+2026-06-09,IK Oddevold,Norrköping,Se2,Superettan,under,1-2,False,False,1.67,2.16,2.3455,2.15,2.26,141,12,-0.59,-0.675
+2026-06-09,Sandvikens IF,Falkenbergs FF,Se2,Superettan,over,4-2,True,True,2.1,1.68,1.838,1.67,1.7,153,12,0.4,0.262
+2026-06-10,San Antonio,Liga de Portoviejo,Ec2,Liga Pro Serie B,under,4-2,False,False,2.28,1.46,1.5,1.47,1.46,120,8,0.82,0.78
+2026-06-10,Sydney Olympic,SD Raiders,AuN,Npl Nsw U20,over,0-1,False,False,2.2,1.4,1.65,1.4,,86,6,,0.55
+2026-06-10,Canberra Olympic,Gungahlin Juventus,AuA,Capital Territory NPL,over,2-3,True,True,4.0,1.17,1.525,1.25,,121,8,,2.475
+2026-06-10,O'Connor Knights,Cooma Tigers,AuA,Capital Territory NPL,over,0-1,False,False,4.0,1.19,1.575,1.19,,104,7,,2.425
+2026-06-10,Tuggeranong United,Monaro Panthers,AuA,Capital Territory NPL,over,1-6,True,True,3.4,1.23,1.3,1.2,,120,8,,2.1
+2026-06-10,Belconnen United,Canberra White Eagles,AuA,Capital Territory NPL,over,1-2,True,True,3.0,1.23,1.95,1.23,,121,8,,1.05
+2026-06-10,Canberra FC,Queanbeyan City,AuA,Capital Territory NPL,over,4-2,True,True,3.0,1.32,1.36,1.31,,121,8,,1.64
+2026-06-10,Cape Town City,Magesi FC,Za1,Premier Soccer League,under,1-1,True,True,2.75,1.45,1.5,1.44,1.46,173,12,1.29,1.25
+2026-06-10,Damash Gilan,Mes Shahr-e Babak,Ir2,Azadegan League,under,0-7,False,False,2.75,1.5,1.5,1.49,,2,2,,1.25
+2026-06-10,KuPS Kuopio,VPS Vaasa,FiC,Suomen Cup,over,0-0,False,False,1.8,1.85,1.94,1.82,1.88,186,13,-0.08,-0.14
+2026-06-10,Naft Bandar Abbas,Shahrdari Noshahr,Ir2,Azadegan League,under,1-0,True,True,2.9,1.36,1.36,1.36,,17,1,,1.54
+2026-06-11,Sport Recife,Athletic Club MG,Br2,Serie B,over,1-1,False,False,1.57,2.22,2.32,2.2,2.32,187,11,-0.75,-0.75
+2026-06-12,South Korea,Czech Republic,WC,World Cup,under,2-1,False,False,2.2,1.65,1.72,1.62,1.68,234,20,0.52,0.48
+2026-06-12,San Juan SC,Project 51O,Us4,USL League Two,over,1-3,True,True,2.25,1.5,2.725,2.725,,6,2,,-0.475
+2026-06-12,Manly United,Sydney United,AuN,New South Wales NPL,under,1-1,True,True,1.85,1.83,2.17,1.83,1.88,186,12,-0.03,-0.32
+2026-06-12,Marconi Stallions,Sydney U21,AuN,New South Wales NPL,under,0-0,True,True,1.62,2.24,2.45,2.22,2.27,146,10,-0.65,-0.83
+2026-06-12,Campbelltown City,West Torrens,AuS,South Australia NPL,over,1-2,True,True,2.75,1.37,1.625,1.37,1.4,129,9,1.35,1.125
+2026-06-12,Suwon FMC W,Gumi Sportstoto W,KrW,WK-League,over,6-0,True,True,1.97,1.65,2.05,1.66,1.68,182,11,0.29,-0.08
+2026-06-12,Pho Hien FC,Bac Ninh,Vn1,V.League 1,under,1-1,True,True,2.05,1.7,1.74,1.65,1.74,126,8,0.31,0.31
+2026-06-12,Adelaide Comets,West Adelaide,AuS,South Australia NPL,over,3-2,True,True,2.35,1.5,1.85,1.49,1.52,129,9,0.83,0.5
+2026-06-12,Foutoua Club,Karamah,Sy1,Premier League,under,2-4,False,False,1.75,1.47,1.47,1.47,,1,1,,0.28
+2026-06-12,Reyady Abaseya,Al Hikma Beirut,Lb,Premier League,under,0-1,True,True,2.0,1.67,1.8,1.71,,142,8,,0.2
+2026-06-12,Coastal Union,Namungo,Tz1,Ligi kuu Bara,under,1-1,True,True,2.46,1.5,1.5,1.49,1.5,149,11,0.96,0.96
+2026-06-12,FUS Rabat,Maghreb Fès,Ma1,Botola Pro,under,1-1,True,True,2.95,1.37,1.85,1.34,1.36,184,12,1.59,1.1
+2026-06-12,Olympique Safi,Kawkab Marrakech,Ma1,Botola Pro,under,1-0,True,True,2.65,1.44,1.5,1.44,1.46,184,12,1.19,1.15
+2026-06-12,Saburtalo,FC Spaeri,Ge1,Erovnuli Liga,under,1-1,True,True,1.8,1.87,2.0,1.87,1.93,190,12,-0.13,-0.2
+2026-06-12,FK Tukums 2000,BFC Daugavpils,Lv1,Virsliga,over,1-1,False,False,2.05,1.69,3.8,1.69,1.73,202,13,0.32,-1.75
+2026-06-13,Audax Italiano,La Serena,Cl1,Primera División,over,1-1,False,False,2.0,1.75,2.675,1.74,1.81,211,12,0.19,-0.675
+2026-06-13,USA,Paraguay,WC,World Cup,under,4-1,False,False,2.35,1.56,1.6914,1.57,1.58,244,20,0.77,0.659
+2026-06-13,Juventud Antoniana,Sarmiento de La Banda,Ar3,Torneo Federal A,under,0-1,True,True,2.3,1.48,1.5,1.49,1.5,152,9,0.8,0.8
+2026-06-13,Adamstown FC,Broadmeadow,AuN,Northern NSW NPL,over,1-5,True,True,2.1,1.32,1.36,1.32,,133,7,,0.74
+2026-06-13,Hobart Zebras,South Hobart,AuT,Tasmania NPL,over,1-3,True,True,4.0,1.18,1.525,1.14,,78,5,,2.475
+2026-06-13,O'Connor Knights,Tuggeranong United,AuA,Capital Territory NPL,over,2-3,True,True,3.5,1.25,1.525,1.25,,134,8,,1.975
+2026-06-13,Queanbeyan City,Monaro Panthers,AuA,Capital Territory NPL,over,5-2,True,True,3.25,1.33,1.36,1.36,1.36,147,8,1.89,1.89
+2026-06-13,Brindabella Blues,Belconnen United,AuA,Capital Territory NPL,over,1-4,True,True,3.25,1.3,1.625,1.29,,128,8,,1.625
+2026-06-13,Para Hills Knights,FK Beograd,AuS,South Australia NPL,over,1-5,True,True,3.75,1.22,1.45,1.22,,115,7,,2.3
+2026-06-13,Edgeworth Eagles,Cooks Hill United,AuN,Northern NSW NPL,over,0-1,False,False,3.75,1.33,2.95,1.32,,136,8,,0.8
+2026-06-13,Maitland FC,Valentine Phoenix,AuN,Northern NSW NPL,over,1-0,False,False,3.75,1.33,2.95,1.32,,136,8,,0.8
+2026-06-13,Glenorchy Knights,Riverside Olympic,AuT,Tasmania NPL,over,1-1,False,False,3.0,1.3,1.675,1.27,,116,7,,1.325
+2026-06-13,Armadale SC,Bayswater City,AuW,Western Australia NPL,over,0-5,True,True,3.1,1.31,1.65,1.3,,146,9,,1.45
+2026-06-13,Dianella White Eagles,Western Knights,AuW,Western Australia NPL,over,1-0,False,False,2.6,1.4,2.3,1.39,1.41,165,10,1.19,0.3
+2026-06-13,Fremantle City,Balcatta,AuW,Western Australia NPL,over,5-2,True,True,2.6,1.4,1.45,1.4,1.43,163,9,1.17,1.15
+2026-06-13,Changchun YaTai,Dalian Kuncheng,Cn2,League One,under,2-1,False,False,1.95,1.7,2.15,1.69,1.74,191,11,0.21,-0.2
+2026-06-14,Sarmiento Resistencia,Defensores Pto. Vilelas,Ar3,Torneo Federal A,under,2-0,True,True,1.25,1.57,2.05,1.57,1.57,170,10,-0.32,-0.8
+2026-06-15,Sweden,Tunisia,WC,World Cup,under,5-1,False,False,2.2,1.7,1.74,1.67,1.71,301,19,0.49,0.46
+2026-06-15,KMC,Coastal Union,Tz1,Ligi kuu Bara,under,1-3,False,False,1.77,2.15,2.66,2.52,2.66,140,8,-0.89,-0.89
+2026-06-15,Adama Kenema,Ethiopia Nigd Bank,Et1,Premier League,under,2-1,False,False,2.28,1.43,1.5,1.41,1.4,98,7,0.88,0.78
+2026-06-15,Mes Shahr-e Babak,Be'sat Kermanshah,Ir2,Azadegan League,under,0-0,True,True,2.3,1.44,1.55,1.4,1.42,157,8,0.88,0.75
+2026-06-15,Fard Alborz,Sanat Naft AC,Ir2,Azadegan League,under,1-2,False,False,3.75,1.27,1.3,1.27,,5,5,,2.45
+2026-06-15,SJK Akatemia,FC Haka,Fi2,Ykkösliiga,under,0-2,True,True,1.57,2.14,2.5,2.12,2.25,239,11,-0.68,-0.93
+2026-06-15,Spain,Cape Verde,WC,World Cup,over,0-0,False,False,3.45,1.33,2.6,1.3,1.29,264,15,2.16,0.85
+2026-06-15,Nomme Kalju II,Nõmme United II,Ee2,Esiliiga A,over,4-1,True,True,1.55,1.2,1.525,1.18,,121,6,,0.025
+2026-06-16,Londrina,Avai FC,Br2,Serie B,under,3-2,False,False,2.35,1.6,3.0,1.56,1.61,242,11,0.74,-0.65
+2026-06-16,Iran,New Zealand,WC,World Cup,under,2-2,False,False,2.45,1.58,3.1,1.57,1.59,302,19,0.86,-0.65
+2026-06-16,Al Ahed Beirut,Al Hikma Beirut,Lb,Premier League,over,1-0,False,False,1.77,1.95,2.1,2.0,2.0,209,9,-0.23,-0.33
+2026-06-16,Shabab Al Sahel,Racing Beirut,Lb,Premier League,over,2-0,False,False,2.12,1.5,2.05,1.55,1.54,206,10,0.58,0.07
+2026-06-16,Shahrdari Noshahr,Navad Urmia,Ir2,Azadegan League,under,0-0,True,True,3.25,1.28,1.33,1.28,,112,6,,1.92
+2026-06-16,Ario Eslamshahr,Naft Bandar Abbas,Ir2,Azadegan League,under,1-0,True,True,3.75,1.24,1.25,1.21,,108,6,,2.5
+2026-06-16,Parnu,Flora Tallinn,Ee1,Meistriliiga,over,1-2,True,True,2.5,1.5,1.62,1.46,1.5,238,11,1.0,0.88
+2026-06-16,FC Kuressaare,Trans Narva,Ee1,Meistriliiga,over,0-0,False,False,2.05,1.7,1.75,1.7,1.72,237,11,0.33,0.3
+2026-06-16,Dila Gori,FC Spaeri,Ge1,Erovnuli Liga,under,3-1,False,False,1.77,1.83,2.95,1.88,1.93,236,12,-0.16,-1.18
+2026-06-16,Grobinas SC,FK Liepaja,Lv1,Virsliga,over,1-0,False,False,1.85,1.83,1.91,1.85,1.88,240,11,-0.03,-0.06
+2026-06-16,Azam,Mashujaa,Tz1,Ligi kuu Bara,under,2-0,True,True,2.0,2.2,2.62,2.45,2.35,172,10,-0.35,-0.62
+2026-06-17,Delaware FC,Pennsylvania Classics,Us4,USL League Two,over,0-2,False,False,2.55,1.825,2.2,2.2,,3,1,,0.35
+2026-06-17,Argentina,Algeria,WC,World Cup,under,3-0,False,False,2.0,1.86,1.98,1.85,1.86,310,23,0.14,0.02
+2026-06-17,Austria,Jordan,WC,World Cup,under,3-1,False,False,1.8,2.0,2.33,1.95,2.01,302,19,-0.21,-0.53
+2026-06-17,Changnyeong W,Suwon FMC W,KrW,WK-League,over,1-6,True,True,2.35,1.9,1.9,1.9,,2,1,,0.45
+2026-06-17,Gyeongju W,Hwacheon KSPO W,KrW,WK-League,over,0-1,False,False,1.97,1.73,1.85,1.75,,213,10,,0.12
+2026-06-17,Gumi Sportstoto W,Incheon Red Angels W,KrW,WK-League,over,0-0,False,False,1.82,1.9,2.0,1.9,1.97,239,11,-0.15,-0.18
+2026-06-17,Seoul W,Boeun Sangmu W,KrW,WK-League,under,2-1,False,False,1.74,2.0,3.075,2.0,,208,10,,-1.335
+2026-06-17,Mbeya City,Simba,Tz1,Ligi kuu Bara,under,0-1,True,True,1.92,1.86,2.08,1.87,1.86,190,10,0.06,-0.16
+2026-06-17,Merani Martvili,FC Samtredia,Ge2,Erovnuli Liga 2,over,2-1,True,True,2.0,1.77,2.05,1.62,1.67,140,8,0.33,-0.05
+2026-06-17,Gareji Sagarejo,Shturmi,Ge2,Erovnuli Liga 2,over,0-0,False,False,1.7,2.07,2.3,2.05,2.0,138,7,-0.3,-0.6
+2026-06-18,FC Tulsa,Monterey Bay,Us2,USL Championship,under,2-0,True,True,1.8,1.93,2.25,1.92,1.99,219,10,-0.19,-0.45
+2026-06-18,Forward Madison,Fort Wayne,Us4,USL League One,under,1-1,True,True,1.9,1.65,2.15,1.56,1.71,243,11,0.19,-0.25
+2026-06-19,Texoma,West Texas,Us4,USL League Two,over,1-0,False,False,2.23,1.58,1.9,1.58,1.58,218,10,0.65,0.33
+2026-06-19,Mexico,South Korea,WC,World Cup,under,1-0,True,True,2.0,1.7,1.78,1.67,1.72,299,18,0.28,0.22
+2026-06-19,Dalian Kewei,Shenyang City,CnC,FA Cup,under,1-0,True,True,1.9,1.8,2.025,1.8,1.87,282,13,0.03,-0.125
+2026-06-19,Shanghai Segenda,Shanghai SIPG,CnC,FA Cup,over,1-2,True,True,2.34,1.52,1.85,1.5,1.51,266,12,0.83,0.49
+2026-06-19,Bentleigh Greens,South Melbourne,AuV,Victoria NPL,over,1-5,True,True,2.2,1.57,1.75,1.67,1.66,237,11,0.54,0.45
+2026-06-19,Gold Coast Knights,Magic United,AuQ,Queensland NPL,over,2-1,True,True,4.33,1.15,3.3,1.11,,95,5,,1.03
+2026-06-19,Dalian Yingbo B,Nantong Haimen,Cn3,League Two,under,2-1,False,False,2.25,1.45,1.54,1.4,1.43,244,12,0.82,0.71
+2026-06-19,Oakleigh Cannons,Melbourne City II,AuV,Victoria NPL,under,3-1,False,False,1.2,2.75,3.02,2.48,3.02,10,10,-1.82,-1.82
+2026-06-19,Guangzhou Dandelion,Hubei Chufeng Heli,Cn3,League Two,under,2-3,False,False,2.25,1.53,2.95,1.53,1.57,237,11,0.68,-0.7
+2026-06-19,Shenzhen Juniors,Sichuan FC,CnC,FA Cup,over,1-3,True,True,1.92,1.78,1.9,1.75,1.74,278,13,0.18,0.02
+2026-06-19,Shangyu Pterosaur,Guangdong Mingtu,Cn3,League Two,under,0-2,True,True,2.25,1.45,1.975,1.4,1.41,212,10,0.84,0.275
+2026-06-19,Guizhou Zhicheng,Xiamen Feilu,Cn3,League Two,over,1-0,False,False,1.73,2.0,2.06,2.05,2.03,237,11,-0.3,-0.33
+2026-06-19,Jiangxi Liansheng,Henan Jianye,CnC,FA Cup,under,0-2,True,True,1.95,1.82,2.05,1.83,1.87,277,13,0.08,-0.1
+2026-06-19,Rizhao Yuqi,Tianjin Teda,CnC,FA Cup,under,1-1,True,True,2.23,1.67,2.0,1.62,1.69,263,12,0.54,0.23
+2026-06-19,Langfang Glory City,Dalian Zhixing,CnC,FA Cup,over,1-1,False,False,1.85,1.9,3.1,1.83,1.9,236,11,-0.05,-1.25
+2026-06-20,San Marcos Arica,Limache,ClC,Copa Chile,under,1-3,False,False,1.82,1.95,2.6,1.95,,193,9,,-0.78
+2026-06-20,Brazil,Haiti,WC,World Cup,over,3-0,True,True,3.35,1.3,1.5,1.3,1.31,267,13,2.04,1.85
+2026-06-20,Türkiye,Paraguay,WC,World Cup,over,0-1,False,False,1.76,2.1,2.35,2.05,2.15,298,17,-0.39,-0.59
+2026-06-20,Hume City FC,Green Gully SC,AuV,Victoria NPL,under,3-2,False,False,1.58,2.38,2.62,2.38,2.45,237,11,-0.87,-1.04
+2026-06-20,Lambton Jaffas,Adamstown FC,AuN,Northern NSW NPL,over,1-1,False,False,2.38,1.33,1.36,1.33,,164,7,,1.02
+2026-06-20,South East United,Glenorchy Knights,AuT,Tasmania NPL,over,1-0,False,False,3.75,1.18,2.2,1.18,,141,7,,1.55
+2026-06-20,Launceston United,Ulverstone,AuT,Tasmania NPL,over,3-2,True,True,3.75,1.24,1.3,1.26,,163,7,,2.45
+2026-06-20,Canberra Olympic,Monaro Panthers,AuA,Capital Territory NPL,over,2-5,True,True,4.33,1.16,1.2,1.16,,114,5,,3.13
+2026-06-20,Heidelberg United,Preston Lions,AuV,Victoria NPL,over,0-1,False,False,1.98,1.72,1.75,1.75,1.73,217,10,0.25,0.23
+2026-06-20,Gold Coast United,Brisbane Roar U21,AuQ,Queensland NPL,over,1-4,True,True,2.6,1.43,1.46,1.38,1.46,9,9,1.14,1.14
+2026-06-20,Belmont Swansea,Broadmeadow,AuN,Northern NSW NPL,over,1-0,False,False,2.6,1.28,2.475,1.28,,163,8,,0.125
+2026-06-21,Tucumán Central,Boca Unidos,Ar3,Torneo Federal A,over,2-0,False,False,1.5,2.38,4.65,2.4,2.38,186,11,-0.88,-3.15
+2026-06-21,Defensores Pto. Vilelas,Sol de América,Ar3,Torneo Federal A,over,2-1,True,True,1.85,2.6,2.6,1.825,,2,1,,-0.75
+2026-06-22,O Higgins,Unión Española,ClC,Copa Chile,under,1-1,True,True,1.85,1.93,1.96,1.88,1.96,266,12,-0.11,-0.11
+2026-06-22,New Zealand,Egypt,WC,World Cup,under,1-3,False,False,2.02,1.83,1.9,1.83,1.9,301,19,0.12,0.12
+2026-06-22,Merani Martvili,FC Gori,Ge2,Erovnuli Liga 2,under,0-2,True,True,1.8,1.8,2.0,1.9,,5,2,,-0.2
+2026-06-22,Kolkheti Poti,Shturmi,Ge2,Erovnuli Liga 2,under,0-0,True,True,2.01,1.7,1.75,1.69,1.68,185,10,0.33,0.26
+2026-06-22,Dila Gori,Metalurgi Rustavi,Ge1,Erovnuli Liga,over,3-0,True,True,1.63,2.13,2.35,2.2,2.15,224,12,-0.52,-0.72
+2026-06-22,FC Elva,Flora Tallinn II,Ee2,Esiliiga A,over,0-3,True,True,2.15,1.33,1.625,1.32,1.37,170,9,0.78,0.525
+2026-06-22,FC Maardu,Viimsi JK,Ee2,Esiliiga A,under,1-0,True,True,1.65,2.55,2.88,2.4,2.39,170,9,-0.74,-1.23
+2026-06-22,FC Telavi,Dusheti Aragvi,Ge2,Erovnuli Liga 2,under,1-0,True,True,2.02,1.68,1.85,1.68,1.68,188,11,0.34,0.17
+2026-06-22,Fortune,Steve Biko FC,Gm1,GFA League,under,1-0,True,True,2.38,1.4,1.53,1.38,1.4,129,7,0.98,0.85
+2026-06-23,Norway,Senegal,WC,World Cup,under,3-2,False,False,1.82,1.9,2.02,1.83,1.91,315,21,-0.09,-0.2
+2026-06-23,Jordan,Algeria,WC,World Cup,under,1-2,False,False,1.97,1.89,1.98,1.85,1.93,315,21,0.04,-0.01
+2026-06-23,Shanghai Second,Dalian Yingbo B,Cn3,League Two,over,1-2,True,True,1.48,2.42,2.6,2.45,2.44,270,13,-0.96,-1.12
+2026-06-23,Changchun Xidu,Rizhao Yuqi,Cn3,League Two,under,0-0,True,True,3.0,1.33,1.675,1.3,1.31,218,11,1.69,1.325
+2026-06-23,Qingdao Red Lions,Dalian Kewei,Cn3,League Two,under,0-0,True,True,2.25,1.49,1.53,1.44,1.49,265,13,0.76,0.72
+2026-06-23,Xiamen Feilu,Hubei Chufeng Heli,Cn3,League Two,over,0-0,False,False,1.6,2.08,2.3,2.15,2.12,249,12,-0.52,-0.7
+2026-06-23,Guangdong Mingtu,Guizhou Zhicheng,Cn3,League Two,over,0-0,False,False,1.57,2.2,2.4,2.2,2.22,242,12,-0.65,-0.83
+2026-06-23,Nantong Haimen,Shanghai Port II,Cn3,League Two,over,2-2,True,True,1.6,2.17,2.38,2.2,2.2,245,12,-0.6,-0.78
+2026-06-23,Alga Bishkek,Bars,Kg1,Premier League,under,3-1,False,False,1.85,1.825,1.825,1.825,,1,1,,0.025
+2026-06-23,VPS Vaasa,AC Oulu,Fi1,Veikkausliiga,under,5-1,False,False,1.97,1.82,1.8855,1.75,1.87,300,14,0.1,0.085
+2026-06-23,KuPS Kuopio,Ilves,Fi1,Veikkausliiga,over,4-3,True,True,2.18,1.67,1.75,1.62,1.68,300,14,0.5,0.43
+2026-06-23,FC Lahti,TPS Turku,Fi1,Veikkausliiga,over,0-0,False,False,2.0,1.89,1.9898,1.83,1.9,300,14,0.1,0.01
+2026-06-23,Saburtalo,Meshakhte Tkibuli,Ge1,Erovnuli Liga,over,2-1,True,True,2.12,1.67,2.825,1.62,1.64,245,12,0.48,-0.705
+2026-06-23,FF Jaro,IF Gnistan,Fi1,Veikkausliiga,over,1-1,False,False,2.0,1.7,1.95,1.67,1.69,301,14,0.31,0.05
+2026-06-23,IFK Mariehamn,HJK Helsinki,Fi1,Veikkausliiga,over,0-4,True,True,2.4,1.49,1.675,1.36,1.41,277,13,0.99,0.725
+2026-06-23,Portugal,Uzbekistan,WC,World Cup,over,5-0,True,True,2.48,1.5,1.61,1.4,1.44,303,15,1.04,0.87
+2026-06-23,Dinamo Tbilisi,Dinamo Batumi,Ge1,Erovnuli Liga,over,2-1,True,True,1.92,1.78,1.9,1.67,1.67,275,14,0.25,0.02
+2026-06-23,BK Astrio,Ängelholms FF,SeC,Svenska Cupen,under,0-3,False,False,1.53,2.38,3.4,3.0,2.54,183,9,-1.01,-1.87
+2026-06-23,Järfälla,FC Arlanda,SeC,Svenska Cupen,over,0-2,False,False,2.28,1.53,2.425,1.54,1.47,228,12,0.81,-0.145
+2026-06-23,Cruzeiro U20,América Mineiro U20,BrB,Brasileiro U20 A,over,2-2,True,True,1.97,1.63,1.95,1.73,1.65,9,9,0.32,0.02
+2026-06-23,Sao Paulo U20,Fortaleza U20,BrB,Brasileiro U20 A,under,1-0,True,True,1.82,2.0,2.05,1.97,2.02,176,10,-0.2,-0.23
+2026-06-23,Gremio U20,Bahia U20,BrB,Brasileiro U20 A,over,4-0,True,True,2.25,1.56,1.65,1.55,1.58,9,9,0.67,0.6
+2026-06-23,Vitoria U20,Santos U20,BrB,Brasileiro U20 A,under,1-2,False,False,1.57,2.01,2.18,2.0,2.05,176,10,-0.48,-0.61
+2026-06-23,Coquimbo Unido,Limache,ClC,Copa Chile,over,1-1,False,False,1.97,1.84,1.95,1.8,1.85,247,13,0.12,0.02
+2026-07-28,United Kolkata,Mohun Bagan AC,In3,Calcutta Premier Division,under,0-1,True,True,1.65,2.08,2.19,2.05,2.19,105,7,-0.54,-0.54
+2026-07-28,KuPS Kuopio,Sabah,UCL,UEFA Champions League,under,0-2,True,True,1.9,1.9,1.98,1.88,1.93,211,12,-0.03,-0.08
+2026-07-28,Xorazm Urganch,Surkhon,Uz1,Super League,over,1-0,False,False,1.65,2.12,2.24,2.12,2.17,163,10,-0.52,-0.59
+2026-07-28,Neftchi Fergana,Navbahor,Uz1,Super League,under,1-1,True,True,1.85,1.73,1.95,1.73,1.68,173,10,0.17,-0.1
+2026-07-28,DFK Dainava,TransINVEST Vilnius II,Lt2,1 Lyga,over,3-1,True,True,2.75,1.36,1.55,1.34,1.39,134,8,1.36,1.2
+2026-07-28,Vihren Sandanski,CSKA II Sofia,Bg2,Second League,over,1-1,False,False,1.9,1.8,5.75,1.82,1.81,197,11,0.09,-3.85
+2026-07-28,Rilski Sportist,Ludogorets II,Bg2,Second League,under,0-1,True,True,1.85,1.79,1.85,1.78,1.79,170,9,0.06,0.0
+2026-07-28,Dobrudzha,Pirin Blagoevgrad,Bg2,Second League,over,5-1,True,True,1.65,2.02,2.1,2.02,2.05,167,10,-0.4,-0.45
+2026-07-28,Lincoln Red Imps,Mjällby AIF,UCL,UEFA Champions League,over,0-0,False,False,2.15,1.68,1.78,1.66,1.68,203,11,0.47,0.37
+2026-07-28,Hapoel Haifa,Ironi Tiberias,IlC,Toto Cup Ligat Al,under,3-1,False,False,1.93,1.82,2.6,1.8,1.85,178,11,0.08,-0.67
+2026-07-28,Helsingborg,United Nordic,Se2,Superettan,over,1-1,False,False,2.35,1.62,2.6,1.61,1.68,202,12,0.67,-0.25
+2026-07-28,Landskrona BoIS,Norrköping,Se2,Superettan,under,0-1,True,True,1.67,2.15,2.25,2.1,2.1,205,12,-0.43,-0.58
+2026-07-28,Ironi Kiryat Shmona,Maccabi Haifa,IlC,Toto Cup Ligat Al,over,3-0,True,True,2.15,1.64,1.7,1.64,1.66,167,10,0.49,0.45
+2026-07-28,Apollon Limassol,Dila Gori,ECL,UEFA Europa Conference League,over,3-0,True,True,2.15,1.62,1.9,1.58,1.57,211,12,0.58,0.25
+2026-07-29,Bogotá FC,Deportivo Pasto,CoC,Copa Colombia,under,0-3,False,False,1.97,1.49,1.52,1.45,1.5,200,10,0.47,0.45
+2026-07-29,Rosario Central,Racing Club,Ar1,Liga Profesional Argentina,under,0-0,True,True,2.45,1.5,1.53,1.51,1.49,200,10,0.96,0.92
+2026-07-29,Argentinos Juniors,Estudiantes Río Cuarto,Ar1,Liga Profesional Argentina,under,3-0,False,False,2.43,1.62,1.66,1.64,1.66,220,11,0.77,0.77
+2026-07-29,Santos,UCV FC,CS,CONMEBOL Sudamericana,over,4-2,True,True,2.28,1.55,1.63,1.54,1.51,220,11,0.77,0.65
+2026-07-29,Fortaleza,Botafogo SP,Br2,Serie B,over,1-0,False,False,1.56,2.37,2.49,2.3,2.49,200,10,-0.93,-0.93
+2026-07-29,Cavalry FC,Supra du Québec,Ca1,Canadian Premier League,under,2-1,False,False,1.85,2.41,2.56,2.35,2.56,180,9,-0.71,-0.71
+2026-07-29,Bucheon FC 1995,Paju Citizen,KrC,FA Cup,over,3-0,True,True,1.9,1.88,4.25,1.9,1.96,205,12,-0.06,-2.35
+2026-07-29,Busan I'Park,FC Seoul,KrC,FA Cup,over,2-0,False,False,2.0,1.72,2.6,1.74,1.76,205,12,0.24,-0.6
+2026-07-29,Incheon United,GimPo Citizen,KrC,FA Cup,under,1-0,True,True,1.53,2.11,2.28,2.1,2.14,194,10,-0.61,-0.75
+2026-07-29,Gwangju FC,Cheonan City,KrC,FA Cup,under,1-0,True,True,1.85,1.95,2.04,1.92,1.98,217,11,-0.13,-0.19
+2026-07-29,Ulsan Citizen,Ulsan Hyundai,KrC,FA Cup,under,1-0,True,True,1.55,2.25,2.7,2.22,2.28,195,11,-0.73,-1.15
+2026-07-29,Asan Mugunghwa,Siheung Citizen,KrC,FA Cup,under,2-1,False,False,1.97,1.8,2.0,1.77,1.81,186,11,0.16,-0.03
+2026-07-29,Yeoju Citizen,Dangjin Citizen,KrC,FA Cup,over,0-1,False,False,1.97,1.76,1.85,1.77,1.82,197,10,0.15,0.12
+2026-07-29,Jeju United,Hwaseong FC,KrC,FA Cup,under,3-3,False,False,1.82,1.92,2.0,1.88,1.98,228,11,-0.16,-0.18
+2026-07-29,Cheongju FC,FC Anyang,KrC,FA Cup,under,1-3,False,False,1.87,1.88,3.1,1.88,1.92,229,12,-0.05,-1.23
+2026-07-29,Gimhae City,Seongnam FC,KrC,FA Cup,under,0-1,True,True,2.0,1.7,1.8,1.69,1.67,219,12,0.33,0.2
+2026-07-29,Reyady Abaseya,Tadamon Sour,Lb,Premier League,over,2-1,True,True,1.82,1.95,2.0,1.92,1.97,212,10,-0.15,-0.18
+2026-07-29,Ilpar,Metallurg Asha,RuC,Cup,over,1-0,False,False,1.95,1.89,1.89,1.89,,38,2,,0.06
+2026-07-30,Forward Madison,Chattanooga RW,Us4,USL League One,over,5-2,True,True,1.9,1.86,1.96,1.87,1.86,234,9,0.04,-0.06
+2026-07-30,Instituto Córdoba,CA Platense,Ar1,Liga Profesional Argentina,under,2-1,False,False,2.75,1.4,2.15,1.44,1.44,228,10,1.31,0.6
+2026-07-30,Fluminense,Bahia,Br1,Serie A,under,0-0,True,True,1.92,1.95,2.01,2.0,1.94,277,12,-0.02,-0.09
+2026-07-30,Vitória,Palmeiras,Br1,Serie A,over,0-4,True,True,1.64,2.35,2.6,2.37,2.4,278,12,-0.76,-0.96
+2026-07-30,RB Bragantino,Sporting Cristal,CS,CONMEBOL Sudamericana,under,1-0,True,True,1.5,2.38,2.44,2.37,2.39,252,11,-0.89,-0.94
+2026-07-30,Cienciano,Lanús,CS,CONMEBOL Sudamericana,under,4-0,False,False,1.87,1.67,2.1,1.7,1.65,252,11,0.22,-0.23
+2026-07-30,Luís Ángel Firpo,Fuerte San Francisco,Sv1,Primera Division,under,4-0,False,False,1.95,1.83,3.075,1.83,1.88,241,11,0.07,-1.125
+2026-07-30,Real Cartagena,América de Cali,CoC,Copa Colombia,under,1-1,True,True,2.0,3.1,3.1,3.1,,1,1,,-1.1
+2026-07-30,Anri Vladivostok,Dynamo Barnaul,RuC,Cup,over,1-2,True,True,1.95,1.25,1.33,1.33,,50,2,,0.62
+2026-07-30,Sydney Olympic,Brisbane Roar,AuC,Australia Cup,over,0-3,True,True,2.11,1.4,2.675,1.43,1.43,227,10,0.68,-0.565
+2026-07-30,South Melbourne,Adelaide United,AuC,Australia Cup,over,2-1,True,True,2.2,1.6,1.65,1.61,1.6,219,10,0.6,0.55
+2026-07-30,Temp Barnaul,KDV,RuC,Cup,under,3-4,False,False,1.77,3.08,3.08,3.08,,30,2,,-1.31
+2026-07-30,AC d'Escaldes,FC Vaduz,ECL,UEFA Europa Conference League,over,0-2,False,False,2.1,1.72,2.0,1.7,1.72,182,11,0.38,0.1
+2026-07-30,JIPPO Joensuu,JäPS,Fi2,Ykkösliiga,over,1-0,False,False,1.95,1.8,2.0,1.82,1.88,262,10,0.07,-0.05
+2026-07-30,Maccabi Tel Aviv,Sheriff Tiraspol,UEL,UEFA Europa League,over,1-0,False,False,2.3,1.56,1.64,1.59,1.56,290,10,0.74,0.66
+2026-07-30,Nomme Kalju,Shelbourne FC,ECL,UEFA Europa Conference League,over,2-1,True,True,2.2,1.72,1.8,1.72,1.74,303,12,0.46,0.4
+2026-07-30,Zira,Paide,ECL,UEFA Europa Conference League,under,1-1,True,True,1.8,2.05,2.14,1.95,2.04,305,11,-0.24,-0.34
+2026-07-30,Auda,FCSB,ECL,UEFA Europa Conference League,over,4-1,True,True,2.12,1.69,1.77,1.68,1.66,306,11,0.46,0.35
+2026-07-30,Inter Turku,Basaksehir,ECL,UEFA Europa Conference League,under,2-0,True,True,1.8,1.95,2.3,1.95,2.01,287,12,-0.21,-0.5
+2026-07-31,Isidro Metapán,CD FAS,Sv1,Primera Division,over,2-0,False,False,1.53,2.1,3.45,2.12,2.11,261,11,-0.58,-1.92
+2026-07-31,Independiente,Newell's Old Boys,Ar1,Liga Profesional Argentina,under,1-0,True,True,2.25,1.67,1.74,1.7,1.74,275,11,0.51,0.51
+2026-07-31,Coritiba,Cruzeiro,Br1,Serie A,over,0-1,False,False,1.66,2.22,2.35,2.22,2.34,275,11,-0.68,-0.69
+2026-07-31,O Higgins,Boca Juniors,CS,CONMEBOL Sudamericana,under,1-0,True,True,2.28,1.58,1.66,1.58,1.61,240,10,0.67,0.62
+2026-07-31,Caracas,Ind Santa Fe,CS,CONMEBOL Sudamericana,under,0-3,False,False,2.16,1.59,1.725,1.59,1.59,241,11,0.57,0.435
+2026-07-31,Atlético Bucaramanga,Llaneros FC (COL),Co1,Primera A,under,1-1,True,True,2.18,1.69,1.77,1.69,1.69,191,11,0.49,0.41
+2026-07-31,Alebrijes de Oaxaca,Dorados Sinaloa,Mx2,Liga de Expansión MX,over,0-2,False,False,1.87,1.88,2.01,1.88,1.98,265,12,-0.11,-0.14
+2026-07-31,Ural U19,Chertanovo U20,RuY,Youth Championship,over,3-1,True,True,2.19,1.6,1.6,1.58,,72,3,,0.59
+2026-07-31,Bentleigh Greens,Oakleigh Cannons,AuV,Victoria NPL,over,0-0,False,False,2.2,1.63,2.075,1.66,1.69,226,10,0.51,0.125
+2026-07-31,WDSC Wolves FC,Brisbane City,AuQ,Queensland NPL,over,5-2,True,True,3.2,1.29,1.36,1.3,,200,8,,1.84
+2026-07-31,Rochedale Rovers,Eastern Suburbs,AuQ,Queensland NPL,over,2-1,True,True,3.2,1.3,1.625,1.33,,177,8,,1.575
+2026-07-31,Peerless,Kalighat Club,In3,Calcutta Premier Division,under,1-0,True,True,1.85,1.95,1.95,1.625,,2,1,,-0.1
+2026-07-31,United,Rainbow,In3,Calcutta Premier Division,over,2-1,True,True,2.0,1.95,1.95,1.925,,2,1,,0.05
+2026-07-31,Campbelltown City,Adelaide City,AuS,South Australia NPL,under,0-4,False,False,1.58,2.19,2.5,2.17,2.3,220,9,-0.72,-0.92
+2026-07-31,Incheon Red Angels W,Hwacheon KSPO W,KrW,WK-League,under,0-2,True,True,1.96,1.65,1.88,1.64,1.68,237,11,0.28,0.08
+2026-07-31,Suwon FMC W,Gumi Sportstoto W,KrW,WK-League,under,4-1,False,False,1.52,2.49,2.62,2.4,2.58,170,8,-1.06,-1.1
+2026-07-31,Preston Lions,Green Gully SC,AuV,Victoria NPL,over,2-2,True,True,2.1,1.62,1.66,1.6,1.56,225,9,0.54,0.44
+2026-07-31,Henan Jianye,Dalian Zhixing,Cn1,Super League,over,1-1,False,False,2.15,1.53,1.85,1.52,1.53,253,11,0.62,0.3
+2026-07-31,Van Yerevan,Sardarapat,Am1,Premier League,under,1-4,False,False,1.95,1.83,3.6,1.85,1.81,249,12,0.14,-1.65
