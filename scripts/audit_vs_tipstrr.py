@@ -48,6 +48,7 @@ from workers.api_clients.db import execute_query  # noqa: E402
 INPUT_PATH = ROOT / "dev" / "active" / "tipstrr_raw.json"
 LEDGER_DIR = ROOT / "ledger"
 OUT_PATH = LEDGER_DIR / "comparison_tipstrr.json"
+PICKS_CSV_PATH = LEDGER_DIR / "picks_tipstrr.csv"
 
 STAKE = 10.0
 MIN_SAMPLE = 50
@@ -180,6 +181,7 @@ def our_stats(start: str, end: str) -> dict:
           AND sb.result::text IN ('won','lost')
           AND sb.market IN ('1x2','over_under_25','o/u')
           AND b.maturity_label IN ('calibrated','beta','active')
+          AND b.name NOT LIKE 'inplay_%%'
         """,
         (start, end),
     )
@@ -265,6 +267,42 @@ def main() -> int:
                       sort_keys=True).encode()
     print(f"\nFingerprint: {hashlib.sha256(blob).hexdigest()[:16]}")
     print(f"Wrote: {OUT_PATH}")
+
+    # Tipstrr's per-pick selections are paywalled. Their public monthly
+    # buckets are all we can expose — emit one CSV row per (tipster × month)
+    # inside the window so users can audit the roll-up.
+    from scripts._picks_csv import write_picks_csv  # noqa: E402
+    csv_rows = []
+    for t in raw:
+        if not t.get("football_only"):
+            continue
+        for m in t.get("monthly") or []:
+            m_date = (m.get("date") or "")[:10]
+            if not month_in_window(m_date, start, end):
+                continue
+            tips = int(m.get("tips") or 0)
+            if tips <= 0:
+                continue
+            wins = int(m.get("win") or 0)
+            loses = int(m.get("lose") or 0)
+            profit = float(m.get("levelStakeProfit") or 0)
+            roi = m.get("levelStakeROI")
+            # Result column captures WON/LOST count in "n_won-n_lost"
+            csv_rows.append({
+                "source": "tipstrr",
+                "kickoff_date": m_date,
+                "league": t.get("slug") or "",
+                "home_team": "",
+                "away_team": "",
+                "market": "pooled_all_types",
+                "pick": f"monthly_bucket_{tips}_tips",
+                "odds": f"{float(m.get('averageOdds') or 0):.3f}" if m.get("averageOdds") else "",
+                "result": f"{wins}W-{loses}L",
+                "pnl_per_unit": f"{profit / tips:.4f}" if tips else "",
+                "ref_url": f"https://tipstrr.com/tipster/{t.get('slug','')}/stats",
+            })
+    n_csv = write_picks_csv(PICKS_CSV_PATH, csv_rows)
+    print(f"Wrote {n_csv} rows to {PICKS_CSV_PATH}")
     return 0
 
 

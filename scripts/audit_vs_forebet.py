@@ -42,6 +42,7 @@ from workers.api_clients.db import execute_query  # noqa: E402
 INPUT_PATH = ROOT / "dev" / "active" / "forebet_raw.json"
 LEDGER_DIR = ROOT / "ledger"
 OUT_PATH = LEDGER_DIR / "comparison_forebet.json"
+PICKS_CSV_PATH = LEDGER_DIR / "picks_forebet.csv"
 
 STAKE = 10.0
 MIN_SAMPLE = 50
@@ -146,6 +147,7 @@ def our_stats(start: str, end: str) -> dict:
           AND sb.result::text IN ('won','lost')
           AND sb.market IN ('1x2','over_under_25','o/u')
           AND b.maturity_label IN ('calibrated','beta','active')
+          AND b.name NOT LIKE 'inplay_%%'
         """,
         (start, end),
     )
@@ -241,6 +243,27 @@ def main() -> int:
                       sort_keys=True).encode()
     print(f"\nFingerprint: {hashlib.sha256(blob).hexdigest()[:16]}")
     print(f"Wrote: {OUT_PATH}")
+
+    from scripts._picks_csv import compute_pnl, write_picks_csv  # noqa: E402
+    csv_rows = []
+    for r in kept:
+        odds_f = float(r["pick_odds"])
+        result = "won" if r.get("correct") else "lost"
+        csv_rows.append({
+            "source": "forebet",
+            "kickoff_date": r.get("match_date") or "",
+            "league": r.get("league_short") or "",
+            "home_team": r.get("home_team") or "",
+            "away_team": r.get("away_team") or "",
+            "market": r.get("market") or "",
+            "pick": r.get("pick") or "",
+            "odds": f"{odds_f:.3f}",
+            "result": result,
+            "pnl_per_unit": compute_pnl(odds_f, result),
+            "ref_url": f"https://www.forebet.com/en/football-predictions/predictions-1x2/{r.get('match_date','')}",
+        })
+    n_csv = write_picks_csv(PICKS_CSV_PATH, csv_rows)
+    print(f"Wrote {n_csv} rows to {PICKS_CSV_PATH}")
     return 0
 
 

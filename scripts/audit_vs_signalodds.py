@@ -49,6 +49,7 @@ from workers.api_clients.db import execute_query  # noqa: E402
 INPUT_PATH = ROOT / "dev" / "active" / "signalodds_soccer.json"
 LEDGER_DIR = ROOT / "ledger"
 OUT_PATH = LEDGER_DIR / "comparison_signalodds.json"
+PICKS_CSV_PATH = LEDGER_DIR / "picks_signalodds.csv"
 
 STAKE = 10.0
 MIN_SAMPLE = 50
@@ -174,6 +175,7 @@ def our_stats(start: str, end: str) -> dict:
           AND sb.result::text IN ('won','lost')
           AND sb.market IN ('1x2','over_under_25','o/u')
           AND b.maturity_label IN ('calibrated','beta','active')
+          AND b.name NOT LIKE 'inplay_%%'
         """,
         (start, end),
     )
@@ -277,6 +279,28 @@ def main() -> int:
                        sort_keys=True).encode()
     print(f"\nFingerprint: {hashlib.sha256(blob).hexdigest()[:16]}")
     print(f"Wrote: {OUT_PATH}")
+
+    from scripts._picks_csv import compute_pnl, write_picks_csv  # noqa: E402
+    csv_rows = []
+    for r in so_kept:
+        odds_f = float(r["odds"]) if r.get("odds") else None
+        status = r.get("status")
+        result = "won" if status == "Correct" else ("lost" if status == "Incorrect" else "")
+        csv_rows.append({
+            "source": "signalodds",
+            "kickoff_date": parse_url_date(r) or "",
+            "league": r.get("league") or "",
+            "home_team": r.get("home_team") or "",
+            "away_team": r.get("away_team") or "",
+            "market": r.get("market") or "",
+            "pick": r.get("pick") or "",
+            "odds": f"{odds_f:.3f}" if odds_f else "",
+            "result": result,
+            "pnl_per_unit": compute_pnl(odds_f, result),
+            "ref_url": r.get("detail_url") or r.get("event_url") or "https://signalodds.com/predictions/past?sport=soccer",
+        })
+    n_csv = write_picks_csv(PICKS_CSV_PATH, csv_rows)
+    print(f"Wrote {n_csv} rows to {PICKS_CSV_PATH}")
     return 0
 
 

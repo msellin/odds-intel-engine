@@ -28500,5 +28500,85 @@ def test_competitor_scrapes_weekly_2026_08_01():
     )
 
 
+@test("COMPETITOR-PICKS-CSV-2026-08-01 — per-source picks CSVs + fixture matrix + inplay excluded from OI cohort")
+def test_competitor_picks_csv_2026_08_01():
+    """COMPETITOR-PICKS-CSV-2026-08-01: aggregates alone aren't verifiable —
+    a visitor needs to be able to pull the underlying picks. Ship:
+
+      1. Every audit_vs_*.py writes ledger/picks_<source>.csv alongside
+         comparison_<source>.json using the shared scripts/_picks_csv.py
+         schema.
+      2. scripts/dump_oddsintel_picks_csv.py writes picks_oddsintel.csv
+         from simulated_bets — SAME filter as the audit our_stats query,
+         which now excludes `inplay_%%` bots so the OddsIntel cohort is
+         apples-to-apples with pre-match competitors.
+      3. scripts/build_matched_picks_csv.py fuzzy-joins the per-source
+         CSVs on (kickoff_date, market, home_team, away_team) into
+         picks_matched.csv — the fixture-level matrix the landing links to.
+      4. All 5 audit_vs_*.py our_stats queries carry the same
+         `AND b.name NOT LIKE 'inplay_%%'` guard so a competitor added
+         later can't accidentally bring inplay back in.
+
+    Any regression that silently drops inplay-exclusion or that stops
+    emitting a picks CSV will fail this test.
+    """
+    from pathlib import Path
+    repo = Path(__file__).resolve().parent.parent
+
+    helper = repo / "scripts" / "_picks_csv.py"
+    assert helper.exists(), "scripts/_picks_csv.py missing — shared CSV schema"
+    helper_txt = helper.read_text()
+    for col in ("kickoff_date", "home_team", "away_team", "market", "pick", "odds", "result"):
+        assert col in helper_txt, f"_picks_csv.py must declare {col} column"
+
+    for src in ("deepbetting", "forebet", "signalodds", "tipstrr"):
+        audit = repo / "scripts" / f"audit_vs_{src}.py"
+        atxt = audit.read_text()
+        assert f"picks_{src}.csv" in atxt, (
+            f"audit_vs_{src}.py must emit ledger/picks_{src}.csv "
+            "(COMPETITOR-PICKS-CSV-2026-08-01)."
+        )
+        assert "write_picks_csv" in atxt, (
+            f"audit_vs_{src}.py must call write_picks_csv() from _picks_csv."
+        )
+        # inplay exclusion in our_stats
+        assert "NOT LIKE 'inplay_%%'" in atxt, (
+            f"audit_vs_{src}.py our_stats must filter out inplay bots — "
+            "comparison is with pre-match tipsters."
+        )
+
+    wo = (repo / "scripts" / "audit_vs_winnerodds.py").read_text()
+    assert "picks_winnerodds.csv" in wo, (
+        "audit_vs_winnerodds.py must emit ledger/picks_winnerodds.csv."
+    )
+    assert "NOT LIKE 'inplay_%%'" in wo, (
+        "audit_vs_winnerodds.py our_stats must filter out inplay bots."
+    )
+
+    dump = repo / "scripts" / "dump_oddsintel_picks_csv.py"
+    assert dump.exists(), (
+        "scripts/dump_oddsintel_picks_csv.py missing — needed to dump "
+        "our own picks side of the matrix."
+    )
+    dump_txt = dump.read_text()
+    assert "NOT LIKE 'inplay_%%'" in dump_txt, (
+        "dump_oddsintel_picks_csv.py must exclude inplay bots — must "
+        "match audit filter for apples-to-apples."
+    )
+    assert "picks_oddsintel.csv" in dump_txt
+
+    matrix = repo / "scripts" / "build_matched_picks_csv.py"
+    assert matrix.exists(), (
+        "scripts/build_matched_picks_csv.py missing — matrix builder is "
+        "the primary Verify link target."
+    )
+    matrix_txt = matrix.read_text()
+    for src in ("oddsintel", "forebet", "signalodds"):
+        assert f"picks_{src}.csv" in matrix_txt or f'"{src}"' in matrix_txt, (
+            f"matrix builder must reference {src} — that's the join population."
+        )
+    assert "picks_matched.csv" in matrix_txt
+
+
 if __name__ == "__main__":
     main()

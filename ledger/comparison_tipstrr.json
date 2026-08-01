@@ -1,7 +1,7 @@
 {
   "source": "Tipstrr",
   "source_url": "https://tipstrr.com/tipster/<slug>/stats",
-  "snapshot_at_utc": "2026-08-01T12:12:27+00:00",
+  "snapshot_at_utc": "2026-08-01T12:35:40+00:00",
   "window": {
     "start": "2026-05-04",
     "end": "2026-08-02"
@@ -61,11 +61,11 @@
     ]
   },
   "our_stats_same_window": {
-    "n": 780,
-    "stake_total": 4567.26,
-    "pnl_total": 582.81,
-    "roi_pct": 12.76,
-    "hit_rate_pct": 46.28,
-    "avg_odds": 2.882
+    "n": 536,
+    "stake_total": 3347.26,
+    "pnl_total": 207.1,
+    "roi_pct": 6.19,
+    "hit_rate_pct": 42.72,
+    "avg_odds": 2.729
   }
 }

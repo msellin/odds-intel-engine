@@ -64,6 +64,7 @@ def our_stats(start: str, end: str) -> dict:
           AND sb.market IN ('1x2', 'o/u', 'over_under_25')
           AND sb.created_at >= %s::date
           AND sb.created_at <  %s::date
+          AND b.name NOT LIKE 'inplay_%%'
         """,
         (start, end),
     )
@@ -131,6 +132,32 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"\nWrote {out}")
+
+    from scripts._picks_csv import compute_pnl, write_picks_csv  # noqa: E402
+    picks_out = Path("ledger") / "picks_winnerodds.csv"
+    csv_rows = []
+    for r in rows:
+        try:
+            odds_f = float(r.get("cuota") or 0)
+        except (TypeError, ValueError):
+            odds_f = None
+        st = (r.get("status") or "").lower()
+        result = "won" if st in ("win", "won") else ("lost" if st in ("lose", "lost") else ("void" if st == "void" else ""))
+        csv_rows.append({
+            "source": "winnerodds",
+            "kickoff_date": (r.get("fecha_apuesta") or "")[:10],
+            "league": r.get("country") or "",
+            "home_team": "",
+            "away_team": "",
+            "market": "mixed",
+            "pick": r.get("apuesta") or "",
+            "odds": f"{odds_f:.3f}" if odds_f else "",
+            "result": result,
+            "pnl_per_unit": compute_pnl(odds_f, result),
+            "ref_url": "https://winnerodds.com",
+        })
+    n_csv = write_picks_csv(picks_out, csv_rows)
+    print(f"Wrote {n_csv} rows to {picks_out}")
     return 0
 
 

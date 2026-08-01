@@ -44,6 +44,7 @@ from workers.api_clients.db import execute_query  # noqa: E402
 INPUT_PATH = ROOT / "dev" / "active" / "deepbetting_stats.json"
 LEDGER_DIR = ROOT / "ledger"
 OUT_PATH = LEDGER_DIR / "comparison_deepbetting.json"
+PICKS_CSV_PATH = LEDGER_DIR / "picks_deepbetting.csv"
 
 STAKE = 10.0
 MIN_SAMPLE = 50
@@ -175,6 +176,7 @@ def our_stats(start: str, end: str) -> dict:
           AND sb.result::text IN ('won','lost')
           AND sb.market IN ('1x2','over_under_25','o/u')
           AND b.maturity_label IN ('calibrated','beta','active')
+          AND b.name NOT LIKE 'inplay_%%'
         """,
         (start, end),
     )
@@ -275,6 +277,30 @@ def main() -> int:
                        sort_keys=True).encode()
     print(f"\nFingerprint: {hashlib.sha256(blob).hexdigest()[:16]}")
     print(f"Wrote: {OUT_PATH}")
+
+    # COMPETITOR-PICKS-CSV-2026-08-01: also emit per-pick CSV so the landing
+    # "Verify · view raw picks" link exposes the underlying rows behind the
+    # aggregate above.
+    from scripts._picks_csv import compute_pnl, write_picks_csv  # noqa: E402
+    csv_rows = []
+    for r in kept:
+        odds_f = float(r.get("odds"))
+        result = "won" if r.get("forecast_status") == "Won" else "lost"
+        csv_rows.append({
+            "source": "deepbetting",
+            "kickoff_date": _norm_date(r.get("date_norm")) or "",
+            "league": r.get("division_label") or "",
+            "home_team": "",   # DeepBetting doesn't publish per-pick teams
+            "away_team": "",
+            "market": DB_MARKETS_OK.get(r.get("forecast_type"), r.get("forecast_type") or ""),
+            "pick": r.get("forecast") or r.get("forecast_pick") or "",
+            "odds": f"{odds_f:.3f}",
+            "result": result,
+            "pnl_per_unit": compute_pnl(odds_f, result),
+            "ref_url": "https://deepbetting.io/dashboard/",
+        })
+    n_csv = write_picks_csv(PICKS_CSV_PATH, csv_rows)
+    print(f"Wrote {n_csv} rows to {PICKS_CSV_PATH}")
     return 0
 
 
