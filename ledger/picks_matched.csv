@@ -1,6 +1,24 @@
 kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,oddsintel_result,forebet_pick,forebet_odds,forebet_result,signalodds_pick,signalodds_odds,signalodds_result
+2026-08-02,Major League Soccer,Sporting Kansas City,Houston Dynamo,1x2,home,3.200,lost,,,,,,
+2026-08-01,Liga Panameña de Fútbol,Sporting San Miguelito,Plaza Amador,1x2,home,3.790,lost,,,,,,
+2026-08-01,Friendlies Clubs,Reading,Charlton,1x2,home,4.200,won,,,,,,
 2026-08-01,Cup,Přepeře,Velke Hamry,1x2,home,3.600,won,,,,,,
+2026-08-01,2. Division - Group 1,Pors Grenland,Brattvåg,1x2,home,4.000,lost,,,,,,
+2026-08-01,Friendlies Clubs,Oldham,Sheffield Wednesday,1x2,home,4.100,won,,,,,,
+2026-08-01,Superliga,Lyngby,Aarhus,1x2,home,3.500,lost,,,,,,
+2026-08-01,2. liga,Lokomotíva Zvolen,Tatran Prešov,1x2,home,3.250,lost,,,,,,
+2026-08-01,2. liga,Lokomotíva Zvolen,Tatran Prešov,1x2,home,3.250,lost,,,,,,
+2026-08-01,Division 2 - Norra Svealand,Lidingö,Angby,1x2,home,3.560,lost,,,,,,
+2026-08-01,Friendlies Clubs,Leicester,Genoa,1x2,home,3.240,lost,,,,,,
+2026-08-01,Division 2 - Norra Svealand,Korsnäs,Helges,over_under_25,under 2.5,2.950,lost,,,,,,
+2026-08-01,Veikkausliiga,Gnistan,KuPS,1x2,home,3.250,lost,,,,,,
+2026-08-01,Friendlies Clubs,Energie Cottbus,Werder Bremen,1x2,home,3.850,lost,,,,,,
+2026-08-01,Friendlies Clubs,Dynamo Dresden,Union Berlin,1x2,home,4.150,won,,,,,,
+2026-08-01,Premier League,Dinamo Makhachkala,Lokomotiv,1x2,home,3.560,won,,,,,,
 2026-08-01,Friendlies Clubs,De Graafschap,Excelsior,1x2,home,3.650,lost,,,,,,
+2026-08-01,Major League Soccer,DC United,Nashville SC,1x2,home,3.100,lost,,,,,,
+2026-08-01,Friendlies Clubs,Cheltenham,Milton Keynes Dons,1x2,home,4.250,lost,,,,,,
+2026-08-01,Friendlies Clubs,Bognor Regis Town,Chichester City,1x2,home,4.200,lost,,,,,,
 2026-08-01,South Australia State League 1,Adelaide Cobras,Adelaide Olympic,1x2,home,3.640,lost,,,,,,
 2026-07-31,AuQ,WDSC Wolves FC,Brisbane City,1x2,,,,X,4.000,lost,,,
 2026-07-31,AuQ,WDSC Wolves FC,Brisbane City,over_under_25,,,,Over,3.200,won,,,
@@ -491,7 +509,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-26,Friendlies Clubs,Borac Banja Luka,IMT Novi Beograd,1x2,home,4.000,lost,,,,,,
 2026-06-25,Úrvalsdeild,Breidablik,Vikingur Reykjavík,1x2,home,5.050,lost,,,,,,
 2026-06-24,USL League Two,Morris Elite,New Jersey Copa,1x2,home,3.680,won,,,,,,
-2026-06-24,FIFA World Cup,Colombia,DR Congo,1x2,,,,,,,Colombia Win,1.590,won
 2026-06-24,League Two,Chengdu Rongcheng II,Guangzhou Dandelion,1x2,home,3.810,lost,,,,,,
 2026-06-24,League Two,BIT,Shandong Taishan II,over_under_25,over 2.5,2.500,won,,,,,,
 2026-06-23,Cn3,Xiamen Feilu,Hubei Chufeng Heli,1x2,,,,X,3.200,won,,,
@@ -500,7 +517,7 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-23,BrB,Vitoria U20,Santos U20,over_under_25,,,,Under,1.570,lost,,,
 2026-06-23,LtC,Vilniaus BFA,FK Kauno Zalgiris,1x2,,,,2,1.110,won,,,
 2026-06-23,LtC,Vilniaus BFA,FK Kauno Zalgiris,over_under_25,,,,Over,2.300,won,,,
-2026-06-23,Fi1,VPS Vaasa,AC Oulu,1x2,,,,2,3.400,lost,VPS Vaasa Win,2.550,won
+2026-06-23,Fi1,VPS Vaasa,AC Oulu,1x2,,,,2,3.400,lost,,,
 2026-06-23,Fi1,VPS Vaasa,AC Oulu,over_under_25,,,,Under,1.970,lost,,,
 2026-06-23,Cn3,Shanghai Second,Dalian Yingbo B,1x2,,,,2,2.350,won,,,
 2026-06-23,Cn3,Shanghai Second,Dalian Yingbo B,over_under_25,,,,Over,1.480,won,,,
@@ -510,27 +527,26 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-23,Ge1,Saburtalo,Meshakhte Tkibuli,over_under_25,,,,Over,2.120,won,,,
 2026-06-23,Cn3,Qingdao Red Lions,Dalian Kewei,1x2,,,,2,2.050,lost,,,
 2026-06-23,Cn3,Qingdao Red Lions,Dalian Kewei,over_under_25,,,,Under,2.250,won,,,
-2026-06-23,WC,Portugal,Uzbekistan,1x2,,,,1,1.140,won,Portugal Win,1.230,won
+2026-06-23,WC,Portugal,Uzbekistan,1x2,,,,1,1.140,won,,,
 2026-06-23,WC,Portugal,Uzbekistan,over_under_25,,,,Over,2.480,won,,,
 2026-06-23,Br2,Ponte Preta,Novorizontino SP,1x2,,,,2,1.850,won,,,
 2026-06-23,Br2,Ponte Preta,Novorizontino SP,over_under_25,,,,Under,2.170,won,,,
 2026-06-23,BrC,Perolas Negras,Santa Cruz RJ,1x2,,,,1,1.330,won,,,
-2026-06-23,FIFA World Cup,Panama,Croatia,1x2,,,,,,,Croatia Win,1.580,won
 2026-06-23,BrC,Olaria RJ,Duque de Caxias RJ,1x2,,,,1,1.500,won,,,
 2026-06-23,BrC,Olaria RJ,Duque de Caxias RJ,over_under_25,,,,Under,1.970,lost,,,
-2026-06-23,WC,Norway,Senegal,1x2,,,,X,3.400,lost,Norway Win,2.360,won
+2026-06-23,WC,Norway,Senegal,1x2,,,,X,3.400,lost,,,
 2026-06-23,WC,Norway,Senegal,over_under_25,,,,Under,1.820,lost,,,
 2026-06-23,League Two,Nantong Haimen Codion,Shanghai Port II,over_under_25,over 2.5,2.380,won,Over,1.600,won,,,
 2026-06-23,Cn3,Nantong Haimen,Shanghai Port II,1x2,,,,2,2.620,lost,,,
-2026-06-23,Fi1,KuPS Kuopio,Ilves,1x2,,,,1,1.600,won,KuPS Kuopio Win,1.680,won
+2026-06-23,Fi1,KuPS Kuopio,Ilves,1x2,,,,1,1.600,won,,,
 2026-06-23,Fi1,KuPS Kuopio,Ilves,over_under_25,,,,Over,2.180,won,,,
 2026-06-23,SeC,Järfälla,FC Arlanda,1x2,,,,1,3.200,lost,,,
 2026-06-23,SeC,Järfälla,FC Arlanda,over_under_25,,,,Over,2.280,lost,,,
-2026-06-23,WC,Jordan,Algeria,1x2,,,,X,4.330,lost,Algeria Win,1.610,won
+2026-06-23,WC,Jordan,Algeria,1x2,,,,X,4.330,lost,,,
 2026-06-23,WC,Jordan,Algeria,over_under_25,,,,Under,1.970,lost,,,
 2026-06-23,Fi1,Inter Turku,Seinajoen JK,1x2,,,,1,1.550,lost,,,
 2026-06-23,Fi1,Inter Turku,Seinajoen JK,over_under_25,,,,Over,2.230,lost,,,
-2026-06-23,Fi1,IFK Mariehamn,HJK Helsinki,1x2,,,,2,1.330,won,HJK Helsinki Win,1.420,won
+2026-06-23,Fi1,IFK Mariehamn,HJK Helsinki,1x2,,,,2,1.330,won,,,
 2026-06-23,Fi1,IFK Mariehamn,HJK Helsinki,over_under_25,,,,Over,2.400,won,,,
 2026-06-23,Cn3,Guangdong Mingtu,Guizhou Zhicheng,1x2,,,,2,1.800,lost,,,
 2026-06-23,Cn3,Guangdong Mingtu,Guizhou Zhicheng,over_under_25,,,,Over,1.570,lost,,,
@@ -540,12 +556,10 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-23,AuQ,Gold Coast Knights,Eastern Suburbs,over_under_25,,,,Over,2.900,won,,,
 2026-06-23,LtC,FK Minija Kretinga,Panevezys,1x2,,,,2,1.900,lost,,,
 2026-06-23,LtC,FK Minija Kretinga,Panevezys,over_under_25,,,,Over,2.100,won,,,
-2026-06-23,Fi1,FF Jaro,IF Gnistan,1x2,,,,2,1.830,lost,IF Gnistan Win,2.220,lost
+2026-06-23,Fi1,FF Jaro,IF Gnistan,1x2,,,,2,1.830,lost,,,
 2026-06-23,Fi1,FF Jaro,IF Gnistan,over_under_25,,,,Over,2.000,lost,,,
-2026-06-23,Fi1,FC Lahti,TPS Turku,1x2,,,,1,1.750,lost,FC Lahti Win,1.850,lost
+2026-06-23,Fi1,FC Lahti,TPS Turku,1x2,,,,1,1.750,lost,,,
 2026-06-23,Fi1,FC Lahti,TPS Turku,over_under_25,,,,Over,2.000,lost,,,
-2026-06-23,Veikkausliiga - Finland,FC Inter Turku,SJK Seinäjoki,1x2,,,,,,,FC Inter Turku Win,1.560,lost
-2026-06-23,FIFA World Cup,England,Ghana,1x2,,,,,,,England Win,1.250,lost
 2026-06-23,AuN,Edgeworth Eagles,Lambton Jaffas,1x2,,,,2,2.100,lost,,,
 2026-06-23,AuN,Edgeworth Eagles,Lambton Jaffas,over_under_25,,,,Over,2.900,won,,,
 2026-06-23,Ge1,Dinamo Tbilisi,Dinamo Batumi,1x2,,,,X,3.400,lost,,,
@@ -564,34 +578,29 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-23,BrC,Cabofriense RJ,Bonsucesso RJ,over_under_25,,,,Under,2.330,won,,,
 2026-06-23,SeC,BK Astrio,Ängelholms FF,1x2,,,,X,5.000,lost,,,
 2026-06-23,SeC,BK Astrio,Ängelholms FF,over_under_25,,,,Under,1.530,lost,,,
-2026-06-23,Brazil Série B,América Mineiro,Criciuma,1x2,,,,,,,Criciuma Win,2.680,won
 2026-06-23,BrC,Americano RJ,Macaé RJ,1x2,,,,1,1.200,won,,,
 2026-06-23,BrC,Americano RJ,Macaé RJ,over_under_25,,,,Under,1.610,lost,,,
 2026-06-23,Kg1,Alga Bishkek,Bars,1x2,,,,2,2.500,lost,,,
 2026-06-23,Kg1,Alga Bishkek,Bars,over_under_25,,,,Under,1.850,lost,,,
 2026-06-23,Ar3,9 de Julio Rafaela,El Linqueño,1x2,,,,1,1.650,won,,,
 2026-06-23,Ar3,9 de Julio Rafaela,El Linqueño,over_under_25,,,,Under,2.080,lost,,,
-2026-06-22,Superettan - Sweden,Örebro SK,Sandvikens IF,1x2,,,,,,,Sandvikens IF Win,2.800,lost
 2026-06-22,Us4,West Seattle Junction,Ballard,1x2,,,,2,1.400,won,,,
 2026-06-22,Et1,Welwalo Adigrat Uni,Hadiya Hosaena,1x2,,,,X,2.500,lost,,,
 2026-06-22,Et1,Welayta Dicha,Mebrat Hayl,1x2,,,,X,2.620,lost,,,
-2026-06-22,Superettan - Sweden,Varbergs BoIS,Landskrona BoIS,1x2,,,,,,,Varbergs BoIS Win,1.980,lost
 2026-06-22,WC,Uruguay,Cape Verde,1x2,,,,1,1.400,lost,,,
 2026-06-22,WC,Uruguay,Cape Verde,over_under_25,,,,Under,2.050,lost,,,
 2026-06-22,Gm1,Team Rhino,TMT,1x2,,,,X,3.100,lost,,,
 2026-06-22,Esiliiga B,Tallinna Kalev II,Narva U21,1x2,home,3.300,lost,,,,,,
 2026-06-22,Esiliiga B,Tallinna Kalev II,Narva U21,1x2,home,3.820,lost,,,,,,
 2026-06-22,Us4,Sueno,St. Croix,1x2,,,,1,1.220,won,,,
-2026-06-22,League of Ireland,Shelbourne Dublin,Bohemians,1x2,,,,,,,Shelbourne Dublin Win,2.820,lost
 2026-06-22,KW,Salmiya SC,Fahaheel SC,1x2,,,,1,1.500,won,,,
 2026-06-22,KW,Salmiya SC,Fahaheel SC,over_under_25,,,,Over,2.000,won,,,
 2026-06-22,Lv1,Rigas Futbola skola,FK Ogre,1x2,,,,1,1.050,won,,,
 2026-06-22,Lv1,Rigas Futbola skola,FK Ogre,over_under_25,,,,Over,3.900,won,,,
 2026-06-22,Gm1,Real de Banjul,Greater Tomorrow,1x2,,,,1,1.800,lost,,,
-2026-06-22,Brazil Série B,Ponte Preta,Grêmio Novorizontino,1x2,,,,,,,Grêmio Novorizontino Win,1.790,won
 2026-06-22,ClC,O Higgins,Unión Española,1x2,,,,X,3.200,won,,,
 2026-06-22,ClC,O Higgins,Unión Española,over_under_25,,,,Under,1.850,won,,,
-2026-06-22,WC,New Zealand,Egypt,1x2,,,,X,3.900,lost,Egypt Win,1.640,won
+2026-06-22,WC,New Zealand,Egypt,1x2,,,,X,3.900,lost,,,
 2026-06-22,WC,New Zealand,Egypt,over_under_25,,,,Under,2.020,lost,,,
 2026-06-22,Ge2,Merani Martvili,FC Gori,1x2,,,,1,1.530,lost,,,
 2026-06-22,Ge2,Merani Martvili,FC Gori,over_under_25,,,,Under,1.800,won,,,
@@ -599,14 +608,12 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-22,Ge2,Kolkheti Poti,Shturmi,1x2,,,,X,3.200,won,,,
 2026-06-22,Ge2,Kolkheti Poti,Shturmi,over_under_25,,,,Under,2.010,won,,,
 2026-06-22,Mn1,Khovd Western,Khovd FC,1x2,,,,1,1.220,won,,,
-2026-06-22,Superettan - Sweden,IK Oddevold,Ljungskile SK,1x2,,,,,,,IK Oddevold Win,2.080,lost
 2026-06-22,Mn1,Hunters,Khoromkhon Club,1x2,,,,1,1.030,won,,,
 2026-06-22,Gm1,Hawks,Samger,1x2,,,,X,2.620,won,,,
 2026-06-22,Ge2,Gareji Sagarejo,FC Lazika,1x2,,,,1,1.610,lost,,,
 2026-06-22,Ge2,Gareji Sagarejo,FC Lazika,over_under_25,,,,Under,1.980,lost,,,
 2026-06-22,Gm1,Gambia Ports A.,Medina United,1x2,,,,X,2.900,lost,,,
 2026-06-22,Gm1,Gambia Ports A.,Medina United,over_under_25,,,,Under,2.300,won,,,
-2026-06-22,FIFA World Cup,France,Iraq,1x2,,,,,,,France Win,3.520,won
 2026-06-22,Gm1,Fortune,Steve Biko FC,1x2,,,,X,3.200,lost,,,
 2026-06-22,Gm1,Fortune,Steve Biko FC,over_under_25,,,,Under,2.380,won,,,
 2026-06-22,Et1,Fasil Kenema,Arba Minch Kenema,1x2,,,,1,2.440,won,,,
@@ -619,24 +626,17 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-22,Ge1,Dila Gori,Metalurgi Rustavi,1x2,,,,2,2.900,lost,,,
 2026-06-22,Ge1,Dila Gori,Metalurgi Rustavi,over_under_25,,,,Over,1.630,won,,,
 2026-06-22,Kg1,Asiagoal,Bishkek City,1x2,,,,1,2.100,lost,,,
-2026-06-22,FIFA World Cup,Argentina,Austria,1x2,,,,,,,Argentina Win,1.610,won
 2026-06-22,Us4,Annapolis Blues,Northern Virginia,1x2,,,,2,3.200,won,,,
 2026-06-22,Us4,Annapolis Blues,Northern Virginia,over_under_25,,,,Over,2.160,won,,,
 2026-06-22,Us4,AHFC Royals,San Antonio FC 2,1x2,,,,1,1.500,won,,,
-2026-06-21,Superettan - Sweden,Östersunds FK,IFK Norrkoping,1x2,,,,,,,IFK Norrkoping Win,2.650,won
-2026-06-21,Superettan - Sweden,Östers IF,Falkenbergs FF,1x2,,,,,,,Östers IF Win,2.360,lost
 2026-06-21,Br2,Vila Nova FC,Nautico,1x2,,,,1,2.250,won,,,
 2026-06-21,Br2,Vila Nova FC,Nautico,over_under_25,,,,Over,1.680,won,,,
 2026-06-21,Br4,Velo Clube,Agua Santa SP,1x2,,,,1,2.050,lost,,,
 2026-06-21,Br4,Velo Clube,Agua Santa SP,over_under_25,,,,Under,2.020,won,,,
 2026-06-21,Us4,Utah United,Colorado Storm,1x2,,,,1,2.050,lost,,,
-2026-06-21,FIFA World Cup,Uruguay,Cape Verde,1x2,,,,,,,Uruguay Win,1.510,lost
-2026-06-21,FIFA World Cup,Tunisia,Japan,1x2,,,,,,,Japan Win,1.630,won
 2026-06-21,Ar3,Tucumán Central,Boca Unidos,1x2,,,,1,2.200,won,,,
 2026-06-21,Ar3,Tucumán Central,Boca Unidos,over_under_25,,,,Over,1.500,lost,,,
 2026-06-21,3. Division - Girone 5,Tromsø II,Skedsmo,1x2,home,4.200,lost,,,,,,
-2026-06-21,Brazil Série B,São Bernardo,Juventude,1x2,,,,,,,São Bernardo Win,2.700,lost
-2026-06-21,FIFA World Cup,Spain,Saudi Arabia,1x2,,,,,,,Spain Win,3.420,won
 2026-06-21,Serie D,Sao Jose,Santa Catarina,1x2,home,2.700,lost,,,,,,
 2026-06-21,Br3,Santa Cruz,Ypiranga RS,1x2,,,,1,1.750,lost,,,
 2026-06-21,Br3,Santa Cruz,Ypiranga RS,over_under_25,,,,Under,2.200,won,,,
@@ -655,7 +655,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-21,Us4,North Carolina II,Port City,1x2,,,,1,1.160,lost,,,
 2026-06-21,Superettan,Norrby IF,United Nordic,over_under_25,over 2.5,1.680,lost,,,,,,
 2026-06-21,Superettan,Norrby IF,United Nordic,over_under_25,over 2.5,1.680,lost,,,,,,
-2026-06-21,Superettan - Sweden,Norrby IF,Nordic United FC,1x2,,,,,,,Nordic United FC Win,2.450,lost
 2026-06-21,MLS Next Pro,New York City II,Chattanooga,1x2,home,3.600,lost,,,,,,
 2026-06-21,MLS Next Pro,New York City II,Chattanooga,1x2,home,3.600,lost,,,,,,
 2026-06-21,MLS Next Pro,New York City II,Chattanooga,1x2,home,3.600,lost,,,,,,
@@ -664,25 +663,20 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-21,Esiliiga B,JK Tabasalu,Tartu Kalev,1x2,home,3.300,won,,,,,,
 2026-06-21,Esiliiga B,JK Tabasalu,Tartu Kalev,1x2,home,3.300,won,,,,,,
 2026-06-21,Serie D,Ivinhema,Democrata GV,1x2,home,2.920,won,,,,,,
-2026-06-21,Superettan - Sweden,IK Brage,IFK Värnamo,1x2,,,,,,,IK Brage Win,2.150,won
-2026-06-21,Superettan - Sweden,Helsingborgs IF,GIF Sundsvall,1x2,,,,,,,Helsingborgs IF Win,1.880,won
 2026-06-21,Superettan,Helsingborg,GIF Sundsvall,over_under_25,over 2.5,1.980,won,,,,,,
 2026-06-21,Superettan,Helsingborg,GIF Sundsvall,over_under_25,over 2.5,1.980,won,,,,,,
 2026-06-21,Us2,Hartford Athletic,Pittsburgh Riverhounds,1x2,,,,2,3.000,lost,,,
 2026-06-21,Us2,Hartford Athletic,Pittsburgh Riverhounds,over_under_25,,,,Under,2.020,won,,,
 2026-06-21,Us4,Greenville Triumph,Alta,1x2,,,,2,3.500,won,,,
 2026-06-21,Us4,Greenville Triumph,Alta,over_under_25,,,,Under,1.800,lost,,,
-2026-06-21,Brazil Série B,Goiás,Operario PR,1x2,,,,,,,Goiás Win,2.200,lost
 2026-06-21,Ar3,Gimnasia Chivilcoy,Escobar FC,1x2,,,,1,1.450,won,,,
 2026-06-21,Ar3,Gimnasia Chivilcoy,Escobar FC,over_under_25,,,,Under,2.380,won,,,
 2026-06-21,ClC,Everton de Vina,San Luis Quillota,1x2,,,,X,3.700,won,,,
 2026-06-21,ClC,Everton de Vina,San Luis Quillota,over_under_25,,,,Under,1.760,lost,,,
-2026-06-21,FIFA World Cup,Ecuador,Curaçao,1x2,,,,,,,Ecuador Win,3.520,lost
 2026-06-21,Ar3,Defensores Pto. Vilelas,Sol de América,1x2,,,,2,2.550,lost,,,
 2026-06-21,Ar3,Defensores Pto. Vilelas,Sol de América,over_under_25,,,,Over,1.850,won,,,
 2026-06-21,MLS Next Pro,Columbus Crew II,Atlanta United II,over_under_25,under 2.5,2.750,lost,,,,,,
 2026-06-21,Segunda División,Colchagua,Provincial Osorno,over_under_25,under 2.5,1.780,won,,,,,,
-2026-06-21,Brazil Série B,Clube de Regatas Brasil,Fortaleza,1x2,,,,,,,Clube de Regatas Brasil Win,2.320,lost
 2026-06-21,Us4,Chattanooga RW,Naples,1x2,,,,1,1.660,won,,,
 2026-06-21,Us4,Chattanooga RW,Naples,over_under_25,,,,Over,1.850,lost,,,
 2026-06-21,Serie D,Central SC,Ferroviario,1x2,home,2.750,lost,,,,,,
@@ -693,8 +687,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-21,Serie D,Cascavel,Marcílio Dias,1x2,home,2.720,lost,,,,,,
 2026-06-21,Us2,Brooklyn FC,Tampa Bay Rowdies,1x2,,,,2,1.570,won,,,
 2026-06-21,Us2,Brooklyn FC,Tampa Bay Rowdies,over_under_25,,,,Under,1.560,won,,,
-2026-06-21,FIFA World Cup,Belgium,Iran,1x2,,,,,,,Belgium Win,1.480,lost
-2026-06-21,Brazil Série B,Avai,Cuiabá,1x2,,,,,,,Avai Win,2.620,won
 2026-06-21,Us4,Akron City,Steel City,1x2,,,,2,1.610,won,,,
 2026-06-21,Us4,Akron City,Steel City,over_under_25,,,,Under,1.620,won,,,
 2026-06-21,Us4,AC Connecticut,Black Rock,1x2,,,,2,1.570,won,,,
@@ -707,10 +699,9 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-20,Nz2,Wellington Olympic,Western Suburbs,1x2,,,,2,4.500,lost,,,
 2026-06-20,AuN,WS Wanderers Youth,Sutherland Sharks,1x2,,,,2,3.000,won,,,
 2026-06-20,AuN,WS Wanderers Youth,Sutherland Sharks,over_under_25,,,,Under,1.560,lost,,,
-2026-06-20,Brazil Série B,Vila Nova,Nautico PE,1x2,,,,,,,Vila Nova Win,2.460,won
 2026-06-20,Nz2,Upper Hutt City,Miramar,1x2,,,,2,1.270,won,,,
 2026-06-20,Primera B Metropolitana,UAI Urquiza,San Martín Burzaco,1x2,home,3.000,lost,,,,,,
-2026-06-20,WC,Türkiye,Paraguay,1x2,,,,1,2.000,lost,Turkey Win,2.120,lost
+2026-06-20,WC,Türkiye,Paraguay,1x2,,,,1,2.000,lost,,,
 2026-06-20,WC,Türkiye,Paraguay,over_under_25,,,,Over,1.760,lost,,,
 2026-06-20,Us4,Tobacco Road,Asheville City,1x2,,,,X,4.500,lost,,,
 2026-06-20,Nz2,Tauranga City United,Bay Olympic,1x2,,,,1,1.800,lost,,,
@@ -728,11 +719,9 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-20,ClC,San Marcos Arica,Limache,over_under_25,,,,Under,1.820,lost,,,
 2026-06-20,USL League Two,SC United Bantams,Charlotte Eagles,over_under_25,under 2.5,3.000,won,,,,,,
 2026-06-20,Nz2,Northern AFC,Ferrymead Bays,1x2,,,,2,1.500,lost,,,
-2026-06-20,FIFA World Cup,Netherlands,Sweden,1x2,,,,,,,Netherlands Win,1.790,won
 2026-06-20,Nz2,Nelson Suburbs,Wanaka,1x2,,,,1,1.100,won,,,
 2026-06-20,Nz2,Melville United,Fencibles United,1x2,,,,2,1.420,won,,,
 2026-06-20,Us4,Loudoun United II,Bethesda SC,1x2,,,,2,1.850,lost,,,
-2026-06-20,Brazil Série B,Londrina,Athletic Club (MG),1x2,,,,,,,Londrina Win,2.760,won
 2026-06-20,AuT,Launceston United,Ulverstone,1x2,,,,1,2.050,won,,,
 2026-06-20,AuT,Launceston United,Ulverstone,over_under_25,,,,Over,3.750,won,,,
 2026-06-20,AuN,Lambton Jaffas,Adamstown FC,1x2,,,,1,1.440,lost,,,
@@ -749,7 +738,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-20,AuV,Heidelberg United,Preston Lions,over_under_25,,,,Over,1.980,lost,,,
 2026-06-20,AuQ,Gold Coast United,Brisbane Roar U21,1x2,,,,1,1.900,lost,,,
 2026-06-20,AuQ,Gold Coast United,Brisbane Roar U21,over_under_25,,,,Over,2.600,won,,,
-2026-06-20,FIFA World Cup,Germany,Ivory Coast,1x2,,,,,,,Germany Win,1.580,won
 2026-06-20,JpW2,Ehime W,NGU Lublield Nagoya W,1x2,,,,2,1.720,won,,,
 2026-06-20,JpW2,Ehime W,NGU Lublield Nagoya W,over_under_25,,,,Over,1.900,won,,,
 2026-06-20,JpW3,Diosa Izumo W,Veertien Mie W,1x2,,,,X,2.860,lost,,,
@@ -760,10 +748,9 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-20,Primera División RFEF - Play Offs,Celta de Vigo II,Ponferradina,over_under_25,over 2.5,2.750,won,,,,,,
 2026-06-20,Serie D,Ceilândia,Luverdense,1x2,home,3.200,lost,,,,,,
 2026-06-20,Serie D,Ceilândia,Luverdense,1x2,home,3.200,lost,,,,,,
-2026-06-20,Brazil Série B,Ceará,Botafogo,1x2,,,,,,,Ceará Win,2.040,lost
 2026-06-20,AuA,Canberra Olympic,Monaro Panthers,1x2,,,,2,1.450,won,,,
 2026-06-20,AuA,Canberra Olympic,Monaro Panthers,over_under_25,,,,Over,4.330,won,,,
-2026-06-20,WC,Brazil,Haiti,1x2,,,,1,1.080,won,Brazil Win,3.400,won
+2026-06-20,WC,Brazil,Haiti,1x2,,,,1,1.080,won,,,
 2026-06-20,WC,Brazil,Haiti,over_under_25,,,,Over,3.350,won,,,
 2026-06-20,AuN,Belmont Swansea,Broadmeadow,1x2,,,,2,1.610,lost,,,
 2026-06-20,AuN,Belmont Swansea,Broadmeadow,over_under_25,,,,Over,2.600,lost,,,
@@ -773,23 +760,17 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-20,ClC,Audax Italiano,Deportes Santa Cruz,over_under_25,,,,Under,1.650,won,,,
 2026-06-20,Nz2,Auckland United,Eastern Suburbs (NZL),1x2,,,,2,2.050,lost,,,
 2026-06-20,Nz2,Auckland United,Eastern Suburbs (NZL),over_under_25,,,,Under,1.920,won,,,
-2026-06-20,La Liga 2 - Spain,Almería,Málaga,1x2,,,,,,,Almería Win,2.180,lost
 2026-06-19,CnC,Xi'an Ronghai,Qingdao West Coast,1x2,,,,2,1.650,lost,,,
 2026-06-19,CnC,Xi'an Ronghai,Qingdao West Coast,over_under_25,,,,Under,1.710,won,,,
-2026-06-19,League of Ireland,Waterford FC,Shamrock Rovers,1x2,,,,,,,Shamrock Rovers Win,1.640,won
 2026-06-19,Sy1,Wahda Damascus,Ittihad Aleppo,1x2,,,,2,1.820,lost,,,
 2026-06-19,Us4,Utah United,Atletico Union,1x2,,,,X,3.900,lost,,,
-2026-06-19,Primera División - Chile,Universidad de Chile,O'Higgins,1x2,,,,,,,Universidad de Chile Win,1.930,won
 2026-06-19,Cl1,Univ de Chile,O Higgins,1x2,,,,1,2.050,won,,,
 2026-06-19,Cl1,Univ de Chile,O Higgins,over_under_25,,,,Over,1.770,lost,,,
-2026-06-19,FIFA World Cup,USA,Australia,1x2,,,,,,,USA Win,1.660,won
 2026-06-19,Reserve League,Tigre Res.,San Lorenzo Res.,1x2,home,3.950,lost,,,,,,
 2026-06-19,Us4,Texoma,West Texas,1x2,,,,2,3.700,lost,,,
 2026-06-19,Us4,Texoma,West Texas,over_under_25,,,,Over,2.230,lost,,,
-2026-06-19,League of Ireland,St Patricks Athletic,Sligo Rovers,1x2,,,,,,,St Patricks Athletic Win,1.280,won
 2026-06-19,Br2,Sport Recife,Atlético GO,1x2,,,,X,3.250,won,,,
 2026-06-19,Br2,Sport Recife,Atlético GO,over_under_25,,,,Under,2.140,won,,,
-2026-06-19,Brazil Série B,Sport Recife,Atletico Goianiense,1x2,,,,,,,Sport Recife Win,2.180,lost
 2026-06-19,CnC,Shenzhen Juniors,Sichuan FC,1x2,,,,X,3.600,lost,,,
 2026-06-19,CnC,Shenzhen Juniors,Sichuan FC,over_under_25,,,,Over,1.920,won,,,
 2026-06-19,Cn3,Shangyu Pterosaur,Guangdong Mingtu,1x2,,,,X,3.000,lost,,,
@@ -798,14 +779,13 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-19,CnC,Shanghai Segenda,Shanghai SIPG,over_under_25,,,,Over,2.340,won,,,
 2026-06-19,CnC,Shaanxi Union,Zhejiang FC,1x2,,,,1,4.500,lost,,,
 2026-06-19,CnC,Shaanxi Union,Zhejiang FC,over_under_25,,,,Under,1.800,won,,,
-2026-06-19,FIFA World Cup,Scotland,Morocco,1x2,,,,,,,Morocco Win,1.820,won
 2026-06-19,FA Cup,Rizhao Yuqi,Tianjin Teda,1x2,home,3.900,lost,2,2.150,lost,,,
 2026-06-19,CnC,Rizhao Yuqi,Tianjin Teda,over_under_25,,,,Under,2.230,won,,,
 2026-06-19,Us4,Real Central New Jersey,OC Nor'easters,1x2,,,,2,1.720,won,,,
 2026-06-19,AuV,Oakleigh Cannons,Melbourne City II,1x2,,,,X,4.750,lost,,,
 2026-06-19,AuV,Oakleigh Cannons,Melbourne City II,over_under_25,,,,Under,1.200,lost,,,
 2026-06-19,1. Deild,Njardvik,Leiknir R.,over_under_25,under 2.5,2.600,won,,,,,,
-2026-06-19,WC,Mexico,South Korea,1x2,,,,1,2.100,won,Mexico Win,2.120,won
+2026-06-19,WC,Mexico,South Korea,1x2,,,,1,2.100,won,,,
 2026-06-19,WC,Mexico,South Korea,over_under_25,,,,Under,2.000,won,,,
 2026-06-19,Us4,Lansing City,Midwest United,1x2,,,,2,1.160,won,,,
 2026-06-19,CnC,Langfang Glory City,Dalian Zhixing,1x2,,,,X,4.500,won,,,
@@ -825,19 +805,16 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-19,CnC,Guangdong GZ-Power,Beijing Guoan,over_under_25,,,,Over,2.000,won,,,
 2026-06-19,AuQ,Gold Coast Knights,Magic United,1x2,,,,1,1.200,won,,,
 2026-06-19,AuQ,Gold Coast Knights,Magic United,over_under_25,,,,Over,4.330,won,,,
-2026-06-19,League of Ireland,Galway United,Derry City,1x2,,,,,,,Derry City Win,2.400,lost
 2026-06-19,Mo1,Gala,Benfica de Macau,1x2,,,,2,2.800,lost,,,
 2026-06-19,By2,FK Minsk-2,FK Volna Pinsk,1x2,,,,2,2.080,won,,,
 2026-06-19,By2,FK Minsk-2,FK Volna Pinsk,over_under_25,,,,Over,2.250,won,,,
 2026-06-19,Kz2,FC Shakhter,Jaiyq,1x2,,,,1,1.130,won,,,
-2026-06-19,League of Ireland,Drogheda United,Shelbourne Dublin,1x2,,,,,,,Shelbourne Dublin Win,2.020,lost
 2026-06-19,League Two,Dalian Yingbo B,Nantong Haimen Codion,over_under_25,over 2.5,2.800,won,Under,2.250,lost,,,
 2026-06-19,Cn3,Dalian Yingbo B,Nantong Haimen,1x2,,,,X,2.900,lost,,,
 2026-06-19,CnC,Dalian Kewei,Shenyang City,1x2,,,,2,2.200,lost,,,
 2026-06-19,CnC,Dalian Kewei,Shenyang City,over_under_25,,,,Under,1.900,won,,,
 2026-06-19,WC,Canada,Qatar,1x2,,,,1,1.280,won,,,
 2026-06-19,WC,Canada,Qatar,over_under_25,,,,Under,1.820,lost,,,
-2026-06-19,League of Ireland,Bohemians,Dundalk,1x2,,,,,,,Bohemians Win,1.920,lost
 2026-06-19,AuV,Bentleigh Greens,South Melbourne,1x2,,,,2,1.800,won,,,
 2026-06-19,AuV,Bentleigh Greens,South Melbourne,over_under_25,,,,Over,2.200,won,,,
 2026-06-19,Us4,Ballard,Bigfoot,1x2,,,,1,1.110,won,,,
@@ -845,10 +822,8 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-18,Us4,Weston,Miami FC,1x2,,,,1,2.250,won,,,
 2026-06-18,BrM,Valeriodoce,Aymorés,1x2,,,,2,2.700,lost,,,
 2026-06-18,BrM,Valeriodoce,Aymorés,over_under_25,,,,Under,2.350,won,,,
-2026-06-18,FIFA World Cup,Uzbekistan,Colombia,1x2,,,,,,,Colombia Win,1.420,won
 2026-06-18,BrM,Uberaba MG,Patrocinense MG,1x2,,,,2,3.800,lost,,,
 2026-06-18,BrM,Uberaba MG,Patrocinense MG,over_under_25,,,,Under,2.350,won,,,
-2026-06-18,FIFA World Cup,Switzerland,Bosnia & Herzegovina,1x2,,,,,,,Switzerland Win,1.590,won
 2026-06-18,Us4,Sporting Jax 2,Nona,1x2,,,,X,3.900,lost,,,
 2026-06-18,Us4,Sporting Jax 2,Nona,over_under_25,,,,Under,1.800,lost,,,
 2026-06-18,Ettan - Södra,Skövde AIK,Hässleholms IF,1x2,home,3.250,lost,,,,,,
@@ -865,26 +840,20 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-18,Us4,Fort Worth Vaqueros,McKinney Chupacabras,over_under_25,,,,Over,3.450,won,,,
 2026-06-18,Us2,FC Tulsa,Monterey Bay,1x2,,,,1,1.650,won,,,
 2026-06-18,Us2,FC Tulsa,Monterey Bay,over_under_25,,,,Under,1.800,won,,,
-2026-06-18,FIFA World Cup,Czech Republic,South Africa,1x2,,,,,,,Czech Republic Win,1.840,lost
 2026-06-18,Us4,Connecticut Rush,Western Mass Pioneers,1x2,,,,2,1.610,won,,,
 2026-06-18,Us4,Christos,Northern Virginia,1x2,,,,1,2.620,lost,,,
-2026-06-18,FIFA World Cup,Canada,Qatar,1x2,,,,,,,Canada Win,1.320,won
 2026-06-18,BrM,Caldense MG,Guarani MG,1x2,,,,1,2.300,lost,,,
 2026-06-18,BrB,Bragantino U20,Fluminense U20,1x2,,,,1,1.670,won,,,
 2026-06-18,BrB,Bragantino U20,Fluminense U20,over_under_25,,,,Over,2.250,won,,,
 2026-06-18,Friendlies Clubs,Austria Klagenfurt,SV Kapfenberg,1x2,home,3.800,won,,,,,,
 2026-06-18,Us4,Annapolis Blues,Hill City,1x2,,,,1,1.850,won,,,
-2026-06-18,Veikkausliiga - Finland,AC Oulu,IFK Mariehamn,1x2,,,,,,,AC Oulu Win,1.430,won
 2026-06-17,Us4,West Chester United II,Philadelphia Lone Star,1x2,,,,1,1.750,won,,,
 2026-06-17,Mn1,Tuv Azarganuud,FC Ulaanbaatar,1x2,,,,2,1.420,lost,,,
-2026-06-17,Veikkausliiga - Finland,TPS Turku,KuPS Kuopio,1x2,,,,,,,KuPS Kuopio Win,1.740,won
 2026-06-17,Tz1,Singida Black Stars,Dodoma Jiji,1x2,,,,1,1.330,won,,,
 2026-06-17,Tz1,Singida Black Stars,Dodoma Jiji,over_under_25,,,,Over,1.980,won,,,
 2026-06-17,KrW,Seoul W,Boeun Sangmu W,1x2,,,,2,3.000,lost,,,
 2026-06-17,KrW,Seoul W,Boeun Sangmu W,over_under_25,,,,Under,1.740,lost,,,
-2026-06-17,Veikkausliiga - Finland,SJK Seinäjoki,VPS Vaasa,1x2,,,,,,,SJK Seinäjoki Win,2.440,lost
 2026-06-17,Virsliga,Riga,Rīgas FS,over_under_25,over 2.5,1.880,won,,,,,,
-2026-06-17,FIFA World Cup,Portugal,DR Congo,1x2,,,,,,,Portugal Win,1.340,lost
 2026-06-17,Ge2,Merani Martvili,FC Samtredia,1x2,,,,1,1.400,won,,,
 2026-06-17,Ge2,Merani Martvili,FC Samtredia,over_under_25,,,,Over,2.000,won,,,
 2026-06-17,Tz1,Mbeya City,Simba,1x2,,,,2,1.280,won,,,
@@ -895,16 +864,12 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-17,WC,Iraq,Norway,1x2,,,,2,1.220,won,,,
 2026-06-17,WC,Iraq,Norway,over_under_25,,,,Under,1.620,lost,,,
 2026-06-17,Reserve League,Instituto Res.,Unión Santa Fe Res.,over_under_25,under 2.5,1.810,won,,,,,,
-2026-06-17,Veikkausliiga - Finland,Ilves Tampere,Jaro,1x2,,,,,,,Ilves Tampere Win,1.790,won
-2026-06-17,Veikkausliiga - Finland,IF Gnistan,FC Lahti,1x2,,,,,,,IF Gnistan Win,2.540,won
 2026-06-17,Us4,Houston Sur,GFI,1x2,,,,2,1.420,won,,,
-2026-06-17,Veikkausliiga - Finland,HJK Helsinki,FC Inter Turku,1x2,,,,,,,HJK Helsinki Win,2.700,lost
 2026-06-17,KrW,Gyeongju W,Hwacheon KSPO W,1x2,,,,2,1.720,won,,,
 2026-06-17,KrW,Gyeongju W,Hwacheon KSPO W,over_under_25,,,,Over,1.970,lost,,,
 2026-06-17,KrW,Gumi Sportstoto W,Incheon Red Angels W,1x2,,,,2,1.900,lost,,,
 2026-06-17,KrW,Gumi Sportstoto W,Incheon Red Angels W,over_under_25,,,,Over,1.820,lost,,,
 2026-06-17,FiWC,Gnistan W,KuPS W,1x2,,,,2,1.220,won,,,
-2026-06-17,FIFA World Cup,Ghana,Panama,1x2,,,,,,,Ghana Win,2.340,won
 2026-06-17,Cm1,Gazelle,Canon Yaoundé,1x2,,,,X,3.000,lost,,,
 2026-06-17,Cm1,Gazelle,Canon Yaoundé,over_under_25,,,,Under,2.160,won,,,
 2026-06-17,Ge2,Gareji Sagarejo,Shturmi,1x2,,,,1,2.100,lost,,,
@@ -913,7 +878,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-17,Br2,Fortaleza,América Mineiro,over_under_25,,,,Over,1.850,won,,,
 2026-06-17,ByC,FC Molodechno,BATE Borisov,1x2,,,,X,4.000,lost,,,
 2026-06-17,ByC,FC Molodechno,BATE Borisov,over_under_25,,,,Under,1.800,lost,,,
-2026-06-17,FIFA World Cup,England,Croatia,1x2,,,,,,,England Win,1.780,won
 2026-06-17,Us4,Delaware FC,Pennsylvania Classics,1x2,,,,1,1.830,lost,,,
 2026-06-17,Us4,Delaware FC,Pennsylvania Classics,over_under_25,,,,Over,2.550,lost,,,
 2026-06-17,Us4,Cleveland Force,Erie Sports Center,1x2,,,,1,1.250,won,,,
@@ -925,9 +889,9 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-17,Mz1,CD Maxaquene,UD Songo,over_under_25,,,,Under,2.300,lost,,,
 2026-06-17,Us4,Boston Olympiakos,Boston City,1x2,,,,1,1.300,won,,,
 2026-06-17,Mz1,Baía de Pemba,ENH Vilankulo,1x2,,,,X,2.800,won,,,
-2026-06-17,WC,Austria,Jordan,1x2,,,,1,1.400,won,Austria Win,1.380,won
+2026-06-17,WC,Austria,Jordan,1x2,,,,1,1.400,won,,,
 2026-06-17,WC,Austria,Jordan,over_under_25,,,,Under,1.800,lost,,,
-2026-06-17,WC,Argentina,Algeria,1x2,,,,1,1.550,won,Argentina Win,1.450,won
+2026-06-17,WC,Argentina,Algeria,1x2,,,,1,1.550,won,,,
 2026-06-17,WC,Argentina,Algeria,over_under_25,,,,Under,2.000,lost,,,
 2026-06-16,Br3,Ypiranga RS,Botafogo PB,1x2,,,,1,2.100,lost,,,
 2026-06-16,Br3,Ypiranga RS,Botafogo PB,over_under_25,,,,Over,1.620,lost,,,
@@ -957,19 +921,14 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-16,Br3,Maringá FC PR,Maranhão MA,over_under_25,,,,Under,1.670,won,,,
 2026-06-16,NoWC,Lyn W,Brann W,1x2,,,,2,1.270,won,,,
 2026-06-16,NoWC,Lyn W,Brann W,over_under_25,,,,Over,1.970,lost,,,
-2026-06-16,Br2,Londrina,Avai FC,1x2,,,,X,3.000,lost,Londrina Win,2.400,won
+2026-06-16,Br2,Londrina,Avai FC,1x2,,,,X,3.000,lost,,,
 2026-06-16,Br2,Londrina,Avai FC,over_under_25,,,,Under,2.350,lost,,,
-2026-06-16,Superettan - Sweden,Landskrona BoIS,Nordic United FC,1x2,,,,,,,Landskrona BoIS Win,2.320,won
-2026-06-16,FIFA World Cup,Iraq,Norway,1x2,,,,,,,Norway Win,1.220,won
-2026-06-16,WC,Iran,New Zealand,1x2,,,,1,1.850,lost,Iran Win,2.000,lost
+2026-06-16,WC,Iran,New Zealand,1x2,,,,1,1.850,lost,,,
 2026-06-16,WC,Iran,New Zealand,over_under_25,,,,Under,2.450,lost,,,
-2026-06-16,Superettan - Sweden,IFK Värnamo,Helsingborgs IF,1x2,,,,,,,IFK Värnamo Win,2.180,lost
 2026-06-16,Superettan,IFK Varnamo,Helsingborg,over_under_25,over 2.5,1.670,lost,,,,,,
 2026-06-16,Superettan,IFK Varnamo,Helsingborg,over_under_25,over 2.5,1.670,lost,,,,,,
 2026-06-16,Lv1,Grobinas SC,FK Liepaja,1x2,,,,2,1.750,lost,,,
 2026-06-16,Lv1,Grobinas SC,FK Liepaja,over_under_25,,,,Over,1.850,lost,,,
-2026-06-16,FIFA World Cup,France,Senegal,1x2,,,,,,,France Win,1.510,won
-2026-06-16,Brazil Série B,Fortaleza,América Mineiro,1x2,,,,,,,Fortaleza Win,1.640,lost
 2026-06-16,Br3,Ferroviária SP,Barra,1x2,,,,X,3.000,lost,,,
 2026-06-16,Br3,Ferroviária SP,Barra,over_under_25,,,,Under,2.700,won,,,
 2026-06-16,Lt1,FK Suduva,FA Siauliai,1x2,,,,X,3.700,lost,,,
@@ -979,7 +938,7 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-16,Ge1,Dila Gori,FC Spaeri,1x2,,,,X,3.600,lost,,,
 2026-06-16,Ge1,Dila Gori,FC Spaeri,over_under_25,,,,Under,1.770,lost,,,
 2026-06-16,Aw1,Dakota,Sporting Aruba,1x2,,,,1,1.610,lost,,,
-2026-06-16,Br2,Criciúma,Ceará SC,1x2,,,,1,1.750,lost,Criciuma Win,1.980,lost
+2026-06-16,Br2,Criciúma,Ceará SC,1x2,,,,1,1.750,lost,,,
 2026-06-16,Br2,Criciúma,Ceará SC,over_under_25,,,,Over,1.570,lost,,,
 2026-06-16,Mz1,Costa do Sol Maputo,Chingale de Tete,1x2,,,,1,1.480,won,,,
 2026-06-16,Mz1,Costa do Sol Maputo,Chingale de Tete,over_under_25,,,,Under,2.100,won,,,
@@ -1001,11 +960,10 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-15,Ca1,Vancouver FC,Pacific,over_under_25,,,,Over,2.300,won,,,
 2026-06-15,WC,Sweden,Tunisia,1x2,,,,X,3.400,lost,,,
 2026-06-15,WC,Sweden,Tunisia,over_under_25,,,,Under,2.200,lost,,,
-2026-06-15,WC,Spain,Cape Verde,1x2,,,,1,1.060,lost,Spain Win,3.450,lost
+2026-06-15,WC,Spain,Cape Verde,1x2,,,,1,1.060,lost,,,
 2026-06-15,WC,Spain,Cape Verde,over_under_25,,,,Over,3.450,lost,,,
 2026-06-15,Ir2,Sorkhpooshan Pakdasht,Mes Kerman,1x2,,,,X,2.450,won,,,
 2026-06-15,Ir2,Sorkhpooshan Pakdasht,Mes Kerman,over_under_25,,,,Under,3.400,won,,,
-2026-06-15,FIFA World Cup,Saudi Arabia,Uruguay,1x2,,,,,,,Uruguay Win,1.520,lost
 2026-06-15,Fi2,SJK Akatemia,FC Haka,1x2,,,,2,1.570,won,,,
 2026-06-15,Fi2,SJK Akatemia,FC Haka,over_under_25,,,,Under,1.570,won,,,
 2026-06-15,Esiliiga A,Nõmme Kalju II,Nõmme United II,1x2,home,2.630,won,1,1.950,won,,,
@@ -1021,10 +979,8 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-15,Tz1,KMC,Coastal Union,over_under_25,,,,Under,1.770,lost,,,
 2026-06-15,WC,Ivory Coast,Ecuador,1x2,,,,X,2.800,lost,,,
 2026-06-15,WC,Ivory Coast,Ecuador,over_under_25,,,,Under,2.900,won,,,
-2026-06-15,Superettan - Sweden,IFK Norrkoping,Varbergs BoIS,1x2,,,,,,,IFK Norrkoping Win,2.160,won
 2026-06-15,Azadegan League,Havadar,Mes Kerman,over_under_25,under 2.5,1.330,won,,,,,,
 2026-06-15,Et1,Hadiya Hosaena,Fasil Kenema,1x2,,,,X,2.500,lost,,,
-2026-06-15,Superettan - Sweden,GIF Sundsvall,Östers IF,1x2,,,,,,,Östers IF Win,2.200,won
 2026-06-15,Br3,Floresta CE,Figueirense,1x2,,,,X,2.800,lost,,,
 2026-06-15,Br3,Floresta CE,Figueirense,over_under_25,,,,Under,2.900,lost,,,
 2026-06-15,Ir2,Fard Alborz,Sanat Naft AC,1x2,,,,2,3.000,won,,,
@@ -1033,19 +989,14 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-15,Ar3,Deportivo Merlo,Argentino Merlo,over_under_25,,,,Under,3.100,lost,,,
 2026-06-15,Br2,Botafogo SP,Operário PR,1x2,,,,X,2.800,lost,,,
 2026-06-15,Br2,Botafogo SP,Operário PR,over_under_25,,,,Under,2.500,lost,,,
-2026-06-15,FIFA World Cup,Belgium,Egypt,1x2,,,,,,,Belgium Win,1.690,lost
 2026-06-15,Et1,Arba Minch Kenema,Shire Endaselassie,1x2,,,,X,2.750,lost,,,
 2026-06-15,Et1,Adama Kenema,Ethiopia Nigd Bank,1x2,,,,X,2.750,lost,,,
 2026-06-15,Et1,Adama Kenema,Ethiopia Nigd Bank,over_under_25,,,,Under,2.280,lost,,,
-2026-06-14,Primera División - Chile,Ñublense,Huachipato,1x2,,,,,,,Ñublense Win,2.040,lost
 2026-06-14,USL League One,Westchester SC,Greenville Triumph,1x2,home,3.100,won,,,,,,
 2026-06-14,USL League One,Westchester SC,Greenville Triumph,1x2,home,3.100,won,,,,,,
 2026-06-14,USL League One,Westchester SC,Greenville Triumph,1x2,home,3.100,won,,,,,,
-2026-06-14,Primera División - Chile,Universidad Católica (CHI),Universidad de Concepción,1x2,,,,,,,Universidad Católica (CHI) Win,1.580,won
-2026-06-14,Primera División - Chile,Union La Calera,Universidad de Chile,1x2,,,,,,,Universidad de Chile Win,2.160,lost
 2026-06-14,Us2,Tampa Bay Rowdies,Hartford Athletic,1x2,,,,1,1.440,lost,,,
 2026-06-14,Us2,Tampa Bay Rowdies,Hartford Athletic,over_under_25,,,,Over,1.930,lost,,,
-2026-06-14,Brazil Série B,São Bernardo,Sport Recife,1x2,,,,,,,São Bernardo Win,2.500,lost
 2026-06-14,Ar3,Sportivo Las Parejas,Gimnasia Chivilcoy,1x2,,,,1,1.950,lost,,,
 2026-06-14,Ar3,Sportivo Las Parejas,Gimnasia Chivilcoy,over_under_25,,,,Under,2.450,won,,,
 2026-06-14,Us4,Sporting Jax 2,Inter Gainesville,1x2,,,,2,2.700,lost,,,
@@ -1056,7 +1007,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-14,Ar3,Sarmiento Resistencia,Defensores Pto. Vilelas,over_under_25,,,,Under,1.250,won,,,
 2026-06-14,Us4,Sarasota Paradise,Union Omaha,1x2,,,,2,2.200,lost,,,
 2026-06-14,Us4,Sarasota Paradise,Union Omaha,over_under_25,,,,Under,1.800,won,,,
-2026-06-14,Superettan - Sweden,Sandvikens IF,IK Brage,1x2,,,,,,,Sandvikens IF Win,2.260,won
 2026-06-14,Us4,SC United Bantams,Hickory,1x2,,,,2,2.600,won,,,
 2026-06-14,Primera C,Puerto Nuevo,Centro Español,1x2,home,3.200,lost,,,,,,
 2026-06-14,Primera C,Puerto Nuevo,Centro Español,1x2,home,3.200,lost,,,,,,
@@ -1069,32 +1019,22 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-14,Us4,One Knoxville,New York Cosmos,1x2,,,,1,1.450,won,,,
 2026-06-14,Us4,One Knoxville,New York Cosmos,over_under_25,,,,Under,1.680,lost,,,
 2026-06-14,Us4,North Carolina II,Carolina Dynamo,1x2,,,,1,1.720,lost,,,
-2026-06-14,Superettan - Sweden,Norrby IF,IK Oddevold,1x2,,,,,,,IK Oddevold Win,2.100,won
-2026-06-14,FIFA World Cup,Netherlands,Japan,1x2,,,,,,,Netherlands Win,2.080,lost
-2026-06-14,La Liga 2 - Spain,Málaga,Almería,1x2,,,,,,,Málaga Win,2.320,lost
 2026-06-14,Us2,Loudoun United,Rhode Island,1x2,,,,X,3.700,lost,,,
 2026-06-14,Us2,Loudoun United,Rhode Island,over_under_25,,,,Under,1.770,lost,,,
 2026-06-14,Us4,Lorain County Leviathan,Akron City,1x2,,,,1,2.500,won,,,
 2026-06-14,Primera B Metropolitana,Liniers,Real Pilar,1x2,home,2.880,lost,,,,,,
 2026-06-14,Us2,Lexington,San Antonio FC,1x2,,,,2,3.300,lost,,,
 2026-06-14,Us2,Lexington,San Antonio FC,over_under_25,,,,Over,1.850,lost,,,
-2026-06-14,Brazil Série B,Juventude,Ponte Preta,1x2,,,,,,,Juventude Win,1.590,won
 2026-06-14,Primera C,Juventud Unida,Estrella Del Sur,1x2,home,2.950,won,,,,,,
 2026-06-14,Serie D,Jacuipense,ASA,1x2,home,2.870,lost,,,,,,
-2026-06-14,FIFA World Cup,Ivory Coast,Ecuador,1x2,,,,,,,Ecuador Win,2.550,lost
 2026-06-14,Serie D,Independência,Guaporé,1x2,home,2.720,lost,,,,,,
 2026-06-14,League Two,Hubei Chufeng Heli,Shenzhen 2028,1x2,home,2.750,lost,,,,,,
-2026-06-14,FIFA World Cup,Haiti,Scotland,1x2,,,,,,,Scotland Win,1.620,won
-2026-06-14,Brazil Série B,Grêmio Novorizontino,Nautico PE,1x2,,,,,,,Grêmio Novorizontino Win,2.150,lost
 2026-06-14,Ar2,Gimnasia Jujuy,San Martin San Juan,1x2,,,,1,1.950,won,,,
 2026-06-14,Ar2,Gimnasia Jujuy,San Martin San Juan,over_under_25,,,,Under,2.450,lost,,,
-2026-06-14,Superettan - Sweden,Falkenbergs FF,Örebro SK,1x2,,,,,,,Falkenbergs FF Win,1.940,lost
 2026-06-14,Ar3,Escobar FC,9 de Julio Rafaela,1x2,,,,2,4.500,lost,,,
 2026-06-14,Ar3,Escobar FC,9 de Julio Rafaela,over_under_25,,,,Over,1.500,lost,,,
 2026-06-14,Ettan - Norra,Enköping,Vasalund,1x2,home,2.750,lost,,,,,,
-2026-06-14,Primera División - Chile,Deportes Concepción,Deportes Limache,1x2,,,,,,,Deportes Limache Win,2.440,lost
 2026-06-14,Us4,Delaware FC,OC Nor'easters,1x2,,,,2,1.250,won,,,
-2026-06-14,Brazil Série B,Cuiabá,Vila Nova,1x2,,,,,,,Cuiabá Win,2.300,won
 2026-06-14,Us4,Christos,Patuxent,1x2,,,,1,1.100,won,,,
 2026-06-14,Us4,Chicago Dutch Lions,River Light,1x2,,,,2,1.800,lost,,,
 2026-06-14,Us4,Charlotte Independence,Naples,1x2,,,,1,1.610,won,,,
@@ -1104,22 +1044,18 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-14,Botola 2,Chabab Mohammédia,Widad Témara,over_under_25,under 2.5,1.500,won,,,,,,
 2026-06-14,WC,Brazil,Morocco,1x2,,,,1,1.650,lost,,,
 2026-06-14,WC,Brazil,Morocco,over_under_25,,,,Over,1.700,lost,,,
-2026-06-14,Brazil Série B,Botafogo,Operario PR,1x2,,,,,,,Botafogo Win,2.340,won
 2026-06-14,Torneo Federal A,Boca Unidos,San Martin Formosa,1x2,home,2.750,won,,,,,,
 2026-06-14,World Cup,Australia,Türkiye,over_under_25,over 2.5,2.070,lost,,,,,,
-2026-06-14,FIFA World Cup,Australia,Turkey,1x2,,,,,,,Turkey Win,1.780,lost
 2026-06-14,Primera Nacional,Atletico Mitre,Los Andes,over_under_25,over 2.5,3.500,won,,,,,,
-2026-06-14,Brazil Série B,Athletic Club (MG),Goiás,1x2,,,,,,,Athletic Club (MG) Win,2.540,lost
 2026-06-14,Serie C,AO Itabaiana,Ituano,1x2,home,3.350,lost,,,,,,
 2026-06-13,AuN,WS Wanderers Youth,St George City FA,1x2,,,,2,2.800,lost,,,
 2026-06-13,AuN,WS Wanderers Youth,St George City FA,over_under_25,,,,Over,2.100,lost,,,
 2026-06-13,1. Deild,Völsungur,Njardvik,over_under_25,under 2.5,2.750,lost,,,,,,
-2026-06-13,Veikkausliiga - Finland,VPS Vaasa,KuPS Kuopio,1x2,,,,,,,KuPS Kuopio Win,2.280,lost
 2026-06-13,JpW2,VONDS Ichihara W,Yunogo Belle W,1x2,,,,2,1.660,won,,,
 2026-06-13,JpW2,VONDS Ichihara W,Yunogo Belle W,over_under_25,,,,Over,1.970,lost,,,
 2026-06-13,AuN,University of NSW,St George Saints,1x2,,,,1,1.950,lost,,,
 2026-06-13,AuN,University of NSW,St George Saints,over_under_25,,,,Under,1.770,lost,,,
-2026-06-13,WC,USA,Paraguay,1x2,,,,1,2.050,won,USA Win,2.020,won
+2026-06-13,WC,USA,Paraguay,1x2,,,,1,2.050,won,,,
 2026-06-13,WC,USA,Paraguay,over_under_25,,,,Under,2.350,lost,,,
 2026-06-13,Ettan - Norra,Stocksund,Sollentuna,1x2,home,2.880,lost,,,,,,
 2026-06-13,AuW,Stirling Lions,Sorrento FC,1x2,,,,1,1.530,lost,,,
@@ -1136,7 +1072,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-13,Ru4,SKA-Khabarovsk-2,Salyut Belgorod,1x2,,,,1,2.860,lost,,,
 2026-06-13,AuA,Queanbeyan City,Monaro Panthers,1x2,,,,1,3.300,lost,,,
 2026-06-13,AuA,Queanbeyan City,Monaro Panthers,over_under_25,,,,Over,3.250,won,,,
-2026-06-13,FIFA World Cup,Qatar,Switzerland,1x2,,,,,,,Switzerland Win,1.240,lost
 2026-06-13,USL League One,Portland Hearts of Pine,Chattanooga Red Wolves,1x2,home,2.770,lost,,,,,,
 2026-06-13,USL Championship,Pittsburgh Riverhounds,Indy Eleven,over_under_25,under 2.5,2.020,won,,,,,,
 2026-06-13,AuW,Perth Glory Youth,Perth SC,1x2,,,,2,1.750,won,,,
@@ -1162,9 +1097,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-13,Regionalliga - West,Kitzbühel,Seekirchen,over_under_25,under 2.5,3.340,lost,,,,,,
 2026-06-13,Ar3,Juventud Antoniana,Sarmiento de La Banda,1x2,,,,2,4.200,won,,,
 2026-06-13,Ar3,Juventud Antoniana,Sarmiento de La Banda,over_under_25,,,,Under,2.300,won,,,
-2026-06-13,Veikkausliiga - Finland,Jaro,HJK Helsinki,1x2,,,,,,,HJK Helsinki Win,1.750,won
-2026-06-13,Veikkausliiga - Finland,Ilves Tampere,TPS Turku,1x2,,,,,,,Ilves Tampere Win,2.000,won
-2026-06-13,Veikkausliiga - Finland,IFK Mariehamn,IF Gnistan,1x2,,,,,,,IF Gnistan Win,2.010,won
 2026-06-13,AuT,Hobart Zebras,South Hobart,1x2,,,,2,1.180,won,,,
 2026-06-13,AuT,Hobart Zebras,South Hobart,over_under_25,,,,Over,4.000,won,,,
 2026-06-13,AuQ,Gold Coast United,Brisbane City,1x2,,,,2,1.830,won,,,
@@ -1174,9 +1106,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-13,AuW,Fremantle City,Balcatta,1x2,,,,1,1.900,won,,,
 2026-06-13,AuW,Fremantle City,Balcatta,over_under_25,,,,Over,2.600,won,,,
 2026-06-13,Veikkausliiga,FF Jaro,HJK Helsinki,over_under_25,over 2.5,1.810,won,,,,,,
-2026-06-13,Veikkausliiga - Finland,FC Lahti,SJK Seinäjoki,1x2,,,,,,,FC Lahti Win,2.360,lost
-2026-06-13,Veikkausliiga - Finland,FC Inter Turku,AC Oulu,1x2,,,,,,,FC Inter Turku Win,1.780,lost
-2026-06-13,Primera División - Chile,Everton de Viña del Mar,Palestino,1x2,,,,,,,Palestino Win,2.840,won
 2026-06-13,Primera C,El Porvenir,Atletico Atlas,1x2,home,2.600,lost,,,,,,
 2026-06-13,AuN,Edgeworth Eagles,Cooks Hill United,1x2,,,,1,10.000,lost,,,
 2026-06-13,AuN,Edgeworth Eagles,Cooks Hill United,over_under_25,,,,Over,3.750,lost,,,
@@ -1185,8 +1114,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-13,AuW,Dianella White Eagles,Western Knights,1x2,,,,2,3.250,lost,,,
 2026-06-13,AuW,Dianella White Eagles,Western Knights,over_under_25,,,,Over,2.600,lost,,,
 2026-06-13,AuS,Croydon Kings,Playford City Patriots,1x2,,,,X,3.700,lost,,,
-2026-06-13,Primera División - Chile,Coquimbo Unido,O'Higgins,1x2,,,,,,,Coquimbo Unido Win,1.860,lost
-2026-06-13,Primera División - Chile,Colo Colo,Cobresal,1x2,,,,,,,Colo Colo Win,1.310,won
 2026-06-13,USL League Two,Chicago Dutch Lions,River Light,1x2,home,2.700,lost,,,,,,
 2026-06-13,USL League One,Charlotte Independence,Naples,over_under_25,under 2.5,2.250,lost,,,,,,
 2026-06-13,Cn2,Changchun YaTai,Dalian Kuncheng,1x2,,,,X,3.800,lost,,,
@@ -1196,8 +1123,7 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-13,JpW3,Bunnies Gunma White Star W,Diosa Izumo W,over_under_25,,,,Under,2.410,lost,,,
 2026-06-13,AuA,Brindabella Blues,Belconnen United,1x2,,,,2,1.730,won,,,
 2026-06-13,AuA,Brindabella Blues,Belconnen United,over_under_25,,,,Over,3.250,won,,,
-2026-06-13,FIFA World Cup,Brazil,Morocco,1x2,,,,,,,Brazil Win,1.750,lost
-2026-06-13,Cl1,Audax Italiano,La Serena,1x2,,,,1,1.900,lost,Audax Italiano Win,2.000,lost
+2026-06-13,Cl1,Audax Italiano,La Serena,1x2,,,,1,1.900,lost,,,
 2026-06-13,Cl1,Audax Italiano,La Serena,over_under_25,,,,Over,2.000,lost,,,
 2026-06-13,Br2,Atlético GO,CRB AL,1x2,,,,2,3.300,lost,,,
 2026-06-13,Br2,Atlético GO,CRB AL,over_under_25,,,,Under,2.150,lost,,,
@@ -1207,16 +1133,13 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-13,South Australia NPL,Adelaide United II,Adelaide City,1x2,home,3.250,lost,,,,,,
 2026-06-13,AuN,Adamstown FC,Broadmeadow,1x2,,,,2,1.400,won,,,
 2026-06-13,AuN,Adamstown FC,Broadmeadow,over_under_25,,,,Over,2.100,won,,,
-2026-06-12,League of Ireland,Waterford FC,Sligo Rovers,1x2,,,,,,,Waterford FC Win,2.280,won
 2026-06-12,Us4,Utah United,Flatirons Rush,1x2,,,,1,1.040,won,,,
 2026-06-12,KrW,Suwon FMC W,Gumi Sportstoto W,1x2,,,,1,1.480,won,,,
 2026-06-12,KrW,Suwon FMC W,Gumi Sportstoto W,over_under_25,,,,Over,1.970,won,,,
-2026-06-12,League of Ireland,St Patricks Athletic,Drogheda United,1x2,,,,,,,St Patricks Athletic Win,1.380,won
-2026-06-12,WC,South Korea,Czech Republic,1x2,,,,X,3.100,lost,South Korea Win,2.820,won
+2026-06-12,WC,South Korea,Czech Republic,1x2,,,,X,3.100,lost,,,
 2026-06-12,WC,South Korea,Czech Republic,over_under_25,,,,Under,2.200,lost,,,
 2026-06-12,Tz1,Singida Big Stars,Azam,1x2,,,,2,1.480,won,,,
 2026-06-12,Tz1,Singida Big Stars,Azam,over_under_25,,,,Over,1.680,lost,,,
-2026-06-12,League of Ireland,Shelbourne Dublin,Shamrock Rovers,1x2,,,,,,,Shamrock Rovers Win,2.740,lost
 2026-06-12,Primera B Metropolitana,San Martín Burzaco,Villa Dalmine,1x2,home,3.200,lost,,,,,,
 2026-06-12,Primera B Metropolitana,San Martín Burzaco,Villa Dalmine,1x2,home,3.200,lost,,,,,,
 2026-06-12,Us4,San Juan SC,Project 51O,1x2,,,,2,1.900,won,,,
@@ -1246,7 +1169,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-12,Kakkonen - Lohko A,HPS,Kiffen,1x2,home,2.920,lost,,,,,,
 2026-06-12,Kakkonen - Lohko B,GrIFK,HJS Akatemia,1x2,home,3.550,lost,,,,,,
 2026-06-12,Kakkonen - Lohko B,GrIFK,HJS Akatemia,1x2,home,3.550,lost,,,,,,
-2026-06-12,League of Ireland,Galway United,Dundalk,1x2,,,,,,,Dundalk Win,2.480,won
 2026-06-12,Sy1,Foutoua Club,Karamah,1x2,,,,2,1.760,won,,,
 2026-06-12,Sy1,Foutoua Club,Karamah,over_under_25,,,,Under,1.750,lost,,,
 2026-06-12,Ma1,FUS Rabat,Maghreb Fès,1x2,,,,X,2.750,won,,,
@@ -1257,7 +1179,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-12,By1,FC Isloch,Naftan Novopolotsk,1x2,,,,1,1.250,won,,,
 2026-06-12,By1,FC Isloch,Naftan Novopolotsk,over_under_25,,,,Over,2.150,won,,,
 2026-06-12,Erovnuli Liga,Dinamo Batumi,Dila,1x2,home,3.700,won,,,,,,
-2026-06-12,League of Ireland,Derry City,Bohemians,1x2,,,,,,,Bohemians Win,2.460,lost
 2026-06-12,Tz1,Coastal Union,Namungo,1x2,,,,X,3.000,won,,,
 2026-06-12,Tz1,Coastal Union,Namungo,over_under_25,,,,Under,2.460,won,,,
 2026-06-12,CzU,Ceske Budejovice U19,Plzen U19,1x2,,,,2,2.750,won,,,
@@ -1266,7 +1187,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-12,Victoria NPL 2,Brunswick City,Eltham Redbacks FC,over_under_25,under 2.5,2.950,lost,,,,,,
 2026-06-12,BrM,Atletico-MG U20,Uberabinha U20,1x2,,,,1,1.070,won,,,
 2026-06-12,BrM,Atletico-MG U20,Uberabinha U20,over_under_25,,,,Under,1.280,lost,,,
-2026-06-12,Brazil Série B,Atletico Goianiense,Clube de Regatas Brasil,1x2,,,,,,,Atletico Goianiense Win,2.260,lost
 2026-06-12,AuS,Adelaide Comets,West Adelaide,1x2,,,,2,2.350,lost,,,
 2026-06-12,AuS,Adelaide Comets,West Adelaide,over_under_25,,,,Over,2.350,won,,,
 2026-06-11,Ca1,York 9 FC,Cavalry FC,1x2,,,,2,1.850,won,,,
@@ -1276,7 +1196,7 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-11,Us4,Virginia Marauders,Patuxent,1x2,,,,1,1.950,won,,,
 2026-06-11,Us2,Tampa Bay Rowdies,Charleston Battery,1x2,,,,1,1.570,lost,,,
 2026-06-11,Us2,Tampa Bay Rowdies,Charleston Battery,over_under_25,,,,Under,1.800,lost,,,
-2026-06-11,Br2,Sport Recife,Athletic Club MG,1x2,,,,2,4.330,lost,Sport Recife Win,1.820,lost
+2026-06-11,Br2,Sport Recife,Athletic Club MG,1x2,,,,2,4.330,lost,,,
 2026-06-11,Br2,Sport Recife,Athletic Club MG,over_under_25,,,,Over,1.570,lost,,,
 2026-06-11,Us4,SC United Bantams,Tobacco Road,1x2,,,,1,1.480,lost,,,
 2026-06-11,Us4,Reading United AC,OC Nor'easters,1x2,,,,2,1.530,won,,,
@@ -1286,9 +1206,7 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-11,Us4,North Carolina II,Wake,1x2,,,,1,1.300,won,,,
 2026-06-11,Us4,New England SC,Seacoast Utd Phantoms,1x2,,,,1,1.530,won,,,
 2026-06-11,Division 2 - Norra Götaland,Motala,Kumla,1x2,home,1.720,lost,,,,,,
-2026-06-11,FIFA World Cup,Mexico,South Africa,1x2,,,,,,,Mexico Win,1.470,won
 2026-06-11,Us4,Loudoun United II,Annapolis Blues,1x2,,,,2,1.380,lost,,,
-2026-06-11,Superettan - Sweden,Helsingborgs IF,Landskrona BoIS,1x2,,,,,,,Helsingborgs IF Win,2.540,lost
 2026-06-11,Division 2 - Norrland,Gottne,Friska Viljor,1x2,home,1.910,lost,,,,,,
 2026-06-11,Br2,Goiás,Novorizontino SP,1x2,,,,X,2.880,lost,,,
 2026-06-11,Br2,Goiás,Novorizontino SP,over_under_25,,,,Under,2.550,lost,,,
@@ -1313,14 +1231,13 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-11,Us4,Birmingham Legion II,Dothan United,1x2,,,,2,1.300,won,,,
 2026-06-11,Us4,Birmingham Legion II,Dothan United,over_under_25,,,,Under,1.820,won,,,
 2026-06-11,Us4,AC Connecticut,Vermont Green,1x2,,,,2,1.140,won,,,
-2026-06-10,Superettan - Sweden,Örebro SK,GIF Sundsvall,1x2,,,,,,,Örebro SK Win,2.000,lost
 2026-06-10,USL League One,Westchester SC,Fort Wayne,1x2,home,3.000,lost,,,,,,
 2026-06-10,USL League One,Westchester SC,Fort Wayne,1x2,home,3.000,lost,,,,,,
 2026-06-10,USL League One,Westchester SC,Fort Wayne,1x2,home,3.000,lost,,,,,,
 2026-06-10,USL League One,Westchester SC,Fort Wayne,1x2,home,3.000,lost,,,,,,
 2026-06-10,Reserve League,Vélez Sársfield Res.,Tigre Res.,1x2,home,1.490,won,,,,,,
 2026-06-10,Superettan,Varbergs BoIS FC,Norrby IF,over_under_25,over 2.5,1.830,lost,,,,,,
-2026-06-10,Superettan,Varbergs BoIS FC,Norrby IF,1x2,home,1.700,won,,,,Varbergs BoIS Win,1.730,won
+2026-06-10,Superettan,Varbergs BoIS FC,Norrby IF,1x2,home,1.700,won,,,,,,
 2026-06-10,Superettan,Varbergs BoIS FC,Norrby IF,over_under_25,over 2.5,1.830,lost,,,,,,
 2026-06-10,AuA,Tuggeranong United,Monaro Panthers,1x2,,,,1,4.330,lost,,,
 2026-06-10,AuA,Tuggeranong United,Monaro Panthers,over_under_25,,,,Over,3.400,won,,,
@@ -1348,13 +1265,12 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-10,Br2,Nautico,Fortaleza,over_under_25,,,,Over,1.600,lost,,,
 2026-06-10,Ir2,Naft Bandar Abbas,Shahrdari Noshahr,1x2,,,,X,2.620,lost,,,
 2026-06-10,Ir2,Naft Bandar Abbas,Shahrdari Noshahr,over_under_25,,,,Under,2.900,won,,,
-2026-06-10,Segunda División,Malaga,Las Palmas,1x2,home,2.190,lost,,,,Málaga Win,2.340,lost
+2026-06-10,Segunda División,Malaga,Las Palmas,1x2,home,2.190,lost,,,,,,
 2026-06-10,Zw1,MWOS,Manica Diamonds FC,1x2,,,,X,3.100,lost,,,
 2026-06-10,FiC,KuPS Kuopio,VPS Vaasa,over_under_25,,,,Over,1.800,lost,,,
 2026-06-10,Suomen Cup,KuPS,VPS,1x2,home,1.850,lost,1,1.670,lost,,,
 2026-06-10,Liga Pro Serie B,Ind. Juniors,Deportivo Cuenca Juniors,1x2,home,1.880,won,,,,,,
 2026-06-10,2. Deild,Haukar,Kormákur / Hvöt,1x2,home,1.580,lost,,,,,,
-2026-06-10,Brazil Série B,Goiás,Grêmio Novorizontino,1x2,,,,,,,Goiás Win,2.440,lost
 2026-06-10,Canadian Premier League,Forge,HFX Wanderers FC,1x2,home,1.550,won,,,,,,
 2026-06-10,Canadian Premier League,Forge,HFX Wanderers FC,1x2,home,1.550,won,,,,,,
 2026-06-10,Zw1,Dynamos FC,Hunters,1x2,,,,1,1.750,lost,,,
@@ -1370,8 +1286,8 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-10,USL League One,Charlotte Independence,Union Omaha,over_under_25,under 2.5,2.500,won,,,,,,
 2026-06-10,ArR,Central Córdoba SdE Res.,Colón Res.,1x2,,,,X,3.100,lost,,,
 2026-06-10,ArR,Central Córdoba SdE Res.,Colón Res.,over_under_25,,,,Under,2.140,won,,,
-2026-06-10,Serie B,Ceara,Avai,1x2,home,1.800,won,,,,Ceará Win,1.780,won
-2026-06-10,Serie B,Ceara,Avai,1x2,home,1.820,won,,,,Ceará Win,1.780,won
+2026-06-10,Serie B,Ceara,Avai,1x2,home,1.800,won,,,,,,
+2026-06-10,Serie B,Ceara,Avai,1x2,home,1.820,won,,,,,,
 2026-06-10,Za1,Cape Town City,Magesi FC,1x2,,,,2,3.800,lost,,,
 2026-06-10,Za1,Cape Town City,Magesi FC,over_under_25,,,,Under,2.750,won,,,
 2026-06-10,AuA,Canberra Olympic,Gungahlin Juventus,1x2,,,,1,9.000,lost,,,
@@ -1384,7 +1300,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-10,Ca1,Atlético Ottawa,Supra du Québec,1x2,,,,1,1.900,won,,,
 2026-06-10,Ca1,Atlético Ottawa,Supra du Québec,over_under_25,,,,Under,1.650,lost,,,
 2026-06-10,Cup,Afturelding,Stjarnan,1x2,home,3.800,won,,,,,,
-2026-06-09,Superettan - Sweden,Östers IF,IFK Värnamo,1x2,,,,1,1.950,won,Östers IF Win,1.970,won
 2026-06-09,Ma1,Yacoub El Mansour,CODM Meknès,1x2,,,,2,3.100,lost,,,
 2026-06-09,Ma1,Yacoub El Mansour,CODM Meknès,over_under_25,,,,Under,2.300,won,,,
 2026-06-09,Br2,Vila Nova FC,Botafogo SP,1x2,,,,1,2.250,won,,,
@@ -1393,7 +1308,7 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-09,SeC,Vendelsö IK,Haninge,over_under_25,,,,Over,2.300,won,,,
 2026-06-09,Cl2,Unión Española,Unión San Felipe,1x2,,,,1,1.670,lost,,,
 2026-06-09,Cl2,Unión Española,Unión San Felipe,over_under_25,,,,Over,1.950,won,,,
-2026-06-09,Se2,United Nordic,Östersunds FK,1x2,,,,1,1.950,lost,Nordic United FC Win,2.260,lost
+2026-06-09,Se2,United Nordic,Östersunds FK,1x2,,,,1,1.950,lost,,,
 2026-06-09,Se2,United Nordic,Östersunds FK,over_under_25,,,,Under,1.620,won,,,
 2026-06-09,Ml1,US Bougouni,USFAS Bamako,1x2,,,,2,1.800,lost,,,
 2026-06-09,Us4,The Villages,Sporting Jax 2,1x2,,,,X,5.000,won,,,
@@ -1409,7 +1324,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-09,Ir2,Saipa Karaj,Sorkhpooshan Pakdasht,over_under_25,,,,Under,3.400,won,,,
 2026-06-09,Fi2,SJK Akatemia,JIPPO Joensuu,1x2,,,,2,1.140,lost,,,
 2026-06-09,Fi2,SJK Akatemia,JIPPO Joensuu,over_under_25,,,,Over,4.000,lost,,,
-2026-06-09,Brazil Série B,Ponte Preta,Cuiabá,1x2,,,,,,,Cuiabá Win,2.480,won
 2026-06-09,Superettan,Osters IF,IFK Varnamo,1x2,home,2.032,won,1,1.950,won,,,
 2026-06-09,Superettan,Osters IF,IFK Varnamo,over_under_25,over 2.5,1.631,won,Over,2.300,won,,,
 2026-06-09,Superettan,Osters IF,IFK Varnamo,over_under_25,over 2.5,1.631,won,Over,2.300,won,,,
@@ -1419,7 +1333,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-09,Ir2,Niroye Zamini,Ario Eslamshahr,over_under_25,,,,Under,3.750,won,,,
 2026-06-09,Ir2,Navad Urmia,Fard Alborz,1x2,,,,X,2.880,lost,,,
 2026-06-09,Ir2,Navad Urmia,Fard Alborz,over_under_25,,,,Under,2.300,lost,,,
-2026-06-09,Brazil Série B,Nautico PE,Fortaleza,1x2,,,,,,,Nautico PE Win,2.340,lost
 2026-06-09,Azadegan League,Nassaji Mazandaran,Shenavarsazi Qeshm,1x2,home,1.380,won,1,1.220,won,,,
 2026-06-09,Ir2,Nassaji Mazandaran,Shenavarsazi Qeshm,over_under_25,,,,Under,2.000,won,,,
 2026-06-09,Azadegan League,Mes Kerman,Naft Gachsaran,1x2,home,1.750,lost,X,2.750,won,,,
@@ -1433,9 +1346,9 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-09,Friendlies,Indonesia,Mozambique,1x2,home,1.470,won,,,,,,
 2026-06-09,SeC,IK Sturehov,FBK Karlstad,1x2,,,,X,7.500,lost,,,
 2026-06-09,SeC,IK Sturehov,FBK Karlstad,over_under_25,,,,Under,1.300,lost,,,
-2026-06-09,Se2,IK Oddevold,Norrköping,1x2,,,,X,3.300,lost,IFK Norrkoping Win,2.620,won
+2026-06-09,Se2,IK Oddevold,Norrköping,1x2,,,,X,3.300,lost,,,
 2026-06-09,Se2,IK Oddevold,Norrköping,over_under_25,,,,Under,1.670,lost,,,
-2026-06-09,Se2,IK Brage,Ljungskile SK,1x2,,,,1,2.450,lost,IK Brage Win,2.680,lost
+2026-06-09,Se2,IK Brage,Ljungskile SK,1x2,,,,1,2.450,lost,,,
 2026-06-09,Se2,IK Brage,Ljungskile SK,over_under_25,,,,Over,2.100,won,,,
 2026-06-09,FiC,FC Honka Espoo,HJK Helsinki,1x2,,,,2,1.140,won,,,
 2026-06-09,FiC,FC Honka Espoo,HJK Helsinki,over_under_25,,,,Over,4.000,won,,,
@@ -1455,7 +1368,7 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-09,Friendlies,Angola,Central African Republic,1x2,home,1.650,won,,,,,,
 2026-06-09,Br2,América Mineiro,Atlético GO,1x2,,,,X,3.000,lost,,,
 2026-06-09,Br2,América Mineiro,Atlético GO,over_under_25,,,,Under,2.450,lost,,,
-2026-06-09,Segunda División,Almeria,Castellón,1x2,home,2.410,won,,,,Almería Win,2.440,won
+2026-06-09,Segunda División,Almeria,Castellón,1x2,home,2.410,won,,,,,,
 2026-06-09,Liga Pro Serie B,9 de Octubre,Cuniburo,1x2,home,2.700,won,,,,,,
 2026-06-09,Liga Pro Serie B,9 de Octubre,Cuniburo,1x2,home,2.700,won,,,,,,
 2026-06-09,Py2,3 de Noviembre,General Caballero JLM,1x2,,,,2,1.850,won,,,
@@ -1465,7 +1378,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-08,Ma1,Wydad Casablanca,Olympique Safi,over_under_25,,,,Under,1.930,won,,,
 2026-06-08,Botola Pro,Wydad AC,Olympique Safi,1x2,home,1.570,won,1,1.530,won,,,
 2026-06-08,Us4,Virginia Marauders,Christos,1x2,,,,2,1.400,won,,,
-2026-06-08,Brazil Série B,Vila Nova,Botafogo,1x2,,,,,,,Vila Nova Win,2.040,won
 2026-06-08,Se4,Utsiktens BK,FC Rosengard,1x2,,,,2,1.530,won,,,
 2026-06-08,Se4,Utsiktens BK,FC Rosengard,over_under_25,,,,Over,2.150,lost,,,
 2026-06-08,ArR,Unión Santa Fe Res.,Atlético Tucumán Res.,1x2,,,,2,3.250,lost,,,
@@ -1517,7 +1429,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-08,Primera A,Atletico Nacional,Junior,1x2,home,1.530,won,,,,,,
 2026-06-08,Us4,Asheville City,Wake,1x2,,,,1,1.030,won,,,
 2026-06-08,Ettan - Södra,Angelholms FF,Olympic,1x2,home,2.304,lost,,,,,,
-2026-06-08,Brazil Série B,América Mineiro,Atletico Goianiense,1x2,,,,,,,América Mineiro Win,2.460,lost
 2026-06-08,Division Intermedia,3 de Noviembre,General Caballero,1x2,home,4.750,lost,,,,,,
 2026-06-07,Us4,Westchester Flames,New Jersey Copa,1x2,,,,2,2.000,won,,,
 2026-06-07,Ar2,Tristán Suárez,Club Almagro,1x2,,,,1,1.800,lost,,,
@@ -1559,7 +1470,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-07,Ar3,Defensores Pto. Vilelas,Boca Unidos,over_under_25,,,,Over,1.400,lost,,,
 2026-06-07,Us4,Connecticut Rush,Seacoast Utd Phantoms,1x2,,,,1,2.000,lost,,,
 2026-06-07,Us4,Columbus United,Montgomery United,1x2,,,,X,4.330,lost,,,
-2026-06-07,Brazil Série B,Clube de Regatas Brasil,São Bernardo,1x2,,,,,,,Clube de Regatas Brasil Win,1.920,lost
 2026-06-07,Primera Nacional,Club Atlético Güemes,Deportivo Maipu,1x2,home,2.630,won,,,,,,
 2026-06-07,Us4,Charlotte Independence 2,Charlotte Eagles,1x2,,,,2,4.000,lost,,,
 2026-06-07,Primera División RFEF - Play Offs,Celta de Vigo II,Europa Fc,over_under_25,over 2.5,2.300,won,,,,,,
@@ -1580,7 +1490,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-06,Primera C,Yupanqui,Central Cordoba,1x2,home,2.880,won,,,,,,
 2026-06-06,Jp3,Yokohama FC,Renofa Yamaguchi,1x2,,,,1,1.700,won,,,
 2026-06-06,Jp3,Yokohama FC,Renofa Yamaguchi,over_under_25,,,,Over,1.920,won,,,
-2026-06-06,J League,Yokohama F Marinos,Shimizu S Pulse,1x2,,,,,,,Yokohama F Marinos Win,2.380,won
 2026-06-06,JpW3,Yamato Sylphid W,Veertien Mie W,1x2,,,,X,2.950,lost,,,
 2026-06-06,JpW3,Yamato Sylphid W,Veertien Mie W,over_under_25,,,,Under,2.100,won,,,
 2026-06-06,Nz2,Western Suburbs,Napier City Rovers,1x2,,,,2,1.950,lost,,,
@@ -1596,10 +1505,8 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-06,2. Deild,Vikingur Olafsiik,Kári,1x2,home,3.000,lost,,,,,,
 2026-06-06,Ca1,Vancouver FC,Atlético Ottawa,1x2,,,,2,2.700,lost,,,
 2026-06-06,Ca1,Vancouver FC,Atlético Ottawa,over_under_25,,,,Over,2.100,won,,,
-2026-06-06,J League,Urawa Red Diamonds,Fagiano Okayama,1x2,,,,,,,Urawa Red Diamonds Win,1.980,lost
 2026-06-06,Nz2,Upper Hutt City,Petone,1x2,,,,1,2.620,won,,,
 2026-06-06,3. liga - MSFL,Unie Hlubina,Uničov,1x2,home,2.850,lost,,,,,,
-2026-06-06,J League,Tokyo Verdy,Gamba Osaka,1x2,,,,,,,Gamba Osaka Win,2.640,won
 2026-06-06,Ar3,Talleres (RdE),Deportivo Merlo,1x2,,,,X,2.500,lost,,,
 2026-06-06,Ar3,Talleres (RdE),Deportivo Merlo,over_under_25,,,,Under,3.350,won,,,
 2026-06-06,USL League Two,Swarm FC,Birmingham Legion II,1x2,home,2.450,won,,,,,,
@@ -1626,13 +1533,10 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-06,Kakkonen - Lohko A,MyPa,PPJ,1x2,home,3.250,lost,,,,,,
 2026-06-06,Uy1,Montevideo Wanderers,Danubio FC,1x2,,,,1,2.250,lost,,,
 2026-06-06,Uy1,Montevideo Wanderers,Danubio FC,over_under_25,,,,Under,2.350,won,,,
-2026-06-06,J League,Mito HollyHock,V-Varen Nagasaki,1x2,,,,,,,Mito HollyHock Win,2.300,lost
 2026-06-06,AuQ,Magic United,Brisbane Roar U21,1x2,,,,1,2.700,won,,,
 2026-06-06,AuQ,Magic United,Brisbane Roar U21,over_under_25,,,,Over,3.450,won,,,
 2026-06-06,USL League Two,Lorain County Leviathan,Pittsburgh Riverhounds 2,1x2,home,2.420,won,,,,,,
-2026-06-06,J League,Kawasaki Frontale,Hiroshima Sanfrecce FC,1x2,,,,,,,Hiroshima Sanfrecce FC Win,2.030,won
-2026-06-06,J League,Kashiwa Reysol,Kyoto Purple Sanga,1x2,,,,,,,Kashiwa Reysol Win,1.980,lost
-2026-06-06,Jp1,Kashima Antlers,Vissel Kobe,1x2,,,,1,2.200,won,Kashima Antlers Win,2.500,won
+2026-06-06,Jp1,Kashima Antlers,Vissel Kobe,1x2,,,,1,2.200,won,,,
 2026-06-06,Jp1,Kashima Antlers,Vissel Kobe,over_under_25,,,,Under,2.100,won,,,
 2026-06-06,3. liga - MSFL,Karviná II,Zbrojovka Brno II,1x2,home,2.750,won,,,,,,
 2026-06-06,Primera C,JJ Urquiza,Puerto Nuevo,1x2,home,2.350,lost,,,,,,
@@ -1651,9 +1555,8 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-06,Nz2,Ferrymead Bays,Wanaka,1x2,,,,1,1.180,won,,,
 2026-06-06,Division Intermedia,Fernando De La Mora,Guairena FC,1x2,home,2.770,lost,,,,,,
 2026-06-06,Nz2,Fencibles United,Tauranga City United,1x2,,,,1,1.600,won,,,
-2026-06-06,Jp1,FC Tokyo,Cerezo Osaka,1x2,,,,2,4.000,won,FC Tokyo Win,1.890,lost
+2026-06-06,Jp1,FC Tokyo,Cerezo Osaka,1x2,,,,2,4.000,won,,,
 2026-06-06,Jp1,FC Tokyo,Cerezo Osaka,over_under_25,,,,Over,2.100,won,,,
-2026-06-06,J League,FC Machida Zelvia,Nagoya Grampus,1x2,,,,,,,FC Machida Zelvia Win,2.150,won
 2026-06-06,Primera B Metropolitana,Excursionistas,San Martín Burzaco,over_under_25,over 2.5,3.000,lost,,,,,,
 2026-06-06,Primera C,Estrella Del Sur,Sacachispas,1x2,home,2.670,lost,,,,,,
 2026-06-06,Nz2,Eastern Suburbs (NZL),Melville United,1x2,,,,1,1.250,won,,,
@@ -1661,8 +1564,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-06,USL League Two,East Atlanta,Apotheos,1x2,home,2.450,lost,,,,,,
 2026-06-06,Primera C,Deportivo Español,Claypole,1x2,home,2.350,won,,,,,,
 2026-06-06,Primera B Metropolitana,Deportivo Armenio,Defensores Unidos,1x2,home,2.500,won,,,,,,
-2026-06-06,Brazil Série B,Criciuma,Londrina,1x2,,,,,,,Criciuma Win,1.670,won
-2026-06-06,La Liga 2 - Spain,CD Castellón,Almería,1x2,,,,,,,CD Castellón Win,1.880,lost
 2026-06-06,Primera B Metropolitana,Brown DE Adrogue,Comunicaciones,1x2,home,3.050,lost,,,,,,
 2026-06-06,Primera B Metropolitana,Brown DE Adrogue,Comunicaciones,1x2,home,3.050,lost,,,,,,
 2026-06-06,USL League Two,Boston Bolts,AC Connecticut,1x2,home,1.930,won,,,,,,
@@ -1698,7 +1599,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-05,AuW,Perth SC,Stirling Lions,over_under_25,,,,Over,3.500,won,,,
 2026-06-05,Ua1,PFK Aleksandriya,Livyi Bereh Kyiv,1x2,,,,1,2.300,lost,,,
 2026-06-05,Ua1,PFK Aleksandriya,Livyi Bereh Kyiv,over_under_25,,,,Under,2.150,won,,,
-2026-06-05,Brazil Série B,Operario PR,Juventude,1x2,,,,,,,Operario PR Win,2.300,won
 2026-06-05,BrP,Oeste U20,Velo Clube U20,1x2,,,,X,2.380,lost,,,
 2026-06-05,BrP,Oeste U20,Velo Clube U20,over_under_25,,,,Under,2.700,won,,,
 2026-06-05,AuV,Oakleigh Cannons,St Albans Saints,1x2,,,,1,1.330,lost,,,
@@ -1902,8 +1802,7 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-01,Us4,RKC,Rockford Raptors,1x2,,,,1,1.250,lost,,,
 2026-06-01,Ua2,Probiy Horodenka,Prykarpattya,1x2,,,,2,2.620,won,,,
 2026-06-01,Ua2,Probiy Horodenka,Prykarpattya,over_under_25,,,,Under,1.940,lost,,,
-2026-06-01,Brazil Série B,Ponte Preta,Botafogo,1x2,,,,,,,Ponte Preta Win,2.980,lost
-2026-06-01,Cl1,Palestino,Audax Italiano,1x2,,,,1,1.850,lost,Palestino Win,1.980,lost
+2026-06-01,Cl1,Palestino,Audax Italiano,1x2,,,,1,1.850,lost,,,
 2026-06-01,Cl1,Palestino,Audax Italiano,over_under_25,,,,Over,1.800,lost,,,
 2026-06-01,Uy2,Oriental (URU),Tacuarembó FC,1x2,,,,X,2.900,lost,,,
 2026-06-01,Uy2,Oriental (URU),Tacuarembó FC,over_under_25,,,,Under,2.450,won,,,
@@ -1933,21 +1832,14 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-06-01,Ua2,Chernomorets Od,Metalist Kharkov,over_under_25,,,,Under,1.810,won,,,
 2026-06-01,Ec1,CS Emelec,Univ Católica Quito,1x2,,,,1,2.620,won,,,
 2026-06-01,Ec1,CS Emelec,Univ Católica Quito,over_under_25,,,,Over,1.770,lost,,,
-2026-05-31,Superettan - Sweden,Östersunds FK,Örebro SK,1x2,,,,,,,Östersunds FK Win,1.860,won
-2026-05-31,La Liga 2 - Spain,Zaragoza,Málaga,1x2,,,,,,,Málaga Win,1.920,won
-2026-05-31,Super League - China,Wuhan Three Towns,Yunnan Yukun,1x2,,,,,,,Yunnan Yukun Win,2.450,lost
 2026-05-31,USL League Two,Westchester Flames,Staten Island Athletic,1x2,home,2.360,lost,,,,,,
-2026-05-31,Eliteserien - Norway,Vålerenga,HamKam,1x2,,,,,,,Vålerenga Win,1.720,lost
 2026-05-31,Superliga,Vllaznia Shkodër,AF Elbasani,1x2,home,2.700,lost,,,,,,
-2026-05-31,Brazil Série A,Vasco da Gama,Atletico Mineiro,1x2,,,,,,,Vasco da Gama Win,2.150,lost
 2026-05-31,Serie D,Tuna Luso,Trem,over_under_25,over 2.5,1.790,lost,,,,,,
 2026-05-31,Ar3,Tucumán Central,Defensores Pto. Vilelas,1x2,,,,1,1.830,won,,,
 2026-05-31,Ar3,Tucumán Central,Defensores Pto. Vilelas,over_under_25,,,,Under,2.340,won,,,
-2026-05-31,Super League - China,Tianjin Jinmen Tiger FC,Dalian Yingbo,1x2,,,,,,,Dalian Yingbo Win,2.520,lost
 2026-05-31,USL League Two,Tacoma Stars,Bangers,over_under_25,over 2.5,1.500,won,,,,,,
 2026-05-31,Br4,São Raimundo RR,GAS RR,1x2,,,,1,1.500,won,,,
 2026-05-31,Br4,São Raimundo RR,GAS RR,over_under_25,,,,Under,1.730,lost,,,
-2026-05-31,Brazil Série B,São Bernardo,Grêmio Novorizontino,1x2,,,,,,,Grêmio Novorizontino Win,2.820,lost
 2026-05-31,Ar3,Sportivo Las Parejas,Escobar FC,1x2,,,,X,2.700,lost,,,
 2026-05-31,Ar3,Sportivo Las Parejas,Escobar FC,over_under_25,,,,Under,3.000,won,,,
 2026-05-31,Ar3,Sportivo Belgrano,Gimnasia Chivilcoy,1x2,,,,2,4.500,lost,,,
@@ -1955,7 +1847,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-31,Pe1,Sport Boys,CD Comerciantes,1x2,,,,X,3.200,lost,,,
 2026-05-31,Pe1,Sport Boys,CD Comerciantes,over_under_25,,,,Under,2.250,won,,,
 2026-05-31,Torneo Federal A,Sol de Mayo,Santamarina,1x2,home,2.050,won,,,,,,
-2026-05-31,J League,Shimizu S Pulse,Yokohama F Marinos,1x2,,,,,,,Shimizu S Pulse Win,2.530,lost
 2026-05-31,Serie D,Sao Jose,Independiente FSJ,over_under_25,over 2.5,3.000,lost,,,,,,
 2026-05-31,Serie D,Sao Jose,Independiente FSJ,1x2,home,2.350,won,,,,,,
 2026-05-31,Br1,Santos,Vitória,1x2,,,,1,1.730,won,,,
@@ -1963,10 +1854,8 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-31,Torneo Federal A,San Martín Mendoza,Cipolletti,1x2,home,2.380,won,,,,,,
 2026-05-31,Br4,Sampaio Corrêa RJ,Velo Clube,1x2,,,,X,2.880,lost,,,
 2026-05-31,Br4,Sampaio Corrêa RJ,Velo Clube,over_under_25,,,,Under,2.300,won,,,
-2026-05-31,Eliteserien - Norway,SK Brann,Sarpsborg FK,1x2,,,,,,,SK Brann Win,1.680,lost
 2026-05-31,Us4,Richmond Kickers,Athletic Club Boise,1x2,,,,1,3.250,lost,,,
 2026-05-31,Us4,Richmond Kickers,Athletic Club Boise,over_under_25,,,,Under,1.850,lost,,,
-2026-05-31,Brazil Série A,Remo,Sao Paulo,1x2,,,,,,,Sao Paulo Win,2.660,lost
 2026-05-31,Br4,Portuguesa RJ,America RJ,1x2,,,,1,1.420,lost,,,
 2026-05-31,Br4,Portuguesa RJ,America RJ,over_under_25,,,,Over,1.650,won,,,
 2026-05-31,Us4,Portland Hearts of Pine,Spokane Velocity,1x2,,,,X,3.400,lost,,,
@@ -1976,39 +1865,28 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-31,Segunda División RFEF - Play-offs,Poblense,Águilas,over_under_25,under 2.5,1.620,won,,,,,,
 2026-05-31,Us2,Pittsburgh Riverhounds,Miami FC II,1x2,,,,1,1.850,won,,,
 2026-05-31,Us2,Pittsburgh Riverhounds,Miami FC II,over_under_25,,,,Under,1.700,won,,,
-2026-05-31,Brazil Série A,Palmeiras,Chapecoense,1x2,,,,,,,Palmeiras Win,1.280,won
 2026-05-31,Ca1,Pacific,Atlético Ottawa,1x2,,,,2,1.910,lost,,,
 2026-05-31,Ca1,Pacific,Atlético Ottawa,over_under_25,,,,Under,1.800,lost,,,
-2026-05-31,Primera División - Chile,O'Higgins,Everton de Viña del Mar,1x2,,,,,,,O'Higgins Win,2.000,lost
 2026-05-31,Us4,Morris Elite,Manhattan,1x2,,,,2,2.350,won,,,
-2026-05-31,Allsvenskan - Sweden,Mjällby AIF,Djurgardens IF,1x2,,,,,,,Mjällby AIF Win,2.800,won
 2026-05-31,Us2,Louisville City,Tampa Bay Rowdies,1x2,,,,2,3.300,won,,,
 2026-05-31,Us2,Louisville City,Tampa Bay Rowdies,over_under_25,,,,Under,1.700,won,,,
-2026-05-31,Brazil Série B,Londrina,Vila Nova,1x2,,,,,,,Londrina Win,2.620,lost
-2026-05-31,La Liga 2 - Spain,Leganés,CD Mirandés,1x2,,,,,,,Leganés Win,2.120,won
 2026-05-31,Segunda División,Leganes,Mirandes,1x2,home,2.130,won,,,,,,
 2026-05-31,Division 2 - Norra Svealand,Korsnäs,Viggbyholms IK,over_under_25,under 2.5,2.700,won,,,,,,
 2026-05-31,Us2,Indy Eleven,Rhode Island,1x2,,,,1,2.550,won,,,
 2026-05-31,Us2,Indy Eleven,Rhode Island,over_under_25,,,,Over,1.950,lost,,,
-2026-05-31,Superettan - Sweden,IFK Värnamo,Nordic United FC,1x2,,,,,,,IFK Värnamo Win,2.400,lost
 2026-05-31,Serie D,IAPE,Sampaio Correa,over_under_25,over 2.5,2.500,won,,,,,,
-2026-05-31,Superettan - Sweden,Helsingborgs IF,IFK Norrkoping,1x2,,,,,,,IFK Norrkoping Win,2.210,won
 2026-05-31,Us2,Hartford Athletic,New Mexico United,1x2,,,,1,1.800,lost,,,
 2026-05-31,Us2,Hartford Athletic,New Mexico United,over_under_25,,,,Over,2.050,lost,,,
 2026-05-31,Friendlies,Germany,Finland,over_under_25,under 2.5,3.600,lost,,,,,,
-2026-05-31,Jupiler Pro League,Gent,Genk,1x2,home,3.050,lost,,,,Genk Win,2.300,lost
-2026-05-31,Jupiler Pro League,Gent,Genk,1x2,home,3.050,lost,,,,Genk Win,2.300,lost
+2026-05-31,Jupiler Pro League,Gent,Genk,1x2,home,3.050,lost,,,,,,
+2026-05-31,Jupiler Pro League,Gent,Genk,1x2,home,3.050,lost,,,,,,
 2026-05-31,Py2,General Caballero JLM,Paraguari,1x2,,,,1,1.250,won,,,
 2026-05-31,Py2,General Caballero JLM,Paraguari,over_under_25,,,,Under,1.730,lost,,,
 2026-05-31,Br4,Galvez AC,Porto Velho,1x2,,,,2,5.000,won,,,
 2026-05-31,Br4,Galvez AC,Porto Velho,over_under_25,,,,Over,1.770,won,,,
 2026-05-31,Us4,Flint City Bucks,Kalamazoo FC,1x2,,,,1,1.380,won,,,
-2026-05-31,J League,Fagiano Okayama,Urawa Red Diamonds,1x2,,,,,,,Urawa Red Diamonds Win,2.470,lost
 2026-05-31,Liga Pro Serie B,El Nacional,LDU Portoviejo,1x2,home,3.150,lost,,,,,,
 2026-05-31,Primera División Femenina,Eibar W,Edf Logrono W,1x2,home,2.550,won,,,,,,
-2026-05-31,La Liga 2 - Spain,Deportivo La Coruña,Las Palmas,1x2,,,,,,,Las Palmas Win,2.180,won
-2026-05-31,Primera División - Chile,Deportes Limache,Coquimbo Unido,1x2,,,,,,,Coquimbo Unido Win,2.650,won
-2026-05-31,Allsvenskan - Sweden,Degerfors IF,IF Brommapojkarna,1x2,,,,,,,Degerfors IF Win,2.460,lost
 2026-05-31,Ar4,Defensores de Cambaceres,Centro Español,1x2,,,,2,2.750,lost,,,
 2026-05-31,Ar4,Defensores de Cambaceres,Centro Español,over_under_25,,,,Under,3.000,won,,,
 2026-05-31,Uy2,Colón,Miramar Misiones,1x2,,,,X,3.100,lost,,,
@@ -2017,46 +1895,31 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-31,Us4,Chattanooga RW,Charlotte Independence,over_under_25,,,,Over,1.860,won,,,
 2026-05-31,Us2,Charleston Battery,Detroit City FC,1x2,,,,1,1.910,won,,,
 2026-05-31,Us2,Charleston Battery,Detroit City FC,over_under_25,,,,Under,1.950,won,,,
-2026-05-31,Brazil Série B,Ceará,Operario PR,1x2,,,,,,,Ceará Win,2.060,lost
 2026-05-31,Br3,Caxias RS,Ituano SP,1x2,,,,1,1.800,won,,,
 2026-05-31,Br3,Caxias RS,Ituano SP,over_under_25,,,,Over,1.500,won,,,
 2026-05-31,Tercera División RFEF - Group 2,Caudal,Covadonga,over_under_25,under 2.5,1.700,lost,,,,,,
-2026-05-31,La Liga 2 - Spain,CD Castellón,SD Eibar,1x2,,,,,,,CD Castellón Win,1.600,won
-2026-05-31,Brazil Série A,Bragantino-SP,Internacional,1x2,,,,,,,Bragantino-SP Win,2.260,won
-2026-05-31,Allsvenskan - Sweden,BK Hacken,Hammarby IF,1x2,,,,,,,Hammarby IF Win,2.250,lost
 2026-05-31,Segunda División RFEF - Play-offs,Atlético Baleares,Real Jaén,1x2,home,2.300,lost,,,,,,
 2026-05-31,Segunda División RFEF - Play-offs,Atlético Baleares,Real Jaén,1x2,home,2.300,lost,,,,,,
-2026-05-31,La Liga 2 - Spain,Almería,Real Valladolid CF,1x2,,,,,,,Almería Win,1.430,won
-2026-05-31,Veikkausliiga - Finland,AC Oulu,Jaro,1x2,,,,,,,AC Oulu Win,1.650,won
 2026-05-31,Us4,AC Connecticut,Boston City,1x2,,,,1,1.500,won,,,
-2026-05-30,Superettan - Sweden,Östers IF,Norrby IF,1x2,,,,,,,Östers IF Win,2.100,won
 2026-05-30,Regionalliga - Ost,Wiener Viktoria,Oberwart,1x2,home,3.100,lost,,,,,,
 2026-05-30,Regionalliga - Ost,Wiener Viktoria,Oberwart,1x2,home,3.100,lost,,,,,,
 2026-05-30,Us4,Western Mass Pioneers,Connecticut Rush,1x2,,,,2,6.500,lost,,,
 2026-05-30,III Liga - Group 2,WDA Swiecie,Noteć Czarnków,1x2,home,2.510,lost,,,,,,
 2026-05-30,Serie D,Vitória ES,Real Noroeste,over_under_25,over 2.5,2.300,lost,,,,,,
-2026-05-30,J League,Vissel Kobe,Kashima Antlers,1x2,,,,,,,Vissel Kobe Win,2.330,lost
-2026-05-30,J League,V-Varen Nagasaki,Mito HollyHock,1x2,,,,,,,V-Varen Nagasaki Win,2.370,won
 2026-05-30,AuN,University of NSW,Wollongong FC,1x2,,,,2,2.600,lost,,,
 2026-05-30,AuN,University of NSW,Wollongong FC,over_under_25,,,,Under,1.730,won,,,
-2026-05-30,Primera División - Chile,Universidad de Concepción,Union La Calera,1x2,,,,,,,Universidad de Concepción Win,2.260,lost
-2026-05-30,Primera División - Chile,Universidad de Chile,Deportes Concepción,1x2,,,,,,,Universidad de Chile Win,1.580,won
 2026-05-30,Cl1,Univ de Concepcion,Unión La Calera,1x2,,,,1,2.550,lost,,,
 2026-05-30,Cl1,Univ de Concepcion,Unión La Calera,over_under_25,,,,Over,1.770,lost,,,
 2026-05-30,New South Wales NPL,UNSW,Wollongong Wolves,1x2,home,2.550,won,,,,,,
 2026-05-30,Ettan - Södra,Tvååker,Kristianstad,1x2,home,2.100,lost,,,,,,
 2026-05-30,Ettan - Södra,Trollhättan,Atvidabergs FF,1x2,home,2.330,lost,,,,,,
 2026-05-30,Serie D,Treze,Lagarto,over_under_25,under 2.5,1.800,lost,,,,,,
-2026-05-30,Veikkausliiga - Finland,TPS Turku,VPS Vaasa,1x2,,,,,,,VPS Vaasa Win,2.510,lost
 2026-05-30,K League 2,Suwon City FC,Seongnam FC,1x2,home,2.250,lost,,,,,,
 2026-05-30,Ca1,Supra du Québec,York 9 FC,1x2,,,,X,3.300,lost,,,
 2026-05-30,Ca1,Supra du Québec,York 9 FC,over_under_25,,,,Under,1.770,lost,,,
-2026-05-30,Brazil Série B,Sport Recife,Nautico PE,1x2,,,,,,,Sport Recife Win,2.400,won
 2026-05-30,3. Division - Girone 2,Spjelkavik,Byåsen,1x2,home,2.720,won,,,,,,
 2026-05-30,AuT,South Hobart,Launceston United,1x2,,,,1,1.020,won,,,
-2026-05-30,Super League - China,Shenzhen Peng City FC,Qingdao Hainiu FC,1x2,,,,,,,Shenzhen Peng City FC Win,2.040,won
 2026-05-30,USL League One,Sarasota Paradise,NY Cosmos,1x2,home,1.740,won,,,,,,
-2026-05-30,Brazil Série A,Santos,Vitoria,1x2,,,,,,,Santos Win,1.860,won
 2026-05-30,BrP,Santa Fé SP,José Bonifácio,1x2,,,,2,1.600,won,,,
 2026-05-30,BrP,Santa Fé SP,José Bonifácio,over_under_25,,,,Under,1.900,won,,,
 2026-05-30,Serie D,Sampaio Corrêa RJ,Velo Clube,over_under_25,over 2.5,2.500,lost,,,,,,
@@ -2067,16 +1930,14 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-30,Division Intermedia,Resistencia,Fernando De La Mora,1x2,home,2.800,won,,,,,,
 2026-05-30,JpW3,Renofa Yamaguchi W,Nankatsu W,1x2,,,,X,3.100,lost,,,
 2026-05-30,JpW3,Renofa Yamaguchi W,Nankatsu W,over_under_25,,,,Under,2.100,won,,,
-2026-05-30,Segunda División,Real Sociedad II,Cultural Leonesa,1x2,home,2.340,lost,,,,Real Sociedad B Win,2.440,lost
-2026-05-30,Segunda División,Real Sociedad II,Cultural Leonesa,1x2,home,2.340,lost,,,,Real Sociedad B Win,2.440,lost
+2026-05-30,Segunda División,Real Sociedad II,Cultural Leonesa,1x2,home,2.340,lost,,,,,,
+2026-05-30,Segunda División,Real Sociedad II,Cultural Leonesa,1x2,home,2.340,lost,,,,,,
 2026-05-30,Ar2,Racing de Cordoba,Ferro Carril Oeste,1x2,,,,2,2.880,lost,,,
 2026-05-30,Ar2,Racing de Cordoba,Ferro Carril Oeste,over_under_25,,,,Over,1.400,lost,,,
 2026-05-30,Super League,Qingdao Youth Island,Shanghai Shenhua,over_under_25,under 2.5,2.200,lost,,,,,,
-2026-05-30,Super League - China,Qingdao West Coast FC,Shanghai Shenhua FC,1x2,,,,,,,Qingdao West Coast FC Win,2.460,lost
 2026-05-30,Primera C,Puerto Nuevo,Mercedes,1x2,home,2.900,lost,,,,,,
 2026-05-30,Serie D,Porto BA,Tombense,over_under_25,over 2.5,2.350,won,,,,,,
 2026-05-30,USL Championship,Pittsburgh Riverhounds,Miami FC,over_under_25,under 2.5,1.950,won,,,,,,
-2026-05-30,UEFA Champions League,Paris Saint Germain,Arsenal,1x2,,,,,,,Paris Saint Germain Win,2.500,lost
 2026-05-30,Us4,One Knoxville,Greenville Triumph,1x2,,,,1,1.830,won,,,
 2026-05-30,Us4,One Knoxville,Greenville Triumph,over_under_25,,,,Under,1.820,won,,,
 2026-05-30,Us4,OC Nor'easters,Delaware FC,1x2,,,,1,1.280,won,,,
@@ -2085,45 +1946,32 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-30,III Liga - Group 4,Naprzód,Stal Kraśnik,1x2,home,2.550,lost,,,,,,
 2026-05-30,III Liga - Group 4,Naprzód,Stal Kraśnik,1x2,home,2.550,lost,,,,,,
 2026-05-30,Nz2,Napier City Rovers,Island Bay United,1x2,,,,1,1.160,won,,,
-2026-05-30,J League,Nagoya Grampus,FC Machida Zelvia,1x2,,,,,,,FC Machida Zelvia Win,2.600,lost
 2026-05-30,Fj1,Nadroga FC,Ba FC,1x2,,,,2,1.330,won,,,
 2026-05-30,Western Australia State League 1,Murdoch Melville,Kingsley Westside,1x2,home,2.920,won,,,,,,
 2026-05-30,Western Australia State League 1,Murdoch Melville,Kingsley Westside,1x2,home,2.920,won,,,,,,
 2026-05-30,Western Australia State League 1,Murdoch Melville,Kingsley Westside,1x2,home,2.920,won,,,,,,
-2026-05-30,Eliteserien - Norway,Molde,Sandefjord,1x2,,,,,,,Molde Win,1.660,won
 2026-05-30,AuV,Melbourne City II,Dandenong City,1x2,,,,1,2.300,lost,,,
 2026-05-30,AuV,Melbourne City II,Dandenong City,over_under_25,,,,Over,2.000,lost,,,
 2026-05-30,New South Wales NPL,Marconi Stallions,Rockdale City Suns,over_under_25,under 2.5,2.500,won,,,,,,
-2026-05-30,Allsvenskan - Sweden,Malmo FF,Halmstads BK,1x2,,,,,,,Malmo FF Win,1.530,won
 2026-05-30,Primera C,Lujan,Leones de Rosario,over_under_25,over 2.5,2.790,lost,,,,,,
 2026-05-30,3. liga - CFL A,Loko Vltavín,Dukla Praha II,over_under_25,under 2.5,2.150,lost,,,,,,
-2026-05-30,Superettan - Sweden,Ljungskile SK,Varbergs BoIS,1x2,,,,,,,Ljungskile SK Win,2.750,lost
 2026-05-30,III Liga - Group 2,Lipno Stęszew,Unia Swarzędz,1x2,home,2.700,won,,,,,,
-2026-05-30,Eliteserien - Norway,Lillestrom,Viking FK,1x2,,,,,,,Viking FK Win,2.150,won
 2026-05-30,CoC,Leones,Ind Medellin,1x2,,,,X,3.750,won,,,
 2026-05-30,CoC,Leones,Ind Medellin,over_under_25,,,,Under,1.800,won,,,
-2026-05-30,Superettan - Sweden,Landskrona BoIS,IK Brage,1x2,,,,,,,Landskrona BoIS Win,2.300,lost
-2026-05-30,Primera División - Chile,La Serena,Colo Colo,1x2,,,,,,,Colo Colo Win,2.020,won
-2026-05-30,J League,Kyoto Purple Sanga,Kashiwa Reysol,1x2,,,,,,,Kashiwa Reysol Win,2.340,won
 2026-05-30,Torneo Federal A,Kimberley Mar del Plata,Germinal de Rawson,over_under_25,under 2.5,1.530,won,,,,,,
-2026-05-30,Br2,Juventude,América Mineiro,1x2,,,,1,1.950,won,Juventude Win,1.940,won
+2026-05-30,Br2,Juventude,América Mineiro,1x2,,,,1,1.950,won,,,
 2026-05-30,Br2,Juventude,América Mineiro,over_under_25,,,,Under,2.550,lost,,,
 2026-05-30,3. liga - CFL A,Jiskra Domažlice,Viktoria Plzeň II,1x2,home,1.950,won,,,,,,
 2026-05-30,Kr3,Jeonbuk Motors II,Busan Kyotong,1x2,,,,2,2.400,won,,,
 2026-05-30,Kr3,Jeonbuk Motors II,Busan Kyotong,over_under_25,,,,Under,1.360,lost,,,
 2026-05-30,Py2,Independiente FBC,12 de Junio VH,1x2,,,,2,2.100,won,,,
 2026-05-30,Py2,Independiente FBC,12 de Junio VH,over_under_25,,,,Under,2.210,lost,,,
-2026-05-30,Veikkausliiga - Finland,IF Gnistan,SJK Seinäjoki,1x2,,,,,,,SJK Seinäjoki Win,2.600,lost
 2026-05-30,New South Wales NPL 2,Hurstville FC,Rydalmere Lions,1x2,home,2.500,won,,,,,,
 2026-05-30,AuV,Hume City FC,South Melbourne,1x2,,,,1,2.150,lost,,,
 2026-05-30,AuV,Hume City FC,South Melbourne,over_under_25,,,,Over,2.600,lost,,,
-2026-05-30,J League,Hiroshima Sanfrecce FC,Kawasaki Frontale,1x2,,,,,,,Hiroshima Sanfrecce FC Win,1.650,won
-2026-05-30,Super League - China,Henan FC,Zhejiang,1x2,,,,,,,Henan FC Win,1.850,lost
-2026-05-30,Veikkausliiga - Finland,HJK Helsinki,IFK Mariehamn,1x2,,,,,,,HJK Helsinki Win,1.250,won
-2026-05-30,Brazil Série A,Grêmio,Corinthians,1x2,,,,,,,Grêmio Win,2.760,lost
 2026-05-30,Serie A,Gremio,Corinthians,over_under_25,over 2.5,2.500,won,,,,,,
-2026-05-30,Segunda División,Granada CF,Sporting Gijon,1x2,home,2.570,lost,,,,Granada CF Win,2.540,lost
-2026-05-30,Segunda División,Granada CF,Sporting Gijon,1x2,home,2.570,lost,,,,Granada CF Win,2.540,lost
+2026-05-30,Segunda División,Granada CF,Sporting Gijon,1x2,home,2.570,lost,,,,,,
+2026-05-30,Segunda División,Granada CF,Sporting Gijon,1x2,home,2.570,lost,,,,,,
 2026-05-30,AuQ,Gold Coast United,Peninsula Power,1x2,,,,2,1.600,won,,,
 2026-05-30,AuQ,Gold Coast United,Peninsula Power,over_under_25,,,,Over,2.850,won,,,
 2026-05-30,III Liga - Group 3,Goczałkowice Zdrój,Zagłębie Lubin II,1x2,home,2.400,won,,,,,,
@@ -2132,16 +1980,11 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-30,K League 2,Gimhae City,Gimpo Citizen,over_under_25,over 2.5,2.100,won,,,,,,
 2026-05-30,Kr3,Gangneung City,Changwon City,1x2,,,,X,3.200,lost,,,
 2026-05-30,Kr3,Gangneung City,Changwon City,over_under_25,,,,Under,2.050,won,,,
-2026-05-30,J League,Gamba Osaka,Tokyo Verdy,1x2,,,,,,,Gamba Osaka Win,1.910,lost
-2026-05-30,Superettan - Sweden,GIF Sundsvall,Sandvikens IF,1x2,,,,,,,Sandvikens IF Win,2.450,won
-2026-05-30,Allsvenskan - Sweden,GAIS,Kalmar FF,1x2,,,,,,,GAIS Win,1.930,won
 2026-05-30,Us4,Forward Madison,Corpus Christi,1x2,,,,X,3.500,lost,,,
 2026-05-30,Us4,Forward Madison,Corpus Christi,over_under_25,,,,Under,1.950,lost,,,
 2026-05-30,Division 2 - Södra Svealand,Forward,Rågsved,1x2,home,2.750,won,,,,,,
 2026-05-30,Serie C,Floresta,Confiança,1x2,home,2.870,won,,,,,,
-2026-05-30,Brazil Série A,Flamengo,Coritiba,1x2,,,,,,,Flamengo Win,1.450,won
-2026-05-30,Superettan,Falkenbergs FF,Oddevold,1x2,home,2.450,won,,,,Falkenbergs FF Win,2.480,won
-2026-05-30,Veikkausliiga - Finland,FC Lahti,Ilves Tampere,1x2,,,,,,,FC Lahti Win,2.600,won
+2026-05-30,Superettan,Falkenbergs FF,Oddevold,1x2,home,2.450,won,,,,,,
 2026-05-30,Primera C,El Porvenir,Deportivo Muñiz,1x2,home,1.930,won,,,,,,
 2026-05-30,Nz2,Eastern Suburbs (NZL),Auckland City,1x2,,,,2,2.450,lost,,,
 2026-05-30,Nz2,Eastern Suburbs (NZL),Auckland City,over_under_25,,,,Over,1.800,lost,,,
@@ -2152,12 +1995,9 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-30,Cl1,Cobresal,Ñublense,1x2,,,,X,3.500,lost,,,
 2026-05-30,Cl1,Cobresal,Ñublense,over_under_25,,,,Over,1.870,lost,,,
 2026-05-30,Primera C,Claypole,Central Cordoba,1x2,home,2.950,lost,,,,,,
-2026-05-30,Super League - China,Chongqing Tonglianglong FC,Beijing FC,1x2,,,,,,,Beijing FC Win,1.960,won
-2026-05-30,Super League - China,Chengdu Rongcheng FC,Shandong Luneng Taishan FC,1x2,,,,,,,Chengdu Rongcheng FC Win,2.160,won
 2026-05-30,USL League One,Chattanooga Red Wolves,Charlotte Independence,1x2,home,2.330,lost,,,,,,
 2026-05-30,Uy1,Cerro Largo,CA Cerro,1x2,,,,1,2.100,won,,,
 2026-05-30,Uy1,Cerro Largo,CA Cerro,over_under_25,,,,Over,1.500,lost,,,
-2026-05-30,J League,Cerezo Osaka,FC Tokyo,1x2,,,,,,,FC Tokyo Win,2.430,lost
 2026-05-30,Primera C,Central Ballester,Deportivo Español,1x2,home,3.050,lost,,,,,,
 2026-05-30,Primera C,Central Ballester,Deportivo Español,1x2,home,3.050,lost,,,,,,
 2026-05-30,Serie D,Ceilândia,Goiatuba EC,1x2,home,2.670,lost,,,,,,
@@ -2167,33 +2007,24 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-30,JpW3,Bunnies Gunma White Star W,Diavorosso Hiroshima W,over_under_25,,,,Under,2.250,won,,,
 2026-05-30,1. Liga Promotion,Breitenrain,Young Boys II,1x2,home,2.320,won,,,,,,
 2026-05-30,Us4,Ballard,Midlakes United,1x2,,,,1,1.250,won,,,
-2026-05-30,Brazil Série A,Bahia,Botafogo,1x2,,,,,,,Bahia Win,2.000,won
 2026-05-30,1 Lyga,BFA,Jonava,1x2,home,2.400,won,,,,,,
 2026-05-30,AuV,Avondale FC,Bentleigh Greens,1x2,,,,1,1.300,won,,,
 2026-05-30,AuV,Avondale FC,Bentleigh Greens,over_under_25,,,,Over,2.350,won,,,
-2026-05-30,J League,Avispa Fukuoka,JEF United Chiba,1x2,,,,,,,Avispa Fukuoka Win,2.050,lost
-2026-05-30,Brazil Série B,Avai,Criciuma,1x2,,,,,,,Avai Win,2.560,lost
 2026-05-30,Division Intermedia,Atlético Tembetary,Benjamín Aceval,1x2,home,2.650,won,,,,,,
 2026-05-30,CoC,Atlético FC,Millonarios,1x2,,,,X,5.250,lost,,,
 2026-05-30,CoC,Atlético FC,Millonarios,over_under_25,,,,Over,2.500,won,,,
-2026-05-30,Brazil Série A,Atletico Paranaense,Mirassol,1x2,,,,,,,Atletico Paranaense Win,1.870,won
-2026-05-30,Brazil Série B,Atletico Goianiense,Goiás,1x2,,,,,,,Atletico Goianiense Win,2.380,lost
-2026-05-30,Brazil Série B,Athletic Club (MG),Fortaleza,1x2,,,,,,,Fortaleza Win,2.640,lost
 2026-05-30,Western Australia NPL,Armadale,Perth Glory II,1x2,home,2.380,won,,,,,,
 2026-05-30,Primera C,Argentino Rosario,Estrella Del Sur,1x2,home,2.500,lost,,,,,,
 2026-05-30,Br4,América RN,Central PE,1x2,,,,X,3.500,lost,,,
 2026-05-30,Br4,América RN,Central PE,over_under_25,,,,Under,2.300,won,,,
 2026-05-30,Primera Nacional,All Boys,Los Andes,over_under_25,over 2.5,3.770,lost,,,,,,
 2026-05-30,South Australia NPL,Adelaide United II,Playford City Patriots,1x2,home,2.550,lost,,,,,,
-2026-05-30,Allsvenskan - Sweden,AIK,IK Sirius,1x2,,,,,,,IK Sirius Win,2.200,won
 2026-05-30,Us4,AFC Ann Arbor,Union Macomb,1x2,,,,1,1.750,won,,,
-2026-05-30,Segunda División,AD Ceuta FC,Albacete,1x2,home,2.400,won,,,,AD Ceuta FC Win,2.460,won
-2026-05-30,Segunda División,AD Ceuta FC,Albacete,1x2,home,2.400,won,,,,AD Ceuta FC Win,2.460,won
-2026-05-29,Allsvenskan - Sweden,Örgryte IS,IF Elfsborg,1x2,,,,,,,IF Elfsborg Win,1.980,lost
+2026-05-30,Segunda División,AD Ceuta FC,Albacete,1x2,home,2.400,won,,,,,,
+2026-05-30,Segunda División,AD Ceuta FC,Albacete,1x2,home,2.400,won,,,,,,
 2026-05-29,Nz2,Western Springs,Bay Olympic,1x2,,,,1,1.420,won,,,
 2026-05-29,South Australia NPL,West Torrens Birkalla,Adelaide Comets,over_under_25,under 2.5,2.620,lost,Over,2.620,won,,,
 2026-05-29,AuS,West Torrens,Adelaide Comets,1x2,,,,1,1.600,won,,,
-2026-05-29,Eliteserien - Norway,Vålerenga,Kristiansund BK,1x2,,,,,,,Vålerenga Win,1.600,won
 2026-05-29,Esiliiga B,Tartu Kalev,Levadia U19,1x2,home,2.000,won,,,,,,
 2026-05-29,Us4,Tacoma Stars,Oly Town,1x2,,,,1,2.550,won,,,
 2026-05-29,Us4,Tacoma Stars,Oly Town,over_under_25,,,,Over,2.000,won,,,
@@ -2201,20 +2032,15 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-29,AuN,Sydney U21,WS Wanderers Youth,over_under_25,,,,Over,2.450,won,,,
 2026-05-29,Fj1,Suva FC,Lautoka FC,1x2,,,,2,2.200,lost,,,
 2026-05-29,Fj1,Suva FC,Lautoka FC,over_under_25,,,,Over,2.170,lost,,,
-2026-05-29,League of Ireland,Sligo Rovers,Bohemians,1x2,,,,,,,Bohemians Win,1.780,won
 2026-05-29,Et1,Shire Endaselassie,Hadiya Hosaena,1x2,,,,X,2.500,won,,,
 2026-05-29,Cn1,Shenyang City,Shanghai SIPG,1x2,,,,X,3.600,lost,,,
 2026-05-29,Cn1,Shenyang City,Shanghai SIPG,over_under_25,,,,Under,1.650,lost,,,
-2026-05-29,League of Ireland,Shelbourne Dublin,Galway United,1x2,,,,,,,Shelbourne Dublin Win,1.810,lost
 2026-05-29,Cn2,Shanghai Jiading,Nantong Zhiyun,1x2,,,,2,2.350,lost,,,
 2026-05-29,Cn2,Shanghai Jiading,Nantong Zhiyun,over_under_25,,,,Under,2.550,won,,,
-2026-05-29,League of Ireland,Shamrock Rovers,St Patricks Athletic,1x2,,,,,,,Shamrock Rovers Win,2.400,won
 2026-05-29,Cn2,Shaanxi Union,Nanjing Fengfan,1x2,,,,X,3.400,lost,,,
 2026-05-29,Cn2,Shaanxi Union,Nanjing Fengfan,over_under_25,,,,Over,1.620,lost,,,
 2026-05-29,Division Intermedia,SOL DE America,Deportivo Santani,1x2,home,2.270,lost,,,,,,
-2026-05-29,Eliteserien - Norway,SK Brann,Sarpsborg FK,1x2,,,,,,,SK Brann Win,1.680,lost
 2026-05-29,First NL,Rudes,Sesvete,over_under_25,over 2.5,2.390,won,,,,,,
-2026-05-29,Eliteserien - Norway,Rosenborg,Bodø/Glimt,1x2,,,,,,,Bodø/Glimt Win,1.650,lost
 2026-05-29,ArR,River Plate Res.,San Lorenzo Res.,1x2,,,,2,3.900,lost,,,
 2026-05-29,ArR,River Plate Res.,San Lorenzo Res.,over_under_25,,,,Over,1.500,lost,,,
 2026-05-29,Fj1,Rewa FC,Tailevu Naitasiri,1x2,,,,1,1.050,won,,,
@@ -2227,17 +2053,14 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-29,USL League One,One Knoxville,Greenville Triumph,1x2,home,2.080,won,,,,,,
 2026-05-29,AuW,Olympic Kingsway,Dianella White Eagles,1x2,,,,1,1.600,won,,,
 2026-05-29,AuW,Olympic Kingsway,Dianella White Eagles,over_under_25,,,,Over,2.620,won,,,
-2026-05-29,Ligue 1 - France,Nice,Saint Etienne,1x2,,,,,,,Nice Win,2.020,won
 2026-05-29,Fj1,Nasinu FC,Labasa FC,1x2,,,,2,1.360,lost,,,
 2026-05-29,Fj1,Nasinu FC,Labasa FC,over_under_25,,,,Over,2.200,won,,,
 2026-05-29,BrN,Nacional AM,Paysandu,1x2,,,,X,3.000,lost,,,
 2026-05-29,BrN,Nacional AM,Paysandu,over_under_25,,,,Over,1.530,won,,,
-2026-05-29,Serie B - Italy,Monza,US Catanzaro 1929,1x2,,,,,,,Monza Win,1.960,lost
 2026-05-29,E17,Montenegro U17,Italy U17,1x2,,,,2,1.210,won,,,
 2026-05-29,Ua2,Metalurh Zaporizhzhia,Chernihiv,1x2,,,,X,3.440,won,,,
 2026-05-29,Ua2,Metalurh Zaporizhzhia,Chernihiv,over_under_25,,,,Under,1.910,won,,,
 2026-05-29,Nz2,Manukau United,Fencibles United,1x2,,,,2,1.160,won,,,
-2026-05-29,Super League - China,Liaoning Tieren FC,Shanghai SIPG FC,1x2,,,,,,,Liaoning Tieren FC Win,2.430,won
 2026-05-29,III Liga - Group 3,Kluczbork,Ślęza Wrocław,over_under_25,under 2.5,2.650,lost,,,,,,
 2026-05-29,Kakkonen - Lohko B,Ilves II,HJS Akatemia,1x2,home,2.400,lost,,,,,,
 2026-05-29,Kakkonen - Lohko B,Ilves II,HJS Akatemia,1x2,home,2.400,lost,,,,,,
@@ -2250,26 +2073,22 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-29,Cn2,Guangdong GZ-Power,Shenzhen Juniors,1x2,,,,2,4.000,lost,,,
 2026-05-29,Cn2,Guangdong GZ-Power,Shenzhen Juniors,over_under_25,,,,Over,2.000,lost,,,
 2026-05-29,3. liga - MSFL,Frýdek-Místek,Hodonín,1x2,home,2.750,lost,,,,,,
-2026-05-29,Eliteserien - Norway,Fredrikstad FK,IK Start,1x2,,,,,,,Fredrikstad FK Win,1.850,won
 2026-05-29,Prva Liga,FAP,Grafičar,1x2,home,2.600,won,,,,,,
 2026-05-29,Us4,Edgewater Castle,Sueno,1x2,,,,2,1.180,won,,,
 2026-05-29,Ligue 2,ES Hammam-Sousse,Progrès Sakiet Eddaïer,1x2,home,2.620,lost,,,,,,
 2026-05-29,Premier Division,Drogheda United,Waterford,over_under_25,under 2.5,2.040,lost,,,,,,
-2026-05-29,League of Ireland,Drogheda United,Waterford FC,1x2,,,,,,,Drogheda United Win,1.920,lost
-2026-05-29,CLA,Cruzeiro,Barcelona SC,1x2,,,,1,1.280,won,Cruzeiro Win,1.270,won
+2026-05-29,CLA,Cruzeiro,Barcelona SC,1x2,,,,1,1.280,won,,,
 2026-05-29,CLA,Cruzeiro,Barcelona SC,over_under_25,,,,Under,1.830,lost,,,
-2026-05-29,Primera División - Chile,Cobresal,Ñublense,1x2,,,,,,,Ñublense Win,2.430,won
 2026-05-29,CLA,Cerro Porteño,Sporting Cristal,1x2,,,,1,1.650,won,,,
 2026-05-29,CLA,Cerro Porteño,Sporting Cristal,over_under_25,,,,Under,2.200,won,,,
-2026-05-29,CS,CA Tigre,Alianza Atlético,1x2,,,,1,1.270,won,CA Tigre BA Win,1.300,won
+2026-05-29,CS,CA Tigre,Alianza Atlético,1x2,,,,1,1.270,won,,,
 2026-05-29,CS,CA Tigre,Alianza Atlético,over_under_25,,,,Under,1.830,won,,,
-2026-05-29,CLA,Boca Juniors,Universidad Católica,1x2,,,,1,1.440,lost,Boca Juniors Win,1.460,lost
+2026-05-29,CLA,Boca Juniors,Universidad Católica,1x2,,,,1,1.440,lost,,,
 2026-05-29,CLA,Boca Juniors,Universidad Católica,over_under_25,,,,Under,2.000,won,,,
-2026-05-29,CS,América de Cali,Macará,1x2,,,,1,1.620,lost,América de Cali Win,1.740,lost
+2026-05-29,CS,América de Cali,Macará,1x2,,,,1,1.620,lost,,,
 2026-05-29,CS,América de Cali,Macará,over_under_25,,,,Under,2.250,won,,,
 2026-05-29,Division 1,Al Jazira Al Hamra,Al Fujairah SC,1x2,home,2.950,won,,,,,,
 2026-05-29,Division 1,Al Jazira Al Hamra,Al Fujairah SC,1x2,home,2.950,won,,,,,,
-2026-05-29,Eliteserien - Norway,Aalesund,HamKam,1x2,,,,,,,Aalesund Win,2.140,lost
 2026-05-28,CS,Vasco da Gama,Barracas Central,1x2,,,,X,4.750,lost,,,
 2026-05-28,CS,Vasco da Gama,Barracas Central,over_under_25,,,,Under,1.700,lost,,,
 2026-05-28,Us2,Sporting JAX,San Antonio FC,1x2,,,,2,5.500,lost,,,
@@ -2278,7 +2097,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-28,BrC,Rio Branco ES,Anápolis GO,1x2,,,,1,2.620,won,,,
 2026-05-28,CS,Racing Club,Independiente Petrolero,1x2,,,,1,1.140,won,,,
 2026-05-28,CS,Racing Club,Independiente Petrolero,over_under_25,,,,Over,3.100,lost,,,
-2026-05-28,Copa Libertadores,Peñarol Montevideo,Independiente Santa Fe,1x2,,,,,,,Peñarol Montevideo Win,1.930,lost
 2026-05-28,CS,Olimpia Asunción,Audax Italiano,1x2,,,,1,1.570,won,,,
 2026-05-28,CS,Olimpia Asunción,Audax Italiano,over_under_25,,,,Under,1.800,lost,,,
 2026-05-28,Us4,New York Cosmos,Union Omaha,1x2,,,,2,1.900,won,,,
@@ -2296,21 +2114,18 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-28,BrC,Fluminense SC,Juventus SC,1x2,,,,1,1.910,lost,,,
 2026-05-28,BrC,Fluminense SC,Juventus SC,over_under_25,,,,Under,2.600,won,,,
 2026-05-28,Us4,Dayton Dutch Lions,Louisville City 2,1x2,,,,2,1.280,won,,,
-2026-05-28,Copa Libertadores,Club Bolívar,Independiente Rivadavia,1x2,,,,,,,Club Bolívar Win,2.520,lost
 2026-05-28,CS,Cienciano,Juventud LP,1x2,,,,X,4.200,won,,,
 2026-05-28,CS,Cienciano,Juventud LP,over_under_25,,,,Under,1.800,won,,,
 2026-05-28,Us4,Chattanooga RW,Richmond Kickers,1x2,,,,2,3.600,lost,,,
 2026-05-28,Us4,Chattanooga RW,Richmond Kickers,over_under_25,,,,Under,1.870,lost,,,
 2026-05-28,BrS,Chapecoense SC,Novorizontino SP,1x2,,,,1,1.830,lost,,,
 2026-05-28,BrS,Chapecoense SC,Novorizontino SP,over_under_25,,,,Under,2.250,lost,,,
-2026-05-28,Copa Libertadores,Cerro Porteño,Sporting Cristal,1x2,,,,,,,Cerro Porteño Win,1.680,won
 2026-05-28,BrC,Caravaggio,Nação,1x2,,,,1,1.800,won,,,
 2026-05-28,BrC,Caravaggio,Nação,over_under_25,,,,Over,1.650,won,,,
 2026-05-28,CS,Caracas,Botafogo,1x2,,,,X,3.300,lost,,,
 2026-05-28,CS,Caracas,Botafogo,over_under_25,,,,Under,2.250,lost,,,
 2026-05-28,BrC,Brasil de Pelotas,Bage,1x2,,,,1,1.910,won,,,
 2026-05-28,BrC,Brasil de Pelotas,Bage,over_under_25,,,,Under,2.600,won,,,
-2026-05-28,Copa Sudamericana,Bragantino-SP,Carabobo FC,1x2,,,,,,,Bragantino-SP Win,1.350,won
 2026-05-28,Us4,Boston Olympiakos,New England SC,1x2,,,,2,1.720,won,,,
 2026-05-28,Us4,Black Rock,Vermont Green,1x2,,,,2,1.450,won,,,
 2026-05-28,Us4,Black Rock,Vermont Green,over_under_25,,,,Over,2.300,won,,,
@@ -2321,7 +2136,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-28,Us4,AC Connecticut,Blackwatch Rush,1x2,,,,1,1.500,lost,,,
 2026-05-27,Bb1,Wotton,Bagatelle,1x2,,,,2,1.580,won,,,
 2026-05-27,Bb1,Wotton,Bagatelle,over_under_25,,,,Over,2.250,won,,,
-2026-05-27,Copa Sudamericana,Vasco da Gama,Barracas Central,1x2,,,,,,,Vasco da Gama Win,1.410,won
 2026-05-27,CLA,Universitario,Deportes Tolima,1x2,,,,2,3.800,lost,,,
 2026-05-27,CLA,Universitario,Deportes Tolima,over_under_25,,,,Under,2.450,won,,,
 2026-05-27,Serie C - Promotion - Play-offs,Union Brescia,Salernitana,1x2,home,2.710,won,,,,,,
@@ -2338,16 +2152,15 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-27,KrW,Seoul W,Incheon Red Angels W,over_under_25,,,,Over,1.770,won,,,
 2026-05-27,Us4,Seacoast Utd Phantoms,Connecticut Rush,1x2,,,,2,2.870,won,,,
 2026-05-27,Us4,Seacoast Utd Phantoms,Connecticut Rush,over_under_25,,,,Under,1.520,lost,,,
-2026-05-27,CS,Santos,Deportivo Cuenca,1x2,,,,2,11.000,lost,Santos Win,1.390,won
+2026-05-27,CS,Santos,Deportivo Cuenca,1x2,,,,2,11.000,lost,,,
 2026-05-27,CS,Santos,Deportivo Cuenca,over_under_25,,,,Under,1.830,lost,,,
-2026-05-27,CS,San Lorenzo,Deportivo Recoleta,1x2,,,,X,4.500,lost,San Lorenzo Win,1.420,lost
+2026-05-27,CS,San Lorenzo,Deportivo Recoleta,1x2,,,,X,4.500,lost,,,
 2026-05-27,CS,San Lorenzo,Deportivo Recoleta,over_under_25,,,,Under,2.100,won,,,
 2026-05-27,CS,Palestino,Deportivo Riestra,1x2,,,,X,3.100,won,,,
 2026-05-27,CS,Palestino,Deportivo Riestra,over_under_25,,,,Under,2.200,won,,,
-2026-05-27,Copa Sudamericana,Olimpia Asunción,Audax Italiano,1x2,,,,,,,Olimpia Asunción Win,1.670,won
 2026-05-27,Us4,Nona,Sporting Jax 2,1x2,,,,2,5.500,lost,,,
 2026-05-27,Us4,Nona,Sporting Jax 2,over_under_25,,,,Under,1.800,won,,,
-2026-05-27,CLA,Nacional (URU),Coquimbo Unido,1x2,,,,X,3.300,lost,Nacional de Montevideo Win,1.880,won
+2026-05-27,CLA,Nacional (URU),Coquimbo Unido,1x2,,,,X,3.300,lost,,,
 2026-05-27,CLA,Nacional (URU),Coquimbo Unido,over_under_25,,,,Under,2.000,won,,,
 2026-05-27,CS,Millonarios,O Higgins,1x2,,,,1,1.700,lost,,,
 2026-05-27,CS,Millonarios,O Higgins,over_under_25,,,,Under,2.000,lost,,,
@@ -2359,7 +2172,6 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-27,CLA,LDU,Always Ready,over_under_25,,,,Under,1.570,lost,,,
 2026-05-27,Ar3,Ituzaingó,Deportivo Laferrere,1x2,,,,X,2.880,lost,,,
 2026-05-27,Ar3,Ituzaingó,Deportivo Laferrere,over_under_25,,,,Under,2.500,won,,,
-2026-05-27,Copa Libertadores,Independiente del Valle,Rosario Central,1x2,,,,,,,Independiente del Valle Win,1.950,won
 2026-05-27,Reserve League,Independiente Riva. Res.,Central Córdoba SdE Res.,over_under_25,under 2.5,1.800,lost,,,,,,
 2026-05-27,Cz3,Hradec Kralove B,Pardubice B,1x2,,,,X,3.800,lost,,,
 2026-05-27,KrW,Gumi Sportstoto W,Gyeongju W,1x2,,,,1,1.660,lost,,,
@@ -2369,31 +2181,25 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-27,VnWC,GT Thai Nguyen W,PP Ha Nam W,1x2,,,,1,1.440,won,,,
 2026-05-27,CLA,Flamengo,Cusco FC,1x2,,,,1,1.110,won,,,
 2026-05-27,CLA,Flamengo,Cusco FC,over_under_25,,,,Under,1.350,lost,,,
-2026-05-27,CLA,Estudiantes La Plata,Ind Medellin,1x2,,,,X,3.500,lost,Estudiantes La Plata Win,1.660,won
+2026-05-27,CLA,Estudiantes La Plata,Ind Medellin,1x2,,,,X,3.500,lost,,,
 2026-05-27,CLA,Estudiantes La Plata,Ind Medellin,over_under_25,,,,Under,2.250,won,,,
 2026-05-27,Ar3,Deportivo Merlo,Liniers,1x2,,,,1,2.600,lost,,,
 2026-05-27,Ar3,Deportivo Merlo,Liniers,over_under_25,,,,Under,2.500,won,,,
 2026-05-27,Us4,Delaware FC,Philadelphia Lone Star,1x2,,,,1,2.620,won,,,
 2026-05-27,Ph1,Davao Aguilas,Taguig,1x2,,,,2,1.400,lost,,,
 2026-05-27,Ph1,Davao Aguilas,Taguig,over_under_25,,,,Under,1.550,won,,,
-2026-05-27,UEFA Europa Conference League,Crystal Palace,Rayo Vallecano,1x2,,,,,,,Crystal Palace Win,2.000,won
 2026-05-27,Ar3,Comunicaciones BA,UAI Urquiza,1x2,,,,X,2.880,lost,,,
 2026-05-27,Ar3,Comunicaciones BA,UAI Urquiza,over_under_25,,,,Under,2.500,lost,,,
-2026-05-27,Copa Sudamericana,Clube Atlético Mineiro,Puerto Cabello,1x2,,,,,,,Clube Atlético Mineiro Win,1.290,won
-2026-05-27,Copa Sudamericana,Club Cienciano,CA Juventud,1x2,,,,,,,Club Cienciano Win,1.650,lost
 2026-05-27,Serie C - Promotion - Play-offs,Catania,Ascoli,1x2,home,2.750,won,,,,,,
 2026-05-27,Serie C - Promotion - Play-offs,Catania,Ascoli,1x2,home,2.750,won,,,,,,
-2026-05-27,Copa Sudamericana,Caracas FC,Botafogo,1x2,,,,,,,Botafogo Win,2.340,won
 2026-05-27,Ar3,Brown de Adrogué,Talleres (RdE),1x2,,,,2,2.880,won,,,
 2026-05-27,Ar3,Brown de Adrogué,Talleres (RdE),over_under_25,,,,Under,2.500,lost,,,
 2026-05-27,Kz1,Altai Semey,Astana,1x2,,,,X,3.400,won,,,
 2026-05-27,Kz1,Altai Semey,Astana,over_under_25,,,,Under,1.950,won,,,
-2026-05-26,Superettan - Sweden,Örebro SK,Helsingborgs IF,1x2,,,,,,,Örebro SK Win,2.300,lost
 2026-05-26,Tz1,Singida Black Stars,Mbeya City,1x2,,,,1,1.250,won,,,
 2026-05-26,Tz1,Singida Black Stars,Mbeya City,over_under_25,,,,Over,1.930,won,,,
 2026-05-26,Cw1,Scherpenheuvel,Inter Willemstad,1x2,,,,X,3.750,lost,,,
 2026-05-26,Cw1,Scherpenheuvel,Inter Willemstad,over_under_25,,,,Over,2.120,won,,,
-2026-05-26,Copa Sudamericana,Sao Paulo,CA Boston River,1x2,,,,,,,Sao Paulo Win,1.200,won
 2026-05-26,Ec1,SD Aucas,Manta FC,1x2,,,,1,1.420,won,,,
 2026-05-26,Ec1,SD Aucas,Manta FC,over_under_25,,,,Under,2.020,lost,,,
 2026-05-26,Reserve League,Racing Club Res.,Tigre Res.,over_under_25,under 2.5,1.850,lost,,,,,,
@@ -2401,17 +2207,12 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-26,Br3,Paysandu,Floresta CE,over_under_25,,,,Over,1.480,won,,,
 2026-05-26,Tz1,Pamba Jiji,Tanzania Prisons,1x2,,,,1,1.500,lost,,,
 2026-05-26,Tz1,Pamba Jiji,Tanzania Prisons,over_under_25,,,,Under,2.270,lost,,,
-2026-05-26,Copa Sudamericana,Palestino,Deportivo Riestra,1x2,,,,,,,Palestino Win,2.380,lost
 2026-05-26,UzC,Nasaf Qarshi,Shurtan Guzar,1x2,,,,1,1.250,won,,,
 2026-05-26,UzC,Nasaf Qarshi,Shurtan Guzar,over_under_25,,,,Over,2.200,won,,,
-2026-05-26,Copa Libertadores,Lanus,Mirassol,1x2,,,,,,,Lanus Win,1.900,won
-2026-05-26,Copa Libertadores,LDU Quito,Club Always Ready,1x2,,,,,,,LDU Quito Win,1.420,won
 2026-05-26,Cw1,Jong Holland,Centro Dominguito,1x2,,,,1,1.500,won,,,
 2026-05-26,Br3,Ituano SP,Botafogo PB,1x2,,,,1,2.000,won,,,
 2026-05-26,Br3,Ituano SP,Botafogo PB,over_under_25,,,,Over,1.570,lost,,,
 2026-05-26,E17,Italy U17,France U17,1x2,,,,2,2.210,lost,,,
-2026-05-26,Copa Sudamericana,Grêmio,Montevideo City Torque,1x2,,,,,,,Grêmio Win,1.540,lost
-2026-05-26,Bundesliga 2 - Germany,Greuther Fürth,Rot-Weiss Essen,1x2,,,,,,,Greuther Fürth Win,1.780,won
 2026-05-26,Py2,General Caballero JLM,Guaireña FC,1x2,,,,1,1.850,lost,,,
 2026-05-26,Py2,General Caballero JLM,Guaireña FC,over_under_25,,,,Over,1.750,lost,,,
 2026-05-26,Kz2,FC Shakhter,Yelimay II,1x2,,,,1,2.300,won,,,
@@ -2440,22 +2241,16 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-25,Br1,Vasco da Gama,RB Bragantino,over_under_25,,,,Under,2.000,lost,,,
 2026-05-25,Cl1,Universidad Católica,Colo Colo,1x2,,,,2,2.900,won,,,
 2026-05-25,Cl1,Universidad Católica,Colo Colo,over_under_25,,,,Over,1.770,won,,,
-2026-05-25,Mx1,UNAM Pumas,Cruz Azul,1x2,,,,X,3.300,lost,Cruz Azul Win,2.560,won
+2026-05-25,Mx1,UNAM Pumas,Cruz Azul,1x2,,,,X,3.300,lost,,,
 2026-05-25,Mx1,UNAM Pumas,Cruz Azul,over_under_25,,,,Over,1.770,won,,,
-2026-05-25,Eliteserien - Norway,Tromso,Aalesund,1x2,,,,,,,Tromso Win,1.480,lost
 2026-05-25,Us4,Tobacco Road,North Carolina II,1x2,,,,2,2.000,won,,,
 2026-05-25,Us4,Staten Island Athletic,FC Motown II,1x2,,,,2,1.160,won,,,
-2026-05-25,Premiership - Scotland,St Mirren,Partick Thistle,1x2,,,,,,,St Mirren Win,1.780,won
 2026-05-25,Us4,Spokane Velocity,Sarasota Paradise,1x2,,,,1,1.530,won,,,
 2026-05-25,Us4,Spokane Velocity,Sarasota Paradise,over_under_25,,,,Under,1.850,won,,,
-2026-05-25,Eliteserien - Norway,Sarpsborg FK,Molde,1x2,,,,,,,Molde Win,2.540,lost
-2026-05-25,Eliteserien - Norway,Sandefjord,Fredrikstad FK,1x2,,,,,,,Sandefjord Win,1.900,lost
 2026-05-25,Ar2,San Martín Tucumán,CA Atlanta,1x2,,,,X,2.900,lost,,,
 2026-05-25,Ar2,San Martín Tucumán,CA Atlanta,over_under_25,,,,Under,3.000,won,,,
 2026-05-25,Cl2,San Luis Quillota,CD Magallanes,1x2,,,,1,1.910,won,,,
 2026-05-25,Cl2,San Luis Quillota,CD Magallanes,over_under_25,,,,Under,1.770,lost,,,
-2026-05-25,Bundesliga - Germany,SC Paderborn,VfL Wolfsburg,1x2,,,,,,,VfL Wolfsburg Win,2.120,lost
-2026-05-25,Austrian Football Bundesliga,Rapid Wien,Ried,1x2,,,,,,,Rapid Wien Win,2.100,won
 2026-05-25,Campionato Primavera - 1,Parma U20,Cesena U20,over_under_25,under 2.5,2.200,won,,,,,,
 2026-05-25,Py2,Paraguari,Benjamín Aceval,1x2,,,,2,2.800,won,,,
 2026-05-25,Py2,Paraguari,Benjamín Aceval,over_under_25,,,,Under,2.100,lost,,,
@@ -2463,972 +2258,107 @@ kickoff_date,league,home_team,away_team,market,oddsintel_pick,oddsintel_odds,odd
 2026-05-25,K League 2,Paju Citizen,Gimpo Citizen,over_under_25,over 2.5,2.350,lost,,,,,,
 2026-05-25,Br2,Operário PR,Criciúma,1x2,,,,X,2.900,won,,,
 2026-05-25,Br2,Operário PR,Criciúma,over_under_25,,,,Under,2.700,won,,,
-2026-05-25,League 2,Notts County,Salford City,1x2,,,,,,,Notts County Win,2.920,won
 2026-05-25,Jm,Montego Bay Utd,Mount Pleasant,1x2,,,,2,2.550,won,,,
 2026-05-25,Jm,Montego Bay Utd,Mount Pleasant,over_under_25,,,,Under,2.170,lost,,,
-2026-05-25,MLS,Los Angeles FC,Seattle Sounders FC,1x2,,,,,,,Los Angeles FC Win,2.000,won
 2026-05-25,First League,Lokomotiv Plovdiv,Botev Plovdiv,1x2,home,3.350,won,,,,,,
 2026-05-25,Bb1,Kick Start,Weymouth Wales,1x2,,,,2,1.450,won,,,
 2026-05-25,Bb1,Kick Start,Weymouth Wales,over_under_25,,,,Over,2.020,lost,,,
-2026-05-25,Eliteserien - Norway,KFUM,Rosenborg,1x2,,,,,,,KFUM Win,2.380,won
 2026-05-25,Us1,Inter Miami CF,Philadelphia Union,1x2,,,,1,1.360,won,,,
 2026-05-25,Us1,Inter Miami CF,Philadelphia Union,over_under_25,,,,Over,3.350,won,,,
-2026-05-25,Eliteserien - Norway,IK Start,Vålerenga,1x2,,,,,,,Vålerenga Win,2.280,lost
-2026-05-25,Superettan - Sweden,IFK Norrkoping,Östers IF,1x2,,,,,,,IFK Norrkoping Win,1.710,won
-2026-05-25,Allsvenskan - Sweden,IFK Goteborg,Mjällby AIF,1x2,,,,,,,Mjällby AIF Win,2.720,lost
-2026-05-25,Allsvenskan - Sweden,IF Elfsborg,BK Hacken,1x2,,,,,,,BK Hacken Win,2.480,lost
-2026-05-25,Eliteserien - Norway,HamKam,Lillestrom,1x2,,,,,,,Lillestrom Win,2.360,lost
-2026-05-25,League of Ireland,Derry City,Shelbourne Dublin,1x2,,,,,,,Derry City Win,2.540,lost
 2026-05-25,Ec1,Delfin SC,Barcelona SC,1x2,,,,2,2.200,won,,,
-2026-05-25,Brazil Série A,Coritiba,Bahia,1x2,,,,,,,Coritiba Win,2.740,won
 2026-05-25,Do1,Cibao FC,Salcedo,1x2,,,,1,1.660,won,,,
 2026-05-25,Do1,Cibao FC,Salcedo,over_under_25,,,,Under,2.020,lost,,,
 2026-05-25,Hn1,CD Motagua,CD Marathón,1x2,,,,1,1.850,lost,,,
 2026-05-25,Hn1,CD Motagua,CD Marathón,over_under_25,,,,Over,1.850,lost,,,
-2026-05-25,Brazil Série B,Botafogo,Athletic Club (MG),1x2,,,,,,,Botafogo Win,2.100,lost
-2026-05-25,League of Ireland,Bohemians,Shamrock Rovers,1x2,,,,,,,Bohemians Win,2.480,lost
 2026-05-25,Br2,Avai FC,Goiás,1x2,,,,1,2.250,lost,,,
 2026-05-25,Br2,Avai FC,Goiás,over_under_25,,,,Over,1.650,lost,,,
-2026-05-24,Super League - China,Zhejiang,Liaoning Tieren FC,1x2,,,,,,,Zhejiang Win,1.710,lost
-2026-05-24,Super League - China,Yunnan Yukun,Qingdao West Coast FC,1x2,,,,,,,Yunnan Yukun Win,1.960,lost
-2026-05-24,EPL,West Ham United,Leeds United,1x2,,,,,,,West Ham United Win,1.850,won
-2026-05-24,La Liga - Spain,Villarreal,Atlético Madrid,1x2,,,,,,,Villarreal Win,2.600,won
-2026-05-24,Brazil Série A,Vasco da Gama,Bragantino-SP,1x2,,,,,,,Vasco da Gama Win,2.050,lost
-2026-05-24,Superettan - Sweden,Varbergs BoIS,GIF Sundsvall,1x2,,,,,,,Varbergs BoIS Win,1.660,won
-2026-05-24,Primera División - Chile,Universidad Católica (CHI),Colo Colo,1x2,,,,,,,Universidad Católica (CHI) Win,2.650,lost
-2026-05-24,Belgium First Div,Union Saint-Gilloise,Anderlecht,1x2,,,,,,,Union Saint-Gilloise Win,1.600,won
-2026-05-24,Primera División - Chile,Union La Calera,Palestino,1x2,,,,,,,Palestino Win,2.800,won
-2026-05-24,Serie B - Italy,US Catanzaro 1929,Monza,1x2,,,,,,,Monza Win,2.720,won
-2026-05-24,EPL,Tottenham Hotspur,Everton,1x2,,,,,,,Tottenham Hotspur Win,1.950,won
 2026-05-24,Serie A,Torino,Juventus,over_under_25,under 2.5,2.100,lost,,,,,,
-2026-05-24,Serie A - Italy,Torino,Juventus,1x2,,,,,,,Juventus Win,1.500,lost
-2026-05-24,J League,Tokyo Verdy,Yokohama F Marinos,1x2,,,,,,,Tokyo Verdy Win,2.700,lost
-2026-05-24,MLS,Sporting Kansas City,New York Red Bulls,1x2,,,,,,,New York Red Bulls Win,2.160,won
-2026-05-24,J League,Shimizu S Pulse,Gamba Osaka,1x2,,,,,,,Gamba Osaka Win,2.480,won
-2026-05-24,Super League - China,Shandong Luneng Taishan FC,Wuhan Three Towns,1x2,,,,,,,Shandong Luneng Taishan FC Win,1.360,lost
-2026-05-24,MLS,San Diego FC,Vancouver Whitecaps FC,1x2,,,,,,,Vancouver Whitecaps FC Win,2.040,won
-2026-05-24,La Liga 2 - Spain,SD Huesca,CD Castellón,1x2,,,,,,,CD Castellón Win,1.750,won
-2026-05-24,La Liga 2 - Spain,SD Eibar,Córdoba,1x2,,,,,,,SD Eibar Win,1.750,won
-2026-05-24,Primera División - Argentina,River Plate,Belgrano de Cordoba,1x2,,,,,,,River Plate Win,2.100,lost
-2026-05-24,Brazil Série A,Remo,Atletico Paranaense,1x2,,,,,,,Atletico Paranaense Win,2.880,won
-2026-05-24,La Liga 2 - Spain,Real Valladolid CF,Deportivo La Coruña,1x2,,,,,,,Deportivo La Coruña Win,1.730,won
-2026-05-24,Super League - China,Qingdao Hainiu FC,Chongqing Tonglianglong FC,1x2,,,,,,,Qingdao Hainiu FC Win,2.500,lost
-2026-05-24,MLS,Portland Timbers,San Jose Earthquakes,1x2,,,,,,,Portland Timbers Win,2.660,lost
-2026-05-24,Serie A - Italy,Parma,Sassuolo,1x2,,,,,,,Sassuolo Win,2.720,lost
-2026-05-24,Brazil Série B,Operario PR,Criciuma,1x2,,,,,,,Operario PR Win,2.320,lost
-2026-05-24,EPL,Nottingham Forest,Bournemouth,1x2,,,,,,,Bournemouth Win,2.100,lost
-2026-05-24,MLS,Nashville SC,New York City FC,1x2,,,,,,,Nashville SC Win,1.800,won
-2026-05-24,Serie A - Italy,Napoli,Udinese,1x2,,,,,,,Napoli Win,1.530,won
-2026-05-24,La Liga 2 - Spain,Málaga,Real Racing Club de Santander,1x2,,,,,,,Málaga Win,1.670,lost
-2026-05-24,J League,Mito HollyHock,Kawasaki Frontale,1x2,,,,,,,Kawasaki Frontale Win,2.300,won
-2026-05-24,EPL,Manchester City,Aston Villa,1x2,,,,,,,Manchester City Win,1.340,lost
-2026-05-24,Allsvenskan - Sweden,Malmo FF,Västerås SK,1x2,,,,,,,Malmo FF Win,1.700,lost
-2026-05-24,EPL,Liverpool,Brentford,1x2,,,,,,,Liverpool Win,1.880,lost
-2026-05-24,Serie A - Italy,Lecce,Genoa,1x2,,,,,,,Lecce Win,1.820,won
 2026-05-24,Ligue 2,Laval,Rouen,over_under_25,over 2.5,2.350,lost,,,,,,
-2026-05-24,Primera División - Chile,La Serena,Deportes Limache,1x2,,,,,,,La Serena Win,2.600,won
-2026-05-24,MLS,LA Galaxy,Houston Dynamo,1x2,,,,,,,LA Galaxy Win,2.060,lost
-2026-05-24,Eliteserien - Norway,Kristiansund BK,Viking FK,1x2,,,,,,,Viking FK Win,1.520,won
-2026-05-24,MLS,Inter Miami CF,Philadelphia Union,1x2,,,,,,,Inter Miami CF Win,1.450,won
-2026-05-24,Allsvenskan - Sweden,IK Sirius,GAIS,1x2,,,,,,,IK Sirius Win,1.790,won
-2026-05-24,Serie A - Italy,Hellas Verona,AS Roma,1x2,,,,,,,AS Roma Win,1.360,won
-2026-05-24,Allsvenskan - Sweden,Hammarby IF,AIK,1x2,,,,,,,Hammarby IF Win,1.530,lost
-2026-05-24,EPL,Fulham,Newcastle United,1x2,,,,,,,Newcastle United Win,2.420,lost
-2026-05-24,Brazil Série A,Flamengo,Palmeiras,1x2,,,,,,,Flamengo Win,1.880,lost
-2026-05-24,J League,Fagiano Okayama,Cerezo Osaka,1x2,,,,,,,Cerezo Osaka Win,2.530,won
 2026-05-24,Segunda División,FC Andorra,AD Ceuta FC,over_under_25,under 2.5,2.620,won,,,,,,
-2026-05-24,Primera División - Chile,Deportes Concepción,Huachipato,1x2,,,,,,,Deportes Concepción Win,2.240,won
-2026-05-24,La Liga 2 - Spain,Cultural Leonesa,Burgos CF,1x2,,,,,,,Burgos CF Win,2.550,won
-2026-05-24,EPL,Crystal Palace,Arsenal,1x2,,,,,,,Arsenal Win,1.830,won
-2026-05-24,Brazil Série A,Cruzeiro,Chapecoense,1x2,,,,,,,Cruzeiro Win,1.400,won
-2026-05-24,Serie A - Italy,Cremonese,Como,1x2,,,,,,,Como Win,1.640,won
-2026-05-24,Brazil Série A,Corinthians,Atletico Mineiro,1x2,,,,,,,Corinthians Win,1.910,won
-2026-05-24,MLS,Columbus Crew SC,Atlanta United FC,1x2,,,,,,,Columbus Crew SC Win,1.570,won
-2026-05-24,MLS,Colorado Rapids,FC Dallas,1x2,,,,,,,Colorado Rapids Win,2.520,lost
-2026-05-24,Belgium First Div,Club Brugge,Gent,1x2,,,,,,,Club Brugge Win,1.750,won
-2026-05-24,MLS,Chicago Fire,Toronto FC,1x2,,,,,,,Chicago Fire Win,1.530,won
-2026-05-24,La Liga 2 - Spain,CD Mirandés,Granada CF,1x2,,,,,,,CD Mirandés Win,1.520,won
-2026-05-24,EPL,Burnley,Wolverhampton Wanderers,1x2,,,,,,,Burnley Win,2.440,lost
-2026-05-24,EPL,Brighton and Hove Albion,Manchester United,1x2,,,,,,,Brighton and Hove Albion Win,1.900,lost
-2026-05-24,League 1,Bolton Wanderers,Stockport County FC,1x2,,,,,,,Bolton Wanderers Win,2.650,won
-2026-05-24,Eliteserien - Norway,Bodø/Glimt,SK Brann,1x2,,,,,,,Bodø/Glimt Win,1.390,won
-2026-05-24,Brazil Série B,Avai,Goiás,1x2,,,,,,,Avai Win,2.480,lost
-2026-05-24,Brazil Série B,Atletico Goianiense,São Bernardo,1x2,,,,,,,Atletico Goianiense Win,1.950,lost
-2026-05-24,La Liga 2 - Spain,Andorra CF,AD Ceuta FC,1x2,,,,,,,Andorra CF Win,1.580,lost
-2026-05-24,Brazil Série B,América Mineiro,Vila Nova,1x2,,,,,,,América Mineiro Win,2.260,lost
-2026-05-24,La Liga 2 - Spain,Albacete,Real Sociedad B,1x2,,,,,,,Albacete Win,1.920,won
-2026-05-24,Dutch Eredivisie,Ajax,FC Utrecht,1x2,,,,,,,Ajax Win,1.900,lost
-2026-05-24,Serie A - Italy,AC Milan,Cagliari,1x2,,,,,,,AC Milan Win,1.320,lost
-2026-05-23,Primera División - Chile,Ñublense,Universidad de Concepción,1x2,,,,,,,Ñublense Win,1.830,lost
-2026-05-23,Brazil Série A,Vitoria,Internacional,1x2,,,,,,,Internacional Win,2.620,lost
 2026-05-23,Campionato Primavera - 2,Venezia U19,Padova U19,over_under_25,under 2.5,2.380,won,,,,,,
-2026-05-23,La Liga,Valencia,Barcelona,1x2,home,3.650,won,,,,Barcelona Win,1.950,lost
-2026-05-23,Primera División - Chile,Universidad de Chile,O'Higgins,1x2,,,,,,,Universidad de Chile Win,1.720,won
+2026-05-23,La Liga,Valencia,Barcelona,1x2,home,3.650,won,,,,,,
 2026-05-23,Jupiler Pro League,Standard Liege,Charleroi,over_under_25,under 2.5,1.940,won,,,,,,
-2026-05-23,Belgium First Div,Standard Liege,Charleroi,1x2,,,,,,,Standard Liege Win,2.200,lost
-2026-05-23,MLS,St. Louis City SC,Austin FC,1x2,,,,,,,St. Louis City SC Win,1.730,won
-2026-05-23,Super League - China,Shanghai SIPG FC,Tianjin Jinmen Tiger FC,1x2,,,,,,,Shanghai SIPG FC Win,1.770,lost
-2026-05-23,Brazil Série A,Sao Paulo,Botafogo,1x2,,,,,,,Sao Paulo Win,1.980,lost
-2026-05-23,Veikkausliiga - Finland,SJK Seinäjoki,AC Oulu,1x2,,,,,,,AC Oulu Win,2.680,won
-2026-05-23,Belgium First Div,Royal Antwerp,Westerlo,1x2,,,,,,,Royal Antwerp Win,2.050,won
-2026-05-23,La Liga - Spain,Real Betis,Levante,1x2,,,,,,,Real Betis Win,2.360,won
-2026-05-23,Ekstraklasa - Poland,Raków Częstochowa,Arka Gdynia,1x2,,,,,,,Raków Częstochowa Win,1.380,won
 2026-05-23,Primera División,Portuguesa FC,Deportivo La Guaira,over_under_25,over 2.5,2.410,lost,,,,,,
-2026-05-23,Ekstraklasa - Poland,Pogoń Szczecin,GKS Katowice,1x2,,,,,,,GKS Katowice Win,2.430,lost
-2026-05-23,Superettan - Sweden,Norrby IF,Ljungskile SK,1x2,,,,,,,Ljungskile SK Win,2.420,lost
-2026-05-23,Superettan - Sweden,Nordic United FC,IK Brage,1x2,,,,,,,Nordic United FC Win,2.250,won
-2026-05-23,Ekstraklasa - Poland,Nieciecza,Lechia Gdańsk,1x2,,,,,,,Lechia Gdańsk Win,1.780,lost
-2026-05-23,Brazil Série A,Mirassol,Fluminense,1x2,,,,,,,Mirassol Win,2.760,won
-2026-05-23,MLS,Minnesota United FC,Real Salt Lake,1x2,,,,,,,Minnesota United FC Win,2.140,lost
 2026-05-23,La Liga,Mallorca,Oviedo,over_under_25,under 2.5,1.970,lost,,,,,,
-2026-05-23,La Liga - Spain,Mallorca,Oviedo,1x2,,,,,,,Mallorca Win,1.530,won
-2026-05-23,Belgium First Div,Leuven,Genk,1x2,,,,,,,Genk Win,1.920,won
-2026-05-23,Serie A - Italy,Lazio,Pisa,1x2,,,,,,,Lazio Win,1.610,won
-2026-05-23,J League,Kyoto Purple Sanga,V-Varen Nagasaki,1x2,,,,,,,Kyoto Purple Sanga Win,1.950,won
-2026-05-23,Veikkausliiga - Finland,KuPS Kuopio,FC Lahti,1x2,,,,,,,KuPS Kuopio Win,1.630,won
 2026-05-23,Frauenliga,Kleinmünchen / BW Linz W,Rheindorf Altach W,over_under_25,under 2.5,2.500,won,,,,,,
-2026-05-23,J League,Kashiwa Reysol,JEF United Chiba,1x2,,,,,,,Kashiwa Reysol Win,1.540,won
-2026-05-23,J League,Kashima Antlers,FC Tokyo,1x2,,,,,,,Kashima Antlers Win,2.580,won
-2026-05-23,Allsvenskan - Sweden,Kalmar FF,Degerfors IF,1x2,,,,,,,Kalmar FF Win,2.100,won
-2026-05-23,Brazil Série B,Juventude,Sport Recife,1x2,,,,,,,Juventude Win,2.300,lost
 2026-05-23,Western Australia State League 1,Joondalup City,Inglewood United,over_under_25,under 2.5,2.500,won,,,,,,
-2026-05-23,Veikkausliiga - Finland,Jaro,IFK Mariehamn,1x2,,,,,,,Jaro Win,2.000,won
-2026-05-23,Ekstraklasa - Poland,Jagiellonia Białystok,Zagłębie Lubin,1x2,,,,,,,Jagiellonia Białystok Win,1.680,won
-2026-05-23,Veikkausliiga - Finland,Ilves Tampere,IF Gnistan,1x2,,,,,,,Ilves Tampere Win,2.140,won
-2026-05-23,Superettan - Sweden,IK Oddevold,Östersunds FK,1x2,,,,,,,IK Oddevold Win,2.120,won
 2026-05-23,Championship,Hull City,Middlesbrough,over_under_25,under 2.5,1.760,won,,,,,,
-2026-05-23,Championship,Hull City,Middlesbrough,1x2,,,,,,,Middlesbrough Win,1.980,lost
-2026-05-23,J League,Hiroshima Sanfrecce FC,Nagoya Grampus,1x2,,,,,,,Hiroshima Sanfrecce FC Win,1.710,won
-2026-05-23,Allsvenskan - Sweden,Halmstads BK,Örgryte IS,1x2,,,,,,,Halmstads BK Win,2.280,won
-2026-05-23,Ekstraklasa - Poland,Górnik Zabrze,Radomiak Radom,1x2,,,,,,,Górnik Zabrze Win,1.480,won
 2026-05-23,K League 2,Gyeongnam FC,Suwon City FC,1x2,home,3.750,won,,,,,,
 2026-05-23,K League 2,Gyeongnam FC,Suwon City FC,1x2,home,3.750,won,,,,,,
-2026-05-23,Brazil Série B,Grêmio Novorizontino,Ceará,1x2,,,,,,,Grêmio Novorizontino Win,2.240,won
-2026-05-23,Brazil Série A,Grêmio,Santos,1x2,,,,,,,Grêmio Win,2.280,won
-2026-05-23,La Liga - Spain,Girona,Elche CF,1x2,,,,,,,Girona Win,1.880,lost
-2026-05-23,La Liga - Spain,Getafe,CA Osasuna,1x2,,,,,,,Getafe Win,2.740,won
-2026-05-23,Brazil Série B,Fortaleza,Londrina,1x2,,,,,,,Fortaleza Win,1.610,won
 2026-05-23,Superettan,Falkenbergs FF,IFK Varnamo,over_under_25,over 2.5,1.830,won,,,,,,
-2026-05-23,Superettan - Sweden,Falkenbergs FF,IFK Värnamo,1x2,,,,,,,Falkenbergs FF Win,2.470,won
 2026-05-23,Super Liga,FK Partizan,Radnik Surdulica,over_under_25,over 2.5,1.870,won,,,,,,
-2026-05-23,Dutch Eredivisie,FC Volendam,Willem II,1x2,,,,,,,FC Volendam Win,2.200,lost
-2026-05-23,Veikkausliiga - Finland,FC Inter Turku,TPS Turku,1x2,,,,,,,FC Inter Turku Win,1.560,won
-2026-05-23,Premier League - Russia,FC Dynamo Makhachkala,Ural Sverdlovsk Oblast,1x2,,,,,,,FC Dynamo Makhachkala Win,2.000,won
-2026-05-23,MLS,FC Cincinnati,Orlando City SC,1x2,,,,,,,FC Cincinnati Win,1.670,won
-2026-05-23,Belgium First Div,Dender,Lommel SK,1x2,,,,,,,Dender Win,2.150,lost
-2026-05-23,Super League - China,Dalian Yingbo,Chengdu Rongcheng FC,1x2,,,,,,,Chengdu Rongcheng FC Win,1.920,lost
-2026-05-23,MLS,D.C. United,CF Montreal,1x2,,,,,,,D.C. United Win,2.020,lost
-2026-05-23,Ekstraklasa - Poland,Cracovia Kraków,Korona Kielce,1x2,,,,,,,Cracovia Kraków Win,2.240,lost
-2026-05-23,MLS,Charlotte FC,New England Revolution,1x2,,,,,,,Charlotte FC Win,1.880,won
-2026-05-23,La Liga - Spain,Celta Vigo,Sevilla,1x2,,,,,,,Celta Vigo Win,1.810,won
-2026-05-23,Serie A - Italy,Bologna,Inter Milan,1x2,,,,,,,Inter Milan Win,2.320,lost
-2026-05-23,Super League - China,Beijing FC,Henan FC,1x2,,,,,,,Beijing FC Win,1.700,lost
-2026-05-23,UEFA Champions League Women,Barcelona,Lyon,1x2,,,,,,,Barcelona Win,1.370,won
-2026-05-23,J League,Avispa Fukuoka,Vissel Kobe,1x2,,,,,,,Vissel Kobe Win,1.780,won
-2026-05-23,Brazil Série B,Avai,Goiás,1x2,,,,,,,Avai Win,2.420,won
-2026-05-23,Primera División - Chile,Audax Italiano,Cobresal,1x2,,,,,,,Audax Italiano Win,1.850,won
-2026-05-23,A-League,Auckland FC,Sydney FC,1x2,,,,,,,Auckland FC Win,2.220,won
-2026-05-23,La Liga - Spain,Alavés,Rayo Vallecano,1x2,,,,,,,Alavés Win,2.560,lost
 2026-05-22,III Liga - Group 3,Zagłębie Lubin II,Miedź Legnica II,over_under_25,under 2.5,2.750,lost,,,,,,
-2026-05-22,Veikkausliiga,VPS,HJK Helsinki,1x2,home,3.890,won,,,,HJK Helsinki Win,2.020,lost
-2026-05-22,Copa Libertadores,Universidad Católica (CHI),Barcelona SC,1x2,,,,,,,Universidad Católica (CHI) Win,1.770,won
+2026-05-22,Veikkausliiga,VPS,HJK Helsinki,1x2,home,3.890,won,,,,,,
 2026-05-22,Eredivisie Women,Twente W,PSV/Eindhoven W,over_under_25,over 2.5,1.860,won,,,,,,
-2026-05-22,Serie B - Italy,Südtirol,Bari,1x2,,,,,,,Südtirol Win,2.040,lost
-2026-05-22,League of Ireland,Shelbourne Dublin,Waterford FC,1x2,,,,,,,Shelbourne Dublin Win,1.370,won
 2026-05-22,Premier Division,Shamrock Rovers,Sligo Rovers,over_under_25,under 2.5,2.120,lost,,,,,,
-2026-05-22,League of Ireland,Shamrock Rovers,Sligo Rovers,1x2,,,,,,,Shamrock Rovers Win,1.350,lost
-2026-05-22,Bundesliga 2 - Germany,Rot-Weiss Essen,Greuther Fürth,1x2,,,,,,,Greuther Fürth Win,2.500,lost
-2026-05-22,Austrian Football Bundesliga,Ried,Rapid Wien,1x2,,,,,,,Ried Win,2.600,won
-2026-05-22,Copa Sudamericana,Racing Club,Caracas FC,1x2,,,,,,,Racing Club Win,1.200,lost
-2026-05-22,Coupe de France,RC Lens,Nice,1x2,,,,,,,RC Lens Win,1.520,won
-2026-05-22,Copa Libertadores,Peñarol Montevideo,Corinthians-SP,1x2,,,,,,,Peñarol Montevideo Win,2.650,lost
-2026-05-22,Brazil Série B,Nautico PE,Cuiabá,1x2,,,,,,,Nautico PE Win,1.980,won
-2026-05-22,Copa Sudamericana,Macará,Alianza Atlético,1x2,,,,,,,Macará Win,1.500,lost
 2026-05-22,Victoria Premier League 2,Kingston City,Werribee City,over_under_25,under 2.5,2.620,won,,,,,,
-2026-05-22,Championship,Hull City,Middlesbrough,1x2,,,,,,,Middlesbrough Win,2.020,won
 2026-05-22,Super League Women,Genk (W),Zulte-Waregem W,1x2,home,3.000,lost,,,,,,
 2026-05-22,Premier Division,Galway United,Bohemians,1x2,home,3.910,lost,,,,,,
-2026-05-22,Serie A - Italy,Fiorentina,Atalanta BC,1x2,,,,,,,Fiorentina Win,2.700,lost
-2026-05-22,J League,FC Machida Zelvia,Urawa Red Diamonds,1x2,,,,,,,FC Machida Zelvia Win,2.350,lost
-2026-05-22,Primera División - Chile,Everton de Viña del Mar,Coquimbo Unido,1x2,,,,,,,Coquimbo Unido Win,2.520,lost
-2026-05-22,League of Ireland,Drogheda United,Dundalk,1x2,,,,,,,Dundalk Win,2.200,lost
-2026-05-22,Allsvenskan - Sweden,Djurgardens IF,IF Brommapojkarna,1x2,,,,,,,Djurgardens IF Win,1.470,lost
-2026-05-22,League of Ireland,Derry City,St Patricks Athletic,1x2,,,,,,,St Patricks Athletic Win,2.540,lost
-2026-05-22,Copa Sudamericana,Blooming,Carabobo FC,1x2,,,,,,,Carabobo FC Win,2.420,won
-2026-05-21,Copa Sudamericana,River Plate,Bragantino-SP,1x2,,,,,,,River Plate Win,2.680,lost
-2026-05-21,Copa Sudamericana,Puerto Cabello,CA Juventud,1x2,,,,,,,Puerto Cabello Win,2.300,lost
-2026-05-21,Premiership - Scotland,Partick Thistle,St Mirren,1x2,,,,,,,Partick Thistle Win,2.630,lost
-2026-05-21,Super League - Greece,Panetolikos Agrinio,Asteras Tripolis,1x2,,,,,,,Panetolikos Agrinio Win,2.660,lost
-2026-05-21,Copa Libertadores,Palmeiras-SP,Cerro Porteño,1x2,,,,,,,Palmeiras-SP Win,1.330,lost
-2026-05-21,Saudi Pro League,Neom,Al-Ettifaq,1x2,,,,,,,Neom Win,1.910,lost
-2026-05-21,Copa Libertadores,LDU Quito,Lanus,1x2,,,,,,,LDU Quito Win,1.950,won
-2026-05-21,Belgium First Div,KV Mechelen,Club Brugge,1x2,,,,,,,Club Brugge Win,1.370,lost
-2026-05-21,Copa Libertadores,Junior FC,Sporting Cristal,1x2,,,,,,,Junior FC Win,1.770,won
-2026-05-21,Allsvenskan - Sweden,IF Elfsborg,Mjällby AIF,1x2,,,,,,,Mjällby AIF Win,2.600,lost
-2026-05-21,Copa Sudamericana,Grêmio,Palestino,1x2,,,,,,,Grêmio Win,1.400,won
-2026-05-21,Copa Libertadores,Flamengo-RJ,Estudiantes La Plata,1x2,,,,,,,Flamengo-RJ Win,1.460,won
-2026-05-21,Dutch Eredivisie,FC Utrecht,Heerenveen,1x2,,,,,,,FC Utrecht Win,2.040,won
-2026-05-21,Copa Libertadores,Deportivo La Guaira,Independiente Rivadavia,1x2,,,,,,,Independiente Rivadavia Win,1.870,won
-2026-05-21,Copa Libertadores,Cusco FC,Independiente Medellín,1x2,,,,,,,Cusco FC Win,2.450,lost
-2026-05-21,Liga MX,Cruz Azul,Pumas,1x2,,,,,,,Cruz Azul Win,1.750,won
-2026-05-21,Copa Sudamericana,Clube Atlético Mineiro,Club Cienciano,1x2,,,,,,,Clube Atlético Mineiro Win,1.230,won
-2026-05-21,Denmark Superliga,Brondby IF,FC Copenhagen,1x2,,,,,,,FC Copenhagen Win,2.340,won
-2026-05-21,Super League - Greece,Atromitos Athens,Panserraikos FC,1x2,,,,,,,Atromitos Athens Win,1.590,won
-2026-05-21,Belgium First Div,Anderlecht,Sint Truiden,1x2,,,,,,,Anderlecht Win,2.280,won
-2026-05-21,Saudi Pro League,Al-Riyadh,Al-Okhdood,1x2,,,,,,,Al-Riyadh Win,1.440,won
-2026-05-21,Saudi Pro League,Al-Kholood,Al-Fateh,1x2,,,,,,,Al-Kholood Win,2.500,lost
 2026-05-21,Pro League,Al-Ittihad FC,Al-Qadisiyah FC,over_under_25,under 2.5,2.700,lost,,,,,,
-2026-05-21,Saudi Pro League,Al-Ittihad,Al-Qadsiah,1x2,,,,,,,Al-Ittihad Win,2.460,lost
-2026-05-21,Saudi Pro League,Al-Hazem,Al-Taawoun,1x2,,,,,,,Al-Taawoun Win,1.830,lost
-2026-05-21,Super League - Greece,AE Kifisia FC,AEL,1x2,,,,,,,AE Kifisia FC Win,2.260,won
-2026-05-20,Super League - China,Zhejiang,Shandong Luneng Taishan FC,1x2,,,,,,,Shandong Luneng Taishan FC Win,2.340,lost
-2026-05-20,Dutch Eredivisie,Willem II,FC Volendam,1x2,,,,,,,Willem II Win,2.180,lost
-2026-05-20,Premier League - Russia,Ural Sverdlovsk Oblast,FC Dynamo Makhachkala,1x2,,,,,,,Ural Sverdlovsk Oblast Win,2.550,lost
-2026-05-20,Super League - China,Shanghai Shenhua FC,Wuhan Three Towns,1x2,,,,,,,Shanghai Shenhua FC Win,1.600,lost
-2026-05-20,Copa Sudamericana,Sao Paulo,Millonarios,1x2,,,,,,,Sao Paulo Win,1.650,lost
-2026-05-20,Copa Sudamericana,Santos,San Lorenzo,1x2,,,,,,,Santos Win,1.850,lost
-2026-05-20,UEFA Europa League,SC Freiburg,Aston Villa,1x2,,,,,,,Aston Villa Win,1.750,won
-2026-05-20,Serie B - Italy,Palermo,US Catanzaro 1929,1x2,,,,,,,Palermo Win,1.900,won
-2026-05-20,Copa Libertadores,Nacional de Montevideo,Club Universitario de Deportes,1x2,,,,,,,Nacional de Montevideo Win,1.910,lost
-2026-05-20,Eliteserien - Norway,Lillestrom,Kristiansund BK,1x2,,,,,,,Lillestrom Win,1.430,lost
-2026-05-20,Super League - China,Liaoning Tieren FC,Qingdao Hainiu FC,1x2,,,,,,,Liaoning Tieren FC Win,2.280,won
-2026-05-20,Veikkausliiga - Finland,KuPS Kuopio,Jaro,1x2,,,,,,,KuPS Kuopio Win,1.410,won
-2026-05-20,Copa Libertadores,Independiente del Valle,Libertad Asuncion,1x2,,,,,,,Independiente del Valle Win,1.360,won
-2026-05-20,Copa Libertadores,Independiente Santa Fe,Platense,1x2,,,,,,,Independiente Santa Fe Win,2.250,won
-2026-05-20,Veikkausliiga - Finland,Ilves Tampere,FC Inter Turku,1x2,,,,,,,FC Inter Turku Win,2.100,won
-2026-05-20,Allsvenskan - Sweden,GAIS,Hammarby IF,1x2,,,,,,,Hammarby IF Win,2.180,lost
-2026-05-20,Premier League - Russia,FC Rotor Volgograd,FC Akron Tolyatti,1x2,,,,,,,FC Rotor Volgograd Win,2.540,lost
-2026-05-20,Copa Libertadores,Club Always Ready,Mirassol,1x2,,,,,,,Mirassol Win,1.700,won
-2026-05-20,Super League - China,Chongqing Tonglianglong FC,Yunnan Yukun,1x2,,,,,,,Yunnan Yukun Win,2.700,lost
-2026-05-20,Copa Sudamericana,CA Boston River,O'Higgins,1x2,,,,,,,O'Higgins Win,2.050,lost
-2026-05-20,Copa Sudamericana,C.D. Cuenca,Recoleta FC,1x2,,,,,,,C.D. Cuenca Win,1.680,lost
-2026-05-20,Copa Libertadores,Boca Juniors,Cruzeiro,1x2,,,,,,,Boca Juniors Win,2.010,lost
-2026-05-20,Copa Sudamericana,América de Cali,CA Tigre BA,1x2,,,,,,,América de Cali Win,2.040,lost
-2026-05-20,Saudi Pro League,Al-Najma,Al-Shabab,1x2,,,,,,,Al-Shabab Win,1.500,lost
-2026-05-20,Saudi Pro League,Al-Khaleej,Al-Ahli,1x2,,,,,,,Al-Ahli Win,1.500,won
-2026-05-20,Eliteserien - Norway,Aalesund,SK Brann,1x2,,,,,,,SK Brann Win,1.930,lost
-2026-05-19,Belgium First Div,Westerlo,Standard Liege,1x2,,,,,,,Westerlo Win,2.020,lost
-2026-05-19,Super League - China,Tianjin Jinmen Tiger FC,Henan FC,1x2,,,,,,,Henan FC Win,2.600,won
-2026-05-19,Super League - China,Shenzhen Peng City FC,Dalian Yingbo,1x2,,,,,,,Dalian Yingbo Win,2.800,lost
 2026-05-19,Ligue 2,Rouen,Laval,over_under_25,over 2.5,2.200,lost,,,,,,
-2026-05-19,Austrian Football Bundesliga,Ried,Wolfsberger AC,1x2,,,,,,,Ried Win,2.300,won
-2026-05-19,Super League - China,Qingdao West Coast FC,Beijing FC,1x2,,,,,,,Beijing FC Win,2.100,lost
-2026-05-19,Serie B - Italy,Monza,Juve Stabia,1x2,,,,,,,Monza Win,1.720,won
-2026-05-19,Copa Sudamericana,Montevideo City Torque,Deportivo Riestra,1x2,,,,,,,Montevideo City Torque Win,2.220,won
-2026-05-19,Superettan - Sweden,Helsingborgs IF,Varbergs BoIS,1x2,,,,,,,Varbergs BoIS Win,2.670,won
-2026-05-19,Belgium First Div,Genk,Royal Antwerp,1x2,,,,,,,Genk Win,1.650,lost
-2026-05-19,Copa Libertadores,Fluminense-RJ,Club Bolívar,1x2,,,,,,,Fluminense-RJ Win,1.250,won
-2026-05-19,Copa Libertadores,Coquimbo Unido,Deportes Tolima,1x2,,,,,,,Coquimbo Unido Win,2.220,won
-2026-05-19,Super League - China,Chengdu Rongcheng FC,Shanghai SIPG FC,1x2,,,,,,,Chengdu Rongcheng FC Win,1.550,lost
-2026-05-19,EPL,Chelsea,Tottenham Hotspur,1x2,,,,,,,Chelsea Win,2.060,won
-2026-05-19,Belgium First Div,Charleroi,Leuven,1x2,,,,,,,Charleroi Win,1.790,lost
-2026-05-19,Copa Sudamericana,Audax Italiano,Barracas Central,1x2,,,,,,,Audax Italiano Win,2.520,won
-2026-05-18,Allsvenskan - Sweden,Örgryte IS,IFK Goteborg,1x2,,,,,,,IFK Goteborg Win,1.950,won
-2026-05-18,League of Ireland,Waterford FC,Drogheda United,1x2,,,,,,,Drogheda United Win,2.460,lost
 2026-05-18,Premier Division,Waterford,Drogheda United,over_under_25,under 2.5,1.960,lost,,,,,,
-2026-05-18,Brazil Série B,Ponte Preta,Londrina,1x2,,,,,,,Ponte Preta Win,2.300,lost
-2026-05-18,MLS,Nashville SC,Los Angeles FC,1x2,,,,,,,Nashville SC Win,2.170,won
 2026-05-18,First League,Montana,Spartak Varna,over_under_25,under 2.5,2.200,won,,,,,,
-2026-05-18,La Liga 2 - Spain,Leganés,SD Huesca,1x2,,,,,,,Leganés Win,2.000,lost
-2026-05-18,Superettan - Sweden,IK Oddevold,Örebro SK,1x2,,,,,,,IK Oddevold Win,2.090,won
-2026-05-18,Superettan - Sweden,GIF Sundsvall,Landskrona BoIS,1x2,,,,,,,Landskrona BoIS Win,2.440,lost
-2026-05-18,Veikkausliiga - Finland,FC Lahti,VPS Vaasa,1x2,,,,,,,FC Lahti Win,2.410,lost
-2026-05-18,Allsvenskan - Sweden,Djurgardens IF,IK Sirius,1x2,,,,,,,Djurgardens IF Win,2.360,lost
-2026-05-18,Primera División - Chile,Deportes Concepción,Everton de Viña del Mar,1x2,,,,,,,Deportes Concepción Win,2.620,lost
-2026-05-18,Ekstraklasa - Poland,Arka Gdynia,Nieciecza,1x2,,,,,,,Arka Gdynia Win,1.750,lost
-2026-05-17,Superettan - Sweden,Östersunds FK,Sandvikens IF,1x2,,,,,,,Östersunds FK Win,2.020,won
-2026-05-17,Superettan - Sweden,Östers IF,Ljungskile SK,1x2,,,,,,,Östers IF Win,2.320,lost
-2026-05-17,La Liga 2 - Spain,Zaragoza,Sporting Gijón,1x2,,,,,,,Zaragoza Win,1.890,lost
-2026-05-17,EPL,Wolverhampton Wanderers,Fulham,1x2,,,,,,,Fulham Win,1.990,lost
-2026-05-17,Allsvenskan - Sweden,Västerås SK,AIK,1x2,,,,,,,AIK Win,2.280,lost
-2026-05-17,Brazil Série B,Vila Nova,Avai,1x2,,,,,,,Vila Nova Win,2.100,won
-2026-05-17,J League,V-Varen Nagasaki,Vissel Kobe,1x2,,,,,,,Vissel Kobe Win,1.750,lost
-2026-05-17,Serie A - Italy,Udinese,Cremonese,1x2,,,,,,,Udinese Win,2.520,lost
-2026-05-17,Serie B - Italy,US Catanzaro 1929,Palermo,1x2,,,,,,,Palermo Win,2.420,lost
-2026-05-17,Turkey Super League,Trabzonspor,Genclerbirligi SK,1x2,,,,,,,Genclerbirligi SK Win,2.260,won
-2026-05-17,Frauen-Bundesliga,TSG Hoffenheim,RB Leipzig,1x2,,,,,,,TSG Hoffenheim Win,1.470,lost
-2026-05-17,Ligue 1 - France,Strasbourg,AS Monaco,1x2,,,,,,,AS Monaco Win,2.220,lost
-2026-05-17,Premiership - Scotland,St Mirren,Dundee United,1x2,,,,,,,St Mirren Win,2.320,lost
-2026-05-17,Brazil Série B,Sport Recife,Clube de Regatas Brasil,1x2,,,,,,,Sport Recife Win,2.040,lost
-2026-05-17,Dutch Eredivisie,Sparta Rotterdam,Excelsior,1x2,,,,,,,Sparta Rotterdam Win,2.120,lost
-2026-05-17,Denmark Superliga,SonderjyskE,FC Nordsjaelland,1x2,,,,,,,FC Nordsjaelland Win,2.180,won
-2026-05-17,La Liga - Spain,Sevilla,Real Madrid,1x2,,,,,,,Real Madrid Win,2.300,won
-2026-05-17,MLS,Seattle Sounders FC,LA Galaxy,1x2,,,,,,,Seattle Sounders FC Win,1.680,lost
-2026-05-17,Serie A - Italy,Sassuolo,Lecce,1x2,,,,,,,Sassuolo Win,2.820,lost
-2026-05-17,Brazil Série A,Santos,Coritiba,1x2,,,,,,,Santos Win,1.800,lost
-2026-05-17,MLS,San Jose Earthquakes,FC Dallas,1x2,,,,,,,San Jose Earthquakes Win,1.870,lost
-2026-05-17,Bundesliga 2 - Germany,SV Darmstadt 98,SC Paderborn,1x2,,,,,,,SC Paderborn Win,1.920,won
-2026-05-17,Frauen-Bundesliga,SGS Essen,SC Freiburg,1x2,,,,,,,SC Freiburg Win,1.850,lost
-2026-05-17,Premier League - Russia,Rubin Kazan,FC Nizhny Novgorod,1x2,,,,,,,Rubin Kazan Win,2.170,lost
-2026-05-17,La Liga - Spain,Real Sociedad,Valencia,1x2,,,,,,,Real Sociedad Win,2.260,lost
-2026-05-17,MLS,Real Salt Lake,Colorado Rapids,1x2,,,,,,,Real Salt Lake Win,1.720,won
-2026-05-17,La Liga - Spain,Rayo Vallecano,Villarreal,1x2,,,,,,,Rayo Vallecano Win,2.430,won
-2026-05-17,Ekstraklasa - Poland,Piast Gliwice,Raków Częstochowa,1x2,,,,,,,Raków Częstochowa Win,2.770,won
-2026-05-17,Super League 1,Panserraikos,Panetolikos,1x2,home,2.770,lost,,,,Panserraikos FC Win,2.680,lost
-2026-05-17,Super League - Greece,Panathinaikos,PAOK Thessaloniki,1x2,,,,,,,PAOK Thessaloniki Win,2.060,lost
-2026-05-17,La Liga - Spain,Oviedo,Alavés,1x2,,,,,,,Alavés Win,2.000,won
-2026-05-17,Super League - Greece,OFI Crete,Volos FC,1x2,,,,,,,OFI Crete Win,1.910,won
-2026-05-17,Denmark Superliga,OB Odense BK,Vejle Boldklub,1x2,,,,,,,OB Odense BK Win,1.550,lost
-2026-05-17,Superettan - Sweden,Nordic United FC,Falkenbergs FF,1x2,,,,,,,Nordic United FC Win,2.160,lost
+2026-05-17,Super League 1,Panserraikos,Panetolikos,1x2,home,2.770,lost,,,,,,
 2026-05-17,Ligue 1,Nice,Metz,over_under_25,over 2.5,1.570,lost,,,,,,
-2026-05-17,Ligue 1 - France,Nice,Metz,1x2,,,,,,,Nice Win,1.390,lost
-2026-05-17,EPL,Newcastle United,West Ham United,1x2,,,,,,,Newcastle United Win,2.280,won
-2026-05-17,Allsvenskan - Sweden,Mjällby AIF,BK Hacken,1x2,,,,,,,Mjällby AIF Win,2.180,lost
-2026-05-17,Ligue 1 - France,Marseille,Rennes,1x2,,,,,,,Marseille Win,2.160,won
-2026-05-17,EPL,Manchester United,Nottingham Forest,1x2,,,,,,,Manchester United Win,1.680,won
-2026-05-17,Premiership - Scotland,Livingston,Kilmarnock,1x2,,,,,,,Kilmarnock Win,2.420,won
-2026-05-17,Ligue 1 - France,Lille,Auxerre,1x2,,,,,,,Lille Win,1.410,lost
-2026-05-17,EPL,Leeds United,Brighton and Hove Albion,1x2,,,,,,,Brighton and Hove Albion Win,2.230,lost
-2026-05-17,Ekstraklasa - Poland,Lechia Gdańsk,Legia Warszawa,1x2,,,,,,,Legia Warszawa Win,2.450,won
-2026-05-17,J League,Kyoto Purple Sanga,Hiroshima Sanfrecce FC,1x2,,,,,,,Hiroshima Sanfrecce FC Win,1.990,won
-2026-05-17,J League,Kawasaki Frontale,FC Machida Zelvia,1x2,,,,,,,FC Machida Zelvia Win,2.450,lost
-2026-05-17,Turkey Super League,Kasimpasa SK,Galatasaray,1x2,,,,,,,Galatasaray Win,2.420,lost
-2026-05-17,Bundesliga 2 - Germany,Karlsruher SC,VfL Bochum,1x2,,,,,,,VfL Bochum Win,2.540,won
 2026-05-17,Úrvalsdeild,KR Reykjavík,Fram Reykjavík,over_under_25,under 2.5,4.330,lost,,,,,,
-2026-05-17,Serie A - Italy,Juventus,Fiorentina,1x2,,,,,,,Juventus Win,1.370,lost
-2026-05-17,K League 1,Jeonbuk Hyundai Motors,Sangju Sangmu FC,1x2,,,,,,,Jeonbuk Hyundai Motors Win,1.770,won
-2026-05-17,K League 1,Jeju United FC,FC Anyang,1x2,,,,,,,Jeju United FC Win,2.550,lost
-2026-05-17,J League,JEF United Chiba,Kashima Antlers,1x2,,,,,,,Kashima Antlers Win,1.680,won
-2026-05-17,Serie A - Italy,Inter Milan,Hellas Verona,1x2,,,,,,,Inter Milan Win,1.250,lost
-2026-05-17,MLS,Inter Miami CF,Portland Timbers,1x2,,,,,,,Inter Miami CF Win,1.370,won
 2026-05-17,Serie A,Inter,Hellas Verona,over_under_25,under 2.5,2.620,won,,,,,,
-2026-05-17,Superettan - Sweden,IFK Värnamo,Norrby IF,1x2,,,,,,,IFK Värnamo Win,1.940,lost
-2026-05-17,Allsvenskan - Sweden,IF Brommapojkarna,Kalmar FF,1x2,,,,,,,IF Brommapojkarna Win,2.660,won
-2026-05-17,Primera División - Chile,Huachipato,Union La Calera,1x2,,,,,,,Huachipato Win,2.180,won
-2026-05-17,MLS,Houston Dynamo,Vancouver Whitecaps FC,1x2,,,,,,,Vancouver Whitecaps FC Win,2.000,lost
-2026-05-17,Dutch Eredivisie,Heracles Almelo,Groningen,1x2,,,,,,,Groningen Win,1.610,won
-2026-05-17,Dutch Eredivisie,Heerenveen,Ajax,1x2,,,,,,,Ajax Win,2.180,lost
 2026-05-17,2. Bundesliga,Hannover 96,1. FC Nürnberg,over_under_25,under 2.5,2.830,lost,,,,,,
-2026-05-17,Bundesliga 2 - Germany,Hannover 96,1. FC Nürnberg,1x2,,,,,,,Hannover 96 Win,1.500,lost
-2026-05-17,Liga MX,Guadalajara,Cruz Azul,1x2,,,,,,,Guadalajara Win,2.320,lost
-2026-05-17,Serie A - Italy,Genoa,AC Milan,1x2,,,,,,,AC Milan Win,1.830,won
-2026-05-17,K League 1,Gangwon FC,Ulsan Hyundai FC,1x2,,,,,,,Gangwon FC Win,2.150,won
-2026-05-17,Ekstraklasa - Poland,GKS Katowice,Jagiellonia Białystok,1x2,,,,,,,Jagiellonia Białystok Win,2.560,lost
-2026-05-17,Turkey Super League,Fenerbahce,Eyüpspor,1x2,,,,,,,Fenerbahce Win,1.290,lost
-2026-05-17,J League,Fagiano Okayama,Shimizu S Pulse,1x2,,,,,,,Fagiano Okayama Win,2.490,won
-2026-05-17,Premier League - Russia,FK Rostov,Zenit St Petersburg,1x2,,,,,,,Zenit St Petersburg Win,1.450,won
-2026-05-17,Dutch Eredivisie,FC Utrecht,Fortuna Sittard,1x2,,,,,,,FC Utrecht Win,1.530,won
-2026-05-17,Swiss Superleague,FC St Gallen,FC Thun,1x2,,,,,,,FC St Gallen Win,1.910,lost
-2026-05-17,Bundesliga 2 - Germany,FC Schalke 04,Eintracht Braunschweig,1x2,,,,,,,FC Schalke 04 Win,1.940,won
-2026-05-17,Swiss Superleague,FC Lugano,FC Basel,1x2,,,,,,,FC Lugano Win,1.950,won
-2026-05-17,Premier League - Russia,FC Krasnodar,Gazovik Orenburg,1x2,,,,,,,FC Krasnodar Win,1.310,won
-2026-05-17,Premier League - Russia,FC Dynamo Makhachkala,Spartak Moscow,1x2,,,,,,,Spartak Moscow Win,2.000,lost
-2026-05-17,Denmark Superliga,FC Copenhagen,Randers FC,1x2,,,,,,,FC Copenhagen Win,1.590,won
-2026-05-17,EPL,Everton,Sunderland,1x2,,,,,,,Everton Win,1.890,lost
-2026-05-17,Bundesliga 2 - Germany,Elversberg,SC Preußen Münster,1x2,,,,,,,Elversberg Win,1.240,won
-2026-05-17,La Liga - Spain,Elche CF,Getafe,1x2,,,,,,,Elche CF Win,2.390,won
-2026-05-17,Frauen-Bundesliga,Eintracht Frankfurt,Union Berlin,1x2,,,,,,,Eintracht Frankfurt Win,1.290,won
-2026-05-17,Bundesliga 2 - Germany,Dynamo Dresden,Holstein Kiel,1x2,,,,,,,Dynamo Dresden Win,1.750,won
-2026-05-17,Premiership - Scotland,Dundee FC,Aberdeen,1x2,,,,,,,Dundee FC Win,2.440,won
 2026-05-17,Premiership,Dundee,Aberdeen,over_under_25,over 2.5,1.800,won,,,,,,
-2026-05-17,La Liga 2 - Spain,Deportivo La Coruña,Andorra CF,1x2,,,,,,,Deportivo La Coruña Win,1.630,won
-2026-05-17,Primera División - Chile,Deportes Limache,Universidad Católica (CHI),1x2,,,,,,,Universidad Católica (CHI) Win,2.560,won
-2026-05-17,Brazil Série B,Criciuma,Atletico Goianiense,1x2,,,,,,,Criciuma Win,2.060,lost
-2026-05-17,Serie A - Italy,Como,Parma,1x2,,,,,,,Como Win,1.290,won
-2026-05-17,Primera División - Chile,Colo Colo,Ñublense,1x2,,,,,,,Colo Colo Win,1.720,won
-2026-05-17,Belgium First Div,Club Brugge,Union Saint-Gilloise,1x2,,,,,,,Club Brugge Win,2.150,won
-2026-05-17,Brazil Série A,Chapecoense,Remo,1x2,,,,,,,Chapecoense Win,2.480,lost
-2026-05-17,Brazil Série B,Ceará,Fortaleza,1x2,,,,,,,Ceará Win,2.550,won
-2026-05-17,La Liga - Spain,CA Osasuna,Espanyol,1x2,,,,,,,CA Osasuna Win,2.230,lost
-2026-05-17,Ligue 1 - France,Brest,Angers,1x2,,,,,,,Brest Win,1.930,lost
-2026-05-17,EPL,Brentford,Crystal Palace,1x2,,,,,,,Brentford Win,1.700,lost
-2026-05-17,Brazil Série A,Bragantino-SP,Vitoria,1x2,,,,,,,Bragantino-SP Win,1.740,won
-2026-05-17,Brazil Série A,Botafogo,Corinthians,1x2,,,,,,,Botafogo Win,2.420,won
-2026-05-17,Frauen-Bundesliga,Bayer Leverkusen,Werder Bremen,1x2,,,,,,,Bayer Leverkusen Win,1.580,lost
 2026-05-17,1st Division,Baroka FC,Upington City,1x2,home,3.750,lost,,,,,,
-2026-05-17,La Liga - Spain,Barcelona,Real Betis,1x2,,,,,,,Barcelona Win,1.350,won
-2026-05-17,Swiss Superleague,BSC Young Boys,FC Sion,1x2,,,,,,,FC Sion Win,2.480,lost
-2026-05-17,Austrian Football Bundesliga,Austria Wien,LASK,1x2,,,,,,,LASK Win,2.300,won
-2026-05-17,MLS,Austin FC,Sporting Kansas City,1x2,,,,,,,Austin FC Win,1.540,lost
-2026-05-17,Brazil Série A,Atletico Paranaense,Flamengo,1x2,,,,,,,Flamengo Win,2.300,lost
-2026-05-17,La Liga - Spain,Athletic Bilbao,Celta Vigo,1x2,,,,,,,Athletic Bilbao Win,2.290,lost
-2026-05-17,Bundesliga 2 - Germany,Arminia Bielefeld,Hertha Berlin,1x2,,,,,,,Arminia Bielefeld Win,1.800,won
-2026-05-17,Super League - Greece,Aris Thessaloniki,Levadiakos,1x2,,,,,,,Aris Thessaloniki Win,2.000,won
-2026-05-17,Primera División - Argentina,Argentinos Juniors,Belgrano de Cordoba,1x2,,,,,,,Argentinos Juniors Win,2.040,lost
-2026-05-17,Belgium First Div,Anderlecht,KV Mechelen,1x2,,,,,,,Anderlecht Win,1.900,lost
-2026-05-17,Dutch Eredivisie,AZ Alkmaar,NAC Breda,1x2,,,,,,,AZ Alkmaar Win,1.390,lost
-2026-05-17,Denmark Superliga,AGF Aarhus,Viborg FF,1x2,,,,,,,AGF Aarhus Win,2.160,won
-2026-05-17,Super League 1,AEK Athens FC,Olympiakos Piraeus,1x2,home,3.380,lost,,,,Olympiakos Piraeus Win,2.360,lost
+2026-05-17,Super League 1,AEK Athens FC,Olympiakos Piraeus,1x2,home,3.380,lost,,,,,,
 2026-05-16,Super League Women,Zulte-Waregem W,Westerlo (W),over_under_25,over 2.5,1.700,won,,,,,,
-2026-05-16,Super League - China,Yunnan Yukun,Shanghai Shenhua FC,1x2,,,,,,,Yunnan Yukun Win,2.260,won
-2026-05-16,J League,Yokohama F Marinos,Kashiwa Reysol,1x2,,,,,,,Kashiwa Reysol Win,2.280,won
-2026-05-16,Super League - China,Wuhan Three Towns,Liaoning Tieren FC,1x2,,,,,,,Wuhan Three Towns Win,2.470,lost
-2026-05-16,Austrian Football Bundesliga,Wolfsberger AC,WSG Tirol,1x2,,,,,,,Wolfsberger AC Win,2.100,won
-2026-05-16,Ekstraklasa - Poland,Wisła Płock,Górnik Zabrze,1x2,,,,,,,Górnik Zabrze Win,2.180,won
-2026-05-16,Bundesliga - Germany,Werder Bremen,Borussia Dortmund,1x2,,,,,,,Borussia Dortmund Win,2.040,won
-2026-05-16,3. Liga - Germany,Wehen Wiesbaden,TSG Hoffenheim II,1x2,,,,,,,Wehen Wiesbaden Win,1.950,won
-2026-05-16,Eliteserien - Norway,Vålerenga,Sarpsborg FK,1x2,,,,,,,Vålerenga Win,1.950,won
-2026-05-16,Eliteserien - Norway,Viking FK,IK Start,1x2,,,,,,,Viking FK Win,1.250,won
-2026-05-16,3. Liga - Germany,VfB Stuttgart II,VfL Osnabrück,1x2,,,,,,,VfL Osnabrück Win,2.050,won
-2026-05-16,J League,Urawa Red Diamonds,FC Tokyo,1x2,,,,,,,FC Tokyo Win,2.550,lost
-2026-05-16,Bundesliga - Germany,Union Berlin,Augsburg,1x2,,,,,,,Augsburg Win,2.530,lost
-2026-05-16,Brazil Série B,São Bernardo,América Mineiro,1x2,,,,,,,São Bernardo Win,1.880,lost
-2026-05-16,Belgium First Div,Standard Liege,Genk,1x2,,,,,,,Genk Win,2.200,lost
-2026-05-16,Primeira Liga - Portugal,Sporting Lisbon,Gil Vicente,1x2,,,,,,,Sporting Lisbon Win,1.280,won
-2026-05-16,League of Ireland,Sligo Rovers,Galway United,1x2,,,,,,,Galway United Win,2.700,won
-2026-05-16,Belgium First Div,Sint Truiden,Gent,1x2,,,,,,,Sint Truiden Win,2.080,lost
-2026-05-16,Super League - China,Shandong Luneng Taishan FC,Chongqing Tonglianglong FC,1x2,,,,,,,Shandong Luneng Taishan FC Win,1.610,won
-2026-05-16,3. Liga - Germany,Schweinfurt,Erzgebirge Aue,1x2,,,,,,,Erzgebirge Aue Win,1.980,won
-2026-05-16,Turkey Super League,Samsunspor,Goztepe,1x2,,,,,,,Samsunspor Win,2.500,won
 2026-05-16,3. Liga,SSV Ulm 1846,Rot-Weiß Essen,over_under_25,under 2.5,3.000,lost,,,,,,
-2026-05-16,3. Liga - Germany,SSV Ulm 1846,Rot-Weiss Essen,1x2,,,,,,,Rot-Weiss Essen Win,1.630,won
-2026-05-16,Eliteserien - Norway,SK Brann,KFUM,1x2,,,,,,,SK Brann Win,1.480,won
-2026-05-16,Veikkausliiga - Finland,SJK Seinäjoki,FC Inter Turku,1x2,,,,,,,FC Inter Turku Win,2.170,won
-2026-05-16,3. Liga - Germany,SC Verl,TSV 1860 München,1x2,,,,,,,SC Verl Win,1.730,won
-2026-05-16,Bundesliga - Germany,SC Freiburg,RB Leipzig,1x2,,,,,,,RB Leipzig Win,2.420,lost
-2026-05-16,Primera División - Argentina,River Plate,Rosario Central,1x2,,,,,,,River Plate Win,2.050,won
-2026-05-16,Austrian Football Bundesliga,Rheindorf Altach,Ried,1x2,,,,,,,Rheindorf Altach Win,1.790,won
-2026-05-16,La Liga 2 - Spain,Real Sociedad B,CD Mirandés,1x2,,,,,,,CD Mirandés Win,2.220,lost
-2026-05-16,Ekstraklasa - Poland,Radomiak Radom,Lech Poznań,1x2,,,,,,,Lech Poznań Win,1.950,won
-2026-05-16,MLS,Philadelphia Union,Columbus Crew SC,1x2,,,,,,,Philadelphia Union Win,2.420,lost
-2026-05-16,Primera División - Chile,Palestino,La Serena,1x2,,,,,,,Palestino Win,1.980,won
-2026-05-16,Brazil Série B,Operario PR,Nautico PE,1x2,,,,,,,Operario PR Win,2.140,lost
-2026-05-16,Primera División - Chile,O'Higgins,Universidad de Concepción,1x2,,,,,,,O'Higgins Win,1.820,lost
-2026-05-16,A-League,Newcastle Jets FC,Sydney FC,1x2,,,,,,,Newcastle Jets FC Win,2.380,lost
-2026-05-16,MLS,New York Red Bulls,New York City FC,1x2,,,,,,,New York City FC Win,2.660,lost
-2026-05-16,MLS,New England Revolution,Minnesota United FC,1x2,,,,,,,New England Revolution Win,2.280,won
-2026-05-16,Ekstraklasa - Poland,Motor Lublin,Cracovia Kraków,1x2,,,,,,,Cracovia Kraków Win,2.550,lost
-2026-05-16,Primeira Liga - Portugal,Moreirense FC,AVS Futebol SAD,1x2,,,,,,,Moreirense FC Win,1.830,lost
-2026-05-16,Eliteserien - Norway,Molde,Kristiansund BK,1x2,,,,,,,Molde Win,1.430,won
-2026-05-16,J League,Mito HollyHock,Tokyo Verdy,1x2,,,,,,,Tokyo Verdy Win,2.760,won
-2026-05-16,3. Liga - Germany,MSV Duisburg,FC Viktoria Köln 1904,1x2,,,,,,,MSV Duisburg Win,1.460,lost
-2026-05-16,Eliteserien - Norway,Lillestrom,Sandefjord,1x2,,,,,,,Lillestrom Win,1.850,won
-2026-05-16,Serie B,Juve Stabia,Monza,1x2,home,4.050,lost,,,,Monza Win,2.080,lost
-2026-05-16,3. Liga - Germany,Jahn Regensburg,FC Energie Cottbus,1x2,,,,,,,FC Energie Cottbus Win,1.720,won
-2026-05-16,Brazil Série A,Internacional,Vasco da Gama,1x2,,,,,,,Internacional Win,2.080,won
-2026-05-16,K League 1,Incheon United,Gwangju FC,1x2,,,,,,,Incheon United Win,1.530,won
-2026-05-16,Superettan - Sweden,IK Brage,IFK Norrkoping,1x2,,,,,,,IFK Norrkoping Win,2.260,lost
-2026-05-16,Veikkausliiga - Finland,IFK Mariehamn,KuPS Kuopio,1x2,,,,,,,KuPS Kuopio Win,1.480,lost
-2026-05-16,Veikkausliiga - Finland,IF Gnistan,Jaro,1x2,,,,,,,IF Gnistan Win,2.340,won
-2026-05-16,Premiership - Scotland,Hibernian,Motherwell,1x2,,,,,,,Hibernian Win,2.750,lost
-2026-05-16,Allsvenskan - Sweden,Halmstads BK,IF Elfsborg,1x2,,,,,,,IF Elfsborg Win,2.080,lost
-2026-05-16,Veikkausliiga - Finland,HJK Helsinki,Ilves Tampere,1x2,,,,,,,HJK Helsinki Win,1.720,lost
-2026-05-16,La Liga 2 - Spain,Granada CF,Burgos CF,1x2,,,,,,,Burgos CF Win,2.620,won
-2026-05-16,Brazil Série B,Goiás,Botafogo,1x2,,,,,,,Goiás Win,1.930,won
-2026-05-16,Turkey Super League,Gazişehir Gaziantep,Basaksehir,1x2,,,,,,,Basaksehir Win,1.830,won
-2026-05-16,Allsvenskan - Sweden,GAIS,Degerfors IF,1x2,,,,,,,GAIS Win,1.710,lost
-2026-05-16,Eliteserien - Norway,Fredrikstad FK,HamKam,1x2,,,,,,,Fredrikstad FK Win,2.100,won
-2026-05-16,Brazil Série A,Fluminense,Sao Paulo,1x2,,,,,,,Fluminense Win,1.930,won
-2026-05-16,Primeira Liga - Portugal,Famalicão,Alverca,1x2,,,,,,,Famalicão Win,1.670,won
-2026-05-16,Premiership - Scotland,Falkirk F.C.,Rangers,1x2,,,,,,,Rangers Win,1.910,won
-2026-05-16,Swiss Superleague,FC Winterthur,FC Luzern,1x2,,,,,,,FC Luzern Win,2.000,won
-2026-05-16,Bundesliga - Germany,FC St. Pauli,VfL Wolfsburg,1x2,,,,,,,VfL Wolfsburg Win,2.440,won
-2026-05-16,Primeira Liga - Portugal,FC Porto,Santa Clara,1x2,,,,,,,FC Porto Win,1.360,won
-2026-05-16,Swiss Superleague,FC Lausanne-Sport,Grasshopper Zürich,1x2,,,,,,,FC Lausanne-Sport Win,1.550,lost
-2026-05-16,3. Liga - Germany,FC Ingolstadt 04,Waldhof Mannheim,1x2,,,,,,,FC Ingolstadt 04 Win,2.080,won
-2026-05-16,Austrian Football Bundesliga,FC Blau-Weiß Linz,Grazer AK,1x2,,,,,,,FC Blau-Weiß Linz Win,2.080,lost
-2026-05-16,K League 1,Daejeon Citizen,FC Seoul,1x2,,,,,,,FC Seoul Win,2.720,won
-2026-05-16,MLS,D.C. United,St. Louis City SC,1x2,,,,,,,D.C. United Win,2.460,lost
-2026-05-16,La Liga 2 - Spain,Cultural Leonesa,SD Eibar,1x2,,,,,,,SD Eibar Win,2.620,lost
-2026-05-16,Brazil Série B,Cuiabá,Grêmio Novorizontino,1x2,,,,,,,Cuiabá Win,2.520,lost
-2026-05-16,Primera División - Chile,Coquimbo Unido,Audax Italiano,1x2,,,,,,,Coquimbo Unido Win,1.910,won
+2026-05-16,Serie B,Juve Stabia,Monza,1x2,home,4.050,lost,,,,,,
 2026-05-16,FA WSL,Chelsea W,Manchester United (W),over_under_25,under 2.5,2.200,won,,,,,,
 2026-05-16,FA Cup,Chelsea,Manchester City,over_under_25,under 2.5,2.110,won,,,,,,
-2026-05-16,FA Cup,Chelsea,Manchester City,1x2,,,,,,,Manchester City Win,1.740,won
-2026-05-16,MLS,Charlotte FC,Toronto FC,1x2,,,,,,,Charlotte FC Win,1.860,won
-2026-05-16,Belgium First Div,Charleroi,Westerlo,1x2,,,,,,,Charleroi Win,2.050,lost
-2026-05-16,Primeira Liga - Portugal,Casa Pia,Rio Ave FC,1x2,,,,,,,Casa Pia Win,1.710,lost
-2026-05-16,MLS,CF Montreal,Chicago Fire,1x2,,,,,,,Chicago Fire Win,2.400,won
-2026-05-16,Primeira Liga - Portugal,Braga,CF Estrela,1x2,,,,,,,Braga Win,1.720,lost
-2026-05-16,Bundesliga - Germany,Bayer Leverkusen,Hamburger SV,1x2,,,,,,,Bayer Leverkusen Win,1.320,lost
-2026-05-16,Brazil Série A,Atletico Mineiro,Mirassol,1x2,,,,,,,Atletico Mineiro Win,2.160,won
-2026-05-16,Super League - Greece,Asteras Tripolis,AE Kifisia FC,1x2,,,,,,,Asteras Tripolis Win,1.670,lost
-2026-05-16,Primeira Liga - Portugal,Arouca,Tondela,1x2,,,,,,,Tondela Win,2.280,lost
-2026-05-16,La Liga 2 - Spain,Almería,Las Palmas,1x2,,,,,,,Almería Win,2.080,lost
-2026-05-16,Saudi Pro League,Al-Okhdood,Al-Khaleej,1x2,,,,,,,Al-Khaleej Win,1.760,lost
-2026-05-16,Saudi Pro League,Al-Hilal,Neom,1x2,,,,,,,Al-Hilal Win,1.280,won
-2026-05-16,Saudi Pro League,Al-Ahli,Al-Kholood,1x2,,,,,,,Al-Ahli Win,1.300,won
-2026-05-16,Super League - Greece,AEL,Atromitos Athens,1x2,,,,,,,AEL Win,2.400,won
-2026-05-16,La Liga 2 - Spain,AD Ceuta FC,Málaga,1x2,,,,,,,Málaga Win,1.990,won
-2026-05-16,Veikkausliiga - Finland,AC Oulu,TPS Turku,1x2,,,,,,,AC Oulu Win,1.710,won
-2026-05-16,Bundesliga - Germany,1. FC Heidenheim,FSV Mainz 05,1x2,,,,,,,1. FC Heidenheim Win,1.980,lost
-2026-05-15,Turkey Super League,Çaykur Rizespor,Besiktas JK,1x2,,,,,,,Besiktas JK Win,2.000,lost
-2026-05-15,Ekstraklasa - Poland,Zagłębie Lubin,Pogoń Szczecin,1x2,,,,,,,Pogoń Szczecin Win,2.640,won
-2026-05-15,League of Ireland,Waterford FC,Derry City,1x2,,,,,,,Derry City Win,1.760,lost
-2026-05-15,Super League - China,Tianjin Jinmen Tiger FC,Chengdu Rongcheng FC,1x2,,,,,,,Chengdu Rongcheng FC Win,1.650,won
-2026-05-15,League of Ireland,St Patricks Athletic,Shelbourne Dublin,1x2,,,,,,,St Patricks Athletic Win,2.000,lost
-2026-05-15,Super League - China,Shanghai SIPG FC,Zhejiang,1x2,,,,,,,Shanghai SIPG FC Win,1.990,lost
-2026-05-15,League 2,Salford City,Grimsby Town,1x2,,,,,,,Salford City Win,2.440,lost
 2026-05-15,Süper Lig,Rizespor,Beşiktaş,1x2,home,3.500,lost,,,,,,
-2026-05-15,Liga MX,Pachuca,Pumas,1x2,,,,,,,Pachuca Win,2.130,won
-2026-05-15,League 2,Notts County,Chesterfield FC,1x2,,,,,,,Notts County Win,2.380,lost
-2026-05-15,Belgium First Div,Leuven,Royal Antwerp,1x2,,,,,,,Royal Antwerp Win,2.600,lost
-2026-05-15,Super League - China,Henan FC,Shenzhen Peng City FC,1x2,,,,,,,Henan FC Win,1.660,won
-2026-05-15,League of Ireland,Dundalk,Shamrock Rovers,1x2,,,,,,,Shamrock Rovers Win,2.330,lost
 2026-05-15,National 1,Dijon,Orleans,over_under_25,under 2.5,2.300,lost,,,,,,
-2026-05-15,Saudi Pro League,Damac,Al-Fayha,1x2,,,,,,,Damac Win,1.850,won
-2026-05-15,Super League - China,Dalian Yingbo,Qingdao West Coast FC,1x2,,,,,,,Dalian Yingbo Win,1.770,lost
-2026-05-15,La Liga 2 - Spain,Córdoba,Albacete,1x2,,,,,,,Córdoba Win,1.710,lost
-2026-05-15,League of Ireland,Bohemians,Drogheda United,1x2,,,,,,,Bohemians Win,1.560,won
-2026-05-15,Super League - China,Beijing FC,Qingdao Hainiu FC,1x2,,,,,,,Beijing FC Win,1.450,won
-2026-05-15,Serie B - Italy,Bari,Südtirol,1x2,,,,,,,Bari Win,2.620,lost
-2026-05-15,EPL,Aston Villa,Liverpool,1x2,,,,,,,Liverpool Win,2.560,lost
-2026-05-15,Saudi Pro League,Al-Taawoun,Al-Riyadh,1x2,,,,,,,Al-Taawoun Win,1.750,lost
-2026-05-15,A-League,Adelaide United,Auckland FC,1x2,,,,,,,Adelaide United Win,2.420,lost
-2026-05-14,La Liga - Spain,Valencia,Rayo Vallecano,1x2,,,,,,,Valencia Win,2.340,lost
-2026-05-14,MLS,St. Louis City SC,Los Angeles FC,1x2,,,,,,,Los Angeles FC Win,2.600,lost
-2026-05-14,MLS,Sporting Kansas City,LA Galaxy,1x2,,,,,,,LA Galaxy Win,1.960,lost
-2026-05-14,MLS,Seattle Sounders FC,San Jose Earthquakes,1x2,,,,,,,Seattle Sounders FC Win,2.020,won
-2026-05-14,Primera División - Argentina,River Plate,Gimnasia La Plata,1x2,,,,,,,River Plate Win,1.530,won
-2026-05-14,MLS,Real Salt Lake,Houston Dynamo,1x2,,,,,,,Real Salt Lake Win,1.830,won
-2026-05-14,La Liga - Spain,Real Madrid,Oviedo,1x2,,,,,,,Real Madrid Win,1.330,won
-2026-05-14,MLS,Minnesota United FC,Colorado Rapids,1x2,,,,,,,Minnesota United FC Win,1.840,lost
-2026-05-14,Superettan - Sweden,Ljungskile SK,GIF Sundsvall,1x2,,,,,,,Ljungskile SK Win,1.820,won
-2026-05-14,La Liga - Spain,Girona,Real Sociedad,1x2,,,,,,,Girona Win,2.060,lost
-2026-05-14,Swiss Superleague,FC Thun,BSC Young Boys,1x2,,,,,,,FC Thun Win,2.060,lost
-2026-05-14,Swiss Superleague,FC Sion,FC Lugano,1x2,,,,,,,FC Sion Win,2.250,lost
-2026-05-14,MLS,FC Dallas,Vancouver Whitecaps FC,1x2,,,,,,,Vancouver Whitecaps FC Win,2.040,won
-2026-05-14,Swiss Superleague,FC Basel,FC St Gallen,1x2,,,,,,,FC Basel Win,2.580,lost
-2026-05-14,Liga MX,Cruz Azul,Guadalajara,1x2,,,,,,,Cruz Azul Win,2.120,lost
-2026-05-14,League 1,Bradford City,Bolton Wanderers,1x2,,,,,,,Bradford City Win,2.660,lost
-2026-05-14,Saudi Pro League,Al-Qadsiah,Al-Hazem,1x2,,,,,,,Al-Qadsiah Win,1.250,won
-2026-05-14,Saudi Pro League,Al-Fateh,Al-Najma,1x2,,,,,,,Al-Fateh Win,1.500,won
-2026-05-14,Saudi Pro League,Al-Ettifaq,Al-Ittihad,1x2,,,,,,,Al-Ittihad Win,1.890,won
-2026-05-13,Superettan - Sweden,Östers IF,Sandvikens IF,1x2,,,,,,,Östers IF Win,2.040,won
-2026-05-13,Super League - Greece,Volos FC,Aris Thessaloniki,1x2,,,,,,,Aris Thessaloniki Win,2.000,won
-2026-05-13,J League,Vissel Kobe,Kyoto Purple Sanga,1x2,,,,,,,Vissel Kobe Win,1.740,won
-2026-05-13,La Liga - Spain,Villarreal,Sevilla,1x2,,,,,,,Villarreal Win,2.120,lost
-2026-05-13,K League 1,Ulsan Hyundai FC,Jeju United FC,1x2,,,,,,,Ulsan Hyundai FC Win,1.930,won
 2026-05-13,Suomen Cup,Turku PS,HJS Akatemia,over_under_25,under 2.5,3.800,lost,,,,,,
 2026-05-13,Cup,Throttur Reykjavik,Breidablik,1x2,home,4.400,lost,,,,,,
-2026-05-13,League 1,Stockport County FC,Stevenage,1x2,,,,,,,Stockport County FC Win,1.920,won
-2026-05-13,Primera División - Argentina,Rosario Central,Racing Club,1x2,,,,,,,Rosario Central Win,2.380,won
-2026-05-13,Premiership - Scotland,Rangers,Hibernian,1x2,,,,,,,Rangers Win,1.560,lost
-2026-05-13,Ekstraklasa - Poland,Raków Częstochowa,Jagiellonia Białystok,1x2,,,,,,,Raków Częstochowa Win,2.150,lost
-2026-05-13,Ligue 1 - France,RC Lens,Paris Saint Germain,1x2,,,,,,,Paris Saint Germain Win,2.100,won
-2026-05-13,Liga MX,Pachuca,Pumas,1x2,,,,,,,Pachuca Win,2.200,won
-2026-05-13,Super League - Greece,PAOK Thessaloniki,AEK Athens,1x2,,,,,,,PAOK Thessaloniki Win,1.740,lost
-2026-05-13,MLS,Orlando City SC,Philadelphia Union,1x2,,,,,,,Philadelphia Union Win,2.300,lost
-2026-05-13,Super League - Greece,Olympiakos Piraeus,Panathinaikos,1x2,,,,,,,Olympiakos Piraeus Win,1.500,won
-2026-05-13,MLS,New York Red Bulls,Columbus Crew SC,1x2,,,,,,,Columbus Crew SC Win,2.350,lost
-2026-05-13,MLS,New England Revolution,Nashville SC,1x2,,,,,,,Nashville SC Win,2.500,won
-2026-05-13,EPL,Manchester City,Crystal Palace,1x2,,,,,,,Manchester City Win,1.220,won
-2026-05-13,Super League - Greece,Levadiakos,OFI Crete,1x2,,,,,,,Levadiakos Win,1.680,won
-2026-05-13,Coppa Italia,Lazio,Inter Milan,1x2,,,,,,,Inter Milan Win,1.710,won
-2026-05-13,Superettan - Sweden,IK Brage,Östersunds FK,1x2,,,,,,,IK Brage Win,2.220,lost
-2026-05-13,Premiership - Scotland,Hearts,Falkirk F.C.,1x2,,,,,,,Hearts Win,1.460,won
-2026-05-13,La Liga - Spain,Getafe,Mallorca,1x2,,,,,,,Getafe Win,2.320,won
 2026-05-13,Cup,FK Crvena Zvezda,Vojvodina,over_under_25,under 2.5,2.620,lost,,,,,,
-2026-05-13,J League,FC Machida Zelvia,Tokyo Verdy,1x2,,,,,,,FC Machida Zelvia Win,1.910,lost
-2026-05-13,MLS,FC Cincinnati,Inter Miami CF,1x2,,,,,,,Inter Miami CF Win,2.180,won
-2026-05-13,K League 1,FC Anyang,Sangju Sangmu FC,1x2,,,,,,,FC Anyang Win,2.540,lost
-2026-05-13,MLS,D.C. United,Chicago Fire,1x2,,,,,,,Chicago Fire Win,2.620,won
-2026-05-13,MLS,Charlotte FC,New York City FC,1x2,,,,,,,Charlotte FC Win,2.300,lost
-2026-05-13,MLS,CF Montreal,Portland Timbers,1x2,,,,,,,CF Montreal Win,2.000,lost
-2026-05-13,Ligue 1 - France,Brest,Strasbourg,1x2,,,,,,,Strasbourg Win,2.580,won
-2026-05-13,Ekstraklasa - Poland,Arka Gdynia,Górnik Zabrze,1x2,,,,,,,Górnik Zabrze Win,2.170,lost
-2026-05-13,Primera División - Argentina,Argentinos Juniors,Atlético Huracán,1x2,,,,,,,Argentinos Juniors Win,1.940,won
 2026-05-13,Eerste Divisie,Almere City FC,Willem II,over_under_25,under 2.5,2.270,won,,,,,,
-2026-05-13,La Liga - Spain,Alavés,Barcelona,1x2,,,,,,,Barcelona Win,2.170,lost
 2026-05-13,La Liga,Alaves,Barcelona,over_under_25,under 2.5,2.650,won,,,,,,
-2026-05-12,Serie B - Italy,US Catanzaro 1929,Avellino,1x2,,,,,,,US Catanzaro 1929 Win,2.220,won
-2026-05-12,Championship,Southampton,Middlesbrough,1x2,,,,,,,Southampton Win,2.560,won
-2026-05-12,Ligue 2 - France,Red Star,Rodez AF,1x2,,,,,,,Red Star Win,1.940,lost
-2026-05-12,La Liga - Spain,Real Betis,Elche CF,1x2,,,,,,,Real Betis Win,1.660,won
-2026-05-12,Super League - Greece,Panetolikos Agrinio,AEL,1x2,,,,,,,Panetolikos Agrinio Win,2.400,lost
-2026-05-12,Serie B - Italy,Modena,Juve Stabia,1x2,,,,,,,Modena Win,2.240,lost
-2026-05-12,Brazil Série B,Londrina,São Bernardo,1x2,,,,,,,Londrina Win,2.380,lost
-2026-05-12,Superettan - Sweden,Landskrona BoIS,Norrby IF,1x2,,,,,,,Landskrona BoIS Win,2.100,lost
-2026-05-12,Premiership - Scotland,Kilmarnock,Dundee FC,1x2,,,,,,,Kilmarnock Win,2.000,won
-2026-05-12,K League 1,Incheon United,Pohang Steelers,1x2,,,,,,,Incheon United Win,2.700,lost
-2026-05-12,Superettan - Sweden,IFK Värnamo,Örebro SK,1x2,,,,,,,IFK Värnamo Win,2.000,lost
-2026-05-12,K League 1,Gwangju FC,FC Seoul,1x2,,,,,,,FC Seoul Win,1.420,won
-2026-05-12,Swiss Superleague,Grasshopper Zürich,FC Winterthur,1x2,,,,,,,Grasshopper Zürich Win,1.880,won
-2026-05-12,K League 1,Gangwon FC,Daejeon Citizen,1x2,,,,,,,Gangwon FC Win,2.280,won
-2026-05-12,Swiss Superleague,FC Luzern,FC Zurich,1x2,,,,,,,FC Luzern Win,1.550,won
-2026-05-12,Premiership - Scotland,Dundee United,Livingston,1x2,,,,,,,Dundee United Win,1.750,lost
-2026-05-12,La Liga - Spain,Celta Vigo,Levante,1x2,,,,,,,Celta Vigo Win,1.840,lost
-2026-05-12,La Liga - Spain,CA Osasuna,Atlético Madrid,1x2,,,,,,,CA Osasuna Win,2.580,lost
-2026-05-12,Primera División - Argentina,Belgrano de Cordoba,Union Santa Fe,1x2,,,,,,,Belgrano de Cordoba Win,2.500,won
-2026-05-12,Super League - Greece,Asteras Tripolis,Panserraikos FC,1x2,,,,,,,Asteras Tripolis Win,1.820,won
-2026-05-12,Saudi Pro League,Al-Nassr,Al-Hilal,1x2,,,,,,,Al-Nassr Win,2.420,lost
-2026-05-12,Saudi Pro League,Al-Kholood,Al-Okhdood,1x2,,,,,,,Al-Kholood Win,1.610,lost
-2026-05-12,Premiership - Scotland,Aberdeen,St Mirren,1x2,,,,,,,Aberdeen Win,2.220,lost
-2026-05-12,Super League - Greece,AE Kifisia FC,Atromitos Athens,1x2,,,,,,,AE Kifisia FC Win,2.300,lost
-2026-05-11,Primeira Liga - Portugal,Vitória SC,Casa Pia,1x2,,,,,,,Vitória SC Win,1.800,lost
-2026-05-11,Primera División - Argentina,Velez Sarsfield BA,Gimnasia La Plata,1x2,,,,,,,Velez Sarsfield BA Win,1.880,lost
-2026-05-11,EPL,Tottenham Hotspur,Leeds United,1x2,,,,,,,Tottenham Hotspur Win,1.880,lost
-2026-05-11,Primeira Liga - Portugal,Tondela,Moreirense FC,1x2,,,,,,,Tondela Win,2.040,won
-2026-05-11,Premier League - Russia,Spartak Moscow,Rubin Kazan,1x2,,,,,,,Spartak Moscow Win,1.600,won
-2026-05-11,Primeira Liga - Portugal,Santa Clara,Nacional,1x2,,,,,,,Santa Clara Win,2.220,won
-2026-05-11,La Liga 2 - Spain,SD Huesca,Real Sociedad B,1x2,,,,,,,SD Huesca Win,1.920,lost
-2026-05-11,La Liga - Spain,Rayo Vallecano,Girona,1x2,,,,,,,Rayo Vallecano Win,2.550,lost
-2026-05-11,Denmark Superliga,Randers FC,OB Odense BK,1x2,,,,,,,Randers FC Win,2.280,lost
-2026-05-11,Frauen-Bundesliga,RB Leipzig,Bayer Leverkusen,1x2,,,,,,,Bayer Leverkusen Win,1.580,won
-2026-05-11,Liga MX,Pumas,América,1x2,,,,,,,América Win,2.640,lost
-2026-05-11,Saudi Pro League,Neom,Al-Shabab,1x2,,,,,,,Neom Win,2.300,won
-2026-05-11,Serie A - Italy,Napoli,Bologna,1x2,,,,,,,Napoli Win,1.620,lost
-2026-05-11,Championship,Millwall,Hull City,1x2,,,,,,,Millwall Win,1.820,lost
-2026-05-11,MLS,Los Angeles FC,Houston Dynamo,1x2,,,,,,,Los Angeles FC Win,1.680,lost
-2026-05-11,Allsvenskan - Sweden,IK Sirius,Örgryte IS,1x2,,,,,,,IK Sirius Win,1.290,won
-2026-05-11,Brazil Série B,Grêmio Novorizontino,Botafogo,1x2,,,,,,,Grêmio Novorizontino Win,1.830,won
-2026-05-11,Premier League - Russia,FC Nizhny Novgorod,CSKA Moscow,1x2,,,,,,,CSKA Moscow Win,2.100,won
-2026-05-11,Premier League - Russia,FC Akron Tolyatti,FK Rostov,1x2,,,,,,,FK Rostov Win,2.600,won
-2026-05-11,Premier League - Russia,Dinamo Moscow,FC Krasnodar,1x2,,,,,,,FC Krasnodar Win,1.910,lost
-2026-05-11,Ekstraklasa - Poland,Cracovia Kraków,Radomiak Radom,1x2,,,,,,,Cracovia Kraków Win,2.040,lost
-2026-05-11,Primeira Liga - Portugal,CF Estrela,Famalicão,1x2,,,,,,,Famalicão Win,2.040,lost
-2026-05-11,Primeira Liga - Portugal,Benfica,Braga,1x2,,,,,,,Benfica Win,1.480,lost
-2026-05-11,Saudi Pro League,Al-Taawoun,Al-Ahli,1x2,,,,,,,Al-Ahli Win,1.830,won
-2026-05-10,Super League - China,Zhejiang,Tianjin Jinmen Tiger FC,1x2,,,,,,,Zhejiang Win,1.750,lost
-2026-05-10,J League,Yokohama F Marinos,Kashima Antlers,1x2,,,,,,,Kashima Antlers Win,2.050,lost
-2026-05-10,Ekstraklasa - Poland,Wisła Płock,Motor Lublin,1x2,,,,,,,Wisła Płock Win,2.400,lost
-2026-05-10,EPL,West Ham United,Arsenal,1x2,,,,,,,Arsenal Win,1.650,won
-2026-05-10,Super League - Greece,Volos FC,Levadiakos,1x2,,,,,,,Levadiakos Win,2.630,won
-2026-05-10,Primeira Liga - Portugal,Vitória SC,Casa Pia,1x2,,,,,,,Vitória SC Win,1.700,lost
-2026-05-10,J League,Vissel Kobe,Fagiano Okayama,1x2,,,,,,,Vissel Kobe Win,1.670,lost
-2026-05-10,Denmark Superliga,Vejle Boldklub,FC Fredericia,1x2,,,,,,,FC Fredericia Win,2.220,lost
-2026-05-10,Brazil Série A,Vasco da Gama,Atletico Paranaense,1x2,,,,,,,Vasco da Gama Win,1.950,won
-2026-05-10,Ligue 1 - France,Toulouse,Lyon,1x2,,,,,,,Lyon Win,1.890,lost
-2026-05-10,Primeira Liga - Portugal,Tondela,Moreirense FC,1x2,,,,,,,Tondela Win,2.030,won
-2026-05-10,3. Liga - Germany,TSV Havelse,Schweinfurt,1x2,,,,,,,TSV Havelse Win,2.050,won
-2026-05-10,3. Liga - Germany,TSG Hoffenheim II,1. FC Saarbrücken,1x2,,,,,,,1. FC Saarbrücken Win,2.230,lost
-2026-05-10,Denmark Superliga,Silkeborg IF,FC Copenhagen,1x2,,,,,,,FC Copenhagen Win,1.880,won
-2026-05-10,Super League - China,Shenzhen Peng City FC,Shandong Luneng Taishan FC,1x2,,,,,,,Shandong Luneng Taishan FC Win,2.000,won
-2026-05-10,MLS,Seattle Sounders FC,San Diego FC,1x2,,,,,,,Seattle Sounders FC Win,1.770,lost
-2026-05-10,Brazil Série A,Santos,Bragantino-SP,1x2,,,,,,,Santos Win,2.300,won
-2026-05-10,Primeira Liga - Portugal,Santa Clara,Nacional,1x2,,,,,,,Santa Clara Win,2.120,won
-2026-05-10,Eliteserien - Norway,Sandefjord,Kristiansund BK,1x2,,,,,,,Sandefjord Win,1.690,won
-2026-05-10,MLS,San Jose Earthquakes,Vancouver Whitecaps FC,1x2,,,,,,,Vancouver Whitecaps FC Win,2.320,lost
-2026-05-10,Bundesliga 2 - Germany,SC Preußen Münster,SV Darmstadt 98,1x2,,,,,,,SC Preußen Münster Win,2.380,lost
-2026-05-10,Belgium First Div,Royal Antwerp,Charleroi,1x2,,,,,,,Royal Antwerp Win,2.550,lost
-2026-05-10,Eliteserien - Norway,Rosenborg,Lillestrom,1x2,,,,,,,Lillestrom Win,2.390,lost
-2026-05-10,Primera División - Argentina,Rosario Central,Independiente,1x2,,,,,,,Rosario Central Win,2.360,won
-2026-05-10,Primera División - Argentina,River Plate,San Lorenzo,1x2,,,,,,,River Plate Win,1.670,lost
-2026-05-10,Primeira Liga - Portugal,Rio Ave FC,Sporting Lisbon,1x2,,,,,,,Sporting Lisbon Win,1.240,won
-2026-05-10,Brazil Série A,Remo,Palmeiras,1x2,,,,,,,Palmeiras Win,1.860,lost
-2026-05-10,Austrian Football Bundesliga,Rapid Wien,Austria Wien,1x2,,,,,,,Rapid Wien Win,2.200,lost
-2026-05-10,Super League - China,Qingdao West Coast FC,Wuhan Three Towns,1x2,,,,,,,Qingdao West Coast FC Win,2.040,lost
-2026-05-10,MLS,Portland Timbers,Sporting Kansas City,1x2,,,,,,,Portland Timbers Win,1.570,won
-2026-05-10,Ekstraklasa - Poland,Piast Gliwice,GKS Katowice,1x2,,,,,,,Piast Gliwice Win,2.200,lost
-2026-05-10,Serie A - Italy,Parma,AS Roma,1x2,,,,,,,AS Roma Win,1.590,won
-2026-05-10,Liga MX,Pachuca,Toluca,1x2,,,,,,,Toluca Win,2.170,lost
-2026-05-10,La Liga - Spain,Oviedo,Getafe,1x2,,,,,,,Getafe Win,2.700,lost
-2026-05-10,Super League - Greece,Olympiakos Piraeus,PAOK Thessaloniki,1x2,,,,,,,Olympiakos Piraeus Win,1.690,lost
-2026-05-10,EPL,Nottingham Forest,Newcastle United,1x2,,,,,,,Newcastle United Win,2.600,lost
-2026-05-10,MLS,New York City FC,Columbus Crew SC,1x2,,,,,,,New York City FC Win,2.540,won
-2026-05-10,Brazil Série B,Nautico PE,América Mineiro,1x2,,,,,,,Nautico PE Win,2.000,won
-2026-05-10,MLS,Nashville SC,D.C. United,1x2,,,,,,,Nashville SC Win,1.700,lost
-2026-05-10,J League,Nagoya Grampus,Kyoto Purple Sanga,1x2,,,,,,,Nagoya Grampus Win,2.300,won
-2026-05-10,Dutch Eredivisie,NAC Breda,Heerenveen,1x2,,,,,,,Heerenveen Win,2.600,lost
-2026-05-10,Brazil Série A,Mirassol,Chapecoense,1x2,,,,,,,Mirassol Win,1.530,lost
-2026-05-10,MLS,Minnesota United FC,Austin FC,1x2,,,,,,,Minnesota United FC Win,1.750,lost
-2026-05-10,Ligue 1 - France,Metz,Lorient,1x2,,,,,,,Lorient Win,2.220,won
-2026-05-10,La Liga - Spain,Mallorca,Villarreal,1x2,,,,,,,Mallorca Win,2.450,lost
-2026-05-10,Premier League - Russia,Lokomotiv Moscow,FC Baltika Kaliningrad,1x2,,,,,,,Lokomotiv Moscow Win,2.080,won
-2026-05-10,Super League - China,Liaoning Tieren FC,Yunnan Yukun,1x2,,,,,,,Yunnan Yukun Win,2.570,won
-2026-05-10,La Liga 2 - Spain,Leganés,Real Racing Club de Santander,1x2,,,,,,,Real Racing Club de Santander Win,2.430,won
-2026-05-10,Ligue 1 - France,Le Havre,Marseille,1x2,,,,,,,Marseille Win,2.100,won
-2026-05-10,Austrian Football Bundesliga,LASK,RB Salzburg,1x2,,,,,,,RB Salzburg Win,2.440,lost
-2026-05-10,J League,Kashiwa Reysol,Kawasaki Frontale,1x2,,,,,,,Kashiwa Reysol Win,2.020,won
-2026-05-10,Allsvenskan - Sweden,Kalmar FF,Halmstads BK,1x2,,,,,,,Kalmar FF Win,1.820,won
-2026-05-10,Eliteserien - Norway,KFUM,Viking FK,1x2,,,,,,,Viking FK Win,1.670,won
-2026-05-10,J League,JEF United Chiba,FC Machida Zelvia,1x2,,,,,,,FC Machida Zelvia Win,1.800,won
-2026-05-10,Primera División - Argentina,Independiente Rivadavia,Union Santa Fe,1x2,,,,,,,Independiente Rivadavia Win,2.450,lost
-2026-05-10,Bundesliga - Germany,Hamburger SV,SC Freiburg,1x2,,,,,,,SC Freiburg Win,2.580,lost
-2026-05-10,Liga MX,Guadalajara,Tigres,1x2,,,,,,,Guadalajara Win,2.200,won
-2026-05-10,Brazil Série B,Grêmio Novorizontino,Botafogo,1x2,,,,,,,Grêmio Novorizontino Win,1.830,won
-2026-05-10,Brazil Série A,Grêmio,Flamengo,1x2,,,,,,,Flamengo Win,2.020,won
-2026-05-10,League 2,Grimsby Town,Salford City,1x2,,,,,,,Grimsby Town Win,2.200,lost
-2026-05-10,Dutch Eredivisie,Go Ahead Eagles,PSV Eindhoven,1x2,,,,,,,PSV Eindhoven Win,1.660,won
-2026-05-10,Primeira Liga - Portugal,Gil Vicente,Arouca,1x2,,,,,,,Gil Vicente Win,1.700,lost
-2026-05-10,Belgium First Div,Genk,Westerlo,1x2,,,,,,,Genk Win,1.700,won
-2026-05-10,Premier League - Russia,Gazovik Orenburg,Kryliya Sovetov,1x2,,,,,,,Gazovik Orenburg Win,2.090,won
-2026-05-10,J League,Gamba Osaka,Hiroshima Sanfrecce FC,1x2,,,,,,,Hiroshima Sanfrecce FC Win,2.140,won
-2026-05-10,Dutch Eredivisie,Fortuna Sittard,FC Zwolle,1x2,,,,,,,Fortuna Sittard Win,2.180,won
-2026-05-10,Bundesliga 2 - Germany,Fortuna Düsseldorf,Elversberg,1x2,,,,,,,Elversberg Win,2.100,lost
-2026-05-10,Serie A - Italy,Fiorentina,Genoa,1x2,,,,,,,Fiorentina Win,2.200,lost
-2026-05-10,Dutch Eredivisie,Feyenoord,AZ Alkmaar,1x2,,,,,,,Feyenoord Win,1.900,lost
-2026-05-10,Bundesliga - Germany,FSV Mainz 05,Union Berlin,1x2,,,,,,,FSV Mainz 05 Win,1.800,lost
-2026-05-10,3. Liga - Germany,FC Viktoria Köln 1904,Alemannia Aachen,1x2,,,,,,,Alemannia Aachen Win,2.320,won
-2026-05-10,Dutch Eredivisie,FC Twente Enschede,Sparta Rotterdam,1x2,,,,,,,FC Twente Enschede Win,1.400,won
-2026-05-10,J League,FC Tokyo,Tokyo Verdy,1x2,,,,,,,FC Tokyo Win,1.850,won
-2026-05-10,Swiss Superleague,FC Sion,FC Thun,1x2,,,,,,,FC Sion Win,1.810,won
-2026-05-10,Denmark Superliga,FC Nordsjaelland,FC Midtjylland,1x2,,,,,,,FC Midtjylland Win,2.250,lost
-2026-05-10,Swiss Superleague,FC Lugano,FC St Gallen,1x2,,,,,,,FC Lugano Win,2.250,lost
-2026-05-10,Veikkausliiga - Finland,FC Lahti,IFK Mariehamn,1x2,,,,,,,FC Lahti Win,1.630,lost
-2026-05-10,MLS,FC Dallas,Real Salt Lake,1x2,,,,,,,FC Dallas Win,2.380,won
-2026-05-10,K League 1,FC Anyang,Jeonbuk Hyundai Motors,1x2,,,,,,,Jeonbuk Hyundai Motors Win,2.150,lost
-2026-05-10,Premier League - Russia,FC Akhmat Grozny,FC Dynamo Makhachkala,1x2,,,,,,,FC Akhmat Grozny Win,2.600,lost
-2026-05-10,Dutch Eredivisie,Excelsior,FC Volendam,1x2,,,,,,,Excelsior Win,1.820,lost
-2026-05-10,Primera División - Argentina,Estudiantes,Racing Club,1x2,,,,,,,Estudiantes Win,2.420,lost
-2026-05-10,La Liga 2 - Spain,Córdoba,Granada CF,1x2,,,,,,,Córdoba Win,1.790,won
-2026-05-10,EPL,Crystal Palace,Everton,1x2,,,,,,,Everton Win,2.650,lost
-2026-05-10,Liga MX,Cruz Azul,Atlas,1x2,,,,,,,Cruz Azul Win,1.480,won
-2026-05-10,Serie A - Italy,Cremonese,Pisa,1x2,,,,,,,Cremonese Win,1.770,won
-2026-05-10,Brazil Série A,Corinthians,Sao Paulo,1x2,,,,,,,Corinthians Win,2.150,won
-2026-05-10,League 2,Chesterfield FC,Notts County,1x2,,,,,,,Chesterfield FC Win,2.180,lost
-2026-05-10,Premiership - Scotland,Celtic,Rangers,1x2,,,,,,,Celtic Win,2.040,won
-2026-05-10,Primeira Liga - Portugal,CF Estrela,Famalicão,1x2,,,,,,,Famalicão Win,2.000,lost
-2026-05-10,La Liga 2 - Spain,CD Mirandés,SD Eibar,1x2,,,,,,,SD Eibar Win,2.620,won
-2026-05-10,EPL,Burnley,Aston Villa,1x2,,,,,,,Aston Villa Win,1.670,lost
-2026-05-10,Denmark Superliga,Brondby IF,AGF Aarhus,1x2,,,,,,,AGF Aarhus Win,2.330,won
-2026-05-10,Primeira Liga - Portugal,Benfica,Braga,1x2,,,,,,,Benfica Win,1.380,lost
-2026-05-10,Super League - China,Beijing FC,Shanghai SIPG FC,1x2,,,,,,,Beijing FC Win,1.780,lost
-2026-05-10,La Liga - Spain,Barcelona,Real Madrid,1x2,,,,,,,Barcelona Win,1.690,won
-2026-05-10,Swiss Superleague,BSC Young Boys,FC Basel,1x2,,,,,,,BSC Young Boys Win,2.040,won
-2026-05-10,Brazil Série B,Avai,Fortaleza,1x2,,,,,,,Avai Win,2.740,lost
-2026-05-10,Ligue 1 - France,Auxerre,Nice,1x2,,,,,,,Auxerre Win,2.540,won
-2026-05-10,Brazil Série A,Atletico Mineiro,Botafogo,1x2,,,,,,,Atletico Mineiro Win,2.220,lost
-2026-05-10,Super League - Greece,Aris Thessaloniki,OFI Crete,1x2,,,,,,,Aris Thessaloniki Win,1.650,won
-2026-05-10,Primera División - Argentina,Argentinos Juniors,Lanus,1x2,,,,,,,Argentinos Juniors Win,2.000,won
-2026-05-10,Ligue 1 - France,Angers,Strasbourg,1x2,,,,,,,Strasbourg Win,2.620,lost
-2026-05-10,La Liga 2 - Spain,Andorra CF,Las Palmas,1x2,,,,,,,Andorra CF Win,2.630,won
-2026-05-10,Primeira Liga - Portugal,Alverca,Estoril,1x2,,,,,,,Alverca Win,2.520,lost
-2026-05-10,Saudi Pro League,Al-Riyadh,Al-Fateh,1x2,,,,,,,Al-Riyadh Win,2.230,won
-2026-05-10,Saudi Pro League,Al-Ittihad,Damac,1x2,,,,,,,Al-Ittihad Win,1.500,won
-2026-05-10,Primeira Liga - Portugal,AVS Futebol SAD,FC Porto,1x2,,,,,,,FC Porto Win,1.240,lost
-2026-05-10,Ligue 1 - France,AS Monaco,Lille,1x2,,,,,,,AS Monaco Win,2.530,lost
-2026-05-10,Allsvenskan - Sweden,AIK,Djurgardens IF,1x2,,,,,,,Djurgardens IF Win,2.850,won
-2026-05-10,Super League - Greece,AEK Athens,Panathinaikos,1x2,,,,,,,AEK Athens Win,1.520,won
-2026-05-10,Serie A - Italy,AC Milan,Atalanta BC,1x2,,,,,,,AC Milan Win,2.170,lost
-2026-05-10,Bundesliga - Germany,1. FC Köln,1. FC Heidenheim,1x2,,,,,,,1. FC Köln Win,2.040,lost
-2026-05-09,Superettan - Sweden,Östersunds FK,Falkenbergs FF,1x2,,,,,,,Östersunds FK Win,2.200,lost
-2026-05-09,Ekstraklasa - Poland,Widzew Łódź,Lechia Gdańsk,1x2,,,,,,,Widzew Łódź Win,2.020,won
-2026-05-09,3. Liga - Germany,Waldhof Mannheim,Jahn Regensburg,1x2,,,,,,,Waldhof Mannheim Win,2.400,won
-2026-05-09,Austrian Football Bundesliga,WSG Tirol,FC Blau-Weiß Linz,1x2,,,,,,,FC Blau-Weiß Linz Win,2.760,lost
-2026-05-09,Allsvenskan - Sweden,Västerås SK,GAIS,1x2,,,,,,,GAIS Win,2.320,won
-2026-05-09,Bundesliga - Germany,VfL Wolfsburg,Bayern Munich,1x2,,,,,,,Bayern Munich Win,1.680,won
-2026-05-09,3. Liga - Germany,VfL Osnabrück,SSV Ulm 1846,1x2,,,,,,,VfL Osnabrück Win,1.530,lost
-2026-05-09,Bundesliga 2 - Germany,VfL Bochum,Hannover 96,1x2,,,,,,,Hannover 96 Win,2.170,lost
-2026-05-09,Bundesliga - Germany,VfB Stuttgart,Bayer Leverkusen,1x2,,,,,,,VfB Stuttgart Win,2.260,won
-2026-05-09,Veikkausliiga - Finland,VPS Vaasa,IF Gnistan,1x2,,,,,,,VPS Vaasa Win,2.000,lost
-2026-05-09,Turkey Super League,Torku Konyaspor,Fenerbahce,1x2,,,,,,,Fenerbahce Win,1.540,won
-2026-05-09,Primera División - Argentina,Talleres,Belgrano de Cordoba,1x2,,,,,,,Talleres Win,2.420,lost
-2026-05-09,3. Liga - Germany,TSV 1860 München,FC Ingolstadt 04,1x2,,,,,,,TSV 1860 München Win,2.300,lost
-2026-05-09,Bundesliga - Germany,TSG Hoffenheim,Werder Bremen,1x2,,,,,,,TSG Hoffenheim Win,1.500,won
-2026-05-09,A-League,Sydney FC,Newcastle Jets FC,1x2,,,,,,,Sydney FC Win,2.420,lost
-2026-05-09,EPL,Sunderland,Manchester United,1x2,,,,,,,Manchester United Win,1.940,lost
 2026-05-09,I Liga,Stal Mielec,Puszcza Niepołomice,over_under_25,over 2.5,1.870,lost,,,,,,
-2026-05-09,Ligue 2 - France,Stade de Reims,Pau FC,1x2,,,,,,,Stade de Reims Win,1.400,won
-2026-05-09,Ligue 2 - France,Stade Lavallois,Boulogne,1x2,,,,,,,Stade Lavallois Win,1.650,won
-2026-05-09,Premiership - Scotland,St Mirren,Kilmarnock,1x2,,,,,,,St Mirren Win,2.060,lost
-2026-05-09,Super League - China,Shanghai Shenhua FC,Chongqing Tonglianglong FC,1x2,,,,,,,Shanghai Shenhua FC Win,1.580,lost
-2026-05-09,La Liga - Spain,Sevilla,Espanyol,1x2,,,,,,,Sevilla Win,2.120,won
-2026-05-09,K League 1,Sangju Sangmu FC,Incheon United,1x2,,,,,,,Sangju Sangmu FC Win,2.420,lost
-2026-05-09,Superettan - Sweden,Sandvikens IF,Ljungskile SK,1x2,,,,,,,Ljungskile SK Win,2.600,lost
-2026-05-09,Belgium First Div,SV Zulte-Waregem,Dender,1x2,,,,,,,SV Zulte-Waregem Win,1.580,won
-2026-05-09,Ligue 2 - France,SC Bastia,Le Mans FC,1x2,,,,,,,Le Mans FC Win,2.500,won
-2026-05-09,3. Liga - Germany,Rot-Weiss Essen,SC Verl,1x2,,,,,,,SC Verl Win,2.560,lost
-2026-05-09,Primera División - Argentina,Rosario Central,Independiente,1x2,,,,,,,Rosario Central Win,2.400,won
-2026-05-09,Austrian Football Bundesliga,Ried,Wolfsberger AC,1x2,,,,,,,Ried Win,2.380,lost
 2026-05-09,Ligue 2,Reims,Pau,over_under_25,under 2.5,2.700,lost,,,,,,
-2026-05-09,Ligue 2 - France,Red Star,Montpellier,1x2,,,,,,,Red Star Win,1.870,lost
-2026-05-09,La Liga - Spain,Real Sociedad,Real Betis,1x2,,,,,,,Real Sociedad Win,2.700,lost
-2026-05-09,Bundesliga - Germany,RB Leipzig,FC St. Pauli,1x2,,,,,,,RB Leipzig Win,1.340,won
-2026-05-09,Jupiler Pro League,RAAL La Louvière,Cercle Brugge,1x2,home,3.220,won,,,,Cercle Brugge KSV Win,2.230,lost
-2026-05-09,Brazil Série B,Ponte Preta,Sport Recife,1x2,,,,,,,Sport Recife Win,2.740,won
-2026-05-09,Super League - Greece,Panserraikos FC,AE Kifisia FC,1x2,,,,,,,AE Kifisia FC Win,2.380,won
-2026-05-09,Superettan - Sweden,Nordic United FC,Östers IF,1x2,,,,,,,Östers IF Win,2.500,lost
-2026-05-09,MLS,New England Revolution,Philadelphia Union,1x2,,,,,,,New England Revolution Win,2.760,won
-2026-05-09,Ligue 2,Nancy,Dunkerque,1x2,home,2.900,won,,,,USL Dunkerque Win,2.550,lost
-2026-05-09,La Liga 2 - Spain,Málaga,Sporting Gijón,1x2,,,,,,,Málaga Win,1.580,won
-2026-05-09,Premiership - Scotland,Motherwell,Hearts,1x2,,,,,,,Hearts Win,2.520,lost
-2026-05-09,J League,Mito HollyHock,Urawa Red Diamonds,1x2,,,,,,,Urawa Red Diamonds Win,2.330,won
-2026-05-09,Championship,Middlesbrough,Southampton,1x2,,,,,,,Middlesbrough Win,2.380,lost
-2026-05-09,EPL,Manchester City,Brentford,1x2,,,,,,,Manchester City Win,1.400,won
+2026-05-09,Jupiler Pro League,RAAL La Louvière,Cercle Brugge,1x2,home,3.220,won,,,,,,
+2026-05-09,Ligue 2,Nancy,Dunkerque,1x2,home,2.900,won,,,,,,
 2026-05-09,Premier League,Liverpool,Chelsea,over_under_25,under 2.5,3.000,won,,,,,,
-2026-05-09,EPL,Liverpool,Chelsea,1x2,,,,,,,Liverpool Win,1.940,lost
 2026-05-09,Serie A,Lecce,Juventus,over_under_25,under 2.5,2.230,won,,,,,,
-2026-05-09,Serie A - Italy,Lecce,Juventus,1x2,,,,,,,Juventus Win,1.540,won
-2026-05-09,Serie A - Italy,Lazio,Inter Milan,1x2,,,,,,,Inter Milan Win,1.900,won
 2026-05-09,Super League 1,Larisa,Asteras Tripolis,1x2,home,2.690,lost,,,,,,
-2026-05-09,Turkey Super League,Kocaelispor,Fatih Karagümrük,1x2,,,,,,,Kocaelispor Win,2.080,lost
-2026-05-09,K League 1,Jeju United FC,FC Seoul,1x2,,,,,,,FC Seoul Win,2.060,lost
-2026-05-09,Ekstraklasa - Poland,Jagiellonia Białystok,Pogoń Szczecin,1x2,,,,,,,Jagiellonia Białystok Win,1.910,won
-2026-05-09,Superettan - Sweden,IK Oddevold,Landskrona BoIS,1x2,,,,,,,IK Oddevold Win,2.300,lost
-2026-05-09,Allsvenskan - Sweden,IFK Goteborg,Hammarby IF,1x2,,,,,,,Hammarby IF Win,1.750,won
-2026-05-09,Ekstraklasa - Poland,Górnik Zabrze,Zagłębie Lubin,1x2,,,,,,,Górnik Zabrze Win,1.710,lost
-2026-05-09,K League 1,Gwangju FC,Gangwon FC,1x2,,,,,,,Gangwon FC Win,1.440,lost
-2026-05-09,Austrian Football Bundesliga,Grazer AK,Rheindorf Altach,1x2,,,,,,,Grazer AK Win,2.350,lost
-2026-05-09,Turkey Super League,Goztepe,Gazişehir Gaziantep,1x2,,,,,,,Goztepe Win,1.530,won
-2026-05-09,Turkey Super League,Genclerbirligi SK,Kasimpasa SK,1x2,,,,,,,Genclerbirligi SK Win,2.480,won
-2026-05-09,Turkey Super League,Galatasaray,Antalyaspor,1x2,,,,,,,Galatasaray Win,1.200,won
-2026-05-09,Superettan - Sweden,GIF Sundsvall,IFK Norrkoping,1x2,,,,,,,IFK Norrkoping Win,1.900,won
-2026-05-09,EPL,Fulham,Bournemouth,1x2,,,,,,,Bournemouth Win,2.480,won
-2026-05-09,Brazil Série A,Fluminense,Vitoria,1x2,,,,,,,Fluminense Win,1.550,lost
-2026-05-09,Swiss Superleague,FC Zurich,Grasshopper Zürich,1x2,,,,,,,FC Zurich Win,2.420,won
-2026-05-09,Swiss Superleague,FC Winterthur,FC Lausanne-Sport,1x2,,,,,,,FC Lausanne-Sport Win,1.820,lost
-2026-05-09,Swiss Superleague,FC Luzern,Servette,1x2,,,,,,,FC Luzern Win,2.120,lost
-2026-05-09,Veikkausliiga - Finland,FC Inter Turku,Jaro,1x2,,,,,,,FC Inter Turku Win,1.540,won
-2026-05-09,3. Liga - Germany,FC Energie Cottbus,Wehen Wiesbaden,1x2,,,,,,,FC Energie Cottbus Win,1.540,won
-2026-05-09,Primera División - Argentina,Estudiantes,Racing Club,1x2,,,,,,,Estudiantes Win,2.470,lost
-2026-05-09,Bundesliga 2 - Germany,Eintracht Braunschweig,Dynamo Dresden,1x2,,,,,,,Eintracht Braunschweig Win,2.670,won
-2026-05-09,Premiership - Scotland,Dundee FC,Livingston,1x2,,,,,,,Dundee FC Win,1.830,won
-2026-05-09,Allsvenskan - Sweden,Degerfors IF,Mjällby AIF,1x2,,,,,,,Mjällby AIF Win,2.140,won
-2026-05-09,K League 1,Daejeon Citizen,Pohang Steelers,1x2,,,,,,,Daejeon Citizen Win,2.400,lost
-2026-05-09,Brazil Série A,Coritiba,Internacional,1x2,,,,,,,Coritiba Win,2.920,lost
-2026-05-09,Brazil Série B,Clube de Regatas Brasil,Operario PR,1x2,,,,,,,Clube de Regatas Brasil Win,2.140,won
-2026-05-09,Ligue 2,Clermont Foot,Guingamp,1x2,home,3.150,won,,,,Guingamp Win,2.200,lost
-2026-05-09,Ligue 2,Clermont Foot,Guingamp,1x2,home,3.150,won,,,,Guingamp Win,2.200,lost
-2026-05-09,MLS,Chicago Fire,New York Red Bulls,1x2,,,,,,,Chicago Fire Win,1.590,lost
-2026-05-09,Super League - China,Chengdu Rongcheng FC,Henan FC,1x2,,,,,,,Chengdu Rongcheng FC Win,1.580,won
-2026-05-09,MLS,Charlotte FC,FC Cincinnati,1x2,,,,,,,Charlotte FC Win,2.200,lost
-2026-05-09,J League,Cerezo Osaka,V-Varen Nagasaki,1x2,,,,,,,Cerezo Osaka Win,1.870,won
-2026-05-09,Brazil Série B,Ceará,Atletico Goianiense,1x2,,,,,,,Ceará Win,2.020,lost
-2026-05-09,Serie A - Italy,Cagliari,Udinese,1x2,,,,,,,Cagliari Win,2.660,lost
-2026-05-09,MLS,CF Montreal,Orlando City SC,1x2,,,,,,,CF Montreal Win,1.980,won
-2026-05-09,La Liga 2 - Spain,Burgos CF,Almería,1x2,,,,,,,Almería Win,2.700,lost
-2026-05-09,EPL,Brighton and Hove Albion,Wolverhampton Wanderers,1x2,,,,,,,Brighton and Hove Albion Win,1.300,won
-2026-05-09,League 1,Bolton Wanderers,Bradford City,1x2,,,,,,,Bolton Wanderers Win,1.870,won
-2026-05-09,Primera División - Argentina,Boca Juniors,Atlético Huracán,1x2,,,,,,,Boca Juniors Win,1.930,lost
-2026-05-09,Turkey Super League,Besiktas JK,Trabzonspor,1x2,,,,,,,Besiktas JK Win,2.100,lost
-2026-05-09,Frauen-Bundesliga,Bayern Munich,Eintracht Frankfurt,1x2,,,,,,,Bayern Munich Win,1.470,won
-2026-05-09,Turkey Super League,Basaksehir,Samsunspor,1x2,,,,,,,Basaksehir Win,1.890,won
-2026-05-09,Bundesliga - Germany,Augsburg,Borussia Monchengladbach,1x2,,,,,,,Augsburg Win,2.180,won
-2026-05-09,A-League,Auckland FC,Adelaide United,1x2,,,,,,,Auckland FC Win,2.200,lost
-2026-05-09,Super League - Greece,Atromitos Athens,Panetolikos Agrinio,1x2,,,,,,,Atromitos Athens Win,2.320,lost
-2026-05-09,La Liga - Spain,Atlético Madrid,Celta Vigo,1x2,,,,,,,Atlético Madrid Win,2.230,lost
-2026-05-09,Brazil Série B,Athletic Club (MG),Cuiabá,1x2,,,,,,,Athletic Club (MG) Win,2.560,lost
-2026-05-09,Ligue 2 - France,Annecy FC,Rodez AF,1x2,,,,,,,Annecy FC Win,2.260,lost
-2026-05-09,La Liga 2 - Spain,Albacete,Cultural Leonesa,1x2,,,,,,,Albacete Win,2.260,won
-2026-05-09,Turkey Super League,Alanyaspor,Kayserispor,1x2,,,,,,,Alanyaspor Win,2.380,won
-2026-05-09,Saudi Pro League,Al-Najma,Al-Hazem,1x2,,,,,,,Al-Hazem Win,2.090,lost
-2026-05-09,Saudi Pro League,Al-Khaleej,Al-Ettifaq,1x2,,,,,,,Al-Khaleej Win,2.220,lost
-2026-05-09,Saudi Pro League,Al-Fayha,Al-Qadsiah,1x2,,,,,,,Al-Qadsiah Win,1.530,won
-2026-05-09,La Liga 2 - Spain,AD Ceuta FC,CD Castellón,1x2,,,,,,,CD Castellón Win,1.710,lost
-2026-05-09,Bundesliga 2 - Germany,1. FC Nürnberg,FC Schalke 04,1x2,,,,,,,1. FC Nürnberg Win,2.000,won
-2026-05-09,Frauen-Bundesliga,1. FC Köln,Hamburger SV,1x2,,,,,,,1. FC Köln Win,1.660,won
-2026-05-08,Superettan - Sweden,Örebro SK,IK Brage,1x2,,,,,,,Örebro SK Win,2.460,lost
+2026-05-09,Ligue 2,Clermont Foot,Guingamp,1x2,home,3.150,won,,,,,,
+2026-05-09,Ligue 2,Clermont Foot,Guingamp,1x2,home,3.150,won,,,,,,
 2026-05-08,South Australia NPL,West Torrens Birkalla,Playford City Patriots,1x2,home,2.830,lost,,,,,,
 2026-05-08,Primera División - Apertura,Wanderers,Liverpool Montevideo,1x2,home,3.450,won,,,,,,
 2026-05-08,Primera División - Apertura,Wanderers,Liverpool Montevideo,1x2,home,3.450,won,,,,,,
-2026-05-08,Serie B - Italy,Venezia,Palermo,1x2,,,,,,,Venezia Win,1.690,won
-2026-05-08,Serie A - Italy,Torino,Sassuolo,1x2,,,,,,,Torino Win,2.600,won
 2026-05-08,Liga MX Femenil,Toluca (W),América W,1x2,home,4.160,lost,,,,,,
 2026-05-08,Liga MX Femenil,Toluca (W),América W,1x2,home,4.160,lost,,,,,,
-2026-05-08,Veikkausliiga - Finland,TPS Turku,HJK Helsinki,1x2,,,,,,,HJK Helsinki Win,1.750,lost
-2026-05-08,Belgium First Div,Standard Liege,Leuven,1x2,,,,,,,Standard Liege Win,2.200,won
-2026-05-08,League of Ireland,St Patricks Athletic,Waterford FC,1x2,,,,,,,St Patricks Athletic Win,1.240,won
-2026-05-08,Bundesliga 2 - Germany,SC Paderborn,Karlsruher SC,1x2,,,,,,,SC Paderborn Win,1.440,lost
 2026-05-08,Serie B,Reggiana,Sampdoria,1x2,home,3.650,won,,,,,,
 2026-05-08,Serie B,Reggiana,Sampdoria,1x2,home,3.650,won,,,,,,
-2026-05-08,Ekstraklasa - Poland,Raków Częstochowa,Korona Kielce,1x2,,,,,,,Raków Częstochowa Win,1.830,won
-2026-05-08,Ligue 1 - France,RC Lens,Nantes,1x2,,,,,,,RC Lens Win,1.480,won
 2026-05-08,New South Wales NPL 2,Prospect United,Bankstown City Lions,1x2,home,3.600,lost,,,,,,
 2026-05-08,New South Wales NPL 2,Prospect United,Bankstown City Lions,1x2,home,3.600,lost,,,,,,
-2026-05-08,Serie B - Italy,Pescara,Spezia,1x2,,,,,,,Pescara Win,2.200,lost
-2026-05-08,Serie B - Italy,Monza,Empoli,1x2,,,,,,,Monza Win,1.730,lost
-2026-05-08,La Liga - Spain,Levante,CA Osasuna,1x2,,,,,,,Levante Win,2.680,won
-2026-05-08,Ekstraklasa - Poland,Lech Poznań,Arka Gdynia,1x2,,,,,,,Lech Poznań Win,1.420,lost
-2026-05-08,Veikkausliiga - Finland,KuPS Kuopio,SJK Seinäjoki,1x2,,,,,,,KuPS Kuopio Win,1.650,lost
-2026-05-08,Copa Libertadores,Junior FC,Cerro Porteño,1x2,,,,,,,Junior FC Win,2.080,lost
-2026-05-08,CONMEBOL Libertadores,Independiente Medellin,Flamengo,1x2,home,4.700,lost,,,,Flamengo-RJ Win,1.850,lost
+2026-05-08,CONMEBOL Libertadores,Independiente Medellin,Flamengo,1x2,home,4.700,lost,,,,,,
 2026-05-08,Premyer Liqa,Imisli FK,Zira,1x2,home,4.200,lost,,,,,,
 2026-05-08,Premyer Liqa,Imisli FK,Zira,1x2,home,4.200,lost,,,,,,
-2026-05-08,Allsvenskan - Sweden,IF Elfsborg,IF Brommapojkarna,1x2,,,,,,,IF Elfsborg Win,2.180,won
-2026-05-08,Championship,Hull City,Millwall,1x2,home,3.150,lost,,,,Millwall Win,2.560,lost
-2026-05-08,Championship,Hull City,Millwall,1x2,home,3.150,lost,,,,Millwall Win,2.560,lost
-2026-05-08,Eliteserien - Norway,HamKam,Vålerenga,1x2,,,,,,,Vålerenga Win,2.590,lost
-2026-05-08,Premier Division,Galway United,Shamrock Rovers,1x2,home,3.920,lost,,,,Shamrock Rovers Win,2.000,won
-2026-05-08,Premier Division,Galway United,Shamrock Rovers,1x2,home,3.920,lost,,,,Shamrock Rovers Win,2.000,won
-2026-05-08,Serie B - Italy,Frosinone,Mantova,1x2,,,,,,,Frosinone Win,1.650,won
-2026-05-08,3. Liga - Germany,Erzgebirge Aue,MSV Duisburg,1x2,,,,,,,MSV Duisburg Win,1.600,lost
+2026-05-08,Championship,Hull City,Millwall,1x2,home,3.150,lost,,,,,,
+2026-05-08,Championship,Hull City,Millwall,1x2,home,3.150,lost,,,,,,
+2026-05-08,Premier Division,Galway United,Shamrock Rovers,1x2,home,3.920,lost,,,,,,
+2026-05-08,Premier Division,Galway United,Shamrock Rovers,1x2,home,3.920,lost,,,,,,
 2026-05-08,South Australia State League 1,Eastern United,Fulham United,1x2,home,5.000,lost,,,,,,
 2026-05-08,Premier Division,Drogheda United,Derry City,1x2,home,3.400,won,,,,,,
 2026-05-08,Premier Division,Drogheda United,Derry City,1x2,home,3.400,won,,,,,,
-2026-05-08,Copa Libertadores,Coquimbo Unido,Club Universitario de Deportes,1x2,,,,,,,Coquimbo Unido Win,2.200,won
-2026-05-08,Serie B,Catanzaro,Bari,1x2,home,2.830,lost,,,,Bari Win,2.650,won
-2026-05-08,CONMEBOL Sudamericana,Carabobo FC,River Plate,1x2,home,4.400,lost,,,,River Plate Win,1.970,won
-2026-05-08,CONMEBOL Sudamericana,Carabobo FC,River Plate,1x2,home,4.400,lost,,,,River Plate Win,1.970,won
+2026-05-08,Serie B,Catanzaro,Bari,1x2,home,2.830,lost,,,,,,
+2026-05-08,CONMEBOL Sudamericana,Carabobo FC,River Plate,1x2,home,4.400,lost,,,,,,
+2026-05-08,CONMEBOL Sudamericana,Carabobo FC,River Plate,1x2,home,4.400,lost,,,,,,
 2026-05-08,Segunda División,Cadiz,Deportivo La Coruña,1x2,home,4.020,lost,,,,,,
 2026-05-08,Segunda División,Cadiz,Deportivo La Coruña,1x2,home,4.020,lost,,,,,,
 2026-05-08,Victoria NPL 2,Brunswick Juventus FC,Northcote City,1x2,home,3.050,won,,,,,,
 2026-05-08,Victoria NPL 2,Brunswick Juventus FC,Northcote City,1x2,home,3.050,won,,,,,,
-2026-05-08,Bundesliga - Germany,Borussia Dortmund,Eintracht Frankfurt,1x2,,,,,,,Borussia Dortmund Win,1.550,won
-2026-05-08,Copa Sudamericana,Blooming,Bragantino-SP,1x2,,,,,,,Bragantino-SP Win,1.880,won
-2026-05-08,Serie B - Italy,Avellino,Modena,1x2,,,,,,,Avellino Win,1.800,won
 2026-05-08,2. Liga,Austria Salzburg,Austria Lustenau,1x2,home,3.850,lost,,,,,,
-2026-05-08,Frauen-Bundesliga,1. FC Nürnberg,SGS Essen,1x2,,,,,,,1. FC Nürnberg Win,2.500,won
-2026-05-08,2. Bundesliga,1. FC Kaiserslautern,Arminia Bielefeld,1x2,home,3.320,won,,,,Arminia Bielefeld Win,2.300,lost
-2026-05-08,2. Bundesliga,1. FC Kaiserslautern,Arminia Bielefeld,1x2,home,3.320,won,,,,Arminia Bielefeld Win,2.300,lost
-2026-05-07,UEFA Europa Conference League,Strasbourg,Rayo Vallecano,1x2,,,,,,,Strasbourg Win,2.000,lost
-2026-05-07,UEFA Europa League,SC Freiburg,SC Braga,1x2,,,,,,,SC Freiburg Win,1.830,won
-2026-05-07,Copa Libertadores,Platense,Peñarol Montevideo,1x2,,,,,,,Platense Win,2.280,lost
-2026-05-07,Copa Sudamericana,O'Higgins,Sao Paulo,1x2,,,,,,,Sao Paulo Win,2.580,lost
-2026-05-07,Copa Libertadores,Mirassol,LDU Quito,1x2,,,,,,,Mirassol Win,1.600,won
-2026-05-07,Copa Sudamericana,Macará,CA Tigre BA,1x2,,,,,,,Macará Win,2.800,lost
-2026-05-07,Copa Libertadores,Independiente Santa Fe,Corinthians-SP,1x2,,,,,,,Corinthians-SP Win,2.750,lost
-2026-05-07,Copa Libertadores,Independiente Rivadavia,Fluminense-RJ,1x2,,,,,,,Independiente Rivadavia Win,2.550,lost
-2026-05-07,Copa Libertadores,Deportes Tolima,Nacional de Montevideo,1x2,,,,,,,Deportes Tolima Win,2.150,won
-2026-05-07,UEFA Europa Conference League,Crystal Palace,Shakhtar Donetsk,1x2,,,,,,,Crystal Palace Win,1.650,won
-2026-05-07,Copa Sudamericana,CA Boston River,Millonarios,1x2,,,,,,,Millonarios Win,1.900,won
-2026-05-07,Copa Sudamericana,Botafogo,Racing Club,1x2,,,,,,,Botafogo Win,2.320,won
-2026-05-07,Copa Sudamericana,Barracas Central,Olimpia Asunción,1x2,,,,,,,Barracas Central Win,2.820,lost
-2026-05-07,UEFA Europa League,Aston Villa,Nottingham Forest,1x2,,,,,,,Aston Villa Win,1.790,won
-2026-05-07,Copa Sudamericana,Alianza Atlético,América de Cali,1x2,,,,,,,América de Cali Win,2.350,won
-2026-05-07,Saudi Pro League,Al-Shabab,Al-Nassr,1x2,,,,,,,Al-Nassr Win,1.350,won
-2026-05-06,Super League - China,Yunnan Yukun,Zhejiang,1x2,,,,,,,Yunnan Yukun Win,2.280,lost
-2026-05-06,Super League - China,Wuhan Three Towns,Qingdao Hainiu FC,1x2,,,,,,,Wuhan Three Towns Win,2.160,lost
-2026-05-06,J League,V-Varen Nagasaki,Fagiano Okayama,1x2,,,,,,,V-Varen Nagasaki Win,2.620,won
-2026-05-06,Copa Libertadores,UCV FC,Independiente del Valle,1x2,,,,,,,Independiente del Valle Win,1.850,lost
+2026-05-08,2. Bundesliga,1. FC Kaiserslautern,Arminia Bielefeld,1x2,home,3.320,won,,,,,,
+2026-05-08,2. Bundesliga,1. FC Kaiserslautern,Arminia Bielefeld,1x2,home,3.320,won,,,,,,
 2026-05-06,J2 League,Tochigi City,Yokohama FC,1x2,home,3.400,lost,,,,,,
 2026-05-06,First League,Spartak Varna,Dobrudzha,1x2,home,3.300,lost,,,,,,
-2026-05-06,J League,Shimizu S Pulse,Cerezo Osaka,1x2,,,,,,,Shimizu S Pulse Win,2.570,lost
-2026-05-06,Super League - China,Shanghai SIPG FC,Shenzhen Peng City FC,1x2,,,,,,,Shanghai SIPG FC Win,1.690,lost
-2026-05-06,Copa Sudamericana,Recoleta FC,Santos,1x2,,,,,,,Santos Win,1.550,lost
-2026-05-06,J League,Nagoya Grampus,Gamba Osaka,1x2,,,,,,,Nagoya Grampus Win,2.450,won
-2026-05-06,Copa Sudamericana,Montevideo City Torque,Palestino,1x2,,,,,,,Montevideo City Torque Win,1.950,won
-2026-05-06,J League,Kawasaki Frontale,Tokyo Verdy,1x2,,,,,,,Kawasaki Frontale Win,2.100,won
-2026-05-06,J League,Kashiwa Reysol,Urawa Red Diamonds,1x2,,,,,,,Kashiwa Reysol Win,2.200,lost
-2026-05-06,J League,Kashima Antlers,Mito HollyHock,1x2,,,,,,,Kashima Antlers Win,1.670,won
-2026-05-06,J League,Hiroshima Sanfrecce FC,Vissel Kobe,1x2,,,,,,,Hiroshima Sanfrecce FC Win,2.100,lost
-2026-05-06,J League,FC Tokyo,JEF United Chiba,1x2,,,,,,,FC Tokyo Win,1.490,lost
-2026-05-06,J League,FC Machida Zelvia,Yokohama F Marinos,1x2,,,,,,,FC Machida Zelvia Win,1.800,won
-2026-05-06,Copa Libertadores,Deportivo La Guaira,Club Bolívar,1x2,,,,,,,Club Bolívar Win,2.760,lost
-2026-05-06,Copa Libertadores,Cusco FC,Estudiantes La Plata,1x2,,,,,,,Estudiantes La Plata Win,2.400,lost
-2026-05-06,Copa Libertadores,Club Always Ready,Lanus,1x2,,,,,,,Club Always Ready Win,1.810,won
-2026-05-06,Copa Sudamericana,C.D. Cuenca,San Lorenzo,1x2,,,,,,,C.D. Cuenca Win,2.720,lost
-2026-05-06,Super League - China,Beijing FC,Dalian Yingbo,1x2,,,,,,,Beijing FC Win,1.700,won
-2026-05-06,UEFA Champions League,Bayern Munich,Paris Saint Germain,1x2,,,,,,,Bayern Munich Win,1.660,lost
-2026-05-06,Frauen-Bundesliga,Bayern Munich,TSG Hoffenheim,1x2,,,,,,,Bayern Munich Win,1.230,lost
-2026-05-06,Copa Libertadores,Barcelona SC,Boca Juniors,1x2,,,,,,,Boca Juniors Win,2.150,lost
-2026-05-06,J League,Avispa Fukuoka,Kyoto Purple Sanga,1x2,,,,,,,Kyoto Purple Sanga Win,2.430,lost
-2026-05-06,Copa Sudamericana,Audax Italiano,Vasco da Gama,1x2,,,,,,,Audax Italiano Win,2.550,lost
-2026-05-05,Copa Libertadores,Sporting Cristal,Palmeiras-SP,1x2,,,,,,,Palmeiras-SP Win,1.720,won
-2026-05-05,Super League - China,Shandong Luneng Taishan FC,Shanghai Shenhua FC,1x2,,,,,,,Shanghai Shenhua FC Win,2.400,lost
-2026-05-05,K League 1,Sangju Sangmu FC,Ulsan Hyundai FC,1x2,,,,,,,Ulsan Hyundai FC Win,2.720,won
-2026-05-05,Super League - China,Qingdao West Coast FC,Tianjin Jinmen Tiger FC,1x2,,,,,,,Qingdao West Coast FC Win,2.450,lost
-2026-05-05,Super League - China,Liaoning Tieren FC,Chengdu Rongcheng FC,1x2,,,,,,,Chengdu Rongcheng FC Win,1.550,won
-2026-05-05,K League 1,Jeonbuk Hyundai Motors,Gwangju FC,1x2,,,,,,,Jeonbuk Hyundai Motors Win,1.380,won
-2026-05-05,Veikkausliiga - Finland,IF Gnistan,FC Inter Turku,1x2,,,,,,,FC Inter Turku Win,1.750,lost
-2026-05-05,K League 1,Gangwon FC,Pohang Steelers,1x2,,,,,,,Gangwon FC Win,2.170,lost
-2026-05-05,Superettan - Sweden,Falkenbergs FF,IFK Norrkoping,1x2,,,,,,,IFK Norrkoping Win,2.660,lost
-2026-05-05,K League 1,FC Seoul,FC Anyang,1x2,,,,,,,FC Seoul Win,1.780,lost
-2026-05-05,Primera División - Argentina,Estudiantes de Río Cuarto,Instituto de Córdoba,1x2,,,,,,,Instituto de Córdoba Win,2.420,won
-2026-05-05,Copa Sudamericana,Deportivo Pereira,Grêmio,1x2,,,,,,,Draw,2.960,lost
-2026-05-05,K League 1,Daejeon Citizen,Incheon United,1x2,,,,,,,Daejeon Citizen Win,2.240,lost
-2026-05-05,Copa Sudamericana,Club Independiente Petrolero,Caracas FC,1x2,,,,,,,Club Independiente Petrolero Win,2.430,lost
-2026-05-05,Super League - China,Chongqing Tonglianglong FC,Henan FC,1x2,,,,,,,Henan FC Win,2.700,lost
-2026-05-05,Copa Sudamericana,CA Juventud,Clube Atlético Mineiro,1x2,,,,,,,Clube Atlético Mineiro Win,2.240,lost
-2026-05-05,UEFA Champions League,Arsenal,Atlético Madrid,1x2,,,,,,,Arsenal Win,1.650,won
-2026-05-05,Saudi Pro League,Al-Khaleej,Al-Hilal,1x2,,,,,,,Al-Hilal Win,1.290,won
-2026-05-04,League of Ireland,Waterford FC,Dundalk,1x2,,,,,,,Dundalk Win,1.660,lost
-2026-05-04,Brazil Série B,Vila Nova,Athletic Club (MG),1x2,,,,,,,Vila Nova Win,1.840,lost
-2026-05-04,Primera División - Argentina,Velez Sarsfield BA,Newells Old Boys,1x2,,,,,,,Velez Sarsfield BA Win,1.680,lost
 2026-05-04,Liga I,Unirea Slobozia,AFC Hermannstadt,1x2,home,3.350,lost,,,,,,
-2026-05-04,Liga MX,Toluca,Pachuca,1x2,,,,,,,Toluca Win,1.890,lost
-2026-05-04,Primeira Liga - Portugal,Sporting Lisbon,Vitória SC,1x2,,,,,,,Sporting Lisbon Win,1.270,won
-2026-05-04,League of Ireland,Sligo Rovers,St Patricks Athletic,1x2,,,,,,,St Patricks Athletic Win,1.730,lost
-2026-05-04,League of Ireland,Shamrock Rovers,Drogheda United,1x2,,,,,,,Shamrock Rovers Win,1.540,won
-2026-05-04,La Liga - Spain,Sevilla,Real Sociedad,1x2,,,,,,,Sevilla Win,2.540,won
 2026-05-04,Premier League,Ruh Lviv,Zorya Luhansk,1x2,home,4.500,lost,,,,,,
-2026-05-04,Austrian Football Bundesliga,Rheindorf Altach,Wolfsberger AC,1x2,,,,,,,Rheindorf Altach Win,2.520,lost
-2026-05-04,Ekstraklasa - Poland,Radomiak Radom,Lechia Gdańsk,1x2,,,,,,,Radomiak Radom Win,2.330,won
-2026-05-04,Superettan - Sweden,Landskrona BoIS,Östers IF,1x2,,,,,,,Landskrona BoIS Win,2.750,lost
-2026-05-04,Austrian Football Bundesliga,LASK,Rapid Wien,1x2,,,,,,,LASK Win,2.050,won
-2026-05-04,Premiership - Scotland,Hearts,Rangers,1x2,,,,,,,Rangers Win,2.520,lost
-2026-05-04,Allsvenskan - Sweden,Halmstads BK,IF Brommapojkarna,1x2,,,,,,,IF Brommapojkarna Win,2.640,won
-2026-05-04,Veikkausliiga - Finland,HJK Helsinki,FC Lahti,1x2,,,,,,,HJK Helsinki Win,1.480,won
-2026-05-04,Primera División - Argentina,Gimnasia Mendoza,Defensa y Justicia,1x2,,,,,,,Gimnasia Mendoza Win,2.440,won
 2026-05-04,First Division,Finn Harps,Bray Wanderers,1x2,home,3.250,won,,,,,,
-2026-05-04,EPL,Everton,Manchester City,1x2,,,,,,,Manchester City Win,1.510,lost
-2026-05-04,Allsvenskan - Sweden,Djurgardens IF,IFK Goteborg,1x2,,,,,,,Djurgardens IF Win,1.760,won
-2026-05-04,League of Ireland,Derry City,Galway United,1x2,,,,,,,Derry City Win,1.850,lost
-2026-05-04,Serie A,Cremonese,Lazio,1x2,home,3.150,lost,,,,Lazio Win,2.650,won
-2026-05-04,EPL,Chelsea,Nottingham Forest,1x2,,,,,,,Chelsea Win,1.710,lost
-2026-05-04,League of Ireland,Bohemians,Shelbourne Dublin,1x2,,,,,,,Bohemians Win,2.100,lost
-2026-05-04,Eliteserien - Norway,Bodø/Glimt,Molde,1x2,,,,,,,Bodø/Glimt Win,1.370,lost
-2026-05-04,La Liga 2 - Spain,Almería,CD Mirandés,1x2,,,,,,,Almería Win,1.500,won
-2026-05-04,Saudi Pro League,Al-Ittihad,Al-Kholood,1x2,,,,,,,Al-Ittihad Win,1.520,lost
-2026-05-04,Saudi Pro League,Al-Fayha,Al-Riyadh,1x2,,,,,,,Al-Fayha Win,2.370,won
-2026-05-04,Serie A - Italy,AS Roma,Fiorentina,1x2,,,,,,,AS Roma Win,1.640,won
+2026-05-04,Serie A,Cremonese,Lazio,1x2,home,3.150,lost,,,,,,
