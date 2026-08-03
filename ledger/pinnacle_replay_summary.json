@@ -1,0 +1,33 @@
+{
+  "generated_at": "2026-08-03T07:26:26.871638Z",
+  "notes": "Replays each source's fuzzy-matched picks at the Pinnacle-close odds we captured in our own odds_snapshots. Same basis for all. Sources without per-pick team names (DeepBetting, Tipstrr, WinnerOdds public feed) are not included.",
+  "sources": {
+    "oddsintel": {
+      "picks_matched_to_fixture": 536,
+      "picks_replayed": 515,
+      "hit_rate_pct": 42.14,
+      "roi_at_pinnacle_close_pct": -4.63,
+      "roi_at_published_odds_pct": 7.14,
+      "dropped_no_pinnacle": 21,
+      "dropped_no_score": 0
+    },
+    "forebet": {
+      "picks_matched_to_fixture": 810,
+      "picks_replayed": 562,
+      "hit_rate_pct": 50.71,
+      "roi_at_pinnacle_close_pct": -5.19,
+      "roi_at_published_odds_pct": 6.0,
+      "dropped_no_pinnacle": 248,
+      "dropped_no_score": 0
+    },
+    "signalodds": {
+      "picks_matched_to_fixture": 865,
+      "picks_replayed": 854,
+      "hit_rate_pct": 50.94,
+      "roi_at_pinnacle_close_pct": -0.74,
+      "roi_at_published_odds_pct": 1.27,
+      "dropped_no_pinnacle": 11,
+      "dropped_no_score": 0
+    }
+  }
+}
