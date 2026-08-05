@@ -44,3 +44,8 @@ rapidfuzz>=3.0.0
 
 # AI
 google-genai>=1.0.0
+
+# Payments — used by stripe_reconcile cron. Silent-imported at job time so
+# missing dep failed every fire with "No module named 'stripe'" until pinned
+# 2026-08-05.
+stripe>=15.0.0
