@@ -28339,50 +28339,56 @@ def test_retired_bot_leak_fix_2026_07_31():
     )
 
 
-@test("CS2-DISABLE-2026-07-31 — all 27 CS2 scheduler jobs routed through _add_cs2_job gate")
-def test_cs2_disable_2026_07_31():
-    """CS2-DISABLE-2026-07-31: 5 firing CS2 paper bots showed −27 to
-    −33% ROI over 205 settled bets (2026-06-09 → -07-31) with flat
-    CLV (±0.7pp). The model is systematically overconfident, not just
-    variance-cursed. All 27 CS2 scheduler.add_job calls now route
-    through a _add_cs2_job(...) helper that no-ops when the
-    _CS2_ENABLED module constant is falsy. Default is OFF — set
-    CS2_ENABLED=true in scheduler env to re-register.
+@test("CS2-REMOVED-2026-08-05 — CS2 scheduler support fully removed")
+def test_cs2_removed_2026_08_05():
+    """CS2-REMOVED-2026-08-05: follow-up to CS2-DISABLE-2026-07-31.
+    The env-gated `_CS2_ENABLED` + `_add_cs2_job` shim from 07-31 was
+    never intended as a long-term home for retired CS2 wiring. This
+    smoke pins the removed state: no `_CS2_ENABLED` symbol, no
+    `_add_cs2_job` helper, no `def job_cs2_*` functions, no
+    `flaresolverr_hltv_session_refresh` (CS2-specific), and fewer than
+    3 residual CS2 references (only in historical/comment context).
 
-    If you're re-enabling CS2 post-fix, DON'T just delete this test.
-    Add a new smoke that proves the calibration issue is addressed
-    (e.g. new shrinkage backtest shows ECE ≤ 15% and CLV > +1%).
+    DB tables (cs2_*) and scripts under `scripts/esports/` stay on disk
+    — this pin is scheduler-side only, so re-adding CS2 later is a
+    single scheduler PR + new smoke.
+
+    If you're re-adding CS2 support, delete this test AND add a smoke
+    that proves the calibration issue that got it retired is addressed
+    (e.g. shrinkage backtest with ECE ≤ 15% and CLV > +1%).
     """
     from pathlib import Path
     src = (Path(__file__).resolve().parent.parent / "workers" / "scheduler.py").read_text()
 
-    assert "_CS2_ENABLED = os.getenv(\"CS2_ENABLED\"" in src, (
-        "workers/scheduler.py must define _CS2_ENABLED via CS2_ENABLED env "
-        "(CS2-DISABLE-2026-07-31)."
+    assert "_CS2_ENABLED" not in src, (
+        "workers/scheduler.py must not contain _CS2_ENABLED — "
+        "the env-gate shim was removed by CS2-REMOVED-2026-08-05."
     )
-    assert "def _add_cs2_job(" in src, (
-        "workers/scheduler.py must define _add_cs2_job helper "
-        "(CS2-DISABLE-2026-07-31)."
+    assert "_add_cs2_job" not in src, (
+        "workers/scheduler.py must not contain _add_cs2_job — "
+        "the helper was removed by CS2-REMOVED-2026-08-05."
     )
-    # All CS2 job add_job calls must route through the helper, not direct.
-    residual = [
+    def_cs2 = [
         line for line in src.splitlines()
-        if "scheduler.add_job(job_cs2_" in line
+        if line.startswith("def job_cs2_")
     ]
-    assert not residual, (
-        f"Found {len(residual)} residual scheduler.add_job(job_cs2_*) "
-        f"call(s) — all must route through _add_cs2_job(...) so the "
-        f"_CS2_ENABLED gate applies uniformly. Residual: {residual[:3]}"
+    assert not def_cs2, (
+        f"Found {len(def_cs2)} residual `def job_cs2_*` function(s) — all "
+        f"CS2 job definitions must be removed. First: {def_cs2[:3]}"
     )
-    # Exact count for regression safety — should be 27 gated CS2 jobs.
-    gated = [
-        line for line in src.splitlines()
-        if "_add_cs2_job(job_cs2_" in line
-    ]
-    assert len(gated) >= 27, (
-        f"Expected >=27 CS2 jobs routed through _add_cs2_job (audit found "
-        f"27 as of 2026-07-31). Got {len(gated)}. If you added new CS2 jobs, "
-        f"bump this floor + confirm they're gated."
+    assert "flaresolverr_hltv_session_refresh" not in src, (
+        "workers/scheduler.py must not contain "
+        "flaresolverr_hltv_session_refresh — the CS2-specific HLTV FS "
+        "session refresh job was removed by CS2-REMOVED-2026-08-05."
+    )
+    # Residual CS2 references are allowed only in historical comments/
+    # docstrings (e.g. CS2-PIPELINE-TRUTHFUL-LOGGING origin note in
+    # _run_subprocess_job). Cap at <3 to catch regressions.
+    cs2_hits = sum(1 for line in src.splitlines() if "cs2" in line.lower())
+    assert cs2_hits < 8, (
+        f"Found {cs2_hits} CS2 references in scheduler.py. Expected <8 "
+        f"(only historical comments should remain). If a fresh CS2 job "
+        f"registration snuck in, remove it or update this floor."
     )
 
 
