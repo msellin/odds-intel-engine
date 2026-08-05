@@ -1,10 +1,10 @@
 {
   "source": "Tipstrr",
   "source_url": "https://tipstrr.com/tipster/<slug>/stats",
-  "snapshot_at_utc": "2026-08-04T05:19:23+00:00",
+  "snapshot_at_utc": "2026-08-05T05:19:00+00:00",
   "window": {
     "start": "2026-05-04",
-    "end": "2026-08-05"
+    "end": "2026-08-06"
   },
   "status": "insufficient-data-pending",
   "min_sample_each_side": 50,

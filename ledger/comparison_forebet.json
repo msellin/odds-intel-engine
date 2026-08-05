@@ -1,10 +1,10 @@
 {
   "source": "Forebet",
   "source_url": "https://www.forebet.com/en/football-predictions/predictions-1x2/<date>  (and /under-over-25-goals/<date>)",
-  "snapshot_at_utc": "2026-08-04T05:19:20+00:00",
+  "snapshot_at_utc": "2026-08-05T05:18:58+00:00",
   "window": {
     "start": "2026-05-04",
-    "end": "2026-08-05"
+    "end": "2026-08-06"
   },
   "status": "ok",
   "min_sample_each_side": 50,
