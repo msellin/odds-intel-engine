@@ -32,8 +32,8 @@ oddsintel,2026-05-08,Premier Division,Galway United,Shamrock Rovers,1x2,home,3.9
 oddsintel,2026-05-08,Premier Division,Galway United,Shamrock Rovers,1x2,home,3.920,lost,-1.0000,https://oddsintel.app/picks
 oddsintel,2026-05-08,Championship,Hull City,Millwall,1x2,home,3.150,lost,-1.0000,https://oddsintel.app/picks
 oddsintel,2026-05-08,Championship,Hull City,Millwall,1x2,home,3.150,lost,-1.0000,https://oddsintel.app/picks
-oddsintel,2026-05-08,Primera División - Apertura,Wanderers,Liverpool Montevideo,1x2,home,3.450,won,2.4500,https://oddsintel.app/picks
-oddsintel,2026-05-08,Primera División - Apertura,Wanderers,Liverpool Montevideo,1x2,home,3.450,won,2.4500,https://oddsintel.app/picks
+oddsintel,2026-05-08,Primera División,Wanderers,Liverpool Montevideo,1x2,home,3.450,won,2.4500,https://oddsintel.app/picks
+oddsintel,2026-05-08,Primera División,Wanderers,Liverpool Montevideo,1x2,home,3.450,won,2.4500,https://oddsintel.app/picks
 oddsintel,2026-05-09,Ligue 2,Clermont Foot,Guingamp,1x2,home,3.150,won,2.1500,https://oddsintel.app/picks
 oddsintel,2026-05-09,Ligue 2,Nancy,Dunkerque,1x2,home,2.900,won,1.9000,https://oddsintel.app/picks
 oddsintel,2026-05-09,Ligue 2,Reims,Pau,over_under_25,under 2.5,2.700,lost,-1.0000,https://oddsintel.app/picks
@@ -48,7 +48,7 @@ oddsintel,2026-05-13,Cup,Throttur Reykjavik,Breidablik,1x2,home,4.400,lost,-1.00
 oddsintel,2026-05-13,La Liga,Alaves,Barcelona,over_under_25,under 2.5,2.650,won,1.6500,https://oddsintel.app/picks
 oddsintel,2026-05-13,Cup,FK Crvena Zvezda,Vojvodina,over_under_25,under 2.5,2.620,lost,-1.0000,https://oddsintel.app/picks
 oddsintel,2026-05-13,Eerste Divisie,Almere City FC,Willem II,over_under_25,under 2.5,2.270,won,1.2700,https://oddsintel.app/picks
-oddsintel,2026-05-15,National 1,Dijon,Orleans,over_under_25,under 2.5,2.300,lost,-1.0000,https://oddsintel.app/picks
+oddsintel,2026-05-15,Ligue 3,Dijon,Orleans,over_under_25,under 2.5,2.300,lost,-1.0000,https://oddsintel.app/picks
 oddsintel,2026-05-15,Süper Lig,Rizespor,Beşiktaş,1x2,home,3.500,lost,-1.0000,https://oddsintel.app/picks
 oddsintel,2026-05-16,FA WSL,Chelsea W,Manchester United (W),over_under_25,under 2.5,2.200,won,1.2000,https://oddsintel.app/picks
 oddsintel,2026-05-16,3. Liga,SSV Ulm 1846,Rot-Weiß Essen,over_under_25,under 2.5,3.000,lost,-1.0000,https://oddsintel.app/picks
@@ -279,7 +279,7 @@ oddsintel,2026-06-08,Botola Pro,Wydad AC,Olympique Safi,1x2,home,1.570,won,0.570
 oddsintel,2026-06-08,Kakkonen - Lohko A,Kiffen,PuiU Helsinki,1x2,home,1.670,won,0.6700,https://oddsintel.app/picks
 oddsintel,2026-06-08,Division 2 - Norrland,Täfteå,Umeå FC Akademi,1x2,home,1.440,won,0.4400,https://oddsintel.app/picks
 oddsintel,2026-06-08,Primera C,Berazategui,Juventud Unida,1x2,home,1.750,won,0.7500,https://oddsintel.app/picks
-oddsintel,2026-06-08,Primera División - Apertura,Liverpool Montevideo,Cerro Largo,1x2,home,1.930,lost,-1.0000,https://oddsintel.app/picks
+oddsintel,2026-06-08,Primera División,Liverpool Montevideo,Cerro Largo,1x2,home,1.930,lost,-1.0000,https://oddsintel.app/picks
 oddsintel,2026-06-08,Division Intermedia,3 de Noviembre,General Caballero,1x2,home,4.750,lost,-1.0000,https://oddsintel.app/picks
 oddsintel,2026-06-08,Carioca C,Uni Souza,Barcelona RJ,1x2,home,1.530,won,0.5300,https://oddsintel.app/picks
 oddsintel,2026-06-08,Primera C,Berazategui,Juventud Unida,1x2,home,1.750,won,0.7500,https://oddsintel.app/picks
@@ -585,3 +585,7 @@ oddsintel,2026-08-08,MLS Next Pro,Philadelphia Union II,FC Cincinnati II,over_un
 oddsintel,2026-08-08,Primera B Metropolitana,Brown DE Adrogue,Excursionistas,1x2,home,3.600,won,2.6000,https://oddsintel.app/picks
 oddsintel,2026-08-08,3. Division - Girone 2,NTNUI,Byåsen,1x2,home,3.620,lost,-1.0000,https://oddsintel.app/picks
 oddsintel,2026-08-08,NB III - Northwest,Bicskei,SC Sopron,over_under_25,over 2.5,1.700,won,0.7000,https://oddsintel.app/picks
+oddsintel,2026-08-09,Jupiler Pro League,Zulte Waregem,Genk,1x2,home,3.200,won,2.2000,https://oddsintel.app/picks
+oddsintel,2026-08-09,1. Lig,Vanspor FK,Kayserispor,1x2,home,3.170,lost,-1.0000,https://oddsintel.app/picks
+oddsintel,2026-08-09,J1 League,Tokyo Verdy,Kawasaki Frontale,1x2,home,3.400,lost,-1.0000,https://oddsintel.app/picks
+oddsintel,2026-08-09,2. Bundesliga,Energie Cottbus,Hannover 96,1x2,home,3.550,won,2.5500,https://oddsintel.app/picks
