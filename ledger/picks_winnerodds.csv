@@ -1,4 +1,15 @@
 source,kickoff_date,league,home_team,away_team,market,pick,odds,result,pnl_per_unit,ref_url
+winnerodds,2026-07-30,Australia,,,mixed,u3.5,2.270,,,https://winnerodds.com
+winnerodds,2026-07-30,Australia,,,mixed,u3.5,2.280,won,1.2800,https://winnerodds.com
+winnerodds,2026-07-26,USA,,,mixed,ah-0_1,1.200,won,0.2000,https://winnerodds.com
+winnerodds,2026-07-31,USA,,,mixed,ah-0_2,1.800,,,https://winnerodds.com
+winnerodds,2026-07-26,USA,,,mixed,ah-0_1,1.250,won,0.2500,https://winnerodds.com
+winnerodds,2026-07-31,Ecuador,,,mixed,u2.5,1.500,,,https://winnerodds.com
+winnerodds,2026-07-27,Argentina,,,mixed,ah-0_1,1.917,void,0.0000,https://winnerodds.com
+winnerodds,2026-07-30,Argentina,,,mixed,ah-0_1,1.571,won,0.5710,https://winnerodds.com
+winnerodds,2026-07-28,Argentina,,,mixed,1,1.504,,,https://winnerodds.com
+winnerodds,2026-07-28,Argentina,,,mixed,ah-0_1,1.919,void,0.0000,https://winnerodds.com
+winnerodds,2026-07-27,Argentina,,,mixed,ah+0.5_1,1.500,won,0.5000,https://winnerodds.com
 winnerodds,2026-08-01,Lithuania,,,mixed,ah-0_2,1.810,void,0.0000,https://winnerodds.com
 winnerodds,2026-07-31,Russia,,,mixed,ah-0.5_2,3.500,,,https://winnerodds.com
 winnerodds,2026-07-30,Russia,,,mixed,ah-0_1,1.110,won,0.1100,https://winnerodds.com
