@@ -1,4 +1,6 @@
 source,kickoff_date,league,home_team,away_team,market,pick,odds,result,pnl_per_unit,ref_url
+winnerodds,2026-07-31,Russia,,,mixed,ah-0.5_1,1.420,won,0.4200,https://winnerodds.com
+winnerodds,2026-07-31,Russia,,,mixed,2,3.126,,,https://winnerodds.com
 winnerodds,2026-07-30,Australia,,,mixed,u3.5,2.270,,,https://winnerodds.com
 winnerodds,2026-07-30,Australia,,,mixed,u3.5,2.280,won,1.2800,https://winnerodds.com
 winnerodds,2026-07-26,USA,,,mixed,ah-0_1,1.200,won,0.2000,https://winnerodds.com
