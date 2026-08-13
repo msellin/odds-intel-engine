@@ -1,10 +1,10 @@
 {
   "source": "SignalOdds",
   "source_url": "https://signalodds.com/predictions/past?sport=soccer",
-  "snapshot_at_utc": "2026-08-12T04:12:15+00:00",
+  "snapshot_at_utc": "2026-08-13T04:15:45+00:00",
   "window": {
     "start": "2026-05-04",
-    "end": "2026-08-13"
+    "end": "2026-08-14"
   },
   "status": "insufficient-data-pending",
   "min_sample_each_side": 50,
