@@ -1,4 +1,18 @@
 source,kickoff_date,league,home_team,away_team,market,pick,odds,result,pnl_per_unit,ref_url
+winnerodds,2026-07-29,Finland,,,mixed,u3.5,2.800,,,https://winnerodds.com
+winnerodds,2026-07-27,USA,,,mixed,ah-0.5_2,1.826,won,0.8260,https://winnerodds.com
+winnerodds,2026-08-01,USA,,,mixed,ah+0.5_2,3.620,,,https://winnerodds.com
+winnerodds,2026-07-27,Argentina,,,mixed,1,2.150,won,1.1500,https://winnerodds.com
+winnerodds,2026-07-28,Argentina,,,mixed,ah-0_1,1.400,,,https://winnerodds.com
+winnerodds,2026-07-28,Argentina,,,mixed,ah-0_1,1.833,won,0.8330,https://winnerodds.com
+winnerodds,2026-07-27,Argentina,,,mixed,ah+0.5_1,1.280,won,0.2800,https://winnerodds.com
+winnerodds,2026-07-30,Argentina,,,mixed,ah-0.5_2,1.720,won,0.7200,https://winnerodds.com
+winnerodds,2026-08-01,Finland,,,mixed,u3.5,2.100,won,1.1000,https://winnerodds.com
+winnerodds,2026-07-23,Belarus,,,mixed,ah-0.5_1,1.380,won,0.3800,https://winnerodds.com
+winnerodds,2026-08-01,Faroe Islands,,,mixed,ah-0_2,1.220,won,0.2200,https://winnerodds.com
+winnerodds,2026-07-31,Russia,,,mixed,ah-0_1,1.330,won,0.3300,https://winnerodds.com
+winnerodds,2026-07-29,Estonia,,,mixed,ah-0.5_1,1.520,won,0.5200,https://winnerodds.com
+winnerodds,2026-07-28,Iceland,,,mixed,ah-0_2,1.180,void,0.0000,https://winnerodds.com
 winnerodds,2026-08-02,Paraguay,,,mixed,ah-0_1,1.340,won,0.3400,https://winnerodds.com
 winnerodds,2026-07-31,Russia,,,mixed,1,3.560,,,https://winnerodds.com
 winnerodds,2026-07-26,Finland,,,mixed,u2.5,1.870,won,0.8700,https://winnerodds.com
