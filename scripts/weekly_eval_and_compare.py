@@ -149,6 +149,27 @@ def evaluate(version: str, rows: list) -> dict | None:
             probs_ou = bundle["over_under"].predict_proba(X)[0]
         except Exception:
             continue
+        # DRAW-CALIBRATION-EVAL-PARITY-2026-08-16: apply the same shrink the
+        # live inference path applies (workers/model/xgboost_ensemble.py).
+        # Without this, rigorous_eval bypasses the shrink and reports
+        # uncalibrated numbers while the bots run on calibrated ones — the
+        # eval would show "no change" and we'd never know if the shrink
+        # was actually helping. classes_ order is [A, D, H] typically.
+        from workers.model.draw_calibration import apply_draw_calibration
+        classes = list(bundle["result_1x2"].classes_)
+        if "H" in classes:
+            idx_h, idx_d, idx_a = classes.index("H"), classes.index("D"), classes.index("A")
+        else:
+            # train.py outcome_map: home=0, draw=1, away=2. classes_ = [0,1,2].
+            idx_h, idx_d, idx_a = 0, 1, 2
+        _hp, _dp, _ap = apply_draw_calibration(
+            float(probs_1x2[idx_h]), float(probs_1x2[idx_d]), float(probs_1x2[idx_a])
+        )
+        # Splat back into the same slots; downstream metrics loop uses
+        # index 0=home, 1=draw, 2=away — same order as _truth_1x2, so we
+        # rebuild probs_1x2 in that fixed order regardless of bundle
+        # classes_ ordering.
+        probs_1x2 = (_hp, _dp, _ap)
         for i, mkt in enumerate(["home", "draw", "away"]):
             p = float(probs_1x2[i])
             m = metrics[f"1x2_{mkt}"]

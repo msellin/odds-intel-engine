@@ -132,6 +132,23 @@ def _score_rows_with_bundle(version: str, rows: list) -> dict:
             probs_ou = bundle["over_under"].predict_proba(X)[0]
         except Exception:
             continue
+        # DRAW-CALIBRATION-EVAL-PARITY-2026-08-16: apply the same shrink
+        # workers/model/xgboost_ensemble.py applies at live inference so
+        # this eval mirrors what the bots see. See workers/model/
+        # draw_calibration.py for the helper + full rationale.
+        from workers.model.draw_calibration import apply_draw_calibration
+        classes = list(bundle["result_1x2"].classes_)
+        if "H" in classes:
+            idx_h, idx_d, idx_a = classes.index("H"), classes.index("D"), classes.index("A")
+        else:
+            # train.py outcome_map: home=0, draw=1, away=2. classes_ = [0,1,2].
+            idx_h, idx_d, idx_a = 0, 1, 2
+        _hp, _dp, _ap = apply_draw_calibration(
+            float(probs_1x2[idx_h]), float(probs_1x2[idx_d]), float(probs_1x2[idx_a])
+        )
+        # Fixed (home, draw, away) order matches the "1x2_home/draw/away"
+        # loop below and _truth_1x2 [home_hit, draw_hit, away_hit].
+        probs_1x2 = (_hp, _dp, _ap)
         rid = r.get("match_id")
         for i, mkt in enumerate(["1x2_home", "1x2_draw", "1x2_away"]):
             per_market[mkt].append((float(probs_1x2[i]), truth_3[i], rid, tier))
