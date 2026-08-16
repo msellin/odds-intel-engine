@@ -28586,5 +28586,73 @@ def test_competitor_picks_csv_2026_08_01():
     assert "picks_matched.csv" in matrix_txt
 
 
+@test("SCHEDULER-DRAIN-TIMEOUT-2026-08-16 — 90s hard timeout on manual_placement_drain")
+def test_scheduler_drain_timeout_2026_08_16():
+    """SCHEDULER-DRAIN-TIMEOUT-2026-08-16: manual_placement_drain fires every
+    10s and calls place_bet_by_id() which touches Coolbet auth. When Coolbet
+    JWT expires / CDP-Chrome down / FS session hangs, place_bet_by_id can
+    block indefinitely with no exception raised. APScheduler max_instances=1
+    then blocks every subsequent 10s fire — the recurring SCHEDULER-AF-
+    429-DEADLOCK hang pattern (4 occurrences in 5 weeks, most recent Aug 12
+    → Aug 15 Postgres OOM cascade).
+
+    Fix: wrap the place_bet_by_id call in a per-tick ThreadPoolExecutor
+    submit + result(timeout=90). Any tick that would otherwise wedge the
+    worker forever now surfaces as a TimeoutError, queue row marked error,
+    and the next drain tick proceeds normally. 90s ceiling is well above
+    the ~5-15s a real Coolbet placement takes.
+    """
+    from pathlib import Path
+    repo = Path(__file__).resolve().parent.parent
+    sched = (repo / "workers" / "scheduler.py").read_text()
+    assert "SCHEDULER-DRAIN-TIMEOUT-2026-08-16" in sched, (
+        "scheduler.py must document the drain timeout fix inline "
+        "so future readers don't restore the unbounded path."
+    )
+    assert "future.result(timeout=90)" in sched, (
+        "scheduler.py drain must call place_bet_by_id via "
+        "future.result(timeout=90) — anything else re-opens the hang path."
+    )
+    assert "_cf.TimeoutError" in sched, (
+        "scheduler.py drain must catch concurrent.futures.TimeoutError so "
+        "a timed-out placement is recorded as error, not re-raised."
+    )
+    assert "timeout_90s_likely_coolbet_auth_or_fs_down" in sched, (
+        "timeout branch must record a specific reason string — helps ops "
+        "triage the next hang from queue history alone."
+    )
+
+
+@test("ACCA-RETIRED-LEAK-FIX-2026-08-16 — run_acca_pass skips is_active=False variants")
+def test_acca_retired_leak_fix_2026_08_16():
+    """ACCA-RETIRED-LEAK-FIX-2026-08-16: 5 acca/combo bots retired 2026-06-06
+    (is_active=False + retired_at + maturity_label='retired') kept placing
+    NEW simulated_bets every morning because run_acca_pass() in
+    workers/jobs/acca_bot.py iterated the hardcoded ACCA_VARIANTS dict
+    without consulting the bots table. Sim-side analog to the
+    RETIRED-BOT-LEAK-FIX-2026-07-31 that fixed only the real-money placer.
+
+    Fix: query bots for is_active=TRUE AND retired_at IS NULL, intersect
+    with ACCA_VARIANTS keys, skip everything else with reason=bot_retired.
+    """
+    from pathlib import Path
+    repo = Path(__file__).resolve().parent.parent
+    acca = (repo / "workers" / "jobs" / "acca_bot.py").read_text()
+    assert "ACCA-RETIRED-LEAK-FIX-2026-08-16" in acca, (
+        "acca_bot.py must document the leak fix inline."
+    )
+    assert "is_active IS TRUE AND retired_at IS NULL" in acca, (
+        "acca_bot.py must query the bots table for is_active + retired_at "
+        "guards — otherwise the retired variants can silently return."
+    )
+    assert "active_variant_names" in acca, (
+        "run_acca_pass must build an active_variant_names set from the "
+        "bots table and gate ACCA_VARIANTS iteration on it."
+    )
+    assert '"reason": "bot_retired"' in acca, (
+        "retired variants must produce reason=bot_retired for audit clarity."
+    )
+
+
 if __name__ == "__main__":
     main()

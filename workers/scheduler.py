@@ -1344,13 +1344,32 @@ def _drain_manual_placement_queue():
     if not claimed:
         return
 
+    # SCHEDULER-DRAIN-TIMEOUT-2026-08-16 — the historical hang pattern
+    # (SCHEDULER-AF-429-DEADLOCK, 4 occurrences in 5 weeks) traces back to
+    # place_bet_by_id blocking indefinitely when Coolbet auth is broken
+    # (CDP-Chrome down / JWT expired / FS session hung). Because APScheduler
+    # runs each job in a worker thread and max_instances=1 blocks future
+    # ticks, one stuck drain freezes this whole 10s-interval job forever.
+    # Wrap the call in a ThreadPoolExecutor.submit(...).result(timeout=90)
+    # so a hung placer surfaces as a TimeoutError instead of a permanent
+    # worker lock. 90s ceiling — a real Coolbet placement takes ~5-15s.
+    import concurrent.futures as _cf
+    _drain_executor = _cf.ThreadPoolExecutor(max_workers=1,
+                                              thread_name_prefix="drain-place")
+
     for row in claimed:
         queue_id = row["id"]
         sim_id = str(row["simulated_bet_id"])
         chat_id = row.get("telegram_chat_id")
         message_id = row.get("telegram_message_id")
         try:
-            result = place_bet_by_id(sim_id)
+            future = _drain_executor.submit(place_bet_by_id, sim_id)
+            result = future.result(timeout=90)
+        except _cf.TimeoutError:
+            console.print(f"[red]manual_placement_drain {sim_id} TIMEOUT after 90s — "
+                          "likely Coolbet auth or FS session down[/red]")
+            result = {"outcome": "error",
+                       "reason": "timeout_90s_likely_coolbet_auth_or_fs_down"}
         except Exception as e:
             console.print(f"[red]manual_placement_drain {sim_id} failed: {e}[/red]")
             result = {"outcome": "error", "reason": str(e)[:300]}
@@ -1400,6 +1419,12 @@ def _drain_manual_placement_queue():
             """,
             (outcome, status_line[:500], queue_id),
         )
+
+    # Release the per-tick executor. wait=False so a still-hung placement
+    # doesn't block the drain from returning — the worker thread dies with
+    # the executor and we'll re-instantiate next tick. Hung threads are
+    # daemon and get reaped on scheduler exit.
+    _drain_executor.shutdown(wait=False)
 
 
 def job_league_draw_rate():

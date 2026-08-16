@@ -829,9 +829,30 @@ def run_acca_pass(dry_run: bool = False) -> dict:
         out_legs = {name: [l.__dict__ for l in _legs_for(cfg)] for name, cfg in ACCA_VARIANTS.items()}
         return {"dry_run": True, "legs_per_variant": out_legs}
 
+    # ACCA-RETIRED-LEAK-FIX-2026-08-16 — analog to RETIRED-BOT-LEAK-FIX-2026-07-31
+    # which fixed the real-money placer. The 5 acca/combo bots retired 2026-06-06
+    # (is_active=False + retired_at + maturity_label='retired') kept writing new
+    # simulated_bets every morning because run_acca_pass() iterated the hardcoded
+    # ACCA_VARIANTS dict without consulting the bots table. Filter them out here
+    # so retired acca configs are inert without needing to delete their code
+    # (kept for historical bet_id linkage — same convention as BOTS_CONFIG).
+    active_variant_names = {
+        r["name"] for r in execute_query(
+            "SELECT name FROM bots "
+            "WHERE name = ANY(%s) AND is_active IS TRUE AND retired_at IS NULL",
+            [list(ACCA_VARIANTS.keys())],
+        )
+    }
+    skipped_retired = [n for n in ACCA_VARIANTS.keys() if n not in active_variant_names]
+    if skipped_retired:
+        console.print(f"[dim]Acca: skipping retired variants: {skipped_retired}[/dim]")
+
     results = {}
     legs_by_variant: dict = {}
     for bot_name, cfg in ACCA_VARIANTS.items():
+        if bot_name not in active_variant_names:
+            results[bot_name] = {"placed": False, "reason": "bot_retired"}
+            continue
         legs = _legs_for(cfg)
         legs_by_variant[bot_name] = legs
         if len(legs) < cfg["min_legs"]:
