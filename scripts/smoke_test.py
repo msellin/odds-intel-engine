@@ -28654,5 +28654,80 @@ def test_acca_retired_leak_fix_2026_08_16():
     )
 
 
+@test("DRAW-CALIBRATION-2026-08-16 — post-hoc DRAW_CAL_FACTOR shrink + renormalize in xgboost_ensemble")
+def test_draw_calibration_2026_08_16():
+    """DRAW-CALIBRATION-2026-08-16: 4 consecutive weekly retrains
+    (v20260802, v20260809, v20260816, and v20260712 baseline) show a
+    persistent 1x2_draw log-loss regression. Root cause per Aug 3
+    SUMMARY_JSON: model predicts ~37% avg draw rate vs ~20% actual.
+    Training on lower-draw data does not fix the calibration bias.
+
+    Fix: post-hoc DRAW_CAL_FACTOR env-var multiplicative shrink on
+    draw_prob, then renormalize home + away proportionally so the three
+    sum to 1. Default 1.0 = no change (safe rollout — must be enabled
+    via env). A value like 0.60 shrinks 37% → ~22%, matching observed.
+
+    Rollback: unset DRAW_CAL_FACTOR (or set to 1.0). No retrain needed.
+    """
+    from pathlib import Path
+    repo = Path(__file__).resolve().parent.parent
+    ens = (repo / "workers" / "model" / "xgboost_ensemble.py").read_text()
+    assert "DRAW-CALIBRATION-2026-08-16" in ens, (
+        "xgboost_ensemble.py must document the calibration fix inline so "
+        "the next reader doesn't undo the shrink."
+    )
+    assert 'DRAW_CAL_FACTOR' in ens, (
+        "xgboost_ensemble.py must read the DRAW_CAL_FACTOR env var."
+    )
+    assert 'os.getenv("DRAW_CAL_FACTOR", "1.0")' in ens, (
+        "DRAW_CAL_FACTOR default must be 1.0 (no-op) so the change is "
+        "off-by-default until tuned live."
+    )
+    assert "draw_prob = float(draw_prob) * _draw_cal_factor" in ens, (
+        "the shrink must be a multiplicative scale on draw_prob, not "
+        "an additive or replacement operation."
+    )
+    assert "remaining = 1.0 - draw_prob" in ens, (
+        "after shrinking draw, home + away must be renormalized to fill "
+        "1 - new_draw. Otherwise the three probabilities won't sum to 1."
+    )
+
+
+@test("RETRAIN-HEALTHCHECK-CADENCE-2026-08-16 — Mon-Sat cadence + 24h dedup + dedup log")
+def test_retrain_healthcheck_cadence_2026_08_16():
+    """RETRAIN-HEALTHCHECK-CADENCE-2026-08-16: Jul 26 weekly_retrain
+    silently skipped (zero pipeline_runs rows for that Sunday). The
+    original Mon+Tue cadence + 48h dedup meant a single missed Sunday
+    could get one dedup-eaten Tue alert and then go completely dark for
+    the rest of the week. Extended to Mon-Sat + 24h dedup gives 5 alert
+    chances instead of ~1. Also log-warning on dedup-suppressed cases so
+    the operator can see the healthcheck ran + saw the problem but
+    couldn't send.
+    """
+    from pathlib import Path
+    repo = Path(__file__).resolve().parent.parent
+    sched = (repo / "workers" / "scheduler.py").read_text()
+    assert "RETRAIN-HEALTHCHECK-CADENCE-2026-08-16" in sched, (
+        "scheduler.py must document the cadence bump so it doesn't get "
+        "reverted to Mon+Tue only."
+    )
+    assert 'day_of_week="mon,tue,wed,thu,fri,sat"' in sched, (
+        "retrain_healthcheck cron must fire Mon-Sat, not the old Mon+Tue."
+    )
+
+    hc = (repo / "workers" / "jobs" / "retrain_healthcheck.py").read_text()
+    assert "RETRAIN-HEALTHCHECK-CADENCE-2026-08-16" in hc, (
+        "retrain_healthcheck.py must document the dedup + log bump."
+    )
+    assert 'os.getenv("RETRAIN_ALERT_DEDUP_HOURS", "24")' in hc, (
+        "ALERT_DEDUP_HOURS default must be 24, not the old 48. Paired "
+        "with Mon-Sat cadence a shorter dedup gives 5 alert chances."
+    )
+    assert 'dedup-suppressed' in hc, (
+        "when dedup swallows an alert we must log-warn — otherwise the "
+        "silent-alert-eaten pathway that caused the Jul 26 miss is intact."
+    )
+
+
 if __name__ == "__main__":
     main()

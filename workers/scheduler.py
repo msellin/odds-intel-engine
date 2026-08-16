@@ -2319,12 +2319,23 @@ def main():
                       max_instances=1, misfire_grace_time=900)
 
     # RETRAIN-HEALTHCHECK (2026-06-21) — Mon + Tue 09:00 UTC, alerts when
-    # the Sunday weekly_retrain has been silently failing. 2 consecutive
-    # failures (06-07 + 06-14) went un-alerted before today's success.
+    # the Sunday weekly_retrain has been silently failing.
+    # RETRAIN-HEALTHCHECK-CADENCE-2026-08-16: bumped to Mon-Sat 09:00 UTC
+    # (skip Sunday because the actual retrain fires at 03:00 UTC and a
+    # 09:00 healthcheck could race a slow retrain still finishing). Jul 26
+    # weekly_retrain never ran (pipeline_runs has zero rows for that
+    # Sunday — silent skip). Mon Jul 27 age was 8.25d, under the 9d
+    # threshold, so passed as healthy. Tue Jul 28 age was 9.25d and DID
+    # exceed threshold, but the alert was either dedup-swallowed by the
+    # 48h window or the send failed silently — nothing surfaced. Adding
+    # Wed–Sat as extra alert chances catches the case even when Mon dedup
+    # or Tue send silently fails. Weekly job = ok to alert 5×/week if
+    # something's actually wrong; the operator can tune dedup down.
     scheduler.add_job(job_retrain_healthcheck,
-                      CronTrigger(day_of_week="mon,tue", hour=9, minute=0),
+                      CronTrigger(day_of_week="mon,tue,wed,thu,fri,sat",
+                                  hour=9, minute=0),
                       id="retrain_healthcheck",
-                      name="Retrain Healthcheck [Mon/Tue 09:00 UTC]",
+                      name="Retrain Healthcheck [Mon-Sat 09:00 UTC]",
                       max_instances=1, misfire_grace_time=3600)
 
     # COOLBET-DAEMON-HEALTHCHECK (2026-06-21) — every 30 min, Railway-side

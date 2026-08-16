@@ -377,6 +377,31 @@ def get_xgboost_prediction(home_team: str, away_team: str,
             draw_prob = probs_1x2[1] if len(probs_1x2) > 1 else 0.3
             away_prob = probs_1x2[0]
 
+        # DRAW-CALIBRATION-2026-08-16 — post-hoc draw-probability rescale.
+        # The 4-bundle rigorous_eval trend (see dev/active/rigorous-eval-
+        # v20260816.md) confirmed every weekly retrain since v20260712
+        # regresses on 1x2_draw. Aug 3 SUMMARY_JSON showed the ensemble
+        # predicts ~37% average draws vs ~20% actual — a systematic 17pp
+        # over-prediction that persists no matter what training data we
+        # feed it. Post-hoc scale of the draw column addresses the calibration
+        # bias without touching the model architecture.
+        #
+        # DRAW_CAL_FACTOR is a multiplicative shrink applied to draw_prob;
+        # home/away are then renormalized proportionally so the three sum
+        # to 1. Default 1.0 = no change (safe rollout — the factor comes on
+        # via env only). A value of 0.60 shrinks 37% avg → ~22% avg, close
+        # to observed. Tune from live tracking of predicted-vs-observed
+        # rolling means.
+        _draw_cal_factor = float(os.getenv("DRAW_CAL_FACTOR", "1.0"))
+        if _draw_cal_factor != 1.0 and 0.0 < _draw_cal_factor <= 1.5:
+            draw_prob = float(draw_prob) * _draw_cal_factor
+            others_total = float(home_prob) + float(away_prob)
+            remaining = 1.0 - draw_prob
+            if others_total > 0 and remaining > 0:
+                scale = remaining / others_total
+                home_prob = float(home_prob) * scale
+                away_prob = float(away_prob) * scale
+
         # O/U classifier (from v_ou bundle, may be a different version)
         bundle_ou = _load_bundle(v_ou) if v_ou != v_1x2 else bundle_1x2
         if not bundle_ou:

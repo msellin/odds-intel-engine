@@ -36,7 +36,12 @@ PIPELINE_NAME = "weekly_retrain"
 
 STALE_THRESHOLD_DAYS = int(os.getenv("RETRAIN_STALE_DAYS", "9"))
 FAILING_THRESHOLD_CONSEC = int(os.getenv("RETRAIN_FAILING_CONSEC", "2"))
-ALERT_DEDUP_HOURS = int(os.getenv("RETRAIN_ALERT_DEDUP_HOURS", "48"))
+# RETRAIN-HEALTHCHECK-CADENCE-2026-08-16: was 48h. Combined with the prior
+# Mon+Tue-only cadence this meant a Tue alert (or dedup-swallowed Tue) had
+# NO other chance to fire until the following Mon — the whole rest of the
+# week went silent while the retrain stayed broken. 24h paired with the
+# new Mon–Sat cadence gives 5 alerts if the operator missed the first.
+ALERT_DEDUP_HOURS = int(os.getenv("RETRAIN_ALERT_DEDUP_HOURS", "24"))
 
 
 def _latest_runs(limit: int = 8) -> list[dict]:
@@ -183,6 +188,19 @@ def run_retrain_healthcheck(*, dry_run: bool = False) -> dict:
         if status in ("stale", "failing"):
             if last_alert is not None and (now - last_alert) < timedelta(hours=ALERT_DEDUP_HOURS):
                 counters["dedup_skipped"] = True
+                # RETRAIN-HEALTHCHECK-CADENCE-2026-08-16: this used to
+                # return silently. The Jul 26 skip was in this exact
+                # branch — visible on Tue Jul 28 as stale, alert eaten by
+                # dedup (or its earlier equivalent), zero further signal.
+                # Log to the console so at least the operator sees "we
+                # know it's broken but suppressed the alert" in the
+                # scheduler journal.
+                hours_since = (now - last_alert).total_seconds() / 3600.0
+                log.warning(
+                    "retrain healthcheck: %s (%s) but dedup-suppressed "
+                    "(alerted %.1fh ago, dedup window %dh)",
+                    status, reason, hours_since, ALERT_DEDUP_HOURS,
+                )
                 return counters
 
             msg = _format_alert(status, reason, runs, now)
