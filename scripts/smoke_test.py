@@ -1412,6 +1412,46 @@ def _():
     )
 
 
+@test("ODDS-OUTLIER-FILTER — 1X2/BTTS/DC offers rejected when far above Pinnacle-or-median consensus")
+def _():
+    """Placement-layer must drop non-Pinnacle 1X2 / BTTS / DC offers priced above
+    anchor × ceiling multiplier, where anchor = Pinnacle odds if present else the
+    median across ≥3 accessible-book offers. Motivation (2026-08-18): flagged
+    example — Hapoel Ramat Gan home win listed at Marathonbet 4.50 (+22% edge)
+    when Coolbet consensus was ~2.60. Filter must:
+      (1) declare per-market ceiling multipliers (1x2 / btts / double_chance),
+      (2) require ≥3 accessible books when Pinnacle is absent (min-books gate),
+      (3) reject non-Pinnacle offers exceeding anchor × multiplier,
+      (4) exempt Pinnacle itself (it IS the anchor when present),
+      (5) log a reject counter so the operator can see outliers being dropped.
+    """
+    import inspect
+    from workers.jobs import daily_pipeline_v2
+    src = inspect.getsource(daily_pipeline_v2._load_today_from_db)
+    assert "ODDS-OUTLIER-FILTER-2026-08-18" in src, (
+        "ODDS-OUTLIER-FILTER: marker missing — outlier rejection not wired into _load_today_from_db"
+    )
+    assert '"1x2": 1.35' in src and '"btts": 1.30' in src and '"double_chance": 1.35' in src, (
+        "ODDS-OUTLIER-FILTER: per-market ceiling multipliers must include 1x2 (1.35), "
+        "btts (1.30), double_chance (1.35)"
+    )
+    assert "_OUTLIER_MIN_BOOKS = 3" in src, (
+        "ODDS-OUTLIER-FILTER: min-books gate for median anchor must be 3"
+    )
+    assert "from statistics import median" in src, (
+        "ODDS-OUTLIER-FILTER: median anchor requires statistics.median import"
+    )
+    assert "outlier_anchor" in src and 'next((o for b, o in offers if b == "Pinnacle")' in src, (
+        "ODDS-OUTLIER-FILTER: anchor selection must prefer Pinnacle before falling back to median"
+    )
+    assert 'bookmaker != "Pinnacle" and odds_val > _anchor * _mult' in src, (
+        "ODDS-OUTLIER-FILTER: rejection check must exempt Pinnacle and apply ceiling multiplier"
+    )
+    assert "outlier_rejects" in src, (
+        "ODDS-OUTLIER-FILTER: reject counter missing — operator would not see outliers being dropped"
+    )
+
+
 @test("ODDS-QUALITY-CLEANUP — filter drops unused OU markets and extreme AH lines")
 def _():
     """filter_garbage_ou_rows must drop OU variants not in ALLOWED_OU_MARKETS

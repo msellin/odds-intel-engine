@@ -1944,6 +1944,49 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
         except (TypeError, ValueError):
             pass
 
+    # ODDS-OUTLIER-FILTER-2026-08-18: generalise OU-PIN-REQUIRED to 1X2 / BTTS / DC.
+    # Real cross-book variance on these markets is small; single-book offers priced
+    # far above the sharp/consensus price are almost always stale, mislabelled or
+    # limit-restricted and NOT reachable at the shown price. Picking them as "best
+    # odds" inflates reported edge % / ROI without a bettable price behind it.
+    # Anchor: Pinnacle odds if present (sharpest reference), else the median across
+    # ≥3 accessible-book offers. Ceiling multiplier per market family. If no anchor
+    # can be formed (Pinnacle absent AND fewer than 3 accessible books), the whole
+    # (match, market, selection) is dropped rather than accepted unvalidated.
+    from statistics import median as _median
+    _OUTLIER_MULT: dict[str, float] = {
+        "1x2": 1.35,
+        "btts": 1.30,
+        "double_chance": 1.35,
+    }
+    _OUTLIER_MIN_BOOKS = 3
+    outlier_offers: dict[str, dict[str, list[tuple[str, float]]]] = _dd(lambda: _dd(list))
+    for row in odds_raw:
+        market = str(row.get("market", ""))
+        if market not in _OUTLIER_MULT:
+            continue
+        bookmaker = row.get("bookmaker") or "unknown"
+        if bookmaker not in ACCESSIBLE_BOOKMAKERS:
+            continue
+        try:
+            odds_val = float(row["odds"])
+        except (TypeError, ValueError):
+            continue
+        mid = str(row["match_id"])
+        key = f"{market}_{row['selection']}"
+        outlier_offers[mid][key].append((bookmaker, odds_val))
+
+    outlier_anchor: dict[str, dict[str, float]] = _dd(dict)
+    for mid, keys in outlier_offers.items():
+        for key, offers in keys.items():
+            pin = next((o for b, o in offers if b == "Pinnacle"), None)
+            if pin is not None:
+                outlier_anchor[mid][key] = pin
+            elif len(offers) >= _OUTLIER_MIN_BOOKS:
+                outlier_anchor[mid][key] = _median(o for _, o in offers)
+            # else: no anchor available — main loop will reject this (mid, key)
+    outlier_rejects = 0
+
     best: dict[str, dict[str, float]] = _dd(lambda: _dd(float))
     best_bookmaker: dict[str, dict[str, str]] = _dd(dict)  # ACCESSIBLE-BM: which book had best accessible odds
     bm_sources: dict[str, set] = _dd(set)
@@ -1965,6 +2008,17 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
         # ACCESSIBLE-BM: only aggregate odds from bookmakers users can actually bet at
         if bookmaker not in ACCESSIBLE_BOOKMAKERS:
             continue
+        # ODDS-OUTLIER-FILTER-2026-08-18: reject 1X2 / BTTS / DC offers that blow
+        # out the consensus. Pinnacle is exempt (it IS the anchor when present).
+        _mult = _OUTLIER_MULT.get(market)
+        if _mult is not None:
+            _anchor = outlier_anchor.get(mid, {}).get(key)
+            if _anchor is None:
+                outlier_rejects += 1
+                continue  # no Pinnacle + <3 accessible books → no reliable consensus
+            if bookmaker != "Pinnacle" and odds_val > _anchor * _mult:
+                outlier_rejects += 1
+                continue  # single-book outlier vs anchor → not a bettable price
         if market == "asian_handicap":
             hl = row.get("handicap_line")
             if hl is not None:
@@ -2093,6 +2147,11 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
     console.print(f"  {len(odds_matches)} matches with odds loaded from DB")
     console.print(f"  {len(af_only_matches)} AF-only matches (no odds) loaded from DB")
     console.print(f"  {len(af_preds)} AF predictions loaded from DB")
+    if outlier_rejects > 0:
+        console.print(
+            f"  [dim]ODDS-OUTLIER-FILTER dropped {outlier_rejects} 1X2/BTTS/DC "
+            f"offers as outliers vs consensus[/dim]"
+        )
     return odds_matches, af_only_matches, af_preds, dict(best_bookmaker)
 
 
