@@ -1412,6 +1412,64 @@ def _():
     )
 
 
+@test("BOT-NO-PIN-SHADOW — shadow pass fires on 1X2 matches without Pinnacle when ≥3 accessible books quote")
+def _():
+    """Phase 1 data-collection bot for matches Pinnacle doesn't price.
+    Guards:
+      (1) function exists and is called from run_morning (morning cohort only,
+          skipped when shadow_mode=True to avoid double-writes),
+      (2) requires ensemble model probability + skips matches with Pinnacle,
+      (3) requires ≥3 accessible-book quotes per selection (min-books gate),
+      (4) applies same 1.35× median outlier check as ODDS-OUTLIER-FILTER,
+      (5) edge threshold 8% (higher than production to compensate for
+          unknown calibration on non-Pinnacle leagues),
+      (6) writes to shadow_bets only via bulk_store_shadow_bets — never to
+          simulated_bets, never touches bankroll,
+      (7) migration 271 registers bot_no_pin_shadow_v1 with
+          maturity_label='experimental'."""
+    import inspect
+    from workers.jobs import daily_pipeline_v2
+    src = inspect.getsource(daily_pipeline_v2._run_no_pin_shadow_pass)
+    assert "BOT-NO-PIN-SHADOW-2026-08-18" in src, "shadow pass marker missing"
+    assert "source = 'ensemble'" in src, (
+        "no-pin shadow must query ensemble predictions (production model), not af/poisson"
+    )
+    assert "has_pinnacle" in src and "if mid in has_pinnacle:" in src, (
+        "no-pin shadow must skip matches that DO have Pinnacle coverage"
+    )
+    assert "_MIN_BOOKS = 3" in src, "min-books gate must be 3"
+    assert "_EDGE_THRESHOLD = 0.08" in src, (
+        "edge threshold must be 8% — higher than prod bots to compensate for unknown "
+        "calibration on non-Pinnacle leagues"
+    )
+    assert "best_odds > median_odds * 1.35" in src, (
+        "no-pin shadow must reject outlier best_odds via 1.35× median check "
+        "(same principle as ODDS-OUTLIER-FILTER)"
+    )
+    assert "bulk_store_shadow_bets" in src, (
+        "no-pin shadow must write via bulk_store_shadow_bets — never touches simulated_bets"
+    )
+    assert "bot_no_pin_shadow_v1" in src, "bot name must resolve to bot_no_pin_shadow_v1"
+    # Hook check — must be called from run_morning, morning cohort only, not in shadow_mode
+    run_morning_src = inspect.getsource(daily_pipeline_v2.run_morning)
+    assert "_run_no_pin_shadow_pass" in run_morning_src, (
+        "no-pin shadow pass must be invoked from run_morning"
+    )
+    assert 'cohort in (None, "morning") and not shadow_mode' in run_morning_src, (
+        "no-pin shadow must run in morning cohort only, skipped when shadow_mode=True"
+    )
+    # Migration exists and registers the bot with the right maturity label
+    import os
+    mig_path = os.path.join(
+        os.path.dirname(inspect.getfile(daily_pipeline_v2)),
+        "..", "..", "supabase", "migrations", "271_bot_no_pin_shadow.sql",
+    )
+    with open(mig_path) as f:
+        mig = f.read()
+    assert "'bot_no_pin_shadow_v1'" in mig, "migration 271 must INSERT bot_no_pin_shadow_v1"
+    assert "'experimental'" in mig, "bot must ship as maturity_label='experimental'"
+
+
 @test("ODDS-OUTLIER-FILTER — 1X2/BTTS/DC offers rejected when far above Pinnacle-or-median consensus")
 def _():
     """Placement-layer must drop non-Pinnacle 1X2 / BTTS / DC offers priced above

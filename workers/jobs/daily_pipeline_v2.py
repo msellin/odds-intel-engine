@@ -3739,11 +3739,208 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         except Exception as e:
             console.print(f"[yellow]Acca bot failed (non-critical): {e}[/yellow]")
 
+    # BOT-NO-PIN-SHADOW-2026-08-18 Phase 1 — log shadow bets on matches
+    # without Pinnacle coverage (data collection only, no real placement).
+    # Morning cohort only; refresh cohorts don't materially change the
+    # accessible-book best price on already-scored matches.
+    if cohort in (None, "morning") and not shadow_mode:
+        try:
+            _run_no_pin_shadow_pass(today_str)
+        except Exception as e:
+            console.print(f"[yellow]No-pin shadow bot failed (non-critical): {e}[/yellow]")
+
     # 11.6: Cross-match correlation check — warn about concentrated exposure
     _check_exposure_concentration()
 
     from workers.api_clients.supabase_client import write_ops_snapshot
     write_ops_snapshot(today_str)
+
+
+def _run_no_pin_shadow_pass(today_str: str) -> int:
+    """BOT-NO-PIN-SHADOW-2026-08-18 Phase 1 — shadow-log 1X2 picks on
+    matches WITHOUT Pinnacle coverage.
+
+    Motivation: ~15-20% of odds-carrying fixtures per day have no Pinnacle
+    1X2 quote (cup ties, U-teams, lower-tier leagues) and are skipped
+    entirely by production bots because our filters (OU-PIN-REQUIRED +
+    ODDS-OUTLIER-FILTER-2026-08-18) need Pinnacle as the sharp anchor. This
+    pass fires when the main ensemble model has a prob AND ≥3 accessible
+    books quote the same selection (median = local anchor) AND the
+    best-of-accessible edge ≥ 8%.
+
+    Writes to shadow_bets only — never places a real or simulated bet, never
+    touches bankroll. Data-collection Phase 1: run for ~4-6 weeks, then check
+    settled ROI to decide promotion to paper beta or retirement.
+    """
+    from workers.api_clients.db import execute_query
+    from workers.api_clients.supabase_client import bulk_store_shadow_bets
+    from statistics import median as _median
+    import uuid as _uuid
+    from collections import defaultdict as _dd
+
+    bot_id = _get_bot_id_by_name("bot_no_pin_shadow_v1")
+    if not bot_id:
+        console.print("[dim]no-pin shadow: bot_no_pin_shadow_v1 not registered — skip[/dim]")
+        return 0
+
+    next_day_str = _next_day(today_str)
+
+    # 1. Load today's scheduled matches whose kickoff is still in the future
+    matches_raw = execute_query(
+        """SELECT id, date FROM matches
+           WHERE date >= %s AND date < %s AND status = 'scheduled'""",
+        (f"{today_str}T00:00:00Z", f"{next_day_str}T00:00:00Z"),
+    )
+    if not matches_raw:
+        return 0
+    now_utc = datetime.now(timezone.utc)
+    match_ids: list[str] = []
+    for m in matches_raw:
+        try:
+            ko = datetime.fromisoformat(str(m["date"]).replace("Z", "+00:00"))
+            if ko.tzinfo is None:
+                ko = ko.replace(tzinfo=timezone.utc)
+        except (ValueError, AttributeError):
+            match_ids.append(str(m["id"]))
+            continue
+        if ko > now_utc:
+            match_ids.append(str(m["id"]))
+    if not match_ids:
+        return 0
+
+    # 2. Load ensemble 1X2 probabilities (main production model)
+    preds_raw = execute_query(
+        """SELECT match_id, market, model_probability
+           FROM predictions
+           WHERE match_id = ANY(%s::uuid[])
+             AND source = 'ensemble'
+             AND market IN ('1x2_home','1x2_draw','1x2_away')""",
+        (match_ids,),
+    )
+    ens_probs: dict[str, dict[str, float]] = _dd(dict)
+    for p in preds_raw:
+        mid = str(p["match_id"])
+        try:
+            ens_probs[mid][p["market"]] = float(p["model_probability"])
+        except (TypeError, ValueError):
+            continue
+    if not ens_probs:
+        return 0
+
+    # 3. Load 1X2 odds — INCLUDING Pinnacle rows so we can identify + skip
+    # matches that DO have Pinnacle coverage (those are handled by prod bots).
+    odds_raw = execute_query(
+        """SELECT match_id, selection, odds, bookmaker
+           FROM odds_snapshots
+           WHERE match_id = ANY(%s::uuid[])
+             AND is_closing = false
+             AND market = '1x2'""",
+        (match_ids,),
+    )
+    if not odds_raw:
+        return 0
+
+    has_pinnacle: set[str] = set()
+    # mid -> selection -> [(bookmaker, odds), ...] limited to accessible books
+    offers: dict[str, dict[str, list[tuple[str, float]]]] = _dd(lambda: _dd(list))
+    for row in odds_raw:
+        bm = row.get("bookmaker") or "unknown"
+        mid = str(row["match_id"])
+        sel = str(row["selection"]).lower()
+        if bm == "Pinnacle":
+            has_pinnacle.add(mid)
+            continue
+        if bm not in ACCESSIBLE_BOOKMAKERS:
+            continue
+        try:
+            odds_val = float(row["odds"])
+        except (TypeError, ValueError):
+            continue
+        offers[mid][sel].append((bm, odds_val))
+
+    # 4. For each match without Pinnacle, score each selection
+    _MIN_BOOKS = 3
+    _EDGE_THRESHOLD = 0.08
+    _ODDS_MIN = 1.30
+    _ODDS_MAX = 6.00
+    _MIN_PROB = 0.25
+    _MODEL_MARKET = {"home": "1x2_home", "draw": "1x2_draw", "away": "1x2_away"}
+
+    now_iso = now_utc.isoformat()
+    rows_to_write: list[dict] = []
+    scored = 0
+    skipped_no_anchor = 0
+    skipped_edge = 0
+    for mid, sel_offers in offers.items():
+        if mid in has_pinnacle:
+            continue  # production bots already cover this
+        if mid not in ens_probs:
+            continue  # no ensemble prob — nothing to compare against
+        for sel_lower, book_offers in sel_offers.items():
+            if len(book_offers) < _MIN_BOOKS:
+                skipped_no_anchor += 1
+                continue
+            mkt_key = _MODEL_MARKET.get(sel_lower)
+            if mkt_key is None:
+                continue
+            prob = ens_probs[mid].get(mkt_key)
+            if prob is None or prob < _MIN_PROB:
+                continue
+            best_book, best_odds = max(book_offers, key=lambda x: x[1])
+            if not (_ODDS_MIN <= best_odds <= _ODDS_MAX):
+                continue
+            # Sanity: reject best_odds that blow out the median (same
+            # principle as the outlier filter, self-contained here)
+            median_odds = _median(o for _, o in book_offers)
+            if best_odds > median_odds * 1.35:
+                skipped_no_anchor += 1
+                continue
+            edge = best_odds * prob - 1.0
+            if edge < _EDGE_THRESHOLD:
+                skipped_edge += 1
+                continue
+            scored += 1
+            rows_to_write.append({
+                "bot_id": bot_id,
+                "match_id": mid,
+                "market": "1x2",
+                "selection": sel_lower,
+                "odds": best_odds,
+                "model_prob": prob,
+                "calibrated_prob": prob,  # ensemble output — no separate Platt calibration for this shadow
+                "edge": round(edge, 4),
+                "kelly_fraction": None,
+                "placed_at": now_iso,
+                "timing_cohort": "morning",
+                "recommended_bookmaker": best_book,
+            })
+
+    if not rows_to_write:
+        console.print(
+            f"[dim]no-pin shadow: 0 picks written "
+            f"(candidates skipped — no anchor: {skipped_no_anchor}, edge<8%: {skipped_edge})[/dim]"
+        )
+        return 0
+
+    shadow_run_id = str(_uuid.uuid4())
+    try:
+        n = bulk_store_shadow_bets(rows_to_write, shadow_run_id, "morning")
+    except Exception as e:
+        console.print(f"[yellow]no-pin shadow: write failed ({e})[/yellow]")
+        return 0
+    console.print(
+        f"[dim]no-pin shadow: {n} pick(s) written "
+        f"(scored {scored}, no-anchor {skipped_no_anchor}, edge<8% {skipped_edge}, "
+        f"run_id={shadow_run_id[:8]})[/dim]"
+    )
+    return n
+
+
+def _get_bot_id_by_name(name: str) -> str | None:
+    """Local helper — look up bot UUID by name."""
+    from workers.api_clients.db import execute_query
+    rows = execute_query("SELECT id::text AS id FROM bots WHERE name = %s", [name])
+    return rows[0]["id"] if rows else None
 
 
 def _check_exposure_concentration():
