@@ -1412,6 +1412,66 @@ def _():
     )
 
 
+@test("CLV-AUTOVOID — settlement voids bets where odds_at_pick/closing_odds ≥ 1.65× (data-error safety net)")
+def _():
+    """Post-settlement safety net for fantasy pre-match prices. Any settled
+    bet where odds_at_pick / closing_odds ≥ 1.65 (CLV ≥ 65%) is almost
+    certainly a data error — placement's ODDS-OUTLIER-FILTER catches this
+    class at pick time, but pre-filter picks and future filter regressions
+    need a belt-and-braces catch at settlement. Motivated by the 2026-08-19
+    retroactive sweep of 4 bets (Gremio-U20 Coolbet-teams-swapped, Sudtirol,
+    Hapoel Ramat Gan, Bognor Regis) where pick prices were nowhere near the
+    closing sharp line.
+
+    Guards:
+      (1) helper exists and is called from run_settlement after
+          _settle_pending_bets, wrapped in try/except (non-fatal),
+      (2) threshold constant is 1.65,
+      (3) update uses execute_write_returning (not execute_query — which
+          doesn't commit, per the 2026-06 COOLBET-INLINE-HEAL-BUTTONS bug),
+      (4) WHERE clause is idempotent — skips rows already tagged with
+          CLV-AUTOVOID so re-running settlement doesn't double-tag,
+      (5) only touches won/lost rows (not pending, not already void),
+      (6) closing_odds NOT NULL + > 0 guard,
+      (7) sets result='void' AND pnl=0 so the void drops from headline ROI.
+    """
+    import inspect
+    from workers.jobs import settlement
+    # Helper exists + threshold + execute_write_returning
+    assert hasattr(settlement, "_apply_clv_autovoid"), "_apply_clv_autovoid missing"
+    assert getattr(settlement, "CLV_AUTOVOID_RATIO_THRESHOLD", None) == 1.65, (
+        "CLV_AUTOVOID_RATIO_THRESHOLD must be 1.65"
+    )
+    helper_src = inspect.getsource(settlement._apply_clv_autovoid)
+    assert "execute_write_returning" in helper_src, (
+        "CLV-AUTOVOID: must use execute_write_returning (execute_query does NOT commit)"
+    )
+    # Idempotency + row-guard clauses
+    assert "NOT LIKE '%%CLV-AUTOVOID%%'" in helper_src or "NOT LIKE '%CLV-AUTOVOID%'" in helper_src, (
+        "CLV-AUTOVOID: idempotency clause (skip rows already tagged) missing"
+    )
+    assert "result IN ('won', 'lost')" in helper_src, (
+        "CLV-AUTOVOID: must only touch won/lost rows (not pending, not already void)"
+    )
+    assert "closing_odds IS NOT NULL" in helper_src and "closing_odds > 0" in helper_src, (
+        "CLV-AUTOVOID: closing_odds NULL/zero guard missing"
+    )
+    assert "result   = 'void'" in helper_src or "result = 'void'" in helper_src, (
+        "CLV-AUTOVOID: must set result='void'"
+    )
+    assert "pnl      = 0" in helper_src or "pnl = 0" in helper_src, (
+        "CLV-AUTOVOID: must zero the pnl so void drops from headline ROI"
+    )
+    # Called from run_settlement, non-fatal
+    run_src = inspect.getsource(settlement.run_settlement)
+    assert "_apply_clv_autovoid" in run_src, (
+        "CLV-AUTOVOID: helper must be invoked from run_settlement"
+    )
+    assert "CLV-AUTOVOID-2026-08-19" in run_src, (
+        "CLV-AUTOVOID: run_settlement hook must carry the CLV-AUTOVOID-2026-08-19 marker"
+    )
+
+
 @test("BOT-NO-PIN-SHADOW — shadow pass fires on 1X2 matches without Pinnacle when ≥3 accessible books quote")
 def _():
     """Phase 1 data-collection bot for matches Pinnacle doesn't price.
@@ -1450,6 +1510,18 @@ def _():
         "no-pin shadow must write via bulk_store_shadow_bets — never touches simulated_bets"
     )
     assert "bot_no_pin_shadow_v1" in src, "bot name must resolve to bot_no_pin_shadow_v1"
+    # BOT-NO-PIN-SHADOW-FALLBACK-GUARD-2026-08-19: must reject the ensemble's
+    # uniform (1/3, 1/3, 1/3) no-information fallback so we don't compute fake
+    # edges from a prob the model never actually predicted.
+    assert "BOT-NO-PIN-SHADOW-FALLBACK-GUARD-2026-08-19" in src, (
+        "no-pin shadow: fallback-uniform guard marker missing — bot would score fake edges on "
+        "leagues the ensemble model has no coverage for"
+    )
+    assert "_FALLBACK_UNIFORM_TOL" in src, "fallback-uniform tolerance constant missing"
+    assert "abs(_h - 1/3)" in src and "abs(_d - 1/3)" in src and "abs(_a - 1/3)" in src, (
+        "fallback guard must check all three 1X2 probs are within tolerance of 1/3"
+    )
+    assert "skipped_fallback" in src, "fallback-guard rejection counter missing"
     # Hook check — must be called from run_morning, morning cohort only, not in shadow_mode
     run_morning_src = inspect.getsource(daily_pipeline_v2.run_morning)
     assert "_run_no_pin_shadow_pass" in run_morning_src, (

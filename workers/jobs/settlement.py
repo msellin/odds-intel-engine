@@ -36,7 +36,7 @@ from workers.api_clients.supabase_client import (
     build_match_feature_vectors,
     build_referee_stats,
 )
-from workers.api_clients.db import execute_query, execute_write, bulk_upsert
+from workers.api_clients.db import execute_query, execute_write, execute_write_returning, bulk_upsert
 
 console = Console()
 
@@ -1180,6 +1180,26 @@ def run_settlement():
         console.print("\n[yellow]No pending bets to settle — skipping bet settlement.[/yellow]")
     else:
         _settle_pending_bets(pending, finished)
+
+    # CLV-AUTOVOID-2026-08-19 — post-settlement safety net for data-error prices.
+    # Any settled bet where odds_at_pick / closing_odds ≥ 1.65 (i.e. CLV ≥ 65%)
+    # is almost certainly a fantasy pre-match price (e.g. bookmaker had teams
+    # swapped, or stale opener that never moved as the sharp line settled).
+    # The ODDS-OUTLIER-FILTER-2026-08-18 blocks this at placement, but a few
+    # pre-filter picks landed with clearly-unreachable prices — see the
+    # 2026-08-19 retroactive void sweep on 4 bets (Gremio-U20, Sudtirol,
+    # Hapoel, Bognor). This step catches the same class of bug automatically
+    # at settlement time if anything slips past the placement filter.
+    #
+    # Threshold 1.65× is intentionally conservative — legitimate value picks
+    # that close shorter (squad-news drops, sharp arrival) rarely exceed 1.5×.
+    # Anything ≥ 1.65× is far more likely a data error than a real edge that
+    # closed. Manual review is available for edge cases via the reasoning
+    # column (idempotent — the update skips rows already tagged CLV-AUTOVOID).
+    try:
+        _apply_clv_autovoid()
+    except Exception as e:
+        console.print(f"  [yellow]CLV auto-void sweep error (non-fatal): {e}[/yellow]")
 
     # 4a. WC-F2 — auto-post Twitter/X recap for every freshly-settled
     # World Cup fixture. Idempotent via wc_match_tweets PK on match_id —
@@ -2933,6 +2953,54 @@ def run_report():
         )
 
     console.print(t)
+
+
+# CLV-AUTOVOID-2026-08-19 — void settled bets whose pick odds were unreachable
+# at market. Odds_at_pick/closing_odds ≥ 1.65 = pick was ≥ 65% longer than the
+# closing (sharp-consensus) line — near-certain data error, not real edge.
+CLV_AUTOVOID_RATIO_THRESHOLD = 1.65
+
+
+def _apply_clv_autovoid() -> int:
+    """Auto-void settled won/lost bets whose pick_odds were demonstrably not
+    reachable at the real closing market. Idempotent — the WHERE clause skips
+    rows already tagged with 'CLV-AUTOVOID' in reasoning.
+
+    Called from run_settlement() right after _settle_pending_bets. Any bet
+    where odds_at_pick / closing_odds ≥ CLV_AUTOVOID_RATIO_THRESHOLD (1.65×)
+    is flipped to result='void', pnl=0, and gets a reasoning note attributing
+    the void to this sweep. Bankroll is not restated retroactively — the
+    void just removes the bet from headline ROI / P&L aggregations.
+
+    Returns count of rows voided in this pass.
+    """
+    updated = execute_write_returning(
+        """
+        UPDATE simulated_bets
+           SET result   = 'void',
+               pnl      = 0,
+               reasoning = COALESCE(reasoning || E'\n', '')
+                           || 'CLV-AUTOVOID 2026-08-19: odds_at_pick/closing_odds '
+                           || ROUND((odds_at_pick / closing_odds)::numeric, 2) || 'x '
+                           || '(threshold %sx) — pick price not reachable at real market.'
+         WHERE result IN ('won', 'lost')
+           AND closing_odds IS NOT NULL
+           AND closing_odds > 0
+           AND (odds_at_pick / closing_odds) >= %s
+           AND (reasoning IS NULL OR reasoning NOT LIKE '%%CLV-AUTOVOID%%')
+         RETURNING id
+        """,
+        [CLV_AUTOVOID_RATIO_THRESHOLD, CLV_AUTOVOID_RATIO_THRESHOLD],
+    )
+    n = len(updated) if updated else 0
+    if n > 0:
+        console.print(
+            f"  [yellow]CLV-AUTOVOID: {n} bet(s) voided "
+            f"(odds_at_pick/closing_odds ≥ {CLV_AUTOVOID_RATIO_THRESHOLD}×)[/yellow]"
+        )
+    else:
+        console.print(f"  [dim]CLV-AUTOVOID: no data-error prices to void[/dim]")
+    return n
 
 
 if __name__ == "__main__":

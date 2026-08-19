@@ -3865,17 +3865,38 @@ def _run_no_pin_shadow_pass(today_str: str) -> int:
     _ODDS_MAX = 6.00
     _MIN_PROB = 0.25
     _MODEL_MARKET = {"home": "1x2_home", "draw": "1x2_draw", "away": "1x2_away"}
+    # BOT-NO-PIN-SHADOW-FALLBACK-GUARD-2026-08-19: the ensemble model
+    # returns a no-information fallback (1/3 for each 1X2 selection) on
+    # leagues it has no coverage for — Slovak amateur cup, Japan Emperor Cup
+    # lower rounds, U-teams, Poland III Liga, etc. Multiplying a 1/3 prior
+    # by long tail-book odds produces fake +100%+ "edges" that aren't real
+    # model beliefs. Require the ensemble's 1X2 triple to be meaningfully
+    # different from (1/3, 1/3, 1/3) before trusting the per-selection prob.
+    _FALLBACK_UNIFORM_TOL = 0.02  # per-selection distance from 1/3 required
 
     now_iso = now_utc.isoformat()
     rows_to_write: list[dict] = []
     scored = 0
     skipped_no_anchor = 0
     skipped_edge = 0
+    skipped_fallback = 0
     for mid, sel_offers in offers.items():
         if mid in has_pinnacle:
             continue  # production bots already cover this
         if mid not in ens_probs:
             continue  # no ensemble prob — nothing to compare against
+        # Reject the ensemble's no-information fallback (uniform 1/3 prior on 1X2).
+        # If all three probs are within _FALLBACK_UNIFORM_TOL of 1/3, the model
+        # didn't score this match — anything we compute from that prob is fake.
+        _h = ens_probs[mid].get("1x2_home")
+        _d = ens_probs[mid].get("1x2_draw")
+        _a = ens_probs[mid].get("1x2_away")
+        if _h is not None and _d is not None and _a is not None:
+            if (abs(_h - 1/3) < _FALLBACK_UNIFORM_TOL
+                and abs(_d - 1/3) < _FALLBACK_UNIFORM_TOL
+                and abs(_a - 1/3) < _FALLBACK_UNIFORM_TOL):
+                skipped_fallback += 1
+                continue
         for sel_lower, book_offers in sel_offers.items():
             if len(book_offers) < _MIN_BOOKS:
                 skipped_no_anchor += 1
@@ -3918,7 +3939,8 @@ def _run_no_pin_shadow_pass(today_str: str) -> int:
     if not rows_to_write:
         console.print(
             f"[dim]no-pin shadow: 0 picks written "
-            f"(candidates skipped — no anchor: {skipped_no_anchor}, edge<8%: {skipped_edge})[/dim]"
+            f"(candidates skipped — fallback prob: {skipped_fallback}, "
+            f"no anchor: {skipped_no_anchor}, edge<8%: {skipped_edge})[/dim]"
         )
         return 0
 
@@ -3930,7 +3952,8 @@ def _run_no_pin_shadow_pass(today_str: str) -> int:
         return 0
     console.print(
         f"[dim]no-pin shadow: {n} pick(s) written "
-        f"(scored {scored}, no-anchor {skipped_no_anchor}, edge<8% {skipped_edge}, "
+        f"(scored {scored}, fallback-prob {skipped_fallback}, "
+        f"no-anchor {skipped_no_anchor}, edge<8% {skipped_edge}, "
         f"run_id={shadow_run_id[:8]})[/dim]"
     )
     return n
