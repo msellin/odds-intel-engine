@@ -1412,6 +1412,45 @@ def _():
     )
 
 
+@test("SHADOW-FAST-SETTLE — shadow_bets settle on the 15-min settle_ready cadence, not only at 21:00 UTC")
+def _():
+    """Before this fix, `_settle_pending_shadow_bets` was called only from
+    `run_settlement` (once daily at 21:00 UTC), so shadow_bets sat 6-8h in
+    'pending' between match finish and the batch. Fix: also call it from
+    `settle_finished_matches` (invoked by settle_ready every 15 min AND
+    inline from the live poller). Guards:
+      (1) settle_finished_matches queries _PENDING_SHADOW_BETS_SQL scoped to
+          the match_ids it's settling,
+      (2) calls _settle_pending_shadow_bets with finished=[] (score comes
+          from matches.score_home/score_away via the SQL),
+      (3) wrapped in try/except so a shadow-settle failure never blocks
+          the real-bet settlement chain — same discipline as the
+          run_settlement daily-batch path.
+    """
+    import inspect
+    from workers.jobs import settlement
+    src = inspect.getsource(settlement.settle_finished_matches)
+    assert "SHADOW-FAST-SETTLE-2026-08-19" in src, (
+        "shadow fast-settle marker missing — bets on finished matches would sit "
+        "'pending' for 6-8h until the 21:00 UTC batch"
+    )
+    assert "_PENDING_SHADOW_BETS_SQL" in src and "sb.match_id = ANY" in src, (
+        "shadow settlement must query pending shadow bets scoped to the match_ids being settled"
+    )
+    assert "_settle_pending_shadow_bets" in src, (
+        "settle_finished_matches must invoke _settle_pending_shadow_bets"
+    )
+    # Must be wrapped so a shadow failure never blocks real-bet settlement
+    lines = src.split("\n")
+    shadow_line = next(i for i, l in enumerate(lines) if "_settle_pending_shadow_bets" in l)
+    # Walk back to find enclosing try/except
+    try_found = any("try:" in l for l in lines[max(0, shadow_line - 10) : shadow_line])
+    except_found = any("except" in l for l in lines[shadow_line : min(len(lines), shadow_line + 8)])
+    assert try_found and except_found, (
+        "shadow settle call must be wrapped in try/except so a failure doesn't block real-bet settlement"
+    )
+
+
 @test("CLV-AUTOVOID — settlement voids bets where odds_at_pick/closing_odds ≥ 1.65× (data-error safety net)")
 def _():
     """Post-settlement safety net for fantasy pre-match prices. Any settled

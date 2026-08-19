@@ -695,6 +695,25 @@ def settle_finished_matches(match_ids: list[str]):
         except Exception as e:
             console.print(f"  [yellow]User picks settlement error: {e}[/yellow]")
 
+    # SHADOW-FAST-SETTLE-2026-08-19: settle shadow_bets on the same 15-min
+    # cadence as simulated_bets so the /admin/shadow-bots ledger stops
+    # showing 6-8h "pending" lags between match finish and 21:00 UTC batch.
+    # Wrapped in try/except so a shadow-settle failure never blocks the
+    # real-bet settlement chain.
+    try:
+        shadow_pending = execute_query(
+            _PENDING_SHADOW_BETS_SQL + " AND sb.match_id = ANY(%s::uuid[])",
+            [match_ids],
+        )
+        if shadow_pending:
+            console.print(
+                f"[cyan]Live shadow settlement: {len(shadow_pending)} pending "
+                f"shadow bet(s) for {len(match_ids)} finished match(es)[/cyan]"
+            )
+            _settle_pending_shadow_bets(shadow_pending, finished=[])
+    except Exception as e:
+        console.print(f"  [yellow]Shadow live-settlement error (non-fatal): {e}[/yellow]")
+
     # SELF-USE-VALIDATION: settle any superadmin real-money bets on the same cadence.
     try:
         _settle_real_bets_for_matches(match_ids)
