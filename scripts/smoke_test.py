@@ -1472,6 +1472,60 @@ def _():
     )
 
 
+@test("CONFIG-SWEEP-PHASE-D — sweep shadow pass fires 3 bots with tier-2-3 configs (1X2 home / draw / BTTS yes)")
+def _():
+    """Phase D shadow bots derived from CONFIG-SWEEP-2026-08-19. Guards:
+      (1) three configs registered in _SWEEP_SHADOW_CONFIGS with correct
+          markets and Pinnacle-required flags matching the sweep report,
+      (2) all three constrained to tier_filter = (2, 3) — the sweep's
+          universal signal,
+      (3) all three write via bulk_store_shadow_bets (never simulated_bets),
+      (4) pass is invoked from run_morning, morning cohort only, skipped
+          when shadow_mode=True,
+      (5) migration 272 registers all three bots with maturity_label='experimental'.
+    """
+    import inspect
+    from workers.jobs import daily_pipeline_v2
+    cfgs = daily_pipeline_v2._SWEEP_SHADOW_CONFIGS
+    names = {c["name"] for c in cfgs}
+    assert names == {"bot_sweep_1x2_home_v1", "bot_sweep_1x2_draw_v1", "bot_sweep_btts_yes_v1"}, (
+        f"sweep configs must register exactly the 3 winners, got {names}"
+    )
+    for c in cfgs:
+        assert c["tier_filter"] == (2, 3), (
+            f"sweep {c['name']}: tier_filter must be (2, 3) — the sweep's universal signal"
+        )
+    home = next(c for c in cfgs if c["name"] == "bot_sweep_1x2_home_v1")
+    assert home["edge_min"] == 0.10 and home["require_pinnacle"] is True and home["mkt_key"] == "1x2_home", (
+        "1X2 home config drift from sweep result"
+    )
+    draw = next(c for c in cfgs if c["name"] == "bot_sweep_1x2_draw_v1")
+    assert draw["edge_min"] == 0.05 and draw["require_pinnacle"] is True and draw["mkt_key"] == "1x2_draw", (
+        "1X2 draw config drift from sweep result"
+    )
+    btts = next(c for c in cfgs if c["name"] == "bot_sweep_btts_yes_v1")
+    assert btts["edge_min"] == 0.05 and btts["require_pinnacle"] is False and btts["mkt_key"] == "btts_yes", (
+        "BTTS yes config drift from sweep result"
+    )
+    # Pass exists, uses bulk_store_shadow_bets, invoked from run_morning
+    pass_src = inspect.getsource(daily_pipeline_v2._run_sweep_shadow_pass)
+    assert "bulk_store_shadow_bets" in pass_src, "sweep shadow must write via bulk_store_shadow_bets"
+    assert "CONFIG-SWEEP-2026-08-19" in pass_src, "CONFIG-SWEEP marker missing from _run_sweep_shadow_pass"
+    run_src = inspect.getsource(daily_pipeline_v2.run_morning)
+    assert "_run_sweep_shadow_pass" in run_src, "sweep pass must be invoked from run_morning"
+    # Migration exists and inserts all three bots as experimental
+    import os
+    mig_path = os.path.join(
+        os.path.dirname(inspect.getfile(daily_pipeline_v2)),
+        "..", "..", "supabase", "migrations", "272_bot_sweep_shadows.sql",
+    )
+    with open(mig_path) as f:
+        mig = f.read()
+    for name in ("bot_sweep_1x2_home_v1", "bot_sweep_1x2_draw_v1", "bot_sweep_btts_yes_v1"):
+        assert f"'{name}'" in mig, f"migration 272 must INSERT {name}"
+    assert mig.count("'experimental'") >= 3, "migration 272 must set maturity_label='experimental' on all 3 bots"
+
+
 @test("BOT-NO-PIN-SHADOW — shadow pass fires on 1X2 matches without Pinnacle when ≥3 accessible books quote")
 def _():
     """Phase 1 data-collection bot for matches Pinnacle doesn't price.

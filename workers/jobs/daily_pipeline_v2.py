@@ -3749,6 +3749,16 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         except Exception as e:
             console.print(f"[yellow]No-pin shadow bot failed (non-critical): {e}[/yellow]")
 
+    # CONFIG-SWEEP-2026-08-19 Phase D — three shadow bots derived from
+    # the walk-forward parameter sweep (tier 2-3 leagues, 1X2 home /
+    # 1X2 draw / BTTS yes). Data-collection only, writes to shadow_bets.
+    # See dev/active/config-sweep-2026-08-19-report.md.
+    if cohort in (None, "morning") and not shadow_mode:
+        try:
+            _run_sweep_shadow_pass(today_str)
+        except Exception as e:
+            console.print(f"[yellow]Sweep shadow bots failed (non-critical): {e}[/yellow]")
+
     # 11.6: Cross-match correlation check — warn about concentrated exposure
     _check_exposure_concentration()
 
@@ -3984,6 +3994,226 @@ def _get_bot_id_by_name(name: str) -> str | None:
     from workers.api_clients.db import execute_query
     rows = execute_query("SELECT id::text AS id FROM bots WHERE name = %s", [name])
     return rows[0]["id"] if rows else None
+
+
+# CONFIG-SWEEP-2026-08-19 Phase D — three shadow bots derived from the
+# walk-forward parameter sweep. Each fires on a specific (market, tier,
+# edge_threshold, odds_range) config that showed positive ROI + CLV in
+# all three test windows (May-Jun / Jun-Jul / Aug). See
+# dev/active/config-sweep-2026-08-19-report.md for full analysis.
+_SWEEP_SHADOW_CONFIGS: tuple[dict, ...] = (
+    {
+        "name": "bot_sweep_1x2_home_v1",
+        "market": "1x2",
+        "selection": "home",
+        "mkt_key": "1x2_home",
+        "tier_filter": (2, 3),
+        "edge_min": 0.10,
+        "odds_min": 2.00,
+        "odds_max": 5.00,
+        "min_prob": 0.25,
+        "require_pinnacle": True,
+    },
+    {
+        "name": "bot_sweep_1x2_draw_v1",
+        "market": "1x2",
+        "selection": "draw",
+        "mkt_key": "1x2_draw",
+        "tier_filter": (2, 3),
+        "edge_min": 0.05,
+        "odds_min": 1.30,
+        "odds_max": 3.50,
+        "min_prob": 0.25,
+        "require_pinnacle": True,
+    },
+    {
+        "name": "bot_sweep_btts_yes_v1",
+        "market": "btts",
+        "selection": "yes",
+        "mkt_key": "btts_yes",
+        "tier_filter": (2, 3),
+        "edge_min": 0.05,
+        "odds_min": 2.00,
+        "odds_max": 2.50,
+        "min_prob": 0.25,
+        "require_pinnacle": False,
+    },
+)
+
+
+def _run_sweep_shadow_pass(today_str: str) -> int:
+    """CONFIG-SWEEP-2026-08-19 Phase D — shadow-log picks for the three
+    sweep-derived configs (1X2 home / 1X2 draw / BTTS yes, all tier 2-3).
+    Writes to shadow_bets only, never touches simulated_bets or bankroll.
+    Runs from run_morning after the no-pin shadow pass.
+    """
+    from workers.api_clients.db import execute_query
+    from workers.api_clients.supabase_client import bulk_store_shadow_bets
+    import uuid as _uuid
+    from collections import defaultdict as _dd
+
+    # Resolve bot IDs; skip any bot that isn't registered yet
+    bot_ids: dict[str, str] = {}
+    for cfg in _SWEEP_SHADOW_CONFIGS:
+        bid = _get_bot_id_by_name(cfg["name"])
+        if bid:
+            bot_ids[cfg["name"]] = bid
+    if not bot_ids:
+        console.print("[dim]sweep shadow: no bots registered — skip[/dim]")
+        return 0
+
+    next_day_str = _next_day(today_str)
+
+    # 1. Load today's scheduled matches (kickoff in future) + tier from leagues
+    matches_raw = execute_query(
+        """
+        SELECT m.id::text AS id, m.date, COALESCE(l.tier, 1) AS tier
+          FROM matches m
+          LEFT JOIN leagues l ON m.league_id = l.id
+         WHERE m.date >= %s AND m.date < %s AND m.status = 'scheduled'
+        """,
+        (f"{today_str}T00:00:00Z", f"{next_day_str}T00:00:00Z"),
+    )
+    if not matches_raw:
+        return 0
+
+    now_utc = datetime.now(timezone.utc)
+    match_meta: dict[str, dict] = {}
+    for m in matches_raw:
+        mid = str(m["id"])
+        try:
+            ko = datetime.fromisoformat(str(m["date"]).replace("Z", "+00:00"))
+            if ko.tzinfo is None:
+                ko = ko.replace(tzinfo=timezone.utc)
+            if ko <= now_utc:
+                continue
+        except (ValueError, AttributeError):
+            pass
+        match_meta[mid] = {"tier": int(m.get("tier") or 1)}
+    if not match_meta:
+        return 0
+    match_ids = list(match_meta.keys())
+
+    # 2. Load ensemble predictions for the three markets we care about
+    preds_raw = execute_query(
+        """
+        SELECT match_id::text, market, model_probability
+          FROM predictions
+         WHERE match_id = ANY(%s::uuid[])
+           AND source = 'ensemble'
+           AND market IN ('1x2_home','1x2_draw','1x2_away','btts_yes','btts_no')
+        """,
+        (match_ids,),
+    )
+    ens: dict[str, dict[str, float]] = _dd(dict)
+    for p in preds_raw:
+        try:
+            ens[str(p["match_id"])][p["market"]] = float(p["model_probability"])
+        except (TypeError, ValueError):
+            continue
+
+    # 3. Load odds — 1x2 + btts, accessible books only. Also track whether
+    # Pinnacle quoted each (match, market, selection) for the require_pinnacle
+    # configs.
+    odds_raw = execute_query(
+        """
+        SELECT match_id::text, market, selection, odds, bookmaker
+          FROM odds_snapshots
+         WHERE match_id = ANY(%s::uuid[])
+           AND is_closing = false
+           AND market IN ('1x2', 'btts')
+        """,
+        (match_ids,),
+    )
+    if not odds_raw:
+        return 0
+
+    # (mid, market, selection) → best accessible odds + best bookmaker
+    best: dict[tuple[str, str, str], tuple[float, str]] = {}
+    pin_present: set[tuple[str, str, str]] = set()
+    for row in odds_raw:
+        bm = row.get("bookmaker") or "unknown"
+        key = (str(row["match_id"]), str(row["market"]), str(row["selection"]).lower())
+        try:
+            o = float(row["odds"])
+        except (TypeError, ValueError):
+            continue
+        if bm == "Pinnacle":
+            pin_present.add(key)
+        if bm not in ACCESSIBLE_BOOKMAKERS:
+            continue
+        current = best.get(key)
+        if current is None or o > current[0]:
+            best[key] = (o, bm)
+
+    # 4. For each sweep config, scan matches and write shadow bets
+    now_iso = now_utc.isoformat()
+    total_written = 0
+    for cfg in _SWEEP_SHADOW_CONFIGS:
+        bot_id = bot_ids.get(cfg["name"])
+        if not bot_id:
+            continue
+        rows_to_write: list[dict] = []
+        scored = skipped_tier = skipped_odds = skipped_prob = 0
+        skipped_edge = skipped_pin = skipped_no_odds = 0
+        for mid, meta in match_meta.items():
+            if meta["tier"] not in cfg["tier_filter"]:
+                skipped_tier += 1
+                continue
+            prob = ens.get(mid, {}).get(cfg["mkt_key"])
+            if prob is None or prob < cfg["min_prob"]:
+                skipped_prob += 1
+                continue
+            key = (mid, cfg["market"], cfg["selection"])
+            best_row = best.get(key)
+            if best_row is None:
+                skipped_no_odds += 1
+                continue
+            odds, book = best_row
+            if not (cfg["odds_min"] <= odds <= cfg["odds_max"]):
+                skipped_odds += 1
+                continue
+            if cfg["require_pinnacle"] and key not in pin_present:
+                skipped_pin += 1
+                continue
+            edge = odds * prob - 1.0
+            if edge < cfg["edge_min"]:
+                skipped_edge += 1
+                continue
+            scored += 1
+            rows_to_write.append({
+                "bot_id": bot_id,
+                "match_id": mid,
+                "market": cfg["market"],
+                "selection": cfg["selection"],
+                "odds": odds,
+                "model_prob": prob,
+                "calibrated_prob": prob,
+                "edge": round(edge, 4),
+                "kelly_fraction": None,
+                "placed_at": now_iso,
+                "timing_cohort": "morning",
+                "recommended_bookmaker": book,
+            })
+        if not rows_to_write:
+            console.print(
+                f"[dim]sweep shadow {cfg['name']}: 0 written "
+                f"(tier {skipped_tier}, prob {skipped_prob}, no_odds {skipped_no_odds}, "
+                f"odds_range {skipped_odds}, pin {skipped_pin}, edge {skipped_edge})[/dim]"
+            )
+            continue
+        shadow_run_id = str(_uuid.uuid4())
+        try:
+            n = bulk_store_shadow_bets(rows_to_write, shadow_run_id, "morning")
+        except Exception as e:
+            console.print(f"[yellow]sweep shadow {cfg['name']}: write failed ({e})[/yellow]")
+            continue
+        console.print(
+            f"[dim]sweep shadow {cfg['name']}: {n} pick(s) written "
+            f"(scored {scored}, run_id={shadow_run_id[:8]})[/dim]"
+        )
+        total_written += n
+    return total_written
 
 
 def _check_exposure_concentration():
