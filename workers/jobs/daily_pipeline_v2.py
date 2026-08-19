@@ -3865,14 +3865,28 @@ def _run_no_pin_shadow_pass(today_str: str) -> int:
     _ODDS_MAX = 6.00
     _MIN_PROB = 0.25
     _MODEL_MARKET = {"home": "1x2_home", "draw": "1x2_draw", "away": "1x2_away"}
-    # BOT-NO-PIN-SHADOW-FALLBACK-GUARD-2026-08-19: the ensemble model
-    # returns a no-information fallback (1/3 for each 1X2 selection) on
-    # leagues it has no coverage for — Slovak amateur cup, Japan Emperor Cup
-    # lower rounds, U-teams, Poland III Liga, etc. Multiplying a 1/3 prior
-    # by long tail-book odds produces fake +100%+ "edges" that aren't real
-    # model beliefs. Require the ensemble's 1X2 triple to be meaningfully
-    # different from (1/3, 1/3, 1/3) before trusting the per-selection prob.
-    _FALLBACK_UNIFORM_TOL = 0.02  # per-selection distance from 1/3 required
+    # BOT-NO-PIN-SHADOW-FALLBACK-GUARD-2026-08-19: reject known no-information
+    # ensemble fallback shapes. When the ensemble has no real signal for a
+    # match (leagues with zero training coverage — Slovak amateur cup, Japan
+    # Emperor Cup lower rounds, U-teams, Poland III Liga, Brazil Cearense
+    # U20, Serbia Prva Liga, etc.) it inherits one of a small set of round
+    # default shapes from AF's prior. Real ensemble outputs look like
+    # (0.4577, 0.3458, 0.1965) — 4 decimals, no round-number pattern.
+    # Multiplying a fallback prob by long tail-book odds produces fake +100%+
+    # "edges" (verified 2026-08-19 with 93 initial shadow picks — all were
+    # on these fallback shapes).
+    _FALLBACK_UNIFORM_TOL = 0.02  # per-selection tolerance
+    _FALLBACK_SHAPES: tuple[tuple[float, float, float], ...] = (
+        (1/3, 1/3, 1/3),
+        # AF's underdog-priors (0.10, 0.45, 0.45) and permutations
+        (0.10, 0.45, 0.45),
+        (0.45, 0.10, 0.45),
+        (0.45, 0.45, 0.10),
+        # AF's binary "one team can't win" (0.00, 0.50, 0.50)
+        (0.00, 0.50, 0.50),
+        (0.50, 0.00, 0.50),
+        (0.50, 0.50, 0.00),
+    )
 
     now_iso = now_utc.isoformat()
     rows_to_write: list[dict] = []
@@ -3885,18 +3899,24 @@ def _run_no_pin_shadow_pass(today_str: str) -> int:
             continue  # production bots already cover this
         if mid not in ens_probs:
             continue  # no ensemble prob — nothing to compare against
-        # Reject the ensemble's no-information fallback (uniform 1/3 prior on 1X2).
-        # If all three probs are within _FALLBACK_UNIFORM_TOL of 1/3, the model
-        # didn't score this match — anything we compute from that prob is fake.
+        # Reject if the ensemble's 1X2 triple matches any known no-information
+        # fallback shape (see _FALLBACK_SHAPES above). Anything we compute
+        # from a fallback prob is fake — the model has no real belief.
         _h = ens_probs[mid].get("1x2_home")
         _d = ens_probs[mid].get("1x2_draw")
         _a = ens_probs[mid].get("1x2_away")
-        if _h is not None and _d is not None and _a is not None:
-            if (abs(_h - 1/3) < _FALLBACK_UNIFORM_TOL
-                and abs(_d - 1/3) < _FALLBACK_UNIFORM_TOL
-                and abs(_a - 1/3) < _FALLBACK_UNIFORM_TOL):
-                skipped_fallback += 1
-                continue
+        if _h is None or _d is None or _a is None:
+            continue
+        _is_fallback = False
+        for _th, _td, _ta in _FALLBACK_SHAPES:
+            if (abs(_h - _th) < _FALLBACK_UNIFORM_TOL
+                and abs(_d - _td) < _FALLBACK_UNIFORM_TOL
+                and abs(_a - _ta) < _FALLBACK_UNIFORM_TOL):
+                _is_fallback = True
+                break
+        if _is_fallback:
+            skipped_fallback += 1
+            continue
         for sel_lower, book_offers in sel_offers.items():
             if len(book_offers) < _MIN_BOOKS:
                 skipped_no_anchor += 1

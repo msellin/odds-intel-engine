@@ -1518,9 +1518,14 @@ def _():
         "leagues the ensemble model has no coverage for"
     )
     assert "_FALLBACK_UNIFORM_TOL" in src, "fallback-uniform tolerance constant missing"
-    assert "abs(_h - 1/3)" in src and "abs(_d - 1/3)" in src and "abs(_a - 1/3)" in src, (
-        "fallback guard must check all three 1X2 probs are within tolerance of 1/3"
+    assert "_FALLBACK_SHAPES" in src, (
+        "fallback shape table missing — must enumerate known no-information ensemble outputs "
+        "(uniform 1/3, AF underdog-prior (0.10, 0.45, 0.45), AF binary (0.00, 0.50, 0.50))"
     )
+    # Must include all three fallback shape families (uniform, underdog-prior, binary)
+    assert "(1/3, 1/3, 1/3)" in src, "fallback shapes must include uniform (1/3, 1/3, 1/3)"
+    assert "(0.10, 0.45, 0.45)" in src, "fallback shapes must include AF underdog prior (0.10, 0.45, 0.45)"
+    assert "(0.00, 0.50, 0.50)" in src, "fallback shapes must include AF binary (0.00, 0.50, 0.50)"
     assert "skipped_fallback" in src, "fallback-guard rejection counter missing"
     # Hook check — must be called from run_morning, morning cohort only, not in shadow_mode
     run_morning_src = inspect.getsource(daily_pipeline_v2.run_morning)
