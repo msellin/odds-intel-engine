@@ -1031,13 +1031,34 @@ def settle_ready_matches():
         [f"{yesterday}T00:00:00", f"{today}T23:59:59"]
     )
 
-    if not rows:
-        console.print("[dim]Settle-ready sweep: nothing to do.[/dim]")
-        return
+    match_ids = [r["id"] for r in rows] if rows else []
+    if match_ids:
+        console.print(
+            f"[cyan]Settle-ready sweep: {len(match_ids)} match(es) need settlement[/cyan]"
+        )
+        settle_finished_matches(match_ids)
 
-    match_ids = [r["id"] for r in rows]
-    console.print(f"[cyan]Settle-ready sweep: {len(match_ids)} match(es) need settlement[/cyan]")
-    settle_finished_matches(match_ids)
+    # SHADOW-FAST-SETTLE-2026-08-19 — independently catch shadow_bets pending
+    # on already-'done' matches. When simulated_bets get settled fast (via the
+    # live poller marking settlement_status='done'), the sweep above skips the
+    # match — but shadow_bets on that match may still be pending (older matches
+    # from before this fix shipped, or edge cases where the daily batch missed
+    # them). Query pending shadow bets directly and settle any whose match has
+    # finished.
+    try:
+        shadow_pending = execute_query(
+            _PENDING_SHADOW_BETS_SQL
+            + " AND m.status = 'finished'"
+            + " AND m.score_home IS NOT NULL AND m.score_away IS NOT NULL"
+        )
+        if shadow_pending:
+            console.print(
+                f"[cyan]Settle-ready sweep: {len(shadow_pending)} pending shadow bet(s) "
+                f"on finished matches[/cyan]"
+            )
+            _settle_pending_shadow_bets(shadow_pending, finished=[])
+    except Exception as e:
+        console.print(f"  [yellow]Shadow catch-up settle error (non-fatal): {e}[/yellow]")
 
 
 def _settle_user_picks_for_matches(match_ids: list[str]):
