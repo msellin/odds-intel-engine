@@ -29257,6 +29257,54 @@ def _():
     )
 
 
+@test("BET365-EXECUTION-AUDIT — Bet365 removed from ACCESSIBLE_BOOKMAKERS")
+def _():
+    """BET365-EXECUTION-AUDIT-2026-08-21: audit on 803 settled production
+    picks since 2026-05-04 found Bet365 with the worst realization gap
+    of any book — 22% pick concentration, CLV +10%, flat ROI -10%
+    (n=178). Root cause: Bet365 odds systematically inflated ~26.6%
+    over Pinnacle at the same time (n=32 matched pairs on 1x2). Either
+    stale, unreachable, or limit-restricted. Other soft books
+    (Marathonbet +30%, Coolbet +40%, Betano +24%, Unibet +10%) do not
+    show this pattern. Removed Bet365 from ACCESSIBLE_BOOKMAKERS —
+    picks route to next-best price at any other soft book, and phantom
+    Bet365 offers no longer land as our "best odds".
+
+    Estimated portfolio ROI lift: +10.04% → +15.7% (blended, flat
+    stakes). Volume drops ~22%.
+
+    Pins:
+      1. Bet365 not in ACCESSIBLE_BOOKMAKERS
+      2. Other legitimate soft books remain (Marathonbet, Coolbet,
+         Betano, Unibet, 10Bet, 888Sport, Pinnacle)
+    """
+    src = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text()
+    # Find the ACCESSIBLE_BOOKMAKERS frozenset content
+    import re as _re
+    m = _re.search(
+        r"ACCESSIBLE_BOOKMAKERS\s*:\s*frozenset\s*=\s*frozenset\(\{([^}]+)\}",
+        src,
+        flags=_re.DOTALL,
+    )
+    assert m is not None, "ACCESSIBLE_BOOKMAKERS frozenset not found"
+    contents = m.group(1)
+    # Bet365 MUST NOT be a member. String match is naive but sufficient —
+    # the only Bet365 references in the frozenset block would be a member.
+    assert '"Bet365"' not in contents, (
+        "Bet365 must not be in ACCESSIBLE_BOOKMAKERS — its odds are "
+        "systematically inflated ~27% over Pinnacle and generate -10% "
+        "flat ROI vs other soft books' +10-40%. See BET365-EXECUTION-"
+        "AUDIT-2026-08-21 in PRIORITY_QUEUE for the analysis."
+    )
+    # Other legitimate accessible books must remain — a mass drop would
+    # be a different (more dangerous) change and worth flagging.
+    for expected in ("Marathonbet", "Unibet", "Coolbet", "Pinnacle"):
+        assert f'"{expected}"' in contents, (
+            f"{expected} unexpectedly missing from ACCESSIBLE_BOOKMAKERS. "
+            f"If intentional, add a comment explaining why."
+        )
+
+
 @test("FEATURE-COVERAGE-INJURIES — coverage_injuries flag no longer gates writes")
 def _():
     """FEATURE-COVERAGE-BACKFILL-2026-08-21: coverage audit found only

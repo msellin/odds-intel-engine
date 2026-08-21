@@ -1039,8 +1039,27 @@ DIXON_COLES_RHO = -0.13
 # edge is not inflated by odds the user can never actually achieve.
 # Pinnacle is included because it's available via Pinnacle Sports .com (manual) and also
 # serves as the sharpest-book quality reference throughout the pipeline.
+#
+# BET365-EXECUTION-AUDIT-2026-08-21: Bet365 REMOVED. Audit on 803 settled
+# picks since 2026-05-04 found Bet365 concentrating 22% of production
+# picks (n=178) with CLV +10% but flat ROI -10% — a 20pp CLV-to-ROI
+# realization gap that no other soft book showed. Root cause: Bet365 odds
+# captured via AF's feed are systematically inflated ~26.6% above
+# contemporaneous Pinnacle prices on 1x2 (n=32 matched pairs), suggesting
+# either stale odds, unreachable "shell" prices, or a specific-market
+# limit issue. ODDS-OUTLIER-FILTER-2026-08-18 catches the worst offenders
+# (>35% over anchor for 1x2, >30% for BTTS) but the ~20-30% band still
+# leaks through and generates -20% ROI picks.
+#
+# Estimated portfolio impact of removal: with Bet365's 178 picks at
+# -10% flat ROI dropped, the remaining ~625 picks project to +15.7%
+# blended ROI (vs current +10.04%). Volume drops ~22%.
+#
+# Rollback: add "Bet365" back to the frozenset. If Bet365 later becomes
+# reachable via a different feed (direct scrape / different AF endpoint),
+# re-audit before adding back.
 ACCESSIBLE_BOOKMAKERS: frozenset = frozenset({
-    "Bet365", "Unibet", "Betano", "Marathonbet", "10Bet", "888Sport", "Pinnacle",
+    "Unibet", "Betano", "Marathonbet", "10Bet", "888Sport", "Pinnacle",
     # COOLBET-AS-ACCESSIBLE (2026-05-20): Coolbet is our actual placement
     # venue and now ingested every 30m by the daemon's wide odds mode. Adding
     # it here so its prices feed edge math — if Coolbet has the best price on
