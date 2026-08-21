@@ -28997,5 +28997,61 @@ def test_retrain_healthcheck_cadence_2026_08_16():
     )
 
 
+@test("PERF-SIGNUP-HISTORY — /performance opens full history to logged-in users")
+def _():
+    """After TIER-COLLAPSE 2026-06-24 the paid product is defunct; the old
+    isPro gate on the full bet history was protecting a paywall no one buys.
+    Flipping to !!user turns signup into the reward (funnel fix for the
+    Telegram → web conversion) and gives poll respondents what 57% asked
+    for (full history + filters).
+
+    Locks in the four moving parts:
+      1. page.tsx keys on isLoggedIn (not isPro) for the streaming section
+      2. page.tsx imports FullBetItem + toFullBetItems (mapping wired up)
+      3. performance-history.tsx has the league filter + sort dropdown
+      4. performance-leaderboard.tsx has the retiredBotCount funnel line
+    """
+    page = _web_path("src/app/(app)/performance/page.tsx").read_text()
+    assert "isLoggedIn" in page, (
+        "performance/page.tsx must gate the streaming history on isLoggedIn, "
+        "not isPro — the tier system was collapsed 2026-06-24."
+    )
+    assert "LoggedInPerformanceSection" in page, (
+        "performance/page.tsx must have a LoggedInPerformanceSection that "
+        "streams allBets for the full ledger."
+    )
+    assert "toFullBetItems" in page, (
+        "performance/page.tsx must map SanitizedBotBet → FullBetItem so the "
+        "history component can render league/market/sort."
+    )
+
+    history = _web_path("src/components/performance-history.tsx").read_text()
+    assert "leagueFilter" in history, (
+        "performance-history.tsx must expose a league filter (poll ask #1)."
+    )
+    assert "SORT_LABELS" in history, (
+        "performance-history.tsx must expose sort options (poll ask #2)."
+    )
+    assert "isLoggedIn" in history, (
+        "performance-history.tsx must accept isLoggedIn to distinguish "
+        "anonymous (10-bet teaser + sign-up CTA) from logged-in (full ledger)."
+    )
+    assert "Sign up free" in history, (
+        "performance-history.tsx anonymous upsell must offer Sign up free "
+        "(the current signup reward), not Upgrade to Pro (deprecated tier)."
+    )
+
+    leaderboard = _web_path("src/components/performance-leaderboard.tsx").read_text()
+    assert "retiredBotCount" in leaderboard, (
+        "performance-leaderboard.tsx must accept retiredBotCount so the "
+        "subhead reflects the full strategy funnel (proven + underperforming "
+        "+ maturing + retired), not just current survivors."
+    )
+    assert "PERF-BOT-FUNNEL" in leaderboard, (
+        "performance-leaderboard.tsx must anchor the funnel-line block with "
+        "PERF-BOT-FUNNEL so future refactors don't silently drop it."
+    )
+
+
 if __name__ == "__main__":
     main()

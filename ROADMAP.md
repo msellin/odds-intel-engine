@@ -137,7 +137,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 |---------|--------|
 | `/` landing | ✅ Minimal hero pulling live ROI from `/api/v1/track-record` |
 | `/picks` | ✅ Live pending pre-match picks for the next 36 hours, free, no signup |
-| `/performance` | ✅ Settled track record + per-bot leaderboard (no tabs to deleted pages) |
+| `/performance` | ✅ Settled track record + per-bot leaderboard. **Anonymous** = 10-bet ledger teaser + "Sign up free" CTA; **logged-in** = full filterable history (league / market / bot filters, 6-way sort, 200-row cap). Leaderboard subhead surfaces full strategy funnel ("Tested to date: N · proven / underperforming / maturing / retired"). Gate changed from `isPro` to `!!user` on 2026-08-21 (PERF-SIGNUP-HISTORY) — signup is now the reward, not payment (post TIER-COLLAPSE). |
 | `/privacy`, `/terms` | ✅ Minimal nav, retained for legal |
 | `/api/v1/track-record` | ✅ Public JSON feed of settled bets (median CLV, beat-rate, ROI) |
 | `/api/v1/upcoming` | ✅ Public JSON feed of pending picks (next 36h) |
