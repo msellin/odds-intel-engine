@@ -29053,5 +29053,52 @@ def _():
     )
 
 
+@test("NAV-AUTH-VISIBLE — signed-in vs signed-out is visually distinct")
+def _():
+    """Before 2026-08-21 the nav rendered near-identical LogIn / LogOut icons
+    (same colour, same size) and both were `hidden sm:flex` — so on mobile,
+    signed-in state was invisible entirely. Users couldn't tell whether their
+    signup had taken. The fix: signed-out gets a prominent blue Sign-in pill
+    (visible on mobile too); signed-in gets a colored initial avatar that
+    opens a popover with email + Profile link + Sign out.
+
+    Pin the four moving parts so a future refactor doesn't regress it."""
+    nav = _web_path("src/components/nav.tsx").read_text()
+    assert "isRealUser" in nav, (
+        "nav.tsx must gate the avatar/menu on isRealUser (real user, not "
+        "the auto-created anonymous session) — otherwise anonymous users "
+        "who saved a favorite lose the Sign-in CTA."
+    )
+    assert "avatarColor" in nav and "avatarInitial" in nav, (
+        "nav.tsx must render a colored initial avatar so signed-in state is "
+        "visually distinct from signed-out (deterministic seed → colour)."
+    )
+    assert "Sign in" in nav, (
+        "nav.tsx must show a labeled Sign-in button when signed out — the "
+        "icon-only affordance was invisible on mobile."
+    )
+    assert "border-blue-500" in nav, (
+        "nav.tsx signed-out Sign-in button must be colour-accented (blue) "
+        "so it stands out — a neutral-grey icon was the original problem."
+    )
+    assert "menuOpen" in nav and "role=\"menu\"" in nav, (
+        "nav.tsx must expose an aria-labelled popover menu on the avatar "
+        "so keyboard/AT users get the Sign-out affordance."
+    )
+
+    profile_page = _web_path("src/app/(app)/profile/page.tsx").read_text()
+    assert "redirect(\"/login?next=/profile\")" in profile_page, (
+        "profile/page.tsx must redirect anonymous visitors to /login with "
+        "a next= param so they land back on /profile after auth."
+    )
+    assert "ProfileSignOutButton" in profile_page, (
+        "profile/page.tsx must render the sign-out client component."
+    )
+    sob = _web_path("src/components/profile-sign-out-button.tsx").read_text()
+    assert "signOut" in sob and "router.push(\"/\")" in sob, (
+        "profile-sign-out-button.tsx must call signOut and route home."
+    )
+
+
 if __name__ == "__main__":
     main()

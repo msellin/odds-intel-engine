@@ -142,7 +142,8 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | `/api/v1/track-record` | ✅ Public JSON feed of settled bets (median CLV, beat-rate, ROI) |
 | `/api/v1/upcoming` | ✅ Public JSON feed of pending picks (next 36h) |
 | `/admin/*` | ✅ Operator-only, untouched by collapse |
-| WC pages, /value-bets, /matches/*, /live, /accuracy, /bankroll, /learn, /how-it-works, /methodology, /my-picks, /predictions, /profile, /recaps, /vs, /welcome, /pricing, /changelog | ❌ Deleted |
+| /profile | ✅ Restored 2026-08-21 as a minimal page (email + tier + sign out); linked from the new nav avatar dropdown |
+| WC pages, /value-bets, /matches/*, /live, /accuracy, /bankroll, /learn, /how-it-works, /methodology, /my-picks, /predictions, /recaps, /vs, /welcome, /pricing, /changelog | ❌ Deleted |
 | Stripe checkout/upgrade/portal | ❌ Deleted (webhook retained for 2 legacy subscribers) |
 | Tier matrix (Free/Pro/Elite) | ❌ Deprecated — no paid product right now |
 
