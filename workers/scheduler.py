@@ -2159,8 +2159,18 @@ def main():
     # them takes >5 min on a shared lock (Coolbet session / AF semaphore / DB
     # pool). Staggering doesn't eliminate the underlying shared-resource bug
     # but reduces the worst-case overlap window from 0s to 5min.
-    scheduler.add_job(job_shadow_run_interval, CronTrigger(hour="7-22", minute="10,40"),
-                      id="shadow_interval", name="Shadow Run [30min]")
+    # SHADOW-24H-COVERAGE-2026-08-21: previously "hour=7-22" — created an
+    # 8.5h overnight gap (22:40 UTC → 07:10 UTC) where shadow bots didn't
+    # fire. That missed MLS matches (kick 00:00-06:00 UTC), Australian
+    # A-League (04:00-08:00 UTC), and early Asian kickoffs. Since
+    # BOT-PIN-OU-SHADOW-2026-08-21 our line-shopping shadow bots are pure
+    # Pinnacle-vs-soft-book comparisons (no v10 dependency), so they can
+    # cover ALL continents — but the cron gate was clipping them.
+    #
+    # Cost: minimal. Shadow runners read existing predictions + odds
+    # snapshots from DB, no fresh AF fetches. +16 runs/day (32 → 48).
+    scheduler.add_job(job_shadow_run_interval, CronTrigger(hour="*", minute="10,40"),
+                      id="shadow_interval", name="Shadow Run [30min · 24/7]")
 
     # News checker: 09:00, 12:30, 14:30, 16:30, 18:30 UTC
     # 14:30 added — feeds 15:00 betting (was 2.5h stale)
