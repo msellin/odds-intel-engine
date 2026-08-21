@@ -45,28 +45,50 @@ def main():
     console.print("[bold]SIG-12 — xG overperformance rolling signal[/bold]")
     console.print("Loading per-(match, side) final xG vs goals...")
 
-    # For each match, pick the latest live snapshot with xg_home not null
-    # AND minute closest to full-time. DISTINCT ON (match_id) ORDER BY minute DESC.
+    # FINAL-XG-SETTLEMENT-FIX-2026-08-21: previously read from
+    # live_match_snapshots (populated by LivePoller during play). After
+    # AF-QUOTA-REALLOCATION-2026-08-21 gated off live stats polling, the
+    # feed was: bad coverage (2.8% MFV). Better source: match_stats table
+    # written by settlement's post-FT get_fixture_statistics() call —
+    # covers ~43% of recent settled matches (limited by AF's coverage,
+    # not our polling). Falls back to live_match_snapshots for matches
+    # where match_stats is missing (older matches pre-settlement fix).
     rows = execute_query("""
-        WITH latest_xg AS (
+        WITH settlement_xg AS (
+            SELECT match_id, xg_home, xg_away, 'settlement' AS source
+            FROM match_stats
+            WHERE xg_home IS NOT NULL AND xg_away IS NOT NULL
+        ),
+        live_xg AS (
             SELECT DISTINCT ON (match_id)
-                match_id, xg_home, xg_away, minute, captured_at
+                match_id, xg_home, xg_away, 'live_snapshot' AS source
             FROM live_match_snapshots
-            WHERE xg_home IS NOT NULL
-              AND minute >= 80
+            WHERE xg_home IS NOT NULL AND minute >= 80
             ORDER BY match_id, minute DESC, captured_at DESC
+        ),
+        final_xg AS (
+            SELECT match_id, xg_home, xg_away, source FROM settlement_xg
+            UNION ALL
+            SELECT match_id, xg_home, xg_away, source
+            FROM live_xg
+            WHERE match_id NOT IN (SELECT match_id FROM settlement_xg)
         )
         SELECT
             m.id AS match_id, m.date AS match_date,
             m.home_team_id, m.away_team_id,
             m.score_home, m.score_away,
-            lxg.xg_home, lxg.xg_away
+            fx.xg_home, fx.xg_away, fx.source
         FROM matches m
-        JOIN latest_xg lxg ON lxg.match_id = m.id
+        JOIN final_xg fx ON fx.match_id = m.id
         WHERE m.score_home IS NOT NULL AND m.score_away IS NOT NULL
         ORDER BY m.date ASC
     """)
-    console.print(f"  Loaded {len(rows):,} settled matches with late-game xG")
+    console.print(f"  Loaded {len(rows):,} settled matches with final xG")
+    if rows:
+        source_counts: dict[str, int] = {}
+        for r in rows:
+            source_counts[r.get("source", "?")] = source_counts.get(r.get("source", "?"), 0) + 1
+        console.print(f"  Sources: {source_counts}")
 
     # Per-team chronological list of (match_date, match_id, overperf)
     team_history: dict = defaultdict(list)
