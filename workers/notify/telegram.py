@@ -402,3 +402,102 @@ def send_telegram_to_users(
             log.warning("send_telegram_to_users chat_id=%s failed: %s", chat_id, e)
 
     return sent
+
+
+# ─── Shadow-picks summary (bot channel / operator chat) ─────────────────────
+# SHADOW-TELEGRAM-2026-08-21 — one compact summary per bot per run. Replaces
+# the per-inplay-pick alerts that overwhelmed the operator's channel. Used to
+# spot when a shadow bot fires picks worth manually placing at Coolbet/etc.
+#
+# Rate: one message per bot per shadow-run (~8 msgs/day cap across all
+# shadow bots at current volume). Failure is non-fatal.
+
+_SITE_ROOT_DEFAULT = "https://oddsintel.app"
+
+
+def notify_shadow_picks(bot_name: str, rows: list[dict]) -> str | None:
+    """Post a compact summary of shadow picks written by one bot in one run.
+
+    Args:
+        bot_name: DB name of the shadow bot (e.g. "bot_sweep_ou25_v1")
+        rows: list of pick dicts (as passed to bulk_store_shadow_bets). Each
+              needs match_id, market, selection, odds, model_prob, edge.
+
+    Env gates:
+      SHADOW_TELEGRAM_ENABLED (default "true") — flip to "false" to silence
+      TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID — same as send_telegram
+
+    Returns telegram message_id (as str) or None on skip / failure.
+    """
+    if not rows:
+        return None
+    if os.getenv("SHADOW_TELEGRAM_ENABLED", "true").lower() not in ("true", "1", "yes"):
+        return None
+    if not os.getenv("TELEGRAM_BOT_TOKEN") or not os.getenv("TELEGRAM_CHAT_ID"):
+        return None
+
+    # Batch-fetch match metadata for sample-line rendering. 20 picks → 1 query.
+    meta_by_id: dict[str, dict] = {}
+    try:
+        from workers.api_clients.db import execute_query
+        match_ids = list({str(r["match_id"]) for r in rows if r.get("match_id")})
+        if match_ids:
+            meta_rows = execute_query(
+                """SELECT m.id::text AS id,
+                          COALESCE(ht.name, 'Home') AS home,
+                          COALESCE(at.name, 'Away') AS away,
+                          COALESCE(l.name, '?') AS league,
+                          COALESCE(l.country, '') AS country
+                     FROM matches m
+                     LEFT JOIN teams ht ON ht.id = m.home_team_id
+                     LEFT JOIN teams at ON at.id = m.away_team_id
+                     LEFT JOIN leagues l ON l.id = m.league_id
+                    WHERE m.id = ANY(%s::uuid[])""",
+                (match_ids,),
+            )
+            meta_by_id = {r["id"]: r for r in meta_rows}
+    except Exception:
+        meta_by_id = {}
+
+    site = os.getenv("SITE_URL", _SITE_ROOT_DEFAULT).rstrip("/")
+    detail_url = f"{site}/admin/shadow-bots/{bot_name}"
+    n = len(rows)
+    sample_n = min(3, n)
+    lines: list[str] = [
+        f"🔬 <b>{bot_name}</b> — {n} shadow pick{'s' if n != 1 else ''}"
+    ]
+    for r in rows[:sample_n]:
+        m = meta_by_id.get(str(r.get("match_id", "")), {})
+        home = m.get("home", "Home")
+        away = m.get("away", "Away")
+        market = r.get("market", "?")
+        sel = r.get("selection", "?")
+        odds = r.get("odds")
+        edge = r.get("edge")
+        prob = r.get("model_prob") or r.get("calibrated_prob")
+        min_odds = None
+        try:
+            if prob and float(prob) > 0:
+                thr = float(edge) if edge is not None else 0.05
+                min_odds = (1.0 + thr) / float(prob)
+        except (TypeError, ValueError):
+            pass
+        odds_str = f"@ {float(odds):.2f}" if odds else ""
+        min_str = f" (min ≥{min_odds:.2f})" if min_odds else ""
+        edge_str = f" · edge {float(edge) * 100:+.1f}%" if edge is not None else ""
+        lines.append(
+            f"• {home} vs {away}: {market} {sel} {odds_str}{min_str}{edge_str}"
+        )
+    if n > sample_n:
+        lines.append(f"• +{n - sample_n} more")
+    lines.append(f'<a href="{detail_url}">See ledger →</a>')
+    msg = "\n".join(lines)
+
+    try:
+        return send_telegram(
+            msg,
+            dedup_key=f"shadow-{bot_name}-{rows[0].get('placed_at', '')[:16]}",
+        )
+    except Exception as e:
+        log.warning("notify_shadow_picks(%s) failed: %s", bot_name, e)
+        return None

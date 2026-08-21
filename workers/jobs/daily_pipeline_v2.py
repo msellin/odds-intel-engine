@@ -4048,6 +4048,19 @@ def _run_no_pin_shadow_pass(today_str: str) -> int:
         f"no-anchor {skipped_no_anchor}, edge<8% {skipped_edge}, "
         f"run_id={shadow_run_id[:8]})[/dim]"
     )
+    # SHADOW-TELEGRAM-2026-08-21: post compact summary to operator channel
+    try:
+        from workers.notify.telegram import notify_shadow_picks as _notify
+        # Group written rows by bot_id for per-bot summary posts
+        from collections import defaultdict as _dd2
+        by_bot: dict[str, list[dict]] = _dd2(list)
+        for _r in rows_to_write:
+            by_bot[_r["bot_id"]].append(_r)
+        id_to_name = {v: k for k, v in _active_bots.items()}
+        for bid, brows in by_bot.items():
+            _notify(id_to_name.get(bid, "unknown"), brows)
+    except Exception as _e:
+        console.print(f"[yellow]no-pin shadow: telegram notify failed ({_e})[/yellow]")
     return n
 
 
@@ -4274,6 +4287,12 @@ def _run_sweep_shadow_pass(today_str: str) -> int:
             f"[dim]sweep shadow {cfg['name']}: {n} pick(s) written "
             f"(scored {scored}, run_id={shadow_run_id[:8]})[/dim]"
         )
+        # SHADOW-TELEGRAM-2026-08-21
+        try:
+            from workers.notify.telegram import notify_shadow_picks as _notify
+            _notify(cfg["name"], rows_to_write)
+        except Exception as _e:
+            console.print(f"[yellow]sweep shadow {cfg['name']}: telegram notify failed ({_e})[/yellow]")
         total_written += n
     return total_written
 
@@ -4482,6 +4501,12 @@ def _run_pin_ou_shadow_pass(today_str: str) -> int:
             f"[dim]pin-ou shadow {bot_name}: {n} pick(s) written "
             f"(run_id={shadow_run_id[:8]})[/dim]"
         )
+        # SHADOW-TELEGRAM-2026-08-21
+        try:
+            from workers.notify.telegram import notify_shadow_picks as _notify
+            _notify(bot_name, rows)
+        except Exception as _e:
+            console.print(f"[yellow]pin-ou shadow {bot_name}: telegram notify failed ({_e})[/yellow]")
         total_written += n
     return total_written
 
@@ -4663,6 +4688,12 @@ def _run_pin_1x2_shadow_pass(today_str: str) -> int:
             f"[dim]pin-1x2 shadow {bot_name}: {n} pick(s) written "
             f"(run_id={shadow_run_id[:8]})[/dim]"
         )
+        # SHADOW-TELEGRAM-2026-08-21
+        try:
+            from workers.notify.telegram import notify_shadow_picks as _notify
+            _notify(bot_name, rows)
+        except Exception as _e:
+            console.print(f"[yellow]pin-1x2 shadow {bot_name}: telegram notify failed ({_e})[/yellow]")
         total_written += n
     return total_written
 

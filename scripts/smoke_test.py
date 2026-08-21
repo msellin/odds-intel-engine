@@ -29257,6 +29257,52 @@ def _():
     )
 
 
+@test("SHADOW-TELEGRAM — shadow-pick notifier + inplay gated off")
+def _():
+    """SHADOW-TELEGRAM-2026-08-21 — refactor operator Telegram channel to
+    replace per-inplay-pick noise with per-run shadow-bot summaries. Each
+    shadow-bet writer now posts one compact summary (bot header + sample
+    picks + link to /admin/shadow-bots/<bot>).
+
+    Pins:
+      1. notify_shadow_picks helper exists in workers/notify/telegram.py
+      2. SHADOW_TELEGRAM_ENABLED gate defaults ON
+      3. INPLAY_TELEGRAM_ENABLED gate defaults OFF
+      4. All 4 shadow-bet writers call notify_shadow_picks
+    """
+    tg = _engine_path("workers/notify/telegram.py").read_text()
+    assert "def notify_shadow_picks" in tg, (
+        "workers/notify/telegram.py must define notify_shadow_picks"
+    )
+    assert 'SHADOW_TELEGRAM_ENABLED' in tg and '"true"' in tg, (
+        "notify_shadow_picks must gate on SHADOW_TELEGRAM_ENABLED "
+        "defaulting to 'true' (opt-out, not opt-in)"
+    )
+
+    ip = _engine_path("workers/jobs/inplay_bot.py").read_text()
+    assert 'INPLAY_TELEGRAM_ENABLED' in ip, (
+        "inplay_bot.py must gate the per-pick Telegram post on "
+        "INPLAY_TELEGRAM_ENABLED — otherwise the operator channel "
+        "gets flooded with paper-only inplay noise."
+    )
+    # Default must be off — presence of "false" as the default fallback
+    assert 'INPLAY_TELEGRAM_ENABLED", "false"' in ip, (
+        "INPLAY_TELEGRAM_ENABLED must default to 'false' — reverting "
+        "restores the pre-refactor noise (inplay per-pick posts)."
+    )
+
+    dp = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text()
+    # Count runners that call notify_shadow_picks. Should be 4 hooks for
+    # 4 shadow passes (no_pin, sweep, pin_ou, pin_1x2).
+    hook_count = dp.count("notify_shadow_picks as _notify")
+    assert hook_count >= 4, (
+        f"daily_pipeline_v2.py must call notify_shadow_picks from ≥4 "
+        f"shadow-bet writers (no_pin, sweep, pin_ou, pin_1x2). Found "
+        f"{hook_count} — a runner is missing the hook and its shadow "
+        f"picks won't reach the operator channel."
+    )
+
+
 @test("BOT-NO-PIN-HOME — home-only refined shadow bot replaces bot_no_pin_shadow_v1")
 def _():
     """BOT-NO-PIN-HOME-2026-08-21: audit of bot_no_pin_shadow_v1 revealed

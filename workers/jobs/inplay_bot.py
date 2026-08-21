@@ -399,38 +399,46 @@ def _store_and_notify(
                 f"xG {xg_h:.2f}-{xg_a:.2f}"
                 f"[/bold green]"
             )
-            home = pm.get("home_name") or "?"
-            away = pm.get("away_name") or "?"
-            cb_url = _coolbet_match_url(home, away)
-            from workers.notify.telegram import place_button_markup as _place_btn
-            from workers.notify.telegram import record_bet_alert as _rec_alert
-            _markup = _place_btn(str(bet_id)) if bet_id else None
-            _inplay_text = (
-                f"📡 <b>INPLAY</b> paper bet\n"
-                f"  <b>{home} vs {away}</b>\n"
-                f"  {trigger['market']} {trigger['selection']} @ {trigger['odds']:.2f}\n"
-                f"  edge {trigger['edge']:+.1f}%  ·  min {cand['minute']}  ·  score {cand['score_home']}-{cand['score_away']}\n"
-                f"  bot {bot_name}{src_tag}"
-                + (f"\n  <a href=\"{cb_url}\">Open on Coolbet →</a>" if cb_url else "")
-            )
-            _msg_id = send_telegram(_inplay_text, reply_markup=_markup)
-            if _msg_id and bet_id:
-                import os as _os
-                _prefix = (_os.getenv("TELEGRAM_PREFIX", "[OI]") + " ") if _os.getenv("TELEGRAM_PREFIX", "[OI]") else ""
-                _rec_alert(str(bet_id), _msg_id, _prefix + _inplay_text)
-            _league = pm.get("league_name") or ""
-            _country = pm.get("league_country") or ""
-            _league_str = f"{_country} / {_league}" if _country and _league else _league
-            send_telegram_to_users(
-                f"🔔 <b>Live value bet</b>\n"
-                f"<b>{home} vs {away}</b>\n"
-                f"{trigger['market']} {trigger['selection']} @ {trigger['odds']:.2f}\n"
-                f"{trigger['edge']:+.1f}% edge · min {cand['minute']} ({cand['score_home']}-{cand['score_away']})"
-                + (f" · {_league_str}" if _league_str else "")
-                + f"\n\n{clv_footer_line()}",
-                tier_minimum="pro",
-                dedup_key=f"user-bet-{bet_id}",
-            )
+            # SHADOW-TELEGRAM-2026-08-21: inplay per-pick Telegram posts
+            # env-gated OFF by default. The operator channel was overwhelmed
+            # by per-pick inplay noise, and inplay bots are paper-only
+            # (no delivery mechanism, no revenue). Shadow-bot summaries
+            # replaced this as the operator's new signal. Setting
+            # INPLAY_TELEGRAM_ENABLED=true restores the previous behavior
+            # for future paid in-play launches.
+            import os as _os
+            if _os.getenv("INPLAY_TELEGRAM_ENABLED", "false").lower() in ("true", "1", "yes"):
+                home = pm.get("home_name") or "?"
+                away = pm.get("away_name") or "?"
+                cb_url = _coolbet_match_url(home, away)
+                from workers.notify.telegram import place_button_markup as _place_btn
+                from workers.notify.telegram import record_bet_alert as _rec_alert
+                _markup = _place_btn(str(bet_id)) if bet_id else None
+                _inplay_text = (
+                    f"📡 <b>INPLAY</b> paper bet\n"
+                    f"  <b>{home} vs {away}</b>\n"
+                    f"  {trigger['market']} {trigger['selection']} @ {trigger['odds']:.2f}\n"
+                    f"  edge {trigger['edge']:+.1f}%  ·  min {cand['minute']}  ·  score {cand['score_home']}-{cand['score_away']}\n"
+                    f"  bot {bot_name}{src_tag}"
+                    + (f"\n  <a href=\"{cb_url}\">Open on Coolbet →</a>" if cb_url else "")
+                )
+                _msg_id = send_telegram(_inplay_text, reply_markup=_markup)
+                if _msg_id and bet_id:
+                    _prefix = (_os.getenv("TELEGRAM_PREFIX", "[OI]") + " ") if _os.getenv("TELEGRAM_PREFIX", "[OI]") else ""
+                    _rec_alert(str(bet_id), _msg_id, _prefix + _inplay_text)
+                _league = pm.get("league_name") or ""
+                _country = pm.get("league_country") or ""
+                _league_str = f"{_country} / {_league}" if _country and _league else _league
+                send_telegram_to_users(
+                    f"🔔 <b>Live value bet</b>\n"
+                    f"<b>{home} vs {away}</b>\n"
+                    f"{trigger['market']} {trigger['selection']} @ {trigger['odds']:.2f}\n"
+                    f"{trigger['edge']:+.1f}% edge · min {cand['minute']} ({cand['score_home']}-{cand['score_away']})"
+                    + (f" · {_league_str}" if _league_str else "")
+                    + f"\n\n{clv_footer_line()}",
+                    tier_minimum="pro",
+                    dedup_key=f"user-bet-{bet_id}",
+                )
             return True
     except Exception as e:
         _funnel["store_bet_error"] += 1
