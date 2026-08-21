@@ -154,3 +154,68 @@ bot_opt_home_lower            1152  +10.50%   +9.88%     +0.13   +0.24
 **Important caveat on `bot_btts_all`**: retiring it would give the biggest single hero boost (+2.84pp ROI, +1.59pp CLV). But its **recent 60d ROI is +19%** and CLV +4.8% — it's a bot that had a bad early period and has recovered. Retiring based only on hero-drag would kill a currently-profitable strategy. **Don't retire on hero math alone** — use it as a signal, then check recent trend before pulling the trigger.
 
 The Phase 1 candidates above all satisfy BOTH criteria: hero-drag AND currently-losing 60d/30d.
+
+---
+
+## Actual before/after simulation (2026-08-21, applied against live DB in memory)
+
+Running the retirement list through the live hero query and cache-rebuild logic without touching prod produced:
+
+**Hero cohort (`getCalibratedHeadlineStats`)**
+
+| | BEFORE | AFTER (16 retired) | Δ |
+|---|---:|---:|---:|
+| n | 1,208 | **1,025** | −183 |
+| ROI | +10.37% | **+13.54%** | **+3.17 pp** |
+| CLV mean | +9.64% | +10.06% | +0.42 pp |
+| CLV-beat rate | 80.7% | 81.2% | +0.5 pp |
+| PnL total | €+751 | **€+852** | **+€101** |
+| **Last 30d ROI** | +9.92% | **+22.58%** | **+12.66 pp** ← biggest recent-window impact |
+| Last 30d PnL | €+145 | €+258 | +€113 |
+
+**Leaderboard funnel**
+
+| | BEFORE | AFTER |
+|---|---:|---:|
+| Non-retired non-experimental non-in-play non-CS2 soccer | 14 | 12 |
+| Retired | 35 | 51 |
+| Total tested (excl. experimental) | 49 | 63 |
+
+**90d cumulative PnL curve endpoint**: €+491 → €+550 (+€59) — the chart's trailing peak moves up modestly.
+
+**Hero per-market after retirement**:
+| Market | n | ROI | CLV | PnL |
+|---|---:|---:|---:|---:|
+| 1x2 | 476 | +21.54% | +13.75% | €+603 |
+| o/u | 353 | +12.78% | +6.21% | €+276 |
+| btts | 196 | −2.06% | +4.51% | €−27 |
+
+(BTTS is now the drag — bot_btts_all's historical early-period losses are still counted in the all-time cohort. Its recent 60d is +19% so the drag reverses over time; don't retire on this alone.)
+
+---
+
+## Deploying
+
+Migration file: `supabase/migrations/273_bot_cleanup_2026_08_21.sql` — 5 UPDATEs for the losing bots + 1 batch UPDATE for the 11 CS2 bots. Idempotent (running twice is a no-op).
+
+**Two paths to apply, choose one:**
+
+1. **CI path** — push to main and let `.github/workflows/migrate.yml` handle it (as documented in CLAUDE.md).
+2. **SSH path** — apply directly on VPS if the CI path is broken post-SUPABASE-TO-VPS:
+   ```bash
+   scp supabase/migrations/273_bot_cleanup_2026_08_21.sql root@204.168.199.8:/tmp/
+   ssh root@204.168.199.8 'psql -U oddsintel -d oddsintel -f /tmp/273_bot_cleanup_2026_08_21.sql'
+   ```
+
+**After applying — force fresh dashboard_cache (or wait for 21:00 UTC settlement):**
+```bash
+ssh root@204.168.199.8 'cd /opt/oddsintel && sudo -u oddsintel .venv/bin/python -c "from workers.jobs.settlement import write_dashboard_cache; write_dashboard_cache()"'
+```
+
+**Immediate vs delayed effects:**
+- **Immediate (< 10 min, on next Next.js ISR revalidate):** hero ROI/CLV, bot leaderboard active list, history table cohort filter.
+- **After `write_dashboard_cache()`:** cumulative PnL 30d/90d chart curve, per-bot breakdown in the leaderboard cached data.
+- **Automatic at next 21:00 UTC settlement:** the above happens for free.
+
+**Rollback**: `UPDATE bots SET is_active=true, retired_at=NULL, maturity_label='<previous>' WHERE name IN (...)`. Full previous maturity values are in the bots table history — capture them from a fresh `pg_dump bots` before running the migration if you want a bulletproof revert path.
+
