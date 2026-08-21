@@ -140,15 +140,38 @@ def _build_fixture_meta(target_date: str) -> dict[int, dict]:
 
 
 def fetch_injuries(fixture_meta: dict, coverage_map: dict, target_date: str) -> int:
-    """T3: Fetch and store injuries (single /injuries?date= call)."""
+    """T3: Fetch and store injuries (single /injuries?date= call).
+
+    FEATURE-COVERAGE-BACKFILL-2026-08-21: previously gated storage on
+    `league.coverage_injuries` — but audit found this flag was stale/wrong
+    for the Big-5 leagues (Premier League, Serie A, Bundesliga, Ligue 1
+    all had coverage_injuries=false despite AF definitely serving data
+    for them). Result: injury_severity_score MFV coverage stuck at 1.0%
+    because we bulk-fetched injuries for the whole date, then threw away
+    the response for 435 of 445 leagues.
+
+    New logic: since /injuries?date= is a SINGLE bulk API call (no
+    per-fixture cost), we store injuries for EVERY match with a match_id
+    where AF returned data. If AF has nothing for a fixture, the value
+    is absent from the response — no waste, just genuinely no data.
+    The coverage_injuries flag stays informational but no longer gates
+    writes.
+    """
     console.print("\n[cyan]T3: Fetching injuries (by date, single call)...[/cyan]")
 
-    # Set of fixture IDs we care about (have a match_id and league has coverage)
+    # Every fixture with a resolved match_id is eligible — AF bulk-returns
+    # injuries for all fixtures on that date in ONE call, so per-fixture
+    # filtering saves zero quota. If AF has no data for a fixture, the
+    # response simply omits it (nothing to store, no error).
     eligible_fids = {
         fid for fid, meta in fixture_meta.items()
         if meta.get("match_id")
-        and league_has_coverage(coverage_map, meta.get("league_id", ""), "injuries")
     }
+    # Preserved for reporting/audit only (not for gating writes):
+    covered_by_flag = sum(
+        1 for fid in eligible_fids
+        if league_has_coverage(coverage_map, fixture_meta.get(fid, {}).get("league_id", ""), "injuries")
+    )
 
     if not eligible_fids:
         console.print("  No fixtures eligible for injury fetch")
@@ -160,7 +183,8 @@ def fetch_injuries(fixture_meta: dict, coverage_map: dict, target_date: str) -> 
         console.print(f"  [yellow]Injuries fetch error: {e}[/yellow]")
         return 0
 
-    console.print(f"  {len(eligible_fids)} eligible fixtures, "
+    console.print(f"  {len(eligible_fids)} eligible fixtures "
+                  f"({covered_by_flag} with coverage_injuries=true), "
                   f"{len(injuries_by_fixture)} fixtures with injuries returned")
 
     stored = 0

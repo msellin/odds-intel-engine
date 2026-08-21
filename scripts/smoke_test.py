@@ -29257,6 +29257,50 @@ def _():
     )
 
 
+@test("FEATURE-COVERAGE-INJURIES — coverage_injuries flag no longer gates writes")
+def _():
+    """FEATURE-COVERAGE-BACKFILL-2026-08-21: coverage audit found only
+    1.0% of MFV rows since 2026-08-01 had injury_severity_score_home
+    populated. Root cause: /injuries?date= bulk-returned injury data for
+    every league, but fetch_injuries() threw away 435 of 445 leagues'
+    data because leagues.coverage_injuries was stale/false — including
+    for Premier League, Serie A, Bundesliga, Ligue 1 (AF definitely
+    serves injuries for these). Fix: drop the coverage_injuries gate;
+    store injuries for every fixture where AF returns them. No per-
+    fixture quota cost (bulk endpoint), only more data captured.
+
+    Pins:
+      1. fetch_injuries no longer filters eligible_fids on
+         league_has_coverage(..., 'injuries')
+      2. eligible_fids is derived from match_id presence alone
+    """
+    src = _engine_path("workers/jobs/fetch_enrichment.py").read_text()
+    # Get the fetch_injuries function body
+    import re as _re
+    m = _re.search(
+        r"def fetch_injuries\([^)]*\)[^}]*?\n(?=(?:def |\Z))",
+        src,
+        flags=_re.DOTALL,
+    )
+    body = m.group(0) if m else src
+    # The eligibility filter must NOT gate on league_has_coverage("injuries")
+    # inside the eligible_fids comprehension.
+    eligible_block_match = _re.search(
+        r"eligible_fids\s*=\s*\{[^}]+\}",
+        body,
+        flags=_re.DOTALL,
+    )
+    assert eligible_block_match is not None, "eligible_fids block not found"
+    eligible_block = eligible_block_match.group(0)
+    assert 'league_has_coverage' not in eligible_block, (
+        "fetch_injuries eligible_fids must NOT gate on league_has_coverage — "
+        "the coverage_injuries flag was stale/wrong for Big-5 leagues and "
+        "gating on it dropped injury_severity coverage from ~86% possible "
+        "to 1.0% actual. /injuries?date= is a bulk endpoint, per-league "
+        "filtering saves zero quota."
+    )
+
+
 @test("AF-QUOTA-REALLOCATION — inplay-only polling gated off by default")
 def _():
     """AF-QUOTA-REALLOCATION-2026-08-21 — Aug 1 + Aug 8 both hit
@@ -29304,6 +29348,13 @@ def _():
         "INPLAY_HIGH_PRIORITY_ENABLED env var. Removing the gate "
         "re-enables the 45s stats acceleration that burns ~1,200 "
         "calls/day for paper-only inplay strategy triggering."
+    )
+    assert 'INPLAY_STATS_EVENTS_POLL_ENABLED' in lp, (
+        "live_poller.py must gate the per-match stats+events fetch on "
+        "INPLAY_STATS_EVENTS_POLL_ENABLED. This is the biggest quota "
+        "consumer (~40-60k calls/day on peak match days). No live UI in "
+        "the current product; settlement uses its own final-stats fetch. "
+        "Removing the gate re-enables ~40-60k calls/day for no benefit."
     )
 
 

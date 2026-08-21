@@ -405,8 +405,25 @@ class LivePoller:
             # ── RAIL-11: Determine if this match needs HIGH-priority stats ──
             is_high = self._is_high_priority(match_id, af_fix)
 
-            # Fetch stats on medium interval OR every cycle for HIGH priority
-            fetch_stats_this_cycle = (
+            # Fetch stats on medium interval OR every cycle for HIGH priority.
+            #
+            # AF-QUOTA-REALLOCATION-2026-08-21 (part 2): master gate for the
+            # entire stats/events per-match fetch — the biggest quota consumer
+            # on peak days (~40-60k calls). We poll stats/events for two
+            # historical reasons: (a) hypothetical live match-detail UI —
+            # but there is no such UI in the current product (95% prematch),
+            # (b) inplay strategy triggers — but inplay is paper-only with
+            # no delivery mechanism. Settlement uses its own final-stats
+            # fetch on FT and is unaffected.
+            #
+            # Gate: INPLAY_STATS_EVENTS_POLL_ENABLED (default false). Setting
+            # true restores the previous behaviour. Rollback is one env var.
+            import os as _os
+            stats_polling_enabled = _os.getenv(
+                "INPLAY_STATS_EVENTS_POLL_ENABLED", "false"
+            ).lower() in ("true", "1", "yes")
+
+            fetch_stats_this_cycle = stats_polling_enabled and (
                 is_high or
                 (self._cycle % self.MEDIUM_MULTIPLIER == 0)
             )
