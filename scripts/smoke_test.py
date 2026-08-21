@@ -29024,6 +29024,25 @@ def _():
         "performance/page.tsx must map SanitizedBotBet → FullBetItem so the "
         "history component can render league/market/sort."
     )
+    # PERF-HISTORY-COHORT-MATCH (2026-08-21): history rows must match the
+    # ROI headline cohort (production public strategies) so users don't see
+    # a count mismatch between "+X% ROI n=1,208" and the ledger below.
+    assert "PUBLIC_MATURITY_LABELS" in page and "CALIBRATED_PUBLIC_MARKETS" in page and "CALIBRATED_SINCE" in page, (
+        "performance/page.tsx must import + apply the SAME cohort constants "
+        "used by getCalibratedHeadlineStats so the history reconciles with "
+        "the ROI headline n. Do NOT duplicate the constants — import them."
+    )
+    assert "publicBotNames" in page, (
+        "performance/page.tsx must build a bot-name allowlist from "
+        "PUBLIC_MATURITY_LABELS and filter cohortBets against it — otherwise "
+        "retired/experimental bots leak into the ledger and inflate the count."
+    )
+    engine_data = _web_path("src/lib/engine-data.ts").read_text()
+    for const_name in ("PUBLIC_MATURITY_LABELS", "CALIBRATED_PUBLIC_MARKETS", "CALIBRATED_SINCE"):
+        assert f"export const {const_name}" in engine_data, (
+            f"engine-data.ts must export {const_name} so /performance can "
+            "reuse it — a private constant here means two cohorts drift apart."
+        )
 
     history = _web_path("src/components/performance-history.tsx").read_text()
     assert "leagueFilter" in history, (
