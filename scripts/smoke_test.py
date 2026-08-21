@@ -29257,6 +29257,30 @@ def _():
     )
 
 
+@test("AF-PLAYER-STATS-HOME-FALLBACK — settlement derives home_team_api_id from fixture data")
+def _():
+    """AF-PLAYER-STATS-HOME-ASYMMETRY-FIX-2026-08-21: match_player_stats
+    had home/away asymmetry (5,898 away rows vs 3,760 home rows, 36%
+    gap) because settlement looked up home_team_api_id from
+    match_injuries — but only ~1% of matches had injury data pre-fix
+    (see FEATURE-COVERAGE-BACKFILL). When lookup returned None,
+    parse_fixture_players defaulted ALL players to team_side='away',
+    starving team_avg_player_rating_home.
+
+    Fix: fallback to batch_fix.teams.home.id from the AF fixture data
+    itself (always present in the /fixtures response).
+
+    Pins the fallback presence in settlement.py _enrich_one_match.
+    """
+    src = _engine_path("workers/jobs/settlement.py").read_text()
+    assert 'teams_data.get("home")' in src, (
+        "settlement.py _enrich_one_match must fall back to "
+        "batch_fix['teams']['home']['id'] when match_injuries lookup "
+        "returns None. Removing the fallback re-creates the home/away "
+        "asymmetry that starved team_avg_player_rating_home coverage."
+    )
+
+
 @test("BET365-EXECUTION-AUDIT — Bet365 removed from ACCESSIBLE_BOOKMAKERS")
 def _():
     """BET365-EXECUTION-AUDIT-2026-08-21: audit on 803 settled production

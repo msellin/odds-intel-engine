@@ -585,6 +585,24 @@ def fetch_post_match_enrichment() -> dict:
         result = {"stats": 0, "halftime": 0, "events": 0, "players": 0}
         batch_fix = prefetched.get(af_id)
 
+        # AF-PLAYER-STATS-HOME-ASYMMETRY-FIX-2026-08-21: fallback if the
+        # match_injuries lookup didn't yield a home_team_api_id (~63% of
+        # matches pre-INJURY-FILTER-FIX had no injury data at all, so
+        # this dict was mostly empty → parse_fixture_players defaulted
+        # ALL players to team_side='away'). Extract home team's api_id
+        # from the fixture data itself, which always has it in
+        # teams.home.id. Result: match_player_stats now correctly labels
+        # home vs away, unblocking team_avg_player_rating_home coverage.
+        if home_api_id is None and batch_fix:
+            try:
+                teams_data = batch_fix.get("teams") or {}
+                home_team = teams_data.get("home") or {}
+                fallback = home_team.get("id")
+                if fallback:
+                    home_api_id = int(fallback)
+            except (TypeError, ValueError):
+                pass
+
         # T4 + Full stats — use batch data if available, fall back to individual call
         try:
             if batch_fix and batch_fix.get("statistics"):
