@@ -3758,44 +3758,43 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         except Exception as e:
             console.print(f"[yellow]Acca bot failed (non-critical): {e}[/yellow]")
 
-    # BOT-NO-PIN-SHADOW-2026-08-18 Phase 1 — log shadow bets on matches
-    # without Pinnacle coverage (data collection only, no real placement).
-    # Morning cohort only; refresh cohorts don't materially change the
-    # accessible-book best price on already-scored matches.
-    if cohort in (None, "morning") and not shadow_mode:
+    # SHADOW-BOTS-MULTI-COHORT-2026-08-21: shadow-bet writers now fire on
+    # BOTH the morning cohort AND the 30-min shadow_mode refresh runs
+    # (07-22 UTC). Rationale: line-shopping edge (Pinnacle vs soft books)
+    # appears and disappears throughout the day as soft books catch up.
+    # Morning-only firing missed those windows.
+    #
+    # DB deduplication: bulk_store_shadow_bets ON CONFLICT (shadow_cohort,
+    # bot_id, match_id, market, selection). Since shadow_cohort tags each
+    # refresh run with 'HHMM', the same pick DOES get written per cohort
+    # it survives in — useful for tracking odds-drift persistence.
+    #
+    # Telegram: notify_shadow_picks only fires on morning runs by default
+    # (via the is_morning_run flag below) so the operator channel doesn't
+    # get flooded with 30+ messages/day per bot. Set SHADOW_TELEGRAM_ALL_COHORTS=true
+    # to also post per-refresh summaries.
+    _is_morning_run = cohort in (None, "morning") and not shadow_mode
+    _run_shadow_now = _is_morning_run or shadow_mode
+    # Cohort tag stored on each shadow_bets row. 'morning' for the daily
+    # scan, 'HHMM' UTC for refresh runs so ON CONFLICT dedup is by-window
+    # (same pick appearing in 3 refresh windows = 3 rows tracking drift).
+    _shadow_cohort_tag: str = (shadow_cohort if shadow_mode else "morning")
+
+    if _run_shadow_now:
         try:
-            _run_no_pin_shadow_pass(today_str)
+            _run_no_pin_shadow_pass(today_str, _shadow_cohort_tag, notify_telegram=_is_morning_run)
         except Exception as e:
             console.print(f"[yellow]No-pin shadow bot failed (non-critical): {e}[/yellow]")
-
-    # CONFIG-SWEEP-2026-08-19 Phase D — three shadow bots derived from
-    # the walk-forward parameter sweep (tier 2-3 leagues, 1X2 home /
-    # 1X2 draw / BTTS yes). Data-collection only, writes to shadow_bets.
-    # See dev/active/config-sweep-2026-08-19-report.md.
-    if cohort in (None, "morning") and not shadow_mode:
         try:
-            _run_sweep_shadow_pass(today_str)
+            _run_sweep_shadow_pass(today_str, _shadow_cohort_tag, notify_telegram=_is_morning_run)
         except Exception as e:
             console.print(f"[yellow]Sweep shadow bots failed (non-critical): {e}[/yellow]")
-
-    # BOT-PIN-OU-SHADOW-2026-08-21 — two shadow bots for OU 2.5 / OU 3.5
-    # where Pinnacle has odds. Analog to bot_no_pin_shadow_v1 (1X2 without
-    # Pinnacle) but for the INVERSE case: OU with Pinnacle but without v10
-    # model. Existing OU picks require v10 model coverage which is thin;
-    # this bot captures the 98% gap.
-    if cohort in (None, "morning") and not shadow_mode:
         try:
-            _run_pin_ou_shadow_pass(today_str)
+            _run_pin_ou_shadow_pass(today_str, _shadow_cohort_tag, notify_telegram=_is_morning_run)
         except Exception as e:
             console.print(f"[yellow]Pin-OU shadow bots failed (non-critical): {e}[/yellow]")
-
-    # BOT-PIN-1X2-SHADOW-2026-08-21 — closes the (Pinnacle × model × 1X2)
-    # coverage grid. Home wins in tier 1-2, draws in tier 4 — the two
-    # slices where pure line-shopping shows real ROI in the historical
-    # audit. Same design as the OU bots (no model dependency).
-    if cohort in (None, "morning") and not shadow_mode:
         try:
-            _run_pin_1x2_shadow_pass(today_str)
+            _run_pin_1x2_shadow_pass(today_str, _shadow_cohort_tag, notify_telegram=_is_morning_run)
         except Exception as e:
             console.print(f"[yellow]Pin-1X2 shadow bots failed (non-critical): {e}[/yellow]")
 
@@ -3806,7 +3805,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
     write_ops_snapshot(today_str)
 
 
-def _run_no_pin_shadow_pass(today_str: str) -> int:
+def _run_no_pin_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_telegram: bool = True) -> int:
     """BOT-NO-PIN-SHADOW-2026-08-18 Phase 1 — shadow-log 1X2 picks on
     matches WITHOUT Pinnacle coverage.
 
@@ -4038,29 +4037,28 @@ def _run_no_pin_shadow_pass(today_str: str) -> int:
 
     shadow_run_id = str(_uuid.uuid4())
     try:
-        n = bulk_store_shadow_bets(rows_to_write, shadow_run_id, "morning")
+        n = bulk_store_shadow_bets(rows_to_write, shadow_run_id, cohort_tag)
     except Exception as e:
         console.print(f"[yellow]no-pin shadow: write failed ({e})[/yellow]")
         return 0
     console.print(
-        f"[dim]no-pin shadow: {n} pick(s) written "
+        f"[dim]no-pin shadow [{cohort_tag}]: {n} pick(s) written "
         f"(scored {scored}, fallback-prob {skipped_fallback}, "
         f"no-anchor {skipped_no_anchor}, edge<8% {skipped_edge}, "
         f"run_id={shadow_run_id[:8]})[/dim]"
     )
-    # SHADOW-TELEGRAM-2026-08-21: post compact summary to operator channel
-    try:
-        from workers.notify.telegram import notify_shadow_picks as _notify
-        # Group written rows by bot_id for per-bot summary posts
-        from collections import defaultdict as _dd2
-        by_bot: dict[str, list[dict]] = _dd2(list)
-        for _r in rows_to_write:
-            by_bot[_r["bot_id"]].append(_r)
-        id_to_name = {v: k for k, v in _active_bots.items()}
-        for bid, brows in by_bot.items():
-            _notify(id_to_name.get(bid, "unknown"), brows)
-    except Exception as _e:
-        console.print(f"[yellow]no-pin shadow: telegram notify failed ({_e})[/yellow]")
+    if notify_telegram:
+        try:
+            from workers.notify.telegram import notify_shadow_picks as _notify
+            from collections import defaultdict as _dd2
+            by_bot: dict[str, list[dict]] = _dd2(list)
+            for _r in rows_to_write:
+                by_bot[_r["bot_id"]].append(_r)
+            id_to_name = {v: k for k, v in _active_bots.items()}
+            for bid, brows in by_bot.items():
+                _notify(id_to_name.get(bid, "unknown"), brows)
+        except Exception as _e:
+            console.print(f"[yellow]no-pin shadow: telegram notify failed ({_e})[/yellow]")
     return n
 
 
@@ -4116,7 +4114,7 @@ _SWEEP_SHADOW_CONFIGS: tuple[dict, ...] = (
 )
 
 
-def _run_sweep_shadow_pass(today_str: str) -> int:
+def _run_sweep_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_telegram: bool = True) -> int:
     """CONFIG-SWEEP-2026-08-19 Phase D — shadow-log picks for the three
     sweep-derived configs (1X2 home / 1X2 draw / BTTS yes, all tier 2-3).
     Writes to shadow_bets only, never touches simulated_bets or bankroll.
@@ -4279,20 +4277,20 @@ def _run_sweep_shadow_pass(today_str: str) -> int:
             continue
         shadow_run_id = str(_uuid.uuid4())
         try:
-            n = bulk_store_shadow_bets(rows_to_write, shadow_run_id, "morning")
+            n = bulk_store_shadow_bets(rows_to_write, shadow_run_id, cohort_tag)
         except Exception as e:
             console.print(f"[yellow]sweep shadow {cfg['name']}: write failed ({e})[/yellow]")
             continue
         console.print(
-            f"[dim]sweep shadow {cfg['name']}: {n} pick(s) written "
+            f"[dim]sweep shadow {cfg['name']} [{cohort_tag}]: {n} pick(s) written "
             f"(scored {scored}, run_id={shadow_run_id[:8]})[/dim]"
         )
-        # SHADOW-TELEGRAM-2026-08-21
-        try:
-            from workers.notify.telegram import notify_shadow_picks as _notify
-            _notify(cfg["name"], rows_to_write)
-        except Exception as _e:
-            console.print(f"[yellow]sweep shadow {cfg['name']}: telegram notify failed ({_e})[/yellow]")
+        if notify_telegram:
+            try:
+                from workers.notify.telegram import notify_shadow_picks as _notify
+                _notify(cfg["name"], rows_to_write)
+            except Exception as _e:
+                console.print(f"[yellow]sweep shadow {cfg['name']}: telegram notify failed ({_e})[/yellow]")
         total_written += n
     return total_written
 
@@ -4318,7 +4316,7 @@ _PIN_OU_MAX_VIG = 0.10       # skip if Pinnacle's implied prob sum > 1.10 (10% v
 _PIN_OU_OUTLIER_MULT = 1.30  # reject soft-book odds > anchor × 1.30 (matches ODDS-OUTLIER-FILTER for OU)
 
 
-def _run_pin_ou_shadow_pass(today_str: str) -> int:
+def _run_pin_ou_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_telegram: bool = True) -> int:
     """BOT-PIN-OU-SHADOW-2026-08-21 — shadow-log OU 2.5 + OU 3.5 picks
     on matches where Pinnacle has odds but existing bots don't fire.
 
@@ -4493,20 +4491,20 @@ def _run_pin_ou_shadow_pass(today_str: str) -> int:
     for bot_name, rows in rows_by_bot.items():
         shadow_run_id = str(_uuid.uuid4())
         try:
-            n = bulk_store_shadow_bets(rows, shadow_run_id, "morning")
+            n = bulk_store_shadow_bets(rows, shadow_run_id, cohort_tag)
         except Exception as e:
             console.print(f"[yellow]pin-ou shadow {bot_name}: write failed ({e})[/yellow]")
             continue
         console.print(
-            f"[dim]pin-ou shadow {bot_name}: {n} pick(s) written "
+            f"[dim]pin-ou shadow {bot_name} [{cohort_tag}]: {n} pick(s) written "
             f"(run_id={shadow_run_id[:8]})[/dim]"
         )
-        # SHADOW-TELEGRAM-2026-08-21
-        try:
-            from workers.notify.telegram import notify_shadow_picks as _notify
-            _notify(bot_name, rows)
-        except Exception as _e:
-            console.print(f"[yellow]pin-ou shadow {bot_name}: telegram notify failed ({_e})[/yellow]")
+        if notify_telegram:
+            try:
+                from workers.notify.telegram import notify_shadow_picks as _notify
+                _notify(bot_name, rows)
+            except Exception as _e:
+                console.print(f"[yellow]pin-ou shadow {bot_name}: telegram notify failed ({_e})[/yellow]")
         total_written += n
     return total_written
 
@@ -4534,7 +4532,7 @@ _PIN_1X2_ODDS_MAX = 6.00
 _PIN_1X2_OUTLIER_MULT = 1.35  # non-Pinnacle offer capped at Pin × 1.35 (matches ODDS-OUTLIER-FILTER for 1x2)
 
 
-def _run_pin_1x2_shadow_pass(today_str: str) -> int:
+def _run_pin_1x2_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_telegram: bool = True) -> int:
     """BOT-PIN-1X2-SHADOW-2026-08-21 — shadow-log 1X2 picks on matches
     where Pinnacle has 1X2 odds. Pure line-shopping — no model dep.
 
@@ -4680,20 +4678,20 @@ def _run_pin_1x2_shadow_pass(today_str: str) -> int:
     for bot_name, rows in rows_by_bot.items():
         shadow_run_id = str(_uuid.uuid4())
         try:
-            n = bulk_store_shadow_bets(rows, shadow_run_id, "morning")
+            n = bulk_store_shadow_bets(rows, shadow_run_id, cohort_tag)
         except Exception as e:
             console.print(f"[yellow]pin-1x2 shadow {bot_name}: write failed ({e})[/yellow]")
             continue
         console.print(
-            f"[dim]pin-1x2 shadow {bot_name}: {n} pick(s) written "
+            f"[dim]pin-1x2 shadow {bot_name} [{cohort_tag}]: {n} pick(s) written "
             f"(run_id={shadow_run_id[:8]})[/dim]"
         )
-        # SHADOW-TELEGRAM-2026-08-21
-        try:
-            from workers.notify.telegram import notify_shadow_picks as _notify
-            _notify(bot_name, rows)
-        except Exception as _e:
-            console.print(f"[yellow]pin-1x2 shadow {bot_name}: telegram notify failed ({_e})[/yellow]")
+        if notify_telegram:
+            try:
+                from workers.notify.telegram import notify_shadow_picks as _notify
+                _notify(bot_name, rows)
+            except Exception as _e:
+                console.print(f"[yellow]pin-1x2 shadow {bot_name}: telegram notify failed ({_e})[/yellow]")
         total_written += n
     return total_written
 
