@@ -3778,6 +3778,17 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         except Exception as e:
             console.print(f"[yellow]Sweep shadow bots failed (non-critical): {e}[/yellow]")
 
+    # BOT-PIN-OU-SHADOW-2026-08-21 — two shadow bots for OU 2.5 / OU 3.5
+    # where Pinnacle has odds. Analog to bot_no_pin_shadow_v1 (1X2 without
+    # Pinnacle) but for the INVERSE case: OU with Pinnacle but without v10
+    # model. Existing OU picks require v10 model coverage which is thin;
+    # this bot captures the 98% gap.
+    if cohort in (None, "morning") and not shadow_mode:
+        try:
+            _run_pin_ou_shadow_pass(today_str)
+        except Exception as e:
+            console.print(f"[yellow]Pin-OU shadow bots failed (non-critical): {e}[/yellow]")
+
     # 11.6: Cross-match correlation check — warn about concentrated exposure
     _check_exposure_concentration()
 
@@ -4230,6 +4241,214 @@ def _run_sweep_shadow_pass(today_str: str) -> int:
         console.print(
             f"[dim]sweep shadow {cfg['name']}: {n} pick(s) written "
             f"(scored {scored}, run_id={shadow_run_id[:8]})[/dim]"
+        )
+        total_written += n
+    return total_written
+
+
+# BOT-PIN-OU-SHADOW-2026-08-21 — two OU shadow bots (2.5 + 3.5) for the
+# inverse case of bot_no_pin_shadow_v1: matches where Pinnacle HAS OU odds
+# but existing bots don't fire because they depend on v10 model coverage.
+_PIN_OU_SHADOW_CONFIGS: tuple[dict, ...] = (
+    {
+        "name": "bot_sweep_ou25_v1",
+        "market": "over_under_25",
+    },
+    {
+        "name": "bot_sweep_ou35_v1",
+        "market": "over_under_35",
+    },
+)
+
+_PIN_OU_EDGE_MIN = 0.08
+_PIN_OU_ODDS_MIN = 1.30
+_PIN_OU_ODDS_MAX = 5.00
+_PIN_OU_MAX_VIG = 0.10       # skip if Pinnacle's implied prob sum > 1.10 (10% vig)
+_PIN_OU_OUTLIER_MULT = 1.30  # reject soft-book odds > anchor × 1.30 (matches ODDS-OUTLIER-FILTER for OU)
+
+
+def _run_pin_ou_shadow_pass(today_str: str) -> int:
+    """BOT-PIN-OU-SHADOW-2026-08-21 — shadow-log OU 2.5 + OU 3.5 picks
+    on matches where Pinnacle has odds but existing bots don't fire.
+
+    Pure Pinnacle-vs-soft-book line-shopping: no v10 model dependency,
+    no shrinkage step. edge = best_soft_book_odds × Pinnacle_implied - 1.
+
+    Fires when:
+      - Pinnacle has both over + under odds (need both for vig check)
+      - Combined Pinnacle implied prob ≤ 1.10 (max 10% vig)
+      - ≥1 accessible-book offer for the same selection
+      - Best soft-book odds in [1.30, 5.00]
+      - Best soft-book odds ≤ 1.30 × Pinnacle odds (outlier guard —
+        mirrors ODDS-OUTLIER-FILTER-2026-08-18 for OU markets)
+      - edge (best_soft × pin_implied - 1) ≥ 8%
+
+    Writes to shadow_bets only. Never simulated_bets, never bankroll.
+    Promotion gate: n≥50 AND ROI ≥ +3% → beta. Kill: ROI ≤ -8% at n≥50.
+    """
+    from workers.api_clients.db import execute_query
+    from workers.api_clients.supabase_client import bulk_store_shadow_bets
+    import uuid as _uuid
+    from collections import defaultdict as _dd
+
+    # Resolve bot IDs; skip if not registered yet
+    bot_ids: dict[str, str] = {}
+    for cfg in _PIN_OU_SHADOW_CONFIGS:
+        bid = _get_bot_id_by_name(cfg["name"])
+        if bid:
+            bot_ids[cfg["name"]] = bid
+    if not bot_ids:
+        console.print("[dim]pin-ou shadow: no bots registered — skip[/dim]")
+        return 0
+
+    next_day_str = _next_day(today_str)
+
+    # 1. Today's scheduled matches (kickoff still in future)
+    matches_raw = execute_query(
+        """SELECT id::text AS id, date FROM matches
+           WHERE date >= %s AND date < %s AND status = 'scheduled'""",
+        (f"{today_str}T00:00:00Z", f"{next_day_str}T00:00:00Z"),
+    )
+    if not matches_raw:
+        return 0
+    now_utc = datetime.now(timezone.utc)
+    match_ids: list[str] = []
+    for m in matches_raw:
+        try:
+            ko = datetime.fromisoformat(str(m["date"]).replace("Z", "+00:00"))
+            if ko.tzinfo is None:
+                ko = ko.replace(tzinfo=timezone.utc)
+        except (ValueError, AttributeError):
+            match_ids.append(str(m["id"]))
+            continue
+        if ko > now_utc:
+            match_ids.append(str(m["id"]))
+    if not match_ids:
+        return 0
+
+    # 2. Load latest OU odds for both markets (over_under_25 + over_under_35).
+    # Filter to accessible books + Pinnacle (Pinnacle is the anchor, not
+    # in ACCESSIBLE_BOOKMAKERS for placement but always kept as sharp ref).
+    markets_wanted = tuple(cfg["market"] for cfg in _PIN_OU_SHADOW_CONFIGS)
+    odds_raw = execute_query(
+        """SELECT DISTINCT ON (match_id, market, selection, bookmaker)
+                  match_id::text AS match_id, market, selection, bookmaker, odds
+             FROM odds_snapshots
+            WHERE match_id = ANY(%s::uuid[])
+              AND is_closing = false
+              AND market = ANY(%s::text[])
+              AND bookmaker = ANY(%s::text[])
+            ORDER BY match_id, market, selection, bookmaker, timestamp DESC""",
+        (
+            match_ids,
+            list(markets_wanted),
+            list(ACCESSIBLE_BOOKMAKERS),  # includes Pinnacle
+        ),
+    )
+    if not odds_raw:
+        return 0
+
+    # 3. Structure: {market: {match_id: {selection: {bookmaker: odds}}}}
+    grouped: dict[str, dict[str, dict[str, dict[str, float]]]] = _dd(lambda: _dd(lambda: _dd(dict)))
+    for row in odds_raw:
+        try:
+            odds_val = float(row["odds"])
+        except (TypeError, ValueError):
+            continue
+        mkt = row["market"]
+        mid = row["match_id"]
+        sel = str(row["selection"]).lower()
+        if sel not in ("over", "under"):
+            continue
+        grouped[mkt][mid][sel][row["bookmaker"]] = odds_val
+
+    # 4. Score each (market, match). Both bots share the same scoring logic
+    # — only market string differs. Fire per-market bot on that market's picks.
+    now_iso = now_utc.isoformat()
+    rows_by_bot: dict[str, list[dict]] = _dd(list)
+    stats = {"scored": 0, "no_pin": 0, "high_vig": 0, "no_soft": 0,
+             "outlier": 0, "odds_range": 0, "low_edge": 0}
+
+    for cfg in _PIN_OU_SHADOW_CONFIGS:
+        mkt = cfg["market"]
+        bid = bot_ids.get(cfg["name"])
+        if not bid:
+            continue
+        for mid, sels in grouped.get(mkt, {}).items():
+            over_books = sels.get("over") or {}
+            under_books = sels.get("under") or {}
+            pin_over = over_books.get("Pinnacle")
+            pin_under = under_books.get("Pinnacle")
+            if not pin_over or not pin_under or pin_over <= 1.0 or pin_under <= 1.0:
+                stats["no_pin"] += 1
+                continue
+            # Vig guard — Pinnacle's total implied should sum ~1.02-1.06
+            total_implied = (1.0 / pin_over) + (1.0 / pin_under)
+            if total_implied > (1.0 + _PIN_OU_MAX_VIG):
+                stats["high_vig"] += 1
+                continue
+
+            # Score each side (over + under)
+            for sel, pin_odds in (("over", pin_over), ("under", pin_under)):
+                accessible = over_books if sel == "over" else under_books
+                # Best non-Pinnacle offer among accessible books
+                soft_offers = [
+                    (bm, o) for bm, o in accessible.items() if bm != "Pinnacle"
+                ]
+                if not soft_offers:
+                    stats["no_soft"] += 1
+                    continue
+                best_bm, best_odds = max(soft_offers, key=lambda x: x[1])
+                # Outlier guard — best_odds must not exceed Pinnacle × 1.30
+                if best_odds > pin_odds * _PIN_OU_OUTLIER_MULT:
+                    stats["outlier"] += 1
+                    continue
+                if not (_PIN_OU_ODDS_MIN <= best_odds <= _PIN_OU_ODDS_MAX):
+                    stats["odds_range"] += 1
+                    continue
+
+                pin_implied = 1.0 / pin_odds
+                edge = best_odds * pin_implied - 1.0
+                if edge < _PIN_OU_EDGE_MIN:
+                    stats["low_edge"] += 1
+                    continue
+
+                stats["scored"] += 1
+                rows_by_bot[cfg["name"]].append({
+                    "bot_id": bid,
+                    "match_id": mid,
+                    "market": mkt,
+                    "selection": sel,
+                    "odds": best_odds,
+                    "model_prob": pin_implied,   # Pinnacle-implied stands in for model_prob
+                    "calibrated_prob": pin_implied,
+                    "edge": round(edge, 4),
+                    "kelly_fraction": None,
+                    "placed_at": now_iso,
+                    "timing_cohort": "morning",
+                    "recommended_bookmaker": best_bm,
+                })
+
+    if not rows_by_bot:
+        console.print(
+            f"[dim]pin-ou shadow: 0 picks (no_pin {stats['no_pin']}, "
+            f"high_vig {stats['high_vig']}, no_soft {stats['no_soft']}, "
+            f"outlier {stats['outlier']}, odds_range {stats['odds_range']}, "
+            f"low_edge {stats['low_edge']})[/dim]"
+        )
+        return 0
+
+    total_written = 0
+    for bot_name, rows in rows_by_bot.items():
+        shadow_run_id = str(_uuid.uuid4())
+        try:
+            n = bulk_store_shadow_bets(rows, shadow_run_id, "morning")
+        except Exception as e:
+            console.print(f"[yellow]pin-ou shadow {bot_name}: write failed ({e})[/yellow]")
+            continue
+        console.print(
+            f"[dim]pin-ou shadow {bot_name}: {n} pick(s) written "
+            f"(run_id={shadow_run_id[:8]})[/dim]"
         )
         total_written += n
     return total_written

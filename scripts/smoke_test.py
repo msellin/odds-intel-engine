@@ -29257,6 +29257,51 @@ def _():
     )
 
 
+@test("BOT-PIN-OU-SHADOW — OU 2.5 + OU 3.5 shadow bots present + migration registered")
+def _():
+    """BOT-PIN-OU-SHADOW-2026-08-21 — two shadow bots fire on OU 2.5 +
+    OU 3.5 where Pinnacle has odds but existing bots don't fire due to
+    v10 model coverage. Analog to bot_no_pin_shadow_v1 (Aug 18, 1x2
+    without Pinnacle).
+
+    Historical simulation showed 3,308 tier-1-4 OU 2.5 picks at 8%+
+    edge in past 3.5 months; only 45 (1.4%) were actually taken by
+    production bots. OU 3.5 similar gap. Expected shadow volume from
+    tomorrow forward: ~30-60 picks/day combined.
+
+    Pins:
+      1. Two configs in _PIN_OU_SHADOW_CONFIGS (bot_sweep_ou25_v1 + ou35_v1)
+      2. Runner function _run_pin_ou_shadow_pass exists
+      3. Hooked into run_morning (cohort in [None,'morning'] gate)
+      4. Migration 274 registers both bots with maturity_label='experimental'
+    """
+    src = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text()
+    assert '_PIN_OU_SHADOW_CONFIGS' in src, (
+        "_PIN_OU_SHADOW_CONFIGS must be defined in daily_pipeline_v2.py"
+    )
+    for expected_name in ("bot_sweep_ou25_v1", "bot_sweep_ou35_v1"):
+        assert f'"{expected_name}"' in src, (
+            f"config for {expected_name} missing from _PIN_OU_SHADOW_CONFIGS"
+        )
+    assert "def _run_pin_ou_shadow_pass" in src, (
+        "runner _run_pin_ou_shadow_pass must be defined"
+    )
+    assert "_run_pin_ou_shadow_pass(today_str)" in src, (
+        "run_morning must call _run_pin_ou_shadow_pass — otherwise the "
+        "bot exists but never fires."
+    )
+    # Migration existence
+    mig = _engine_path("supabase/migrations/274_bot_pin_ou_shadow.sql").read_text()
+    for expected_name in ("bot_sweep_ou25_v1", "bot_sweep_ou35_v1"):
+        assert expected_name in mig, (
+            f"migration 274 must INSERT bot {expected_name}"
+        )
+    assert "'experimental'" in mig, (
+        "shadow bots must ship as maturity_label='experimental' — writes "
+        "to shadow_bets only, never simulated_bets or bankroll."
+    )
+
+
 @test("AF-PLAYER-STATS-HOME-FALLBACK — settlement derives home_team_api_id from fixture data")
 def _():
     """AF-PLAYER-STATS-HOME-ASYMMETRY-FIX-2026-08-21: match_player_stats
