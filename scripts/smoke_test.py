@@ -29257,6 +29257,46 @@ def _():
     )
 
 
+@test("BOT-NO-PIN-HOME — home-only refined shadow bot replaces bot_no_pin_shadow_v1")
+def _():
+    """BOT-NO-PIN-HOME-2026-08-21: audit of bot_no_pin_shadow_v1 revealed
+    home picks won (n=42 ROI +32.7%) while draw + away lost (-25%, -18%).
+    Ships home-only refined bot_no_pin_home_v1 to capture just the
+    winning slice. Migrations 276 (retire) + 277 (ship home).
+
+    Pins:
+      1. Migration 277 registers bot_no_pin_home_v1
+      2. Migration 276 retires bot_no_pin_shadow_v1 + bot_acca_leg_shadow
+      3. _run_no_pin_shadow_pass writes home-selection rows to home_v1
+      4. Runner filters to only active bots (retired ones skip)
+    """
+    mig_retire = _engine_path("supabase/migrations/276_retire_shadow_bots_2026_08_21.sql").read_text()
+    assert "bot_no_pin_shadow_v1" in mig_retire and "is_active = FALSE" in mig_retire, (
+        "migration 276 must retire bot_no_pin_shadow_v1"
+    )
+    assert "bot_acca_leg_shadow" in mig_retire, (
+        "migration 276 must retire bot_acca_leg_shadow"
+    )
+
+    mig_home = _engine_path("supabase/migrations/277_bot_no_pin_home.sql").read_text()
+    assert "bot_no_pin_home_v1" in mig_home and "experimental" in mig_home, (
+        "migration 277 must register bot_no_pin_home_v1 as experimental"
+    )
+
+    src = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text()
+    # Runner must route home-only picks to home_v1
+    assert 'if home_bot_id and sel_lower == "home"' in src, (
+        "no-pin runner must route home selections to bot_no_pin_home_v1. "
+        "Removing this check would fire home_v1 on all selections, "
+        "replicating the losing draw/away picks it was designed to avoid."
+    )
+    # Runner must filter to active bots only
+    assert "is_active = TRUE AND retired_at IS NULL" in src, (
+        "no-pin runner must filter to active bots — otherwise the retired "
+        "bot_no_pin_shadow_v1 would continue writing shadow_bets."
+    )
+
+
 @test("BOT-PIN-1X2-SHADOW — 1x2 line-shopping shadow bots (home t1-2 + draw t4)")
 def _():
     """BOT-PIN-1X2-SHADOW-2026-08-21 — closes the (Pinnacle × model × 1X2)

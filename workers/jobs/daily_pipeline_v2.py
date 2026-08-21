@@ -3828,10 +3828,26 @@ def _run_no_pin_shadow_pass(today_str: str) -> int:
     import uuid as _uuid
     from collections import defaultdict as _dd
 
-    bot_id = _get_bot_id_by_name("bot_no_pin_shadow_v1")
-    if not bot_id:
-        console.print("[dim]no-pin shadow: bot_no_pin_shadow_v1 not registered — skip[/dim]")
+    # BOT-NO-PIN-HOME-2026-08-21: bot_no_pin_shadow_v1 retired 2026-08-21
+    # (audit showed draw/away picks were loss-making, only home won).
+    # Refined bot_no_pin_home_v1 replaces it — home-only, same edge
+    # threshold. Both bots looked up here so if either is active we fire
+    # to it. Filter to only active bots — retired bots skip.
+    from workers.api_clients.db import execute_query as _eq
+    _bot_rows = _eq(
+        """SELECT id::text AS id, name FROM bots
+           WHERE name IN ('bot_no_pin_shadow_v1','bot_no_pin_home_v1')
+             AND is_active = TRUE AND retired_at IS NULL"""
+    )
+    _active_bots = {r["name"]: r["id"] for r in _bot_rows}
+    if not _active_bots:
+        console.print("[dim]no-pin shadow: no active bots registered — skip[/dim]")
         return 0
+    legacy_bot_id = _active_bots.get("bot_no_pin_shadow_v1")
+    home_bot_id = _active_bots.get("bot_no_pin_home_v1")
+    # bot_id used by the rest of this function stays pointed at legacy
+    # if active, else home. Selection filter applied at write time below.
+    bot_id = legacy_bot_id or home_bot_id
 
     next_day_str = _next_day(today_str)
 
@@ -3991,20 +4007,26 @@ def _run_no_pin_shadow_pass(today_str: str) -> int:
                 skipped_edge += 1
                 continue
             scored += 1
-            rows_to_write.append({
-                "bot_id": bot_id,
+            # BOT-NO-PIN-HOME-2026-08-21 routing:
+            #   legacy bot (bot_no_pin_shadow_v1) — writes ALL selections (may be retired)
+            #   home bot   (bot_no_pin_home_v1)   — writes ONLY home selections
+            base_row = {
                 "match_id": mid,
                 "market": "1x2",
                 "selection": sel_lower,
                 "odds": best_odds,
                 "model_prob": prob,
-                "calibrated_prob": prob,  # ensemble output — no separate Platt calibration for this shadow
+                "calibrated_prob": prob,  # ensemble output — no Platt on this shadow
                 "edge": round(edge, 4),
                 "kelly_fraction": None,
                 "placed_at": now_iso,
                 "timing_cohort": "morning",
                 "recommended_bookmaker": best_book,
-            })
+            }
+            if legacy_bot_id:
+                rows_to_write.append({**base_row, "bot_id": legacy_bot_id})
+            if home_bot_id and sel_lower == "home":
+                rows_to_write.append({**base_row, "bot_id": home_bot_id})
 
     if not rows_to_write:
         console.print(
