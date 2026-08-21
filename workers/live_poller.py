@@ -45,7 +45,13 @@ class LivePoller:
     FAST_INTERVAL = 45       # Bulk fixtures + odds when live matches exist
     IDLE_INTERVAL = 120      # Poll interval when no live matches — saves API budget while still
                              # catching any match that kicks off within ~2 min
-    MEDIUM_MULTIPLIER = 3    # Stats every 3rd fast cycle (= 135s at 45s fast)
+    # AF-QUOTA-REALLOCATION-2026-08-21: stats/events cadence widened from
+    # 135s (3× fast) to 180s (4× fast). Saves ~4,000 calls/day (~5% quota
+    # headroom). No settlement impact — F/T is caught via the 45s bulk
+    # /fixtures live feed regardless. Only downstream cost: inplay xG
+    # snapshots update 45s slower during live matches. Inplay bots are
+    # paper-only with no real-money delivery, so this is loss-of-nothing.
+    MEDIUM_MULTIPLIER = 4    # Stats every 4th fast cycle (= 180s at 45s fast)
     SLOW_MULTIPLIER = 10     # Lineups every 10th fast cycle (= 7.5min at 45s fast)
 
     # Active bet refresh: refresh the set of match_ids with pending bets
@@ -135,22 +141,29 @@ class LivePoller:
             console.print(f"[yellow]LivePoller: failed to refresh active bets: {e}[/yellow]")
 
     def _is_high_priority(self, match_id: str, af_fix: dict | None = None) -> bool:
-        """Return True if this match should get stats every cycle (vs every 3rd).
+        """Return True if this match should get stats every cycle (vs every 4th).
 
-        HIGH-priority matches are either:
-        1. Matches with a pending paper bet (we want fresh data for our positions), OR
-        2. Matches in an "actionable" state for in-play strategies — minute ≥ 25 with
-           total goals ≤ 1. This window is when strategies A, D, G, H fire, and they
-           need stats (xG, SoT, corners) to evaluate. Without lifting these to HIGH
-           priority, stats are only fetched every ~135s, leaving most candidate
-           snapshots without the data each strategy needs (~9% coverage observed in
-           backfill — see commit messages for INPLAY-NEW-CORNER / INPLAY-NEW-HT).
+        HIGH-priority matches (when INPLAY_HIGH_PRIORITY_ENABLED=true) are:
+        1. Matches with a pending paper bet, OR
+        2. Matches in an "actionable" state for in-play strategies — minute ≥ 25
+           with total goals ≤ 1 (strategies A, D, G, H window).
 
-        Cost: ~30% of live matches sit in this state at any given moment, roughly
-        doubling stats-call volume during peak hours. On the 75K Ultra plan this
-        caused quota exhaustion on a busy Saturday (2026-05-09). Upgraded to Mega
-        (150K/day) to provide headroom — see AF-QUOTA-AUDIT in PRIORITY_QUEUE.md.
+        AF-QUOTA-REALLOCATION-2026-08-21: HIGH-priority acceleration is
+        env-gated (default OFF). The ~1,200 calls/day it burns fed inplay
+        strategies that never trigger real-money bets (no delivery
+        mechanism). Setting INPLAY_HIGH_PRIORITY_ENABLED=true restores the
+        45s stats cadence for pending-bet + actionable matches. F/T
+        detection for pending bets is separate — see _probe_finishing_matches,
+        which still catches archived matches on every cycle and is
+        unaffected by this gate.
+
+        Cost when enabled: ~30% of live matches sit in HIGH state, roughly
+        doubling stats volume during peak hours. On 2026-05-09 (75K plan)
+        this caused quota exhaustion.
         """
+        import os
+        if os.getenv("INPLAY_HIGH_PRIORITY_ENABLED", "false").lower() not in ("true", "1", "yes"):
+            return False
         mid = str(match_id)
         if mid in self._active_bet_match_ids:
             return True

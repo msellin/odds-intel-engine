@@ -59,9 +59,17 @@ console = Console()
 
 def fetch_live_bulk() -> tuple[list[dict], dict[int, list[dict]]]:
     """
-    Fetch all live fixtures + all live odds in 2 bulk API calls.
+    Fetch all live fixtures + optionally all live odds in bulk.
     Returns (parsed_fixtures, odds_by_fixture_id).
+
+    AF-QUOTA-REALLOCATION-2026-08-21: `/odds/live` polling is env-gated
+    (default OFF). We don't run real-money in-play strategies — the
+    inplay bots are paper-only with no delivery mechanism — so the
+    ~2,000 calls/day this endpoint consumes are pure waste. Setting
+    INPLAY_LIVE_ODDS_POLL_ENABLED=true restores the live-odds fetch
+    for future paid-tier in-play work.
     """
+    import os
     fixtures = []
     try:
         raw = get_live_fixtures()
@@ -70,11 +78,12 @@ def fetch_live_bulk() -> tuple[list[dict], dict[int, list[dict]]]:
         console.print(f"[yellow]AF live fixtures error: {e}[/yellow]")
 
     odds_by_fixture: dict[int, list[dict]] = {}
-    try:
-        raw_odds = get_live_odds()
-        odds_by_fixture = parse_live_odds(raw_odds)
-    except Exception as e:
-        console.print(f"[yellow]AF live odds error: {e}[/yellow]")
+    if os.getenv("INPLAY_LIVE_ODDS_POLL_ENABLED", "false").lower() in ("true", "1", "yes"):
+        try:
+            raw_odds = get_live_odds()
+            odds_by_fixture = parse_live_odds(raw_odds)
+        except Exception as e:
+            console.print(f"[yellow]AF live odds error: {e}[/yellow]")
 
     return fixtures, odds_by_fixture
 
@@ -332,15 +341,23 @@ def run_live_tracker(dry_run: bool = False):
     # Parse live fixtures
     live_fixtures = [_parse_af_live_fixture(f) for f in live_fixtures_raw]
 
-    # ── T5: Get all live odds (1 call) ─────────────────────────────────────
-    console.print("[cyan]T5: Fetching live odds from API-Football...[/cyan]")
+    # ── T5: Get all live odds (1 call) — gated by AF-QUOTA-REALLOCATION ────
+    # Same INPLAY_LIVE_ODDS_POLL_ENABLED gate as fetch_live_bulk. Standalone
+    # run_live_tracker path (job_live_tracker) is not currently on the
+    # scheduler, but keep the gate consistent so a future revival doesn't
+    # silently re-enable /odds/live polling.
+    import os as _os
     live_odds_by_fixture: dict[int, list[dict]] = {}
-    try:
-        raw_live_odds = get_live_odds()
-        live_odds_by_fixture = parse_live_odds(raw_live_odds)
-        console.print(f"  {len(live_odds_by_fixture)} fixtures with live odds")
-    except Exception as e:
-        console.print(f"  [yellow]AF live odds error: {e}[/yellow]")
+    if _os.getenv("INPLAY_LIVE_ODDS_POLL_ENABLED", "false").lower() in ("true", "1", "yes"):
+        console.print("[cyan]T5: Fetching live odds from API-Football...[/cyan]")
+        try:
+            raw_live_odds = get_live_odds()
+            live_odds_by_fixture = parse_live_odds(raw_live_odds)
+            console.print(f"  {len(live_odds_by_fixture)} fixtures with live odds")
+        except Exception as e:
+            console.print(f"  [yellow]AF live odds error: {e}[/yellow]")
+    else:
+        console.print("[dim]T5: /odds/live gated off (INPLAY_LIVE_ODDS_POLL_ENABLED)[/dim]")
 
     # ── Process each live match ─────────────────────────────────────────────
     console.print("\n[cyan]Processing live matches...[/cyan]\n")

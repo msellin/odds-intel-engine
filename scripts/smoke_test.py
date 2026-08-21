@@ -29257,6 +29257,56 @@ def _():
     )
 
 
+@test("AF-QUOTA-REALLOCATION — inplay-only polling gated off by default")
+def _():
+    """AF-QUOTA-REALLOCATION-2026-08-21 — Aug 1 + Aug 8 both hit
+    ~149,800/150k daily AF quota. 81% consumed by live-polling that
+    feeds paper-only inplay bots with no real-money delivery. Three
+    cuts freeing ~7,000 calls/day (9% headroom):
+
+      (a) /odds/live polling gated off (INPLAY_LIVE_ODDS_POLL_ENABLED)
+      (b) stats/events cadence widened 135s → 180s (MEDIUM_MULTIPLIER)
+      (c) HIGH-priority 45s stats acceleration gated off
+          (INPLAY_HIGH_PRIORITY_ENABLED)
+
+    Freed quota reinvestable into prematch feature-coverage work
+    (/fixtures/players, /predictions hourly). Gates default OFF so
+    the reduced-consumption behavior is what ships; operator can
+    re-enable per-gate on VPS via env if future paid in-play launches.
+
+    Pins:
+      1. fetch_live_bulk gates get_live_odds on env var
+      2. LivePoller.MEDIUM_MULTIPLIER == 4 (was 3)
+      3. _is_high_priority gates on env var and defaults False
+    """
+    lt = _engine_path("workers/jobs/live_tracker.py").read_text()
+    # Every get_live_odds() call must be preceded by the env gate.
+    # Two callers today: fetch_live_bulk (used by LivePoller every 45s)
+    # and run_live_tracker (standalone cron — not currently scheduled but
+    # gate it too to prevent silent revival).
+    call_count = lt.count("get_live_odds()")
+    gate_count = lt.count("INPLAY_LIVE_ODDS_POLL_ENABLED")
+    assert gate_count >= call_count, (
+        f"live_tracker.py has {call_count} get_live_odds() call(s) but "
+        f"only {gate_count} INPLAY_LIVE_ODDS_POLL_ENABLED gate(s). Every "
+        f"caller of /odds/live must be gated — an ungated call silently "
+        f"burns ~2,000 calls/day feeding paper-only inplay bots."
+    )
+
+    lp = _engine_path("workers/live_poller.py").read_text()
+    assert "MEDIUM_MULTIPLIER = 4" in lp, (
+        "LivePoller.MEDIUM_MULTIPLIER must be 4 (180s cadence, saves "
+        "~4,000 calls/day). Reverting to 3 restores 135s cadence + "
+        "the pre-2026-08-21 quota load."
+    )
+    assert 'INPLAY_HIGH_PRIORITY_ENABLED' in lp, (
+        "live_poller.py _is_high_priority must gate on "
+        "INPLAY_HIGH_PRIORITY_ENABLED env var. Removing the gate "
+        "re-enables the 45s stats acceleration that burns ~1,200 "
+        "calls/day for paper-only inplay strategy triggering."
+    )
+
+
 @test("FLAT-ROI-EVERYWHERE — public ROI numbers use €10 flat stake")
 def _():
     """FLAT-ROI-EVERYWHERE-2026-08-21 — every public-facing ROI number
