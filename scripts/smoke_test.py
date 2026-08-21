@@ -29044,6 +29044,32 @@ def _():
             "reuse it — a private constant here means two cohorts drift apart."
         )
 
+    # PERF-COHORT-RECONCILE (2026-08-21): the hero's "N bets logged" scale
+    # row must read from the calibrated cohort (same as ROI headline n +
+    # history row count), and "N strategies live" must exclude in-play +
+    # experimental so it matches the leaderboard funnel line. Otherwise the
+    # page shows 3 different bet-count numbers and 2 different strategy-count
+    # numbers on the same screen.
+    hero = _web_path("src/components/performance-hero.tsx").read_text()
+    assert "cal?.n ?? stats.settledBets" in hero, (
+        "performance-hero.tsx bets-logged scale line must prefer the "
+        "calibrated cohort n (matches ROI headline + history). Falling back "
+        "to stats.settledBets is only OK when the calibrated cache is cold."
+    )
+    client = _web_path("src/components/performance-client.tsx").read_text()
+    assert "isLiveBot(b.name)" in client and "maturityLabel" in client and "experimental" in client, (
+        "performance-client.tsx must build activeBotCount from the SAME "
+        "cohort as the leaderboard funnel (non-in-play, non-experimental, "
+        "non-retired) — otherwise the hero says 43 live and the funnel says "
+        "25 live on the same page."
+    )
+    leaderboard_early = _web_path("src/components/performance-leaderboard.tsx").read_text()
+    assert 'proven ·' in leaderboard_early or "proven strategies" in leaderboard_early, (
+        "performance-leaderboard.tsx subhead must say 'proven' (matches the "
+        "funnel line's 'X proven') not 'active' — the ambiguous 'active' was "
+        "reading as 'currently running' but meant 'currently winning'."
+    )
+
     history = _web_path("src/components/performance-history.tsx").read_text()
     assert "leagueFilter" in history, (
         "performance-history.tsx must expose a league filter (poll ask #1)."
