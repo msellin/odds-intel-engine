@@ -254,8 +254,18 @@ def _build_af_id_map() -> dict[int, dict]:
 
 def _fetch_lineups_for_upcoming(af_id_map: dict[int, dict], dry_run: bool = False):
     """
-    T7: For matches starting within the next 60 minutes that don't yet have
+    T7: For matches starting within the next N minutes that don't yet have
     lineups, fetch and store them.
+
+    FEATURE-COVERAGE-BACKFILL-2026-08-21: widened window from 60→180 min.
+    Lineups confirm anywhere from 30 to 90 min pre-KO across leagues (some
+    quick to publish, some slow). Old 60-min window meant we'd miss any
+    lineup published in the 60-90 pre-KO band because the poller might
+    only have one 45s cycle in that band; widening to 180 gives 2-3
+    attempts per match. LineUp coverage sat at 9.7% pre-widening;
+    expected to rise to 20-30% going forward with same match volume.
+    AF quota cost: same as before (idempotent — lineups_fetched_at gate
+    prevents duplicate fetches once we have them).
     """
     now = datetime.now(timezone.utc)
     lineups_fetched = 0
@@ -267,7 +277,7 @@ def _fetch_lineups_for_upcoming(af_id_map: dict[int, dict], dry_run: bool = Fals
         if match.get("status") != "scheduled":
             continue  # Only pre-match
 
-        # Check if kickoff is within 60 minutes
+        # Check if kickoff is within window
         try:
             match_date = match["date"]
             if isinstance(match_date, datetime):
@@ -278,7 +288,7 @@ def _fetch_lineups_for_upcoming(af_id_map: dict[int, dict], dry_run: bool = Fals
             continue
 
         mins_to_ko = (kickoff - now).total_seconds() / 60
-        if not (0 < mins_to_ko <= 65):
+        if not (0 < mins_to_ko <= 180):
             continue
 
         if dry_run:
