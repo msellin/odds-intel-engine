@@ -3676,6 +3676,31 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             console.print(f"\n[yellow]SHADOW [{shadow_cohort}] — no candidate bets[/yellow]")
         if verbose_funnel:
             _print_funnel(_funnel, verbose_funnel_bot)
+        # SHADOW-BOTS-MULTI-COHORT-EARLY-RETURN-FIX-2026-08-21: run the
+        # new shadow-bot writers (no_pin, sweep, pin_ou, pin_1x2) BEFORE
+        # the early return. The BET-TIMING-MONITOR shadow_mode path
+        # short-circuits here to skip exposure check / ops_snapshot; but
+        # my new writers weren't caught by the later `if _run_shadow_now`
+        # block because that block sits after this return. Ship them
+        # inline here so refresh cohorts (07-22 UTC now 24/7) actually
+        # fire them.
+        _shadow_cohort_tag = shadow_cohort or "morning"
+        try:
+            _run_no_pin_shadow_pass(today_str, _shadow_cohort_tag, notify_telegram=False)
+        except Exception as _e:
+            console.print(f"[yellow]No-pin shadow bot failed (non-critical): {_e}[/yellow]")
+        try:
+            _run_sweep_shadow_pass(today_str, _shadow_cohort_tag, notify_telegram=False)
+        except Exception as _e:
+            console.print(f"[yellow]Sweep shadow bots failed (non-critical): {_e}[/yellow]")
+        try:
+            _run_pin_ou_shadow_pass(today_str, _shadow_cohort_tag, notify_telegram=False)
+        except Exception as _e:
+            console.print(f"[yellow]Pin-OU shadow bots failed (non-critical): {_e}[/yellow]")
+        try:
+            _run_pin_1x2_shadow_pass(today_str, _shadow_cohort_tag, notify_telegram=False)
+        except Exception as _e:
+            console.print(f"[yellow]Pin-1X2 shadow bots failed (non-critical): {_e}[/yellow]")
         # Skip exposure check + ops_snapshot — shadow runs piggyback on the real run's snapshot.
         return
 
@@ -3773,28 +3798,26 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
     # (via the is_morning_run flag below) so the operator channel doesn't
     # get flooded with 30+ messages/day per bot. Set SHADOW_TELEGRAM_ALL_COHORTS=true
     # to also post per-refresh summaries.
-    _is_morning_run = cohort in (None, "morning") and not shadow_mode
-    _run_shadow_now = _is_morning_run or shadow_mode
-    # Cohort tag stored on each shadow_bets row. 'morning' for the daily
-    # scan, 'HHMM' UTC for refresh runs so ON CONFLICT dedup is by-window
-    # (same pick appearing in 3 refresh windows = 3 rows tracking drift).
-    _shadow_cohort_tag: str = (shadow_cohort if shadow_mode else "morning")
-
-    if _run_shadow_now:
+    # SHADOW-BOTS-MULTI-COHORT: morning-cohort path. shadow_mode refresh
+    # runs are handled inline in the `if shadow_mode:` block above (which
+    # returns early before this point). Here we're on the morning run
+    # (cohort=None or "morning", shadow_mode=False) — fire the 4 shadow
+    # writers with notify_telegram=True so the operator gets summaries.
+    if cohort in (None, "morning") and not shadow_mode:
         try:
-            _run_no_pin_shadow_pass(today_str, _shadow_cohort_tag, notify_telegram=_is_morning_run)
+            _run_no_pin_shadow_pass(today_str, "morning", notify_telegram=True)
         except Exception as e:
             console.print(f"[yellow]No-pin shadow bot failed (non-critical): {e}[/yellow]")
         try:
-            _run_sweep_shadow_pass(today_str, _shadow_cohort_tag, notify_telegram=_is_morning_run)
+            _run_sweep_shadow_pass(today_str, "morning", notify_telegram=True)
         except Exception as e:
             console.print(f"[yellow]Sweep shadow bots failed (non-critical): {e}[/yellow]")
         try:
-            _run_pin_ou_shadow_pass(today_str, _shadow_cohort_tag, notify_telegram=_is_morning_run)
+            _run_pin_ou_shadow_pass(today_str, "morning", notify_telegram=True)
         except Exception as e:
             console.print(f"[yellow]Pin-OU shadow bots failed (non-critical): {e}[/yellow]")
         try:
-            _run_pin_1x2_shadow_pass(today_str, _shadow_cohort_tag, notify_telegram=_is_morning_run)
+            _run_pin_1x2_shadow_pass(today_str, "morning", notify_telegram=True)
         except Exception as e:
             console.print(f"[yellow]Pin-1X2 shadow bots failed (non-critical): {e}[/yellow]")
 
