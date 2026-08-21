@@ -29257,5 +29257,72 @@ def _():
     )
 
 
+@test("ADMIN-PLACE-COHORT-CLEANUP — /admin/place drops retired/inplay/exotic-market rows")
+def _():
+    """/admin/place used to show every pending simulated_bet — including
+    retired-bot rows (leaked in via ACCA-RETIRED-LEAK-FIX pre-2026-08-16
+    and still leaking via mid-flight retirement pending queue), inplay
+    bots (belong on a separate operator surface), and exotic markets
+    (combo, double_chance — both always net negative when they leak).
+
+    /admin/place composition audit 2026-08-21 (60d settled): retired
+    combo/acca bots contributed −€501 PnL, retired inplay bots −€244;
+    the winning cohort (bot_v10_all prematch calibrated) contributed
+    +€223. Cleaning the surface so it describes the same cohort as
+    /picks + /performance (production prematch × standard markets)
+    makes it the honest foundation for a future paid-tier filter view.
+
+    Pins the getPlaceableBets() cohort filter:
+      1. .select() pulls maturity_label + retired_at on the bot join
+      2. retired_at filter (bot?.retired_at → drop)
+      3. inplay_% filter (bot.name.startsWith('inplay_') → drop)
+      4. exotic-market filter (combo, double_chance → drop)
+    """
+    engine = _web_path("src/lib/engine-data.ts").read_text()
+
+    # Find the getPlaceableBets function body — the filters must live
+    # inside it, not in some unrelated helper.
+    import re as _re
+    m = _re.search(
+        r"export async function getPlaceableBets\b.*?\n\}\n",
+        engine,
+        flags=_re.DOTALL,
+    )
+    assert m is not None, (
+        "engine-data.ts must export getPlaceableBets — /admin/place depends on it."
+    )
+    fn_body = m.group(0)
+
+    # (1) bot select must include the fields we filter on. If a future
+    # refactor drops these from the projection, filter reads become
+    # undefined and every row silently passes.
+    assert "maturity_label" in fn_body and "retired_at" in fn_body, (
+        "getPlaceableBets bot join must select `maturity_label, retired_at` "
+        "— otherwise the cohort filters below silently no-op."
+    )
+
+    # (2) retired filter
+    assert "bot?.retired_at" in fn_body, (
+        "getPlaceableBets must drop rows where the bot is retired "
+        "(bot?.retired_at). Pending-bet leakage during mid-flight "
+        "retirement caused the −€501 combo tail in the 60d audit."
+    )
+
+    # (3) inplay filter — startsWith is the JS-side analog of the
+    # NOT LIKE 'inplay_%' filter on /picks + /performance.
+    assert 'startsWith("inplay_")' in fn_body, (
+        "getPlaceableBets must drop inplay bots — they belong on a "
+        "separate operator surface (different placement mechanics)."
+    )
+
+    # (4) exotic-market filter — combo + double_chance, case-insensitive
+    for exotic in ("combo", "double_chance"):
+        assert f'=== "{exotic}"' in fn_body, (
+            f"getPlaceableBets must drop market='{exotic}' — combo is "
+            "100% loss when it leaks (retired bots only), double_chance "
+            "is retired via null floor in coolbet-edge.ts."
+        )
+
+
 if __name__ == "__main__":
     main()
