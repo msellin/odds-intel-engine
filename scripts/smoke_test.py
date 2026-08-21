@@ -29098,6 +29098,69 @@ def _():
     )
 
 
+@test("PERF-CHART-CONSOLIDATE — one toggle chart + calibration behind a collapse")
+def _():
+    """/performance previously had two flat-looking P&L charts (the hero
+    equity sparkline at 60px, and the extras 90d area chart at 180px)
+    stacked vertically, both narrow enough that at a glance they read
+    as horizontal lines. Consolidated 2026-08-21 into a single 260px
+    chart with a 7d/30d/90d toggle. Calibration table (honest but
+    initially confusing) moved into a "Model transparency" collapse so
+    it stays available without dominating the primary flow.
+
+    Pin the moving parts:
+    - New PerformancePnlChartToggle component exists and is used by
+      PerformanceExtras.
+    - Old EquitySparkline + PerformancePnlChart files are deleted (no
+      dead code re-imports).
+    - Hero doesn't import the sparkline.
+    - Extras exposes a collapsible "Model transparency" that contains
+      the calibration content.
+    """
+    # New chart present + used
+    chart = _web_path("src/components/performance-pnl-chart-toggle.tsx").read_text()
+    assert "PerformancePnlChartToggle" in chart, "chart component export missing"
+    assert "curve30d" in chart and "curve90d" in chart, (
+        "toggle chart must accept both curves as separate props — a single "
+        "merged curve would hide the 30d slice."
+    )
+    assert "aria-pressed" in chart, (
+        "period toggle buttons must expose aria-pressed for a11y."
+    )
+
+    # Extras wired up
+    extras = _web_path("src/components/performance-extras.tsx").read_text()
+    assert "PerformancePnlChartToggle" in extras, (
+        "performance-extras.tsx must render the new toggle chart in place "
+        "of the deleted PerformancePnlChart."
+    )
+    assert "Model transparency" in extras, (
+        "calibration table must live inside the Model-transparency collapse "
+        "so it's honest without dominating the primary flow."
+    )
+    assert "TransparencyCollapse" in extras, (
+        "collapse wrapper must be a named component so the calibration is "
+        "obviously behind a toggle, not always-open."
+    )
+
+    # Hero cleanup
+    hero = _web_path("src/components/performance-hero.tsx").read_text()
+    assert "EquitySparkline" not in hero, (
+        "hero must not import EquitySparkline anymore — the small 30d "
+        "sparkline was replaced by the toggle chart lower on the page."
+    )
+
+    # Old files gone
+    for orphan in (
+        "src/components/equity-sparkline.tsx",
+        "src/components/performance-pnl-chart.tsx",
+    ):
+        assert not (_web_root / orphan).exists(), (
+            f"{orphan} was replaced by performance-pnl-chart-toggle.tsx and "
+            "must be deleted so nothing accidentally imports the old chart."
+        )
+
+
 @test("NAV-AUTH-VISIBLE — signed-in vs signed-out is visually distinct")
 def _():
     """Before 2026-08-21 the nav rendered near-identical LogIn / LogOut icons
