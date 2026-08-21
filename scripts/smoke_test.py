@@ -29257,6 +29257,50 @@ def _():
     )
 
 
+@test("BOT-PIN-1X2-SHADOW — 1x2 line-shopping shadow bots (home t1-2 + draw t4)")
+def _():
+    """BOT-PIN-1X2-SHADOW-2026-08-21 — closes the (Pinnacle × model × 1X2)
+    coverage grid. Two config-driven shadow bots for the slices the
+    historical audit showed positive ROI at pure line-shopping edges:
+      - Home wins tier 1-2 at 12%+: +12% (t1) / +31% (t2) ROI
+      - Draws tier 4 at 5%+: +6-18% ROI
+
+    Away picks explicitly not shipped (audit showed -3 to -20% across
+    tiers) and tier 3-4 home + tier 1-3 draw excluded (negative/mixed).
+
+    Pins:
+      1. _PIN_1X2_SHADOW_CONFIGS defined with 2 configs
+      2. Runner function _run_pin_1x2_shadow_pass exists
+      3. Hooked into run_morning
+      4. Migration 275 registers both bots
+      5. Config restricts by (selection, tiers, edge_min) not blanket-fires
+    """
+    src = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text()
+    assert "_PIN_1X2_SHADOW_CONFIGS" in src, "_PIN_1X2_SHADOW_CONFIGS must be defined"
+    for expected in ("bot_pin_1x2_home_v1", "bot_pin_1x2_draw_tier4_v1"):
+        assert f'"{expected}"' in src, f"config missing for {expected}"
+    assert "def _run_pin_1x2_shadow_pass" in src, "runner must exist"
+    assert "_run_pin_1x2_shadow_pass(today_str)" in src, (
+        "run_morning must call _run_pin_1x2_shadow_pass"
+    )
+    # Verify configs have selection + tier gates so the bot doesn't
+    # accidentally fire on all-tier away picks (the -20% category)
+    for cfg_marker in ('"selection": "home"', '"selection": "draw"'):
+        assert cfg_marker in src, (
+            f"config missing selection filter: {cfg_marker}"
+        )
+    # No away config — critical
+    assert '"selection": "away"' not in src.split('_PIN_1X2_SHADOW_CONFIGS')[1].split(')')[0], (
+        "must NOT have an away shadow bot config — historical audit shows "
+        "-3 to -20% ROI on away picks at line-shopping edges (soft-book "
+        "away lines systematically inflated)."
+    )
+
+    mig = _engine_path("supabase/migrations/275_bot_pin_1x2_shadow.sql").read_text()
+    for expected in ("bot_pin_1x2_home_v1", "bot_pin_1x2_draw_tier4_v1"):
+        assert expected in mig, f"migration 275 must INSERT bot {expected}"
+
+
 @test("BOT-PIN-OU-SHADOW — OU 2.5 + OU 3.5 shadow bots present + migration registered")
 def _():
     """BOT-PIN-OU-SHADOW-2026-08-21 — two shadow bots fire on OU 2.5 +

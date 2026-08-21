@@ -3789,6 +3789,16 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         except Exception as e:
             console.print(f"[yellow]Pin-OU shadow bots failed (non-critical): {e}[/yellow]")
 
+    # BOT-PIN-1X2-SHADOW-2026-08-21 — closes the (Pinnacle × model × 1X2)
+    # coverage grid. Home wins in tier 1-2, draws in tier 4 — the two
+    # slices where pure line-shopping shows real ROI in the historical
+    # audit. Same design as the OU bots (no model dependency).
+    if cohort in (None, "morning") and not shadow_mode:
+        try:
+            _run_pin_1x2_shadow_pass(today_str)
+        except Exception as e:
+            console.print(f"[yellow]Pin-1X2 shadow bots failed (non-critical): {e}[/yellow]")
+
     # 11.6: Cross-match correlation check — warn about concentrated exposure
     _check_exposure_concentration()
 
@@ -4448,6 +4458,187 @@ def _run_pin_ou_shadow_pass(today_str: str) -> int:
             continue
         console.print(
             f"[dim]pin-ou shadow {bot_name}: {n} pick(s) written "
+            f"(run_id={shadow_run_id[:8]})[/dim]"
+        )
+        total_written += n
+    return total_written
+
+
+# BOT-PIN-1X2-SHADOW-2026-08-21 — closes the (Pinnacle × model × 1X2)
+# coverage grid. Home wins in tier 1-2, draws in tier 4. Pure line-shopping
+# (no model dependency), same design as _PIN_OU_SHADOW_CONFIGS.
+_PIN_1X2_SHADOW_CONFIGS: tuple[dict, ...] = (
+    {
+        "name": "bot_pin_1x2_home_v1",
+        "selection": "home",
+        "tiers": (1, 2),
+        "edge_min": 0.12,
+    },
+    {
+        "name": "bot_pin_1x2_draw_tier4_v1",
+        "selection": "draw",
+        "tiers": (4,),
+        "edge_min": 0.05,
+    },
+)
+
+_PIN_1X2_ODDS_MIN = 1.30
+_PIN_1X2_ODDS_MAX = 6.00
+_PIN_1X2_OUTLIER_MULT = 1.35  # non-Pinnacle offer capped at Pin × 1.35 (matches ODDS-OUTLIER-FILTER for 1x2)
+
+
+def _run_pin_1x2_shadow_pass(today_str: str) -> int:
+    """BOT-PIN-1X2-SHADOW-2026-08-21 — shadow-log 1X2 picks on matches
+    where Pinnacle has 1X2 odds. Pure line-shopping — no model dep.
+
+    Config-driven per (selection, tier, edge_threshold). Only fires the
+    slices that showed positive ROI in the historical audit — home tier
+    1-2 at 12%+ and draw tier 4 at 5%+. Away picks are explicitly not
+    shipped because the audit showed -3 to -20% ROI at line-shopping
+    edges (soft-book away lines are systematically stale/wrong).
+    """
+    from workers.api_clients.db import execute_query
+    from workers.api_clients.supabase_client import bulk_store_shadow_bets
+    import uuid as _uuid
+    from collections import defaultdict as _dd
+
+    # Resolve bot IDs; skip if not registered yet
+    bot_ids: dict[str, str] = {}
+    for cfg in _PIN_1X2_SHADOW_CONFIGS:
+        bid = _get_bot_id_by_name(cfg["name"])
+        if bid:
+            bot_ids[cfg["name"]] = bid
+    if not bot_ids:
+        console.print("[dim]pin-1x2 shadow: no bots registered — skip[/dim]")
+        return 0
+
+    next_day_str = _next_day(today_str)
+
+    # 1. Today's scheduled matches (future kickoff) + tier
+    matches_raw = execute_query(
+        """SELECT m.id::text AS id, m.date, COALESCE(l.tier, 1) AS tier
+             FROM matches m LEFT JOIN leagues l ON m.league_id = l.id
+            WHERE m.date >= %s AND m.date < %s AND m.status = 'scheduled'""",
+        (f"{today_str}T00:00:00Z", f"{next_day_str}T00:00:00Z"),
+    )
+    if not matches_raw:
+        return 0
+    now_utc = datetime.now(timezone.utc)
+    match_tier: dict[str, int] = {}
+    for m in matches_raw:
+        try:
+            ko = datetime.fromisoformat(str(m["date"]).replace("Z", "+00:00"))
+            if ko.tzinfo is None:
+                ko = ko.replace(tzinfo=timezone.utc)
+            if ko <= now_utc:
+                continue
+        except (ValueError, AttributeError):
+            pass
+        match_tier[str(m["id"])] = int(m.get("tier") or 1)
+    if not match_tier:
+        return 0
+    match_ids = list(match_tier.keys())
+
+    # 2. Load 1X2 odds — Pinnacle + accessible books.
+    odds_raw = execute_query(
+        """SELECT DISTINCT ON (match_id, selection, bookmaker)
+                  match_id::text AS match_id, selection, bookmaker, odds
+             FROM odds_snapshots
+            WHERE match_id = ANY(%s::uuid[])
+              AND is_closing = false
+              AND market = '1x2'
+              AND bookmaker = ANY(%s::text[])
+            ORDER BY match_id, selection, bookmaker, timestamp DESC""",
+        (match_ids, list(ACCESSIBLE_BOOKMAKERS)),
+    )
+    if not odds_raw:
+        return 0
+
+    # {match_id: {selection: {bookmaker: odds}}}
+    grouped: dict[str, dict[str, dict[str, float]]] = _dd(lambda: _dd(dict))
+    for row in odds_raw:
+        try:
+            odds_val = float(row["odds"])
+        except (TypeError, ValueError):
+            continue
+        sel = str(row["selection"]).lower()
+        if sel not in ("home", "draw", "away"):
+            continue
+        grouped[row["match_id"]][sel][row["bookmaker"]] = odds_val
+
+    now_iso = now_utc.isoformat()
+    rows_by_bot: dict[str, list[dict]] = _dd(list)
+    stats = {"scored": 0, "no_pin": 0, "no_soft": 0, "outlier": 0,
+             "odds_range": 0, "low_edge": 0, "wrong_tier": 0}
+
+    for cfg in _PIN_1X2_SHADOW_CONFIGS:
+        bid = bot_ids.get(cfg["name"])
+        if not bid:
+            continue
+        sel = cfg["selection"]
+        allowed_tiers = set(cfg["tiers"])
+        for mid, sels in grouped.items():
+            tier = match_tier.get(mid)
+            if tier not in allowed_tiers:
+                stats["wrong_tier"] += 1
+                continue
+            books = sels.get(sel) or {}
+            pin_odds = books.get("Pinnacle")
+            if not pin_odds or pin_odds <= 1.0:
+                stats["no_pin"] += 1
+                continue
+            soft_offers = [(bm, o) for bm, o in books.items() if bm != "Pinnacle"]
+            if not soft_offers:
+                stats["no_soft"] += 1
+                continue
+            best_bm, best_odds = max(soft_offers, key=lambda x: x[1])
+            if best_odds > pin_odds * _PIN_1X2_OUTLIER_MULT:
+                stats["outlier"] += 1
+                continue
+            if not (_PIN_1X2_ODDS_MIN <= best_odds <= _PIN_1X2_ODDS_MAX):
+                stats["odds_range"] += 1
+                continue
+            pin_implied = 1.0 / pin_odds
+            edge = best_odds * pin_implied - 1.0
+            if edge < cfg["edge_min"]:
+                stats["low_edge"] += 1
+                continue
+
+            stats["scored"] += 1
+            rows_by_bot[cfg["name"]].append({
+                "bot_id": bid,
+                "match_id": mid,
+                "market": "1x2",
+                "selection": sel,
+                "odds": best_odds,
+                "model_prob": pin_implied,
+                "calibrated_prob": pin_implied,
+                "edge": round(edge, 4),
+                "kelly_fraction": None,
+                "placed_at": now_iso,
+                "timing_cohort": "morning",
+                "recommended_bookmaker": best_bm,
+            })
+
+    if not rows_by_bot:
+        console.print(
+            f"[dim]pin-1x2 shadow: 0 picks (no_pin {stats['no_pin']}, "
+            f"no_soft {stats['no_soft']}, outlier {stats['outlier']}, "
+            f"odds_range {stats['odds_range']}, low_edge {stats['low_edge']}, "
+            f"wrong_tier {stats['wrong_tier']})[/dim]"
+        )
+        return 0
+
+    total_written = 0
+    for bot_name, rows in rows_by_bot.items():
+        shadow_run_id = str(_uuid.uuid4())
+        try:
+            n = bulk_store_shadow_bets(rows, shadow_run_id, "morning")
+        except Exception as e:
+            console.print(f"[yellow]pin-1x2 shadow {bot_name}: write failed ({e})[/yellow]")
+            continue
+        console.print(
+            f"[dim]pin-1x2 shadow {bot_name}: {n} pick(s) written "
             f"(run_id={shadow_run_id[:8]})[/dim]"
         )
         total_written += n
