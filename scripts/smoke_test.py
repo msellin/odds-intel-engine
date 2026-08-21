@@ -29208,5 +29208,54 @@ def _():
     )
 
 
+@test("PICKS-COHORT-ALIGN — /api/v1/upcoming filters match /api/v1/track-record")
+def _():
+    """The public /picks feed used to include inplay-bot picks and could
+    include retired-bot picks, while /performance's ledger excludes both.
+    Telegram subscribers clicking through from /picks → /performance saw
+    picks disappear from the ledger — same trust-loss class as the
+    LANDING-COMP-COHORT-DISCLOSURE 2026-07-06 issue.
+
+    Both endpoints must apply the identical cohort filter so every
+    /picks row lands on the ledger once settled.
+
+    Pins on both files:
+      1. maturity_label IN ('calibrated','beta','active') (via PUBLIC_MATURITY_LABELS)
+      2. NOT LIKE 'inplay_%%'  (pre-match only)
+      3. retired_at IS NULL    (excludes retired bots)
+      4. market whitelist matches PRE_MATCH_MARKETS
+    """
+    upcoming = _web_path("src/app/api/v1/upcoming/route.ts").read_text()
+    track = _web_path("src/app/api/v1/track-record/route.ts").read_text()
+
+    for src_name, src in (("upcoming", upcoming), ("track-record", track)):
+        assert "PUBLIC_MATURITY_LABELS" in src, (
+            f"{src_name}/route.ts must gate on PUBLIC_MATURITY_LABELS "
+            "(calibrated + beta + active) — production strategies only."
+        )
+        assert 'inplay_%' in src, (
+            f"{src_name}/route.ts must filter out inplay bots "
+            "(.not(\"bots.name\", \"like\", \"inplay_%%\")) — /picks and the "
+            "ledger describe the pre-match cohort."
+        )
+
+    # retired_at gate lives on /picks explicitly; the ledger's filter
+    # excludes retired bots via inplay_% (all currently-retired production
+    # bots are prematch) + maturity_label — but /picks needs both since
+    # a beta bot could be retired mid-flight and still show pending picks.
+    assert '.is("bots.retired_at", null)' in upcoming, (
+        "upcoming/route.ts must filter out retired bots "
+        "(.is(\"bots.retired_at\", null)) so /picks matches /performance's "
+        "getPublicCohortBotNames rule."
+    )
+
+    # Market whitelist must match between the two so a market added to one
+    # side doesn't silently drop off the other.
+    assert 'PRE_MATCH_MARKETS' in upcoming and 'PRE_MATCH_MARKETS' in track, (
+        "both endpoints must define + use PRE_MATCH_MARKETS. Drift would "
+        "let a market show on /picks but not on the ledger, or vice versa."
+    )
+
+
 if __name__ == "__main__":
     main()
