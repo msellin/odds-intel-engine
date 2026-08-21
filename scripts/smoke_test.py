@@ -29257,6 +29257,56 @@ def _():
     )
 
 
+@test("FLAT-ROI-EVERYWHERE — public ROI numbers use €10 flat stake")
+def _():
+    """FLAT-ROI-EVERYWHERE-2026-08-21 — every public-facing ROI number
+    (landing hero, /performance tiles, /api/v1/track-record meta) is
+    computed at €10 flat stake per pick. This matches WinnerOdds /
+    Tipstrr / SignalOdds / Forebet publication methodology so the
+    landing comparison card is apples-to-apples.
+
+    Internal bots continue staking Kelly (proportional to divergence);
+    admin surfaces still see Kelly numbers. Only the PUBLIC surface
+    switched.
+
+    Pins:
+      1. FLAT_STAKE_EUR constant exported from engine-data.ts
+      2. getCalibratedHeadlineStats reads odds_at_pick + result (not
+         stake + pnl) — the flat computation source
+      3. Aggregate ROI computed from flat_pnl / (n × FLAT_STAKE)
+      4. /api/v1/track-record aggregate loop uses flat computation
+      5. /api/v1/track-record per-bet rows expose flat stake/pnl
+    """
+    engine = _web_path("src/lib/engine-data.ts").read_text()
+    track = _web_path("src/app/api/v1/track-record/route.ts").read_text()
+
+    assert "export const FLAT_STAKE_EUR = 10" in engine, (
+        "engine-data.ts must export FLAT_STAKE_EUR = 10 — a rename or "
+        "value change breaks the reconciliation across surfaces."
+    )
+    # Headline function must compute flat PnL from odds_at_pick + result
+    # (not from stake + pnl which are Kelly). Look for the signature pattern.
+    assert 'FLAT_STAKE_EUR * (odds - 1)' in engine, (
+        "engine-data.ts must compute flat PnL as FLAT_STAKE_EUR * (odds - 1) "
+        "on wins. Missing pattern = silent revert to Kelly PnL."
+    )
+    assert 'pnlFlat' in engine and 'stakeFlat' in engine, (
+        "engine-data.ts must maintain pnlFlat / stakeFlat accumulators "
+        "for the headline aggregate — Kelly accumulators (pnl/stake) alone "
+        "would silently publish Kelly ROI."
+    )
+
+    # /api/v1/track-record must project the same fields and use FLAT_STAKE
+    assert "FLAT_STAKE" in track, (
+        "track-record/route.ts must define + use a FLAT_STAKE constant. "
+        "Rename or removal would silently drop back to Kelly for the "
+        "public ledger endpoint."
+    )
+    assert 'odds_at_pick, result, clv' in track, (
+        "track-record/route.ts aggregate select must include odds_at_pick + result"
+    )
+
+
 @test("ADMIN-PLACE-COHORT-CLEANUP — /admin/place drops retired/inplay/exotic-market rows")
 def _():
     """/admin/place used to show every pending simulated_bet — including
