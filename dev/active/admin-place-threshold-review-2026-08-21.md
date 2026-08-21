@@ -220,3 +220,129 @@ I'd do (2) — it makes the *next* review a 5-min operation instead of a code de
 3. **Per-bot floors** — the data shows bot_v10_all + bot_opt_home_lower both benefit strongly from a 12% 1X2 floor. If we ever want bot-specific gates (currently only market-specific), these two are the first candidates.
 4. **draw_no_bet re-review** — DNB-ZOMBIE-DIAGNOSIS says summer-starved, expected to un-block at Aug 15 European season restart. Re-sweep DNB threshold at ~2026-09-20 after 30 days of restart data.
 5. **The 25%+ edge bucket in the last-14-days data** — showed −86% ROI on n=26. Classic "fantasy odds" pattern (see FOREBET-OU-VERIFY-2026-08-01). Likely already caught by ODDS-OUTLIER-FILTER-2026-08-18 and CLV-AUTOVOID-2026-08-19 — verify next audit.
+
+---
+
+## Appendix: total-€ replay (does higher ROI% actually give more €?)
+
+**Question**: raising thresholds boosts ROI% but cuts volume — so does the current lower-threshold setup, with more bets, actually give higher total € PnL than the recommended higher threshold?
+
+**Method**: for each market, replay every settled bet since 2026-05-01 at each candidate threshold. Compute total stake and total PnL (in € across ~1000-2000 bets per market). Also show what each "edge band" contributes independently so it's visible where money is made vs. lost.
+
+### 1x2 — raising to 12% wins BOTH ROI% AND total € (no trade-off)
+
+**Cumulative total PnL** at each threshold:
+
+```
+thresh    n   stake_€   pnl_€    ROI%
+   3%  1849     10195      +81   +0.80
+   5%  1768      9704     +184   +1.90
+   7%  1556      8455     +293   +3.46
+   8%  1393      7524     +279   +3.71
+  10%  1072      5686     +490   +8.61   ← current
+  12%   769      3982     +810  +20.35   ← recommended
+  15%   493      2552     +325  +12.75
+  20%   234      1187     +264  +22.26
+```
+
+**Per-band contribution** (what each edge slice actually earned in isolation):
+
+```
+band       n   pnl_€    ROI%
+3-5%      81    -104  -24.41
+5-7%     212    -108   -8.68
+7-8%     163     +14   +1.46
+8-10%    321    -211  -11.54
+10-12%   303    -321  -18.82  ← this band burns €321 net at current 10% floor
+12-15%   276    +485  +33.91
+15-20%   259     +61   +4.48
+20+%     234    +264  +22.26
+```
+
+**Interpretation:** the 10-12% band is currently our biggest single loser (−€321). Raising the floor to 12% *removes* that loss — total PnL jumps from +€490 to +€810 (+€320 delta). This is not a trade-off; it's strictly better on both axes.
+
+### o/u — 8% is the total-€ peak; higher ROI% costs €
+
+**This is where your question bites.** Cumulative total PnL:
+
+```
+thresh    n   stake_€   pnl_€    ROI%
+   3%  1341      7720     +126   +1.63    ← current
+   5%  1247      7149     +173   +2.42
+   7%  1072      6084     +133   +2.19
+   8%   979      5507     +283   +5.14    ← total-€ peak (recommended)
+  10%   747      3913     +279   +7.12
+  12%   590      2966     +263   +8.86    ← highest ROI% but LESS €
+  15%   484      2419     +126   +5.21
+  20%   366      1837      +60   +3.28
+```
+
+**Per-band contribution:**
+
+```
+band       n   pnl_€    ROI%
+3-5%      94     -48   -8.33
+5-7%     175     +40   +3.76
+7-8%      93    -150  -25.99   ← this band burns €150 (current setup takes them)
+8-10%    232      +5   +0.30
+10-12%   157     +16   +1.68
+12-15%   106    +136  +24.95
+15-20%   118     +66  +11.34
+20+%     366     +60   +3.28
+```
+
+**Interpretation:** the peak total € is at **8%** (€283), not at the highest-ROI threshold (12% → only €263). Going from 8% → 12% you gain +3.7pp ROI but *lose* €20 of realized PnL. Beyond 12% you lose PnL rapidly (down to €60 at 20%).
+
+So for o/u the answer is: **8% is the correct total-€ peak.** 10% and 12% are "higher ROI% at real € cost" — they only make sense if you're bankroll-constrained and each € of stake is expensive elsewhere. At current scale (paper trading + small real bankroll), 8% wins.
+
+### asian_handicap — every current-taken band loses money; raising or retiring both save €
+
+```
+thresh    n   stake_€   pnl_€    ROI%
+   3%   543      2840     -113   -3.98
+   5%   535      2799     -112   -3.99    ← current
+   7%   491      2542     -141   -5.53
+   8%   458      2367      -96   -4.06
+  10%   378      1946      -71   -3.64
+  12%   308      1561      -28   -1.78
+  15%   210      1045      +14   +1.38    ← barely positive
+  20%    57       267       +9   +3.50
+```
+
+**Interpretation:** at the current 5% floor we've lost €112 in 60 days on AH. Retiring saves that €112 outright. Raising to 15% gives a marginal +€14 gain on 210 bets over the same window — technically positive but the risk/reward is thin. **Both moves are strictly better than the status quo.**
+
+### btts — 10% is already the total-€ peak
+
+```
+thresh    n   stake_€   pnl_€    ROI%
+   3%   355      2304      -36   -1.55
+   5%   321      2083     -102   -4.89
+   7%   249      1576       +8   +0.51
+   8%   205      1281      -10   -0.81
+  10%   122       700      +81  +11.59   ← current & peak — keep
+  12%    59       303      -42  -13.87
+  15%    33       162      -16   -9.58
+```
+
+Per band, the 10-12% slice earned +€123. Below and above bleeds. Current setting is exactly right — don't move.
+
+### double_chance — retiring saves €87
+
+```
+   3%   274      1242      -87   -7.04
+  15%   112       344      -21   -6.00
+```
+
+At any threshold, still losing. Retirement (current state) is correct — the €87 hole would still be there if we placed at ≥15%, just smaller.
+
+---
+
+### Summary: which markets have a real ROI-vs-volume trade-off?
+
+- **1x2**: no trade-off — 12% wins both ROI% *and* €. Ship 12%.
+- **o/u**: real trade-off starts at 10% and above. **8% is the objective peak**; going higher gives ROI% at a €10-20 cost. Ship 8%.
+- **AH**: no trade-off in the positive direction — everything below 15% loses. Retire or raise to 15% (both save €).
+- **BTTS**: already at the total-€ peak. Don't move.
+- **DC**: retirement saves €87. Keep retired.
+
+Revised bottom line: my recommendations from the main body of the doc **maximize total realized € as well as ROI%** for every market except o/u — where I explicitly recommend the total-€ peak (8%) over the higher-ROI-but-less-€ points (10% or 12%).
