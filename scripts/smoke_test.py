@@ -13998,6 +13998,62 @@ def _():
         "coolbet_placer.py must pass handicap_line=snap_line to store_coolbet_odds_snapshot"
 
 
+@test("COOLBET-OU-LINE-MISLABEL-2026-08-22 — writer drops OU rows if U-prob not monotone in line")
+def _():
+    """Coolbet OU line-mislabel bug (2026-08-22): 51/302 matches with today's shadow
+    picks had Coolbet OU rows where U-probability wasn't monotone-nondecreasing in
+    line — impossible for a real market. Root-cause candidate: is_ou substring match
+    accepts non-goals totals (halftime/corners/cards) with matching line value.
+    Defensive fix: monotonicity guard in store_coolbet_snapshots_for_match drops
+    the whole OU set when violated. Zero data > lying data.
+
+    Pins:
+    (1) _ou_rows_monotone helper exists.
+    (2) store_coolbet_snapshots_for_match buffers OU rows and calls the guard.
+    (3) Guard actually rejects a known-bad case and accepts a known-good case.
+    """
+    import pathlib, importlib
+    src = pathlib.Path("workers/automation/coolbet_explorer.py").read_text()
+    assert "def _ou_rows_monotone" in src, "monotonicity helper must exist"
+    assert "COOLBET-OU-LINE-MISLABEL-2026-08-22" in src, \
+        "guard must be tagged with the bug-code marker"
+    # Buffer + guard call in the store fn
+    fn_start = src.index("def store_coolbet_snapshots_for_match")
+    fn_end = src.index("\ndef ", fn_start + 1)
+    fn_src = src[fn_start:fn_end]
+    assert "ou_buffer" in fn_src and "_ou_rows_monotone" in fn_src, \
+        "store_coolbet_snapshots_for_match must buffer OU rows and call the guard"
+    assert 'coolbet-ou-monotonicity' in fn_src, \
+        "must log dropped OU sets so the operator sees when the guard fires"
+
+    # Functional check — import + call the helper directly
+    import sys as _sys
+    _sys.path.insert(0, str(pathlib.Path.cwd()))
+    mod = importlib.import_module("workers.automation.coolbet_explorer")
+    # Known-bad: Shanghai Port II Coolbet — U2.5=1.60 (63%), U3.5=1.20 (83%),
+    # but O2.5=2.20 (45%) vs O3.5=4.05 (25%) — U-side monotone here actually,
+    # so this specific data would PASS. Use a synthetic mislabel case:
+    bad = [
+        ("over_under_15", "under", 2.72),  # 37%
+        ("over_under_25", "under", 1.55),  # 65%
+        ("over_under_35", "under", 1.62),  # 62%  ← violation: 62% < 65%
+        ("over_under_45", "under", 1.25),  # 80%
+    ]
+    assert mod._ou_rows_monotone(bad) is False, \
+        "bad monotonicity case must be rejected"
+    good = [
+        ("over_under_15", "under", 3.00),  # 33%
+        ("over_under_25", "under", 2.00),  # 50%
+        ("over_under_35", "under", 1.50),  # 67%
+        ("over_under_45", "under", 1.20),  # 83%
+    ]
+    assert mod._ou_rows_monotone(good) is True, \
+        "clean monotonic case must pass"
+    # Single line / empty must pass — nothing to compare
+    assert mod._ou_rows_monotone([]) is True
+    assert mod._ou_rows_monotone([("over_under_25", "under", 2.00)]) is True
+
+
 @test("FIX-LEAGUE-TIERS-140 — migration 140 fixes Saudi-Arabia/South-Africa dash variants + extra top divisions")
 def _():
     """Migration 140 must fix the country-name dash variants missed by 138 (Saudi-Arabia,

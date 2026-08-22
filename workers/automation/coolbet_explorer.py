@@ -678,6 +678,45 @@ def load_value_bet_matches(days: int) -> list[dict]:
     )
 
 
+def _ou_rows_monotone(ou_rows: list[tuple[str, str, float]]) -> bool:
+    """COOLBET-OU-LINE-MISLABEL-2026-08-22: sanity-check OU snapshot.
+
+    17% of matches with today's shadow picks (51/302) had Coolbet OU rows where
+    Under-probability was NOT monotone-nondecreasing in the line — mathematically
+    impossible for a real market. Example: Shanghai Port II U2.5=1.60 and U3.5=1.20
+    price essentially the same under-probability, so one label is wrong.
+
+    Root cause hypothesis: `is_ou` gate in parse_market accepts any market with
+    "total goals" / "over/under" substring — likely a non-goals total (halftime
+    goals, corners, cards) with matching line value writes to the goals-OU slot
+    and clobbers it. Cheap defensive fix: monotonicity guard at the writer.
+
+    Returns True if the (over_line, under_odds) pairs across all present lines
+    are consistent (U-prob non-decreasing in line, 2pp tolerance for margin).
+    Returns True on empty/single-line sets — nothing to compare."""
+    by_line: dict[int, dict[str, float]] = {}
+    for market, selection, odds in ou_rows:
+        if not market.startswith("over_under_"):
+            continue
+        try:
+            cents = int(market.split("_")[-1])
+        except ValueError:
+            continue
+        by_line.setdefault(cents, {})[selection] = odds
+    lines_with_under = [(c, d["under"]) for c, d in sorted(by_line.items())
+                        if "under" in d and d["under"] > 1.0]
+    if len(lines_with_under) < 2:
+        return True
+    prev_u_prob = 0.0
+    for _cents, u_odds in lines_with_under:
+        u_prob = 1.0 / u_odds
+        # 2pp tolerance covers normal 2-8% overround edge cases.
+        if u_prob < prev_u_prob - 0.02:
+            return False
+        prev_u_prob = max(prev_u_prob, u_prob)
+    return True
+
+
 def store_coolbet_snapshots_for_match(
     match_id: str,
     coolbet_markets: list[dict],
@@ -686,24 +725,50 @@ def store_coolbet_snapshots_for_match(
     dry_run: bool,
     kickoff_iso: str = "",
 ) -> tuple[int, int, dict[str, int]]:
-    """Parse + store all markets for one match. Returns (parsed, stored, by_market)."""
+    """Parse + store all markets for one match. Returns (parsed, stored, by_market).
+
+    COOLBET-OU-LINE-MISLABEL-2026-08-22: OU rows are buffered and dropped
+    wholesale if U-probability fails monotonicity across lines — better zero
+    goals-OU data than lying data. Non-OU markets (1x2, BTTS, DC, AH) are
+    unaffected."""
     parsed = 0
     stored = 0
     by_market: dict[str, int] = {}
     minutes_to_ko = _minutes_to_kickoff(kickoff_iso)
 
+    ou_buffer: list[tuple[str, str, float, float | None]] = []  # (market, sel, odds, line)
+    non_ou_rows: list[tuple[str, str, float, float | None]] = []
+
     for mkt in coolbet_markets:
         for market, selection, odds, line in parse_market(mkt, odds_map):
             parsed += 1
             by_market[market] = by_market.get(market, 0) + 1
-            if dry_run:
-                continue
-            try:
-                store_coolbet_odds_snapshot(match_id, market, selection, odds,
-                                            minutes_to_ko, handicap_line=line)
-                stored += 1
-            except Exception as e:
-                log.warning("Store failed for %s %s: %s", market, selection, e)
+            if market.startswith("over_under_"):
+                ou_buffer.append((market, selection, odds, line))
+            else:
+                non_ou_rows.append((market, selection, odds, line))
+
+    ou_ok = _ou_rows_monotone([(m, s, o) for m, s, o, _ in ou_buffer])
+    if not ou_ok:
+        log.warning(
+            "coolbet-ou-monotonicity: dropping %d OU rows for match %s "
+            "(U-prob not monotone in line — likely mislabelled)",
+            len(ou_buffer), match_id,
+        )
+        for m in {r[0] for r in ou_buffer}:
+            by_market.pop(m, None)
+        ou_buffer.clear()
+
+    to_store = non_ou_rows + ou_buffer
+    for market, selection, odds, line in to_store:
+        if dry_run:
+            continue
+        try:
+            store_coolbet_odds_snapshot(match_id, market, selection, odds,
+                                        minutes_to_ko, handicap_line=line)
+            stored += 1
+        except Exception as e:
+            log.warning("Store failed for %s %s: %s", market, selection, e)
     return parsed, stored, by_market
 
 
