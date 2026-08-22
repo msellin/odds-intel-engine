@@ -35,7 +35,7 @@ jobs:
           cache: 'pip'
 
       - name: Install deps
-        run: pip install --quiet psycopg2-binary python-dotenv requests
+        run: pip install --quiet psycopg2-binary python-dotenv requests rich
 
       - name: Open SSH tunnel to VPS Postgres
         env:
