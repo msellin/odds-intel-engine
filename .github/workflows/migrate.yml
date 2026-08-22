@@ -1,5 +1,30 @@
 name: OddsIntel — Run DB Migrations
 
+# MIGRATE-VPS-CUTOVER (2026-08-22): rewritten to apply migrations directly
+# against VPS Postgres via SSH tunnel. Prior version ran `supabase db push`
+# against the Supabase project — but SUPABASE-CLEANUP-DROP (2026-07-13)
+# dropped the `public` schema on Supabase (data plane is authoritative on
+# VPS Postgres), so every run since 2026-07-13 has failed at the first
+# migration. Operators were hand-applying migrations via psql, and it
+# eventually bit us: USER-PICK-MARKS shipped 2026-08-22 with migration 278
+# creating `user_pick_marks`; the checkbox on /admin/shadow-bots posted to
+# a table that didn't exist and silently reverted every tick.
+#
+# Design:
+#   1. Tunnel to VPS Postgres (localhost:5433 → 204.168.199.8:5432) using
+#      the shared VPS_DEPLOY_KEY (same secret competitor_audits_weekly.yml
+#      uses).
+#   2. Ensure a `_schema_migrations(filename, applied_at)` tracking table
+#      exists. First run: backfill every migration with numeric prefix ≤ 277
+#      as applied, because those were manually applied over July/August
+#      before this workflow was fixed. Subsequent runs no-op the backfill.
+#   3. Iterate `supabase/migrations/*.sql` in sorted order. For each file
+#      not yet in `_schema_migrations`, apply with `psql -v ON_ERROR_STOP=1`
+#      and record it. Errors fail the workflow — no `continue-on-error`.
+#
+# `DATABASE_URL` should point at the tunnel: postgres://oddsintel_owner:...@localhost:5433/oddsintel
+# (same value competitor_audits_weekly.yml uses).
+
 on:
   push:
     branches: [main]
@@ -8,31 +33,96 @@ on:
       - '.github/workflows/migrate.yml'
   workflow_dispatch:
 
+concurrency:
+  group: db-migrations
+  cancel-in-progress: false
+
 jobs:
   migrate:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
+      - name: Install psql client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Open SSH tunnel to VPS Postgres
+        env:
+          VPS_DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$VPS_DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H 204.168.199.8 >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -f -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
+              -L 5433:localhost:5432 root@204.168.199.8
+          nc -z localhost 5433 && echo "tunnel up on localhost:5433"
+
+      - name: Bootstrap _schema_migrations tracking table
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE TABLE IF NOT EXISTS _schema_migrations (
+              filename    text PRIMARY KEY,
+              applied_at  timestamptz NOT NULL DEFAULT NOW()
+          );
+          COMMENT ON TABLE _schema_migrations IS
+              'Tracks which supabase/migrations/*.sql files have been applied. Populated by .github/workflows/migrate.yml. Manual applies MUST also insert a row here or the workflow will double-apply.';
+          SQL
+
+      - name: Backfill applied migrations (first run only)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          # On the very first run of the rewritten workflow, mark every
+          # migration whose numeric prefix is ≤ 277 as already applied.
+          # 277 = bot_no_pin_home (verified applied via `SELECT * FROM bots
+          # WHERE name = 'bot_no_pin_home_v1'`). Anything ≥ 278 is real
+          # pending work. On subsequent runs the tracking table is
+          # non-empty and this whole loop is a series of no-ops via
+          # ON CONFLICT DO NOTHING.
+          count=$(psql "$DATABASE_URL" -tAc "SELECT COUNT(*) FROM _schema_migrations")
+          count=$(echo "$count" | tr -d '[:space:]')
+          if [ "$count" = "0" ]; then
+            echo "First run — backfilling migrations with prefix ≤ 277 as applied."
+            for f in supabase/migrations/*.sql; do
+              name=$(basename "$f")
+              prefix=$(echo "$name" | grep -oE '^[0-9]+' || true)
+              if [ -n "$prefix" ] && [ "$prefix" -le 277 ]; then
+                psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -tAc \
+                  "INSERT INTO _schema_migrations (filename) VALUES ('$name') ON CONFLICT DO NOTHING" \
+                  >/dev/null
+              fi
+            done
+            new_count=$(psql "$DATABASE_URL" -tAc "SELECT COUNT(*) FROM _schema_migrations" | tr -d '[:space:]')
+            echo "Backfilled $new_count migrations as applied."
+          else
+            echo "_schema_migrations has $count rows — skipping backfill."
+          fi
 
       - name: Apply pending migrations
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
-          # --include-all (MIGRATE-OUT-OF-ORDER-FIX, 2026-06-02): the Supabase
-          # CLI refuses to apply migrations whose version-prefix is earlier
-          # than the latest already-applied migration. This bit us when
-          # parallel work in WC-V2-T1 took prefix 165 + 166 while a sibling
-          # work item had taken 165 and got renamed to 167; the workflow then
-          # errored with "Found local migration files to be inserted before
-          # the last migration on remote database."  Our migrations are
-          # additive + idempotent (CREATE TABLE IF NOT EXISTS, DROP POLICY
-          # IF EXISTS, etc.), so applying out-of-order is safe in our shape.
-          # The path trigger above also watches this workflow file so edits
-          # here re-run on the next push.
-          supabase db push --include-all
+          set -euo pipefail
+          applied=0
+          for f in supabase/migrations/*.sql; do
+            name=$(basename "$f")
+            already=$(psql "$DATABASE_URL" -tAc \
+              "SELECT 1 FROM _schema_migrations WHERE filename = '$name'" | tr -d '[:space:]')
+            if [ "$already" = "1" ]; then
+              continue
+            fi
+            echo "── Applying $name ──"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -tAc \
+              "INSERT INTO _schema_migrations (filename) VALUES ('$name')" >/dev/null
+            echo "── OK: $name ──"
+            applied=$((applied + 1))
+          done
+          echo "Applied $applied new migration(s)."

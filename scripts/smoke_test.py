@@ -30056,5 +30056,59 @@ def _():
     )
 
 
+@test("MIGRATE-VPS-CUTOVER — migrate.yml applies via VPS tunnel, tracks in _schema_migrations")
+def _():
+    """MIGRATE-VPS-CUTOVER-2026-08-22 — the migrate.yml workflow used to
+    `supabase db push` against Supabase, but the public schema was
+    dropped there on 2026-07-13 (SUPABASE-CLEANUP-DROP). Every run since
+    has failed silently at the first migration. Operators were hand-
+    applying via psql, and it bit us when USER-PICK-MARKS shipped 2026-
+    08-22 — migration 278 wasn't applied, the checkbox POST 500'd, and
+    every tick reverted.
+
+    New workflow tunnels to VPS Postgres and applies pending migrations
+    tracked in a `_schema_migrations` table. Pins:
+      1. No more `supabase db push` — that path is broken.
+      2. Opens SSH tunnel to root@204.168.199.8 → localhost:5433.
+      3. Bootstrap step creates `_schema_migrations` (idempotent CREATE
+         TABLE IF NOT EXISTS).
+      4. Applies each new file with `psql -v ON_ERROR_STOP=1` so errors
+         fail the workflow instead of getting swallowed.
+      5. Serialized via `concurrency: db-migrations` — two concurrent
+         runs would race on the tracking table.
+    """
+    yml = _engine_path(".github/workflows/migrate.yml").read_text()
+    # Reject an actual invocation of `supabase db push` — a bare command
+    # in a `run:` block. Doc-comment mentions of the string are fine
+    # (they explain why the workflow was rewritten).
+    import re as _re
+    if _re.search(r"^\s*supabase\s+db\s+push\b", yml, flags=_re.MULTILINE):
+        raise AssertionError(
+            "migrate.yml must not invoke `supabase db push` — that path "
+            "is broken since SUPABASE-CLEANUP-DROP dropped the public "
+            "schema on Supabase 2026-07-13. Use the VPS tunnel + psql."
+        )
+    assert "204.168.199.8" in yml and "L 5433:localhost:5432" in yml, (
+        "migrate.yml must open the SSH tunnel to VPS Postgres "
+        "(204.168.199.8 → localhost:5433) before running psql. Same "
+        "pattern as competitor_audits_weekly.yml."
+    )
+    assert "_schema_migrations" in yml and "CREATE TABLE IF NOT EXISTS _schema_migrations" in yml, (
+        "migrate.yml must bootstrap the _schema_migrations tracking "
+        "table — otherwise every run tries to re-apply every historical "
+        "migration and idempotency isn't guaranteed across all 277+ files."
+    )
+    assert "ON_ERROR_STOP=1" in yml, (
+        "migrate.yml must run psql with -v ON_ERROR_STOP=1 — otherwise "
+        "a broken migration's error gets logged but the workflow "
+        "still marks it applied, exactly the failure mode that hid "
+        "SUPABASE-CLEANUP-DROP's damage for six weeks."
+    )
+    assert "concurrency:" in yml and "db-migrations" in yml, (
+        "migrate.yml must set concurrency: db-migrations so two "
+        "simultaneous runs can't race on the tracking table."
+    )
+
+
 if __name__ == "__main__":
     main()
