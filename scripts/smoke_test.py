@@ -29842,5 +29842,157 @@ def _():
         )
 
 
+@test("USER-PICK-MARKS — migration 278 + /api/me/pick-marks route + checkbox wired")
+def _():
+    """USER-PICK-MARKS-2026-08-22 — per-user checkbox on /picks so the
+    operator can mark which picks they placed manually. Persists in
+    user_pick_marks (user_id, pick_id).
+
+    Pins:
+      1. Migration 278 creates user_pick_marks with (user_id, pick_id) PK
+         + RLS locked so only the service-role server route can write.
+      2. /api/me/pick-marks route exists with GET returning marked ids
+         and POST accepting {pickId, marked}. Both require auth.
+      3. PickBetMark client component posts to /api/me/pick-marks with the
+         optimistic-toggle pattern.
+      4. /picks page reads the auth session, gates checkbox render on
+         signed-in, and fetches user marks via fetchUserMarkedPickIds.
+    """
+    mig = _engine_path("supabase/migrations/278_user_pick_marks.sql").read_text()
+    assert "CREATE TABLE" in mig and "user_pick_marks" in mig, (
+        "migration 278 must create user_pick_marks table"
+    )
+    assert "PRIMARY KEY (user_id, pick_id)" in mig, (
+        "user_pick_marks must key on (user_id, pick_id) — one row per "
+        "user-pick pairing so upsert can toggle idempotently."
+    )
+    assert "ENABLE ROW LEVEL SECURITY" in mig and "USING (false)" in mig, (
+        "user_pick_marks must have RLS on with anon/authenticated denied "
+        "— only the server-side /api/me/pick-marks route writes, via the "
+        "service key. A missing RLS gate would let a leaked anon key read "
+        "every user's bet history."
+    )
+
+    route = _web_path("src/app/api/me/pick-marks/route.ts").read_text()
+    assert "export async function GET" in route and "export async function POST" in route, (
+        "/api/me/pick-marks must expose GET + POST — GET rehydrates the "
+        "checkbox state on page load, POST toggles one row."
+    )
+    assert "createSupabaseServer" in route and "getUser" in route, (
+        "/api/me/pick-marks must gate on the cookie-backed session via "
+        "createSupabaseServer + getUser — otherwise anon calls could "
+        "poison another user's marks by guessing user_id."
+    )
+    for guard in ('.eq("user_id", user.id)', 'user_id: user.id'):
+        assert guard in route, (
+            f"/api/me/pick-marks must scope every DB call to user.id "
+            f"({guard!r} required) — the service client bypasses RLS, "
+            "so filter discipline is the only guard against cross-user "
+            "writes."
+        )
+
+    ui = _web_path("src/components/pick-bet-mark.tsx").read_text()
+    assert "/api/me/pick-marks" in ui and "pickId" in ui and "marked" in ui, (
+        "PickBetMark must POST { pickId, marked } to /api/me/pick-marks — "
+        "otherwise the checkbox drifts from the DB state after refresh."
+    )
+
+    page = _web_path("src/app/picks/page.tsx").read_text()
+    assert "PickBetMark" in page and "fetchUserMarkedPickIds" in page, (
+        "/picks must render PickBetMark and pre-fetch the user's marked "
+        "ids so the checkboxes render already-ticked on first paint "
+        "(no flash of empty state)."
+    )
+    assert "isSignedIn" in page and "isSignedIn && (" in page, (
+        "/picks must gate the checkbox on isSignedIn — anon visitors "
+        "shouldn't see a checkbox they can't persist."
+    )
+
+
+@test("PICKS-USER-GATE — public /api/v1/upcoming is calibrated-only, wider cohort signed-in only")
+def _():
+    """PICKS-USER-GATE-2026-08-22 — the public /api/v1/upcoming JSON feed
+    is narrowed to `maturity_label = 'calibrated'` so it matches the
+    Telegram public channel one-to-one. Signed-in visitors get the wider
+    calibrated + beta + active cohort via a server-side helper that is
+    never exposed as a route — anon scrapers can't pull beta+active picks
+    from the network tab.
+
+    Pins:
+      1. /api/v1/upcoming's PUBLIC_MATURITY_LABELS is ['calibrated'] only.
+      2. lib/upcoming-picks exports SIGNED_IN_MATURITY_LABELS with all
+         three cohorts, and there is NO client-fetchable route that
+         returns them.
+      3. /picks reads the session, branches on isSignedIn, and passes the
+         wider array only when authenticated.
+    """
+    upcoming = _web_path("src/app/api/v1/upcoming/route.ts").read_text()
+    # calibrated-only: PUBLIC_MATURITY_LABELS assigned to ["calibrated"]
+    # (single-element). Reject any assignment that includes beta or
+    # active in the same list — that's exactly the leak we're closing.
+    assert 'PUBLIC_MATURITY_LABELS = ["calibrated"]' in upcoming, (
+        "PICKS-USER-GATE: /api/v1/upcoming must scope PUBLIC_MATURITY_LABELS "
+        "to ['calibrated'] only. Widening it would ship beta + active picks "
+        "to unauthenticated scrapers, defeating the whole gate."
+    )
+    for leak in ("beta", "active"):
+        assert f'"{leak}"' not in upcoming.split("PUBLIC_MATURITY_LABELS")[1].split("]")[0], (
+            f"PICKS-USER-GATE: PUBLIC_MATURITY_LABELS must not include "
+            f"'{leak}' — that cohort is the signed-in-only surface."
+        )
+
+    lib = _web_path("src/lib/upcoming-picks.ts").read_text()
+    assert 'SIGNED_IN_MATURITY_LABELS = ["calibrated", "beta", "active"]' in lib, (
+        "PICKS-USER-GATE: lib/upcoming-picks must export "
+        "SIGNED_IN_MATURITY_LABELS with all three production maturity tiers "
+        "so the /picks server component can render the wider set for auth "
+        "users."
+    )
+    assert "export async function fetchUpcomingPicks" in lib, (
+        "PICKS-USER-GATE: fetchUpcomingPicks helper must live in a "
+        "server-only module — never inlined into an API route that a "
+        "browser could hit."
+    )
+
+    # No public /api/me/upcoming or similar client-fetchable route may
+    # ever return the wider cohort — a future refactor adding one would
+    # silently reopen the leak.
+    import glob as _glob
+    api_files = _glob.glob(
+        str(_web_root / "src" / "app" / "api" / "**" / "route.ts"),
+        recursive=True,
+    )
+    import re as _re
+    for path in api_files:
+        text = _pathlib.Path(path).read_text()
+        # Only flag actual imports — doc-comment mentions of
+        # SIGNED_IN_MATURITY_LABELS are fine (in fact, encouraged so
+        # future readers understand the boundary). An `import` line
+        # bringing the symbol into scope is the real leak.
+        if _re.search(
+            r"^\s*import\s.*SIGNED_IN_MATURITY_LABELS", text, flags=_re.MULTILINE
+        ):
+            raise AssertionError(
+                f"PICKS-USER-GATE: {path} imports "
+                "SIGNED_IN_MATURITY_LABELS — API routes must not return "
+                "the signed-in-only cohort. Move the caller into a "
+                "server component or reuse fetchUpcomingPicks from a "
+                "page render only."
+            )
+
+    page = _web_path("src/app/picks/page.tsx").read_text()
+    assert "SIGNED_IN_MATURITY_LABELS" in page and "PUBLIC_MATURITY_LABELS" in page, (
+        "PICKS-USER-GATE: /picks page must select between the two label "
+        "arrays based on auth — otherwise the wider cohort either leaks "
+        "to anon or never renders."
+    )
+    assert 'isSignedIn\n    ? SIGNED_IN_MATURITY_LABELS' in page or (
+        "isSignedIn" in page and "? SIGNED_IN_MATURITY_LABELS" in page
+    ), (
+        "PICKS-USER-GATE: /picks must branch maturity labels on "
+        "isSignedIn — otherwise anon visitors see beta + active picks."
+    )
+
+
 if __name__ == "__main__":
     main()

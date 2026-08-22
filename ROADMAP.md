@@ -136,11 +136,11 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | Surface | Status |
 |---------|--------|
 | `/` landing | ✅ Minimal hero pulling live ROI from `/api/v1/track-record` |
-| `/picks` | ✅ Live pending pre-match picks for the next 36 hours, free, no signup |
+| `/picks` | ✅ Live pending pre-match picks for the next 36 hours. **Anonymous** = calibrated-only cohort (same set the Telegram public channel ships). **Logged-in** = wider calibrated + beta + active cohort, plus per-row "Mark bet" checkbox persisting to `user_pick_marks`. Wider cohort renders server-side only — no client-fetchable route exposes it. Gated via PICKS-USER-GATE 2026-08-22. |
 | `/performance` | ✅ Settled track record + per-bot leaderboard. **Anonymous** = 10-bet ledger teaser + "Sign up free" CTA; **logged-in** = full filterable history (league / market / bot filters, 6-way sort, 200-row cap). Leaderboard subhead surfaces full strategy funnel ("Tested to date: N · proven / underperforming / maturing / retired"). Gate changed from `isPro` to `!!user` on 2026-08-21 (PERF-SIGNUP-HISTORY) — signup is now the reward, not payment (post TIER-COLLAPSE). |
 | `/privacy`, `/terms` | ✅ Minimal nav, retained for legal |
 | `/api/v1/track-record` | ✅ Public JSON feed of settled bets (median CLV, beat-rate, ROI) |
-| `/api/v1/upcoming` | ✅ Public JSON feed of pending picks (next 36h) |
+| `/api/v1/upcoming` | ✅ Public JSON feed of pending picks (next 36h). Narrowed 2026-08-22 to `maturity_label = 'calibrated'` only so it matches the Telegram public channel one-to-one. The wider signed-in cohort is not available via any JSON endpoint. |
 | `/admin/*` | ✅ Operator-only, untouched by collapse |
 | /profile | ✅ Restored 2026-08-21 as a minimal page (email + tier + sign out); linked from the new nav avatar dropdown |
 | WC pages, /value-bets, /matches/*, /live, /accuracy, /bankroll, /learn, /how-it-works, /methodology, /my-picks, /predictions, /recaps, /vs, /welcome, /pricing, /changelog | ❌ Deleted |
