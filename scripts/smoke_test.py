@@ -13998,6 +13998,70 @@ def _():
         "coolbet_placer.py must pass handicap_line=snap_line to store_coolbet_odds_snapshot"
 
 
+@test("COOLBET-HALF-MATCH-FILTER-2026-08-22 — parse_market rejects sub-period markets on name-fallback")
+def _():
+    """Coolbet's API returns sub-period markets ("Both Teams To Score 1st Half",
+    "Total Goals - 2nd Half") whose names still match the is_btts / is_ou
+    name-fallback substrings. Without a filter they get written into the
+    full-match slot and clobber real data. Confirmed 2026-08-22 on Olympic vs
+    Tvååker: Coolbet stored 3 BTTS pairs in one scrape, the last pair (yes=2.41,
+    no=1.46) had yes/no SWAPPED vs full-match consensus (all other 9 books:
+    yes≈1.46).
+
+    Pins:
+    (1) _HALF_MATCH_HINTS tuple + _looks_like_sub_period helper exist.
+    (2) is_ou / is_btts / is_1x2 / is_dc / is_ah name-fallbacks guarded by
+        `not sub_period`.
+    (3) mtid-based matches still trigger regardless of name (unambiguous).
+    (4) Functional check: known sub-period names return True from helper,
+        full-match names return False.
+    """
+    import pathlib, importlib
+    src = pathlib.Path("workers/automation/coolbet_explorer.py").read_text()
+    assert "_HALF_MATCH_HINTS" in src, "_HALF_MATCH_HINTS tuple must exist"
+    assert "def _looks_like_sub_period" in src, "_looks_like_sub_period helper must exist"
+    assert "COOLBET-HALF-MATCH-FILTER-2026-08-22" in src, \
+        "sub-period filter must be tagged with bug-code marker"
+    # Each fallback substring branch must be gated by `not sub_period`
+    import re as _re
+    for gate in ("is_1x2", "is_ou", "is_btts", "is_dc", "is_ah"):
+        m = _re.search(rf"    {gate}\s*= ", src)
+        assert m is not None, f"{gate} definition must be present"
+        idx = m.start()
+        # Walk to the end of the assignment (matching parens)
+        depth = 0
+        end = idx
+        started = False
+        for i in range(idx, min(len(src), idx + 400)):
+            ch = src[i]
+            if ch == "(":
+                depth += 1
+                started = True
+            elif ch == ")":
+                depth -= 1
+                if depth == 0 and started:
+                    end = i + 1
+                    break
+        block = src[idx:end]
+        assert "not sub_period" in block, (
+            f"{gate} name-fallback must be gated by `not sub_period` — "
+            f"block: {block[:200]}"
+        )
+
+    # Functional check on the helper
+    import sys as _sys
+    _sys.path.insert(0, str(pathlib.Path.cwd()))
+    mod = importlib.reload(importlib.import_module("workers.automation.coolbet_explorer"))
+    assert mod._looks_like_sub_period("both teams to score 1st half") is True
+    assert mod._looks_like_sub_period("total goals - 2nd half") is True
+    assert mod._looks_like_sub_period("match result 1st half") is True
+    assert mod._looks_like_sub_period("home team to score") is True
+    assert mod._looks_like_sub_period("both teams to score") is False
+    assert mod._looks_like_sub_period("total goals over/under") is False
+    assert mod._looks_like_sub_period("match result") is False
+    assert mod._looks_like_sub_period("") is False
+
+
 @test("COOLBET-OU-LINE-MISLABEL-2026-08-22 — writer drops OU rows if U-prob not monotone in line")
 def _():
     """Coolbet OU line-mislabel bug (2026-08-22): 51/302 matches with today's shadow

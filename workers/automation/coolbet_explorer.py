@@ -228,6 +228,38 @@ def _ou_market_for_line(line: float) -> str | None:
     return f"over_under_{cents:02d}"
 
 
+# COOLBET-HALF-MATCH-FILTER-2026-08-22: reject sub-period markets before they
+# hit the market-type dispatch. Coolbet's API returns "Both Teams To Score
+# 1st Half" and similar sub-period markets whose names still match the
+# is_btts / is_ou name-fallback substrings ("both teams to score", "total
+# goals") — they were being written into the full-match BTTS/OU slot and
+# clobbering the real full-match rows. Confirmed 2026-08-22 on Olympic vs
+# Tvååker BTTS: three separate BTTS pairs stored in one scrape, the last
+# one (yes=2.41/no=1.46) had yes/no swapped vs full-match consensus (~1.46
+# yes across every other book) because the "last" pair was actually the
+# 2nd-half market. Only affects the name-fallback path — if `mtid` is
+# already a known main-market ID, we trust it.
+_HALF_MATCH_HINTS = (
+    " 1st half", " 2nd half", " first half", " second half",
+    " 1st period", " 2nd period",
+    " halftime", " half time", " ht ", "(ht)",
+    " extra time", " overtime",
+    " team to score", " home to score", " away to score",  # single-team variants
+)
+
+
+def _looks_like_sub_period(name: str) -> bool:
+    """True if the market name suggests a sub-period (half/period/single-team)
+    market rather than a full-match one. Used to short-circuit the name-fallback
+    on is_ou/is_btts so sub-period markets don't clobber their full-match slots."""
+    if not name:
+        return False
+    for hint in _HALF_MATCH_HINTS:
+        if hint in name:
+            return True
+    return False
+
+
 def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, float, float | None]]:
     """Return list of (market_name, selection, odds, handicap_line) rows
     for one Coolbet market dict, looking up odds by outcome_id.
@@ -267,16 +299,25 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
     # so leagues with unfamiliar mtids still resolve. Discovered when Gremio
     # vs Santos was found on Coolbet but every selection skipped as
     # "no_market" — Coolbet returned `Match Winner (3-way)` + `Total Goals`.
+    # COOLBET-HALF-MATCH-FILTER-2026-08-22: reject sub-period markets on the
+    # name-fallback path only. If mtid matches a known main-market ID we still
+    # trust it (mtid=818 is full-match Total Goals, mtid=1377 is full-match
+    # BTTS — these are locale-independent and unambiguous). But for markets
+    # coming in via the name-substring fallback (e.g. "Both Teams To Score
+    # 1st Half"), reject if the name looks sub-period. Same guard applied to
+    # is_1x2 defensively — we haven't seen half-1X2 collide yet, but Coolbet
+    # ships "Match Result 1st Half" in some leagues.
+    sub_period = _looks_like_sub_period(name)
     is_1x2  = (mtid in _MTID_1X2
-               or "match result" in name or "1x2" in name
-               or "match winner" in name)
+               or (not sub_period and ("match result" in name or "1x2" in name
+                                       or "match winner" in name)))
     is_ou   = (mtid in _MTID_OU
-               or "total goals" in name
-               or "over / under" in name or "over/under" in name)
+               or (not sub_period and ("total goals" in name
+                                       or "over / under" in name or "over/under" in name)))
     is_btts = (mtid in _MTID_BTTS
-               or "both teams to score" in name or "btts" in name)
-    is_dc   = mtid in _MTID_DC   or "double chance" in name
-    is_ah   = mtid in _MTID_AH   or "asian handicap" in name
+               or (not sub_period and ("both teams to score" in name or "btts" in name)))
+    is_dc   = mtid in _MTID_DC   or (not sub_period and "double chance" in name)
+    is_ah   = mtid in _MTID_AH   or (not sub_period and "asian handicap" in name)
 
     if is_1x2:
         # COOLBET-SELECTION-CASE (2026-06-03): emit lowercase to match every
