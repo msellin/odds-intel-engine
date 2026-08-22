@@ -1,4 +1,20 @@
 source,kickoff_date,league,home_team,away_team,market,pick,odds,result,pnl_per_unit,ref_url
+winnerodds,2026-08-15,Estonia,,,mixed,2,2.800,won,1.8000,https://winnerodds.com
+winnerodds,2026-08-14,Australia,,,mixed,u3.5,2.050,won,1.0500,https://winnerodds.com
+winnerodds,2026-08-10,Australia,,,mixed,u3.5,2.180,,,https://winnerodds.com
+winnerodds,2026-08-15,Australia,,,mixed,u3.5,3.250,,,https://winnerodds.com
+winnerodds,2026-08-14,Australia,,,mixed,u3.5,2.154,,,https://winnerodds.com
+winnerodds,2026-08-09,USA,,,mixed,ah-0_2,3.045,void,0.0000,https://winnerodds.com
+winnerodds,2026-08-10,Canada,,,mixed,ah-0_1,1.230,void,0.0000,https://winnerodds.com
+winnerodds,2026-08-11,Iceland,,,mixed,2,2.700,won,1.7000,https://winnerodds.com
+winnerodds,2026-08-09,Iceland,,,mixed,u3.5,2.200,,,https://winnerodds.com
+winnerodds,2026-08-14,Germany,,,mixed,2,5.500,,,https://winnerodds.com
+winnerodds,2026-08-13,Germany,,,mixed,2,1.700,won,0.7000,https://winnerodds.com
+winnerodds,2026-08-09,Germany,,,mixed,1,3.070,,,https://winnerodds.com
+winnerodds,2026-08-13,Kuwait,,,mixed,u2.5,1.650,won,0.6500,https://winnerodds.com
+winnerodds,2026-08-13,Kuwait,,,mixed,u2.5,2.020,won,1.0200,https://winnerodds.com
+winnerodds,2026-08-12,Germany,,,mixed,2,1.730,,,https://winnerodds.com
+winnerodds,2026-08-09,Germany,,,mixed,1,2.280,,,https://winnerodds.com
 winnerodds,2026-08-09,Germany,,,mixed,ah-0_1,1.360,,,https://winnerodds.com
 winnerodds,2026-08-11,Poland,,,mixed,1,1.950,,,https://winnerodds.com
 winnerodds,2026-08-10,Estonia,,,mixed,ah-0.5_1,2.650,,,https://winnerodds.com
@@ -11,9 +27,9 @@ winnerodds,2026-08-11,Austria,,,mixed,1,1.975,,,https://winnerodds.com
 winnerodds,2026-08-08,Kuwait,,,mixed,u2.5,2.050,,,https://winnerodds.com
 winnerodds,2026-08-09,Venezuela,,,mixed,1,3.450,won,2.4500,https://winnerodds.com
 winnerodds,2026-08-09,Argentina,,,mixed,ah-0.5_2,1.170,won,0.1700,https://winnerodds.com
-winnerodds,2026-08-09,Argentina,,,mixed,ah-0_1,1.610,won,0.6100,https://winnerodds.com
-winnerodds,2026-08-09,Argentina,,,mixed,ah-0_1,1.910,won,0.9100,https://winnerodds.com
 winnerodds,2026-08-09,Argentina,,,mixed,ah-0_1,1.260,won,0.2600,https://winnerodds.com
+winnerodds,2026-08-09,Argentina,,,mixed,ah-0_1,1.910,won,0.9100,https://winnerodds.com
+winnerodds,2026-08-09,Argentina,,,mixed,ah-0_1,1.610,won,0.6100,https://winnerodds.com
 winnerodds,2026-08-03,Argentina,,,mixed,ah-0_1,1.546,void,0.0000,https://winnerodds.com
 winnerodds,2026-08-04,Sweden,,,mixed,ah-0_1,1.667,won,0.6670,https://winnerodds.com
 winnerodds,2026-08-03,Bulgaria,,,mixed,u2.5,1.700,,,https://winnerodds.com
@@ -154,8 +170,8 @@ winnerodds,2026-07-29,Mexico,,,mixed,2,2.710,won,1.7100,https://winnerodds.com
 winnerodds,2026-07-27,USA,,,mixed,ah-0_1,1.620,won,0.6200,https://winnerodds.com
 winnerodds,2026-07-26,USA,,,mixed,ah+0.5_2,2.880,,,https://winnerodds.com
 winnerodds,2026-07-30,Argentina,,,mixed,ah-0_1,2.330,void,0.0000,https://winnerodds.com
-winnerodds,2026-07-30,Argentina,,,mixed,ah-0_1,1.629,won,0.6290,https://winnerodds.com
 winnerodds,2026-07-30,Argentina,,,mixed,ah-0_1,1.409,,,https://winnerodds.com
+winnerodds,2026-07-30,Argentina,,,mixed,ah-0_1,1.629,won,0.6290,https://winnerodds.com
 winnerodds,2026-07-27,Argentina,,,mixed,ah+0.5_1,1.500,won,0.5000,https://winnerodds.com
 winnerodds,2026-07-29,Lithuania,,,mixed,u3.5,2.100,,,https://winnerodds.com
 winnerodds,2026-07-26,Finland,,,mixed,u3.5,2.000,won,1.0000,https://winnerodds.com
@@ -223,8 +239,8 @@ winnerodds,2026-07-24,Iceland,,,mixed,u3.5,2.330,,,https://winnerodds.com
 winnerodds,2026-07-23,Northern Ireland,,,mixed,ah-0.5_2,1.420,won,0.4200,https://winnerodds.com
 winnerodds,2026-07-14,Northern Ireland,,,mixed,2,1.110,won,0.1100,https://winnerodds.com
 winnerodds,2026-07-20,Finland,,,mixed,ah-0_2,1.750,,,https://winnerodds.com
-winnerodds,2026-07-19,Finland,,,mixed,u3.5,2.320,won,1.3200,https://winnerodds.com
 winnerodds,2026-07-19,Finland,,,mixed,u3.5,2.200,won,1.2000,https://winnerodds.com
+winnerodds,2026-07-19,Finland,,,mixed,u3.5,2.320,won,1.3200,https://winnerodds.com
 winnerodds,2026-07-14,Mozambique,,,mixed,ah-0_1,1.300,won,0.3000,https://winnerodds.com
 winnerodds,2026-07-19,Kazakhstan,,,mixed,u3.5,3.390,,,https://winnerodds.com
 winnerodds,2026-07-18,Ecuador,,,mixed,u2.5,1.550,won,0.5500,https://winnerodds.com
@@ -351,8 +367,8 @@ winnerodds,2026-06-30,Brazil,,,mixed,2,3.850,,,https://winnerodds.com
 winnerodds,2026-06-25,Argentina,,,mixed,ah-0.5_1,2.250,won,1.2500,https://winnerodds.com
 winnerodds,2026-06-25,Argentina,,,mixed,ah-0_1,1.365,,,https://winnerodds.com
 winnerodds,2026-07-04,Argentina,,,mixed,ah-0.5_1,2.950,,,https://winnerodds.com
-winnerodds,2026-07-01,Argentina,,,mixed,ah-0_1,1.790,void,0.0000,https://winnerodds.com
 winnerodds,2026-07-01,Argentina,,,mixed,ah-0_1,2.080,won,1.0800,https://winnerodds.com
+winnerodds,2026-07-01,Argentina,,,mixed,ah-0_1,1.790,void,0.0000,https://winnerodds.com
 winnerodds,2026-06-29,Argentina,,,mixed,1,3.400,,,https://winnerodds.com
 winnerodds,2026-06-29,Argentina,,,mixed,ah-0_1,1.666,void,0.0000,https://winnerodds.com
 winnerodds,2026-06-25,Argentina,,,mixed,1,2.470,,,https://winnerodds.com
@@ -521,8 +537,8 @@ winnerodds,2026-06-22,USA,,,mixed,ah-0_2,1.190,won,0.1900,https://winnerodds.com
 winnerodds,2026-06-18,Finland,,,mixed,ah-0_2,1.680,void,0.0000,https://winnerodds.com
 winnerodds,2026-06-18,Finland,,,mixed,x,3.550,won,2.5500,https://winnerodds.com
 winnerodds,2026-06-20,Russia,,,mixed,ah-0_1,2.060,,,https://winnerodds.com
-winnerodds,2026-06-22,China,,,mixed,1,3.830,,,https://winnerodds.com
 winnerodds,2026-06-22,China,,,mixed,ah-0_1,1.730,void,0.0000,https://winnerodds.com
+winnerodds,2026-06-22,China,,,mixed,1,3.830,,,https://winnerodds.com
 winnerodds,2026-06-21,Iceland,,,mixed,ah-0_2,1.666,,,https://winnerodds.com
 winnerodds,2026-06-20,Sweden,,,mixed,o3.5,1.880,won,0.8800,https://winnerodds.com
 winnerodds,2026-06-21,Norway,,,mixed,o3.5,1.800,won,0.8000,https://winnerodds.com
@@ -594,8 +610,8 @@ winnerodds,2026-06-17,Australia,,,mixed,ah-0_2,2.170,void,0.0000,https://winnero
 winnerodds,2026-06-18,Australia,,,mixed,ah-0_2,1.621,,,https://winnerodds.com
 winnerodds,2026-06-17,Australia,,,mixed,ah-0_2,1.190,,,https://winnerodds.com
 winnerodds,2026-06-19,Japan,,,mixed,ah-0_2,1.333,won,0.3330,https://winnerodds.com
-winnerodds,2026-06-18,USA,,,mixed,ah-0_2,1.520,won,0.5200,https://winnerodds.com
 winnerodds,2026-06-18,USA,,,mixed,o3.5,2.150,,,https://winnerodds.com
+winnerodds,2026-06-18,USA,,,mixed,ah-0_2,1.520,won,0.5200,https://winnerodds.com
 winnerodds,2026-06-18,USA,,,mixed,ah-0_2,1.375,won,0.3750,https://winnerodds.com
 winnerodds,2026-06-18,Argentina,,,mixed,ah-0.5_2,1.650,won,0.6500,https://winnerodds.com
 winnerodds,2026-06-17,Faroe Islands,,,mixed,x,4.330,won,3.3300,https://winnerodds.com
@@ -704,8 +720,8 @@ winnerodds,2026-06-12,Sweden,,,mixed,ah-0_2,3.250,void,0.0000,https://winnerodds
 winnerodds,2026-06-12,Sweden,,,mixed,ah-0_2,1.640,void,0.0000,https://winnerodds.com
 winnerodds,2026-06-10,Norway,,,mixed,o3.5,1.420,won,0.4200,https://winnerodds.com
 winnerodds,2026-06-10,Latvia,,,mixed,2,1.160,won,0.1600,https://winnerodds.com
-winnerodds,2026-06-06,Kazakhstan,,,mixed,u2.5,1.900,won,0.9000,https://winnerodds.com
 winnerodds,2026-06-06,Kazakhstan,,,mixed,x,3.500,,,https://winnerodds.com
+winnerodds,2026-06-06,Kazakhstan,,,mixed,u2.5,1.900,won,0.9000,https://winnerodds.com
 winnerodds,2026-06-11,Belarus,,,mixed,ah-0_2,1.690,won,0.6900,https://winnerodds.com
 winnerodds,2026-06-08,Australia,,,mixed,o3.5,1.840,,,https://winnerodds.com
 winnerodds,2026-06-10,Australia,,,mixed,ah-0_2,3.750,won,2.7500,https://winnerodds.com
@@ -857,8 +873,8 @@ winnerodds,2026-06-02,USA,,,mixed,ah-0_2,1.900,,,https://winnerodds.com
 winnerodds,2026-06-02,USA,,,mixed,o2.5,1.444,,,https://winnerodds.com
 winnerodds,2026-06-02,USA,,,mixed,ah-0_2,3.500,,,https://winnerodds.com
 winnerodds,2026-06-03,USA,,,mixed,ah-0_2,1.444,won,0.4440,https://winnerodds.com
-winnerodds,2026-06-02,USA,,,mixed,2,1.363,won,0.3630,https://winnerodds.com
 winnerodds,2026-06-02,USA,,,mixed,o2.5,1.444,won,0.4440,https://winnerodds.com
+winnerodds,2026-06-02,USA,,,mixed,2,1.363,won,0.3630,https://winnerodds.com
 winnerodds,2026-06-02,USA,,,mixed,2,2.000,won,1.0000,https://winnerodds.com
 winnerodds,2026-06-03,Ecuador,,,mixed,x,3.250,won,2.2500,https://winnerodds.com
 winnerodds,2026-06-01,Ecuador,,,mixed,u2.5,1.550,won,0.5500,https://winnerodds.com
@@ -898,8 +914,8 @@ winnerodds,2026-05-29,Finland,,,mixed,u2.5,2.050,won,1.0500,https://winnerodds.c
 winnerodds,2026-05-26,Norway,,,mixed,ah-0_1,1.137,won,0.1370,https://winnerodds.com
 winnerodds,2026-05-31,Norway,,,mixed,ah-0_2,1.720,,,https://winnerodds.com
 winnerodds,2026-05-30,Norway,,,mixed,o3.5,1.630,won,0.6300,https://winnerodds.com
-winnerodds,2026-05-30,Faroe Islands,,,mixed,ah-0_2,1.830,won,0.8300,https://winnerodds.com
 winnerodds,2026-05-30,Faroe Islands,,,mixed,o2.5,1.400,won,0.4000,https://winnerodds.com
+winnerodds,2026-05-30,Faroe Islands,,,mixed,ah-0_2,1.830,won,0.8300,https://winnerodds.com
 winnerodds,2026-05-30,Finland,,,mixed,ah-0_2,3.000,won,2.0000,https://winnerodds.com
 winnerodds,2026-05-30,Iceland,,,mixed,o3.5,2.057,,,https://winnerodds.com
 winnerodds,2026-05-30,Iceland,,,mixed,o2.5,1.363,won,0.3630,https://winnerodds.com
@@ -963,8 +979,8 @@ winnerodds,2026-05-28,Australia,,,mixed,o3.5,1.930,won,0.9300,https://winnerodds
 winnerodds,2026-05-28,Australia,,,mixed,u2.5,3.750,,,https://winnerodds.com
 winnerodds,2026-05-27,Australia,,,mixed,ah+0.5_2,1.340,won,0.3400,https://winnerodds.com
 winnerodds,2026-05-26,Australia,,,mixed,u2.5,4.100,,,https://winnerodds.com
-winnerodds,2026-05-27,Australia,,,mixed,o3.5,1.550,won,0.5500,https://winnerodds.com
 winnerodds,2026-05-27,Australia,,,mixed,ah-0_2,1.660,,,https://winnerodds.com
+winnerodds,2026-05-27,Australia,,,mixed,o3.5,1.550,won,0.5500,https://winnerodds.com
 winnerodds,2026-05-29,Russia,,,mixed,ah-0.5_1,2.380,,,https://winnerodds.com
 winnerodds,2026-05-29,South Korea,,,mixed,ah-0_2,1.500,won,0.5000,https://winnerodds.com
 winnerodds,2026-05-27,Australia,,,mixed,u3.5,2.025,,,https://winnerodds.com
@@ -1037,8 +1053,8 @@ winnerodds,2026-05-23,Georgia,,,mixed,u3.5,1.250,won,0.2500,https://winnerodds.c
 winnerodds,2026-05-24,Bosnia and Herzegovina,,,mixed,ah+0.5_1,1.361,,,https://winnerodds.com
 winnerodds,2026-05-20,Bosnia and Herzegovina,,,mixed,ah-0.5_1,1.727,,,https://winnerodds.com
 winnerodds,2026-05-24,Morocco,,,mixed,ah-0.5_1,2.150,won,1.1500,https://winnerodds.com
-winnerodds,2026-05-24,Czech Republic,,,mixed,ah-0_1,1.332,won,0.3320,https://winnerodds.com
 winnerodds,2026-05-24,Morocco,,,mixed,ah-0.5_1,2.220,,,https://winnerodds.com
+winnerodds,2026-05-24,Czech Republic,,,mixed,ah-0_1,1.332,won,0.3320,https://winnerodds.com
 winnerodds,2026-05-23,Sweden,,,mixed,o2.5,1.412,won,0.4120,https://winnerodds.com
 winnerodds,2026-05-22,Russia,,,mixed,ah-0.5_1,1.810,won,0.8100,https://winnerodds.com
 winnerodds,2026-05-23,Russia,,,mixed,ah-0_1,1.300,won,0.3000,https://winnerodds.com
@@ -1185,8 +1201,8 @@ winnerodds,2026-05-19,Estonia,,,mixed,o2.5,1.621,,,https://winnerodds.com
 winnerodds,2026-05-18,Russia,,,mixed,2,3.130,,,https://winnerodds.com
 winnerodds,2026-05-19,Czech Republic,,,mixed,ah-0.5_1,1.321,,,https://winnerodds.com
 winnerodds,2026-05-19,Czech Republic,,,mixed,ah-0_1,1.210,void,0.0000,https://winnerodds.com
-winnerodds,2026-05-19,Czech Republic,,,mixed,ah-0_1,1.380,won,0.3800,https://winnerodds.com
 winnerodds,2026-05-19,Czech Republic,,,mixed,2,3.550,won,2.5500,https://winnerodds.com
+winnerodds,2026-05-19,Czech Republic,,,mixed,ah-0_1,1.380,won,0.3800,https://winnerodds.com
 winnerodds,2026-05-19,Czech Republic,,,mixed,ah-0.5_1,1.471,,,https://winnerodds.com
 winnerodds,2026-05-17,Latvia,,,mixed,o2.5,1.430,won,0.4300,https://winnerodds.com
 winnerodds,2026-05-11,Zambia,,,mixed,o2.5,3.880,,,https://winnerodds.com
@@ -1358,9 +1374,9 @@ winnerodds,2026-05-12,Sweden,,,mixed,ah-0_1,1.530,void,0.0000,https://winnerodds
 winnerodds,2026-05-14,Egypt,,,mixed,o2.5,3.750,,,https://winnerodds.com
 winnerodds,2026-05-14,Egypt,,,mixed,o2.5,3.200,,,https://winnerodds.com
 winnerodds,2026-05-14,Egypt,,,mixed,o2.5,2.950,,,https://winnerodds.com
-winnerodds,2026-05-14,Egypt,,,mixed,o2.5,2.800,,,https://winnerodds.com
-winnerodds,2026-05-14,Egypt,,,mixed,ah-0_2,3.250,,,https://winnerodds.com
 winnerodds,2026-05-14,Egypt,,,mixed,ah-0_2,2.750,void,0.0000,https://winnerodds.com
+winnerodds,2026-05-14,Egypt,,,mixed,ah-0_2,3.250,,,https://winnerodds.com
+winnerodds,2026-05-14,Egypt,,,mixed,o2.5,2.800,,,https://winnerodds.com
 winnerodds,2026-05-13,Norway,,,mixed,ah-0_1,1.210,won,0.2100,https://winnerodds.com
 winnerodds,2026-05-13,Norway,,,mixed,o3.5,1.780,,,https://winnerodds.com
 winnerodds,2026-05-13,Norway,,,mixed,2,3.100,,,https://winnerodds.com
@@ -1456,8 +1472,8 @@ winnerodds,2026-05-09,Japan,,,mixed,1,1.560,won,0.5600,https://winnerodds.com
 winnerodds,2026-05-09,Fiji,,,mixed,o2.5,1.610,won,0.6100,https://winnerodds.com
 winnerodds,2026-05-09,Fiji,,,mixed,o3.5,4.300,,,https://winnerodds.com
 winnerodds,2026-05-09,Fiji,,,mixed,u2.5,4.500,,,https://winnerodds.com
-winnerodds,2026-05-05,Argentina,,,mixed,o2.5,3.300,,,https://winnerodds.com
 winnerodds,2026-05-05,Argentina,,,mixed,ah-0_1,1.615,won,0.6150,https://winnerodds.com
+winnerodds,2026-05-05,Argentina,,,mixed,o2.5,3.300,,,https://winnerodds.com
 winnerodds,2026-05-04,Peru,,,mixed,u3.5,1.430,won,0.4300,https://winnerodds.com
 winnerodds,2026-05-08,Chile,,,mixed,2,2.450,,,https://winnerodds.com
 winnerodds,2026-05-08,Venezuela,,,mixed,o2.5,2.150,,,https://winnerodds.com
