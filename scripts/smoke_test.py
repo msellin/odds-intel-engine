@@ -30005,5 +30005,56 @@ def _():
     )
 
 
+@test("MOVE-ACTIVE-TO-BETA — active taxonomy retired, dormant opt bots retired")
+def _():
+    """MOVE-ACTIVE-TO-BETA-2026-08-22 — five bots carried the pre-taxonomy
+    `maturity_label='active'` label. Two firing bots (bot_opt_home_lower,
+    bot_conservative) reconciled to `beta`; three zero-fire opt-* bots
+    retired outright after 4 months of no volume. Migration 279 encodes
+    the change.
+
+    Pins:
+      1. Migration 279 exists and names all five bots.
+      2. bot_opt_home_lower + bot_conservative go to beta.
+      3. bot_opt_away_british + bot_opt_away_europe + bot_opt_ou_british
+         get retired_at NOW() + maturity_label='retired'.
+    """
+    mig = _engine_path(
+        "supabase/migrations/279_move_active_to_beta_2026_08_22.sql"
+    ).read_text()
+
+    for name in (
+        "bot_opt_home_lower",
+        "bot_conservative",
+        "bot_opt_away_british",
+        "bot_opt_away_europe",
+        "bot_opt_ou_british",
+    ):
+        assert name in mig, (
+            f"migration 279 must reference {name} — otherwise the "
+            "taxonomy cleanup is incomplete and /performance's cohort "
+            "breakdown will still show a stale `active` bucket."
+        )
+
+    # Beta path: two bots moved to beta via a single UPDATE.
+    assert "maturity_label = 'beta'" in mig, (
+        "migration 279 must set maturity_label='beta' for the two "
+        "firing bots — otherwise they stay in the ghost `active` bucket."
+    )
+
+    # Retirement path: three bots get retired_at + retired label.
+    retired_count = mig.count("maturity_label= 'retired'")
+    assert retired_count >= 3, (
+        f"migration 279 must retire all three zero-fire opt-* bots "
+        f"(3 separate UPDATEs setting maturity_label='retired'). "
+        f"Found {retired_count} — a bot is missing the retirement gate."
+    )
+    assert mig.count("retired_at    = NOW()") >= 3, (
+        "migration 279 must set retired_at=NOW() on each of the three "
+        "retired bots — retired_at is the primary is-this-bot-active "
+        "gate for the placer + scanners (RETIRED-BOT-LEAK-FIX 2026-07-31)."
+    )
+
+
 if __name__ == "__main__":
     main()
