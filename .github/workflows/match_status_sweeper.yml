@@ -1,0 +1,56 @@
+name: OddsIntel — Match Status Sweeper
+
+# MATCH-STATUS-SWEEPER (2026-08-22): 30-min cron that catches matches
+# stuck at status IN ('scheduled', 'live') past kickoff and refreshes
+# their state via AF `/fixtures?ids=...`. workers/scheduler.py already
+# runs an equivalent sweeper (settlement.py::fix_stale_live_matches),
+# but when the systemd scheduler stalls (as on 2026-08-22 — 9h without a
+# status refresh, 439 matches stuck, 1,760+ pending shadow_bets zombies)
+# nothing else picks up the slack. This cron is the belt-and-braces
+# path: a scheduler outage no longer poisons the shadow ledger.
+#
+# Runs on the same VPS_DEPLOY_KEY tunnel as competitor_audits_weekly.yml.
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: match-status-sweeper
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install deps
+        run: pip install --quiet psycopg2-binary python-dotenv requests
+
+      - name: Open SSH tunnel to VPS Postgres
+        env:
+          VPS_DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$VPS_DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H 204.168.199.8 >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -f -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
+              -L 5433:localhost:5432 root@204.168.199.8
+          nc -z localhost 5433 && echo "tunnel up on localhost:5433"
+
+      - name: Run sweeper
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+        run: python3 scripts/match_status_sweeper.py

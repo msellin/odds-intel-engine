@@ -30110,5 +30110,85 @@ def _():
     )
 
 
+@test("MATCH-STATUS-SWEEPER — standalone script + 30-min cron independent of scheduler")
+def _():
+    """MATCH-STATUS-SWEEPER-2026-08-22 — workers/scheduler.py's
+    fix_stale_live_matches() (settlement.py:920) already sweeps stuck
+    matches every 15 min, but when the systemd scheduler stalls (as on
+    2026-08-22 — 9h without a refresh, 439 matches stuck, 1,760+ pending
+    shadow_bets zombies), nothing else picks up the slack.
+
+    This test pins the standalone belt-and-braces path:
+      1. scripts/match_status_sweeper.py exists and queries the stuck-
+         match set (status IN scheduled/live + kickoff past 95 min).
+      2. Handles FT/AET/PEN/ABD/WO → finished with score.
+      3. Handles PST/CANC/SUSP/AWD/INT → postponed AND voids BOTH
+         simulated_bets AND shadow_bets pending on the match (the
+         scheduler version voids simulated_bets only — that's why the
+         64 postponed-shadow-bets have been leaking pending for weeks).
+      4. Uses get_fixtures_batch to save AF quota (20 fixtures per call).
+      5. GitHub Actions cron runs every 30 min via tunnel — independent
+         of workers/scheduler.py so a systemd stall no longer stops
+         status refresh.
+    """
+    src = _engine_path("scripts/match_status_sweeper.py").read_text()
+
+    for gate in ("status IN ('scheduled', 'live')", "api_football_id IS NOT NULL"):
+        assert gate in src, (
+            f"match_status_sweeper must filter on {gate!r} — otherwise it "
+            "either misses stuck matches or hits AF for matches without "
+            "a fixture ID (immediate 4xx from AF, wasted quota)."
+        )
+
+    assert "get_fixtures_batch" in src, (
+        "match_status_sweeper must use api_football.get_fixtures_batch — "
+        "individual get_fixture_by_id calls would burn 20× the AF quota "
+        "on a full backlog sweep."
+    )
+
+    # Handle every AF status_short we care about.
+    for finish_code in ("FT", "AET", "PEN", "ABD", "WO"):
+        assert f'"{finish_code}"' in src, (
+            f"match_status_sweeper must handle status_short {finish_code} "
+            "as finished. Missing one leaves those matches stuck."
+        )
+    for dead_code in ("PST", "CANC", "SUSP", "AWD", "INT"):
+        assert f'"{dead_code}"' in src, (
+            f"match_status_sweeper must handle status_short {dead_code} as "
+            "postponed. Missing one leaves the shadow ledger zombified."
+        )
+
+    # Void BOTH bet tables — the whole point of the standalone rewrite.
+    assert "UPDATE simulated_bets" in src and "UPDATE shadow_bets" in src, (
+        "match_status_sweeper must void BOTH simulated_bets AND shadow_bets "
+        "on postponed matches. The scheduler-based fix voids simulated only "
+        "— that's why shadow_bets postponed-pending zombies accumulate."
+    )
+
+    # Health ping so silence is visible.
+    assert "pipeline_health_state" in src and "match_status_sweeper" in src, (
+        "match_status_sweeper must upsert into pipeline_health_state so a "
+        "future stall (like today's scheduler outage) surfaces via the "
+        "existing failure-alerter surface instead of hiding for hours."
+    )
+
+    yml = _engine_path(".github/workflows/match_status_sweeper.yml").read_text()
+    assert "cron: '*/30 * * * *'" in yml, (
+        "match_status_sweeper.yml must run every 30 min — the whole point "
+        "is regular cadence, not on-demand."
+    )
+    assert "204.168.199.8" in yml and "L 5433:localhost:5432" in yml, (
+        "match_status_sweeper.yml must open the VPS tunnel — same pattern "
+        "as competitor_audits_weekly.yml + migrate.yml."
+    )
+    assert "match_status_sweeper.py" in yml, (
+        "match_status_sweeper.yml must invoke the sweeper script."
+    )
+    assert "concurrency:" in yml and "match-status-sweeper" in yml, (
+        "match_status_sweeper.yml must set concurrency to avoid overlapping "
+        "runs racing on the same stuck matches (double AF calls, wasted quota)."
+    )
+
+
 if __name__ == "__main__":
     main()
