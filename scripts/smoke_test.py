@@ -29897,15 +29897,26 @@ def _():
         "otherwise the checkbox drifts from the DB state after refresh."
     )
 
-    page = _web_path("src/app/picks/page.tsx").read_text()
-    assert "PickBetMark" in page and "fetchUserMarkedPickIds" in page, (
-        "/picks must render PickBetMark and pre-fetch the user's marked "
-        "ids so the checkboxes render already-ticked on first paint "
-        "(no flash of empty state)."
+    # Checkbox is superadmin-only on /admin/shadow-bots (Upcoming picks
+     # section). Public /picks does NOT render the checkbox — it's an
+     # operator tool for tracking which shadow-bot picks have been placed
+     # manually, not a general user feature.
+    shadow_page = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
+    assert "PickBetMark" in shadow_page and "fetchUserMarkedPickIds" in shadow_page, (
+        "/admin/shadow-bots must render PickBetMark on each upcoming-pick "
+        "row and pre-fetch the operator's marked ids so checkboxes render "
+        "already-ticked on first paint (no flash of empty state)."
     )
-    assert "isSignedIn" in page and "isSignedIn && (" in page, (
-        "/picks must gate the checkbox on isSignedIn — anon visitors "
-        "shouldn't see a checkbox they can't persist."
+    assert "is_superadmin" in shadow_page and 'Superadmin only.' in shadow_page, (
+        "/admin/shadow-bots must keep the superadmin gate — the checkbox "
+        "is an operator surface, not general-user."
+    )
+    picks_page = _web_path("src/app/picks/page.tsx").read_text()
+    assert "PickBetMark" not in picks_page, (
+        "/picks (public feed) must NOT render PickBetMark — it's a "
+        "superadmin-only tool for the shadow-bots operator surface. If a "
+        "future refactor moves it back, it needs to be gated on "
+        "is_superadmin, not just signed-in."
     )
 
 
