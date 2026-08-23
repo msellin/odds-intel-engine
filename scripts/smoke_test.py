@@ -1620,6 +1620,15 @@ def _():
     assert "(0.10, 0.45, 0.45)" in src, "fallback shapes must include AF underdog prior (0.10, 0.45, 0.45)"
     assert "(0.00, 0.50, 0.50)" in src, "fallback shapes must include AF binary (0.00, 0.50, 0.50)"
     assert "skipped_fallback" in src, "fallback-guard rejection counter missing"
+    # BOT-NO-PIN-TIER0-GUARD: matches query must join leagues and exclude tier=0.
+    # 5 settled picks on tier=0 leagues (Saudi Div 1, Costa Rica Liga de Ascenso,
+    # Germany Regionalliga) accumulated -62.4% ROI because the ensemble has no
+    # real signal there and passes through a Poisson guess (e.g. 58% model vs
+    # 26% Pinnacle for Al Saqer vs Damac, 2026-08-23).
+    assert "l.tier > 0" in src or "(l.tier IS NULL OR l.tier > 0)" in src, (
+        "no-pin shadow: must exclude tier=0 leagues (BOT-NO-PIN-TIER0-GUARD) — "
+        "ensemble has no coverage there and generates fake edges"
+    )
     # Hook check — must be called from run_morning, morning cohort only, not in shadow_mode
     run_morning_src = inspect.getsource(daily_pipeline_v2.run_morning)
     assert "_run_no_pin_shadow_pass" in run_morning_src, (

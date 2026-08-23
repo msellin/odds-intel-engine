@@ -3873,10 +3873,19 @@ def _run_no_pin_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_
 
     next_day_str = _next_day(today_str)
 
-    # 1. Load today's scheduled matches whose kickoff is still in the future
+    # 1. Load today's scheduled matches whose kickoff is still in the future.
+    # BOT-NO-PIN-TIER0-GUARD: exclude tier=0 leagues (untiered: regional
+    # divisions, youth cups, amateur competitions). The ensemble has no
+    # training coverage there and falls back to a Poisson guess that can
+    # produce large fake "edges" (e.g. 58% model vs 26% Pinnacle implied
+    # for Al Saqer vs Damac, Saudi Division 1, 2026-08-23). Confirmed on
+    # 5 settled picks at -62.4% ROI vs -9.6% overall.
     matches_raw = execute_query(
-        """SELECT id, date FROM matches
-           WHERE date >= %s AND date < %s AND status = 'scheduled'""",
+        """SELECT m.id, m.date FROM matches m
+           JOIN leagues l ON l.id = m.league_id
+           WHERE m.date >= %s AND m.date < %s
+             AND m.status = 'scheduled'
+             AND (l.tier IS NULL OR l.tier > 0)""",
         (f"{today_str}T00:00:00Z", f"{next_day_str}T00:00:00Z"),
     )
     if not matches_raw:
