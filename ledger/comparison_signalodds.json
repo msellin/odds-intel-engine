@@ -1,10 +1,10 @@
 {
   "source": "SignalOdds",
   "source_url": "https://signalodds.com/predictions/past?sport=soccer",
-  "snapshot_at_utc": "2026-08-22T02:57:36+00:00",
+  "snapshot_at_utc": "2026-08-23T03:06:53+00:00",
   "window": {
     "start": "2026-05-04",
-    "end": "2026-08-23"
+    "end": "2026-08-24"
   },
   "status": "insufficient-data-pending",
   "min_sample_each_side": 50,
@@ -16,11 +16,11 @@
   "their_breakdown": {},
   "their_drop_reasons": {},
   "our_stats_same_window": {
-    "n": 618,
-    "stake_total": 3939.46,
-    "pnl_total": 625.46,
-    "roi_pct": 15.88,
-    "hit_rate_pct": 43.69,
-    "avg_odds": 2.812
+    "n": 630,
+    "stake_total": 4030.38,
+    "pnl_total": 553.04,
+    "roi_pct": 13.72,
+    "hit_rate_pct": 43.02,
+    "avg_odds": 2.821
   }
 }

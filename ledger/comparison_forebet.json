@@ -1,10 +1,10 @@
 {
   "source": "Forebet",
   "source_url": "https://www.forebet.com/en/football-predictions/predictions-1x2/<date>  (and /under-over-25-goals/<date>)",
-  "snapshot_at_utc": "2026-08-22T02:57:41+00:00",
+  "snapshot_at_utc": "2026-08-23T03:07:00+00:00",
   "window": {
     "start": "2026-05-04",
-    "end": "2026-08-23"
+    "end": "2026-08-24"
   },
   "status": "ok",
   "min_sample_each_side": 50,
@@ -85,11 +85,11 @@
     "not_settled": 56
   },
   "our_stats_same_window": {
-    "n": 618,
-    "stake_total": 3939.46,
-    "pnl_total": 625.46,
-    "roi_pct": 15.88,
-    "hit_rate_pct": 43.69,
-    "avg_odds": 2.812
+    "n": 630,
+    "stake_total": 4030.38,
+    "pnl_total": 553.04,
+    "roi_pct": 13.72,
+    "hit_rate_pct": 43.02,
+    "avg_odds": 2.821
   }
 }
