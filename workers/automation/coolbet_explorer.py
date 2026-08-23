@@ -247,6 +247,15 @@ _HALF_MATCH_HINTS = (
     " team to score", " home to score", " away to score",  # single-team variants
 )
 
+# COOLBET-COMBINED-MARKET-FILTER: reject combo markets like "Both Teams To
+# Score & Over 2.5 Goals" from the is_btts name-fallback. These markets have
+# combined outcomes (yes+over, no+under) and a different market_type_id than
+# 1377, so they only reach the fallback path. Their result_keys are NOT the
+# plain "yes"/"no" that the BTTS branch expects — so if they slip through they
+# either add garbage rows or clobber the real BTTS slot depending on key shape.
+# " & " is Coolbet's standard connector for all combined-market names.
+_COMBINED_MARKET_HINTS = (" & ", " and over", " and under", "+ over", "+ under")
+
 
 def _looks_like_sub_period(name: str) -> bool:
     """True if the market name suggests a sub-period (half/period/single-team)
@@ -255,6 +264,17 @@ def _looks_like_sub_period(name: str) -> bool:
     if not name:
         return False
     for hint in _HALF_MATCH_HINTS:
+        if hint in name:
+            return True
+    return False
+
+
+def _looks_like_combined_market(name: str) -> bool:
+    """True if the market name combines two independent bet types (e.g. 'BTTS & Over 2.5').
+    Applied to the name-fallback path only — trusted mtids bypass this check."""
+    if not name:
+        return False
+    for hint in _COMBINED_MARKET_HINTS:
         if hint in name:
             return True
     return False
@@ -308,6 +328,7 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
     # is_1x2 defensively — we haven't seen half-1X2 collide yet, but Coolbet
     # ships "Match Result 1st Half" in some leagues.
     sub_period = _looks_like_sub_period(name)
+    combined   = _looks_like_combined_market(name)
     is_1x2  = (mtid in _MTID_1X2
                or (not sub_period and ("match result" in name or "1x2" in name
                                        or "match winner" in name)))
@@ -315,7 +336,8 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
                or (not sub_period and ("total goals" in name
                                        or "over / under" in name or "over/under" in name)))
     is_btts = (mtid in _MTID_BTTS
-               or (not sub_period and ("both teams to score" in name or "btts" in name)))
+               or (not sub_period and not combined
+                   and ("both teams to score" in name or "btts" in name)))
     is_dc   = mtid in _MTID_DC   or (not sub_period and "double chance" in name)
     is_ah   = mtid in _MTID_AH   or (not sub_period and "asian handicap" in name)
 
@@ -1084,7 +1106,7 @@ def run_bulk(
         console.print(t3)
 
 
-def run_one_shot(match_id: str) -> None:
+def run_one_shot(match_id: str, raw: bool = False) -> None:
     rows = execute_query(
         """
         SELECT m.id::text AS id, m.date AS date,
@@ -1124,7 +1146,7 @@ def run_one_shot(match_id: str) -> None:
 
     # --raw: dump every market's name + type_id before parsing, so unknown
     # markets (AH, DC, etc.) can be identified and _MTID_* sets updated.
-    if getattr(args, "raw", False):
+    if raw:
         tr = Table(show_header=True, title=f"RAW markets — event #{ev['id']}")
         tr.add_column("market_type_id", justify="right")
         tr.add_column("name")
@@ -1179,7 +1201,7 @@ def main() -> None:
     args = ap.parse_args()
 
     if args.match_id:
-        run_one_shot(args.match_id)
+        run_one_shot(args.match_id, raw=args.raw)
     else:
         run_bulk(args.days, args.dry_run, args.sleep, args.limit, bets_only=args.bets_only)
 

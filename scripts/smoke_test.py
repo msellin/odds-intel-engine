@@ -14118,6 +14118,57 @@ def _():
     assert mod._ou_rows_monotone([("over_under_25", "under", 2.00)]) is True
 
 
+@test("COOLBET-COMBINED-MARKET-FILTER — parse_market rejects BTTS+OU combined markets on name-fallback")
+def _():
+    """Coolbet offers combined markets like 'Both Teams To Score & Over 2.5 Goals'
+    with a different market_type_id than 1377. On the name-fallback path, is_btts
+    matched them because the name contains 'both teams to score' — their outcomes
+    are NOT plain yes/no so they'd either add garbage rows or clobber the pure BTTS
+    slot. Fix: _looks_like_combined_market() detects ' & ' and similar connectors.
+
+    Pins:
+    (1) _COMBINED_MARKET_HINTS and _looks_like_combined_market helper exist.
+    (2) is_btts name-fallback gated by `not combined`.
+    (3) Functional check: combined names return True, pure BTTS returns False.
+    """
+    import pathlib, importlib
+    src = pathlib.Path("workers/automation/coolbet_explorer.py").read_text()
+    assert "_COMBINED_MARKET_HINTS" in src, "_COMBINED_MARKET_HINTS tuple must exist"
+    assert "def _looks_like_combined_market" in src, "_looks_like_combined_market helper must exist"
+    # is_btts name-fallback must be gated by `not combined`
+    import re as _re
+    m = _re.search(r"    is_btts\s*= ", src)
+    assert m is not None, "is_btts definition must be present"
+    idx = m.start()
+    depth = 0
+    end = idx
+    started = False
+    for i in range(idx, min(len(src), idx + 400)):
+        ch = src[i]
+        if ch == "(":
+            depth += 1
+            started = True
+        elif ch == ")":
+            depth -= 1
+            if depth == 0 and started:
+                end = i + 1
+                break
+    block = src[idx:end]
+    assert "not combined" in block, (
+        "is_btts name-fallback must be gated by `not combined` to block BTTS+OU combos"
+    )
+    # Functional check
+    import sys as _sys
+    _sys.path.insert(0, str(pathlib.Path.cwd()))
+    mod = importlib.reload(importlib.import_module("workers.automation.coolbet_explorer"))
+    assert mod._looks_like_combined_market("both teams to score & over 2.5 goals") is True
+    assert mod._looks_like_combined_market("btts & under 2.5") is True
+    assert mod._looks_like_combined_market("match result and over 2.5") is True
+    assert mod._looks_like_combined_market("both teams to score") is False
+    assert mod._looks_like_combined_market("total goals over/under") is False
+    assert mod._looks_like_combined_market("") is False
+
+
 @test("FIX-LEAGUE-TIERS-140 — migration 140 fixes Saudi-Arabia/South-Africa dash variants + extra top divisions")
 def _():
     """Migration 140 must fix the country-name dash variants missed by 138 (Saudi-Arabia,
