@@ -29893,21 +29893,24 @@ def _():
         )
 
 
-@test("USER-PICK-MARKS — migration 278 + /api/me/pick-marks route + checkbox wired")
+@test("USER-PICK-MARKS — migration 278 + /api/me/pick-marks route + tri-state wired")
 def _():
-    """USER-PICK-MARKS-2026-08-22 — per-user checkbox on /picks so the
-    operator can mark which picks they placed manually. Persists in
-    user_pick_marks (user_id, pick_id).
+    """USER-PICK-MARKS-2026-08-22 / USER-PICK-MARKS-STATE-2026-08-23 —
+    per-user tri-state pick review workflow on /admin/shadow-bots.
+    Migration 280 adds `state SMALLINT` to user_pick_marks:
+      1 = reviewed (looked at, maybe waiting for better odds)
+      2 = bet placed
 
     Pins:
       1. Migration 278 creates user_pick_marks with (user_id, pick_id) PK
          + RLS locked so only the service-role server route can write.
-      2. /api/me/pick-marks route exists with GET returning marked ids
-         and POST accepting {pickId, marked}. Both require auth.
-      3. PickBetMark client component posts to /api/me/pick-marks with the
-         optimistic-toggle pattern.
-      4. /picks page reads the auth session, gates checkbox render on
-         signed-in, and fetches user marks via fetchUserMarkedPickIds.
+      2. Migration 280 adds state SMALLINT NOT NULL DEFAULT 2.
+      3. /api/me/pick-marks route exists with GET returning marks dict
+         and POST accepting {pickId, state}. Both require auth.
+      4. PickBetMark client component posts to /api/me/pick-marks with
+         {pickId, state} and cycles through 0→1→2→0 on click.
+      5. /admin/shadow-bots uses fetchUserPickMarkStates (Map) and passes
+         initialState to PickBetMark.
     """
     mig = _engine_path("supabase/migrations/278_user_pick_marks.sql").read_text()
     assert "CREATE TABLE" in mig and "user_pick_marks" in mig, (
@@ -29924,10 +29927,18 @@ def _():
         "every user's bet history."
     )
 
+    mig280 = _engine_path("supabase/migrations/280_user_pick_marks_state.sql").read_text()
+    assert "state" in mig280 and "SMALLINT" in mig280, (
+        "migration 280 must add state SMALLINT column to user_pick_marks"
+    )
+    assert "DEFAULT 2" in mig280, (
+        "migration 280 must default state=2 so existing rows stay as 'bet placed'"
+    )
+
     route = _web_path("src/app/api/me/pick-marks/route.ts").read_text()
     assert "export async function GET" in route and "export async function POST" in route, (
         "/api/me/pick-marks must expose GET + POST — GET rehydrates the "
-        "checkbox state on page load, POST toggles one row."
+        "mark state on page load, POST updates one row."
     )
     assert "createSupabaseServer" in route and "getUser" in route, (
         "/api/me/pick-marks must gate on the cookie-backed session via "
@@ -29941,33 +29952,31 @@ def _():
             "so filter discipline is the only guard against cross-user "
             "writes."
         )
+    assert '"state"' in route or "'state'" in route or "state" in route, (
+        "/api/me/pick-marks must read/write state field (tri-state)"
+    )
 
     ui = _web_path("src/components/pick-bet-mark.tsx").read_text()
-    assert "/api/me/pick-marks" in ui and "pickId" in ui and "marked" in ui, (
-        "PickBetMark must POST { pickId, marked } to /api/me/pick-marks — "
-        "otherwise the checkbox drifts from the DB state after refresh."
+    assert "/api/me/pick-marks" in ui and "pickId" in ui and "state" in ui, (
+        "PickBetMark must POST { pickId, state } to /api/me/pick-marks — "
+        "otherwise the tri-state drifts from the DB state after refresh."
     )
+    assert "initialState" in ui, "PickBetMark must accept initialState prop"
 
-    # Checkbox is superadmin-only on /admin/shadow-bots (Upcoming picks
-     # section). Public /picks does NOT render the checkbox — it's an
-     # operator tool for tracking which shadow-bot picks have been placed
-     # manually, not a general user feature.
     shadow_page = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
-    assert "PickBetMark" in shadow_page and "fetchUserMarkedPickIds" in shadow_page, (
+    assert "PickBetMark" in shadow_page and "fetchUserPickMarkStates" in shadow_page, (
         "/admin/shadow-bots must render PickBetMark on each upcoming-pick "
-        "row and pre-fetch the operator's marked ids so checkboxes render "
-        "already-ticked on first paint (no flash of empty state)."
+        "row and pre-fetch the operator's mark states so icons render "
+        "correctly on first paint."
     )
     assert "is_superadmin" in shadow_page and 'Superadmin only.' in shadow_page, (
-        "/admin/shadow-bots must keep the superadmin gate — the checkbox "
-        "is an operator surface, not general-user."
+        "/admin/shadow-bots must keep the superadmin gate — the mark "
+        "workflow is an operator surface, not general-user."
     )
     picks_page = _web_path("src/app/picks/page.tsx").read_text()
     assert "PickBetMark" not in picks_page, (
         "/picks (public feed) must NOT render PickBetMark — it's a "
-        "superadmin-only tool for the shadow-bots operator surface. If a "
-        "future refactor moves it back, it needs to be gated on "
-        "is_superadmin, not just signed-in."
+        "superadmin-only tool for the shadow-bots operator surface."
     )
 
 
