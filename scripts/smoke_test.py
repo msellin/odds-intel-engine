@@ -29997,9 +29997,11 @@ def _():
     Four red-flag patterns (skip for real money):
       1. bot_pin_1x2_draw_tier4_v1 — 10 settled, 1W/9L (−65% ROI), skip until 50+ sample
       2. tier === null || tier === 0 — no model coverage, ensemble uses Poisson fallback
-      3. gapPp < 10 — every bot shows negative ROI below 10pp in settled data
+      3. edgePct < 10 — relative edge (u.edge_percent × 100) < 10%; every bot negative below
+         10% in settled data. NB: edgePct is relative (8.6%), NOT absolute gap (3.5pp) — they
+         are different metrics. u.edge_percent is stored as decimal fraction by the bot.
     One yellow-flag pattern (verify before placing):
-      4. gapPp >= 25 AND (ou35 OR draw) — counter-intuitive, likely Coolbet phantom line
+      4. edgePct >= 25 AND (ou35 OR draw) — counter-intuitive, likely Coolbet phantom line
       5. home pick with odds >= 3.5 — pin_home underperforms at high odds (−4.7% vs +58%)
 
     Bots keep firing to collect data; flags are display-only and do NOT
@@ -30014,12 +30016,17 @@ def _():
         "PICK-CONFIDENCE-FLAGS: must flag pin_1x2_draw_tier4_v1 rows red — "
         "10 settled bets at −65% ROI; structural high-variance bet type, skip until 50+ sample."
     )
-    assert "gapPp < 10" in page, (
-        "PICK-CONFIDENCE-FLAGS: must flag gapPp < 10 red — every bot shows "
-        "negative ROI below 10pp in settled data, even after passing the bot's own edge gate."
+    assert "edgePct" in page, (
+        "PICK-CONFIDENCE-FLAGS: must use edgePct (u.edge_percent × 100, relative %) for "
+        "thresholds — NOT gapPp (absolute pp). Settled-data buckets are in relative edge %. "
+        "A 44% model vs 2.47 odds is 3.5pp absolute but 8.6% relative — different metrics."
     )
-    assert "gapPp >= 25" in page, (
-        "PICK-CONFIDENCE-FLAGS: must yellow-flag gapPp >= 25 on draw/OU35 — "
+    assert "edgePct < 10" in page, (
+        "PICK-CONFIDENCE-FLAGS: must flag edgePct < 10 red — every bot shows "
+        "negative ROI below 10% relative edge in settled data."
+    )
+    assert "edgePct >= 25" in page, (
+        "PICK-CONFIDENCE-FLAGS: must yellow-flag edgePct >= 25 on draw/OU35 — "
         "counter-intuitive negative performance suggests Coolbet phantom lines."
     )
     for pattern in ("border-rose-500", "border-amber-500"):
