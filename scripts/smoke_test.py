@@ -29989,6 +29989,50 @@ def _():
     )
 
 
+@test("PICK-CONFIDENCE-FLAGS — real-money warning badges on shadow-bots upcoming picks")
+def _():
+    """PICK-CONFIDENCE-FLAGS-2026-08-23 — operator-facing confidence flags
+    on the /admin/shadow-bots upcoming picks table.
+
+    Four red-flag patterns (skip for real money):
+      1. bot_pin_1x2_draw_tier4_v1 — 10 settled, 1W/9L (−65% ROI), skip until 50+ sample
+      2. tier === null || tier === 0 — no model coverage, ensemble uses Poisson fallback
+      3. gapPp < 10 — every bot shows negative ROI below 10pp in settled data
+    One yellow-flag pattern (verify before placing):
+      4. gapPp >= 25 AND (ou35 OR draw) — counter-intuitive, likely Coolbet phantom line
+      5. home pick with odds >= 3.5 — pin_home underperforms at high odds (−4.7% vs +58%)
+
+    Bots keep firing to collect data; flags are display-only and do NOT
+    suppress pick creation or bet placement.
+    """
+    page = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
+    assert "cFlag" in page, (
+        "PICK-CONFIDENCE-FLAGS: shadow-bots page must compute cFlag (confidence flag) "
+        "per upcoming-pick row — used to display red/yellow warning badges."
+    )
+    assert "bot_pin_1x2_draw_tier4_v1" in page, (
+        "PICK-CONFIDENCE-FLAGS: must flag pin_1x2_draw_tier4_v1 rows red — "
+        "10 settled bets at −65% ROI; structural high-variance bet type, skip until 50+ sample."
+    )
+    assert "gapPp < 10" in page, (
+        "PICK-CONFIDENCE-FLAGS: must flag gapPp < 10 red — every bot shows "
+        "negative ROI below 10pp in settled data, even after passing the bot's own edge gate."
+    )
+    assert "gapPp >= 25" in page, (
+        "PICK-CONFIDENCE-FLAGS: must yellow-flag gapPp >= 25 on draw/OU35 — "
+        "counter-intuitive negative performance suggests Coolbet phantom lines."
+    )
+    for pattern in ("border-rose-500", "border-amber-500"):
+        assert pattern in page, (
+            f"PICK-CONFIDENCE-FLAGS: must use {pattern} left-border to tint flagged rows — "
+            "color coding lets operator scan at a glance without reading each tooltip."
+        )
+    assert "cFlag.reason" in page or "cFlag?.reason" in page, (
+        "PICK-CONFIDENCE-FLAGS: flag reason must surface as a tooltip title — "
+        "operator needs to understand WHY a row is flagged, not just that it is."
+    )
+
+
 @test("PICKS-USER-GATE — public /api/v1/upcoming is calibrated-only, wider cohort signed-in only")
 def _():
     """PICKS-USER-GATE-2026-08-22 — the public /api/v1/upcoming JSON feed
