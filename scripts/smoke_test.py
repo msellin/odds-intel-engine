@@ -1620,6 +1620,25 @@ def _():
     assert "(0.10, 0.45, 0.45)" in src, "fallback shapes must include AF underdog prior (0.10, 0.45, 0.45)"
     assert "(0.00, 0.50, 0.50)" in src, "fallback shapes must include AF binary (0.00, 0.50, 0.50)"
     assert "skipped_fallback" in src, "fallback-guard rejection counter missing"
+    # BOT-NO-PIN-MODEL-SANITY-2026-08-23: must reject picks where the ensemble is
+    # more than 20pp above the market median-implied probability. Catches cases like
+    # Sireți vs Dacia-Buiucani (model 60% vs market 29% implied → 107% fake edge,
+    # producing a ≥1.80 min odds when the match actually trades at 3.45-3.60).
+    # The fallback-shape filter catches round-number priors but not miscalibrated
+    # real model outputs on leagues with thin training data.
+    assert "BOT-NO-PIN-MODEL-SANITY-2026-08-23" in src, (
+        "no-pin shadow: model-sanity guard marker missing — without it, extreme "
+        "model-market disagreements (e.g. model 60% vs market 29%) produce fake "
+        "100%+ edges and useless min-odds floors"
+    )
+    assert "_median_implied" in src, (
+        "no-pin shadow: must compute _median_implied = 1/median_odds to check "
+        "model vs market gap — this is the sanity bound variable"
+    )
+    assert "prob - _median_implied > 0.20" in src, (
+        "no-pin shadow: must reject when model prob exceeds market median-implied "
+        "by more than 20pp — the threshold that blocks the Sireți-class errors"
+    )
     # BOT-NO-PIN-TIER0-GUARD: matches query must join leagues and exclude tier=0.
     # 5 settled picks on tier=0 leagues (Saudi Div 1, Costa Rica Liga de Ascenso,
     # Germany Regionalliga) accumulated -62.4% ROI because the ensemble has no

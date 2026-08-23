@@ -4033,6 +4033,18 @@ def _run_no_pin_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_
             if best_odds > median_odds * 1.35:
                 skipped_no_anchor += 1
                 continue
+            # BOT-NO-PIN-MODEL-SANITY-2026-08-23: reject picks where the ensemble
+            # is more than 20pp above the market median-implied probability.
+            # When Pinnacle isn't present, the ensemble can drift wildly from
+            # the multi-book consensus (e.g. 60% model vs 29% market-implied,
+            # producing a fake 107% edge). The fallback-shape filter catches
+            # round-number priors but not mis-calibrated real outputs.
+            # 20pp cap: legitimate picks are ≤15pp (44% vs 40%), this only
+            # fires on extreme model-market disagreement (≥20pp gap).
+            _median_implied = 1.0 / median_odds
+            if prob - _median_implied > 0.20:
+                skipped_edge += 1
+                continue
             edge = best_odds * prob - 1.0
             if edge < _EDGE_THRESHOLD:
                 skipped_edge += 1
