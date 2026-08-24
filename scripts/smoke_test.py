@@ -30473,5 +30473,58 @@ def _():
         assert f"WHERE name = '{bot}'" in mig, f"migration must retire {bot}"
     assert mig.count("is_active = FALSE") == 2, "exactly two bots should be retired"
 
+@test("ENGINE-DEPLOY-2026-08-24 — engine auto-deploys and drift is alerted on")
+def _():
+    """The engine had NO deploy automation until 2026-08-24, while the web repo
+    and migrations both did. That asymmetry let the VPS run 21 commits behind
+    with no signal — BOT-NO-PIN-TIER0-GUARD and BOT-NO-PIN-MODEL-SANITY, both
+    shipped to stop bad picks, never ran. Guards:
+      (1) an engine deploy workflow exists and fires on push to main,
+      (2) it restarts oddsintel-scheduler (the REAL unit name) when runtime
+          code changes,
+      (3) it verifies the deployed SHA rather than assuming the pull worked,
+      (4) a drift check runs on a schedule and covers both repos,
+      (5) CLAUDE.md documents the unit name correctly — it said
+          `odds-scheduler.service`, which does not exist.
+    """
+    from pathlib import Path
+    import re
+
+    dep = _engine_path(".github/workflows/deploy.yml")
+    assert dep.exists(), "engine needs its own deploy workflow"
+    d = dep.read_text()
+
+    assert re.search(r"on:\s*\n\s*push:\s*\n\s*branches:\s*\[main\]", d), (
+        "engine deploy must fire on push to main, not only workflow_dispatch"
+    )
+    assert "systemctl restart oddsintel-scheduler" in d, (
+        "deploy must restart the scheduler — pulling alone leaves the running "
+        "process on the old code, since Python loads modules at start"
+    )
+    assert "odds-scheduler" not in d.replace("oddsintel-scheduler", ""), (
+        "wrong unit name — it is oddsintel-scheduler.service"
+    )
+    assert "workers/" in d, "restart must be gated on runtime paths"
+    assert "github.sha" in d, "deploy must verify the deployed SHA"
+    assert "--ff-only" in d, (
+        "use --ff-only so a hand-edited box fails loudly instead of merging"
+    )
+
+    drift = _engine_path(".github/workflows/deploy_drift_check.yml")
+    assert drift.exists(), "drift check workflow missing"
+    dr = drift.read_text()
+    assert "schedule:" in dr and "cron:" in dr, "drift check must run on a schedule"
+    for repo in ("/opt/odds-intel-engine", "/opt/odds-intel-web"):
+        assert repo in dr, f"drift check must cover {repo}"
+    assert "rev-list --count HEAD..origin/main" in dr, (
+        "drift check must compare against origin/main"
+    )
+    assert "TELEGRAM_BOT_TOKEN" in dr, "drift must alert, not just fail silently"
+
+    claude = _engine_path("CLAUDE.md").read_text()
+    assert "oddsintel-scheduler.service" in claude, (
+        "CLAUDE.md must name the real systemd unit"
+    )
+
 if __name__ == "__main__":
     main()

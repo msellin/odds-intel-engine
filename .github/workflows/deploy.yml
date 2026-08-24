@@ -1,0 +1,129 @@
+# ENGINE-DEPLOY-2026-08-24 — automatic VPS deploy for the pipeline engine.
+#
+# WHY THIS EXISTS
+# ---------------
+# Until today the engine had NO deploy automation. `odds-intel-web` has had
+# `.github/workflows/deploy.yml` since 2026-07-07, and migrations auto-apply
+# via `migrate.yml`. That left three delivery paths with two of them automated,
+# and the third — the actual betting logic — requiring a manual
+# `git pull && systemctl restart` that nobody was doing.
+#
+# On 2026-08-24 the VPS was found 21 commits behind. BOT-NO-PIN-TIER0-GUARD and
+# BOT-NO-PIN-MODEL-SANITY, both shipped 2026-08-23 to stop bad picks, had never
+# run. The operator had seen the FRONTEND half of that same day's work go live
+# and reasonably concluded the whole task had shipped. Silent, no signal.
+#
+# Damage that time was nil (the guard would have blocked 2 picks, both winners),
+# but the failure mode is the same shape as the InplayBot UUID bug that burned
+# 11 days.
+#
+# WHAT IT DOES
+# ------------
+# Always pulls on any push to main, so the box never drifts. Restarts the
+# scheduler ONLY when runtime code changed (`workers/**` or `requirements.txt`)
+# so doc-only commits don't cause needless churn.
+#
+# TRADEOFF, STATED EXPLICITLY: a restart kills any in-flight pipeline job.
+# That is accepted. Jobs re-run on the next tick (:05/:35 betting, :10/:40
+# shadow) and the shadow writers dedupe via ON CONFLICT DO NOTHING, so an
+# interrupted run self-heals. A few minutes of a re-run job is strictly less
+# harmful than days of stale betting logic, which is what the alternative
+# actually cost us.
+
+name: Deploy Engine to VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: engine-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 204.168.199.8
+          username: root
+          key: ${{ secrets.VPS_DEPLOY_KEY }}
+          command_timeout: 10m
+          script: |
+            set -euo pipefail
+            cd /opt/odds-intel-engine
+
+            OLD=$(git rev-parse HEAD)
+            git fetch --quiet origin main
+            # --ff-only on purpose: if someone hand-edited a tracked file on the
+            # box we want a LOUD failure, not a silent merge commit.
+            git pull --ff-only --quiet origin main
+            NEW=$(git rev-parse HEAD)
+
+            if [ "$OLD" = "$NEW" ]; then
+              echo "already at $NEW — nothing to do"
+              exit 0
+            fi
+
+            echo "deployed $OLD -> $NEW"
+            CHANGED=$(git diff --name-only "$OLD" "$NEW")
+            echo "--- changed files ---"
+            echo "$CHANGED"
+
+            if echo "$CHANGED" | grep -qE '^requirements\.txt$'; then
+              echo "--- requirements.txt changed, installing ---"
+              ./venv/bin/pip install -q -r requirements.txt
+            fi
+
+            if echo "$CHANGED" | grep -qE '^(workers/|requirements\.txt)'; then
+              echo "--- runtime code changed, restarting scheduler ---"
+              systemctl restart oddsintel-scheduler
+              sleep 8
+              systemctl is-active --quiet oddsintel-scheduler
+              echo "scheduler restarted and active"
+            else
+              echo "--- no runtime change, scheduler left running ---"
+            fi
+
+      - name: Verify deployed SHA and service health
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 204.168.199.8
+          username: root
+          key: ${{ secrets.VPS_DEPLOY_KEY }}
+          script: |
+            set -euo pipefail
+            cd /opt/odds-intel-engine
+
+            DEPLOYED=$(git rev-parse HEAD)
+            if [ "$DEPLOYED" != "${{ github.sha }}" ]; then
+              echo "SHA MISMATCH: VPS at $DEPLOYED, expected ${{ github.sha }}"
+              exit 1
+            fi
+
+            if ! systemctl is-active --quiet oddsintel-scheduler; then
+              echo "oddsintel-scheduler is NOT active after deploy"
+              systemctl status oddsintel-scheduler --no-pager -l | tail -30
+              exit 1
+            fi
+
+            # The module must actually import — a syntax error in a writer
+            # would otherwise sit here until the next scheduled job failed.
+            ./venv/bin/python3 -c "import workers.jobs.daily_pipeline_v2" >/dev/null
+            echo "verified: $DEPLOYED, scheduler active, pipeline module imports"
+
+      - name: Alert on failure
+        if: failure()
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          [ -z "${TG_TOKEN:-}" ] && exit 0
+          curl -sS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT}" \
+            -d parse_mode="HTML" \
+            -d text="🚨 <b>Engine deploy FAILED</b>%0Acommit <code>${GITHUB_SHA:0:8}</code>%0AThe VPS may be running stale betting logic.%0A${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            >/dev/null || true

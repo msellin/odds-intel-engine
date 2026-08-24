@@ -93,6 +93,36 @@ Do not let docs drift from reality. If you notice something marked TODO that is 
 - Manual steps and launch checklist live in `ROADMAP.md` (Launch Checklist section)
 - Retired docs (BACKLOG, PROGRESS, NEXT_STEPS, research_findings) have been deleted — history is in git
 
+## Deployment — three paths, all automated
+
+Everything below fires on push to `main`. **Do not hand-deploy**; if something
+looks stale, check the workflow run rather than SSHing in and pulling.
+
+| What changed | Path | Workflow | Effect |
+|---|---|---|---|
+| `workers/**`, `requirements.txt` | engine → VPS | `odds-intel-engine/.github/workflows/deploy.yml` | pull + `systemctl restart oddsintel-scheduler` |
+| Anything else in the engine repo | engine → VPS | same | pull only, no restart |
+| `supabase/migrations/**` | DB | `migrate.yml` | applies + records in `_schema_migrations` |
+| `odds-intel-web/**` | web → VPS | `odds-intel-web/.github/workflows/deploy.yml` | pull + clean build + `pm2 restart` |
+
+**Why this is written down (ENGINE-DEPLOY-2026-08-24):** the engine had no
+deploy automation until 2026-08-24 while the web repo and migrations both did.
+On that date the VPS was found **21 commits behind** — `BOT-NO-PIN-TIER0-GUARD`
+and `BOT-NO-PIN-MODEL-SANITY`, both shipped the previous day specifically to
+stop bad picks, had never run. Because the frontend half of the same day's work
+*had* auto-deployed, the task looked shipped. Assume nothing about what is live
+on the box; the drift check is the only thing that actually proves it.
+
+`deploy_drift_check.yml` runs daily at 06:00 UTC and Telegram-alerts if either
+repo is behind, on a non-main branch, has uncommitted tracked changes, or if
+`oddsintel-scheduler` / pm2 `odds-intel-web` is not running.
+
+Manual deploy (only when Actions itself is broken):
+```bash
+ssh root@204.168.199.8 'cd /opt/odds-intel-engine && git pull --ff-only \
+  && systemctl restart oddsintel-scheduler && systemctl is-active oddsintel-scheduler'
+```
+
 ## Database Migrations
 
 **All migrations live in `supabase/migrations/` in this repo (odds-intel-engine) — never in odds-intel-web.**
@@ -135,9 +165,9 @@ ESPN (free)                  -> Settlement results backup
 - Python 3.14, dependencies in `requirements.txt`
 - **Postgres 17 on Hetzner VPS** for DB — migrations in `supabase/migrations/` (kept the folder name for history; applied by GitHub Actions to the VPS DB via the auto-apply workflow)
 - Supabase Auth still authoritative for user identity (`auth.users`); Supabase Storage still hosts model bundles
-- **Hetzner VPS** for pipeline automation (`workers/scheduler.py` as systemd unit `odds-scheduler.service`; scheduler + FS Docker + Postgres + PostgREST + Next.js all colocated)
+- **Hetzner VPS** for pipeline automation (`workers/scheduler.py` as systemd unit **`oddsintel-scheduler.service`** — note the name, `odds-scheduler` does not exist; scheduler + FS Docker + Postgres + PostgREST + Next.js all colocated)
 - Direct PostgreSQL (psycopg2) for engine writes; PostgREST for HTTP-based frontend reads and external callers
-- GitHub Actions kept for manual `workflow_dispatch` triggers + DB migrations only
+- GitHub Actions runs: engine deploy (`deploy.yml`), DB migrations (`migrate.yml`), daily drift check (`deploy_drift_check.yml`), smoke tests, plus manual `workflow_dispatch` triggers
 - Credentials in `.env` (gitignored) — never commit secrets
 - Prediction model: Poisson + XGBoost blend with 3-tier fallback (A/B/C)
 - 16 paper trading bots running since 2026-04-27
@@ -157,7 +187,7 @@ The frontend lives at `../odds-intel-web/` (sibling directory). All rules for it
 - **Per-user client-side reads** must go through a Next.js server route (browser can't authenticate to VPS PostgREST directly). Example: `/api/me/profile` in place of `supabase.from("profiles").eq("id", user.id)` on the browser client.
 - Payments: Stripe (checkout, webhook at `/api/stripe/webhook`, portal)
 - Error monitoring: Sentry
-- Deployment: VPS pm2 (:3000) behind nginx, deployed via `git push` + `npm run build` + `pm2 restart odds-intel-web --update-env` (NEXT_PUBLIC_* are baked at build time, so any env change requires a fresh build)
+- Deployment: VPS pm2 (:3000) behind nginx. **Automatic on push to main** via `.github/workflows/deploy.yml` — see "Deployment" below. NEXT_PUBLIC_* are baked at build time, so any env change requires a fresh build.
 
 ### Tier Gating Rules
 

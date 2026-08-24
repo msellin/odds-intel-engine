@@ -1,0 +1,73 @@
+# DEPLOY-DRIFT-CHECK-2026-08-24 — safety net behind the deploy workflows.
+#
+# Deploy automation only helps while it works. This catches the cases it
+# cannot: a deploy that failed and nobody read the alert, a hand-edit on the
+# box that blocks --ff-only, a service that died hours after a clean deploy,
+# or a repo somebody pointed at a different branch.
+#
+# Checks BOTH deployed repos against origin/main and alerts on any drift.
+# Runs daily at 06:00 UTC — before the European fixture load, so there is time
+# to fix it before the day's picks are generated.
+
+name: Deploy Drift Check
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check VPS repos against origin/main
+        id: check
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 204.168.199.8
+          username: root
+          key: ${{ secrets.VPS_DEPLOY_KEY }}
+          script: |
+            set -uo pipefail
+            PROBLEMS=""
+
+            check_repo () {
+              DIR="$1"; NAME="$2"
+              cd "$DIR" || { PROBLEMS="${PROBLEMS}%0A- ${NAME}: directory missing"; return; }
+              git fetch --quiet origin main 2>/dev/null || true
+              BRANCH=$(git rev-parse --abbrev-ref HEAD)
+              BEHIND=$(git rev-list --count HEAD..origin/main 2>/dev/null || echo "?")
+              DIRTY=$(git status --porcelain --untracked-files=no | wc -l | tr -d ' ')
+              echo "${NAME}: branch=${BRANCH} behind=${BEHIND} dirty=${DIRTY}"
+              [ "$BRANCH" != "main" ] && PROBLEMS="${PROBLEMS}%0A- ${NAME}: on branch <b>${BRANCH}</b>, not main"
+              [ "$BEHIND" != "0" ] && [ "$BEHIND" != "?" ] && PROBLEMS="${PROBLEMS}%0A- ${NAME}: <b>${BEHIND} commits behind</b> origin/main"
+              [ "$DIRTY" != "0" ] && PROBLEMS="${PROBLEMS}%0A- ${NAME}: ${DIRTY} uncommitted change(s) to tracked files — blocks --ff-only"
+            }
+
+            check_repo /opt/odds-intel-engine "engine"
+            check_repo /opt/odds-intel-web "web"
+
+            # Services must be up, not merely deployed.
+            systemctl is-active --quiet oddsintel-scheduler \
+              || PROBLEMS="${PROBLEMS}%0A- <b>oddsintel-scheduler is NOT running</b>"
+            pm2 pid odds-intel-web >/dev/null 2>&1 \
+              || PROBLEMS="${PROBLEMS}%0A- <b>pm2 odds-intel-web is NOT running</b>"
+
+            if [ -n "$PROBLEMS" ]; then
+              echo "DRIFT_DETECTED${PROBLEMS}"
+              exit 1
+            fi
+            echo "no drift — both repos current, both services up"
+
+      - name: Alert on drift
+        if: failure()
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          [ -z "${TG_TOKEN:-}" ] && exit 0
+          curl -sS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT}" \
+            -d parse_mode="HTML" \
+            -d text="⚠️ <b>VPS deploy drift detected</b>%0AThe VPS may be running stale code. Check the run log for which repo/service.%0A${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            >/dev/null || true
