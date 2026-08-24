@@ -340,7 +340,19 @@ The `simulated_bets` table is the **public track-record chain** — the basis fo
    bets. It is now batched (`get_fixtures_batch`, 20 ids/call) and bounded by
    `STALE_SWEEP_BUDGET_S` (default 300s); rows are processed oldest-first so a
    truncated run still drains the backlog. Postponed matches now void
-   `shadow_bets` as well as `simulated_bets`.
+   `shadow_bets` as well as `simulated_bets`, stamping `void_reason='postponed'`.
+
+   **BET-VOID-INTEGRITY (2026-08-24):** the sweep ends with
+   `resettle_wrongly_voided_bets()`. Voiding a postponed fixture's bets was a
+   one-way door — when AF later reported FT and the match flipped to `finished`
+   with a real score, nothing reopened them. Piast Gliwice 1-1 Legia left 57
+   `double_chance 1X` picks void (1X on a draw wins); an unversioned 2026-08-23
+   cleanup left 143 more. The pass re-runs `settle_bet_result` over every void
+   on a finished match and **writes only when the result stops being `void`**,
+   so genuine AH/DNB pushes are untouched and steady state does zero writes.
+   `void_reason='quarantine'` rows (the May-June INPLAY-O / OU cleanups) are
+   excluded outright. Any repair Telegram-alerts — steady state is zero, so an
+   alert always means something upstream voided a bet it shouldn't have.
 
 ### ⑩ Match Previews (`match_previews.py`) — ENG-3
 - Runs at 07:15 UTC, after morning pipeline + 07:00 odds refresh complete

@@ -95,13 +95,13 @@ def _mark_postponed_and_void(match_id: str) -> tuple[int, int]:
     )
     voided_sim = execute_write(
         """UPDATE simulated_bets
-              SET result = 'void', pnl = 0
+              SET result = 'void', pnl = 0, void_reason = 'postponed'
             WHERE match_id = %s AND result = 'pending'""",
         (match_id,),
     ) or 0
     voided_shadow = execute_write(
         """UPDATE shadow_bets
-              SET result = 'void', pnl = 0
+              SET result = 'void', pnl = 0, void_reason = 'postponed'
             WHERE match_id = %s AND result = 'pending'""",
         (match_id,),
     ) or 0

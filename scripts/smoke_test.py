@@ -30735,5 +30735,95 @@ def _():
     assert "_dump_ou_mislabel_payload" in writer, "dump never wired to the guard"
 
 
+@test("BET-VOID-INTEGRITY — wrongly-voided bets get re-settled, quarantines never do")
+def _bet_void_integrity():
+    """BET-VOID-INTEGRITY-2026-08-24 — a postponed fixture that later gets
+    played left its bets voided forever, and an ad-hoc 2026-08-23 cleanup
+    voided 143 bot_no_pin_home_v1 picks including a winning Fløya 5-3 Home
+    pick the operator had reviewed for real money.
+
+    Guards the three properties that make the re-settler safe:
+      (1) it only writes when the recomputed result stops being 'void', so
+          genuine AH/DNB pushes survive and the pass is idempotent;
+      (2) it never touches void_reason='quarantine' — resurrecting the
+          INPLAY-O-QUARANTINE / OU-sweep rows would re-inject fake PnL;
+      (3) simulated_bets repairs move bots.current_bankroll, because a void
+          contributed nothing to it.
+    """
+    import inspect
+    from pathlib import Path
+
+    from workers.jobs import settlement as st
+
+    assert hasattr(st, "resettle_wrongly_voided_bets"), (
+        "resettle_wrongly_voided_bets is the only path back from a wrong void — "
+        "nothing else in the repo ever un-voids a bet"
+    )
+    src = inspect.getsource(st.resettle_wrongly_voided_bets)
+
+    assert "IS DISTINCT FROM 'quarantine'" in st._WRONGLY_VOIDED_SQL, (
+        "the re-settler must exclude void_reason='quarantine'. Those are the "
+        "deliberate May-June cleanups; reopening them undoes the whole point "
+        "of INPLAY-O-QUARANTINE (62 rows, €577 of fake PnL)."
+    )
+    assert "m.status = 'finished'" in st._WRONGLY_VOIDED_SQL, (
+        "only re-settle on finished matches — a postponed fixture's void is correct"
+    )
+    assert "m.score_home IS NOT NULL" in st._WRONGLY_VOIDED_SQL, (
+        "finished with no score cannot be settled; skip rather than guess"
+    )
+
+    assert 'settlement["result"] == "void"' in src and "continue" in src, (
+        "the pass must skip rows that recompute to void. Without that, genuine "
+        "AH pushes get rewritten every 15 minutes and the sweep is not idempotent."
+    )
+    assert "current_bankroll = current_bankroll + %s" in src, (
+        "a repaired simulated_bet changes PnL, so bots.current_bankroll owes the "
+        "delta — settlement's normal path updates bankroll and this must too"
+    )
+    assert "send_telegram" in src, (
+        "steady state is zero repairs, so any repair means something upstream "
+        "voided wrongly — that has to be visible, not just logged to journald"
+    )
+
+    # Wired into the 15-min sweep, not just importable.
+    ready = inspect.getsource(st.settle_ready_matches)
+    assert "resettle_wrongly_voided_bets" in ready, (
+        "re-settler must run from settle_ready_matches (15-min cron). A helper "
+        "nobody calls is how the postponed-void zombies accumulated in the "
+        "first place."
+    )
+
+    # Both deliberate-void writers must stamp a reason, or the re-settler
+    # cannot tell a postponement from a mystery UPDATE.
+    stale = inspect.getsource(st.fix_stale_live_matches)
+    assert stale.count("void_reason='postponed'") >= 2, (
+        "fix_stale_live_matches must stamp void_reason on BOTH simulated_bets "
+        "and shadow_bets"
+    )
+    sweeper = (Path(__file__).resolve().parent / "match_status_sweeper.py").read_text()
+    assert sweeper.count("void_reason = 'postponed'") >= 2, (
+        "match_status_sweeper must stamp void_reason on both bet tables too"
+    )
+
+    # Migration 282 — column, quarantine backfill, dedupe view.
+    mig = (Path(__file__).resolve().parent.parent
+           / "supabase" / "migrations" / "282_void_reason.sql").read_text()
+    for table in ("shadow_bets", "simulated_bets"):
+        assert f"ALTER TABLE {table}" in mig and "void_reason" in mig, (
+            f"282 must add void_reason to {table}"
+        )
+    assert "'quarantine'" in mig and "created_at < '2026-07-01'" in mig, (
+        "282 must backfill the pre-July quarantines. Every simulated_bets void "
+        "before 2026-07-01 is a documented cleanup; without the backfill the "
+        "first re-settler run resurrects all 300+ of them."
+    )
+    assert "CREATE OR REPLACE VIEW shadow_bets_unique" in mig, (
+        "shadow_bets_unique gives engine-side analysis the same deduped basis "
+        "the admin UI computes client-side — 30-min cohorts mean raw row counts "
+        "overstate n by ~16x against the n>=50 graduation gates"
+    )
+
+
 if __name__ == "__main__":
     main()

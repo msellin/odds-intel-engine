@@ -1044,7 +1044,7 @@ def fix_stale_live_matches():
                 )
                 voided = execute_write(
                     """UPDATE simulated_bets
-                       SET result='void', pnl=0
+                       SET result='void', pnl=0, void_reason='postponed'
                        WHERE match_id=%s AND result='pending'""",
                     [match_id],
                 ) or 0
@@ -1053,7 +1053,7 @@ def fix_stale_live_matches():
                 # simulated_bets only; the standalone sweeper does both.
                 voided += execute_write(
                     """UPDATE shadow_bets
-                       SET result='void', pnl=0
+                       SET result='void', pnl=0, void_reason='postponed'
                        WHERE match_id=%s AND result='pending'""",
                     [match_id],
                 ) or 0
@@ -1137,6 +1137,186 @@ def settle_ready_matches():
             _settle_pending_shadow_bets(shadow_pending, finished=[])
     except Exception as e:
         console.print(f"  [yellow]Shadow catch-up settle error (non-fatal): {e}[/yellow]")
+
+    # BET-VOID-INTEGRITY-2026-08-24 — a postponed fixture that later gets played
+    # leaves its bets voided forever, because nothing ever revisited them. Run
+    # after the settle passes above so freshly-finished matches are already
+    # scored. Steady state does zero writes.
+    try:
+        resettle_wrongly_voided_bets()
+    except Exception as e:
+        console.print(f"  [yellow]Void-integrity sweep error (non-fatal): {e}[/yellow]")
+
+
+_WRONGLY_VOIDED_SQL = """
+SELECT
+    sb.id, sb.bot_id, sb.match_id, sb.market, sb.selection, sb.stake,
+    sb.odds_at_pick, sb.pnl, sb.void_reason,
+    m.score_home, m.score_away,
+    ht.name AS home_team_name, ta.name AS away_team_name
+FROM {table} sb
+JOIN matches m ON m.id = sb.match_id
+LEFT JOIN teams ht ON m.home_team_id = ht.id
+LEFT JOIN teams ta ON m.away_team_id = ta.id
+WHERE sb.result = 'void'
+  AND sb.void_reason IS DISTINCT FROM 'quarantine'
+  AND m.status = 'finished'
+  AND m.score_home IS NOT NULL
+  AND m.score_away IS NOT NULL
+ORDER BY sb.match_id
+LIMIT %s
+"""
+
+
+def resettle_wrongly_voided_bets(limit: int = 2000, dry_run: bool = False) -> dict:
+    """BET-VOID-INTEGRITY-2026-08-24 — reopen bets that are void but shouldn't be.
+
+    Two mechanisms put wrong voids in the ledger and neither had a way back:
+
+      1. `fix_stale_live_matches()` / `match_status_sweeper.py` void every pending
+         bet when AF reports a fixture postponed. When AF later reports FT the
+         match flips to 'finished' with a real score, but nothing reopened the
+         bets. Piast Gliwice 1-1 Legia (2026-08-22) left 57 `double_chance 1X`
+         picks void — 1X on a draw wins.
+      2. Ad-hoc cleanup SQL. On 2026-08-23 an unversioned UPDATE voided 143
+         `bot_no_pin_home_v1` picks matching the then-new 20pp model-sanity rule,
+         including the winning Fløya 5-3 Home pick the operator had reviewed.
+
+    This pass re-runs `settle_bet_result` over every void on a finished match
+    and **writes only when the recomputed result is no longer 'void'**. Genuine
+    AH/DNB pushes recompute to void and are left completely untouched, which
+    also makes the pass idempotent — a steady state does zero writes.
+
+    `void_reason='quarantine'` rows are excluded outright: those are the
+    deliberate May-June cleanups (INPLAY-O-QUARANTINE and the OU sweeps) whose
+    whole purpose was to remove fake PnL. Resurrecting them would undo that.
+
+    Returns {'checked', 'repaired', 'shadow', 'simulated', 'pnl_delta'}.
+    """
+    checked = repaired = n_shadow = n_sim = 0
+    pnl_delta_total = 0.0
+    bankroll_delta: dict[str, float] = {}
+    examples: list[str] = []
+
+    for table in ("shadow_bets", "simulated_bets"):
+        try:
+            rows = execute_query(_WRONGLY_VOIDED_SQL.format(table=table), [limit])
+        except Exception as e:
+            console.print(f"  [yellow]Void-integrity query failed for {table}: {e}[/yellow]")
+            continue
+
+        for bet in rows or []:
+            checked += 1
+            try:
+                settlement = settle_bet_result(
+                    bet, int(bet["score_home"]), int(bet["score_away"]), None
+                )
+            except Exception as e:
+                console.print(f"  [yellow]Void-integrity recompute failed for {bet['id']}: {e}[/yellow]")
+                continue
+
+            if settlement["result"] == "void":
+                # Genuine push (AH whole line / DNB draw) — leave it alone.
+                continue
+
+            # A market that cannot push resolving to void means the row was
+            # never really settled; anything else here is a repaired postponement.
+            reason = (
+                "postponed-then-played"
+                if bet.get("void_reason") == "postponed"
+                else "unexplained-void"
+            )
+
+            if dry_run:
+                repaired += 1
+                if len(examples) < 12:
+                    examples.append(
+                        f"{bet['home_team_name']} v {bet['away_team_name']} "
+                        f"{bet['score_home']}-{bet['score_away']} "
+                        f"{bet['market']}/{bet['selection']} → {settlement['result'].upper()} "
+                        f"({settlement['pnl']:+.2f}, {reason})"
+                    )
+                continue
+
+            # The old row contributed 0 to PnL whether it stored 0 or NULL, so
+            # the delta is simply the newly computed pnl.
+            delta = float(settlement["pnl"])
+            closing_odds = get_closing_odds(
+                bet["match_id"],
+                _normalize_bet_market(bet["market"], bet["selection"]),
+                _normalize_bet_selection(bet["selection"]),
+            )
+            clv = None
+            if closing_odds and float(closing_odds) > 0:
+                clv = round((float(bet["odds_at_pick"]) / float(closing_odds)) - 1, 4)
+
+            try:
+                execute_write(
+                    f"UPDATE {table} SET result = %s, pnl = %s, closing_odds = %s, "
+                    f"clv = %s, void_reason = NULL WHERE id = %s",
+                    [settlement["result"], settlement["pnl"], closing_odds, clv, bet["id"]],
+                )
+            except Exception as e:
+                console.print(f"  [yellow]Void-integrity write failed for {bet['id']}: {e}[/yellow]")
+                continue
+
+            repaired += 1
+            pnl_delta_total += delta
+            if table == "shadow_bets":
+                n_shadow += 1
+            else:
+                # simulated_bets feed bot bankroll; a void contributed nothing,
+                # so the bankroll owes exactly the recomputed pnl.
+                n_sim += 1
+                bankroll_delta[bet["bot_id"]] = bankroll_delta.get(bet["bot_id"], 0.0) + delta
+            if len(examples) < 12:
+                examples.append(
+                    f"{bet['home_team_name']} v {bet['away_team_name']} "
+                    f"{bet['score_home']}-{bet['score_away']} "
+                    f"{bet['market']}/{bet['selection']} → {settlement['result'].upper()} "
+                    f"({settlement['pnl']:+.2f}, {reason})"
+                )
+
+    for bot_id, delta in bankroll_delta.items():
+        if not delta:
+            continue
+        try:
+            execute_write(
+                "UPDATE bots SET current_bankroll = current_bankroll + %s WHERE id = %s",
+                [round(delta, 2), bot_id],
+            )
+        except Exception as e:
+            console.print(f"  [yellow]Void-integrity bankroll update failed for {bot_id}: {e}[/yellow]")
+
+    if repaired:
+        verb = "would repair" if dry_run else "repaired"
+        console.print(
+            f"[yellow]Void integrity: {verb} {repaired} wrongly-voided bet(s) "
+            f"(shadow {n_shadow}, simulated {n_sim}, PnL {pnl_delta_total:+.2f}) "
+            f"of {checked} checked[/yellow]"
+        )
+        for line in examples:
+            console.print(f"    [dim]{line}[/dim]")
+        # A repair means something upstream voided a bet it had no business
+        # voiding. Steady state is zero, so any alert here is actionable.
+        if not dry_run:
+            try:
+                from workers.notify.telegram import send_telegram
+                send_telegram(
+                    f"⚠️ Void integrity: re-settled {repaired} wrongly-voided bet(s)\n"
+                    f"shadow={n_shadow} simulated={n_sim} PnL {pnl_delta_total:+.2f}\n"
+                    + "\n".join(examples[:5])
+                )
+            except Exception as e:
+                console.print(f"  [dim]Void-integrity telegram failed: {e}[/dim]")
+
+    return {
+        "checked": checked,
+        "repaired": repaired,
+        "shadow": n_shadow,
+        "simulated": n_sim,
+        "pnl_delta": round(pnl_delta_total, 2),
+    }
 
 
 def _settle_user_picks_for_matches(match_ids: list[str]):
