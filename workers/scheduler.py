@@ -44,6 +44,19 @@ _last_job_lock = threading.Lock()
 _recent_errors: list[dict] = []  # Last N job errors for health endpoint
 _MAX_RECENT_ERRORS = 20
 
+# ── SCHEDULER-STALL-RCA / SCHEDULER-AF-429-DEADLOCK watchdog (2026-08-24) ──
+# Registry of jobs currently occupying an APScheduler worker thread, keyed by
+# thread ident. The 2026-08-22 stall took hours of journalctl archaeology to
+# pin down because the only evidence was "max_instances blocked" — we knew a
+# job was stuck but not WHERE. The watchdog below turns that into a stack trace
+# in the log the first time it happens.
+_inflight: dict[int, dict] = {}
+_inflight_lock = threading.Lock()
+# Longest any single job legitimately runs today is weekly_retrain (~21 min) and
+# settlement (~30 min). 45 min is comfortably past both, so a trip means a hang.
+JOB_STALL_WARN_S = float(os.getenv("JOB_STALL_WARN_S", "2700"))
+_stall_reported: set[tuple[int, str]] = set()
+
 SHADOW_MODE = os.getenv("SHADOW_MODE", "false").lower() == "true"
 HEALTH_PORT = int(os.getenv("PORT", "8080"))
 
@@ -87,6 +100,10 @@ def _run_job(name: str, fn, *args, _log_run: bool = True, **kwargs):
             run_id = None
 
     error_msg = None
+    _tid = threading.get_ident()
+    with _inflight_lock:
+        _inflight[_tid] = {"job": full_name, "started_monotonic": time.monotonic(),
+                           "started_at": started.isoformat()}
     try:
         fn(*args, **kwargs)
         status = "completed"
@@ -108,6 +125,10 @@ def _run_job(name: str, fn, *args, _log_run: bool = True, **kwargs):
         })
         if len(_recent_errors) > _MAX_RECENT_ERRORS:
             _recent_errors.pop(0)
+
+    with _inflight_lock:
+        _inflight.pop(_tid, None)
+        _stall_reported.discard((_tid, full_name))
 
     if _log_run and run_id:
         try:
@@ -1628,6 +1649,69 @@ def job_settlement():
     _run_job("settlement", settlement_pipeline, _log_run=False)
 
 
+def job_stall_watchdog():
+    """Detect a job that has occupied its worker thread past JOB_STALL_WARN_S and
+    dump every thread's stack so the hang is diagnosable from the log alone.
+
+    SCHEDULER-STALL-RCA (2026-08-24). On 2026-08-22 settle_ready started at 06:15
+    and never returned; max_instances=1 then silently skipped every run until
+    after 11:45, leaving 439 matches unsettled and 1,760 zombie shadow bets. The
+    only trace in the journal was a repeating "max_instances blocked" line, which
+    says a job is stuck but not where — pinning it down needed hours of log
+    archaeology plus a py-spy install after the fact.
+
+    Uses sys._current_frames() rather than py-spy so it has zero external deps and
+    works identically on the VPS and locally. Reports once per (thread, job) so a
+    long hang produces one dump, not one every tick.
+    """
+    import traceback as _tb
+    now = time.monotonic()
+    with _inflight_lock:
+        snapshot = {tid: dict(meta) for tid, meta in _inflight.items()}
+    stalled = [
+        (tid, meta) for tid, meta in snapshot.items()
+        if now - meta["started_monotonic"] >= JOB_STALL_WARN_S
+    ]
+    if not stalled:
+        return
+
+    frames = sys._current_frames()
+    for tid, meta in stalled:
+        key = (tid, meta["job"])
+        with _inflight_lock:
+            if key in _stall_reported:
+                continue
+            _stall_reported.add(key)
+        elapsed_min = (now - meta["started_monotonic"]) / 60
+        frame = frames.get(tid)
+        stack = "".join(_tb.format_stack(frame)) if frame else "<thread gone>"
+        console.print(f"\n[red]{'═' * 60}[/red]")
+        console.print(
+            f"[red bold]JOB STALLED: {meta['job']} — running {elapsed_min:.0f} min "
+            f"(started {meta['started_at']}, thread {tid})[/red bold]"
+        )
+        console.print(f"[red dim]{stack}[/red dim]")
+        console.print(f"[red]{'═' * 60}[/red]")
+        _recent_errors.append({
+            "job": meta["job"],
+            "error": (f"STALLED {elapsed_min:.0f}min — stack tail: "
+                      f"{stack.strip().splitlines()[-1][:300] if stack.strip() else 'n/a'}"),
+            "at": datetime.now(timezone.utc).isoformat(),
+        })
+        if len(_recent_errors) > _MAX_RECENT_ERRORS:
+            _recent_errors.pop(0)
+        try:
+            from workers.notify.telegram import send_telegram
+            send_telegram(
+                f"\u26a0\ufe0f Scheduler job stalled: {meta['job']} running "
+                f"{elapsed_min:.0f} min. Stack dumped to journalctl.",
+                dedup_key=f"job-stall:{meta['job']}",
+                dedup_window_s=3600,
+            )
+        except Exception:
+            pass
+
+
 def job_settle_ready():
     """15-min sweep: settle any finished match not yet marked done."""
     from workers.jobs.settlement import settle_ready_matches
@@ -2322,6 +2406,12 @@ def main():
     # DB-backed dedup via pipeline_health_state (4h window), recovery
     # auto-clears on next successful run. Fires at :23 to offset from
     # the bulk of cron firing at :00/:05/:12/:15/:17/:30.
+    # Stall watchdog: every 5 min, off-the-hour. Deliberately NOT wrapped in
+    # _run_job — it must keep working when every other worker thread is wedged,
+    # and it must not appear in its own _inflight registry. SCHEDULER-STALL-RCA.
+    scheduler.add_job(job_stall_watchdog, IntervalTrigger(minutes=5),
+                      id="job_stall_watchdog", name="Job Stall Watchdog [5min]")
+
     scheduler.add_job(job_pipeline_failure_alerter,
                       CronTrigger(minute=23),
                       id="pipeline_failure_alerter",

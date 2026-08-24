@@ -42,6 +42,31 @@
 
 Remaining headroom: ~60K req/day. AF Ultra required — **do NOT downgrade to Pro** (7.5K limit).
 
+### Per-minute limit is the binding constraint, not the daily quota (2026-08-24)
+
+The daily quota has never been the problem — the VPS sits at ~8K/150K by mid-morning.
+The **per-minute** limit is what actually bites: `journalctl -u oddsintel-scheduler`
+shows 100–2,300 HTTP 429 `"exceeded the limit of requests per minute"` responses
+*every day*, and those 429s are what fed both scheduler hangs (SCHEDULER-AF-429-DEADLOCK,
+SCHEDULER-STALL-RCA).
+
+Two structural reasons, both worth knowing before adding any AF-touching job:
+
+1. **The rate limiter is per-process, the quota is per-account.** `MIN_REQUEST_INTERVAL`
+   in `workers/api_clients/api_football.py` throttles one Python process to ~8 req/s.
+   But the same API key is used concurrently by the VPS scheduler, the LivePoller
+   thread, the `coolbet_health_ping` subprocess, the `match_status_sweeper` GitHub
+   Actions cron, and any manual script — none of which can see each other's rate.
+   Adding a new AF caller adds its full burst on top.
+2. **Bursts, not averages, trip it.** Startup catch-up and any per-fixture fan-out
+   loop issue their calls back-to-back.
+
+Every AF request is now bounded by `AF_TIMEOUT_S` / `AF_MAX_ATTEMPTS` /
+`AF_RETRY_BUDGET_S`, and `Retry-After` is honoured when AF sends it, so a 429 storm
+costs bounded time instead of hanging a scheduler job. That makes the 429s survivable;
+it does not make them go away. A real fix (a shared cross-process token bucket, or
+simply fewer callers) is not yet filed as its own task — see AF-QUOTA-REALLOCATION.
+
 ---
 
 ## Integrated Endpoints (T1–T13)

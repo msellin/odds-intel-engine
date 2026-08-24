@@ -122,6 +122,16 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 ## Current System State (2026-06-24, infra updates 2026-07-13)
 
+> **Infra update 2026-08-24 (SCHEDULER-STALL-RCA / SCHEDULER-AF-429-DEADLOCK)** — the scheduler's
+> recurring multi-hour "hangs" (Jul 12, Jul 15, Aug 22) were never the systemd process dying. A single
+> APScheduler worker thread wedged inside `fix_stale_live_matches()`, which fan-out-fetched 225-350
+> fixtures one AF call at a time inside a job that fires every 15 min with `max_instances=1`; every
+> later run was then correctly skipped, silently, for hours. That sweep is now batched and
+> wall-clock-bounded, every AF request has a hard retry budget, and a new `job_stall_watchdog` (5-min
+> interval) stack-dumps and Telegrams any job that holds its worker past 45 min. **Operational
+> consequence: "the scheduler is running" is not evidence the pipeline is running.** Check
+> `max_instances blocked` in `journalctl -u oddsintel-scheduler` — that line means a job is wedged.
+
 > **Infra update 2026-07-13** — Supabase `public` schema dropped (SUPABASE-CLEANUP-DROP). Data plane fully on Hetzner VPS Postgres 17 since 2026-07-09 (SUPABASE-TO-VPS); Supabase now holds only Auth (52 users) + Storage `models` bucket (222 MB). Supabase DB is 18 MB, cleared for Free-tier downgrade — pending user dashboard action. See `INFRASTRUCTURE.md` for full state + cost delta.
 
 > **Note 2026-06-24**: Major product collapse. The frontend surface narrowed from

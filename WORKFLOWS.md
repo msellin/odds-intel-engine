@@ -91,6 +91,7 @@ Sun 03:00 ㊶ CS2 map stats job_cs2_compute_map_stats()    CS2-MAP-STATS-EXPAND 
          ⑫ InplayBot      inplay_bot.py             Paper trading: 8 strategies (A-F + A2 + C_home), runs after each LivePoller snapshot store; sends Telegram DMs to connected Pro/Elite users on new bets
 */30   ⑯ Dash Cache Ref  write_dashboard_cache()   Rebuilds dashboard_cache at :15 and :45 — keeps /performance fresh
 */5    ⑭ Healthcheck     job_healthcheck_ping()    Pings healthchecks.io every 5min — external dead-man's switch
+*/5    ㊷ Stall watchdog  job_stall_watchdog()      SCHEDULER-STALL-RCA 2026-08-24 — dumps the stack of any job that has held its worker thread >JOB_STALL_WARN_S (45min) and Telegrams once per hang. NOT wrapped in _run_job so it keeps working while every other worker is wedged. Exists because the 2026-08-22 settle_ready hang (06:15→11:45) left only "max_instances blocked" in the journal — proof a job was stuck, no clue where.
 09:35  ⑬ Health Alert    run_morning_checks()      Alerts if 0 bets placed or >10 matches missing Pinnacle odds
 22:45  ㊳ Ledger snapshot  .github/workflows/track_record_ledger.yml  CLOSING-LINE-LEDGER 2026-06-24 — GitHub Actions cron. Runs `scripts/export_track_record_snapshot.py` to write `ledger/YYYY-MM-DD.json` + `ledger/latest.json` + `ledger/index.json` (with sha256), then stamps via OpenTimestamps (`ots stamp`) → `.ots` file. Walks all .ots files and runs `ots upgrade` to pull in any newly-confirmed Bitcoin block-header proofs (prior days). Commits as `github-actions[bot]`. Three independent verification anchors: live API at /api/v1/track-record + GitHub-signed commit + Bitcoin blockchain via OTS.
 
@@ -326,6 +327,20 @@ The `simulated_bets` table is the **public track-record chain** — the basis fo
    - Gemini post-mortem analysis of losses
    - **Pruning (PERF-2):** `scripts/prune_odds_snapshots.py` — single SQL DELETE removes all intermediate snapshots for finished matches (keeps opening + closing). Prevents `odds_snapshots` from growing unboundedly (was 4.1M rows, ~500K/day).
    - **Sundays only:** Platt recalibration (`scripts/fit_platt.py`) — refits sigmoid α/β per market from all settled predictions → `model_calibration` table
+
+3. **Settle-ready sweep (every 15 min):** `settle_ready_matches()` — catch-all for
+   matches the LivePoller missed. Starts with `fix_stale_live_matches()`, which
+   re-checks every match still `scheduled`/`live` more than 95 min past kickoff.
+
+   **SCHEDULER-STALL-RCA (2026-08-24):** that sweep used to fetch each overdue
+   fixture individually — 225-351 AF calls on a normal day, serial, with 429
+   retry sleeps, inside a job that fires every 15 min with `max_instances=1`. On
+   2026-08-22 the 06:15 run never returned and settle_ready did not run again
+   until after 11:45, leaving 439 matches unsettled and 1,760 zombie shadow
+   bets. It is now batched (`get_fixtures_batch`, 20 ids/call) and bounded by
+   `STALE_SWEEP_BUDGET_S` (default 300s); rows are processed oldest-first so a
+   truncated run still drains the backlog. Postponed matches now void
+   `shadow_bets` as well as `simulated_bets`.
 
 ### ⑩ Match Previews (`match_previews.py`) — ENG-3
 - Runs at 07:15 UTC, after morning pipeline + 07:00 odds refresh complete

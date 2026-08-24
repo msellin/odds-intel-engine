@@ -28,6 +28,22 @@ MIN_REQUEST_INTERVAL = 0.12  # 120ms between requests
 _last_request_time = 0.0
 _rate_lock = threading.Lock()
 
+# ── SCHEDULER-AF-429-DEADLOCK (2026-08-24) ────────────────────────────────
+# Every AF request must be bounded on BOTH axes:
+#   AF_TIMEOUT_S      — per-socket timeout, no request can hang on the wire
+#   AF_MAX_ATTEMPTS   — retry count cap
+#   AF_RETRY_BUDGET_S — hard wall-clock ceiling for the whole _get() call
+#                       including backoff sleeps. Without this the worst case
+#                       is attempts × (timeout + backoff), which on a 429 storm
+#                       is tens of seconds per call — and callers that fan out
+#                       over hundreds of fixtures then blow past their own
+#                       schedule and get silently blocked by max_instances=1.
+# Overridable via env so the VPS can be tuned without a redeploy.
+AF_TIMEOUT_S = float(os.getenv("AF_TIMEOUT_S", "15"))
+AF_MAX_ATTEMPTS = int(os.getenv("AF_MAX_ATTEMPTS", "3"))
+AF_RETRY_BUDGET_S = float(os.getenv("AF_RETRY_BUDGET_S", "45"))
+AF_MAX_BACKOFF_S = float(os.getenv("AF_MAX_BACKOFF_S", "8"))
+
 
 # ── Budget Tracker ─────────────────────────────────────────────────────────
 # Tracks daily API call count in-memory. Syncs with AF /status endpoint hourly.
@@ -200,6 +216,33 @@ def _headers() -> dict:
 
 _HARD_QUOTA_FLOOR = 200  # Never burn below this — keeps settlement alive
 
+
+def _sleep_before_retry(attempt: int, deadline: float, resp) -> bool:
+    """Back off before the next AF retry. Returns False when the call is out of budget.
+
+    SCHEDULER-AF-429-DEADLOCK (2026-08-24): the previous code slept
+    unconditionally, so a 429 storm cost attempts × backoff on every single
+    request. Callers fanning out over hundreds of fixtures then overran their
+    own 15-minute schedule by hours. Now every retry is checked against a hard
+    per-call deadline, and AF's own Retry-After is honoured (capped) when sent.
+    """
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return False
+    backoff = min(2.0 ** attempt, AF_MAX_BACKOFF_S)
+    if resp is not None:
+        try:
+            retry_after = float(resp.headers.get("Retry-After", "") or 0)
+            if retry_after > 0:
+                backoff = min(retry_after, AF_MAX_BACKOFF_S)
+        except (TypeError, ValueError):
+            pass
+    if backoff >= remaining:
+        return False
+    time.sleep(backoff)
+    return True
+
+
 def _get(endpoint: str, params: dict = None) -> dict:
     """
     Make a rate-limited GET request to API-Football.
@@ -218,31 +261,40 @@ def _get(endpoint: str, params: dict = None) -> dict:
             f"AF quota critically low ({budget.remaining()} remaining) — call blocked"
         )
 
-    # Thread-safe rate limiting
+    # Thread-safe rate limiting.
+    # SCHEDULER-AF-429-DEADLOCK: the sleep MUST happen outside the lock. Holding
+    # _rate_lock across time.sleep() serialises every AF-touching thread behind
+    # the slowest one — a lock convoy that turns 12 scheduler workers into 1 and
+    # multiplies any fan-out loop's wall-clock. Reserve the slot under the lock,
+    # sleep outside it.
     with _rate_lock:
         now = time.time()
-        elapsed = now - _last_request_time
-        if elapsed < MIN_REQUEST_INTERVAL:
-            time.sleep(MIN_REQUEST_INTERVAL - elapsed)
-        _last_request_time = time.time()
+        slot = max(now, _last_request_time + MIN_REQUEST_INTERVAL)
+        _last_request_time = slot
+    wait = slot - time.time()
+    if wait > 0:
+        time.sleep(wait)
 
     url = f"{BASE_URL}/{endpoint}"
+    deadline = time.monotonic() + AF_RETRY_BUDGET_S
     last_exc = None
-    for attempt in range(3):
+    for attempt in range(AF_MAX_ATTEMPTS):
+        is_last = attempt == AF_MAX_ATTEMPTS - 1
         try:
-            resp = requests.get(url, headers=_headers(), params=params, timeout=15)
-            if resp.status_code in (429, 503) and attempt < 2:
-                time.sleep(2 ** attempt)
-                last_exc = requests.exceptions.HTTPError(response=resp)
-                continue
+            resp = requests.get(url, headers=_headers(), params=params,
+                                timeout=AF_TIMEOUT_S)
+            if resp.status_code in (429, 503) and not is_last:
+                last_exc = requests.exceptions.HTTPError(
+                    f"AF {resp.status_code} on /{endpoint}", response=resp)
+                if _sleep_before_retry(attempt, deadline, resp):
+                    continue
+                raise last_exc
             resp.raise_for_status()
             break
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
-            if attempt < 2:
-                time.sleep(2 ** attempt)
-                last_exc = exc
-                continue
-            raise
+            last_exc = exc
+            if is_last or not _sleep_before_retry(attempt, deadline, None):
+                raise
     else:
         raise last_exc
 

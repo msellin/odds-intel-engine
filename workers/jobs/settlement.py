@@ -13,6 +13,7 @@ Usage:
 import sys
 import os
 import math
+import time
 import argparse
 import json
 from pathlib import Path
@@ -63,6 +64,14 @@ WHERE sb.result = 'pending'
 
 # BET-TIMING-MONITOR: settle shadow_bets the same way as simulated_bets.
 # Distinct query because shadow_bets has fewer columns (no bankroll/alignment).
+# SCHEDULER-STALL-RCA (2026-08-24) — bounds for fix_stale_live_matches().
+# The sweep runs inside settle_ready, which fires every 15 minutes with
+# max_instances=1, so it must always finish well inside that window. 20 is the
+# maximum ids AF accepts per /fixtures call; 300s leaves ample headroom for the
+# rest of settle_ready. Env-overridable so the VPS can be retuned without a deploy.
+_STALE_SWEEP_CHUNK = int(os.getenv("STALE_SWEEP_CHUNK", "20"))
+_STALE_SWEEP_BUDGET_S = float(os.getenv("STALE_SWEEP_BUDGET_S", "300"))
+
 _PENDING_SHADOW_BETS_SQL = """
 SELECT
     sb.id, sb.bot_id, sb.match_id, sb.market, sb.selection, sb.stake,
@@ -936,7 +945,7 @@ def fix_stale_live_matches():
 
     Called by settle_ready_matches() so it runs on the same 15-min cadence.
     """
-    from workers.api_clients.api_football import get_fixture_by_id
+    from workers.api_clients.api_football import get_fixtures_batch
     from workers.api_clients.supabase_client import update_match_result
 
     stale_cutoff = datetime.now(timezone.utc) - timedelta(minutes=95)
@@ -946,7 +955,8 @@ def fix_stale_live_matches():
            FROM matches m
            WHERE m.status IN ('live', 'scheduled')
              AND m.date < %s
-             AND m.api_football_id IS NOT NULL""",
+             AND m.api_football_id IS NOT NULL
+           ORDER BY m.date ASC""",
         [stale_cutoff.isoformat()],
     )
 
@@ -955,15 +965,56 @@ def fix_stale_live_matches():
 
     live_count = sum(1 for r in rows if r["status"] == "live")
     sched_count = sum(1 for r in rows if r["status"] == "scheduled")
-    console.print(f"[yellow]Stale-match check: {len(rows)} match(es) overdue "
-                  f"({live_count} live, {sched_count} scheduled) — querying AF API[/yellow]")
-    fixed = 0
+
+    # SCHEDULER-STALL-RCA / SCHEDULER-AF-429-DEADLOCK (2026-08-24) — this loop
+    # was the hang. It called get_fixture_by_id() once per overdue match, which
+    # on a normal day is 225-350 fixtures and on 2026-08-22 was 439. Serial, with
+    # AF 429 retry sleeps on each call, one pass regularly exceeded the 15-minute
+    # settle_ready cadence — and because job_defaults set max_instances=1, every
+    # subsequent settle_ready was silently skipped. On 2026-08-22 the 06:15 run
+    # never returned and settle_ready did not run again until after 11:45 (5.5h),
+    # which is what left 439 matches unsettled and 1,760 zombie shadow bets.
+    #
+    # Two bounds, both required:
+    #   1. Batch the fetch — get_fixtures_batch does 20 fixtures per AF call, so
+    #      350 matches costs 18 calls instead of 350.
+    #   2. Hard wall-clock deadline — even batched, AF can stall. We stop cleanly
+    #      well inside the cadence and let the next run pick up the remainder
+    #      (rows are ordered oldest-first, so progress is monotonic).
+    deadline = time.monotonic() + _STALE_SWEEP_BUDGET_S
+    af_ids, by_af_id = [], {}
     for row in rows:
+        try:
+            af_id = int(row["api_football_id"])
+        except (TypeError, ValueError):
+            continue
+        af_ids.append(af_id)
+        by_af_id[af_id] = row
+
+    console.print(f"[yellow]Stale-match check: {len(rows)} match(es) overdue "
+                  f"({live_count} live, {sched_count} scheduled) — querying AF API "
+                  f"in batches of {_STALE_SWEEP_CHUNK}[/yellow]")
+
+    fixtures: dict[int, dict] = {}
+    fetched = 0
+    for i in range(0, len(af_ids), _STALE_SWEEP_CHUNK):
+        if time.monotonic() >= deadline:
+            console.print(
+                f"[yellow]Stale-match check: budget of {_STALE_SWEEP_BUDGET_S:.0f}s "
+                f"exhausted after {fetched}/{len(af_ids)} fixture(s) — deferring the "
+                f"rest to the next sweep[/yellow]"
+            )
+            break
+        chunk = af_ids[i : i + _STALE_SWEEP_CHUNK]
+        fixtures.update(get_fixtures_batch(chunk))
+        fetched += len(chunk)
+
+    fixed = 0
+    for af_id, fixture in fixtures.items():
+        row = by_af_id[af_id]
         match_id = row["id"]
-        af_id = row["api_football_id"]
         db_status = row["status"]
         try:
-            fixture = get_fixture_by_id(int(af_id))
             if not fixture:
                 continue
             status_short = fixture.get("fixture", {}).get("status", {}).get("short", "")
@@ -996,7 +1047,16 @@ def fix_stale_live_matches():
                        SET result='void', pnl=0
                        WHERE match_id=%s AND result='pending'""",
                     [match_id],
-                )
+                ) or 0
+                # Void shadow_bets too. MATCH-STATUS-SWEEPER (2026-08-22) found 64
+                # postponed-match shadow zombies precisely because this path voided
+                # simulated_bets only; the standalone sweeper does both.
+                voided += execute_write(
+                    """UPDATE shadow_bets
+                       SET result='void', pnl=0
+                       WHERE match_id=%s AND result='pending'""",
+                    [match_id],
+                ) or 0
                 msg = f"[yellow]Stale match {match_id} ({db_status}→postponed): {status_short}"
                 if voided:
                     msg += f" — voided {voided} pending bet(s)"

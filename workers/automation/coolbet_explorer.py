@@ -28,7 +28,9 @@ log; extend MARKET_PARSERS below if a missing market matters.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import os
 import random
 import re
 import sys
@@ -256,6 +258,43 @@ _HALF_MATCH_HINTS = (
 # " & " is Coolbet's standard connector for all combined-market names.
 _COMBINED_MARKET_HINTS = (" & ", " and over", " and under", "+ over", "+ under")
 
+# COOLBET-OU-LINE-MISLABEL-RCA (2026-08-24): the is_ou name-fallback accepted ANY
+# market whose name contains "total goals" / "over/under". Coolbet ships a family
+# of markets that match that substring but are NOT the full-match goals line, and
+# every one of them carries its own `line` (often 0.5-3.5) that collides with the
+# real goals lines:
+#   • team totals      — "Total Goals Home Team", "Total Goals — Away Team"
+#   • non-goal totals  — "Over / Under Corners", "Total Cards", "Total Bookings"
+#   • parity markets   — "Total Goals Odd/Even"
+# A team total U2.5 (one side under 2.5) prices nothing like a match U2.5, so when
+# one overwrote the other the stored OU ladder stopped being monotone in the line —
+# the exact symptom the 2026-08-22 guard detects. The guard drops the data; this
+# list stops it being written in the first place.
+#
+# Half/period variants are already handled by _HALF_MATCH_HINTS. Only the
+# name-fallback consults this — a market arriving with a trusted `mtid` in
+# _MTID_OU is still believed, so leagues that ship non-standard mtids
+# (COOLBET-MARKET-NAMES 2026-05-23) do not regress.
+_NON_GOALS_TOTAL_HINTS = (
+    # team-total qualifiers
+    "home team", "away team", "by home", "by away", "home total", "away total",
+    # parity
+    "odd/even", "odd / even", "odd or even",
+    # non-goal totals
+    "corner", "card", "booking", "yellow", "red card", "shot", "foul",
+    "offside", "throw", "save", "penalt", "substitut",
+)
+
+
+def _looks_like_non_goals_total(name: str) -> bool:
+    """True if an over/under-shaped market name is not the full-match GOALS line.
+
+    Applied to the is_ou name-fallback only; trusted mtids bypass it.
+    See _NON_GOALS_TOTAL_HINTS for why each family is excluded."""
+    if not name:
+        return False
+    return any(hint in name for hint in _NON_GOALS_TOTAL_HINTS)
+
 
 def _looks_like_sub_period(name: str) -> bool:
     """True if the market name suggests a sub-period (half/period/single-team)
@@ -332,9 +371,11 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
     is_1x2  = (mtid in _MTID_1X2
                or (not sub_period and ("match result" in name or "1x2" in name
                                        or "match winner" in name)))
+    non_goals_total = _looks_like_non_goals_total(name)
     is_ou   = (mtid in _MTID_OU
-               or (not sub_period and ("total goals" in name
-                                       or "over / under" in name or "over/under" in name)))
+               or (not sub_period and not combined and not non_goals_total
+                   and ("total goals" in name
+                        or "over / under" in name or "over/under" in name)))
     is_btts = (mtid in _MTID_BTTS
                or (not sub_period and not combined
                    and ("both teams to score" in name or "btts" in name)))
@@ -780,6 +821,66 @@ def _ou_rows_monotone(ou_rows: list[tuple[str, str, float]]) -> bool:
     return True
 
 
+_OU_DUMP_DIR = Path(__file__).resolve().parents[2] / "dev" / "active"
+_OU_DUMP_LIMIT = int(os.getenv("COOLBET_OU_DUMP_LIMIT", "3"))
+_ou_dumps_written = 0
+
+
+def _dump_ou_mislabel_payload(
+    match_id: str,
+    coolbet_markets: list[dict],
+    ou_buffer: list[tuple[str, str, float, float | None]],
+) -> None:
+    """COOLBET-OU-LINE-MISLABEL-RCA (2026-08-24): capture the raw payload the
+    first few times the monotonicity guard fires.
+
+    The 2026-08-22 guard proved the data was wrong but not which market was
+    doing the clobbering, because we store parsed rows and never the source
+    names. Without a dump the RCA can only be argued from Coolbet's market
+    catalogue. This writes one JSON per offending match (capped, so a bad day
+    can't fill the disk) containing every market's name/mtid/line and the OU
+    rows we were about to store — enough to name the culprit in one look.
+
+    Best-effort: a dump failure must never break odds ingestion.
+    """
+    global _ou_dumps_written
+    if _ou_dumps_written >= _OU_DUMP_LIMIT:
+        return
+    try:
+        _OU_DUMP_DIR.mkdir(parents=True, exist_ok=True)
+        path = _OU_DUMP_DIR / f"coolbet-raw-{match_id}.json"
+        if path.exists():
+            return
+        payload = {
+            "match_id": match_id,
+            "captured_at": datetime.now(timezone.utc).isoformat(),
+            "reason": "ou_monotonicity_guard_fired",
+            "markets": [
+                {
+                    "name": m.get("name"),
+                    "market_type_id": m.get("market_type_id"),
+                    "line": m.get("line"),
+                    "raw_line": m.get("raw_line"),
+                    "outcomes": [
+                        {"id": oc.get("id"), "name": oc.get("name"),
+                         "result_key": oc.get("result_key")}
+                        for oc in (m.get("outcomes") or [])
+                    ],
+                }
+                for m in coolbet_markets
+            ],
+            "parsed_ou_rows": [
+                {"market": m, "selection": sel, "odds": o, "line": ln}
+                for m, sel, o, ln in ou_buffer
+            ],
+        }
+        path.write_text(json.dumps(payload, indent=2, default=str))
+        _ou_dumps_written += 1
+        log.warning("coolbet-ou-monotonicity: raw payload dumped to %s", path)
+    except Exception as exc:  # pragma: no cover — diagnostics must never break ingest
+        log.warning("coolbet-ou-monotonicity: payload dump failed: %s", exc)
+
+
 def store_coolbet_snapshots_for_match(
     match_id: str,
     coolbet_markets: list[dict],
@@ -818,6 +919,7 @@ def store_coolbet_snapshots_for_match(
             "(U-prob not monotone in line — likely mislabelled)",
             len(ou_buffer), match_id,
         )
+        _dump_ou_mislabel_payload(match_id, coolbet_markets, ou_buffer)
         for m in {r[0] for r in ou_buffer}:
             by_market.pop(m, None)
         ou_buffer.clear()

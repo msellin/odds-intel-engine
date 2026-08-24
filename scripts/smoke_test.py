@@ -30526,5 +30526,214 @@ def _():
         "CLAUDE.md must name the real systemd unit"
     )
 
+
+@test("SCHEDULER-AF-429-DEADLOCK — every AF request is bounded on time and retries")
+def _():
+    """Two multi-hour scheduler hangs (2026-07-12, 2026-07-15) and the
+    2026-08-22 settle_ready stall all traced back to AF calls with no hard
+    ceiling. The journal on the VPS still shows 100-2,300 HTTP 429s per day,
+    so the retry path is hot code, not an edge case.
+
+    Pins the four properties that make a hang impossible:
+      (1) named constants exist (magic numbers drift silently),
+      (2) the socket timeout is applied from the constant, not hardcoded,
+      (3) a wall-clock retry budget bounds the WHOLE _get() call — attempts x
+          (timeout + backoff) was the unbounded quantity,
+      (4) time.sleep() never runs while _rate_lock is held. Sleeping under the
+          global lock convoys every AF-touching thread behind the slowest one,
+          which is what turned 12 scheduler workers into an effective 1.
+    """
+    import inspect
+    from workers.api_clients import api_football as af
+
+    for const in ("AF_TIMEOUT_S", "AF_MAX_ATTEMPTS", "AF_RETRY_BUDGET_S",
+                  "AF_MAX_BACKOFF_S"):
+        assert hasattr(af, const), (
+            f"api_football must define {const} — hardcoded retry/timeout numbers "
+            "are how the 429 deadlock went unnoticed for a month"
+        )
+    assert af.AF_TIMEOUT_S > 0 and af.AF_MAX_ATTEMPTS >= 1
+    assert af.AF_RETRY_BUDGET_S > af.AF_TIMEOUT_S, (
+        "the retry budget must exceed a single timeout, else no retry can ever run"
+    )
+
+    src = inspect.getsource(af._get)
+    assert "timeout=AF_TIMEOUT_S" in src, (
+        "every requests.get in _get must take its timeout from AF_TIMEOUT_S"
+    )
+    assert "timeout=15" not in src, "hardcoded timeout left behind"
+    assert "AF_RETRY_BUDGET_S" in src and "deadline" in src, (
+        "_get needs a wall-clock deadline covering all attempts + backoff"
+    )
+
+    # The lock block must not contain a sleep. Isolate the `with` body by
+    # taking the lines that stay more-indented than the `with` itself.
+    lines = src.split("\n")
+    start = next(i for i, l in enumerate(lines) if "with _rate_lock:" in l)
+    base = len(lines[start]) - len(lines[start].lstrip())
+    lock_block = []
+    for l in lines[start + 1:]:
+        if l.strip() and (len(l) - len(l.lstrip())) <= base:
+            break
+        lock_block.append(l)
+    lock_block = "\n".join(lock_block)
+    assert "time.sleep" not in lock_block, (
+        "time.sleep() inside _rate_lock convoys all AF threads — reserve the "
+        "slot under the lock, sleep outside it"
+    )
+
+    # Backoff helper must honour the deadline and never overshoot it.
+    import time as _t
+    assert af._sleep_before_retry(0, _t.monotonic() - 1, None) is False, (
+        "_sleep_before_retry must refuse to sleep once the budget is spent"
+    )
+    assert af._sleep_before_retry(5, _t.monotonic() + 0.2, None) is False, (
+        "_sleep_before_retry must refuse a backoff longer than the time left"
+    )
+
+
+@test("SCHEDULER-STALL-RCA — stale-match sweep is batched and time-bounded")
+def _():
+    """ROOT CAUSE of the 2026-08-22 stall, confirmed from journalctl:
+    settle_ready started 06:15:00 and never returned; max_instances=1 then
+    skipped every run until after 11:45 (5.5h). fix_stale_live_matches() was
+    calling get_fixture_by_id() once per overdue match — 80 that morning, and
+    225-351 on a normal day — serially, each with AF 429 retry sleeps, inside a
+    job that fires every 15 minutes. That is what left 439 matches unsettled
+    and 1,760 zombie shadow bets.
+
+    Pins both bounds plus the void-discipline fix:
+      (1) batched fetch (20 ids/call) instead of one call per fixture,
+      (2) a wall-clock budget so a slow AF cannot outrun the 15-min cadence,
+      (3) oldest-first ordering so deferred work still makes progress,
+      (4) postponed matches void shadow_bets as well as simulated_bets.
+    """
+    import inspect
+    from workers.jobs import settlement
+
+    assert settlement._STALE_SWEEP_CHUNK <= 20, (
+        "AF accepts at most 20 ids per /fixtures call"
+    )
+    assert 0 < settlement._STALE_SWEEP_BUDGET_S < 900, (
+        "the sweep runs inside settle_ready, which fires every 15 min (900s) "
+        "with max_instances=1 — a budget at or above the cadence re-creates "
+        "the exact stall this fixes"
+    )
+
+    src = inspect.getsource(settlement.fix_stale_live_matches)
+    assert "get_fixtures_batch" in src, (
+        "the sweep must batch — one AF call per fixture is what hung it"
+    )
+    assert "get_fixture_by_id(" not in src.replace("get_fixture_by_id()", ""), (
+        "per-fixture fetch reintroduced"
+    )
+    assert "_STALE_SWEEP_BUDGET_S" in src and "time.monotonic()" in src, (
+        "the sweep needs a wall-clock deadline; batching alone does not bound "
+        "a stalled AF"
+    )
+    assert "ORDER BY m.date ASC" in src, (
+        "oldest-first, so a budget-truncated run still drains the backlog "
+        "instead of re-fetching the same head every time"
+    )
+    assert "shadow_bets" in src, (
+        "postponed matches must void shadow_bets too — voiding simulated_bets "
+        "only is what left 64 postponed-shadow zombies (MATCH-STATUS-SWEEPER)"
+    )
+
+
+@test("SCHEDULER-STALL-WATCHDOG — a hung job dumps its stack instead of going silent")
+def _():
+    """The 2026-08-22 RCA cost hours because the only evidence a job was stuck
+    was a repeating 'max_instances blocked' line — it said THAT something hung,
+    never WHERE. This watchdog turns the next one into a stack trace in the log.
+
+    Pins: the in-flight registry, the stall threshold, that the watchdog is
+    registered on a short interval, that it dumps real frames, and that it is
+    NOT wrapped in _run_job (it has to keep working while workers are wedged,
+    and must not register itself as in-flight).
+
+    Source-inspected rather than imported — apscheduler is a VPS-only dep.
+    """
+    import re
+    src = _engine_path("workers/scheduler.py").read_text()
+
+    assert "_inflight: dict[int, dict] = {}" in src, "in-flight job registry missing"
+    m = re.search(r'JOB_STALL_WARN_S = float\(os\.getenv\("JOB_STALL_WARN_S", "(\d+)"\)\)', src)
+    assert m, "JOB_STALL_WARN_S must be a named, env-overridable constant"
+    assert int(m.group(1)) >= 1800, (
+        "threshold must sit above the longest legitimate job (settlement ~30 "
+        "min, weekly_retrain ~21 min) or it will cry wolf every week"
+    )
+
+    run_src = src.split("def _run_job(", 1)[1].split("\ndef ", 1)[0]
+    assert "_inflight[_tid]" in run_src and "_inflight.pop" in run_src, (
+        "_run_job must register AND deregister — a leaked entry makes the "
+        "watchdog fire forever on a job that finished"
+    )
+
+    wd_src = src.split("def job_stall_watchdog(", 1)[1].split("\ndef ", 1)[0]
+    assert "sys._current_frames()" in wd_src, (
+        "dump real frames — py-spy is not installed everywhere and an alert "
+        "without a stack is what made this a multi-hour RCA"
+    )
+    assert "_stall_reported" in wd_src, "report once per hang, not once per tick"
+    assert "send_telegram" in wd_src, "a silent stall is the whole problem"
+
+    assert 'id="job_stall_watchdog"' in src, "watchdog job not registered"
+    reg = src.split('id="job_stall_watchdog"')[0].rsplit("scheduler.add_job", 1)[1]
+    assert "job_stall_watchdog" in reg and "_run_job" not in reg, (
+        "the watchdog must be scheduled directly, not through _run_job — it "
+        "has to survive every worker thread being wedged"
+    )
+
+
+@test("COOLBET-OU-LINE-MISLABEL-RCA — non-goals totals can no longer reach the OU slot")
+def _():
+    """RCA for the 2026-08-22 guard. That guard proved 51/302 matches had OU
+    ladders whose Under-probability was not monotone in the line — impossible
+    for a real market — but it only DROPPED the data. Cause: the is_ou
+    name-fallback accepted any market containing 'total goals' / 'over/under',
+    which also matches team totals ('Total Goals Home Team'), non-goal totals
+    (corners, cards, shots) and parity markets. Those carry their own line and
+    overwrote the real goals ladder.
+
+    Pins the name blacklist, that it is fallback-only (trusted mtids still
+    win, so non-standard-mtid leagues do not regress), and the raw-payload
+    dump that will name the exact culprit next time the guard fires.
+    """
+    import inspect
+    from workers.automation import coolbet_explorer as ce
+
+    f = ce._looks_like_non_goals_total
+    for bad in ("total goals home team", "total goals away team",
+                "over / under corners", "total cards", "total yellow cards",
+                "total goals odd/even", "total shots"):
+        assert f(bad) is True, f"{bad!r} must be rejected from the goals-OU slot"
+    for good in ("total goals", "over / under", "over/under", "total goals 2.5"):
+        assert f(good) is False, f"{good!r} is the real full-match goals line"
+
+    src = inspect.getsource(ce.parse_market)
+    assert "non_goals_total" in src and "_MTID_OU" in src, (
+        "the blacklist must apply to the name-fallback only — a market with a "
+        "trusted mtid is still believed (COOLBET-MARKET-NAMES 2026-05-23)"
+    )
+    ou_gate = src.split("is_ou", 1)[1].split("is_btts", 1)[0]
+    assert "not non_goals_total" in ou_gate and "not combined" in ou_gate, (
+        "is_ou fallback must screen out both non-goals totals and combo markets"
+    )
+
+    assert hasattr(ce, "_dump_ou_mislabel_payload"), (
+        "guard fires must capture the raw payload — we store parsed rows only, "
+        "so without a dump the culprit market name is unrecoverable"
+    )
+    dump = inspect.getsource(ce._dump_ou_mislabel_payload)
+    assert "_OU_DUMP_LIMIT" in dump, "cap the dumps; a bad day must not fill the disk"
+    assert "market_type_id" in dump and "outcomes" in dump, (
+        "the dump is useless without market names, mtids and outcomes"
+    )
+    writer = inspect.getsource(ce.store_coolbet_snapshots_for_match)
+    assert "_dump_ou_mislabel_payload" in writer, "dump never wired to the guard"
+
+
 if __name__ == "__main__":
     main()
