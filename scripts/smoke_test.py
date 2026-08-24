@@ -29542,45 +29542,57 @@ def _():
     )
 
 
-@test("BOT-PIN-1X2-SHADOW — 1x2 line-shopping shadow bots (home t1-2 + draw t4)")
+@test("BOT-PIN-1X2-SHADOW — 1x2 line-shopping shadow bot (home tiers 1-2)")
 def _():
-    """BOT-PIN-1X2-SHADOW-2026-08-21 — closes the (Pinnacle × model × 1X2)
-    coverage grid. Two config-driven shadow bots for the slices the
-    historical audit showed positive ROI at pure line-shopping edges:
-      - Home wins tier 1-2 at 12%+: +12% (t1) / +31% (t2) ROI
-      - Draws tier 4 at 5%+: +6-18% ROI
+    """BOT-PIN-1X2-SHADOW-2026-08-21, re-gated by PER-BOT-SWEEP-2026-08-24.
 
-    Away picks explicitly not shipped (audit showed -3 to -20% across
-    tiers) and tier 3-4 home + tier 1-3 draw excluded (negative/mixed).
+    Originally shipped two bots. The draw/tier-4 bot is now RETIRED
+    (migration 281): its 5% edge gate sat below the 12.2% Pinnacle overround
+    on tier-4 draws, so 85% of its live picks were negative-EV by
+    construction — live -40.8%, and the operator went 0W/11L on real money.
+
+    The home bot survives and is the strongest of the eight: positive in all
+    three replay windows, positive across every tier variation tested, best
+    CLV (+15.6%), zero negative-true-edge picks live.
+
+    Away picks were never shipped (audit showed -3 to -20% across tiers).
 
     Pins:
-      1. _PIN_1X2_SHADOW_CONFIGS defined with 2 configs
-      2. Runner function _run_pin_1x2_shadow_pass exists
-      3. Hooked into run_morning
-      4. Migration 275 registers both bots
-      5. Config restricts by (selection, tiers, edge_min) not blanket-fires
+      1. _PIN_1X2_SHADOW_CONFIGS defined, home bot present
+      2. draw/tier-4 bot NOT in the live config tuple
+      3. Runner function _run_pin_1x2_shadow_pass exists + is called
+      4. No away config
+      5. Migration 275 (original registration) still records both bots
     """
     src = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text()
     assert "_PIN_1X2_SHADOW_CONFIGS" in src, "_PIN_1X2_SHADOW_CONFIGS must be defined"
-    for expected in ("bot_pin_1x2_home_v1", "bot_pin_1x2_draw_tier4_v1"):
-        assert f'"{expected}"' in src, f"config missing for {expected}"
+    assert '"bot_pin_1x2_home_v1"' in src, "config missing for bot_pin_1x2_home_v1"
     assert "def _run_pin_1x2_shadow_pass" in src, "runner must exist"
-    assert "_run_pin_1x2_shadow_pass(today_str)" in src, (
+    # Prefix match — the writer takes (today_str, cohort_tag, notify_telegram)
+    # since SHADOW-BOTS-MULTI-COHORT-2026-08-21.
+    assert "_run_pin_1x2_shadow_pass(today_str," in src, (
         "run_morning must call _run_pin_1x2_shadow_pass"
     )
-    # Verify configs have selection + tier gates so the bot doesn't
-    # accidentally fire on all-tier away picks (the -20% category)
-    for cfg_marker in ('"selection": "home"', '"selection": "draw"'):
-        assert cfg_marker in src, (
-            f"config missing selection filter: {cfg_marker}"
-        )
-    # No away config — critical
-    assert '"selection": "away"' not in src.split('_PIN_1X2_SHADOW_CONFIGS')[1].split(')')[0], (
+
+    cfg_block = src[src.index("_PIN_1X2_SHADOW_CONFIGS: tuple[dict, ...] = ("):]
+    cfg_block = cfg_block[: cfg_block.index(")\n")]
+
+    # Retired bot must be gone from the LIVE tuple (comments above it may
+    # still name it — that's the retirement note, which we want kept).
+    assert '"bot_pin_1x2_draw_tier4_v1"' not in cfg_block, (
+        "bot_pin_1x2_draw_tier4_v1 is retired (migration 281) and must not "
+        "remain in _PIN_1X2_SHADOW_CONFIGS — a 5% gate cannot beat a 12.2% "
+        "overround."
+    )
+    assert '"selection": "home"' in cfg_block, "home selection filter missing"
+    assert '"selection": "away"' not in cfg_block, (
         "must NOT have an away shadow bot config — historical audit shows "
         "-3 to -20% ROI on away picks at line-shopping edges (soft-book "
         "away lines systematically inflated)."
     )
 
+    # Migration 275 is the historical registration — both bots stay recorded
+    # there; retirement happens in 281.
     mig = _engine_path("supabase/migrations/275_bot_pin_1x2_shadow.sql").read_text()
     for expected in ("bot_pin_1x2_home_v1", "bot_pin_1x2_draw_tier4_v1"):
         assert expected in mig, f"migration 275 must INSERT bot {expected}"
@@ -29615,10 +29627,22 @@ def _():
     assert "def _run_pin_ou_shadow_pass" in src, (
         "runner _run_pin_ou_shadow_pass must be defined"
     )
-    assert "_run_pin_ou_shadow_pass(today_str)" in src, (
+    # SMOKE-FIX-2026-08-24: this asserted `_run_pin_ou_shadow_pass(today_str)`
+    # with no further args, but the writer has taken (today_str, cohort_tag,
+    # notify_telegram) since SHADOW-BOTS-MULTI-COHORT-2026-08-21. The literal
+    # never matched, so this test had been failing on main. Match the call by
+    # prefix instead so signature changes don't silently re-break it.
+    assert "_run_pin_ou_shadow_pass(today_str," in src, (
         "run_morning must call _run_pin_ou_shadow_pass — otherwise the "
         "bot exists but never fires."
     )
+    # PER-BOT-SWEEP-2026-08-24: both OU bots now carry a tier filter. They
+    # previously had none at all and fired on untiered leagues.
+    for expected_name in ("bot_sweep_ou25_v1", "bot_sweep_ou35_v1"):
+        _cfg = src[src.index(f'"{expected_name}"'):]
+        assert '"tiers"' in _cfg[:_cfg.index("}")], (
+            f"{expected_name} must declare a tier filter"
+        )
     # Migration existence
     mig = _engine_path("supabase/migrations/274_bot_pin_ou_shadow.sql").read_text()
     for expected_name in ("bot_sweep_ou25_v1", "bot_sweep_ou35_v1"):
@@ -30008,54 +30032,68 @@ def _():
     )
 
 
-@test("PICK-CONFIDENCE-FLAGS — real-money warning badges on shadow-bots upcoming picks")
+@test("PICK-CONFIDENCE-FLAGS — upcoming-picks warning reduced to the one still-supported flag")
 def _():
-    """PICK-CONFIDENCE-FLAGS-2026-08-23 — operator-facing confidence flags
-    on the /admin/shadow-bots upcoming picks table.
+    """PICK-CONFIDENCE-FLAGS-2026-08-23, cut down by PER-BOT-SWEEP-2026-08-24.
 
-    Four red-flag patterns (skip for real money):
-      1. bot_pin_1x2_draw_tier4_v1 — 10 settled, 1W/9L (−65% ROI), skip until 50+ sample
-      2. tier === null || tier === 0 — no model coverage, ensemble uses Poisson fallback
-      3. edgePct < 10 — relative edge (u.edge_percent × 100) < 10%; every bot negative below
-         10% in settled data. NB: edgePct is relative (8.6%), NOT absolute gap (3.5pp) — they
-         are different metrics. u.edge_percent is stored as decimal fraction by the bot.
-    One yellow-flag pattern (verify before placing):
-      4. edgePct >= 25 AND (ou35 OR draw) — counter-intuitive, likely Coolbet phantom line
-      5. home pick with odds >= 3.5 — pin_home underperforms at high odds (−4.7% vs +58%)
+    The page shipped five flags. Four are now enforced in bot config instead,
+    which is strictly better — the bets are never generated at all:
+      * draw/tier-4 bot        -> retired (migration 281)
+      * tier 0 / NULL leagues  -> excluded at the SQL layer in every writer
+      * sub-10% edge           -> obsolete basis. It was calibrated on
+        vig-inclusive line-shop edge; those bots now gate on DE-VIGGED edge
+        >= 3%, so a 4% edge is genuinely +EV and a red flag would fire on
+        nearly every pick.
+      * home @ 3.5+ odds       -> never supported. pin_home at 3.5+ was
+        -24.7% but sweep_home was +104% — opposite directions, error bars
+        far wider than the effect.
 
-    Bots keep firing to collect data; flags are display-only and do NOT
-    suppress pick creation or bet placement.
+    What remains is the one open, unfixed problem:
+    SWEEP-HOME-BOTS-CALIBRATION-2026-08-22 — the model-driven bots produce
+    extreme model-vs-market gaps on reserve/II teams and cross-tier ties.
+
+    Pins:
+      1. the four retired flags are gone
+      2. the surviving flag targets ONLY the model-driven bots (the
+         line-shop bots have no model, so model-vs-market gap is meaningless
+         for them — their "probability" IS the de-vigged market price)
+      3. it uses gapPp (absolute pp), which is the metric the calibration
+         finding is stated in
     """
     page = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
-    assert "cFlag" in page, (
-        "PICK-CONFIDENCE-FLAGS: shadow-bots page must compute cFlag (confidence flag) "
-        "per upcoming-pick row — used to display red/yellow warning badges."
+
+    assert "PER-BOT-SWEEP-2026-08-24" in page, "flag-reduction rationale must be recorded"
+
+    # (1) retired flags gone
+    assert "every bot shows negative ROI below 10%" not in page, (
+        "sub-10% red flag must be removed — its basis was vig-inclusive edge"
     )
-    assert "bot_pin_1x2_draw_tier4_v1" in page, (
-        "PICK-CONFIDENCE-FLAGS: must flag pin_1x2_draw_tier4_v1 rows red — "
-        "10 settled bets at −65% ROI; structural high-variance bet type, skip until 50+ sample."
+    assert "pin_home bets at 3.5+ underperform" not in page, (
+        "home @ 3.5+ flag must be removed — never supported by the data"
     )
-    assert "edgePct" in page, (
-        "PICK-CONFIDENCE-FLAGS: must use edgePct (u.edge_percent × 100, relative %) for "
-        "thresholds — NOT gapPp (absolute pp). Settled-data buckets are in relative edge %. "
-        "A 44% model vs 2.47 odds is 3.5pp absolute but 8.6% relative — different metrics."
+    assert "ensemble falls back to Poisson guess" not in page, (
+        "tier 0/NULL flag must be removed — now excluded at the SQL layer"
     )
-    assert "edgePct < 10" in page, (
-        "PICK-CONFIDENCE-FLAGS: must flag edgePct < 10 red — every bot shows "
-        "negative ROI below 10% relative edge in settled data."
+    assert 'botName === "bot_pin_1x2_draw_tier4_v1"' not in page, (
+        "draw/tier-4 flag must be removed — bot is retired"
     )
-    assert "edgePct >= 25" in page, (
-        "PICK-CONFIDENCE-FLAGS: must yellow-flag edgePct >= 25 on draw/OU35 — "
-        "counter-intuitive negative performance suggests Coolbet phantom lines."
-    )
-    for pattern in ("border-rose-500", "border-amber-500"):
-        assert pattern in page, (
-            f"PICK-CONFIDENCE-FLAGS: must use {pattern} left-border to tint flagged rows — "
-            "color coding lets operator scan at a glance without reading each tooltip."
+
+    # (2) surviving flag is scoped to the model-driven bots only
+    assert "MODEL_DRIVEN" in page, "surviving flag must scope to model-driven bots"
+    for bot in ("bot_sweep_1x2_home_v1", "bot_sweep_1x2_draw_v1", "bot_sweep_btts_yes_v1"):
+        assert bot in page, f"{bot} must be in the model-driven set"
+    _md = page[page.index("const MODEL_DRIVEN"):]
+    _md = _md[: _md.index("]")]
+    for lineshop in ("bot_sweep_ou25_v1", "bot_sweep_ou35_v1", "bot_pin_1x2_home_v1"):
+        assert lineshop not in _md, (
+            f"{lineshop} is line-shop — it has no model, so a model-vs-market "
+            "gap flag is meaningless for it"
         )
-    assert "cFlag.reason" in page or "cFlag?.reason" in page, (
-        "PICK-CONFIDENCE-FLAGS: flag reason must surface as a tooltip title — "
-        "operator needs to understand WHY a row is flagged, not just that it is."
+
+    # (3) uses gapPp, the metric the calibration finding is stated in
+    assert "gapPp >= 25" in page, (
+        "surviving flag must threshold on gapPp (absolute pp) — the "
+        "overconfidence finding (6-17pp) is stated in pp, not relative %"
     )
 
 
@@ -30374,6 +30412,66 @@ def _():
 
     # (5) live comparison baseline must be pinned.
     assert "LIVE = {" in src, "live-vs-backtest comparison table missing"
+
+@test("PER-BOT-SWEEP-CONFIG-2026-08-24 — de-vig, tier gate, side lock, retirement enforced")
+def _():
+    """Config changes from the per-bot sweep. Guards:
+      (1) retirement is enforced at lookup — _get_bot_id_by_name filters
+          is_active/retired_at, so a retired bot cannot keep writing picks,
+      (2) line-shop bots gate on DE-VIGGED edge via _LINESHOP_TRUE_EDGE_MIN,
+      (3) both line-shop writers actually divide by the overround,
+      (4) bot_pin_1x2_draw_tier4_v1 is gone from the live config tuple,
+      (5) OU bots have a tier filter (they previously had NONE) and exclude
+          NULL-tier leagues,
+      (6) OU bots write at most ONE side per total (side lock),
+      (7) migration 281 retires both bots and records config history.
+    """
+    from pathlib import Path
+
+    src = Path("workers/jobs/daily_pipeline_v2.py").read_text()
+
+    # (1) retirement enforced at the single shared lookup
+    lookup = src[src.index("def _get_bot_id_by_name"):]
+    lookup = lookup[: lookup.index("\n\n\n")]
+    assert "is_active = TRUE" in lookup and "retired_at IS NULL" in lookup, (
+        "_get_bot_id_by_name must filter retired bots — otherwise retiring a "
+        "bot in the DB does not stop its shadow pass from firing"
+    )
+
+    # (2) + (3) de-vig
+    assert "_LINESHOP_TRUE_EDGE_MIN = 0.03" in src, "de-vigged edge floor missing"
+    assert "_LINESHOP_TIERS: tuple[int, ...] = (1, 2)" in src, "line-shop tier set missing"
+    assert "(1.0 / pin_odds) / total_implied" in src, "OU writer must de-vig"
+    assert "(1.0 / pin_odds) / overround" in src, "1X2 writer must de-vig"
+
+    # (4) retired bot removed from the live tuple
+    cfg_block = src[src.index("_PIN_1X2_SHADOW_CONFIGS: tuple[dict, ...] = ("):]
+    cfg_block = cfg_block[: cfg_block.index(")\n")]
+    assert "bot_pin_1x2_draw_tier4_v1" not in cfg_block, (
+        "retired draw/tier-4 bot must not remain in _PIN_1X2_SHADOW_CONFIGS"
+    )
+
+    # (5) OU tier gate + NULL-tier exclusion
+    ou = src[src.index("def _run_pin_ou_shadow_pass"):]
+    ou = ou[: ou.index("\ndef ")]
+    assert "l.tier IS NOT NULL" in ou, "OU pass must exclude NULL-tier leagues"
+    assert 'stats["wrong_tier"]' in ou, "OU pass must apply a tier filter"
+
+    # (6) side lock — only the best side of a total is kept
+    assert "PER-BOT-SWEEP-SIDE-LOCK-2026-08-24" in ou, "side-lock marker missing"
+    assert "max(candidates" in ou, "OU pass must write only the higher-edge side"
+
+    # NULL-tier must not silently become tier 1 anywhere in the shadow writers
+    assert "COALESCE(l.tier, 1)" not in src, (
+        "COALESCE(l.tier, 1) makes untiered leagues pass as tier 1"
+    )
+
+    # (7) migration
+    mig = Path("supabase/migrations/281_per_bot_sweep_config_change.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS bot_config_history" in mig, "config history table missing"
+    for bot in ("bot_pin_1x2_draw_tier4_v1", "bot_no_pin_home_v1"):
+        assert f"WHERE name = '{bot}'" in mig, f"migration must retire {bot}"
+    assert mig.count("is_active = FALSE") == 2, "exactly two bots should be retired"
 
 if __name__ == "__main__":
     main()

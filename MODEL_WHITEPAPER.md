@@ -1164,6 +1164,83 @@ renders the same data from its 2026-06-25 refactor.
 
 ---
 
+## 10c. Line-Shopping Bots and the De-Vig Correction (2026-08-24)
+
+Five of the eight shadow bots deployed 2026-08-19..21 do not use the ensemble
+model at all. They are pure **line-shopping**: take Pinnacle as the sharp
+anchor, and bet when an accessible soft book prices the same selection
+materially better. This section documents how their edge is computed, because
+the original formula was wrong in a way that cost real money.
+
+### 10c.1 The error
+
+As shipped, edge was:
+
+```
+edge = best_soft_odds × (1 / pin_odds) − 1
+```
+
+`1 / pin_odds` is Pinnacle's **vig-inclusive** implied probability. It
+overstates the true probability by the whole overround. On a two-way market
+where Pinnacle runs a 7% overround, a computed "8% edge" is really about 1%;
+where it runs 12%, the same computed edge is **negative EV**.
+
+This is not a tuning question — the quantity being compared against the
+threshold was simply not a probability.
+
+### 10c.2 The correction
+
+```
+overround = Σ (1 / pin_odds_i)   over all selections in the market
+true_prob = (1 / pin_odds) / overround
+edge      = best_soft_odds × true_prob − 1
+```
+
+For 1X2 this requires Pinnacle prices on all three selections; for OU, both
+sides. Where the full set isn't available the pick is skipped rather than
+priced on a partial book.
+
+Shipped in `daily_pipeline_v2.py` as `_LINESHOP_TRUE_EDGE_MIN = 0.03` — a
+post-vig expected-value floor applied uniformly to every line-shop bot.
+
+### 10c.3 Evidence
+
+Point-in-time replay (`scripts/per_bot_backtest_sweep.py`), 17,750 matches
+priced at kickoff−3h, 2026-05-01 → 08-21:
+
+| de-vigged edge | n | flat ROI | t |
+|---|---:|---:|---:|
+| **< 0%** | **62,823** | **−6.8%** | **−14.46** |
+| 0–3% | 3,054 | +4.3% | +1.84 |
+| 3–8% | 1,504 | −1.5% | −0.42 |
+
+Selections with negative true edge lose roughly the vig, as theory predicts.
+
+The concrete casualty was `bot_pin_1x2_draw_tier4_v1`: a 5% gate against a
+12.2% Pinnacle overround on tier-4 draws meant **85% of its live picks were
+negative-EV by construction**. It returned −40.8% and is retired
+(migration 281). By contrast `bot_pin_1x2_home_v1`, whose 12% gate cleared its
+9.0% overround, had **zero** negative-true-edge picks and returned +16.2%.
+The entire spread between the best and worst line-shop bot is explained by
+whether the gate exceeded the overround.
+
+### 10c.4 Why the thresholds are not tuned per bot
+
+The same replay tested 448 configs (8 bots × 7 edge thresholds × 8 tier sets)
+and ran a walk-forward selection test: configs chosen for positive ROI in
+windows 1 and 2 went on to average **−9.2%** in the unseen window 3 — worse
+than selecting nothing (−5.8%) and worse than the configs that selection
+rejected (−4.2%). Only 37% stayed positive.
+
+**ROI-based threshold selection is anti-predictive at these sample sizes.**
+Selecting instead on CLV > +2% gave +1.5% out of sample with 47% positive.
+Accordingly the de-vig floor is a single principled constant, not a per-bot
+fit, and promotion gates moved from ROI to CLV.
+
+Caveat carried forward: for line-shop bots, CLV measured against Pinnacle's
+close is partly tautological — they select on beating Pinnacle. CLV is a clean
+selection signal only for the model-driven bots.
+
 ## 11. Known Limitations
 
 1. **Top-tier market efficiency:** Tiers 1-2 show negative ROI historically. The model adds little beyond what bookmakers already price in for EPL, La Liga, etc.

@@ -8,3 +8,9 @@
 - [x] Sweep: per bot × edge threshold × tier × window
 - [x] Compare backtest vs live per bot
 - [x] Write report (context doc) — config changes NOT shipped, awaiting operator decision
+- [x] Ship config changes (migration 281 + engine + frontend) — 2026-08-24
+- [x] Record config history for rollback (`bot_config_history`)
+- [x] Update /admin/shadow-bots (retired bots, active-only aggregates, flags 5→1)
+- [x] Fix pre-existing failing smoke test BOT-PIN-OU-SHADOW
+- [ ] **Review 2026-08-31** — one week of forward data, judge on CLV not ROI
+- [ ] Drop `scratch_pit_odds_3h` from the prod DB when re-runs are done

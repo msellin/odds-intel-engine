@@ -1,6 +1,6 @@
 # PER-BOT-SWEEP-2026-08-24 — Context
 
-## Status: analysis complete, no config changes shipped yet (awaiting operator decision)
+## Status: SHIPPED 2026-08-24 — review 2026-08-31 with a week of forward data
 
 ## Artifacts
 
@@ -94,11 +94,58 @@ backtests therefore measure old models, not the live v20260712/v20260719.
 | bot_sweep_btts_yes_v1 | 240 | −1.7% | n/a | 2/3 | 30 | +0.6% |
 | bot_no_pin_home_v1 | 187 | −6.2% | +9.1% | 1/3 | 66 | −10.6% |
 
-## Next steps (not yet done)
+## What shipped 2026-08-24
 
-1. Retire `bot_pin_1x2_draw_tier4_v1` and `bot_no_pin_home_v1`.
-2. De-vig the line-shop edge formula (daily_pipeline_v2.py:4504, :4691).
-3. Re-gate remaining bots to tiers 1-2.
-4. Switch promotion gates from ROI to CLV (see finding 5).
-5. Fix the two UI flags (tier-4 unflagged; home@3.5+ unsupported).
-6. Drop `scratch_pit_odds_3h`.
+Engine (`workers/jobs/daily_pipeline_v2.py`):
+1. `_get_bot_id_by_name` now filters `is_active`/`retired_at`. **This was a
+   real hole** — retiring a bot in the DB did not stop its shadow pass firing,
+   because every writer looked the id up by name only.
+2. `_LINESHOP_TRUE_EDGE_MIN = 0.03` — de-vigged edge floor, applied uniformly
+   to all three surviving line-shop bots. Both writers now divide the
+   Pinnacle-implied probability by the market overround.
+3. `_LINESHOP_TIERS = (1, 2)`.
+4. OU bots: tier filter added (they had NONE — no `leagues` join at all) and
+   a **side lock** so only the higher-edge side of a total is written.
+5. `COALESCE(l.tier, 1)` removed everywhere — NULL-tier leagues were silently
+   passing every tier-1 filter.
+6. `bot_pin_1x2_draw_tier4_v1` removed from `_PIN_1X2_SHADOW_CONFIGS`.
+
+DB (`supabase/migrations/281_per_bot_sweep_config_change.sql`):
+7. `bot_config_history` table — pre- and post-change JSONB snapshots for all
+   8 bots, so any config is recoverable. One live row per bot enforced by a
+   partial unique index.
+8. Both bots retired with full `retired_reason`.
+
+Frontend (`odds-intel-web`):
+9. `SHADOW_BOTS` backtest figures replaced with the reproducible replay
+   numbers (the old ones came from the uncommitted simulation).
+10. Upcoming-picks flags cut 5 → 1. Four are now enforced in config instead,
+    which is strictly better — the bets are never generated. The survivor is
+    the model-vs-market gap flag for model-driven bots only
+    (SWEEP-HOME-BOTS-CALIBRATION-2026-08-22, still open).
+11. Retired bots move to the retired section automatically via `retired_at`;
+    the active ROI/CLV cards already excluded them.
+
+Smoke: `PER-BOT-SWEEP-CONFIG-2026-08-24` added. Three existing tests updated —
+`BOT-PIN-OU-SHADOW` was **already failing on main** (asserted a call signature
+that changed in SHADOW-BOTS-MULTI-COHORT-2026-08-21).
+
+## Still open
+
+- `scratch_pit_odds_3h` left in the prod DB for re-runs — drop when done.
+- Promotion gates: the CLV rule is documented in the writer docstrings and
+  MODEL_WHITEPAPER §10c, but there is no automated gate check. That is
+  `BOT-GRADUATION-GATES-TIERED-2026-08-22` Phase 2.
+- The three model-driven bots were NOT re-gated. Their thresholds have no
+  better-supported alternative, and `sweep_1x2_home`'s tier 3 slice is its
+  better half, so the general tier-3 rule does not apply there.
+- `bot_sweep_1x2_draw_v1` is the one to watch: its most recent backtest
+  window is −23% to −59% at every edge threshold. Kill at n=100 if it holds.
+
+## Review 2026-08-31
+
+Compare per-bot ROI + CLV for picks with `pick_time >= 2026-08-24` against the
+pre-change baseline. Expect LOWER volume (tier gates + de-vig cut roughly half
+the line-shop picks) — judge on CLV, not ROI. One week is ~n=60-100/bot, which
+is not enough for an ROI verdict and is exactly the sample size at which this
+audit showed ROI selection to be anti-predictive.

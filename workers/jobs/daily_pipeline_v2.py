@@ -4107,9 +4107,20 @@ def _run_no_pin_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_
 
 
 def _get_bot_id_by_name(name: str) -> str | None:
-    """Local helper — look up bot UUID by name."""
+    """Local helper — look up bot UUID by name.
+
+    PER-BOT-SWEEP-RETIRE-2026-08-24: filters on is_active/retired_at. Before
+    this, retiring a bot in the DB did NOT stop its shadow pass from firing —
+    the writers looked the id up by name only, so a "retired" bot kept
+    producing picks. Retirement is now enforced at the single lookup every
+    shadow writer goes through.
+    """
     from workers.api_clients.db import execute_query
-    rows = execute_query("SELECT id::text AS id FROM bots WHERE name = %s", [name])
+    rows = execute_query(
+        "SELECT id::text AS id FROM bots "
+        "WHERE name = %s AND is_active = TRUE AND retired_at IS NULL",
+        [name],
+    )
     return rows[0]["id"] if rows else None
 
 
@@ -4184,10 +4195,11 @@ def _run_sweep_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_t
     # 1. Load today's scheduled matches (kickoff in future) + tier from leagues
     matches_raw = execute_query(
         """
-        SELECT m.id::text AS id, m.date, COALESCE(l.tier, 1) AS tier
+        SELECT m.id::text AS id, m.date, l.tier AS tier
           FROM matches m
-          LEFT JOIN leagues l ON m.league_id = l.id
+          JOIN leagues l ON m.league_id = l.id
          WHERE m.date >= %s AND m.date < %s AND m.status = 'scheduled'
+           AND l.tier IS NOT NULL
         """,
         (f"{today_str}T00:00:00Z", f"{next_day_str}T00:00:00Z"),
     )
@@ -4339,6 +4351,33 @@ def _run_sweep_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_t
     return total_written
 
 
+# PER-BOT-SWEEP-DEVIG-2026-08-24 — shared gate for every line-shopping bot.
+#
+# The old formula was `edge = best_soft × (1 / pin_odds) - 1`, which measures
+# edge against Pinnacle's VIG-INCLUSIVE implied probability. That overstates
+# the true probability by the whole overround, so an "8% edge" against a book
+# running a 10% overround is actually NEGATIVE expected value.
+#
+# Concrete case that motivated this: bot_pin_1x2_draw_tier4_v1 ran a 5% gate
+# against a 12.2% Pinnacle overround on tier-4 draws. 85% of its live picks
+# had negative true edge; it returned -40.8% and is retired in migration 281.
+#
+# True edge divides by the overround first:
+#     true_prob = (1 / pin_odds) / overround
+#     edge      = best_soft × true_prob - 1
+#
+# Validated on 62,823 backtest rows: selections with negative true edge return
+# -6.8% (t = -14.46). The 3% floor is a principled post-vig EV threshold, NOT
+# tuned per bot — PER-BOT-SWEEP-2026-08-24 showed that picking thresholds on
+# backtest ROI is actively anti-predictive (-9.2% out of sample).
+_LINESHOP_TRUE_EDGE_MIN = 0.03
+
+# Tier 3 is negative under BOTH mechanisms independently — -14.1% (t=-2.03,
+# n=304) on the model-driven bots' history and -7.7% (n=503) in the line-shop
+# backtest. Tier 4 is ambiguous for line-shopping but clearly negative for the
+# model bots, and tiers 0/NULL have no model coverage at all.
+_LINESHOP_TIERS: tuple[int, ...] = (1, 2)
+
 # BOT-PIN-OU-SHADOW-2026-08-21 — two OU shadow bots (2.5 + 3.5) for the
 # inverse case of bot_no_pin_shadow_v1: matches where Pinnacle HAS OU odds
 # but existing bots don't fire because they depend on v10 model coverage.
@@ -4346,14 +4385,17 @@ _PIN_OU_SHADOW_CONFIGS: tuple[dict, ...] = (
     {
         "name": "bot_sweep_ou25_v1",
         "market": "over_under_25",
+        "tiers": _LINESHOP_TIERS,
     },
     {
         "name": "bot_sweep_ou35_v1",
         "market": "over_under_35",
+        "tiers": _LINESHOP_TIERS,
     },
 )
 
-_PIN_OU_EDGE_MIN = 0.08
+# PER-BOT-SWEEP-DEVIG-2026-08-24: edge is now measured against the DE-VIGGED
+# Pinnacle probability. See _LINESHOP_TRUE_EDGE_MIN below for the rationale.
 _PIN_OU_ODDS_MIN = 1.30
 _PIN_OU_ODDS_MAX = 5.00
 _PIN_OU_MAX_VIG = 0.10       # skip if Pinnacle's implied prob sum > 1.10 (10% vig)
@@ -4365,19 +4407,27 @@ def _run_pin_ou_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_
     on matches where Pinnacle has odds but existing bots don't fire.
 
     Pure Pinnacle-vs-soft-book line-shopping: no v10 model dependency,
-    no shrinkage step. edge = best_soft_book_odds × Pinnacle_implied - 1.
+    no shrinkage step.
+
+    PER-BOT-SWEEP-2026-08-24 reworked the gate — edge is now measured against
+    the DE-VIGGED Pinnacle probability, tiers are restricted, and only one
+    side of a total can be held.
 
     Fires when:
-      - Pinnacle has both over + under odds (need both for vig check)
+      - League tier is in _LINESHOP_TIERS (1-2); NULL-tier leagues excluded
+      - Pinnacle has both over + under odds (need both to de-vig)
       - Combined Pinnacle implied prob ≤ 1.10 (max 10% vig)
       - ≥1 accessible-book offer for the same selection
       - Best soft-book odds in [1.30, 5.00]
       - Best soft-book odds ≤ 1.30 × Pinnacle odds (outlier guard —
         mirrors ODDS-OUTLIER-FILTER-2026-08-18 for OU markets)
-      - edge (best_soft × pin_implied - 1) ≥ 8%
+      - true edge (best_soft × (pin_implied / overround) - 1)
+        ≥ _LINESHOP_TRUE_EDGE_MIN
+      - Only the higher-edge side of the total is written (side lock)
 
     Writes to shadow_bets only. Never simulated_bets, never bankroll.
-    Promotion gate: n≥50 AND ROI ≥ +3% → beta. Kill: ROI ≤ -8% at n≥50.
+    Promotion gate: n≥100 AND CLV ≥ +2% AND ≥30 days → beta (CLV, not ROI —
+    PER-BOT-SWEEP-2026-08-24 showed ROI selection is anti-predictive).
     """
     from workers.api_clients.db import execute_query
     from workers.api_clients.supabase_client import bulk_store_shadow_bets
@@ -4396,26 +4446,37 @@ def _run_pin_ou_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_
 
     next_day_str = _next_day(today_str)
 
-    # 1. Today's scheduled matches (kickoff still in future)
+    # 1. Today's scheduled matches (kickoff still in future) + tier.
+    # PER-BOT-SWEEP-TIER-2026-08-24: these bots previously had NO tier filter
+    # at all — the query didn't join leagues, so they fired on every tier
+    # including untiered leagues. Now joined + NULL-tier excluded.
     matches_raw = execute_query(
-        """SELECT id::text AS id, date FROM matches
-           WHERE date >= %s AND date < %s AND status = 'scheduled'""",
+        """SELECT m.id::text AS id, m.date, l.tier AS tier
+             FROM matches m JOIN leagues l ON m.league_id = l.id
+            WHERE m.date >= %s AND m.date < %s AND m.status = 'scheduled'
+              AND l.tier IS NOT NULL""",
         (f"{today_str}T00:00:00Z", f"{next_day_str}T00:00:00Z"),
     )
     if not matches_raw:
         return 0
     now_utc = datetime.now(timezone.utc)
     match_ids: list[str] = []
+    match_tier: dict[str, int] = {}
     for m in matches_raw:
         try:
             ko = datetime.fromisoformat(str(m["date"]).replace("Z", "+00:00"))
             if ko.tzinfo is None:
                 ko = ko.replace(tzinfo=timezone.utc)
+            if ko <= now_utc:
+                continue
         except (ValueError, AttributeError):
-            match_ids.append(str(m["id"]))
+            pass
+        mid = str(m["id"])
+        match_ids.append(mid)
+        try:
+            match_tier[mid] = int(m["tier"])
+        except (TypeError, ValueError):
             continue
-        if ko > now_utc:
-            match_ids.append(str(m["id"]))
     if not match_ids:
         return 0
 
@@ -4460,14 +4521,18 @@ def _run_pin_ou_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_
     now_iso = now_utc.isoformat()
     rows_by_bot: dict[str, list[dict]] = _dd(list)
     stats = {"scored": 0, "no_pin": 0, "high_vig": 0, "no_soft": 0,
-             "outlier": 0, "odds_range": 0, "low_edge": 0}
+             "outlier": 0, "odds_range": 0, "low_edge": 0, "wrong_tier": 0}
 
     for cfg in _PIN_OU_SHADOW_CONFIGS:
         mkt = cfg["market"]
         bid = bot_ids.get(cfg["name"])
         if not bid:
             continue
+        allowed_tiers = set(cfg["tiers"])
         for mid, sels in grouped.get(mkt, {}).items():
+            if match_tier.get(mid) not in allowed_tiers:
+                stats["wrong_tier"] += 1
+                continue
             over_books = sels.get("over") or {}
             under_books = sels.get("under") or {}
             pin_over = over_books.get("Pinnacle")
@@ -4481,7 +4546,12 @@ def _run_pin_ou_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_
                 stats["high_vig"] += 1
                 continue
 
-            # Score each side (over + under)
+            # Score each side (over + under), then keep only the better one.
+            # PER-BOT-SWEEP-SIDE-LOCK-2026-08-24: both sides could clear the
+            # gate, and across refresh cohorts the bot flipped over→under on
+            # the same total (2 matches, 2026-08-22) — ending up holding both
+            # sides. One total, one side.
+            candidates: list[tuple[float, dict]] = []
             for sel, pin_odds in (("over", pin_over), ("under", pin_under)):
                 accessible = over_books if sel == "over" else under_books
                 # Best non-Pinnacle offer among accessible books
@@ -4500,34 +4570,39 @@ def _run_pin_ou_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_
                     stats["odds_range"] += 1
                     continue
 
-                pin_implied = 1.0 / pin_odds
-                edge = best_odds * pin_implied - 1.0
-                if edge < _PIN_OU_EDGE_MIN:
+                # De-vigged Pinnacle probability — see _LINESHOP_TRUE_EDGE_MIN.
+                true_prob = (1.0 / pin_odds) / total_implied
+                edge = best_odds * true_prob - 1.0
+                if edge < _LINESHOP_TRUE_EDGE_MIN:
                     stats["low_edge"] += 1
                     continue
 
-                stats["scored"] += 1
-                rows_by_bot[cfg["name"]].append({
+                candidates.append((edge, {
                     "bot_id": bid,
                     "match_id": mid,
                     "market": mkt,
                     "selection": sel,
                     "odds": best_odds,
-                    "model_prob": pin_implied,   # Pinnacle-implied stands in for model_prob
-                    "calibrated_prob": pin_implied,
+                    "model_prob": true_prob,   # de-vigged Pinnacle stands in for model_prob
+                    "calibrated_prob": true_prob,
                     "edge": round(edge, 4),
                     "kelly_fraction": None,
                     "placed_at": now_iso,
                     "timing_cohort": "morning",
                     "recommended_bookmaker": best_bm,
-                })
+                }))
+
+            if not candidates:
+                continue
+            stats["scored"] += 1
+            rows_by_bot[cfg["name"]].append(max(candidates, key=lambda x: x[0])[1])
 
     if not rows_by_bot:
         console.print(
             f"[dim]pin-ou shadow: 0 picks (no_pin {stats['no_pin']}, "
             f"high_vig {stats['high_vig']}, no_soft {stats['no_soft']}, "
             f"outlier {stats['outlier']}, odds_range {stats['odds_range']}, "
-            f"low_edge {stats['low_edge']})[/dim]"
+            f"low_edge {stats['low_edge']}, wrong_tier {stats['wrong_tier']})[/dim]"
         )
         return 0
 
@@ -4556,18 +4631,16 @@ def _run_pin_ou_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_
 # BOT-PIN-1X2-SHADOW-2026-08-21 — closes the (Pinnacle × model × 1X2)
 # coverage grid. Home wins in tier 1-2, draws in tier 4. Pure line-shopping
 # (no model dependency), same design as _PIN_OU_SHADOW_CONFIGS.
+# PER-BOT-SWEEP-RETIRE-2026-08-24: bot_pin_1x2_draw_tier4_v1 removed. Its 5%
+# gate sat below the 12.2% Pinnacle overround on tier-4 draws, so 85% of its
+# live picks were negative-EV by construction (-40.8% live, 0W/11L on the
+# operator's real money). Retired in migration 281.
 _PIN_1X2_SHADOW_CONFIGS: tuple[dict, ...] = (
     {
         "name": "bot_pin_1x2_home_v1",
         "selection": "home",
-        "tiers": (1, 2),
-        "edge_min": 0.12,
-    },
-    {
-        "name": "bot_pin_1x2_draw_tier4_v1",
-        "selection": "draw",
-        "tiers": (4,),
-        "edge_min": 0.05,
+        "tiers": _LINESHOP_TIERS,
+        "edge_min": _LINESHOP_TRUE_EDGE_MIN,
     },
 )
 
@@ -4605,9 +4678,10 @@ def _run_pin_1x2_shadow_pass(today_str: str, cohort_tag: str = "morning", notify
 
     # 1. Today's scheduled matches (future kickoff) + tier
     matches_raw = execute_query(
-        """SELECT m.id::text AS id, m.date, COALESCE(l.tier, 1) AS tier
-             FROM matches m LEFT JOIN leagues l ON m.league_id = l.id
-            WHERE m.date >= %s AND m.date < %s AND m.status = 'scheduled'""",
+        """SELECT m.id::text AS id, m.date, l.tier AS tier
+             FROM matches m JOIN leagues l ON m.league_id = l.id
+            WHERE m.date >= %s AND m.date < %s AND m.status = 'scheduled'
+              AND l.tier IS NOT NULL""",
         (f"{today_str}T00:00:00Z", f"{next_day_str}T00:00:00Z"),
     )
     if not matches_raw:
@@ -4676,6 +4750,18 @@ def _run_pin_1x2_shadow_pass(today_str: str, cohort_tag: str = "morning", notify
             if not pin_odds or pin_odds <= 1.0:
                 stats["no_pin"] += 1
                 continue
+            # De-vig needs Pinnacle on ALL THREE selections to get the
+            # overround — see _LINESHOP_TRUE_EDGE_MIN.
+            pin_three = []
+            for _s in ("home", "draw", "away"):
+                _o = (sels.get(_s) or {}).get("Pinnacle")
+                if not _o or _o <= 1.0:
+                    break
+                pin_three.append(_o)
+            if len(pin_three) < 3:
+                stats["no_pin"] += 1
+                continue
+            overround = sum(1.0 / _o for _o in pin_three)
             soft_offers = [(bm, o) for bm, o in books.items() if bm != "Pinnacle"]
             if not soft_offers:
                 stats["no_soft"] += 1
@@ -4687,8 +4773,8 @@ def _run_pin_1x2_shadow_pass(today_str: str, cohort_tag: str = "morning", notify
             if not (_PIN_1X2_ODDS_MIN <= best_odds <= _PIN_1X2_ODDS_MAX):
                 stats["odds_range"] += 1
                 continue
-            pin_implied = 1.0 / pin_odds
-            edge = best_odds * pin_implied - 1.0
+            true_prob = (1.0 / pin_odds) / overround
+            edge = best_odds * true_prob - 1.0
             if edge < cfg["edge_min"]:
                 stats["low_edge"] += 1
                 continue
@@ -4700,8 +4786,8 @@ def _run_pin_1x2_shadow_pass(today_str: str, cohort_tag: str = "morning", notify
                 "market": "1x2",
                 "selection": sel,
                 "odds": best_odds,
-                "model_prob": pin_implied,
-                "calibrated_prob": pin_implied,
+                "model_prob": true_prob,
+                "calibrated_prob": true_prob,
                 "edge": round(edge, 4),
                 "kelly_fraction": None,
                 "placed_at": now_iso,
