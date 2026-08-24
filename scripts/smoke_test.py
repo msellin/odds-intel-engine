@@ -30329,5 +30329,51 @@ def _():
     )
 
 
+
+
+@test("PER-BOT-SWEEP-2026-08-24 — point-in-time replay harness with de-vig support")
+def _():
+    """Early execution of PER-BOT-SWEEP-N500 after the 2026-08-22→24 real-money loss.
+
+    The original CONFIG-SWEEP-2026-08-19 only tested MODEL-driven configs and
+    validated just 3 of the 8 deployed bots; the 5 line-shop bots were shipped
+    on an ad-hoc simulation whose script was never committed. This harness
+    replaces it. Guards:
+      (1) harness exists with both engines (lineshop + model),
+      (2) replay is point-in-time — snapshots strictly before kickoff, no
+          look-ahead best-of-day pricing,
+      (3) de-vig support exists (edge measured against (1/pin)/overround, not
+          the vig-inclusive 1/pin the live code uses),
+      (4) all 8 deployed bots are represented in the BOTS table,
+      (5) live results are pinned for backtest-vs-live comparison.
+    """
+    from pathlib import Path
+
+    src = Path("scripts/per_bot_backtest_sweep.py").read_text()
+
+    assert "PER-BOT-SWEEP-2026-08-24" in src, "sweep marker missing"
+    assert "def lineshop_picks(" in src, "line-shop engine missing"
+    assert "def model_picks(" in src, "model engine missing"
+
+    # (2) point-in-time: the extraction must exclude look-ahead snapshots.
+    assert "no look-ahead" in src, "point-in-time guarantee not documented"
+
+    # (3) de-vig: true edge divides the Pinnacle-implied prob by the overround.
+    assert "devig" in src, "de-vig parameter missing"
+    assert "/ orr if devig" in src or "(1.0 / pin) / orr" in src, (
+        "de-vig must divide Pinnacle-implied prob by the market overround"
+    )
+
+    # (4) every deployed shadow bot must be in the replay table.
+    for bot in (
+        "bot_sweep_1x2_home_v1", "bot_sweep_1x2_draw_v1", "bot_sweep_btts_yes_v1",
+        "bot_no_pin_home_v1", "bot_sweep_ou25_v1", "bot_sweep_ou35_v1",
+        "bot_pin_1x2_home_v1", "bot_pin_1x2_draw_tier4_v1",
+    ):
+        assert bot in src, f"{bot} missing from sweep BOTS table"
+
+    # (5) live comparison baseline must be pinned.
+    assert "LIVE = {" in src, "live-vs-backtest comparison table missing"
+
 if __name__ == "__main__":
     main()
