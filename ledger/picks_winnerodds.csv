@@ -1,4 +1,6 @@
 source,kickoff_date,league,home_team,away_team,market,pick,odds,result,pnl_per_unit,ref_url
+winnerodds,2026-08-18,Germany,,,mixed,ah+0.5_1,1.320,won,0.3200,https://winnerodds.com
+winnerodds,2026-08-16,Mexico,,,mixed,u3.5,1.950,,,https://winnerodds.com
 winnerodds,2026-08-12,Brazil,,,mixed,ah-0_1,1.552,void,0.0000,https://winnerodds.com
 winnerodds,2026-08-11,Argentina,,,mixed,ah+0.5_1,1.375,won,0.3750,https://winnerodds.com
 winnerodds,2026-08-16,Kuwait,,,mixed,u2.5,1.650,won,0.6500,https://winnerodds.com
