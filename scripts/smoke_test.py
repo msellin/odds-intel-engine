@@ -31131,5 +31131,31 @@ def test_coverage_expansion_probe_2026_08_26():
     return "coverage-expansion probe replays v10's gate on unbet leagues"
 
 
+
+@test("PICKS-MIN-ODDS")
+def test_picks_min_odds_2026_08_26():
+    """PICKS-MIN-ODDS-2026-08-26 — /picks shows the break-even price so a reader
+    can check the odds they are actually offered before placing."""
+    lib = _web_path("src/lib/upcoming-picks.ts").read_text()
+    page = _web_path("src/app/picks/page.tsx").read_text()
+
+    assert "min_odds" in lib, "UpcomingPick must carry min_odds"
+    # Derived, not stored: edge = odds*prob - 1  =>  break-even = odds / (1+edge)
+    assert "(1 + Number(r.edge_percent))" in lib, \
+        "min_odds must be derived as odds / (1 + edge)"
+    # A -100% edge would divide by zero; guard must be present.
+    assert "Number(r.edge_percent) > -1" in lib, "must guard against divide-by-zero"
+    assert "min {p.min_odds.toFixed(2)}" in page, "picks page must render it"
+    assert "text-neutral-600" in page, "must stay visually quiet next to the odds"
+
+    # The arithmetic itself, since it is the whole point: a pick at 2.50 with a
+    # 10 pct edge implies prob 0.44, so it stops being +EV below 2.273.
+    odds, edge = 2.50, 0.10
+    assert abs(odds / (1 + edge) - 2.2727) < 0.001
+    # And a pick with zero edge is already at its floor.
+    assert abs(3.00 / (1 + 0.0) - 3.00) < 1e-9
+    return "break-even 'min odds' shown on /picks so readers can revalidate price"
+
+
 if __name__ == "__main__":
     main()
