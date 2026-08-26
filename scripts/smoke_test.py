@@ -31257,5 +31257,42 @@ def test_weekly_eval_baseline_2026_08_26():
     return "weekly eval warns when production is split across model versions"
 
 
+
+@test("MODEL-1X2-PROMOTION")
+def test_model_1x2_promotion_2026_08_26():
+    """MODEL-1X2-PROMOTION-2026-08-26 — v20260823 promoted for the 1X2 head only,
+    and the promotion audit trail reconciled to what is actually served."""
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/285_reconcile_model_promotions.sql").read_text()
+
+    # Reality on 2026-08-26, read from the live scheduler's /proc environ:
+    #   MODEL_VERSION=v20260712, MODEL_VERSION_OU(_T1)=v20260719,
+    #   MODEL_VERSION_1X2=v20260823
+    for v in ("v20260712", "v20260719", "v20260607"):
+        assert v in mig, f"{v} must be reconciled"
+    assert "COALESCE(promoted_at," in mig, "must not overwrite a real promotion date"
+    assert "COALESCE(demoted_at," in mig
+    assert "AND promoted_at IS NULL" in mig, "must be idempotent"
+
+    # OU was deliberately NOT promoted: the eval scored it against v20260712
+    # while v20260719 was live, so that comparison was never validly made.
+    assert "wrong baseline" in mig, \
+        "must record why OU stayed on v20260719 rather than moving to the candidate"
+
+    from workers.api_clients.db import execute_query
+    rows = execute_query(
+        "SELECT version, promoted_at, demoted_at FROM model_versions "
+        "WHERE version = ANY(%s)",
+        [["v20260823", "v20260719", "v20260712", "v20260607"]],
+    )
+    st = {r["version"]: r for r in rows}
+    assert st["v20260823"]["promoted_at"] is not None, "1X2 candidate must be promoted"
+    assert st["v20260712"]["promoted_at"] is not None, "global must be recorded live"
+    assert st["v20260719"]["promoted_at"] is not None, "OU head must be recorded live"
+    assert st["v20260607"]["demoted_at"] is not None, \
+        "v20260607 stopped serving in July and must not still read as production"
+    return "1X2 promoted to v20260823; promotion audit trail matches served versions"
+
+
 if __name__ == "__main__":
     main()
