@@ -1,5 +1,29 @@
 name: Smoke Tests
 
+# CI-SMOKE-GATE-DEAD-2026-08-24 / fixed 2026-08-26.
+#
+# This gate had not passed in weeks, and the diagnosis on file was that the
+# `DATABASE_URL` repo secret was stale — pointing at localhost:5433, "the
+# SSH-tunnel address from the pre-SUPABASE-TO-VPS setup", with the fix being for
+# the operator to rotate it.
+#
+# That was wrong, and it is worth saying why: localhost:5433 IS correct. It is
+# the tunnel address, and `migrate.yml` uses the very same secret successfully
+# on every migration push. The difference is that migrate.yml OPENS the tunnel
+# first, and this workflow never did. So every DB-backed test here failed with
+# `Connection refused` — 89 of them at the time, which meant a genuine
+# regression was indistinguishable from the standing failure.
+#
+# No secret rotation is needed. VPS_DEPLOY_KEY already exists (migrate.yml has
+# been using it since the VPS cutover); this workflow just has to open the same
+# tunnel before running the suite.
+#
+# Why this matters beyond tidiness: CLAUDE.md tells agents not to run the full
+# suite locally because "GitHub Actions runs it on every push to main — that's
+# the gate". A permanently-red gate is worse than no gate, because it looks like
+# one. On 2026-08-26 it hid two regressions that were only caught by diffing
+# failing test NAMES against a baseline commit.
+
 on:
   push:
     branches: [main]
@@ -19,6 +43,21 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      # Same tunnel migrate.yml opens. Kept byte-identical on purpose: if the
+      # VPS address or key handling ever changes, both workflows should be
+      # edited together and a diff between them makes that obvious.
+      - name: Open SSH tunnel to VPS Postgres
+        env:
+          VPS_DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$VPS_DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H 204.168.199.8 >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -f -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
+              -L 5433:localhost:5432 root@204.168.199.8
+          nc -z localhost 5433 && echo "tunnel up on localhost:5433"
 
       - name: Run smoke tests
         env:
