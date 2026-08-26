@@ -31110,5 +31110,26 @@ def test_clv_first_gate_2026_08_26():
     return "graduation gate decides on de-vigged Pinnacle CLV; ROI is a cross-check"
 
 
+
+@test("COVERAGE-EXPANSION-PROBE")
+def test_coverage_expansion_probe_2026_08_26():
+    """COVERAGE-EXPANSION-2026-08-26 — widening the best model into unbet leagues
+    is measurably negative. Pins the probe so the conclusion stays reproducible."""
+    import pathlib
+    src = pathlib.Path("scripts/coverage_expansion_probe.py").read_text()
+
+    # It must replay bot_v10_all's ACTUAL gate, not an approximation — the whole
+    # point is testing the winning config in new territory.
+    assert '"fav": 0.08, "long": 0.12' in src, "must use v10's tier-1 thresholds verbatim"
+    assert "p[\"prob\"] < 0.30" in src, "must apply v10's min_prob floor"
+    assert "1.30 <= o <= 4.50" in src, "must apply v10's odds range"
+    # Without the outlier guard the first slice search reported CLV +173.95%
+    # from mislabelled OU lines; any probe over raw odds needs it.
+    assert "1.35 if mkt == \"1x2\" else 1.30" in src, "price-outlier guard required"
+    assert "p.created_at <= m.date" in src, "predictions must be point-in-time"
+    assert "model_version='v20260712'" in src, "must probe the CURRENT best model"
+    return "coverage-expansion probe replays v10's gate on unbet leagues"
+
+
 if __name__ == "__main__":
     main()
