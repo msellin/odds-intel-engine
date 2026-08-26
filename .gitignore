@@ -43,3 +43,6 @@ dev/active/pinnacle-backfill-jsons/
 
 # Migration secrets (temporary during Supabase→VPS migration)
 dev/active/supabase-migration-secrets.md
+
+# CS2-REMOVAL-2026-08-26: 41MB table dump, kept locally + on VPS /tmp, never committed
+dev/active/cs2-removal-2026-08-26/*.gz

@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS cs2_upcoming_matches (
     fair_odds_map2   FLOAT,
     threshold_map1   FLOAT,
     threshold_map2   FLOAT,
+    bookie_odds1     FLOAT,      -- bo3.gg bookmaker reference odds
+    bookie_odds2     FLOAT,
     scanned_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

@@ -1,0 +1,38 @@
+DB pool created (2-20 connections)
+
+--- fill_matches: 800 candidates (<10 players each) ---
+  [429] backing off 2.0s on https://api-public.cs-prod.leetify.com/v2/matches/04397f63-b04c-4869-a67b-1cdd5d0cd065
+  [429] backing off 4.0s on https://api-public.cs-prod.leetify.com/v2/matches/04397f63-b04c-4869-a67b-1cdd5d0cd065
+  [429] backing off 8.0s on https://api-public.cs-prod.leetify.com/v2/matches/04397f63-b04c-4869-a67b-1cdd5d0cd065
+  [429] backing off 16.0s on https://api-public.cs-prod.leetify.com/v2/matches/04397f63-b04c-4869-a67b-1cdd5d0cd065
+  [429] backing off 2.0s on https://api-public.cs-prod.leetify.com/v2/matches/07c91c49-2009-4421-b43d-f50f46108c4b
+  [429] backing off 4.0s on https://api-public.cs-prod.leetify.com/v2/matches/07c91c49-2009-4421-b43d-f50f46108c4b
+  [429] backing off 8.0s on https://api-public.cs-prod.leetify.com/v2/matches/07c91c49-2009-4421-b43d-f50f46108c4b
+  [429] backing off 16.0s on https://api-public.cs-prod.leetify.com/v2/matches/07c91c49-2009-4421-b43d-f50f46108c4b
+  [429] backing off 2.0s on https://api-public.cs-prod.leetify.com/v2/matches/09fb0a62-52f0-43c9-ac30-ab3570b3f458
+  [429] backing off 4.0s on https://api-public.cs-prod.leetify.com/v2/matches/09fb0a62-52f0-43c9-ac30-ab3570b3f458
+  [429] backing off 8.0s on https://api-public.cs-prod.leetify.com/v2/matches/09fb0a62-52f0-43c9-ac30-ab3570b3f458
+  [429] backing off 16.0s on https://api-public.cs-prod.leetify.com/v2/matches/09fb0a62-52f0-43c9-ac30-ab3570b3f458
+  [429] backing off 2.0s on https://api-public.cs-prod.leetify.com/v2/matches/0c766ab3-1f6c-44bb-9459-a823adf2f124
+  [429] backing off 4.0s on https://api-public.cs-prod.leetify.com/v2/matches/0c766ab3-1f6c-44bb-9459-a823adf2f124
+  [429] backing off 8.0s on https://api-public.cs-prod.leetify.com/v2/matches/0c766ab3-1f6c-44bb-9459-a823adf2f124
+  [429] backing off 16.0s on https://api-public.cs-prod.leetify.com/v2/matches/0c766ab3-1f6c-44bb-9459-a823adf2f124
+  [429] backing off 2.0s on https://api-public.cs-prod.leetify.com/v2/matches/0f82d233-84e1-4188-b353-3902a4ffa4ea
+  [429] backing off 4.0s on https://api-public.cs-prod.leetify.com/v2/matches/0f82d233-84e1-4188-b353-3902a4ffa4ea
+  [429] backing off 8.0s on https://api-public.cs-prod.leetify.com/v2/matches/0f82d233-84e1-4188-b353-3902a4ffa4ea
+  [429] backing off 16.0s on https://api-public.cs-prod.leetify.com/v2/matches/0f82d233-84e1-4188-b353-3902a4ffa4ea
+  [429] backing off 2.0s on https://api-public.cs-prod.leetify.com/v2/matches/1212558c-fdc2-43ed-8217-2da07b5b1f29
+  [429] backing off 4.0s on https://api-public.cs-prod.leetify.com/v2/matches/1212558c-fdc2-43ed-8217-2da07b5b1f29
+  [429] backing off 8.0s on https://api-public.cs-prod.leetify.com/v2/matches/1212558c-fdc2-43ed-8217-2da07b5b1f29
+  [429] backing off 16.0s on https://api-public.cs-prod.leetify.com/v2/matches/1212558c-fdc2-43ed-8217-2da07b5b1f29
+  [429] backing off 2.0s on https://api-public.cs-prod.leetify.com/v2/matches/149cbdca-15bd-4fef-8fbe-840d8265302a
+  [429] backing off 4.0s on https://api-public.cs-prod.leetify.com/v2/matches/149cbdca-15bd-4fef-8fbe-840d8265302a
+  [429] backing off 8.0s on https://api-public.cs-prod.leetify.com/v2/matches/149cbdca-15bd-4fef-8fbe-840d8265302a
+  [429] backing off 16.0s on https://api-public.cs-prod.leetify.com/v2/matches/149cbdca-15bd-4fef-8fbe-840d8265302a
+  [429] backing off 2.0s on https://api-public.cs-prod.leetify.com/v2/matches/1659209e-70d6-4fbd-a53f-c4055584a641
+  [429] backing off 4.0s on https://api-public.cs-prod.leetify.com/v2/matches/1659209e-70d6-4fbd-a53f-c4055584a641
+  [429] backing off 8.0s on https://api-public.cs-prod.leetify.com/v2/matches/1659209e-70d6-4fbd-a53f-c4055584a641
+  [429] backing off 16.0s on https://api-public.cs-prod.leetify.com/v2/matches/1659209e-70d6-4fbd-a53f-c4055584a641
+  [429] backing off 2.0s on https://api-public.cs-prod.leetify.com/v2/matches/174e6a89-8a39-4da8-a8b5-93e63175436b
+  [429] backing off 4.0s on https://api-public.cs-prod.leetify.com/v2/matches/174e6a89-8a39-4da8-a8b5-93e63175436b
+  [429] backing off 8.0s on https://api-public.cs-prod.leetify.com/v2/matches/174e6a89-8a39-4da8-a8b5-93e63175436b

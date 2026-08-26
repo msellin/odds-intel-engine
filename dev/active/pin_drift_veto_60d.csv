@@ -1,0 +1,556 @@
+bet_id,bot_id,kickoff,league,country,market,selection,stake,pnl,result,timing_cohort,is_morning,drift_for_pick,abs_drift,against_us,bet_news_impact,mfv_news_impact,news_explained,clv_pinnacle
+aaf933f1-1585-4e89-ac5e-6fcf094e06c5,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-06-02 23:00:00+00:00,USL League Two,USA,1x2,home,4.64,-4.64,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.0459
+aa7cbc68-f3a5-496f-b808-35d12c119270,9ea21bc8-20a7-4500-b5ea-057f2a430e1f,2026-06-01 23:00:00+00:00,Primera B,Chile,1x2,away,5.00,-5.00,lost,,False,0.01214,0.01214,False,,,False,
+dd9c4219-d0d1-494a-b022-88b1ce60b203,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-06-01 23:00:00+00:00,Serie C,Brazil,1x2,home,4.70,-4.70,lost,all,False,-0.03033,0.03033,True,0.0000,0.000,False,0.068
+e852c1e1-6aca-4f2c-8fdd-25699a24cbf6,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-06-01 22:00:00+00:00,Liga Pro,Ecuador,1x2,home,4.53,-4.53,lost,all,False,0.05411,0.05411,False,0.0000,0.000,False,0.1054
+cb3f00a0-dfe1-4a2a-aee0-6a9c7f162308,9ea21bc8-20a7-4500-b5ea-057f2a430e1f,2026-06-01 19:00:00+00:00,Division Intermedia,Paraguay,1x2,home,5.00,6.00,won,,False,0.0,0.0,False,,0.000,False,
+ce699bfb-f576-49cf-b91f-ce507cffe384,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-06-01 17:30:00+00:00,Liga I,Romania,1x2,home,9.50,16.62,won,all,False,-0.00266,0.00266,True,0.0000,0.000,False,-0.0143
+419c58e7-6133-4bcf-8f90-538bf253425e,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-31 23:00:00+00:00,USL League Two,USA,1x2,home,5.17,-5.17,lost,all,False,0.0,0.0,False,0.0000,0.000,False,-0.0042
+b28e5a92-7c6a-4b74-9cce-f1d7dd3b9720,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-31 23:00:00+00:00,USL League Two,USA,1x2,home,4.69,-4.69,lost,all,False,0.0,0.0,False,0.0000,0.000,False,-0.0042
+8a8926ca-03c4-46df-a1cb-7473b327627f,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-31 22:00:00+00:00,Primera División,Peru,1x2,home,4.68,3.60,won,all,False,0.01109,0.01109,False,,0.000,False,0.1569
+6a7c02f2-cddf-4485-a322-675076c33259,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-31 22:00:00+00:00,Serie D,Brazil,1x2,home,5.25,7.09,won,all,False,0.05304,0.05304,False,0.0000,0.000,False,0.2842
+6fb4c430-fc9e-411d-b799-6e60bc44eefd,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-31 22:00:00+00:00,Serie D,Brazil,1x2,home,5.96,8.05,won,all,False,0.05304,0.05304,False,0.0000,0.000,False,0.2842
+0ec1e7d8-73e7-48d3-ad5d-fd3f2c5b1429,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-31 21:30:00+00:00,Primera División,Chile,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+de2b77de-b2d1-4a63-8aa3-9b615b608b9d,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-31 21:00:00+00:00,Serie D,Brazil,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+697c6621-f72a-498b-9db7-c9e05a229282,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-31 20:00:00+00:00,Canadian Premier League,Canada,1x2,home,4.21,6.31,won,all,False,-0.00372,0.00372,True,0.0000,0.000,False,0.073
+c8d18c1d-830c-42f0-a6ef-61856c2d2ea9,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-31 20:00:00+00:00,Primera Nacional,Argentina,1x2,home,4.23,4.86,won,all,False,0.03401,0.03401,False,0.0000,0.000,False,0.075
+6218ec38-c6e4-4c6b-a994-baf9c533a7c2,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-31 20:00:00+00:00,Primera Nacional,Argentina,1x2,home,5.23,6.01,won,all,False,0.03401,0.03401,False,0.0000,0.000,False,0.075
+430df426-be58-442a-a356-806ab08560d6,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-31 19:00:00+00:00,Segunda División,Spain,1x2,home,9.20,-9.20,lost,all,False,-0.02232,0.02232,True,0.0000,0.000,False,0.1019
+e46d9e92-f42d-4fe9-82c9-89bdc66dd2eb,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-31 19:00:00+00:00,Serie C,Brazil,1x2,home,4.59,4.13,won,all,False,0.08058,0.08058,False,0.0000,0.000,False,0.2102
+99cab75f-a113-4c6a-a18e-bfa904076714,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-31 19:00:00+00:00,Primera Nacional,Argentina,1x2,home,3.71,4.93,won,all,False,-0.02536,0.02536,True,0.0000,0.000,False,0.1148
+bdfededa-8e1a-4e95-8783-14c891a7f9d9,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-31 19:00:00+00:00,Torneo Federal A,Argentina,1x2,home,4.28,5.91,won,all,False,0.0,0.0,False,0.0000,0.000,False,0.5556
+f9f16740-1001-439d-a8c0-1c92587fe086,9ea21bc8-20a7-4500-b5ea-057f2a430e1f,2026-05-31 19:00:00+00:00,Serie D,Brazil,1x2,away,5.00,18.75,won,,False,0.00142,0.00142,False,,,False,
+c7ba321c-d457-4193-85cc-3b7f2619ca2a,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-31 19:00:00+00:00,Torneo Federal A,Argentina,1x2,home,4.26,-4.26,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.0169
+ba11dced-78a6-4b18-a933-9674ed51e284,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-31 19:00:00+00:00,Torneo Federal A,Argentina,1x2,home,5.73,7.91,won,all,False,0.0,0.0,False,0.0000,0.000,False,0.5556
+ccc89b6d-adec-45f8-9f57-5e372a8a8528,6644da46-96a4-4a93-9d53-fe2d8f6aa15b,2026-05-31 19:00:00+00:00,Segunda División,Spain,1x2,home,7.53,8.51,won,all,False,-0.03434,0.03434,True,0.0000,0.000,False,-0.0274
+0a2e5944-2d19-4533-a05f-7d55237517ec,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-31 19:00:00+00:00,Torneo Federal A,Argentina,1x2,home,5.17,7.13,won,all,False,0.0,0.0,False,0.0000,0.000,False,0.5556
+b63c29b6-2334-482a-944d-bff221585382,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-31 19:00:00+00:00,Serie A,Brazil,1x2,home,5.00,-5.00,lost,,False,0.03435,0.03435,False,,0.000,False,
+f50ffb65-70e9-43c4-9fa2-2c479ff3df6e,2e446f74-9fd0-4022-a356-d96aa80815da,2026-05-31 19:00:00+00:00,USL League Two,USA,1x2,away,5.00,25.00,won,,False,0.0,0.0,False,,0.000,False,
+edcc956c-c05b-4315-9a59-3aa045d6b8ce,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-31 19:00:00+00:00,Serie B,Brazil,1x2,home,5.00,-5.00,lost,,False,-0.00249,0.00249,True,,,False,
+2b8bb3ae-1781-4b83-9344-031cf52745eb,9ea21bc8-20a7-4500-b5ea-057f2a430e1f,2026-05-31 19:00:00+00:00,Serie D,Brazil,1x2,away,5.00,18.75,won,,False,0.0,0.0,False,,,False,
+0489b57c-9de6-49e1-9a9f-bff2ff409b8b,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-31 19:00:00+00:00,Serie A,Brazil,1x2,home,9.18,-9.18,lost,all,False,0.03435,0.03435,False,0.0000,0.000,False,0.0644
+19da0de7-1008-4a69-bdee-93dd9840731f,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-31 18:15:00+00:00,Primera División,Peru,1x2,away,5.00,-5.00,lost,,False,-0.02326,0.02326,True,,0.000,False,
+d6806f0a-4ee4-4749-aed0-a7ae0d5b0d82,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-31 18:00:00+00:00,Torneo Federal A,Argentina,1x2,home,1.72,1.81,won,all,False,0.0,0.0,False,0.0000,0.000,False,-0.0144
+b2b934eb-f57a-4876-9d5f-e657267637ff,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-31 18:00:00+00:00,Torneo Federal A,Argentina,1x2,home,1.94,2.04,won,all,False,0.0,0.0,False,0.0000,0.000,False,-0.0144
+ad15b4e6-d2aa-47a0-ae03-a0189b3578aa,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-31 17:00:00+00:00,Segunda División RFEF - Play-offs,Spain,1x2,home,5.20,-5.20,lost,all,False,0.06027,0.06027,False,0.0000,0.000,False,0.15
+b46db074-3cd7-4c29-8a35-92b2bd7add20,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-31 17:00:00+00:00,Segunda División RFEF - Play-offs,Spain,1x2,home,5.78,-5.78,lost,all,False,0.06027,0.06027,False,0.0000,0.000,False,0.15
+88a5bbc4-8bac-42d7-8958-fc7783c7d569,81aa2ba0-be7e-48ae-a5b2-7932fd56afcc,2026-05-31 17:00:00+00:00,Segunda División RFEF - Play-offs,Spain,1x2,home,5.09,-5.09,lost,all,False,0.06027,0.06027,False,0.0000,0.000,False,0.15
+0a0049d1-0ee3-40bd-86cc-b18e91e053c6,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-31 16:30:00+00:00,Jupiler Pro League,Belgium,1x2,home,7.97,-7.97,lost,all,False,0.04388,0.04388,False,0.0000,0.000,False,0.4524
+fd1bd67d-cf24-49a8-938b-fd779bc719e7,e12edb14-2779-4a87-8418-726bcb5ef9ed,2026-05-31 16:30:00+00:00,Jupiler Pro League,Belgium,1x2,home,8.60,-8.60,lost,all,False,0.04388,0.04388,False,0.0000,0.000,False,0.4524
+96f336db-1532-4f23-a36b-57dedb03aa4a,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-31 16:30:00+00:00,Jupiler Pro League,Belgium,1x2,home,10.11,-10.11,lost,all,False,0.04388,0.04388,False,0.2000,0.000,True,0.4524
+d080fff4-37d9-43bd-aac7-4e6ea058b518,9ea21bc8-20a7-4500-b5ea-057f2a430e1f,2026-05-31 16:00:00+00:00,Kakkonen - Lohko A,Finland,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+f1ca2289-b7b2-4a9a-91c2-74505b162f75,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-31 16:00:00+00:00,Liga Pro Serie B,Ecuador,1x2,home,8.05,-8.05,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.3462
+281ad053-8163-4adc-aeaf-eee0cb30bfba,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-31 16:00:00+00:00,Liga Pro Serie B,Ecuador,1x2,home,10.31,-10.31,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.3462
+a919943b-b435-4f12-ac47-88d62dd2f097,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-31 14:00:00+00:00,Serie A,Brazil,1x2,home,8.95,11.01,won,all,False,0.01251,0.01251,False,0.0000,0.000,False,0.0229
+eda4bc0b-f6ce-4712-91d0-d01085a326f8,9ea21bc8-20a7-4500-b5ea-057f2a430e1f,2026-05-31 14:00:00+00:00,2. Division - Group 1,Norway,1x2,home,5.00,-5.00,lost,,False,0.00271,0.00271,False,,,False,
+d5c56eaf-ed83-47d3-bd53-b498b1aca995,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-31 14:00:00+00:00,2. Division - Group 1,Norway,1x2,away,4.50,-4.50,lost,all,False,0.00893,0.00893,False,0.0000,0.000,False,0.2514
+ee43c001-5112-493a-8d1f-3d2fc6d00e8c,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-31 13:00:00+00:00,Superettan,Sweden,1x2,home,5.23,-5.23,lost,all,False,-0.00176,0.00176,True,0.0000,0.000,False,0.0435
+e08ad9a7-e0ed-4a4d-be62-02edcfcda9a5,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-31 11:00:00+00:00,Super League,China,1x2,away,5.00,-5.00,lost,,False,-0.00325,0.00325,True,0.0000,0.000,False,
+6d61ec6b-b6bf-4639-a944-15938afdd5a8,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-31 11:00:00+00:00,Damallsvenskan,Sweden,1x2,home,4.54,-4.54,lost,all,False,0.0547,0.0547,False,0.0000,0.000,False,0.1677
+7574b6a4-a688-4015-af2e-5b3aa84ec193,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-30 23:30:00+00:00,USL League One,USA,1x2,home,3.44,2.55,won,all,False,0.0,0.0,False,0.0000,0.000,False,0.0357
+2122dc6d-af77-4e25-b427-62c4ea6c4f69,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-30 23:30:00+00:00,USL League One,USA,1x2,home,3.62,2.68,won,all,False,0.0,0.0,False,0.0000,0.000,False,0.0357
+58d46234-d164-45ff-9c5b-28c4289d7fe3,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-30 23:00:00+00:00,MLS Next Pro,USA,1x2,home,6.65,-6.65,lost,all,False,0.00198,0.00198,False,0.0000,0.000,False,0.0848
+dbef62fc-da15-4228-96e6-4e2f7f5fc580,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-30 23:00:00+00:00,USL League One,USA,1x2,home,9.72,-9.72,lost,all,False,0.0019,0.0019,False,0.0000,0.000,False,0.0175
+e70300ea-f398-484b-9e82-cc6dfc344b31,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-30 23:00:00+00:00,USL League One,USA,1x2,home,10.23,-10.23,lost,all,False,0.0019,0.0019,False,0.0000,0.000,False,0.0175
+05f2e1f4-dece-4adc-a202-c8fdafee6bf9,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-30 23:00:00+00:00,MLS Next Pro,USA,1x2,home,6.31,-6.31,lost,all,False,0.00198,0.00198,False,0.0000,0.000,False,0.0848
+52addd5b-ac61-4ec5-888e-4077b7ecc9f5,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-30 23:00:00+00:00,USL League One,USA,1x2,home,8.65,-8.65,lost,all,False,0.0019,0.0019,False,0.0000,0.000,False,0.0175
+f4eacb1a-d2af-48cd-bbea-ddfac84842c9,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-30 23:00:00+00:00,Serie A,Brazil,1x2,home,8.56,7.10,won,all,False,0.00321,0.00321,False,0.0000,0.000,False,0.0223
+a3dc050e-65e5-423d-8c99-62c95ecc196d,9ea21bc8-20a7-4500-b5ea-057f2a430e1f,2026-05-30 22:30:00+00:00,USL League One,USA,1x2,home,5.00,13.75,won,,False,0.0,0.0,False,,,False,
+7eaa279e-e408-4271-8bfa-aea8cd288993,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-30 22:00:00+00:00,Segunda División,Uruguay,1x2,home,4.17,-4.17,lost,all,False,-0.00395,0.00395,True,0.0000,0.000,False,0.0531
+ad110846-95d1-403c-8912-e4175efa07cc,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-30 20:00:00+00:00,Serie D,Brazil,1x2,home,2.69,-2.69,lost,all,False,-0.09533,0.09533,True,,,False,0.0723
+3107b329-829d-4b54-9c9e-2d20cd4ab3ab,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-30 20:00:00+00:00,Division Intermedia,Paraguay,1x2,home,5.58,9.21,won,all,False,0.0,0.0,False,0.0000,0.000,False,0.0685
+f9d507b1-9979-4573-90a2-627e448e2685,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-30 20:00:00+00:00,NWSL Women,USA,1x2,away,5.00,-5.00,lost,,False,-0.0398,0.0398,True,,,False,
+35889117-3516-4929-9f2f-6e963b9c4db6,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-30 20:00:00+00:00,Serie D,Brazil,1x2,home,2.37,-2.37,lost,all,False,-0.09533,0.09533,True,,,False,0.0723
+bf237051-64ea-4d20-8809-fa1cb15baa24,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-30 20:00:00+00:00,Division Intermedia,Paraguay,1x2,home,5.21,8.60,won,all,False,0.0,0.0,False,0.0000,0.000,False,0.0685
+e5ed7308-fe7b-4f4e-bef7-01021370c94d,9ea21bc8-20a7-4500-b5ea-057f2a430e1f,2026-05-30 20:00:00+00:00,NWSL Women,USA,1x2,away,5.00,-5.00,lost,,False,-0.0398,0.0398,True,,,False,
+e436db06-952e-4f22-9b91-ac4e84eb6c96,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-30 20:00:00+00:00,Serie C,Brazil,1x2,home,1.35,2.52,won,all,False,-0.07377,0.07377,True,0.0000,0.000,False,0.1299
+1c7ce0b7-93ef-4994-8a8e-8b65fcb91706,81aa2ba0-be7e-48ae-a5b2-7932fd56afcc,2026-05-30 19:00:00+00:00,Segunda División,Spain,1x2,home,6.85,-6.85,lost,all,False,-0.00154,0.00154,True,,,False,0.0405
+eacdce29-17c9-4d27-9261-af7e72c98e25,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-30 19:00:00+00:00,Serie B,Brazil,1x2,home,5.00,-5.00,lost,,False,0.00158,0.00158,False,,,False,
+bfb20d9f-9184-4bed-b962-94dcadb0c11d,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-30 19:00:00+00:00,Liga Pro,Ecuador,1x2,home,5.00,25.00,won,,False,0.05359,0.05359,False,,,False,
+0aa07506-6541-4aec-b0cd-867d288e5682,6644da46-96a4-4a93-9d53-fe2d8f6aa15b,2026-05-30 19:00:00+00:00,Segunda División,Spain,1x2,home,6.67,-6.67,lost,all,False,-0.00154,0.00154,True,,,False,0.0405
+840334c4-6815-414b-9040-bdd7be98185e,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-30 18:30:00+00:00,Primera C,Argentina,1x2,home,2.46,-2.46,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.073
+8e096c9c-9913-4862-8256-babda49a4404,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-30 18:30:00+00:00,Primera C,Argentina,1x2,home,2.60,-2.60,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.073
+072f568e-db35-4694-962f-c909e8f949d3,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-30 18:30:00+00:00,Primera C,Argentina,1x2,home,4.39,-4.39,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.073
+49f346cd-34af-44d1-8486-0ee3fdce4656,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-30 18:30:00+00:00,Primera Nacional,Argentina,1x2,home,8.04,-8.04,lost,all,False,-0.00949,0.00949,True,0.0000,0.000,False,-0.0129
+e780eaf8-6e94-443c-b0b1-681f300dc9b5,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-30 18:30:00+00:00,Primera Nacional,Argentina,1x2,home,8.11,8.19,won,all,False,0.0288,0.0288,False,0.0000,0.000,False,0.1229
+c7d25640-97d4-43cd-b4ef-65c27421407b,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-30 17:30:00+00:00,Primera C,Argentina,1x2,home,4.95,-4.95,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.1132
+7075f93d-3f20-4c89-9048-71ed13430552,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-30 17:30:00+00:00,Primera C,Argentina,1x2,home,4.41,-4.41,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.1132
+767d1036-1983-4f9f-bc59-0740d6ce691e,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-30 17:30:00+00:00,Primera B Metropolitana,Argentina,1x2,home,5.73,-5.73,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.0488
+3cf059e7-b432-4b6d-a027-2f6127b78228,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-30 17:30:00+00:00,Primera B Metropolitana,Argentina,1x2,home,5.23,-5.23,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.0488
+236ecde9-1510-46a0-950b-af63d65d065a,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-30 17:30:00+00:00,Primera C,Argentina,1x2,home,5.25,-5.25,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.1132
+01b742db-d24b-43cc-a4b0-3673f6137ac9,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-30 17:30:00+00:00,Primera B Metropolitana,Argentina,1x2,home,4.85,-4.85,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.0488
+f9e2f839-5090-45b9-a401-31aee80b1059,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-30 16:00:00+00:00,Primera División,Peru,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,,0.000,False,
+a262404e-cb5d-45f8-9c55-b9a44713caee,9ea21bc8-20a7-4500-b5ea-057f2a430e1f,2026-05-30 16:00:00+00:00,UEFA Champions League,World,1x2,home,5.00,-5.00,lost,,False,0.00333,0.00333,False,0.2000,0.000,True,
+151b4e4d-3aa1-4eb3-93f3-5666d8fec38a,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-30 16:00:00+00:00,Primera División,Peru,1x2,home,4.43,-4.43,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.0914
+a6835648-9402-46ec-8b97-117ec5698207,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-30 16:00:00+00:00,UEFA Champions League,World,1x2,home,5.00,-5.00,lost,,False,0.00333,0.00333,False,0.0000,0.000,False,
+1b3996f9-5c03-43ac-b2b7-2fb9517fde3a,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-30 15:30:00+00:00,Primera C,Argentina,1x2,home,5.24,-5.24,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.0099
+4441e8d8-fefb-4928-a3f9-20560915eeca,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-30 15:30:00+00:00,Primera C,Argentina,1x2,home,4.79,-4.79,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.0099
+5fe469df-fc2a-4e6d-8492-b6d0d8726f63,63fb95b9-d7ba-4cdd-8db3-2e83b179ac58,2026-05-30 15:30:00+00:00,Primera C,Argentina,1x2,home,4.87,-4.87,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.0099
+1dc81678-65dc-4519-bd65-d918feaa7670,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-30 15:00:00+00:00,Regionalliga - Ost,Austria,1x2,home,4.76,-4.76,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.308
+97b665b2-d8e0-48ed-94a8-b903266b1fb7,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-30 15:00:00+00:00,Regionalliga - Ost,Austria,1x2,home,4.62,-4.62,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.308
+4af2f5c7-3e10-4cd9-b469-6d90fedbe880,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-30 15:00:00+00:00,Regionalliga - Ost,Austria,1x2,home,5.90,-5.90,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.308
+37a8683e-f917-4310-875a-758e967f350b,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-30 15:00:00+00:00,3. liga - CFL A,Czech-Republic,1x2,home,4.88,4.64,won,all,False,0.02481,0.02481,False,0.0000,0.000,False,0.0372
+39fac056-153e-4c98-92dc-976f6826c285,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-30 15:00:00+00:00,3. liga - CFL A,Czech-Republic,1x2,home,5.31,5.04,won,all,False,0.02481,0.02481,False,0.0000,0.000,False,0.0372
+9f889b21-40b5-41fe-a31d-637d70bfcb94,e12edb14-2779-4a87-8418-726bcb5ef9ed,2026-05-30 15:00:00+00:00,Regionalliga - Ost,Austria,1x2,home,5.00,-5.00,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.308
+6d3d8621-1b8a-4948-b2b2-026766f1cebd,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-30 15:00:00+00:00,3. liga - CFL A,Czech-Republic,1x2,home,5.76,5.47,won,all,False,0.02481,0.02481,False,0.0000,0.000,False,0.0372
+0f569f2d-58ad-43ea-a547-c2cfc64d35cb,81aa2ba0-be7e-48ae-a5b2-7932fd56afcc,2026-05-30 14:15:00+00:00,Segunda División,Spain,1x2,home,10.00,-10.00,lost,all,False,-0.0058,0.0058,True,0.0000,0.000,False,0.04
+716f9f72-d379-4e59-9853-0e513b41559a,6644da46-96a4-4a93-9d53-fe2d8f6aa15b,2026-05-30 14:15:00+00:00,Segunda División,Spain,1x2,home,9.91,-9.91,lost,all,False,-0.0058,0.0058,True,0.0000,0.000,False,0.04
+dd227d2c-0ff4-4055-9e90-85b06669e6c9,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-30 14:15:00+00:00,Segunda División,Spain,1x2,home,9.05,-9.05,lost,all,False,-0.0058,0.0058,True,0.0000,0.000,False,0.04
+deaebe30-bf30-429b-ab3f-4d384feed9e2,81aa2ba0-be7e-48ae-a5b2-7932fd56afcc,2026-05-30 14:15:00+00:00,Segunda División,Spain,1x2,home,8.53,11.94,won,all,False,-0.02828,0.02828,True,0.0000,0.000,False,-0.1078
+a79174ce-0006-4dc8-b1af-f51e5793a950,6644da46-96a4-4a93-9d53-fe2d8f6aa15b,2026-05-30 14:15:00+00:00,Segunda División,Spain,1x2,home,8.85,12.39,won,all,False,-0.02828,0.02828,True,0.0000,0.000,False,-0.1078
+2c1cf751-456d-45ba-a4c1-698dd60dd88f,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-30 14:00:00+00:00,Ettan - Södra,Sweden,1x2,home,5.00,-5.00,lost,all,False,0.0187,0.0187,False,0.0000,0.000,False,-0.0541
+4ecfd8f7-8512-4c49-982f-46a5baba07fe,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-30 14:00:00+00:00,Ettan - Södra,Sweden,1x2,home,4.55,-4.55,lost,all,False,0.0187,0.0187,False,0.0000,0.000,False,-0.0541
+6ad387bb-e24c-4459-93f1-6f8729522d97,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-30 14:00:00+00:00,Ettan - Södra,Sweden,1x2,home,5.33,-5.33,lost,all,False,0.0187,0.0187,False,0.0000,0.000,False,-0.0541
+812776ec-b481-4fbe-b215-3e8d64dfcbfc,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-30 14:00:00+00:00,Ettan - Södra,Sweden,1x2,home,5.36,-5.36,lost,all,False,-0.02165,0.02165,True,0.0000,0.000,False,0.0737
+24bc8460-4c2c-4f4e-86fd-262921d1fe3f,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-30 14:00:00+00:00,Ettan - Södra,Sweden,1x2,home,4.57,-4.57,lost,all,False,-0.02165,0.02165,True,0.0000,0.000,False,0.0737
+aa3fe17b-d30f-4630-8fef-d5bfdf12e788,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-30 14:00:00+00:00,First NL,Croatia,1x2,home,4.83,-4.83,lost,all,False,0.0,0.0,False,0.0000,0.000,False,-0.1443
+18cde22d-785d-426c-a799-2b4e3da4929f,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-30 14:00:00+00:00,Ettan - Södra,Sweden,1x2,home,5.03,-5.03,lost,all,False,-0.02165,0.02165,True,0.0000,0.000,False,0.0737
+bde5cdcd-62b9-45b7-ba9c-232e916582f2,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-30 13:00:00+00:00,Superettan,Sweden,1x2,home,8.12,11.77,won,all,False,-0.01051,0.01051,True,0.0000,0.000,False,-0.0278
+cd7ca715-24e5-4c56-b010-55361ae33d8a,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-30 13:00:00+00:00,Superettan,Sweden,1x2,home,8.70,12.62,won,all,False,-0.01051,0.01051,True,0.0000,0.000,False,-0.0278
+ea7d8eac-251d-48c6-bbd7-2d41b06326e2,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-30 11:00:00+00:00,Super League,China,1x2,home,5.00,-5.00,lost,,False,-0.00668,0.00668,True,0.0000,0.000,False,
+b94f51ed-a583-4153-9e3d-bfe5f8100133,9ea21bc8-20a7-4500-b5ea-057f2a430e1f,2026-05-30 11:00:00+00:00,Ettan - Södra,Sweden,1x2,away,5.00,18.75,won,,False,0.0,0.0,False,0.0000,0.000,False,
+a2e0851a-fe9b-490d-a66f-b88721cb80ee,9ea21bc8-20a7-4500-b5ea-057f2a430e1f,2026-05-30 11:00:00+00:00,Superettan,Sweden,1x2,away,5.00,-5.00,lost,,False,-0.00305,0.00305,True,0.0000,0.000,False,
+c99e0b0d-0abf-4fb0-9f51-9b82acd8183e,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-29 22:30:00+00:00,USL League One,USA,1x2,home,4.29,4.63,won,all,False,0.01097,0.01097,False,0.0000,0.000,False,0.0833
+c6911694-fb19-4d3c-b806-f572e5b955dd,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-29 22:30:00+00:00,USL League One,USA,1x2,home,3.96,4.28,won,all,False,0.01097,0.01097,False,0.0000,0.000,False,0.0833
+1c1a6a3a-a38a-42ba-ad31-ca9d89885559,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-29 20:00:00+00:00,Division Intermedia,Paraguay,1x2,home,4.26,-4.26,lost,all,False,0.0,0.0,False,,,False,0.1465
+5d6cc03e-f71b-49c4-8348-3277517515d1,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-29 20:00:00+00:00,Division Intermedia,Paraguay,1x2,home,4.69,-4.69,lost,all,False,0.0,0.0,False,,,False,0.1465
+64d6a116-94e1-4c2b-a26f-a17de3838f7b,9ea21bc8-20a7-4500-b5ea-057f2a430e1f,2026-05-29 17:00:00+00:00,Eliteserien,Norway,1x2,away,5.00,-5.00,lost,,False,-0.00538,0.00538,True,0.0000,0.000,False,
+0ae6ce00-1a61-471f-8768-c3512272d6c5,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-29 17:00:00+00:00,Division 2 - Södra Götaland,Sweden,1x2,away,5.00,12.50,won,,False,0.0,0.0,False,0.0000,0.000,False,
+1aec2255-16e4-4258-867f-25934dd2dad1,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-29 17:00:00+00:00,3. liga - MSFL,Czech-Republic,1x2,home,3.12,-3.12,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.1634
+80cca085-5d24-4659-97ec-a9254e052bb9,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-29 17:00:00+00:00,3. liga - MSFL,Czech-Republic,1x2,home,3.41,-3.41,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.1634
+e8301d12-1848-493c-b4d0-b8c30b2212f9,9ea21bc8-20a7-4500-b5ea-057f2a430e1f,2026-05-29 17:00:00+00:00,2. Division,Denmark,1x2,away,5.00,-5.00,lost,,False,-0.06868,0.06868,True,0.0000,0.000,False,
+8a2b6def-6d67-46b2-8048-3679ebb0a063,a11342db-ab23-49d6-93f6-e9ce42ea7ee9,2026-05-29 17:00:00+00:00,3. liga - MSFL,Czech-Republic,1x2,home,3.07,-3.07,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.1634
+4e79cbfa-2b34-4aff-9a28-a7e0b92e5139,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-29 16:00:00+00:00,Kakkonen - Lohko B,Finland,1x2,home,4.05,-4.05,lost,all,False,0.07594,0.07594,False,0.0000,0.000,False,0.1881
+dd02309d-80eb-46cf-91a7-cfef94599948,9ea21bc8-20a7-4500-b5ea-057f2a430e1f,2026-05-29 16:00:00+00:00,2. Division,Denmark,1x2,away,5.00,10.50,won,,False,-0.00084,0.00084,True,0.0000,0.000,False,
+a27ed1bf-8ea1-4eee-b6fd-f6f445d5cf7d,a11342db-ab23-49d6-93f6-e9ce42ea7ee9,2026-05-29 16:00:00+00:00,Kakkonen - Lohko B,Finland,1x2,home,3.59,-3.59,lost,all,False,0.07594,0.07594,False,0.0000,0.000,False,0.1881
+aa856164-32c8-4d6e-bcef-0352ab4eaccd,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-29 16:00:00+00:00,Esiliiga B,Estonia,1x2,home,5.82,5.82,won,all,False,0.0,0.0,False,0.0000,0.000,False,0.2739
+66650edc-2d81-4621-9839-adca677c5032,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-29 16:00:00+00:00,Esiliiga B,Estonia,1x2,home,5.33,5.33,won,all,False,0.0,0.0,False,0.0000,0.000,False,0.2739
+7d2d0dd6-334a-4b1f-b9bc-2cd70f11a413,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-29 16:00:00+00:00,Esiliiga B,Estonia,1x2,home,4.82,4.82,won,all,False,0.0,0.0,False,0.0000,0.000,False,0.2739
+6923ec20-5cf6-481c-a29c-8668b61313fb,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-29 16:00:00+00:00,Kakkonen - Lohko B,Finland,1x2,home,3.71,-3.71,lost,all,False,0.07594,0.07594,False,0.0000,0.000,False,0.1881
+5928ec3f-43ae-4a56-9ab0-8b3632c2f3af,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-29 16:00:00+00:00,Friendlies,World,1x2,home,5.00,80.00,won,,False,-0.00733,0.00733,True,0.0000,0.000,False,
+4f7d3c9a-8726-4c4f-b8c2-78954e32de57,9ea21bc8-20a7-4500-b5ea-057f2a430e1f,2026-05-29 15:30:00+00:00,Ykkösliiga,Finland,1x2,home,5.00,10.00,won,,False,0.00684,0.00684,False,,,False,
+62050091-4064-4d6b-a95f-581a107968b5,9ea21bc8-20a7-4500-b5ea-057f2a430e1f,2026-05-29 15:30:00+00:00,First NL,Croatia,1x2,away,5.00,-5.00,lost,,False,-0.00056,0.00056,True,0.0000,0.000,False,
+83eb8a67-d901-4ab9-a1a2-4dab1e2a2025,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-29 15:30:00+00:00,3. liga - MSFL,Czech-Republic,1x2,home,4.75,-4.75,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.0036
+d07c24aa-5373-4c64-9bc7-d13777d025c0,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-29 15:30:00+00:00,3. liga - MSFL,Czech-Republic,1x2,home,5.27,-5.27,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.0036
+2d5015fd-91e3-4a35-85e5-bb19f6b1e1fa,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-29 15:30:00+00:00,Kakkonen - Lohko A,Finland,1x2,home,5.00,-5.00,lost,,False,-0.00356,0.00356,True,0.0000,0.000,False,
+33291092-63c8-42d2-a115-d8317e1fa250,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-29 15:30:00+00:00,3. liga - MSFL,Czech-Republic,1x2,home,5.76,-5.76,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.0036
+78ad0f70-8790-4e65-a402-b72778b6d7c4,9ea21bc8-20a7-4500-b5ea-057f2a430e1f,2026-05-29 15:30:00+00:00,Ykkönen,Finland,1x2,home,5.00,18.75,won,,False,0.03733,0.03733,False,0.0000,0.000,False,
+34e8e676-99f8-464b-b85d-53140d18ebdf,9ea21bc8-20a7-4500-b5ea-057f2a430e1f,2026-05-29 15:00:00+00:00,Erovnuli Liga,Georgia,1x2,away,5.00,15.00,won,,False,0.0,0.0,False,0.0000,0.000,False,
+6109c9a4-c2ed-42e3-a67d-25afb2e8c5b9,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-29 14:15:00+00:00,Division 1,United-Arab-Emirates,1x2,home,5.82,11.35,won,all,False,0.0,0.0,False,0.0000,0.000,False,0.4461
+29855cf3-9de9-4e87-bbea-51ed10ef9b7c,a11342db-ab23-49d6-93f6-e9ce42ea7ee9,2026-05-29 14:15:00+00:00,Division 1,United-Arab-Emirates,1x2,home,5.15,10.04,won,all,False,0.0,0.0,False,0.0000,0.000,False,0.4461
+c97876ac-9270-4f08-88f7-a06f28d15d21,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-29 14:15:00+00:00,Division 1,United-Arab-Emirates,1x2,home,4.53,8.83,won,all,False,0.0,0.0,False,0.0000,0.000,False,0.4461
+6add4c96-dd45-4f0f-9d2e-324d6a9bcd77,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-29 14:15:00+00:00,Division 1,United-Arab-Emirates,1x2,home,4.82,9.40,won,all,False,0.0,0.0,False,0.0000,0.000,False,0.4461
+a40ff1b5-3aed-4cc4-b2b2-74f4e6b44648,7f1b2a43-5f85-4c6b-a337-91fa39830f2f,2026-05-29 14:15:00+00:00,Division 1,United-Arab-Emirates,1x2,home,5.00,-5.00,lost,,False,-0.02053,0.02053,True,0.0000,0.000,False,
+c42bc60b-b9d5-4cbd-84f7-acd40d6f4300,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-29 14:15:00+00:00,Division 1,United-Arab-Emirates,1x2,home,4.77,-4.77,lost,all,False,0.00232,0.00232,False,0.0000,0.000,False,0.0047
+015a8510-a5c1-43d4-b925-250f6db43ac8,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-29 14:15:00+00:00,Division 1,United-Arab-Emirates,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,0.0000,0.000,False,
+5ddc5da7-124b-476f-9925-9c61c79e5e11,9ea21bc8-20a7-4500-b5ea-057f2a430e1f,2026-05-28 18:30:00+00:00,I Liga,Poland,1x2,away,5.00,-5.00,lost,,False,-0.00126,0.00126,True,,,False,
+549bc2af-39d2-4ac4-817f-d007c63721eb,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-28 17:00:00+00:00,Regionalliga - Ost,Austria,1x2,away,5.00,13.75,won,,False,0.0,0.0,False,0.0000,0.000,False,
+c292d957-e4a8-4e00-a633-ffa359139980,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-28 16:00:00+00:00,Esiliiga A,Estonia,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,0.0000,0.000,False,
+0367fe4b-0b9e-426d-8af3-6621777c1c57,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-28 15:00:00+00:00,Premier League,Kazakhstan,1x2,home,5.00,8.00,won,,False,-0.01856,0.01856,True,0.0000,0.000,False,
+8bc3f3cc-9a7f-4e66-9bf0-278914db1cf8,63fb95b9-d7ba-4cdd-8db3-2e83b179ac58,2026-05-27 23:30:00+00:00,USL Championship,USA,1x2,home,7.91,-7.91,lost,all,False,-0.01184,0.01184,True,,,False,0.0085
+0b52a8fc-cfab-4a0c-a1ea-34b3047d8d15,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-27 23:30:00+00:00,USL Championship,USA,1x2,home,8.62,-8.62,lost,all,False,-0.01184,0.01184,True,,,False,0.0085
+095c7f89-0460-4d5d-843f-53b4d2a2aab0,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-27 23:00:00+00:00,USL League One,USA,1x2,home,2.45,-2.45,lost,all,False,0.02689,0.02689,False,,,False,0.25
+6549ee77-9b2b-4f17-9602-5873c47e7fcc,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-27 22:00:00+00:00,Copa Sul-Sudeste,Brazil,1x2,away,5.00,-5.00,lost,,False,-0.00876,0.00876,True,,,False,
+a4b976d0-f9f3-4b25-94dd-95be72b13674,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-27 22:00:00+00:00,CONMEBOL Sudamericana,World,1x2,away,5.00,-5.00,lost,,False,-0.01447,0.01447,True,,,False,
+08f4ae8f-fe75-4b4a-9152-1a5a49fb99ef,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-27 22:00:00+00:00,CONMEBOL Sudamericana,World,1x2,home,5.00,30.00,won,,False,0.01623,0.01623,False,,,False,
+81d35cf0-140a-4335-999f-d74d8b3797c4,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-27 20:30:00+00:00,Copa Ecuador,Ecuador,1x2,home,2.58,5.42,won,all,False,-0.04627,0.04627,True,0.0000,0.000,False,0.1071
+34324ada-e62d-4d09-8ac8-53a7f2921a61,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-27 19:15:00+00:00,1. Deild,Iceland,1x2,home,5.00,18.75,won,,False,-0.03579,0.03579,True,,,False,
+6629cfc1-558e-4591-8f64-4f4d01859312,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-27 19:00:00+00:00,Serie C - Promotion - Play-offs,Italy,1x2,home,6.79,11.88,won,all,False,0.01736,0.01736,False,0.3000,0.400,True,0.1506
+770bb7eb-9c8a-42b1-8d7b-15c51c219076,a11342db-ab23-49d6-93f6-e9ce42ea7ee9,2026-05-27 19:00:00+00:00,Serie C - Promotion - Play-offs,Italy,1x2,home,7.72,13.51,won,all,False,0.01736,0.01736,False,0.0000,0.400,True,0.1506
+237ab70a-7f77-445b-9080-125578c457ce,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-27 19:00:00+00:00,Serie C - Promotion - Play-offs,Italy,1x2,home,8.87,15.52,won,all,False,0.01736,0.01736,False,0.4000,0.400,True,0.1506
+d5b22bc2-8d4f-481c-95ea-5b82fa265aa3,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-27 18:30:00+00:00,Friendlies,World,1x2,home,5.00,125.00,won,,False,0.01114,0.01114,False,,,False,
+6ace6ff5-08bd-4819-8299-978f0698b0f8,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-27 18:00:00+00:00,Serie C - Promotion - Play-offs,Italy,1x2,home,8.73,14.93,won,all,False,0.02838,0.02838,False,0.0000,0.000,False,0.2207
+85b36215-5ea0-4d1b-bb8b-e45b54492d33,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-27 18:00:00+00:00,Serie C - Promotion - Play-offs,Italy,1x2,home,11.40,19.49,won,all,False,0.02838,0.02838,False,0.0000,0.000,False,0.2207
+a6b3d61b-1f1b-4694-b414-ac6c5561b5d2,a11342db-ab23-49d6-93f6-e9ce42ea7ee9,2026-05-27 18:00:00+00:00,Serie C - Promotion - Play-offs,Italy,1x2,home,9.92,16.96,won,all,False,0.02838,0.02838,False,0.0000,0.000,False,0.2207
+88bb44d6-46c5-40c1-8a66-a13823dea9ae,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-27 17:00:00+00:00,Primera División Femenina,Spain,1x2,away,5.00,-5.00,lost,,False,0.01519,0.01519,False,0.0000,0.000,False,
+d045e0e4-296f-46de-86ad-cdf22ef81dcb,4c36876f-6a4e-481f-9a2e-2a61bf5bd28b,2026-05-27 13:00:00+00:00,Premier League,Kazakhstan,1x2,home,2.61,-2.61,lost,all,False,0.0,0.0,False,0.0000,,False,0.0786
+0f22701c-cd7e-4b9e-b03a-1e889351d18e,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-26 22:00:00+00:00,CONMEBOL Sudamericana,World,1x2,home,5.00,-5.00,lost,,False,-0.00185,0.00185,True,,,False,
+3dca1bfe-3e6d-471a-bb85-fd29f209b03f,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-26 12:00:00+00:00,Ethiopia Cup,Ethiopia,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+406fc056-584a-437f-8c8c-35f8b3185338,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-25 23:30:00+00:00,Serie D,Brazil,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+256c5ce8-bf6f-479b-a164-0041c41a4eb2,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-25 18:00:00+00:00,Segunda División,Peru,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,,0.000,False,
+376b44c2-07c1-4766-a6bc-a9d80b89225c,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-25 17:00:00+00:00,Allsvenskan,Sweden,1x2,away,5.00,-5.00,lost,,False,-0.00957,0.00957,True,0.0000,0.000,False,
+6ed09256-dfb3-4a61-91b2-59a04a150e5a,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-25 15:00:00+00:00,Eliteserien,Norway,1x2,away,5.00,-5.00,lost,,False,-0.002,0.002,True,0.0000,0.000,False,
+efb4b25f-2284-4b59-a84b-48bc067e36ed,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-25 15:00:00+00:00,Virsliga,Latvia,1x2,home,5.00,-5.00,lost,,False,0.00305,0.00305,False,0.0000,0.000,False,
+078454d3-1f65-4bfd-bd1c-ed95ee498470,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-25 15:00:00+00:00,Eliteserien,Norway,1x2,away,5.00,-5.00,lost,,False,-0.00791,0.00791,True,0.0000,0.000,False,
+1f556041-7816-4bd6-86c1-112cdbfac023,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-25 14:45:00+00:00,First League,Bulgaria,1x2,home,3.87,9.09,won,all,False,-0.00447,0.00447,True,0.1000,0.000,True,0.2738
+52121e97-0c14-49d3-a53e-600a20c375e9,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-25 12:00:00+00:00,2. Division - Group 1,Norway,1x2,away,5.00,12.00,won,,False,0.0,0.0,False,,,False,
+80c6c26c-d663-407f-babe-535165bb3d9a,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-24 23:10:00+00:00,Liga Pro,Ecuador,1x2,away,5.00,35.00,won,,False,0.03628,0.03628,False,,0.000,False,
+bc99ccac-48dd-4af3-a7f2-598717f53b9c,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 23:10:00+00:00,Liga Pro,Ecuador,1x2,home,3.82,-3.82,lost,all,False,-0.04323,0.04323,True,0.0000,0.000,False,-0.139
+25bdaeb5-c5a0-439f-a718-2534a2d95991,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-24 23:00:00+00:00,USL League Two,USA,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+52a982b7-2308-4078-862d-6501c88c59fb,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 22:00:00+00:00,Primera Nacional,Argentina,1x2,away,7.33,29.32,won,all,False,-0.00161,0.00161,True,0.0000,0.000,False,-0.004
+e0a4fcea-1b86-4588-8814-4c4db2499718,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-24 22:00:00+00:00,Premier League,Jamaica,1x2,home,5.00,-5.00,lost,,False,-0.0015,0.0015,True,,,False,
+e2407fe4-0da9-4183-85cd-c9e760f7f5f0,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 22:00:00+00:00,Primera División,Chile,1x2,home,6.97,-6.97,lost,all,False,-0.00152,0.00152,True,0.0000,,False,0.1078
+e74f591b-9d83-45be-92a9-e06433ad7183,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 22:00:00+00:00,Serie B,Brazil,1x2,home,8.27,-8.27,lost,all,False,0.01751,0.01751,False,,,False,0.0472
+ce1f22c5-200a-4829-bc7b-a7bc498f76ba,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-24 21:30:00+00:00,Serie B,Brazil,1x2,away,5.00,18.75,won,,False,-0.00247,0.00247,True,,,False,
+9def29db-2f99-4383-8cdd-d2682f0f301d,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 21:30:00+00:00,Primera Nacional,Argentina,1x2,home,7.53,12.05,won,all,False,-0.00452,0.00452,True,0.0000,0.000,False,-0.0262
+0d0294ca-ca26-4e84-b459-2fd86fab9ed9,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 21:30:00+00:00,Serie A,Brazil,1x2,away,6.99,-6.99,lost,all,False,-0.01208,0.01208,True,0.0000,,False,0.0
+6d172ba2-caf8-4d14-8ad9-1c846cbf6543,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-24 21:00:00+00:00,Serie D,Brazil,1x2,away,5.00,-5.00,lost,,False,-0.03424,0.03424,True,,,False,
+431bff7f-1c43-4bb4-9308-eb07ca51a4c3,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-24 21:00:00+00:00,Primera Nacional,Argentina,1x2,away,5.00,-5.00,lost,,False,0.0022,0.0022,False,,,False,
+049123d5-c9e8-4749-bd53-9ed3b3d91b47,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-24 20:00:00+00:00,Division Profesional - Apertura,Paraguay,1x2,home,5.00,-5.00,lost,,False,0.02586,0.02586,False,,,False,
+09dce09d-2973-456e-bac2-7ceef9e60b7d,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 19:30:00+00:00,Primera Nacional,Argentina,1x2,away,3.12,-3.12,lost,all,False,-0.02901,0.02901,True,0.0000,0.000,False,-0.138
+101c291b-4b58-483d-9b47-736c3c33932f,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-24 19:30:00+00:00,Serie B,Brazil,1x2,home,5.00,10.00,won,,False,-0.00889,0.00889,True,,,False,
+24b2bc63-cd71-4e5b-afe0-6640b66e1659,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-24 19:30:00+00:00,Serie C,Brazil,1x2,away,5.00,13.75,won,,False,-0.01123,0.01123,True,,,False,
+c88f003d-4ea0-4505-8521-29fe453f7ab4,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-24 19:00:00+00:00,Serie C - Promotion - Play-offs,Italy,1x2,home,5.00,-5.00,lost,,False,-0.00449,0.00449,True,,0.000,False,
+70dff26d-5ee4-41bd-8fb6-c007cd42182f,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-24 19:00:00+00:00,Serie D,Brazil,1x2,home,5.00,-5.00,lost,,False,0.01919,0.01919,False,,,False,
+10a164b4-a85a-4e1e-9333-ddfcc910e1ef,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 19:00:00+00:00,La Liga,Spain,1x2,home,7.07,11.31,won,all,False,-0.00153,0.00153,True,0.0000,,False,0.0236
+c36a0c3c-6ba5-456f-a601-01881454970b,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 18:30:00+00:00,Liga Profesional Argentina,Argentina,1x2,away,6.02,21.67,won,all,False,0.01475,0.01475,False,0.0000,0.000,False,0.201
+2eebd629-0a2c-4bf4-b879-b37bd8e8cc0f,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 18:00:00+00:00,Serie B,Italy,1x2,home,6.39,-6.39,lost,all,False,0.01267,0.01267,False,0.0000,0.000,False,0.0251
+d1700eed-e544-48a1-8dc2-6b9f27731fc5,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-24 18:00:00+00:00,Serie B,Italy,1x2,home,8.21,-8.21,lost,all,False,0.01267,0.01267,False,0.0000,0.000,False,0.0251
+76bb2782-2f48-4c4f-914f-32be71677115,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-24 17:25:00+00:00,Premier League,Kuwait,1x2,home,5.00,-5.00,lost,,False,-0.00276,0.00276,True,0.0000,0.000,False,
+89d63dfd-0bdd-4e38-8af3-09829eccb8a4,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 17:00:00+00:00,Segunda División RFEF - Play-offs,Spain,1x2,home,2.03,4.75,won,all,False,0.0,0.0,False,,0.000,False,0.27
+0b85e18e-4551-4537-8114-7447a1102c64,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-24 16:30:00+00:00,Segunda División,Spain,1x2,home,5.00,-5.00,lost,,False,-0.00209,0.00209,True,,,False,
+1f01d0d9-19fa-4814-95d8-fb3c6cd2adfc,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 16:30:00+00:00,Segunda División,Spain,1x2,away,3.15,-3.15,lost,all,False,0.00255,0.00255,False,0.0000,0.000,False,-0.0633
+6ad6fd7a-f7b5-44fa-a15d-12d011721c93,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 16:30:00+00:00,Jupiler Pro League,Belgium,1x2,away,5.56,-5.56,lost,all,False,-0.01098,0.01098,True,,0.000,False,-0.0707
+535d4841-429a-4567-ab4e-bc0b7ab33b14,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-24 16:30:00+00:00,Segunda División,Spain,1x2,home,8.42,-8.42,lost,all,False,-0.00209,0.00209,True,0.0000,,False,0.0197
+d2a5b1a9-4ed5-4a91-9889-7aa73b123a74,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 16:30:00+00:00,Segunda División,Spain,1x2,home,3.38,-3.38,lost,all,False,-0.00209,0.00209,True,0.0000,,False,0.0197
+1b15a893-20ba-4b9a-9940-51dd661164b4,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 16:30:00+00:00,Segunda División,Spain,1x2,away,3.75,-3.75,lost,all,False,0.01035,0.01035,False,0.0000,0.000,False,0.0754
+c2baf7e4-1194-41bb-aa93-d6e15d01979d,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 16:30:00+00:00,Segunda División,Spain,1x2,home,4.92,8.31,won,all,False,-0.03978,0.03978,True,0.0000,0.000,False,-0.0182
+76b8c610-6f32-40c4-9161-a80dda675c17,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-24 16:15:00+00:00,Taça de Portugal,Portugal,1x2,away,5.00,18.75,won,,False,-0.00331,0.00331,True,,,False,
+825407cd-b4df-43aa-b316-3a1ba65d9ec7,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-24 15:00:00+00:00,Cup,Russia,1x2,home,9.45,-9.45,lost,all,False,-0.00137,0.00137,True,0.0000,0.000,False,-0.0036
+ce7e61e4-89c5-4875-b39a-8ad837082fb6,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-24 15:00:00+00:00,Premier League,England,1x2,away,5.00,32.50,won,,False,0.00551,0.00551,False,,,False,
+bcded6b5-0fcd-415c-aa0e-bb8119489ce8,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 15:00:00+00:00,Premier League,England,1x2,home,3.48,9.19,won,all,False,0.00493,0.00493,False,0.4500,0.450,True,0.0055
+ee1bca3f-0e53-48d0-a358-48225a4632da,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-24 15:00:00+00:00,A Lyga,Lithuania,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+913b228c-8869-4ead-a2b3-a7d684c8cacf,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 15:00:00+00:00,Premier League,England,1x2,home,7.08,13.38,won,all,False,0.02028,0.02028,False,0.0000,,False,0.0989
+a41cd5fe-1af3-43e7-b3a9-50df10b6f452,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 15:00:00+00:00,Premier League,England,1x2,home,5.88,-5.88,lost,all,False,0.0,0.0,False,0.0000,,False,-0.0039
+bdf220ab-47b7-4ace-96b1-a02a02d54a19,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 15:00:00+00:00,Premier League,England,1x2,away,3.81,-3.81,lost,all,False,-0.01958,0.01958,True,0.0000,,False,-0.0871
+91c94f23-b38c-4919-8db0-5b37cdfd1799,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-24 15:00:00+00:00,Premier League,England,1x2,home,8.45,15.97,won,all,False,0.02028,0.02028,False,0.0000,,False,0.0989
+8ef751ec-2bdb-48c6-801f-92ef5a013930,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 15:00:00+00:00,Erovnuli Liga,Georgia,1x2,home,4.45,-4.45,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.0108
+b0a64a50-3476-4bab-9bc8-1b268b287d55,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 15:00:00+00:00,Premier League,England,1x2,away,7.20,-7.20,lost,all,False,0.00055,0.00055,False,0.0000,,False,0.0
+10dabf60-0a84-4517-8d72-0306dbb714b6,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 15:00:00+00:00,Cup,Russia,1x2,home,6.78,-6.78,lost,all,False,-0.00137,0.00137,True,0.1500,0.000,True,-0.0251
+9a8c390c-23a5-4596-ba0c-e3e14b9b6da6,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-24 14:30:00+00:00,Allsvenskan,Sweden,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+2e3b6b5a-d9c7-4cae-a6a4-9a3bd9021ee6,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 14:30:00+00:00,I Liga,Poland,1x2,away,5.22,-5.22,lost,all,False,0.00683,0.00683,False,0.0000,0.000,False,0.3731
+9bf07328-b962-46e3-b443-151d9e0f331d,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-24 14:30:00+00:00,I Liga,Poland,1x2,away,5.00,-5.00,lost,,False,0.00347,0.00347,False,,,False,
+79eaf316-4dc1-475d-aab6-6cc11a508d5b,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-24 14:30:00+00:00,Allsvenskan,Sweden,1x2,away,5.00,18.75,won,,False,0.0,0.0,False,,,False,
+7968e468-c9ab-4eb7-a2cd-c1043cfac743,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-24 14:30:00+00:00,I Liga,Poland,1x2,home,2.22,-2.22,lost,all,False,0.0,0.0,False,0.0000,,False,0.0894
+1ab63fa8-5e89-496f-9148-c3b772a548aa,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 23:30:00+00:00,Major League Soccer,USA,1x2,away,6.24,-6.24,lost,all,False,0.01734,0.01734,False,0.0000,0.000,False,0.1364
+a9273903-3b8f-4b9f-9691-92e3bcd82411,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-23 23:30:00+00:00,USL Championship,USA,1x2,away,5.00,-5.00,lost,,False,-0.00515,0.00515,True,,,False,
+ca5b7b96-ed30-4e64-a723-1527b24aeec0,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-23 22:30:00+00:00,NWSL Women,USA,1x2,away,5.00,-5.00,lost,,False,0.00209,0.00209,False,,,False,
+c0d49fca-1ce9-492f-a0be-a7aa568bccdb,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 22:00:00+00:00,Primera División,Venezuela,1x2,home,8.91,-8.91,lost,all,False,0.00253,0.00253,False,0.0000,0.000,False,0.0357
+6789b770-3536-4b26-824d-08eb89f6d2d1,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 22:00:00+00:00,USL Championship,USA,1x2,home,8.47,-8.47,lost,all,False,0.0163,0.0163,False,0.0000,0.000,False,-0.0586
+efe52366-305a-45fd-970c-a7f2d63010d3,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 22:00:00+00:00,Serie A,Brazil,1x2,home,5.78,9.71,won,all,False,0.00281,0.00281,False,0.0000,0.000,False,0.0268
+44305941-3a27-438e-9a87-e79685119175,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-23 21:30:00+00:00,Liga Pro,Ecuador,1x2,home,5.00,-5.00,lost,,False,-0.01667,0.01667,True,,,False,
+93dd23d6-6263-49c9-86ef-fca8ec85180c,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 21:30:00+00:00,Primera División - Apertura,Uruguay,1x2,away,9.89,-9.89,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.0261
+f9c2cfe1-8b2c-4095-9da3-ae5e477cf3a0,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-23 21:15:00+00:00,Division Profesional - Apertura,Paraguay,1x2,home,5.00,15.00,won,,False,-0.02034,0.02034,True,,,False,
+cd0221f6-ae5a-4b6d-b3cd-65d33c153cec,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-23 21:15:00+00:00,Division Profesional - Apertura,Paraguay,1x2,away,5.00,-5.00,lost,,False,0.01669,0.01669,False,,,False,
+c475804f-5a8f-4738-966b-3d4626284a4b,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-23 21:00:00+00:00,Serie D,Brazil,1x2,away,5.00,-5.00,lost,,False,0.03066,0.03066,False,,,False,
+10f3dea7-3d4a-4a66-81d9-a57742bc91b4,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-23 20:30:00+00:00,Major League Soccer,USA,1x2,home,5.00,-5.00,lost,,False,-0.01565,0.01565,True,,,False,
+6b615a5b-8612-4eeb-bde3-b8a6f7d528e8,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-23 20:00:00+00:00,Serie A,Brazil,1x2,home,7.76,16.30,won,all,False,-0.00309,0.00309,True,0.0000,0.000,False,0.0299
+ad1cb5c2-7ceb-4005-9a08-5ec9cda7fd2c,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-23 20:00:00+00:00,Copa Colombia,Colombia,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+0226811b-63e0-4125-8874-8004e4c29f28,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 20:00:00+00:00,Serie A,Brazil,1x2,home,2.79,5.86,won,all,False,-0.00309,0.00309,True,0.0000,0.000,False,0.0299
+c1758ffd-835c-4eca-9b26-d2afba1269c4,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 20:00:00+00:00,Serie A,Brazil,1x2,away,5.78,-5.78,lost,all,False,-0.00177,0.00177,True,0.0000,0.000,False,-0.0021
+215f5398-3447-4e75-bb23-df9799fe222a,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 20:00:00+00:00,MLS Next Pro,USA,1x2,home,6.42,9.31,won,all,False,0.0,0.0,False,0.0000,0.000,False,0.0793
+207a6d57-c473-42ed-8bf3-62b93546fce0,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-23 19:30:00+00:00,Primera Nacional,Argentina,1x2,away,5.00,-5.00,lost,,False,0.05247,0.05247,False,,,False,
+fbb20c6f-d1ab-4b84-8149-efac4c83b9db,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 19:30:00+00:00,Segunda Liga,Portugal,1x2,away,7.75,-7.75,lost,all,False,-0.00478,0.00478,True,0.0000,0.000,False,0.0158
+01f04ed1-d02f-4918-964f-cfcf725621ee,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 19:00:00+00:00,La Liga,Spain,1x2,home,3.40,6.02,won,all,False,-0.00518,0.00518,True,0.0000,0.000,False,0.0036
+0145ce38-acea-4569-8671-2a49d2046086,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-23 19:00:00+00:00,Division Profesional - Apertura,Paraguay,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+f8ade4cf-b0be-44db-be3b-212709d609c7,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 19:00:00+00:00,La Liga,Spain,1x2,away,3.37,-3.37,lost,all,False,0.00257,0.00257,False,0.0000,0.000,False,0.0514
+5e9b6743-865d-4203-9dac-17ee2fa21f16,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-23 19:00:00+00:00,La Liga,Spain,1x2,home,8.40,22.26,won,all,False,-0.00241,0.00241,True,0.0000,0.000,False,0.0641
+45d28d2e-e786-4394-a257-0fc7defc5c85,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 19:00:00+00:00,La Liga,Spain,1x2,home,7.44,19.72,won,all,False,-0.00241,0.00241,True,0.0000,0.000,False,0.0641
+ddb8d4e2-ca6b-4ab8-8d12-a560922dc3dd,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 19:00:00+00:00,La Liga,Spain,1x2,home,8.23,-8.23,lost,all,False,0.03263,0.03263,False,0.0000,0.000,False,0.0675
+4e8f4034-a143-480d-ad4f-a48e353c5751,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 19:00:00+00:00,MLS Next Pro,USA,1x2,home,4.79,7.76,won,all,False,0.0,0.0,False,,0.000,False,0.0234
+5f552af8-e75a-4992-8422-002bc48bbbf6,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 18:45:00+00:00,Major League Soccer,USA,1x2,away,6.43,-6.43,lost,all,False,0.00257,0.00257,False,0.0000,0.000,False,0.0661
+08fcef04-24bb-4eeb-93c5-f82214fe2811,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-23 18:30:00+00:00,Primera B Metropolitana,Argentina,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+2182ebeb-7196-469c-9031-6881733c0e32,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-23 18:30:00+00:00,Torneo Federal A,Argentina,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,,0.000,False,
+80e90815-6b72-4cc0-a0ab-f72e2874b15c,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-23 18:00:00+00:00,Botola Pro,Morocco,1x2,away,5.00,-5.00,lost,,False,0.00328,0.00328,False,,,False,
+6c25e2d5-30f8-4d95-a8ef-086ca3899ea6,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 18:00:00+00:00,Primera Nacional,Argentina,1x2,away,7.80,-7.80,lost,all,False,-0.00298,0.00298,True,0.0000,0.000,False,0.0165
+48a2a521-d061-4423-a52c-0626175eb4e9,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-23 18:00:00+00:00,Ligat Ha'al,Israel,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,0.0000,0.000,False,
+41eadb5e-4739-42f3-845d-31f56e67b4fa,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 17:30:00+00:00,Liga I,Romania,1x2,away,9.79,-9.79,lost,all,False,0.02542,0.02542,False,0.0000,0.000,False,0.3356
+c05eb75c-db4d-47fc-a2e6-54a2f75c968c,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-23 17:00:00+00:00,Premier League,Egypt,1x2,home,5.00,-5.00,lost,,False,-0.00186,0.00186,True,0.0000,0.000,False,
+891fefd5-a015-41c7-8e46-953faf287dab,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-23 17:00:00+00:00,Cupa,Moldova,1x2,home,5.00,32.50,won,,False,-0.01832,0.01832,True,0.0000,0.000,False,
+00742a37-664c-4443-aa0c-e22d430fe12b,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 16:30:00+00:00,Primera División RFEF - Group 2,Spain,1x2,away,7.18,-7.18,lost,all,False,-0.00259,0.00259,True,0.0000,0.000,False,0.3393
+8215bc0f-dcb5-44e7-8d02-476e397edc35,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 16:00:00+00:00,Serie A,Italy,1x2,home,6.35,-6.35,lost,all,False,-0.03377,0.03377,True,0.0000,0.000,False,-0.1694
+2451a744-aa86-4053-ba6f-e4ee695016c1,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-23 16:00:00+00:00,Tercera División RFEF - Group 1,Spain,1x2,home,5.00,-5.00,lost,,False,0.02124,0.02124,False,0.0000,0.000,False,
+f33a740d-bdeb-4a8f-913c-208c0fcefed0,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-23 16:00:00+00:00,Segunda División,Uruguay,1x2,away,5.00,-5.00,lost,,False,0.00159,0.00159,False,,,False,
+844d0f31-b5de-4748-80ae-08604c87aace,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 15:30:00+00:00,Ekstraklasa,Poland,1x2,home,5.87,-5.87,lost,all,False,-0.01531,0.01531,True,0.0000,0.000,False,0.0706
+ef313e29-a2a3-47e9-8cb5-5a1bbbd0be1f,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-23 15:30:00+00:00,Ekstraklasa,Poland,1x2,away,5.00,-5.00,lost,,False,0.00353,0.00353,False,,0.000,False,
+e1211b51-47e3-469a-859d-baff34ee530f,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 15:30:00+00:00,Ekstraklasa,Poland,1x2,away,6.08,-6.08,lost,all,False,0.00165,0.00165,False,0.0000,0.000,False,0.1194
+306ce6c0-fa52-4383-8b29-db6413e524e9,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-23 15:00:00+00:00,Tercera División RFEF - Group 4,Spain,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,0.0000,0.000,False,
+f6374d05-46e6-46f5-9af7-d7d9d1343449,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-23 14:30:00+00:00,Division 2 - Södra Svealand,Sweden,1x2,away,5.00,10.50,won,,False,0.0,0.0,False,0.0000,0.000,False,
+1ea0ac73-ea79-4ba7-bfa5-c8698159115f,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-23 14:00:00+00:00,1. Deild,Iceland,1x2,away,5.00,-5.00,lost,,False,0.00195,0.00195,False,,,False,
+fdc4a407-8eb0-47df-b1bc-18eab688fa96,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 14:00:00+00:00,Veikkausliiga,Finland,1x2,home,8.11,-8.11,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.0352
+5ee820c5-0cce-4338-b43b-95e08b1f5bb0,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 14:00:00+00:00,Ettan - Södra,Sweden,1x2,home,4.34,-4.34,lost,all,False,0.00447,0.00447,False,0.0000,0.000,False,0.0235
+f256e063-9d13-4c85-96dd-b0665546e479,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-23 14:00:00+00:00,Veikkausliiga,Finland,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,0.0000,0.000,False,
+16193585-9988-41f2-8f93-08fe3f997163,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-23 14:00:00+00:00,National Division,Luxembourg,1x2,away,4.34,-4.34,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.1547
+6a085199-eec7-4de1-9040-6a86dbfef6b4,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-23 13:30:00+00:00,Tweede Divisie,Netherlands,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+53c5d84e-d7fd-4f4e-9d6d-f012f4d6f991,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-22 23:00:00+00:00,Copa Argentina,Argentina,1x2,home,7.25,-7.25,lost,all,False,0.01665,0.01665,False,,0.000,False,0.0393
+52a80caa-0b87-4fb4-b85b-364dfe33cfd4,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-22 23:00:00+00:00,Copa Argentina,Argentina,1x2,home,7.84,-7.84,lost,all,False,0.01665,0.01665,False,0.0000,0.000,False,0.0393
+8d08c656-9eb1-487d-a395-f7c442562c30,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-22 22:30:00+00:00,Primera División - Apertura,Uruguay,1x2,home,6.59,-6.59,lost,all,False,-0.02383,0.02383,True,,0.000,False,0.0
+ddc98c9b-a72a-4bf2-8859-ff2bd6a44c0c,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-22 22:00:00+00:00,MLS Next Pro,USA,1x2,home,5.00,-5.00,lost,,False,0.01578,0.01578,False,,,False,
+006b48bd-0bc1-4959-926a-3630a2a3b015,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-22 19:15:00+00:00,Úrvalsdeild,Iceland,1x2,home,3.39,6.98,won,all,False,0.04085,0.04085,False,0.0000,0.000,False,0.0775
+b79a1f94-b159-4606-a47d-965caa212dda,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-22 19:00:00+00:00,Coupe de France,France,1x2,away,5.00,-5.00,lost,,False,0.01446,0.01446,False,,,False,
+2b5f93a5-ad3f-46fa-aa17-42d5a64f8bc5,5b3bdbd1-eaa6-4ff1-97c1-93c0cdc2ed08,2026-05-22 19:00:00+00:00,Premier Division,Ireland,1x2,home,9.85,-9.85,lost,all,False,0.00616,0.00616,False,0.0000,0.000,False,0.117
+0bba2676-1b66-41ee-bf94-639ceb144ad5,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-22 19:00:00+00:00,Premier Division,Ireland,1x2,home,9.71,-9.71,lost,all,False,0.00616,0.00616,False,0.0000,0.000,False,0.117
+887e74c0-ba1d-47e5-96b8-eed6906b1010,c0f858b3-34af-4bb4-afbb-66105b79ceeb,2026-05-22 19:00:00+00:00,Premier Division,Ireland,1x2,home,9.83,-9.83,lost,all,False,0.00616,0.00616,False,0.0000,0.000,False,0.117
+9c1ae543-e1a5-401a-9a47-5ea8e268a421,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-22 18:45:00+00:00,Premier Division,Ireland,1x2,home,8.82,-8.82,lost,all,False,0.01813,0.01813,False,0.0000,0.000,False,-0.1
+9cd5ef40-b46a-4e9f-a610-4e39fda50e96,c0f858b3-34af-4bb4-afbb-66105b79ceeb,2026-05-22 18:45:00+00:00,Premier Division,Ireland,1x2,home,8.10,-8.10,lost,all,False,-0.0102,0.0102,True,0.0000,0.000,False,0.0344
+5378cb0d-b16e-4ff7-992b-d0ce6c1f028c,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-22 18:45:00+00:00,Premier Division,Ireland,1x2,away,5.00,-5.00,lost,,False,0.00421,0.00421,False,,,False,
+4c4bb3a6-95c1-4ebd-995b-7762839e864e,c0f858b3-34af-4bb4-afbb-66105b79ceeb,2026-05-22 18:45:00+00:00,Premier Division,Ireland,1x2,home,8.85,-8.85,lost,all,False,0.01813,0.01813,False,0.0000,0.000,False,-0.1
+f839deec-6f59-4564-aee3-0efec070a899,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-22 18:45:00+00:00,Premier Division,Ireland,1x2,home,8.65,-8.65,lost,all,False,-0.0102,0.0102,True,0.0000,0.000,False,0.0344
+71eeb22a-0c5b-42e0-9797-232b8bdd6f53,5b3bdbd1-eaa6-4ff1-97c1-93c0cdc2ed08,2026-05-22 18:45:00+00:00,Premier Division,Ireland,1x2,home,8.12,-8.12,lost,all,False,-0.0102,0.0102,True,0.0000,0.000,False,0.0344
+bf6a7a5f-d764-4b31-a7ad-d7aabdf94dfd,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-22 18:00:00+00:00,Super League Women,Belgium,1x2,home,3.23,-3.23,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.3699
+bcb53895-ebb7-43c2-913f-c8ec579c50e8,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-22 18:00:00+00:00,Super League Women,Belgium,1x2,home,3.51,-3.51,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.3699
+891f7f5a-f763-4a2b-a9e2-edb24e52af17,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-22 18:00:00+00:00,Super Liga,Serbia,1x2,away,5.00,30.00,won,,False,0.0,0.0,False,,,False,
+3e7fd39e-4689-49cc-a3d6-77fac182d880,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-22 17:45:00+00:00,Türkiye Kupası,Turkey,1x2,away,5.00,-5.00,lost,,False,-0.01415,0.01415,True,,,False,
+0eeffd88-671d-4026-9881-dec660689fb5,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-22 17:00:00+00:00,Allsvenskan,Sweden,1x2,away,5.00,9.38,won,,False,0.00556,0.00556,False,0.0000,0.000,False,
+45e84326-c273-4c80-871c-b829e650a748,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-22 17:00:00+00:00,Allsvenskan,Sweden,1x2,home,5.00,-5.00,lost,,False,-0.00965,0.00965,True,0.0000,0.000,False,
+a5e8e978-fa97-47dc-8ef6-5f4efd75b658,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-22 16:00:00+00:00,Veikkausliiga,Finland,1x2,home,8.02,23.18,won,all,False,-0.00133,0.00133,True,0.0000,0.000,False,0.0716
+12537940-729d-4063-a889-54f4cf6713d2,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-22 14:30:00+00:00,1. Division,Cyprus,1x2,home,8.15,-8.15,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.1803
+f49ef046-2ea0-40a2-b375-7534e00f3f37,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-21 22:00:00+00:00,CONMEBOL Sudamericana,World,1x2,home,5.00,-5.00,lost,,False,0.00804,0.00804,False,,,False,
+fe722995-7650-4aad-8163-78b4f4d16f47,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-21 19:00:00+00:00,Premiership,Scotland,1x2,home,5.00,-5.00,lost,,False,-0.0261,0.0261,True,,,False,
+dcd7982d-0ca4-4c7d-b822-f4957d305dc4,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-21 19:00:00+00:00,Eredivisie,Netherlands,1x2,away,5.00,-5.00,lost,,False,-0.0074,0.0074,True,,,False,
+87f10470-015e-46a7-bff4-6a2a0e8126a1,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-21 18:30:00+00:00,Premijer Liga,Bosnia,1x2,away,5.00,10.00,won,,False,-0.00303,0.00303,True,,,False,
+440b48f5-3ad0-404d-9b1e-ad66fa0fca93,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-21 18:00:00+00:00,Pro League,Saudi-Arabia,1x2,home,8.36,-8.36,lost,all,False,-0.00472,0.00472,True,0.0000,0.000,False,0.0764
+3c24c6b7-5151-4473-85a8-abb9ef63ee0b,5b3bdbd1-eaa6-4ff1-97c1-93c0cdc2ed08,2026-05-21 17:00:00+00:00,Regionalliga - Mitte,Austria,1x2,home,2.47,-2.47,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.7094
+6d089691-3280-4682-9783-fbc319a6085b,c0f858b3-34af-4bb4-afbb-66105b79ceeb,2026-05-21 17:00:00+00:00,Regionalliga - Mitte,Austria,1x2,home,2.46,-2.46,lost,all,False,0.0,0.0,False,0.0000,0.000,False,0.7094
+a79ebfd8-05d8-4c42-8501-046de8900b45,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-21 15:30:00+00:00,Ligi kuu Bara,Tanzania,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,0.0000,0.000,False,
+4e3f7bd4-a51f-4e0b-8471-337a08db7352,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-20 22:00:00+00:00,Copa Sul-Sudeste,Brazil,1x2,away,5.00,-5.00,lost,,False,-0.00922,0.00922,True,,,False,
+2885ec18-3fc3-4298-a429-e672beb161d6,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-20 18:30:00+00:00,Serie C - Promotion - Play-offs,Italy,1x2,away,5.00,-5.00,lost,,False,-0.00036,0.00036,True,,0.000,False,
+4c33d5e6-fa1c-4a1e-8bf1-30bc4c3926bb,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-20 18:00:00+00:00,Eliteserien,Norway,1x2,away,5.00,-5.00,lost,,False,-0.00543,0.00543,True,,,False,
+16ca9a3f-196d-4529-afa8-1a99c39fa394,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-20 18:00:00+00:00,Pro League,Saudi-Arabia,1x2,away,5.00,-5.00,lost,,False,-0.02268,0.02268,True,,,False,
+7dd275e8-164e-44cb-8015-b0cac5786659,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-20 18:00:00+00:00,Pro League,Saudi-Arabia,1x2,home,5.00,-5.00,lost,,False,-0.00027,0.00027,True,,,False,
+29f1c265-dc07-4825-bfee-8e1153807927,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-20 17:00:00+00:00,Premier League,Egypt,1x2,away,5.00,-5.00,lost,,False,0.00612,0.00612,False,0.0000,0.000,False,
+ec06039f-92a4-4106-827a-fda6b9a05ab0,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-20 16:45:00+00:00,Ligue 1,Algeria,1x2,away,5.00,12.00,won,,False,-0.01223,0.01223,True,0.0000,0.000,False,
+600b9cfc-8c54-4802-8132-a215b45ad012,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-20 16:00:00+00:00,Cup,Bulgaria,1x2,home,5.00,-5.00,lost,,False,-0.01748,0.01748,True,0.1500,0.150,True,
+e2db2a95-0efc-46be-847e-ff7b22cfbdd8,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-20 16:00:00+00:00,Cup,Czech-Republic,1x2,away,5.00,16.66,won,,False,-0.00815,0.00815,True,,,False,
+ed13484c-39fc-47e8-847f-b50ae290f528,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-20 15:45:00+00:00,Liga Leumit,Israel,1x2,away,5.00,-5.00,lost,,False,0.00467,0.00467,False,0.0000,0.000,False,
+ba119947-9e39-4a58-9f24-accf6f18eeab,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-20 15:45:00+00:00,Liga Leumit,Israel,1x2,away,5.00,-5.00,lost,,False,-0.00069,0.00069,True,,,False,
+d5d51993-d803-44ca-b6ae-35d3f0a1a5e4,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-20 15:00:00+00:00,USL League Two,USA,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,0.0000,0.000,False,
+0c391e8b-e443-4fd4-bd50-469674a9514d,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-19 22:00:00+00:00,CONMEBOL Libertadores,World,1x2,away,5.00,-5.00,lost,,False,-0.01014,0.01014,True,,,False,
+92ae4289-cda6-4d15-860e-40f01347950b,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-19 18:30:00+00:00,Premier League,England,1x2,away,5.00,-5.00,lost,,False,-0.01057,0.01057,True,,0.000,False,
+9e31a837-502f-4814-a646-f0cc27a28014,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-19 18:30:00+00:00,Jupiler Pro League,Belgium,1x2,away,5.00,-5.00,lost,,False,-0.00289,0.00289,True,,,False,
+88c64a95-4b8c-42ae-96a2-bbcb448120a1,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-19 17:00:00+00:00,Superettan,Sweden,1x2,home,5.00,-5.00,lost,,False,-0.00472,0.00472,True,0.0000,0.000,False,
+174e3212-bd4d-423b-97c4-eabc07bf1deb,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-19 16:00:00+00:00,Cup,Lithuania,1x2,home,5.00,6.00,won,,False,0.0,0.0,False,0.0000,0.000,False,
+4d3455f5-65df-4c18-99ef-5e5db8f60ba2,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-18 23:00:00+00:00,Serie C,Brazil,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+76936c15-f9da-40aa-9214-74a58d113541,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-18 19:15:00+00:00,1. Deild,Iceland,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+0ff17cb1-e14c-4309-8b19-c1af37d78ff3,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-18 17:30:00+00:00,Meistaradeildin,Faroe-Islands,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,0.0000,0.000,False,
+51925170-80ce-438a-ac74-0e8e4b991ece,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-18 17:00:00+00:00,Allsvenskan,Sweden,1x2,away,5.00,11.00,won,,False,-0.00224,0.00224,True,0.0000,0.000,False,
+c0a88fe7-02c0-4a0e-9e8f-de6586816ba5,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-18 17:00:00+00:00,Ligat Ha'al,Israel,1x2,home,5.00,-5.00,lost,,False,0.0148,0.0148,False,0.0000,0.000,False,
+076da010-3a5d-42c4-b845-b5909ea519b9,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-18 17:00:00+00:00,Allsvenskan,Sweden,1x2,home,5.00,-5.00,lost,,False,-0.0041,0.0041,True,0.0000,0.000,False,
+7696e926-2d49-45af-b08e-8f324bc59eeb,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-18 14:00:00+00:00,Premier League,Egypt,1x2,away,5.00,10.00,won,,False,-0.00177,0.00177,True,,,False,
+1fbd7e18-7dde-4126-9425-d3e5805d5a2f,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-18 14:00:00+00:00,Indian Super League,India,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+a6daf81e-e845-42cf-915e-2aeded6bfacc,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 22:00:00+00:00,Primera División,Venezuela,1x2,home,6.37,-6.37,lost,morning,True,0.06539,0.06539,False,0.0000,0.000,False,0.2282
+53f58a86-1992-44ab-8797-b85d67d5d8c3,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-17 22:00:00+00:00,Primera División,Venezuela,1x2,home,7.40,-7.40,lost,morning,True,0.06539,0.06539,False,0.0000,0.000,False,0.2282
+683fc0cc-6849-44c9-8fde-51e031110aac,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 21:00:00+00:00,Primera División,Venezuela,1x2,home,4.64,-4.64,lost,morning,True,0.01986,0.01986,False,0.0000,0.000,False,0.0683
+526b0078-2076-4219-92b6-43fec69a15f8,2e446f74-9fd0-4022-a356-d96aa80815da,2026-05-17 21:00:00+00:00,Primera División - Apertura,Uruguay,1x2,home,5.00,-5.00,lost,,False,0.03303,0.03303,False,,0.000,False,
+bb796187-14bf-4807-88f5-aadf75b016cc,7f1b2a43-5f85-4c6b-a337-91fa39830f2f,2026-05-17 21:00:00+00:00,Primera División - Apertura,Uruguay,1x2,home,5.00,-5.00,lost,,False,0.03303,0.03303,False,,0.000,False,
+d4f3c173-e1cf-4fe3-ab7f-673338df8211,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-17 21:00:00+00:00,USL League One Cup,USA,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+014a704b-34f7-45d7-843a-43aead6302a7,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-17 20:30:00+00:00,Liga Pro Serie B,Ecuador,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+02cd5b91-fd2c-4ee4-925f-c2b079e512e8,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 19:30:00+00:00,Segunda Liga,Portugal,1x2,home,8.13,13.17,won,morning,True,-0.00153,0.00153,True,0.0000,0.000,False,0.0694
+d0598f9c-3546-473e-bd7a-523fe3e7bc18,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 19:15:00+00:00,Segunda División,Spain,1x2,away,8.22,28.77,won,morning,True,-0.01896,0.01896,True,0.0000,0.000,False,-0.0909
+9d79c975-b3e4-4cc5-a0e5-f897df9164a6,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 19:00:00+00:00,Ligue 1,France,1x2,home,2.79,5.86,won,morning,True,-0.00311,0.00311,True,0.0000,0.000,False,0.0098
+23583597-cb5a-4ff3-b514-2ebde0503805,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 19:00:00+00:00,Ligue 1,France,1x2,draw,5.73,-5.73,lost,morning,True,0.00675,0.00675,False,0.0000,0.000,False,0.002
+f18a62a0-756d-4cbf-9b32-2f40e56ddd4a,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 19:00:00+00:00,Ligue 1,France,1x2,away,2.02,7.68,won,morning,True,0.00827,0.00827,False,0.0000,0.000,False,0.0714
+0e5cbb67-31d7-418e-8495-9b9674ab3110,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-17 19:00:00+00:00,Ligue 1,France,1x2,home,5.00,12.00,won,,False,-0.00311,0.00311,True,,0.000,False,
+dde631d9-0cf8-474c-ac55-e31af88a68fb,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-17 19:00:00+00:00,Serie A,Brazil,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+8c4b6395-5cc7-4621-aa2a-c49f27b6d5dc,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-17 19:00:00+00:00,Ligue 1,France,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,,0.000,False,
+20e99eca-7233-4955-bff3-1fa98134f72d,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 19:00:00+00:00,Ligue 1,France,1x2,home,7.20,-7.20,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0112
+ada73c13-599b-4328-bda4-c8cad7d73ea0,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-17 19:00:00+00:00,Ligue 1,France,1x2,home,6.21,14.28,won,morning,True,-0.00311,0.00311,True,0.0000,0.000,False,0.0749
+0cc932b0-8b7e-4901-a1f0-c011495b2413,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 19:00:00+00:00,Ligue 1,France,1x2,draw,5.15,-5.15,lost,morning,True,-0.00055,0.00055,True,0.0000,0.000,False,-0.0092
+9935294f-a60e-44df-b7f4-5a5677f8635d,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 19:00:00+00:00,Ligue 1,France,1x2,draw,2.79,-2.79,lost,morning,True,-0.00746,0.00746,True,0.0000,0.000,False,-0.0431
+f299f1fa-fb9b-40e7-87af-f230ca593cb8,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 19:00:00+00:00,Ligue 1,France,1x2,home,8.28,-8.28,lost,morning,True,-0.00287,0.00287,True,0.0000,0.000,False,-0.0112
+c9b3e312-030d-456f-92f3-4c8397e003c6,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 18:45:00+00:00,Serie A,Italy,1x2,home,6.65,-6.65,lost,morning,True,0.0013,0.0013,False,0.0000,0.000,False,0.0632
+25832d31-3d0a-4031-afd8-52a32593c967,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-17 18:30:00+00:00,Primera C,Argentina,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+09ab71f2-3ead-4d83-9db9-989a49d91ebd,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 18:15:00+00:00,Úrvalsdeild,Iceland,1x2,draw,2.64,9.58,won,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0595
+0061f9e7-3ec7-4ae9-9618-f28f70d07966,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 18:15:00+00:00,Úrvalsdeild,Iceland,1x2,home,2.91,5.97,won,morning,True,0.00344,0.00344,False,0.0000,0.000,False,0.0033
+341af1a4-4d97-4d74-9e53-34fc2841ef7f,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 18:00:00+00:00,Serie B,Italy,1x2,home,4.81,10.10,won,morning,True,0.03584,0.03584,False,0.0800,0.080,True,0.2863
+e245bfa5-5425-48fc-8708-c7ca3856551f,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 18:00:00+00:00,Super Liga,Serbia,1x2,home,4.39,-4.39,lost,morning,True,0.01872,0.01872,False,0.0000,0.000,False,-0.0957
+03cdf7ca-44bb-46ae-857a-bef7699b5d99,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-17 18:00:00+00:00,Serie B,Italy,1x2,home,8.16,17.14,won,morning,True,0.03584,0.03584,False,0.1000,0.080,True,0.2863
+aa4f6c0c-0ca3-4547-a059-de560809ac38,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 17:00:00+00:00,La Liga,Spain,1x2,away,5.99,-5.99,lost,morning,True,0.00519,0.00519,False,0.0000,0.000,False,0.0789
+75c77914-4d37-450a-aad3-37df127c55e4,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-17 17:00:00+00:00,La Liga,Spain,1x2,home,5.00,-5.00,lost,,False,-0.00402,0.00402,True,0.0000,0.000,False,
+93665fc7-f624-4c27-9c78-17d8f600780f,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-17 17:00:00+00:00,Süper Lig,Turkey,1x2,away,5.00,-5.00,lost,,False,0.00712,0.00712,False,0.0000,0.000,False,
+1f450188-8a6e-45bd-a003-98b8d957c11e,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-17 17:00:00+00:00,La Liga,Spain,1x2,home,5.00,-5.00,lost,,False,-0.00215,0.00215,True,0.0000,0.000,False,
+ac119d3d-2e4c-434d-90cd-cdbed3ee1c6f,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-17 17:00:00+00:00,Süper Lig,Turkey,1x2,home,5.00,-5.00,lost,,False,0.02277,0.02277,False,0.0000,0.000,False,
+1dcda05a-f06c-4ed5-aa0e-2da78635dc79,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 17:00:00+00:00,La Liga,Spain,1x2,home,2.32,-2.32,lost,morning,True,0.00902,0.00902,False,0.0000,0.000,False,0.0211
+21eec547-7ad9-4e69-9636-19603ebe5686,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 17:00:00+00:00,Süper Lig,Turkey,1x2,home,3.30,7.09,won,morning,True,-0.00977,0.00977,True,0.0000,0.000,False,-0.0248
+ab3c7a53-b949-4371-85d0-f0820c33bc33,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 17:00:00+00:00,La Liga,Spain,1x2,away,5.76,20.97,won,morning,True,0.02145,0.02145,False,0.0000,0.000,False,0.0867
+efe771e9-2bd0-4674-82fa-e9bb2b7218f2,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-17 17:00:00+00:00,Segunda División RFEF - Play-offs,Spain,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,0.0000,0.000,False,
+8a42eef6-237c-4614-9051-809f49bc2ef2,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 16:30:00+00:00,Super League 1,Greece,1x2,home,6.10,-6.10,lost,morning,True,0.00916,0.00916,False,0.0000,0.050,True,0.1095
+76094be3-7ba7-4e46-aa7e-06f5fab002ae,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 16:30:00+00:00,Super Liga,Serbia,1x2,draw,3.01,10.84,won,morning,True,0.01308,0.01308,False,0.0000,0.000,False,0.0624
+45a79cb8-90d9-4ab1-8a6b-29731eb35757,4294d045-afae-45f3-a2f6-ac4f0ae82ee7,2026-05-17 16:30:00+00:00,Super League 1,Greece,1x2,home,8.48,-8.48,lost,midday,False,0.00722,0.00722,False,0.3000,0.200,True,0.0432
+a82f3834-c1df-4dce-b055-7aba5946043d,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 16:30:00+00:00,Super League 1,Greece,1x2,home,5.38,-5.38,lost,morning,True,0.00722,0.00722,False,0.2000,0.200,True,0.0401
+129eb569-fe2a-4e83-987b-80a9b8b2b9b5,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-17 16:15:00+00:00,Meistaradeildin,Faroe-Islands,1x2,home,5.00,-5.00,lost,,False,0.00075,0.00075,False,0.0000,0.000,False,
+d63fd83a-d3a6-493c-b762-25028acb07bd,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 16:00:00+00:00,Serie A,Italy,1x2,draw,2.84,-2.84,lost,morning,True,0.00817,0.00817,False,0.0000,0.000,False,0.0395
+06e92df3-23a3-4ed2-be6b-1a2970153163,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 16:00:00+00:00,Serie A Women,Italy,1x2,draw,6.26,-6.26,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0
+a8eb5e43-cca7-4ee8-9ee3-8e30b943ec82,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-17 16:00:00+00:00,1. Deild,Iceland,1x2,away,5.00,-5.00,lost,,False,-0.00075,0.00075,True,,,False,
+09bc1afd-7954-42fa-bf7b-95e400cc4933,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 16:00:00+00:00,Serie A,Italy,1x2,away,2.64,10.30,won,morning,True,-0.00355,0.00355,True,0.0000,0.000,False,0.0538
+57628663-cd1a-4ebc-9bb2-2b5099b0e190,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-17 15:30:00+00:00,1. SNL,Slovenia,1x2,away,5.00,-5.00,lost,,False,-0.00167,0.00167,True,,,False,
+05643548-2af5-4a9a-9fb8-8e3e33b7e8ef,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-17 15:00:00+00:00,Primera División RFEF - Group 1,Spain,1x2,away,5.00,-5.00,lost,,False,0.00398,0.00398,False,0.0000,0.000,False,
+e0b6b0ac-c0bb-4184-91e8-fdd367958fb9,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-17 15:00:00+00:00,Superettan,Sweden,1x2,away,5.00,-5.00,lost,,False,-0.00141,0.00141,True,,,False,
+e6fff44c-52d6-4602-b3da-e689cccaf1f5,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-17 15:00:00+00:00,Primera División RFEF - Group 1,Spain,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,0.0000,0.000,False,
+3f4a8f9d-233a-4ceb-bd36-5908e713d0e2,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 15:00:00+00:00,Primera División RFEF - Group 1,Spain,1x2,home,6.38,-6.38,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.1554
+a236a698-223a-4e37-9f86-86d4ed34e04d,69013221-a3b3-4d0c-9468-9b19ca0ecf8e,2026-05-17 15:00:00+00:00,Primera División RFEF - Group 1,Spain,1x2,home,9.88,-9.88,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.1554
+ab3df48e-873a-4b23-be7a-0152ce88945e,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-17 14:30:00+00:00,Super League,Switzerland,1x2,home,5.00,-5.00,lost,,False,0.00726,0.00726,False,0.0000,0.000,False,
+4f0b6a7b-b8a0-4da0-9c22-83e64d6f856b,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 14:30:00+00:00,Super League,Switzerland,1x2,draw,6.58,-6.58,lost,morning,True,0.00474,0.00474,False,0.0000,0.000,False,-0.0716
+e9297699-1f27-40d4-8859-32f141c4f5a2,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 14:30:00+00:00,Super League,Switzerland,1x2,draw,6.51,22.59,won,morning,True,0.0046,0.0046,False,0.0000,0.000,False,-0.0283
+c154a59e-ebb9-4ae0-8770-ad14daf9a237,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 14:00:00+00:00,Premier League,England,1x2,home,2.98,7.27,won,morning,True,0.0,0.0,False,0.0000,0.000,False,-0.0029
+fd4f6019-409a-4dcd-b5ec-d1d89712ff98,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-17 14:00:00+00:00,Jupiler Pro League,Belgium,1x2,home,5.00,12.50,won,,False,0.0,0.0,False,,,False,
+e3493bf7-af0e-40a1-8e59-f944afbf3fc9,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 14:00:00+00:00,Premier League,England,1x2,away,3.34,-3.34,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0571
+9f248e4b-a04c-4ed0-9d74-b78a41e939fe,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-17 14:00:00+00:00,Premier League,Egypt,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+4afa0f1e-447a-47fd-b2c9-e38ea1d2191f,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-17 14:00:00+00:00,HNL,Croatia,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+1b02f6be-ca39-4d49-8292-c7fcb84ec99a,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-17 14:00:00+00:00,Premyer Liqa,Azerbaijan,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+27b2c71c-3fff-49aa-a611-ffd78f2956e8,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 14:00:00+00:00,Premier League,England,1x2,draw,5.31,18.05,won,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0837
+253a8109-79d1-43b0-876c-347133085e0b,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-17 14:00:00+00:00,Jupiler Pro League,Belgium,1x2,home,5.00,27.50,won,,False,0.0,0.0,False,,,False,
+ffad0e08-8d08-4333-acff-c6762873b0b3,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 13:30:00+00:00,2. Bundesliga,Germany,1x2,draw,6.30,-6.30,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0535
+ee0a7588-0989-4800-b626-c1ced40cdf22,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 13:30:00+00:00,2. Bundesliga,Germany,1x2,home,6.28,-6.28,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0289
+58af51d9-0e11-43b8-a1f2-67bf016b0de1,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-17 13:30:00+00:00,2. Bundesliga,Germany,1x2,home,5.00,10.50,won,,False,0.0,0.0,False,0.0000,0.000,False,
+e2f078dc-d4b9-4b06-aa62-c40e80ac7a83,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 13:30:00+00:00,2. Bundesliga,Germany,1x2,away,8.02,-8.02,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0732
+05b95255-f6b4-464f-b334-184f38b3f83d,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 13:30:00+00:00,2. Bundesliga,Germany,1x2,draw,3.11,-3.11,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0714
+12444f1a-c005-4c07-b135-c7702eb248b0,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 13:30:00+00:00,2. Bundesliga,Germany,1x2,draw,3.38,-3.38,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0354
+9a97cb25-1e82-490e-90ec-3ecb57d24323,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 13:30:00+00:00,2. Bundesliga,Germany,1x2,away,2.54,-2.54,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0661
+8efbe7e6-9182-466e-9193-a515b4a7fc1f,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 13:30:00+00:00,2. Bundesliga,Germany,1x2,draw,2.80,-2.80,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0294
+ec7a09ea-1266-4260-98a3-b605c15245ba,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-17 13:30:00+00:00,2. Bundesliga,Germany,1x2,draw,3.40,-3.40,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,-0.0566
+ffdf35a9-20c5-4179-9ee9-06b5fcb69fd7,4294d045-afae-45f3-a2f6-ac4f0ae82ee7,2026-05-17 12:00:00+00:00,Super League 1,Greece,1x2,home,7.52,-7.52,lost,midday,False,-0.02378,0.02378,True,0.0000,0.000,False,0.0036
+96af7b67-bcfa-4987-9fa9-e5b98884efa1,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 23:30:00+00:00,Major League Soccer,USA,1x2,draw,5.66,16.58,won,morning,True,-0.00065,0.00065,True,0.0000,0.000,False,0.0234
+b89df51f-d988-4bbb-b7b5-1e7fd6ce78fb,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-16 23:30:00+00:00,Major League Soccer,USA,1x2,away,5.00,-5.00,lost,,False,-0.02106,0.02106,True,,,False,
+011b9da3-89d7-4044-a6cb-db9729d94c66,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-16 23:30:00+00:00,USL League One Cup,USA,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+d2dee140-c638-4a9e-9992-d408d2a66e24,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-16 23:30:00+00:00,Major League Soccer,USA,1x2,away,5.00,-5.00,lost,,False,0.00159,0.00159,False,,,False,
+30c35e94-7e64-4c01-8fce-7164ac95aea5,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-16 21:30:00+00:00,Primera División,Chile,1x2,home,5.00,-5.00,lost,,False,-0.00307,0.00307,True,,,False,
+29472f9c-3305-49d2-8f40-6b61e32d27c2,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-16 21:30:00+00:00,Serie A,Brazil,1x2,away,5.00,-5.00,lost,,False,-0.00211,0.00211,True,,,False,
+49123c1a-d80d-4831-b6d2-d41d663ef874,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-16 21:00:00+00:00,Serie D,Brazil,1x2,away,5.00,8.10,won,,False,0.0,0.0,False,,,False,
+efb4a734-d444-4dfe-840d-cf9d35e58e41,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-16 20:00:00+00:00,Serie C,Brazil,1x2,away,5.00,6.90,won,,False,0.06605,0.06605,False,,,False,
+b795a9b7-e699-406d-b32a-98bcc5d97199,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-16 20:00:00+00:00,Serie D,Brazil,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+ceec4cdd-1b10-4b34-8db4-20d0ae300c82,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-16 19:00:00+00:00,Primera División RFEF - Group 2,Spain,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+ef4b7a96-dce4-497c-825a-40e4d7f923cb,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 19:00:00+00:00,Feminine Division 1,France,1x2,home,5.74,12.34,won,morning,True,-0.03715,0.03715,True,0.1400,0.000,True,-0.0625
+40b617fb-226d-4c6d-a8fc-8e4741aa0bff,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-16 19:00:00+00:00,Primera División RFEF - Group 2,Spain,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+b92f42a8-1a38-41dc-a948-19f2c81f86fb,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-16 18:30:00+00:00,Serie D,Brazil,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+fdcd8c82-d4b4-439b-bb40-3ad83fa66e54,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-16 18:30:00+00:00,Primera Nacional,Argentina,1x2,home,5.00,-5.00,lost,,False,0.0124,0.0124,False,,,False,
+04755ef3-73ed-4129-8185-7c0765f8036b,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 18:15:00+00:00,Ekstraklasa,Poland,1x2,home,2.72,-2.72,lost,morning,True,-0.01329,0.01329,True,0.0000,0.000,False,-0.1021
+59078d9e-2853-4ac4-a372-e22f2745b89b,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-16 18:00:00+00:00,Serie B,Italy,1x2,home,10.75,-10.75,lost,morning,True,0.05551,0.05551,False,0.0000,0.000,False,0.3591
+2f14244f-777b-48fe-9a69-c0c21eed2d81,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-16 18:00:00+00:00,Super Liga,Serbia,1x2,away,5.00,22.50,won,,False,-0.01133,0.01133,True,,,False,
+2c398e60-43c0-444e-b0e6-cb1f5c913eab,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 18:00:00+00:00,Serie B,Italy,1x2,home,9.08,-9.08,lost,morning,True,0.05551,0.05551,False,0.0000,0.000,False,0.3591
+69c88553-c94d-4a0c-8963-10f66ba78190,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-16 17:45:00+00:00,AFC Champions League Two,World,1x2,away,5.00,27.50,won,,False,-0.00356,0.00356,True,0.0000,0.000,False,
+811891ae-14ce-48d5-9f98-d24bb3e6e690,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 17:00:00+00:00,Primeira Liga,Portugal,1x2,draw,2.91,9.31,won,morning,True,0.00058,0.00058,False,0.0000,0.000,False,0.0145
+0534cfc0-853f-423f-aa07-3cc2fdff4381,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-16 17:00:00+00:00,Primeira Liga,Portugal,1x2,away,5.00,-5.00,lost,,False,0.00403,0.00403,False,0.0000,0.000,False,
+c8f1da36-5a2b-489a-8684-2c5c5a26d44e,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-16 17:00:00+00:00,Erovnuli Liga,Georgia,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,0.0000,0.000,False,
+20543202-c40a-4d52-8704-13eebe36aff5,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 17:00:00+00:00,Primeira Liga,Portugal,1x2,home,2.92,6.25,won,morning,True,-0.00401,0.00401,True,0.0000,0.000,False,-0.0456
+5c4af70b-0edc-4b58-b6ca-fdc9fce6bfac,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 17:00:00+00:00,Süper Lig,Turkey,1x2,draw,3.75,-3.75,lost,morning,True,-0.00658,0.00658,True,0.0000,0.000,False,0.0204
+d0c7e6e1-28bc-4745-b65b-c5d709fa8018,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 17:00:00+00:00,Primeira Liga,Portugal,1x2,draw,2.94,9.41,won,morning,True,0.00174,0.00174,False,0.0000,0.000,False,0.0797
+9fe49e36-b265-4aee-af72-6530a26c4432,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-16 16:30:00+00:00,Segunda División,Spain,1x2,away,5.00,-5.00,lost,,False,0.00915,0.00915,False,0.0000,0.000,False,
+68188e8c-5447-4335-bb18-df1b949a7435,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 16:30:00+00:00,Segunda División,Spain,1x2,home,1.74,-1.74,lost,morning,True,-0.00199,0.00199,True,0.0000,0.000,False,-0.1124
+57001561-cb27-49c6-a0ba-73648baf75f4,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 16:15:00+00:00,HNL,Croatia,1x2,home,2.40,-2.40,lost,morning,True,-0.00068,0.00068,True,0.0000,0.000,False,0.0186
+4bc827c0-f47f-458b-ad6f-b749a3d9d75b,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 16:15:00+00:00,Jupiler Pro League,Belgium,1x2,home,5.13,-5.13,lost,morning,True,0.00283,0.00283,False,0.0000,0.000,False,0.0251
+ace0c054-6adf-4301-a167-2620b1f3c852,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-16 16:00:00+00:00,Esiliiga A,Estonia,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+8af719d1-7aaf-4965-a073-eb3a6e49836e,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 16:00:00+00:00,Super League,Switzerland,1x2,draw,3.00,-3.00,lost,morning,True,0.0045,0.0045,False,0.0000,0.000,False,-0.0307
+016d2c6b-6830-45db-9b00-84b023ebef8a,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 16:00:00+00:00,Super League,Switzerland,1x2,home,6.23,-6.23,lost,morning,True,0.01225,0.01225,False,0.0000,0.000,False,0.0552
+fc2df1d2-3a52-4586-9841-d62b4f707a91,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 16:00:00+00:00,First League,Bulgaria,1x2,draw,1.13,-1.13,lost,morning,True,-0.00564,0.00564,True,0.0000,0.000,False,-0.1818
+5c045023-b808-420e-a671-2f8cfc3c87e6,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 16:00:00+00:00,Super League,Switzerland,1x2,home,5.09,-5.09,lost,morning,True,0.01222,0.01222,False,0.0000,0.000,False,-0.0677
+a2469631-066a-42ef-8140-22f6434593cb,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-16 16:00:00+00:00,Super League,Switzerland,1x2,away,5.00,12.50,won,,False,0.00199,0.00199,False,,,False,
+f946be52-c20d-4bf2-84a0-375a2961fc29,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 16:00:00+00:00,Serie A Women,Italy,1x2,draw,4.72,-4.72,lost,morning,True,-0.00259,0.00259,True,0.0000,0.000,False,0.0116
+c89e92e2-d7aa-4fad-b486-0917492fccbb,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-16 15:30:00+00:00,First NL,Croatia,1x2,home,5.00,9.40,won,,False,0.0,0.0,False,,,False,
+4e47e65b-05b3-490d-b0a3-49e43af4f510,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 15:30:00+00:00,Ekstraklasa,Poland,1x2,home,2.41,-2.41,lost,morning,True,0.00453,0.00453,False,0.0000,0.000,False,-0.0317
+2cf37444-0ef8-465a-86de-5b8c1653eb78,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-16 15:15:00+00:00,NB I,Hungary,1x2,home,5.00,-5.00,lost,,False,-0.00048,0.00048,True,0.0000,0.000,False,
+ed44b49e-7d5a-41b8-b94e-976b97ac0ad4,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-16 15:00:00+00:00,FNL,Czech-Republic,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,0.0000,0.000,False,
+75d9d9fd-c980-4ffa-9c4f-bf2ddd6805aa,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 14:30:00+00:00,1. Deild,Faroe-Islands,1x2,draw,9.30,-9.30,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0309
+e1e862ee-c5dd-477b-bd86-d4aaafcc5430,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 14:15:00+00:00,Segunda División,Spain,1x2,draw,7.35,-7.35,lost,morning,True,-0.00422,0.00422,True,0.0000,0.000,False,0.0024
+ee11f85d-5610-4fe1-974c-a4a961899972,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 14:15:00+00:00,Segunda División,Spain,1x2,home,2.73,5.57,won,morning,True,0.00439,0.00439,False,0.0000,0.000,False,-0.0065
+131d6a57-0965-439e-bf33-f2783a803bb0,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 14:00:00+00:00,1. Division,Norway,1x2,draw,2.68,-2.68,lost,morning,True,-0.0024,0.0024,True,0.0000,0.000,False,-0.0109
+1685cf5c-da7e-4249-83a8-71020a86a5e1,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-16 14:00:00+00:00,Meistriliiga,Estonia,1x2,away,5.00,13.00,won,,False,0.0,0.0,False,,,False,
+c5f631ec-9cae-4872-9caa-97bc7e5154f8,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-16 14:00:00+00:00,1. Liga Promotion,Switzerland,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+9b3bb1c6-3bc6-4252-86a0-ca892e3f6473,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-16 14:00:00+00:00,2. Division - Group 1,Norway,1x2,away,5.00,11.25,won,,False,-0.05105,0.05105,True,,,False,
+e573f236-f59b-456a-992f-2800351126ef,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 14:00:00+00:00,Süper Lig,Turkey,1x2,home,5.91,11.23,won,morning,True,0.0,0.0,False,0.0000,0.000,False,-0.0268
+d7ce9aef-a7a0-4d8b-bf04-266b05ad7ac1,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-16 14:00:00+00:00,1a Divisió,Andorra,1x2,home,5.00,18.75,won,,False,0.0,0.0,False,,,False,
+4833f224-63b2-4bfa-8fdf-362c03bd3193,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 14:00:00+00:00,FA Cup,England,1x2,draw,6.83,-6.83,lost,morning,True,0.00237,0.00237,False,0.0000,0.000,False,0.0122
+548729cc-64ea-4964-a3c6-e72d35ebe6b8,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 14:00:00+00:00,Jupiler Pro League,Belgium,1x2,draw,6.97,-6.97,lost,morning,True,-0.01494,0.01494,True,0.0000,0.000,False,-0.0328
+05bc3056-a53d-40a7-98c5-b2eb03ea713c,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-16 14:00:00+00:00,Ykkönen,Finland,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+98341265-bd15-4b01-a0e8-85564743e1c3,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-16 14:00:00+00:00,Eliteserien,Norway,1x2,away,5.00,18.75,won,,False,0.02105,0.02105,False,,,False,
+e997c8ec-bbaf-4895-9e78-c9d420ba5ca1,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-16 14:00:00+00:00,A Lyga,Lithuania,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+0823417a-3a45-4095-a5ee-1443d1cecd14,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 13:30:00+00:00,Bundesliga,Germany,1x2,home,3.23,-3.23,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.1129
+fff82686-0d52-4b27-9042-eca439496faa,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 13:30:00+00:00,Bundesliga,Germany,1x2,draw,7.47,25.77,won,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0114
+41fbb69a-341f-44d6-862f-2d0b9613bcbe,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 13:30:00+00:00,Tweede Divisie,Netherlands,1x2,draw,3.18,-3.18,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,-0.0217
+9239ad6d-65b4-44dd-b491-3aef4ead148b,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 13:30:00+00:00,Bundesliga,Germany,1x2,draw,3.02,-3.02,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.009
+06cc0ad1-c5a1-4836-927c-580ed8fe05aa,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 13:30:00+00:00,Bundesliga,Germany,1x2,home,6.23,-6.23,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0084
+2445f3c4-1659-4a9d-9168-ea20f9f69ecd,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 13:30:00+00:00,Bundesliga,Germany,1x2,draw,3.12,-3.12,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0921
+dfab5eaf-87b5-478b-a035-443214cd6c66,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 13:30:00+00:00,Bundesliga,Germany,1x2,home,3.62,-3.62,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0733
+faeaa616-aa29-4a32-87fc-822ad3727a22,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-16 13:30:00+00:00,Bundesliga,Germany,1x2,draw,3.60,-3.60,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0199
+1341a1fc-510c-4638-8ab1-ffc4b8912f78,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-15 22:30:00+00:00,Division Intermedia,Paraguay,1x2,away,5.00,15.00,won,,False,0.0,0.0,False,,,False,
+1c21f1ca-7d2c-4aff-8a01-48a9a3b927ab,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-15 20:00:00+00:00,Primera División,Peru,1x2,home,5.00,12.50,won,,False,-0.00557,0.00557,True,,,False,
+c6d89ed8-f2c5-4727-a954-5ce31477b255,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-15 19:00:00+00:00,Segunda División,Spain,1x2,draw,8.38,-8.38,lost,morning,True,-0.00292,0.00292,True,0.0000,0.000,False,-0.0375
+fd999eec-78e3-4eae-872b-bc946d80862c,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-15 18:45:00+00:00,Premiership,Scotland,1x2,away,8.31,-8.31,lost,morning,True,0.00725,0.00725,False,0.0000,0.000,False,0.0212
+323bb689-3505-4580-861e-d2bb27f63052,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-15 18:30:00+00:00,Segunda División,Spain,1x2,away,5.00,-5.00,lost,,False,-0.01757,0.01757,True,,0.000,False,
+a39373db-26bf-46df-b874-05b519ed0399,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-15 18:15:00+00:00,Challenge League,Switzerland,1x2,away,5.00,-5.00,lost,,False,0.01151,0.01151,False,,,False,
+76e171d3-ea1b-4c60-908b-4e70d002f2bb,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-15 18:15:00+00:00,Challenge League,Switzerland,1x2,draw,7.29,-7.29,lost,morning,True,0.0029,0.0029,False,0.0000,0.000,False,-0.1011
+7efb34ad-30c4-4f7f-b914-8bda8a497aab,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-15 17:30:00+00:00,National 1,France,1x2,draw,3.77,11.57,won,morning,True,-0.00298,0.00298,True,0.0000,0.000,False,0.0853
+dd6e2546-1220-4404-a033-5f9ce6163845,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-15 17:30:00+00:00,National 1,France,1x2,away,8.95,-8.95,lost,morning,True,-0.01236,0.01236,True,0.0000,0.000,False,0.197
+41c7fe94-05d6-4948-a81d-ecd068a0827e,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-15 17:30:00+00:00,National 1,France,1x2,away,4.41,-4.41,lost,morning,True,0.00615,0.00615,False,0.0000,0.000,False,-0.097
+8b97f9bd-cc2e-4215-a0f2-269d31be9560,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-15 17:30:00+00:00,National 1,France,1x2,draw,6.83,-6.83,lost,morning,True,-0.02097,0.02097,True,0.0000,0.000,False,0.1538
+e31d6c3c-f8aa-4910-b49d-95f42ab0c0e8,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-15 17:00:00+00:00,Segunda Liga,Portugal,1x2,home,7.59,18.44,won,morning,True,0.01901,0.01901,False,0.0000,0.000,False,-0.0058
+492bd052-f0ce-421b-a29a-922795f9901b,4294d045-afae-45f3-a2f6-ac4f0ae82ee7,2026-05-15 17:00:00+00:00,Süper Lig,Turkey,1x2,home,7.41,-7.41,lost,midday,False,-0.00481,0.00481,True,0.0000,0.000,False,0.0903
+ab554ff8-05e7-4412-aea2-d3219c07a0d2,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-15 17:00:00+00:00,1. Division,Denmark,1x2,away,5.00,-5.00,lost,,False,-0.00308,0.00308,True,0.0000,0.000,False,
+780152f1-4773-4c83-915d-42526ae6dcbe,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-15 17:00:00+00:00,Süper Lig,Turkey,1x2,home,6.79,-6.79,lost,morning,True,-0.00481,0.00481,True,0.0000,0.000,False,0.0903
+2671c2cf-19b4-47f6-9b5c-90c429ec0145,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-15 17:00:00+00:00,Regionalliga - Mitte,Austria,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,0.0000,0.000,False,
+bfdf836a-94ad-4848-87c3-ab68828e7883,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-15 17:00:00+00:00,Süper Lig,Turkey,1x2,draw,9.11,27.79,won,morning,True,0.00129,0.00129,False,0.0000,0.000,False,0.0465
+8c11ea73-ba51-490c-8dda-06ba182dd621,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-15 16:00:00+00:00,1. Division,Cyprus,1x2,away,5.00,17.50,won,,False,0.00849,0.00849,False,,,False,
+85c2539e-d729-4ca0-bbe2-2ed5da5af55d,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-15 16:00:00+00:00,Premier League,Bahrain,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,,,False,
+1855bab6-fdc3-45e7-8aea-69eacd59c745,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-15 15:45:00+00:00,NB I,Hungary,1x2,away,5.00,-5.00,lost,,False,0.00221,0.00221,False,,,False,
+02f41e41-a249-498e-ad97-ba7a0a7ac61e,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-15 15:30:00+00:00,First NL,Croatia,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,0.0000,0.000,False,
+da1edd27-db67-41df-a7dd-2144493d67c2,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-15 14:30:00+00:00,Iraqi League,Iraq,1x2,away,5.00,-5.00,lost,,False,0.0,0.0,False,0.0000,0.000,False,
+657cdc96-2ddf-44ff-bb09-0044cd2961cd,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-14 19:00:00+00:00,League One,England,1x2,home,8.36,-8.36,lost,morning,True,-0.02509,0.02509,True,0.0000,0.000,False,-0.0683
+1d31a6c8-db40-4415-8929-9838e52ec1ca,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-14 18:00:00+00:00,Premier League Cup,England,1x2,away,8.06,28.61,won,morning,True,-0.01663,0.01663,True,0.0000,0.000,False,0.0134
+7ad4e42a-934e-4bab-8b73-f15b772c1048,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-14 18:00:00+00:00,Premier League Cup,England,1x2,draw,8.98,-8.98,lost,morning,True,-0.01604,0.01604,True,0.0000,0.000,False,-0.0647
+6b927f16-7460-4f19-b0b4-50c6d16f995d,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-14 15:00:00+00:00,2. Liga,Austria,1x2,away,5.00,-5.00,lost,,False,-0.00084,0.00084,True,0.0000,0.000,False,
+4fe4b76d-8703-48d2-bc2c-abc5bb418a72,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-14 15:00:00+00:00,Cup,Iceland,1x2,draw,4.51,-4.51,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.1256
+0db1fc6c-4260-45de-b15c-f657f6be87c3,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-14 15:00:00+00:00,2. Liga,Austria,1x2,home,5.00,-5.00,lost,,False,0.0,0.0,False,0.0000,0.000,False,
+b0bbbb4e-8bad-4287-92c5-41c7546572e5,c0f858b3-34af-4bb4-afbb-66105b79ceeb,2026-05-14 15:00:00+00:00,2. Liga,Austria,1x2,home,5.02,-5.02,lost,midday,False,0.0,0.0,False,0.0000,0.000,False,0.1455
+71d2199e-3e3d-4fe2-b4aa-a187e8cf7695,5b3bdbd1-eaa6-4ff1-97c1-93c0cdc2ed08,2026-05-14 15:00:00+00:00,2. Liga,Austria,1x2,home,5.00,-5.00,lost,midday,False,0.0,0.0,False,0.0000,0.000,False,0.1455
+4f27ca3b-4f68-409f-91f7-8540a94d7b12,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-14 15:00:00+00:00,Cup,Iceland,1x2,home,3.57,10.89,won,morning,True,0.0,0.0,False,0.0000,0.000,False,0.2816
+dd473db7-42e8-44ca-81d6-5525d2ff9ec7,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-14 14:30:00+00:00,Super League,Switzerland,1x2,draw,9.12,-9.12,lost,morning,True,-0.00192,0.00192,True,0.0000,0.000,False,0.026
+b518bee9-9057-43e5-8a0c-4608a8151295,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-14 14:05:00+00:00,Professional League,Oman,1x2,home,2.06,7.73,won,morning,True,0.05601,0.05601,False,0.0000,0.000,False,0.2943
+8d403f3f-b864-40a8-91c7-fbde80e0c18b,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-14 14:00:00+00:00,Løgmanssteypid,Faroe-Islands,1x2,away,5.00,-5.00,lost,,False,-0.0065,0.0065,True,,,False,
+cc5771d6-5b9e-4202-be54-25a2d14a72a9,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-14 14:00:00+00:00,Ettan - Södra,Sweden,1x2,home,5.00,-5.00,lost,,False,-0.0017,0.0017,True,,,False,
+8133451a-2a0a-409b-b6c9-ecf398068ea8,99f1a3c9-0db1-44ca-a3c0-b09c8f882fb6,2026-05-13 23:30:00+00:00,Major League Soccer,USA,1x2,draw,9.75,-9.75,lost,midday,False,0.00524,0.00524,False,0.0000,0.000,False,0.0194
+973b8cf0-1a7b-486d-beaf-5a639710c81d,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 23:30:00+00:00,Major League Soccer,USA,1x2,home,7.13,-7.13,lost,morning,True,0.00212,0.00212,False,0.0000,0.000,False,0.0065
+ae7d5383-521c-4fd3-8945-e8e44e003bee,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 23:30:00+00:00,Major League Soccer,USA,1x2,draw,7.80,-7.80,lost,morning,True,0.00524,0.00524,False,0.0000,0.000,False,0.0194
+e082564e-bac7-47d0-8d3d-828b9dc17f59,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-13 23:30:00+00:00,Major League Soccer,USA,1x2,home,5.00,-5.00,lost,,False,0.00212,0.00212,False,,0.000,False,
+461b9405-b28c-495d-a108-091a237a8b7c,c0d2db45-53ab-4838-8e78-cad17ce29389,2026-05-13 23:30:00+00:00,Major League Soccer,USA,1x2,home,10.34,22.23,won,morning,True,0.00107,0.00107,False,0.0000,0.000,False,0.1455
+31b12792-9f64-43c7-a97a-bb28c4bd6129,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 23:30:00+00:00,Major League Soccer,USA,1x2,home,3.83,8.23,won,morning,True,0.00107,0.00107,False,0.0000,0.000,False,0.1455
+768c237e-c8b3-4e84-bcce-5862988b06cc,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-13 23:00:00+00:00,MLS Next Pro,USA,1x2,away,5.00,-5.00,lost,,False,0.0674,0.0674,False,,,False,
+768aafce-e6dc-4edf-bf19-12dc09b7bd27,99f1a3c9-0db1-44ca-a3c0-b09c8f882fb6,2026-05-13 23:00:00+00:00,Primera División,Venezuela,1x2,draw,8.59,-8.59,lost,midday,False,0.02185,0.02185,False,0.0000,0.000,False,0.1172
+3f7d6aeb-c4a3-4eef-8dba-2ddb02b67bd2,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 23:00:00+00:00,Primera División,Venezuela,1x2,draw,6.87,-6.87,lost,morning,True,0.02185,0.02185,False,0.0000,0.000,False,0.1172
+9bd92fc5-2d95-4497-bd7c-37aab0d31f74,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-13 21:45:00+00:00,Liga Profesional Argentina,Argentina,1x2,home,5.00,35.00,won,,False,-0.00182,0.00182,True,,,False,
+fe6155bd-fa99-4f37-8486-e0285b9fd084,257c197a-ee5a-499e-a2eb-05dbac608bc4,2026-05-13 21:45:00+00:00,Liga Profesional Argentina,Argentina,1x2,home,5.00,50.00,won,,False,-0.00182,0.00182,True,,,False,
+83a43fd3-075e-4d69-b519-fe01459b3a4f,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-13 21:45:00+00:00,Liga Profesional Argentina,Argentina,1x2,away,5.00,-5.00,lost,,False,-0.00376,0.00376,True,,,False,
+2170088b-efc8-4fd6-ba7d-fdc22bbc3461,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 20:00:00+00:00,Cup,Iceland,1x2,draw,1.99,-1.99,lost,morning,True,-0.00204,0.00204,True,0.0000,0.000,False,-0.011
+13df3011-3896-4bb0-a8ff-bceab2af6b6d,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 19:30:00+00:00,La Liga,Spain,1x2,home,3.23,8.20,won,morning,True,0.00177,0.00177,False,0.0000,0.000,False,0.0994
+4cc56167-f64e-4bdd-86a3-10dfe925e39e,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 19:00:00+00:00,Premiership,Scotland,1x2,draw,3.50,-3.50,lost,morning,True,0.00743,0.00743,False,0.0500,0.000,True,0.079
+edd645ef-b28a-491f-8c5c-81bbbcbae1bc,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 19:00:00+00:00,Ligue 1,France,1x2,home,6.91,-6.91,lost,morning,True,0.01901,0.01901,False,0.3000,0.300,True,0.1125
+0256821f-2ef3-4a3d-a754-136c95204f13,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 19:00:00+00:00,Coppa Italia,Italy,1x2,draw,8.16,-8.16,lost,morning,True,0.01202,0.01202,False,0.0000,0.000,False,0.0811
+03cade0d-7106-4ecc-98c5-b0c5e980ab0f,c0f858b3-34af-4bb4-afbb-66105b79ceeb,2026-05-13 19:00:00+00:00,Premiership,Scotland,1x2,draw,8.59,-8.59,lost,midday,False,0.00743,0.00743,False,0.0000,0.000,False,0.079
+2fcb1ffe-2cf6-4ee0-a44e-a666a7598233,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 19:00:00+00:00,League One,England,1x2,away,8.43,-8.43,lost,morning,True,0.01703,0.01703,False,0.0000,0.000,False,0.2429
+462c5f21-223e-4228-b673-f77e36152d69,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 19:00:00+00:00,Premiership,Scotland,1x2,draw,8.36,-8.36,lost,morning,True,-0.0031,0.0031,True,0.0000,0.000,False,-0.0784
+c6a8a5ea-da92-4061-a5c4-111a046d75ea,1569843d-24e6-4680-91c7-f8ce450f610e,2026-05-13 19:00:00+00:00,Premiership,Scotland,1x2,away,5.00,9.40,won,,False,0.00913,0.00913,False,,0.000,False,
+dd5aa43a-67e0-4dcf-9e7d-d9958f53e7c0,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 19:00:00+00:00,Ligue 1,France,1x2,draw,7.62,-7.62,lost,morning,True,-0.00648,0.00648,True,0.0000,0.300,True,0.0353
+e3a1406c-f039-419d-ba2c-b013078688ab,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-13 19:00:00+00:00,Premiership,Scotland,1x2,home,5.00,-5.00,lost,,False,-0.02466,0.02466,True,,0.000,False,
+eb5362d7-c7dc-40cb-812a-6ffa52bbf706,5b3bdbd1-eaa6-4ff1-97c1-93c0cdc2ed08,2026-05-13 19:00:00+00:00,Premiership,Scotland,1x2,draw,8.32,-8.32,lost,midday,False,0.00743,0.00743,False,0.0000,0.000,False,0.0993
+92ca2f61-d6b9-4c04-9adb-74b8773d1beb,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 18:00:00+00:00,Cup,Serbia,1x2,draw,4.34,16.06,won,morning,True,-0.00492,0.00492,True,0.0000,0.000,False,-0.0208
+2439116e-b50e-4925-9034-789c00bdea5e,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 17:30:00+00:00,Cup,Iceland,1x2,home,4.38,-4.38,lost,morning,True,0.00254,0.00254,False,0.0000,0.000,False,0.2865
+d02ece1e-6a51-4759-b2ae-6a898b2aea0d,267afbcb-b38e-47d1-9e3b-307c763b49c9,2026-05-13 17:30:00+00:00,Cup,Iceland,1x2,home,5.30,-5.30,lost,morning,True,0.00254,0.00254,False,0.0000,0.000,False,0.2865
+a3e2aeed-1b90-4a2f-8cce-8f10beebc65a,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-13 17:00:00+00:00,Ligat Ha'al,Israel,1x2,home,5.00,-5.00,lost,,False,0.07553,0.07553,False,0.0000,0.000,False,
+a4959292-b16c-41e3-8e00-b67499b80756,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 17:00:00+00:00,Cupa României,Romania,1x2,home,7.07,-7.07,lost,morning,True,-0.01526,0.01526,True,0.0000,0.000,False,0.1151
+9d21f84a-0582-40d2-abcc-62f6c48bae2e,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 17:00:00+00:00,Ettan - Norra,Sweden,1x2,draw,3.83,-3.83,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0085
+bfae7b28-1bff-425b-a37c-af871ec0eb4c,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 17:00:00+00:00,2. Division,Denmark,1x2,home,4.25,-4.25,lost,morning,True,0.00361,0.00361,False,0.0000,0.000,False,-0.0933
+0c7af466-dc10-49f4-bbf8-867cdf4e099a,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-13 17:00:00+00:00,Premier League,Egypt,1x2,home,5.00,-5.00,lost,,False,0.00974,0.00974,False,0.0000,0.000,False,
+bbc4592d-c9fc-4321-a406-0dc7f83e483a,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 16:30:00+00:00,Super League 1,Greece,1x2,draw,3.25,-3.25,lost,morning,True,-0.00445,0.00445,True,0.0000,-0.100,True,-0.0343
+83ff7af9-0e85-4e1c-815a-bbe67777ca68,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 16:00:00+00:00,Ekstraklasa,Poland,1x2,home,3.52,-3.52,lost,morning,True,-0.00927,0.00927,True,0.0000,0.000,False,-0.0155
+97c8ecde-d6b1-4fb2-92d0-ed6ef7ec2242,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 14:00:00+00:00,Super League 1,Greece,1x2,draw,8.64,-8.64,lost,morning,True,0.00616,0.00616,False,0.0000,0.000,False,0.0221
+8e819600-3047-4c83-9ed8-bd4041e3e0fe,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-13 14:00:00+00:00,Super League 1,Greece,1x2,away,9.42,-9.42,lost,morning,True,0.01273,0.01273,False,0.0000,0.000,False,0.0767
+42729e31-736f-4ba8-9d8b-9b9f9a8ba224,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-12 22:00:00+00:00,Primera División,Venezuela,1x2,away,9.36,-9.36,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0171
+c50ea26c-95c3-4ae7-8c7c-1e893a02859b,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-12 19:30:00+00:00,La Liga,Spain,1x2,home,9.45,-9.45,lost,morning,True,-0.00294,0.00294,True,0.0000,0.000,False,0.0276
+1fcc6077-5af5-42cf-b45d-308f9b3c191a,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-12 19:00:00+00:00,Championship,England,1x2,home,9.16,13.83,won,morning,True,0.0,0.0,False,0.0000,0.000,False,-0.0233
+9d7dbcf9-c1b9-4b6c-bc7e-a765bb71a0bd,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-12 19:00:00+00:00,Serie B,Italy,1x2,home,7.43,9.29,won,morning,True,0.03295,0.03295,False,0.0000,0.000,False,0.1307
+a660a765-62e9-4bc2-af18-4a12f1b994da,5b3bdbd1-eaa6-4ff1-97c1-93c0cdc2ed08,2026-05-12 18:45:00+00:00,Premiership,Scotland,1x2,home,8.36,-8.36,lost,midday,False,0.0,0.0,False,0.0000,0.000,False,0.0
+79ed0d1e-6827-4097-9901-a2f6b4b9d242,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-12 18:45:00+00:00,Premiership,Scotland,1x2,home,8.00,-8.00,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0
+56e4ff05-7748-410e-ada7-88c3bcd269ff,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-12 18:45:00+00:00,Premiership,Scotland,1x2,away,7.70,-7.70,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0987
+0760c7b3-1e0a-41d7-8c1f-a4ddcbe583ca,c0f858b3-34af-4bb4-afbb-66105b79ceeb,2026-05-12 18:45:00+00:00,Premiership,Scotland,1x2,home,8.32,-8.32,lost,midday,False,0.0,0.0,False,0.0000,0.000,False,0.0
+5aadba5c-6468-4488-b0e8-5eaacfb08905,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-12 18:00:00+00:00,Pro League,Saudi-Arabia,1x2,away,5.00,-5.00,lost,,False,-0.00685,0.00685,True,,0.000,False,
+37509e70-71c9-43de-8181-34710a5f2771,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-12 15:00:00+00:00,Premier League,Ukraine,1x2,home,4.11,-4.11,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0346
+a6d9f3ab-b1fe-4c58-a570-39ed16b8d6e4,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-11 19:15:00+00:00,Primeira Liga,Portugal,1x2,away,8.56,34.24,won,morning,True,-0.00216,0.00216,True,0.0000,0.000,False,-0.004
+8aef3a68-c398-49f6-b53e-a2d92af4bb7c,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-11 19:15:00+00:00,Primeira Liga,Portugal,1x2,away,8.48,31.80,won,morning,True,-0.00616,0.00616,True,0.0000,0.000,False,0.0021
+8437babc-588f-423f-a050-4651b609030e,03fc1e33-d03b-49f9-a746-ba0afc513b36,2026-05-11 19:15:00+00:00,Primeira Liga,Portugal,1x2,away,5.00,-5.00,lost,,False,-0.00267,0.00267,True,,,False,
+1d242778-199d-4102-8695-dddf78e4650b,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-11 19:00:00+00:00,Championship,England,1x2,away,8.18,31.90,won,morning,True,-0.00385,0.00385,True,0.0000,0.000,False,-0.0448
+18bbcc3a-c673-4437-bb03-0041771c4359,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-11 19:00:00+00:00,La Liga,Spain,1x2,home,5.84,-5.84,lost,morning,True,-0.00325,0.00325,True,0.0000,0.000,False,-0.0078
+a894b223-30c9-48d5-93ec-d9ad9b221afc,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-11 19:00:00+00:00,Premier League,England,1x2,away,6.20,-6.20,lost,morning,True,-0.01465,0.01465,True,0.0000,0.000,False,-0.0335
+554d6a4f-4246-4bf1-852d-199ebe9091c8,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-11 18:30:00+00:00,Segunda División,Spain,1x2,away,8.77,30.26,won,morning,True,0.01182,0.01182,False,0.0000,0.000,False,0.4127
+0c32d26a-7670-4314-ae52-1d14ddf0a5c8,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-11 18:15:00+00:00,Challenge League,Switzerland,1x2,home,3.81,-3.81,lost,morning,True,-0.00145,0.00145,True,-0.0800,-0.080,True,-0.0676
+4864b028-c0b2-44a3-991b-9e480c003333,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-11 17:00:00+00:00,Virsliga,Latvia,1x2,home,4.41,-4.41,lost,morning,True,-0.0357,0.0357,True,0.0000,0.000,False,-0.0857
+44e3cb28-9631-4c1c-902b-254579dc92e2,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-11 15:00:00+00:00,Virsliga,Latvia,1x2,home,3.71,-3.71,lost,morning,True,-0.01001,0.01001,True,0.0000,0.000,False,0.0189
+4ab02f53-c457-42c7-8777-793bf8c80f45,a126179f-acd9-4e8d-af27-db1d0c8ab6d8,2026-05-10 21:00:00+00:00,Primera División,Venezuela,1x2,away,5.30,-5.30,lost,morning,True,0.0,0.0,False,0.0000,0.000,False,0.0417

@@ -1,0 +1,29 @@
+bot,match_id,date,league,country,tier,season,market,selection,odds,model_prob,implied_prob,edge,stake,won,pnl,score_home,score_away
+bot_lower_1x2,c016f850-b6af-41bb-9208-4f018338689b,2026-06-24T11:30:00+00:00,League Two,China,3,2026,1x2,home,2.45,0.4724,0.4082,0.0642,10.0,True,14.5,2,1
+bot_lower_1x2,30f171d0-24b5-46fc-b0f2-652db6e090b8,2026-06-25T02:00:00+00:00,MLS Next Pro,USA,2,2026,1x2,home,2.9,0.4209,0.3448,0.0761,10.0,True,19.0,1,0
+bot_lower_1x2,f18532a3-fd30-42c0-9c95-e50320346f6e,2026-06-30T21:00:00+00:00,Division Intermedia,Paraguay,2,2026,1x2,away,3.0,0.515,0.3333,0.1817,10.0,True,20.0,1,2
+bot_lower_1x2,77d0f466-a39b-4794-9e00-ac0a6acff774,2026-07-01T17:00:00+00:00,Ettan - Södra,Sweden,3,2026,1x2,home,2.15,0.5374,0.4651,0.0723,10.0,True,11.5,3,2
+bot_lower_1x2,f5fc7380-c023-4ad0-b338-61d29b004668,2026-07-01T20:00:00+00:00,USL League Two,USA,4,2026,1x2,home,2.9,0.4515,0.3448,0.1067,10.0,True,19.0,4,2
+bot_lower_1x2,221593f6-e47a-42ca-9ff7-def7294e9d0a,2026-07-02T02:00:00+00:00,USL League Two,USA,4,2026,1x2,home,2.19,0.6176,0.4566,0.161,10.0,False,-10.0,1,4
+bot_lower_1x2,406bca41-5af9-4db4-b2a5-f51ac770fdff,2026-07-02T16:00:00+00:00,Esiliiga A,Estonia,2,2026,1x2,away,3.13,0.4071,0.3195,0.0876,10.0,False,-10.0,2,2
+bot_lower_1x2,147e94b6-b155-4578-b00e-55b3c549aa6a,2026-07-03T01:30:00+00:00,USL League One,USA,3,2026,1x2,away,3.15,0.393,0.3175,0.0755,10.0,True,21.5,1,2
+bot_lower_1x2,2086d0a9-e7d0-4a35-96ec-c9fe1ce25b95,2026-07-03T12:00:00+00:00,1. Division,Kazakhstan,2,2026,1x2,home,3.2,0.4318,0.3125,0.1193,10.0,True,22.0,3,2
+bot_lower_1x2,98b1901a-83a3-4d00-bb75-0a11a556f093,2026-07-03T16:00:00+00:00,Azadegan League,Iran,2,2025,1x2,draw,2.7,0.4463,0.3704,0.0759,10.0,True,17.0,0,0
+bot_lower_1x2,f7ae4dd2-61b0-4e09-a604-31114b914d88,2026-07-03T17:30:00+00:00,Esiliiga A,Estonia,2,2026,1x2,away,3.32,0.5156,0.3012,0.2144,10.0,False,-10.0,3,3
+bot_lower_1x2,33adce4a-4b36-4a98-9c26-c4e4b5d84b43,2026-07-03T19:15:00+00:00,1. Deild,Iceland,2,2026,1x2,home,2.65,0.4747,0.3774,0.0973,10.0,True,16.5,1,0
+bot_lower_1x2,39bf5af3-413c-4baf-b56a-8ed3477ee11f,2026-07-03T19:15:00+00:00,1. Deild,Iceland,2,2026,1x2,away,1.62,0.7143,0.6173,0.097,10.0,True,6.2,2,4
+bot_lower_1x2,b7eaae89-2f91-4cf1-be3d-06fef9747e7a,2026-07-03T23:30:00+00:00,USL League One,USA,3,2026,1x2,away,3.39,0.4527,0.295,0.1577,10.0,True,23.9,2,3
+bot_lower_1x2,94420434-8704-4bf8-aa26-8aca6ae3fa86,2026-07-03T23:30:00+00:00,USL League One,USA,3,2026,1x2,away,2.77,0.5364,0.361,0.1754,10.0,False,-10.0,0,0
+bot_lower_1x2,1ae23c89-c9ee-41b8-b508-8d634fa18783,2026-07-04T10:30:00+00:00,K League 2,South-Korea,2,2026,1x2,home,3.15,0.5406,0.3175,0.2231,10.0,False,-10.0,0,1
+bot_lower_1x2,76ef284a-7aab-4bb1-8a18-33742a19ba62,2026-07-04T11:30:00+00:00,League Two,China,3,2026,1x2,home,3.45,0.4153,0.2899,0.1254,10.0,False,-10.0,4,4
+bot_lower_1x2,6eece560-1d88-4e16-9cd6-ea01161e03b6,2026-07-04T11:30:00+00:00,League Two,China,3,2026,1x2,away,3.5,0.5439,0.2857,0.2582,10.0,True,25.0,1,2
+bot_lower_1x2,eefddb6a-e356-4bca-b25f-0e2d30b5449b,2026-07-04T12:00:00+00:00,Esiliiga B,Estonia,3,2026,1x2,home,2.43,0.5222,0.4115,0.1107,10.0,True,14.3,3,2
+bot_lower_1x2,09dd5654-4d45-4145-aa24-637458570bd0,2026-07-04T12:00:00+00:00,Esiliiga B,Estonia,3,2026,1x2,home,2.23,0.541,0.4484,0.0926,10.0,True,12.3,3,2
+bot_lower_1x2,1036e259-0bbf-4ad4-9cc5-dfaa214cc3a5,2026-07-04T12:00:00+00:00,League Two,China,3,2026,1x2,home,2.18,0.6217,0.4587,0.163,10.0,False,-10.0,0,1
+bot_lower_1x2,6024bbed-aae4-48f6-9119-1a962deb66e6,2026-07-04T13:00:00+00:00,Kakkonen - Lohko B,Finland,3,2026,1x2,home,2.9,0.4064,0.3448,0.0616,10.0,True,19.0,3,0
+bot_lower_1x2,255ad037-4a47-42d8-a8af-debdc7167cf9,2026-07-04T13:00:00+00:00,Kakkonen - Lohko A,Finland,3,2026,1x2,home,3.24,0.5284,0.3086,0.2198,10.0,True,22.4,2,1
+bot_lower_1x2,405d0ec5-66ec-462f-b8d3-69d598628028,2026-07-04T14:00:00+00:00,Kakkonen - Lohko C,Finland,3,2026,1x2,away,3.45,0.4693,0.2899,0.1794,10.0,True,24.5,3,4
+bot_lower_1x2,c81f8b6a-b485-4a43-9180-b3a996cc78db,2026-07-04T16:00:00+00:00,Primera B Metropolitana,Argentina,3,2026,1x2,home,2.04,0.6483,0.4902,0.1581,10.0,True,10.4,4,0
+bot_lower_1x2,9cc7a832-f18f-45a0-b55a-835a42a93d80,2026-07-04T18:00:00+00:00,Primera B Metropolitana,Argentina,3,2026,1x2,home,2.95,0.4559,0.339,0.1169,10.0,False,-10.0,1,2
+bot_lower_1x2,7a42afaa-5bdb-43b7-bba7-eb63845c4f02,2026-07-04T18:30:00+00:00,Primera Nacional,Argentina,2,2026,1x2,draw,2.92,0.45,0.3425,0.1075,10.0,False,-10.0,1,0
+bot_lower_1x2,40be8913-7f30-4b1a-8e64-a8f32cd73947,2026-07-04T18:30:00+00:00,Primera Nacional,Argentina,2,2026,1x2,draw,2.9,0.45,0.3448,0.1052,10.0,False,-10.0,1,0
