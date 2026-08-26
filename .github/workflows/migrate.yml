@@ -110,6 +110,26 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set -euo pipefail
+
+          # MIGRATE-HANG-GUARD-2026-08-26. The job carries timeout-minutes: 15,
+          # but psql itself had no timeouts, so a dead SSH tunnel meant every
+          # invocation below blocked on a socket that would never answer and the
+          # job burned the full 15 minutes before Actions killed it. On
+          # 2026-08-26 that queued every other workflow in the repo behind it —
+          # four commits got no runs at all until the job was cancelled by hand.
+          #
+          # connect_timeout fails fast when the tunnel is gone; statement_timeout
+          # and lock_timeout bound a migration that blocks on a lock instead of
+          # sitting there until the job dies. 10 min is generous for the DDL we
+          # write and still leaves headroom inside the 15-min job budget.
+          export PGCONNECT_TIMEOUT=15
+          export PGOPTIONS="-c statement_timeout=600000 -c lock_timeout=60000"
+
+          # Prove the tunnel answers before iterating; a clear failure here is
+          # far easier to read than N identical connection errors further down.
+          psql "$DATABASE_URL" -tAc "SELECT 1" >/dev/null \
+            || { echo "cannot reach Postgres through the tunnel — aborting"; exit 1; }
+
           applied=0
           for f in supabase/migrations/*.sql; do
             name=$(basename "$f")
