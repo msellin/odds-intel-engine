@@ -19769,7 +19769,7 @@ def _():
         assert market in psrc, f"_is_hit must handle {market}"
 
     # Settlement hook wired
-    settle = pathlib.Path("workers/jobs/settlement.py").read_text()
+    settle = pathlib.Path("workers/jobs/settlement.py")
     s_src = settle.read_text()
     assert "settle_published_picks_for_matches" in s_src, (
         "settlement.py must call settle_published_picks_for_matches() "
@@ -20133,7 +20133,7 @@ def _():
     assert "JSONB" in msrc, "column must be JSONB"
 
     # 2. Settlement job
-    settle = pathlib.Path("workers/jobs/settlement.py").read_text()
+    settle = pathlib.Path("workers/jobs/settlement.py")
     ssrc = settle.read_text()
     assert "_value_bets_cumulative" in ssrc, (
         "settlement must define _value_bets_cumulative function"
