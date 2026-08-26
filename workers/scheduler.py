@@ -646,7 +646,30 @@ def job_weekly_retrain():
 
     def _retrain():
         version = f"v{_date.today().strftime('%Y%m%d')}"
+        # WEEKLY-EVAL-BASELINE-2026-08-26: resolve the baseline the way the
+        # RUNTIME does, not from the global env var alone.
+        #
+        # This read `os.getenv("MODEL_VERSION")` — the global — while inference
+        # resolves per market via _resolve_version(), which checks
+        # MODEL_VERSION_OU_T{tier} then MODEL_VERSION_{MARKET} then the global.
+        # Since 2026-07-19 OU 2.5 has actually been served by v20260719 while
+        # the global stayed v20260712, so every weekly email since has scored
+        # the OU markets against a model that was NOT in production. The
+        # 2026-08-23 email reported v20260823 as +5.42% worse on over25/under25
+        # — measured against the wrong baseline entirely.
+        #
+        # Comparing markets served by different versions against one shared
+        # baseline cannot be made correct, so report the per-market baselines
+        # too and let the eval note record which was used where.
+        from workers.model.xgboost_ensemble import _resolve_version as _rv
         production = os.getenv("MODEL_VERSION", "v14")
+        _per_market = {k: _rv(k) for k in ("1x2", "ou", "goals")}
+        if len(set(_per_market.values())) > 1:
+            console.print(
+                f"[yellow]weekly eval: production is SPLIT across versions "
+                f"{_per_market} — the single-baseline comparison below is only "
+                f"valid for markets served by {production}[/yellow]"
+            )
 
         console.print(f"[bold cyan]Weekly retrain → {version}[/bold cyan]")
         # Subprocess so a hung XGBoost run can't block the scheduler thread

@@ -31217,5 +31217,45 @@ def test_shadow_retire_negative_clv_2026_08_26():
     return "negative-CLV shadow bots retired; BTTS left for the operator to decide"
 
 
+
+@test("WEEKLY-EVAL-BASELINE")
+def test_weekly_eval_baseline_2026_08_26():
+    """WEEKLY-EVAL-BASELINE-2026-08-26 — the weekly retrain eval must notice when
+    production is split across model versions."""
+    import pathlib
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    ev = pathlib.Path("scripts/weekly_eval_and_compare.py").read_text()
+
+    # The scheduler resolved the baseline from the GLOBAL env var only, while
+    # inference routes per market. OU 2.5 has been served by v20260719 since
+    # 2026-07-19 while the global stayed v20260712, so every weekly email since
+    # scored the OU markets against a model that was not live.
+    assert "WEEKLY-EVAL-BASELINE-2026-08-26" in sched
+    assert "_resolve_version as _rv" in sched, \
+        "scheduler must resolve the baseline the way the RUNTIME does"
+    assert '_per_market = {k: _rv(k) for k in ("1x2", "ou", "goals")}' in sched
+    assert "is SPLIT across versions" in sched, "a split baseline must be surfaced"
+
+    assert "warn_split_baseline" in ev, "eval must carry the split check"
+    assert "NOT served by" in ev, \
+        "the eval table must name which market heads are not live on the baseline"
+
+    # The resolver itself, since the whole fix rests on it: a per-market
+    # override must win over the global.
+    import os
+    from workers.model.xgboost_ensemble import _resolve_version
+    prev = os.environ.get("MODEL_VERSION_OU")
+    os.environ["MODEL_VERSION_OU"] = "v_test_ou"
+    try:
+        assert _resolve_version("ou") == "v_test_ou", \
+            "MODEL_VERSION_OU must override the global for the ou head"
+    finally:
+        if prev is None:
+            os.environ.pop("MODEL_VERSION_OU", None)
+        else:
+            os.environ["MODEL_VERSION_OU"] = prev
+    return "weekly eval warns when production is split across model versions"
+
+
 if __name__ == "__main__":
     main()

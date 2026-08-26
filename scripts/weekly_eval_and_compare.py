@@ -262,6 +262,13 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("candidate", help="New candidate model version (e.g. v20260524)")
     p.add_argument("production", help="Currently-promoted version (e.g. v14)")
+    # WEEKLY-EVAL-BASELINE-2026-08-26: the caller passes ONE production version,
+    # but production is routed per market (MODEL_VERSION_OU / _OU_T{tier} /
+    # _1X2 / _BTTS, then the global). When those disagree, a single-baseline
+    # table silently compares some markets against a model that is not live —
+    # which is what happened to OU from 2026-07-19 onward.
+    p.add_argument("--warn-split-baseline", action="store_true", default=True,
+                   help="Warn when production is served by more than one version")
     p.add_argument("--days", type=int, default=14, help="Held-out window in days (default 14)")
     args = p.parse_args()
 
@@ -304,6 +311,20 @@ def main():
     console.print(f"\n[green]Persisted cv_metrics for both versions[/green]")
 
     # Print comparison
+    if args.warn_split_baseline:
+        try:
+            from workers.model.xgboost_ensemble import _resolve_version as _rv
+            live = {k: _rv(k) for k in ("1x2", "ou", "goals")}
+            off = {k: v for k, v in live.items() if v != args.production}
+            if off:
+                console.print(
+                    f"[yellow]WARNING: production is split. These market heads are "
+                    f"NOT served by {args.production}: {off}. Their rows below "
+                    f"compare against a model that is not live.[/yellow]"
+                )
+        except Exception:
+            pass
+
     console.print(f"\n[bold]CANDIDATE {args.candidate} vs PRODUCTION {args.production}[/bold]\n")
     print(f"  {'market':<16}{'log_loss_cand':>14}{'log_loss_prod':>15}{'Δll%':>8}{'Δbrier%':>10}{'verdict':>12}")
     print("  " + "-" * 76)
