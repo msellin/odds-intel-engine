@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  COOLBET-FEED-WATCHDOG-2026-08-26
+
+  Runs on the operator's Mac, not the VPS, because the two remedies it can apply
+  both need to be local: `launchctl` to reload the odds job, and CDP-Chrome on
+  :9222 to mint fresh Imperva cookies.
+
+  Every 20 minutes. The odds job itself runs every 30, and the watchdog only
+  acts after 3h of silence, so this cadence costs nothing and catches an outage
+  within one cycle instead of the 80 hours the 2026-08-26 one went unnoticed.
+
+  Install:
+    cp local/launchd/com.oddsintel.coolbet-feed-watchdog.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.oddsintel.coolbet-feed-watchdog.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.oddsintel.coolbet-feed-watchdog</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/python3</string>
+        <string>-m</string>
+        <string>workers.jobs.coolbet_feed_watchdog</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/margussellin/www/odds-intel-engine</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- Same direct-request path the odds job uses. Without this the
+             session routes through FlareSolverr, which is a different failure
+             surface entirely and not what this watchdog is measuring. -->
+        <key>COOLBET_NO_FS</key>
+        <string>true</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PYTHONPATH</key>
+        <string>/Users/margussellin/www/odds-intel-engine</string>
+    </dict>
+
+    <key>StartInterval</key>
+    <integer>1200</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/margussellin/www/odds-intel-engine/dev/active/coolbet-feed-watchdog.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/margussellin/www/odds-intel-engine/dev/active/coolbet-feed-watchdog.log</string>
+</dict>
+</plist>

@@ -25327,5 +25327,52 @@ def test_kuma_tier1_wired():
 
 
 
+
+@test("COOLBET-FEED-WATCHDOG")
+def test_coolbet_feed_watchdog_2026_08_26():
+    """COOLBET-FEED-WATCHDOG-2026-08-26 — watches the feed's OUTPUT and only
+    self-heals what it can actually fix."""
+    import pathlib
+    from workers.jobs.coolbet_feed_watchdog import (
+        classify, FEED_STALE_H, COOKIE_STALE_H, ODDS_JOB,
+    )
+    src = pathlib.Path("workers/jobs/coolbet_feed_watchdog.py").read_text()
+
+    # The whole point: judge on odds arriving, not on the job looking alive.
+    # On 2026-08-26 launchd reported the job running while it had failed every
+    # 30 minutes for 80 hours.
+    assert "FROM odds_snapshots WHERE bookmaker = 'Coolbet'" in src, \
+        "must measure the feed's output, not process state"
+
+    # Self-heal ONLY the two states with a safe automatic remedy. CDP_DOWN and
+    # BLOCKED must alert and stop — retrying a block hardens it.
+    assert '"NOT_LOADED"' in src and '"STALE_COOKIES"' in src
+    assert '"CDP_DOWN"' in src and '"BLOCKED"' in src
+    heal = src[src.index("def run("):]
+    assert "_reload_job()" in heal and "_refresh_cookies()" in heal
+    blocked_branch = heal[heal.index("else:"):heal.index("return result")]
+    assert "_reload_job" not in blocked_branch and "_refresh_cookies" not in blocked_branch, \
+        "CDP_DOWN / BLOCKED must not trigger a remedy — alert only"
+
+    assert 0 < FEED_STALE_H <= 6, "feed-stale threshold must be sane"
+    assert 0 < COOKIE_STALE_H <= 4, "cookie-stale threshold must be sane"
+    assert ODDS_JOB == "com.oddsintel.coolbet-odds-snapshot"
+
+    # classify() must be pure — safe to call anywhere, takes no action.
+    state, reason = classify()
+    assert state in ("HEALTHY", "NOT_LOADED", "STALE_COOKIES", "CDP_DOWN",
+                     "BLOCKED", "UNKNOWN"), f"unexpected state {state}"
+    assert reason
+
+    plist = pathlib.Path("local/launchd/com.oddsintel.coolbet-feed-watchdog.plist").read_text()
+    assert "<key>COOLBET_NO_FS</key>" in plist, (
+        "the watchdog must use the same direct-request path as the odds job; "
+        "without it the session routes through FlareSolverr and measures a "
+        "different failure surface"
+    )
+    assert "coolbet_feed_watchdog" in plist
+    return "coolbet feed watchdog judges output, self-heals only what it can"
+
+
 if __name__ == "__main__":
     main()
