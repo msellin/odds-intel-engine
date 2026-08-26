@@ -30936,5 +30936,61 @@ def test_shadow_promotion_gate_2026_08_26():
     return "t-statistic promotion gate (|t|>=1.65, n>=200) replaces ROI>=3% at n>=50"
 
 
+
+@test("OU-LINE-INTEGRITY")
+def test_ou_line_integrity_2026_08_26():
+    """SHADOW-OU-EDGE-AUDIT-2026-08-26 — a soft-book OU quote must be priced for
+    the line it is labelled with. Coolbet's 'over 2.5' was pricing like a 3.0."""
+    import pathlib
+    from workers.jobs.daily_pipeline_v2 import _ou_line_is_consistent as ok
+
+    # Real averages from the audit: Coolbet 1.96 on picks labelled
+    # over_under_25/over, where Pinnacle's 2.5 was 1.60 and its 3.5 was 2.44.
+    # 1/1.96 = .510 sits nearer 1/2.44 = .410 than 1/1.60 = .625 -> reject.
+    grouped = {
+        "over_under_25": {"m1": {"over": {"Pinnacle": 1.60}}},
+        "over_under_35": {"m1": {"over": {"Pinnacle": 2.44}}},
+    }
+    assert ok(1.96, "over_under_25", "over", "m1", grouped) is False, \
+        "a 2.5 quote priced like a 3.0 must be rejected"
+    assert ok(1.70, "over_under_25", "over", "m1", grouped) is True, \
+        "a genuinely better 2.5 price must survive"
+    assert ok(2.50, "over_under_35", "over", "m1", grouped) is True, \
+        "a clean 3.5 quote must survive"
+    # No Pinnacle reference -> defer to the other guards, never reject blind.
+    assert ok(1.96, "over_under_25", "under", "m1", grouped) is True
+    assert ok(1.96, "over_under_25", "over", "unknown_match", grouped) is True
+
+    src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    assert "_ou_line_is_consistent(best_odds, mkt, sel, mid, grouped)" in src, \
+        "guard must be wired into the OU line-shop scoring loop"
+    assert '"line_mismatch"' in src, "rejections must be counted in the funnel stats"
+    return "OU line-integrity guard rejects mislabelled totals (Coolbet 35% drift)"
+
+
+@test("SHADOW-DISCRETION-PANEL")
+def test_shadow_discretion_panel_2026_08_26():
+    """SHADOW-DISCRETION-BLEED-2026-08-26 — placed-vs-untouched is surfaced on
+    the admin page, and surfaced with its uncertainty rather than as a fact."""
+    page = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
+    assert "Discipline check" in page, "discipline panel must be rendered"
+    assert "discPlaced" in page and "discUntouched" in page
+    # The finding is suggestive, not established. The page must say so — an
+    # overstated warning is its own error.
+    # JSX wraps the sentence across lines, so match on normalised whitespace.
+    flat = " ".join(page.split())
+    assert "not yet statistically established" in flat, \
+        "panel must not present the gap as established"
+    assert "of marks" in flat and "discPlaced.days" in page, \
+        "panel must show how thin the sample is"
+    assert "id, bot_id, match_id" in page, \
+        "shadow_bets select must include id so marks can be joined"
+    import pathlib
+    rep = pathlib.Path("scripts/discretion_bleed_report.py").read_text()
+    assert "CLUSTERED BY DAY" in rep, "the clustered test must exist"
+    assert "shadow_bets_unique" in rep, "report must use the deduped view"
+    return "placed-vs-untouched surfaced with day-clustered caveat"
+
+
 if __name__ == "__main__":
     main()

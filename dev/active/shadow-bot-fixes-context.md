@@ -40,3 +40,37 @@ Tasks 1 (CLV), 2 (Shin de-vig), 3 (promotion gate) shipped. 4 (discretion),
 ## Next steps
 - Read the two running replays (Shin vs proportional; retired-bot counterfactual).
 - Task 5 OU audit; task 4 UI surface.
+
+## Round 2 findings (2026-08-26, later)
+
+6. Bookmaker sharpness: my first ranking used raw Brier per book and put
+   Pinnacle 14th of 15. That was INVALID — each book prices a different slate,
+   so Brier partly measures how easy its games are. Rewritten as a paired
+   comparison on shared matches: **every one of the 15 books is worse than or
+   equal to Pinnacle.** Closest (indistinguishable): 10Bet +0.000026 (t=0.26),
+   Marathonbet +0.000032, 1xBet +0.000048, Superbet +0.000089. Significantly
+   worse: Bet365 (t=2.23), SBO (1.96), 888Sport (3.12), Unibet (3.62),
+   Coolbet (3.84, +0.003095 — 5x the next worst).
+   Consistent with the consensus result: every individual book is worse than
+   Pinnacle, yet an AVERAGE of them slightly beats it. Classic wisdom-of-crowds;
+   averaging cancels idiosyncratic error.
+
+7. OU "edge" root cause found and it is one book. Auditing 187 settled OU
+   line-shop picks against Pinnacle's full ladder:
+       Unibet 82 picks / 100% match stated line
+       10Bet  43 / 91%
+       Coolbet 34 / 65%   <- 11 of 12 drifts land on OU 3.5
+       Betano 14 / 100%, Marathonbet 10 / 100%, 888Sport 4 / 100%
+   On picks labelled over_under_25/over, Coolbet averaged 1.96 while Pinnacle's
+   2.5 averaged 1.60 and its 3.5 averaged 2.44 — Coolbet's "over 2.5" prices
+   like a 3.0. Coolbet is the operator's real placement venue.
+   COOLBET-OU-LINE-MISLABEL-GUARD-2026-08-22 misses this because a uniformly
+   shifted single line stays internally monotone.
+   Fix: `_ou_line_is_consistent()` in daily_pipeline_v2 — bookmaker-agnostic,
+   tests the price not the source.
+
+## Still open
+- The Coolbet INGESTION bug itself (why its OU line labels are shifted) is not
+  fixed — only the downstream consumption is guarded. Needs a Coolbet-side
+  investigation; filed separately.
+- Long-horizon Shin-vs-proportional replay was still running at hand-off.

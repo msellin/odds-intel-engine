@@ -4405,6 +4405,61 @@ _PIN_OU_MAX_VIG = 0.10       # skip if Pinnacle's implied prob sum > 1.10 (10% v
 _PIN_OU_OUTLIER_MULT = 1.30  # reject soft-book odds > anchor × 1.30 (matches ODDS-OUTLIER-FILTER for OU)
 
 
+def _ou_line_is_consistent(
+    best_odds: float,
+    stated_market: str,
+    selection: str,
+    mid: str,
+    grouped: dict,
+) -> bool:
+    """SHADOW-OU-EDGE-AUDIT-2026-08-26 — reject a soft-book OU quote that is
+    priced like a DIFFERENT total than the one it is labelled with.
+
+    The OU line-shop bots were selecting on an 11-13% de-vigged edge against
+    Pinnacle that never closed. A real mispricing gets arbitraged before
+    kickoff; one that survives is usually not a mispricing at all. Auditing 187
+    settled picks against Pinnacle's full OU ladder found the cause, and it is
+    one book:
+
+        bookmaker      picks   quote matches its stated line
+        Unibet            82                          100%
+        10Bet             43                           91%
+        Coolbet           34                           65%   <-- 11 of 12 drifts land on OU 3.5
+        Betano            14                          100%
+        Marathonbet       10                          100%
+
+    Concretely, on picks labelled over_under_25/over, Coolbet averaged 1.96
+    while Pinnacle's 2.5 line averaged 1.60 and its 3.5 line averaged 2.44 —
+    Coolbet's "over 2.5" is priced nearer a 3.0 total. That is not value, it is
+    an accounting artefact, and it matters because Coolbet is the venue the
+    operator actually places at ([[feedback_odds_quality_recurring]] — wrong OU
+    odds have been flagged roughly ten times).
+
+    COOLBET-OU-LINE-MISLABEL-GUARD-2026-08-22 already rejects a non-monotone OU
+    ladder, but that only fires when several lines from one book disagree with
+    each other. A single line that is uniformly shifted stays internally
+    monotone and slips through, which is why this cross-book check is needed.
+
+    Deliberately bookmaker-agnostic: it tests the price, not the source, so a
+    future feed developing the same fault is caught without another patch.
+    """
+    stated_pin = ((grouped.get(stated_market, {}).get(mid, {}) or {})
+                  .get(selection, {}) or {}).get("Pinnacle")
+    if not stated_pin or stated_pin <= 1.0 or best_odds <= 1.0:
+        return True  # nothing to compare against — leave the other guards to it
+
+    own_gap = abs(1.0 / best_odds - 1.0 / stated_pin)
+    for other_market, per_match in grouped.items():
+        if other_market == stated_market:
+            continue
+        other_pin = ((per_match.get(mid, {}) or {}).get(selection, {}) or {}).get("Pinnacle")
+        if not other_pin or other_pin <= 1.0:
+            continue
+        if abs(1.0 / best_odds - 1.0 / other_pin) < own_gap:
+            return False
+    return True
+
+
 def _run_pin_ou_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_telegram: bool = True) -> int:
     """BOT-PIN-OU-SHADOW-2026-08-21 — shadow-log OU 2.5 + OU 3.5 picks
     on matches where Pinnacle has odds but existing bots don't fire.
@@ -4524,7 +4579,8 @@ def _run_pin_ou_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_
     now_iso = now_utc.isoformat()
     rows_by_bot: dict[str, list[dict]] = _dd(list)
     stats = {"scored": 0, "no_pin": 0, "high_vig": 0, "no_soft": 0,
-             "outlier": 0, "odds_range": 0, "low_edge": 0, "wrong_tier": 0}
+             "outlier": 0, "odds_range": 0, "low_edge": 0, "wrong_tier": 0,
+             "line_mismatch": 0}
 
     for cfg in _PIN_OU_SHADOW_CONFIGS:
         mkt = cfg["market"]
@@ -4571,6 +4627,10 @@ def _run_pin_ou_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_
                     continue
                 if not (_PIN_OU_ODDS_MIN <= best_odds <= _PIN_OU_ODDS_MAX):
                     stats["odds_range"] += 1
+                    continue
+                # The quote must actually be for the line it claims to be for.
+                if not _ou_line_is_consistent(best_odds, mkt, sel, mid, grouped):
+                    stats["line_mismatch"] = stats.get("line_mismatch", 0) + 1
                     continue
 
                 # De-vigged Pinnacle probability — see _LINESHOP_TRUE_EDGE_MIN.
