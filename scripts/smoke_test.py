@@ -31019,5 +31019,37 @@ def test_shadow_discretion_panel_2026_08_26():
     return "placed-vs-untouched surfaced with day-clustered caveat"
 
 
+
+@test("META-MODEL-CLV-TARGET")
+def test_meta_model_clv_target_2026_08_26():
+    """META-MODEL-CLV-TARGET-2026-08-26 — the meta-model trains on the DE-VIGGED
+    Pinnacle CLV, bounded to sane values."""
+    import pathlib
+    src = pathlib.Path("scripts/train_b_ml3.py").read_text()
+
+    assert "COALESCE(sb.clv_pinnacle_devig, sb.clv_pinnacle)::float as clv_pinnacle" in src, (
+        "bets-mode must train on the de-vigged CLV. The raw column carries "
+        "Pinnacle's overround (+12.24 pct mean vs +5.39 pct de-vigged) and, before "
+        "PIN-CLOSE-PRE-KO-FALLBACK, could be sourced from an in-play tick."
+    )
+    assert "abs(COALESCE(sb.clv_pinnacle_devig, sb.clv_pinnacle)) <= 0.50" in src, (
+        "label must be bounded — 7.8 pct of backfilled rows carried impossible "
+        "values running to +397 pct, all on longshots, and they dominate the fit"
+    )
+    # psycopg2 treats % as a parameter placeholder in these queries; a stray one
+    # in a SQL comment raises IndexError at execute time, which is how this
+    # very query broke while being written.
+    # Slice the SQL literal itself, not the enclosing function — a % in the
+    # Python docstring is harmless, one inside the query is not.
+    q_start = src.index('rows = execute_query(f"""', src.index("def _load_bets_mode_data"))
+    q = src[q_start: src.index("ORDER BY sb.created_at ASC", q_start)]
+    assert "%" not in q, "no bare % in the bets-mode SQL — psycopg2 reads it as a placeholder"
+
+    backfill = pathlib.Path("scripts/backfill_simulated_clv_devig.py").read_text()
+    assert "clv_pinnacle_devig = v.clv" in backfill, "backfill must target the devig column"
+    assert "simulated_bets" in backfill
+    return "meta-model trains on de-vigged, bounded Pinnacle CLV"
+
+
 if __name__ == "__main__":
     main()

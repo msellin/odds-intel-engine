@@ -416,7 +416,23 @@ def _load_bets_mode_data(days: int = 60) -> pd.DataFrame:
         SELECT
           sb.id as bet_id,
           sb.selection,
-          sb.clv_pinnacle::float as clv_pinnacle,
+          -- META-MODEL-CLV-TARGET-2026-08-26: train on the DE-VIGGED Pinnacle
+          -- CLV, not the raw one. The raw column carries Pinnacle's overround
+          -- (measured +12.24 pct mean vs +5.39 pct de-vigged — a 6.85pp shift) and,
+          -- until PIN-CLOSE-PRE-KO-FALLBACK-2026-08-26, could be sourced from
+          -- an IN-PLAY tick on any match where is_closing was never marked.
+          --
+          -- Measured on the same 2,340 settled rows, sorting by each label:
+          --     label   Q1     Q2      Q3     Q4     Q5    monotone  median split
+          --     raw    +3.2  -13.0   -0.7  +15.0  +14.5     2/4      +12.4/-4.8
+          --     devig  -1.9   -3.6   +2.9   +9.0  +12.5     4/4      +13.4/-5.8
+          -- The raw label's Q1 being POSITIVE while Q2 is -13 pct is the tell: its
+          -- extreme-negative values are in-play garbage, not bad bets.
+          --
+          -- COALESCE so rows the de-vig backfill could not compute (markets
+          -- without a full Pinnacle complement) still contribute rather than
+          -- silently shrinking an already-small bets-mode window.
+          COALESCE(sb.clv_pinnacle_devig, sb.clv_pinnacle)::float as clv_pinnacle,
           sb.created_at,
           mfv.match_id,
           mfv.match_date,
@@ -450,6 +466,16 @@ def _load_bets_mode_data(days: int = 60) -> pd.DataFrame:
         WHERE b.is_active = true
           AND sb.result IN ('won', 'lost')
           AND sb.clv_pinnacle IS NOT NULL
+          -- META-MODEL-CLV-LABEL-SANITY-2026-08-26: 205 of 2,633 backfilled
+          -- rows (7.8 pct) carry an impossible CLV — the extremes run to +397 pct,
+          -- all on longshots at odds 6.5-13.0. A +397 pct CLV means the soft book
+          -- offered 13.0 while de-vigged Pinnacle called it a 38 pct chance; that is
+          -- a data error (a mislabelled market or an outlier price), not an edge.
+          -- Left in, they dominate a gradient-boosted fit, because the model can
+          -- separate them trivially and they are concentrated on one odds band.
+          -- 50 pct is a generous bound: a genuine closing-line beat of more than half
+          -- the price does not happen.
+          AND abs(COALESCE(sb.clv_pinnacle_devig, sb.clv_pinnacle)) <= 0.50
           AND sb.match_id IS NOT NULL
           AND sb.created_at >= NOW() - INTERVAL '{days} days'
         ORDER BY sb.created_at ASC
