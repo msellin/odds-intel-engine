@@ -100,3 +100,22 @@ against a known baseline — the run was already red, so "still red" proved
 nothing. Comparing failing test NAMES against a baseline commit is the only
 thing that worked. That is a direct consequence of CI-SMOKE-GATE-DEAD: a
 permanently-red gate cannot signal a regression.
+
+## Shin replay corroboration (final, 2026-05-01 → 08-27)
+| bot | devig | n | ROI | SE | t | hit | avg odds |
+|---|---|---|---|---|---|---|---|
+| pin_1x2_home | proportional | 493 | +6.15% | 7.36 | +0.84 | 33.5% | 3.60 |
+| pin_1x2_home | shin | 582 | +6.68% | 5.76 | +1.16 | 43.1% | 2.86 |
+| ou35 | proportional | 483 | +0.10% | 5.84 | +0.02 | 40.4% | 2.74 |
+| ou35 | shin | 378 | +1.58% | 6.06 | +0.26 | 46.0% | 2.38 |
+
+ROI deltas are noise. The mechanism signal is the avg-odds drop on BOTH bots —
+longshot selection removed — plus the hit-rate rise and lower SE. Shin is not a
+stricter filter: +89 picks on 1X2, -105 on OU 3.5.
+
+## Also fixed en route
+PIN-CLOSE-PRE-KO-FALLBACK-2026-08-26 (`2959c9d`) — get_pinnacle_closing_odds
+fallback had no kickoff cutoff and could return an IN-PLAY tick as a closing
+line. Same bug CLOSING-PRE-KO-FALLBACK fixed for get_closing_odds in May; the
+Pinnacle variant was missed. Found by running the live path over backfilled rows
+and finding one disagreed (+12.1% vs +17.9%). Now 0/6 mismatches.

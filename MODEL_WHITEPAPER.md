@@ -1327,6 +1327,28 @@ made money, and a method better calibrated over 20 months and ~95k outcomes will
 still be better calibrated next month. Reproduce with
 `scripts/devig_calibration_backtest.py`.
 
+**Corroboration (not the basis for the decision).** Point-in-time replay of both
+live line-shop configs over 2026-05-01 → 08-27, `scripts/lineshop_replay.py`:
+
+| bot | de-vig | n | ROI | SE | t | hit | avg odds |
+|---|---|---:|---:|---:|---:|---:|---:|
+| bot_pin_1x2_home_v1 | proportional | 493 | +6.15% | 7.36% | +0.84 | 33.5% | 3.60 |
+| bot_pin_1x2_home_v1 | **Shin** | 582 | +6.68% | 5.76% | +1.16 | 43.1% | **2.86** |
+| bot_sweep_ou35_v1 | proportional | 483 | +0.10% | 5.84% | +0.02 | 40.4% | 2.74 |
+| bot_sweep_ou35_v1 | **Shin** | 378 | +1.58% | 6.06% | +0.26 | 46.0% | **2.38** |
+
+The ROI differences are inside the noise and prove nothing on their own — as
+expected at these sample sizes, and the reason the decision rests on calibration.
+What the replay *does* show is the mechanism operating exactly as predicted, on
+two independent bots: **average odds fall** (3.60 → 2.86 and 2.74 → 2.38) because
+the manufactured longshot edges stop being selected, and hit rate rises
+correspondingly (33.5% → 43.1%, 40.4% → 46.0%). Standard error on the 1X2 bot
+drops from 7.36% to 5.76% — the same signal carried with less variance.
+
+Note Shin is **not simply a stricter filter**: it fires *more* picks on 1X2
+(493 → 582) and fewer on OU 3.5 (483 → 378). It reshapes selection rather than
+shrinking it, which was not predictable from the theory alone.
+
 ### 10c.2c Line integrity — the quote must be for the line it claims
 
 The OU line-shop bots selected on an 11–13% de-vigged edge against Pinnacle that
