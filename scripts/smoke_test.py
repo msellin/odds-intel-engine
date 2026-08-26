@@ -25463,5 +25463,53 @@ def test_coolbet_ou_line_shift_2026_08_26():
     return "bracketed Coolbet team totals no longer clobber the full-match OU ladder"
 
 
+
+@test("COOLBET-VALUE-BOT")
+def test_coolbet_value_bot_2026_08_26():
+    """COOLBET-VALUE-BOT-2026-08-26 — bets COOLBET's own price, valued against
+    de-vigged Pinnacle. The only bot whose quote the operator can actually take."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+
+    assert "_COOLBET_VALUE_BOT = \"bot_coolbet_value_v1\"" in src
+    assert "def _run_coolbet_value_pass(" in src
+    fn = src[src.index("def _run_coolbet_value_pass("):src.index("def _run_pin_ou_shadow_pass(")]
+
+    # It must price at Coolbet and NOT take a max across books — that is the
+    # entire reason it exists. 57 of 58 sweep/pin picks were negative-EV at
+    # Coolbet on 2026-08-26 despite showing +7% on the page.
+    assert '"recommended_bookmaker": "Coolbet"' in fn, \
+        "every pick must be quoted at Coolbet"
+    assert "max(" not in fn, "must not take a best-of-N price"
+
+    # Fair value must come from Pinnacle. Valuing Coolbet against Coolbet is
+    # circular — a book can never look mispriced against itself.
+    assert "_devig(pin)" in fn, "fair value must be the Shin-de-vigged Pinnacle close"
+    assert "'Coolbet', 'Pinnacle'" in fn, "must read both books"
+
+    # Guards carried over from the sibling bots.
+    assert "_LINESHOP_TRUE_EDGE_MIN" in fn, "must use the shared 3% post-vig floor"
+    assert "_LINESHOP_TIERS" in fn, "must keep the tier 1-2 gate"
+    assert "1.35 if mkt ==" in fn, (
+        "outlier guard required — COOLBET-OU-LINE-SHIFT found a bracketed TEAM "
+        "total sitting in the full-match OU slot at 17.00 vs Pinnacle's 4.19"
+    )
+    # One side per total, or we pay the vig twice for a guaranteed loss.
+    assert "edge > best[\"edge\"]" in fn, "must keep only the best side per market"
+
+    # Wired into BOTH cohorts, error-isolated so a Coolbet outage cannot take
+    # the pipeline down.
+    # Count CALL sites only — the def line matches a naive substring too.
+    calls = src.count("            _run_coolbet_value_pass(today_str")
+    assert calls == 2, (
+        f"must run on the morning cohort AND the shadow refresh (found {calls})"
+    )
+    assert "Coolbet-value bot failed (non-critical)" in src, "must be error-isolated"
+
+    mig = pathlib.Path("supabase/migrations/287_bot_coolbet_value.sql").read_text()
+    assert "bot_coolbet_value_v1" in mig and "ON CONFLICT (name) DO NOTHING" in mig
+    return "Coolbet-priced value bot: quotes only obtainable prices"
+
+
 if __name__ == "__main__":
     main()

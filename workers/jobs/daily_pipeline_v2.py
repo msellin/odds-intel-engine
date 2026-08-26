@@ -3797,6 +3797,13 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             _run_pin_1x2_shadow_pass(today_str, _shadow_cohort_tag, notify_telegram=False)
         except Exception as _e:
             console.print(f"[yellow]Pin-1X2 shadow bots failed (non-critical): {_e}[/yellow]")
+        try:
+            # COOLBET-VALUE-BOT-2026-08-26: the only bot whose price the operator
+            # can actually take. Error-isolated like its siblings — a Coolbet
+            # feed outage must never take the pipeline down with it.
+            _run_coolbet_value_pass(today_str, _shadow_cohort_tag, notify_telegram=False)
+        except Exception as _e:
+            console.print(f"[yellow]Coolbet-value bot failed (non-critical): {_e}[/yellow]")
         # Skip exposure check + ops_snapshot — shadow runs piggyback on the real run's snapshot.
         return
 
@@ -3916,6 +3923,10 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             _run_pin_1x2_shadow_pass(today_str, "morning", notify_telegram=True)
         except Exception as e:
             console.print(f"[yellow]Pin-1X2 shadow bots failed (non-critical): {e}[/yellow]")
+        try:
+            _run_coolbet_value_pass(today_str, "morning", notify_telegram=True)
+        except Exception as e:
+            console.print(f"[yellow]Coolbet-value bot failed (non-critical): {e}[/yellow]")
 
     # 11.6: Cross-match correlation check — warn about concentrated exposure
     _check_exposure_concentration()
@@ -4554,6 +4565,154 @@ def _ou_line_is_consistent(
         if abs(1.0 / best_odds - 1.0 / other_pin) < own_gap:
             return False
     return True
+
+
+# ─── COOLBET-VALUE-BOT-2026-08-26 ────────────────────────────────────────────
+#
+# The one bot whose quoted price the operator can actually take.
+#
+# Every other line-shop bot gates on the best of six accessible books. He places
+# at Coolbet. Measured on the live list 2026-08-26, 57 of 58 picks were
+# negative-EV at Coolbet despite showing +7% on the page — bot_sweep_ou25_v1
+# showed +7.0% and was -7.0% at Coolbet, bot_sweep_ou35_v1 +7.5% and -5.2%.
+#
+# Not because Coolbet is uncompetitive: it is the best price 38.1% of the time,
+# more often than any book in the set. The bots surface the 62% where somebody
+# else led. Taking the max also selects for whichever book is most WRONG, and
+# those are the worst-calibrated ones (book_bias_probe). Fixing the shop removes
+# that selection effect: the edge measured is the edge received.
+#
+# Fair value still comes from de-vigged Pinnacle, NOT from Coolbet — a book can
+# never look mispriced against itself. Coolbet decides what we pay; Pinnacle
+# decides what it is worth. Only the first has to be reachable.
+_COOLBET_VALUE_BOT = "bot_coolbet_value_v1"
+_COOLBET_MARKETS = ("1x2", "over_under_25", "over_under_35")
+_COOLBET_ODDS_MIN, _COOLBET_ODDS_MAX = 1.30, 6.00
+
+
+def _run_coolbet_value_pass(today_str: str, cohort_tag: str = "morning",
+                            notify_telegram: bool = True) -> int:
+    """Fire picks priced at COOLBET, valued against the de-vigged Pinnacle close."""
+    from workers.api_clients.db import execute_query
+    from workers.api_clients.supabase_client import bulk_store_shadow_bets
+    import uuid as _uuid
+
+    bid = _get_bot_id_by_name(_COOLBET_VALUE_BOT)
+    if not bid:
+        console.print("[dim]coolbet-value: bot not registered — skip[/dim]")
+        return 0
+
+    next_day_str = _next_day(today_str)
+    matches_raw = execute_query(
+        """SELECT m.id::text AS id, m.date, l.tier AS tier
+             FROM matches m JOIN leagues l ON m.league_id = l.id
+            WHERE m.date >= %s AND m.date < %s AND m.status = 'scheduled'
+              AND l.tier = ANY(%s)""",
+        (f"{today_str}T00:00:00Z", f"{next_day_str}T00:00:00Z",
+         list(_LINESHOP_TIERS)),
+    )
+    if not matches_raw:
+        return 0
+    now_utc = datetime.now(timezone.utc)
+    match_ids = [m["id"] for m in matches_raw if m["date"] > now_utc]
+    if not match_ids:
+        return 0
+
+    # Coolbet AND Pinnacle only. Coolbet is not in the AF feed at all — those
+    # rows come from the Mac launchd scraper at :03/:33 — so a stale scraper
+    # silently empties this bot. COOLBET-FEED-WATCHDOG exists for that.
+    odds_raw = execute_query(
+        """SELECT DISTINCT ON (match_id, market, selection, bookmaker)
+                  match_id::text AS match_id, market, selection, bookmaker, odds
+             FROM odds_snapshots
+            WHERE match_id = ANY(%s::uuid[]) AND is_closing = false
+              AND market = ANY(%s::text[])
+              AND bookmaker IN ('Coolbet', 'Pinnacle')
+            ORDER BY match_id, market, selection, bookmaker, timestamp DESC""",
+        (match_ids, list(_COOLBET_MARKETS)),
+    )
+    if not odds_raw:
+        return 0
+
+    grouped: dict = {}
+    for row in odds_raw:
+        try:
+            o = float(row["odds"])
+        except (TypeError, ValueError):
+            continue
+        grouped.setdefault(row["market"], {}).setdefault(row["match_id"], {}) \
+               .setdefault(str(row["selection"]).lower(), {})[row["bookmaker"]] = o
+
+    now_iso = now_utc.isoformat()
+    rows: list[dict] = []
+    stats = {"scored": 0, "no_coolbet": 0, "no_pin": 0, "odds_range": 0,
+             "outlier": 0, "low_edge": 0}
+
+    for mkt, per_match in grouped.items():
+        sides = ["home", "draw", "away"] if mkt == "1x2" else ["over", "under"]
+        for mid, sels in per_match.items():
+            pin = [(sels.get(s) or {}).get("Pinnacle") for s in sides]
+            if any(p is None or p <= 1.0 for p in pin):
+                stats["no_pin"] += 1
+                continue
+            probs = _devig(pin)          # Shin — see workers/model/devig.py
+            if probs is None:
+                continue
+
+            best = None
+            for i, s in enumerate(sides):
+                cb = (sels.get(s) or {}).get("Coolbet")
+                if not cb or cb <= 1.0:
+                    stats["no_coolbet"] += 1
+                    continue
+                if not (_COOLBET_ODDS_MIN <= cb <= _COOLBET_ODDS_MAX):
+                    stats["odds_range"] += 1
+                    continue
+                # Same outlier guard as the other line-shop bots: a Coolbet
+                # quote far above Pinnacle is far more often a mislabelled
+                # market than free money — see COOLBET-OU-LINE-SHIFT, where a
+                # bracketed TEAM total sat in the full-match OU slot at 17.00
+                # against Pinnacle's 4.19.
+                mult = 1.35 if mkt == "1x2" else 1.30
+                if cb > pin[i] * mult:
+                    stats["outlier"] += 1
+                    continue
+                edge = cb * probs[i] - 1.0
+                if edge < _LINESHOP_TRUE_EDGE_MIN:
+                    stats["low_edge"] += 1
+                    continue
+                if best is None or edge > best["edge"]:
+                    best = {"sel": s, "odds": cb, "edge": edge, "prob": probs[i]}
+
+            # One side per market per match — betting both sides of a total is
+            # paying the vig twice for a guaranteed loss.
+            if best:
+                stats["scored"] += 1
+                rows.append({
+                    "bot_id": bid, "match_id": mid, "market": mkt,
+                    "selection": best["sel"], "odds": best["odds"],
+                    "model_prob": best["prob"], "calibrated_prob": best["prob"],
+                    "edge": round(best["edge"], 4), "kelly_fraction": None,
+                    "placed_at": now_iso, "timing_cohort": cohort_tag,
+                    # Always Coolbet. That is the entire point of this bot.
+                    "recommended_bookmaker": "Coolbet",
+                })
+
+    if not rows:
+        console.print(f"[dim]coolbet-value [{cohort_tag}]: 0 picks ({stats})[/dim]")
+        return 0
+
+    run_id = str(_uuid.uuid4())
+    n = bulk_store_shadow_bets(rows, run_id, cohort_tag)
+    console.print(f"[dim]coolbet-value [{cohort_tag}]: {n} pick(s) written "
+                  f"(scored {stats['scored']}, run_id={run_id[:8]})[/dim]")
+    if notify_telegram and n:
+        try:
+            from workers.notify.telegram import notify_shadow_picks as _notify
+            _notify(_COOLBET_VALUE_BOT, rows)
+        except Exception as _e:
+            console.print(f"[yellow]coolbet-value telegram failed ({_e})[/yellow]")
+    return n
 
 
 def _run_pin_ou_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_telegram: bool = True) -> int:
