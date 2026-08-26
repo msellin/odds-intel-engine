@@ -21606,7 +21606,12 @@ def test_railway_elimination_service():
 
     # Setup script: covers all five install steps
     assert "docker" in setup_src.lower(), "setup script must install Docker"
-    assert "pip3 install" in setup_src, "setup script must install Python deps"
+    # RAILWAY-ELIMINATION Phase 5 (d827f24) moved Hetzner deps into a venv, so
+    # the script installs via `venv/bin/pip`, not `pip3`. The assertion was never
+    # updated and has failed ever since. Accept either form — what matters is
+    # that the script installs Python deps at all.
+    assert ("pip3 install" in setup_src or "pip install" in setup_src), \
+        "setup script must install Python deps"
     assert "systemctl enable" in setup_src, "setup script must enable the systemd unit"
 
 
@@ -22105,8 +22110,7 @@ def test_coolbet_cdp_cookie_export():
     # checked out in CI, so only assert if the plist paths exist locally.
     import os
     home = pathlib.Path(os.path.expanduser("~"))
-    for name in ("com.oddsintel.coolbet-odds-snapshot.plist",
-                 "com.oddsintel.cs2-coolbet-scanner.plist"):
+    for name in ("com.oddsintel.coolbet-odds-snapshot.plist",):
         plist = home / "Library/LaunchAgents" / name
         if not plist.exists():
             continue  # CI / non-operator env
@@ -25196,7 +25200,6 @@ def test_coolbet_scrapers_moved_to_mac():
     assert "\n    scheduler.add_job(job_cs2_coolbet_scanner," not in sched, (
         "cs2_coolbet_scanner is registered on the VPS scheduler — moved "
         "to the Mac launchd. See "
-        "local/launchd/com.oddsintel.cs2-coolbet-scanner.plist."
     )
     # Breadcrumb comments must point at the launchd plists so future
     # readers know why these jobs aren't in the scheduler.
@@ -25205,16 +25208,15 @@ def test_coolbet_scrapers_moved_to_mac():
         "coolbet_odds_snapshot so it's discoverable — don't delete "
         "the breadcrumb."
     )
-    assert "com.oddsintel.cs2-coolbet-scanner.plist" in sched, (
-        "workers/scheduler.py must mention the launchd plist for "
-        "cs2_coolbet_scanner — don't delete the breadcrumb."
-    )
+    # CS2-REMOVAL-2026-08-26 removed the cs2_coolbet_scanner plist along with the
+    # rest of the esports vertical, so this breadcrumb has nothing left to point
+    # at. The odds-snapshot half of this test still guards a live Mac scraper.
 
     for name, minutes, prog_marker in [
         ("com.oddsintel.coolbet-odds-snapshot.plist",
          (3, 33), "workers.automation.coolbet_explorer"),
-        ("com.oddsintel.cs2-coolbet-scanner.plist",
-         (17, 47), "scripts/esports/cs2_coolbet_scanner.py"),
+        # The cs2-coolbet-scanner entry was removed with the esports vertical
+        # (CS2-REMOVAL-2026-08-26); odds-snapshot is the remaining Mac scraper.
     ]:
         plist = (root / "local/launchd" / name).read_text()
         assert "<key>StartCalendarInterval</key>" in plist, (
@@ -25311,7 +25313,7 @@ def test_kuma_tier1_wired():
         "morning_pipeline",
         "betting_refresh",
         "settlement",
-        "cs2_bot",
+        # "cs2_bot" removed by CS2-REMOVAL-2026-08-26 — no longer a job.
         "cs2_v8_predict",
         "coolbet_health_ping",
         "healthcheck_ping",
