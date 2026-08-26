@@ -278,6 +278,25 @@ _COMBINED_MARKET_HINTS = (" & ", " and over", " and under", "+ over", "+ under")
 _NON_GOALS_TOTAL_HINTS = (
     # team-total qualifiers
     "home team", "away team", "by home", "by away", "home total", "away total",
+    # COOLBET-OU-LINE-SHIFT-2026-08-26: Coolbet's actual name for a team total
+    # is "[Home] Total Goals" / "[Away] Total Goals" — BRACKETED, matching none
+    # of the qualifiers above. It carries market_type_id 1551, which is not in
+    # _MTID_OU, so it fell through to the name-fallback, matched "total goals",
+    # and was written into the FULL-MATCH OU slot at the same `line` as the real
+    # ladder.
+    #
+    # A single team going over 4.5 is far rarer than the match doing so, so the
+    # prices are wildly apart and the mislabelled row looks like enormous value:
+    # Grêmio Anápolis v Goianésia stored "over 4.5" at 17.00 while Pinnacle's
+    # match line was 4.19 (+306%). Fleet-wide this showed as OU 4.5 sitting
+    # +32% above Pinnacle on average and OU 3.5 +12%, while OU 1.5 and 2.5 —
+    # lines a team total rarely competes on — were normal.
+    #
+    # Same family of bug as COOLBET-COMBINED-MARKET-FILTER (BTTS & Over 2.5
+    # clobbering pure BTTS) and COOLBET-HALF-MATCH-FILTER (1st-half markets
+    # clobbering full-match): a market whose NAME contains ours, at a `line`
+    # that collides with ours.
+    "[home]", "[away]", "[home ", "[away ",
     # parity
     "odd/even", "odd / even", "odd or even",
     # non-goal totals

@@ -25426,5 +25426,42 @@ def test_model_ab_ensemble_leg_2026_08_26():
     return "A/B now scores the blended ensemble the bots actually bet"
 
 
+
+@test("COOLBET-OU-LINE-SHIFT")
+def test_coolbet_ou_line_shift_2026_08_26():
+    """COOLBET-OU-LINE-SHIFT-2026-08-26 — Coolbet's bracketed TEAM totals must
+    not land in the full-match OU slot."""
+    import pathlib
+    from workers.automation.coolbet_explorer import (
+        _looks_like_non_goals_total, _NON_GOALS_TOTAL_HINTS,
+    )
+
+    # Coolbet names a team total "[Home] Total Goals" — BRACKETED. The existing
+    # qualifiers ("home team", "away total", ...) match none of that, and its
+    # market_type_id (1551) is not in _MTID_OU, so it fell through to the
+    # name-fallback, matched "total goals", and was stored as a full-match line.
+    assert _looks_like_non_goals_total("[home] total goals"), \
+        "bracketed home team total must be rejected"
+    assert _looks_like_non_goals_total("[away] total goals"), \
+        "bracketed away team total must be rejected"
+
+    # ...without rejecting the real market, which is the whole point.
+    assert not _looks_like_non_goals_total("total goals over / under"), \
+        "the genuine full-match goals line must still be accepted"
+
+    # The older unbracketed spellings must keep working.
+    assert _looks_like_non_goals_total("total goals home team")
+    assert _looks_like_non_goals_total("over / under corners")
+
+    assert "[home]" in _NON_GOALS_TOTAL_HINTS and "[away]" in _NON_GOALS_TOTAL_HINTS
+
+    src = pathlib.Path("workers/automation/coolbet_explorer.py").read_text()
+    assert "COOLBET-OU-LINE-SHIFT-2026-08-26" in src, (
+        "the why must stay next to the hint list — this is the third "
+        "market-name collision after COMBINED-MARKET and HALF-MATCH"
+    )
+    return "bracketed Coolbet team totals no longer clobber the full-match OU ladder"
+
+
 if __name__ == "__main__":
     main()
