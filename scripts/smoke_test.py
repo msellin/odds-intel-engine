@@ -25379,5 +25379,52 @@ def test_coolbet_feed_watchdog_2026_08_26():
     return "coolbet feed watchdog judges output, self-heals only what it can"
 
 
+
+@test("MODEL-AB-ENSEMBLE-LEG")
+def test_model_ab_ensemble_leg_2026_08_26():
+    """MODEL-AB-ENSEMBLE-LEG-2026-08-26 — the A/B scores the blended ENSEMBLE,
+    not just the raw XGB leg, because the ensemble is what the bots bet."""
+    import pathlib
+    from workers.model.xgboost_ensemble import ensemble_prediction
+    src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+
+    assert "pred_shadow = ensemble_prediction(poisson_pred, xgb_pred_shadow" in src, \
+        "shadow XGB leg must be blended with the SAME poisson into an ensemble"
+    assert '"source": "ensemble",\n                            "model_prob": float(_sh_prob)' in src \
+        or 'shadow={_shadow_ver}' in src, \
+        "shadow ensemble rows must be written with source='ensemble'"
+
+    # A version compared against itself is noise — exactly what the stale
+    # SHADOW_MODEL_VERSION pin produced before SHADOW-AUTOSELECT.
+    assert '_shadow_ver != (_ens_ver or "")' in src, \
+        "must not write a shadow row when candidate == production for that head"
+
+    # _shadow_ver is assigned inside the Tier-A branch; without a per-match
+    # init a Tier-B/C match would NameError at the write and kill the pipeline.
+    assert 'xgb_pred_shadow = None  # Phase B shadow candidate predictions' in src
+    i = src.index("xgb_pred_shadow = None  # Phase B")
+    assert '_shadow_ver = ""' in src[i:i + 500], \
+        "_shadow_ver must be initialised per match, not only inside Tier A"
+
+    # ensemble_prediction reads the expected-goals half; the XGB-leg-only A/B
+    # never called the blender, so the shadow dict lacked these keys and would
+    # have raised KeyError in production.
+    assert '"xgb_exp_home": _eh_s' in src and '"xgb_exp_away": _ea_s' in src, \
+        "shadow inference must produce the goals regressors the blender needs"
+
+    # The blend must actually work and must differ when the legs differ.
+    poisson = {"home_prob": .45, "draw_prob": .28, "away_prob": .27,
+               "over_25_prob": .55, "under_25_prob": .45,
+               "exp_home": 1.5, "exp_away": 1.1}
+    a = ensemble_prediction(poisson, {"xgb_home_prob": .50, "xgb_draw_prob": .26,
+        "xgb_away_prob": .24, "xgb_over25_prob": .58, "xgb_exp_home": 1.7,
+        "xgb_exp_away": 1.0}, tier=1)
+    b = ensemble_prediction(poisson, {"xgb_home_prob": .44, "xgb_draw_prob": .29,
+        "xgb_away_prob": .27, "xgb_over25_prob": .52, "xgb_exp_home": 1.4,
+        "xgb_exp_away": 1.2}, tier=1)
+    assert a["home_prob"] != b["home_prob"], "differing XGB legs must differ after blending"
+    return "A/B now scores the blended ensemble the bots actually bet"
+
+
 if __name__ == "__main__":
     main()

@@ -2713,6 +2713,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         pred = poisson_pred  # default: Poisson-only
         xgb_pred = None
         xgb_pred_shadow = None  # Phase B shadow candidate predictions
+        # MODEL-AB-ENSEMBLE-LEG-2026-08-26: bind per match. The real
+        # assignment lives inside the Tier-A inference branch, so without
+        # this a match that skips that branch would raise NameError at the
+        # shadow-ensemble write below and take the whole pipeline down.
+        _shadow_ver = ""
         if data_tier == "A":
             from workers.utils.team_names import normalize_team_name
             home_norm = normalize_team_name(match["home_team"], source="default")
@@ -2816,11 +2821,22 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                             _po_s = _ou_s.predict_proba(_X_s)[0]
                             _oc = list(_ou_s.classes_)
                             _o25_s = _po_s[_oc.index(True)] if True in _oc else (_po_s[_oc.index(1)] if 1 in _oc else _po_s[-1])
+                            # MODEL-AB-ENSEMBLE-LEG-2026-08-26: the goals
+                            # regressors are needed too. ensemble_prediction()
+                            # reads xgb_exp_home / xgb_exp_away to blend the
+                            # expected-goals half; without them it raises
+                            # KeyError. The XGB-leg-only A/B never called the
+                            # blender, so this gap was invisible until the
+                            # ensemble leg was wired up.
+                            _eh_s = float(_shadow_bundle["home_goals"].predict(_X_s)[0])
+                            _ea_s = float(_shadow_bundle["away_goals"].predict(_X_s)[0])
                             xgb_pred_shadow = {
                                 "xgb_home_prob": float(_hp_s),
                                 "xgb_draw_prob": float(_dp_s),
                                 "xgb_away_prob": float(_ap_s),
                                 "xgb_over25_prob": float(_o25_s),
+                                "xgb_exp_home": _eh_s,
+                                "xgb_exp_away": _ea_s,
                                 "_shadow_version": _shadow_ver,
                             }
                     except Exception as _shadow_exc:
@@ -2835,6 +2851,29 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                             console.print(f"[dim]shadow inference exc ({_shadow_ver}): "
                                           f"{type(_shadow_exc).__name__}: {str(_shadow_exc)[:200]}[/dim]")
                         xgb_pred_shadow = None
+
+        # MODEL-AB-ENSEMBLE-LEG-2026-08-26: blend the shadow XGB leg into a
+        # shadow ENSEMBLE, so the A/B compares what the bots actually bet.
+        #
+        # SHADOW-INFERENCE has scored a candidate bundle since 2026-05-24, but it
+        # only ever wrote the raw XGB leg (source='xgboost'). The bots bet the
+        # blended ensemble — Poisson + XGB + calibration — so the paired data on
+        # hand measured a component, not the thing in production. The first
+        # paired run showed why that matters: v20260712 -3.59% CLV vs v20260705
+        # -4.25%, newer better but BOTH negative, which is plausible for a raw
+        # component under an ensemble-tuned gate and says nothing about
+        # production picks.
+        #
+        # Same Poisson, same blend weights, same tier — only the XGB leg differs,
+        # which is exactly the comparison a promotion decision needs.
+        pred_shadow = None
+        if xgb_pred_shadow:
+            try:
+                pred_shadow = ensemble_prediction(poisson_pred, xgb_pred_shadow,
+                                                  tier=_tier)
+            except Exception as _e_sh:
+                pred_shadow = None
+                console.print(f"[dim]shadow ensemble blend failed: {_e_sh}[/dim]")
 
         # Store predictions
         data_tier = pred.get("data_tier", "A")
@@ -2975,6 +3014,33 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 if _ens_ver:
                     _row["model_version"] = _ens_ver
                 pending_pred_rows.append(_row)
+
+                # MODEL-AB-ENSEMBLE-LEG-2026-08-26: the same market, scored by
+                # the candidate bundle. Written with source='ensemble' and the
+                # SHADOW model_version, so predictions carries both versions on
+                # the SAME (match, market) — which is what makes the comparison
+                # paired. The table already keys on
+                # (match_id, market, source, model_version), so this is purely
+                # additive and cannot collide with the production row.
+                #
+                # Skipped when the shadow blend produced nothing for this market
+                # (Tier C omits some OU heads), and when the candidate resolves
+                # to the same version as production — a version compared against
+                # itself is noise, and that is exactly what the stale
+                # SHADOW_MODEL_VERSION pin was doing before SHADOW-AUTOSELECT.
+                if pred_shadow and _shadow_ver and _shadow_ver != (_ens_ver or ""):
+                    _sh_prob = pred_shadow.get(prob_key)
+                    if _sh_prob is not None:
+                        pending_pred_rows.append({
+                            "match_id": match_id,
+                            "market": market,
+                            "source": "ensemble",
+                            "model_prob": float(_sh_prob),
+                            "implied_prob": 1 / odds_val,
+                            "edge": float(_sh_prob) - (1 / odds_val),
+                            "reasoning": f"data_tier={data_tier} shadow={_shadow_ver}",
+                            "model_version": _shadow_ver,
+                        })
 
         # AH predictions: store calibrated-lambda AH probabilities for CLV analysis.
         # Uses Platt-corrected 1x2 probs (pred) to invert → lambdas, fixing the
