@@ -34,6 +34,7 @@ All project documentation lives in this repo (`odds-intel-engine/`). Before star
 | `docs/AF_ENDPOINT_FREQUENCY.md` | API-Football endpoint update frequencies vs our polling — identifies gaps |
 | `docs/API-Football_Documentation_v3.9.3.pdf` | Full API-Football v3.9.3 docs (130 pages) — **local only** (gitignored, 7.1MB) |
 | `docs/VPS_NEXTJS_MIGRATION_RUNBOOK.md` | Vercel→VPS Next.js migration playbook — used for odds-intel-web 2026-07-07, reusable for future sites |
+| `docs/ANALYSIS_GOTCHAS.md` | **Read before writing any analysis query.** Table/source vocabularies, capabilities that already exist (model A/B via `SHADOW_MODEL_VERSION`), dedup rules, outlier guards, and the CLV-vs-ROI variance numbers. Every entry is something that was guessed wrong or rediscovered the hard way. |
 
 ## Task Lifecycle — Every Task Must Follow This Exactly
 
