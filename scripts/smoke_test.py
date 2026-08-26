@@ -25508,7 +25508,17 @@ def test_coolbet_value_bot_2026_08_26():
 
     mig = pathlib.Path("supabase/migrations/287_bot_coolbet_value.sql").read_text()
     assert "bot_coolbet_value_v1" in mig and "ON CONFLICT (name) DO NOTHING" in mig
-    return "Coolbet-priced value bot: quotes only obtainable prices"
+
+    # /admin/shadow-bots renders a HARDCODED bot list — a new bot is invisible
+    # there until it is added, which is how a bot can run for weeks unseen.
+    page = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
+    assert '"bot_coolbet_value_v1"' in page, \
+        "new shadow bots must be added to SHADOW_BOTS or they never render"
+    # backtestN 0 means never replayed. Showing "+0.0% n=0" would read as a
+    # measured zero rather than an absence.
+    assert "s.backtestN === 0 ?" in page and "no backtest" in page, \
+        "an unreplayed config must render as 'no backtest', not a fake zero"
+    return "Coolbet-priced value bot: quotes only obtainable prices, visible on the admin page"
 
 
 if __name__ == "__main__":
