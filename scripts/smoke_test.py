@@ -30441,8 +30441,19 @@ def _():
     # (2) + (3) de-vig
     assert "_LINESHOP_TRUE_EDGE_MIN = 0.03" in src, "de-vigged edge floor missing"
     assert "_LINESHOP_TIERS: tuple[int, ...] = (1, 2)" in src, "line-shop tier set missing"
-    assert "(1.0 / pin_odds) / total_implied" in src, "OU writer must de-vig"
-    assert "(1.0 / pin_odds) / overround" in src, "1X2 writer must de-vig"
+    # Both writers must de-vig. LINESHOP-SHIN-DEVIG-2026-08-26 replaced the
+    # proportional formulas these two lines used to pin — `(1/pin)/total_implied`
+    # and `(1/pin)/overround` — with Shin, so assert on the CURRENT mechanism
+    # instead. The intent of the original assertion is preserved: an
+    # un-de-vigged writer must still fail this test.
+    assert "from workers.model.devig import devig as _devig" in src, \
+        "line-shop writers must import the shared de-vig helper"
+    assert "_probs = _devig([pin_over, pin_under])" in src, "OU writer must de-vig"
+    assert "_pin_probs = _devig(pin_three)" in src, "1X2 writer must de-vig"
+    assert "(1.0 / pin_odds) / total_implied" not in src, \
+        "OU writer must not fall back to proportional de-vig"
+    assert "(1.0 / pin_odds) / overround" not in src, \
+        "1X2 writer must not fall back to proportional de-vig"
 
     # (4) retired bot removed from the live tuple
     cfg_block = src[src.index("_PIN_1X2_SHADOW_CONFIGS: tuple[dict, ...] = ("):]
