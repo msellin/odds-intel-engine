@@ -25518,6 +25518,15 @@ def test_coolbet_value_bot_2026_08_26():
     # measured zero rather than an absence.
     assert "s.backtestN === 0 ?" in page and "no backtest" in page, \
         "an unreplayed config must render as 'no backtest', not a fake zero"
+
+    # The DETAIL page has its OWN allowlist and 404s on anything missing from
+    # it. Being in SHADOW_BOTS is not enough — the index would link to a dead
+    # page, which is exactly what happened on first deploy.
+    detail = _web_path("src/app/(app)/admin/shadow-bots/[bot]/page.tsx").read_text()
+    assert "bot_coolbet_value_v1: {" in detail, \
+        "detail page ALLOWED entry required or the row links to a 404"
+    assert "bot_coolbet_value_v1: 0.03," in detail, \
+        "detail page edge-floor map must know this bot's gate"
     return "Coolbet-priced value bot: quotes only obtainable prices, visible on the admin page"
 
 
