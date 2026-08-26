@@ -98,9 +98,29 @@ jobs:
             set -euo pipefail
             cd /opt/odds-intel-engine
 
+            # DEPLOY-SHA-RACE-2026-08-26: the VPS being AHEAD of this run is
+            # fine, and used to fail the job.
+            #
+            # Rapid successive pushes overlap: run A checks out sha_A, but by
+            # the time its verify step runs, run B has already pulled sha_B onto
+            # the box. A strict equality check then reports "SHA MISMATCH" and
+            # exits 1 even though the deploy worked and the VPS holds NEWER
+            # code. Three deploys went red that way on 2026-08-26 while the box
+            # was healthy the whole time — noise that looks exactly like a real
+            # deploy failure, on the one workflow that must stay trustworthy
+            # (ENGINE-DEPLOY-2026-08-24 exists because 21 commits of drift went
+            # unnoticed).
+            #
+            # Fail only when the VPS is genuinely BEHIND — i.e. this run's
+            # commit is not an ancestor of what is deployed.
             DEPLOYED=$(git rev-parse HEAD)
-            if [ "$DEPLOYED" != "${{ github.sha }}" ]; then
-              echo "SHA MISMATCH: VPS at $DEPLOYED, expected ${{ github.sha }}"
+            if [ "$DEPLOYED" = "${{ github.sha }}" ]; then
+              echo "VPS at exactly ${{ github.sha }}"
+            elif git merge-base --is-ancestor "${{ github.sha }}" "$DEPLOYED" 2>/dev/null; then
+              echo "VPS at $DEPLOYED, which is AHEAD of ${{ github.sha }} — a later"
+              echo "deploy won the race. Not a failure."
+            else
+              echo "SHA MISMATCH: VPS at $DEPLOYED, which does not contain ${{ github.sha }}"
               exit 1
             fi
 
