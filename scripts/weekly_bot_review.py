@@ -3,7 +3,7 @@ with PROMOTE / DEMOTE / HOLD verdict for each currently-active bot.
 
 Origin: 2026-06-13 audit found `bot_high_alignment` (maturity=beta, -€56 over
 50 real bets) had been auto-placing real money for days because the Mac
-daemon lacked the maturity gate that Railway had. The decision "which bots
+daemon lacked the maturity gate that the pipeline had. The decision "which bots
 are trustworthy enough to spend real money on?" was manual and ad-hoc —
 promotions happened reactively when someone happened to notice.
 

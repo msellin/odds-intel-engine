@@ -6,7 +6,7 @@ log-loss, distribution stats (mean/median/std), and threshold-precision
 sweep at 0.45 / 0.50 / 0.55 / 0.60.
 
 Use this in the morning to make a data-driven decision on which bundle
-to swap in via META_B_ML3_VERSION env on Railway.
+to swap in via META_B_ML3_VERSION env on the VPS.
 
 Usage:
     python3 scripts/compare_meta_bundles.py
@@ -155,7 +155,7 @@ def main():
     best = results[0]
     console.print(f"\n[bold green]Best by in-sample AUC: {best['name']} (AUC {best['is_auc']:.4f}, CV {best['cv_auc_mean']})[/bold green]")
     console.print(
-        f"To swap on Railway: set META_B_ML3_VERSION={best['name']}\n"
+        f"To swap on the VPS: set in /opt/odds-intel-engine/.env META_B_ML3_VERSION={best['name']}\n"
         f"  Threshold from training: {best['chosen_threshold']:.3f}\n"
         f"  At that threshold: "
         f"fires {best['sweep'].get(round(best['chosen_threshold'], 3), (0, 0, 0))[0]} of {len(y)} "

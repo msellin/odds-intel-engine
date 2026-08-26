@@ -188,11 +188,11 @@ def _():
     # hydrate from Storage. Check both — at least one must have it.
     legacy_src = inspect.getsource(xgboost_ensemble._load_models)
     per_market_src = inspect.getsource(xgboost_ensemble._load_bundle)
-    # Without this wire, a fresh Railway container with MODEL_VERSION set to a
+    # Without this wire, a fresh the VPS container with MODEL_VERSION set to a
     # bundle not on disk falls through to {} and silently degrades to Poisson.
     assert "ensure_local_bundle" in per_market_src, (
         "_load_bundle must call ensure_local_bundle when the bundle dir is missing — "
-        "otherwise Railway redeploys lose bundles silently."
+        "otherwise scheduler restarts lose bundles silently."
     )
     # The legacy wrapper should delegate to _load_bundle (so the wire is preserved transitively).
     assert "_load_bundle" in legacy_src, "_load_models must delegate to _load_bundle"
@@ -516,7 +516,7 @@ def _():
         from workers.jobs.news_checker import run_news_checker  # noqa: F401
     except ModuleNotFoundError as e:
         if "google" in str(e):
-            return  # google-genai not installed locally — fine, it's on Railway
+            return  # google-genai not installed locally — fine, it's on the VPS
         raise
 
 
@@ -719,7 +719,7 @@ def _():
     """The Ops Dashboard shows '—' on every metric if no ops_snapshot row for today.
     Original test invoked write_ops_snapshot() directly: 146s and writing duplicate
     rows on every CI push (~95% of suite runtime). The real silent-failure guard
-    is the daily Railway run logging to pipeline_runs — if that stops, the
+    is the daily the VPS run logging to pipeline_runs — if that stops, the
     dashboard goes stale visibly. Schema is covered by the migration 063 test
     above. Here we just verify the function is correctly wired."""
     import pathlib
@@ -779,7 +779,7 @@ def _():
 
 @test("SETTLEMENT-CATCHUP — scheduler fires settlement on startup if last success was >25h ago (source inspect)")
 def _():
-    """Every git push redeploys the Railway scheduler, killing any in-flight job.
+    """Every git push redeploys the VPS scheduler, killing any in-flight job.
     With heavy dev cadence the 21:00/23:30/01:00 redundant settlement runs can
     all be killed mid-run, leaving finished matches unsettled until the next
     21:00 window. This catch-up runs at startup so a missed daily settlement
@@ -2535,7 +2535,7 @@ def _():
 @test("MISFIRE-GRACE — job_defaults sets misfire_grace_time so 1-3s GIL jitter doesn't skip jobs")
 def _():
     # APScheduler's default misfire_grace_time is 1s. Once-a-day jobs (Watchlist
-    # 08:30, Stripe Reconcile 09:00, Odds 11:00) were silently skipped on Railway
+    # 08:30, Stripe Reconcile 09:00, Odds 11:00) were silently skipped on the VPS
     # when the scheduler thread slipped 2-3s under GIL contention. Widening the
     # grace window to 5min is safe because coalesce=True collapses stale bursts.
     from pathlib import Path
@@ -3682,16 +3682,16 @@ def _():
 @test("COOLBET-JWT-DB-BACKED — JWT bootstraps from coolbet_session_state, persists on every login/renew")
 def test_coolbet_jwt_db_backed():
     """COOLBET-JWT-DB-BACKED (2026-06-12): Imperva 403's /s/auth/login from
-    cloud IPs (Railway) but accepts it from residential IPs (local). Before
-    this change, Railway lost its session on every restart and the operator
+    cloud IPs (the VPS) but accepts it from residential IPs (local). Before
+    this change, the VPS lost its session on every restart and the operator
     had to paste a fresh JWT to COOLBET_MANUAL_JWT env every time something
-    broke — env-var drift between local and Railway was a recurring failure
+    broke — env-var drift between local and the VPS was a recurring failure
     mode.
 
     The fix: persist the JWT to coolbet_session_state.jwt_current after
     every successful login/renew. CoolbetSession bootstraps from that
     column on init, falling back to env var only when DB is empty. Local
-    enrollment (residential IP) writes to DB → Railway reads from DB on
+    enrollment (residential IP) writes to DB → the VPS reads from DB on
     next process start → keeps it alive via /s/auth/renew-token (which
     Imperva accepts from any IP).
 
@@ -3722,7 +3722,7 @@ def test_coolbet_jwt_db_backed():
     # CoolbetSession bootstraps from DB AND persists on success.
     sess_src = pathlib.Path("workers/automation/coolbet_session.py").read_text()
     assert "read_persisted_jwt" in sess_src, (
-        "CoolbetSession.__init__ must read_persisted_jwt() so Railway can "
+        "CoolbetSession.__init__ must read_persisted_jwt() so the VPS can "
         "inherit the JWT after local enrollment without an env-var push."
     )
     assert "_pick_freshest_jwt(" in sess_src, (
@@ -3744,15 +3744,15 @@ def test_coolbet_jwt_db_backed():
     ]
     assert 'persist_jwt(token' in login_block, (
         "_login (API login path) must persist the JWT to DB so a successful "
-        "local API login propagates to Railway via DB."
+        "local API login propagates to the VPS via DB."
     )
 
-    # Enrollment writes to DB (this is THE bootstrap path for Railway).
+    # Enrollment writes to DB (this is THE bootstrap path for the VPS).
     enroll_src = pathlib.Path("scripts/coolbet/flaresolverr_login_enroll.py").read_text()
     assert "from workers.automation.coolbet_state import persist_jwt" in enroll_src, (
         "flaresolverr_login_enroll.py must import persist_jwt from coolbet_state — "
         "this is the ONLY entrypoint that gets a fresh JWT past Imperva from a "
-        "Railway-blocked context. Without DB write, Railway never inherits."
+        "the VPS-blocked context. Without DB write, the VPS never inherits."
     )
     # Tagged so /status can show where the latest JWT came from.
     assert 'set_by="local_enroll"' in enroll_src, (
@@ -3773,7 +3773,7 @@ def test_coolbet_mac_daemon():
     for fn in ("_tick", "run_forever", "main"):
         assert f"def {fn}(" in daemon_src, f"daemon must expose {fn}()"
     # Daemon calls the existing placer (NOT a fork) — same edge gates,
-    # same idempotency guarantees as the Railway-side implementation
+    # same idempotency guarantees as the VPS-side implementation
     # we just shelved. Drift here is the failure mode this test prevents.
     assert "from workers.automation.coolbet_placer import" in daemon_src, (
         "daemon must call the existing coolbet_placer — no fork of placement logic."
@@ -3816,10 +3816,10 @@ def test_coolbet_mac_daemon():
     assert "<key>KeepAlive</key>" in plist and "<true/>" in plist, (
         "launchd must KeepAlive — daemon auto-restart is the supervisor."
     )
-    # Local FS URL override so daemon doesn't accidentally hit Railway FS
+    # Local FS URL override so daemon doesn't accidentally hit the VPS FS
     # (defeats the residential-IP premise).
     assert "http://localhost:8191" in plist, (
-        "plist must pin FLARESOLVERR_URL=http://localhost:8191 — Railway FS "
+        "plist must pin FLARESOLVERR_URL=http://localhost:8191 — the VPS FS "
         "doesn't help us from the Mac; the whole point is using local."
     )
 
@@ -3836,7 +3836,7 @@ def test_coolbet_mac_daemon():
 @test("COOLBET-SIGNALER-A — Telegram bet-signaler replaces auto-placer (resilient to Imperva/FS)")
 def test_coolbet_signaler():
     """COOLBET-SIGNALER-A (2026-06-12): the auto-place chain (Imperva 403 from
-    Railway IPs → FlareSolverr Chrome tab → 30-min JWT TTL → SMS-2FA on
+    the VPS IPs → FlareSolverr Chrome tab → 30-min JWT TTL → SMS-2FA on
     re-login) was structurally fragile and spammed SMS overnight. Signal-only
     mode is the safety net: pure DB read + Telegram send, zero Coolbet API.
 
@@ -3884,7 +3884,7 @@ def test_coolbet_no_auto_login():
     """COOLBET-NO-AUTO-LOGIN (2026-06-12): on 2026-06-11 evening the
     heartbeat cron triggered 100+ SMS 2FA messages overnight. Root cause:
     JWT expired, every 5-min heartbeat called _ensure_auth → _login →
-    /s/auth/login. Coolbet sent SMS each time because Railway IP wasn't
+    /s/auth/login. Coolbet sent SMS each time because the VPS IP wasn't
     device-trusted. Account lockout risk.
 
     The fix: CoolbetSession() refuses API login by default. Only the
@@ -4198,7 +4198,7 @@ def test_isotonic_activate_v20260621():
     """ISOTONIC-ACTIVATE-V20260621 (2026-06-21): closes GLOBAL-PLATT-OVERCONFIDENCE
     by activating the dormant isotonic infrastructure for the v20260621
     bundle. Fitted via fit_isotonic_offline.py + uploaded to Storage so
-    Railway hydrates on cache miss.
+    the VPS hydrates on cache miss.
 
     Selective activation — fitted 5 markets, kept the 3 that help
     fired-bets ECE, discarded the 2 that hurt:
@@ -4217,7 +4217,7 @@ def test_isotonic_activate_v20260621():
     on missing market — so a deleted .pkl is a graceful no-op for that
     selection, preserving the current production behaviour there.
 
-    Activation: operator flips STAGE2_CALIBRATOR=isotonic on Railway
+    Activation: operator flips STAGE2_CALIBRATOR=isotonic in /opt/odds-intel-engine/.env
     after reading the validation table. Smoke pins file presence in
     the bundle dir + .pkl loadability + apply_isotonic graceful-fallback
     contract."""
@@ -4336,12 +4336,12 @@ def test_retrain_healthcheck():
     pipeline_runs while diagnosing why bets still tagged v20260607 two
     weeks later. Cost: a week of v20260621's BETTER-on-8-markets gains.
 
-    Fix mirrors COOLBET-DAEMON-HEALTHCHECK: Railway-side job runs Mon/Tue
+    Fix mirrors COOLBET-DAEMON-HEALTHCHECK: VPS-side job runs Mon/Tue
     09:00 UTC, queries pipeline_runs for the latest weekly_retrain runs,
     classifies as stale (>9d since last success) / failing (2+ consecutive
     non-completed) / healthy, and Telegrams accordingly. DB-backed dedup
     via the new pipeline_health_state table (migration 258) so the alert
-    survives Railway redeploys.
+    survives scheduler restarts.
 
     Pin: migration 258 + job module + both stale + failing branches + the
     dedup table interaction + scheduler hook with Mon/Tue cron."""
@@ -4491,7 +4491,7 @@ def test_bot_maturity_label_invariant():
     )
 
 
-@test("COOLBET-DAEMON-HEALTHCHECK — Railway-side health alert for silent / sustained-erroring daemon")
+@test("COOLBET-DAEMON-HEALTHCHECK — VPS-side health alert for silent / sustained-erroring daemon")
 def test_coolbet_daemon_healthcheck():
     """COOLBET-DAEMON-HEALTHCHECK (2026-06-21): closes the alerting gap
     that left a 3-day outage silent on 2026-06-18 → 21. Three reasons the
@@ -4503,10 +4503,10 @@ def test_coolbet_daemon_healthcheck():
       3. Mac daemon IS the alerter — Mac sleep / daemon crash kills the
          alerter and the placer at the same time.
 
-    Fix: new Railway job (every 30 min) reads coolbet_session_state +
+    Fix: new the VPS job (every 30 min) reads coolbet_session_state +
     coolbet_heal_log and Telegrams when the daemon is silent OR
     sustainedly erroring. DB-backed dedup via last_health_alert_at
-    (migration 256) survives Railway redeploys.
+    (migration 256) survives scheduler restarts.
 
     Pin: migration 256 column, job module, alert/recovery code paths,
     scheduler hook with 30-min cron."""
@@ -4515,13 +4515,13 @@ def test_coolbet_daemon_healthcheck():
     mig = pathlib.Path("supabase/migrations/256_coolbet_daemon_healthcheck.sql").read_text()
     assert "last_health_alert_at" in mig and "TIMESTAMPTZ" in mig, (
         "Migration 256 must add last_health_alert_at TIMESTAMPTZ — the "
-        "DB-backed dedup that survives Railway redeploys."
+        "DB-backed dedup that survives scheduler restarts."
     )
 
     job_path = pathlib.Path("workers/jobs/coolbet_daemon_healthcheck.py")
     assert job_path.exists(), (
         "workers/jobs/coolbet_daemon_healthcheck.py must exist — this is "
-        "the Railway-side alerter."
+        "the VPS-side alerter."
     )
     job = job_path.read_text()
     assert "def run_daemon_healthcheck(" in job, (
@@ -4949,7 +4949,7 @@ def test_coolbet_selfheal_docker_fs():
     (c) DEFENSIVE-FS-URL: _fs_call prefers localhost:8191 when the Mac
         daemon is running (signalled by COOLBET_MAC_POLL_S env var)
         AND local FS is reachable — defends against operator-side .env
-        drift that points at a remote Railway FS (today's actual bug).
+        drift that points at a remote the VPS FS (today's actual bug).
 
     Pin: the three new helpers + their wiring."""
     import pathlib
@@ -4977,7 +4977,7 @@ def test_coolbet_selfheal_docker_fs():
         "that decides whether to attempt Docker auto-start."
     )
     # Reachability check must hit localhost specifically (not the configured
-    # URL) — checking Railway and finding it down would falsely trigger
+    # URL) — checking the VPS and finding it down would falsely trigger
     # local Docker recovery that can't help.
     reach_block = bs[bs.index("def _flaresolverr_reachable("):
                      bs.index("def auto_launch_cdp_chrome(")]
@@ -5011,7 +5011,7 @@ def test_coolbet_selfheal_docker_fs():
 
     # (d) COOLBET_FS_LOCAL_URL (2026-06-26): Coolbet-specific override for
     # ad-hoc Mac CLI runs (smoke tests, manual placer dry-runs) that pick
-    # up a Railway FLARESOLVERR_URL from .env. The Mac daemon's launchd plist
+    # up a the VPS FLARESOLVERR_URL from .env. The Mac daemon's launchd plist
     # already pins localhost, but CLI runs inherit the .env value. Without
     # this override, a `python3 -m workers.automation.coolbet_placer`
     # invocation from the shell would 500 forever while the daemon hummed
@@ -5019,7 +5019,7 @@ def test_coolbet_selfheal_docker_fs():
     assert "COOLBET_FS_LOCAL_URL" in fs_call_block, (
         "_fs_call must check COOLBET_FS_LOCAL_URL — Coolbet-specific override "
         "that lets ad-hoc Mac CLI runs prefer local FS without touching the "
-        "shared FLARESOLVERR_URL (which Railway-hosted callers still need)."
+        "shared FLARESOLVERR_URL (which VPS-hosted callers still need)."
     )
     # The override must short-circuit BEFORE the COOLBET_MAC_POLL_S branch
     # so it works for CLI (no daemon env) too.
@@ -5170,7 +5170,7 @@ def test_coolbet_daily_summary():
     must_surface = [
         ("Daemon", "tick age + last result (placed/errors)"),
         ("JWT",    "TTL — proactive-refresh visibility"),
-        ("Railway HB", "Railway scheduler liveness"),
+        ("the VPS HB", "VPS scheduler liveness"),
         ("Catch-net",  "C2 heartbeat — confirms */5 cron firing"),
         ("24h",  "real-bet activity"),
         ("Today", "calibrated queue"),
@@ -5209,8 +5209,8 @@ def test_coolbet_daily_summary():
 def test_coolbet_prekickoff_heartbeat():
     """COOLBET-PREKICKOFF-HEARTBEAT (C2, 2026-06-16): the catch-net is
     silent on healthy days — no Telegram fires when the daemon is up and
-    nothing's at risk. Without a DB heartbeat, "Railway running cron,
-    catch-net silent because healthy" looks identical to "Railway crashed"
+    nothing's at risk. Without a DB heartbeat, "the VPS running cron,
+    catch-net silent because healthy" looks identical to "the VPS crashed"
     from outside.
 
     Migration 252 adds prekickoff_last_run_at + prekickoff_last_run_result.
@@ -5321,7 +5321,7 @@ def test_coolbet_proactive_jwt_refresh():
     daemon = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
     assert "proactive_jwt_refresh" in daemon, (
         "Mac daemon must import + call proactive_jwt_refresh() — the "
-        "Railway scheduler never runs the daemon, so the call lives there."
+        "VPS scheduler never runs the daemon, so the call lives there."
     )
     tick_block = daemon[daemon.index("def _tick("):
                         daemon.index("def run_forever(")]
@@ -5375,9 +5375,9 @@ def test_coolbet_daemon_heartbeat_on_empty():
     )
 
 
-@test("COOLBET-PREKICKOFF-CATCHNET — Railway job alerts on calibrated picks near KO when Mac daemon is down")
+@test("COOLBET-PREKICKOFF-CATCHNET — the VPS job alerts on calibrated picks near KO when Mac daemon is down")
 def test_coolbet_prekickoff_catchnet():
-    """COOLBET-DAEMON-ALERTS catch-net (2026-06-16): Railway-side job runs
+    """COOLBET-DAEMON-ALERTS catch-net (2026-06-16): VPS-side job runs
     every 5 min, independent of the Mac. When (a) Mac daemon is stale or
     last tick errored AND (b) a calibrated-bot pick is approaching KO
     unplaced — push urgent Telegram so operator can place from phone.
@@ -5460,8 +5460,8 @@ def test_coolbet_prekickoff_catchnet():
 
 @test("COOLBET-MATURITY-GATE-IN-PLIST — Mac daemon plist sets COOLBET_RECORD_ALLOWED_MATURITY=calibrated")
 def test_coolbet_maturity_gate_in_plist():
-    """COOLBET-MATURITY-GATE-IN-PLIST (2026-06-12): Railway has
-    COOLBET_RECORD_ALLOWED_MATURITY=calibrated set, but Railway env
+    """COOLBET-MATURITY-GATE-IN-PLIST (2026-06-12): the VPS has
+    COOLBET_RECORD_ALLOWED_MATURITY=calibrated set, but the VPS env
     does not reach the Mac-side daemon — only the daemon's own
     process env (launchd plist + local .env) does. The gap let beta
     bots auto-place real money on 2026-06-12 (bot_high_alignment
@@ -6037,7 +6037,7 @@ def test_admin_tg_clarity():
 @test("COOLBET-TG-OPERATOR-COMMANDS — /status, /today, /pause, /resume, /help wired in webhook")
 def _():
     """COOLBET-FS-SESSION-STABLE Step 1.6 (2026-06-11): Telegram operator
-    commands for on-demand bot health + control without ssh / Railway.
+    commands for on-demand bot health + control without ssh / the VPS.
 
     Gated by TELEGRAM_CHAT_ID env (same as the existing place-button admin
     gate) so random chats can't pause the live bot. Non-operator chats fall
@@ -6123,7 +6123,7 @@ def _():
 @test("MANUAL-PLACE — admin button + webhook + drain loop end-to-end wiring")
 def test_manual_place_wiring():
     """MANUAL-PLACE (2026-05-29): admin taps Telegram inline-keyboard button
-    on a value-bet alert; Vercel webhook queues, Railway scheduler drains
+    on a value-bet alert; Vercel webhook queues, VPS scheduler drains
     every 10s, edits the message with the outcome. Source-inspection only
     (live flow runs across two services + a Telegram callback)."""
     import inspect
@@ -6504,7 +6504,7 @@ def _():
     still exposes keep_alive() + jwt_seconds_remaining, used by the daemon
     main loop. The scheduler-level 20-min keepalive job was retired in
     REMOVE-KEEPALIVE (commit a8753ac) — Imperva cookies + anon /record mode
-    made it dead weight on Railway."""
+    made it dead weight on the VPS."""
     import inspect
     from workers.automation.coolbet_session import CoolbetSession
     assert hasattr(CoolbetSession, "keep_alive"), "CoolbetSession.keep_alive missing"
@@ -7429,7 +7429,7 @@ def _():
 
 @test("EMAIL-FROM-FALLBACK — aln_auto_tune falls back to DIGEST_FROM_EMAIL when ALERT_FROM_EMAIL unset")
 def _():
-    """Railway has DIGEST_FROM_EMAIL configured (not ALERT_FROM_EMAIL).
+    """the VPS has DIGEST_FROM_EMAIL configured (not ALERT_FROM_EMAIL).
     All new email jobs must fall back so emails don't silently drop.
     """
     from pathlib import Path as _Path
@@ -9294,7 +9294,7 @@ def _():
 @test("BT-SEED-FIX — BudgetTracker has _seed_from_db method that seeds _endpoint_counts_today")
 def _():
     """Source-inspection test: BudgetTracker must have _seed_from_db() that reads
-    api_budget_log and seeds _endpoint_counts_today to survive Railway redeploys."""
+    api_budget_log and seeds _endpoint_counts_today to survive scheduler restarts."""
     import pathlib
     src = pathlib.Path("workers/api_clients/api_football.py").read_text()
     assert "def _seed_from_db(" in src, "_seed_from_db() method must exist on BudgetTracker"
@@ -11253,7 +11253,7 @@ def test_meta_retrain():
     """META-RETRAIN (2026-05-25): Sunday 04:00 UTC retrain job invokes
     scripts/train_b_ml3.py with a versioned tag and logs to pipeline_runs.
     Promotion stays manual — operator inspects new bundle's threshold.json
-    and decides whether to flip META_B_ML3_VERSION on Railway.
+    and decides whether to flip META_B_ML3_VERSION in /opt/odds-intel-engine/.env (then restart oddsintel-scheduler).
     """
     import pathlib
     src = (pathlib.Path(__file__).resolve().parent.parent /
@@ -11302,7 +11302,7 @@ def test_health_alerts_monitoring():
         assert f'"{alert_id}"' in src, f"alert dedup key '{alert_id}' missing"
     # psutil in requirements (with /proc fallback for envs that don't have it)
     reqs = (pathlib.Path(__file__).resolve().parent.parent / "requirements.txt").read_text()
-    assert "psutil" in reqs, "psutil must be declared (MEMORY-MONITORING uses it on Railway)"
+    assert "psutil" in reqs, "psutil must be declared (MEMORY-MONITORING uses it on the VPS)"
 
 
 @test("B-ML3-V2-ACTIVE — meta-model scorer wired into daily_pipeline_v2 with env gating")
@@ -11315,7 +11315,7 @@ def test_b_ml3_v2_active():
     """
     import pathlib
     base = pathlib.Path(__file__).resolve().parent.parent
-    # Bundle artifacts shipped with the repo for Railway deploy
+    # Bundle artifacts shipped with the repo for the VPS deploy
     bundle = base / "data" / "models" / "meta" / "v_20260525_v21"
     assert (bundle / "b_ml3.pkl").exists(), "v_20260525_v21 model pickle must be committed"
     assert (bundle / "scaler.pkl").exists(), "scaler must be committed"
@@ -11416,7 +11416,7 @@ def test_ah_home_line_filter():
 def test_unmatched_log_quiet():
     """UNMATCHED-LOG-QUIET (2026-05-24): the unmatched_teams logger writes to
     data/logs/unmatched_teams.log but had propagate=True by default, so its
-    INFO messages reached the root logger and cluttered Railway stdout.
+    INFO messages reached the root logger and cluttered the VPS stdout.
     Fixed by setting propagate=False — file handler still captures them."""
     import pathlib
     src = (pathlib.Path(__file__).resolve().parent.parent /
@@ -12361,7 +12361,7 @@ def _():
 
 @test("SHADOW-DEDUP — cohort-scoped unique constraint in migration + ON CONFLICT clause")
 def _():
-    """SHADOW-DEDUP (2026-05-20): Railway rolling restarts briefly run two scheduler
+    """SHADOW-DEDUP (2026-05-20): the VPS rolling restarts briefly run two scheduler
     instances that both fire the same shadow window, producing duplicate shadow_bets.
     Fix: unique constraint on (shadow_cohort, bot_id, match_id, market, selection)
     and matching ON CONFLICT in bulk_store_shadow_bets."""
@@ -14912,9 +14912,9 @@ def test_ou_dc_consolidation():
 def test_coolbet_auto_record():
     """Tombstone test: the original COOLBET-AUTO-RECORD contract pinned
     `_run_coolbet_record()` being called from `run_betting()` to auto-place
-    on Coolbet from Railway. That entire path was RETIRED on 2026-06-12 by
+    on Coolbet from the VPS. That entire path was RETIRED on 2026-06-12 by
     COOLBET-SIGNALER-A — Imperva/cloud-IP blocks made cloud-side auto-
-    placement unreliable, so the architecture split into (a) a Railway-
+    placement unreliable, so the architecture split into (a) a the VPS-
     side Telegram signaler (`_run_coolbet_signal`) that does ZERO Coolbet
     API calls in the hot path, and (b) the Mac-at-home daemon
     (`workers/automation/coolbet_mac_daemon.py`) that handles placement
@@ -15699,7 +15699,7 @@ def _():
       • load_qualified_combo_bets (combos)
       • load_qualified_inplay_bets (inplay)
     All three skip the gate when bet_id_filter is set (admin override).
-    Flip happens on 2026-06-08 by setting the env to 'calibrated' on Railway."""
+    Flip happens on 2026-06-08 by setting the env to 'calibrated' in /opt/odds-intel-engine/.env."""
     import pathlib, os, inspect
     from workers.automation import coolbet_placer
 
@@ -16288,19 +16288,19 @@ def _():
     # status. Without HAVING, even all-pass jobs would appear with
     # failed=0 in the email. After 2026-06-25 the filter also excludes
     # transient 'killed — scheduler restarted' / 'killed — orphaned'
-    # kills (Railway redeploy noise, not real bugs).
+    # kills (a scheduler restart noise, not real bugs).
     assert "HAVING COUNT(*) FILTER (WHERE status = 'failed' AND NOT is_transient) > 0" in job, (
         "_collect_failures must HAVING-filter to jobs with ≥1 REAL failure "
-        "(non-transient) — without the is_transient filter, Railway "
+        "(non-transient) — without the is_transient filter, the VPS "
         "redeploy noise dominates the digest and hides real bugs."
     )
     # The transient classification patterns must be present.
     assert "_TRANSIENT_PATTERNS" in job, (
         "must define _TRANSIENT_PATTERNS — the 'killed — ...' strings "
-        "that mark Railway redeploy noise."
+        "that mark a scheduler restart noise."
     )
     assert "killed — scheduler restarted" in job and "killed — orphaned" in job, (
-        "transient patterns must cover the two known Railway kill signatures."
+        "transient patterns must cover the two known the VPS kill signatures."
     )
     # Must be quiet on healthy.
     run_block = job[job.index("def run_failure_digest("):]
@@ -23235,7 +23235,7 @@ def _():
 @test("TENNIS-SCHEDULER-FIX — work-inside-_run_job pattern + raise-on-skip")
 def _():
     """SCHEDULER-FIX 2026-06-25: tennis_scanner had ZERO pipeline_runs rows in
-    7 days despite OA_KEY being set on Railway. Root cause was the pattern:
+    7 days despite OA_KEY being set on the VPS. Root cause was the pattern:
 
         def job_tennis_scanner():
             if not os.getenv(...):
@@ -23280,7 +23280,7 @@ def _():
             f"but successes don't — wrong direction."
         )
 
-        # raise on env-missing — otherwise a misconfigured Railway env
+        # raise on env-missing — otherwise a misconfigured env
         # logs status='completed' (the silent-failure trap).
         assert 'raise RuntimeError(' in body and 'OA_KEY' in body and 'OD_KEY' not in body, (
             f"{job}: env-var check must RAISE RuntimeError when OA_KEY/"
@@ -23697,7 +23697,7 @@ def _():
     cs2_settlement. Both scripts catch the ImportError silently and return
     [] / 0, which causes cs2_scanner to write '0 upcoming matches' and the
     pipeline marker check correctly raises 'failed.' Was missing from
-    Railway env until 2026-06-25 — caused silent fixture starvation.
+    the VPS env until 2026-06-25 — caused silent fixture starvation.
 
     Pin so a future requirements.txt cleanup doesn't drop it again.
     """
@@ -23705,7 +23705,7 @@ def _():
     req = pathlib.Path("requirements.txt").read_text()
     assert "cs2api" in req, (
         "requirements.txt must include cs2api — used by cs2_elo_scanner + "
-        "cs2_settlement for bo3.gg API access. Missing from Railway env "
+        "cs2_settlement for bo3.gg API access. Missing from the VPS env "
         "caused 'No upcoming matches found' silent failures."
     )
 
@@ -25836,7 +25836,7 @@ def _():
                "normalize_team", "scan"]:
         assert f"def {fn}" in src
 
-    # Railway cron
+    # the VPS cron
     sched = pathlib.Path("workers/scheduler.py").read_text()
     tree = ast.parse(sched)
     fns = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
@@ -25849,7 +25849,7 @@ def _():
     map, and a 3-stage matcher (exact → norm_team → fuzzy) — the same shape
     we proved at 84.5% coverage on cs2_match_id_bridge_populate.py. The
     previous scanner used a single exact-dict lookup on normalize_team()
-    output and matched 0/30 fixtures against Pinnacle on Railway."""
+    output and matched 0/30 fixtures against Pinnacle on the VPS."""
     import pathlib, ast
     src = pathlib.Path("scripts/esports/cs2_pinnacle_scanner.py").read_text()
 
@@ -26698,7 +26698,7 @@ def _():
 @test("CS2-PIPELINE-TRUTHFUL-LOGGING — cs2_* subprocess jobs propagate non-zero exit into pipeline_runs")
 def _():
     """CS2-PIPELINE-TRUTHFUL-LOGGING (2026-06-21): closes a silent-failure
-    class. Between 2026-06-14 and 2026-06-21, every cs2_* job on Railway
+    class. Between 2026-06-14 and 2026-06-21, every cs2_* job on the VPS
     logged status='completed' while cs2_upcoming_matches stayed empty for
     9 days. Root cause: jobs ran the work in a subprocess and called
     `_run_job(name, lambda: None)` AFTER — the no-op lambda always succeeded,
@@ -27336,7 +27336,7 @@ def test_railway_elimination_service():
     assert "python3" in unit_src, "systemd unit must invoke python3"
     assert "TZ=UTC" in unit_src, "systemd unit must set TZ=UTC (APScheduler timezone)"
     assert "FLARESOLVERR_URL=http://localhost:8191" in unit_src, (
-        "systemd unit must pin FLARESOLVERR_URL to localhost (not Railway-hosted)"
+        "systemd unit must pin FLARESOLVERR_URL to localhost (not VPS-hosted)"
     )
     assert "SCHEDULER_PROCESS_MB_LIMIT" in unit_src, (
         "systemd unit must set SCHEDULER_PROCESS_MB_LIMIT for health_alerts.py"
@@ -27629,7 +27629,7 @@ def test_coolbet_scrapers_moved_to_mac():
        If the offsets drift, betting_refresh at :05/:35 may read
        stale Coolbet odds.
     3. Both plists must pin FLARESOLVERR_URL=http://localhost:8191
-       to defeat any stale Railway URL still sitting in `.env`.
+       to defeat any stale the VPS URL still sitting in `.env`.
     """
     import pathlib
     root = pathlib.Path(__file__).parent.parent
@@ -27682,7 +27682,7 @@ def test_coolbet_scrapers_moved_to_mac():
         )
         assert "<string>http://localhost:8191</string>" in plist, (
             f"{name} must pin FLARESOLVERR_URL=http://localhost:8191 "
-            "so the dead Railway URL in .env can't hijack the run."
+            "so the dead the VPS URL in .env can't hijack the run."
         )
         assert "<key>RunAtLoad</key>\n    <false/>" in plist, (
             f"{name} must have RunAtLoad=false so `launchctl load` "

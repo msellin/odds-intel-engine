@@ -132,7 +132,7 @@ def run(target_date: date = None, dry_run: bool = False) -> bool:
     if missed:
         lines.append(f"<h3>⚠️ {len(missed)} Stripe event(s) NOT processed</h3>")
         lines.append("<p>These events were delivered by Stripe but never hit processed_events. "
-                     "Check Railway logs for webhook failures around these times.</p><ul>")
+                     "Check the VPS logs for webhook failures around these times.</p><ul>")
         for ev in stripe_events:
             if ev["id"] in missed:
                 ts = datetime.fromtimestamp(ev["created"], tz=timezone.utc).strftime("%H:%M UTC")

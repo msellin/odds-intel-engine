@@ -101,7 +101,7 @@ def check_morning_bets() -> None:
             "zero_bets",
             f"0 bets placed — {match_count} matches scheduled",
             f"<p>Today ({today}) has {match_count} scheduled matches but 0 simulated bets were placed.</p>"
-            f"<p>The morning betting pipeline likely failed. Check Railway logs.</p>",
+            f"<p>The morning betting pipeline likely failed. Check the VPS logs.</p>",
         )
 
 
@@ -218,7 +218,7 @@ def check_snapshot_staleness() -> None:
             f"LivePoller stale — last snapshot {age_minutes:.0f} min ago",
             f"<p>It is {now_utc.strftime('%H:%M UTC')} and the last live match snapshot was "
             f"{age_minutes:.0f} minutes ago.</p>"
-            f"<p>LivePoller may be down or stuck. Check Railway logs for the live-poller thread.</p>",
+            f"<p>LivePoller may be down or stuck. Check the VPS logs for the live-poller thread.</p>",
         )
 
 
@@ -227,7 +227,7 @@ def check_tennis_scanner_silent() -> None:
     successfully in > 12 hours. The scanner is scheduled at 06:00 + 14:00 UTC
     so a healthy state means last success ≤ 12h ago in steady state. Catches:
 
-    - OA_KEY/ODDS_API_KEY missing/expired on Railway
+    - OA_KEY/ODDS_API_KEY missing/expired on the VPS
     - Scheduler crash that skipped the tennis_scanner cron specifically
     - subprocess timeout / The Odds API outage
     - Quota exhaustion (the failure mode that bit OddsPapi at 250 req/mo;
@@ -269,7 +269,7 @@ def check_tennis_scanner_silent() -> None:
             f"{last_success.strftime('%Y-%m-%d %H:%M UTC')}).</p>"
             f"<p>Scheduled at 06:00 + 14:00 UTC. Likely causes:</p>"
             f"<ul>"
-            f"<li>OA_KEY / ODDS_API_KEY missing or invalid on Railway</li>"
+            f"<li>OA_KEY / ODDS_API_KEY missing or invalid on the VPS</li>"
             f"<li>The Odds API credit quota exhausted (500/mo free tier)</li>"
             f"<li>Scheduler crashed or specific cron skipped</li>"
             f"<li>subprocess timeout (>300s) — check logs</li>"
@@ -348,7 +348,7 @@ def check_settlement() -> None:
             f"<p>There are {stale_pending} simulated bets still marked 'pending' on matches "
             f"that have finished.</p>"
             f"<p>Settlement job may have failed on {today}. "
-            f"Check Railway logs for the 21:00 UTC settlement job and pipeline_runs table.</p>",
+            f"Check the VPS logs for the 21:00 UTC settlement job and pipeline_runs table.</p>",
         )
 
 
@@ -444,7 +444,7 @@ def check_betting_refresh_stale() -> None:
             f"<p>At {now_utc.strftime('%H:%M UTC')} no betting_refresh job has completed in the "
             f"last 4 hours.</p>"
             f"<p>Either APScheduler is stuck, the betting_pipeline is erroring out before commit, "
-            f"or the engine is OOMed. Check Railway logs.</p>",
+            f"or the engine is OOMed. Check the VPS logs.</p>",
         )
         return
 
@@ -458,7 +458,7 @@ def check_betting_refresh_stale() -> None:
             f"betting_refresh stale — last run {age_min:.0f} min ago",
             f"<p>It is {now_utc.strftime('%H:%M UTC')} and the last successful betting_refresh "
             f"completed {age_min:.0f} minutes ago (expected every 30 min in the active window).</p>"
-            f"<p>2 consecutive cycles have been missed. Pipeline likely degraded — check Railway logs "
+            f"<p>2 consecutive cycles have been missed. Pipeline likely degraded — check the VPS logs "
             f"for stack traces in betting_pipeline or shadow_* jobs.</p>",
         )
 
@@ -637,7 +637,7 @@ def check_stale_retirement_flags() -> None:
 
 
 def check_dashboard_cache_stale() -> None:
-    """CACHE-FRESHNESS-WATCHDOG 2026-06-01 — Railway dashboard_cache_refresh
+    """CACHE-FRESHNESS-WATCHDOG 2026-06-01 — VPS_cache_refresh
     job stopped running 14:35 UTC today; the staleness went unnoticed until a
     user spotted misleading numbers on /performance 3h later. This check fires
     a Telegram alert when the latest dashboard_cache row is > 60 min old —
@@ -664,10 +664,10 @@ def check_dashboard_cache_stale() -> None:
             f"The cron is supposed to run every 30 minutes via "
             f"<code>job_dashboard_cache_refresh</code>.</p>"
             f"<p>Likely causes: APScheduler hung (check <code>pipeline_runs</code> "
-            f"for jobs stuck in 'running'), Railway service crash, or "
+            f"for jobs stuck in 'running'), systemd service crash, or "
             f"<code>write_dashboard_cache()</code> raising silently.</p>"
             f"<p>The /performance page is currently showing the stale row, which "
-            f"may confuse visitors. Restart Railway or investigate the scheduler "
+            f"may confuse visitors. Restart the VPS or investigate the scheduler "
             f"thread pool.</p>"
         )
 

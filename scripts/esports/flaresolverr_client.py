@@ -2,7 +2,7 @@
 FlareSolverr client — defeats Cloudflare bot protection by routing requests
 through a headless-Chrome container that solves CF challenges automatically.
 
-Run FlareSolverr locally or on Railway:
+Run FlareSolverr locally or on the VPS:
     docker run -d --name=flaresolverr --restart unless-stopped \\
       -p 8191:8191 ghcr.io/flaresolverr/flaresolverr:latest
 
@@ -44,7 +44,7 @@ _last_request_at = 0.0
 def is_available() -> bool:
     """Quick GET / to check FlareSolverr is reachable.
 
-    15s timeout — Railway internal DNS can be slow on cold container start.
+    15s timeout — the VPS internal DNS can be slow on cold container start.
     Previously 5s caused silent fallback to plain requests, hitting CF 403s.
     """
     try:

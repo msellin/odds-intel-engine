@@ -73,7 +73,7 @@ class BudgetTracker:
     def _seed_from_db(self) -> None:
         """Seed _endpoint_counts_today from the latest api_budget_log row for today.
 
-        BT-SEED-FIX: the dict is in-memory only — Railway redeploys reset it while
+        BT-SEED-FIX: the dict is in-memory only — scheduler restarts reset it while
         calls_today re-syncs from AF /status. This one DB read at startup closes the gap.
         Silently skips if DB is unavailable or the latest row is from a prior day.
         """

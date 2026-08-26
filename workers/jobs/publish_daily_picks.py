@@ -2,7 +2,7 @@
 GROWTH-ACCURACY-PICKS-LOG (2026-06-05) — daily publisher for the
 public accuracy track-record.
 
-Runs at 06:00 UTC daily via the Railway scheduler. For every match
+Runs at 06:00 UTC daily via the VPS scheduler. For every match
 kicking off in the next 24h that has an ensemble prediction, logs:
   - The highest-confidence 1X2 selection (home / draw / away)
   - The higher of over_15 / under_15 (OU 1.5 market)

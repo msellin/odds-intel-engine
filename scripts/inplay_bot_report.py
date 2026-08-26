@@ -2,7 +2,7 @@
 OddsIntel — Inplay Bot Report
 
 Shows per-strategy tried/fired funnel from inplay_bot_stats, combined with
-actual bet P&L from simulated_bets. Replaces hunting through Railway logs.
+actual bet P&L from simulated_bets. Replaces hunting through the VPS logs.
 
 Usage:
     python3 scripts/inplay_bot_report.py

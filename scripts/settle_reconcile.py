@@ -154,7 +154,7 @@ def run(target_date: date = None, dry_run: bool = False) -> bool:
         f"<h2>Settlement drift: {target_date.isoformat()}</h2>",
         f"<p><strong>{len(stale)} finished matches</strong> still have pending bets "
         f"after the settlement job ran.</p>",
-        "<p>Check Railway logs around 21:00 UTC for settlement errors.</p>",
+        "<p>Check the VPS logs around 21:00 UTC for settlement errors.</p>",
         "<ul>",
     ]
     for r in stale:
@@ -166,7 +166,7 @@ def run(target_date: date = None, dry_run: bool = False) -> bool:
     lines.append("</ul>")
     lines.append(
         "<p><strong>Action:</strong> Run <code>venv/bin/python -m workers.jobs.settlement settle_ready</code> "
-        "manually, or trigger settlement via Railway deploy.</p>"
+        "manually, or trigger settlement via the VPS deploy.</p>"
     )
     lines.append(f"<p>Summary: {finished} finished matches | {total_pending} total pending bets | "
                  f"{total_settled} settled bets</p>")

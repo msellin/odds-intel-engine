@@ -1,7 +1,7 @@
 """
-Operator kill switches — disable subsystems via Railway env vars without a redeploy.
+Operator kill switches — disable subsystems via VPS env vars without a redeploy.
 
-Usage: set the env var to "1" or "true" in Railway → subsystem skips its next cycle.
+Usage: set the env var to "1" or "true" in /opt/odds-intel-engine/.env → subsystem skips its next cycle.
 Unset or "0" = enabled (default). Changes take effect within one cycle (30s–5min).
 
 Available flags:

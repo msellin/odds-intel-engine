@@ -1,12 +1,12 @@
 """
-Probe Betfair data accessibility from this host (Railway / server).
+Probe Betfair data accessibility from this host (the VPS / server).
 
 Tests:
   1. DNS + TCP reachability of betfair.com and historicdata.betfair.com
   2. Free BSP (Betfair Starting Price) CSV data — no auth required
      https://promo.betfair.com/betfairsp/prices/dfbetfairsp{DDMMYYYY}.csv
   3. historicdata.betfair.com landing page (auth required to actually download,
-     but 200/403 vs timeout tells us if Railway can reach it at all)
+     but 200/403 vs timeout tells us if the VPS can reach it at all)
 
 If BSP access works: run with --download to pull the last N days of football
 BSP files into data/raw/betfair_bsp/.
@@ -17,7 +17,7 @@ Free, no registration, goes back to ~2016.
 
 For full historical tick data (historicdata.betfair.com):
   - Requires Betfair account + data purchase (£10-50/month per sport)
-  - If Railway can reach the site, you can register via Railway IP if
+  - If the VPS can reach the site, you can register via the VPS IP if
     needed (no geo-block at server level)
 
 Usage:

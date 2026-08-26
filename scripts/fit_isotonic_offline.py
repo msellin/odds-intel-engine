@@ -162,7 +162,7 @@ def main():
         t.add_row(name, f"{b:.4f}", f"{a:.4f}", f"{sym} {abs(delta):.4f}")
     console.print(t)
     console.print(f"\n[green]✓ Saved {len(results)} isotonic pickles to {bundle}[/green]")
-    console.print(f"[dim]Activate via STAGE2_CALIBRATOR=isotonic on Railway[/dim]")
+    console.print(f"[dim]Activate via STAGE2_CALIBRATOR=isotonic on the VPS[/dim]")
 
 
 if __name__ == "__main__":

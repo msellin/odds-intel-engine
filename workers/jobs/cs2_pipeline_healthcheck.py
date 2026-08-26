@@ -4,7 +4,7 @@ pipeline. Independent of the scheduler wrapper so it catches the case where
 the wrapper itself silently lies about success.
 
 Why this exists, in one sentence: between 2026-06-14 and 2026-06-21, every
-cs2_* job on Railway logged status='completed' in pipeline_runs while
+cs2_* job on the VPS logged status='completed' in pipeline_runs while
 cs2_upcoming_matches received zero new rows — 9 days of silent outage.
 The scheduler-side fix (CS2-PIPELINE-TRUTHFUL-LOGGING, same commit) makes
 non-zero subprocess exits propagate as RuntimeError so pipeline_runs reflects
@@ -149,7 +149,7 @@ def _format_alert(status: str, reason: str, state: dict, now: datetime) -> str:
 
     lines.append("")
     if status == "stale_scanner":
-        lines.append("➡ Check Railway logs for the most recent <code>cs2_scanner</code> + "
+        lines.append("➡ Check the VPS logs for the most recent <code>cs2_scanner</code> + "
                      "<code>cs2_hltv_upcoming</code> + <code>cs2_pinnacle_scanner</code> runs. "
                      "Pipeline_runs.error_message now carries stderr after the "
                      "CS2-PIPELINE-TRUTHFUL-LOGGING fix.")

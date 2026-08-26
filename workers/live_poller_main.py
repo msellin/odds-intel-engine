@@ -2,9 +2,9 @@
 
 Currently LivePoller runs as a daemon thread inside `workers.scheduler.main()`,
 so a crash in the poller takes the whole scheduler with it. To split it into
-a separate Railway service:
+a separate systemd service:
 
-  1. Add a second Railway service pointing at this entrypoint:
+  1. Add a second systemd service pointing at this entrypoint:
         python3 -m workers.live_poller_main
   2. On the SCHEDULER service, set `LIVE_POLLER_IN_SCHEDULER=false` so it
      doesn't double-run the poller.

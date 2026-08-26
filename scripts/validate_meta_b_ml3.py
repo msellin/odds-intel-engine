@@ -21,7 +21,7 @@ Methodology:
        MARGINAL if separation 2-5pp
        FAIL  if < 2pp (= noise)
 
-Output guides the META_B_ML3_VERSION + ENABLED flip on Railway.
+Output guides the META_B_ML3_VERSION + ENABLED flip on the VPS.
 
 Run pre-flight when you want to check current data:
     python3 scripts/validate_meta_b_ml3.py --since 2026-05-25

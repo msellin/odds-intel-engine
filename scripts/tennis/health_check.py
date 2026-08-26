@@ -3,7 +3,7 @@
 TENNIS-PAPER-BETS health check — one-shot diagnostic.
 
 Verifies every layer of the tennis pipeline can be reached + reports the
-last-known state. Designed to be runnable both locally and on Railway when
+last-known state. Designed to be runnable both locally and on the VPS when
 something looks off. Output is a single human-readable report; exit code is
 0 if everything's healthy, 1 if any check fails.
 

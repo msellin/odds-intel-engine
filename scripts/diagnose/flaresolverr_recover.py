@@ -19,7 +19,7 @@ The 2026-06-25 incident pattern: cs2_hltv_upcoming + cs2_coolbet_scanner
 The fix below would have unstuck the failing sessions without touching
 coolbet_prod (which was still serving coolbet_odds_snapshot fine).
 
-Usage (against Railway FS — set FLARESOLVERR_URL first):
+Usage (against the VPS FS — set FLARESOLVERR_URL first):
     # See what's there
     FLARESOLVERR_URL=https://your-fs.up.railway.app \\
         python3 scripts/diagnose/flaresolverr_recover.py --list

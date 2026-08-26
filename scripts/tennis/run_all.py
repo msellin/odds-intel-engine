@@ -3,7 +3,7 @@
 Tennis daily cycle — one-command orchestrator.
 
 Fires the full tennis pipeline in the right order, with sensible defaults
-for manual operation. Used when the Railway scheduler is unreliable (the
+for manual operation. Used when the VPS scheduler is unreliable (the
 7-day silent-failure incident on 2026-06-25 motivated this) AND as a
 manual catch-up tool after outages.
 

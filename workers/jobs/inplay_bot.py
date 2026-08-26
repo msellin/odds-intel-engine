@@ -2004,7 +2004,7 @@ def _check_strategy_e(cand: dict, pm: dict, has_red_card: bool) -> dict | None:
     # defaults to false → shadow mode: both probs stored in extras, but the
     # edge gate still uses raw_model_prob (preserves current bet count).
     # After 7+ days of shadow data confirms the calibrated probs would have
-    # filtered the right cohort, flip to true on Railway to activate.
+    # filtered the right cohort, flip to true in /opt/odds-intel-engine/.env to activate.
     from workers.model.improvements import apply_platt
     cal_model_prob = apply_platt(raw_model_prob, "inplay_e_under_25", odds)
     platt_enabled = os.getenv("INPLAY_E_PLATT_ENABLED", "false").lower() in ("true", "1", "yes")

@@ -10,7 +10,7 @@ Two strategies tried in order:
 Run:
     venv/bin/python scripts/coolbet_login_poc.py
     venv/bin/python scripts/coolbet_login_poc.py --strategy stealth
-    venv/bin/python scripts/coolbet_login_poc.py --headless  # for Railway
+    venv/bin/python scripts/coolbet_login_poc.py --headless  # for the VPS
 
 Credentials from .env: COOLBET_EMAIL, COOLBET_PASSWORD
 """

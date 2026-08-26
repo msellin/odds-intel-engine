@@ -3020,7 +3020,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         # matches whose league's rolling mean CLV is below the threshold.
         # Env-gated — default OFF so it doesn't contaminate Phase 3.5 verdict.
         # To activate post-2026-06-07:
-        #   ELITE_LEAGUE_FILTER_ENABLED=true on Railway
+        #   ELITE_LEAGUE_FILTER_ENABLED=true on the VPS
         #   (optional) ELITE_LEAGUE_FILTER_THRESHOLD=-0.005 (default -0.01)
         if os.getenv("ELITE_LEAGUE_FILTER_ENABLED", "false").lower() in ("true", "1", "yes"):
             league_clv_threshold = float(os.getenv("ELITE_LEAGUE_FILTER_THRESHOLD", "-0.01"))

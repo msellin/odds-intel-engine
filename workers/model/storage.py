@@ -1,7 +1,7 @@
 """
 ML-BUNDLE-STORAGE — Supabase Storage adapter for trained model bundles.
 
-Persistent registry that solves Railway's ephemeral-filesystem problem: every
+Persistent registry that solves the ephemeral-filesystem problem: every
 deploy resets the container, so bundles trained at runtime get destroyed.
 This module pushes bundles to Supabase Storage on train completion and pulls
 them back on first inference, transparently.
@@ -19,14 +19,14 @@ Operator workflow:
      auto-uploads bundle + registers row in model_versions.
   2. Inspect: `python3 scripts/list_models.py` → shows every version with
      its CV metrics + promotion status.
-  3. Promote: set `MODEL_VERSION=v_20260517` on Railway + redeploy. First
+  3. Promote: set `MODEL_VERSION=v_20260517` in /opt/odds-intel-engine/.env + restart oddsintel-scheduler. First
      prediction triggers download from Storage; subsequent predictions hit
      local cache. SQL: `UPDATE model_versions SET promoted_at = NOW()
      WHERE version = ...`. Demote previous version with `demoted_at`.
   4. Rollback: change MODEL_VERSION back. Old bundle still in Storage.
 
-Why Supabase Storage rather than Railway Volume:
-  - Survives Railway region migration / service replacement
+Why Supabase Storage rather than a host volume:
+  - Survives host migration / service replacement
   - Local agent can pull same bundles for offline_eval (single source of truth)
   - Postgres registry gives audit trail + per-version CV metrics
   - Free under 1GB; ~5MB/bundle = ~200 versions before any cost

@@ -49,7 +49,7 @@ from collections import defaultdict, deque
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Importable standalone (Railway scheduler imports this; CLI also runs)
+# Importable standalone (VPS scheduler imports this; CLI also runs)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from dotenv import load_dotenv

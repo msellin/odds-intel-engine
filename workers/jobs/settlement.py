@@ -1083,7 +1083,7 @@ def fix_stale_live_matches():
     Detect matches stuck on status='live' OR 'scheduled' that have actually finished.
 
     The live poller's fetch_live_bulk() only returns fixtures with status
-    1H/2H/HT. If the poller misses a match entirely (e.g. Railway restart,
+    1H/2H/HT. If the poller misses a match entirely (e.g. the VPS restart,
     stale deploy, race condition at startup), the DB status stays 'scheduled'
     forever. This function catches both cases:
       1. Finding matches with status IN ('live','scheduled') kicked off >95

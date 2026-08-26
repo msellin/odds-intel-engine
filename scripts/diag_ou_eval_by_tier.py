@@ -1,6 +1,6 @@
 """OU-CLV-OPTION-B-RE-EVAL (2026-06-12) — per-tier OU 2.5 eval.
 
-The current Railway env override `MODEL_VERSION_OU=v14_recreate_2026_05_11`
+The current the VPS env override `MODEL_VERSION_OU=v14_recreate_2026_05_11`
 (flipped 2026-06-07) was based on a TIER-C-EXPAND-driven log-loss
 regression. OU25-DEDICATED-MODEL-INVESTIGATE (2026-06-08) found that on
 the broader 1,493-match holdout, `v20260524_market` actually dominates

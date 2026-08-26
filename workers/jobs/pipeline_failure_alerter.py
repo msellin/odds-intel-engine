@@ -10,14 +10,14 @@ today"). The digest stays for forensics; this alerter is the
 fire-detection layer.
 
 Strategy: every cron tick, ask "which jobs have failed N times in a
-row (excluding transient Railway redeploy kills)?" Fire a Telegram
+row (excluding transient a scheduler restart kills)?" Fire a Telegram
 once per stuck job; dedup via pipeline_health_state so the same
 stuck job doesn't buzz the phone every hour for a week. On recovery
 (next successful run after an alert was issued), clear the dedup
 marker — next outage of that same job re-fires.
 
 What's "transient" — the same 'killed — scheduler restarted' /
-'killed — orphaned' patterns the digest filters out. Railway
+'killed — orphaned' patterns the digest filters out. the VPS
 redeploys can produce 1-2 in a row when a deploy + a long-running
 job race; we don't want to wake the operator for that.
 """
@@ -159,7 +159,7 @@ def _format_alert(job: dict) -> str:
         ok_str = "no recent success"
     lines = [
         f"🔴 {job_name} stuck",
-        f"  {n}+ consecutive failures (excl. Railway redeploy kills)",
+        f"  {n}+ consecutive failures (excl. a scheduler restart kills)",
         f"  last fail: {last_fail:%Y-%m-%d %H:%M} UTC",
         f"  {ok_str}",
     ]

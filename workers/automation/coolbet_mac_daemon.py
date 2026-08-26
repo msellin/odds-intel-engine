@@ -3,13 +3,13 @@ Coolbet Mac-side placement daemon (COOLBET-MAC-DAEMON, 2026-06-12).
 
 Runs on the operator's Mac at home. Polls the DB for qualified picks
 and places them against Coolbet via CoolbetSession — same code path the
-Railway-side placer used, but FROM A RESIDENTIAL IP so Imperva's
+VPS-side placer used, but FROM A RESIDENTIAL IP so Imperva's
 /s/auth/login cloud-IP block doesn't apply.
 
 WHY THIS EXISTS:
-The auto-placer chain (Imperva 403 from Railway IPs → FS Chrome tab →
+The auto-placer chain (Imperva 403 from the VPS IPs → FS Chrome tab →
 30-min JWT → SMS-2FA on re-login) was structurally fragile when run
-from Railway. The 100+ SMS spam on 2026-06-11 night was the breaking
+from the VPS. The 100+ SMS spam on 2026-06-11 night was the breaking
 point. Moving the placement leg to a Mac at home fixes the root cause
 — residential IP, persistent local Chrome profile (volume-mounted),
 no remote container OOM crashes.

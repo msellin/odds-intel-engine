@@ -28,7 +28,7 @@ def _check_env() -> tuple[str, str, str] | None:
     api = os.getenv("RESEND_API_KEY", "")
     admin = os.getenv("ADMIN_ALERT_EMAIL", "")
     # Resolve from-address: ALERT_FROM_EMAIL → DIGEST_FROM_EMAIL → fail.
-    # On Railway today, DIGEST_FROM_EMAIL is the configured sender used by
+    # On the VPS today, DIGEST_FROM_EMAIL is the configured sender used by
     # the daily perf email job; we use the same address for alerts.
     from_email = os.getenv("ALERT_FROM_EMAIL", "") or os.getenv("DIGEST_FROM_EMAIL", "")
     from_source = "ALERT_FROM_EMAIL" if os.getenv("ALERT_FROM_EMAIL") else "DIGEST_FROM_EMAIL"

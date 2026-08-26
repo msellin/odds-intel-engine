@@ -3,7 +3,7 @@
 FlareSolverr stale-session sweeper.
 
 The bug we hit on 2026-06-11: every scraper that calls FS's sessions.create
-without a matching sessions.destroy leaks a Chrome instance. Railway's
+without a matching sessions.destroy leaks a Chrome instance. the VPS's
 container hit the slot limit and started hanging on new session creates.
 
 This sweeper runs hourly. It lists current FS sessions and destroys any

@@ -6,8 +6,8 @@ What "promote" means in this codebase:
   - model_versions.promoted_at = NOW() — audit trail
   - The previous promoted version's demoted_at = NOW() (if known)
 
-This script handles the DB side and prints the Railway env-var command for
-the human to run (since changing Railway env requires the dashboard or CLI
+This script handles the DB side and prints the the VPS env-var command for
+the human to run (since changing the VPS env requires the dashboard or CLI
 auth, not our DB connection).
 
 Usage:
@@ -74,18 +74,18 @@ def main():
         console.print(f"[bold]Current production (per DB):[/bold] {current[0]} (promoted {current[1]})")
     else:
         console.print(f"[bold]Current production (per DB):[/bold] [dim]none recorded[/dim] "
-                      f"— set MODEL_VERSION env on Railway is the actual source of truth.")
+                      f"— set MODEL_VERSION env on the VPS is the actual source of truth.")
 
     env_var = _market_env_var(args.market)
     scope = f"market={args.market.upper()}" if args.market else "global"
-    console.print(f"[bold]Scope:[/bold] {scope} → Railway env [cyan]{env_var}={args.version}[/cyan]")
+    console.print(f"[bold]Scope:[/bold] {scope} → the VPS env [cyan]{env_var}={args.version}[/cyan]")
 
     if args.dry_run:
         console.print("\n[yellow]DRY RUN — no DB writes performed.[/yellow]")
         console.print(f"\nTo actually promote:")
         console.print(f"  1. python3 scripts/promote_model.py {args.version}"
                       + (f" --market {args.market}" if args.market else ""))
-        console.print(f"  2. On Railway: set env var {env_var}={args.version} and redeploy")
+        console.print(f"  2. On the VPS: set env var {env_var}={args.version} and redeploy")
         return
 
     # Demote the current production (if any) — only on global promotion.
@@ -107,9 +107,9 @@ def main():
     console.print(f"  Promoted {args.version} (promoted_at = NOW())")
 
     console.print("\n[bold green]✓ DB updated.[/bold green]")
-    console.print(f"\n[bold]Next step (manual):[/bold] flip Railway env var")
+    console.print(f"\n[bold]Next step (manual):[/bold] flip the VPS env var")
     console.print(f"  [cyan]{env_var}={args.version}[/cyan]")
-    console.print(f"\nAfter Railway redeploys, the bots will use this version on the next pipeline cohort.")
+    console.print(f"\nAfter scheduler restarts, the bots will use this version on the next pipeline cohort.")
     cur.close(); conn.close()
 
 

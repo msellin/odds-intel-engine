@@ -2,7 +2,7 @@
 Coolbet bet-signaler — Telegram safety-net for value picks.
 
 WHY THIS EXISTS (COOLBET-SIGNALER-A, 2026-06-12): the auto-placer chain
-(Imperva 403 from Railway IPs → FlareSolverr Chrome tab → 30-min JWT TTL
+(Imperva 403 from the VPS IPs → FlareSolverr Chrome tab → 30-min JWT TTL
 → SMS-2FA on re-login) is structurally fragile. Each link in that chain
 broke at least once this week. The signaler bypasses the entire chain:
 it reads qualified picks from `simulated_bets` and sends a Telegram

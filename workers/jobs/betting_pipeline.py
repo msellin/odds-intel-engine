@@ -59,7 +59,7 @@ def _current_cohort() -> str:
 
 def _run_coolbet_signal() -> None:
     """COOLBET-SIGNALER-A (2026-06-12): replaces the previous auto-placer
-    call. The auto-place chain (Imperva 403 from Railway IPs → FlareSolverr
+    call. The auto-place chain (Imperva 403 from the VPS IPs → FlareSolverr
     Chrome tab → 30-min JWT → SMS-2FA on re-login) burned the operator with
     100+ SMS overnight 2026-06-11 when the Chrome tab crashed. The signaler
     bypasses ALL of that — pure DB read + Telegram send, no Coolbet API.
@@ -149,7 +149,7 @@ def run_betting(cohort: str | None = None):
         console.print(f"\n[red]Betting pipeline failed: {e}[/red]")
         console.print(f"[red dim]{tb}[/red dim]")
         if run_id:
-            # Store full traceback (not just str(e)) to help diagnose Railway failures
+            # Store full traceback (not just str(e)) to help diagnose the VPS failures
             full_error = f"{type(e).__name__}: {e}\n\nTraceback:\n{tb}"
             log_pipeline_failed(run_id, full_error[:2000])
         raise

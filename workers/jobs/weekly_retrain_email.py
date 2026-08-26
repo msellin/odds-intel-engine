@@ -3,7 +3,7 @@
 Called by job_weekly_retrain after scripts/weekly_eval_and_compare.py produces
 its SUMMARY_JSON output. Parses that JSON and emails a per-market comparison
 to ADMIN_ALERT_EMAIL via Resend so the human in the loop actually sees the
-retrain result instead of it going to /dev/null on the Railway cron logs.
+retrain result instead of it going to /dev/null on the the VPS cron logs.
 """
 from __future__ import annotations
 import os, re, json

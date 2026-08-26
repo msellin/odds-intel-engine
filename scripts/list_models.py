@@ -63,7 +63,7 @@ def main():
     console.print(
         "\n[dim]Promote: UPDATE model_versions SET promoted_at = NOW() WHERE version = '...'\n"
         "Demote:  UPDATE model_versions SET demoted_at = NOW() WHERE version = '...'\n"
-        "Switch:  set MODEL_VERSION env var on Railway → redeploy → bundle auto-downloads on first prediction.[/dim]"
+        "Switch:  set MODEL_VERSION env var on the VPS → redeploy → bundle auto-downloads on first prediction.[/dim]"
     )
 
 

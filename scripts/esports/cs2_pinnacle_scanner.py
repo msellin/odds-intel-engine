@@ -7,7 +7,7 @@ pinnacle_implied_prob as a model feature is documented to add 2-5pp AUC in
 similar studies — bigger than every other signal we've added today combined.
 
 API: guest.api.arcadia.pinnacle.com — public, no auth key required, but
-geo-blocked in several countries including Estonia. Railway US IP works.
+geo-blocked in several countries including Estonia. the VPS US IP works.
 
 Politeness:
 - 4-6s random jitter AFTER each request (lifted from our soccer scraper)
@@ -146,7 +146,7 @@ def discover_cs2_leagues(c: PinnacleClient) -> tuple[list[dict], str]:
     """Hit /sports/12/leagues, filter for CS2/Counter-Strike, cache to disk.
 
     Returns (filtered_list, diagnostic_str) so the scraper state row can record
-    what we found — important since the script runs remotely on Railway and we
+    what we found — important since the script runs remotely on the VPS and we
     can't see stdout directly.
     """
     leagues = c.get(f"/0.1/sports/{PINNACLE_ESPORTS_SPORT_ID}/leagues")
@@ -596,7 +596,7 @@ def main():
 
     print(f"\n=== CS2 Pinnacle Scanner  {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC ===")
 
-    ctx = scraper_run("pinnacle_scanner", "Pinnacle CS2 moneyline scrape (Railway-side IP only)") if (scraper_run and not args.dry) else None
+    ctx = scraper_run("pinnacle_scanner", "Pinnacle CS2 moneyline scrape (VPS-side IP only)") if (scraper_run and not args.dry) else None
     st = ctx.__enter__() if ctx else None
     try:
         try:
@@ -615,7 +615,7 @@ def main():
             for _ in range(result["updated"]):
                 st.tick_done()
             # Surface league discovery diagnostic in notes — critical for debugging
-            # remote-only failures (Railway-side IP can't be probed locally).
+            # remote-only failures (VPS-side IP can't be probed locally).
             mb = result.get("match_breakdown", {})
             st.note(
                 f"leagues={result['leagues']} "

@@ -250,7 +250,7 @@ def log_heal_attempt(*, triggered_by: str, result: dict,
 
     triggered_by: 'auto' (from daemon consecutive-error path), 'operator_tg'
     (Telegram inline button), 'operator_cli' (--full-heal command), 'pipeline'
-    (Railway-side helper, future)."""
+    (VPS-side helper, future)."""
     import json as _json
     try:
         from workers.api_clients.db import execute_write
@@ -275,8 +275,8 @@ def log_heal_attempt(*, triggered_by: str, result: dict,
 
 def mark_prekickoff_run(result: dict) -> None:
     """Write the pre-kickoff catch-net's per-fire heartbeat so /admin pages
-    and ad-hoc probes can verify Railway's */5 cron actually ran without
-    tailing Railway logs. Called from
+    and ad-hoc probes can verify the VPS's */5 cron actually ran without
+    tailing the VPS logs. Called from
     `workers.jobs.coolbet_prekickoff_alert.run_prekickoff_alert` at the end
     of every invocation, success OR no-op — a "healthy daemon, no
     candidates" run still bumps the timestamp so a stale
@@ -389,12 +389,12 @@ def persist_jwt(jwt: str, *, login_session_id: str | None = None,
     The JWT in env stays as a fallback for first-deploy bootstrap; DB is
     the freshest canonical source after that.
 
-    Why this matters: Imperva 403's /s/auth/login from Railway IPs but
-    accepts it from residential IPs. Without DB-backed JWT, Railway loses
+    Why this matters: Imperva 403's /s/auth/login from the VPS IPs but
+    accepts it from residential IPs. Without DB-backed JWT, the VPS loses
     its session on every restart and can't re-login from there. With it,
-    local enrollment writes a fresh JWT to DB → Railway reads from DB on
+    local enrollment writes a fresh JWT to DB → the VPS reads from DB on
     next start → keeps it alive via /s/auth/renew-token (which IS
-    accepted from Railway IP).
+    accepted from the VPS IP).
 
     set_by is a free-text process tag for debugging — e.g. "local_enroll",
     "local_renew", "railway_renew" — surfaces in /status."""
@@ -410,7 +410,7 @@ def persist_jwt(jwt: str, *, login_session_id: str | None = None,
 
 
 def _default_set_by() -> str:
-    """Best-effort process tag — 'railway_*' on Railway, 'local_*' otherwise.
+    """Best-effort process tag — 'railway_*' on the VPS, 'local_*' otherwise.
     Used when a caller doesn't pass an explicit set_by tag."""
     if os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"):
         return "railway"
@@ -425,7 +425,7 @@ def read_persisted_jwt() -> tuple[str | None, str | None]:
     API login.
 
     Called from CoolbetSession.__init__ to bootstrap from the freshest
-    available JWT across the local + Railway pair, so neither side has
+    available JWT across the local + the VPS pair, so neither side has
     to wait for an env-var push."""
     try:
         from workers.api_clients.db import execute_query

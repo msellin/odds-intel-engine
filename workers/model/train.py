@@ -793,7 +793,7 @@ def load_training_data(include_pinnacle: bool = False,
     # transaction mode) kills long-running SELECTs that scan most of MFV.
     # Rewrite the DATABASE_URL to use the session-mode pooler port (5432),
     # which allows persistent connections. Same host, different port; works
-    # locally and on Railway.
+    # locally and on the VPS.
     import os, re
     import psycopg2
     import psycopg2.extras
@@ -951,7 +951,7 @@ def train_all(version: str = "untagged",
     console.print(f"\n[bold green]✓ All models trained and saved to {output_dir}[/bold green]\n")
 
     # ML-BUNDLE-STORAGE — push the bundle to Supabase Storage + register a
-    # row in `model_versions`. Without this, training on Railway leaves the
+    # row in `model_versions`. Without this, training on the VPS leaves the
     # bundle on the container's ephemeral filesystem and it dies on the next
     # deploy. With this, every freshly-trained bundle is durable, downloadable
     # from any environment, and auditable through the registry table.
@@ -992,7 +992,7 @@ def train_all(version: str = "untagged",
     except Exception as e:
         console.print(
             f"[yellow]⚠ Storage upload failed for {version}: {e}\n"
-            f"  Bundle is on local disk only — Railway will lose it on next deploy.\n"
+            f"  Bundle is on local disk only — the VPS will lose it on next deploy.\n"
             f"  Run `python3 scripts/bootstrap_model_storage.py --only {version}` to retry.[/yellow]\n"
         )
 

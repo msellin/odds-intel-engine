@@ -44,7 +44,7 @@ FROM_EMAIL = os.getenv("ALERT_FROM_EMAIL") or os.getenv("DIGEST_FROM_EMAIL", "al
 ERROR_SAMPLE_LEN = 200
 
 
-# Transient kill messages — these are Railway redeploy noise, not real
+# Transient kill messages — these are a scheduler restart noise, not real
 # bugs. Filtered out of the failure count so the digest surfaces only
 # actionable signal. (The rows are still in pipeline_runs for audits.)
 # Added 2026-06-25 after a 32h FS outage stayed hidden behind 13 daily
@@ -66,7 +66,7 @@ def _collect_failures() -> list[dict]:
     """One row per job_name with at least one *real* failure in the last 24h.
 
     Excludes 'killed — scheduler restarted' / 'killed — orphaned' kills
-    from the failed count (Railway redeploy noise). Jobs whose ONLY 24h
+    from the failed count (a scheduler restart noise). Jobs whose ONLY 24h
     failures are transient kills don't appear in the digest at all.
 
     Returns: [{job_name, failed, total, transient_failed, sample_error,

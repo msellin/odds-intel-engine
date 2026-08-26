@@ -163,8 +163,8 @@ def _fs_call(body: dict, *, timeout_s: int = 90) -> dict:
     COOLBET_FS_LOCAL_URL (2026-06-26): Coolbet-specific override. When set
     AND reachable, used in preference to FLARESOLVERR_URL — covers ad-hoc
     Mac CLI runs (smoke tests, manual placer dry-runs) that otherwise pick
-    up a Railway URL from .env and 500. Mac-only opt-in by being set;
-    Railway-hosted callers don't see it.
+    up a stale remote URL from .env and 500. Mac-only opt-in by being set;
+    VPS-hosted callers don't see it.
 
     DEFENSIVE-FS-URL (2026-06-17): legacy fallback for the Mac daemon path
     — if FLARESOLVERR_URL points to a remote host AND COOLBET_MAC_POLL_S
@@ -393,7 +393,7 @@ class CoolbetSession:
         # read scanners (e.g. scripts/tennis/place_coolbet_tennis.py) that
         # only need Imperva clearance, never JWT auth. Also lets the scanner
         # run on environments without a FlareSolverr instance (local dev,
-        # Railway scheduler) — production Coolbet daemon on the Mac keeps
+        # VPS scheduler) — production Coolbet daemon on the Mac keeps
         # using FS as today. require_auth=True implicitly disables this
         # since JWT-bearing calls need fresh FS cookies to look authentic.
         #
@@ -590,7 +590,7 @@ class CoolbetSession:
             fs_url=os.getenv("FLARESOLVERR_URL"),
             fs_session_name=self._fs_session_name,
         )
-        # Persist to DB so a process on the other side (Railway when this
+        # Persist to DB so a process on the other side (the VPS when this
         # ran locally, or vice versa) can bootstrap from the same token
         # without an env-var sync.
         try:
@@ -678,15 +678,15 @@ class CoolbetSession:
         replaces both stale env-paste AND SMS-triggering /s/auth/login.
 
         Tried before the SMS-blocked fallback in _login(). Silently no-ops
-        on Railway / any env without a CDP-Chrome reachable at
+        on the VPS / any env without a CDP-Chrome reachable at
         COOLBET_CHROME_CDP_URL — the operator-side daemon is the only
         process where this path is meaningful."""
         try:
             from workers.automation.coolbet_browser_sync import extract_jwt_from_cdp
         except Exception as e:
-            # INFO-level — silent on Railway (no CDP-Chrome there) but
+            # INFO-level — silent on the VPS (no CDP-Chrome there) but
             # surfaces import failures locally so we can diagnose.
-            log.info("CDP JWT helper unavailable (likely Railway env): %s", e)
+            log.info("CDP JWT helper unavailable (likely the VPS env): %s", e)
             return False
         try:
             cdp_jwt = extract_jwt_from_cdp(allow_open_new_tab=False)
@@ -773,7 +773,7 @@ class CoolbetSession:
             "password": self._password,
         })
         if resp.status_code == 403:
-            # Imperva 403's /s/auth/login from cloud IPs (Railway) even when
+            # Imperva 403's /s/auth/login from cloud IPs (the VPS) even when
             # the same code + cookies succeed from a residential IP. The
             # self-heal answer is to run the one-time enrollment locally
             # — that persists a fresh JWT to coolbet_session_state.jwt_current
@@ -781,7 +781,7 @@ class CoolbetSession:
             # construction (or on the next placement run that constructs one).
             raise RuntimeError(
                 "Coolbet login blocked (403) — Imperva blocks /s/auth/login from "
-                "this IP (typical for cloud datacenter origins like Railway). "
+                "this IP (typical for cloud datacenter origins like the VPS). "
                 "Run `python3 scripts/coolbet/flaresolverr_login_enroll.py start` "
                 "from a residential IP one time; the fresh JWT lands in "
                 "coolbet_session_state.jwt_current and this process will inherit "
@@ -841,8 +841,8 @@ class CoolbetSession:
             fs_url=os.getenv("FLARESOLVERR_URL"),
             fs_session_name=self._fs_session_name,
         )
-        # Persist so the OTHER side (Railway after a local bootstrap, or
-        # local after a Railway renewal — wherever the password login
+        # Persist so the OTHER side (the VPS after a local bootstrap, or
+        # local after a the VPS renewal — wherever the password login
         # actually worked) can pick up this token from DB.
         try:
             _state().persist_jwt(token, login_session_id=self._login_session_id,
@@ -1028,7 +1028,7 @@ class CoolbetSession:
 
         KEEPALIVE-FS-HEADER-STRIP-FIX (2026-06-11): goes via PLAIN requests,
         not session.get(). Reason: FlareSolverr v2 silently strips the
-        `headers` parameter from request bodies (confirmed in FS Railway
+        `headers` parameter from request bodies (confirmed in FS the VPS
         logs — `WARNING Request parameter 'headers' was removed in
         FlareSolverr v2.`). So FS-routed auth-required GETs lose their
         cbauth Bearer + login_session_id headers and Coolbet returns 401.

@@ -47,7 +47,7 @@ def _load_current_bumps() -> dict[str, float]:
 def _send_email(subject: str, html: str) -> None:
     RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
     ADMIN_ALERT_EMAIL = os.getenv("ADMIN_ALERT_EMAIL", "")
-    # Fall back to DIGEST_FROM_EMAIL when ALERT_FROM_EMAIL not set — Railway
+    # Fall back to DIGEST_FROM_EMAIL when ALERT_FROM_EMAIL not set — the VPS
     # already has DIGEST_FROM_EMAIL configured for the daily perf email.
     FROM_EMAIL = (
         os.getenv("ALERT_FROM_EMAIL")

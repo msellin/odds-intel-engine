@@ -1,7 +1,7 @@
 """
 COOLBET-DAEMON-ALERTS — pre-kickoff catch-net (2026-06-16).
 
-Runs from Railway every 5 min. If a calibrated-bot pick is <90min from
+Runs from the VPS every 5 min. If a calibrated-bot pick is <90min from
 kickoff AND not placed AND not skipped AND the Mac daemon looks stale or
 broken, push an urgent Telegram so the operator can place from their
 phone.
@@ -14,7 +14,7 @@ Chrome logged out, FlareSolverr down — the operator has no second
 reminder. On 2026-06-15/16, the daemon failed for 24h+ with no alert
 and missed a calibrated pick.
 
-This catch-net is the safety third leg. It runs on Railway so it's
+This catch-net is the safety third leg. It runs on the VPS so it's
 independent of the Mac, queries `coolbet_session_state.mac_daemon_last_tick_at`
 to detect daemon health, and only fires when (a) we have an unplaced
 calibrated pick approaching KO, and (b) the daemon doesn't appear to be
@@ -213,7 +213,7 @@ def run_prekickoff_alert(*, dry_run: bool = False) -> dict:
     Writes prekickoff_last_run_at + prekickoff_last_run_result to
     coolbet_session_state on EVERY invocation (healthy daemon, no
     candidates, sends, errors) so the cron's liveness is DB-observable
-    without tailing Railway logs. See COOLBET-PREKICKOFF-HEARTBEAT
+    without tailing the VPS logs. See COOLBET-PREKICKOFF-HEARTBEAT
     (mig 252)."""
     from workers.notify.telegram import send_telegram
 
@@ -253,8 +253,8 @@ def run_prekickoff_alert(*, dry_run: bool = False) -> dict:
         return counters
     finally:
         # DB heartbeat — runs on every path including the early
-        # `return counters` exits above. Without this, "Railway healthy
-        # but catch-net silent" and "Railway crashed" look identical
+        # `return counters` exits above. Without this, "the VPS healthy
+        # but catch-net silent" and "the VPS crashed" look identical
         # from outside. Best-effort: observability must not break the
         # alerting path itself.
         if not dry_run:

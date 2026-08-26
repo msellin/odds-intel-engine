@@ -95,7 +95,7 @@ def _run_job(name: str, fn, *args, _log_run: bool = True, **kwargs):
             run_id = log_pipeline_start(name, _date.today().isoformat())
         except Exception:
             # Silent — logging failure must not interfere with the job and
-            # must not add Railway stdout volume. _recent_errors will surface
+            # must not add journal volume. _recent_errors will surface
             # any underlying DB problem on the next genuine job error.
             run_id = None
 
@@ -766,7 +766,7 @@ def job_weekly_meta_retrain():
 
     Train script writes the bundle to data/models/meta/<version>/. No
     promotion — the operator inspects the new bundle's threshold.json and
-    decides whether to flip META_B_ML3_VERSION on Railway.
+    decides whether to flip META_B_ML3_VERSION in /opt/odds-intel-engine/.env (then restart oddsintel-scheduler).
     """
     import subprocess
     from datetime import date as _date
@@ -787,7 +787,7 @@ def job_weekly_meta_retrain():
         # Tail the output so the new bundle's CV AUC is visible in pipeline_runs metadata.
         console.print(result.stdout[-3000:])
         # BUNDLE-STORAGE-SYNC (2026-05-25): mirror the new bundle to Supabase
-        # Storage so future Railway redeploys can hydrate it on cache miss.
+        # Storage so future scheduler restarts can hydrate it on cache miss.
         try:
             from workers.model.storage import upload_meta_bundle
             local_dir = Path(__file__).parent.parent / "data" / "models" / "meta" / version
@@ -879,7 +879,7 @@ def job_weekly_bot_review():
 
     Origin: 2026-06-13 audit found `bot_high_alignment` (maturity=beta,
     -€56 over 50 real bets) had been auto-placing real money for days
-    because the Mac daemon lacked the maturity gate Railway had. The
+    because the Mac daemon lacked the maturity gate the pipeline had. The
     decision "which bots are trustworthy enough to spend real money on?"
     was manual and ad-hoc — promotions happened reactively when someone
     happened to notice. This cron makes it systematic.
@@ -926,7 +926,7 @@ def job_tennis_scanner():
         if not (os.getenv("OA_KEY") or os.getenv("ODDS_API_KEY")):
             console.print("[yellow]Tennis scanner skipped — no OA_KEY / ODDS_API_KEY env var[/yellow]")
             # Raise so _run_job logs status='failed' rather than 'completed' —
-            # otherwise a misconfigured Railway env looks like healthy runs.
+            # otherwise a misconfigured env looks like healthy runs.
             raise RuntimeError("tennis_scanner: OA_KEY / ODDS_API_KEY missing")
         console.print("[bold cyan]Tennis value scanner — Odds API scan[/bold cyan]")
         result = subprocess.run(
@@ -1050,7 +1050,7 @@ def job_coolbet_daily_summary():
 
 def job_coolbet_prekickoff_alert():
     """COOLBET-DAEMON-ALERTS (2026-06-16): pre-kickoff catch-net. Runs every
-    5 min on Railway, independent of the Mac. When the Mac daemon's
+    5 min on the VPS, independent of the Mac. When the Mac daemon's
     heartbeat is stale or its last tick errored AND a calibrated-bot pick
     is approaching KO unplaced — push an urgent Telegram so the operator
     can place from their phone.
@@ -1187,11 +1187,11 @@ def job_retrain_healthcheck():
 
 
 def job_coolbet_daemon_healthcheck():
-    """COOLBET-DAEMON-HEALTHCHECK (2026-06-21): Railway-side safety net for
+    """COOLBET-DAEMON-HEALTHCHECK (2026-06-21): VPS-side safety net for
     the Mac daemon's in-process alert path. Reads coolbet_session_state +
     coolbet_heal_log every 30 min and Telegrams when the daemon is silent
     (>90m since last tick) or sustainedly erroring (>2h without a
-    successful auto-heal). DB-backed dedup survives Railway redeploys.
+    successful auto-heal). DB-backed dedup survives scheduler restarts.
 
     Quiet on healthy. Logs a summary line when it fires (alert/recovery)."""
     from workers.jobs.coolbet_daemon_healthcheck import run_daemon_healthcheck
@@ -1230,7 +1230,7 @@ def job_flaresolverr_sweep():
     stale FlareSolverr sessions that aren't in the active whitelist.
 
     Root cause this fixes: every scraper that calls sessions.create without
-    a matching sessions.destroy leaks a Chrome instance. Railway hit the
+    a matching sessions.destroy leaks a Chrome instance. the scheduler hit the
     slot limit on 2026-06-11 and sessions.create started hanging — the
     symptom that triggered the architectural rewrite. Hourly sweeping
     bounds future damage to ~1h of leaked sessions even if a scraper
@@ -1987,7 +1987,7 @@ def _maybe_catchup_missed_settlement():
     """If the last successful 'settlement' run was >25h ago, a daily settlement
     is missing. Fire one in a background thread so startup isn't blocked.
 
-    Background: every git push triggers a Railway redeploy, which kills any
+    Background: every git push triggers a a scheduler restart, which kills any
     in-flight job. With heavy dev cadence the 21:00/23:30/01:00 settlement
     triples can all be killed mid-run. Without this catch-up, finished matches
     sit unsettled until the next 21:00 window.
@@ -2346,7 +2346,7 @@ def main():
 
     # META-RETRAIN (2026-05-25) — weekly B-ML3 meta-model retrain Sunday 04:00 UTC,
     # an hour after the main retrain (which refreshes MFV features the meta
-    # model consumes). Promotion stays manual (flip META_B_ML3_VERSION on Railway).
+    # model consumes). Promotion stays manual (flip META_B_ML3_VERSION in /opt/odds-intel-engine/.env (then restart oddsintel-scheduler)).
     # META-VALIDATE-WEEKLY (2026-06-01) — runs Sunday 05:00 UTC after
     # weekly_meta_retrain finishes, scores all bundles on real settled bets
     # and emails the verdict. Replaces the 2026-06-10 manual checkpoint.
@@ -2461,7 +2461,7 @@ def main():
                       name="Retrain Healthcheck [Mon-Sat 09:00 UTC]",
                       max_instances=1, misfire_grace_time=3600)
 
-    # COOLBET-DAEMON-HEALTHCHECK (2026-06-21) — every 30 min, Railway-side
+    # COOLBET-DAEMON-HEALTHCHECK (2026-06-21) — every 30 min, VPS-side
     # safety net. Independent of the Mac daemon's in-process alert (which
     # left a 3-day outage silent on 2026-06-18 → 21).
     scheduler.add_job(job_coolbet_daemon_healthcheck,
@@ -2708,7 +2708,7 @@ def main():
     # service can be deployed without the in-process poller. Default ON
     # (matches pre-split behaviour); set LIVE_POLLER_IN_SCHEDULER=false
     # on the scheduler service when running `workers/live_poller_main.py`
-    # as a separate Railway service.
+    # as a separate systemd service.
     if os.getenv("LIVE_POLLER_IN_SCHEDULER", "true").lower() in ("true", "1", "yes"):
         from workers.live_poller import LivePoller
         from workers.api_clients.api_football import budget

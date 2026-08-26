@@ -1,5 +1,5 @@
 """
-COOLBET-DAEMON-HEALTHCHECK — Railway-side daemon health alert (2026-06-21).
+COOLBET-DAEMON-HEALTHCHECK — VPS-side daemon health alert (2026-06-21).
 
 Closes the third leg of the alerting story. The 2026-06-18 → 2026-06-21
 outage went silent for 3 days because:
@@ -12,9 +12,9 @@ outage went silent for 3 days because:
   3. The Mac daemon IS the alerter. Mac sleep / daemon crash kills
      monitoring AND placement together.
 
-This job runs every 30 min on Railway, independent of the Mac. It reads
+This job runs every 30 min on the VPS, independent of the Mac. It reads
 coolbet_session_state directly from the DB and decides whether to alert.
-DB-backed dedup via last_health_alert_at (migration 256) survives Railway
+DB-backed dedup via last_health_alert_at (migration 256) survives the VPS
 redeploys and bounds alert rate to once per ALERT_DEDUP_HOURS.
 
 Conditions (any one fires an alert):

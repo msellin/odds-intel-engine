@@ -158,7 +158,7 @@ tracked under `ACCA-LEG-SHADOW-EVAL` in `PRIORITY_QUEUE.md`.
 
 ## Service topology (WORKER-SPLIT-LIVEPOLLER, 2026-05-25)
 
-Two Railway service deployment is now supported:
+Two-process deployment is supported (both systemd units on the VPS):
 
   **Service A — Scheduler (`python -m workers.scheduler`)**
     Owns all cron jobs and the scheduled betting pipeline. Set
@@ -167,25 +167,25 @@ Two Railway service deployment is now supported:
 
   **Service B — LivePoller (`python -m workers.live_poller_main`)**
     Standalone 24/7 LivePoller. SIGTERM/SIGINT graceful shutdown.
-    Independent Railway crash-restart cycle.
+    Independent systemd restart cycle.
 
 Default config (single service) still works: scheduler starts the
 in-process poller because `LIVE_POLLER_IN_SCHEDULER` defaults to `true`.
-To switch, deploy Service B from the same repo with the alternate CMD,
-then flip `LIVE_POLLER_IN_SCHEDULER=false` on Service A. Cost +$2-3/mo
-on Hobby plan; blast radius isolated.
+To switch, add a second systemd unit running the alternate entrypoint,
+then set `LIVE_POLLER_IN_SCHEDULER=false` in /opt/odds-intel-engine/.env and
+restart. No extra hosting cost on the VPS; blast radius isolated.
 
-## Execution: Railway vs GitHub Actions
+## Execution: VPS vs GitHub Actions
 
 | Component | Runs on | How |
 |-----------|---------|-----|
-| **All scheduled jobs (①-⑧)** | **Railway** ($5/mo) | `workers/scheduler.py` — APScheduler cron triggers |
-| **Live polling (⑥)** | **Railway** | `workers/live_poller.py` — daemon thread, 30s/60s/5min tiers |
+| **All scheduled jobs (①-⑧)** | **Hetzner VPS** (systemd `oddsintel-scheduler`) | `workers/scheduler.py` — APScheduler cron triggers |
+| **Live polling (⑥)** | **Hetzner VPS** | `workers/live_poller.py` — daemon thread, 30s/60s/5min tiers |
 | Manual recovery runs | GitHub Actions | `workflow_dispatch` — trigger any job manually |
 | DB migrations | GitHub Actions | `migrate.yml` — on push to `supabase/migrations/` |
-| Historical backfill | **Railway** | `scripts/backfill_historical.py` — 02:00 UTC daily, self-stops on completion |
+| Historical backfill | **Hetzner VPS** | `scripts/backfill_historical.py` — 02:00 UTC daily, self-stops on completion |
 
-### Railway Environment Variables
+### VPS Environment Variables (`/opt/odds-intel-engine/.env`, read by systemd `EnvironmentFile`)
 
 `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `API_FOOTBALL_KEY`, `GEMINI_API_KEY`, `DATABASE_URL`, `RESEND_API_KEY`, `DIGEST_FROM_EMAIL`, `SITE_URL`, `TZ=UTC`, `HEALTHCHECKS_IO_PING_URL`, `ADMIN_ALERT_EMAIL`
 
@@ -290,7 +290,7 @@ The `simulated_bets` table is the **public track-record chain** — the basis fo
 
 ### ⑥ Live Tracker / LivePoller (`live_poller.py` + `live_tracker.py`)
 
-**Runs on Railway as a daemon thread** with tiered polling (replaced 5-min GH Actions cron):
+**Runs on the VPS as a daemon thread** with tiered polling (replaced 5-min GH Actions cron):
 
 | Tier | Interval | Endpoints | Calls/cycle |
 |------|----------|-----------|-------------|
@@ -401,7 +401,7 @@ The `simulated_bets` table is the **public track-record chain** — the basis fo
 - Pro: bet count + CTA. Elite: full table with odds/edge/confidence.
 
 - Only sends to users with `user_notification_settings.email_digest_enabled = true`
-- Requires `RESEND_API_KEY` in env (+ Railway env vars).
+- Requires `RESEND_API_KEY` in `/opt/odds-intel-engine/.env`.
 - Manual run: `python -m workers.jobs.email_digest --dry-run`
 
 ### ⑨ Historical Backfill (`backfill_historical.py`) — ✅ COMPLETE 2026-05-28
@@ -487,9 +487,9 @@ After step 5: bets are placed, value bets page has data.
 
 ---
 
-## GitHub Actions Budget (post-Railway migration)
+## GitHub Actions Budget (post-migration off GitHub-Actions cron)
 
-**~100-200 minutes/month** (down from ~11,280 min/month). All scheduled jobs moved to Railway.
+**~100-200 minutes/month** (down from ~11,280 min/month). All scheduled jobs run on the Hetzner VPS (RAILWAY-ELIMINATION 2026-06-29 moved them off Railway).
 
 | Usage | Runs/month | Minutes |
 |-------|-----------|---------|

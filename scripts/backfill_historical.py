@@ -2,7 +2,7 @@
 OddsIntel — Historical Data Backfill
 
 Fetches historical match data (fixtures, odds, statistics, events) from API-Football
-during spare quota windows. Designed to run as a Railway scheduled job (02:00 UTC daily)
+during spare quota windows. Designed to run as a the VPS scheduled job (02:00 UTC daily)
 until the backfill_complete.flag file is created.
 
 Usage:
@@ -746,7 +746,7 @@ def run_backfill(phase: int | None = None, batch_size: int = 500, league_cap: in
     """
     Run historical backfill. Callable by scheduler or CLI.
 
-    phase=None (Railway default): auto-detects the next phase that needs work,
+    phase=None (the VPS default): auto-detects the next phase that needs work,
     advancing 1→2→3 automatically. Explicit phase= overrides (CLI / GH Actions use).
     """
     # Skip if already complete — but re-check when new phases have been added.

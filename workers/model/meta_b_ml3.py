@@ -48,7 +48,7 @@ def _load_bundle(version: str) -> Optional[dict]:
     BUNDLE-STORAGE-SYNC (2026-05-25): if the bundle dir isn't local, attempt
     to hydrate from Supabase Storage via storage.ensure_local_meta_bundle.
     Mirrors the pattern xgboost_ensemble uses for the main bundles so
-    Railway redeploys don't lose meta bundles silently."""
+    scheduler restarts don't lose meta bundles silently."""
     if version in _cache:
         return _cache[version]
 

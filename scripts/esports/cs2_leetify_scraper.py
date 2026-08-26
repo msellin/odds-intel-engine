@@ -77,7 +77,7 @@ LEETIFY_API_KEY = os.getenv(
 )
 LEETIFY_BASE = "https://api-public.cs-prod.leetify.com"
 
-RATE_LIMIT_SECONDS = 1.0  # be polite — Leetify suggests 1 req/s.
+RATE_LIMIT_SECONDS = 3.0  # 1 req/s triggered constant 429s in practice — bumped to 3s.
 
 
 # ── Hardcoded seed Steam64 IDs for top CS2 pros ──────────────────────────
@@ -130,9 +130,9 @@ def _polite_sleep():
     _last_call[0] = time.monotonic()
 
 
-def fetch_json(url: str, *, retries: int = 3) -> dict | list | None:
+def fetch_json(url: str, *, retries: int = 6) -> dict | list | None:
     """GET url with the Leetify auth header. Returns parsed JSON or None on
-    persistent failure. Handles 429 with exponential backoff."""
+    persistent failure. Handles 429 with exponential backoff up to ~64s."""
     for attempt in range(retries):
         _polite_sleep()
         req = urllib.request.Request(
@@ -143,7 +143,7 @@ def fetch_json(url: str, *, retries: int = 3) -> dict | list | None:
                 return json.loads(r.read())
         except urllib.error.HTTPError as e:
             if e.code == 429:
-                backoff = 2.0 * (2 ** attempt)
+                backoff = min(2.0 * (2 ** attempt), 64.0)
                 print(f"  [429] backing off {backoff:.1f}s on {url}")
                 time.sleep(backoff)
                 continue

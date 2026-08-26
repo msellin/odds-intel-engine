@@ -179,7 +179,7 @@ def _format_summary(s: dict) -> str:
         warnings.append(f"🛑 catch-net {_fmt_age(prekickoff_age)} ago (cron silent)")
     # Only flag JWT-low when token is still valid but TTL is shrinking
     # (proactive refresh window). A fully expired JWT is already covered
-    # by the daemon-stale / Railway-HB warnings above; a duplicate
+    # by the daemon-stale / the VPS-HB warnings above; a duplicate
     # "TTL -93399s" line just adds noise.
     if jwt_ttl is not None and 0 < jwt_ttl < JWT_TTL_WARN_MIN * 60:
         warnings.append(f"⚠ JWT TTL {_fmt_age(jwt_ttl)} (proactive refresh should kick in)")

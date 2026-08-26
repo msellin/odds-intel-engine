@@ -39,7 +39,7 @@ MODELS_DIR = ENGINE_DIR / "data" / "models" / "soccer"
 # Production default — v14 trained on MFV schema with OU market features (2026-05-11).
 DEFAULT_MODEL_VERSION = "v14"
 
-# `MODEL_VERSION` is read from env at module import. Setting it on Railway
+# `MODEL_VERSION` is read from env at module import. Setting it in /opt/odds-intel-engine/.env
 # lets ops flip the active model without code changes; the harness exposes
 # this through the `model_version` column on `predictions` / `simulated_bets`
 # so post-hoc evaluation can compare versions on overlapping settled matches.

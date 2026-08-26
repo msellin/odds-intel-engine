@@ -1,5 +1,5 @@
 """
-RETRAIN-HEALTHCHECK — Railway-side alert for stale weekly_retrain (2026-06-21).
+RETRAIN-HEALTHCHECK — VPS-side alert for stale weekly_retrain (2026-06-21).
 
 Mirrors COOLBET-DAEMON-HEALTHCHECK for a different silent-failure class.
 
@@ -15,7 +15,7 @@ Conditions (any one fires an alert):
              (transient flakes don't alert; sustained pattern does)
 
 DB-backed dedup via pipeline_health_state (migration 258) — survives
-Railway redeploys. Alert at most once per ALERT_DEDUP_HOURS per incident.
+scheduler restarts. Alert at most once per ALERT_DEDUP_HOURS per incident.
 Recovery message when a successful retrain lands after a prior alert
 clears last_alert_at so the next outage gets fresh alerting.
 
@@ -146,7 +146,7 @@ def _format_alert(status: str, reason: str, runs: list[dict], now: datetime) -> 
 
     lines.append("")
     if status == "stale":
-        lines.append("➡ Check Railway logs for the most recent Sunday cron. "
+        lines.append("➡ Check the VPS logs for the most recent Sunday cron. "
                      "Model is stuck on the last successful version.")
     elif status == "failing":
         lines.append("➡ Re-run manually: "

@@ -202,16 +202,22 @@ def normalize_team(name: str) -> str:
 
 # ───── PINNACLE MATCHUP-ID RESOLUTION ────────────────────────────────
 def resolve_pinnacle_ids(our_matches: list[dict], throttler: Throttler) -> dict:
-    """Fetch Pinnacle's soccer matchups list once, build a
+    """Fetch Pinnacle's soccer matchups list (up to 3 attempts), build a
     (norm_home, norm_away, date_utc) → matchup_id index. Returns a
     dict our_match_id → pinnacle_matchup_id for matches we found.
     """
-    print(f"\n[resolve] Fetching Pinnacle soccer matchups list (one call)...")
-    data = throttler.fetch(
-        f"/0.1/sports/{PINNACLE_SOCCER_SPORT_ID}/matchups?withSpecials=false&brandId=0"
-    )
+    print(f"\n[resolve] Fetching Pinnacle soccer matchups list...")
+    data = None
+    for attempt in range(1, 4):
+        data = throttler.fetch(
+            f"/0.1/sports/{PINNACLE_SOCCER_SPORT_ID}/matchups?withSpecials=false&brandId=0"
+        )
+        if data and isinstance(data, list):
+            break
+        print(f"  [resolve] attempt {attempt}/3 returned nothing — retrying in 15s...")
+        time.sleep(15)
     if not data or not isinstance(data, list):
-        print("[resolve] Pinnacle matchups endpoint returned nothing — aborting.")
+        print("[resolve] Pinnacle matchups endpoint returned nothing after 3 attempts — aborting.")
         return {}
 
     # Build index: normalized (home, away, YYYY-MM-DD) → matchup_id

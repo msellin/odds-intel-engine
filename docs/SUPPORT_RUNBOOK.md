@@ -114,7 +114,7 @@ render from the session.
 | Processed events | Supabase → Table Editor → processed_events |
 | Webhook event log | Stripe → Developers → Webhooks → endpoint → Recent deliveries |
 | Resend email log | https://resend.com/emails |
-| Railway logs | Railway → odds-intel-engine → Deployments → View logs |
+| Engine logs | `ssh root@204.168.199.8 'journalctl -u oddsintel-scheduler -n 200 --no-pager'` |
 | Vercel logs | Vercel → Project → Functions tab |
 
 ---

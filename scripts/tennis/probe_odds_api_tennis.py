@@ -2,7 +2,7 @@
 """
 TENNIS-PAPER-BETS Phase 1 — probe The Odds API for tennis coverage.
 
-We already have OA_KEY/ODDS_API_KEY in Railway (used by WC sweep). Goal:
+We already have OA_KEY/ODDS_API_KEY on the VPS (used by WC sweep). Goal:
   1. List tennis sport keys the API exposes
   2. For each: fetch upcoming events, check Pinnacle coverage + odds payload shape
   3. Try a /scores call to see if results are queryable (== settlement source)

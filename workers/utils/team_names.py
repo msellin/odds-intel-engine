@@ -23,7 +23,7 @@ if not _unmatched_logger.handlers:
 # unmatched team names are expected daily noise for lower-tier / women's /
 # U20 matches that aren't in our historical training data. The dedicated
 # file handler (data/logs/unmatched_teams.log) still captures them for
-# manual review, but we don't want them in Railway's stdout stream.
+# manual review, but we don't want them in the scheduler journal.
 _unmatched_logger.propagate = False
 
 # Canonical team name mapping (common variants → DB standard name)
