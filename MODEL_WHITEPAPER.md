@@ -435,6 +435,41 @@ shrunk = alpha * model_prob + (1 - alpha) * anchor_implied_prob
 
 **Anchor:** Pinnacle-implied probability when available (fallback to market-average across the 13 tracked bookmakers). Pinnacle vig is 2-3% vs 5-8% for soft books — their implied probabilities are closer to true probabilities. This applies to all markets (1X2 home/draw/away, O/U over/under) since PIN-2 (2026-05-06).
 
+**Is Pinnacle actually the sharpest book? (measured 2026-08-26.)** This had been
+an inherited assumption. Ranking books by raw Brier score is invalid — each book
+prices a different slate, so Brier partly measures how easy its games are, and a
+first attempt on that basis wrongly put Pinnacle 14th of 15. Compared *pairwise
+on matches both books price*, every one of the 15 books is worse than or equal
+to Pinnacle:
+
+| closest to Pinnacle | Brier gap | t | verdict |
+|---|---|---|---|
+| 10Bet | +0.000026 | +0.26 | indistinguishable |
+| Marathonbet | +0.000032 | +0.39 | indistinguishable |
+| 1xBet | +0.000048 | +0.54 | indistinguishable |
+| Bet365 | +0.000236 | +2.23 | worse |
+| Unibet | +0.000562 | +3.62 | worse |
+| Coolbet | +0.003095 | +3.84 | worse (by 5× the next) |
+
+So Pinnacle is the best *single* book, and 10Bet / Marathonbet / 1xBet are
+statistically indistinguishable substitutes where Pinnacle is missing.
+
+**But a consensus beats any single book.** De-vigging each book separately and
+then averaging the probabilities scores slightly *better* than Pinnacle alone
+(Brier −0.000036 on 51,732 identical outcome rows), and this still holds when
+the book being priced is excluded from the average — the leave-one-out form,
+which is the only version usable as a line-shopping anchor, since a consensus
+containing the book you are betting is circular. This is the ordinary
+wisdom-of-crowds result: every individual member is worse than the best member,
+yet the average is better, because averaging cancels idiosyncratic error.
+
+The consequence for strategy is that **Pinnacle is not required**. The ~16% of
+matches with no Pinnacle price, and markets Pinnacle never quotes (BTTS), are
+workable with a leave-one-out consensus anchor. It also reframes why the
+`bot_no_pin_*` bots failed: they anchored on the *model* (average model edge
+47.6%, wildly overconfident), not on a market consensus. See
+`scripts/anchor_comparison_backtest.py` and `scripts/bookmaker_sharpness_rank.py`.
+
 **1X2 markets (default alphas):**
 
 | Tier | alpha | Model weight | Market weight | Rationale |
@@ -723,8 +758,9 @@ Bot strategies are validated against a 354,518-match dataset (275 leagues, 2005-
 CLV is the industry standard for evaluating betting models independently of short-term variance:
 
 ```
-CLV (soft-book) = (odds_at_pick / soft_closing_odds) - 1
-CLV (Pinnacle)  = (odds_at_pick / pinnacle_closing_odds) - 1   ← primary metric (PIN-5)
+CLV (soft-book)     = (odds_at_pick / soft_closing_odds) - 1
+CLV (Pinnacle, raw) = (odds_at_pick / pinnacle_closing_odds) - 1
+CLV (Pinnacle, fair)= (odds_at_pick * devig(pinnacle_close)) - 1   ← primary metric
 ```
 
 - **Positive CLV** means we consistently got better odds than the closing line — the market moved in our direction after our bet. This is the strongest evidence of a real edge.
@@ -733,7 +769,48 @@ CLV (Pinnacle)  = (odds_at_pick / pinnacle_closing_odds) - 1   ← primary metri
 
 CLV is meaningful even when P&L is negative (variance can dominate in small samples).
 
-Both `clv` (soft-book) and `clv_pinnacle` (Pinnacle-specific) are stored on `simulated_bets` and tracked per cohort.
+**Which definition to trust (SHADOW-CLV-BOOKMAKER-FIX-2026-08-26).** These are not
+interchangeable, and the differences were measured rather than assumed. On 3,446
+settled picks with every variant computed on the *same* rows:
+
+| variant | Spearman rho vs realised return | Q5−Q1 ROI spread | monotone buckets |
+|---|---|---|---|
+| soft-book, unfiltered (any book) | +0.0592 | +23.4pp | 3/4 |
+| soft-book, the book we priced at | +0.0326 | +25.0pp | 2/4 |
+| Pinnacle, raw | +0.0780 | +36.1pp | 3/4 |
+| **Pinnacle, de-vigged** | **+0.0784** | +34.3pp | **4/4** |
+
+Two things follow. First, the unfiltered soft-book value is **not** noise — it
+ranks real — but it is the weakest, and because `get_closing_odds()` had no
+bookmaker filter it compared against whichever book sorted last among tied
+timestamps. For a line-shopping bot, whose `odds_at_pick` is the MAX across
+accessible books by construction, `max(13 books) / one_arbitrary_book` reads
+positive whether or not the bet had edge. Its *level* is therefore
+uninterpretable even though its *ordering* carries information.
+
+Second, raw and de-vigged Pinnacle rank almost identically. The de-vig does not
+improve the ordering — it fixes the **zero point**. Raw Pinnacle CLV carries
+Pinnacle's overround, so it reads positive by roughly the margin on a bet with
+no edge at all. Since the column exists to answer "is this above or below fair",
+the zero point is the half that has to be right.
+
+The practical validation: under the unfiltered column all nine shadow bots read
+positive, including `bot_pin_1x2_draw_tier4_v1` at +4.8% CLV against −40.8% ROI.
+Under the de-vigged Pinnacle column it reads −4.8%, and every bot retired on
+mechanism grounds is negative. The metric now agrees with those retirements
+instead of contradicting them.
+
+**No-anchor markets.** API-Football's Pinnacle feed carries only eight bet types
+— Match Winner, Asian Handicap (+first half), Goals O/U (+first half),
+Total-Home, Total-Away, Away Team Total 1st Half. **BTTS is not among them and
+never has been**: zero Pinnacle BTTS rows exist in `odds_snapshots`. Any BTTS
+strategy is therefore unvalidatable against a sharp line through this provider,
+which is a standing reason for extra scepticism about BTTS bots rather than a
+bug to fix.
+
+Stored columns: `clv` (soft-book) and `clv_pinnacle` on both `simulated_bets`
+and `shadow_bets`; `closing_bookmaker` records which book supplied
+`closing_odds`, which was previously unrecorded and arbitrary.
 
 ### 9.2 Secondary Metrics
 
@@ -1202,6 +1279,88 @@ priced on a partial book.
 
 Shipped in `daily_pipeline_v2.py` as `_LINESHOP_TRUE_EDGE_MIN = 0.03` — a
 post-vig expected-value floor applied uniformly to every line-shop bot.
+
+### 10c.2b Proportional de-vig was still wrong (LINESHOP-SHIN-DEVIG, 2026-08-26)
+
+Dividing by the overround removes the *right amount* of margin in total but
+distributes it wrongly. Bookmakers do not spread margin evenly in proportional
+terms — they load it onto longshots. A proportional removal therefore takes too
+little margin off the longshot and too much off the favourite, and the de-vigged
+longshot probability comes out too high. That manufactures apparent edge on
+precisely the selections that lose: draws and away dogs.
+
+Measured on 20 months of Pinnacle closes (2025-01-01 → 2026-08-27), bottom
+probability decile, predicted minus actual:
+
+| market | outcomes | proportional | Shin |
+|---|---:|---:|---:|
+| 1x2 | 70,245 | **+1.85pp** | +0.55pp |
+| over_under_35 | 24,174 | **+3.23pp** | +1.78pp |
+
++1.85pp on an 11% true probability is a **17% relative** over-statement, applied
+against a 3% edge gate. A distortion of that size does not shade the answer, it
+swamps it — a selection showing "+3% true edge" under proportional de-vig can
+easily be double-digit negative EV in reality.
+
+**Shin's method** models the margin as compensation for a proportion `z` of
+insider money and solves for the probabilities a book must hold to break even
+against it, removing proportionally more margin from longshots:
+
+```
+p_i = [ sqrt(z² + 4(1 − z)·π_i²/Π) − z ] / (2(1 − z)),    π_i = 1/o_i, Π = Σπ
+```
+
+with `z` solved by bisection so `Σp_i = 1`. Implemented in
+`workers/model/devig.py`; both line-shop call sites use it.
+
+**Applied to every market, not just 3-way.** The initial design applied Shin only
+to 3-way markets on the assumption that a 2-way market is near enough symmetric
+for proportional to be adequate. The backtest disproved that: OU 3.5 is strongly
+lopsided and shows a *larger* bottom-decile distortion than 1X2. Shin won on
+Brier and log loss in every market tested, and in 2025 and 2026 separately.
+
+This was judged on **calibration only, never ROI**. PER-BOT-SWEEP-2026-08-24
+established that selecting configs on backtest ROI is anti-predictive here
+(−9.2% out of sample), so ROI cannot arbitrate a mechanism choice. Calibration
+can: a de-vig method is right or wrong independently of whether betting on it
+made money, and a method better calibrated over 20 months and ~95k outcomes will
+still be better calibrated next month. Reproduce with
+`scripts/devig_calibration_backtest.py`.
+
+### 10c.2c Line integrity — the quote must be for the line it claims
+
+The OU line-shop bots selected on an 11–13% de-vigged edge against Pinnacle that
+**did not close**: CLV against the Pinnacle close (13.0% / 12.2%) was
+approximately equal to the selection edge at pick time, meaning the sharp line
+never moved toward these picks at all. A genuine mispricing gets arbitraged
+before kickoff; one that survives is usually not a mispricing.
+
+Auditing 187 settled OU picks against Pinnacle's full ladder localised it to one
+book:
+
+| bookmaker | picks | quote matches its stated line |
+|---|---:|---:|
+| Unibet | 82 | 100% |
+| 10Bet | 43 | 91% |
+| **Coolbet** | **34** | **65%** — 11 of 12 drifts land on OU 3.5 |
+| Betano | 14 | 100% |
+| Marathonbet | 10 | 100% |
+
+On picks labelled `over_under_25`/over, Coolbet averaged 1.96 while Pinnacle's
+2.5 line averaged 1.60 and its 3.5 line averaged 2.44 — Coolbet's "over 2.5" is
+priced nearer a 3.0 total. The "edge" was an accounting artefact, and it matters
+because Coolbet is the venue real money is placed at.
+
+`COOLBET-OU-LINE-MISLABEL-GUARD-2026-08-22` does not catch this: that guard
+rejects a non-monotone OU ladder, and a single uniformly shifted line stays
+internally monotone. `_ou_line_is_consistent()` now rejects any soft quote that
+sits nearer a *different* Pinnacle line than the one it is labelled with. It is
+deliberately bookmaker-agnostic — it tests the price, not the source.
+
+Note this also partly explains Coolbet ranking worst-calibrated of 15 books in
+the paired sharpness test (§ Anchor): some of that apparent miscalibration is
+our own mislabelling of its lines. The upstream ingestion bug is not yet fixed;
+only downstream consumption is guarded. Audit: `scripts/ou_line_integrity_audit.py`.
 
 ### 10c.3 Evidence
 

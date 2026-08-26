@@ -60,7 +60,8 @@ Data tier system:
 | Steam move flag (>3% drift) | `steam_move` | On bets | ✅ Running |
 | Odds volatility (std of implied prob, 24h) | `odds_volatility` | Morning pipeline | ✅ Running |
 | CLV (soft-book closing line value) | `pseudo_clv_home/draw/away` on `matches`; `clv` on `simulated_bets` | Settlement | ✅ Running |
-| CLV — Pinnacle-anchored | `clv_pinnacle` on `simulated_bets` | Settlement (PIN-5) | ✅ Running |
+| CLV — Pinnacle-anchored | `clv_pinnacle` on `simulated_bets` **and `shadow_bets`** (migration 283) | Settlement (PIN-5) | ✅ Running. **This is the CLV to trust** — SHADOW-CLV-BOOKMAKER-FIX-2026-08-26 measured all variants on the same 3,446 settled picks: Pinnacle-anchored rho +0.078 / monotone 4/4 vs the soft-book column's +0.059 / 3/4. Shadow rows store the **de-vigged** form (Shin), so 0 = Pinnacle-fair rather than Pinnacle-quoted. **No BTTS coverage** — API-Football's Pinnacle feed carries only 8 bet types and Both Teams Score is not one of them (zero Pinnacle BTTS rows have ever existed). |
+| Closing-odds provenance | `closing_bookmaker` on `shadow_bets` | Settlement | ✅ Running (2026-08-26). Records which book supplied `closing_odds`. Previously unrecorded *and* arbitrary: all 13 books share a closing timestamp, so `ORDER BY timestamp DESC LIMIT 1` returned a non-deterministic row — observed suppliers 10Bet 77 / Bet365 45 / William Hill 28. |
 | Sharp consensus (home 1x2) | `sharp_consensus_home` | Morning pipeline | ✅ Running (P5.1) |
 | Sharp consensus (draw 1x2) | `sharp_consensus_draw` | Morning pipeline | ✅ Running (SHARP-DRAW-AWAY) |
 | Sharp consensus (away 1x2) | `sharp_consensus_away` | Morning pipeline | ✅ Running (SHARP-DRAW-AWAY) |
