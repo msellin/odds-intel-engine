@@ -86,6 +86,33 @@ def main() -> int:
         mid = str(b["match_id"])
         mkt = _normalize_bet_market(b["market"], b["selection"])
         sel = _normalize_bet_selection(b["selection"])
+        # DOUBLE-CHANCE-CLV-2026-08-26: DC has no Pinnacle price of its own, but
+        # each DC outcome is a union of 1X2 outcomes, and the de-vigged 1X2
+        # probabilities partition the space — so P(1X) = P(home) + P(draw), etc.
+        # The DC bots are the highest-volume in the fleet and had no CLV at all.
+        _DC = {"1x": ("home", "draw"), "12": ("home", "away"), "x2": ("draw", "away")}
+        if mkt == "double_chance":
+            legs = _DC.get(sel)
+            if not legs:
+                skipped["dc_bad_selection"] += 1
+                continue
+            base = ["home", "draw", "away"]
+            key = (mid, "1x2")
+            if key not in prob_cache:
+                odds = [closes.get((mid, "1x2", s2)) for s2 in base]
+                prob_cache[key] = (None if any(o is None or o <= 1.0 for o in odds)
+                                   else devig(odds))
+            probs = prob_cache[key]
+            if probs is None:
+                skipped["no_full_pinnacle_close"] += 1
+                continue
+            p = sum(probs[base.index(l)] for l in legs)
+            if not (0.0 < p < 1.0):
+                skipped["bad_prob"] += 1
+                continue
+            updates.append((round(float(b["odds_at_pick"]) * p - 1.0, 4), b["id"]))
+            continue
+
         sides = _market_complement_selections(mkt, sel)
         if not sides or sel not in sides:
             skipped["market_not_deviggable"] += 1

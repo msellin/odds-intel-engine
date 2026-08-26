@@ -541,6 +541,43 @@ def get_devigged_pinnacle_close_prob(
     partial set cannot be de-vigged, so this returns None rather than guessing.
     Uses Shin for 3-way and proportional for 2-way; see workers/model/devig.py.
     """
+    # DOUBLE-CHANCE-CLV-2026-08-26: Pinnacle quotes no double_chance market at
+    # all (zero rows in odds_snapshots — its API-Football feed carries 8 bet
+    # types and DC is not among them), so a DC price cannot be de-vigged
+    # directly. It can be DERIVED exactly, because each DC outcome is a union of
+    # 1X2 outcomes and the de-vigged 1X2 probabilities form a proper partition:
+    #
+    #     P(1X) = P(home) + P(draw)
+    #     P(12) = P(home) + P(away)
+    #     P(X2) = P(draw) + P(away)
+    #
+    # This matters more than it sounds: the three double-chance bots are the
+    # largest in the fleet by volume (bot_dc_value 2,436 settled picks,
+    # bot_dc_specialist 2,316, bot_dc_strong_fav 1,180) and every one of them had
+    # ZERO CLV coverage — 5,932 settled picks with no validator, against 433 for
+    # the entire line-shop family that has had all the attention.
+    dc_map = {"1x": ("home", "draw"), "12": ("home", "away"), "x2": ("draw", "away")}
+    if (market or "").strip().lower() == "double_chance":
+        legs = dc_map.get((selection or "").strip().lower())
+        if not legs:
+            return None
+        base = ["home", "draw", "away"]
+        odds_1x2: list[float] = []
+        for side in base:
+            o = get_pinnacle_closing_odds(match_id, "1x2", side)
+            if not o or o <= 1.0:
+                return None
+            odds_1x2.append(float(o))
+        try:
+            from workers.model.devig import devig as _dv
+        except Exception:
+            return None
+        probs_1x2 = _dv(odds_1x2)
+        if probs_1x2 is None:
+            return None
+        p = sum(probs_1x2[base.index(l)] for l in legs)
+        return p if 0.0 < p < 1.0 else None
+
     sides = _market_complement_selections(market, selection)
     if not sides:
         return None

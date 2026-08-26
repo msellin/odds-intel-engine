@@ -31051,5 +31051,34 @@ def test_meta_model_clv_target_2026_08_26():
     return "meta-model trains on de-vigged, bounded Pinnacle CLV"
 
 
+
+@test("DOUBLE-CHANCE-CLV")
+def test_double_chance_clv_2026_08_26():
+    """DOUBLE-CHANCE-CLV-2026-08-26 — DC has no Pinnacle price of its own, so its
+    fair probability is DERIVED from the de-vigged 1X2 partition."""
+    import pathlib
+    from workers.model.devig import devig
+
+    # The derivation must be exact: DC outcomes are unions of 1X2 outcomes, and
+    # de-vigged 1X2 probabilities partition the space, so the three DC
+    # probabilities must sum to exactly 2 (each 1X2 outcome appears in two of them).
+    p = devig([1.85, 3.60, 4.50])
+    one_x, one_two, x_two = p[0] + p[1], p[0] + p[2], p[1] + p[2]
+    assert abs((one_x + one_two + x_two) - 2.0) < 1e-9, \
+        "the three DC probabilities must sum to 2 — each 1X2 leg appears twice"
+    for v in (one_x, one_two, x_two):
+        assert 0.0 < v < 1.0
+
+    src = pathlib.Path("workers/jobs/settlement.py").read_text()
+    assert '"1x": ("home", "draw")' in src and '"x2": ("draw", "away")' in src, \
+        "DC leg mapping must be present in the settlement CLV helper"
+    assert 'if (market or "").strip().lower() == "double_chance"' in src, \
+        "get_devigged_pinnacle_close_prob must special-case double_chance"
+
+    bf = pathlib.Path("scripts/backfill_shadow_clv_pinnacle.py").read_text()
+    assert '_DC = {"1x": ("home", "draw")' in bf, "backfill must derive DC too"
+    return "double-chance CLV derived from the de-vigged 1X2 partition"
+
+
 if __name__ == "__main__":
     main()
