@@ -142,15 +142,29 @@ def classify() -> tuple[str, str]:
                 f"answering on :9222, so cookies cannot be refreshed. Run "
                 f"local/launch_chrome_for_sync.sh and open a coolbet.com tab.")
 
+    # Cookie AGE is a weak signal on its own. Observed 2026-08-26: a run started
+    # clean on freshly-harvested cookies, wrote 4,517 rows, and was then
+    # re-challenged with a 403 mid-batch — cookies barely minutes old and
+    # already rejected. Imperva rotates its challenge far faster than the 2h
+    # staleness threshold, so keying only on age would classify a re-challenge
+    # as BLOCKED and page a human for something a re-harvest fixes.
+    #
+    # So: if the feed is stale and CDP is available, re-harvest regardless of
+    # age. It is cheap (one CDP read), idempotent, and the single remedy that
+    # has actually worked. BLOCKED is reserved for the case where even that has
+    # been tried — see run(), which only escalates after a failed refresh.
     cookie_h = _hours_since_cookies()
-    if cookie_h is not None and cookie_h > COOKIE_STALE_H:
+    if cookie_h is None or cookie_h > COOKIE_STALE_H:
         return ("STALE_COOKIES",
                 f"no Coolbet odds for {odds_h:.1f}h and Imperva cookies are "
-                f"{cookie_h:.1f}h old")
+                f"{cookie_h:.1f}h old" if cookie_h is not None else
+                f"no Coolbet odds for {odds_h:.1f}h and cookie age is unknown")
+    return ("STALE_COOKIES",
+            f"no Coolbet odds for {odds_h:.1f}h despite cookies only "
+            f"{cookie_h:.1f}h old — Imperva re-challenges far faster than they "
+            f"expire, so re-harvesting is tried before calling this blocked")
 
-    # Job running, CDP up, cookies fresh, still no odds. Nothing left that this
-    # job knows how to fix, so it must not keep trying — retrying a block is how
-    # one outage becomes a rate-limit ban.
+    # Unreachable today, kept for the escalation path in run().
     return ("BLOCKED",
             f"no Coolbet odds for {odds_h:.1f}h despite a loaded job, live CDP "
             f"and fresh cookies — upstream is refusing the client. Needs a "
@@ -210,7 +224,16 @@ def run(dry_run: bool = False) -> dict:
     if state == "NOT_LOADED":
         result["action"] = "reloaded" if _reload_job() else "reload_failed"
     elif state == "STALE_COOKIES":
-        result["action"] = "cookies_refreshed" if _refresh_cookies() else "cookie_refresh_failed"
+        if _refresh_cookies():
+            result["action"] = "cookies_refreshed"
+        else:
+            # The one remedy failed. NOW it is a human problem, and the alert
+            # says so rather than reporting a refresh that did not happen.
+            result["action"] = "cookie_refresh_failed"
+            state = "BLOCKED"
+            reason = (f"{reason}; re-harvest from CDP-Chrome failed — check that "
+                      f"a coolbet.com tab is open and logged in")
+            result["state"], result["reason"] = state, reason
     else:
         # CDP_DOWN / BLOCKED — no safe automatic remedy. Alert and stop.
         result["action"] = "alerted"

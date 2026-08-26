@@ -25350,9 +25350,14 @@ def test_coolbet_feed_watchdog_2026_08_26():
     assert '"CDP_DOWN"' in src and '"BLOCKED"' in src
     heal = src[src.index("def run("):]
     assert "_reload_job()" in heal and "_refresh_cookies()" in heal
-    blocked_branch = heal[heal.index("else:"):heal.index("return result")]
-    assert "_reload_job" not in blocked_branch and "_refresh_cookies" not in blocked_branch, \
-        "CDP_DOWN / BLOCKED must not trigger a remedy — alert only"
+    # BLOCKED is an ESCALATION, not a first classification. Observed 2026-08-26:
+    # a run wrote 4,517 rows on fresh cookies then hit a 403 mid-batch, cookies
+    # minutes old. Imperva re-challenges far faster than the staleness
+    # threshold, so keying on age alone would page a human for something one
+    # CDP re-harvest fixes. run() must only reach BLOCKED after that fails.
+    assert 'state = "BLOCKED"' in heal, \
+        "BLOCKED must be reachable only after a failed cookie refresh"
+    assert "cookie_refresh_failed" in heal
 
     assert 0 < FEED_STALE_H <= 6, "feed-stale threshold must be sane"
     assert 0 < COOKIE_STALE_H <= 4, "cookie-stale threshold must be sane"
