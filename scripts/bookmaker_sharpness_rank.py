@@ -83,6 +83,7 @@ def main() -> int:
     # Overround is reported too: a tight margin is the usual proxy for sharpness,
     # and it is worth seeing whether it actually tracks calibration here.
     acc: dict = defaultdict(list)
+    acc_by_match: dict = defaultdict(dict)
     vig: dict = defaultdict(list)
     for mid, books in per.items():
         sh, sa = scores[mid]
@@ -96,8 +97,58 @@ def main() -> int:
             if not probs:
                 continue
             vig[bk].append(sum(1.0 / sel[s] for s in sides) - 1.0)
-            for i, y in enumerate(ys):
-                acc[bk].append((probs[i], y))
+            rows_here = [(probs[i], y) for i, y in enumerate(ys)]
+            acc[bk].extend(rows_here)
+            acc_by_match[bk][mid] = rows_here
+
+    # PAIRWISE vs PINNACLE, on matches BOTH books price.
+    #
+    # Ranking books by raw Brier is invalid: Brier depends on how hard the games
+    # are, and each book quotes a different slate. A book that only prices top
+    # leagues gets a better Brier for free. The first version of this script had
+    # that bug and put Pinnacle 14th of 15 — an artefact of 888Sport quoting
+    # 14,679 rows against Pinnacle's 51,921, not a real ranking.
+    pin_by_match = acc_by_match.get("Pinnacle", {})
+    pairwise = []
+    for bk, per_match_pairs in acc_by_match.items():
+        if bk == "Pinnacle":
+            continue
+        shared = set(per_match_pairs) & set(pin_by_match)
+        if len(shared) < 300:
+            continue
+        mine, theirs = [], []
+        for mid in shared:
+            mine.extend(per_match_pairs[mid])
+            theirs.extend(pin_by_match[mid])
+        n = len(mine)
+        bm = sum((p - y) ** 2 for p, y in mine) / n
+        bp = sum((p - y) ** 2 for p, y in theirs) / n
+        # Paired per-match differences give a t-stat: the same games, so the
+        # match-difficulty term cancels instead of contaminating the comparison.
+        diffs = []
+        for mid in shared:
+            a = sum((p - y) ** 2 for p, y in per_match_pairs[mid]) / len(per_match_pairs[mid])
+            b = sum((p - y) ** 2 for p, y in pin_by_match[mid]) / len(pin_by_match[mid])
+            diffs.append(a - b)
+        k = len(diffs)
+        md = sum(diffs) / k
+        vd = sum((x - md) ** 2 for x in diffs) / (k - 1)
+        se = math.sqrt(vd / k)
+        pairwise.append((md, bk, len(shared), n, bm, bp, md / se if se else 0.0))
+    pairwise.sort()
+
+    print("PAIRWISE vs PINNACLE — only matches BOTH books price (this is the "
+          "valid comparison)\n")
+    print(f"{'bookmaker':16s} {'matches':>8s} {'book brier':>11s} {'pin brier':>11s}"
+          f" {'diff':>10s} {'t':>7s}   verdict")
+    print("-" * 80)
+    for md, bk, nm, n, bm, bp, t in pairwise:
+        verdict = ("sharper than Pinnacle" if t <= -1.96
+                   else "worse than Pinnacle" if t >= 1.96
+                   else "indistinguishable")
+        print(f"{bk:16s} {nm:8d} {bm:11.6f} {bp:11.6f} {md:+10.6f} {t:+7.2f}   {verdict}")
+    print("\n(negative diff = book beats Pinnacle on the shared slate; "
+          "|t| >= 1.96 is significant)\n")
 
     out = []
     for bk, pairs in acc.items():
@@ -111,8 +162,10 @@ def main() -> int:
         out.append((b, ll, n, bk, 100.0 * sum(vig[bk]) / len(vig[bk])))
     out.sort()
 
-    print(f"market={args.market}   {args.start} → {args.end}   "
-          f"(books with >= {args.min_n} outcome rows)\n")
+    print(f"market={args.market}   {args.start} → {args.end}\n")
+    print("RAW BRIER — NOT a valid ranking, shown only to make the confound "
+          "visible.\nEach book prices a different slate, so this partly measures "
+          "how hard its games are.\n")
     print(f"{'rank':>4s} {'bookmaker':16s} {'n':>8s} {'brier':>10s} {'logloss':>10s}"
           f" {'overround':>10s} {'vs Pinnacle':>12s}")
     print("-" * 76)
