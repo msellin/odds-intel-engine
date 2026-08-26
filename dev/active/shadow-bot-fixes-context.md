@@ -74,3 +74,29 @@ Tasks 1 (CLV), 2 (Shin de-vig), 3 (promotion gate) shipped. 4 (discretion),
   fixed — only the downstream consumption is guarded. Needs a Coolbet-side
   investigation; filed separately.
 - Long-horizon Shin-vs-proportional replay was still running at hand-off.
+
+## Shipped (all pushed, engine deploy + migrations green)
+| commit | what |
+|---|---|
+| engine `7ea8623` | CLV anchor, Shin de-vig, t-stat gate, migration 283, 8 analysis scripts |
+| web `9feffba` | t-stat gate + Pinnacle-anchored CLV on /admin/shadow-bots |
+| engine `27832ba` | OU line-integrity guard + discretion report |
+| web `bd2eeb1` | discipline-check panel |
+| engine `208cf84` | MODEL_WHITEPAPER §9.1 / §Anchor / §10c.2b / §10c.2c, ROADMAP, SIGNALS |
+| engine `7164c7d` | fix PER-BOT-SWEEP-CONFIG (pinned the de-vig formula Shin replaced) |
+| engine `3a8f79d` | queue: COOLBET-OU-LINE-SHIFT + CONSENSUS-ANCHOR-BOT |
+| engine `2f76eb6` | revert two lines a bulk sed corrupted (GROWTH-* tests) |
+
+## CI accounting
+Baseline before this work (6508834): 661 passed / 89 failed.
+After: 664 passed / 89 failed — +3 new engine tests, no net new failures.
+The 89 are the standing CI-SMOKE-GATE-DEAD-2026-08-24 breakage (DATABASE_URL
+repo secret still points at localhost:5433). Needs the operator.
+
+## Lesson worth keeping
+Two self-inflicted regressions in this session, both from bulk sed over a
+30k-line test file. CI caught both only because the failure COUNT was compared
+against a known baseline — the run was already red, so "still red" proved
+nothing. Comparing failing test NAMES against a baseline commit is the only
+thing that worked. That is a direct consequence of CI-SMOKE-GATE-DEAD: a
+permanently-red gate cannot signal a regression.
