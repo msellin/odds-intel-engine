@@ -598,9 +598,27 @@ def get_pinnacle_closing_odds(match_id: str, market: str, selection: str) -> flo
     if result:
         return float(result[0]["odds"])
 
+    # PIN-CLOSE-PRE-KO-FALLBACK (2026-08-26): the fallback used to take the
+    # absolute-latest Pinnacle snapshot with no kickoff cutoff, so on any match
+    # where is_closing was never marked it could return an IN-PLAY tick — a
+    # legitimate live price (2-1 down at 80', odds of 40.0) treated as a closing
+    # line. That is precisely the bug CLOSING-PRE-KO-FALLBACK fixed in
+    # get_closing_odds() on 2026-05-23; the Pinnacle variant was missed, and it
+    # matters more now that de-vigged Pinnacle CLV is the primary validator
+    # (SHADOW-CLV-BOOKMAKER-FIX-2026-08-26).
+    #
+    # Found by running the live code path against rows the bulk backfill had
+    # already written and noticing they disagreed: one bot_pin_1x2_home_v1 pick
+    # computed +12.1% here against +17.9% stored, because the backfill applied a
+    # pre-KO cutoff and this function did not.
     result2 = execute_query(
-        "SELECT odds FROM odds_snapshots WHERE match_id = %s AND market = %s "
-        "AND selection = %s AND bookmaker = 'Pinnacle' ORDER BY timestamp DESC LIMIT 1",
+        """SELECT os.odds
+             FROM odds_snapshots os
+             JOIN matches m ON m.id = os.match_id
+            WHERE os.match_id = %s AND os.market = %s AND os.selection = %s
+              AND os.bookmaker = 'Pinnacle'
+              AND os.timestamp <= m.date
+            ORDER BY os.timestamp DESC LIMIT 1""",
         [match_id, market, selection]
     )
     return float(result2[0]["odds"]) if result2 else None

@@ -30913,6 +30913,22 @@ def test_shadow_clv_bookmaker_2026_08_26():
         "shadow pending query must select recommended_bookmaker"
     assert callable(get_devigged_pinnacle_close_prob)
 
+    # PIN-CLOSE-PRE-KO-FALLBACK-2026-08-26: the Pinnacle closing lookup's
+    # fallback had no kickoff cutoff, so on a match where is_closing was never
+    # marked it could return an IN-PLAY tick as the "closing" line. Same bug
+    # CLOSING-PRE-KO-FALLBACK fixed for get_closing_odds in May; the Pinnacle
+    # variant was missed. It matters more now that de-vigged Pinnacle CLV is the
+    # primary validator.
+    pin_fn = src[src.index("def get_pinnacle_closing_odds"):]
+    pin_fn = pin_fn[: pin_fn.index("\n\n\n")]
+    assert "os.timestamp <= m.date" in pin_fn, (
+        "get_pinnacle_closing_odds fallback must exclude in-play ticks by "
+        "capping at kickoff — otherwise a live price becomes a closing line"
+    )
+    assert "JOIN matches m ON m.id = os.match_id" in pin_fn, (
+        "the pre-KO cutoff needs the match join"
+    )
+
     mig = pathlib.Path("supabase/migrations/283_shadow_clv_pinnacle.sql").read_text()
     assert "clv_pinnacle" in mig and "closing_bookmaker" in mig
     # Migration 282 keyed the view on the LATEST pick_time while the admin pages
