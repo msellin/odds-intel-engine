@@ -2749,6 +2749,36 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             # for Tier A matches only (a few hundred per pipeline run).
             _shadow_ver = os.environ.get("SHADOW_MODEL_VERSION", "").strip()
             from workers.model.xgboost_ensemble import MODEL_VERSION as _prod_ver
+            # SHADOW-AUTOSELECT-2026-08-26: with no env override, shadow-score
+            # the NEWEST trained bundle rather than nothing.
+            #
+            # The env pin had gone stale in the worst possible way: on
+            # 2026-08-26 production was v20260712 (trained 07-12) while
+            # SHADOW_MODEL_VERSION still pointed at v20260705 — a model OLDER
+            # than production. The A/B slot was burning inference comparing
+            # production against its own predecessor, which can never justify a
+            # promotion. Meanwhile four newer bundles (v20260802, v20260809,
+            # v20260816, v20260823) sat trained and unscored, because the weekly
+            # retrain trains and emails but promotion is a manual step nobody
+            # had run in six weeks.
+            #
+            # A pin that must be hand-updated after every retrain will drift
+            # again. Defaulting to the newest bundle means the candidate is
+            # always the one a promotion decision would actually be about, and
+            # the env var stays available to pin a specific version deliberately.
+            if not _shadow_ver:
+                try:
+                    from workers.api_clients.db import execute_query as _eq_mv
+                    _newest = _eq_mv(
+                        "SELECT version FROM model_versions "
+                        "WHERE demoted_at IS NULL AND version <> %s "
+                        "ORDER BY trained_at DESC LIMIT 1",
+                        [_prod_ver],
+                    )
+                    if _newest:
+                        _shadow_ver = str(_newest[0]["version"]).strip()
+                except Exception:
+                    _shadow_ver = ""  # never let A/B selection break scoring
             if _shadow_ver and _shadow_ver != _prod_ver:
                 # Temporarily route a clean call through _load_bundle to
                 # produce candidate predictions. We call get_xgboost_prediction

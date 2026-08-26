@@ -22,6 +22,12 @@ Conditions (any one fires an alert):
              (daemon crashed, Mac asleep, launchd job broken)
   • erroring: last tick result.errors > 0 AND no successful auto_self_heal
              in the last 2 hours (sustained, not a transient blip)
+  • odds_stale: no Coolbet row in odds_snapshots for > 8h
+             (COOLBET-ODDS-STALE-2026-08-26) — every other condition watches
+             the daemon's SELF-REPORT; this one watches its OUTPUT. A daemon
+             that ticks happily and writes nothing passes all the others, which
+             is exactly what happened on 2026-08-26: 74h with no Coolbet odds,
+             zero of 344 upcoming picks carrying a Coolbet price, and no alert.
 
 On healthy state AFTER a previous alert: send a recovery Telegram once
 and clear last_health_alert_at so the next outage gets fresh alerting.
@@ -51,6 +57,11 @@ SUSTAINED_ERROR_THRESHOLD_MIN = int(os.getenv("COOLBET_HEALTH_ERROR_SUSTAINED_MI
 # Dedup window — fire at most once per this many hours per incident. The
 # operator only needs to hear about the same outage so often.
 ALERT_DEDUP_HOURS = int(os.getenv("COOLBET_HEALTH_DEDUP_HOURS", "4"))
+
+# COOLBET-ODDS-STALE-2026-08-26: how long Coolbet may go without writing a
+# single odds row before that is an incident in its own right. The daemon polls
+# far more often than this, so 8h is generous and only fires on a real outage.
+ODDS_STALE_THRESHOLD_H = 8
 
 # JWT-staleness threshold. JWT-stale-with-pending-picks alerts only when
 # the JWT is BOTH expired (or about to expire) AND there's a calibrated
@@ -166,6 +177,26 @@ def _normalise_tick_result(raw) -> dict:
     return {}
 
 
+def _hours_since_last_coolbet_odds() -> float | None:
+    """Hours since the most recent Coolbet row in odds_snapshots.
+
+    None when the query fails — a broken lookup must not manufacture an alert,
+    and must not suppress the other checks either.
+    """
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            "SELECT EXTRACT(epoch FROM (now() - max(timestamp))) / 3600.0 AS h "
+            "FROM odds_snapshots WHERE bookmaker = 'Coolbet'",
+            [],
+        )
+        if rows and rows[0].get("h") is not None:
+            return float(rows[0]["h"])
+    except Exception:
+        return None
+    return None
+
+
 def _evaluate_health(state: dict | None, now: datetime) -> tuple[str, str]:
     """Decide current daemon health. Returns (status, reason) where status
     is one of 'silent' / 'erroring' / 'jwt_stale' / 'healthy'. `reason`
@@ -182,6 +213,29 @@ def _evaluate_health(state: dict | None, now: datetime) -> tuple[str, str]:
         return ("silent",
                 f"last tick {int(age_min)}m ago "
                 f"(> {SILENT_THRESHOLD_MIN}m threshold)")
+
+    # COOLBET-ODDS-STALE-2026-08-26 — the check that was missing.
+    #
+    # Every condition above watches the daemon's own self-report: is it ticking,
+    # does it claim errors, is its JWT fresh. None of them asks the only question
+    # that matters downstream — DID ANY COOLBET ODDS ACTUALLY ARRIVE.
+    #
+    # A daemon that ticks happily and writes nothing passes every other check in
+    # this file. That is exactly what happened: on 2026-08-26 the last Coolbet
+    # row in odds_snapshots was 74 HOURS old, zero of 344 upcoming picks carried
+    # a Coolbet price, and no alert had fired. The operator places real money at
+    # Coolbet, so every pick in that window was priced at a book we could not
+    # confirm they could reach.
+    #
+    # This is the silent-failure shape that has cost the most here before: the
+    # monitored proxy stays green while the thing it stands for is dead. Check
+    # the output, not the heartbeat.
+    odds_age_h = _hours_since_last_coolbet_odds()
+    if odds_age_h is not None and odds_age_h > ODDS_STALE_THRESHOLD_H:
+        return ("odds_stale",
+                f"no Coolbet odds written for {odds_age_h:.0f}h "
+                f"(> {ODDS_STALE_THRESHOLD_H}h threshold) — picks cannot be "
+                f"priced at the venue we place at")
 
     result = _normalise_tick_result(state.get("mac_daemon_last_tick_result"))
     if int(result.get("errors") or 0) > 0:
@@ -336,7 +390,7 @@ def run_daemon_healthcheck(*, dry_run: bool = False) -> dict:
 
         last_alert = (state or {}).get("last_health_alert_at")
 
-        if status in ("silent", "erroring", "jwt_stale"):
+        if status in ("silent", "erroring", "jwt_stale", "odds_stale"):
             if last_alert is not None and (now - last_alert) < timedelta(hours=ALERT_DEDUP_HOURS):
                 counters["dedup_skipped"] = True
                 return counters

@@ -31157,5 +31157,65 @@ def test_picks_min_odds_2026_08_26():
     return "break-even 'min odds' shown on /picks so readers can revalidate price"
 
 
+
+@test("SHADOW-AUTOSELECT")
+def test_shadow_autoselect_2026_08_26():
+    """SHADOW-AUTOSELECT-2026-08-26 — with no env pin, the A/B slot shadow-scores
+    the NEWEST trained bundle instead of a stale hand-set version."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    assert "SHADOW-AUTOSELECT-2026-08-26" in src
+    assert "ORDER BY trained_at DESC LIMIT 1" in src, \
+        "must pick the newest trained bundle"
+    assert "WHERE demoted_at IS NULL AND version <> %s" in src, \
+        "must exclude demoted bundles and production itself"
+    # The env var has to keep working for deliberate pinning.
+    assert 'os.environ.get("SHADOW_MODEL_VERSION", "").strip()' in src
+    # Selection must never be able to break scoring.
+    i = src.index("SHADOW-AUTOSELECT-2026-08-26")
+    block = src[i:i + 1800]
+    assert "except Exception:" in block, "auto-select must be fail-safe"
+    return "shadow A/B slot auto-selects the newest bundle"
+
+
+@test("COOLBET-ODDS-STALE")
+def test_coolbet_odds_stale_2026_08_26():
+    """COOLBET-ODDS-STALE-2026-08-26 — the healthcheck must watch Coolbet's
+    OUTPUT, not just its heartbeat."""
+    import pathlib
+    from workers.jobs.coolbet_daemon_healthcheck import ODDS_STALE_THRESHOLD_H
+    src = pathlib.Path("workers/jobs/coolbet_daemon_healthcheck.py").read_text()
+
+    assert "def _hours_since_last_coolbet_odds" in src
+    assert "odds_stale" in src, "new status must exist"
+    # Must actually be in the alerting set, or it is computed and discarded.
+    assert '"silent", "erroring", "jwt_stale", "odds_stale"' in src, \
+        "odds_stale must be in the set of statuses that fire an alert"
+    assert "bookmaker = 'Coolbet'" in src, "must query real Coolbet odds rows"
+    assert 0 < ODDS_STALE_THRESHOLD_H <= 24, "threshold must be sane"
+    # A failed lookup must not manufacture OR suppress an alert.
+    i = src.index("def _hours_since_last_coolbet_odds")
+    assert "return None" in src[i:i + 900]
+    return "coolbet healthcheck alerts when no odds are written, not just on silence"
+
+
+@test("SHADOW-RETIRE-NEGATIVE-CLV")
+def test_shadow_retire_negative_clv_2026_08_26():
+    """SHADOW-RETIRE-NEGATIVE-CLV-2026-08-26 — the two decisively negative-CLV
+    shadow bots are retired so their picks stop reaching the operator."""
+    import pathlib
+    mig = pathlib.Path("supabase/migrations/284_retire_negative_clv_bots.sql").read_text()
+    assert "bot_sweep_1x2_draw_v1" in mig and "bot_sweep_1x2_home_v1" in mig
+    assert "retired_at = NOW()" in mig and "is_active  = FALSE" in mig
+    assert "AND retired_at IS NULL" in mig, "must be idempotent"
+    # bot_sweep_btts_yes_v1 has NO CLV rather than negative CLV — absence of
+    # evidence is a different call from evidence of absence, and not ours.
+    assert "bot_sweep_btts_yes_v1" in mig, "must explain why BTTS is left alone"
+    assert "UPDATE bots" in mig
+    assert "'bot_sweep_btts_yes_v1'," not in mig.split("WHERE name IN (")[1].split(")")[0], \
+        "btts bot must NOT be in the retire list"
+    return "negative-CLV shadow bots retired; BTTS left for the operator to decide"
+
+
 if __name__ == "__main__":
     main()
