@@ -77,6 +77,9 @@ SELECT
     sb.id, sb.bot_id, sb.match_id, sb.market, sb.selection, sb.stake,
     sb.odds_at_pick, sb.model_probability, sb.edge_percent, sb.result,
     sb.closing_odds, sb.pick_time, sb.shadow_cohort, sb.timing_cohort,
+    -- SHADOW-CLV-BOOKMAKER-FIX-2026-08-26: needed to anchor closing_odds to the
+    -- book the bot actually priced at instead of an arbitrary one.
+    sb.recommended_bookmaker,
     m.id as m_id, m.date as m_date, m.score_home, m.score_away,
     m.result as match_result, m.status as match_status,
     ht.name as home_team_name, ta.name as away_team_name
@@ -434,8 +437,33 @@ def _settle_system_fours_up(leg_results: list, total_stake: float) -> dict:
 
 # ─── Closing odds lookup ─────────────────────────────────────────────────────
 
-def get_closing_odds(match_id: str, market: str, selection: str) -> float | None:
-    """Get the closing odds for a match/market/selection from odds_snapshots"""
+def get_closing_odds(
+    match_id: str,
+    market: str,
+    selection: str,
+    bookmaker: str | None = None,
+) -> float | None:
+    """Get the closing odds for a match/market/selection from odds_snapshots.
+
+    SHADOW-CLV-BOOKMAKER-FIX-2026-08-26: `bookmaker` was added because the
+    unfiltered form is not well defined. Every book writes its closing snapshot
+    in the same batch, so they share a timestamp; `ORDER BY timestamp DESC
+    LIMIT 1` then picks an arbitrary row among the ties, and which book wins can
+    change between two runs of the same query. Observed spread on a single
+    1X2 home selection: 3.90 (Unibet) to 5.00 (10Bet) — a 28% swing in whatever
+    CLV gets computed from it.
+
+    That is worse than noise for line-shopping bots, whose `odds_at_pick` is by
+    construction the MAX across accessible books: comparing a max against one
+    arbitrary book makes the resulting CLV structurally positive regardless of
+    whether the bet had any edge.
+
+    Callers that want a specific book (the one a bet was actually priced at,
+    or Pinnacle) must now pass it. The unfiltered form is kept for the existing
+    `clv` column so historical values stay comparable, but it is made
+    deterministic with a bookmaker tie-break so at least the same query returns
+    the same answer twice.
+    """
     if market == "asian_handicap":
         # selection = "home -1.25" or "away +0.5" — parse team + handicap_line
         parts = selection.split(" ", 1)
@@ -445,26 +473,35 @@ def get_closing_odds(match_id: str, market: str, selection: str) -> float | None
                 hl = float(hl_str)
             except ValueError:
                 return None
+            bm_clause = "AND bookmaker = %s " if bookmaker else ""
+            bm_args = [bookmaker] if bookmaker else []
             result = execute_query(
                 "SELECT odds FROM odds_snapshots WHERE match_id = %s AND market = %s "
                 "AND selection = %s AND handicap_line = %s AND is_closing = TRUE "
-                "ORDER BY timestamp DESC LIMIT 1",
-                [match_id, market, sel_team, hl]
+                f"{bm_clause}"
+                "ORDER BY timestamp DESC, bookmaker LIMIT 1",
+                [match_id, market, sel_team, hl] + bm_args
             )
             if result:
                 return float(result[0]["odds"])
             result2 = execute_query(
                 "SELECT odds FROM odds_snapshots WHERE match_id = %s AND market = %s "
-                "AND selection = %s AND handicap_line = %s ORDER BY timestamp DESC LIMIT 1",
-                [match_id, market, sel_team, hl]
+                "AND selection = %s AND handicap_line = %s "
+                f"{bm_clause}"
+                "ORDER BY timestamp DESC, bookmaker LIMIT 1",
+                [match_id, market, sel_team, hl] + bm_args
             )
             return float(result2[0]["odds"]) if result2 else None
         return None
 
+    bm_clause = "AND bookmaker = %s " if bookmaker else ""
+    bm_args = [bookmaker] if bookmaker else []
     result = execute_query(
         "SELECT odds FROM odds_snapshots WHERE match_id = %s AND market = %s "
-        "AND selection = %s AND is_closing = TRUE ORDER BY timestamp DESC LIMIT 1",
-        [match_id, market, selection]
+        "AND selection = %s AND is_closing = TRUE "
+        f"{bm_clause}"
+        "ORDER BY timestamp DESC, bookmaker LIMIT 1",
+        [match_id, market, selection] + bm_args
     )
     if result:
         return float(result[0]["odds"])
@@ -476,15 +513,75 @@ def get_closing_odds(match_id: str, market: str, selection: str) -> float | None
     # e.g. 151.0 mid-match) — that produced garbage CLV (-98%) for any
     # match where pre-KO snapshotting hadn't fired.
     result2 = execute_query(
-        """SELECT os.odds
+        f"""SELECT os.odds
            FROM odds_snapshots os
            JOIN matches m ON m.id = os.match_id
            WHERE os.match_id = %s AND os.market = %s AND os.selection = %s
              AND os.timestamp <= m.date
-           ORDER BY os.timestamp DESC LIMIT 1""",
-        [match_id, market, selection]
+             {"AND os.bookmaker = %s" if bookmaker else ""}
+           ORDER BY os.timestamp DESC, os.bookmaker LIMIT 1""",
+        [match_id, market, selection] + bm_args
     )
     return float(result2[0]["odds"]) if result2 else None
+
+
+def get_devigged_pinnacle_close_prob(
+    match_id: str, market: str, selection: str
+) -> float | None:
+    """SHADOW-CLV-BOOKMAKER-FIX-2026-08-26 — Pinnacle's closing probability with
+    its margin removed.
+
+    Raw Pinnacle CLV (`odds_at_pick / pinnacle_close - 1`) carries Pinnacle's
+    overround, so it reads positive by roughly the size of that margin even on a
+    bet with no edge at all. Dividing the margin out first makes the *level*
+    mean something: a positive number is a price better than Pinnacle's true
+    estimate, not merely better than Pinnacle's quote.
+
+    Requires the FULL market at close (home/draw/away, or over/under) — a
+    partial set cannot be de-vigged, so this returns None rather than guessing.
+    Uses Shin for 3-way and proportional for 2-way; see workers/model/devig.py.
+    """
+    sides = _market_complement_selections(market, selection)
+    if not sides:
+        return None
+    odds: list[float] = []
+    for side in sides:
+        o = get_pinnacle_closing_odds(match_id, market, side)
+        if not o or o <= 1.0:
+            return None
+        odds.append(float(o))
+    try:
+        from workers.model.devig import devig
+    except Exception:
+        return None
+    probs = devig(odds)
+    if probs is None:
+        return None
+    try:
+        idx = sides.index(selection)
+    except ValueError:
+        return None
+    p = probs[idx]
+    return p if 0.0 < p < 1.0 else None
+
+
+def _market_complement_selections(market: str, selection: str) -> list[str] | None:
+    """Full set of mutually exclusive selections for a market, in a fixed order.
+
+    Only markets whose complement set is unambiguous are de-viggable here.
+    double_chance and asian_handicap are deliberately excluded: DC outcomes
+    overlap (1X and X2 both contain the draw) so they do not form a partition,
+    and AH needs the handicap line threaded through, which this helper does not
+    take.
+    """
+    m = (market or "").strip().lower()
+    if m == "1x2":
+        return ["home", "draw", "away"]
+    if m == "btts":
+        return ["yes", "no"]
+    if m.startswith("over_under"):
+        return ["over", "under"]
+    return None
 
 
 def get_pinnacle_closing_odds(match_id: str, market: str, selection: str) -> float | None:
@@ -2682,16 +2779,42 @@ def _settle_pending_shadow_bets(pending: list, finished: list) -> int:
         match_id = bet["match_id"]
         odds_market = _normalize_bet_market(bet["market"], bet["selection"])
         odds_selection = _normalize_bet_selection(bet["selection"])
-        closing_odds = get_closing_odds(match_id, odds_market, odds_selection)
+
+        # SHADOW-CLV-BOOKMAKER-FIX-2026-08-26: prefer the book the bot actually
+        # priced at, so `closing_odds` answers "what happened to MY price"
+        # rather than "what happened to whichever book sorted last". Falls back
+        # to the unfiltered form when that book has no closing row, and records
+        # which book supplied the number either way.
+        own_book = bet.get("recommended_bookmaker")
+        closing_bookmaker = None
+        closing_odds = None
+        if own_book:
+            closing_odds = get_closing_odds(match_id, odds_market, odds_selection, own_book)
+            if closing_odds:
+                closing_bookmaker = own_book
+        if closing_odds is None:
+            closing_odds = get_closing_odds(match_id, odds_market, odds_selection)
+
+        # The validator the bot is actually judged on. Pinnacle-anchored and
+        # de-vigged, so 0 means Pinnacle-fair rather than Pinnacle-quoted.
+        clv_pinnacle = None
+        try:
+            true_p = get_devigged_pinnacle_close_prob(match_id, odds_market, odds_selection)
+            if true_p:
+                clv_pinnacle = round(float(bet["odds_at_pick"]) * true_p - 1.0, 4)
+        except Exception as _e:  # never let a CLV lookup block a settlement
+            console.print(f"  [dim]devigged-pinnacle CLV failed for {bet['id']}: {_e}[/dim]")
 
         settlement = settle_bet_result(bet, score_home, score_away, closing_odds)
 
         try:
             execute_write(
                 "UPDATE shadow_bets SET result = %s, pnl = %s, "
-                "closing_odds = %s, clv = %s WHERE id = %s",
+                "closing_odds = %s, clv = %s, clv_pinnacle = %s, "
+                "closing_bookmaker = %s WHERE id = %s",
                 [settlement["result"], settlement["pnl"],
-                 closing_odds, settlement["clv"], bet["id"]]
+                 closing_odds, settlement["clv"], clv_pinnacle,
+                 closing_bookmaker, bet["id"]]
             )
         except Exception as e:
             console.print(f"  [yellow]Shadow-settle error for {bet['id']}: {e}[/yellow]")

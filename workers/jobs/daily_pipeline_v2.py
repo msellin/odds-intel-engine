@@ -4372,6 +4372,9 @@ def _run_sweep_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_t
 # backtest ROI is actively anti-predictive (-9.2% out of sample).
 _LINESHOP_TRUE_EDGE_MIN = 0.03
 
+# Shin de-vig — see workers/model/devig.py for why proportional is not used.
+from workers.model.devig import devig as _devig  # noqa: E402
+
 # Tier 3 is negative under BOTH mechanisms independently — -14.1% (t=-2.03,
 # n=304) on the model-driven bots' history and -7.7% (n=503) in the line-shop
 # backtest. Tier 4 is ambiguous for line-shopping but clearly negative for the
@@ -4571,7 +4574,15 @@ def _run_pin_ou_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_
                     continue
 
                 # De-vigged Pinnacle probability — see _LINESHOP_TRUE_EDGE_MIN.
-                true_prob = (1.0 / pin_odds) / total_implied
+                # LINESHOP-SHIN-DEVIG-2026-08-26: Shin, not proportional. On a
+                # lopsided line (OU 3.5 especially) proportional over-states the
+                # unlikely side; measured gap in the bottom probability decile
+                # was +3.23pp vs Shin's +1.78pp over 24k OU 3.5 outcomes.
+                _probs = _devig([pin_over, pin_under])
+                if _probs is None:
+                    stats["devig_fail"] = stats.get("devig_fail", 0) + 1
+                    continue
+                true_prob = _probs[0] if sel == "over" else _probs[1]
                 edge = best_odds * true_prob - 1.0
                 if edge < _LINESHOP_TRUE_EDGE_MIN:
                     stats["low_edge"] += 1
@@ -4761,7 +4772,15 @@ def _run_pin_1x2_shadow_pass(today_str: str, cohort_tag: str = "morning", notify
             if len(pin_three) < 3:
                 stats["no_pin"] += 1
                 continue
-            overround = sum(1.0 / _o for _o in pin_three)
+            # LINESHOP-SHIN-DEVIG-2026-08-26: Shin de-vig. Proportional removal
+            # over-states the longshot leg of a 3-way market — measured +1.85pp
+            # in the bottom probability decile over 70k Pinnacle 1X2 outcomes
+            # (2025-01 → 2026-08), i.e. a ~17% relative over-statement, against
+            # a 3% edge gate. Shin cuts it to +0.55pp.
+            _pin_probs = _devig(pin_three)
+            if _pin_probs is None:
+                stats["devig_fail"] = stats.get("devig_fail", 0) + 1
+                continue
             soft_offers = [(bm, o) for bm, o in books.items() if bm != "Pinnacle"]
             if not soft_offers:
                 stats["no_soft"] += 1
@@ -4773,7 +4792,7 @@ def _run_pin_1x2_shadow_pass(today_str: str, cohort_tag: str = "morning", notify
             if not (_PIN_1X2_ODDS_MIN <= best_odds <= _PIN_1X2_ODDS_MAX):
                 stats["odds_range"] += 1
                 continue
-            true_prob = (1.0 / pin_odds) / overround
+            true_prob = _pin_probs[("home", "draw", "away").index(cfg["selection"])]
             edge = best_odds * true_prob - 1.0
             if edge < cfg["edge_min"]:
                 stats["low_edge"] += 1

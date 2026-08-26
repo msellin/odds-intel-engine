@@ -19769,7 +19769,7 @@ def _():
         assert market in psrc, f"_is_hit must handle {market}"
 
     # Settlement hook wired
-    settle = pathlib.Path("workers/jobs/settlement.py")
+    settle = pathlib.Path("workers/jobs/settlement.py").read_text()
     s_src = settle.read_text()
     assert "settle_published_picks_for_matches" in s_src, (
         "settlement.py must call settle_published_picks_for_matches() "
@@ -20133,7 +20133,7 @@ def _():
     assert "JSONB" in msrc, "column must be JSONB"
 
     # 2. Settlement job
-    settle = pathlib.Path("workers/jobs/settlement.py")
+    settle = pathlib.Path("workers/jobs/settlement.py").read_text()
     ssrc = settle.read_text()
     assert "_value_bets_cumulative" in ssrc, (
         "settlement must define _value_bets_cumulative function"
@@ -30823,6 +30823,117 @@ def _bet_void_integrity():
         "the admin UI computes client-side — 30-min cohorts mean raw row counts "
         "overstate n by ~16x against the n>=50 graduation gates"
     )
+
+
+
+@test("SHIN-DEVIG")
+def test_shin_devig_2026_08_26():
+    """LINESHOP-SHIN-DEVIG-2026-08-26 — Shin de-vig replaces proportional in the
+    line-shopping bots. Pins the maths and the two call sites."""
+    import pathlib
+    from workers.model.devig import devig, shin_devig, proportional_devig
+
+    # A 3-way market with a real overround must come back summing to 1.
+    probs = devig([1.85, 3.60, 4.50])
+    assert probs is not None, "devig returned None on a valid 3-way market"
+    assert abs(sum(probs) - 1.0) < 1e-9, f"probs must sum to 1, got {sum(probs)}"
+
+    # The defining property: vs proportional, Shin takes MORE probability off
+    # the longshot and gives more to the favourite. This is the whole reason for
+    # the change — proportional manufactures edge on draws and away dogs.
+    prop = proportional_devig([1.85, 3.60, 4.50])
+    assert probs[0] > prop[0], "Shin should raise the favourite vs proportional"
+    assert probs[2] < prop[2], "Shin should lower the longshot vs proportional"
+
+    # 2-way markets are handled too (OU 3.5 is strongly lopsided in practice).
+    two = devig([1.50, 2.60])
+    assert two is not None and abs(sum(two) - 1.0) < 1e-9
+
+    # Degenerate input must return None, never a bogus probability.
+    for bad in ([], [1.0, 2.0], [0.9, 2.0], [None, 2.0]):
+        assert devig(bad) is None, f"devig({bad}) should be None"
+
+    # No-overround market falls back to proportional rather than failing.
+    assert shin_devig([2.0, 2.0]) is not None
+
+    src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
+    assert "from workers.model.devig import devig as _devig" in src, \
+        "daily_pipeline_v2 must import the shared devig helper"
+    assert "true_prob = (1.0 / pin_odds) / total_implied" not in src, \
+        "OU line-shop still uses the old proportional de-vig"
+    assert "true_prob = (1.0 / pin_odds) / overround" not in src, \
+        "1X2 line-shop still uses the old proportional de-vig"
+    assert src.count("_devig(") >= 2, "expected devig used at both line-shop sites"
+    return "Shin de-vig wired into both line-shop sites; longshot correction verified"
+
+
+@test("SHADOW-CLV-BOOKMAKER")
+def test_shadow_clv_bookmaker_2026_08_26():
+    """SHADOW-CLV-BOOKMAKER-FIX-2026-08-26 — get_closing_odds must accept a
+    bookmaker and be deterministic; shadow settlement must store the
+    de-vigged Pinnacle CLV."""
+    import pathlib
+    import inspect
+    from workers.jobs.settlement import (
+        get_closing_odds,
+        get_devigged_pinnacle_close_prob,
+        _market_complement_selections,
+    )
+
+    params = inspect.signature(get_closing_odds).parameters
+    assert "bookmaker" in params, "get_closing_odds must take a bookmaker filter"
+    assert params["bookmaker"].default is None, "bookmaker must stay optional"
+
+    # Complement sets: only markets that actually partition the outcome space.
+    assert _market_complement_selections("1x2", "home") == ["home", "draw", "away"]
+    assert _market_complement_selections("over_under_25", "over") == ["over", "under"]
+    # double_chance outcomes overlap (1X and X2 both contain the draw) and AH
+    # needs a handicap line, so neither is de-viggable here.
+    assert _market_complement_selections("double_chance", "1x") is None
+    assert _market_complement_selections("asian_handicap", "home -1") is None
+
+    src = pathlib.Path("workers/jobs/settlement.py").read_text()
+    # Ties on timestamp made the old query non-deterministic across runs.
+    assert "ORDER BY timestamp DESC, bookmaker LIMIT 1" in src, \
+        "closing-odds lookup must have a deterministic tie-break"
+    assert "clv_pinnacle = %s" in src and "closing_bookmaker = %s" in src, \
+        "shadow settlement must persist clv_pinnacle and closing_bookmaker"
+    assert "sb.recommended_bookmaker" in src, \
+        "shadow pending query must select recommended_bookmaker"
+    assert callable(get_devigged_pinnacle_close_prob)
+
+    mig = pathlib.Path("supabase/migrations/283_shadow_clv_pinnacle.sql").read_text()
+    assert "clv_pinnacle" in mig and "closing_bookmaker" in mig
+    # Migration 282 keyed the view on the LATEST pick_time while the admin pages
+    # dedupe on the EARLIEST; 283 aligns them on earliest.
+    assert "pick_time ASC" in mig, "shadow_bets_unique must dedupe on earliest pick_time"
+    return "CLV bookmaker filter + de-vigged Pinnacle CLV + aligned unique view"
+
+
+@test("SHADOW-PROMOTION-GATE")
+def test_shadow_promotion_gate_2026_08_26():
+    """SHADOW-PROMOTION-GATE-2026-08-26 — the graduation gate is a t-test, not a
+    raw ROI threshold. Monte-Carlo showed the old gate promoted a truly
+    break-even bot 43% of the time."""
+    import pathlib
+    src = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
+    assert "const PROMOTE_T = 1.65" in src, "promotion must gate on a t-statistic"
+    assert "const RETIRE_T = -1.65" in src
+    assert "const MIN_SETTLED_FOR_DECISION = 200" in src, \
+        "n>=50 is far too small at these odds"
+    assert "tStat >= PROMOTE_T" in src, "gate must actually use the t-stat"
+    # Only the GATE must stop using raw ROI. A `roi >= 3` still appears as a
+    # display colour threshold, which is fine — it tints a number, it does not
+    # decide anything.
+    assert "} else if (roi >= 3) {" not in src, \
+        "raw-ROI promotion threshold must be gone from the gate"
+    assert "} else if (roi <= -8) {" not in src, \
+        "raw-ROI retirement threshold must be gone from the gate"
+    assert "clv_pinnacle" in src, "page must read the Pinnacle-anchored CLV"
+    # The simulation that justified the change has to stay runnable.
+    sim = pathlib.Path("scripts/promotion_gate_simulation.py").read_text()
+    assert "def t_gate_sim" in sim and "shadow_bets_unique" in sim
+    return "t-statistic promotion gate (|t|>=1.65, n>=200) replaces ROI>=3% at n>=50"
 
 
 if __name__ == "__main__":
