@@ -31080,5 +31080,35 @@ def test_double_chance_clv_2026_08_26():
     return "double-chance CLV derived from the de-vigged 1X2 partition"
 
 
+
+@test("CLV-FIRST-GATE")
+def test_clv_first_gate_2026_08_26():
+    """CLV-FIRST-DEV-LOOP-2026-08-26 — the graduation gate decides on CLV, with
+    ROI kept as a cross-check."""
+    import pathlib
+    page = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
+
+    assert "const CLV_MIN_N = 100" in page, "CLV gate needs its own sample floor"
+    assert "clvTStat" in page, "the CLV t-statistic must be computed"
+    assert "const gateT = hasClvGate ? clvTStat : tStat" in page, (
+        "the gate must prefer CLV and fall back to ROI only where Pinnacle "
+        "quotes no market (BTTS)"
+    )
+    assert "gateT >= PROMOTE_T" in page and "gateT <= RETIRE_T" in page, \
+        "promote/retire must read the gate statistic, not the ROI t-stat"
+    # The fallback has to stay honest: a bot with no CLV anchor is slower to
+    # judge, and the UI should say so rather than silently using a weaker test.
+    assert "no CLV anchor" in page, \
+        "bots without a CLV anchor must be labelled as such"
+
+    rep = pathlib.Path("scripts/clv_gate_report.py").read_text()
+    assert "shadow_bets_unique" in rep, "report must use the deduped view"
+    assert "DISAGREEMENTS" in rep, (
+        "the report must surface bots where CLV and ROI point opposite ways — "
+        "bot_dc_strong_fav read +0.40% ROI while sitting at -4.02% CLV (t=-21)"
+    )
+    return "graduation gate decides on de-vigged Pinnacle CLV; ROI is a cross-check"
+
+
 if __name__ == "__main__":
     main()
