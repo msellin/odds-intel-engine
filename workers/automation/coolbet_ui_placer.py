@@ -297,35 +297,143 @@ def read_outcomes(page) -> list[UiOutcome]:
     return out
 
 
+def _wanted_line(market: str) -> float | None:
+    """Extract the total from our market vocabulary: over_under_25 -> 2.5."""
+    m = re.fullmatch(r"over_under_(\d{2,3})", market)
+    if not m:
+        return None
+    digits = m.group(1)
+    return float(f"{digits[:-1]}.{digits[-1]}")
+
+
+def _label_line(label: str) -> float | None:
+    """Extract the total Coolbet rendered: 'Üle Ü 2.5' -> 2.5.
+
+    Coolbet writes the side twice — the word then its initial ('Üle Ü 2.5',
+    'Alla A 1.73') — so the number is taken from the LAST numeric token that
+    looks like a line, not the first thing that parses as a float.
+    """
+    nums = re.findall(r"\d+(?:[.,]\d+)?", label)
+    for tok in nums:
+        val = float(tok.replace(",", "."))
+        # Lines are .0/.25/.5/.75 steps and realistically below 10; odds are
+        # >1 with two decimals. Require a genuine line-shaped step.
+        if val < 10 and abs(val * 4 - round(val * 4)) < 1e-9:
+            return val
+    return None
+
+
+def _ou_side(label: str) -> str | None:
+    """'over' / 'under' / None from an Estonian or English OU label."""
+    low = label.strip().lower()
+    if low.startswith(OVER_PREFIXES):
+        return "over"
+    if low.startswith(UNDER_PREFIXES):
+        return "under"
+    return None
+
+
 def find_outcome(
     outcomes: list[UiOutcome], market: str, selection: str, home: str, away: str
 ) -> UiOutcome | None:
     """Resolve our (market, selection) vocabulary onto a rendered price.
 
-    Only 1x2 is supported today — that is what the UI path has been verified
-    against end to end. OU and AH need line matching against the Estonian
-    'Üle/Alla X.X' labels and are deliberately left unimplemented rather than
-    guessed at, because a wrong line is a silently wrong bet
-    ([[feedback_odds_quality_recurring]]).
+    Supports 1x2 and over_under_XX. Asian handicap is NOT supported — Coolbet
+    renders AH as team-name-plus-handicap ('FK Partizan +1.0'), which collides
+    with the 1X2 label space, and quarter lines do not exist there at all
+    ([[project_coolbet_limitations]]). It raises rather than guesses, because a
+    wrong line is a silently wrong bet ([[feedback_odds_quality_recurring]]).
     """
-    if market != "1x2":
-        raise UiPlacerError(
-            f"market {market!r} not supported on the UI path yet — only 1x2 is verified"
-        )
-    want = {"home": home, "away": away, "draw": None}.get(selection)
-    for o in outcomes:
-        low = o.label.lower()
-        if selection == "draw":
-            if any(d in low for d in DRAW_LABELS):
-                return o
-            continue
-        if want and fuzz.token_set_ratio(want.lower(), low) >= 85:
-            # Reject handicap/total variants that embed the team name
-            # ('FK Partizan +1.0') — those are different markets.
-            if re.search(r"[+\-]\d|\d\.\d", low):
+    if market == "1x2":
+        want = {"home": home, "away": away, "draw": None}.get(selection)
+        for o in outcomes:
+            low = o.label.lower()
+            if selection == "draw":
+                if any(d in low for d in DRAW_LABELS):
+                    return o
                 continue
-            return o
-    return None
+            if want and fuzz.token_set_ratio(want.lower(), low) >= 85:
+                # Reject handicap/total variants that embed the team name
+                # ('FK Partizan +1.0') — those are different markets.
+                if re.search(r"[+\-]\d|\d\.\d", low):
+                    continue
+                return o
+        return None
+
+    line = _wanted_line(market)
+    if line is not None:
+        if selection not in ("over", "under"):
+            raise UiPlacerError(f"selection {selection!r} invalid for {market!r}")
+        for o in outcomes:
+            if _ou_side(o.label) != selection:
+                continue
+            got = _label_line(o.label)
+            # Exact line only. 'Over 2.5' and 'Over 3.5' are different bets and
+            # a near-miss here is how you silently back the wrong total.
+            if got is not None and abs(got - line) < 1e-9:
+                return o
+        return None
+
+    raise UiPlacerError(
+        f"market {market!r} not supported on the UI path — only 1x2 and over_under_XX"
+    )
+
+
+def select_ou_line(page, line: float, *, timeout_ms: int = 8000) -> bool:
+    """Click the Over/Under line tab for `line`, revealing its prices.
+
+    The match page renders ONE OU line at a time. The others exist as separate
+    market ids whose buttons carry the price but NO label, so a naive read sees
+    '1.41' with nothing saying which line it belongs to — which is exactly how
+    you back the wrong total. The line strip ('2.5 3 3.5 4 4.5') switches which
+    one is labelled.
+
+    Located structurally, not by class: Coolbet's class names are hashed CSS
+    modules (`VcWFvM FqpiHC ufmJsq`) that change on every redeploy. We look for
+    a leaf whose entire text is the line number, sitting in a strip that is
+    nothing but line numbers.
+
+    Clicked through Playwright rather than `el.click()` in page JS: the tab is a
+    plain DIV, and React does not always respond to a synthetic DOM click on a
+    non-button. Playwright dispatches real mouse events.
+
+    Returns True when the requested line ends up rendered.
+    """
+    label = f"{line:g}"  # 2.5 -> "2.5", 3.0 -> "3"
+
+    def _rendered() -> bool:
+        return any(
+            _label_line(o.label) == line and _ou_side(o.label)
+            for o in read_outcomes(page)
+        )
+
+    if _rendered():
+        return True
+
+    loc = page.locator(f'xpath=//*[not(*) and normalize-space(text())="{label}"]')
+    for i in range(min(loc.count(), 12)):
+        el = loc.nth(i)
+        try:
+            strip = el.evaluate(
+                r"""el => {
+                     const s = el.parentElement?.parentElement;
+                     if (!s) return '';
+                     return (s.innerText || '').replace(/\s+/g, ' ').trim();
+                   }"""
+            )
+        except Exception:
+            continue
+        if not re.fullmatch(r"[\d.\s]+", strip or "") or len(strip.split()) < 2:
+            continue
+        try:
+            el.click(timeout=timeout_ms)
+        except Exception as e:
+            log.debug("OU line tab click failed on candidate %d: %s", i, e)
+            continue
+        page.wait_for_timeout(2000)
+        if _rendered():
+            return True
+    return _rendered()
 
 
 # ── betslip ───────────────────────────────────────────────────────────────────

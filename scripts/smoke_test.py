@@ -25665,14 +25665,36 @@ def test_coolbet_ui_placer_2026_08_27():
     # how edge disappears.
     assert "max_odds_drop_pct" in stage_src
 
-    # Only 1x2 is verified end to end. OU/AH need Estonian line matching
-    # (Üle/Alla 2.5); guessing a line is a silently wrong bet.
+    # OU line matching against Coolbet's Estonian labels. The line must match
+    # EXACTLY — 'Over 2.5' and 'Over 3.5' are different bets, and Coolbet
+    # writes the side twice ('Üle Ü 2.5'), so the line cannot be taken as the
+    # first number that parses.
+    ou = [
+        up.UiOutcome(market_id="849", label="Üle Ü 2.5", odds=2.12),
+        up.UiOutcome(market_id="849", label="Alla A 2.5", odds=1.73),
+        up.UiOutcome(market_id="850", label="Üle Ü 3.5", odds=3.51),
+    ]
+    assert up._label_line("Üle Ü 2.5") == 2.5, "side initial must not be read as the line"
+    assert up._ou_side("Alla A 2.5") == "under"
+    assert up.find_outcome(ou, "over_under_25", "over", "A", "B").odds == 2.12
+    assert up.find_outcome(ou, "over_under_35", "over", "A", "B").odds == 3.51
+    # A line that is not on the page must come back None, never a near miss.
+    assert up.find_outcome(ou, "over_under_35", "under", "A", "B") is None
+
+    # Asian handicap stays unsupported: Coolbet renders it as team-name-plus-
+    # handicap ('FK Partizan +1.0'), colliding with the 1X2 label space.
     outcomes = [up.UiOutcome(market_id="1", label="FK Partizan", odds=3.30)]
     try:
-        up.find_outcome(outcomes, "over_under_25", "over", "A", "B")
+        up.find_outcome(outcomes, "ah_home_-1.00", "home", "A", "B")
         raise AssertionError("unsupported market must raise, not guess")
     except up.UiPlacerError:
         pass
+
+    # A non-main OU line is rendered unlabelled on the match page, so
+    # select_ou_line must confirm the line actually became visible rather than
+    # reporting success off the back of a click that changed nothing.
+    src_line = inspect.getsource(up.select_ou_line)
+    assert "_rendered()" in src_line, "must verify the line rendered, not trust the click"
 
     # COOLBET-SQUAD-GUARD: a reserve side must never match a first team. This
     # produced a fake +87pct edge on the Epicbet path (Rosario Central Res.).
