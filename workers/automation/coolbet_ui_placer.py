@@ -319,7 +319,17 @@ def open_event(page, ev: UiEvent, *, timeout_ms: int = 15000) -> None:
     """Click through to the match page from the search dropdown."""
     link = page.locator(f'a[href="{ev.href}"]').first
     link.click(timeout=timeout_ms)
-    page.wait_for_timeout(4000)
+    # WAIT for the URL to change, don't sleep and hope. A fixed pause raced the
+    # SPA: consecutive picks landed on the PREVIOUS pick's match page
+    # ("did not land on match 6022383: .../match/5975109") because the click
+    # had not navigated yet when the check ran. Fall back to a direct goto —
+    # the dropdown link is a nicety, the match id is what we actually need.
+    try:
+        page.wait_for_url(f"**/match/{ev.match_id}*", timeout=timeout_ms)
+    except Exception:
+        page.goto(f"https://www.coolbet.com{ev.href}",
+                  wait_until="domcontentloaded", timeout=25000)
+    page.wait_for_timeout(3000)
     if ev.match_id not in page.url:
         raise UiPlacerError(f"navigation did not land on match {ev.match_id}: {page.url}")
 
@@ -740,6 +750,75 @@ def place(page, *, timeout_ms: int = 20000) -> SlipState | None:
         return None
 
 
+# ── price snapshots ───────────────────────────────────────────────────────────
+
+# odds_snapshots has column vocabulary for .5 lines only. Coolbet's ladder also
+# quotes whole numbers (2, 3, 4) — there is nowhere to put those, so they are
+# dropped rather than rounded onto a neighbouring line, which would be a
+# silently wrong total. Same rule as the Epicbet quarter lines.
+_OU_LINE_SLOTS = {0.5: "05", 1.5: "15", 2.5: "25", 3.5: "35", 4.5: "45"}
+
+
+def snapshot_prices(match_id: str, outcomes: list[UiOutcome], ou: list[UiOutcome],
+                    home: str = "", away: str = "", kickoff=None) -> int:
+    """Write everything visible on this match page into odds_snapshots.
+
+    The placer loads a real match page every pass, so the prices are free —
+    they were being read and thrown away. Two reasons this is worth keeping:
+
+    1. It is an INDEPENDENT Coolbet feed. The bulk scraper goes through
+       search/v2 and dies on stale Imperva cookies (dead 08:26 -> 12:44 UTC on
+       2026-08-27, and 80h in COOLBET-FEED-WATCHDOG). This path reads a real
+       logged-in browser and has no cookie dependency at all.
+    2. It gives a ~30-minute-resolution intraday series on exactly the matches
+       we hold picks for, which is what any study of Coolbet drift needs.
+
+    Returns the number of rows written. Never raises — a snapshot failure must
+    not affect placement.
+    """
+    from workers.api_clients.supabase_client import store_odds
+
+    data: dict = {"bookmaker": "Coolbet"}
+
+    for o in outcomes:
+        low = _ascii_lower(o.label)
+        # Skip handicap/total variants that embed a team name
+        # ('FK Partizan +1.0') — those are a different market.
+        if re.search(r"[+\-]\d|\d\.\d", low):
+            continue
+        if any(d in low for d in DRAW_LABELS):
+            data["odds_draw"] = o.odds
+        elif home and fuzz.token_set_ratio(home.lower(), low) >= 85:
+            data["odds_home"] = o.odds
+        elif away and fuzz.token_set_ratio(away.lower(), low) >= 85:
+            data["odds_away"] = o.odds
+
+    for o in ou:
+        side = _ou_side(o.label)
+        line = _label_line(o.label)
+        slot = _OU_LINE_SLOTS.get(line) if line is not None else None
+        if not side or not slot:
+            continue
+        data[f"odds_{side}_{slot}"] = o.odds
+
+    if len(data) <= 1:
+        return 0
+    mins = None
+    if kickoff:
+        from datetime import datetime, timezone
+        mins = int((datetime.now(timezone.utc) - kickoff).total_seconds() // 60)
+    try:
+        store_odds(str(match_id), data, minutes_to_kickoff=mins)
+    except Exception as e:
+        log.warning("snapshot write failed for %s: %s", match_id, e)
+        return 0
+    return len(data) - 1
+
+
+def _ascii_lower(s: str) -> str:
+    return (s or "").lower()
+
+
 # ── audit trail ───────────────────────────────────────────────────────────────
 
 
@@ -916,6 +995,22 @@ def stage_bet(
         outcomes = read_outcomes(page)
         if not outcomes:
             return _fail("price", "no prices rendered on match page", ev)
+
+    # Snapshot everything the page shows, whatever happens to this bet. The
+    # page is already loaded, so the prices are free — and this feed survives
+    # the stale-cookie 403s that repeatedly kill the bulk scraper.
+    try:
+        is_ou = _wanted_line(bet["market"]) is not None
+        # `outcomes` already holds whichever set this pick needed; read the
+        # other one so the snapshot covers the whole page, not just our market.
+        main = outcomes if not is_ou else read_outcomes(page)
+        ladder = outcomes if is_ou else read_ou_grid(page)
+        n_snap = snapshot_prices(bet["match_id"], main, ladder,
+                                 home, away, bet.get("match_date"))
+        if n_snap:
+            notes.append(f"snapshot {n_snap} prices")
+    except Exception as e:
+        log.debug("snapshot skipped: %s", e)
 
     try:
         outcome = find_outcome(outcomes, bet["market"], bet["selection"], home, away)

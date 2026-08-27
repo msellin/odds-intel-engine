@@ -42,8 +42,21 @@
         <string>/Users/margussellin/www/odds-intel-engine</string>
     </dict>
 
-    <key>StartInterval</key>
-    <integer>1200</integer>
+    <!-- COOLBET-WATCHDOG-NEVER-RAN (2026-08-27): this job used
+         StartInterval=1200 and launchd fired it ZERO times — `launchctl print`
+         reported `runs = 0`, `last exit code = (never exited)` while the
+         sibling odds-snapshot job (StartCalendarInterval) sat on 2162 runs.
+         RunAtLoad did not fire it either, and an unload/load cycle did not
+         fix it; only an explicit `launchctl kickstart` ever ran it. So the
+         feed sat dead 08:26 -> 12:44 UTC on stale Imperva cookies with the
+         watchdog loaded and silent — the exact 80h outage it was built to
+         catch. Switched to the calendar schedule that provably works here. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Minute</key><integer>20</integer></dict>
+        <dict><key>Minute</key><integer>40</integer></dict>
+    </array>
 
     <key>RunAtLoad</key>
     <true/>

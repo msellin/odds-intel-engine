@@ -25956,6 +25956,22 @@ def test_coolbet_ui_placer_2026_08_27():
     assert "betSlipSettings" in empty_src, "slip reset must go through localStorage"
     assert "reload" in empty_src, "storage reset only takes effect after a reload"
 
+    # The placer loads a real match page every pass, so its prices are free —
+    # and unlike the bulk scraper (search/v2, killed by stale Imperva cookies
+    # for 4.5h on 2026-08-27 and 80h before that) this path has no cookie
+    # dependency. odds_snapshots has vocabulary for .5 lines only; whole-number
+    # lines are DROPPED, never rounded onto a neighbour.
+    snap_src = inspect.getsource(up.snapshot_prices)
+    assert "store_odds" in snap_src, "reuse the shared writer, not a raw insert"
+    assert set(up._OU_LINE_SLOTS) == {0.5, 1.5, 2.5, 3.5, 4.5}, \
+        "only .5 lines have an odds_snapshots slot"
+    assert 2.0 not in up._OU_LINE_SLOTS and 3.0 not in up._OU_LINE_SLOTS
+
+    # Navigation must WAIT for the URL, not sleep and hope: a fixed pause raced
+    # the SPA and consecutive picks landed on the previous pick's match page.
+    open_src = inspect.getsource(up.open_event)
+    assert "wait_for_url" in open_src, "must wait for navigation, not a fixed timeout"
+
     # The plist must never place a bet merely by being loaded.
     plist = pathlib.Path("local/launchd/com.oddsintel.coolbet-ui-placer.plist").read_text()
     assert "<key>RunAtLoad</key>\n    <false/>" in plist, \
