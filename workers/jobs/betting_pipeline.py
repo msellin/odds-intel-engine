@@ -78,15 +78,34 @@ def _run_coolbet_signal() -> None:
     from workers.notify.telegram import send_telegram
 
     # Operator kill switch — same DB flag the old auto-placer respected.
-    # /pause sets it; /resume clears. When paused we skip signaling too,
-    # so the operator can fully silence Coolbet output during e.g. a
-    # personal break without env changes.
+    # /pause sets it; /resume clears. An OPERATOR-set pause silences
+    # signaling too, so the operator can fully mute Coolbet output during
+    # e.g. a personal break without env changes.
+    #
+    # SIGNAL-PAUSE-DECOUPLE (2026-08-27): a *daemon self-pause* is NOT an
+    # operator decision — it means the Mac daemon hit a sustained Coolbet
+    # outage and stopped placing. That is a placement-side problem, and it
+    # must not mute notification. Before this fix the two shared one flag:
+    # a daemon self-pause on 2026-08-23 03:53 UTC silenced every Telegram
+    # signal — operator chat AND the public @oddsintelpicks channel, which
+    # doesn't touch Coolbet at all — for 4 days and 12 picks. Nothing
+    # errored; "0 signals" is indistinguishable from "no qualifying picks".
+    # Signals are notification-only (no API calls, no real_bets writes), so
+    # they are always safe to send while placement is down.
     try:
-        from workers.automation.coolbet_state import is_placement_paused
+        from workers.automation.coolbet_state import (
+            is_daemon_self_pause, is_placement_paused,
+        )
         paused, reason = is_placement_paused()
     except Exception:
         paused, reason = (False, None)
-    if paused:
+        is_daemon_self_pause = lambda _r: False  # noqa: E731
+    if paused and is_daemon_self_pause(reason):
+        console.print(
+            f"[yellow]Placement paused by daemon self-pause (reason: {reason}) "
+            f"— signaling CONTINUES (notification-only, no Coolbet calls)[/yellow]"
+        )
+    elif paused:
         console.print(f"[yellow]Coolbet signaler SKIPPED — operator paused (reason: {reason or 'no reason given'})[/yellow]")
         return
 

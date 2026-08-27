@@ -96,6 +96,15 @@ Sun 03:00 ㊶ CS2 map stats job_cs2_compute_map_stats()    CS2-MAP-STATS-EXPAND 
 22:45  ㊳ Ledger snapshot  .github/workflows/track_record_ledger.yml  CLOSING-LINE-LEDGER 2026-06-24 — GitHub Actions cron. Runs `scripts/export_track_record_snapshot.py` to write `ledger/YYYY-MM-DD.json` + `ledger/latest.json` + `ledger/index.json` (with sha256), then stamps via OpenTimestamps (`ots stamp`) → `.ots` file. Walks all .ots files and runs `ots upgrade` to pull in any newly-confirmed Bitcoin block-header proofs (prior days). Commits as `github-actions[bot]`. Three independent verification anchors: live API at /api/v1/track-record + GitHub-signed commit + Bitcoin blockchain via OTS.
 
 Telegram public channel posting — every calibrated-maturity pre-match pick (1x2/OU/BTTS, no AH) auto-posts to `@oddsintelpicks` via `workers.notify.telegram.send_telegram_public()` from inside `coolbet_signaler.py` (PUBLIC-CHANNEL-POST hook, 2026-06-24). Beta/active/experimental picks stay in the operator chat only. Triggered same moment as the operator-side signal; no separate cron.
+
+**Pause semantics (SIGNAL-PAUSE-DECOUPLE, 2026-08-27).** Signaling is gated on `coolbet_session_state.placement_paused`, but the two pause *kinds* behave differently:
+
+| Pause kind | reason text | Placement | Telegram signaling (operator + public) |
+|---|---|---|---|
+| Operator `/pause` | anything else | stopped | **muted** — deliberate full silence |
+| Daemon self-pause | starts `daemon self-pause` | stopped | **continues** |
+
+A daemon self-pause means the Mac daemon hit a sustained Coolbet outage — a placement-side problem. Signals are notification-only (no Coolbet API calls, no `real_bets` writes), so they keep flowing; the public channel doesn't touch Coolbet at all. Both call sites discriminate via `coolbet_state.is_daemon_self_pause()`. Before this split, a daemon self-pause silenced every Telegram signal for 4 days (2026-08-23 → 08-27, 12 picks) with nothing erroring.
 10-22  ⑬ Health Alert    run_snapshot_check()      Hourly: alerts if last LivePoller snapshot >25min stale
 ```
 

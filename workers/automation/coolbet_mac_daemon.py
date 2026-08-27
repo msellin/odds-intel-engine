@@ -639,6 +639,9 @@ def run_forever() -> None:
     # COOLBET-DAEMON-SELFPAUSE (B3, 2026-06-16): once-per-burst gate so
     # SELFPAUSE_AFTER_MINUTES is applied at most once per error streak.
     self_paused_this_burst = False
+    # SELFPAUSE-STICKY-FIX: armed at boot so the first clean tick after a
+    # restart clears any self-pause left behind by the previous process.
+    clear_check_pending = True
     while not _stop:
         tick_count += 1
         c = _tick()
@@ -655,6 +658,7 @@ def run_forever() -> None:
             if consecutive_errors == 0:
                 first_error_at = time.time()
             consecutive_errors += 1
+            clear_check_pending = True
 
             # B3 (2026-06-16): self-pause after a long sustained outage.
             # Stops the daemon hammering Coolbet's auth chain while the
@@ -666,14 +670,16 @@ def run_forever() -> None:
                     and not self_paused_this_burst):
                 try:
                     from workers.automation.coolbet_state import (
-                        is_placement_paused, set_placement_paused,
+                        DAEMON_SELF_PAUSE_MARKER, is_placement_paused,
+                        set_placement_paused,
                     )
                     already_paused, _reason = is_placement_paused()
                     if not already_paused:
                         set_placement_paused(
                             True,
-                            reason=(f"daemon self-pause: {consecutive_errors} "
-                                    f"consecutive errors over {int(elapsed_min)}m"),
+                            reason=(f"{DAEMON_SELF_PAUSE_MARKER}: "
+                                    f"{consecutive_errors} consecutive errors "
+                                    f"over {int(elapsed_min)}m"),
                         )
                         log.warning("self-paused placement after %dm of errors", int(elapsed_min))
                     self_paused_this_burst = True
@@ -721,22 +727,36 @@ def run_forever() -> None:
             # burst will alert again (correct — that's a new incident).
             if consecutive_errors > 0:
                 log.info("daemon recovered after %d consecutive errors", consecutive_errors)
-                # B3: if we self-paused during this burst, clear the
-                # pause now that we've ticked cleanly. The pause was set
-                # by the daemon ("daemon self-pause: ..."); only clear
-                # daemon-set pauses — operator-set ones stay until the
-                # operator clears them explicitly.
-                if self_paused_this_burst:
-                    try:
-                        from workers.automation.coolbet_state import (
-                            is_placement_paused, set_placement_paused,
-                        )
-                        paused, reason = is_placement_paused()
-                        if paused and reason and "daemon self-pause" in reason:
-                            set_placement_paused(False)
-                            log.info("auto-cleared daemon self-pause after clean tick")
-                    except Exception as e:
-                        log.warning("auto-clear self-pause failed: %s", e)
+            # B3: clear the pause now that we've ticked cleanly. Only
+            # daemon-set pauses are cleared — operator-set ones stay until
+            # the operator clears them explicitly.
+            #
+            # SELFPAUSE-STICKY-FIX (2026-08-27): this used to sit inside the
+            # `consecutive_errors > 0` branch AND be gated on the in-memory
+            # `self_paused_this_burst`. Both reset on daemon restart, so a
+            # self-pause that outlived one restart could NEVER auto-clear:
+            # the restarted daemon ticks cleanly from zero, so neither gate
+            # is ever true again. That is how the 2026-08-23 self-pause
+            # survived 4 days and silenced 12 picks. Now it runs on any clean
+            # tick and branches on the DB reason, which is the durable record
+            # of who set the pause and is correct across restarts.
+            # `clear_check_pending` keeps this to one query per recovery
+            # rather than one per tick.
+            if clear_check_pending:
+                try:
+                    from workers.automation.coolbet_state import (
+                        is_daemon_self_pause, is_placement_paused,
+                        set_placement_paused,
+                    )
+                    paused, reason = is_placement_paused()
+                    if paused and is_daemon_self_pause(reason):
+                        set_placement_paused(False)
+                        log.info("auto-cleared daemon self-pause after clean "
+                                 "tick (was: %s)", reason)
+                    clear_check_pending = False
+                except Exception as e:
+                    # leave the flag set so the next clean tick retries
+                    log.warning("auto-clear self-pause failed: %s", e)
             consecutive_errors = 0
             first_error_at = 0.0
             alert_fired_this_burst = False

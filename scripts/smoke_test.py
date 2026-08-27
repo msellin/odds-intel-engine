@@ -4982,16 +4982,135 @@ def test_coolbet_daemon_selfpause():
         "branch matches on this substring to avoid clobbering operator "
         "pauses."
     )
-    # Auto-clear path must check the reason before clearing. Locate the
-    # recovered branch — the `consecutive_errors = 0` AFTER the `daemon
-    # recovered after` log line is the right slice end (the FIRST
-    # `consecutive_errors = 0` in `loop` is the init assignment above).
-    rec_start = loop.index("daemon recovered after")
-    rec_end = loop.index("consecutive_errors = 0", rec_start)
-    recovered_block = loop[rec_start:rec_end]
-    assert "daemon self-pause" in recovered_block, (
-        "Auto-clear must only clear daemon-set pauses — operator-set "
-        "pauses with different reason text must remain in force."
+    # Auto-clear path must check the reason before clearing. Since
+    # SELFPAUSE-STICKY-FIX the clear lives in its own `clear_check_pending`
+    # block on the clean-tick path (no longer nested in the recovery
+    # branch), so slice from that gate.
+    clear_start = loop.index("if clear_check_pending:")
+    clear_block = loop[clear_start:loop.index("consecutive_errors = 0", clear_start)]
+    assert "is_daemon_self_pause" in clear_block, (
+        "Auto-clear must only clear daemon-set pauses (via the shared "
+        "is_daemon_self_pause helper) — operator-set pauses with "
+        "different reason text must remain in force."
+    )
+
+
+@test("SELFPAUSE-STICKY-FIX — daemon self-pause auto-clears across a daemon restart")
+def test_selfpause_sticky_fix():
+    """SELFPAUSE-STICKY-FIX (2026-08-27): the auto-clear used to live
+    inside the `consecutive_errors > 0` branch AND be gated on the
+    in-memory `self_paused_this_burst`. Both reset to zero/False on
+    daemon restart, so a self-pause that outlived one restart could
+    never auto-clear — the restarted daemon ticks cleanly from zero, so
+    neither gate is ever true again. That is how the 2026-08-23
+    self-pause stayed on for 4 days and silenced 12 picks.
+
+    Pin: (a) the clear runs on ANY clean tick, not only a recovery tick;
+    (b) it is NOT gated on self_paused_this_burst; (c) clear_check_pending
+    is armed at boot so the first clean tick after a restart checks;
+    (d) it is re-armed on error ticks; (e) a failed clear leaves the flag
+    set so the next clean tick retries."""
+    import pathlib
+    daemon = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
+    loop = daemon[daemon.index("def run_forever("):]
+
+    assert "clear_check_pending = True" in loop, (
+        "Loop must arm clear_check_pending at boot — otherwise a "
+        "self-pause left by the previous process never gets checked."
+    )
+    # (a)+(b): the clear must be gated on clear_check_pending, and the
+    # gate must NOT be the per-burst in-memory flag.
+    clear_start = loop.index("if clear_check_pending:")
+    clear_end = loop.index("consecutive_errors = 0", clear_start)
+    clear_block = loop[clear_start:clear_end]
+    assert "self_paused_this_burst" not in clear_block, (
+        "Auto-clear must NOT be gated on self_paused_this_burst — that "
+        "flag resets on restart, which is the sticky-pause bug."
+    )
+    assert "set_placement_paused(False)" in clear_block, (
+        "Auto-clear block must actually clear the pause."
+    )
+    # (a): the clear sits OUTSIDE the `consecutive_errors > 0` recovery
+    # branch — a restarted daemon never enters that branch. "Outside"
+    # means same indentation depth, so compare the two gates' indents
+    # rather than their byte offsets.
+    def _indent_of(needle):
+        i = loop.index(needle)
+        return i - (loop.rindex("\n", 0, i) + 1)
+
+    recovery_indent = _indent_of("if consecutive_errors > 0:")
+    clear_indent = _indent_of("if clear_check_pending:")
+    assert clear_indent <= recovery_indent, (
+        "Auto-clear must not be nested inside the `consecutive_errors > 0` "
+        "recovery branch — a daemon restarted while paused ticks cleanly "
+        f"from zero and would never reach it (clear indent {clear_indent} "
+        f"> recovery indent {recovery_indent})."
+    )
+    # (d): re-armed when errors occur, so a NEW self-pause also clears.
+    err_start = loop.index("consecutive_errors += 1")
+    assert "clear_check_pending = True" in loop[err_start:err_start + 200], (
+        "clear_check_pending must be re-armed on error ticks."
+    )
+    # (e): the flag is cleared only on a successful check, inside try.
+    assert clear_block.index("clear_check_pending = False") < clear_block.index("except Exception"), (
+        "clear_check_pending must be cleared inside the try (only on "
+        "success) so a DB failure retries on the next clean tick."
+    )
+
+
+@test("SIGNAL-PAUSE-DECOUPLE — a daemon self-pause stops placement but must not mute Telegram signaling")
+def test_signal_pause_decouple():
+    """SIGNAL-PAUSE-DECOUPLE (2026-08-27): placement and notification
+    used to share one kill switch. When the Mac daemon self-paused on a
+    sustained Coolbet outage (2026-08-23 03:53 UTC), betting_pipeline's
+    signal gate returned early — muting the operator chat AND the public
+    @oddsintelpicks channel, which makes no Coolbet calls at all. Four
+    days and 12 picks went unsent with nothing erroring; "0 signals" is
+    indistinguishable from "no qualifying picks".
+
+    Signals are notification-only (no Coolbet API calls, no real_bets
+    writes), so they are always safe while placement is down.
+
+    Pin: (a) a daemon self-pause does NOT return early; (b) an
+    operator-set pause still does; (c) both branch on the shared helper
+    so the marker string can't drift; (d) the helper itself behaves."""
+    import pathlib
+    from workers.automation.coolbet_state import (
+        DAEMON_SELF_PAUSE_MARKER, is_daemon_self_pause,
+    )
+
+    # (d) functional — the discriminator itself.
+    assert is_daemon_self_pause("daemon self-pause: 7 consecutive errors over 207m")
+    assert not is_daemon_self_pause("operator break")
+    assert not is_daemon_self_pause(None)
+    assert not is_daemon_self_pause("")
+    assert DAEMON_SELF_PAUSE_MARKER == "daemon self-pause"
+
+    src = pathlib.Path("workers/jobs/betting_pipeline.py").read_text()
+    gate_start = src.index("is_placement_paused()")
+    gate = src[gate_start:gate_start + 1200]
+
+    assert "is_daemon_self_pause(reason)" in gate, (
+        "Signal gate must distinguish a daemon self-pause from an "
+        "operator pause via the shared helper — not an inline substring."
+    )
+    # (a) the self-pause branch must NOT return.
+    self_pause_branch = gate[gate.index("if paused and is_daemon_self_pause(reason):"):gate.index("elif paused:")]
+    assert "return" not in self_pause_branch, (
+        "A daemon self-pause must NOT short-circuit signaling — "
+        "notification is safe while placement is down."
+    )
+    # (b) the operator branch must still return.
+    operator_branch = gate[gate.index("elif paused:"):]
+    assert "return" in operator_branch.split("\n\n")[0], (
+        "An operator-set pause must still mute signaling — that is the "
+        "deliberate /pause behaviour."
+    )
+    # (c) the daemon writes the same marker the gate reads.
+    daemon = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
+    assert "DAEMON_SELF_PAUSE_MARKER" in daemon, (
+        "Daemon must stamp the shared marker constant into the pause "
+        "reason so the signal gate's check can never drift out of sync."
     )
 
 

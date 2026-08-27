@@ -330,6 +330,23 @@ def is_placement_paused() -> tuple[bool, str | None]:
         return (False, None)
 
 
+# SIGNAL-PAUSE-DECOUPLE (2026-08-27): the marker the daemon stamps into
+# placement_paused_reason when it pauses itself. Defined once, here, because
+# three call sites now branch on it (daemon self-pause write, daemon
+# auto-clear, betting_pipeline signal gate) and a drifting substring would
+# silently turn a self-pause into an operator pause — which is exactly the
+# failure that muted Telegram for 4 days.
+DAEMON_SELF_PAUSE_MARKER = "daemon self-pause"
+
+
+def is_daemon_self_pause(reason: str | None) -> bool:
+    """True when `reason` is a pause the daemon set on itself (as opposed to
+    an operator /pause). Daemon self-pauses stop placement but must NOT stop
+    signaling, and may be auto-cleared; operator pauses do both and are
+    cleared only by the operator."""
+    return bool(reason) and DAEMON_SELF_PAUSE_MARKER in reason
+
+
 def set_placement_paused(paused: bool, *, reason: str | None = None) -> None:
     """Operator kill switch. Telegram /pause sets paused=True with a reason;
     /resume clears both. Plain UPDATE — no validation — operator owns this."""
