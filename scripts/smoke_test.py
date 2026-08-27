@@ -25972,6 +25972,25 @@ def test_coolbet_ui_placer_2026_08_27():
     open_src = inspect.getsource(up.open_event)
     assert "wait_for_url" in open_src, "must wait for navigation, not a fixed timeout"
 
+    # Search must WAIT for results. A flat sleep read a half-built dropdown and
+    # reported "1 results" — really zero, since Coolbet injects a promoted
+    # 'Ungari - Eesti' row into every search regardless of query.
+    search_src = inspect.getsource(up.search_events)
+    assert "wait_for_function" in search_src, "must wait for search results to render"
+
+    # "Cannot find it" and "Coolbet does not offer it" are different facts and
+    # must not share a message: 22 de Julio v Santo Domingo is listed by
+    # Coolbet against Vargas Torres, so refusing it is CORRECT, while an empty
+    # search is our bug. They were indistinguishable in the audit until now.
+    assert "fixture not offered by Coolbet" in stage_src_ou
+    assert "search returned no fixtures" in stage_src_ou
+
+    # Concurrent passes drive the SAME browser tab and corrupt each other —
+    # five fixtures failed to match inside one 90s window on 2026-08-27 purely
+    # from a manual run overlapping the scheduled one.
+    assert "single_run_lock" in runner and "LOCK_NB" in runner, \
+        "a second pass must refuse rather than fight for the browser"
+
     # The plist must never place a bet merely by being loaded.
     plist = pathlib.Path("local/launchd/com.oddsintel.coolbet-ui-placer.plist").read_text()
     assert "<key>RunAtLoad</key>\n    <false/>" in plist, \

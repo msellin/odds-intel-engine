@@ -22,8 +22,11 @@ Requires the operator's CDP-Chrome to be running with a Coolbet tab open:
 from __future__ import annotations
 
 import argparse
+import fcntl
 import logging
+import os
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -133,6 +136,43 @@ def load_picks(bot_name: str) -> list[dict]:
     )
 
 
+LOCK_PATH = Path.home() / ".coolbet-daemon" / "ui-placer.lock"
+
+
+@contextmanager
+def single_run_lock():
+    """Refuse to start if another pass is already driving the browser.
+
+    Both the scheduled job and any manual run drive the SAME Chrome tab, so
+    two passes type into the same search box and navigate the same page. On
+    2026-08-27 that produced five fixtures failing to match inside a 90-second
+    window — Ararat, Iberia, St. Gallen, Simba and Brann all matched fine in
+    every other pass — plus a Fulham search that returned nothing. It reads as
+    a matcher bug and is not one.
+
+    flock releases automatically if the holder dies, so a crashed pass cannot
+    wedge the lock.
+    """
+    LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(LOCK_PATH, "w")
+    try:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError(
+                "another Coolbet UI pass is running — refusing to drive the "
+                "same browser twice (see ~/.coolbet-daemon/ui-placer.lock)"
+            )
+        fh.write(str(os.getpid()))
+        fh.flush()
+        yield
+    finally:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+        finally:
+            fh.close()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--bot", default=DEFAULT_BOT)
@@ -152,6 +192,13 @@ def main() -> int:
         picks = picks[: args.limit]
     if not picks:
         print(f"No open picks for {args.bot}.")
+        return 0
+
+    try:
+        lock = single_run_lock()
+        lock.__enter__()
+    except RuntimeError as e:
+        print(f"SKIP — {e}")
         return 0
 
     mode = "EXECUTE" if args.execute else ("STAGE" if args.stage else "DRY-RUN")
@@ -242,6 +289,8 @@ def main() -> int:
         """SELECT COUNT(*) AS n FROM coolbet_placement_attempts
             WHERE attempted_at >= NOW() - INTERVAL '1 hour'"""
     )[0]["n"]
+    lock.__exit__(None, None, None)
+
     print(f"\nplaced={placed} staged={staged} skipped={rejected} "
           f"already-placed={skipped_done} "
           f"— {recorded} attempt(s) recorded in the last hour")

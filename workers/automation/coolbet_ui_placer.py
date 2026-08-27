@@ -198,7 +198,20 @@ def search_events(page, query: str, *, timeout_ms: int = 15000) -> list[UiEvent]
     box.click(timeout=timeout_ms)
     box.fill("")
     box.type(query, delay=80)
-    page.wait_for_timeout(3500)
+
+    # WAIT for results to render rather than sleeping a flat 3.5s. The old
+    # fixed pause read a half-built dropdown and reported "1 results" — which
+    # is really ZERO, because Coolbet injects a promoted 'Ungari - Eesti' row
+    # into every search regardless of query. That looked like a matcher failure
+    # when it was an empty read.
+    try:
+        page.wait_for_function(
+            """() => [...document.querySelectorAll('a[href*="/sport/match/"]')]
+                       .filter(a => (a.innerText||'').trim()).length > 1""",
+            timeout=8000,
+        )
+    except Exception:
+        page.wait_for_timeout(2500)   # genuinely no hits — let it settle, then read
 
     rows = page.evaluate(
         """() => [...document.querySelectorAll('a[href*="/sport/match/"]')].map(a => ({
@@ -291,6 +304,18 @@ def pick_event(
         if best is None or score > best[0]:
             best = (score, ev)
     return best[1] if best else None
+
+
+def _best_pair_score(events: list[UiEvent], home: str, away: str) -> float:
+    """Best min(home, away) score across candidates — how close we got."""
+    from workers.automation.coolbet_placer import _ascii, _team_aliases
+
+    best = 0.0
+    for ev in events:
+        hs = max(fuzz.token_set_ratio(_ascii(a), _ascii(ev.home)) for a in _team_aliases(home))
+        as_ = max(fuzz.token_set_ratio(_ascii(a), _ascii(ev.away)) for a in _team_aliases(away))
+        best = max(best, min(hs, as_))
+    return best
 
 
 def _start_plausible(start_text: str, kickoff: datetime, *, tol_h: int = 30) -> bool:
@@ -977,7 +1002,20 @@ def stage_bet(
 
     ev = pick_event(events, home, away, bet.get("match_date"))
     if ev is None:
-        return _fail("match", f"no confident match for {home} v {away} in {len(events)} results")
+        # Separate the two very different causes. A fixture Coolbet does not
+        # offer is a correct refusal (22 de Julio v Santo Domingo: Coolbet
+        # lists Vargas Torres as the opponent, so matching it would back the
+        # WRONG game). An empty search is our bug. They looked identical in
+        # the audit until now.
+        real = [e for e in events if e.home and e.away]
+        best = _best_pair_score(real, home, away)
+        if not real:
+            return _fail("match", f"search returned no fixtures for {home!r}")
+        return _fail(
+            "match",
+            f"fixture not offered by Coolbet: {home} v {away} — "
+            f"{len(real)} candidates, best pair score {best:.0f}",
+        )
 
     try:
         open_event(page, ev)
