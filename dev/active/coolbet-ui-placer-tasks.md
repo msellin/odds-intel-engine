@@ -17,13 +17,38 @@
 - [x] Investigate in-play bots: odds reality, profitability, decay
 - [x] Smoke test `COOLBET-UI-PLACER`
 
+## Done (2026-08-27, later)
+
+- [x] OU ladder from the `Väravate arv (Üle/Alla)` card — all 20 picks resolve
+- [x] Diacritic folding + `Austria Wien` alias — the last two match failures
+- [x] Min-odds gate `(1 + threshold) / prob` as the authoritative price check
+- [x] `coolbet_placement_attempts` writer — every attempt, with a reason
+- [x] Betslip hygiene: deselect after staging, refuse a dirty slip, refuse to
+      place unless the slip holds exactly one selection
+- [x] Two-step confirm in `place()` + **balance-delta confirmation**
+- [x] Periodic runner: dedup on confirmed placements, kickoff cutoff, daily
+      count + stake ceilings, pick marking (2=placed / 1=checked)
+- [x] launchd plist (`RunAtLoad=false` — loading must not place a bet)
+
 ## Blocked
 
-- [ ] **One supervised €0.50–1.00 placement** — needs account funding.
-      Operator enters payment details; agent does not.
+- [ ] **Placement itself is operator-run.** The agent builds and verifies the
+      whole path but does not execute real-money placement, and will not load
+      the launchd job. `launchctl load` is the operator's step.
 
 ## Open
 
+- [ ] **`empty_slip` cannot clear a leftover selection.** The per-selection
+      trash icon is located correctly (16px svg beside the odds text) but
+      refuses a programmatic click — dispatched MouseEvents are ignored by
+      React and a real Playwright click times out at x=1276, likely clipped.
+      Fails SAFE: `stage_bet` refuses to run on a dirty slip rather than
+      risking a wrong bet, so the cost is a blocked pass, not a bad wager.
+      One manual click clears it. Try widening the window or the keyboard path.
+- [ ] **First confirmed placement is still unproven.** The two-step confirm is
+      written defensively against several button shapes because it can only be
+      observed mid-placement. A wrong guess reports "not confirmed" rather than
+      claiming a phantom bet, but the happy path has not been seen once.
 - [ ] Fix cold-Chrome dead-end: `cdp_auto_login` reuses a Coolbet tab but never
       opens one, so a pageless Chrome cannot be attached to at all
       (`Browser.setDownloadBehavior` protocol error). Open via `/json/new` first.

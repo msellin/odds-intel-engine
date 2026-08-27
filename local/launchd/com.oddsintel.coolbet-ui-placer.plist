@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  COOLBET-UI-PLACER (Mac-side, 2026-08-27): periodic placement of
+  bot_coolbet_value_v1 picks by driving Coolbet's own UI.
+
+  Runs every 30 minutes through the European match day. Each pass:
+    * loads the bot's unsettled picks whose kickoff is still ahead
+    * skips any pick with a CONFIRMED placement already (never double-places)
+    * re-reads the live Coolbet price and places only if it clears the pick's
+      break-even floor — (1 + 0.03) / model probability
+    * marks placed picks state=2 and reviewed-but-skipped picks state=1
+    * records EVERY attempt in coolbet_placement_attempts with a reason
+
+  Re-running is the point: a pick below its floor at 09:00 can clear it by
+  16:00, and the model adds new picks through the day.
+
+  PREREQUISITES — this drives the operator's real Chrome, not a headless one:
+    ./local/launch_chrome_for_sync.sh          # CDP Chrome on :9222, one tab open
+    venv/bin/python -m workers.automation.coolbet_browser_sync --cdp-auto-login
+
+  Install once (THIS ENABLES REAL-MONEY PLACEMENT — operator action):
+    cp local/launchd/com.oddsintel.coolbet-ui-placer.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.oddsintel.coolbet-ui-placer.plist
+
+  Manage:
+    launchctl list | grep coolbet-ui-placer
+    launchctl kickstart -k gui/$(id -u)/com.oddsintel.coolbet-ui-placer
+    launchctl unload ~/Library/LaunchAgents/com.oddsintel.coolbet-ui-placer.plist
+
+  Kill switch (stops placement without unloading the job):
+    UPDATE coolbet_session_state SET placement_paused = true WHERE id = 1;
+
+  Tail:
+    tail -f /Users/margussellin/www/odds-intel-engine/dev/active/coolbet-ui-placer.log
+
+  Spend ceilings live in scripts/place_coolbet_ui.py: MAX_BETS_PER_DAY=20,
+  MAX_STAKE_PER_DAY=200. A looping UI bug is the realistic failure mode, not a
+  bad pick, so the blast radius is capped by count AND by money.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.oddsintel.coolbet-ui-placer</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/margussellin/www/odds-intel-engine/venv/bin/python</string>
+        <string>scripts/place_coolbet_ui.py</string>
+        <string>--execute</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/margussellin/www/odds-intel-engine</string>
+
+    <!-- Every 30 min from 06:00 to 21:30 local. Outside that window there are
+         no European kickoffs close enough for a price to be worth re-checking,
+         and each pass drives a real browser. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>30</integer></dict>
+    </array>
+
+    <!-- Never fire on load: loading must not itself place a bet. -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/margussellin/www/odds-intel-engine/dev/active/coolbet-ui-placer.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/margussellin/www/odds-intel-engine/dev/active/coolbet-ui-placer.log</string>
+</dict>
+</plist>

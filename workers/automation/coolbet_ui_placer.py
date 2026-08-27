@@ -556,35 +556,47 @@ def slip_ticket_count(page) -> int:
     return int(m.group(1)) if m else 0
 
 
-def empty_slip(page, *, tries: int = 6) -> int:
+def empty_slip(page, *, tries: int = 8) -> int:
     """Empty the betslip. Returns the ticket count left behind (0 = clean).
 
-    The slip has no labelled clear control — only anonymous <svg> icons — so we
-    click them in order and keep whichever actually drops the counter. On
-    2026-08-27 the first icon was a clear-all and took 2 selections to 0.
+    Each selection card carries a small trash <svg> with no label, id or
+    data-test — so it is found by SHAPE and CONTEXT: a ~16px icon whose
+    enclosing div also contains an odds-looking number ('Viik 3.35'). That is
+    the only stable handle Coolbet gives; class names are hashed CSS modules.
 
-    Needed because selections survive page navigation (Coolbet remembers them),
-    so a run that stages several picks accumulates a multi-selection slip.
+    This matters for periodic running: selections survive navigation, so a slip
+    left dirty by an earlier pass blocks every pick on the next one.
     """
-    if slip_ticket_count(page) == 0:
-        return 0
-    try:
-        pb = page.locator(SEL_PLACE_BTN).first
-        svgs = pb.locator("xpath=./../../../../../..").locator("svg")
-        for i in range(min(svgs.count(), tries)):
-            before = slip_ticket_count(page)
-            if before == 0:
-                return 0
+    for _ in range(tries):
+        n = slip_ticket_count(page)
+        if n == 0:
+            return 0
+        # Real Playwright click, not a dispatched MouseEvent: React ignores
+        # synthetic events on these icons (the same trap as the OU line tabs).
+        svgs = page.locator("svg")
+        clicked = False
+        for i in range(min(svgs.count(), 200)):
+            el = svgs.nth(i)
             try:
-                svgs.nth(i).click(timeout=2500)
-                page.wait_for_timeout(1200)
+                box = el.bounding_box()
+                if not box or box["width"] > 26 or box["width"] < 6:
+                    continue
+                near = el.evaluate(
+                    r"""el => {
+                          const d = el.closest('div');
+                          return (d ? d.innerText : '').replace(/\s+/g, ' ').trim();
+                       }"""
+                )
+                if not re.search(r"\d+[.,]\d{2}", near or ""):
+                    continue
+                el.click(timeout=3000, force=True)
+                clicked = True
+                break
             except Exception:
                 continue
-            if slip_ticket_count(page) < before:
-                if slip_ticket_count(page) == 0:
-                    return 0
-    except Exception as e:
-        log.warning("empty_slip failed: %s", e)
+        if not clicked:
+            break
+        page.wait_for_timeout(1200)
     return slip_ticket_count(page)
 
 
@@ -655,21 +667,78 @@ def clear_stake(page, market_id: str) -> None:
         log.debug("clear_stake no-op: %s", e)
 
 
-def place(page, *, timeout_ms: int = 20000) -> SlipState:
-    """Click TEE PANUS. THIS COMMITS REAL MONEY.
+def read_balance(page) -> float | None:
+    """Account balance in EUR, or None if it cannot be read.
 
-    Never called unless the caller passed execute=True and the kill switch is
-    clear — both are enforced in `stage_bet`, not here, so this stays a dumb
-    primitive that is trivially greppable.
+    Used as the ONLY reliable confirmation that a bet was accepted: Coolbet's
+    UI gives the placer no ticket id, and the betslip clears on both success
+    and several failure modes.
+    """
+    val = page.evaluate(
+        r"""() => {
+              const cands = [...document.querySelectorAll('*')]
+                .filter(e => e.children.length === 0 && /€/.test(e.innerText || ''))
+                .map(e => (e.innerText || '').trim())
+                .filter(t => /^[\d\s .,]+€$/.test(t));
+              return cands.length ? cands[0] : null;
+           }"""
+    )
+    if not val:
+        return None
+    cleaned = (val.replace("€", "").replace("\u00a0", "").replace(" ", "")
+                  .replace(".", "").replace(",", "."))
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def place(page, *, timeout_ms: int = 20000) -> SlipState | None:
+    """Click TEE PANUS, then the confirmation step. THIS COMMITS REAL MONEY.
+
+    Coolbet uses a TWO-STEP confirm: the first click swaps the slip into a
+    confirmation state and a second control actually submits. Getting this
+    wrong is what produced a false 'placed' record on 2026-08-27 — the first
+    click landed, the slip changed, read_slip raised, and the old code called
+    that success while the balance never moved.
+
+    The confirm control is matched on several plausible shapes because it can
+    only be observed mid-placement. A wrong guess is SAFE: the caller confirms
+    by balance delta, so an unclicked confirm reports "not confirmed" rather
+    than claiming a bet that does not exist.
+
+    Never called unless the caller passed execute=True, the kill switch is
+    clear, and the slip holds exactly one selection.
     """
     page.locator(SEL_PLACE_BTN).first.click(timeout=timeout_ms)
-    page.wait_for_timeout(5000)
+    page.wait_for_timeout(2500)
+
+    # Second step. Try the same button again first — Coolbet re-labels the
+    # primary action in place — then explicit confirm wordings.
+    for attempt in (
+        lambda: page.locator(SEL_PLACE_BTN).first,
+        lambda: page.get_by_role("button", name=re.compile(r"kinnita|confirm", re.I)).first,
+        lambda: page.get_by_role("button", name=re.compile(r"n[õo]ustu|accept", re.I)).first,
+        lambda: page.locator('button:has-text("TEE PANUS")').first,
+    ):
+        try:
+            loc = attempt()
+            if loc.count() == 0 or not loc.is_visible():
+                continue
+            loc.click(timeout=6000)
+            page.wait_for_timeout(3000)
+            break
+        except Exception as e:
+            log.debug("confirm candidate failed: %s", e)
+            continue
+
+    page.wait_for_timeout(2500)
     try:
         return read_slip(page)
     except UiPlacerError:
-        # Slip clears on a successful placement — that is the success shape.
-        return SlipState(selection="", odds=None, potential_return=None,
-                         place_enabled=False, message="slip cleared after placement")
+        # Slip gone. That is CONSISTENT with success but is not evidence of it —
+        # the caller must still confirm via balance.
+        return None
 
 
 # ── audit trail ───────────────────────────────────────────────────────────────
@@ -927,7 +996,27 @@ def stage_bet(
         return _fail("place", f"refusing to place — slip holds {n} selections, expected 1",
                      ev, outcome, slip, applied)
 
+    # CONFIRM BY EVIDENCE, never by absence of an exception. On 2026-08-27 a
+    # run recorded outcome='placed' for FK Jablonec draw @ 3.50 while the
+    # balance never moved off EUR 250.00 — the click had not placed anything.
+    # The UI gives no ticket id and the slip clears on success AND on several
+    # failures, so the balance delta is the only trustworthy signal.
+    balance_before = read_balance(page)
     after = place(page)
+    balance_after = read_balance(page)
+    if balance_before is None or balance_after is None:
+        clear_stake(page, outcome.market_id)
+        return _fail("place", "cannot read balance — refusing to claim a placement "
+                              "that cannot be confirmed", ev, outcome, after, applied)
+    moved = balance_before - balance_after
+    if abs(moved - applied) > 0.01:
+        return _fail(
+            "place",
+            f"placement NOT confirmed: balance {balance_before:.2f} -> "
+            f"{balance_after:.2f} (moved {moved:.2f}, expected {applied:.2f})",
+            ev, outcome, after, applied,
+        )
+    notes.append(f"balance {balance_before:.2f} -> {balance_after:.2f}")
     real_bet_id = None
     try:
         from workers.api_clients.supabase_client import store_real_bet

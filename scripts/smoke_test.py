@@ -25925,6 +25925,30 @@ def test_coolbet_ui_placer_2026_08_27():
     # success and stored nothing.
     assert "execute_write_returning" in rec_src, "audit write must commit"
 
+    # PLACEMENT MUST BE CONFIRMED BY EVIDENCE. On 2026-08-27 a run recorded
+    # outcome='placed' (and wrote a real_bets row) for FK Jablonec draw @ 3.50
+    # while the balance never moved off EUR 250.00 — the first TEE PANUS click
+    # only opens Coolbet's two-step confirm. A cleared slip is not a bet.
+    assert "read_balance" in stage_src_ou, "placement must be confirmed by balance delta"
+    assert "NOT confirmed" in stage_src_ou, "unconfirmed placement must not be recorded as placed"
+    place_src = inspect.getsource(up.place)
+    assert "kinnita|confirm" in place_src, "must click Coolbet's second confirm step"
+
+    # Periodic running is the design, so re-runs must never double-place and
+    # must be bounded in blast radius.
+    runner = pathlib.Path("scripts/place_coolbet_ui.py").read_text()
+    assert "def already_placed" in runner, "re-runs must not double-place"
+    assert "outcome = 'placed'" in runner, "dedup must key on a CONFIRMED placement"
+    assert "MAX_BETS_PER_DAY" in runner and "MAX_STAKE_PER_DAY" in runner, \
+        "unattended placement needs count AND money ceilings"
+    assert "KICKOFF_CUTOFF_MIN" in runner, "must not place into a starting match"
+    assert "MARK_PLACED" in runner and "MARK_CHECKED" in runner
+
+    # The plist must never place a bet merely by being loaded.
+    plist = pathlib.Path("local/launchd/com.oddsintel.coolbet-ui-placer.plist").read_text()
+    assert "<key>RunAtLoad</key>\n    <false/>" in plist, \
+        "loading the job must not itself fire a placement"
+
     # COOLBET-SQUAD-GUARD: a reserve side must never match a first team. This
     # produced a fake +87pct edge on the Epicbet path (Rosario Central Res.).
     evs = [up.UiEvent(match_id="1", href="/et/sport/match/1",
