@@ -77,7 +77,12 @@ def _sync_playwright_factory():
         log.info("Using patchright (anti-detection fork)")
         return sync_playwright
     except ImportError:
-        sync_playwright = _sync_playwright_factory()
+        # CDP-LOGIN-RECURSION-FIX (2026-08-27): this branch used to call
+        # _sync_playwright_factory() again — infinite self-recursion, so a
+        # missing patchright turned into RecursionError instead of the
+        # documented fallback. Unattended login died silently the moment
+        # patchright went absent. Import vanilla playwright, as intended.
+        from playwright.sync_api import sync_playwright
         log.info("patchright unavailable — using vanilla playwright")
         return sync_playwright
 

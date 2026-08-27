@@ -25621,5 +25621,75 @@ def _():
     return "Epicbet ingest: vocabulary pinned, reserve/youth false-matches blocked, :02/:32 slot"
 
 
+@test("COOLBET-UI-PLACER")
+def test_coolbet_ui_placer_2026_08_27():
+    """COOLBET-UI-PLACER-2026-08-27 — place at Coolbet by driving the UI, so the
+    path has no Imperva cookie-freshness dependency. Stage-only by default."""
+    import inspect
+    import pathlib
+    from workers.automation import coolbet_ui_placer as up
+
+    src = pathlib.Path("workers/automation/coolbet_ui_placer.py").read_text()
+
+    # Selectors are the contract with Coolbet's markup — verified live against
+    # the FK Partizan v Getafe page 2026-08-27. Centralised so a redesign is a
+    # one-place fix; pinned here so a silent edit shows up as a red test.
+    assert up.SEL_SEARCH == 'input[name="sportSearch"]'
+    assert up.SEL_PLACE_BTN == 'button[data-test="button-place-bet"]'
+    assert "yourStake{market_id}" in up.SEL_STAKE
+
+    # Money-committing default must be OFF. stage_bet() is the only orchestrator
+    # and execute=False leaves the account untouched.
+    assert inspect.signature(up.stage_bet).parameters["execute"].default is False
+
+    # The kill switch must gate the execute branch. place_all_bets kept placing
+    # through a paused flag once already (PLACEMENT-PAUSED-KILL-SWITCH,
+    # 2026-06-12) — do not let the UI path repeat it.
+    stage_src = inspect.getsource(up.stage_bet)
+    assert "is_placement_paused" in stage_src, "execute path must honour the kill switch"
+    assert "place_enabled" in stage_src, "must not click a disabled place button"
+
+    # button-odds-<id> keys the MARKET, not the outcome: 1X2 home/draw/away all
+    # share one id, Over and Under share one. Treating it as an outcome id bets
+    # the wrong side. The module must say so.
+    assert "MARKET, not the outcome" in src
+
+    # Stake field is a React-controlled input behind an on-screen keypad — a
+    # fill() that looks fine can be silently dropped. set_stake must read back.
+    assert "input_value" in inspect.getsource(up.set_stake), \
+        "stake must be verified by read-back, never assumed"
+    assert "did not stick" in stage_src, "stage_bet must reject a dropped stake"
+
+    # Odds drift: the pick is qualified against a captured price. FK Partizan
+    # carried 3.55 while Coolbet showed 3.30 — staking into that silently is
+    # how edge disappears.
+    assert "max_odds_drop_pct" in stage_src
+
+    # Only 1x2 is verified end to end. OU/AH need Estonian line matching
+    # (Üle/Alla 2.5); guessing a line is a silently wrong bet.
+    outcomes = [up.UiOutcome(market_id="1", label="FK Partizan", odds=3.30)]
+    try:
+        up.find_outcome(outcomes, "over_under_25", "over", "A", "B")
+        raise AssertionError("unsupported market must raise, not guess")
+    except up.UiPlacerError:
+        pass
+
+    # COOLBET-SQUAD-GUARD: a reserve side must never match a first team. This
+    # produced a fake +87pct edge on the Epicbet path (Rosario Central Res.).
+    evs = [up.UiEvent(match_id="1", href="/et/sport/match/1",
+                      text="Rosario Central Res. - Boca Res.",
+                      home="Rosario Central Res.", away="Boca Res.")]
+    assert up.pick_event(evs, "Rosario Central", "Boca Juniors") is None, \
+        "reserve fixture must not match a first team"
+
+    # And the honest positive case still matches.
+    evs2 = [up.UiEvent(match_id="6022381", href="/et/sport/match/6022381",
+                       text="FK Partizan - Getafe 27 aug 22:00",
+                       home="FK Partizan", away="Getafe")]
+    assert up.pick_event(evs2, "FK Partizan", "Getafe") is not None
+
+    return "Coolbet UI placer: selectors pinned, stage-only default, squad guard, stake read-back"
+
+
 if __name__ == "__main__":
     main()

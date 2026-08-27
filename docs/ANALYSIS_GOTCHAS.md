@@ -165,6 +165,30 @@ Two more Epicbet-specific facts worth knowing before writing a query against it:
   +87% edge against Pinnacle. The Coolbet path does **not** yet have this guard
   (COOLBET-SQUAD-GUARD, open).
 
+## 14. CLV is meaningless for in-play bets — do not gate on it
+
+`clv_pinnacle_devig` compares the taken price against Pinnacle's **pre-match
+close**. An in-play bet placed at minute 22 with a goal already on the board is
+a different market entirely, so the comparison is not a closing-line value at
+all.
+
+The numbers announce themselves as nonsense once you look: `inplay_c` **+134%**,
+`inplay_j` **+74%**, `inplay_n` **+66%** — while all three have ROI between
+−7% and −28%.
+
+Consequence: gotcha 8's advice ("gate on CLV", n≈78 for ±2%) applies to
+**prematch only**. In-play has to be judged on ROI, which needs ~17,000 bets for
+the same precision. **No in-play bot currently has a decisive record**, and any
+claim that one does is measuring the artifact. Judge in-play on ROI plus the
+real-vs-simulated agreement in `real_bets`, and say the sample is indecisive
+rather than quoting a CLV.
+
+Related: `recommended_bookmaker` is **NULL on all 1,246 settled in-play bets**,
+so there is no book attribution outside the 55 that reached `real_bets` (all at
+Coolbet). A per-book in-play query returns nothing and that is not a bug.
+
+---
+
 ## Re-runnable analysis scripts (all committed 2026-08-26)
 
 | script | answers |
