@@ -25690,11 +25690,19 @@ def test_coolbet_ui_placer_2026_08_27():
     except up.UiPlacerError:
         pass
 
-    # A non-main OU line is rendered unlabelled on the match page, so
-    # select_ou_line must confirm the line actually became visible rather than
-    # reporting success off the back of a click that changed nothing.
-    src_line = inspect.getsource(up.select_ou_line)
-    assert "_rendered()" in src_line, "must verify the line rendered, not trust the click"
+    # Totals must be read from the 'Väravate arv (Üle/Alla)' card, which holds
+    # the whole ladder. The strip at the top of the match page is a quick-bet
+    # shortcut showing ONE line — reading totals there missed every non-main
+    # line on the first attempt.
+    grid_src = inspect.getsource(up.read_ou_grid)
+    assert "Väravate arv" in grid_src, "OU ladder must come from the totals card"
+    # The line sits in its own cell, so the row is recovered geometrically.
+    # Integrity guard: both prices on a row must share a market id (one id per
+    # line), else the row is dropped rather than mis-paired into a wrong total.
+    assert "row[0][\"mkt\"] != row[1][\"mkt\"]" in grid_src, \
+        "mis-paired OU row must be dropped, not guessed"
+    stage_src_ou = inspect.getsource(up.stage_bet)
+    assert "read_ou_grid" in stage_src_ou, "stage_bet must use the ladder for totals"
 
     # COOLBET-SQUAD-GUARD: a reserve side must never match a first team. This
     # produced a fake +87pct edge on the Epicbet path (Rosario Central Res.).

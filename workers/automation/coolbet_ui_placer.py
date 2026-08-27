@@ -217,7 +217,17 @@ def pick_event(
     (Rosario Central Res. vs Rosario Central, partial_ratio 100). Coolbet is
     the venue real money goes to, so the guard belongs here first.
     """
+    from workers.automation.coolbet_placer import _ascii, _team_aliases
     from workers.automation.epicbet_explorer import _squad_tag
+
+    def _best_score(ours: str, theirs: str) -> float:
+        # Fold diacritics before scoring — Coolbet lists 'Centro Atlético
+        # Fénix' where our DB has 'Fenix', and an unfolded 'é' drops the score
+        # below threshold on an otherwise exact token match. Aliases cover the
+        # cases folding cannot: 'Austria Vienna' vs 'FK Austria Wien' is a
+        # translation, not a spelling.
+        t = _ascii(theirs)
+        return max(fuzz.token_set_ratio(_ascii(a), t) for a in _team_aliases(ours))
 
     best: tuple[float, UiEvent] | None = None
     for ev in events:
@@ -229,10 +239,7 @@ def pick_event(
             continue
         # Score both sides and take the WORSE one, so a strong home match
         # cannot paper over a wrong away side (same rule as the API matcher).
-        score = min(
-            fuzz.token_set_ratio(home.lower(), ev.home.lower()),
-            fuzz.token_set_ratio(away.lower(), ev.away.lower()),
-        )
+        score = min(_best_score(home, ev.home), _best_score(away, ev.away))
         if score < min_score:
             continue
         if kickoff and ev.start_text and not _start_plausible(ev.start_text, kickoff):
@@ -379,61 +386,79 @@ def find_outcome(
     )
 
 
-def select_ou_line(page, line: float, *, timeout_ms: int = 8000) -> bool:
-    """Click the Over/Under line tab for `line`, revealing its prices.
+def read_ou_grid(page) -> list[UiOutcome]:
+    """Read the full Over/Under ladder from the 'Väravate arv (Üle/Alla)' card.
 
-    The match page renders ONE OU line at a time. The others exist as separate
-    market ids whose buttons carry the price but NO label, so a naive read sees
-    '1.41' with nothing saying which line it belongs to — which is exactly how
-    you back the wrong total. The line strip ('2.5 3 3.5 4 4.5') switches which
-    one is labelled.
+    The card is a grid: a left column of line labels (1.5, 2, 2.5, 3 …) and two
+    price columns, Üle (over) then Alla (under). The line lives in its own cell,
+    NOT inside the button, which is why a naive `read_outcomes` sees bare prices
+    with nothing saying which total they belong to.
 
-    Located structurally, not by class: Coolbet's class names are hashed CSS
-    modules (`VcWFvM FqpiHC ufmJsq`) that change on every redeploy. We look for
-    a leaf whose entire text is the line number, sitting in a strip that is
-    nothing but line numbers.
+    The row is recovered geometrically — label and its two prices share a
+    horizontal band — because the DOM gives no per-row container to walk up to
+    and the class names are hashed CSS modules. Column order (lower x = Üle)
+    decides the side.
 
-    Clicked through Playwright rather than `el.click()` in page JS: the tab is a
-    plain DIV, and React does not always respond to a synthetic DOM click on a
-    non-button. Playwright dispatches real mouse events.
+    Do NOT read totals off the header strip at the top of the match page: those
+    are quick-bet shortcuts showing a single line, and that is what made the
+    first attempt at OU miss every non-main total.
 
-    Returns True when the requested line ends up rendered.
+    Integrity guard: the two prices on a row must share a market id (Coolbet
+    keys one id per line). A row that fails that is dropped rather than
+    guessed at — a mis-paired row is a silently wrong total.
     """
-    label = f"{line:g}"  # 2.5 -> "2.5", 3.0 -> "3"
+    raw = page.evaluate(
+        r"""() => {
+              const cards = [...document.querySelectorAll('div')].filter(d =>
+                /Väravate arv/.test(d.innerText || '') &&
+                d.querySelectorAll('button[data-test^="button-odds-"]').length >= 6);
+              if (!cards.length) return null;
+              const card = cards[cards.length - 1];   // innermost matching card
+              const mid = e => {
+                const r = e.getBoundingClientRect();
+                return { x: Math.round(r.x), y: Math.round(r.y + r.height / 2) };
+              };
+              const labels = [...card.querySelectorAll('*')]
+                .filter(e => e.children.length === 0 &&
+                             /^\d+(\.\d)?$/.test((e.innerText || '').trim()))
+                .map(e => ({ t: (e.innerText || '').trim(), ...mid(e) }));
+              const btns = [...card.querySelectorAll('button[data-test^="button-odds-"]')]
+                .map(e => ({ odds: (e.innerText || '').trim(),
+                             mkt: e.getAttribute('data-test').replace('button-odds-', ''),
+                             ...mid(e) }));
+              return { labels, btns };
+           }"""
+    )
+    if not raw or not raw.get("labels"):
+        return []
 
-    def _rendered() -> bool:
-        return any(
-            _label_line(o.label) == line and _ou_side(o.label)
-            for o in read_outcomes(page)
+    out: list[UiOutcome] = []
+    for lab in raw["labels"]:
+        try:
+            line = float(lab["t"])
+        except ValueError:
+            continue
+        # Same horizontal band as the label, and to its right.
+        row = sorted(
+            (b for b in raw["btns"] if abs(b["y"] - lab["y"]) <= 6 and b["x"] > lab["x"]),
+            key=lambda b: b["x"],
         )
-
-    if _rendered():
-        return True
-
-    loc = page.locator(f'xpath=//*[not(*) and normalize-space(text())="{label}"]')
-    for i in range(min(loc.count(), 12)):
-        el = loc.nth(i)
-        try:
-            strip = el.evaluate(
-                r"""el => {
-                     const s = el.parentElement?.parentElement;
-                     if (!s) return '';
-                     return (s.innerText || '').replace(/\s+/g, ' ').trim();
-                   }"""
+        if len(row) != 2:
+            log.debug("OU row for line %s has %d prices — skipped", line, len(row))
+            continue
+        if row[0]["mkt"] != row[1]["mkt"]:
+            log.warning(
+                "OU row %s pairs different market ids (%s/%s) — skipped",
+                line, row[0]["mkt"], row[1]["mkt"],
             )
-        except Exception:
             continue
-        if not re.fullmatch(r"[\d.\s]+", strip or "") or len(strip.split()) < 2:
-            continue
-        try:
-            el.click(timeout=timeout_ms)
-        except Exception as e:
-            log.debug("OU line tab click failed on candidate %d: %s", i, e)
-            continue
-        page.wait_for_timeout(2000)
-        if _rendered():
-            return True
-    return _rendered()
+        for side, cell in (("Üle", row[0]), ("Alla", row[1])):
+            try:
+                odds = float(cell["odds"].replace(",", "."))
+            except ValueError:
+                continue
+            out.append(UiOutcome(market_id=cell["mkt"], label=f"{side} {line:g}", odds=odds))
+    return out
 
 
 # ── betslip ───────────────────────────────────────────────────────────────────
@@ -586,9 +611,17 @@ def stage_bet(
         return StageResult(False, f"no confident match for {home} v {away} in {len(events)} results")
 
     open_event(page, ev)
-    outcomes = read_outcomes(page)
-    if not outcomes:
-        return StageResult(False, "no prices rendered on match page", event=ev)
+    # Totals come from the 'Väravate arv (Üle/Alla)' card, which carries the
+    # whole ladder. The header strip at the top of the page shows one line only
+    # (quick bets) — reading totals from there misses every non-main line.
+    if _wanted_line(bet["market"]) is not None:
+        outcomes = read_ou_grid(page)
+        if not outcomes:
+            return StageResult(False, "OU ladder not found on match page", event=ev)
+    else:
+        outcomes = read_outcomes(page)
+        if not outcomes:
+            return StageResult(False, "no prices rendered on match page", event=ev)
 
     outcome = find_outcome(outcomes, bet["market"], bet["selection"], home, away)
     if outcome is None:

@@ -1047,6 +1047,14 @@ _TEAM_ALIASES: dict[str, list[str]] = {
     "evergreen":            ["Northern Virginia FC", "NoVa FC"],
     "northern virginia fc": ["Evergreen FC"],
     "nova fc":              ["Evergreen FC"],
+    # COOLBET-UI-PLACER (2026-08-27): city-name TRANSLATIONS, not spellings —
+    # diacritic folding in _ascii cannot help here because Vienna and Wien share
+    # no letters to fold. Found live: our 'Austria Vienna' (API-Football) scored
+    # too low against Coolbet's 'FK Austria Wien' and the fixture was skipped
+    # even though it was sitting in the search results.
+    "austria vienna":       ["FK Austria Wien", "Austria Wien"],
+    "austria wien":         ["Austria Vienna"],
+    "fk austria wien":      ["Austria Vienna"],
 }
 
 
