@@ -25823,6 +25823,29 @@ def test_coolbet_ui_placer_2026_08_27():
     stage_src_ou = inspect.getsource(up.stage_bet)
     assert "read_ou_grid" in stage_src_ou, "stage_bet must use the ladder for totals"
 
+    # Price gate is MIN-ODDS, not a drift percentage: a pick can sit below its
+    # break-even price without having drifted at all, and taking it is negative
+    # EV by the bot's own criterion.
+    assert "min_odds_for" in stage_src_ou, "must gate on break-even price"
+    assert abs(up.min_odds_for({"model_probability": 0.336}, 0.03) - 3.065) < 0.01
+
+    # Slip hygiene. Coolbet remembers selections across navigation, so blanking
+    # the stake is not enough — on 2026-08-27 three staged picks left a slip
+    # reading '2 Pilet' whose text showed a DIFFERENT pick's selection.
+    # Placing from that state bets something we never chose.
+    assert "deselect_outcome" in stage_src_ou, "staged bets must be taken back out of the slip"
+    assert "empty_slip" in stage_src_ou, "a dirty slip must be cleared before staging"
+    assert "expected 1" in stage_src_ou, \
+        "must refuse to place unless the slip holds exactly our one bet"
+
+    # Every exit path records, including the ones that never reached a price.
+    assert "record_attempt" in stage_src_ou
+    rec_src = inspect.getsource(up.record_attempt)
+    # execute_query does NOT commit — the first version inserted, returned a
+    # fresh id, and rolled back on connection release, so the run reported
+    # success and stored nothing.
+    assert "execute_write_returning" in rec_src, "audit write must commit"
+
     # COOLBET-SQUAD-GUARD: a reserve side must never match a first team. This
     # produced a fake +87pct edge on the Epicbet path (Rosario Central Res.).
     evs = [up.UiEvent(match_id="1", href="/et/sport/match/1",

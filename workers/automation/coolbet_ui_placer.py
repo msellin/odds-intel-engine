@@ -145,15 +145,59 @@ def is_logged_in(page) -> bool:
 # ── search ────────────────────────────────────────────────────────────────────
 
 
+def dismiss_overlays(page, *, tries: int = 3) -> bool:
+    """Close any modal/backdrop sitting over the page. Returns True if clear.
+
+    A leftover MUI modal backdrop (`div.MuiBackdrop-root`) covers the entire
+    viewport, so every subsequent click fails Playwright's actionability check
+    with a bare timeout that says nothing about the cause. Two full 15-pick
+    runs were lost to this before `elementFromPoint` on the search box came
+    back as the backdrop rather than the input.
+
+    Escape first (the documented dismissal), then a click on the backdrop
+    itself for modals that ignore it.
+    """
+    for _ in range(tries):
+        present = page.evaluate(
+            "() => !!document.querySelector('div.MuiBackdrop-root')"
+        )
+        if not present:
+            return True
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(700)
+        if not page.evaluate("() => !!document.querySelector('div.MuiBackdrop-root')"):
+            return True
+        try:
+            page.locator("div.MuiBackdrop-root").first.click(timeout=2000)
+        except Exception as e:
+            log.debug("backdrop click failed: %s", e)
+        page.wait_for_timeout(700)
+    return not page.evaluate("() => !!document.querySelector('div.MuiBackdrop-root')")
+
+
 def search_events(page, query: str, *, timeout_ms: int = 15000) -> list[UiEvent]:
     """Type `query` into Coolbet's own search box and read the dropdown."""
-    if SPORT_PAGE.split("/et/")[0] not in page.url or "/sport" not in page.url:
+    # Gate on the search box actually being present, not on the URL looking
+    # right. A match page's URL contains '/sport' and passes any URL check
+    # while the header search can still be absent mid-render — which stalled a
+    # whole 15-pick run on Page.click timeouts.
+    dismiss_overlays(page)
+    # Gate on the search box being VISIBLE, not merely present. On a match page
+    # the header search stays in the DOM but collapsed, so a querySelector check
+    # passes and every click then times out waiting for actionability — that
+    # stalled two full 15-pick runs.
+    if not page.locator(SEL_SEARCH).first.is_visible():
         page.goto(SPORT_PAGE, wait_until="domcontentloaded", timeout=25000)
         page.wait_for_timeout(2000)
     page.wait_for_selector(SEL_SEARCH, timeout=timeout_ms)
-    page.click(SEL_SEARCH)
-    page.fill(SEL_SEARCH, "")
-    page.type(SEL_SEARCH, query, delay=80)
+    # .first everywhere: Coolbet renders the header search more than once
+    # (desktop + responsive), and page.click() is strict — it fails with
+    # "locator resolved to N elements" rather than picking one, which stalled
+    # an entire 15-pick run on 30s timeouts.
+    box = page.locator(SEL_SEARCH).first
+    box.click(timeout=timeout_ms)
+    box.fill("")
+    box.type(query, delay=80)
     page.wait_for_timeout(3500)
 
     rows = page.evaluate(
@@ -487,16 +531,76 @@ def set_stake(page, market_id: str, stake: float, *, timeout_ms: int = 10000) ->
     silently dropped. We read the value back and the caller compares — never
     assume the stake stuck ([[feedback_silent_failures]]).
     """
+    # The stake field is named yourStake<id>, but that id is NOT always the
+    # market id we clicked — it varies by market type. Only one single is in
+    # the slip at a time, so match on the name PREFIX and take the first.
     sel = SEL_STAKE.format(market_id=market_id)
+    if page.locator(sel).count() == 0:
+        sel = 'input[name^="yourStake"]'
     page.wait_for_selector(sel, timeout=timeout_ms)
-    page.fill(sel, "")
-    page.type(sel, f"{stake:.2f}", delay=80)
+    field = page.locator(sel).first
+    field.fill("")
+    field.type(f"{stake:.2f}", delay=80)
     page.wait_for_timeout(2000)
-    raw = page.input_value(sel) or "0"
+    raw = field.input_value() or "0"
     try:
         return float(raw.replace(",", "."))
     except ValueError:
         return 0.0
+
+
+def slip_ticket_count(page) -> int:
+    """How many selections the betslip holds, from its own 'N Pilet' counter."""
+    txt = page.evaluate("() => document.body.innerText || ''")
+    m = re.search(r"(\d+)\s*Pilet", txt)
+    return int(m.group(1)) if m else 0
+
+
+def empty_slip(page, *, tries: int = 6) -> int:
+    """Empty the betslip. Returns the ticket count left behind (0 = clean).
+
+    The slip has no labelled clear control — only anonymous <svg> icons — so we
+    click them in order and keep whichever actually drops the counter. On
+    2026-08-27 the first icon was a clear-all and took 2 selections to 0.
+
+    Needed because selections survive page navigation (Coolbet remembers them),
+    so a run that stages several picks accumulates a multi-selection slip.
+    """
+    if slip_ticket_count(page) == 0:
+        return 0
+    try:
+        pb = page.locator(SEL_PLACE_BTN).first
+        svgs = pb.locator("xpath=./../../../../../..").locator("svg")
+        for i in range(min(svgs.count(), tries)):
+            before = slip_ticket_count(page)
+            if before == 0:
+                return 0
+            try:
+                svgs.nth(i).click(timeout=2500)
+                page.wait_for_timeout(1200)
+            except Exception:
+                continue
+            if slip_ticket_count(page) < before:
+                if slip_ticket_count(page) == 0:
+                    return 0
+    except Exception as e:
+        log.warning("empty_slip failed: %s", e)
+    return slip_ticket_count(page)
+
+
+def deselect_outcome(page, outcome: UiOutcome, *, timeout_ms: int = 8000) -> None:
+    """Re-click a price to take it back OUT of the betslip.
+
+    Coolbet's odds buttons toggle. Blanking the stake is NOT enough — the
+    selection stays in the slip and the next pick's selection lands on top of
+    it, so the slip accumulates. Observed live on 2026-08-27: after three
+    staged picks the slip read '2 Pilet' and the third pick's slip text showed
+    the SECOND pick's selection. Placing from that state bets the wrong thing.
+    """
+    try:
+        select_outcome(page, outcome, timeout_ms=timeout_ms)
+    except Exception as e:
+        log.warning("could not deselect %s: %s", outcome.label, e)
 
 
 def read_slip(page) -> SlipState:
@@ -543,7 +647,10 @@ def _slip_message(text: str) -> str:
 def clear_stake(page, market_id: str) -> None:
     """Blank the stake field — used to leave the slip uncommitted after staging."""
     try:
-        page.fill(SEL_STAKE.format(market_id=market_id), "")
+        sel = SEL_STAKE.format(market_id=market_id)
+        if page.locator(sel).count() == 0:
+            sel = 'input[name^="yourStake"]'
+        page.locator(sel).first.fill("")
     except Exception as e:  # slip may already be gone
         log.debug("clear_stake no-op: %s", e)
 
@@ -563,6 +670,93 @@ def place(page, *, timeout_ms: int = 20000) -> SlipState:
         # Slip clears on a successful placement — that is the success shape.
         return SlipState(selection="", odds=None, potential_return=None,
                          place_enabled=False, message="slip cleared after placement")
+
+
+# ── audit trail ───────────────────────────────────────────────────────────────
+
+
+def record_attempt(
+    bet: dict,
+    *,
+    outcome: str,
+    stage: str,
+    reason: str = "",
+    ev: "UiEvent | None" = None,
+    ui_outcome: "UiOutcome | None" = None,
+    slip: "SlipState | None" = None,
+    stake_requested: float | None = None,
+    stake_applied: float | None = None,
+    execute_mode: bool = False,
+    ticket_id: str | None = None,
+    real_bet_id: str | None = None,
+) -> str | None:
+    """Write one row to coolbet_placement_attempts — ALWAYS, whatever happened.
+
+    A placer that quietly places nothing looks identical to one with nothing to
+    place unless the misses are recorded too ([[feedback_silent_failures]]).
+    `coolbet_odds` stays NULL exactly when we never reached a price, and
+    `reason` says why rather than leaving a hole.
+
+    Never raises: an audit-write failure must not abort a placement run, and it
+    certainly must not mask the outcome we were trying to record.
+    """
+    # execute_write_returning, NOT execute_query: execute_query never commits,
+    # so the INSERT returned a fresh id and then vanished on connection
+    # release — an audit write that reports success and stores nothing.
+    from workers.api_clients.db import execute_write_returning
+
+    captured = bet.get("odds_at_pick") or bet.get("odds") or bet.get("captured_odds")
+    cb_odds = ui_outcome.odds if ui_outcome else None
+    drift = None
+    if captured and cb_odds:
+        drift = (float(captured) - cb_odds) / float(captured) * 100.0
+    try:
+        rows = execute_write_returning(
+            """INSERT INTO coolbet_placement_attempts
+                 (bot_id, bot_name, shadow_bet_id, simulated_bet_id, match_id,
+                  home_team, away_team, kickoff, market, selection,
+                  captured_odds, coolbet_odds, odds_drift_pct,
+                  stake_requested, stake_applied,
+                  coolbet_match_id, coolbet_market_id,
+                  outcome, stage, reason, slip_text, ticket_id, real_bet_id,
+                  execute_mode)
+               VALUES (%s,%s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s, %s,%s,
+                       %s,%s, %s,%s,%s,%s,%s,%s, %s)
+               RETURNING id::text""",
+            (
+                bet.get("bot_id"), bet.get("bot_name"),
+                bet.get("shadow_bet_id") or bet.get("id"),
+                bet.get("simulated_bet_id"), bet.get("match_id"),
+                bet.get("home_team"), bet.get("away_team"), bet.get("match_date"),
+                bet.get("market"), bet.get("selection"),
+                captured, cb_odds, drift,
+                stake_requested, stake_applied,
+                ev.match_id if ev else None,
+                ui_outcome.market_id if ui_outcome else None,
+                outcome, stage, reason or None,
+                slip.raw[:2000] if slip else None,
+                ticket_id, real_bet_id, execute_mode,
+            ),
+        )
+        return rows[0]["id"] if rows else None
+    except Exception as e:
+        log.error("could not record placement attempt (%s/%s): %s", outcome, stage, e)
+        return None
+
+
+def min_odds_for(bet: dict, threshold: float) -> float | None:
+    """Break-even price for this pick: (1 + threshold) / model probability.
+
+    Same formula the /picks page and the shadow-bots admin use. Below this the
+    edge is gone and the bet is negative EV, so it is the authoritative gate —
+    a generic "odds dropped less than X pct" check is not equivalent, because a
+    pick can be under its floor at pick time without having drifted at all.
+    """
+    prob = bet.get("model_probability") or bet.get("calibrated_prob")
+    if not prob:
+        return None
+    prob = float(prob)
+    return (1.0 + threshold) / prob if prob > 0 else None
 
 
 # ── orchestration ─────────────────────────────────────────────────────────────
@@ -586,87 +780,170 @@ def stage_bet(
     stake: float,
     *,
     execute: bool = False,
-    max_odds_drop_pct: float = 5.0,
+    edge_threshold: float = 0.03,
+    max_odds_drop_pct: float = 100.0,
 ) -> StageResult:
     """Drive one qualified pick through the UI up to (optionally) placement.
 
-    Steps: search → match → open → read prices → resolve outcome → odds-drift
-    check → select → stake (verified) → read slip → optionally place.
+    Steps: search → match → open → read prices → resolve outcome → min-odds
+    gate → select → stake (verified by read-back) → read slip → optionally
+    place. EVERY exit writes a coolbet_placement_attempts row, including the
+    ones that never reached a price.
 
     `execute=False` (default) stops with the bet staged and the stake cleared,
     which is a complete no-op against the account.
+
+    The primary price gate is min-odds — (1 + edge_threshold) / model
+    probability — not a drift percentage. A pick can sit below its break-even
+    price without having drifted at all, and taking it is negative EV by the
+    bot's own criterion.
     """
     home, away = bet["home_team"], bet["away_team"]
     notes: list[str] = []
 
-    if not is_logged_in(page):
-        return StageResult(False, "not logged in — run coolbet_browser_sync --cdp-auto-login")
+    def _fail(stage: str, reason: str, ev=None, oc=None, slip=None,
+              applied: float | None = None) -> StageResult:
+        record_attempt(bet, outcome="rejected", stage=stage, reason=reason,
+                       ev=ev, ui_outcome=oc, slip=slip,
+                       stake_requested=stake, stake_applied=applied,
+                       execute_mode=execute)
+        return StageResult(False, reason, ev, oc, slip, applied or 0.0, False, notes)
 
-    events = search_events(page, home)
+    if not is_logged_in(page):
+        return _fail("login", "not logged in — run coolbet_browser_sync --cdp-auto-login")
+
+    # Never work against a dirty slip. Selections left by an earlier run cannot
+    # be told apart from ours once staged, and placing from a multi-selection
+    # slip bets something we never chose.
+    dirty = slip_ticket_count(page)
+    if dirty:
+        dirty = empty_slip(page)
+    if dirty:
+        return _fail("login", f"betslip is not empty ({dirty} selection(s)) — clear it first")
+
+    try:
+        events = search_events(page, home)
+    except Exception as e:
+        return _fail("search", f"search failed: {type(e).__name__}: {str(e)[:120]}")
     if not events:
-        return StageResult(False, f"no search results for {home!r}")
+        return _fail("search", f"no search results for {home!r}")
 
     ev = pick_event(events, home, away, bet.get("match_date"))
     if ev is None:
-        return StageResult(False, f"no confident match for {home} v {away} in {len(events)} results")
+        return _fail("match", f"no confident match for {home} v {away} in {len(events)} results")
 
-    open_event(page, ev)
+    try:
+        open_event(page, ev)
+    except Exception as e:
+        return _fail("open", f"could not open match page: {str(e)[:120]}", ev)
+
     # Totals come from the 'Väravate arv (Üle/Alla)' card, which carries the
     # whole ladder. The header strip at the top of the page shows one line only
     # (quick bets) — reading totals from there misses every non-main line.
     if _wanted_line(bet["market"]) is not None:
         outcomes = read_ou_grid(page)
         if not outcomes:
-            return StageResult(False, "OU ladder not found on match page", event=ev)
+            return _fail("price", "OU ladder not found on match page", ev)
     else:
         outcomes = read_outcomes(page)
         if not outcomes:
-            return StageResult(False, "no prices rendered on match page", event=ev)
+            return _fail("price", "no prices rendered on match page", ev)
 
-    outcome = find_outcome(outcomes, bet["market"], bet["selection"], home, away)
+    try:
+        outcome = find_outcome(outcomes, bet["market"], bet["selection"], home, away)
+    except UiPlacerError as e:
+        return _fail("outcome", str(e), ev)
     if outcome is None:
-        return StageResult(False, f"{bet['market']}/{bet['selection']} not found on page", event=ev)
+        return _fail("outcome", f"{bet['market']}/{bet['selection']} not offered on this page", ev)
 
-    # Odds drift — the pick was qualified against a captured price. Refuse to
-    # stake into a materially worse one; edge is the whole reason we are here.
-    captured = bet.get("odds") or bet.get("captured_odds")
+    # ── price gates ──────────────────────────────────────────────────────────
+    floor = min_odds_for(bet, edge_threshold)
+    if floor is not None and outcome.odds < floor:
+        return _fail(
+            "drift",
+            f"below min odds: {outcome.odds} < {floor:.2f} "
+            f"(break-even at {edge_threshold:.0%} edge)",
+            ev, outcome,
+        )
+    if floor is not None:
+        notes.append(f"min_odds={floor:.2f} coolbet={outcome.odds}")
+
+    captured = bet.get("odds_at_pick") or bet.get("odds") or bet.get("captured_odds")
     if captured:
         drop = (float(captured) - outcome.odds) / float(captured) * 100.0
         if drop > max_odds_drop_pct:
-            return StageResult(
-                False,
-                f"odds dropped {drop:.1f}% ({captured} → {outcome.odds}), limit {max_odds_drop_pct}%",
-                event=ev, outcome=outcome,
-            )
-        notes.append(f"odds {captured} → {outcome.odds} ({drop:+.1f}%)")
+            return _fail("drift", f"odds dropped {drop:.1f}pct ({captured} → {outcome.odds})",
+                         ev, outcome)
+        notes.append(f"odds {captured} → {outcome.odds} ({drop:+.1f}pct)")
 
-    select_outcome(page, outcome)
-    applied = set_stake(page, outcome.market_id, stake)
+    # ── stake ────────────────────────────────────────────────────────────────
+    # Any UI step can raise (timeouts, re-renders). An exception here must be
+    # RECORDED as a failed attempt, not escape and abort the whole run — one
+    # unhandled stake timeout killed a 15-pick run mid-way.
+    try:
+        select_outcome(page, outcome)
+        applied = set_stake(page, outcome.market_id, stake)
+    except Exception as e:
+        try:
+            clear_stake(page, outcome.market_id)
+        except Exception:
+            pass
+        return _fail("stake", f"{type(e).__name__}: {str(e)[:140]}", ev, outcome)
     if abs(applied - stake) > 0.005:
         clear_stake(page, outcome.market_id)
-        return StageResult(
-            False, f"stake did not stick: wanted {stake:.2f}, field holds {applied:.2f}",
-            event=ev, outcome=outcome,
-        )
+        return _fail("stake", f"stake did not stick: wanted {stake:.2f}, field holds {applied:.2f}",
+                     ev, outcome, applied=applied)
 
     slip = read_slip(page)
     notes.append(f"slip: {slip.selection[:60]}")
 
     if not execute:
         clear_stake(page, outcome.market_id)
+        deselect_outcome(page, outcome)
+        record_attempt(bet, outcome="staged", stage="slip",
+                       reason="staged only (execute=False)", ev=ev, ui_outcome=outcome,
+                       slip=slip, stake_requested=stake, stake_applied=applied,
+                       execute_mode=False)
         return StageResult(True, "staged (not placed)", ev, outcome, slip, applied, False, notes)
 
     from workers.automation.coolbet_state import is_placement_paused
     paused, why = is_placement_paused()
     if paused:
         clear_stake(page, outcome.market_id)
-        return StageResult(False, f"placement_paused: {why or 'no reason given'}",
-                           ev, outcome, slip, applied, False, notes)
+        return _fail("place", f"placement_paused: {why or 'no reason given'}",
+                     ev, outcome, slip, applied)
 
     if not slip.place_enabled:
         clear_stake(page, outcome.market_id)
-        return StageResult(False, f"place button disabled ({slip.message or 'unknown'})",
-                           ev, outcome, slip, applied, False, notes)
+        deselect_outcome(page, outcome)
+        return _fail("place", f"place button disabled ({slip.message or 'unknown'})",
+                     ev, outcome, slip, applied)
+
+    # Final safety before money moves: the slip must hold exactly our one bet.
+    n = slip_ticket_count(page)
+    if n != 1:
+        clear_stake(page, outcome.market_id)
+        deselect_outcome(page, outcome)
+        return _fail("place", f"refusing to place — slip holds {n} selections, expected 1",
+                     ev, outcome, slip, applied)
 
     after = place(page)
+    real_bet_id = None
+    try:
+        from workers.api_clients.supabase_client import store_real_bet
+        real_bet_id = store_real_bet(
+            match_id=str(bet["match_id"]), market=bet["market"], selection=bet["selection"],
+            bookmaker="Coolbet", captured_odds=float(captured) if captured else outcome.odds,
+            actual_odds=outcome.odds, stake=applied, bot_id=str(bet["bot_id"]) if bet.get("bot_id") else None,
+            notes=f"ui-placer edge_threshold={edge_threshold:.2%}",
+        )
+    except Exception as e:
+        # The bet is already placed at Coolbet at this point. Losing the
+        # real_bets row must not look like a failed placement.
+        log.error("placed but could not write real_bets: %s", e)
+        notes.append(f"real_bets write failed: {str(e)[:80]}")
+    record_attempt(bet, outcome="placed", stage="place", reason="",
+                   ev=ev, ui_outcome=outcome, slip=after,
+                   stake_requested=stake, stake_applied=applied,
+                   execute_mode=True, real_bet_id=real_bet_id)
     return StageResult(True, "placed", ev, outcome, after, applied, True, notes)
