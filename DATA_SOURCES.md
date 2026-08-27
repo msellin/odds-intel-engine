@@ -13,6 +13,7 @@
 | **OddsPapi** (free 250/mo) | Historical Pinnacle closing-odds backfill for soccer CLV (one-shot via `scripts/ingest_oddspapi_pinnacle_closes.py`). | ⚠️ Quota exhausted 2026-06-25 — tennis scanner that was burning the budget is being replaced by The Odds API. Last backfill 2026-06-15 (12,218 rows / 219 matches into `odds_snapshots`). |
 | **football-data.co.uk** (free) | Historical odds + secondary stats CSVs (CSV-FULL-EXTRACT 2026-06-04 captures 9 bookmakers × 1X2 + OU 2.5 + AH, open + close) | ✅ Active. ~80-120K net-new rows per season-set ingest. |
 | ESPN (free) | Settlement result backup | ✅ Active (backup) |
+| **Epicbet** (free, EE-licensed) | Second operator-reachable book in `odds_snapshots` (EPICBET-ODDS-INGEST-2026-08-27). Anonymous REST JSON — no auth, no bot-protection, runs VPS-side via `workers/automation/epicbet_explorer.py`. Markets: 1X2, OU 0.5–4.5, BTTS, AH. **No `double_chance`** — the league listing only carries market groups 45/15/69/19. | ✅ Active. ~5.6K rows / 229 matches per 30-min sweep. |
 | ~~Kambi API (free)~~ | Supplementary odds — removed 2026-05-06 (all 41 leagues already covered by AF; "ub"/"paf" bookmakers provided <5% best-odds and "ub" is just Unibet which AF covers separately) | Removed |
 | ~~BetExplorer~~ | Gap league odds — removed 2026-04-29 (fragile HTML scraping, low value) | Removed |
 

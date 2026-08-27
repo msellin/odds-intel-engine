@@ -239,6 +239,7 @@ restart. No extra hosting cost on the VPS; blast radius isolated.
 - AF bulk odds via `/odds?date=` — ~178 fixtures, 13 bookmakers, all markets (1X2, O/U, BTTS, DC)
 - Bookmakers: 10Bet, 1xBet, 888Sport, Bet365, Betano, BetVictor, Betfair, Dafabet, Marathonbet, Pinnacle, SBO, Unibet, William Hill
 - Kambi removed 2026-05-06 — all leagues already covered by AF, no unique value
+- **Epicbet** ingested separately at :02/:32 UTC (`job_epicbet_odds_snapshot` → `workers/automation/epicbet_explorer.run_bulk`), landing 3 min before the :05/:35 betting refresh. Bulk league sweep, anonymous, VPS-side. Coolbet's equivalent runs on the operator's Mac because Imperva 403s the VPS; Epicbet has no such protection.
 - Stores all in `odds_snapshots` with `minutes_to_kickoff`
 - `--mark-closing` flag for pre-kickoff runs (13:30, 17:30, 20:00)
 - **OU quality gates (ODDS-QUALITY-CLEANUP, 2026-05-10)**: `filter_garbage_ou_rows` (in `workers/utils/odds_quality.py`) drops OU rows from blacklisted bookmakers (`api-football`, `api-football-live`, `William Hill`) and both sides of impossible `(over, under)` pairs (`1/over + 1/under < 1.02`). Applied at every write path. 1X2 / BTTS rows from the same bookmakers pass through unchanged. See `DATA_SOURCES.md` for the why.
@@ -481,6 +482,7 @@ After step 5: bets are placed, value bets page has data.
 |--------|------|------|
 | **API-Football Ultra** | Primary: fixtures, odds (13 bookmakers), predictions, injuries, lineups, standings, H2H, stats, live | $29/mo |
 | ~~**Kambi**~~ | Removed 2026-05-06 — AF already covers all 41 Kambi leagues with 13 bookmakers | — |
+| **Epicbet** | Second EMTA-licensed, operator-reachable book — 1X2/OU/BTTS/AH, anonymous REST feed | Free |
 | **ESPN** | Settlement results backup | Free |
 | **Gemini 2.5 Flash** | AI news analysis (qualitative signals) + match previews (ENG-3) | ~$0.05/day |
 | **Resend** | Email digest delivery (ENG-4) | Free to 3,000 emails/mo |

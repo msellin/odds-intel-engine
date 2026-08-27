@@ -501,6 +501,33 @@ def _coolbet_odds_snapshot_wrapper():
     _run_job("coolbet_odds_snapshot", job_coolbet_odds_snapshot)
 
 
+def job_epicbet_odds_snapshot():
+    """EPICBET-ODDS-INGEST-2026-08-27 — 30-min Epicbet odds ingest at :02/:32 UTC.
+
+    Second EMTA-licensed, operator-reachable book alongside Coolbet, so value
+    bots stop being priced against a single venue. Unlike Coolbet this needs no
+    auth and hits no bot-protection, so it runs on the VPS rather than the Mac.
+
+    Sweeps Epicbet's football league listings in bulk (~140 calls), fuzzy-matches
+    against DB fixtures in the next 2 days, and stores 1X2 / OU / BTTS / AH into
+    odds_snapshots with bookmaker='Epicbet'. Fires 3 min before the :05/:35
+    betting refresh so the same cycle sees fresh prices.
+
+    Error-isolated — an Epicbet outage never blocks other jobs.
+    """
+    from workers.automation.epicbet_explorer import run_bulk
+    import traceback
+    try:
+        run_bulk(days=2, dry_run=False)
+    except Exception as e:
+        console.print(f"[red]Epicbet odds snapshot failed: {e}[/red]")
+        console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
+
+
+def _epicbet_odds_snapshot_wrapper():
+    _run_job("epicbet_odds_snapshot", job_epicbet_odds_snapshot)
+
+
 
 def _shadow_run(shadow_cohort: str):
     """Run run_morning(shadow_mode=True, shadow_cohort=...) with error isolation."""
@@ -2256,6 +2283,15 @@ def main():
     # (local/launchd/com.oddsintel.coolbet-odds-snapshot.plist) — Imperva
     # 403s the VPS. `_coolbet_odds_snapshot_wrapper` above is kept for
     # manual runs (`python -m workers.automation.coolbet_explorer`).
+
+    # EPICBET-ODDS-INGEST-2026-08-27: Epicbet, by contrast, serves its prematch
+    # feed anonymously with no bot-protection, so it runs here on the VPS.
+    # :02/:32 — 3 min ahead of betting_refresh_interval (:05/:35) so the same
+    # cycle prices against fresh Epicbet quotes, and clear of the :10/:40
+    # shadow slot (see SCHEDULER-HANG-MITIGATION below).
+    scheduler.add_job(_epicbet_odds_snapshot_wrapper,
+                      CronTrigger(hour="*", minute="2,32"),
+                      id="epicbet_odds_snapshot", name="Epicbet Odds [30min]")
 
     # SCHEDULER-HANG-MITIGATION (2026-06-01) — staggered :10/:40 instead of
     # :05/:35 so it doesn't share a firing minute with betting_refresh_interval.

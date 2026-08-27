@@ -140,6 +140,31 @@ file instead.
 
 ---
 
+## 13. Not every book prices every market — Epicbet has no `double_chance`
+
+`odds_snapshots` gained **Epicbet** on 2026-08-27 (EPICBET-ODDS-INGEST), the
+second EMTA-licensed book the operator can actually place at. It does **not**
+write `double_chance` rows: the bulk league listing we ingest from only carries
+market groups 45 (1X2), 15 (Match Total Goals), 69 (Both to Score) and 19 (Goals
+Handicap). Coolbet writes DC, Epicbet does not.
+
+So a query of the form "books that price DC" silently excludes Epicbet, and a
+per-book coverage ratio computed across all markets will make Epicbet look
+worse than it is. Compare books **pairwise on markets both actually price** —
+the same trap as gotcha 10.
+
+Two more Epicbet-specific facts worth knowing before writing a query against it:
+
+* **It prices quarter OU lines (0.75, 1.25, 2.25 …); we drop them.** There is no
+  `over_under_XX` column vocabulary for quarter lines, so only .5 lines land.
+  Absence of a 2.25 row does not mean Epicbet did not quote it.
+* **Reserve and youth fixtures are guarded, not matched.** `_squads_compatible`
+  refuses to match "X Res." / "X U21" / "X W" against a first-team event, so
+  those fixtures have Epicbet rows only when Epicbet itself lists the reserve
+  side. This is deliberate — without it, one reserves fixture produced a fake
+  +87% edge against Pinnacle. The Coolbet path does **not** yet have this guard
+  (COOLBET-SQUAD-GUARD, open).
+
 ## Re-runnable analysis scripts (all committed 2026-08-26)
 
 | script | answers |

@@ -750,6 +750,46 @@ def store_coolbet_odds_snapshot(
             conn.commit()
 
 
+def store_book_odds_snapshots(
+    bookmaker: str,
+    match_id: str,
+    rows: list[tuple[str, str, float, float | None]],
+    minutes_to_kickoff: int | None = None,
+) -> int:
+    """Batch-insert odds rows for one match / one bookmaker into odds_snapshots.
+
+    `rows` is a list of (market, selection, odds, handicap_line) — the exact
+    tuple shape the Coolbet/Epicbet explorers' parsers emit. Returns the number
+    of rows written.
+
+    EPICBET-ODDS-INGEST-2026-08-27: added so a second book can share the writer.
+    `store_coolbet_odds_snapshot` (single row, bookmaker hardcoded) predates this
+    and stays as-is — the Coolbet path writes row-at-a-time behind a per-row
+    try/except, and rewiring it is not this task's business.
+    """
+    from workers.api_clients.db import get_conn
+    if not rows:
+        return 0
+    now = datetime.now(timezone.utc).isoformat()
+    is_closing = minutes_to_kickoff is not None and abs(minutes_to_kickoff) <= 5
+    payload = [
+        (match_id, bookmaker, market, selection, odds, now,
+         is_closing, minutes_to_kickoff, line)
+        for market, selection, odds, line in rows
+    ]
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.executemany(
+                """INSERT INTO odds_snapshots
+                   (match_id, bookmaker, market, selection, odds, timestamp,
+                    is_closing, minutes_to_kickoff, handicap_line)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                payload,
+            )
+            conn.commit()
+    return len(payload)
+
+
 # ============================================================
 # LIVE TRACKING
 # ============================================================

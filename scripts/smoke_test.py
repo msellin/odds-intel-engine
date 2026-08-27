@@ -25530,5 +25530,96 @@ def test_coolbet_value_bot_2026_08_26():
     return "Coolbet-priced value bot: quotes only obtainable prices, visible on the admin page"
 
 
+@test("EPICBET-ODDS-INGEST — second EE-licensed book: parser vocabulary, squad guard, scheduler slot")
+def _():
+    """EPICBET-ODDS-INGEST-2026-08-27. Coolbet was the only book the operator can
+    actually bet at, so every value bot was priced against a single venue.
+    Epicbet serves its prematch feed anonymously (no auth, no bot-protection),
+    so it ingests VPS-side on the normal scheduler.
+
+    Pins the three things that silently produce wrong money if they drift:
+
+    (1) **Snapshot vocabulary.** Rows must use the same market/selection strings
+        every other bookmaker in odds_snapshots uses (`1x2` home/draw/away,
+        `over_under_XX`, `btts`, `asian_handicap`). A capitalised or renamed
+        selection is invisible to the frontend lookup — that was
+        COOLBET-SELECTION-CASE.
+    (2) **Squad-qualifier guard.** `fuzzy_match_event` scores with partial_ratio,
+        which cannot tell "Rosario Central Res." from "Rosario Central". On the
+        first live run that produced Epicbet home 2.75 vs Pinnacle 1.47 — an
+        apparent +87% edge across two different fixtures.
+    (3) **Scheduler slot.** The job must be registered and must land before the
+        :05/:35 betting refresh, or the cycle prices against stale quotes.
+    """
+    import pathlib
+    from workers.automation import epicbet_explorer as ep
+
+    # (1) vocabulary — parse a synthetic event through the real parser
+    ev = {"raw": {
+        "homeTeamName": "Alpha FC", "awayTeamName": "Beta United",
+        "marketGroups": [
+            {"id": 45, "markets": [{"id": 1, "line": None, "outcomes": [
+                {"id": 11, "name": "Alpha FC"}, {"id": 12, "name": "Draw"},
+                {"id": 13, "name": "Beta United"}]}]},
+            {"id": 15, "markets": [
+                {"id": 2, "line": 2.5, "outcomes": [
+                    {"id": 21, "name": "Over", "line": "2.5"},
+                    {"id": 22, "name": "Under", "line": "2.5"}]},
+                # quarter line must be dropped — no column vocabulary for it
+                {"id": 3, "line": 2.25, "outcomes": [
+                    {"id": 31, "name": "Over", "line": "2.25"},
+                    {"id": 32, "name": "Under", "line": "2.25"}]}]},
+            {"id": 69, "markets": [{"id": 4, "line": None, "outcomes": [
+                {"id": 41, "name": "Yes"}, {"id": 42, "name": "No"}]}]},
+            {"id": 19, "markets": [{"id": 5, "line": -1.0, "outcomes": [
+                {"id": 51, "name": "Alpha FC", "line": "-1.0"},
+                {"id": 52, "name": "Beta United", "line": "+1.0"}]}]},
+        ]}}
+    odds = {11: 1.50, 12: 4.00, 13: 6.00, 21: 1.90, 22: 1.95,
+            31: 1.70, 32: 2.15, 41: 1.80, 42: 1.95, 51: 2.05, 52: 1.80}
+    rows = ep.parse_event_markets(ev, odds)
+    got = {(m, sel) for m, sel, _o, _l in rows}
+    for expected in [("1x2", "home"), ("1x2", "draw"), ("1x2", "away"),
+                     ("over_under_25", "over"), ("over_under_25", "under"),
+                     ("btts", "yes"), ("btts", "no"),
+                     ("asian_handicap", "home"), ("asian_handicap", "away")]:
+        assert expected in got, f"missing {expected} — snapshot vocabulary drifted"
+    assert not any(m == "over_under_22" or m == "over_under_23" for m, _ in got), \
+        "quarter OU lines have no column vocabulary and must be dropped"
+    # AH line is stored home-perspective on BOTH sides of the market
+    ah = {sel: line for m, sel, _o, line in rows if m == "asian_handicap"}
+    assert ah["home"] == -1.0 and ah["away"] == -1.0, \
+        f"AH must store the home-perspective line on both rows, got {ah}"
+    # 1X2 must not be flipped: home is the shortest price here
+    x2 = {sel: o for m, sel, o, _l in rows if m == "1x2"}
+    assert x2["home"] == 1.50 and x2["away"] == 6.00, f"1X2 orientation flipped: {x2}"
+
+    # (2) squad guard
+    assert ep._squad_tag("Rosario Central Res.") == "res"
+    assert ep._squad_tag("Rosario Central") is None
+    assert ep._squad_tag("Club Tijuana U21") == "u21"
+    assert ep._squad_tag("Millonarios W") == "w"
+    assert ep._squad_tag("Brighton") is None, "first-team names must carry no tag"
+    assert not ep._squads_compatible(
+        "Rosario Central Res.", "Barracas Central Res.",
+        {"home": "Rosario Central", "away": "Barracas Central"}), \
+        "a reserves fixture must never match the first-team event"
+    assert ep._squads_compatible(
+        "Rosario Central Res.", "Barracas Central Res.",
+        {"home": "Rosario Central Res.", "away": "Barracas Central Res."})
+    src_mod = pathlib.Path("workers/automation/epicbet_explorer.py").read_text()
+    assert "_squads_compatible(m[\"home\"], m[\"away\"], ev)" in src_mod, \
+        "the guard must actually filter candidates, not just exist"
+
+    # (3) scheduler registration + ordering
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    assert "def job_epicbet_odds_snapshot" in sched, "scheduler job must exist"
+    assert 'id="epicbet_odds_snapshot"' in sched, "job must be registered, not just defined"
+    assert 'CronTrigger(hour="*", minute="2,32")' in sched, \
+        "Epicbet must fire at :02/:32 — before the :05/:35 betting refresh"
+    assert "Epicbet odds snapshot failed" in sched, "must be error-isolated"
+    return "Epicbet ingest: vocabulary pinned, reserve/youth false-matches blocked, :02/:32 slot"
+
+
 if __name__ == "__main__":
     main()
