@@ -258,6 +258,70 @@ def _start_text(text: str) -> str:
 # ── matching ──────────────────────────────────────────────────────────────────
 
 
+# Club-name noise that Coolbet either omits or spells differently. Stripped
+# only when building a SEARCH QUERY — never when scoring a match.
+_CLUB_NOISE = {
+    "fc", "cf", "cs", "cd", "sc", "ac", "afc", "sk", "fk", "bk", "if", "ff",
+    "club", "deportivo", "atletico", "atlético", "united", "city", "county",
+}
+
+
+def search_queries(home: str, away: str) -> list[str]:
+    """Query strings to try against Coolbet's search, best first.
+
+    Coolbet's search does NOT tolerate our full DB team names. Verified live
+    2026-08-27: "Ararat-Armenia" returned 10 results NOT including the fixture
+    (St. Gallen games instead), while "ararat" returned it second. The hyphen
+    is the culprit — the search tokenises poorly on punctuation.
+
+    So: most distinctive single word first, then more of the name, then the
+    away side. Whatever the query, pick_event still vets the result — a loose
+    query never means a loose match.
+    """
+    out: list[str] = []
+
+    def add(q: str) -> None:
+        q = (q or "").strip()
+        if q and q.lower() not in [o.lower() for o in out]:
+            out.append(q)
+
+    for name in (home, away):
+        if not name:
+            continue
+        words = [w for w in re.split(r"[\s\-/.,()]+", name) if w]
+        meaningful = [w for w in words if w.lower() not in _CLUB_NOISE and len(w) > 2]
+        if meaningful:
+            add(meaningful[0])
+        if len(meaningful) > 1:
+            add(" ".join(meaningful[:2]))
+        add(name)
+    return out
+
+
+def _best_pair_score(events: list[UiEvent], home: str, away: str) -> float:
+    """Best min(home, away) score across candidates — how close we got."""
+    best = 0.0
+    for ev in events:
+        if not ev.home or not ev.away:
+            continue
+        best = max(best, min(_best_score(home, ev.home), _best_score(away, ev.away)))
+    return best
+
+
+def _best_score(ours: str, theirs: str) -> float:
+    """Best name score for one side, across diacritic folding and aliases.
+
+    Folding handles 'Fenix' vs 'Centro Atlético Fénix'; aliases handle what
+    folding cannot, like 'Austria Vienna' vs 'FK Austria Wien' — a
+    translation, not a spelling. Scored per SIDE; the caller takes the worse
+    of home and away.
+    """
+    from workers.automation.coolbet_placer import _ascii, _team_aliases
+
+    t = _ascii(theirs)
+    return max(fuzz.token_set_ratio(_ascii(a), t) for a in _team_aliases(ours))
+
+
 def pick_event(
     events: list[UiEvent],
     home: str,
@@ -265,26 +329,26 @@ def pick_event(
     kickoff: datetime | None = None,
     *,
     min_score: float = 80.0,
+    min_score_with_time: float = 55.0,
 ) -> UiEvent | None:
     """Choose the search result that is our fixture, or None.
 
-    COOLBET-SQUAD-GUARD (2026-08-27): reuses `_squad_tag` from the Epicbet
-    explorer so a reserve/youth side can never match a first team. This is
-    the class of false match that produced a fake +87% edge on Epicbet
-    (Rosario Central Res. vs Rosario Central, partial_ratio 100). Coolbet is
-    the venue real money goes to, so the guard belongs here first.
-    """
-    from workers.automation.coolbet_placer import _ascii, _team_aliases
-    from workers.automation.epicbet_explorer import _squad_tag
+    Evidence is combined rather than resting on names alone, because the same
+    club is spelled differently across platforms ('Ararat-Armenia' vs
+    'FC Ararat-Armenia', 'Universitatea Craiova' vs 'CS Universitatea Craiova'):
 
-    def _best_score(ours: str, theirs: str) -> float:
-        # Fold diacritics before scoring — Coolbet lists 'Centro Atlético
-        # Fénix' where our DB has 'Fenix', and an unfolded 'é' drops the score
-        # below threshold on an otherwise exact token match. Aliases cover the
-        # cases folding cannot: 'Austria Vienna' vs 'FK Austria Wien' is a
-        # translation, not a spelling.
-        t = _ascii(theirs)
-        return max(fuzz.token_set_ratio(_ascii(a), t) for a in _team_aliases(ours))
+      * home and away are scored SEPARATELY and we take the WORSE of the two,
+        so a strong home match cannot carry a wrong away side;
+      * kickoff is parsed from Coolbet's Estonian local time into UTC and
+        compared to ours to the minute — a fixture agreeing to the minute is
+        close to unique, which lets the name bar drop to `min_score_with_time`;
+      * a kickoff that parses and DISAGREES is a hard reject at any name score,
+        which kills same-teams-different-leg false matches.
+
+    COOLBET-SQUAD-GUARD: a reserve/youth side can never match a first team,
+    whatever the time says — that produced a fake +87pct edge on Epicbet.
+    """
+    from workers.automation.epicbet_explorer import _squad_tag
 
     best: tuple[float, UiEvent] | None = None
     for ev in events:
@@ -294,47 +358,64 @@ def pick_event(
             continue
         if _squad_tag(away) != _squad_tag(ev.away):
             continue
-        # Score both sides and take the WORSE one, so a strong home match
-        # cannot paper over a wrong away side (same rule as the API matcher).
+
+        time_ok = start_matches(ev.start_text, kickoff) if kickoff else None
+        if time_ok is False:
+            continue   # parsed and wrong — not our fixture, whatever the names say
+
         score = min(_best_score(home, ev.home), _best_score(away, ev.away))
-        if score < min_score:
+        threshold = min_score_with_time if time_ok else min_score
+        if score < threshold:
             continue
-        if kickoff and ev.start_text and not _start_plausible(ev.start_text, kickoff):
-            continue
-        if best is None or score > best[0]:
-            best = (score, ev)
+        # Prefer a time-corroborated candidate over a merely better-named one.
+        rank = score + (1000 if time_ok else 0)
+        if best is None or rank > best[0]:
+            best = (rank, ev)
     return best[1] if best else None
 
 
-def _best_pair_score(events: list[UiEvent], home: str, away: str) -> float:
-    """Best min(home, away) score across candidates — how close we got."""
-    from workers.automation.coolbet_placer import _ascii, _team_aliases
+# Estonian month abbreviations as Coolbet renders them in search results.
+_ET_MONTHS = {
+    "jaan": 1, "veebr": 2, "märts": 3, "marts": 3, "apr": 4, "mai": 5,
+    "juuni": 6, "juuli": 7, "aug": 8, "sept": 9, "okt": 10, "nov": 11, "dets": 12,
+}
 
-    best = 0.0
-    for ev in events:
-        hs = max(fuzz.token_set_ratio(_ascii(a), _ascii(ev.home)) for a in _team_aliases(home))
-        as_ = max(fuzz.token_set_ratio(_ascii(a), _ascii(ev.away)) for a in _team_aliases(away))
-        best = max(best, min(hs, as_))
-    return best
+# Coolbet renders kickoff in Estonian local time (UTC+2 winter / +3 summer).
+_SITE_TZ = "Europe/Tallinn"
 
 
-def _start_plausible(start_text: str, kickoff: datetime, *, tol_h: int = 30) -> bool:
-    """Cheap same-fixture date check on the rendered 'DD mmm HH:MM' string.
+def parse_start(start_text: str, ref: datetime | None = None) -> datetime | None:
+    """Parse '27 aug 19:00' into an aware UTC datetime, or None.
 
-    Coolbet renders local Estonian time (UTC+2/+3) with no year and a
-    localised month name, so rather than parse it we compare day-of-month
-    against the kickoff's own local day, allowing the neighbouring days to
-    absorb both the timezone offset and any month-name mismatch.
+    Coolbet prints local Estonian time with no year, so the year is taken from
+    the reference kickoff (our own DB value) and the result converted from
+    Europe/Tallinn to UTC. That makes kickoff a PRECISE signal: 27 aug 19:00
+    Tallinn is exactly 16:00 UTC, and a fixture matching to the minute is
+    close to unique — far stronger evidence than a club name that two sites
+    spell differently.
     """
-    m = re.match(r"(\d{1,2})", start_text.strip())
+    m = re.search(r"(\d{1,2})\s+([A-Za-zäöüõ]+),?\s+(\d{1,2}):(\d{2})", start_text or "")
     if not m:
-        return True
-    day = int(m.group(1))
-    ko = kickoff.astimezone(timezone.utc)
-    ok_days = {
-        (ko + timedelta(hours=off)).day for off in (-tol_h, 0, tol_h)
-    }
-    return day in ok_days
+        return None
+    day, mon_s, hh, mm = int(m.group(1)), m.group(2).lower(), int(m.group(3)), int(m.group(4))
+    month = _ET_MONTHS.get(mon_s) or _ET_MONTHS.get(mon_s[:4]) or _ET_MONTHS.get(mon_s[:3])
+    if not month:
+        return None
+    year = (ref or datetime.now(timezone.utc)).year
+    try:
+        from zoneinfo import ZoneInfo
+        local = datetime(year, month, day, hh, mm, tzinfo=ZoneInfo(_SITE_TZ))
+    except Exception:
+        return None
+    return local.astimezone(timezone.utc)
+
+
+def start_matches(start_text: str, kickoff: datetime, *, tol_min: int = 5) -> bool | None:
+    """True/False if the rendered kickoff matches ours; None if unparseable."""
+    got = parse_start(start_text, kickoff)
+    if got is None:
+        return None
+    return abs((got - kickoff.astimezone(timezone.utc)).total_seconds()) <= tol_min * 60
 
 
 # ── match page ────────────────────────────────────────────────────────────────
@@ -993,14 +1074,28 @@ def stage_bet(
     if dirty:
         return _fail("login", f"betslip is not empty ({dirty} selection(s)) — clear it first")
 
-    try:
-        events = search_events(page, home)
-    except Exception as e:
-        return _fail("search", f"search failed: {type(e).__name__}: {str(e)[:120]}")
+    # Try several query shapes — Coolbet's search is punctuation-sensitive and
+    # our DB names often miss it entirely. pick_event still vets every result,
+    # so a looser query cannot produce a looser match.
+    events: list[UiEvent] = []
+    ev = None
+    for q in search_queries(home, away):
+        try:
+            found = search_events(page, q)
+        except Exception as e:
+            log.debug("search %r failed: %s", q, e)
+            continue
+        if not found:
+            continue
+        events = found
+        ev = pick_event(found, home, away, bet.get("match_date"))
+        if ev is not None:
+            if q.lower() != home.lower():
+                notes.append(f"matched via query {q!r}")
+            break
     if not events:
         return _fail("search", f"no search results for {home!r}")
 
-    ev = pick_event(events, home, away, bet.get("match_date"))
     if ev is None:
         # Separate the two very different causes. A fixture Coolbet does not
         # offer is a correct refusal (22 de Julio v Santo Domingo: Coolbet

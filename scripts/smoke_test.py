@@ -25823,6 +25823,7 @@ def _():
 def test_coolbet_ui_placer_2026_08_27():
     """COOLBET-UI-PLACER-2026-08-27 — place at Coolbet by driving the UI, so the
     path has no Imperva cookie-freshness dependency. Stage-only by default."""
+    import datetime as _dt
     import inspect
     import pathlib
     from workers.automation import coolbet_ui_placer as up
@@ -25990,6 +25991,31 @@ def test_coolbet_ui_placer_2026_08_27():
     # from a manual run overlapping the scheduled one.
     assert "single_run_lock" in runner and "LOCK_NB" in runner, \
         "a second pass must refuse rather than fight for the browser"
+
+    # Coolbet's search does not tolerate our full DB team names. Verified live:
+    # "Ararat-Armenia" returned 10 results NOT containing the fixture, while
+    # "ararat" returned it second — the hyphen breaks their tokeniser.
+    assert up.search_queries("Ararat-Armenia", "Universitatea Craiova")[0] == "Ararat"
+    assert "FC ST. Gallen" not in up.search_queries("FC ST. Gallen", "X")[:1]
+
+    # Kickoff is the strongest evidence available: Coolbet prints Estonian
+    # local time, and 27 aug 19:00 Tallinn is exactly 16:00 UTC. A fixture
+    # agreeing to the minute is close to unique, so names spelled differently
+    # across platforms stop being the deciding factor.
+    ko = _dt.datetime(2026, 8, 27, 16, 0, tzinfo=_dt.timezone.utc)
+    assert up.parse_start("27 aug 19:00", ko) == ko, "Tallinn->UTC conversion"
+    assert up.start_matches("27 aug 19:00", ko) is True
+    assert up.start_matches("21 aug 19:00", ko) is False
+
+    right = up.UiEvent("1", "/x", "", "FC Ararat-Armenia", "CS Universitatea Craiova", "27 aug 19:00")
+    assert up.pick_event([right], "Ararat-Armenia", "Universitatea Craiova", ko) is not None
+    # Same teams, wrong leg — a parsed-and-disagreeing kickoff is a hard reject
+    # at any name score.
+    wrong_leg = up.UiEvent("2", "/y", "", "FC Ararat-Armenia", "CS Universitatea Craiova", "21 aug 19:00")
+    assert up.pick_event([wrong_leg], "Ararat-Armenia", "Universitatea Craiova", ko) is None
+    # And a perfect kickoff must NOT let a reserve side through.
+    res = up.UiEvent("3", "/z", "", "Rosario Central Res.", "Boca Res.", "27 aug 19:00")
+    assert up.pick_event([res], "Rosario Central", "Boca Juniors", ko) is None
 
     # The plist must never place a bet merely by being loaded.
     plist = pathlib.Path("local/launchd/com.oddsintel.coolbet-ui-placer.plist").read_text()
