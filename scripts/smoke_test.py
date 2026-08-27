@@ -25944,6 +25944,18 @@ def test_coolbet_ui_placer_2026_08_27():
     assert "KICKOFF_CUTOFF_MIN" in runner, "must not place into a starting match"
     assert "MARK_PLACED" in runner and "MARK_CHECKED" in runner
 
+    # The loop must recover its own session — the login is fully scripted, so
+    # an unattended pass does not need a human unless Coolbet asks for SMS.
+    assert "cdp_auto_login" in runner, "runner must re-login on its own"
+
+    # The betslip lives in localStorage; resetting the key is what makes the
+    # loop self-clearing. Clicking the per-selection trash icon does NOT work:
+    # it ignores dispatched MouseEvents and a real click times out on an icon
+    # clipped at the viewport edge.
+    empty_src = inspect.getsource(up.empty_slip)
+    assert "betSlipSettings" in empty_src, "slip reset must go through localStorage"
+    assert "reload" in empty_src, "storage reset only takes effect after a reload"
+
     # The plist must never place a bet merely by being loaded.
     plist = pathlib.Path("local/launchd/com.oddsintel.coolbet-ui-placer.plist").read_text()
     assert "<key>RunAtLoad</key>\n    <false/>" in plist, \

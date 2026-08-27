@@ -161,10 +161,29 @@ def main() -> int:
     placed = staged = rejected = skipped_done = 0
     with sync_playwright() as pw:
         browser, page = up.attach(pw)
+
+        # Self-heal the session. The login is fully scripted — cdp_auto_login
+        # fills COOLBET_USER/COOLBET_PASS from .env and clicks Logi sisse — so
+        # an unattended pass recovers on its own instead of needing a human.
+        # The ONLY step no script can take is an SMS challenge, which Coolbet
+        # asks for rarely because the reese84 marker survives session lapses.
         if not up.is_logged_in(page):
-            print("NOT LOGGED IN — run: "
-                  "venv/bin/python -m workers.automation.coolbet_browser_sync --cdp-auto-login")
-            return 2
+            print("session lost — logging in…")
+            from workers.automation.coolbet_browser_sync import cdp_auto_login
+            try:
+                rc = cdp_auto_login()
+            except Exception as e:
+                print(f"auto-login raised: {type(e).__name__}: {str(e)[:120]}")
+                rc = 1
+            if rc != 0:
+                print("AUTO-LOGIN FAILED — if Coolbet asked for SMS, complete it "
+                      "in the browser; otherwise check COOLBET_USER/COOLBET_PASS.")
+                return 2
+            browser, page = up.attach(pw)
+            if not up.is_logged_in(page):
+                print("still not logged in after auto-login — aborting")
+                return 2
+            print("session restored.")
 
         from datetime import datetime, timedelta, timezone
         now = datetime.now(timezone.utc)

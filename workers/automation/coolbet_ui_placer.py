@@ -556,47 +556,46 @@ def slip_ticket_count(page) -> int:
     return int(m.group(1)) if m else 0
 
 
-def empty_slip(page, *, tries: int = 8) -> int:
+def empty_slip(page, *, tries: int = 3) -> int:
     """Empty the betslip. Returns the ticket count left behind (0 = clean).
 
-    Each selection card carries a small trash <svg> with no label, id or
-    data-test — so it is found by SHAPE and CONTEXT: a ~16px icon whose
-    enclosing div also contains an odds-looking number ('Viik 3.35'). That is
-    the only stable handle Coolbet gives; class names are hashed CSS modules.
+    Coolbet persists the slip in localStorage under `betSlipSettings` as
+    `betSlipMarketIdToOutcomeId` — which is why selections survive navigation
+    and why a slip left dirty by one pass blocks every pick on the next. Reset
+    the key and reload, and the slip comes back empty.
 
-    This matters for periodic running: selections survive navigation, so a slip
-    left dirty by an earlier pass blocks every pick on the next one.
+    This replaces clicking the per-selection trash icon, which could be located
+    reliably (a ~16px svg beside the odds text) but not clicked: it ignores
+    dispatched MouseEvents (React) and a real Playwright click times out
+    because the icon sits at the very right edge of the viewport, partially
+    clipped. The storage path has no such dependency on layout or theme.
+
+    The sibling keys are cleared too so a stray parlay or bet-builder
+    selection cannot leave the counter non-zero after a 1X2 reset.
     """
+    if slip_ticket_count(page) == 0:
+        return 0
     for _ in range(tries):
-        n = slip_ticket_count(page)
-        if n == 0:
-            return 0
-        # Real Playwright click, not a dispatched MouseEvent: React ignores
-        # synthetic events on these icons (the same trap as the OU line tabs).
-        svgs = page.locator("svg")
-        clicked = False
-        for i in range(min(svgs.count(), 200)):
-            el = svgs.nth(i)
-            try:
-                box = el.bounding_box()
-                if not box or box["width"] > 26 or box["width"] < 6:
-                    continue
-                near = el.evaluate(
-                    r"""el => {
-                          const d = el.closest('div');
-                          return (d ? d.innerText : '').replace(/\s+/g, ' ').trim();
-                       }"""
-                )
-                if not re.search(r"\d+[.,]\d{2}", near or ""):
-                    continue
-                el.click(timeout=3000, force=True)
-                clicked = True
-                break
-            except Exception:
-                continue
-        if not clicked:
+        try:
+            page.evaluate(
+                r"""() => {
+                      const blank = ts => JSON.stringify(
+                        {betSlipMarketIdToOutcomeId: {}, updatedAt: ts});
+                      const now = 0;  // Coolbet only reads this for ordering
+                      localStorage.setItem('betSlipSettings', blank(now));
+                      localStorage.setItem('parlayCardSettings', blank(now));
+                      localStorage.setItem('betbuilderBetslipIdByMarketId', '{}');
+                      localStorage.setItem('betSlipBetbuilderSettings',
+                        JSON.stringify({selectedSelectionsByMatchId: {}, updatedAt: now}));
+                   }"""
+            )
+        except Exception as e:
+            log.warning("could not reset betslip storage: %s", e)
             break
-        page.wait_for_timeout(1200)
+        page.reload(wait_until="domcontentloaded", timeout=25000)
+        page.wait_for_timeout(3000)
+        if slip_ticket_count(page) == 0:
+            return 0
     return slip_ticket_count(page)
 
 
