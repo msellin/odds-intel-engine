@@ -10,11 +10,15 @@ Conditions checked:
   2. Odds coverage (09:15): Pinnacle odds missing for >10 of today's scheduled matches
   3. Snapshot staleness (hourly 10-23 UTC): no live snapshot in last 25 min during active window
   4. Settlement check (21:30): 0 results settled when >5 bets were pending before settlement
+  5. Signal silence (hourly 10-23 UTC): picks eligible for Telegram but unsent past a
+     grace period, or no picks produced at all for 48h (SIGNAL-SILENCE-ALERT)
 
 Each condition logs to console always. Email fires only when the condition is true.
 One alert per condition per UTC day (deduped in memory via a simple set — process-level only).
 
-Requires: RESEND_API_KEY + ADMIN_ALERT_EMAIL in .env.
+Requires: RESEND_API_KEY + ADMIN_ALERT_EMAIL in .env. The signal-silence check
+additionally sends a Telegram leg (TELEGRAM_BOT_TOKEN) — see _notify_telegram
+for why both channels are load-bearing there.
 """
 
 import os
@@ -640,7 +644,7 @@ def check_dashboard_cache_stale() -> None:
     """CACHE-FRESHNESS-WATCHDOG 2026-06-01 — VPS_cache_refresh
     job stopped running 14:35 UTC today; the staleness went unnoticed until a
     user spotted misleading numbers on /performance 3h later. This check fires
-    a Telegram alert when the latest dashboard_cache row is > 60 min old —
+    an email alert when the latest dashboard_cache row is > 60 min old —
     well outside the 30-min cron cadence, conservatively avoids false positives
     during scheduler restarts.
     """
@@ -670,6 +674,165 @@ def check_dashboard_cache_stale() -> None:
             f"may confuse visitors. Restart the VPS or investigate the scheduler "
             f"thread pool.</p>"
         )
+
+
+# SIGNAL-SILENCE-ALERT (2026-08-27) — grace period before an unsignaled
+# candidate counts as "stuck". betting_refresh runs at 09:30/11:00/13:30/
+# 15:00/17:30/19:00/20:30 UTC, so the widest legitimate gap between two
+# signal opportunities is ~2.5h. 180 min clears that gap without letting a
+# real outage sit unreported for more than one extra cycle.
+SIGNAL_STUCK_AFTER_MIN = 180
+
+# Condition B: the pipeline producing nothing at all for this long is
+# itself a fault. Deliberately generous — pick volume swings hard by
+# fixture list (34 one day, 3 the next), so anything tighter than two full
+# days would cry wolf on a thin weekend.
+NO_PICKS_AFTER_HOURS = 48
+
+
+def _notify_telegram(text: str, dedup_key: str) -> None:
+    """Best-effort Telegram leg for an alert. Never raises — email is the
+    independent second channel and must still go out if this fails.
+
+    Note the deliberate circularity limit: an alert about Telegram silence
+    is itself sent over Telegram. That is fine for the failure class this
+    was built for (SIGNAL-PAUSE-DECOUPLE — signaling was muted by *logic*,
+    a pause gate, while the transport stayed perfectly healthy), and this
+    path calls send_telegram directly with no pause gate in front of it.
+    It does NOT cover a dead bot token or a Telegram outage — that is what
+    the email leg is for. Do not drop the email leg on the grounds that
+    Telegram is faster.
+    """
+    try:
+        from workers.notify.telegram import send_telegram
+        send_telegram(text, dedup_key=dedup_key, dedup_window_s=6 * 3600)
+    except Exception as e:
+        console.print(f"[yellow]signal-silence Telegram leg failed: {e}[/yellow]")
+
+
+def check_signal_silence() -> None:
+    """SIGNAL-SILENCE-ALERT (2026-08-27) — nothing alerted when Telegram
+    signals stopped for 4 days (2026-08-23 → 08-27, 12 picks unsent).
+
+    The pause that caused it showed as a red glyph on /status and the daily
+    summary, but nothing *pushed*. Both surfaces are pull-only, so "0
+    signals today" and "no qualifying picks today" looked identical from
+    every angle — the same silent-failure class as the InplayBot UUID bug.
+
+    Two conditions, deliberately complementary:
+
+      A. Picks exist that SHOULD have signaled and haven't. Detected by
+         calling load_signal_candidates() — the signaler's own selection
+         query — rather than reimplementing its WHERE clause here. That
+         matters: the candidate set has non-obvious gating (per-market
+         edge floors, the 36h lookahead, real_bets dedup, combo exclusion,
+         DISTINCT ON collapsing multi-bot picks). A hand-rolled copy would
+         drift from the real gate and alert on picks that were never
+         eligible. If the signaler's definition changes, this check
+         follows it for free.
+
+      B. The inverse — no picks produced at all for NO_PICKS_AFTER_HOURS.
+         Condition A is structurally blind to this: zero candidates means
+         zero stuck candidates, so a pipeline producing nothing looks
+         exactly like a pipeline whose output all went out fine.
+
+    Fires at most once per condition per day per channel.
+    """
+    # --- Condition B: pipeline produced nothing at all ---------------
+    rows = execute_query(
+        "SELECT MAX(created_at) AS t FROM simulated_bets"
+    )
+    last_pick = rows[0]["t"] if rows else None
+    now_utc = datetime.now(timezone.utc)
+    if last_pick is not None:
+        if last_pick.tzinfo is None:
+            last_pick = last_pick.replace(tzinfo=timezone.utc)
+        pick_age_h = (now_utc - last_pick).total_seconds() / 3600
+        console.print(
+            f"[dim]health_alerts: last pick produced {pick_age_h:.1f}h ago[/dim]"
+        )
+        if pick_age_h > NO_PICKS_AFTER_HOURS:
+            msg = (
+                f"⚠️ No picks produced for {pick_age_h:.0f}h "
+                f"(last: {last_pick.strftime('%Y-%m-%d %H:%M UTC')}). "
+                f"The betting pipeline may be failing silently — check "
+                f"pipeline_runs for betting/betting_refresh."
+            )
+            _notify_telegram(msg, dedup_key="signal-silence-no-picks")
+            _alert_once(
+                "no_picks_produced",
+                f"No picks produced for {pick_age_h:.0f}h",
+                f"<p>The most recent <code>simulated_bets</code> row is "
+                f"{pick_age_h:.0f} hours old (last write "
+                f"{last_pick.strftime('%Y-%m-%d %H:%M UTC')}).</p>"
+                f"<p>Pick volume swings a lot by fixture list, so this "
+                f"threshold is deliberately generous — {NO_PICKS_AFTER_HOURS}h "
+                f"of nothing is not a thin weekend, it is a fault. Check "
+                f"<code>pipeline_runs</code> for the betting jobs.</p>",
+            )
+
+    # --- Condition A: eligible picks are not being signaled -----------
+    try:
+        from workers.automation.coolbet_signaler import load_signal_candidates
+        candidates = load_signal_candidates()
+    except Exception as e:
+        console.print(f"[yellow]health_alerts signal-silence load error: {e}[/yellow]")
+        return
+
+    if not candidates:
+        console.print("[dim]health_alerts: no unsignaled candidates[/dim]")
+        return
+
+    ids = [str(c["simulated_bet_id"]) for c in candidates]
+    age_rows = execute_query(
+        "SELECT MIN(created_at) AS t FROM simulated_bets WHERE id = ANY(%s::uuid[])",
+        (ids,),
+    )
+    oldest = age_rows[0]["t"] if age_rows else None
+    if oldest is None:
+        return
+    if oldest.tzinfo is None:
+        oldest = oldest.replace(tzinfo=timezone.utc)
+    stuck_min = (now_utc - oldest).total_seconds() / 60
+    console.print(
+        f"[dim]health_alerts: {len(candidates)} unsignaled candidate(s), "
+        f"oldest {stuck_min:.0f} min[/dim]"
+    )
+    if stuck_min <= SIGNAL_STUCK_AFTER_MIN:
+        return  # within a normal gap between betting_refresh windows
+
+    # Surface the pause state in the alert — an operator /pause is a
+    # legitimate cause and the operator should see that immediately
+    # rather than going digging for it.
+    try:
+        from workers.automation.coolbet_state import is_placement_paused
+        paused, pause_reason = is_placement_paused()
+    except Exception:
+        paused, pause_reason = (False, None)
+    pause_note = (
+        f" Placement is PAUSED (reason: {pause_reason or 'none given'})."
+        if paused else ""
+    )
+
+    msg = (
+        f"⚠️ {len(candidates)} pick(s) eligible for Telegram but unsent — "
+        f"oldest {stuck_min:.0f} min old.{pause_note} "
+        f"Signals should fire every betting_refresh window."
+    )
+    _notify_telegram(msg, dedup_key="signal-silence-stuck")
+    _alert_once(
+        "signal_silence",
+        f"{len(candidates)} pick(s) eligible but never signaled",
+        f"<p><code>load_signal_candidates()</code> returns "
+        f"{len(candidates)} pick(s) that pass every signaling gate, and the "
+        f"oldest has been waiting {stuck_min:.0f} minutes — past the "
+        f"{SIGNAL_STUCK_AFTER_MIN}-minute grace period that covers the "
+        f"widest normal gap between betting_refresh windows.</p>"
+        f"<p>{'<b>Placement is paused: ' + str(pause_reason) + '</b>' if paused else 'Placement is not paused.'}</p>"
+        f"<p>Likely causes: an operator <code>/pause</code> still in force "
+        f"(this mutes signaling by design), a wedged scheduler so "
+        f"betting_refresh never runs, or a Telegram send failing.</p>",
+    )
 
 
 def run_morning_checks() -> None:
@@ -714,6 +877,10 @@ def run_snapshot_check() -> None:
         ("meta_score_drift", check_meta_score_drift),
         ("stale_retirement_flags", check_stale_retirement_flags),
         ("dashboard_cache_stale", check_dashboard_cache_stale),
+        # SIGNAL-SILENCE-ALERT 2026-08-27 — hourly is the right cadence:
+        # fast enough to catch a mute within one betting_refresh window,
+        # slow enough that the per-day dedup keeps it to one buzz.
+        ("signal_silence", check_signal_silence),
     ]:
         try:
             fn()

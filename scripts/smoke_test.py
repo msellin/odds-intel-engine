@@ -4995,6 +4995,85 @@ def test_coolbet_daemon_selfpause():
     )
 
 
+@test("SIGNAL-SILENCE-ALERT — pushes when eligible picks go unsignaled, or when no picks are produced at all")
+def test_signal_silence_alert():
+    """SIGNAL-SILENCE-ALERT (2026-08-27): the 4-day Telegram mute
+    (SIGNAL-PAUSE-DECOUPLE) produced no alert of any kind. /status and the
+    daily summary both showed the paused glyph, but both are pull-only —
+    "0 signals today" and "no qualifying picks today" were
+    indistinguishable from every surface.
+
+    Pin the invariants that make the check trustworthy:
+      (a) it reuses load_signal_candidates() rather than reimplementing
+          the signaler's WHERE clause — a hand-rolled copy would drift
+          from the real gate (per-market edge floors, 36h lookahead,
+          real_bets dedup, combo exclusion) and alert on ineligible picks;
+      (b) BOTH channels fire — an alert about Telegram silence sent only
+          over Telegram cannot report a dead bot token;
+      (c) condition B (no picks produced at all) exists — condition A is
+          structurally blind to it, since zero candidates means zero stuck
+          candidates;
+      (d) it is wired into the hourly bundle, not merely defined;
+      (e) the grace period covers the widest betting_refresh gap (~2.5h)
+          so a normal window gap can't cry wolf."""
+    import pathlib
+    src = pathlib.Path("workers/jobs/health_alerts.py").read_text()
+
+    assert "def check_signal_silence(" in src, (
+        "check_signal_silence must exist in health_alerts."
+    )
+    body = src[src.index("def check_signal_silence("):src.index("def run_morning_checks(")]
+
+    # (a) reuse the signaler's own selection, don't re-derive it.
+    assert "load_signal_candidates" in body, (
+        "Must call load_signal_candidates() — reimplementing the "
+        "signaler's gating here would drift and produce false alerts."
+    )
+    assert "signaled_at IS NULL" not in body, (
+        "Must NOT hand-roll the candidate WHERE clause — that is exactly "
+        "the drift load_signal_candidates() is reused to avoid."
+    )
+
+    # (b) both channels, independently.
+    assert "_notify_telegram" in body, "Telegram leg required."
+    assert "_alert_once" in body, (
+        "Email leg required — Telegram alone cannot report a dead bot "
+        "token or a Telegram outage."
+    )
+
+    # (c) the inverse condition.
+    assert "NO_PICKS_AFTER_HOURS" in body, (
+        "Condition B (no picks produced at all) must be checked — "
+        "condition A cannot detect it."
+    )
+    assert "MAX(created_at)" in body, (
+        "Condition B must read the newest simulated_bets row."
+    )
+
+    # (e) grace period clears the widest normal betting_refresh gap.
+    assert "SIGNAL_STUCK_AFTER_MIN" in src
+    ns: dict = {}
+    for line in src.splitlines():
+        if line.startswith(("SIGNAL_STUCK_AFTER_MIN", "NO_PICKS_AFTER_HOURS")):
+            exec(line, ns)  # noqa: S102 — module-level int constants only
+    assert ns["SIGNAL_STUCK_AFTER_MIN"] >= 150, (
+        "Grace period must clear the widest betting_refresh gap (~2.5h) — "
+        f"got {ns['SIGNAL_STUCK_AFTER_MIN']}min, which will fire on a "
+        "normal window gap."
+    )
+    assert ns["NO_PICKS_AFTER_HOURS"] >= 24, (
+        "No-picks threshold must be generous — pick volume swings hard by "
+        f"fixture list (34 one day, 3 the next); got {ns['NO_PICKS_AFTER_HOURS']}h."
+    )
+
+    # (d) actually wired into the hourly bundle.
+    bundle = src[src.index("def run_snapshot_check("):src.index("def run_settlement_check(")]
+    assert "check_signal_silence" in bundle, (
+        "check_signal_silence must be registered in run_snapshot_check — "
+        "defining it without wiring it is the same silent gap it fixes."
+    )
+
+
 @test("SELFPAUSE-STICKY-FIX — daemon self-pause auto-clears across a daemon restart")
 def test_selfpause_sticky_fix():
     """SELFPAUSE-STICKY-FIX (2026-08-27): the auto-clear used to live

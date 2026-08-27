@@ -105,7 +105,11 @@ Telegram public channel posting — every calibrated-maturity pre-match pick (1x
 | Daemon self-pause | starts `daemon self-pause` | stopped | **continues** |
 
 A daemon self-pause means the Mac daemon hit a sustained Coolbet outage — a placement-side problem. Signals are notification-only (no Coolbet API calls, no `real_bets` writes), so they keep flowing; the public channel doesn't touch Coolbet at all. Both call sites discriminate via `coolbet_state.is_daemon_self_pause()`. Before this split, a daemon self-pause silenced every Telegram signal for 4 days (2026-08-23 → 08-27, 12 picks) with nothing erroring.
-10-22  ⑬ Health Alert    run_snapshot_check()      Hourly: alerts if last LivePoller snapshot >25min stale
+
+**Silence tripwire (SIGNAL-SILENCE-ALERT, 2026-08-27).** `health_alerts.check_signal_silence()` runs in the hourly 10-22 UTC bundle and pushes on two complementary conditions: (A) `load_signal_candidates()` returns picks that pass every signaling gate but the oldest has waited > `SIGNAL_STUCK_AFTER_MIN` (180 min — clears the widest betting_refresh gap of ~2.5h); (B) no `simulated_bets` row written for > `NO_PICKS_AFTER_HOURS` (48h), which condition A is structurally blind to. Condition A reuses the signaler's own candidate query rather than reimplementing it, so it can't drift from the real gate. Alerts go to **both** Telegram and email — an alert about Telegram silence sent only over Telegram can't report a dead bot token. An active pause is named in the alert text so an operator `/pause` is immediately obvious as the cause.
+10-22  ⑬ Health Alert    run_snapshot_check()      Hourly: alerts if last LivePoller snapshot >25min stale,
+                                                 or if picks are eligible for Telegram but unsent >180min,
+                                                 or if no picks produced at all for 48h (SIGNAL-SILENCE-ALERT)
 ```
 
 ### 🍎 Mac-side jobs (launchd, operator's Mac only)
