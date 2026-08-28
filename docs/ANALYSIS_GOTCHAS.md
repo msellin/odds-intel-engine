@@ -230,6 +230,35 @@ Scoped and rejected on 2026-08-28: `COOLBET-DC-BOT-SCOPE-2026-08-28`.
 
 ---
 
+## 16. You cannot compute AH CLV by fixing the handicap line
+
+Pinnacle quotes a LADDER of Asian handicap lines simultaneously — **7 to 10+
+distinct lines per match** — not one line that moves. So "the last Pinnacle
+quote at handicap -1.0" is not a closing price: it is the last time that
+*rung* was priced, which averages **12.78 hours before kickoff** (median 0.5h,
+i.e. strongly bimodal — some rungs are quoted to the whistle, others are
+abandoned early).
+
+Measured 2026-08-28 on a Coolbet AH backtest: comparing the taken price to the
+last quote at the same fixed line gave **+19.13% mean CLV at t=+7.75** — which
+would be an enormous edge — while the same picks returned **-15.33% ROI**.
+Gotcha 8 records that CLV normally runs ~1:1 with ROI, and that per-bet CLV sd
+is ~9%; this measurement's sd was **24.3%**. Every diagnostic said the metric
+was broken, not that a huge edge had been found.
+
+**If you need AH CLV**, you must compare like for like — either the closing
+price at whatever rung Pinnacle finished on, converted to a common basis, or
+restrict to lines still actively quoted near kickoff. Do not fix the line and
+call the last row a close.
+
+The same shape has now appeared three times in one day: fixed-line AH "CLV",
+stale cross-book pairing inventing +55% DC edges, and Asian-handicap rows
+grouped without `handicap_line` producing a fake +17% favourite drift. **When a
+number looks too good in this dataset, check what it is being compared against
+before believing it.**
+
+---
+
 ## Re-runnable analysis scripts (all committed 2026-08-26)
 
 | script | answers |
