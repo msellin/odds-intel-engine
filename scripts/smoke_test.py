@@ -19818,30 +19818,62 @@ def test_bot_gate_reachable():
     again. It is source-inspection only (no DB) so it runs in CI.
     """
     import pathlib as _p
+    import re
     src = _p.Path("scripts/weekly_bot_review.py").read_text()
 
-    # --- Fix 1: a paper-evidence promotion path exists, with its own bars ---
-    for const in (
-        "MIN_PAPER_BETS_FOR_VERDICT",
-        "PROMOTE_PAPER_ROI_PCT",
-        "PROMOTE_PAPER_CLV_PCT",
-        "PROMOTE_PAPER_ROI_NO_CLV_PCT",
-        "DEMOTE_PAPER_ROI_PCT",
-        "MIN_PAPER_SPAN_DAYS",
-    ):
+    # --- Fix 1: a paper-evidence promotion path exists, gated on a t-test ---
+    for const in ("PROMOTE_T", "RETIRE_T", "CLV_MIN_N",
+                  "MIN_SETTLED_FOR_DECISION", "MIN_DAYS_FOR_DECISION"):
         assert const in src, (
             f"weekly_bot_review.py must expose {const} — the paper-evidence "
             f"path is the ONLY promotion route a non-calibrated bot can walk, "
             f"since real_bets is gated on maturity=calibrated"
         )
 
-    # The paper path must not itself depend on real_bets. If a future edit
-    # adds `real_n >=` into the paper branch the catch-22 returns.
-    paper_branch = src[src.index("# Paper path — the reachable one"):src.index("# ---- HOLD")]
-    assert "real_n" not in paper_branch, (
-        "the paper promotion path must not reference real_n — requiring real "
-        "bets is exactly the catch-22 this task removed"
+    # The gate must be a SIGNIFICANCE test, not a raw ROI level.
+    # SHADOW-PROMOTION-GATE-2026-08-26 measured a raw-threshold gate promoting a
+    # break-even bot 42.8% of the time, and the first cut of this task's paper
+    # path demoted a break-even bot 24.4% of the time at n=100 (ROI SE ~13pp
+    # makes a -10% threshold a t of -0.75). Pin the t-test so that regresses
+    # loudly rather than silently.
+    assert "def _t_stat" in src, (
+        "the gate must compute a t-statistic — a raw ROI/CLV threshold is "
+        "cleared whenever noise lands above it, and raising n does not fix it"
     )
+    assert "gate_t >= PROMOTE_T" in src and "gate_t <= RETIRE_T" in src, (
+        "PROMOTE/DEMOTE must compare the t-statistic against PROMOTE_T/RETIRE_T"
+    )
+
+    # The paper path must not depend on real_bets. If a future edit puts a
+    # real-bet requirement back into the gate, the catch-22 returns. The one
+    # allowed reference is the explicitly-labelled real-money tripwire.
+    gate_branch = src[src.index("    # ---- Not enough evidence to decide"):]
+    gate_branch = gate_branch[:gate_branch.index("def _fmt_pct")]
+    assert "real_n" not in gate_branch, (
+        "the t-statistic gate must not reference real_n — requiring real bets "
+        "is exactly the catch-22 this task removed. The real-money tripwire "
+        "lives above this block and is scoped to calibrated bots only."
+    )
+
+    # Both surfaces must decide with the SAME numbers. Two gates disagreeing on
+    # the same question is how a bot gets promoted on one and retired on the
+    # other.
+    admin = _p.Path(
+        "../odds-intel-web/src/app/(app)/admin/shadow-bots/page.tsx"
+    )
+    if admin.exists():
+        admin_src = admin.read_text()
+        for const, val in (("PROMOTE_T", "1.65"), ("RETIRE_T", "-1.65"),
+                           ("CLV_MIN_N", "100"),
+                           ("MIN_SETTLED_FOR_DECISION", "200"),
+                           ("MIN_DAYS_FOR_DECISION", "14")):
+            assert f"{const} = {val}" in admin_src, (
+                f"admin shadow-bots page must keep {const} = {val}"
+            )
+            assert re.search(rf"^{const}\s+= {re.escape(val)}", src, re.M), (
+                f"weekly_bot_review.py must keep {const} = {val} to match the "
+                f"admin gate — the two surfaces must not diverge"
+            )
 
     # --- Fix 2: the shadow ledger is read, and via the deduped VIEW ---------
     assert "def _fetch_shadow_bets" in src, (
@@ -19873,29 +19905,36 @@ def test_bot_gate_reachable():
     )
 
     # --- Fix 3: no-CLV bots are scored, not silently excluded --------------
-    assert "def _has_clv_data" in src, (
-        "must detect bots that structurally cannot produce CLV (inplay_*) so "
-        "they are scored on a stiffer ROI bar instead of being permanently "
-        "ineligible for promotion"
+    # inplay_* and BTTS bots have no closing-line anchor, so a CLV gate would
+    # leave them permanently ineligible. They fall back to the ROI t-test at a
+    # much larger n — slower, which is the true cost of an unanchored market,
+    # and the digest names it rather than hiding it.
+    assert "def _gate_inputs" in src and "no CLV anchor" in src, (
+        "bots with no CLV anchor must fall back to the ROI t-test rather than "
+        "being silently ineligible for promotion forever"
     )
 
     # --- DEMOTE must apply at any maturity, not calibrated-only ------------
-    demote_paper = src[src.index("    # Paper path — applies at ANY maturity"):]
-    demote_paper = demote_paper[:demote_paper.index("# ---- PROMOTE")]
-    assert "is_calibrated" not in demote_paper, (
-        "the paper DEMOTE branch must NOT be gated on maturity — a beta bot "
-        "bleeding paper money (bot_summer_specialist, -56% ROI) is visible to "
-        "every signed-in user on /picks and must be demotable"
+    # A beta bot bleeding money is visible to every signed-in user on /picks,
+    # so it must be demotable. Before this task DEMOTE required
+    # maturity == 'calibrated' and bot_summer_specialist sat at -56% ROI
+    # keeping its beta label indefinitely.
+    demote_line = "    if gate_t <= RETIRE_T:"
+    assert demote_line in src, "DEMOTE must be driven by the t-statistic"
+    demote_branch = src[src.index(demote_line):]
+    demote_branch = demote_branch[:demote_branch.index("if gate_t >= PROMOTE_T")]
+    assert "is_calibrated" not in demote_branch, (
+        "the t-gate DEMOTE branch must NOT be gated on maturity — a beta bot "
+        "bleeding paper money must be demotable"
     )
 
     # --- Promotion needs persistence, not just volume ----------------------
     # bot_pin_1x2_home_v1 reached n=104 in 6 days. Sample size alone is not
-    # evidence of durability.
-    assert "paper_span_days >= MIN_PAPER_SPAN_DAYS" in src, (
-        "paper promotion must require the picks to SPAN MIN_PAPER_SPAN_DAYS, "
-        "so a single hot week cannot clear the n>=100 bar"
+    # evidence of durability, so the picks must also span an observation window.
+    assert "observation_days < MIN_DAYS_FOR_DECISION" in src, (
+        "promotion must require the picks to span MIN_DAYS_FOR_DECISION, so a "
+        "single hot week cannot clear the n threshold"
     )
-    assert "def _paper_span_days" in src, "span helper must exist"
 
     # --- Promotion stays manual -------------------------------------------
     # The review emits a verdict; the maturity_label change is a hand-written
@@ -19958,9 +19997,9 @@ def test_bot_maturity_review_weekly():
     assert 'is_calibrated = maturity == "calibrated"' in script_src, (
         "verdict must derive is_calibrated from maturity == 'calibrated'"
     )
-    assert 'if is_calibrated:' in script_src and '"already calibrated"' in script_src, (
-        "PROMOTE paths must be unreachable for calibrated bots — the "
-        "is_calibrated early-return is what enforces that"
+    assert 'if is_calibrated:' in script_src and 'already calibrated' in script_src, (
+        "the PROMOTE branch must be unreachable for calibrated bots — the "
+        "is_calibrated guard is what enforces that"
     )
 
     # Scheduler hook
@@ -26181,6 +26220,21 @@ def test_coolbet_ui_placer_2026_08_27():
     # from a manual run overlapping the scheduled one.
     assert "single_run_lock" in runner and "LOCK_NB" in runner, \
         "a second pass must refuse rather than fight for the browser"
+
+    # BLOCK DETECTION (2026-08-28). Coolbet served an Imperva interstitial — a
+    # ~1KB document with an empty body and an _Incapsula_Resource iframe —
+    # after a day of heavy automated traffic from one IP. is_logged_in was a
+    # NEGATIVE check (no password field == logged in), so a block page read as
+    # a healthy session and the placer walked into failure after failure.
+    login_src = inspect.getsource(up.is_logged_in)
+    assert "detect_block" in login_src, "a block must not read as a healthy session"
+    block_src = inspect.getsource(up.detect_block)
+    assert "_Incapsula_Resource" in block_src
+    # A block is not a login problem: re-logging in adds traffic from an
+    # already-flagged IP. The pass must abort, not retry.
+    assert "BLOCKED:" in stage_src_ou
+    assert "ABORT" in runner and "will recover on its own" in runner, \
+        "a blocked pass must stop, not hammer the IP pick by pick"
 
     # REAL-MONEY ALLOWLIST (2026-08-28). Experimental bots must be able to run
     # the whole pipeline — matching, pricing, snapshots, audit rows — with no

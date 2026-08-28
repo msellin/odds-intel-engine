@@ -101,26 +101,48 @@ PROMOTE_REAL_ROI_PCT   = 10.0   # real ROI > +10%
 PROMOTE_SIM_CLV_PCT    = 5.0    # paper CLV > +5%
 DEMOTE_REAL_ROI_PCT    = -5.0   # real ROI < -5%
 
-# --- Paper path (BOT-GATE-REACHABLE 2026-08-28) ------------------------------
+# --- Paper path (BOT-GATE-REACHABLE 2026-08-28, revised same day) ------------
 # The only path a non-calibrated bot can actually walk: real_bets is gated on
 # maturity=calibrated, so paper evidence is the ONLY evidence a beta bot can
-# accumulate. Higher n, lower ROI/CLV bars — see module docstring for why.
-MIN_PAPER_BETS_FOR_VERDICT  = 100    # min settled paper picks (sim OR shadow)
-PROMOTE_PAPER_ROI_PCT       = 3.0    # paper ROI > +3%
-PROMOTE_PAPER_CLV_PCT       = 3.0    # paper CLV > +3%
-# Bots with NO closing line at all (inplay_*) cannot produce CLV. Rather than
-# leaving them permanently ineligible, score them on a stiffer ROI bar alone.
-PROMOTE_PAPER_ROI_NO_CLV_PCT = 8.0   # paper ROI > +8% when CLV is unavailable
-DEMOTE_PAPER_ROI_PCT        = -10.0  # paper ROI < -10% at any maturity
-# A high-frequency bot can reach n=100 in under a week — bot_pin_1x2_home_v1
-# hit 104 settled picks in 6 days on its first run. Sample size alone is not
-# evidence of durability: one hot week of a single market regime clears n=100
-# without saying anything about whether the edge survives. Require the picks to
-# SPAN at least this many days as well, so promotion needs persistence, not
-# just volume. Demotion is deliberately NOT span-gated — a bot losing money
-# fast should be caught fast.
-MIN_PAPER_SPAN_DAYS         = 21
-
+# accumulate.
+#
+# REVISION (BOT-GATE-TSTAT): the first cut of this path used raw thresholds
+# (paper ROI > +3%, paper CLV > +3%, DEMOTE at ROI < -10%). That was wrong, and
+# SHADOW-PROMOTION-GATE-2026-08-26 had already proved why for the sibling gate
+# on /admin/shadow-bots: a raw ROI level is close to uninformative because it is
+# cleared whenever noise lands above it, and raising n does not fix it — at
+# n=2000 a break-even bot still promotes 17% of the time.
+#
+# Simulated against the empirical odds pool these bots actually bet at (n=740,
+# mean odds 2.95, 20k trials at n=100), the raw-threshold version behaved like:
+#
+#     true ROI  true CLV   promote   DEMOTE
+#          0%        0%       0.0%    24.4%   <- break-even bot demoted 1 in 4
+#         +5%       +5%      54.1%    14.7%   <- GOOD bot demoted 1 in 7
+#
+# The ROI leg is the culprit: per-bet ROI SD is 1.341, so at n=100 the standard
+# error is ~13pp and a -10% threshold is a t of -0.75. That is a coin flip, and
+# demotion is the consequential direction — it strips a bot off /picks.
+#
+# The same t-statistic gate the admin page uses fixes it outright:
+#
+#     true ROI  true CLV   promote   DEMOTE
+#          0%        0%       5.0%     5.1%   <- exactly the nominal 5% per side
+#         +5%       +5%     100.0%     0.0%
+#         -5%       -3%       0.0%    95.5%
+#
+# (The 100% power figure is idealised — it assumes independent CLV draws at the
+# documented per-bet SD of 0.090. Real picks correlate within a matchday, so
+# read it as an upper bound on power, not a promise.)
+#
+# THESE CONSTANTS MUST MATCH odds-intel-web/src/app/(app)/admin/shadow-bots/page.tsx.
+# Two gates deciding the same question with different numbers is how a bot ends
+# up promoted on one surface and retired on the other. Smoke pins the pairing.
+PROMOTE_T                   = 1.65   # one-sided 5% test
+RETIRE_T                    = -1.65
+CLV_MIN_N                   = 100    # CLV converges ~222x faster than ROI
+MIN_SETTLED_FOR_DECISION    = 200    # fallback when the bot has no CLV anchor
+MIN_DAYS_FOR_DECISION       = 14     # two weekend cycles
 
 def _connect():
     return psycopg2.connect(os.environ["DATABASE_URL"])
@@ -255,96 +277,109 @@ def _window_metrics(rows, ts_idx, days, now):
     return (n, hit_pct, roi_pct, clv_pct)
 
 
-def _paper_span_days(rows, days, now):
-    """Days between the first and last paper pick inside the window. Used to
-    stop a single high-volume week from clearing the n>=100 promotion bar."""
+def _t_stat(values):
+    """One-sample t = mean / standard error. None when there is nothing to
+    test. This is the gating statistic on both surfaces — keep it identical to
+    the tStat/clvTStat computation in the admin shadow-bots page."""
+    n = len(values)
+    if n < 2:
+        return None
+    mean = sum(values) / n
+    var = sum((v - mean) ** 2 for v in values) / (n - 1)
+    se = (var / n) ** 0.5
+    if se <= 0:
+        return None
+    return mean / se
+
+
+def _window_rows(rows, days, now):
     cutoff = now.timestamp() - days * 86400
-    ts = [r[0].timestamp() for r in rows if r[0].timestamp() >= cutoff]
-    if len(ts) < 2:
-        return 0.0
-    return (max(ts) - min(ts)) / 86400.0
+    return [r for r in rows if r[0].timestamp() >= cutoff]
 
 
-def _has_clv_data(paper_rows):
-    """True when the bot produces CLV at all. `inplay_*` bots never do — there
-    is no closing line for an in-play pick — so scoring them on a CLV bar
-    makes them permanently ineligible for promotion regardless of results."""
-    return any(len(r) == 5 and r[4] is not None for r in paper_rows)
+def _gate_inputs(paper_rows, days, now):
+    """Return (gate_t, basis, n_basis, observation_days) for the verdict.
+
+    Decide on CLV where we have it. CLV's per-bet SD is 0.090 against ROI's
+    1.341 (ANALYSIS_GOTCHAS #8), so CLV needs ~222x fewer bets for the same
+    precision — CLV_MIN_N=100 is already past the ~78 needed for +/-2%, while
+    ROI needs MIN_SETTLED_FOR_DECISION=200 and is still far slower.
+
+    Bots on markets Pinnacle does not quote (BTTS above all) and every inplay_*
+    bot have no CLV anchor at all and fall back to the ROI gate. That is a real
+    cost of betting an unanchored market and the digest names it rather than
+    hiding it. It also replaces the old special-case "no-CLV bots get a stiffer
+    raw ROI bar" hack, which was itself a raw threshold and had the same flaw.
+    """
+    in_window = _window_rows(paper_rows, days, now)
+    if not in_window:
+        return None, "none", 0, 0.0
+
+    ts = [r[0].timestamp() for r in in_window]
+    observation_days = (max(ts) - min(ts)) / 86400.0 if len(ts) > 1 else 0.0
+
+    clvs = [float(r[4]) for r in in_window if len(r) == 5 and r[4] is not None]
+    if len(clvs) >= CLV_MIN_N:
+        return _t_stat(clvs), "clv", len(clvs), observation_days
+
+    # ROI fallback: per-bet return is (odds-1) on a win, -1 on a loss. We store
+    # stake and pnl rather than odds, so the per-bet return is pnl/stake.
+    rets = [float(r[3]) / float(r[2])
+            for r in in_window
+            if r[1] in ("won", "lost") and r[2] and float(r[2]) > 0 and r[3] is not None]
+    if len(rets) >= MIN_SETTLED_FOR_DECISION:
+        return _t_stat(rets), "roi", len(rets), observation_days
+
+    n_have = len(clvs) if clvs else len(rets)
+    basis = "clv" if clvs else "roi"
+    return None, basis, n_have, observation_days
 
 
-def _verdict(maturity, paper60, real60, has_clv, paper_span_days):
-    """Compute PROMOTE / DEMOTE / HOLD from 60d window metrics.
+def _verdict(maturity, gate_t, basis, n_basis, observation_days, real60):
+    """Compute PROMOTE / DEMOTE / HOLD.
 
-    paper60, real60 are tuples (n, hit_pct, roi_pct, clv_pct).
-    has_clv is False for bots that structurally cannot produce CLV.
-    paper_span_days is the first-to-last spread of paper picks in the window.
-
-    Returns (verdict, reason) — reason is a short human string printed next to
-    the verdict so the operator can see WHICH rule fired without re-deriving
-    it from the numbers.
+    Returns (verdict, reason) — reason names WHICH rule fired, or which
+    constraint binds, so the operator can act without re-deriving it.
     """
     real_n, _, real_roi, _ = real60
-    paper_n, _, paper_roi, paper_clv = paper60
-
     is_calibrated = maturity == "calibrated"
 
-    # ---- DEMOTE first: a bot losing money outranks any promotion case ------
-    # Real-money path — a calibrated bot bleeding actual money.
+    # ---- Real-money tripwire ----------------------------------------------
+    # Deliberately NOT a statistical verdict: at n=20 the ROI standard error is
+    # ~30pp, so "real ROI < -5%" is a t of about -0.17 and will fire on noise.
+    # It is kept anyway because the loss function is asymmetric — a false
+    # DEMOTE costs a calibrated bot nothing but paper trading, while a false
+    # negative costs actual money every day it persists. Trigger-happy is the
+    # correct bias here, and calling it a tripwire rather than a verdict is the
+    # honest way to say so.
     if (is_calibrated
             and real_n >= MIN_BETS_FOR_VERDICT
             and real_roi is not None
             and real_roi < DEMOTE_REAL_ROI_PCT):
-        return "DEMOTE", f"real ROI {real_roi:+.1f}% < {DEMOTE_REAL_ROI_PCT:+.0f}% on n={real_n}"
+        return "DEMOTE", (f"real-money tripwire: ROI {real_roi:+.1f}% on n={real_n} "
+                          f"(not a significance test — see docstring)")
 
-    # Paper path — applies at ANY maturity. Before BOT-GATE-REACHABLE this
-    # branch was calibrated-only, so a beta bot at -56% ROI stayed beta (and
-    # therefore stayed visible to every signed-in user on /picks) forever.
-    if (paper_n >= MIN_PAPER_BETS_FOR_VERDICT
-            and paper_roi is not None
-            and paper_roi < DEMOTE_PAPER_ROI_PCT):
-        return "DEMOTE", f"paper ROI {paper_roi:+.1f}% < {DEMOTE_PAPER_ROI_PCT:+.0f}% on n={paper_n}"
+    # ---- Not enough evidence to decide ------------------------------------
+    if gate_t is None:
+        need = CLV_MIN_N if basis == "clv" else MIN_SETTLED_FOR_DECISION
+        label = "with CLV" if basis == "clv" else "settled (no CLV anchor)"
+        return "HOLD", f"{n_basis}/{need} {label}"
+    if observation_days < MIN_DAYS_FOR_DECISION:
+        return "HOLD", (f"{observation_days:.0f}/{MIN_DAYS_FOR_DECISION} days observed "
+                        f"(n={n_basis} but too recent)")
 
-    # ---- PROMOTE: calibrated is the top rung, nothing to promote into ------
-    if is_calibrated:
-        return "HOLD", "already calibrated"
+    # ---- The gate ----------------------------------------------------------
+    if gate_t <= RETIRE_T:
+        # Applies at ANY maturity. Before BOT-GATE-REACHABLE this was
+        # calibrated-only, so a losing beta bot stayed beta — and beta is
+        # visible to every signed-in user on /picks.
+        return "DEMOTE", f"{basis} t={gate_t:+.2f} <= {RETIRE_T:+.2f} on n={n_basis}"
+    if gate_t >= PROMOTE_T:
+        if is_calibrated:
+            return "HOLD", f"already calibrated ({basis} t={gate_t:+.2f})"
+        return "PROMOTE", f"{basis} t={gate_t:+.2f} >= {PROMOTE_T:+.2f} on n={n_basis}"
 
-    # Real-money fast lane (the original gate). Only reachable for bots that
-    # somehow have real bets despite the maturity gate — manual placements, or
-    # history predating COOLBET_RECORD_ALLOWED_MATURITY being switched on.
-    if (real_n >= MIN_BETS_FOR_VERDICT
-            and real_roi is not None and real_roi > PROMOTE_REAL_ROI_PCT
-            and paper_clv is not None and paper_clv > PROMOTE_SIM_CLV_PCT):
-        return "PROMOTE", (f"real ROI {real_roi:+.1f}% on n={real_n} "
-                           f"+ paper CLV {paper_clv:+.1f}%")
-
-    # Paper path — the reachable one. Needs BOTH volume and persistence.
-    if (paper_n >= MIN_PAPER_BETS_FOR_VERDICT
-            and paper_span_days >= MIN_PAPER_SPAN_DAYS
-            and paper_roi is not None):
-        if has_clv:
-            if paper_roi > PROMOTE_PAPER_ROI_PCT and paper_clv is not None and paper_clv > PROMOTE_PAPER_CLV_PCT:
-                return "PROMOTE", (f"paper ROI {paper_roi:+.1f}% + CLV {paper_clv:+.1f}% "
-                                   f"on n={paper_n}")
-        else:
-            # No closing line available for this bot family — stiffer ROI bar
-            # stands in for the missing CLV confirmation.
-            if paper_roi > PROMOTE_PAPER_ROI_NO_CLV_PCT:
-                return "PROMOTE", (f"paper ROI {paper_roi:+.1f}% on n={paper_n} "
-                                   f"(no-CLV bot, {PROMOTE_PAPER_ROI_NO_CLV_PCT:+.0f}% bar)")
-
-    # ---- HOLD, with the binding constraint named ---------------------------
-    if paper_n < MIN_PAPER_BETS_FOR_VERDICT:
-        return "HOLD", f"paper n={paper_n} < {MIN_PAPER_BETS_FOR_VERDICT}"
-    if paper_span_days < MIN_PAPER_SPAN_DAYS:
-        return "HOLD", (f"paper picks span {paper_span_days:.0f}d < "
-                        f"{MIN_PAPER_SPAN_DAYS}d (n={paper_n} but too recent)")
-    if paper_roi is None:
-        return "HOLD", "no settled paper ROI"
-    if has_clv and (paper_clv is None or paper_clv <= PROMOTE_PAPER_CLV_PCT):
-        clv_str = f"{paper_clv:+.1f}%" if paper_clv is not None else "n/a"
-        return "HOLD", f"paper CLV {clv_str} <= {PROMOTE_PAPER_CLV_PCT:+.0f}%"
-    bar = PROMOTE_PAPER_ROI_NO_CLV_PCT if not has_clv else PROMOTE_PAPER_ROI_PCT
-    return "HOLD", f"paper ROI {paper_roi:+.1f}% <= {bar:+.0f}%"
+    return "HOLD", f"{basis} t={gate_t:+.2f} inconclusive on n={n_basis}"
 
 
 def _fmt_pct(v):
@@ -461,14 +496,17 @@ def main():
 
     print(f"Bot maturity review · {ran_at.strftime('%Y-%m-%d %H:%M UTC')}")
     print(f"Verdict window: last {VERDICT_WINDOW_DAYS}d (★ in tables below)")
-    print("Thresholds (maturity != calibrated for every PROMOTE path):")
-    print(f"  PROMOTE  real   · real n >= {MIN_BETS_FOR_VERDICT} AND real ROI > +{PROMOTE_REAL_ROI_PCT:.0f}% AND paper CLV > +{PROMOTE_SIM_CLV_PCT:.0f}%")
-    print(f"  PROMOTE  paper  · paper n >= {MIN_PAPER_BETS_FOR_VERDICT} AND paper ROI > +{PROMOTE_PAPER_ROI_PCT:.0f}% AND paper CLV > +{PROMOTE_PAPER_CLV_PCT:.0f}%")
-    print(f"  PROMOTE  no-CLV · paper n >= {MIN_PAPER_BETS_FOR_VERDICT} AND paper ROI > +{PROMOTE_PAPER_ROI_NO_CLV_PCT:.0f}%  (inplay_* — no closing line exists)")
-    print(f"           both paper paths also require picks spanning >= {MIN_PAPER_SPAN_DAYS}d (persistence, not just volume)")
-    print(f"  DEMOTE   real   · calibrated AND real n >= {MIN_BETS_FOR_VERDICT} AND real ROI < {DEMOTE_REAL_ROI_PCT:+.0f}%")
-    print(f"  DEMOTE   paper  · any maturity AND paper n >= {MIN_PAPER_BETS_FOR_VERDICT} AND paper ROI < {DEMOTE_PAPER_ROI_PCT:+.0f}%")
-    print("  HOLD     else — the reason column names the binding constraint")
+    print("Gate: a one-sided t-test on the metric that converges, NOT a raw ROI level.")
+    print(f"  basis    · de-vigged Pinnacle CLV once n >= {CLV_MIN_N}; else per-bet ROI once n >= {MIN_SETTLED_FOR_DECISION}")
+    print(f"             (CLV per-bet SD 0.090 vs ROI 1.341 — CLV needs ~222x fewer bets)")
+    print(f"  PROMOTE  · t >= {PROMOTE_T:+.2f} AND maturity != calibrated AND >= {MIN_DAYS_FOR_DECISION}d observed")
+    print(f"  DEMOTE   · t <= {RETIRE_T:+.2f} at ANY maturity")
+    print(f"  DEMOTE   · real-money tripwire: calibrated AND real n >= {MIN_BETS_FOR_VERDICT} "
+          f"AND real ROI < {DEMOTE_REAL_ROI_PCT:+.0f}% (deliberately not a significance test)")
+    print("  HOLD     · else — the reason column names the binding constraint")
+    print()
+    print("Thresholds are shared with /admin/shadow-bots. A raw ROI gate was measured at")
+    print("24% false-demote on a break-even bot; the t-gate holds both error rates at ~5%.")
     print()
     print("Paper ledger = simulated_bets when the bot writes there, else shadow_bets_unique")
     print("(sweep/pin/coolbet-value bots are shadow-only). Promotion remains a MANUAL migration.")
@@ -495,9 +533,10 @@ def main():
         real60 = _window_metrics(real_rows, 0, 60, ran_at)
         real90 = _window_metrics(real_rows, 0, 90, ran_at)
 
-        has_clv = _has_clv_data(sim_rows)
-        span60  = _paper_span_days(sim_rows, VERDICT_WINDOW_DAYS, ran_at)
-        verdict, reason = _verdict(maturity, sim60, real60, has_clv, span60)
+        gate_t, basis, n_basis, obs_days = _gate_inputs(
+            sim_rows, VERDICT_WINDOW_DAYS, ran_at)
+        verdict, reason = _verdict(
+            maturity, gate_t, basis, n_basis, obs_days, real60)
         verdict_counts[verdict] += 1
 
         block = (name, maturity, verdict, reason, source,

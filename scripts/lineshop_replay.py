@@ -36,6 +36,12 @@ from workers.model.devig import proportional_devig, shin_devig  # noqa: E402
 
 PICK_LEAD_HOURS = 3
 
+# First date on which more than one bookmaker exists in odds_snapshots, i.e. the
+# earliest a line-shopping bot could have had anything to shop against. Pinnacle
+# goes back to 2023-01-27; Unibet / Betano / 10Bet / Marathonbet all start
+# 2026-04-28, 888Sport 04-30, Coolbet 05-20. Verified 2026-08-28.
+LINESHOP_DATA_START = "2026-04-28"
+
 ACCESSIBLE = {"Unibet", "Betano", "Marathonbet", "10Bet", "888Sport", "Pinnacle", "Coolbet"}
 
 # Bot configs as deployed. Kept here rather than imported because the point is
@@ -349,7 +355,21 @@ def main() -> int:
     args = ap.parse_args()
 
     bots = sorted(CONFIGS) if args.bot == "all" else [args.bot]
-    print(f"replay {args.start} → {args.end}  devig={args.devig}  lead={args.lead}h\n")
+    print(f"replay {args.start} → {args.end}  devig={args.devig}  lead={args.lead}h")
+
+    # LINESHOP-REPLAY-WINDOW-GUARD (2026-08-28): line-shopping needs at least
+    # two books quoting the same match. Before 2026-04-28 the odds archive holds
+    # PINNACLE ONLY — every other accessible book starts 2026-04-28 (888Sport
+    # 04-30, Coolbet 05-20). A replay starting earlier is not "a longer
+    # backtest", it is the same four months with a silent zero in front of it,
+    # and the old output rendered that as a bare "(no qualifying picks)" line
+    # indistinguishable from a genuinely unprofitable config. Say so instead.
+    if args.start < LINESHOP_DATA_START:
+        print(f"  ⚠️  requested start {args.start} precedes the multi-book archive. "
+              f"Only Pinnacle exists before {LINESHOP_DATA_START}, so no line-shop")
+        print(f"      comparison is possible there — results below cover "
+              f"{LINESHOP_DATA_START} → {args.end} regardless of the flag.")
+    print()
     print(f"{'bot':30s} {'n':>6s} {'ROI':>8s} {'SE':>7s} {'t':>6s} {'hit':>6s} {'odds':>6s} {'edge':>7s}")
     print("-" * 82)
     for b in bots:

@@ -129,17 +129,61 @@ def attach(pw):
     return browser, ctx.new_page()
 
 
+def detect_block(page) -> str | None:
+    """Return a reason if Coolbet is serving a block page, else None.
+
+    On 2026-08-28 Coolbet began serving an Imperva interstitial — a ~1KB
+    document with an empty body and an `_Incapsula_Resource` iframe — after a
+    day of heavy automated traffic from one IP (36 placer passes plus a long
+    series of diagnostic navigations). Every placer pass then failed at the
+    search stage while reporting a healthy session.
+
+    Detected structurally rather than by text, because the interstitial carries
+    no readable copy: a near-empty body on a page that should be a full SPA.
+    """
+    try:
+        info = page.evaluate(
+            """() => ({
+                 html: document.documentElement.outerHTML.length,
+                 body: (document.body ? document.body.innerText : '').trim().length,
+                 incap: document.documentElement.outerHTML.includes('_Incapsula_Resource'),
+               })"""
+        )
+    except Exception as e:
+        return f"page unreadable: {type(e).__name__}"
+    if info.get("incap"):
+        return "Imperva interstitial (_Incapsula_Resource) — the IP is blocked"
+    if info.get("html", 0) < 5000 and info.get("body", 0) == 0:
+        return (f"near-empty document ({info.get('html')} bytes, no body text) — "
+                f"the app did not render; treat as blocked, not as logged out")
+    return None
+
+
 def is_logged_in(page) -> bool:
     """True when the page shows an authenticated session.
 
-    Checks for the login form rather than for a balance widget: a €0.00
-    balance is a perfectly valid logged-in state (it is exactly the state
-    the operator's account was in on 2026-08-27), so keying on a balance
-    value would misreport a funded-but-empty account as logged out.
+    POSITIVE check. This used to return `not <password field present>`, which
+    made any page without a login form read as authenticated — including the
+    Imperva block page, which has no form at all. On 2026-08-28 that reported a
+    healthy session while Coolbet was serving a 1KB interstitial, so the placer
+    walked into failure after failure instead of stopping.
+
+    A balance widget is the marker, and its VALUE is deliberately ignored:
+    EUR 0.00 is a perfectly valid logged-in state (exactly the account's state
+    on 2026-08-27), so keying on the amount would misreport a funded-but-empty
+    account as logged out.
     """
-    return not page.evaluate(
-        """() => !!document.querySelector("input[type='password'], input[name='password']")"""
-    )
+    if detect_block(page):
+        return False
+    return bool(page.evaluate(
+        r"""() => {
+             if (document.querySelector("input[type='password'], input[name='password']"))
+               return false;                      // login form on screen
+             const txt = document.body ? document.body.innerText : '';
+             if (/\d+[.,]\d{2}\s*€/.test(txt)) return true;   // balance rendered
+             return /Logi v\u00e4lja|Minu konto|My account|Log out/i.test(txt);
+           }"""
+    ))
 
 
 # ── search ────────────────────────────────────────────────────────────────────
@@ -1062,6 +1106,12 @@ def stage_bet(
                        execute_mode=execute)
         return StageResult(False, reason, ev, oc, slip, applied or 0.0, False, notes)
 
+    blocked = detect_block(page)
+    if blocked:
+        # A block is NOT a login problem, and re-logging in makes it worse by
+        # adding traffic from an already-flagged IP. Say so and stop.
+        return _fail("login", f"BLOCKED: {blocked} — stop the job and let it cool off; "
+                              f"do not retry or re-login")
     if not is_logged_in(page):
         return _fail("login", "not logged in — run coolbet_browser_sync --cdp-auto-login")
 

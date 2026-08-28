@@ -260,6 +260,13 @@ def main() -> int:
     placed = staged = rejected = skipped_done = 0
     with sync_playwright() as pw:
         browser, page = up.attach(pw)
+        blocked = up.detect_block(page)
+        if blocked:
+            print(f"ABORT — {blocked}")
+            print("  Coolbet is serving an interstitial to this IP. Do NOT retry or "
+                  "re-login; both add traffic from an already-flagged address. The "
+                  "job stays scheduled and will recover on its own once it lifts.")
+            return 0
         if not up.is_logged_in(page):
             print("still not logged in after auto-login — aborting")
             return 2
@@ -306,6 +313,15 @@ def main() -> int:
             elif res.ok:
                 staged += 1
                 print(f"staged   {label}\n         {'; '.join(res.notes)}")
+            elif res.reason.startswith("BLOCKED:"):
+                # Abort the ENTIRE pass. Continuing would send one search per
+                # remaining pick from an IP Coolbet has already flagged, which
+                # is how a temporary block becomes a persistent one. The job
+                # stays scheduled so it recovers by itself once the block
+                # lifts — one cheap check per pass instead of ~30.
+                print(f"ABORT    {res.reason}")
+                print("         stopping this pass; the job will retry next slot.")
+                break
             else:
                 rejected += 1
                 # Below-floor now can clear later, so mark it reviewed rather
