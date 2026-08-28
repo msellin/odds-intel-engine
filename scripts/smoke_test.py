@@ -25948,6 +25948,15 @@ def test_coolbet_ui_placer_2026_08_27():
     # The loop must recover its own session — the login is fully scripted, so
     # an unattended pass does not need a human unless Coolbet asks for SMS.
     assert "cdp_auto_login" in runner, "runner must re-login on its own"
+    # cdp_auto_login opens its OWN sync_playwright, and Playwright refuses a
+    # second sync context inside the first. Calling it from within the run's
+    # `with sync_playwright()` block broke every unattended recovery overnight
+    # 2026-08-27 -> 08-28: the loop woke, found the session gone, and failed to
+    # heal on every pass with "Sync API inside the asyncio loop". The heal must
+    # run BEFORE the run context is opened.
+    heal_at = runner.index("cdp_auto_login")
+    ctx_at = runner.index("with sync_playwright()")
+    assert heal_at < ctx_at, "session heal must happen outside the run's browser context"
 
     # The betslip lives in localStorage; resetting the key is what makes the
     # loop self-clearing. Clicking the per-selection trash icon does NOT work:

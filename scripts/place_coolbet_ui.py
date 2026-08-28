@@ -173,6 +173,22 @@ def single_run_lock():
             fh.close()
 
 
+def _session_alive() -> bool:
+    """Is the Coolbet session live? Opens and closes its own browser context.
+
+    Deliberately separate from the run's context so the caller can heal the
+    session before that context exists — see the note in main().
+    """
+    from playwright.sync_api import sync_playwright as _sp
+    try:
+        with _sp() as pw:
+            _, page = up.attach(pw)
+            return up.is_logged_in(page)
+    except Exception as e:
+        log.warning("session check failed: %s", e)
+        return False
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--bot", default=DEFAULT_BOT)
@@ -186,6 +202,27 @@ def main() -> int:
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     threshold = BOT_THRESHOLDS.get(args.bot, 0.03)
+
+    # Self-heal the session BEFORE opening the run's browser context.
+    # cdp_auto_login opens its own sync_playwright, and Playwright refuses a
+    # second sync context inside the first ("Sync API inside the asyncio
+    # loop"). Calling it from within the run's `with sync_playwright()` block
+    # broke every unattended recovery from 2026-08-27 21:30 to 2026-08-28
+    # 06:00+ — the loop woke, found the session gone, and failed to heal on
+    # every pass. Keep this OUTSIDE the run context.
+    if not _session_alive():
+        print("session lost — logging in…")
+        from workers.automation.coolbet_browser_sync import cdp_auto_login
+        try:
+            rc = cdp_auto_login()
+        except Exception as e:
+            print(f"auto-login raised: {type(e).__name__}: {str(e)[:140]}")
+            rc = 1
+        if rc != 0:
+            print("AUTO-LOGIN FAILED — if Coolbet asked for SMS, complete it in "
+                  "the browser; otherwise check COOLBET_USER/COOLBET_PASS.")
+            return 2
+        print("session restored.")
 
     picks = load_picks(args.bot)
     if args.limit:
@@ -208,29 +245,9 @@ def main() -> int:
     placed = staged = rejected = skipped_done = 0
     with sync_playwright() as pw:
         browser, page = up.attach(pw)
-
-        # Self-heal the session. The login is fully scripted — cdp_auto_login
-        # fills COOLBET_USER/COOLBET_PASS from .env and clicks Logi sisse — so
-        # an unattended pass recovers on its own instead of needing a human.
-        # The ONLY step no script can take is an SMS challenge, which Coolbet
-        # asks for rarely because the reese84 marker survives session lapses.
         if not up.is_logged_in(page):
-            print("session lost — logging in…")
-            from workers.automation.coolbet_browser_sync import cdp_auto_login
-            try:
-                rc = cdp_auto_login()
-            except Exception as e:
-                print(f"auto-login raised: {type(e).__name__}: {str(e)[:120]}")
-                rc = 1
-            if rc != 0:
-                print("AUTO-LOGIN FAILED — if Coolbet asked for SMS, complete it "
-                      "in the browser; otherwise check COOLBET_USER/COOLBET_PASS.")
-                return 2
-            browser, page = up.attach(pw)
-            if not up.is_logged_in(page):
-                print("still not logged in after auto-login — aborting")
-                return 2
-            print("session restored.")
+            print("still not logged in after auto-login — aborting")
+            return 2
 
         from datetime import datetime, timedelta, timezone
         now = datetime.now(timezone.utc)
