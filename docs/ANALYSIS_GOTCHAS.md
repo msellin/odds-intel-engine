@@ -189,6 +189,47 @@ Coolbet). A per-book in-play query returns nothing and that is not a bug.
 
 ---
 
+## 15. Double chance at Coolbet is DEAD — do not scope it again
+
+Settled 2026-08-28 from two independent directions. **Do not re-open this
+without new evidence that Coolbet's DC pricing itself has changed.**
+
+**The market is priced worse than the edge available.** Coolbet's double-chance
+quotes sit roughly **4-6% below de-vigged Pinnacle fair value**, which is simply
+its margin on that market. Measured live over a 2-day window with same-window
+(≤30min) pairing and a structural guard: **zero** qualifying picks at 2%, 3% or
+5% edge; median edge **-5.8%**; the single best DC price in the whole sample
+still **-3.2%**, i.e. worse than fair. There is no tail to fish in.
+
+**History says the same thing.** All three retired DC bots posted negative CLV
+against de-vigged Pinnacle — the very anchor a new bot would use:
+
+| bot | n (CLV) | CLV |
+|---|---|---|
+| `bot_dc_value` | 113 | -3.63% |
+| `bot_dc_specialist` | 54 | -5.71% |
+| `bot_dc_strong_fav` | 31 | -3.69% |
+
+Combined **n=198**, past the n≈78 CLV threshold, so this is a verdict rather
+than a small sample. Their realised CLV matches the live probe's median almost
+exactly — the same number arrived at from bet outcomes and from raw prices.
+
+**Two traps that make DC look alive when it is not:**
+
+* **Stale pairing invents edge.** Taking each book's latest row independently
+  (no time window) produced apparent edges of **+55.6% / +50.7% / +45.4%** from
+  quotes **10-17 hours apart**. One offered `x2` at 2.20 while Pinnacle's *away
+  alone* was 2.26 — structurally impossible, since a DC price must be shorter
+  than either leg it contains. Any DC probe without a pairing window will
+  rediscover this "opportunity".
+* **Pinnacle quotes no DC at all**, so it must be derived from de-vigged 1X2
+  (gotcha 4). That derivation is exact and is not the problem — the problem is
+  the price Coolbet offers.
+
+Scoped and rejected on 2026-08-28: `COOLBET-DC-BOT-SCOPE-2026-08-28`.
+
+---
+
 ## Re-runnable analysis scripts (all committed 2026-08-26)
 
 | script | answers |

@@ -2099,6 +2099,10 @@ def bulk_store_shadow_bets(rows: list[dict], shadow_run_id: str, shadow_cohort: 
             r.get("timing_cohort"),
             r.get("model_version", _active_model_version()),
             _sanitize_for_json(r.get("meta_clv_score")),  # B-ML3-V2-ACTIVE (migration 130)
+            # COOLBET-FEED-PAIRING (migration 289): hours between the two
+            # books' quotes used for this pick. NULL for bots that do not pair
+            # books. Recorded so "was this edge real or stale?" is a query.
+            _sanitize_for_json(r.get("pair_gap_hours")),
         ))
 
     if not tuples:
@@ -2110,7 +2114,7 @@ def bulk_store_shadow_bets(rows: list[dict], shadow_run_id: str, shadow_cohort: 
              odds_at_pick, pick_time, stake,
              model_probability, calibrated_prob, edge_percent,
              recommended_bookmaker, kelly_fraction, timing_cohort, model_version,
-             meta_clv_score)
+             meta_clv_score, pair_gap_hours)
         VALUES %s
         ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection) DO NOTHING
     """

@@ -25834,6 +25834,37 @@ def _():
     return "Epicbet ingest: vocabulary pinned, reserve/youth false-matches blocked, :02/:32 slot"
 
 
+@test("COOLBET-FEED-PAIRING")
+def test_coolbet_feed_pairing_2026_08_28():
+    """COOLBET-FEED-PAIRING-2026-08-28 — never price a Coolbet quote against a
+    Pinnacle quote taken hours earlier, and record how far apart they were."""
+    import inspect
+    import pathlib
+    from workers.jobs.daily_pipeline_v2 import _PAIR_MAX_GAP_H, _run_coolbet_value_pass
+
+    src = inspect.getsource(_run_coolbet_value_pass)
+
+    # The bot used to take each book's LATEST row with no window between them.
+    # Measured on its last 79 picks: median gap 1.63h, 56pct over 1h, 37pct
+    # over 4h, max 15.6h. Coolbet swings 14-19pct intraday, so that can invent
+    # edge — the same mechanism produced apparent +55.6pct DC edges from
+    # quotes 16h apart.
+    assert "stale_pair" in src, "stale pairings must be counted, not silently used"
+    assert "_PAIR_MAX_GAP_H" in src, "pairing must be time-bounded"
+    assert 0 < _PAIR_MAX_GAP_H <= 12, "pairing window must be sane"
+
+    # Staleness must be auditable after the fact, not reconstructable only by
+    # re-querying odds_snapshots (which ages out).
+    assert "pair_gap_hours" in src, "each pick must record its own pairing gap"
+    writer = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
+    assert "pair_gap_hours" in writer, "the writer must persist the gap"
+
+    mig = pathlib.Path("supabase/migrations/289_shadow_bets_pair_gap.sql").read_text()
+    assert "ADD COLUMN IF NOT EXISTS pair_gap_hours" in mig
+
+    return "cross-book pairing time-bounded + gap recorded per pick"
+
+
 @test("COOLBET-UI-PLACER")
 def test_coolbet_ui_placer_2026_08_27():
     """COOLBET-UI-PLACER-2026-08-27 — place at Coolbet by driving the UI, so the

@@ -4479,6 +4479,30 @@ def _run_sweep_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_t
 # backtest ROI is actively anti-predictive (-9.2% out of sample).
 _LINESHOP_TRUE_EDGE_MIN = 0.03
 
+# COOLBET-FEED-PAIRING (2026-08-28): maximum age difference between the two
+# books' quotes before a pairing is untrustworthy.
+#
+# The mechanism is real — comparing a Coolbet price to a Pinnacle price taken
+# hours earlier can manufacture edge from nothing, and that is exactly what
+# produced apparent +55.6pct double-chance edges from quotes 16h apart.
+#
+# But the threshold is a JUDGEMENT CALL, not a derived number, and the
+# measurements argue against being strict:
+#   * claimed edge does NOT rise with gap on the live bot's picks —
+#     7.65pct at <=1h, 7.24pct at 1-4h, 5.82pct at >4h. If staleness were
+#     inflating edge we would see the opposite, so no live pick is known bogus.
+#   * there is no natural cliff to cut at. On 2026-08-28's 39 picks the loss
+#     runs 49pct at 1h, 41pct at 2h, 33pct at 3-4h, 23pct at 6h — the two feeds
+#     are CHRONICALLY misaligned (median gap 0.97h even after the scraper was
+#     repaired), not merely misaligned during outages.
+#
+# So 4h is deliberately loose: it catches egregious outage-era pairings (the
+# 15.6h kind) while costing ~33pct of picks rather than 41pct, and every pick
+# now records its own gap in shadow_bets.pair_gap_hours. Tighten this once
+# there is settled data correlating gap with CLV — that is the honest way to
+# choose it, and it is not available yet.
+_PAIR_MAX_GAP_H = float(os.getenv("COOLBET_PAIR_MAX_GAP_H", "4.0"))
+
 # Shin de-vig — see workers/model/devig.py for why proportional is not used.
 from workers.model.devig import devig as _devig  # noqa: E402
 
@@ -4623,7 +4647,8 @@ def _run_coolbet_value_pass(today_str: str, cohort_tag: str = "morning",
     # silently empties this bot. COOLBET-FEED-WATCHDOG exists for that.
     odds_raw = execute_query(
         """SELECT DISTINCT ON (match_id, market, selection, bookmaker)
-                  match_id::text AS match_id, market, selection, bookmaker, odds
+                  match_id::text AS match_id, market, selection, bookmaker, odds,
+                  timestamp
              FROM odds_snapshots
             WHERE match_id = ANY(%s::uuid[]) AND is_closing = false
               AND market = ANY(%s::text[])
@@ -4635,6 +4660,7 @@ def _run_coolbet_value_pass(today_str: str, cohort_tag: str = "morning",
         return 0
 
     grouped: dict = {}
+    stamps: dict = {}
     for row in odds_raw:
         try:
             o = float(row["odds"])
@@ -4642,11 +4668,13 @@ def _run_coolbet_value_pass(today_str: str, cohort_tag: str = "morning",
             continue
         grouped.setdefault(row["market"], {}).setdefault(row["match_id"], {}) \
                .setdefault(str(row["selection"]).lower(), {})[row["bookmaker"]] = o
+        stamps.setdefault(row["market"], {}).setdefault(row["match_id"], {}) \
+              .setdefault(str(row["selection"]).lower(), {})[row["bookmaker"]] = row["timestamp"]
 
     now_iso = now_utc.isoformat()
     rows: list[dict] = []
     stats = {"scored": 0, "no_coolbet": 0, "no_pin": 0, "odds_range": 0,
-             "outlier": 0, "low_edge": 0}
+             "outlier": 0, "low_edge": 0, "stale_pair": 0}
 
     for mkt, per_match in grouped.items():
         sides = ["home", "draw", "away"] if mkt == "1x2" else ["over", "under"]
@@ -4677,12 +4705,27 @@ def _run_coolbet_value_pass(today_str: str, cohort_tag: str = "morning",
                 if cb > pin[i] * mult:
                     stats["outlier"] += 1
                     continue
+                # COOLBET-FEED-PAIRING (2026-08-28): refuse to price a
+                # Coolbet quote against a Pinnacle quote taken hours earlier.
+                # Coolbet swings 14-19pct intraday, so a stale pairing can
+                # manufacture edge from nothing — the same mechanism produced
+                # apparent +55.6pct DC edges from quotes 16h apart. Skip the
+                # side rather than guess which of the two prices is current.
+                st = ((stamps.get(mkt, {}).get(mid, {}) or {}).get(s) or {})
+                t_cb, t_pin = st.get("Coolbet"), st.get("Pinnacle")
+                gap_h = None
+                if t_cb and t_pin:
+                    gap_h = abs((t_cb - t_pin).total_seconds()) / 3600.0
+                    if gap_h > _PAIR_MAX_GAP_H:
+                        stats["stale_pair"] += 1
+                        continue
                 edge = cb * probs[i] - 1.0
                 if edge < _LINESHOP_TRUE_EDGE_MIN:
                     stats["low_edge"] += 1
                     continue
                 if best is None or edge > best["edge"]:
-                    best = {"sel": s, "odds": cb, "edge": edge, "prob": probs[i]}
+                    best = {"sel": s, "odds": cb, "edge": edge, "prob": probs[i],
+                            "gap_h": gap_h}
 
             # One side per market per match — betting both sides of a total is
             # paying the vig twice for a guaranteed loss.
@@ -4696,6 +4739,10 @@ def _run_coolbet_value_pass(today_str: str, cohort_tag: str = "morning",
                     "placed_at": now_iso, "timing_cohort": cohort_tag,
                     # Always Coolbet. That is the entire point of this bot.
                     "recommended_bookmaker": "Coolbet",
+                    # How far apart the two books' quotes were — so staleness
+                    # is a query later, not an investigation.
+                    "pair_gap_hours": (round(best["gap_h"], 2)
+                                       if best.get("gap_h") is not None else None),
                 })
 
     if not rows:
